@@ -17,10 +17,11 @@ This document specifies the Kubernetes Conditions for the **EffectivenessAssessm
 
 ---
 
-## Condition Types (2)
+## Condition Types (3)
 
 | Condition Type | Purpose | Set By |
 |----------------|---------|--------|
+| `Ready` | Aggregate: True on Completed | Reconciler |
 | `AssessmentComplete` | Assessment reached a terminal state | Reconciler (completeAssessment) |
 | `SpecIntegrity` | Post-remediation spec hash is still valid | Reconciler (Step 6.5 drift guard) |
 
@@ -42,6 +43,15 @@ Indicates that the EM has finished assessing the effectiveness of the remediatio
 | `True` | `NoExecution` | "No workflow execution found for this remediation" |
 
 **Note**: `Status` is always `True` for `AssessmentComplete` because the assessment has reached a terminal state (the EA is in `Completed` phase). The `Reason` field distinguishes between the different completion outcomes.
+
+### Ready
+
+| Status | Reason | Message Pattern |
+|--------|--------|-----------------|
+| `True` | `Ready` | "Assessment completed" |
+| `False` | `NotReady` | "Assessment in progress" |
+
+**When Set**: True when phase is Completed (AssessmentComplete reached terminal state).
 
 ### SpecIntegrity
 

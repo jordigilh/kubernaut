@@ -15,10 +15,11 @@ This document specifies the Kubernetes Conditions for the **RemediationApprovalR
 
 ---
 
-## 🎯 Condition Types (3)
+## 🎯 Condition Types (4)
 
 | Condition Type | Purpose | Set By |
 |----------------|---------|--------|
+| `Ready` | Aggregate: True on Approved/Rejected, False on Expired | Controller |
 | `ApprovalPending` | Approval awaiting decision | Controller |
 | `ApprovalDecided` | Decision made (approved/rejected) | Controller |
 | `ApprovalExpired` | Timeout before decision | Controller |
@@ -48,6 +49,15 @@ This document specifies the Kubernetes Conditions for the **RemediationApprovalR
 |--------|--------|-----------------|
 | `True` | `Timeout` | "Approval expired after {duration} without decision" |
 | `False` | `NotExpired` | "Approval has not expired" |
+
+### Ready
+
+| Status | Reason | Message Pattern |
+|--------|--------|-----------------|
+| `True` | `Ready` | "Approval decided (approved or rejected)" |
+| `False` | `NotReady` | "Approval expired without decision" |
+
+**When Set**: True when Approved or Rejected; False when Expired.
 
 ---
 

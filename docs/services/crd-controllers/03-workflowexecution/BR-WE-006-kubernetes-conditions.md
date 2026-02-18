@@ -27,11 +27,11 @@
 ### Functional Requirements
 
 1. **Five Condition Types Implemented**:
+   - `Ready` - Aggregate: True on success terminal, False on failure terminal
    - `TektonPipelineCreated` - Tracks PipelineRun creation
    - `TektonPipelineRunning` - Tracks pipeline execution state
    - `TektonPipelineComplete` - Tracks completion (success/failure)
    - `AuditRecorded` - Tracks BR-WE-005 audit event persistence
-   - `ResourceLocked` - Tracks resource locking (DD-WE-001/003)
 
 2. **Lifecycle Coverage**:
    - All 5 CRD phases represented: Pending, Running, Completed, Failed, Skipped
@@ -174,24 +174,21 @@
 
 ---
 
-### Condition 5: ResourceLocked
+### Condition 5: Ready
 
-**Type**: `ResourceLocked`
-**Phase**: Skipped
-**Authority**: DD-WE-001/003, PhaseSkipped (line 355)
+**Type**: `Ready`
+**Phase**: All terminal
+**Authority**: DD-CRD-002 aggregate condition pattern
 
 **Status Values**:
-- `True`: Target resource locked, execution skipped
-- `False`: Resource available (not applicable when absent)
+- `True`: Workflow succeeded or skipped
+- `False`: Workflow failed, timed out, or cancelled
 
 **Reasons**:
-- `TargetResourceBusy`: Another workflow running on target
-- `RecentlyRemediated`: Cooldown period active
-- Maps to SkipReason constants (lines 360-382)
+- Success: `Ready`
+- Failure: `NotReady`
 
-**Messages**:
-- Busy: "Another workflow ({name}) is currently executing on target {resource}"
-- Cooldown: "Target resource {resource} recently remediated, cooldown until {time}"
+**Note**: `ResourceLocked` was removed (dead code, never implemented).
 
 ---
 
@@ -207,7 +204,7 @@
 1. After PipelineRun creation (Reconcile)
 2. During PipelineRun status sync (syncPipelineRunStatus)
 3. After audit event emission (emitAudit)
-4. During resource lock check (checkResourceLock)
+4. On terminal phase transitions (Ready)
 
 ### Dependencies
 
@@ -265,7 +262,7 @@
 2. **Pipeline Creation Failure**: TektonPipelineCreated=False
 3. **Pipeline Execution Failure**: TektonPipelineComplete=False
 4. **Audit Failure**: AuditRecorded=False
-5. **Resource Locked**: ResourceLocked=True, Phase=Skipped
+5. **Ready condition**: Set on terminal phase transitions
 
 **Target**: 70%+ integration coverage
 
@@ -310,7 +307,7 @@
 
 ### Must Have (V4.2)
 
-- [x] All 5 conditions implemented
+- [x] All 5 conditions implemented (Ready, TektonPipelineCreated, TektonPipelineRunning, TektonPipelineComplete, AuditRecorded)
 - [x] Conditions visible in `kubectl describe workflowexecution`
 - [x] Unit tests passing (100% coverage of conditions.go)
 - [x] Integration tests passing (70%+ coverage)

@@ -286,6 +286,22 @@ func (m *Manager) UpdateWorkflowStatus(
 
 ---
 
+## 📐 **Per-Controller Status Update Patterns** (Issue #79, 2026-02-18)
+
+Each controller uses a different status update pattern based on its reconciliation flow:
+
+| Controller | Pattern | Notes |
+|------------|---------|-------|
+| **SignalProcessing** | Callback-based `AtomicStatusUpdate(ctx, obj, func() error)` | `pkg/signalprocessing/status` or inline; batches phase + conditions + counters |
+| **AIAnalysis** | Callback-based `AtomicStatusUpdate(ctx, obj, func() error)` | `pkg/aianalysis` status manager; batches phase + conditions |
+| **WorkflowExecution** | Callback-based `AtomicStatusUpdate(ctx, obj, func() error)` | `pkg/workflowexecution`; batches phase + conditions |
+| **Notification** | Fixed-signature `AtomicStatusUpdate(ctx, obj, conditions []metav1.Condition)` | **Critical**: `conditions` parameter passed in prevents refetch wipe. Without it, `Get` inside `RetryOnConflict` would overwrite in-memory conditions before `Update`. See `pkg/notification/status/manager.go`. |
+| **RemediationOrchestrator (RR)** | `helpers.UpdateRemediationRequestStatus` callback | Callback receives refetched RR; batches phase + outcome + conditions |
+| **RemediationOrchestrator (RAR)** | Direct retry loop with `Status().Update()` | No StatusManager; in-memory build + direct update (RAR has simpler status) |
+| **EffectivenessMonitor** | In-memory build + direct `Status().Update()` | No StatusManager; no `AtomicStatusUpdate` pattern |
+
+---
+
 ## ✅ **Acceptance Criteria**
 
 ### **Per-Service Completion Checklist**
@@ -436,4 +452,5 @@ If issues arise:
 | 2025-12-26 | Initial DD created | AI Assistant |
 | 2025-12-26 | Reference implementation (Notification) | AI Assistant |
 | 2025-12-26 | Mandate approved for system-wide rollout | Engineering Lead |
+| 2026-02-18 | Per-controller status update patterns documented (Issue #79); NT conditions parameter extension noted | AI Assistant |
 

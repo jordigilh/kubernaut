@@ -13,6 +13,7 @@
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2026-02-05 | AI Assistant | Initial standard: per-CRD column registry, RR/SP additions, Reason column gap analysis |
+| 1.1 | 2026-02-18 | AI Assistant | Issue #79: Ready + Reason column IMPLEMENTED; ResourceLocked/RemediationExecuted removed from gaps; NotificationDelivered uses centralized constants |
 
 ---
 
@@ -50,7 +51,7 @@ Every Kubernaut CRD SHOULD include at minimum:
 |--------|---------|-----------|
 | **Phase** | Current lifecycle state | MUST (if CRD has phases) |
 | **Age** | Time since creation | MUST |
-| **Reason** | Why it's in this state | SHOULD (pending Ready condition, see Future Work) |
+| **Reason** | Why it's in this state | ✅ IMPLEMENTED (Ready condition + printer column on all 7 CRDs) |
 
 Domain-specific columns (Confidence, WorkflowID, Severity, etc.) are added per-CRD as needed.
 
@@ -185,7 +186,6 @@ An audit of all 5 controllers revealed that **no CRD has a unified `Ready` condi
 
 ### Negative
 
-- Reason column deferred until conditions infrastructure is fixed (separate effort)
 - Adding columns to existing CRDs changes `kubectl get` output format (minor disruption)
 
 ---

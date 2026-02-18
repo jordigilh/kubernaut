@@ -139,7 +139,11 @@ kubectl describe remediationrequest <name> | grep -A5 "WorkflowExecution"
 - **Status**: `False` during active processing
 - **Reason Success**: `RecoverySucceeded`
 - **Reason Failure**: `RecoveryFailed`, `MaxAttemptsReached`, `BlockedByConsecutiveFailures`
-- **When**: Terminal phase reached
+- **When**: Terminal phase reached (including timeout and blocked-terminal paths; Issue #79 gap fix)
+
+**Condition**: **Ready**
+- **Status**: `True` when phase is Completed or Skipped
+- **Status**: `False` when phase is Failed, TimedOut, or Cancelled
 
 **Integration Point**: `pkg/remediationorchestrator/controller/reconciler.go` (phase transitions)
 
@@ -345,6 +349,7 @@ Status:
 | **handleExecutingPhase** | `pkg/remediationorchestrator/controller/reconciler.go:237` | WorkflowExecutionComplete |
 | **transitionToFailed** | `pkg/remediationorchestrator/controller/reconciler.go:~300` | RecoveryComplete (failure) |
 | **transitionToCompleted** | `pkg/remediationorchestrator/controller/reconciler.go:~320` | RecoveryComplete (success) |
+| **timeout/blocked-terminal paths** | `pkg/remediationorchestrator/controller/reconciler.go` | RecoveryComplete (Issue #79 gap fix) |
 
 ---
 

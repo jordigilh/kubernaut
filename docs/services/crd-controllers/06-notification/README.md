@@ -1,7 +1,7 @@
 # Notification Controller
 
 **Version**: v1.6.0
-**Status**: ✅ Production-Ready (358 tests, 100% pass rate, 17/17 BRs Complete)
+**Status**: ✅ Production-Ready (358 tests, 100% pass rate, 18/18 BRs Complete)
 **Health/Ready Port**: 8081 (`/healthz`, `/readyz` - no auth required)
 **Metrics Port**: 9186 (`/metrics` - with auth filter, DD-TEST-001 compliant)
 **CRD**: NotificationRequest
@@ -328,6 +328,7 @@ status:
 | **BR-NOT-066** | Alertmanager Config | Alertmanager-compatible routing format | 100% |
 | **BR-NOT-067** | Config Hot-Reload | ConfigMap hot-reload without restart | 100% |
 | **BR-NOT-068** | Multi-Channel Fanout | Single notification to multiple channels | 100% |
+| **BR-NOT-069** | Routing Rule Visibility | `RoutingResolved` + `Ready` conditions | 100% |
 
 **Overall BR Coverage**: **96.9%** ✅ (17/17 BRs, avg 96.9%)
 
