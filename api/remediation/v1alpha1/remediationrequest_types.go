@@ -349,7 +349,7 @@ type RemediationRequestSpec struct {
 	// ========================================
 
 	// Complete original webhook payload for debugging and audit
-	// Stored as []byte to preserve exact format
+	// Issue #96: stored as string to avoid base64 encoding in CEL validation
 	OriginalPayload string `json:"originalPayload,omitempty"`
 
 	// ========================================
