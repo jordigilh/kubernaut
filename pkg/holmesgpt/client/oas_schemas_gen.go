@@ -23,7 +23,7 @@ type AlternativeWorkflow struct {
 	// Workflow identifier.
 	WorkflowID string `json:"workflow_id"`
 	// OCI image reference.
-	ContainerImage OptNilString `json:"container_image"`
+	ExecutionBundle OptNilString `json:"execution_bundle"`
 	// Confidence score for this alternative.
 	Confidence float64 `json:"confidence"`
 	// Why this alternative was considered but not selected.
@@ -35,9 +35,9 @@ func (s *AlternativeWorkflow) GetWorkflowID() string {
 	return s.WorkflowID
 }
 
-// GetContainerImage returns the value of ContainerImage.
-func (s *AlternativeWorkflow) GetContainerImage() OptNilString {
-	return s.ContainerImage
+// GetExecutionBundle returns the value of ExecutionBundle.
+func (s *AlternativeWorkflow) GetExecutionBundle() OptNilString {
+	return s.ExecutionBundle
 }
 
 // GetConfidence returns the value of Confidence.
@@ -55,9 +55,9 @@ func (s *AlternativeWorkflow) SetWorkflowID(val string) {
 	s.WorkflowID = val
 }
 
-// SetContainerImage sets the value of ContainerImage.
-func (s *AlternativeWorkflow) SetContainerImage(val OptNilString) {
-	s.ContainerImage = val
+// SetExecutionBundle sets the value of ExecutionBundle.
+func (s *AlternativeWorkflow) SetExecutionBundle(val OptNilString) {
+	s.ExecutionBundle = val
 }
 
 // SetConfidence sets the value of Confidence.
@@ -3994,8 +3994,8 @@ type SelectedWorkflowSummary struct {
 	WorkflowID string `json:"workflow_id"`
 	// Workflow version.
 	Version string `json:"version"`
-	// Container image used for execution.
-	ContainerImage string `json:"container_image"`
+	// OCI execution bundle reference (digest-pinned).
+	ExecutionBundle string `json:"execution_bundle"`
 	// Parameters passed to workflow.
 	Parameters OptSelectedWorkflowSummaryParameters `json:"parameters"`
 	// Why this workflow was originally selected.
@@ -4012,9 +4012,9 @@ func (s *SelectedWorkflowSummary) GetVersion() string {
 	return s.Version
 }
 
-// GetContainerImage returns the value of ContainerImage.
-func (s *SelectedWorkflowSummary) GetContainerImage() string {
-	return s.ContainerImage
+// GetExecutionBundle returns the value of ExecutionBundle.
+func (s *SelectedWorkflowSummary) GetExecutionBundle() string {
+	return s.ExecutionBundle
 }
 
 // GetParameters returns the value of Parameters.
@@ -4037,9 +4037,9 @@ func (s *SelectedWorkflowSummary) SetVersion(val string) {
 	s.Version = val
 }
 
-// SetContainerImage sets the value of ContainerImage.
-func (s *SelectedWorkflowSummary) SetContainerImage(val string) {
-	s.ContainerImage = val
+// SetExecutionBundle sets the value of ExecutionBundle.
+func (s *SelectedWorkflowSummary) SetExecutionBundle(val string) {
+	s.ExecutionBundle = val
 }
 
 // SetParameters sets the value of Parameters.
