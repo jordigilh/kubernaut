@@ -213,7 +213,7 @@ class TestRecoveryEndpointWithDetectedLabels:
                 selected_workflow={
                     "workflow_id": "test-v1",
                     "version": "1.0.0",
-                    "container_image": "test:latest",
+                    "execution_bundle": "test:latest",
                     "rationale": "Test"
                 },
                 failure={
