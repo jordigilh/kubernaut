@@ -201,13 +201,13 @@ func (r *Repository) SearchByLabels(ctx context.Context, request *models.Workflo
 		signalType := result.Labels.SignalType
 
 		// Handle optional pointer fields
-		containerImage := ""
-		if result.ContainerImage != nil {
-			containerImage = *result.ContainerImage
+		schemaImage := ""
+		if result.SchemaImage != nil {
+			schemaImage = *result.SchemaImage
 		}
-		containerDigest := ""
-		if result.ContainerDigest != nil {
-			containerDigest = *result.ContainerDigest
+		executionBundle := ""
+		if result.ExecutionBundle != nil {
+			executionBundle = *result.ExecutionBundle
 		}
 
 		// DD-WORKFLOW-002 v3.0: Flat response structure
@@ -218,8 +218,8 @@ func (r *Repository) SearchByLabels(ctx context.Context, request *models.Workflo
 			Title:           result.Name, // DD-WORKFLOW-002 v3.0: "name" renamed to "title"
 			Description:     result.Description,
 			SignalType:      signalType,
-			ContainerImage:  containerImage,
-			ContainerDigest: containerDigest,
+			SchemaImage:     schemaImage,
+			ExecutionBundle: executionBundle,
 
 			// V1.0: Label-only scoring fields (with CustomLabels wildcard support)
 			Confidence:   result.FinalScore,                                   // DD-WORKFLOW-002 v3.0: "confidence" = final_score

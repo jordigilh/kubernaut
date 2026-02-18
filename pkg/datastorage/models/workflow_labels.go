@@ -119,7 +119,7 @@ type DetectedLabels struct {
 	// If empty/nil, all detections succeeded
 	// Validated: only accepts values from ValidDetectedLabelFields
 	// Authority: DD-WORKFLOW-001 v2.1 (Detection Failure Handling)
-	FailedDetections []string `json:"failed_detections,omitempty" validate:"omitempty,dive,oneof=gitOpsManaged pdbProtected hpaEnabled stateful helmManaged networkIsolated serviceMesh"`
+	FailedDetections []string `json:"failedDetections,omitempty" validate:"omitempty,dive,oneof=gitOpsManaged pdbProtected hpaEnabled stateful helmManaged networkIsolated serviceMesh"`
 
 	// ========================================
 	// GITOPS MANAGEMENT (DD-WORKFLOW-001 v2.3)
