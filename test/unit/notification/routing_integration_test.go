@@ -24,32 +24,31 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// BR-NOT-065: Channel Routing Based on Labels - Controller Integration
-// This tests the integration between the routing package and NotificationRequest CRDs
+// BR-NOT-065: Channel Routing Based on Spec Fields - Controller Integration
+// Issue #91: Routing now uses spec fields instead of labels
 var _ = Describe("Routing Controller Integration (BR-NOT-065)", func() {
 
-	Describe("ResolveChannelsFromLabels", func() {
+	Describe("ResolveChannelsFromSpecFields", func() {
 
 		var config *routing.Config
 
 		BeforeEach(func() {
-			// Setup a typical production routing configuration
 			configYAML := `
 route:
   receiver: default-slack
   routes:
     - match:
-        kubernaut.ai/notification-type: approval_required
-        kubernaut.ai/severity: critical
+        type: approval_required
+        severity: critical
       receiver: pagerduty-critical
     - match:
-        kubernaut.ai/notification-type: approval_required
+        type: approval_required
       receiver: slack-approvals
     - match:
-        kubernaut.ai/notification-type: failed
+        type: failed
       receiver: pagerduty-oncall
     - match:
-        kubernaut.ai/notification-type: completed
+        type: completed
       receiver: slack-ops
 receivers:
   - name: default-slack
@@ -75,44 +74,39 @@ receivers:
 
 		Context("when NotificationRequest has no spec.channels", func() {
 
-			It("should resolve channels from labels for critical approval notification", func() {
+			It("should resolve channels from spec fields for critical approval notification", func() {
 				notification := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "test-notification",
 						Namespace: "kubernaut-system",
-						Labels: map[string]string{
-							"kubernaut.ai/notification-type": "approval_required",
-							"kubernaut.ai/severity":          "critical",
-							"kubernaut.ai/environment":       "production",
-						},
 					},
 					Spec: notificationv1alpha1.NotificationRequestSpec{
-						Type:     notificationv1alpha1.NotificationTypeEscalation,
+						Type:     "approval_required",
 						Priority: notificationv1alpha1.NotificationPriorityCritical,
+						Severity: "critical",
 						Subject:  "Approval Required",
 						Body:     "Test body",
-						// Channels NOT specified - should be resolved from routing rules
+						Metadata: map[string]string{
+							"environment": "production",
+						},
 					},
 				}
 
 				channels := routing.ResolveChannelsForNotification(config, notification)
 				Expect(channels).To(ContainElement("pagerduty"))
-				Expect(channels).ToNot(ContainElement("slack")) // PagerDuty receiver, not Slack
+				Expect(channels).ToNot(ContainElement("slack"))
 			})
 
-			It("should resolve channels from labels for non-critical approval notification", func() {
+			It("should resolve channels from spec fields for non-critical approval notification", func() {
 				notification := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "test-notification",
 						Namespace: "kubernaut-system",
-						Labels: map[string]string{
-							"kubernaut.ai/notification-type": "approval_required",
-							"kubernaut.ai/severity":          "high",
-						},
 					},
 					Spec: notificationv1alpha1.NotificationRequestSpec{
-						Type:     notificationv1alpha1.NotificationTypeEscalation,
+						Type:     "approval_required",
 						Priority: notificationv1alpha1.NotificationPriorityHigh,
+						Severity: "high",
 						Subject:  "Approval Required",
 						Body:     "Test body",
 					},
@@ -122,17 +116,14 @@ receivers:
 				Expect(channels).To(ContainElement("slack"))
 			})
 
-			It("should resolve channels from labels for failed notification", func() {
+			It("should resolve channels from spec fields for failed notification", func() {
 				notification := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "test-notification",
 						Namespace: "kubernaut-system",
-						Labels: map[string]string{
-							"kubernaut.ai/notification-type": "failed",
-						},
 					},
 					Spec: notificationv1alpha1.NotificationRequestSpec{
-						Type:     notificationv1alpha1.NotificationTypeStatusUpdate,
+						Type:     "failed",
 						Priority: notificationv1alpha1.NotificationPriorityHigh,
 						Subject:  "Remediation Failed",
 						Body:     "Test body",
@@ -143,17 +134,14 @@ receivers:
 				Expect(channels).To(ContainElement("pagerduty"))
 			})
 
-			It("should fall back to default receiver when no labels match", func() {
+			It("should fall back to default receiver when no spec fields match", func() {
 				notification := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "test-notification",
 						Namespace: "kubernaut-system",
-						Labels: map[string]string{
-							"kubernaut.ai/notification-type": "unknown-type",
-						},
 					},
 					Spec: notificationv1alpha1.NotificationRequestSpec{
-						Type:     notificationv1alpha1.NotificationTypeSimple,
+						Type:     "unknown-type",
 						Priority: notificationv1alpha1.NotificationPriorityLow,
 						Subject:  "Test",
 						Body:     "Test body",
@@ -161,18 +149,16 @@ receivers:
 				}
 
 				channels := routing.ResolveChannelsForNotification(config, notification)
-				Expect(channels).To(ContainElement("slack")) // default-slack receiver
+				Expect(channels).To(ContainElement("slack"))
 			})
 
-			It("should handle notification with no labels by using default receiver", func() {
+			It("should handle notification with no spec fields by using default receiver", func() {
 				notification := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "test-notification",
 						Namespace: "kubernaut-system",
-						// No labels
 					},
 					Spec: notificationv1alpha1.NotificationRequestSpec{
-						Type:     notificationv1alpha1.NotificationTypeSimple,
 						Priority: notificationv1alpha1.NotificationPriorityLow,
 						Subject:  "Test",
 						Body:     "Test body",
@@ -180,7 +166,7 @@ receivers:
 				}
 
 				channels := routing.ResolveChannelsForNotification(config, notification)
-				Expect(channels).To(ContainElement("slack")) // default-slack receiver
+				Expect(channels).To(ContainElement("slack"))
 			})
 		})
 
@@ -191,17 +177,13 @@ receivers:
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "test-notification",
 						Namespace: "kubernaut-system",
-						Labels: map[string]string{
-							"kubernaut.ai/notification-type": "approval_required",
-							"kubernaut.ai/severity":          "critical",
-						},
 					},
 					Spec: notificationv1alpha1.NotificationRequestSpec{
-						Type:     notificationv1alpha1.NotificationTypeEscalation,
+						Type:     "approval_required",
 						Priority: notificationv1alpha1.NotificationPriorityCritical,
+						Severity: "critical",
 						Subject:  "Test",
 						Body:     "Test body",
-						// Explicit channels override routing rules
 						Channels: []notificationv1alpha1.Channel{
 							notificationv1alpha1.ChannelConsole,
 							notificationv1alpha1.ChannelSlack,
@@ -209,7 +191,6 @@ receivers:
 					},
 				}
 
-				// When spec.channels is specified, it takes precedence over routing
 				hasExplicitChannels := len(notification.Spec.Channels) > 0
 				Expect(hasExplicitChannels).To(BeTrue())
 				Expect(notification.Spec.Channels).To(ContainElements(
@@ -226,19 +207,15 @@ receivers:
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "test-notification",
 						Namespace: "kubernaut-system",
-						Labels: map[string]string{
-							"kubernaut.ai/notification-type": "approval_required",
-						},
 					},
 					Spec: notificationv1alpha1.NotificationRequestSpec{
-						Type:     notificationv1alpha1.NotificationTypeEscalation,
+						Type:     "approval_required",
 						Priority: notificationv1alpha1.NotificationPriorityCritical,
 						Subject:  "Test",
 						Body:     "Test body",
 					},
 				}
 
-				// When config is nil, use DefaultConfig (console fallback)
 				defaultConfig := routing.DefaultConfig()
 				channels := routing.ResolveChannelsForNotification(defaultConfig, notification)
 				Expect(channels).To(ContainElement("console"))
@@ -269,16 +246,15 @@ receivers:
 		})
 	})
 
-	Describe("Label Key Constants", func() {
+	Describe("Routing Attribute Key Constants", func() {
 
-		It("should use kubernaut.ai domain for all routing labels", func() {
-			// BR-NOT-065: Labels use kubernaut.ai domain (corrected from kubernaut.io)
-			Expect(routing.LabelNotificationType).To(Equal("kubernaut.ai/notification-type"))
-			Expect(routing.LabelSeverity).To(Equal("kubernaut.ai/severity"))
-			Expect(routing.LabelEnvironment).To(Equal("kubernaut.ai/environment"))
-			Expect(routing.LabelPriority).To(Equal("kubernaut.ai/priority"))
-			Expect(routing.LabelComponent).To(Equal("kubernaut.ai/component"))
-			Expect(routing.LabelRemediationRequest).To(Equal("kubernaut.ai/remediation-request"))
+		It("should use simplified keys for spec-field-based routing (Issue #91)", func() {
+			Expect(routing.AttrType).To(Equal("type"))
+			Expect(routing.AttrSeverity).To(Equal("severity"))
+			Expect(routing.AttrEnvironment).To(Equal("environment"))
+			Expect(routing.AttrPriority).To(Equal("priority"))
+			Expect(routing.AttrSkipReason).To(Equal("skip-reason"))
+			Expect(routing.AttrInvestigationOutcome).To(Equal("investigation-outcome"))
 		})
 	})
 })

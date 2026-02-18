@@ -240,13 +240,10 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 					Name:       notifName,
 					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
-					Labels: map[string]string{
-						"kubernaut.ai/severity":    "low",
-						"kubernaut.ai/environment": "test",
-					},
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Type:     notificationv1alpha1.NotificationTypeSimple,
+					Severity: "low",
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Test Optional Fields",
 					Body:     "Testing with optional fields omitted",
@@ -295,13 +292,10 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 					Name:       notifName,
 					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
-					Labels: map[string]string{
-						"kubernaut.ai/severity":    "medium",
-						"kubernaut.ai/environment": "test",
-					},
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Type:     notificationv1alpha1.NotificationTypeSimple,
+					Severity: "medium",
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Test Empty Channels - Routing Rules",
 					Body:     "Should succeed with routing rules",

@@ -98,7 +98,7 @@ route:
   receiver: slack-ops
   routes:
     - match:
-        kubernaut.ai/severity: critical
+        severity: critical
       receiver: pagerduty-oncall
 receivers:
   - name: slack-ops
@@ -131,7 +131,7 @@ receivers:
 			err := router.LoadConfig([]byte(initialConfig))
 			Expect(err).NotTo(HaveOccurred())
 
-			// Get initial receiver for empty labels
+			// Get initial receiver for empty attributes
 			initialReceiver := router.FindReceiver(map[string]string{})
 			Expect(initialReceiver.Name).To(Equal("default-console"))
 
@@ -202,15 +202,15 @@ receivers:
 			Expect(err).NotTo(HaveOccurred())
 
 			// Simulate in-flight notification resolution (before reload)
-			labels := map[string]string{"kubernaut.ai/severity": "critical"}
-			receiverBeforeReload := router.FindReceiver(labels)
+			attrs := map[string]string{"severity": "critical"}
+			receiverBeforeReload := router.FindReceiver(attrs)
 
 			// Reload config with different routing
 			err = router.LoadConfig([]byte(`
 route:
   routes:
     - match:
-        kubernaut.ai/severity: critical
+        severity: critical
       receiver: pagerduty
   receiver: slack-ops
 receivers:
@@ -229,7 +229,7 @@ receivers:
 			Expect(receiverBeforeReload.Name).NotTo(BeEmpty())
 
 			// New notifications get new routing
-			receiverAfterReload := router.FindReceiver(labels)
+			receiverAfterReload := router.FindReceiver(attrs)
 			Expect(receiverAfterReload.Name).To(Equal("pagerduty"))
 		})
 	})
@@ -377,7 +377,7 @@ var _ = Describe("BR-NOT-067: Controller ConfigMap Watch Integration", func() {
 route:
   routes:
     - match:
-        kubernaut.ai/skip-reason: PreviousExecutionFailed
+        skip-reason: PreviousExecutionFailed
       receiver: pagerduty-critical
   receiver: default-console
 receivers:
@@ -391,10 +391,10 @@ receivers:
 			Expect(err).NotTo(HaveOccurred())
 
 			// Verify routing resolution
-			labels := map[string]string{
-				routing.LabelSkipReason: routing.SkipReasonPreviousExecutionFailed,
+			attrs := map[string]string{
+				routing.AttrSkipReason: routing.SkipReasonPreviousExecutionFailed,
 			}
-			receiver := router.FindReceiver(labels)
+			receiver := router.FindReceiver(attrs)
 			Expect(receiver.Name).To(Equal("pagerduty-critical"))
 
 			_ = ctx // Context used in actual controller
