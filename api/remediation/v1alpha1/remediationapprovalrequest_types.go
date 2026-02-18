@@ -141,9 +141,9 @@ type RecommendedWorkflowSummary struct {
 	// Workflow version
 	// +kubebuilder:validation:Required
 	Version string `json:"version"`
-	// Container image to execute
+	// Execution bundle OCI reference (digest-pinned)
 	// +kubebuilder:validation:Required
-	ContainerImage string `json:"containerImage"`
+	ExecutionBundle string `json:"executionBundle"`
 	// Rationale for selecting this workflow
 	// +kubebuilder:validation:Required
 	Rationale string `json:"rationale"`

@@ -847,13 +847,13 @@ spec:
                   Populated from workflowexecution.selection.completed audit event.
                   Reference: BR-AUDIT-005 Gap #5 (Workflow Selection)
                 properties:
-                  containerDigest:
-                    description: ContainerDigest for audit trail and reproducibility
-                    type: string
-                  containerImage:
+                  executionBundle:
                     description: |-
-                      ContainerImage resolved from workflow catalog
+                      ExecutionBundle resolved from workflow catalog
                       OCI bundle reference for Tekton PipelineRun
+                    type: string
+                  executionBundleDigest:
+                    description: ExecutionBundleDigest for audit trail and reproducibility
                     type: string
                   version:
                     description: Version of the workflow
@@ -862,7 +862,7 @@ spec:
                     description: WorkflowID is the catalog lookup key
                     type: string
                 required:
-                - containerImage
+                - executionBundle
                 - version
                 - workflowId
                 type: object

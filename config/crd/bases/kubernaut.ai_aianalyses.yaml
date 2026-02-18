@@ -614,8 +614,8 @@ spec:
                           description: Action type from DD-WORKFLOW-016 taxonomy (e.g.,
                             ScaleReplicas, RestartPod)
                           type: string
-                        containerImage:
-                          description: Container image used
+                        executionBundle:
+                          description: Execution bundle OCI reference (digest-pinned)
                           type: string
                         parameters:
                           additionalProperties:
@@ -632,7 +632,7 @@ spec:
                           description: Workflow identifier
                           type: string
                       required:
-                      - containerImage
+                      - executionBundle
                       - rationale
                       - version
                       - workflowId
@@ -758,8 +758,9 @@ spec:
                       maximum: 1
                       minimum: 0
                       type: number
-                    containerImage:
-                      description: Container image (OCI bundle) - resolved by HolmesGPT-API
+                    executionBundle:
+                      description: Execution bundle OCI reference (digest-pinned)
+                        - resolved by HolmesGPT-API
                       type: string
                     rationale:
                       description: Rationale explaining why this workflow was considered
@@ -1162,11 +1163,12 @@ spec:
                     maximum: 1
                     minimum: 0
                     type: number
-                  containerDigest:
-                    description: Container digest for audit trail
+                  executionBundle:
+                    description: Execution bundle OCI reference (digest-pinned) -
+                      resolved by HolmesGPT-API
                     type: string
-                  containerImage:
-                    description: Container image (OCI bundle) - resolved by HolmesGPT-API
+                  executionBundleDigest:
+                    description: Execution bundle digest for audit trail
                     type: string
                   executionEngine:
                     description: |-
@@ -1194,7 +1196,7 @@ spec:
                     type: string
                 required:
                 - confidence
-                - containerImage
+                - executionBundle
                 - rationale
                 - version
                 - workflowId

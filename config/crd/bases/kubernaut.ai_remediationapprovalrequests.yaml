@@ -178,8 +178,8 @@ spec:
               recommendedWorkflow:
                 description: Recommended workflow from AI analysis
                 properties:
-                  containerImage:
-                    description: Container image to execute
+                  executionBundle:
+                    description: Execution bundle OCI reference (digest-pinned)
                     type: string
                   rationale:
                     description: Rationale for selecting this workflow
@@ -191,7 +191,7 @@ spec:
                     description: Workflow identifier from catalog
                     type: string
                 required:
-                - containerImage
+                - executionBundle
                 - rationale
                 - version
                 - workflowId

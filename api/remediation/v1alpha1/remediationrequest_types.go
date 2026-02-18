@@ -742,13 +742,13 @@ type WorkflowReference struct {
 	// Version of the workflow
 	Version string `json:"version"`
 
-	// ContainerImage resolved from workflow catalog
+	// ExecutionBundle resolved from workflow catalog
 	// OCI bundle reference for Tekton PipelineRun
-	ContainerImage string `json:"containerImage"`
+	ExecutionBundle string `json:"executionBundle"`
 
-	// ContainerDigest for audit trail and reproducibility
+	// ExecutionBundleDigest for audit trail and reproducibility
 	// +optional
-	ContainerDigest string `json:"containerDigest,omitempty"`
+	ExecutionBundleDigest string `json:"executionBundleDigest,omitempty"`
 }
 
 // ========================================
