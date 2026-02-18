@@ -1135,6 +1135,9 @@ func (r *Reconciler) setCompletionFields(ea *eav1.EffectivenessAssessment, reaso
 	ea.Status.AssessmentReason = reason
 	ea.Status.Message = fmt.Sprintf("Assessment completed: %s", reason)
 
+	// Issue #79 Phase 7b: Set Ready condition on terminal transitions
+	conditions.SetReady(ea, true, conditions.ReasonReady, "Assessment completed")
+
 	// Set AssessmentComplete condition (DD-CRD-002) for all completion paths.
 	// The condition reason maps from AssessmentReason to the DD-CRD-002 reason constant.
 	condReason := mapAssessmentReasonToConditionReason(reason)

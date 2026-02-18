@@ -33,6 +33,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/helpers"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
+	"github.com/jordigilh/kubernaut/pkg/remediationrequest"
 )
 
 // AIAnalysisHandler handles AIAnalysis CRD status changes for the Remediation Orchestrator.
@@ -139,6 +140,10 @@ func (h *AIAnalysisHandler) handleWorkflowNotNeeded(
 		rr.Status.Message = ai.Status.Message
 		now := metav1.Now()
 		rr.Status.CompletedAt = &now
+
+		// BR-ORCH-043: Set Ready condition (terminal success - no action required)
+		remediationrequest.SetReady(rr, true, remediationrequest.ReasonReady, "No action required", h.Metrics)
+
 		return nil
 	})
 	if err != nil {

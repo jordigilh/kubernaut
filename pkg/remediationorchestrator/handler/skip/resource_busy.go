@@ -28,6 +28,7 @@ import (
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/config"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/helpers"
+	"github.com/jordigilh/kubernaut/pkg/remediationrequest"
 )
 
 // ========================================
@@ -88,6 +89,10 @@ func (h *ResourceBusyHandler) Handle(
 		rr.Status.SkipReason = "ResourceBusy"
 		// V1.0: SkipDetails removed, skip information now in RR.Status
 		// rr.Status.DuplicateOf would be set by RO routing logic before WFE creation
+
+		// BR-ORCH-043: Set Ready condition (terminal skip - resource busy)
+		remediationrequest.SetReady(rr, true, remediationrequest.ReasonReady, "Skipped: resource busy", h.ctx.Metrics)
+
 		return nil
 	})
 	if err != nil {

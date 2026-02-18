@@ -105,6 +105,9 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 			h.log.V(1).Info("Failed to record analysis failure audit", "error", auditErr)
 		}
 
+		// Set WorkflowResolved=False and ApprovalRequired=False before AnalysisComplete
+		aianalysis.SetWorkflowResolved(analysis, false, aianalysis.ReasonWorkflowResolutionFailed, "No workflow selected from investigation")
+		aianalysis.SetApprovalRequired(analysis, false, "NotApplicable", "No workflow to approve")
 		// Set AnalysisComplete=False condition
 		aianalysis.SetAnalysisComplete(analysis, false, "No workflow selected from investigation")
 
@@ -150,6 +153,9 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 		h.log.V(1).Info("Failed to record analysis failure audit", "error", auditErr)
 	}
 
+	// Set WorkflowResolved=False and ApprovalRequired=False before AnalysisComplete
+	aianalysis.SetWorkflowResolved(analysis, false, aianalysis.ReasonWorkflowResolutionFailed, "Rego evaluation failed, cannot resolve workflow")
+	aianalysis.SetApprovalRequired(analysis, false, "NotApplicable", "Rego evaluation failed, approval status unknown")
 	// Set AnalysisComplete=False condition
 	aianalysis.SetAnalysisComplete(analysis, false, "Rego policy evaluation failed: "+err.Error())
 

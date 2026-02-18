@@ -668,7 +668,6 @@ type RemediationRequestStatus struct {
 	//   - Reason "DeliverySucceeded": Notification sent
 	//   - Reason "UserCancelled": User deleted NotificationRequest before delivery
 	//   - Reason "DeliveryFailed": NotificationRequest failed to deliver
-	// - "RemediationExecuted": True if workflow executed successfully
 	//
 	// Conditions follow Kubernetes API conventions (KEP-1623).
 	// Reference: BR-ORCH-029 (user cancellation), BR-ORCH-030 (status tracking)
@@ -778,6 +777,7 @@ type DeduplicationStatus struct {
 // +kubebuilder:selectablefield:JSONPath=.spec.severity
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.overallPhase`
 // +kubebuilder:printcolumn:name="Outcome",type=string,JSONPath=`.status.outcome`
+// +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`,priority=1
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // RemediationRequest is the Schema for the remediationrequests API.

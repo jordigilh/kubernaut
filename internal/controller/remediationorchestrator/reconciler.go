@@ -528,6 +528,29 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	if phase.IsTerminal(phase.Phase(rr.Status.OverallPhase)) {
 		logger.V(1).Info("Terminal-phase housekeeping", "phase", rr.Status.OverallPhase)
 
+		// Issue #79 Phase 7c: Safety net for terminal RRs without Ready condition (e.g., externally cancelled)
+		readyCondition := remediationrequest.GetCondition(rr, remediationrequest.ConditionReady)
+		if readyCondition == nil {
+			isSuccess := rr.Status.OverallPhase == remediationv1.PhaseCompleted || rr.Status.OverallPhase == remediationv1.PhaseSkipped
+			if isSuccess {
+				if updateErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+					remediationrequest.SetReady(rr, true, remediationrequest.ReasonReady, "Terminal phase: "+string(rr.Status.OverallPhase), r.Metrics)
+					remediationrequest.SetRecoveryComplete(rr, true, "RecoveryComplete", "Terminal phase: "+string(rr.Status.OverallPhase), r.Metrics)
+					return nil
+				}); updateErr != nil {
+					logger.Error(updateErr, "Failed to set Ready safety net")
+				}
+			} else {
+				if updateErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+					remediationrequest.SetReady(rr, false, remediationrequest.ReasonNotReady, "Terminal phase: "+string(rr.Status.OverallPhase), r.Metrics)
+					remediationrequest.SetRecoveryComplete(rr, false, "RecoveryIncomplete", "Terminal phase: "+string(rr.Status.OverallPhase), r.Metrics)
+					return nil
+				}); updateErr != nil {
+					logger.Error(updateErr, "Failed to set Ready safety net")
+				}
+			}
+		}
+
 		// BR-ORCH-029/030: Track notification delivery status for terminal RRs
 		if err := r.trackNotificationStatus(ctx, rr); err != nil {
 			logger.Error(err, "Failed to track notification status in terminal phase")
@@ -1098,6 +1121,7 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 			remediationapprovalrequest.SetApprovalDecided(rar, true,
 				remediationapprovalrequest.ReasonApproved,
 				fmt.Sprintf("Approved by %s", rar.Status.DecidedBy), r.Metrics)
+			remediationapprovalrequest.SetReady(rar, true, remediationapprovalrequest.ReasonReady, "Approval decided", r.Metrics)
 			return r.client.Status().Update(ctx, rar)
 		}); err != nil {
 			logger.Error(err, "Failed to update RAR conditions")
@@ -1197,6 +1221,7 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 			remediationapprovalrequest.SetApprovalDecided(rar, true,
 				remediationapprovalrequest.ReasonRejected,
 				fmt.Sprintf("Rejected by %s: %s", rar.Status.DecidedBy, rar.Status.DecisionMessage), r.Metrics)
+			remediationapprovalrequest.SetReady(rar, true, remediationapprovalrequest.ReasonReady, "Approval decided", r.Metrics)
 			return r.client.Status().Update(ctx, rar)
 		}); err != nil {
 			logger.Error(err, "Failed to update RAR conditions")
@@ -1245,6 +1270,7 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 				remediationapprovalrequest.SetApprovalExpired(rar, true,
 					fmt.Sprintf("Expired after %v without decision",
 						time.Since(rar.ObjectMeta.CreationTimestamp.Time).Round(time.Minute)), r.Metrics)
+				remediationapprovalrequest.SetReady(rar, false, remediationapprovalrequest.ReasonNotReady, "Approval expired", r.Metrics)
 				rar.Status.Decision = remediationv1.ApprovalDecisionExpired
 				rar.Status.DecidedBy = "system"
 				now := metav1.Now()
@@ -1513,6 +1539,9 @@ func (r *Reconciler) transitionToCompleted(ctx context.Context, rr *remediationv
 		now := metav1.Now()
 		rr.Status.CompletedAt = &now
 
+		// BR-ORCH-043: Set Ready condition (terminal success)
+		remediationrequest.SetReady(rr, true, remediationrequest.ReasonReady, "Remediation completed", r.Metrics)
+
 		// DD-WE-004 V1.0: Reset exponential backoff on success
 		if rr.Status.NextAllowedExecution != nil {
 			logger.Info("Clearing exponential backoff after successful completion",
@@ -1667,6 +1696,9 @@ func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.R
 		rr.Status.FailurePhase = &failurePhase
 		rr.Status.FailureReason = &failureReason
 
+		// BR-ORCH-043: Set Ready condition (terminal failure)
+		remediationrequest.SetReady(rr, false, remediationrequest.ReasonNotReady, "Remediation failed", r.Metrics)
+
 		// DD-WE-004 V1.0: Set exponential backoff for pre-execution failures
 		// Only applies when BELOW consecutive failure threshold (at threshold → 1-hour fixed block)
 		// Increment consecutive failures (this happens for all failures, not just pre-execution)
@@ -1744,6 +1776,11 @@ func (r *Reconciler) handleGlobalTimeout(ctx context.Context, rr *remediationv1.
 		now := metav1.Now()
 		rr.Status.TimeoutTime = &now
 		rr.Status.TimeoutPhase = &timeoutPhase
+
+		// BR-ORCH-043: Set Ready and RecoveryComplete conditions (terminal timeout)
+		remediationrequest.SetReady(rr, false, remediationrequest.ReasonNotReady, "Remediation timed out", r.Metrics)
+		remediationrequest.SetRecoveryComplete(rr, false, "RecoveryTimedOut", "Global timeout exceeded", r.Metrics)
+
 		return nil
 	})
 	if err != nil {
