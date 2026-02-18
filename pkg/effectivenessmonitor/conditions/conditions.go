@@ -34,12 +34,24 @@ import (
 // ========================================
 
 const (
+	// ConditionReady indicates the EffectivenessAssessment is ready (aggregate condition)
+	ConditionReady = "Ready"
+
 	// ConditionAssessmentComplete indicates the assessment reached a terminal state.
 	ConditionAssessmentComplete = "AssessmentComplete"
 
 	// ConditionSpecIntegrity indicates whether the post-remediation spec hash is still valid.
 	// Set on every reconcile after HashComputed=true (DD-EM-002 v1.1).
 	ConditionSpecIntegrity = "SpecIntegrity"
+)
+
+// ========================================
+// CONDITION REASONS: Ready
+// ========================================
+
+const (
+	ReasonReady    = "Ready"
+	ReasonNotReady = "NotReady"
 )
 
 // ========================================
@@ -93,8 +105,18 @@ func SetCondition(ea *eav1.EffectivenessAssessment, conditionType string, status
 		LastTransitionTime: metav1.Now(),
 		Reason:             reason,
 		Message:            message,
+		ObservedGeneration: ea.Generation,
 	}
 	meta.SetStatusCondition(&ea.Status.Conditions, condition)
+}
+
+// SetReady sets the Ready condition on the EffectivenessAssessment
+func SetReady(ea *eav1.EffectivenessAssessment, ready bool, reason, message string) {
+	status := metav1.ConditionTrue
+	if !ready {
+		status = metav1.ConditionFalse
+	}
+	SetCondition(ea, ConditionReady, status, reason, message)
 }
 
 // GetCondition returns the condition with the specified type, or nil if not found.
