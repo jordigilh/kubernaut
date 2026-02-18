@@ -136,8 +136,8 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 				WorkflowID:      GetStringFromMap(swMap, "workflow_id"),
 				ActionType:      GetStringFromMap(swMap, "action_type"),
 				Version:         GetStringFromMap(swMap, "version"),
-				ContainerImage:  GetStringFromMap(swMap, "container_image"),
-				ContainerDigest: GetStringFromMap(swMap, "container_digest"),
+				ExecutionBundle:  GetStringFromMap(swMap, "execution_bundle"),
+				ExecutionBundleDigest: GetStringFromMap(swMap, "execution_bundle_digest"),
 				Confidence:      GetFloat64FromMap(swMap, "confidence"),
 				Rationale:       GetStringFromMap(swMap, "rationale"),
 				ExecutionEngine: GetStringFromMap(swMap, "execution_engine"),
@@ -156,15 +156,15 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 	if len(resp.AlternativeWorkflows) > 0 {
 		alternatives := make([]aianalysisv1.AlternativeWorkflow, 0, len(resp.AlternativeWorkflows))
 		for _, alt := range resp.AlternativeWorkflows {
-			containerImage := ""
-			if alt.ContainerImage.Set && !alt.ContainerImage.Null {
-				containerImage = alt.ContainerImage.Value
+			executionBundle := ""
+			if alt.ExecutionBundle.Set && !alt.ExecutionBundle.Null {
+				executionBundle = alt.ExecutionBundle.Value
 			}
 			alternatives = append(alternatives, aianalysisv1.AlternativeWorkflow{
-				WorkflowID:     alt.WorkflowID,
-				ContainerImage: containerImage,
-				Confidence:     alt.Confidence,
-				Rationale:      alt.Rationale,
+				WorkflowID:      alt.WorkflowID,
+				ExecutionBundle:  executionBundle,
+				Confidence:      alt.Confidence,
+				Rationale:       alt.Rationale,
 			})
 		}
 		analysis.Status.AlternativeWorkflows = alternatives
@@ -256,8 +256,8 @@ func (p *ResponseProcessor) ProcessRecoveryResponse(ctx context.Context, analysi
 				WorkflowID:      GetStringFromMap(swMap, "workflow_id"),
 				ActionType:      GetStringFromMap(swMap, "action_type"),
 				Version:         GetStringFromMap(swMap, "version"),
-				ContainerImage:  GetStringFromMap(swMap, "container_image"),
-				ContainerDigest: GetStringFromMap(swMap, "container_digest"),
+				ExecutionBundle:  GetStringFromMap(swMap, "execution_bundle"),
+				ExecutionBundleDigest: GetStringFromMap(swMap, "execution_bundle_digest"),
 				Confidence:      GetFloat64FromMap(swMap, "confidence"),
 				Rationale:       GetStringFromMap(swMap, "rationale"),
 				ExecutionEngine: GetStringFromMap(swMap, "execution_engine"),
@@ -418,7 +418,7 @@ func (p *ResponseProcessor) handleWorkflowResolutionFailureFromIncident(ctx cont
 		if swMap != nil {
 			analysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowID:      GetStringFromMap(swMap, "workflow_id"),
-				ContainerImage:  GetStringFromMap(swMap, "container_image"),
+				ExecutionBundle:  GetStringFromMap(swMap, "execution_bundle"),
 				Confidence:      GetFloat64FromMap(swMap, "confidence"),
 				Rationale:       GetStringFromMap(swMap, "rationale"),
 				ExecutionEngine: GetStringFromMap(swMap, "execution_engine"),
@@ -565,8 +565,8 @@ func (p *ResponseProcessor) handleLowConfidenceFailure(ctx context.Context, anal
 			analysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowID:      GetStringFromMap(swMap, "workflow_id"),
 				Version:         GetStringFromMap(swMap, "version"),
-				ContainerImage:  GetStringFromMap(swMap, "container_image"),
-				ContainerDigest: GetStringFromMap(swMap, "container_digest"),
+				ExecutionBundle:  GetStringFromMap(swMap, "execution_bundle"),
+				ExecutionBundleDigest: GetStringFromMap(swMap, "execution_bundle_digest"),
 				Confidence:      GetFloat64FromMap(swMap, "confidence"),
 				Rationale:       GetStringFromMap(swMap, "rationale"),
 				ExecutionEngine: GetStringFromMap(swMap, "execution_engine"),
@@ -591,15 +591,15 @@ func (p *ResponseProcessor) handleLowConfidenceFailure(ctx context.Context, anal
 	if len(resp.AlternativeWorkflows) > 0 {
 		alternatives := make([]aianalysisv1.AlternativeWorkflow, 0, len(resp.AlternativeWorkflows))
 		for _, alt := range resp.AlternativeWorkflows {
-			containerImage := ""
-			if alt.ContainerImage.Set && !alt.ContainerImage.Null {
-				containerImage = alt.ContainerImage.Value
+			executionBundle := ""
+			if alt.ExecutionBundle.Set && !alt.ExecutionBundle.Null {
+				executionBundle = alt.ExecutionBundle.Value
 			}
 			alternatives = append(alternatives, aianalysisv1.AlternativeWorkflow{
-				WorkflowID:     alt.WorkflowID,
-				ContainerImage: containerImage,
-				Confidence:     alt.Confidence,
-				Rationale:      alt.Rationale,
+				WorkflowID:      alt.WorkflowID,
+				ExecutionBundle:  executionBundle,
+				Confidence:      alt.Confidence,
+				Rationale:       alt.Rationale,
 			})
 		}
 		analysis.Status.AlternativeWorkflows = alternatives
@@ -769,8 +769,8 @@ func (p *ResponseProcessor) handleLowConfidenceFailureFromRecovery(ctx context.C
 			analysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowID:      GetStringFromMap(swMap, "workflow_id"),
 				Version:         GetStringFromMap(swMap, "version"),
-				ContainerImage:  GetStringFromMap(swMap, "container_image"),
-				ContainerDigest: GetStringFromMap(swMap, "container_digest"),
+				ExecutionBundle:  GetStringFromMap(swMap, "execution_bundle"),
+				ExecutionBundleDigest: GetStringFromMap(swMap, "execution_bundle_digest"),
 				Confidence:      GetFloat64FromMap(swMap, "confidence"),
 				Rationale:       GetStringFromMap(swMap, "rationale"),
 				ExecutionEngine: GetStringFromMap(swMap, "execution_engine"),

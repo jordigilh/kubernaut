@@ -217,7 +217,7 @@ func (b *RequestBuilder) buildPreviousExecution(prev aianalysisv1.PreviousExecut
 	selectedWorkflow := client.SelectedWorkflowSummary{
 		WorkflowID:     prev.SelectedWorkflow.WorkflowID,
 		Version:        prev.SelectedWorkflow.Version,
-		ContainerImage: prev.SelectedWorkflow.ContainerImage,
+		ExecutionBundle: prev.SelectedWorkflow.ExecutionBundle,
 		Rationale:      prev.SelectedWorkflow.Rationale,
 	}
 	// Note: Parameters mapping happens in ResponseProcessor when reading from HAPI

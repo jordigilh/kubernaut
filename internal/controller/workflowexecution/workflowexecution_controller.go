@@ -1046,7 +1046,7 @@ func (r *WorkflowExecutionReconciler) BuildPipelineRun(wfe *workflowexecutionv1a
 				ResolverRef: tektonv1.ResolverRef{
 					Resolver: "bundles",
 					Params: []tektonv1.Param{
-						{Name: "bundle", Value: tektonv1.ParamValue{Type: tektonv1.ParamTypeString, StringVal: wfe.Spec.WorkflowRef.ContainerImage}},
+						{Name: "bundle", Value: tektonv1.ParamValue{Type: tektonv1.ParamTypeString, StringVal: wfe.Spec.WorkflowRef.ExecutionBundle}},
 						{Name: "name", Value: tektonv1.ParamValue{Type: tektonv1.ParamTypeString, StringVal: "workflow"}},
 						{Name: "kind", Value: tektonv1.ParamValue{Type: tektonv1.ParamTypeString, StringVal: "pipeline"}},
 					},
@@ -1470,8 +1470,8 @@ func (r *WorkflowExecutionReconciler) updateStatus(
 // Returns error if validation fails (ConfigurationError reason)
 func (r *WorkflowExecutionReconciler) ValidateSpec(wfe *workflowexecutionv1alpha1.WorkflowExecution) error {
 	// Validate container image is required
-	if wfe.Spec.WorkflowRef.ContainerImage == "" {
-		return fmt.Errorf("workflowRef.containerImage is required")
+	if wfe.Spec.WorkflowRef.ExecutionBundle == "" {
+		return fmt.Errorf("workflowRef.executionBundle is required")
 	}
 
 	// Validate target resource is required

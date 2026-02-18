@@ -39,7 +39,7 @@ MOCK_PLAYBOOKS = {
         "version": "1.0.0",
         "title": "OOMKill Remediation - Scale Down Replicas",
         "description": "Reduces replica count for deployments experiencing OOMKilled due to node memory pressure. Use when: (1) Node memory utilization >90%, (2) Multiple pods OOMKilled on same node, (3) Application can tolerate reduced capacity.",
-        "container_image": "quay.io/kubernaut/playbook-oomkill-scale-down:v1.0.0",
+        "execution_bundle": "quay.io/kubernaut/playbook-oomkill-scale-down:v1.0.0",
         "labels": {
             "signal_type": "OOMKilled",
             "severity": "high",
@@ -91,7 +91,7 @@ MOCK_PLAYBOOKS = {
         "version": "1.0.0",
         "title": "OOMKill Remediation - Increase Memory Limits",
         "description": "Increases memory limits for pods experiencing OOMKilled. Use when: (1) Single pod repeatedly OOMKilled, (2) Memory usage consistently at limit, (3) Application legitimately needs more memory.",
-        "container_image": "quay.io/kubernaut/playbook-oomkill-increase-memory:v1.0.0",
+        "execution_bundle": "quay.io/kubernaut/playbook-oomkill-increase-memory:v1.0.0",
         "labels": {
             "signal_type": "OOMKilled",
             "severity": "high",
@@ -143,7 +143,7 @@ MOCK_PLAYBOOKS = {
         "version": "1.0.0",
         "title": "OOMKill Remediation - Optimize Application Configuration",
         "description": "Optimizes application configuration to reduce memory footprint. Use when: (1) Application has tunable memory settings, (2) Memory leak suspected, (3) Inefficient configuration detected.",
-        "container_image": "quay.io/kubernaut/playbook-oomkill-optimize-app:v1.0.0",
+        "execution_bundle": "quay.io/kubernaut/playbook-oomkill-optimize-app:v1.0.0",
         "labels": {
             "signal_type": "OOMKilled",
             "severity": "high",

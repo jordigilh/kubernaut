@@ -342,7 +342,7 @@ class IncidentResponse(BaseModel):
     incident_id: str = Field(..., description="Incident identifier from request")
     analysis: str = Field(..., description="Natural language analysis from LLM")
     root_cause_analysis: Dict[str, Any] = Field(..., description="Structured RCA with summary, severity, contributing_factors")
-    selected_workflow: Optional[Dict[str, Any]] = Field(None, description="Selected workflow with workflow_id, containerImage, confidence, parameters")
+    selected_workflow: Optional[Dict[str, Any]] = Field(None, description="Selected workflow with workflow_id, execution_bundle, confidence, parameters")
     confidence: float = Field(..., ge=0.0, le=1.0, description="Overall confidence in analysis")
     timestamp: str = Field(..., description="ISO timestamp of analysis completion")
 
