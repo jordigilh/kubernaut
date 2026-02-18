@@ -2929,13 +2929,21 @@ components:
         executionEngine:
           type: string
           description: "Execution engine (e.g., argo-workflows)"
-        containerImage:
+        schemaImage:
           type: string
-          description: "OCI image reference"
+          description: "OCI image used to extract the workflow schema (DD-WORKFLOW-017)"
           example: "ghcr.io/kubernaut/workflows/oomkill:v1.0.0@sha256:abc123..."
-        containerDigest:
+        schemaDigest:
           type: string
-          description: "OCI image digest"
+          description: "OCI schema image digest"
+          example: "sha256:abc123..."
+        executionBundle:
+          type: string
+          description: "OCI execution bundle reference (digest-pinned)"
+          example: "ghcr.io/kubernaut/workflows/oomkill@sha256:abc123..."
+        executionBundleDigest:
+          type: string
+          description: "OCI execution bundle digest"
           example: "sha256:abc123..."
         labels:
           $ref: '#/components/schemas/MandatoryLabels'
