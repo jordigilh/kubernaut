@@ -18,6 +18,7 @@ package schema
 
 import (
 	"encoding/json"
+	"encoding/hex"
 	"fmt"
 	"strings"
 
@@ -136,6 +137,63 @@ func (p *Parser) Validate(schema *models.WorkflowSchema) error {
 		}
 	}
 
+	// Validate execution section (Issue #89: execution.bundle is mandatory with sha256 digest)
+	if schema.Execution == nil {
+		return models.NewSchemaValidationError("execution", "execution section is required")
+	}
+	if schema.Execution.Bundle == "" {
+		return models.NewSchemaValidationError("execution.bundle", "execution.bundle is required")
+	}
+	if err := validateBundleDigest(schema.Execution.Bundle); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// ParseBundleDigest parses an OCI bundle reference and extracts its sha256 digest.
+// Returns the full reference and the hex-only digest (without "sha256:" prefix).
+//
+// Accepted formats:
+//   - registry/repo@sha256:<64 hex>           (digest-only)
+//   - registry/repo:tag@sha256:<64 hex>       (tag+digest)
+//
+// Returns error for:
+//   - Missing @ separator (tag-only references)
+//   - Non-sha256 algorithm
+//   - Truncated digest (not exactly 64 hex chars)
+//   - Invalid hex characters
+func ParseBundleDigest(bundle string) (fullRef string, digest string, err error) {
+	atIdx := strings.LastIndex(bundle, "@")
+	if atIdx < 0 {
+		return "", "", fmt.Errorf("must contain a sha256 digest (e.g., @sha256:<64 hex chars>)")
+	}
+
+	digestPart := bundle[atIdx+1:]
+
+	if !strings.HasPrefix(digestPart, "sha256:") {
+		algo := strings.SplitN(digestPart, ":", 2)[0]
+		return "", "", fmt.Errorf("digest algorithm must be sha256, got %q", algo)
+	}
+
+	hexPart := strings.TrimPrefix(digestPart, "sha256:")
+	if len(hexPart) != 64 {
+		return "", "", fmt.Errorf("sha256 digest must be exactly 64 hex characters, got %d", len(hexPart))
+	}
+
+	if _, decodeErr := hex.DecodeString(hexPart); decodeErr != nil {
+		return "", "", fmt.Errorf("sha256 digest contains invalid hex characters: %v", decodeErr)
+	}
+
+	return bundle, hexPart, nil
+}
+
+// validateBundleDigest wraps ParseBundleDigest as a schema validation error.
+func validateBundleDigest(bundle string) *models.SchemaValidationError {
+	_, _, err := ParseBundleDigest(bundle)
+	if err != nil {
+		return models.NewSchemaValidationError("execution.bundle", err.Error())
+	}
 	return nil
 }
 

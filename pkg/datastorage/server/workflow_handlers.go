@@ -61,9 +61,9 @@ import (
 // DD-WORKFLOW-017: OCI-based workflow registration (pullspec-only)
 // BR-WORKFLOW-017-001: Accept only containerImage, pull OCI image, extract schema, populate catalog
 func (h *Handler) HandleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
-	// Step 1: Parse request body — expect only {"container_image": "..."}
+	// Step 1: Parse request body — expect only {"schemaImage": "..."}
 	var req struct {
-		ContainerImage string `json:"container_image"`
+		SchemaImage string `json:"schemaImage"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		h.logger.Error(err, "Failed to decode workflow create request")
@@ -72,10 +72,10 @@ func (h *Handler) HandleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Step 2: Validate containerImage is present
-	if req.ContainerImage == "" {
+	// Step 2: Validate schemaImage is present
+	if req.SchemaImage == "" {
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request", "Bad Request",
-			"container_image is required", h.logger)
+			"schemaImage is required", h.logger)
 		return
 	}
 
@@ -88,18 +88,18 @@ func (h *Handler) HandleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Step 4: Pull OCI image and extract /workflow-schema.yaml (DD-WORKFLOW-017)
-	result, err := h.schemaExtractor.ExtractFromImage(r.Context(), req.ContainerImage)
+	result, err := h.schemaExtractor.ExtractFromImage(r.Context(), req.SchemaImage)
 	if err != nil {
-		h.classifyExtractionError(w, err, req.ContainerImage)
+		h.classifyExtractionError(w, err, req.SchemaImage)
 		return
 	}
 
 	// Step 5: Build RemediationWorkflow from extracted schema
 	schemaParser := schema.NewParser()
-	workflow, err := h.buildWorkflowFromSchema(schemaParser, result, req.ContainerImage)
+	workflow, err := h.buildWorkflowFromSchema(schemaParser, result, req.SchemaImage)
 	if err != nil {
 		h.logger.Error(err, "Failed to build workflow from extracted schema",
-			"container_image", req.ContainerImage,
+			"container_image", req.SchemaImage,
 		)
 		response.WriteRFC7807Error(w, http.StatusInternalServerError, "internal-error", "Internal Server Error",
 			"Failed to process extracted schema", h.logger)
@@ -181,8 +181,8 @@ func (h *Handler) HandleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 		"workflow_id", workflow.WorkflowID,
 		"workflow_name", workflow.WorkflowName,
 		"version", workflow.Version,
-		"container_image", req.ContainerImage,
-		"container_digest", workflow.ContainerDigest,
+		"schema_image", req.SchemaImage,
+		"schema_digest", workflow.SchemaDigest,
 	)
 
 	// Return created workflow
@@ -281,7 +281,7 @@ func (h *Handler) buildWorkflowFromSchema(
 	// Convert execution engine string to ExecutionEngine type
 	execEngine := models.ExecutionEngine(schemaParser.ExtractExecutionEngine(parsedSchema))
 
-	// ContainerImage and ContainerDigest are *string in the DB model
+	// SchemaImage is the OCI image used for registration, SchemaDigest is its sha256
 	imgRef := containerImage
 	digest := result.Digest
 
@@ -294,11 +294,19 @@ func (h *Handler) buildWorkflowFromSchema(
 		Content:         result.RawContent,
 		Parameters:      &rawParams,
 		ExecutionEngine: execEngine,
-		ContainerImage:  &imgRef,
-		ContainerDigest: &digest,
+		SchemaImage:     &imgRef,
+		SchemaDigest:    &digest,
 		ActionType:      parsedSchema.ActionType,
 		Status:          "active",
 		IsLatestVersion: true,
+	}
+
+	// Extract execution bundle from schema (Issue #89)
+	if bundle := schemaParser.ExtractExecutionBundle(parsedSchema); bundle != nil {
+		workflow.ExecutionBundle = bundle
+		if _, digest, err := schema.ParseBundleDigest(*bundle); err == nil {
+			workflow.ExecutionBundleDigest = &digest
+		}
 	}
 
 	// Set labels from extracted JSONB
@@ -1163,8 +1171,11 @@ func (h *Handler) HandleListWorkflowsByActionType(w http.ResponseWriter, r *http
 			Version:         wf.Version,
 			ExecutionEngine: string(wf.ExecutionEngine),
 		}
-		if wf.ContainerImage != nil {
-			entry.ContainerImage = *wf.ContainerImage
+		if wf.SchemaImage != nil {
+			entry.SchemaImage = *wf.SchemaImage
+		}
+		if wf.ExecutionBundle != nil {
+			entry.ExecutionBundle = *wf.ExecutionBundle
 		}
 		discoveryEntries = append(discoveryEntries, entry)
 	}
