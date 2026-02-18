@@ -146,8 +146,6 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: kubernaut-workflows
-  labels:
-    kubernaut.ai/component: workflow-execution
 
 ---
 # 2. ServiceAccount
@@ -242,7 +240,7 @@ func (r *WorkflowExecutionReconciler) buildPipelineRun(
 
 Since WorkflowExecution CRD may be in `kubernaut-system` but PipelineRun is in `kubernaut-workflows`, Kubernetes owner references don't work cross-namespace. Instead:
 
-1. **Label linking**: PipelineRun has label `kubernaut.ai/workflow-execution: <wfe-name>`
+1. **Label linking**: PipelineRun has label `kubernaut.ai/workflow-execution: <wfe-name>` (Issue #91: still valid for external K8s resources like PipelineRun/Job)
 2. **Finalizer cleanup**: WorkflowExecution finalizer deletes associated PipelineRun
 3. **Watch by label**: Controller watches PipelineRuns by label selector
 

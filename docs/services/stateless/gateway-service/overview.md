@@ -378,9 +378,9 @@ kind: RemediationRequest
 metadata:
   name: remediation-abc123
   namespace: kubernaut-system
+  # Issue #91: kubernaut.ai/severity, kubernaut.ai/signal-type removed; use spec.severity, spec.signalType
   labels:
     kubernaut.ai/alert-name: HighMemoryUsage
-    kubernaut.ai/severity: critical
 spec:
   alertFingerprint: "a1b2c3d4..."
   alertName: "HighMemoryUsage"

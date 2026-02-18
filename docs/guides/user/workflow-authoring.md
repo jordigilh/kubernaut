@@ -141,7 +141,7 @@ The workflow is now available for AI Analysis to select. No additional registrat
 
 ### Required Labels
 
-All Kubernaut workflows MUST include these labels:
+All Kubernaut workflows MUST include these labels on the Tekton Pipeline resource (Issue #91: these remain valid—they are on external K8s resources for workflow selection, not Kubernaut CRD metadata):
 
 ```yaml
 metadata:

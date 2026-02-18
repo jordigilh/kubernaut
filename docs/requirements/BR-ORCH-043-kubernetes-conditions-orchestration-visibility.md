@@ -244,20 +244,20 @@ kube_customresource_condition{
 # Step 1: Check RemediationRequest phase
 kubectl get remediationrequest rr-alert-123
 
-# Step 2: Find SignalProcessing CRD
-kubectl get signalprocessing -l kubernaut.ai/remediation-request=rr-alert-123
+# Step 2: Find SignalProcessing CRD (Issue #91: field selector replaces label)
+kubectl get signalprocessing --field-selector spec.remediationRequestRef.name=rr-alert-123
 
 # Step 3: Check SP status
 kubectl describe signalprocessing sp-rr-alert-123
 
 # Step 4: Find AIAnalysis CRD
-kubectl get aianalysis -l kubernaut.ai/remediation-request=rr-alert-123
+kubectl get aianalysis --field-selector spec.remediationRequestRef.name=rr-alert-123
 
 # Step 5: Check AI status
 kubectl describe aianalysis ai-rr-alert-123
 
 # Step 6: Find WorkflowExecution CRD
-kubectl get workflowexecution -l kubernaut.ai/remediation-request=rr-alert-123
+kubectl get workflowexecution --field-selector spec.remediationRequestRef.name=rr-alert-123
 
 # Step 7: Check WE status
 kubectl describe workflowexecution we-rr-alert-123
