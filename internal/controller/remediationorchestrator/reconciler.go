@@ -1784,16 +1784,18 @@ func (r *Reconciler) handleGlobalTimeout(ctx context.Context, rr *remediationv1.
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      notificationName,
 			Namespace: rr.Namespace,
-			Labels: map[string]string{
-				"kubernaut.ai/remediation-request": rr.Name,
-				"kubernaut.ai/notification-type":   "timeout",
-				"kubernaut.ai/severity":            rr.Spec.Severity,
-				"kubernaut.ai/component":           "remediation-orchestrator",
-			},
 		},
 		Spec: notificationv1.NotificationRequestSpec{
+			RemediationRequestRef: &corev1.ObjectReference{
+				APIVersion: remediationv1.GroupVersion.String(),
+				Kind:       "RemediationRequest",
+				Name:       rr.Name,
+				Namespace:  rr.Namespace,
+				UID:        rr.UID,
+			},
 			Type:     notificationv1.NotificationTypeEscalation,
 			Priority: notificationv1.NotificationPriorityCritical,
+			Severity: rr.Spec.Severity,
 			Subject:  fmt.Sprintf("Remediation Timeout: %s", rr.Spec.SignalName),
 			Body: fmt.Sprintf(`Remediation request has exceeded the global timeout and requires manual intervention.
 
@@ -2515,6 +2517,77 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		// Index already exists - safe to continue
 	}
 
+	// Issue #91: Register field indexes on child CRDs for spec.remediationRequestRef.name
+	// Enables MatchingFields queries and kubectl --field-selector for child lookups by parent RR
+	childCRDIndexes := []struct {
+		obj       client.Object
+		extractor func(client.Object) []string
+	}{
+		{
+			obj: &aianalysisv1.AIAnalysis{},
+			extractor: func(obj client.Object) []string {
+				aa := obj.(*aianalysisv1.AIAnalysis)
+				if aa.Spec.RemediationRequestRef.Name == "" {
+					return nil
+				}
+				return []string{aa.Spec.RemediationRequestRef.Name}
+			},
+		},
+		{
+			obj: &notificationv1.NotificationRequest{},
+			extractor: func(obj client.Object) []string {
+				nr := obj.(*notificationv1.NotificationRequest)
+				if nr.Spec.RemediationRequestRef == nil || nr.Spec.RemediationRequestRef.Name == "" {
+					return nil
+				}
+				return []string{nr.Spec.RemediationRequestRef.Name}
+			},
+		},
+		{
+			obj: &signalprocessingv1.SignalProcessing{},
+			extractor: func(obj client.Object) []string {
+				sp := obj.(*signalprocessingv1.SignalProcessing)
+				if sp.Spec.RemediationRequestRef.Name == "" {
+					return nil
+				}
+				return []string{sp.Spec.RemediationRequestRef.Name}
+			},
+		},
+		{
+			obj: &remediationv1.RemediationApprovalRequest{},
+			extractor: func(obj client.Object) []string {
+				rar := obj.(*remediationv1.RemediationApprovalRequest)
+				if rar.Spec.RemediationRequestRef.Name == "" {
+					return nil
+				}
+				return []string{rar.Spec.RemediationRequestRef.Name}
+			},
+		},
+		{
+			obj: &workflowexecutionv1.WorkflowExecution{},
+			extractor: func(obj client.Object) []string {
+				wfe := obj.(*workflowexecutionv1.WorkflowExecution)
+				if wfe.Spec.RemediationRequestRef.Name == "" {
+					return nil
+				}
+				return []string{wfe.Spec.RemediationRequestRef.Name}
+			},
+		},
+	}
+
+	for _, idx := range childCRDIndexes {
+		if err := mgr.GetFieldIndexer().IndexField(
+			context.Background(),
+			idx.obj,
+			RemediationRequestRefNameIndex,
+			idx.extractor,
+		); err != nil {
+			if !k8serrors.IsIndexerConflict(err) {
+				return fmt.Errorf("failed to create field index %s on %T: %w", RemediationRequestRefNameIndex, idx.obj, err)
+			}
+		}
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&remediationv1.RemediationRequest{}).
 		Owns(&signalprocessingv1.SignalProcessing{}).
@@ -2714,17 +2787,19 @@ func (r *Reconciler) createPhaseTimeoutNotification(ctx context.Context, rr *rem
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      notificationName,
 			Namespace: rr.Namespace,
-			Labels: map[string]string{
-				"kubernaut.ai/remediation-request": rr.Name,
-				"kubernaut.ai/notification-type":   "phase-timeout",
-				"kubernaut.ai/phase":               string(phase),
-				"kubernaut.ai/severity":            rr.Spec.Severity,
-				"kubernaut.ai/component":           "remediation-orchestrator",
-			},
 		},
 		Spec: notificationv1.NotificationRequestSpec{
+			RemediationRequestRef: &corev1.ObjectReference{
+				APIVersion: remediationv1.GroupVersion.String(),
+				Kind:       "RemediationRequest",
+				Name:       rr.Name,
+				Namespace:  rr.Namespace,
+				UID:        rr.UID,
+			},
 			Type:     notificationv1.NotificationTypeEscalation,
 			Priority: notificationv1.NotificationPriorityHigh,
+			Severity: rr.Spec.Severity,
+			Phase:    string(phase),
 			Subject:  fmt.Sprintf("Phase Timeout: %s - %s", phase, rr.Spec.SignalName),
 			Body: fmt.Sprintf(`Remediation phase has exceeded timeout and requires investigation.
 

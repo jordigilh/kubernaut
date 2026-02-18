@@ -85,10 +85,8 @@ func (c *SignalProcessingCreator) Create(ctx context.Context, rr *remediationv1.
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: rr.Namespace,
-			Labels: map[string]string{
-				"kubernaut.ai/remediation-request": rr.Name,
-				"kubernaut.ai/component":           "signal-processing",
-			},
+			// Issue #91: labels removed; parent tracked via spec.remediationRequestRef + ownerRef
+
 		},
 		Spec: signalprocessingv1.SignalProcessingSpec{
 			// Reference to parent RemediationRequest for audit trail

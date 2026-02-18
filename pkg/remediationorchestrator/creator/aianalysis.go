@@ -90,10 +90,8 @@ func (c *AIAnalysisCreator) Create(
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: rr.Namespace,
-			Labels: map[string]string{
-				"kubernaut.ai/remediation-request": rr.Name,
-				"kubernaut.ai/component":           "ai-analysis",
-			},
+			// Issue #91: labels removed; parent tracked via spec.remediationRequestRef + ownerRef
+
 		},
 		Spec: aianalysisv1.AIAnalysisSpec{
 			// Parent reference for audit trail

@@ -69,6 +69,9 @@ const DefaultCooldownDuration = 1 * time.Hour
 // Reference: BR-GATEWAY-185 v1.1
 const FingerprintFieldIndex = "spec.signalFingerprint"
 
+// Issue #91: Field index for child CRD lookups by parent RemediationRequest name
+const RemediationRequestRefNameIndex = "spec.remediationRequestRef.name"
+
 // ========================================
 // BLOCKING LOGIC METHODS
 // Validated by: test/integration/remediationorchestrator/blocking_integration_test.go
