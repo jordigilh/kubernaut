@@ -280,8 +280,8 @@ type SelectedWorkflowSummary struct {
 	ActionType string `json:"actionType,omitempty"`
 	// Workflow version
 	Version string `json:"version"`
-	// Container image used
-	ContainerImage string `json:"containerImage"`
+	// Execution bundle OCI reference (digest-pinned)
+	ExecutionBundle string `json:"executionBundle"`
 	// Parameters passed to workflow
 	Parameters map[string]string `json:"parameters,omitempty"`
 	// Why this workflow was selected
@@ -587,11 +587,11 @@ type SelectedWorkflow struct {
 	// Workflow version
 	// +kubebuilder:validation:Required
 	Version string `json:"version"`
-	// Container image (OCI bundle) - resolved by HolmesGPT-API
+	// Execution bundle OCI reference (digest-pinned) - resolved by HolmesGPT-API
 	// +kubebuilder:validation:Required
-	ContainerImage string `json:"containerImage"`
-	// Container digest for audit trail
-	ContainerDigest string `json:"containerDigest,omitempty"`
+	ExecutionBundle string `json:"executionBundle"`
+	// Execution bundle digest for audit trail
+	ExecutionBundleDigest string `json:"executionBundleDigest,omitempty"`
 	// Confidence score (0.0-1.0)
 	// +kubebuilder:validation:Minimum=0.0
 	// +kubebuilder:validation:Maximum=1.0
@@ -617,8 +617,8 @@ type AlternativeWorkflow struct {
 	// Workflow identifier (catalog lookup key)
 	// +kubebuilder:validation:Required
 	WorkflowID string `json:"workflowId"`
-	// Container image (OCI bundle) - resolved by HolmesGPT-API
-	ContainerImage string `json:"containerImage,omitempty"`
+	// Execution bundle OCI reference (digest-pinned) - resolved by HolmesGPT-API
+	ExecutionBundle string `json:"executionBundle,omitempty"`
 	// Confidence score (0.0-1.0) - shows why it wasn't selected
 	// +kubebuilder:validation:Minimum=0.0
 	// +kubebuilder:validation:Maximum=1.0

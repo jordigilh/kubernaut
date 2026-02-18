@@ -161,13 +161,13 @@ spec:
                   WorkflowRef contains the workflow catalog reference
                   Resolved from AIAnalysis.Status.SelectedWorkflow by RemediationOrchestrator
                 properties:
-                  containerDigest:
-                    description: ContainerDigest for audit trail and reproducibility
-                    type: string
-                  containerImage:
+                  executionBundle:
                     description: |-
-                      ContainerImage resolved from workflow catalog (Data Storage API)
+                      ExecutionBundle resolved from workflow catalog (Data Storage API)
                       OCI bundle reference for Tekton PipelineRun
+                    type: string
+                  executionBundleDigest:
+                    description: ExecutionBundleDigest for audit trail and reproducibility
                     type: string
                   version:
                     description: Version of the workflow
@@ -176,7 +176,7 @@ spec:
                     description: WorkflowID is the catalog lookup key
                     type: string
                 required:
-                - containerImage
+                - executionBundle
                 - version
                 - workflowId
                 type: object
