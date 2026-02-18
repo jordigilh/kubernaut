@@ -141,7 +141,7 @@ class TestRecoveryAnalysisLogic:
                 "selected_workflow": {
                     "workflow_id": "scale-horizontal-v1",
                     "version": "1.0.0",
-                    "container_image": "kubernaut/workflow-scale:v1.0.0",
+                    "execution_bundle": "kubernaut/workflow-scale:v1.0.0",
                     "parameters": {"TARGET_REPLICAS": "5"},
                     "rationale": "Scaling out"
                 },

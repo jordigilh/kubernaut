@@ -143,7 +143,7 @@ MINIMAL_RECOVERY_REQUEST = {
         "selected_workflow": {
             "workflow_id": "restart-deployment-v1",
             "version": "1.0.0",
-            "container_image": "kubernaut/restart:1.0",
+            "execution_bundle": "kubernaut/restart:1.0",
             "rationale": "Restart to clear memory",
         },
         "failure": {

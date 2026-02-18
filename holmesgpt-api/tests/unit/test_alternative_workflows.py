@@ -41,7 +41,7 @@ class TestAlternativeWorkflowModel:
         """Test creating a valid AlternativeWorkflow"""
         alt = AlternativeWorkflow(
             workflow_id="restart-pod-v1",
-            container_image="ghcr.io/kubernaut/workflows/restart-pod:v1.0.0",
+            execution_bundle="ghcr.io/kubernaut/workflows/restart-pod:v1.0.0",
             confidence=0.75,
             rationale="Simpler approach but doesn't address root cause of memory leak"
         )
@@ -49,15 +49,15 @@ class TestAlternativeWorkflowModel:
         assert alt.confidence == 0.75
         assert "memory leak" in alt.rationale
 
-    def test_alternative_workflow_without_container_image(self):
-        """Test AlternativeWorkflow with optional container_image omitted"""
+    def test_alternative_workflow_without_execution_bundle(self):
+        """Test AlternativeWorkflow with optional execution_bundle omitted"""
         alt = AlternativeWorkflow(
             workflow_id="scale-horizontal-v1",
             confidence=0.65,
             rationale="Scaling approach considered but rejected due to cost constraints"
         )
         assert alt.workflow_id == "scale-horizontal-v1"
-        assert alt.container_image is None
+        assert alt.execution_bundle is None
 
     def test_confidence_must_be_between_0_and_1(self):
         """Test confidence validation bounds"""
@@ -108,7 +108,7 @@ class TestIncidentResponseAlternatives:
             },
             selected_workflow={
                 "workflow_id": "increase-memory-v1",
-                "container_image": "ghcr.io/kubernaut/workflows/memory:v1.0.0",
+                "execution_bundle": "ghcr.io/kubernaut/workflows/memory:v1.0.0",
                 "confidence": 0.90,
                 "rationale": "Best match for OOMKilled with memory leak"
             },
@@ -117,7 +117,7 @@ class TestIncidentResponseAlternatives:
             alternative_workflows=[
                 AlternativeWorkflow(
                     workflow_id="restart-pod-v1",
-                    container_image="ghcr.io/kubernaut/workflows/restart:v1.0.0",
+                    execution_bundle="ghcr.io/kubernaut/workflows/restart:v1.0.0",
                     confidence=0.75,
                     rationale="Quick fix but doesn't address memory leak"
                 ),

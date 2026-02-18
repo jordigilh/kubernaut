@@ -68,7 +68,7 @@ def _make_parsed_result(workflow_id="wf-test-001", needs_human_review=False):
     if workflow_id:
         result["selected_workflow"] = {
             "workflow_id": workflow_id,
-            "container_image": "registry.io/wf:1.0",
+            "execution_bundle": "registry.io/wf:1.0",
             "parameters": {},
             "confidence": 0.85,
         }

@@ -61,7 +61,7 @@ class TestRecoveryPromptGeneration:
                 "selected_workflow": {
                     "workflow_id": "scale-horizontal-v1",
                     "version": "1.0.0",
-                    "container_image": "kubernaut/workflow-scale:v1.0.0",
+                    "execution_bundle": "kubernaut/workflow-scale:v1.0.0",
                     "parameters": {"TARGET_REPLICAS": "5"},
                     "rationale": "Scale to distribute load"
                 },
@@ -104,7 +104,7 @@ class TestRecoveryPromptGeneration:
                 "selected_workflow": {
                     "workflow_id": "dangerous-workflow-v1",
                     "version": "1.0.0",
-                    "container_image": "test:latest",
+                    "execution_bundle": "test:latest",
                     "parameters": {},
                     "rationale": "Test"
                 },
@@ -143,7 +143,7 @@ class TestRecoveryPromptGeneration:
                 "selected_workflow": {
                     "workflow_id": "test-v1",
                     "version": "1.0.0",
-                    "container_image": "test:latest",
+                    "execution_bundle": "test:latest",
                     "parameters": {},
                     "rationale": "Test"
                 },
@@ -183,7 +183,7 @@ class TestRecoveryPromptGeneration:
                 "selected_workflow": {
                     "workflow_id": "test-v1",
                     "version": "1.0.0",
-                    "container_image": "test:latest",
+                    "execution_bundle": "test:latest",
                     "parameters": {},
                     "rationale": "Test"
                 },
