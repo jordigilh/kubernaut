@@ -21,6 +21,10 @@ spec:
     - jsonPath: .status.outcome
       name: Outcome
       type: string
+    - jsonPath: .status.conditions[?(@.type=="Ready")].reason
+      name: Reason
+      priority: 1
+      type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
@@ -360,7 +364,6 @@ spec:
                     - Reason "DeliverySucceeded": Notification sent
                     - Reason "UserCancelled": User deleted NotificationRequest before delivery
                     - Reason "DeliveryFailed": NotificationRequest failed to deliver
-                  - "RemediationExecuted": True if workflow executed successfully
 
                   Conditions follow Kubernetes API conventions (KEP-1623).
                   Reference: BR-ORCH-029 (user cancellation), BR-ORCH-030 (status tracking)

@@ -24,6 +24,10 @@ spec:
     - jsonPath: .spec.correlationID
       name: CorrelationID
       type: string
+    - jsonPath: .status.conditions[?(@.type=="Ready")].reason
+      name: ReadyReason
+      priority: 1
+      type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date

@@ -231,6 +231,7 @@ type EAComponents struct {
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.assessmentReason`
 // +kubebuilder:printcolumn:name="CorrelationID",type=string,JSONPath=`.spec.correlationID`
+// +kubebuilder:printcolumn:name="ReadyReason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`,priority=1
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // EffectivenessAssessment is the Schema for the effectivenessassessments API.

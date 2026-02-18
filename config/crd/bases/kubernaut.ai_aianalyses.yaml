@@ -24,6 +24,10 @@ spec:
     - jsonPath: .status.approvalRequired
       name: ApprovalRequired
       type: boolean
+    - jsonPath: .status.conditions[?(@.type=="Ready")].reason
+      name: Reason
+      priority: 1
+      type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date

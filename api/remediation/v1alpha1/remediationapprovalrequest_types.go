@@ -258,6 +258,7 @@ type RemediationApprovalRequestStatus struct {
 // +kubebuilder:printcolumn:name="Decision",type=string,JSONPath=`.status.decision`
 // +kubebuilder:printcolumn:name="Expired",type=boolean,JSONPath=`.status.expired`
 // +kubebuilder:printcolumn:name="RequiredBy",type=date,JSONPath=`.spec.requiredBy`
+// +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`,priority=1
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // RemediationApprovalRequest is the Schema for the remediationapprovalrequests API.
