@@ -119,8 +119,13 @@ spec:
                   type: string
                 description: |-
                   Metadata for context (key-value pairs)
-                  Examples: remediationRequestName, cluster, namespace, severity, alertName
+                  Examples: remediationRequestName, cluster, namespace, alertName
                 type: object
+              phase:
+                description: |-
+                  Phase that triggered this notification (for phase-timeout notifications)
+                  Issue #91: promoted from mutable label to immutable spec field
+                type: string
               priority:
                 default: medium
                 description: Priority of notification (critical, high, medium, low)
@@ -240,6 +245,16 @@ spec:
                     minimum: 60
                     type: integer
                 type: object
+              reviewSource:
+                description: |-
+                  ReviewSource indicates what triggered manual review (for manual-review notifications)
+                  Issue #91: promoted from mutable label to immutable spec field
+                type: string
+              severity:
+                description: |-
+                  Severity from the originating signal (used for routing)
+                  Issue #91: promoted from mutable label to immutable spec field
+                type: string
               subject:
                 description: Subject line for notification
                 maxLength: 500
@@ -402,6 +417,10 @@ spec:
                 type: integer
             type: object
         type: object
+    selectableFields:
+    - jsonPath: .spec.remediationRequestRef.name
+    - jsonPath: .spec.type
+    - jsonPath: .spec.severity
     served: true
     storage: true
     subresources:

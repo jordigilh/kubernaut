@@ -250,6 +250,8 @@ type RemediationApprovalRequestStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:selectablefield:JSONPath=.spec.remediationRequestRef.name
+// +kubebuilder:selectablefield:JSONPath=.spec.aiAnalysisRef.name
 // +kubebuilder:resource:shortName=rar;rars
 // +kubebuilder:printcolumn:name="AIAnalysis",type=string,JSONPath=`.spec.aiAnalysisRef.name`
 // +kubebuilder:printcolumn:name="Confidence",type=number,JSONPath=`.spec.confidence`

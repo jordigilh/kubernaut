@@ -423,13 +423,15 @@ spec:
                             type: object
                           ownerChain:
                             description: |-
-                              OwnerChain: K8s ownership traversal from signal source resource
-                              DD-WORKFLOW-001 v1.7: Used by HolmesGPT-API for 100% safe DetectedLabels validation
-                              SignalProcessing traverses metadata.ownerReferences to build this chain
+                              OwnerChain: K8s ownership traversal from signal source resource.
+                              SignalProcessing traverses metadata.ownerReferences to build this chain.
                               Example: Pod → ReplicaSet → Deployment
                               Empty chain = orphan resource (no owners)
-                              HolmesGPT-API uses this to validate DetectedLabels applicability when RCA
-                              identifies a different resource than the original signal source
+
+                              ADR-055: No longer propagated from SP to AIAnalysis or HAPI.
+                              HAPI resolves its own chain post-RCA via get_resource_context tool.
+                              Field retained in shared types for SP internal use (label detection).
+                              ADR-056: Scheduled for relocation to SP-internal types.
                             items:
                               description: "OwnerChainEntry represents a single entry
                                 in the K8s ownership chain.\nDD-WORKFLOW-001 v1.8:
@@ -1267,8 +1269,11 @@ spec:
                   type: object
                 type: array
               warnings:
-                description: Non-fatal warnings from HolmesGPT-API (e.g., OwnerChain
-                  validation, low confidence)
+                description: |-
+                  ========================================
+                  HAPI RESPONSE METADATA
+                  ========================================
+                  Non-fatal warnings from HolmesGPT-API (e.g., low confidence)
                 items:
                   type: string
                 type: array
@@ -1278,6 +1283,8 @@ spec:
             - phase
             type: object
         type: object
+    selectableFields:
+    - jsonPath: .spec.remediationRequestRef.name
     served: true
     storage: true
     subresources:

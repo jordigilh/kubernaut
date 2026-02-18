@@ -774,6 +774,8 @@ type DeduplicationStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:selectablefield:JSONPath=.spec.signalFingerprint
+// +kubebuilder:selectablefield:JSONPath=.spec.signalType
+// +kubebuilder:selectablefield:JSONPath=.spec.severity
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.overallPhase`
 // +kubebuilder:printcolumn:name="Outcome",type=string,JSONPath=`.status.outcome`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
