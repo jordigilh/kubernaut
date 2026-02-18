@@ -32,7 +32,7 @@ from fastapi import HTTPException, status
 
 from src.models.config_models import AppConfig
 from holmes.config import Config
-from holmes.core.models import InvestigateRequest, InvestigationResult
+from holmes.core.models import InvestigateRequest
 from holmes.core.investigation import investigate_issues
 from src.audit import (
     get_audit_store,
@@ -96,7 +96,6 @@ def _get_holmes_config(
     - "gpt-4" (OpenAI - no prefix needed)
     - "provider_name/model-name" (other providers)
     """
-    # Get formatted model name for litellm (supports Ollama, OpenAI, Claude, Vertex AI)
     from src.extensions.llm_config import (
         get_model_config_for_sdk,
         prepare_toolsets_config_for_sdk,
