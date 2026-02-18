@@ -101,14 +101,14 @@ class TestSelectedWorkflowSummaryModel:
         workflow = SelectedWorkflowSummary(
             workflow_id="scale-horizontal-v1",
             version="1.0.0",
-            container_image="kubernaut/workflow-scale:v1.0.0",
+            execution_bundle="kubernaut/workflow-scale:v1.0.0",
             parameters={"TARGET_REPLICAS": "5", "NAMESPACE": "production"},
             rationale="Scaling out to distribute memory load"
         )
 
         assert workflow.workflow_id == "scale-horizontal-v1"
         assert workflow.version == "1.0.0"
-        assert workflow.container_image == "kubernaut/workflow-scale:v1.0.0"
+        assert workflow.execution_bundle == "kubernaut/workflow-scale:v1.0.0"
         assert workflow.parameters["TARGET_REPLICAS"] == "5"
         assert workflow.rationale == "Scaling out to distribute memory load"
 
@@ -121,7 +121,7 @@ class TestSelectedWorkflowSummaryModel:
         workflow = SelectedWorkflowSummary(
             workflow_id="restart-pod-v1",
             version="1.0.0",
-            container_image="kubernaut/workflow-restart:v1.0.0",
+            execution_bundle="kubernaut/workflow-restart:v1.0.0",
             rationale="Simple restart"
         )
 
@@ -218,7 +218,7 @@ class TestPreviousExecutionModel:
             selected_workflow=SelectedWorkflowSummary(
                 workflow_id="scale-horizontal-v1",
                 version="1.0.0",
-                container_image="kubernaut/workflow-scale:v1.0.0",
+                execution_bundle="kubernaut/workflow-scale:v1.0.0",
                 rationale="Scale to distribute load"
             ),
             failure=ExecutionFailure(
@@ -269,7 +269,7 @@ class TestRecoveryRequestWithPreviousExecution:
                 selected_workflow=SelectedWorkflowSummary(
                     workflow_id="scale-v1",
                     version="1.0.0",
-                    container_image="test:latest",
+                    execution_bundle="test:latest",
                     rationale="Scale"
                 ),
                 failure=ExecutionFailure(
