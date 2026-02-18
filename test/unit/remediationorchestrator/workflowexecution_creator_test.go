@@ -152,9 +152,9 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 			Expect(created.Spec.Confidence).To(Equal(ai.Status.SelectedWorkflow.Confidence))
 			Expect(created.Spec.Rationale).To(Equal(ai.Status.SelectedWorkflow.Rationale))
 
-			// Verify labels
-			Expect(created.Labels["kubernaut.ai/remediation-request"]).To(Equal(rr.Name))
-			Expect(created.Labels["kubernaut.ai/component"]).To(Equal("workflow-execution"))
+			// Issue #91: labels removed; parent tracked via spec.remediationRequestRef + ownerRef
+			Expect(created.Labels).To(BeNil())
+			Expect(created.Spec.RemediationRequestRef.Name).To(Equal(rr.Name))
 		})
 	})
 

@@ -210,10 +210,11 @@ var _ = Describe("E2E-RO-045-001: Completion Notification", Label("e2e", "notifi
 		Expect(notification.Spec.Priority).To(Equal(notificationv1.NotificationPriorityLow),
 			"Completion notifications should be low priority (informational)")
 
-		By("11. Validating NotificationRequest labels for routing")
-		Expect(notification.Labels).To(HaveKeyWithValue("kubernaut.ai/notification-type", "completion"))
-		Expect(notification.Labels).To(HaveKeyWithValue("kubernaut.ai/remediation-request", rr.Name))
-		Expect(notification.Labels).To(HaveKeyWithValue("kubernaut.ai/component", "remediation-orchestrator"))
+		By("11. Validating NotificationRequest spec fields for routing (Issue #91)")
+		Expect(notification.Spec.Type).To(Equal(notificationv1.NotificationTypeCompletion))
+		Expect(notification.Spec.RemediationRequestRef).ToNot(BeNil())
+		Expect(notification.Spec.RemediationRequestRef.Name).To(Equal(rr.Name))
+		Expect(notification.Spec.Severity).ToNot(BeEmpty())
 
 		By("12. Validating NotificationRequest metadata")
 		Expect(notification.Spec.Metadata).To(HaveKeyWithValue("remediationRequest", rr.Name))

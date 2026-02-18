@@ -251,8 +251,8 @@ var _ = Describe("AIAnalysis ManualReview Flow", Label("integration", "manual-re
 			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: nrName, Namespace: namespace}, nr)).To(Succeed())
 
 			Expect(nr.Spec.Type).To(Equal(notificationv1.NotificationTypeManualReview))
-			Expect(nr.Labels["kubernaut.ai/notification-type"]).To(Equal("manual-review"))
-			Expect(nr.Labels["kubernaut.ai/remediation-request"]).To(Equal(rrName))
+			Expect(nr.Spec.RemediationRequestRef).ToNot(BeNil())
+			Expect(nr.Spec.RemediationRequestRef.Name).To(Equal(rrName))
 
 			By("Verifying RR status updated")
 			rr := &remediationv1.RemediationRequest{}
@@ -327,8 +327,8 @@ var _ = Describe("AIAnalysis ManualReview Flow", Label("integration", "manual-re
 
 			Expect(nr.Spec.Type).To(Equal(notificationv1.NotificationTypeManualReview))
 			Expect(nr.Spec.Priority).To(Equal(notificationv1.NotificationPriorityHigh))
-			Expect(nr.Labels["kubernaut.ai/notification-type"]).To(Equal("manual-review"))
-			Expect(nr.Labels["kubernaut.ai/remediation-request"]).To(Equal(rrName))
+			Expect(nr.Spec.RemediationRequestRef).ToNot(BeNil())
+			Expect(nr.Spec.RemediationRequestRef.Name).To(Equal(rrName))
 			Expect(nr.Spec.Metadata).To(HaveKeyWithValue("reason", "APIError"))
 			Expect(nr.Spec.Metadata).To(HaveKeyWithValue("subReason", "MaxRetriesExceeded"))
 

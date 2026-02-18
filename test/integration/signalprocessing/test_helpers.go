@@ -196,10 +196,6 @@ func CreateTestSignalProcessingWithParent(name, namespace string, parentRR *reme
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
-			Labels: map[string]string{
-				"kubernaut.ai/remediation-request": parentRR.Name,
-				"kubernaut.ai/component":           "signal-processing",
-			},
 		},
 		Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 			// Reference to parent RemediationRequest (REQUIRED for audit trail)

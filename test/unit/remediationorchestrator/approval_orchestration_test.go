@@ -130,15 +130,15 @@ var _ = Describe("ApprovalOrchestration", func() {
 				Expect(name2).To(Equal(name1))
 			})
 
-			It("should set appropriate labels for filtering", func() {
+			It("should not set kubernaut.ai labels (Issue #91: parent tracked via spec + ownerRef)", func() {
 				name, err := ac.Create(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
 
 				rar := &remediationv1.RemediationApprovalRequest{}
 				Expect(fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: "default"}, rar)).To(Succeed())
 
-				Expect(rar.Labels).To(HaveKeyWithValue("kubernaut.ai/remediation-request", "test-rr"))
-				Expect(rar.Labels).To(HaveKeyWithValue("kubernaut.ai/component", "approval"))
+				Expect(rar.Labels).To(BeNil())
+				Expect(rar.Spec.RemediationRequestRef.Name).To(Equal("test-rr"))
 			})
 
 			It("should set RequiredBy deadline", func() {

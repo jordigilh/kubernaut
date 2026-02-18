@@ -160,8 +160,8 @@ var _ = Describe("BR-GATEWAY-004: RemediationRequest CRD Creation Business Outco
 			Expect(err).NotTo(HaveOccurred())
 			Expect(rr.Spec.Severity).To(Equal("critical"),
 				"Severity must be preserved for RO prioritization")
-			Expect(rr.Labels["kubernaut.ai/severity"]).To(Equal("critical"),
-				"Severity label enables filtering: kubectl get rr -l kubernaut.ai/severity=critical")
+			Expect(rr.Labels).NotTo(HaveKey("kubernaut.ai/severity"),
+				"Issue #91: severity is in immutable spec field, not a mutable label")
 		})
 
 		It("creates CRD with correct resource identification for workflow selection", func() {
@@ -380,8 +380,8 @@ var _ = Describe("BR-GATEWAY-004: RemediationRequest CRD Creation Business Outco
 				"Signal type preserved for audit trail and filtering")
 			Expect(rr.Spec.SignalSource).To(Equal("alertmanager"),
 				"Signal source preserved for troubleshooting")
-			Expect(rr.Labels["kubernaut.ai/signal-type"]).To(Equal("prometheus-alert"),
-				"Signal type label enables filtering by source")
+			Expect(rr.Labels).NotTo(HaveKey("kubernaut.ai/signal-type"),
+				"Issue #91: signal type is in immutable spec field, not a mutable label")
 		})
 
 		It("preserves temporal data for audit trail (firing and received times)", func() {
@@ -677,8 +677,8 @@ var _ = Describe("BR-GATEWAY-019: CRDCreator Safe Defaults", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(rr.Spec.SignalType).To(Equal("kubernetes-event"),
 					"SignalType distinguishes prometheus-alert vs kubernetes-event sources")
-				Expect(rr.Labels["kubernaut.ai/signal-type"]).To(Equal("kubernetes-event"),
-					"Signal type label enables filtering by source")
+				Expect(rr.Labels).NotTo(HaveKey("kubernaut.ai/signal-type"),
+					"Issue #91: signal type is in immutable spec field, not a mutable label")
 			})
 		})
 

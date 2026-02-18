@@ -315,11 +315,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 							UID:        createdRR.UID,
 						},
 					},
-					Labels: map[string]string{
-						"kubernaut.ai/remediation-request": rr.Name,
-						"kubernaut.ai/environment":         "production",
 					},
-				},
 				Spec: remediationv1.RemediationApprovalRequestSpec{
 					RemediationRequestRef: corev1.ObjectReference{
 						Name:       rr.Name,

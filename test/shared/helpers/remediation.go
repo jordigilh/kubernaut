@@ -145,10 +145,7 @@ func NewSignalProcessing(name, namespace string, opts ...SignalProcessingOpts) *
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
-			UID:       types.UID(fmt.Sprintf("%s-uid", name)),
-			Labels: map[string]string{
-				"kubernaut.ai/component": "signal-processing",
-			},
+			UID: types.UID(fmt.Sprintf("%s-uid", name)),
 		},
 		Spec: signalprocessingv1.SignalProcessingSpec{
 			RemediationRequestRef: signalprocessingv1.ObjectReference{
@@ -242,10 +239,7 @@ func NewAIAnalysis(name, namespace string, opts ...AIAnalysisOpts) *aianalysisv1
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
-			UID:       types.UID(fmt.Sprintf("%s-uid", name)),
-			Labels: map[string]string{
-				"kubernaut.ai/component": "ai-analysis",
-			},
+			UID: types.UID(fmt.Sprintf("%s-uid", name)),
 		},
 		Spec: aianalysisv1.AIAnalysisSpec{
 			RemediationID: "test-remediation",
@@ -350,10 +344,7 @@ func NewWorkflowExecution(name, namespace string, opts ...WorkflowExecutionOpts)
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
-			UID:       types.UID(fmt.Sprintf("%s-uid", name)),
-			Labels: map[string]string{
-				"kubernaut.ai/component": "workflow-execution",
-			},
+			UID: types.UID(fmt.Sprintf("%s-uid", name)),
 		},
 		Spec: workflowexecutionv1.WorkflowExecutionSpec{
 			WorkflowRef: workflowexecutionv1.WorkflowRef{
@@ -443,10 +434,7 @@ func NewNotificationRequest(name, namespace string, opts ...NotificationRequestO
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
-			UID:       types.UID(fmt.Sprintf("%s-uid", name)),
-			Labels: map[string]string{
-				"kubernaut.ai/component": "notification",
-			},
+			UID: types.UID(fmt.Sprintf("%s-uid", name)),
 		},
 		Spec: notificationv1.NotificationRequestSpec{
 			Type:     notifType,

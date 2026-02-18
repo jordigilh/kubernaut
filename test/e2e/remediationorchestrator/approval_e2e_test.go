@@ -119,9 +119,6 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("rar-%s", testRR.Name),
 					Namespace: testNamespace,
-					Labels: map[string]string{
-						"kubernaut.ai/remediation-request": testRR.Name,
-					},
 				},
 				Spec: remediationv1.RemediationApprovalRequestSpec{
 					RemediationRequestRef: corev1.ObjectReference{
@@ -374,9 +371,6 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("rar-%s", testRR.Name),
 					Namespace: testNamespace,
-					Labels: map[string]string{
-						"kubernaut.ai/remediation-request": testRR.Name,
-					},
 				},
 				Spec: remediationv1.RemediationApprovalRequestSpec{
 					RemediationRequestRef: corev1.ObjectReference{
