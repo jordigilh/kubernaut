@@ -59,7 +59,7 @@ import (
 
 // HandleCreateWorkflow handles POST /api/v1/workflows
 // DD-WORKFLOW-017: OCI-based workflow registration (pullspec-only)
-// BR-WORKFLOW-017-001: Accept only containerImage, pull OCI image, extract schema, populate catalog
+// BR-WORKFLOW-017-001: Accept only schemaImage, pull OCI image, extract schema, populate catalog
 func (h *Handler) HandleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 	// Step 1: Parse request body — expect only {"schemaImage": "..."}
 	var req struct {
@@ -99,7 +99,7 @@ func (h *Handler) HandleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 	workflow, err := h.buildWorkflowFromSchema(schemaParser, result, req.SchemaImage)
 	if err != nil {
 		h.logger.Error(err, "Failed to build workflow from extracted schema",
-			"container_image", req.SchemaImage,
+			"schema_image", req.SchemaImage,
 		)
 		response.WriteRFC7807Error(w, http.StatusInternalServerError, "internal-error", "Internal Server Error",
 			"Failed to process extracted schema", h.logger)
@@ -204,7 +204,7 @@ func (h *Handler) classifyExtractionError(w http.ResponseWriter, err error, cont
 	// Image pull failure: errors from the puller contain "pull image"
 	if strings.Contains(errMsg, "pull image") {
 		h.logger.Error(err, "OCI image pull failed",
-			"container_image", containerImage,
+			"schema_image", containerImage,
 		)
 		response.WriteRFC7807Error(w, http.StatusBadGateway, "image-pull-failed", "Image Pull Failed",
 			fmt.Sprintf("Failed to pull OCI image %q: %v", containerImage, err), h.logger)
@@ -214,7 +214,7 @@ func (h *Handler) classifyExtractionError(w http.ResponseWriter, err error, cont
 	// Schema not found: the extractor returns "not found in image layers"
 	if strings.Contains(errMsg, "not found in image layers") {
 		h.logger.Error(err, "workflow-schema.yaml not found in OCI image",
-			"container_image", containerImage,
+			"schema_image", containerImage,
 		)
 		response.WriteRFC7807Error(w, http.StatusUnprocessableEntity, "schema-not-found", "Schema Not Found",
 			fmt.Sprintf("/workflow-schema.yaml not found in OCI image %q", containerImage), h.logger)
@@ -224,7 +224,7 @@ func (h *Handler) classifyExtractionError(w http.ResponseWriter, err error, cont
 	// Schema validation failure: errors from ParseAndValidate contain "validate workflow-schema.yaml"
 	if strings.Contains(errMsg, "validate workflow-schema.yaml") {
 		h.logger.Error(err, "Invalid workflow-schema.yaml in OCI image",
-			"container_image", containerImage,
+			"schema_image", containerImage,
 		)
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "validation-error", "Schema Validation Error",
 			fmt.Sprintf("Invalid workflow-schema.yaml in image %q: %v", containerImage, err), h.logger)
@@ -233,7 +233,7 @@ func (h *Handler) classifyExtractionError(w http.ResponseWriter, err error, cont
 
 	// Fallback: unknown extraction error
 	h.logger.Error(err, "Unexpected error during OCI schema extraction",
-		"container_image", containerImage,
+		"schema_image", containerImage,
 	)
 	response.WriteRFC7807Error(w, http.StatusInternalServerError, "internal-error", "Internal Server Error",
 		fmt.Sprintf("Schema extraction failed: %v", err), h.logger)
@@ -435,7 +435,7 @@ func (h *Handler) HandleListWorkflows(w http.ResponseWriter, r *http.Request) {
 // DD-WORKFLOW-016, DD-HAPI-017: Security gate via optional context filters (Step 3)
 //
 // Returns complete workflow object including:
-// - spec.container_image: OCI container image reference (for HAPI validation)
+// - spec.schema_image: OCI container image reference (for HAPI validation)
 // - spec.parameters[]: Parameter schema (for LLM parameter validation)
 // - detected_labels: Signal type, severity labels (for workflow filtering)
 //

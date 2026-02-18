@@ -117,8 +117,8 @@ func MapToRRFields(parsedData *ParsedAuditData) (*ReconstructedRRFields, error) 
 			result.Status.SelectedWorkflowRef = &remediationv1.WorkflowReference{
 				WorkflowID:      parsedData.SelectedWorkflowRef.WorkflowID,
 				Version:         parsedData.SelectedWorkflowRef.Version,
-				ContainerImage:  parsedData.SelectedWorkflowRef.ContainerImage,
-				ContainerDigest: parsedData.SelectedWorkflowRef.ContainerDigest,
+				ExecutionBundle:  parsedData.SelectedWorkflowRef.ContainerImage,
+				ExecutionBundleDigest: parsedData.SelectedWorkflowRef.ContainerDigest,
 			}
 		}
 

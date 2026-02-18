@@ -164,7 +164,7 @@ func (c *ApprovalCreator) buildApprovalRequest(
 		recommendedWorkflow = remediationv1.RecommendedWorkflowSummary{
 			WorkflowID:     ai.Status.SelectedWorkflow.WorkflowID,
 			Version:        ai.Status.SelectedWorkflow.Version,
-			ContainerImage: ai.Status.SelectedWorkflow.ContainerImage,
+			ExecutionBundle: ai.Status.SelectedWorkflow.ExecutionBundle,
 			Rationale:      ai.Status.SelectedWorkflow.Rationale,
 		}
 	}

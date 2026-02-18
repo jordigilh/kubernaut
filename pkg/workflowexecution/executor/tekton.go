@@ -176,7 +176,7 @@ func (t *TektonExecutor) buildPipelineRun(wfe *workflowexecutionv1alpha1.Workflo
 				ResolverRef: tektonv1.ResolverRef{
 					Resolver: "bundles",
 					Params: []tektonv1.Param{
-						{Name: "bundle", Value: tektonv1.ParamValue{Type: tektonv1.ParamTypeString, StringVal: wfe.Spec.WorkflowRef.ContainerImage}},
+						{Name: "bundle", Value: tektonv1.ParamValue{Type: tektonv1.ParamTypeString, StringVal: wfe.Spec.WorkflowRef.ExecutionBundle}},
 						{Name: "name", Value: tektonv1.ParamValue{Type: tektonv1.ParamTypeString, StringVal: "workflow"}},
 						{Name: "kind", Value: tektonv1.ParamValue{Type: tektonv1.ParamTypeString, StringVal: "pipeline"}},
 					},

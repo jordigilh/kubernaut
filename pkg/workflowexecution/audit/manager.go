@@ -178,7 +178,7 @@ func (m *Manager) RecordWorkflowSelectionCompleted(ctx context.Context, wfe *wor
 	payload := api.WorkflowExecutionAuditPayload{
 		WorkflowID:      wfe.Spec.WorkflowRef.WorkflowID,
 		WorkflowVersion: wfe.Spec.WorkflowRef.Version,
-		ContainerImage:  wfe.Spec.WorkflowRef.ContainerImage,
+		ContainerImage:  wfe.Spec.WorkflowRef.ExecutionBundle,
 		ExecutionName:   wfe.Name,
 		Phase:           api.WorkflowExecutionAuditPayloadPhase(phase),
 		TargetResource:  wfe.Spec.TargetResource, // Already a string per CRD definition
@@ -257,7 +257,7 @@ func (m *Manager) RecordExecutionWorkflowStarted(
 	payload := api.WorkflowExecutionAuditPayload{
 		WorkflowID:      wfe.Spec.WorkflowRef.WorkflowID,
 		WorkflowVersion: wfe.Spec.WorkflowRef.Version,
-		ContainerImage:  wfe.Spec.WorkflowRef.ContainerImage,
+		ContainerImage:  wfe.Spec.WorkflowRef.ExecutionBundle,
 		ExecutionName:   wfe.Name,
 		Phase:           api.WorkflowExecutionAuditPayloadPhase(phase),
 		TargetResource:  wfe.Spec.TargetResource, // Already a string per CRD definition
@@ -357,7 +357,7 @@ func (m *Manager) recordAuditEvent(
 		WorkflowVersion: wfe.Spec.WorkflowRef.Version,
 		TargetResource:  wfe.Spec.TargetResource,
 		Phase:           api.WorkflowExecutionAuditPayloadPhase(wfe.Status.Phase),
-		ContainerImage:  wfe.Spec.WorkflowRef.ContainerImage,
+		ContainerImage:  wfe.Spec.WorkflowRef.ExecutionBundle,
 		ExecutionName:   wfe.Name,
 	}
 
@@ -512,7 +512,7 @@ func (m *Manager) recordFailureAuditWithDetails(ctx context.Context, wfe *workfl
 		WorkflowVersion: wfe.Spec.WorkflowRef.Version,
 		TargetResource:  wfe.Spec.TargetResource,
 		Phase:           api.WorkflowExecutionAuditPayloadPhase(wfe.Status.Phase),
-		ContainerImage:  wfe.Spec.WorkflowRef.ContainerImage,
+		ContainerImage:  wfe.Spec.WorkflowRef.ExecutionBundle,
 		ExecutionName:   wfe.Name,
 	}
 
