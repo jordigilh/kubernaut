@@ -34,6 +34,9 @@ import (
 // ========================================
 
 const (
+	// ConditionReady indicates the RemediationApprovalRequest is ready (aggregate condition)
+	ConditionReady = "Ready"
+
 	// ConditionApprovalPending indicates approval is awaiting human decision
 	ConditionApprovalPending = "ApprovalPending"
 
@@ -52,6 +55,12 @@ const (
 // ========================================
 // CONDITION REASONS
 // ========================================
+
+// Ready reasons
+const (
+	ReasonReady    = "Ready"
+	ReasonNotReady = "NotReady"
+)
 
 // ApprovalPending reasons
 const (
@@ -104,6 +113,7 @@ func SetCondition(rar *remediationv1.RemediationApprovalRequest, conditionType s
 		LastTransitionTime: metav1.Now(),
 		Reason:             reason,
 		Message:            message,
+		ObservedGeneration: rar.Generation,
 	}
 	meta.SetStatusCondition(&rar.Status.Conditions, condition)
 
@@ -134,6 +144,15 @@ func GetCondition(rar *remediationv1.RemediationApprovalRequest, conditionType s
 // ========================================
 // TYPE-SPECIFIC SETTERS
 // ========================================
+
+// SetReady sets the Ready condition on the RemediationApprovalRequest
+func SetReady(rar *remediationv1.RemediationApprovalRequest, ready bool, reason, message string, m *rometrics.Metrics) {
+	status := metav1.ConditionTrue
+	if !ready {
+		status = metav1.ConditionFalse
+	}
+	SetCondition(rar, ConditionReady, status, reason, message, m)
+}
 
 // SetApprovalPending sets the ApprovalPending condition
 func SetApprovalPending(rar *remediationv1.RemediationApprovalRequest, pending bool, message string, m *rometrics.Metrics) {

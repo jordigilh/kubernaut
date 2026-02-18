@@ -37,6 +37,9 @@ import (
 
 // Condition types for SignalProcessing
 const (
+	// ConditionReady indicates the SignalProcessing is ready (or not)
+	ConditionReady = "Ready"
+
 	// ConditionEnrichmentComplete indicates K8s context enrichment phase finished
 	ConditionEnrichmentComplete = "EnrichmentComplete"
 
@@ -138,6 +141,12 @@ const (
 	ReasonValidationFailed = "ValidationFailed"
 )
 
+// Ready condition reasons
+const (
+	ReasonReady    = "Ready"
+	ReasonNotReady = "NotReady"
+)
+
 // ========================================
 // GENERIC CONDITION HELPERS
 // ========================================
@@ -151,8 +160,18 @@ func SetCondition(sp *spv1.SignalProcessing, conditionType string, status metav1
 		LastTransitionTime: metav1.Now(),
 		Reason:             reason,
 		Message:            message,
+		ObservedGeneration: sp.Generation,
 	}
 	meta.SetStatusCondition(&sp.Status.Conditions, condition)
+}
+
+// SetReady sets the Ready condition on the SignalProcessing.
+func SetReady(sp *spv1.SignalProcessing, ready bool, reason, message string) {
+	status := metav1.ConditionTrue
+	if !ready {
+		status = metav1.ConditionFalse
+	}
+	SetCondition(sp, ConditionReady, status, reason, message)
 }
 
 // GetCondition returns the condition with the specified type, or nil if not found.
