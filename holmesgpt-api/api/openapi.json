@@ -790,7 +790,7 @@
             "title": "Workflow Id",
             "description": "Workflow identifier"
           },
-          "container_image": {
+          "execution_bundle": {
             "anyOf": [
               {
                 "type": "string"
@@ -1430,7 +1430,7 @@
               }
             ],
             "title": "Selected Workflow",
-            "description": "Selected workflow with workflow_id, containerImage, confidence, parameters"
+            "description": "Selected workflow with workflow_id, execution_bundle, confidence, parameters"
           },
           "confidence": {
             "type": "number",
@@ -1783,7 +1783,7 @@
               "summary": "Memory exhaustion causing OOMKilled in production pod"
             },
             "selected_workflow": {
-              "container_image": "kubernaut/workflow-scale:v1.0.0",
+              "execution_bundle": "kubernaut/workflow-scale:v1.0.0",
               "parameters": {
                 "TARGET_REPLICAS": "5"
               },
@@ -2014,10 +2014,10 @@
             "title": "Version",
             "description": "Workflow version"
           },
-          "container_image": {
+          "execution_bundle": {
             "type": "string",
-            "title": "Container Image",
-            "description": "Container image used for execution"
+            "title": "Execution Bundle",
+            "description": "OCI execution bundle reference (digest-pinned)"
           },
           "parameters": {
             "additionalProperties": {
@@ -2037,7 +2037,7 @@
         "required": [
           "workflow_id",
           "version",
-          "container_image",
+          "execution_bundle",
           "rationale"
         ],
         "title": "SelectedWorkflowSummary",
