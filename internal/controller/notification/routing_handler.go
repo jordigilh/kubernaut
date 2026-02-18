@@ -56,6 +56,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
+	kubernautnotif "github.com/jordigilh/kubernaut/pkg/notification"
 	"github.com/jordigilh/kubernaut/pkg/notification/routing"
 )
 
@@ -74,33 +75,30 @@ func (r *NotificationRequestReconciler) resolveChannelsFromRouting( //nolint:unu
 	ctx context.Context,
 	notification *notificationv1alpha1.NotificationRequest,
 ) []notificationv1alpha1.Channel {
-	channels, _ := r.resolveChannelsFromRoutingWithDetails(ctx, notification)
+	channels, _, _ := r.resolveChannelsFromRoutingWithDetails(ctx, notification)
 	return channels
 }
 
 // resolveChannelsFromRoutingWithDetails resolves channels and returns routing details for BR-NOT-069 condition.
-// BR-NOT-069: Return routing message for RoutingResolved condition visibility
+// Returns (channels, routingReason, routingMessage) so callers can set the correct RoutingResolved reason.
 func (r *NotificationRequestReconciler) resolveChannelsFromRoutingWithDetails(
 	ctx context.Context,
 	notification *notificationv1alpha1.NotificationRequest,
-) ([]notificationv1alpha1.Channel, string) {
+) ([]notificationv1alpha1.Channel, string, string) {
 	logger := log.FromContext(ctx)
 
-	// BR-NOT-067: Use Router for thread-safe routing with hot-reload support
 	if r.Router == nil {
 		logger.Info("No routing router initialized, using default console channel",
 			"notification", notification.Name)
 		return []notificationv1alpha1.Channel{notificationv1alpha1.ChannelConsole},
+			kubernautnotif.ReasonRoutingFallback,
 			"No routing configuration, using console fallback"
 	}
 
 	routingAttrs := routing.RoutingAttributesFromSpec(notification)
 	logger.V(1).Info("Routing attributes from spec", "attributes", routingAttrs)
 
-	// BR-NOT-067: Find matching receiver using thread-safe Router
 	receiver := r.Router.FindReceiver(routingAttrs)
-
-	// Convert receiver to channels
 	channels := r.receiverToChannels(receiver)
 
 	logger.Info("Resolved channels from routing",
@@ -108,19 +106,21 @@ func (r *NotificationRequestReconciler) resolveChannelsFromRoutingWithDetails(
 		"receiver", receiver.Name,
 		"channels", channels)
 
-	// BR-NOT-069: Build routing message for RoutingResolved condition
-	var routingMessage string
-	if receiver.Name == "console-fallback" || len(channels) == 0 {
+	isFallback := receiver.Name == "console-fallback" || len(channels) == 0
+	var routingReason, routingMessage string
+	if isFallback {
+		routingReason = kubernautnotif.ReasonRoutingFallback
 		attrsPart := r.formatAttributesForCondition(routingAttrs)
 		routingMessage = fmt.Sprintf("No routing rules matched %s, using console fallback", attrsPart)
 	} else {
+		routingReason = kubernautnotif.ReasonRoutingRuleMatched
 		attrsPart := r.formatAttributesForCondition(routingAttrs)
 		channelsPart := r.formatChannelsForCondition(channels)
 		routingMessage = fmt.Sprintf("Matched rule '%s' %s → channels: %s",
 			receiver.Name, attrsPart, channelsPart)
 	}
 
-	return channels, routingMessage
+	return channels, routingReason, routingMessage
 }
 
 // ========================================
