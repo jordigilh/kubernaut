@@ -99,10 +99,8 @@ func (c *WorkflowExecutionCreator) Create(
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: rr.Namespace,
-			Labels: map[string]string{
-				"kubernaut.ai/remediation-request": rr.Name,
-				"kubernaut.ai/component":           "workflow-execution",
-			},
+			// Issue #91: labels removed; parent tracked via spec.remediationRequestRef + ownerRef
+
 		},
 		Spec: workflowexecutionv1.WorkflowExecutionSpec{
 			// Parent reference for audit trail (REQUIRED)

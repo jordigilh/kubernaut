@@ -198,12 +198,8 @@ func (c *ApprovalCreator) buildApprovalRequest(
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: rr.Namespace,
-			Labels: map[string]string{
-				"kubernaut.ai/remediation-request": rr.Name,
-				"kubernaut.ai/ai-analysis":         ai.Name,
-				"kubernaut.ai/confidence-level":    confidenceLevel,
-				"kubernaut.ai/component":           "approval",
-			},
+			// Issue #91: labels removed; parent tracked via spec.remediationRequestRef + ownerRef
+
 		},
 		Spec: remediationv1.RemediationApprovalRequestSpec{
 			RemediationRequestRef: rrRef,

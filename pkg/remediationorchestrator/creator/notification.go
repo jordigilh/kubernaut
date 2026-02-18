@@ -115,12 +115,6 @@ func (c *NotificationCreator) CreateApprovalNotification(
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: rr.Namespace,
-			Labels: map[string]string{
-				"kubernaut.ai/remediation-request": rr.Name,
-				"kubernaut.ai/notification-type":   "approval",
-				"kubernaut.ai/severity":            rr.Spec.Severity,
-				"kubernaut.ai/component":           "remediation-orchestrator",
-			},
 		},
 		Spec: notificationv1.NotificationRequestSpec{
 			// BR-NOT-064: Parent reference for audit correlation and lineage tracking
@@ -134,6 +128,7 @@ func (c *NotificationCreator) CreateApprovalNotification(
 			Type: notificationv1.NotificationTypeApproval,
 			// Priority now from AIAnalysis.Spec.SignalContext.BusinessPriority (set by SP, not RR.Spec)
 			Priority: c.mapPriority(ai.Spec.AnalysisRequest.SignalContext.BusinessPriority),
+			Severity: rr.Spec.Severity,
 			Subject:  fmt.Sprintf("Approval Required: %s", rr.Spec.SignalName),
 			Body:     c.buildApprovalBody(rr, ai),
 			Channels: channels,
@@ -299,12 +294,6 @@ func (c *NotificationCreator) CreateCompletionNotification(
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: rr.Namespace,
-			Labels: map[string]string{
-				"kubernaut.ai/remediation-request": rr.Name,
-				"kubernaut.ai/notification-type":   "completion",
-				"kubernaut.ai/severity":            rr.Spec.Severity,
-				"kubernaut.ai/component":           "remediation-orchestrator",
-			},
 		},
 		Spec: notificationv1.NotificationRequestSpec{
 			// BR-NOT-064: Parent reference for audit correlation and lineage tracking
@@ -316,7 +305,8 @@ func (c *NotificationCreator) CreateCompletionNotification(
 				UID:        rr.UID,
 			},
 			Type:     notificationv1.NotificationTypeCompletion,
-			Priority: notificationv1.NotificationPriorityLow, // Completion is informational
+			Priority: notificationv1.NotificationPriorityLow,
+			Severity: rr.Spec.Severity,
 			Subject:  fmt.Sprintf("Remediation Completed: %s", rr.Spec.SignalName),
 			Body:     c.buildCompletionBody(rr, ai, rootCause, workflowID, executionEngine),
 			Channels: []notificationv1.Channel{notificationv1.ChannelSlack, notificationv1.ChannelFile},
@@ -427,12 +417,6 @@ func (c *NotificationCreator) CreateBulkDuplicateNotification(
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: rr.Namespace,
-			Labels: map[string]string{
-				"kubernaut.ai/remediation-request": rr.Name,
-				"kubernaut.ai/notification-type":   "bulk-duplicate",
-				"kubernaut.ai/severity":            "low", // Informational
-				"kubernaut.ai/component":           "remediation-orchestrator",
-			},
 		},
 		Spec: notificationv1.NotificationRequestSpec{
 			// BR-NOT-064: Parent reference for audit correlation and lineage tracking
@@ -443,8 +427,9 @@ func (c *NotificationCreator) CreateBulkDuplicateNotification(
 				Namespace:  rr.Namespace,
 				UID:        rr.UID,
 			},
-			Type:     notificationv1.NotificationTypeSimple, // Informational
+			Type:     notificationv1.NotificationTypeSimple,
 			Priority: notificationv1.NotificationPriorityLow,
+			Severity: "low",
 			Subject:  fmt.Sprintf("Remediation Completed with %d Duplicates", rr.Status.DuplicateCount),
 			Body:     c.buildBulkDuplicateBody(rr),
 			Channels: []notificationv1.Channel{notificationv1.ChannelSlack}, // Lower priority channel
@@ -591,13 +576,6 @@ func (c *NotificationCreator) CreateManualReviewNotification(
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: rr.Namespace,
-			Labels: map[string]string{
-				"kubernaut.ai/remediation-request": rr.Name,
-				"kubernaut.ai/notification-type":   "manual-review",
-				"kubernaut.ai/review-source":       string(reviewCtx.Source),
-				"kubernaut.ai/severity":            rr.Spec.Severity,
-				"kubernaut.ai/component":           "remediation-orchestrator",
-			},
 		},
 		Spec: notificationv1.NotificationRequestSpec{
 			// BR-NOT-064: Parent reference for audit correlation and lineage tracking
@@ -608,8 +586,10 @@ func (c *NotificationCreator) CreateManualReviewNotification(
 				Namespace:  rr.Namespace,
 				UID:        rr.UID,
 			},
-			Type:     notificationv1.NotificationTypeManualReview,
-			Priority: priority,
+			Type:         notificationv1.NotificationTypeManualReview,
+			Priority:     priority,
+			Severity:     rr.Spec.Severity,
+			ReviewSource: string(reviewCtx.Source),
 			Subject:  fmt.Sprintf("⚠️ Manual Review Required: %s", rr.Spec.SignalName),
 			Body:     c.buildManualReviewBody(rr, reviewCtx),
 			Channels: channels,
