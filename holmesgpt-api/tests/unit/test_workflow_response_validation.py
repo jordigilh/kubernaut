@@ -69,8 +69,8 @@ class TestDataStorageClientGetWorkflowByUUID:
             "content": "apiVersion: tekton.dev/v1beta1...",
             "content_hash": "sha256:abc123",
             "labels": {"signal_type": "OOMKilled", "severity": ["critical"]},
-            "container_image": "ghcr.io/kubernaut/restart-pod:v1.0.0",
-            "container_digest": "sha256:def456",
+            "schema_image": "ghcr.io/kubernaut/restart-pod:v1.0.0",
+            "schema_digest": "sha256:def456",
             "status": "active",
             "is_latest_version": True,
             "parameters": {
@@ -747,7 +747,7 @@ class TestCompleteValidationFlow:
         """
         DD-HAPI-002: All validation passes.
 
-        Given: Valid workflow_id, correct container_image, valid parameters
+        Given: Valid workflow_id, correct execution_bundle, valid parameters
         When: validate() is called
         Then: Returns is_valid=True with no errors
         """

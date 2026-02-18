@@ -46,7 +46,7 @@ class TestPreviousExecution(unittest.TestCase):
                 selected_workflow = holmesgpt_api_client.models.selected_workflow_summary.SelectedWorkflowSummary(
                     workflow_id = '', 
                     version = '', 
-                    container_image = '', 
+                    execution_bundle = '', 
                     parameters = {
                         'key' : ''
                         }, 
@@ -74,7 +74,7 @@ class TestPreviousExecution(unittest.TestCase):
                 selected_workflow = holmesgpt_api_client.models.selected_workflow_summary.SelectedWorkflowSummary(
                     workflow_id = '', 
                     version = '', 
-                    container_image = '', 
+                    execution_bundle = '', 
                     parameters = {
                         'key' : ''
                         }, 
