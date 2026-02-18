@@ -103,10 +103,10 @@ func (r *Router) GetConfig() *Config {
 	return r.config
 }
 
-// FindReceiver finds the matching receiver for the given labels.
-// BR-NOT-065: Label-based routing with ordered evaluation
+// FindReceiver finds the matching receiver for the given routing attributes.
+// BR-NOT-065: Attribute-based routing with ordered evaluation
 // Thread-safe read access.
-func (r *Router) FindReceiver(labels map[string]string) *Receiver {
+func (r *Router) FindReceiver(attrs map[string]string) *Receiver {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -115,25 +115,23 @@ func (r *Router) FindReceiver(labels map[string]string) *Receiver {
 		return defaultConsoleReceiver()
 	}
 
-	// Find matching receiver name
-	receiverName := r.config.Route.FindReceiver(labels)
+	receiverName := r.config.Route.FindReceiver(attrs)
 	if receiverName == "" {
 		r.logger.V(1).Info("No matching route found, using default console fallback",
-			"labels", labels)
+			"attributes", attrs)
 		return defaultConsoleReceiver()
 	}
 
-	// Look up receiver by name
 	receiver := r.config.GetReceiver(receiverName)
 	if receiver == nil {
 		r.logger.Error(nil, "Receiver not found in config",
 			"receiverName", receiverName,
-			"labels", labels)
+			"attributes", attrs)
 		return defaultConsoleReceiver()
 	}
 
 	r.logger.V(1).Info("Resolved receiver from routing rules",
-		"labels", labels,
+		"attributes", attrs,
 		"receiver", receiverName,
 	)
 
