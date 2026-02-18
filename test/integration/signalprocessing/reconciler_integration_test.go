@@ -1380,8 +1380,8 @@ labels["team"] := ["platform"  // Missing closing bracket
 			Expect(spconditions.IsConditionTrue(&final, spconditions.ConditionProcessingComplete)).To(BeTrue(),
 				"ProcessingComplete should be True")
 
-			// Verify all 4 conditions exist
-			Expect(final.Status.Conditions).To(HaveLen(4), "Should have exactly 4 conditions")
+			// Verify all 5 conditions exist (EnrichmentComplete, ClassificationComplete, CategorizationComplete, ProcessingComplete, Ready)
+			Expect(final.Status.Conditions).To(HaveLen(5), "Should have exactly 5 conditions")
 		})
 
 		It("BR-SP-110: should have informative condition messages", func() {

@@ -162,7 +162,7 @@ var _ = Describe("BR-NOT-051: Status Tracking", func() {
 
 				Expect(fakeClient.Create(ctx, notification)).To(Succeed())
 
-				err := statusManager.UpdatePhase(ctx, notification, newPhase, "TestReason", "Test message")
+				err := statusManager.UpdatePhase(ctx, notification, newPhase, "TestReason", "Test message", nil)
 
 				if shouldSucceed {
 					Expect(err).ToNot(HaveOccurred())
@@ -202,7 +202,7 @@ var _ = Describe("BR-NOT-051: Status Tracking", func() {
 			Expect(fakeClient.Create(ctx, notification)).To(Succeed())
 
 			// Update to terminal phase (Sent)
-			err := statusManager.UpdatePhase(ctx, notification, notificationv1alpha1.NotificationPhaseSent, "AllDeliveriesSucceeded", "All channels delivered")
+			err := statusManager.UpdatePhase(ctx, notification, notificationv1alpha1.NotificationPhaseSent, "AllDeliveriesSucceeded", "All channels delivered", nil)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Verify completion time set
@@ -242,6 +242,124 @@ var _ = Describe("BR-NOT-051: Status Tracking", func() {
 			}, updated)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(updated.Status.ObservedGeneration).To(Equal(int64(3)))
+		})
+	})
+
+	// Issue #79 Phase 1b: Conditions parameter in AtomicStatusUpdate and UpdatePhase
+	Context("UT-NT-079-001: AtomicStatusUpdate conditions persistence", func() {
+		It("should persist conditions passed through the conditions parameter", func() {
+			nr := &notificationv1alpha1.NotificationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "cond-atomic-test",
+					Namespace:  "kubernaut-notifications",
+					Generation: 2,
+				},
+				Status: notificationv1alpha1.NotificationRequestStatus{
+					Phase: notificationv1alpha1.NotificationPhaseSending,
+				},
+			}
+			Expect(fakeClient.Create(ctx, nr)).To(Succeed())
+
+			conditions := []metav1.Condition{
+				{
+					Type:               "RoutingResolved",
+					Status:             metav1.ConditionTrue,
+					Reason:             "RoutingRuleMatched",
+					Message:            "Matched rule 'prod-critical'",
+					ObservedGeneration: 2,
+				},
+			}
+
+			err := statusManager.AtomicStatusUpdate(
+				ctx, nr,
+				notificationv1alpha1.NotificationPhaseSent,
+				"Delivered", "All channels succeeded",
+				nil, // no delivery attempts
+				conditions,
+			)
+			Expect(err).ToNot(HaveOccurred())
+
+			updated := &notificationv1alpha1.NotificationRequest{}
+			Expect(fakeClient.Get(ctx, types.NamespacedName{
+				Name:      "cond-atomic-test",
+				Namespace: "kubernaut-notifications",
+			}, updated)).To(Succeed())
+
+			Expect(updated.Status.Phase).To(Equal(notificationv1alpha1.NotificationPhaseSent))
+			Expect(updated.Status.Conditions).To(HaveLen(1))
+			Expect(updated.Status.Conditions[0].Type).To(Equal("RoutingResolved"))
+			Expect(updated.Status.Conditions[0].Reason).To(Equal("RoutingRuleMatched"))
+		})
+
+		It("should accept nil conditions without error", func() {
+			nr := &notificationv1alpha1.NotificationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "cond-nil-test",
+					Namespace:  "kubernaut-notifications",
+					Generation: 1,
+				},
+				Status: notificationv1alpha1.NotificationRequestStatus{
+					Phase: notificationv1alpha1.NotificationPhaseSending,
+				},
+			}
+			Expect(fakeClient.Create(ctx, nr)).To(Succeed())
+
+			err := statusManager.AtomicStatusUpdate(
+				ctx, nr,
+				notificationv1alpha1.NotificationPhaseSent,
+				"Delivered", "OK",
+				nil, nil,
+			)
+			Expect(err).ToNot(HaveOccurred())
+
+			updated := &notificationv1alpha1.NotificationRequest{}
+			Expect(fakeClient.Get(ctx, types.NamespacedName{
+				Name:      "cond-nil-test",
+				Namespace: "kubernaut-notifications",
+			}, updated)).To(Succeed())
+			Expect(updated.Status.Conditions).To(BeEmpty())
+		})
+	})
+
+	Context("UT-NT-079-002: UpdatePhase conditions persistence", func() {
+		It("should persist conditions passed through the conditions parameter", func() {
+			nr := &notificationv1alpha1.NotificationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "cond-phase-test",
+					Namespace:  "kubernaut-notifications",
+					Generation: 1,
+				},
+				Status: notificationv1alpha1.NotificationRequestStatus{},
+			}
+			Expect(fakeClient.Create(ctx, nr)).To(Succeed())
+
+			conditions := []metav1.Condition{
+				{
+					Type:               "RoutingResolved",
+					Status:             metav1.ConditionTrue,
+					Reason:             "RoutingFallback",
+					Message:            "Using console fallback",
+					ObservedGeneration: 1,
+				},
+			}
+
+			err := statusManager.UpdatePhase(
+				ctx, nr,
+				notificationv1alpha1.NotificationPhasePending,
+				"Initialized", "Notification request received",
+				conditions,
+			)
+			Expect(err).ToNot(HaveOccurred())
+
+			updated := &notificationv1alpha1.NotificationRequest{}
+			Expect(fakeClient.Get(ctx, types.NamespacedName{
+				Name:      "cond-phase-test",
+				Namespace: "kubernaut-notifications",
+			}, updated)).To(Succeed())
+
+			Expect(updated.Status.Phase).To(Equal(notificationv1alpha1.NotificationPhasePending))
+			Expect(updated.Status.Conditions).To(HaveLen(1))
+			Expect(updated.Status.Conditions[0].Reason).To(Equal("RoutingFallback"))
 		})
 	})
 })

@@ -204,4 +204,67 @@ var _ = Describe("Notification Conditions", func() {
 			})
 		})
 	})
+
+	// Issue #79 Phase 1a: Generic condition helpers
+	Describe("SetCondition", func() {
+		Context("when setting an arbitrary condition type", func() {
+			It("should create the condition with correct values", func() {
+				notification.SetCondition(
+					notifReq,
+					"TestCondition",
+					metav1.ConditionTrue,
+					"TestReason",
+					"test message",
+				)
+
+				Expect(notifReq.Status.Conditions).To(HaveLen(1))
+				c := notifReq.Status.Conditions[0]
+				Expect(c.Type).To(Equal("TestCondition"))
+				Expect(c.Status).To(Equal(metav1.ConditionTrue))
+				Expect(c.Reason).To(Equal("TestReason"))
+				Expect(c.Message).To(Equal("test message"))
+				Expect(c.ObservedGeneration).To(Equal(int64(1)))
+			})
+		})
+
+		Context("when setting multiple different condition types", func() {
+			It("should store each condition independently", func() {
+				notification.SetCondition(notifReq, "CondA", metav1.ConditionTrue, "ReasonA", "msg A")
+				notification.SetCondition(notifReq, "CondB", metav1.ConditionFalse, "ReasonB", "msg B")
+
+				Expect(notifReq.Status.Conditions).To(HaveLen(2))
+			})
+		})
+
+		Context("when updating an existing condition", func() {
+			It("should update in place without duplicating", func() {
+				notification.SetCondition(notifReq, "CondA", metav1.ConditionTrue, "R1", "first")
+				notification.SetCondition(notifReq, "CondA", metav1.ConditionFalse, "R2", "second")
+
+				Expect(notifReq.Status.Conditions).To(HaveLen(1))
+				c := notifReq.Status.Conditions[0]
+				Expect(c.Status).To(Equal(metav1.ConditionFalse))
+				Expect(c.Reason).To(Equal("R2"))
+			})
+		})
+	})
+
+	Describe("GetCondition", func() {
+		Context("when condition exists", func() {
+			It("should return the condition", func() {
+				notification.SetCondition(notifReq, "TestCond", metav1.ConditionTrue, "R", "m")
+
+				c := notification.GetCondition(notifReq, "TestCond")
+				Expect(c).NotTo(BeNil())
+				Expect(c.Type).To(Equal("TestCond"))
+			})
+		})
+
+		Context("when condition does not exist", func() {
+			It("should return nil", func() {
+				c := notification.GetCondition(notifReq, "NonExistent")
+				Expect(c).To(BeNil())
+			})
+		})
+	})
 })
