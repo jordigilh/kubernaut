@@ -129,7 +129,7 @@ var _ = Describe("WorkflowExecution Controller K8s Events [DD-EVENT-001]", func(
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID:     "restart-deployment",
 						Version:        "v1",
-						ContainerImage: "registry.example.com/workflows/restart:v1",
+						ExecutionBundle: "registry.example.com/workflows/restart:v1",
 					},
 				},
 			}
@@ -193,7 +193,7 @@ var _ = Describe("WorkflowExecution Controller K8s Events [DD-EVENT-001]", func(
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID:     "restart-deployment",
 						Version:        "v1",
-						ContainerImage: "registry.example.com/workflows/restart:v1",
+						ExecutionBundle: "registry.example.com/workflows/restart:v1",
 					},
 				},
 			}
@@ -257,7 +257,7 @@ var _ = Describe("WorkflowExecution Controller K8s Events [DD-EVENT-001]", func(
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID:     "restart-deployment",
 						Version:        "v1",
-						ContainerImage: "registry.example.com/workflows/restart:v1",
+						ExecutionBundle: "registry.example.com/workflows/restart:v1",
 					},
 				},
 			}

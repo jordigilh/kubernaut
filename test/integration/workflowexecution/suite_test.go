@@ -448,7 +448,7 @@ func createUniqueWFE(testID, targetResource string) *workflowexecutionv1alpha1.W
 			WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 				WorkflowID:     "test-workflow",
 				Version:        "v1.0.0",
-				ContainerImage: "ghcr.io/kubernaut/workflows/test@sha256:abc123",
+				ExecutionBundle: "ghcr.io/kubernaut/workflows/test@sha256:abc123",
 			},
 			TargetResource:  targetResource,
 			ExecutionEngine: "tekton",

@@ -463,7 +463,7 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 				WorkflowID:     "wf-restart-pods",
 				Version:        "v1.0.0",
 				Confidence:     0.72,
-				ContainerImage: "kubernaut/workflows:latest",
+				ExecutionBundle: "kubernaut/workflows:latest",
 				Rationale:      "Pod restart recommended based on OOM patterns",
 			}
 			ai.Status.RootCause = "Memory leak causing OOM kills"
@@ -524,7 +524,7 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 				WorkflowID:     "wf-restart-pods",
 				Version:        "v1.0.0",
 				Confidence:     0.70,
-				ContainerImage: "kubernaut/workflows:latest",
+				ExecutionBundle: "kubernaut/workflows:latest",
 				Rationale:      "Restart recommended",
 			}
 			now := metav1.Now()
@@ -595,7 +595,7 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 			WorkflowID:     "wf-restart-pods",
 			Version:        "v1.0.0",
 			Confidence:     0.70,
-			ContainerImage: "kubernaut/workflows:latest",
+			ExecutionBundle: "kubernaut/workflows:latest",
 			Rationale:      "Restart recommended",
 		}
 		now := metav1.Now()

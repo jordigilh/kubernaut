@@ -137,7 +137,7 @@ var _ = Describe("WorkflowExecution K8s Event Observability (DD-EVENT-001, BR-WE
 		It("should emit WorkflowValidationFailed when spec is invalid", func() {
 			// Create WFE with empty ContainerImage (ValidateSpec rejects this)
 			wfe := createUniqueWFE("events-invalid", "default/deployment/test-pod")
-			wfe.Spec.WorkflowRef.ContainerImage = ""
+			wfe.Spec.WorkflowRef.ExecutionBundle = ""
 
 			defer func() {
 				_ = k8sClient.Delete(ctx, wfe)

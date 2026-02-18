@@ -89,7 +89,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 			Component:       "deployment",
 			Environment:     "production",
 			Priority:        "*",
-			ContainerImage:  "quay.io/kubernaut-cicd/test-workflows/crashloop-config-fix-job:v1.0.0",
+			SchemaImage:  "quay.io/kubernaut-cicd/test-workflows/crashloop-config-fix-job:v1.0.0",
 			ExecutionEngine: "job",
 			// DD-WORKFLOW-017: SchemaParameters mirror OCI image's /workflow-schema.yaml for documentation.
 			// Actual schema comes from OCI image via pullspec-only registration.
@@ -123,7 +123,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 			Component:       "deployment",
 			Environment:     "production",
 			Priority:        "*",
-			ContainerImage:  "quay.io/kubernaut-cicd/test-workflows/oomkill-increase-memory-job:v1.0.0",
+			SchemaImage:  "quay.io/kubernaut-cicd/test-workflows/oomkill-increase-memory-job:v1.0.0",
 			ExecutionEngine: "job",
 			// DD-WORKFLOW-017: SchemaParameters mirror OCI image's /workflow-schema.yaml for documentation.
 			// Actual schema comes from OCI image via pullspec-only registration.

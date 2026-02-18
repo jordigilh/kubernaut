@@ -278,8 +278,8 @@ func NewCompletedAIAnalysis(name, namespace string) *aianalysisv1.AIAnalysis {
 		SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
 			WorkflowID:      "pod-restart-workflow",
 			Version:         "v1.0.0",
-			ContainerImage:  "kubernaut/workflows/pod-restart:v1.0.0",
-			ContainerDigest: "sha256:abc123",
+			ExecutionBundle:  "kubernaut/workflows/pod-restart:v1.0.0",
+			ExecutionBundleDigest: "sha256:abc123",
 			Confidence:      0.95,
 			Rationale:       "High confidence match for pod restart scenario",
 			Parameters: map[string]string{
@@ -297,8 +297,8 @@ func NewAIAnalysisRequiringApproval(name, namespace, approvalReason string) *aia
 		SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
 			WorkflowID:      "deployment-rollback-workflow",
 			Version:         "v1.0.0",
-			ContainerImage:  "kubernaut/workflows/deployment-rollback:v1.0.0",
-			ContainerDigest: "sha256:def456",
+			ExecutionBundle:  "kubernaut/workflows/deployment-rollback:v1.0.0",
+			ExecutionBundleDigest: "sha256:def456",
 			Confidence:      0.65, // Low confidence triggers approval
 			Rationale:       "Moderate confidence - human review recommended",
 			Parameters: map[string]string{
@@ -350,8 +350,8 @@ func NewWorkflowExecution(name, namespace string, opts ...WorkflowExecutionOpts)
 			WorkflowRef: workflowexecutionv1.WorkflowRef{
 				WorkflowID:      "pod-restart-workflow",
 				Version:         "v1.0.0",
-				ContainerImage:  "kubernaut/workflows/pod-restart:v1.0.0",
-				ContainerDigest: "sha256:abc123",
+				ExecutionBundle:  "kubernaut/workflows/pod-restart:v1.0.0",
+				ExecutionBundleDigest: "sha256:abc123",
 			},
 			TargetResource: fmt.Sprintf("%s/Pod/test-pod", namespace),
 			Parameters: map[string]string{

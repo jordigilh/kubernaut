@@ -251,7 +251,7 @@ var _ = Describe("InvestigatingHandler", func() {
 					"",                                    // rcaSummary
 					"",                                    // rcaSeverity
 					"wf-scale-deployment",                 // workflowID
-					"kubernaut.io/workflows/scale:v1.0.0", // containerImage
+					"kubernaut.io/workflows/scale:v1.0.0", // executionBundle
 					0.7,                                   // workflowConfidence
 					"",                                    // workflowRationale
 					false,                                 // includeAlternatives
@@ -280,7 +280,7 @@ var _ = Describe("InvestigatingHandler", func() {
 					"OOM caused by memory leak",             // rcaSummary
 					"high",                                  // rcaSeverity
 					"wf-restart-pod",                        // workflowID
-					"kubernaut.io/workflows/restart:v1.0.0", // containerImage
+					"kubernaut.io/workflows/restart:v1.0.0", // executionBundle
 					0.92,                                    // workflowConfidence
 					"Selected for OOM recovery",             // workflowRationale
 					true,                                    // includeAlternatives
@@ -309,7 +309,7 @@ var _ = Describe("InvestigatingHandler", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.SelectedWorkflow).NotTo(BeNil())
 				Expect(analysis.Status.SelectedWorkflow.WorkflowID).To(Equal("wf-restart-pod"))
-				Expect(analysis.Status.SelectedWorkflow.ContainerImage).To(Equal("kubernaut.io/workflows/restart:v1.0.0"))
+				Expect(analysis.Status.SelectedWorkflow.ExecutionBundle).To(Equal("kubernaut.io/workflows/restart:v1.0.0"))
 				Expect(analysis.Status.SelectedWorkflow.Confidence).To(BeNumerically("~", 0.92, 0.01))
 				Expect(analysis.Status.SelectedWorkflow.Rationale).To(Equal("Selected for OOM recovery"))
 			})
@@ -880,7 +880,7 @@ var _ = Describe("InvestigatingHandler", func() {
 					"Memory leak detected",    // rcaSummary
 					"high",                    // rcaSeverity
 					"restart-pod-v1",          // workflowID
-					"kubernaut/restart:v1",    // containerImage
+					"kubernaut/restart:v1",    // executionBundle
 					0.90,                      // workflowConfidence
 					"Pod restart recommended", // workflowRationale
 					false,                     // includeAlternatives
@@ -978,7 +978,7 @@ var _ = Describe("InvestigatingHandler", func() {
 						SelectedWorkflow: aianalysisv1.SelectedWorkflowSummary{
 							WorkflowID:     "restart-pod-v1",
 							Version:        "1.0",
-							ContainerImage: "kubernaut.io/workflows/restart:v1",
+							ExecutionBundle: "kubernaut.io/workflows/restart:v1",
 						},
 						Failure: aianalysisv1.ExecutionFailure{
 							FailedStepIndex: 2,

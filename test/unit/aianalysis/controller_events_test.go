@@ -279,7 +279,7 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 			testAnalysis.Status.Message = "Analysis in progress"
 			testAnalysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowID:     "wf-restart-pod",
-				ContainerImage: "kubernaut.io/workflows/restart-pod:v1.0.0",
+				ExecutionBundle: "kubernaut.io/workflows/restart-pod:v1.0.0",
 				Confidence:     0.85,
 			}
 			Expect(fakeClient.Status().Update(ctx, testAnalysis)).To(Succeed())
@@ -422,7 +422,7 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 			testAnalysis.Status.Phase = aianalysis.PhaseAnalyzing
 			testAnalysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowID:     "wf-restart-pod",
-				ContainerImage: "kubernaut.io/workflows/restart-pod:v1.0.0",
+				ExecutionBundle: "kubernaut.io/workflows/restart-pod:v1.0.0",
 				Confidence:     0.85,
 			}
 			Expect(fakeClient.Status().Update(ctx, testAnalysis)).To(Succeed())
@@ -499,7 +499,7 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 			testAnalysis.Status.Phase = aianalysis.PhaseAnalyzing
 			testAnalysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowID:     "wf-restart-pod",
-				ContainerImage: "kubernaut.io/workflows/restart-pod:v1.0.0",
+				ExecutionBundle: "kubernaut.io/workflows/restart-pod:v1.0.0",
 				Confidence:     0.85,
 			}
 			Expect(fakeClient.Status().Update(ctx, testAnalysis)).To(Succeed())

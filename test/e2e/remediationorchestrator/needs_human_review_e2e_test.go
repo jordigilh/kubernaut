@@ -285,7 +285,7 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 		analysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 			WorkflowID:     "restart-pod-v1",
 			Version:        "1.0.0",
-			ContainerImage: "quay.io/kubernaut/restart-pod:v1",
+			ExecutionBundle: "quay.io/kubernaut/restart-pod:v1",
 			Confidence:     0.95,
 			Rationale:      "High confidence workflow match for pod restart scenario",
 		}

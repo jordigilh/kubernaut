@@ -285,7 +285,7 @@ var _ = Describe("Full RR Reconstruction Integration Tests (BR-AUDIT-005 v2.0)",
 			Expect(rr.Status.SelectedWorkflowRef).ToNot(BeNil(), "Gap #5: SelectedWorkflowRef should be populated")
 			Expect(rr.Status.SelectedWorkflowRef.WorkflowID).To(Equal("restart-pod-workflow"), "Gap #5: WorkflowID from workflowexecution.selection.completed")
 			Expect(rr.Status.SelectedWorkflowRef.Version).To(Equal("v1.2.0"), "Gap #5: Version from workflowexecution.selection.completed")
-			Expect(rr.Status.SelectedWorkflowRef.ContainerImage).To(Equal("ghcr.io/kubernaut/workflows:restart-pod-v1.2.0"), "Gap #5: ContainerImage from workflowexecution.selection.completed")
+			Expect(rr.Status.SelectedWorkflowRef.ExecutionBundle).To(Equal("ghcr.io/kubernaut/workflows:restart-pod-v1.2.0"), "Gap #5: ContainerImage from workflowexecution.selection.completed")
 
 			// Gap #6: Workflow execution
 			Expect(rr.Status.ExecutionRef).ToNot(BeNil(), "Gap #6: ExecutionRef should be populated")

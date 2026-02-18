@@ -441,7 +441,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID:     "restart-deployment",
 						Version:        "1.0.0",
-						ContainerImage: "ghcr.io/kubernaut/workflows/restart-deployment:v1.0.0",
+						ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-deployment:v1.0.0",
 					},
 					Parameters: map[string]string{
 						"NAMESPACE":       "payment",
@@ -816,7 +816,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 					TargetResource: "default/deployment/test-app",
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID:     "restart-deployment",
-						ContainerImage: "ghcr.io/kubernaut/workflows/restart:v1.0.0",
+						ExecutionBundle: "ghcr.io/kubernaut/workflows/restart:v1.0.0",
 					},
 				},
 				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
@@ -927,7 +927,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 					TargetResource: "default/deployment/failing-app",
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID:     "restart-deployment",
-						ContainerImage: "ghcr.io/kubernaut/workflows/restart:v1.0.0",
+						ExecutionBundle: "ghcr.io/kubernaut/workflows/restart:v1.0.0",
 					},
 				},
 				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
@@ -2633,7 +2633,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						TargetResource: "default/deployment/my-app",
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "test-workflow",
-							ContainerImage: "ghcr.io/test/workflow:v1",
+							ExecutionBundle: "ghcr.io/test/workflow:v1",
 						},
 					},
 					Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
@@ -2673,7 +2673,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						TargetResource: "default/deployment/my-app",
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "test-workflow",
-							ContainerImage: "ghcr.io/test/workflow:v1",
+							ExecutionBundle: "ghcr.io/test/workflow:v1",
 						},
 					},
 					Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
@@ -2707,7 +2707,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						TargetResource: "default/deployment/my-app",
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "test-workflow",
-							ContainerImage: "ghcr.io/test/workflow:v1",
+							ExecutionBundle: "ghcr.io/test/workflow:v1",
 						},
 					},
 					Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
@@ -2747,7 +2747,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						TargetResource: "default/deployment/my-app",
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "test-workflow",
-							ContainerImage: "ghcr.io/test/workflow:v1",
+							ExecutionBundle: "ghcr.io/test/workflow:v1",
 						},
 					},
 				}
@@ -2781,7 +2781,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						TargetResource: "default/deployment/my-app",
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "test-workflow",
-							ContainerImage: "ghcr.io/test/workflow:v1",
+							ExecutionBundle: "ghcr.io/test/workflow:v1",
 						},
 					},
 				}
@@ -2811,7 +2811,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						TargetResource: "default/deployment/my-app",
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "test-workflow",
-							ContainerImage: "ghcr.io/test/workflow:v1",
+							ExecutionBundle: "ghcr.io/test/workflow:v1",
 						},
 					},
 				}
@@ -2857,7 +2857,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "kubectl-restart-deployment",
 							Version:        "v1.0.0",
-							ContainerImage: "ghcr.io/kubernaut/kubectl-actions:v1.28",
+							ExecutionBundle: "ghcr.io/kubernaut/kubectl-actions:v1.28",
 						},
 						Parameters: map[string]string{
 							"NAMESPACE":       "payment",
@@ -2901,7 +2901,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "kubectl-restart-deployment",
 							Version:        "v1.0.0",
-							ContainerImage: "ghcr.io/kubernaut/kubectl-actions:v1.28",
+							ExecutionBundle: "ghcr.io/kubernaut/kubectl-actions:v1.28",
 						},
 						Parameters: map[string]string{
 							"NAMESPACE":       "payment",
@@ -2942,7 +2942,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "test-workflow",
 							Version:        "v1.0.0",
-							ContainerImage: "ghcr.io/test/workflow:v1",
+							ExecutionBundle: "ghcr.io/test/workflow:v1",
 						},
 						Parameters: nil,
 					},
@@ -3012,7 +3012,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						TargetResource: "production/deployment/payment-api",
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "increase-memory-conservative",
-							ContainerImage: "ghcr.io/kubernaut/workflows/increase-memory:v1.2.0",
+							ExecutionBundle: "ghcr.io/kubernaut/workflows/increase-memory:v1.2.0",
 						},
 						Parameters: map[string]string{
 							"NAMESPACE":       "production",
@@ -3089,7 +3089,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						TargetResource: "staging/deployment/api-gateway",
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "restart-deployment",
-							ContainerImage: "ghcr.io/kubernaut/workflows/restart:v1.0.0",
+							ExecutionBundle: "ghcr.io/kubernaut/workflows/restart:v1.0.0",
 						},
 					},
 					Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
@@ -3157,7 +3157,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						TargetResource: "default/deployment/app",
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "test-workflow",
-							ContainerImage: "ghcr.io/test/workflow:v1",
+							ExecutionBundle: "ghcr.io/test/workflow:v1",
 						},
 					},
 					Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
@@ -3194,7 +3194,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						TargetResource: "default/deployment/app",
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "test-workflow",
-							ContainerImage: "ghcr.io/test/workflow:v1",
+							ExecutionBundle: "ghcr.io/test/workflow:v1",
 						},
 					},
 					Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
@@ -3241,7 +3241,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						TargetResource: "production/deployment/my-app",
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "increase-memory",
-							ContainerImage: "ghcr.io/org/workflow:v1.0",
+							ExecutionBundle: "ghcr.io/org/workflow:v1.0",
 						},
 					},
 				}
@@ -3260,7 +3260,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						TargetResource: "production/deployment/my-app",
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "increase-memory",
-							ContainerImage: "", // Missing
+							ExecutionBundle: "", // Missing
 						},
 					},
 				}
@@ -3270,7 +3270,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 				// Then: Should return ConfigurationError
 				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("containerImage"))
+				Expect(err.Error()).To(ContainSubstring("executionBundle"))
 			})
 
 			It("should return error for missing TargetResource", func() {
@@ -3280,7 +3280,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						TargetResource: "", // Missing
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "increase-memory",
-							ContainerImage: "ghcr.io/org/workflow:v1.0",
+							ExecutionBundle: "ghcr.io/org/workflow:v1.0",
 						},
 					},
 				}
@@ -3300,7 +3300,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						TargetResource: "node/worker-node-1", // Cluster-scoped: kind/name
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "node-disk-cleanup",
-							ContainerImage: "ghcr.io/org/workflow:v1.0",
+							ExecutionBundle: "ghcr.io/org/workflow:v1.0",
 						},
 					},
 				}
@@ -3319,7 +3319,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						TargetResource: "production", // Only 1 part - invalid
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "increase-memory",
-							ContainerImage: "ghcr.io/org/workflow:v1.0",
+							ExecutionBundle: "ghcr.io/org/workflow:v1.0",
 						},
 					},
 				}
@@ -3339,7 +3339,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						TargetResource: "production/deployment/my-app/extra", // Extra part
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "increase-memory",
-							ContainerImage: "ghcr.io/org/workflow:v1.0",
+							ExecutionBundle: "ghcr.io/org/workflow:v1.0",
 						},
 					},
 				}
@@ -3365,7 +3365,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 							TargetResource: target,
 							WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 								WorkflowID:     "test-workflow",
-								ContainerImage: "ghcr.io/org/workflow:v1.0",
+								ExecutionBundle: "ghcr.io/org/workflow:v1.0",
 							},
 						},
 					}
@@ -3381,7 +3381,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			// ========================================
 
 			// DescribeTable validates actual ValidateSpec() implementation behavior
-			// Validation order: containerImage -> targetResource -> format
+			// Validation order: executionBundle -> targetResource -> format
 			// Note: WorkflowID is NOT validated by current implementation
 			DescribeTable("TargetResource format validation",
 				func(targetResource string, workflowID string, containerImage string, shouldPass bool, expectedErrorSubstring string) {
@@ -3390,7 +3390,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 							TargetResource: targetResource,
 							WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 								WorkflowID:     workflowID,
-								ContainerImage: containerImage,
+								ExecutionBundle: containerImage,
 							},
 						},
 					}
@@ -3420,16 +3420,16 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				Entry("valid - cluster-scoped clusterrole", "clusterrole/admin", "workflow-9", "ghcr.io/org/wf:v1", true, ""),
 				Entry("valid - cluster-scoped namespace", "namespace/production", "workflow-10", "ghcr.io/org/wf:v1", true, ""),
 
-				// Invalid TargetResource - missing parts (must have valid containerImage first)
+				// Invalid TargetResource - missing parts (must have valid executionBundle first)
 				Entry("invalid - empty targetResource", "", "workflow-1", "ghcr.io/org/wf:v1", false, "targetResource"),
 				Entry("invalid - only one part", "default", "workflow-1", "ghcr.io/org/wf:v1", false, "format"),
 				Entry("invalid - too many parts", "default/deployment/app/extra", "workflow-1", "ghcr.io/org/wf:v1", false, "format"),
 
-				// Invalid WorkflowRef - containerImage validation
-				Entry("invalid - empty ContainerImage", "default/deployment/app", "workflow-1", "", false, "containerImage"),
+				// Invalid WorkflowRef - executionBundle validation
+				Entry("invalid - empty ExecutionBundle", "default/deployment/app", "workflow-1", "", false, "executionBundle"),
 
-				// Validation order: containerImage checked first
-				Entry("invalid - all empty returns containerImage error first", "", "", "", false, "containerImage"),
+				// Validation order: executionBundle checked first
+				Entry("invalid - all empty returns executionBundle error first", "", "", "", false, "executionBundle"),
 			)
 		})
 
@@ -3440,7 +3440,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 						TargetResource: "invalid-format", // Invalid
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-							ContainerImage: "ghcr.io/org/workflow:v1.0",
+							ExecutionBundle: "ghcr.io/org/workflow:v1.0",
 						},
 					},
 				}
@@ -4203,12 +4203,12 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			}
 		})
 
-		It("should reject empty containerImage", func() {
-			// Given: WFE with empty containerImage
+		It("should reject empty executionBundle", func() {
+			// Given: WFE with empty executionBundle
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						ContainerImage: "", // Empty
+						ExecutionBundle: "", // Empty
 					},
 					TargetResource: "default/deployment/my-app",
 				},
@@ -4219,7 +4219,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 			// Then: Should return error
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("containerImage is required"))
+			Expect(err.Error()).To(ContainSubstring("executionBundle is required"))
 		})
 
 		It("should reject empty targetResource", func() {
@@ -4227,7 +4227,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						ContainerImage: "quay.io/kubernaut/workflow:v1",
+						ExecutionBundle: "quay.io/kubernaut/workflow:v1",
 					},
 					TargetResource: "", // Empty
 				},
@@ -4246,7 +4246,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						ContainerImage: "quay.io/kubernaut/workflow:v1",
+						ExecutionBundle: "quay.io/kubernaut/workflow:v1",
 					},
 					TargetResource: "my-app", // Invalid: only 1 part
 				},
@@ -4265,7 +4265,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						ContainerImage: "quay.io/kubernaut/workflow:v1",
+						ExecutionBundle: "quay.io/kubernaut/workflow:v1",
 					},
 					TargetResource: "default/deployment/my-app/extra", // Invalid: 4 parts
 				},
@@ -4284,7 +4284,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						ContainerImage: "quay.io/kubernaut/workflow:v1",
+						ExecutionBundle: "quay.io/kubernaut/workflow:v1",
 					},
 					TargetResource: "default//my-app", // Invalid: empty kind
 				},
@@ -4584,7 +4584,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "test-workflow",
 							Version:        "v1",
-							ContainerImage: "registry.example.com/workflows/test:v1",
+							ExecutionBundle: "registry.example.com/workflows/test:v1",
 						},
 						TargetResource: "deployments/test-app",
 					},
@@ -4625,7 +4625,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "test-workflow",
 							Version:        "v1",
-							ContainerImage: "registry.example.com/workflows/test:v1",
+							ExecutionBundle: "registry.example.com/workflows/test:v1",
 						},
 						TargetResource: "deployments/test-app",
 					},
@@ -4657,7 +4657,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "test-workflow",
 							Version:        "v1",
-							ContainerImage: "registry.example.com/workflows/test:v1",
+							ExecutionBundle: "registry.example.com/workflows/test:v1",
 						},
 						TargetResource: "deployments/test-app",
 					},
@@ -4689,7 +4689,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "test-workflow",
 							Version:        "v1",
-							ContainerImage: "registry.example.com/workflows/test:v1",
+							ExecutionBundle: "registry.example.com/workflows/test:v1",
 						},
 						TargetResource: "deployments/test-app",
 					},
@@ -4721,7 +4721,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "test-workflow",
 							Version:        "v1",
-							ContainerImage: "registry.example.com/workflows/test:v1",
+							ExecutionBundle: "registry.example.com/workflows/test:v1",
 						},
 						TargetResource: "deployments/test-app",
 					},
@@ -4753,7 +4753,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "test-workflow",
 							Version:        "v1",
-							ContainerImage: "registry.example.com/workflows/test:v1",
+							ExecutionBundle: "registry.example.com/workflows/test:v1",
 						},
 						TargetResource: "deployments/test-app",
 					},
@@ -4785,7 +4785,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "test-workflow",
 							Version:        "v1",
-							ContainerImage: "registry.example.com/workflows/test:v1",
+							ExecutionBundle: "registry.example.com/workflows/test:v1",
 						},
 						TargetResource: "deployments/test-app",
 					},
@@ -4817,7 +4817,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "test-workflow",
 							Version:        "v1",
-							ContainerImage: "registry.example.com/workflows/test:v1",
+							ExecutionBundle: "registry.example.com/workflows/test:v1",
 						},
 						TargetResource: "deployments/test-app",
 						// DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name as correlation ID
@@ -4893,7 +4893,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "test-workflow",
 							Version:        "v1",
-							ContainerImage: "registry.example.com/workflows/test:v1",
+							ExecutionBundle: "registry.example.com/workflows/test:v1",
 						},
 						TargetResource: "deployments/test-app",
 					},
@@ -4945,7 +4945,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "test-workflow",
 							Version:        "v1",
-							ContainerImage: "registry.example.com/workflows/test:v1",
+							ExecutionBundle: "registry.example.com/workflows/test:v1",
 						},
 						TargetResource: "deployments/test-app",
 					},
@@ -4981,7 +4981,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "test-workflow",
 							Version:        "v1",
-							ContainerImage: "registry.example.com/workflows/test:v1",
+							ExecutionBundle: "registry.example.com/workflows/test:v1",
 						},
 						TargetResource: "deployments/test-app",
 						Parameters: map[string]string{
@@ -5015,7 +5015,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "test-workflow",
 							Version:        "v1",
-							ContainerImage: "registry.example.com/workflows/test:v1",
+							ExecutionBundle: "registry.example.com/workflows/test:v1",
 						},
 						TargetResource: "deployments/test-app",
 					},
@@ -5070,7 +5070,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "test-workflow",
 							Version:        "v1",
-							ContainerImage: "registry.example.com/workflows/test:v1",
+							ExecutionBundle: "registry.example.com/workflows/test:v1",
 						},
 						TargetResource: "namespace/deployment/app-name",
 					},
@@ -5094,7 +5094,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "test-workflow",
 							Version:        "v1",
-							ContainerImage: "registry.example.com/workflows/test:v1",
+							ExecutionBundle: "registry.example.com/workflows/test:v1",
 						},
 						TargetResource: "path//to///resource",
 					},
@@ -5121,7 +5121,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "test-workflow",
 							Version:        "v1",
-							ContainerImage: "registry.example.com/workflows/test:v1",
+							ExecutionBundle: "registry.example.com/workflows/test:v1",
 						},
 						TargetResource: longResource,
 					},
@@ -5148,7 +5148,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "test-workflow",
 							Version:        "v1",
-							ContainerImage: "registry.example.com/workflows/test:v1",
+							ExecutionBundle: "registry.example.com/workflows/test:v1",
 						},
 						TargetResource: resource63,
 					},
@@ -5176,7 +5176,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "test-workflow",
 							Version:        "v1",
-							ContainerImage: "registry.example.com/workflows/test:v1",
+							ExecutionBundle: "registry.example.com/workflows/test:v1",
 						},
 						TargetResource: "///",
 					},

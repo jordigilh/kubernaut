@@ -73,7 +73,7 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 							},
 							SelectedWorkflow: aianalysisv1alpha1.SelectedWorkflowSummary{
 								WorkflowID:     "oomkill-increase-memory-v1",
-								ContainerImage: "quay.io/kubernaut/workflow-oomkill:v1.0.0",
+								ExecutionBundle: "quay.io/kubernaut/workflow-oomkill:v1.0.0",
 								Rationale:      "Increase memory limits for OOMKilled pod",
 							},
 							Failure: aianalysisv1alpha1.ExecutionFailure{
@@ -172,7 +172,7 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 							},
 							SelectedWorkflow: aianalysisv1alpha1.SelectedWorkflowSummary{
 								WorkflowID:     "oomkill-increase-memory-v1",
-								ContainerImage: "quay.io/kubernaut/workflow-oomkill:v1.0.0",
+								ExecutionBundle: "quay.io/kubernaut/workflow-oomkill:v1.0.0",
 								Rationale:      "Conservative memory increase for OOMKilled pod",
 							},
 							Failure: aianalysisv1alpha1.ExecutionFailure{
@@ -351,7 +351,7 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 							},
 							SelectedWorkflow: aianalysisv1alpha1.SelectedWorkflowSummary{
 								WorkflowID:     "oomkill-increase-memory-v1",
-								ContainerImage: "quay.io/kubernaut/workflow-oomkill:v1.0.0",
+								ExecutionBundle: "quay.io/kubernaut/workflow-oomkill:v1.0.0",
 								Rationale:      "Increase memory limit",
 							},
 							Failure: aianalysisv1alpha1.ExecutionFailure{
@@ -372,7 +372,7 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 							},
 							SelectedWorkflow: aianalysisv1alpha1.SelectedWorkflowSummary{
 								WorkflowID:     "oomkill-restart-pod-v1",
-								ContainerImage: "quay.io/kubernaut/workflow-restart:v1.0.0",
+								ExecutionBundle: "quay.io/kubernaut/workflow-restart:v1.0.0",
 								Rationale:      "Restart pod as fallback",
 							},
 							Failure: aianalysisv1alpha1.ExecutionFailure{
@@ -571,7 +571,7 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 							},
 							SelectedWorkflow: aianalysisv1alpha1.SelectedWorkflowSummary{
 								WorkflowID:     "failed-workflow-v1",
-								ContainerImage: "quay.io/kubernaut/workflow-failed:v1.0.0",
+								ExecutionBundle: "quay.io/kubernaut/workflow-failed:v1.0.0",
 							},
 							Failure: aianalysisv1alpha1.ExecutionFailure{
 								Reason:        "WorkflowFailed",

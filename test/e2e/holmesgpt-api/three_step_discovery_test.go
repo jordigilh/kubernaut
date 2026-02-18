@@ -182,7 +182,7 @@ var _ = Describe("E2E-HAPI-017: Three-Step Workflow Discovery", Label("e2e", "ha
 				SelectedWorkflow: hapiclient.SelectedWorkflowSummary{
 					WorkflowID:     failedWorkflowID,
 					Version:        "1.0.0",
-					ContainerImage: "ghcr.io/kubernaut/workflows/oomkill-increase-memory:v1.0.0",
+					ExecutionBundle: "ghcr.io/kubernaut/workflows/oomkill-increase-memory:v1.0.0",
 					Rationale:      "Selected for initial remediation via three-step discovery",
 				},
 				Failure: hapiclient.ExecutionFailure{

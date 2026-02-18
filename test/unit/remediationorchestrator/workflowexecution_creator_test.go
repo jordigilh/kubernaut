@@ -146,7 +146,7 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 			// Verify WorkflowRef pass-through from AIAnalysis
 			Expect(created.Spec.WorkflowRef.WorkflowID).To(Equal(ai.Status.SelectedWorkflow.WorkflowID))
 			Expect(created.Spec.WorkflowRef.Version).To(Equal(ai.Status.SelectedWorkflow.Version))
-			Expect(created.Spec.WorkflowRef.ContainerImage).To(Equal(ai.Status.SelectedWorkflow.ContainerImage))
+			Expect(created.Spec.WorkflowRef.ExecutionBundle).To(Equal(ai.Status.SelectedWorkflow.ExecutionBundle))
 
 			// Verify audit fields
 			Expect(created.Spec.Confidence).To(Equal(ai.Status.SelectedWorkflow.Confidence))
@@ -401,10 +401,10 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 				"WorkflowID is empty",
 				func(ai *aianalysisv1.AIAnalysis) { ai.Status.SelectedWorkflow.WorkflowID = "" },
 				"workflowId is required"),
-			Entry("empty ContainerImage",
-				"ContainerImage is empty",
-				func(ai *aianalysisv1.AIAnalysis) { ai.Status.SelectedWorkflow.ContainerImage = "" },
-				"containerImage is required"),
+			Entry("empty ExecutionBundle",
+				"ExecutionBundle is empty",
+				func(ai *aianalysisv1.AIAnalysis) { ai.Status.SelectedWorkflow.ExecutionBundle = "" },
+				"executionBundle is required"),
 		)
 
 		It("should return error when client Create fails per BR-ORCH-025", func() {

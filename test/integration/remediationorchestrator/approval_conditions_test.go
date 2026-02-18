@@ -72,7 +72,7 @@ var _ = Describe("RemediationApprovalRequest Conditions Integration", Label("int
 					RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{
 						WorkflowID:     "test-workflow-1",
 						Version:        "v1.0.0",
-						ContainerImage: "kubernaut/workflows:test",
+						ExecutionBundle: "kubernaut/workflows:test",
 						Rationale:      "Test workflow for approval",
 					},
 					InvestigationSummary: "Test investigation summary",

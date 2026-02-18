@@ -200,7 +200,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowID:     "wf-scale-deployment",
 				Version:        "v1.0.0",
-				ContainerImage: "ghcr.io/kubernaut/workflows/scale-deployment:v1.0.0",
+				ExecutionBundle: "ghcr.io/kubernaut/workflows/scale-deployment:v1.0.0",
 				Confidence:     0.92,
 			}
 			Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
@@ -229,7 +229,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 					WorkflowRef: workflowexecutionv1.WorkflowRef{
 						WorkflowID:     "wf-scale-deployment",
 						Version:        "v1.0.0",
-						ContainerImage: "ghcr.io/kubernaut/workflows/scale-deployment:v1.0.0",
+						ExecutionBundle: "ghcr.io/kubernaut/workflows/scale-deployment:v1.0.0",
 					},
 					TargetResource:  testNS + "/Deployment/test-app",
 					ExecutionEngine: "tekton",
@@ -332,7 +332,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 					RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{
 						WorkflowID:     "wf-delete-pod",
 						Version:        "v1.0.0",
-						ContainerImage: "quay.io/kubernaut/workflow-delete-pod:v1.0.0",
+						ExecutionBundle: "quay.io/kubernaut/workflow-delete-pod:v1.0.0",
 						Rationale:      "Pod restart recommended due to OOM",
 					},
 					InvestigationSummary: "Pod restart recommended due to OOM",
@@ -436,7 +436,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 					RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{
 						WorkflowID:     "wf-dangerous-op",
 						Version:        "v1.0.0",
-						ContainerImage: "quay.io/kubernaut/workflow-dangerous:v1.0.0",
+						ExecutionBundle: "quay.io/kubernaut/workflow-dangerous:v1.0.0",
 						Rationale:      "Dangerous operation requires approval",
 					},
 					InvestigationSummary: "Risky operation",

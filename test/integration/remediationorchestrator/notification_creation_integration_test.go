@@ -119,7 +119,7 @@ var _ = Describe("Notification Creation Integration Tests (BR-ORCH-033/034)", fu
 					RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{
 						WorkflowID:     "test-workflow-001",
 						Version:        "v1.0.0",
-						ContainerImage: "test/image:latest",
+						ExecutionBundle: "test/image:latest",
 						Rationale:      "Test rationale",
 					},
 					InvestigationSummary: "Test investigation summary",

@@ -247,7 +247,7 @@ var _ = Describe("Gap #5-6 Edge Cases (BR-AUDIT-005)", func() {
 			Expect(fields.Status.SelectedWorkflowRef).ToNot(BeNil())
 			Expect(fields.Status.SelectedWorkflowRef.WorkflowID).To(BeEmpty())
 			Expect(fields.Status.SelectedWorkflowRef.Version).To(BeEmpty())
-			Expect(fields.Status.SelectedWorkflowRef.ContainerImage).To(BeEmpty())
+			Expect(fields.Status.SelectedWorkflowRef.ExecutionBundle).To(BeEmpty())
 		})
 	})
 
