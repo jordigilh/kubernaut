@@ -78,7 +78,7 @@ var _ = Describe("ApprovalOrchestration", func() {
 							WorkflowID:     "wf-restart-pods",
 							Version:        "v1.0.0",
 							Confidence:     0.75,
-							ContainerImage: "kubernaut/workflows:latest",
+							ExecutionBundle: "kubernaut/workflows:latest",
 							Rationale:      "Pod restart recommended based on OOM patterns",
 						},
 						ApprovalReason: "Confidence between 60-79%",
@@ -216,7 +216,7 @@ var _ = Describe("ApprovalOrchestration", func() {
 						RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{
 							WorkflowID:     "wf-test",
 							Version:        "v1.0.0",
-							ContainerImage: "test:latest",
+							ExecutionBundle: "test:latest",
 							Rationale:      "Test rationale",
 						},
 						RecommendedActions: []remediationv1.ApprovalRecommendedAction{
@@ -247,7 +247,7 @@ var _ = Describe("ApprovalOrchestration", func() {
 						RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{
 							WorkflowID:     "wf-test",
 							Version:        "v1.0.0",
-							ContainerImage: "test:latest",
+							ExecutionBundle: "test:latest",
 							Rationale:      "Test rationale",
 						},
 						RecommendedActions: []remediationv1.ApprovalRecommendedAction{
@@ -285,7 +285,7 @@ var _ = Describe("ApprovalOrchestration", func() {
 						RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{
 							WorkflowID:     "wf-test",
 							Version:        "v1.0.0",
-							ContainerImage: "test:latest",
+							ExecutionBundle: "test:latest",
 							Rationale:      "Test rationale",
 						},
 						RecommendedActions: []remediationv1.ApprovalRecommendedAction{
@@ -324,7 +324,7 @@ var _ = Describe("ApprovalOrchestration", func() {
 						RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{
 							WorkflowID:     "wf-test",
 							Version:        "v1.0.0",
-							ContainerImage: "test:latest",
+							ExecutionBundle: "test:latest",
 							Rationale:      "Test rationale",
 						},
 						RecommendedActions: []remediationv1.ApprovalRecommendedAction{

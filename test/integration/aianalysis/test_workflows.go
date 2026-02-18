@@ -206,7 +206,7 @@ func SeedTestWorkflowsInDataStorage(client *ogenclient.Client, output io.Writer)
 			Component:        wf.Component,
 			Environment:      wf.Environment,
 			Priority:         wf.Priority,
-			ContainerImage:   "", // AIAnalysis uses default pattern (empty = auto-generate)
+			SchemaImage:     "", // AIAnalysis uses default pattern (empty = auto-generate)
 			SchemaParameters: wf.SchemaParameters, // BR-HAPI-191: Pass through for HAPI validation
 		}
 	}

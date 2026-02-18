@@ -49,7 +49,7 @@ var _ = Describe("Reconstruction Validator", func() {
 					SelectedWorkflowRef: &remediationv1.WorkflowReference{ // Gap #5
 						WorkflowID:     "test-workflow-001",
 						Version:        "v1.0.0",
-						ContainerImage: "test/workflow:latest",
+						ExecutionBundle: "test/workflow:latest",
 					},
 					ExecutionRef: &corev1.ObjectReference{ // Gap #6
 						Name:      "test-execution-001",
@@ -122,8 +122,8 @@ var _ = Describe("Reconstruction Validator", func() {
 					SelectedWorkflowRef: &remediationv1.WorkflowReference{ // Gap #5
 						WorkflowID:      "workflow-002",
 						Version:         "v2.1.0",
-						ContainerImage:  "registry/workflow:v2.1.0",
-						ContainerDigest: "sha256:abcdef123456",
+						ExecutionBundle:  "registry/workflow:v2.1.0",
+						ExecutionBundleDigest: "sha256:abcdef123456",
 					},
 					ExecutionRef: &corev1.ObjectReference{ // Gap #6
 						Name:      "execution-002",
@@ -214,7 +214,7 @@ var _ = Describe("Reconstruction Validator", func() {
 					SelectedWorkflowRef: &remediationv1.WorkflowReference{ // Gap #5
 						WorkflowID:     "workflow-003",
 						Version:        "v1.2.0",
-						ContainerImage: "registry/workflow:v1.2.0",
+						ExecutionBundle: "registry/workflow:v1.2.0",
 					},
 					ExecutionRef: &corev1.ObjectReference{ // Gap #6
 						Name:      "execution-003",

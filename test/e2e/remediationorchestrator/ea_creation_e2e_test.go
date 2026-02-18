@@ -143,7 +143,7 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 		analysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 			WorkflowID:     "restart-deployment-v1",
 			Version:        "1.0.0",
-			ContainerImage: "quay.io/kubernaut/restart-deployment:v1",
+			ExecutionBundle: "quay.io/kubernaut/restart-deployment:v1",
 			Confidence:     0.92,
 			Rationale:      "High confidence match for CPU remediation",
 		}

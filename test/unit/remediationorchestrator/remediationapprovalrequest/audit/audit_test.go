@@ -112,7 +112,7 @@ var _ = Describe("BR-AUDIT-006: RemediationApprovalRequest Audit Trail", func() 
 				RecommendedWorkflow: remediationapprovalrequestv1alpha1.RecommendedWorkflowSummary{
 					WorkflowID:     "oomkill-increase-memory-limits",
 					Version:        "v1.2.0",
-					ContainerImage: "ghcr.io/kubernaut/oomkill-remediation:v1.2.0",
+					ExecutionBundle: "ghcr.io/kubernaut/oomkill-remediation:v1.2.0",
 					Rationale:      "Increases memory limits to prevent OOMKilled",
 				},
 				InvestigationSummary: "Pod api-server OOMKilled due to memory pressure",
@@ -447,7 +447,7 @@ func createRARForScenario(scenario ApprovalDecisionScenario) *remediationapprova
 			RecommendedWorkflow: remediationapprovalrequestv1alpha1.RecommendedWorkflowSummary{
 				WorkflowID:     "oomkill-increase-memory-limits",
 				Version:        "v1.2.0",
-				ContainerImage: "ghcr.io/kubernaut/oomkill-remediation:v1.2.0",
+				ExecutionBundle: "ghcr.io/kubernaut/oomkill-remediation:v1.2.0",
 				Rationale:      "Increases memory limits to prevent OOMKilled",
 			},
 			InvestigationSummary: "Pod api-server OOMKilled due to memory pressure",

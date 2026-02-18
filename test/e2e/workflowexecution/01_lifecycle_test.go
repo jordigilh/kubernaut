@@ -156,7 +156,7 @@ var _ = Describe("WorkflowExecution Lifecycle E2E", func() {
 				WorkflowID: "test-intentional-failure",
 				Version:    "v1.0.0",
 				// Tekton bundle from quay.io/kubernaut-cicd/tekton-bundles (built with tkn bundle push)
-				ContainerImage: "quay.io/kubernaut-cicd/tekton-bundles/failing:v1.0.0",
+				ExecutionBundle: "quay.io/kubernaut-cicd/tekton-bundles/failing:v1.0.0",
 			},
 				TargetResource: targetResource,
 				Parameters: map[string]string{

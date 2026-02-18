@@ -384,7 +384,7 @@ func createTestWFE(name, targetResource string) *workflowexecutionv1alpha1.Workf
 				// Built with `tkn bundle push` — contains Tekton Pipeline with required annotations
 				// Schema image (test-workflows/) is used for DataStorage registration (DD-WORKFLOW-017)
 				// Tekton bundle (tekton-bundles/) is used for WFE execution via bundle resolver
-				ContainerImage: "quay.io/kubernaut-cicd/tekton-bundles/hello-world:v1.0.0",
+				ExecutionBundle: "quay.io/kubernaut-cicd/tekton-bundles/hello-world:v1.0.0",
 			},
 			TargetResource: targetResource,
 			Parameters: map[string]string{

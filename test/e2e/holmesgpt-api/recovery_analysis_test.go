@@ -52,7 +52,7 @@ var _ = Describe("E2E-HAPI Recovery Analysis", Label("e2e", "hapi", "recovery"),
 			SelectedWorkflow: hapiclient.SelectedWorkflowSummary{
 				WorkflowID:     failedWorkflowID,
 				Version:        "1.0.0",
-				ContainerImage: "registry.example.com/workflow:latest",
+				ExecutionBundle: "registry.example.com/workflow:latest",
 				Rationale:      "Selected for initial remediation attempt",
 			},
 			Failure: hapiclient.ExecutionFailure{
@@ -197,7 +197,7 @@ var _ = Describe("E2E-HAPI Recovery Analysis", Label("e2e", "hapi", "recovery"),
 				SelectedWorkflow: hapiclient.SelectedWorkflowSummary{
 					WorkflowID:     "workflow-restart-failed",
 					Version:        "1.0.0",
-					ContainerImage: "registry.example.com/workflow:latest",
+					ExecutionBundle: "registry.example.com/workflow:latest",
 					Rationale:      "Selected for initial remediation attempt",
 				},
 				Failure: hapiclient.ExecutionFailure{

@@ -123,7 +123,7 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 				WorkflowID:     "wf-restart-pods",
 				Version:        "v1.0.0",
 				Confidence:     0.95,
-				ContainerImage: "kubernaut/workflows:latest",
+				ExecutionBundle: "kubernaut/workflows:latest",
 				Rationale:      "High confidence auto-approve",
 			}
 			now := metav1.Now()
@@ -208,7 +208,7 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 				WorkflowID:     "wf-restart-pods",
 				Version:        "v1.0.0",
 				Confidence:     0.70,
-				ContainerImage: "kubernaut/workflows:latest",
+				ExecutionBundle: "kubernaut/workflows:latest",
 				Rationale:      "Restart recommended",
 			}
 			now := metav1.Now()

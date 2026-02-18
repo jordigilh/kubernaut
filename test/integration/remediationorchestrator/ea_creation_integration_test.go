@@ -81,7 +81,7 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 		ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 			WorkflowID:     "wf-restart-pods",
 			Version:        "v1.0.0",
-			ContainerImage: "test-image:latest",
+			ExecutionBundle: "test-image:latest",
 			Confidence:     0.95,
 		}
 		now := metav1.Now()
@@ -265,7 +265,7 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 		ai.Status.Phase = aianalysisv1.PhaseCompleted
 		ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 			WorkflowID: "wf-restart-pods", Version: "v1.0.0",
-			ContainerImage: "test-image:latest", Confidence: 0.95,
+			ExecutionBundle: "test-image:latest", Confidence: 0.95,
 		}
 		completedAt := metav1.Now()
 		ai.Status.CompletedAt = &completedAt

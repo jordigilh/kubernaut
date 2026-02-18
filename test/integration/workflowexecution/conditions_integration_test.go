@@ -59,7 +59,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID:     "test-workflow",
 						Version:        "v1.0.0",
-						ContainerImage: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
+						ExecutionBundle: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
 					},
 					TargetResource: "default/deployment/condition-test-app",
 					ExecutionEngine: "tekton",
@@ -125,7 +125,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID:     "test-workflow",
 						Version:        "v1.0.0",
-						ContainerImage: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
+						ExecutionBundle: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
 					},
 					TargetResource: "default/deployment/running-test-app",
 					ExecutionEngine: "tekton",
@@ -189,7 +189,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID:     "test-workflow",
 						Version:        "v1.0.0",
-						ContainerImage: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
+						ExecutionBundle: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
 					},
 					TargetResource: "default/deployment/complete-success-app",
 					ExecutionEngine: "tekton",
@@ -273,7 +273,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID:     "test-workflow",
 						Version:        "v1.0.0",
-						ContainerImage: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
+						ExecutionBundle: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
 					},
 					TargetResource: "default/deployment/audit-test-app",
 					ExecutionEngine: "tekton",
@@ -328,7 +328,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID:     "test-workflow",
 						Version:        "v1.0.0",
-						ContainerImage: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
+						ExecutionBundle: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
 					},
 					TargetResource: "default/deployment/full-lifecycle-app",
 					ExecutionEngine: "tekton",

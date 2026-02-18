@@ -74,7 +74,7 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID:     "test-workflow",
 						Version:        "v1.0.0",
-						ContainerImage: "quay.io/kubernaut/test:v1",
+						ExecutionBundle: "quay.io/kubernaut/test:v1",
 					},
 					TargetResource: "default/deployment/test-app",
 					ExecutionEngine: "tekton",
@@ -128,7 +128,7 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID:     "test-workflow",
 						Version:        "v1.0.0",
-						ContainerImage: "quay.io/kubernaut/test:v1",
+						ExecutionBundle: "quay.io/kubernaut/test:v1",
 					},
 					TargetResource: "default/deployment/test-app",
 					ExecutionEngine: "tekton",
@@ -178,7 +178,7 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID:     "test-workflow-success",
 						Version:        "v1.0.0",
-						ContainerImage: "quay.io/kubernaut/test:v1",
+						ExecutionBundle: "quay.io/kubernaut/test:v1",
 					},
 					TargetResource: "default/deployment/test-app",
 					ExecutionEngine: "tekton",
@@ -273,7 +273,7 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID:     "nonexistent-workflow",
 						Version:        "v1.0.0",
-						ContainerImage: "", // Empty image triggers pre-execution failure
+						ExecutionBundle: "", // Empty image triggers pre-execution failure
 					},
 					TargetResource: "default/deployment/test-app",
 					ExecutionEngine: "tekton",
@@ -326,7 +326,7 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID:     "test-workflow-ordering",
 						Version:        "v1.0.0",
-						ContainerImage: "quay.io/kubernaut/test:v1",
+						ExecutionBundle: "quay.io/kubernaut/test:v1",
 					},
 					TargetResource: "default/deployment/ordering-test",
 					ExecutionEngine: "tekton",

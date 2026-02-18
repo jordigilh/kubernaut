@@ -113,7 +113,7 @@ var _ = Describe("AnalyzingHandler", func() {
 				RootCause: "OOM caused by memory leak",
 				SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
 					WorkflowID:     "wf-restart-pod",
-					ContainerImage: "kubernaut.io/workflows/restart:v1.0.0",
+					ExecutionBundle: "kubernaut.io/workflows/restart:v1.0.0",
 					Confidence:     0.92,
 					Rationale:      "Selected for OOM recovery",
 				},
@@ -235,13 +235,13 @@ var _ = Describe("AnalyzingHandler", func() {
 				analysis.Status.AlternativeWorkflows = []aianalysisv1.AlternativeWorkflow{
 					{
 						WorkflowID:     "wf-scale-up",
-						ContainerImage: "kubernaut.io/workflows/scale:v1.0.0",
+						ExecutionBundle: "kubernaut.io/workflows/scale:v1.0.0",
 						Confidence:     0.75,
 						Rationale:      "Could scale up instead of restart",
 					},
 					{
 						WorkflowID:     "wf-rollback",
-						ContainerImage: "kubernaut.io/workflows/rollback:v1.0.0",
+						ExecutionBundle: "kubernaut.io/workflows/rollback:v1.0.0",
 						Confidence:     0.60,
 						Rationale:      "Could rollback to previous version",
 					},
