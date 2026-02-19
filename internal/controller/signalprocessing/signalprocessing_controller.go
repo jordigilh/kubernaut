@@ -18,7 +18,7 @@ limitations under the License.
 // Per IMPLEMENTATION_PLAN_V1.31.md - E2E GREEN Phase + BR-SP-090 Audit
 //
 // Reconciliation Flow:
-//  1. Pending → Enriching: K8s context enrichment + owner chain + detected labels
+//  1. Pending → Enriching: K8s context enrichment + owner chain + custom labels
 //  2. Enriching → Classifying: Environment + Priority classification
 //  3. Classifying → Categorizing: Business classification
 //  4. Categorizing → Completed: Final status update + audit event
@@ -29,7 +29,7 @@ limitations under the License.
 //   - BR-SP-070-072: Priority Assignment
 //   - BR-SP-090: Categorization Audit Trail
 //   - BR-SP-100: Owner Chain Traversal
-//   - BR-SP-101: Detected Labels
+//   - BR-SP-102: Custom Labels
 package signalprocessing
 
 import (
@@ -38,14 +38,9 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	appsv1 "k8s.io/api/apps/v1"
-	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	corev1 "k8s.io/api/core/v1"
-	networkingv1 "k8s.io/api/networking/v1"
-	policyv1 "k8s.io/api/policy/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
@@ -62,7 +57,6 @@ import (
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/audit"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/classifier"
-	"github.com/jordigilh/kubernaut/pkg/signalprocessing/detection"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/ownerchain"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/rego"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/status"
@@ -116,8 +110,7 @@ type SignalProcessingReconciler struct {
 
 	// Day 8-9 Enrichment Components (per IMPLEMENTATION_PLAN_V1.31.md)
 	// These are OPTIONAL - controller falls back to inline implementation if nil
-	RegoEngine    *rego.Engine             // BR-SP-102: CustomLabels Rego extraction
-	LabelDetector *detection.LabelDetector // BR-SP-101: DetectedLabels auto-detection
+	RegoEngine *rego.Engine // BR-SP-102: CustomLabels Rego extraction
 
 	// K8sEnricher provides sophisticated Kubernetes context enrichment
 	// This is MANDATORY - fail loudly if nil or on error
@@ -387,11 +380,7 @@ func (r *SignalProcessingReconciler) reconcileEnriching(ctx context.Context, sp 
 		return ctrl.Result{}, fmt.Errorf("enrichment failed: %w", err)
 	}
 
-	// 4. Detect labels (BR-SP-101)
-	detectedLabels := r.detectLabels(ctx, k8sCtx, targetNs, targetKind, targetName, logger)
-	k8sCtx.DetectedLabels = detectedLabels
-
-	// 5. Custom labels (BR-SP-102) - Rego-based extraction
+	// 4. Custom labels (BR-SP-102) - Rego-based extraction
 	// Per IMPLEMENTATION_PLAN_V1.31.md Day 8: Use RegoEngine for CustomLabels
 	customLabels := make(map[string][]string)
 	if r.RegoEngine != nil {
@@ -848,196 +837,6 @@ func (r *SignalProcessingReconciler) reconcileCategorizing(ctx context.Context, 
 	return ctrl.Result{}, nil
 }
 
-// detectLabels detects cluster characteristics using LabelDetector component.
-// BR-SP-101: Detected Labels Auto-Detection
-// Uses pkg/signalprocessing/detection.LabelDetector for mature detection logic.
-func (r *SignalProcessingReconciler) detectLabels(ctx context.Context, k8sCtx *signalprocessingv1alpha1.KubernetesContext, namespace string, targetKind, targetName string, logger logr.Logger) *signalprocessingv1alpha1.DetectedLabels {
-	labels := &signalprocessingv1alpha1.DetectedLabels{}
-
-	// 1. IsProduction - from namespace labels (controller-specific logic)
-	if k8sCtx.Namespace != nil {
-		env := k8sCtx.Namespace.Labels["kubernaut.ai/environment"]
-		labels.IsProduction = (env == "production" || env == "prod")
-	}
-
-	// 2-8. Use LabelDetector component for all detections (BR-SP-101)
-	// LabelDetector provides: TTL caching, HPA owner chain support, comprehensive GitOps detection
-	if r.LabelDetector != nil {
-		// Convert to sharedtypes for LabelDetector
-		sharedK8sCtx := r.buildRegoKubernetesContextForDetection(k8sCtx, targetKind, targetName)
-
-		// Convert owner chain from signalprocessingv1alpha1 to sharedtypes
-		sharedOwnerChain := make([]sharedtypes.OwnerChainEntry, len(k8sCtx.OwnerChain))
-		for i, owner := range k8sCtx.OwnerChain {
-			sharedOwnerChain[i] = sharedtypes.OwnerChainEntry{
-				Namespace: owner.Namespace,
-				Kind:      owner.Kind,
-				Name:      owner.Name,
-			}
-		}
-
-		// Call LabelDetector (now handles GitOps via namespace annotations)
-		detectedLabels := r.LabelDetector.DetectLabels(ctx, sharedK8sCtx, sharedOwnerChain)
-		if detectedLabels != nil {
-			// Map sharedtypes.DetectedLabels to signalprocessingv1alpha1.DetectedLabels
-			// Note: CRD DetectedLabels is a subset of sharedtypes.DetectedLabels
-			labels.GitOpsManaged = detectedLabels.GitOpsManaged
-			// GitOpsTool not in CRD v1alpha1 - logged only
-			if detectedLabels.GitOpsTool != "" {
-				logger.V(2).Info("GitOps tool detected", "tool", detectedLabels.GitOpsTool)
-			}
-			labels.HasPDB = detectedLabels.PDBProtected
-			labels.HasHPA = detectedLabels.HPAEnabled
-			// Stateful not in CRD v1alpha1 - logged only
-			if detectedLabels.Stateful {
-				logger.V(2).Info("Stateful workload detected")
-			}
-			labels.HelmManaged = detectedLabels.HelmManaged
-			labels.NetworkIsolated = detectedLabels.NetworkIsolated
-			labels.ServiceMesh = detectedLabels.ServiceMesh != "" // Convert string to bool
-			// FailedDetections not in CRD v1alpha1 - logged only
-			if len(detectedLabels.FailedDetections) > 0 {
-				logger.Info("Some label detections failed", "failedDetections", detectedLabels.FailedDetections)
-			}
-		}
-	} else {
-		// Fallback to inline detection if LabelDetector not available (should not happen in production)
-		logger.V(1).Info("LabelDetector not available, using inline detection fallback")
-		labels.GitOpsManaged = r.detectGitOpsFromNamespace(k8sCtx)
-		labels.HelmManaged = r.detectHelmFallback(ctx, k8sCtx, namespace)
-		labels.HasPDB = r.hasPDB(ctx, namespace, k8sCtx, logger)
-		labels.HasHPA = r.hasHPA(ctx, namespace, targetKind, targetName, k8sCtx, logger)
-		labels.NetworkIsolated = r.hasNetworkPolicy(ctx, namespace, logger)
-		labels.ServiceMesh = r.detectServiceMeshFallback(k8sCtx)
-	}
-
-	return labels
-}
-
-// detectGitOpsFromNamespace detects GitOps management from namespace annotations.
-// BR-SP-101: GitOps detection from namespace annotations (not in LabelDetector).
-// Note: LabelDetector checks labels, but namespace-level GitOps uses annotations.
-func (r *SignalProcessingReconciler) detectGitOpsFromNamespace(k8sCtx *signalprocessingv1alpha1.KubernetesContext) bool {
-	if k8sCtx.Namespace != nil {
-		annos := k8sCtx.Namespace.Annotations
-		if annos != nil {
-			if _, ok := annos["argocd.argoproj.io/managed"]; ok {
-				return true
-			}
-			if _, ok := annos["fluxcd.io/sync-status"]; ok {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// detectHelmFallback is fallback Helm detection (used only if LabelDetector unavailable).
-func (r *SignalProcessingReconciler) detectHelmFallback(ctx context.Context, k8sCtx *signalprocessingv1alpha1.KubernetesContext, namespace string) bool {
-	for _, owner := range k8sCtx.OwnerChain {
-		if owner.Kind == "Deployment" {
-			deploy := &appsv1.Deployment{}
-			if err := r.Get(ctx, types.NamespacedName{Namespace: namespace, Name: owner.Name}, deploy); err == nil {
-				if _, ok := deploy.Labels["helm.sh/chart"]; ok {
-					return true
-				}
-				if managedBy, ok := deploy.Labels["app.kubernetes.io/managed-by"]; ok && managedBy == "Helm" {
-					return true
-				}
-			}
-		}
-	}
-	return false
-}
-
-// detectServiceMeshFallback is fallback service mesh detection (used only if LabelDetector unavailable).
-func (r *SignalProcessingReconciler) detectServiceMeshFallback(k8sCtx *signalprocessingv1alpha1.KubernetesContext) bool {
-	if k8sCtx.Pod != nil && k8sCtx.Pod.Annotations != nil {
-		// Istio
-		if _, ok := k8sCtx.Pod.Annotations["sidecar.istio.io/status"]; ok {
-			return true
-		}
-		// Linkerd
-		if _, ok := k8sCtx.Pod.Annotations["linkerd.io/proxy-version"]; ok {
-			return true
-		}
-	}
-	return false
-}
-
-// hasPDB checks if any PDB applies to the target resource.
-func (r *SignalProcessingReconciler) hasPDB(ctx context.Context, namespace string, k8sCtx *signalprocessingv1alpha1.KubernetesContext, logger logr.Logger) bool {
-	pdbList := &policyv1.PodDisruptionBudgetList{}
-	if err := r.List(ctx, pdbList, client.InNamespace(namespace)); err != nil {
-		logger.V(1).Info("Failed to list PDBs", "error", err)
-		return false
-	}
-
-	// Get pod labels to match against PDB selectors
-	var podLabels map[string]string
-	if k8sCtx.Pod != nil {
-		podLabels = k8sCtx.Pod.Labels
-	}
-
-	if podLabels == nil {
-		return false
-	}
-
-	for _, pdb := range pdbList.Items {
-		if pdb.Spec.Selector == nil {
-			continue
-		}
-		selector, err := metav1.LabelSelectorAsSelector(pdb.Spec.Selector)
-		if err != nil {
-			continue
-		}
-		if selector.Matches(labels.Set(podLabels)) {
-			return true
-		}
-	}
-
-	return false
-}
-
-// hasHPA checks if any HPA targets resources in the owner chain.
-func (r *SignalProcessingReconciler) hasHPA(ctx context.Context, namespace string, targetKind, targetName string, k8sCtx *signalprocessingv1alpha1.KubernetesContext, logger logr.Logger) bool {
-	hpaList := &autoscalingv2.HorizontalPodAutoscalerList{}
-	if err := r.List(ctx, hpaList, client.InNamespace(namespace)); err != nil {
-		logger.V(1).Info("Failed to list HPAs", "error", err)
-		return false
-	}
-
-	// Check if any HPA targets this workload
-	// BR-SP-101: Check both direct target and owner chain
-	for _, hpa := range hpaList.Items {
-		targetRef := hpa.Spec.ScaleTargetRef
-
-		// 1. Check if HPA directly targets the signal's target resource
-		if targetRef.Kind == targetKind && targetRef.Name == targetName {
-			return true
-		}
-
-		// 2. Check if HPA targets a resource in the owner chain
-		for _, owner := range k8sCtx.OwnerChain {
-			if owner.Kind == targetRef.Kind && owner.Name == targetRef.Name {
-				return true
-			}
-		}
-	}
-
-	return false
-}
-
-// hasNetworkPolicy checks if any NetworkPolicy applies to the namespace.
-func (r *SignalProcessingReconciler) hasNetworkPolicy(ctx context.Context, namespace string, logger logr.Logger) bool {
-	npList := &networkingv1.NetworkPolicyList{}
-	if err := r.List(ctx, npList, client.InNamespace(namespace)); err != nil {
-		logger.V(1).Info("Failed to list NetworkPolicies", "error", err)
-		return false
-	}
-	return len(npList.Items) > 0
-}
-
 // buildRecoveryContext extracts recovery context from the RemediationRequest.
 // BR-SP-003: Recovery Context Integration
 // DD-001: Recovery Context Enrichment
@@ -1207,31 +1006,6 @@ func (r *SignalProcessingReconciler) buildRegoKubernetesContext(k8sCtx *signalpr
 		result.DeploymentDetails = &sharedtypes.DeploymentDetails{
 			Labels:   k8sCtx.Deployment.Labels,
 			Replicas: k8sCtx.Deployment.Replicas,
-		}
-	}
-
-	return result
-}
-
-// buildRegoKubernetesContextForDetection builds a KubernetesContext for LabelDetector.
-// BR-SP-101: Includes target resource information for HPA detection.
-func (r *SignalProcessingReconciler) buildRegoKubernetesContextForDetection(k8sCtx *signalprocessingv1alpha1.KubernetesContext, targetKind, targetName string) *sharedtypes.KubernetesContext {
-	result := r.buildRegoKubernetesContext(k8sCtx)
-
-	// BR-SP-101: For LabelDetector, populate deployment name for HPA detection
-	// If the signal target is a Deployment, use target name directly
-	if targetKind == "Deployment" && targetName != "" {
-		if result.DeploymentDetails == nil {
-			result.DeploymentDetails = &sharedtypes.DeploymentDetails{}
-		}
-		result.DeploymentDetails.Name = targetName
-	} else if result.DeploymentDetails != nil {
-		// Otherwise, try to extract from owner chain
-		for _, owner := range k8sCtx.OwnerChain {
-			if owner.Kind == "Deployment" {
-				result.DeploymentDetails.Name = owner.Name
-				break
-			}
 		}
 	}
 

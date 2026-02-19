@@ -2,12 +2,9 @@ package signalprocessing
 
 import (
 	"context"
-	"strings"
 
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
-	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	corev1 "k8s.io/api/core/v1"
-	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -83,35 +80,20 @@ func (m *mockK8sEnricher) Enrich(ctx context.Context, signal *signalprocessingv1
 		Namespace: &signalprocessingv1alpha1.NamespaceContext{
 			Name: signal.TargetResource.Namespace,
 		},
-		DetectedLabels: &signalprocessingv1alpha1.DetectedLabels{},
 	}
 
 	// If client provided, enrich with real K8s data from fake client
 	if m.Client != nil {
-		// Enrich namespace context with labels and detect patterns
 		if signal.TargetResource.Namespace != "" {
 			ns := &corev1.Namespace{}
 			nsKey := client.ObjectKey{Name: signal.TargetResource.Namespace}
 			if err := m.Client.Get(ctx, nsKey, ns); err == nil {
 				k8sCtx.Namespace.Labels = ns.Labels
 				k8sCtx.Namespace.Annotations = ns.Annotations
-
-				// Detect production environment from labels
-				if ns.Labels["env"] == "production" || ns.Labels["environment"] == "production" {
-					k8sCtx.DetectedLabels.IsProduction = true
-				}
-
-				// Detect GitOps management from annotations
-				for annKey := range ns.Annotations {
-					if strings.HasPrefix(annKey, "argocd.argoproj.io/") || strings.HasPrefix(annKey, "fluxcd.io/") {
-						k8sCtx.DetectedLabels.GitOpsManaged = true
-						break
-					}
-				}
 			}
 		}
 
-		// Detect PDB for Pod resources
+		// Enrich Pod details
 		if signal.TargetResource.Kind == "Pod" {
 			pod := &corev1.Pod{}
 			podKey := client.ObjectKey{
@@ -119,53 +101,14 @@ func (m *mockK8sEnricher) Enrich(ctx context.Context, signal *signalprocessingv1
 				Namespace: signal.TargetResource.Namespace,
 			}
 			if err := m.Client.Get(ctx, podKey, pod); err == nil {
-				// Store pod labels for PDB matching
 				k8sCtx.Pod = &signalprocessingv1alpha1.PodDetails{
 					Labels: pod.Labels,
-				}
-
-				// Check for PDB matching pod labels
-				pdbList := &policyv1.PodDisruptionBudgetList{}
-				if err := m.Client.List(ctx, pdbList, client.InNamespace(signal.TargetResource.Namespace)); err == nil {
-					for _, pdb := range pdbList.Items {
-						// Simple label matching (real enricher does more sophisticated matching)
-						if matchesLabels(pdb.Spec.Selector.MatchLabels, pod.Labels) {
-							k8sCtx.DetectedLabels.HasPDB = true
-							break
-						}
-					}
-				}
-			}
-		}
-
-		// Detect HPA for Deployment resources
-		if signal.TargetResource.Kind == "Deployment" {
-			hpaList := &autoscalingv2.HorizontalPodAutoscalerList{}
-			if err := m.Client.List(ctx, hpaList, client.InNamespace(signal.TargetResource.Namespace)); err == nil {
-				for _, hpa := range hpaList.Items {
-					if hpa.Spec.ScaleTargetRef.Name == signal.TargetResource.Name {
-						k8sCtx.DetectedLabels.HasHPA = true
-						break
-					}
 				}
 			}
 		}
 	}
 
 	return k8sCtx, nil
-}
-
-// matchesLabels checks if selector labels match target labels (simplified version).
-func matchesLabels(selector, target map[string]string) bool {
-	if len(selector) == 0 {
-		return false
-	}
-	for k, v := range selector {
-		if target[k] != v {
-			return false
-		}
-	}
-	return true
 }
 
 // newDefaultMockK8sEnricher creates a mock that returns minimal K8s context.

@@ -2543,18 +2543,6 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 			{
-				if s.HasPdb.Set {
-					e.FieldStart("has_pdb")
-					s.HasPdb.Encode(e)
-				}
-			}
-			{
-				if s.HasHpa.Set {
-					e.FieldStart("has_hpa")
-					s.HasHpa.Encode(e)
-				}
-			}
-			{
 				if s.DurationMs.Set {
 					e.FieldStart("duration_ms")
 					s.DurationMs.Encode(e)
@@ -4999,18 +4987,6 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				if s.DegradedMode.Set {
 					e.FieldStart("degraded_mode")
 					s.DegradedMode.Encode(e)
-				}
-			}
-			{
-				if s.HasPdb.Set {
-					e.FieldStart("has_pdb")
-					s.HasPdb.Encode(e)
-				}
-			}
-			{
-				if s.HasHpa.Set {
-					e.FieldStart("has_hpa")
-					s.HasHpa.Encode(e)
 				}
 			}
 			{
@@ -26099,18 +26075,6 @@ func (s *SignalProcessingAuditPayload) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.HasPdb.Set {
-			e.FieldStart("has_pdb")
-			s.HasPdb.Encode(e)
-		}
-	}
-	{
-		if s.HasHpa.Set {
-			e.FieldStart("has_hpa")
-			s.HasHpa.Encode(e)
-		}
-	}
-	{
 		if s.DurationMs.Set {
 			e.FieldStart("duration_ms")
 			s.DurationMs.Encode(e)
@@ -26172,7 +26136,7 @@ func (s *SignalProcessingAuditPayload) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSignalProcessingAuditPayload = [29]string{
+var jsonFieldsNameOfSignalProcessingAuditPayload = [27]string{
 	0:  "event_type",
 	1:  "phase",
 	2:  "signal",
@@ -26190,18 +26154,16 @@ var jsonFieldsNameOfSignalProcessingAuditPayload = [29]string{
 	14: "has_owner_chain",
 	15: "owner_chain_length",
 	16: "degraded_mode",
-	17: "has_pdb",
-	18: "has_hpa",
-	19: "duration_ms",
-	20: "has_namespace",
-	21: "has_pod",
-	22: "has_deployment",
-	23: "business_unit",
-	24: "from_phase",
-	25: "to_phase",
-	26: "signal_mode",
-	27: "original_signal_type",
-	28: "error",
+	17: "duration_ms",
+	18: "has_namespace",
+	19: "has_pod",
+	20: "has_deployment",
+	21: "business_unit",
+	22: "from_phase",
+	23: "to_phase",
+	24: "signal_mode",
+	25: "original_signal_type",
+	26: "error",
 }
 
 // Decode decodes SignalProcessingAuditPayload from json.
@@ -26384,26 +26346,6 @@ func (s *SignalProcessingAuditPayload) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"degraded_mode\"")
-			}
-		case "has_pdb":
-			if err := func() error {
-				s.HasPdb.Reset()
-				if err := s.HasPdb.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"has_pdb\"")
-			}
-		case "has_hpa":
-			if err := func() error {
-				s.HasHpa.Reset()
-				if err := s.HasHpa.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"has_hpa\"")
 			}
 		case "duration_ms":
 			if err := func() error {

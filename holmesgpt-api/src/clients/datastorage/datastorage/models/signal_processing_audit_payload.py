@@ -48,8 +48,6 @@ class SignalProcessingAuditPayload(BaseModel):
     has_owner_chain: Optional[StrictBool] = Field(default=None, description="Whether the resource has an owner chain")
     owner_chain_length: Optional[StrictInt] = Field(default=None, description="Length of the owner chain")
     degraded_mode: Optional[StrictBool] = Field(default=None, description="Whether context enrichment was degraded")
-    has_pdb: Optional[StrictBool] = Field(default=None, description="Whether the resource has a PodDisruptionBudget")
-    has_hpa: Optional[StrictBool] = Field(default=None, description="Whether the resource has a HorizontalPodAutoscaler")
     duration_ms: Optional[StrictInt] = Field(default=None, description="Enrichment duration in milliseconds")
     has_namespace: Optional[StrictBool] = Field(default=None, description="Whether namespace context was enriched")
     has_pod: Optional[StrictBool] = Field(default=None, description="Whether pod context was enriched")
@@ -60,7 +58,7 @@ class SignalProcessingAuditPayload(BaseModel):
     signal_mode: Optional[StrictStr] = Field(default=None, description="Whether this signal is reactive (incident occurred) or predictive (incident predicted). BR-SP-106 Predictive Signal Mode Classification.")
     original_signal_type: Optional[StrictStr] = Field(default=None, description="Original signal type before normalization. Only populated for predictive signals (e.g., PredictedOOMKill). SOC2 CC7.4 audit trail preservation.")
     error: Optional[StrictStr] = Field(default=None, description="Error message if processing failed")
-    __properties: ClassVar[List[str]] = ["event_type", "phase", "signal", "severity", "external_severity", "normalized_severity", "determination_source", "policy_hash", "environment", "environment_source", "priority", "priority_source", "criticality", "sla_requirement", "has_owner_chain", "owner_chain_length", "degraded_mode", "has_pdb", "has_hpa", "duration_ms", "has_namespace", "has_pod", "has_deployment", "business_unit", "from_phase", "to_phase", "signal_mode", "original_signal_type", "error"]
+    __properties: ClassVar[List[str]] = ["event_type", "phase", "signal", "severity", "external_severity", "normalized_severity", "determination_source", "policy_hash", "environment", "environment_source", "priority", "priority_source", "criticality", "sla_requirement", "has_owner_chain", "owner_chain_length", "degraded_mode", "duration_ms", "has_namespace", "has_pod", "has_deployment", "business_unit", "from_phase", "to_phase", "signal_mode", "original_signal_type", "error"]
 
     @field_validator('event_type')
     def event_type_validate_enum(cls, value):
@@ -242,8 +240,6 @@ class SignalProcessingAuditPayload(BaseModel):
             "has_owner_chain": obj.get("has_owner_chain"),
             "owner_chain_length": obj.get("owner_chain_length"),
             "degraded_mode": obj.get("degraded_mode"),
-            "has_pdb": obj.get("has_pdb"),
-            "has_hpa": obj.get("has_hpa"),
             "duration_ms": obj.get("duration_ms"),
             "has_namespace": obj.get("has_namespace"),
             "has_pod": obj.get("has_pod"),

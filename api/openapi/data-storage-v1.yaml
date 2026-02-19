@@ -3571,12 +3571,6 @@ components:
         degraded_mode:
           type: boolean
           description: Whether context enrichment was degraded
-        has_pdb:
-          type: boolean
-          description: Whether the resource has a PodDisruptionBudget
-        has_hpa:
-          type: boolean
-          description: Whether the resource has a HorizontalPodAutoscaler
 
         # Enrichment Fields (conditional)
         duration_ms:

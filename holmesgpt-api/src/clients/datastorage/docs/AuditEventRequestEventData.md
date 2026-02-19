@@ -61,8 +61,6 @@ Name | Type | Description | Notes
 **has_owner_chain** | **bool** | Whether the resource has an owner chain | [optional] 
 **owner_chain_length** | **int** | Length of the owner chain | [optional] 
 **degraded_mode** | **bool** | Whether operating in degraded mode | 
-**has_pdb** | **bool** | Whether the resource has a PodDisruptionBudget | [optional] 
-**has_hpa** | **bool** | Whether the resource has a HorizontalPodAutoscaler | [optional] 
 **has_namespace** | **bool** | Whether namespace context was enriched | [optional] 
 **has_pod** | **bool** | Whether pod context was enriched | [optional] 
 **has_deployment** | **bool** | Whether deployment context was enriched | [optional] 

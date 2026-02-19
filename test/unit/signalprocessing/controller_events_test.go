@@ -265,7 +265,6 @@ var _ = Describe("SignalProcessing Controller K8s Events [DD-EVENT-001]", func()
 							Labels: signal.Labels,
 						},
 						DegradedMode: true,
-						DetectedLabels: &signalprocessingv1alpha1.DetectedLabels{},
 					}, nil
 				},
 			}
@@ -330,10 +329,9 @@ var _ = Describe("SignalProcessing Controller K8s Events [DD-EVENT-001]", func()
 					KubernetesContext: &signalprocessingv1alpha1.KubernetesContext{
 						Namespace: &signalprocessingv1alpha1.NamespaceContext{
 							Name:   "default",
-							Labels: map[string]string{"env": "production"},
-						},
-						DetectedLabels: &signalprocessingv1alpha1.DetectedLabels{},
+						Labels: map[string]string{"env": "production"},
 					},
+				},
 					EnvironmentClassification: &signalprocessingv1alpha1.EnvironmentClassification{
 						Environment: "production",
 						Source:      "mock",

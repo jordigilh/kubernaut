@@ -53,8 +53,6 @@ class TestSignalProcessingAuditPayload(unittest.TestCase):
                 has_owner_chain = True,
                 owner_chain_length = 56,
                 degraded_mode = True,
-                has_pdb = True,
-                has_hpa = True,
                 duration_ms = 56,
                 has_namespace = True,
                 has_pod = True,
