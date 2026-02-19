@@ -1,9 +1,0 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: kubernaut-system
-  labels:
-    name: kubernaut-system
-    managed-by: kubernaut
-    component: core-services
-
