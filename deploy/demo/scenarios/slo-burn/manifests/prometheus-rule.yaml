@@ -1,0 +1,37 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: kubernaut-slo-rules
+  namespace: demo-slo
+  labels:
+    release: prometheus
+spec:
+  groups:
+  - name: kubernaut-slo
+    rules:
+    # 5m rolling error rate from blackbox probe results
+    # probe_success is 0 (fail) or 1 (pass), probed every 10s
+    - record: job:api_gateway:error_rate_5m
+      expr: |
+        1 - avg_over_time(probe_success{namespace="demo-slo", instance=~".*api-gateway.*"}[5m])
+
+    # SLO: 99.9% availability (0.1% error budget)
+    # Alert when error rate exceeds 14.4x sustainable burn rate (~1h to exhaust budget)
+    # Threshold: 0.001 * 14.4 = 1.44% error rate
+    - alert: KubernautSLOBudgetBurning
+      expr: |
+        job:api_gateway:error_rate_5m > (0.001 * 14.4)
+      for: 2m
+      labels:
+        severity: critical
+      annotations:
+        summary: >
+          Service api-gateway burning SLO error budget at
+          {{ $value | humanizePercentage }} error rate.
+          SLO target: 99.9% (0.1% error budget). At this rate, the budget
+          will exhaust within approximately 1 hour.
+        description: >
+          The 5-minute rolling error rate for api-gateway in demo-slo has exceeded
+          the sustainable burn rate threshold (14.4x). This is measured via blackbox
+          probing of the /api/ endpoint. Proactive rollback is recommended to
+          preserve the SLO.

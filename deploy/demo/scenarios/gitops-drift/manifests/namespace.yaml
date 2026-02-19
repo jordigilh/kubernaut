@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: demo-gitops
+  labels:
+    kubernaut.ai/environment: staging
+    kubernaut.ai/business-unit: platform
+    kubernaut.ai/service-owner: sre-team
+    kubernaut.ai/criticality: high
+    kubernaut.ai/sla-tier: tier-2

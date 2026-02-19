@@ -1,0 +1,37 @@
+# Node Provisioning Workflow Schema - Job Backend (BR-WORKFLOW-004)
+# Scenario: #126 -- Cluster autoscaling (Kind + Podman)
+metadata:
+  workflowId: provision-node-v1
+  version: "1.0.0"
+  description:
+    what: "Requests provisioning of a new Kubernetes node to increase cluster capacity when pods are stuck Pending"
+    whenToUse: "When pods are Pending due to insufficient cluster-wide resources (CPU, memory) and no existing node has capacity"
+    whenNotToUse: "When scheduling failures are caused by taints, affinity rules, or PDB constraints rather than resource exhaustion"
+    preconditions: "All schedulable nodes are at or near capacity, pending pods have resource requests that cannot be satisfied"
+
+actionType: ProvisionNode
+
+labels:
+  signalType: FailedScheduling
+  severity: [critical, high]
+  environment: [production, staging]
+  component: "*"
+  priority: "*"
+
+execution:
+  engine: job
+  bundle: quay.io/kubernaut-cicd/test-workflows/provision-node-job@sha256:placeholder
+
+parameters:
+  - name: TARGET_NAMESPACE
+    type: string
+    required: true
+    description: "Namespace with pending pods"
+  - name: TARGET_APP
+    type: string
+    required: true
+    description: "Label selector value for the app with pending pods"
+  - name: CLUSTER_NAME
+    type: string
+    required: true
+    description: "Kind cluster name (for provisioner agent coordination)"

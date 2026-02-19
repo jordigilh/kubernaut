@@ -1,0 +1,71 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: blackbox-exporter
+  namespace: demo-slo
+  labels:
+    app: blackbox-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: blackbox-exporter
+  template:
+    metadata:
+      labels:
+        app: blackbox-exporter
+    spec:
+      containers:
+      - name: blackbox-exporter
+        image: quay.io/prometheus/blackbox-exporter:v0.25.0
+        ports:
+        - containerPort: 9115
+          name: http
+        resources:
+          requests:
+            memory: "16Mi"
+            cpu: "5m"
+          limits:
+            memory: "32Mi"
+            cpu: "20m"
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 9115
+          initialDelaySeconds: 3
+          periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: blackbox-exporter
+  namespace: demo-slo
+  labels:
+    app: blackbox-exporter
+spec:
+  selector:
+    app: blackbox-exporter
+  ports:
+  - port: 9115
+    targetPort: 9115
+    name: http
+  type: ClusterIP
+---
+# Probe CRD: instructs prometheus-operator to scrape blackbox-exporter
+# targeting the api-gateway /api/ endpoint every 10 seconds
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata:
+  name: api-gateway-probe
+  namespace: demo-slo
+  labels:
+    release: prometheus
+spec:
+  interval: 10s
+  module: http_2xx
+  prober:
+    url: blackbox-exporter.demo-slo.svc:9115
+  targets:
+    staticConfig:
+      static:
+      - http://api-gateway.demo-slo.svc/api/status
