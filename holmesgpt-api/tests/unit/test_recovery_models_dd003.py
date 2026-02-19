@@ -388,23 +388,20 @@ class TestEnrichmentResultsModel:
     DetectedLabels for workflow filtering.
     """
 
-    def test_enrichment_results_contains_detected_labels(self):
+    def test_enrichment_results_contains_kubernetes_context_and_custom_labels(self):
         """
-        Business Outcome: DetectedLabels accessible via enrichment_results
+        Business Outcome: EnrichmentResults carries kubernetesContext and customLabels.
+        ADR-056: detectedLabels removed (computed by HAPI post-RCA).
         """
-        from src.models.incident_models import EnrichmentResults, DetectedLabels
+        from src.models.incident_models import EnrichmentResults
 
         enrichment = EnrichmentResults(
-            detectedLabels=DetectedLabels(
-                gitOpsManaged=True,
-                gitOpsTool="flux"
-            ),
-            enrichmentQuality=0.95
+            kubernetesContext={"pod_status": "Running"},
+            customLabels={"team": ["platform"]},
         )
 
-        assert enrichment.detectedLabels.gitOpsManaged is True
-        assert enrichment.detectedLabels.gitOpsTool == "flux"
-        assert enrichment.enrichmentQuality == 0.95
+        assert enrichment.kubernetesContext["pod_status"] == "Running"
+        assert enrichment.customLabels["team"] == ["platform"]
 
     def test_enrichment_results_allows_kubernetes_context(self):
         """
@@ -439,17 +436,17 @@ class TestEnrichmentResultsModel:
 
         assert enrichment.customLabels["team"] == ["platform"]
 
-    def test_enrichment_quality_bounded_0_to_1(self):
+    def test_enrichment_results_all_fields_optional(self):
         """
-        Business Outcome: Quality score is a valid percentage
+        Business Outcome: All EnrichmentResults fields are optional.
+        ADR-056: enrichmentQuality removed along with detectedLabels.
         """
         from src.models.incident_models import EnrichmentResults
 
-        with pytest.raises(ValidationError):
-            EnrichmentResults(enrichmentQuality=1.5)  # Invalid
+        enrichment = EnrichmentResults()
 
-        with pytest.raises(ValidationError):
-            EnrichmentResults(enrichmentQuality=-0.1)  # Invalid
+        assert enrichment.kubernetesContext is None
+        assert enrichment.customLabels is None
 
 
 class TestIncidentRequestWithEnrichmentResults:
@@ -464,9 +461,7 @@ class TestIncidentRequestWithEnrichmentResults:
         """
         Business Outcome: Incident analysis includes cluster context
         """
-        from src.models.incident_models import (
-            IncidentRequest, EnrichmentResults, DetectedLabels
-        )
+        from src.models.incident_models import IncidentRequest, EnrichmentResults
 
         request = IncidentRequest(
             incident_id="inc-001",
@@ -484,16 +479,13 @@ class TestIncidentRequestWithEnrichmentResults:
             business_category="critical",
             cluster_name="prod-us-west-2",
             enrichment_results=EnrichmentResults(
-                detectedLabels=DetectedLabels(
-                    gitOpsManaged=True,
-                    gitOpsTool="argocd",
-                    pdbProtected=True
-                )
+                kubernetesContext={"pod_status": "Running"},
+                customLabels={"team": ["platform"]},
             )
         )
 
         assert request.enrichment_results is not None
-        assert request.enrichment_results.detectedLabels.gitOpsManaged is True
+        assert request.enrichment_results.kubernetesContext["pod_status"] == "Running"
 
     def test_incident_request_works_without_enrichment_results(self):
         """

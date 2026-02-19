@@ -425,6 +425,7 @@ class TestDiscoveryToolsExecutionBundle:
             component="pod",
             environment="production",
             priority="P0",
+            session_state={"detected_labels": {}},
         )
 
         mock_response = Mock()
@@ -475,6 +476,7 @@ class TestDiscoveryToolsExecutionBundle:
             component="pod",
             environment="production",
             priority="P0",
+            session_state={"detected_labels": {}},
         )
 
         mock_response = Mock()
