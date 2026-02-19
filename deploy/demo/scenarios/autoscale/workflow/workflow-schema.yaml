@@ -20,7 +20,7 @@ labels:
 
 execution:
   engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/provision-node-job@sha256:placeholder
+  bundle: quay.io/kubernaut-cicd/test-workflows/provision-node-job@sha256:064539dc0ca47d659cf80c866443478c04219b724e12e9c5bc3be37042b031c1
 
 parameters:
   - name: TARGET_NAMESPACE
