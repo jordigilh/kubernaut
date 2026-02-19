@@ -167,8 +167,8 @@ SignalProcessing                  AIAnalysis              HAPI
 
 | File | Change | Rationale |
 |------|--------|-----------|
-| `pkg/shared/types/enrichment.go` | Remove `OwnerChain []OwnerChainEntry` field from `EnrichmentResults`. Keep `OwnerChainEntry` type (used by SP internally). | OwnerChain no longer propagated; SP uses its own CRD type |
-| `pkg/shared/types/enrichment.go` | Remove `DetectedLabels *DetectedLabels` field from `EnrichmentResults`. Keep `DetectedLabels` type (used by SP internally). | Labels no longer propagated; SP uses them internally |
+| `pkg/shared/types/enrichment.go` | Remove `OwnerChain []OwnerChainEntry` field from `EnrichmentResults` (**ADR-055: removed**). Keep `OwnerChainEntry` type (used by SP internally). | OwnerChain no longer propagated; SP uses its own CRD type |
+| `pkg/shared/types/enrichment.go` | Remove `DetectedLabels *DetectedLabels` field from `EnrichmentResults` (**ADR-056: removed, now in PostRCAContext**). Keep `DetectedLabels` type (used by SP internally). | Labels no longer propagated; SP uses them internally |
 | `pkg/remediationorchestrator/creator/aianalysis.go` | Remove `buildEnrichmentResults` OwnerChain copy logic and DetectedLabels copy logic | No longer propagated to AIAnalysis |
 | `pkg/aianalysis/handlers/request_builder.go` | Remove DetectedLabels mapping to HAPI request (OwnerChain mapping already removed by ADR-055) | HAPI computes its own labels |
 | `api/signalprocessing/v1alpha1/signalprocessing_types.go` | Keep `OwnerChain` in `KubernetesContext` (SP-internal) | SP still needs it for its own label detection |

@@ -1,5 +1,7 @@
 # ⚠️ NOTICE: AIAnalysis CRD Path Correction
 
+> **Note (ADR-056/ADR-055):** References to `EnrichmentResults.DetectedLabels` and `EnrichmentResults.OwnerChain` in this document are historical. These fields were removed: DetectedLabels is now computed by HAPI post-RCA (ADR-056), and OwnerChain is resolved via get_resource_context (ADR-055).
+
 **Date**: December 2, 2025
 **From**: AIAnalysis Service Team
 **To**: SignalProcessing Team, Remediation Orchestrator Team

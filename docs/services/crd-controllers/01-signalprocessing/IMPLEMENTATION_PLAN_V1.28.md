@@ -1,5 +1,7 @@
 # Signal Processing Service - Implementation Plan
 
+> **Note (ADR-056/ADR-055):** References to `EnrichmentResults.DetectedLabels` and `EnrichmentResults.OwnerChain` in this document are historical. These fields were removed per ADR-056 and ADR-055.
+
 **Filename**: `IMPLEMENTATION_PLAN_V1.29.md`
 **Version**: v1.29
 **Last Updated**: 2025-12-07

@@ -64,11 +64,11 @@ type InvestigationRequest struct {
     KubernetesContext *KubernetesContext `json:"kubernetesContext,omitempty"`
 
     // Labels for workflow filtering (DD-WORKFLOW-001 v1.8)
-    DetectedLabels *DetectedLabels       `json:"detectedLabels,omitempty"`
+    DetectedLabels *DetectedLabels       `json:"detectedLabels,omitempty"`  // ADR-056: removed from EnrichmentResults
     CustomLabels   map[string][]string   `json:"customLabels,omitempty"`
 
     // Owner chain for DetectedLabels validation (DD-WORKFLOW-001 v1.7)
-    OwnerChain []OwnerChainEntry `json:"ownerChain,omitempty"`
+    OwnerChain []OwnerChainEntry `json:"ownerChain,omitempty"`  // ADR-055: removed from EnrichmentResults
 
     // Recovery context (if applicable)
     IsRecoveryAttempt  bool                `json:"isRecoveryAttempt,omitempty"`
@@ -283,9 +283,9 @@ func (r *AIAnalysisReconciler) buildInvestigationRequest(
     // Add enrichment data
     if aiAnalysis.Spec.EnrichmentResults != nil {
         req.KubernetesContext = aiAnalysis.Spec.EnrichmentResults.KubernetesContext
-        req.DetectedLabels = aiAnalysis.Spec.EnrichmentResults.DetectedLabels
+        req.DetectedLabels = aiAnalysis.Spec.EnrichmentResults.DetectedLabels  // ADR-056: removed from EnrichmentResults
         req.CustomLabels = aiAnalysis.Spec.EnrichmentResults.CustomLabels
-        req.OwnerChain = aiAnalysis.Spec.EnrichmentResults.OwnerChain
+        req.OwnerChain = aiAnalysis.Spec.EnrichmentResults.OwnerChain  // ADR-055: removed from EnrichmentResults
     }
 
     // Add recovery context (if applicable)
@@ -357,7 +357,7 @@ func (r *AIAnalysisReconciler) evaluateApprovalPolicy(
         ActionType:  "workflow_execution", // Generic for V1.0
 
         // Labels for advanced policy decisions
-        DetectedLabels: aiAnalysis.Spec.EnrichmentResults.DetectedLabels,
+        DetectedLabels: aiAnalysis.Spec.EnrichmentResults.DetectedLabels,  // ADR-056: removed from EnrichmentResults
         CustomLabels:   aiAnalysis.Spec.EnrichmentResults.CustomLabels,
 
         // Recovery context
@@ -451,8 +451,8 @@ func (r *AIAnalysisReconciler) SetupWithManager(mgr ctrl.Manager) error {
 | **No "Recommending" Phase** | Merged into Analyzing | HolmesGPT-API returns workflow recommendation directly |
 | **No HolmesGPTConfig** | Removed | V1.0 uses single HolmesGPT-API provider |
 | **No InvestigationScope** | Removed | HolmesGPT decides investigation scope dynamically |
-| **DetectedLabels + CustomLabels** | Added to request | DD-WORKFLOW-001 v1.8 for workflow filtering |
-| **OwnerChain** | Added to request | DD-WORKFLOW-001 v1.7 for label validation |
+| **DetectedLabels + CustomLabels** | Added to request | DD-WORKFLOW-001 v1.8 for workflow filtering (ADR-056: DetectedLabels removed from EnrichmentResults) |
+| **OwnerChain** | Added to request | DD-WORKFLOW-001 v1.7 for label validation (ADR-055: removed from EnrichmentResults) |
 | **PreviousExecutions as slice** | Added | Tracks ALL recovery attempts (not just last) |
 | **approvalRequired flag** | V1.0 signaling | RO orchestrates notification (no AIApprovalRequest CRD) |
 

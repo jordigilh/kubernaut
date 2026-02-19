@@ -1,5 +1,7 @@
 # AIAnalysis Integration Tests - Business Outcome Edge Case Triage
 
+> **Note (ADR-056/ADR-055):** References to `EnrichmentResults.DetectedLabels` and `EnrichmentResults.OwnerChain` in this document are historical. These fields were removed: DetectedLabels is now computed by HAPI post-RCA (ADR-056), and OwnerChain is resolved via get_resource_context (ADR-055).
+
 **Date**: December 16, 2025
 **Service**: AIAnalysis (AA)
 **Phase**: V1.0 Business Outcome Gap Analysis

@@ -10,7 +10,7 @@
 
 | Version | Date | Changes |
 |---------|------|---------|
-| v2.0 | 2025-11-30 | **V1.0 ALIGNMENT**: Updated schema to match AIAnalysis CRD types; Added DetectedLabels/CustomLabels columns; Updated for workflow selection (not recommendation generation); Removed hallucination detection column (redefined for catalog validation) |
+| v2.0 | 2025-11-30 | **V1.0 ALIGNMENT**: Updated schema to match AIAnalysis CRD types; Added DetectedLabels (ADR-056: removed from EnrichmentResults)/CustomLabels columns; Updated for workflow selection (not recommendation generation); Removed hallucination detection column (redefined for catalog validation) |
 | v1.0 | 2025-10-15 | Initial specification |
 
 ---
@@ -164,7 +164,7 @@ func (a *AuditClient) RecordInvestigationStart(
     aiAnalysis *aianalysisv1alpha1.AIAnalysis,
 ) error {
     // Marshal DetectedLabels and CustomLabels to JSON
-    detectedLabelsJSON, _ := json.Marshal(aiAnalysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.DetectedLabels)
+    detectedLabelsJSON, _ := json.Marshal(aiAnalysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.DetectedLabels)  // ADR-056: removed from EnrichmentResults
     customLabelsJSON, _ := json.Marshal(aiAnalysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.CustomLabels)
 
     audit := &AIAnalysisAudit{
