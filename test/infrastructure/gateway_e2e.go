@@ -574,8 +574,8 @@ func gatewayManifest(imageName string, enableCoverage bool) string {
 
 	if enableCoverage {
 		coverageEnvYAML = `
-          - name: GOCOVERDIR
-            value: /coverdata`
+            - name: GOCOVERDIR
+              value: /coverdata`
 		coverageVolumeMountYAML = `
             - name: coverdata
               mountPath: /coverdata`
