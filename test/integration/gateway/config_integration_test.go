@@ -249,6 +249,8 @@ datastorage:
 
 			By("6. Test missing required field (listenAddr)")
 			invalidMissingConfig := `
+server:
+  listenAddr: ""
 datastorage:
   url: "http://data-storage:8080"
   timeout: 10s
