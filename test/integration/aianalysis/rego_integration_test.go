@@ -180,9 +180,13 @@ var _ = Describe("Rego Policy Integration", Label("integration", "rego"), func()
 
 	Context("Stateful Workload Protection - BR-AI-011", func() {
 		It("should require approval for stateful workloads in production", func() {
+			// Use Kind "Deployment" (not "StatefulSet") to isolate the is_stateful rule (score 50)
+			// from the is_sensitive_resource rule (score 80). StatefulSet triggers BOTH rules,
+			// and the higher-scoring sensitive_resource reason wins, masking the stateful reason.
+			// A Deployment with detected_labels.stateful=true exercises the stateful path exclusively.
 			result, err := evaluator.Evaluate(evalCtx, &rego.PolicyInput{
 				Environment:      "production",
-				AffectedResource: &rego.AffectedResourceInput{Kind: "StatefulSet", Name: "db", Namespace: "production"},
+				AffectedResource: &rego.AffectedResourceInput{Kind: "Deployment", Name: "db", Namespace: "production"},
 				FailedDetections: []string{},
 				Confidence:       0.95,
 				DetectedLabels: map[string]interface{}{

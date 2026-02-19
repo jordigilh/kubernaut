@@ -378,24 +378,26 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 			Expect(eventTypeCounts[aiaudit.EventTypeAnalysisCompleted]).To(Equal(1),
 				"Should have exactly 1 analysis completion event")
 
-			// Total events: DD-TESTING-001 Pattern 4 (lines 256-299): Validate exact expected count
-			// Per DD-AUDIT-003: AIAnalysis Controller audit trail (filtered to exclude HAPI events)
-			//
-			// AIAnalysis Controller events (7):
-			// - 3 phase transitions (Pending→Investigating→Analyzing→Completed)
-			// - 1 AI agent API call metadata (aiagent.call)
-			// - 1 Rego evaluation (policy check)
-			// - 1 Approval decision (auto-approval or manual review)
-			// - 1 Analysis completion
-			//
-			// Note: HolmesGPT-API events (llm_request, llm_response, llm_tool_call, workflow_validation_attempt)
-			//       are EXCLUDED from this test. HAPI integration tests validate those separately.
-			//       This test focuses ONLY on AIAnalysis controller audit behavior.
-			//
-			// Total: 7 AIAnalysis events (deterministic per DD-AIANALYSIS-005 v1.x behavior)
-			// Breakdown: 3 phase transitions + 1 AI agent metadata + 1 Rego + 1 approval + 1 completion
-			Expect(len(events)).To(Equal(7),
-				"AIAnalysis workflow generates exactly 7 audit events: 3 phase transitions + 1 AI agent metadata + 1 Rego + 1 approval + 1 completion")
+		// Total events: DD-TESTING-001 Pattern 4 (lines 256-299): Validate exact expected count
+		// Per DD-AUDIT-003: AIAnalysis Controller audit trail (filtered to exclude HAPI events)
+		//
+		// AIAnalysis Controller events (9):
+		// - 3 phase transitions (Pending→Investigating→Analyzing→Completed)
+		// - 1 AI agent submit (aiagent.submit — session creation, BR-AA-HAPI-064)
+		// - 1 AI agent result (aiagent.result — session result retrieval, BR-AA-HAPI-064)
+		// - 1 AI agent API call metadata (aiagent.call — backward compat from RecordAIAgentResult)
+		// - 1 Rego evaluation (policy check)
+		// - 1 Approval decision (auto-approval or manual review)
+		// - 1 Analysis completion
+		//
+		// Note: HolmesGPT-API events (llm_request, llm_response, llm_tool_call, workflow_validation_attempt)
+		//       are EXCLUDED from this test. HAPI integration tests validate those separately.
+		//       This test focuses ONLY on AIAnalysis controller audit behavior.
+		//
+		// Total: 9 AIAnalysis events (deterministic per DD-AIANALYSIS-005 v1.x + BR-AA-HAPI-064 session audit)
+		// Breakdown: 3 phase transitions + 3 AI agent events (submit+result+call) + 1 Rego + 1 approval + 1 completion
+		Expect(len(events)).To(Equal(9),
+			"AIAnalysis workflow generates exactly 9 audit events: 3 phase transitions + 3 AI agent (submit+result+call) + 1 Rego + 1 approval + 1 completion")
 		})
 	})
 
