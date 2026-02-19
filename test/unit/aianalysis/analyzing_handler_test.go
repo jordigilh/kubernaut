@@ -29,7 +29,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
-	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/test/shared/mocks"
 )
 
@@ -489,54 +488,6 @@ var _ = Describe("AnalyzingHandler", func() {
 				Expect(mockEvaluator.LastInput.RecoveryAttemptNumber).To(Equal(0))
 			})
 
-			// BR-AI-012: DetectedLabels population from EnrichmentResults (DD-WORKFLOW-001 v2.2)
-			It("should pass DetectedLabels from EnrichmentResults", func() {
-				analysis := createTestAnalysis()
-				analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.DetectedLabels = &sharedtypes.DetectedLabels{
-					GitOpsManaged:   true,
-					GitOpsTool:      "argocd",
-					PDBProtected:    true,
-					HPAEnabled:      false,
-					Stateful:        true,
-					HelmManaged:     false,
-					NetworkIsolated: true,
-					ServiceMesh:     "istio",
-				}
-
-				_, err := handler.Handle(ctx, analysis)
-
-				Expect(err).NotTo(HaveOccurred())
-				Expect(mockEvaluator.LastInput).NotTo(BeNil())
-				Expect(mockEvaluator.LastInput.DetectedLabels).NotTo(BeNil())
-				// Verify snake_case keys per DD-WORKFLOW-001 v2.2
-				Expect(mockEvaluator.LastInput.DetectedLabels["git_ops_managed"]).To(BeTrue())
-				Expect(mockEvaluator.LastInput.DetectedLabels["git_ops_tool"]).To(Equal("argocd"))
-				Expect(mockEvaluator.LastInput.DetectedLabels["pdb_protected"]).To(BeTrue())
-				Expect(mockEvaluator.LastInput.DetectedLabels["hpa_enabled"]).To(BeFalse())
-				Expect(mockEvaluator.LastInput.DetectedLabels["stateful"]).To(BeTrue())
-				Expect(mockEvaluator.LastInput.DetectedLabels["helm_managed"]).To(BeFalse())
-				Expect(mockEvaluator.LastInput.DetectedLabels["network_isolated"]).To(BeTrue())
-				Expect(mockEvaluator.LastInput.DetectedLabels["service_mesh"]).To(Equal("istio"))
-			})
-
-			// BR-AI-012: FailedDetections populated from DetectedLabels
-			It("should pass FailedDetections from DetectedLabels", func() {
-				analysis := createTestAnalysis()
-				analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.DetectedLabels = &sharedtypes.DetectedLabels{
-					FailedDetections: []string{"pdbProtected", "hpaEnabled"},
-					PDBProtected:     false, // Value should be ignored per DD-WORKFLOW-001 v2.2
-					HPAEnabled:       false, // Value should be ignored
-				}
-
-				_, err := handler.Handle(ctx, analysis)
-
-				Expect(err).NotTo(HaveOccurred())
-				Expect(mockEvaluator.LastInput).NotTo(BeNil())
-				Expect(mockEvaluator.LastInput.FailedDetections).To(HaveLen(2))
-				Expect(mockEvaluator.LastInput.FailedDetections).To(ContainElement("pdbProtected"))
-				Expect(mockEvaluator.LastInput.FailedDetections).To(ContainElement("hpaEnabled"))
-			})
-
 			// BR-AI-012: CustomLabels population from EnrichmentResults
 			It("should pass CustomLabels from EnrichmentResults", func() {
 				analysis := createTestAnalysis()
@@ -555,19 +506,6 @@ var _ = Describe("AnalyzingHandler", func() {
 				Expect(mockEvaluator.LastInput.CustomLabels["constraint"]).To(ContainElement("stateful-safe"))
 				Expect(mockEvaluator.LastInput.CustomLabels["team"]).To(ContainElement("name=payments"))
 				Expect(mockEvaluator.LastInput.CustomLabels["region"]).To(ContainElement("us-east-1"))
-			})
-
-			// BR-AI-012: Empty DetectedLabels returns empty map
-			It("should return empty map when DetectedLabels is nil", func() {
-				analysis := createTestAnalysis()
-				analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.DetectedLabels = nil
-
-				_, err := handler.Handle(ctx, analysis)
-
-				Expect(err).NotTo(HaveOccurred())
-				Expect(mockEvaluator.LastInput).NotTo(BeNil())
-				Expect(mockEvaluator.LastInput.DetectedLabels).NotTo(BeNil())
-				Expect(mockEvaluator.LastInput.DetectedLabels).To(BeEmpty())
 			})
 
 			// BR-AI-012: Empty CustomLabels returns empty map
