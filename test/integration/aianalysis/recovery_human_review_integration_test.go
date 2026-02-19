@@ -97,11 +97,7 @@ var _ = Describe("BR-HAPI-197: Recovery Human Review Integration", Label("integr
 								Name:      "failing-pod",
 								Namespace: testNamespace,
 							},
-							EnrichmentResults: sharedtypes.EnrichmentResults{
-								DetectedLabels: &sharedtypes.DetectedLabels{
-									GitOpsManaged: true,
-								},
-							},
+							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
 						AnalysisTypes: []string{"recovery-analysis", "workflow-selection"},
 					},

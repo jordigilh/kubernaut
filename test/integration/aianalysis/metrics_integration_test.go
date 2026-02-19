@@ -125,12 +125,7 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 								Name:      "test-pod",
 								Namespace: namespace,
 							},
-							EnrichmentResults: sharedtypes.EnrichmentResults{
-								DetectedLabels: &sharedtypes.DetectedLabels{
-									GitOpsManaged: true,
-									GitOpsTool:    "argocd",
-								},
-							},
+							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
 						// DD-AIANALYSIS-005: v1.x single analysis type only
 						AnalysisTypes: []string{"incident-analysis"},
@@ -266,12 +261,7 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 								Name:      "prod-pod",
 								Namespace: namespace,
 							},
-							EnrichmentResults: sharedtypes.EnrichmentResults{
-								DetectedLabels: &sharedtypes.DetectedLabels{
-									GitOpsManaged: true,
-									GitOpsTool:    "argocd",
-								},
-							},
+							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
 						// DD-AIANALYSIS-005: v1.x single analysis type only
 						AnalysisTypes: []string{"incident-analysis"},
