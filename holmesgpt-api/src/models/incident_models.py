@@ -179,12 +179,31 @@ class DetectedLabels(BaseModel):
         return v
 
 
+class BusinessClassification(BaseModel):
+    """
+    Business context from SignalProcessing categorization phase.
+
+    BR-SP-002: Business Classification
+    BR-SP-080: Business Unit Detection
+    BR-SP-081: SLA Requirement Mapping
+
+    Used for:
+    1. Workflow filtering - select workflows matching business context
+    2. Rego approval policies - criticality/SLA-based gating
+    3. LLM context - business impact understanding
+    """
+    businessUnit: Optional[str] = Field(None, description="Business unit owning the service (e.g., 'payments', 'platform')")
+    serviceOwner: Optional[str] = Field(None, description="Service owner team or individual")
+    criticality: Optional[str] = Field(None, description="Business criticality: critical, high, medium, low")
+    slaRequirement: Optional[str] = Field(None, description="SLA tier: platinum, gold, silver, bronze")
+
+
 class EnrichmentResults(BaseModel):
     """
     Enrichment results from SignalProcessing.
 
-    Contains Kubernetes context and custom labels used for workflow filtering
-    and LLM context.
+    Contains Kubernetes context, custom labels, and business classification
+    used for workflow filtering and LLM context.
 
     ADR-056: detectedLabels removed -- now computed by HAPI post-RCA via LabelDetector.
     ADR-055: ownerChain removed -- resolved by HAPI via get_resource_context tool.
@@ -202,6 +221,10 @@ class EnrichmentResults(BaseModel):
     customLabels: Optional[CustomLabels] = Field(
         None,
         description="Custom labels from SignalProcessing (subdomain → values). Auto-appended to workflow search per DD-HAPI-001."
+    )
+    businessClassification: Optional[BusinessClassification] = Field(
+        None,
+        description="Business classification from SP categorization (BR-SP-002). Used for workflow filtering and Rego approval policies."
     )
 
 

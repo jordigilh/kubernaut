@@ -209,7 +209,22 @@ func (c *AIAnalysisCreator) buildEnrichmentResults(sp *signalprocessingv1.Signal
 
 	// ADR-055: OwnerChain no longer propagated to AIAnalysis. Context enrichment
 	// (owner chain, spec hash, history) is performed post-RCA by the LLM via
-	// get_resource_context. SP still computes the chain for its own label detection.
+	// get_resource_context. SP still computes the chain for its own classification.
+
+	// Pass through CustomLabels from SP enrichment (BR-SP-102)
+	if sp.Status.KubernetesContext != nil && len(sp.Status.KubernetesContext.CustomLabels) > 0 {
+		results.CustomLabels = sp.Status.KubernetesContext.CustomLabels
+	}
+
+	// Pass through BusinessClassification from SP categorization (BR-SP-002, BR-SP-080, BR-SP-081)
+	if sp.Status.BusinessClassification != nil {
+		results.BusinessClassification = &sharedtypes.BusinessClassification{
+			BusinessUnit:   sp.Status.BusinessClassification.BusinessUnit,
+			ServiceOwner:   sp.Status.BusinessClassification.ServiceOwner,
+			Criticality:    sp.Status.BusinessClassification.Criticality,
+			SLARequirement: sp.Status.BusinessClassification.SLARequirement,
+		}
+	}
 
 	return results
 }

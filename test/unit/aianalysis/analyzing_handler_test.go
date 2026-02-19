@@ -29,6 +29,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/test/shared/mocks"
 )
 
@@ -519,6 +520,52 @@ var _ = Describe("AnalyzingHandler", func() {
 				Expect(mockEvaluator.LastInput).NotTo(BeNil())
 				Expect(mockEvaluator.LastInput.CustomLabels).NotTo(BeNil())
 				Expect(mockEvaluator.LastInput.CustomLabels).To(BeEmpty())
+			})
+
+			// BR-SP-002, BR-SP-080, BR-SP-081: BusinessClassification pass-through to Rego policy
+			It("should pass BusinessClassification from EnrichmentResults to policy input", func() {
+				analysis := createTestAnalysis()
+				analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.BusinessClassification = &sharedtypes.BusinessClassification{
+					BusinessUnit:   "payments",
+					ServiceOwner:   "team-checkout",
+					Criticality:    "critical",
+					SLARequirement: "platinum",
+				}
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(mockEvaluator.LastInput).NotTo(BeNil())
+				Expect(mockEvaluator.LastInput.BusinessClassification).NotTo(BeNil())
+				Expect(mockEvaluator.LastInput.BusinessClassification).To(HaveKeyWithValue("business_unit", "payments"))
+				Expect(mockEvaluator.LastInput.BusinessClassification).To(HaveKeyWithValue("service_owner", "team-checkout"))
+				Expect(mockEvaluator.LastInput.BusinessClassification).To(HaveKeyWithValue("criticality", "critical"))
+				Expect(mockEvaluator.LastInput.BusinessClassification).To(HaveKeyWithValue("sla_requirement", "platinum"))
+			})
+
+			It("should not set BusinessClassification when nil in EnrichmentResults", func() {
+				analysis := createTestAnalysis()
+				analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.BusinessClassification = nil
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(mockEvaluator.LastInput).NotTo(BeNil())
+				Expect(mockEvaluator.LastInput.BusinessClassification).To(BeNil())
+			})
+
+			It("should map only populated BusinessClassification fields", func() {
+				analysis := createTestAnalysis()
+				analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.BusinessClassification = &sharedtypes.BusinessClassification{
+					Criticality: "high",
+				}
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(mockEvaluator.LastInput).NotTo(BeNil())
+				Expect(mockEvaluator.LastInput.BusinessClassification).To(HaveLen(1))
+				Expect(mockEvaluator.LastInput.BusinessClassification).To(HaveKeyWithValue("criticality", "high"))
 			})
 		})
 

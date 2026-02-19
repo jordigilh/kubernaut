@@ -44,6 +44,26 @@ type EnrichmentResults struct {
 	// Example: {"constraint": ["cost-constrained", "stateful-safe"], "team": ["name=payments"]}
 	// Passed through to HolmesGPT-API for workflow filtering + LLM context
 	CustomLabels map[string][]string `json:"customLabels,omitempty"`
+
+	// Business classification from SP categorization phase
+	// BR-SP-002, BR-SP-080, BR-SP-081: Business unit, criticality, SLA
+	// Passed through to HolmesGPT-API for workflow filtering and Rego approval decisions
+	BusinessClassification *BusinessClassification `json:"businessClassification,omitempty"`
+}
+
+// BusinessClassification contains business context derived from SP categorization.
+// BR-SP-002: Business Classification
+// BR-SP-080: Business Unit Detection
+// BR-SP-081: SLA Requirement Mapping
+type BusinessClassification struct {
+	// Business unit owning the service (e.g., "payments", "platform")
+	BusinessUnit string `json:"businessUnit,omitempty"`
+	// Service owner team or individual
+	ServiceOwner string `json:"serviceOwner,omitempty"`
+	// Business criticality level: critical, high, medium, low
+	Criticality string `json:"criticality,omitempty"`
+	// SLA requirement tier: platinum, gold, silver, bronze
+	SLARequirement string `json:"slaRequirement,omitempty"`
 }
 
 // OwnerChainEntry represents a single entry in the K8s ownership chain.

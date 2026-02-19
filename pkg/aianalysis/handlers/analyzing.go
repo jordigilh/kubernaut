@@ -382,6 +382,23 @@ func (h *AnalyzingHandler) buildPolicyInput(analysis *aianalysisv1.AIAnalysis) *
 		input.CustomLabels = make(map[string][]string)
 	}
 
+	// Populate BusinessClassification from EnrichmentResults (BR-SP-002, BR-SP-080, BR-SP-081)
+	if bc := analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.BusinessClassification; bc != nil {
+		input.BusinessClassification = make(map[string]string)
+		if bc.BusinessUnit != "" {
+			input.BusinessClassification["business_unit"] = bc.BusinessUnit
+		}
+		if bc.ServiceOwner != "" {
+			input.BusinessClassification["service_owner"] = bc.ServiceOwner
+		}
+		if bc.Criticality != "" {
+			input.BusinessClassification["criticality"] = bc.Criticality
+		}
+		if bc.SLARequirement != "" {
+			input.BusinessClassification["sla_requirement"] = bc.SLARequirement
+		}
+	}
+
 	return input
 }
 

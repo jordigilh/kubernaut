@@ -51,11 +51,14 @@ type PolicyInput struct {
 	// Target resource
 	TargetResource TargetResourceInput `json:"target_resource"`
 
-	// Detected labels (auto-detected by SignalProcessing)
+	// Detected labels (ADR-056: computed by HAPI post-RCA)
 	DetectedLabels map[string]interface{} `json:"detected_labels"`
 
 	// Custom labels (customer-defined via Rego)
 	CustomLabels map[string][]string `json:"custom_labels"`
+
+	// Business classification from SP categorization (BR-SP-002, BR-SP-080, BR-SP-081)
+	BusinessClassification map[string]string `json:"business_classification,omitempty"`
 
 	// HolmesGPT-API response data
 	Confidence float64  `json:"confidence"`
@@ -182,6 +185,8 @@ func (e *Evaluator) Evaluate(ctx context.Context, input *PolicyInput) (*PolicyRe
 		// Detected labels
 		"detected_labels": input.DetectedLabels,
 		"custom_labels":   input.CustomLabels,
+		// Business classification (BR-SP-002)
+		"business_classification": input.BusinessClassification,
 		// HolmesGPT-API response data
 		"confidence": input.Confidence,
 		"warnings":   input.Warnings,

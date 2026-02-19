@@ -189,6 +189,9 @@ func (b *RequestBuilder) BuildRecoveryRequest(analysis *aianalysisv1.AIAnalysis)
 		"recoveryAttemptNumber", analysis.Spec.RecoveryAttemptNumber,
 	)
 
+	// Map enrichment results (same as incident path)
+	req.EnrichmentResults.SetTo(b.buildEnrichmentResults(enrichment))
+
 	// Map previous execution context (most recent only - API supports single execution)
 	if len(analysis.Spec.PreviousExecutions) > 0 {
 		// Use the most recent execution (last in the array)
@@ -271,11 +274,24 @@ func (b *RequestBuilder) buildEnrichmentResults(enrichment sharedtypes.Enrichmen
 		result.KubernetesContext.SetToNull() // Mark as present but empty for now
 	}
 
-	// ADR-055: OwnerChain mapping removed. Context enrichment (owner chain,
-	// spec hash, remediation history) is now performed post-RCA by the LLM
-	// via the get_resource_context tool.
-
-	// EnrichmentQuality is not set (removed per Dec 2, 2025 decision)
+	// Map BusinessClassification if present (BR-SP-002, BR-SP-080, BR-SP-081)
+	if enrichment.BusinessClassification != nil {
+		bc := enrichment.BusinessClassification
+		clientBC := client.BusinessClassification{}
+		if bc.BusinessUnit != "" {
+			clientBC.BusinessUnit.SetTo(bc.BusinessUnit)
+		}
+		if bc.ServiceOwner != "" {
+			clientBC.ServiceOwner.SetTo(bc.ServiceOwner)
+		}
+		if bc.Criticality != "" {
+			clientBC.Criticality.SetTo(bc.Criticality)
+		}
+		if bc.SLARequirement != "" {
+			clientBC.SlaRequirement.SetTo(bc.SLARequirement)
+		}
+		result.BusinessClassification.SetTo(clientBC)
+	}
 
 	return result
 }

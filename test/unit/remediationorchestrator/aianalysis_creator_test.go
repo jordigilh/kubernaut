@@ -481,4 +481,124 @@ var _ = Describe("AIAnalysisCreator", func() {
 			})
 		})
 	})
+
+	Context("CustomLabels pass-through (BR-SP-102)", func() {
+		It("should copy CustomLabels from SP KubernetesContext to AIAnalysis EnrichmentResults", func() {
+			completedSP := helpers.NewCompletedSignalProcessing("sp-customlabels", "default")
+			completedSP.Status.KubernetesContext.CustomLabels = map[string][]string{
+				"team":        {"platform"},
+				"tier":        {"critical"},
+				"cost-center": {"eng-42"},
+			}
+
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
+				WithStatusSubresource(completedSP).Build()
+			aiCreator := creator.NewAIAnalysisCreator(fakeClient, scheme, nil)
+			rr := helpers.NewRemediationRequest("test-customlabels", "default")
+
+			name, err := aiCreator.Create(ctx, rr, completedSP)
+
+			Expect(err).ToNot(HaveOccurred())
+			createdAI := &aianalysisv1.AIAnalysis{}
+			err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, createdAI)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(createdAI.Spec.AnalysisRequest.SignalContext.EnrichmentResults.CustomLabels).To(HaveKeyWithValue("team", []string{"platform"}))
+			Expect(createdAI.Spec.AnalysisRequest.SignalContext.EnrichmentResults.CustomLabels).To(HaveKeyWithValue("tier", []string{"critical"}))
+			Expect(createdAI.Spec.AnalysisRequest.SignalContext.EnrichmentResults.CustomLabels).To(HaveKeyWithValue("cost-center", []string{"eng-42"}))
+		})
+
+		It("should not set CustomLabels when SP has no CustomLabels", func() {
+			completedSP := helpers.NewCompletedSignalProcessing("sp-no-labels", "default")
+
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
+				WithStatusSubresource(completedSP).Build()
+			aiCreator := creator.NewAIAnalysisCreator(fakeClient, scheme, nil)
+			rr := helpers.NewRemediationRequest("test-no-labels", "default")
+
+			name, err := aiCreator.Create(ctx, rr, completedSP)
+
+			Expect(err).ToNot(HaveOccurred())
+			createdAI := &aianalysisv1.AIAnalysis{}
+			err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, createdAI)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(createdAI.Spec.AnalysisRequest.SignalContext.EnrichmentResults.CustomLabels).To(BeEmpty())
+		})
+	})
+
+	Context("BusinessClassification pass-through (BR-SP-002, BR-SP-080, BR-SP-081)", func() {
+		It("should copy BusinessClassification from SP status to AIAnalysis EnrichmentResults", func() {
+			completedSP := helpers.NewCompletedSignalProcessing("sp-bizclass", "default")
+			completedSP.Status.BusinessClassification = &signalprocessingv1.BusinessClassification{
+				BusinessUnit:   "payments",
+				ServiceOwner:   "team-checkout",
+				Criticality:    "critical",
+				SLARequirement: "platinum",
+			}
+
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
+				WithStatusSubresource(completedSP).Build()
+			aiCreator := creator.NewAIAnalysisCreator(fakeClient, scheme, nil)
+			rr := helpers.NewRemediationRequest("test-bizclass", "default")
+
+			name, err := aiCreator.Create(ctx, rr, completedSP)
+
+			Expect(err).ToNot(HaveOccurred())
+			createdAI := &aianalysisv1.AIAnalysis{}
+			err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, createdAI)
+			Expect(err).ToNot(HaveOccurred())
+
+			bc := createdAI.Spec.AnalysisRequest.SignalContext.EnrichmentResults.BusinessClassification
+			Expect(bc).ToNot(BeNil())
+			Expect(bc.BusinessUnit).To(Equal("payments"))
+			Expect(bc.ServiceOwner).To(Equal("team-checkout"))
+			Expect(bc.Criticality).To(Equal("critical"))
+			Expect(bc.SLARequirement).To(Equal("platinum"))
+		})
+
+		It("should not set BusinessClassification when SP has none", func() {
+			completedSP := helpers.NewCompletedSignalProcessing("sp-no-bizclass", "default")
+
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
+				WithStatusSubresource(completedSP).Build()
+			aiCreator := creator.NewAIAnalysisCreator(fakeClient, scheme, nil)
+			rr := helpers.NewRemediationRequest("test-no-bizclass", "default")
+
+			name, err := aiCreator.Create(ctx, rr, completedSP)
+
+			Expect(err).ToNot(HaveOccurred())
+			createdAI := &aianalysisv1.AIAnalysis{}
+			err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, createdAI)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(createdAI.Spec.AnalysisRequest.SignalContext.EnrichmentResults.BusinessClassification).To(BeNil())
+		})
+
+		It("should handle partial BusinessClassification fields", func() {
+			completedSP := helpers.NewCompletedSignalProcessing("sp-partial-bizclass", "default")
+			completedSP.Status.BusinessClassification = &signalprocessingv1.BusinessClassification{
+				Criticality: "high",
+			}
+
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
+				WithStatusSubresource(completedSP).Build()
+			aiCreator := creator.NewAIAnalysisCreator(fakeClient, scheme, nil)
+			rr := helpers.NewRemediationRequest("test-partial-bizclass", "default")
+
+			name, err := aiCreator.Create(ctx, rr, completedSP)
+
+			Expect(err).ToNot(HaveOccurred())
+			createdAI := &aianalysisv1.AIAnalysis{}
+			err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, createdAI)
+			Expect(err).ToNot(HaveOccurred())
+
+			bc := createdAI.Spec.AnalysisRequest.SignalContext.EnrichmentResults.BusinessClassification
+			Expect(bc).ToNot(BeNil())
+			Expect(bc.Criticality).To(Equal("high"))
+			Expect(bc.BusinessUnit).To(BeEmpty())
+			Expect(bc.ServiceOwner).To(BeEmpty())
+			Expect(bc.SLARequirement).To(BeEmpty())
+		})
+	})
 })
