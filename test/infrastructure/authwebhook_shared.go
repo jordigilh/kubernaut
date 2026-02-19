@@ -20,9 +20,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -113,7 +111,8 @@ func DeployAuthWebhookManifestsOnly(ctx context.Context, clusterName, namespace,
 	return deployAuthWebhookManifestsInternal(ctx, namespace, kubeconfigPath, preLoadedImage, workspaceRoot, writer)
 }
 
-// Assumes image already built (PHASE 1) and loaded to Kind (PHASE 3)
+// deployAuthWebhookManifestsInternal deploys AuthWebhook using the shared inline YAML template.
+// Standardized: uses authWebhookManifest() (single source of truth).
 func deployAuthWebhookManifestsInternal(ctx context.Context, namespace, kubeconfigPath, awImageName, workspaceRoot string, writer io.Writer) error {
 	// STEP 1: Generate webhook TLS certificates
 	_, _ = fmt.Fprintln(writer, "\n🔐 STEP 1: Generating webhook TLS certificates...")
@@ -122,7 +121,7 @@ func deployAuthWebhookManifestsInternal(ctx context.Context, namespace, kubeconf
 	}
 	_, _ = fmt.Fprintln(writer, "   ✅ TLS certificates generated")
 
-	// STEP 4: Apply ALL CRDs (required for webhook registration)
+	// STEP 2: Apply ALL CRDs (required for webhook registration)
 	_, _ = fmt.Fprintln(writer, "\n📋 STEP 2: Applying ALL CRDs...")
 	cmd := exec.Command("kubectl", "apply",
 		"--kubeconfig", kubeconfigPath,
@@ -134,68 +133,30 @@ func deployAuthWebhookManifestsInternal(ctx context.Context, namespace, kubeconf
 	}
 	_, _ = fmt.Fprintln(writer, "   ✅ All CRDs applied")
 
-	// STEP 5: Deploy AuthWebhook service + webhook configurations
+	// STEP 3: Deploy AuthWebhook using inline YAML template
 	_, _ = fmt.Fprintln(writer, "\n🚀 STEP 3: Deploying AuthWebhook service...")
-	// Read and substitute namespace in manifest (Go-based replacement for envsubst)
-	manifestPath := filepath.Join(workspaceRoot, "test/e2e/authwebhook/manifests/authwebhook-deployment.yaml")
-	manifestContent, err := os.ReadFile(manifestPath)
-	if err != nil {
-		return fmt.Errorf("failed to read manifest: %w", err)
-	}
-
-	// Replace ${WEBHOOK_NAMESPACE} with actual namespace
-	substitutedManifest := strings.ReplaceAll(string(manifestContent), "${WEBHOOK_NAMESPACE}", namespace)
-	_, _ = fmt.Fprintf(writer, "   🔧 Substituted namespace: ${WEBHOOK_NAMESPACE} → %s\n", namespace)
-	
-	// Replace hardcoded imagePullPolicy with dynamic value
-	// CI/CD mode (IMAGE_REGISTRY set): Use IfNotPresent (allows pulling from GHCR)
-	// Local mode: Use Never (uses images loaded into Kind)
-	substitutedManifest = strings.ReplaceAll(substitutedManifest,
-		"imagePullPolicy: Never",
-		fmt.Sprintf("imagePullPolicy: %s", GetImagePullPolicy()))
-	_, _ = fmt.Fprintf(writer, "   🔧 Substituted imagePullPolicy: Never → %s\n", GetImagePullPolicy())
-
-	// Apply substituted manifest via kubectl
+	manifest := authWebhookManifest(namespace, awImageName)
 	cmd = exec.Command("kubectl", "apply",
 		"--kubeconfig", kubeconfigPath,
-		"-f", "-") // Read from stdin
-	cmd.Stdin = strings.NewReader(substitutedManifest)
-	cmd.Dir = workspaceRoot
-	if output, err := cmd.CombinedOutput(); err != nil {
-		_, _ = fmt.Fprintf(writer, "   ❌ Deployment failed: %s\n", output)
-		return fmt.Errorf("kubectl apply authwebhook deployment failed: %w", err)
+		"-f", "-")
+	cmd.Stdin = strings.NewReader(manifest)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to deploy AuthWebhook: %w", err)
 	}
 	_, _ = fmt.Fprintln(writer, "   ✅ AuthWebhook deployment applied")
 
-	// STEP 6: Patch deployment with correct image
-	_, _ = fmt.Fprintf(writer, "\n🔧 STEP 4: Patching deployment with image: %s\n", awImageName)
-	cmd = exec.Command("kubectl", "set", "image",
-		"--kubeconfig", kubeconfigPath,
-		"-n", namespace,
-		"deployment/authwebhook",
-		fmt.Sprintf("authwebhook=%s", awImageName))
-	if output, err := cmd.CombinedOutput(); err != nil {
-		_, _ = fmt.Fprintf(writer, "   ❌ Image patch failed: %s\n", output)
-		return fmt.Errorf("kubectl set image failed: %w", err)
-	}
-	_, _ = fmt.Fprintln(writer, "   ✅ Deployment image patched")
-
-	// STEP 7: Patch webhook configurations with CA bundle
-	_, _ = fmt.Fprintln(writer, "\n🔐 STEP 5: Patching webhook configurations with CA bundle...")
+	// STEP 4: Patch webhook configurations with CA bundle
+	_, _ = fmt.Fprintln(writer, "\n🔐 STEP 4: Patching webhook configurations with CA bundle...")
 	if err := patchWebhookConfigsWithCABundle(kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to patch webhook configurations: %w", err)
 	}
 	_, _ = fmt.Fprintln(writer, "   ✅ Webhook configurations patched")
 
-	// STEP 8: Wait for webhook pod readiness
-	// Per DD-TEST-008: K8s v1.35.0 probe bug workaround
-	// kubectl wait relies on kubelet probes (broken in v1.35.0 - prober_manager.go:197 error)
-	// Solution: Poll Pod status directly via K8s API (same as AuthWebhook E2E)
-	// See: docs/handoff/AUTHWEBHOOK_POD_READINESS_ISSUE_JAN09.md
-	_, _ = fmt.Fprintln(writer, "\n⏳ STEP 8: Waiting for AuthWebhook pod readiness...")
+	// STEP 5: Wait for webhook pod readiness
+	_, _ = fmt.Fprintln(writer, "\n⏳ STEP 5: Waiting for AuthWebhook pod readiness...")
 	_, _ = fmt.Fprintln(writer, "   ⏱️  Workaround: Polling Pod API directly (K8s v1.35.0 probe bug)")
-
-	// Use direct Pod status polling instead of kubectl wait
 	if err := waitForAuthWebhookPodReady(kubeconfigPath, namespace, writer); err != nil {
 		return fmt.Errorf("AuthWebhook pod did not become ready: %w", err)
 	}
