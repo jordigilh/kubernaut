@@ -208,11 +208,7 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 								Name:      "memory-hog",
 								Namespace: namespace,
 							},
-							EnrichmentResults: sharedtypes.EnrichmentResults{
-								OwnerChain: []sharedtypes.OwnerChainEntry{
-									{Namespace: namespace, Kind: "Pod", Name: "memory-hog"},
-								},
-							},
+							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
 						AnalysisTypes: []string{"investigation"},
 					},
@@ -289,11 +285,7 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 								Name:      "backend-api",
 								Namespace: namespace,
 							},
-							EnrichmentResults: sharedtypes.EnrichmentResults{
-								OwnerChain: []sharedtypes.OwnerChainEntry{
-									{Namespace: namespace, Kind: "Deployment", Name: "backend-api"},
-								},
-							},
+							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
 						AnalysisTypes: []string{"investigation"},
 					},

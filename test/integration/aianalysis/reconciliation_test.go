@@ -70,15 +70,7 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 								Name:      "test-pod",
 								Namespace: testNamespace, // DD-TEST-002: Use dynamic namespace
 							},
-							EnrichmentResults: sharedtypes.EnrichmentResults{
-								DetectedLabels: &sharedtypes.DetectedLabels{
-									GitOpsManaged: true,
-									PDBProtected:  true,
-								},
-								OwnerChain: []sharedtypes.OwnerChainEntry{
-									{Namespace: testNamespace, Kind: "Deployment", Name: "test-app"}, // DD-TEST-002
-								},
-							},
+							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
 						AnalysisTypes: []string{"investigation", "root-cause", "workflow-selection"},
 					},

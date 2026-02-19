@@ -174,15 +174,7 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 								Name:      "payment-service",
 								Namespace: "payments",
 							},
-							EnrichmentResults: sharedtypes.EnrichmentResults{
-								DetectedLabels: &sharedtypes.DetectedLabels{
-									GitOpsManaged: true,
-									PDBProtected:  true,
-								},
-								OwnerChain: []sharedtypes.OwnerChainEntry{
-									{Namespace: "payments", Kind: "Deployment", Name: "payment-service"},
-								},
-							},
+							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
 						AnalysisTypes: []string{"investigation"},
 					},
@@ -444,11 +436,7 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 								Name:      "frontend",
 								Namespace: "default",
 							},
-							EnrichmentResults: sharedtypes.EnrichmentResults{
-								OwnerChain: []sharedtypes.OwnerChainEntry{
-									{Namespace: "default", Kind: "Deployment", Name: "frontend"},
-								},
-							},
+							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
 						AnalysisTypes: []string{"investigation"},
 					},
@@ -513,11 +501,7 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 								Name:      "payment-service",
 								Namespace: "payments",
 							},
-							EnrichmentResults: sharedtypes.EnrichmentResults{
-								OwnerChain: []sharedtypes.OwnerChainEntry{
-									{Namespace: "payments", Kind: "Deployment", Name: "payment-service"},
-								},
-							},
+							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
 						AnalysisTypes: []string{"investigation"},
 					},

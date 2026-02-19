@@ -96,15 +96,7 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 								Name:      "oom-service-abc123",
 								Namespace: "staging",
 							},
-							EnrichmentResults: sharedtypes.EnrichmentResults{
-								DetectedLabels: &sharedtypes.DetectedLabels{
-									GitOpsManaged: true,
-									GitOpsTool:    "argocd",
-								},
-								OwnerChain: []sharedtypes.OwnerChainEntry{
-									{Namespace: "staging", Kind: "Deployment", Name: "oom-service"},
-								},
-							},
+							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
 						AnalysisTypes: []string{"recovery-analysis", "workflow-selection"},
 					},
@@ -198,14 +190,7 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 								Name:      "memory-hungry-app",
 								Namespace: "staging",
 							},
-							EnrichmentResults: sharedtypes.EnrichmentResults{
-								DetectedLabels: &sharedtypes.DetectedLabels{
-									GitOpsManaged: true,
-								},
-								OwnerChain: []sharedtypes.OwnerChainEntry{
-									{Namespace: "staging", Kind: "Deployment", Name: "memory-hungry-app"},
-								},
-							},
+							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
 						AnalysisTypes: []string{"recovery-analysis", "workflow-selection"},
 					},
@@ -273,11 +258,7 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 								Name:      "dev-app",
 								Namespace: "development",
 							},
-							EnrichmentResults: sharedtypes.EnrichmentResults{
-								DetectedLabels: &sharedtypes.DetectedLabels{
-									GitOpsManaged: false,
-								},
-							},
+							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
 						AnalysisTypes: []string{"recovery-analysis"},
 					},
@@ -397,15 +378,7 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 								Name:      "critical-service",
 								Namespace: "staging",
 							},
-							EnrichmentResults: sharedtypes.EnrichmentResults{
-								DetectedLabels: &sharedtypes.DetectedLabels{
-									GitOpsManaged: true,
-									PDBProtected:  true,
-								},
-								OwnerChain: []sharedtypes.OwnerChainEntry{
-									{Namespace: "staging", Kind: "Deployment", Name: "critical-service"},
-								},
-							},
+							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
 						AnalysisTypes: []string{"recovery-analysis", "workflow-selection"},
 					},
@@ -553,11 +526,7 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 								Name:      "failing-pod-hr",
 								Namespace: "staging",
 							},
-							EnrichmentResults: sharedtypes.EnrichmentResults{
-								DetectedLabels: &sharedtypes.DetectedLabels{
-									GitOpsManaged: true,
-								},
-							},
+							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
 						AnalysisTypes: []string{"recovery-analysis", "workflow-selection"},
 					},
