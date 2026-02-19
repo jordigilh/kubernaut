@@ -64,6 +64,7 @@ class TestListAvailableActionsTool:
             component="pod",
             environment="production",
             priority="P0",
+            session_state={"detected_labels": {}},
         )
 
         # Mock the HTTP GET call
@@ -125,6 +126,7 @@ class TestListAvailableActionsTool:
             component="pod",
             environment="production",
             priority="P0",
+            session_state={"detected_labels": {}},
         )
 
         mock_response = Mock()
@@ -159,6 +161,7 @@ class TestListAvailableActionsTool:
             component="deployment",
             environment="staging",
             priority="P1",
+            session_state={"detected_labels": {}},
         )
 
         mock_response = Mock()
@@ -196,6 +199,7 @@ class TestListAvailableActionsTool:
             component="pod",
             environment="production",
             priority="P0",
+            session_state={"detected_labels": {}},
         )
 
         with patch('requests.get', side_effect=requests.exceptions.ConnectionError("refused")):
@@ -229,6 +233,7 @@ class TestListWorkflowsTool:
             component="pod",
             environment="production",
             priority="P0",
+            session_state={"detected_labels": {}},
         )
 
         mock_response = Mock()
@@ -281,6 +286,7 @@ class TestListWorkflowsTool:
             component="pod",
             environment="production",
             priority="P0",
+            session_state={"detected_labels": {}},
         )
 
         result = tool.invoke(params={})
@@ -303,6 +309,7 @@ class TestListWorkflowsTool:
             component="pod",
             environment="production",
             priority="P0",
+            session_state={"detected_labels": {}},
         )
 
         mock_response = Mock()
@@ -346,6 +353,7 @@ class TestGetWorkflowTool:
             component="pod",
             environment="production",
             priority="P0",
+            session_state={"detected_labels": {}},
         )
 
         mock_response = Mock()
@@ -391,6 +399,7 @@ class TestGetWorkflowTool:
             component="pod",
             environment="production",
             priority="P0",
+            session_state={"detected_labels": {}},
         )
 
         result = tool.invoke(params={})
@@ -414,6 +423,7 @@ class TestGetWorkflowTool:
             component="pod",
             environment="production",
             priority="P0",
+            session_state={"detected_labels": {}},
         )
 
         mock_response = Mock()
@@ -584,6 +594,7 @@ class TestWorkflowDiscoveryToolset:
             environment="production",
             priority="P0",
             custom_labels=custom,
+            session_state={"detected_labels": {}},
         )
 
         tool.invoke(params={})
@@ -614,6 +625,7 @@ class TestWorkflowDiscoveryToolset:
             environment="production",
             priority="P0",
             custom_labels={},
+            session_state={"detected_labels": {}},
         )
 
         tool.invoke(params={})
@@ -643,9 +655,6 @@ class TestDetectedLabelsPropagation:
         Verifies detected_labels are JSON-encoded and added to query params.
         """
         from src.toolsets.workflow_discovery import ListAvailableActionsTool
-        from src.models.incident_models import DetectedLabels
-
-        detected_labels = DetectedLabels(gitOpsManaged=True, gitOpsTool="argocd")
 
         mock_get.return_value = Mock(
             status_code=200,
@@ -653,12 +662,13 @@ class TestDetectedLabelsPropagation:
             raise_for_status=Mock(),
         )
 
+        # ADR-056: detected_labels are provided via session_state (runtime-computed)
         tool = ListAvailableActionsTool(
             severity="critical",
             component="pod",
             environment="production",
             priority="P0",
-            detected_labels=detected_labels,
+            session_state={"detected_labels": {"gitOpsManaged": True, "gitOpsTool": "argocd"}},
         )
         tool.invoke({})
 
@@ -677,14 +687,6 @@ class TestDetectedLabelsPropagation:
         DD-WORKFLOW-001 v2.1: Fields in failedDetections are excluded from params.
         """
         from src.toolsets.workflow_discovery import ListAvailableActionsTool
-        from src.models.incident_models import DetectedLabels
-
-        # pdbProtected detection failed - should be stripped
-        detected_labels = DetectedLabels(
-            gitOpsManaged=True,
-            pdbProtected=False,
-            failedDetections=["pdbProtected"],
-        )
 
         mock_get.return_value = Mock(
             status_code=200,
@@ -692,12 +694,17 @@ class TestDetectedLabelsPropagation:
             raise_for_status=Mock(),
         )
 
+        # ADR-056: detected_labels via session_state; pdbProtected in failedDetections should be stripped
         tool = ListAvailableActionsTool(
             severity="critical",
             component="pod",
             environment="production",
             priority="P0",
-            detected_labels=detected_labels,
+            session_state={"detected_labels": {
+                "gitOpsManaged": True,
+                "pdbProtected": False,
+                "failedDetections": ["pdbProtected"],
+            }},
         )
         tool.invoke({})
 
@@ -731,6 +738,7 @@ class TestDetectedLabelsPropagation:
             environment="production",
             priority="P0",
             detected_labels=None,
+            session_state={"detected_labels": {}},
         )
         tool.invoke({})
 
@@ -766,7 +774,7 @@ class TestRemediationIdPropagation:
             raise_for_status=Mock(),
         )
 
-        tool = ListAvailableActionsTool(remediation_id="rem-uuid-123")
+        tool = ListAvailableActionsTool(remediation_id="rem-uuid-123", session_state={"detected_labels": {}})
         tool.invoke({})
 
         # Verify remediation_id in query params
@@ -790,7 +798,7 @@ class TestRemediationIdPropagation:
             raise_for_status=Mock(),
         )
 
-        tool = ListWorkflowsTool(remediation_id="rem-uuid-123")
+        tool = ListWorkflowsTool(remediation_id="rem-uuid-123", session_state={"detected_labels": {}})
         tool.invoke({"action_type": "scale_up"})
 
         call_kwargs = mock_get.call_args
@@ -821,7 +829,7 @@ class TestRemediationIdPropagation:
             raise_for_status=Mock(),
         )
 
-        tool = GetWorkflowTool(remediation_id="rem-uuid-123")
+        tool = GetWorkflowTool(remediation_id="rem-uuid-123", session_state={"detected_labels": {}})
         tool.invoke({"workflow_id": "wf-001"})
 
         call_kwargs = mock_get.call_args
@@ -846,7 +854,7 @@ class TestRemediationIdPropagation:
         )
 
         # Test with None
-        tool = ListAvailableActionsTool(remediation_id=None)
+        tool = ListAvailableActionsTool(remediation_id=None, session_state={"detected_labels": {}})
         result = tool.invoke({})
 
         # Should succeed
