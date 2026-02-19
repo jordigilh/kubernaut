@@ -32,7 +32,7 @@ limitations under the License.
 // Implementation Plan: Day 10, Tier 2 - Reconciler Integration Tests
 //
 // Test Matrix: 25 tests per IMPLEMENTATION_PLAN_V1.30.md
-// - Happy Path: 10 tests (BR-SP-051, BR-SP-070, BR-SP-002, BR-SP-100, BR-SP-101, BR-SP-102)
+// - Happy Path: 10 tests (BR-SP-051, BR-SP-070, BR-SP-002, BR-SP-100, BR-SP-102) [BR-SP-101 relocated to HAPI per ADR-056]
 // - Edge Cases: 8 tests (BR-SP-053, BR-SP-001, BR-SP-100, BR-SP-103, BR-SP-102)
 // - Error Handling: 7 tests (Error Categories A-D, BR-SP-103, ADR-038)
 //

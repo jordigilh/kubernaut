@@ -280,7 +280,7 @@ func (r *SignalProcessingReconciler) reconcilePending(ctx context.Context, sp *s
 //
 // BR-SP-001: K8s Context Enrichment
 // BR-SP-100: Owner Chain Traversal
-// BR-SP-101: Detected Labels
+// ADR-056: BR-SP-101 (Detected Labels) relocated to HAPI post-RCA
 //
 // ========================================
 // V2.0 EXTENSIBILITY POINT: Multi-Provider Support
@@ -989,7 +989,7 @@ func (r *SignalProcessingReconciler) buildRegoKubernetesContext(k8sCtx *signalpr
 	if k8sCtx.Namespace != nil {
 		result.Namespace = k8sCtx.Namespace.Name
 		result.NamespaceLabels = k8sCtx.Namespace.Labels
-		result.NamespaceAnnotations = k8sCtx.Namespace.Annotations // BR-SP-101: For GitOps detection
+		result.NamespaceAnnotations = k8sCtx.Namespace.Annotations
 	}
 
 	// Convert Pod details if available

@@ -878,60 +878,8 @@ func createTestDeployment(namespace, name string, labels map[string]string) *app
 	return deployment
 }
 
-// createTestPDB creates a PodDisruptionBudget for testing BR-SP-101.
-func createTestPDB(namespace, name string, selector map[string]string) *policyv1.PodDisruptionBudget {
-	pdb := &policyv1.PodDisruptionBudget{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-		},
-		Spec: policyv1.PodDisruptionBudgetSpec{
-			Selector: &metav1.LabelSelector{
-				MatchLabels: selector,
-			},
-		},
-	}
-	Expect(k8sClient.Create(ctx, pdb)).To(Succeed())
-	return pdb
-}
-
-// createTestHPA creates a HorizontalPodAutoscaler for testing BR-SP-101.
-func createTestHPA(namespace, name, targetDeployment string) *autoscalingv2.HorizontalPodAutoscaler {
-	minReplicas := int32(1)
-	hpa := &autoscalingv2.HorizontalPodAutoscaler{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-		},
-		Spec: autoscalingv2.HorizontalPodAutoscalerSpec{
-			ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{
-				APIVersion: "apps/v1",
-				Kind:       "Deployment",
-				Name:       targetDeployment,
-			},
-			MinReplicas: &minReplicas,
-			MaxReplicas: 10,
-		},
-	}
-	Expect(k8sClient.Create(ctx, hpa)).To(Succeed())
-	return hpa
-}
-
-// createTestNetworkPolicy creates a NetworkPolicy for testing BR-SP-101.
-func createTestNetworkPolicy(namespace, name string) *networkingv1.NetworkPolicy {
-	netpol := &networkingv1.NetworkPolicy{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-		},
-		Spec: networkingv1.NetworkPolicySpec{
-			PodSelector: metav1.LabelSelector{},
-			PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress},
-		},
-	}
-	Expect(k8sClient.Create(ctx, netpol)).To(Succeed())
-	return netpol
-}
+// ADR-056: createTestPDB, createTestHPA, createTestNetworkPolicy removed
+// — BR-SP-101 detection tests relocated to HAPI
 
 // createSignalProcessingCR creates a SignalProcessing CR for testing.
 // createSignalProcessingCR creates a SignalProcessing CR with proper parent RemediationRequest.
