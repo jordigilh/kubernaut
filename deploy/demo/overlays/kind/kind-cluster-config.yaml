@@ -40,3 +40,6 @@ nodes:
       extraArgs:
         kube-api-qps: "100"
         kube-api-burst: "200"
+- role: worker
+  labels:
+    kubernaut.ai/workload-node: "true"
