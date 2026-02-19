@@ -183,8 +183,11 @@ class EnrichmentResults(BaseModel):
     """
     Enrichment results from SignalProcessing.
 
-    Contains Kubernetes context, auto-detected labels, and custom labels
-    that are used for workflow filtering and LLM context.
+    Contains Kubernetes context and custom labels used for workflow filtering
+    and LLM context.
+
+    ADR-056: detectedLabels removed -- now computed by HAPI post-RCA via LabelDetector.
+    ADR-055: ownerChain removed -- resolved by HAPI via get_resource_context tool.
 
     Design Decision: DD-RECOVERY-003, DD-HAPI-001
 
@@ -196,12 +199,10 @@ class EnrichmentResults(BaseModel):
     - Auto-appended to MCP workflow search (invisible to LLM)
     """
     kubernetesContext: Optional[Dict[str, Any]] = Field(None, description="Kubernetes resource context")
-    detectedLabels: Optional[DetectedLabels] = Field(None, description="Auto-detected cluster characteristics")
     customLabels: Optional[CustomLabels] = Field(
         None,
         description="Custom labels from SignalProcessing (subdomain → values). Auto-appended to workflow search per DD-HAPI-001."
     )
-    enrichmentQuality: float = Field(default=0.0, ge=0.0, le=1.0, description="Quality score of enrichment (0-1)")
 
 
 class IncidentRequest(BaseModel):
@@ -383,14 +384,18 @@ class IncidentResponse(BaseModel):
     )
 
     # Validation attempts history (BR-HAPI-197, DD-HAPI-002 v1.2, Dec 6, 2025)
-    # Complete history of all validation attempts during LLM self-correction loop.
-    # Used for:
-    # - Operator notifications: Natural language description of why validation failed
-    # - Audit trail: Complete record of all attempts (also emitted to audit store)
-    # - Debugging: Understanding LLM behavior and failure patterns
     validation_attempts_history: List[ValidationAttempt] = Field(
         default_factory=list,
         description="History of all validation attempts during LLM self-correction. "
                     "Each attempt records workflow_id, validation result, and any errors. "
                     "Empty if validation passed on first attempt or no workflow was selected."
+    )
+
+    # ADR-056: DetectedLabels computed at runtime by HAPI's LabelDetector.
+    # Returned to AIAnalysis for storage in PostRCAContext and Rego policy input.
+    detected_labels: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Cluster characteristics detected at runtime by HAPI (ADR-056). "
+                    "Includes: gitOpsManaged, pdbProtected, hpaEnabled, stateful, "
+                    "helmManaged, networkIsolated, serviceMesh, failedDetections."
     )

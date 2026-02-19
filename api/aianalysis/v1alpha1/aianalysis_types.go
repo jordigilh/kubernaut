@@ -513,8 +513,36 @@ type AIAnalysisStatus struct {
 	// +optional
 	InvestigationSession *InvestigationSession `json:"investigationSession,omitempty"`
 
+	// ========================================
+	// POST-RCA CONTEXT (ADR-056)
+	// Runtime-computed cluster characteristics from HAPI
+	// ========================================
+	// PostRCAContext holds data computed by HAPI after RCA (e.g., DetectedLabels).
+	// Immutable once set — use CEL validation on the PostRCAContext type.
+	// +optional
+	PostRCAContext *PostRCAContext `json:"postRCAContext,omitempty"`
+
 	// Conditions
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+}
+
+// PostRCAContext holds data computed by HAPI after the RCA phase.
+// ADR-056: DetectedLabels are computed at runtime by HAPI's LabelDetector
+// and returned in the HAPI response for storage in the AIAnalysis status.
+// This data is used by Rego policies for approval gating (e.g., stateful
+// workload detection) and is immutable once set.
+//
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.setAt) || self == oldSelf",message="postRCAContext is immutable once setAt is populated (ADR-056)"
+type PostRCAContext struct {
+	// DetectedLabels contains cluster characteristics computed by HAPI's
+	// LabelDetector during the get_resource_context tool invocation.
+	// +optional
+	DetectedLabels *sharedtypes.DetectedLabels `json:"detectedLabels,omitempty"`
+	// SetAt records when the PostRCAContext was populated.
+	// Used as the immutability guard: once SetAt is non-nil, the entire
+	// PostRCAContext becomes immutable via CEL validation.
+	// +optional
+	SetAt *metav1.Time `json:"setAt,omitempty"`
 }
 
 // InvestigationSession tracks the async HAPI session lifecycle.

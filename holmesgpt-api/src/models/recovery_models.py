@@ -297,12 +297,19 @@ class RecoveryResponse(BaseModel):
     )
 
     # ADR-045 v1.2: Alternative workflows for audit/context (Dec 5, 2025)
-    # BR-AUDIT-005 Gap #4: Required for SOC2 compliance and RR reconstruction
     alternative_workflows: List[AlternativeWorkflow] = Field(
         default_factory=list,
         description="Other workflows considered but not selected. "
                     "For operator context and audit trail only - NOT for automatic execution. "
                     "Helps operators understand AI reasoning and decision alternatives."
+    )
+
+    # ADR-056: DetectedLabels computed at runtime by HAPI's LabelDetector.
+    detected_labels: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Cluster characteristics detected at runtime by HAPI (ADR-056). "
+                    "Includes: gitOpsManaged, pdbProtected, hpaEnabled, stateful, "
+                    "helmManaged, networkIsolated, serviceMesh, failedDetections."
     )
 
     class Config:

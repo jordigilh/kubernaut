@@ -17,6 +17,10 @@
 //   - HolmesGPT-API (uses for workflow filtering + LLM context)
 //   - Data Storage (stores workflow metadata constraints)
 //
+// ADR-056: DetectedLabels and OwnerChain removed from EnrichmentResults.
+// DetectedLabels are now computed by HAPI post-RCA (see PostRCAContext).
+// OwnerChain is resolved by HAPI via get_resource_context tool (ADR-055).
+//
 // Design Decision: DD-WORKFLOW-001 v2.2, DD-CONTRACT-002
 // See: docs/architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md
 //
@@ -34,35 +38,12 @@ type EnrichmentResults struct {
 	// Kubernetes resource context (pod status, node conditions, etc.)
 	KubernetesContext *KubernetesContext `json:"kubernetesContext,omitempty"`
 
-	// Auto-detected cluster characteristics - NO CONFIG NEEDED
-	// SignalProcessing detects these from K8s resources automatically
-	// Used by HolmesGPT-API for: workflow filtering + LLM context
-	DetectedLabels *DetectedLabels `json:"detectedLabels,omitempty"`
-
-	// OwnerChain: K8s ownership traversal from signal source resource.
-	// SignalProcessing traverses metadata.ownerReferences to build this chain.
-	// Example: Pod → ReplicaSet → Deployment
-	// Empty chain = orphan resource (no owners)
-	//
-	// ADR-055: No longer propagated from SP to AIAnalysis or HAPI.
-	// HAPI resolves its own chain post-RCA via get_resource_context tool.
-	// Field retained in shared types for SP internal use (label detection).
-	// ADR-056: Scheduled for relocation to SP-internal types.
-	OwnerChain []OwnerChainEntry `json:"ownerChain,omitempty"`
-
 	// Custom labels from Rego policies - CUSTOMER DEFINED
 	// Key = subdomain/category (e.g., "constraint", "team", "region")
 	// Value = list of label values (boolean keys or "key=value" pairs)
 	// Example: {"constraint": ["cost-constrained", "stateful-safe"], "team": ["name=payments"]}
 	// Passed through to HolmesGPT-API for workflow filtering + LLM context
 	CustomLabels map[string][]string `json:"customLabels,omitempty"`
-
-	// NOTE: EnrichmentQuality field was REMOVED (Dec 2, 2025)
-	// Detection Failure Handling (DD-WORKFLOW-001 v2.1):
-	// - Detection succeeds → explicit true/false values
-	// - Detection fails (RBAC, timeout) → false + error log
-	// No "unknown" state - downstream consumers receive valid booleans only.
-	// See: docs/architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md#detection-failure-handling-v21
 }
 
 // OwnerChainEntry represents a single entry in the K8s ownership chain.

@@ -36,6 +36,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
 	"github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // ResponseProcessor handles processing of HolmesGPT-API responses
@@ -116,6 +117,9 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 	// All checks passed - store HAPI response metadata and continue processing
 	analysis.Status.Warnings = resp.Warnings
 	analysis.Status.InvestigationID = resp.IncidentID
+
+	// ADR-056: Extract detected_labels from HAPI response into PostRCAContext
+	p.populatePostRCAContext(analysis, resp.DetectedLabels.Value, resp.DetectedLabels.Set, resp.DetectedLabels.Null)
 
 	// ADR-055: TargetInOwnerChain removed. affectedResource is now a first-class
 	// LLM RCA output, not derived from pre-computed owner chain.
@@ -248,6 +252,9 @@ func (p *ResponseProcessor) ProcessRecoveryResponse(ctx context.Context, analysi
 	analysis.Status.Warnings = resp.Warnings
 	analysis.Status.InvestigationID = resp.IncidentID
 
+	// ADR-056: Extract detected_labels from HAPI response into PostRCAContext
+	p.populatePostRCAContext(analysis, resp.DetectedLabels.Value, resp.DetectedLabels.Set, resp.DetectedLabels.Null)
+
 	// Store selected workflow (DD-CONTRACT-002)
 	if hasSelectedWorkflow {
 		swMap := GetMapFromOptNil(resp.SelectedWorkflow.Value)
@@ -319,6 +326,49 @@ func (p *ResponseProcessor) PopulateRecoveryStatusFromRecovery(analysis *aianaly
 	}
 
 	return true
+}
+
+// populatePostRCAContext extracts detected_labels from the HAPI response raw map
+// and sets PostRCAContext on the AIAnalysis status.
+// ADR-056: DetectedLabels flow from HAPI → PostRCAContext for Rego policy input.
+func (p *ResponseProcessor) populatePostRCAContext(analysis *aianalysisv1.AIAnalysis, detectedLabelsRaw interface{}, isSet bool, isNull bool) {
+	if !isSet || isNull {
+		return
+	}
+
+	dlMap := GetMapFromOptNil(detectedLabelsRaw)
+	if dlMap == nil || len(dlMap) == 0 {
+		return
+	}
+
+	dl := extractDetectedLabels(dlMap)
+	now := metav1.Now()
+	analysis.Status.PostRCAContext = &aianalysisv1.PostRCAContext{
+		DetectedLabels: dl,
+		SetAt:          &now,
+	}
+
+	p.log.Info("Populated PostRCAContext from HAPI detected_labels",
+		"gitOpsManaged", dl.GitOpsManaged,
+		"stateful", dl.Stateful,
+		"failedDetections", dl.FailedDetections,
+	)
+}
+
+// extractDetectedLabels converts a raw map from the HAPI response into the
+// strongly-typed DetectedLabels struct. Fields not present default to zero values.
+func extractDetectedLabels(m map[string]interface{}) *sharedtypes.DetectedLabels {
+	return &sharedtypes.DetectedLabels{
+		GitOpsManaged:    GetBoolFromMap(m, "gitOpsManaged"),
+		GitOpsTool:       GetStringFromMap(m, "gitOpsTool"),
+		PDBProtected:     GetBoolFromMap(m, "pdbProtected"),
+		HPAEnabled:       GetBoolFromMap(m, "hpaEnabled"),
+		Stateful:         GetBoolFromMap(m, "stateful"),
+		HelmManaged:      GetBoolFromMap(m, "helmManaged"),
+		NetworkIsolated:  GetBoolFromMap(m, "networkIsolated"),
+		ServiceMesh:      GetStringFromMap(m, "serviceMesh"),
+		FailedDetections: GetStringSliceFromMap(m, "failedDetections"),
+	}
 }
 
 // handleWorkflowResolutionFailureFromIncident handles workflow resolution failure from IncidentResponse

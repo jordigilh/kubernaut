@@ -29,6 +29,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/rego"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // P1.3 Refactoring: RegoEvaluatorInterface and AnalyzingAuditClientInterface moved to interfaces.go
@@ -366,14 +367,12 @@ func (h *AnalyzingHandler) buildPolicyInput(analysis *aianalysisv1.AIAnalysis) *
 		}
 	}
 
-	// Populate DetectedLabels from EnrichmentResults (per DD-WORKFLOW-001 v2.2)
-	// Convert typed struct to map for Rego policy evaluation
-	// Path: analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.DetectedLabels
-	input.DetectedLabels = h.buildDetectedLabelsMap(analysis)
+	// ADR-056: DetectedLabels read exclusively from PostRCAContext (HAPI post-RCA).
+	dl := h.resolveDetectedLabels(analysis)
+	input.DetectedLabels = h.detectedLabelsToMap(dl)
 
-	// Populate FailedDetections from DetectedLabels (per DD-WORKFLOW-001 v2.2)
-	if analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.DetectedLabels != nil {
-		input.FailedDetections = analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.DetectedLabels.FailedDetections
+	if dl != nil {
+		input.FailedDetections = dl.FailedDetections
 	}
 
 	// Populate CustomLabels from EnrichmentResults
@@ -396,30 +395,31 @@ func getEnvironment(analysis *aianalysisv1.AIAnalysis) string {
 	return analysis.Spec.AnalysisRequest.SignalContext.Environment
 }
 
-// buildDetectedLabelsMap converts the typed DetectedLabels struct to a map for Rego.
-// Per DD-WORKFLOW-001 v2.2: DetectedLabels uses snake_case field names in JSON.
-// Rego policies access these as input.detected_labels.git_ops_managed, etc.
-func (h *AnalyzingHandler) buildDetectedLabelsMap(analysis *aianalysisv1.AIAnalysis) map[string]interface{} {
-	labels := make(map[string]interface{})
+// resolveDetectedLabels returns DetectedLabels from PostRCAContext.
+// ADR-056: PostRCAContext.DetectedLabels are computed by HAPI at RCA time
+// and are the sole source of cluster characteristics for Rego policy input.
+func (h *AnalyzingHandler) resolveDetectedLabels(analysis *aianalysisv1.AIAnalysis) *sharedtypes.DetectedLabels {
+	if analysis.Status.PostRCAContext != nil {
+		return analysis.Status.PostRCAContext.DetectedLabels
+	}
+	return nil
+}
 
-	dl := analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.DetectedLabels
+// detectedLabelsToMap converts the typed DetectedLabels struct to a map for Rego.
+// Per DD-WORKFLOW-001 v2.2: DetectedLabels uses snake_case field names in JSON.
+// Rego policies access these as input.detected_labels.stateful, etc.
+func (h *AnalyzingHandler) detectedLabelsToMap(dl *sharedtypes.DetectedLabels) map[string]interface{} {
+	labels := make(map[string]interface{})
 	if dl == nil {
 		return labels
 	}
 
-	// GitOps management (per DD-WORKFLOW-001 v2.2)
 	labels["git_ops_managed"] = dl.GitOpsManaged
 	labels["git_ops_tool"] = dl.GitOpsTool
-
-	// Workload protection
 	labels["pdb_protected"] = dl.PDBProtected
 	labels["hpa_enabled"] = dl.HPAEnabled
-
-	// Workload characteristics
 	labels["stateful"] = dl.Stateful
 	labels["helm_managed"] = dl.HelmManaged
-
-	// Security posture
 	labels["network_isolated"] = dl.NetworkIsolated
 	labels["service_mesh"] = dl.ServiceMesh
 

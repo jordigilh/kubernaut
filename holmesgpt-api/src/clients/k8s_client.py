@@ -27,11 +27,15 @@ Design Decisions:
 RBAC Requirements (ServiceAccount):
 - apps/v1: get on Deployments, StatefulSets, DaemonSets, ReplicaSets
 - core/v1: get on Pods, Nodes (for bare resource fallback)
+- policy/v1: list PodDisruptionBudgets (ADR-056 label detection)
+- autoscaling/v2: list HorizontalPodAutoscalers (ADR-056 label detection)
+- networking.k8s.io/v1: list NetworkPolicies (ADR-056 label detection)
+- core/v1: get Namespaces (ADR-056 label detection - namespace labels/annotations)
 """
 
 import asyncio
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from kubernetes import client as k8s_client
 from kubernetes import config as k8s_config
@@ -54,10 +58,13 @@ _API_GROUP_MAP = {
 
 
 class K8sResourceClient:
-    """Lightweight K8s client for owner resolution and spec hash computation.
+    """Lightweight K8s client for owner resolution, spec hash, and label detection queries.
 
     Designed for in-cluster usage with a ServiceAccount that has limited RBAC.
     All blocking K8s API calls are executed via asyncio.to_thread().
+
+    ADR-056 extensions: list_pdbs, list_hpas, list_network_policies return
+    (items, error_str|None) tuples for LabelDetector error tracking.
     """
 
     def __init__(self):
@@ -65,6 +72,9 @@ class K8sResourceClient:
         self._initialized = False
         self._apps_v1: Optional[k8s_client.AppsV1Api] = None
         self._core_v1: Optional[k8s_client.CoreV1Api] = None
+        self._policy_v1: Optional[k8s_client.PolicyV1Api] = None
+        self._autoscaling_v2: Optional[k8s_client.AutoscalingV2Api] = None
+        self._networking_v1: Optional[k8s_client.NetworkingV1Api] = None
 
     def _ensure_initialized(self):
         """Lazy initialization of the K8s client."""
@@ -72,8 +82,7 @@ class K8sResourceClient:
             return
         try:
             k8s_config.load_incluster_config()
-            self._apps_v1 = k8s_client.AppsV1Api()
-            self._core_v1 = k8s_client.CoreV1Api()
+            self._init_api_clients()
             self._initialized = True
             logger.info("K8s client initialized (in-cluster config)")
         except k8s_config.ConfigException:
@@ -83,13 +92,138 @@ class K8sResourceClient:
             )
             try:
                 k8s_config.load_kube_config()
-                self._apps_v1 = k8s_client.AppsV1Api()
-                self._core_v1 = k8s_client.CoreV1Api()
+                self._init_api_clients()
                 self._initialized = True
                 logger.info("K8s client initialized (kubeconfig fallback)")
             except Exception as e:
                 logger.error("Failed to initialize K8s client: %s", e)
                 raise
+
+    def _init_api_clients(self):
+        """Create all K8s API client instances."""
+        self._apps_v1 = k8s_client.AppsV1Api()
+        self._core_v1 = k8s_client.CoreV1Api()
+        self._policy_v1 = k8s_client.PolicyV1Api()
+        self._autoscaling_v2 = k8s_client.AutoscalingV2Api()
+        self._networking_v1 = k8s_client.NetworkingV1Api()
+
+    def _list_pdbs_sync(self, namespace: str) -> Tuple[List[Any], Optional[str]]:
+        """Synchronous LIST of PodDisruptionBudgets in a namespace.
+
+        Returns (items, error_string). error_string is None on success.
+        """
+        self._ensure_initialized()
+        try:
+            result = self._policy_v1.list_namespaced_pod_disruption_budget(
+                namespace=namespace
+            )
+            return result.items, None
+        except ApiException as e:
+            logger.warning("PDB list failed in %s: %s", namespace, e)
+            return [], str(e)
+        except Exception as e:
+            logger.error("Unexpected error listing PDBs in %s: %s", namespace, e)
+            return [], str(e)
+
+    async def list_pdbs(self, namespace: str) -> Tuple[List[Any], Optional[str]]:
+        """Async LIST of PodDisruptionBudgets in a namespace.
+
+        ADR-056: Used by LabelDetector for pdbProtected detection.
+        Returns (items, error_string). error_string is None on success.
+        """
+        return await asyncio.to_thread(self._list_pdbs_sync, namespace)
+
+    def _list_hpas_sync(self, namespace: str) -> Tuple[List[Any], Optional[str]]:
+        """Synchronous LIST of HorizontalPodAutoscalers in a namespace.
+
+        Returns (items, error_string). error_string is None on success.
+        """
+        self._ensure_initialized()
+        try:
+            result = self._autoscaling_v2.list_namespaced_horizontal_pod_autoscaler(
+                namespace=namespace
+            )
+            return result.items, None
+        except ApiException as e:
+            logger.warning("HPA list failed in %s: %s", namespace, e)
+            return [], str(e)
+        except Exception as e:
+            logger.error("Unexpected error listing HPAs in %s: %s", namespace, e)
+            return [], str(e)
+
+    async def list_hpas(self, namespace: str) -> Tuple[List[Any], Optional[str]]:
+        """Async LIST of HorizontalPodAutoscalers in a namespace.
+
+        ADR-056: Used by LabelDetector for hpaEnabled detection.
+        Returns (items, error_string). error_string is None on success.
+        """
+        return await asyncio.to_thread(self._list_hpas_sync, namespace)
+
+    def _list_network_policies_sync(
+        self, namespace: str
+    ) -> Tuple[List[Any], Optional[str]]:
+        """Synchronous LIST of NetworkPolicies in a namespace.
+
+        Returns (items, error_string). error_string is None on success.
+        """
+        self._ensure_initialized()
+        try:
+            result = self._networking_v1.list_namespaced_network_policy(
+                namespace=namespace
+            )
+            return result.items, None
+        except ApiException as e:
+            logger.warning("NetworkPolicy list failed in %s: %s", namespace, e)
+            return [], str(e)
+        except Exception as e:
+            logger.error(
+                "Unexpected error listing NetworkPolicies in %s: %s", namespace, e
+            )
+            return [], str(e)
+
+    async def list_network_policies(
+        self, namespace: str
+    ) -> Tuple[List[Any], Optional[str]]:
+        """Async LIST of NetworkPolicies in a namespace.
+
+        ADR-056: Used by LabelDetector for networkIsolated detection.
+        Returns (items, error_string). error_string is None on success.
+        """
+        return await asyncio.to_thread(self._list_network_policies_sync, namespace)
+
+    def _get_namespace_metadata_sync(
+        self, name: str
+    ) -> Optional[Dict[str, Any]]:
+        """Synchronous GET of namespace labels and annotations.
+
+        ADR-056: Used to build k8s_context for LabelDetector (GitOps and
+        service mesh detection inspect namespace-level labels/annotations).
+        Returns dict with 'labels' and 'annotations' keys, or None on error.
+        """
+        self._ensure_initialized()
+        try:
+            ns = self._core_v1.read_namespace(name=name)
+            return {
+                "labels": ns.metadata.labels or {},
+                "annotations": ns.metadata.annotations or {},
+            }
+        except ApiException as e:
+            logger.warning("Namespace %s not found or inaccessible: %s", name, e)
+            return None
+        except Exception as e:
+            logger.error("Unexpected error fetching namespace %s: %s", name, e)
+            return None
+
+    async def get_namespace_metadata(
+        self, name: str
+    ) -> Optional[Dict[str, Any]]:
+        """Async GET of namespace labels and annotations.
+
+        ADR-056: Used by get_resource_context to build k8s_context for
+        LabelDetector. Returns dict with 'labels' and 'annotations' keys,
+        or None on error.
+        """
+        return await asyncio.to_thread(self._get_namespace_metadata_sync, name)
 
     def _get_resource_spec_sync(
         self, kind: str, name: str, namespace: str

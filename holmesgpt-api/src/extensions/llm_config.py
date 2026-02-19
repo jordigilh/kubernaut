@@ -280,6 +280,25 @@ def get_model_config_for_sdk(app_config: Optional[Dict[str, Any]] = None) -> tup
     return formatted_model, provider
 
 
+def inject_detected_labels(
+    result: Dict[str, Any],
+    session_state: Optional[Dict[str, Any]],
+) -> None:
+    """
+    Inject detected_labels from session_state into the response result dict.
+
+    ADR-056: After LLM investigation completes, the detected_labels computed
+    on-demand by WorkflowDiscoveryToolset are included in the HAPI response
+    so AIAnalysis can store them in PostRCAContext for Rego policy evaluation.
+
+    Args:
+        result: Mutable response dict (IncidentResponse or RecoveryResponse format)
+        session_state: Shared session state dict, or None
+    """
+    if session_state and "detected_labels" in session_state:
+        result["detected_labels"] = session_state["detected_labels"]
+
+
 def register_workflow_discovery_toolset(
     config: Config,
     app_config: Optional[Dict[str, Any]] = None,
@@ -290,6 +309,10 @@ def register_workflow_discovery_toolset(
     component: str = "",
     environment: str = "",
     priority: str = "",
+    session_state: Optional[Dict[str, Any]] = None,
+    k8s_client: Any = None,
+    resource_name: str = "",
+    resource_namespace: str = "",
 ) -> Config:
     """
     Register the three-step workflow discovery toolset with HolmesGPT SDK Config.
@@ -307,6 +330,9 @@ def register_workflow_discovery_toolset(
     set once at toolset creation and propagated to all three tools as query
     parameters for the DS security gate (DD-HAPI-017).
 
+    ADR-056 SoC: k8s_client and resource identity are passed to the toolset
+    for on-demand label detection in list_available_actions.
+
     Args:
         config: HolmesGPT SDK Config instance (already initialized)
         app_config: Optional application configuration (for logging context)
@@ -317,6 +343,10 @@ def register_workflow_discovery_toolset(
         component: K8s resource kind (pod/deployment/node/etc.)
         environment: Namespace-derived environment (production/staging/development)
         priority: Severity-mapped priority (P0/P1/P2/P3)
+        session_state: Shared mutable dict for inter-tool communication (ADR-056).
+        k8s_client: K8s client for on-demand label detection (ADR-056 SoC).
+        resource_name: Target resource name for label detection.
+        resource_namespace: Target resource namespace for label detection.
 
     Returns:
         The same Config instance with workflow discovery registered via monkey-patch
@@ -329,7 +359,6 @@ def register_workflow_discovery_toolset(
     # authenticate with DataStorage (fixes 401 Unauthorized on /api/v1/workflows/*).
     http_session = create_workflow_discovery_session()
 
-    # Create the three-step discovery toolset instance
     discovery_toolset = WorkflowDiscoveryToolset(
         enabled=True,
         remediation_id=remediation_id,
@@ -340,6 +369,10 @@ def register_workflow_discovery_toolset(
         custom_labels=custom_labels,
         detected_labels=detected_labels,
         http_session=http_session,
+        session_state=session_state,
+        k8s_client=k8s_client,
+        resource_name=resource_name,
+        resource_namespace=resource_namespace,
     )
 
     # Initialize toolset manager if needed
