@@ -31,13 +31,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/redis/go-redis/v9"
-	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 )
@@ -839,315 +834,184 @@ func deployDataStorageServiceRBAC(ctx context.Context, namespace, kubeconfigPath
 	return nil
 }
 
+// deployPostgreSQLInNamespace deploys PostgreSQL using an inline YAML template.
+// Standardized: same pattern as all other kubernaut E2E services.
 func deployPostgreSQLInNamespace(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
-	clientset, err := getKubernetesClient(kubeconfigPath)
-	if err != nil {
-		return err
-	}
+	manifest := `---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgresql-secret
+stringData:
+  POSTGRES_USER: slm_user
+  POSTGRES_PASSWORD: test_password
+  POSTGRES_DB: action_history
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgresql
+  labels:
+    app: postgresql
+spec:
+  type: NodePort
+  ports:
+  - name: postgresql
+    port: 5432
+    targetPort: 5432
+    nodePort: 30432
+    protocol: TCP
+  selector:
+    app: postgresql
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgresql
+  labels:
+    app: postgresql
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgresql
+  template:
+    metadata:
+      labels:
+        app: postgresql
+    spec:
+      containers:
+      - name: postgresql
+        image: postgres:16-alpine
+        ports:
+        - name: postgresql
+          containerPort: 5432
+        env:
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: postgresql-secret
+              key: POSTGRES_USER
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgresql-secret
+              key: POSTGRES_PASSWORD
+        - name: POSTGRES_DB
+          valueFrom:
+            secretKeyRef:
+              name: postgresql-secret
+              key: POSTGRES_DB
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        volumeMounts:
+        - name: postgresql-data
+          mountPath: /var/lib/postgresql/data
+        resources:
+          requests:
+            memory: 256Mi
+            cpu: 250m
+          limits:
+            memory: 512Mi
+            cpu: 500m
+        readinessProbe:
+          exec:
+            command: ["pg_isready", "-U", "slm_user", "-d", "action_history"]
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+        livenessProbe:
+          exec:
+            command: ["pg_isready", "-U", "slm_user", "-d", "action_history"]
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+      volumes:
+      - name: postgresql-data
+        emptyDir: {}
+`
 
-	// 1. Create Secret for credentials
-	// Note: PostgreSQL docker entrypoint auto-creates user and database from env vars
-	// No init script needed - POSTGRES_USER gets ownership of POSTGRES_DB automatically
-	secret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "postgresql-secret",
-			Namespace: namespace,
-		},
-		StringData: map[string]string{
-			"POSTGRES_USER":     "slm_user",
-			"POSTGRES_PASSWORD": "test_password",
-			"POSTGRES_DB":       "action_history",
-		},
-	}
-
-	_, err = clientset.CoreV1().Secrets(namespace).Create(ctx, secret, metav1.CreateOptions{})
-	if err != nil {
-		// Handle case where secret already exists (from previous test run)
-		if !errors.IsAlreadyExists(err) {
-			return fmt.Errorf("failed to create PostgreSQL secret: %w", err)
-		}
-		// Secret exists, update it to ensure it has correct values
-		_, err = clientset.CoreV1().Secrets(namespace).Update(ctx, secret, metav1.UpdateOptions{})
-		if err != nil {
-			return fmt.Errorf("failed to update existing PostgreSQL secret: %w", err)
-		}
-	}
-
-	// 2. Create Service (NodePort for direct access from host - eliminates port-forward instability)
-	service := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "postgresql",
-			Namespace: namespace,
-			Labels: map[string]string{
-				"app": "postgresql",
-			},
-		},
-		Spec: corev1.ServiceSpec{
-			Type: corev1.ServiceTypeNodePort,
-			Ports: []corev1.ServicePort{
-				{
-					Name:       "postgresql",
-					Port:       5432,
-					TargetPort: intstr.FromInt(5432),
-					NodePort:   30432, // Mapped to localhost:5432 via Kind extraPortMappings
-					Protocol:   corev1.ProtocolTCP,
-				},
-			},
-			Selector: map[string]string{
-				"app": "postgresql",
-			},
-		},
-	}
-
-	_, err = clientset.CoreV1().Services(namespace).Create(ctx, service, metav1.CreateOptions{})
-	if err != nil {
-		return fmt.Errorf("failed to create PostgreSQL service: %w", err)
-	}
-
-	// 3. Create Deployment
-	replicas := int32(1)
-	deployment := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "postgresql",
-			Namespace: namespace,
-			Labels: map[string]string{
-				"app": "postgresql",
-			},
-		},
-		Spec: appsv1.DeploymentSpec{
-			Replicas: &replicas,
-			Selector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					"app": "postgresql",
-				},
-			},
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{
-						"app": "postgresql",
-					},
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name:  "postgresql",
-							Image: "postgres:16-alpine",
-							Ports: []corev1.ContainerPort{
-								{
-									Name:          "postgresql",
-									ContainerPort: 5432,
-								},
-							},
-							Env: []corev1.EnvVar{
-								{
-									Name: "POSTGRES_USER",
-									ValueFrom: &corev1.EnvVarSource{
-										SecretKeyRef: &corev1.SecretKeySelector{
-											LocalObjectReference: corev1.LocalObjectReference{
-												Name: "postgresql-secret",
-											},
-											Key: "POSTGRES_USER",
-										},
-									},
-								},
-								{
-									Name: "POSTGRES_PASSWORD",
-									ValueFrom: &corev1.EnvVarSource{
-										SecretKeyRef: &corev1.SecretKeySelector{
-											LocalObjectReference: corev1.LocalObjectReference{
-												Name: "postgresql-secret",
-											},
-											Key: "POSTGRES_PASSWORD",
-										},
-									},
-								},
-								{
-									Name: "POSTGRES_DB",
-									ValueFrom: &corev1.EnvVarSource{
-										SecretKeyRef: &corev1.SecretKeySelector{
-											LocalObjectReference: corev1.LocalObjectReference{
-												Name: "postgresql-secret",
-											},
-											Key: "POSTGRES_DB",
-										},
-									},
-								},
-								{
-									Name:  "PGDATA",
-									Value: "/var/lib/postgresql/data/pgdata",
-								},
-							},
-							VolumeMounts: []corev1.VolumeMount{
-								{
-									Name:      "postgresql-data",
-									MountPath: "/var/lib/postgresql/data",
-								},
-							},
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceMemory: resource.MustParse("256Mi"),
-									corev1.ResourceCPU:    resource.MustParse("250m"),
-								},
-								Limits: corev1.ResourceList{
-									corev1.ResourceMemory: resource.MustParse("512Mi"),
-									corev1.ResourceCPU:    resource.MustParse("500m"),
-								},
-							},
-							ReadinessProbe: &corev1.Probe{
-								ProbeHandler: corev1.ProbeHandler{
-									Exec: &corev1.ExecAction{
-										Command: []string{"pg_isready", "-U", "slm_user", "-d", "action_history"},
-									},
-								},
-								InitialDelaySeconds: 5,
-								PeriodSeconds:       5,
-								TimeoutSeconds:      3,
-							},
-							LivenessProbe: &corev1.Probe{
-								ProbeHandler: corev1.ProbeHandler{
-									Exec: &corev1.ExecAction{
-										Command: []string{"pg_isready", "-U", "slm_user", "-d", "action_history"},
-									},
-								},
-								InitialDelaySeconds: 30,
-								PeriodSeconds:       10,
-								TimeoutSeconds:      5,
-							},
-						},
-					},
-					Volumes: []corev1.Volume{
-						{
-							Name: "postgresql-data",
-							VolumeSource: corev1.VolumeSource{
-								EmptyDir: &corev1.EmptyDirVolumeSource{},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-
-	_, err = clientset.AppsV1().Deployments(namespace).Create(ctx, deployment, metav1.CreateOptions{})
-	if err != nil {
-		return fmt.Errorf("failed to create PostgreSQL deployment: %w", err)
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-n", namespace, "-f", "-")
+	cmd.Stdin = strings.NewReader(manifest)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to deploy PostgreSQL: %w", err)
 	}
 
 	_, _ = fmt.Fprintf(writer, "   ✅ PostgreSQL deployed (Secret + Service + Deployment)\n")
-	_, _ = fmt.Fprintf(writer, "   ℹ️  User and database auto-created by PostgreSQL entrypoint\n")
 	return nil
 }
 
+// deployRedisInNamespace deploys Redis using an inline YAML template.
+// Standardized: same pattern as all other kubernaut E2E services.
 func deployRedisInNamespace(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
-	clientset, err := getKubernetesClient(kubeconfigPath)
-	if err != nil {
-		return err
-	}
+	manifest := `---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  labels:
+    app: redis
+spec:
+  type: ClusterIP
+  ports:
+  - name: redis
+    port: 6379
+    targetPort: 6379
+    protocol: TCP
+  selector:
+    app: redis
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  labels:
+    app: redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+      - name: redis
+        image: quay.io/jordigilh/redis:7-alpine
+        ports:
+        - name: redis
+          containerPort: 6379
+        resources:
+          requests:
+            memory: 128Mi
+            cpu: 100m
+          limits:
+            memory: 256Mi
+            cpu: 200m
+        readinessProbe:
+          exec:
+            command: ["redis-cli", "ping"]
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+        livenessProbe:
+          exec:
+            command: ["redis-cli", "ping"]
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+`
 
-	// 1. Create Service
-	service := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "redis",
-			Namespace: namespace,
-			Labels: map[string]string{
-				"app": "redis",
-			},
-		},
-		Spec: corev1.ServiceSpec{
-			Type: corev1.ServiceTypeClusterIP,
-			Ports: []corev1.ServicePort{
-				{
-					Name:       "redis",
-					Port:       6379,
-					TargetPort: intstr.FromInt(6379),
-					Protocol:   corev1.ProtocolTCP,
-				},
-			},
-			Selector: map[string]string{
-				"app": "redis",
-			},
-		},
-	}
-
-	_, err = clientset.CoreV1().Services(namespace).Create(ctx, service, metav1.CreateOptions{})
-	if err != nil {
-		return fmt.Errorf("failed to create Redis service: %w", err)
-	}
-
-	// 2. Create Deployment
-	replicas := int32(1)
-	deployment := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "redis",
-			Namespace: namespace,
-			Labels: map[string]string{
-				"app": "redis",
-			},
-		},
-		Spec: appsv1.DeploymentSpec{
-			Replicas: &replicas,
-			Selector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					"app": "redis",
-				},
-			},
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{
-						"app": "redis",
-					},
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name:  "redis",
-							Image: "quay.io/jordigilh/redis:7-alpine",
-							Ports: []corev1.ContainerPort{
-								{
-									Name:          "redis",
-									ContainerPort: 6379,
-								},
-							},
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceMemory: resource.MustParse("128Mi"),
-									corev1.ResourceCPU:    resource.MustParse("100m"),
-								},
-								Limits: corev1.ResourceList{
-									corev1.ResourceMemory: resource.MustParse("256Mi"),
-									corev1.ResourceCPU:    resource.MustParse("200m"),
-								},
-							},
-							ReadinessProbe: &corev1.Probe{
-								ProbeHandler: corev1.ProbeHandler{
-									Exec: &corev1.ExecAction{
-										Command: []string{"redis-cli", "ping"},
-									},
-								},
-								InitialDelaySeconds: 5,
-								PeriodSeconds:       5,
-								TimeoutSeconds:      3,
-							},
-							LivenessProbe: &corev1.Probe{
-								ProbeHandler: corev1.ProbeHandler{
-									Exec: &corev1.ExecAction{
-										Command: []string{"redis-cli", "ping"},
-									},
-								},
-								InitialDelaySeconds: 30,
-								PeriodSeconds:       10,
-								TimeoutSeconds:      5,
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-
-	_, err = clientset.AppsV1().Deployments(namespace).Create(ctx, deployment, metav1.CreateOptions{})
-	if err != nil {
-		return fmt.Errorf("failed to create Redis deployment: %w", err)
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-n", namespace, "-f", "-")
+	cmd.Stdin = strings.NewReader(manifest)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to deploy Redis: %w", err)
 	}
 
 	_, _ = fmt.Fprintf(writer, "   ✅ Redis deployed (Service + Deployment)\n")
@@ -1171,419 +1035,235 @@ func deployDataStorageServiceInNamespace(ctx context.Context, namespace, kubecon
 	return deployDataStorageServiceInNamespaceWithNodePort(ctx, namespace, kubeconfigPath, dataStorageImage, 30081, writer)
 }
 
-// deployDataStorageServiceInNamespaceWithNodePort deploys DataStorage with OAuth2-Proxy sidecar.
-// Architecture: Direct access via DD-AUTH-014 (no oauth-proxy)
-// DD-AUTH-010: Real authentication with ServiceAccount tokens (no pass-through mode)
-// DD-AUTH-011: SubjectAccessReview (SAR) with verb:"create" for all DataStorage operations
-// DD-AUTH-009 v2.0: OpenShift oauth-proxy (NOT CNCF oauth2-proxy)
+// deployDataStorageServiceInNamespaceWithNodePort deploys DataStorage using an inline YAML template.
 // DD-AUTH-014: Middleware-based SAR authentication (no oauth-proxy sidecar)
+// Standardized: same pattern as all other kubernaut E2E services.
 func deployDataStorageServiceInNamespaceWithNodePort(ctx context.Context, namespace, kubeconfigPath, dataStorageImage string, nodePort int32, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "📦 Deploying DataStorage with middleware-based auth (DD-AUTH-014)...\n")
 
-	clientset, err := getKubernetesClient(kubeconfigPath)
-	if err != nil {
-		return err
+	pullPolicy := GetImagePullPolicy()
+
+	coverageEnvYAML := ""
+	coverageVolumeMountYAML := ""
+	coverageVolumeYAML := ""
+	coverageSecurityContextYAML := ""
+
+	if os.Getenv("E2E_COVERAGE") == "true" {
+		_, _ = fmt.Fprintf(writer, "   ✅ DD-TEST-007: Coverage instrumentation enabled\n")
+		coverageEnvYAML = `
+            - name: GOCOVERDIR
+              value: /coverdata`
+		coverageVolumeMountYAML = `
+            - name: coverage
+              mountPath: /coverdata`
+		coverageVolumeYAML = `
+        - name: coverage
+          hostPath:
+            path: /coverdata
+            type: DirectoryOrCreate`
+		coverageSecurityContextYAML = `
+      securityContext:
+        runAsUser: 0
+        runAsGroup: 0`
 	}
 
-	// 1. Create ConfigMap for service configuration
-	configYAML := fmt.Sprintf(`server:
-  port: 8080
-  host: "0.0.0.0"
-  readTimeout: 30s
-  writeTimeout: 30s
-database:
-  host: postgresql.%s.svc.cluster.local
-  port: 5432
-  name: action_history
-  user: slm_user
-  sslMode: disable
-  maxOpenConns: 50
-  maxIdleConns: 10
-  connMaxLifetime: 1h
-  connMaxIdleTime: 10m
-  secretsFile: "/etc/datastorage/secrets/db-secrets.yaml"
-  usernameKey: "username"
-  passwordKey: "password"
-redis:
-  addr: redis.%s.svc.cluster.local:6379
-  db: 0
-  dlqStreamName: dlq-stream
-  dlqMaxLen: 1000
-  dlqConsumerGroup: dlq-group
-  secretsFile: "/etc/datastorage/secrets/redis-secrets.yaml"
-  passwordKey: "password"
-logging:
-  level: debug
-  format: json`, namespace, namespace)
+	manifest := fmt.Sprintf(`---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: datastorage-config
+data:
+  config.yaml: |
+    server:
+      port: 8080
+      host: "0.0.0.0"
+      readTimeout: 30s
+      writeTimeout: 30s
+    database:
+      host: postgresql.%[1]s.svc.cluster.local
+      port: 5432
+      name: action_history
+      user: slm_user
+      sslMode: disable
+      maxOpenConns: 50
+      maxIdleConns: 10
+      connMaxLifetime: 1h
+      connMaxIdleTime: 10m
+      secretsFile: "/etc/datastorage/secrets/db-secrets.yaml"
+      usernameKey: "username"
+      passwordKey: "password"
+    redis:
+      addr: redis.%[1]s.svc.cluster.local:6379
+      db: 0
+      dlqStreamName: dlq-stream
+      dlqMaxLen: 1000
+      dlqConsumerGroup: dlq-group
+      secretsFile: "/etc/datastorage/secrets/redis-secrets.yaml"
+      passwordKey: "password"
+    logging:
+      level: debug
+      format: json
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: datastorage-secret
+stringData:
+  db-secrets.yaml: |
+    username: slm_user
+    password: test_password
+  redis-secrets.yaml: |
+    password: ""
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: data-storage-sa
+  labels:
+    app: data-storage-service
+    component: auth
+    authorization: dd-auth-014
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: data-storage-auth-middleware
+  labels:
+    app: data-storage-service
+    component: auth
+    authorization: dd-auth-014
+rules:
+- apiGroups: ["authentication.k8s.io"]
+  resources: ["tokenreviews"]
+  verbs: ["create"]
+- apiGroups: ["authorization.k8s.io"]
+  resources: ["subjectaccessreviews"]
+  verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: data-storage-auth-middleware
+  labels:
+    app: data-storage-service
+    component: auth
+    authorization: dd-auth-014
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-auth-middleware
+subjects:
+- kind: ServiceAccount
+  name: data-storage-sa
+  namespace: %[1]s
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: data-storage-service
+  labels:
+    app: datastorage
+spec:
+  type: NodePort
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+    nodePort: %[2]d
+    protocol: TCP
+  - name: metrics
+    port: 9181
+    targetPort: 9181
+    protocol: TCP
+  selector:
+    app: datastorage
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: datastorage
+  labels:
+    app: datastorage
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: datastorage
+  template:
+    metadata:
+      labels:
+        app: datastorage
+    spec:
+      serviceAccountName: data-storage-sa%[3]s
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: ""
+      tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+      containers:
+      - name: datastorage
+        image: %[4]s
+        imagePullPolicy: %[5]s
+        ports:
+        - name: http
+          containerPort: 8080
+        - name: metrics
+          containerPort: 9181
+        env:
+        - name: CONFIG_PATH
+          value: /etc/datastorage/config.yaml
+        - name: POD_NAMESPACE
+          value: %[1]s%[6]s
+        volumeMounts:
+        - name: config
+          mountPath: /etc/datastorage
+          readOnly: true
+        - name: secrets
+          mountPath: /etc/datastorage/secrets
+          readOnly: true%[7]s
+        resources:
+          requests:
+            memory: 256Mi
+            cpu: 250m
+          limits:
+            memory: 512Mi
+            cpu: 500m
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+      volumes:
+      - name: config
+        configMap:
+          name: datastorage-config
+      - name: secrets
+        secret:
+          secretName: datastorage-secret%[8]s
+`, namespace, nodePort, coverageSecurityContextYAML, dataStorageImage, pullPolicy,
+		coverageEnvYAML, coverageVolumeMountYAML, coverageVolumeYAML)
 
-	configMap := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "datastorage-config",
-			Namespace: namespace,
-		},
-		Data: map[string]string{
-			"config.yaml": configYAML,
-		},
-	}
-
-	_, err = clientset.CoreV1().ConfigMaps(namespace).Create(ctx, configMap, metav1.CreateOptions{})
-	if err != nil {
-		return fmt.Errorf("failed to create Data Storage ConfigMap: %w", err)
-	}
-
-	// 2. Create Secret for database and Redis credentials
-	secret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "datastorage-secret",
-			Namespace: namespace,
-		},
-		StringData: map[string]string{
-			"db-secrets.yaml": `username: slm_user
-password: test_password`,
-			"redis-secrets.yaml": `password: ""`,
-		},
-	}
-
-	_, err = clientset.CoreV1().Secrets(namespace).Create(ctx, secret, metav1.CreateOptions{})
-	if err != nil {
-		// Handle case where secret already exists (from previous test run)
-		if !errors.IsAlreadyExists(err) {
-			return fmt.Errorf("failed to create Data Storage Secret: %w", err)
-		}
-		// Secret exists, update it to ensure it has correct values
-		_, err = clientset.CoreV1().Secrets(namespace).Update(ctx, secret, metav1.UpdateOptions{})
-		if err != nil {
-			return fmt.Errorf("failed to update existing Data Storage Secret: %w", err)
-		}
-	}
-
-	// 2.5. Create ServiceAccount + RBAC for middleware-based auth (DD-AUTH-014)
-	// Required for TokenReview and SubjectAccessReview API calls
-	_, _ = fmt.Fprintf(writer, "   🔐 Creating DataStorage ServiceAccount + RBAC...\n")
-
-	// ServiceAccount
-	serviceAccount := &corev1.ServiceAccount{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "data-storage-sa",
-			Namespace: namespace,
-			Labels: map[string]string{
-				"app":           "data-storage-service",
-				"component":     "auth",
-				"authorization": "dd-auth-014",
-			},
-		},
-	}
-	_, err = clientset.CoreV1().ServiceAccounts(namespace).Create(ctx, serviceAccount, metav1.CreateOptions{})
-	if err != nil && !errors.IsAlreadyExists(err) {
-		return fmt.Errorf("failed to create DataStorage ServiceAccount: %w", err)
-	}
-
-	// ClusterRole for TokenReview + SubjectAccessReview
-	clusterRole := &rbacv1.ClusterRole{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "data-storage-auth-middleware",
-			Labels: map[string]string{
-				"app":           "data-storage-service",
-				"component":     "auth",
-				"authorization": "dd-auth-014",
-			},
-		},
-		Rules: []rbacv1.PolicyRule{
-			{
-				APIGroups: []string{"authentication.k8s.io"},
-				Resources: []string{"tokenreviews"},
-				Verbs:     []string{"create"},
-			},
-			{
-				APIGroups: []string{"authorization.k8s.io"},
-				Resources: []string{"subjectaccessreviews"},
-				Verbs:     []string{"create"},
-			},
-		},
-	}
-	_, err = clientset.RbacV1().ClusterRoles().Create(ctx, clusterRole, metav1.CreateOptions{})
-	if err != nil && !errors.IsAlreadyExists(err) {
-		return fmt.Errorf("failed to create DataStorage ClusterRole: %w", err)
-	}
-
-	// ClusterRoleBinding
-	clusterRoleBinding := &rbacv1.ClusterRoleBinding{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "data-storage-auth-middleware",
-			Labels: map[string]string{
-				"app":           "data-storage-service",
-				"component":     "auth",
-				"authorization": "dd-auth-014",
-			},
-		},
-		RoleRef: rbacv1.RoleRef{
-			APIGroup: "rbac.authorization.k8s.io",
-			Kind:     "ClusterRole",
-			Name:     "data-storage-auth-middleware",
-		},
-		Subjects: []rbacv1.Subject{
-			{
-				Kind:      "ServiceAccount",
-				Name:      "data-storage-sa",
-				Namespace: namespace,
-			},
-		},
-	}
-	_, err = clientset.RbacV1().ClusterRoleBindings().Create(ctx, clusterRoleBinding, metav1.CreateOptions{})
-	if err != nil && !errors.IsAlreadyExists(err) {
-		return fmt.Errorf("failed to create DataStorage ClusterRoleBinding: %w", err)
-	}
-	_, _ = fmt.Fprintf(writer, "     ✅ DataStorage RBAC configured\n")
-
-	// 3. Create Service (NodePort for direct access from host - eliminates port-forward instability)
-	// DD-AUTH-014: Direct to DataStorage (no oauth-proxy)
-	service := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "data-storage-service", // DD-AUTH-011: Match production service name for SAR
-			Namespace: namespace,
-			Labels: map[string]string{
-				"app": "datastorage",
-			},
-		},
-		Spec: corev1.ServiceSpec{
-			Type: corev1.ServiceTypeNodePort,
-			Ports: []corev1.ServicePort{
-				{
-					Name:       "http",
-					Port:       8080,                 // DD-AUTH-014: Direct to DataStorage (no proxy)
-					TargetPort: intstr.FromInt(8080), // Maps to DataStorage container port
-					NodePort:   nodePort,             // Configurable per service (default: 30081)
-					Protocol:   corev1.ProtocolTCP,
-				},
-				{
-					Name:       "metrics",
-					Port:       9181,
-					TargetPort: intstr.FromInt(9181),
-					Protocol:   corev1.ProtocolTCP,
-				},
-			},
-			Selector: map[string]string{
-				"app": "datastorage",
-			},
-		},
-	}
-
-	_, err = clientset.CoreV1().Services(namespace).Create(ctx, service, metav1.CreateOptions{})
-	if err != nil {
-		return fmt.Errorf("failed to create Data Storage Service: %w", err)
-	}
-
-	// 4. Create Deployment
-	replicas := int32(1)
-	deployment := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "datastorage",
-			Namespace: namespace,
-			Labels: map[string]string{
-				"app": "datastorage",
-			},
-		},
-		Spec: appsv1.DeploymentSpec{
-			Replicas: &replicas,
-			Selector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					"app": "datastorage",
-				},
-			},
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{
-						"app": "datastorage",
-					},
-				},
-				Spec: corev1.PodSpec{
-					// DD-AUTH-014: ServiceAccount for middleware-based auth
-					// Required for TokenReview and SubjectAccessReview API calls
-					ServiceAccountName: "data-storage-sa",
-					// DD-TEST-001: Schedule on control-plane where images are loaded
-					// Kind loads images to control-plane only by default
-					NodeSelector: map[string]string{
-						"node-role.kubernetes.io/control-plane": "",
-					},
-					Tolerations: []corev1.Toleration{
-						{
-							Key:      "node-role.kubernetes.io/control-plane",
-							Operator: corev1.TolerationOpExists,
-							Effect:   corev1.TaintEffectNoSchedule,
-						},
-					},
-					// DD-TEST-007: Run as root for E2E coverage (simplified permissions)
-					// Per SP team guidance: non-root user may not have permission to write /coverdata
-					SecurityContext: func() *corev1.PodSecurityContext {
-						if os.Getenv("E2E_COVERAGE") == "true" {
-							runAsUser := int64(0)
-							runAsGroup := int64(0)
-							return &corev1.PodSecurityContext{
-								RunAsUser:  &runAsUser,
-								RunAsGroup: &runAsGroup,
-							}
-						}
-						return nil
-					}(),
-					Containers: []corev1.Container{
-						// DD-AUTH-014: DataStorage with middleware-based auth (no oauth-proxy sidecar)
-						// Authenticates using Kubernetes TokenReview API + authorizes using SAR API
-						{
-							Name:            "datastorage",
-							Image:           dataStorageImage,       // DD-TEST-001: service-specific tag
-							ImagePullPolicy: GetImagePullPolicyV1(), // Dynamic: IfNotPresent (CI/CD) or Never (local)
-							Ports: []corev1.ContainerPort{
-								{
-									Name:          "http", // DD-AUTH-014: Direct access (no proxy)
-									ContainerPort: 8080,   // Internal port (matches config.yaml)
-								},
-								{
-									Name:          "metrics",
-									ContainerPort: 9181,
-								},
-							},
-							Env: func() []corev1.EnvVar {
-								envVars := []corev1.EnvVar{
-									{
-										Name:  "CONFIG_PATH",
-										Value: "/etc/datastorage/config.yaml",
-									},
-									// DD-AUTH-014: POD_NAMESPACE required for SAR namespace context
-									{
-										Name:  "POD_NAMESPACE",
-										Value: namespace,
-									},
-									// DD-AUTH-014: Use in-cluster config (ServiceAccount mounted automatically)
-									// KUBECONFIG env var removed - was causing crashes in E2E (host path doesn't exist in container)
-									// With proper data-storage-sa ServiceAccount + RBAC, in-cluster config works correctly
-								}
-								// DD-TEST-007: E2E Coverage Capture Standard
-								// Only add GOCOVERDIR if E2E_COVERAGE=true
-								// MUST match Kind extraMounts path: /coverdata (not /tmp/coverage)
-								coverageEnabled := os.Getenv("E2E_COVERAGE") == "true"
-								_, _ = fmt.Fprintf(writer, "   🔍 DD-TEST-007: E2E_COVERAGE=%s (enabled=%v)\n", os.Getenv("E2E_COVERAGE"), coverageEnabled)
-								if coverageEnabled {
-									_, _ = fmt.Fprintf(writer, "   ✅ Adding GOCOVERDIR=/coverdata to DataStorage deployment\n")
-									envVars = append(envVars, corev1.EnvVar{
-										Name:  "GOCOVERDIR",
-										Value: "/coverdata",
-									})
-								} else {
-									_, _ = fmt.Fprintf(writer, "   ⚠️  E2E_COVERAGE not set, skipping GOCOVERDIR\n")
-								}
-								_, _ = fmt.Fprintf(writer, "   ✅ DD-AUTH-014: Using in-cluster config with ServiceAccount, POD_NAMESPACE=%s\n", namespace)
-								return envVars
-							}(),
-							VolumeMounts: func() []corev1.VolumeMount {
-								mounts := []corev1.VolumeMount{
-									{
-										Name:      "config",
-										MountPath: "/etc/datastorage",
-										ReadOnly:  true,
-									},
-									{
-										Name:      "secrets",
-										MountPath: "/etc/datastorage/secrets",
-										ReadOnly:  true,
-									},
-								}
-								// DD-TEST-007: Add coverage volume mount if enabled
-								// MUST match Kind extraMounts path: /coverdata (not /tmp/coverage)
-								if os.Getenv("E2E_COVERAGE") == "true" {
-									mounts = append(mounts, corev1.VolumeMount{
-										Name:      "coverage",
-										MountPath: "/coverdata",
-										ReadOnly:  false,
-									})
-								}
-								return mounts
-							}(),
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceMemory: resource.MustParse("256Mi"),
-									corev1.ResourceCPU:    resource.MustParse("250m"),
-								},
-								Limits: corev1.ResourceList{
-									corev1.ResourceMemory: resource.MustParse("512Mi"),
-									corev1.ResourceCPU:    resource.MustParse("500m"),
-								},
-							},
-							ReadinessProbe: &corev1.Probe{
-								ProbeHandler: corev1.ProbeHandler{
-									HTTPGet: &corev1.HTTPGetAction{
-										Path: "/health",
-										Port: intstr.FromInt(8080), // DataStorage listens on 8080
-									},
-								},
-								InitialDelaySeconds: 30, // Allow PostgreSQL/Redis startup (was 5s - too short)
-								PeriodSeconds:       5,
-								TimeoutSeconds:      3,
-								FailureThreshold:    3,
-							},
-							LivenessProbe: &corev1.Probe{
-								ProbeHandler: corev1.ProbeHandler{
-									HTTPGet: &corev1.HTTPGetAction{
-										Path: "/health",
-										Port: intstr.FromInt(8080), // DataStorage listens on 8080
-									},
-								},
-								InitialDelaySeconds: 30,
-								PeriodSeconds:       10,
-								TimeoutSeconds:      5,
-								FailureThreshold:    3,
-							},
-						},
-					},
-					Volumes: func() []corev1.Volume {
-						volumes := []corev1.Volume{
-							{
-								Name: "config",
-								VolumeSource: corev1.VolumeSource{
-									ConfigMap: &corev1.ConfigMapVolumeSource{
-										LocalObjectReference: corev1.LocalObjectReference{
-											Name: "datastorage-config",
-										},
-									},
-								},
-							},
-							{
-								Name: "secrets",
-								VolumeSource: corev1.VolumeSource{
-									Secret: &corev1.SecretVolumeSource{
-										SecretName: "datastorage-secret",
-									},
-								},
-							},
-						}
-						// DD-TEST-007: Add hostPath volume for coverage if enabled
-						// MUST match Kind extraMounts path: /coverdata (not /tmp/coverage)
-						if os.Getenv("E2E_COVERAGE") == "true" {
-							volumes = append(volumes, corev1.Volume{
-								Name: "coverage",
-								VolumeSource: corev1.VolumeSource{
-									HostPath: &corev1.HostPathVolumeSource{
-										Path: "/coverdata",
-										Type: func() *corev1.HostPathType {
-											t := corev1.HostPathDirectoryOrCreate
-											return &t
-										}(),
-									},
-								},
-							})
-						}
-						return volumes
-					}(),
-				},
-			},
-		},
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-n", namespace, "-f", "-")
+	cmd.Stdin = strings.NewReader(manifest)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to deploy DataStorage: %w", err)
 	}
 
-	_, err = clientset.AppsV1().Deployments(namespace).Create(ctx, deployment, metav1.CreateOptions{})
-	if err != nil {
-		return fmt.Errorf("failed to create Data Storage Deployment: %w", err)
-	}
-
-	_, _ = fmt.Fprintf(writer, "   ✅ Data Storage Service deployed (ConfigMap + Secret + Service + Deployment)\n")
+	_, _ = fmt.Fprintf(writer, "   ✅ Data Storage Service deployed (ConfigMap + Secret + RBAC + Service + Deployment)\n")
 	return nil
 }
 
