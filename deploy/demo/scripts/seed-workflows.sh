@@ -54,6 +54,29 @@ register_workflow '{
   "container_image": "quay.io/kubernaut-cicd/test-workflows/crashloop-config-fix-job:latest"
 }' "crashloop-config-fix-job"
 
+# ============================================
+# Demo Scenario Workflows (#114, #119-#130)
+# Built by: deploy/demo/scripts/build-demo-workflows.sh
+# ============================================
+
+# Workflow 3: GitOps Revert (#125 -- GitOps drift remediation)
+# actionType: GitRevertCommit | detectedLabels: gitOpsTool: "*"
+register_workflow '{
+  "container_image": "quay.io/kubernaut-cicd/test-workflows/git-revert-job:v1.0.0"
+}' "git-revert-job"
+
+# Workflow 4: Node Provisioning (#126 -- Cluster autoscaling)
+# actionType: ProvisionNode
+register_workflow '{
+  "container_image": "quay.io/kubernaut-cicd/test-workflows/provision-node-job:v1.0.0"
+}' "provision-node-job"
+
+# Workflow 5: Proactive Rollback (#128 -- SLO error budget burn)
+# actionType: ProactiveRollback
+register_workflow '{
+  "container_image": "quay.io/kubernaut-cicd/test-workflows/proactive-rollback-job:v1.0.0"
+}' "proactive-rollback-job"
+
 echo ""
-echo "==> Workflow seeding complete"
+echo "==> Workflow seeding complete (5 workflows)"
 echo "==> Verify: curl -s ${DATASTORAGE_URL}/api/v1/workflows | jq '.'"

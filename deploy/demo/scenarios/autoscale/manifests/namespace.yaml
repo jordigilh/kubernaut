@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: demo-autoscale
+  labels:
+    kubernaut.ai/environment: staging
+    kubernaut.ai/business-unit: infrastructure
+    kubernaut.ai/service-owner: sre-team
+    kubernaut.ai/criticality: high
+    kubernaut.ai/sla-tier: tier-2
