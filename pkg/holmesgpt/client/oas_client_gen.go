@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-faster/errors"
 	"github.com/go-faster/jx"
+	"github.com/ogen-go/ogen/conv"
 	ht "github.com/ogen-go/ogen/http"
 	"github.com/ogen-go/ogen/otelogen"
 	"github.com/ogen-go/ogen/uri"
@@ -43,26 +44,28 @@ type Invoker interface {
 	HealthCheckHealthGet(ctx context.Context) (jx.Raw, error)
 	// IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost invokes incident_analyze_endpoint_api_v1_incident_analyze_post operation.
 	//
-	// Analyze initial incident and provide RCA + workflow selection
+	// Submit incident analysis request (async session-based pattern).
 	// Business Requirement: BR-HAPI-002 (Incident analysis endpoint)
-	// Business Requirement: BR-WORKFLOW-001 (MCP Workflow Integration)
-	// Business Requirement: BR-AUDIT-005 v2.0 (Gap #4 - AI Provider Data)
-	// Design Decision: DD-AUDIT-005 (Hybrid Provider Data Capture)
+	// Business Requirement: BR-AA-HAPI-064.1 (Async submit returns session ID)
 	// Design Decision: DD-AUTH-006 (User attribution for LLM cost tracking)
-	// Called by: AIAnalysis Controller (for initial incident RCA and workflow selection)
-	// Flow:
-	// 1. Receive IncidentRequest from AIAnalysis
-	// 2. Extract authenticated user from oauth-proxy header (DD-AUTH-006)
-	// 3. Sanitize input for LLM (BR-HAPI-211)
-	// 4. Call HolmesGPT SDK for investigation (BR-HAPI-002)
-	// 5. Search workflow catalog via MCP (BR-HAPI-250)
-	// 6. Validate workflow response (DD-HAPI-002 v1.2)
-	// 7. Self-correct if validation fails (up to 3 attempts)
-	// 8. Emit audit event with complete response (DD-AUDIT-005)
-	// 9. Return IncidentResponse with RCA and workflow selection.
+	// Called by: AIAnalysis Controller via SubmitInvestigation()
+	// Returns HTTP 202 Accepted with {"session_id": "<uuid>"}.
+	// The investigation runs as a background task. Poll via GET /incident/session/{id}.
 	//
 	// POST /api/v1/incident/analyze
 	IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx context.Context, request *IncidentRequest) (IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes, error)
+	// IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet invokes incident_session_result_endpoint_api_v1_incident_session__session_id__result_get operation.
+	//
+	// Retrieve completed investigation result. BR-AA-HAPI-064.3.
+	//
+	// GET /api/v1/incident/session/{session_id}/result
+	IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet(ctx context.Context, params IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetParams) (IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetRes, error)
+	// IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet invokes incident_session_status_endpoint_api_v1_incident_session__session_id__get operation.
+	//
+	// Poll session status. BR-AA-HAPI-064.2.
+	//
+	// GET /api/v1/incident/session/{session_id}
+	IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet(ctx context.Context, params IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetParams) (IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRes, error)
 	// ReadinessCheckReadyGet invokes readiness_check_ready_get operation.
 	//
 	// Readiness probe endpoint
@@ -76,14 +79,28 @@ type Invoker interface {
 	ReadinessCheckReadyGet(ctx context.Context) (jx.Raw, error)
 	// RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePost invokes recovery_analyze_endpoint_api_v1_recovery_analyze_post operation.
 	//
-	// Analyze failed action and provide recovery strategies
+	// Submit recovery analysis request (async session-based pattern).
 	// Business Requirement: BR-HAPI-001 (Recovery analysis endpoint)
-	// Design Decision: DD-WORKFLOW-002 v2.4 - WorkflowCatalogToolset via SDK
+	// Business Requirement: BR-AA-HAPI-064.9 (Recovery async submit)
 	// Design Decision: DD-AUTH-006 (User attribution for LLM cost tracking)
-	// Called by: AIAnalysis Controller (for recovery attempts after workflow failure).
+	// Called by: AIAnalysis Controller via SubmitRecoveryInvestigation()
+	// Returns HTTP 202 Accepted with {"session_id": "<uuid>"}.
+	// The investigation runs as a background task. Poll via GET /recovery/session/{id}.
 	//
 	// POST /api/v1/recovery/analyze
 	RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePost(ctx context.Context, request *RecoveryRequest) (RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes, error)
+	// RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGet invokes recovery_session_result_endpoint_api_v1_recovery_session__session_id__result_get operation.
+	//
+	// Retrieve completed recovery result. BR-AA-HAPI-064.9.
+	//
+	// GET /api/v1/recovery/session/{session_id}/result
+	RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGet(ctx context.Context, params RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetParams) (RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetRes, error)
+	// RecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGet invokes recovery_session_status_endpoint_api_v1_recovery_session__session_id__get operation.
+	//
+	// Poll recovery session status. BR-AA-HAPI-064.9.
+	//
+	// GET /api/v1/recovery/session/{session_id}
+	RecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGet(ctx context.Context, params RecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGetParams) (RecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGetRes, error)
 }
 
 // Client implements OAS client.
@@ -279,23 +296,13 @@ func (c *Client) sendHealthCheckHealthGet(ctx context.Context) (res jx.Raw, err 
 
 // IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost invokes incident_analyze_endpoint_api_v1_incident_analyze_post operation.
 //
-// Analyze initial incident and provide RCA + workflow selection
+// Submit incident analysis request (async session-based pattern).
 // Business Requirement: BR-HAPI-002 (Incident analysis endpoint)
-// Business Requirement: BR-WORKFLOW-001 (MCP Workflow Integration)
-// Business Requirement: BR-AUDIT-005 v2.0 (Gap #4 - AI Provider Data)
-// Design Decision: DD-AUDIT-005 (Hybrid Provider Data Capture)
+// Business Requirement: BR-AA-HAPI-064.1 (Async submit returns session ID)
 // Design Decision: DD-AUTH-006 (User attribution for LLM cost tracking)
-// Called by: AIAnalysis Controller (for initial incident RCA and workflow selection)
-// Flow:
-// 1. Receive IncidentRequest from AIAnalysis
-// 2. Extract authenticated user from oauth-proxy header (DD-AUTH-006)
-// 3. Sanitize input for LLM (BR-HAPI-211)
-// 4. Call HolmesGPT SDK for investigation (BR-HAPI-002)
-// 5. Search workflow catalog via MCP (BR-HAPI-250)
-// 6. Validate workflow response (DD-HAPI-002 v1.2)
-// 7. Self-correct if validation fails (up to 3 attempts)
-// 8. Emit audit event with complete response (DD-AUDIT-005)
-// 9. Return IncidentResponse with RCA and workflow selection.
+// Called by: AIAnalysis Controller via SubmitInvestigation()
+// Returns HTTP 202 Accepted with {"session_id": "<uuid>"}.
+// The investigation runs as a background task. Poll via GET /incident/session/{id}.
 //
 // POST /api/v1/incident/analyze
 func (c *Client) IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx context.Context, request *IncidentRequest) (IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes, error) {
@@ -362,6 +369,189 @@ func (c *Client) sendIncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx context
 
 	stage = "DecodeResponse"
 	result, err := decodeIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet invokes incident_session_result_endpoint_api_v1_incident_session__session_id__result_get operation.
+//
+// Retrieve completed investigation result. BR-AA-HAPI-064.3.
+//
+// GET /api/v1/incident/session/{session_id}/result
+func (c *Client) IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet(ctx context.Context, params IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetParams) (IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetRes, error) {
+	res, err := c.sendIncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendIncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet(ctx context.Context, params IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetParams) (res IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("incident_session_result_endpoint_api_v1_incident_session__session_id__result_get"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/api/v1/incident/session/{session_id}/result"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/api/v1/incident/session/"
+	{
+		// Encode "session_id" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "session_id",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SessionID))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/result"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	defer resp.Body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeIncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet invokes incident_session_status_endpoint_api_v1_incident_session__session_id__get operation.
+//
+// Poll session status. BR-AA-HAPI-064.2.
+//
+// GET /api/v1/incident/session/{session_id}
+func (c *Client) IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet(ctx context.Context, params IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetParams) (IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRes, error) {
+	res, err := c.sendIncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendIncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet(ctx context.Context, params IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetParams) (res IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("incident_session_status_endpoint_api_v1_incident_session__session_id__get"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/api/v1/incident/session/{session_id}"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [2]string
+	pathParts[0] = "/api/v1/incident/session/"
+	{
+		// Encode "session_id" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "session_id",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SessionID))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	defer resp.Body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeIncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -449,11 +639,13 @@ func (c *Client) sendReadinessCheckReadyGet(ctx context.Context) (res jx.Raw, er
 
 // RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePost invokes recovery_analyze_endpoint_api_v1_recovery_analyze_post operation.
 //
-// Analyze failed action and provide recovery strategies
+// Submit recovery analysis request (async session-based pattern).
 // Business Requirement: BR-HAPI-001 (Recovery analysis endpoint)
-// Design Decision: DD-WORKFLOW-002 v2.4 - WorkflowCatalogToolset via SDK
+// Business Requirement: BR-AA-HAPI-064.9 (Recovery async submit)
 // Design Decision: DD-AUTH-006 (User attribution for LLM cost tracking)
-// Called by: AIAnalysis Controller (for recovery attempts after workflow failure).
+// Called by: AIAnalysis Controller via SubmitRecoveryInvestigation()
+// Returns HTTP 202 Accepted with {"session_id": "<uuid>"}.
+// The investigation runs as a background task. Poll via GET /recovery/session/{id}.
 //
 // POST /api/v1/recovery/analyze
 func (c *Client) RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePost(ctx context.Context, request *RecoveryRequest) (RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes, error) {
@@ -520,6 +712,189 @@ func (c *Client) sendRecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePost(ctx context
 
 	stage = "DecodeResponse"
 	result, err := decodeRecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGet invokes recovery_session_result_endpoint_api_v1_recovery_session__session_id__result_get operation.
+//
+// Retrieve completed recovery result. BR-AA-HAPI-064.9.
+//
+// GET /api/v1/recovery/session/{session_id}/result
+func (c *Client) RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGet(ctx context.Context, params RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetParams) (RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetRes, error) {
+	res, err := c.sendRecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGet(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendRecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGet(ctx context.Context, params RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetParams) (res RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("recovery_session_result_endpoint_api_v1_recovery_session__session_id__result_get"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/api/v1/recovery/session/{session_id}/result"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/api/v1/recovery/session/"
+	{
+		// Encode "session_id" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "session_id",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SessionID))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/result"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	defer resp.Body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeRecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// RecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGet invokes recovery_session_status_endpoint_api_v1_recovery_session__session_id__get operation.
+//
+// Poll recovery session status. BR-AA-HAPI-064.9.
+//
+// GET /api/v1/recovery/session/{session_id}
+func (c *Client) RecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGet(ctx context.Context, params RecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGetParams) (RecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGetRes, error) {
+	res, err := c.sendRecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGet(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendRecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGet(ctx context.Context, params RecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGetParams) (res RecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGetRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("recovery_session_status_endpoint_api_v1_recovery_session__session_id__get"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/api/v1/recovery/session/{session_id}"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, RecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGetOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [2]string
+	pathParts[0] = "/api/v1/recovery/session/"
+	{
+		// Encode "session_id" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "session_id",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SessionID))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	defer resp.Body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeRecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGetResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
