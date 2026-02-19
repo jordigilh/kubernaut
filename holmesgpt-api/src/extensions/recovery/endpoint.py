@@ -130,6 +130,7 @@ async def recovery_session_status_endpoint(session_id: str):
 @router.get(
     "/recovery/session/{session_id}/result",
     status_code=status.HTTP_200_OK,
+    response_model=RecoveryResponse,
     responses={404: {"description": "Session not found"}, 409: {"description": "Session not yet completed"}},
 )
 async def recovery_session_result_endpoint(session_id: str):
