@@ -67,7 +67,6 @@ import (
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	spaudit "github.com/jordigilh/kubernaut/pkg/signalprocessing/audit"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/classifier"
-	"github.com/jordigilh/kubernaut/pkg/signalprocessing/detection"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/enricher"
 	spmetrics "github.com/jordigilh/kubernaut/pkg/signalprocessing/metrics"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/ownerchain"
@@ -588,9 +587,6 @@ result := {}
 	err = regoEngine.StartHotReload(ctx)
 	Expect(err).NotTo(HaveOccurred())
 
-	// Initialize Label Detector (BR-SP-101)
-	labelDetector := detection.NewLabelDetector(k8sManager.GetClient(), logger)
-
 	// Initialize Metrics (DD-005: Observability)
 	// Per AIAnalysis pattern: Use global prometheus.DefaultRegisterer
 	sharedMetrics := spmetrics.NewMetrics() // No args = uses global prometheus.DefaultRegisterer
@@ -625,7 +621,6 @@ result := {}
 		BusinessClassifier: businessClassifier,
 		SeverityClassifier: severityClassifier, // BR-SP-105, DD-SEVERITY-001: Severity determination
 		RegoEngine:         regoEngine,         // BR-SP-102, BR-SP-104: CustomLabels extraction
-		LabelDetector:      labelDetector,      // BR-SP-101: Detected labels
 		K8sEnricher:        k8sEnricher,        // BR-SP-001: K8s context enrichment (interface)
 		OwnerChainBuilder:    ownerChainBuilder,    // BR-SP-100: Owner chain analysis
 		SignalModeClassifier: signalModeClassifier, // BR-SP-106: Predictive signal mode classification (ADR-054)

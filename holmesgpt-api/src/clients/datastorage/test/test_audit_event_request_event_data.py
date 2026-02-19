@@ -104,8 +104,6 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                 has_owner_chain = True,
                 owner_chain_length = 56,
                 degraded_mode = True,
-                has_pdb = True,
-                has_hpa = True,
                 has_namespace = True,
                 has_pod = True,
                 has_deployment = True,

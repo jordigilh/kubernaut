@@ -33,7 +33,7 @@ limitations under the License.
 // - BR-SP-051: Environment classification from namespace labels
 // - BR-SP-070: Priority assignment (P0-P3) based on environment + severity
 // - BR-SP-100: Owner chain traversal for enrichment
-// - BR-SP-101: Detected labels (PDB, HPA, NetworkPolicy)
+// - BR-SP-101: Detected labels (removed - ADR-056: relocated to HAPI)
 // - BR-SP-102: CustomLabels from Rego policies
 //
 // NOTE: These tests duplicate some integration test scenarios intentionally
@@ -55,9 +55,7 @@ import (
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 
 	appsv1 "k8s.io/api/apps/v1"
-	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	corev1 "k8s.io/api/core/v1"
-	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -681,208 +679,10 @@ var _ = Describe("BR-SP-100: Owner Chain Enables Root Cause Analysis", func() {
 	})
 })
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// BR-SP-101: Detected Labels (PDB, HPA)
-// BUSINESS VALUE: Remediation workflows respect cluster safety features
-// STAKEHOLDER: Platform team needs remediation to honor PDB/HPA
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-var _ = Describe("BR-SP-101: Detected Labels Enable Safe Remediation Decisions", func() {
-	var testNs string
+// BR-SP-101: DetectedLabels tests removed - ADR-056: DetectedLabels relocated to HAPI
+// See: holmesgpt-api/tests/unit/test_label_detector.py
 
-	BeforeEach(func() {
-		testNs = helpers.CreateTestNamespace(ctx, k8sClient, "e2e-detect")
-	})
-
-	AfterEach(func() {
-		helpers.DeleteTestNamespace(ctx, k8sClient, testNs)
-	})
-
-	// TDD RED: This test will FAIL until controller detects PDB
-	It("BR-SP-101: should detect PDB protection to prevent unsafe pod deletion", func() {
-		By("Creating Pod with labels")
-		pod := &corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "protected-pod",
-				Namespace: testNs,
-				Labels:    map[string]string{"app": "protected"},
-			},
-			Spec: corev1.PodSpec{
-				Containers: []corev1.Container{{
-					Name:  "main",
-					Image: "nginx:latest",
-				}},
-			},
-		}
-		Expect(k8sClient.Create(ctx, pod)).To(Succeed())
-
-		By("Creating PDB matching pod labels")
-		minAvailable := intstr.FromInt(1)
-		pdb := &policyv1.PodDisruptionBudget{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "protected-pdb",
-				Namespace: testNs,
-			},
-			Spec: policyv1.PodDisruptionBudgetSpec{
-				MinAvailable: &minAvailable,
-				Selector: &metav1.LabelSelector{
-					MatchLabels: map[string]string{"app": "protected"},
-				},
-			},
-		}
-		Expect(k8sClient.Create(ctx, pdb)).To(Succeed())
-
-		By("Creating SignalProcessing CR")
-		sp := &signalprocessingv1alpha1.SignalProcessing{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "e2e-pdb-detect",
-				Namespace: testNs,
-			},
-			Spec: signalprocessingv1alpha1.SignalProcessingSpec{
-				RemediationRequestRef: signalprocessingv1alpha1.ObjectReference{
-					APIVersion: "kubernaut.ai/v1alpha1",
-					Kind:       "RemediationRequest",
-					Name:       "e2e-pdb-detect-rr",
-					Namespace:  testNs,
-				},
-				Signal: signalprocessingv1alpha1.SignalData{
-					Fingerprint:  "b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8",
-					Name:         "PDBAlert",
-					Severity:     "critical",
-					Type:         "prometheus",
-					TargetType:   "kubernetes",
-					ReceivedTime: metav1.Now(),
-					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
-						Kind:      "Pod",
-						Name:      "protected-pod",
-						Namespace: testNs,
-					},
-				},
-			},
-		}
-		Expect(k8sClient.Create(ctx, sp)).To(Succeed())
-
-		By("Waiting for PDB detection")
-		Eventually(func() bool {
-			var updated signalprocessingv1alpha1.SignalProcessing
-			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &updated); err != nil {
-				return false
-			}
-			if updated.Status.KubernetesContext == nil || updated.Status.KubernetesContext.DetectedLabels == nil {
-				return false
-			}
-			return updated.Status.KubernetesContext.DetectedLabels.HasPDB
-		}, timeout, interval).Should(BeTrue())
-	})
-
-	// TDD RED: This test will FAIL until controller detects HPA
-	// FlakeAttempts(3): Timing-sensitive test due to controller reconciliation and HPA detection
-	It("BR-SP-101: should detect HPA to prevent conflicting scale operations", FlakeAttempts(3), func() {
-		By("Creating Deployment")
-		replicas := int32(1)
-		deployment := &appsv1.Deployment{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "scalable-deployment",
-				Namespace: testNs,
-			},
-			Spec: appsv1.DeploymentSpec{
-				Replicas: &replicas,
-				Selector: &metav1.LabelSelector{
-					MatchLabels: map[string]string{"app": "scalable"},
-				},
-				Template: corev1.PodTemplateSpec{
-					ObjectMeta: metav1.ObjectMeta{
-						Labels: map[string]string{"app": "scalable"},
-					},
-					Spec: corev1.PodSpec{
-						Containers: []corev1.Container{{
-							Name:  "main",
-							Image: "nginx:latest",
-						}},
-					},
-				},
-			},
-		}
-		Expect(k8sClient.Create(ctx, deployment)).To(Succeed())
-
-		By("Creating HPA targeting deployment")
-		minReplicas := int32(1)
-		hpa := &autoscalingv2.HorizontalPodAutoscaler{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "scalable-hpa",
-				Namespace: testNs,
-			},
-			Spec: autoscalingv2.HorizontalPodAutoscalerSpec{
-				ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{
-					APIVersion: "apps/v1",
-					Kind:       "Deployment",
-					Name:       "scalable-deployment",
-				},
-				MinReplicas: &minReplicas,
-				MaxReplicas: 5,
-			},
-		}
-		Expect(k8sClient.Create(ctx, hpa)).To(Succeed())
-
-		By("Waiting for Pod to be created")
-		var podName string
-		Eventually(func() bool {
-			pods := &corev1.PodList{}
-			if err := k8sClient.List(ctx, pods, client.InNamespace(testNs)); err != nil {
-				return false
-			}
-			for _, pod := range pods.Items {
-				if pod.Labels["app"] == "scalable" {
-					podName = pod.Name
-					return true
-				}
-			}
-			return false
-		}, timeout, interval).Should(BeTrue())
-
-		By("Creating SignalProcessing CR targeting the Pod")
-		sp := &signalprocessingv1alpha1.SignalProcessing{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "e2e-hpa-detect",
-				Namespace: testNs,
-			},
-			Spec: signalprocessingv1alpha1.SignalProcessingSpec{
-				RemediationRequestRef: signalprocessingv1alpha1.ObjectReference{
-					APIVersion: "kubernaut.ai/v1alpha1",
-					Kind:       "RemediationRequest",
-					Name:       "e2e-hpa-detect-rr",
-					Namespace:  testNs,
-				},
-				Signal: signalprocessingv1alpha1.SignalData{
-					Fingerprint:  "c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9",
-					Name:         "HPAAlert",
-					Severity:     "high",
-					Type:         "prometheus",
-					TargetType:   "kubernetes",
-					ReceivedTime: metav1.Now(),
-					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
-						Kind:      "Pod",
-						Name:      podName,
-						Namespace: testNs,
-					},
-				},
-			},
-		}
-		Expect(k8sClient.Create(ctx, sp)).To(Succeed())
-
-		By("Waiting for HPA detection")
-		Eventually(func() bool {
-			var updated signalprocessingv1alpha1.SignalProcessing
-			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &updated); err != nil {
-				return false
-			}
-			if updated.Status.KubernetesContext == nil || updated.Status.KubernetesContext.DetectedLabels == nil {
-				return false
-			}
-			return updated.Status.KubernetesContext.DetectedLabels.HasHPA
-		}, timeout, interval).Should(BeTrue())
-	})
-})
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // BR-SP-102: CustomLabels from Rego

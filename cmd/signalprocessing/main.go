@@ -52,7 +52,6 @@ import (
 	spaudit "github.com/jordigilh/kubernaut/pkg/signalprocessing/audit"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/classifier"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/config"
-	"github.com/jordigilh/kubernaut/pkg/signalprocessing/detection"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/enricher"
 	spmetrics "github.com/jordigilh/kubernaut/pkg/signalprocessing/metrics"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/ownerchain"
@@ -331,7 +330,6 @@ func main() {
 	// ========================================
 	// BR-SP-001: Kubernetes context enrichment
 	// BR-SP-100: Owner chain traversal
-	// BR-SP-101: Detected labels auto-detection
 	// BR-SP-102: CustomLabels Rego extraction
 
 	regoEngine := rego.NewEngine(
@@ -354,12 +352,6 @@ func main() {
 		ctrl.Log.WithName("ownerchain"),
 	)
 	setupLog.Info("owner chain builder configured")
-
-	labelDetector := detection.NewLabelDetector(
-		mgr.GetClient(),
-		ctrl.Log.WithName("detection"),
-	)
-	setupLog.Info("label detector configured")
 
 	// BR-SP-001: Metrics for observability (DD-005)
 	// Per AIAnalysis pattern: Use global ctrlmetrics.Registry for production
@@ -409,7 +401,6 @@ func main() {
 		SignalModeClassifier: signalModeClassifier,   // BR-SP-106: Predictive signal mode (ADR-054)
 		RegoEngine:           regoEngine,
 		OwnerChainBuilder:    ownerChainBuilder,
-		LabelDetector:        labelDetector,
 		K8sEnricher:          k8sEnricher,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "SignalProcessing")

@@ -44,7 +44,6 @@ limitations under the License.
 // - BR-SP-053: Default Environment Fallback
 // - BR-SP-070: Priority Assignment (P0/P1/P2/P3)
 // - BR-SP-100: Owner Chain Traversal (max depth 5)
-// - BR-SP-101: Detected Labels (PDB, HPA)
 // - BR-SP-102: CustomLabels Rego Extraction (multi-key)
 // - BR-SP-103: Failed Detections Tracking
 // - ADR-038: Audit Non-Blocking
@@ -391,88 +390,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 			Expect(final.Status.KubernetesContext.OwnerChain[1].Kind).To(Equal("Deployment"))
 		})
 
-		// PDB detection for pod protection
-		It("BR-SP-101: should detect PDB protection", func() {
-			By("Creating namespace")
-			ns := createTestNamespace("pdb-test")
-			defer deleteTestNamespace(ns)
-
-			By("Creating Pod")
-			podLabels := map[string]string{"app": "pdb-protected"}
-			_ = createTestPod(ns, "pdb-pod", podLabels, nil)
-
-			By("Creating PDB that matches Pod")
-			_ = createTestPDB(ns, "test-pdb", podLabels)
-
-			By("Creating SignalProcessing CR")
-			sp := createSignalProcessingCR(ns, "test-signal-hp-08", signalprocessingv1alpha1.SignalData{
-				Fingerprint: ValidTestFingerprints["reconciler-08"],
-				Name:        "PDBTest",
-				Severity: "high",
-				Type:        "prometheus",
-				TargetType:  "kubernetes",
-				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
-					Kind:      "Pod",
-					Name:      "pdb-pod",
-					Namespace: ns,
-				},
-				ReceivedTime: metav1.Now(),
-			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
-
-			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
-			Expect(err).ToNot(HaveOccurred())
-
-			By("Verifying PDB detection")
-			var final signalprocessingv1alpha1.SignalProcessing
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
-
-			Expect(final.Status.KubernetesContext).ToNot(BeNil())
-			Expect(final.Status.KubernetesContext.DetectedLabels).ToNot(BeNil())
-			Expect(final.Status.KubernetesContext.DetectedLabels.HasPDB).To(BeTrue())
-		})
-
-		// HPA detection for auto-scaling
-		It("BR-SP-101: should detect HPA enabled", func() {
-			By("Creating namespace")
-			ns := createTestNamespace("hpa-test")
-			defer deleteTestNamespace(ns)
-
-			By("Creating Deployment")
-			deployLabels := map[string]string{"app": "hpa-target"}
-			_ = createTestDeployment(ns, "hpa-deployment", deployLabels)
-
-			By("Creating HPA targeting Deployment")
-			_ = createTestHPA(ns, "test-hpa", "hpa-deployment")
-
-			// Create parent RemediationRequest (matches production architecture)
-			By("Creating parent RemediationRequest")
-			targetResource := signalprocessingv1alpha1.ResourceIdentifier{
-				Kind:      "Deployment",
-				Name:      "hpa-deployment",
-				Namespace: ns,
-			}
-			rr := CreateTestRemediationRequest("test-rr-hp-09", ns, ValidTestFingerprints["reconciler-09"], "high", targetResource)
-			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
-
-			By("Creating SignalProcessing CR with RemediationRequestRef")
-			sp := CreateTestSignalProcessingWithParent("test-signal-hp-09", ns, rr, ValidTestFingerprints["reconciler-09"], targetResource)
-			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
-			defer func() { _ = deleteAndWait(sp, timeout) }()
-
-			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
-			Expect(err).ToNot(HaveOccurred())
-
-			By("Verifying HPA detection")
-			var final signalprocessingv1alpha1.SignalProcessing
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
-
-			Expect(final.Status.KubernetesContext).ToNot(BeNil())
-			Expect(final.Status.KubernetesContext.DetectedLabels).ToNot(BeNil())
-			Expect(final.Status.KubernetesContext.DetectedLabels.HasHPA).To(BeTrue())
-		})
+		// BR-SP-101 detection tests removed - ADR-056: DetectedLabels relocated to HAPI
 
 		// CustomLabels extraction from Rego policy
 		It("BR-SP-102: should populate CustomLabels from Rego policy", func() {
@@ -812,9 +730,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 			var final signalprocessingv1alpha1.SignalProcessing
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
 
-			// In success case, DetectedLabels should be populated with no failures tracked
 			Expect(final.Status.KubernetesContext).ToNot(BeNil())
-			Expect(final.Status.KubernetesContext.DetectedLabels).ToNot(BeNil())
 		})
 
 		// Multi-key Rego policy evaluation

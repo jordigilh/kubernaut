@@ -16913,10 +16913,6 @@ type SignalProcessingAuditPayload struct {
 	OwnerChainLength OptInt `json:"owner_chain_length"`
 	// Whether context enrichment was degraded.
 	DegradedMode OptBool `json:"degraded_mode"`
-	// Whether the resource has a PodDisruptionBudget.
-	HasPdb OptBool `json:"has_pdb"`
-	// Whether the resource has a HorizontalPodAutoscaler.
-	HasHpa OptBool `json:"has_hpa"`
 	// Enrichment duration in milliseconds.
 	DurationMs OptInt `json:"duration_ms"`
 	// Whether namespace context was enriched.
@@ -17024,16 +17020,6 @@ func (s *SignalProcessingAuditPayload) GetOwnerChainLength() OptInt {
 // GetDegradedMode returns the value of DegradedMode.
 func (s *SignalProcessingAuditPayload) GetDegradedMode() OptBool {
 	return s.DegradedMode
-}
-
-// GetHasPdb returns the value of HasPdb.
-func (s *SignalProcessingAuditPayload) GetHasPdb() OptBool {
-	return s.HasPdb
-}
-
-// GetHasHpa returns the value of HasHpa.
-func (s *SignalProcessingAuditPayload) GetHasHpa() OptBool {
-	return s.HasHpa
 }
 
 // GetDurationMs returns the value of DurationMs.
@@ -17169,16 +17155,6 @@ func (s *SignalProcessingAuditPayload) SetOwnerChainLength(val OptInt) {
 // SetDegradedMode sets the value of DegradedMode.
 func (s *SignalProcessingAuditPayload) SetDegradedMode(val OptBool) {
 	s.DegradedMode = val
-}
-
-// SetHasPdb sets the value of HasPdb.
-func (s *SignalProcessingAuditPayload) SetHasPdb(val OptBool) {
-	s.HasPdb = val
-}
-
-// SetHasHpa sets the value of HasHpa.
-func (s *SignalProcessingAuditPayload) SetHasHpa(val OptBool) {
-	s.HasHpa = val
 }
 
 // SetDurationMs sets the value of DurationMs.
