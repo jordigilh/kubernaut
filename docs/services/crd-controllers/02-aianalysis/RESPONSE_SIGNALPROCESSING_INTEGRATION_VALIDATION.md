@@ -28,8 +28,8 @@ The fields ARE received correctly, but at a **slightly different path** than ref
 
 | Your Reference | **Correct Path in AIAnalysis** |
 |----------------|--------------------------------|
-| `spec.signalContext.ownerChain` | `spec.analysisRequest.signalContext.enrichmentResults.ownerChain` |
-| `spec.signalContext.detectedLabels` | `spec.analysisRequest.signalContext.enrichmentResults.detectedLabels` |
+| `spec.signalContext.ownerChain` | `spec.analysisRequest.signalContext.enrichmentResults.ownerChain` (ADR-055: removed from EnrichmentResults) |
+| `spec.signalContext.detectedLabels` | `spec.analysisRequest.signalContext.enrichmentResults.detectedLabels` (ADR-056: removed from EnrichmentResults) |
 | `spec.signalContext.customLabels` | `spec.analysisRequest.signalContext.enrichmentResults.customLabels` |
 
 ### AIAnalysis Spec Structure
@@ -61,8 +61,8 @@ type SignalContextInput struct {
 
 type EnrichmentResults struct {
     KubernetesContext *KubernetesContext     `json:"kubernetesContext,omitempty"`
-    DetectedLabels    *DetectedLabels        `json:"detectedLabels,omitempty"`    // ✅
-    OwnerChain        []OwnerChainEntry      `json:"ownerChain,omitempty"`        // ✅
+    DetectedLabels    *DetectedLabels        `json:"detectedLabels,omitempty"`    // ✅ ADR-056: removed from EnrichmentResults
+    OwnerChain        []OwnerChainEntry      `json:"ownerChain,omitempty"`        // ✅ ADR-055: removed from EnrichmentResults
     CustomLabels      map[string][]string    `json:"customLabels,omitempty"`      // ✅
     EnrichmentQuality float64                `json:"enrichmentQuality,omitempty"`
 }
@@ -93,8 +93,8 @@ Yes, the **Remediation Orchestrator (RO)** is responsible for:
 SignalProcessing.Status.EnrichmentResults
     │
     ├── KubernetesContext  → AIAnalysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.KubernetesContext
-    ├── DetectedLabels     → AIAnalysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.DetectedLabels
-    ├── OwnerChain         → AIAnalysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.OwnerChain
+    ├── DetectedLabels     → AIAnalysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.DetectedLabels (ADR-056: removed)
+    ├── OwnerChain         → AIAnalysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.OwnerChain (ADR-055: removed)
     ├── CustomLabels       → AIAnalysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.CustomLabels
     └── EnrichmentQuality  → AIAnalysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.EnrichmentQuality
 ```
@@ -118,8 +118,8 @@ Both CRDs use identical structures per **DD-WORKFLOW-001 v1.8**:
 
 | Field | SignalProcessing (v1.7) | AIAnalysis (v2.0) | Status |
 |-------|-------------------------|-------------------|--------|
-| `DetectedLabels` | `*DetectedLabels` | `*DetectedLabels` | ✅ Match |
-| `OwnerChain` | `[]OwnerChainEntry` | `[]OwnerChainEntry` | ✅ Match |
+| `DetectedLabels` | `*DetectedLabels` | `*DetectedLabels` | ✅ Match (ADR-056: removed from EnrichmentResults) |
+| `OwnerChain` | `[]OwnerChainEntry` | `[]OwnerChainEntry` | ✅ Match (ADR-055: removed from EnrichmentResults) |
 | `CustomLabels` | `map[string][]string` | `map[string][]string` | ✅ Match |
 | `EnrichmentQuality` | `float64` | `float64` | ✅ Match |
 
@@ -160,10 +160,12 @@ spec:
   analysisRequest:
     signalContext:
       enrichmentResults:
+        # ADR-056: detectedLabels removed from EnrichmentResults
         detectedLabels:
           gitOpsManaged: true
           gitOpsTool: "argocd"
           pdbProtected: true
+        # ADR-055: ownerChain removed from EnrichmentResults
         ownerChain:
           - namespace: "production"
             kind: "ReplicaSet"

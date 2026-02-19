@@ -37,7 +37,7 @@ graph LR
         PROM[Prometheus]
     end
 
-    CTRL -->|"POST /api/v1/investigate<br/>+ DetectedLabels + CustomLabels"| HAPI
+    CTRL -->|"POST /api/v1/investigate<br/>+ DetectedLabels (ADR-056: removed) + CustomLabels"| HAPI
     HAPI -->|"MCP tool call"| MCP
     MCP -->|"Query with labels"| DS
     DS -->|"workflowId + containerImage"| MCP
@@ -52,7 +52,7 @@ graph LR
 |--------|---------------|
 | **AI Provider** | HolmesGPT-API only (single provider) |
 | **Workflow Selection** | MCP tool: `search_workflow_catalog` |
-| **Labels for Filtering** | DetectedLabels + CustomLabels passed to HolmesGPT-API |
+| **Labels for Filtering** | DetectedLabels (ADR-056: removed from EnrichmentResults) + CustomLabels passed to HolmesGPT-API |
 | **Toolsets** | System-wide configuration (kubernetes, prometheus) |
 | **No LLM Config in CRD** | ❌ `HolmesGPTConfig` removed from AIAnalysis.spec |
 
@@ -65,9 +65,9 @@ type InvestigationRequest struct {
     KubernetesContext  *KubernetesContext     `json:"kubernetesContext,omitempty"`
 
     // Labels for workflow filtering (DD-WORKFLOW-001 v1.8)
-    DetectedLabels     *DetectedLabels        `json:"detectedLabels,omitempty"`
+    DetectedLabels     *DetectedLabels        `json:"detectedLabels,omitempty"`  // ADR-056: removed from EnrichmentResults
     CustomLabels       map[string][]string    `json:"customLabels,omitempty"`
-    OwnerChain         []OwnerChainEntry      `json:"ownerChain,omitempty"`
+    OwnerChain         []OwnerChainEntry      `json:"ownerChain,omitempty"`     // ADR-055: removed from EnrichmentResults
 
     // Recovery context
     IsRecoveryAttempt  bool                   `json:"isRecoveryAttempt,omitempty"`
@@ -258,7 +258,7 @@ func (r *AIAnalysisReconciler) evaluateApprovalPolicy(
 
     // Add labels if available
     if aiAnalysis.Spec.EnrichmentResults != nil {
-        if dl := aiAnalysis.Spec.EnrichmentResults.DetectedLabels; dl != nil {
+        if dl := aiAnalysis.Spec.EnrichmentResults.DetectedLabels; dl != nil {  // ADR-056: removed from EnrichmentResults
             input.DetectedLabels = &rego.DetectedLabelsInput{
                 GitOpsManaged:    dl.GitOpsTool != "",
                 GitOpsTool:       dl.GitOpsTool,

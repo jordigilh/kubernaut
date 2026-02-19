@@ -817,7 +817,7 @@ WHERE signal.detected_labels->>'gitOpsTool' IS NOT NULL
 │  │   - Check NetworkPolicy → networkIsolated: false (omitted)               │   │
 │  └─────────────────────────────────────────────────────────────────────────┘   │
 │                                                                                  │
-│  OUTPUT: EnrichmentResults.DetectedLabels = {                                    │
+│  OUTPUT: EnrichmentResults.DetectedLabels = { (**ADR-056: removed, now in PostRCAContext**) │
 │    "gitOpsManaged": true,                                                        │
 │    "gitOpsTool": "argocd",                                                       │
 │    "pdbProtected": true,                                                         │
@@ -947,8 +947,8 @@ type OwnerChainEntry struct {
     "name": "payment-api-7d8f9c6b5-x2k4m"
   },
   "enrichment_results": {
-    "detectedLabels": {"gitOpsManaged": true, "gitOpsTool": "argocd"},
-    "ownerChain": [
+    "detectedLabels": {"gitOpsManaged": true, "gitOpsTool": "argocd"},  // ADR-056: removed, now in PostRCAContext
+    "ownerChain": [  // ADR-055: removed
       {"namespace": "production", "kind": "ReplicaSet", "name": "payment-api-7d8f9c6b5"},
       {"namespace": "production", "kind": "Deployment", "name": "payment-api"}
     ]
