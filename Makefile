@@ -545,11 +545,17 @@ build-holmesgpt-api-image-e2e: ## Build holmesgpt-api Docker image (E2E - minima
 
 .PHONY: export-openapi-holmesgpt-api
 export-openapi-holmesgpt-api: ## Export holmesgpt-api OpenAPI spec from FastAPI (ADR-045)
-	@echo "📄 Exporting OpenAPI spec from FastAPI app..."
-	@cd holmesgpt-api && mkdir -p api
-	@cd holmesgpt-api && python3 -c "from src.main import app; import json; print(json.dumps(app.openapi(), indent=2))" > api/openapi.json
+	@echo "📄 Exporting OpenAPI spec from FastAPI app (containerized)..."
+	@mkdir -p holmesgpt-api/api
+	@podman run --rm \
+		-v $(CURDIR):/workspace:z \
+		-w /workspace/holmesgpt-api \
+		-e CONFIG_FILE=config.yaml \
+		-e OPENAPI_EXPORT=1 \
+		-e PYTHONUNBUFFERED=1 \
+		registry.access.redhat.com/ubi9/python-312:latest \
+		sh -c "find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null; pip install -q ./src/clients/datastorage && pip install -q -r requirements-slim.txt && python3 -c 'from src.main import app; import json; print(json.dumps(app.openapi(), indent=2))' > api/openapi.json && echo 'Schema count:' && python3 -c 'import json; spec=json.load(open(\"api/openapi.json\")); print(len(spec.get(\"components\", {}).get(\"schemas\", {})))'"
 	@echo "✅ OpenAPI spec exported: holmesgpt-api/api/openapi.json"
-	@cd holmesgpt-api && echo "📊 Schema count: $$(python3 -c \"import json; spec=json.load(open('api/openapi.json')); print(len(spec.get('components', {}).get('schemas', {})))\")"
 
 .PHONY: validate-openapi-holmesgpt-api
 validate-openapi-holmesgpt-api: export-openapi-holmesgpt-api ## Validate holmesgpt-api OpenAPI spec is committed (CI - ADR-045)

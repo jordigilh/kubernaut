@@ -329,40 +329,47 @@ def create_app(authenticator=None, authorizer=None):
     # Initialize auth components if not provided (production mode)
     # Authority: DD-AUTH-014 (Middleware-based SAR authentication)
     if authenticator is None or authorizer is None:
-        try:
-            # DD-AUTH-014: Support file-based kubeconfig for integration tests
-            # If KUBECONFIG env var is set, load from file (integration tests with envtest)
-            # Otherwise, load in-cluster config (production)
-            from kubernetes import client as k8s_client, config as k8s_config
-            
-            if os.getenv("KUBECONFIG"):
+        if os.getenv("DISABLE_K8S_AUTH", "").lower() == "true":
+            # OpenAPI export and schema generation -- no K8s cluster needed
+            from src.auth.mock_auth import MockAuthenticator, MockAuthorizer
+            authenticator = MockAuthenticator()
+            authorizer = MockAuthorizer(default_allow=True)
+            logger.info({"event": "auth_disabled", "mode": "schema-export"})
+        else:
+            try:
+                # DD-AUTH-014: Support file-based kubeconfig for integration tests
+                # If KUBECONFIG env var is set, load from file (integration tests with envtest)
+                # Otherwise, load in-cluster config (production)
+                from kubernetes import client as k8s_client, config as k8s_config
+                
+                if os.getenv("KUBECONFIG"):
+                    logger.info({
+                        "event": "loading_kubeconfig",
+                        "path": os.getenv("KUBECONFIG"),
+                        "mode": "file-based (integration tests with envtest)"
+                    })
+                    k8s_config.load_kube_config()
+                    api_client = k8s_client.ApiClient()
+                    authenticator = K8sAuthenticator(api_client)
+                    authorizer = K8sAuthorizer(api_client)
+                else:
+                    logger.info({"event": "loading_incluster_config", "mode": "production"})
+                    authenticator = K8sAuthenticator()
+                    authorizer = K8sAuthorizer()
+                
                 logger.info({
-                    "event": "loading_kubeconfig",
-                    "path": os.getenv("KUBECONFIG"),
-                    "mode": "file-based (integration tests with envtest)"
+                    "event": "auth_initialized",
+                    "mode": "production" if not os.getenv("KUBECONFIG") else "integration-with-envtest",
+                    "authenticator": "K8sAuthenticator",
+                    "authorizer": "K8sAuthorizer"
                 })
-                k8s_config.load_kube_config()
-                api_client = k8s_client.ApiClient()
-                authenticator = K8sAuthenticator(api_client)
-                authorizer = K8sAuthorizer(api_client)
-            else:
-                logger.info({"event": "loading_incluster_config", "mode": "production"})
-                authenticator = K8sAuthenticator()
-                authorizer = K8sAuthorizer()
-            
-            logger.info({
-                "event": "auth_initialized",
-                "mode": "production" if not os.getenv("KUBECONFIG") else "integration-with-envtest",
-                "authenticator": "K8sAuthenticator",
-                "authorizer": "K8sAuthorizer"
-            })
-        except Exception as e:
-            logger.error({
-                "event": "auth_init_failed",
-                "error": str(e)
-            })
-            # In production, fail fast if K8s auth cannot be initialized
-            raise RuntimeError(f"Failed to initialize K8s auth components: {e}")
+            except Exception as e:
+                logger.error({
+                    "event": "auth_init_failed",
+                    "error": str(e)
+                })
+                # In production, fail fast if K8s auth cannot be initialized
+                raise RuntimeError(f"Failed to initialize K8s auth components: {e}")
 
     # Get pod namespace dynamically (for SAR checks)
     # In production, read from ServiceAccount namespace file
@@ -454,11 +461,16 @@ def create_app(authenticator=None, authorizer=None):
 
 # Create application instance (production mode - no injected dependencies)
 # Skip module-level app creation during pytest to allow test fixtures to inject mock auth
+# Skip K8s auth during OpenAPI export (OPENAPI_EXPORT=1) to allow spec generation outside cluster
 import sys
 _is_test_mode = "pytest" in sys.modules
+_is_openapi_export = os.getenv("OPENAPI_EXPORT") == "1"
 
 if not _is_test_mode:
-    app = create_app()
+    if _is_openapi_export:
+        app = create_app(authenticator=MockAuthenticator(), authorizer=MockAuthorizer(default_allow=True))
+    else:
+        app = create_app()
     
     # ========================================
     # METRICS ENDPOINT

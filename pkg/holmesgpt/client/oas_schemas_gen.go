@@ -22,7 +22,7 @@ import (
 type AlternativeWorkflow struct {
 	// Workflow identifier.
 	WorkflowID string `json:"workflow_id"`
-	// OCI image reference.
+	// OCI execution bundle reference.
 	ExecutionBundle OptNilString `json:"execution_bundle"`
 	// Confidence score for this alternative.
 	Confidence float64 `json:"confidence"`
@@ -70,10 +70,71 @@ func (s *AlternativeWorkflow) SetRationale(val string) {
 	s.Rationale = val
 }
 
+// Business context from SignalProcessing categorization phase.
+// BR-SP-002: Business Classification
+// BR-SP-080: Business Unit Detection
+// BR-SP-081: SLA Requirement Mapping
+// Used for:
+// 1. Workflow filtering - select workflows matching business context
+// 2. Rego approval policies - criticality/SLA-based gating
+// 3. LLM context - business impact understanding.
+// Ref: #/components/schemas/BusinessClassification
+type BusinessClassification struct {
+	// Business unit owning the service (e.g., 'payments', 'platform').
+	BusinessUnit OptNilString `json:"businessUnit"`
+	// Service owner team or individual.
+	ServiceOwner OptNilString `json:"serviceOwner"`
+	// Business criticality: critical, high, medium, low.
+	Criticality OptNilString `json:"criticality"`
+	// SLA tier: platinum, gold, silver, bronze.
+	SlaRequirement OptNilString `json:"slaRequirement"`
+}
+
+// GetBusinessUnit returns the value of BusinessUnit.
+func (s *BusinessClassification) GetBusinessUnit() OptNilString {
+	return s.BusinessUnit
+}
+
+// GetServiceOwner returns the value of ServiceOwner.
+func (s *BusinessClassification) GetServiceOwner() OptNilString {
+	return s.ServiceOwner
+}
+
+// GetCriticality returns the value of Criticality.
+func (s *BusinessClassification) GetCriticality() OptNilString {
+	return s.Criticality
+}
+
+// GetSlaRequirement returns the value of SlaRequirement.
+func (s *BusinessClassification) GetSlaRequirement() OptNilString {
+	return s.SlaRequirement
+}
+
+// SetBusinessUnit sets the value of BusinessUnit.
+func (s *BusinessClassification) SetBusinessUnit(val OptNilString) {
+	s.BusinessUnit = val
+}
+
+// SetServiceOwner sets the value of ServiceOwner.
+func (s *BusinessClassification) SetServiceOwner(val OptNilString) {
+	s.ServiceOwner = val
+}
+
+// SetCriticality sets the value of Criticality.
+func (s *BusinessClassification) SetCriticality(val OptNilString) {
+	s.Criticality = val
+}
+
+// SetSlaRequirement sets the value of SlaRequirement.
+func (s *BusinessClassification) SetSlaRequirement(val OptNilString) {
+	s.SlaRequirement = val
+}
+
 // Enrichment results from SignalProcessing.
-// ADR-056: detectedLabels removed (computed by HAPI post-RCA via LabelDetector).
-// ADR-055: ownerChain removed (resolved by HAPI via get_resource_context tool).
-// Contains Kubernetes context and custom labels used for workflow filtering and LLM context.
+// Contains Kubernetes context, custom labels, and business classification
+// used for workflow filtering and LLM context.
+// ADR-056: detectedLabels removed -- now computed by HAPI post-RCA via LabelDetector.
+// ADR-055: ownerChain removed -- resolved by HAPI via get_resource_context tool.
 // Design Decision: DD-RECOVERY-003, DD-HAPI-001
 // Custom Labels (DD-HAPI-001):
 // - Format: map[string][]string (subdomain → list of values)
@@ -88,6 +149,9 @@ type EnrichmentResults struct {
 	// Custom labels from SignalProcessing (subdomain → values). Auto-appended to workflow search per
 	// DD-HAPI-001.
 	CustomLabels OptNilEnrichmentResultsCustomLabels `json:"customLabels"`
+	// Business classification from SP categorization (BR-SP-002). Used for workflow filtering and Rego
+	// approval policies.
+	BusinessClassification OptNilBusinessClassification `json:"businessClassification"`
 }
 
 // GetKubernetesContext returns the value of KubernetesContext.
@@ -100,6 +164,11 @@ func (s *EnrichmentResults) GetCustomLabels() OptNilEnrichmentResultsCustomLabel
 	return s.CustomLabels
 }
 
+// GetBusinessClassification returns the value of BusinessClassification.
+func (s *EnrichmentResults) GetBusinessClassification() OptNilBusinessClassification {
+	return s.BusinessClassification
+}
+
 // SetKubernetesContext sets the value of KubernetesContext.
 func (s *EnrichmentResults) SetKubernetesContext(val OptNilEnrichmentResultsKubernetesContext) {
 	s.KubernetesContext = val
@@ -108,6 +177,11 @@ func (s *EnrichmentResults) SetKubernetesContext(val OptNilEnrichmentResultsKube
 // SetCustomLabels sets the value of CustomLabels.
 func (s *EnrichmentResults) SetCustomLabels(val OptNilEnrichmentResultsCustomLabels) {
 	s.CustomLabels = val
+}
+
+// SetBusinessClassification sets the value of BusinessClassification.
+func (s *EnrichmentResults) SetBusinessClassification(val OptNilBusinessClassification) {
+	s.BusinessClassification = val
 }
 
 type EnrichmentResultsCustomLabels map[string][]string
@@ -310,6 +384,28 @@ func (s *HTTPError) SetRequestID(val OptNilString) {
 	s.RequestID = val
 }
 
+// Ref: #/components/schemas/HTTPValidationError
+type HTTPValidationError struct {
+	Detail []ValidationError `json:"detail"`
+}
+
+// GetDetail returns the value of Detail.
+func (s *HTTPValidationError) GetDetail() []ValidationError {
+	return s.Detail
+}
+
+// SetDetail sets the value of Detail.
+func (s *HTTPValidationError) SetDetail(val []ValidationError) {
+	s.Detail = val
+}
+
+func (*HTTPValidationError) incidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetRes() {
+}
+func (*HTTPValidationError) incidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRes() {}
+func (*HTTPValidationError) recoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetRes() {
+}
+func (*HTTPValidationError) recoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGetRes() {}
+
 // Structured reason for needs_human_review=true.
 // Business Requirements: BR-HAPI-197, BR-HAPI-200, BR-HAPI-212
 // Design Decision: DD-HAPI-002 v1.2
@@ -396,6 +492,11 @@ func (s *HumanReviewReason) UnmarshalText(data []byte) error {
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
+}
+
+type IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostAcceptedApplicationJSON jx.Raw
+
+func (*IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostAcceptedApplicationJSON) incidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes() {
 }
 
 type IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONBadRequest HTTPError
@@ -1218,7 +1319,7 @@ func (s *IncidentRequestSignalLabels) init() IncidentRequestSignalLabels {
 // - warnings: Non-fatal warnings for transparency (Dec 2, 2025)
 // - alternative_workflows: Other workflows considered (Dec 5, 2025) - INFORMATIONAL ONLY
 // - needs_human_review: AI could not produce reliable result (Dec 6, 2025)
-// ADR-055: target_in_owner_chain removed - replaced by affected_resource in Rego input.
+// ADR-055: target_in_owner_chain removed -- replaced by affected_resource in Rego input.
 // Ref: #/components/schemas/IncidentResponse
 type IncidentResponse struct {
 	// Incident identifier from request.
@@ -1376,7 +1477,7 @@ func (s *IncidentResponse) SetDetectedLabels(val OptNilIncidentResponseDetectedL
 	s.DetectedLabels = val
 }
 
-func (*IncidentResponse) incidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes() {}
+func (*IncidentResponse) incidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetRes() {}
 
 type IncidentResponseDetectedLabels map[string]jx.Raw
 
@@ -1410,6 +1511,29 @@ func (s *IncidentResponseSelectedWorkflow) init() IncidentResponseSelectedWorkfl
 		*s = m
 	}
 	return m
+}
+
+// IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetConflict is response for IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet operation.
+type IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetConflict struct{}
+
+func (*IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetConflict) incidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetRes() {
+}
+
+// IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetNotFound is response for IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet operation.
+type IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetNotFound struct{}
+
+func (*IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetNotFound) incidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetRes() {
+}
+
+// IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetNotFound is response for IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet operation.
+type IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetNotFound struct{}
+
+func (*IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetNotFound) incidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRes() {
+}
+
+type IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetOKApplicationJSON jx.Raw
+
+func (*IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetOKApplicationJSON) incidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRes() {
 }
 
 // NewOptBool returns new OptBool with value set to v.
@@ -1515,6 +1639,69 @@ func (o OptNilBool) Get() (v bool, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptNilBool) Or(d bool) bool {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptNilBusinessClassification returns new OptNilBusinessClassification with value set to v.
+func NewOptNilBusinessClassification(v BusinessClassification) OptNilBusinessClassification {
+	return OptNilBusinessClassification{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilBusinessClassification is optional nullable BusinessClassification.
+type OptNilBusinessClassification struct {
+	Value BusinessClassification
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilBusinessClassification was set.
+func (o OptNilBusinessClassification) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilBusinessClassification) Reset() {
+	var v BusinessClassification
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilBusinessClassification) SetTo(v BusinessClassification) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilBusinessClassification) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilBusinessClassification) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v BusinessClassification
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilBusinessClassification) Get() (v BusinessClassification, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilBusinessClassification) Or(d BusinessClassification) BusinessClassification {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -2789,6 +2976,11 @@ func (s *PreviousExecution) SetNaturalLanguageSummary(val OptNilString) {
 	s.NaturalLanguageSummary = val
 }
 
+type RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostAcceptedApplicationJSON jx.Raw
+
+func (*RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostAcceptedApplicationJSON) recoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes() {
+}
+
 type RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONBadRequest HTTPError
 
 func (*RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONBadRequest) recoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes() {
@@ -3616,7 +3808,7 @@ func (s *RecoveryResponse) SetDetectedLabels(val OptNilRecoveryResponseDetectedL
 	s.DetectedLabels = val
 }
 
-func (*RecoveryResponse) recoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes() {}
+func (*RecoveryResponse) recoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetRes() {}
 
 type RecoveryResponseDetectedLabels map[string]jx.Raw
 
@@ -3661,6 +3853,29 @@ func (s *RecoveryResponseSelectedWorkflow) init() RecoveryResponseSelectedWorkfl
 		*s = m
 	}
 	return m
+}
+
+// RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetConflict is response for RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGet operation.
+type RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetConflict struct{}
+
+func (*RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetConflict) recoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetRes() {
+}
+
+// RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetNotFound is response for RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGet operation.
+type RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetNotFound struct{}
+
+func (*RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetNotFound) recoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetRes() {
+}
+
+// RecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGetNotFound is response for RecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGet operation.
+type RecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGetNotFound struct{}
+
+func (*RecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGetNotFound) recoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGetRes() {
+}
+
+type RecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGetOKApplicationJSON jx.Raw
+
+func (*RecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGetOKApplicationJSON) recoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGetRes() {
 }
 
 // Individual recovery strategy option.
@@ -3796,7 +4011,7 @@ type SelectedWorkflowSummary struct {
 	WorkflowID string `json:"workflow_id"`
 	// Workflow version.
 	Version string `json:"version"`
-	// OCI execution bundle reference (digest-pinned).
+	// Execution bundle used for workflow execution.
 	ExecutionBundle string `json:"execution_bundle"`
 	// Parameters passed to workflow.
 	Parameters OptSelectedWorkflowSummaryParameters `json:"parameters"`
@@ -4056,4 +4271,105 @@ func (s *ValidationAttempt) SetErrors(val []string) {
 // SetTimestamp sets the value of Timestamp.
 func (s *ValidationAttempt) SetTimestamp(val string) {
 	s.Timestamp = val
+}
+
+// Ref: #/components/schemas/ValidationError
+type ValidationError struct {
+	Loc  []ValidationErrorLocItem `json:"loc"`
+	Msg  string                   `json:"msg"`
+	Type string                   `json:"type"`
+}
+
+// GetLoc returns the value of Loc.
+func (s *ValidationError) GetLoc() []ValidationErrorLocItem {
+	return s.Loc
+}
+
+// GetMsg returns the value of Msg.
+func (s *ValidationError) GetMsg() string {
+	return s.Msg
+}
+
+// GetType returns the value of Type.
+func (s *ValidationError) GetType() string {
+	return s.Type
+}
+
+// SetLoc sets the value of Loc.
+func (s *ValidationError) SetLoc(val []ValidationErrorLocItem) {
+	s.Loc = val
+}
+
+// SetMsg sets the value of Msg.
+func (s *ValidationError) SetMsg(val string) {
+	s.Msg = val
+}
+
+// SetType sets the value of Type.
+func (s *ValidationError) SetType(val string) {
+	s.Type = val
+}
+
+// ValidationErrorLocItem represents sum type.
+type ValidationErrorLocItem struct {
+	Type   ValidationErrorLocItemType // switch on this field
+	String string
+	Int    int
+}
+
+// ValidationErrorLocItemType is oneOf type of ValidationErrorLocItem.
+type ValidationErrorLocItemType string
+
+// Possible values for ValidationErrorLocItemType.
+const (
+	StringValidationErrorLocItem ValidationErrorLocItemType = "string"
+	IntValidationErrorLocItem    ValidationErrorLocItemType = "int"
+)
+
+// IsString reports whether ValidationErrorLocItem is string.
+func (s ValidationErrorLocItem) IsString() bool { return s.Type == StringValidationErrorLocItem }
+
+// IsInt reports whether ValidationErrorLocItem is int.
+func (s ValidationErrorLocItem) IsInt() bool { return s.Type == IntValidationErrorLocItem }
+
+// SetString sets ValidationErrorLocItem to string.
+func (s *ValidationErrorLocItem) SetString(v string) {
+	s.Type = StringValidationErrorLocItem
+	s.String = v
+}
+
+// GetString returns string and true boolean if ValidationErrorLocItem is string.
+func (s ValidationErrorLocItem) GetString() (v string, ok bool) {
+	if !s.IsString() {
+		return v, false
+	}
+	return s.String, true
+}
+
+// NewStringValidationErrorLocItem returns new ValidationErrorLocItem from string.
+func NewStringValidationErrorLocItem(v string) ValidationErrorLocItem {
+	var s ValidationErrorLocItem
+	s.SetString(v)
+	return s
+}
+
+// SetInt sets ValidationErrorLocItem to int.
+func (s *ValidationErrorLocItem) SetInt(v int) {
+	s.Type = IntValidationErrorLocItem
+	s.Int = v
+}
+
+// GetInt returns int and true boolean if ValidationErrorLocItem is int.
+func (s ValidationErrorLocItem) GetInt() (v int, ok bool) {
+	if !s.IsInt() {
+		return v, false
+	}
+	return s.Int, true
+}
+
+// NewIntValidationErrorLocItem returns new ValidationErrorLocItem from int.
+func NewIntValidationErrorLocItem(v int) ValidationErrorLocItem {
+	var s ValidationErrorLocItem
+	s.SetInt(v)
+	return s
 }
