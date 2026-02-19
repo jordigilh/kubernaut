@@ -261,3 +261,4 @@ must-gather-*.tar.gz
 # Cursor Swarm Extension (development)
 .cursor-swarm-dev/
 *.vsix
+*.venv*
