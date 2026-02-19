@@ -124,16 +124,6 @@ func (in *EnrichmentResults) DeepCopyInto(out *EnrichmentResults) {
 		*out = new(KubernetesContext)
 		(*in).DeepCopyInto(*out)
 	}
-	if in.DetectedLabels != nil {
-		in, out := &in.DetectedLabels, &out.DetectedLabels
-		*out = new(DetectedLabels)
-		(*in).DeepCopyInto(*out)
-	}
-	if in.OwnerChain != nil {
-		in, out := &in.OwnerChain, &out.OwnerChain
-		*out = make([]OwnerChainEntry, len(*in))
-		copy(*out, *in)
-	}
 	if in.CustomLabels != nil {
 		in, out := &in.CustomLabels, &out.CustomLabels
 		*out = make(map[string][]string, len(*in))

@@ -398,29 +398,9 @@ def _create_recovery_investigation_prompt(
     cluster_name = request_data.get("cluster_name", "unknown")
     signal_source = request_data.get("signal_source", "unknown")
 
-    # Get detected labels for cluster context
-    enrichment_results = request_data.get("enrichment_results", {})
-    detected_labels = None
-    if enrichment_results:
-        # Handle both dict and EnrichmentResults model
-        if hasattr(enrichment_results, 'detectedLabels'):
-            dl = enrichment_results.detectedLabels
-            if dl:
-                # If it's already a DetectedLabels model, use it directly
-                if isinstance(dl, DetectedLabels):
-                    detected_labels = dl
-                # Otherwise convert dict to DetectedLabels model
-                elif isinstance(dl, dict):
-                    detected_labels = DetectedLabels(**dl)
-        elif isinstance(enrichment_results, dict):
-            dl = enrichment_results.get('detectedLabels', {})
-            if dl:
-                # Convert dict to DetectedLabels model
-                if isinstance(dl, dict):
-                    detected_labels = DetectedLabels(**dl)
-                # If it's already a DetectedLabels model, use it directly
-                elif isinstance(dl, DetectedLabels):
-                    detected_labels = dl
+    # ADR-056: DetectedLabels are no longer extracted from enrichment_results
+    # for prompt construction. They are computed at runtime by HAPI's
+    # get_resource_context tool and used via session_state.
 
     # Build recovery context section (appears BEFORE standard sections)
     prompt = f"""# Recovery Analysis Request (Attempt {attempt_number})
@@ -517,20 +497,9 @@ You must understand what was attempted and why it failed before recommending alt
 
 """
 
-    # Add cluster context section if DetectedLabels are available
-    if detected_labels:
-        prompt += f"""## Cluster Environment Characteristics (AUTO-DETECTED)
-
-The following characteristics were automatically detected for the target resource.
-**These are automatically included as context filters in your workflow discovery tool calls.**
-
-{_build_cluster_context_section(detected_labels)}
-
-{_build_mcp_filter_instructions(detected_labels)}
-
----
-
-"""
+    # ADR-056: Cluster environment characteristics are now computed at runtime
+    # by the get_resource_context tool (LabelDetector) and injected into
+    # DataStorage queries via session_state. No longer included in the prompt.
 
     # Pre-compute three-step protocol instructions for recovery (DD-HAPI-017)
     _failed_workflow_id = selected_workflow.get('workflow_id', 'Unknown')

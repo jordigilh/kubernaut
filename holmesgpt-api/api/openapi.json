@@ -822,7 +822,7 @@
           "rationale"
         ],
         "title": "AlternativeWorkflow",
-        "description": "Alternative workflow recommendation for operator context.\n\nDesign Decision: ADR-045 v1.2 (Alternative Workflows for Audit)\n\nIMPORTANT: Alternatives are for CONTEXT, not EXECUTION.\nPer APPROVAL_REJECTION_BEHAVIOR_DETAILED.md:\n- \u2705 Purpose: Help operator make an informed decision\n- \u2705 Content: Pros/cons of alternative approaches\n- \u274c NOT: A fallback queue for automatic execution\n\nOnly `selected_workflow` is executed. Alternatives provide:\n- Audit trail of what options were considered\n- Context for operator approval decisions\n- Transparency into AI reasoning"
+        "description": "Alternative workflow recommendation for operator context.\n\nDesign Decision: ADR-045 v1.2 (Alternative Workflows for Audit)\n\nIMPORTANT: Alternatives are for CONTEXT, not EXECUTION.\nPer APPROVAL_REJECTION_BEHAVIOR_DETAILED.md:\n- ✅ Purpose: Help operator make an informed decision\n- ✅ Content: Pros/cons of alternative approaches\n- ❌ NOT: A fallback queue for automatic execution\n\nOnly `selected_workflow` is executed. Alternatives provide:\n- Audit trail of what options were considered\n- Context for operator approval decisions\n- Transparency into AI reasoning"
       },
       "DetectedLabels": {
         "properties": {
@@ -902,17 +902,6 @@
             "title": "Kubernetescontext",
             "description": "Kubernetes resource context"
           },
-          "detectedLabels": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/DetectedLabels"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Auto-detected cluster characteristics"
-          },
           "customLabels": {
             "anyOf": [
               {
@@ -929,58 +918,12 @@
               }
             ],
             "title": "Customlabels",
-            "description": "Custom labels from SignalProcessing (subdomain \u2192 values). Auto-appended to workflow search per DD-HAPI-001."
-          },
-          "enrichmentQuality": {
-            "type": "number",
-            "maximum": 1.0,
-            "minimum": 0.0,
-            "title": "Enrichmentquality",
-            "description": "Quality score of enrichment (0-1)",
-            "default": 0.0
-          },
-          "ownerChain": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/OwnerChainEntry"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Ownerchain",
-            "description": "Kubernetes owner chain from signal target to root controller. Conditional: empty for bare Pods, Nodes, or resources without controllers. Last entry is the root owner (e.g., Deployment). Issue #97."
+            "description": "Custom labels from SignalProcessing (subdomain → values). Auto-appended to workflow search per DD-HAPI-001."
           }
         },
         "type": "object",
         "title": "EnrichmentResults",
-        "description": "Enrichment results from SignalProcessing.\n\nContains Kubernetes context, auto-detected labels, custom labels, and owner chain\nthat are used for workflow filtering, LLM context, and remediation history.\n\nDesign Decision: DD-RECOVERY-003, DD-HAPI-001\n\nCustom Labels (DD-HAPI-001):\n- Format: map[string][]string (subdomain \u2192 list of values)\n- Keys are subdomains (e.g., \"constraint\", \"team\")\n- Values are lists of strings (boolean keys or \"key=value\" pairs)\n- Example: {\"constraint\": [\"cost-constrained\"], \"team\": [\"name=payments\"]}\n- Auto-appended to MCP workflow search (invisible to LLM)"
-      },
-      "OwnerChainEntry": {
-        "properties": {
-          "kind": {
-            "type": "string",
-            "title": "Kind",
-            "description": "Kubernetes resource kind (e.g., Pod, ReplicaSet, Deployment)"
-          },
-          "name": {
-            "type": "string",
-            "title": "Name",
-            "description": "Resource name"
-          },
-          "namespace": {
-            "type": "string",
-            "title": "Namespace",
-            "description": "Resource namespace (empty for cluster-scoped)"
-          }
-        },
-        "required": ["kind", "name"],
-        "type": "object",
-        "title": "OwnerChainEntry",
-        "description": "An entry in the Kubernetes owner chain. Issue #97."
+        "description": "Enrichment results from SignalProcessing.\n\nADR-056: detectedLabels removed (computed by HAPI post-RCA via LabelDetector).\nADR-055: ownerChain removed (resolved by HAPI via get_resource_context tool).\n\nContains Kubernetes context and custom labels used for workflow filtering and LLM context.\n\nDesign Decision: DD-RECOVERY-003, DD-HAPI-001\n\nCustom Labels (DD-HAPI-001):\n- Format: map[string][]string (subdomain → list of values)\n- Keys are subdomains (e.g., \"constraint\", \"team\")\n- Values are lists of strings (boolean keys or \"key=value\" pairs)\n- Example: {\"constraint\": [\"cost-constrained\"], \"team\": [\"name=payments\"]}\n- Auto-appended to MCP workflow search (invisible to LLM)"
       },
       "ExecutionFailure": {
         "properties": {
@@ -1484,6 +1427,19 @@
             "type": "array",
             "title": "Validation Attempts History",
             "description": "History of all validation attempts during LLM self-correction. Each attempt records workflow_id, validation result, and any errors. Empty if validation passed on first attempt or no workflow was selected."
+          },
+          "detected_labels": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detected Labels",
+            "description": "Cluster characteristics detected at runtime by HAPI (ADR-056). Includes: gitOpsManaged, pdbProtected, hpaEnabled, stateful, helmManaged, networkIsolated, serviceMesh, failedDetections."
           }
         },
         "type": "object",
@@ -1908,6 +1864,19 @@
             "type": "array",
             "title": "Alternative Workflows",
             "description": "Other workflows considered but not selected. For operator context and audit trail only - NOT for automatic execution. Helps operators understand AI reasoning and decision alternatives."
+          },
+          "detected_labels": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detected Labels",
+            "description": "Cluster characteristics detected at runtime by HAPI (ADR-056). Includes: gitOpsManaged, pdbProtected, hpaEnabled, stateful, helmManaged, networkIsolated, serviceMesh, failedDetections."
           }
         },
         "type": "object",

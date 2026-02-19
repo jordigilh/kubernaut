@@ -299,29 +299,9 @@ def create_incident_investigation_prompt(
     # "predictive": Predict & prevent - incident predicted but not yet occurred
     signal_mode = request_data.get('signal_mode') or 'reactive'
 
-    # DetectedLabels from enrichment_results (DD-RECOVERY-003)
-    enrichment_results = request_data.get('enrichment_results', {})
-    detected_labels = None
-    if enrichment_results:
-        # Handle both dict and EnrichmentResults model
-        if hasattr(enrichment_results, 'detectedLabels'):
-            dl = enrichment_results.detectedLabels
-            if dl:
-                # If it's already a DetectedLabels model, use it directly
-                if isinstance(dl, DetectedLabels):
-                    detected_labels = dl
-                # Otherwise convert dict to DetectedLabels model
-                elif isinstance(dl, dict):
-                    detected_labels = DetectedLabels(**dl)
-        elif isinstance(enrichment_results, dict):
-            dl = enrichment_results.get('detectedLabels', {})
-            if dl:
-                # Convert dict to DetectedLabels model
-                if isinstance(dl, dict):
-                    detected_labels = DetectedLabels(**dl)
-                # If it's already a DetectedLabels model, use it directly
-                elif isinstance(dl, DetectedLabels):
-                    detected_labels = dl
+    # ADR-056: DetectedLabels are no longer extracted from enrichment_results
+    # for prompt construction. They are computed at runtime by HAPI's
+    # get_resource_context tool and used via session_state.
 
     # Generate contextual descriptions
     priority_desc = PRIORITY_DESCRIPTIONS.get(priority, f"{priority} - Standard priority").format(business_category=business_category)
@@ -428,19 +408,9 @@ that a **{signal_type}** event will occur for **{namespace}/{resource_kind}/{res
                 prompt += f" (and {len(affected_resources) - 5} more)"
             prompt += "\n"
 
-    # Add Cluster Environment Characteristics if DetectedLabels are available (DD-RECOVERY-003)
-    if detected_labels:
-        prompt += f"""
-## Cluster Environment Characteristics (AUTO-DETECTED)
-
-The following characteristics were automatically detected for the target resource.
-**Use these to guide your workflow selection reasoning.**
-
-{build_cluster_context_section(detected_labels)}
-
-{build_mcp_filter_instructions(detected_labels)}
-
-"""
+    # ADR-056: Cluster environment characteristics are now computed at runtime
+    # by the get_resource_context tool (LabelDetector) and injected into
+    # DataStorage queries via session_state. No longer included in the prompt.
 
     # BR-HAPI-016: Add remediation history section if context is available
     if remediation_history_context:

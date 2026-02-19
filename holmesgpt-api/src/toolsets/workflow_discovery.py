@@ -43,6 +43,13 @@ Audit Trail:
   - HAPI does NOT generate audit events
   - remediation_id passed via query param for correlation
 
+On-Demand Label Detection (ADR-056, Separation of Concerns):
+  When session_state and k8s_client are provided, list_available_actions
+  computes DetectedLabels on first invocation via LabelDetector and caches
+  them in session_state["detected_labels"]. Subsequent tools (list_workflows,
+  get_workflow) read the cached labels. This separates the workflow-filtering
+  concern from the historical-context concern in get_resource_context.
+
 Configuration:
   - DATA_STORAGE_URL: Data Storage Service endpoint (default: http://data-storage:8080)
   - DATA_STORAGE_TIMEOUT: HTTP timeout in seconds (default: 60)
@@ -292,6 +299,10 @@ class _DiscoveryToolBase(Tool):
         custom_labels: Optional[Dict[str, List[str]]] = None,
         detected_labels: Optional[DetectedLabels] = None,
         http_session: Optional[Any] = None,
+        session_state: Optional[Dict[str, Any]] = None,
+        k8s_client: Any = None,
+        resource_name: str = "",
+        resource_namespace: str = "",
     ):
         super().__init__(
             name=name,
@@ -314,8 +325,6 @@ class _DiscoveryToolBase(Tool):
         )
 
         # Authenticated requests.Session for DataStorage calls (DD-AUTH-005).
-        # In production, ServiceAccountAuthSession injects the SA token.
-        # For integration tests, StaticTokenAuthSession can be provided.
         object.__setattr__(self, "_http_session", http_session)
 
         # Signal context filters (set once, propagated to all steps)
@@ -327,6 +336,104 @@ class _DiscoveryToolBase(Tool):
         object.__setattr__(self, "_custom_labels", custom_labels or {})
         object.__setattr__(self, "_detected_labels", detected_labels)
 
+        # ADR-056: Shared session state for inter-tool communication
+        object.__setattr__(self, "_session_state", session_state)
+
+        # ADR-056 SoC: K8s client + resource identity for on-demand label detection
+        object.__setattr__(self, "_k8s_client", k8s_client)
+        object.__setattr__(self, "_resource_name", resource_name)
+        object.__setattr__(self, "_resource_namespace", resource_namespace)
+
+    def _ensure_detected_labels(self) -> None:
+        """ADR-056 SoC: Compute and cache detected_labels on first call.
+
+        Labels are computed on-demand when workflow discovery first needs them,
+        separating the workflow-filtering concern from historical context
+        (get_resource_context). Results are cached in session_state for
+        reuse by subsequent discovery tools.
+        """
+        if self._session_state is not None and "detected_labels" in self._session_state:
+            return
+
+        if self._k8s_client is None or self._session_state is None:
+            return
+
+        try:
+            import asyncio
+            try:
+                asyncio.get_running_loop()
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                    labels = pool.submit(asyncio.run, self._compute_labels_async()).result()
+            except RuntimeError:
+                labels = asyncio.run(self._compute_labels_async())
+            self._session_state["detected_labels"] = labels if labels else {}
+        except Exception as e:
+            logger.warning({
+                "event": "label_detection_failed",
+                "resource": f"{self._component}/{self._resource_namespace}/{self._resource_name}",
+                "error": str(e),
+            })
+            if self._session_state is not None:
+                self._session_state["detected_labels"] = {}
+
+    async def _compute_labels_async(self) -> Dict[str, Any]:
+        """Async helper to resolve owner chain, build K8s context, and detect labels."""
+        from src.detection.labels import LabelDetector
+
+        kind = self._component
+        name = self._resource_name
+        namespace = self._resource_namespace
+
+        owner_chain = await self._k8s_client.resolve_owner_chain(kind, name, namespace)
+        k8s_context = await self._build_k8s_context(kind, name, namespace, owner_chain)
+
+        detector = LabelDetector(self._k8s_client)
+        labels = await detector.detect_labels(k8s_context, owner_chain)
+        return labels if labels else {}
+
+    async def _build_k8s_context(
+        self, kind: str, name: str, namespace: str, owner_chain: List[Dict[str, str]]
+    ) -> Dict[str, Any]:
+        """Build k8s_context dict for LabelDetector from K8s resource metadata.
+
+        Fetches pod details (if kind is Pod), deployment details (if a
+        Deployment exists in the owner chain), and namespace metadata.
+        Returns partial context when some metadata is unavailable.
+        """
+        k8s_context: Dict[str, Any] = {"namespace": namespace}
+
+        if kind == "Pod":
+            pod = await self._k8s_client._get_resource_metadata("Pod", name, namespace)
+            if pod is not None:
+                k8s_context["pod_details"] = {
+                    "name": name,
+                    "labels": pod.metadata.labels or {},
+                    "annotations": pod.metadata.annotations or {},
+                }
+
+        for entry in owner_chain:
+            if entry["kind"] == "Deployment":
+                deploy = await self._k8s_client._get_resource_metadata(
+                    "Deployment", entry["name"], entry.get("namespace", "")
+                )
+                if deploy is not None:
+                    k8s_context["deployment_details"] = {
+                        "name": entry["name"],
+                        "labels": deploy.metadata.labels or {},
+                    }
+                break
+
+        ns_meta = await self._k8s_client.get_namespace_metadata(namespace)
+        if ns_meta is not None:
+            k8s_context["namespace_labels"] = ns_meta.get("labels", {})
+            k8s_context["namespace_annotations"] = ns_meta.get("annotations", {})
+        else:
+            k8s_context["namespace_labels"] = {}
+            k8s_context["namespace_annotations"] = {}
+
+        return k8s_context
+
     def _build_context_params(self) -> Dict[str, Any]:
         """
         Build query parameters dict with signal context filters.
@@ -336,14 +443,14 @@ class _DiscoveryToolBase(Tool):
         DD-HAPI-017: detected_labels propagated when present (DD-WORKFLOW-001 v2.1:
         strip_failed_detections applied before sending).
 
+        ADR-056 SoC: detected_labels are read from session_state["detected_labels"],
+        computed on-demand by _ensure_detected_labels in list_available_actions.
+
         NOTE: severity, component, environment, and priority are ALWAYS included
         because the DS OpenAPI spec declares them as required: true. Omitting any
         of them causes a 400 Bad Request from the ogen request validator.
-        The `or ""` guard converts None to empty string to prevent "None" literals
-        in query params.
         """
         params: Dict[str, Any] = {}
-        # DS OpenAPI: these 4 parameters are required: true — always include them
         params["severity"] = self._severity or ""
         params["component"] = self._component or ""
         params["environment"] = self._environment or ""
@@ -352,11 +459,20 @@ class _DiscoveryToolBase(Tool):
             params["remediation_id"] = self._remediation_id
         if self._custom_labels:
             params["custom_labels"] = json.dumps(self._custom_labels)
-        if self._detected_labels:
-            clean_labels = strip_failed_detections(self._detected_labels)
-            clean_dict = clean_labels.model_dump(exclude_defaults=True, exclude_none=True)
-            if clean_dict:
-                params["detected_labels"] = json.dumps(clean_dict)
+
+        # ADR-056 SoC: Read detected_labels from session_state (computed
+        # on-demand by _ensure_detected_labels). strip_failed_detections
+        # removes unreliable label values before sending to DataStorage.
+        if self._session_state and "detected_labels" in self._session_state:
+            raw_labels = self._session_state["detected_labels"]
+            if raw_labels:
+                clean_labels = strip_failed_detections(raw_labels)
+                if isinstance(clean_labels, dict):
+                    clean_dict = {k: v for k, v in clean_labels.items() if v is not None}
+                else:
+                    clean_dict = clean_labels.model_dump(exclude_defaults=True, exclude_none=True)
+                if clean_dict:
+                    params["detected_labels"] = json.dumps(clean_dict)
         return params
 
     def _do_get(self, url: str, extra_params: Optional[Dict] = None) -> Dict:
@@ -428,6 +544,10 @@ class ListAvailableActionsTool(_DiscoveryToolBase):
         custom_labels: Optional[Dict[str, List[str]]] = None,
         detected_labels: Optional[DetectedLabels] = None,
         http_session: Optional[Any] = None,
+        session_state: Optional[Dict[str, Any]] = None,
+        k8s_client: Any = None,
+        resource_name: str = "",
+        resource_namespace: str = "",
     ):
         super().__init__(
             name="list_available_actions",
@@ -465,11 +585,16 @@ class ListAvailableActionsTool(_DiscoveryToolBase):
             custom_labels=custom_labels,
             detected_labels=detected_labels,
             http_session=http_session,
+            session_state=session_state,
+            k8s_client=k8s_client,
+            resource_name=resource_name,
+            resource_namespace=resource_namespace,
         )
 
     def _invoke(
         self, params: Dict, user_approved: bool = False
     ) -> StructuredToolResult:
+        self._ensure_detected_labels()
         try:
             offset = params.get("offset", 0)
             limit = params.get("limit", 10)
@@ -540,6 +665,10 @@ class ListWorkflowsTool(_DiscoveryToolBase):
         custom_labels: Optional[Dict[str, List[str]]] = None,
         detected_labels: Optional[DetectedLabels] = None,
         http_session: Optional[Any] = None,
+        session_state: Optional[Dict[str, Any]] = None,
+        k8s_client: Any = None,
+        resource_name: str = "",
+        resource_namespace: str = "",
     ):
         super().__init__(
             name="list_workflows",
@@ -584,11 +713,16 @@ class ListWorkflowsTool(_DiscoveryToolBase):
             custom_labels=custom_labels,
             detected_labels=detected_labels,
             http_session=http_session,
+            session_state=session_state,
+            k8s_client=k8s_client,
+            resource_name=resource_name,
+            resource_namespace=resource_namespace,
         )
 
     def _invoke(
         self, params: Dict, user_approved: bool = False
     ) -> StructuredToolResult:
+        self._ensure_detected_labels()
         try:
             action_type = params.get("action_type", "")
             if not action_type:
@@ -670,6 +804,10 @@ class GetWorkflowTool(_DiscoveryToolBase):
         custom_labels: Optional[Dict[str, List[str]]] = None,
         detected_labels: Optional[DetectedLabels] = None,
         http_session: Optional[Any] = None,
+        session_state: Optional[Dict[str, Any]] = None,
+        k8s_client: Any = None,
+        resource_name: str = "",
+        resource_namespace: str = "",
     ):
         super().__init__(
             name="get_workflow",
@@ -703,11 +841,16 @@ class GetWorkflowTool(_DiscoveryToolBase):
             custom_labels=custom_labels,
             detected_labels=detected_labels,
             http_session=http_session,
+            session_state=session_state,
+            k8s_client=k8s_client,
+            resource_name=resource_name,
+            resource_namespace=resource_namespace,
         )
 
     def _invoke(
         self, params: Dict, user_approved: bool = False
     ) -> StructuredToolResult:
+        self._ensure_detected_labels()
         try:
             workflow_id = params.get("workflow_id", "")
             if not workflow_id:
@@ -792,6 +935,10 @@ class WorkflowDiscoveryToolset(Toolset):
         custom_labels: Optional[Dict[str, List[str]]] = None,
         detected_labels: Optional[DetectedLabels] = None,
         http_session: Optional[Any] = None,
+        session_state: Optional[Dict[str, Any]] = None,
+        k8s_client: Any = None,
+        resource_name: str = "",
+        resource_namespace: str = "",
     ):
         """
         Initialize the three-step discovery toolset.
@@ -808,8 +955,11 @@ class WorkflowDiscoveryToolset(Toolset):
             http_session: Optional authenticated requests.Session for DataStorage
                          calls (DD-AUTH-005). If None, falls back to unauthenticated
                          requests.get().
+            session_state: Shared mutable dict for inter-tool communication (ADR-056).
+            k8s_client: K8s client for on-demand label detection (ADR-056 SoC).
+            resource_name: Target resource name for label detection.
+            resource_namespace: Target resource namespace for label detection.
         """
-        # Shared constructor kwargs for all three tools
         shared_kwargs = dict(
             remediation_id=remediation_id,
             severity=severity,
@@ -819,6 +969,10 @@ class WorkflowDiscoveryToolset(Toolset):
             custom_labels=custom_labels,
             detected_labels=detected_labels,
             http_session=http_session,
+            session_state=session_state,
+            k8s_client=k8s_client,
+            resource_name=resource_name,
+            resource_namespace=resource_namespace,
         )
 
         super().__init__(

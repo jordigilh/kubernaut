@@ -222,56 +222,52 @@ async def analyze_recovery(request_data: Dict[str, Any], app_config: Optional[Ap
             "message": f"DD-HAPI-001: {len(custom_labels)} custom label subdomains will be auto-appended to workflow search"
         })
 
-    # DD-WORKFLOW-001 v1.7: Extract detected_labels for workflow matching (100% safe)
-    detected_labels_dict = enrichment_results.get("detectedLabels", {}) or {}
-    detected_labels = DetectedLabels(**detected_labels_dict) if detected_labels_dict else None
+    # ADR-055: owner_chain no longer extracted from enrichment_results.
+    # Context enrichment (owner chain, spec hash, history) is now performed
+    # post-RCA by the LLM via the get_resource_context tool.
 
-    # DD-WORKFLOW-001 v1.7: Extract source_resource for DetectedLabels validation
-    # This is the original signal's resource - compared against LLM's rca_resource
     source_resource = {
         "namespace": request_data.get("resource_namespace", ""),
         "kind": request_data.get("resource_kind", ""),
         "name": request_data.get("resource_name", "")
     }
 
-    # ADR-055: owner_chain no longer extracted from enrichment_results.
-    # Context enrichment (owner chain, spec hash, history) is now performed
-    # post-RCA by the LLM via the get_resource_context tool.
-
-    if detected_labels:
-        # Get non-None fields from DetectedLabels model for logging
-        label_fields = [f for f, v in detected_labels.model_dump(exclude_none=True).items() if f != "failedDetections"]
-        logger.info({
-            "event": "detected_labels_extracted",
-            "incident_id": incident_id,
-            "fields": label_fields,
-            "source_resource": f"{source_resource.get('kind')}/{source_resource.get('namespace') or 'cluster'}",
-            "message": f"DD-WORKFLOW-001 v1.7: {len(label_fields)} detected labels"
-        })
-
     config = _get_holmes_config(
         app_config,
         remediation_id=remediation_id,
         custom_labels=custom_labels,
-        detected_labels=detected_labels,
+        detected_labels=None,  # ADR-056: computed on-demand by list_available_actions
         source_resource=source_resource,
     )
 
+    # ADR-056 SoC: Create shared session_state for inter-tool communication.
+    # WorkflowDiscoveryToolset computes detected_labels on-demand in list_available_actions.
+    session_state: Dict[str, Any] = {}
+
+    # ADR-056 SoC: Get K8s client for on-demand label detection in workflow discovery
+    from src.clients.k8s_client import get_k8s_client
+    try:
+        k8s = get_k8s_client()
+    except Exception as e:
+        logger.warning({"event": "k8s_client_unavailable_for_labels", "error": str(e)})
+        k8s = None
+
     # DD-HAPI-017: Register three-step workflow discovery toolset
-    # (replaces single search_workflow_catalog tool from DD-WORKFLOW-002)
-    # NOTE: Registration is done here (not in _get_holmes_config) because
-    # context filters come from request_data which is only available in the caller.
     from src.extensions.llm_config import register_workflow_discovery_toolset, register_resource_context_toolset
     config = register_workflow_discovery_toolset(
         config,
         app_config,
         remediation_id=remediation_id,
         custom_labels=custom_labels,
-        detected_labels=detected_labels,
+        detected_labels=None,  # ADR-056: computed on-demand by list_available_actions
         severity=request_data.get("severity", ""),
         component=request_data.get("resource_kind", ""),
         environment=request_data.get("environment", ""),
         priority=request_data.get("priority", ""),
+        session_state=session_state,
+        k8s_client=k8s,
+        resource_name=request_data.get("resource_name", ""),
+        resource_namespace=request_data.get("resource_namespace", ""),
     )
 
     # ADR-055: Register resource context toolset for post-RCA enrichment
@@ -506,12 +502,17 @@ async def analyze_recovery(request_data: Dict[str, Any], app_config: Optional[Ap
             audit_store, incident_id, remediation_id, workflow_id
         )
 
+        # ADR-056: Inject runtime-computed detected_labels into response
+        from src.extensions.llm_config import inject_detected_labels
+        inject_detected_labels(result, session_state)
+
         logger.info({
             "event": "recovery_analysis_completed",
             "incident_id": incident_id,
             "strategy_count": len(result.get("strategies", [])),
             "confidence": result.get("analysis_confidence"),
             "validation_attempts": len(validation_errors_history) + 1 if result else 0,
+            "has_detected_labels": "detected_labels" in result,
         })
 
         # Record metrics (BR-HAPI-011: Investigation metrics)

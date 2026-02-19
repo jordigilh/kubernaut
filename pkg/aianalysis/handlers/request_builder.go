@@ -250,31 +250,9 @@ func (b *RequestBuilder) buildPreviousExecution(prev aianalysisv1.PreviousExecut
 func (b *RequestBuilder) buildEnrichmentResults(enrichment sharedtypes.EnrichmentResults) client.EnrichmentResults {
 	result := client.EnrichmentResults{}
 
-	// Map DetectedLabels if present
-	if enrichment.DetectedLabels != nil {
-		dl := enrichment.DetectedLabels
-		detectedLabels := client.DetectedLabels{
-			FailedDetections: dl.FailedDetections,
-		}
-
-		// Map boolean fields using OptBool
-		detectedLabels.GitOpsManaged.SetTo(dl.GitOpsManaged)
-		detectedLabels.PdbProtected.SetTo(dl.PDBProtected)
-		detectedLabels.HpaEnabled.SetTo(dl.HPAEnabled)
-		detectedLabels.Stateful.SetTo(dl.Stateful)
-		detectedLabels.HelmManaged.SetTo(dl.HelmManaged)
-		detectedLabels.NetworkIsolated.SetTo(dl.NetworkIsolated)
-
-		// Map string fields using OptString
-		if dl.GitOpsTool != "" {
-			detectedLabels.GitOpsTool.SetTo(dl.GitOpsTool)
-		}
-		if dl.ServiceMesh != "" {
-			detectedLabels.ServiceMesh.SetTo(dl.ServiceMesh)
-		}
-
-		result.DetectedLabels.SetTo(detectedLabels)
-	}
+	// ADR-056: DetectedLabels removed from EnrichmentResults.
+	// DetectedLabels are now computed by HAPI post-RCA and returned
+	// in the response (stored in PostRCAContext).
 
 	// Map CustomLabels if present
 	if len(enrichment.CustomLabels) > 0 {

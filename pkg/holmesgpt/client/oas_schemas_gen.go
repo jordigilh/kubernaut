@@ -70,131 +70,10 @@ func (s *AlternativeWorkflow) SetRationale(val string) {
 	s.Rationale = val
 }
 
-// Auto-detected cluster characteristics from SignalProcessing.
-// These labels are used for:
-// 1. LLM context (natural language) - help LLM understand cluster environment
-// 2. MCP workflow filtering - filter workflows to only compatible ones
-// Design Decision: DD-WORKFLOW-001 v2.2, DD-RECOVERY-003
-// Changes:
-// - v2.1: Added `failedDetections` field to track which detections failed
-// - v2.2: Removed `podSecurityLevel` (PSP deprecated, PSS is namespace-level)
-// Consumer logic: if field is in failedDetections, ignore its value.
-// Ref: #/components/schemas/DetectedLabels
-type DetectedLabels struct {
-	// Field names where detection failed. Consumer should ignore values of these fields. Valid values:
-	// gitOpsManaged, pdbProtected, hpaEnabled, stateful, helmManaged, networkIsolated, serviceMesh.
-	FailedDetections []string `json:"failedDetections"`
-	// Whether namespace is managed by GitOps.
-	GitOpsManaged OptBool `json:"gitOpsManaged"`
-	// GitOps tool: 'argocd', 'flux', or ''.
-	GitOpsTool OptString `json:"gitOpsTool"`
-	// Whether PodDisruptionBudget protects this workload.
-	PdbProtected OptBool `json:"pdbProtected"`
-	// Whether HorizontalPodAutoscaler is active.
-	HpaEnabled OptBool `json:"hpaEnabled"`
-	// Whether this is a stateful workload (StatefulSet or has PVCs).
-	Stateful OptBool `json:"stateful"`
-	// Whether resource is managed by Helm.
-	HelmManaged OptBool `json:"helmManaged"`
-	// Whether NetworkPolicy restricts traffic.
-	NetworkIsolated OptBool `json:"networkIsolated"`
-	// Service mesh: 'istio', 'linkerd', ''.
-	ServiceMesh OptString `json:"serviceMesh"`
-}
-
-// GetFailedDetections returns the value of FailedDetections.
-func (s *DetectedLabels) GetFailedDetections() []string {
-	return s.FailedDetections
-}
-
-// GetGitOpsManaged returns the value of GitOpsManaged.
-func (s *DetectedLabels) GetGitOpsManaged() OptBool {
-	return s.GitOpsManaged
-}
-
-// GetGitOpsTool returns the value of GitOpsTool.
-func (s *DetectedLabels) GetGitOpsTool() OptString {
-	return s.GitOpsTool
-}
-
-// GetPdbProtected returns the value of PdbProtected.
-func (s *DetectedLabels) GetPdbProtected() OptBool {
-	return s.PdbProtected
-}
-
-// GetHpaEnabled returns the value of HpaEnabled.
-func (s *DetectedLabels) GetHpaEnabled() OptBool {
-	return s.HpaEnabled
-}
-
-// GetStateful returns the value of Stateful.
-func (s *DetectedLabels) GetStateful() OptBool {
-	return s.Stateful
-}
-
-// GetHelmManaged returns the value of HelmManaged.
-func (s *DetectedLabels) GetHelmManaged() OptBool {
-	return s.HelmManaged
-}
-
-// GetNetworkIsolated returns the value of NetworkIsolated.
-func (s *DetectedLabels) GetNetworkIsolated() OptBool {
-	return s.NetworkIsolated
-}
-
-// GetServiceMesh returns the value of ServiceMesh.
-func (s *DetectedLabels) GetServiceMesh() OptString {
-	return s.ServiceMesh
-}
-
-// SetFailedDetections sets the value of FailedDetections.
-func (s *DetectedLabels) SetFailedDetections(val []string) {
-	s.FailedDetections = val
-}
-
-// SetGitOpsManaged sets the value of GitOpsManaged.
-func (s *DetectedLabels) SetGitOpsManaged(val OptBool) {
-	s.GitOpsManaged = val
-}
-
-// SetGitOpsTool sets the value of GitOpsTool.
-func (s *DetectedLabels) SetGitOpsTool(val OptString) {
-	s.GitOpsTool = val
-}
-
-// SetPdbProtected sets the value of PdbProtected.
-func (s *DetectedLabels) SetPdbProtected(val OptBool) {
-	s.PdbProtected = val
-}
-
-// SetHpaEnabled sets the value of HpaEnabled.
-func (s *DetectedLabels) SetHpaEnabled(val OptBool) {
-	s.HpaEnabled = val
-}
-
-// SetStateful sets the value of Stateful.
-func (s *DetectedLabels) SetStateful(val OptBool) {
-	s.Stateful = val
-}
-
-// SetHelmManaged sets the value of HelmManaged.
-func (s *DetectedLabels) SetHelmManaged(val OptBool) {
-	s.HelmManaged = val
-}
-
-// SetNetworkIsolated sets the value of NetworkIsolated.
-func (s *DetectedLabels) SetNetworkIsolated(val OptBool) {
-	s.NetworkIsolated = val
-}
-
-// SetServiceMesh sets the value of ServiceMesh.
-func (s *DetectedLabels) SetServiceMesh(val OptString) {
-	s.ServiceMesh = val
-}
-
 // Enrichment results from SignalProcessing.
-// Contains Kubernetes context, auto-detected labels, custom labels, and owner chain
-// that are used for workflow filtering, LLM context, and remediation history.
+// ADR-056: detectedLabels removed (computed by HAPI post-RCA via LabelDetector).
+// ADR-055: ownerChain removed (resolved by HAPI via get_resource_context tool).
+// Contains Kubernetes context and custom labels used for workflow filtering and LLM context.
 // Design Decision: DD-RECOVERY-003, DD-HAPI-001
 // Custom Labels (DD-HAPI-001):
 // - Format: map[string][]string (subdomain → list of values)
@@ -206,17 +85,9 @@ func (s *DetectedLabels) SetServiceMesh(val OptString) {
 type EnrichmentResults struct {
 	// Kubernetes resource context.
 	KubernetesContext OptNilEnrichmentResultsKubernetesContext `json:"kubernetesContext"`
-	// Auto-detected cluster characteristics.
-	DetectedLabels OptNilDetectedLabels `json:"detectedLabels"`
 	// Custom labels from SignalProcessing (subdomain → values). Auto-appended to workflow search per
 	// DD-HAPI-001.
 	CustomLabels OptNilEnrichmentResultsCustomLabels `json:"customLabels"`
-	// Quality score of enrichment (0-1).
-	EnrichmentQuality OptFloat64 `json:"enrichmentQuality"`
-	// Kubernetes owner chain from signal target to root controller. Conditional: empty for bare Pods,
-	// Nodes, or resources without controllers. Last entry is the root owner (e.g., Deployment). Issue
-	// #97.
-	OwnerChain OptNilOwnerChainEntryArray `json:"ownerChain"`
 }
 
 // GetKubernetesContext returns the value of KubernetesContext.
@@ -224,24 +95,9 @@ func (s *EnrichmentResults) GetKubernetesContext() OptNilEnrichmentResultsKubern
 	return s.KubernetesContext
 }
 
-// GetDetectedLabels returns the value of DetectedLabels.
-func (s *EnrichmentResults) GetDetectedLabels() OptNilDetectedLabels {
-	return s.DetectedLabels
-}
-
 // GetCustomLabels returns the value of CustomLabels.
 func (s *EnrichmentResults) GetCustomLabels() OptNilEnrichmentResultsCustomLabels {
 	return s.CustomLabels
-}
-
-// GetEnrichmentQuality returns the value of EnrichmentQuality.
-func (s *EnrichmentResults) GetEnrichmentQuality() OptFloat64 {
-	return s.EnrichmentQuality
-}
-
-// GetOwnerChain returns the value of OwnerChain.
-func (s *EnrichmentResults) GetOwnerChain() OptNilOwnerChainEntryArray {
-	return s.OwnerChain
 }
 
 // SetKubernetesContext sets the value of KubernetesContext.
@@ -249,24 +105,9 @@ func (s *EnrichmentResults) SetKubernetesContext(val OptNilEnrichmentResultsKube
 	s.KubernetesContext = val
 }
 
-// SetDetectedLabels sets the value of DetectedLabels.
-func (s *EnrichmentResults) SetDetectedLabels(val OptNilDetectedLabels) {
-	s.DetectedLabels = val
-}
-
 // SetCustomLabels sets the value of CustomLabels.
 func (s *EnrichmentResults) SetCustomLabels(val OptNilEnrichmentResultsCustomLabels) {
 	s.CustomLabels = val
-}
-
-// SetEnrichmentQuality sets the value of EnrichmentQuality.
-func (s *EnrichmentResults) SetEnrichmentQuality(val OptFloat64) {
-	s.EnrichmentQuality = val
-}
-
-// SetOwnerChain sets the value of OwnerChain.
-func (s *EnrichmentResults) SetOwnerChain(val OptNilOwnerChainEntryArray) {
-	s.OwnerChain = val
 }
 
 type EnrichmentResultsCustomLabels map[string][]string
@@ -1386,7 +1227,7 @@ type IncidentResponse struct {
 	Analysis string `json:"analysis"`
 	// Structured RCA with summary, severity, contributing_factors.
 	RootCauseAnalysis IncidentResponseRootCauseAnalysis `json:"root_cause_analysis"`
-	// Selected workflow with workflow_id, containerImage, confidence, parameters.
+	// Selected workflow with workflow_id, execution_bundle, confidence, parameters.
 	SelectedWorkflow OptNilIncidentResponseSelectedWorkflow `json:"selected_workflow"`
 	// Overall confidence in analysis.
 	Confidence float64 `json:"confidence"`
@@ -1410,6 +1251,9 @@ type IncidentResponse struct {
 	// validation result, and any errors. Empty if validation passed on first attempt or no workflow was
 	// selected.
 	ValidationAttemptsHistory []ValidationAttempt `json:"validation_attempts_history"`
+	// Cluster characteristics detected at runtime by HAPI (ADR-056). Includes: gitOpsManaged,
+	// pdbProtected, hpaEnabled, stateful, helmManaged, networkIsolated, serviceMesh, failedDetections.
+	DetectedLabels OptNilIncidentResponseDetectedLabels `json:"detected_labels"`
 }
 
 // GetIncidentID returns the value of IncidentID.
@@ -1467,6 +1311,11 @@ func (s *IncidentResponse) GetValidationAttemptsHistory() []ValidationAttempt {
 	return s.ValidationAttemptsHistory
 }
 
+// GetDetectedLabels returns the value of DetectedLabels.
+func (s *IncidentResponse) GetDetectedLabels() OptNilIncidentResponseDetectedLabels {
+	return s.DetectedLabels
+}
+
 // SetIncidentID sets the value of IncidentID.
 func (s *IncidentResponse) SetIncidentID(val string) {
 	s.IncidentID = val
@@ -1522,7 +1371,23 @@ func (s *IncidentResponse) SetValidationAttemptsHistory(val []ValidationAttempt)
 	s.ValidationAttemptsHistory = val
 }
 
+// SetDetectedLabels sets the value of DetectedLabels.
+func (s *IncidentResponse) SetDetectedLabels(val OptNilIncidentResponseDetectedLabels) {
+	s.DetectedLabels = val
+}
+
 func (*IncidentResponse) incidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes() {}
+
+type IncidentResponseDetectedLabels map[string]jx.Raw
+
+func (s *IncidentResponseDetectedLabels) init() IncidentResponseDetectedLabels {
+	m := *s
+	if m == nil {
+		m = map[string]jx.Raw{}
+		*s = m
+	}
+	return m
+}
 
 // Structured RCA with summary, severity, contributing_factors.
 type IncidentResponseRootCauseAnalysis map[string]jx.Raw
@@ -1593,52 +1458,6 @@ func (o OptBool) Or(d bool) bool {
 	return d
 }
 
-// NewOptFloat64 returns new OptFloat64 with value set to v.
-func NewOptFloat64(v float64) OptFloat64 {
-	return OptFloat64{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptFloat64 is optional float64.
-type OptFloat64 struct {
-	Value float64
-	Set   bool
-}
-
-// IsSet returns true if OptFloat64 was set.
-func (o OptFloat64) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptFloat64) Reset() {
-	var v float64
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptFloat64) SetTo(v float64) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptFloat64) Get() (v float64, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptFloat64) Or(d float64) float64 {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
 // NewOptNilBool returns new OptNilBool with value set to v.
 func NewOptNilBool(v bool) OptNilBool {
 	return OptNilBool{
@@ -1696,69 +1515,6 @@ func (o OptNilBool) Get() (v bool, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptNilBool) Or(d bool) bool {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptNilDetectedLabels returns new OptNilDetectedLabels with value set to v.
-func NewOptNilDetectedLabels(v DetectedLabels) OptNilDetectedLabels {
-	return OptNilDetectedLabels{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptNilDetectedLabels is optional nullable DetectedLabels.
-type OptNilDetectedLabels struct {
-	Value DetectedLabels
-	Set   bool
-	Null  bool
-}
-
-// IsSet returns true if OptNilDetectedLabels was set.
-func (o OptNilDetectedLabels) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptNilDetectedLabels) Reset() {
-	var v DetectedLabels
-	o.Value = v
-	o.Set = false
-	o.Null = false
-}
-
-// SetTo sets value to v.
-func (o *OptNilDetectedLabels) SetTo(v DetectedLabels) {
-	o.Set = true
-	o.Null = false
-	o.Value = v
-}
-
-// IsNull returns true if value is Null.
-func (o OptNilDetectedLabels) IsNull() bool { return o.Null }
-
-// SetToNull sets value to null.
-func (o *OptNilDetectedLabels) SetToNull() {
-	o.Set = true
-	o.Null = true
-	var v DetectedLabels
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptNilDetectedLabels) Get() (v DetectedLabels, ok bool) {
-	if o.Null {
-		return v, false
-	}
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptNilDetectedLabels) Or(d DetectedLabels) DetectedLabels {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -2080,6 +1836,69 @@ func (o OptNilIncidentRequestSignalLabels) Or(d IncidentRequestSignalLabels) Inc
 	return d
 }
 
+// NewOptNilIncidentResponseDetectedLabels returns new OptNilIncidentResponseDetectedLabels with value set to v.
+func NewOptNilIncidentResponseDetectedLabels(v IncidentResponseDetectedLabels) OptNilIncidentResponseDetectedLabels {
+	return OptNilIncidentResponseDetectedLabels{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilIncidentResponseDetectedLabels is optional nullable IncidentResponseDetectedLabels.
+type OptNilIncidentResponseDetectedLabels struct {
+	Value IncidentResponseDetectedLabels
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilIncidentResponseDetectedLabels was set.
+func (o OptNilIncidentResponseDetectedLabels) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilIncidentResponseDetectedLabels) Reset() {
+	var v IncidentResponseDetectedLabels
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilIncidentResponseDetectedLabels) SetTo(v IncidentResponseDetectedLabels) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilIncidentResponseDetectedLabels) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilIncidentResponseDetectedLabels) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v IncidentResponseDetectedLabels
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilIncidentResponseDetectedLabels) Get() (v IncidentResponseDetectedLabels, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilIncidentResponseDetectedLabels) Or(d IncidentResponseDetectedLabels) IncidentResponseDetectedLabels {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptNilIncidentResponseSelectedWorkflow returns new OptNilIncidentResponseSelectedWorkflow with value set to v.
 func NewOptNilIncidentResponseSelectedWorkflow(v IncidentResponseSelectedWorkflow) OptNilIncidentResponseSelectedWorkflow {
 	return OptNilIncidentResponseSelectedWorkflow{
@@ -2206,69 +2025,6 @@ func (o OptNilInt) Or(d int) int {
 	return d
 }
 
-// NewOptNilOwnerChainEntryArray returns new OptNilOwnerChainEntryArray with value set to v.
-func NewOptNilOwnerChainEntryArray(v []OwnerChainEntry) OptNilOwnerChainEntryArray {
-	return OptNilOwnerChainEntryArray{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptNilOwnerChainEntryArray is optional nullable []OwnerChainEntry.
-type OptNilOwnerChainEntryArray struct {
-	Value []OwnerChainEntry
-	Set   bool
-	Null  bool
-}
-
-// IsSet returns true if OptNilOwnerChainEntryArray was set.
-func (o OptNilOwnerChainEntryArray) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptNilOwnerChainEntryArray) Reset() {
-	var v []OwnerChainEntry
-	o.Value = v
-	o.Set = false
-	o.Null = false
-}
-
-// SetTo sets value to v.
-func (o *OptNilOwnerChainEntryArray) SetTo(v []OwnerChainEntry) {
-	o.Set = true
-	o.Null = false
-	o.Value = v
-}
-
-// IsNull returns true if value is Null.
-func (o OptNilOwnerChainEntryArray) IsNull() bool { return o.Null }
-
-// SetToNull sets value to null.
-func (o *OptNilOwnerChainEntryArray) SetToNull() {
-	o.Set = true
-	o.Null = true
-	var v []OwnerChainEntry
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptNilOwnerChainEntryArray) Get() (v []OwnerChainEntry, ok bool) {
-	if o.Null {
-		return v, false
-	}
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptNilOwnerChainEntryArray) Or(d []OwnerChainEntry) []OwnerChainEntry {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
 // NewOptNilPreviousExecution returns new OptNilPreviousExecution with value set to v.
 func NewOptNilPreviousExecution(v PreviousExecution) OptNilPreviousExecution {
 	return OptNilPreviousExecution{
@@ -2326,6 +2082,69 @@ func (o OptNilPreviousExecution) Get() (v PreviousExecution, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptNilPreviousExecution) Or(d PreviousExecution) PreviousExecution {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptNilRecoveryResponseDetectedLabels returns new OptNilRecoveryResponseDetectedLabels with value set to v.
+func NewOptNilRecoveryResponseDetectedLabels(v RecoveryResponseDetectedLabels) OptNilRecoveryResponseDetectedLabels {
+	return OptNilRecoveryResponseDetectedLabels{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilRecoveryResponseDetectedLabels is optional nullable RecoveryResponseDetectedLabels.
+type OptNilRecoveryResponseDetectedLabels struct {
+	Value RecoveryResponseDetectedLabels
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilRecoveryResponseDetectedLabels was set.
+func (o OptNilRecoveryResponseDetectedLabels) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilRecoveryResponseDetectedLabels) Reset() {
+	var v RecoveryResponseDetectedLabels
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilRecoveryResponseDetectedLabels) SetTo(v RecoveryResponseDetectedLabels) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilRecoveryResponseDetectedLabels) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilRecoveryResponseDetectedLabels) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v RecoveryResponseDetectedLabels
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilRecoveryResponseDetectedLabels) Get() (v RecoveryResponseDetectedLabels, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilRecoveryResponseDetectedLabels) Or(d RecoveryResponseDetectedLabels) RecoveryResponseDetectedLabels {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -2899,47 +2718,6 @@ func (s *OriginalRCA) SetSeverity(val Severity) {
 // SetContributingFactors sets the value of ContributingFactors.
 func (s *OriginalRCA) SetContributingFactors(val []string) {
 	s.ContributingFactors = val
-}
-
-// An entry in the Kubernetes owner chain. Issue #97.
-// Ref: #/components/schemas/OwnerChainEntry
-type OwnerChainEntry struct {
-	// Kubernetes resource kind (e.g., Pod, ReplicaSet, Deployment).
-	Kind string `json:"kind"`
-	// Resource name.
-	Name string `json:"name"`
-	// Resource namespace (empty for cluster-scoped).
-	Namespace OptString `json:"namespace"`
-}
-
-// GetKind returns the value of Kind.
-func (s *OwnerChainEntry) GetKind() string {
-	return s.Kind
-}
-
-// GetName returns the value of Name.
-func (s *OwnerChainEntry) GetName() string {
-	return s.Name
-}
-
-// GetNamespace returns the value of Namespace.
-func (s *OwnerChainEntry) GetNamespace() OptString {
-	return s.Namespace
-}
-
-// SetKind sets the value of Kind.
-func (s *OwnerChainEntry) SetKind(val string) {
-	s.Kind = val
-}
-
-// SetName sets the value of Name.
-func (s *OwnerChainEntry) SetName(val string) {
-	s.Name = val
-}
-
-// SetNamespace sets the value of Namespace.
-func (s *OwnerChainEntry) SetNamespace(val OptString) {
-	s.Namespace = val
 }
 
 // Complete context about the previous execution attempt that failed.
@@ -3703,6 +3481,9 @@ type RecoveryResponse struct {
 	// Other workflows considered but not selected. For operator context and audit trail only - NOT for
 	// automatic execution. Helps operators understand AI reasoning and decision alternatives.
 	AlternativeWorkflows []AlternativeWorkflow `json:"alternative_workflows"`
+	// Cluster characteristics detected at runtime by HAPI (ADR-056). Includes: gitOpsManaged,
+	// pdbProtected, hpaEnabled, stateful, helmManaged, networkIsolated, serviceMesh, failedDetections.
+	DetectedLabels OptNilRecoveryResponseDetectedLabels `json:"detected_labels"`
 }
 
 // GetIncidentID returns the value of IncidentID.
@@ -3765,6 +3546,11 @@ func (s *RecoveryResponse) GetAlternativeWorkflows() []AlternativeWorkflow {
 	return s.AlternativeWorkflows
 }
 
+// GetDetectedLabels returns the value of DetectedLabels.
+func (s *RecoveryResponse) GetDetectedLabels() OptNilRecoveryResponseDetectedLabels {
+	return s.DetectedLabels
+}
+
 // SetIncidentID sets the value of IncidentID.
 func (s *RecoveryResponse) SetIncidentID(val string) {
 	s.IncidentID = val
@@ -3825,7 +3611,23 @@ func (s *RecoveryResponse) SetAlternativeWorkflows(val []AlternativeWorkflow) {
 	s.AlternativeWorkflows = val
 }
 
+// SetDetectedLabels sets the value of DetectedLabels.
+func (s *RecoveryResponse) SetDetectedLabels(val OptNilRecoveryResponseDetectedLabels) {
+	s.DetectedLabels = val
+}
+
 func (*RecoveryResponse) recoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes() {}
+
+type RecoveryResponseDetectedLabels map[string]jx.Raw
+
+func (s *RecoveryResponseDetectedLabels) init() RecoveryResponseDetectedLabels {
+	m := *s
+	if m == nil {
+		m = map[string]jx.Raw{}
+		*s = m
+	}
+	return m
+}
 
 // Additional metadata.
 type RecoveryResponseMetadata map[string]jx.Raw

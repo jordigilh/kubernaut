@@ -28,9 +28,9 @@ Returns to the LLM:
   - root_owner: Identity of the root managing resource (kind, name, namespace)
   - remediation_history: Past remediations for that resource
 
-Owner chain traversal and spec hash computation are internal implementation
-details not exposed to the LLM. The LLM only needs to know what resource
-was resolved as the root owner and what remediations have been tried before.
+DetectedLabels computation (ADR-056) is handled by the WorkflowDiscoveryToolset,
+which computes labels on-demand when querying available actions (separation of
+concerns: historical context vs workflow filtering).
 """
 
 import asyncio
@@ -114,18 +114,14 @@ class GetResourceContextTool(Tool):
     async def _invoke_async(self, kind: str, name: str, namespace: str = "") -> StructuredToolResult:
         """Async implementation of resource context lookup."""
         try:
-            # Step 1 (internal): Resolve owner chain via K8s API
             owner_chain = await self._k8s_client.resolve_owner_chain(kind, name, namespace)
 
-            # Step 2 (internal): Determine root owner (last entry in chain, or the resource itself)
             root_owner = owner_chain[-1] if owner_chain else {"kind": kind, "name": name, "namespace": namespace}
 
-            # Step 3 (internal): Compute spec hash for root owner
             spec_hash = await self._k8s_client.compute_spec_hash(
                 root_owner["kind"], root_owner["name"], root_owner.get("namespace", "")
             )
 
-            # Step 4 (internal): Fetch remediation history for root owner + spec hash
             history = []
             if self._history_fetcher:
                 try:
@@ -142,7 +138,6 @@ class GetResourceContextTool(Tool):
                         "error": str(e),
                     })
 
-            # Return only what the LLM needs: root owner identity + history
             result_data = {
                 "root_owner": root_owner,
                 "remediation_history": history,
@@ -178,7 +173,8 @@ class ResourceContextToolset(Toolset):
     """Toolset providing get_resource_context to the LLM.
 
     ADR-055: Registered alongside WorkflowDiscoveryToolset in both
-    incident and recovery tool registries.
+    incident and recovery tool registries. Focused on historical context:
+    owner chain resolution, spec hash computation, and remediation history.
     """
 
     def __init__(
