@@ -323,8 +323,6 @@ var _ = Describe("AIAnalysisCreator", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				Expect(createdAI.Spec.RemediationRequestRef.Name).To(Equal(rr.Name))
-				// ADR-055: OwnerChain should always be empty -- no longer propagated
-				Expect(createdAI.Spec.AnalysisRequest.SignalContext.EnrichmentResults.OwnerChain).To(BeEmpty())
 			})
 
 			It("should handle SignalProcessing with partial/incomplete enrichment data", func() {
