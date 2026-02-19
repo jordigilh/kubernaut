@@ -559,66 +559,245 @@ func buildAndLoadGatewayImage(clusterName string, writer io.Writer) error {
 	return nil
 }
 
-// deployGatewayService deploys Gateway service to the cluster
-// DD-TEST-001: Uses unique image tag for multi-developer testing support
+// gatewayManifest generates the full Gateway multi-document YAML manifest as an inline
+// template. This eliminates static YAML files that can drift from code expectations.
 //
-// Parameters:
-//   - gatewayImageName: Full image name (e.g., "localhost/gateway:tag") - REQUIRED
-//
-// Authority: docs/handoff/GATEWAY_VALIDATION_RESULTS_JAN07.md (Option A - parameter-based, no file I/O)
-func deployGatewayService(ctx context.Context, namespace, kubeconfigPath, gatewayImageName string, writer io.Writer) error {
-	projectRoot := getProjectRoot()
+// Standardization: All kubernaut E2E services use inline YAML templates piped to
+// kubectl apply -f - (same pattern as AA, SP, RO, EM, WE, HAPI).
+func gatewayManifest(imageName string, enableCoverage bool) string {
+	pullPolicy := GetImagePullPolicy()
 
+	coverageEnvYAML := ""
+	coverageVolumeMountYAML := ""
+	coverageVolumeYAML := ""
+	coverageSecurityContextYAML := ""
+
+	if enableCoverage {
+		coverageEnvYAML = `
+          - name: GOCOVERDIR
+            value: /coverdata`
+		coverageVolumeMountYAML = `
+            - name: coverdata
+              mountPath: /coverdata`
+		coverageVolumeYAML = `
+        - name: coverdata
+          hostPath:
+            path: /coverdata
+            type: DirectoryOrCreate`
+		coverageSecurityContextYAML = `
+      securityContext:
+        runAsUser: 0
+        runAsGroup: 0`
+	}
+
+	return fmt.Sprintf(`---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gateway-config
+  namespace: kubernaut-system
+data:
+  config.yaml: |
+    server:
+      listenAddr: ":8080"
+      maxConcurrentRequests: 100
+      readTimeout: 30s
+      writeTimeout: 30s
+      idleTimeout: 120s
+    datastorage:
+      url: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
+      timeout: 10s
+      buffer:
+        bufferSize: 10000
+        batchSize: 100
+        flushInterval: 1s
+        maxRetries: 3
+    processing:
+      environment:
+        cacheTtl: 5s
+        configmapNamespace: "kubernaut-system"
+        configmapName: "kubernaut-environment-overrides"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: kubernaut-system
+  labels:
+    app: gateway
+    component: webhook
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gateway
+  template:
+    metadata:
+      labels:
+        app: gateway
+        component: webhook
+    spec:
+      serviceAccountName: gateway
+      terminationGracePeriodSeconds: 30%s
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: ""
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: gateway
+          image: %s
+          imagePullPolicy: %s
+          args:
+            - "--config=/etc/gateway/config.yaml"
+          env:%s
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+          volumeMounts:
+            - name: config
+              mountPath: /etc/gateway
+              readOnly: true%s
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+      volumes:
+        - name: config
+          configMap:
+            name: gateway-config%s
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway-service
+  namespace: kubernaut-system
+  labels:
+    app: gateway
+spec:
+  type: NodePort
+  selector:
+    app: gateway
+  ports:
+    - name: http
+      protocol: TCP
+      port: 8080
+      targetPort: 8080
+      nodePort: 30080
+    - name: metrics
+      protocol: TCP
+      port: 9090
+      targetPort: 9090
+      nodePort: 30090
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gateway
+  namespace: kubernaut-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: gateway-role
+rules:
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["remediationrequests"]
+    verbs: ["create", "get", "list", "watch", "update", "patch"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["remediationrequests/status"]
+    verbs: ["update", "patch"]
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods", "nodes", "services", "secrets", "persistentvolumes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "create", "update", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: gateway-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: gateway-role
+subjects:
+  - kind: ServiceAccount
+    name: gateway
+    namespace: kubernaut-system
+`, coverageSecurityContextYAML, imageName, pullPolicy, coverageEnvYAML, coverageVolumeMountYAML, coverageVolumeYAML)
+}
+
+// deployGatewayService deploys Gateway service using an inline YAML template.
+// Standardized: same pattern as AA, SP, RO, EM, WE, HAPI (no static YAML files).
+func deployGatewayService(ctx context.Context, namespace, kubeconfigPath, gatewayImageName string, writer io.Writer) error {
 	if gatewayImageName == "" {
-		return fmt.Errorf("gatewayImageName parameter is required (no file-based fallback)")
+		return fmt.Errorf("gatewayImageName parameter is required")
 	}
 
 	_, _ = fmt.Fprintf(writer, "   Using Gateway image: %s\n", gatewayImageName)
 
-	// Read deployment manifest and replace hardcoded tag with actual tag
-	deploymentPath := filepath.Join(projectRoot, "test/e2e/gateway/gateway-deployment.yaml")
-	deploymentContent, err := os.ReadFile(deploymentPath)
-	if err != nil {
-		return fmt.Errorf("failed to read deployment file: %w", err)
-	}
-
-	// Replace hardcoded tag with actual unique tag
-	updatedContent := strings.ReplaceAll(string(deploymentContent),
-		"localhost/kubernaut-gateway:e2e-test",
-		gatewayImageName)
-
-	// Replace hardcoded imagePullPolicy with dynamic value
-	// CI/CD mode (IMAGE_REGISTRY set): Use IfNotPresent (allows pulling from GHCR)
-	// Local mode: Use Never (uses images loaded into Kind)
-	updatedContent = strings.ReplaceAll(updatedContent,
-		"imagePullPolicy: Never",
-		fmt.Sprintf("imagePullPolicy: %s", GetImagePullPolicy()))
-
-	// Create temporary modified deployment file
-	tmpDeployment := filepath.Join(os.TempDir(), "gateway-deployment-e2e.yaml")
-	if err := os.WriteFile(tmpDeployment, []byte(updatedContent), 0644); err != nil {
-		return fmt.Errorf("failed to write temp deployment: %w", err)
-	}
-	defer func() { _ = os.Remove(tmpDeployment) }()
-
-	// Apply the modified deployment
-	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
-		"apply", "-f", tmpDeployment,
-		"-n", namespace)
+	manifest := gatewayManifest(gatewayImageName, false)
+	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd.Stdin = strings.NewReader(manifest)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("kubectl apply Gateway deployment failed: %w", err)
+		return fmt.Errorf("kubectl apply Gateway manifest failed: %w", err)
 	}
 
-	// Wait for Gateway to be ready (extended timeout for RBAC propagation + initial image pull in Podman)
 	_, _ = fmt.Fprintln(writer, "   Waiting for Gateway pod (may take up to 5 minutes for RBAC + initial startup)...")
 	waitCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
 		"wait", "--for=condition=ready", "pod",
 		"-l", "app=gateway",
 		"-n", namespace,
-		"--timeout=300s") // 5 minutes for Podman-based Kind clusters
+		"--timeout=300s")
 	waitCmd.Stdout = writer
 	waitCmd.Stderr = writer
 	if err := waitCmd.Run(); err != nil {
@@ -719,278 +898,16 @@ func LoadGatewayCoverageImage(clusterName string, writer io.Writer) error {
 	return nil
 }
 
+// GatewayCoverageManifest returns the coverage-enabled Gateway manifest.
+// Delegates to the unified gatewayManifest() with coverage enabled.
 func GatewayCoverageManifest(imageName string) string {
-	// Coverage manifest aligned with standard gateway-deployment.yaml
-	// Key differences from standard: GOCOVERDIR env, hostPath volume, root securityContext
-	// CRITICAL: Config keys MUST use camelCase to match Go struct YAML tags (pkg/gateway/config/config.go)
-
-	return fmt.Sprintf(`---
-# Gateway Service ConfigMap
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: gateway-config
-  namespace: kubernaut-system
-data:
-  config.yaml: |
-    server:
-      listenAddr: ":8080"
-      maxConcurrentRequests: 100
-      readTimeout: 30s
-      writeTimeout: 30s
-      idleTimeout: 120s
-
-    datastorage:
-      # ADR-030: DataStorage connectivity (audit trail + workflow catalog)
-      url: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
-      timeout: 10s
-      buffer:
-        bufferSize: 10000
-        batchSize: 100
-        flushInterval: 1s
-        maxRetries: 3
-
-    processing:
-      deduplication:
-        ttl: 10s  # DEPRECATED (DD-GATEWAY-011): Parsed for compat, no effect
-
----
-# Gateway Service Rego Policy ConfigMap
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: gateway-rego-policy
-  namespace: kubernaut-system
-data:
-  priority-policy.rego: |
-    package priority
-
-    # Default priority assignment based on severity and environment
-    default priority := "P2"
-
-    # P0: Critical alerts in production
-    priority := "P0" if {
-        input.severity == "critical"
-        input.environment == "production"
-    }
-
-    # P1: Critical alerts in staging or warning in production
-    priority := "P1" if {
-        input.severity == "critical"
-        input.environment == "staging"
-    }
-
-    priority := "P1" if {
-        input.severity == "warning"
-        input.environment == "production"
-    }
-
----
-# Gateway Service Deployment (Coverage-Enabled)
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: gateway
-  namespace: kubernaut-system
-  labels:
-    app: gateway
-    component: webhook
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: gateway
-  template:
-    metadata:
-      labels:
-        app: gateway
-        component: webhook
-    spec:
-      serviceAccountName: gateway
-      terminationGracePeriodSeconds: 30
-      # E2E Coverage: Run as root to write to hostPath volume (acceptable for E2E tests)
-      securityContext:
-        runAsUser: 0
-        runAsGroup: 0
-      # Run on control-plane node to access NodePort mappings
-      nodeSelector:
-        node-role.kubernetes.io/control-plane: ""
-      tolerations:
-        - key: node-role.kubernetes.io/control-plane
-          operator: Exists
-          effect: NoSchedule
-      containers:
-        - name: gateway
-          image: %s
-          imagePullPolicy: %s
-          args:
-            - "--config=/etc/gateway/config.yaml"
-          env:
-          # E2E Coverage: Set GOCOVERDIR to enable coverage capture
-          - name: GOCOVERDIR
-            value: /coverdata
-          # ADR-052: Pod identity for distributed locking (multi-replica safety)
-          - name: POD_NAME
-            valueFrom:
-              fieldRef:
-                fieldPath: metadata.name
-          - name: POD_NAMESPACE
-            valueFrom:
-              fieldRef:
-                fieldPath: metadata.namespace
-          ports:
-            - name: http
-              containerPort: 8080
-              protocol: TCP
-            - name: metrics
-              containerPort: 9090
-              protocol: TCP
-          volumeMounts:
-            - name: config
-              mountPath: /etc/gateway
-              readOnly: true
-            - name: rego-policy
-              mountPath: /etc/gateway-policy
-              readOnly: true
-            # E2E Coverage: Mount coverage directory
-            - name: coverdata
-              mountPath: /coverdata
-          livenessProbe:
-            httpGet:
-              path: /health
-              port: 8080
-            initialDelaySeconds: 10
-            periodSeconds: 10
-            timeoutSeconds: 5
-            failureThreshold: 3
-          readinessProbe:
-            httpGet:
-              path: /ready
-              port: 8080
-            initialDelaySeconds: 30
-            periodSeconds: 5
-            timeoutSeconds: 5
-            failureThreshold: 6
-          resources:
-            requests:
-              memory: "256Mi"
-              cpu: "100m"
-            limits:
-              memory: "512Mi"
-              cpu: "500m"
-      volumes:
-        - name: config
-          configMap:
-            name: gateway-config
-        - name: rego-policy
-          configMap:
-            name: gateway-rego-policy
-        # E2E Coverage: hostPath volume for coverage data
-        - name: coverdata
-          hostPath:
-            path: /coverdata
-            type: DirectoryOrCreate
-
----
-# Gateway Service
-apiVersion: v1
-kind: Service
-metadata:
-  name: gateway-service
-  namespace: kubernaut-system
-  labels:
-    app: gateway
-spec:
-  type: NodePort
-  selector:
-    app: gateway
-  ports:
-    - name: http
-      protocol: TCP
-      port: 8080
-      targetPort: 8080
-      nodePort: 30080  # Expose on host for E2E testing
-    - name: metrics
-      protocol: TCP
-      port: 9090
-      targetPort: 9090
-      nodePort: 30090  # Expose metrics on host
-
----
-# Gateway ServiceAccount
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: gateway
-  namespace: kubernaut-system
-
----
-# Gateway ClusterRole (for CRD creation and namespace access)
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: gateway-role
-rules:
-  # RemediationRequest CRD access (updated to kubernaut.ai API group)
-  - apiGroups: ["kubernaut.ai"]
-    resources: ["remediationrequests"]
-    verbs: ["create", "get", "list", "watch", "update", "patch"]
-
-  # RemediationRequest status subresource access (DD-GATEWAY-011)
-  # Required for Gateway StatusUpdater to update Status.Deduplication
-  - apiGroups: ["kubernaut.ai"]
-    resources: ["remediationrequests/status"]
-    verbs: ["update", "patch"]
-
-  # Namespace access (for environment classification)
-  - apiGroups: [""]
-    resources: ["namespaces"]
-    verbs: ["get", "list", "watch"]
-
-  # ConfigMap access (for environment overrides)
-  - apiGroups: [""]
-    resources: ["configmaps"]
-    verbs: ["get", "list", "watch"]
-
-  # Scope validation: metadata-only cache (ADR-053 Decision #5, BR-SCOPE-001)
-  # Gateway uses controller-runtime metadata-only informers for scope label lookups.
-  # list+watch required for informer cache; get for direct metadata reads.
-  # Includes cluster-scoped resources (nodes, persistentvolumes) for opt-in label checks.
-  - apiGroups: [""]
-    resources: ["pods", "nodes", "services", "secrets", "persistentvolumes"]
-    verbs: ["get", "list", "watch"]
-  - apiGroups: ["apps"]
-    resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
-    verbs: ["get", "list", "watch"]
-  - apiGroups: ["batch"]
-    resources: ["jobs", "cronjobs"]
-    verbs: ["get", "list", "watch"]
-
-  # Lease resource permissions for distributed locking (DD-GATEWAY-013, BR-GATEWAY-190)
-  # CRITICAL: Required for K8s Lease-based distributed locking to prevent deduplication races
-  - apiGroups: ["coordination.k8s.io"]
-    resources: ["leases"]
-    verbs: ["get", "create", "update", "delete"]
-
----
-# Gateway ClusterRoleBinding
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: gateway-rolebinding
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: gateway-role
-subjects:
-  - kind: ServiceAccount
-    name: gateway
-    namespace: kubernaut-system
-`, imageName, GetImagePullPolicy())
+	return gatewayManifest(imageName, true)
 }
 
+// DeployGatewayCoverageManifest deploys Gateway with coverage instrumentation.
+// Uses the unified inline YAML template with coverage=true.
 func DeployGatewayCoverageManifest(kubeconfigPath string, gatewayImageName string, writer io.Writer) error {
-	manifest := GatewayCoverageManifest(gatewayImageName)
+	manifest := gatewayManifest(gatewayImageName, true)
 
 	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
@@ -998,10 +915,10 @@ func DeployGatewayCoverageManifest(kubeconfigPath string, gatewayImageName strin
 	cmd.Stderr = writer
 
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to apply coverage Gateway manifest: %w", err)
+		return fmt.Errorf("failed to apply Gateway manifest: %w", err)
 	}
 
-	_, _ = fmt.Fprintln(writer, "⏳ Waiting for coverage-enabled Gateway to be ready...")
+	_, _ = fmt.Fprintln(writer, "⏳ Waiting for Gateway to be ready...")
 	return waitForGatewayHealth(kubeconfigPath, writer, 90*time.Second)
 }
 

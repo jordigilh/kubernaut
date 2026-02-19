@@ -608,45 +608,19 @@ func deployFullPipelineAAController(ctx context.Context, namespace, kubeconfigPa
 // deployFullPipelineGateway deploys the Gateway service with NodePort 30080
 // for the full pipeline E2E. Uses a customized deployment manifest that routes
 // to the correct DataStorage and Redis services within the cluster.
+// deployFullPipelineGateway deploys Gateway using the unified inline YAML template.
+// Standardized: uses gatewayManifest() instead of reading static YAML files.
 func deployFullPipelineGateway(ctx context.Context, namespace, kubeconfigPath, gatewayImageName string, writer io.Writer) error {
-	projectRoot := getProjectRoot()
+	manifest := gatewayManifest(gatewayImageName, false)
 
-	// Read the standard Gateway deployment manifest
-	deploymentPath := filepath.Join(projectRoot, "test/e2e/gateway/gateway-deployment.yaml")
-	deploymentContent, err := os.ReadFile(deploymentPath)
-	if err != nil {
-		return fmt.Errorf("failed to read Gateway deployment: %w", err)
-	}
-
-	// Replace image name and pull policy
-	updatedContent := strings.ReplaceAll(string(deploymentContent),
-		"quay.io/jordigilh/kubernaut-gateway:fullpipeline-e2e-arm64", gatewayImageName)
-	updatedContent = strings.ReplaceAll(updatedContent,
-		"imagePullPolicy: Always",
-		fmt.Sprintf("imagePullPolicy: %s", GetImagePullPolicy()))
-
-	// Replace the NodePort to use 30080 (DD-TEST-001 v2.7: full pipeline allocation)
-	// The gateway-deployment.yaml may use a different NodePort for the gateway-only E2E
-	updatedContent = strings.ReplaceAll(updatedContent,
-		"nodePort: 30088", "nodePort: 30080")
-
-	// Write temporary modified manifest
-	tmpDeployment := filepath.Join(os.TempDir(), "fullpipeline-gateway-deployment.yaml")
-	if err := os.WriteFile(tmpDeployment, []byte(updatedContent), 0644); err != nil {
-		return fmt.Errorf("failed to write temp deployment: %w", err)
-	}
-	defer func() { _ = os.Remove(tmpDeployment) }()
-
-	// Apply
-	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
-		"apply", "-f", tmpDeployment, "-n", namespace)
+	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd.Stdin = strings.NewReader(manifest)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("Gateway deployment failed: %w", err)
 	}
 
-	// Wait for Gateway pod ready
 	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for Gateway pod ready...")
 	waitCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
 		"wait", "--for=condition=ready", "pod",
