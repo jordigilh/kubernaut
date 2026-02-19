@@ -158,7 +158,7 @@ type KubernetesContext struct {
 	// Namespace information
 	Namespace            string            `json:"namespace"`
 	NamespaceLabels      map[string]string `json:"namespaceLabels,omitempty"`
-	NamespaceAnnotations map[string]string `json:"namespaceAnnotations,omitempty"` // BR-SP-101: For GitOps detection
+	NamespaceAnnotations map[string]string `json:"namespaceAnnotations,omitempty"`
 
 	// Pod context
 	PodDetails *PodDetails `json:"podDetails,omitempty"`

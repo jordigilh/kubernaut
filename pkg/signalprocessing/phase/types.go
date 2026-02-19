@@ -43,7 +43,7 @@ const (
 	Pending = signalprocessingv1alpha1.PhasePending
 
 	// Enriching is when K8s context enrichment is in progress.
-	// Business Requirements: BR-SP-001 (K8s Context), BR-SP-100 (Owner Chain), BR-SP-101 (Detected Labels)
+	// Business Requirements: BR-SP-001 (K8s Context), BR-SP-100 (Owner Chain)
 	Enriching = signalprocessingv1alpha1.PhaseEnriching
 
 	// Classifying is when environment/priority classification is in progress.
