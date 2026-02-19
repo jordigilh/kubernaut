@@ -1051,16 +1051,16 @@ func deployDataStorageServiceInNamespaceWithNodePort(ctx context.Context, namesp
 	if os.Getenv("E2E_COVERAGE") == "true" {
 		_, _ = fmt.Fprintf(writer, "   ✅ DD-TEST-007: Coverage instrumentation enabled\n")
 		coverageEnvYAML = `
-            - name: GOCOVERDIR
-              value: /coverdata`
+        - name: GOCOVERDIR
+          value: /coverdata`
 		coverageVolumeMountYAML = `
-            - name: coverage
-              mountPath: /coverdata`
-		coverageVolumeYAML = `
         - name: coverage
-          hostPath:
-            path: /coverdata
-            type: DirectoryOrCreate`
+          mountPath: /coverdata`
+		coverageVolumeYAML = `
+      - name: coverage
+        hostPath:
+          path: /coverdata
+          type: DirectoryOrCreate`
 		coverageSecurityContextYAML = `
       securityContext:
         runAsUser: 0
