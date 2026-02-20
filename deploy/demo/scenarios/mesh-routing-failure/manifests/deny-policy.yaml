@@ -1,0 +1,35 @@
+apiVersion: policy.linkerd.io/v1beta3
+kind: Server
+metadata:
+  name: api-server-http
+  namespace: demo-mesh-failure
+spec:
+  podSelector:
+    matchLabels:
+      app: api-server
+  port: http
+  proxyProtocol: HTTP/1
+---
+apiVersion: policy.linkerd.io/v1alpha1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-all-traffic
+  namespace: demo-mesh-failure
+spec:
+  targetRef:
+    group: policy.linkerd.io
+    kind: Server
+    name: api-server-http
+  requiredAuthenticationRefs:
+    - name: require-mesh-identity
+      kind: MeshTLSAuthentication
+      group: policy.linkerd.io
+---
+apiVersion: policy.linkerd.io/v1alpha1
+kind: MeshTLSAuthentication
+metadata:
+  name: require-mesh-identity
+  namespace: demo-mesh-failure
+spec:
+  identities:
+    - "nonexistent-service.nonexistent-namespace.serviceaccount.identity.linkerd.cluster.local"

@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-app
+  namespace: demo-cert-failure
+  labels:
+    app: demo-app
+    kubernaut.ai/managed: "true"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: demo-app
+  template:
+    metadata:
+      labels:
+        app: demo-app
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.27-alpine
+        ports:
+        - containerPort: 443
+        volumeMounts:
+        - name: tls
+          mountPath: /etc/nginx/ssl
+          readOnly: true
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "10m"
+          limits:
+            memory: "64Mi"
+            cpu: "50m"
+      volumes:
+      - name: tls
+        secret:
+          secretName: demo-app-tls
+          optional: true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo-app
+  namespace: demo-cert-failure
+  labels:
+    app: demo-app
+spec:
+  selector:
+    app: demo-app
+  ports:
+  - port: 443
+    targetPort: 443
+  type: ClusterIP

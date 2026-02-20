@@ -1,0 +1,44 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: kubernaut-mesh-failure-rules
+  namespace: demo-mesh-failure
+  labels:
+    release: prometheus
+spec:
+  groups:
+  - name: kubernaut-mesh-failure
+    rules:
+    - alert: KubernautHighErrorRate
+      expr: |
+        (
+          sum(rate(response_total{namespace="demo-mesh-failure", classification="failure", direction="inbound"}[5m]))
+          /
+          sum(rate(response_total{namespace="demo-mesh-failure", direction="inbound"}[5m]))
+        ) > 0.5
+      for: 2m
+      labels:
+        severity: critical
+      annotations:
+        summary: >
+          High error rate detected in mesh-proxied namespace demo-mesh-failure.
+          More than 50% of inbound requests are failing.
+        description: >
+          Linkerd proxy metrics show a high failure rate for inbound traffic
+          in namespace demo-mesh-failure. This is typically caused by a
+          restrictive AuthorizationPolicy blocking legitimate traffic.
+    - alert: KubernautMeshUnauthorized
+      expr: |
+        sum(rate(response_total{namespace="demo-mesh-failure", status_code="403", direction="inbound"}[5m])) > 0
+      for: 2m
+      labels:
+        severity: critical
+      annotations:
+        summary: >
+          Linkerd proxy is returning 403 Forbidden for inbound traffic in
+          namespace demo-mesh-failure, indicating an AuthorizationPolicy is
+          blocking requests.
+        description: >
+          A Linkerd AuthorizationPolicy appears to be denying traffic to
+          workloads in namespace demo-mesh-failure. This causes health check
+          failures and service unavailability.

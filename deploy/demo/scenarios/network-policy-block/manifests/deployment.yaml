@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-frontend
+  namespace: demo-netpol
+  labels:
+    app: web-frontend
+    kubernaut.ai/managed: "true"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: web-frontend
+  template:
+    metadata:
+      labels:
+        app: web-frontend
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.27-alpine
+        ports:
+        - containerPort: 8080
+        volumeMounts:
+        - name: config
+          mountPath: /etc/nginx/nginx.conf
+          subPath: nginx.conf
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "10m"
+          limits:
+            memory: "64Mi"
+            cpu: "50m"
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 2
+          periodSeconds: 5
+      volumes:
+      - name: config
+        configMap:
+          name: web-frontend-config
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: web-frontend-config
+  namespace: demo-netpol
+data:
+  nginx.conf: |
+    worker_processes auto;
+    error_log /var/log/nginx/error.log warn;
+    pid /tmp/nginx.pid;
+    events { worker_connections 1024; }
+    http {
+        server {
+            listen 8080;
+            server_name _;
+            location / { return 200 'ok\n'; add_header Content-Type text/plain; }
+            location /healthz { return 200 'ok\n'; add_header Content-Type text/plain; }
+        }
+    }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-frontend
+  namespace: demo-netpol
+  labels:
+    app: web-frontend
+spec:
+  selector:
+    app: web-frontend
+  ports:
+  - port: 8080
+    targetPort: 8080
+  type: ClusterIP

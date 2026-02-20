@@ -1,0 +1,36 @@
+# Fix NetworkPolicy Workflow Schema - Job Backend (BR-WORKFLOW-004)
+# Scenario: #138 -- Deny-all NetworkPolicy blocks traffic -> remove offending policy
+metadata:
+  workflowId: fix-network-policy-v1
+  version: "1.0.0"
+  description:
+    what: "Removes a deny-all NetworkPolicy that is blocking legitimate ingress traffic and causing health check failures"
+    whenToUse: "When a NetworkPolicy is blocking all ingress traffic to a workload, causing liveness/readiness probe failures"
+    whenNotToUse: "When the NetworkPolicy is intentionally restrictive for security purposes and the outage has a different root cause"
+    preconditions: "A deny-all NetworkPolicy exists in the namespace, and the workload's health checks are failing due to blocked traffic"
+
+actionType: FixNetworkPolicy
+
+labels:
+  signalType: DeploymentUnavailable
+  severity: [critical, high]
+  environment: [production, staging]
+  component: "*"
+  priority: "*"
+
+detectedLabels:
+  networkIsolated: "true"
+
+execution:
+  engine: job
+  bundle: quay.io/kubernaut-cicd/test-workflows/fix-network-policy-job:v1.0.0
+
+parameters:
+  - name: TARGET_NAMESPACE
+    type: string
+    required: true
+    description: "Namespace of the affected workload"
+  - name: TARGET_POLICY
+    type: string
+    required: false
+    description: "Name of the offending NetworkPolicy (auto-detected if not provided)"
