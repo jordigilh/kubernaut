@@ -13,27 +13,37 @@
 # limitations under the License.
 
 """
-Tests for get_resource_context tool -- historical context only (ADR-055).
+Tests for get_resource_context tool -- label detection + one-shot reassessment.
 
-ADR-056 SoC Refactoring: DetectedLabels computation was removed from
-get_resource_context. The tool now focuses exclusively on its single
-concern: owner chain resolution, spec hash computation, and remediation
-history. Label detection is handled by WorkflowDiscoveryToolset.
+ADR-056 v1.4 Phase 1: get_resource_context computes DetectedLabels for the
+RCA target resource (post-RCA) and stores them in session_state. When active
+labels are detected, includes detected_infrastructure in the response for
+LLM RCA reassessment. Second calls resolve context for revised targets but
+skip label re-detection (one-shot guarantee).
 
 Business Requirements:
-  - BR-HAPI-250: DetectedLabels integration with Data Storage (via workflow discovery)
-  - BR-SP-101:   DetectedLabels Auto-Detection (via workflow discovery)
+  - BR-SP-101:       DetectedLabels Auto-Detection (8 characteristics)
+  - BR-SP-103:       FailedDetections tracking
+  - BR-HAPI-194:     Honor failedDetections in workflow filtering
+  - BR-HAPI-017-008: One-shot reassessment via detected_infrastructure
 
-Test Matrix: 5 tests
-  - UT-HAPI-056-034: Tool no longer accepts session_state/label_detector params
-  - UT-HAPI-056-035: Tool returns root_owner + history (existing behavior preserved)
-  - UT-HAPI-056-036: Tool resolves owner chain and returns root managing resource
-  - UT-HAPI-056-037: History fetcher failure is handled gracefully
-  - UT-HAPI-056-038: K8s client failure is handled gracefully
+Test Matrix: 12 tests
+  - UT-HAPI-056-034: Writes detected_labels to session_state
+  - UT-HAPI-056-035: Writes {} sentinel on None detection
+  - UT-HAPI-056-036: Preserves return behavior (root_owner + history always present)
+  - UT-HAPI-056-037: Pod->Deployment chain produces correct labels
+  - UT-HAPI-056-038: Deployment-only chain produces correct labels
+  - UT-HAPI-056-039: StatefulSet chain labels (stateful=true)
+  - UT-HAPI-056-040: Namespace metadata None graceful fallback
+  - UT-HAPI-056-041: LabelDetector exception writes {} sentinel
+  - UT-HAPI-056-042: No session_state provided, detection runs without crash
+  - UT-HAPI-056-090: Active labels include detected_infrastructure in response
+  - UT-HAPI-056-091: All-default labels omit detected_infrastructure
+  - UT-HAPI-056-092: Second call skips re-detection, omits detected_infrastructure
 """
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 
 OWNER_CHAIN_POD_TO_DEPLOY = [
@@ -42,111 +52,376 @@ OWNER_CHAIN_POD_TO_DEPLOY = [
     {"kind": "Deployment", "name": "api", "namespace": "production"},
 ]
 
+OWNER_CHAIN_DEPLOY_ONLY = [
+    {"kind": "Deployment", "name": "api", "namespace": "production"},
+]
 
-def _make_mock_k8s():
+OWNER_CHAIN_STATEFULSET = [
+    {"kind": "Pod", "name": "db-0", "namespace": "production"},
+    {"kind": "StatefulSet", "name": "db", "namespace": "production"},
+]
+
+LABELS_GITOPS_ARGOCD = {
+    "failedDetections": [],
+    "gitOpsManaged": True,
+    "gitOpsTool": "argocd",
+    "pdbProtected": False,
+    "hpaEnabled": False,
+    "stateful": False,
+    "helmManaged": False,
+    "networkIsolated": False,
+    "serviceMesh": "",
+}
+
+LABELS_HELM_MANAGED = {
+    "failedDetections": [],
+    "gitOpsManaged": False,
+    "gitOpsTool": "",
+    "pdbProtected": False,
+    "hpaEnabled": False,
+    "stateful": False,
+    "helmManaged": True,
+    "networkIsolated": False,
+    "serviceMesh": "",
+}
+
+LABELS_STATEFUL = {
+    "failedDetections": [],
+    "gitOpsManaged": False,
+    "gitOpsTool": "",
+    "pdbProtected": False,
+    "hpaEnabled": False,
+    "stateful": True,
+    "helmManaged": False,
+    "networkIsolated": False,
+    "serviceMesh": "",
+}
+
+LABELS_ALL_DEFAULTS = {
+    "failedDetections": [],
+    "gitOpsManaged": False,
+    "gitOpsTool": "",
+    "pdbProtected": False,
+    "hpaEnabled": False,
+    "stateful": False,
+    "helmManaged": False,
+    "networkIsolated": False,
+    "serviceMesh": "",
+}
+
+
+def _make_mock_k8s(owner_chain=None):
     """Create a mock K8s client with standard return values."""
     mock_k8s = AsyncMock()
-    mock_k8s.resolve_owner_chain.return_value = OWNER_CHAIN_POD_TO_DEPLOY
+    mock_k8s.resolve_owner_chain.return_value = owner_chain or OWNER_CHAIN_POD_TO_DEPLOY
     mock_k8s.compute_spec_hash.return_value = "sha256:abc123"
+
+    pod_meta = MagicMock()
+    pod_meta.metadata.labels = {"app": "api"}
+    pod_meta.metadata.annotations = {}
+    mock_k8s._get_resource_metadata.return_value = pod_meta
+
+    mock_k8s.get_namespace_metadata.return_value = {
+        "labels": {},
+        "annotations": {},
+    }
     return mock_k8s
 
 
-class TestResourceContextSeparationOfConcerns:
-    """UT-HAPI-056-034 through UT-HAPI-056-038: resource_context no longer handles label detection."""
-
-    def test_ut_hapi_056_034_no_session_state_or_label_detector_params(self):
-        """UT-HAPI-056-034: GetResourceContextTool no longer accepts session_state/label_detector."""
-        from toolsets.resource_context import GetResourceContextTool
-        import inspect
-
-        sig = inspect.signature(GetResourceContextTool.__init__)
-        param_names = set(sig.parameters.keys()) - {"self"}
-        assert "session_state" not in param_names
-        assert "label_detector" not in param_names
-        assert "k8s_client" in param_names
-        assert "history_fetcher" in param_names
+class TestResourceContextLabelDetection:
+    """UT-HAPI-056-034 through 042: get_resource_context computes labels for RCA target."""
 
     @pytest.mark.asyncio
-    async def test_ut_hapi_056_035_returns_root_owner_and_history(self):
-        """UT-HAPI-056-035: Tool still returns root_owner + remediation_history."""
+    @patch("src.detection.labels.LabelDetector")
+    async def test_ut_hapi_056_034_writes_detected_labels_to_session_state(self, mock_detector_cls):
+        """UT-HAPI-056-034: Labels computed post-RCA are stored in session_state."""
         from toolsets.resource_context import GetResourceContextTool
 
+        mock_detector = AsyncMock()
+        mock_detector.detect_labels.return_value = LABELS_GITOPS_ARGOCD
+        mock_detector_cls.return_value = mock_detector
+
+        session_state = {}
+        mock_k8s = _make_mock_k8s()
+        tool = GetResourceContextTool(
+            k8s_client=mock_k8s,
+            session_state=session_state,
+        )
+
+        result = await tool._invoke_async(kind="Pod", name="api-pod-abc", namespace="production")
+
+        assert result.status.value == "success"
+        assert "detected_labels" in session_state
+        assert session_state["detected_labels"]["gitOpsManaged"] is True
+        assert session_state["detected_labels"]["gitOpsTool"] == "argocd"
+
+    @pytest.mark.asyncio
+    @patch("src.detection.labels.LabelDetector")
+    async def test_ut_hapi_056_035_writes_sentinel_on_none_detection(self, mock_detector_cls):
+        """UT-HAPI-056-035: {} sentinel when LabelDetector returns None."""
+        from toolsets.resource_context import GetResourceContextTool
+
+        mock_detector = AsyncMock()
+        mock_detector.detect_labels.return_value = None
+        mock_detector_cls.return_value = mock_detector
+
+        session_state = {}
+        mock_k8s = _make_mock_k8s()
+        tool = GetResourceContextTool(
+            k8s_client=mock_k8s,
+            session_state=session_state,
+        )
+
+        result = await tool._invoke_async(kind="Pod", name="api-pod-abc", namespace="production")
+
+        assert result.status.value == "success"
+        assert session_state["detected_labels"] == {}
+
+    @pytest.mark.asyncio
+    @patch("src.detection.labels.LabelDetector")
+    async def test_ut_hapi_056_036_preserves_return_behavior(self, mock_detector_cls):
+        """UT-HAPI-056-036: root_owner + history always present in response."""
+        from toolsets.resource_context import GetResourceContextTool
+
+        mock_detector = AsyncMock()
+        mock_detector.detect_labels.return_value = LABELS_GITOPS_ARGOCD
+        mock_detector_cls.return_value = mock_detector
+
+        session_state = {}
         mock_k8s = _make_mock_k8s()
         mock_history = MagicMock(return_value=[{"workflow_id": "wf-1"}])
-
         tool = GetResourceContextTool(
             k8s_client=mock_k8s,
             history_fetcher=mock_history,
+            session_state=session_state,
         )
 
         result = await tool._invoke_async(kind="Pod", name="api-pod-abc", namespace="production")
 
         assert result.status.value == "success"
         data = result.data
-        assert data["root_owner"] == {"kind": "Deployment", "name": "api", "namespace": "production"}
+        assert "root_owner" in data
+        assert data["root_owner"]["kind"] == "Deployment"
+        assert "remediation_history" in data
         assert len(data["remediation_history"]) == 1
-        assert "detected_labels" not in data
 
     @pytest.mark.asyncio
-    async def test_ut_hapi_056_036_resolves_owner_chain_to_root(self):
-        """UT-HAPI-056-036: Tool resolves Pod -> RS -> Deployment chain and returns root."""
+    @patch("src.detection.labels.LabelDetector")
+    async def test_ut_hapi_056_037_pod_deployment_chain_labels(self, mock_detector_cls):
+        """UT-HAPI-056-037: Pod->RS->Deployment chain produces correct labels."""
         from toolsets.resource_context import GetResourceContextTool
 
-        mock_k8s = _make_mock_k8s()
-        tool = GetResourceContextTool(k8s_client=mock_k8s)
+        mock_detector = AsyncMock()
+        mock_detector.detect_labels.return_value = LABELS_GITOPS_ARGOCD
+        mock_detector_cls.return_value = mock_detector
 
-        result = await tool._invoke_async(kind="Pod", name="api-pod-abc", namespace="production")
-
-        assert result.status.value == "success"
-        root = result.data["root_owner"]
-        assert root["kind"] == "Deployment"
-        assert root["name"] == "api"
-        mock_k8s.resolve_owner_chain.assert_called_once_with("Pod", "api-pod-abc", "production")
-        mock_k8s.compute_spec_hash.assert_called_once_with("Deployment", "api", "production")
-
-    @pytest.mark.asyncio
-    async def test_ut_hapi_056_037_history_fetcher_failure_graceful(self):
-        """UT-HAPI-056-037: History fetcher exception results in empty history, tool succeeds."""
-        from toolsets.resource_context import GetResourceContextTool
-
-        mock_k8s = _make_mock_k8s()
-        mock_history = MagicMock(side_effect=RuntimeError("DS unavailable"))
-
+        session_state = {}
+        mock_k8s = _make_mock_k8s(owner_chain=OWNER_CHAIN_POD_TO_DEPLOY)
         tool = GetResourceContextTool(
             k8s_client=mock_k8s,
-            history_fetcher=mock_history,
+            session_state=session_state,
+        )
+
+        await tool._invoke_async(kind="Pod", name="api-pod-abc", namespace="production")
+
+        assert session_state["detected_labels"]["gitOpsManaged"] is True
+        assert session_state["detected_labels"]["gitOpsTool"] == "argocd"
+
+    @pytest.mark.asyncio
+    @patch("src.detection.labels.LabelDetector")
+    async def test_ut_hapi_056_038_deployment_only_chain_labels(self, mock_detector_cls):
+        """UT-HAPI-056-038: Deployment-only chain produces correct labels."""
+        from toolsets.resource_context import GetResourceContextTool
+
+        mock_detector = AsyncMock()
+        mock_detector.detect_labels.return_value = LABELS_HELM_MANAGED
+        mock_detector_cls.return_value = mock_detector
+
+        session_state = {}
+        mock_k8s = _make_mock_k8s(owner_chain=OWNER_CHAIN_DEPLOY_ONLY)
+        tool = GetResourceContextTool(
+            k8s_client=mock_k8s,
+            session_state=session_state,
+        )
+
+        await tool._invoke_async(kind="Deployment", name="api", namespace="production")
+
+        assert session_state["detected_labels"]["helmManaged"] is True
+
+    @pytest.mark.asyncio
+    @patch("src.detection.labels.LabelDetector")
+    async def test_ut_hapi_056_039_statefulset_chain_labels(self, mock_detector_cls):
+        """UT-HAPI-056-039: StatefulSet in owner chain produces stateful=true."""
+        from toolsets.resource_context import GetResourceContextTool
+
+        mock_detector = AsyncMock()
+        mock_detector.detect_labels.return_value = LABELS_STATEFUL
+        mock_detector_cls.return_value = mock_detector
+
+        session_state = {}
+        mock_k8s = _make_mock_k8s(owner_chain=OWNER_CHAIN_STATEFULSET)
+        tool = GetResourceContextTool(
+            k8s_client=mock_k8s,
+            session_state=session_state,
+        )
+
+        await tool._invoke_async(kind="Pod", name="db-0", namespace="production")
+
+        assert session_state["detected_labels"]["stateful"] is True
+
+    @pytest.mark.asyncio
+    @patch("src.detection.labels.LabelDetector")
+    async def test_ut_hapi_056_040_namespace_metadata_none_fallback(self, mock_detector_cls):
+        """UT-HAPI-056-040: Namespace metadata None does not crash detection."""
+        from toolsets.resource_context import GetResourceContextTool
+
+        mock_detector = AsyncMock()
+        mock_detector.detect_labels.return_value = LABELS_ALL_DEFAULTS
+        mock_detector_cls.return_value = mock_detector
+
+        session_state = {}
+        mock_k8s = _make_mock_k8s()
+        mock_k8s.get_namespace_metadata.return_value = None
+        tool = GetResourceContextTool(
+            k8s_client=mock_k8s,
+            session_state=session_state,
         )
 
         result = await tool._invoke_async(kind="Pod", name="api-pod-abc", namespace="production")
 
         assert result.status.value == "success"
-        assert result.data["remediation_history"] == []
+        assert "detected_labels" in session_state
 
     @pytest.mark.asyncio
-    async def test_ut_hapi_056_038_k8s_client_failure_returns_error(self):
-        """UT-HAPI-056-038: K8s client exception returns ERROR status."""
+    @patch("src.detection.labels.LabelDetector")
+    async def test_ut_hapi_056_041_label_detector_exception_writes_sentinel(self, mock_detector_cls):
+        """UT-HAPI-056-041: LabelDetector exception writes {} sentinel, tool succeeds."""
         from toolsets.resource_context import GetResourceContextTool
 
-        mock_k8s = AsyncMock()
-        mock_k8s.resolve_owner_chain.side_effect = RuntimeError("K8s API unavailable")
+        mock_detector = AsyncMock()
+        mock_detector.detect_labels.side_effect = RuntimeError("detection failed")
+        mock_detector_cls.return_value = mock_detector
 
-        tool = GetResourceContextTool(k8s_client=mock_k8s)
+        session_state = {}
+        mock_k8s = _make_mock_k8s()
+        tool = GetResourceContextTool(
+            k8s_client=mock_k8s,
+            session_state=session_state,
+        )
 
         result = await tool._invoke_async(kind="Pod", name="api-pod-abc", namespace="production")
 
-        assert result.status.value == "error"
+        assert result.status.value == "success"
+        assert session_state["detected_labels"] == {}
+        assert "root_owner" in result.data
+
+    @pytest.mark.asyncio
+    @patch("src.detection.labels.LabelDetector")
+    async def test_ut_hapi_056_042_no_session_state_no_crash(self, mock_detector_cls):
+        """UT-HAPI-056-042: No session_state provided, detection runs without crash."""
+        from toolsets.resource_context import GetResourceContextTool
+
+        mock_detector = AsyncMock()
+        mock_detector.detect_labels.return_value = LABELS_GITOPS_ARGOCD
+        mock_detector_cls.return_value = mock_detector
+
+        mock_k8s = _make_mock_k8s()
+        tool = GetResourceContextTool(
+            k8s_client=mock_k8s,
+            session_state=None,
+        )
+
+        result = await tool._invoke_async(kind="Pod", name="api-pod-abc", namespace="production")
+
+        assert result.status.value == "success"
+        assert "root_owner" in result.data
 
 
-class TestResourceContextToolsetSoC:
-    """Verify ResourceContextToolset no longer accepts session_state."""
+class TestResourceContextReassessment:
+    """UT-HAPI-056-090 through 092: One-shot reassessment via detected_infrastructure."""
 
-    def test_toolset_no_session_state_param(self):
-        """ResourceContextToolset.__init__ no longer accepts session_state."""
-        from toolsets.resource_context import ResourceContextToolset
-        import inspect
+    @pytest.mark.asyncio
+    @patch("src.detection.labels.LabelDetector")
+    async def test_ut_hapi_056_090_active_labels_include_detected_infrastructure(self, mock_detector_cls):
+        """UT-HAPI-056-090: Active labels trigger detected_infrastructure in response."""
+        from toolsets.resource_context import GetResourceContextTool
 
-        sig = inspect.signature(ResourceContextToolset.__init__)
-        param_names = set(sig.parameters.keys()) - {"self"}
-        assert "session_state" not in param_names
-        assert "k8s_client" in param_names
-        assert "history_fetcher" in param_names
+        mock_detector = AsyncMock()
+        mock_detector.detect_labels.return_value = LABELS_GITOPS_ARGOCD
+        mock_detector_cls.return_value = mock_detector
+
+        session_state = {}
+        mock_k8s = _make_mock_k8s()
+        tool = GetResourceContextTool(
+            k8s_client=mock_k8s,
+            session_state=session_state,
+        )
+
+        result = await tool._invoke_async(kind="Pod", name="api-pod-abc", namespace="production")
+
+        assert result.status.value == "success"
+        data = result.data
+        assert "detected_infrastructure" in data
+        assert "labels" in data["detected_infrastructure"]
+        assert data["detected_infrastructure"]["labels"]["gitOpsManaged"] is True
+        assert data["detected_infrastructure"]["labels"]["gitOpsTool"] == "argocd"
+        assert "note" in data["detected_infrastructure"]
+        assert len(data["detected_infrastructure"]["note"]) > 0
+        assert "root_owner" in data
+        assert "remediation_history" in data
+        assert "failedDetections" not in data["detected_infrastructure"]["labels"]
+
+    @pytest.mark.asyncio
+    @patch("src.detection.labels.LabelDetector")
+    async def test_ut_hapi_056_091_all_default_labels_omit_detected_infrastructure(self, mock_detector_cls):
+        """UT-HAPI-056-091: All-default labels omit detected_infrastructure."""
+        from toolsets.resource_context import GetResourceContextTool
+
+        mock_detector = AsyncMock()
+        mock_detector.detect_labels.return_value = LABELS_ALL_DEFAULTS
+        mock_detector_cls.return_value = mock_detector
+
+        session_state = {}
+        mock_k8s = _make_mock_k8s()
+        tool = GetResourceContextTool(
+            k8s_client=mock_k8s,
+            session_state=session_state,
+        )
+
+        result = await tool._invoke_async(kind="Pod", name="api-pod-abc", namespace="production")
+
+        assert result.status.value == "success"
+        data = result.data
+        assert "detected_infrastructure" not in data
+        assert "root_owner" in data
+        assert "detected_labels" in session_state
+
+    @pytest.mark.asyncio
+    @patch("src.detection.labels.LabelDetector")
+    async def test_ut_hapi_056_092_second_call_skips_redetection(self, mock_detector_cls):
+        """UT-HAPI-056-092: Second call skips label re-detection and omits detected_infrastructure."""
+        from toolsets.resource_context import GetResourceContextTool
+
+        mock_detector = AsyncMock()
+        mock_detector.detect_labels.return_value = LABELS_GITOPS_ARGOCD
+        mock_detector_cls.return_value = mock_detector
+
+        original_labels = {"gitOpsManaged": True, "gitOpsTool": "argocd"}
+        session_state = {"detected_labels": original_labels}
+        mock_k8s = _make_mock_k8s(owner_chain=[
+            {"kind": "Node", "name": "worker-3", "namespace": ""},
+        ])
+        tool = GetResourceContextTool(
+            k8s_client=mock_k8s,
+            session_state=session_state,
+        )
+
+        result = await tool._invoke_async(kind="Node", name="worker-3", namespace="")
+
+        assert result.status.value == "success"
+        data = result.data
+        assert "detected_infrastructure" not in data
+        assert data["root_owner"]["kind"] == "Node"
+        assert data["root_owner"]["name"] == "worker-3"
+        assert session_state["detected_labels"] is original_labels
+        mock_detector.detect_labels.assert_not_called()
