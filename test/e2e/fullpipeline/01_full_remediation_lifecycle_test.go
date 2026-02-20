@@ -55,7 +55,7 @@ import (
 // This test uses the memory-eater pod to generate a real OOMKill event.
 // The kubernetes-event-exporter watches for this event and POSTs to Gateway.
 // From there, the full controller pipeline processes the signal.
-var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
+var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 
 	var (
 		testNamespace   string // K8s event test namespace (fp-e2e-*)
