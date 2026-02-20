@@ -3,7 +3,7 @@
 set -euo pipefail
 
 echo "==> Deleting CA Secret that backs the ClusterIssuer..."
-kubectl delete secret demo-ca-key-pair -n cert-manager
+kubectl delete secret demo-ca-key-pair -n cert-manager --ignore-not-found
 
 echo "==> Triggering certificate re-issuance to force failure detection..."
 kubectl delete secret demo-app-tls -n demo-cert-failure --ignore-not-found

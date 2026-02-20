@@ -84,3 +84,57 @@ spec:
   - port: 8080
     targetPort: 8080
   type: ClusterIP
+---
+# Traffic generator: continuously probes the web-frontend Service from within
+# the cluster. When the deny-all NetworkPolicy is applied, this pod's requests
+# fail (inter-pod traffic blocked by CNI), providing a reliable signal regardless
+# of whether kubelet probes are also blocked.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: traffic-gen
+  namespace: demo-netpol
+  labels:
+    app: traffic-gen
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: traffic-gen
+  template:
+    metadata:
+      labels:
+        app: traffic-gen
+    spec:
+      containers:
+      - name: curl
+        image: curlimages/curl:8.12.1
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          while true; do
+            if curl -sf -o /dev/null -m 2 http://web-frontend.demo-netpol:8080/healthz; then
+              echo "probe=success"
+            else
+              echo "probe=failure"
+            fi
+            sleep 5
+          done
+        resources:
+          requests:
+            memory: "16Mi"
+            cpu: "5m"
+          limits:
+            memory: "32Mi"
+            cpu: "20m"
+        livenessProbe:
+          exec:
+            command: ["curl", "-sf", "-o", "/dev/null", "-m", "3", "http://web-frontend.demo-netpol:8080/healthz"]
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command: ["curl", "-sf", "-o", "/dev/null", "-m", "3", "http://web-frontend.demo-netpol:8080/healthz"]
+          initialDelaySeconds: 5
+          periodSeconds: 5
