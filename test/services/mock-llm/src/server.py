@@ -709,17 +709,23 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
             # Backward compatibility: return text response
             return self._text_response(scenario, request_data)
 
-        # DD-HAPI-017: Three-step discovery protocol
-        # Detect if the tools list includes the three-step discovery tools
+        # DD-HAPI-017 + ADR-056 v1.4: Discovery protocol with optional resource context
+        # When get_resource_context is available, run it first (4-step flow);
+        # otherwise fall back to the original 3-step flow.
         if self._has_three_step_tools(tools):
+            has_rc = self._has_resource_context_tool(tools)
+            total_steps = 4 if has_rc else 3
             tool_result_count = self._count_tool_results(messages)
-            logger.info(f"🔍 Three-step discovery: {tool_result_count} tool results so far")
-            if tool_result_count >= 3:
-                # All 3 tool calls completed → return final analysis
+            logger.info(
+                f"🔍 Discovery protocol ({total_steps}-step): "
+                f"{tool_result_count} tool results so far"
+            )
+            if tool_result_count >= total_steps:
                 return self._final_analysis_response(scenario, request_data)
             else:
-                # Return the next tool call in the sequence
-                return self._three_step_tool_call_response(scenario, request_data, tool_result_count)
+                return self._discovery_tool_call_response(
+                    scenario, request_data, tool_result_count, has_rc
+                )
 
         # Legacy two-phase flow (search_workflow_catalog)
         if has_tool_result:
@@ -867,12 +873,21 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
         """
         Count the number of tool result messages in the conversation.
 
-        DD-HAPI-017: Used by the three-step discovery protocol to determine
-        which step we're on:
-          0 tool results → return list_available_actions (Step 1)
-          1 tool result  → return list_workflows (Step 2)
-          2 tool results → return get_workflow (Step 3)
-          3+ tool results → return final analysis
+        DD-HAPI-017 + ADR-056 v1.4: Used by the discovery protocol to
+        determine which step we're on.
+
+        4-step flow (with get_resource_context):
+          0 tool results → get_resource_context (ADR-056)
+          1 tool result  → list_available_actions
+          2 tool results → list_workflows
+          3 tool results → get_workflow
+          4+ tool results → final analysis
+
+        3-step flow (without get_resource_context):
+          0 tool results → list_available_actions
+          1 tool result  → list_workflows
+          2 tool results → get_workflow
+          3+ tool results → final analysis
         """
         count = 0
         for msg in messages:
@@ -894,43 +909,122 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
                 return True
         return False
 
-    def _three_step_tool_call_response(
-        self, scenario: MockScenario, request_data: Dict[str, Any], step: int
+    def _has_resource_context_tool(self, tools: List[Dict[str, Any]]) -> bool:
+        """
+        Check if the tools list includes get_resource_context.
+
+        ADR-056 v1.4: When HAPI registers the resource context toolset,
+        the tools list will include 'get_resource_context'. The mock must
+        call it before workflow discovery so that HAPI populates
+        session_state["detected_labels"].
+        """
+        for tool in tools:
+            func = tool.get("function", {})
+            if func.get("name") == "get_resource_context":
+                return True
+        return False
+
+    def _extract_resource_from_messages(
+        self, messages: List[Dict[str, Any]], scenario: "MockScenario"
+    ) -> tuple:
+        """
+        Extract resource identity (kind, name, namespace) from prompt messages.
+
+        ADR-056 v1.4: The mock needs the actual resource coordinates to pass
+        to get_resource_context. HAPI's prompt_builder formats the resource as:
+          "Resource: {namespace}/{kind}/{name}"
+        If not found, fall back to scenario defaults.
+
+        Returns:
+            (kind, name, namespace) tuple
+        """
+        import re
+        for msg in messages:
+            content = str(msg.get("content", ""))
+            # Match "Resource: namespace/Kind/name" from prompt_builder.py line 343
+            match = re.search(r"Resource:\s*(\S+)/(\S+)/(\S+)", content)
+            if match:
+                namespace, kind, name = match.group(1), match.group(2), match.group(3)
+                logger.info(
+                    f"📍 ADR-056: Extracted resource from prompt: "
+                    f"{kind}/{name} in {namespace}"
+                )
+                return (kind, name, namespace)
+        logger.info(
+            f"📍 ADR-056: Resource not found in prompt, using scenario defaults: "
+            f"{scenario.rca_resource_kind}/{scenario.rca_resource_name} "
+            f"in {scenario.rca_resource_namespace}"
+        )
+        return (
+            scenario.rca_resource_kind,
+            scenario.rca_resource_name,
+            scenario.rca_resource_namespace,
+        )
+
+    def _discovery_tool_call_response(
+        self,
+        scenario: MockScenario,
+        request_data: Dict[str, Any],
+        step: int,
+        has_resource_context: bool,
     ) -> Dict[str, Any]:
         """
-        Generate the next tool call in the three-step discovery sequence.
+        Generate the next tool call in the discovery sequence.
 
-        DD-HAPI-017: Three-Step Workflow Discovery Protocol
-          Step 0 (0 tool results): list_available_actions
-          Step 1 (1 tool result):  list_workflows  (with action_type from scenario)
-          Step 2 (2 tool results): get_workflow     (with workflow_id from scenario)
+        ADR-056 v1.4 + DD-HAPI-017: When has_resource_context is True, use a
+        4-step flow that calls get_resource_context first so HAPI populates
+        session_state["detected_labels"]:
+
+          Step 0: get_resource_context  (ADR-056 v1.4)
+          Step 1: list_available_actions
+          Step 2: list_workflows
+          Step 3: get_workflow
+
+        When has_resource_context is False, use the original 3-step flow:
+
+          Step 0: list_available_actions
+          Step 1: list_workflows
+          Step 2: get_workflow
 
         Args:
             scenario: The detected MockScenario
             request_data: Original request data
-            step: Current step index (0, 1, or 2)
+            step: Current step index (tool result count)
+            has_resource_context: Whether get_resource_context is available
         """
         call_id = f"call_{uuid.uuid4().hex[:12]}"
+        messages = request_data.get("messages", [])
 
-        if step == 0:
-            # Step 1: list_available_actions
+        # Normalize step to the 3-step offset when resource context is present
+        effective_step = step - 1 if has_resource_context else step
+
+        if has_resource_context and step == 0:
+            # ADR-056 v1.4: Call get_resource_context first
+            kind, name, namespace = self._extract_resource_from_messages(
+                messages, scenario
+            )
+            tool_name = "get_resource_context"
+            tool_args = {"kind": kind, "name": name, "namespace": namespace}
+            logger.info(
+                f"🔧 Discovery Step 0 (ADR-056): {tool_name}"
+                f"({kind}/{name} in {namespace})"
+            )
+
+        elif effective_step == 0:
             tool_name = "list_available_actions"
             tool_args = {"limit": 100}
-            logger.info(f"🔧 Three-step Step 1: {tool_name}")
+            logger.info(f"🔧 Discovery Step {step}: {tool_name}")
 
-        elif step == 1:
-            # Step 2: list_workflows — use action_type derived from scenario
-            # Map scenario signal types to action types
+        elif effective_step == 1:
             action_type = self._scenario_to_action_type(scenario)
             tool_name = "list_workflows"
             tool_args = {"action_type": action_type, "limit": 10}
-            logger.info(f"🔧 Three-step Step 2: {tool_name} (action_type={action_type})")
+            logger.info(f"🔧 Discovery Step {step}: {tool_name} (action_type={action_type})")
 
         else:
-            # Step 3: get_workflow — use workflow_id from scenario
             tool_name = "get_workflow"
             tool_args = {"workflow_id": scenario.workflow_id}
-            logger.info(f"🔧 Three-step Step 3: {tool_name} (workflow_id={scenario.workflow_id})")
+            logger.info(f"🔧 Discovery Step {step}: {tool_name} (workflow_id={scenario.workflow_id})")
 
         # Record for test validation
         tool_call_tracker.record(tool_name, tool_args, call_id)
