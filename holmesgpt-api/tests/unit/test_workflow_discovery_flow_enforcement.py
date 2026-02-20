@@ -13,26 +13,25 @@
 # limitations under the License.
 
 """
-Tests for on-demand label detection in workflow discovery tools.
+Tests for workflow discovery label consumption from session_state.
 
-ADR-056 SoC Refactoring: The cross-tool flow prerequisite (_check_flow_prerequisite)
-has been removed. Instead, _ensure_detected_labels computes and caches labels
-on-demand when any discovery tool is invoked. Labels are computed via LabelDetector
-using the K8s client + resource identity passed at toolset creation time.
+ADR-056 v1.4: Labels are computed by get_resource_context and stored in
+session_state["detected_labels"]. Workflow discovery tools read from
+session_state rather than computing labels themselves.
 
 Business Requirements:
   - BR-HAPI-250: DetectedLabels integration with Data Storage
   - BR-SP-101:   DetectedLabels Auto-Detection (post-RCA via HAPI)
 
 Test Matrix: 8 tests
-  - UT-HAPI-056-043: list_available_actions computes labels on-demand when missing
-  - UT-HAPI-056-044: list_available_actions uses cached labels when present
-  - UT-HAPI-056-045: list_available_actions proceeds with empty sentinel (no recomputation)
-  - UT-HAPI-056-046: list_workflows uses cached labels (no recomputation)
-  - UT-HAPI-056-047: get_workflow uses cached labels (no recomputation)
-  - UT-HAPI-056-048: Label detection failure writes empty sentinel, tool proceeds
-  - UT-HAPI-056-049: No k8s_client -- labels not computed, tool proceeds
-  - UT-HAPI-056-050: WorkflowDiscoveryToolset propagates k8s_client to all 3 tools
+  - UT-HAPI-056-043: list_available_actions reads labels from session_state
+  - UT-HAPI-056-044: list_available_actions uses cached labels (no K8s calls)
+  - UT-HAPI-056-045: list_available_actions proceeds with empty sentinel
+  - UT-HAPI-056-046: list_workflows reads cached labels from session_state
+  - UT-HAPI-056-047: get_workflow reads cached labels from session_state
+  - UT-HAPI-056-048: Discovery tool proceeds when session_state has no labels yet
+  - UT-HAPI-056-049: Discovery tool proceeds when session_state is None
+  - UT-HAPI-056-050: WorkflowDiscoveryToolset propagates session_state to all 3 tools
 """
 
 import json
@@ -41,12 +40,6 @@ from unittest.mock import Mock, AsyncMock, MagicMock, patch
 
 from holmes.core.tools import StructuredToolResultStatus
 
-
-OWNER_CHAIN_POD_TO_DEPLOY = [
-    {"kind": "Pod", "name": "api-pod-abc", "namespace": "production"},
-    {"kind": "ReplicaSet", "name": "api-rs-xyz", "namespace": "production"},
-    {"kind": "Deployment", "name": "api", "namespace": "production"},
-]
 
 DETECTED_LABELS_ARGOCD = {
     "failedDetections": [],
@@ -61,24 +54,12 @@ DETECTED_LABELS_ARGOCD = {
 }
 
 
-def _make_mock_k8s():
-    """Create a mock K8s client for label detection."""
-    mock_k8s = AsyncMock()
-    mock_k8s.resolve_owner_chain.return_value = OWNER_CHAIN_POD_TO_DEPLOY
-    mock_k8s.get_namespace_metadata = AsyncMock(
-        return_value={"labels": {}, "annotations": {}}
-    )
-    mock_k8s._get_resource_metadata = AsyncMock(return_value=None)
-    return mock_k8s
-
-
-class TestOnDemandLabelDetection:
-    """UT-HAPI-056-043 through UT-HAPI-056-045: On-demand label detection in list_available_actions."""
+class TestDiscoveryReadsSessionState:
+    """UT-HAPI-056-043 through UT-HAPI-056-045: Discovery tools read labels from session_state."""
 
     @patch("src.toolsets.workflow_discovery.requests.get")
-    @patch("src.detection.labels.LabelDetector")
-    def test_ut_hapi_056_043_computes_labels_on_demand(self, mock_detector_cls, mock_get):
-        """UT-HAPI-056-043: list_available_actions computes labels when session_state has no detected_labels."""
+    def test_ut_hapi_056_043_reads_labels_from_session_state(self, mock_get):
+        """UT-HAPI-056-043: list_available_actions reads labels populated by get_resource_context."""
         from src.toolsets.workflow_discovery import ListAvailableActionsTool
 
         mock_get.return_value = Mock(
@@ -89,12 +70,7 @@ class TestOnDemandLabelDetection:
             }),
         )
 
-        mock_detector = AsyncMock()
-        mock_detector.detect_labels.return_value = DETECTED_LABELS_ARGOCD
-        mock_detector_cls.return_value = mock_detector
-
-        mock_k8s = _make_mock_k8s()
-        session_state = {}
+        session_state = {"detected_labels": DETECTED_LABELS_ARGOCD}
 
         tool = ListAvailableActionsTool(
             severity="critical",
@@ -102,20 +78,16 @@ class TestOnDemandLabelDetection:
             environment="production",
             priority="P0",
             session_state=session_state,
-            k8s_client=mock_k8s,
-            resource_name="api-pod-abc",
-            resource_namespace="production",
         )
 
         result = tool.invoke(params={})
 
         assert result.status == StructuredToolResultStatus.SUCCESS
-        assert "detected_labels" in session_state
-        assert session_state["detected_labels"] == DETECTED_LABELS_ARGOCD
+        assert session_state["detected_labels"] is DETECTED_LABELS_ARGOCD
 
     @patch("src.toolsets.workflow_discovery.requests.get")
-    def test_ut_hapi_056_044_uses_cached_labels(self, mock_get):
-        """UT-HAPI-056-044: list_available_actions uses cached labels when present (no recomputation)."""
+    def test_ut_hapi_056_044_uses_cached_labels_no_k8s_calls(self, mock_get):
+        """UT-HAPI-056-044: list_available_actions uses cached labels without making K8s API calls."""
         from src.toolsets.workflow_discovery import ListAvailableActionsTool
 
         mock_get.return_value = Mock(
@@ -129,28 +101,22 @@ class TestOnDemandLabelDetection:
         cached_labels = {"gitOpsManaged": True, "gitOpsTool": "argocd"}
         session_state = {"detected_labels": cached_labels}
 
-        mock_k8s = _make_mock_k8s()
-
         tool = ListAvailableActionsTool(
             severity="critical",
             component="Pod",
             environment="production",
             priority="P0",
             session_state=session_state,
-            k8s_client=mock_k8s,
-            resource_name="api-pod-abc",
-            resource_namespace="production",
         )
 
         result = tool.invoke(params={})
 
         assert result.status == StructuredToolResultStatus.SUCCESS
         assert session_state["detected_labels"] is cached_labels
-        mock_k8s.resolve_owner_chain.assert_not_called()
 
     @patch("src.toolsets.workflow_discovery.requests.get")
     def test_ut_hapi_056_045_proceeds_with_empty_sentinel(self, mock_get):
-        """UT-HAPI-056-045: list_available_actions proceeds when detected_labels is {} (no recomputation)."""
+        """UT-HAPI-056-045: list_available_actions proceeds when detected_labels is {} sentinel."""
         from src.toolsets.workflow_discovery import ListAvailableActionsTool
 
         mock_get.return_value = Mock(
@@ -162,7 +128,6 @@ class TestOnDemandLabelDetection:
         )
 
         session_state = {"detected_labels": {}}
-        mock_k8s = _make_mock_k8s()
 
         tool = ListAvailableActionsTool(
             severity="critical",
@@ -170,15 +135,11 @@ class TestOnDemandLabelDetection:
             environment="production",
             priority="P0",
             session_state=session_state,
-            k8s_client=mock_k8s,
-            resource_name="api-pod-abc",
-            resource_namespace="production",
         )
 
         result = tool.invoke(params={})
 
         assert result.status == StructuredToolResultStatus.SUCCESS
-        mock_k8s.resolve_owner_chain.assert_not_called()
 
 
 class TestCachedLabelsInSubsequentTools:
@@ -240,49 +201,12 @@ class TestCachedLabelsInSubsequentTools:
         assert result.status == StructuredToolResultStatus.SUCCESS
 
 
-class TestLabelDetectionEdgeCases:
-    """UT-HAPI-056-048 through UT-HAPI-056-049: Error handling and missing k8s_client."""
+class TestDiscoveryGracefulDegradation:
+    """UT-HAPI-056-048 through UT-HAPI-056-049: Graceful degradation without labels."""
 
     @patch("src.toolsets.workflow_discovery.requests.get")
-    @patch("src.detection.labels.LabelDetector")
-    def test_ut_hapi_056_048_detection_failure_writes_sentinel(self, mock_detector_cls, mock_get):
-        """UT-HAPI-056-048: Label detection failure writes {} sentinel, tool proceeds normally."""
-        from src.toolsets.workflow_discovery import ListAvailableActionsTool
-
-        mock_get.return_value = Mock(
-            status_code=200,
-            json=Mock(return_value={
-                "actionTypes": [],
-                "pagination": {"totalCount": 0, "offset": 0, "limit": 10, "hasMore": False},
-            }),
-        )
-
-        mock_detector = AsyncMock()
-        mock_detector.detect_labels.side_effect = RuntimeError("K8s RBAC denied")
-        mock_detector_cls.return_value = mock_detector
-
-        mock_k8s = _make_mock_k8s()
-        session_state = {}
-
-        tool = ListAvailableActionsTool(
-            severity="critical",
-            component="Pod",
-            environment="production",
-            priority="P0",
-            session_state=session_state,
-            k8s_client=mock_k8s,
-            resource_name="api-pod-abc",
-            resource_namespace="production",
-        )
-
-        result = tool.invoke(params={})
-
-        assert result.status == StructuredToolResultStatus.SUCCESS
-        assert session_state["detected_labels"] == {}
-
-    @patch("src.toolsets.workflow_discovery.requests.get")
-    def test_ut_hapi_056_049_no_k8s_client_skips_detection(self, mock_get):
-        """UT-HAPI-056-049: No k8s_client -- labels not computed, tool proceeds."""
+    def test_ut_hapi_056_048_proceeds_without_labels_in_session(self, mock_get):
+        """UT-HAPI-056-048: Discovery proceeds when session_state has no detected_labels key yet."""
         from src.toolsets.workflow_discovery import ListAvailableActionsTool
 
         mock_get.return_value = Mock(
@@ -301,7 +225,6 @@ class TestLabelDetectionEdgeCases:
             environment="production",
             priority="P0",
             session_state=session_state,
-            k8s_client=None,
         )
 
         result = tool.invoke(params={})
@@ -309,16 +232,40 @@ class TestLabelDetectionEdgeCases:
         assert result.status == StructuredToolResultStatus.SUCCESS
         assert "detected_labels" not in session_state
 
+    @patch("src.toolsets.workflow_discovery.requests.get")
+    def test_ut_hapi_056_049_proceeds_with_none_session_state(self, mock_get):
+        """UT-HAPI-056-049: Discovery proceeds when session_state is None."""
+        from src.toolsets.workflow_discovery import ListAvailableActionsTool
+
+        mock_get.return_value = Mock(
+            status_code=200,
+            json=Mock(return_value={
+                "actionTypes": [],
+                "pagination": {"totalCount": 0, "offset": 0, "limit": 10, "hasMore": False},
+            }),
+        )
+
+        tool = ListAvailableActionsTool(
+            severity="critical",
+            component="pod",
+            environment="production",
+            priority="P0",
+            session_state=None,
+        )
+
+        result = tool.invoke(params={})
+
+        assert result.status == StructuredToolResultStatus.SUCCESS
+
 
 class TestToolsetPropagation:
-    """UT-HAPI-056-050: WorkflowDiscoveryToolset propagates k8s_client and resource identity."""
+    """UT-HAPI-056-050: WorkflowDiscoveryToolset propagates session_state."""
 
-    def test_ut_hapi_056_050_toolset_propagates_k8s_client_and_resource_identity(self):
-        """UT-HAPI-056-050: WorkflowDiscoveryToolset passes k8s_client + resource identity to all 3 tools."""
+    def test_ut_hapi_056_050_toolset_propagates_session_state_to_all_tools(self):
+        """UT-HAPI-056-050: WorkflowDiscoveryToolset passes session_state to all 3 tools."""
         from src.toolsets.workflow_discovery import WorkflowDiscoveryToolset
 
-        mock_k8s = _make_mock_k8s()
-        session_state = {}
+        session_state = {"detected_labels": DETECTED_LABELS_ARGOCD}
 
         toolset = WorkflowDiscoveryToolset(
             severity="critical",
@@ -326,13 +273,7 @@ class TestToolsetPropagation:
             environment="production",
             priority="P0",
             session_state=session_state,
-            k8s_client=mock_k8s,
-            resource_name="api-pod-abc",
-            resource_namespace="production",
         )
 
         for tool in toolset.tools:
             assert tool._session_state is session_state
-            assert tool._k8s_client is mock_k8s
-            assert tool._resource_name == "api-pod-abc"
-            assert tool._resource_namespace == "production"
