@@ -152,56 +152,7 @@ var _ = Describe("Config.Validate - Unit Tests", Label("config", "validation"), 
 		})
 	})
 
-	// ========================================
-	// TEST 5: Invalid Backoff Configuration
-	// ========================================
-	Context("DD-WE-004: Invalid Backoff Settings", func() {
-		It("should fail with clear error for zero base cooldown", func() {
-			cfg := config.DefaultConfig()
-			cfg.Backoff.BaseCooldown = 0 // Invalid!
-
-			err := cfg.Validate()
-
-			Expect(err).To(HaveOccurred(), "Zero base cooldown should be rejected")
-		})
-
-		It("should fail with clear error for negative max cooldown", func() {
-			cfg := config.DefaultConfig()
-			cfg.Backoff.MaxCooldown = -1 * time.Minute // Invalid!
-
-			err := cfg.Validate()
-
-			Expect(err).To(HaveOccurred(), "Negative max cooldown should be rejected")
-		})
-
-		It("should fail with clear error for invalid max exponent", func() {
-			cfg := config.DefaultConfig()
-			cfg.Backoff.MaxExponent = 0 // Invalid! (must be >= 1)
-
-			err := cfg.Validate()
-
-			Expect(err).To(HaveOccurred(), "Zero max exponent should be rejected")
-		})
-
-		It("should fail with clear error for excessive max exponent", func() {
-			cfg := config.DefaultConfig()
-			cfg.Backoff.MaxExponent = 20 // Invalid! (must be <= 10)
-
-			err := cfg.Validate()
-
-			Expect(err).To(HaveOccurred(), "Excessive max exponent should be rejected")
-		})
-
-		It("should fail when max cooldown is less than base cooldown", func() {
-			cfg := config.DefaultConfig()
-			cfg.Backoff.BaseCooldown = 10 * time.Minute
-			cfg.Backoff.MaxCooldown = 5 * time.Minute // Invalid! (less than base)
-
-			err := cfg.Validate()
-
-			Expect(err).To(HaveOccurred(), "MaxCooldown < BaseCooldown should be rejected")
-		})
-	})
+	// Issue #99: TEST 5 (DD-WE-004 Invalid Backoff Settings) removed per DD-RO-002 Phase 3
 
 	// ========================================
 	// TEST 6: Invalid DataStorage Configuration
@@ -280,13 +231,8 @@ var _ = Describe("Config.Validate - Unit Tests", Label("config", "validation"), 
 					CooldownPeriod: -1 * time.Minute, // Invalid!
 					ServiceAccount: "",               // Invalid!
 				},
-				Backoff: config.BackoffConfig{
-					BaseCooldown:           0,  // Invalid!
-					MaxCooldown:            0,  // Invalid!
-					MaxExponent:            0,  // Invalid!
-					MaxConsecutiveFailures: -1, // Invalid!
-				},
-				DataStorage: sharedconfig.DataStorageConfig{
+			// Issue #99: BackoffConfig removed (DD-RO-002 Phase 3)
+			DataStorage: sharedconfig.DataStorageConfig{
 					URL:     "", // Invalid!
 					Timeout: 0,  // Invalid!
 				},

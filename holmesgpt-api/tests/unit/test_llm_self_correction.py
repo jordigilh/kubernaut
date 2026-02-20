@@ -167,7 +167,6 @@ class TestParseAndValidateInvestigationResult:
         result, validation_result = _parse_and_validate_investigation_result(
             investigation,
             request_data,
-            owner_chain=None,
             data_storage_client=None
         )
 
@@ -201,7 +200,6 @@ Based on my analysis:
         result, _ = _parse_and_validate_investigation_result(
             investigation,
             request_data,
-            owner_chain=None,
             data_storage_client=None
         )
 
@@ -230,7 +228,6 @@ Based on my analysis:
         result, _ = _parse_and_validate_investigation_result(
             investigation,
             request_data,
-            owner_chain=None,
             data_storage_client=None
         )
 
@@ -259,7 +256,6 @@ Based on my analysis:
         result, _ = _parse_and_validate_investigation_result(
             investigation,
             request_data,
-            owner_chain=None,
             data_storage_client=None  # No validation
         )
 
@@ -296,7 +292,6 @@ Based on my analysis:
         result, _ = _parse_and_validate_investigation_result(
             investigation,
             request_data,
-            owner_chain=None,
             data_storage_client=None
         )
 

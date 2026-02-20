@@ -1,5 +1,7 @@
 # AI Analysis Service - Days 2-4: Phase Handlers
 
+> **Note (ADR-056/ADR-055):** References to `EnrichmentResults.DetectedLabels` and `EnrichmentResults.OwnerChain` in this document are historical. These fields were removed per ADR-056 and ADR-055.
+
 **Parent Document**: [IMPLEMENTATION_PLAN_V1.0.md](../IMPLEMENTATION_PLAN_V1.0.md)
 **Duration**: 24 hours (3 days × 8h)
 **Phase**: Core Implementation

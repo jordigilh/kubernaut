@@ -206,7 +206,7 @@ class TestRecoveryEndpointCustomLabels:
                 selected_workflow={
                     "workflow_id": "oom-memory-increase-v1",
                     "version": "v1.0.0",
-                    "container_image": "quay.io/kubernaut/oom-remediation:v1.0.0",
+                    "execution_bundle": "quay.io/kubernaut/oom-remediation:v1.0.0",
                     "parameters": {"memory_increment": "256Mi"},
                     "rationale": "Increase memory limits to prevent OOM"
                 },
@@ -279,7 +279,7 @@ class TestRecoveryEndpointCustomLabels:
                 selected_workflow={
                     "workflow_id": "crashloop-restart-v1",
                     "version": "v1.0.0",
-                    "container_image": "quay.io/kubernaut/crashloop-remediation:v1.0.0",
+                    "execution_bundle": "quay.io/kubernaut/crashloop-remediation:v1.0.0",
                     "parameters": {},
                     "rationale": "Restart the crashed container"
                 },

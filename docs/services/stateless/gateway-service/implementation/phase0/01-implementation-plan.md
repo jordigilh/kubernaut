@@ -640,6 +640,8 @@ func (c *Client) ListRemediationRequestsByFingerprint(ctx context.Context, finge
 
 **File:** `pkg/gateway/processing/crd_creator.go` (NEW)
 
+> **Note (Issue #91):** The labels `kubernaut.ai/signal-type` and `kubernaut.ai/severity` in the example below were migrated to immutable spec fields. See Issue #91.
+
 ```go
 package processing
 

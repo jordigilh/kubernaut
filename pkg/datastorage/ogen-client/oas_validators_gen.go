@@ -487,7 +487,7 @@ func (s AuditEventEventData) Validate() error {
 		return nil // no validation needed
 	case AIAnalysisPhaseTransitionPayloadAuditEventEventData:
 		return nil // no validation needed
-	case AIAnalysisHolmesGPTCallPayloadAuditEventEventData:
+	case AuditEventEventDataAianalysisAiagentCallAuditEventEventData, AuditEventEventDataAianalysisAiagentResultAuditEventEventData, AuditEventEventDataAianalysisAiagentSessionLostAuditEventEventData, AuditEventEventDataAianalysisAiagentSubmitAuditEventEventData:
 		return nil // no validation needed
 	case AIAnalysisApprovalDecisionPayloadAuditEventEventData:
 		if err := s.AIAnalysisApprovalDecisionPayload.Validate(); err != nil {
@@ -784,7 +784,7 @@ func (s AuditEventRequestEventData) Validate() error {
 		return nil // no validation needed
 	case AIAnalysisPhaseTransitionPayloadAuditEventRequestEventData:
 		return nil // no validation needed
-	case AIAnalysisHolmesGPTCallPayloadAuditEventRequestEventData:
+	case AuditEventRequestEventDataAianalysisAiagentCallAuditEventRequestEventData, AuditEventRequestEventDataAianalysisAiagentResultAuditEventRequestEventData, AuditEventRequestEventDataAianalysisAiagentSessionLostAuditEventRequestEventData, AuditEventRequestEventDataAianalysisAiagentSubmitAuditEventRequestEventData:
 		return nil // no validation needed
 	case AIAnalysisApprovalDecisionPayloadAuditEventRequestEventData:
 		if err := s.AIAnalysisApprovalDecisionPayload.Validate(); err != nil {
@@ -1093,7 +1093,7 @@ func (s *DetectedLabels) Validate() error {
 		return nil
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
-			Name:  "failed_detections",
+			Name:  "failedDetections",
 			Error: err,
 		})
 	}
@@ -1976,7 +1976,7 @@ func (s *IncidentResponseData) Validate() error {
 		return nil
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
-			Name:  "root_cause_analysis",
+			Name:  "rootCauseAnalysis",
 			Error: err,
 		})
 	}
@@ -1994,7 +1994,7 @@ func (s *IncidentResponseData) Validate() error {
 		return nil
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
-			Name:  "selected_workflow",
+			Name:  "selectedWorkflow",
 			Error: err,
 		})
 	}
@@ -2033,7 +2033,7 @@ func (s *IncidentResponseData) Validate() error {
 		return nil
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
-			Name:  "human_review_reason",
+			Name:  "humanReviewReason",
 			Error: err,
 		})
 	}
@@ -2090,7 +2090,7 @@ func (s *IncidentResponseDataRootCauseAnalysis) Validate() error {
 		return nil
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
-			Name:  "contributing_factors",
+			Name:  "contributingFactors",
 			Error: err,
 		})
 	}
@@ -4349,7 +4349,7 @@ func (s *RemediationWorkflow) Validate() error {
 		return nil
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
-			Name:  "workflow_name",
+			Name:  "workflowName",
 			Error: err,
 		})
 	}
@@ -4478,7 +4478,7 @@ func (s *RemediationWorkflow) Validate() error {
 		return nil
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
-			Name:  "content_hash",
+			Name:  "contentHash",
 			Error: err,
 		})
 	}
@@ -4507,7 +4507,7 @@ func (s *RemediationWorkflow) Validate() error {
 		return nil
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
-			Name:  "custom_labels",
+			Name:  "customLabels",
 			Error: err,
 		})
 	}
@@ -4525,7 +4525,7 @@ func (s *RemediationWorkflow) Validate() error {
 		return nil
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
-			Name:  "detected_labels",
+			Name:  "detectedLabels",
 			Error: err,
 		})
 	}
@@ -4566,7 +4566,7 @@ func (s *RemediationWorkflow) Validate() error {
 		return nil
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
-			Name:  "disabled_by",
+			Name:  "disabledBy",
 			Error: err,
 		})
 	}
@@ -4596,7 +4596,7 @@ func (s *RemediationWorkflow) Validate() error {
 		return nil
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
-			Name:  "previous_version",
+			Name:  "previousVersion",
 			Error: err,
 		})
 	}
@@ -4626,7 +4626,7 @@ func (s *RemediationWorkflow) Validate() error {
 		return nil
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
-			Name:  "approved_by",
+			Name:  "approvedBy",
 			Error: err,
 		})
 	}
@@ -4654,7 +4654,7 @@ func (s *RemediationWorkflow) Validate() error {
 		return nil
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
-			Name:  "expected_success_rate",
+			Name:  "expectedSuccessRate",
 			Error: err,
 		})
 	}
@@ -4682,7 +4682,7 @@ func (s *RemediationWorkflow) Validate() error {
 		return nil
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
-			Name:  "expected_duration_seconds",
+			Name:  "expectedDurationSeconds",
 			Error: err,
 		})
 	}
@@ -4710,7 +4710,7 @@ func (s *RemediationWorkflow) Validate() error {
 		return nil
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
-			Name:  "actual_success_rate",
+			Name:  "actualSuccessRate",
 			Error: err,
 		})
 	}
@@ -4738,7 +4738,7 @@ func (s *RemediationWorkflow) Validate() error {
 		return nil
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
-			Name:  "total_executions",
+			Name:  "totalExecutions",
 			Error: err,
 		})
 	}
@@ -4766,7 +4766,7 @@ func (s *RemediationWorkflow) Validate() error {
 		return nil
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
-			Name:  "successful_executions",
+			Name:  "successfulExecutions",
 			Error: err,
 		})
 	}
@@ -4796,7 +4796,7 @@ func (s *RemediationWorkflow) Validate() error {
 		return nil
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
-			Name:  "created_by",
+			Name:  "createdBy",
 			Error: err,
 		})
 	}
@@ -4826,7 +4826,7 @@ func (s *RemediationWorkflow) Validate() error {
 		return nil
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
-			Name:  "updated_by",
+			Name:  "updatedBy",
 			Error: err,
 		})
 	}
@@ -5894,7 +5894,7 @@ func (s *WorkflowSearchFilters) Validate() error {
 		return nil
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
-			Name:  "custom_labels",
+			Name:  "customLabels",
 			Error: err,
 		})
 	}
@@ -5912,7 +5912,7 @@ func (s *WorkflowSearchFilters) Validate() error {
 		return nil
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
-			Name:  "detected_labels",
+			Name:  "detectedLabels",
 			Error: err,
 		})
 	}

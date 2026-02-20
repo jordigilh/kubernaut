@@ -22,7 +22,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-// BR-NOT-065: Channel Routing Based on Labels
+// BR-NOT-065: Channel Routing Based on Spec Fields
 // BR-NOT-066: Alertmanager-Compatible Configuration Format
 var _ = Describe("Notification Routing Configuration (BR-NOT-065, BR-NOT-066)", func() {
 
@@ -49,18 +49,18 @@ receivers:
 				Expect(config.Receivers[0].Name).To(Equal("default-receiver"))
 			})
 
-			It("should parse routing rules with label matchers", func() {
-				// BR-NOT-065: Label-based routing
+			It("should parse routing rules with attribute matchers", func() {
+				// BR-NOT-065: Attribute-based routing
 				configYAML := `
 route:
   receiver: default-receiver
   routes:
     - match:
-        kubernaut.ai/notification-type: approval_required
-        kubernaut.ai/severity: critical
+        type: approval_required
+        severity: critical
       receiver: pagerduty-oncall
     - match:
-        kubernaut.ai/notification-type: completed
+        type: completed
       receiver: slack-ops
 receivers:
   - name: default-receiver
@@ -76,8 +76,8 @@ receivers:
 				config, err := routing.ParseConfig([]byte(configYAML))
 				Expect(err).ToNot(HaveOccurred())
 				Expect(config.Route.Routes).To(HaveLen(2))
-				Expect(config.Route.Routes[0].Match).To(HaveKeyWithValue("kubernaut.ai/notification-type", "approval_required"))
-				Expect(config.Route.Routes[0].Match).To(HaveKeyWithValue("kubernaut.ai/severity", "critical"))
+				Expect(config.Route.Routes[0].Match).To(HaveKeyWithValue("type", "approval_required"))
+				Expect(config.Route.Routes[0].Match).To(HaveKeyWithValue("severity", "critical"))
 				Expect(config.Route.Routes[0].Receiver).To(Equal("pagerduty-oncall"))
 			})
 
@@ -85,7 +85,7 @@ receivers:
 				configYAML := `
 route:
   receiver: default
-  group_by: ['kubernaut.ai/environment', 'kubernaut.ai/severity']
+  group_by: ['environment', 'severity']
 receivers:
   - name: default
     slack_configs:
@@ -93,7 +93,7 @@ receivers:
 `
 				config, err := routing.ParseConfig([]byte(configYAML))
 				Expect(err).ToNot(HaveOccurred())
-				Expect(config.Route.GroupBy).To(ContainElements("kubernaut.ai/environment", "kubernaut.ai/severity"))
+				Expect(config.Route.GroupBy).To(ContainElements("environment", "severity"))
 			})
 
 			It("should parse receiver configurations for multiple channels", func() {
@@ -185,17 +185,17 @@ route:
   receiver: default-receiver
   routes:
     - match:
-        kubernaut.ai/notification-type: approval_required
-        kubernaut.ai/severity: critical
+        type: approval_required
+        severity: critical
       receiver: pagerduty-critical
     - match:
-        kubernaut.ai/notification-type: approval_required
+        type: approval_required
       receiver: slack-approvals
     - match:
-        kubernaut.ai/notification-type: completed
+        type: completed
       receiver: slack-ops
     - match:
-        kubernaut.ai/notification-type: failed
+        type: failed
       receiver: pagerduty-oncall
 receivers:
   - name: default-receiver
@@ -220,73 +220,73 @@ receivers:
 		})
 
 		It("should match critical approval notifications to pagerduty-critical", func() {
-			labels := map[string]string{
-				"kubernaut.ai/notification-type": "approval_required",
-				"kubernaut.ai/severity":          "critical",
-				"kubernaut.ai/environment":       "production",
+			attrs := map[string]string{
+				"type": "approval_required",
+				"severity":          "critical",
+				"environment":       "production",
 			}
 
-			receiver := config.Route.FindReceiver(labels)
+			receiver := config.Route.FindReceiver(attrs)
 			Expect(receiver).To(Equal("pagerduty-critical"))
 		})
 
 		It("should match non-critical approval notifications to slack-approvals", func() {
-			labels := map[string]string{
-				"kubernaut.ai/notification-type": "approval_required",
-				"kubernaut.ai/severity":          "high",
+			attrs := map[string]string{
+				"type": "approval_required",
+				"severity":          "high",
 			}
 
-			receiver := config.Route.FindReceiver(labels)
+			receiver := config.Route.FindReceiver(attrs)
 			Expect(receiver).To(Equal("slack-approvals"))
 		})
 
 		It("should match completed notifications to slack-ops", func() {
-			labels := map[string]string{
-				"kubernaut.ai/notification-type": "completed",
+			attrs := map[string]string{
+				"type": "completed",
 			}
 
-			receiver := config.Route.FindReceiver(labels)
+			receiver := config.Route.FindReceiver(attrs)
 			Expect(receiver).To(Equal("slack-ops"))
 		})
 
 		It("should match failed notifications to pagerduty-oncall", func() {
-			labels := map[string]string{
-				"kubernaut.ai/notification-type": "failed",
+			attrs := map[string]string{
+				"type": "failed",
 			}
 
-			receiver := config.Route.FindReceiver(labels)
+			receiver := config.Route.FindReceiver(attrs)
 			Expect(receiver).To(Equal("pagerduty-oncall"))
 		})
 
 		It("should fall back to default receiver when no routes match", func() {
-			labels := map[string]string{
-				"kubernaut.ai/notification-type": "unknown-type",
+			attrs := map[string]string{
+				"type": "unknown-type",
 			}
 
-			receiver := config.Route.FindReceiver(labels)
+			receiver := config.Route.FindReceiver(attrs)
 			Expect(receiver).To(Equal("default-receiver"))
 		})
 
 		It("should match first matching route (ordered evaluation)", func() {
 			// Both routes could match, but first should win
-			labels := map[string]string{
-				"kubernaut.ai/notification-type": "approval_required",
-				"kubernaut.ai/severity":          "critical",
+			attrs := map[string]string{
+				"type": "approval_required",
+				"severity":          "critical",
 			}
 
-			receiver := config.Route.FindReceiver(labels)
+			receiver := config.Route.FindReceiver(attrs)
 			// First route matches both conditions, second only matches type
 			Expect(receiver).To(Equal("pagerduty-critical"))
 		})
 
-		It("should handle empty labels by returning default receiver", func() {
-			labels := map[string]string{}
+		It("should handle empty attributes by returning default receiver", func() {
+			attrs := map[string]string{}
 
-			receiver := config.Route.FindReceiver(labels)
+			receiver := config.Route.FindReceiver(attrs)
 			Expect(receiver).To(Equal("default-receiver"))
 		})
 
-		It("should handle nil labels by returning default receiver", func() {
+		It("should handle nil attributes by returning default receiver", func() {
 			receiver := config.Route.FindReceiver(nil)
 			Expect(receiver).To(Equal("default-receiver"))
 		})
@@ -426,20 +426,20 @@ receivers:
 	})
 
 	// =============================================================================
-	// SKIP-REASON LABEL ROUTING (BR-NOT-065, DD-WE-004)
+	// SKIP-REASON ATTRIBUTE ROUTING (BR-NOT-065, DD-WE-004)
 	// =============================================================================
 	// Added: Day 13 Enhancement
 	// Purpose: Verify skip-reason based routing for WorkflowExecution failures
 	// Cross-Team: WE→NOT Q7, RO Q8 (2025-12-06)
 	// =============================================================================
 
-	Describe("Skip-Reason Label Routing (BR-NOT-065, DD-WE-004)", func() {
+	Describe("Skip-Reason Attribute Routing (BR-NOT-065, DD-WE-004)", func() {
 
-		Context("Label Constants Verification", func() {
+		Context("Attribute Constants Verification", func() {
 
-			// Test 1: Verify label key constant
-			It("should define correct skip-reason label key", func() {
-				Expect(routing.LabelSkipReason).To(Equal("kubernaut.ai/skip-reason"))
+			// Test 1: Verify attribute key constant
+			It("should define correct skip-reason attribute key", func() {
+				Expect(routing.AttrSkipReason).To(Equal("skip-reason"))
 			})
 
 			// Test 2: Verify skip reason value constants
@@ -461,18 +461,18 @@ route:
   routes:
     # CRITICAL: Execution failures → PagerDuty
     - match:
-        kubernaut.ai/skip-reason: PreviousExecutionFailed
+        skip-reason: PreviousExecutionFailed
       receiver: pagerduty-critical
     # HIGH: Exhausted retries → Slack
     - match:
-        kubernaut.ai/skip-reason: ExhaustedRetries
+        skip-reason: ExhaustedRetries
       receiver: slack-ops
     # LOW: Temporary conditions → Console
     - match:
-        kubernaut.ai/skip-reason: ResourceBusy
+        skip-reason: ResourceBusy
       receiver: console-bulk
     - match:
-        kubernaut.ai/skip-reason: RecentlyRemediated
+        skip-reason: RecentlyRemediated
       receiver: console-bulk
   receiver: default-slack
 receivers:
@@ -497,10 +497,10 @@ receivers:
 			// Test 3: DescribeTable for all skip-reason routing scenarios
 			DescribeTable("should route to correct receiver based on skip-reason",
 				func(skipReason, expectedReceiver string, description string) {
-					labels := map[string]string{
-						routing.LabelSkipReason: skipReason,
+					attrs := map[string]string{
+						routing.AttrSkipReason: skipReason,
 					}
-					receiverName := config.Route.FindReceiver(labels)
+					receiverName := config.Route.FindReceiver(attrs)
 					Expect(receiverName).To(Equal(expectedReceiver), description)
 				},
 				Entry("CRITICAL: PreviousExecutionFailed → pagerduty-critical",
@@ -520,18 +520,18 @@ receivers:
 					"Unknown skip reasons fall back to default receiver"),
 			)
 
-			// Test 4: Combined labels (skip-reason + severity)
+			// Test 4: Combined attributes (skip-reason + severity)
 			It("should match most specific rule when skip-reason combined with severity", func() {
 				// Config with combined matching (more specific first)
 				combinedConfigYAML := `
 route:
   routes:
     - match:
-        kubernaut.ai/skip-reason: PreviousExecutionFailed
-        kubernaut.ai/severity: critical
+        skip-reason: PreviousExecutionFailed
+        severity: critical
       receiver: pagerduty-immediate
     - match:
-        kubernaut.ai/skip-reason: PreviousExecutionFailed
+        skip-reason: PreviousExecutionFailed
       receiver: slack-escalation
   receiver: default-console
 receivers:
@@ -548,28 +548,28 @@ receivers:
 				combinedConfig, err := routing.ParseConfig([]byte(combinedConfigYAML))
 				Expect(err).ToNot(HaveOccurred())
 
-				// Both labels - should match first (more specific) rule
-				labelsWithSeverity := map[string]string{
-					routing.LabelSkipReason: routing.SkipReasonPreviousExecutionFailed,
-					routing.LabelSeverity:   routing.SeverityCritical,
+				// Both attributes - should match first (more specific) rule
+				attrsWithSeverity := map[string]string{
+					routing.AttrSkipReason: routing.SkipReasonPreviousExecutionFailed,
+					routing.AttrSeverity:   routing.SeverityCritical,
 				}
-				Expect(combinedConfig.Route.FindReceiver(labelsWithSeverity)).To(
+				Expect(combinedConfig.Route.FindReceiver(attrsWithSeverity)).To(
 					Equal("pagerduty-immediate"),
 					"Combined skip-reason+severity should match specific rule")
 
 				// Only skip-reason - should match second rule
-				labelsOnlySkip := map[string]string{
-					routing.LabelSkipReason: routing.SkipReasonPreviousExecutionFailed,
+				attrsOnlySkip := map[string]string{
+					routing.AttrSkipReason: routing.SkipReasonPreviousExecutionFailed,
 				}
-				Expect(combinedConfig.Route.FindReceiver(labelsOnlySkip)).To(
+				Expect(combinedConfig.Route.FindReceiver(attrsOnlySkip)).To(
 					Equal("slack-escalation"),
 					"Skip-reason alone should match less specific rule")
 			})
 
-			// Test 5: Empty/nil labels fallback
-			It("should fall back to default receiver when no skip-reason label present", func() {
-				emptyLabels := map[string]string{}
-				Expect(config.Route.FindReceiver(emptyLabels)).To(Equal("default-slack"))
+			// Test 5: Empty/nil attributes fallback
+			It("should fall back to default receiver when no skip-reason attribute present", func() {
+				emptyAttrs := map[string]string{}
+				Expect(config.Route.FindReceiver(emptyAttrs)).To(Equal("default-slack"))
 
 				Expect(config.Route.FindReceiver(nil)).To(Equal("default-slack"))
 			})
@@ -582,13 +582,13 @@ receivers:
 	// Cross-Team: HAPI→NOT (2025-12-07)
 	// =============================================================================
 
-	Describe("Investigation-Outcome Label Routing (BR-HAPI-200)", func() {
+	Describe("Investigation-Outcome Attribute Routing (BR-HAPI-200)", func() {
 
-		Context("Label Constants Verification", func() {
+		Context("Attribute Constants Verification", func() {
 
-			// Test 1: Verify label key constant
-			It("should define correct investigation-outcome label key", func() {
-				Expect(routing.LabelInvestigationOutcome).To(Equal("kubernaut.ai/investigation-outcome"))
+			// Test 1: Verify attribute key constant
+			It("should define correct investigation-outcome attribute key", func() {
+				Expect(routing.AttrInvestigationOutcome).To(Equal("investigation-outcome"))
 			})
 
 			// Test 2: Verify investigation outcome value constants
@@ -610,15 +610,15 @@ route:
   routes:
     # Resolved: Skip notification (route to no-op/silent receiver)
     - match:
-        kubernaut.ai/investigation-outcome: resolved
+        investigation-outcome: resolved
       receiver: silent-noop
     # Inconclusive: Route to ops for human review
     - match:
-        kubernaut.ai/investigation-outcome: inconclusive
+        investigation-outcome: inconclusive
       receiver: slack-ops
     # Workflow selected: Standard routing (falls through to default)
     - match:
-        kubernaut.ai/investigation-outcome: workflow_selected
+        investigation-outcome: workflow_selected
       receiver: default-slack
 receivers:
   - name: silent-noop
@@ -638,10 +638,10 @@ receivers:
 			// Test 3: DescribeTable for all investigation-outcome routing scenarios
 			DescribeTable("should route to correct receiver based on investigation-outcome",
 				func(outcome, expectedReceiver, description string) {
-					labels := map[string]string{
-						routing.LabelInvestigationOutcome: outcome,
+					attrs := map[string]string{
+						routing.AttrInvestigationOutcome: outcome,
 					}
-					receiverName := config.Route.FindReceiver(labels)
+					receiverName := config.Route.FindReceiver(attrs)
 					Expect(receiverName).To(Equal(expectedReceiver), description)
 				},
 				Entry("resolved → silent-noop",
@@ -658,10 +658,10 @@ receivers:
 					"Unknown outcomes fall back to default receiver"),
 			)
 
-			// Test 4: Empty labels fallback
-			It("should fall back to default receiver when no investigation-outcome label present", func() {
-				emptyLabels := map[string]string{}
-				Expect(config.Route.FindReceiver(emptyLabels)).To(Equal("default-slack"))
+			// Test 4: Empty attributes fallback
+			It("should fall back to default receiver when no investigation-outcome attribute present", func() {
+				emptyAttrs := map[string]string{}
+				Expect(config.Route.FindReceiver(emptyAttrs)).To(Equal("default-slack"))
 			})
 		})
 	})

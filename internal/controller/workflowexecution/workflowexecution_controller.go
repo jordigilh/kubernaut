@@ -71,7 +71,6 @@ import (
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
-	"github.com/jordigilh/kubernaut/pkg/shared/backoff"
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
 	weconditions "github.com/jordigilh/kubernaut/pkg/workflowexecution"
 	weaudit "github.com/jordigilh/kubernaut/pkg/workflowexecution/audit"
@@ -180,36 +179,6 @@ type WorkflowExecutionReconciler struct {
 	// Maps execution engine names ("tekton", "job") to Executor implementations.
 	// When nil, falls back to inline Tekton-only code path.
 	ExecutorRegistry *weexecutor.Registry
-
-
-	// ========================================
-	// DEPRECATED: EXPONENTIAL BACKOFF CONFIGURATION (BR-WE-012, DD-WE-004)
-	// V1.0: Routing moved to RO per DD-RO-002 Phase 3 (Dec 19, 2025)
-	// These fields kept for backward compatibility but are no longer used
-	// ========================================
-
-	// BaseCooldownPeriod is the initial cooldown for exponential backoff
-	// DEPRECATED (V1.0): Use RR.Status.NextAllowedExecution (RO handles routing)
-	// Formula: Cooldown = BaseCooldownPeriod * 2^(min(failures-1, MaxBackoffExponent))
-	// Default: 1 minute
-	BaseCooldownPeriod time.Duration
-
-	// MaxCooldownPeriod caps the exponential backoff
-	// DEPRECATED (V1.0): Use RO's MaxCooldownPeriod (RO handles routing)
-	// Default: 10 minutes (prevents RR timeout)
-	MaxCooldownPeriod time.Duration
-
-	// MaxBackoffExponent limits exponential growth
-	// DEPRECATED (V1.0): Use RO's backoff configuration (RO handles routing)
-	// e.g., 4 means max multiplier is 2^4 = 16x
-	// Default: 4
-	MaxBackoffExponent int
-
-	// MaxConsecutiveFailures before auto-failing with ExhaustedRetries
-	// DEPRECATED (V1.0): Use RO's ConsecutiveFailureThreshold (RO handles routing)
-	// After this many consecutive pre-execution failures, skip with ExhaustedRetries
-	// Default: 5
-	MaxConsecutiveFailures int
 }
 
 // ========================================
@@ -1077,7 +1046,7 @@ func (r *WorkflowExecutionReconciler) BuildPipelineRun(wfe *workflowexecutionv1a
 				ResolverRef: tektonv1.ResolverRef{
 					Resolver: "bundles",
 					Params: []tektonv1.Param{
-						{Name: "bundle", Value: tektonv1.ParamValue{Type: tektonv1.ParamTypeString, StringVal: wfe.Spec.WorkflowRef.ContainerImage}},
+						{Name: "bundle", Value: tektonv1.ParamValue{Type: tektonv1.ParamTypeString, StringVal: wfe.Spec.WorkflowRef.ExecutionBundle}},
 						{Name: "name", Value: tektonv1.ParamValue{Type: tektonv1.ParamTypeString, StringVal: "workflow"}},
 						{Name: "kind", Value: tektonv1.ParamValue{Type: tektonv1.ParamTypeString, StringVal: "pipeline"}},
 					},
@@ -1213,6 +1182,9 @@ func (r *WorkflowExecutionReconciler) MarkCompleted(ctx context.Context, wfe *wo
 			weconditions.ReasonExecutionSucceeded,
 			fmt.Sprintf("All tasks completed successfully in %s", wfe.Status.Duration))
 
+		// Issue #79 Phase 7b: Set Ready condition on terminal transitions
+		weconditions.SetReady(wfe, true, weconditions.ReasonReady, "Workflow execution completed")
+
 		// Day 8: Record audit event for workflow completion (BR-WE-005, ADR-032)
 		// Uses Audit Manager (P3: Audit Manager pattern)
 		if err := r.AuditManager.RecordWorkflowCompleted(ctx, wfe); err != nil {
@@ -1331,6 +1303,9 @@ func (r *WorkflowExecutionReconciler) MarkFailed(ctx context.Context, wfe *workf
 			failureReason,
 			failureMessage)
 
+		// Issue #79 Phase 7b: Set Ready condition on terminal transitions
+		weconditions.SetReady(wfe, false, weconditions.ReasonNotReady, "Workflow execution failed")
+
 		// Day 8: Record audit event for workflow failure (BR-WE-005, ADR-032)
 		// Uses Audit Manager (P3: Audit Manager pattern)
 		if err := r.AuditManager.RecordWorkflowFailed(ctx, wfe); err != nil {
@@ -1431,26 +1406,11 @@ func (r *WorkflowExecutionReconciler) MarkFailedWithReason(ctx context.Context, 
 			conditionReason,
 			fmt.Sprintf("Failed to create PipelineRun: %s", message))
 
-		// Day 6 Extension (BR-WE-012): Pre-execution failure - apply exponential backoff
-		wfe.Status.ConsecutiveFailures++
-		if r.BaseCooldownPeriod > 0 {
-			backoffConfig := backoff.Config{
-				BasePeriod:    r.BaseCooldownPeriod,
-				MaxPeriod:     r.MaxCooldownPeriod,
-				Multiplier:    2.0, // Standard exponential (power-of-2)
-				JitterPercent: 10,  // Anti-thundering herd (±10%)
-			}
-			duration := backoffConfig.Calculate(wfe.Status.ConsecutiveFailures)
+		// Issue #79 Phase 7b: Set Ready condition on terminal transitions
+		weconditions.SetReady(wfe, false, weconditions.ReasonNotReady, "Workflow execution failed")
 
-			nextAllowed := metav1.NewTime(time.Now().Add(duration))
-			wfe.Status.NextAllowedExecution = &nextAllowed
-
-			logger.Info("Calculated exponential backoff for pre-execution failure",
-				"consecutiveFailures", wfe.Status.ConsecutiveFailures,
-				"backoff", duration,
-				"nextAllowedExecution", nextAllowed.Time,
-			)
-		}
+		// Issue #99: Deprecated backoff block removed (DD-RO-002 Phase 3)
+		// RO handles all routing/backoff decisions via RR.Status
 
 		// Day 8: Record audit event for workflow failure (BR-WE-005)
 		// Uses Audit Manager (P3: Audit Manager pattern)
@@ -1519,8 +1479,8 @@ func (r *WorkflowExecutionReconciler) updateStatus(
 // Returns error if validation fails (ConfigurationError reason)
 func (r *WorkflowExecutionReconciler) ValidateSpec(wfe *workflowexecutionv1alpha1.WorkflowExecution) error {
 	// Validate container image is required
-	if wfe.Spec.WorkflowRef.ContainerImage == "" {
-		return fmt.Errorf("workflowRef.containerImage is required")
+	if wfe.Spec.WorkflowRef.ExecutionBundle == "" {
+		return fmt.Errorf("workflowRef.executionBundle is required")
 	}
 
 	// Validate target resource is required

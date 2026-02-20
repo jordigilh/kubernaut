@@ -44,7 +44,7 @@ graph LR
         NOT[Notification Service]
     end
 
-    SP -->|"EnrichmentResults<br/>(DetectedLabels, CustomLabels, OwnerChain)"| RO
+    SP -->|"EnrichmentResults<br/>(DetectedLabels (ADR-056: removed, now computed by HAPI post-RCA), CustomLabels, OwnerChain (ADR-055: removed))"| RO
     RO -->|"Creates AIAnalysis<br/>with copied enrichment"| AIA
     CTRL -->|"POST /api/v1/incident/analyze"| HAPI
     HAPI -->|"Internal toolkit:<br/>search_workflow_catalog"| DS
@@ -99,7 +99,7 @@ spec:
         replicas: 3
         availableReplicas: 2
 
-    # Auto-detected labels (DD-WORKFLOW-001 v2.1)
+    # Auto-detected labels (DD-WORKFLOW-001 v2.1) (ADR-056: removed from EnrichmentResults, now computed by HAPI post-RCA)
     detectedLabels:
       # Detection failures (DD-WORKFLOW-001 v2.1)
       # If a field is listed here, its value is unreliable (RBAC, timeout, etc.)
@@ -122,7 +122,7 @@ spec:
       region:
         - "name=us-west-2"
 
-    # K8s ownership chain (DD-WORKFLOW-001 v1.7)
+    # K8s ownership chain (DD-WORKFLOW-001 v1.7) (ADR-055: removed from EnrichmentResults)
     ownerChain:
       - namespace: "production"
         kind: "ReplicaSet"
@@ -182,14 +182,14 @@ spec:
   "priority": "P0",
   "cluster_name": "prod-us-west-2",
   "enrichment_results": {
-    "detectedLabels": {
+    "detectedLabels": {  // ADR-056: removed from EnrichmentResults, now computed by HAPI post-RCA
       "failedDetections": [],  // DD-WORKFLOW-001 v2.1: or ["pdbProtected"] if query failed
       "gitOpsManaged": true,
       "gitOpsTool": "argocd",
       "pdbProtected": true,
       "serviceMesh": "istio"
     },
-    "ownerChain": [
+    "ownerChain": [  // ADR-055: removed from EnrichmentResults
       {"namespace": "default", "kind": "ReplicaSet", "name": "nginx-7d8f9c6b5"},
       {"namespace": "default", "kind": "Deployment", "name": "nginx"}
     ],
@@ -206,14 +206,14 @@ spec:
 |-------|------------|----------------|
 | Structure | Nested `signalContext` | Flat fields |
 | `remediation_id` | Optional | **MANDATORY** (audit correlation) |
-| DetectedLabels | Wrong fields | Use `pkg/shared/types/enrichment.go` |
+| DetectedLabels | Wrong fields | Use `pkg/shared/types/enrichment.go` (ADR-056: removed from EnrichmentResults) |
 | `failedDetections` | Not present | **Added (DD-WORKFLOW-001 v2.1)** - list of fields where detection failed |
 
 #### Label Usage by HolmesGPT-API
 
 | Label Type | LLM Prompt | Workflow Filtering |
 |------------|------------|-------------------|
-| **DetectedLabels** | ✅ Always included | ✅ Only if OwnerChain validates (`target_in_owner_chain=true`) |
+| **DetectedLabels** (ADR-056: removed from EnrichmentResults) | ✅ Always included | ✅ Only if OwnerChain validates (`target_in_owner_chain=true`) |
 | **CustomLabels** | ❌ NOT in LLM prompt | ✅ Always (auto-appended to search) |
 | **FailedDetections** | ✅ Mentioned as caveats | ⚠️ Skip filter for affected fields |
 
@@ -240,7 +240,7 @@ WHERE (
 
 **Key Distinction**: "Resource doesn't exist" ≠ detection failure. A successful detection that finds no PDB returns `pdbProtected=false` with empty `failedDetections`.
 
-#### OwnerChain Validation (DD-WORKFLOW-001 v1.7)
+#### OwnerChain Validation (DD-WORKFLOW-001 v1.7) (ADR-055: OwnerChain removed from EnrichmentResults)
 
 HolmesGPT-API validates DetectedLabels applicability when RCA identifies a different resource than the signal source:
 
@@ -357,7 +357,7 @@ HolmesGPT-API internally calls Data Storage to search the workflow catalog. The 
 | Criterion | Weight | Source |
 |-----------|--------|--------|
 | Signal type match | High | `signal_type` in request |
-| DetectedLabels constraints | Medium | Only if `target_in_owner_chain=true` |
+| DetectedLabels constraints (ADR-056: removed from EnrichmentResults) | Medium | Only if `target_in_owner_chain=true` |
 | CustomLabels constraints | Medium | Always applied |
 | Historical success rate | Low | Data Storage aggregation |
 
@@ -529,7 +529,7 @@ type ApprovalPolicyInput struct {
     // ========================================
     // LABELS (for advanced policies)
     // ========================================
-    DetectedLabels *DetectedLabels       `json:"detected_labels,omitempty"`
+    DetectedLabels *DetectedLabels       `json:"detected_labels,omitempty"`  // ADR-056: removed from EnrichmentResults
     CustomLabels   map[string][]string   `json:"custom_labels,omitempty"`
 
     // ========================================

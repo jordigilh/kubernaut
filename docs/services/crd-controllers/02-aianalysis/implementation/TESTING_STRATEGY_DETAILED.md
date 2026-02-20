@@ -1,5 +1,7 @@
 # Testing Strategy - AI Analysis Service (Detailed)
 
+> **Note (ADR-056/ADR-055):** References to `EnrichmentResults.DetectedLabels` and `EnrichmentResults.OwnerChain` in this document are historical. These fields were removed per ADR-056 and ADR-055.
+
 **Date**: 2025-12-04
 **Status**: 📋 Template - Complete at Day 6-8
 **Version**: 1.0

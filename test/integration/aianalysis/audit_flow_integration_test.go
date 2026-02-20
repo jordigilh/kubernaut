@@ -136,7 +136,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 			// TEST OBJECTIVE:
 			// Verify controller generates ALL audit events during full workflow:
 			// - Phase transitions: Pending → Investigating → Analyzing → Completed
-			// - HolmesGPT calls during Investigation
+			// - AI agent calls during Investigation
 			// - Rego evaluations during Analyzing
 			// - Approval decisions during Analyzing
 			// - Analysis complete event at Completed
@@ -188,7 +188,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 					return ""
 				}
 				return analysis.Status.Phase
-			}, 90*time.Second, 2*time.Second).Should(Equal("Completed"),
+			}, 30*time.Second, 2*time.Second).Should(Equal("Completed"),
 				"Controller should complete full workflow within 90 seconds")
 
 			By("Verifying complete audit trail in Data Storage")
@@ -252,16 +252,16 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 			Expect(hasPhaseTransition).To(BeTrue(),
 				"Controller MUST audit phase transitions (Pending → Investigating → Analyzing → Completed)")
 
-			By("Verifying HolmesGPT call events are present")
-			hasHolmesGPTCall := false
+			By("Verifying AI agent call events are present")
+			hasAIAgentCall := false
 			for _, event := range events {
-				if event.EventType == aiaudit.EventTypeHolmesGPTCall {
-					hasHolmesGPTCall = true
+				if event.EventType == aiaudit.EventTypeAIAgentCall {
+					hasAIAgentCall = true
 					break
 				}
 			}
-			Expect(hasHolmesGPTCall).To(BeTrue(),
-				"Investigation handler MUST audit HolmesGPT API calls")
+			Expect(hasAIAgentCall).To(BeTrue(),
+				"Investigation handler MUST audit AI agent API calls")
 
 			By("Verifying approval decision events are present")
 			hasApprovalDecision := false
@@ -291,7 +291,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 
 			// Validate ALL required event types are present
 			Expect(hasPhaseTransition).To(BeTrue(), "REQUIRED: Phase transition audit events")
-			Expect(hasHolmesGPTCall).To(BeTrue(), "REQUIRED: HolmesGPT call audit events")
+			Expect(hasAIAgentCall).To(BeTrue(), "REQUIRED: AI agent call audit events")
 			Expect(hasApprovalDecision).To(BeTrue(), "REQUIRED: Approval decision audit events")
 			Expect(hasAnalysisComplete).To(BeTrue(), "REQUIRED: Analysis completion audit event")
 
@@ -364,11 +364,11 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 					fmt.Sprintf("BR-AI-050: Required phase transition missing: %s", required))
 			}
 
-			// HolmesGPT calls: 1 call (v1.x single analysis type behavior per DD-AIANALYSIS-005)
+			// AI agent calls: 1 call (v1.x single analysis type behavior per DD-AIANALYSIS-005)
 			// Test spec requests AnalysisTypes: ["investigation"]
 			// v1.x controller makes exactly 1 HAPI call regardless of array length
-			Expect(eventTypeCounts[aiaudit.EventTypeHolmesGPTCall]).To(Equal(1),
-				"Expected exactly 1 HolmesGPT API call (v1.x single-type behavior)")
+			Expect(eventTypeCounts[aiaudit.EventTypeAIAgentCall]).To(Equal(1),
+				"Expected exactly 1 AI agent API call (v1.x single-type behavior)")
 
 			// Approval decision: Exactly 1
 			Expect(eventTypeCounts[aiaudit.EventTypeApprovalDecision]).To(Equal(1),
@@ -378,37 +378,39 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 			Expect(eventTypeCounts[aiaudit.EventTypeAnalysisCompleted]).To(Equal(1),
 				"Should have exactly 1 analysis completion event")
 
-			// Total events: DD-TESTING-001 Pattern 4 (lines 256-299): Validate exact expected count
-			// Per DD-AUDIT-003: AIAnalysis Controller audit trail (filtered to exclude HAPI events)
-			//
-			// AIAnalysis Controller events (7):
-			// - 3 phase transitions (Pending→Investigating→Analyzing→Completed)
-			// - 1 HolmesGPT API call metadata (holmesgpt.call)
-			// - 1 Rego evaluation (policy check)
-			// - 1 Approval decision (auto-approval or manual review)
-			// - 1 Analysis completion
-			//
-			// Note: HolmesGPT-API events (llm_request, llm_response, llm_tool_call, workflow_validation_attempt)
-			//       are EXCLUDED from this test. HAPI integration tests validate those separately.
-			//       This test focuses ONLY on AIAnalysis controller audit behavior.
-			//
-			// Total: 7 AIAnalysis events (deterministic per DD-AIANALYSIS-005 v1.x behavior)
-			// Breakdown: 3 phase transitions + 1 HolmesGPT metadata + 1 Rego + 1 approval + 1 completion
-			Expect(len(events)).To(Equal(7),
-				"AIAnalysis workflow generates exactly 7 audit events: 3 phase transitions + 1 HolmesGPT metadata + 1 Rego + 1 approval + 1 completion")
+		// Total events: DD-TESTING-001 Pattern 4 (lines 256-299): Validate exact expected count
+		// Per DD-AUDIT-003: AIAnalysis Controller audit trail (filtered to exclude HAPI events)
+		//
+		// AIAnalysis Controller events (9):
+		// - 3 phase transitions (Pending→Investigating→Analyzing→Completed)
+		// - 1 AI agent submit (aiagent.submit — session creation, BR-AA-HAPI-064)
+		// - 1 AI agent result (aiagent.result — session result retrieval, BR-AA-HAPI-064)
+		// - 1 AI agent API call metadata (aiagent.call — backward compat from RecordAIAgentResult)
+		// - 1 Rego evaluation (policy check)
+		// - 1 Approval decision (auto-approval or manual review)
+		// - 1 Analysis completion
+		//
+		// Note: HolmesGPT-API events (llm_request, llm_response, llm_tool_call, workflow_validation_attempt)
+		//       are EXCLUDED from this test. HAPI integration tests validate those separately.
+		//       This test focuses ONLY on AIAnalysis controller audit behavior.
+		//
+		// Total: 9 AIAnalysis events (deterministic per DD-AIANALYSIS-005 v1.x + BR-AA-HAPI-064 session audit)
+		// Breakdown: 3 phase transitions + 3 AI agent events (submit+result+call) + 1 Rego + 1 approval + 1 completion
+		Expect(len(events)).To(Equal(9),
+			"AIAnalysis workflow generates exactly 9 audit events: 3 phase transitions + 3 AI agent (submit+result+call) + 1 Rego + 1 approval + 1 completion")
 		})
 	})
 
 	// ========================================
 	// CONTEXT: Investigation Phase Audit
-	// Business Value: Operators can debug HolmesGPT integration issues
+	// Business Value: Operators can debug AI agent integration issues
 	// ========================================
 
 	Context("Investigation Phase Audit - BR-AI-023", func() {
-		It("should automatically audit HolmesGPT calls during investigation", func() {
+		It("should automatically audit AI agent calls during investigation", func() {
 			// ========================================
 			// TEST OBJECTIVE:
-			// Verify InvestigatingHandler automatically calls auditClient.RecordHolmesGPTCall()
+			// Verify InvestigatingHandler automatically calls auditClient.RecordAIAgentCall()
 			// when it calls HolmesGPT-API during investigation phase
 			// ========================================
 			//
@@ -458,11 +460,11 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 				Equal("Completed"),
 			), "Controller should complete investigation within 60 seconds")
 
-			By("Verifying HolmesGPT call was automatically audited")
+			By("Verifying AI agent call was automatically audited")
 
 			// NT Pattern: Flush audit buffer on EACH retry inside Eventually()
 			correlationID := analysis.Spec.RemediationID
-			eventType := aiaudit.EventTypeHolmesGPTCall
+			eventType := aiaudit.EventTypeAIAgentCall
 			eventCategory := "analysis"
 			var events []ogenclient.AuditEvent
 			Eventually(func() int {
@@ -484,28 +486,28 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 				events = resp.Data
 				return len(events)
 			}, 30*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
-				"Controller MUST generate HolmesGPT call audit events")
+				"Controller MUST generate AI agent call audit events")
 
 			// DD-TESTING-001: Deterministic count validation instead of weak null-testing
 			eventCounts := countEventsByType(events)
-			Expect(eventCounts[aiaudit.EventTypeHolmesGPTCall]).To(Equal(1),
-				"Expected exactly 1 HolmesGPT call event during investigation")
+			Expect(eventCounts[aiaudit.EventTypeAIAgentCall]).To(Equal(1),
+				"Expected exactly 1 AI agent call event during investigation")
 
-			// Business Value: Operators can trace HolmesGPT interactions
+			// Business Value: Operators can trace AI agent interactions
 			event := events[0]
 			validators.ValidateAuditEvent(event, validators.ExpectedAuditEvent{
-				EventType:     aiaudit.EventTypeHolmesGPTCall,
+				EventType:     aiaudit.EventTypeAIAgentCall,
 				EventCategory: ogenclient.AuditEventEventCategoryAnalysis,
-				EventAction:   "holmesgpt_call",
+				EventAction:   "aiagent_call",
 				EventOutcome:  validators.EventOutcomePtr(ogenclient.AuditEventEventOutcomeSuccess),
 				CorrelationID: correlationID,
 			})
 
 			// DD-TESTING-001: Validate event_data structure per DD-AUDIT-004
 			// Use strongly-typed payload (eliminates map[string]interface{} per DD-AUDIT-004)
-			payload := event.EventData.AIAnalysisHolmesGPTCallPayload
-			Expect(payload.Endpoint).ToNot(BeEmpty(), "event_data should include HolmesGPT endpoint")
-			Expect(payload.HTTPStatusCode).To(Equal(int32(200)), "Successful HolmesGPT call should return 200")
+			payload := event.EventData.AIAnalysisAIAgentCallPayload
+			Expect(payload.Endpoint).ToNot(BeEmpty(), "event_data should include AI agent endpoint")
+			Expect(payload.HTTPStatusCode).To(Equal(int32(200)), "Successful AI agent call should return 200")
 			Expect(payload.DurationMs).To(BeNumerically(">", 0), "Duration should be positive")
 
 			// DD-TESTING-001 Pattern 6: Validate top-level DurationMs field (BR-AI-002: Performance tracking)
@@ -913,14 +915,14 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 	// ========================================
 
 	Context("Error Handling Audit - BR-AI-050", func() {
-		It("should audit HolmesGPT calls with error status code when API fails", func() {
+		It("should audit AI agent calls with error status code when API fails", func() {
 			// ========================================
 			// TEST OBJECTIVE:
-			// Verify InvestigatingHandler audits HolmesGPT calls even when they fail
+			// Verify InvestigatingHandler audits AI agent calls even when they fail
 			// (with status code 500 and failure outcome)
 			// ========================================
 
-			By("Creating AIAnalysis that will trigger HolmesGPT error (using invalid signal type)")
+			By("Creating AIAnalysis that will trigger AI agent error (using invalid signal type)")
 			analysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("test-hapi-error-%s", uuid.New().String()[:8]),
@@ -955,7 +957,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 
 			// NT Pattern: Flush audit buffer on EACH retry inside Eventually()
 			correlationID := analysis.Spec.RemediationID
-			eventType := aiaudit.EventTypeHolmesGPTCall
+			eventType := aiaudit.EventTypeAIAgentCall
 			eventCategory := "analysis"
 			var events []ogenclient.AuditEvent
 			Eventually(func() int {
@@ -977,28 +979,28 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 				events = resp.Data
 				return len(events)
 			}, 30*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
-				"InvestigatingHandler MUST audit HolmesGPT calls even when they fail")
+				"InvestigatingHandler MUST audit AI agent calls even when they fail")
 
-			// DD-TESTING-001: Validate specific event counts for HolmesGPT calls
+			// DD-TESTING-001: Validate specific event counts for AI agent calls
 			eventCounts := countEventsByType(events)
-			Expect(eventCounts[aiaudit.EventTypeHolmesGPTCall]).To(BeNumerically(">=", 1),
-				"Expected at least 1 HolmesGPT call event (may be more due to retries)")
+			Expect(eventCounts[aiaudit.EventTypeAIAgentCall]).To(BeNumerically(">=", 1),
+				"Expected at least 1 AI agent call event (may be more due to retries)")
 
-			// Business Value: Operators can trace failed HolmesGPT interactions
+			// Business Value: Operators can trace failed AI agent interactions
 			event := events[0]
 
 			// ✅ CORRECT: Use validators.ValidateAuditEvent per TESTING_GUIDELINES.md
 			validators.ValidateAuditEvent(event, validators.ExpectedAuditEvent{
-				EventType:     aiaudit.EventTypeHolmesGPTCall,
+				EventType:     aiaudit.EventTypeAIAgentCall,
 				EventCategory: ogenclient.AuditEventEventCategoryAnalysis,
-				EventAction:   aiaudit.EventActionHolmesGPTCall,
+				EventAction:   aiaudit.EventActionAIAgentCall,
 				CorrelationID: correlationID,
 				// Note: EventOutcome intentionally omitted - may vary based on HAPI response
 			})
 
 			// DD-TESTING-001: Validate strongly-typed payload (DD-AUDIT-004)
-			payload := event.EventData.AIAnalysisHolmesGPTCallPayload
-			Expect(payload.Endpoint).ToNot(BeEmpty(), "event_data should include HolmesGPT endpoint")
+			payload := event.EventData.AIAnalysisAIAgentCallPayload
+			Expect(payload.Endpoint).ToNot(BeEmpty(), "event_data should include AI agent endpoint")
 			Expect(payload.HTTPStatusCode).ToNot(BeZero(), "event_data should include HTTP status code")
 			Expect(payload.DurationMs).To(BeNumerically(">", 0), "Duration should be positive even for failed calls")
 

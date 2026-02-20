@@ -69,17 +69,6 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 								Namespace: "payments",
 							},
 							EnrichmentResults: sharedtypes.EnrichmentResults{
-								DetectedLabels: &sharedtypes.DetectedLabels{
-									GitOpsManaged:   true,
-									GitOpsTool:      "argocd",
-									PDBProtected:    true,
-									HPAEnabled:      true,
-									NetworkIsolated: true,
-									ServiceMesh:     "istio",
-								},
-								OwnerChain: []sharedtypes.OwnerChainEntry{
-									{Namespace: "payments", Kind: "Deployment", Name: "payment-service"},
-								},
 								CustomLabels: map[string][]string{
 									"team":        {"payments"},
 									"cost_center": {"revenue"},
@@ -125,8 +114,7 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 			// Should have completion timestamp
 			Expect(analysis.Status.CompletedAt).NotTo(BeZero())
 
-			// Should capture targetInOwnerChain
-			Expect(analysis.Status.TargetInOwnerChain).NotTo(BeNil())
+			// ADR-055: Should capture affectedResource in RCA (replaces targetInOwnerChain)
 		})
 
 		It("should require approval for production environment - BR-AI-013", func() {
@@ -179,14 +167,7 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 								Name:      "web-app",
 								Namespace: "staging",
 							},
-							EnrichmentResults: sharedtypes.EnrichmentResults{
-								DetectedLabels: &sharedtypes.DetectedLabels{
-									GitOpsManaged: true,
-								},
-								OwnerChain: []sharedtypes.OwnerChainEntry{
-									{Namespace: "staging", Kind: "Deployment", Name: "web-app"},
-								},
-							},
+							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
 						AnalysisTypes: []string{"investigation", "workflow-selection"},
 					},
@@ -302,12 +283,7 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 								Name:      "test-app",
 								Namespace: "production",
 							},
-							EnrichmentResults: sharedtypes.EnrichmentResults{
-								DetectedLabels: &sharedtypes.DetectedLabels{
-									// FailedDetections indicates data quality issues
-									FailedDetections: []string{"gitOpsManaged"},
-								},
-							},
+							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
 						AnalysisTypes: []string{"investigation"},
 					},

@@ -35,7 +35,7 @@ limitations under the License.
 // - BR-SP-051: Environment classification
 // - BR-SP-070: Priority assignment
 // - BR-SP-100: Owner chain traversal
-// - BR-SP-101: Detected labels
+// - BR-SP-101: Detected labels (removed - ADR-056: relocated to HAPI)
 // - BR-SP-102: CustomLabels from Rego
 package signalprocessing
 

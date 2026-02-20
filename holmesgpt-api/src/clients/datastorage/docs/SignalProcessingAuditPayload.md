@@ -23,8 +23,6 @@ Name | Type | Description | Notes
 **has_owner_chain** | **bool** | Whether the resource has an owner chain | [optional] 
 **owner_chain_length** | **int** | Length of the owner chain | [optional] 
 **degraded_mode** | **bool** | Whether context enrichment was degraded | [optional] 
-**has_pdb** | **bool** | Whether the resource has a PodDisruptionBudget | [optional] 
-**has_hpa** | **bool** | Whether the resource has a HorizontalPodAutoscaler | [optional] 
 **duration_ms** | **int** | Enrichment duration in milliseconds | [optional] 
 **has_namespace** | **bool** | Whether namespace context was enriched | [optional] 
 **has_pod** | **bool** | Whether pod context was enriched | [optional] 

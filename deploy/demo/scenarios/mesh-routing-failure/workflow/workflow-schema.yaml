@@ -1,0 +1,40 @@
+# Fix AuthorizationPolicy Workflow Schema - Job Backend (BR-WORKFLOW-004)
+# Scenario: #136 -- Linkerd AuthorizationPolicy blocks traffic -> remove/fix policy
+metadata:
+  workflowId: fix-authz-policy-v1
+  version: "1.0.0"
+  description:
+    what: "Removes or fixes a Linkerd AuthorizationPolicy that is blocking legitimate traffic"
+    whenToUse: "When a Linkerd-meshed workload has high error rates (403s) due to a restrictive AuthorizationPolicy"
+    whenNotToUse: "When the 403 errors are intentional (security policy) or caused by something other than an AuthorizationPolicy"
+    preconditions: "Linkerd is installed, the workload is meshed, and an AuthorizationPolicy is identified as the traffic blocker"
+
+actionType: FixAuthorizationPolicy
+
+labels:
+  signalType: HighErrorRate
+  severity: [critical, high]
+  environment: [production, staging]
+  component: "*"
+  priority: "*"
+
+detectedLabels:
+  serviceMesh: "*"
+
+execution:
+  engine: job
+  bundle: quay.io/kubernaut-cicd/test-workflows/fix-authz-policy-job:v1.0.0
+
+parameters:
+  - name: TARGET_NAMESPACE
+    type: string
+    required: true
+    description: "Namespace of the affected workload"
+  - name: TARGET_POLICY
+    type: string
+    required: false
+    description: "Name of the AuthorizationPolicy to remove (if known)"
+  - name: TARGET_SERVER
+    type: string
+    required: false
+    description: "Name of the Linkerd Server resource associated with the policy"

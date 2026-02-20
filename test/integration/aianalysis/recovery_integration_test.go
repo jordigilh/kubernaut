@@ -101,7 +101,7 @@ var _ = Describe("Recovery Endpoint Integration", Label("integration", "recovery
 					SelectedWorkflow: client.SelectedWorkflowSummary{
 						WorkflowID:     "memory-fix-v1",
 						Version:        "v1.0.0",
-						ContainerImage: "kubernaut/memory-fix:v1.0.0",
+						ExecutionBundle: "kubernaut/memory-fix:v1.0.0",
 						Rationale:      "Selected for OOM remediation",
 					},
 					Failure: client.ExecutionFailure{
@@ -224,7 +224,7 @@ var _ = Describe("Recovery Endpoint Integration", Label("integration", "recovery
 					SelectedWorkflow: client.SelectedWorkflowSummary{
 						WorkflowID:     "restart-pod-v1",
 						Version:        "1.0.0",
-						ContainerImage: "kubernaut/restart:v1",
+						ExecutionBundle: "kubernaut/restart:v1",
 						Rationale:      "Selected based on OOMKilled signal type",
 					},
 					Failure: client.ExecutionFailure{
@@ -271,7 +271,7 @@ var _ = Describe("Recovery Endpoint Integration", Label("integration", "recovery
 					SelectedWorkflow: client.SelectedWorkflowSummary{
 						WorkflowID:     "db-pool-fix-v2",
 						Version:        "v2.1.0",
-						ContainerImage: "kubernaut/db-fix:v2.1.0",
+						ExecutionBundle: "kubernaut/db-fix:v2.1.0",
 						Parameters:     client.NewOptSelectedWorkflowSummaryParameters(map[string]string{"MAX_CONNECTIONS": "100", "TIMEOUT": "30s"}),
 						Rationale:      "Selected based on connection pool symptoms",
 					},
@@ -313,7 +313,7 @@ var _ = Describe("Recovery Endpoint Integration", Label("integration", "recovery
 					},
 					SelectedWorkflow: client.SelectedWorkflowSummary{
 						WorkflowID:     "memory-scale-v2",
-						ContainerImage: "kubernaut/memory-scale:v2",
+						ExecutionBundle: "kubernaut/memory-scale:v2",
 						Rationale:      "Second attempt after restart failed",
 					},
 					Failure: client.ExecutionFailure{

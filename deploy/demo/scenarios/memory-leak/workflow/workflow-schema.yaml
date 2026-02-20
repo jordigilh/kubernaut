@@ -1,0 +1,33 @@
+# Graceful Restart Workflow Schema - Job Backend (BR-WORKFLOW-004)
+# Scenario: #129 -- Predictive memory exhaustion -> graceful restart
+metadata:
+  workflowId: graceful-restart-v1
+  version: "1.0.0"
+  description:
+    what: "Performs a graceful rolling restart of a deployment to reset its runtime state and reclaim leaked memory"
+    whenToUse: "When predictive analysis indicates a container is trending toward OOM based on memory growth rate, and a restart will reset the leak without data loss"
+    whenNotToUse: "When the memory growth is from legitimate workload (cache warming, data loading) rather than a leak, or when the application cannot tolerate restarts"
+    preconditions: "The deployment supports rolling restarts without data loss, and the memory growth pattern is confirmed as a leak (linear, unbounded)"
+
+actionType: GracefulRestart
+
+labels:
+  signalType: PredictiveMemoryExhaust
+  severity: [warning, critical]
+  environment: [production, staging]
+  component: "*"
+  priority: "*"
+
+execution:
+  engine: job
+  bundle: quay.io/kubernaut-cicd/test-workflows/graceful-restart-job@sha256:56e68593ef8cf813cd6cd17189e6536bb52f129b06e9088bca181a039c457881
+
+parameters:
+  - name: TARGET_NAMESPACE
+    type: string
+    required: true
+    description: "Namespace of the affected deployment"
+  - name: TARGET_DEPLOYMENT
+    type: string
+    required: true
+    description: "Name of the deployment to restart"

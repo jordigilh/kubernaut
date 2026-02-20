@@ -26,10 +26,12 @@ import (
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:selectablefield:JSONPath=.spec.remediationRequestRef.name
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="Severity",type=string,JSONPath=`.status.severity`
 // +kubebuilder:printcolumn:name="Environment",type=string,JSONPath=`.status.environmentClassification.environment`
 // +kubebuilder:printcolumn:name="Priority",type=string,JSONPath=`.status.priorityAssignment.priority`
+// +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`,priority=1
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // SignalProcessing is the Schema for the signalprocessings API.
@@ -124,8 +126,8 @@ type SignalData struct {
 	// When Gateway received the signal
 	ReceivedTime metav1.Time `json:"receivedTime"`
 
-	// Provider-specific fields in raw JSON format
-	ProviderData []byte `json:"providerData,omitempty"`
+	// Provider-specific fields in raw JSON format (issue #96: string to avoid base64)
+	ProviderData string `json:"providerData,omitempty"`
 }
 
 // ResourceIdentifier identifies the target resource for remediation.
@@ -275,8 +277,6 @@ type KubernetesContext struct {
 	Node *NodeDetails `json:"node,omitempty"`
 	// Owner chain from target to top-level controller
 	OwnerChain []OwnerChainEntry `json:"ownerChain,omitempty"`
-	// Detected labels (auto-detected cluster characteristics)
-	DetectedLabels *DetectedLabels `json:"detectedLabels,omitempty"`
 	// Custom labels (extracted via Rego policies)
 	// DD-WORKFLOW-001 v1.9: map[string][]string (subdomain → list of values)
 	// Example: {"constraint": ["cost-constrained", "stateful-safe"], "team": ["name=payments"]}
@@ -432,7 +432,7 @@ type NodeCondition struct {
 // OwnerChainEntry represents one owner in the ownership chain.
 // BR-SP-100: OwnerChain Builder
 // DD-WORKFLOW-001 v1.8: Namespace, Kind, Name ONLY (no APIVersion/UID)
-// HolmesGPT-API uses for DetectedLabels validation
+// HolmesGPT-API uses for context enrichment
 type OwnerChainEntry struct {
 	// Owner namespace (empty for cluster-scoped resources like Node)
 	Namespace string `json:"namespace,omitempty"`
@@ -440,28 +440,6 @@ type OwnerChainEntry struct {
 	Kind string `json:"kind"`
 	// Owner name
 	Name string `json:"name"`
-}
-
-// DetectedLabels contains auto-detected cluster characteristics.
-// BR-SP-101: DetectedLabels Detector
-// DD-WORKFLOW-001 v2.2: 8 detection categories
-type DetectedLabels struct {
-	// Whether the target is in a production namespace
-	IsProduction bool `json:"isProduction,omitempty"`
-	// Whether the target has resource limits defined
-	HasResourceLimits bool `json:"hasResourceLimits,omitempty"`
-	// Whether the target is managed by Helm
-	HelmManaged bool `json:"helmManaged,omitempty"`
-	// Whether the target is managed by ArgoCD/Flux
-	GitOpsManaged bool `json:"gitOpsManaged,omitempty"`
-	// Whether the target has a PDB (PodDisruptionBudget)
-	HasPDB bool `json:"hasPDB,omitempty"`
-	// Whether the target has an HPA (HorizontalPodAutoscaler)
-	HasHPA bool `json:"hasHPA,omitempty"`
-	// Whether the namespace has network isolation
-	NetworkIsolated bool `json:"networkIsolated,omitempty"`
-	// Whether the namespace is part of a service mesh
-	ServiceMesh bool `json:"serviceMesh,omitempty"`
 }
 
 // RecoveryContext holds context for recovery attempts.

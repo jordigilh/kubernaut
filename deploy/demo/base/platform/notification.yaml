@@ -100,6 +100,10 @@ spec:
       labels:
         app: notification-controller
         control-plane: controller-manager
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9186"
+        prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: notification-controller
       containers:
@@ -109,10 +113,12 @@ spec:
           env:
             - name: CONFIG_PATH
               value: "/etc/notification/config.yaml"
-            # Optional: Slack webhook URL for slack delivery channel
-            # Set this to your Slack incoming webhook URL to enable Slack notifications
+            # Slack webhook URL from Secret (created from ~/.kubernaut/notification/slack-webhook.url)
             - name: SLACK_WEBHOOK_URL
-              value: ""
+              valueFrom:
+                secretKeyRef:
+                  name: slack-webhook
+                  key: webhook-url
           args:
             - "-config"
             - "$(CONFIG_PATH)"

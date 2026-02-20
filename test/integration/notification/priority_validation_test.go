@@ -263,15 +263,11 @@ var _ = Describe("BR-NOT-057: Priority-Based Processing", Label("integration", "
 					Name:       notifName,
 					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
-					Labels: map[string]string{
-						"kubernaut.ai/notification-type": "escalation",
-						"kubernaut.ai/severity":          "critical",
-						"kubernaut.ai/environment":       "production",
-					},
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Type:     notificationv1alpha1.NotificationTypeEscalation,
 					Priority: notificationv1alpha1.NotificationPriorityCritical,
+					Severity: "critical",
 					Subject:  "🚨 Production Outage - Payment API Down",
 					Body:     "Critical: Payment API unresponsive for 5+ minutes. Immediate action required.",
 					Recipients: []notificationv1alpha1.Recipient{
@@ -279,6 +275,9 @@ var _ = Describe("BR-NOT-057: Priority-Based Processing", Label("integration", "
 					},
 					Channels: []notificationv1alpha1.Channel{
 						notificationv1alpha1.ChannelConsole,
+					},
+					Metadata: map[string]string{
+						"environment": "production",
 					},
 				},
 			}
@@ -317,14 +316,11 @@ var _ = Describe("BR-NOT-057: Priority-Based Processing", Label("integration", "
 					Name:       notifName,
 					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
-					Labels: map[string]string{
-						"kubernaut.ai/notification-type": "completed",
-						"kubernaut.ai/severity":          "low",
-					},
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Type:     notificationv1alpha1.NotificationTypeSimple,
 					Priority: notificationv1alpha1.NotificationPriorityLow,
+					Severity: "low",
 					Subject:  "ℹ️ Routine Maintenance Completed",
 					Body:     "Info: Scheduled maintenance completed successfully. No action required.",
 					Recipients: []notificationv1alpha1.Recipient{

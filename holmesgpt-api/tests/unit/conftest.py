@@ -20,6 +20,27 @@ def pytest_configure(config):
     Pytest hook that runs before test collection.
     Create config file BEFORE any test modules are imported.
     """
+    # Prevent prometrix pydantic v1 crash on Python 3.14+.
+    # prometrix uses pydantic v1 BaseModel which is incompatible with Python
+    # 3.14's type system. Mock the entire package so the Holmes SDK import
+    # chain doesn't crash at collection time.
+    import sys
+    from unittest.mock import MagicMock
+    for mod_name in [
+        "prometrix",
+        "prometrix.auth",
+        "prometrix.connect",
+        "prometrix.connect.aws_connect",
+        "prometrix.connect.custom_connect",
+        "prometrix.exceptions",
+        "prometrix.models",
+        "prometrix.models.prometheus_config",
+        "prometrix.models.prometheus_result",
+        "prometrix.utils",
+    ]:
+        if mod_name not in sys.modules:
+            sys.modules[mod_name] = MagicMock()
+
     _config_content = """
 llm:
   provider: "openai"

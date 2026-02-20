@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	k8sretry "k8s.io/client-go/util/retry"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8sretry "k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -97,6 +98,7 @@ func (m *Manager) AtomicStatusUpdate(
 	reason string,
 	message string,
 	attempts []notificationv1alpha1.DeliveryAttempt,
+	conditions []metav1.Condition,
 ) error {
 	return k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
 		// 1. Refetch to get latest resourceVersion (bypasses cache - DD-STATUS-001)
@@ -105,29 +107,33 @@ func (m *Manager) AtomicStatusUpdate(
 		}
 
 		// DD-STATUS-001: Debug logging to diagnose cache issues
-		ctrl.Log.WithName("status-manager").Info("🔍 DD-STATUS-001: API reader refetch complete",
+		ctrl.Log.WithName("status-manager").Info("DD-STATUS-001: API reader refetch complete",
 			"deliveryAttemptsBeforeUpdate", len(notification.Status.DeliveryAttempts),
-			"newAttemptsToAdd", len(attempts))
+			"newAttemptsToAdd", len(attempts),
+			"conditionsToApply", len(conditions))
 
-		// 2. Validate phase transition (if phase is changing)
+		// 2. Re-apply conditions after refetch to prevent in-memory conditions from being wiped
+		for _, c := range conditions {
+			meta.SetStatusCondition(&notification.Status.Conditions, c)
+		}
+
+		// 3. Validate phase transition (if phase is changing)
 		if notification.Status.Phase != newPhase {
 			if !isValidPhaseTransition(notification.Status.Phase, newPhase) {
 				return fmt.Errorf("invalid phase transition from %s to %s", notification.Status.Phase, newPhase)
 			}
 
-			// Update phase fields
 			notification.Status.Phase = newPhase
 			notification.Status.Reason = reason
 			notification.Status.Message = message
 
-			// Set completion time for terminal phases
 			if isTerminalPhase(newPhase) {
 				now := metav1.Now()
 				notification.Status.CompletionTime = &now
 			}
 		}
 
-		// 3. Record all delivery attempts atomically
+		// 4. Record all delivery attempts atomically
 		// De-duplicate attempts to prevent concurrent reconciles from recording the same attempt twice
 		// BUG FIX (Jan 22, 2026): Relaxed deduplication to only reject truly identical attempts
 		// Previous logic rejected legitimate failed attempts with same attempt# due to API propagation lag
@@ -179,7 +185,7 @@ func (m *Manager) AtomicStatusUpdate(
 		// DD-CONTROLLER-001: Track processed generation to prevent duplicate reconciles
 		notification.Status.ObservedGeneration = notification.Generation
 
-		// 4. SINGLE ATOMIC UPDATE: All changes committed together
+		// 5. SINGLE ATOMIC UPDATE: All changes committed together
 		if err := m.client.Status().Update(ctx, notification); err != nil {
 			return fmt.Errorf("failed to atomically update status: %w", err)
 		}
@@ -196,24 +202,29 @@ func (m *Manager) AtomicStatusUpdate(
 //
 // This method uses retry logic to handle optimistic locking conflicts.
 // See: docs/development/business-requirements/DEVELOPMENT_GUIDELINES.md
-func (m *Manager) UpdatePhase(ctx context.Context, notification *notificationv1alpha1.NotificationRequest, newPhase notificationv1alpha1.NotificationPhase, reason, message string) error {
+func (m *Manager) UpdatePhase(ctx context.Context, notification *notificationv1alpha1.NotificationRequest, newPhase notificationv1alpha1.NotificationPhase, reason, message string, conditions []metav1.Condition) error {
 	return k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
 		// 1. Refetch to get latest resourceVersion (bypasses cache - DD-STATUS-001)
 		if err := m.apiReader.Get(ctx, client.ObjectKeyFromObject(notification), notification); err != nil {
 			return fmt.Errorf("failed to refetch notification: %w", err)
 		}
 
-		// 2. Validate phase transition
+		// 2. Re-apply conditions after refetch to prevent in-memory conditions from being wiped
+		for _, c := range conditions {
+			meta.SetStatusCondition(&notification.Status.Conditions, c)
+		}
+
+		// 3. Validate phase transition
 		if !isValidPhaseTransition(notification.Status.Phase, newPhase) {
 			return fmt.Errorf("invalid phase transition from %s to %s", notification.Status.Phase, newPhase)
 		}
 
-		// 3. Update phase fields
+		// 4. Update phase fields
 		notification.Status.Phase = newPhase
 		notification.Status.Reason = reason
 		notification.Status.Message = message
 
-		// 4. Set completion time for terminal phases
+		// 5. Set completion time for terminal phases
 		if isTerminalPhase(newPhase) {
 			now := metav1.Now()
 			notification.Status.CompletionTime = &now
@@ -222,7 +233,7 @@ func (m *Manager) UpdatePhase(ctx context.Context, notification *notificationv1a
 		// DD-CONTROLLER-001: Track processed generation to prevent duplicate reconciles
 		notification.Status.ObservedGeneration = notification.Generation
 
-		// 5. Update status using status subresource
+		// 6. Update status using status subresource
 		if err := m.client.Status().Update(ctx, notification); err != nil {
 			return fmt.Errorf("failed to update phase: %w", err)
 		}

@@ -1,5 +1,7 @@
 # Days 8-10: E2E Testing & Production Polish
 
+> **Note (ADR-056/ADR-055):** References to `EnrichmentResults.DetectedLabels` and `EnrichmentResults.OwnerChain` in this document are historical. These fields were removed per ADR-056 and ADR-055.
+
 **Part of**: AI Analysis Implementation Plan V1.0
 **Parent Document**: [IMPLEMENTATION_PLAN_V1.0.md](../../IMPLEMENTATION_PLAN_V1.0.md)
 **Duration**: 18-24 hours (3 days)

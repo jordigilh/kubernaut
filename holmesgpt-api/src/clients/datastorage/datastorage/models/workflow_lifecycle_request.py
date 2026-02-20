@@ -32,8 +32,8 @@ class WorkflowLifecycleRequest(BaseModel):
     Request for workflow lifecycle operations (enable, disable, deprecate). Reason is mandatory per DD-WORKFLOW-017 Phase 4.4.
     """ # noqa: E501
     reason: Annotated[str, Field(min_length=1, strict=True)] = Field(description="Why the lifecycle operation is being performed (mandatory)")
-    updated_by: Optional[StrictStr] = Field(default=None, description="Who is performing the operation")
-    __properties: ClassVar[List[str]] = ["reason", "updated_by"]
+    updated_by: Optional[StrictStr] = Field(default=None, description="Who is performing the operation", alias="updatedBy")
+    __properties: ClassVar[List[str]] = ["reason", "updatedBy"]
 
     model_config = {
         "populate_by_name": True,
@@ -85,7 +85,7 @@ class WorkflowLifecycleRequest(BaseModel):
 
         _obj = cls.model_validate({
             "reason": obj.get("reason"),
-            "updated_by": obj.get("updated_by")
+            "updatedBy": obj.get("updatedBy")
         })
         return _obj
 

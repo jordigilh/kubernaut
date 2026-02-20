@@ -1,7 +1,7 @@
 # CRD Controllers Documentation
 
-**Last Updated**: 2026-02-12
-**Structure Version**: 1.1
+**Last Updated**: 2026-02-16
+**Structure Version**: 1.2
 **Documentation Status**: ✅ Active
 
 ---
@@ -24,13 +24,28 @@ This directory contains comprehensive documentation for all **7 CRD controller s
 | **Kubernetes Executor** | [04-kubernetesexecutor/](./04-kubernetesexecutor/) | ✅ Active | Safe Kubernetes action execution |
 | **Remediation Orchestrator** | [05-remediationorchestrator/](./05-remediationorchestrator/) | ✅ Active | Multi-CRD lifecycle coordination |
 | **Notification** | [06-notification/](./06-notification/) | 🚧 In Development | Multi-channel notification delivery with CRD persistence |
-| **Effectiveness Monitor** | [07-effectivenessmonitor/](./07-effectivenessmonitor/) | ✅ Active (V1.0) | Post-remediation effectiveness assessment (health, alerts, metrics, spec drift). Defense-in-depth testing (unit/integration/E2E) with binary code coverage. Docs: test plan only; 14-file structure pending. |
+| **Effectiveness Monitor** | [07-effectivenessmonitor/](./07-effectivenessmonitor/) | ✅ Active (V1.0) | Post-remediation effectiveness assessment (health, alerts, metrics, spec drift) |
+
+### **Code Coverage (PR #90, 2026-02-16)**
+
+| Service | Unit | Integration | E2E | All Tiers |
+|---------|------|-------------|-----|-----------|
+| Signal Processing | 87.3% | 61.4% | 58.2% | 85.4% |
+| AI Analysis | 80.0% | 73.6% | 53.8% | 87.6% |
+| Workflow Execution | 74.0% | 67.9% | 56.0% | 82.9% |
+| Kubernetes Executor | — | — | — | — |
+| Remediation Orchestrator | 79.9% | 59.8% | 49.1% | 82.1% |
+| Notification | 75.5% | 57.6% | 49.5% | 73.3% |
+| Effectiveness Monitor | 72.1% | 64.9% | 68.8% | 81.9% |
+
+> **Targets**: Unit ≥80%, Integration ≥80%, All Tiers ≥80%.
+> Coverage is per-tier against the tier-specific code subset (see `scripts/coverage/coverage_report.py`).
 
 ---
 
 ## 📖 How to Navigate Service Documentation
 
-Each service directory follows a **consistent 14-file structure** for easy navigation (services 01-06; 07-effectivenessmonitor has a test plan only — full docs pending):
+Each service directory follows a **consistent 14-file structure** for easy navigation:
 
 ### **Standard Files in Each Service** (Common Pattern)
 
@@ -285,6 +300,7 @@ Common patterns duplicated with clear markers for easy maintenance.
 **Last Restructure**: 2025-01-15
 **Relocation Update**: 2025-10-12
 **Document Reorganization**: 2025-10-14 (85% reduction in root-level files)
-**EM V1.0 Integration**: 2026-02-12 (7th service: Effectiveness Monitor with full coverage)
+**EM V1.0 Integration**: 2026-02-12 (7th service: Effectiveness Monitor)
+**Coverage Update**: 2026-02-16 (PR #90: added per-service coverage table)
 **Status**: ✅ Active and maintained
 

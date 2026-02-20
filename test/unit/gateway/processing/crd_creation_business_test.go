@@ -160,8 +160,8 @@ var _ = Describe("BR-GATEWAY-004: RemediationRequest CRD Creation Business Outco
 			Expect(err).NotTo(HaveOccurred())
 			Expect(rr.Spec.Severity).To(Equal("critical"),
 				"Severity must be preserved for RO prioritization")
-			Expect(rr.Labels["kubernaut.ai/severity"]).To(Equal("critical"),
-				"Severity label enables filtering: kubectl get rr -l kubernaut.ai/severity=critical")
+			Expect(rr.Labels).NotTo(HaveKey("kubernaut.ai/severity"),
+				"Issue #91: severity is in immutable spec field, not a mutable label")
 		})
 
 		It("creates CRD with correct resource identification for workflow selection", func() {
@@ -380,8 +380,8 @@ var _ = Describe("BR-GATEWAY-004: RemediationRequest CRD Creation Business Outco
 				"Signal type preserved for audit trail and filtering")
 			Expect(rr.Spec.SignalSource).To(Equal("alertmanager"),
 				"Signal source preserved for troubleshooting")
-			Expect(rr.Labels["kubernaut.ai/signal-type"]).To(Equal("prometheus-alert"),
-				"Signal type label enables filtering by source")
+			Expect(rr.Labels).NotTo(HaveKey("kubernaut.ai/signal-type"),
+				"Issue #91: signal type is in immutable spec field, not a mutable label")
 		})
 
 		It("preserves temporal data for audit trail (firing and received times)", func() {
@@ -414,6 +414,47 @@ var _ = Describe("BR-GATEWAY-004: RemediationRequest CRD Creation Business Outco
 				"Received time preserved - shows WHEN Gateway received signal")
 			Expect(rr.Annotations["kubernaut.ai/created-at"]).NotTo(BeEmpty(),
 				"Creation timestamp in annotation for audit trail")
+		})
+	})
+
+	Context("Issue #96: ProviderData and OriginalPayload are plain JSON strings (no base64)", func() {
+		It("stores ProviderData as parseable JSON, not base64-encoded bytes", func() {
+			rawPayload := json.RawMessage(`{"alerts":[{"status":"firing","labels":{"alertname":"HighMemory"}}]}`)
+			signal := &types.NormalizedSignal{
+				AlertName:    "HighMemory",
+				Fingerprint:  "issue96-fingerprint-001",
+				Severity:     "warning",
+				SourceType:   "prometheus-alert",
+				Source:       "alertmanager",
+				Namespace:    testNamespace,
+				ReceivedTime: time.Now(),
+				RawPayload:   rawPayload,
+				Labels: map[string]string{
+					"alertname": "HighMemory",
+					"namespace": testNamespace,
+				},
+				Resource: types.ResourceIdentifier{
+					Kind:      "Pod",
+					Name:      "app-pod-1",
+					Namespace: testNamespace,
+				},
+			}
+
+			rr, err := crdCreator.CreateRemediationRequest(ctx, signal)
+
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(rr.Spec.ProviderData).NotTo(BeEmpty())
+			var providerMap map[string]interface{}
+			Expect(json.Unmarshal([]byte(rr.Spec.ProviderData), &providerMap)).To(Succeed(),
+				"ProviderData must be parseable JSON, not base64-encoded bytes")
+
+			Expect(rr.Spec.OriginalPayload).NotTo(BeEmpty())
+			var payloadMap map[string]interface{}
+			Expect(json.Unmarshal([]byte(rr.Spec.OriginalPayload), &payloadMap)).To(Succeed(),
+				"OriginalPayload must be parseable JSON, not base64-encoded bytes")
+			Expect(payloadMap).To(HaveKey("alerts"),
+				"OriginalPayload must preserve the original alert structure")
 		})
 	})
 
@@ -677,8 +718,8 @@ var _ = Describe("BR-GATEWAY-019: CRDCreator Safe Defaults", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(rr.Spec.SignalType).To(Equal("kubernetes-event"),
 					"SignalType distinguishes prometheus-alert vs kubernetes-event sources")
-				Expect(rr.Labels["kubernaut.ai/signal-type"]).To(Equal("kubernetes-event"),
-					"Signal type label enables filtering by source")
+				Expect(rr.Labels).NotTo(HaveKey("kubernaut.ai/signal-type"),
+					"Issue #91: signal type is in immutable spec field, not a mutable label")
 			})
 		})
 
@@ -758,9 +799,9 @@ var _ = Describe("BR-GATEWAY-019: CRDCreator Safe Defaults", func() {
 					Expect(err).ToNot(HaveOccurred())
 					Expect(rr.Spec.ProviderData).ToNot(BeNil(),
 						"ProviderData should be populated even with empty namespace")
-					// ProviderData is JSON - should contain empty namespace value
+					// ProviderData is JSON string - should contain empty namespace value
 					var providerDataMap map[string]interface{}
-					jsonErr := json.Unmarshal(rr.Spec.ProviderData, &providerDataMap)
+					jsonErr := json.Unmarshal([]byte(rr.Spec.ProviderData), &providerDataMap)
 					Expect(jsonErr).ToNot(HaveOccurred())
 					Expect(providerDataMap).To(HaveKey("namespace"))
 					Expect(providerDataMap).To(HaveKey("labels"))
@@ -790,13 +831,14 @@ var _ = Describe("BR-GATEWAY-019: CRDCreator Safe Defaults", func() {
 					Expect(err).ToNot(HaveOccurred())
 					Expect(rr.Spec.ProviderData).ToNot(BeNil(),
 						"ProviderData should be populated even with nil labels")
-					// ProviderData JSON should handle nil labels gracefully
+					// ProviderData JSON string should handle nil labels gracefully
 					var providerDataMap map[string]interface{}
-					jsonErr := json.Unmarshal(rr.Spec.ProviderData, &providerDataMap)
+					jsonErr := json.Unmarshal([]byte(rr.Spec.ProviderData), &providerDataMap)
 					Expect(jsonErr).ToNot(HaveOccurred(),
 						"ProviderData JSON should be valid even with nil labels")
 				})
 			})
 		})
 	})
+
 })

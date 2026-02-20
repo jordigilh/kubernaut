@@ -280,8 +280,8 @@ type SelectedWorkflowSummary struct {
 	ActionType string `json:"actionType,omitempty"`
 	// Workflow version
 	Version string `json:"version"`
-	// Container image used
-	ContainerImage string `json:"containerImage"`
+	// Execution bundle OCI reference (digest-pinned)
+	ExecutionBundle string `json:"executionBundle"`
 	// Parameters passed to workflow
 	Parameters map[string]string `json:"parameters,omitempty"`
 	// Why this workflow was selected
@@ -473,13 +473,9 @@ type AIAnalysisStatus struct {
 	InvestigationTime int64 `json:"investigationTime,omitempty"`
 
 	// ========================================
-	// HAPI RESPONSE METADATA (Dec 2025)
+	// HAPI RESPONSE METADATA
 	// ========================================
-	// Whether the RCA-identified target resource was found in OwnerChain
-	// If false, DetectedLabels may be from different scope than affected resource
-	// Used for: Rego policy input, audit trail, operator notifications, metrics
-	TargetInOwnerChain *bool `json:"targetInOwnerChain,omitempty"`
-	// Non-fatal warnings from HolmesGPT-API (e.g., OwnerChain validation, low confidence)
+	// Non-fatal warnings from HolmesGPT-API (e.g., low confidence)
 	Warnings []string `json:"warnings,omitempty"`
 	// ValidationAttemptsHistory contains complete history of all HAPI validation attempts
 	// Per DD-HAPI-002 v1.4: HAPI retries up to 3 times with LLM self-correction
@@ -517,8 +513,36 @@ type AIAnalysisStatus struct {
 	// +optional
 	InvestigationSession *InvestigationSession `json:"investigationSession,omitempty"`
 
+	// ========================================
+	// POST-RCA CONTEXT (ADR-056)
+	// Runtime-computed cluster characteristics from HAPI
+	// ========================================
+	// PostRCAContext holds data computed by HAPI after RCA (e.g., DetectedLabels).
+	// Immutable once set — use CEL validation on the PostRCAContext type.
+	// +optional
+	PostRCAContext *PostRCAContext `json:"postRCAContext,omitempty"`
+
 	// Conditions
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+}
+
+// PostRCAContext holds data computed by HAPI after the RCA phase.
+// ADR-056: DetectedLabels are computed at runtime by HAPI's LabelDetector
+// and returned in the HAPI response for storage in the AIAnalysis status.
+// This data is used by Rego policies for approval gating (e.g., stateful
+// workload detection) and is immutable once set.
+//
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.setAt) || self == oldSelf",message="postRCAContext is immutable once setAt is populated (ADR-056)"
+type PostRCAContext struct {
+	// DetectedLabels contains cluster characteristics computed by HAPI's
+	// LabelDetector during the get_resource_context tool invocation.
+	// +optional
+	DetectedLabels *sharedtypes.DetectedLabels `json:"detectedLabels,omitempty"`
+	// SetAt records when the PostRCAContext was populated.
+	// Used as the immutability guard: once SetAt is non-nil, the entire
+	// PostRCAContext becomes immutable via CEL validation.
+	// +optional
+	SetAt *metav1.Time `json:"setAt,omitempty"`
 }
 
 // InvestigationSession tracks the async HAPI session lifecycle.
@@ -591,11 +615,11 @@ type SelectedWorkflow struct {
 	// Workflow version
 	// +kubebuilder:validation:Required
 	Version string `json:"version"`
-	// Container image (OCI bundle) - resolved by HolmesGPT-API
+	// Execution bundle OCI reference (digest-pinned) - resolved by HolmesGPT-API
 	// +kubebuilder:validation:Required
-	ContainerImage string `json:"containerImage"`
-	// Container digest for audit trail
-	ContainerDigest string `json:"containerDigest,omitempty"`
+	ExecutionBundle string `json:"executionBundle"`
+	// Execution bundle digest for audit trail
+	ExecutionBundleDigest string `json:"executionBundleDigest,omitempty"`
 	// Confidence score (0.0-1.0)
 	// +kubebuilder:validation:Minimum=0.0
 	// +kubebuilder:validation:Maximum=1.0
@@ -621,8 +645,8 @@ type AlternativeWorkflow struct {
 	// Workflow identifier (catalog lookup key)
 	// +kubebuilder:validation:Required
 	WorkflowID string `json:"workflowId"`
-	// Container image (OCI bundle) - resolved by HolmesGPT-API
-	ContainerImage string `json:"containerImage,omitempty"`
+	// Execution bundle OCI reference (digest-pinned) - resolved by HolmesGPT-API
+	ExecutionBundle string `json:"executionBundle,omitempty"`
 	// Confidence score (0.0-1.0) - shows why it wasn't selected
 	// +kubebuilder:validation:Minimum=0.0
 	// +kubebuilder:validation:Maximum=1.0
@@ -670,9 +694,11 @@ type PreviousAttemptAssessment struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:selectablefield:JSONPath=.spec.remediationRequestRef.name
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="Confidence",type=number,JSONPath=`.status.selectedWorkflow.confidence`
 // +kubebuilder:printcolumn:name="ApprovalRequired",type=boolean,JSONPath=`.status.approvalRequired`
+// +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`,priority=1
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // AIAnalysis is the Schema for the aianalyses API.

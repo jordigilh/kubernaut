@@ -49,7 +49,7 @@ func SeedTestWorkflowsInDataStorage(client *ogenclient.Client, output io.Writer)
 			Component:      wf.Component,
 			Environment:    wf.Environment,
 			Priority:       wf.Priority,
-			ContainerImage: wf.ContainerImage, // HAPI integration: Use full image ref with digest
+			SchemaImage: wf.ContainerImage, // HAPI integration: Use full image ref with digest
 		}
 	}
 

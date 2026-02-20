@@ -218,7 +218,7 @@ var _ = Describe("BR-GATEWAY-092: Notification Metadata in RemediationRequest CR
 			Expect(rr.Spec.OriginalPayload).NotTo(BeEmpty(),
 				"Engineer can view raw Prometheus webhook for debugging")
 			var payload map[string]interface{}
-			err = json.Unmarshal(rr.Spec.OriginalPayload, &payload)
+			err = json.Unmarshal([]byte(rr.Spec.OriginalPayload), &payload)
 			Expect(err).NotTo(HaveOccurred(),
 				"Original payload is valid JSON for notification service parsing")
 

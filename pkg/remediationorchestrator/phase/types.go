@@ -69,12 +69,15 @@ const (
 	// Skipped - WorkflowExecution was skipped due to resource lock (terminal state)
 	// Reference: BR-ORCH-032
 	Skipped = remediationv1.PhaseSkipped
+
+	// Cancelled - Remediation was manually cancelled (terminal state)
+	Cancelled = remediationv1.PhaseCancelled
 )
 
 // IsTerminal returns true if the phase is a terminal state.
 func IsTerminal(p Phase) bool {
 	switch p {
-	case Completed, Failed, TimedOut, Skipped:
+	case Completed, Failed, TimedOut, Skipped, Cancelled:
 		return true
 	default:
 		return false

@@ -45,10 +45,10 @@ func encodeHealthCheckHealthGetResponse(response jx.Raw, w http.ResponseWriter, 
 
 func encodeIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostResponse(response IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes, w http.ResponseWriter, span trace.Span) error {
 	switch response := response.(type) {
-	case *IncidentResponse:
+	case *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostAcceptedApplicationJSON:
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		w.WriteHeader(200)
-		span.SetStatus(codes.Ok, http.StatusText(200))
+		w.WriteHeader(202)
+		span.SetStatus(codes.Ok, http.StatusText(202))
 
 		e := new(jx.Encoder)
 		response.Encode(e)
@@ -193,6 +193,90 @@ func encodeIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostResponse(response Inci
 	}
 }
 
+func encodeIncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetResponse(response IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetRes, w http.ResponseWriter, span trace.Span) error {
+	switch response := response.(type) {
+	case *IncidentResponse:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(200)
+		span.SetStatus(codes.Ok, http.StatusText(200))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetNotFound:
+		w.WriteHeader(404)
+		span.SetStatus(codes.Error, http.StatusText(404))
+
+		return nil
+
+	case *IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetConflict:
+		w.WriteHeader(409)
+		span.SetStatus(codes.Error, http.StatusText(409))
+
+		return nil
+
+	case *HTTPValidationError:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(422)
+		span.SetStatus(codes.Error, http.StatusText(422))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	default:
+		return errors.Errorf("unexpected response type: %T", response)
+	}
+}
+
+func encodeIncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetResponse(response IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRes, w http.ResponseWriter, span trace.Span) error {
+	switch response := response.(type) {
+	case *IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetOKApplicationJSON:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(200)
+		span.SetStatus(codes.Ok, http.StatusText(200))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetNotFound:
+		w.WriteHeader(404)
+		span.SetStatus(codes.Error, http.StatusText(404))
+
+		return nil
+
+	case *HTTPValidationError:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(422)
+		span.SetStatus(codes.Error, http.StatusText(422))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	default:
+		return errors.Errorf("unexpected response type: %T", response)
+	}
+}
+
 func encodeReadinessCheckReadyGetResponse(response jx.Raw, w http.ResponseWriter, span trace.Span) error {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(200)
@@ -211,10 +295,10 @@ func encodeReadinessCheckReadyGetResponse(response jx.Raw, w http.ResponseWriter
 
 func encodeRecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostResponse(response RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes, w http.ResponseWriter, span trace.Span) error {
 	switch response := response.(type) {
-	case *RecoveryResponse:
+	case *RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostAcceptedApplicationJSON:
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		w.WriteHeader(200)
-		span.SetStatus(codes.Ok, http.StatusText(200))
+		w.WriteHeader(202)
+		span.SetStatus(codes.Ok, http.StatusText(202))
 
 		e := new(jx.Encoder)
 		response.Encode(e)
@@ -345,6 +429,90 @@ func encodeRecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostResponse(response Reco
 		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(500)
 		span.SetStatus(codes.Error, http.StatusText(500))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	default:
+		return errors.Errorf("unexpected response type: %T", response)
+	}
+}
+
+func encodeRecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetResponse(response RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetRes, w http.ResponseWriter, span trace.Span) error {
+	switch response := response.(type) {
+	case *RecoveryResponse:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(200)
+		span.SetStatus(codes.Ok, http.StatusText(200))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetNotFound:
+		w.WriteHeader(404)
+		span.SetStatus(codes.Error, http.StatusText(404))
+
+		return nil
+
+	case *RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetConflict:
+		w.WriteHeader(409)
+		span.SetStatus(codes.Error, http.StatusText(409))
+
+		return nil
+
+	case *HTTPValidationError:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(422)
+		span.SetStatus(codes.Error, http.StatusText(422))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	default:
+		return errors.Errorf("unexpected response type: %T", response)
+	}
+}
+
+func encodeRecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGetResponse(response RecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGetRes, w http.ResponseWriter, span trace.Span) error {
+	switch response := response.(type) {
+	case *RecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGetOKApplicationJSON:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(200)
+		span.SetStatus(codes.Ok, http.StatusText(200))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *RecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGetNotFound:
+		w.WriteHeader(404)
+		span.SetStatus(codes.Error, http.StatusText(404))
+
+		return nil
+
+	case *HTTPValidationError:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(422)
+		span.SetStatus(codes.Error, http.StatusText(422))
 
 		e := new(jx.Encoder)
 		response.Encode(e)

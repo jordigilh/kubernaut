@@ -19,6 +19,17 @@
 | **ADR-043** | **OCI Bundle** - Workflow definition lives in container, not CRD |
 | **DD-WORKFLOW-003** | **Parameters** - UPPER_SNAKE_CASE keys for Tekton params |
 | **DD-WE-001** | **Resource Locking** - Prevents parallel/redundant workflows on same target |
+| **Issue #91** | **Metadata Migration** - `kubernaut.ai/*` labels removed from CRDs; use spec fields and field selectors |
+
+### Metadata and Filtering (Issue #91)
+
+**Removed from WorkflowExecution CRD**:
+- `kubernaut.ai/component` → ownerRef is sufficient for ownership
+- `kubernaut.ai/remediation-request` → use `spec.remediationRequestRef` instead
+
+**Operational queries**: Use field selectors (`+kubebuilder:selectablefield`) instead of label-based filtering.
+
+**KEPT on external K8s resources** (PipelineRun, Jobs): `kubernaut.ai/workflow-execution` label for WE-to-Job/PipelineRun correlation. This is on Tekton/K8s resources, not our CRDs.
 
 ---
 
@@ -426,9 +437,7 @@ metadata:
     name: remediation-payment-oom
     uid: abc-123-def-456
     controller: true
-  labels:
-    kubernaut.ai/remediation-request: remediation-payment-oom
-    kubernaut.ai/workflow-id: oomkill-increase-memory
+  # Issue #91: kubernaut.ai/* labels removed from CRDs; use spec.remediationRequestRef and field selectors
 spec:
   remediationRequestRef:
     name: remediation-payment-oom
@@ -502,9 +511,7 @@ metadata:
     name: remediation-payment-oom
     uid: abc-123-def-456
     controller: true
-  labels:
-    kubernaut.ai/remediation-request: remediation-payment-oom
-    kubernaut.ai/workflow-id: oomkill-increase-memory
+  # Issue #91: kubernaut.ai/* labels removed from CRDs; use spec.remediationRequestRef and field selectors
 spec:
   remediationRequestRef:
     name: remediation-payment-oom
@@ -599,9 +606,7 @@ metadata:
     name: remediation-payment-oom-duplicate
     uid: def-456-ghi-789
     controller: true
-  labels:
-    kubernaut.ai/remediation-request: remediation-payment-oom-duplicate
-    kubernaut.ai/workflow-id: oomkill-increase-memory
+  # Issue #91: kubernaut.ai/* labels removed from CRDs; use spec.remediationRequestRef and field selectors
 spec:
   remediationRequestRef:
     name: remediation-payment-oom-duplicate
@@ -670,9 +675,7 @@ metadata:
     name: remediation-node-disk-duplicate
     uid: ghi-789-jkl-012
     controller: true
-  labels:
-    kubernaut.ai/remediation-request: remediation-node-disk-duplicate
-    kubernaut.ai/workflow-id: node-disk-cleanup
+  # Issue #91: kubernaut.ai/* labels removed from CRDs; use spec.remediationRequestRef and field selectors
 spec:
   remediationRequestRef:
     name: remediation-node-disk-duplicate
@@ -857,6 +860,7 @@ func (r *WorkflowExecutionReconciler) buildPipelineRun(
             Name:      fmt.Sprintf("%s-run", wfe.Name),
             Namespace: wfe.Namespace,
             Labels: map[string]string{
+                // Issue #91: KEPT - label on external K8s resource (PipelineRun) for WE-to-PipelineRun correlation
                 "kubernaut.ai/workflow-execution": wfe.Name,
                 "kubernaut.ai/workflow-id":        wfe.Spec.WorkflowRef.WorkflowID,
             },
@@ -1257,6 +1261,7 @@ func (r *WorkflowExecutionReconciler) checkResourceLock(
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 4.2 | 2026-02-18 | **Issue #91**: Removed `kubernaut.ai/remediation-request` and `kubernaut.ai/workflow-id` labels from WorkflowExecution CRD examples. Added Metadata and Filtering section: field selectors replace label-based filtering; `kubernaut.ai/workflow-execution` KEPT on PipelineRun (external resource). |
 | 4.1 | 2025-12-06 | **Exponential Backoff (DD-WE-004)**: Added `ConsecutiveFailures` and `NextAllowedExecution` status fields. Added `SkipReasonExhaustedRetries` and `SkipReasonPreviousExecutionFailed` constants. Backoff applies only to pre-execution failures; execution failures block retries immediately. |
 | 3.1 | 2025-12-01 | **Resource Locking (V1.0 Safety)**: Added `targetResource` to spec. Added `Skipped` phase with `SkipDetails` struct. Prevents parallel workflows on same target (ResourceBusy). Prevents redundant sequential workflows with same workflow+target (RecentlyRemediated). Added `SkipDetails`, `ConflictingWorkflowRef`, `RecentRemediationRef` types. Added controller logic for `checkResourceLock()`. Aligned with DD-CONTRACT-001 v1.4. Audit trail for skipped executions. |
 | 3.0 | 2025-12-01 | **Enhanced Failure Details**: Added `FailureDetails` struct with structured failure information for recovery flow. Includes `failedTaskIndex`, `failedTaskName`, `reason` (K8s-style enum), `naturalLanguageSummary` for LLM context. Deprecated `failureReason` string field. Added controller logic for extracting failure details from PipelineRun. Aligned with DD-CONTRACT-001 v1.3. |

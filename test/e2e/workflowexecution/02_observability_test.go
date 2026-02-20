@@ -370,7 +370,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 			wfe := createTestWFE(testName, targetResource)
 
 			// Use invalid workflow image to trigger failure
-			wfe.Spec.WorkflowRef.ContainerImage = "ghcr.io/invalid/nonexistent:latest"
+			wfe.Spec.WorkflowRef.ExecutionBundle = "ghcr.io/invalid/nonexistent:latest"
 
 			defer func() {
 				_ = deleteWFE(wfe)
@@ -554,7 +554,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 				WorkflowID: "test-intentional-failure",
 				Version:    "v1.0.0",
 				// Tekton bundle from quay.io/kubernaut-cicd/tekton-bundles (built with tkn bundle push)
-				ContainerImage: "quay.io/kubernaut-cicd/tekton-bundles/failing:v1.0.0",
+				ExecutionBundle: "quay.io/kubernaut-cicd/tekton-bundles/failing:v1.0.0",
 			},
 				TargetResource: targetResource,
 				Parameters: map[string]string{
@@ -774,7 +774,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 				"target_resource should match")
 			Expect(string(eventData.Phase)).ToNot(BeEmpty(),
 				"phase should be present")
-			Expect(eventData.ContainerImage).To(Equal(wfe.Spec.WorkflowRef.ContainerImage),
+			Expect(eventData.ContainerImage).To(Equal(wfe.Spec.WorkflowRef.ExecutionBundle),
 				"container_image should match")
 			Expect(eventData.ExecutionName).To(Equal(wfe.Name),
 				"execution_name should match")

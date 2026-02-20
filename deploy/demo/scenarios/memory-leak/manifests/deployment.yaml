@@ -1,0 +1,79 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: leaky-app
+  namespace: demo-memory-leak
+  labels:
+    app: leaky-app
+    kubernaut.ai/managed: "true"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: leaky-app
+  template:
+    metadata:
+      labels:
+        app: leaky-app
+    spec:
+      containers:
+      - name: app
+        image: nginx:1.27-alpine
+        ports:
+        - containerPort: 80
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "10m"
+          limits:
+            memory: "64Mi"
+            cpu: "50m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 3
+          periodSeconds: 5
+      - name: leaker
+        image: busybox:1.36
+        command: ["sh", "-c"]
+        args:
+        - |
+          # Simulate gradual memory leak via /dev/shm
+          # Allocates ~1MB every 15 seconds (~4MB/min)
+          # With 192Mi limit, reaches ~80% in ~35 min, triggering predict_linear alert
+          i=0
+          while true; do
+            dd if=/dev/urandom of=/dev/shm/leak_$i bs=1M count=1 2>/dev/null
+            i=$((i + 1))
+            sleep 15
+          done
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "5m"
+          limits:
+            memory: "192Mi"
+            cpu: "20m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: leaky-app
+  namespace: demo-memory-leak
+  labels:
+    app: leaky-app
+    kubernaut.ai/managed: "true"
+spec:
+  selector:
+    app: leaky-app
+  ports:
+  - port: 80
+    targetPort: 80
+  type: ClusterIP

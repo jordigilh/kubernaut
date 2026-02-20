@@ -135,7 +135,7 @@ type TargetResource struct {
 // Only StabilizationWindow is set by the RO — it controls how long the EM
 // waits after remediation before starting assessment checks.
 // All other assessment parameters (PrometheusEnabled, AlertManagerEnabled,
-// ValidityWindow) are EM-internal configuration read from EMConfig.
+// ValidityWindow) are EM-internal configuration read from effectivenessmonitor.Config.
 // The EM emits individual component audit events to DataStorage; the overall
 // effectiveness score is computed by DataStorage on demand, not by the EM.
 type EAConfig struct {
@@ -231,6 +231,7 @@ type EAComponents struct {
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.assessmentReason`
 // +kubebuilder:printcolumn:name="CorrelationID",type=string,JSONPath=`.spec.correlationID`
+// +kubebuilder:printcolumn:name="ReadyReason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`,priority=1
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // EffectivenessAssessment is the Schema for the effectivenessassessments API.

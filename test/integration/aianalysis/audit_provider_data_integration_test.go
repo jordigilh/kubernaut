@@ -218,11 +218,7 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 								Name:      "payment-service",
 								Namespace: namespace,
 							},
-							EnrichmentResults: sharedtypes.EnrichmentResults{
-								DetectedLabels: &sharedtypes.DetectedLabels{
-									GitOpsManaged: true,
-								},
-							},
+							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
 						// Single analysis type for hybrid audit test (focused on HAPI+AA event validation)
 						AnalysisTypes: []string{"investigation"},
@@ -280,7 +276,7 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 
 			// DD-AUDIT-005: Validate response_data contains complete IncidentResponse
 			responseData := hapiPayload.ResponseData
-			Expect(responseData.IncidentID).ToNot(BeEmpty(), "response_data should have incident_id")
+			Expect(responseData.IncidentId).ToNot(BeEmpty(), "response_data should have incident_id")
 			Expect(responseData.Analysis).ToNot(BeEmpty(), "response_data should have analysis text")
 			Expect(responseData.RootCauseAnalysis.Summary).ToNot(BeEmpty(), "Should have root_cause_analysis.summary")
 			Expect(responseData.Confidence).To(BeNumerically(">", 0), "Should have confidence > 0")
@@ -390,11 +386,7 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 								Name:      "data-processor",
 								Namespace: namespace,
 							},
-							EnrichmentResults: sharedtypes.EnrichmentResults{
-								DetectedLabels: &sharedtypes.DetectedLabels{
-									GitOpsManaged: false,
-								},
-							},
+							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
 						// Single analysis type for RR reconstruction test (focused on data structure validation)
 						AnalysisTypes: []string{"investigation"},
@@ -430,7 +422,7 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 			By("Validating COMPLETE IncidentResponse structure for RR reconstruction")
 
 			// Core analysis fields (strongly-typed)
-			Expect(responseData.IncidentID).ToNot(BeEmpty(), "Required: incident_id")
+			Expect(responseData.IncidentId).ToNot(BeEmpty(), "Required: incident_id")
 			Expect(responseData.Analysis).ToNot(BeEmpty(), "Required: analysis text")
 			Expect(responseData.Timestamp).ToNot(BeZero(), "Required: timestamp")
 			Expect(responseData.Confidence).To(BeNumerically(">", 0), "Required: confidence score")
@@ -443,12 +435,12 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 			if responseData.SelectedWorkflow.IsSet() {
 				workflow := responseData.SelectedWorkflow.Value
 				// Workflow ID is mandatory if workflow is selected
-				Expect(workflow.WorkflowID.IsSet()).To(BeTrue(), "Workflow should have workflow_id")
-				if workflow.WorkflowID.IsSet() {
-					Expect(workflow.WorkflowID.Value).ToNot(BeEmpty(), "Workflow ID should not be empty")
+				Expect(workflow.WorkflowId.IsSet()).To(BeTrue(), "Workflow should have workflow_id")
+				if workflow.WorkflowId.IsSet() {
+					Expect(workflow.WorkflowId.Value).ToNot(BeEmpty(), "Workflow ID should not be empty")
 				}
 				// Other fields are truly optional and may not be set in all scenarios
-				GinkgoWriter.Printf("✅ Selected workflow present: workflow_id=%v\n", workflow.WorkflowID)
+				GinkgoWriter.Printf("✅ Selected workflow present: workflow_id=%v\n", workflow.WorkflowId)
 			}
 
 			// Alternative workflows (audit trail) - strongly-typed array
@@ -457,7 +449,7 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 			// Decision metadata - strongly-typed optional fields
 			// needs_human_review defaults to false, so just check field exists
 			Expect(responseData.Warnings).ToNot(BeNil(), "Required: warnings array")
-			// target_in_owner_chain defaults to true, field always present
+			// ADR-055: target_in_owner_chain removed, replaced by affected_resource in RCA
 
 			GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 			GinkgoWriter.Println("✅ RR RECONSTRUCTION VALIDATION PASSED")
@@ -509,11 +501,7 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 								Name:      "test-pod",
 								Namespace: namespace,
 							},
-							EnrichmentResults: sharedtypes.EnrichmentResults{
-								DetectedLabels: &sharedtypes.DetectedLabels{
-									GitOpsManaged: false,
-								},
-							},
+							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
 						// DD-AIANALYSIS-005: v1.x single analysis type only
 						AnalysisTypes: []string{"investigation"},

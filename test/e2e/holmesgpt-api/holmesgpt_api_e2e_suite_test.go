@@ -347,7 +347,7 @@ var _ = SynchronizedAfterSuite(
 
 		// Delete cluster (with must-gather log export on failure)
 		logger.Info("🧹 Deleting Kind cluster...")
-		err := infrastructure.DeleteCluster(clusterName, "holmesgpt-api", anyFailure, GinkgoWriter)
+		err := infrastructure.DeleteCluster(clusterName, "holmesgpt-api", anyFailure, GinkgoWriter, sharedNamespace)
 		if err != nil {
 			logger.Info("⚠️  Warning: Failed to delete cluster", "error", err)
 		} else {

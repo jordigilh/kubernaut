@@ -1,0 +1,88 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-server
+  namespace: demo-mesh-failure
+  labels:
+    app: api-server
+    kubernaut.ai/managed: "true"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: api-server
+  template:
+    metadata:
+      labels:
+        app: api-server
+    spec:
+      containers:
+      - name: api-server
+        image: nginx:1.27-alpine
+        ports:
+        - containerPort: 8080
+          name: http
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "10m"
+          limits:
+            memory: "64Mi"
+            cpu: "50m"
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 3
+          periodSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 2
+          periodSeconds: 3
+        volumeMounts:
+        - name: config
+          mountPath: /etc/nginx/nginx.conf
+          subPath: nginx.conf
+      volumes:
+      - name: config
+        configMap:
+          name: api-server-config
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-server-config
+  namespace: demo-mesh-failure
+data:
+  nginx.conf: |
+    worker_processes auto;
+    error_log /var/log/nginx/error.log warn;
+    pid /tmp/nginx.pid;
+    events { worker_connections 1024; }
+    http {
+        server {
+            listen 8080;
+            server_name _;
+            location / { return 200 'ok\n'; add_header Content-Type text/plain; }
+            location /healthz { return 200 'ok\n'; add_header Content-Type text/plain; }
+        }
+    }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-server
+  namespace: demo-mesh-failure
+  labels:
+    app: api-server
+    kubernaut.ai/managed: "true"
+spec:
+  selector:
+    app: api-server
+  ports:
+  - port: 8080
+    targetPort: 8080
+    name: http
+  type: ClusterIP

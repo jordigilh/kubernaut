@@ -13,7 +13,7 @@ data:
       stabilizationWindow: 30s
       validityWindow: 120s
     datastorage:
-      url: http://data-storage-service:8080
+      url: http://data-storage-service.kubernaut-system.svc.cluster.local:8080
       timeout: 10s
       buffer:
         bufferSize: 100
@@ -21,7 +21,10 @@ data:
         flushInterval: 1s
         maxRetries: 3
     controller:
+      metricsAddr: ":9090"
+      healthProbeAddr: ":8081"
       leaderElection: false
+      leaderElectionId: "effectivenessmonitor.kubernaut.ai"
     external:
       prometheusUrl: http://prometheus-svc:9090
       prometheusEnabled: true
@@ -52,6 +55,9 @@ rules:
   - apiGroups: [""]
     resources: ["pods"]
     verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+    verbs: ["get", "list"]
   - apiGroups: [""]
     resources: ["events"]
     verbs: ["create", "patch"]
@@ -85,6 +91,10 @@ spec:
     metadata:
       labels:
         app: effectivenessmonitor-controller
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: effectivenessmonitor-controller
       containers:
@@ -93,8 +103,6 @@ spec:
           imagePullPolicy: IfNotPresent
           args:
             - "--config=/etc/effectivenessmonitor/effectivenessmonitor.yaml"
-            - "--metrics-bind-address=:9090"
-            - "--health-probe-bind-address=:8081"
           ports:
             - containerPort: 9090
               name: metrics

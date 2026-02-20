@@ -1,0 +1,29 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: kubernaut-cert-gitops-rules
+  namespace: demo-cert-gitops
+  labels:
+    release: prometheus
+spec:
+  groups:
+  - name: kubernaut-cert-gitops
+    rules:
+    - alert: KubernautCertificateNotReady
+      expr: |
+        certmanager_certificate_ready_status{
+          namespace="demo-cert-gitops",
+          name="demo-app-cert",
+          condition="True"
+        } == 0
+      for: 2m
+      labels:
+        severity: critical
+      annotations:
+        summary: >
+          Certificate {{ $labels.name }} in namespace {{ $labels.namespace }}
+          is not ready. This is a GitOps-managed resource (ArgoCD).
+        description: >
+          The demo-app-cert Certificate has been in a non-ready state for more
+          than 2 minutes. The Certificate is managed by ArgoCD and should be
+          remediated via a git-based fix rather than direct kubectl changes.

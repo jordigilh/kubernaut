@@ -2,7 +2,7 @@
 
 **Status**: ✅ APPROVED  
 **Decision Date**: 2026-02-09  
-**Version**: 1.4  
+**Version**: 1.5  
 **Authority Level**: FOUNDATIONAL  
 **Applies To**: All CRD controllers (AA, WE, RO, SP, Notification, EM)
 
@@ -13,6 +13,7 @@
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2026-02-09 | AI Assistant | Initial registry: 11 implemented events, migration pattern |
+| 1.5 | 2026-02-18 | AI Assistant | Issue #79: Condition reasons aligned with event reasons across all controllers |
 | 1.1 | 2026-02-05 | AI Assistant | Full coverage: P1-P4 gap analysis, 9 new constants, per-controller BRs (BR-*-095) |
 | 1.4 | 2026-02-14 | AI Assistant | Added SpecDriftDetected (P2 Warning) to EM registry; inline string replaced with constant |
 | 1.3 | 2026-02-13 | AI Assistant | Removed EventReasonRemediationIneffective; EffectivenessAssessed always Normal (no threshold); DS computes score on demand |
@@ -51,6 +52,8 @@ Gaps were classified into 4 priority tiers:
 - **P4 (Error Paths)**: Transient error conditions useful for diagnosing stuck CRDs
 
 This DD establishes the authoritative event registry and implementation pattern.
+
+**Issue #79 (2026-02-18)**: Condition reasons are now aligned with event reasons across all controllers. The `Ready` condition's `reason` field and K8s Event `reason` use consistent values (e.g., `WorkflowCompleted`, `AnalysisFailed`), improving operator observability in both `kubectl describe` (Events) and `kubectl get` (Reason printer column).
 
 ---
 

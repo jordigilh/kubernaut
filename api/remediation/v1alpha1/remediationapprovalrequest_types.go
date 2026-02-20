@@ -141,9 +141,9 @@ type RecommendedWorkflowSummary struct {
 	// Workflow version
 	// +kubebuilder:validation:Required
 	Version string `json:"version"`
-	// Container image to execute
+	// Execution bundle OCI reference (digest-pinned)
 	// +kubebuilder:validation:Required
-	ContainerImage string `json:"containerImage"`
+	ExecutionBundle string `json:"executionBundle"`
 	// Rationale for selecting this workflow
 	// +kubebuilder:validation:Required
 	Rationale string `json:"rationale"`
@@ -250,12 +250,15 @@ type RemediationApprovalRequestStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:selectablefield:JSONPath=.spec.remediationRequestRef.name
+// +kubebuilder:selectablefield:JSONPath=.spec.aiAnalysisRef.name
 // +kubebuilder:resource:shortName=rar;rars
 // +kubebuilder:printcolumn:name="AIAnalysis",type=string,JSONPath=`.spec.aiAnalysisRef.name`
 // +kubebuilder:printcolumn:name="Confidence",type=number,JSONPath=`.spec.confidence`
 // +kubebuilder:printcolumn:name="Decision",type=string,JSONPath=`.status.decision`
 // +kubebuilder:printcolumn:name="Expired",type=boolean,JSONPath=`.status.expired`
 // +kubebuilder:printcolumn:name="RequiredBy",type=date,JSONPath=`.spec.requiredBy`
+// +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`,priority=1
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // RemediationApprovalRequest is the Schema for the remediationapprovalrequests API.

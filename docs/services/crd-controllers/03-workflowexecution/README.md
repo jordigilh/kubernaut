@@ -32,8 +32,6 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: kubernaut-workflows
-  labels:
-    kubernaut.ai/component: workflow-execution
 ---
 # 2. ServiceAccount for PipelineRun execution
 apiVersion: v1
@@ -332,6 +330,7 @@ ANALYSIS → PLAN → DO-RED → DO-GREEN → DO-REFACTOR → CHECK
 **Changelog**:
 | Version | Date | Changes |
 |---------|------|---------|
+| 4.3 | 2026-02-18 | **Issue #91**: Removed `kubernaut.ai/component` label from Namespace example (ownerRef sufficient for CRD ownership) |
 | 4.2 | 2025-12-06 | Added links to new user guides, troubleshooting, and runbook in centralized docs/ |
 | 4.1 | 2025-12-04 | **Implementation Complete** - Full controller implemented with tests |
 | 4.0 | 2025-12-02 | Simplified documentation, updated architecture section |

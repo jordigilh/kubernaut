@@ -235,7 +235,7 @@ Your previous workflow response had validation errors:
 {schema_section}
 **Please correct your response:**
 1. Re-check the workflow ID exists (use get_workflow with the workflow_id)
-2. Ensure container_image matches the catalog exactly (or omit to use catalog default)
+2. Ensure execution_bundle matches the catalog exactly (or omit to use catalog default)
 3. Verify all required parameters are provided with correct types and values
 
 **Re-submit your JSON response with the corrected workflow selection.**
@@ -299,29 +299,9 @@ def create_incident_investigation_prompt(
     # "predictive": Predict & prevent - incident predicted but not yet occurred
     signal_mode = request_data.get('signal_mode') or 'reactive'
 
-    # DetectedLabels from enrichment_results (DD-RECOVERY-003)
-    enrichment_results = request_data.get('enrichment_results', {})
-    detected_labels = None
-    if enrichment_results:
-        # Handle both dict and EnrichmentResults model
-        if hasattr(enrichment_results, 'detectedLabels'):
-            dl = enrichment_results.detectedLabels
-            if dl:
-                # If it's already a DetectedLabels model, use it directly
-                if isinstance(dl, DetectedLabels):
-                    detected_labels = dl
-                # Otherwise convert dict to DetectedLabels model
-                elif isinstance(dl, dict):
-                    detected_labels = DetectedLabels(**dl)
-        elif isinstance(enrichment_results, dict):
-            dl = enrichment_results.get('detectedLabels', {})
-            if dl:
-                # Convert dict to DetectedLabels model
-                if isinstance(dl, dict):
-                    detected_labels = DetectedLabels(**dl)
-                # If it's already a DetectedLabels model, use it directly
-                elif isinstance(dl, DetectedLabels):
-                    detected_labels = dl
+    # ADR-056: DetectedLabels are no longer extracted from enrichment_results
+    # for prompt construction. They are computed at runtime by HAPI's
+    # get_resource_context tool and used via session_state.
 
     # Generate contextual descriptions
     priority_desc = PRIORITY_DESCRIPTIONS.get(priority, f"{priority} - Standard priority").format(business_category=business_category)
@@ -428,19 +408,9 @@ that a **{signal_type}** event will occur for **{namespace}/{resource_kind}/{res
                 prompt += f" (and {len(affected_resources) - 5} more)"
             prompt += "\n"
 
-    # Add Cluster Environment Characteristics if DetectedLabels are available (DD-RECOVERY-003)
-    if detected_labels:
-        prompt += f"""
-## Cluster Environment Characteristics (AUTO-DETECTED)
-
-The following characteristics were automatically detected for the target resource.
-**Use these to guide your workflow selection reasoning.**
-
-{build_cluster_context_section(detected_labels)}
-
-{build_mcp_filter_instructions(detected_labels)}
-
-"""
+    # ADR-056: Cluster environment characteristics are now computed at runtime
+    # by the get_resource_context tool (LabelDetector) and injected into
+    # DataStorage queries via session_state. No longer included in the prompt.
 
     # BR-HAPI-016: Add remediation history section if context is available
     if remediation_history_context:
@@ -506,12 +476,13 @@ Based on your RCA, determine the signal_type that best describes the effect:
 
 ### Phase 3b: Identify the Affected Resource (MANDATORY for remediation)
 
-Determine the **root owner** resource that the remediation should target:
-- From the signal resource (e.g., Pod), trace the OwnerReferences chain UP to the root owner.
-- **Example**: Pod `memory-eater-abc` → owned by ReplicaSet `memory-eater-xyz` → owned by **Deployment** `memory-eater`
-- The `affectedResource` in your response MUST be the **root owner** (e.g., Deployment, StatefulSet, DaemonSet), **NOT** the Pod.
-- Use `kubectl get pod <name> -n <ns> -o jsonpath='{{.metadata.ownerReferences}}'` to find the owner.
-- Include `kind`, `name`, and `namespace` in the `affectedResource` field of `root_cause_analysis`.
+Determine the resource that the remediation should target:
+- Call `get_resource_context` with the resource you identified during RCA (kind, name, namespace).
+- The tool resolves the **root managing resource** (e.g., for a Pod it finds the managing Deployment) and returns:
+  - `root_owner`: The root managing resource (`kind`, `name`, `namespace`). Use this as your `affectedResource`.
+  - `remediation_history`: Past remediations for that resource. Use this to avoid repeating recently failed workflows.
+- Set `affectedResource` in `root_cause_analysis` to the `root_owner` from the tool response.
+- **Example**: You call the tool for Pod "api-xyz-abc". The tool returns `root_owner: {{kind: Deployment, name: api, namespace: prod}}`. Your `affectedResource` is the Deployment, not the Pod.
 
 ### Phase 4: Discover and Select Workflow (MANDATORY - Three-Step Protocol)
 **YOU MUST** follow this three-step workflow discovery protocol:
@@ -561,7 +532,7 @@ and choose a different workflow.
   "alternative_workflows": [
     {{
       "workflow_id": "other-workflow-id",
-      "container_image": "image:tag",
+      "execution_bundle": "image@sha256:digest",
       "confidence": 0.75,
       "rationale": "Why this was considered but not selected"
     }}
@@ -773,7 +744,7 @@ Explain your investigation findings, root cause analysis, and reasoning for work
 {{"workflow_id": "workflow-id-from-mcp-search-results", "action_type": "ScaleReplicas", "version": "1.0.0", "confidence": 0.95, "rationale": "Why this workflow was selected", "execution_engine": "tekton", "parameters": {{"PARAM_NAME": "value"}}}}
 
 # alternative_workflows
-[{{"workflow_id": "alt-workflow-id", "container_image": "image:tag", "confidence": 0.75, "rationale": "Why this was considered but not selected"}}]
+[{{"workflow_id": "alt-workflow-id", "execution_bundle": "image@sha256:digest", "confidence": 0.75, "rationale": "Why this was considered but not selected"}}]
 
 **IMPORTANT**:
 - **DO NOT** use a single ```json block - use section headers as shown above

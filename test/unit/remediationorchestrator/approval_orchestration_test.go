@@ -78,7 +78,7 @@ var _ = Describe("ApprovalOrchestration", func() {
 							WorkflowID:     "wf-restart-pods",
 							Version:        "v1.0.0",
 							Confidence:     0.75,
-							ContainerImage: "kubernaut/workflows:latest",
+							ExecutionBundle: "kubernaut/workflows:latest",
 							Rationale:      "Pod restart recommended based on OOM patterns",
 						},
 						ApprovalReason: "Confidence between 60-79%",
@@ -130,15 +130,15 @@ var _ = Describe("ApprovalOrchestration", func() {
 				Expect(name2).To(Equal(name1))
 			})
 
-			It("should set appropriate labels for filtering", func() {
+			It("should not set kubernaut.ai labels (Issue #91: parent tracked via spec + ownerRef)", func() {
 				name, err := ac.Create(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
 
 				rar := &remediationv1.RemediationApprovalRequest{}
 				Expect(fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: "default"}, rar)).To(Succeed())
 
-				Expect(rar.Labels).To(HaveKeyWithValue("kubernaut.ai/remediation-request", "test-rr"))
-				Expect(rar.Labels).To(HaveKeyWithValue("kubernaut.ai/component", "approval"))
+				Expect(rar.Labels).To(BeNil())
+				Expect(rar.Spec.RemediationRequestRef.Name).To(Equal("test-rr"))
 			})
 
 			It("should set RequiredBy deadline", func() {
@@ -216,7 +216,7 @@ var _ = Describe("ApprovalOrchestration", func() {
 						RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{
 							WorkflowID:     "wf-test",
 							Version:        "v1.0.0",
-							ContainerImage: "test:latest",
+							ExecutionBundle: "test:latest",
 							Rationale:      "Test rationale",
 						},
 						RecommendedActions: []remediationv1.ApprovalRecommendedAction{
@@ -247,7 +247,7 @@ var _ = Describe("ApprovalOrchestration", func() {
 						RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{
 							WorkflowID:     "wf-test",
 							Version:        "v1.0.0",
-							ContainerImage: "test:latest",
+							ExecutionBundle: "test:latest",
 							Rationale:      "Test rationale",
 						},
 						RecommendedActions: []remediationv1.ApprovalRecommendedAction{
@@ -285,7 +285,7 @@ var _ = Describe("ApprovalOrchestration", func() {
 						RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{
 							WorkflowID:     "wf-test",
 							Version:        "v1.0.0",
-							ContainerImage: "test:latest",
+							ExecutionBundle: "test:latest",
 							Rationale:      "Test rationale",
 						},
 						RecommendedActions: []remediationv1.ApprovalRecommendedAction{
@@ -324,7 +324,7 @@ var _ = Describe("ApprovalOrchestration", func() {
 						RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{
 							WorkflowID:     "wf-test",
 							Version:        "v1.0.0",
-							ContainerImage: "test:latest",
+							ExecutionBundle: "test:latest",
 							Rationale:      "Test rationale",
 						},
 						RecommendedActions: []remediationv1.ApprovalRecommendedAction{

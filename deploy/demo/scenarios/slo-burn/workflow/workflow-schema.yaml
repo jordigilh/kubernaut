@@ -1,0 +1,33 @@
+# Proactive Rollback Workflow Schema - Job Backend (BR-WORKFLOW-004)
+# Scenario: #128 -- SLO error budget burn -> proactive rollback
+metadata:
+  workflowId: proactive-rollback-v1
+  version: "1.0.0"
+  description:
+    what: "Proactively rolls back a deployment based on SLO error budget burn rate analysis"
+    whenToUse: "When the current error rate will exhaust the SLO error budget before the next maintenance window, and a recent deployment revision is the likely cause"
+    whenNotToUse: "When the error rate is within normal bounds, or the issue is caused by an external dependency rather than a deployment change"
+    preconditions: "A previous stable deployment revision exists, and the error spike correlates with a recent deployment change"
+
+actionType: ProactiveRollback
+
+labels:
+  signalType: ErrorBudgetBurn
+  severity: [critical, high]
+  environment: [production, staging]
+  component: "*"
+  priority: "*"
+
+execution:
+  engine: job
+  bundle: quay.io/kubernaut-cicd/test-workflows/proactive-rollback-job@sha256:c6b96d856249e98ae9585a075f0649ea592e7de7ff4e56e2ae80395b7df4126c
+
+parameters:
+  - name: TARGET_NAMESPACE
+    type: string
+    required: true
+    description: "Namespace of the affected deployment"
+  - name: TARGET_DEPLOYMENT
+    type: string
+    required: true
+    description: "Name of the deployment to roll back"

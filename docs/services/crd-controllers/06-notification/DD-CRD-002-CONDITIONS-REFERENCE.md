@@ -53,13 +53,24 @@ NotificationRequest serves as the **reference implementation** for services with
 
 | Condition Type | Reasons | Purpose | Controller Phase |
 |----------------|---------|---------|------------------|
+| `Ready` | 2 | Aggregate: True on success terminal, False on failure terminal | All |
 | `RoutingResolved` | 3 | Indicates routing rule evaluation outcome | Routing Phase |
 
-**Total**: 1 Condition Type, 3 Condition Reasons
+**Total**: 2 Condition Types, 5 Condition Reasons
 
 ---
 
 ## 🔍 Condition Specifications
+
+### Condition: `Ready`
+
+**Type Constant**: `ConditionTypeReady = "Ready"`
+
+**Purpose**: Aggregate condition indicating readiness. True on success terminal phases (Sent, PartiallySent); False on failure terminal.
+
+**When Set**: On phase transitions to terminal state.
+
+---
 
 ### Condition: `RoutingResolved`
 
@@ -70,6 +81,10 @@ NotificationRequest serves as the **reference implementation** for services with
 **Business Requirement**: BR-NOT-069 (Routing Rule Visibility via Conditions)
 
 **When Set**: During the **Routing Phase** of reconciliation (after spec validation, before channel sending)
+
+**Implementation Notes** (Issue #79):
+- **Persistence fix**: `AtomicStatusUpdate`/`UpdatePhase` must pass `conditions` parameter so RoutingResolved is persisted when phase is updated.
+- **Fallback reason fix**: When no routing rules match, use `ReasonRoutingFallback` (not `RoutingFailed`); fallback is a valid success state.
 
 **Status Values**:
 - ✅ **True**: Routing completed successfully (rule matched or fallback used)

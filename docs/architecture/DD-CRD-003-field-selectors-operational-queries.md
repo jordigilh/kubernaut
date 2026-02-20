@@ -96,15 +96,15 @@ mgr.GetFieldIndexer().IndexField(ctx, &workflowexecutionv1alpha1.WorkflowExecuti
 
 ---
 
-### Alternative 3: Label-Based Filtering (Workaround)
-**Approach**: Copy key fields to labels for filtering
+### Alternative 3: Label-Based Filtering (Workaround) — DEPRECATED
+**Approach**: Copy key fields to labels for filtering (historical pattern; **removed in Issue #91**)
 
-**Example**:
+**Historical Example** (no longer used):
 ```yaml
 metadata:
   labels:
-    kubernaut.ai/remediation-request: rr-abc123
-    kubernaut.ai/phase: Running
+    kubernaut.ai/remediation-request: rr-abc123  # REMOVED: use spec.remediationRequestRef
+    kubernaut.ai/phase: Running                   # REMOVED: use spec/status fields
 ```
 
 **Pros**:
@@ -116,6 +116,7 @@ metadata:
 - ❌ Duplicates data (spec/status → labels)
 - ❌ Requires label sync logic
 - ❌ Labels can drift from actual values
+- ❌ **Issue #91**: `kubernaut.ai/*` labels migrated to immutable spec fields; field selectors replace label-based filtering
 
 **Confidence**: 70% (rejected - maintenance burden)
 

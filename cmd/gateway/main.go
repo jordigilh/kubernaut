@@ -19,7 +19,6 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -41,16 +40,10 @@ var (
 )
 
 func main() {
-	// Parse command-line flags
-	configPath := flag.String("config", "config/gateway.yaml", "Path to configuration file")
-	showVersion := flag.Bool("version", false, "Show version and exit")
-	listenAddr := flag.String("listen", ":8080", "HTTP server listen address")
+	// ADR-030: Single --config flag; all functional config in YAML ConfigMap
+	var configPath string
+	flag.StringVar(&configPath, "config", config.DefaultConfigPath, "Path to YAML configuration file (optional, falls back to defaults)")
 	flag.Parse()
-
-	if *showVersion {
-		fmt.Printf("Gateway Service %s-%s (built: %s)\n", version, gitCommit, buildDate) //nolint:forbidigo // CLI version output
-		os.Exit(0)
-	}
 
 	// DD-005: Initialize logger using shared logging library (logr.Logger interface)
 	logger := kubelog.NewLogger(kubelog.Options{
@@ -65,24 +58,26 @@ func main() {
 		"version", version,
 		"git_commit", gitCommit,
 		"build_date", buildDate,
-		"config_path", *configPath,
-		"listen_addr", *listenAddr)
+		"config_path", configPath)
 
-	// Load configuration from YAML file
-	serverCfg, err := config.LoadFromFile(*configPath)
-	if err != nil {
-		logger.Error(err, "Failed to load configuration",
-			"config_path", *configPath)
-		os.Exit(1)
+	// ADR-030: Load configuration from YAML file
+	var serverCfg *config.ServerConfig
+	if configPath != "" {
+		var err error
+		serverCfg, err = config.LoadFromFile(configPath)
+		if err != nil {
+			logger.Error(err, "Failed to load configuration",
+				"config_path", configPath)
+			os.Exit(1)
+		}
+		logger.Info("Configuration loaded successfully", "config_path", configPath)
+	} else {
+		logger.Info("No config file specified, using defaults")
+		serverCfg = config.DefaultServerConfig()
 	}
 
-	// Override configuration with environment variables (e.g., secrets)
+	// Override configuration with environment variables (e.g., secrets only per ADR-030)
 	serverCfg.LoadFromEnv()
-
-	// Override with command-line flags (highest priority)
-	if *listenAddr != ":8080" {
-		serverCfg.Server.ListenAddr = *listenAddr
-	}
 
 	// Validate configuration
 	if err := serverCfg.Validate(); err != nil {
@@ -90,7 +85,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	logger.Info("Configuration loaded successfully",
+	logger.Info("Configuration validated",
 		"listen_addr", serverCfg.Server.ListenAddr,
 		"data_storage_url", serverCfg.DataStorage.URL)
 
@@ -132,7 +127,7 @@ func main() {
 	defer serverCancel()
 
 	go func() {
-		logger.Info("Gateway server starting", "address", *listenAddr)
+		logger.Info("Gateway server starting", "address", serverCfg.Server.ListenAddr)
 		if err := srv.Start(serverCtx); err != nil {
 			errChan <- err
 		}

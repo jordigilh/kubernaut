@@ -71,14 +71,7 @@ var _ = Describe("E2E-AA-064: Session-Based Async Flow", Label("e2e", "session",
 								Name:      "session-test-pod",
 								Namespace: "staging",
 							},
-							EnrichmentResults: sharedtypes.EnrichmentResults{
-								DetectedLabels: &sharedtypes.DetectedLabels{
-									GitOpsManaged: true,
-								},
-								OwnerChain: []sharedtypes.OwnerChainEntry{
-									{Namespace: "staging", Kind: "Deployment", Name: "session-test-pod"},
-								},
-							},
+							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
 						AnalysisTypes: []string{"investigation", "root-cause", "workflow-selection"},
 					},

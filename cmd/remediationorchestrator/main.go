@@ -19,7 +19,6 @@ package main
 import (
 	"flag"
 	"os"
-	"time"
 
 	"github.com/go-logr/zapr"
 	zaplog "go.uber.org/zap"
@@ -37,7 +36,7 @@ import (
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
-	"github.com/jordigilh/kubernaut/internal/config"
+	config "github.com/jordigilh/kubernaut/internal/config/remediationorchestrator"
 	controller "github.com/jordigilh/kubernaut/internal/controller/remediationorchestrator"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
@@ -62,31 +61,12 @@ func init() {
 }
 
 func main() {
-	var metricsAddr string
-	var probeAddr string
-	var enableLeaderElection bool
-	var globalTimeout time.Duration
-	var processingTimeout time.Duration
-	var analyzingTimeout time.Duration
-	var executingTimeout time.Duration
-
-	flag.StringVar(&metricsAddr, "metrics-bind-address", ":9093", "The address the metric endpoint binds to.")
-	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8084", "The address the probe endpoint binds to.")
-	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
-		"Enable leader election for controller manager. "+
-			"Enabling this will ensure there is only one active controller manager.")
-	// Note: --data-storage-url flag removed per ADR-030 (YAML config mandate)
-	// DataStorage URL is now configured via config.yaml (audit.datastorage_url)
+	// ========================================
+	// ADR-030: Configuration via YAML file
+	// Single --config flag; all functional config in YAML ConfigMap
+	// ========================================
 	var configPath string
-	flag.StringVar(&configPath, "config", "", "Path to YAML configuration file (optional, falls back to defaults)")
-	flag.DurationVar(&globalTimeout, "global-timeout", 1*time.Hour,
-		"Global timeout for entire remediation workflow (BR-ORCH-027, AC-027-3)")
-	flag.DurationVar(&processingTimeout, "processing-timeout", 5*time.Minute,
-		"Timeout for SignalProcessing phase (BR-ORCH-028, AC-028-1)")
-	flag.DurationVar(&analyzingTimeout, "analyzing-timeout", 10*time.Minute,
-		"Timeout for AIAnalysis phase (BR-ORCH-028, AC-028-1)")
-	flag.DurationVar(&executingTimeout, "executing-timeout", 30*time.Minute,
-		"Timeout for WorkflowExecution phase (BR-ORCH-028, AC-028-1)")
+	flag.StringVar(&configPath, "config", config.DefaultConfigPath, "Path to YAML configuration file (optional, falls back to defaults)")
 
 	opts := zap.Options{
 		Development: true,
@@ -96,28 +76,11 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme: scheme,
-		Metrics: metricsserver.Options{
-			BindAddress: metricsAddr,
-		},
-		HealthProbeBindAddress: probeAddr,
-		LeaderElection:         enableLeaderElection,
-		LeaderElectionID:       "remediationorchestrator.kubernaut.ai",
-	})
-	if err != nil {
-		setupLog.Error(err, "unable to start manager")
-		os.Exit(1)
-	}
-
 	// ========================================
 	// CONFIGURATION LOADING (ADR-030)
-	// Per DS Team Response (2025-12-27): Load audit buffer config from YAML
-	// See: docs/handoff/DS_RESPONSE_AUDIT_BUFFER_FLUSH_TIMING_DEC_27_2025.md
 	// ========================================
 	cfg, err := config.LoadFromFile(configPath)
 	if err != nil {
-		// Graceful degradation: Log warning and use defaults
 		setupLog.Error(err, "Failed to load configuration from file, using defaults",
 			"configPath", configPath)
 		cfg = config.DefaultConfig()
@@ -125,6 +88,26 @@ func main() {
 		setupLog.Info("Configuration loaded successfully", "configPath", configPath)
 	} else {
 		setupLog.Info("No config file specified, using defaults")
+	}
+
+	// Validate configuration (ADR-030)
+	if err := cfg.Validate(); err != nil {
+		setupLog.Error(err, "Configuration validation failed")
+		os.Exit(1)
+	}
+
+	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+		Scheme: scheme,
+		Metrics: metricsserver.Options{
+			BindAddress: cfg.Controller.MetricsAddr,
+		},
+		HealthProbeBindAddress: cfg.Controller.HealthProbeAddr,
+		LeaderElection:         cfg.Controller.LeaderElection,
+		LeaderElectionID:       cfg.Controller.LeaderElectionID,
+	})
+	if err != nil {
+		setupLog.Error(err, "unable to start manager")
+		os.Exit(1)
 	}
 
 	// ========================================
@@ -144,6 +127,7 @@ func main() {
 		"timeout", cfg.DataStorage.Timeout)
 
 	// Create buffered audit store (fire-and-forget pattern, ADR-038)
+	// ADR-030: Use buffer config from YAML (not hardcoded RecommendedConfig)
 	auditConfig := audit.Config{
 		BufferSize:    cfg.DataStorage.Buffer.BufferSize,
 		BatchSize:     cfg.DataStorage.Buffer.BatchSize,
@@ -170,17 +154,17 @@ func main() {
 		"dataStorageURL", cfg.DataStorage.URL,
 		"bufferSize", auditConfig.BufferSize,
 		"batchSize", auditConfig.BatchSize,
-		"flushInterval", auditConfig.FlushInterval, // CRITICAL: Log to verify YAML config loaded
+		"flushInterval", auditConfig.FlushInterval,
 	)
 
 	// Log configuration
 	setupLog.Info("RemediationOrchestrator controller configuration",
-		"metricsAddr", metricsAddr,
-		"probeAddr", probeAddr,
-		"globalTimeout", globalTimeout,
-		"processingTimeout", processingTimeout,
-		"analyzingTimeout", analyzingTimeout,
-		"executingTimeout", executingTimeout,
+		"metricsAddr", cfg.Controller.MetricsAddr,
+		"healthProbeAddr", cfg.Controller.HealthProbeAddr,
+		"globalTimeout", cfg.Timeouts.Global,
+		"processingTimeout", cfg.Timeouts.Processing,
+		"analyzingTimeout", cfg.Timeouts.Analyzing,
+		"executingTimeout", cfg.Timeouts.Executing,
 		"dataStorageURL", cfg.DataStorage.URL,
 	)
 
@@ -204,6 +188,7 @@ func main() {
 		"stabilizationWindow", cfg.EA.StabilizationWindow)
 
 	// Setup RemediationOrchestrator controller with audit store and comprehensive timeout config
+	// ADR-030: Timeouts from YAML config (not CLI flags)
 	roReconciler := controller.NewReconciler(
 		mgr.GetClient(),
 		mgr.GetAPIReader(), // DD-STATUS-001: API reader for cache-bypassed status refetches
@@ -212,10 +197,10 @@ func main() {
 		mgr.GetEventRecorderFor("remediationorchestrator-controller"), // V1.0 P1: EventRecorder for debugging
 		roMetrics, // V1.0 P0: Metrics for observability (DD-METRICS-001)
 		controller.TimeoutConfig{
-			Global:     globalTimeout,
-			Processing: processingTimeout,
-			Analyzing:  analyzingTimeout,
-			Executing:  executingTimeout,
+			Global:     cfg.Timeouts.Global,
+			Processing: cfg.Timeouts.Processing,
+			Analyzing:  cfg.Timeouts.Analyzing,
+			Executing:  cfg.Timeouts.Executing,
 		},
 		nil,       // Use default routing engine (production)
 		eaCreator, // ADR-EM-001: EA creation on terminal phases

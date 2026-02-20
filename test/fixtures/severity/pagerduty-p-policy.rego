@@ -3,6 +3,7 @@
 #
 # This policy demonstrates PagerDuty "P" priority scheme mapping
 # to normalized severity values (critical, high, medium, low, unknown)
+# using a map-based lookup with lower() normalization.
 #
 # Usage in tests:
 #   - Load this policy into SignalProcessing classifier
@@ -13,30 +14,19 @@ package signalprocessing.severity
 
 import rego.v1
 
-# PagerDuty P0 → Critical (all-hands production outage)
-result := {"severity": "critical", "source": "rego-policy"} if {
-	input.signal.severity in ["P0", "p0"]
+# Map-based lookup: all case variants handled via lower()
+# PagerDuty P0 and P1 both map to critical (different impact levels)
+severity_map := {
+    "p0": "critical",
+    "p1": "critical",
+    "p2": "high",
+    "p3": "medium",
+    "p4": "low",
 }
 
-# PagerDuty P1 → Critical (severe customer impact)
-result := {"severity": "critical", "source": "rego-policy"} if {
-	input.signal.severity in ["P1", "p1"]
+result := {"severity": severity_map[lower(input.signal.severity)], "source": "rego-policy"} if {
+    lower(input.signal.severity) in object.keys(severity_map)
 }
 
-# PagerDuty P2 → High (moderate impact)
-result := {"severity": "high", "source": "rego-policy"} if {
-	input.signal.severity in ["P2", "p2"]
-}
-
-# PagerDuty P3 → Medium (low priority)
-result := {"severity": "medium", "source": "rego-policy"} if {
-	input.signal.severity in ["P3", "p3"]
-}
-
-# PagerDuty P4 → Low (informational)
-result := {"severity": "low", "source": "rego-policy"} if {
-	input.signal.severity in ["P4", "p4"]
-}
-
-# Fallback: unmapped severity → unknown
+# Fallback: unmapped severity -> unknown
 default result := {"severity": "unknown", "source": "fallback"}

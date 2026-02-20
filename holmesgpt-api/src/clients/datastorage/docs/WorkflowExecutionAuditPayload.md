@@ -21,6 +21,7 @@ Name | Type | Description | Notes
 **failed_task_name** | **str** | Name of the failed TaskRun (if identified) | [optional] 
 **error_details** | [**ErrorDetails**](ErrorDetails.md) |  | [optional] 
 **pipelinerun_name** | **str** | Name of the associated Tekton PipelineRun | [optional] 
+**parameters** | **Dict[str, str]** | Post-normalization workflow parameters applied to PipelineRun (map[string]string). SOC2 CC7.1-CC7.3 chain of custody. | [optional] 
 
 ## Example
 

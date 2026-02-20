@@ -16,11 +16,6 @@ data:
       writeTimeout: 30s
       idleTimeout: 120s
 
-    middleware:
-      rateLimit:
-        requestsPerMinute: 100
-        burst: 10
-
     datastorage:
       url: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
       timeout: 10s
@@ -31,10 +26,12 @@ data:
         maxRetries: 3
 
     processing:
-      environment:
-        cacheTtl: 5s
-        configmapNamespace: "kubernaut-system"
-        configmapName: "kubernaut-environment-overrides"
+      deduplication:
+        ttl: 5m
+      retry:
+        maxAttempts: 3
+        initialBackoff: 100ms
+        maxBackoff: 5s
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -101,6 +98,10 @@ spec:
     metadata:
       labels:
         app: gateway
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: gateway
       containers:

@@ -9,21 +9,26 @@ metadata:
   namespace: kubernaut-system
 data:
   remediationorchestrator.yaml: |
-    datastorage:
-      url: http://data-storage-service:8080
-      timeout: 10s
-      buffer:
-        bufferSize: 10000
-        batchSize: 50
-        flushInterval: 100ms
-        maxRetries: 3
     controller:
-      metricsAddr: :9093
-      healthProbeAddr: :8084
+      metricsAddr: ":9090"
+      healthProbeAddr: ":8081"
       leaderElection: false
-      leaderElectionId: remediationorchestrator.kubernaut.ai
+      leaderElectionId: "remediationorchestrator.kubernaut.ai"
+    timeouts:
+      global: "1h"
+      processing: "5m"
+      analyzing: "10m"
+      executing: "30m"
+    datastorage:
+      url: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
+      timeout: "10s"
+      buffer:
+        bufferSize: 30000
+        batchSize: 1000
+        flushInterval: "1s"
+        maxRetries: 3
     effectivenessAssessment:
-      stabilizationWindow: 10s
+      stabilizationWindow: "5m"
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -112,6 +117,10 @@ spec:
     metadata:
       labels:
         app: remediationorchestrator-controller
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: remediationorchestrator-controller
       containers:
@@ -121,10 +130,10 @@ spec:
           args:
             - --config=/etc/config/remediationorchestrator.yaml
           ports:
-            - containerPort: 8084
+            - containerPort: 8081
               name: health
               protocol: TCP
-            - containerPort: 9093
+            - containerPort: 9090
               name: metrics
               protocol: TCP
           volumeMounts:
@@ -156,8 +165,8 @@ metadata:
 spec:
   type: ClusterIP
   ports:
-    - port: 9093
-      targetPort: 9093
+    - port: 9090
+      targetPort: 9090
       protocol: TCP
       name: metrics
   selector:

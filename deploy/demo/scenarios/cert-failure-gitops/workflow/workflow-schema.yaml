@@ -1,0 +1,53 @@
+# Fix Certificate (GitOps) Workflow Schema - Job Backend (BR-WORKFLOW-004)
+# Scenario: #134 -- GitOps-managed Certificate failure -> git revert
+metadata:
+  workflowId: fix-certificate-gitops-v1
+  version: "1.0.0"
+  description:
+    what: "Reverts a bad Git commit that broke a cert-manager ClusterIssuer in a GitOps-managed environment"
+    whenToUse: "When a GitOps-managed cert-manager Certificate is stuck NotReady because a recent Git commit changed the ClusterIssuer to reference a non-existent CA Secret"
+    whenNotToUse: "When the environment is not GitOps-managed (use fix-certificate-v1 instead for direct kubectl remediation)"
+    preconditions: "ArgoCD is active, the Gitea repository is accessible, and a previous healthy commit exists with the correct ClusterIssuer configuration"
+
+actionType: GitRevertCommit
+
+labels:
+  signalType: CertificateNotReady
+  severity: [critical, high]
+  environment: [production, staging]
+  component: "*"
+  priority: "*"
+
+detectedLabels:
+  gitOpsTool: "*"
+
+execution:
+  engine: job
+  bundle: quay.io/kubernaut-cicd/test-workflows/fix-certificate-gitops-job:v1.0.0
+
+parameters:
+  - name: GIT_REPO_URL
+    type: string
+    required: true
+    description: "URL of the Git repository (without credentials, e.g., http://gitea-http.gitea:3000/kubernaut/demo-cert-gitops-repo.git)"
+  - name: GIT_USERNAME
+    type: string
+    required: true
+    description: "Git username for clone/push authentication"
+  - name: GIT_PASSWORD
+    type: string
+    required: true
+    description: "Git password or token for clone/push authentication"
+  - name: GIT_BRANCH
+    type: string
+    required: false
+    description: "Branch to revert on"
+    default: "main"
+  - name: TARGET_NAMESPACE
+    type: string
+    required: true
+    description: "Namespace of the affected Certificate"
+  - name: TARGET_RESOURCE_NAME
+    type: string
+    required: true
+    description: "Name of the affected Certificate (for verification)"

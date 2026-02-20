@@ -630,35 +630,27 @@ data:
   priority.rego: |
     package signalprocessing.priority
 
-    # Priority assignment based on environment and severity
-    # OPA v1.0 syntax: requires 'if' keyword before rule body
-    # DD-SEVERITY-001 v1.1: Uses critical/high/medium/low/unknown severity levels
-    default result := {"priority": "P3", "confidence": 0.6}
-
-    # Production + critical = P0 (highest urgency)
-    result := {"priority": "P0", "confidence": 0.9} if {
-      input.environment == "production"
-      input.signal.severity == "critical"
-    }
-    # Production + high = P1 (high urgency) - DD-SEVERITY-001 v1.1
-    result := {"priority": "P1", "confidence": 0.9} if {
-      input.environment == "production"
-      input.signal.severity == "high"
-    }
-    # Staging + critical = P2 (medium urgency per BR-SP-070)
-    result := {"priority": "P2", "confidence": 0.9} if {
-      input.environment == "staging"
-      input.signal.severity == "critical"
-    }
-    # Staging + high = P2 (medium urgency) - DD-SEVERITY-001 v1.1
-    result := {"priority": "P2", "confidence": 0.9} if {
-      input.environment == "staging"
-      input.signal.severity == "high"
-    }
-    # Development = P3 (lowest urgency, regardless of severity)
-    result := {"priority": "P3", "confidence": 0.9} if {
-      input.environment == "development"
-    }
+    # Score-based priority aggregation (issue #98)
+    import rego.v1
+    severity_score := 3 if { lower(input.signal.severity) == "critical" }
+    severity_score := 2 if { lower(input.signal.severity) == "warning" }
+    severity_score := 2 if { lower(input.signal.severity) == "high" }
+    severity_score := 1 if { lower(input.signal.severity) == "info" }
+    default severity_score := 0
+    env_scores contains 3 if { lower(input.environment) == "production" }
+    env_scores contains 2 if { lower(input.environment) == "staging" }
+    env_scores contains 1 if { lower(input.environment) == "development" }
+    env_scores contains 1 if { lower(input.environment) == "test" }
+    env_scores contains 3 if { input.namespace_labels["tier"] == "critical" }
+    env_scores contains 2 if { input.namespace_labels["tier"] == "high" }
+    env_score := max(env_scores) if { count(env_scores) > 0 }
+    default env_score := 0
+    composite_score := severity_score + env_score
+    result := {"priority": "P0", "policy_name": "score-based"} if { composite_score >= 6 }
+    result := {"priority": "P1", "policy_name": "score-based"} if { composite_score == 5 }
+    result := {"priority": "P2", "policy_name": "score-based"} if { composite_score == 4 }
+    result := {"priority": "P3", "policy_name": "score-based"} if { composite_score < 4; composite_score > 0 }
+    default result := {"priority": "P3", "policy_name": "default-catch-all"}
 ---
 # 3. Business Classification Policy (BR-SP-071)
 apiVersion: v1
@@ -889,6 +881,34 @@ func signalProcessingControllerCoverageManifestWithPolicy(imageName, imagePullPo
 
 	return fmt.Sprintf(`
 apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: signalprocessing-config
+  namespace: kubernaut-system
+data:
+  config.yaml: |
+    controller:
+      metricsAddr: ":9090"
+      healthProbeAddr: ":8081"
+      leaderElection: false
+      leaderElectionId: "signalprocessing.kubernaut.ai"
+    enrichment:
+      cacheTtl: "5m"
+      timeout: "10s"
+    classifier:
+      regoConfigMapName: "signalprocessing-rego-policy"
+      regoConfigMapKey: "policy.rego"
+      hotReloadInterval: "30s"
+    datastorage:
+      url: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
+      timeout: "10s"
+      buffer:
+        bufferSize: 10000
+        batchSize: 50
+        flushInterval: "100ms"
+        maxRetries: 3
+---
+apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: signalprocessing-controller
@@ -964,16 +984,13 @@ spec:
       - name: controller
         image: %s
         imagePullPolicy: %s
+        args:
+        - "--config=/etc/signalprocessing/config.yaml"
         env:
         - name: NAMESPACE
           valueFrom:
             fieldRef:
               fieldPath: metadata.namespace
-        # BR-SP-090: Point to DataStorage service in kubernaut-system namespace
-        # Fix: Correct service name is data-storage-service (not datastorage)
-        - name: DATA_STORAGE_URL
-          value: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
-        # E2E Coverage: Set GOCOVERDIR to enable coverage capture
         - name: GOCOVERDIR
           value: /coverdata
         ports:
@@ -1001,6 +1018,11 @@ spec:
             cpu: 500m
             memory: 256Mi
         volumeMounts:
+        # ADR-030: Mount service config at /etc/signalprocessing/config.yaml
+        - name: config
+          mountPath: /etc/signalprocessing/config.yaml
+          subPath: config.yaml
+          readOnly: true
         # Mount policies at /etc/signalprocessing/policies (same as standard manifest)
         - name: policies
           mountPath: /etc/signalprocessing/policies
@@ -1014,6 +1036,10 @@ spec:
         - name: coverdata
           mountPath: /coverdata
       volumes:
+      # ADR-030: Service configuration ConfigMap
+      - name: config
+        configMap:
+          name: signalprocessing-config
       # Projected volume for all policies (includes severity policy for BR-SP-105)
       - name: policies
         projected:

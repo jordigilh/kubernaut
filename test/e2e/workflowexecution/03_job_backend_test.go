@@ -152,7 +152,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 						WorkflowID: "test-job-intentional-failure",
 						Version:    "v1.0.0",
 						// Job failing image: exits with non-zero status
-						ContainerImage: fmt.Sprintf("%s/job-failing:%s",
+						ExecutionBundle: fmt.Sprintf("%s/job-failing:%s",
 							infrastructure.TestWorkflowBundleRegistry, infrastructure.TestWorkflowBundleVersion),
 					},
 					TargetResource: targetResource,
@@ -296,7 +296,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 			By("Verifying Job container image")
 			Expect(job.Spec.Template.Spec.Containers).To(HaveLen(1))
 			container := job.Spec.Template.Spec.Containers[0]
-			Expect(container.Image).To(Equal(wfe.Spec.WorkflowRef.ContainerImage),
+			Expect(container.Image).To(Equal(wfe.Spec.WorkflowRef.ExecutionBundle),
 				"Job container image should match WFE spec")
 
 			By("Verifying environment variables include parameters")
@@ -348,7 +348,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID:     "test-invalid-engine",
 						Version:        "v1.0.0",
-						ContainerImage: "busybox:latest",
+						ExecutionBundle: "busybox:latest",
 					},
 					TargetResource: "default/deployment/invalid-test",
 				},
@@ -530,7 +530,7 @@ func createTestJobWFE(name, targetResource string) *workflowexecutionv1alpha1.Wo
 				Version:    "v1.0.0",
 				// Job hello-world image: echoes params and exits 0
 				// Pre-built multi-arch image from quay.io/kubernaut-cicd (amd64 + arm64)
-				ContainerImage: fmt.Sprintf("%s/job-hello-world:%s",
+				ExecutionBundle: fmt.Sprintf("%s/job-hello-world:%s",
 					infrastructure.TestWorkflowBundleRegistry, infrastructure.TestWorkflowBundleVersion),
 			},
 			TargetResource: targetResource,

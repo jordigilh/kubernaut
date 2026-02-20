@@ -1,5 +1,7 @@
 # NOTICE: Gateway Classification Removal - SP Team Coordination
 
+> **Note (Issue #91):** CRD routing labels (`kubernaut.ai/signal-type`, `kubernaut.ai/severity`, etc.) referenced in this document were migrated to immutable spec fields. See Issue #91.
+
 **Date**: 2025-12-06
 **Version**: 1.1
 **From**: Gateway Service Team

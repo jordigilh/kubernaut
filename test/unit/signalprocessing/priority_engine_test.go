@@ -75,55 +75,29 @@ package signalprocessing.priority
 
 import rego.v1
 
-# P0: Critical + production
-result := {"priority": "P0", "confidence": 0.95, "policy_name": "critical-production"} if {
-    lower(input.signal.severity) == "critical"
-    lower(input.environment) == "production"
-}
+# Score-based priority aggregation (issue #98)
+severity_score := 3 if { lower(input.signal.severity) == "critical" }
+severity_score := 2 if { lower(input.signal.severity) == "high" }
+severity_score := 1 if { lower(input.signal.severity) == "low" }
+default severity_score := 0
 
-# P1: Critical + staging
-result := {"priority": "P1", "confidence": 0.90, "policy_name": "critical-staging"} if {
-    lower(input.signal.severity) == "critical"
-    lower(input.environment) == "staging"
-}
+env_scores contains 3 if { lower(input.environment) == "production" }
+env_scores contains 2 if { lower(input.environment) == "staging" }
+env_scores contains 1 if { lower(input.environment) == "development" }
+env_scores contains 1 if { lower(input.environment) == "test" }
+env_scores contains 3 if { input.namespace_labels["tier"] == "critical" }
+env_scores contains 2 if { input.namespace_labels["tier"] == "high" }
 
-# P1: High + production (DD-SEVERITY-001 v1.1)
-result := {"priority": "P1", "confidence": 0.90, "policy_name": "high-production"} if {
-    lower(input.signal.severity) == "high"
-    lower(input.environment) == "production"
-}
+env_score := max(env_scores) if { count(env_scores) > 0 }
+default env_score := 0
 
-# P2: Low + production (DD-SEVERITY-001 v1.1)
-result := {"priority": "P2", "confidence": 0.85, "policy_name": "low-production"} if {
-    lower(input.signal.severity) == "low"
-    lower(input.environment) == "production"
-}
+composite_score := severity_score + env_score
 
-# P2: High + staging (DD-SEVERITY-001 v1.1)
-result := {"priority": "P2", "confidence": 0.85, "policy_name": "high-staging"} if {
-    lower(input.signal.severity) == "high"
-    lower(input.environment) == "staging"
-}
+result := {"priority": "P0", "policy_name": "score-based"} if { composite_score >= 6 }
+result := {"priority": "P1", "policy_name": "score-based"} if { composite_score == 5 }
+result := {"priority": "P2", "policy_name": "score-based"} if { composite_score == 4 }
+result := {"priority": "P3", "policy_name": "score-based"} if { composite_score < 4; composite_score > 0 }
 
-# P2: Critical + development
-result := {"priority": "P2", "confidence": 0.85, "policy_name": "critical-development"} if {
-    lower(input.signal.severity) == "critical"
-    lower(input.environment) == "development"
-}
-
-# P3: Low + development (DD-SEVERITY-001 v1.1)
-result := {"priority": "P3", "confidence": 0.80, "policy_name": "low-development"} if {
-    lower(input.signal.severity) == "low"
-    lower(input.environment) == "development"
-}
-
-# P3: High + development (DD-SEVERITY-001 v1.1)
-result := {"priority": "P3", "confidence": 0.80, "policy_name": "high-development"} if {
-    lower(input.signal.severity) == "high"
-    lower(input.environment) == "development"
-}
-
-# Default catch-all (operators define their own defaults)
 default result := {"priority": "P2", "policy_name": "default-catch-all"}
 `
 
@@ -350,7 +324,7 @@ result := {"priority": "P2", "confidence": 0.60, "policy_name": "default"} if {
 		})
 
 		// BR-SP-070: Empty string severity
-		It("BR-SP-070: should fallback to P2 for empty severity", func() {
+		It("BR-SP-070: should fallback to P3 for empty severity in production", func() {
 			policyPath := createPolicy(standardPolicy)
 			var err error
 			priorityEngine, err = classifier.NewPriorityEngine(ctx, policyPath, logger)
@@ -371,9 +345,11 @@ result := {"priority": "P2", "confidence": 0.60, "policy_name": "default"} if {
 
 			result, err := priorityEngine.Assign(ctx, k8sCtx, envClass, signal)
 
-			// Should use Rego default or Go fallback
+			// Score-based: severity_score=0 + env_score=3 = 3 → P3
+			// (Improved from old N×M catch-all P2: unknown severity in production
+			// should be lower priority than a known low-severity signal)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Priority).To(Equal("P2"))
+			Expect(result.Priority).To(Equal("P3"))
 		})
 
 		// BR-SP-070: Both empty

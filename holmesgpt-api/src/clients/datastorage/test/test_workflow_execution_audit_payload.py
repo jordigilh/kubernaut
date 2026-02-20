@@ -55,7 +55,10 @@ class TestWorkflowExecutionAuditPayload(unittest.TestCase):
                     component = 'gateway', 
                     retry_possible = True, 
                     stack_trace = ["/path/to/file.go:123 function.Name"], ),
-                pipelinerun_name = 'restart-payment-api-2025-12-17-abc123-run'
+                pipelinerun_name = 'restart-payment-api-2025-12-17-abc123-run',
+                parameters = {
+                    'key' : ''
+                    }
             )
         else:
             return WorkflowExecutionAuditPayload(

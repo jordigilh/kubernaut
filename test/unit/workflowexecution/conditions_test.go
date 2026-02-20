@@ -46,7 +46,7 @@ var _ = Describe("Conditions Infrastructure", func() {
 	})
 
 	// ========================================
-	// Test Condition Setters (5 conditions × 2 tests each = 10 tests)
+	// Test Condition Setters (4 conditions × 2 tests each = 8 tests)
 	// ========================================
 
 	Describe("SetExecutionCreated", func() {
@@ -163,34 +163,6 @@ var _ = Describe("Conditions Infrastructure", func() {
 				Expect(condition).ToNot(BeNil())
 				Expect(condition.Status).To(Equal(metav1.ConditionFalse))
 				Expect(condition.Reason).To(Equal(weconditions.ReasonAuditFailed))
-			})
-		})
-	})
-
-	Describe("SetResourceLocked", func() {
-		Context("when target resource is busy", func() {
-			It("should set condition to True with TargetResourceBusy reason", func() {
-				weconditions.SetResourceLocked(wfe, true,
-					weconditions.ReasonTargetResourceBusy,
-					"Another workflow is executing on target deployment/payment-api")
-
-				condition := weconditions.GetCondition(wfe, weconditions.ConditionResourceLocked)
-				Expect(condition).ToNot(BeNil())
-				Expect(condition.Status).To(Equal(metav1.ConditionTrue))
-				Expect(condition.Reason).To(Equal(weconditions.ReasonTargetResourceBusy))
-			})
-		})
-
-		Context("when target recently remediated", func() {
-			It("should set condition to True with RecentlyRemediated reason", func() {
-				weconditions.SetResourceLocked(wfe, true,
-					weconditions.ReasonRecentlyRemediated,
-					"Same workflow executed on target 30s ago (cooldown: 5m)")
-
-				condition := weconditions.GetCondition(wfe, weconditions.ConditionResourceLocked)
-				Expect(condition).ToNot(BeNil())
-				Expect(condition.Status).To(Equal(metav1.ConditionTrue))
-				Expect(condition.Reason).To(Equal(weconditions.ReasonRecentlyRemediated))
 			})
 		})
 	})
@@ -365,26 +337,6 @@ var _ = Describe("Conditions Infrastructure", func() {
 			condition = weconditions.GetCondition(wfe, weconditions.ConditionExecutionComplete)
 			Expect(condition.Reason).To(Equal(weconditions.ReasonOOMKilled))
 		})
-
-		It("should support all ResourceLocked reasons", func() {
-			// Test target resource busy
-			weconditions.SetResourceLocked(wfe, true,
-				weconditions.ReasonTargetResourceBusy, "Resource busy")
-			condition := weconditions.GetCondition(wfe, weconditions.ConditionResourceLocked)
-			Expect(condition.Reason).To(Equal(weconditions.ReasonTargetResourceBusy))
-
-			// Test recently remediated
-			weconditions.SetResourceLocked(wfe, true,
-				weconditions.ReasonRecentlyRemediated, "Recently remediated")
-			condition = weconditions.GetCondition(wfe, weconditions.ConditionResourceLocked)
-			Expect(condition.Reason).To(Equal(weconditions.ReasonRecentlyRemediated))
-
-			// Test previous execution failed
-			weconditions.SetResourceLocked(wfe, true,
-				weconditions.ReasonPreviousExecutionFailed, "Previous failed")
-			condition = weconditions.GetCondition(wfe, weconditions.ConditionResourceLocked)
-			Expect(condition.Reason).To(Equal(weconditions.ReasonPreviousExecutionFailed))
-		})
 	})
 
 	// ========================================
@@ -422,30 +374,6 @@ var _ = Describe("Conditions Infrastructure", func() {
 				Expect(condition.Status).To(Equal(metav1.ConditionTrue),
 					"All conditions should be True in success scenario")
 			}
-		})
-
-		It("should track resource lock condition (legacy - V1.0: RO prevents locked WFE creation)", func() {
-			// V1.0 NOTE: In V1.0, RO prevents creation of WFEs on locked resources (DD-RO-002)
-			// This test validates the condition infrastructure still works for edge cases
-			// where a WFE might be created before RO's routing decision completes
-
-			// Resource lock detected
-			weconditions.SetResourceLocked(wfe, true,
-				weconditions.ReasonTargetResourceBusy,
-				"Another workflow executing on target")
-
-			// Audit event for workflow state change
-			weconditions.SetAuditRecorded(wfe, true,
-				weconditions.ReasonAuditSucceeded,
-				"Audit event for workflow state recorded")
-
-			// Verify resource lock condition tracked
-			Expect(wfe.Status.Conditions).To(HaveLen(2))
-			Expect(weconditions.IsConditionTrue(wfe, weconditions.ConditionResourceLocked)).To(BeTrue())
-			Expect(weconditions.IsConditionTrue(wfe, weconditions.ConditionAuditRecorded)).To(BeTrue())
-
-			// ExecutionCreated should NOT be set (no execution resource created when locked)
-			Expect(weconditions.GetCondition(wfe, weconditions.ConditionExecutionCreated)).To(BeNil())
 		})
 	})
 })

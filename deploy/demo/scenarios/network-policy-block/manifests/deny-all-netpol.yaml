@@ -1,0 +1,11 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-all-ingress
+  namespace: demo-netpol
+  labels:
+    injected-by: kubernaut-demo
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress

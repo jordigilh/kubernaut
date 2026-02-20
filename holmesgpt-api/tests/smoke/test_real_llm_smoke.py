@@ -210,7 +210,7 @@ def mock_data_storage_response(signal_type: str = "OOMKilled") -> Dict[str, Any]
 
     return {
         "workflows": [workflow],
-        "total_results": 1,
+        "totalResults": 1,
         "query": f"{signal_type} critical"
     }
 
@@ -355,7 +355,7 @@ class TestRealLLMToolCalling:
                     "workflow_id": "scale-horizontal-v1",
                     "title": "Horizontal Scaling",
                     "version": "1.0.0",
-                    "container_image": "ghcr.io/kubernaut/scale:v1.0.0",
+                    "execution_bundle": "ghcr.io/kubernaut/scale:v1.0.0",
                     "parameters": {"TARGET_REPLICAS": "5"},
                     "rationale": "Scale out to distribute load"
                 },
@@ -384,12 +384,12 @@ class TestRealLLMToolCalling:
             mock_response.status_code = 200
             mock_response.json.return_value = {
                 "workflows": [{
-                    "workflow_id": "memory-optimize-v1",
+                    "workflowId": "memory-optimize-v1",
                     "title": "Memory Optimization",
-                    "signal_type": "OOMKilled",
+                    "signalType": "OOMKilled",
                     "confidence": 0.85
                 }],
-                "total_results": 1
+                "totalResults": 1
             }
             mock_post.return_value = mock_response
 

@@ -145,10 +145,7 @@ func NewSignalProcessing(name, namespace string, opts ...SignalProcessingOpts) *
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
-			UID:       types.UID(fmt.Sprintf("%s-uid", name)),
-			Labels: map[string]string{
-				"kubernaut.ai/component": "signal-processing",
-			},
+			UID: types.UID(fmt.Sprintf("%s-uid", name)),
 		},
 		Spec: signalprocessingv1.SignalProcessingSpec{
 			RemediationRequestRef: signalprocessingv1.ObjectReference{
@@ -242,10 +239,7 @@ func NewAIAnalysis(name, namespace string, opts ...AIAnalysisOpts) *aianalysisv1
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
-			UID:       types.UID(fmt.Sprintf("%s-uid", name)),
-			Labels: map[string]string{
-				"kubernaut.ai/component": "ai-analysis",
-			},
+			UID: types.UID(fmt.Sprintf("%s-uid", name)),
 		},
 		Spec: aianalysisv1.AIAnalysisSpec{
 			RemediationID: "test-remediation",
@@ -284,8 +278,8 @@ func NewCompletedAIAnalysis(name, namespace string) *aianalysisv1.AIAnalysis {
 		SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
 			WorkflowID:      "pod-restart-workflow",
 			Version:         "v1.0.0",
-			ContainerImage:  "kubernaut/workflows/pod-restart:v1.0.0",
-			ContainerDigest: "sha256:abc123",
+			ExecutionBundle:  "kubernaut/workflows/pod-restart:v1.0.0",
+			ExecutionBundleDigest: "sha256:abc123",
 			Confidence:      0.95,
 			Rationale:       "High confidence match for pod restart scenario",
 			Parameters: map[string]string{
@@ -303,8 +297,8 @@ func NewAIAnalysisRequiringApproval(name, namespace, approvalReason string) *aia
 		SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
 			WorkflowID:      "deployment-rollback-workflow",
 			Version:         "v1.0.0",
-			ContainerImage:  "kubernaut/workflows/deployment-rollback:v1.0.0",
-			ContainerDigest: "sha256:def456",
+			ExecutionBundle:  "kubernaut/workflows/deployment-rollback:v1.0.0",
+			ExecutionBundleDigest: "sha256:def456",
 			Confidence:      0.65, // Low confidence triggers approval
 			Rationale:       "Moderate confidence - human review recommended",
 			Parameters: map[string]string{
@@ -350,17 +344,14 @@ func NewWorkflowExecution(name, namespace string, opts ...WorkflowExecutionOpts)
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
-			UID:       types.UID(fmt.Sprintf("%s-uid", name)),
-			Labels: map[string]string{
-				"kubernaut.ai/component": "workflow-execution",
-			},
+			UID: types.UID(fmt.Sprintf("%s-uid", name)),
 		},
 		Spec: workflowexecutionv1.WorkflowExecutionSpec{
 			WorkflowRef: workflowexecutionv1.WorkflowRef{
 				WorkflowID:      "pod-restart-workflow",
 				Version:         "v1.0.0",
-				ContainerImage:  "kubernaut/workflows/pod-restart:v1.0.0",
-				ContainerDigest: "sha256:abc123",
+				ExecutionBundle:  "kubernaut/workflows/pod-restart:v1.0.0",
+				ExecutionBundleDigest: "sha256:abc123",
 			},
 			TargetResource: fmt.Sprintf("%s/Pod/test-pod", namespace),
 			Parameters: map[string]string{
@@ -443,10 +434,7 @@ func NewNotificationRequest(name, namespace string, opts ...NotificationRequestO
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
-			UID:       types.UID(fmt.Sprintf("%s-uid", name)),
-			Labels: map[string]string{
-				"kubernaut.ai/component": "notification",
-			},
+			UID: types.UID(fmt.Sprintf("%s-uid", name)),
 		},
 		Spec: notificationv1.NotificationRequestSpec{
 			Type:     notifType,

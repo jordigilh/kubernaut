@@ -18,13 +18,13 @@ limitations under the License.
 // SIGNAL PROCESSING CONTROLLER (DD-006)
 // ========================================
 //
-// 📋 Design Decisions:
+// Design Decisions:
 //   - DD-006: Controller Scaffolding Strategy
 //   - DD-005: Observability Standards (Metrics & Logging)
 //   - DD-CRD-001: API Group Domain (.kubernaut.ai)
 //   - DD-014: Binary Version Logging
 //
-// 🎯 Business Requirements:
+// Business Requirements:
 //   - BR-SP-001: K8s Context Enrichment
 //   - BR-SP-070: Priority Assignment (Rego)
 //   - BR-SP-090: Categorization Audit Trail
@@ -35,7 +35,6 @@ package main
 import (
 	"flag"
 	"os"
-	"time"
 
 	// Standard Kubernetes imports
 	"k8s.io/apimachinery/pkg/runtime"
@@ -53,7 +52,6 @@ import (
 	spaudit "github.com/jordigilh/kubernaut/pkg/signalprocessing/audit"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/classifier"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/config"
-	"github.com/jordigilh/kubernaut/pkg/signalprocessing/detection"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/enricher"
 	spmetrics "github.com/jordigilh/kubernaut/pkg/signalprocessing/metrics"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/ownerchain"
@@ -78,12 +76,12 @@ func init() {
 }
 
 func main() {
+	// ========================================
+	// ADR-030: Configuration via YAML file
+	// Single --config flag; all functional config in YAML ConfigMap
+	// ========================================
 	var configFile string
-
-	// Controller config from DefaultControllerConfig() - NOT from flags for safety
-	ctrlCfg := config.DefaultControllerConfig()
-
-	flag.StringVar(&configFile, "config", "/etc/signalprocessing/config.yaml", "Path to configuration file")
+	flag.StringVar(&configFile, "config", config.DefaultConfigPath, "Path to configuration file")
 
 	opts := zap.Options{
 		Development: true,
@@ -100,38 +98,40 @@ func main() {
 		"buildDate", buildDate,
 	)
 
-	// Load configuration
+	// ========================================
+	// CONFIGURATION LOADING (ADR-030)
+	// ========================================
 	cfg, err := config.LoadFromFile(configFile)
 	if err != nil {
-		// In development/testing, use defaults if config file not found
-		setupLog.Info("config file not found, using defaults", "path", configFile, "error", err.Error())
-		cfg = &config.Config{} // Will fail validation - that's intentional
+		setupLog.Error(err, "Failed to load configuration from file, using defaults",
+			"configPath", configFile)
+		cfg = config.DefaultConfig()
+	} else {
+		setupLog.Info("Configuration loaded successfully", "configPath", configFile)
 	}
 
-	// Validate configuration (skip in development if empty)
-	if cfg.Enrichment.Timeout > 0 {
-		if err := cfg.Validate(); err != nil {
-			setupLog.Error(err, "invalid configuration")
-			os.Exit(1)
-		}
+	if err := cfg.Validate(); err != nil {
+		setupLog.Error(err, "invalid configuration")
+		os.Exit(1)
 	}
 
-	setupLog.Info("configuration loaded",
-		"config", configFile,
-		"metrics-address", ctrlCfg.MetricsAddr,
-		"probe-address", ctrlCfg.HealthProbeAddr,
-		"leader-election", ctrlCfg.LeaderElection,
+	setupLog.Info("SignalProcessing controller configuration",
+		"metricsAddr", cfg.Controller.MetricsAddr,
+		"healthProbeAddr", cfg.Controller.HealthProbeAddr,
+		"enrichmentTimeout", cfg.Enrichment.Timeout,
+		"dataStorageURL", cfg.DataStorage.URL,
 	)
 
 	// Setup controller manager
+	// ADR-030: Controller settings from YAML config (not hardcoded defaults)
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,
 		Metrics: metricsserver.Options{
-			BindAddress: ctrlCfg.MetricsAddr,
+			BindAddress: cfg.Controller.MetricsAddr,
 		},
-		HealthProbeBindAddress: ctrlCfg.HealthProbeAddr,
-		LeaderElection:         ctrlCfg.LeaderElection,
-		LeaderElectionID:       ctrlCfg.LeaderElectionID,
+		HealthProbeBindAddress: cfg.Controller.HealthProbeAddr,
+		LeaderElection:         cfg.Controller.LeaderElection,
+		LeaderElectionID:       cfg.Controller.LeaderElectionID,
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
@@ -143,22 +143,27 @@ func main() {
 	// ========================================
 	// ADR-032: Audit is MANDATORY - controller will crash if not configured
 	// ADR-038: Fire-and-forget pattern via BufferedStore
-	dataStorageURL := os.Getenv("DATA_STORAGE_URL")
-	if dataStorageURL == "" {
-		dataStorageURL = "http://datastorage-service:8080" // Default for in-cluster
-	}
-	setupLog.Info("configuring audit client", "dataStorageURL", dataStorageURL)
+	// ADR-030: DataStorage URL from YAML config (not env var)
+	setupLog.Info("configuring audit client", "dataStorageURL", cfg.DataStorage.URL)
 
 	// DD-API-001: Use OpenAPI client adapter (type-safe, contract-validated)
-	dsClient, err := sharedaudit.NewOpenAPIClientAdapter(dataStorageURL, 5*time.Second)
+	dsClient, err := sharedaudit.NewOpenAPIClientAdapter(cfg.DataStorage.URL, cfg.DataStorage.Timeout)
 	if err != nil {
 		setupLog.Error(err, "FATAL: failed to create Data Storage client")
 		os.Exit(1)
 	}
 
+	// ADR-030: Audit buffer config from YAML (not RecommendedConfig)
+	auditConfig := sharedaudit.Config{
+		BufferSize:    cfg.DataStorage.Buffer.BufferSize,
+		BatchSize:     cfg.DataStorage.Buffer.BatchSize,
+		FlushInterval: cfg.DataStorage.Buffer.FlushInterval,
+		MaxRetries:    cfg.DataStorage.Buffer.MaxRetries,
+	}
+
 	auditStore, err := sharedaudit.NewBufferedStore(
 		dsClient,
-		sharedaudit.RecommendedConfig("signalprocessing"), // DD-AUDIT-004: MEDIUM tier (30K buffer)
+		auditConfig,
 		"signalprocessing",
 		ctrl.Log.WithName("audit"),
 	)
@@ -166,6 +171,13 @@ func main() {
 		setupLog.Error(err, "FATAL: failed to create audit store - audit is MANDATORY per ADR-032")
 		os.Exit(1)
 	}
+
+	setupLog.Info("Audit store initialized",
+		"dataStorageURL", cfg.DataStorage.URL,
+		"bufferSize", auditConfig.BufferSize,
+		"batchSize", auditConfig.BatchSize,
+		"flushInterval", auditConfig.FlushInterval,
+	)
 
 	// Create service-specific audit client (BR-SP-090)
 	auditClient := spaudit.NewAuditClient(auditStore, ctrl.Log.WithName("audit"))
@@ -179,9 +191,9 @@ func main() {
 	// BR-SP-002: Business unit classification
 	//
 	// Option B: Fail-fast on Rego syntax errors at startup
-	// - Policy file NOT FOUND → INFO log, use fallback (policies are optional)
-	// - Policy file EXISTS but INVALID → FATAL error, exit(1) (deployment bug)
-	// - Runtime evaluation errors → fallback per BR-SP-071 (handled in controller)
+	// - Policy file NOT FOUND -> INFO log, use fallback (policies are optional)
+	// - Policy file EXISTS but INVALID -> FATAL error, exit(1) (deployment bug)
+	// - Runtime evaluation errors -> fallback per BR-SP-071 (handled in controller)
 	//
 	// Production deployments should mount Rego policies at /etc/signalprocessing/policies/
 
@@ -293,7 +305,7 @@ func main() {
 	// SIGNAL MODE CLASSIFIER (OPTIONAL)
 	// ========================================
 	// BR-SP-106: Predictive Signal Mode Classification
-	// ADR-054: Uses YAML config (not Rego) — simple key-value lookup
+	// ADR-054: Uses YAML config (not Rego) -- simple key-value lookup
 	// If config file is missing, all signals default to reactive mode (backwards compatible)
 	signalModeClassifier := classifier.NewSignalModeClassifier(
 		ctrl.Log.WithName("classifier.signalmode"),
@@ -318,7 +330,6 @@ func main() {
 	// ========================================
 	// BR-SP-001: Kubernetes context enrichment
 	// BR-SP-100: Owner chain traversal
-	// BR-SP-101: Detected labels auto-detection
 	// BR-SP-102: CustomLabels Rego extraction
 
 	regoEngine := rego.NewEngine(
@@ -342,25 +353,20 @@ func main() {
 	)
 	setupLog.Info("owner chain builder configured")
 
-	labelDetector := detection.NewLabelDetector(
-		mgr.GetClient(),
-		ctrl.Log.WithName("detection"),
-	)
-	setupLog.Info("label detector configured")
-
 	// BR-SP-001: Metrics for observability (DD-005)
 	// Per AIAnalysis pattern: Use global ctrlmetrics.Registry for production
 	spMetrics := spmetrics.NewMetrics() // Uses ctrlmetrics.Registry (global)
 	setupLog.Info("signalprocessing metrics configured")
 
 	// BR-SP-001: K8s context enricher with caching, timeout, metrics, degraded mode
+	// ADR-030: Enrichment timeout from YAML config (not hardcoded)
 	k8sEnricher := enricher.NewK8sEnricher(
 		mgr.GetClient(),
 		ctrl.Log.WithName("enricher"),
 		spMetrics,
-		10*time.Second, // Enrichment timeout
+		cfg.Enrichment.Timeout,
 	)
-	setupLog.Info("k8s enricher configured")
+	setupLog.Info("k8s enricher configured", "enrichmentTimeout", cfg.Enrichment.Timeout)
 
 	// ========================================
 	// DD-PERF-001: Atomic Status Updates
@@ -381,22 +387,21 @@ func main() {
 
 	// Setup reconciler with ALL required components
 	if err = (&signalprocessing.SignalProcessingReconciler{
-		Client:             mgr.GetClient(),
-		Scheme:             mgr.GetScheme(),
-		AuditClient:        auditClient,     // Legacy - kept for backwards compatibility during migration
-		AuditManager:       auditManager,    // Phase 3 refactoring (2026-01-22)
-		Metrics:            spMetrics,       // DD-005: Observability
-		Recorder:           mgr.GetEventRecorderFor("signalprocessing-controller"),
-		StatusManager:      statusManager,   // DD-PERF-001: Atomic status updates
-		EnvClassifier:      envClassifier,
-		PriorityAssigner:   priorityEngine,  // PriorityEngine implements PriorityAssigner interface
-		BusinessClassifier: businessClassifier,
-		SeverityClassifier:   severityClassifier,   // BR-SP-105: Severity determination (DD-SEVERITY-001)
-		SignalModeClassifier: signalModeClassifier, // BR-SP-106: Predictive signal mode (ADR-054)
+		Client:               mgr.GetClient(),
+		Scheme:               mgr.GetScheme(),
+		AuditClient:          auditClient,          // Legacy - kept for backwards compatibility during migration
+		AuditManager:         auditManager,          // Phase 3 refactoring (2026-01-22)
+		Metrics:              spMetrics,              // DD-005: Observability
+		Recorder:             mgr.GetEventRecorderFor("signalprocessing-controller"),
+		StatusManager:        statusManager,          // DD-PERF-001: Atomic status updates
+		EnvClassifier:        envClassifier,
+		PriorityAssigner:     priorityEngine,         // PriorityEngine implements PriorityAssigner interface
+		BusinessClassifier:   businessClassifier,
+		SeverityClassifier:   severityClassifier,     // BR-SP-105: Severity determination (DD-SEVERITY-001)
+		SignalModeClassifier: signalModeClassifier,   // BR-SP-106: Predictive signal mode (ADR-054)
 		RegoEngine:           regoEngine,
-		OwnerChainBuilder:  ownerChainBuilder,
-		LabelDetector:      labelDetector,
-		K8sEnricher:        k8sEnricher,
+		OwnerChainBuilder:    ownerChainBuilder,
+		K8sEnricher:          k8sEnricher,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "SignalProcessing")
 		os.Exit(1)

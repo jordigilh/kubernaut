@@ -20,6 +20,7 @@ import json
 
 from typing import Any, ClassVar, Dict, List, Optional
 from pydantic import BaseModel, StrictStr
+from pydantic import Field
 try:
     from typing import Self
 except ImportError:
@@ -29,9 +30,9 @@ class IncidentResponseDataAlternativeWorkflowsInner(BaseModel):
     """
     IncidentResponseDataAlternativeWorkflowsInner
     """ # noqa: E501
-    workflow_id: Optional[StrictStr] = None
+    workflow_id: Optional[StrictStr] = Field(default=None, alias="workflowId")
     rationale: Optional[StrictStr] = None
-    __properties: ClassVar[List[str]] = ["workflow_id", "rationale"]
+    __properties: ClassVar[List[str]] = ["workflowId", "rationale"]
 
     model_config = {
         "populate_by_name": True,
@@ -82,7 +83,7 @@ class IncidentResponseDataAlternativeWorkflowsInner(BaseModel):
             return cls.model_validate(obj)
 
         _obj = cls.model_validate({
-            "workflow_id": obj.get("workflow_id"),
+            "workflowId": obj.get("workflowId"),
             "rationale": obj.get("rationale")
         })
         return _obj

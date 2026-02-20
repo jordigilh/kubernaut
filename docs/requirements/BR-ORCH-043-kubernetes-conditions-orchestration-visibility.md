@@ -139,7 +139,11 @@ kubectl describe remediationrequest <name> | grep -A5 "WorkflowExecution"
 - **Status**: `False` during active processing
 - **Reason Success**: `RecoverySucceeded`
 - **Reason Failure**: `RecoveryFailed`, `MaxAttemptsReached`, `BlockedByConsecutiveFailures`
-- **When**: Terminal phase reached
+- **When**: Terminal phase reached (including timeout and blocked-terminal paths; Issue #79 gap fix)
+
+**Condition**: **Ready**
+- **Status**: `True` when phase is Completed or Skipped
+- **Status**: `False` when phase is Failed, TimedOut, or Cancelled
 
 **Integration Point**: `pkg/remediationorchestrator/controller/reconciler.go` (phase transitions)
 
@@ -244,20 +248,20 @@ kube_customresource_condition{
 # Step 1: Check RemediationRequest phase
 kubectl get remediationrequest rr-alert-123
 
-# Step 2: Find SignalProcessing CRD
-kubectl get signalprocessing -l kubernaut.ai/remediation-request=rr-alert-123
+# Step 2: Find SignalProcessing CRD (Issue #91: field selector replaces label)
+kubectl get signalprocessing --field-selector spec.remediationRequestRef.name=rr-alert-123
 
 # Step 3: Check SP status
 kubectl describe signalprocessing sp-rr-alert-123
 
 # Step 4: Find AIAnalysis CRD
-kubectl get aianalysis -l kubernaut.ai/remediation-request=rr-alert-123
+kubectl get aianalysis --field-selector spec.remediationRequestRef.name=rr-alert-123
 
 # Step 5: Check AI status
 kubectl describe aianalysis ai-rr-alert-123
 
 # Step 6: Find WorkflowExecution CRD
-kubectl get workflowexecution -l kubernaut.ai/remediation-request=rr-alert-123
+kubectl get workflowexecution --field-selector spec.remediationRequestRef.name=rr-alert-123
 
 # Step 7: Check WE status
 kubectl describe workflowexecution we-rr-alert-123
@@ -345,6 +349,7 @@ Status:
 | **handleExecutingPhase** | `pkg/remediationorchestrator/controller/reconciler.go:237` | WorkflowExecutionComplete |
 | **transitionToFailed** | `pkg/remediationorchestrator/controller/reconciler.go:~300` | RecoveryComplete (failure) |
 | **transitionToCompleted** | `pkg/remediationorchestrator/controller/reconciler.go:~320` | RecoveryComplete (success) |
+| **timeout/blocked-terminal paths** | `pkg/remediationorchestrator/controller/reconciler.go` | RecoveryComplete (Issue #79 gap fix) |
 
 ---
 

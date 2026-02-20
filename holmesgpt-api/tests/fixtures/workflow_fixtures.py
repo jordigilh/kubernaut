@@ -54,7 +54,7 @@ class WorkflowFixture:
     environment: str
     priority: str
     risk_tolerance: str
-    container_image: str
+    schema_image: str
 
     @property
     def primary_environment(self) -> str:
@@ -87,7 +87,7 @@ parameters:
     description: Target resource name
 execution:
   engine: tekton
-  bundle: {self.container_image}"""
+  bundle: {self.schema_image}"""
 
     def to_oci_request(self) -> CreateWorkflowFromOCIRequest:
         """
@@ -98,7 +98,7 @@ execution:
         and populates all catalog fields from the extracted schema.
         """
         return CreateWorkflowFromOCIRequest(
-            container_image=self.container_image
+            schema_image=self.schema_image
         )
 
     def to_remediation_workflow(self) -> RemediationWorkflow:
@@ -112,10 +112,10 @@ execution:
         content = self.to_yaml_content()
         content_hash = hashlib.sha256(content.encode()).hexdigest()
 
-        # Extract container_digest if present
-        container_digest = None
-        if "@sha256:" in self.container_image:
-            container_digest = self.container_image.split("@")[1]
+        # Extract schema_digest if present
+        schema_digest = None
+        if "@sha256:" in self.schema_image:
+            schema_digest = self.schema_image.split("@")[1]
 
         # Create MandatoryLabels instance
         labels = MandatoryLabels(
@@ -139,8 +139,8 @@ execution:
             labels=labels,
             execution_engine="tekton",
             status="active",
-            container_image=self.container_image,
-            container_digest=container_digest
+            schema_image=self.schema_image,
+            schema_digest=schema_digest
         )
 
 
@@ -160,7 +160,7 @@ TEST_WORKFLOWS = [
         environment=["production"],
         priority="P0",
         risk_tolerance="low",
-        container_image="ghcr.io/kubernaut/workflows/oomkill-increase-memory:v1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000001"
+        schema_image="ghcr.io/kubernaut/workflows/oomkill-increase-memory:v1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000001"
     ),
     WorkflowFixture(
         workflow_name="memory-optimize-v1",  # Aligned with Mock LLM and AIAnalysis
@@ -174,7 +174,7 @@ TEST_WORKFLOWS = [
         environment=["staging"],
         priority="P1",
         risk_tolerance="medium",
-        container_image="ghcr.io/kubernaut/workflows/oomkill-scale-down:v1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000002"
+        schema_image="ghcr.io/kubernaut/workflows/oomkill-scale-down:v1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000002"
     ),
     WorkflowFixture(
         workflow_name="crashloop-config-fix-v1",  # Aligned with Mock LLM and AIAnalysis
@@ -188,7 +188,7 @@ TEST_WORKFLOWS = [
         environment=["production"],
         priority="P1",
         risk_tolerance="low",
-        container_image="ghcr.io/kubernaut/workflows/crashloop-fix-config:v1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000003"
+        schema_image="ghcr.io/kubernaut/workflows/crashloop-fix-config:v1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000003"
     ),
     WorkflowFixture(
         workflow_name="node-drain-reboot-v1",  # Aligned with Mock LLM and AIAnalysis
@@ -202,7 +202,7 @@ TEST_WORKFLOWS = [
         environment=["production"],
         priority="P0",
         risk_tolerance="low",
-        container_image="ghcr.io/kubernaut/workflows/node-drain-reboot:v1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000004"
+        schema_image="ghcr.io/kubernaut/workflows/node-drain-reboot:v1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000004"
     ),
     WorkflowFixture(
         workflow_name="image-pull-backoff-fix-credentials",
@@ -216,7 +216,7 @@ TEST_WORKFLOWS = [
         environment=["production"],
         priority="P1",
         risk_tolerance="medium",
-        container_image="ghcr.io/kubernaut/workflows/imagepull-fix-creds:v1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000005"
+        schema_image="ghcr.io/kubernaut/workflows/imagepull-fix-creds:v1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000005"
     ),
 ]
 
@@ -491,7 +491,7 @@ def _generate_pagination_workflows() -> List[WorkflowFixture]:
     for action_type, prefix, signal_type, component, severity, env, priority, count in definitions:
         for i in range(1, count + 1):
             workflow_name = f"pagination-{prefix}-{i:02d}-v1"
-            # Generate a deterministic hash suffix for container image
+            # Generate a deterministic hash suffix for schema image
             hash_suffix = hashlib.sha256(workflow_name.encode()).hexdigest()[:64]
 
             pagination_fixtures.append(
@@ -507,7 +507,7 @@ def _generate_pagination_workflows() -> List[WorkflowFixture]:
                     environment=[env],
                     priority=priority,
                     risk_tolerance="medium",
-                    container_image=f"ghcr.io/kubernaut/workflows/{workflow_name}:v1.0.0@sha256:{hash_suffix}",
+                    schema_image=f"ghcr.io/kubernaut/workflows/{workflow_name}:v1.0.0@sha256:{hash_suffix}",
                 )
             )
 

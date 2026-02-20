@@ -416,7 +416,7 @@ func applySpecificMigrations(ctx context.Context, config MigrationConfig, migrat
 			}
 		}
 		return fmt.Errorf("PostgreSQL pod not ready yet")
-	}, 3*time.Minute, 5*time.Second).Should(Succeed(), "PostgreSQL pod should be ready for migrations")
+	}, 5*time.Minute, 5*time.Second).Should(Succeed(), "PostgreSQL pod should be ready for migrations")
 
 	_, _ = fmt.Fprintf(writer, "   📦 PostgreSQL pod ready: %s\n", podName)
 

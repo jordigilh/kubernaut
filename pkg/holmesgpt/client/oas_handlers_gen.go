@@ -282,23 +282,13 @@ func (s *Server) handleHealthCheckHealthGetRequest(args [0]string, argsEscaped b
 
 // handleIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostRequest handles incident_analyze_endpoint_api_v1_incident_analyze_post operation.
 //
-// Analyze initial incident and provide RCA + workflow selection
+// Submit incident analysis request (async session-based pattern).
 // Business Requirement: BR-HAPI-002 (Incident analysis endpoint)
-// Business Requirement: BR-WORKFLOW-001 (MCP Workflow Integration)
-// Business Requirement: BR-AUDIT-005 v2.0 (Gap #4 - AI Provider Data)
-// Design Decision: DD-AUDIT-005 (Hybrid Provider Data Capture)
+// Business Requirement: BR-AA-HAPI-064.1 (Async submit returns session ID)
 // Design Decision: DD-AUTH-006 (User attribution for LLM cost tracking)
-// Called by: AIAnalysis Controller (for initial incident RCA and workflow selection)
-// Flow:
-// 1. Receive IncidentRequest from AIAnalysis
-// 2. Extract authenticated user from oauth-proxy header (DD-AUTH-006)
-// 3. Sanitize input for LLM (BR-HAPI-211)
-// 4. Call HolmesGPT SDK for investigation (BR-HAPI-002)
-// 5. Search workflow catalog via MCP (BR-HAPI-250)
-// 6. Validate workflow response (DD-HAPI-002 v1.2)
-// 7. Self-correct if validation fails (up to 3 attempts)
-// 8. Emit audit event with complete response (DD-AUDIT-005)
-// 9. Return IncidentResponse with RCA and workflow selection.
+// Called by: AIAnalysis Controller via SubmitInvestigation()
+// Returns HTTP 202 Accepted with {"session_id": "<uuid>"}.
+// The investigation runs as a background task. Poll via GET /incident/session/{id}.
 //
 // POST /api/v1/incident/analyze
 func (s *Server) handleIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostRequest(args [0]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
@@ -437,6 +427,288 @@ func (s *Server) handleIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostRequest(ar
 	}
 }
 
+// handleIncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetRequest handles incident_session_result_endpoint_api_v1_incident_session__session_id__result_get operation.
+//
+// Retrieve completed investigation result. BR-AA-HAPI-064.3.
+//
+// GET /api/v1/incident/session/{session_id}/result
+func (s *Server) handleIncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetRequest(args [1]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
+	statusWriter := &codeRecorder{ResponseWriter: w}
+	w = statusWriter
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("incident_session_result_endpoint_api_v1_incident_session__session_id__result_get"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.HTTPRouteKey.String("/api/v1/incident/session/{session_id}/result"),
+	}
+
+	// Start a span for this request.
+	ctx, span := s.cfg.Tracer.Start(r.Context(), IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetOperation,
+		trace.WithAttributes(otelAttrs...),
+		serverSpanKind,
+	)
+	defer span.End()
+
+	// Add Labeler to context.
+	labeler := &Labeler{attrs: otelAttrs}
+	ctx = contextWithLabeler(ctx, labeler)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		elapsedDuration := time.Since(startTime)
+
+		attrSet := labeler.AttributeSet()
+		attrs := attrSet.ToSlice()
+		code := statusWriter.status
+		if code != 0 {
+			codeAttr := semconv.HTTPResponseStatusCode(code)
+			attrs = append(attrs, codeAttr)
+			span.SetAttributes(codeAttr)
+		}
+		attrOpt := metric.WithAttributes(attrs...)
+
+		// Increment request counter.
+		s.requests.Add(ctx, 1, attrOpt)
+
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		s.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), attrOpt)
+	}()
+
+	var (
+		recordError = func(stage string, err error) {
+			span.RecordError(err)
+
+			// https://opentelemetry.io/docs/specs/semconv/http/http-spans/#status
+			// Span Status MUST be left unset if HTTP status code was in the 1xx, 2xx or 3xx ranges,
+			// unless there was another error (e.g., network error receiving the response body; or 3xx codes with
+			// max redirects exceeded), in which case status MUST be set to Error.
+			code := statusWriter.status
+			if code < 100 || code >= 500 {
+				span.SetStatus(codes.Error, stage)
+			}
+
+			attrSet := labeler.AttributeSet()
+			attrs := attrSet.ToSlice()
+			if code != 0 {
+				attrs = append(attrs, semconv.HTTPResponseStatusCode(code))
+			}
+
+			s.errors.Add(ctx, 1, metric.WithAttributes(attrs...))
+		}
+		err          error
+		opErrContext = ogenerrors.OperationContext{
+			Name: IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetOperation,
+			ID:   "incident_session_result_endpoint_api_v1_incident_session__session_id__result_get",
+		}
+	)
+	params, err := decodeIncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetParams(args, argsEscaped, r)
+	if err != nil {
+		err = &ogenerrors.DecodeParamsError{
+			OperationContext: opErrContext,
+			Err:              err,
+		}
+		defer recordError("DecodeParams", err)
+		s.cfg.ErrorHandler(ctx, w, r, err)
+		return
+	}
+
+	var rawBody []byte
+
+	var response IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetRes
+	if m := s.cfg.Middleware; m != nil {
+		mreq := middleware.Request{
+			Context:          ctx,
+			OperationName:    IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetOperation,
+			OperationSummary: "Incident Session Result Endpoint",
+			OperationID:      "incident_session_result_endpoint_api_v1_incident_session__session_id__result_get",
+			Body:             nil,
+			RawBody:          rawBody,
+			Params: middleware.Parameters{
+				{
+					Name: "session_id",
+					In:   "path",
+				}: params.SessionID,
+			},
+			Raw: r,
+		}
+
+		type (
+			Request  = struct{}
+			Params   = IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetParams
+			Response = IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetRes
+		)
+		response, err = middleware.HookMiddleware[
+			Request,
+			Params,
+			Response,
+		](
+			m,
+			mreq,
+			unpackIncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetParams,
+			func(ctx context.Context, request Request, params Params) (response Response, err error) {
+				response, err = s.h.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet(ctx, params)
+				return response, err
+			},
+		)
+	} else {
+		response, err = s.h.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet(ctx, params)
+	}
+	if err != nil {
+		defer recordError("Internal", err)
+		s.cfg.ErrorHandler(ctx, w, r, err)
+		return
+	}
+
+	if err := encodeIncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetResponse(response, w, span); err != nil {
+		defer recordError("EncodeResponse", err)
+		if !errors.Is(err, ht.ErrInternalServerErrorResponse) {
+			s.cfg.ErrorHandler(ctx, w, r, err)
+		}
+		return
+	}
+}
+
+// handleIncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRequest handles incident_session_status_endpoint_api_v1_incident_session__session_id__get operation.
+//
+// Poll session status. BR-AA-HAPI-064.2.
+//
+// GET /api/v1/incident/session/{session_id}
+func (s *Server) handleIncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRequest(args [1]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
+	statusWriter := &codeRecorder{ResponseWriter: w}
+	w = statusWriter
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("incident_session_status_endpoint_api_v1_incident_session__session_id__get"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.HTTPRouteKey.String("/api/v1/incident/session/{session_id}"),
+	}
+
+	// Start a span for this request.
+	ctx, span := s.cfg.Tracer.Start(r.Context(), IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetOperation,
+		trace.WithAttributes(otelAttrs...),
+		serverSpanKind,
+	)
+	defer span.End()
+
+	// Add Labeler to context.
+	labeler := &Labeler{attrs: otelAttrs}
+	ctx = contextWithLabeler(ctx, labeler)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		elapsedDuration := time.Since(startTime)
+
+		attrSet := labeler.AttributeSet()
+		attrs := attrSet.ToSlice()
+		code := statusWriter.status
+		if code != 0 {
+			codeAttr := semconv.HTTPResponseStatusCode(code)
+			attrs = append(attrs, codeAttr)
+			span.SetAttributes(codeAttr)
+		}
+		attrOpt := metric.WithAttributes(attrs...)
+
+		// Increment request counter.
+		s.requests.Add(ctx, 1, attrOpt)
+
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		s.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), attrOpt)
+	}()
+
+	var (
+		recordError = func(stage string, err error) {
+			span.RecordError(err)
+
+			// https://opentelemetry.io/docs/specs/semconv/http/http-spans/#status
+			// Span Status MUST be left unset if HTTP status code was in the 1xx, 2xx or 3xx ranges,
+			// unless there was another error (e.g., network error receiving the response body; or 3xx codes with
+			// max redirects exceeded), in which case status MUST be set to Error.
+			code := statusWriter.status
+			if code < 100 || code >= 500 {
+				span.SetStatus(codes.Error, stage)
+			}
+
+			attrSet := labeler.AttributeSet()
+			attrs := attrSet.ToSlice()
+			if code != 0 {
+				attrs = append(attrs, semconv.HTTPResponseStatusCode(code))
+			}
+
+			s.errors.Add(ctx, 1, metric.WithAttributes(attrs...))
+		}
+		err          error
+		opErrContext = ogenerrors.OperationContext{
+			Name: IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetOperation,
+			ID:   "incident_session_status_endpoint_api_v1_incident_session__session_id__get",
+		}
+	)
+	params, err := decodeIncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetParams(args, argsEscaped, r)
+	if err != nil {
+		err = &ogenerrors.DecodeParamsError{
+			OperationContext: opErrContext,
+			Err:              err,
+		}
+		defer recordError("DecodeParams", err)
+		s.cfg.ErrorHandler(ctx, w, r, err)
+		return
+	}
+
+	var rawBody []byte
+
+	var response IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRes
+	if m := s.cfg.Middleware; m != nil {
+		mreq := middleware.Request{
+			Context:          ctx,
+			OperationName:    IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetOperation,
+			OperationSummary: "Incident Session Status Endpoint",
+			OperationID:      "incident_session_status_endpoint_api_v1_incident_session__session_id__get",
+			Body:             nil,
+			RawBody:          rawBody,
+			Params: middleware.Parameters{
+				{
+					Name: "session_id",
+					In:   "path",
+				}: params.SessionID,
+			},
+			Raw: r,
+		}
+
+		type (
+			Request  = struct{}
+			Params   = IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetParams
+			Response = IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRes
+		)
+		response, err = middleware.HookMiddleware[
+			Request,
+			Params,
+			Response,
+		](
+			m,
+			mreq,
+			unpackIncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetParams,
+			func(ctx context.Context, request Request, params Params) (response Response, err error) {
+				response, err = s.h.IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet(ctx, params)
+				return response, err
+			},
+		)
+	} else {
+		response, err = s.h.IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet(ctx, params)
+	}
+	if err != nil {
+		defer recordError("Internal", err)
+		s.cfg.ErrorHandler(ctx, w, r, err)
+		return
+	}
+
+	if err := encodeIncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetResponse(response, w, span); err != nil {
+		defer recordError("EncodeResponse", err)
+		if !errors.Is(err, ht.ErrInternalServerErrorResponse) {
+			s.cfg.ErrorHandler(ctx, w, r, err)
+		}
+		return
+	}
+}
+
 // handleReadinessCheckReadyGetRequest handles readiness_check_ready_get operation.
 //
 // Readiness probe endpoint
@@ -566,11 +838,13 @@ func (s *Server) handleReadinessCheckReadyGetRequest(args [0]string, argsEscaped
 
 // handleRecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRequest handles recovery_analyze_endpoint_api_v1_recovery_analyze_post operation.
 //
-// Analyze failed action and provide recovery strategies
+// Submit recovery analysis request (async session-based pattern).
 // Business Requirement: BR-HAPI-001 (Recovery analysis endpoint)
-// Design Decision: DD-WORKFLOW-002 v2.4 - WorkflowCatalogToolset via SDK
+// Business Requirement: BR-AA-HAPI-064.9 (Recovery async submit)
 // Design Decision: DD-AUTH-006 (User attribution for LLM cost tracking)
-// Called by: AIAnalysis Controller (for recovery attempts after workflow failure).
+// Called by: AIAnalysis Controller via SubmitRecoveryInvestigation()
+// Returns HTTP 202 Accepted with {"session_id": "<uuid>"}.
+// The investigation runs as a background task. Poll via GET /recovery/session/{id}.
 //
 // POST /api/v1/recovery/analyze
 func (s *Server) handleRecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRequest(args [0]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
@@ -701,6 +975,288 @@ func (s *Server) handleRecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRequest(ar
 	}
 
 	if err := encodeRecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostResponse(response, w, span); err != nil {
+		defer recordError("EncodeResponse", err)
+		if !errors.Is(err, ht.ErrInternalServerErrorResponse) {
+			s.cfg.ErrorHandler(ctx, w, r, err)
+		}
+		return
+	}
+}
+
+// handleRecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetRequest handles recovery_session_result_endpoint_api_v1_recovery_session__session_id__result_get operation.
+//
+// Retrieve completed recovery result. BR-AA-HAPI-064.9.
+//
+// GET /api/v1/recovery/session/{session_id}/result
+func (s *Server) handleRecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetRequest(args [1]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
+	statusWriter := &codeRecorder{ResponseWriter: w}
+	w = statusWriter
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("recovery_session_result_endpoint_api_v1_recovery_session__session_id__result_get"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.HTTPRouteKey.String("/api/v1/recovery/session/{session_id}/result"),
+	}
+
+	// Start a span for this request.
+	ctx, span := s.cfg.Tracer.Start(r.Context(), RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetOperation,
+		trace.WithAttributes(otelAttrs...),
+		serverSpanKind,
+	)
+	defer span.End()
+
+	// Add Labeler to context.
+	labeler := &Labeler{attrs: otelAttrs}
+	ctx = contextWithLabeler(ctx, labeler)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		elapsedDuration := time.Since(startTime)
+
+		attrSet := labeler.AttributeSet()
+		attrs := attrSet.ToSlice()
+		code := statusWriter.status
+		if code != 0 {
+			codeAttr := semconv.HTTPResponseStatusCode(code)
+			attrs = append(attrs, codeAttr)
+			span.SetAttributes(codeAttr)
+		}
+		attrOpt := metric.WithAttributes(attrs...)
+
+		// Increment request counter.
+		s.requests.Add(ctx, 1, attrOpt)
+
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		s.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), attrOpt)
+	}()
+
+	var (
+		recordError = func(stage string, err error) {
+			span.RecordError(err)
+
+			// https://opentelemetry.io/docs/specs/semconv/http/http-spans/#status
+			// Span Status MUST be left unset if HTTP status code was in the 1xx, 2xx or 3xx ranges,
+			// unless there was another error (e.g., network error receiving the response body; or 3xx codes with
+			// max redirects exceeded), in which case status MUST be set to Error.
+			code := statusWriter.status
+			if code < 100 || code >= 500 {
+				span.SetStatus(codes.Error, stage)
+			}
+
+			attrSet := labeler.AttributeSet()
+			attrs := attrSet.ToSlice()
+			if code != 0 {
+				attrs = append(attrs, semconv.HTTPResponseStatusCode(code))
+			}
+
+			s.errors.Add(ctx, 1, metric.WithAttributes(attrs...))
+		}
+		err          error
+		opErrContext = ogenerrors.OperationContext{
+			Name: RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetOperation,
+			ID:   "recovery_session_result_endpoint_api_v1_recovery_session__session_id__result_get",
+		}
+	)
+	params, err := decodeRecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetParams(args, argsEscaped, r)
+	if err != nil {
+		err = &ogenerrors.DecodeParamsError{
+			OperationContext: opErrContext,
+			Err:              err,
+		}
+		defer recordError("DecodeParams", err)
+		s.cfg.ErrorHandler(ctx, w, r, err)
+		return
+	}
+
+	var rawBody []byte
+
+	var response RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetRes
+	if m := s.cfg.Middleware; m != nil {
+		mreq := middleware.Request{
+			Context:          ctx,
+			OperationName:    RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetOperation,
+			OperationSummary: "Recovery Session Result Endpoint",
+			OperationID:      "recovery_session_result_endpoint_api_v1_recovery_session__session_id__result_get",
+			Body:             nil,
+			RawBody:          rawBody,
+			Params: middleware.Parameters{
+				{
+					Name: "session_id",
+					In:   "path",
+				}: params.SessionID,
+			},
+			Raw: r,
+		}
+
+		type (
+			Request  = struct{}
+			Params   = RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetParams
+			Response = RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetRes
+		)
+		response, err = middleware.HookMiddleware[
+			Request,
+			Params,
+			Response,
+		](
+			m,
+			mreq,
+			unpackRecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetParams,
+			func(ctx context.Context, request Request, params Params) (response Response, err error) {
+				response, err = s.h.RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGet(ctx, params)
+				return response, err
+			},
+		)
+	} else {
+		response, err = s.h.RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGet(ctx, params)
+	}
+	if err != nil {
+		defer recordError("Internal", err)
+		s.cfg.ErrorHandler(ctx, w, r, err)
+		return
+	}
+
+	if err := encodeRecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetResponse(response, w, span); err != nil {
+		defer recordError("EncodeResponse", err)
+		if !errors.Is(err, ht.ErrInternalServerErrorResponse) {
+			s.cfg.ErrorHandler(ctx, w, r, err)
+		}
+		return
+	}
+}
+
+// handleRecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGetRequest handles recovery_session_status_endpoint_api_v1_recovery_session__session_id__get operation.
+//
+// Poll recovery session status. BR-AA-HAPI-064.9.
+//
+// GET /api/v1/recovery/session/{session_id}
+func (s *Server) handleRecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGetRequest(args [1]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
+	statusWriter := &codeRecorder{ResponseWriter: w}
+	w = statusWriter
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("recovery_session_status_endpoint_api_v1_recovery_session__session_id__get"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.HTTPRouteKey.String("/api/v1/recovery/session/{session_id}"),
+	}
+
+	// Start a span for this request.
+	ctx, span := s.cfg.Tracer.Start(r.Context(), RecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGetOperation,
+		trace.WithAttributes(otelAttrs...),
+		serverSpanKind,
+	)
+	defer span.End()
+
+	// Add Labeler to context.
+	labeler := &Labeler{attrs: otelAttrs}
+	ctx = contextWithLabeler(ctx, labeler)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		elapsedDuration := time.Since(startTime)
+
+		attrSet := labeler.AttributeSet()
+		attrs := attrSet.ToSlice()
+		code := statusWriter.status
+		if code != 0 {
+			codeAttr := semconv.HTTPResponseStatusCode(code)
+			attrs = append(attrs, codeAttr)
+			span.SetAttributes(codeAttr)
+		}
+		attrOpt := metric.WithAttributes(attrs...)
+
+		// Increment request counter.
+		s.requests.Add(ctx, 1, attrOpt)
+
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		s.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), attrOpt)
+	}()
+
+	var (
+		recordError = func(stage string, err error) {
+			span.RecordError(err)
+
+			// https://opentelemetry.io/docs/specs/semconv/http/http-spans/#status
+			// Span Status MUST be left unset if HTTP status code was in the 1xx, 2xx or 3xx ranges,
+			// unless there was another error (e.g., network error receiving the response body; or 3xx codes with
+			// max redirects exceeded), in which case status MUST be set to Error.
+			code := statusWriter.status
+			if code < 100 || code >= 500 {
+				span.SetStatus(codes.Error, stage)
+			}
+
+			attrSet := labeler.AttributeSet()
+			attrs := attrSet.ToSlice()
+			if code != 0 {
+				attrs = append(attrs, semconv.HTTPResponseStatusCode(code))
+			}
+
+			s.errors.Add(ctx, 1, metric.WithAttributes(attrs...))
+		}
+		err          error
+		opErrContext = ogenerrors.OperationContext{
+			Name: RecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGetOperation,
+			ID:   "recovery_session_status_endpoint_api_v1_recovery_session__session_id__get",
+		}
+	)
+	params, err := decodeRecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGetParams(args, argsEscaped, r)
+	if err != nil {
+		err = &ogenerrors.DecodeParamsError{
+			OperationContext: opErrContext,
+			Err:              err,
+		}
+		defer recordError("DecodeParams", err)
+		s.cfg.ErrorHandler(ctx, w, r, err)
+		return
+	}
+
+	var rawBody []byte
+
+	var response RecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGetRes
+	if m := s.cfg.Middleware; m != nil {
+		mreq := middleware.Request{
+			Context:          ctx,
+			OperationName:    RecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGetOperation,
+			OperationSummary: "Recovery Session Status Endpoint",
+			OperationID:      "recovery_session_status_endpoint_api_v1_recovery_session__session_id__get",
+			Body:             nil,
+			RawBody:          rawBody,
+			Params: middleware.Parameters{
+				{
+					Name: "session_id",
+					In:   "path",
+				}: params.SessionID,
+			},
+			Raw: r,
+		}
+
+		type (
+			Request  = struct{}
+			Params   = RecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGetParams
+			Response = RecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGetRes
+		)
+		response, err = middleware.HookMiddleware[
+			Request,
+			Params,
+			Response,
+		](
+			m,
+			mreq,
+			unpackRecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGetParams,
+			func(ctx context.Context, request Request, params Params) (response Response, err error) {
+				response, err = s.h.RecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGet(ctx, params)
+				return response, err
+			},
+		)
+	} else {
+		response, err = s.h.RecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGet(ctx, params)
+	}
+	if err != nil {
+		defer recordError("Internal", err)
+		s.cfg.ErrorHandler(ctx, w, r, err)
+		return
+	}
+
+	if err := encodeRecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGetResponse(response, w, span); err != nil {
 		defer recordError("EncodeResponse", err)
 		if !errors.Is(err, ht.ErrInternalServerErrorResponse) {
 			s.cfg.ErrorHandler(ctx, w, r, err)

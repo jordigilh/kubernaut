@@ -92,7 +92,13 @@ def mock_analyze_incident():
         "incident_id": "test-incident-endpoint-001",
         "remediation_id": "rem-endpoint-test-001",
         "analysis": "Root cause: OOM due to memory leak in the application",
+        "root_cause_analysis": {
+            "summary": "OOM due to memory leak",
+            "severity": "high",
+            "contributing_factors": ["memory leak in application"],
+        },
         "confidence": 0.9,
+        "timestamp": "2026-01-01T00:00:00Z",
         "needs_human_review": False,
         "human_review_reason": None,
         "warnings": [],

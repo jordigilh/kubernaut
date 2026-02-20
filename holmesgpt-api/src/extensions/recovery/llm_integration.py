@@ -24,6 +24,7 @@ This module contains the main recovery analysis logic, Holmes SDK integration,
 and configuration management.
 """
 
+import asyncio
 import os
 import logging
 from typing import Dict, Any, Optional, List
@@ -31,7 +32,7 @@ from fastapi import HTTPException, status
 
 from src.models.config_models import AppConfig
 from holmes.config import Config
-from holmes.core.models import InvestigateRequest, InvestigationResult
+from holmes.core.models import InvestigateRequest
 from holmes.core.investigation import investigate_issues
 from src.audit import (
     get_audit_store,
@@ -66,7 +67,6 @@ def _get_holmes_config(
     custom_labels: Optional[Dict[str, List[str]]] = None,
     detected_labels: Optional[DetectedLabels] = None,
     source_resource: Optional[Dict[str, str]] = None,
-    owner_chain: Optional[List[Dict[str, str]]] = None
 ) -> Config:
     """
     Initialize HolmesGPT SDK Config from environment variables and app config
@@ -86,9 +86,6 @@ def _get_holmes_config(
         source_resource: Original signal's resource for DetectedLabels validation
                         Format: {"namespace": "production", "kind": "Pod", "name": "api-xyz"}
                         Compared against LLM's rca_resource.
-        owner_chain: K8s ownership chain from SignalProcessing enrichment
-                    Format: [{"namespace": "prod", "kind": "ReplicaSet", "name": "..."}, ...]
-                    Used for PROVEN relationship validation (100% safe).
 
     Required environment variables:
     - LLM_MODEL: Full litellm-compatible model identifier (e.g., "provider/model-name")
@@ -99,7 +96,6 @@ def _get_holmes_config(
     - "gpt-4" (OpenAI - no prefix needed)
     - "provider_name/model-name" (other providers)
     """
-    # Get formatted model name for litellm (supports Ollama, OpenAI, Claude, Vertex AI)
     from src.extensions.llm_config import (
         get_model_config_for_sdk,
         prepare_toolsets_config_for_sdk,
@@ -142,8 +138,7 @@ def _get_holmes_config(
         detected_labels_count = len([f for f in detected_labels.model_dump(exclude_none=True).keys() if f != "failedDetections"]) if detected_labels else 0
         detected_labels_info = f", detected_labels={detected_labels_count} fields" if detected_labels else ""
         source_info = f", source={source_resource.get('kind')}/{source_resource.get('namespace', 'cluster')}" if source_resource else ""
-        owner_info = f", owner_chain={len(owner_chain)} owners" if owner_chain else ""
-        logger.info(f"Initialized HolmesGPT SDK config: model={model_name}, toolsets={list(config.toolset_manager.toolsets.keys()) if hasattr(config, 'toolset_manager') else 'N/A'}{custom_labels_info}{detected_labels_info}{source_info}{owner_info}")
+        logger.info(f"Initialized HolmesGPT SDK config: model={model_name}, toolsets={list(config.toolset_manager.toolsets.keys()) if hasattr(config, 'toolset_manager') else 'N/A'}{custom_labels_info}{detected_labels_info}{source_info}")
         return config
     except Exception as e:
         logger.error(f"Failed to initialize HolmesGPT config: {e}")
@@ -227,82 +222,70 @@ async def analyze_recovery(request_data: Dict[str, Any], app_config: Optional[Ap
             "message": f"DD-HAPI-001: {len(custom_labels)} custom label subdomains will be auto-appended to workflow search"
         })
 
-    # DD-WORKFLOW-001 v1.7: Extract detected_labels for workflow matching (100% safe)
-    detected_labels_dict = enrichment_results.get("detectedLabels", {}) or {}
-    detected_labels = DetectedLabels(**detected_labels_dict) if detected_labels_dict else None
+    # ADR-055: owner_chain no longer extracted from enrichment_results.
+    # Context enrichment (owner chain, spec hash, history) is now performed
+    # post-RCA by the LLM via the get_resource_context tool.
 
-    # DD-WORKFLOW-001 v1.7: Extract source_resource for DetectedLabels validation
-    # This is the original signal's resource - compared against LLM's rca_resource
     source_resource = {
         "namespace": request_data.get("resource_namespace", ""),
         "kind": request_data.get("resource_kind", ""),
         "name": request_data.get("resource_name", "")
     }
 
-    # DD-WORKFLOW-001 v1.7: Extract owner_chain from enrichment_results
-    # K8s ownership chain from SignalProcessing (via ownerReferences)
-    # Used for PROVEN relationship validation (100% safe)
-    owner_chain = enrichment_results.get("ownerChain")
-
-    if detected_labels:
-        # Get non-None fields from DetectedLabels model for logging
-        label_fields = [f for f, v in detected_labels.model_dump(exclude_none=True).items() if f != "failedDetections"]
-        logger.info({
-            "event": "detected_labels_extracted",
-            "incident_id": incident_id,
-            "fields": label_fields,
-            "source_resource": f"{source_resource.get('kind')}/{source_resource.get('namespace') or 'cluster'}",
-            "owner_chain_length": len(owner_chain) if owner_chain else 0,
-            "message": f"DD-WORKFLOW-001 v1.7: {len(label_fields)} detected labels (100% safe validation)"
-        })
-
     config = _get_holmes_config(
         app_config,
         remediation_id=remediation_id,
         custom_labels=custom_labels,
-        detected_labels=detected_labels,
+        detected_labels=None,  # ADR-056: computed on-demand by list_available_actions
         source_resource=source_resource,
-        owner_chain=owner_chain
     )
 
+    # ADR-056 v1.4: Create shared session_state for inter-tool communication.
+    # Labels are detected by get_resource_context and read by workflow discovery.
+    session_state: Dict[str, Any] = {}
+
     # DD-HAPI-017: Register three-step workflow discovery toolset
-    # (replaces single search_workflow_catalog tool from DD-WORKFLOW-002)
-    # NOTE: Registration is done here (not in _get_holmes_config) because
-    # context filters come from request_data which is only available in the caller.
-    from src.extensions.llm_config import register_workflow_discovery_toolset
+    from src.extensions.llm_config import register_workflow_discovery_toolset, register_resource_context_toolset
     config = register_workflow_discovery_toolset(
         config,
         app_config,
         remediation_id=remediation_id,
         custom_labels=custom_labels,
-        detected_labels=detected_labels,
+        detected_labels=None,  # ADR-056 v1.4: populated via session_state by get_resource_context
         severity=request_data.get("severity", ""),
         component=request_data.get("resource_kind", ""),
         environment=request_data.get("environment", ""),
         priority=request_data.get("priority", ""),
+        session_state=session_state,
     )
+
+    # ADR-055/ADR-056 v1.4: Register resource context toolset for post-RCA enrichment + label detection
+    config = register_resource_context_toolset(config, app_config, session_state=session_state)
 
     # Use HolmesGPT SDK with enhanced error handling
     # NOTE: Workflow discovery is handled by WorkflowDiscoveryToolset registered via
     # register_workflow_discovery_toolset() - LLM calls three-step tools during investigation
     # per DD-HAPI-017
+    # ADR-055: Pre-computation of root_owner, spec hash, and owner-chain-based
+    # history removed. Context enrichment is now post-RCA via get_resource_context tool.
     try:
         # BR-HAPI-016: Query remediation history from DataStorage for prompt enrichment
         # Graceful degradation: if DS unavailable or module not yet deployed, context is None
+        # ADR-055: Uses signal target directly (no root_owner override). Will be fully
+        # replaced by get_resource_context tool in Phase 2.
         remediation_history_context = None
         try:
             from src.clients.remediation_history_client import (
                 create_remediation_history_api,
                 fetch_remediation_history_for_request,
             )
+
             rh_api = create_remediation_history_api(app_config)
-            current_spec_hash = ""
-            if isinstance(enrichment_results, dict):
-                current_spec_hash = enrichment_results.get("currentSpecHash", "")
+
             remediation_history_context = fetch_remediation_history_for_request(
                 api=rh_api,
                 request_data=request_data,
-                current_spec_hash=current_spec_hash,
+                current_spec_hash="",
             )
         except (ImportError, Exception) as rh_err:
             logger.warning({"event": "remediation_history_unavailable", "error": str(rh_err)})
@@ -407,10 +390,13 @@ async def analyze_recovery(request_data: Dict[str, Any], app_config: Optional[Ap
                 "attempt": attempt + 1,
                 "max_attempts": MAX_VALIDATION_ATTEMPTS
             })
-            investigation_result = investigate_issues(
+            # DD-AA-HAPI-064: Offload sync Holmes SDK call to thread pool
+            # to keep the event loop responsive for session submit/poll requests
+            investigation_result = await asyncio.to_thread(
+                investigate_issues,
                 investigate_request=investigation_request,
                 dal=dal,
-                config=config
+                config=config,
             )
 
             # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -453,7 +439,7 @@ async def analyze_recovery(request_data: Dict[str, Any], app_config: Optional[Ap
             if validator:
                 validation_result = validator.validate(
                     workflow_id=workflow_id,
-                    container_image=selected_workflow.get("container_image"),
+                    execution_bundle=selected_workflow.get("execution_bundle"),
                     parameters=selected_workflow.get("parameters", {}),
                 )
                 is_valid = validation_result.is_valid
@@ -505,12 +491,17 @@ async def analyze_recovery(request_data: Dict[str, Any], app_config: Optional[Ap
             audit_store, incident_id, remediation_id, workflow_id
         )
 
+        # ADR-056: Inject runtime-computed detected_labels into response
+        from src.extensions.llm_config import inject_detected_labels
+        inject_detected_labels(result, session_state)
+
         logger.info({
             "event": "recovery_analysis_completed",
             "incident_id": incident_id,
             "strategy_count": len(result.get("strategies", [])),
             "confidence": result.get("analysis_confidence"),
             "validation_attempts": len(validation_errors_history) + 1 if result else 0,
+            "has_detected_labels": "detected_labels" in result,
         })
 
         # Record metrics (BR-HAPI-011: Investigation metrics)

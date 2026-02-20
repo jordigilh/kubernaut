@@ -164,7 +164,7 @@ func (c *ApprovalCreator) buildApprovalRequest(
 		recommendedWorkflow = remediationv1.RecommendedWorkflowSummary{
 			WorkflowID:     ai.Status.SelectedWorkflow.WorkflowID,
 			Version:        ai.Status.SelectedWorkflow.Version,
-			ContainerImage: ai.Status.SelectedWorkflow.ContainerImage,
+			ExecutionBundle: ai.Status.SelectedWorkflow.ExecutionBundle,
 			Rationale:      ai.Status.SelectedWorkflow.Rationale,
 		}
 	}
@@ -198,12 +198,8 @@ func (c *ApprovalCreator) buildApprovalRequest(
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: rr.Namespace,
-			Labels: map[string]string{
-				"kubernaut.ai/remediation-request": rr.Name,
-				"kubernaut.ai/ai-analysis":         ai.Name,
-				"kubernaut.ai/confidence-level":    confidenceLevel,
-				"kubernaut.ai/component":           "approval",
-			},
+			// Issue #91: labels removed; parent tracked via spec.remediationRequestRef + ownerRef
+
 		},
 		Spec: remediationv1.RemediationApprovalRequestSpec{
 			RemediationRequestRef: rrRef,

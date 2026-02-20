@@ -113,7 +113,7 @@ var _ = Describe("AnalyzingHandler", func() {
 				RootCause: "OOM caused by memory leak",
 				SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
 					WorkflowID:     "wf-restart-pod",
-					ContainerImage: "kubernaut.io/workflows/restart:v1.0.0",
+					ExecutionBundle: "kubernaut.io/workflows/restart:v1.0.0",
 					Confidence:     0.92,
 					Rationale:      "Selected for OOM recovery",
 				},
@@ -235,13 +235,13 @@ var _ = Describe("AnalyzingHandler", func() {
 				analysis.Status.AlternativeWorkflows = []aianalysisv1.AlternativeWorkflow{
 					{
 						WorkflowID:     "wf-scale-up",
-						ContainerImage: "kubernaut.io/workflows/scale:v1.0.0",
+						ExecutionBundle: "kubernaut.io/workflows/scale:v1.0.0",
 						Confidence:     0.75,
 						Rationale:      "Could scale up instead of restart",
 					},
 					{
 						WorkflowID:     "wf-rollback",
-						ContainerImage: "kubernaut.io/workflows/rollback:v1.0.0",
+						ExecutionBundle: "kubernaut.io/workflows/rollback:v1.0.0",
 						Confidence:     0.60,
 						Rationale:      "Could rollback to previous version",
 					},
@@ -398,16 +398,27 @@ var _ = Describe("AnalyzingHandler", func() {
 				Expect(mockEvaluator.LastInput.Confidence).To(BeNumerically("~", 0.92, 0.01))
 			})
 
-			It("should pass TargetInOwnerChain from status", func() {
+			// ADR-055: TargetInOwnerChain replaced by AffectedResource
+			It("should pass AffectedResource from RCA status", func() {
 				analysis := createTestAnalysis()
-				targetInChain := true
-				analysis.Status.TargetInOwnerChain = &targetInChain
+				analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+					Summary:  "OOM detected",
+					Severity: "high",
+					AffectedResource: &aianalysisv1.AffectedResource{
+						Kind:      "Deployment",
+						Name:      "api-server",
+						Namespace: "production",
+					},
+				}
 
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(mockEvaluator.LastInput).NotTo(BeNil())
-				Expect(mockEvaluator.LastInput.TargetInOwnerChain).To(BeTrue())
+				Expect(mockEvaluator.LastInput.AffectedResource).NotTo(BeNil())
+				Expect(mockEvaluator.LastInput.AffectedResource.Kind).To(Equal("Deployment"))
+				Expect(mockEvaluator.LastInput.AffectedResource.Name).To(Equal("api-server"))
+				Expect(mockEvaluator.LastInput.AffectedResource.Namespace).To(Equal("production"))
 			})
 
 			It("should pass Warnings from status", func() {
@@ -478,54 +489,6 @@ var _ = Describe("AnalyzingHandler", func() {
 				Expect(mockEvaluator.LastInput.RecoveryAttemptNumber).To(Equal(0))
 			})
 
-			// BR-AI-012: DetectedLabels population from EnrichmentResults (DD-WORKFLOW-001 v2.2)
-			It("should pass DetectedLabels from EnrichmentResults", func() {
-				analysis := createTestAnalysis()
-				analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.DetectedLabels = &sharedtypes.DetectedLabels{
-					GitOpsManaged:   true,
-					GitOpsTool:      "argocd",
-					PDBProtected:    true,
-					HPAEnabled:      false,
-					Stateful:        true,
-					HelmManaged:     false,
-					NetworkIsolated: true,
-					ServiceMesh:     "istio",
-				}
-
-				_, err := handler.Handle(ctx, analysis)
-
-				Expect(err).NotTo(HaveOccurred())
-				Expect(mockEvaluator.LastInput).NotTo(BeNil())
-				Expect(mockEvaluator.LastInput.DetectedLabels).NotTo(BeNil())
-				// Verify snake_case keys per DD-WORKFLOW-001 v2.2
-				Expect(mockEvaluator.LastInput.DetectedLabels["git_ops_managed"]).To(BeTrue())
-				Expect(mockEvaluator.LastInput.DetectedLabels["git_ops_tool"]).To(Equal("argocd"))
-				Expect(mockEvaluator.LastInput.DetectedLabels["pdb_protected"]).To(BeTrue())
-				Expect(mockEvaluator.LastInput.DetectedLabels["hpa_enabled"]).To(BeFalse())
-				Expect(mockEvaluator.LastInput.DetectedLabels["stateful"]).To(BeTrue())
-				Expect(mockEvaluator.LastInput.DetectedLabels["helm_managed"]).To(BeFalse())
-				Expect(mockEvaluator.LastInput.DetectedLabels["network_isolated"]).To(BeTrue())
-				Expect(mockEvaluator.LastInput.DetectedLabels["service_mesh"]).To(Equal("istio"))
-			})
-
-			// BR-AI-012: FailedDetections populated from DetectedLabels
-			It("should pass FailedDetections from DetectedLabels", func() {
-				analysis := createTestAnalysis()
-				analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.DetectedLabels = &sharedtypes.DetectedLabels{
-					FailedDetections: []string{"pdbProtected", "hpaEnabled"},
-					PDBProtected:     false, // Value should be ignored per DD-WORKFLOW-001 v2.2
-					HPAEnabled:       false, // Value should be ignored
-				}
-
-				_, err := handler.Handle(ctx, analysis)
-
-				Expect(err).NotTo(HaveOccurred())
-				Expect(mockEvaluator.LastInput).NotTo(BeNil())
-				Expect(mockEvaluator.LastInput.FailedDetections).To(HaveLen(2))
-				Expect(mockEvaluator.LastInput.FailedDetections).To(ContainElement("pdbProtected"))
-				Expect(mockEvaluator.LastInput.FailedDetections).To(ContainElement("hpaEnabled"))
-			})
-
 			// BR-AI-012: CustomLabels population from EnrichmentResults
 			It("should pass CustomLabels from EnrichmentResults", func() {
 				analysis := createTestAnalysis()
@@ -546,19 +509,6 @@ var _ = Describe("AnalyzingHandler", func() {
 				Expect(mockEvaluator.LastInput.CustomLabels["region"]).To(ContainElement("us-east-1"))
 			})
 
-			// BR-AI-012: Empty DetectedLabels returns empty map
-			It("should return empty map when DetectedLabels is nil", func() {
-				analysis := createTestAnalysis()
-				analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.DetectedLabels = nil
-
-				_, err := handler.Handle(ctx, analysis)
-
-				Expect(err).NotTo(HaveOccurred())
-				Expect(mockEvaluator.LastInput).NotTo(BeNil())
-				Expect(mockEvaluator.LastInput.DetectedLabels).NotTo(BeNil())
-				Expect(mockEvaluator.LastInput.DetectedLabels).To(BeEmpty())
-			})
-
 			// BR-AI-012: Empty CustomLabels returns empty map
 			It("should return empty map when CustomLabels is nil", func() {
 				analysis := createTestAnalysis()
@@ -570,6 +520,52 @@ var _ = Describe("AnalyzingHandler", func() {
 				Expect(mockEvaluator.LastInput).NotTo(BeNil())
 				Expect(mockEvaluator.LastInput.CustomLabels).NotTo(BeNil())
 				Expect(mockEvaluator.LastInput.CustomLabels).To(BeEmpty())
+			})
+
+			// BR-SP-002, BR-SP-080, BR-SP-081: BusinessClassification pass-through to Rego policy
+			It("should pass BusinessClassification from EnrichmentResults to policy input", func() {
+				analysis := createTestAnalysis()
+				analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.BusinessClassification = &sharedtypes.BusinessClassification{
+					BusinessUnit:   "payments",
+					ServiceOwner:   "team-checkout",
+					Criticality:    "critical",
+					SLARequirement: "platinum",
+				}
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(mockEvaluator.LastInput).NotTo(BeNil())
+				Expect(mockEvaluator.LastInput.BusinessClassification).NotTo(BeNil())
+				Expect(mockEvaluator.LastInput.BusinessClassification).To(HaveKeyWithValue("business_unit", "payments"))
+				Expect(mockEvaluator.LastInput.BusinessClassification).To(HaveKeyWithValue("service_owner", "team-checkout"))
+				Expect(mockEvaluator.LastInput.BusinessClassification).To(HaveKeyWithValue("criticality", "critical"))
+				Expect(mockEvaluator.LastInput.BusinessClassification).To(HaveKeyWithValue("sla_requirement", "platinum"))
+			})
+
+			It("should not set BusinessClassification when nil in EnrichmentResults", func() {
+				analysis := createTestAnalysis()
+				analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.BusinessClassification = nil
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(mockEvaluator.LastInput).NotTo(BeNil())
+				Expect(mockEvaluator.LastInput.BusinessClassification).To(BeNil())
+			})
+
+			It("should map only populated BusinessClassification fields", func() {
+				analysis := createTestAnalysis()
+				analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.BusinessClassification = &sharedtypes.BusinessClassification{
+					Criticality: "high",
+				}
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(mockEvaluator.LastInput).NotTo(BeNil())
+				Expect(mockEvaluator.LastInput.BusinessClassification).To(HaveLen(1))
+				Expect(mockEvaluator.LastInput.BusinessClassification).To(HaveKeyWithValue("criticality", "high"))
 			})
 		})
 

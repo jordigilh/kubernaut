@@ -3,6 +3,7 @@
 > **📋 Changelog**
 > | Version | Date | Changes | Reference |
 > |---------|------|---------|-----------|
+> | v1.4 | 2026-02-18 | **Issue #91**: Removed `kubernaut.ai/signal-type` label from CRD example; use `spec.signalType`. `kubernaut.ai/severity` removed; use `spec.severity`. | - |
 > | v1.3 | 2025-12-03 | Updated DeduplicationInfo to use firstOccurrence/lastOccurrence | [RemediationRequest CRD](../../../../api/remediation/v1alpha1/remediationrequest_types.go) |
 > | v1.2 | 2025-12-03 | Added TargetResource and TargetType fields | [DD-GATEWAY-NON-K8S-SIGNALS](../../../architecture/decisions/DD-GATEWAY-NON-K8S-SIGNALS.md) |
 > | v1.1 | 2025-11-27 | Removed ProviderData.resource (now in spec.targetResource) | API contract alignment |
@@ -149,11 +150,11 @@ kind: RemediationRequest
 metadata:
   name: remediation-abc123
   namespace: kubernaut-system
+  # Issue #91: kubernaut.ai/severity, kubernaut.ai/signal-type removed; use spec.severity, spec.signalType
   labels:
     kubernaut.ai/alert-name: HighMemoryUsage
     kubernaut.ai/environment: prod
     kubernaut.ai/priority: P0
-    kubernaut.ai/signal-type: prometheus
 spec:
   # Core identification
   alertFingerprint: "a1b2c3d4e5..."

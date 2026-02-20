@@ -11,10 +11,9 @@ Name | Type | Description | Notes
 **name** | **str** | Display name | 
 **description** | [**StructuredDescription**](StructuredDescription.md) |  | 
 **version** | **str** | Semantic version | 
-**container_image** | **str** | OCI image reference | 
+**schema_image** | **str** | OCI image used to extract the workflow schema | 
+**execution_bundle** | **str** | OCI execution bundle reference (digest-pinned) | [optional] 
 **execution_engine** | **str** | Execution engine (tekton, job) | [optional] 
-**actual_success_rate** | **float** | Historical success rate (0.0-1.0) | [optional] 
-**total_executions** | **int** | Total times this workflow has been executed | [optional] 
 
 ## Example
 

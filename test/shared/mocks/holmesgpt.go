@@ -122,7 +122,7 @@ func NewMockHolmesGPTClient() *MockHolmesGPTClient {
 	idBytes, _ := json.Marshal("mock-workflow-001")
 	swMap["workflow_id"] = jx.Raw(idBytes)
 	imgBytes, _ := json.Marshal("kubernaut.io/workflows/restart-pod:v1.0.0")
-	swMap["container_image"] = jx.Raw(imgBytes)
+	swMap["execution_bundle"] = jx.Raw(imgBytes)
 	confBytes, _ := json.Marshal(0.8)
 	swMap["confidence"] = jx.Raw(confBytes)
 
@@ -202,6 +202,7 @@ func (m *MockHolmesGPTClient) WithSuccessResponse(analysis string, confidence fl
 }
 
 // WithFullResponse configures the mock to return a complete response including RCA and workflow.
+// ADR-055: targetInOwnerChain parameter removed - affectedResource is now in RCA output.
 func (m *MockHolmesGPTClient) WithFullResponse(
 	analysis string,
 	confidence float64,
@@ -211,7 +212,6 @@ func (m *MockHolmesGPTClient) WithFullResponse(
 	workflowID string,
 	containerImage string,
 	workflowConfidence float64,
-	targetInOwnerChain bool,
 	workflowRationale string,
 	includeAlternatives bool,
 ) *MockHolmesGPTClient {
@@ -230,7 +230,7 @@ func (m *MockHolmesGPTClient) WithFullResponse(
 		idBytes, _ := json.Marshal(workflowID)
 		swMap["workflow_id"] = jx.Raw(idBytes)
 		imgBytes, _ := json.Marshal(containerImage)
-		swMap["container_image"] = jx.Raw(imgBytes)
+		swMap["execution_bundle"] = jx.Raw(imgBytes)
 		confBytes, _ := json.Marshal(workflowConfidence)
 		swMap["confidence"] = jx.Raw(confBytes)
 		if workflowRationale != "" {
@@ -246,7 +246,7 @@ func (m *MockHolmesGPTClient) WithFullResponse(
 			WorkflowID:     "wf-scale-deployment",
 			Confidence:     0.75,
 			Rationale:      "Consider scaling deployment for resource pressure",
-			ContainerImage: client.NewOptNilString("kubernaut.io/workflows/scale:v1.0.0"),
+			ExecutionBundle: client.NewOptNilString("kubernaut.io/workflows/scale:v1.0.0"),
 		}
 		alternatives = append(alternatives, alt)
 	}
@@ -264,9 +264,6 @@ func (m *MockHolmesGPTClient) WithFullResponse(
 	if len(swMap) > 0 {
 		m.Response.SelectedWorkflow.SetTo(swMap)
 	}
-
-	// Set TargetInOwnerChain from parameter
-	m.Response.TargetInOwnerChain.SetTo(targetInOwnerChain)
 
 	m.Err = nil
 	return m
@@ -491,7 +488,7 @@ func (m *MockHolmesGPTClient) WithRecoverySuccessResponse(
 		idBytes, _ := json.Marshal(workflowID)
 		swMap["workflow_id"] = jx.Raw(idBytes)
 		imgBytes, _ := json.Marshal(containerImage)
-		swMap["container_image"] = jx.Raw(imgBytes)
+		swMap["execution_bundle"] = jx.Raw(imgBytes)
 		confBytes, _ := json.Marshal(workflowConfidence)
 		swMap["confidence"] = jx.Raw(confBytes)
 	}
@@ -746,7 +743,7 @@ func BuildMockSelectedWorkflow(workflowID string, containerImage string, confide
 	}
 	if containerImage != "" {
 		bytes, _ := json.Marshal(containerImage)
-		swMap["container_image"] = jx.Raw(bytes)
+		swMap["execution_bundle"] = jx.Raw(bytes)
 	}
 	if confidence > 0 {
 		bytes, _ := json.Marshal(confidence)

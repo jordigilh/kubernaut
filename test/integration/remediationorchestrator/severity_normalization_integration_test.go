@@ -128,13 +128,17 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			Eventually(func() bool {
 				var aaList aianalysisv1.AIAnalysisList
 				err := k8sManager.GetAPIReader().List(ctx, &aaList,
-					client.InNamespace(namespace),
-					client.MatchingLabels{"kubernaut.ai/remediation-request": rrName})
-				if err != nil || len(aaList.Items) == 0 {
+					client.InNamespace(namespace))
+				if err != nil {
 					return false
 				}
-				createdAA = &aaList.Items[0]
-				return true
+				for i := range aaList.Items {
+					if aaList.Items[i].Spec.RemediationRequestRef.Name == rrName {
+						createdAA = &aaList.Items[i]
+						return true
+					}
+				}
+				return false
 			}, timeout, interval).Should(BeTrue(),
 				"RO should create AIAnalysis when SignalProcessing reaches Completed phase")
 
@@ -197,13 +201,17 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			Eventually(func() bool {
 				var aaList aianalysisv1.AIAnalysisList
 				err := k8sManager.GetAPIReader().List(ctx, &aaList,
-					client.InNamespace(namespace),
-					client.MatchingLabels{"kubernaut.ai/remediation-request": rrName})
-				if err != nil || len(aaList.Items) == 0 {
+					client.InNamespace(namespace))
+				if err != nil {
 					return false
 				}
-				createdAA = &aaList.Items[0]
-				return true
+				for i := range aaList.Items {
+					if aaList.Items[i].Spec.RemediationRequestRef.Name == rrName {
+						createdAA = &aaList.Items[i]
+						return true
+					}
+				}
+				return false
 			}, timeout, interval).Should(BeTrue())
 
 			Expect(createdAA.Spec.AnalysisRequest.SignalContext.Severity).To(Equal("high"),
@@ -276,13 +284,17 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			Eventually(func() bool {
 				var aaList aianalysisv1.AIAnalysisList
 				err := k8sManager.GetAPIReader().List(ctx, &aaList,
-					client.InNamespace(namespace),
-					client.MatchingLabels{"kubernaut.ai/remediation-request": rrName})
-				if err != nil || len(aaList.Items) == 0 {
+					client.InNamespace(namespace))
+				if err != nil {
 					return false
 				}
-				createdAA = &aaList.Items[0]
-				return true
+				for i := range aaList.Items {
+					if aaList.Items[i].Spec.RemediationRequestRef.Name == rrName {
+						createdAA = &aaList.Items[i]
+						return true
+					}
+				}
+				return false
 			}, timeout, interval).Should(BeTrue())
 
 			Expect(createdAA.Spec.AnalysisRequest.SignalContext.Severity).To(Equal("critical"),
@@ -351,13 +363,17 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			Eventually(func() bool {
 				var aaList aianalysisv1.AIAnalysisList
 				err := k8sManager.GetAPIReader().List(ctx, &aaList,
-					client.InNamespace(namespace),
-					client.MatchingLabels{"kubernaut.ai/remediation-request": rrName})
-				if err != nil || len(aaList.Items) == 0 {
+					client.InNamespace(namespace))
+				if err != nil {
 					return false
 				}
-				createdAA = &aaList.Items[0]
-				return true
+				for i := range aaList.Items {
+					if aaList.Items[i].Spec.RemediationRequestRef.Name == rrName {
+						createdAA = &aaList.Items[i]
+						return true
+					}
+				}
+				return false
 			}, timeout, interval).Should(BeTrue())
 
 			Expect(createdAA.Spec.AnalysisRequest.SignalContext.Severity).To(Equal("medium"),
@@ -439,13 +455,17 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			Eventually(func() bool {
 				var aaList aianalysisv1.AIAnalysisList
 				err := k8sManager.GetAPIReader().List(ctx, &aaList,
-					client.InNamespace(namespace),
-					client.MatchingLabels{"kubernaut.ai/remediation-request": rrName})
-				if err != nil || len(aaList.Items) == 0 {
+					client.InNamespace(namespace))
+				if err != nil {
 					return false
 				}
-				createdAA = &aaList.Items[0]
-				return true
+				for i := range aaList.Items {
+					if aaList.Items[i].Spec.RemediationRequestRef.Name == rrName {
+						createdAA = &aaList.Items[i]
+						return true
+					}
+				}
+				return false
 			}, timeout, interval).Should(BeTrue(),
 				"RO should create AIAnalysis when SignalProcessing reaches Completed phase")
 
@@ -509,13 +529,17 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			Eventually(func() bool {
 				var aaList aianalysisv1.AIAnalysisList
 				err := k8sManager.GetAPIReader().List(ctx, &aaList,
-					client.InNamespace(namespace),
-					client.MatchingLabels{"kubernaut.ai/remediation-request": rrName})
-				if err != nil || len(aaList.Items) == 0 {
+					client.InNamespace(namespace))
+				if err != nil {
 					return false
 				}
-				createdAA = &aaList.Items[0]
-				return true
+				for i := range aaList.Items {
+					if aaList.Items[i].Spec.RemediationRequestRef.Name == rrName {
+						createdAA = &aaList.Items[i]
+						return true
+					}
+				}
+				return false
 			}, timeout, interval).Should(BeTrue())
 
 			Expect(createdAA.Spec.AnalysisRequest.SignalContext.SignalMode).To(Equal("reactive"),
@@ -587,13 +611,17 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			Eventually(func() bool {
 				var aaList aianalysisv1.AIAnalysisList
 				err := k8sManager.GetAPIReader().List(ctx, &aaList,
-					client.InNamespace(namespace),
-					client.MatchingLabels{"kubernaut.ai/remediation-request": rrName})
-				if err != nil || len(aaList.Items) == 0 {
+					client.InNamespace(namespace))
+				if err != nil {
 					return false
 				}
-				createdAA = &aaList.Items[0]
-				return true
+				for i := range aaList.Items {
+					if aaList.Items[i].Spec.RemediationRequestRef.Name == rrName {
+						createdAA = &aaList.Items[i]
+						return true
+					}
+				}
+				return false
 			}, timeout, interval).Should(BeTrue())
 
 			Expect(createdAA.Spec.AnalysisRequest.SignalContext.Severity).To(Equal("critical"),

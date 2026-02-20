@@ -59,9 +59,9 @@ func MapToRRFields(parsedData *ParsedAuditData) (*ReconstructedRRFields, error) 
 		result.Spec.SignalLabels = parsedData.SignalLabels
 		result.Spec.SignalAnnotations = parsedData.SignalAnnotations
 
-		// Convert jx.Raw to []byte for OriginalPayload
+		// Map OriginalPayload (string, issue #96)
 		if len(parsedData.OriginalPayload) > 0 {
-			result.Spec.OriginalPayload = []byte(parsedData.OriginalPayload)
+			result.Spec.OriginalPayload = parsedData.OriginalPayload
 		}
 
 	case "orchestrator.lifecycle.created":
@@ -108,7 +108,7 @@ func MapToRRFields(parsedData *ParsedAuditData) (*ReconstructedRRFields, error) 
 	case "aianalysis.analysis.completed":
 		// Map AI Analysis audit data to RR Spec (Gap #4)
 		if len(parsedData.ProviderData) > 0 {
-			result.Spec.ProviderData = []byte(parsedData.ProviderData)
+			result.Spec.ProviderData = parsedData.ProviderData
 		}
 
 	case "workflowexecution.selection.completed":
@@ -117,8 +117,8 @@ func MapToRRFields(parsedData *ParsedAuditData) (*ReconstructedRRFields, error) 
 			result.Status.SelectedWorkflowRef = &remediationv1.WorkflowReference{
 				WorkflowID:      parsedData.SelectedWorkflowRef.WorkflowID,
 				Version:         parsedData.SelectedWorkflowRef.Version,
-				ContainerImage:  parsedData.SelectedWorkflowRef.ContainerImage,
-				ContainerDigest: parsedData.SelectedWorkflowRef.ContainerDigest,
+				ExecutionBundle:  parsedData.SelectedWorkflowRef.ContainerImage,
+				ExecutionBundleDigest: parsedData.SelectedWorkflowRef.ContainerDigest,
 			}
 		}
 

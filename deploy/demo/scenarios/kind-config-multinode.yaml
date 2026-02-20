@@ -1,0 +1,40 @@
+# Kind cluster config: control-plane + 1 worker node
+# Used by scenarios that require a separate worker node:
+#   #122 pending-taint, #126 autoscale, #127 node-notready
+#
+# Usage:
+#   kind create cluster --name kubernaut-demo --config deploy/demo/scenarios/kind-config-multinode.yaml
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+  extraPortMappings:
+  - containerPort: 30080
+    hostPort: 30080
+    protocol: TCP
+  - containerPort: 30081
+    hostPort: 30081
+    protocol: TCP
+  - containerPort: 30190
+    hostPort: 9190
+    protocol: TCP
+  - containerPort: 30193
+    hostPort: 9193
+    protocol: TCP
+  - containerPort: 30300
+    hostPort: 3000
+    protocol: TCP
+  kubeadmConfigPatches:
+  - |
+    kind: ClusterConfiguration
+    apiServer:
+      extraArgs:
+        max-requests-inflight: "800"
+        max-mutating-requests-inflight: "400"
+    controllerManager:
+      extraArgs:
+        kube-api-qps: "100"
+        kube-api-burst: "200"
+- role: worker
+  labels:
+    kubernaut.ai/workload-node: "true"

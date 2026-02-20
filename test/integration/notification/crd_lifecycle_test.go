@@ -312,13 +312,10 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 					Name:       notifName,
 					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
-					Labels: map[string]string{
-						"kubernaut.ai/severity":    "medium",
-						"kubernaut.ai/environment": "test",
-					},
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Type:     notificationv1alpha1.NotificationTypeSimple,
+					Severity: "medium",
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Optional Fields Test",
 					Body:     "Testing with optional fields omitted",

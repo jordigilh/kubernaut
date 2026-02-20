@@ -51,16 +51,22 @@ type PolicyInput struct {
 	// Target resource
 	TargetResource TargetResourceInput `json:"target_resource"`
 
-	// Detected labels (auto-detected by SignalProcessing)
+	// Detected labels (ADR-056: computed by HAPI post-RCA)
 	DetectedLabels map[string]interface{} `json:"detected_labels"`
 
 	// Custom labels (customer-defined via Rego)
 	CustomLabels map[string][]string `json:"custom_labels"`
 
+	// Business classification from SP categorization (BR-SP-002, BR-SP-080, BR-SP-081)
+	BusinessClassification map[string]string `json:"business_classification,omitempty"`
+
 	// HolmesGPT-API response data
-	Confidence         float64  `json:"confidence"`
-	TargetInOwnerChain bool     `json:"target_in_owner_chain"`
-	Warnings           []string `json:"warnings,omitempty"`
+	Confidence float64  `json:"confidence"`
+	Warnings   []string `json:"warnings,omitempty"`
+
+	// ADR-055: Affected resource identified by LLM during RCA
+	// Replaces target_in_owner_chain boolean with structured resource data
+	AffectedResource *AffectedResourceInput `json:"affected_resource,omitempty"`
 
 	// FailedDetections (DD-WORKFLOW-001 v2.1)
 	FailedDetections []string `json:"failed_detections,omitempty"`
@@ -72,6 +78,15 @@ type PolicyInput struct {
 
 // TargetResourceInput contains target resource identification
 type TargetResourceInput struct {
+	Kind      string `json:"kind"`
+	Name      string `json:"name"`
+	Namespace string `json:"namespace"`
+}
+
+// AffectedResourceInput is the LLM-identified target resource for Rego policy evaluation.
+// ADR-055: Replaces target_in_owner_chain boolean with structured resource data,
+// enabling granular per-kind approval policies.
+type AffectedResourceInput struct {
 	Kind      string `json:"kind"`
 	Name      string `json:"name"`
 	Namespace string `json:"namespace"`
@@ -170,10 +185,13 @@ func (e *Evaluator) Evaluate(ctx context.Context, input *PolicyInput) (*PolicyRe
 		// Detected labels
 		"detected_labels": input.DetectedLabels,
 		"custom_labels":   input.CustomLabels,
+		// Business classification (BR-SP-002)
+		"business_classification": input.BusinessClassification,
 		// HolmesGPT-API response data
-		"confidence":            input.Confidence,
-		"target_in_owner_chain": input.TargetInOwnerChain,
-		"warnings":              input.Warnings,
+		"confidence": input.Confidence,
+		"warnings":   input.Warnings,
+		// ADR-055: Affected resource for granular per-kind policies
+		"affected_resource": input.AffectedResource,
 		// FailedDetections
 		"failed_detections": input.FailedDetections,
 		// Recovery context

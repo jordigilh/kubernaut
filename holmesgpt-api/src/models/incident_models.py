@@ -179,12 +179,34 @@ class DetectedLabels(BaseModel):
         return v
 
 
+class BusinessClassification(BaseModel):
+    """
+    Business context from SignalProcessing categorization phase.
+
+    BR-SP-002: Business Classification
+    BR-SP-080: Business Unit Detection
+    BR-SP-081: SLA Requirement Mapping
+
+    Used for:
+    1. Workflow filtering - select workflows matching business context
+    2. Rego approval policies - criticality/SLA-based gating
+    3. LLM context - business impact understanding
+    """
+    businessUnit: Optional[str] = Field(None, description="Business unit owning the service (e.g., 'payments', 'platform')")
+    serviceOwner: Optional[str] = Field(None, description="Service owner team or individual")
+    criticality: Optional[str] = Field(None, description="Business criticality: critical, high, medium, low")
+    slaRequirement: Optional[str] = Field(None, description="SLA tier: platinum, gold, silver, bronze")
+
+
 class EnrichmentResults(BaseModel):
     """
     Enrichment results from SignalProcessing.
 
-    Contains Kubernetes context, auto-detected labels, and custom labels
-    that are used for workflow filtering and LLM context.
+    Contains Kubernetes context, custom labels, and business classification
+    used for workflow filtering and LLM context.
+
+    ADR-056: detectedLabels removed -- now computed by HAPI post-RCA via LabelDetector.
+    ADR-055: ownerChain removed -- resolved by HAPI via get_resource_context tool.
 
     Design Decision: DD-RECOVERY-003, DD-HAPI-001
 
@@ -196,12 +218,14 @@ class EnrichmentResults(BaseModel):
     - Auto-appended to MCP workflow search (invisible to LLM)
     """
     kubernetesContext: Optional[Dict[str, Any]] = Field(None, description="Kubernetes resource context")
-    detectedLabels: Optional[DetectedLabels] = Field(None, description="Auto-detected cluster characteristics")
     customLabels: Optional[CustomLabels] = Field(
         None,
         description="Custom labels from SignalProcessing (subdomain → values). Auto-appended to workflow search per DD-HAPI-001."
     )
-    enrichmentQuality: float = Field(default=0.0, ge=0.0, le=1.0, description="Quality score of enrichment (0-1)")
+    businessClassification: Optional[BusinessClassification] = Field(
+        None,
+        description="Business classification from SP categorization (BR-SP-002). Used for workflow filtering and Rego approval policies."
+    )
 
 
 class IncidentRequest(BaseModel):
@@ -318,7 +342,7 @@ class AlternativeWorkflow(BaseModel):
     - Transparency into AI reasoning
     """
     workflow_id: str = Field(..., description="Workflow identifier")
-    container_image: Optional[str] = Field(None, description="OCI image reference")
+    execution_bundle: Optional[str] = Field(None, description="OCI execution bundle reference")
     confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence score for this alternative")
     rationale: str = Field(..., description="Why this alternative was considered but not selected")
 
@@ -328,20 +352,21 @@ class IncidentResponse(BaseModel):
     Response model for incident analysis endpoint
 
     Business Requirement: BR-HAPI-002 (Incident analysis response schema)
-    Design Decision: DD-WORKFLOW-001 v1.7 (OwnerChain validation)
     Design Decision: DD-HAPI-002 v1.2 (Workflow Response Validation)
     Design Decision: ADR-045 v1.2 (Alternative Workflows for Audit)
+    Design Decision: ADR-055 (LLM-Driven Context Enrichment)
 
     Fields added per AIAnalysis team requests:
-    - target_in_owner_chain: Whether RCA target was found in OwnerChain (Dec 2, 2025)
     - warnings: Non-fatal warnings for transparency (Dec 2, 2025)
     - alternative_workflows: Other workflows considered (Dec 5, 2025) - INFORMATIONAL ONLY
     - needs_human_review: AI could not produce reliable result (Dec 6, 2025)
+
+    ADR-055: target_in_owner_chain removed -- replaced by affected_resource in Rego input.
     """
     incident_id: str = Field(..., description="Incident identifier from request")
     analysis: str = Field(..., description="Natural language analysis from LLM")
     root_cause_analysis: Dict[str, Any] = Field(..., description="Structured RCA with summary, severity, contributing_factors")
-    selected_workflow: Optional[Dict[str, Any]] = Field(None, description="Selected workflow with workflow_id, containerImage, confidence, parameters")
+    selected_workflow: Optional[Dict[str, Any]] = Field(None, description="Selected workflow with workflow_id, execution_bundle, confidence, parameters")
     confidence: float = Field(..., ge=0.0, le=1.0, description="Overall confidence in analysis")
     timestamp: str = Field(..., description="ISO timestamp of analysis completion")
 
@@ -366,12 +391,7 @@ class IncidentResponse(BaseModel):
                     "no_matching_workflows, low_confidence, llm_parsing_error"
     )
 
-    # OwnerChain validation fields (DD-WORKFLOW-001 v1.7, AIAnalysis request Dec 2025)
-    target_in_owner_chain: bool = Field(
-        default=True,
-        description="Whether RCA-identified target resource was found in OwnerChain. "
-                    "If false, DetectedLabels may be from different scope than affected resource."
-    )
+    # ADR-055: target_in_owner_chain removed -- replaced by affected_resource in Rego input
     warnings: List[str] = Field(
         default_factory=list,
         description="Non-fatal warnings (e.g., OwnerChain validation issues, low confidence)"
@@ -387,14 +407,18 @@ class IncidentResponse(BaseModel):
     )
 
     # Validation attempts history (BR-HAPI-197, DD-HAPI-002 v1.2, Dec 6, 2025)
-    # Complete history of all validation attempts during LLM self-correction loop.
-    # Used for:
-    # - Operator notifications: Natural language description of why validation failed
-    # - Audit trail: Complete record of all attempts (also emitted to audit store)
-    # - Debugging: Understanding LLM behavior and failure patterns
     validation_attempts_history: List[ValidationAttempt] = Field(
         default_factory=list,
         description="History of all validation attempts during LLM self-correction. "
                     "Each attempt records workflow_id, validation result, and any errors. "
                     "Empty if validation passed on first attempt or no workflow was selected."
+    )
+
+    # ADR-056: DetectedLabels computed at runtime by HAPI's LabelDetector.
+    # Returned to AIAnalysis for storage in PostRCAContext and Rego policy input.
+    detected_labels: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Cluster characteristics detected at runtime by HAPI (ADR-056). "
+                    "Includes: gitOpsManaged, pdbProtected, hpaEnabled, stateful, "
+                    "helmManaged, networkIsolated, serviceMesh, failedDetections."
     )

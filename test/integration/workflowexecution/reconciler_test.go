@@ -358,7 +358,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 	// Audit Events (BR-WE-005)
 	// ========================================
 	Context("Audit Events during Reconciliation", func() {
-		// V2.1 UPDATE: RecordAuditEvent IS NOW CALLED during controller reconciliation!
+		// V2.1 UPDATE: AuditManager records audit events during controller reconciliation!
 		// V1.0 NOTE: workflow.skipped events removed - RO emits those now (DD-RO-002)
 		// Audit events are emitted for all phase transitions:
 		// - workflow.started (Running phase)

@@ -34,7 +34,7 @@ import (
 
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
-	"github.com/jordigilh/kubernaut/internal/config"
+	config "github.com/jordigilh/kubernaut/internal/config/effectivenessmonitor"
 	controller "github.com/jordigilh/kubernaut/internal/controller/effectivenessmonitor"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	emaudit "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/audit"
@@ -56,17 +56,12 @@ func init() {
 }
 
 func main() {
-	var metricsAddr string
-	var probeAddr string
-	var enableLeaderElection bool
+	// ========================================
+	// ADR-030: Configuration via YAML file
+	// Single --config flag; all functional config in YAML ConfigMap
+	// ========================================
 	var configPath string
-
-	flag.StringVar(&metricsAddr, "metrics-bind-address", ":9090", "The address the metric endpoint binds to.")
-	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
-	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
-		"Enable leader election for controller manager. "+
-			"Enabling this will ensure there is only one active controller manager.")
-	flag.StringVar(&configPath, "config", "", "Path to YAML configuration file (optional, falls back to defaults)")
+	flag.StringVar(&configPath, "config", config.DefaultConfigPath, "Path to YAML configuration file (optional, falls back to defaults)")
 
 	opts := zap.Options{
 		Development: true,
@@ -79,15 +74,21 @@ func main() {
 	// ========================================
 	// CONFIGURATION LOADING (ADR-030)
 	// ========================================
-	cfg, err := config.LoadEMConfigFromFile(configPath)
+	cfg, err := config.LoadFromFile(configPath)
 	if err != nil {
 		setupLog.Error(err, "Failed to load configuration from file, using defaults",
 			"configPath", configPath)
-		cfg = config.DefaultEMConfig()
+		cfg = config.DefaultConfig()
 	} else if configPath != "" {
 		setupLog.Info("Configuration loaded successfully", "configPath", configPath)
 	} else {
 		setupLog.Info("No config file specified, using defaults")
+	}
+
+	// Validate configuration (ADR-030)
+	if err := cfg.Validate(); err != nil {
+		setupLog.Error(err, "Configuration validation failed")
+		os.Exit(1)
 	}
 
 	// ========================================
@@ -99,11 +100,11 @@ func main() {
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,
 		Metrics: metricsserver.Options{
-			BindAddress: metricsAddr,
+			BindAddress: cfg.Controller.MetricsAddr,
 		},
-		HealthProbeBindAddress: probeAddr,
-		LeaderElection:         enableLeaderElection,
-		LeaderElectionID:       "effectivenessmonitor.kubernaut.ai",
+		HealthProbeBindAddress: cfg.Controller.HealthProbeAddr,
+		LeaderElection:         cfg.Controller.LeaderElection,
+		LeaderElectionID:       cfg.Controller.LeaderElectionID,
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
@@ -160,8 +161,8 @@ func main() {
 
 	// Log configuration
 	setupLog.Info("EffectivenessMonitor controller configuration",
-		"metricsAddr", metricsAddr,
-		"probeAddr", probeAddr,
+		"metricsAddr", cfg.Controller.MetricsAddr,
+		"healthProbeAddr", cfg.Controller.HealthProbeAddr,
 		"stabilizationWindow", cfg.Assessment.StabilizationWindow,
 		"validityWindow", cfg.Assessment.ValidityWindow,
 		"prometheusEnabled", cfg.External.PrometheusEnabled,
@@ -242,8 +243,8 @@ func main() {
 	// DS QUERIER INITIALIZATION (DD-EM-002: pre-remediation hash lookup)
 	// ========================================
 	var dsQuerier emclient.DataStorageQuerier
-	dsQuerier = emclient.NewDataStorageHTTPQuerier(cfg.DataStorage.URL)
-	setupLog.Info("DataStorage querier initialized for pre-remediation hash lookup",
+	dsQuerier = emclient.NewDataStorageHTTPQuerierWithTimeout(cfg.DataStorage.URL, cfg.DataStorage.Timeout)
+	setupLog.Info("DataStorage querier initialized for pre-remediation hash lookup (DD-AUTH-005: SA auth)",
 		"url", cfg.DataStorage.URL)
 
 	// ========================================

@@ -63,11 +63,11 @@ var _ = Describe("Rego Policy Integration", Label("integration", "rego"), func()
 	Context("Production Approval Policy - BR-AI-013", func() {
 		It("should auto-approve staging environment", func() {
 			result, err := evaluator.Evaluate(evalCtx, &rego.PolicyInput{
-				Environment:        "staging",
-				TargetInOwnerChain: true,
-				FailedDetections:   []string{},
-				Warnings:           []string{},
-				Confidence:         0.95,
+				Environment:      "staging",
+				AffectedResource: &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "staging"},
+				FailedDetections: []string{},
+				Warnings:         []string{},
+				Confidence:       0.95,
 			})
 
 			Expect(err).NotTo(HaveOccurred())
@@ -76,28 +76,28 @@ var _ = Describe("Rego Policy Integration", Label("integration", "rego"), func()
 			Expect(result.Reason).To(ContainSubstring("Auto-approved"))
 		})
 
-		It("should require approval for production with unvalidated target", func() {
+		// ADR-055 + BR-AI-085-005: Missing affected_resource = default-deny
+		It("should require approval when affected resource is missing", func() {
 			result, err := evaluator.Evaluate(evalCtx, &rego.PolicyInput{
-				Environment:        "production",
-				TargetInOwnerChain: false, // Target not in owner chain = data quality issue
-				FailedDetections:   []string{},
-				Warnings:           []string{},
-				Confidence:         0.90,
+				Environment:      "production",
+				FailedDetections: []string{},
+				Warnings:         []string{},
+				Confidence:       0.90,
 			})
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.ApprovalRequired).To(BeTrue())
 			Expect(result.Degraded).To(BeFalse())
-			Expect(result.Reason).To(ContainSubstring("unvalidated target"))
+			Expect(result.Reason).To(ContainSubstring("affected resource"))
 		})
 
 		It("should require approval for production with failed detections", func() {
 			result, err := evaluator.Evaluate(evalCtx, &rego.PolicyInput{
-				Environment:        "production",
-				TargetInOwnerChain: true,
-				FailedDetections:   []string{"gitOpsManaged"}, // Detection failed
-				Warnings:           []string{},
-				Confidence:         0.85,
+				Environment:      "production",
+				AffectedResource: &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "production"},
+				FailedDetections: []string{"gitOpsManaged"}, // Detection failed
+				Warnings:         []string{},
+				Confidence:       0.85,
 			})
 
 			Expect(err).NotTo(HaveOccurred())
@@ -107,11 +107,11 @@ var _ = Describe("Rego Policy Integration", Label("integration", "rego"), func()
 
 		It("should auto-approve production with all validations passing", func() {
 			result, err := evaluator.Evaluate(evalCtx, &rego.PolicyInput{
-				Environment:        "production",
-				TargetInOwnerChain: true,
-				FailedDetections:   []string{},
-				Warnings:           []string{},
-				Confidence:         0.95,
+				Environment:      "production",
+				AffectedResource: &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "production"},
+				FailedDetections: []string{},
+				Warnings:         []string{},
+				Confidence:       0.95,
 				DetectedLabels: map[string]interface{}{
 					"gitOpsManaged": true,
 					"pdbProtected":  true,
@@ -126,12 +126,12 @@ var _ = Describe("Rego Policy Integration", Label("integration", "rego"), func()
 	})
 
 	Context("Environment-Specific Rules - BR-AI-013", func() {
-		It("should auto-approve development environment", func() {
+		It("should auto-approve development environment with affected resource", func() {
 			result, err := evaluator.Evaluate(evalCtx, &rego.PolicyInput{
-				Environment:        "development",
-				TargetInOwnerChain: false, // Even with issues, dev auto-approves
-				FailedDetections:   []string{"gitOpsManaged"},
-				Confidence:         0.50,
+				Environment:      "development",
+				AffectedResource: &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "development"},
+				FailedDetections: []string{"gitOpsManaged"},
+				Confidence:       0.50,
 			})
 
 			Expect(err).NotTo(HaveOccurred())
@@ -140,10 +140,10 @@ var _ = Describe("Rego Policy Integration", Label("integration", "rego"), func()
 
 		It("should auto-approve qa environment", func() {
 			result, err := evaluator.Evaluate(evalCtx, &rego.PolicyInput{
-				Environment:        "qa",
-				TargetInOwnerChain: true,
-				FailedDetections:   []string{},
-				Confidence:         0.75,
+				Environment:      "qa",
+				AffectedResource: &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "qa"},
+				FailedDetections: []string{},
+				Confidence:       0.75,
 			})
 
 			Expect(err).NotTo(HaveOccurred())
@@ -152,9 +152,9 @@ var _ = Describe("Rego Policy Integration", Label("integration", "rego"), func()
 
 		It("should auto-approve test environment", func() {
 			result, err := evaluator.Evaluate(evalCtx, &rego.PolicyInput{
-				Environment:        "test",
-				TargetInOwnerChain: true,
-				Confidence:         0.80,
+				Environment:      "test",
+				AffectedResource: &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "test"},
+				Confidence:       0.80,
 			})
 
 			Expect(err).NotTo(HaveOccurred())
@@ -165,11 +165,11 @@ var _ = Describe("Rego Policy Integration", Label("integration", "rego"), func()
 	Context("Warning Handling - BR-AI-011", func() {
 		It("should require approval for production with warnings", func() {
 			result, err := evaluator.Evaluate(evalCtx, &rego.PolicyInput{
-				Environment:        "production",
-				TargetInOwnerChain: true,
-				FailedDetections:   []string{},
-				Warnings:           []string{"High resource utilization detected"},
-				Confidence:         0.90,
+				Environment:      "production",
+				AffectedResource: &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "production"},
+				FailedDetections: []string{},
+				Warnings:         []string{"High resource utilization detected"},
+				Confidence:       0.90,
 			})
 
 			Expect(err).NotTo(HaveOccurred())
@@ -180,11 +180,15 @@ var _ = Describe("Rego Policy Integration", Label("integration", "rego"), func()
 
 	Context("Stateful Workload Protection - BR-AI-011", func() {
 		It("should require approval for stateful workloads in production", func() {
+			// Use Kind "Deployment" (not "StatefulSet") to isolate the is_stateful rule (score 50)
+			// from the is_sensitive_resource rule (score 80). StatefulSet triggers BOTH rules,
+			// and the higher-scoring sensitive_resource reason wins, masking the stateful reason.
+			// A Deployment with detected_labels.stateful=true exercises the stateful path exclusively.
 			result, err := evaluator.Evaluate(evalCtx, &rego.PolicyInput{
-				Environment:        "production",
-				TargetInOwnerChain: true,
-				FailedDetections:   []string{},
-				Confidence:         0.95,
+				Environment:      "production",
+				AffectedResource: &rego.AffectedResourceInput{Kind: "Deployment", Name: "db", Namespace: "production"},
+				FailedDetections: []string{},
+				Confidence:       0.95,
 				DetectedLabels: map[string]interface{}{
 					"stateful": true,
 				},
@@ -245,10 +249,12 @@ var _ = Describe("Rego Policy Integration", Label("integration", "rego"), func()
 					"criticality": {"high"},
 				},
 
+				// ADR-055: Affected resource (replaces target_in_owner_chain)
+				AffectedResource: &rego.AffectedResourceInput{Kind: "Deployment", Name: "web-app", Namespace: "staging"},
+
 				// HolmesGPT-API response data
-				Confidence:         0.92,
-				TargetInOwnerChain: true,
-				Warnings:           []string{},
+				Confidence: 0.92,
+				Warnings:   []string{},
 
 				// Failed detections
 				FailedDetections: []string{},

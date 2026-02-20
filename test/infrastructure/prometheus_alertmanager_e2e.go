@@ -123,12 +123,13 @@ data:
         insecure_skip_verify: true
       bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
       relabel_configs:
-      - target_label: __address__
-        replacement: kubernetes.default.svc:443
-      - source_labels: [__meta_kubernetes_node_name]
-        regex: (.+)
-        target_label: __metrics_path__
-        replacement: /api/v1/nodes/${1}/proxy/metrics/cadvisor
+      - action: labelmap
+        regex: __meta_kubernetes_node_label_(.+)
+      - source_labels: [__meta_kubernetes_node_address_InternalIP]
+        target_label: __address__
+        replacement: ${1}:10250
+      - target_label: __metrics_path__
+        replacement: /metrics/cadvisor
       metric_relabel_configs:
       - source_labels: [__name__]
         regex: 'container_(cpu_usage_seconds_total|memory_working_set_bytes|memory_usage_bytes|spec_memory_limit_bytes)'
@@ -408,6 +409,64 @@ func waitForHTTPReady(url, serviceName string, timeout time.Duration, writer io.
 	}
 
 	return fmt.Errorf("timeout waiting for %s at %s after %v", serviceName, url, timeout)
+}
+
+// WaitForPrometheusCadvisorTarget polls the Prometheus targets API until the
+// kubelet-cadvisor scrape job has at least one target in "up" state.
+// This detects cadvisor scraping failures early (within seconds of setup)
+// rather than surfacing as a mysterious metrics timeout minutes later in the EM.
+func WaitForPrometheusCadvisorTarget(promURL string, timeout time.Duration, writer io.Writer) error {
+	_, _ = fmt.Fprintf(writer, "  ⏳ Waiting for Prometheus cadvisor scrape target to be UP...\n")
+	deadline := time.Now().Add(timeout)
+	client := &http.Client{Timeout: 5 * time.Second}
+
+	type targetResult struct {
+		ActiveTargets []struct {
+			ScrapePool string `json:"scrapePool"`
+			Health     string `json:"health"`
+			ScrapeURL  string `json:"scrapeUrl"`
+			LastError  string `json:"lastError"`
+		} `json:"activeTargets"`
+	}
+	type apiResponse struct {
+		Status string       `json:"status"`
+		Data   targetResult `json:"data"`
+	}
+
+	var lastErr string
+	for time.Now().Before(deadline) {
+		resp, err := client.Get(promURL + "/api/v1/targets")
+		if err != nil {
+			time.Sleep(2 * time.Second)
+			continue
+		}
+
+		var result apiResponse
+		decodeErr := json.NewDecoder(resp.Body).Decode(&result)
+		_ = resp.Body.Close()
+		if decodeErr != nil {
+			time.Sleep(2 * time.Second)
+			continue
+		}
+
+		for _, t := range result.Data.ActiveTargets {
+			if t.ScrapePool == "kubelet-cadvisor" {
+				if t.Health == "up" {
+					_, _ = fmt.Fprintf(writer, "  ✅ Prometheus cadvisor target is UP (%s)\n", t.ScrapeURL)
+					return nil
+				}
+				lastErr = t.LastError
+				_, _ = fmt.Fprintf(writer, "  ⏳ cadvisor target found but health=%s (error: %s)\n", t.Health, t.LastError)
+			}
+		}
+
+		time.Sleep(3 * time.Second)
+	}
+
+	if lastErr != "" {
+		return fmt.Errorf("timeout: cadvisor target never became healthy (last error: %s)", lastErr)
+	}
+	return fmt.Errorf("timeout: no cadvisor target discovered by Prometheus after %v", timeout)
 }
 
 // ============================================================================

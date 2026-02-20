@@ -13,27 +13,29 @@ actionType: IncreaseMemoryLimits
 
 labels:
   signalType: OOMKilled
-  severity: [critical]
+  severity: [critical, high]
   environment: [production, staging, test]
-  component: deployment
-  priority: P1
+  component: "*"
+  priority: "*"
 
 execution:
   engine: job
+  bundle: quay.io/kubernaut-cicd/test-workflows/oomkill-increase-memory-job:v1.0.0-exec@sha256:f9a698380357e77bde95927589a71a06a136620bb40a69d3d0e5560054845b25
 
 parameters:
-  - name: NAMESPACE
+  - name: TARGET_RESOURCE_KIND
     type: string
     required: true
-    description: "Target namespace containing the affected deployment"
-  - name: DEPLOYMENT_NAME
+    description: "Kubernetes resource kind (Deployment, StatefulSet, DaemonSet)"
+  - name: TARGET_RESOURCE_NAME
     type: string
     required: true
-    description: "Name of the deployment to update memory limits"
-  - name: MEMORY_INCREASE_PERCENT
-    type: integer
-    required: false
-    description: "Percentage to increase memory limits by"
-    default: 25
-    minimum: 10
-    maximum: 100
+    description: "Name of the resource to patch"
+  - name: TARGET_NAMESPACE
+    type: string
+    required: true
+    description: "Namespace of the resource"
+  - name: MEMORY_LIMIT_NEW
+    type: string
+    required: true
+    description: "New memory limit to apply (e.g., 128Mi, 256Mi, 1Gi)"

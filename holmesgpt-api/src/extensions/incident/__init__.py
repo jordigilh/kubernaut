@@ -50,7 +50,6 @@ from .prompt_builder import (
 from .result_parser import (
     parse_and_validate_investigation_result,
     determine_human_review_reason,
-    is_target_in_owner_chain,
     parse_investigation_result  # DEPRECATED but kept for backward compatibility
 )
 
@@ -61,7 +60,6 @@ _build_mcp_filter_instructions = build_mcp_filter_instructions
 _build_validation_error_feedback = build_validation_error_feedback
 _parse_and_validate_investigation_result = parse_and_validate_investigation_result
 _determine_human_review_reason = determine_human_review_reason
-_is_target_in_owner_chain = is_target_in_owner_chain
 _parse_investigation_result = parse_investigation_result
 _create_data_storage_client = create_data_storage_client
 
@@ -97,13 +95,11 @@ __all__ = [
     # Result parsing (public API)
     "parse_and_validate_investigation_result",
     "determine_human_review_reason",
-    "is_target_in_owner_chain",
     "parse_investigation_result",  # DEPRECATED
 
     # Result parsing (backward compatibility with _ prefix)
     "_parse_and_validate_investigation_result",
     "_determine_human_review_reason",
-    "_is_target_in_owner_chain",
     "_parse_investigation_result",
 ]
 

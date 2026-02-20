@@ -35,6 +35,9 @@ import (
 // ========================================
 
 const (
+	// ConditionReady indicates the RemediationRequest is ready (aggregate condition)
+	ConditionReady = "Ready"
+
 	// ConditionSignalProcessingReady indicates SP CRD was created successfully
 	ConditionSignalProcessingReady = "SignalProcessingReady"
 
@@ -55,11 +58,20 @@ const (
 
 	// ConditionRecoveryComplete indicates terminal phase reached
 	ConditionRecoveryComplete = "RecoveryComplete"
+
+	// ConditionNotificationDelivered indicates notification delivery outcome
+	ConditionNotificationDelivered = "NotificationDelivered"
 )
 
 // ========================================
 // CONDITION REASONS
 // ========================================
+
+// Ready reasons
+const (
+	ReasonReady    = "Ready"
+	ReasonNotReady = "NotReady"
+)
 
 // SignalProcessing reasons
 const (
@@ -99,6 +111,13 @@ const (
 	ReasonInProgress                   = "InProgress"
 )
 
+// Notification delivery reasons
+const (
+	ReasonDeliverySucceeded = "DeliverySucceeded"
+	ReasonDeliveryFailed   = "DeliveryFailed"
+	ReasonUserCancelled    = "UserCancelled"
+)
+
 // ========================================
 // GENERIC CONDITION FUNCTIONS
 // DD-CRD-002 v1.2: MUST use meta.SetStatusCondition and meta.FindStatusCondition
@@ -125,6 +144,7 @@ func SetCondition(rr *remediationv1.RemediationRequest, conditionType string, st
 		LastTransitionTime: metav1.Now(),
 		Reason:             reason,
 		Message:            message,
+		ObservedGeneration: rr.Generation,
 	}
 	meta.SetStatusCondition(&rr.Status.Conditions, condition)
 
@@ -155,6 +175,15 @@ func GetCondition(rr *remediationv1.RemediationRequest, conditionType string) *m
 // ========================================
 // TYPE-SPECIFIC SETTERS
 // ========================================
+
+// SetReady sets the Ready condition on the RemediationRequest
+func SetReady(rr *remediationv1.RemediationRequest, ready bool, reason, message string, m *rometrics.Metrics) {
+	status := metav1.ConditionTrue
+	if !ready {
+		status = metav1.ConditionFalse
+	}
+	SetCondition(rr, ConditionReady, status, reason, message, m)
+}
 
 // SetSignalProcessingReady sets the SignalProcessingReady condition
 func SetSignalProcessingReady(rr *remediationv1.RemediationRequest, ready bool, message string, m *rometrics.Metrics) {
@@ -223,4 +252,13 @@ func SetRecoveryComplete(rr *remediationv1.RemediationRequest, succeeded bool, r
 		status = metav1.ConditionFalse
 	}
 	SetCondition(rr, ConditionRecoveryComplete, status, reason, message, m)
+}
+
+// SetNotificationDelivered sets the NotificationDelivered condition
+func SetNotificationDelivered(rr *remediationv1.RemediationRequest, succeeded bool, reason, message string, m *rometrics.Metrics) {
+	status := metav1.ConditionTrue
+	if !succeeded {
+		status = metav1.ConditionFalse
+	}
+	SetCondition(rr, ConditionNotificationDelivered, status, reason, message, m)
 }

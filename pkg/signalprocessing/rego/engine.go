@@ -90,9 +90,8 @@ func NewEngine(logger logr.Logger, policyPath string) *Engine {
 // RegoInput wraps shared types for Rego policy evaluation.
 // Uses sharedtypes.KubernetesContext (authoritative source).
 type RegoInput struct {
-	Kubernetes     *sharedtypes.KubernetesContext `json:"kubernetes"`
-	Signal         SignalContext                  `json:"signal"`
-	DetectedLabels *sharedtypes.DetectedLabels    `json:"detected_labels,omitempty"`
+	Kubernetes *sharedtypes.KubernetesContext `json:"kubernetes"`
+	Signal     SignalContext                  `json:"signal"`
 }
 
 // SignalContext contains signal-specific data for Rego policies.

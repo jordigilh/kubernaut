@@ -76,6 +76,7 @@ build_failures.*
 # AI provider credentials (MUST NOT be committed)
 credentials.json
 slack-webhook.url
+slack-webhook-url
 *service-account*.json
 *openai-credentials*.json
 *anthropic-credentials*.json
@@ -220,8 +221,9 @@ OVERNIGHT_*.md
 
 # Auto-generated OpenAPI spec copies (via go:generate)
 # DD-API-002: These are auto-generated from api/openapi/*.yaml
-pkg/*/server/middleware/openapi_spec_data.yaml
-pkg/audit/openapi_spec_data.yaml
+# Tracked in git so remote builds (e.g. helios08 AMD64) work without running go:generate
+# pkg/*/server/middleware/openapi_spec_data.yaml
+# pkg/audit/openapi_spec_data.yaml
 
 /workflowexecution
 
@@ -259,3 +261,4 @@ must-gather-*.tar.gz
 # Cursor Swarm Extension (development)
 .cursor-swarm-dev/
 *.vsix
+*.venv*

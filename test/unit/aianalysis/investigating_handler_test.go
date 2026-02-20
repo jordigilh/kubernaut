@@ -41,7 +41,7 @@ import (
 // noopAuditClient is a no-op implementation of AuditClientInterface for unit tests.
 type noopAuditClient struct{}
 
-func (n *noopAuditClient) RecordHolmesGPTCall(ctx context.Context, analysis *aianalysisv1.AIAnalysis, endpoint string, statusCode int, durationMs int) {
+func (n *noopAuditClient) RecordAIAgentCall(ctx context.Context, analysis *aianalysisv1.AIAnalysis, endpoint string, statusCode int, durationMs int) {
 	// No-op: Unit tests don't need audit recording
 }
 
@@ -59,13 +59,13 @@ func (n *noopAuditClient) RecordAnalysisComplete(ctx context.Context, analysis *
 }
 
 // BR-AA-HAPI-064: Session audit no-ops
-func (n *noopAuditClient) RecordHolmesGPTSubmit(ctx context.Context, analysis *aianalysisv1.AIAnalysis, sessionID string) {
+func (n *noopAuditClient) RecordAIAgentSubmit(ctx context.Context, analysis *aianalysisv1.AIAnalysis, sessionID string) {
 }
 
-func (n *noopAuditClient) RecordHolmesGPTResult(ctx context.Context, analysis *aianalysisv1.AIAnalysis, investigationTimeMs int64) {
+func (n *noopAuditClient) RecordAIAgentResult(ctx context.Context, analysis *aianalysisv1.AIAnalysis, investigationTimeMs int64) {
 }
 
-func (n *noopAuditClient) RecordHolmesGPTSessionLost(ctx context.Context, analysis *aianalysisv1.AIAnalysis, generation int32) {
+func (n *noopAuditClient) RecordAIAgentSessionLost(ctx context.Context, analysis *aianalysisv1.AIAnalysis, generation int32) {
 }
 
 // auditClientSpy is a spy implementation that records audit events for validation.
@@ -79,7 +79,7 @@ type failedAnalysisEvent struct {
 	err      error
 }
 
-func (s *auditClientSpy) RecordHolmesGPTCall(ctx context.Context, analysis *aianalysisv1.AIAnalysis, endpoint string, statusCode int, durationMs int) {
+func (s *auditClientSpy) RecordAIAgentCall(ctx context.Context, analysis *aianalysisv1.AIAnalysis, endpoint string, statusCode int, durationMs int) {
 	// Not tracked in spy for Gap #7 tests
 }
 
@@ -100,15 +100,15 @@ func (s *auditClientSpy) RecordAnalysisComplete(ctx context.Context, analysis *a
 }
 
 // BR-AA-HAPI-064: Session audit spy methods
-func (s *auditClientSpy) RecordHolmesGPTSubmit(ctx context.Context, analysis *aianalysisv1.AIAnalysis, sessionID string) {
+func (s *auditClientSpy) RecordAIAgentSubmit(ctx context.Context, analysis *aianalysisv1.AIAnalysis, sessionID string) {
 	// Not tracked in spy for Gap #7 tests
 }
 
-func (s *auditClientSpy) RecordHolmesGPTResult(ctx context.Context, analysis *aianalysisv1.AIAnalysis, investigationTimeMs int64) {
+func (s *auditClientSpy) RecordAIAgentResult(ctx context.Context, analysis *aianalysisv1.AIAnalysis, investigationTimeMs int64) {
 	// Not tracked in spy for Gap #7 tests
 }
 
-func (s *auditClientSpy) RecordHolmesGPTSessionLost(ctx context.Context, analysis *aianalysisv1.AIAnalysis, generation int32) {
+func (s *auditClientSpy) RecordAIAgentSessionLost(ctx context.Context, analysis *aianalysisv1.AIAnalysis, generation int32) {
 	// Not tracked in spy for Gap #7 tests
 }
 
@@ -223,7 +223,6 @@ var _ = Describe("InvestigatingHandler", func() {
 					"wf-restart-pod",
 					"kubernaut.io/workflows/restart:v1.0.0",
 					0.9,
-					true,  // targetInOwnerChain
 					"",    // workflowRationale
 					false, // includeAlternatives
 				)
@@ -238,9 +237,6 @@ var _ = Describe("InvestigatingHandler", func() {
 				Expect(err).NotTo(HaveOccurred())
 				// Business outcome: Investigation completes successfully
 				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseAnalyzing), "Should proceed to Analyzing phase")
-				// Business outcome: Data quality indicator captured for policy evaluation
-				Expect(analysis.Status.TargetInOwnerChain).NotTo(BeNil(), "Data quality indicator should be captured")
-				Expect(*analysis.Status.TargetInOwnerChain).To(BeTrue(), "Target should be found in owner chain")
 			})
 		})
 
@@ -255,9 +251,8 @@ var _ = Describe("InvestigatingHandler", func() {
 					"",                                    // rcaSummary
 					"",                                    // rcaSeverity
 					"wf-scale-deployment",                 // workflowID
-					"kubernaut.io/workflows/scale:v1.0.0", // containerImage
+					"kubernaut.io/workflows/scale:v1.0.0", // executionBundle
 					0.7,                                   // workflowConfidence
-					false,                                 // targetInOwnerChain - test expects false
 					"",                                    // workflowRationale
 					false,                                 // includeAlternatives
 				)
@@ -273,16 +268,6 @@ var _ = Describe("InvestigatingHandler", func() {
 				Expect(analysis.Status.Warnings).To(ContainElement("High memory pressure"))
 				Expect(analysis.Status.Warnings).To(ContainElement("Node scheduling delayed"))
 			})
-
-			It("should set targetInOwnerChain to false", func() {
-				analysis := createTestAnalysis()
-
-				_, err := handler.Handle(ctx, analysis)
-
-				Expect(err).NotTo(HaveOccurred())
-				Expect(analysis.Status.TargetInOwnerChain).NotTo(BeNil())
-				Expect(*analysis.Status.TargetInOwnerChain).To(BeFalse())
-			})
 		})
 
 		// BR-AI-008: v1.5 Response Fields - RootCauseAnalysis capture
@@ -295,9 +280,8 @@ var _ = Describe("InvestigatingHandler", func() {
 					"OOM caused by memory leak",             // rcaSummary
 					"high",                                  // rcaSeverity
 					"wf-restart-pod",                        // workflowID
-					"kubernaut.io/workflows/restart:v1.0.0", // containerImage
+					"kubernaut.io/workflows/restart:v1.0.0", // executionBundle
 					0.92,                                    // workflowConfidence
-					true,                                    // targetInOwnerChain
 					"Selected for OOM recovery",             // workflowRationale
 					true,                                    // includeAlternatives
 				)
@@ -325,7 +309,7 @@ var _ = Describe("InvestigatingHandler", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.SelectedWorkflow).NotTo(BeNil())
 				Expect(analysis.Status.SelectedWorkflow.WorkflowID).To(Equal("wf-restart-pod"))
-				Expect(analysis.Status.SelectedWorkflow.ContainerImage).To(Equal("kubernaut.io/workflows/restart:v1.0.0"))
+				Expect(analysis.Status.SelectedWorkflow.ExecutionBundle).To(Equal("kubernaut.io/workflows/restart:v1.0.0"))
 				Expect(analysis.Status.SelectedWorkflow.Confidence).To(BeNumerically("~", 0.92, 0.01))
 				Expect(analysis.Status.SelectedWorkflow.Rationale).To(Equal("Selected for OOM recovery"))
 			})
@@ -735,7 +719,6 @@ var _ = Describe("InvestigatingHandler", func() {
 						"wf-test",
 						"test:v1",
 						confidence,
-						true,  // targetInOwnerChain
 						"",    // workflowRationale
 						false, // includeAlternatives
 					)
@@ -897,9 +880,8 @@ var _ = Describe("InvestigatingHandler", func() {
 					"Memory leak detected",    // rcaSummary
 					"high",                    // rcaSeverity
 					"restart-pod-v1",          // workflowID
-					"kubernaut/restart:v1",    // containerImage
+					"kubernaut/restart:v1",    // executionBundle
 					0.90,                      // workflowConfidence
-					true,                      // targetInOwnerChain
 					"Pod restart recommended", // workflowRationale
 					false,                     // includeAlternatives
 				)
@@ -996,7 +978,7 @@ var _ = Describe("InvestigatingHandler", func() {
 						SelectedWorkflow: aianalysisv1.SelectedWorkflowSummary{
 							WorkflowID:     "restart-pod-v1",
 							Version:        "1.0",
-							ContainerImage: "kubernaut.io/workflows/restart:v1",
+							ExecutionBundle: "kubernaut.io/workflows/restart:v1",
 						},
 						Failure: aianalysisv1.ExecutionFailure{
 							FailedStepIndex: 2,
@@ -1070,7 +1052,6 @@ var _ = Describe("InvestigatingHandler", func() {
 					"restart-pod-v1",
 					"kubernaut.io/workflows/restart:v1",
 					0.9,
-					true,  // targetInOwnerChain
 					"",    // workflowRationale
 					false, // includeAlternatives
 				)

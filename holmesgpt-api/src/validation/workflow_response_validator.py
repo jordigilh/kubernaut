@@ -24,13 +24,14 @@ self-correction while context is still available.
 Business Requirements:
 - BR-AI-023: Hallucination detection (workflow existence validation)
 - BR-HAPI-191: Parameter validation in chat session
-- BR-HAPI-196: Container image consistency validation
+- BR-HAPI-196: Execution bundle consistency validation
 
 Design Decision: DD-HAPI-002 v1.2 - Workflow Response Validation Architecture
+Design Decision: DD-WORKFLOW-017 - Workflow Lifecycle Field Renames
 
 Validation Steps:
 1. Workflow Existence: Verify workflow_id exists in catalog
-2. Container Image Consistency: Verify container_image matches catalog
+2. Execution Bundle Consistency: Verify execution_bundle matches catalog
 3. Parameter Schema: Verify parameters conform to schema (type, required, length, range, enum)
 """
 
@@ -57,12 +58,12 @@ class ValidationResult:
     Attributes:
         is_valid: True if all validations passed
         errors: List of error messages for failed validations
-        validated_container_image: Container image from catalog (always use this)
+        validated_execution_bundle: Execution bundle from catalog (always use this)
         schema_hint: Formatted schema hint for LLM self-correction
     """
     is_valid: bool
     errors: List[str] = field(default_factory=list)
-    validated_container_image: Optional[str] = None
+    validated_execution_bundle: Optional[str] = None
     schema_hint: Optional[str] = None
 
 
@@ -77,7 +78,7 @@ class WorkflowResponseValidator:
     Business Requirements:
     - BR-AI-023: Hallucination detection
     - BR-HAPI-191: Parameter validation
-    - BR-HAPI-196: Container image consistency
+    - BR-HAPI-196: Execution bundle consistency
 
     Design Decision: DD-HAPI-002 v1.2
     """
@@ -120,7 +121,7 @@ class WorkflowResponseValidator:
     def validate(
         self,
         workflow_id: str,
-        container_image: Optional[str],
+        execution_bundle: Optional[str],
         parameters: Dict[str, Any]
     ) -> ValidationResult:
         """
@@ -128,12 +129,12 @@ class WorkflowResponseValidator:
 
         Validates in order:
         1. Workflow existence (BR-AI-023)
-        2. Container image consistency (BR-HAPI-196)
+        2. Execution bundle consistency (BR-HAPI-196, DD-WORKFLOW-017)
         3. Parameter schema (BR-HAPI-191)
 
         Args:
             workflow_id: Workflow ID from LLM response
-            container_image: Container image from LLM response (can be None)
+            execution_bundle: Execution bundle from LLM response (can be None)
             parameters: Parameters from LLM response
 
         Returns:
@@ -159,20 +160,19 @@ class WorkflowResponseValidator:
                 f"Workflow '{workflow_id}' not found in catalog. "
                 f"Please select a different workflow from the search results."
             )
-            # Can't continue validation without workflow
             return ValidationResult(is_valid=False, errors=errors)
 
         # STEP 1b: Action-Type Cross-Check (DD-WORKFLOW-016, Gap 3)
         action_type_errors = self._validate_action_type_crosscheck(workflow)
         errors.extend(action_type_errors)
 
-        # STEP 2: Container Image Consistency (BR-HAPI-196)
-        image_errors = self._validate_container_image(
-            container_image,
-            workflow.container_image,
+        # STEP 2: Execution Bundle Consistency (BR-HAPI-196, DD-WORKFLOW-017)
+        bundle_errors = self._validate_execution_bundle(
+            execution_bundle,
+            workflow.execution_bundle,
             workflow_id
         )
-        errors.extend(image_errors)
+        errors.extend(bundle_errors)
 
         # STEP 3: Parameter Schema Validation (BR-HAPI-191)
         param_errors = self._validate_parameters(parameters, workflow)
@@ -182,14 +182,14 @@ class WorkflowResponseValidator:
             return ValidationResult(
                 is_valid=False,
                 errors=errors,
-                validated_container_image=workflow.container_image,
+                validated_execution_bundle=workflow.execution_bundle,
                 schema_hint=self._format_schema_hint(workflow)
             )
 
         return ValidationResult(
             is_valid=True,
             errors=[],
-            validated_container_image=workflow.container_image
+            validated_execution_bundle=workflow.execution_bundle
         )
 
     def _validate_workflow_exists(self, workflow_id: str):
@@ -298,25 +298,26 @@ class WorkflowResponseValidator:
             )
             return []
 
-    def _validate_container_image(
+    def _validate_execution_bundle(
         self,
-        llm_image: Optional[str],
-        catalog_image: str,
+        llm_bundle: Optional[str],
+        catalog_bundle: str,
         workflow_id: str
     ) -> List[str]:
         """
-        STEP 2: Validate container image consistency.
+        STEP 2: Validate execution bundle consistency.
 
-        Business Requirement: BR-HAPI-196 (Container Image Consistency)
+        Business Requirement: BR-HAPI-196 (Execution Bundle Consistency)
+        Design Decision: DD-WORKFLOW-017 (Field Renames)
 
         Cases:
-        - LLM provides matching image → OK
-        - LLM provides null/empty → Use catalog image (OK)
-        - LLM provides mismatched image → Error (hallucination)
+        - LLM provides matching bundle -> OK
+        - LLM provides null/empty -> Use catalog bundle (OK)
+        - LLM provides mismatched bundle -> Error (hallucination)
 
         Args:
-            llm_image: Container image from LLM response
-            catalog_image: Container image from workflow catalog
+            llm_bundle: Execution bundle from LLM response
+            catalog_bundle: Execution bundle from workflow catalog
             workflow_id: Workflow ID for error messages
 
         Returns:
@@ -324,17 +325,16 @@ class WorkflowResponseValidator:
         """
         errors: List[str] = []
 
-        if llm_image is None or llm_image == "":
-            # LLM didn't specify - we'll use catalog value (OK)
-            logger.debug(f"Container image not specified, using catalog: {catalog_image}")
+        if llm_bundle is None or llm_bundle == "":
+            logger.debug(f"Execution bundle not specified, using catalog: {catalog_bundle}")
             return []
 
-        if llm_image != catalog_image:
-            logger.info(f"Container image mismatch: LLM={llm_image}, Catalog={catalog_image}")
+        if llm_bundle != catalog_bundle:
+            logger.info(f"Execution bundle mismatch: LLM={llm_bundle}, Catalog={catalog_bundle}")
             errors.append(
-                f"Container image mismatch for workflow '{workflow_id}': "
-                f"you provided '{llm_image}' but catalog has '{catalog_image}'. "
-                f"Please use the correct image from the workflow catalog or leave it null."
+                f"Execution bundle mismatch for workflow '{workflow_id}': "
+                f"you provided '{llm_bundle}' but catalog has '{catalog_bundle}'. "
+                f"Please use the correct execution bundle from the workflow catalog or leave it null."
             )
 
         return errors

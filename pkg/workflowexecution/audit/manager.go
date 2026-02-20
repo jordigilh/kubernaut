@@ -178,7 +178,7 @@ func (m *Manager) RecordWorkflowSelectionCompleted(ctx context.Context, wfe *wor
 	payload := api.WorkflowExecutionAuditPayload{
 		WorkflowID:      wfe.Spec.WorkflowRef.WorkflowID,
 		WorkflowVersion: wfe.Spec.WorkflowRef.Version,
-		ContainerImage:  wfe.Spec.WorkflowRef.ContainerImage,
+		ContainerImage:  wfe.Spec.WorkflowRef.ExecutionBundle,
 		ExecutionName:   wfe.Name,
 		Phase:           api.WorkflowExecutionAuditPayloadPhase(phase),
 		TargetResource:  wfe.Spec.TargetResource, // Already a string per CRD definition
@@ -257,12 +257,18 @@ func (m *Manager) RecordExecutionWorkflowStarted(
 	payload := api.WorkflowExecutionAuditPayload{
 		WorkflowID:      wfe.Spec.WorkflowRef.WorkflowID,
 		WorkflowVersion: wfe.Spec.WorkflowRef.Version,
-		ContainerImage:  wfe.Spec.WorkflowRef.ContainerImage,
+		ContainerImage:  wfe.Spec.WorkflowRef.ExecutionBundle,
 		ExecutionName:   wfe.Name,
 		Phase:           api.WorkflowExecutionAuditPayloadPhase(phase),
 		TargetResource:  wfe.Spec.TargetResource, // Already a string per CRD definition
 	}
 	payload.PipelinerunName.SetTo(pipelineRunName)
+
+	// Add execution parameters for SOC2 chain of custody (Issue #103)
+	if len(wfe.Spec.Parameters) > 0 {
+		payload.Parameters.SetTo(api.WorkflowExecutionAuditPayloadParameters(wfe.Spec.Parameters))
+	}
+
 	// Use proper Gap #6 constructor (added to OpenAPI spec discriminator)
 	event.EventData = api.NewAuditEventRequestEventDataWorkflowexecutionExecutionStartedAuditEventRequestEventData(payload)
 
@@ -351,7 +357,7 @@ func (m *Manager) recordAuditEvent(
 		WorkflowVersion: wfe.Spec.WorkflowRef.Version,
 		TargetResource:  wfe.Spec.TargetResource,
 		Phase:           api.WorkflowExecutionAuditPayloadPhase(wfe.Status.Phase),
-		ContainerImage:  wfe.Spec.WorkflowRef.ContainerImage,
+		ContainerImage:  wfe.Spec.WorkflowRef.ExecutionBundle,
 		ExecutionName:   wfe.Name,
 	}
 
@@ -378,6 +384,11 @@ func (m *Manager) recordAuditEvent(
 	// Add PipelineRun reference if present
 	if wfe.Status.ExecutionRef != nil {
 		payload.PipelinerunName.SetTo(wfe.Status.ExecutionRef.Name)
+	}
+
+	// Add execution parameters for SOC2 chain of custody (Issue #103)
+	if len(wfe.Spec.Parameters) > 0 {
+		payload.Parameters.SetTo(api.WorkflowExecutionAuditPayloadParameters(wfe.Spec.Parameters))
 	}
 
 	// Set event data using ogen union constructor based on action
@@ -501,7 +512,7 @@ func (m *Manager) recordFailureAuditWithDetails(ctx context.Context, wfe *workfl
 		WorkflowVersion: wfe.Spec.WorkflowRef.Version,
 		TargetResource:  wfe.Spec.TargetResource,
 		Phase:           api.WorkflowExecutionAuditPayloadPhase(wfe.Status.Phase),
-		ContainerImage:  wfe.Spec.WorkflowRef.ContainerImage,
+		ContainerImage:  wfe.Spec.WorkflowRef.ExecutionBundle,
 		ExecutionName:   wfe.Name,
 	}
 
@@ -537,6 +548,11 @@ func (m *Manager) recordFailureAuditWithDetails(ctx context.Context, wfe *workfl
 	// Add PipelineRun reference if present
 	if wfe.Status.ExecutionRef != nil {
 		payload.PipelinerunName.SetTo(wfe.Status.ExecutionRef.Name)
+	}
+
+	// Add execution parameters for SOC2 chain of custody (Issue #103)
+	if len(wfe.Spec.Parameters) > 0 {
+		payload.Parameters.SetTo(api.WorkflowExecutionAuditPayloadParameters(wfe.Spec.Parameters))
 	}
 
 	// Set event data using ogen union constructor - always use "failed" for recordFailureAuditWithDetails

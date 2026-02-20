@@ -261,7 +261,7 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowID:     "test-workflow",
 				Version:        "1.0.0",
-				ContainerImage: "test-image:latest",
+				ExecutionBundle: "test-image:latest",
 				Confidence:     0.95,
 			}
 			ai.Status.ApprovalRequired = false
@@ -472,7 +472,7 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowID:     "test-workflow",
 				Version:        "1.0.0",
-				ContainerImage: "test-image:latest",
+				ExecutionBundle: "test-image:latest",
 				Confidence:     0.65, // Low confidence
 			}
 			ai.Status.ApprovalRequired = true

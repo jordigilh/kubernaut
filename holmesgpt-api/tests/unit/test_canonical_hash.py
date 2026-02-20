@@ -31,21 +31,21 @@ class TestCanonicalSpecHash:
 
     def test_empty_spec_matches_go(self):
         """UT-HASH-001: Empty/None spec produces same hash as Go nil spec."""
-        from utils.canonical_hash import canonical_spec_hash
+        from src.utils.canonical_hash import canonical_spec_hash
 
         result = canonical_spec_hash(None)
         assert result == "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
 
     def test_empty_dict_matches_go(self):
         """UT-HASH-002: Empty dict produces same hash as Go empty map."""
-        from utils.canonical_hash import canonical_spec_hash
+        from src.utils.canonical_hash import canonical_spec_hash
 
         result = canonical_spec_hash({})
         assert result == "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
 
     def test_simple_spec_matches_go(self):
         """UT-HASH-003: Simple spec with nested map produces same hash as Go."""
-        from utils.canonical_hash import canonical_spec_hash
+        from src.utils.canonical_hash import canonical_spec_hash
 
         spec = {
             "replicas": 3,
@@ -60,7 +60,7 @@ class TestCanonicalSpecHash:
 
     def test_map_order_independence(self):
         """UT-HASH-004: Different insertion order produces identical hash (Go compatibility)."""
-        from utils.canonical_hash import canonical_spec_hash
+        from src.utils.canonical_hash import canonical_spec_hash
 
         spec_a = {
             "replicas": 3,
@@ -75,7 +75,7 @@ class TestCanonicalSpecHash:
 
     def test_slice_order_independence(self):
         """UT-HASH-005: Different list order produces identical hash (Go compatibility)."""
-        from utils.canonical_hash import canonical_spec_hash
+        from src.utils.canonical_hash import canonical_spec_hash
 
         spec_ab = {
             "containers": [
@@ -94,7 +94,7 @@ class TestCanonicalSpecHash:
 
     def test_hash_format(self):
         """UT-HASH-006: Hash format is 'sha256:<64-hex>' (71 chars total)."""
-        from utils.canonical_hash import canonical_spec_hash
+        from src.utils.canonical_hash import canonical_spec_hash
 
         result = canonical_spec_hash({"key": "value"})
         assert result.startswith("sha256:")
@@ -102,7 +102,7 @@ class TestCanonicalSpecHash:
 
     def test_idempotent(self):
         """UT-HASH-007: Same input always produces same hash."""
-        from utils.canonical_hash import canonical_spec_hash
+        from src.utils.canonical_hash import canonical_spec_hash
 
         spec = {"replicas": 3, "image": "nginx:1.21"}
         h1 = canonical_spec_hash(spec)

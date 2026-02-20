@@ -101,10 +101,8 @@ const (
 	IntegrationTestNamePrefix = "int-test-"
 
 	// Controller configuration
-	DefaultCooldownPeriod         = 5 * time.Minute
-	DefaultBaseCooldownPeriod     = 1 * time.Minute
-	DefaultMaxCooldownPeriod      = 10 * time.Minute
-	DefaultMaxConsecutiveFailures = 5
+	DefaultCooldownPeriod = 5 * time.Minute
+	// Issue #99: Backoff constants removed (DD-RO-002 Phase 3)
 )
 
 // testClock is a real clock for integration tests
@@ -340,9 +338,6 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		ExecutionNamespace:     WorkflowExecutionNS,
 		ServiceAccountName:     "kubernaut-workflow-runner",
 		CooldownPeriod:         10 * time.Second, // Short cooldown for integration tests (default 5min too long)
-		BaseCooldownPeriod:     DefaultBaseCooldownPeriod,
-		MaxCooldownPeriod:      DefaultMaxCooldownPeriod,
-		MaxConsecutiveFailures: DefaultMaxConsecutiveFailures,
 		AuditStore:             auditStore,       // REAL audit store for integration tests
 		Metrics:                testMetrics,       // Test-isolated metrics (DD-METRICS-001)
 		StatusManager:          statusManager,     // DD-PERF-001: Atomic status updates
@@ -453,7 +448,7 @@ func createUniqueWFE(testID, targetResource string) *workflowexecutionv1alpha1.W
 			WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 				WorkflowID:     "test-workflow",
 				Version:        "v1.0.0",
-				ContainerImage: "ghcr.io/kubernaut/workflows/test@sha256:abc123",
+				ExecutionBundle: "ghcr.io/kubernaut/workflows/test@sha256:abc123",
 			},
 			TargetResource:  targetResource,
 			ExecutionEngine: "tekton",

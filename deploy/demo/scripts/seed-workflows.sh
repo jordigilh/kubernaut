@@ -54,6 +54,117 @@ register_workflow '{
   "container_image": "quay.io/kubernaut-cicd/test-workflows/crashloop-config-fix-job:latest"
 }' "crashloop-config-fix-job"
 
+# ============================================
+# Demo Scenario Workflows (#114, #119-#130)
+# Built by: deploy/demo/scripts/build-demo-workflows.sh
+# ============================================
+
+# Workflow 3: GitOps Revert (#125 -- GitOps drift remediation)
+# actionType: GitRevertCommit | detectedLabels: gitOpsTool: "*"
+register_workflow '{
+  "container_image": "quay.io/kubernaut-cicd/test-workflows/git-revert-job:v1.0.0"
+}' "git-revert-job"
+
+# Workflow 4: Node Provisioning (#126 -- Cluster autoscaling)
+# actionType: ProvisionNode
+register_workflow '{
+  "container_image": "quay.io/kubernaut-cicd/test-workflows/provision-node-job:v1.0.0"
+}' "provision-node-job"
+
+# Workflow 5: Proactive Rollback (#128 -- SLO error budget burn)
+# actionType: ProactiveRollback
+register_workflow '{
+  "container_image": "quay.io/kubernaut-cicd/test-workflows/proactive-rollback-job:v1.0.0"
+}' "proactive-rollback-job"
+
+# Workflow 6: Graceful Restart (#129 -- Predictive memory exhaustion)
+# actionType: GracefulRestart
+register_workflow '{
+  "container_image": "quay.io/kubernaut-cicd/test-workflows/graceful-restart-job:v1.0.0"
+}' "graceful-restart-job"
+
+# Workflow 7: CrashLoop Rollback (#120 -- CrashLoopBackOff remediation)
+# actionType: GracefulRestart
+register_workflow '{
+  "container_image": "quay.io/kubernaut-cicd/test-workflows/crashloop-rollback-job:v1.0.0"
+}' "crashloop-rollback-job"
+
+# Workflow 8: Patch HPA (#123 -- HPA maxed out)
+# actionType: PatchHPA | detectedLabels: hpaEnabled: "true"
+register_workflow '{
+  "container_image": "quay.io/kubernaut-cicd/test-workflows/patch-hpa-job:v1.0.0"
+}' "patch-hpa-job"
+
+# Workflow 9: Relax PDB (#124 -- PDB deadlock)
+# actionType: RelaxPDB | detectedLabels: pdbProtected: "true"
+register_workflow '{
+  "container_image": "quay.io/kubernaut-cicd/test-workflows/relax-pdb-job:v1.0.0"
+}' "relax-pdb-job"
+
+# Workflow 10: Remove Taint (#122 -- Pending pods due to node taint)
+# actionType: RemoveTaint
+register_workflow '{
+  "container_image": "quay.io/kubernaut-cicd/test-workflows/remove-taint-job:v1.0.0"
+}' "remove-taint-job"
+
+# Workflow 11: Cleanup PVC (#121 -- Orphaned PVC disk pressure)
+# actionType: CleanupPVC
+register_workflow '{
+  "container_image": "quay.io/kubernaut-cicd/test-workflows/cleanup-pvc-job:v1.0.0"
+}' "cleanup-pvc-job"
+
+# Workflow 12: Cordon + Drain (#127 -- Node NotReady)
+# actionType: CordonDrainNode
+register_workflow '{
+  "container_image": "quay.io/kubernaut-cicd/test-workflows/cordon-drain-job:v1.0.0"
+}' "cordon-drain-job"
+
+# Workflow 13: Rollback Deployment (#130 -- Stuck rollout)
+# actionType: GracefulRestart
+register_workflow '{
+  "container_image": "quay.io/kubernaut-cicd/test-workflows/rollback-deployment-job:v1.0.0"
+}' "rollback-deployment-job"
+
+# ============================================
+# New Demo Scenario Workflows (#133-#138)
+# ============================================
+
+# Workflow 14: Fix Certificate (#133 -- cert-manager CRD failure)
+# actionType: FixCertificate
+register_workflow '{
+  "container_image": "quay.io/kubernaut-cicd/test-workflows/fix-certificate-job:v1.0.0"
+}' "fix-certificate-job"
+
+# Workflow 15: Fix Certificate GitOps (#134 -- cert-manager + ArgoCD)
+# actionType: GitRevertCommit | detectedLabels: gitOpsTool: "*"
+register_workflow '{
+  "container_image": "quay.io/kubernaut-cicd/test-workflows/fix-certificate-gitops-job:v1.0.0"
+}' "fix-certificate-gitops-job"
+
+# Workflow 16: Helm Rollback (#135 -- Helm-managed CrashLoopBackOff)
+# actionType: HelmRollback | detectedLabels: helmManaged: "true"
+register_workflow '{
+  "container_image": "quay.io/kubernaut-cicd/test-workflows/helm-rollback-job:v1.0.0"
+}' "helm-rollback-job"
+
+# Workflow 17: Fix AuthorizationPolicy (#136 -- Linkerd mesh routing)
+# actionType: FixAuthorizationPolicy | detectedLabels: serviceMesh: "*"
+register_workflow '{
+  "container_image": "quay.io/kubernaut-cicd/test-workflows/fix-authz-policy-job:v1.0.0"
+}' "fix-authz-policy-job"
+
+# Workflow 18: Fix StatefulSet PVC (#137 -- StatefulSet PVC failure)
+# actionType: FixStatefulSetPVC | detectedLabels: stateful: "true"
+register_workflow '{
+  "container_image": "quay.io/kubernaut-cicd/test-workflows/fix-statefulset-pvc-job:v1.0.0"
+}' "fix-statefulset-pvc-job"
+
+# Workflow 19: Fix NetworkPolicy (#138 -- NetworkPolicy traffic block)
+# actionType: FixNetworkPolicy | detectedLabels: networkIsolated: "true"
+register_workflow '{
+  "container_image": "quay.io/kubernaut-cicd/test-workflows/fix-network-policy-job:v1.0.0"
+}' "fix-network-policy-job"
+
 echo ""
-echo "==> Workflow seeding complete"
+echo "==> Workflow seeding complete (19 workflows)"
 echo "==> Verify: curl -s ${DATASTORAGE_URL}/api/v1/workflows | jq '.'"

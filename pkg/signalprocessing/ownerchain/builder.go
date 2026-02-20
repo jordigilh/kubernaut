@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package ownerchain provides K8s ownership chain traversal for DetectedLabels validation.
+// Package ownerchain provides K8s ownership chain traversal for enrichment.
 //
 // # Business Requirements
 //
@@ -60,7 +60,7 @@ import (
 const MaxOwnerChainDepth = 5
 
 // Builder constructs the K8s ownership chain.
-// Used by HolmesGPT-API to validate DetectedLabels applicability.
+// Used for K8s context enrichment in the SignalProcessing pipeline.
 // DD-WORKFLOW-001 v1.8: Namespace, Kind, Name ONLY (no APIVersion/UID)
 // BR-SP-100: Max depth 5, owners only (source not included)
 type Builder struct {
@@ -69,7 +69,7 @@ type Builder struct {
 }
 
 // NewBuilder creates a new OwnerChain builder.
-// Per BR-SP-100: K8s ownerReference traversal for DetectedLabels validation.
+// Per BR-SP-100: K8s ownerReference traversal for enrichment.
 func NewBuilder(c client.Client, logger logr.Logger) *Builder {
 	return &Builder{
 		client: c,

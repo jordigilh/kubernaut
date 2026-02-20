@@ -62,7 +62,7 @@ labels:
   priority: p1
 execution:
   engine: tekton
-  bundle: quay.io/kubernaut/oomkill-workflow:v1.0.0
+  bundle: quay.io/kubernaut/oomkill-workflow:v1.0.0@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
 parameters:
   - name: NAMESPACE
     type: string
@@ -147,6 +147,9 @@ labels:
   environment: [staging, production]
   component: pod
   priority: p1
+execution:
+  engine: tekton
+  bundle: ghcr.io/kubernaut/workflows/multi-env-test@sha256:a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2
 parameters:
   - name: PARAM
     type: string
@@ -191,7 +194,7 @@ parameters:
     description: A param
 execution:
   engine: tekton
-  bundle: quay.io/test/no-signal:v1.0.0
+  bundle: quay.io/test/no-signal:v1.0.0@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
 `
 			parsedSchema, err := parser.ParseAndValidate(noSignalTypeYAML)
 			Expect(err).ToNot(HaveOccurred(), "schema without signalType should be accepted")

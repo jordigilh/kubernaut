@@ -174,15 +174,7 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 								Name:      "payment-service",
 								Namespace: "payments",
 							},
-							EnrichmentResults: sharedtypes.EnrichmentResults{
-								DetectedLabels: &sharedtypes.DetectedLabels{
-									GitOpsManaged: true,
-									PDBProtected:  true,
-								},
-								OwnerChain: []sharedtypes.OwnerChainEntry{
-									{Namespace: "payments", Kind: "Deployment", Name: "payment-service"},
-								},
-							},
+							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
 						AnalysisTypes: []string{"investigation"},
 					},
@@ -237,10 +229,10 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 			Expect(eventCounts["aianalysis.phase.transition"]).To(Equal(3),
 				"Should have EXACTLY 3 phase transitions: Pending→Investigating→Analyzing→Completed (no duplicates)")
 
-			Expect(eventCounts).To(HaveKey("aianalysis.holmesgpt.call"),
-				"Should audit HolmesGPT-API calls during investigation")
-			Expect(eventCounts["aianalysis.holmesgpt.call"]).To(Equal(1),
-				"Should have EXACTLY 1 HolmesGPT call in happy path (no retries/duplicates)")
+			Expect(eventCounts).To(HaveKey("aianalysis.aiagent.call"),
+				"Should audit AI agent API calls during investigation")
+			Expect(eventCounts["aianalysis.aiagent.call"]).To(Equal(1),
+				"Should have EXACTLY 1 AI agent call in happy path (no retries/duplicates)")
 
 			Expect(eventCounts).To(HaveKey("aianalysis.rego.evaluation"),
 				"Should audit Rego policy evaluation for approval decision")
@@ -355,8 +347,8 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 			}
 		})
 
-		It("should audit HolmesGPT-API calls with correct endpoint and status", func() {
-			By("Creating AIAnalysis that will trigger HolmesGPT-API call")
+		It("should audit AI agent API calls with correct endpoint and status", func() {
+			By("Creating AIAnalysis that will trigger AI agent API call")
 			suffix := randomSuffix()
 			namespace := createTestNamespace("audit-hapi")
 			analysis := &aianalysisv1alpha1.AIAnalysis{
@@ -395,16 +387,16 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 
 			remediationID := analysis.Spec.RemediationID
 
-		By("Waiting for HolmesGPT-API call events to appear in Data Storage")
-		hapiEvents := waitForSpecificAuditEvent(remediationID, aianalysisaudit.EventTypeHolmesGPTCall, 1)
+		By("Waiting for AI agent call events to appear in Data Storage")
+		hapiEvents := waitForSpecificAuditEvent(remediationID, aianalysisaudit.EventTypeAIAgentCall, 1)
 
-			By("Validating HolmesGPT-API call event_data structure")
+			By("Validating AI agent API call event_data structure")
 			for _, event := range hapiEvents {
 				// Access strongly-typed payload via discriminated union
-				payload := event.EventData.AIAnalysisHolmesGPTCallPayload
-				Expect(payload).ToNot(BeNil(), "Should have AIAnalysisHolmesGPTCallPayload")
+				payload := event.EventData.AIAnalysisAIAgentCallPayload
+				Expect(payload).ToNot(BeNil(), "Should have AIAnalysisAIAgentCallPayload")
 
-				// Per DD-AUDIT-004: HolmesGPTCallPayload structure
+				// Per DD-AUDIT-004: AIAgentCallPayload structure
 				Expect(payload.Endpoint).ToNot(BeEmpty(), "Should record API endpoint called")
 				Expect(payload.HTTPStatusCode).ToNot(BeZero(), "Should record HTTP status code")
 				Expect(payload.DurationMs).ToNot(BeZero(), "Should record call duration")
@@ -444,11 +436,7 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 								Name:      "frontend",
 								Namespace: "default",
 							},
-							EnrichmentResults: sharedtypes.EnrichmentResults{
-								OwnerChain: []sharedtypes.OwnerChainEntry{
-									{Namespace: "default", Kind: "Deployment", Name: "frontend"},
-								},
-							},
+							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
 						AnalysisTypes: []string{"investigation"},
 					},
@@ -513,11 +501,7 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 								Name:      "payment-service",
 								Namespace: "payments",
 							},
-							EnrichmentResults: sharedtypes.EnrichmentResults{
-								OwnerChain: []sharedtypes.OwnerChainEntry{
-									{Namespace: "payments", Kind: "Deployment", Name: "payment-service"},
-								},
-							},
+							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
 						AnalysisTypes: []string{"investigation"},
 					},

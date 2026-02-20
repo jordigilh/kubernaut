@@ -22,8 +22,8 @@ import (
 type AlternativeWorkflow struct {
 	// Workflow identifier.
 	WorkflowID string `json:"workflow_id"`
-	// OCI image reference.
-	ContainerImage OptNilString `json:"container_image"`
+	// OCI execution bundle reference.
+	ExecutionBundle OptNilString `json:"execution_bundle"`
 	// Confidence score for this alternative.
 	Confidence float64 `json:"confidence"`
 	// Why this alternative was considered but not selected.
@@ -35,9 +35,9 @@ func (s *AlternativeWorkflow) GetWorkflowID() string {
 	return s.WorkflowID
 }
 
-// GetContainerImage returns the value of ContainerImage.
-func (s *AlternativeWorkflow) GetContainerImage() OptNilString {
-	return s.ContainerImage
+// GetExecutionBundle returns the value of ExecutionBundle.
+func (s *AlternativeWorkflow) GetExecutionBundle() OptNilString {
+	return s.ExecutionBundle
 }
 
 // GetConfidence returns the value of Confidence.
@@ -55,9 +55,9 @@ func (s *AlternativeWorkflow) SetWorkflowID(val string) {
 	s.WorkflowID = val
 }
 
-// SetContainerImage sets the value of ContainerImage.
-func (s *AlternativeWorkflow) SetContainerImage(val OptNilString) {
-	s.ContainerImage = val
+// SetExecutionBundle sets the value of ExecutionBundle.
+func (s *AlternativeWorkflow) SetExecutionBundle(val OptNilString) {
+	s.ExecutionBundle = val
 }
 
 // SetConfidence sets the value of Confidence.
@@ -70,131 +70,71 @@ func (s *AlternativeWorkflow) SetRationale(val string) {
 	s.Rationale = val
 }
 
-// Auto-detected cluster characteristics from SignalProcessing.
-// These labels are used for:
-// 1. LLM context (natural language) - help LLM understand cluster environment
-// 2. MCP workflow filtering - filter workflows to only compatible ones
-// Design Decision: DD-WORKFLOW-001 v2.2, DD-RECOVERY-003
-// Changes:
-// - v2.1: Added `failedDetections` field to track which detections failed
-// - v2.2: Removed `podSecurityLevel` (PSP deprecated, PSS is namespace-level)
-// Consumer logic: if field is in failedDetections, ignore its value.
-// Ref: #/components/schemas/DetectedLabels
-type DetectedLabels struct {
-	// Field names where detection failed. Consumer should ignore values of these fields. Valid values:
-	// gitOpsManaged, pdbProtected, hpaEnabled, stateful, helmManaged, networkIsolated, serviceMesh.
-	FailedDetections []string `json:"failedDetections"`
-	// Whether namespace is managed by GitOps.
-	GitOpsManaged OptBool `json:"gitOpsManaged"`
-	// GitOps tool: 'argocd', 'flux', or ''.
-	GitOpsTool OptString `json:"gitOpsTool"`
-	// Whether PodDisruptionBudget protects this workload.
-	PdbProtected OptBool `json:"pdbProtected"`
-	// Whether HorizontalPodAutoscaler is active.
-	HpaEnabled OptBool `json:"hpaEnabled"`
-	// Whether this is a stateful workload (StatefulSet or has PVCs).
-	Stateful OptBool `json:"stateful"`
-	// Whether resource is managed by Helm.
-	HelmManaged OptBool `json:"helmManaged"`
-	// Whether NetworkPolicy restricts traffic.
-	NetworkIsolated OptBool `json:"networkIsolated"`
-	// Service mesh: 'istio', 'linkerd', ''.
-	ServiceMesh OptString `json:"serviceMesh"`
+// Business context from SignalProcessing categorization phase.
+// BR-SP-002: Business Classification
+// BR-SP-080: Business Unit Detection
+// BR-SP-081: SLA Requirement Mapping
+// Used for:
+// 1. Workflow filtering - select workflows matching business context
+// 2. Rego approval policies - criticality/SLA-based gating
+// 3. LLM context - business impact understanding.
+// Ref: #/components/schemas/BusinessClassification
+type BusinessClassification struct {
+	// Business unit owning the service (e.g., 'payments', 'platform').
+	BusinessUnit OptNilString `json:"businessUnit"`
+	// Service owner team or individual.
+	ServiceOwner OptNilString `json:"serviceOwner"`
+	// Business criticality: critical, high, medium, low.
+	Criticality OptNilString `json:"criticality"`
+	// SLA tier: platinum, gold, silver, bronze.
+	SlaRequirement OptNilString `json:"slaRequirement"`
 }
 
-// GetFailedDetections returns the value of FailedDetections.
-func (s *DetectedLabels) GetFailedDetections() []string {
-	return s.FailedDetections
+// GetBusinessUnit returns the value of BusinessUnit.
+func (s *BusinessClassification) GetBusinessUnit() OptNilString {
+	return s.BusinessUnit
 }
 
-// GetGitOpsManaged returns the value of GitOpsManaged.
-func (s *DetectedLabels) GetGitOpsManaged() OptBool {
-	return s.GitOpsManaged
+// GetServiceOwner returns the value of ServiceOwner.
+func (s *BusinessClassification) GetServiceOwner() OptNilString {
+	return s.ServiceOwner
 }
 
-// GetGitOpsTool returns the value of GitOpsTool.
-func (s *DetectedLabels) GetGitOpsTool() OptString {
-	return s.GitOpsTool
+// GetCriticality returns the value of Criticality.
+func (s *BusinessClassification) GetCriticality() OptNilString {
+	return s.Criticality
 }
 
-// GetPdbProtected returns the value of PdbProtected.
-func (s *DetectedLabels) GetPdbProtected() OptBool {
-	return s.PdbProtected
+// GetSlaRequirement returns the value of SlaRequirement.
+func (s *BusinessClassification) GetSlaRequirement() OptNilString {
+	return s.SlaRequirement
 }
 
-// GetHpaEnabled returns the value of HpaEnabled.
-func (s *DetectedLabels) GetHpaEnabled() OptBool {
-	return s.HpaEnabled
+// SetBusinessUnit sets the value of BusinessUnit.
+func (s *BusinessClassification) SetBusinessUnit(val OptNilString) {
+	s.BusinessUnit = val
 }
 
-// GetStateful returns the value of Stateful.
-func (s *DetectedLabels) GetStateful() OptBool {
-	return s.Stateful
+// SetServiceOwner sets the value of ServiceOwner.
+func (s *BusinessClassification) SetServiceOwner(val OptNilString) {
+	s.ServiceOwner = val
 }
 
-// GetHelmManaged returns the value of HelmManaged.
-func (s *DetectedLabels) GetHelmManaged() OptBool {
-	return s.HelmManaged
+// SetCriticality sets the value of Criticality.
+func (s *BusinessClassification) SetCriticality(val OptNilString) {
+	s.Criticality = val
 }
 
-// GetNetworkIsolated returns the value of NetworkIsolated.
-func (s *DetectedLabels) GetNetworkIsolated() OptBool {
-	return s.NetworkIsolated
-}
-
-// GetServiceMesh returns the value of ServiceMesh.
-func (s *DetectedLabels) GetServiceMesh() OptString {
-	return s.ServiceMesh
-}
-
-// SetFailedDetections sets the value of FailedDetections.
-func (s *DetectedLabels) SetFailedDetections(val []string) {
-	s.FailedDetections = val
-}
-
-// SetGitOpsManaged sets the value of GitOpsManaged.
-func (s *DetectedLabels) SetGitOpsManaged(val OptBool) {
-	s.GitOpsManaged = val
-}
-
-// SetGitOpsTool sets the value of GitOpsTool.
-func (s *DetectedLabels) SetGitOpsTool(val OptString) {
-	s.GitOpsTool = val
-}
-
-// SetPdbProtected sets the value of PdbProtected.
-func (s *DetectedLabels) SetPdbProtected(val OptBool) {
-	s.PdbProtected = val
-}
-
-// SetHpaEnabled sets the value of HpaEnabled.
-func (s *DetectedLabels) SetHpaEnabled(val OptBool) {
-	s.HpaEnabled = val
-}
-
-// SetStateful sets the value of Stateful.
-func (s *DetectedLabels) SetStateful(val OptBool) {
-	s.Stateful = val
-}
-
-// SetHelmManaged sets the value of HelmManaged.
-func (s *DetectedLabels) SetHelmManaged(val OptBool) {
-	s.HelmManaged = val
-}
-
-// SetNetworkIsolated sets the value of NetworkIsolated.
-func (s *DetectedLabels) SetNetworkIsolated(val OptBool) {
-	s.NetworkIsolated = val
-}
-
-// SetServiceMesh sets the value of ServiceMesh.
-func (s *DetectedLabels) SetServiceMesh(val OptString) {
-	s.ServiceMesh = val
+// SetSlaRequirement sets the value of SlaRequirement.
+func (s *BusinessClassification) SetSlaRequirement(val OptNilString) {
+	s.SlaRequirement = val
 }
 
 // Enrichment results from SignalProcessing.
-// Contains Kubernetes context, auto-detected labels, and custom labels
-// that are used for workflow filtering and LLM context.
+// Contains Kubernetes context, custom labels, and business classification
+// used for workflow filtering and LLM context.
+// ADR-056: detectedLabels removed -- now computed by HAPI post-RCA via LabelDetector.
+// ADR-055: ownerChain removed -- resolved by HAPI via get_resource_context tool.
 // Design Decision: DD-RECOVERY-003, DD-HAPI-001
 // Custom Labels (DD-HAPI-001):
 // - Format: map[string][]string (subdomain → list of values)
@@ -206,13 +146,12 @@ func (s *DetectedLabels) SetServiceMesh(val OptString) {
 type EnrichmentResults struct {
 	// Kubernetes resource context.
 	KubernetesContext OptNilEnrichmentResultsKubernetesContext `json:"kubernetesContext"`
-	// Auto-detected cluster characteristics.
-	DetectedLabels OptNilDetectedLabels `json:"detectedLabels"`
 	// Custom labels from SignalProcessing (subdomain → values). Auto-appended to workflow search per
 	// DD-HAPI-001.
 	CustomLabels OptNilEnrichmentResultsCustomLabels `json:"customLabels"`
-	// Quality score of enrichment (0-1).
-	EnrichmentQuality OptFloat64 `json:"enrichmentQuality"`
+	// Business classification from SP categorization (BR-SP-002). Used for workflow filtering and Rego
+	// approval policies.
+	BusinessClassification OptNilBusinessClassification `json:"businessClassification"`
 }
 
 // GetKubernetesContext returns the value of KubernetesContext.
@@ -220,19 +159,14 @@ func (s *EnrichmentResults) GetKubernetesContext() OptNilEnrichmentResultsKubern
 	return s.KubernetesContext
 }
 
-// GetDetectedLabels returns the value of DetectedLabels.
-func (s *EnrichmentResults) GetDetectedLabels() OptNilDetectedLabels {
-	return s.DetectedLabels
-}
-
 // GetCustomLabels returns the value of CustomLabels.
 func (s *EnrichmentResults) GetCustomLabels() OptNilEnrichmentResultsCustomLabels {
 	return s.CustomLabels
 }
 
-// GetEnrichmentQuality returns the value of EnrichmentQuality.
-func (s *EnrichmentResults) GetEnrichmentQuality() OptFloat64 {
-	return s.EnrichmentQuality
+// GetBusinessClassification returns the value of BusinessClassification.
+func (s *EnrichmentResults) GetBusinessClassification() OptNilBusinessClassification {
+	return s.BusinessClassification
 }
 
 // SetKubernetesContext sets the value of KubernetesContext.
@@ -240,19 +174,14 @@ func (s *EnrichmentResults) SetKubernetesContext(val OptNilEnrichmentResultsKube
 	s.KubernetesContext = val
 }
 
-// SetDetectedLabels sets the value of DetectedLabels.
-func (s *EnrichmentResults) SetDetectedLabels(val OptNilDetectedLabels) {
-	s.DetectedLabels = val
-}
-
 // SetCustomLabels sets the value of CustomLabels.
 func (s *EnrichmentResults) SetCustomLabels(val OptNilEnrichmentResultsCustomLabels) {
 	s.CustomLabels = val
 }
 
-// SetEnrichmentQuality sets the value of EnrichmentQuality.
-func (s *EnrichmentResults) SetEnrichmentQuality(val OptFloat64) {
-	s.EnrichmentQuality = val
+// SetBusinessClassification sets the value of BusinessClassification.
+func (s *EnrichmentResults) SetBusinessClassification(val OptNilBusinessClassification) {
+	s.BusinessClassification = val
 }
 
 type EnrichmentResultsCustomLabels map[string][]string
@@ -455,6 +384,28 @@ func (s *HTTPError) SetRequestID(val OptNilString) {
 	s.RequestID = val
 }
 
+// Ref: #/components/schemas/HTTPValidationError
+type HTTPValidationError struct {
+	Detail []ValidationError `json:"detail"`
+}
+
+// GetDetail returns the value of Detail.
+func (s *HTTPValidationError) GetDetail() []ValidationError {
+	return s.Detail
+}
+
+// SetDetail sets the value of Detail.
+func (s *HTTPValidationError) SetDetail(val []ValidationError) {
+	s.Detail = val
+}
+
+func (*HTTPValidationError) incidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetRes() {
+}
+func (*HTTPValidationError) incidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRes() {}
+func (*HTTPValidationError) recoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetRes() {
+}
+func (*HTTPValidationError) recoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGetRes() {}
+
 // Structured reason for needs_human_review=true.
 // Business Requirements: BR-HAPI-197, BR-HAPI-200, BR-HAPI-212
 // Design Decision: DD-HAPI-002 v1.2
@@ -541,6 +492,11 @@ func (s *HumanReviewReason) UnmarshalText(data []byte) error {
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
+}
+
+type IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostAcceptedApplicationJSON jx.Raw
+
+func (*IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostAcceptedApplicationJSON) incidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes() {
 }
 
 type IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONBadRequest HTTPError
@@ -1356,14 +1312,14 @@ func (s *IncidentRequestSignalLabels) init() IncidentRequestSignalLabels {
 
 // Response model for incident analysis endpoint
 // Business Requirement: BR-HAPI-002 (Incident analysis response schema)
-// Design Decision: DD-WORKFLOW-001 v1.7 (OwnerChain validation)
 // Design Decision: DD-HAPI-002 v1.2 (Workflow Response Validation)
 // Design Decision: ADR-045 v1.2 (Alternative Workflows for Audit)
+// Design Decision: ADR-055 (LLM-Driven Context Enrichment)
 // Fields added per AIAnalysis team requests:
-// - target_in_owner_chain: Whether RCA target was found in OwnerChain (Dec 2, 2025)
 // - warnings: Non-fatal warnings for transparency (Dec 2, 2025)
 // - alternative_workflows: Other workflows considered (Dec 5, 2025) - INFORMATIONAL ONLY
-// - needs_human_review: AI could not produce reliable result (Dec 6, 2025).
+// - needs_human_review: AI could not produce reliable result (Dec 6, 2025)
+// ADR-055: target_in_owner_chain removed -- replaced by affected_resource in Rego input.
 // Ref: #/components/schemas/IncidentResponse
 type IncidentResponse struct {
 	// Incident identifier from request.
@@ -1372,7 +1328,7 @@ type IncidentResponse struct {
 	Analysis string `json:"analysis"`
 	// Structured RCA with summary, severity, contributing_factors.
 	RootCauseAnalysis IncidentResponseRootCauseAnalysis `json:"root_cause_analysis"`
-	// Selected workflow with workflow_id, containerImage, confidence, parameters.
+	// Selected workflow with workflow_id, execution_bundle, confidence, parameters.
 	SelectedWorkflow OptNilIncidentResponseSelectedWorkflow `json:"selected_workflow"`
 	// Overall confidence in analysis.
 	Confidence float64 `json:"confidence"`
@@ -1387,9 +1343,6 @@ type IncidentResponse struct {
 	// parsing warnings. Values: workflow_not_found, image_mismatch, parameter_validation_failed,
 	// no_matching_workflows, low_confidence, llm_parsing_error.
 	HumanReviewReason OptNilHumanReviewReason `json:"human_review_reason"`
-	// Whether RCA-identified target resource was found in OwnerChain. If false, DetectedLabels may be
-	// from different scope than affected resource.
-	TargetInOwnerChain OptBool `json:"target_in_owner_chain"`
 	// Non-fatal warnings (e.g., OwnerChain validation issues, low confidence).
 	Warnings []string `json:"warnings"`
 	// Other workflows considered but not selected. For operator context and audit trail only - NOT for
@@ -1399,6 +1352,9 @@ type IncidentResponse struct {
 	// validation result, and any errors. Empty if validation passed on first attempt or no workflow was
 	// selected.
 	ValidationAttemptsHistory []ValidationAttempt `json:"validation_attempts_history"`
+	// Cluster characteristics detected at runtime by HAPI (ADR-056). Includes: gitOpsManaged,
+	// pdbProtected, hpaEnabled, stateful, helmManaged, networkIsolated, serviceMesh, failedDetections.
+	DetectedLabels OptNilIncidentResponseDetectedLabels `json:"detected_labels"`
 }
 
 // GetIncidentID returns the value of IncidentID.
@@ -1441,11 +1397,6 @@ func (s *IncidentResponse) GetHumanReviewReason() OptNilHumanReviewReason {
 	return s.HumanReviewReason
 }
 
-// GetTargetInOwnerChain returns the value of TargetInOwnerChain.
-func (s *IncidentResponse) GetTargetInOwnerChain() OptBool {
-	return s.TargetInOwnerChain
-}
-
 // GetWarnings returns the value of Warnings.
 func (s *IncidentResponse) GetWarnings() []string {
 	return s.Warnings
@@ -1459,6 +1410,11 @@ func (s *IncidentResponse) GetAlternativeWorkflows() []AlternativeWorkflow {
 // GetValidationAttemptsHistory returns the value of ValidationAttemptsHistory.
 func (s *IncidentResponse) GetValidationAttemptsHistory() []ValidationAttempt {
 	return s.ValidationAttemptsHistory
+}
+
+// GetDetectedLabels returns the value of DetectedLabels.
+func (s *IncidentResponse) GetDetectedLabels() OptNilIncidentResponseDetectedLabels {
+	return s.DetectedLabels
 }
 
 // SetIncidentID sets the value of IncidentID.
@@ -1501,11 +1457,6 @@ func (s *IncidentResponse) SetHumanReviewReason(val OptNilHumanReviewReason) {
 	s.HumanReviewReason = val
 }
 
-// SetTargetInOwnerChain sets the value of TargetInOwnerChain.
-func (s *IncidentResponse) SetTargetInOwnerChain(val OptBool) {
-	s.TargetInOwnerChain = val
-}
-
 // SetWarnings sets the value of Warnings.
 func (s *IncidentResponse) SetWarnings(val []string) {
 	s.Warnings = val
@@ -1521,7 +1472,23 @@ func (s *IncidentResponse) SetValidationAttemptsHistory(val []ValidationAttempt)
 	s.ValidationAttemptsHistory = val
 }
 
-func (*IncidentResponse) incidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes() {}
+// SetDetectedLabels sets the value of DetectedLabels.
+func (s *IncidentResponse) SetDetectedLabels(val OptNilIncidentResponseDetectedLabels) {
+	s.DetectedLabels = val
+}
+
+func (*IncidentResponse) incidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetRes() {}
+
+type IncidentResponseDetectedLabels map[string]jx.Raw
+
+func (s *IncidentResponseDetectedLabels) init() IncidentResponseDetectedLabels {
+	m := *s
+	if m == nil {
+		m = map[string]jx.Raw{}
+		*s = m
+	}
+	return m
+}
 
 // Structured RCA with summary, severity, contributing_factors.
 type IncidentResponseRootCauseAnalysis map[string]jx.Raw
@@ -1544,6 +1511,29 @@ func (s *IncidentResponseSelectedWorkflow) init() IncidentResponseSelectedWorkfl
 		*s = m
 	}
 	return m
+}
+
+// IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetConflict is response for IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet operation.
+type IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetConflict struct{}
+
+func (*IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetConflict) incidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetRes() {
+}
+
+// IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetNotFound is response for IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet operation.
+type IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetNotFound struct{}
+
+func (*IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetNotFound) incidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetRes() {
+}
+
+// IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetNotFound is response for IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet operation.
+type IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetNotFound struct{}
+
+func (*IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetNotFound) incidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRes() {
+}
+
+type IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetOKApplicationJSON jx.Raw
+
+func (*IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetOKApplicationJSON) incidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRes() {
 }
 
 // NewOptBool returns new OptBool with value set to v.
@@ -1586,52 +1576,6 @@ func (o OptBool) Get() (v bool, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptBool) Or(d bool) bool {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptFloat64 returns new OptFloat64 with value set to v.
-func NewOptFloat64(v float64) OptFloat64 {
-	return OptFloat64{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptFloat64 is optional float64.
-type OptFloat64 struct {
-	Value float64
-	Set   bool
-}
-
-// IsSet returns true if OptFloat64 was set.
-func (o OptFloat64) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptFloat64) Reset() {
-	var v float64
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptFloat64) SetTo(v float64) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptFloat64) Get() (v float64, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptFloat64) Or(d float64) float64 {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -1701,52 +1645,52 @@ func (o OptNilBool) Or(d bool) bool {
 	return d
 }
 
-// NewOptNilDetectedLabels returns new OptNilDetectedLabels with value set to v.
-func NewOptNilDetectedLabels(v DetectedLabels) OptNilDetectedLabels {
-	return OptNilDetectedLabels{
+// NewOptNilBusinessClassification returns new OptNilBusinessClassification with value set to v.
+func NewOptNilBusinessClassification(v BusinessClassification) OptNilBusinessClassification {
+	return OptNilBusinessClassification{
 		Value: v,
 		Set:   true,
 	}
 }
 
-// OptNilDetectedLabels is optional nullable DetectedLabels.
-type OptNilDetectedLabels struct {
-	Value DetectedLabels
+// OptNilBusinessClassification is optional nullable BusinessClassification.
+type OptNilBusinessClassification struct {
+	Value BusinessClassification
 	Set   bool
 	Null  bool
 }
 
-// IsSet returns true if OptNilDetectedLabels was set.
-func (o OptNilDetectedLabels) IsSet() bool { return o.Set }
+// IsSet returns true if OptNilBusinessClassification was set.
+func (o OptNilBusinessClassification) IsSet() bool { return o.Set }
 
 // Reset unsets value.
-func (o *OptNilDetectedLabels) Reset() {
-	var v DetectedLabels
+func (o *OptNilBusinessClassification) Reset() {
+	var v BusinessClassification
 	o.Value = v
 	o.Set = false
 	o.Null = false
 }
 
 // SetTo sets value to v.
-func (o *OptNilDetectedLabels) SetTo(v DetectedLabels) {
+func (o *OptNilBusinessClassification) SetTo(v BusinessClassification) {
 	o.Set = true
 	o.Null = false
 	o.Value = v
 }
 
 // IsNull returns true if value is Null.
-func (o OptNilDetectedLabels) IsNull() bool { return o.Null }
+func (o OptNilBusinessClassification) IsNull() bool { return o.Null }
 
 // SetToNull sets value to null.
-func (o *OptNilDetectedLabels) SetToNull() {
+func (o *OptNilBusinessClassification) SetToNull() {
 	o.Set = true
 	o.Null = true
-	var v DetectedLabels
+	var v BusinessClassification
 	o.Value = v
 }
 
 // Get returns value and boolean that denotes whether value was set.
-func (o OptNilDetectedLabels) Get() (v DetectedLabels, ok bool) {
+func (o OptNilBusinessClassification) Get() (v BusinessClassification, ok bool) {
 	if o.Null {
 		return v, false
 	}
@@ -1757,7 +1701,7 @@ func (o OptNilDetectedLabels) Get() (v DetectedLabels, ok bool) {
 }
 
 // Or returns value if set, or given parameter if does not.
-func (o OptNilDetectedLabels) Or(d DetectedLabels) DetectedLabels {
+func (o OptNilBusinessClassification) Or(d BusinessClassification) BusinessClassification {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -2079,6 +2023,69 @@ func (o OptNilIncidentRequestSignalLabels) Or(d IncidentRequestSignalLabels) Inc
 	return d
 }
 
+// NewOptNilIncidentResponseDetectedLabels returns new OptNilIncidentResponseDetectedLabels with value set to v.
+func NewOptNilIncidentResponseDetectedLabels(v IncidentResponseDetectedLabels) OptNilIncidentResponseDetectedLabels {
+	return OptNilIncidentResponseDetectedLabels{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilIncidentResponseDetectedLabels is optional nullable IncidentResponseDetectedLabels.
+type OptNilIncidentResponseDetectedLabels struct {
+	Value IncidentResponseDetectedLabels
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilIncidentResponseDetectedLabels was set.
+func (o OptNilIncidentResponseDetectedLabels) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilIncidentResponseDetectedLabels) Reset() {
+	var v IncidentResponseDetectedLabels
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilIncidentResponseDetectedLabels) SetTo(v IncidentResponseDetectedLabels) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilIncidentResponseDetectedLabels) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilIncidentResponseDetectedLabels) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v IncidentResponseDetectedLabels
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilIncidentResponseDetectedLabels) Get() (v IncidentResponseDetectedLabels, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilIncidentResponseDetectedLabels) Or(d IncidentResponseDetectedLabels) IncidentResponseDetectedLabels {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptNilIncidentResponseSelectedWorkflow returns new OptNilIncidentResponseSelectedWorkflow with value set to v.
 func NewOptNilIncidentResponseSelectedWorkflow(v IncidentResponseSelectedWorkflow) OptNilIncidentResponseSelectedWorkflow {
 	return OptNilIncidentResponseSelectedWorkflow{
@@ -2262,6 +2269,69 @@ func (o OptNilPreviousExecution) Get() (v PreviousExecution, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptNilPreviousExecution) Or(d PreviousExecution) PreviousExecution {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptNilRecoveryResponseDetectedLabels returns new OptNilRecoveryResponseDetectedLabels with value set to v.
+func NewOptNilRecoveryResponseDetectedLabels(v RecoveryResponseDetectedLabels) OptNilRecoveryResponseDetectedLabels {
+	return OptNilRecoveryResponseDetectedLabels{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilRecoveryResponseDetectedLabels is optional nullable RecoveryResponseDetectedLabels.
+type OptNilRecoveryResponseDetectedLabels struct {
+	Value RecoveryResponseDetectedLabels
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilRecoveryResponseDetectedLabels was set.
+func (o OptNilRecoveryResponseDetectedLabels) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilRecoveryResponseDetectedLabels) Reset() {
+	var v RecoveryResponseDetectedLabels
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilRecoveryResponseDetectedLabels) SetTo(v RecoveryResponseDetectedLabels) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilRecoveryResponseDetectedLabels) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilRecoveryResponseDetectedLabels) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v RecoveryResponseDetectedLabels
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilRecoveryResponseDetectedLabels) Get() (v RecoveryResponseDetectedLabels, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilRecoveryResponseDetectedLabels) Or(d RecoveryResponseDetectedLabels) RecoveryResponseDetectedLabels {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -2904,6 +2974,11 @@ func (s *PreviousExecution) SetFailure(val ExecutionFailure) {
 // SetNaturalLanguageSummary sets the value of NaturalLanguageSummary.
 func (s *PreviousExecution) SetNaturalLanguageSummary(val OptNilString) {
 	s.NaturalLanguageSummary = val
+}
+
+type RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostAcceptedApplicationJSON jx.Raw
+
+func (*RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostAcceptedApplicationJSON) recoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes() {
 }
 
 type RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostApplicationJSONBadRequest HTTPError
@@ -3598,6 +3673,9 @@ type RecoveryResponse struct {
 	// Other workflows considered but not selected. For operator context and audit trail only - NOT for
 	// automatic execution. Helps operators understand AI reasoning and decision alternatives.
 	AlternativeWorkflows []AlternativeWorkflow `json:"alternative_workflows"`
+	// Cluster characteristics detected at runtime by HAPI (ADR-056). Includes: gitOpsManaged,
+	// pdbProtected, hpaEnabled, stateful, helmManaged, networkIsolated, serviceMesh, failedDetections.
+	DetectedLabels OptNilRecoveryResponseDetectedLabels `json:"detected_labels"`
 }
 
 // GetIncidentID returns the value of IncidentID.
@@ -3660,6 +3738,11 @@ func (s *RecoveryResponse) GetAlternativeWorkflows() []AlternativeWorkflow {
 	return s.AlternativeWorkflows
 }
 
+// GetDetectedLabels returns the value of DetectedLabels.
+func (s *RecoveryResponse) GetDetectedLabels() OptNilRecoveryResponseDetectedLabels {
+	return s.DetectedLabels
+}
+
 // SetIncidentID sets the value of IncidentID.
 func (s *RecoveryResponse) SetIncidentID(val string) {
 	s.IncidentID = val
@@ -3720,7 +3803,23 @@ func (s *RecoveryResponse) SetAlternativeWorkflows(val []AlternativeWorkflow) {
 	s.AlternativeWorkflows = val
 }
 
-func (*RecoveryResponse) recoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes() {}
+// SetDetectedLabels sets the value of DetectedLabels.
+func (s *RecoveryResponse) SetDetectedLabels(val OptNilRecoveryResponseDetectedLabels) {
+	s.DetectedLabels = val
+}
+
+func (*RecoveryResponse) recoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetRes() {}
+
+type RecoveryResponseDetectedLabels map[string]jx.Raw
+
+func (s *RecoveryResponseDetectedLabels) init() RecoveryResponseDetectedLabels {
+	m := *s
+	if m == nil {
+		m = map[string]jx.Raw{}
+		*s = m
+	}
+	return m
+}
 
 // Additional metadata.
 type RecoveryResponseMetadata map[string]jx.Raw
@@ -3754,6 +3853,29 @@ func (s *RecoveryResponseSelectedWorkflow) init() RecoveryResponseSelectedWorkfl
 		*s = m
 	}
 	return m
+}
+
+// RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetConflict is response for RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGet operation.
+type RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetConflict struct{}
+
+func (*RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetConflict) recoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetRes() {
+}
+
+// RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetNotFound is response for RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGet operation.
+type RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetNotFound struct{}
+
+func (*RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetNotFound) recoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetRes() {
+}
+
+// RecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGetNotFound is response for RecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGet operation.
+type RecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGetNotFound struct{}
+
+func (*RecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGetNotFound) recoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGetRes() {
+}
+
+type RecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGetOKApplicationJSON jx.Raw
+
+func (*RecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGetOKApplicationJSON) recoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGetRes() {
 }
 
 // Individual recovery strategy option.
@@ -3889,8 +4011,8 @@ type SelectedWorkflowSummary struct {
 	WorkflowID string `json:"workflow_id"`
 	// Workflow version.
 	Version string `json:"version"`
-	// Container image used for execution.
-	ContainerImage string `json:"container_image"`
+	// Execution bundle used for workflow execution.
+	ExecutionBundle string `json:"execution_bundle"`
 	// Parameters passed to workflow.
 	Parameters OptSelectedWorkflowSummaryParameters `json:"parameters"`
 	// Why this workflow was originally selected.
@@ -3907,9 +4029,9 @@ func (s *SelectedWorkflowSummary) GetVersion() string {
 	return s.Version
 }
 
-// GetContainerImage returns the value of ContainerImage.
-func (s *SelectedWorkflowSummary) GetContainerImage() string {
-	return s.ContainerImage
+// GetExecutionBundle returns the value of ExecutionBundle.
+func (s *SelectedWorkflowSummary) GetExecutionBundle() string {
+	return s.ExecutionBundle
 }
 
 // GetParameters returns the value of Parameters.
@@ -3932,9 +4054,9 @@ func (s *SelectedWorkflowSummary) SetVersion(val string) {
 	s.Version = val
 }
 
-// SetContainerImage sets the value of ContainerImage.
-func (s *SelectedWorkflowSummary) SetContainerImage(val string) {
-	s.ContainerImage = val
+// SetExecutionBundle sets the value of ExecutionBundle.
+func (s *SelectedWorkflowSummary) SetExecutionBundle(val string) {
+	s.ExecutionBundle = val
 }
 
 // SetParameters sets the value of Parameters.
@@ -4149,4 +4271,105 @@ func (s *ValidationAttempt) SetErrors(val []string) {
 // SetTimestamp sets the value of Timestamp.
 func (s *ValidationAttempt) SetTimestamp(val string) {
 	s.Timestamp = val
+}
+
+// Ref: #/components/schemas/ValidationError
+type ValidationError struct {
+	Loc  []ValidationErrorLocItem `json:"loc"`
+	Msg  string                   `json:"msg"`
+	Type string                   `json:"type"`
+}
+
+// GetLoc returns the value of Loc.
+func (s *ValidationError) GetLoc() []ValidationErrorLocItem {
+	return s.Loc
+}
+
+// GetMsg returns the value of Msg.
+func (s *ValidationError) GetMsg() string {
+	return s.Msg
+}
+
+// GetType returns the value of Type.
+func (s *ValidationError) GetType() string {
+	return s.Type
+}
+
+// SetLoc sets the value of Loc.
+func (s *ValidationError) SetLoc(val []ValidationErrorLocItem) {
+	s.Loc = val
+}
+
+// SetMsg sets the value of Msg.
+func (s *ValidationError) SetMsg(val string) {
+	s.Msg = val
+}
+
+// SetType sets the value of Type.
+func (s *ValidationError) SetType(val string) {
+	s.Type = val
+}
+
+// ValidationErrorLocItem represents sum type.
+type ValidationErrorLocItem struct {
+	Type   ValidationErrorLocItemType // switch on this field
+	String string
+	Int    int
+}
+
+// ValidationErrorLocItemType is oneOf type of ValidationErrorLocItem.
+type ValidationErrorLocItemType string
+
+// Possible values for ValidationErrorLocItemType.
+const (
+	StringValidationErrorLocItem ValidationErrorLocItemType = "string"
+	IntValidationErrorLocItem    ValidationErrorLocItemType = "int"
+)
+
+// IsString reports whether ValidationErrorLocItem is string.
+func (s ValidationErrorLocItem) IsString() bool { return s.Type == StringValidationErrorLocItem }
+
+// IsInt reports whether ValidationErrorLocItem is int.
+func (s ValidationErrorLocItem) IsInt() bool { return s.Type == IntValidationErrorLocItem }
+
+// SetString sets ValidationErrorLocItem to string.
+func (s *ValidationErrorLocItem) SetString(v string) {
+	s.Type = StringValidationErrorLocItem
+	s.String = v
+}
+
+// GetString returns string and true boolean if ValidationErrorLocItem is string.
+func (s ValidationErrorLocItem) GetString() (v string, ok bool) {
+	if !s.IsString() {
+		return v, false
+	}
+	return s.String, true
+}
+
+// NewStringValidationErrorLocItem returns new ValidationErrorLocItem from string.
+func NewStringValidationErrorLocItem(v string) ValidationErrorLocItem {
+	var s ValidationErrorLocItem
+	s.SetString(v)
+	return s
+}
+
+// SetInt sets ValidationErrorLocItem to int.
+func (s *ValidationErrorLocItem) SetInt(v int) {
+	s.Type = IntValidationErrorLocItem
+	s.Int = v
+}
+
+// GetInt returns int and true boolean if ValidationErrorLocItem is int.
+func (s ValidationErrorLocItem) GetInt() (v int, ok bool) {
+	if !s.IsInt() {
+		return v, false
+	}
+	return s.Int, true
+}
+
+// NewIntValidationErrorLocItem returns new ValidationErrorLocItem from int.
+func NewIntValidationErrorLocItem(v int) ValidationErrorLocItem {
+	var s ValidationErrorLocItem
+	s.SetInt(v)
+	return s
 }

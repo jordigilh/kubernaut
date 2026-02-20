@@ -452,9 +452,9 @@ var _ = Describe("NotificationCreator", func() {
 			ctx = context.Background()
 		})
 
-		Context("BR-ORCH-001: Approval notification labels", func() {
-			// Test #19: Sets correct labels for approval notification
-			It("should set kubernaut.ai labels for routing (kubernaut.ai/severity, kubernaut.ai/notification-type)", func() {
+		Context("BR-ORCH-001: Approval notification spec fields", func() {
+			// Test #19: Issue #91 - routing data in spec fields, not labels
+			It("should set spec fields for routing (severity, type) instead of labels", func() {
 				client := fakeClient.Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
@@ -469,16 +469,17 @@ var _ = Describe("NotificationCreator", func() {
 				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
 				Expect(err).ToNot(HaveOccurred())
 
-				Expect(nr.Labels).To(HaveKeyWithValue("kubernaut.ai/remediation-request", "test-rr"))
-				Expect(nr.Labels).To(HaveKeyWithValue("kubernaut.ai/notification-type", "approval"))
-				Expect(nr.Labels).To(HaveKeyWithValue("kubernaut.ai/severity", "high"))
-				Expect(nr.Labels).To(HaveKeyWithValue("kubernaut.ai/component", "remediation-orchestrator"))
+				Expect(nr.Spec.RemediationRequestRef).ToNot(BeNil())
+				Expect(nr.Spec.RemediationRequestRef.Name).To(Equal("test-rr"))
+				Expect(nr.Spec.Type).To(Equal(notificationv1.NotificationTypeApproval))
+				Expect(nr.Spec.Severity).To(Equal("high"))
+				Expect(nr.Labels).To(BeNil())
 			})
 		})
 
-		Context("BR-ORCH-034: Bulk notification labels", func() {
-			// Test #20: Sets correct labels for bulk notification
-			It("should set kubernaut.ai labels for bulk notification", func() {
+		Context("BR-ORCH-034: Bulk notification spec fields", func() {
+			// Test #20: Issue #91 - routing data in spec fields, not labels
+			It("should set spec fields for bulk notification instead of labels", func() {
 				client := fakeClient.Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
@@ -492,9 +493,11 @@ var _ = Describe("NotificationCreator", func() {
 				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
 				Expect(err).ToNot(HaveOccurred())
 
-				Expect(nr.Labels).To(HaveKeyWithValue("kubernaut.ai/remediation-request", "test-rr"))
-				Expect(nr.Labels).To(HaveKeyWithValue("kubernaut.ai/notification-type", "bulk-duplicate"))
-				Expect(nr.Labels).To(HaveKeyWithValue("kubernaut.ai/component", "remediation-orchestrator"))
+				Expect(nr.Spec.RemediationRequestRef).ToNot(BeNil())
+				Expect(nr.Spec.RemediationRequestRef.Name).To(Equal("test-rr"))
+				Expect(nr.Spec.Type).To(Equal(notificationv1.NotificationTypeSimple))
+				Expect(nr.Spec.Severity).To(Equal("low"))
+				Expect(nr.Labels).To(BeNil())
 			})
 		})
 	})
@@ -804,11 +807,12 @@ var _ = Describe("NotificationCreator", func() {
 				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
 				Expect(err).ToNot(HaveOccurred())
 
-				Expect(nr.Labels).To(HaveKeyWithValue("kubernaut.ai/remediation-request", "test-rr"))
-				Expect(nr.Labels).To(HaveKeyWithValue("kubernaut.ai/notification-type", "manual-review"))
-				Expect(nr.Labels).To(HaveKeyWithValue("kubernaut.ai/severity", "critical"))
-				Expect(nr.Labels).To(HaveKeyWithValue("kubernaut.ai/component", "remediation-orchestrator"))
-				Expect(nr.Labels).To(HaveKeyWithValue("kubernaut.ai/review-source", "AIAnalysis"))
+				Expect(nr.Spec.RemediationRequestRef).ToNot(BeNil())
+				Expect(nr.Spec.RemediationRequestRef.Name).To(Equal("test-rr"))
+				Expect(nr.Spec.Type).To(Equal(notificationv1.NotificationTypeManualReview))
+				Expect(nr.Spec.Severity).To(Equal("critical"))
+				Expect(nr.Spec.ReviewSource).To(Equal("AIAnalysis"))
+				Expect(nr.Labels).To(BeNil())
 			})
 		})
 
@@ -1256,9 +1260,11 @@ var _ = Describe("NotificationCreator", func() {
 				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
 				Expect(err).ToNot(HaveOccurred())
 
-				Expect(nr.Labels).To(HaveKeyWithValue("kubernaut.ai/remediation-request", "test-rr"))
-				Expect(nr.Labels).To(HaveKeyWithValue("kubernaut.ai/notification-type", "completion"))
-				Expect(nr.Labels).To(HaveKeyWithValue("kubernaut.ai/component", "remediation-orchestrator"))
+				Expect(nr.Spec.RemediationRequestRef).ToNot(BeNil())
+				Expect(nr.Spec.RemediationRequestRef.Name).To(Equal("test-rr"))
+				Expect(nr.Spec.Type).To(Equal(notificationv1.NotificationTypeCompletion))
+				Expect(nr.Spec.Severity).ToNot(BeEmpty())
+				Expect(nr.Labels).To(BeNil())
 			})
 		})
 

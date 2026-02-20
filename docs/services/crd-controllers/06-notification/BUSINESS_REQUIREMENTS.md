@@ -467,34 +467,39 @@ The **Notification Service** is a Kubernetes CRD controller that delivers multi-
 
 ### Category 9: Channel Routing (V1.0)
 
-#### BR-NOT-065: Channel Routing Based on Labels
+#### BR-NOT-065: Channel Routing Based on Spec Fields
 
-**Description**: The Notification Service MUST route notifications to appropriate channel(s) based on notification labels (type, environment, severity, namespace, skip-reason) using configurable routing rules. CRD creators (e.g., RemediationOrchestrator) do NOT need to specify Recipients or Channels - routing rules determine these based on labels.
+**Description**: The Notification Service MUST route notifications to appropriate channel(s) based on notification spec fields and `spec.metadata` (type, severity, environment, namespace, skip-reason) using configurable routing rules. CRD creators (e.g., RemediationOrchestrator) do NOT need to specify Recipients or Channels - routing rules determine these based on spec fields.
 
 **Priority**: P0 (CRITICAL)
 
-**Rationale**: Different notification types require different delivery channels. Approval requests may need PagerDuty for immediate attention, while completion notifications may only need Slack. Label-based routing enables flexible, configurable channel selection without code changes.
+**Rationale**: Different notification types require different delivery channels. Approval requests may need PagerDuty for immediate attention, while completion notifications may only need Slack. Spec-field-based routing enables flexible, configurable channel selection without code changes.
 
-**Implementation**:
-- Routing based on notification labels: `type`, `environment`, `severity`, `namespace`, `skip-reason`
-- Configurable routing rules in ConfigMap
+**Implementation** (Issue #91):
+- Routing based on spec fields: `spec.type`, `spec.severity`, `spec.phase`, `spec.reviewSource`, `spec.priority`
+- Routing based on `spec.metadata`: `environment`, `namespace`, `skip-reason`, `investigation-outcome`
+- Configurable routing rules in ConfigMap (simplified keys: `severity`, `type`, `skip-reason`, etc.)
+- Field selectors (`+kubebuilder:selectablefield`) replace label-based filtering
 - First matching rule wins (ordered evaluation)
 - Default fallback channel if no rules match
 
-**Supported Routing Labels** (all use `kubernaut.ai/` domain):
+**Supported Routing Spec Fields** (Issue #91: migrated from labels to immutable spec):
 
-| Label Key | Purpose | Example Values |
-|-----------|---------|----------------|
-| `kubernaut.ai/notification-type` | Notification type routing | `escalation`, `approval_required`, `completed`, `failed` |
-| `kubernaut.ai/severity` | Severity-based routing | `critical`, `high`, `medium`, `low` |
-| `kubernaut.ai/environment` | Environment-based routing | `production`, `staging`, `development`, `test` |
-| `kubernaut.ai/priority` | Priority-based routing | `P0`, `P1`, `P2`, `P3` |
-| `kubernaut.ai/namespace` | Namespace-based routing | Kubernetes namespace name |
-| `kubernaut.ai/component` | Source component routing | `remediation-orchestrator`, `workflow-execution` |
-| `kubernaut.ai/remediation-request` | Correlation routing | RemediationRequest CRD name |
-| `kubernaut.ai/skip-reason` | WFE skip reason routing | `PreviousExecutionFailed`, `ExhaustedRetries`, `ResourceBusy`, `RecentlyRemediated` |
+| Spec Field / Metadata Key | Config Match Key | Purpose | Example Values |
+|---------------------------|------------------|---------|----------------|
+| `spec.type` | `type` | Notification type routing | `escalation`, `approval`, `completion`, `manual-review` |
+| `spec.severity` | `severity` | Severity-based routing | `critical`, `high`, `medium`, `low` |
+| `spec.metadata["environment"]` | `environment` | Environment-based routing | `production`, `staging`, `development`, `test` |
+| `spec.priority` | `priority` | Priority-based routing | `critical`, `high`, `medium`, `low` |
+| `spec.metadata["namespace"]` | `namespace` | Namespace-based routing | Kubernetes namespace name |
+| `spec.phase` | `phase` | Phase that triggered notification | `signal-processing`, `ai-analysis`, `workflow-execution` |
+| `spec.reviewSource` | `review-source` | Manual review source | `WorkflowResolutionFailed`, `ExhaustedRetries` |
+| `spec.remediationRequestRef` | (correlation) | Parent remediation link | ObjectReference (ownerRef sufficient) |
+| `spec.metadata["skip-reason"]` | `skip-reason` | WFE skip reason routing | `PreviousExecutionFailed`, `ExhaustedRetries`, `ResourceBusy`, `RecentlyRemediated` |
 
-**Skip Reason Routing** (Added per DD-WE-004 v1.1):
+**Removed** (Issue #91): `kubernaut.ai/component` (ownerRef sufficient), `kubernaut.ai/remediation-request` (use `spec.remediationRequestRef`).
+
+**Skip Reason Routing** (DD-WE-004 v1.1):
 
 | Skip Reason | Recommended Severity | Routing Target | Rationale |
 |-------------|---------------------|----------------|-----------|
@@ -503,37 +508,37 @@ The **Notification Service** is a Kubernetes CRD controller that delivers multi-
 | `ResourceBusy` | `low` | Bulk (BR-ORCH-034) | Temporary - auto-resolves |
 | `RecentlyRemediated` | `low` | Bulk (BR-ORCH-034) | Temporary - auto-resolves |
 
-**Mandatory Labels for CRD Creators** (REQUIRED):
+**Mandatory Spec Fields for CRD Creators** (REQUIRED):
 
-CRD creators (RemediationOrchestrator, WorkflowExecution) MUST set these labels when creating NotificationRequest CRDs:
+CRD creators (RemediationOrchestrator, WorkflowExecution) MUST set these spec fields when creating NotificationRequest CRDs:
 
-| Label | Requirement | Source | Rationale |
-|-------|-------------|--------|-----------|
-| `kubernaut.ai/notification-type` | **MANDATORY** | CRD creator | Required for type-based routing |
-| `kubernaut.ai/severity` | **MANDATORY** | CRD creator | Required for severity-based routing |
-| `kubernaut.ai/environment` | **MANDATORY** | RemediationRequest | Required for environment-based routing |
-| `kubernaut.ai/skip-reason` | **CONDITIONAL** | WorkflowExecution (when skipped) | Required for skip-reason routing |
-| `kubernaut.ai/remediation-request` | **MANDATORY** | RemediationRequest name | Required for correlation |
-| `kubernaut.ai/component` | **MANDATORY** | Source controller name | Required for source tracking |
+| Spec Field | Requirement | Source | Rationale |
+|------------|-------------|--------|-----------|
+| `spec.type` | **MANDATORY** | CRD creator | Required for type-based routing |
+| `spec.severity` | **MANDATORY** | CRD creator | Required for severity-based routing |
+| `spec.metadata["environment"]` | **MANDATORY** | RemediationRequest | Required for environment-based routing |
+| `spec.metadata["skip-reason"]` | **CONDITIONAL** | WorkflowExecution (when skipped) | Required for skip-reason routing |
+| `spec.remediationRequestRef` | **MANDATORY** | RemediationRequest | Required for correlation (or ownerRef) |
 
-**Cross-Team Enforcement**: Per DD-WE-004 Q8, RO confirmed they will set all routing labels explicitly.
+**Cross-Team Enforcement**: Per DD-WE-004 Q8, RO confirmed they will set all routing spec fields explicitly.
 
 **Acceptance Criteria**:
-- ✅ Notifications routed based on label matching
+- ✅ Notifications routed based on spec field matching
 - ✅ Multiple routing rules supported with priority ordering
 - ✅ Default fallback channel configured
 - ✅ Routing decision logged for audit
-- ✅ Skip-reason label supported for WFE failure routing (DD-WE-004)
-- ✅ Missing mandatory labels logged as warning
+- ✅ Skip-reason routing supported for WFE failure routing (DD-WE-004)
+- ✅ Missing mandatory spec fields logged as warning
 
 **Test Coverage**:
-- Unit: Label matching and routing decision logic (37 tests)
-- Integration: Multi-rule routing with various label combinations
+- Unit: Spec field matching and routing decision logic (37 tests)
+- Integration: Multi-rule routing with various spec field combinations
 - E2E: End-to-end routing validation
 
 **Related BRs**: BR-NOT-066 (Config Format), BR-NOT-067 (Hot-Reload)
 **Related DDs**: DD-NOTIFICATION-001 (Alertmanager Routing Reuse), DD-WE-004 (Exponential Backoff)
 **Cross-Team**: NOTICE_WE_EXPONENTIAL_BACKOFF_DD_WE_004.md (Q7, Q8)
+**Issue #91**: `kubernaut.ai/*` labels migrated to immutable spec fields; routing config keys simplified
 
 ---
 
@@ -634,7 +639,7 @@ CRD creators (RemediationOrchestrator, WorkflowExecution) MUST set these labels 
 
 **Full Specification**: [BR-NOT-069-routing-rule-visibility-conditions.md](../../../requirements/BR-NOT-069-routing-rule-visibility-conditions.md)
 
-**Description**: The Notification Service MUST expose routing rule resolution status via Kubernetes Conditions, enabling operators to debug label-based channel routing without accessing controller logs.
+**Description**: The Notification Service MUST expose routing rule resolution status via Kubernetes Conditions, enabling operators to debug spec-field-based channel routing without accessing controller logs.
 
 **Priority**: P1 (HIGH)
 

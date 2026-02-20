@@ -1,0 +1,41 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: kubernaut-memory-leak-rules
+  namespace: demo-memory-leak
+  labels:
+    release: prometheus
+spec:
+  groups:
+  - name: kubernaut-memory-leak
+    rules:
+    # Predict memory exhaustion using linear extrapolation
+    # Fires when the "leaker" container is projected to exceed its memory limit
+    # within 30 minutes (1800s) based on the last 10-minute trend
+    - alert: KubernautPredictiveMemoryExhaust
+      expr: |
+        predict_linear(
+          container_memory_working_set_bytes{
+            namespace="demo-memory-leak",
+            container="leaker"
+          }[10m], 1800
+        )
+        >
+        on(namespace, pod, container)
+        kube_pod_container_resource_limits{
+          namespace="demo-memory-leak",
+          container="leaker",
+          resource="memory"
+        }
+      for: 2m
+      labels:
+        severity: warning
+      annotations:
+        summary: >
+          Container {{ $labels.container }} in pod {{ $labels.pod }} is predicted
+          to exhaust its memory limit within 30 minutes based on current growth rate.
+        description: >
+          Memory usage in the leaker container of deployment leaky-app is growing
+          linearly. At the current rate, it will exceed the 192Mi limit and be
+          OOMKilled. A proactive graceful restart is recommended to reset memory
+          usage before the crash occurs.

@@ -1,0 +1,19 @@
+# Cordon + Drain Node - Runnable Job Container (BR-WE-014)
+# Scenario: #127 -- Node NotReady -> cordon and drain
+FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+
+ARG TARGETARCH
+ARG KUBECTL_VERSION=v1.31.4
+
+RUN curl -fsSL -o /usr/local/bin/kubectl \
+    "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${TARGETARCH}/kubectl" && \
+    chmod +x /usr/local/bin/kubectl
+
+COPY workflow-schema.yaml /workflow-schema.yaml
+
+COPY remediate.sh /scripts/remediate.sh
+RUN chmod +x /scripts/remediate.sh
+
+USER 1001
+
+ENTRYPOINT ["/scripts/remediate.sh"]

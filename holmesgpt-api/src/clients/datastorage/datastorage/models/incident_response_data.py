@@ -34,18 +34,17 @@ class IncidentResponseData(BaseModel):
     """
     Complete IncidentResponse structure from HolmesGPT API (DD-AUDIT-004 - strongly typed, no additionalProperties)
     """ # noqa: E501
-    incident_id: StrictStr = Field(description="Incident identifier from request")
+    incident_id: StrictStr = Field(description="Incident identifier from request", alias="incidentId")
     analysis: StrictStr = Field(description="Natural language analysis from LLM")
-    root_cause_analysis: IncidentResponseDataRootCauseAnalysis
-    selected_workflow: Optional[IncidentResponseDataSelectedWorkflow] = None
+    root_cause_analysis: IncidentResponseDataRootCauseAnalysis = Field(alias="rootCauseAnalysis")
+    selected_workflow: Optional[IncidentResponseDataSelectedWorkflow] = Field(default=None, alias="selectedWorkflow")
     confidence: Union[Annotated[float, Field(le=1.0, strict=True, ge=0.0)], Annotated[int, Field(le=1, strict=True, ge=0)]] = Field(description="Overall confidence in analysis")
     timestamp: datetime = Field(description="ISO timestamp of analysis completion")
-    needs_human_review: Optional[StrictBool] = Field(default=False, description="True when AI could not produce reliable result")
-    human_review_reason: Optional[StrictStr] = Field(default=None, description="Structured reason when needs_human_review=true (BR-HAPI-197, BR-HAPI-200, BR-HAPI-212)")
-    target_in_owner_chain: Optional[StrictBool] = Field(default=True, description="Whether RCA target was found in OwnerChain")
+    needs_human_review: Optional[StrictBool] = Field(default=False, description="True when AI could not produce reliable result", alias="needsHumanReview")
+    human_review_reason: Optional[StrictStr] = Field(default=None, description="Structured reason when needsHumanReview=true (BR-HAPI-197, BR-HAPI-200, BR-HAPI-212)", alias="humanReviewReason")
     warnings: Optional[List[StrictStr]] = Field(default=None, description="Non-fatal warnings (e.g., OwnerChain validation issues)")
-    alternative_workflows: Optional[List[IncidentResponseDataAlternativeWorkflowsInner]] = Field(default=None, description="Other workflows considered but not selected")
-    __properties: ClassVar[List[str]] = ["incident_id", "analysis", "root_cause_analysis", "selected_workflow", "confidence", "timestamp", "needs_human_review", "human_review_reason", "target_in_owner_chain", "warnings", "alternative_workflows"]
+    alternative_workflows: Optional[List[IncidentResponseDataAlternativeWorkflowsInner]] = Field(default=None, description="Other workflows considered but not selected", alias="alternativeWorkflows")
+    __properties: ClassVar[List[str]] = ["incidentId", "analysis", "rootCauseAnalysis", "selectedWorkflow", "confidence", "timestamp", "needsHumanReview", "humanReviewReason", "warnings", "alternativeWorkflows"]
 
     @field_validator('human_review_reason')
     def human_review_reason_validate_enum(cls, value):
@@ -96,17 +95,17 @@ class IncidentResponseData(BaseModel):
         )
         # override the default output from pydantic by calling `to_dict()` of root_cause_analysis
         if self.root_cause_analysis:
-            _dict['root_cause_analysis'] = self.root_cause_analysis.to_dict()
+            _dict['rootCauseAnalysis'] = self.root_cause_analysis.to_dict()
         # override the default output from pydantic by calling `to_dict()` of selected_workflow
         if self.selected_workflow:
-            _dict['selected_workflow'] = self.selected_workflow.to_dict()
+            _dict['selectedWorkflow'] = self.selected_workflow.to_dict()
         # override the default output from pydantic by calling `to_dict()` of each item in alternative_workflows (list)
         _items = []
         if self.alternative_workflows:
             for _item in self.alternative_workflows:
                 if _item:
                     _items.append(_item.to_dict())
-            _dict['alternative_workflows'] = _items
+            _dict['alternativeWorkflows'] = _items
         return _dict
 
     @classmethod
@@ -119,17 +118,16 @@ class IncidentResponseData(BaseModel):
             return cls.model_validate(obj)
 
         _obj = cls.model_validate({
-            "incident_id": obj.get("incident_id"),
+            "incidentId": obj.get("incidentId"),
             "analysis": obj.get("analysis"),
-            "root_cause_analysis": IncidentResponseDataRootCauseAnalysis.from_dict(obj.get("root_cause_analysis")) if obj.get("root_cause_analysis") is not None else None,
-            "selected_workflow": IncidentResponseDataSelectedWorkflow.from_dict(obj.get("selected_workflow")) if obj.get("selected_workflow") is not None else None,
+            "rootCauseAnalysis": IncidentResponseDataRootCauseAnalysis.from_dict(obj.get("rootCauseAnalysis")) if obj.get("rootCauseAnalysis") is not None else None,
+            "selectedWorkflow": IncidentResponseDataSelectedWorkflow.from_dict(obj.get("selectedWorkflow")) if obj.get("selectedWorkflow") is not None else None,
             "confidence": obj.get("confidence"),
             "timestamp": obj.get("timestamp"),
-            "needs_human_review": obj.get("needs_human_review") if obj.get("needs_human_review") is not None else False,
-            "human_review_reason": obj.get("human_review_reason"),
-            "target_in_owner_chain": obj.get("target_in_owner_chain") if obj.get("target_in_owner_chain") is not None else True,
+            "needsHumanReview": obj.get("needsHumanReview") if obj.get("needsHumanReview") is not None else False,
+            "humanReviewReason": obj.get("humanReviewReason"),
             "warnings": obj.get("warnings"),
-            "alternative_workflows": [IncidentResponseDataAlternativeWorkflowsInner.from_dict(_item) for _item in obj.get("alternative_workflows")] if obj.get("alternative_workflows") is not None else None
+            "alternativeWorkflows": [IncidentResponseDataAlternativeWorkflowsInner.from_dict(_item) for _item in obj.get("alternativeWorkflows")] if obj.get("alternativeWorkflows") is not None else None
         })
         return _obj
 

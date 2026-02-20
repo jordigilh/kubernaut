@@ -27,6 +27,10 @@ spec:
     - jsonPath: .status.priorityAssignment.priority
       name: Priority
       type: string
+    - jsonPath: .status.conditions[?(@.type=="Ready")].reason
+      name: Reason
+      priority: 1
+      type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
@@ -135,8 +139,8 @@ spec:
                     maxLength: 253
                     type: string
                   providerData:
-                    description: Provider-specific fields in raw JSON format
-                    format: byte
+                    description: 'Provider-specific fields in raw JSON format (issue
+                      #96: string to avoid base64)'
                     type: string
                   receivedTime:
                     description: When Gateway received the signal
@@ -757,6 +761,8 @@ spec:
                 type: string
             type: object
         type: object
+    selectableFields:
+    - jsonPath: .spec.remediationRequestRef.name
     served: true
     storage: true
     subresources:

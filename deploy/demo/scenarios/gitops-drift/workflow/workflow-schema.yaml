@@ -1,0 +1,47 @@
+# GitOps Revert Workflow Schema - Job Backend (BR-WORKFLOW-004)
+# Scenario: #125 -- GitOps drift remediation (ArgoCD + Gitea)
+metadata:
+  workflowId: git-revert-v1
+  version: "1.0.0"
+  description:
+    what: "Reverts the most recent commit in a GitOps-managed repository to undo a bad change"
+    whenToUse: "When a GitOps-managed workload is crashing due to a bad commit (ConfigMap, Deployment spec, etc.) and ArgoCD/Flux will reconcile the reverted state"
+    whenNotToUse: "When the environment is not GitOps-managed -- use RollbackDeployment instead"
+    preconditions: "ArgoCD or Flux is active, the Gitea/GitHub repository is accessible, and a previous healthy commit exists"
+
+actionType: GitRevertCommit
+
+labels:
+  signalType: CrashLoopBackOff
+  severity: [critical, high]
+  environment: [production, staging]
+  component: "*"
+  priority: "*"
+
+# Workflow-author-defined: what infrastructure characteristics this workflow REQUIRES
+# DD-WORKFLOW-001 v2.0: matched against incident DetectedLabels from HAPI LabelDetector
+detectedLabels:
+  gitOpsTool: "*"
+
+execution:
+  engine: job
+  bundle: quay.io/kubernaut-cicd/test-workflows/git-revert-job@sha256:5b208cc81456f182b1ecb8c74e0f8cd4fb3518e8455149bffb913aafaf6a2dfb
+
+parameters:
+  - name: GIT_REPO_URL
+    type: string
+    required: true
+    description: "URL of the Git repository to revert (e.g., http://gitea-http.gitea:3000/kubernaut/demo-gitops-repo.git)"
+  - name: GIT_BRANCH
+    type: string
+    required: false
+    description: "Branch to revert on"
+    default: "main"
+  - name: TARGET_NAMESPACE
+    type: string
+    required: true
+    description: "Namespace of the affected workload"
+  - name: TARGET_RESOURCE_NAME
+    type: string
+    required: true
+    description: "Name of the affected resource (for verification)"

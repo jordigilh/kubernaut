@@ -302,13 +302,11 @@ func (r *RemediationOrchestratorReconciler) createAIAnalysis(
     }
 
     // Create AIAnalysis with structured data
+    // Note: Issue #91 - kubernaut.ai/remediation-request label REMOVED; spec.remediationRequestRef and ownerRef are sufficient
     ai := &aianalysisv1alpha1.AIAnalysis{
         ObjectMeta: metav1.ObjectMeta{
             Name:      fmt.Sprintf("%s-aianalysis", rr.Name),
             Namespace: rr.Namespace,
-            Labels: map[string]string{
-                "kubernaut.ai/remediation-request": rr.Name,
-            },
         },
         Spec: aianalysisv1alpha1.AIAnalysisSpec{
             RemediationRequestRef: corev1.ObjectReference{

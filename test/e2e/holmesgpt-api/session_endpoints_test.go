@@ -482,7 +482,7 @@ var _ = Describe("E2E-HAPI-064: Session-Based Endpoints", Label("e2e", "hapi", "
 				SelectedWorkflow: hapiclient.SelectedWorkflowSummary{
 					WorkflowID:     "workflow-session-failed",
 					Version:        "1.0.0",
-					ContainerImage: "registry.example.com/workflow:latest",
+					ExecutionBundle: "registry.example.com/workflow:latest",
 					Rationale:      "Selected for initial remediation attempt",
 				},
 				Failure: hapiclient.ExecutionFailure{
@@ -569,7 +569,7 @@ var _ = Describe("E2E-HAPI-064: Session-Based Endpoints", Label("e2e", "hapi", "
 				},
 				SelectedWorkflow: hapiclient.SelectedWorkflowSummary{
 					WorkflowID: "workflow-not-repro", Version: "1.0.0",
-					ContainerImage: "registry.example.com/workflow:latest",
+					ExecutionBundle: "registry.example.com/workflow:latest",
 					Rationale:      "Selected for initial attempt",
 				},
 				Failure: hapiclient.ExecutionFailure{
@@ -641,7 +641,7 @@ var _ = Describe("E2E-HAPI-064: Session-Based Endpoints", Label("e2e", "hapi", "
 				},
 				SelectedWorkflow: hapiclient.SelectedWorkflowSummary{
 					WorkflowID: "workflow-no-recovery", Version: "1.0.0",
-					ContainerImage: "registry.example.com/workflow:latest",
+					ExecutionBundle: "registry.example.com/workflow:latest",
 					Rationale:      "Initial attempt",
 				},
 				Failure: hapiclient.ExecutionFailure{
@@ -763,7 +763,7 @@ var _ = Describe("E2E-HAPI-064: Session-Based Endpoints", Label("e2e", "hapi", "
 				SelectedWorkflow: hapiclient.SelectedWorkflowSummary{
 					WorkflowID:     "workflow-from-incident",
 					Version:        "1.0.0",
-					ContainerImage: "registry.example.com/workflow:latest",
+					ExecutionBundle: "registry.example.com/workflow:latest",
 					Rationale:      "Selected by initial incident analysis",
 				},
 				Failure: hapiclient.ExecutionFailure{

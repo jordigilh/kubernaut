@@ -1,13 +1,14 @@
-# Notification Routing Configuration - Label-Based Routing
+# Notification Routing Configuration - Spec-Field-Based Routing
 #
-# BR-NOT-065: Channel Routing Based on Labels
+# BR-NOT-065: Channel Routing Based on Spec Fields
 # BR-NOT-066: Alertmanager-Compatible Configuration Format
 # DD-WE-004: WorkflowExecution Exponential Backoff Skip Reasons
 # BR-HAPI-200: Investigation Outcome Reporting
 #
-# This configuration demonstrates routing based on:
-# - WorkflowExecution skip reasons (DD-WE-004)
-# - HolmesGPT-API investigation outcomes (BR-HAPI-200)
+# Issue #91: Routing now uses spec fields + metadata instead of labels.
+# Match keys correspond to spec field names (type, severity, phase,
+# review-source, priority) and spec.metadata keys (skip-reason,
+# investigation-outcome, environment, etc.).
 #
 # Use as a ConfigMap for the Notification Controller.
 #
@@ -19,18 +20,16 @@
 # Cross-Team References:
 #   - NOTICE_WE_EXPONENTIAL_BACKOFF_DD_WE_004.md (Q7, Q8)
 #   - NOTICE_INVESTIGATION_INCONCLUSIVE_BR_HAPI_200.md
-#   - Labels set by RemediationOrchestrator (mandatory per BR-NOT-065)
-#
-# Last Updated: 2025-12-07
+#   - Spec fields set by RemediationOrchestrator (mandatory per BR-NOT-065)
 
 # Global routing configuration (Alertmanager-compatible format)
 route:
-  # Group notifications by these labels to reduce alert noise
+  # Group notifications by these attributes to reduce alert noise
   group_by:
-    - kubernaut.ai/environment
-    - kubernaut.ai/skip-reason
-    - kubernaut.ai/investigation-outcome
-    - kubernaut.ai/remediation-request
+    - environment
+    - skip-reason
+    - investigation-outcome
+    - remediation-request
 
   # Wait time before sending first notification for a group
   group_wait: 30s
@@ -51,9 +50,8 @@ route:
     # Route to PagerDuty for immediate 24/7 alerting.
     #
     - match:
-        kubernaut.ai/skip-reason: PreviousExecutionFailed
+        skip-reason: PreviousExecutionFailed
       receiver: pagerduty-oncall-critical
-      # Override group settings for critical alerts
       group_wait: 0s  # Send immediately
       repeat_interval: 15m  # Remind every 15 minutes
 
@@ -65,7 +63,7 @@ route:
     # Route to Slack #ops for team awareness.
     #
     - match:
-        kubernaut.ai/skip-reason: ExhaustedRetries
+        skip-reason: ExhaustedRetries
       receiver: slack-ops-high
       group_wait: 1m
       repeat_interval: 1h
@@ -78,13 +76,13 @@ route:
     # Route to console only (bulk notifications per BR-ORCH-034).
     #
     - match:
-        kubernaut.ai/skip-reason: ResourceBusy
+        skip-reason: ResourceBusy
       receiver: console-only-bulk
       group_wait: 5m
       group_interval: 30m
 
     - match:
-        kubernaut.ai/skip-reason: RecentlyRemediated
+        skip-reason: RecentlyRemediated
       receiver: console-only-bulk
       group_wait: 5m
       group_interval: 30m
@@ -97,9 +95,8 @@ route:
     # Route to silent receiver (no delivery).
     #
     - match:
-        kubernaut.ai/investigation-outcome: resolved
+        investigation-outcome: resolved
       receiver: silent-noop
-      # No need to repeat - alert is already resolved
       repeat_interval: 168h  # 1 week (effectively disable repeats)
 
     # =================================================================
@@ -110,7 +107,7 @@ route:
     # Route to Slack #ops for triage.
     #
     - match:
-        kubernaut.ai/investigation-outcome: inconclusive
+        investigation-outcome: inconclusive
       receiver: slack-ops-inconclusive
       group_wait: 1m
       repeat_interval: 2h
@@ -122,8 +119,8 @@ route:
     # that don't match specific skip-reason rules.
     #
     - match:
-        kubernaut.ai/environment: production
-        kubernaut.ai/severity: critical
+        environment: production
+        severity: critical
       receiver: pagerduty-oncall-critical
 
     # =================================================================
@@ -132,8 +129,8 @@ route:
     # Escalation notifications in production go to Slack ops.
     #
     - match:
-        kubernaut.ai/environment: production
-        kubernaut.ai/notification-type: escalation
+        environment: production
+        type: escalation
       receiver: slack-ops-high
 
     # =================================================================
@@ -142,15 +139,15 @@ route:
     # Non-production notifications go to Slack #dev
     #
     - match:
-        kubernaut.ai/environment: staging
+        environment: staging
       receiver: slack-dev-low
 
     - match:
-        kubernaut.ai/environment: development
+        environment: development
       receiver: slack-dev-low
 
     - match:
-        kubernaut.ai/environment: test
+        environment: test
       receiver: slack-dev-low
 
   # Default fallback receiver (when no routes match)
@@ -161,10 +158,7 @@ receivers:
   # ===================================================================
   # SILENT: No delivery (BR-HAPI-200 resolved alerts)
   # ===================================================================
-  # Used for alerts that self-resolved during investigation.
-  # Prevents alert fatigue by not delivering notifications.
   - name: silent-noop
-    # No delivery configs = silent/no-op
 
   # ===================================================================
   # OPS: Slack for inconclusive investigations (BR-HAPI-200)
@@ -172,7 +166,6 @@ receivers:
   - name: slack-ops-inconclusive
     slack_configs:
       - channel: '#kubernaut-ops-triage'
-        # Note: actual Slack config would include webhook URL
 
   # ===================================================================
   # CRITICAL: PagerDuty for 24/7 on-call alerting
@@ -181,7 +174,6 @@ receivers:
     pagerduty_configs:
       - service_key: ${PAGERDUTY_CRITICAL_SERVICE_KEY}
         severity: critical
-        # Note: actual PagerDuty config would include more fields
 
   # ===================================================================
   # HIGH: Slack #ops for team awareness
@@ -189,7 +181,6 @@ receivers:
   - name: slack-ops-high
     slack_configs:
       - channel: '#kubernaut-ops'
-        # Note: actual Slack config would include webhook URL
 
   # ===================================================================
   # LOW: Console only for bulk notifications
@@ -211,5 +202,3 @@ receivers:
   - name: slack-default
     slack_configs:
       - channel: '#kubernaut-alerts'
-
-

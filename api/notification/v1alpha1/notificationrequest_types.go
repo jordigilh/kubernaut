@@ -199,8 +199,23 @@ type NotificationRequestSpec struct {
 	// +optional
 	Channels []Channel `json:"channels,omitempty"`
 
+	// Severity from the originating signal (used for routing)
+	// Issue #91: promoted from mutable label to immutable spec field
+	// +optional
+	Severity string `json:"severity,omitempty"`
+
+	// Phase that triggered this notification (for phase-timeout notifications)
+	// Issue #91: promoted from mutable label to immutable spec field
+	// +optional
+	Phase string `json:"phase,omitempty"`
+
+	// ReviewSource indicates what triggered manual review (for manual-review notifications)
+	// Issue #91: promoted from mutable label to immutable spec field
+	// +optional
+	ReviewSource string `json:"reviewSource,omitempty"`
+
 	// Metadata for context (key-value pairs)
-	// Examples: remediationRequestName, cluster, namespace, severity, alertName
+	// Examples: remediationRequestName, cluster, namespace, alertName
 	// +optional
 	Metadata map[string]string `json:"metadata,omitempty"`
 
@@ -296,11 +311,15 @@ type NotificationRequestStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:selectablefield:JSONPath=.spec.remediationRequestRef.name
+// +kubebuilder:selectablefield:JSONPath=.spec.type
+// +kubebuilder:selectablefield:JSONPath=.spec.severity
 // +kubebuilder:resource:shortName=notif;notifs
 // +kubebuilder:printcolumn:name="Type",type=string,JSONPath=`.spec.type`
 // +kubebuilder:printcolumn:name="Priority",type=string,JSONPath=`.spec.priority`
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="Attempts",type=integer,JSONPath=`.status.totalAttempts`
+// +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`,priority=1
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // NotificationRequest is the Schema for the notificationrequests API

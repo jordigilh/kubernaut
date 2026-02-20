@@ -27,7 +27,7 @@ All analysis is performed asynchronously via the session-based submit/poll/resul
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, status
 import logging
 
-from src.models.incident_models import IncidentRequest
+from src.models.incident_models import IncidentRequest, IncidentResponse
 from .llm_integration import analyze_incident
 from src.audit import get_audit_store, create_aiagent_response_complete_event  # DD-AUDIT-005
 from src.middleware.user_context import get_authenticated_user  # DD-AUTH-006
@@ -152,6 +152,8 @@ async def incident_session_status_endpoint(session_id: str):
 @router.get(
     "/incident/session/{session_id}/result",
     status_code=status.HTTP_200_OK,
+    response_model=IncidentResponse,
+    response_model_exclude_none=True,
     responses={404: {"description": "Session not found"}, 409: {"description": "Session not yet completed"}},
 )
 async def incident_session_result_endpoint(session_id: str):

@@ -6,12 +6,13 @@
 **Target Version**: V1.1
 **Status**: ✅ Approved
 **Date**: 2026-01-20
-**Last Updated**: 2026-01-20
+**Last Updated**: 2026-02-12
 
 **Related Design Decisions**:
 - [DD-HAPI-006: Affected Resource in Root Cause Analysis](../architecture/decisions/DD-HAPI-006-affectedResource-in-rca.md)
 - [DD-AIANALYSIS-001: Rego Policy Loading Strategy](../architecture/decisions/DD-AIANALYSIS-001-rego-policy-loading-strategy.md)
 - [DD-CONTRACT-002: Service Integration Contracts](../architecture/decisions/DD-CONTRACT-002-service-integration-contracts.md)
+- [ADR-055: LLM-Driven Context Enrichment](../architecture/decisions/ADR-055-llm-driven-context-enrichment.md)
 
 **Related Business Requirements**:
 - BR-AI-012: Approval Policy Evaluation (referenced - not found, needs creation)
@@ -37,6 +38,10 @@ AIAnalysis evaluates Rego policies to determine if remediation workflows require
 1. ❌ **Incorrect approval decisions**: Workflows targeting production resources may not require approval if signal source is in staging
 2. ❌ **Limited policy expressiveness**: Cannot write policies like "require approval if RCA targets critical Deployments"
 3. ❌ **Inconsistent approval logic**: Approval based on symptom (signal source) instead of root cause (RCA target)
+
+### **Supersession Note (ADR-055)**
+
+Per [ADR-055: LLM-Driven Context Enrichment](../architecture/decisions/ADR-055-llm-driven-context-enrichment.md), the previous `target_in_owner_chain` boolean field is **superseded** by `affected_resource`. The LLM now identifies the actual remediation target during RCA (Phase 1) and provides it as a structured `affectedResource` object. This replaces the former boolean that only indicated whether the signal source appeared in the owner chain, providing significantly richer context for Rego policy decisions (kind, name, namespace).
 
 ---
 
@@ -226,9 +231,27 @@ require_approval if {
 }
 ```
 
+**Example 5: Default-deny for missing affected_resource (recommended safety pattern)**
+```rego
+package kubernaut.approval
+
+# Safety net: require approval when LLM failed to identify remediation target.
+# Without this rule, kind-specific approval rules silently do not fire
+# when affected_resource is nil, allowing remediation without approval.
+require_approval if {
+    not input.affected_resource
+}
+
+# These rules only evaluate when affected_resource is present
+require_approval if {
+    input.affected_resource.kind == "StatefulSet"
+    input.affected_resource.namespace == "production"
+}
+```
+
 **Acceptance Criteria**:
-1. ✅ Documentation includes 4+ example policies using `affected_resource`
-2. ✅ Examples cover: production targeting, source vs target comparison, API version checks, fallback logic
+1. ✅ Documentation includes 5+ example policies using `affected_resource`
+2. ✅ Examples cover: production targeting, source vs target comparison, API version checks, fallback logic, **default-deny safety pattern**
 3. ✅ Examples are tested with unit tests in AIAnalysis
 4. ✅ Examples use snake_case naming (`affected_resource`, `api_version`, `target_resource`)
 
@@ -248,6 +271,40 @@ require_approval if {
 1. ✅ Existing Rego policies pass without modification
 2. ✅ New policies can use `affected_resource` without breaking old policies
 3. ✅ Policy evaluation does not fail if `affected_resource` is nil
+
+---
+
+### **FR-AI-085-005: Default-Deny When `affected_resource` Is Missing**
+
+**Requirement**: Rego policies that rely on `affected_resource` for kind-specific or namespace-specific approval decisions MUST include a **default-deny rule** that requires approval when `affected_resource` is undefined or null.
+
+**Rationale**: Per ADR-055, the LLM is instructed to always provide `affectedResource` in its response, and the `WorkflowResponseValidator` enforces this with a 3-attempt self-correction loop. However, if after all retries `affectedResource` is still missing (e.g., LLM consistently fails to provide it), the Rego policy input will have `affected_resource = null`. In this scenario, kind-specific rules like `require_approval if { input.affected_resource.kind == "Deployment" }` would silently **not fire**, resulting in no approval being required. This is a **production safety gap**: unknown remediation targets must default to requiring approval.
+
+**Default-Deny Pattern**:
+```rego
+package kubernaut.approval
+
+# Default-deny: require approval when affected_resource is missing.
+# This prevents silent bypass of kind/namespace-specific approval rules
+# when the LLM fails to identify the target resource.
+require_approval if {
+    not input.affected_resource
+}
+
+# Kind-specific rules only fire when affected_resource is present
+require_approval if {
+    input.affected_resource.kind == "Deployment"
+    input.affected_resource.namespace == "production"
+}
+```
+
+**User-Facing Documentation**: This pattern MUST be documented in the Rego policy authoring guide as a **recommended safety practice** for any policy that uses `affected_resource` for approval decisions. Users should be advised that omitting the default-deny rule may allow remediations to proceed without approval when the LLM cannot determine the target resource.
+
+**Acceptance Criteria**:
+1. ✅ Default Rego approval policy includes a `require_approval` rule for missing `affected_resource`
+2. ✅ Policy authoring documentation includes the default-deny pattern with explanation
+3. ✅ Unit tests verify that missing `affected_resource` triggers approval requirement
+4. ✅ Unit tests verify that present `affected_resource` bypasses the default-deny rule (kind-specific rules take precedence)
 
 ---
 
@@ -415,17 +472,20 @@ require_approval if {
 - ✅ Minimal code changes (struct field + builder logic)
 - ✅ Backward compatible (optional field)
 - ✅ Aligns with existing Rego policy infrastructure
+- ✅ Default-deny pattern (FR-AI-085-005) prevents silent approval bypass when `affected_resource` is missing
 
 **Risks**:
-- ⚠️ **5% Gap**: Policy authors may forget to check `if input.affected_resource != null`
-  - **Mitigation**: Provide fallback pattern in documentation
-  - **Mitigation**: Example policies demonstrate null check pattern
+- ⚠️ **5% Gap**: Policy authors may forget to include the default-deny rule in custom policies
+  - **Mitigation**: Default approval policy ships with the default-deny rule pre-configured
+  - **Mitigation**: Policy authoring documentation prominently features the default-deny pattern
+  - **Mitigation**: Example policies (Example 5) demonstrate the safety pattern
 
 ---
 
 **Document Control**:
 - **Created**: 2026-01-20
-- **Last Updated**: 2026-01-20
-- **Version**: 1.0
+- **Last Updated**: 2026-02-12
+- **Version**: 1.1
 - **Status**: ✅ Approved
-- **Next Review**: After implementation (estimated 2026-01-22)
+- **Changes in 1.1**: Added FR-AI-085-005 (default-deny for missing `affected_resource`), added ADR-055 reference, documented `target_in_owner_chain` supersession, added Example 5 (default-deny safety pattern).
+- **Next Review**: After ADR-055 implementation

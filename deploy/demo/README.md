@@ -115,28 +115,50 @@ kubectl --kubeconfig ~/.kube/kubernaut-demo-config rollout restart deployment/ho
 To receive remediation notifications in Slack:
 
 1. Create a [Slack Incoming Webhook](https://api.slack.com/messaging/webhooks) for your workspace
-2. Patch the notification controller with your webhook URL:
+2. Place the webhook URL in the secrets directory (this file is gitignored):
 
 ```bash
-kubectl --kubeconfig ~/.kube/kubernaut-demo-config set env deployment/notification-controller \
-  SLACK_WEBHOOK_URL="https://hooks.slack.com/services/YOUR/WEBHOOK/URL" \
-  -n kubernaut-system
+# Option A: Copy from ~/.kubernaut/ if you already have one
+cp ~/.kubernaut/notification/slack-webhook.url deploy/demo/base/secrets/slack-webhook-url
+
+# Option B: Create manually
+echo "https://hooks.slack.com/services/YOUR/WEBHOOK/URL" > deploy/demo/base/secrets/slack-webhook-url
 ```
 
-The notification controller will automatically restart and begin delivering notifications to your Slack channel.
+3. The `slack-webhook` Secret is generated automatically by Kustomize from `deploy/demo/base/secrets/kustomization.yaml` and referenced by the notification controller deployment via `secretKeyRef`.
+
+If the demo is already running, you can create the Secret manually and restart:
+
+```bash
+kubectl --kubeconfig ~/.kube/kubernaut-demo-config create secret generic slack-webhook \
+  -n kubernaut-system \
+  --from-file=webhook-url=$HOME/.kubernaut/notification/slack-webhook.url
+
+kubectl --kubeconfig ~/.kube/kubernaut-demo-config rollout restart deployment/notification-controller -n kubernaut-system
+```
 
 ### 6. Deploy Demo Workloads
 
-Two workload variants are available:
+Two workload variants are available via Make targets:
 
 **OOMKill scenario** (Kubernetes Event Exporter signal):
 ```bash
-kubectl --kubeconfig ~/.kube/kubernaut-demo-config apply -f deploy/demo/base/workloads/memory-eater-oomkill.yaml
+make demo-trigger-oomkill
 ```
 
 **High memory usage scenario** (Prometheus AlertManager signal):
 ```bash
-kubectl --kubeconfig ~/.kube/kubernaut-demo-config apply -f deploy/demo/base/workloads/memory-eater-high-usage.yaml
+make demo-trigger-high-usage
+```
+
+**Reset workloads** (clean slate for re-triggering):
+```bash
+make demo-reset-workloads
+```
+
+You can also apply manifests directly:
+```bash
+kubectl --kubeconfig ~/.kube/kubernaut-demo-config apply -f deploy/demo/base/workloads/memory-eater-oomkill.yaml
 ```
 
 ## Expected Remediation Flow

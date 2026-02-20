@@ -30,7 +30,7 @@ class DetectedLabels(BaseModel):
     """
     Auto-detected labels from Kubernetes resources (DD-WORKFLOW-001 v2.3) - V1.0 structured types
     """ # noqa: E501
-    failed_detections: Optional[List[StrictStr]] = Field(default=None, description="Fields where detection failed (RBAC, timeout, etc.) - consumer should ignore these fields")
+    failed_detections: Optional[List[StrictStr]] = Field(default=None, description="Fields where detection failed (RBAC, timeout, etc.) - consumer should ignore these fields", alias="failedDetections")
     git_ops_managed: Optional[StrictBool] = Field(default=None, description="Resource is managed by GitOps (ArgoCD/Flux)", alias="gitOpsManaged")
     git_ops_tool: Optional[StrictStr] = Field(default=None, description="GitOps tool: argocd, flux, or * (wildcard = any tool)", alias="gitOpsTool")
     pdb_protected: Optional[StrictBool] = Field(default=None, description="PodDisruptionBudget protects this workload", alias="pdbProtected")
@@ -39,7 +39,7 @@ class DetectedLabels(BaseModel):
     helm_managed: Optional[StrictBool] = Field(default=None, description="Resource is managed by Helm", alias="helmManaged")
     network_isolated: Optional[StrictBool] = Field(default=None, description="NetworkPolicy restricts traffic", alias="networkIsolated")
     service_mesh: Optional[StrictStr] = Field(default=None, description="Service mesh type: istio, linkerd, or * (wildcard = any mesh)", alias="serviceMesh")
-    __properties: ClassVar[List[str]] = ["failed_detections", "gitOpsManaged", "gitOpsTool", "pdbProtected", "hpaEnabled", "stateful", "helmManaged", "networkIsolated", "serviceMesh"]
+    __properties: ClassVar[List[str]] = ["failedDetections", "gitOpsManaged", "gitOpsTool", "pdbProtected", "hpaEnabled", "stateful", "helmManaged", "networkIsolated", "serviceMesh"]
 
     @field_validator('failed_detections')
     def failed_detections_validate_enum(cls, value):
@@ -121,7 +121,7 @@ class DetectedLabels(BaseModel):
             return cls.model_validate(obj)
 
         _obj = cls.model_validate({
-            "failed_detections": obj.get("failed_detections"),
+            "failedDetections": obj.get("failedDetections"),
             "gitOpsManaged": obj.get("gitOpsManaged"),
             "gitOpsTool": obj.get("gitOpsTool"),
             "pdbProtected": obj.get("pdbProtected"),

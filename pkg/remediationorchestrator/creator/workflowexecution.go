@@ -74,8 +74,8 @@ func (c *WorkflowExecutionCreator) Create(
 	if ai.Status.SelectedWorkflow.WorkflowID == "" {
 		return "", fmt.Errorf("selectedWorkflow.workflowId is required")
 	}
-	if ai.Status.SelectedWorkflow.ContainerImage == "" {
-		return "", fmt.Errorf("selectedWorkflow.containerImage is required")
+	if ai.Status.SelectedWorkflow.ExecutionBundle == "" {
+		return "", fmt.Errorf("selectedWorkflow.executionBundle is required")
 	}
 
 	// Generate deterministic name
@@ -99,10 +99,8 @@ func (c *WorkflowExecutionCreator) Create(
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: rr.Namespace,
-			Labels: map[string]string{
-				"kubernaut.ai/remediation-request": rr.Name,
-				"kubernaut.ai/component":           "workflow-execution",
-			},
+			// Issue #91: labels removed; parent tracked via spec.remediationRequestRef + ownerRef
+
 		},
 		Spec: workflowexecutionv1.WorkflowExecutionSpec{
 			// Parent reference for audit trail (REQUIRED)
@@ -117,8 +115,8 @@ func (c *WorkflowExecutionCreator) Create(
 			WorkflowRef: workflowexecutionv1.WorkflowRef{
 				WorkflowID:      ai.Status.SelectedWorkflow.WorkflowID,
 				Version:         ai.Status.SelectedWorkflow.Version,
-				ContainerImage:  ai.Status.SelectedWorkflow.ContainerImage,
-				ContainerDigest: ai.Status.SelectedWorkflow.ContainerDigest,
+				ExecutionBundle:  ai.Status.SelectedWorkflow.ExecutionBundle,
+				ExecutionBundleDigest: ai.Status.SelectedWorkflow.ExecutionBundleDigest,
 			},
 			// TargetResource: String format "namespace/kind/name" (per API contract)
 			// BR-HAPI-191: Prefer LLM-identified AffectedResource (e.g., Deployment)
@@ -166,7 +164,7 @@ func (c *WorkflowExecutionCreator) Create(
 	logger.Info("Created WorkflowExecution CRD",
 		"name", name,
 		"workflowId", ai.Status.SelectedWorkflow.WorkflowID,
-		"containerImage", ai.Status.SelectedWorkflow.ContainerImage,
+		"executionBundle", ai.Status.SelectedWorkflow.ExecutionBundle,
 		"targetResource", we.Spec.TargetResource,
 	)
 	return name, nil

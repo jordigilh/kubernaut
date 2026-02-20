@@ -331,7 +331,7 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowID:     "test-workflow",
 				Version:        "1.0.0",
-				ContainerImage: "test-image:latest",
+				ExecutionBundle: "test-image:latest",
 			}
 			Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
 

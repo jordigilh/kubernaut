@@ -1,0 +1,29 @@
+# Cordon + Drain Workflow Schema - Job Backend (BR-WORKFLOW-004)
+# Scenario: #127 -- Node NotReady -> cordon and drain
+metadata:
+  workflowId: cordon-drain-v1
+  version: "1.0.0"
+  description:
+    what: "Cordons a NotReady node to prevent new scheduling and drains existing workloads to healthy nodes"
+    whenToUse: "When a node has been in NotReady state for an extended period, indicating a persistent hardware or OS-level failure"
+    whenNotToUse: "When the node is briefly NotReady due to a known transient condition (e.g., kubelet restart, brief network hiccup)"
+    preconditions: "The cluster has sufficient capacity on remaining nodes to absorb the drained workloads"
+
+actionType: CordonDrainNode
+
+labels:
+  signalType: NodeNotReady
+  severity: [critical]
+  environment: [production, staging]
+  component: "*"
+  priority: "*"
+
+execution:
+  engine: job
+  bundle: quay.io/kubernaut-cicd/test-workflows/cordon-drain-job@sha256:027066ddfc8ff142b9fa8e442a00de967c937da056a65b55c8af28a87682f395
+
+parameters:
+  - name: TARGET_NODE
+    type: string
+    required: true
+    description: "Name of the NotReady node to cordon and drain"

@@ -23,6 +23,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -74,30 +75,28 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 		It("should preserve skip-reason label through CRD creation and retrieval", func() {
 			notifName := fmt.Sprintf("skip-reason-label-test-%s", uniqueSuffix)
 
-			// Create NotificationRequest with skip-reason label
+			// Issue #91: Create NotificationRequest with spec fields + metadata for routing
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       notifName,
 					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
-					Labels: map[string]string{
-						routing.LabelSkipReason:  routing.SkipReasonPreviousExecutionFailed,
-						routing.LabelEnvironment: routing.EnvironmentProduction,
-						routing.LabelSeverity:    routing.SeverityCritical,
-						routing.LabelComponent:   "remediation-orchestrator",
-					},
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Type:     notificationv1alpha1.NotificationTypeEscalation,
 					Priority: notificationv1alpha1.NotificationPriorityCritical,
+					Severity: routing.SeverityCritical,
 					Subject:  fmt.Sprintf("Test Skip-Reason: PreviousExecutionFailed [%s]", uniqueSuffix),
 					Body:     "Workflow execution failed - cluster state unknown. Manual intervention required.",
 					Recipients: []notificationv1alpha1.Recipient{
 						{Email: "oncall@example.com"},
 					},
-					// Channels intentionally empty - routing rules should apply
 					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole, // Use console for deterministic testing
+						notificationv1alpha1.ChannelConsole,
+					},
+					Metadata: map[string]string{
+						routing.AttrSkipReason:  routing.SkipReasonPreviousExecutionFailed,
+						routing.AttrEnvironment: routing.EnvironmentProduction,
 					},
 				},
 			}
@@ -115,22 +114,17 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 				}, created)
 			}, 5*time.Second, 500*time.Millisecond).Should(Succeed(), "NotificationRequest should exist")
 
-			// Verify skip-reason label is preserved
-			Expect(created.Labels).To(HaveKeyWithValue(
-				routing.LabelSkipReason,
+			// Issue #91: Verify routing data is in spec fields + metadata, not labels
+			Expect(created.Spec.Severity).To(Equal(routing.SeverityCritical),
+				"Severity should be in spec field")
+			Expect(created.Spec.Metadata).To(HaveKeyWithValue(
+				routing.AttrSkipReason,
 				routing.SkipReasonPreviousExecutionFailed,
-			), "Skip-reason label should be preserved")
-
-			// Verify other routing labels are preserved
-			Expect(created.Labels).To(HaveKeyWithValue(
-				routing.LabelEnvironment,
+			), "Skip-reason should be in spec.metadata")
+			Expect(created.Spec.Metadata).To(HaveKeyWithValue(
+				routing.AttrEnvironment,
 				routing.EnvironmentProduction,
-			), "Environment label should be preserved")
-
-			Expect(created.Labels).To(HaveKeyWithValue(
-				routing.LabelSeverity,
-				routing.SeverityCritical,
-			), "Severity label should be preserved")
+			), "Environment should be in spec.metadata")
 
 			// Wait for controller to process (should reach Sent phase)
 			err = waitForReconciliationComplete(ctx, k8sClient, notifName, testNamespace,
@@ -156,18 +150,18 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 						Name:       notifName,
 						Namespace:  testNamespace,
 						Generation: 1, // K8s increments on create/update
-						Labels: map[string]string{
-							routing.LabelSkipReason: skipReason,
-							routing.LabelSeverity:   severity,
-						},
 					},
 					Spec: notificationv1alpha1.NotificationRequestSpec{
 						Type:     notificationv1alpha1.NotificationTypeStatusUpdate,
 						Priority: notificationv1alpha1.NotificationPriorityMedium,
+						Severity: severity,
 						Subject:  fmt.Sprintf("Skip Reason Test: %s [%s]", skipReason, uniqueSuffix),
 						Body:     fmt.Sprintf("Testing skip reason: %s", skipReason),
 						Channels: []notificationv1alpha1.Channel{
 							notificationv1alpha1.ChannelConsole,
+						},
+						Metadata: map[string]string{
+							routing.AttrSkipReason: skipReason,
 						},
 					},
 				}
@@ -183,9 +177,9 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 						Name:      notifName,
 						Namespace: testNamespace,
 					}, created)
-					return created.Labels[routing.LabelSkipReason]
+					return created.Spec.Metadata[routing.AttrSkipReason]
 				}, 5*time.Second, 500*time.Millisecond).Should(Equal(skipReason),
-					"Skip-reason label should be: %s", skipReason)
+					"Skip-reason should be in spec.metadata: %s", skipReason)
 
 				// Wait for reconciliation
 				err = waitForReconciliationComplete(ctx, k8sClient, notifName, testNamespace,
@@ -234,32 +228,33 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 
 	Context("Controller Label Extraction", func() {
 
-		// Test 3: Controller processes notification with combined routing labels
-		// BR-NOT-065: Multiple labels can be combined for fine-grained routing
-		It("should process notification with combined skip-reason and environment labels", func() {
+		// Test 3: Controller processes notification with combined routing attributes
+		// BR-NOT-065: Multiple attributes can be combined for fine-grained routing
+		It("should process notification with combined skip-reason and environment attributes", func() {
 			notifName := fmt.Sprintf("combined-labels-test-%s", uniqueSuffix)
 
-			// Create NotificationRequest with multiple routing labels
+			// Issue #91: Create NR with combined spec fields + metadata for routing
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       notifName,
 					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
-					Labels: map[string]string{
-						routing.LabelSkipReason:         routing.SkipReasonPreviousExecutionFailed,
-						routing.LabelEnvironment:        routing.EnvironmentProduction,
-						routing.LabelSeverity:           routing.SeverityCritical,
-						routing.LabelComponent:          "remediation-orchestrator",
-						routing.LabelRemediationRequest: "rr-test-12345",
-					},
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Type:     notificationv1alpha1.NotificationTypeEscalation,
 					Priority: notificationv1alpha1.NotificationPriorityCritical,
-					Subject:  fmt.Sprintf("Combined Labels Test [%s]", uniqueSuffix),
-					Body:     "Testing combined label routing in production environment",
+					Severity: routing.SeverityCritical,
+					RemediationRequestRef: &corev1.ObjectReference{
+						Name: "rr-test-12345",
+					},
+					Subject: fmt.Sprintf("Combined Labels Test [%s]", uniqueSuffix),
+					Body:    "Testing combined spec field routing in production environment",
 					Channels: []notificationv1alpha1.Channel{
 						notificationv1alpha1.ChannelConsole,
+					},
+					Metadata: map[string]string{
+						routing.AttrSkipReason:  routing.SkipReasonPreviousExecutionFailed,
+						routing.AttrEnvironment: routing.EnvironmentProduction,
 					},
 				},
 			}
@@ -281,19 +276,19 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 			}, processed)
 			Expect(err).NotTo(HaveOccurred())
 
-			// All routing labels should be intact
-			Expect(processed.Labels).To(HaveLen(5), "All 5 routing labels should be preserved")
-			Expect(processed.Labels[routing.LabelSkipReason]).To(Equal(routing.SkipReasonPreviousExecutionFailed))
-			Expect(processed.Labels[routing.LabelEnvironment]).To(Equal(routing.EnvironmentProduction))
-			Expect(processed.Labels[routing.LabelSeverity]).To(Equal(routing.SeverityCritical))
-			Expect(processed.Labels[routing.LabelComponent]).To(Equal("remediation-orchestrator"))
-			Expect(processed.Labels[routing.LabelRemediationRequest]).To(Equal("rr-test-12345"))
+			// Issue #91: Routing data is in spec fields + metadata, not labels
+			Expect(processed.Spec.Severity).To(Equal(routing.SeverityCritical))
+			Expect(processed.Spec.Type).To(Equal(notificationv1alpha1.NotificationTypeEscalation))
+			Expect(processed.Spec.RemediationRequestRef).ToNot(BeNil())
+			Expect(processed.Spec.RemediationRequestRef.Name).To(Equal("rr-test-12345"))
+			Expect(processed.Spec.Metadata[routing.AttrSkipReason]).To(Equal(routing.SkipReasonPreviousExecutionFailed))
+			Expect(processed.Spec.Metadata[routing.AttrEnvironment]).To(Equal(routing.EnvironmentProduction))
 
 			// Cleanup
 			err = deleteAndWait(ctx, k8sClient, notif, 10*time.Second)
 			Expect(err).NotTo(HaveOccurred())
 
-			GinkgoWriter.Printf("✅ Combined routing labels processed correctly\n")
+			GinkgoWriter.Printf("✅ Combined routing attributes processed correctly\n")
 		})
 
 		// Test 4: Controller handles notification without skip-reason label
@@ -301,24 +296,24 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 		It("should process notification without skip-reason label (fallback routing)", func() {
 			notifName := fmt.Sprintf("no-skip-reason-test-%s", uniqueSuffix)
 
-			// Create NotificationRequest WITHOUT skip-reason label
+			// Issue #91: Create NR with spec fields + metadata (no skip-reason)
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       notifName,
 					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
-					Labels: map[string]string{
-						routing.LabelEnvironment: routing.EnvironmentStaging,
-						routing.LabelSeverity:    routing.SeverityMedium,
-					},
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Type:     notificationv1alpha1.NotificationTypeSimple,
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
+					Severity: routing.SeverityMedium,
 					Subject:  fmt.Sprintf("No Skip-Reason Test [%s]", uniqueSuffix),
-					Body:     "Testing fallback routing without skip-reason label",
+					Body:     "Testing fallback routing without skip-reason",
 					Channels: []notificationv1alpha1.Channel{
 						notificationv1alpha1.ChannelConsole,
+					},
+					Metadata: map[string]string{
+						routing.AttrEnvironment: routing.EnvironmentStaging,
 					},
 				},
 			}
@@ -339,8 +334,8 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 				Namespace: testNamespace,
 			}, processed)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(processed.Labels).NotTo(HaveKey(routing.LabelSkipReason),
-				"Skip-reason label should not be present")
+			Expect(processed.Spec.Metadata).NotTo(HaveKey(routing.AttrSkipReason),
+				"Skip-reason should not be in spec.metadata for this test")
 
 			// Cleanup
 			err = deleteAndWait(ctx, k8sClient, notif, 10*time.Second)
@@ -351,40 +346,38 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 	})
 
 	// ============================================================================
-	// Subcategory: Routing Label Consistency
+	// Subcategory: Routing Attribute Consistency
 	// ============================================================================
 
-	Context("Routing Label Consistency", func() {
+	Context("Routing Attribute Consistency", func() {
 
-		// Test 5: Verify label domain is kubernaut.ai (not kubernaut.io)
-		// Per: NOTICE_LABEL_DOMAIN_AND_NOTIFICATION_ROUTING.md
-		It("should use kubernaut.ai domain for all routing labels", func() {
-			notifName := fmt.Sprintf("label-domain-test-%s", uniqueSuffix)
+		// Test 5: Issue #91 - Verify routing attributes come from spec fields, no kubernaut.ai/* labels
+		It("should use spec fields for routing, not kubernaut.ai labels", func() {
+			notifName := fmt.Sprintf("spec-routing-test-%s", uniqueSuffix)
 
-			// Create NotificationRequest with all routing labels
+			// Issue #91: Create NR with routing data in spec fields + metadata
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       notifName,
 					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
-					Labels: map[string]string{
-						routing.LabelSkipReason:         routing.SkipReasonExhaustedRetries,
-						routing.LabelNotificationType:   routing.NotificationTypeEscalation,
-						routing.LabelSeverity:           routing.SeverityHigh,
-						routing.LabelEnvironment:        routing.EnvironmentProduction,
-						routing.LabelPriority:           "P1",
-						routing.LabelComponent:          "workflow-execution",
-						routing.LabelRemediationRequest: "rr-domain-test",
-						routing.LabelNamespace:          "production",
-					},
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Type:     notificationv1alpha1.NotificationTypeEscalation,
 					Priority: notificationv1alpha1.NotificationPriorityHigh,
-					Subject:  fmt.Sprintf("Label Domain Test [%s]", uniqueSuffix),
-					Body:     "Testing kubernaut.ai label domain consistency",
+					Severity: routing.SeverityHigh,
+					RemediationRequestRef: &corev1.ObjectReference{
+						Name: "rr-domain-test",
+					},
+					Subject: fmt.Sprintf("Spec Routing Test [%s]", uniqueSuffix),
+					Body:    "Testing spec-field-based routing consistency",
 					Channels: []notificationv1alpha1.Channel{
 						notificationv1alpha1.ChannelConsole,
+					},
+					Metadata: map[string]string{
+						routing.AttrSkipReason:  routing.SkipReasonExhaustedRetries,
+						routing.AttrEnvironment: routing.EnvironmentProduction,
+						routing.AttrNamespace:   "production",
 					},
 				},
 			}
@@ -402,25 +395,12 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 				}, created)
 			}, 5*time.Second, 500*time.Millisecond).Should(Succeed())
 
-			// Verify ALL label keys use kubernaut.ai domain
+			// Issue #91: Verify routing data is in spec fields, not labels
+			Expect(created.Spec.Type).ToNot(BeEmpty(), "Routing type should be in spec.type")
+			// No kubernaut.ai/* routing labels should be set anymore
 			for key := range created.Labels {
-				if key != routing.LabelSkipReason &&
-					key != routing.LabelNotificationType &&
-					key != routing.LabelSeverity &&
-					key != routing.LabelEnvironment &&
-					key != routing.LabelPriority &&
-					key != routing.LabelComponent &&
-					key != routing.LabelRemediationRequest &&
-					key != routing.LabelNamespace {
-					// Skip non-routing labels (if any system labels exist)
-					continue
-				}
-
-				// Verify domain is kubernaut.ai, NOT kubernaut.io
-				Expect(key).To(HavePrefix("kubernaut.ai/"),
-					"Routing label %s should use kubernaut.ai domain", key)
-				Expect(key).NotTo(HavePrefix("kubernaut.io/"),
-					"Routing label %s should NOT use kubernaut.io domain", key)
+				Expect(key).NotTo(HavePrefix("kubernaut.ai/"),
+					"Issue #91: routing label %s should no longer be set; use spec fields instead", key)
 			}
 
 			// Wait for processing
@@ -432,7 +412,7 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 			err = deleteAndWait(ctx, k8sClient, notif, 10*time.Second)
 			Expect(err).NotTo(HaveOccurred())
 
-			GinkgoWriter.Printf("✅ All routing labels use kubernaut.ai domain\n")
+			GinkgoWriter.Printf("✅ All routing data in spec fields, no kubernaut.ai labels\n")
 		})
 	})
 })

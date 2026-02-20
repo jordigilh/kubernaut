@@ -201,7 +201,7 @@ func newAIAnalysisCompleted(name, namespace, rrName string, confidence float64, 
 	ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 		WorkflowID:     workflowID,
 		Version:        "v1",
-		ContainerImage: "test-image:latest",
+		ExecutionBundle: "test-image:latest",
 		Confidence:     confidence,
 	}
 

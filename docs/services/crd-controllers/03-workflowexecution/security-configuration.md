@@ -9,6 +9,9 @@
 
 ## Changelog
 
+### Version 4.1 (2026-02-18)
+- ✅ **Issue #91**: Removed `kubernaut.ai/component` label from Namespace example; `kubernaut.ai/workflow-execution` KEPT on PipelineRun (external resource)
+
 ### Version 4.0 (2025-12-03)
 - ✅ **Added**: Dedicated execution namespace RBAC (DD-WE-002)
 - ✅ **Added**: kubernaut-workflow-runner ClusterRole for cross-namespace operations
@@ -40,8 +43,6 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: kubernaut-workflows
-  labels:
-    kubernaut.ai/component: workflow-execution
 ---
 # ServiceAccount for PipelineRun execution
 apiVersion: v1
@@ -460,6 +461,7 @@ func (r *WorkflowExecutionReconciler) buildPipelineRun(
             Name:      wfe.Name,
             Namespace: wfe.Namespace,
             Labels: map[string]string{
+                // Issue #91: KEPT - label on external K8s resource (PipelineRun) for WE-to-PipelineRun correlation
                 "kubernaut.ai/workflow-execution": wfe.Name,
                 "kubernaut.ai/workflow-id":        wfe.Spec.WorkflowRef.WorkflowID,
             },

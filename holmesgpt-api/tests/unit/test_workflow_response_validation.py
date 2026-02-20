@@ -69,8 +69,8 @@ class TestDataStorageClientGetWorkflowByUUID:
             "content": "apiVersion: tekton.dev/v1beta1...",
             "content_hash": "sha256:abc123",
             "labels": {"signal_type": "OOMKilled", "severity": ["critical"]},
-            "container_image": "ghcr.io/kubernaut/restart-pod:v1.0.0",
-            "container_digest": "sha256:def456",
+            "schema_image": "ghcr.io/kubernaut/restart-pod:v1.0.0",
+            "schema_digest": "sha256:def456",
             "status": "active",
             "is_latest_version": True,
             "parameters": {
@@ -135,8 +135,7 @@ class TestWorkflowExistenceValidation:
         """Sample workflow from Data Storage."""
         workflow = Mock()
         workflow.workflow_id = "restart-pod-v1"
-        workflow.container_image = "ghcr.io/kubernaut/restart-pod:v1.0.0"
-        workflow.container_digest = "sha256:def456"
+        workflow.execution_bundle = "ghcr.io/kubernaut/restart-pod:v1.0.0"
         workflow.parameters = {
             "schema": {
                 "parameters": []  # Empty for existence tests
@@ -162,7 +161,7 @@ class TestWorkflowExistenceValidation:
         # Act
         result = validator.validate(
             workflow_id="hallucinated-workflow-xyz",
-            container_image=None,
+            execution_bundle=None,
             parameters={}
         )
 
@@ -190,7 +189,7 @@ class TestWorkflowExistenceValidation:
         # Act
         result = validator.validate(
             workflow_id="restart-pod-v1",
-            container_image=None,
+            execution_bundle=None,
             parameters={}
         )
 
@@ -218,19 +217,18 @@ class TestContainerImageConsistencyValidation:
 
     @pytest.fixture
     def mock_workflow(self) -> Mock:
-        """Sample workflow with container image."""
+        """Sample workflow with execution bundle."""
         workflow = Mock()
         workflow.workflow_id = "restart-pod-v1"
-        workflow.container_image = "ghcr.io/kubernaut/restart-pod:v1.0.0"
-        workflow.container_digest = "sha256:def456"
+        workflow.execution_bundle = "ghcr.io/kubernaut/restart-pod:v1.0.0"
         workflow.parameters = {"schema": {"parameters": []}}
         return workflow
 
-    def test_validate_accepts_matching_container_image(self, mock_ds_client, mock_workflow):
+    def test_validate_accepts_matching_execution_bundle(self, mock_ds_client, mock_workflow):
         """
-        BR-HAPI-196: Container image matches catalog.
+        BR-HAPI-196: Execution bundle matches catalog.
 
-        Given: LLM provides container_image that matches catalog
+        Given: LLM provides execution_bundle that matches catalog
         When: validate() is called
         Then: No "mismatch" error
         """
@@ -244,7 +242,7 @@ class TestContainerImageConsistencyValidation:
         # Act
         result = validator.validate(
             workflow_id="restart-pod-v1",
-            container_image="ghcr.io/kubernaut/restart-pod:v1.0.0",  # Matches catalog
+            execution_bundle="ghcr.io/kubernaut/restart-pod:v1.0.0",
             parameters={}
         )
 
@@ -252,13 +250,13 @@ class TestContainerImageConsistencyValidation:
         mismatch_errors = [e for e in result.errors if "mismatch" in e.lower()]
         assert len(mismatch_errors) == 0
 
-    def test_validate_accepts_null_container_image(self, mock_ds_client, mock_workflow):
+    def test_validate_accepts_null_execution_bundle(self, mock_ds_client, mock_workflow):
         """
-        BR-HAPI-196: Null image - use catalog value.
+        BR-HAPI-196: Null bundle - use catalog value.
 
-        Given: LLM provides null/empty container_image
+        Given: LLM provides null/empty execution_bundle
         When: validate() is called
-        Then: Returns validated_container_image from catalog
+        Then: Returns validated_execution_bundle from catalog
         """
         # Arrange
         mock_ds_client.get_workflow_by_id.return_value = mock_workflow
@@ -270,22 +268,22 @@ class TestContainerImageConsistencyValidation:
         # Act
         result = validator.validate(
             workflow_id="restart-pod-v1",
-            container_image=None,  # LLM didn't specify
+            execution_bundle=None,
             parameters={}
         )
 
         # Assert
-        assert result.validated_container_image == "ghcr.io/kubernaut/restart-pod:v1.0.0"
+        assert result.validated_execution_bundle == "ghcr.io/kubernaut/restart-pod:v1.0.0"
         mismatch_errors = [e for e in result.errors if "mismatch" in e.lower()]
         assert len(mismatch_errors) == 0
 
-    def test_validate_rejects_mismatched_container_image(self, mock_ds_client, mock_workflow):
+    def test_validate_rejects_mismatched_execution_bundle(self, mock_ds_client, mock_workflow):
         """
-        BR-HAPI-196: Image mismatch - hallucination detected.
+        BR-HAPI-196: Bundle mismatch - hallucination detected.
 
-        Given: LLM provides container_image that doesn't match catalog
+        Given: LLM provides execution_bundle that doesn't match catalog
         When: validate() is called
-        Then: Returns error with both images mentioned
+        Then: Returns error with both bundles mentioned
         """
         # Arrange
         mock_ds_client.get_workflow_by_id.return_value = mock_workflow
@@ -297,7 +295,7 @@ class TestContainerImageConsistencyValidation:
         # Act
         result = validator.validate(
             workflow_id="restart-pod-v1",
-            container_image="ghcr.io/evil/malware:latest",  # WRONG!
+            execution_bundle="ghcr.io/evil/malware:latest",
             parameters={}
         )
 
@@ -305,7 +303,6 @@ class TestContainerImageConsistencyValidation:
         assert result.is_valid is False
         mismatch_errors = [e for e in result.errors if "mismatch" in e.lower()]
         assert len(mismatch_errors) >= 1
-        # Error should mention both the wrong image and the correct one
         error_text = " ".join(result.errors)
         assert "ghcr.io/evil/malware:latest" in error_text
         assert "ghcr.io/kubernaut/restart-pod:v1.0.0" in error_text
@@ -332,8 +329,8 @@ class TestParameterSchemaValidation:
         """Helper to create workflow with specific parameter schema."""
         workflow = Mock()
         workflow.workflow_id = "test-workflow"
-        workflow.container_image = "ghcr.io/kubernaut/test:v1.0.0"
-        workflow.container_digest = "sha256:abc123"
+        workflow.execution_bundle = "ghcr.io/kubernaut/test:v1.0.0"
+        workflow.execution_bundle_digest = "sha256:abc123"
         workflow.parameters = {
             "schema": {
                 "parameters": param_defs
@@ -364,7 +361,7 @@ class TestParameterSchemaValidation:
         # Act
         result = validator.validate(
             workflow_id="test-workflow",
-            container_image=None,
+            execution_bundle=None,
             parameters={}  # Missing 'namespace'!
         )
 
@@ -395,7 +392,7 @@ class TestParameterSchemaValidation:
         # Act
         result = validator.validate(
             workflow_id="test-workflow",
-            container_image=None,
+            execution_bundle=None,
             parameters={}  # Optional 'delay' not provided - OK
         )
 
@@ -426,7 +423,7 @@ class TestParameterSchemaValidation:
         # Act
         result = validator.validate(
             workflow_id="test-workflow",
-            container_image=None,
+            execution_bundle=None,
             parameters={"namespace": 12345}  # Wrong type!
         )
 
@@ -456,7 +453,7 @@ class TestParameterSchemaValidation:
         # Act
         result = validator.validate(
             workflow_id="test-workflow",
-            container_image=None,
+            execution_bundle=None,
             parameters={"replicas": "five"}  # Wrong type!
         )
 
@@ -489,7 +486,7 @@ class TestParameterSchemaValidation:
         # Act
         result = validator.validate(
             workflow_id="test-workflow",
-            container_image=None,
+            execution_bundle=None,
             parameters={
                 "namespace": "production",
                 "replicas": 3,
@@ -525,7 +522,7 @@ class TestParameterSchemaValidation:
         # Act
         result = validator.validate(
             workflow_id="test-workflow",
-            container_image=None,
+            execution_bundle=None,
             parameters={"namespace": "a"}  # Too short!
         )
 
@@ -555,7 +552,7 @@ class TestParameterSchemaValidation:
         # Act
         result = validator.validate(
             workflow_id="test-workflow",
-            container_image=None,
+            execution_bundle=None,
             parameters={"namespace": "a" * 100}  # Too long!
         )
 
@@ -587,7 +584,7 @@ class TestParameterSchemaValidation:
         # Act
         result = validator.validate(
             workflow_id="test-workflow",
-            container_image=None,
+            execution_bundle=None,
             parameters={"replicas": 0}  # Below minimum!
         )
 
@@ -617,7 +614,7 @@ class TestParameterSchemaValidation:
         # Act
         result = validator.validate(
             workflow_id="test-workflow",
-            container_image=None,
+            execution_bundle=None,
             parameters={"replicas": 1000}  # Above maximum!
         )
 
@@ -650,7 +647,7 @@ class TestParameterSchemaValidation:
         # Act
         result = validator.validate(
             workflow_id="test-workflow",
-            container_image=None,
+            execution_bundle=None,
             parameters={"strategy": "Invalid"}  # Not in enum!
         )
 
@@ -681,7 +678,7 @@ class TestParameterSchemaValidation:
         # Act
         result = validator.validate(
             workflow_id="test-workflow",
-            container_image=None,
+            execution_bundle=None,
             parameters={"strategy": "RollingUpdate"}  # Valid enum value
         )
 
@@ -717,8 +714,8 @@ class TestCompleteValidationFlow:
         # Arrange
         workflow = Mock()
         workflow.workflow_id = "test-workflow"
-        workflow.container_image = "ghcr.io/kubernaut/correct:v1.0.0"
-        workflow.container_digest = "sha256:abc123"
+        workflow.execution_bundle = "ghcr.io/kubernaut/correct:v1.0.0"
+        workflow.execution_bundle_digest = "sha256:abc123"
         workflow.parameters = {
             "schema": {
                 "parameters": [
@@ -735,7 +732,7 @@ class TestCompleteValidationFlow:
         # Act
         result = validator.validate(
             workflow_id="test-workflow",
-            container_image="ghcr.io/wrong/image:v1.0.0",  # WRONG
+            execution_bundle="ghcr.io/wrong/image:v1.0.0",  # WRONG
             parameters={}  # Missing required 'namespace'
         )
 
@@ -750,15 +747,15 @@ class TestCompleteValidationFlow:
         """
         DD-HAPI-002: All validation passes.
 
-        Given: Valid workflow_id, correct container_image, valid parameters
+        Given: Valid workflow_id, correct execution_bundle, valid parameters
         When: validate() is called
         Then: Returns is_valid=True with no errors
         """
         # Arrange
         workflow = Mock()
         workflow.workflow_id = "restart-pod-v1"
-        workflow.container_image = "ghcr.io/kubernaut/restart:v1.0.0"
-        workflow.container_digest = "sha256:abc123"
+        workflow.execution_bundle = "ghcr.io/kubernaut/restart:v1.0.0"
+        workflow.execution_bundle_digest = "sha256:abc123"
         workflow.parameters = {
             "schema": {
                 "parameters": [
@@ -776,14 +773,14 @@ class TestCompleteValidationFlow:
         # Act
         result = validator.validate(
             workflow_id="restart-pod-v1",
-            container_image=None,  # Use catalog value
+            execution_bundle=None,  # Use catalog value
             parameters={"namespace": "production", "delay": 30}
         )
 
         # Assert
         assert result.is_valid is True
         assert len(result.errors) == 0
-        assert result.validated_container_image == "ghcr.io/kubernaut/restart:v1.0.0"
+        assert result.validated_execution_bundle == "ghcr.io/kubernaut/restart:v1.0.0"
 
 
 # =============================================================================
@@ -817,7 +814,7 @@ class TestActionTypeCrossCheckValidation:
         workflow = Mock()
         workflow.workflow_id = "wf-001"
         workflow.action_type = "CordonNode"
-        workflow.container_image = "ghcr.io/kubernaut/cordon:v1.0.0"
+        workflow.execution_bundle = "ghcr.io/kubernaut/cordon:v1.0.0"
         workflow.parameters = None
         mock_ds_client.get_workflow_by_id.return_value = workflow
 
@@ -841,7 +838,7 @@ class TestActionTypeCrossCheckValidation:
 
         result = validator.validate(
             workflow_id="wf-001",
-            container_image=None,
+            execution_bundle=None,
             parameters={},
         )
 
@@ -862,7 +859,7 @@ class TestActionTypeCrossCheckValidation:
         workflow = Mock()
         workflow.workflow_id = "wf-001"
         workflow.action_type = "RestartPod"
-        workflow.container_image = "ghcr.io/kubernaut/restart:v1.0.0"
+        workflow.execution_bundle = "ghcr.io/kubernaut/restart:v1.0.0"
         workflow.parameters = None
         mock_ds_client.get_workflow_by_id.return_value = workflow
 
@@ -885,7 +882,7 @@ class TestActionTypeCrossCheckValidation:
 
         result = validator.validate(
             workflow_id="wf-001",
-            container_image=None,
+            execution_bundle=None,
             parameters={},
         )
 
@@ -902,7 +899,7 @@ class TestActionTypeCrossCheckValidation:
         workflow = Mock()
         workflow.workflow_id = "wf-001"
         workflow.action_type = "AnyAction"
-        workflow.container_image = "ghcr.io/kubernaut/any:v1.0.0"
+        workflow.execution_bundle = "ghcr.io/kubernaut/any:v1.0.0"
         workflow.parameters = None
         mock_ds_client.get_workflow_by_id.return_value = workflow
 
@@ -913,7 +910,7 @@ class TestActionTypeCrossCheckValidation:
 
         result = validator.validate(
             workflow_id="wf-001",
-            container_image=None,
+            execution_bundle=None,
             parameters={},
         )
 
@@ -932,7 +929,7 @@ class TestActionTypeCrossCheckValidation:
         workflow = Mock()
         workflow.workflow_id = "wf-001"
         workflow.action_type = "RestartPod"
-        workflow.container_image = "ghcr.io/kubernaut/restart:v1.0.0"
+        workflow.execution_bundle = "ghcr.io/kubernaut/restart:v1.0.0"
         workflow.parameters = None
         mock_ds_client.get_workflow_by_id.return_value = workflow
         mock_ds_client.list_available_actions.side_effect = Exception("Connection refused")
@@ -949,7 +946,7 @@ class TestActionTypeCrossCheckValidation:
 
         result = validator.validate(
             workflow_id="wf-001",
-            container_image=None,
+            execution_bundle=None,
             parameters={},
         )
 

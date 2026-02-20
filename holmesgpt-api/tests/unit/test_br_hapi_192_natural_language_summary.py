@@ -43,7 +43,7 @@ class TestPreviousExecutionNaturalLanguageSummary:
             selected_workflow=SelectedWorkflowSummary(
                 workflow_id="scale-horizontal-v1",
                 version="1.0.0",
-                container_image="kubernaut/workflow:v1",
+                execution_bundle="kubernaut/workflow:v1",
                 parameters={"TARGET_REPLICAS": "5"},
                 rationale="Scale to distribute load"
             ),
@@ -83,7 +83,7 @@ class TestPreviousExecutionNaturalLanguageSummary:
             selected_workflow=SelectedWorkflowSummary(
                 workflow_id="scale-v1",
                 version="1.0.0",
-                container_image="kubernaut/workflow:v1",
+                execution_bundle="kubernaut/workflow:v1",
                 parameters={},
                 rationale="Scale out"
             ),
@@ -115,7 +115,7 @@ class TestPreviousExecutionNaturalLanguageSummary:
             selected_workflow=SelectedWorkflowSummary(
                 workflow_id="scale-v1",
                 version="1.0.0",
-                container_image="kubernaut/workflow:v1",
+                execution_bundle="kubernaut/workflow:v1",
                 parameters={},
                 rationale="Scale out"
             ),
@@ -158,7 +158,7 @@ class TestRecoveryRequestWithNaturalLanguageSummary:
                 selected_workflow=SelectedWorkflowSummary(
                     workflow_id="scale-v1",
                     version="1.0.0",
-                    container_image="kubernaut/workflow:v1",
+                    execution_bundle="kubernaut/workflow:v1",
                     parameters={},
                     rationale="Scale out"
                 ),
@@ -203,7 +203,7 @@ class TestRecoveryPromptInclusion:
                 "selected_workflow": {
                     "workflow_id": "scale-v1",
                     "version": "1.0.0",
-                    "container_image": "kubernaut/workflow:v1",
+                    "execution_bundle": "kubernaut/workflow:v1",
                     "parameters": {},
                     "rationale": "Scale out"
                 },
@@ -257,7 +257,7 @@ class TestRecoveryPromptInclusion:
                 "selected_workflow": {
                     "workflow_id": "scale-v1",
                     "version": "1.0.0",
-                    "container_image": "kubernaut/workflow:v1",
+                    "execution_bundle": "kubernaut/workflow:v1",
                     "parameters": {},
                     "rationale": "Scale out"
                 },

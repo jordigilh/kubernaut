@@ -23,6 +23,8 @@ import (
 	"net/http"
 	"net/url"
 	"time"
+
+	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 )
 
 // dataStorageHTTPQuerier implements DataStorageQuerier via HTTP calls to DataStorage.
@@ -31,22 +33,30 @@ type dataStorageHTTPQuerier struct {
 	httpClient *http.Client
 }
 
-// NewDataStorageHTTPQuerier creates a new DS querier with default timeout.
+// NewDataStorageHTTPQuerier creates a new DS querier with default timeout and
+// ServiceAccount authentication (DD-AUTH-005).
 func NewDataStorageHTTPQuerier(baseURL string) DataStorageQuerier {
-	return &dataStorageHTTPQuerier{
-		baseURL: baseURL,
-		httpClient: &http.Client{
-			Timeout: 10 * time.Second,
-		},
-	}
+	return NewDataStorageHTTPQuerierWithTransport(baseURL, 10*time.Second, nil)
 }
 
-// NewDataStorageHTTPQuerierWithTimeout creates a new DS querier with custom timeout.
+// NewDataStorageHTTPQuerierWithTimeout creates a new DS querier with custom timeout
+// and ServiceAccount authentication (DD-AUTH-005).
 func NewDataStorageHTTPQuerierWithTimeout(baseURL string, timeout time.Duration) DataStorageQuerier {
+	return NewDataStorageHTTPQuerierWithTransport(baseURL, timeout, nil)
+}
+
+// NewDataStorageHTTPQuerierWithTransport creates a DS querier with explicit transport.
+// When transport is nil, ServiceAccount token auth is used automatically
+// (same pattern as audit.NewOpenAPIClientAdapter -- DD-AUTH-005).
+func NewDataStorageHTTPQuerierWithTransport(baseURL string, timeout time.Duration, transport http.RoundTripper) DataStorageQuerier {
+	if transport == nil {
+		transport = auth.NewServiceAccountTransport()
+	}
 	return &dataStorageHTTPQuerier{
 		baseURL: baseURL,
 		httpClient: &http.Client{
-			Timeout: timeout,
+			Timeout:   timeout,
+			Transport: transport,
 		},
 	}
 }

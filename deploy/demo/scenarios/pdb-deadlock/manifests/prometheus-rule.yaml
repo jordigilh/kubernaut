@@ -1,0 +1,39 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: kubernaut-pdb-deadlock-rules
+  namespace: demo-pdb
+  labels:
+    release: prometheus
+spec:
+  groups:
+  - name: kubernaut-pdb-deadlock
+    rules:
+    # Detect PDB blocking disruptions (0 allowed disruptions for extended period)
+    - alert: KubernautPDBDeadlock
+      expr: |
+        kube_poddisruptionbudget_status_pod_disruptions_allowed{
+          namespace="demo-pdb",
+          poddisruptionbudget="payment-service-pdb"
+        } == 0
+        and
+        kube_poddisruptionbudget_status_expected_pods{
+          namespace="demo-pdb",
+          poddisruptionbudget="payment-service-pdb"
+        }
+        ==
+        kube_poddisruptionbudget_status_current_healthy{
+          namespace="demo-pdb",
+          poddisruptionbudget="payment-service-pdb"
+        }
+      for: 3m
+      labels:
+        severity: warning
+      annotations:
+        summary: >
+          PDB {{ $labels.poddisruptionbudget }} in namespace {{ $labels.namespace }}
+          is blocking all voluntary disruptions despite all pods being healthy.
+        description: >
+          The payment-service PDB has minAvailable=2 with 2 replicas, leaving zero
+          allowed disruptions. This blocks rolling updates, node drains, and any
+          voluntary eviction. The PDB should be relaxed to allow at least 1 disruption.
