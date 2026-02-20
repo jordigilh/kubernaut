@@ -130,9 +130,6 @@ class TestRegisterWorkflowDiscoveryToolset:
                 detected_labels=None,
                 http_session=mock_session,
                 session_state=None,
-                k8s_client=None,
-                resource_name="",
-                resource_namespace="",
             )
 
     def test_injects_via_list_server_toolsets_ut_reg_003(self):
