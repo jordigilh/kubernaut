@@ -14,6 +14,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NAMESPACE="demo-autoscale"
 PROVISIONER_PID=""
 
+# shellcheck source=../../scripts/kind-helper.sh
+source "${SCRIPT_DIR}/../../scripts/kind-helper.sh"
+ensure_kind_cluster "${SCRIPT_DIR}/kind-config.yaml" "${1:-}"
+
 cleanup_provisioner() {
   if [ -n "$PROVISIONER_PID" ]; then
     echo "==> Stopping provisioner agent (PID: $PROVISIONER_PID)..."
