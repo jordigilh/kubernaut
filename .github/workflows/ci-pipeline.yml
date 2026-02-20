@@ -1027,7 +1027,7 @@ jobs:
             echo "" >> coverage-summary.md
             echo "Run locally: \`make coverage-report-markdown\`" >> coverage-summary.md
             echo "" >> coverage-summary.md
-            echo "See [Coverage Analysis Report](docs/testing/COVERAGE_ANALYSIS_REPORT.md)." >> coverage-summary.md
+            echo "See [Testing Coverage Methodology](docs/testing/TESTING_COVERAGE_METHODOLOGY.md)." >> coverage-summary.md
             echo "⚠️  Fallback report created"
           fi
           

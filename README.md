@@ -153,7 +153,7 @@ Kubernaut services use **Kustomize** for Kubernetes deployment. See the [demo de
 ### Development
 
 - [Developer Guide](docs/DEVELOPER_GUIDE.md) — Onboarding, environment setup, and contribution workflow
-- [Testing Strategy](docs/testing/COVERAGE_ANALYSIS_REPORT.md) — Defense-in-depth pyramid with per-tier coverage analysis
+- [Testing Coverage Methodology](docs/testing/TESTING_COVERAGE_METHODOLOGY.md) — Defense-in-depth pyramid with per-tier coverage analysis
 - [Development Methodology](docs/development/methodology/) — APDC framework and TDD workflow
 
 ---
@@ -185,7 +185,7 @@ Each CRD controller requires specific Kubernetes permissions. See [RBAC document
 ### Development Standards
 
 - **Go**: Standard conventions with comprehensive error handling
-- **Testing**: Ginkgo/Gomega BDD framework with defense-in-depth coverage (unit, integration, E2E). Coverage is reported automatically on every PR via CI. See the [Coverage Analysis Report](docs/testing/COVERAGE_ANALYSIS_REPORT.md) for per-service breakdown.
+- **Testing**: Ginkgo/Gomega BDD framework with defense-in-depth coverage (unit, integration, E2E). Coverage is reported automatically on every PR via CI. See the [Testing Coverage Methodology](docs/testing/TESTING_COVERAGE_METHODOLOGY.md) for details.
 - **Documentation**: Comprehensive inline documentation
 - **CRD Changes**: Update [CRD_SCHEMAS.md](docs/architecture/CRD_SCHEMAS.md)
 
