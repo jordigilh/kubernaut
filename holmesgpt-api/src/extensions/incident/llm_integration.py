@@ -319,17 +319,9 @@ async def analyze_incident(
                 "message": f"DD-HAPI-001: {len(custom_labels)} custom label subdomains will be auto-appended to workflow search"
             })
 
-        # ADR-056 SoC: Create shared session_state for inter-tool communication.
-        # WorkflowDiscoveryToolset computes detected_labels on-demand in list_available_actions.
+        # ADR-056 v1.4: Create shared session_state for inter-tool communication.
+        # Labels are detected by get_resource_context and read by workflow discovery.
         session_state: Dict[str, Any] = {}
-
-        # ADR-056 SoC: Get K8s client for on-demand label detection in workflow discovery
-        from src.clients.k8s_client import get_k8s_client
-        try:
-            k8s = get_k8s_client()
-        except Exception as e:
-            logger.warning({"event": "k8s_client_unavailable_for_labels", "error": str(e)})
-            k8s = None
 
         # DD-HAPI-017: Register three-step workflow discovery toolset
         config = register_workflow_discovery_toolset(
@@ -337,19 +329,16 @@ async def analyze_incident(
             app_config,
             remediation_id=remediation_id,
             custom_labels=custom_labels,
-            detected_labels=None,  # ADR-056: computed on-demand by list_available_actions
+            detected_labels=None,  # ADR-056 v1.4: populated via session_state by get_resource_context
             severity=request_data.get("severity", ""),
             component=request_data.get("resource_kind", ""),
             environment=request_data.get("environment", ""),
             priority=request_data.get("priority", ""),
             session_state=session_state,
-            k8s_client=k8s,
-            resource_name=request_data.get("resource_name", ""),
-            resource_namespace=request_data.get("resource_namespace", ""),
         )
 
-        # ADR-055: Register resource context toolset for post-RCA enrichment
-        config = register_resource_context_toolset(config, app_config)
+        # ADR-055/ADR-056 v1.4: Register resource context toolset for post-RCA enrichment + label detection
+        config = register_resource_context_toolset(config, app_config, session_state=session_state)
 
         # DD-HAPI-002 v1.2: Create Data Storage client for workflow validation
         data_storage_client = create_data_storage_client(app_config)

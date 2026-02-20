@@ -16,21 +16,22 @@
 Resource Context Toolset for HolmesGPT SDK.
 
 ADR-055: LLM-Driven Context Enrichment (Post-RCA)
+ADR-056 v1.4: DetectedLabels computation for the RCA target resource.
 
 After the LLM performs Root Cause Analysis and identifies the affected resource,
-it calls get_resource_context to fetch remediation history. The tool internally:
-  1. Resolves the owner chain via K8s ownerReferences traversal
-  2. Identifies the root managing resource (e.g., Pod -> RS -> Deployment)
-  3. Computes a canonical spec hash (SHA-256) for the root owner
-  4. Queries DataStorage for remediation history filtered by root owner + spec hash
+it calls get_resource_context to:
+  1. Resolve the owner chain via K8s ownerReferences traversal
+  2. Identify the root managing resource (e.g., Pod -> RS -> Deployment)
+  3. Compute a canonical spec hash (SHA-256) for the root owner
+  4. Query DataStorage for remediation history filtered by root owner + spec hash
+  5. Detect infrastructure labels for the RCA target (one-shot, ADR-056 v1.4)
+  6. Conditionally return detected_infrastructure for LLM RCA reassessment
 
 Returns to the LLM:
   - root_owner: Identity of the root managing resource (kind, name, namespace)
   - remediation_history: Past remediations for that resource
-
-DetectedLabels computation (ADR-056) is handled by the WorkflowDiscoveryToolset,
-which computes labels on-demand when querying available actions (separation of
-concerns: historical context vs workflow filtering).
+  - detected_infrastructure (conditional): Active infrastructure labels for
+    RCA reassessment, included only on the first call when active labels exist.
 """
 
 import asyncio
@@ -52,15 +53,17 @@ logger = logging.getLogger(__name__)
 class GetResourceContextTool(Tool):
     """LLM-callable tool that fetches remediation context for a K8s resource.
 
-    The LLM calls this after RCA to get the root managing resource and
-    remediation history for the identified target resource. Owner chain
-    traversal and spec hash computation are internal to the tool.
+    The LLM calls this after RCA to get the root managing resource,
+    remediation history, and infrastructure context for the identified
+    target resource. Owner chain traversal, spec hash computation, and
+    label detection are internal to the tool.
     """
 
     def __init__(
         self,
         k8s_client: Any,
         history_fetcher: Optional[Callable] = None,
+        session_state: Optional[Dict[str, Any]] = None,
     ):
         super().__init__(
             name="get_resource_context",
@@ -68,10 +71,11 @@ class GetResourceContextTool(Tool):
                 "Get remediation context for a Kubernetes resource. Call this "
                 "AFTER identifying the affected resource during Root Cause "
                 "Analysis. The tool resolves the root managing resource (e.g., "
-                "a Pod's managing Deployment) and returns its remediation "
-                "history. Use the root_owner in your response as the "
-                "affectedResource, and the history to avoid repeating "
-                "recently failed remediations."
+                "a Pod's managing Deployment), returns its remediation "
+                "history, and detects infrastructure characteristics. "
+                "If infrastructure characteristics are detected (e.g., GitOps "
+                "management, PDB protection), review them to reassess your "
+                "RCA strategy before selecting a workflow."
             ),
             parameters={
                 "kind": ToolParameter(
@@ -90,10 +94,19 @@ class GetResourceContextTool(Tool):
                     required=False,
                 ),
             },
-            additional_instructions="",
+            additional_instructions=(
+                "If the response includes 'detected_infrastructure', review "
+                "the infrastructure labels and consider whether they change "
+                "your root cause analysis or remediation approach. For "
+                "example, gitOpsManaged=true may mean reverting via Git "
+                "instead of direct kubectl patching. You may call this tool "
+                "again for a different resource if you reassess the target, "
+                "but labels will not be re-detected."
+            ),
         )
         object.__setattr__(self, "_k8s_client", k8s_client)
         object.__setattr__(self, "_history_fetcher", history_fetcher)
+        object.__setattr__(self, "_session_state", session_state)
 
     def get_parameterized_one_liner(self, params: Dict) -> str:
         kind = params.get("kind", "?")
@@ -143,6 +156,12 @@ class GetResourceContextTool(Tool):
                 "remediation_history": history,
             }
 
+            detected_infra = await self._detect_labels_if_needed(
+                kind, name, namespace, owner_chain
+            )
+            if detected_infra is not None:
+                result_data["detected_infrastructure"] = detected_infra
+
             logger.info({
                 "event": "resource_context_resolved",
                 "resource": f"{kind}/{namespace}/{name}",
@@ -150,6 +169,7 @@ class GetResourceContextTool(Tool):
                 "root_owner": f"{root_owner['kind']}/{root_owner['name']}",
                 "has_spec_hash": bool(spec_hash),
                 "history_count": len(history),
+                "has_detected_infrastructure": detected_infra is not None,
             })
 
             return StructuredToolResult(
@@ -168,28 +188,136 @@ class GetResourceContextTool(Tool):
                 data={"error": str(e)},
             )
 
+    async def _detect_labels_if_needed(
+        self,
+        kind: str,
+        name: str,
+        namespace: str,
+        owner_chain: List[Dict[str, str]],
+    ) -> Optional[Dict[str, Any]]:
+        """One-shot label detection: detect on first call, skip on subsequent calls.
+
+        Returns a detected_infrastructure dict (with labels + note) when active
+        labels are found on the first call. Returns None when labels are all
+        defaults, when session_state is unavailable, or on subsequent calls.
+        """
+        if self._session_state is None:
+            return None
+
+        if "detected_labels" in self._session_state:
+            return None
+
+        try:
+            from src.detection.labels import LabelDetector
+
+            k8s_context = await self._build_k8s_context(kind, name, namespace, owner_chain)
+            detector = LabelDetector(self._k8s_client)
+            labels = await detector.detect_labels(k8s_context, owner_chain)
+
+            if labels is None:
+                self._session_state["detected_labels"] = {}
+                return None
+
+            self._session_state["detected_labels"] = labels
+
+            if self._has_active_labels(labels):
+                display_labels = {
+                    k: v for k, v in labels.items() if k != "failedDetections"
+                }
+                return {
+                    "labels": display_labels,
+                    "note": (
+                        "Infrastructure characteristics detected for the RCA target. "
+                        "Consider whether these affect your root cause analysis or "
+                        "remediation strategy before selecting a workflow."
+                    ),
+                }
+
+            return None
+
+        except Exception as e:
+            logger.warning({
+                "event": "label_detection_failed",
+                "resource": f"{kind}/{namespace}/{name}",
+                "error": str(e),
+            })
+            self._session_state["detected_labels"] = {}
+            return None
+
+    async def _build_k8s_context(
+        self, kind: str, name: str, namespace: str, owner_chain: List[Dict[str, str]]
+    ) -> Dict[str, Any]:
+        """Build k8s_context dict for LabelDetector from K8s resource metadata."""
+        k8s_context: Dict[str, Any] = {"namespace": namespace}
+
+        if kind == "Pod":
+            pod = await self._k8s_client._get_resource_metadata("Pod", name, namespace)
+            if pod is not None:
+                k8s_context["pod_details"] = {
+                    "name": name,
+                    "labels": pod.metadata.labels or {},
+                    "annotations": pod.metadata.annotations or {},
+                }
+
+        for entry in owner_chain:
+            if entry["kind"] == "Deployment":
+                deploy = await self._k8s_client._get_resource_metadata(
+                    "Deployment", entry["name"], entry.get("namespace", "")
+                )
+                if deploy is not None:
+                    k8s_context["deployment_details"] = {
+                        "name": entry["name"],
+                        "labels": deploy.metadata.labels or {},
+                    }
+                break
+
+        ns_meta = await self._k8s_client.get_namespace_metadata(namespace)
+        if ns_meta is not None:
+            k8s_context["namespace_labels"] = ns_meta.get("labels", {})
+            k8s_context["namespace_annotations"] = ns_meta.get("annotations", {})
+        else:
+            k8s_context["namespace_labels"] = {}
+            k8s_context["namespace_annotations"] = {}
+
+        return k8s_context
+
+    @staticmethod
+    def _has_active_labels(labels: Dict[str, Any]) -> bool:
+        """Check if any label is active (boolean True or non-empty string)."""
+        for key, value in labels.items():
+            if key == "failedDetections":
+                continue
+            if isinstance(value, bool) and value is True:
+                return True
+            if isinstance(value, str) and value:
+                return True
+        return False
+
 
 class ResourceContextToolset(Toolset):
     """Toolset providing get_resource_context to the LLM.
 
     ADR-055: Registered alongside WorkflowDiscoveryToolset in both
-    incident and recovery tool registries. Focused on historical context:
-    owner chain resolution, spec hash computation, and remediation history.
+    incident and recovery tool registries.
+    ADR-056 v1.4: Computes DetectedLabels for the RCA target and stores
+    in session_state for downstream workflow discovery tools.
     """
 
     def __init__(
         self,
         k8s_client: Any = None,
         history_fetcher: Optional[Callable] = None,
+        session_state: Optional[Dict[str, Any]] = None,
     ):
         tool = GetResourceContextTool(
             k8s_client=k8s_client,
             history_fetcher=history_fetcher,
+            session_state=session_state,
         )
 
         super().__init__(
             name="resource_context",
-            description="Fetch remediation context (root owner + history) for a K8s resource",
+            description="Fetch remediation context (root owner + history + infrastructure labels) for a K8s resource",
             docs_url="",
             icon_url="",
             prerequisites=[],
@@ -201,6 +329,6 @@ class ResourceContextToolset(Toolset):
         return {
             "resource_context": {
                 "enabled": True,
-                "description": "ADR-055: Post-RCA resource context enrichment",
+                "description": "ADR-055/ADR-056: Post-RCA resource context enrichment with label detection",
             }
         }

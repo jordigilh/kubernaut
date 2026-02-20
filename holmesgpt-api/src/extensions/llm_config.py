@@ -310,9 +310,6 @@ def register_workflow_discovery_toolset(
     environment: str = "",
     priority: str = "",
     session_state: Optional[Dict[str, Any]] = None,
-    k8s_client: Any = None,
-    resource_name: str = "",
-    resource_namespace: str = "",
 ) -> Config:
     """
     Register the three-step workflow discovery toolset with HolmesGPT SDK Config.
@@ -330,8 +327,8 @@ def register_workflow_discovery_toolset(
     set once at toolset creation and propagated to all three tools as query
     parameters for the DS security gate (DD-HAPI-017).
 
-    ADR-056 SoC: k8s_client and resource identity are passed to the toolset
-    for on-demand label detection in list_available_actions.
+    ADR-056 v1.4: Labels are now detected by get_resource_context and stored
+    in session_state. Workflow discovery reads them from session_state.
 
     Args:
         config: HolmesGPT SDK Config instance (already initialized)
@@ -343,10 +340,8 @@ def register_workflow_discovery_toolset(
         component: K8s resource kind (pod/deployment/node/etc.)
         environment: Namespace-derived environment (production/staging/development)
         priority: Severity-mapped priority (P0/P1/P2/P3)
-        session_state: Shared mutable dict for inter-tool communication (ADR-056).
-        k8s_client: K8s client for on-demand label detection (ADR-056 SoC).
-        resource_name: Target resource name for label detection.
-        resource_namespace: Target resource namespace for label detection.
+        session_state: Shared mutable dict for inter-tool communication (ADR-056 v1.4).
+            Labels are populated by get_resource_context and consumed by discovery tools.
 
     Returns:
         The same Config instance with workflow discovery registered via monkey-patch
@@ -370,9 +365,6 @@ def register_workflow_discovery_toolset(
         detected_labels=detected_labels,
         http_session=http_session,
         session_state=session_state,
-        k8s_client=k8s_client,
-        resource_name=resource_name,
-        resource_namespace=resource_namespace,
     )
 
     # Initialize toolset manager if needed
@@ -452,19 +444,23 @@ def register_workflow_discovery_toolset(
 def register_resource_context_toolset(
     config: Config,
     app_config: Optional[Dict[str, Any]] = None,
+    session_state: Optional[Dict[str, Any]] = None,
 ) -> Config:
     """
     Register the resource context toolset with HolmesGPT SDK Config.
 
     ADR-055: LLM-Driven Context Enrichment (Post-RCA)
+    ADR-056 v1.4: DetectedLabels computation for the RCA target resource.
 
     After RCA, the LLM calls get_resource_context to fetch owner chain,
-    spec hash, and remediation history for the identified target resource.
-    Registered in both incident and recovery tool registries.
+    spec hash, remediation history, and infrastructure labels for the
+    identified target resource.
 
     Args:
         config: HolmesGPT SDK Config instance (already initialized)
         app_config: Optional application configuration
+        session_state: Shared mutable dict for inter-tool communication (ADR-056 v1.4).
+            Labels are detected once and stored here for downstream workflow discovery tools.
 
     Returns:
         The same Config instance with resource context toolset registered
@@ -507,6 +503,7 @@ def register_resource_context_toolset(
         context_toolset = ResourceContextToolset(
             k8s_client=k8s,
             history_fetcher=history_fetcher,
+            session_state=session_state,
         )
     except Exception as e:
         logger.warning({"event": "resource_context_toolset_creation_failed", "error": str(e)})
