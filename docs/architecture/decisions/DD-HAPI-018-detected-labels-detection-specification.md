@@ -2,7 +2,7 @@
 
 **Status**: APPROVED
 **Decision Date**: 2026-02-12
-**Version**: 1.0
+**Version**: 1.1
 **Confidence**: 96%
 **Applies To**: SignalProcessing (Go, reference implementation), HolmesGPT API (Python, new implementation per ADR-056)
 
@@ -13,6 +13,7 @@
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2026-02-12 | Architecture Team | Initial specification extracted from SP reference implementation (`pkg/signalprocessing/detection/labels.go`). Cross-language contract for HAPI Python reimplementation. |
+| 1.1 | 2026-02-20 | Architecture Team | Update consumer guidance: detected labels are now both used as DS query filters AND surfaced to the LLM as read-only `cluster_context` in `list_available_actions` response. `failedDetections` fields excluded from both uses. See ADR-056 v1.3, DD-HAPI-017 v1.3. |
 
 ---
 
@@ -256,11 +257,21 @@ This section defines the critical distinction between "resource absent" and "det
 3. Consumers MUST check FailedDetections before trusting a `false` value. A `false` with the field in FailedDetections means "unknown," not "absent"
 4. A `true` value is always trustworthy regardless of FailedDetections (the query succeeded and found a match)
 
-### Consumer Guidance (for HAPI prompt builder and workflow discovery)
+### Consumer Guidance (for HAPI workflow discovery)
 
-- Fields in FailedDetections MUST be excluded from workflow discovery filters (DD-WORKFLOW-001 v2.1)
-- Fields in FailedDetections MUST be excluded from LLM cluster context descriptions
-- See `holmesgpt-api/src/extensions/incident/prompt_builder.py` for the reference consumer implementation
+Detected labels have two consumer paths (ADR-056 v1.3, DD-HAPI-017 v1.3):
+
+1. **DataStorage query filters**: Labels are injected as `detected_labels` query parameter into all three workflow discovery endpoints (list actions, list workflows, get workflow). This filters the workflow catalog to return only workflows whose `detectedLabels` requirements match the target resource.
+
+2. **LLM-facing `cluster_context`** (v1.1): Labels are surfaced to the LLM as a read-only `cluster_context` section in the `list_available_actions` tool response. This gives the LLM explicit infrastructure context for informed action type selection (e.g., "this is ArgoCD-managed, so GitRevertCommit is the right action type"). The LLM cannot set or override these labels -- they are computed by HAPI and injected into the response.
+
+**FailedDetections exclusion** (applies to BOTH consumer paths):
+- Fields listed in `failedDetections` MUST be excluded from DataStorage workflow discovery query filters (DD-WORKFLOW-001 v2.1)
+- Fields listed in `failedDetections` MUST be excluded from the LLM-facing `cluster_context.detected_labels` object
+- The `failedDetections` array itself MUST NOT appear in the LLM-facing `cluster_context`
+- Use `strip_failed_detections()` (in `workflow_discovery.py`) to apply this exclusion consistently
+
+**Reference implementation**: `holmesgpt-api/src/toolsets/workflow_discovery.py` (`_build_context_params` for DS filters, `ListAvailableActionsTool._invoke` for `cluster_context` injection)
 
 ---
 
@@ -360,7 +371,7 @@ The current SP implementation in `pkg/signalprocessing/detection/labels.go` is t
 | **ADR-056** | Parent architectural decision: relocate DetectedLabels to HAPI post-RCA |
 | **ADR-055** | LLM-driven context enrichment: `get_resource_context` tool that will host label detection |
 | **DD-WORKFLOW-001 v2.3** | Original detection method documentation (SP-specific) |
-| **DD-HAPI-017 v1.2** | Flow enforcement: `get_resource_context` must be called before workflow discovery |
+| **DD-HAPI-017 v1.3** | Flow enforcement: `get_resource_context` must be called before workflow discovery. v1.3 adds `cluster_context` to `list_available_actions` response. |
 | **BR-SP-101** | DetectedLabels auto-detection business requirement |
 | **BR-SP-103** | FailedDetections tracking business requirement |
 | **Issue #102** | Implementation tracking issue |
@@ -381,8 +392,8 @@ The current SP implementation in `pkg/signalprocessing/detection/labels.go` is t
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: February 12, 2026
+**Document Version**: 1.1
+**Last Updated**: February 20, 2026
 **Status**: APPROVED
 **Authority**: Cross-team detection specification for DetectedLabels (SP + HAPI)
 **Confidence**: 96%

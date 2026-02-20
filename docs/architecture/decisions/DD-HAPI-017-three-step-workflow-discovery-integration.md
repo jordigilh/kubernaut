@@ -2,7 +2,7 @@
 
 **Status**: ✅ APPROVED
 **Decision Date**: 2026-02-05
-**Version**: 1.2
+**Version**: 1.3
 **Confidence**: 92%
 **Applies To**: HolmesGPT API (HAPI), DataStorage Service (DS)
 
@@ -15,6 +15,7 @@
 | 1.0 | 2026-02-05 | Architecture Team | Initial design: replace `search_workflow_catalog` with three-step discovery tools for both incident and recovery flows. No migration -- pre-release greenfield replacement. |
 | 1.1 | 2026-02-15 | Architecture Team | Remove `actualSuccessRate` and `totalExecutions` from `list_workflows` LLM-facing response. These global aggregate metrics are misleading for per-incident workflow selection (Section 7). Clarify that contextual remediation history via spec-hash matching (DD-HAPI-016) is the correct mechanism for outcome-aware decisions. |
 | 1.2 | 2026-02-12 | Architecture Team | ADR-056 integration: Add Section 8 (tool-level flow enforcement requiring `get_resource_context` before workflow discovery). Remove `detected_labels` from LLM-facing tool parameters -- labels are now computed by HAPI internally and injected into DS queries transparently. Update BR-HAPI-017-001. Add DD-HAPI-018 cross-reference. |
+| 1.3 | 2026-02-20 | Architecture Team | Surface detected labels to LLM as read-only `cluster_context` in `list_available_actions` tool response (Step 1). Labels remain HAPI-computed and are NOT LLM-managed parameters. The LLM receives them for informed action type reasoning (e.g., GitOps-managed, HPA-enabled). Add BR-HAPI-017-007. Update Section 8 prompt builder impact. See ADR-056 v1.3. |
 
 ---
 
@@ -134,6 +135,7 @@ Each tool:
 - Extends `Tool` with its own parameters, description, and `_invoke` method
 - Passes signal context filters (severity, component, environment, priority, custom_labels) to DS
 - **v1.2 (ADR-056)**: `detected_labels` is NOT an LLM-facing parameter. HAPI reads `detected_labels` from internal session state (populated by `get_resource_context`) and injects them into DS queries transparently. See Section 8.
+- **v1.3**: `list_available_actions` (Step 1) surfaces detected labels as a read-only `cluster_context` section in the tool response. This gives the LLM explicit infrastructure context for action type selection without making labels a tool parameter. Steps 2 and 3 do not include `cluster_context`.
 - Passes `remediationId` as a query parameter for audit correlation (BR-AUDIT-021)
 - Returns a `StructuredToolResult` with clean LLM-rendered output (scores stripped)
 
@@ -323,15 +325,45 @@ Holmes SDK creates tool instances once per investigation and reuses them for all
 | `get_resource_context` succeeds, all label detections fail | Empty dict sentinel; DS queries proceed without label filters (acceptable -- equivalent to SP's all-fields-failed case) |
 | `get_resource_context` itself fails (K8s API unreachable) | Tool returns error to LLM; LLM may retry or proceed to workflow discovery which will also return flow error |
 
-#### Prompt Builder Impact (v1.2)
+#### Prompt Builder Impact (v1.3)
 
 The prompt builder changes for ADR-056 are:
 
-1. **Remove DetectedLabels from prompt context**: The `build_cluster_context_section()` and `build_mcp_filter_instructions()` functions in `prompt_builder.py` currently inject SP-computed `DetectedLabels` into the prompt. Once ADR-056 is implemented, these sections are removed -- HAPI computes and injects labels internally, the LLM does not need to see them.
+1. **Remove DetectedLabels from prompt context**: The `build_cluster_context_section()` and `build_mcp_filter_instructions()` functions in `prompt_builder.py` currently inject SP-computed `DetectedLabels` into the prompt. Once ADR-056 is implemented, these sections are removed -- HAPI computes and injects labels internally via `get_resource_context`.
 
 2. **Phase 3b instruction update**: The `get_resource_context` instruction already exists in the prompt (Phase 3b). No change needed to the instruction text -- the tool's internal behavior changes (now also computes labels) but the LLM-facing contract (call with kind/name/namespace, receive root_owner + history) is unchanged.
 
 3. **Phase 4 instruction update**: Remove any references to `detected_labels` as a parameter the LLM should provide. The "Signal context filters are automatically included" note already covers this.
+
+4. **`cluster_context` in `list_available_actions` response (v1.3)**: The `list_available_actions` tool now surfaces computed `detected_labels` as a read-only `cluster_context` section in its response payload. This provides the LLM with infrastructure characteristics (e.g., `gitOpsManaged`, `hpaEnabled`, `pdbProtected`) that inform action type selection reasoning, without requiring the LLM to detect or query these independently. The `additional_instructions` on `ListAvailableActionsTool` explicitly reference the `cluster_context` section.
+
+#### `list_available_actions` Response Schema (v1.3)
+
+When `detected_labels` are available in session state, the response includes:
+
+```json
+{
+  "actionTypes": [ ... ],
+  "cluster_context": {
+    "detected_labels": {
+      "gitOpsManaged": true,
+      "gitOpsTool": "argocd",
+      "hpaEnabled": false,
+      "pdbProtected": true,
+      "helmManaged": false,
+      "serviceMesh": "",
+      "istioEnabled": false
+    },
+    "note": "These labels describe the infrastructure characteristics of the resource under analysis. Use them to inform your action type selection."
+  }
+}
+```
+
+**Key rules**:
+- `failedDetections` fields are **fully excluded** from `cluster_context.detected_labels` (the LLM should not reason about labels that could not be detected).
+- `False` booleans are **preserved** (unlike DS query parameters which omit `False` values). The LLM benefits from knowing that a feature is explicitly absent (e.g., `hpaEnabled: false` means no HPA).
+- If `detected_labels` is empty or not yet computed, `cluster_context` is omitted entirely.
+- `cluster_context` appears **only** in `list_available_actions` responses, not in `list_workflows` or `get_workflow`.
 
 ---
 
@@ -465,6 +497,21 @@ The prompt builder changes for ADR-056 are:
   - No references to `search_workflow_catalog` in any Python source file
   - `POST /api/v1/workflows/search` no longer called by HAPI
 
+### BR-HAPI-017-007: cluster_context in list_available_actions Response
+
+- **Category**: HAPI
+- **Priority**: P1
+- **Description**: MUST surface computed `detected_labels` as a read-only `cluster_context` section in the `list_available_actions` tool response, providing infrastructure context to the LLM for informed action type selection. Reverses the v1.2 decision to keep labels fully internal.
+- **Acceptance Criteria**:
+  - `list_available_actions` response includes `cluster_context.detected_labels` when labels exist in session state
+  - `cluster_context.detected_labels` excludes all fields listed in `failedDetections`
+  - `False` booleans are preserved in `cluster_context` (not filtered like DS query params)
+  - `cluster_context` is omitted when `detected_labels` is empty or not yet computed
+  - `cluster_context` includes a `note` field explaining label semantics to the LLM
+  - `cluster_context` does NOT appear in `list_workflows` or `get_workflow` responses
+  - `ListAvailableActionsTool.additional_instructions` references `cluster_context` for LLM guidance
+- **Authority**: ADR-056 v1.3, DD-HAPI-017 v1.3, DD-HAPI-018 v1.1
+
 ---
 
 ## Related Decisions
@@ -480,8 +527,8 @@ The prompt builder changes for ADR-056 are:
 | **DD-004** | RFC 7807 error response standard. Error handling for DS responses follows this standard. |
 | **BR-HAPI-250** | Workflow catalog toolset (superseded BR-HAPI-046-050). **Superseded** by BR-HAPI-017-001 through 006. |
 | **BR-AUDIT-021-030 v2.0** | Workflow selection audit trail requirements. Updated for three-step protocol. |
-| **ADR-056** | Post-RCA label computation relocation. Section 8 of this DD implements the HAPI-side flow enforcement and label injection. |
-| **DD-HAPI-018** | DetectedLabels detection specification. Cross-language contract defining the 7 detection characteristics that HAPI implements per ADR-056. |
+| **ADR-056 v1.3** | Post-RCA label computation relocation. Section 8 of this DD implements the HAPI-side flow enforcement and label injection. v1.3 surfaces labels as read-only `cluster_context` in `list_available_actions`. |
+| **DD-HAPI-018 v1.1** | DetectedLabels detection specification. Cross-language contract defining the 7 detection characteristics that HAPI implements per ADR-056. v1.1 adds `cluster_context` consumer guidance. |
 
 ---
 
@@ -499,8 +546,8 @@ The prompt builder changes for ADR-056 are:
 
 ---
 
-**Document Version**: 1.2
-**Last Updated**: February 12, 2026
+**Document Version**: 1.3
+**Last Updated**: February 20, 2026
 **Status**: ✅ APPROVED
 **Authority**: HAPI workflow discovery integration (implements DD-WORKFLOW-016 protocol + ADR-056 flow enforcement)
 **Confidence**: 92%

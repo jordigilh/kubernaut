@@ -2,9 +2,20 @@
 
 **Status**: PROPOSED
 **Decision Date**: 2026-02-12
-**Version**: 1.2
+**Version**: 1.3
 **Confidence**: 96%
 **Applies To**: SignalProcessing, HolmesGPT API (HAPI), AIAnalysis Controller, Data Storage
+
+---
+
+## Changelog
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-02-12 | Architecture Team | Initial decision: relocate label computation from SP to HAPI post-RCA. Labels are HAPI-internal, not returned to LLM. |
+| 1.1 | 2026-02-12 | Architecture Team | Add DD-HAPI-018 cross-reference. Increase confidence to 96%. |
+| 1.2 | 2026-02-12 | Architecture Team | Align with DD-HAPI-017 v1.2 flow enforcement. Clarify session state wiring. |
+| 1.3 | 2026-02-20 | Architecture Team | Surface detected labels to LLM as read-only `cluster_context` in `list_available_actions` response. Labels remain HAPI-computed and are NOT LLM-managed parameters. The change gives the LLM explicit infrastructure context for informed action type selection (e.g., GitOps-managed, HPA-enabled). See DD-HAPI-017 v1.3, BR-HAPI-017-007. |
 
 ---
 
@@ -95,7 +106,7 @@ The gap was anticipated but never resolved:
 
 ### Relocate Label Computation from SignalProcessing to HAPI (Post-RCA, Internal)
 
-Move label detection from signal time (SP) to post-RCA time (HAPI), aligned with the actual remediation target resource identified by the LLM. Labels are computed and used **internally by HAPI** -- the LLM never sees or manages them.
+Move label detection from signal time (SP) to post-RCA time (HAPI), aligned with the actual remediation target resource identified by the LLM. Labels are computed by HAPI and used for two purposes: (1) transparently injected into DataStorage workflow discovery queries as filter criteria, and (2) **surfaced read-only to the LLM** as `cluster_context` in the `list_available_actions` tool response (v1.3). The LLM does not manage or pass labels as parameters -- they are injected into the tool response for reasoning context only.
 
 ### Foundational Principle: Impact vs. Target
 
@@ -111,34 +122,38 @@ SP owns impact classification. HAPI owns target properties. Neither crosses into
 
 ```
 SignalProcessing                  AIAnalysis              HAPI
-+-----------------------+         +----------+           +---------------------------+
-| Business classif.:    |         |          |           | 1. LLM performs RCA       |
-|  - environment        |         | Signal   |           | 2. LLM calls              |
-|  - priority           |         | context  |---------->|    get_resource_context()  |
-|  - severity           |         | only     |  request  |    for RCA target          |
-|  - business unit      |         | (no      |           | 3. Tool internally:        |
-|                       |         |  labels  |           |    - Resolves owner chain  |
-| DetectedLabels:       |         |  or      |           |    - Computes spec hash    |
-|  (SP-internal only)   |         |  owner   |           |    - Fetches history       |
-|  for audit/classify   |         |  chain)  |           |    - Computes labels (NEW) |
-+-----------------------+         +----------+           |    - Stores labels in      |
-                                                         |      session state         |
-                                                         |    Returns to LLM:         |
-                                                         |      root_owner + history  |
-                                                         |      (labels NOT returned) |
-                                                         |                            |
-                                                         | 4. LLM calls list_workflows|
-                                                         |    HAPI transparently      |
-                                                         |    injects stored labels   |
-                                                         |    into DataStorage query  |
-                                                         +---------------------------+
++-----------------------+         +----------+           +-----------------------------------+
+| Business classif.:    |         |          |           | 1. LLM performs RCA               |
+|  - environment        |         | Signal   |           | 2. LLM calls                      |
+|  - priority           |         | context  |---------->|    get_resource_context()          |
+|  - severity           |         | only     |  request  |    for RCA target                  |
+|  - business unit      |         | (no      |           | 3. Tool internally:                |
+|                       |         |  labels  |           |    - Resolves owner chain          |
+| DetectedLabels:       |         |  or      |           |    - Computes spec hash            |
+|  (SP-internal only)   |         |  owner   |           |    - Fetches history               |
+|  for audit/classify   |         |  chain)  |           |    - Computes labels               |
++-----------------------+         +----------+           |    - Stores labels in session state|
+                                                         |    Returns to LLM:                 |
+                                                         |      root_owner + history          |
+                                                         |      (labels NOT in this response) |
+                                                         |                                    |
+                                                         | 4. LLM calls list_available_actions|
+                                                         |    HAPI injects stored labels into |
+                                                         |    DataStorage query AND returns   |
+                                                         |    them as read-only cluster_context|
+                                                         |    in tool response (v1.3)         |
+                                                         |                                    |
+                                                         | 5. LLM calls list_workflows        |
+                                                         |    HAPI transparently injects      |
+                                                         |    stored labels into DS query     |
+                                                         +-----------------------------------+
 ```
 
 ### Key Design Principles
 
 1. **Impact vs. target separation.** Business classification (SP) describes signal impact and is stable across RCA outcomes. DetectedLabels (HAPI) describe the remediation target and must be computed post-RCA for the correct resource.
 
-2. **DetectedLabels are HAPI-internal.** Labels are computed by `get_resource_context` and stored in session state. They are **not returned to the LLM** and **not passed as tool parameters**. HAPI transparently injects them into workflow discovery queries. The LLM's tool interface is simpler -- fewer parameters, no risk of label hallucination.
+2. **DetectedLabels are HAPI-computed, read-only to the LLM.** Labels are computed by HAPI (on-demand during `list_available_actions`) and stored in session state. They are **not passed as tool parameters** (the LLM cannot set or override them). HAPI transparently injects them into workflow discovery queries as filter criteria. **v1.3**: Labels are also surfaced to the LLM as a read-only `cluster_context` section in the `list_available_actions` tool response, giving the LLM explicit infrastructure context (e.g., "this is ArgoCD-managed") for informed action type selection. The LLM's tool interface remains simple -- no label parameters, no risk of label hallucination -- but the LLM can now reason about detected infrastructure characteristics.
 
 3. **Workflow discovery `list_workflows` drops the `detected_labels` parameter.** The LLM calls `list_workflows(action_type)` and HAPI internally applies the stored labels as filter criteria. This is completely transparent from the LLM's perspective.
 
@@ -178,8 +193,8 @@ SignalProcessing                  AIAnalysis              HAPI
 
 | File | Change | Rationale |
 |------|--------|-----------|
-| `holmesgpt-api/src/toolsets/workflow_discovery.py` | Remove `should_include_detected_labels()` function. Remove `detected_labels` from `list_workflows` tool parameter schema. Update toolset to read labels from session state (stored by `get_resource_context`) and inject them transparently into DataStorage queries. LLM calls `list_workflows(action_type)` with no label parameters. | Labels are HAPI-internal; LLM never sees or manages them. Guard function no longer needed -- labels always match target. |
-| `holmesgpt-api/src/extensions/incident/prompt_builder.py` | Remove `build_cluster_context_section()` DetectedLabels rendering from LLM prompt. Labels are no longer provided as LLM context -- they are used internally for filtering only. | LLM does not need to reason about DetectedLabels |
+| `holmesgpt-api/src/toolsets/workflow_discovery.py` | Remove `should_include_detected_labels()` function. Remove `detected_labels` from `list_workflows` tool parameter schema. Update toolset to read labels from session state (stored by `get_resource_context`) and inject them transparently into DataStorage queries. LLM calls `list_workflows(action_type)` with no label parameters. **v1.3 (BR-HAPI-017-007)**: In `ListAvailableActionsTool._invoke()`, after receiving the DS response, inject a `cluster_context` section containing the detected labels (with `failedDetections` stripped) and a natural-language note. This surfaces infrastructure context to the LLM for informed action type selection without making labels a tool parameter. | Labels are HAPI-computed; the LLM receives them as read-only context but cannot set or override them. Guard function no longer needed -- labels always match target. |
+| `holmesgpt-api/src/extensions/incident/prompt_builder.py` | Remove `build_cluster_context_section()` DetectedLabels rendering from LLM prompt. Labels are no longer provided as static prompt context -- they are surfaced dynamically via `cluster_context` in the `list_available_actions` tool response (v1.3). | Labels arrive at the right time (post-RCA, during workflow discovery) rather than at prompt construction time (pre-RCA) |
 | `holmesgpt-api/src/extensions/llm_config.py` | Update `register_workflow_discovery_toolset()` to not pass `detected_labels` from enrichment results. Toolset reads from session state instead. | Labels come from internal state, not request |
 
 ### Phase 4: Update SP Internal Label Flow
@@ -206,7 +221,7 @@ SignalProcessing                  AIAnalysis              HAPI
 
 1. **Accurate workflow discovery**: Labels always describe the resource being remediated, not the signal source. Workflow selection matches the actual target.
 
-2. **Simpler LLM interface**: The LLM never sees DetectedLabels. `list_workflows` drops the `detected_labels` parameter. Fewer tool parameters means less hallucination risk and simpler prompt engineering.
+2. **Simpler LLM interface with informed context**: The LLM does not manage DetectedLabels as tool parameters -- `list_workflows` drops the `detected_labels` parameter. Fewer tool parameters means less hallucination risk and simpler prompt engineering. **v1.3**: The LLM receives detected labels as read-only `cluster_context` in the `list_available_actions` response, enabling explicit reasoning about infrastructure characteristics (e.g., "this is ArgoCD-managed, so GitRevertCommit is the right action type") without the complexity of label management.
 
 3. **Simpler pipeline**: Removes OwnerChain and DetectedLabels propagation across three CRD boundaries (SP -> RO -> AIAnalysis -> HAPI). Fewer moving parts, fewer conversion points.
 
@@ -266,7 +281,7 @@ After the LLM identifies the root cause, trigger a second SP enrichment pass for
 
 - **[ADR-055](ADR-055-llm-driven-context-enrichment.md)**: LLM-Driven Context Enrichment (Post-RCA) -- prerequisite; established `get_resource_context` tool and post-RCA pattern
 - **[DD-HAPI-018](DD-HAPI-018-detected-labels-detection-specification.md)**: DetectedLabels Detection Specification -- cross-language contract for the 7 detection characteristics, including conformance test vectors. Ensures SP (Go) and HAPI (Python) implementations produce identical results.
-- **[DD-HAPI-017 v1.2](DD-HAPI-017-three-step-workflow-discovery-integration.md)**: Three-Step Workflow Discovery Integration -- v1.2 adds tool-level flow enforcement requiring `get_resource_context` before workflow discovery, and removes `detected_labels` from LLM-facing tool parameters.
+- **[DD-HAPI-017 v1.3](DD-HAPI-017-three-step-workflow-discovery-integration.md)**: Three-Step Workflow Discovery Integration -- v1.2 adds tool-level flow enforcement requiring `get_resource_context` before workflow discovery, and removes `detected_labels` from LLM-facing tool parameters. v1.3 adds `cluster_context` to `list_available_actions` response (BR-HAPI-017-007).
 - **DD-WORKFLOW-001 v1.7/v2.1/v2.2**: DetectedLabels schema and validation framework
 - **DD-CONTRACT-002**: Enrichment results schema -- will be updated to remove propagated fields
 - **BR-SP-101**: DetectedLabels auto-detection -- scope narrows to SP-internal
