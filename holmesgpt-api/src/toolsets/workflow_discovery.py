@@ -138,6 +138,34 @@ def strip_failed_detections(detected_labels: DetectedLabels) -> DetectedLabels:
     return DetectedLabels(**clean_dict)
 
 
+def _build_cluster_context_labels(raw_labels) -> Dict[str, Any]:
+    """Build a clean label dict for the LLM-facing cluster_context.
+
+    Unlike DS query filters (which use strip_failed_detections + exclude_defaults),
+    cluster_context preserves ``False`` values because they are informative to the
+    LLM (e.g., ``pdbProtected=false``).  Failed detection fields are fully excluded
+    so the LLM does not see unreliable values.
+
+    ADR-056 v1.3 / DD-HAPI-018 v1.1 consumer guidance.
+    """
+    if isinstance(raw_labels, dict):
+        failed = set(
+            raw_labels.get("failedDetections")
+            or raw_labels.get("failed_detections")
+            or []
+        )
+        clean = {k: v for k, v in raw_labels.items() if v is not None}
+    else:
+        failed = set(getattr(raw_labels, "failedDetections", None) or [])
+        clean = raw_labels.model_dump(exclude_none=True)
+
+    clean.pop("failedDetections", None)
+    clean.pop("failed_detections", None)
+    for field in failed:
+        clean.pop(field, None)
+    return clean
+
+
 def _resources_match(r1: Dict[str, str], r2: Dict[str, Any]) -> bool:
     """
     Check if two resource references match (kind + namespace + name).
@@ -461,18 +489,19 @@ class _DiscoveryToolBase(Tool):
             params["custom_labels"] = json.dumps(self._custom_labels)
 
         # ADR-056 SoC: Read detected_labels from session_state (computed
-        # on-demand by _ensure_detected_labels). strip_failed_detections
-        # removes unreliable label values before sending to DataStorage.
+        # on-demand by _ensure_detected_labels). Failed detections are
+        # stripped, then default/false values are excluded because DS
+        # filters only need positive signals (True, non-empty string).
         if self._session_state and "detected_labels" in self._session_state:
             raw_labels = self._session_state["detected_labels"]
             if raw_labels:
-                clean_labels = strip_failed_detections(raw_labels)
-                if isinstance(clean_labels, dict):
-                    clean_dict = {k: v for k, v in clean_labels.items() if v is not None}
-                else:
-                    clean_dict = clean_labels.model_dump(exclude_defaults=True, exclude_none=True)
-                if clean_dict:
-                    params["detected_labels"] = json.dumps(clean_dict)
+                clean = _build_cluster_context_labels(raw_labels)
+                ds_dict = {
+                    k: v for k, v in clean.items()
+                    if v is not None and v is not False and v != ""
+                }
+                if ds_dict:
+                    params["detected_labels"] = json.dumps(ds_dict)
         return params
 
     def _do_get(self, url: str, extra_params: Optional[Dict] = None) -> Dict:
@@ -574,7 +603,10 @@ class ListAvailableActionsTool(_DiscoveryToolBase):
                 "Review ALL returned action types before selecting one. "
                 "Each action type includes 'when_to_use' and 'when_not_to_use' guidance — "
                 "use these to decide which action type best matches the incident. "
-                "If hasMore is true, call again with increased offset to see all action types."
+                "If hasMore is true, call again with increased offset to see all action types. "
+                "If a 'cluster_context' section is present in the response, it contains "
+                "auto-detected infrastructure characteristics (e.g., gitOpsManaged, hpaEnabled, "
+                "pdbProtected) for the target resource. Use these to inform your action type selection."
             ),
             data_storage_url=data_storage_url,
             remediation_id=remediation_id,
@@ -615,6 +647,30 @@ class ListAvailableActionsTool(_DiscoveryToolBase):
                 f"✅ Step 1 complete: {len(data.get('actionTypes', []))} action types, "
                 f"total={data.get('pagination', {}).get('totalCount', '?')}"
             )
+
+            # ADR-056 v1.3 / BR-HAPI-017-007: Surface detected labels as
+            # read-only cluster_context so the LLM can reason about
+            # infrastructure characteristics when selecting an action type.
+            # Unlike DS query filters (which use exclude_defaults to skip
+            # false booleans), cluster_context preserves false values because
+            # they are informative to the LLM (e.g., pdbProtected=false).
+            if self._session_state and self._session_state.get("detected_labels"):
+                raw_labels = self._session_state["detected_labels"]
+                if raw_labels:
+                    clean_dict = _build_cluster_context_labels(raw_labels)
+                    if clean_dict:
+                        data["cluster_context"] = {
+                            "detected_labels": clean_dict,
+                            "note": (
+                                "These infrastructure characteristics were auto-detected "
+                                "for the remediation target resource. Consider them when "
+                                "selecting an action type."
+                            ),
+                        }
+                        logger.info(
+                            f"📋 BR-HAPI-017-007: Surfaced {len(clean_dict)} detected labels "
+                            f"as cluster_context: {list(clean_dict.keys())}"
+                        )
 
             return StructuredToolResult(
                 status=StructuredToolResultStatus.SUCCESS,
