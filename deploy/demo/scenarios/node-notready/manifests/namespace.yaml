@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: demo-node
+  labels:
+    kubernaut.ai/environment: production
+    kubernaut.ai/business-unit: infrastructure
+    kubernaut.ai/service-owner: infra-team
+    kubernaut.ai/criticality: critical
+    kubernaut.ai/sla-tier: tier-1

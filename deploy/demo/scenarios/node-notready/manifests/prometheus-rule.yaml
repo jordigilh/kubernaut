@@ -1,0 +1,25 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: kubernaut-node-notready-rules
+  namespace: demo-node
+  labels:
+    release: prometheus
+spec:
+  groups:
+  - name: kubernaut-node-notready
+    rules:
+    - alert: KubernautNodeNotReady
+      expr: |
+        kube_node_status_condition{condition="Ready", status="true"} == 0
+      for: 1m
+      labels:
+        severity: critical
+      annotations:
+        summary: >
+          Node {{ $labels.node }} is in NotReady state for more than 1 minute.
+        description: >
+          A Kubernetes node has transitioned to NotReady status, indicating it is
+          no longer healthy. Pods on this node may be disrupted. The node should
+          be cordoned to prevent new scheduling and drained to reschedule existing
+          workloads to healthy nodes.
