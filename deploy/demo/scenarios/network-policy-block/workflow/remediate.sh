@@ -1,6 +1,8 @@
 #!/bin/sh
 set -e
 
+: "${TARGET_NAMESPACE:?TARGET_NAMESPACE is required}"
+
 echo "=== Phase 1: Validate ==="
 echo "Checking NetworkPolicies in namespace ${TARGET_NAMESPACE}..."
 

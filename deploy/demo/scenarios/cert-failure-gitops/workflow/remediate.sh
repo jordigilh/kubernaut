@@ -1,6 +1,12 @@
 #!/bin/sh
 set -e
 
+: "${TARGET_RESOURCE_NAME:?TARGET_RESOURCE_NAME is required}"
+: "${TARGET_NAMESPACE:?TARGET_NAMESPACE is required}"
+: "${GIT_REPO_URL:?GIT_REPO_URL is required}"
+: "${GIT_USERNAME:?GIT_USERNAME is required}"
+: "${GIT_PASSWORD:?GIT_PASSWORD is required}"
+
 echo "=== Phase 1: Validate ==="
 echo "Checking Certificate ${TARGET_RESOURCE_NAME} in ${TARGET_NAMESPACE}..."
 
@@ -17,10 +23,12 @@ echo "Validated: Certificate is not Ready. Proceeding with git revert."
 
 echo "=== Phase 2: Action ==="
 WORK_DIR=$(mktemp -d)
+trap 'rm -rf "${WORK_DIR}"' EXIT
 cd "${WORK_DIR}"
 
+AUTH_URL=$(echo "${GIT_REPO_URL}" | sed "s|://|://${GIT_USERNAME}:${GIT_PASSWORD}@|")
 echo "Cloning repository ${GIT_REPO_URL}..."
-git clone "${GIT_REPO_URL}" repo
+git clone "${AUTH_URL}" repo
 cd repo
 git config user.email "kubernaut-remediation@kubernaut.ai"
 git config user.name "Kubernaut Remediation"
@@ -39,9 +47,6 @@ git push origin "${BRANCH}"
 
 NEW_COMMIT=$(git rev-parse HEAD)
 echo "Revert commit: ${NEW_COMMIT}"
-
-cd /
-rm -rf "${WORK_DIR}"
 
 echo "Waiting for ArgoCD to sync (30s)..."
 sleep 30

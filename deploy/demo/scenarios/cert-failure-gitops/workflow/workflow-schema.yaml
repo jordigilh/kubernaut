@@ -29,7 +29,15 @@ parameters:
   - name: GIT_REPO_URL
     type: string
     required: true
-    description: "URL of the Git repository to revert (e.g., http://gitea-http.gitea:3000/kubernaut/demo-cert-gitops-repo.git)"
+    description: "URL of the Git repository (without credentials, e.g., http://gitea-http.gitea:3000/kubernaut/demo-cert-gitops-repo.git)"
+  - name: GIT_USERNAME
+    type: string
+    required: true
+    description: "Git username for clone/push authentication"
+  - name: GIT_PASSWORD
+    type: string
+    required: true
+    description: "Git password or token for clone/push authentication"
   - name: GIT_BRANCH
     type: string
     required: false

@@ -1,6 +1,11 @@
 #!/bin/sh
 set -e
 
+: "${TARGET_CERTIFICATE:?TARGET_CERTIFICATE is required}"
+: "${TARGET_NAMESPACE:?TARGET_NAMESPACE is required}"
+: "${ISSUER_NAME:?ISSUER_NAME is required}"
+: "${CA_SECRET_NAME:?CA_SECRET_NAME is required}"
+
 echo "=== Phase 1: Validate ==="
 echo "Checking Certificate ${TARGET_CERTIFICATE} in ${TARGET_NAMESPACE}..."
 
@@ -36,16 +41,17 @@ echo "=== Phase 2: Action ==="
 echo "Generating new self-signed CA key pair..."
 
 TMPDIR=$(mktemp -d)
+trap 'rm -rf "${TMPDIR}"' EXIT
+
 openssl req -x509 -newkey rsa:2048 -nodes \
   -keyout "${TMPDIR}/ca.key" -out "${TMPDIR}/ca.crt" \
-  -days 365 -subj "/CN=Demo CA/O=Kubernaut" 2>/dev/null
+  -days 365 -subj "/CN=Demo CA/O=Kubernaut"
 
 echo "Creating CA Secret ${CA_SECRET_NAME} in ${CA_SECRET_NAMESPACE:-cert-manager}..."
 kubectl create secret tls "${CA_SECRET_NAME}" \
   --cert="${TMPDIR}/ca.crt" --key="${TMPDIR}/ca.key" \
   -n "${CA_SECRET_NAMESPACE:-cert-manager}" \
   --dry-run=client -o yaml | kubectl apply -f -
-rm -rf "${TMPDIR}"
 
 echo "Triggering certificate re-issuance..."
 kubectl delete secret "$(kubectl get certificate "${TARGET_CERTIFICATE}" -n "${TARGET_NAMESPACE}" \

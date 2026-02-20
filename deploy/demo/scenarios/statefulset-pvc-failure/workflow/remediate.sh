@@ -1,6 +1,9 @@
 #!/bin/sh
 set -e
 
+: "${TARGET_STATEFULSET:?TARGET_STATEFULSET is required}"
+: "${TARGET_NAMESPACE:?TARGET_NAMESPACE is required}"
+
 echo "=== Phase 1: Validate ==="
 echo "Checking StatefulSet ${TARGET_STATEFULSET} in ${TARGET_NAMESPACE}..."
 

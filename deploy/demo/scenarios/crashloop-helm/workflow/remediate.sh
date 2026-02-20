@@ -1,11 +1,14 @@
 #!/bin/sh
 set -e
 
+: "${RELEASE_NAME:?RELEASE_NAME is required}"
+: "${TARGET_NAMESPACE:?TARGET_NAMESPACE is required}"
+
 echo "=== Phase 1: Validate ==="
 echo "Checking Helm release ${RELEASE_NAME} in ${TARGET_NAMESPACE}..."
 
 CURRENT_REV=$(helm history "${RELEASE_NAME}" -n "${TARGET_NAMESPACE}" --max 1 -o json | \
-  grep -o '"revision":[0-9]*' | head -1 | cut -d: -f2)
+  jq -r '.[0].revision')
 echo "Current Helm revision: ${CURRENT_REV}"
 
 if [ "${CURRENT_REV}" -le 1 ]; then
@@ -14,7 +17,7 @@ if [ "${CURRENT_REV}" -le 1 ]; then
 fi
 
 RELEASE_STATUS=$(helm status "${RELEASE_NAME}" -n "${TARGET_NAMESPACE}" -o json | \
-  grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4)
+  jq -r '.info.status')
 echo "Release status: ${RELEASE_STATUS}"
 
 CRASH_PODS=$(kubectl get pods -n "${TARGET_NAMESPACE}" \
@@ -29,11 +32,11 @@ helm rollback "${RELEASE_NAME}" "${PREV_REV}" -n "${TARGET_NAMESPACE}" --wait --
 
 echo "=== Phase 3: Verify ==="
 NEW_REV=$(helm history "${RELEASE_NAME}" -n "${TARGET_NAMESPACE}" --max 1 -o json | \
-  grep -o '"revision":[0-9]*' | head -1 | cut -d: -f2)
+  jq -r '.[0].revision')
 echo "New Helm revision: ${NEW_REV}"
 
 NEW_STATUS=$(helm status "${RELEASE_NAME}" -n "${TARGET_NAMESPACE}" -o json | \
-  grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4)
+  jq -r '.info.status')
 echo "Release status: ${NEW_STATUS}"
 
 READY=$(kubectl get deployment worker -n "${TARGET_NAMESPACE}" \
