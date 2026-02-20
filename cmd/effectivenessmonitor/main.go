@@ -243,8 +243,8 @@ func main() {
 	// DS QUERIER INITIALIZATION (DD-EM-002: pre-remediation hash lookup)
 	// ========================================
 	var dsQuerier emclient.DataStorageQuerier
-	dsQuerier = emclient.NewDataStorageHTTPQuerier(cfg.DataStorage.URL)
-	setupLog.Info("DataStorage querier initialized for pre-remediation hash lookup",
+	dsQuerier = emclient.NewDataStorageHTTPQuerierWithTimeout(cfg.DataStorage.URL, cfg.DataStorage.Timeout)
+	setupLog.Info("DataStorage querier initialized for pre-remediation hash lookup (DD-AUTH-005: SA auth)",
 		"url", cfg.DataStorage.URL)
 
 	// ========================================
