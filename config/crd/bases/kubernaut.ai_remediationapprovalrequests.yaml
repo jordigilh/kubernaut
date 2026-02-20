@@ -33,6 +33,10 @@ spec:
     - jsonPath: .spec.requiredBy
       name: RequiredBy
       type: date
+    - jsonPath: .status.conditions[?(@.type=="Ready")].reason
+      name: Reason
+      priority: 1
+      type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
@@ -178,8 +182,8 @@ spec:
               recommendedWorkflow:
                 description: Recommended workflow from AI analysis
                 properties:
-                  containerImage:
-                    description: Container image to execute
+                  executionBundle:
+                    description: Execution bundle OCI reference (digest-pinned)
                     type: string
                   rationale:
                     description: Rationale for selecting this workflow
@@ -191,7 +195,7 @@ spec:
                     description: Workflow identifier from catalog
                     type: string
                 required:
-                - containerImage
+                - executionBundle
                 - rationale
                 - version
                 - workflowId
@@ -376,6 +380,9 @@ spec:
                 type: string
             type: object
         type: object
+    selectableFields:
+    - jsonPath: .spec.remediationRequestRef.name
+    - jsonPath: .spec.aiAnalysisRef.name
     served: true
     storage: true
     subresources:

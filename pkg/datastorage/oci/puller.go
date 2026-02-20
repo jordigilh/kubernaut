@@ -44,6 +44,11 @@ type ImagePuller interface {
 	// Pull retrieves an OCI image by reference (e.g., "quay.io/org/workflow:v1.0.0").
 	// Returns the image and its SHA-256 digest.
 	Pull(ctx context.Context, ref string) (v1.Image, string, error)
+
+	// Exists checks whether an OCI image manifest exists at the given reference.
+	// Uses a HEAD request — lightweight, does not download layers.
+	// Returns nil if the manifest exists, or an error describing why it doesn't.
+	Exists(ctx context.Context, ref string) error
 }
 
 // CraneImagePuller implements ImagePuller using google/go-containerregistry (crane).
@@ -82,4 +87,20 @@ func (p *CraneImagePuller) Pull(ctx context.Context, ref string) (v1.Image, stri
 	p.logger.V(1).Info("OCI image pulled successfully", "ref", ref, "digest", digestStr)
 
 	return img, digestStr, nil
+}
+
+// Exists checks whether an OCI image manifest exists at the given reference.
+// Uses crane.Head for a lightweight manifest existence check without downloading layers.
+func (p *CraneImagePuller) Exists(ctx context.Context, ref string) error {
+	p.logger.V(1).Info("Checking OCI image existence", "ref", ref)
+
+	opts := append([]crane.Option{crane.WithContext(ctx)}, p.opts...)
+
+	_, err := crane.Head(ref, opts...)
+	if err != nil {
+		return fmt.Errorf("image %q not found in registry: %w", ref, err)
+	}
+
+	p.logger.V(1).Info("OCI image exists", "ref", ref)
+	return nil
 }

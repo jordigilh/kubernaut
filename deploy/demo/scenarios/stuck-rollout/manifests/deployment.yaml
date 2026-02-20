@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: checkout-api
+  namespace: demo-rollout
+  labels:
+    app: checkout-api
+    kubernaut.ai/managed: "true"
+spec:
+  replicas: 3
+  progressDeadlineSeconds: 120
+  selector:
+    matchLabels:
+      app: checkout-api
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: checkout-api
+    spec:
+      containers:
+      - name: api
+        image: nginx:1.27-alpine
+        ports:
+        - containerPort: 80
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "10m"
+          limits:
+            memory: "64Mi"
+            cpu: "50m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 3
+          periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: checkout-api
+  namespace: demo-rollout
+  labels:
+    app: checkout-api
+    kubernaut.ai/managed: "true"
+spec:
+  selector:
+    app: checkout-api
+  ports:
+  - port: 80
+    targetPort: 80
+  type: ClusterIP

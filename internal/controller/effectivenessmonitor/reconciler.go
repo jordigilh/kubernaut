@@ -100,7 +100,7 @@ type ReconcilerConfig struct {
 	// ValidityWindow is the maximum duration for assessment completion.
 	// The EM computes ValidityDeadline = EA.creationTimestamp + ValidityWindow
 	// on first reconciliation and stores it in EA.Status.ValidityDeadline.
-	// Default: 30m (from EMConfig.Assessment.ValidityWindow).
+	// Default: 30m (from effectivenessmonitor.Config.Assessment.ValidityWindow).
 	ValidityWindow time.Duration
 
 	// PrometheusLookback is the duration before EA creation to query Prometheus.
@@ -1134,6 +1134,9 @@ func (r *Reconciler) setCompletionFields(ea *eav1.EffectivenessAssessment, reaso
 	ea.Status.CompletedAt = &now
 	ea.Status.AssessmentReason = reason
 	ea.Status.Message = fmt.Sprintf("Assessment completed: %s", reason)
+
+	// Issue #79 Phase 7b: Set Ready condition on terminal transitions
+	conditions.SetReady(ea, true, conditions.ReasonReady, "Assessment completed")
 
 	// Set AssessmentComplete condition (DD-CRD-002) for all completion paths.
 	// The condition reason maps from AssessmentReason to the DD-CRD-002 reason constant.

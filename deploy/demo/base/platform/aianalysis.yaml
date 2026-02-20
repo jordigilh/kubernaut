@@ -14,63 +14,37 @@ data:
     import rego.v1
 
     default require_approval := false
-    default reason := "Auto-approved"
 
-    require_approval if {
-        input.environment == "production"
-    }
+    require_approval if { input.environment == "production" }
+    require_approval if { input.is_recovery_attempt == true; input.recovery_attempt_number >= 3 }
+    require_approval if { input.environment == "production"; count(input.warnings) > 0 }
+    require_approval if { input.environment == "production"; count(input.failed_detections) > 0 }
 
-    require_approval if {
-        input.is_recovery_attempt == true
-        input.recovery_attempt_number >= 3
-    }
-
-    require_approval if {
-        input.environment == "production"
-        count(input.warnings) > 0
-    }
-
-    require_approval if {
-        input.environment == "production"
-        count(input.failed_detections) > 0
-    }
-
-    reason := msg if {
-        require_approval
+    # Scored risk factors for reason generation
+    risk_factors contains {"score": 100, "reason": msg} if {
         input.is_recovery_attempt == true
         input.recovery_attempt_number >= 3
         msg := sprintf("Multiple recovery attempts (%d) - human approval required", [input.recovery_attempt_number])
     }
-
-    reason := "Data quality warnings in production environment" if {
-        require_approval
+    risk_factors contains {"score": 70, "reason": "Data quality warnings in production environment"} if {
         input.environment == "production"
         count(input.warnings) > 0
-        not input.is_recovery_attempt
     }
-
-    reason := "Data quality issues detected in production environment" if {
-        require_approval
+    risk_factors contains {"score": 60, "reason": "Data quality issues detected in production environment"} if {
         input.environment == "production"
         count(input.failed_detections) > 0
-        count(input.warnings) == 0
-        not input.is_recovery_attempt
+    }
+    risk_factors contains {"score": 40, "reason": "Production environment requires manual approval"} if {
+        input.environment == "production"
     }
 
-    reason := "Production environment requires manual approval" if {
-        require_approval
-        input.environment == "production"
-        count(input.warnings) == 0
-        not input.is_recovery_attempt
-    }
-
-    reason := "Production environment requires manual approval" if {
-        require_approval
-        input.environment == "production"
-        input.is_recovery_attempt == true
-        input.recovery_attempt_number < 3
-    }
+    all_scores contains f.score if { some f in risk_factors }
+    max_risk_score := max(all_scores) if { count(all_scores) > 0 }
+    reason := f.reason if { some f in risk_factors; f.score == max_risk_score }
+    default reason := "Auto-approved"
 ---
+# ADR-030: AIAnalysis controller configuration (YAML ConfigMap)
+# Per CRD_FIELD_NAMING_CONVENTION.md: camelCase for YAML fields
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -78,29 +52,32 @@ metadata:
   namespace: kubernaut-system
 data:
   config.yaml: |
-    server:
-      port: 8080
-      host: "0.0.0.0"
-      read_timeout: "30s"
-      write_timeout: "30s"
-    logging:
-      level: "info"
-      format: "json"
+    controller:
+      metricsAddr: ":9090"
+      healthProbeAddr: ":8081"
+      leaderElection: false
+      leaderElectionId: "aianalysis.kubernaut.ai"
     holmesgpt:
       url: "http://holmesgpt-api:8080"
-      timeout: "60s"
+      timeout: "180s"
+      sessionPollInterval: "15s"
     datastorage:
-      url: "http://data-storage-service:8080"
-      timeout: "60s"
+      url: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
+      timeout: "10s"
+      buffer:
+        bufferSize: 20000
+        batchSize: 1000
+        flushInterval: "1s"
+        maxRetries: 3
     rego:
-      policy_path: "/etc/aianalysis/policies/approval.rego"
+      policyPath: "/etc/aianalysis/policies/approval.rego"
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: aianalysis-controller
   namespace: kubernaut-system
-  automountServiceAccountToken: true
+automountServiceAccountToken: true
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -182,12 +159,23 @@ spec:
     metadata:
       labels:
         app: aianalysis-controller
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: aianalysis-controller
       containers:
         - name: aianalysis
           image: quay.io/kubernaut-ai/aianalysis:demo-v1.0
           imagePullPolicy: IfNotPresent
+          # ADR-030: Single -config flag; all functional config in YAML ConfigMap
+          env:
+            - name: CONFIG_PATH
+              value: /etc/aianalysis/config.yaml
+          args:
+            - "-config"
+            - "$(CONFIG_PATH)"
           ports:
             - containerPort: 8080
             - containerPort: 9090
@@ -200,15 +188,6 @@ spec:
             periodSeconds: 5
             timeoutSeconds: 3
             failureThreshold: 3
-          env:
-            - name: CONFIG_PATH
-              value: /etc/aianalysis/config.yaml
-            - name: REGO_POLICY_PATH
-              value: /etc/aianalysis/policies/approval.rego
-            - name: HOLMESGPT_API_URL
-              value: http://holmesgpt-api:8080
-            - name: DATASTORAGE_URL
-              value: http://data-storage-service:8080
           volumeMounts:
             - name: config
               mountPath: /etc/aianalysis

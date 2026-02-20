@@ -45,10 +45,9 @@ class TestWorkflowDiscoveryEntry(unittest.TestCase):
                     when_not_to_use = '', 
                     preconditions = '', ),
                 version = '',
-                container_image = '',
-                execution_engine = 'tekton',
-                actual_success_rate = 0.0,
-                total_executions = 0
+                schema_image = '',
+                execution_bundle = '',
+                execution_engine = 'tekton'
             )
         else:
             return WorkflowDiscoveryEntry(
@@ -61,7 +60,7 @@ class TestWorkflowDiscoveryEntry(unittest.TestCase):
                     when_not_to_use = '', 
                     preconditions = '', ),
                 version = '',
-                container_image = '',
+                schema_image = '',
         )
         """
 

@@ -29,7 +29,7 @@ import (
 //   (e.g., missing RBAC, wrong DataStorage endpoint, network issues)
 //
 // Test Coverage:
-// - HolmesGPT-API failures (HTTP 500, timeouts, network errors)
+// - AI agent API failures (HTTP 500, timeouts, network errors)
 // - Controller reconciliation errors
 // - Audit event data validation for error scenarios
 //
@@ -45,11 +45,11 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 	})
 
 	// ========================================
-	// Context: HolmesGPT-API Error Scenarios
+	// Context: AI Agent API Error Scenarios
 	// ========================================
 
-	Context("HolmesGPT-API Error Audit - BR-AI-050", func() {
-		It("should audit HolmesGPT calls even when API returns HTTP 500", func() {
+	Context("AI Agent API Error Audit - BR-AI-050", func() {
+		It("should audit AI agent calls even when API returns HTTP 500", func() {
 			By("Creating AIAnalysis with signal type that might trigger HAPI error")
 			suffix := randomSuffix()
 			namespace := createTestNamespace("error-audit-hapi")
@@ -82,22 +82,22 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 
 			remediationID := analysis.Spec.RemediationID
 
-			By("Querying Data Storage for HolmesGPT call audit events")
+			By("Querying Data Storage for AI agent call audit events")
 			// Per TESTING_GUIDELINES.md: Use Eventually(), NOT time.Sleep()
 			// Wait for at least one HAPI call event (success or failure)
 		// waitForSpecificAuditEvent already uses Eventually() internally
-		hapiEventType := aianalysisaudit.EventTypeHolmesGPTCall
+		hapiEventType := aianalysisaudit.EventTypeAIAgentCall
 		hapiEvents := waitForSpecificAuditEvent(remediationID, hapiEventType, 1)
 
-			By("Validating HolmesGPT call was audited regardless of success/failure")
+			By("Validating AI agent call was audited regardless of success/failure")
 			Expect(hapiEvents).ToNot(BeEmpty(),
-				"Controller MUST audit HolmesGPT calls even when they fail (ADR-032 §1)")
+				"Controller MUST audit AI agent calls even when they fail (ADR-032 §1)")
 
 			By("Verifying HTTP status code is captured in audit event")
 			event := hapiEvents[0]
 			// Access strongly-typed payload via discriminated union
-			payload := event.EventData.AIAnalysisHolmesGPTCallPayload
-			Expect(payload).ToNot(BeNil(), "Should have AIAnalysisHolmesGPTCallPayload")
+			payload := event.EventData.AIAnalysisAIAgentCallPayload
+			Expect(payload).ToNot(BeNil(), "Should have AIAnalysisAIAgentCallPayload")
 			Expect(payload.HTTPStatusCode).ToNot(BeZero(),
 				"HTTP status code MUST be captured for all HAPI calls")
 
@@ -208,11 +208,7 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 								Name:      "memory-hog",
 								Namespace: namespace,
 							},
-							EnrichmentResults: sharedtypes.EnrichmentResults{
-								OwnerChain: []sharedtypes.OwnerChainEntry{
-									{Namespace: namespace, Kind: "Pod", Name: "memory-hog"},
-								},
-							},
+							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
 						AnalysisTypes: []string{"investigation"},
 					},
@@ -289,11 +285,7 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 								Name:      "backend-api",
 								Namespace: namespace,
 							},
-							EnrichmentResults: sharedtypes.EnrichmentResults{
-								OwnerChain: []sharedtypes.OwnerChainEntry{
-									{Namespace: namespace, Kind: "Deployment", Name: "backend-api"},
-								},
-							},
+							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
 						AnalysisTypes: []string{"investigation"},
 					},

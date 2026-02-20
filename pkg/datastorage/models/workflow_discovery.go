@@ -32,10 +32,10 @@ import (
 // ActionTypeTaxonomy represents an entry in the action_type_taxonomy table
 // Migration 025: action_type_taxonomy table
 type ActionTypeTaxonomy struct {
-	ActionType  string          `json:"action_type" db:"action_type"`
+	ActionType  string          `json:"actionType" db:"action_type"`
 	Description json.RawMessage `json:"description" db:"description"`
-	CreatedAt   time.Time       `json:"created_at" db:"created_at"`
-	UpdatedAt   time.Time       `json:"updated_at" db:"updated_at"`
+	CreatedAt   time.Time       `json:"createdAt" db:"created_at"`
+	UpdatedAt   time.Time       `json:"updatedAt" db:"updated_at"`
 }
 
 // ActionTypeDescription represents the JSONB description structure for an action type
@@ -71,7 +71,8 @@ type WorkflowDiscoveryEntry struct {
 	Name            string                `json:"name"`
 	Description     StructuredDescription `json:"description"`
 	Version         string                `json:"version"`
-	ContainerImage  string                `json:"containerImage,omitempty"`
+	SchemaImage     string                `json:"schemaImage,omitempty"`
+	ExecutionBundle string                `json:"executionBundle,omitempty"`
 	ExecutionEngine string                `json:"executionEngine,omitempty"`
 }
 
@@ -111,11 +112,11 @@ type WorkflowDiscoveryFilters struct {
 	Priority    string `json:"priority"`
 
 	// Optional context filters
-	CustomLabels   map[string][]string `json:"custom_labels,omitempty"`
-	DetectedLabels *DetectedLabels     `json:"detected_labels,omitempty"`
+	CustomLabels   map[string][]string `json:"customLabels,omitempty"`
+	DetectedLabels *DetectedLabels     `json:"detectedLabels,omitempty"`
 
 	// Audit correlation
-	RemediationID string `json:"remediation_id,omitempty"`
+	RemediationID string `json:"remediationId,omitempty"`
 }
 
 // HasContextFilters returns true if any of the mandatory context filters are set.

@@ -17,8 +17,10 @@ Name | Type | Description | Notes
 **content_hash** | **str** | SHA-256 hash of content | 
 **parameters** | **Dict[str, object]** | Workflow parameters (JSONB) | [optional] 
 **execution_engine** | **str** | Execution engine (e.g., argo-workflows) | 
-**container_image** | **str** | OCI image reference | [optional] 
-**container_digest** | **str** | OCI image digest | [optional] 
+**schema_image** | **str** | OCI image used to extract the workflow schema (DD-WORKFLOW-017) | [optional] 
+**schema_digest** | **str** | OCI schema image digest | [optional] 
+**execution_bundle** | **str** | OCI execution bundle reference (digest-pinned) | [optional] 
+**execution_bundle_digest** | **str** | OCI execution bundle digest | [optional] 
 **labels** | [**MandatoryLabels**](MandatoryLabels.md) |  | 
 **custom_labels** | **Dict[str, List[str]]** | Customer-defined labels (DD-WORKFLOW-001 v1.5) - subdomain-based format | [optional] 
 **detected_labels** | [**DetectedLabels**](DetectedLabels.md) |  | [optional] 

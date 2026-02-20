@@ -100,7 +100,7 @@ def sample_previous_execution():
         "selected_workflow": {
             "workflow_id": "oom-memory-increase-v1",
             "version": "v1.0.0",
-            "container_image": "quay.io/kubernaut/oom-remediation:v1.0.0",
+            "execution_bundle": "quay.io/kubernaut/oom-remediation:v1.0.0",
             "parameters": {"memory_increment": "256Mi"},
             "rationale": "Increase memory limits to prevent OOM"
         },
@@ -216,7 +216,7 @@ class TestRecoveryEndpointE2EFieldValidation:
         assert response.selected_workflow['workflow_id'] is not None
         assert isinstance(response.selected_workflow['workflow_id'], str)
         assert isinstance(response.selected_workflow['confidence'], (int, float))
-        # Note: container_image may not be present in mock mode responses
+        # Note: execution_bundle may not be present in mock mode responses
         # In real scenarios, it would come from Data Storage workflow records
 
         # Validate recovery_analysis structure (dict from API response)
@@ -482,7 +482,7 @@ class TestRecoveryEndpointE2EWorkflowValidation:
         assert workflow['workflow_id'] is not None, "workflow_id required"
         assert workflow.get('parameters') is not None, "parameters required"
         assert isinstance(workflow.get('parameters'), dict), "parameters must be dict"
-        # Note: container_image validation would require real Data Storage workflow records
+        # Note: execution_bundle validation would require real Data Storage workflow records
         # In mock mode, this field may not be populated
 
         # Additional fields for execution (dict from API response)
@@ -552,10 +552,10 @@ class TestRecoveryEndpointE2EEndToEndFlow:
             "selected_workflow": {
                 "workflow_id": initial_workflow_id,
                 "version": "v1.0.0",
-                "container_image": (
-                    incident_response.selected_workflow.get('container_image') or 
-                    incident_response.selected_workflow.get('containerImage') or 
-                    "quay.io/default-workflow:v1.0.0"  # Fallback for E2E test
+                "execution_bundle": (
+                    incident_response.selected_workflow.get('execution_bundle') or 
+                    incident_response.selected_workflow.get('executionBundle') or 
+                    "quay.io/default-workflow:v1.0.0"
                 ),
                 "parameters": incident_response.selected_workflow.get('parameters'),
                 "rationale": incident_response.selected_workflow.get('rationale')

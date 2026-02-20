@@ -42,12 +42,11 @@ class AIAnalysisAuditPayload(BaseModel):
     warnings_count: StrictInt = Field(description="Number of warnings encountered")
     confidence: Optional[Union[StrictFloat, StrictInt]] = Field(default=None, description="Workflow selection confidence (0.0-1.0)")
     workflow_id: Optional[StrictStr] = Field(default=None, description="Selected workflow identifier")
-    target_in_owner_chain: Optional[StrictBool] = Field(default=None, description="Whether target is in owner chain")
     reason: Optional[StrictStr] = Field(default=None, description="Primary failure reason")
     sub_reason: Optional[StrictStr] = Field(default=None, description="Detailed failure sub-reason")
     provider_response_summary: Optional[ProviderResponseSummary] = None
     error_details: Optional[ErrorDetails] = None
-    __properties: ClassVar[List[str]] = ["event_type", "analysis_name", "namespace", "phase", "approval_required", "approval_reason", "degraded_mode", "warnings_count", "confidence", "workflow_id", "target_in_owner_chain", "reason", "sub_reason", "provider_response_summary", "error_details"]
+    __properties: ClassVar[List[str]] = ["event_type", "analysis_name", "namespace", "phase", "approval_required", "approval_reason", "degraded_mode", "warnings_count", "confidence", "workflow_id", "reason", "sub_reason", "provider_response_summary", "error_details"]
 
     @field_validator('event_type')
     def event_type_validate_enum(cls, value):
@@ -128,7 +127,6 @@ class AIAnalysisAuditPayload(BaseModel):
             "warnings_count": obj.get("warnings_count"),
             "confidence": obj.get("confidence"),
             "workflow_id": obj.get("workflow_id"),
-            "target_in_owner_chain": obj.get("target_in_owner_chain"),
             "reason": obj.get("reason"),
             "sub_reason": obj.get("sub_reason"),
             "provider_response_summary": ProviderResponseSummary.from_dict(obj.get("provider_response_summary")) if obj.get("provider_response_summary") is not None else None,

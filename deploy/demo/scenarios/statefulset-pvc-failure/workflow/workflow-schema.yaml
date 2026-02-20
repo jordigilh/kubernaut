@@ -1,0 +1,40 @@
+# Fix StatefulSet PVC Workflow Schema - Job Backend (BR-WORKFLOW-004)
+# Scenario: #137 -- StatefulSet PVC deleted -> pod stuck Pending -> recreate PVC
+metadata:
+  workflowId: fix-statefulset-pvc-v1
+  version: "1.0.0"
+  description:
+    what: "Recreates a missing PVC for a StatefulSet to allow the stuck pod to be scheduled"
+    whenToUse: "When a StatefulSet pod is stuck in Pending because its PVC has been deleted or is unbound"
+    whenNotToUse: "When the PVC exists but the storage backend is down (fix the storage backend instead)"
+    preconditions: "The StatefulSet exists with a volumeClaimTemplate, and the missing PVC name follows the StatefulSet naming convention"
+
+actionType: FixStatefulSetPVC
+
+labels:
+  signalType: StatefulSetReplicasMismatch
+  severity: [critical, high]
+  environment: [production, staging]
+  component: "*"
+  priority: "*"
+
+detectedLabels:
+  stateful: "true"
+
+execution:
+  engine: job
+  bundle: quay.io/kubernaut-cicd/test-workflows/fix-statefulset-pvc-job:v1.0.0
+
+parameters:
+  - name: TARGET_NAMESPACE
+    type: string
+    required: true
+    description: "Namespace of the StatefulSet"
+  - name: TARGET_STATEFULSET
+    type: string
+    required: true
+    description: "Name of the StatefulSet"
+  - name: TARGET_PVC
+    type: string
+    required: false
+    description: "Name of the missing PVC (auto-detected if not provided)"

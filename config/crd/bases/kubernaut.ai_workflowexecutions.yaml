@@ -29,6 +29,10 @@ spec:
     - jsonPath: .status.duration
       name: Duration
       type: string
+    - jsonPath: .status.conditions[?(@.type=="Ready")].reason
+      name: Reason
+      priority: 1
+      type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
@@ -161,13 +165,13 @@ spec:
                   WorkflowRef contains the workflow catalog reference
                   Resolved from AIAnalysis.Status.SelectedWorkflow by RemediationOrchestrator
                 properties:
-                  containerDigest:
-                    description: ContainerDigest for audit trail and reproducibility
-                    type: string
-                  containerImage:
+                  executionBundle:
                     description: |-
-                      ContainerImage resolved from workflow catalog (Data Storage API)
+                      ExecutionBundle resolved from workflow catalog (Data Storage API)
                       OCI bundle reference for Tekton PipelineRun
+                    type: string
+                  executionBundleDigest:
+                    description: ExecutionBundleDigest for audit trail and reproducibility
                     type: string
                   version:
                     description: Version of the workflow
@@ -176,7 +180,7 @@ spec:
                     description: WorkflowID is the catalog lookup key
                     type: string
                 required:
-                - containerImage
+                - executionBundle
                 - version
                 - workflowId
                 type: object
@@ -296,15 +300,6 @@ spec:
                   - type
                   type: object
                 type: array
-              consecutiveFailures:
-                description: |-
-                  ConsecutiveFailures tracks pre-execution failures for this target resource
-                  DEPRECATED (V1.0): Routing state moved to RR.Status.ConsecutiveFailureCount per DD-RO-002 Phase 3
-                  This field is NO LONGER UPDATED by WE controller as of V1.0
-                  Use RR.Status.ConsecutiveFailureCount for routing decisions
-                  Will be REMOVED in V2.0
-                format: int32
-                type: integer
               duration:
                 description: Duration of the execution
                 type: string
@@ -430,15 +425,6 @@ spec:
                   FailureReason explains why execution failed (if applicable)
                   DEPRECATED: Use FailureDetails for structured failure information
                 type: string
-              nextAllowedExecution:
-                description: |-
-                  NextAllowedExecution is the timestamp when next execution is allowed
-                  DEPRECATED (V1.0): Routing state moved to RR.Status.NextAllowedExecution per DD-RO-002 Phase 3
-                  This field is NO LONGER UPDATED by WE controller as of V1.0
-                  Use RR.Status.NextAllowedExecution for routing decisions
-                  Will be REMOVED in V2.0
-                format: date-time
-                type: string
               observedGeneration:
                 description: |-
                   ObservedGeneration is the most recent generation observed by the controller.
@@ -462,6 +448,8 @@ spec:
                 type: string
             type: object
         type: object
+    selectableFields:
+    - jsonPath: .spec.remediationRequestRef.name
     served: true
     storage: true
     subresources:

@@ -319,6 +319,10 @@ func SetupEMInfrastructure(ctx context.Context, clusterName, kubeconfigPath stri
 		return fmt.Errorf("EM controller not ready: %w", err)
 	}
 
+	if err := WaitForPrometheusCadvisorTarget(promURL, 60*time.Second, writer); err != nil {
+		return fmt.Errorf("Prometheus cadvisor target not UP: %w", err)
+	}
+
 	_, _ = fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "  EM E2E Infrastructure Ready")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -351,7 +355,10 @@ data:
         flushInterval: 1s
         maxRetries: 3
     controller:
+      metricsAddr: ":9090"
+      healthProbeAddr: ":8081"
       leaderElection: false
+      leaderElectionId: "effectivenessmonitor.kubernaut.ai"
     external:
       prometheusUrl: http://prometheus-svc:9090
       prometheusEnabled: true
@@ -382,6 +389,9 @@ rules:
 - apiGroups: [""]
   resources: ["pods"]
   verbs: ["get", "list", "watch"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+  verbs: ["get", "list"]
 - apiGroups: [""]
   resources: ["events"]
   verbs: ["create", "patch"]
@@ -423,8 +433,6 @@ spec:
         imagePullPolicy: %[3]s
         args:
         - "--config=/etc/effectivenessmonitor/effectivenessmonitor.yaml"
-        - "--metrics-bind-address=:9090"
-        - "--health-probe-bind-address=:8081"
         ports:
         - containerPort: 9090
           name: metrics

@@ -31,15 +31,15 @@ class WorkflowSearchFilters(BaseModel):
     """
     WorkflowSearchFilters
     """ # noqa: E501
-    signal_type: Optional[StrictStr] = Field(default=None, description="Signal type (optional metadata per DD-WORKFLOW-016: OOMKilled, CrashLoopBackOff, etc.)")
+    signal_type: Optional[StrictStr] = Field(default=None, description="Signal type (optional metadata per DD-WORKFLOW-016: OOMKilled, CrashLoopBackOff, etc.)", alias="signalType")
     severity: StrictStr = Field(description="Severity level (mandatory: critical, high, medium, low)")
     component: StrictStr = Field(description="Component type (mandatory: pod, node, deployment, etc.)")
     environment: StrictStr = Field(description="Environment filter (mandatory, single value from Signal Processing)")
     priority: StrictStr = Field(description="Priority level (mandatory: P0, P1, P2, P3)")
-    custom_labels: Optional[Dict[str, List[StrictStr]]] = Field(default=None, description="Customer-defined labels (DD-WORKFLOW-001 v1.5) - subdomain-based format")
-    detected_labels: Optional[DetectedLabels] = None
+    custom_labels: Optional[Dict[str, List[StrictStr]]] = Field(default=None, description="Customer-defined labels (DD-WORKFLOW-001 v1.5) - subdomain-based format", alias="customLabels")
+    detected_labels: Optional[DetectedLabels] = Field(default=None, alias="detectedLabels")
     status: Optional[List[StrictStr]] = Field(default=None, description="Workflow lifecycle status filter")
-    __properties: ClassVar[List[str]] = ["signal_type", "severity", "component", "environment", "priority", "custom_labels", "detected_labels", "status"]
+    __properties: ClassVar[List[str]] = ["signalType", "severity", "component", "environment", "priority", "customLabels", "detectedLabels", "status"]
 
     @field_validator('severity')
     def severity_validate_enum(cls, value):
@@ -105,7 +105,7 @@ class WorkflowSearchFilters(BaseModel):
         )
         # override the default output from pydantic by calling `to_dict()` of detected_labels
         if self.detected_labels:
-            _dict['detected_labels'] = self.detected_labels.to_dict()
+            _dict['detectedLabels'] = self.detected_labels.to_dict()
         return _dict
 
     @classmethod
@@ -118,13 +118,13 @@ class WorkflowSearchFilters(BaseModel):
             return cls.model_validate(obj)
 
         _obj = cls.model_validate({
-            "signal_type": obj.get("signal_type"),
+            "signalType": obj.get("signalType"),
             "severity": obj.get("severity"),
             "component": obj.get("component"),
             "environment": obj.get("environment"),
             "priority": obj.get("priority"),
-            "custom_labels": obj.get("custom_labels"),
-            "detected_labels": DetectedLabels.from_dict(obj.get("detected_labels")) if obj.get("detected_labels") is not None else None,
+            "customLabels": obj.get("customLabels"),
+            "detectedLabels": DetectedLabels.from_dict(obj.get("detectedLabels")) if obj.get("detectedLabels") is not None else None,
             "status": obj.get("status")
         })
         return _obj

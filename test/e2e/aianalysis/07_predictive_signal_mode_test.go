@@ -84,15 +84,7 @@ var _ = Describe("E2E-AA-084-001: Predictive Signal Mode Investigation", Label("
 								Name:      "api-server",
 								Namespace: namespace,
 							},
-							EnrichmentResults: sharedtypes.EnrichmentResults{
-								DetectedLabels: &sharedtypes.DetectedLabels{
-									GitOpsManaged: false,
-									HPAEnabled:    true,
-								},
-								OwnerChain: []sharedtypes.OwnerChainEntry{
-									{Namespace: namespace, Kind: "Deployment", Name: "api-server"},
-								},
-							},
+							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
 						AnalysisTypes: []string{"investigation", "root-cause", "workflow-selection"},
 					},
@@ -159,12 +151,7 @@ var _ = Describe("E2E-AA-084-001: Predictive Signal Mode Investigation", Label("
 								Name:      "worker-pod",
 								Namespace: namespace,
 							},
-							EnrichmentResults: sharedtypes.EnrichmentResults{
-								DetectedLabels: &sharedtypes.DetectedLabels{},
-								OwnerChain: []sharedtypes.OwnerChainEntry{
-									{Namespace: namespace, Kind: "Deployment", Name: "worker"},
-								},
-							},
+							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
 						AnalysisTypes: []string{"investigation", "root-cause", "workflow-selection"},
 					},

@@ -35,6 +35,10 @@ import (
 	sharedconfig "github.com/jordigilh/kubernaut/internal/config"
 )
 
+// DefaultConfigPath is the standard Kubernetes ConfigMap mount path for this service.
+// ADR-030: All services MUST use /etc/{service}/config.yaml as the default.
+const DefaultConfigPath = "/etc/signalprocessing/config.yaml"
+
 // Config holds the complete configuration for the SignalProcessing controller.
 // ADR-030: YAML-based configuration with camelCase field names.
 type Config struct {
@@ -69,9 +73,10 @@ type ControllerConfig struct {
 }
 
 // DefaultControllerConfig returns the default controller configuration.
+// Per STATELESS_SERVICES_PORT_STANDARD.md: :9090 metrics, :8081 health.
 func DefaultControllerConfig() *ControllerConfig {
 	return &ControllerConfig{
-		MetricsAddr:      ":8080",
+		MetricsAddr:      ":9090",
 		HealthProbeAddr:  ":8081",
 		LeaderElection:   false,
 		LeaderElectionID: "signalprocessing.kubernaut.ai",
@@ -96,18 +101,20 @@ func DefaultConfig() *Config {
 }
 
 // LoadFromFile loads configuration from a YAML file.
+// ADR-030: Unmarshal into DefaultConfig() so missing YAML fields retain defaults.
 func LoadFromFile(path string) (*Config, error) {
+	cfg := DefaultConfig()
+
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
 
-	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
 	}
 
-	return &cfg, nil
+	return cfg, nil
 }
 
 // Validate checks if the configuration is valid.

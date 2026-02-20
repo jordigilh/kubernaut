@@ -1,5 +1,7 @@
 # NOTICE: Notification Service V1.0 Complete
 
+> **Note (Issue #91):** CRD routing labels (`kubernaut.ai/signal-type`, `kubernaut.ai/severity`, etc.) referenced in this document were migrated to immutable spec fields. See Issue #91.
+
 **Date**: December 7, 2025
 **From**: Notification Service Team
 **To**: All Service Teams (Gateway, SignalProcessing, AIAnalysis, WorkflowExecution, RemediationOrchestrator, HolmesGPT-API)

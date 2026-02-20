@@ -3,50 +3,6 @@
 package client
 
 // setDefaults set default value of fields.
-func (s *DetectedLabels) setDefaults() {
-	{
-		val := bool(false)
-		s.GitOpsManaged.SetTo(val)
-	}
-	{
-		val := string("")
-		s.GitOpsTool.SetTo(val)
-	}
-	{
-		val := bool(false)
-		s.PdbProtected.SetTo(val)
-	}
-	{
-		val := bool(false)
-		s.HpaEnabled.SetTo(val)
-	}
-	{
-		val := bool(false)
-		s.Stateful.SetTo(val)
-	}
-	{
-		val := bool(false)
-		s.HelmManaged.SetTo(val)
-	}
-	{
-		val := bool(false)
-		s.NetworkIsolated.SetTo(val)
-	}
-	{
-		val := string("")
-		s.ServiceMesh.SetTo(val)
-	}
-}
-
-// setDefaults set default value of fields.
-func (s *EnrichmentResults) setDefaults() {
-	{
-		val := float64(0)
-		s.EnrichmentQuality.SetTo(val)
-	}
-}
-
-// setDefaults set default value of fields.
 func (s *IncidentRequest) setDefaults() {
 	{
 		val := bool(false)
@@ -71,10 +27,6 @@ func (s *IncidentResponse) setDefaults() {
 	{
 		val := bool(false)
 		s.NeedsHumanReview.SetTo(val)
-	}
-	{
-		val := bool(true)
-		s.TargetInOwnerChain.SetTo(val)
 	}
 }
 

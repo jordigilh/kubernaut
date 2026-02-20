@@ -1,0 +1,30 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: kubernaut-crashloop-helm-rules
+  namespace: demo-crashloop-helm
+  labels:
+    release: prometheus
+spec:
+  groups:
+  - name: kubernaut-crashloop-helm
+    rules:
+    - alert: KubernautCrashLoopDetected
+      expr: |
+        increase(
+          kube_pod_container_status_restarts_total{
+            namespace="demo-crashloop-helm",
+            container="worker"
+          }[10m]
+        ) > 3
+      for: 1m
+      labels:
+        severity: critical
+      annotations:
+        summary: >
+          Container {{ $labels.container }} in pod {{ $labels.pod }} is in
+          CrashLoopBackOff with {{ $value | humanize }} restarts in the last 10 minutes.
+        description: >
+          The Helm-managed worker container is repeatedly crashing. The deployment
+          is managed by Helm (app.kubernetes.io/managed-by: Helm) and should be
+          remediated via helm rollback rather than kubectl rollout undo.

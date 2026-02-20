@@ -36,11 +36,11 @@ class TestCreateWorkflowFromOCIRequest(unittest.TestCase):
         model = CreateWorkflowFromOCIRequest()
         if include_optional:
             return CreateWorkflowFromOCIRequest(
-                container_image = 'quay.io/kubernaut/workflows/scale-replicas:v1.0.0'
+                schema_image = 'quay.io/kubernaut/workflows/scale-replicas:v1.0.0'
             )
         else:
             return CreateWorkflowFromOCIRequest(
-                container_image = 'quay.io/kubernaut/workflows/scale-replicas:v1.0.0',
+                schema_image = 'quay.io/kubernaut/workflows/scale-replicas:v1.0.0',
         )
         """
 

@@ -1,0 +1,38 @@
+# Kind cluster config: single control-plane node
+# Used by scenarios that don't require a separate worker node:
+#   #120 crashloop, #121 disk-pressure, #123 hpa-maxed, #124 pdb-deadlock,
+#   #125 gitops-drift, #128 slo-burn, #129 memory-leak, #130 stuck-rollout
+#
+# Usage:
+#   kind create cluster --name kubernaut-demo --config deploy/demo/scenarios/kind-config-singlenode.yaml
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+  extraPortMappings:
+  - containerPort: 30080
+    hostPort: 30080
+    protocol: TCP
+  - containerPort: 30081
+    hostPort: 30081
+    protocol: TCP
+  - containerPort: 30190
+    hostPort: 9190
+    protocol: TCP
+  - containerPort: 30193
+    hostPort: 9193
+    protocol: TCP
+  - containerPort: 30300
+    hostPort: 3000
+    protocol: TCP
+  kubeadmConfigPatches:
+  - |
+    kind: ClusterConfiguration
+    apiServer:
+      extraArgs:
+        max-requests-inflight: "800"
+        max-mutating-requests-inflight: "400"
+    controllerManager:
+      extraArgs:
+        kube-api-qps: "100"
+        kube-api-burst: "200"

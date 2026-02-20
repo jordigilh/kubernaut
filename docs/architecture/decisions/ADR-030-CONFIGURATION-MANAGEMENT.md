@@ -4,7 +4,7 @@
 **Status**: ✅ **AUTHORITATIVE STANDARD - MANDATORY**
 **Priority**: CRITICAL (Affects all services)
 **Enforcement**: Non-negotiable - all services MUST comply
-**Last Updated**: February 12, 2026 (datastorage section, camelCase alignment)
+**Last Updated**: February 12, 2026 (DefaultConfigPath, sub-package restructure, graceful fallback, full compliance)
 
 ---
 
@@ -16,7 +16,7 @@
 2. **Kubernetes env var substitution** (`$(CONFIG_PATH)`) in deployment args
 3. **YAML ConfigMap** as the source of truth for functional configuration
 4. **Environment variables** ONLY for secrets (never for functional config)
-5. **Dedicated config package** at `pkg/{service}/config/`
+5. **Dedicated config package** at `pkg/{service}/config/` (or `internal/config/{service}/` for CRD controllers)
 6. **Validation** before service startup (fail-fast principle)
 7. **Test fixtures** in `test/unit/{service}/config/testdata/` (NOT in `pkg/`)
 8. **Standardized YAML structure** following the schema defined below
@@ -37,15 +37,15 @@ import (
     "flag"
     "os"
 
-    "{module}/pkg/{service}/config"
+    "{module}/pkg/{service}/config"  // or internal/config/{service} for CRD controllers
     kubelog "github.com/jordigilh/kubernaut/pkg/log"
 )
 
 func main() {
-    // MANDATORY: Use -config flag with sensible default
+    // MANDATORY: Use -config flag with DefaultConfigPath constant
     var configPath string
     flag.StringVar(&configPath, "config",
-        "/etc/{service}/config.yaml",  // Default path (Kubernetes convention)
+        config.DefaultConfigPath,  // Single source of truth for default path
         "Path to configuration file")
 
     flag.Parse()
@@ -87,7 +87,9 @@ func main() {
 
 **Key Requirements**:
 - ✅ MUST use flag named `config` (NOT `config-file`, `config-path`, etc.)
-- ✅ MUST use default path `/etc/{service}/config.yaml`
+- ✅ MUST use `config.DefaultConfigPath` constant as flag default (NOT hardcoded string)
+- ✅ MUST use `flag.StringVar` (NOT `flag.String`) for consistent value-type handling
+- ✅ Default path MUST be `/etc/{service}/config.yaml` (Kubernetes convention)
 - ✅ MUST use `kubelog.NewLogger()` (NOT `zap` directly)
 - ✅ MUST log config path being loaded
 - ✅ MUST call `LoadFromEnv()` for secrets
@@ -335,12 +337,33 @@ settings:
 
 ### Package Layout (MANDATORY)
 
+**HTTP/standalone services** use `pkg/`:
+
 ```
 pkg/{service}/
   ├── config/
   │   ├── config.go          # REQUIRED: Configuration types + loading functions
   │   └── config_test.go     # REQUIRED: Unit tests for config
+```
 
+**CRD controller services** (RO, AIA, EM) use `internal/config/`:
+
+```
+internal/config/{service}/
+  └── config.go              # REQUIRED: Configuration types + loading functions
+```
+
+**Shared types** live in the parent `internal/config/` package:
+
+```
+internal/config/
+  ├── controller.go          # ControllerConfig (shared by all CRD controllers)
+  └── datastorage.go         # DataStorageConfig (shared by all non-DS services)
+```
+
+**Test fixtures and unit tests** (all services):
+
+```
 test/unit/{service}/config/
   └── testdata/
       ├── valid-config.yaml      # REQUIRED: Valid configuration example
@@ -367,6 +390,10 @@ import (
 
     sharedconfig "github.com/jordigilh/kubernaut/internal/config"
 )
+
+// DefaultConfigPath is the standard Kubernetes ConfigMap mount path for this service.
+// MANDATORY: All config packages MUST export this constant.
+const DefaultConfigPath = "/etc/{service}/config.yaml"
 
 // ========================================
 // {SERVICE} SERVICE CONFIGURATION (ADR-030)
@@ -401,23 +428,31 @@ type {ServiceLogic}Settings struct {
 // MANDATORY FUNCTIONS
 // ========================================
 
-// LoadFromFile loads configuration from YAML file
-// MANDATORY: This is the primary configuration loader
+// LoadFromFile loads configuration from YAML file with graceful fallback.
+// MANDATORY: This is the primary configuration loader.
+// Graceful degradation: Returns defaults if path is empty.
+// Returns defaults + error if file read or parse fails.
 func LoadFromFile(path string) (*Config, error) {
+    cfg := DefaultConfig()
+
+    if path == "" {
+        return cfg, nil
+    }
+
     data, err := os.ReadFile(path)
     if err != nil {
-        return nil, fmt.Errorf("failed to read config file: %w", err)
+        return cfg, fmt.Errorf("failed to read config file: %w", err)
     }
 
-    var cfg Config
-    if err := yaml.Unmarshal(data, &cfg); err != nil {
-        return nil, fmt.Errorf("failed to parse config YAML: %w", err)
+    if err := yaml.Unmarshal(data, cfg); err != nil {
+        return cfg, fmt.Errorf("failed to parse config YAML: %w", err)
     }
 
-    // Apply defaults for missing values
-    cfg.applyDefaults()
+    if err := cfg.Validate(); err != nil {
+        return cfg, fmt.Errorf("invalid configuration: %w", err)
+    }
 
-    return &cfg, nil
+    return cfg, nil
 }
 
 // LoadFromEnv overrides configuration with environment variables
@@ -482,11 +517,12 @@ func (c *Config) applyDefaults() {
 }
 ```
 
-**Required Functions**:
-- ✅ `LoadFromFile(path string) (*Config, error)` - YAML loader
+**Required Exports**:
+- ✅ `DefaultConfigPath` constant - Default file path (`/etc/{service}/config.yaml`)
+- ✅ `DefaultConfig() *Config` - Factory with sensible defaults
+- ✅ `LoadFromFile(path string) (*Config, error)` - YAML loader with graceful fallback
 - ✅ `LoadFromEnv()` - Secret overrides ONLY
 - ✅ `Validate() error` - Configuration validation
-- ✅ `applyDefaults()` - Default values (private)
 
 ---
 
@@ -756,12 +792,14 @@ datastorage:
 Before merging configuration changes, verify ALL items:
 
 ### Code Requirements
-- [ ] Config package created at `pkg/{service}/config/config.go`
-- [ ] `LoadFromFile(path string) (*Config, error)` implemented
+- [ ] Config package created at `pkg/{service}/config/` or `internal/config/{service}/` (CRD controllers)
+- [ ] `DefaultConfigPath` constant exported (value: `/etc/{service}/config.yaml`)
+- [ ] `DefaultConfig() *Config` factory function with sensible defaults
+- [ ] `LoadFromFile(path string) (*Config, error)` with graceful fallback
 - [ ] `LoadFromEnv()` implemented (secrets ONLY)
 - [ ] `Validate() error` implemented with comprehensive checks
-- [ ] `applyDefaults()` implemented with sensible defaults
 - [ ] `main.go` uses `-config` flag (NOT other names)
+- [ ] `main.go` uses `flag.StringVar` with `config.DefaultConfigPath` as default
 - [ ] `main.go` uses `kubelog.NewLogger()` (NOT zap directly)
 - [ ] `main.go` calls `LoadFromEnv()` after `LoadFromFile()`
 - [ ] `main.go` calls `Validate()` before starting service
@@ -801,30 +839,42 @@ Before merging configuration changes, verify ALL items:
 
 ### For Existing Services
 
-| Service | Current State | Action Required | ETA |
-|---------|---------------|-----------------|-----|
-| RemediationOrchestrator | `audit.*` section | Rename to `datastorage.*`, use shared type | 30 min |
-| EffectivenessMonitor | `audit.*` section | Rename to `datastorage.*`, use shared type | 30 min |
-| WorkflowExecution | `audit.*` section (no buffer) | Rename to `datastorage.*`, add buffer support | 30 min |
-| Gateway | `infrastructure.*` section | Rename to `datastorage.*`, use shared type | 30 min |
-| Notification | `infrastructure.*` section | Rename to `datastorage.*`, use shared type | 30 min |
-| SignalProcessing | Config struct unused | Full ADR-030 migration with `datastorage` | 2 hours |
-| AuthWebhook | CLI flags + env vars only | Full ADR-030 migration with `datastorage` | 2 hours |
+| Service | Config Package | DefaultConfigPath | cfg.Validate() | Graceful Fallback | Status |
+|---------|---------------|-------------------|----------------|-------------------|--------|
+| RemediationOrchestrator | `internal/config/remediationorchestrator/` | `/etc/remediationorchestrator/config.yaml` | Yes | Yes | Compliant |
+| AIAnalysis | `internal/config/aianalysis/` | `/etc/aianalysis/config.yaml` | Yes | Yes | Compliant |
+| EffectivenessMonitor | `internal/config/effectivenessmonitor/` | `/etc/effectivenessmonitor/config.yaml` | Yes | Yes | Compliant |
+| Gateway | `pkg/gateway/config/` | `/etc/gateway/config.yaml` | Yes | Yes | Compliant |
+| AuthWebhook | `pkg/authwebhook/config/` | `/etc/authwebhook/config.yaml` | Yes | Yes | Compliant |
+| WorkflowExecution | `pkg/workflowexecution/config/` | `/etc/workflowexecution/config.yaml` | Yes | Yes | Compliant |
+| SignalProcessing | `pkg/signalprocessing/config/` | `/etc/signalprocessing/config.yaml` | Yes | Yes | Compliant |
+| DataStorage | `pkg/datastorage/config/` | `/etc/datastorage/config.yaml` | Yes | N/A | Compliant |
+| Notification | `pkg/notification/config/` | `/etc/notification/config.yaml` | Yes | Yes | Compliant |
 
-**Total Migration Effort**: ~6 hours for all existing services
+**Migration Status**: All services now comply with ADR-030 standardized configuration pattern.
 
 ---
 
 ## Authoritative References
 
 ### Current Compliant Implementations
-1. **RemediationOrchestrator**: `internal/config/remediationorchestrator.go` - Reference for CRD controllers
-2. **DataStorage**: `pkg/datastorage/config/config.go` - Reference for storage service
-3. **Gateway**: `pkg/gateway/config/config.go` - Reference for HTTP services
+
+**CRD Controller Services** (config in `internal/config/{service}/`):
+1. **RemediationOrchestrator**: `internal/config/remediationorchestrator/config.go`
+2. **AIAnalysis**: `internal/config/aianalysis/config.go`
+3. **EffectivenessMonitor**: `internal/config/effectivenessmonitor/config.go`
+
+**HTTP / Standalone Services** (config in `pkg/{service}/config/`):
+4. **Gateway**: `pkg/gateway/config/config.go` - Reference for HTTP services
+5. **AuthWebhook**: `pkg/authwebhook/config/config.go`
+6. **WorkflowExecution**: `pkg/workflowexecution/config/config.go`
+7. **SignalProcessing**: `pkg/signalprocessing/config/config.go`
+8. **DataStorage**: `pkg/datastorage/config/config.go` - Reference for storage service
+9. **Notification**: `pkg/notification/config/config.go`
 
 ### Shared Types
-1. **DataStorageConfig**: `internal/config/datastorage.go` - Shared across all non-DS services
-2. **ControllerConfig**: `internal/config/remediationorchestrator.go` - Shared by RO/EM
+1. **ControllerConfig**: `internal/config/controller.go` - Shared by all CRD controllers (RO, AIA, EM)
+2. **DataStorageConfig**: `internal/config/datastorage.go` - Shared across all non-DS services
 
 ### Deployment Examples
 1. **Gateway E2E**: `test/e2e/gateway/gateway-deployment.yaml` - ConfigMap + deployment
@@ -869,5 +919,5 @@ Before merging configuration changes, verify ALL items:
 
 **Status**: ✅ **AUTHORITATIVE STANDARD - MANDATORY**
 **Exceptions**: NONE - all services must comply
-**Last Updated**: February 12, 2026
+**Last Updated**: February 12, 2026 (DefaultConfigPath, sub-package restructure, graceful fallback, full compliance)
 **Enforcement**: Non-negotiable architectural requirement

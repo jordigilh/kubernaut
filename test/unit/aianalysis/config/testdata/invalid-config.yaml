@@ -1,0 +1,22 @@
+# Invalid AIAnalysis configuration for unit tests.
+# ADR-030: Validate() should reject this configuration.
+controller:
+  metricsAddr: ""
+  healthProbeAddr: ""
+
+holmesgpt:
+  url: ""
+  timeout: 0s
+  sessionPollInterval: 0s
+
+datastorage:
+  url: ""
+  timeout: 0s
+  buffer:
+    bufferSize: 0
+    batchSize: 0
+    flushInterval: 0s
+    maxRetries: -1
+
+rego:
+  policyPath: ""

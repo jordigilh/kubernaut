@@ -3,35 +3,28 @@
 #
 # This policy demonstrates Enterprise "Sev" severity scheme mapping
 # to normalized severity values (critical, high, medium, low, unknown)
+# using a map-based lookup with lower() normalization.
 #
 # Usage in tests:
 #   - Load this policy into SignalProcessing classifier
-#   - Send alerts with severity="Sev1", "Sev2", "Sev3", "Sev4"
+#   - Send alerts with severity="Sev1", "SEV1", "sev1"
 #   - Verify normalized severity in SignalProcessing.Status.Severity
 
 package signalprocessing.severity
 
 import rego.v1
 
-# Enterprise Sev1 → Critical (production outage)
-result := {"severity": "critical", "source": "rego-policy"} if {
-	input.signal.severity in ["Sev1", "SEV1", "sev1"]
+# Map-based lookup: all case variants handled via lower()
+severity_map := {
+    "sev1": "critical",
+    "sev2": "high",
+    "sev3": "medium",
+    "sev4": "low",
 }
 
-# Enterprise Sev2 → High (degraded service)
-result := {"severity": "high", "source": "rego-policy"} if {
-	input.signal.severity in ["Sev2", "SEV2", "sev2"]
+result := {"severity": severity_map[lower(input.signal.severity)], "source": "rego-policy"} if {
+    lower(input.signal.severity) in object.keys(severity_map)
 }
 
-# Enterprise Sev3 → Medium (non-critical issue)
-result := {"severity": "medium", "source": "rego-policy"} if {
-	input.signal.severity in ["Sev3", "SEV3", "sev3"]
-}
-
-# Enterprise Sev4 → Low (informational)
-result := {"severity": "low", "source": "rego-policy"} if {
-	input.signal.severity in ["Sev4", "SEV4", "sev4"]
-}
-
-# Fallback: unmapped severity → unknown
+# Fallback: unmapped severity -> unknown
 default result := {"severity": "unknown", "source": "fallback"}

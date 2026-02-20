@@ -13,13 +13,14 @@ actionType: RestartDeployment
 
 labels:
   signalType: CrashLoopBackOff
-  severity: [high]
+  severity: [high, medium]
   environment: [production, staging, test]
-  component: deployment
-  priority: P1
+  component: "*"
+  priority: "*"
 
 execution:
   engine: job
+  bundle: quay.io/kubernaut-cicd/test-workflows/crashloop-config-fix-job:v1.0.0-exec@sha256:c72912b0e5c5b2a4da1b11df150480aaeb3267ddd96119bcb913d91ce7440ea7
 
 parameters:
   - name: NAMESPACE

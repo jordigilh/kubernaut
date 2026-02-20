@@ -117,7 +117,7 @@ def sample_recovery_request():
             "selected_workflow": {
                 "workflow_id": "scale-horizontal-v1",
                 "version": "1.0.0",
-                "container_image": "kubernaut/workflow-scale:v1.0.0",
+                "execution_bundle": "kubernaut/workflow-scale:v1.0.0",
                 "parameters": {"TARGET_REPLICAS": "5"},
                 "rationale": "Scale out to distribute load",
             },
@@ -214,15 +214,15 @@ class TestMockModeIncidentIntegration:
 
         if isinstance(selected_workflow, dict):
             assert selected_workflow.get('workflow_id') is not None
-            # Check both camelCase and snake_case for container_image
-            container_image = selected_workflow.get('container_image') or selected_workflow.get('containerImage')
-            assert container_image is not None
+            # Check both camelCase and snake_case for execution_bundle
+            execution_bundle = selected_workflow.get('execution_bundle') or selected_workflow.get('executionBundle')
+            assert execution_bundle is not None
             assert selected_workflow.get('parameters') is not None
             assert selected_workflow.get('confidence') is not None
             assert selected_workflow.get('rationale') is not None
         else:
             assert selected_workflow.workflow_id is not None
-            assert selected_workflow.container_image is not None
+            assert selected_workflow.execution_bundle is not None
             assert selected_workflow.parameters is not None
             assert selected_workflow.confidence is not None
             assert selected_workflow.rationale is not None
@@ -447,17 +447,17 @@ class TestMockModeAIAnalysisScenarios:
         if isinstance(selected_workflow, dict):
             # For WorkflowExecution.spec.workflowRef
             assert selected_workflow.get('workflow_id') is not None
-            # For WorkflowExecution.spec.containerImage (may be camelCase or snake_case)
-            container_image = selected_workflow.get('container_image') or selected_workflow.get('containerImage')
-            assert container_image is not None
+            # For WorkflowExecution.spec.executionBundle (may be camelCase or snake_case)
+            execution_bundle = selected_workflow.get('execution_bundle') or selected_workflow.get('executionBundle')
+            assert execution_bundle is not None
             # For WorkflowExecution.spec.parameters
             assert selected_workflow.get('parameters') is not None
             assert isinstance(selected_workflow.get('parameters'), dict)
         else:
             # For WorkflowExecution.spec.workflowRef
             assert selected_workflow.workflow_id is not None
-            # For WorkflowExecution.spec.containerImage
-            assert selected_workflow.container_image is not None
+            # For WorkflowExecution.spec.executionBundle
+            assert selected_workflow.execution_bundle is not None
             # For WorkflowExecution.spec.parameters
             assert selected_workflow.parameters is not None
             assert isinstance(selected_workflow.parameters, dict)

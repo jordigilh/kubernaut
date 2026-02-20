@@ -56,12 +56,13 @@ NotificationStatus string `json:"notificationStatus,omitempty"`
 
 // Conditions represent observations of RemediationRequest state.
 // Standard condition types:
+// - "Ready": Aggregate - True on Completed/Skipped, False on Failed/TimedOut/Cancelled
 // - "NotificationDelivered": True if notification sent successfully, False if cancelled/failed
 //   - Reason "DeliverySucceeded": Notification sent
 //   - Reason "UserCancelled": User deleted NotificationRequest before delivery
 //   - Reason "DeliveryFailed": NotificationRequest failed to deliver
-// - "RemediationExecuted": True if workflow executed successfully
 //
+// Use constants from pkg/remediationrequest/conditions.go.
 // Conditions follow Kubernetes API conventions (KEP-1623).
 // Reference: BR-ORCH-029 (user cancellation), BR-ORCH-030 (status tracking)
 // +optional
@@ -156,47 +157,17 @@ status:
       lastTransitionTime: "2025-12-13T12:00:00Z"
 ```
 
-##### **2. RemediationExecuted Condition**
-
-Tracks whether remediation workflow was successfully executed.
-
-**Example**:
-```yaml
-status:
-  conditions:
-    - type: RemediationExecuted
-      status: "True"
-      reason: ExecutionSucceeded
-      message: "Workflow execution completed successfully"
-      lastTransitionTime: "2025-12-13T11:55:00Z"
-```
-
 #### **Condition Update Logic**
 
 ```go
 // When NotificationRequest is sent successfully
-meta.SetStatusCondition(&rr.Status.Conditions, metav1.Condition{
-    Type:    "NotificationDelivered",
-    Status:  metav1.ConditionTrue,
-    Reason:  "DeliverySucceeded",
-    Message: "Notification delivered successfully",
-})
+remediationrequest.SetNotificationDelivered(rr, true, remediationrequest.ReasonDeliverySucceeded, "Notification delivered successfully", h.Metrics)
 
 // When user deletes NotificationRequest (BR-ORCH-029)
-meta.SetStatusCondition(&rr.Status.Conditions, metav1.Condition{
-    Type:    "NotificationDelivered",
-    Status:  metav1.ConditionFalse,
-    Reason:  "UserCancelled",
-    Message: fmt.Sprintf("NotificationRequest %s deleted by user", notifName),
-})
+remediationrequest.SetNotificationDelivered(rr, false, remediationrequest.ReasonUserCancelled, "NotificationRequest deleted by user", h.Metrics)
 
 // When NotificationRequest delivery fails
-meta.SetStatusCondition(&rr.Status.Conditions, metav1.Condition{
-    Type:    "NotificationDelivered",
-    Status:  metav1.ConditionFalse,
-    Reason:  "DeliveryFailed",
-    Message: notif.Status.Message,
-})
+remediationrequest.SetNotificationDelivered(rr, false, remediationrequest.ReasonDeliveryFailed, notif.Status.Message, h.Metrics)
 ```
 
 ---

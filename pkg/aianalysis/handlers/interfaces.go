@@ -67,13 +67,13 @@ type HolmesGPTClientInterface interface {
 // Used for dependency injection to enable testing without real audit storage.
 //
 // Methods:
-// - RecordHolmesGPTCall: Records HAPI API calls with status and duration
+// - RecordAIAgentCall: Records AI agent API calls with status and duration
 // - RecordPhaseTransition: Records phase transition events (DD-AUDIT-003)
-// - RecordHolmesGPTSubmit: Records async HAPI submit event (BR-AA-HAPI-064)
-// - RecordHolmesGPTResult: Records async HAPI result retrieval event (BR-AA-HAPI-064)
-// - RecordHolmesGPTSessionLost: Records session lost event (BR-AA-HAPI-064)
+// - RecordAIAgentSubmit: Records async AI agent submit event (BR-AA-HAPI-064)
+// - RecordAIAgentResult: Records async AI agent result retrieval event (BR-AA-HAPI-064)
+// - RecordAIAgentSessionLost: Records session lost event (BR-AA-HAPI-064)
 type AuditClientInterface interface {
-	RecordHolmesGPTCall(ctx context.Context, analysis *aianalysisv1.AIAnalysis, endpoint string, statusCode int, durationMs int)
+	RecordAIAgentCall(ctx context.Context, analysis *aianalysisv1.AIAnalysis, endpoint string, statusCode int, durationMs int)
 	RecordPhaseTransition(ctx context.Context, analysis *aianalysisv1.AIAnalysis, from, to string)
 	// BR-AUDIT-005 Gap #7: Record analysis failures with standardized ErrorDetails
 	RecordAnalysisFailed(ctx context.Context, analysis *aianalysisv1.AIAnalysis, err error) error
@@ -84,12 +84,12 @@ type AuditClientInterface interface {
 	// Session audit methods (BR-AA-HAPI-064)
 	// ========================================
 
-	// RecordHolmesGPTSubmit records an async HAPI submit event with session ID
-	RecordHolmesGPTSubmit(ctx context.Context, analysis *aianalysisv1.AIAnalysis, sessionID string)
-	// RecordHolmesGPTResult records an async HAPI result retrieval with investigation time
-	RecordHolmesGPTResult(ctx context.Context, analysis *aianalysisv1.AIAnalysis, investigationTimeMs int64)
-	// RecordHolmesGPTSessionLost records a session lost event with generation count
-	RecordHolmesGPTSessionLost(ctx context.Context, analysis *aianalysisv1.AIAnalysis, generation int32)
+	// RecordAIAgentSubmit records an async AI agent submit event with session ID
+	RecordAIAgentSubmit(ctx context.Context, analysis *aianalysisv1.AIAnalysis, sessionID string)
+	// RecordAIAgentResult records an async AI agent result retrieval with investigation time
+	RecordAIAgentResult(ctx context.Context, analysis *aianalysisv1.AIAnalysis, investigationTimeMs int64)
+	// RecordAIAgentSessionLost records a session lost event with generation count
+	RecordAIAgentSessionLost(ctx context.Context, analysis *aianalysisv1.AIAnalysis, generation int32)
 }
 
 // AnalyzingAuditClientInterface defines audit methods for the Analyzing phase.

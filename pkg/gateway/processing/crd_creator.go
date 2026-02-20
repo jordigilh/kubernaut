@@ -258,9 +258,6 @@ func getErrorTypeString(err error) string {
 //	metadata:
 //	  name: rr-<fingerprint-prefix>
 //	  namespace: <signal-namespace>
-//	  labels:
-//	    kubernaut.ai/signal-type: prometheus-alert
-//	    kubernaut.ai/severity: critical
 //	spec:
 //	  signalFingerprint: <fingerprint>
 //	  signalName: HighMemoryUsage
@@ -334,18 +331,8 @@ func (c *CRDCreator) CreateRemediationRequest(
 			Name:      crdName,
 			Namespace: signal.Namespace,
 			Labels: map[string]string{
-				// Standard Kubernetes labels for interoperability
 				"app.kubernetes.io/managed-by": "gateway-service",
 				"app.kubernetes.io/component":  "remediation",
-
-				// Kubernaut-specific labels for filtering and routing
-				"kubernaut.ai/signal-type": signal.SourceType,
-				"kubernaut.ai/severity":    signal.Severity,
-				// Note: signal-fingerprint label removed — SHA256 fingerprints are 64 chars,
-				// exceeding K8s 63-char label value limit. All lookups use the immutable
-				// spec.signalFingerprint field selector instead (BR-GATEWAY-185 v1.1).
-				// Note: kubernaut.ai/environment and kubernaut.ai/priority removed (2025-12-06)
-				// Signal Processing service now owns classification per DD-CATEGORIZATION-001
 			},
 		Annotations: map[string]string{
 			// Timestamp for audit trail (RFC3339 format)
@@ -378,10 +365,12 @@ func (c *CRDCreator) CreateRemediationRequest(
 			SignalAnnotations: c.truncateAnnotationValues(signal.Annotations),
 
 			// Provider-specific data (structured JSON for downstream services)
-			ProviderData: c.buildProviderData(signal),
+			// Issue #96: string type eliminates unnecessary base64 encoding layer
+			ProviderData: string(c.buildProviderData(signal)),
 
 			// Original payload for audit trail
-			OriginalPayload: signal.RawPayload,
+			// Issue #96: string type preserves raw JSON text without base64 encoding
+			OriginalPayload: string(signal.RawPayload),
 
 			// DD-GATEWAY-011: Deduplication REMOVED from Spec (moved to Status)
 			// Gateway now owns status.deduplication (initialized by StatusUpdater)

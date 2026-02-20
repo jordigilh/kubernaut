@@ -45,7 +45,6 @@ logger = logging.getLogger(__name__)
 def parse_and_validate_investigation_result(
     investigation: InvestigationResult,
     request_data: Dict[str, Any],
-    owner_chain: Optional[List[Dict[str, Any]]] = None,
     data_storage_client=None
 ):
     """
@@ -57,7 +56,6 @@ def parse_and_validate_investigation_result(
     Args:
         investigation: HolmesGPT investigation result
         request_data: Original request data
-        owner_chain: OwnerChain from enrichment results for target validation
         data_storage_client: Data Storage client for workflow validation
 
     Returns:
@@ -219,7 +217,7 @@ def parse_and_validate_investigation_result(
                     rationale = alt.get("rationale") or "Alternative workflow option"
                     alternative_workflows.append({
                         "workflow_id": alt.get("workflow_id", ""),
-                        "container_image": alt.get("container_image"),
+                        "execution_bundle": alt.get("execution_bundle"),
                         "confidence": float(alt.get("confidence", 0.0)),
                         "rationale": rationale
                     })
@@ -229,19 +227,17 @@ def parse_and_validate_investigation_result(
                 "parsed_count": len(alternative_workflows)
             })
 
-            # DD-HAPI-002 v1.2: Workflow Response Validation
-            # Validates: workflow existence, container image consistency, parameter schema
+            # DD-HAPI-002 v1.2, DD-WORKFLOW-017: Workflow Response Validation
             if selected_workflow and data_storage_client:
                 validator = WorkflowResponseValidator(data_storage_client)
                 validation_result = validator.validate(
                     workflow_id=selected_workflow.get("workflow_id", ""),
-                    container_image=selected_workflow.get("container_image"),
+                    execution_bundle=selected_workflow.get("execution_bundle"),
                     parameters=selected_workflow.get("parameters", {})
                 )
                 if validation_result.is_valid:
-                    # Use validated container image from catalog
-                    if validation_result.validated_container_image:
-                        selected_workflow["container_image"] = validation_result.validated_container_image
+                    if validation_result.validated_execution_bundle:
+                        selected_workflow["execution_bundle"] = validation_result.validated_execution_bundle
                     validation_result = None  # Clear to indicate success
 
         except (json.JSONDecodeError, ValueError, SyntaxError) as e:
@@ -253,18 +249,12 @@ def parse_and_validate_investigation_result(
             })
             rca = {"summary": "Failed to parse RCA", "severity": "unknown", "contributing_factors": []}
 
-    # OwnerChain validation (DD-WORKFLOW-001 v1.7, AIAnalysis request Dec 2025)
-    target_in_owner_chain = True
+    # ADR-055: owner_chain validation removed. target_in_owner_chain is superseded
+    # by affected_resource in Rego policy input (BR-AI-085, FR-AI-085-005).
     warnings: List[str] = []
 
-    # Check if RCA-identified target is in OwnerChain
+    # Extract RCA target for affectedResource validation
     rca_target = rca.get("affectedResource") or rca.get("affected_resource")
-    if rca_target and owner_chain:
-        target_in_owner_chain = is_target_in_owner_chain(rca_target, owner_chain, request_data)
-        if not target_in_owner_chain:
-            warnings.append(
-                "Target resource not found in OwnerChain - DetectedLabels may not apply to affected resource"
-            )
 
     # E2E-HAPI-003: Check if LLM explicitly set human review fields
     needs_human_review_from_llm = json_data.get("needs_human_review") if json_data else None
@@ -382,7 +372,6 @@ def parse_and_validate_investigation_result(
         "root_cause_analysis": rca,
         "confidence": confidence,
         "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-        "target_in_owner_chain": target_in_owner_chain,
         "warnings": warnings,
         "needs_human_review": needs_human_review,
     }
@@ -432,56 +421,9 @@ def determine_human_review_reason(errors: List[str]) -> str:
         return "parameter_validation_failed"  # Default for validation errors
 
 
-def is_target_in_owner_chain(
-    rca_target: Dict[str, Any],
-    owner_chain: List[Dict[str, Any]],
-    request_data: Dict[str, Any]
-) -> bool:
-    """
-    Check if RCA-identified target resource is in the OwnerChain.
-
-    DD-WORKFLOW-001 v1.7: OwnerChain validation ensures DetectedLabels
-    are applicable to the actual affected resource.
-
-    Args:
-        rca_target: The resource identified by RCA (kind, name, namespace)
-        owner_chain: List of owner resources from enrichment
-        request_data: Original request for source resource comparison
-
-    Returns:
-        True if target is in OwnerChain or is the source resource, False otherwise
-    """
-    # Extract target identifiers
-    target_kind = rca_target.get("kind", "").lower()
-    target_name = rca_target.get("name", "").lower()
-    target_namespace = rca_target.get("namespace", "").lower()
-
-    # Check if target matches the source resource (always valid)
-    source_kind = request_data.get("resource_kind", "").lower()
-    source_name = request_data.get("resource_name", "").lower()
-    source_namespace = request_data.get("resource_namespace", "").lower()
-
-    if target_kind == source_kind and target_name == source_name:
-        if not target_namespace or target_namespace == source_namespace:
-            return True
-
-    # Check if target is in OwnerChain
-    for owner in owner_chain:
-        owner_kind = owner.get("kind", "").lower()
-        owner_name = owner.get("name", "").lower()
-        owner_namespace = owner.get("namespace", "").lower()
-
-        if target_kind == owner_kind and target_name == owner_name:
-            if not target_namespace or target_namespace == owner_namespace:
-                return True
-
-    return False
-
-
 def parse_investigation_result(
     investigation: InvestigationResult,
     request_data: Dict[str, Any],
-    owner_chain: Optional[List[Dict[str, Any]]] = None,
     data_storage_client=None
 ) -> Dict[str, Any]:
     """
@@ -490,13 +432,11 @@ def parse_investigation_result(
     DEPRECATED: Use parse_and_validate_investigation_result for self-correction loop.
 
     Business Requirement: BR-HAPI-002 (Incident analysis response schema)
-    Design Decision: DD-WORKFLOW-001 v1.7 (OwnerChain validation)
     Design Decision: DD-HAPI-002 v1.2 (Workflow Response Validation)
 
     Args:
         investigation: HolmesGPT investigation result
         request_data: Original request data
-        owner_chain: OwnerChain from enrichment results for target validation
         data_storage_client: Optional Data Storage client for workflow validation (DD-HAPI-002 v1.2)
     """
     incident_id = request_data.get("incident_id", "unknown")
@@ -619,7 +559,7 @@ def parse_investigation_result(
                     rationale = alt.get("rationale") or "Alternative workflow option"
                     alternative_workflows.append({
                         "workflow_id": alt.get("workflow_id", ""),
-                        "container_image": alt.get("container_image"),
+                        "execution_bundle": alt.get("execution_bundle"),
                         "confidence": float(alt.get("confidence", 0.0)),
                         "rationale": rationale
                     })
@@ -629,19 +569,16 @@ def parse_investigation_result(
                 "parsed_count": len(alternative_workflows)
             })
 
-            # DD-HAPI-002 v1.2: Workflow Response Validation
-            # Validates: workflow existence, container image consistency, parameter schema
+            # DD-HAPI-002 v1.2, DD-WORKFLOW-017: Workflow Response Validation
             if selected_workflow and data_storage_client:
                 from src.validation.workflow_response_validator import WorkflowResponseValidator
                 validator = WorkflowResponseValidator(data_storage_client)
                 validation_result = validator.validate(
                     workflow_id=selected_workflow.get("workflow_id", ""),
-                    container_image=selected_workflow.get("container_image"),
+                    execution_bundle=selected_workflow.get("execution_bundle"),
                     parameters=selected_workflow.get("parameters", {})
                 )
                 if not validation_result.is_valid:
-                    # Add validation errors as warnings (LLM self-correction would have happened in-session)
-                    # If we reach here, it means the LLM failed to provide valid workflow after max attempts
                     workflow_validation_failed = True
                     workflow_validation_errors = validation_result.errors
                     logger.warning({
@@ -651,17 +588,15 @@ def parse_investigation_result(
                         "errors": validation_result.errors,
                         "message": "DD-HAPI-002 v1.2: Workflow response validation failed"
                     })
-                    # Add validation errors to workflow for transparency
                     selected_workflow["validation_errors"] = validation_result.errors
                 else:
-                    # Use validated container image from catalog
-                    if validation_result.validated_container_image:
-                        selected_workflow["container_image"] = validation_result.validated_container_image
+                    if validation_result.validated_execution_bundle:
+                        selected_workflow["execution_bundle"] = validation_result.validated_execution_bundle
                         logger.debug({
                             "event": "workflow_validation_passed",
                             "incident_id": request_data.get("incident_id", "unknown"),
                             "workflow_id": selected_workflow.get("workflow_id"),
-                            "container_image": validation_result.validated_container_image
+                            "execution_bundle": validation_result.validated_execution_bundle
                         })
         except json.JSONDecodeError:
             rca = {"summary": "Failed to parse RCA", "severity": "unknown", "contributing_factors": []}
@@ -672,29 +607,13 @@ def parse_investigation_result(
         selected_workflow = None
         confidence = 0.0
 
-    # OwnerChain validation (DD-WORKFLOW-001 v1.7, AIAnalysis request Dec 2025)
-    target_in_owner_chain = True
+    # ADR-055: owner_chain validation removed. target_in_owner_chain is superseded
+    # by affected_resource in Rego policy input (BR-AI-085, FR-AI-085-005).
     warnings: List[str] = []
 
     # DD-HAPI-002 v1.2: Workflow validation tracking
     workflow_validation_failed = False
     workflow_validation_errors: List[str] = []
-
-    # Check if RCA-identified target is in OwnerChain
-    rca_target = rca.get("affectedResource") or rca.get("affected_resource")
-    if rca_target and owner_chain:
-        target_in_owner_chain = is_target_in_owner_chain(rca_target, owner_chain, request_data)
-        if not target_in_owner_chain:
-            warnings.append(
-                "Target resource not found in OwnerChain - DetectedLabels may not apply to affected resource"
-            )
-            logger.warning({
-                "event": "target_not_in_owner_chain",
-                "incident_id": incident_id,
-                "rca_target": rca_target,
-                "owner_chain_length": len(owner_chain),
-                "message": "DD-WORKFLOW-001 v1.7: RCA target not in OwnerChain, DetectedLabels may be from different scope"
-            })
 
     # Generate warnings for other conditions (BR-HAPI-197, BR-HAPI-200)
     # E2E-HAPI-003: Extract LLM-provided human review fields first
@@ -779,7 +698,6 @@ def parse_investigation_result(
         "root_cause_analysis": rca,
         "confidence": confidence,
         "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-        "target_in_owner_chain": target_in_owner_chain,
         "warnings": warnings,
         # DD-HAPI-002 v1.2, BR-HAPI-197: Human review flag and structured reason
         "needs_human_review": needs_human_review,

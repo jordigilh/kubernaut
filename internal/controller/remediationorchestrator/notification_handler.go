@@ -21,13 +21,12 @@ import (
 	"fmt"
 	"time"
 
-	"k8s.io/apimachinery/pkg/api/meta"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/remediationrequest"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
 )
 
@@ -137,14 +136,7 @@ func (h *NotificationHandler) HandleNotificationRequestDeletion(
 	)
 
 	// Set condition: NotificationDelivered = False
-	meta.SetStatusCondition(&rr.Status.Conditions, metav1.Condition{
-		Type:               "NotificationDelivered",
-		Status:             metav1.ConditionFalse,
-		ObservedGeneration: rr.Generation,
-		Reason:             "UserCancelled",
-		Message:            "NotificationRequest deleted by user",
-		LastTransitionTime: metav1.Now(),
-	})
+	remediationrequest.SetNotificationDelivered(rr, false, remediationrequest.ReasonUserCancelled, "NotificationRequest deleted by user", h.Metrics)
 
 	logger.Info("Set NotificationDelivered condition",
 		"conditionStatus", "False",
@@ -222,14 +214,7 @@ func (h *NotificationHandler) UpdateNotificationStatus(
 		rr.Status.NotificationStatus = "Sent"
 		deliveryDuration := time.Since(startTime)
 
-		meta.SetStatusCondition(&rr.Status.Conditions, metav1.Condition{
-			Type:               "NotificationDelivered",
-			Status:             metav1.ConditionTrue,
-			ObservedGeneration: rr.Generation,
-			Reason:             "DeliverySucceeded",
-			Message:            "Notification delivered successfully",
-			LastTransitionTime: metav1.Now(),
-		})
+		remediationrequest.SetNotificationDelivered(rr, true, remediationrequest.ReasonDeliverySucceeded, "Notification delivered successfully", h.Metrics)
 
 		// Update metrics (BR-ORCH-030)
 		if h.Metrics != nil {
@@ -251,14 +236,7 @@ func (h *NotificationHandler) UpdateNotificationStatus(
 			failureMessage = "Unknown delivery failure"
 		}
 
-		meta.SetStatusCondition(&rr.Status.Conditions, metav1.Condition{
-			Type:               "NotificationDelivered",
-			Status:             metav1.ConditionFalse,
-			ObservedGeneration: rr.Generation,
-			Reason:             "DeliveryFailed",
-			Message:            fmt.Sprintf("Notification delivery failed: %s", failureMessage),
-			LastTransitionTime: metav1.Now(),
-		})
+		remediationrequest.SetNotificationDelivered(rr, false, remediationrequest.ReasonDeliveryFailed, fmt.Sprintf("Notification delivery failed: %s", failureMessage), h.Metrics)
 
 		// Update metrics (BR-ORCH-030)
 		if h.Metrics != nil {

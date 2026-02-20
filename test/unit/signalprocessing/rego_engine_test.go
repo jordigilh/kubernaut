@@ -207,16 +207,13 @@ package signalprocessing.labels
 import rego.v1
 
 labels["constraint"] := ["cost-aware", "stateful-safe"] if {
-    input.detected_labels.stateful == true
+    input.signal.severity == "critical"
 }
 `
 			err := engine.LoadPolicy(policy)
 			Expect(err).ToNot(HaveOccurred())
 
 			input := createBasicInput("prod-db", map[string]string{})
-			input.DetectedLabels = &sharedtypes.DetectedLabels{
-				Stateful: true,
-			}
 
 			// Act
 			result, err := engine.EvaluatePolicy(ctx, input)

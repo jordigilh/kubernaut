@@ -12,7 +12,7 @@
           "Recovery Analysis"
         ],
         "summary": "Recovery Analyze Endpoint",
-        "description": "Analyze failed action and provide recovery strategies\n\nBusiness Requirement: BR-HAPI-001 (Recovery analysis endpoint)\nDesign Decision: DD-WORKFLOW-002 v2.4 - WorkflowCatalogToolset via SDK\nDesign Decision: DD-AUTH-006 (User attribution for LLM cost tracking)\n\nCalled by: AIAnalysis Controller (for recovery attempts after workflow failure)",
+        "description": "Submit recovery analysis request (async session-based pattern).\n\nBusiness Requirement: BR-HAPI-001 (Recovery analysis endpoint)\nBusiness Requirement: BR-AA-HAPI-064.9 (Recovery async submit)\nDesign Decision: DD-AUTH-006 (User attribution for LLM cost tracking)\n\nCalled by: AIAnalysis Controller via SubmitRecoveryInvestigation()\n\nReturns HTTP 202 Accepted with {\"session_id\": \"<uuid>\"}.\nThe investigation runs as a background task. Poll via GET /recovery/session/{id}.",
         "operationId": "recovery_analyze_endpoint_api_v1_recovery_analyze_post",
         "requestBody": {
           "content": {
@@ -25,13 +25,11 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "202": {
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RecoveryResponse"
-                }
+                "schema": {}
               }
             }
           },
@@ -363,13 +361,106 @@
         }
       }
     },
+    "/api/v1/recovery/session/{session_id}": {
+      "get": {
+        "tags": [
+          "Recovery Analysis"
+        ],
+        "summary": "Recovery Session Status Endpoint",
+        "description": "Poll recovery session status. BR-AA-HAPI-064.9.",
+        "operationId": "recovery_session_status_endpoint_api_v1_recovery_session__session_id__get",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "404": {
+            "description": "Session not found (HAPI may have restarted)"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/recovery/session/{session_id}/result": {
+      "get": {
+        "tags": [
+          "Recovery Analysis"
+        ],
+        "summary": "Recovery Session Result Endpoint",
+        "description": "Retrieve completed recovery result. BR-AA-HAPI-064.9.",
+        "operationId": "recovery_session_result_endpoint_api_v1_recovery_session__session_id__result_get",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecoveryResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Session not found"
+          },
+          "409": {
+            "description": "Session not yet completed"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/incident/analyze": {
       "post": {
         "tags": [
           "Incident Analysis"
         ],
         "summary": "Incident Analyze Endpoint",
-        "description": "Analyze initial incident and provide RCA + workflow selection\n\nBusiness Requirement: BR-HAPI-002 (Incident analysis endpoint)\nBusiness Requirement: BR-WORKFLOW-001 (MCP Workflow Integration)\nBusiness Requirement: BR-AUDIT-005 v2.0 (Gap #4 - AI Provider Data)\nDesign Decision: DD-AUDIT-005 (Hybrid Provider Data Capture)\nDesign Decision: DD-AUTH-006 (User attribution for LLM cost tracking)\n\nCalled by: AIAnalysis Controller (for initial incident RCA and workflow selection)\n\nFlow:\n1. Receive IncidentRequest from AIAnalysis\n2. Extract authenticated user from oauth-proxy header (DD-AUTH-006)\n3. Sanitize input for LLM (BR-HAPI-211)\n4. Call HolmesGPT SDK for investigation (BR-HAPI-002)\n5. Search workflow catalog via MCP (BR-HAPI-250)\n6. Validate workflow response (DD-HAPI-002 v1.2)\n7. Self-correct if validation fails (up to 3 attempts)\n8. Emit audit event with complete response (DD-AUDIT-005)\n9. Return IncidentResponse with RCA and workflow selection",
+        "description": "Submit incident analysis request (async session-based pattern).\n\nBusiness Requirement: BR-HAPI-002 (Incident analysis endpoint)\nBusiness Requirement: BR-AA-HAPI-064.1 (Async submit returns session ID)\nDesign Decision: DD-AUTH-006 (User attribution for LLM cost tracking)\n\nCalled by: AIAnalysis Controller via SubmitInvestigation()\n\nReturns HTTP 202 Accepted with {\"session_id\": \"<uuid>\"}.\nThe investigation runs as a background task. Poll via GET /incident/session/{id}.",
         "operationId": "incident_analyze_endpoint_api_v1_incident_analyze_post",
         "requestBody": {
           "content": {
@@ -382,13 +473,11 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "202": {
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/IncidentResponse"
-                }
+                "schema": {}
               }
             }
           },
@@ -713,6 +802,99 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/incident/session/{session_id}": {
+      "get": {
+        "tags": [
+          "Incident Analysis"
+        ],
+        "summary": "Incident Session Status Endpoint",
+        "description": "Poll session status. BR-AA-HAPI-064.2.",
+        "operationId": "incident_session_status_endpoint_api_v1_incident_session__session_id__get",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "404": {
+            "description": "Session not found (HAPI may have restarted)"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/incident/session/{session_id}/result": {
+      "get": {
+        "tags": [
+          "Incident Analysis"
+        ],
+        "summary": "Incident Session Result Endpoint",
+        "description": "Retrieve completed investigation result. BR-AA-HAPI-064.3.",
+        "operationId": "incident_session_result_endpoint_api_v1_incident_session__session_id__result_get",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncidentResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Session not found"
+          },
+          "409": {
+            "description": "Session not yet completed"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -790,7 +972,7 @@
             "title": "Workflow Id",
             "description": "Workflow identifier"
           },
-          "container_image": {
+          "execution_bundle": {
             "anyOf": [
               {
                 "type": "string"
@@ -799,8 +981,8 @@
                 "type": "null"
               }
             ],
-            "title": "Container Image",
-            "description": "OCI image reference"
+            "title": "Execution Bundle",
+            "description": "OCI execution bundle reference"
           },
           "confidence": {
             "type": "number",
@@ -824,68 +1006,60 @@
         "title": "AlternativeWorkflow",
         "description": "Alternative workflow recommendation for operator context.\n\nDesign Decision: ADR-045 v1.2 (Alternative Workflows for Audit)\n\nIMPORTANT: Alternatives are for CONTEXT, not EXECUTION.\nPer APPROVAL_REJECTION_BEHAVIOR_DETAILED.md:\n- \u2705 Purpose: Help operator make an informed decision\n- \u2705 Content: Pros/cons of alternative approaches\n- \u274c NOT: A fallback queue for automatic execution\n\nOnly `selected_workflow` is executed. Alternatives provide:\n- Audit trail of what options were considered\n- Context for operator approval decisions\n- Transparency into AI reasoning"
       },
-      "DetectedLabels": {
+      "BusinessClassification": {
         "properties": {
-          "failedDetections": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Faileddetections",
-            "description": "Field names where detection failed. Consumer should ignore values of these fields. Valid values: gitOpsManaged, pdbProtected, hpaEnabled, stateful, helmManaged, networkIsolated, serviceMesh"
+          "businessUnit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Businessunit",
+            "description": "Business unit owning the service (e.g., 'payments', 'platform')"
           },
-          "gitOpsManaged": {
-            "type": "boolean",
-            "title": "Gitopsmanaged",
-            "description": "Whether namespace is managed by GitOps",
-            "default": false
+          "serviceOwner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Serviceowner",
+            "description": "Service owner team or individual"
           },
-          "gitOpsTool": {
-            "type": "string",
-            "title": "Gitopstool",
-            "description": "GitOps tool: 'argocd', 'flux', or ''",
-            "default": ""
+          "criticality": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Criticality",
+            "description": "Business criticality: critical, high, medium, low"
           },
-          "pdbProtected": {
-            "type": "boolean",
-            "title": "Pdbprotected",
-            "description": "Whether PodDisruptionBudget protects this workload",
-            "default": false
-          },
-          "hpaEnabled": {
-            "type": "boolean",
-            "title": "Hpaenabled",
-            "description": "Whether HorizontalPodAutoscaler is active",
-            "default": false
-          },
-          "stateful": {
-            "type": "boolean",
-            "title": "Stateful",
-            "description": "Whether this is a stateful workload (StatefulSet or has PVCs)",
-            "default": false
-          },
-          "helmManaged": {
-            "type": "boolean",
-            "title": "Helmmanaged",
-            "description": "Whether resource is managed by Helm",
-            "default": false
-          },
-          "networkIsolated": {
-            "type": "boolean",
-            "title": "Networkisolated",
-            "description": "Whether NetworkPolicy restricts traffic",
-            "default": false
-          },
-          "serviceMesh": {
-            "type": "string",
-            "title": "Servicemesh",
-            "description": "Service mesh: 'istio', 'linkerd', ''",
-            "default": ""
+          "slaRequirement": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slarequirement",
+            "description": "SLA tier: platinum, gold, silver, bronze"
           }
         },
         "type": "object",
-        "title": "DetectedLabels",
-        "description": "Auto-detected cluster characteristics from SignalProcessing.\n\nThese labels are used for:\n1. LLM context (natural language) - help LLM understand cluster environment\n2. MCP workflow filtering - filter workflows to only compatible ones\n\nDesign Decision: DD-WORKFLOW-001 v2.2, DD-RECOVERY-003\n\nChanges:\n- v2.1: Added `failedDetections` field to track which detections failed\n- v2.2: Removed `podSecurityLevel` (PSP deprecated, PSS is namespace-level)\n\nConsumer logic: if field is in failedDetections, ignore its value"
+        "title": "BusinessClassification",
+        "description": "Business context from SignalProcessing categorization phase.\n\nBR-SP-002: Business Classification\nBR-SP-080: Business Unit Detection\nBR-SP-081: SLA Requirement Mapping\n\nUsed for:\n1. Workflow filtering - select workflows matching business context\n2. Rego approval policies - criticality/SLA-based gating\n3. LLM context - business impact understanding"
       },
       "EnrichmentResults": {
         "properties": {
@@ -901,17 +1075,6 @@
             ],
             "title": "Kubernetescontext",
             "description": "Kubernetes resource context"
-          },
-          "detectedLabels": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/DetectedLabels"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Auto-detected cluster characteristics"
           },
           "customLabels": {
             "anyOf": [
@@ -931,18 +1094,21 @@
             "title": "Customlabels",
             "description": "Custom labels from SignalProcessing (subdomain \u2192 values). Auto-appended to workflow search per DD-HAPI-001."
           },
-          "enrichmentQuality": {
-            "type": "number",
-            "maximum": 1.0,
-            "minimum": 0.0,
-            "title": "Enrichmentquality",
-            "description": "Quality score of enrichment (0-1)",
-            "default": 0.0
+          "businessClassification": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BusinessClassification"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Business classification from SP categorization (BR-SP-002). Used for workflow filtering and Rego approval policies."
           }
         },
         "type": "object",
         "title": "EnrichmentResults",
-        "description": "Enrichment results from SignalProcessing.\n\nContains Kubernetes context, auto-detected labels, and custom labels\nthat are used for workflow filtering and LLM context.\n\nDesign Decision: DD-RECOVERY-003, DD-HAPI-001\n\nCustom Labels (DD-HAPI-001):\n- Format: map[string][]string (subdomain \u2192 list of values)\n- Keys are subdomains (e.g., \"constraint\", \"team\")\n- Values are lists of strings (boolean keys or \"key=value\" pairs)\n- Example: {\"constraint\": [\"cost-constrained\"], \"team\": [\"name=payments\"]}\n- Auto-appended to MCP workflow search (invisible to LLM)"
+        "description": "Enrichment results from SignalProcessing.\n\nContains Kubernetes context, custom labels, and business classification\nused for workflow filtering and LLM context.\n\nADR-056: detectedLabels removed -- now computed by HAPI post-RCA via LabelDetector.\nADR-055: ownerChain removed -- resolved by HAPI via get_resource_context tool.\n\nDesign Decision: DD-RECOVERY-003, DD-HAPI-001\n\nCustom Labels (DD-HAPI-001):\n- Format: map[string][]string (subdomain \u2192 list of values)\n- Keys are subdomains (e.g., \"constraint\", \"team\")\n- Values are lists of strings (boolean keys or \"key=value\" pairs)\n- Example: {\"constraint\": [\"cost-constrained\"], \"team\": [\"name=payments\"]}\n- Auto-appended to MCP workflow search (invisible to LLM)"
       },
       "ExecutionFailure": {
         "properties": {
@@ -1054,6 +1220,19 @@
           "title": "Bad Request",
           "type": "https://kubernaut.ai/problems/validation-error"
         }
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
       },
       "HumanReviewReason": {
         "type": "string",
@@ -1392,7 +1571,7 @@
               }
             ],
             "title": "Selected Workflow",
-            "description": "Selected workflow with workflow_id, containerImage, confidence, parameters"
+            "description": "Selected workflow with workflow_id, execution_bundle, confidence, parameters"
           },
           "confidence": {
             "type": "number",
@@ -1423,12 +1602,6 @@
             ],
             "description": "Structured reason when needs_human_review=true. Use this for reliable subReason mapping instead of parsing warnings. Values: workflow_not_found, image_mismatch, parameter_validation_failed, no_matching_workflows, low_confidence, llm_parsing_error"
           },
-          "target_in_owner_chain": {
-            "type": "boolean",
-            "title": "Target In Owner Chain",
-            "description": "Whether RCA-identified target resource was found in OwnerChain. If false, DetectedLabels may be from different scope than affected resource.",
-            "default": true
-          },
           "warnings": {
             "items": {
               "type": "string"
@@ -1452,6 +1625,19 @@
             "type": "array",
             "title": "Validation Attempts History",
             "description": "History of all validation attempts during LLM self-correction. Each attempt records workflow_id, validation result, and any errors. Empty if validation passed on first attempt or no workflow was selected."
+          },
+          "detected_labels": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detected Labels",
+            "description": "Cluster characteristics detected at runtime by HAPI (ADR-056). Includes: gitOpsManaged, pdbProtected, hpaEnabled, stateful, helmManaged, networkIsolated, serviceMesh, failedDetections."
           }
         },
         "type": "object",
@@ -1463,7 +1649,7 @@
           "timestamp"
         ],
         "title": "IncidentResponse",
-        "description": "Response model for incident analysis endpoint\n\nBusiness Requirement: BR-HAPI-002 (Incident analysis response schema)\nDesign Decision: DD-WORKFLOW-001 v1.7 (OwnerChain validation)\nDesign Decision: DD-HAPI-002 v1.2 (Workflow Response Validation)\nDesign Decision: ADR-045 v1.2 (Alternative Workflows for Audit)\n\nFields added per AIAnalysis team requests:\n- target_in_owner_chain: Whether RCA target was found in OwnerChain (Dec 2, 2025)\n- warnings: Non-fatal warnings for transparency (Dec 2, 2025)\n- alternative_workflows: Other workflows considered (Dec 5, 2025) - INFORMATIONAL ONLY\n- needs_human_review: AI could not produce reliable result (Dec 6, 2025)"
+        "description": "Response model for incident analysis endpoint\n\nBusiness Requirement: BR-HAPI-002 (Incident analysis response schema)\nDesign Decision: DD-HAPI-002 v1.2 (Workflow Response Validation)\nDesign Decision: ADR-045 v1.2 (Alternative Workflows for Audit)\nDesign Decision: ADR-055 (LLM-Driven Context Enrichment)\n\nFields added per AIAnalysis team requests:\n- warnings: Non-fatal warnings for transparency (Dec 2, 2025)\n- alternative_workflows: Other workflows considered (Dec 5, 2025) - INFORMATIONAL ONLY\n- needs_human_review: AI could not produce reliable result (Dec 6, 2025)\n\nADR-055: target_in_owner_chain removed -- replaced by affected_resource in Rego input."
       },
       "OriginalRCA": {
         "properties": {
@@ -1751,7 +1937,7 @@
               "summary": "Memory exhaustion causing OOMKilled in production pod"
             },
             "selected_workflow": {
-              "container_image": "kubernaut/workflow-scale:v1.0.0",
+              "execution_bundle": "kubernaut/workflow-scale:v1.0.0",
               "parameters": {
                 "TARGET_REPLICAS": "5"
               },
@@ -1876,6 +2062,19 @@
             "type": "array",
             "title": "Alternative Workflows",
             "description": "Other workflows considered but not selected. For operator context and audit trail only - NOT for automatic execution. Helps operators understand AI reasoning and decision alternatives."
+          },
+          "detected_labels": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detected Labels",
+            "description": "Cluster characteristics detected at runtime by HAPI (ADR-056). Includes: gitOpsManaged, pdbProtected, hpaEnabled, stateful, helmManaged, networkIsolated, serviceMesh, failedDetections."
           }
         },
         "type": "object",
@@ -1982,10 +2181,10 @@
             "title": "Version",
             "description": "Workflow version"
           },
-          "container_image": {
+          "execution_bundle": {
             "type": "string",
-            "title": "Container Image",
-            "description": "Container image used for execution"
+            "title": "Execution Bundle",
+            "description": "Execution bundle used for workflow execution"
           },
           "parameters": {
             "additionalProperties": {
@@ -2005,7 +2204,7 @@
         "required": [
           "workflow_id",
           "version",
-          "container_image",
+          "execution_bundle",
           "rationale"
         ],
         "title": "SelectedWorkflowSummary",
@@ -2079,6 +2278,39 @@
         ],
         "title": "ValidationAttempt",
         "description": "Record of a single validation attempt during LLM self-correction.\n\nBusiness Requirement: BR-HAPI-197 (needs_human_review field)\nDesign Decision: DD-HAPI-002 v1.2 (Workflow Response Validation)\n\nUsed for:\n1. Operator notification - natural language description of why validation failed\n2. Audit trail - complete history of all validation attempts\n3. Debugging - understand LLM behavior when workflows fail"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
       }
     },
     "securitySchemes": {

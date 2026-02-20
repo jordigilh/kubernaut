@@ -59,7 +59,7 @@ var _ = Describe("E2E-DS-017-AUDIT: Workflow Discovery Audit Events (DD-WORKFLOW
 		remediationID = fmt.Sprintf("rem-audit-e2e-%s", testID)
 
 		createReq := dsgen.CreateWorkflowFromOCIRequest{
-			ContainerImage: fmt.Sprintf("%s/audit-test:v1.0.0", infrastructure.TestWorkflowBundleRegistry),
+			SchemaImage: fmt.Sprintf("%s/audit-test:v1.0.0", infrastructure.TestWorkflowBundleRegistry),
 		}
 
 		resp, err := DSClient.CreateWorkflow(testCtx, &createReq)
@@ -67,8 +67,8 @@ var _ = Describe("E2E-DS-017-AUDIT: Workflow Discovery Audit Events (DD-WORKFLOW
 
 		switch r := resp.(type) {
 		case *dsgen.RemediationWorkflow:
-			auditWorkflowID = r.WorkflowID.Value.String()
-			auditWorkflowUUID = r.WorkflowID.Value
+			auditWorkflowID = r.WorkflowId.Value.String()
+			auditWorkflowUUID = r.WorkflowId.Value
 		case *dsgen.CreateWorkflowConflict:
 			// DD-WORKFLOW-002 v3.0: Workflow already exists (409 Conflict).
 			// Query by name to retrieve existing UUID (idempotent test setup).
@@ -81,8 +81,8 @@ var _ = Describe("E2E-DS-017-AUDIT: Workflow Discovery Audit Events (DD-WORKFLOW
 			listResult, listOk := listResp.(*dsgen.WorkflowListResponse)
 			Expect(listOk).To(BeTrue(), "Expected WorkflowListResponse, got %T", listResp)
 			Expect(listResult.Workflows).ToNot(BeEmpty(), "Workflow exists (409) but query returned no results")
-			auditWorkflowID = listResult.Workflows[0].WorkflowID.Value.String()
-			auditWorkflowUUID = listResult.Workflows[0].WorkflowID.Value
+			auditWorkflowID = listResult.Workflows[0].WorkflowId.Value.String()
+			auditWorkflowUUID = listResult.Workflows[0].WorkflowId.Value
 		default:
 			Fail(fmt.Sprintf("Unexpected CreateWorkflow response type: %T", resp))
 		}

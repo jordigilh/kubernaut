@@ -102,9 +102,6 @@ var _ = Describe("Notification Creation Integration Tests (BR-ORCH-033/034)", fu
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      rarName,
 					Namespace: testNamespace,
-					Labels: map[string]string{
-						"kubernaut.ai/remediation-request": rrName,
-					},
 				},
 				Spec: remediationv1.RemediationApprovalRequestSpec{
 					RemediationRequestRef: corev1.ObjectReference{
@@ -122,7 +119,7 @@ var _ = Describe("Notification Creation Integration Tests (BR-ORCH-033/034)", fu
 					RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{
 						WorkflowID:     "test-workflow-001",
 						Version:        "v1.0.0",
-						ContainerImage: "test/image:latest",
+						ExecutionBundle: "test/image:latest",
 						Rationale:      "Test rationale",
 					},
 					InvestigationSummary: "Test investigation summary",
@@ -161,30 +158,31 @@ var _ = Describe("Notification Creation Integration Tests (BR-ORCH-033/034)", fu
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "nr-approval-expiry-" + uuid.New().String()[:8],
 					Namespace: testNamespace,
-					Labels: map[string]string{
-						"kubernaut.ai/remediation-request":          rrName,
-						"kubernaut.ai/remediation-approval-request": rarName,
-						"kubernaut.ai/notification-type":            string(notificationv1.NotificationTypeEscalation),
-					},
 				},
 				Spec: notificationv1.NotificationRequestSpec{
+					RemediationRequestRef: &corev1.ObjectReference{
+						Name: rrName,
+					},
 					Type:     notificationv1.NotificationTypeEscalation,
 					Priority: notificationv1.NotificationPriorityCritical,
 					Subject:  "Approval Expired for " + rrName,
 					Body:     "RemediationApprovalRequest " + rarName + " has expired without decision.",
 					Channels: []notificationv1.Channel{notificationv1.ChannelEmail, notificationv1.ChannelLog},
+					Metadata: map[string]string{
+						"remediationApprovalRequest": rarName,
+					},
 				},
 			}
 			Expect(k8sClient.Create(ctx, nr)).To(Succeed())
 
-			// Validate NotificationRequest exists with correct labels
 			Eventually(func() bool {
 				err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(nr), nr)
 				return err == nil
 			}, timeout, interval).Should(BeTrue())
 
-			Expect(nr.Labels).To(HaveKeyWithValue("kubernaut.ai/remediation-request", rrName))
-			Expect(nr.Labels).To(HaveKeyWithValue("kubernaut.ai/remediation-approval-request", rarName))
+			Expect(nr.Spec.RemediationRequestRef).ToNot(BeNil())
+			Expect(nr.Spec.RemediationRequestRef.Name).To(Equal(rrName))
+			Expect(nr.Spec.Metadata).To(HaveKeyWithValue("remediationApprovalRequest", rarName))
 		})
 	})
 
@@ -230,12 +228,13 @@ var _ = Describe("Notification Creation Integration Tests (BR-ORCH-033/034)", fu
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "nr-workflow-skip-" + uuid.New().String()[:8],
 					Namespace: testNamespace,
-					Labels: map[string]string{
-						"kubernaut.ai/remediation-request": rrName,
-						"kubernaut.ai/notification-type":   string(notificationv1.NotificationTypeManualReview),
-					},
 				},
 				Spec: notificationv1.NotificationRequestSpec{
+					RemediationRequestRef: &corev1.ObjectReference{
+						Name:      rrName,
+						Namespace: testNamespace,
+						Kind:      "RemediationRequest",
+					},
 					Type:     notificationv1.NotificationTypeManualReview,
 					Priority: notificationv1.NotificationPriorityHigh,
 					Subject:  "Workflow Skipped for " + rrName,
@@ -253,7 +252,8 @@ var _ = Describe("Notification Creation Integration Tests (BR-ORCH-033/034)", fu
 
 			Expect(nr.Spec.Type).To(Equal(notificationv1.NotificationTypeManualReview))
 			Expect(nr.Spec.Priority).To(Equal(notificationv1.NotificationPriorityHigh))
-			Expect(nr.Labels).To(HaveKeyWithValue("kubernaut.ai/remediation-request", rrName))
+			Expect(nr.Spec.RemediationRequestRef).ToNot(BeNil())
+			Expect(nr.Spec.RemediationRequestRef.Name).To(Equal(rrName))
 		})
 	})
 
@@ -285,54 +285,37 @@ var _ = Describe("Notification Creation Integration Tests (BR-ORCH-033/034)", fu
 			}
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
-			// Create NotificationRequest with comprehensive labels
+			// Issue #91: Create NotificationRequest with spec fields instead of labels
 			nr := &notificationv1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "nr-labels-test-" + uuid.New().String()[:8],
 					Namespace: testNamespace,
-					Labels: map[string]string{
-						"kubernaut.ai/remediation-request": rrName,
-						// NOTE: Fingerprints are in spec, not labels (64 chars > 63 char limit)
-						"kubernaut.ai/notification-type": string(notificationv1.NotificationTypeEscalation),
-						"kubernaut.ai/severity":          "critical",
-					},
 				},
 				Spec: notificationv1.NotificationRequestSpec{
+					RemediationRequestRef: &corev1.ObjectReference{
+						Name: rrName,
+					},
 					Type:     notificationv1.NotificationTypeEscalation,
 					Priority: notificationv1.NotificationPriorityCritical,
-					Subject:  "Test Notification for Labels",
-					Body:     "Validating label structure for notification correlation",
+					Severity: "critical",
+					Subject:  "Test Notification for Spec Fields",
+					Body:     "Validating spec field structure for notification correlation",
 					Channels: []notificationv1.Channel{notificationv1.ChannelLog},
 				},
 			}
 			Expect(k8sClient.Create(ctx, nr)).To(Succeed())
 
-			// Validate all expected labels are present
 			Eventually(func() bool {
 				err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(nr), nr)
 				return err == nil
 			}, timeout, interval).Should(BeTrue())
 
-			// Required labels for correlation
-			Expect(nr.Labels).To(HaveKeyWithValue("kubernaut.ai/remediation-request", rrName))
-			// Fingerprint is in RR spec, not in labels (64 chars > 63 char K8s label limit)
-			Expect(nr.Labels).To(HaveKeyWithValue("kubernaut.ai/notification-type", string(notificationv1.NotificationTypeEscalation)))
-			Expect(nr.Labels).To(HaveKeyWithValue("kubernaut.ai/severity", "critical"))
-
-			// Test label-based querying (important for notification filtering)
-			nrList := &notificationv1.NotificationRequestList{}
-			err := k8sManager.GetAPIReader().List(ctx, nrList, client.InNamespace(testNamespace), client.MatchingLabels{
-				"kubernaut.ai/remediation-request": rrName,
-			})
-			Expect(err).ToNot(HaveOccurred())
-			Expect(len(nrList.Items)).To(BeNumerically(">=", 1), "Should find NotificationRequest by RR label")
-
-			// Test filtering by notification type
-			err = k8sManager.GetAPIReader().List(ctx, nrList, client.InNamespace(testNamespace), client.MatchingLabels{
-				"kubernaut.ai/notification-type": string(notificationv1.NotificationTypeEscalation),
-			})
-			Expect(err).ToNot(HaveOccurred())
-			Expect(len(nrList.Items)).To(BeNumerically(">=", 1), "Should find NotificationRequest by type label")
+			// Issue #91: Verify spec fields used for correlation instead of labels
+			Expect(nr.Spec.RemediationRequestRef).ToNot(BeNil())
+			Expect(nr.Spec.RemediationRequestRef.Name).To(Equal(rrName))
+			Expect(nr.Spec.Type).To(Equal(notificationv1.NotificationTypeEscalation))
+			Expect(nr.Spec.Severity).To(Equal("critical"))
+			Expect(nr.Labels).To(BeNil())
 
 			// Test fingerprint correlation by querying parent RR using field selector
 			// BR-GATEWAY-185 v1.1: Field selector on spec.signalFingerprint (64 chars, not truncated)
@@ -340,7 +323,7 @@ var _ = Describe("Notification Creation Integration Tests (BR-ORCH-033/034)", fu
 
 			// DEBUG: First list all RRs to see what's in the namespace
 			allRRs := &remediationv1.RemediationRequestList{}
-			err = k8sClient.List(ctx, allRRs, client.InNamespace(testNamespace))
+			err := k8sClient.List(ctx, allRRs, client.InNamespace(testNamespace))
 			Expect(err).ToNot(HaveOccurred())
 			GinkgoWriter.Printf("DEBUG: Found %d RRs in namespace %s\n", len(allRRs.Items), testNamespace)
 			for i, rr := range allRRs.Items {
@@ -363,13 +346,17 @@ var _ = Describe("Notification Creation Integration Tests (BR-ORCH-033/034)", fu
 			GinkgoWriter.Printf("DEBUG: Field selector returned %d RRs\n", len(rrList.Items))
 			Expect(len(rrList.Items)).To(BeNumerically(">=", 1), "Should find RemediationRequest by fingerprint field")
 
-			// Validate NotificationRequests are correlated to the RR
-			nrList = &notificationv1.NotificationRequestList{}
-			err = k8sManager.GetAPIReader().List(ctx, nrList, client.InNamespace(testNamespace), client.MatchingLabels{
-				"kubernaut.ai/remediation-request": rrName,
-			})
+			// Validate NotificationRequests are correlated to the RR via spec.remediationRequestRef
+			nrList := &notificationv1.NotificationRequestList{}
+			err = k8sManager.GetAPIReader().List(ctx, nrList, client.InNamespace(testNamespace))
 			Expect(err).ToNot(HaveOccurred())
-			Expect(len(nrList.Items)).To(BeNumerically(">=", 1), "Should find NotificationRequest correlated to RR")
+			correlatedNRs := 0
+			for _, nr := range nrList.Items {
+				if nr.Spec.RemediationRequestRef != nil && nr.Spec.RemediationRequestRef.Name == rrName {
+					correlatedNRs++
+				}
+			}
+			Expect(correlatedNRs).To(BeNumerically(">=", 1), "Should find NotificationRequest correlated to RR via spec field")
 		})
 	})
 })

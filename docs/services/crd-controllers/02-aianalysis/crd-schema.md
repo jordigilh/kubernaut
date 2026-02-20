@@ -26,7 +26,7 @@
 | Document | Impact on CRD |
 |----------|---------------|
 | **DD-CONTRACT-002** | Self-contained CRD pattern - all data in spec |
-| **DD-WORKFLOW-001 v1.8** | DetectedLabels, CustomLabels, OwnerChain in EnrichmentResults |
+| **DD-WORKFLOW-001 v1.8** | DetectedLabels (ADR-056: removed), CustomLabels, OwnerChain (ADR-055: removed) in EnrichmentResults |
 | **DD-RECOVERY-002** | Recovery flow with `PreviousExecutions` slice |
 | **DD-RECOVERY-003** | Kubernetes reason codes for failure (not natural language) |
 | **ADR-040** | Approval orchestration handled by RO, not AIAnalysis |
@@ -52,7 +52,7 @@ This CRD specification uses **fully structured types**:
 
 | Type | Structure | Benefit |
 |------|-----------|---------|
-| **EnrichmentResults** | Structured with DetectedLabels, CustomLabels, OwnerChain | Type safety, OpenAPI validation |
+| **EnrichmentResults** | Structured with DetectedLabels (ADR-056: removed), CustomLabels, OwnerChain (ADR-055: removed) | Type safety, OpenAPI validation |
 | **PreviousExecutions** | `[]PreviousExecution` slice | Tracks ALL recovery attempts |
 | **ApprovalContext** | Rich structured context | Complete approval information |
 
@@ -216,14 +216,16 @@ type EnrichmentResults struct {
     // Auto-detected cluster characteristics - NO CONFIG NEEDED
     // SignalProcessing detects these from K8s resources automatically
     // Used by HolmesGPT-API for: workflow filtering + LLM context
+    // ADR-056: removed from EnrichmentResults, now computed by HAPI post-RCA
     DetectedLabels *DetectedLabels `json:"detectedLabels,omitempty"`
 
     // OwnerChain: K8s ownership traversal from signal source resource
     // DD-WORKFLOW-001 v1.8: Used by HolmesGPT-API for 100% safe DetectedLabels validation
+    // ADR-055: removed from EnrichmentResults
     // SignalProcessing traverses metadata.ownerReferences to build this chain
     // Example: Pod → ReplicaSet → Deployment
     // Empty chain = orphan resource (no owners)
-    OwnerChain []OwnerChainEntry `json:"ownerChain,omitempty"`
+    OwnerChain []OwnerChainEntry `json:"ownerChain,omitempty"`  // ADR-055: removed from EnrichmentResults
 
     // Custom labels from Rego policies - CUSTOMER DEFINED
     // Key = subdomain/category (e.g., "constraint", "team", "region")

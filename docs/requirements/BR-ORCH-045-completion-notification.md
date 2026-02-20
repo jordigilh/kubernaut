@@ -34,7 +34,7 @@ RemediationOrchestrator MUST create a NotificationRequest CRD with `type=complet
 - **Body**: Includes signal name, severity, root cause analysis summary, workflow executed, execution duration, outcome
 - **Channels**: `[slack, file]` (file channel enables E2E verification via file sink)
 - **Metadata**: `remediationRequest`, `aiAnalysis`, `workflowExecution`, `workflowId`, `rootCause`, `duration`, `outcome`
-- **Labels**: `kubernaut.ai/notification-type=completion`, `kubernaut.ai/remediation-request={name}`, `kubernaut.ai/component=remediation-orchestrator`
+- **Spec fields**: `spec.type=completion`, `spec.remediationRequestRef` (Issue #91: labels removed; ownerRef sufficient for component)
 - **OwnerReference**: RemediationRequest (for cascade deletion per BR-ORCH-031)
 
 ### BR-ORCH-045.2: Idempotency

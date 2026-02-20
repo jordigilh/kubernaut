@@ -277,15 +277,15 @@ var _ = Describe("Full RR Reconstruction Integration Tests (BR-AUDIT-005 v2.0)",
 			// Gap #4: Provider data
 			Expect(rr.Spec.ProviderData).ToNot(BeNil(), "Gap #4: ProviderData should be populated")
 			Expect(rr.Spec.ProviderData).ToNot(BeEmpty(), "Gap #4: ProviderData should not be empty")
-			// ProviderData is stored as JSON []byte - contains ProviderResponseSummary fields
-			Expect(string(rr.Spec.ProviderData)).To(ContainSubstring("incident-memory-high"), "Gap #4: incident_id from aianalysis.analysis.completed")
+			// ProviderData is stored as JSON string (issue #96) - contains ProviderResponseSummary fields
+			Expect(rr.Spec.ProviderData).To(ContainSubstring("incident-memory-high"), "Gap #4: incident_id from aianalysis.analysis.completed")
 			Expect(string(rr.Spec.ProviderData)).To(ContainSubstring("Memory leak detected"), "Gap #4: analysis_preview from aianalysis.analysis.completed")
 
 			// Gap #5: Workflow selection
 			Expect(rr.Status.SelectedWorkflowRef).ToNot(BeNil(), "Gap #5: SelectedWorkflowRef should be populated")
 			Expect(rr.Status.SelectedWorkflowRef.WorkflowID).To(Equal("restart-pod-workflow"), "Gap #5: WorkflowID from workflowexecution.selection.completed")
 			Expect(rr.Status.SelectedWorkflowRef.Version).To(Equal("v1.2.0"), "Gap #5: Version from workflowexecution.selection.completed")
-			Expect(rr.Status.SelectedWorkflowRef.ContainerImage).To(Equal("ghcr.io/kubernaut/workflows:restart-pod-v1.2.0"), "Gap #5: ContainerImage from workflowexecution.selection.completed")
+			Expect(rr.Status.SelectedWorkflowRef.ExecutionBundle).To(Equal("ghcr.io/kubernaut/workflows:restart-pod-v1.2.0"), "Gap #5: ContainerImage from workflowexecution.selection.completed")
 
 			// Gap #6: Workflow execution
 			Expect(rr.Status.ExecutionRef).ToNot(BeNil(), "Gap #6: ExecutionRef should be populated")

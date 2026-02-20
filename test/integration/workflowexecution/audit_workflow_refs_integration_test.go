@@ -151,7 +151,7 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID:     "k8s-restart-pod-v1", // Label-safe: no slashes
 						Version:        "v1.0.0",
-						ContainerImage: "ghcr.io/kubernaut/workflows/restart-pod@sha256:abc123",
+						ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-pod@sha256:abc123",
 					},
 					TargetResource: fmt.Sprintf("%s/deployment/test-app", namespace),
 					ExecutionEngine: "tekton",
@@ -279,7 +279,7 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID:     "k8s-scale-deployment-v1", // Label-safe: no slashes
 						Version:        "v1.0.0",
-						ContainerImage: "ghcr.io/kubernaut/workflows/scale@sha256:def456",
+						ExecutionBundle: "ghcr.io/kubernaut/workflows/scale@sha256:def456",
 					},
 					TargetResource: fmt.Sprintf("%s/deployment/api-server", namespace),
 					ExecutionEngine: "tekton",

@@ -36,6 +36,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
 	"github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // ResponseProcessor handles processing of HolmesGPT-API responses
@@ -117,22 +118,17 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 	analysis.Status.Warnings = resp.Warnings
 	analysis.Status.InvestigationID = resp.IncidentID
 
-	// Store TargetInOwnerChain (data quality indicator for policy evaluation)
-	if resp.TargetInOwnerChain.Set {
-		targetInChain := resp.TargetInOwnerChain.Value
-		analysis.Status.TargetInOwnerChain = &targetInChain
-	}
+	// ADR-056: Extract detected_labels from HAPI response into PostRCAContext
+	p.populatePostRCAContext(analysis, resp.DetectedLabels.Value, resp.DetectedLabels.Set, resp.DetectedLabels.Null)
 
-	// Store root cause analysis (if present) - convert from map[string]jx.Raw
+	// ADR-055: TargetInOwnerChain removed. affectedResource is now a first-class
+	// LLM RCA output, not derived from pre-computed owner chain.
+
+	// Store root cause analysis (if present) - uses centralized helper with affectedResource
 	if len(resp.RootCauseAnalysis) > 0 {
-		rcaMap := GetMapFromOptNil(resp.RootCauseAnalysis)
-		if rcaMap != nil {
-			analysis.Status.RootCause = GetStringFromMap(rcaMap, "summary")
-			analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
-				Summary:             GetStringFromMap(rcaMap, "summary"),
-				Severity:            GetStringFromMap(rcaMap, "severity"),
-				ContributingFactors: GetStringSliceFromMap(rcaMap, "contributing_factors"),
-			}
+		if rca := ExtractRootCauseAnalysis(resp.RootCauseAnalysis); rca != nil {
+			analysis.Status.RootCause = rca.Summary
+			analysis.Status.RootCauseAnalysis = rca
 		}
 	}
 
@@ -144,8 +140,8 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 				WorkflowID:      GetStringFromMap(swMap, "workflow_id"),
 				ActionType:      GetStringFromMap(swMap, "action_type"),
 				Version:         GetStringFromMap(swMap, "version"),
-				ContainerImage:  GetStringFromMap(swMap, "container_image"),
-				ContainerDigest: GetStringFromMap(swMap, "container_digest"),
+				ExecutionBundle:  GetStringFromMap(swMap, "execution_bundle"),
+				ExecutionBundleDigest: GetStringFromMap(swMap, "execution_bundle_digest"),
 				Confidence:      GetFloat64FromMap(swMap, "confidence"),
 				Rationale:       GetStringFromMap(swMap, "rationale"),
 				ExecutionEngine: GetStringFromMap(swMap, "execution_engine"),
@@ -164,15 +160,15 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 	if len(resp.AlternativeWorkflows) > 0 {
 		alternatives := make([]aianalysisv1.AlternativeWorkflow, 0, len(resp.AlternativeWorkflows))
 		for _, alt := range resp.AlternativeWorkflows {
-			containerImage := ""
-			if alt.ContainerImage.Set && !alt.ContainerImage.Null {
-				containerImage = alt.ContainerImage.Value
+			executionBundle := ""
+			if alt.ExecutionBundle.Set && !alt.ExecutionBundle.Null {
+				executionBundle = alt.ExecutionBundle.Value
 			}
 			alternatives = append(alternatives, aianalysisv1.AlternativeWorkflow{
-				WorkflowID:     alt.WorkflowID,
-				ContainerImage: containerImage,
-				Confidence:     alt.Confidence,
-				Rationale:      alt.Rationale,
+				WorkflowID:      alt.WorkflowID,
+				ExecutionBundle:  executionBundle,
+				Confidence:      alt.Confidence,
+				Rationale:       alt.Rationale,
 			})
 		}
 		analysis.Status.AlternativeWorkflows = alternatives
@@ -256,6 +252,9 @@ func (p *ResponseProcessor) ProcessRecoveryResponse(ctx context.Context, analysi
 	analysis.Status.Warnings = resp.Warnings
 	analysis.Status.InvestigationID = resp.IncidentID
 
+	// ADR-056: Extract detected_labels from HAPI response into PostRCAContext
+	p.populatePostRCAContext(analysis, resp.DetectedLabels.Value, resp.DetectedLabels.Set, resp.DetectedLabels.Null)
+
 	// Store selected workflow (DD-CONTRACT-002)
 	if hasSelectedWorkflow {
 		swMap := GetMapFromOptNil(resp.SelectedWorkflow.Value)
@@ -264,8 +263,8 @@ func (p *ResponseProcessor) ProcessRecoveryResponse(ctx context.Context, analysi
 				WorkflowID:      GetStringFromMap(swMap, "workflow_id"),
 				ActionType:      GetStringFromMap(swMap, "action_type"),
 				Version:         GetStringFromMap(swMap, "version"),
-				ContainerImage:  GetStringFromMap(swMap, "container_image"),
-				ContainerDigest: GetStringFromMap(swMap, "container_digest"),
+				ExecutionBundle:  GetStringFromMap(swMap, "execution_bundle"),
+				ExecutionBundleDigest: GetStringFromMap(swMap, "execution_bundle_digest"),
 				Confidence:      GetFloat64FromMap(swMap, "confidence"),
 				Rationale:       GetStringFromMap(swMap, "rationale"),
 				ExecutionEngine: GetStringFromMap(swMap, "execution_engine"),
@@ -327,6 +326,49 @@ func (p *ResponseProcessor) PopulateRecoveryStatusFromRecovery(analysis *aianaly
 	}
 
 	return true
+}
+
+// populatePostRCAContext extracts detected_labels from the HAPI response raw map
+// and sets PostRCAContext on the AIAnalysis status.
+// ADR-056: DetectedLabels flow from HAPI → PostRCAContext for Rego policy input.
+func (p *ResponseProcessor) populatePostRCAContext(analysis *aianalysisv1.AIAnalysis, detectedLabelsRaw interface{}, isSet bool, isNull bool) {
+	if !isSet || isNull {
+		return
+	}
+
+	dlMap := GetMapFromOptNil(detectedLabelsRaw)
+	if dlMap == nil || len(dlMap) == 0 {
+		return
+	}
+
+	dl := extractDetectedLabels(dlMap)
+	now := metav1.Now()
+	analysis.Status.PostRCAContext = &aianalysisv1.PostRCAContext{
+		DetectedLabels: dl,
+		SetAt:          &now,
+	}
+
+	p.log.Info("Populated PostRCAContext from HAPI detected_labels",
+		"gitOpsManaged", dl.GitOpsManaged,
+		"stateful", dl.Stateful,
+		"failedDetections", dl.FailedDetections,
+	)
+}
+
+// extractDetectedLabels converts a raw map from the HAPI response into the
+// strongly-typed DetectedLabels struct. Fields not present default to zero values.
+func extractDetectedLabels(m map[string]interface{}) *sharedtypes.DetectedLabels {
+	return &sharedtypes.DetectedLabels{
+		GitOpsManaged:    GetBoolFromMap(m, "gitOpsManaged"),
+		GitOpsTool:       GetStringFromMap(m, "gitOpsTool"),
+		PDBProtected:     GetBoolFromMap(m, "pdbProtected"),
+		HPAEnabled:       GetBoolFromMap(m, "hpaEnabled"),
+		Stateful:         GetBoolFromMap(m, "stateful"),
+		HelmManaged:      GetBoolFromMap(m, "helmManaged"),
+		NetworkIsolated:  GetBoolFromMap(m, "networkIsolated"),
+		ServiceMesh:      GetStringFromMap(m, "serviceMesh"),
+		FailedDetections: GetStringSliceFromMap(m, "failedDetections"),
+	}
 }
 
 // handleWorkflowResolutionFailureFromIncident handles workflow resolution failure from IncidentResponse
@@ -426,7 +468,7 @@ func (p *ResponseProcessor) handleWorkflowResolutionFailureFromIncident(ctx cont
 		if swMap != nil {
 			analysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowID:      GetStringFromMap(swMap, "workflow_id"),
-				ContainerImage:  GetStringFromMap(swMap, "container_image"),
+				ExecutionBundle:  GetStringFromMap(swMap, "execution_bundle"),
 				Confidence:      GetFloat64FromMap(swMap, "confidence"),
 				Rationale:       GetStringFromMap(swMap, "rationale"),
 				ExecutionEngine: GetStringFromMap(swMap, "execution_engine"),
@@ -434,18 +476,14 @@ func (p *ResponseProcessor) handleWorkflowResolutionFailureFromIncident(ctx cont
 		}
 	}
 
-	// Preserve RCA if available
+	// Preserve RCA if available - Issue #97: uses centralized helper with affectedResource
 	if len(resp.RootCauseAnalysis) > 0 {
-		rcaMap := GetMapFromOptNil(resp.RootCauseAnalysis)
-		if rcaMap != nil {
-			analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
-				Summary:             GetStringFromMap(rcaMap, "summary"),
-				Severity:            GetStringFromMap(rcaMap, "severity"),
-				ContributingFactors: GetStringSliceFromMap(rcaMap, "contributing_factors"),
-			}
+		if rca := ExtractRootCauseAnalysis(resp.RootCauseAnalysis); rca != nil {
+			analysis.Status.RootCauseAnalysis = rca
 		}
 	}
 
+	aianalysis.SetInvestigationComplete(analysis, false, fmt.Sprintf("workflow resolution failed: %s", humanReviewReason))
 	return ctrl.Result{}, nil // Terminal - no requeue
 }
 
@@ -478,15 +516,10 @@ func (p *ResponseProcessor) handleProblemResolvedFromIncident(ctx context.Contex
 
 	analysis.Status.Warnings = resp.Warnings
 
-	// Store RCA if available
+	// Store RCA if available - Issue #97: uses centralized helper with affectedResource
 	if len(resp.RootCauseAnalysis) > 0 {
-		rcaMap := GetMapFromOptNil(resp.RootCauseAnalysis)
-		if rcaMap != nil {
-			analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
-				Summary:             GetStringFromMap(rcaMap, "summary"),
-				Severity:            GetStringFromMap(rcaMap, "severity"),
-				ContributingFactors: GetStringSliceFromMap(rcaMap, "contributing_factors"),
-			}
+		if rca := ExtractRootCauseAnalysis(resp.RootCauseAnalysis); rca != nil {
+			analysis.Status.RootCauseAnalysis = rca
 		}
 	}
 
@@ -525,15 +558,10 @@ func (p *ResponseProcessor) handleNoWorkflowTerminalFailure(ctx context.Context,
 	}
 	analysis.Status.Warnings = resp.Warnings
 
-	// Store RCA if available (for human review context)
+	// Store RCA if available (for human review context) - Issue #97: centralized helper
 	if len(resp.RootCauseAnalysis) > 0 {
-		rcaMap := GetMapFromOptNil(resp.RootCauseAnalysis)
-		if rcaMap != nil {
-			analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
-				Summary:             GetStringFromMap(rcaMap, "summary"),
-				Severity:            GetStringFromMap(rcaMap, "severity"),
-				ContributingFactors: GetStringSliceFromMap(rcaMap, "contributing_factors"),
-			}
+		if rca := ExtractRootCauseAnalysis(resp.RootCauseAnalysis); rca != nil {
+			analysis.Status.RootCauseAnalysis = rca
 		}
 	}
 
@@ -547,6 +575,7 @@ func (p *ResponseProcessor) handleNoWorkflowTerminalFailure(ctx context.Context,
 	p.metrics.FailuresTotal.WithLabelValues("WorkflowResolutionFailed", "NoMatchingWorkflows").Inc()
 	p.metrics.RecordFailure("WorkflowResolutionFailed", "NoMatchingWorkflows")
 
+	aianalysis.SetInvestigationComplete(analysis, false, "no workflow selected: no matching workflows found")
 	return ctrl.Result{}, nil // Terminal - no requeue
 }
 
@@ -588,8 +617,8 @@ func (p *ResponseProcessor) handleLowConfidenceFailure(ctx context.Context, anal
 			analysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowID:      GetStringFromMap(swMap, "workflow_id"),
 				Version:         GetStringFromMap(swMap, "version"),
-				ContainerImage:  GetStringFromMap(swMap, "container_image"),
-				ContainerDigest: GetStringFromMap(swMap, "container_digest"),
+				ExecutionBundle:  GetStringFromMap(swMap, "execution_bundle"),
+				ExecutionBundleDigest: GetStringFromMap(swMap, "execution_bundle_digest"),
 				Confidence:      GetFloat64FromMap(swMap, "confidence"),
 				Rationale:       GetStringFromMap(swMap, "rationale"),
 				ExecutionEngine: GetStringFromMap(swMap, "execution_engine"),
@@ -603,15 +632,10 @@ func (p *ResponseProcessor) handleLowConfidenceFailure(ctx context.Context, anal
 		}
 	}
 
-	// Store RCA if available (for human review context)
+	// Store RCA if available (for human review context) - Issue #97: centralized helper
 	if len(resp.RootCauseAnalysis) > 0 {
-		rcaMap := GetMapFromOptNil(resp.RootCauseAnalysis)
-		if rcaMap != nil {
-			analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
-				Summary:             GetStringFromMap(rcaMap, "summary"),
-				Severity:            GetStringFromMap(rcaMap, "severity"),
-				ContributingFactors: GetStringSliceFromMap(rcaMap, "contributing_factors"),
-			}
+		if rca := ExtractRootCauseAnalysis(resp.RootCauseAnalysis); rca != nil {
+			analysis.Status.RootCauseAnalysis = rca
 		}
 	}
 
@@ -619,15 +643,15 @@ func (p *ResponseProcessor) handleLowConfidenceFailure(ctx context.Context, anal
 	if len(resp.AlternativeWorkflows) > 0 {
 		alternatives := make([]aianalysisv1.AlternativeWorkflow, 0, len(resp.AlternativeWorkflows))
 		for _, alt := range resp.AlternativeWorkflows {
-			containerImage := ""
-			if alt.ContainerImage.Set && !alt.ContainerImage.Null {
-				containerImage = alt.ContainerImage.Value
+			executionBundle := ""
+			if alt.ExecutionBundle.Set && !alt.ExecutionBundle.Null {
+				executionBundle = alt.ExecutionBundle.Value
 			}
 			alternatives = append(alternatives, aianalysisv1.AlternativeWorkflow{
-				WorkflowID:     alt.WorkflowID,
-				ContainerImage: containerImage,
-				Confidence:     alt.Confidence,
-				Rationale:      alt.Rationale,
+				WorkflowID:      alt.WorkflowID,
+				ExecutionBundle:  executionBundle,
+				Confidence:      alt.Confidence,
+				Rationale:       alt.Rationale,
 			})
 		}
 		analysis.Status.AlternativeWorkflows = alternatives
@@ -643,6 +667,7 @@ func (p *ResponseProcessor) handleLowConfidenceFailure(ctx context.Context, anal
 	p.metrics.FailuresTotal.WithLabelValues("WorkflowResolutionFailed", "LowConfidence").Inc()
 	p.metrics.RecordFailure("WorkflowResolutionFailed", "LowConfidence")
 
+	aianalysis.SetInvestigationComplete(analysis, false, fmt.Sprintf("low confidence: %.2f below threshold %.2f", resp.Confidence, confidenceThreshold))
 	return ctrl.Result{}, nil // Terminal - no requeue
 }
 
@@ -715,6 +740,7 @@ func (p *ResponseProcessor) handleWorkflowResolutionFailureFromRecovery(ctx cont
 	analysis.Status.Message = strings.Join(messageParts, " ")
 	analysis.Status.Warnings = resp.Warnings
 
+	aianalysis.SetInvestigationComplete(analysis, false, fmt.Sprintf("recovery workflow resolution failed: %s", humanReviewReason))
 	return ctrl.Result{}, nil
 }
 
@@ -756,6 +782,7 @@ func (p *ResponseProcessor) handleNoWorkflowTerminalFailureFromRecovery(ctx cont
 	p.metrics.FailuresTotal.WithLabelValues("WorkflowResolutionFailed", "NoMatchingWorkflows").Inc()
 	p.metrics.RecordFailure("WorkflowResolutionFailed", "NoMatchingWorkflows")
 
+	aianalysis.SetInvestigationComplete(analysis, false, "no recovery workflow selected: no matching workflows found")
 	return ctrl.Result{}, nil // Terminal - no requeue
 }
 
@@ -797,8 +824,8 @@ func (p *ResponseProcessor) handleLowConfidenceFailureFromRecovery(ctx context.C
 			analysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowID:      GetStringFromMap(swMap, "workflow_id"),
 				Version:         GetStringFromMap(swMap, "version"),
-				ContainerImage:  GetStringFromMap(swMap, "container_image"),
-				ContainerDigest: GetStringFromMap(swMap, "container_digest"),
+				ExecutionBundle:  GetStringFromMap(swMap, "execution_bundle"),
+				ExecutionBundleDigest: GetStringFromMap(swMap, "execution_bundle_digest"),
 				Confidence:      GetFloat64FromMap(swMap, "confidence"),
 				Rationale:       GetStringFromMap(swMap, "rationale"),
 				ExecutionEngine: GetStringFromMap(swMap, "execution_engine"),
@@ -822,6 +849,7 @@ func (p *ResponseProcessor) handleLowConfidenceFailureFromRecovery(ctx context.C
 	p.metrics.FailuresTotal.WithLabelValues("WorkflowResolutionFailed", "LowConfidence").Inc()
 	p.metrics.RecordFailure("WorkflowResolutionFailed", "LowConfidence")
 
+	aianalysis.SetInvestigationComplete(analysis, false, fmt.Sprintf("low confidence recovery: %.2f below threshold %.2f", resp.AnalysisConfidence, confidenceThreshold))
 	return ctrl.Result{}, nil // Terminal - no requeue
 }
 
@@ -860,6 +888,7 @@ func (p *ResponseProcessor) handleRecoveryNotPossible(ctx context.Context, analy
 	analysis.Status.Message = "HAPI determined recovery is not possible for this failure"
 	analysis.Status.Warnings = resp.Warnings
 
+	aianalysis.SetInvestigationComplete(analysis, false, "recovery not possible: no recovery strategy available")
 	return ctrl.Result{}, nil
 }
 
@@ -931,3 +960,35 @@ func mapWarningsToSubReason(warnings []string) string {
 	}
 }
 
+// ExtractRootCauseAnalysis extracts RCA from an IncidentResponse, including affectedResource.
+// Issue #97: Centralizes RCA extraction (was duplicated in 5 handler functions) and adds
+// affectedResource extraction so RO's resolveEffectivenessTarget can target the correct resource.
+func ExtractRootCauseAnalysis(rcaData interface{}) *aianalysisv1.RootCauseAnalysis {
+	rcaMap := GetMapFromOptNil(rcaData)
+	if rcaMap == nil {
+		return nil
+	}
+	rca := &aianalysisv1.RootCauseAnalysis{
+		Summary:             GetStringFromMap(rcaMap, "summary"),
+		Severity:            GetStringFromMap(rcaMap, "severity"),
+		ContributingFactors: GetStringSliceFromMap(rcaMap, "contributing_factors"),
+	}
+
+	// Issue #97: Extract affectedResource from RCA (populated by HAPI from owner chain)
+	if arRaw, ok := rcaMap["affectedResource"]; ok {
+		if arMap, ok := arRaw.(map[string]interface{}); ok {
+			kind, _ := arMap["kind"].(string)
+			name, _ := arMap["name"].(string)
+			ns, _ := arMap["namespace"].(string)
+			if kind != "" && name != "" {
+				rca.AffectedResource = &aianalysisv1.AffectedResource{
+					Kind:      kind,
+					Name:      name,
+					Namespace: ns,
+				}
+			}
+		}
+	}
+
+	return rca
+}

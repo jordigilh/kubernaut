@@ -11,15 +11,6 @@ execution:
   cooldownPeriod: 5m
 
 # ========================================
-# EXPONENTIAL BACKOFF (DD-WE-004, BR-WE-012)
-# ========================================
-backoff:
-  baseCooldown: 60s
-  maxCooldown: 10m
-  maxExponent: 4
-  maxConsecutiveFailures: 5
-
-# ========================================
 # DATASTORAGE CONNECTIVITY (ADR-030)
 # Audit trail + workflow catalog
 # ========================================

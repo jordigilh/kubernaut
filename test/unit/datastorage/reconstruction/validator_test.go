@@ -42,14 +42,14 @@ var _ = Describe("Reconstruction Validator", func() {
 					SignalType:        "prometheus-alert",
 					SignalLabels:      map[string]string{"alertname": "HighCPU"},
 					SignalAnnotations: map[string]string{"summary": "High CPU"},
-					OriginalPayload:   []byte(`{"alert":"data"}`),
-					ProviderData:      []byte(`{"incident_id":"test-123"}`), // Gap #4
+					OriginalPayload:   `{"alert":"data"}`,
+					ProviderData:      `{"incident_id":"test-123"}`, // Gap #4
 				},
 				Status: remediationv1.RemediationRequestStatus{
 					SelectedWorkflowRef: &remediationv1.WorkflowReference{ // Gap #5
 						WorkflowID:     "test-workflow-001",
 						Version:        "v1.0.0",
-						ContainerImage: "test/workflow:latest",
+						ExecutionBundle: "test/workflow:latest",
 					},
 					ExecutionRef: &corev1.ObjectReference{ // Gap #6
 						Name:      "test-execution-001",
@@ -115,15 +115,15 @@ var _ = Describe("Reconstruction Validator", func() {
 					SignalType:        "prometheus-alert",
 					SignalLabels:      map[string]string{"alertname": "HighCPU"},
 					SignalAnnotations: map[string]string{"summary": "CPU usage is high"},
-					OriginalPayload:   []byte(`{"alert":"data"}`),
-					ProviderData:      []byte(`{"incident_id":"test-456","analysis":"complete"}`), // Gap #4
+					OriginalPayload:   `{"alert":"data"}`,
+					ProviderData:      `{"incident_id":"test-456","analysis":"complete"}`, // Gap #4
 				},
 				Status: remediationv1.RemediationRequestStatus{
 					SelectedWorkflowRef: &remediationv1.WorkflowReference{ // Gap #5
 						WorkflowID:      "workflow-002",
 						Version:         "v2.1.0",
-						ContainerImage:  "registry/workflow:v2.1.0",
-						ContainerDigest: "sha256:abcdef123456",
+						ExecutionBundle:  "registry/workflow:v2.1.0",
+						ExecutionBundleDigest: "sha256:abcdef123456",
 					},
 					ExecutionRef: &corev1.ObjectReference{ // Gap #6
 						Name:      "execution-002",
@@ -207,14 +207,14 @@ var _ = Describe("Reconstruction Validator", func() {
 					SignalType:        "prometheus-alert",
 					SignalLabels:      map[string]string{"alertname": "HighCPU"},
 					SignalAnnotations: map[string]string{"summary": "CPU usage is high"},
-					OriginalPayload:   []byte(`{"alert":"data"}`),
-					ProviderData:      []byte(`{"incident_id":"test-789"}`), // Gap #4
+					OriginalPayload:   `{"alert":"data"}`,
+					ProviderData:      `{"incident_id":"test-789"}`, // Gap #4
 				},
 				Status: remediationv1.RemediationRequestStatus{
 					SelectedWorkflowRef: &remediationv1.WorkflowReference{ // Gap #5
 						WorkflowID:     "workflow-003",
 						Version:        "v1.2.0",
-						ContainerImage: "registry/workflow:v1.2.0",
+						ExecutionBundle: "registry/workflow:v1.2.0",
 					},
 					ExecutionRef: &corev1.ObjectReference{ // Gap #6
 						Name:      "execution-003",

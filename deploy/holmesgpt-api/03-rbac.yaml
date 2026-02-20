@@ -24,6 +24,11 @@ rules:
     resources: ["events"]
     verbs: ["get", "list"]
 
+  # ADR-055: Read-only access to apps/v1 for owner chain traversal and spec hash
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "daemonsets", "replicasets"]
+    verbs: ["get"]
+
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

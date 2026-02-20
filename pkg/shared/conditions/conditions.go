@@ -65,6 +65,21 @@ func Set(conditions *[]metav1.Condition, conditionType string, status metav1.Con
 	meta.SetStatusCondition(conditions, condition)
 }
 
+// SetWithGeneration sets or updates a condition with ObservedGeneration.
+// Use this when the caller needs to track which generation of the resource
+// the condition reflects (e.g., for CRD status subresources).
+func SetWithGeneration(conditions *[]metav1.Condition, conditionType string, status metav1.ConditionStatus, reason, message string, observedGeneration int64) {
+	condition := metav1.Condition{
+		Type:               conditionType,
+		Status:             status,
+		LastTransitionTime: metav1.Now(),
+		Reason:             reason,
+		Message:            message,
+		ObservedGeneration: observedGeneration,
+	}
+	meta.SetStatusCondition(conditions, condition)
+}
+
 // Get returns the condition with the specified type, or nil if not found.
 //
 // Parameters:

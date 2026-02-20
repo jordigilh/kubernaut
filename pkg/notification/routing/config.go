@@ -14,12 +14,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package routing implements BR-NOT-065 (Channel Routing Based on Labels)
+// Package routing implements BR-NOT-065 (Channel Routing Based on Spec Fields)
 // and BR-NOT-066 (Alertmanager-Compatible Configuration Format).
 //
-// This package provides label-based routing for notifications using an
-// Alertmanager-compatible configuration format, enabling SREs to use
-// familiar syntax for channel selection rules.
+// Issue #91: Routing now uses immutable spec fields and metadata instead of
+// mutable Kubernetes labels. The Alertmanager-compatible configuration format
+// is preserved, enabling SREs to use familiar syntax for channel selection rules.
 package routing
 
 import (
@@ -42,18 +42,18 @@ type Config struct {
 }
 
 // Route represents a routing node in the routing tree.
-// BR-NOT-065: Label-based routing with ordered evaluation
+// BR-NOT-065: Attribute-based routing with ordered evaluation
 type Route struct {
 	// Receiver is the name of the receiver for this route
 	Receiver string `yaml:"receiver" json:"receiver"`
 
-	// GroupBy specifies labels to group notifications by
+	// GroupBy specifies attributes to group notifications by
 	GroupBy []string `yaml:"group_by,omitempty" json:"group_by,omitempty"`
 
-	// Match is the exact match criteria for labels
+	// Match is the exact match criteria for routing attributes
 	Match map[string]string `yaml:"match,omitempty" json:"match,omitempty"`
 
-	// MatchRE is the regex match criteria for labels (not implemented in V1.0)
+	// MatchRE is the regex match criteria for routing attributes (not implemented in V1.0)
 	MatchRE map[string]string `yaml:"match_re,omitempty" json:"match_re,omitempty"`
 
 	// Continue indicates whether to continue to sibling routes after matching
@@ -242,44 +242,39 @@ func (c *Config) GetReceiver(name string) *Receiver {
 	return c.receiverMap[name]
 }
 
-// FindReceiver finds the matching receiver for the given labels.
+// FindReceiver finds the matching receiver for the given routing attributes.
 // BR-NOT-065: First matching route wins (ordered evaluation)
-func (r *Route) FindReceiver(labels map[string]string) string {
-	if labels == nil {
-		labels = make(map[string]string)
+func (r *Route) FindReceiver(attrs map[string]string) string {
+	if attrs == nil {
+		attrs = make(map[string]string)
 	}
 
 	// Check child routes first (depth-first)
 	for _, childRoute := range r.Routes {
-		if childRoute.matchesLabels(labels) {
-			// If child has nested routes, recurse
+		if childRoute.matchesAttributes(attrs) {
 			if len(childRoute.Routes) > 0 {
-				result := childRoute.FindReceiver(labels)
+				result := childRoute.FindReceiver(attrs)
 				if result != "" {
 					return result
 				}
 			}
-			// Return this child's receiver
 			if childRoute.Receiver != "" {
 				return childRoute.Receiver
 			}
 		}
 	}
 
-	// Fall back to this route's receiver
 	return r.Receiver
 }
 
-// matchesLabels checks if the route's match criteria match the given labels.
-func (r *Route) matchesLabels(labels map[string]string) bool {
+// matchesAttributes checks if the route's match criteria match the given routing attributes.
+func (r *Route) matchesAttributes(attrs map[string]string) bool {
 	if len(r.Match) == 0 {
-		// No match criteria means match everything
 		return true
 	}
 
-	// All match criteria must be satisfied (AND logic)
 	for key, value := range r.Match {
-		if labels[key] != value {
+		if attrs[key] != value {
 			return false
 		}
 	}

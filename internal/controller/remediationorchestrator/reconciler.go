@@ -528,6 +528,29 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	if phase.IsTerminal(phase.Phase(rr.Status.OverallPhase)) {
 		logger.V(1).Info("Terminal-phase housekeeping", "phase", rr.Status.OverallPhase)
 
+		// Issue #79 Phase 7c: Safety net for terminal RRs without Ready condition (e.g., externally cancelled)
+		readyCondition := remediationrequest.GetCondition(rr, remediationrequest.ConditionReady)
+		if readyCondition == nil {
+			isSuccess := rr.Status.OverallPhase == remediationv1.PhaseCompleted || rr.Status.OverallPhase == remediationv1.PhaseSkipped
+			if isSuccess {
+				if updateErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+					remediationrequest.SetReady(rr, true, remediationrequest.ReasonReady, "Terminal phase: "+string(rr.Status.OverallPhase), r.Metrics)
+					remediationrequest.SetRecoveryComplete(rr, true, "RecoveryComplete", "Terminal phase: "+string(rr.Status.OverallPhase), r.Metrics)
+					return nil
+				}); updateErr != nil {
+					logger.Error(updateErr, "Failed to set Ready safety net")
+				}
+			} else {
+				if updateErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+					remediationrequest.SetReady(rr, false, remediationrequest.ReasonNotReady, "Terminal phase: "+string(rr.Status.OverallPhase), r.Metrics)
+					remediationrequest.SetRecoveryComplete(rr, false, "RecoveryIncomplete", "Terminal phase: "+string(rr.Status.OverallPhase), r.Metrics)
+					return nil
+				}); updateErr != nil {
+					logger.Error(updateErr, "Failed to set Ready safety net")
+				}
+			}
+		}
+
 		// BR-ORCH-029/030: Track notification delivery status for terminal RRs
 		if err := r.trackNotificationStatus(ctx, rr); err != nil {
 			logger.Error(err, "Failed to track notification status in terminal phase")
@@ -1098,6 +1121,7 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 			remediationapprovalrequest.SetApprovalDecided(rar, true,
 				remediationapprovalrequest.ReasonApproved,
 				fmt.Sprintf("Approved by %s", rar.Status.DecidedBy), r.Metrics)
+			remediationapprovalrequest.SetReady(rar, true, remediationapprovalrequest.ReasonReady, "Approval decided", r.Metrics)
 			return r.client.Status().Update(ctx, rar)
 		}); err != nil {
 			logger.Error(err, "Failed to update RAR conditions")
@@ -1197,6 +1221,7 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 			remediationapprovalrequest.SetApprovalDecided(rar, true,
 				remediationapprovalrequest.ReasonRejected,
 				fmt.Sprintf("Rejected by %s: %s", rar.Status.DecidedBy, rar.Status.DecisionMessage), r.Metrics)
+			remediationapprovalrequest.SetReady(rar, true, remediationapprovalrequest.ReasonReady, "Approval decided", r.Metrics)
 			return r.client.Status().Update(ctx, rar)
 		}); err != nil {
 			logger.Error(err, "Failed to update RAR conditions")
@@ -1245,6 +1270,7 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 				remediationapprovalrequest.SetApprovalExpired(rar, true,
 					fmt.Sprintf("Expired after %v without decision",
 						time.Since(rar.ObjectMeta.CreationTimestamp.Time).Round(time.Minute)), r.Metrics)
+				remediationapprovalrequest.SetReady(rar, false, remediationapprovalrequest.ReasonNotReady, "Approval expired", r.Metrics)
 				rar.Status.Decision = remediationv1.ApprovalDecisionExpired
 				rar.Status.DecidedBy = "system"
 				now := metav1.Now()
@@ -1513,6 +1539,9 @@ func (r *Reconciler) transitionToCompleted(ctx context.Context, rr *remediationv
 		now := metav1.Now()
 		rr.Status.CompletedAt = &now
 
+		// BR-ORCH-043: Set Ready condition (terminal success)
+		remediationrequest.SetReady(rr, true, remediationrequest.ReasonReady, "Remediation completed", r.Metrics)
+
 		// DD-WE-004 V1.0: Reset exponential backoff on success
 		if rr.Status.NextAllowedExecution != nil {
 			logger.Info("Clearing exponential backoff after successful completion",
@@ -1667,6 +1696,9 @@ func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.R
 		rr.Status.FailurePhase = &failurePhase
 		rr.Status.FailureReason = &failureReason
 
+		// BR-ORCH-043: Set Ready condition (terminal failure)
+		remediationrequest.SetReady(rr, false, remediationrequest.ReasonNotReady, "Remediation failed", r.Metrics)
+
 		// DD-WE-004 V1.0: Set exponential backoff for pre-execution failures
 		// Only applies when BELOW consecutive failure threshold (at threshold → 1-hour fixed block)
 		// Increment consecutive failures (this happens for all failures, not just pre-execution)
@@ -1744,6 +1776,11 @@ func (r *Reconciler) handleGlobalTimeout(ctx context.Context, rr *remediationv1.
 		now := metav1.Now()
 		rr.Status.TimeoutTime = &now
 		rr.Status.TimeoutPhase = &timeoutPhase
+
+		// BR-ORCH-043: Set Ready and RecoveryComplete conditions (terminal timeout)
+		remediationrequest.SetReady(rr, false, remediationrequest.ReasonNotReady, "Remediation timed out", r.Metrics)
+		remediationrequest.SetRecoveryComplete(rr, false, "RecoveryTimedOut", "Global timeout exceeded", r.Metrics)
+
 		return nil
 	})
 	if err != nil {
@@ -1784,16 +1821,18 @@ func (r *Reconciler) handleGlobalTimeout(ctx context.Context, rr *remediationv1.
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      notificationName,
 			Namespace: rr.Namespace,
-			Labels: map[string]string{
-				"kubernaut.ai/remediation-request": rr.Name,
-				"kubernaut.ai/notification-type":   "timeout",
-				"kubernaut.ai/severity":            rr.Spec.Severity,
-				"kubernaut.ai/component":           "remediation-orchestrator",
-			},
 		},
 		Spec: notificationv1.NotificationRequestSpec{
+			RemediationRequestRef: &corev1.ObjectReference{
+				APIVersion: remediationv1.GroupVersion.String(),
+				Kind:       "RemediationRequest",
+				Name:       rr.Name,
+				Namespace:  rr.Namespace,
+				UID:        rr.UID,
+			},
 			Type:     notificationv1.NotificationTypeEscalation,
 			Priority: notificationv1.NotificationPriorityCritical,
+			Severity: rr.Spec.Severity,
 			Subject:  fmt.Sprintf("Remediation Timeout: %s", rr.Spec.SignalName),
 			Body: fmt.Sprintf(`Remediation request has exceeded the global timeout and requires manual intervention.
 
@@ -2515,6 +2554,77 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		// Index already exists - safe to continue
 	}
 
+	// Issue #91: Register field indexes on child CRDs for spec.remediationRequestRef.name
+	// Enables MatchingFields queries and kubectl --field-selector for child lookups by parent RR
+	childCRDIndexes := []struct {
+		obj       client.Object
+		extractor func(client.Object) []string
+	}{
+		{
+			obj: &aianalysisv1.AIAnalysis{},
+			extractor: func(obj client.Object) []string {
+				aa := obj.(*aianalysisv1.AIAnalysis)
+				if aa.Spec.RemediationRequestRef.Name == "" {
+					return nil
+				}
+				return []string{aa.Spec.RemediationRequestRef.Name}
+			},
+		},
+		{
+			obj: &notificationv1.NotificationRequest{},
+			extractor: func(obj client.Object) []string {
+				nr := obj.(*notificationv1.NotificationRequest)
+				if nr.Spec.RemediationRequestRef == nil || nr.Spec.RemediationRequestRef.Name == "" {
+					return nil
+				}
+				return []string{nr.Spec.RemediationRequestRef.Name}
+			},
+		},
+		{
+			obj: &signalprocessingv1.SignalProcessing{},
+			extractor: func(obj client.Object) []string {
+				sp := obj.(*signalprocessingv1.SignalProcessing)
+				if sp.Spec.RemediationRequestRef.Name == "" {
+					return nil
+				}
+				return []string{sp.Spec.RemediationRequestRef.Name}
+			},
+		},
+		{
+			obj: &remediationv1.RemediationApprovalRequest{},
+			extractor: func(obj client.Object) []string {
+				rar := obj.(*remediationv1.RemediationApprovalRequest)
+				if rar.Spec.RemediationRequestRef.Name == "" {
+					return nil
+				}
+				return []string{rar.Spec.RemediationRequestRef.Name}
+			},
+		},
+		{
+			obj: &workflowexecutionv1.WorkflowExecution{},
+			extractor: func(obj client.Object) []string {
+				wfe := obj.(*workflowexecutionv1.WorkflowExecution)
+				if wfe.Spec.RemediationRequestRef.Name == "" {
+					return nil
+				}
+				return []string{wfe.Spec.RemediationRequestRef.Name}
+			},
+		},
+	}
+
+	for _, idx := range childCRDIndexes {
+		if err := mgr.GetFieldIndexer().IndexField(
+			context.Background(),
+			idx.obj,
+			RemediationRequestRefNameIndex,
+			idx.extractor,
+		); err != nil {
+			if !k8serrors.IsIndexerConflict(err) {
+				return fmt.Errorf("failed to create field index %s on %T: %w", RemediationRequestRefNameIndex, idx.obj, err)
+			}
+		}
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&remediationv1.RemediationRequest{}).
 		Owns(&signalprocessingv1.SignalProcessing{}).
@@ -2714,17 +2824,19 @@ func (r *Reconciler) createPhaseTimeoutNotification(ctx context.Context, rr *rem
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      notificationName,
 			Namespace: rr.Namespace,
-			Labels: map[string]string{
-				"kubernaut.ai/remediation-request": rr.Name,
-				"kubernaut.ai/notification-type":   "phase-timeout",
-				"kubernaut.ai/phase":               string(phase),
-				"kubernaut.ai/severity":            rr.Spec.Severity,
-				"kubernaut.ai/component":           "remediation-orchestrator",
-			},
 		},
 		Spec: notificationv1.NotificationRequestSpec{
+			RemediationRequestRef: &corev1.ObjectReference{
+				APIVersion: remediationv1.GroupVersion.String(),
+				Kind:       "RemediationRequest",
+				Name:       rr.Name,
+				Namespace:  rr.Namespace,
+				UID:        rr.UID,
+			},
 			Type:     notificationv1.NotificationTypeEscalation,
 			Priority: notificationv1.NotificationPriorityHigh,
+			Severity: rr.Spec.Severity,
+			Phase:    string(phase),
 			Subject:  fmt.Sprintf("Phase Timeout: %s - %s", phase, rr.Spec.SignalName),
 			Body: fmt.Sprintf(`Remediation phase has exceeded timeout and requires investigation.
 

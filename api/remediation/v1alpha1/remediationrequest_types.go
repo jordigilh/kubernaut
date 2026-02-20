@@ -342,15 +342,15 @@ type RemediationRequestSpec struct {
 	//
 	// For Datadog (targetType="datadog"):
 	//   {"monitorId": 123, "host": "...", "tags": [...], "metricQuery": "...", ...}
-	ProviderData []byte `json:"providerData,omitempty"`
+	ProviderData string `json:"providerData,omitempty"`
 
 	// ========================================
 	// AUDIT/DEBUG
 	// ========================================
 
 	// Complete original webhook payload for debugging and audit
-	// Stored as []byte to preserve exact format
-	OriginalPayload []byte `json:"originalPayload,omitempty"`
+	// Issue #96: stored as string to avoid base64 encoding in CEL validation
+	OriginalPayload string `json:"originalPayload,omitempty"`
 
 	// ========================================
 	// WORKFLOW CONFIGURATION
@@ -668,7 +668,6 @@ type RemediationRequestStatus struct {
 	//   - Reason "DeliverySucceeded": Notification sent
 	//   - Reason "UserCancelled": User deleted NotificationRequest before delivery
 	//   - Reason "DeliveryFailed": NotificationRequest failed to deliver
-	// - "RemediationExecuted": True if workflow executed successfully
 	//
 	// Conditions follow Kubernetes API conventions (KEP-1623).
 	// Reference: BR-ORCH-029 (user cancellation), BR-ORCH-030 (status tracking)
@@ -742,13 +741,13 @@ type WorkflowReference struct {
 	// Version of the workflow
 	Version string `json:"version"`
 
-	// ContainerImage resolved from workflow catalog
+	// ExecutionBundle resolved from workflow catalog
 	// OCI bundle reference for Tekton PipelineRun
-	ContainerImage string `json:"containerImage"`
+	ExecutionBundle string `json:"executionBundle"`
 
-	// ContainerDigest for audit trail and reproducibility
+	// ExecutionBundleDigest for audit trail and reproducibility
 	// +optional
-	ContainerDigest string `json:"containerDigest,omitempty"`
+	ExecutionBundleDigest string `json:"executionBundleDigest,omitempty"`
 }
 
 // ========================================
@@ -774,8 +773,11 @@ type DeduplicationStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:selectablefield:JSONPath=.spec.signalFingerprint
+// +kubebuilder:selectablefield:JSONPath=.spec.signalType
+// +kubebuilder:selectablefield:JSONPath=.spec.severity
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.overallPhase`
 // +kubebuilder:printcolumn:name="Outcome",type=string,JSONPath=`.status.outcome`
+// +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`,priority=1
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // RemediationRequest is the Schema for the remediationrequests API.

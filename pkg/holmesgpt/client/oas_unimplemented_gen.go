@@ -36,26 +36,34 @@ func (UnimplementedHandler) HealthCheckHealthGet(ctx context.Context) (r jx.Raw,
 
 // IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost implements incident_analyze_endpoint_api_v1_incident_analyze_post operation.
 //
-// Analyze initial incident and provide RCA + workflow selection
+// Submit incident analysis request (async session-based pattern).
 // Business Requirement: BR-HAPI-002 (Incident analysis endpoint)
-// Business Requirement: BR-WORKFLOW-001 (MCP Workflow Integration)
-// Business Requirement: BR-AUDIT-005 v2.0 (Gap #4 - AI Provider Data)
-// Design Decision: DD-AUDIT-005 (Hybrid Provider Data Capture)
+// Business Requirement: BR-AA-HAPI-064.1 (Async submit returns session ID)
 // Design Decision: DD-AUTH-006 (User attribution for LLM cost tracking)
-// Called by: AIAnalysis Controller (for initial incident RCA and workflow selection)
-// Flow:
-// 1. Receive IncidentRequest from AIAnalysis
-// 2. Extract authenticated user from oauth-proxy header (DD-AUTH-006)
-// 3. Sanitize input for LLM (BR-HAPI-211)
-// 4. Call HolmesGPT SDK for investigation (BR-HAPI-002)
-// 5. Search workflow catalog via MCP (BR-HAPI-250)
-// 6. Validate workflow response (DD-HAPI-002 v1.2)
-// 7. Self-correct if validation fails (up to 3 attempts)
-// 8. Emit audit event with complete response (DD-AUDIT-005)
-// 9. Return IncidentResponse with RCA and workflow selection.
+// Called by: AIAnalysis Controller via SubmitInvestigation()
+// Returns HTTP 202 Accepted with {"session_id": "<uuid>"}.
+// The investigation runs as a background task. Poll via GET /incident/session/{id}.
 //
 // POST /api/v1/incident/analyze
 func (UnimplementedHandler) IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx context.Context, req *IncidentRequest) (r IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet implements incident_session_result_endpoint_api_v1_incident_session__session_id__result_get operation.
+//
+// Retrieve completed investigation result. BR-AA-HAPI-064.3.
+//
+// GET /api/v1/incident/session/{session_id}/result
+func (UnimplementedHandler) IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet(ctx context.Context, params IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetParams) (r IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet implements incident_session_status_endpoint_api_v1_incident_session__session_id__get operation.
+//
+// Poll session status. BR-AA-HAPI-064.2.
+//
+// GET /api/v1/incident/session/{session_id}
+func (UnimplementedHandler) IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet(ctx context.Context, params IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetParams) (r IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -75,13 +83,33 @@ func (UnimplementedHandler) ReadinessCheckReadyGet(ctx context.Context) (r jx.Ra
 
 // RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePost implements recovery_analyze_endpoint_api_v1_recovery_analyze_post operation.
 //
-// Analyze failed action and provide recovery strategies
+// Submit recovery analysis request (async session-based pattern).
 // Business Requirement: BR-HAPI-001 (Recovery analysis endpoint)
-// Design Decision: DD-WORKFLOW-002 v2.4 - WorkflowCatalogToolset via SDK
+// Business Requirement: BR-AA-HAPI-064.9 (Recovery async submit)
 // Design Decision: DD-AUTH-006 (User attribution for LLM cost tracking)
-// Called by: AIAnalysis Controller (for recovery attempts after workflow failure).
+// Called by: AIAnalysis Controller via SubmitRecoveryInvestigation()
+// Returns HTTP 202 Accepted with {"session_id": "<uuid>"}.
+// The investigation runs as a background task. Poll via GET /recovery/session/{id}.
 //
 // POST /api/v1/recovery/analyze
 func (UnimplementedHandler) RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePost(ctx context.Context, req *RecoveryRequest) (r RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGet implements recovery_session_result_endpoint_api_v1_recovery_session__session_id__result_get operation.
+//
+// Retrieve completed recovery result. BR-AA-HAPI-064.9.
+//
+// GET /api/v1/recovery/session/{session_id}/result
+func (UnimplementedHandler) RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGet(ctx context.Context, params RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetParams) (r RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// RecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGet implements recovery_session_status_endpoint_api_v1_recovery_session__session_id__get operation.
+//
+// Poll recovery session status. BR-AA-HAPI-064.9.
+//
+// GET /api/v1/recovery/session/{session_id}
+func (UnimplementedHandler) RecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGet(ctx context.Context, params RecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGetParams) (r RecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGetRes, _ error) {
 	return r, ht.ErrNotImplemented
 }

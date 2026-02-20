@@ -98,9 +98,9 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 			Expect(resp.Confidence).To(BeNumerically("<=", 1.0))
 		})
 
-		It("should include targetInOwnerChain in response - BR-AI-007", func() {
+		It("should return valid response without targetInOwnerChain (ADR-055) - BR-AI-007", func() {
 			// Real HAPI call - response determined by Mock LLM
-			resp, err := realHGClient.Investigate(testCtx, &client.IncidentRequest{
+			_, err := realHGClient.Investigate(testCtx, &client.IncidentRequest{
 				IncidentID:        "test-memory-001",
 				RemediationID:     "req-test-002",
 				SignalType:        "MemoryPressure",
@@ -118,8 +118,8 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 			})
 
 			Expect(err).NotTo(HaveOccurred())
-			// TargetInOwnerChain is set by default in mock to true
-			Expect(resp.TargetInOwnerChain.Value).To(BeTrue())
+			// ADR-055: TargetInOwnerChain removed from HolmesGPT API response.
+			// The LLM now populates affectedResource directly via get_resource_context tool.
 		})
 
 		It("should return selected workflow - BR-AI-016", func() {
@@ -307,7 +307,7 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 				ResourceNamespace: testNamespace,
 				ResourceKind:      "Pod",
 				ResourceName:      "recovered-pod",
-				ErrorMessage:      "Pod was in CrashLoopBackOff but has now recovered",
+				ErrorMessage:      "Service was previously degraded but has now recovered",
 				Environment:       "staging",
 				Priority:          "P2",
 				RiskTolerance:     "medium",

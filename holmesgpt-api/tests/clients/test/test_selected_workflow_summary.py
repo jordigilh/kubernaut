@@ -37,7 +37,7 @@ class TestSelectedWorkflowSummary(unittest.TestCase):
             return SelectedWorkflowSummary(
                 workflow_id = '',
                 version = '',
-                container_image = '',
+                execution_bundle = '',
                 parameters = {
                     'key' : ''
                     },
@@ -47,7 +47,7 @@ class TestSelectedWorkflowSummary(unittest.TestCase):
             return SelectedWorkflowSummary(
                 workflow_id = '',
                 version = '',
-                container_image = '',
+                execution_bundle = '',
                 rationale = '',
         )
         """

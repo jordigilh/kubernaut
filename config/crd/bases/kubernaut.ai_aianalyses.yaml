@@ -24,6 +24,10 @@ spec:
     - jsonPath: .status.approvalRequired
       name: ApprovalRequired
       type: boolean
+    - jsonPath: .status.conditions[?(@.type=="Ready")].reason
+      name: Reason
+      priority: 1
+      type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
@@ -423,13 +427,15 @@ spec:
                             type: object
                           ownerChain:
                             description: |-
-                              OwnerChain: K8s ownership traversal from signal source resource
-                              DD-WORKFLOW-001 v1.7: Used by HolmesGPT-API for 100% safe DetectedLabels validation
-                              SignalProcessing traverses metadata.ownerReferences to build this chain
+                              OwnerChain: K8s ownership traversal from signal source resource.
+                              SignalProcessing traverses metadata.ownerReferences to build this chain.
                               Example: Pod → ReplicaSet → Deployment
                               Empty chain = orphan resource (no owners)
-                              HolmesGPT-API uses this to validate DetectedLabels applicability when RCA
-                              identifies a different resource than the original signal source
+
+                              ADR-055: No longer propagated from SP to AIAnalysis or HAPI.
+                              HAPI resolves its own chain post-RCA via get_resource_context tool.
+                              Field retained in shared types for SP internal use (label detection).
+                              ADR-056: Scheduled for relocation to SP-internal types.
                             items:
                               description: "OwnerChainEntry represents a single entry
                                 in the K8s ownership chain.\nDD-WORKFLOW-001 v1.8:
@@ -612,8 +618,8 @@ spec:
                           description: Action type from DD-WORKFLOW-016 taxonomy (e.g.,
                             ScaleReplicas, RestartPod)
                           type: string
-                        containerImage:
-                          description: Container image used
+                        executionBundle:
+                          description: Execution bundle OCI reference (digest-pinned)
                           type: string
                         parameters:
                           additionalProperties:
@@ -630,7 +636,7 @@ spec:
                           description: Workflow identifier
                           type: string
                       required:
-                      - containerImage
+                      - executionBundle
                       - rationale
                       - version
                       - workflowId
@@ -756,8 +762,9 @@ spec:
                       maximum: 1
                       minimum: 0
                       type: number
-                    containerImage:
-                      description: Container image (OCI bundle) - resolved by HolmesGPT-API
+                    executionBundle:
+                      description: Execution bundle OCI reference (digest-pinned)
+                        - resolved by HolmesGPT-API
                       type: string
                     rationale:
                       description: Rationale explaining why this workflow was considered
@@ -1160,11 +1167,12 @@ spec:
                     maximum: 1
                     minimum: 0
                     type: number
-                  containerDigest:
-                    description: Container digest for audit trail
+                  executionBundle:
+                    description: Execution bundle OCI reference (digest-pinned) -
+                      resolved by HolmesGPT-API
                     type: string
-                  containerImage:
-                    description: Container image (OCI bundle) - resolved by HolmesGPT-API
+                  executionBundleDigest:
+                    description: Execution bundle digest for audit trail
                     type: string
                   executionEngine:
                     description: |-
@@ -1192,7 +1200,7 @@ spec:
                     type: string
                 required:
                 - confidence
-                - containerImage
+                - executionBundle
                 - rationale
                 - version
                 - workflowId
@@ -1221,15 +1229,6 @@ spec:
                 - MaxRetriesExceeded
                 - SessionRegenerationExceeded
                 type: string
-              targetInOwnerChain:
-                description: |-
-                  ========================================
-                  HAPI RESPONSE METADATA (Dec 2025)
-                  ========================================
-                  Whether the RCA-identified target resource was found in OwnerChain
-                  If false, DetectedLabels may be from different scope than affected resource
-                  Used for: Rego policy input, audit trail, operator notifications, metrics
-                type: boolean
               totalAnalysisTime:
                 description: TotalAnalysisTime is the total duration of the analysis
                   in seconds
@@ -1276,8 +1275,11 @@ spec:
                   type: object
                 type: array
               warnings:
-                description: Non-fatal warnings from HolmesGPT-API (e.g., OwnerChain
-                  validation, low confidence)
+                description: |-
+                  ========================================
+                  HAPI RESPONSE METADATA
+                  ========================================
+                  Non-fatal warnings from HolmesGPT-API (e.g., low confidence)
                 items:
                   type: string
                 type: array
@@ -1287,6 +1289,8 @@ spec:
             - phase
             type: object
         type: object
+    selectableFields:
+    - jsonPath: .spec.remediationRequestRef.name
     served: true
     storage: true
     subresources:

@@ -25,6 +25,9 @@ import (
 
 // Condition types for AIAnalysis
 const (
+	// ConditionReady indicates the AIAnalysis is ready (aggregate condition)
+	ConditionReady = "Ready"
+
 	// ConditionInvestigationComplete indicates investigation phase finished
 	ConditionInvestigationComplete = "InvestigationComplete"
 
@@ -44,6 +47,12 @@ const (
 
 // Condition reasons
 const (
+	// ReasonReady - AIAnalysis is ready
+	ReasonReady = "Ready"
+
+	// ReasonNotReady - AIAnalysis is not ready
+	ReasonNotReady = "NotReady"
+
 	// ReasonInvestigationSucceeded - investigation completed successfully
 	ReasonInvestigationSucceeded = "InvestigationSucceeded"
 
@@ -99,8 +108,18 @@ func SetCondition(analysis *aianalysisv1.AIAnalysis, conditionType string, statu
 		LastTransitionTime: metav1.Now(),
 		Reason:             reason,
 		Message:            message,
+		ObservedGeneration: analysis.Generation,
 	}
 	meta.SetStatusCondition(&analysis.Status.Conditions, condition)
+}
+
+// SetReady sets the Ready condition on the AIAnalysis
+func SetReady(analysis *aianalysisv1.AIAnalysis, ready bool, reason, message string) {
+	status := metav1.ConditionTrue
+	if !ready {
+		status = metav1.ConditionFalse
+	}
+	SetCondition(analysis, ConditionReady, status, reason, message)
 }
 
 // GetCondition returns the condition with the specified type, or nil if not found

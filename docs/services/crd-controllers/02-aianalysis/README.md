@@ -110,9 +110,9 @@
 | **Workflow Selection** | Select workflow from catalog | DD-WORKFLOW-001 v1.8 |
 | **Rego Approval Policies** | ConfigMap-based policy evaluation | DD-AIANALYSIS-001 |
 | **Recovery Flow** | Handle failed workflow retries | DD-RECOVERY-002 |
-| **DetectedLabels** | Auto-detected cluster characteristics | DD-WORKFLOW-001 v1.8 |
+| **DetectedLabels** (ADR-056: removed from EnrichmentResults) | Auto-detected cluster characteristics | DD-WORKFLOW-001 v1.8 |
 | **CustomLabels** | Customer-defined via Rego | DD-WORKFLOW-001 v1.5 |
-| **OwnerChain** | K8s ownership for DetectedLabels validation | DD-WORKFLOW-001 v1.8 |
+| **OwnerChain** (ADR-055: removed from EnrichmentResults) | K8s ownership for DetectedLabels validation | DD-WORKFLOW-001 v1.8 |
 | **Approval Signaling** | Set `approvalRequired=true` → RO notifies | ADR-040 |
 
 ### ❌ Out of Scope (V1.1+)

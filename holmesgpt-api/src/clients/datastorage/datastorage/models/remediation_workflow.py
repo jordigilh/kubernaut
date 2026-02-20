@@ -34,44 +34,46 @@ class RemediationWorkflow(BaseModel):
     """
     RemediationWorkflow
     """ # noqa: E501
-    workflow_id: Optional[StrictStr] = Field(default=None, description="Unique workflow identifier (UUID, auto-generated)")
-    workflow_name: Annotated[str, Field(strict=True, max_length=255)] = Field(description="Workflow name (identifier for versions)")
-    action_type: StrictStr = Field(description="Action type from taxonomy (DD-WORKFLOW-016). FK to action_type_taxonomy.")
+    workflow_id: Optional[StrictStr] = Field(default=None, description="Unique workflow identifier (UUID, auto-generated)", alias="workflowId")
+    workflow_name: Annotated[str, Field(strict=True, max_length=255)] = Field(description="Workflow name (identifier for versions)", alias="workflowName")
+    action_type: StrictStr = Field(description="Action type from taxonomy (DD-WORKFLOW-016). FK to action_type_taxonomy.", alias="actionType")
     version: Annotated[str, Field(strict=True, max_length=50)] = Field(description="Semantic version (e.g., v1.0.0)")
     name: Annotated[str, Field(strict=True, max_length=255)] = Field(description="Human-readable workflow title")
     description: StructuredDescription
     owner: Optional[Annotated[str, Field(strict=True, max_length=255)]] = Field(default=None, description="Workflow owner")
     maintainer: Optional[Annotated[str, Field(strict=True, max_length=255)]] = Field(default=None, description="Workflow maintainer email")
     content: StrictStr = Field(description="YAML workflow definition")
-    content_hash: Annotated[str, Field(min_length=64, strict=True, max_length=64)] = Field(description="SHA-256 hash of content")
+    content_hash: Annotated[str, Field(min_length=64, strict=True, max_length=64)] = Field(description="SHA-256 hash of content", alias="contentHash")
     parameters: Optional[Dict[str, Any]] = Field(default=None, description="Workflow parameters (JSONB)")
-    execution_engine: StrictStr = Field(description="Execution engine (e.g., argo-workflows)")
-    container_image: Optional[StrictStr] = Field(default=None, description="OCI image reference")
-    container_digest: Optional[StrictStr] = Field(default=None, description="OCI image digest")
+    execution_engine: StrictStr = Field(description="Execution engine (e.g., argo-workflows)", alias="executionEngine")
+    schema_image: Optional[StrictStr] = Field(default=None, description="OCI image used to extract the workflow schema (DD-WORKFLOW-017)", alias="schemaImage")
+    schema_digest: Optional[StrictStr] = Field(default=None, description="OCI schema image digest", alias="schemaDigest")
+    execution_bundle: Optional[StrictStr] = Field(default=None, description="OCI execution bundle reference (digest-pinned)", alias="executionBundle")
+    execution_bundle_digest: Optional[StrictStr] = Field(default=None, description="OCI execution bundle digest", alias="executionBundleDigest")
     labels: MandatoryLabels
-    custom_labels: Optional[Dict[str, List[StrictStr]]] = Field(default=None, description="Customer-defined labels (DD-WORKFLOW-001 v1.5) - subdomain-based format")
-    detected_labels: Optional[DetectedLabels] = None
+    custom_labels: Optional[Dict[str, List[StrictStr]]] = Field(default=None, description="Customer-defined labels (DD-WORKFLOW-001 v1.5) - subdomain-based format", alias="customLabels")
+    detected_labels: Optional[DetectedLabels] = Field(default=None, alias="detectedLabels")
     status: StrictStr = Field(description="Workflow lifecycle status")
-    disabled_at: Optional[datetime] = Field(default=None, description="When workflow was disabled")
-    disabled_by: Optional[Annotated[str, Field(strict=True, max_length=255)]] = Field(default=None, description="Who disabled the workflow")
-    disabled_reason: Optional[StrictStr] = Field(default=None, description="Why workflow was disabled")
-    is_latest_version: Optional[StrictBool] = Field(default=None, description="Is this the latest version?")
-    previous_version: Optional[Annotated[str, Field(strict=True, max_length=50)]] = Field(default=None, description="Previous version identifier")
-    deprecation_notice: Optional[StrictStr] = Field(default=None, description="Deprecation notice")
-    version_notes: Optional[StrictStr] = Field(default=None, description="Version release notes")
-    change_summary: Optional[StrictStr] = Field(default=None, description="Summary of changes in this version")
-    approved_by: Optional[Annotated[str, Field(strict=True, max_length=255)]] = Field(default=None, description="Who approved this version")
-    approved_at: Optional[datetime] = Field(default=None, description="When this version was approved")
-    expected_success_rate: Optional[Union[Annotated[float, Field(le=1.0, strict=True, ge=0.0)], Annotated[int, Field(le=1, strict=True, ge=0)]]] = Field(default=None, description="Expected success rate (0.0-1.0)")
-    expected_duration_seconds: Optional[Annotated[int, Field(strict=True, ge=0)]] = Field(default=None, description="Expected execution duration")
-    actual_success_rate: Optional[Union[Annotated[float, Field(le=1.0, strict=True, ge=0.0)], Annotated[int, Field(le=1, strict=True, ge=0)]]] = Field(default=None, description="Actual success rate (0.0-1.0)")
-    total_executions: Optional[Annotated[int, Field(strict=True, ge=0)]] = Field(default=None, description="Total number of executions")
-    successful_executions: Optional[Annotated[int, Field(strict=True, ge=0)]] = Field(default=None, description="Number of successful executions")
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
-    created_by: Optional[Annotated[str, Field(strict=True, max_length=255)]] = None
-    updated_by: Optional[Annotated[str, Field(strict=True, max_length=255)]] = None
-    __properties: ClassVar[List[str]] = ["workflow_id", "workflow_name", "action_type", "version", "name", "description", "owner", "maintainer", "content", "content_hash", "parameters", "execution_engine", "container_image", "container_digest", "labels", "custom_labels", "detected_labels", "status", "disabled_at", "disabled_by", "disabled_reason", "is_latest_version", "previous_version", "deprecation_notice", "version_notes", "change_summary", "approved_by", "approved_at", "expected_success_rate", "expected_duration_seconds", "actual_success_rate", "total_executions", "successful_executions", "created_at", "updated_at", "created_by", "updated_by"]
+    disabled_at: Optional[datetime] = Field(default=None, description="When workflow was disabled", alias="disabledAt")
+    disabled_by: Optional[Annotated[str, Field(strict=True, max_length=255)]] = Field(default=None, description="Who disabled the workflow", alias="disabledBy")
+    disabled_reason: Optional[StrictStr] = Field(default=None, description="Why workflow was disabled", alias="disabledReason")
+    is_latest_version: Optional[StrictBool] = Field(default=None, description="Is this the latest version?", alias="isLatestVersion")
+    previous_version: Optional[Annotated[str, Field(strict=True, max_length=50)]] = Field(default=None, description="Previous version identifier", alias="previousVersion")
+    deprecation_notice: Optional[StrictStr] = Field(default=None, description="Deprecation notice", alias="deprecationNotice")
+    version_notes: Optional[StrictStr] = Field(default=None, description="Version release notes", alias="versionNotes")
+    change_summary: Optional[StrictStr] = Field(default=None, description="Summary of changes in this version", alias="changeSummary")
+    approved_by: Optional[Annotated[str, Field(strict=True, max_length=255)]] = Field(default=None, description="Who approved this version", alias="approvedBy")
+    approved_at: Optional[datetime] = Field(default=None, description="When this version was approved", alias="approvedAt")
+    expected_success_rate: Optional[Union[Annotated[float, Field(le=1.0, strict=True, ge=0.0)], Annotated[int, Field(le=1, strict=True, ge=0)]]] = Field(default=None, description="Expected success rate (0.0-1.0)", alias="expectedSuccessRate")
+    expected_duration_seconds: Optional[Annotated[int, Field(strict=True, ge=0)]] = Field(default=None, description="Expected execution duration", alias="expectedDurationSeconds")
+    actual_success_rate: Optional[Union[Annotated[float, Field(le=1.0, strict=True, ge=0.0)], Annotated[int, Field(le=1, strict=True, ge=0)]]] = Field(default=None, description="Actual success rate (0.0-1.0)", alias="actualSuccessRate")
+    total_executions: Optional[Annotated[int, Field(strict=True, ge=0)]] = Field(default=None, description="Total number of executions", alias="totalExecutions")
+    successful_executions: Optional[Annotated[int, Field(strict=True, ge=0)]] = Field(default=None, description="Number of successful executions", alias="successfulExecutions")
+    created_at: Optional[datetime] = Field(default=None, alias="createdAt")
+    updated_at: Optional[datetime] = Field(default=None, alias="updatedAt")
+    created_by: Optional[Annotated[str, Field(strict=True, max_length=255)]] = Field(default=None, alias="createdBy")
+    updated_by: Optional[Annotated[str, Field(strict=True, max_length=255)]] = Field(default=None, alias="updatedBy")
+    __properties: ClassVar[List[str]] = ["workflowId", "workflowName", "actionType", "version", "name", "description", "owner", "maintainer", "content", "contentHash", "parameters", "executionEngine", "schemaImage", "schemaDigest", "executionBundle", "executionBundleDigest", "labels", "customLabels", "detectedLabels", "status", "disabledAt", "disabledBy", "disabledReason", "isLatestVersion", "previousVersion", "deprecationNotice", "versionNotes", "changeSummary", "approvedBy", "approvedAt", "expectedSuccessRate", "expectedDurationSeconds", "actualSuccessRate", "totalExecutions", "successfulExecutions", "createdAt", "updatedAt", "createdBy", "updatedBy"]
 
     @field_validator('status')
     def status_validate_enum(cls, value):
@@ -125,7 +127,7 @@ class RemediationWorkflow(BaseModel):
             _dict['labels'] = self.labels.to_dict()
         # override the default output from pydantic by calling `to_dict()` of detected_labels
         if self.detected_labels:
-            _dict['detected_labels'] = self.detected_labels.to_dict()
+            _dict['detectedLabels'] = self.detected_labels.to_dict()
         return _dict
 
     @classmethod
@@ -138,43 +140,45 @@ class RemediationWorkflow(BaseModel):
             return cls.model_validate(obj)
 
         _obj = cls.model_validate({
-            "workflow_id": obj.get("workflow_id"),
-            "workflow_name": obj.get("workflow_name"),
-            "action_type": obj.get("action_type"),
+            "workflowId": obj.get("workflowId"),
+            "workflowName": obj.get("workflowName"),
+            "actionType": obj.get("actionType"),
             "version": obj.get("version"),
             "name": obj.get("name"),
             "description": StructuredDescription.from_dict(obj.get("description")) if obj.get("description") is not None else None,
             "owner": obj.get("owner"),
             "maintainer": obj.get("maintainer"),
             "content": obj.get("content"),
-            "content_hash": obj.get("content_hash"),
+            "contentHash": obj.get("contentHash"),
             "parameters": obj.get("parameters"),
-            "execution_engine": obj.get("execution_engine"),
-            "container_image": obj.get("container_image"),
-            "container_digest": obj.get("container_digest"),
+            "executionEngine": obj.get("executionEngine"),
+            "schemaImage": obj.get("schemaImage"),
+            "schemaDigest": obj.get("schemaDigest"),
+            "executionBundle": obj.get("executionBundle"),
+            "executionBundleDigest": obj.get("executionBundleDigest"),
             "labels": MandatoryLabels.from_dict(obj.get("labels")) if obj.get("labels") is not None else None,
-            "custom_labels": obj.get("custom_labels"),
-            "detected_labels": DetectedLabels.from_dict(obj.get("detected_labels")) if obj.get("detected_labels") is not None else None,
+            "customLabels": obj.get("customLabels"),
+            "detectedLabels": DetectedLabels.from_dict(obj.get("detectedLabels")) if obj.get("detectedLabels") is not None else None,
             "status": obj.get("status"),
-            "disabled_at": obj.get("disabled_at"),
-            "disabled_by": obj.get("disabled_by"),
-            "disabled_reason": obj.get("disabled_reason"),
-            "is_latest_version": obj.get("is_latest_version"),
-            "previous_version": obj.get("previous_version"),
-            "deprecation_notice": obj.get("deprecation_notice"),
-            "version_notes": obj.get("version_notes"),
-            "change_summary": obj.get("change_summary"),
-            "approved_by": obj.get("approved_by"),
-            "approved_at": obj.get("approved_at"),
-            "expected_success_rate": obj.get("expected_success_rate"),
-            "expected_duration_seconds": obj.get("expected_duration_seconds"),
-            "actual_success_rate": obj.get("actual_success_rate"),
-            "total_executions": obj.get("total_executions"),
-            "successful_executions": obj.get("successful_executions"),
-            "created_at": obj.get("created_at"),
-            "updated_at": obj.get("updated_at"),
-            "created_by": obj.get("created_by"),
-            "updated_by": obj.get("updated_by")
+            "disabledAt": obj.get("disabledAt"),
+            "disabledBy": obj.get("disabledBy"),
+            "disabledReason": obj.get("disabledReason"),
+            "isLatestVersion": obj.get("isLatestVersion"),
+            "previousVersion": obj.get("previousVersion"),
+            "deprecationNotice": obj.get("deprecationNotice"),
+            "versionNotes": obj.get("versionNotes"),
+            "changeSummary": obj.get("changeSummary"),
+            "approvedBy": obj.get("approvedBy"),
+            "approvedAt": obj.get("approvedAt"),
+            "expectedSuccessRate": obj.get("expectedSuccessRate"),
+            "expectedDurationSeconds": obj.get("expectedDurationSeconds"),
+            "actualSuccessRate": obj.get("actualSuccessRate"),
+            "totalExecutions": obj.get("totalExecutions"),
+            "successfulExecutions": obj.get("successfulExecutions"),
+            "createdAt": obj.get("createdAt"),
+            "updatedAt": obj.get("updatedAt"),
+            "createdBy": obj.get("createdBy"),
+            "updatedBy": obj.get("updatedBy")
         })
         return _obj
 

@@ -28,13 +28,8 @@ import (
 	"time"
 
 	. "github.com/onsi/gomega"
-	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 )
@@ -710,35 +705,15 @@ func installTektonPipelines(kubeconfigPath string, output io.Writer) error {
 }
 
 func DeployWorkflowExecutionController(ctx context.Context, namespace, kubeconfigPath, imageName string, output io.Writer) error {
-	// Per Consolidated API Migration (January 2026):
-	// Accept dynamic image name as parameter (built by BuildImageForKind in PHASE 1)
-	// Image already loaded to Kind in PHASE 3 - no build/load needed here
-	// Authority: docs/handoff/CONSOLIDATED_API_MIGRATION_GUIDE_JAN07.md
 	_, _ = fmt.Fprintf(output, "\n🚀 Deploying WorkflowExecution Controller to %s...\n", namespace)
 	_, _ = fmt.Fprintf(output, "  Using pre-built image: %s\n", imageName)
 
-	// Find project root for absolute paths
 	projectRoot, err := findProjectRoot()
 	if err != nil {
 		return fmt.Errorf("failed to find project root: %w", err)
 	}
 
-	// Create controller namespace (idempotent - ignore AlreadyExists errors)
-	nsCmd := exec.Command("kubectl", "create", "namespace", namespace,
-		"--kubeconfig", kubeconfigPath)
-	nsOutput, nsErr := nsCmd.CombinedOutput()
-	if nsErr != nil && !strings.Contains(string(nsOutput), "AlreadyExists") {
-		_, _ = fmt.Fprintf(output, "❌ Failed to create namespace %s: %s\n", namespace, string(nsOutput))
-		return fmt.Errorf("failed to create namespace %s: %w", namespace, nsErr)
-	}
-	_, _ = fmt.Fprintf(output, "   ✅ Namespace %s ready\n", namespace)
-	// BR-SCOPE-002: Infrastructure namespaces (kubernaut-system) must NOT be labeled as managed.
-	// The managed label is only applied to application/workload namespaces (e.g., fp-e2e-*)
-	// where the memory-eater pod runs. Labeling the controller namespace as managed causes
-	// the Gateway to create spurious RemediationRequests for infrastructure pod events
-	// (FailedScheduling, ImagePullBackOff, etc.).
-
-	// Deploy CRDs (use absolute path)
+	// CRDs must exist before any CR can be created
 	crdPath := filepath.Join(projectRoot, "config/crd/bases/kubernaut.ai_workflowexecutions.yaml")
 	_, _ = fmt.Fprintf(output, "  Applying WorkflowExecution CRDs...\n")
 	crdCmd := exec.Command("kubectl", "apply",
@@ -751,47 +726,9 @@ func DeployWorkflowExecutionController(ctx context.Context, namespace, kubeconfi
 		return fmt.Errorf("failed to apply CRDs: %w", err)
 	}
 
-	// Apply static resources (Namespaces, ServiceAccounts, RBAC)
-	// Note: Deployment and Service are created programmatically for E2E coverage support
-	manifestsPath := filepath.Join(projectRoot, "test/e2e/workflowexecution/manifests/controller-deployment.yaml")
-	_, _ = fmt.Fprintf(output, "  Applying static resources (Namespaces, ServiceAccounts, RBAC)...\n")
-
-	// Use kubectl apply but exclude Deployment and Service resources
-	// They will be created programmatically with E2E coverage support
-	excludeCmd := exec.Command("kubectl", "apply",
-		"-f", manifestsPath,
-		"--kubeconfig", kubeconfigPath,
-	)
-	excludeCmd.Stdout = output
-	excludeCmd.Stderr = output
-	if err := excludeCmd.Run(); err != nil {
-		// Ignore errors - some resources may already exist
-		_, _ = fmt.Fprintf(output, "   ⚠️  Some resources may already exist (continuing)\n")
-	}
-
-	// Delete existing Deployment and Service if they exist (they were created by kubectl apply above)
-	// We'll recreate them programmatically with E2E coverage support
-	_, _ = fmt.Fprintf(output, "  Cleaning up existing Deployment/Service (if any)...\n")
-	deleteDeployCmd := exec.Command("kubectl", "delete", "deployment",
-		"workflowexecution-controller",
-		"-n", namespace,
-		"--kubeconfig", kubeconfigPath,
-		"--ignore-not-found=true")
-	deleteDeployCmd.Stdout = output
-	deleteDeployCmd.Stderr = output
-	_ = deleteDeployCmd.Run() // Ignore errors
-
-	deleteSvcCmd := exec.Command("kubectl", "delete", "service",
-		"workflowexecution-controller-metrics",
-		"-n", namespace,
-		"--kubeconfig", kubeconfigPath,
-		"--ignore-not-found=true")
-	deleteSvcCmd.Stdout = output
-	deleteSvcCmd.Stderr = output
-	_ = deleteSvcCmd.Run() // Ignore errors
-
-	// Deploy controller programmatically with E2E coverage support (DD-TEST-007)
-	_, _ = fmt.Fprintf(output, "  Deploying controller programmatically (E2E coverage support)...\n")
+	// All remaining resources (Namespaces, RBAC, ConfigMap, Deployment, Service)
+	// are applied in a single kubectl apply call.
+	_, _ = fmt.Fprintf(output, "  Applying all controller resources (single kubectl apply)...\n")
 	if err := deployWorkflowExecutionControllerDeployment(ctx, namespace, kubeconfigPath, imageName, output); err != nil {
 		return fmt.Errorf("failed to deploy controller: %w", err)
 	}
@@ -981,355 +918,211 @@ func createQuayPullSecret(kubeconfigPath, namespace string, output io.Writer) er
 	return nil
 }
 
-func deployWorkflowExecutionControllerDeployment(ctx context.Context, namespace, kubeconfigPath, imageName string, output io.Writer) error {
-	// Per Consolidated API Migration (January 2026):
-	// Accept dynamic image name as parameter (built by BuildImageForKind)
-	// Authority: docs/handoff/CONSOLIDATED_API_MIGRATION_GUIDE_JAN07.md
-	clientset, err := getKubernetesClient(kubeconfigPath)
-	if err != nil {
-		return fmt.Errorf("failed to get Kubernetes client: %w", err)
+func deployWorkflowExecutionControllerDeployment(_ context.Context, namespace, kubeconfigPath, imageName string, output io.Writer) error {
+	coverageEnabled := os.Getenv("E2E_COVERAGE") == "true"
+	_, _ = fmt.Fprintf(output, "   DD-TEST-007: E2E_COVERAGE=%s (enabled=%v)\n", os.Getenv("E2E_COVERAGE"), coverageEnabled)
+
+	// DD-TEST-007: Coverage-conditional sections injected into the YAML template
+	var coverageEnv, coverageVolumeMount, coverageVolume, securityContext string
+	if coverageEnabled {
+		coverageEnv = `
+        - name: GOCOVERDIR
+          value: /coverdata`
+		coverageVolumeMount = `
+        - name: coverage
+          mountPath: /coverdata`
+		coverageVolume = `
+      - name: coverage
+        hostPath:
+          path: /coverdata
+          type: DirectoryOrCreate`
+		securityContext = `
+      securityContext:
+        runAsUser: 0
+        runAsGroup: 0`
 	}
 
-	// Create ServiceAccount for WE controller (DD-AUTH-014)
-	// Per RCA (Jan 30, 2026): WE was missing SA, causing 3 audit test failures
-	_, _ = fmt.Fprintf(output, "🔐 Creating WorkflowExecution controller ServiceAccount...\n")
-	sa := &corev1.ServiceAccount{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "workflowexecution-controller",
-			Namespace: namespace,
-		},
-	}
-	_, err = clientset.CoreV1().ServiceAccounts(namespace).Create(ctx, sa, metav1.CreateOptions{})
-	if err != nil && !apierrors.IsAlreadyExists(err) {
-		return fmt.Errorf("failed to create ServiceAccount: %w", err)
-	}
-	_, _ = fmt.Fprintf(output, "   ✅ ServiceAccount created\n")
-
-	// Create Role for WE controller
-	_, _ = fmt.Fprintf(output, "🔐 Creating WorkflowExecution controller Role...\n")
-	role := &rbacv1.Role{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "workflowexecution-controller",
-			Namespace: namespace,
-		},
-		Rules: []rbacv1.PolicyRule{
-			{
-				APIGroups: []string{"kubernaut.ai"},
-				Resources: []string{"workflowexecutions"},
-				Verbs:     []string{"get", "list", "watch", "update", "patch"},
-			},
-			{
-				APIGroups: []string{"kubernaut.ai"},
-				Resources: []string{"workflowexecutions/status"},
-				Verbs:     []string{"get", "update", "patch"},
-			},
-			{
-				APIGroups: []string{"tekton.dev"},
-				Resources: []string{"pipelineruns"},
-				Verbs:     []string{"get", "list", "watch", "create", "update", "patch", "delete"},
-			},
-			{
-				APIGroups: []string{"tekton.dev"},
-				Resources: []string{"pipelineruns/status"},
-				Verbs:     []string{"get"},
-			},
-			{
-				APIGroups: []string{""},
-				Resources: []string{"secrets"},
-				Verbs:     []string{"get", "list"},
-			},
-			{
-				APIGroups: []string{""},
-				Resources: []string{"events"},
-				Verbs:     []string{"create", "patch"},
-			},
-		},
-	}
-	_, err = clientset.RbacV1().Roles(namespace).Create(ctx, role, metav1.CreateOptions{})
-	if err != nil && !apierrors.IsAlreadyExists(err) {
-		return fmt.Errorf("failed to create Role: %w", err)
-	}
-	_, _ = fmt.Fprintf(output, "   ✅ Role created\n")
-
-	// Create RoleBinding for WE controller
-	_, _ = fmt.Fprintf(output, "🔐 Creating WorkflowExecution controller RoleBinding...\n")
-	roleBinding := &rbacv1.RoleBinding{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "workflowexecution-controller",
-			Namespace: namespace,
-		},
-		RoleRef: rbacv1.RoleRef{
-			APIGroup: "rbac.authorization.k8s.io",
-			Kind:     "Role",
-			Name:     "workflowexecution-controller",
-		},
-		Subjects: []rbacv1.Subject{
-			{
-				Kind:      "ServiceAccount",
-				Name:      "workflowexecution-controller",
-				Namespace: namespace,
-			},
-		},
-	}
-	_, err = clientset.RbacV1().RoleBindings(namespace).Create(ctx, roleBinding, metav1.CreateOptions{})
-	if err != nil && !apierrors.IsAlreadyExists(err) {
-		return fmt.Errorf("failed to create RoleBinding: %w", err)
-	}
-	_, _ = fmt.Fprintf(output, "   ✅ RoleBinding created\n")
-
-	// ADR-030: Create ConfigMap with YAML configuration (replaces CLI flags)
-	_, _ = fmt.Fprintf(output, "   📋 Creating WorkflowExecution ConfigMap (ADR-030)...\n")
-	weConfigMap := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "workflowexecution-config",
-			Namespace: namespace,
-		},
-		Data: map[string]string{
-			"workflowexecution.yaml": `# WorkflowExecution E2E Configuration (ADR-030)
-controller:
-  metricsAddr: ":9090"
-  healthProbeAddr: ":8081"
-  leaderElection: false
-  leaderElectionId: workflowexecution.kubernaut.ai
-execution:
-  namespace: kubernaut-workflows
-  cooldownPeriod: 1m
-  serviceAccount: kubernaut-workflow-runner
-backoff:
-  baseCooldown: 1m
-  maxCooldown: 10m
-  maxExponent: 4
-  maxConsecutiveFailures: 5
-datastorage:
-  url: "http://data-storage-service.kubernaut-system:8080"
-  timeout: 10s
-  buffer:
-    bufferSize: 10000
-    batchSize: 50
-    flushInterval: 100ms
-    maxRetries: 3
+	manifest := fmt.Sprintf(`apiVersion: v1
+kind: Namespace
+metadata:
+  name: %[1]s
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: %[2]s
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: workflowexecution-controller
+  namespace: %[1]s
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kubernaut-workflow-runner
+  namespace: %[2]s
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: workflowexecution-controller
+rules:
+- apiGroups: ["kubernaut.ai"]
+  resources: ["workflowexecutions"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["kubernaut.ai"]
+  resources: ["workflowexecutions/status"]
+  verbs: ["get", "update", "patch"]
+- apiGroups: ["kubernaut.ai"]
+  resources: ["workflowexecutions/finalizers"]
+  verbs: ["update"]
+- apiGroups: ["tekton.dev"]
+  resources: ["pipelineruns"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["tekton.dev"]
+  resources: ["taskruns"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["batch"]
+  resources: ["jobs"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create", "patch"]
+- apiGroups: ["coordination.k8s.io"]
+  resources: ["leases"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: workflowexecution-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: workflowexecution-controller
+subjects:
+- kind: ServiceAccount
+  name: workflowexecution-controller
+  namespace: %[1]s
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: workflowexecution-config
+  namespace: %[1]s
+data:
+  workflowexecution.yaml: |
+    controller:
+      metricsAddr: ":9090"
+      healthProbeAddr: ":8081"
+      leaderElection: false
+      leaderElectionId: workflowexecution.kubernaut.ai
+    execution:
+      namespace: %[2]s
+      cooldownPeriod: 1m
+      serviceAccount: kubernaut-workflow-runner
+    datastorage:
+      url: "http://data-storage-service.%[1]s:8080"
+      timeout: 10s
+      buffer:
+        bufferSize: 10000
+        batchSize: 50
+        flushInterval: 100ms
+        maxRetries: 3
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: workflowexecution-controller
+  namespace: %[1]s
+  labels:
+    app: workflowexecution-controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: workflowexecution-controller
+  template:
+    metadata:
+      labels:
+        app: workflowexecution-controller
+    spec:
+      serviceAccountName: workflowexecution-controller%[5]s
+      containers:
+      - name: controller
+        image: %[3]s
+        imagePullPolicy: %[4]s
+        args:
+        - --config=/etc/config/workflowexecution.yaml
+        - --zap-devel=true
+        ports:
+        - containerPort: 9090
+          name: metrics
+        - containerPort: 8081
+          name: health
+        env:%[6]s
+        volumeMounts:
+        - name: config
+          mountPath: /etc/config
+          readOnly: true%[7]s
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: health
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: health
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: 500m
+            memory: 256Mi
+          requests:
+            cpu: 100m
+            memory: 64Mi
+      volumes:
+      - name: config
+        configMap:
+          name: workflowexecution-config%[8]s
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: workflowexecution-controller-metrics
+  namespace: %[1]s
+spec:
+  type: NodePort
+  selector:
+    app: workflowexecution-controller
+  ports:
+  - name: metrics
+    port: 9090
+    targetPort: 9090
+    nodePort: 30185
 `,
-		},
-	}
-	_, err = clientset.CoreV1().ConfigMaps(namespace).Create(ctx, weConfigMap, metav1.CreateOptions{})
-	if err != nil && !apierrors.IsAlreadyExists(err) {
-		return fmt.Errorf("failed to create WorkflowExecution ConfigMap: %w", err)
-	}
-	_, _ = fmt.Fprintf(output, "   ✅ ConfigMap created\n")
+		namespace,          // [1] controller namespace (kubernaut-system)
+		ExecutionNamespace, // [2] execution namespace (kubernaut-workflows)
+		imageName,          // [3] controller image
+		GetImagePullPolicy(), // [4] pull policy
+		securityContext,    // [5] pod security context (coverage only)
+		coverageEnv,        // [6] GOCOVERDIR env var (coverage only)
+		coverageVolumeMount, // [7] /coverdata volume mount (coverage only)
+		coverageVolume,     // [8] hostPath volume (coverage only)
+	)
 
-	replicas := int32(1)
-	deployment := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "workflowexecution-controller",
-			Namespace: namespace,
-			Labels: map[string]string{
-				"app": "workflowexecution-controller",
-			},
-		},
-		Spec: appsv1.DeploymentSpec{
-			Replicas: &replicas,
-			Selector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					"app": "workflowexecution-controller",
-				},
-			},
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{
-						"app": "workflowexecution-controller",
-					},
-				},
-				Spec: corev1.PodSpec{
-					ServiceAccountName: "workflowexecution-controller",
-					// DD-TEST-007: Run as root for E2E coverage (simplified permissions)
-					// Per SP/DS team guidance: non-root user may not have permission to write /coverdata
-					SecurityContext: func() *corev1.PodSecurityContext {
-						if os.Getenv("E2E_COVERAGE") == "true" {
-							runAsUser := int64(0)
-							runAsGroup := int64(0)
-							return &corev1.PodSecurityContext{
-								RunAsUser:  &runAsUser,
-								RunAsGroup: &runAsGroup,
-							}
-						}
-						return nil
-					}(),
-					Containers: []corev1.Container{
-						{
-							Name:            "controller",
-							Image:           imageName,              // Per Consolidated API Migration (January 2026)
-							ImagePullPolicy: GetImagePullPolicyV1(), // Dynamic: IfNotPresent (CI/CD) or Never (local)
-							Args: []string{
-								"--config=/etc/config/workflowexecution.yaml",
-								"--zap-devel=true", // E2E: verbose logging
-							},
-							Ports: []corev1.ContainerPort{
-								{
-									Name:          "metrics",
-									ContainerPort: 9090,
-								},
-								{
-									Name:          "health",
-									ContainerPort: 8081,
-								},
-							},
-							Env: func() []corev1.EnvVar {
-								envVars := []corev1.EnvVar{}
-								// DD-TEST-007: E2E Coverage Capture Standard
-								// Only add GOCOVERDIR if E2E_COVERAGE=true
-								// MUST match Kind extraMounts path: /coverdata
-								coverageEnabled := os.Getenv("E2E_COVERAGE") == "true"
-								_, _ = fmt.Fprintf(output, "   🔍 DD-TEST-007: E2E_COVERAGE=%s (enabled=%v)\n", os.Getenv("E2E_COVERAGE"), coverageEnabled)
-								if coverageEnabled {
-									_, _ = fmt.Fprintf(output, "   ✅ Adding GOCOVERDIR=/coverdata to WorkflowExecution deployment\n")
-									envVars = append(envVars, corev1.EnvVar{
-										Name:  "GOCOVERDIR",
-										Value: "/coverdata",
-									})
-								} else {
-									_, _ = fmt.Fprintf(output, "   ⚠️  E2E_COVERAGE not set, skipping GOCOVERDIR\n")
-								}
-								return envVars
-							}(),
-							VolumeMounts: func() []corev1.VolumeMount {
-								mounts := []corev1.VolumeMount{
-									{
-										Name:      "config",
-										MountPath: "/etc/config",
-										ReadOnly:  true,
-									},
-								}
-								// DD-TEST-007: Add coverage volume mount if enabled
-								// MUST match Kind extraMounts path: /coverdata
-								if os.Getenv("E2E_COVERAGE") == "true" {
-									mounts = append(mounts, corev1.VolumeMount{
-										Name:      "coverage",
-										MountPath: "/coverdata",
-										ReadOnly:  false,
-									})
-								}
-								return mounts
-							}(),
-							LivenessProbe: &corev1.Probe{
-								ProbeHandler: corev1.ProbeHandler{
-									HTTPGet: &corev1.HTTPGetAction{
-										Path: "/healthz",
-										Port: intstr.FromString("health"),
-									},
-								},
-								InitialDelaySeconds: 15,
-								PeriodSeconds:       20,
-							},
-							ReadinessProbe: &corev1.Probe{
-								ProbeHandler: corev1.ProbeHandler{
-									HTTPGet: &corev1.HTTPGetAction{
-										Path: "/readyz",
-										Port: intstr.FromString("health"),
-									},
-								},
-								InitialDelaySeconds: 5,
-								PeriodSeconds:       10,
-							},
-							Resources: corev1.ResourceRequirements{
-								Limits: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse("500m"),
-									corev1.ResourceMemory: resource.MustParse("256Mi"),
-								},
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse("100m"),
-									corev1.ResourceMemory: resource.MustParse("64Mi"),
-								},
-							},
-						},
-					},
-					Volumes: func() []corev1.Volume {
-						volumes := []corev1.Volume{
-							{
-								Name: "config",
-								VolumeSource: corev1.VolumeSource{
-									ConfigMap: &corev1.ConfigMapVolumeSource{
-										LocalObjectReference: corev1.LocalObjectReference{
-											Name: "workflowexecution-config",
-										},
-									},
-								},
-							},
-						}
-						// DD-TEST-007: Add hostPath volume for coverage if enabled
-						// MUST match Kind extraMounts path: /coverdata
-						if os.Getenv("E2E_COVERAGE") == "true" {
-							volumes = append(volumes, corev1.Volume{
-								Name: "coverage",
-								VolumeSource: corev1.VolumeSource{
-									HostPath: &corev1.HostPathVolumeSource{
-										Path: "/coverdata",
-										Type: func() *corev1.HostPathType {
-											t := corev1.HostPathDirectoryOrCreate
-											return &t
-										}(),
-									},
-								},
-							})
-						}
-						return volumes
-					}(),
-				},
-			},
-		},
+	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "--server-side", "-f", "-")
+	cmd.Stdin = strings.NewReader(manifest)
+	cmd.Stdout = output
+	cmd.Stderr = output
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to apply WorkflowExecution controller resources: %w", err)
 	}
-
-	// Create Deployment
-	_, _ = fmt.Fprintf(output, "   Creating Deployment/workflowexecution-controller...\n")
-	_, _ = fmt.Fprintf(output, "   📊 Debug: Image=%s, ImagePullPolicy=%s\n",
-		deployment.Spec.Template.Spec.Containers[0].Image,
-		deployment.Spec.Template.Spec.Containers[0].ImagePullPolicy)
-
-	createdDep, err := clientset.AppsV1().Deployments(namespace).Create(ctx, deployment, metav1.CreateOptions{})
-	if err != nil {
-		return fmt.Errorf("failed to create deployment: %w", err)
-	}
-	_, _ = fmt.Fprintf(output, "   ✅ Deployment created (UID: %s)\n", createdDep.UID)
-
-	// Wait and check status
-	time.Sleep(3 * time.Second)
-
-	// Check Pods
-	podList, _ := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
-		LabelSelector: "app=workflowexecution-controller",
-	})
-	_, _ = fmt.Fprintf(output, "   📊 Debug: Found %d pod(s) after 3s\n", len(podList.Items))
-	for _, pod := range podList.Items {
-		_, _ = fmt.Fprintf(output, "      Pod %s: Phase=%s\n", pod.Name, pod.Status.Phase)
-	}
-
-	// Create Service for metrics
-	service := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "workflowexecution-controller-metrics",
-			Namespace: namespace,
-		},
-		Spec: corev1.ServiceSpec{
-			Type: corev1.ServiceTypeNodePort,
-			Selector: map[string]string{
-				"app": "workflowexecution-controller",
-			},
-			Ports: []corev1.ServicePort{
-				{
-					Name:       "metrics",
-					Port:       9090,
-					TargetPort: intstr.FromInt(9090),
-					NodePort:   30185, // Exposed on host via Kind extraPortMappings
-				},
-			},
-		},
-	}
-
-	_, _ = fmt.Fprintf(output, "   Creating Service/workflowexecution-controller-metrics...\n")
-	_, err = clientset.CoreV1().Services(namespace).Create(ctx, service, metav1.CreateOptions{})
-	if err != nil {
-		return fmt.Errorf("failed to create service: %w", err)
-	}
-	_, _ = fmt.Fprintf(output, "   ✅ Service created\n")
 
 	return nil
 }

@@ -180,7 +180,7 @@ def sample_recovery_request() -> Dict[str, Any]:
                 "workflow_id": "scale-horizontal-v1",
                 "title": "Horizontal Scaling",
                 "version": "1.0.0",
-                "container_image": "ghcr.io/kubernaut/scale:v1.0.0",
+                "execution_bundle": "ghcr.io/kubernaut/scale:v1.0.0",
                 "parameters": {"TARGET_REPLICAS": "5"},
                 "rationale": "Scale out to distribute load"
             },

@@ -143,11 +143,6 @@ func (c *AuditClient) RecordSignalProcessed(ctx context.Context, sp *signalproce
 		payload.HasOwnerChain.SetTo(len(sp.Status.KubernetesContext.OwnerChain) > 0)
 		payload.OwnerChainLength.SetTo(len(sp.Status.KubernetesContext.OwnerChain))
 		payload.DegradedMode.SetTo(sp.Status.KubernetesContext.DegradedMode)
-
-		if sp.Status.KubernetesContext.DetectedLabels != nil {
-			payload.HasPdb.SetTo(sp.Status.KubernetesContext.DetectedLabels.HasPDB)
-			payload.HasHpa.SetTo(sp.Status.KubernetesContext.DetectedLabels.HasHPA)
-		}
 	}
 
 	// Add error if present

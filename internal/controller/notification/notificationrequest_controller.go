@@ -335,17 +335,15 @@ func (r *NotificationRequestReconciler) Reconcile(ctx context.Context, req ctrl.
 	// BR-NOT-069: Set RoutingResolved condition for visibility
 	channels := notification.Spec.Channels
 	if len(channels) == 0 {
-		channels, routingMessage := r.resolveChannelsFromRoutingWithDetails(ctx, notification)
+		channels, routingReason, routingMessage := r.resolveChannelsFromRoutingWithDetails(ctx, notification)
 		log.Info("Resolved channels from routing rules",
 			"notification", notification.Name,
-			"channels", channels,
-			"labels", notification.Labels)
+			"channels", channels)
 
-		// BR-NOT-069: Set RoutingResolved condition after routing resolution
 		kubernautnotif.SetRoutingResolved(
 			notification,
 			metav1.ConditionTrue,
-			kubernautnotif.ReasonRoutingRuleMatched,
+			routingReason,
 			routingMessage,
 		)
 	}
@@ -883,6 +881,7 @@ func (r *NotificationRequestReconciler) handleInitialization(
 		notificationv1alpha1.NotificationPhasePending,
 		"Initialized",
 		"Notification request received",
+		nil,
 	); err != nil {
 		// Concurrent initialization race: UpdatePhase refetches from the API server.
 		// If another reconcile already set Pending, the refetched notification reflects
@@ -947,6 +946,7 @@ func (r *NotificationRequestReconciler) handlePendingToSendingTransition(
 		notificationv1alpha1.NotificationPhaseSending,
 		"ProcessingDeliveries",
 		"Processing delivery channels",
+		nil,
 	); err != nil {
 		log.Error(err, "Failed to update phase to Sending")
 		return err
@@ -985,17 +985,15 @@ func (r *NotificationRequestReconciler) handleDeliveryLoop(
 	// BR-NOT-069: Set RoutingResolved condition for visibility
 	channels := notification.Spec.Channels
 	if len(channels) == 0 {
-		channels, routingMessage := r.resolveChannelsFromRoutingWithDetails(ctx, notification)
+		channels, routingReason, routingMessage := r.resolveChannelsFromRoutingWithDetails(ctx, notification)
 		log.Info("Resolved channels from routing rules",
 			"notification", notification.Name,
-			"channels", channels,
-			"labels", notification.Labels)
+			"channels", channels)
 
-		// BR-NOT-069: Set RoutingResolved condition after routing resolution
 		kubernautnotif.SetRoutingResolved(
 			notification,
 			metav1.ConditionTrue,
-			kubernautnotif.ReasonRoutingRuleMatched,
+			routingReason,
 			routingMessage,
 		)
 	}
@@ -1078,6 +1076,14 @@ func (r *NotificationRequestReconciler) determinePhaseTransition(
 ) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
 
+	// Snapshot in-memory conditions (e.g., RoutingResolved) before any refetch wipes them.
+	// AtomicStatusUpdate refetches the object, overwriting in-memory conditions.
+	// The conditions parameter re-applies them after refetch, ensuring persistence.
+	var preservedConditions []metav1.Condition
+	if rc := kubernautnotif.GetRoutingResolved(notification); rc != nil {
+		preservedConditions = append(preservedConditions, *rc)
+	}
+
 	// NT-BUG-008 & NT-BUG-013: Handle race condition where phase is still Pending
 	// If handlePendingToSendingTransition ran but the re-read returned a stale notification,
 	// we need to persist the transition to Sending first before making terminal transitions.
@@ -1097,7 +1103,8 @@ func (r *NotificationRequestReconciler) determinePhaseTransition(
 			notificationv1alpha1.NotificationPhaseSending,
 			"ProcessingDeliveries",
 			"Processing delivery channels",
-			nil, // No delivery attempts yet
+			nil,
+			preservedConditions,
 		); err != nil {
 			log.Error(err, "Failed to persist Sending phase transition during race condition recovery")
 			return ctrl.Result{}, err
@@ -1162,28 +1169,28 @@ func (r *NotificationRequestReconciler) determinePhaseTransition(
 	switch {
 	case decision.NextPhase == notificationphase.Sent:
 		log.Info("✅ ALL CHANNELS SUCCEEDED → transitioning to Sent")
-		return r.transitionToSent(ctx, notification, result.deliveryAttempts)
+		return r.transitionToSent(ctx, notification, result.deliveryAttempts, preservedConditions)
 
 	case decision.NextPhase == notificationphase.PartiallySent:
 		log.Info("Partial delivery success with exhausted retries, transitioning to PartiallySent")
-		return r.transitionToPartiallySent(ctx, notification, result.deliveryAttempts)
+		return r.transitionToPartiallySent(ctx, notification, result.deliveryAttempts, preservedConditions)
 
 	case decision.NextPhase == notificationphase.Failed && decision.IsPermanentFailure:
 		log.Info("All retries exhausted → transitioning to Failed (permanent)",
 			"reason", decision.Reason)
-		return r.transitionToFailed(ctx, notification, true, decision.Reason, result.deliveryAttempts)
+		return r.transitionToFailed(ctx, notification, true, decision.Reason, result.deliveryAttempts, preservedConditions)
 
 	case decision.NextPhase == notificationphase.Retrying:
 		backoff := r.calculateBackoffWithPolicy(notification, decision.MaxFailedAttemptCount)
 		log.Info("⏰ PARTIAL SUCCESS WITH FAILURES → TRANSITIONING TO RETRYING",
 			"backoff", backoff,
 			"maxAttemptCount", decision.MaxFailedAttemptCount)
-		return r.transitionToRetrying(ctx, notification, backoff, result.deliveryAttempts)
+		return r.transitionToRetrying(ctx, notification, backoff, result.deliveryAttempts, preservedConditions)
 
 	case decision.PhaseUnchanged && decision.ShouldRequeue && result.failureCount > 0:
 		log.Info("All channels failed, retries remaining — temporary failure with backoff",
 			"reason", decision.Reason)
-		return r.transitionToFailed(ctx, notification, false, decision.Reason, result.deliveryAttempts)
+		return r.transitionToFailed(ctx, notification, false, decision.Reason, result.deliveryAttempts, preservedConditions)
 
 	default:
 		log.Info("Partial delivery success, continuing",
@@ -1197,6 +1204,7 @@ func (r *NotificationRequestReconciler) transitionToSent(
 	ctx context.Context,
 	notification *notificationv1alpha1.NotificationRequest,
 	attempts []notificationv1alpha1.DeliveryAttempt,
+	preservedConditions []metav1.Condition,
 ) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
 
@@ -1214,6 +1222,13 @@ func (r *NotificationRequestReconciler) transitionToSent(
 		"AllDeliveriesSucceeded",
 		fmt.Sprintf("Successfully delivered to %d channel(s)", totalSuccessful),
 		attempts,
+		append(preservedConditions, metav1.Condition{
+			Type:               kubernautnotif.ConditionReady,
+			Status:             metav1.ConditionTrue,
+			Reason:             kubernautnotif.ReasonReady,
+			Message:            "Notification delivered",
+			ObservedGeneration: notification.Generation,
+		}),
 	); err != nil {
 		log.Error(err, "Failed to atomically update status to Sent")
 		return ctrl.Result{}, err
@@ -1249,6 +1264,7 @@ func (r *NotificationRequestReconciler) transitionToRetrying(
 	notification *notificationv1alpha1.NotificationRequest,
 	backoff time.Duration,
 	attempts []notificationv1alpha1.DeliveryAttempt,
+	preservedConditions []metav1.Condition,
 ) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
 
@@ -1270,6 +1286,7 @@ func (r *NotificationRequestReconciler) transitionToRetrying(
 			len(notification.Spec.Channels),
 			backoff),
 		attempts,
+		preservedConditions,
 	); err != nil {
 		log.Error(err, "Failed to atomically update status to Retrying")
 		return ctrl.Result{}, err
@@ -1304,6 +1321,7 @@ func (r *NotificationRequestReconciler) transitionToPartiallySent(
 	ctx context.Context,
 	notification *notificationv1alpha1.NotificationRequest,
 	attempts []notificationv1alpha1.DeliveryAttempt,
+	preservedConditions []metav1.Condition,
 ) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
 
@@ -1329,6 +1347,13 @@ func (r *NotificationRequestReconciler) transitionToPartiallySent(
 			totalSuccessful,
 			len(notification.Spec.Channels)),
 		attempts,
+		append(preservedConditions, metav1.Condition{
+			Type:               kubernautnotif.ConditionReady,
+			Status:             metav1.ConditionTrue,
+			Reason:             kubernautnotif.ReasonReady,
+			Message:            "Notification partially delivered",
+			ObservedGeneration: notification.Generation,
+		}),
 	); err != nil {
 		log.Error(err, "Failed to atomically update status to PartiallySent")
 		return ctrl.Result{}, err
@@ -1362,6 +1387,7 @@ func (r *NotificationRequestReconciler) transitionToFailed(
 	permanent bool,
 	reason string,
 	attempts []notificationv1alpha1.DeliveryAttempt,
+	preservedConditions []metav1.Condition,
 ) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
 
@@ -1374,6 +1400,13 @@ func (r *NotificationRequestReconciler) transitionToFailed(
 			reason,
 			"All delivery attempts failed or exhausted retries",
 			attempts,
+			append(preservedConditions, metav1.Condition{
+				Type:               kubernautnotif.ConditionReady,
+				Status:             metav1.ConditionFalse,
+				Reason:             kubernautnotif.ReasonNotReady,
+				Message:            "Notification delivery failed",
+				ObservedGeneration: notification.Generation,
+			}),
 		); err != nil {
 			log.Error(err, "Failed to atomically update status to Failed (permanent)")
 			return ctrl.Result{}, err
@@ -1416,6 +1449,7 @@ func (r *NotificationRequestReconciler) transitionToFailed(
 			reason,
 			"Delivery failed, will retry with backoff",
 			attempts,
+			preservedConditions,
 		); err != nil {
 			log.Error(err, "Failed to atomically record attempts for temporary failure")
 			return ctrl.Result{}, err

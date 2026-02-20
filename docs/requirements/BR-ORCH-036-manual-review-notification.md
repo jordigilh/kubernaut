@@ -158,20 +158,14 @@ func (c *NotificationCreator) CreateManualReviewNotification(
         priority = c.MapAISubReasonToPriority(subReason)
     }
 
-    // Create NotificationRequest
+    // Create NotificationRequest (Issue #91: spec fields replace labels)
     nr := &notificationv1.NotificationRequest{
         ObjectMeta: metav1.ObjectMeta{
             Name:      fmt.Sprintf("nr-manual-review-%s-%d", rr.Name, time.Now().Unix()),
             Namespace: rr.Namespace,
-            Labels: map[string]string{
-                "kubernaut.ai/remediation-request": rr.Name,
-                "kubernaut.ai/notification-type":   "manual-review",
-                "kubernaut.ai/failure-source":      source,
-                "kubernaut.ai/failure-reason":      reason,
-                "kubernaut.ai/component":           "remediation-orchestrator",
-            },
         },
         Spec: notificationv1.NotificationRequestSpec{
+            RemediationRequestRef: &corev1.ObjectReference{Name: rr.Name, Namespace: rr.Namespace},
             Type:     notificationv1.NotificationTypeManualReview,
             Priority: priority,
             Subject:  fmt.Sprintf("⚠️ Manual Review Required: %s", rr.Spec.SignalName),
@@ -205,7 +199,7 @@ func (c *NotificationCreator) CreateManualReviewNotification(
 | AC-036-02 | NotificationRequest created with `type=manual-review` for `PreviousExecutionFailed` | Unit |
 | AC-036-03 | NotificationRequest created with `type=manual-review` for `WasExecutionFailure=true` | Unit |
 | AC-036-04 | Priority is `critical` for WE failures | Unit |
-| AC-036-05 | Label `kubernaut.ai/failure-source=WorkflowExecution` set | Unit |
+| AC-036-05 | `spec.metadata.failureSource=WorkflowExecution` set | Unit |
 
 ### AIAnalysis Source
 
@@ -219,8 +213,8 @@ func (c *NotificationCreator) CreateManualReviewNotification(
 | AC-036-15 | NotificationRequest created for `LLMParsingError` | Unit |
 | AC-036-16 | NotificationRequest created for `InvestigationInconclusive` | Unit |
 | AC-036-17 | Priority mapped correctly per SubReason | Unit |
-| AC-036-18 | Label `kubernaut.ai/failure-source=AIAnalysis` set | Unit |
-| AC-036-19 | Label `kubernaut.ai/failure-reason=WorkflowResolutionFailed` set | Unit |
+| AC-036-18 | `spec.metadata.failureSource=AIAnalysis` set | Unit |
+| AC-036-19 | `spec.metadata.failureReason=WorkflowResolutionFailed` set | Unit |
 
 ### AIAnalysis Infrastructure Failures (v3.0)
 
@@ -230,7 +224,7 @@ func (c *NotificationCreator) CreateManualReviewNotification(
 | AC-036-31 | NotificationRequest created for `APIError` / `TransientError` | Unit |
 | AC-036-32 | NotificationRequest created for `APIError` / `PermanentError` | Unit |
 | AC-036-33 | Priority is `high` for infrastructure failures | Unit |
-| AC-036-34 | Label `kubernaut.ai/failure-source=AIAnalysis` set | Unit |
+| AC-036-34 | `spec.metadata.failureSource=AIAnalysis` set | Unit |
 | AC-036-35 | No failure transitions to RR `Failed` without a notification | Integration |
 
 ### Common
@@ -256,7 +250,7 @@ Scenario: Manual review notification for WE ExhaustedRetries
   Then NotificationRequest should be created with:
     | type | manual-review |
     | priority | critical |
-    | labels.kubernaut.ai/failure-source | WorkflowExecution |
+    | spec.metadata.failureSource | WorkflowExecution |
   And RemediationRequest "rr-1" should have requiresManualReview = true
 
 # AIAnalysis Failures
@@ -270,8 +264,8 @@ Scenario: Manual review notification for AIAnalysis WorkflowNotFound
   Then NotificationRequest should be created with:
     | type | manual-review |
     | priority | high |
-    | labels.kubernaut.ai/failure-source | AIAnalysis |
-    | labels.kubernaut.ai/failure-reason | WorkflowResolutionFailed |
+    | spec.metadata.failureSource | AIAnalysis |
+    | spec.metadata.failureReason | WorkflowResolutionFailed |
   And notification body should contain "Workflow 'restart-pod-v99' not found"
   And RemediationRequest "rr-1" should have requiresManualReview = true
 
@@ -310,7 +304,7 @@ Scenario: Escalation notification for AIAnalysis HAPI timeout (MaxRetriesExceede
   Then NotificationRequest should be created with:
     | type | manual-review |
     | priority | high |
-    | labels.kubernaut.ai/failure-source | AIAnalysis |
+    | spec.metadata.failureSource | AIAnalysis |
   And notification body should contain "APIError"
   And notification body should contain "MaxRetriesExceeded"
   And RemediationRequest "rr-1" should have requiresManualReview = true

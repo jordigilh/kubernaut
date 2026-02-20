@@ -64,7 +64,7 @@ class TestValidatorPassesContextFilters:
 
         mock_ds_client = Mock()
         mock_workflow = Mock()
-        mock_workflow.container_image = "quay.io/kubernaut-ai/test:v1"
+        mock_workflow.execution_bundle = "quay.io/kubernaut-ai/test:v1"
         mock_workflow.parameters = {"schema": {"parameters": []}}
         mock_ds_client.get_workflow_by_id.return_value = mock_workflow
 
@@ -78,7 +78,7 @@ class TestValidatorPassesContextFilters:
 
         validator.validate(
             workflow_id="uuid-1",
-            container_image="quay.io/kubernaut-ai/test:v1",
+            execution_bundle="quay.io/kubernaut-ai/test:v1",
             parameters={},
         )
 
@@ -97,7 +97,7 @@ class TestValidatorPassesContextFilters:
 
         mock_ds_client = Mock()
         mock_workflow = Mock()
-        mock_workflow.container_image = "quay.io/kubernaut-ai/test:v1"
+        mock_workflow.execution_bundle = "quay.io/kubernaut-ai/test:v1"
         mock_workflow.parameters = {"schema": {"parameters": []}}
         mock_ds_client.get_workflow_by_id.return_value = mock_workflow
 
@@ -105,7 +105,7 @@ class TestValidatorPassesContextFilters:
 
         validator.validate(
             workflow_id="uuid-1",
-            container_image=None,
+            execution_bundle=None,
             parameters={},
         )
 
@@ -146,7 +146,7 @@ class TestValidatorTreats404AsFailure:
 
         result = validator.validate(
             workflow_id="uuid-1",
-            container_image=None,
+            execution_bundle=None,
             parameters={},
         )
 
@@ -164,7 +164,7 @@ class TestValidatorTreats404AsFailure:
 
         result = validator.validate(
             workflow_id="uuid-1",
-            container_image=None,
+            execution_bundle=None,
             parameters={},
         )
 
@@ -207,7 +207,7 @@ class TestValidatorContextMismatchErrorMessage:
 
         result = validator.validate(
             workflow_id="uuid-rejected-001",
-            container_image=None,
+            execution_bundle=None,
             parameters={},
         )
 
@@ -231,7 +231,7 @@ class TestValidatorContextMismatchErrorMessage:
 
         result = validator.validate(
             workflow_id="uuid-rejected-001",
-            container_image=None,
+            execution_bundle=None,
             parameters={},
         )
 
@@ -255,7 +255,7 @@ class TestValidatorContextMismatchErrorMessage:
 
         result = validator.validate(
             workflow_id="uuid-rejected-001",
-            container_image=None,
+            execution_bundle=None,
             parameters={},
         )
 
@@ -286,7 +286,7 @@ class TestValidatorHappyPathWithContext:
         mock_ds_client = Mock()
         mock_workflow = Mock()
         mock_workflow.workflow_id = "uuid-1"
-        mock_workflow.container_image = "quay.io/kubernaut-ai/scale:v1.0.0"
+        mock_workflow.execution_bundle = "quay.io/kubernaut-ai/scale:v1.0.0"
         mock_workflow.action_type = "ScaleReplicas"
         mock_workflow.parameters = {
             "schema": {
@@ -311,13 +311,13 @@ class TestValidatorHappyPathWithContext:
 
         result = validator.validate(
             workflow_id="uuid-1",
-            container_image=None,
+            execution_bundle=None,
             parameters={"replicas": 3},
         )
 
         assert result.is_valid is True
         assert len(result.errors) == 0
-        assert result.validated_container_image == "quay.io/kubernaut-ai/scale:v1.0.0"
+        assert result.validated_execution_bundle == "quay.io/kubernaut-ai/scale:v1.0.0"
 
     def test_matching_context_still_validates_parameters(self):
         """Context match + invalid parameters → is_valid=False with param errors."""
@@ -326,7 +326,7 @@ class TestValidatorHappyPathWithContext:
         mock_ds_client = Mock()
         mock_workflow = Mock()
         mock_workflow.workflow_id = "uuid-1"
-        mock_workflow.container_image = "quay.io/kubernaut-ai/scale:v1.0.0"
+        mock_workflow.execution_bundle = "quay.io/kubernaut-ai/scale:v1.0.0"
         mock_workflow.action_type = "ScaleReplicas"
         mock_workflow.parameters = {
             "schema": {
@@ -351,7 +351,7 @@ class TestValidatorHappyPathWithContext:
 
         result = validator.validate(
             workflow_id="uuid-1",
-            container_image=None,
+            execution_bundle=None,
             parameters={},  # Missing required 'replicas'
         )
 

@@ -17,10 +17,11 @@ This document specifies the Kubernetes Conditions for the **RemediationRequest**
 
 ---
 
-## 🎯 Condition Types (7)
+## 🎯 Condition Types (9)
 
 | Condition Type | Purpose | Set By |
 |----------------|---------|--------|
+| `Ready` | Aggregate: True on Completed/Skipped, False on Failed/TimedOut/Cancelled | Reconciler |
 | `SignalProcessingReady` | SP CRD created successfully | Creator |
 | `SignalProcessingComplete` | SP completed/failed | Phase handler |
 | `AIAnalysisReady` | AI CRD created successfully | Creator |
@@ -28,6 +29,7 @@ This document specifies the Kubernetes Conditions for the **RemediationRequest**
 | `WorkflowExecutionReady` | WE CRD created successfully | Creator |
 | `WorkflowExecutionComplete` | WE completed/failed | Phase handler |
 | `RecoveryComplete` | Terminal phase reached | Reconciler |
+| `NotificationDelivered` | Notification delivery outcome | Reconciler |
 
 ---
 
@@ -90,6 +92,27 @@ This document specifies the Kubernetes Conditions for the **RemediationRequest**
 | `False` | `BlockedByConsecutiveFailures` | "Blocked after {count} consecutive failures" |
 | `False` | `InProgress` | "Remediation in progress (phase: {phase})" |
 
+**Note**: RecoveryComplete is now set on timeout and blocked-terminal paths (previously a gap).
+
+### Ready
+
+| Status | Reason | Message Pattern |
+|--------|--------|-----------------|
+| `True` | `Ready` | "Remediation completed or skipped" |
+| `False` | `NotReady` | "Remediation failed, timed out, or cancelled" |
+
+**When Set**: True when phase is Completed or Skipped; False when phase is Failed, TimedOut, or Cancelled.
+
+### NotificationDelivered
+
+| Status | Reason | Message Pattern |
+|--------|--------|-----------------|
+| `True` | `ReasonDeliverySucceeded` | "Notification delivered successfully" |
+| `False` | `ReasonDeliveryFailed` | "Notification delivery failed: {error}" |
+| `False` | `ReasonUserCancelled` | "NotificationRequest deleted by user" |
+
+**Constants**: Use `pkg/remediationrequest/conditions.go` constants: `ReasonDeliverySucceeded`, `ReasonDeliveryFailed`, `ReasonUserCancelled`.
+
 ---
 
 ## 🔧 Implementation
@@ -114,6 +137,7 @@ This document specifies the Kubernetes Conditions for the **RemediationRequest**
 | `controller/reconciler.go:handleExecutingPhase` | WorkflowExecutionComplete |
 | `controller/reconciler.go:transitionToCompleted` | RecoveryComplete (success) |
 | `controller/reconciler.go:transitionToFailed` | RecoveryComplete (failure) |
+| `controller/reconciler.go` (timeout/blocked-terminal paths) | RecoveryComplete (timeout, blocked) |
 
 ---
 

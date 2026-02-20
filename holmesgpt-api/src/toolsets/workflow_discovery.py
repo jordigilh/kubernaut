@@ -43,6 +43,12 @@ Audit Trail:
   - HAPI does NOT generate audit events
   - remediation_id passed via query param for correlation
 
+Label Detection (ADR-056 v1.4):
+  DetectedLabels are computed by get_resource_context (resource_context.py)
+  for the RCA target resource and stored in session_state["detected_labels"].
+  All three discovery tools read the cached labels from session_state for
+  workflow filtering. Discovery tools do not compute labels themselves.
+
 Configuration:
   - DATA_STORAGE_URL: Data Storage Service endpoint (default: http://data-storage:8080)
   - DATA_STORAGE_TIMEOUT: HTTP timeout in seconds (default: 60)
@@ -105,7 +111,7 @@ def strip_failed_detections(detected_labels: DetectedLabels) -> DetectedLabels:
 
     # Handle both dict and Pydantic model
     if isinstance(detected_labels, dict):
-        failed_fields = set(detected_labels.get("failed_detections", []))
+        failed_fields = set(detected_labels.get("failedDetections") or detected_labels.get("failed_detections") or [])
         clean_dict = {k: v for k, v in detected_labels.items() if v is not None}
     else:
         # Get list of failed detection field names
@@ -129,6 +135,34 @@ def strip_failed_detections(detected_labels: DetectedLabels) -> DetectedLabels:
 
     # Return new DetectedLabels with cleaned data
     return DetectedLabels(**clean_dict)
+
+
+def _build_cluster_context_labels(raw_labels) -> Dict[str, Any]:
+    """Build a clean label dict for the LLM-facing cluster_context.
+
+    Unlike DS query filters (which use strip_failed_detections + exclude_defaults),
+    cluster_context preserves ``False`` values because they are informative to the
+    LLM (e.g., ``pdbProtected=false``).  Failed detection fields are fully excluded
+    so the LLM does not see unreliable values.
+
+    ADR-056 v1.3 / DD-HAPI-018 v1.1 consumer guidance.
+    """
+    if isinstance(raw_labels, dict):
+        failed = set(
+            raw_labels.get("failedDetections")
+            or raw_labels.get("failed_detections")
+            or []
+        )
+        clean = {k: v for k, v in raw_labels.items() if v is not None}
+    else:
+        failed = set(getattr(raw_labels, "failedDetections", None) or [])
+        clean = raw_labels.model_dump(exclude_none=True)
+
+    clean.pop("failedDetections", None)
+    clean.pop("failed_detections", None)
+    for field in failed:
+        clean.pop(field, None)
+    return clean
 
 
 def _resources_match(r1: Dict[str, str], r2: Dict[str, Any]) -> bool:
@@ -292,6 +326,7 @@ class _DiscoveryToolBase(Tool):
         custom_labels: Optional[Dict[str, List[str]]] = None,
         detected_labels: Optional[DetectedLabels] = None,
         http_session: Optional[Any] = None,
+        session_state: Optional[Dict[str, Any]] = None,
     ):
         super().__init__(
             name=name,
@@ -314,8 +349,6 @@ class _DiscoveryToolBase(Tool):
         )
 
         # Authenticated requests.Session for DataStorage calls (DD-AUTH-005).
-        # In production, ServiceAccountAuthSession injects the SA token.
-        # For integration tests, StaticTokenAuthSession can be provided.
         object.__setattr__(self, "_http_session", http_session)
 
         # Signal context filters (set once, propagated to all steps)
@@ -327,6 +360,10 @@ class _DiscoveryToolBase(Tool):
         object.__setattr__(self, "_custom_labels", custom_labels or {})
         object.__setattr__(self, "_detected_labels", detected_labels)
 
+        # ADR-056 v1.4: Shared session state for inter-tool communication.
+        # Labels are detected by get_resource_context and stored in session_state.
+        object.__setattr__(self, "_session_state", session_state)
+
     def _build_context_params(self) -> Dict[str, Any]:
         """
         Build query parameters dict with signal context filters.
@@ -336,14 +373,14 @@ class _DiscoveryToolBase(Tool):
         DD-HAPI-017: detected_labels propagated when present (DD-WORKFLOW-001 v2.1:
         strip_failed_detections applied before sending).
 
+        ADR-056 v1.4: detected_labels are read from session_state["detected_labels"],
+        populated by get_resource_context (see resource_context.py).
+
         NOTE: severity, component, environment, and priority are ALWAYS included
         because the DS OpenAPI spec declares them as required: true. Omitting any
         of them causes a 400 Bad Request from the ogen request validator.
-        The `or ""` guard converts None to empty string to prevent "None" literals
-        in query params.
         """
         params: Dict[str, Any] = {}
-        # DS OpenAPI: these 4 parameters are required: true — always include them
         params["severity"] = self._severity or ""
         params["component"] = self._component or ""
         params["environment"] = self._environment or ""
@@ -352,11 +389,21 @@ class _DiscoveryToolBase(Tool):
             params["remediation_id"] = self._remediation_id
         if self._custom_labels:
             params["custom_labels"] = json.dumps(self._custom_labels)
-        if self._detected_labels:
-            clean_labels = strip_failed_detections(self._detected_labels)
-            clean_dict = clean_labels.model_dump(exclude_defaults=True, exclude_none=True)
-            if clean_dict:
-                params["detected_labels"] = json.dumps(clean_dict)
+
+        # ADR-056 v1.4: Read detected_labels from session_state (populated
+        # by get_resource_context). Failed detections are
+        # stripped, then default/false values are excluded because DS
+        # filters only need positive signals (True, non-empty string).
+        if self._session_state and "detected_labels" in self._session_state:
+            raw_labels = self._session_state["detected_labels"]
+            if raw_labels:
+                clean = _build_cluster_context_labels(raw_labels)
+                ds_dict = {
+                    k: v for k, v in clean.items()
+                    if v is not None and v is not False and v != ""
+                }
+                if ds_dict:
+                    params["detected_labels"] = json.dumps(ds_dict)
         return params
 
     def _do_get(self, url: str, extra_params: Optional[Dict] = None) -> Dict:
@@ -428,6 +475,7 @@ class ListAvailableActionsTool(_DiscoveryToolBase):
         custom_labels: Optional[Dict[str, List[str]]] = None,
         detected_labels: Optional[DetectedLabels] = None,
         http_session: Optional[Any] = None,
+        session_state: Optional[Dict[str, Any]] = None,
     ):
         super().__init__(
             name="list_available_actions",
@@ -454,7 +502,10 @@ class ListAvailableActionsTool(_DiscoveryToolBase):
                 "Review ALL returned action types before selecting one. "
                 "Each action type includes 'when_to_use' and 'when_not_to_use' guidance — "
                 "use these to decide which action type best matches the incident. "
-                "If hasMore is true, call again with increased offset to see all action types."
+                "If hasMore is true, call again with increased offset to see all action types. "
+                "If a 'cluster_context' section is present in the response, it contains "
+                "auto-detected infrastructure characteristics (e.g., gitOpsManaged, hpaEnabled, "
+                "pdbProtected) for the target resource. Use these to inform your action type selection."
             ),
             data_storage_url=data_storage_url,
             remediation_id=remediation_id,
@@ -465,6 +516,7 @@ class ListAvailableActionsTool(_DiscoveryToolBase):
             custom_labels=custom_labels,
             detected_labels=detected_labels,
             http_session=http_session,
+            session_state=session_state,
         )
 
     def _invoke(
@@ -490,6 +542,30 @@ class ListAvailableActionsTool(_DiscoveryToolBase):
                 f"✅ Step 1 complete: {len(data.get('actionTypes', []))} action types, "
                 f"total={data.get('pagination', {}).get('totalCount', '?')}"
             )
+
+            # ADR-056 v1.3 / BR-HAPI-017-007: Surface detected labels as
+            # read-only cluster_context so the LLM can reason about
+            # infrastructure characteristics when selecting an action type.
+            # Unlike DS query filters (which use exclude_defaults to skip
+            # false booleans), cluster_context preserves false values because
+            # they are informative to the LLM (e.g., pdbProtected=false).
+            if self._session_state and self._session_state.get("detected_labels"):
+                raw_labels = self._session_state["detected_labels"]
+                if raw_labels:
+                    clean_dict = _build_cluster_context_labels(raw_labels)
+                    if clean_dict:
+                        data["cluster_context"] = {
+                            "detected_labels": clean_dict,
+                            "note": (
+                                "These infrastructure characteristics were auto-detected "
+                                "for the remediation target resource. Consider them when "
+                                "selecting an action type."
+                            ),
+                        }
+                        logger.info(
+                            f"📋 BR-HAPI-017-007: Surfaced {len(clean_dict)} detected labels "
+                            f"as cluster_context: {list(clean_dict.keys())}"
+                        )
 
             return StructuredToolResult(
                 status=StructuredToolResultStatus.SUCCESS,
@@ -540,6 +616,7 @@ class ListWorkflowsTool(_DiscoveryToolBase):
         custom_labels: Optional[Dict[str, List[str]]] = None,
         detected_labels: Optional[DetectedLabels] = None,
         http_session: Optional[Any] = None,
+        session_state: Optional[Dict[str, Any]] = None,
     ):
         super().__init__(
             name="list_workflows",
@@ -584,6 +661,7 @@ class ListWorkflowsTool(_DiscoveryToolBase):
             custom_labels=custom_labels,
             detected_labels=detected_labels,
             http_session=http_session,
+            session_state=session_state,
         )
 
     def _invoke(
@@ -670,6 +748,7 @@ class GetWorkflowTool(_DiscoveryToolBase):
         custom_labels: Optional[Dict[str, List[str]]] = None,
         detected_labels: Optional[DetectedLabels] = None,
         http_session: Optional[Any] = None,
+        session_state: Optional[Dict[str, Any]] = None,
     ):
         super().__init__(
             name="get_workflow",
@@ -703,6 +782,7 @@ class GetWorkflowTool(_DiscoveryToolBase):
             custom_labels=custom_labels,
             detected_labels=detected_labels,
             http_session=http_session,
+            session_state=session_state,
         )
 
     def _invoke(
@@ -792,6 +872,7 @@ class WorkflowDiscoveryToolset(Toolset):
         custom_labels: Optional[Dict[str, List[str]]] = None,
         detected_labels: Optional[DetectedLabels] = None,
         http_session: Optional[Any] = None,
+        session_state: Optional[Dict[str, Any]] = None,
     ):
         """
         Initialize the three-step discovery toolset.
@@ -808,8 +889,9 @@ class WorkflowDiscoveryToolset(Toolset):
             http_session: Optional authenticated requests.Session for DataStorage
                          calls (DD-AUTH-005). If None, falls back to unauthenticated
                          requests.get().
+            session_state: Shared mutable dict for inter-tool communication (ADR-056 v1.4).
+                Labels are populated by get_resource_context and read by discovery tools.
         """
-        # Shared constructor kwargs for all three tools
         shared_kwargs = dict(
             remediation_id=remediation_id,
             severity=severity,
@@ -819,6 +901,7 @@ class WorkflowDiscoveryToolset(Toolset):
             custom_labels=custom_labels,
             detected_labels=detected_labels,
             http_session=http_session,
+            session_state=session_state,
         )
 
         super().__init__(

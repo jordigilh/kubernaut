@@ -56,8 +56,8 @@ Kubernaut's Remediation Orchestrator allows operators to cancel notifications be
 ### **Step 1: List NotificationRequests**
 
 ```bash
-# List all NotificationRequests for a RemediationRequest
-kubectl get notificationrequests -n <namespace> -l kubernaut.ai/remediation-request=<rr-name>
+# List all NotificationRequests for a RemediationRequest (Issue #91: use field selector, not labels)
+kubectl get notificationrequests -n <namespace> --field-selector spec.remediationRequestRef.name=<rr-name>
 
 # Example output:
 # NAME                    TYPE       PRIORITY   STATUS      AGE
@@ -115,7 +115,7 @@ kubectl get remediationrequest <rr-name> -n <namespace> -o jsonpath='{.status.co
 # {
 #   "type": "NotificationDelivered",
 #   "status": "False",
-#   "reason": "UserCancelled",
+#   "reason": "UserCancelled",   # Constant: remediationrequest.ReasonUserCancelled
 #   "message": "NotificationRequest deleted by user",
 #   "lastTransitionTime": "2025-12-13T10:30:00Z"
 # }
@@ -297,14 +297,13 @@ kubectl get notificationrequest <notif-name> -n <namespace> -o jsonpath='{.statu
 kubectl delete notificationrequest <notif-name> -n <namespace>
 ```
 
-### **2. Use Labels for Bulk Operations**
+### **2. Use Field Selectors for Bulk Operations**
 
-Cancel multiple notifications efficiently using label selectors.
+Cancel multiple notifications efficiently using field selectors (Issue #91: labels replaced by spec fields).
 
 ```bash
-# Cancel all approval notifications for a specific RR
-kubectl delete notificationrequests -n <namespace> \
-  -l kubernaut.ai/remediation-request=<rr-name>,kubernaut.ai/notification-type=approval
+# Cancel all notifications for a specific RR (Issue #91: use field selector)
+kubectl delete notificationrequests -n <namespace> --field-selector spec.remediationRequestRef.name=<rr-name>
 ```
 
 ### **3. Monitor Cancellation Patterns**

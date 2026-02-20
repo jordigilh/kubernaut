@@ -26,6 +26,10 @@ import (
 	sharedconfig "github.com/jordigilh/kubernaut/internal/config"
 )
 
+// DefaultConfigPath is the standard Kubernetes ConfigMap mount path for this service.
+// ADR-030: All services MUST use /etc/{service}/config.yaml as the default.
+const DefaultConfigPath = "/etc/gateway/config.yaml"
+
 // ServerConfig is the top-level configuration for the Gateway service.
 // Organized by Single Responsibility Principle for better maintainability.
 type ServerConfig struct {
@@ -222,34 +226,54 @@ func (r *RetrySettings) Validate() error {
 	return nil
 }
 
-// LoadFromFile loads configuration from a YAML file
+// DefaultServerConfig returns safe defaults for the Gateway service.
+// ADR-030: Used when no --config file is specified.
+func DefaultServerConfig() *ServerConfig {
+	return &ServerConfig{
+		Server: ServerSettings{
+			ListenAddr:            ":8080",
+			MaxConcurrentRequests: 100,
+			ReadTimeout:           30 * time.Second,
+			WriteTimeout:          30 * time.Second,
+			IdleTimeout:           120 * time.Second,
+		},
+		DataStorage: sharedconfig.DefaultDataStorageConfig(),
+		Processing: ProcessingSettings{
+			Retry: DefaultRetrySettings(),
+		},
+	}
+}
+
+// LoadFromFile loads configuration from a YAML file with defaults.
+// ADR-030: Service Configuration Management pattern.
+// Graceful degradation: Falls back to defaults if file not found or invalid.
 func LoadFromFile(path string) (*ServerConfig, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read config file: %w", err)
+	cfg := DefaultServerConfig()
+
+	if path == "" {
+		return cfg, nil
 	}
 
-	var cfg ServerConfig
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("failed to parse config: %w", err)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return cfg, nil
+	}
+
+	if err := yaml.Unmarshal(data, cfg); err != nil {
+		return cfg, nil
 	}
 
 	// Apply retry defaults if not configured
-	// BR-GATEWAY-111: Default retry configuration
 	if cfg.Processing.Retry.MaxAttempts == 0 {
-		defaults := DefaultRetrySettings()
-		cfg.Processing.Retry = defaults
+		cfg.Processing.Retry = DefaultRetrySettings()
 	}
 
 	// Apply server defaults for concurrency limiting
-	// ADR-048-ADDENDUM-001: Default to 100 concurrent requests (defense-in-depth with Nginx/HAProxy)
-	// 0 = unlimited (not recommended for production)
-	// 100 = sensible default that prevents per-pod overload
 	if cfg.Server.MaxConcurrentRequests == 0 {
 		cfg.Server.MaxConcurrentRequests = 100
 	}
 
-	return &cfg, nil
+	return cfg, nil
 }
 
 // LoadFromEnv overrides configuration values with environment variables.

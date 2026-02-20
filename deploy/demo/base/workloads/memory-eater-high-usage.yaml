@@ -8,20 +8,20 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: memory-eater
+  name: memory-eater-high-usage
   namespace: demo-workloads
   labels:
-    app: memory-eater
+    app: memory-eater-high-usage
     kubernaut.ai/managed: "true"
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: memory-eater
+      app: memory-eater-high-usage
   template:
     metadata:
       labels:
-        app: memory-eater
+        app: memory-eater-high-usage
         kubernaut.ai/managed: "true"
     spec:
       containers:

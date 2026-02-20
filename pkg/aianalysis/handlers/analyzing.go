@@ -29,6 +29,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/rego"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // P1.3 Refactoring: RegoEvaluatorInterface and AnalyzingAuditClientInterface moved to interfaces.go
@@ -105,6 +106,9 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 			h.log.V(1).Info("Failed to record analysis failure audit", "error", auditErr)
 		}
 
+		// Set WorkflowResolved=False and ApprovalRequired=False before AnalysisComplete
+		aianalysis.SetWorkflowResolved(analysis, false, aianalysis.ReasonWorkflowResolutionFailed, "No workflow selected from investigation")
+		aianalysis.SetApprovalRequired(analysis, false, "NotApplicable", "No workflow to approve")
 		// Set AnalysisComplete=False condition
 		aianalysis.SetAnalysisComplete(analysis, false, "No workflow selected from investigation")
 
@@ -150,6 +154,9 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 		h.log.V(1).Info("Failed to record analysis failure audit", "error", auditErr)
 	}
 
+	// Set WorkflowResolved=False and ApprovalRequired=False before AnalysisComplete
+	aianalysis.SetWorkflowResolved(analysis, false, aianalysis.ReasonWorkflowResolutionFailed, "Rego evaluation failed, cannot resolve workflow")
+	aianalysis.SetApprovalRequired(analysis, false, "NotApplicable", "Rego evaluation failed, approval status unknown")
 	// Set AnalysisComplete=False condition
 	aianalysis.SetAnalysisComplete(analysis, false, "Rego policy evaluation failed: "+err.Error())
 
@@ -350,19 +357,22 @@ func (h *AnalyzingHandler) buildPolicyInput(analysis *aianalysisv1.AIAnalysis) *
 		input.Confidence = analysis.Status.SelectedWorkflow.Confidence
 	}
 
-	// Get TargetInOwnerChain from status (populated by InvestigatingHandler)
-	if analysis.Status.TargetInOwnerChain != nil {
-		input.TargetInOwnerChain = *analysis.Status.TargetInOwnerChain
+	// ADR-055: Populate AffectedResource for Rego policy evaluation
+	if analysis.Status.RootCauseAnalysis != nil && analysis.Status.RootCauseAnalysis.AffectedResource != nil {
+		ar := analysis.Status.RootCauseAnalysis.AffectedResource
+		input.AffectedResource = &rego.AffectedResourceInput{
+			Kind:      ar.Kind,
+			Name:      ar.Name,
+			Namespace: ar.Namespace,
+		}
 	}
 
-	// Populate DetectedLabels from EnrichmentResults (per DD-WORKFLOW-001 v2.2)
-	// Convert typed struct to map for Rego policy evaluation
-	// Path: analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.DetectedLabels
-	input.DetectedLabels = h.buildDetectedLabelsMap(analysis)
+	// ADR-056: DetectedLabels read exclusively from PostRCAContext (HAPI post-RCA).
+	dl := h.resolveDetectedLabels(analysis)
+	input.DetectedLabels = h.detectedLabelsToMap(dl)
 
-	// Populate FailedDetections from DetectedLabels (per DD-WORKFLOW-001 v2.2)
-	if analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.DetectedLabels != nil {
-		input.FailedDetections = analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.DetectedLabels.FailedDetections
+	if dl != nil {
+		input.FailedDetections = dl.FailedDetections
 	}
 
 	// Populate CustomLabels from EnrichmentResults
@@ -370,6 +380,23 @@ func (h *AnalyzingHandler) buildPolicyInput(analysis *aianalysisv1.AIAnalysis) *
 		input.CustomLabels = analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.CustomLabels
 	} else {
 		input.CustomLabels = make(map[string][]string)
+	}
+
+	// Populate BusinessClassification from EnrichmentResults (BR-SP-002, BR-SP-080, BR-SP-081)
+	if bc := analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.BusinessClassification; bc != nil {
+		input.BusinessClassification = make(map[string]string)
+		if bc.BusinessUnit != "" {
+			input.BusinessClassification["business_unit"] = bc.BusinessUnit
+		}
+		if bc.ServiceOwner != "" {
+			input.BusinessClassification["service_owner"] = bc.ServiceOwner
+		}
+		if bc.Criticality != "" {
+			input.BusinessClassification["criticality"] = bc.Criticality
+		}
+		if bc.SLARequirement != "" {
+			input.BusinessClassification["sla_requirement"] = bc.SLARequirement
+		}
 	}
 
 	return input
@@ -385,30 +412,31 @@ func getEnvironment(analysis *aianalysisv1.AIAnalysis) string {
 	return analysis.Spec.AnalysisRequest.SignalContext.Environment
 }
 
-// buildDetectedLabelsMap converts the typed DetectedLabels struct to a map for Rego.
-// Per DD-WORKFLOW-001 v2.2: DetectedLabels uses snake_case field names in JSON.
-// Rego policies access these as input.detected_labels.git_ops_managed, etc.
-func (h *AnalyzingHandler) buildDetectedLabelsMap(analysis *aianalysisv1.AIAnalysis) map[string]interface{} {
-	labels := make(map[string]interface{})
+// resolveDetectedLabels returns DetectedLabels from PostRCAContext.
+// ADR-056: PostRCAContext.DetectedLabels are computed by HAPI at RCA time
+// and are the sole source of cluster characteristics for Rego policy input.
+func (h *AnalyzingHandler) resolveDetectedLabels(analysis *aianalysisv1.AIAnalysis) *sharedtypes.DetectedLabels {
+	if analysis.Status.PostRCAContext != nil {
+		return analysis.Status.PostRCAContext.DetectedLabels
+	}
+	return nil
+}
 
-	dl := analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.DetectedLabels
+// detectedLabelsToMap converts the typed DetectedLabels struct to a map for Rego.
+// Per DD-WORKFLOW-001 v2.2: DetectedLabels uses snake_case field names in JSON.
+// Rego policies access these as input.detected_labels.stateful, etc.
+func (h *AnalyzingHandler) detectedLabelsToMap(dl *sharedtypes.DetectedLabels) map[string]interface{} {
+	labels := make(map[string]interface{})
 	if dl == nil {
 		return labels
 	}
 
-	// GitOps management (per DD-WORKFLOW-001 v2.2)
 	labels["git_ops_managed"] = dl.GitOpsManaged
 	labels["git_ops_tool"] = dl.GitOpsTool
-
-	// Workload protection
 	labels["pdb_protected"] = dl.PDBProtected
 	labels["hpa_enabled"] = dl.HPAEnabled
-
-	// Workload characteristics
 	labels["stateful"] = dl.Stateful
 	labels["helm_managed"] = dl.HelmManaged
-
-	// Security posture
 	labels["network_isolated"] = dl.NetworkIsolated
 	labels["service_mesh"] = dl.ServiceMesh
 

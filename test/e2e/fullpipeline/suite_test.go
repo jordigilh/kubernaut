@@ -220,6 +220,15 @@ var _ = SynchronizedAfterSuite(
 			return
 		}
 
+		// Collect must-gather BEFORE coverage collection.
+		// Coverage collection scales down controllers, which terminates pods and loses their logs.
+		if anyFailure && !setupFailed {
+			homeDir, _ := os.UserHomeDir()
+			kp := fmt.Sprintf("%s/.kube/%s-config", homeDir, clusterName)
+			infrastructure.MustGatherPodLogs(clusterName, kp, "kubernaut-system", "fullpipeline", GinkgoWriter)
+			infrastructure.MustGatherPodLogs(clusterName, kp, "kubernaut-workflows", "fullpipeline", GinkgoWriter)
+		}
+
 		// DD-TEST-007: Collect coverage before cluster deletion
 		if os.Getenv("E2E_COVERAGE") == "true" && !setupFailed {
 			// Collect coverage for each Go controller service

@@ -3,7 +3,7 @@
 > **📋 Changelog**
 > | Version | Date | Changes | Reference |
 > |---------|------|---------|-----------|
-> | v1.3 | 2025-11-30 | Added OwnerChain, DetectedLabels, CustomLabels per DD-WORKFLOW-001 v1.8 | [DD-WORKFLOW-001 v1.8](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md), [HANDOFF v3.2](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) |
+> | v1.3 | 2025-11-30 | Added OwnerChain (**ADR-055: removed**), DetectedLabels (**ADR-056: removed, now in PostRCAContext**), CustomLabels per DD-WORKFLOW-001 v1.8 | [DD-WORKFLOW-001 v1.8](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md), [HANDOFF v3.2](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) |
 > | v1.2 | 2025-11-28 | API group standardized to kubernaut.io/v1alpha1, RBAC updated | [001-crd-api-group-rationale.md](../../../architecture/decisions/001-crd-api-group-rationale.md) |
 > | v1.1 | 2025-11-27 | Rename: RemediationProcessing* → SignalProcessing* | [DD-SIGNAL-PROCESSING-001](../../../architecture/decisions/DD-SIGNAL-PROCESSING-001-service-rename.md) |
 > | v1.1 | 2025-11-27 | Context API deprecated: Recovery context from spec.failureData | [DD-CONTEXT-006](../../../architecture/decisions/DD-CONTEXT-006-CONTEXT-API-DEPRECATION.md) |
@@ -442,7 +442,7 @@ func (r *SignalProcessingReconciler) reconcileEnriching(ctx context.Context, sp 
         log.Error(err, "Failed to build owner chain (non-fatal)")
         // Continue - owner chain is used for validation, not blocking
     } else {
-        sp.Status.EnrichmentResults.OwnerChain = ownerChain
+        sp.Status.EnrichmentResults.OwnerChain = ownerChain  // ADR-055: removed from propagation
         log.Info("Owner chain built",
             "length", len(ownerChain),
             "chain", formatOwnerChain(ownerChain))
@@ -454,7 +454,7 @@ func (r *SignalProcessingReconciler) reconcileEnriching(ctx context.Context, sp 
     // Step 2: CustomLabels (Rego policy evaluation)
     // ========================================
 
-    // Step 1: Auto-detect cluster characteristics (V1.0)
+    // Step 1: Auto-detect cluster characteristics (V1.0) (**ADR-056: removed from propagation, now in PostRCAContext**)
     detectedLabels := r.LabelDetector.DetectLabels(ctx, sp.Status.EnrichmentResults.KubernetesContext)
     sp.Status.EnrichmentResults.DetectedLabels = detectedLabels
     log.Info("DetectedLabels populated",

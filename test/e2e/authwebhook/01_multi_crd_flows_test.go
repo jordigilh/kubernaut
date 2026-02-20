@@ -84,7 +84,7 @@ var _ = Describe("E2E-MULTI-01: Multiple CRDs in Sequence", Ordered, func() {
 				WorkflowRef: workflowexecutionv1.WorkflowRef{
 					WorkflowID:     "test-workflow",
 					Version:        "v1",
-					ContainerImage: "test/image:latest",
+					ExecutionBundle: "test/image:latest",
 				},
 			},
 		}
@@ -135,7 +135,7 @@ var _ = Describe("E2E-MULTI-01: Multiple CRDs in Sequence", Ordered, func() {
 				RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{
 					WorkflowID:     "test-workflow",
 					Version:        "v1",
-					ContainerImage: "test/image:latest",
+					ExecutionBundle: "test/image:latest",
 					Rationale:      "Test remediation plan for E2E validation",
 				},
 				// REQUIRED FIELDS (CRD validation)
@@ -240,7 +240,7 @@ var _ = Describe("E2E-MULTI-02: Concurrent Webhook Requests", func() {
 					WorkflowRef: workflowexecutionv1.WorkflowRef{
 						WorkflowID:     fmt.Sprintf("test-workflow-%d", idx),
 						Version:        "v1",
-						ContainerImage: "test/image:latest",
+						ExecutionBundle: "test/image:latest",
 					},
 				},
 			}

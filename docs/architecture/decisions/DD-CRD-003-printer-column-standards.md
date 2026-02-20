@@ -13,6 +13,7 @@
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2026-02-05 | AI Assistant | Initial standard: per-CRD column registry, RR/SP additions, Reason column gap analysis |
+| 1.1 | 2026-02-18 | AI Assistant | Issue #79: Ready + Reason column IMPLEMENTED; ResourceLocked/RemediationExecuted removed from gaps; NotificationDelivered uses centralized constants |
 
 ---
 
@@ -50,7 +51,7 @@ Every Kubernaut CRD SHOULD include at minimum:
 |--------|---------|-----------|
 | **Phase** | Current lifecycle state | MUST (if CRD has phases) |
 | **Age** | Time since creation | MUST |
-| **Reason** | Why it's in this state | SHOULD (pending Ready condition, see Future Work) |
+| **Reason** | Why it's in this state | ✅ IMPLEMENTED (Ready condition + printer column on all 7 CRDs) |
 
 Domain-specific columns (Confidence, WorkflowID, Severity, etc.) are added per-CRD as needed.
 
@@ -142,35 +143,31 @@ Assessment: Good coverage. 5 columns with clear operational value.
 
 ---
 
-## Future Work: Ready Condition + Reason Column
+## Ready Condition + Reason Column (IMPLEMENTED -- Issue #79)
 
-### Gap Analysis (2026-02-05)
+### Implementation Status (2026-02-18)
 
-An audit of all 5 controllers revealed that **no CRD has a unified `Ready` condition**. Each uses phase-specific conditions instead (e.g., `InvestigationComplete`, `ExecutionCreated`, `RecoveryComplete`). This means a `Reason` printer column via `.status.conditions[?(@.type=="Ready")].reason` is not possible today.
+Issue #79 implemented a unified `Ready` condition across all 7 active CRD types and added a `Reason` printer column using `.status.conditions[?(@.type=="Ready")].reason`. KubernetesExecution is deprecated and excluded.
 
-### Conditions Audit Findings
+### Conditions Audit (Post Issue #79)
 
-| Controller | Condition Count | Has Ready? | Gaps |
-|------------|----------------|------------|------|
-| AIAnalysis | 5 | No | `InvestigationComplete=False` never set on failure |
-| WorkflowExecution | 5 | No | `ResourceLocked` defined but never used |
-| RemediationOrchestrator | 8 | No | `NotificationDelivered` uses inline strings; `RemediationExecuted` documented but not implemented |
-| SignalProcessing | 4 | No | `ClassificationComplete=False` and `EnrichmentComplete=False` never set on failure paths |
-| Notification | 1 | No | Fallback routing uses wrong reason constant; manual slice manipulation instead of `meta.SetStatusCondition` |
+| Controller | Condition Count | Has Ready? | Status |
+|------------|----------------|------------|--------|
+| AIAnalysis | 6 | Yes | `InvestigationComplete=False` wired on all failure paths; `WorkflowResolved`/`ApprovalRequired` gap fixed |
+| WorkflowExecution | 5 | Yes | `ResourceLocked` dead code removed; `ObservedGeneration` fixed |
+| RemediationOrchestrator (RR) | 9 | Yes | `NotificationDelivered` uses centralized constants; `RemediationExecuted` removed (never implemented); `RecoveryComplete` gap fixed on timeout/blocked-terminal paths |
+| RemediationOrchestrator (RAR) | 4 | Yes | Ready wired on Approved/Rejected/Expired paths |
+| SignalProcessing | 5 | Yes | `ClassificationComplete=False` and `EnrichmentComplete=False` wired on failure paths |
+| Notification | 2 | Yes | `RoutingResolved` persistence bug fixed (conditions parameter); fallback reason bug fixed; `meta.SetStatusCondition` used |
+| EffectivenessAssessment | 2 | Yes | Ready wired; `ObservedGeneration` fixed |
 
-### Tracked In
+### Changes Made
 
-- **GitHub Issue**: (see issue created for this effort)
-- **DD-CRD-002**: `DD-CRD-002-kubernetes-conditions-standard.md` (existing conditions standard)
-- **DD-EVENT-001**: `DD-EVENT-001-controller-event-registry.md` (event reason alignment)
-
-### Implementation Path
-
-1. Add a `Ready` condition type to each CRD's conditions helper
-2. Fix consistency gaps (set conditions on failure paths)
-3. Ensure `Ready` is updated on every meaningful state change
-4. Add `Reason` printer column: `+kubebuilder:printcolumn:name="Reason",type=string,JSONPath='.status.conditions[?(@.type=="Ready")].reason'`
-5. Regenerate CRD manifests
+- Added `ConditionReady`, `ReasonReady`, `ReasonNotReady`, and `SetReady()` to all 7 condition packages
+- Fixed `ObservedGeneration` in all condition setters across 7 packages (was missing in 6)
+- Added `Reason` printer column to all 7 CRDs (EA uses `ReadyReason` to avoid conflict with existing `assessmentReason` column)
+- Fixed `phase.IsTerminal()` pre-existing bug (missing `PhaseCancelled`)
+- Added terminal housekeeping safety net for externally-set terminal phases (e.g., `Cancelled`)
 
 ---
 
@@ -181,11 +178,10 @@ An audit of all 5 controllers revealed that **no CRD has a unified `Ready` condi
 - RemediationRequest is now usable in `kubectl get` for operational triage
 - SignalProcessing shows the primary triage dimension (Severity)
 - Cross-CRD standard prevents ad-hoc column proliferation
-- Clear path to unified Reason column via Ready condition
+- Unified `Ready` condition and `Reason` printer column implemented across all 7 CRDs (Issue #79)
 
 ### Negative
 
-- Reason column deferred until conditions infrastructure is fixed (separate effort)
 - Adding columns to existing CRDs changes `kubectl get` output format (minor disruption)
 
 ---

@@ -21,6 +21,10 @@ spec:
     - jsonPath: .status.outcome
       name: Outcome
       type: string
+    - jsonPath: .status.conditions[?(@.type=="Ready")].reason
+      name: Reason
+      priority: 1
+      type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
@@ -123,8 +127,7 @@ spec:
               originalPayload:
                 description: |-
                   Complete original webhook payload for debugging and audit
-                  Stored as []byte to preserve exact format
-                format: byte
+                  Issue #96: stored as string to avoid base64 encoding in CEL validation
                 type: string
               providerData:
                 description: |-
@@ -140,7 +143,6 @@ spec:
 
                   For Datadog (targetType="datadog"):
                     {"monitorId": 123, "host": "...", "tags": [...], "metricQuery": "...", ...}
-                format: byte
                 type: string
               receivedTime:
                 description: When Gateway received the signal
@@ -362,7 +364,6 @@ spec:
                     - Reason "DeliverySucceeded": Notification sent
                     - Reason "UserCancelled": User deleted NotificationRequest before delivery
                     - Reason "DeliveryFailed": NotificationRequest failed to deliver
-                  - "RemediationExecuted": True if workflow executed successfully
 
                   Conditions follow Kubernetes API conventions (KEP-1623).
                   Reference: BR-ORCH-029 (user cancellation), BR-ORCH-030 (status tracking)
@@ -849,13 +850,13 @@ spec:
                   Populated from workflowexecution.selection.completed audit event.
                   Reference: BR-AUDIT-005 Gap #5 (Workflow Selection)
                 properties:
-                  containerDigest:
-                    description: ContainerDigest for audit trail and reproducibility
-                    type: string
-                  containerImage:
+                  executionBundle:
                     description: |-
-                      ContainerImage resolved from workflow catalog
+                      ExecutionBundle resolved from workflow catalog
                       OCI bundle reference for Tekton PipelineRun
+                    type: string
+                  executionBundleDigest:
+                    description: ExecutionBundleDigest for audit trail and reproducibility
                     type: string
                   version:
                     description: Version of the workflow
@@ -864,7 +865,7 @@ spec:
                     description: WorkflowID is the catalog lookup key
                     type: string
                 required:
-                - containerImage
+                - executionBundle
                 - version
                 - workflowId
                 type: object
@@ -1033,6 +1034,8 @@ spec:
         type: object
     selectableFields:
     - jsonPath: .spec.signalFingerprint
+    - jsonPath: .spec.signalType
+    - jsonPath: .spec.severity
     served: true
     storage: true
     subresources:

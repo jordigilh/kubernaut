@@ -64,7 +64,7 @@ data:
       certDir: /tmp/k8s-webhook-server/serving-certs
       healthProbeAddr: ":8081"
     datastorage:
-      url: "http://data-storage-service:8080"
+      url: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
       timeout: 30s
       buffer:
         bufferSize: 1000

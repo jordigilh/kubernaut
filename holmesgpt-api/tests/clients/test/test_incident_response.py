@@ -43,14 +43,13 @@ class TestIncidentResponse(unittest.TestCase):
                 timestamp = '',
                 needs_human_review = True,
                 human_review_reason = 'workflow_not_found',
-                target_in_owner_chain = True,
                 warnings = [
                     ''
                     ],
                 alternative_workflows = [
                     holmesgpt_api_client.models.alternative_workflow.AlternativeWorkflow(
                         workflow_id = '', 
-                        container_image = '', 
+                        execution_bundle = '', 
                         confidence = 0.0, 
                         rationale = '', )
                     ],

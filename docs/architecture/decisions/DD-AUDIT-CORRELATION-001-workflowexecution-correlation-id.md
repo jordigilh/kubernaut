@@ -133,7 +133,7 @@ correlationID := wfe.Spec.RemediationRequestRef.Name
 grep -A 10 "Labels: map\[string\]string{" \
   pkg/remediationorchestrator/creator/workflowexecution.go
 ```
-**Expected**: Only `kubernaut.ai/remediation-request` and `kubernaut.ai/component` labels
+**Expected**: No `kubernaut.ai/*` labels on CRDs (Issue #91: migrated to spec fields; `spec.remediationRequestRef` used instead)
 
 2. **Check WFE Spec Field**:
 ```bash

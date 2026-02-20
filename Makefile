@@ -18,7 +18,8 @@ GOBIN=$(shell go env GOBIN)
 endif
 
 # CONTAINER_TOOL defines the container tool to be used for building images.
-CONTAINER_TOOL ?= docker
+# Auto-detect: prefer podman if available, fall back to docker.
+CONTAINER_TOOL ?= $(shell command -v podman >/dev/null 2>&1 && echo podman || echo docker)
 
 # Setting SHELL to bash allows bash commands to be executed by recipes.
 SHELL = /usr/bin/env bash -o pipefail
@@ -372,6 +373,7 @@ docker-push-%: docker-build-% ## Push service container image
 WORKFLOW_REGISTRY ?= quay.io/kubernaut-cicd/test-workflows
 WORKFLOW_VERSION ?= v1.0.0
 WORKFLOW_FIXTURES_DIR := test/fixtures/workflows
+WORKFLOW_PLACEHOLDER_DIR := test/fixtures/execution-placeholder
 # Platforms to build workflow images for (multi-arch manifest)
 WORKFLOW_PLATFORMS ?= linux/amd64,linux/arm64
 
@@ -390,17 +392,37 @@ build-test-workflows: ## Build all test workflow OCI images (multi-arch: amd64 +
 	@echo "  Version:   $(WORKFLOW_VERSION)"
 	@echo "  Platforms: $(WORKFLOW_PLATFORMS)"
 	@echo ""
+	@# Phase 0: Build placeholder execution image referenced by all Tekton workflow schemas.
+	@# All Tekton workflow-schema.yaml files point their execution.bundle at this image
+	@# so the DataStorage bundle-existence check (crane.Head) passes during registration.
+	@echo "  Building placeholder-execution -> $(WORKFLOW_REGISTRY)/placeholder-execution:$(WORKFLOW_VERSION)"
+	$(call _build_workflow_manifest,$(WORKFLOW_REGISTRY)/placeholder-execution:$(WORKFLOW_VERSION),$(WORKFLOW_PLACEHOLDER_DIR)/Dockerfile,$(WORKFLOW_PLACEHOLDER_DIR)/)
+	@# Phase 1: Build execution images for workflows with per-directory Dockerfiles.
+	@# These contain runnable content (scripts, kubectl, etc.) but NOT workflow-schema.yaml.
+	@# Tagged as :VERSION-exec so they can be referenced by digest in the schema.
+	@for dir in $(WORKFLOW_FIXTURES_DIR)/*/; do \
+		name=$$(basename "$$dir"); \
+		if [ "$$name" = "README.md" ] || [ ! -f "$$dir/workflow-schema.yaml" ]; then continue; fi; \
+		case "$$name" in *-v[0-9]*) continue ;; esac; \
+		if [ -f "$$dir/Dockerfile" ]; then \
+			ref="$(WORKFLOW_REGISTRY)/$$name:$(WORKFLOW_VERSION)-exec"; \
+			echo "  Building $$name (exec) -> $$ref"; \
+			$(CONTAINER_TOOL) rmi "$$ref" 2>/dev/null || true; \
+			$(CONTAINER_TOOL) manifest rm "$$ref" 2>/dev/null || true; \
+			$(CONTAINER_TOOL) build --platform $(WORKFLOW_PLATFORMS) --manifest "$$ref" -f "$$dir/Dockerfile" "$$dir" || exit 1; \
+		fi; \
+	done
+	@# Phase 2: Build schema-only images for ALL workflows using shared FROM scratch Dockerfile.
+	@# DataStorage pulls these to extract /workflow-schema.yaml for catalog registration.
 	@for dir in $(WORKFLOW_FIXTURES_DIR)/*/; do \
 		name=$$(basename "$$dir"); \
 		if [ "$$name" = "README.md" ] || [ ! -f "$$dir/workflow-schema.yaml" ]; then continue; fi; \
 		case "$$name" in *-v[0-9]*) continue ;; esac; \
 		ref="$(WORKFLOW_REGISTRY)/$$name:$(WORKFLOW_VERSION)"; \
-		dockerfile="$(WORKFLOW_FIXTURES_DIR)/Dockerfile"; \
-		if [ -f "$$dir/Dockerfile" ]; then dockerfile="$$dir/Dockerfile"; fi; \
-		echo "  Building $$name -> $$ref"; \
+		echo "  Building $$name (schema) -> $$ref"; \
 		$(CONTAINER_TOOL) rmi "$$ref" 2>/dev/null || true; \
 		$(CONTAINER_TOOL) manifest rm "$$ref" 2>/dev/null || true; \
-		$(CONTAINER_TOOL) build --platform $(WORKFLOW_PLATFORMS) --manifest "$$ref" -f "$$dockerfile" "$$dir" || exit 1; \
+		$(CONTAINER_TOOL) build --platform $(WORKFLOW_PLATFORMS) --manifest "$$ref" -f "$(WORKFLOW_FIXTURES_DIR)/Dockerfile" "$$dir" || exit 1; \
 	done
 	@# Multi-version variants for version management E2E tests (07_workflow_version_management_test.go)
 	@echo "  Building oom-recovery:v1.1.0 (version variant)"
@@ -417,12 +439,29 @@ push-test-workflows: ## Push test workflow multi-arch manifests to registry
 	@echo "  Version:   $(WORKFLOW_VERSION)"
 	@echo "  Platforms: $(WORKFLOW_PLATFORMS)"
 	@echo ""
+	@# Push placeholder execution image (referenced by all Tekton workflow schemas)
+	@echo "  Pushing placeholder-execution -> $(WORKFLOW_REGISTRY)/placeholder-execution:$(WORKFLOW_VERSION)"
+	@$(CONTAINER_TOOL) manifest push --all "$(WORKFLOW_REGISTRY)/placeholder-execution:$(WORKFLOW_VERSION)" "docker://$(WORKFLOW_REGISTRY)/placeholder-execution:$(WORKFLOW_VERSION)"
+	@echo "  ✅ Pushed $(WORKFLOW_REGISTRY)/placeholder-execution:$(WORKFLOW_VERSION)"
+	@# Push execution images first (workflows with per-directory Dockerfiles)
+	@for dir in $(WORKFLOW_FIXTURES_DIR)/*/; do \
+		name=$$(basename "$$dir"); \
+		if [ "$$name" = "README.md" ] || [ ! -f "$$dir/workflow-schema.yaml" ]; then continue; fi; \
+		case "$$name" in *-v[0-9]*) continue ;; esac; \
+		if [ -f "$$dir/Dockerfile" ]; then \
+			ref="$(WORKFLOW_REGISTRY)/$$name:$(WORKFLOW_VERSION)-exec"; \
+			echo "  Pushing $$name (exec) -> $$ref"; \
+			$(CONTAINER_TOOL) manifest push --all "$$ref" "docker://$$ref" || exit 1; \
+			echo "  ✅ Pushed $$ref"; \
+		fi; \
+	done
+	@# Push schema images for all workflows
 	@for dir in $(WORKFLOW_FIXTURES_DIR)/*/; do \
 		name=$$(basename "$$dir"); \
 		if [ "$$name" = "README.md" ] || [ ! -f "$$dir/workflow-schema.yaml" ]; then continue; fi; \
 		case "$$name" in *-v[0-9]*) continue ;; esac; \
 		ref="$(WORKFLOW_REGISTRY)/$$name:$(WORKFLOW_VERSION)"; \
-		echo "  Pushing $$name -> $$ref"; \
+		echo "  Pushing $$name (schema) -> $$ref"; \
 		$(CONTAINER_TOOL) manifest push --all "$$ref" "docker://$$ref" || exit 1; \
 		echo "  ✅ Pushed $$ref"; \
 	done
@@ -544,11 +583,17 @@ build-holmesgpt-api-image-e2e: ## Build holmesgpt-api Docker image (E2E - minima
 
 .PHONY: export-openapi-holmesgpt-api
 export-openapi-holmesgpt-api: ## Export holmesgpt-api OpenAPI spec from FastAPI (ADR-045)
-	@echo "📄 Exporting OpenAPI spec from FastAPI app..."
-	@cd holmesgpt-api && mkdir -p api
-	@cd holmesgpt-api && python3 -c "from src.main import app; import json; print(json.dumps(app.openapi(), indent=2))" > api/openapi.json
+	@echo "📄 Exporting OpenAPI spec from FastAPI app (containerized)..."
+	@mkdir -p holmesgpt-api/api
+	@podman run --rm \
+		-v $(CURDIR):/workspace:z \
+		-w /workspace/holmesgpt-api \
+		-e CONFIG_FILE=config.yaml \
+		-e OPENAPI_EXPORT=1 \
+		-e PYTHONUNBUFFERED=1 \
+		registry.access.redhat.com/ubi9/python-312:latest \
+		sh -c "find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null; pip install -q ./src/clients/datastorage && pip install -q -r requirements-slim.txt && python3 -c 'from src.main import app; import json; print(json.dumps(app.openapi(), indent=2))' > api/openapi.json && echo 'Schema count:' && python3 -c 'import json; spec=json.load(open(\"api/openapi.json\")); print(len(spec.get(\"components\", {}).get(\"schemas\", {})))'"
 	@echo "✅ OpenAPI spec exported: holmesgpt-api/api/openapi.json"
-	@cd holmesgpt-api && echo "📊 Schema count: $$(python3 -c \"import json; spec=json.load(open('api/openapi.json')); print(len(spec.get('components', {}).get('schemas', {})))\")"
 
 .PHONY: validate-openapi-holmesgpt-api
 validate-openapi-holmesgpt-api: export-openapi-holmesgpt-api ## Validate holmesgpt-api OpenAPI spec is committed (CI - ADR-045)
@@ -756,7 +801,7 @@ test-e2e-fullpipeline: ginkgo ensure-coverage-dirs ## Run full pipeline E2E test
 	@echo "   All Kubernaut services in a single Kind cluster"
 	@echo "   Event → Gateway → RO → SP → AA → HAPI → WE(Job) → Notification"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v --timeout=50m --procs=1 ./test/e2e/fullpipeline/...
+	@$(GINKGO) -v --timeout=50m --procs=$(TEST_PROCS) ./test/e2e/fullpipeline/...
 	@echo "✅ Full Pipeline E2E tests completed!"
 
 ##@ Legacy Aliases (Backward Compatibility)
@@ -944,10 +989,15 @@ demo-load-images: ## Load demo images into Kind cluster
 	@echo "  All images loaded."
 
 .PHONY: demo-deploy
-demo-deploy: ## Deploy Kubernaut platform to Kind cluster
+demo-deploy: ## Deploy Kubernaut platform to Kind cluster (DEMO_TAG=<tag> DEMO_REGISTRY=<registry>)
 	@echo "🚀 Deploying Kubernaut demo..."
 	@echo "  Applying CRDs..."
 	KUBECONFIG=$(DEMO_KUBECONFIG) kubectl apply -f config/crd/bases/
+	@echo "  Setting image tags to $(DEMO_REGISTRY)/*:$(DEMO_TAG)..."
+	@cd deploy/demo/overlays/kind && \
+	for svc in $(DEMO_SERVICES) holmesgpt-api; do \
+	    kustomize edit set image $(DEMO_REGISTRY)/$$svc:$(DEMO_TAG); \
+	done
 	KUBECONFIG=$(DEMO_KUBECONFIG) kubectl apply -k deploy/demo/overlays/kind/
 	@echo "  Waiting for PostgreSQL..."
 	KUBECONFIG=$(DEMO_KUBECONFIG) kubectl wait --for=condition=ready pod -l app=postgresql \
@@ -967,13 +1017,46 @@ demo-deploy: ## Deploy Kubernaut platform to Kind cluster
 	@echo "   DataStorage:  http://localhost:30081"
 	@echo "   Prometheus:   http://localhost:9190"
 	@echo "   AlertManager: http://localhost:9193"
+	@echo "   Grafana:      http://localhost:3000  (admin/kubernaut)"
 
 .PHONY: demo-setup
 demo-setup: demo-build-images demo-create-cluster demo-load-images demo-deploy ## Full demo setup (build, cluster, deploy)
 	@echo ""
 	@echo "🎉 Demo environment ready!"
-	@echo "   Apply LLM credentials:  kubectl apply -f deploy/demo/credentials/vertex-ai-example.yaml"
-	@echo "   Trigger workloads:       kubectl apply -k deploy/demo/base/workloads/"
+	@echo "   Apply LLM credentials:  kubectl --kubeconfig $(DEMO_KUBECONFIG) apply -f deploy/demo/credentials/<your-provider>.yaml"
+	@echo "   Trigger OOMKill demo:    make demo-trigger-oomkill"
+	@echo "   Trigger high-usage demo: make demo-trigger-high-usage"
+	@echo "   Reset workloads:         make demo-reset-workloads"
+
+.PHONY: demo-trigger-oomkill
+demo-trigger-oomkill: ## Deploy memory-eater OOMKill workload (triggers remediation pipeline)
+	@echo "💥 Deploying memory-eater (OOMKill variant) to demo-workloads..."
+	@KUBECONFIG=$(DEMO_KUBECONFIG) kubectl apply -f deploy/demo/base/workloads/namespace.yaml
+	@KUBECONFIG=$(DEMO_KUBECONFIG) kubectl apply -f deploy/demo/base/workloads/memory-eater-oomkill.yaml
+	@echo "  Deployed. Watch the pipeline:"
+	@echo "    kubectl --kubeconfig $(DEMO_KUBECONFIG) get pods -n demo-workloads -w"
+	@echo "    kubectl --kubeconfig $(DEMO_KUBECONFIG) get remediationrequests -A -w"
+
+.PHONY: demo-trigger-high-usage
+demo-trigger-high-usage: ## Deploy memory-eater high-usage workload (Prometheus alert path)
+	@echo "📈 Deploying memory-eater (high-usage variant) to demo-workloads..."
+	@KUBECONFIG=$(DEMO_KUBECONFIG) kubectl apply -f deploy/demo/base/workloads/namespace.yaml
+	@KUBECONFIG=$(DEMO_KUBECONFIG) kubectl apply -f deploy/demo/base/workloads/memory-eater-high-usage.yaml
+	@echo "  Deployed. Watch Prometheus alerts:"
+	@echo "    curl -s http://localhost:9190/api/v1/alerts | jq '.data.alerts[] | {alertname: .labels.alertname, state}'"
+	@echo "    kubectl --kubeconfig $(DEMO_KUBECONFIG) get remediationrequests -A -w"
+
+.PHONY: demo-reset-workloads
+demo-reset-workloads: ## Remove demo workloads (clean slate for re-triggering)
+	@echo "🧹 Removing demo workloads..."
+	@KUBECONFIG=$(DEMO_KUBECONFIG) kubectl delete -f deploy/demo/base/workloads/memory-eater-oomkill.yaml --ignore-not-found
+	@KUBECONFIG=$(DEMO_KUBECONFIG) kubectl delete -f deploy/demo/base/workloads/memory-eater-high-usage.yaml --ignore-not-found
+	@KUBECONFIG=$(DEMO_KUBECONFIG) kubectl delete remediationrequests --all -n demo-workloads --ignore-not-found
+	@KUBECONFIG=$(DEMO_KUBECONFIG) kubectl delete signalprocessings --all -n demo-workloads --ignore-not-found
+	@KUBECONFIG=$(DEMO_KUBECONFIG) kubectl delete aianalyses --all -n demo-workloads --ignore-not-found
+	@KUBECONFIG=$(DEMO_KUBECONFIG) kubectl delete workflowexecutions --all -n demo-workloads --ignore-not-found
+	@KUBECONFIG=$(DEMO_KUBECONFIG) kubectl delete effectivenessassessments --all -n demo-workloads --ignore-not-found
+	@echo "  Workloads removed. Ready to re-trigger."
 
 .PHONY: demo-teardown
 demo-teardown: ## Destroy demo Kind cluster
@@ -987,3 +1070,75 @@ demo-status: ## Show demo cluster status
 	@echo "📊 Demo cluster status:"
 	@KUBECONFIG=$(DEMO_KUBECONFIG) kubectl get pods -n kubernaut-system -o wide 2>/dev/null || echo "  Cluster not running"
 	@KUBECONFIG=$(DEMO_KUBECONFIG) kubectl get pods -n demo-workloads -o wide 2>/dev/null || true
+
+##@ Image Build & Push
+
+# Registry, tag, and architecture (override via env or CLI)
+IMAGE_REGISTRY ?= quay.io/kubernaut-ai
+IMAGE_TAG ?= latest
+# Auto-detect native architecture (maps uname output to Go-style names)
+IMAGE_ARCH ?= $(shell uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/')
+
+# All Go services with their Dockerfile mappings (reuses DEMO_* mappings above)
+IMAGE_SERVICES := $(DEMO_SERVICES)
+
+# _image_build_one builds a single service image (native arch, arch-suffixed tag).
+# Usage: $(call _image_build_one,<service>,<dockerfile>)
+define _image_build_one
+	@echo "  Building $(1) [$(IMAGE_ARCH)]..."
+	@$(CONTAINER_TOOL) build -t $(IMAGE_REGISTRY)/$(1):$(IMAGE_TAG)-$(IMAGE_ARCH) -f $(2) .
+
+endef
+
+# _image_push_one pushes an arch-suffixed image for a single service.
+# Usage: $(call _image_push_one,<service>)
+define _image_push_one
+	@echo "  Pushing $(IMAGE_REGISTRY)/$(1):$(IMAGE_TAG)-$(IMAGE_ARCH)..."
+	@$(CONTAINER_TOOL) push $(IMAGE_REGISTRY)/$(1):$(IMAGE_TAG)-$(IMAGE_ARCH)
+
+endef
+
+# NOTE: Generated files (openapi_spec_data.yaml, ogen client) must be committed before
+# running image-build on hosts without Go. Run `make generate` locally first if needed.
+.PHONY: image-build
+image-build: ## Build images for all services (native arch, arch-suffixed tag)
+	@echo "🐳 Building service images [$(IMAGE_ARCH)]..."
+	@echo "   Registry: $(IMAGE_REGISTRY)"
+	@echo "   Tag:      $(IMAGE_TAG)-$(IMAGE_ARCH)"
+	@echo ""
+	$(foreach svc,$(IMAGE_SERVICES),$(call _image_build_one,$(svc),$(DEMO_DOCKERFILES_$(svc))))
+	@echo "  Building holmesgpt-api [$(IMAGE_ARCH)]..."
+	@$(CONTAINER_TOOL) build -t $(IMAGE_REGISTRY)/holmesgpt-api:$(IMAGE_TAG)-$(IMAGE_ARCH) -f holmesgpt-api/Dockerfile .
+	@echo ""
+	@echo "✅ All images built ($(IMAGE_REGISTRY):$(IMAGE_TAG)-$(IMAGE_ARCH))."
+	@echo "   Push with: make image-push IMAGE_TAG=$(IMAGE_TAG)"
+
+.PHONY: image-push
+image-push: ## Push arch-suffixed images to registry
+	@echo "📤 Pushing images to $(IMAGE_REGISTRY)..."
+	@echo "   Tag: $(IMAGE_TAG)-$(IMAGE_ARCH)"
+	@echo ""
+	$(foreach svc,$(IMAGE_SERVICES),$(call _image_push_one,$(svc)))
+	@echo "  Pushing $(IMAGE_REGISTRY)/holmesgpt-api:$(IMAGE_TAG)-$(IMAGE_ARCH)..."
+	@$(CONTAINER_TOOL) push $(IMAGE_REGISTRY)/holmesgpt-api:$(IMAGE_TAG)-$(IMAGE_ARCH)
+	@echo ""
+	@echo "✅ All images pushed to $(IMAGE_REGISTRY) with tag $(IMAGE_TAG)-$(IMAGE_ARCH)."
+
+.PHONY: image-manifest
+image-manifest: ## Create and push multi-arch manifests (run after both arches are pushed)
+	@echo "🔗 Creating multi-arch manifests..."
+	@echo "   Registry: $(IMAGE_REGISTRY)"
+	@echo "   Tag:      $(IMAGE_TAG)"
+	@echo "   Arches:   amd64, arm64"
+	@echo ""
+	@for svc in $(IMAGE_SERVICES) holmesgpt-api; do \
+	    echo "  Manifest: $$svc"; \
+	    $(CONTAINER_TOOL) manifest rm $(IMAGE_REGISTRY)/$$svc:$(IMAGE_TAG) 2>/dev/null || true; \
+	    $(CONTAINER_TOOL) manifest create $(IMAGE_REGISTRY)/$$svc:$(IMAGE_TAG) \
+	        $(IMAGE_REGISTRY)/$$svc:$(IMAGE_TAG)-amd64 \
+	        $(IMAGE_REGISTRY)/$$svc:$(IMAGE_TAG)-arm64; \
+	    $(CONTAINER_TOOL) manifest push $(IMAGE_REGISTRY)/$$svc:$(IMAGE_TAG) \
+	        docker://$(IMAGE_REGISTRY)/$$svc:$(IMAGE_TAG); \
+	done
+	@echo ""
+	@echo "✅ All manifests pushed as $(IMAGE_REGISTRY):$(IMAGE_TAG)."

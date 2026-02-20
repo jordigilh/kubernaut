@@ -1,8 +1,8 @@
 server:
   port: 8091
   host: "0.0.0.0"
-  read_timeout: "30s"
-  write_timeout: "30s"
+  readTimeout: "30s"
+  writeTimeout: "30s"
 
 logging:
   level: "info"
@@ -20,6 +20,6 @@ database:
   name: "action_history"
   user: "slm_user"
   password: "slm_password_dev"
-  ssl_mode: "disable"
+  sslMode: "disable"
 
 

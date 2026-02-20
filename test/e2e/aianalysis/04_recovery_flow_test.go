@@ -73,7 +73,7 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 							},
 							SelectedWorkflow: aianalysisv1alpha1.SelectedWorkflowSummary{
 								WorkflowID:     "oomkill-increase-memory-v1",
-								ContainerImage: "quay.io/kubernaut/workflow-oomkill:v1.0.0",
+								ExecutionBundle: "quay.io/kubernaut/workflow-oomkill:v1.0.0",
 								Rationale:      "Increase memory limits for OOMKilled pod",
 							},
 							Failure: aianalysisv1alpha1.ExecutionFailure{
@@ -96,15 +96,7 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 								Name:      "oom-service-abc123",
 								Namespace: "staging",
 							},
-							EnrichmentResults: sharedtypes.EnrichmentResults{
-								DetectedLabels: &sharedtypes.DetectedLabels{
-									GitOpsManaged: true,
-									GitOpsTool:    "argocd",
-								},
-								OwnerChain: []sharedtypes.OwnerChainEntry{
-									{Namespace: "staging", Kind: "Deployment", Name: "oom-service"},
-								},
-							},
+							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
 						AnalysisTypes: []string{"recovery-analysis", "workflow-selection"},
 					},
@@ -172,7 +164,7 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 							},
 							SelectedWorkflow: aianalysisv1alpha1.SelectedWorkflowSummary{
 								WorkflowID:     "oomkill-increase-memory-v1",
-								ContainerImage: "quay.io/kubernaut/workflow-oomkill:v1.0.0",
+								ExecutionBundle: "quay.io/kubernaut/workflow-oomkill:v1.0.0",
 								Rationale:      "Conservative memory increase for OOMKilled pod",
 							},
 							Failure: aianalysisv1alpha1.ExecutionFailure{
@@ -198,14 +190,7 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 								Name:      "memory-hungry-app",
 								Namespace: "staging",
 							},
-							EnrichmentResults: sharedtypes.EnrichmentResults{
-								DetectedLabels: &sharedtypes.DetectedLabels{
-									GitOpsManaged: true,
-								},
-								OwnerChain: []sharedtypes.OwnerChainEntry{
-									{Namespace: "staging", Kind: "Deployment", Name: "memory-hungry-app"},
-								},
-							},
+							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
 						AnalysisTypes: []string{"recovery-analysis", "workflow-selection"},
 					},
@@ -273,11 +258,7 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 								Name:      "dev-app",
 								Namespace: "development",
 							},
-							EnrichmentResults: sharedtypes.EnrichmentResults{
-								DetectedLabels: &sharedtypes.DetectedLabels{
-									GitOpsManaged: false,
-								},
-							},
+							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
 						AnalysisTypes: []string{"recovery-analysis"},
 					},
@@ -351,7 +332,7 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 							},
 							SelectedWorkflow: aianalysisv1alpha1.SelectedWorkflowSummary{
 								WorkflowID:     "oomkill-increase-memory-v1",
-								ContainerImage: "quay.io/kubernaut/workflow-oomkill:v1.0.0",
+								ExecutionBundle: "quay.io/kubernaut/workflow-oomkill:v1.0.0",
 								Rationale:      "Increase memory limit",
 							},
 							Failure: aianalysisv1alpha1.ExecutionFailure{
@@ -372,7 +353,7 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 							},
 							SelectedWorkflow: aianalysisv1alpha1.SelectedWorkflowSummary{
 								WorkflowID:     "oomkill-restart-pod-v1",
-								ContainerImage: "quay.io/kubernaut/workflow-restart:v1.0.0",
+								ExecutionBundle: "quay.io/kubernaut/workflow-restart:v1.0.0",
 								Rationale:      "Restart pod as fallback",
 							},
 							Failure: aianalysisv1alpha1.ExecutionFailure{
@@ -397,15 +378,7 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 								Name:      "critical-service",
 								Namespace: "staging",
 							},
-							EnrichmentResults: sharedtypes.EnrichmentResults{
-								DetectedLabels: &sharedtypes.DetectedLabels{
-									GitOpsManaged: true,
-									PDBProtected:  true,
-								},
-								OwnerChain: []sharedtypes.OwnerChainEntry{
-									{Namespace: "staging", Kind: "Deployment", Name: "critical-service"},
-								},
-							},
+							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
 						AnalysisTypes: []string{"recovery-analysis", "workflow-selection"},
 					},
@@ -553,11 +526,7 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 								Name:      "failing-pod-hr",
 								Namespace: "staging",
 							},
-							EnrichmentResults: sharedtypes.EnrichmentResults{
-								DetectedLabels: &sharedtypes.DetectedLabels{
-									GitOpsManaged: true,
-								},
-							},
+							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
 						AnalysisTypes: []string{"recovery-analysis", "workflow-selection"},
 					},
@@ -571,7 +540,7 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 							},
 							SelectedWorkflow: aianalysisv1alpha1.SelectedWorkflowSummary{
 								WorkflowID:     "failed-workflow-v1",
-								ContainerImage: "quay.io/kubernaut/workflow-failed:v1.0.0",
+								ExecutionBundle: "quay.io/kubernaut/workflow-failed:v1.0.0",
 							},
 							Failure: aianalysisv1alpha1.ExecutionFailure{
 								Reason:        "WorkflowFailed",

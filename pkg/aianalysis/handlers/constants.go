@@ -67,17 +67,11 @@ const (
 	// BR-AA-HAPI-064.6: Cap at 5 regenerations
 	MaxSessionRegenerations int32 = 5
 
-	// DefaultPollInterval is the initial polling interval for session status.
-	// BR-AA-HAPI-064.8: First poll at 10s
-	DefaultPollInterval = 10 * time.Second
-
-	// PollBackoffMultiplier is the multiplier for polling backoff.
-	// BR-AA-HAPI-064.8: Double interval on each poll
-	PollBackoffMultiplier = 2
-
-	// MaxPollInterval caps the polling interval.
-	// BR-AA-HAPI-064.8: Cap at 30s
-	MaxPollInterval = 30 * time.Second
+	// DefaultSessionPollInterval is the constant polling interval for session status checks.
+	// BR-AA-HAPI-064.8: Polling is not error recovery -- HAPI is healthy, just not done yet.
+	// A constant interval is simpler, predictable, and sufficient for async LLM investigations.
+	// Configurable via WithSessionPollInterval option or --session-poll-interval flag.
+	DefaultSessionPollInterval = 15 * time.Second
 )
 
 

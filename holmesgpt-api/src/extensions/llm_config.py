@@ -280,6 +280,25 @@ def get_model_config_for_sdk(app_config: Optional[Dict[str, Any]] = None) -> tup
     return formatted_model, provider
 
 
+def inject_detected_labels(
+    result: Dict[str, Any],
+    session_state: Optional[Dict[str, Any]],
+) -> None:
+    """
+    Inject detected_labels from session_state into the response result dict.
+
+    ADR-056: After LLM investigation completes, the detected_labels computed
+    on-demand by WorkflowDiscoveryToolset are included in the HAPI response
+    so AIAnalysis can store them in PostRCAContext for Rego policy evaluation.
+
+    Args:
+        result: Mutable response dict (IncidentResponse or RecoveryResponse format)
+        session_state: Shared session state dict, or None
+    """
+    if session_state and "detected_labels" in session_state:
+        result["detected_labels"] = session_state["detected_labels"]
+
+
 def register_workflow_discovery_toolset(
     config: Config,
     app_config: Optional[Dict[str, Any]] = None,
@@ -290,6 +309,7 @@ def register_workflow_discovery_toolset(
     component: str = "",
     environment: str = "",
     priority: str = "",
+    session_state: Optional[Dict[str, Any]] = None,
 ) -> Config:
     """
     Register the three-step workflow discovery toolset with HolmesGPT SDK Config.
@@ -307,6 +327,9 @@ def register_workflow_discovery_toolset(
     set once at toolset creation and propagated to all three tools as query
     parameters for the DS security gate (DD-HAPI-017).
 
+    ADR-056 v1.4: Labels are now detected by get_resource_context and stored
+    in session_state. Workflow discovery reads them from session_state.
+
     Args:
         config: HolmesGPT SDK Config instance (already initialized)
         app_config: Optional application configuration (for logging context)
@@ -317,6 +340,8 @@ def register_workflow_discovery_toolset(
         component: K8s resource kind (pod/deployment/node/etc.)
         environment: Namespace-derived environment (production/staging/development)
         priority: Severity-mapped priority (P0/P1/P2/P3)
+        session_state: Shared mutable dict for inter-tool communication (ADR-056 v1.4).
+            Labels are populated by get_resource_context and consumed by discovery tools.
 
     Returns:
         The same Config instance with workflow discovery registered via monkey-patch
@@ -329,7 +354,6 @@ def register_workflow_discovery_toolset(
     # authenticate with DataStorage (fixes 401 Unauthorized on /api/v1/workflows/*).
     http_session = create_workflow_discovery_session()
 
-    # Create the three-step discovery toolset instance
     discovery_toolset = WorkflowDiscoveryToolset(
         enabled=True,
         remediation_id=remediation_id,
@@ -340,6 +364,7 @@ def register_workflow_discovery_toolset(
         custom_labels=custom_labels,
         detected_labels=detected_labels,
         http_session=http_session,
+        session_state=session_state,
     )
 
     # Initialize toolset manager if needed
@@ -412,6 +437,124 @@ def register_workflow_discovery_toolset(
         "DD-HAPI-017: Monkey-patched list_server_toolsets() AND create_tool_executor() "
         "to inject workflow discovery (three-step protocol) at LLM-visible layer"
     )
+
+    return config
+
+
+def register_resource_context_toolset(
+    config: Config,
+    app_config: Optional[Dict[str, Any]] = None,
+    session_state: Optional[Dict[str, Any]] = None,
+) -> Config:
+    """
+    Register the resource context toolset with HolmesGPT SDK Config.
+
+    ADR-055: LLM-Driven Context Enrichment (Post-RCA)
+    ADR-056 v1.4: DetectedLabels computation for the RCA target resource.
+
+    After RCA, the LLM calls get_resource_context to fetch owner chain,
+    spec hash, remediation history, and infrastructure labels for the
+    identified target resource.
+
+    Args:
+        config: HolmesGPT SDK Config instance (already initialized)
+        app_config: Optional application configuration
+        session_state: Shared mutable dict for inter-tool communication (ADR-056 v1.4).
+            Labels are detected once and stored here for downstream workflow discovery tools.
+
+    Returns:
+        The same Config instance with resource context toolset registered
+    """
+    from src.toolsets.resource_context import ResourceContextToolset
+    from src.clients.k8s_client import get_k8s_client
+
+    try:
+        k8s = get_k8s_client()
+    except Exception as e:
+        logger.warning({"event": "resource_context_k8s_unavailable", "error": str(e)})
+        logger.info("ADR-055: Resource context toolset not registered (K8s client unavailable)")
+        return config
+
+    # History fetcher wraps the remediation history client
+    history_fetcher = None
+    try:
+        from src.clients.remediation_history_client import (
+            create_remediation_history_api,
+            fetch_remediation_history_for_request,
+        )
+        rh_api = create_remediation_history_api(app_config)
+
+        def _fetch_history(resource_kind, resource_name, resource_namespace, current_spec_hash):
+            request_data = {
+                "resource_kind": resource_kind,
+                "resource_name": resource_name,
+                "resource_namespace": resource_namespace,
+            }
+            return fetch_remediation_history_for_request(
+                api=rh_api,
+                request_data=request_data,
+                current_spec_hash=current_spec_hash,
+            )
+        history_fetcher = _fetch_history
+    except (ImportError, Exception) as e:
+        logger.warning({"event": "resource_context_history_unavailable", "error": str(e)})
+
+    try:
+        context_toolset = ResourceContextToolset(
+            k8s_client=k8s,
+            history_fetcher=history_fetcher,
+            session_state=session_state,
+        )
+    except Exception as e:
+        logger.warning({"event": "resource_context_toolset_creation_failed", "error": str(e)})
+        logger.info("ADR-055: Resource context toolset not registered (creation failed)")
+        return config
+
+    # Initialize toolset manager if needed
+    if not hasattr(config, 'toolset_manager') or config.toolset_manager is None:
+        from holmes.core.tool_calling_llm import ToolsetManager
+        config.toolset_manager = ToolsetManager(toolsets=config.toolsets)
+
+    # Monkey-patch to inject resource context toolset (same pattern as workflow discovery)
+    original_list = config.toolset_manager.list_server_toolsets
+    context_injected = [False]
+
+    def patched_list(dal=None, refresh_status=True):
+        toolsets = original_list(dal=dal, refresh_status=refresh_status)
+        if not context_injected[0]:
+            has_context = any(
+                hasattr(t, 'name') and t.name == "resource_context"
+                for t in toolsets
+            )
+            if not has_context:
+                toolsets.append(context_toolset)
+                context_injected[0] = True
+                logger.info("ADR-055: Injected resource_context toolset into SDK")
+        return toolsets
+
+    config.toolset_manager.list_server_toolsets = patched_list
+
+    import types
+    original_executor = config.create_tool_executor
+    context_injected_executor = [False]
+
+    def patched_executor(self, dal=None):
+        tool_executor = original_executor(dal=dal)
+        if not context_injected_executor[0]:
+            has_context = any(
+                hasattr(ts, 'name') and ts.name == "resource_context"
+                for ts in tool_executor.toolsets
+            )
+            if not has_context:
+                tool_executor.toolsets.append(context_toolset)
+                context_injected_executor[0] = True
+                logger.info("ADR-055: Injected resource_context into tool_executor")
+        _wrap_tool_results_with_sanitization(tool_executor)
+        return tool_executor
+
+    object.__setattr__(config, 'create_tool_executor', types.MethodType(patched_executor, config))
+
+    logger.info("ADR-055: Registered resource_context toolset for post-RCA context enrichment")
 
     return config
 

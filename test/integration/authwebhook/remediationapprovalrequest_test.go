@@ -75,7 +75,7 @@ var _ = Describe("BR-AUTH-001: RemediationApprovalRequest Decision Attribution",
 				RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{
 					WorkflowID:     "restart-pod-v1",
 					Version:        "1.0.0",
-					ContainerImage: "kubernaut/restart-pod:v1",
+					ExecutionBundle: "kubernaut/restart-pod:v1",
 					Rationale:      "Standard pod restart for memory leak",
 				},
 				RecommendedActions: []remediationv1.ApprovalRecommendedAction{

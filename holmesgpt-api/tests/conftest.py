@@ -174,7 +174,7 @@ def sample_recovery_request() -> Dict[str, Any]:
             "selected_workflow": {
                 "workflow_id": "scale-horizontal-v1",
                 "version": "1.0.0",
-                "container_image": "kubernaut/workflow-scale:v1.0.0",
+                "execution_bundle": "kubernaut/workflow-scale:v1.0.0",
                 "parameters": {"TARGET_REPLICAS": "5"},
                 "rationale": "Scaling out to handle resource pressure"
             },
@@ -225,7 +225,7 @@ def sample_recovery_request_with_previous_execution() -> Dict[str, Any]:
             "selected_workflow": {
                 "workflow_id": "scale-horizontal-v1",
                 "version": "1.0.0",
-                "container_image": "kubernaut/workflow-scale:v1.0.0",
+                "execution_bundle": "kubernaut/workflow-scale:v1.0.0",
                 "parameters": {"TARGET_REPLICAS": "5"},
                 "rationale": "Scaling out to distribute memory load"
             },

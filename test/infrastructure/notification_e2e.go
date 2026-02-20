@@ -200,6 +200,8 @@ func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 	return notificationImageName, nil
 }
 
+// DeployNotificationController deploys the Notification controller and all its resources
+// using a single inline YAML template. Standardized: same pattern as AA, SP, RO, EM, WE, HAPI.
 func DeployNotificationController(ctx context.Context, namespace, kubeconfigPath, notificationImageName string, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	_, _ = fmt.Fprintf(writer, "Deploying Notification Controller in Namespace: %s\n", namespace)
@@ -209,16 +211,13 @@ func DeployNotificationController(ctx context.Context, namespace, kubeconfigPath
 		return fmt.Errorf("notificationImageName parameter is required")
 	}
 
-	// 1. Create test namespace
 	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
 	if err := createTestNamespace(namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
-	// 2. Create default namespace (E2E tests create NotificationRequests here)
 	_, _ = fmt.Fprintf(writer, "📁 Creating default namespace (for E2E tests)...\n")
 	if err := createTestNamespace("default", kubeconfigPath, writer); err != nil {
-		// Ignore error if namespace already exists (case-insensitive check for different K8s error formats)
 		errMsg := strings.ToLower(err.Error())
 		if !strings.Contains(errMsg, "alreadyexists") && !strings.Contains(errMsg, "already exists") {
 			return fmt.Errorf("failed to create default namespace: %w", err)
@@ -226,40 +225,26 @@ func DeployNotificationController(ctx context.Context, namespace, kubeconfigPath
 		_, _ = fmt.Fprintf(writer, "   ℹ️  default namespace already exists\n")
 	}
 
-	// 2. Deploy RBAC
-	_, _ = fmt.Fprintf(writer, "🔐 Deploying RBAC (ServiceAccount, Role, RoleBinding)...\n")
-	if err := deployNotificationRBAC(namespace, kubeconfigPath, writer); err != nil {
-		return fmt.Errorf("failed to deploy RBAC: %w", err)
+	_, _ = fmt.Fprintf(writer, "🚀 Deploying Notification resources via inline YAML template...\n")
+	slackURL := resolveSlackWebhookURL(writer)
+	enableCoverage := os.Getenv("E2E_COVERAGE") == "true"
+	manifest := notificationControllerManifest(namespace, notificationImageName, slackURL, enableCoverage)
+
+	cmd := exec.Command("kubectl", "apply", "--kubeconfig", kubeconfigPath, "-n", namespace, "-f", "-")
+	cmd.Stdin = strings.NewReader(manifest)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("kubectl apply Notification manifest failed: %w", err)
 	}
 
-	// 2b. Add DataStorage access for audit emission (DD-AUTH-014, same pattern as WE/AuthWebhook)
 	_, _ = fmt.Fprintf(writer, "🔐 Adding DataStorage access for notification-controller SA (DD-AUTH-014)...\n")
 	if err := CreateDataStorageAccessRoleBinding(ctx, namespace, kubeconfigPath, "notification-controller", writer); err != nil {
 		return fmt.Errorf("failed to create DataStorage access RoleBinding: %w", err)
 	}
 	_, _ = fmt.Fprintf(writer, "   ✅ DataStorage access RoleBinding created\n")
 
-	// 3. Deploy ConfigMap (if needed for configuration)
-	_, _ = fmt.Fprintf(writer, "📄 Deploying ConfigMap...\n")
-	if err := deployNotificationConfigMap(namespace, kubeconfigPath, writer); err != nil {
-		return fmt.Errorf("failed to deploy ConfigMap: %w", err)
-	}
-
-	// 3.5 Deploy NodePort Service for metrics (E2E test access)
-	_, _ = fmt.Fprintf(writer, "🌐 Deploying NodePort Service for metrics...\n")
-	if err := deployNotificationService(namespace, kubeconfigPath, writer); err != nil {
-		return fmt.Errorf("failed to deploy NodePort Service: %w", err)
-	}
-
-	// 4. Deploy Notification Controller with image from setup phase
-	_, _ = fmt.Fprintf(writer, "🚀 Deploying Notification Controller...\n")
-	if err := deployNotificationControllerOnly(namespace, kubeconfigPath, notificationImageName, writer); err != nil {
-		return fmt.Errorf("failed to deploy Notification Controller: %w", err)
-	}
-
-	// 5. Wait for controller pod ready (use kubectl wait like gateway does)
 	_, _ = fmt.Fprintf(writer, "⏳ Waiting for controller pod to be created...\n")
-	// First wait for pod to exist (kubectl wait fails if resource doesn't exist yet)
 	podCreatedCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
@@ -281,7 +266,6 @@ func DeployNotificationController(ctx context.Context, namespace, kubeconfigPath
 		case <-podCreatedCtx.Done():
 			return fmt.Errorf("timeout waiting for controller pod to be created")
 		case <-time.After(2 * time.Second):
-			// Continue polling
 		}
 	}
 
@@ -446,207 +430,234 @@ func installNotificationCRD(kubeconfigPath string, writer io.Writer) error {
 	return nil
 }
 
-func deployNotificationRBAC(namespace, kubeconfigPath string, writer io.Writer) error {
-	workspaceRoot, err := findWorkspaceRoot()
-	if err != nil {
-		return fmt.Errorf("failed to find workspace root: %w", err)
-	}
-
-	rbacPath := filepath.Join(workspaceRoot, "test", "e2e", "notification", "manifests", "notification-rbac.yaml")
-	if _, err := os.Stat(rbacPath); os.IsNotExist(err) {
-		return fmt.Errorf("RBAC manifest not found at %s", rbacPath)
-	}
-
-	// Read RBAC manifest and replace the hardcoded namespace in ClusterRoleBinding subjects.
-	// The manifest hardcodes "notification-e2e" for the Notification-specific E2E suite,
-	// but the full pipeline E2E deploys in "kubernaut-system". kubectl apply -n only affects
-	// namespace-scoped resources (ServiceAccount), not cluster-scoped ones (ClusterRoleBinding).
-	rbacContent, err := os.ReadFile(rbacPath)
-	if err != nil {
-		return fmt.Errorf("failed to read RBAC manifest: %w", err)
-	}
-	updatedRBAC := strings.ReplaceAll(string(rbacContent),
-		"namespace: notification-e2e",
-		fmt.Sprintf("namespace: %s", namespace))
-
-	// Write to temp file and apply
-	tmpRBAC := filepath.Join(os.TempDir(), "notification-rbac-e2e.yaml")
-	if err := os.WriteFile(tmpRBAC, []byte(updatedRBAC), 0644); err != nil {
-		return fmt.Errorf("failed to write temp RBAC: %w", err)
-	}
-	defer func() { _ = os.Remove(tmpRBAC) }()
-
-	applyCmd := exec.Command("kubectl", "apply", "-f", tmpRBAC, "-n", namespace)
-	applyCmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", kubeconfigPath))
-	applyCmd.Stdout = writer
-	applyCmd.Stderr = writer
-
-	if err := applyCmd.Run(); err != nil {
-		return fmt.Errorf("failed to apply RBAC: %w", err)
-	}
-
-	_, _ = fmt.Fprintf(writer, "   RBAC deployed (ClusterRole + ClusterRoleBinding) in namespace: %s\n", namespace)
-	return nil
-}
-
-func deployNotificationConfigMap(namespace, kubeconfigPath string, writer io.Writer) error {
-	workspaceRoot, err := findWorkspaceRoot()
-	if err != nil {
-		return fmt.Errorf("failed to find workspace root: %w", err)
-	}
-
-	configMapPath := filepath.Join(workspaceRoot, "test", "e2e", "notification", "manifests", "notification-configmap.yaml")
-	if _, err := os.Stat(configMapPath); os.IsNotExist(err) {
-		// ConfigMap is optional - controller may use defaults
-		_, _ = fmt.Fprintf(writer, "   ConfigMap manifest not found (optional): %s\n", configMapPath)
-		return nil
-	}
-
-	// Use envsubst to replace ${NAMESPACE} placeholder in ConfigMap
-	// This allows data_storage_url to dynamically reference the correct namespace
-	envsubstCmd := exec.Command("sh", "-c", fmt.Sprintf("export NAMESPACE=%s && envsubst < %s | kubectl apply -n %s -f -", namespace, configMapPath, namespace))
-	envsubstCmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", kubeconfigPath))
-	envsubstCmd.Stdout = writer
-	envsubstCmd.Stderr = writer
-
-	if err := envsubstCmd.Run(); err != nil {
-		return fmt.Errorf("failed to apply ConfigMap with envsubst: %w", err)
-	}
-
-	_, _ = fmt.Fprintf(writer, "   ConfigMap deployed in namespace: %s (envsubst applied)\n", namespace)
-	return nil
-}
-
-func deployNotificationService(namespace, kubeconfigPath string, writer io.Writer) error {
-	workspaceRoot, err := findWorkspaceRoot()
-	if err != nil {
-		return fmt.Errorf("failed to find workspace root: %w", err)
-	}
-
-	servicePath := filepath.Join(workspaceRoot, "test", "e2e", "notification", "manifests", "notification-service.yaml")
-	if _, err := os.Stat(servicePath); os.IsNotExist(err) {
-		return fmt.Errorf("service manifest not found at %s", servicePath)
-	}
-
-	applyCmd := exec.Command("kubectl", "apply", "-f", servicePath, "-n", namespace)
-	applyCmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", kubeconfigPath))
-	applyCmd.Stdout = writer
-	applyCmd.Stderr = writer
-
-	if err := applyCmd.Run(); err != nil {
-		return fmt.Errorf("failed to apply service: %w", err)
-	}
-
-	_, _ = fmt.Fprintf(writer, "   NodePort Service deployed (metrics: localhost:8081 → NodePort 30081)\n")
-	return nil
-}
-
-func deployNotificationControllerOnly(namespace, kubeconfigPath, notificationImageName string, writer io.Writer) error {
-	workspaceRoot, err := findWorkspaceRoot()
-	if err != nil {
-		return fmt.Errorf("failed to find workspace root: %w", err)
-	}
-
-	if notificationImageName == "" {
-		return fmt.Errorf("notificationImageName parameter is required (no hardcoded fallback)")
-	}
-
-	_, _ = fmt.Fprintf(writer, "   Using Notification image: %s\n", notificationImageName)
-
-	// Read deployment manifest and replace hardcoded tag with actual tag
-	deploymentPath := filepath.Join(workspaceRoot, "test", "e2e", "notification", "manifests", "notification-deployment.yaml")
-	deploymentContent, err := os.ReadFile(deploymentPath)
-	if err != nil {
-		return fmt.Errorf("failed to read deployment file: %w", err)
-	}
-
-	// Replace hardcoded tag with actual unique tag
-	updatedContent := strings.ReplaceAll(string(deploymentContent),
-		"localhost/kubernaut-notification:e2e-test",
-		notificationImageName)
-
-	// Replace hardcoded imagePullPolicy with dynamic value
-	// CI/CD mode (IMAGE_REGISTRY set): Use IfNotPresent (allows pulling from GHCR)
-	// Local mode: Use Never (uses images loaded into Kind)
-	updatedContent = strings.ReplaceAll(updatedContent,
-		"imagePullPolicy: Never",
-		fmt.Sprintf("imagePullPolicy: %s", GetImagePullPolicy()))
-
-	// Allow overriding mock Slack webhook with real URL for local testing
-	// Priority: 1) SLACK_WEBHOOK_URL env var, 2) ~/.kubernaut/notification/slack-webhook.url file
-	// Usage: SLACK_WEBHOOK_URL="https://hooks.slack.com/..." make test-e2e-fullpipeline
+// resolveSlackWebhookURL resolves the Slack webhook URL from environment or config file.
+func resolveSlackWebhookURL(writer io.Writer) string {
 	slackURL := os.Getenv("SLACK_WEBHOOK_URL")
 	if slackURL != "" {
 		_, _ = fmt.Fprintf(writer, "   Slack webhook URL loaded from SLACK_WEBHOOK_URL env var\n")
-	} else {
-		homeDir, _ := os.UserHomeDir()
-		if homeDir != "" {
-			slackFilePath := filepath.Join(homeDir, ".kubernaut", "notification", "slack-webhook.url")
-			if data, readErr := os.ReadFile(slackFilePath); readErr == nil {
-				slackURL = strings.TrimSpace(string(data))
-				if slackURL != "" {
-					_, _ = fmt.Fprintf(writer, "   Slack webhook URL loaded from %s\n", slackFilePath)
-				}
+		return slackURL
+	}
+	homeDir, _ := os.UserHomeDir()
+	if homeDir != "" {
+		slackFilePath := filepath.Join(homeDir, ".kubernaut", "notification", "slack-webhook.url")
+		if data, readErr := os.ReadFile(slackFilePath); readErr == nil {
+			url := strings.TrimSpace(string(data))
+			if url != "" {
+				_, _ = fmt.Fprintf(writer, "   Slack webhook URL loaded from %s\n", slackFilePath)
+				return url
 			}
 		}
 	}
-	if slackURL != "" {
-		updatedContent = strings.ReplaceAll(updatedContent,
-			`"http://mock-slack:8080/webhook"`,
-			fmt.Sprintf(`"%s"`, slackURL))
-	}
+	return "http://mock-slack:8080/webhook"
+}
 
-	// DD-TEST-007: Inject GOCOVERDIR env var and /coverdata volume when E2E_COVERAGE=true
-	if os.Getenv("E2E_COVERAGE") == "true" {
-		_, _ = fmt.Fprintf(writer, "   📊 DD-TEST-007: Injecting GOCOVERDIR=/coverdata for coverage\n")
-		// Add GOCOVERDIR env var after the existing env section
-		updatedContent = strings.Replace(updatedContent,
-			`- name: SLACK_WEBHOOK_URL`,
-			`- name: GOCOVERDIR
-          value: /coverdata
-        - name: SLACK_WEBHOOK_URL`,
-			1)
-		// Add coverdata volume mount after existing volumeMounts
-		updatedContent = strings.Replace(updatedContent,
-			`- name: notification-output
-          mountPath: /tmp/notifications`,
-			`- name: notification-output
-          mountPath: /tmp/notifications
+// notificationControllerManifest generates the full Notification controller multi-document
+// YAML manifest as an inline template. This consolidates what was previously 4 separate
+// static YAML files (RBAC, ConfigMap, Service, Deployment) into a single atomic apply.
+//
+// Standardization: same pattern as AA, SP, RO, EM, WE, HAPI, Gateway.
+func notificationControllerManifest(namespace, imageName, slackWebhookURL string, enableCoverage bool) string {
+	pullPolicy := GetImagePullPolicy()
+
+	coverageEnvYAML := ""
+	coverageVolumeMountYAML := ""
+	coverageVolumeYAML := ""
+	coverageSecurityContextYAML := ""
+
+	if enableCoverage {
+		coverageEnvYAML = `
+        - name: GOCOVERDIR
+          value: /coverdata`
+		coverageVolumeMountYAML = `
         - name: coverdata
-          mountPath: /coverdata`,
-			1)
-		// Add coverdata volume after existing volumes
-		updatedContent = strings.Replace(updatedContent,
-			`- name: notification-output
-        emptyDir: {}`,
-			`- name: notification-output
-        emptyDir: {}
+          mountPath: /coverdata`
+		coverageVolumeYAML = `
       - name: coverdata
         hostPath:
           path: /coverdata
-          type: DirectoryOrCreate`,
-			1)
+          type: DirectoryOrCreate`
+		coverageSecurityContextYAML = `
+      securityContext:
+        runAsUser: 0
+        runAsGroup: 0`
 	}
 
-	// Create temporary modified deployment file
-	tmpDeployment := filepath.Join(os.TempDir(), "notification-deployment-e2e.yaml")
-	if err := os.WriteFile(tmpDeployment, []byte(updatedContent), 0644); err != nil {
-		return fmt.Errorf("failed to write temp deployment: %w", err)
-	}
-	defer func() { _ = os.Remove(tmpDeployment) }()
-
-	// Apply the modified deployment
-	applyCmd := exec.Command("kubectl", "apply", "-f", tmpDeployment, "-n", namespace)
-	applyCmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", kubeconfigPath))
-	applyCmd.Stdout = writer
-	applyCmd.Stderr = writer
-
-	if err := applyCmd.Run(); err != nil {
-		return fmt.Errorf("failed to apply deployment: %w", err)
-	}
-
-	_, _ = fmt.Fprintf(writer, "   Notification Controller deployment applied in namespace: %s\n", namespace)
-	return nil
+	return fmt.Sprintf(`---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: notification-controller
+  labels:
+    app: notification-controller
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: notification-controller-role
+  labels:
+    app: notification-controller
+rules:
+- apiGroups: ["kubernaut.ai"]
+  resources: ["notificationrequests"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["kubernaut.ai"]
+  resources: ["notificationrequests/status"]
+  verbs: ["get", "update", "patch"]
+- apiGroups: ["kubernaut.ai"]
+  resources: ["notificationrequests/finalizers"]
+  verbs: ["update"]
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create", "patch"]
+- apiGroups: [""]
+  resources: ["configmaps", "secrets"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: notification-controller-rolebinding
+  labels:
+    app: notification-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: notification-controller-role
+subjects:
+- kind: ServiceAccount
+  name: notification-controller
+  namespace: %s
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: notification-controller-config
+data:
+  config.yaml: |
+    controller:
+      metricsAddr: ":9186"
+      healthProbeAddr: ":8081"
+      leaderElection: false
+      leaderElectionId: "notification.kubernaut.ai"
+    delivery:
+      console:
+        enabled: true
+      file:
+        outputDir: "/tmp/notifications"
+        format: "json"
+        timeout: 5s
+      log:
+        enabled: true
+        format: "json"
+      slack:
+        timeout: 10s
+    datastorage:
+      url: "http://data-storage-service.%s.svc.cluster.local:8080"
+      timeout: 10s
+      buffer:
+        bufferSize: 10000
+        batchSize: 100
+        flushInterval: 1s
+        maxRetries: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notification-metrics
+  labels:
+    app: notification-controller
+spec:
+  type: NodePort
+  selector:
+    app: notification-controller
+    control-plane: controller-manager
+  ports:
+  - name: metrics
+    protocol: TCP
+    port: 9090
+    targetPort: 9186
+    nodePort: 30186
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification-controller
+  labels:
+    app: notification-controller
+    control-plane: controller-manager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: notification-controller
+      control-plane: controller-manager
+  template:
+    metadata:
+      labels:
+        app: notification-controller
+        control-plane: controller-manager
+    spec:
+      serviceAccountName: notification-controller%s
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: ""
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+      containers:
+      - name: manager
+        image: %s
+        imagePullPolicy: %s
+        env:
+        - name: CONFIG_PATH
+          value: "/etc/notification/config.yaml"
+        - name: SLACK_WEBHOOK_URL
+          value: "%s"%s
+        args:
+        - "-config"
+        - "$(CONFIG_PATH)"
+        ports:
+        - containerPort: 9186
+          name: metrics
+          protocol: TCP
+        - containerPort: 8081
+          name: health
+          protocol: TCP
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 6
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+        volumeMounts:
+        - name: config
+          mountPath: /etc/notification
+          readOnly: true
+        - name: notification-output
+          mountPath: /tmp/notifications%s
+      volumes:
+      - name: config
+        configMap:
+          name: notification-controller-config
+      - name: notification-output
+        emptyDir: {}%s
+      terminationGracePeriodSeconds: 10
+`, namespace, namespace, coverageSecurityContextYAML, imageName, pullPolicy, slackWebhookURL, coverageEnvYAML, coverageVolumeMountYAML, coverageVolumeYAML)
 }
 
 // DeployNotificationDataStorageServices deploys DataStorage with OAuth2-Proxy for Notification E2E.

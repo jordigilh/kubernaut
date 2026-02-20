@@ -189,13 +189,13 @@ type WorkflowRef struct {
 	// Version of the workflow
 	Version string `json:"version"`
 
-	// ContainerImage resolved from workflow catalog (Data Storage API)
+	// ExecutionBundle resolved from workflow catalog (Data Storage API)
 	// OCI bundle reference for Tekton PipelineRun
-	ContainerImage string `json:"containerImage"`
+	ExecutionBundle string `json:"executionBundle"`
 
-	// ContainerDigest for audit trail and reproducibility
+	// ExecutionBundleDigest for audit trail and reproducibility
 	// +optional
-	ContainerDigest string `json:"containerDigest,omitempty"`
+	ExecutionBundleDigest string `json:"executionBundleDigest,omitempty"`
 }
 
 // ExecutionConfig contains minimal execution settings
@@ -283,28 +283,6 @@ type WorkflowExecutionStatus struct {
 	// DD-RO-002: RO makes routing decisions, SkipDetails removed from WFE
 	// Skip information now in RemediationRequest.Status
 	// ========================================
-
-	// ========================================
-	// EXPONENTIAL BACKOFF (v4.1) - DEPRECATED V1.0
-	// DD-RO-002 Phase 3: Routing state moved to RemediationRequest.Status
-	// WE is now a pure executor - routing logic owned by RO
-	// ========================================
-
-	// ConsecutiveFailures tracks pre-execution failures for this target resource
-	// DEPRECATED (V1.0): Routing state moved to RR.Status.ConsecutiveFailureCount per DD-RO-002 Phase 3
-	// This field is NO LONGER UPDATED by WE controller as of V1.0
-	// Use RR.Status.ConsecutiveFailureCount for routing decisions
-	// Will be REMOVED in V2.0
-	// +optional
-	ConsecutiveFailures int32 `json:"consecutiveFailures,omitempty"`
-
-	// NextAllowedExecution is the timestamp when next execution is allowed
-	// DEPRECATED (V1.0): Routing state moved to RR.Status.NextAllowedExecution per DD-RO-002 Phase 3
-	// This field is NO LONGER UPDATED by WE controller as of V1.0
-	// Use RR.Status.NextAllowedExecution for routing decisions
-	// Will be REMOVED in V2.0
-	// +optional
-	NextAllowedExecution *metav1.Time `json:"nextAllowedExecution,omitempty"`
 
 	// ========================================
 	// AUDIT-TRACKED EXECUTION BLOCK CLEARING (v4.2)
@@ -503,11 +481,13 @@ const (
 
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
+//+kubebuilder:selectablefield:JSONPath=.spec.remediationRequestRef.name
 //+kubebuilder:resource:shortName=wfe
 //+kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 //+kubebuilder:printcolumn:name="WorkflowID",type=string,JSONPath=`.spec.workflowRef.workflowId`
 //+kubebuilder:printcolumn:name="Target",type=string,JSONPath=`.spec.targetResource`
 //+kubebuilder:printcolumn:name="Duration",type=string,JSONPath=`.status.duration`
+//+kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`,priority=1
 //+kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 
 // WorkflowExecution is the Schema for the workflowexecutions API

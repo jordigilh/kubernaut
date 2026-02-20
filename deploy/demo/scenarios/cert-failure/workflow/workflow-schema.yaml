@@ -1,0 +1,46 @@
+# Fix Certificate Workflow Schema - Job Backend (BR-WORKFLOW-004)
+# Scenario: #133 -- cert-manager Certificate NotReady -> recreate CA Secret
+metadata:
+  workflowId: fix-certificate-v1
+  version: "1.0.0"
+  description:
+    what: "Recreates the CA Secret backing a cert-manager ClusterIssuer to restore certificate issuance"
+    whenToUse: "When a cert-manager Certificate is stuck in NotReady because the CA Secret has been deleted or corrupted"
+    whenNotToUse: "When the Certificate failure is caused by DNS validation issues or incorrect certificate spec rather than a missing CA"
+    preconditions: "cert-manager is installed and the ClusterIssuer exists but cannot sign due to a missing or corrupted CA Secret"
+
+actionType: FixCertificate
+
+labels:
+  signalType: CertificateNotReady
+  severity: [critical, high]
+  environment: [production, staging]
+  component: "*"
+  priority: "*"
+
+execution:
+  engine: job
+  bundle: quay.io/kubernaut-cicd/test-workflows/fix-certificate-job:v1.0.0
+
+parameters:
+  - name: TARGET_NAMESPACE
+    type: string
+    required: true
+    description: "Namespace of the affected Certificate"
+  - name: TARGET_CERTIFICATE
+    type: string
+    required: true
+    description: "Name of the Certificate to fix"
+  - name: ISSUER_NAME
+    type: string
+    required: true
+    description: "Name of the ClusterIssuer backing the certificate"
+  - name: CA_SECRET_NAME
+    type: string
+    required: true
+    description: "Name of the CA Secret to recreate"
+  - name: CA_SECRET_NAMESPACE
+    type: string
+    required: false
+    description: "Namespace of the CA Secret"
+    default: "cert-manager"

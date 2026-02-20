@@ -19,10 +19,12 @@ package workflowexecution
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
@@ -439,7 +441,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID:     "restart-deployment",
 						Version:        "1.0.0",
-						ContainerImage: "ghcr.io/kubernaut/workflows/restart-deployment:v1.0.0",
+						ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-deployment:v1.0.0",
 					},
 					Parameters: map[string]string{
 						"NAMESPACE":       "payment",
@@ -814,7 +816,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 					TargetResource: "default/deployment/test-app",
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID:     "restart-deployment",
-						ContainerImage: "ghcr.io/kubernaut/workflows/restart:v1.0.0",
+						ExecutionBundle: "ghcr.io/kubernaut/workflows/restart:v1.0.0",
 					},
 				},
 				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
@@ -925,7 +927,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 					TargetResource: "default/deployment/failing-app",
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID:     "restart-deployment",
-						ContainerImage: "ghcr.io/kubernaut/workflows/restart:v1.0.0",
+						ExecutionBundle: "ghcr.io/kubernaut/workflows/restart:v1.0.0",
 					},
 				},
 				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
@@ -2603,7 +2605,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 					WithStatusSubresource(&workflowexecutionv1alpha1.WorkflowExecution{}).
 					Build()
 				recorder = record.NewFakeRecorder(10)
-				auditStore = &mockAuditStore{}
+				auditStore = &mockAuditStore{events: make([]*ogenclient.AuditEventRequest, 0)}
 
 				reconciler = &workflowexecution.WorkflowExecutionReconciler{
 					Client:             fakeClient,
@@ -2612,24 +2614,26 @@ var _ = Describe("WorkflowExecution Controller", func() {
 					ExecutionNamespace: "kubernaut-workflows",
 					CooldownPeriod:     5 * time.Minute,
 					AuditStore:         auditStore,
+					AuditManager:       audit.NewManager(auditStore, logr.Discard()),
 				}
 			})
 
 			It("should emit audit event when workflow starts (Running phase)", func() {
 				// Given: WFE in Pending phase
+				suffix := uuid.New().String()[:8]
 				wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      "test-wfe-audit-start",
+						Name:      fmt.Sprintf("test-wfe-audit-start-%s", suffix),
 						Namespace: "default",
-						Labels: map[string]string{
-							"kubernaut.ai/correlation-id": "corr-123",
-						},
 					},
 					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+						RemediationRequestRef: corev1.ObjectReference{
+							Name: fmt.Sprintf("rr-start-%s", suffix),
+						},
 						TargetResource: "default/deployment/my-app",
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "test-workflow",
-							ContainerImage: "ghcr.io/test/workflow:v1",
+							ExecutionBundle: "ghcr.io/test/workflow:v1",
 						},
 					},
 					Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
@@ -2644,8 +2648,8 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				wfe.Status.StartTime = &now
 				Expect(fakeClient.Status().Update(ctx, wfe)).To(Succeed())
 
-				// And: RecordAuditEvent is called
-				err := reconciler.RecordAuditEvent(ctx, wfe, audit.EventTypeStarted, "success")
+				// And: AuditManager records the started event
+				err := reconciler.AuditManager.RecordWorkflowStarted(ctx, wfe)
 
 				// Then: Audit store should receive the event
 				Expect(err).ToNot(HaveOccurred())
@@ -2655,17 +2659,21 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 			It("should emit audit event when workflow completes", func() {
 				// Given: WFE in Running phase
+				suffix := uuid.New().String()[:8]
 				startTime := metav1.NewTime(time.Now().Add(-30 * time.Second))
 				wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      "test-wfe-audit-complete",
+						Name:      fmt.Sprintf("test-wfe-audit-complete-%s", suffix),
 						Namespace: "default",
 					},
 					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+						RemediationRequestRef: corev1.ObjectReference{
+							Name: fmt.Sprintf("rr-complete-%s", suffix),
+						},
 						TargetResource: "default/deployment/my-app",
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "test-workflow",
-							ContainerImage: "ghcr.io/test/workflow:v1",
+							ExecutionBundle: "ghcr.io/test/workflow:v1",
 						},
 					},
 					Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
@@ -2675,8 +2683,8 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				}
 				Expect(fakeClient.Create(ctx, wfe)).To(Succeed())
 
-				// When: RecordAuditEvent is called for completion
-				err := reconciler.RecordAuditEvent(ctx, wfe, audit.EventTypeCompleted, "success")
+				// When: AuditManager records the completed event
+				err := reconciler.AuditManager.RecordWorkflowCompleted(ctx, wfe)
 
 				// Then: Audit should be recorded
 				Expect(err).ToNot(HaveOccurred())
@@ -2685,17 +2693,21 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 			It("should emit audit event when workflow fails", func() {
 				// Given: WFE with failure details
+				suffix := uuid.New().String()[:8]
 				startTime := metav1.NewTime(time.Now().Add(-30 * time.Second))
 				wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      "test-wfe-audit-fail",
+						Name:      fmt.Sprintf("test-wfe-audit-fail-%s", suffix),
 						Namespace: "default",
 					},
 					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+						RemediationRequestRef: corev1.ObjectReference{
+							Name: fmt.Sprintf("rr-fail-%s", suffix),
+						},
 						TargetResource: "default/deployment/my-app",
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "test-workflow",
-							ContainerImage: "ghcr.io/test/workflow:v1",
+							ExecutionBundle: "ghcr.io/test/workflow:v1",
 						},
 					},
 					Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
@@ -2709,8 +2721,8 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				}
 				Expect(fakeClient.Create(ctx, wfe)).To(Succeed())
 
-				// When: RecordAuditEvent is called for failure
-				err := reconciler.RecordAuditEvent(ctx, wfe, audit.EventTypeFailed, "failure")
+				// When: AuditManager records the failed event
+				err := reconciler.AuditManager.RecordWorkflowFailed(ctx, wfe)
 
 				// Then: Audit should include failure details
 				Expect(err).ToNot(HaveOccurred())
@@ -2719,26 +2731,29 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			})
 
 			It("should enforce mandatory audit per ADR-032 when AuditStore is nil", func() {
-				// Given: Reconciler without audit store (misconfiguration)
-				reconcilerNoAudit := &workflowexecution.WorkflowExecutionReconciler{
-					Client:             fakeClient,
-					Scheme:             scheme,
-					ExecutionNamespace: "kubernaut-workflows",
-					AuditStore:         nil, // No audit store - misconfiguration
-				}
+				// Given: AuditManager with nil store (misconfiguration)
+				suffix := uuid.New().String()[:8]
+				nilStoreManager := audit.NewManager(nil, logr.Discard())
 
 				wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      "test-wfe-no-audit",
+						Name:      fmt.Sprintf("test-wfe-no-audit-%s", suffix),
 						Namespace: "default",
 					},
 					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+						RemediationRequestRef: corev1.ObjectReference{
+							Name: fmt.Sprintf("rr-no-audit-%s", suffix),
+						},
 						TargetResource: "default/deployment/my-app",
+						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+							WorkflowID:     "test-workflow",
+							ExecutionBundle: "ghcr.io/test/workflow:v1",
+						},
 					},
 				}
 
-				// When: RecordAuditEvent is called
-				err := reconcilerNoAudit.RecordAuditEvent(ctx, wfe, audit.EventTypeStarted, "success")
+				// When: AuditManager records with nil store
+				err := nilStoreManager.RecordWorkflowStarted(ctx, wfe)
 
 				// Then: Should return error per ADR-032 "No Audit Loss"
 				// ADR-032: "Audit writes are MANDATORY, not best-effort"
@@ -2751,47 +2766,200 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			// Day 9: P2 Edge Case - Missing Correlation ID
 			// Business Value: Audit trail completeness for tracing
 			// ========================================
-			It("should handle WFE with missing correlation-id label gracefully", func() {
-				// Given: WFE without correlation-id label
+			It("should handle WFE with empty RemediationRequestRef name gracefully", func() {
+				// Given: WFE without RemediationRequestRef name (empty correlation source)
+				suffix := uuid.New().String()[:8]
 				wfeNoCorrelation := &workflowexecutionv1alpha1.WorkflowExecution{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      "test-wfe-no-correlation",
+						Name:      fmt.Sprintf("test-wfe-no-correlation-%s", suffix),
 						Namespace: "default",
-						Labels:    map[string]string{}, // No correlation-id
 					},
 					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+						RemediationRequestRef: corev1.ObjectReference{
+							Name: "", // Empty correlation source
+						},
 						TargetResource: "default/deployment/my-app",
+						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+							WorkflowID:     "test-workflow",
+							ExecutionBundle: "ghcr.io/test/workflow:v1",
+						},
 					},
 				}
 
-				// When: RecordAuditEvent is called
-				err := reconciler.RecordAuditEvent(ctx, wfeNoCorrelation, audit.EventTypeStarted, "success")
+				// When: AuditManager records the started event
+				err := reconciler.AuditManager.RecordWorkflowStarted(ctx, wfeNoCorrelation)
 
-				// Then: Should succeed without panic (correlation-id is derived from label)
-				// Note: RecordAuditEvent handles missing label gracefully
+				// Then: Should succeed without panic
+				// AuditManager uses RemediationRequestRef.Name as correlation ID
 				Expect(err).ToNot(HaveOccurred())
-				// Audit event should still be recorded
 				Expect(auditStore.events).To(HaveLen(1))
 			})
 
 			It("should handle WFE with nil labels gracefully", func() {
 				// Given: WFE with nil Labels map
+				suffix := uuid.New().String()[:8]
 				wfeNilLabels := &workflowexecutionv1alpha1.WorkflowExecution{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      "test-wfe-nil-labels",
+						Name:      fmt.Sprintf("test-wfe-nil-labels-%s", suffix),
 						Namespace: "default",
 						Labels:    nil, // Nil labels
 					},
 					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+						RemediationRequestRef: corev1.ObjectReference{
+							Name: fmt.Sprintf("rr-nil-labels-%s", suffix),
+						},
 						TargetResource: "default/deployment/my-app",
+						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+							WorkflowID:     "test-workflow",
+							ExecutionBundle: "ghcr.io/test/workflow:v1",
+						},
 					},
 				}
 
-				// When: RecordAuditEvent is called
-				err := reconciler.RecordAuditEvent(ctx, wfeNilLabels, audit.EventTypeStarted, "success")
+				// When: AuditManager records the started event
+				err := reconciler.AuditManager.RecordWorkflowStarted(ctx, wfeNilLabels)
 
 				// Then: Should succeed without panic
 				Expect(err).ToNot(HaveOccurred())
+			})
+		})
+
+		// ========================================
+		// Issue #103: Parameters in Audit Events (SOC2 chain of custody)
+		// Validates parameters field in WorkflowExecutionAuditPayload
+		// ========================================
+		Context("Audit Event Parameters (Issue #103 - SOC2 chain of custody)", func() {
+			var (
+				auditMgr   *audit.Manager
+				store      *mockAuditStore
+				testCtx    context.Context
+			)
+
+			BeforeEach(func() {
+				testCtx = context.Background()
+				store = &mockAuditStore{events: make([]*ogenclient.AuditEventRequest, 0)}
+				auditMgr = audit.NewManager(store, logr.Discard())
+			})
+
+			It("should include parameters in workflow.started audit event", func() {
+				// Given: WFE with post-normalization parameters
+				suffix := uuid.New().String()[:8]
+				wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      fmt.Sprintf("test-wfe-params-started-%s", suffix),
+						Namespace: "default",
+					},
+					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+						RemediationRequestRef: corev1.ObjectReference{
+							Name: fmt.Sprintf("rr-params-started-%s", suffix),
+						},
+						TargetResource: "default/deployment/payment-api",
+						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+							WorkflowID:     "kubectl-restart-deployment",
+							Version:        "v1.0.0",
+							ExecutionBundle: "ghcr.io/kubernaut/kubectl-actions:v1.28",
+						},
+						Parameters: map[string]string{
+							"NAMESPACE":       "payment",
+							"DEPLOYMENT_NAME": "payment-api",
+						},
+					},
+					Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
+						Phase: workflowexecutionv1alpha1.PhaseRunning,
+					},
+				}
+
+				// When: RecordWorkflowStarted is called
+				err := auditMgr.RecordWorkflowStarted(testCtx, wfe)
+
+				// Then: Audit event should contain parameters
+				Expect(err).ToNot(HaveOccurred())
+				Expect(store.events).To(HaveLen(1))
+
+				eventData := parseEventData(store.events[0].EventData)
+				Expect(eventData).To(HaveKey("parameters"))
+
+				params, ok := eventData["parameters"].(map[string]interface{})
+				Expect(ok).To(BeTrue(), "parameters should be a map")
+				Expect(params["NAMESPACE"]).To(Equal("payment"))
+				Expect(params["DEPLOYMENT_NAME"]).To(Equal("payment-api"))
+			})
+
+			It("should include parameters in execution.started audit event", func() {
+				// Given: WFE with post-normalization parameters
+				suffix := uuid.New().String()[:8]
+				wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      fmt.Sprintf("test-wfe-params-exec-started-%s", suffix),
+						Namespace: "default",
+					},
+					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+						RemediationRequestRef: corev1.ObjectReference{
+							Name: fmt.Sprintf("rr-params-exec-%s", suffix),
+						},
+						TargetResource: "default/deployment/payment-api",
+						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+							WorkflowID:     "kubectl-restart-deployment",
+							Version:        "v1.0.0",
+							ExecutionBundle: "ghcr.io/kubernaut/kubectl-actions:v1.28",
+						},
+						Parameters: map[string]string{
+							"NAMESPACE":       "payment",
+							"DEPLOYMENT_NAME": "payment-api",
+						},
+					},
+				}
+
+				// When: RecordExecutionWorkflowStarted is called
+				err := auditMgr.RecordExecutionWorkflowStarted(testCtx, wfe, "payment-api-run-abc", "kubernaut-workflows")
+
+				// Then: Audit event should contain parameters
+				Expect(err).ToNot(HaveOccurred())
+				Expect(store.events).To(HaveLen(1))
+
+				eventData := parseEventData(store.events[0].EventData)
+				Expect(eventData).To(HaveKey("parameters"))
+
+				params, ok := eventData["parameters"].(map[string]interface{})
+				Expect(ok).To(BeTrue(), "parameters should be a map")
+				Expect(params["NAMESPACE"]).To(Equal("payment"))
+				Expect(params["DEPLOYMENT_NAME"]).To(Equal("payment-api"))
+			})
+
+			It("should omit parameters when WFE has nil parameters", func() {
+				// Given: WFE without parameters
+				suffix := uuid.New().String()[:8]
+				wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      fmt.Sprintf("test-wfe-no-params-%s", suffix),
+						Namespace: "default",
+					},
+					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+						RemediationRequestRef: corev1.ObjectReference{
+							Name: fmt.Sprintf("rr-no-params-%s", suffix),
+						},
+						TargetResource: "default/deployment/my-app",
+						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+							WorkflowID:     "test-workflow",
+							Version:        "v1.0.0",
+							ExecutionBundle: "ghcr.io/test/workflow:v1",
+						},
+						Parameters: nil,
+					},
+					Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
+						Phase: workflowexecutionv1alpha1.PhaseCompleted,
+					},
+				}
+
+				// When: RecordWorkflowCompleted is called (no parameters)
+				err := auditMgr.RecordWorkflowCompleted(testCtx, wfe)
+
+				// Then: Audit event should NOT contain parameters key
+				Expect(err).ToNot(HaveOccurred())
+				Expect(store.events).To(HaveLen(1))
+
+				eventData := parseEventData(store.events[0].EventData)
+				Expect(eventData).ToNot(HaveKey("parameters"))
 			})
 		})
 
@@ -2813,7 +2981,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 					WithScheme(scheme).
 					WithStatusSubresource(&workflowexecutionv1alpha1.WorkflowExecution{}).
 					Build()
-				auditStore = &mockAuditStore{}
+				auditStore = &mockAuditStore{events: make([]*ogenclient.AuditEventRequest, 0)}
 
 				reconciler = &workflowexecution.WorkflowExecutionReconciler{
 					Client:             fakeClient,
@@ -2822,25 +2990,29 @@ var _ = Describe("WorkflowExecution Controller", func() {
 					ExecutionNamespace: "kubernaut-workflows",
 					CooldownPeriod:     5 * time.Minute,
 					AuditStore:         auditStore,
+					AuditManager:       audit.NewManager(auditStore, logr.Discard()),
 				}
 			})
 
 			It("should populate all required audit event fields correctly for workflow.started", func() {
 				// Given: Complete WFE with all fields
+				suffix := uuid.New().String()[:8]
+				wfeName := fmt.Sprintf("wfe-audit-validation-start-%s", suffix)
+				rrName := fmt.Sprintf("rr-audit-validation-%s", suffix)
 				startTime := metav1.Now()
 				wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      "wfe-audit-validation-start",
+						Name:      wfeName,
 						Namespace: "production",
-						Labels: map[string]string{
-							"kubernaut.ai/correlation-id": "corr-abc123",
-						},
 					},
 					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+						RemediationRequestRef: corev1.ObjectReference{
+							Name: rrName,
+						},
 						TargetResource: "production/deployment/payment-api",
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "increase-memory-conservative",
-							ContainerImage: "ghcr.io/kubernaut/workflows/increase-memory:v1.2.0",
+							ExecutionBundle: "ghcr.io/kubernaut/workflows/increase-memory:v1.2.0",
 						},
 						Parameters: map[string]string{
 							"NAMESPACE":       "production",
@@ -2854,8 +3026,8 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				}
 				Expect(fakeClient.Create(ctx, wfe)).To(Succeed())
 
-				// When: RecordAuditEvent is called
-				err := reconciler.RecordAuditEvent(ctx, wfe, audit.EventTypeStarted, "success")
+				// When: AuditManager records the started event
+				err := reconciler.AuditManager.RecordWorkflowStarted(ctx, wfe)
 
 				// Then: All audit event fields should be correctly populated
 				Expect(err).ToNot(HaveOccurred())
@@ -2865,7 +3037,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 				// Event Classification
 				Expect(event.EventType).To(Equal(audit.EventTypeStarted))
-				Expect(string(event.EventCategory)).To(Equal("workflowexecution")) // Service name per naming convention (updated Jan 14, 2026)
+				Expect(string(event.EventCategory)).To(Equal("workflowexecution"))
 				Expect(event.EventAction).To(Equal(audit.ActionStarted))
 				Expect(string(event.EventOutcome)).To(Equal(string(sharedaudit.OutcomeSuccess)))
 
@@ -2875,17 +3047,16 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 				// Resource Information
 				Expect(event.ResourceType.Value).To(Equal("WorkflowExecution"))
-				Expect(event.ResourceID.Value).To(Equal("wfe-audit-validation-start"))
+				Expect(event.ResourceID.Value).To(Equal(wfeName))
 
-				// Correlation
-				Expect(event.CorrelationID).To(Equal("corr-abc123"))
+				// Correlation (AuditManager uses RemediationRequestRef.Name)
+				Expect(event.CorrelationID).To(Equal(rrName))
 
 				// Namespace context
 				Expect(event.Namespace.IsSet()).To(BeTrue())
 				Expect(event.Namespace.Value).To(Equal("production"))
 
 				// Event Identity (auto-generated)
-				// NOTE: EventID removed in OpenAPI spec (DD-AUDIT-002 V2.0.1)
 				Expect(event.EventTimestamp).ToNot(BeZero())
 
 				// Event Data (structured type - parse and validate)
@@ -2894,28 +3065,31 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				Expect(eventData["workflow_id"]).To(Equal("increase-memory-conservative"))
 				Expect(eventData["target_resource"]).To(Equal("production/deployment/payment-api"))
 				Expect(eventData["container_image"]).To(Equal("ghcr.io/kubernaut/workflows/increase-memory:v1.2.0"))
-				Expect(eventData["execution_name"]).To(Equal("wfe-audit-validation-start"))
+				Expect(eventData["execution_name"]).To(Equal(wfeName))
 				Expect(eventData["phase"]).To(Equal("Running"))
 			})
 
 			It("should include failure details in audit event for workflow.failed", func() {
 				// Given: WFE with failure details
+				suffix := uuid.New().String()[:8]
+				wfeName := fmt.Sprintf("wfe-audit-validation-failed-%s", suffix)
+				rrName := fmt.Sprintf("rr-audit-failed-%s", suffix)
 				startTime := metav1.NewTime(time.Now().Add(-45 * time.Second))
 				completionTime := metav1.Now()
 				exitCode := int32(1)
 				wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      "wfe-audit-validation-failed",
+						Name:      wfeName,
 						Namespace: "staging",
-						Labels: map[string]string{
-							"kubernaut.ai/correlation-id": "corr-fail456",
-						},
 					},
 					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+						RemediationRequestRef: corev1.ObjectReference{
+							Name: rrName,
+						},
 						TargetResource: "staging/deployment/api-gateway",
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "restart-deployment",
-							ContainerImage: "ghcr.io/kubernaut/workflows/restart:v1.0.0",
+							ExecutionBundle: "ghcr.io/kubernaut/workflows/restart:v1.0.0",
 						},
 					},
 					Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
@@ -2936,8 +3110,8 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				}
 				Expect(fakeClient.Create(ctx, wfe)).To(Succeed())
 
-				// When: RecordAuditEvent is called for failure
-				err := reconciler.RecordAuditEvent(ctx, wfe, audit.EventTypeFailed, "failure")
+				// When: AuditManager records the failed event
+				err := reconciler.AuditManager.RecordWorkflowFailed(ctx, wfe)
 
 				// Then: Audit event should include failure details
 				Expect(err).ToNot(HaveOccurred())
@@ -2949,8 +3123,8 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				Expect(event.EventType).To(Equal(audit.EventTypeFailed))
 				Expect(string(event.EventOutcome)).To(Equal(string(sharedaudit.OutcomeFailure)))
 
-				// Correlation
-				Expect(event.CorrelationID).To(Equal("corr-fail456"))
+				// Correlation (AuditManager uses RemediationRequestRef.Name)
+				Expect(event.CorrelationID).To(Equal(rrName))
 
 				// Event Data with timing (JSON bytes - parse and validate)
 				eventData := parseEventData(event.EventData)
@@ -2966,19 +3140,24 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			// V1.0: workflow.skipped test removed - routing moved to RO (DD-RO-002)
 			// WFE no longer has skip logic; RO handles routing before WFE creation
 
-			It("should use WFE name as correlation ID fallback when label missing", func() {
-				// Given: WFE without correlation-id label
+			It("should use RemediationRequestRef.Name as correlation ID", func() {
+				// Given: WFE with RemediationRequestRef
+				suffix := uuid.New().String()[:8]
+				wfeName := fmt.Sprintf("wfe-corr-test-%s", suffix)
+				rrName := fmt.Sprintf("rr-corr-test-%s", suffix)
 				wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      "wfe-no-correlation-label",
+						Name:      wfeName,
 						Namespace: "default",
-						Labels:    map[string]string{}, // No correlation-id
 					},
 					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+						RemediationRequestRef: corev1.ObjectReference{
+							Name: rrName,
+						},
 						TargetResource: "default/deployment/app",
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "test-workflow",
-							ContainerImage: "ghcr.io/test/workflow:v1",
+							ExecutionBundle: "ghcr.io/test/workflow:v1",
 						},
 					},
 					Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
@@ -2987,31 +3166,35 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				}
 				Expect(fakeClient.Create(ctx, wfe)).To(Succeed())
 
-				// When: RecordAuditEvent is called
-				err := reconciler.RecordAuditEvent(ctx, wfe, audit.EventTypeStarted, "success")
+				// When: AuditManager records the started event
+				err := reconciler.AuditManager.RecordWorkflowStarted(ctx, wfe)
 
-				// Then: CorrelationID should fall back to WFE name
+				// Then: CorrelationID should be RemediationRequestRef.Name
 				Expect(err).ToNot(HaveOccurred())
 				Expect(auditStore.events).To(HaveLen(1))
 
 				event := auditStore.events[0]
-				Expect(event.CorrelationID).To(Equal("wfe-no-correlation-label"))
+				Expect(event.CorrelationID).To(Equal(rrName))
 			})
 
 			It("should populate timing information when available", func() {
 				// Given: WFE with complete timing information
+				suffix := uuid.New().String()[:8]
 				startTime := metav1.NewTime(time.Now().Add(-60 * time.Second))
 				completionTime := metav1.Now()
 				wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      "wfe-audit-timing",
+						Name:      fmt.Sprintf("wfe-audit-timing-%s", suffix),
 						Namespace: "default",
 					},
 					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+						RemediationRequestRef: corev1.ObjectReference{
+							Name: fmt.Sprintf("rr-timing-%s", suffix),
+						},
 						TargetResource: "default/deployment/app",
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "test-workflow",
-							ContainerImage: "ghcr.io/test/workflow:v1",
+							ExecutionBundle: "ghcr.io/test/workflow:v1",
 						},
 					},
 					Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
@@ -3023,8 +3206,8 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				}
 				Expect(fakeClient.Create(ctx, wfe)).To(Succeed())
 
-				// When: RecordAuditEvent is called
-				err := reconciler.RecordAuditEvent(ctx, wfe, audit.EventTypeCompleted, "success")
+				// When: AuditManager records the completed event
+				err := reconciler.AuditManager.RecordWorkflowCompleted(ctx, wfe)
 
 				// Then: Timing fields should be populated
 				Expect(err).ToNot(HaveOccurred())
@@ -3058,7 +3241,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						TargetResource: "production/deployment/my-app",
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "increase-memory",
-							ContainerImage: "ghcr.io/org/workflow:v1.0",
+							ExecutionBundle: "ghcr.io/org/workflow:v1.0",
 						},
 					},
 				}
@@ -3077,7 +3260,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						TargetResource: "production/deployment/my-app",
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "increase-memory",
-							ContainerImage: "", // Missing
+							ExecutionBundle: "", // Missing
 						},
 					},
 				}
@@ -3087,7 +3270,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 				// Then: Should return ConfigurationError
 				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("containerImage"))
+				Expect(err.Error()).To(ContainSubstring("executionBundle"))
 			})
 
 			It("should return error for missing TargetResource", func() {
@@ -3097,7 +3280,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						TargetResource: "", // Missing
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "increase-memory",
-							ContainerImage: "ghcr.io/org/workflow:v1.0",
+							ExecutionBundle: "ghcr.io/org/workflow:v1.0",
 						},
 					},
 				}
@@ -3117,7 +3300,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						TargetResource: "node/worker-node-1", // Cluster-scoped: kind/name
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "node-disk-cleanup",
-							ContainerImage: "ghcr.io/org/workflow:v1.0",
+							ExecutionBundle: "ghcr.io/org/workflow:v1.0",
 						},
 					},
 				}
@@ -3136,7 +3319,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						TargetResource: "production", // Only 1 part - invalid
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "increase-memory",
-							ContainerImage: "ghcr.io/org/workflow:v1.0",
+							ExecutionBundle: "ghcr.io/org/workflow:v1.0",
 						},
 					},
 				}
@@ -3156,7 +3339,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						TargetResource: "production/deployment/my-app/extra", // Extra part
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "increase-memory",
-							ContainerImage: "ghcr.io/org/workflow:v1.0",
+							ExecutionBundle: "ghcr.io/org/workflow:v1.0",
 						},
 					},
 				}
@@ -3182,7 +3365,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 							TargetResource: target,
 							WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 								WorkflowID:     "test-workflow",
-								ContainerImage: "ghcr.io/org/workflow:v1.0",
+								ExecutionBundle: "ghcr.io/org/workflow:v1.0",
 							},
 						},
 					}
@@ -3198,7 +3381,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			// ========================================
 
 			// DescribeTable validates actual ValidateSpec() implementation behavior
-			// Validation order: containerImage -> targetResource -> format
+			// Validation order: executionBundle -> targetResource -> format
 			// Note: WorkflowID is NOT validated by current implementation
 			DescribeTable("TargetResource format validation",
 				func(targetResource string, workflowID string, containerImage string, shouldPass bool, expectedErrorSubstring string) {
@@ -3207,7 +3390,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 							TargetResource: targetResource,
 							WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 								WorkflowID:     workflowID,
-								ContainerImage: containerImage,
+								ExecutionBundle: containerImage,
 							},
 						},
 					}
@@ -3237,16 +3420,16 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				Entry("valid - cluster-scoped clusterrole", "clusterrole/admin", "workflow-9", "ghcr.io/org/wf:v1", true, ""),
 				Entry("valid - cluster-scoped namespace", "namespace/production", "workflow-10", "ghcr.io/org/wf:v1", true, ""),
 
-				// Invalid TargetResource - missing parts (must have valid containerImage first)
+				// Invalid TargetResource - missing parts (must have valid executionBundle first)
 				Entry("invalid - empty targetResource", "", "workflow-1", "ghcr.io/org/wf:v1", false, "targetResource"),
 				Entry("invalid - only one part", "default", "workflow-1", "ghcr.io/org/wf:v1", false, "format"),
 				Entry("invalid - too many parts", "default/deployment/app/extra", "workflow-1", "ghcr.io/org/wf:v1", false, "format"),
 
-				// Invalid WorkflowRef - containerImage validation
-				Entry("invalid - empty ContainerImage", "default/deployment/app", "workflow-1", "", false, "containerImage"),
+				// Invalid WorkflowRef - executionBundle validation
+				Entry("invalid - empty ExecutionBundle", "default/deployment/app", "workflow-1", "", false, "executionBundle"),
 
-				// Validation order: containerImage checked first
-				Entry("invalid - all empty returns containerImage error first", "", "", "", false, "containerImage"),
+				// Validation order: executionBundle checked first
+				Entry("invalid - all empty returns executionBundle error first", "", "", "", false, "executionBundle"),
 			)
 		})
 
@@ -3257,7 +3440,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 						TargetResource: "invalid-format", // Invalid
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-							ContainerImage: "ghcr.io/org/workflow:v1.0",
+							ExecutionBundle: "ghcr.io/org/workflow:v1.0",
 						},
 					},
 				}
@@ -4020,12 +4203,12 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			}
 		})
 
-		It("should reject empty containerImage", func() {
-			// Given: WFE with empty containerImage
+		It("should reject empty executionBundle", func() {
+			// Given: WFE with empty executionBundle
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						ContainerImage: "", // Empty
+						ExecutionBundle: "", // Empty
 					},
 					TargetResource: "default/deployment/my-app",
 				},
@@ -4036,7 +4219,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 			// Then: Should return error
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("containerImage is required"))
+			Expect(err.Error()).To(ContainSubstring("executionBundle is required"))
 		})
 
 		It("should reject empty targetResource", func() {
@@ -4044,7 +4227,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						ContainerImage: "quay.io/kubernaut/workflow:v1",
+						ExecutionBundle: "quay.io/kubernaut/workflow:v1",
 					},
 					TargetResource: "", // Empty
 				},
@@ -4063,7 +4246,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						ContainerImage: "quay.io/kubernaut/workflow:v1",
+						ExecutionBundle: "quay.io/kubernaut/workflow:v1",
 					},
 					TargetResource: "my-app", // Invalid: only 1 part
 				},
@@ -4082,7 +4265,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						ContainerImage: "quay.io/kubernaut/workflow:v1",
+						ExecutionBundle: "quay.io/kubernaut/workflow:v1",
 					},
 					TargetResource: "default/deployment/my-app/extra", // Invalid: 4 parts
 				},
@@ -4101,7 +4284,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						ContainerImage: "quay.io/kubernaut/workflow:v1",
+						ExecutionBundle: "quay.io/kubernaut/workflow:v1",
 					},
 					TargetResource: "default//my-app", // Invalid: empty kind
 				},
@@ -4381,9 +4564,6 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				ExecutionNamespace:     "kubernaut-workflows",
 				ServiceAccountName:     "kubernaut-workflow-runner",
 				CooldownPeriod:         10 * time.Second,
-				BaseCooldownPeriod:     30 * time.Second,
-				MaxCooldownPeriod:      5 * time.Minute,
-				MaxConsecutiveFailures: 5,
 				AuditStore:             auditStore,
 				Metrics:                testMetrics,
 				StatusManager:          statusManager,
@@ -4404,7 +4584,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "test-workflow",
 							Version:        "v1",
-							ContainerImage: "registry.example.com/workflows/test:v1",
+							ExecutionBundle: "registry.example.com/workflows/test:v1",
 						},
 						TargetResource: "deployments/test-app",
 					},
@@ -4445,7 +4625,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "test-workflow",
 							Version:        "v1",
-							ContainerImage: "registry.example.com/workflows/test:v1",
+							ExecutionBundle: "registry.example.com/workflows/test:v1",
 						},
 						TargetResource: "deployments/test-app",
 					},
@@ -4477,7 +4657,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "test-workflow",
 							Version:        "v1",
-							ContainerImage: "registry.example.com/workflows/test:v1",
+							ExecutionBundle: "registry.example.com/workflows/test:v1",
 						},
 						TargetResource: "deployments/test-app",
 					},
@@ -4509,7 +4689,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "test-workflow",
 							Version:        "v1",
-							ContainerImage: "registry.example.com/workflows/test:v1",
+							ExecutionBundle: "registry.example.com/workflows/test:v1",
 						},
 						TargetResource: "deployments/test-app",
 					},
@@ -4541,7 +4721,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "test-workflow",
 							Version:        "v1",
-							ContainerImage: "registry.example.com/workflows/test:v1",
+							ExecutionBundle: "registry.example.com/workflows/test:v1",
 						},
 						TargetResource: "deployments/test-app",
 					},
@@ -4573,7 +4753,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "test-workflow",
 							Version:        "v1",
-							ContainerImage: "registry.example.com/workflows/test:v1",
+							ExecutionBundle: "registry.example.com/workflows/test:v1",
 						},
 						TargetResource: "deployments/test-app",
 					},
@@ -4605,7 +4785,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "test-workflow",
 							Version:        "v1",
-							ContainerImage: "registry.example.com/workflows/test:v1",
+							ExecutionBundle: "registry.example.com/workflows/test:v1",
 						},
 						TargetResource: "deployments/test-app",
 					},
@@ -4637,7 +4817,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "test-workflow",
 							Version:        "v1",
-							ContainerImage: "registry.example.com/workflows/test:v1",
+							ExecutionBundle: "registry.example.com/workflows/test:v1",
 						},
 						TargetResource: "deployments/test-app",
 						// DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name as correlation ID
@@ -4713,7 +4893,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "test-workflow",
 							Version:        "v1",
-							ContainerImage: "registry.example.com/workflows/test:v1",
+							ExecutionBundle: "registry.example.com/workflows/test:v1",
 						},
 						TargetResource: "deployments/test-app",
 					},
@@ -4765,7 +4945,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "test-workflow",
 							Version:        "v1",
-							ContainerImage: "registry.example.com/workflows/test:v1",
+							ExecutionBundle: "registry.example.com/workflows/test:v1",
 						},
 						TargetResource: "deployments/test-app",
 					},
@@ -4801,7 +4981,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "test-workflow",
 							Version:        "v1",
-							ContainerImage: "registry.example.com/workflows/test:v1",
+							ExecutionBundle: "registry.example.com/workflows/test:v1",
 						},
 						TargetResource: "deployments/test-app",
 						Parameters: map[string]string{
@@ -4835,7 +5015,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "test-workflow",
 							Version:        "v1",
-							ContainerImage: "registry.example.com/workflows/test:v1",
+							ExecutionBundle: "registry.example.com/workflows/test:v1",
 						},
 						TargetResource: "deployments/test-app",
 					},
@@ -4890,7 +5070,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "test-workflow",
 							Version:        "v1",
-							ContainerImage: "registry.example.com/workflows/test:v1",
+							ExecutionBundle: "registry.example.com/workflows/test:v1",
 						},
 						TargetResource: "namespace/deployment/app-name",
 					},
@@ -4914,7 +5094,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "test-workflow",
 							Version:        "v1",
-							ContainerImage: "registry.example.com/workflows/test:v1",
+							ExecutionBundle: "registry.example.com/workflows/test:v1",
 						},
 						TargetResource: "path//to///resource",
 					},
@@ -4941,7 +5121,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "test-workflow",
 							Version:        "v1",
-							ContainerImage: "registry.example.com/workflows/test:v1",
+							ExecutionBundle: "registry.example.com/workflows/test:v1",
 						},
 						TargetResource: longResource,
 					},
@@ -4968,7 +5148,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "test-workflow",
 							Version:        "v1",
-							ContainerImage: "registry.example.com/workflows/test:v1",
+							ExecutionBundle: "registry.example.com/workflows/test:v1",
 						},
 						TargetResource: resource63,
 					},
@@ -4996,7 +5176,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:     "test-workflow",
 							Version:        "v1",
-							ContainerImage: "registry.example.com/workflows/test:v1",
+							ExecutionBundle: "registry.example.com/workflows/test:v1",
 						},
 						TargetResource: "///",
 					},

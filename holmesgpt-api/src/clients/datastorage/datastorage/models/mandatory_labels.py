@@ -29,18 +29,18 @@ except ImportError:
 
 class MandatoryLabels(BaseModel):
     """
-    4 mandatory + 1 optional workflow labels (DD-WORKFLOW-016: signal_type now optional)
+    4 mandatory + 1 optional workflow labels (DD-WORKFLOW-016: signalType now optional)
     """ # noqa: E501
-    signal_type: Optional[StrictStr] = Field(default=None, description="Signal type this workflow handles (optional metadata per DD-WORKFLOW-016)")
-    severity: Annotated[List[StrictStr], Field(min_length=1)] = Field(description="Severity level(s) this workflow is designed for. Always an array per DD-WORKFLOW-001 v1.4.")
+    signal_type: Optional[StrictStr] = Field(default=None, description="Signal type this workflow handles (optional metadata per DD-WORKFLOW-016)", alias="signalType")
+    severity: Annotated[List[StrictStr], Field(min_length=1)] = Field(description="Severity level(s) this workflow is designed for. Always an array. To match any severity, list all levels.")
     component: StrictStr = Field(description="Kubernetes resource type this workflow targets (e.g., pod, deployment, node)")
     environment: Annotated[List[StrictStr], Field(min_length=1)] = Field(description="Target environments (workflow can declare multiple, '*' matches all)")
     priority: StrictStr = Field(description="Business priority level (P0, P1, P2, P3, * for any)")
-    __properties: ClassVar[List[str]] = ["signal_type", "severity", "component", "environment", "priority"]
+    __properties: ClassVar[List[str]] = ["signalType", "severity", "component", "environment", "priority"]
 
     @field_validator('severity')
     def severity_validate_enum(cls, value):
-        """Validates the enum — each item must be a valid severity level"""
+        """Validates the enum"""
         for i in value:
             if i not in ('critical', 'high', 'medium', 'low'):
                 raise ValueError("each list item must be one of ('critical', 'high', 'medium', 'low')")
@@ -110,7 +110,7 @@ class MandatoryLabels(BaseModel):
             return cls.model_validate(obj)
 
         _obj = cls.model_validate({
-            "signal_type": obj.get("signal_type"),
+            "signalType": obj.get("signalType"),
             "severity": obj.get("severity"),
             "component": obj.get("component"),
             "environment": obj.get("environment"),

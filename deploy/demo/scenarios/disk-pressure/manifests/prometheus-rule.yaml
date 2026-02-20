@@ -1,0 +1,33 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: kubernaut-disk-pressure-rules
+  namespace: demo-disk
+  labels:
+    release: prometheus
+spec:
+  groups:
+  - name: kubernaut-disk-pressure
+    rules:
+    # Detect PVCs in namespace that are bound but owned by completed/failed Jobs
+    # This is a proxy for "orphaned storage consuming disk"
+    - alert: KubernautOrphanedPVCs
+      expr: |
+        count(
+          kube_persistentvolumeclaim_status_phase{
+            namespace="demo-disk",
+            phase="Bound"
+          }
+        ) > 3
+      for: 2m
+      labels:
+        severity: warning
+      annotations:
+        summary: >
+          Namespace {{ $labels.namespace }} has more than 3 bound PVCs, indicating
+          possible orphaned storage from completed batch jobs.
+        description: >
+          The demo-disk namespace has accumulated multiple bound PVCs that may be
+          from completed or failed batch jobs. These orphaned PVCs consume storage
+          and may contribute to node disk pressure. Cleanup of PVCs not attached
+          to running pods is recommended.

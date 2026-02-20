@@ -144,11 +144,6 @@ func (in *AIAnalysisStatus) DeepCopyInto(out *AIAnalysisStatus) {
 		*out = new(ApprovalContext)
 		(*in).DeepCopyInto(*out)
 	}
-	if in.TargetInOwnerChain != nil {
-		in, out := &in.TargetInOwnerChain, &out.TargetInOwnerChain
-		*out = new(bool)
-		**out = **in
-	}
 	if in.Warnings != nil {
 		in, out := &in.Warnings, &out.Warnings
 		*out = make([]string, len(*in))

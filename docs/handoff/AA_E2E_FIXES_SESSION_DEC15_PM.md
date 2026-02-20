@@ -1,5 +1,7 @@
 # AIAnalysis E2E Test Fixes - Dec 15, 2025 PM Session
 
+> **Note (ADR-056/ADR-055):** References to `EnrichmentResults.DetectedLabels` and `EnrichmentResults.OwnerChain` in this document are historical. These fields were removed: DetectedLabels is now computed by HAPI post-RCA (ADR-056), and OwnerChain is resolved via get_resource_context (ADR-055).
+
 ## 🎯 Session Objective
 Fix remaining E2E test failures after image build fixes (started at 20/25 passing, 80%)
 

@@ -78,7 +78,7 @@ parameters:
     required: true
 execution:
   engine: tekton
-  bundle: quay.io/kubernaut/workflows/scale-memory-bundle:v1.0.0
+  bundle: quay.io/kubernaut/workflows/scale-memory-bundle:v1.0.0@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
 `
 
 // invalidOCIRegistrationSchemaYAML is missing required fields
@@ -100,7 +100,7 @@ var _ = Describe("OCI-Based Workflow Registration Handler (DD-WORKFLOW-017)", fu
 
 	// Helper to create a JSON request body
 	makeCreateRequest := func(containerImage string) *http.Request {
-		body := map[string]string{"container_image": containerImage}
+		body := map[string]string{"schemaImage": containerImage}
 		jsonBody, err := json.Marshal(body)
 		Expect(err).ToNot(HaveOccurred())
 		return httptest.NewRequest(http.MethodPost, "/api/v1/workflows", bytes.NewReader(jsonBody))
@@ -275,7 +275,7 @@ parameters:
     required: true
 execution:
   engine: tekton
-  bundle: quay.io/kubernaut/test:v1.0.0
+  bundle: quay.io/kubernaut/test:v1.0.0@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
 `
 
 		It("should return 400 when action_type is not in the taxonomy", func() {

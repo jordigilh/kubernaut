@@ -119,9 +119,6 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("rar-%s", testRR.Name),
 					Namespace: testNamespace,
-					Labels: map[string]string{
-						"kubernaut.ai/remediation-request": testRR.Name,
-					},
 				},
 				Spec: remediationv1.RemediationApprovalRequestSpec{
 					RemediationRequestRef: corev1.ObjectReference{
@@ -139,7 +136,7 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 					RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{
 						WorkflowID:     "restart-pod-v1",
 						Version:        "1.0.0",
-						ContainerImage: "kubernaut/restart-pod:v1",
+						ExecutionBundle: "kubernaut/restart-pod:v1",
 						Rationale:      "Standard pod restart",
 					},
 					RecommendedActions: []remediationv1.ApprovalRecommendedAction{
@@ -374,9 +371,6 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("rar-%s", testRR.Name),
 					Namespace: testNamespace,
-					Labels: map[string]string{
-						"kubernaut.ai/remediation-request": testRR.Name,
-					},
 				},
 				Spec: remediationv1.RemediationApprovalRequestSpec{
 					RemediationRequestRef: corev1.ObjectReference{
@@ -394,7 +388,7 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 					RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{
 						WorkflowID:     "restart-pod-v1",
 						Version:        "1.0.0",
-						ContainerImage: "kubernaut/restart-pod:v1",
+						ExecutionBundle: "kubernaut/restart-pod:v1",
 						Rationale:      "Standard pod restart",
 					},
 					RecommendedActions: []remediationv1.ApprovalRecommendedAction{

@@ -70,7 +70,7 @@ const (
 	PhasePending = "Pending"
 
 	// PhaseInvestigating calls HolmesGPT-API for investigation.
-	// Captures RCA, SelectedWorkflow, AlternativeWorkflows, TargetInOwnerChain, Warnings.
+	// Captures RCA, SelectedWorkflow, AlternativeWorkflows, Warnings.
 	PhaseInvestigating = "Investigating"
 
 	// PhaseAnalyzing evaluates Rego policies for approval determination.

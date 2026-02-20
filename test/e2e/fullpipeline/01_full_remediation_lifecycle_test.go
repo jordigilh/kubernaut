@@ -55,7 +55,7 @@ import (
 // This test uses the memory-eater pod to generate a real OOMKill event.
 // The kubernetes-event-exporter watches for this event and POSTs to Gateway.
 // From there, the full controller pipeline processes the signal.
-var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
+var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 
 	var (
 		testNamespace   string // K8s event test namespace (fp-e2e-*)
@@ -64,7 +64,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 		testCancel      context.CancelFunc
 	)
 
-	BeforeAll(func() {
+	BeforeEach(func() {
 		testCtx, testCancel = context.WithTimeout(ctx, 10*time.Minute)
 
 		By("Step 0: Seeding test workflows in DataStorage")
@@ -89,7 +89,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 			Component:       "deployment",
 			Environment:     "production",
 			Priority:        "*",
-			ContainerImage:  "quay.io/kubernaut-cicd/test-workflows/crashloop-config-fix-job:v1.0.0",
+			SchemaImage:  "quay.io/kubernaut-cicd/test-workflows/crashloop-config-fix-job:v1.0.0",
 			ExecutionEngine: "job",
 			// DD-WORKFLOW-017: SchemaParameters mirror OCI image's /workflow-schema.yaml for documentation.
 			// Actual schema comes from OCI image via pullspec-only registration.
@@ -123,28 +123,34 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 			Component:       "deployment",
 			Environment:     "production",
 			Priority:        "*",
-			ContainerImage:  "quay.io/kubernaut-cicd/test-workflows/oomkill-increase-memory-job:v1.0.0",
+			SchemaImage:  "quay.io/kubernaut-cicd/test-workflows/oomkill-increase-memory-job:v1.0.0",
 			ExecutionEngine: "job",
 			// DD-WORKFLOW-017: SchemaParameters mirror OCI image's /workflow-schema.yaml for documentation.
 			// Actual schema comes from OCI image via pullspec-only registration.
 			SchemaParameters: []models.WorkflowParameter{
 				{
-					Name:        "NAMESPACE",
+					Name:        "TARGET_RESOURCE_KIND",
 					Type:        "string",
 					Required:    true,
-					Description: "Target namespace containing the affected deployment",
+					Description: "Kubernetes resource kind (Deployment, StatefulSet, DaemonSet)",
 				},
 				{
-					Name:        "DEPLOYMENT_NAME",
+					Name:        "TARGET_RESOURCE_NAME",
 					Type:        "string",
 					Required:    true,
-					Description: "Name of the deployment to update memory limits",
+					Description: "Name of the resource to patch",
 				},
 				{
-					Name:        "MEMORY_INCREASE_PERCENT",
-					Type:        "integer",
-					Required:    false,
-					Description: "Percentage to increase memory limits by",
+					Name:        "TARGET_NAMESPACE",
+					Type:        "string",
+					Required:    true,
+					Description: "Namespace of the resource",
+				},
+				{
+					Name:        "MEMORY_LIMIT_NEW",
+					Type:        "string",
+					Required:    true,
+					Description: "New memory limit to apply (e.g., 128Mi, 256Mi, 1Gi)",
 				},
 			},
 		},
@@ -173,7 +179,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 		}
 	})
 
-	AfterAll(func() {
+	AfterEach(func() {
 		if testNamespace != "" {
 			By("Cleaning up K8s event test namespace")
 			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNamespace}}
@@ -470,7 +476,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 			"signalprocessing.phase.transition",          // pkg/signalprocessing/audit: RecordPhaseTransition
 			// AI Analysis
 			"aianalysis.phase.transition",    // pkg/aianalysis/audit: RecordPhaseTransition
-			"aianalysis.holmesgpt.call",      // pkg/aianalysis/audit: RecordHolmesGPTCall
+			"aianalysis.aiagent.call",        // pkg/aianalysis/audit: RecordAIAgentCall
 			"aianalysis.rego.evaluation",     // pkg/aianalysis/audit: RecordRegoEvaluation
 			"aianalysis.analysis.completed",  // pkg/aianalysis/audit: RecordAnalysisComplete
 			// HolmesGPT API (event_category: "aiagent" per ADR-034 v1.2)
@@ -927,11 +933,11 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 		// ================================================================
 		// AM Step 3: Inject alert into AlertManager and wait for RR
 		// ================================================================
-		// Instead of waiting for Prometheus to scrape cAdvisor metrics and fire
-		// the alert (which is unreliable in K8s 1.34+ due to CRI metrics migration
-		// affecting container_spec_memory_limit_bytes availability), we inject the
-		// MemoryExceedsLimit alert directly into AlertManager via its API.
-		// This still exercises the full AlertManager → Gateway webhook → RR path.
+		// We inject the MemoryExceedsLimit alert directly into AlertManager via
+		// its API rather than waiting for the Prometheus alert rule to fire naturally.
+		// The rule requires `for: 10s` of sustained high memory, adding latency that
+		// makes the test timing unpredictable. Direct injection still exercises the
+		// full AlertManager → Gateway webhook → RR path.
 		By("AM Step 3a: Injecting MemoryExceedsLimit alert into AlertManager")
 		alertManagerURL := fmt.Sprintf("http://localhost:%d", infrastructure.AlertManagerHostPort)
 		injectErr := infrastructure.InjectAlerts(alertManagerURL, []infrastructure.TestAlert{
@@ -1175,7 +1181,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", Ordered, func() {
 			"signalprocessing.signal.processed",
 			"signalprocessing.phase.transition",
 			"aianalysis.phase.transition",
-			"aianalysis.holmesgpt.call",
+			"aianalysis.aiagent.call",
 			"aianalysis.rego.evaluation",
 			"aianalysis.analysis.completed",
 			string(ogenclient.LLMRequestPayloadAuditEventEventData),

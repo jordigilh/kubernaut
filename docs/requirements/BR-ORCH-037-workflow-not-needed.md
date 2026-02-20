@@ -166,11 +166,10 @@ If configured, RO MAY create an **informational** notification:
 kind: NotificationRequest
 metadata:
   name: nr-info-{rr-name}
-  labels:
-    kubernaut.ai/notification-type: status-update
-    kubernaut.ai/outcome: no-action-required
 spec:
-  type: status-update  # NOT manual-review or approval
+  type: status-update  # NOT manual-review or approval (Issue #91: spec.type replaces label)
+  metadata:
+    outcome: no-action-required
   priority: low
   subject: "ℹ️ Auto-Resolved: {signalName}"
   body: |

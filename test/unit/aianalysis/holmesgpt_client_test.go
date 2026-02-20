@@ -69,6 +69,7 @@ var _ = Describe("HolmesGPTClient", func() {
 					case r.URL.Path == "/api/v1/incident/session/test-session-001/result" && r.Method == http.MethodGet:
 						// Step 3: Get result
 						w.WriteHeader(http.StatusOK)
+						// ADR-055: target_in_owner_chain removed from HAPI response
 						_, _ = w.Write([]byte(`{
 							"incident_id": "test-incident-001",
 							"analysis": "Root cause: OOM",
@@ -76,7 +77,6 @@ var _ = Describe("HolmesGPTClient", func() {
 								"root_cause": "OOM detected",
 								"recommendations": ["Increase memory limits"]
 							},
-							"target_in_owner_chain": true,
 							"confidence": 0.85,
 							"timestamp": "2025-12-24T15:00:00Z",
 							"warnings": []
@@ -107,8 +107,7 @@ var _ = Describe("HolmesGPTClient", func() {
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(resp.Analysis).To(Equal("Root cause: OOM"))
-				Expect(resp.TargetInOwnerChain.Set).To(BeTrue())
-				Expect(resp.TargetInOwnerChain.Value).To(BeTrue())
+				// ADR-055: target_in_owner_chain removed, replaced by affected_resource in Rego input
 				Expect(resp.Confidence).To(BeNumerically("~", 0.85, 0.01))
 			})
 		})

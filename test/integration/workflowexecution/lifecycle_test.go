@@ -23,8 +23,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 )
 
@@ -148,46 +146,8 @@ var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
 			GinkgoWriter.Printf("✅ ExecutionRef set: %s\n", updated.Status.ExecutionRef.Name)
 		})
 
-		It("should persist ConsecutiveFailures from status", func() {
-			targetResource := fmt.Sprintf("default/deployment/lifecycle-backoff-%d", time.Now().UnixNano())
-			wfe := createUniqueWFE("backoff", targetResource)
-
-			defer func() {
-				cleanupWFE(wfe)
-			}()
-
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
-
-			// Wait for Running phase first
-			Eventually(func() string {
-				updated, err := getWFE(wfe.Name, wfe.Namespace)
-				if err != nil {
-					return ""
-				}
-				return string(updated.Status.Phase)
-			}, 10*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)))
-
-			// Get fresh copy and update ConsecutiveFailures
-			// Note: This simulates what the controller does after a failure
-			Eventually(func() error {
-				fresh, err := getWFE(wfe.Name, wfe.Namespace)
-				if err != nil {
-					return err
-				}
-				fresh.Status.ConsecutiveFailures = 3
-				nextAllowed := metav1.NewTime(time.Now().Add(30 * time.Second))
-				fresh.Status.NextAllowedExecution = &nextAllowed
-				return k8sClient.Status().Update(ctx, fresh)
-			}, 5*time.Second, 500*time.Millisecond).Should(Succeed())
-
-			// Verify backoff fields persisted
-			updated, err := getWFE(wfe.Name, wfe.Namespace)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(updated.Status.ConsecutiveFailures).To(Equal(int32(3)))
-			Expect(updated.Status.NextAllowedExecution).ToNot(BeNil())
-
-			GinkgoWriter.Println("✅ Backoff fields persisted correctly")
-		})
+		// Issue #99: "should persist ConsecutiveFailures from status" test removed
+		// ConsecutiveFailures and NextAllowedExecution fields removed per DD-RO-002 Phase 3
 	})
 
 	Context("CRD Deletion", func() {

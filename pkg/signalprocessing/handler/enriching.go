@@ -19,7 +19,7 @@ limitations under the License.
 // Reference: CONTROLLER_REFACTORING_PATTERN_LIBRARY.md - Pattern 5 (Controller Decomposition)
 //
 // This package decomposes the SignalProcessing controller into separate handler files:
-// - enriching.go: Handles K8s context enrichment phase (BR-SP-001, BR-SP-100, BR-SP-101)
+// - enriching.go: Handles K8s context enrichment phase (BR-SP-001, BR-SP-100, BR-SP-102)
 // - classifying.go: Handles environment and priority classification phase (BR-SP-051-053, BR-SP-070-072)
 // - categorizing.go: Handles business categorization phase (BR-SP-002, BR-SP-080, BR-SP-081)
 //
@@ -27,7 +27,6 @@ limitations under the License.
 // - Extract reconcileEnriching from controller (~150 lines)
 // - Extract reconcileClassifying from controller (~70 lines)
 // - Extract reconcileCategorizing from controller (~85 lines)
-// - Extract detection helpers (detectLabels, hasPDB, hasHPA, etc.)
 // - Update controller to delegate to handlers
 // - Update integration tests to use handlers
 //
@@ -39,20 +38,6 @@ package handler
 // This handler will encapsulate the logic from reconcileEnriching, including:
 // - K8s context enrichment (K8sEnricher)
 // - Owner chain traversal (OwnerChainBuilder)
-// - Detected labels (LabelDetector)
 // - Custom labels (RegoEngine)
 // - Phase transition logic
 // - Audit event recording
-
-
-
-
-
-
-
-
-
-
-
-
-

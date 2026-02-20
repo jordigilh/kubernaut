@@ -61,8 +61,6 @@ Name | Type | Description | Notes
 **has_owner_chain** | **bool** | Whether the resource has an owner chain | [optional] 
 **owner_chain_length** | **int** | Length of the owner chain | [optional] 
 **degraded_mode** | **bool** | Whether operating in degraded mode | 
-**has_pdb** | **bool** | Whether the resource has a PodDisruptionBudget | [optional] 
-**has_hpa** | **bool** | Whether the resource has a HorizontalPodAutoscaler | [optional] 
 **has_namespace** | **bool** | Whether namespace context was enriched | [optional] 
 **has_pod** | **bool** | Whether pod context was enriched | [optional] 
 **has_deployment** | **bool** | Whether deployment context was enriched | [optional] 
@@ -75,7 +73,6 @@ Name | Type | Description | Notes
 **approval_reason** | **str** | Reason for approval requirement | 
 **warnings_count** | **int** | Number of warnings encountered | 
 **confidence** | **float** | Workflow confidence level (optional) | 
-**target_in_owner_chain** | **bool** | Whether target is in owner chain | [optional] 
 **provider_response_summary** | [**ProviderResponseSummary**](ProviderResponseSummary.md) |  | [optional] 
 **container_image** | **str** | Tekton PipelineRun container image | 
 **execution_name** | **str** | Name of the WorkflowExecution CRD | 
@@ -85,6 +82,7 @@ Name | Type | Description | Notes
 **failure_message** | **str** | Detailed failure message from Tekton | [optional] 
 **failed_task_name** | **str** | Name of the failed TaskRun (if identified) | [optional] 
 **pipelinerun_name** | **str** | Name of the associated Tekton PipelineRun | [optional] 
+**parameters** | **Dict[str, str]** | Post-normalization workflow parameters applied to PipelineRun (map[string]string). SOC2 CC7.1-CC7.3 chain of custody. | [optional] 
 **notification_id** | **str** |  | 
 **type** | **str** | Notification type | 
 **notification_type** | **str** | Alias for type (matches CRD NotificationType enum) | [optional] 

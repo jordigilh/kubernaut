@@ -1,0 +1,24 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: kubernaut-autoscale-rules
+  namespace: demo-autoscale
+  labels:
+    release: prometheus
+spec:
+  groups:
+  - name: kubernaut-autoscale
+    rules:
+    - alert: KubePodSchedulingFailed
+      expr: |
+        kube_pod_status_phase{namespace="demo-autoscale", phase="Pending"} > 0
+      for: 2m
+      labels:
+        severity: critical
+      annotations:
+        summary: >
+          Pods stuck Pending in demo-autoscale due to insufficient cluster resources.
+        description: >
+          One or more pods in the demo-autoscale namespace have been in Pending state
+          for over 2 minutes. This typically indicates node capacity exhaustion --
+          no schedulable node has enough CPU or memory to satisfy the pod resource requests.

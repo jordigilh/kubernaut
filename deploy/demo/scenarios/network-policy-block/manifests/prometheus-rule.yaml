@@ -1,0 +1,52 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: kubernaut-netpol-rules
+  namespace: demo-netpol
+  labels:
+    release: prometheus
+spec:
+  groups:
+  - name: kubernaut-netpol
+    rules:
+    # Primary signal: traffic-gen pod restarts because its liveness probe
+    # (curl to web-frontend) fails when deny-all blocks inter-pod traffic.
+    # This is reliable across all CNI implementations.
+    - alert: KubernautNetworkConnectivityLost
+      expr: |
+        increase(
+          kube_pod_container_status_restarts_total{
+            namespace="demo-netpol",
+            container="curl"
+          }[10m]
+        ) > 2
+      for: 1m
+      labels:
+        severity: critical
+      annotations:
+        summary: >
+          Traffic generator in namespace {{ $labels.namespace }} is restarting
+          due to connectivity failure to web-frontend service.
+        description: >
+          The traffic-gen pod cannot reach web-frontend via the cluster network.
+          A NetworkPolicy is likely blocking inter-pod ingress traffic in namespace
+          demo-netpol. The traffic-gen liveness probe (curl to web-frontend:8080)
+          is failing, causing repeated restarts.
+    # Secondary signal: web-frontend replicas unavailable (depends on CNI
+    # enforcing NetworkPolicy on kubelet probes -- works with kindnet in Kind)
+    - alert: KubernautDeploymentUnavailable
+      expr: |
+        kube_deployment_status_replicas_unavailable{
+          namespace="demo-netpol",
+          deployment="web-frontend"
+        } > 0
+      for: 3m
+      labels:
+        severity: critical
+      annotations:
+        summary: >
+          Deployment {{ $labels.deployment }} has {{ $value }} unavailable replicas
+          in namespace {{ $labels.namespace }}.
+        description: >
+          The web-frontend deployment has unavailable replicas, likely due to
+          health check failures caused by a NetworkPolicy blocking ingress traffic.

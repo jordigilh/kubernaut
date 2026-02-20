@@ -97,11 +97,7 @@ var _ = Describe("BR-HAPI-197: Recovery Human Review Integration", Label("integr
 								Name:      "failing-pod",
 								Namespace: testNamespace,
 							},
-							EnrichmentResults: sharedtypes.EnrichmentResults{
-								DetectedLabels: &sharedtypes.DetectedLabels{
-									GitOpsManaged: true,
-								},
-							},
+							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
 						AnalysisTypes: []string{"recovery-analysis", "workflow-selection"},
 					},
@@ -115,7 +111,7 @@ var _ = Describe("BR-HAPI-197: Recovery Human Review Integration", Label("integr
 							},
 							SelectedWorkflow: aianalysisv1alpha1.SelectedWorkflowSummary{
 								WorkflowID:     "failed-workflow-v1",
-								ContainerImage: "quay.io/kubernaut/workflow-failed:v1.0.0",
+								ExecutionBundle: "quay.io/kubernaut/workflow-failed:v1.0.0",
 							},
 							Failure: aianalysisv1alpha1.ExecutionFailure{
 								Reason:        "WorkflowFailed",
@@ -222,7 +218,7 @@ var _ = Describe("BR-HAPI-197: Recovery Human Review Integration", Label("integr
 							},
 							SelectedWorkflow: aianalysisv1alpha1.SelectedWorkflowSummary{
 								WorkflowID:     "recovery-workflow-v1",
-								ContainerImage: "quay.io/kubernaut/recovery:v1.0.0",
+								ExecutionBundle: "quay.io/kubernaut/recovery:v1.0.0",
 							},
 							Failure: aianalysisv1alpha1.ExecutionFailure{
 								Reason:        "WorkflowFailed",
@@ -318,7 +314,7 @@ var _ = Describe("BR-HAPI-197: Recovery Human Review Integration", Label("integr
 							},
 							SelectedWorkflow: aianalysisv1alpha1.SelectedWorkflowSummary{
 								WorkflowID:     "memory-increase-v1",
-								ContainerImage: "quay.io/kubernaut/memory-increase:v1.0.0",
+								ExecutionBundle: "quay.io/kubernaut/memory-increase:v1.0.0",
 							},
 							Failure: aianalysisv1alpha1.ExecutionFailure{
 								Reason:        "WorkflowFailed",

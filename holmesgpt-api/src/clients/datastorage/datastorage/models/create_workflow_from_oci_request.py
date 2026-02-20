@@ -30,8 +30,8 @@ class CreateWorkflowFromOCIRequest(BaseModel):
     """
     CreateWorkflowFromOCIRequest
     """ # noqa: E501
-    container_image: StrictStr = Field(description="OCI image pullspec. Data Storage pulls this image, extracts /workflow-schema.yaml (ADR-043), validates it, and populates all catalog fields from the extracted schema. ")
-    __properties: ClassVar[List[str]] = ["container_image"]
+    schema_image: StrictStr = Field(description="OCI image pullspec. Data Storage pulls this image, extracts /workflow-schema.yaml (ADR-043), validates it, and populates all catalog fields from the extracted schema. ", alias="schemaImage")
+    __properties: ClassVar[List[str]] = ["schemaImage"]
 
     model_config = {
         "populate_by_name": True,
@@ -82,7 +82,7 @@ class CreateWorkflowFromOCIRequest(BaseModel):
             return cls.model_validate(obj)
 
         _obj = cls.model_validate({
-            "container_image": obj.get("container_image")
+            "schemaImage": obj.get("schemaImage")
         })
         return _obj
 

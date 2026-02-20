@@ -211,6 +211,7 @@ func (b *ConsecutiveFailureBlocker) createBlockNotification(ctx context.Context,
 			},
 			Type:     notificationv1.NotificationType("consecutive_failures_blocked"),
 			Priority: "high",
+			Severity: rr.Spec.Severity,
 			Subject:  fmt.Sprintf("⚠️ Remediation Blocked: %s (Consecutive Failures)", rr.Spec.SignalName),
 			Body: fmt.Sprintf(`The remediation for signal "%s" has been blocked due to %d consecutive failures.
 

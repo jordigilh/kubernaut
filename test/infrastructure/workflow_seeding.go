@@ -57,7 +57,7 @@ type TestWorkflow struct {
 	Component       string // Metadata only: "deployment", "pod", "node", etc. (actual value from OCI image)
 	Environment     string // Metadata only + map key: "staging", "production", "test" (actual value from OCI image)
 	Priority        string // Metadata only: "P0", "P1", "P2", "P3" (actual value from OCI image)
-	ContainerImage  string // Full image ref with optional digest (e.g., "ghcr.io/org/image:tag@sha256:...")
+	SchemaImage     string // Full image ref with optional digest (e.g., "ghcr.io/org/image:tag@sha256:...")
 	ExecutionEngine string // "tekton" or "job" - defaults to "tekton" if empty (BR-WE-014)
 	// SchemaParameters defines workflow input parameters per ADR-043 (BR-HAPI-191)
 	// Used to generate valid workflow-schema.yaml content that DataStorage will parse
@@ -110,7 +110,7 @@ func SeedWorkflowsInDataStorage(client *ogenclient.Client, workflows []TestWorkf
 }
 
 // RegisterWorkflowInDataStorage registers a single workflow via DataStorage OpenAPI Client
-// DD-WORKFLOW-017: Pullspec-only registration — sends only containerImage.
+// DD-WORKFLOW-017: Pullspec-only registration — sends only schemaImage.
 // DataStorage pulls the image, extracts /workflow-schema.yaml, and populates all fields.
 //
 // DD-WORKFLOW-002 v3.0: DataStorage generates UUID (security - cannot be specified by client)
@@ -124,16 +124,16 @@ func RegisterWorkflowInDataStorage(client *ogenclient.Client, wf TestWorkflow, o
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Handle container image: use provided value or generate default pattern
-	containerImage := wf.ContainerImage
-	if containerImage == "" {
-		// Default pattern for tests that don't specify a container image
-		containerImage = fmt.Sprintf("quay.io/kubernaut-cicd/test-workflows/%s:v1.0.0", workflowIDToImageName(wf.WorkflowID))
+	// Handle schema image: use provided value or generate default pattern
+	schemaImage := wf.SchemaImage
+	if schemaImage == "" {
+		// Default pattern for tests that don't specify a schema image
+		schemaImage = fmt.Sprintf("quay.io/kubernaut-cicd/test-workflows/%s:v1.0.0", workflowIDToImageName(wf.WorkflowID))
 	}
 
 	// DD-WORKFLOW-017: Pullspec-only registration request
 	workflowReq := &ogenclient.CreateWorkflowFromOCIRequest{
-		ContainerImage: containerImage,
+		SchemaImage: schemaImage,
 	}
 
 	// POST to DataStorage workflow creation endpoint
@@ -147,7 +147,7 @@ func RegisterWorkflowInDataStorage(client *ogenclient.Client, wf TestWorkflow, o
 	if err == nil {
 		switch r := resp.(type) {
 		case *ogenclient.RemediationWorkflow:
-			return r.WorkflowID.Value.String(), nil
+			return r.WorkflowId.Value.String(), nil
 		case *ogenclient.CreateWorkflowConflict:
 			// DS-BUG-001: 409 Conflict - workflow already exists
 			_, _ = fmt.Fprintf(output, "  ⚠️  Workflow already exists (409 Conflict), querying for UUID...\n")
@@ -170,7 +170,7 @@ func RegisterWorkflowInDataStorage(client *ogenclient.Client, wf TestWorkflow, o
 		if len(r.Workflows) == 0 {
 			return "", fmt.Errorf("workflow exists but query returned no results")
 		}
-		return r.Workflows[0].WorkflowID.Value.String(), nil
+		return r.Workflows[0].WorkflowId.Value.String(), nil
 	default:
 		return "", fmt.Errorf("unexpected response type from ListWorkflows: %T", listResp)
 	}

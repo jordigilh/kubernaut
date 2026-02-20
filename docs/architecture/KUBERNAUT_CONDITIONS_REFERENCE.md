@@ -1,7 +1,7 @@
 # Kubernaut Kubernetes Conditions Reference - AUTHORITATIVE
 
 **Status**: ✅ **ACTIVE**
-**Last Updated**: 2025-12-16
+**Last Updated**: 2026-02-18
 **Authority**: This is the **single source of truth** for all Kubernetes Conditions across Kubernaut CRD controllers
 **Maintained By**: Platform Team
 **Related**: [DD-CRD-002: Kubernetes Conditions Standard](decisions/DD-CRD-002-kubernetes-conditions-standard.md)
@@ -23,15 +23,16 @@ This document provides a **comprehensive inventory** of all Kubernetes Condition
 
 | CRD | Service | Conditions Count | Status | File |
 |-----|---------|------------------|--------|------|
-| AIAnalysis | AIAnalysis | 4 conditions, 9 reasons | ✅ Complete | `pkg/aianalysis/conditions.go` |
-| WorkflowExecution | WorkflowExecution | 5 conditions, 15 reasons | ✅ Complete | `pkg/workflowexecution/conditions.go` |
-| NotificationRequest | Notification | 1 condition, 3 reasons | ✅ Complete | `pkg/notification/conditions.go` |
-| SignalProcessing | SignalProcessing | 0 | 🔴 **Missing** | - |
-| RemediationRequest | RO | 0 | 🔴 **Missing** | - |
-| RemediationApprovalRequest | RO | 0 | 🔴 **Missing** | - |
-| KubernetesExecution | WE | 0 | 🔴 **Missing** | - |
+| AIAnalysis | AIAnalysis | 5 conditions (incl. Ready), 9 reasons | ✅ Complete | `pkg/aianalysis/conditions.go` |
+| WorkflowExecution | WorkflowExecution | 6 conditions (incl. Ready), 15 reasons | ✅ Complete | `pkg/workflowexecution/conditions.go` |
+| NotificationRequest | Notification | 2 conditions (incl. Ready), 3 reasons | ✅ Complete | `pkg/notification/conditions.go` |
+| SignalProcessing | SignalProcessing | 5 conditions (incl. Ready) | ✅ Complete | `pkg/signalprocessing/conditions.go` |
+| RemediationRequest | RO | 5 conditions (incl. Ready) | ✅ Complete | `pkg/remediationrequest/conditions.go` |
+| RemediationApprovalRequest | RO | 4 conditions (incl. Ready) | ✅ Complete | `pkg/remediationapprovalrequest/conditions.go` |
+| EffectivenessAssessment | EM | 3 conditions (incl. Ready) | ✅ Complete | `pkg/effectivenessmonitor/conditions/conditions.go` |
+| KubernetesExecution | WE | 0 | ⚠️ **Deprecated/Excluded** | - |
 
-**Total**: 10 condition types, 27 reasons across 3 complete services
+**Total**: All 7 active CRDs have conditions wired and implemented. All condition setters set `ObservedGeneration`.
 
 ---
 
@@ -45,6 +46,7 @@ This document provides a **comprehensive inventory** of all Kubernetes Condition
 
 | Condition Type | Success Reasons | Failure Reasons | When Set |
 |---------------|-----------------|-----------------|----------|
+| `Ready` | `Ready` | `NotReady` | Aggregate: True on success terminal, False on failure terminal |
 | `InvestigationComplete` | `InvestigationSucceeded` | `InvestigationFailed` | After signal analysis and context gathering |
 | `AnalysisComplete` | `AnalysisSucceeded` | `AnalysisFailed` | After AI/LLM analysis completes |
 | `WorkflowResolved` | `WorkflowSelected`, `NoWorkflowNeeded` | `WorkflowResolutionFailed` | After workflow selection logic |
@@ -70,6 +72,7 @@ kubectl wait --for=condition=AnalysisComplete aianalysis/analysis-123 --timeout=
 
 | Condition Type | Success Reasons | Failure Reasons | When Set |
 |---------------|-----------------|-----------------|----------|
+| `Ready` | `Ready` | `NotReady` | Aggregate: True on success terminal, False on failure terminal |
 | `Initialized` | `Initialized` | `InitializationFailed`, `InvalidSpec` | After validation and setup |
 | `PipelineRunCreated` | `PipelineRunCreated` | `PipelineRunCreationFailed` | After Tekton PipelineRun created |
 | `Running` | `Running` | `StartupFailed`, `ResourcesUnavailable` | While workflow is executing |
@@ -100,6 +103,7 @@ kubectl wait --for=condition=Completed workflowexecution/exec-456 --timeout=30m
 
 | Condition Type | Success Reasons | Failure Reasons | When Set |
 |---------------|-----------------|-----------------|----------|
+| `Ready` | `Ready` | `NotReady` | Aggregate: True on success terminal, False on failure terminal |
 | `RoutingResolved` | `RoutingRuleMatched`, `RoutingFallback` | `RoutingFailed` | After routing rules evaluated |
 
 **kubectl wait Example**:
@@ -122,82 +126,68 @@ Conditions:
 
 ---
 
-## 🔮 **Planned Conditions (V1.0 Implementation Required)**
+## 🔮 **Additional Services (All Wired)**
 
-### **SignalProcessing Service** 🔴 **MISSING**
+### **SignalProcessing Service** ✅ **COMPLETE**
 
-**Target File**: `pkg/signalprocessing/conditions.go` (to be created)
-**Deadline**: January 3, 2026
+**File**: `pkg/signalprocessing/conditions.go`
 **Pattern**: Phase-based lifecycle (similar to AIAnalysis)
 
 | Condition Type | Success Reasons | Failure Reasons | When Set |
 |---------------|-----------------|-----------------|----------|
+| `Ready` | `Ready` | `NotReady` | Aggregate: True on success terminal, False on failure terminal |
 | `ValidationComplete` | `ValidationSucceeded` | `ValidationFailed`, `InvalidSignalFormat` | After signal validation |
 | `EnrichmentComplete` | `EnrichmentSucceeded` | `EnrichmentFailed`, `K8sAPITimeout`, `ResourceNotFound` | After Kubernetes enrichment |
 | `ClassificationComplete` | `ClassificationSucceeded` | `ClassificationFailed`, `RegoEvaluationError`, `PolicyNotFound` | After classification |
 | `ProcessingComplete` | `ProcessingSucceeded` | `ProcessingFailed` | After complete processing |
 
-**Business Requirements**:
-- BR-SP-001: Kubernetes context enrichment
-- BR-SP-051-053: Environment classification
-- BR-SP-070-072: Priority assignment
-- BR-SP-090: Audit trail
-
 ---
 
-### **RemediationRequest Service** 🔴 **MISSING**
+### **RemediationRequest Service** ✅ **COMPLETE**
 
-**Target File**: `pkg/remediationorchestrator/conditions.go` (to be created)
-**Deadline**: January 3, 2026
+**File**: `pkg/remediationrequest/conditions.go`
 **Pattern**: Approval workflow with execution tracking
 
 | Condition Type | Success Reasons | Failure Reasons | When Set |
 |---------------|-----------------|-----------------|----------|
-| `RequestValidated` | `ValidationSucceeded` | `ValidationFailed`, `InvalidWorkflowRef` | After request validation |
-| `ApprovalResolved` | `ApprovalGranted`, `AutoApproved` | `ApprovalDenied`, `ApprovalExpired` | After approval decision |
-| `ExecutionStarted` | `ExecutionStarted` | `ExecutionFailed`, `WorkflowNotFound` | When execution begins |
-| `ExecutionComplete` | `ExecutionSucceeded` | `ExecutionFailed`, `PartialSuccess` | After execution finishes |
-
-**Business Requirements**:
-- BR-RO-001: Request validation
-- BR-RO-010: Approval workflow
-- BR-RO-020: Execution coordination
+| `Ready` | `Ready` | `NotReady` | Aggregate: True on success terminal, False on failure terminal |
+| `SignalProcessingReady` | `Ready` | `NotReady` | After SP CRD created |
+| `AIAnalysisReady` | `Ready` | `NotReady` | After AA CRD created |
+| `WorkflowExecutionReady` | `Ready` | `NotReady` | After WE CRD created |
+| `RecoveryComplete` | `RecoverySucceeded`, `RecoverySkipped` | `RecoveryFailed` | After recovery lifecycle |
 
 ---
 
-### **RemediationApprovalRequest Service** 🔴 **MISSING**
+### **RemediationApprovalRequest Service** ✅ **COMPLETE**
 
-**Target File**: `pkg/remediationorchestrator/approval_conditions.go` (to be created)
-**Deadline**: January 3, 2026
+**File**: `pkg/remediationapprovalrequest/conditions.go`
 **Pattern**: Approval decision tracking
 
 | Condition Type | Success Reasons | Failure Reasons | When Set |
 |---------------|-----------------|-----------------|----------|
+| `Ready` | `Ready` | `NotReady` | Aggregate: True on success terminal, False on failure terminal |
 | `DecisionRecorded` | `Approved`, `Rejected` | `DecisionFailed` | After approval decision made |
 | `NotificationSent` | `NotificationSucceeded` | `NotificationFailed` | After notification sent |
 | `TimeoutExpired` | `TimeoutExpired` | - | When approval timeout reached |
 
-**Business Requirements**:
-- BR-RO-011: Approval decision
-- BR-RO-012: Approval timeout
-
 ---
 
-### **KubernetesExecution Service** 🔴 **MISSING**
+### **EffectivenessAssessment Service** ✅ **COMPLETE**
 
-**Target File**: `pkg/kubernetesexecution/conditions.go` (to be created)
-**Deadline**: January 3, 2026
-**Pattern**: Kubernetes job lifecycle tracking
+**File**: `pkg/effectivenessmonitor/conditions/conditions.go`
+**Pattern**: Assessment lifecycle tracking
 
 | Condition Type | Success Reasons | Failure Reasons | When Set |
 |---------------|-----------------|-----------------|----------|
-| `JobCreated` | `JobCreated` | `JobCreationFailed`, `QuotaExceeded`, `RBACDenied` | After K8s job created |
-| `JobRunning` | `JobStarted` | `JobFailedToStart`, `ImagePullFailed` | While job is running |
-| `JobComplete` | `JobSucceeded` | `JobFailed`, `DeadlineExceeded`, `OOMKilled` | After job completes |
+| `Ready` | `Ready` | `NotReady` | Aggregate: True on success terminal, False on failure terminal |
+| `AssessmentComplete` | `AssessmentSucceeded` | `AssessmentFailed`, `AssessmentExpired` | After assessment finishes |
+| `SpecIntegrity` | `SpecIntact` | `SpecDrifted` | After spec hash comparison |
 
-**Business Requirements**:
-- BR-WE-010: Kubernetes job execution
-- BR-WE-011: Job status tracking
+---
+
+### **KubernetesExecution Service** ⚠️ **DEPRECATED / EXCLUDED**
+
+**Status**: Excluded from conditions implementation. KubernetesExecution is deprecated; WorkflowExecution handles job execution via Tekton PipelineRun.
 
 ---
 
@@ -237,19 +227,22 @@ All Kubernaut conditions follow these standards (per DD-CRD-002):
 
 To avoid conflicts, these condition names are **reserved** or **commonly used**:
 
-### **Common Kubernetes Conditions** (Do NOT reuse)
+### **Common Kubernetes Conditions**
 
 | Condition | Meaning | Used By |
 |-----------|---------|---------|
-| `Ready` | Resource is ready | Native K8s resources |
+| `Ready` | Resource is ready (aggregate) | **All 7 Kubernaut CRDs** + Native K8s resources |
 | `Available` | Resource is available | Deployments, Services |
 | `Progressing` | Resource is progressing | Deployments |
 | `Failed` | Resource has failed | Jobs, Pods |
+
+**Note**: All Kubernaut condition setters set `ObservedGeneration` on every condition update (DD-CRD-002 requirement).
 
 ### **Kubernaut Reserved Conditions** (Do NOT reuse)
 
 | Condition | Service | Meaning |
 |-----------|---------|---------|
+| `Ready` | All 7 CRDs | Aggregate: True on success terminal, False on failure terminal |
 | `InvestigationComplete` | AIAnalysis | Investigation finished |
 | `AnalysisComplete` | AIAnalysis | Analysis finished |
 | `WorkflowResolved` | AIAnalysis | Workflow selection done |
@@ -384,11 +377,11 @@ if cond != nil {
 
 | Metric | Current | Target (V1.0) |
 |--------|---------|---------------|
-| **Services with conditions** | 3/7 (43%) | 7/7 (100%) |
-| **Total condition types** | 10 | ~20 |
-| **Total condition reasons** | 27 | ~50 |
-| **Operator debug time** | 15-30 min (logs) | <1 min (kubectl) |
-| **Automation coverage** | 3/7 services | 7/7 services |
+| **Services with conditions** | 7/7 (100%) | 7/7 (100%) ✅ |
+| **Ready condition wired** | 7/7 (100%) | 7/7 (100%) ✅ |
+| **ObservedGeneration set** | All setters | All setters ✅ |
+| **Operator debug time** | <1 min (kubectl) | <1 min (kubectl) ✅ |
+| **Automation coverage** | 7/7 services | 7/7 services ✅ |
 
 ---
 
@@ -401,10 +394,10 @@ if cond != nil {
 
 ---
 
-**Document Version**: 1.0
+**Document Version**: 1.1
 **Created**: 2025-12-16
-**Last Updated**: 2025-12-16
-**Next Review**: January 3, 2026 (after V1.0 implementation)
+**Last Updated**: 2026-02-18
+**Next Review**: Quarterly (Issue #79 Phase 9)
 **Maintained By**: Platform Team
 **File**: `docs/architecture/KUBERNAUT_CONDITIONS_REFERENCE.md`
 

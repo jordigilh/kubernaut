@@ -374,7 +374,7 @@ if notification.Status.Phase == notificationv1alpha1.NotificationPhaseSent ||
 // IsTerminal returns true if the phase is a terminal state.
 func IsTerminal(p Phase) bool {
     switch p {
-    case Completed, Failed, TimedOut, Skipped:  // Adjust for your service
+    case Completed, Failed, TimedOut, Skipped:  // RR: TimedOut; NR: PartiallySent
         return true
     default:
         return false

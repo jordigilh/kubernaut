@@ -37,9 +37,11 @@ class TestIncidentPromptDetectedLabels:
     for appropriate workflow filtering.
     """
 
-    def test_incident_prompt_includes_detected_labels_section(self):
+    def test_incident_prompt_omits_detected_labels_section(self):
         """
-        Business Outcome: LLM sees cluster characteristics in incident analysis
+        ADR-056: DetectedLabels are now computed at runtime by HAPI's
+        get_resource_context tool, not injected into the initial prompt
+        from enrichment_results.
         """
         from src.extensions.incident import _create_incident_investigation_prompt
 
@@ -68,11 +70,8 @@ class TestIncidentPromptDetectedLabels:
 
         prompt = _create_incident_investigation_prompt(request_data)
 
-        # Business outcome: DetectedLabels section present
-        assert "Cluster Environment Characteristics" in prompt
-        assert "GitOps" in prompt
-        assert "argocd" in prompt
-        assert "PDB" in prompt or "PodDisruptionBudget" in prompt
+        assert "Cluster Environment Characteristics" not in prompt
+        assert "AUTO-DETECTED" not in prompt
 
     def test_incident_prompt_excludes_detected_labels_when_not_provided(self):
         """

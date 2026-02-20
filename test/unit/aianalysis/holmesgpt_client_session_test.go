@@ -291,6 +291,7 @@ var _ = Describe("HolmesGPTClient Session Methods [BR-AA-HAPI-064]", func() {
 
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusOK)
+					// ADR-055: target_in_owner_chain removed from HAPI response
 					_, _ = w.Write([]byte(`{
 						"incident_id": "test-incident-result",
 						"analysis": "Root cause: memory leak",
@@ -298,7 +299,6 @@ var _ = Describe("HolmesGPTClient Session Methods [BR-AA-HAPI-064]", func() {
 							"root_cause": "Memory leak detected",
 							"recommendations": ["Increase memory limits"]
 						},
-						"target_in_owner_chain": true,
 						"confidence": 0.92,
 						"timestamp": "2026-02-09T10:30:00Z",
 						"warnings": []

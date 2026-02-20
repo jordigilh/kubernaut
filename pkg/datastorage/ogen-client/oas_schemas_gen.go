@@ -101,6 +101,47 @@ func (s *AIAgentResponsePayloadEventType) UnmarshalText(data []byte) error {
 	}
 }
 
+// AI agent call event payload (aianalysis.aiagent.call).
+// Ref: #/components/schemas/AIAnalysisAIAgentCallPayload
+type AIAnalysisAIAgentCallPayload struct {
+	// API endpoint called.
+	Endpoint string `json:"endpoint"`
+	// HTTP status code.
+	HTTPStatusCode int32 `json:"http_status_code"`
+	// Call duration in milliseconds.
+	DurationMs int32 `json:"duration_ms"`
+}
+
+// GetEndpoint returns the value of Endpoint.
+func (s *AIAnalysisAIAgentCallPayload) GetEndpoint() string {
+	return s.Endpoint
+}
+
+// GetHTTPStatusCode returns the value of HTTPStatusCode.
+func (s *AIAnalysisAIAgentCallPayload) GetHTTPStatusCode() int32 {
+	return s.HTTPStatusCode
+}
+
+// GetDurationMs returns the value of DurationMs.
+func (s *AIAnalysisAIAgentCallPayload) GetDurationMs() int32 {
+	return s.DurationMs
+}
+
+// SetEndpoint sets the value of Endpoint.
+func (s *AIAnalysisAIAgentCallPayload) SetEndpoint(val string) {
+	s.Endpoint = val
+}
+
+// SetHTTPStatusCode sets the value of HTTPStatusCode.
+func (s *AIAnalysisAIAgentCallPayload) SetHTTPStatusCode(val int32) {
+	s.HTTPStatusCode = val
+}
+
+// SetDurationMs sets the value of DurationMs.
+func (s *AIAnalysisAIAgentCallPayload) SetDurationMs(val int32) {
+	s.DurationMs = val
+}
+
 // Approval decision event payload (aianalysis.approval.decision).
 // Ref: #/components/schemas/AIAnalysisApprovalDecisionPayload
 type AIAnalysisApprovalDecisionPayload struct {
@@ -225,8 +266,6 @@ type AIAnalysisAuditPayload struct {
 	Confidence OptFloat32 `json:"confidence"`
 	// Selected workflow identifier.
 	WorkflowID OptString `json:"workflow_id"`
-	// Whether target is in owner chain.
-	TargetInOwnerChain OptBool `json:"target_in_owner_chain"`
 	// Primary failure reason.
 	Reason OptString `json:"reason"`
 	// Detailed failure sub-reason.
@@ -283,11 +322,6 @@ func (s *AIAnalysisAuditPayload) GetConfidence() OptFloat32 {
 // GetWorkflowID returns the value of WorkflowID.
 func (s *AIAnalysisAuditPayload) GetWorkflowID() OptString {
 	return s.WorkflowID
-}
-
-// GetTargetInOwnerChain returns the value of TargetInOwnerChain.
-func (s *AIAnalysisAuditPayload) GetTargetInOwnerChain() OptBool {
-	return s.TargetInOwnerChain
 }
 
 // GetReason returns the value of Reason.
@@ -358,11 +392,6 @@ func (s *AIAnalysisAuditPayload) SetConfidence(val OptFloat32) {
 // SetWorkflowID sets the value of WorkflowID.
 func (s *AIAnalysisAuditPayload) SetWorkflowID(val OptString) {
 	s.WorkflowID = val
-}
-
-// SetTargetInOwnerChain sets the value of TargetInOwnerChain.
-func (s *AIAnalysisAuditPayload) SetTargetInOwnerChain(val OptBool) {
-	s.TargetInOwnerChain = val
 }
 
 // SetReason sets the value of Reason.
@@ -510,47 +539,6 @@ func (s *AIAnalysisErrorPayload) SetPhase(val string) {
 // SetErrorMessage sets the value of ErrorMessage.
 func (s *AIAnalysisErrorPayload) SetErrorMessage(val string) {
 	s.ErrorMessage = val
-}
-
-// HolmesGPT API call event payload (aianalysis.holmesgpt.call).
-// Ref: #/components/schemas/AIAnalysisHolmesGPTCallPayload
-type AIAnalysisHolmesGPTCallPayload struct {
-	// API endpoint called.
-	Endpoint string `json:"endpoint"`
-	// HTTP status code.
-	HTTPStatusCode int32 `json:"http_status_code"`
-	// Call duration in milliseconds.
-	DurationMs int32 `json:"duration_ms"`
-}
-
-// GetEndpoint returns the value of Endpoint.
-func (s *AIAnalysisHolmesGPTCallPayload) GetEndpoint() string {
-	return s.Endpoint
-}
-
-// GetHTTPStatusCode returns the value of HTTPStatusCode.
-func (s *AIAnalysisHolmesGPTCallPayload) GetHTTPStatusCode() int32 {
-	return s.HTTPStatusCode
-}
-
-// GetDurationMs returns the value of DurationMs.
-func (s *AIAnalysisHolmesGPTCallPayload) GetDurationMs() int32 {
-	return s.DurationMs
-}
-
-// SetEndpoint sets the value of Endpoint.
-func (s *AIAnalysisHolmesGPTCallPayload) SetEndpoint(val string) {
-	s.Endpoint = val
-}
-
-// SetHTTPStatusCode sets the value of HTTPStatusCode.
-func (s *AIAnalysisHolmesGPTCallPayload) SetHTTPStatusCode(val int32) {
-	s.HTTPStatusCode = val
-}
-
-// SetDurationMs sets the value of DurationMs.
-func (s *AIAnalysisHolmesGPTCallPayload) SetDurationMs(val int32) {
-	s.DurationMs = val
 }
 
 // Phase transition event payload (aianalysis.phase.transition).
@@ -1105,7 +1093,7 @@ type AuditEventEventData struct {
 	WorkflowCatalogCreatedPayload          WorkflowCatalogCreatedPayload
 	WorkflowCatalogUpdatedPayload          WorkflowCatalogUpdatedPayload
 	AIAnalysisPhaseTransitionPayload       AIAnalysisPhaseTransitionPayload
-	AIAnalysisHolmesGPTCallPayload         AIAnalysisHolmesGPTCallPayload
+	AIAnalysisAIAgentCallPayload           AIAnalysisAIAgentCallPayload
 	AIAnalysisApprovalDecisionPayload      AIAnalysisApprovalDecisionPayload
 	AIAnalysisRegoEvaluationPayload        AIAnalysisRegoEvaluationPayload
 	AIAnalysisErrorPayload                 AIAnalysisErrorPayload
@@ -1167,7 +1155,10 @@ const (
 	WorkflowCatalogCreatedPayloadAuditEventEventData                             AuditEventEventDataType = "datastorage.workflow.created"
 	WorkflowCatalogUpdatedPayloadAuditEventEventData                             AuditEventEventDataType = "datastorage.workflow.updated"
 	AIAnalysisPhaseTransitionPayloadAuditEventEventData                          AuditEventEventDataType = "aianalysis.phase.transition"
-	AIAnalysisHolmesGPTCallPayloadAuditEventEventData                            AuditEventEventDataType = "aianalysis.holmesgpt.call"
+	AuditEventEventDataAianalysisAiagentCallAuditEventEventData                  AuditEventEventDataType = "aianalysis.aiagent.call"
+	AuditEventEventDataAianalysisAiagentResultAuditEventEventData                AuditEventEventDataType = "aianalysis.aiagent.result"
+	AuditEventEventDataAianalysisAiagentSessionLostAuditEventEventData           AuditEventEventDataType = "aianalysis.aiagent.session_lost"
+	AuditEventEventDataAianalysisAiagentSubmitAuditEventEventData                AuditEventEventDataType = "aianalysis.aiagent.submit"
 	AIAnalysisApprovalDecisionPayloadAuditEventEventData                         AuditEventEventDataType = "aianalysis.approval.decision"
 	AIAnalysisRegoEvaluationPayloadAuditEventEventData                           AuditEventEventDataType = "aianalysis.rego.evaluation"
 	AIAnalysisErrorPayloadAuditEventEventData                                    AuditEventEventDataType = "aianalysis.error.occurred"
@@ -1289,9 +1280,14 @@ func (s AuditEventEventData) IsAIAnalysisPhaseTransitionPayload() bool {
 	return s.Type == AIAnalysisPhaseTransitionPayloadAuditEventEventData
 }
 
-// IsAIAnalysisHolmesGPTCallPayload reports whether AuditEventEventData is AIAnalysisHolmesGPTCallPayload.
-func (s AuditEventEventData) IsAIAnalysisHolmesGPTCallPayload() bool {
-	return s.Type == AIAnalysisHolmesGPTCallPayloadAuditEventEventData
+// IsAIAnalysisAIAgentCallPayload reports whether AuditEventEventData is AIAnalysisAIAgentCallPayload.
+func (s AuditEventEventData) IsAIAnalysisAIAgentCallPayload() bool {
+	switch s.Type {
+	case AuditEventEventDataAianalysisAiagentCallAuditEventEventData, AuditEventEventDataAianalysisAiagentResultAuditEventEventData, AuditEventEventDataAianalysisAiagentSessionLostAuditEventEventData, AuditEventEventDataAianalysisAiagentSubmitAuditEventEventData:
+		return true
+	default:
+		return false
+	}
 }
 
 // IsAIAnalysisApprovalDecisionPayload reports whether AuditEventEventData is AIAnalysisApprovalDecisionPayload.
@@ -1859,24 +1855,49 @@ func NewAIAnalysisPhaseTransitionPayloadAuditEventEventData(v AIAnalysisPhaseTra
 	return s
 }
 
-// SetAIAnalysisHolmesGPTCallPayload sets AuditEventEventData to AIAnalysisHolmesGPTCallPayload.
-func (s *AuditEventEventData) SetAIAnalysisHolmesGPTCallPayload(v AIAnalysisHolmesGPTCallPayload) {
-	s.Type = AIAnalysisHolmesGPTCallPayloadAuditEventEventData
-	s.AIAnalysisHolmesGPTCallPayload = v
+// SetAIAnalysisAIAgentCallPayload sets AuditEventEventData to AIAnalysisAIAgentCallPayload.
+// panics if `t` is not associated with AIAnalysisAIAgentCallPayload
+func (s *AuditEventEventData) SetAIAnalysisAIAgentCallPayload(t AuditEventEventDataType, v AIAnalysisAIAgentCallPayload) {
+	s.Type = t
+	s.AIAnalysisAIAgentCallPayload = v
+	if !s.IsAIAnalysisAIAgentCallPayload() {
+		panic(fmt.Errorf("invariant: %v is not AIAnalysisAIAgentCallPayload", t))
+	}
 }
 
-// GetAIAnalysisHolmesGPTCallPayload returns AIAnalysisHolmesGPTCallPayload and true boolean if AuditEventEventData is AIAnalysisHolmesGPTCallPayload.
-func (s AuditEventEventData) GetAIAnalysisHolmesGPTCallPayload() (v AIAnalysisHolmesGPTCallPayload, ok bool) {
-	if !s.IsAIAnalysisHolmesGPTCallPayload() {
+// GetAIAnalysisAIAgentCallPayload returns AIAnalysisAIAgentCallPayload and true boolean if AuditEventEventData is AIAnalysisAIAgentCallPayload.
+func (s AuditEventEventData) GetAIAnalysisAIAgentCallPayload() (v AIAnalysisAIAgentCallPayload, ok bool) {
+	if !s.IsAIAnalysisAIAgentCallPayload() {
 		return v, false
 	}
-	return s.AIAnalysisHolmesGPTCallPayload, true
+	return s.AIAnalysisAIAgentCallPayload, true
 }
 
-// NewAIAnalysisHolmesGPTCallPayloadAuditEventEventData returns new AuditEventEventData from AIAnalysisHolmesGPTCallPayload.
-func NewAIAnalysisHolmesGPTCallPayloadAuditEventEventData(v AIAnalysisHolmesGPTCallPayload) AuditEventEventData {
+// NewAuditEventEventDataAianalysisAiagentCallAuditEventEventData returns new AuditEventEventData from AIAnalysisAIAgentCallPayload.
+func NewAuditEventEventDataAianalysisAiagentCallAuditEventEventData(v AIAnalysisAIAgentCallPayload) AuditEventEventData {
 	var s AuditEventEventData
-	s.SetAIAnalysisHolmesGPTCallPayload(v)
+	s.SetAIAnalysisAIAgentCallPayload(AuditEventEventDataAianalysisAiagentCallAuditEventEventData, v)
+	return s
+}
+
+// NewAuditEventEventDataAianalysisAiagentResultAuditEventEventData returns new AuditEventEventData from AIAnalysisAIAgentCallPayload.
+func NewAuditEventEventDataAianalysisAiagentResultAuditEventEventData(v AIAnalysisAIAgentCallPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetAIAnalysisAIAgentCallPayload(AuditEventEventDataAianalysisAiagentResultAuditEventEventData, v)
+	return s
+}
+
+// NewAuditEventEventDataAianalysisAiagentSessionLostAuditEventEventData returns new AuditEventEventData from AIAnalysisAIAgentCallPayload.
+func NewAuditEventEventDataAianalysisAiagentSessionLostAuditEventEventData(v AIAnalysisAIAgentCallPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetAIAnalysisAIAgentCallPayload(AuditEventEventDataAianalysisAiagentSessionLostAuditEventEventData, v)
+	return s
+}
+
+// NewAuditEventEventDataAianalysisAiagentSubmitAuditEventEventData returns new AuditEventEventData from AIAnalysisAIAgentCallPayload.
+func NewAuditEventEventDataAianalysisAiagentSubmitAuditEventEventData(v AIAnalysisAIAgentCallPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetAIAnalysisAIAgentCallPayload(AuditEventEventDataAianalysisAiagentSubmitAuditEventEventData, v)
 	return s
 }
 
@@ -2608,7 +2629,7 @@ type AuditEventRequestEventData struct {
 	WorkflowCatalogCreatedPayload          WorkflowCatalogCreatedPayload
 	WorkflowCatalogUpdatedPayload          WorkflowCatalogUpdatedPayload
 	AIAnalysisPhaseTransitionPayload       AIAnalysisPhaseTransitionPayload
-	AIAnalysisHolmesGPTCallPayload         AIAnalysisHolmesGPTCallPayload
+	AIAnalysisAIAgentCallPayload           AIAnalysisAIAgentCallPayload
 	AIAnalysisApprovalDecisionPayload      AIAnalysisApprovalDecisionPayload
 	AIAnalysisRegoEvaluationPayload        AIAnalysisRegoEvaluationPayload
 	AIAnalysisErrorPayload                 AIAnalysisErrorPayload
@@ -2670,7 +2691,10 @@ const (
 	WorkflowCatalogCreatedPayloadAuditEventRequestEventData                                    AuditEventRequestEventDataType = "datastorage.workflow.created"
 	WorkflowCatalogUpdatedPayloadAuditEventRequestEventData                                    AuditEventRequestEventDataType = "datastorage.workflow.updated"
 	AIAnalysisPhaseTransitionPayloadAuditEventRequestEventData                                 AuditEventRequestEventDataType = "aianalysis.phase.transition"
-	AIAnalysisHolmesGPTCallPayloadAuditEventRequestEventData                                   AuditEventRequestEventDataType = "aianalysis.holmesgpt.call"
+	AuditEventRequestEventDataAianalysisAiagentCallAuditEventRequestEventData                  AuditEventRequestEventDataType = "aianalysis.aiagent.call"
+	AuditEventRequestEventDataAianalysisAiagentResultAuditEventRequestEventData                AuditEventRequestEventDataType = "aianalysis.aiagent.result"
+	AuditEventRequestEventDataAianalysisAiagentSessionLostAuditEventRequestEventData           AuditEventRequestEventDataType = "aianalysis.aiagent.session_lost"
+	AuditEventRequestEventDataAianalysisAiagentSubmitAuditEventRequestEventData                AuditEventRequestEventDataType = "aianalysis.aiagent.submit"
 	AIAnalysisApprovalDecisionPayloadAuditEventRequestEventData                                AuditEventRequestEventDataType = "aianalysis.approval.decision"
 	AIAnalysisRegoEvaluationPayloadAuditEventRequestEventData                                  AuditEventRequestEventDataType = "aianalysis.rego.evaluation"
 	AIAnalysisErrorPayloadAuditEventRequestEventData                                           AuditEventRequestEventDataType = "aianalysis.error.occurred"
@@ -2792,9 +2816,14 @@ func (s AuditEventRequestEventData) IsAIAnalysisPhaseTransitionPayload() bool {
 	return s.Type == AIAnalysisPhaseTransitionPayloadAuditEventRequestEventData
 }
 
-// IsAIAnalysisHolmesGPTCallPayload reports whether AuditEventRequestEventData is AIAnalysisHolmesGPTCallPayload.
-func (s AuditEventRequestEventData) IsAIAnalysisHolmesGPTCallPayload() bool {
-	return s.Type == AIAnalysisHolmesGPTCallPayloadAuditEventRequestEventData
+// IsAIAnalysisAIAgentCallPayload reports whether AuditEventRequestEventData is AIAnalysisAIAgentCallPayload.
+func (s AuditEventRequestEventData) IsAIAnalysisAIAgentCallPayload() bool {
+	switch s.Type {
+	case AuditEventRequestEventDataAianalysisAiagentCallAuditEventRequestEventData, AuditEventRequestEventDataAianalysisAiagentResultAuditEventRequestEventData, AuditEventRequestEventDataAianalysisAiagentSessionLostAuditEventRequestEventData, AuditEventRequestEventDataAianalysisAiagentSubmitAuditEventRequestEventData:
+		return true
+	default:
+		return false
+	}
 }
 
 // IsAIAnalysisApprovalDecisionPayload reports whether AuditEventRequestEventData is AIAnalysisApprovalDecisionPayload.
@@ -3362,24 +3391,49 @@ func NewAIAnalysisPhaseTransitionPayloadAuditEventRequestEventData(v AIAnalysisP
 	return s
 }
 
-// SetAIAnalysisHolmesGPTCallPayload sets AuditEventRequestEventData to AIAnalysisHolmesGPTCallPayload.
-func (s *AuditEventRequestEventData) SetAIAnalysisHolmesGPTCallPayload(v AIAnalysisHolmesGPTCallPayload) {
-	s.Type = AIAnalysisHolmesGPTCallPayloadAuditEventRequestEventData
-	s.AIAnalysisHolmesGPTCallPayload = v
+// SetAIAnalysisAIAgentCallPayload sets AuditEventRequestEventData to AIAnalysisAIAgentCallPayload.
+// panics if `t` is not associated with AIAnalysisAIAgentCallPayload
+func (s *AuditEventRequestEventData) SetAIAnalysisAIAgentCallPayload(t AuditEventRequestEventDataType, v AIAnalysisAIAgentCallPayload) {
+	s.Type = t
+	s.AIAnalysisAIAgentCallPayload = v
+	if !s.IsAIAnalysisAIAgentCallPayload() {
+		panic(fmt.Errorf("invariant: %v is not AIAnalysisAIAgentCallPayload", t))
+	}
 }
 
-// GetAIAnalysisHolmesGPTCallPayload returns AIAnalysisHolmesGPTCallPayload and true boolean if AuditEventRequestEventData is AIAnalysisHolmesGPTCallPayload.
-func (s AuditEventRequestEventData) GetAIAnalysisHolmesGPTCallPayload() (v AIAnalysisHolmesGPTCallPayload, ok bool) {
-	if !s.IsAIAnalysisHolmesGPTCallPayload() {
+// GetAIAnalysisAIAgentCallPayload returns AIAnalysisAIAgentCallPayload and true boolean if AuditEventRequestEventData is AIAnalysisAIAgentCallPayload.
+func (s AuditEventRequestEventData) GetAIAnalysisAIAgentCallPayload() (v AIAnalysisAIAgentCallPayload, ok bool) {
+	if !s.IsAIAnalysisAIAgentCallPayload() {
 		return v, false
 	}
-	return s.AIAnalysisHolmesGPTCallPayload, true
+	return s.AIAnalysisAIAgentCallPayload, true
 }
 
-// NewAIAnalysisHolmesGPTCallPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from AIAnalysisHolmesGPTCallPayload.
-func NewAIAnalysisHolmesGPTCallPayloadAuditEventRequestEventData(v AIAnalysisHolmesGPTCallPayload) AuditEventRequestEventData {
+// NewAuditEventRequestEventDataAianalysisAiagentCallAuditEventRequestEventData returns new AuditEventRequestEventData from AIAnalysisAIAgentCallPayload.
+func NewAuditEventRequestEventDataAianalysisAiagentCallAuditEventRequestEventData(v AIAnalysisAIAgentCallPayload) AuditEventRequestEventData {
 	var s AuditEventRequestEventData
-	s.SetAIAnalysisHolmesGPTCallPayload(v)
+	s.SetAIAnalysisAIAgentCallPayload(AuditEventRequestEventDataAianalysisAiagentCallAuditEventRequestEventData, v)
+	return s
+}
+
+// NewAuditEventRequestEventDataAianalysisAiagentResultAuditEventRequestEventData returns new AuditEventRequestEventData from AIAnalysisAIAgentCallPayload.
+func NewAuditEventRequestEventDataAianalysisAiagentResultAuditEventRequestEventData(v AIAnalysisAIAgentCallPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetAIAnalysisAIAgentCallPayload(AuditEventRequestEventDataAianalysisAiagentResultAuditEventRequestEventData, v)
+	return s
+}
+
+// NewAuditEventRequestEventDataAianalysisAiagentSessionLostAuditEventRequestEventData returns new AuditEventRequestEventData from AIAnalysisAIAgentCallPayload.
+func NewAuditEventRequestEventDataAianalysisAiagentSessionLostAuditEventRequestEventData(v AIAnalysisAIAgentCallPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetAIAnalysisAIAgentCallPayload(AuditEventRequestEventDataAianalysisAiagentSessionLostAuditEventRequestEventData, v)
+	return s
+}
+
+// NewAuditEventRequestEventDataAianalysisAiagentSubmitAuditEventRequestEventData returns new AuditEventRequestEventData from AIAnalysisAIAgentCallPayload.
+func NewAuditEventRequestEventDataAianalysisAiagentSubmitAuditEventRequestEventData(v AIAnalysisAIAgentCallPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetAIAnalysisAIAgentCallPayload(AuditEventRequestEventDataAianalysisAiagentSubmitAuditEventRequestEventData, v)
 	return s
 }
 
@@ -4518,17 +4572,17 @@ type CreateWorkflowFromOCIRequest struct {
 	// OCI image pullspec. Data Storage pulls this image, extracts
 	// /workflow-schema.yaml (ADR-043), validates it, and populates
 	// all catalog fields from the extracted schema.
-	ContainerImage string `json:"container_image"`
+	SchemaImage string `json:"schemaImage"`
 }
 
-// GetContainerImage returns the value of ContainerImage.
-func (s *CreateWorkflowFromOCIRequest) GetContainerImage() string {
-	return s.ContainerImage
+// GetSchemaImage returns the value of SchemaImage.
+func (s *CreateWorkflowFromOCIRequest) GetSchemaImage() string {
+	return s.SchemaImage
 }
 
-// SetContainerImage sets the value of ContainerImage.
-func (s *CreateWorkflowFromOCIRequest) SetContainerImage(val string) {
-	s.ContainerImage = val
+// SetSchemaImage sets the value of SchemaImage.
+func (s *CreateWorkflowFromOCIRequest) SetSchemaImage(val string) {
+	s.SchemaImage = val
 }
 
 type CreateWorkflowInternalServerError RFC7807Problem
@@ -4568,7 +4622,7 @@ func (*DeprecateWorkflowNotFound) deprecateWorkflowRes() {}
 // Ref: #/components/schemas/DetectedLabels
 type DetectedLabels struct {
 	// Fields where detection failed (RBAC, timeout, etc.) - consumer should ignore these fields.
-	FailedDetections []DetectedLabelsFailedDetectionsItem `json:"failed_detections"`
+	FailedDetections []DetectedLabelsFailedDetectionsItem `json:"failedDetections"`
 	// Resource is managed by GitOps (ArgoCD/Flux).
 	GitOpsManaged OptBool `json:"gitOpsManaged"`
 	// GitOps tool: argocd, flux, or * (wildcard = any tool).
@@ -6763,32 +6817,30 @@ func (s *HealthCheckServiceUnavailableStatus) UnmarshalText(data []byte) error {
 // Ref: #/components/schemas/IncidentResponseData
 type IncidentResponseData struct {
 	// Incident identifier from request.
-	IncidentID string `json:"incident_id"`
+	IncidentId string `json:"incidentId"`
 	// Natural language analysis from LLM.
 	Analysis string `json:"analysis"`
-	// Structured RCA with summary, severity, contributing_factors.
-	RootCauseAnalysis IncidentResponseDataRootCauseAnalysis `json:"root_cause_analysis"`
-	// Selected workflow with workflow_id, action_type, containerImage, confidence, parameters (optional).
-	SelectedWorkflow OptIncidentResponseDataSelectedWorkflow `json:"selected_workflow"`
+	// Structured RCA with summary, severity, contributingFactors.
+	RootCauseAnalysis IncidentResponseDataRootCauseAnalysis `json:"rootCauseAnalysis"`
+	// Selected workflow with workflowId, actionType, executionBundle, confidence, parameters (optional).
+	SelectedWorkflow OptIncidentResponseDataSelectedWorkflow `json:"selectedWorkflow"`
 	// Overall confidence in analysis.
 	Confidence float32 `json:"confidence"`
 	// ISO timestamp of analysis completion.
 	Timestamp time.Time `json:"timestamp"`
 	// True when AI could not produce reliable result.
-	NeedsHumanReview OptBool `json:"needs_human_review"`
-	// Structured reason when needs_human_review=true (BR-HAPI-197, BR-HAPI-200, BR-HAPI-212).
-	HumanReviewReason OptIncidentResponseDataHumanReviewReason `json:"human_review_reason"`
-	// Whether RCA target was found in OwnerChain.
-	TargetInOwnerChain OptBool `json:"target_in_owner_chain"`
+	NeedsHumanReview OptBool `json:"needsHumanReview"`
+	// Structured reason when needsHumanReview=true (BR-HAPI-197, BR-HAPI-200, BR-HAPI-212).
+	HumanReviewReason OptIncidentResponseDataHumanReviewReason `json:"humanReviewReason"`
 	// Non-fatal warnings (e.g., OwnerChain validation issues).
 	Warnings []string `json:"warnings"`
 	// Other workflows considered but not selected.
-	AlternativeWorkflows []IncidentResponseDataAlternativeWorkflowsItem `json:"alternative_workflows"`
+	AlternativeWorkflows []IncidentResponseDataAlternativeWorkflowsItem `json:"alternativeWorkflows"`
 }
 
-// GetIncidentID returns the value of IncidentID.
-func (s *IncidentResponseData) GetIncidentID() string {
-	return s.IncidentID
+// GetIncidentId returns the value of IncidentId.
+func (s *IncidentResponseData) GetIncidentId() string {
+	return s.IncidentId
 }
 
 // GetAnalysis returns the value of Analysis.
@@ -6826,11 +6878,6 @@ func (s *IncidentResponseData) GetHumanReviewReason() OptIncidentResponseDataHum
 	return s.HumanReviewReason
 }
 
-// GetTargetInOwnerChain returns the value of TargetInOwnerChain.
-func (s *IncidentResponseData) GetTargetInOwnerChain() OptBool {
-	return s.TargetInOwnerChain
-}
-
 // GetWarnings returns the value of Warnings.
 func (s *IncidentResponseData) GetWarnings() []string {
 	return s.Warnings
@@ -6841,9 +6888,9 @@ func (s *IncidentResponseData) GetAlternativeWorkflows() []IncidentResponseDataA
 	return s.AlternativeWorkflows
 }
 
-// SetIncidentID sets the value of IncidentID.
-func (s *IncidentResponseData) SetIncidentID(val string) {
-	s.IncidentID = val
+// SetIncidentId sets the value of IncidentId.
+func (s *IncidentResponseData) SetIncidentId(val string) {
+	s.IncidentId = val
 }
 
 // SetAnalysis sets the value of Analysis.
@@ -6881,11 +6928,6 @@ func (s *IncidentResponseData) SetHumanReviewReason(val OptIncidentResponseDataH
 	s.HumanReviewReason = val
 }
 
-// SetTargetInOwnerChain sets the value of TargetInOwnerChain.
-func (s *IncidentResponseData) SetTargetInOwnerChain(val OptBool) {
-	s.TargetInOwnerChain = val
-}
-
 // SetWarnings sets the value of Warnings.
 func (s *IncidentResponseData) SetWarnings(val []string) {
 	s.Warnings = val
@@ -6897,13 +6939,13 @@ func (s *IncidentResponseData) SetAlternativeWorkflows(val []IncidentResponseDat
 }
 
 type IncidentResponseDataAlternativeWorkflowsItem struct {
-	WorkflowID OptString `json:"workflow_id"`
+	WorkflowId OptString `json:"workflowId"`
 	Rationale  OptString `json:"rationale"`
 }
 
-// GetWorkflowID returns the value of WorkflowID.
-func (s *IncidentResponseDataAlternativeWorkflowsItem) GetWorkflowID() OptString {
-	return s.WorkflowID
+// GetWorkflowId returns the value of WorkflowId.
+func (s *IncidentResponseDataAlternativeWorkflowsItem) GetWorkflowId() OptString {
+	return s.WorkflowId
 }
 
 // GetRationale returns the value of Rationale.
@@ -6911,9 +6953,9 @@ func (s *IncidentResponseDataAlternativeWorkflowsItem) GetRationale() OptString 
 	return s.Rationale
 }
 
-// SetWorkflowID sets the value of WorkflowID.
-func (s *IncidentResponseDataAlternativeWorkflowsItem) SetWorkflowID(val OptString) {
-	s.WorkflowID = val
+// SetWorkflowId sets the value of WorkflowId.
+func (s *IncidentResponseDataAlternativeWorkflowsItem) SetWorkflowId(val OptString) {
+	s.WorkflowId = val
 }
 
 // SetRationale sets the value of Rationale.
@@ -6921,7 +6963,7 @@ func (s *IncidentResponseDataAlternativeWorkflowsItem) SetRationale(val OptStrin
 	s.Rationale = val
 }
 
-// Structured reason when needs_human_review=true (BR-HAPI-197, BR-HAPI-200, BR-HAPI-212).
+// Structured reason when needsHumanReview=true (BR-HAPI-197, BR-HAPI-200, BR-HAPI-212).
 type IncidentResponseDataHumanReviewReason string
 
 const (
@@ -7005,14 +7047,14 @@ func (s *IncidentResponseDataHumanReviewReason) UnmarshalText(data []byte) error
 	}
 }
 
-// Structured RCA with summary, severity, contributing_factors.
+// Structured RCA with summary, severity, contributingFactors.
 type IncidentResponseDataRootCauseAnalysis struct {
 	// Brief RCA summary.
 	Summary string `json:"summary"`
 	// Incident severity (BR-SEVERITY-001).
 	Severity IncidentResponseDataRootCauseAnalysisSeverity `json:"severity"`
 	// List of contributing factors.
-	ContributingFactors []string `json:"contributing_factors"`
+	ContributingFactors []string `json:"contributingFactors"`
 }
 
 // GetSummary returns the value of Summary.
@@ -7108,20 +7150,20 @@ func (s *IncidentResponseDataRootCauseAnalysisSeverity) UnmarshalText(data []byt
 	}
 }
 
-// Selected workflow with workflow_id, action_type, containerImage, confidence, parameters (optional).
+// Selected workflow with workflowId, actionType, executionBundle, confidence, parameters (optional).
 type IncidentResponseDataSelectedWorkflow struct {
-	WorkflowID OptString `json:"workflow_id"`
+	WorkflowId OptString `json:"workflowId"`
 	// Action type from DD-WORKFLOW-016 taxonomy (e.g., ScaleReplicas, RestartPod).
 	// Propagated from HAPI three-step discovery protocol.
-	ActionType     OptString                                         `json:"action_type"`
-	ContainerImage OptString                                         `json:"container_image"`
-	Confidence     OptFloat32                                        `json:"confidence"`
-	Parameters     OptIncidentResponseDataSelectedWorkflowParameters `json:"parameters"`
+	ActionType      OptString                                         `json:"actionType"`
+	ExecutionBundle OptString                                         `json:"executionBundle"`
+	Confidence      OptFloat32                                        `json:"confidence"`
+	Parameters      OptIncidentResponseDataSelectedWorkflowParameters `json:"parameters"`
 }
 
-// GetWorkflowID returns the value of WorkflowID.
-func (s *IncidentResponseDataSelectedWorkflow) GetWorkflowID() OptString {
-	return s.WorkflowID
+// GetWorkflowId returns the value of WorkflowId.
+func (s *IncidentResponseDataSelectedWorkflow) GetWorkflowId() OptString {
+	return s.WorkflowId
 }
 
 // GetActionType returns the value of ActionType.
@@ -7129,9 +7171,9 @@ func (s *IncidentResponseDataSelectedWorkflow) GetActionType() OptString {
 	return s.ActionType
 }
 
-// GetContainerImage returns the value of ContainerImage.
-func (s *IncidentResponseDataSelectedWorkflow) GetContainerImage() OptString {
-	return s.ContainerImage
+// GetExecutionBundle returns the value of ExecutionBundle.
+func (s *IncidentResponseDataSelectedWorkflow) GetExecutionBundle() OptString {
+	return s.ExecutionBundle
 }
 
 // GetConfidence returns the value of Confidence.
@@ -7144,9 +7186,9 @@ func (s *IncidentResponseDataSelectedWorkflow) GetParameters() OptIncidentRespon
 	return s.Parameters
 }
 
-// SetWorkflowID sets the value of WorkflowID.
-func (s *IncidentResponseDataSelectedWorkflow) SetWorkflowID(val OptString) {
-	s.WorkflowID = val
+// SetWorkflowId sets the value of WorkflowId.
+func (s *IncidentResponseDataSelectedWorkflow) SetWorkflowId(val OptString) {
+	s.WorkflowId = val
 }
 
 // SetActionType sets the value of ActionType.
@@ -7154,9 +7196,9 @@ func (s *IncidentResponseDataSelectedWorkflow) SetActionType(val OptString) {
 	s.ActionType = val
 }
 
-// SetContainerImage sets the value of ContainerImage.
-func (s *IncidentResponseDataSelectedWorkflow) SetContainerImage(val OptString) {
-	s.ContainerImage = val
+// SetExecutionBundle sets the value of ExecutionBundle.
+func (s *IncidentResponseDataSelectedWorkflow) SetExecutionBundle(val OptString) {
+	s.ExecutionBundle = val
 }
 
 // SetConfidence sets the value of Confidence.
@@ -7989,11 +8031,11 @@ func (s *ListWorkflowsStatus) UnmarshalText(data []byte) error {
 // LivenessCheckOK is response for LivenessCheck operation.
 type LivenessCheckOK struct{}
 
-// 4 mandatory + 1 optional workflow labels (DD-WORKFLOW-016: signal_type now optional).
+// 4 mandatory + 1 optional workflow labels (DD-WORKFLOW-016: signalType now optional).
 // Ref: #/components/schemas/MandatoryLabels
 type MandatoryLabels struct {
 	// Signal type this workflow handles (optional metadata per DD-WORKFLOW-016).
-	SignalType OptString `json:"signal_type"`
+	SignalType OptString `json:"signalType"`
 	// Severity level(s) this workflow is designed for. Always an array. To match any severity, list all
 	// levels.
 	Severity []MandatoryLabelsSeverityItem `json:"severity"`
@@ -13358,6 +13400,52 @@ func (o OptWorkflowExecutionAuditPayloadFailureReason) Or(d WorkflowExecutionAud
 	return d
 }
 
+// NewOptWorkflowExecutionAuditPayloadParameters returns new OptWorkflowExecutionAuditPayloadParameters with value set to v.
+func NewOptWorkflowExecutionAuditPayloadParameters(v WorkflowExecutionAuditPayloadParameters) OptWorkflowExecutionAuditPayloadParameters {
+	return OptWorkflowExecutionAuditPayloadParameters{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptWorkflowExecutionAuditPayloadParameters is optional WorkflowExecutionAuditPayloadParameters.
+type OptWorkflowExecutionAuditPayloadParameters struct {
+	Value WorkflowExecutionAuditPayloadParameters
+	Set   bool
+}
+
+// IsSet returns true if OptWorkflowExecutionAuditPayloadParameters was set.
+func (o OptWorkflowExecutionAuditPayloadParameters) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptWorkflowExecutionAuditPayloadParameters) Reset() {
+	var v WorkflowExecutionAuditPayloadParameters
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptWorkflowExecutionAuditPayloadParameters) SetTo(v WorkflowExecutionAuditPayloadParameters) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptWorkflowExecutionAuditPayloadParameters) Get() (v WorkflowExecutionAuditPayloadParameters, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptWorkflowExecutionAuditPayloadParameters) Or(d WorkflowExecutionAuditPayloadParameters) WorkflowExecutionAuditPayloadParameters {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptWorkflowResultAuditLabels returns new OptWorkflowResultAuditLabels with value set to v.
 func NewOptWorkflowResultAuditLabels(v WorkflowResultAuditLabels) OptWorkflowResultAuditLabels {
 	return OptWorkflowResultAuditLabels{
@@ -16176,11 +16264,11 @@ func (s *RemediationRequestWebhookAuditPayloadEventType) UnmarshalText(data []by
 // Ref: #/components/schemas/RemediationWorkflow
 type RemediationWorkflow struct {
 	// Unique workflow identifier (UUID, auto-generated).
-	WorkflowID OptUUID `json:"workflow_id"`
+	WorkflowId OptUUID `json:"workflowId"`
 	// Workflow name (identifier for versions).
-	WorkflowName string `json:"workflow_name"`
+	WorkflowName string `json:"workflowName"`
 	// Action type from taxonomy (DD-WORKFLOW-016). FK to action_type_taxonomy.
-	ActionType string `json:"action_type"`
+	ActionType string `json:"actionType"`
 	// Semantic version (e.g., v1.0.0).
 	Version string `json:"version"`
 	// Human-readable workflow title.
@@ -16193,59 +16281,63 @@ type RemediationWorkflow struct {
 	// YAML workflow definition.
 	Content string `json:"content"`
 	// SHA-256 hash of content.
-	ContentHash string `json:"content_hash"`
+	ContentHash string `json:"contentHash"`
 	// Workflow parameters (JSONB).
 	Parameters OptRemediationWorkflowParameters `json:"parameters"`
 	// Execution engine (e.g., argo-workflows).
-	ExecutionEngine string `json:"execution_engine"`
-	// OCI image reference.
-	ContainerImage OptString `json:"container_image"`
-	// OCI image digest.
-	ContainerDigest OptString         `json:"container_digest"`
-	Labels          MandatoryLabels   `json:"labels"`
-	CustomLabels    OptCustomLabels   `json:"custom_labels"`
-	DetectedLabels  OptDetectedLabels `json:"detected_labels"`
+	ExecutionEngine string `json:"executionEngine"`
+	// OCI image used to extract the workflow schema (DD-WORKFLOW-017).
+	SchemaImage OptString `json:"schemaImage"`
+	// OCI schema image digest.
+	SchemaDigest OptString `json:"schemaDigest"`
+	// OCI execution bundle reference (digest-pinned).
+	ExecutionBundle OptString `json:"executionBundle"`
+	// OCI execution bundle digest.
+	ExecutionBundleDigest OptString         `json:"executionBundleDigest"`
+	Labels                MandatoryLabels   `json:"labels"`
+	CustomLabels          OptCustomLabels   `json:"customLabels"`
+	DetectedLabels        OptDetectedLabels `json:"detectedLabels"`
 	// Workflow lifecycle status.
 	Status RemediationWorkflowStatus `json:"status"`
 	// When workflow was disabled.
-	DisabledAt OptDateTime `json:"disabled_at"`
+	DisabledAt OptDateTime `json:"disabledAt"`
 	// Who disabled the workflow.
-	DisabledBy OptString `json:"disabled_by"`
+	DisabledBy OptString `json:"disabledBy"`
 	// Why workflow was disabled.
-	DisabledReason OptString `json:"disabled_reason"`
+	DisabledReason OptString `json:"disabledReason"`
 	// Is this the latest version?.
-	IsLatestVersion OptBool `json:"is_latest_version"`
+	IsLatestVersion OptBool `json:"isLatestVersion"`
 	// Previous version identifier.
-	PreviousVersion OptString `json:"previous_version"`
+	PreviousVersion OptString `json:"previousVersion"`
 	// Deprecation notice.
-	DeprecationNotice OptString `json:"deprecation_notice"`
+	DeprecationNotice OptString `json:"deprecationNotice"`
 	// Version release notes.
-	VersionNotes OptString `json:"version_notes"`
+	VersionNotes OptString `json:"versionNotes"`
 	// Summary of changes in this version.
-	ChangeSummary OptString `json:"change_summary"`
+	ChangeSummary OptString `json:"changeSummary"`
 	// Who approved this version.
-	ApprovedBy OptString `json:"approved_by"`
+	ApprovedBy OptString `json:"approvedBy"`
 	// When this version was approved.
-	ApprovedAt OptDateTime `json:"approved_at"`
+	ApprovedAt OptDateTime `json:"approvedAt"`
 	// Expected success rate (0.0-1.0).
-	ExpectedSuccessRate OptFloat32 `json:"expected_success_rate"`
+	ExpectedSuccessRate OptFloat32 `json:"expectedSuccessRate"`
 	// Expected execution duration.
-	ExpectedDurationSeconds OptInt `json:"expected_duration_seconds"`
+	ExpectedDurationSeconds OptInt `json:"expectedDurationSeconds"`
 	// Actual success rate (0.0-1.0).
-	ActualSuccessRate OptFloat32 `json:"actual_success_rate"`
+	ActualSuccessRate OptFloat32 `json:"actualSuccessRate"`
 	// Total number of executions.
-	TotalExecutions OptInt `json:"total_executions"`
+	TotalExecutions OptInt `json:"totalExecutions"`
 	// Number of successful executions.
-	SuccessfulExecutions OptInt      `json:"successful_executions"`
-	CreatedAt            OptDateTime `json:"created_at"`
-	UpdatedAt            OptDateTime `json:"updated_at"`
-	CreatedBy            OptString   `json:"created_by"`
-	UpdatedBy            OptString   `json:"updated_by"`
+	SuccessfulExecutions OptInt      `json:"successfulExecutions"`
+	CreatedAt            OptDateTime `json:"createdAt"`
+	UpdatedAt            OptDateTime `json:"updatedAt"`
+	CreatedBy            OptString   `json:"createdBy"`
+	UpdatedBy            OptString   `json:"updatedBy"`
 }
 
-// GetWorkflowID returns the value of WorkflowID.
-func (s *RemediationWorkflow) GetWorkflowID() OptUUID {
-	return s.WorkflowID
+// GetWorkflowId returns the value of WorkflowId.
+func (s *RemediationWorkflow) GetWorkflowId() OptUUID {
+	return s.WorkflowId
 }
 
 // GetWorkflowName returns the value of WorkflowName.
@@ -16303,14 +16395,24 @@ func (s *RemediationWorkflow) GetExecutionEngine() string {
 	return s.ExecutionEngine
 }
 
-// GetContainerImage returns the value of ContainerImage.
-func (s *RemediationWorkflow) GetContainerImage() OptString {
-	return s.ContainerImage
+// GetSchemaImage returns the value of SchemaImage.
+func (s *RemediationWorkflow) GetSchemaImage() OptString {
+	return s.SchemaImage
 }
 
-// GetContainerDigest returns the value of ContainerDigest.
-func (s *RemediationWorkflow) GetContainerDigest() OptString {
-	return s.ContainerDigest
+// GetSchemaDigest returns the value of SchemaDigest.
+func (s *RemediationWorkflow) GetSchemaDigest() OptString {
+	return s.SchemaDigest
+}
+
+// GetExecutionBundle returns the value of ExecutionBundle.
+func (s *RemediationWorkflow) GetExecutionBundle() OptString {
+	return s.ExecutionBundle
+}
+
+// GetExecutionBundleDigest returns the value of ExecutionBundleDigest.
+func (s *RemediationWorkflow) GetExecutionBundleDigest() OptString {
+	return s.ExecutionBundleDigest
 }
 
 // GetLabels returns the value of Labels.
@@ -16428,9 +16530,9 @@ func (s *RemediationWorkflow) GetUpdatedBy() OptString {
 	return s.UpdatedBy
 }
 
-// SetWorkflowID sets the value of WorkflowID.
-func (s *RemediationWorkflow) SetWorkflowID(val OptUUID) {
-	s.WorkflowID = val
+// SetWorkflowId sets the value of WorkflowId.
+func (s *RemediationWorkflow) SetWorkflowId(val OptUUID) {
+	s.WorkflowId = val
 }
 
 // SetWorkflowName sets the value of WorkflowName.
@@ -16488,14 +16590,24 @@ func (s *RemediationWorkflow) SetExecutionEngine(val string) {
 	s.ExecutionEngine = val
 }
 
-// SetContainerImage sets the value of ContainerImage.
-func (s *RemediationWorkflow) SetContainerImage(val OptString) {
-	s.ContainerImage = val
+// SetSchemaImage sets the value of SchemaImage.
+func (s *RemediationWorkflow) SetSchemaImage(val OptString) {
+	s.SchemaImage = val
 }
 
-// SetContainerDigest sets the value of ContainerDigest.
-func (s *RemediationWorkflow) SetContainerDigest(val OptString) {
-	s.ContainerDigest = val
+// SetSchemaDigest sets the value of SchemaDigest.
+func (s *RemediationWorkflow) SetSchemaDigest(val OptString) {
+	s.SchemaDigest = val
+}
+
+// SetExecutionBundle sets the value of ExecutionBundle.
+func (s *RemediationWorkflow) SetExecutionBundle(val OptString) {
+	s.ExecutionBundle = val
+}
+
+// SetExecutionBundleDigest sets the value of ExecutionBundleDigest.
+func (s *RemediationWorkflow) SetExecutionBundleDigest(val OptString) {
+	s.ExecutionBundleDigest = val
 }
 
 // SetLabels sets the value of Labels.
@@ -16801,10 +16913,6 @@ type SignalProcessingAuditPayload struct {
 	OwnerChainLength OptInt `json:"owner_chain_length"`
 	// Whether context enrichment was degraded.
 	DegradedMode OptBool `json:"degraded_mode"`
-	// Whether the resource has a PodDisruptionBudget.
-	HasPdb OptBool `json:"has_pdb"`
-	// Whether the resource has a HorizontalPodAutoscaler.
-	HasHpa OptBool `json:"has_hpa"`
 	// Enrichment duration in milliseconds.
 	DurationMs OptInt `json:"duration_ms"`
 	// Whether namespace context was enriched.
@@ -16912,16 +17020,6 @@ func (s *SignalProcessingAuditPayload) GetOwnerChainLength() OptInt {
 // GetDegradedMode returns the value of DegradedMode.
 func (s *SignalProcessingAuditPayload) GetDegradedMode() OptBool {
 	return s.DegradedMode
-}
-
-// GetHasPdb returns the value of HasPdb.
-func (s *SignalProcessingAuditPayload) GetHasPdb() OptBool {
-	return s.HasPdb
-}
-
-// GetHasHpa returns the value of HasHpa.
-func (s *SignalProcessingAuditPayload) GetHasHpa() OptBool {
-	return s.HasHpa
 }
 
 // GetDurationMs returns the value of DurationMs.
@@ -17057,16 +17155,6 @@ func (s *SignalProcessingAuditPayload) SetOwnerChainLength(val OptInt) {
 // SetDegradedMode sets the value of DegradedMode.
 func (s *SignalProcessingAuditPayload) SetDegradedMode(val OptBool) {
 	s.DegradedMode = val
-}
-
-// SetHasPdb sets the value of HasPdb.
-func (s *SignalProcessingAuditPayload) SetHasPdb(val OptBool) {
-	s.HasPdb = val
-}
-
-// SetHasHpa sets the value of HasHpa.
-func (s *SignalProcessingAuditPayload) SetHasHpa(val OptBool) {
-	s.HasHpa = val
 }
 
 // SetDurationMs sets the value of DurationMs.
@@ -18305,8 +18393,10 @@ type WorkflowDiscoveryEntry struct {
 	Description StructuredDescription `json:"description"`
 	// Semantic version.
 	Version string `json:"version"`
-	// OCI image reference.
-	ContainerImage string `json:"containerImage"`
+	// OCI image used to extract the workflow schema.
+	SchemaImage string `json:"schemaImage"`
+	// OCI execution bundle reference (digest-pinned).
+	ExecutionBundle OptString `json:"executionBundle"`
 	// Execution engine (tekton, job).
 	ExecutionEngine OptWorkflowDiscoveryEntryExecutionEngine `json:"executionEngine"`
 }
@@ -18336,9 +18426,14 @@ func (s *WorkflowDiscoveryEntry) GetVersion() string {
 	return s.Version
 }
 
-// GetContainerImage returns the value of ContainerImage.
-func (s *WorkflowDiscoveryEntry) GetContainerImage() string {
-	return s.ContainerImage
+// GetSchemaImage returns the value of SchemaImage.
+func (s *WorkflowDiscoveryEntry) GetSchemaImage() string {
+	return s.SchemaImage
+}
+
+// GetExecutionBundle returns the value of ExecutionBundle.
+func (s *WorkflowDiscoveryEntry) GetExecutionBundle() OptString {
+	return s.ExecutionBundle
 }
 
 // GetExecutionEngine returns the value of ExecutionEngine.
@@ -18371,9 +18466,14 @@ func (s *WorkflowDiscoveryEntry) SetVersion(val string) {
 	s.Version = val
 }
 
-// SetContainerImage sets the value of ContainerImage.
-func (s *WorkflowDiscoveryEntry) SetContainerImage(val string) {
-	s.ContainerImage = val
+// SetSchemaImage sets the value of SchemaImage.
+func (s *WorkflowDiscoveryEntry) SetSchemaImage(val string) {
+	s.SchemaImage = val
+}
+
+// SetExecutionBundle sets the value of ExecutionBundle.
+func (s *WorkflowDiscoveryEntry) SetExecutionBundle(val OptString) {
+	s.ExecutionBundle = val
 }
 
 // SetExecutionEngine sets the value of ExecutionEngine.
@@ -18498,6 +18598,9 @@ type WorkflowExecutionAuditPayload struct {
 	ErrorDetails   OptErrorDetails `json:"error_details"`
 	// Name of the associated Tekton PipelineRun.
 	PipelinerunName OptString `json:"pipelinerun_name"`
+	// Post-normalization workflow parameters applied to PipelineRun (map[string]string). SOC2 CC7.1-CC7.
+	// 3 chain of custody.
+	Parameters OptWorkflowExecutionAuditPayloadParameters `json:"parameters"`
 }
 
 // GetEventType returns the value of EventType.
@@ -18575,6 +18678,11 @@ func (s *WorkflowExecutionAuditPayload) GetPipelinerunName() OptString {
 	return s.PipelinerunName
 }
 
+// GetParameters returns the value of Parameters.
+func (s *WorkflowExecutionAuditPayload) GetParameters() OptWorkflowExecutionAuditPayloadParameters {
+	return s.Parameters
+}
+
 // SetEventType sets the value of EventType.
 func (s *WorkflowExecutionAuditPayload) SetEventType(val WorkflowExecutionAuditPayloadEventType) {
 	s.EventType = val
@@ -18648,6 +18756,11 @@ func (s *WorkflowExecutionAuditPayload) SetErrorDetails(val OptErrorDetails) {
 // SetPipelinerunName sets the value of PipelinerunName.
 func (s *WorkflowExecutionAuditPayload) SetPipelinerunName(val OptString) {
 	s.PipelinerunName = val
+}
+
+// SetParameters sets the value of Parameters.
+func (s *WorkflowExecutionAuditPayload) SetParameters(val OptWorkflowExecutionAuditPayloadParameters) {
+	s.Parameters = val
 }
 
 // Event type for discriminator (matches parent event_type). Per ADR-034 v1.5, all WorkflowExecution
@@ -18796,6 +18909,19 @@ func (s *WorkflowExecutionAuditPayloadFailureReason) UnmarshalText(data []byte) 
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
+}
+
+// Post-normalization workflow parameters applied to PipelineRun (map[string]string). SOC2 CC7.1-CC7.
+// 3 chain of custody.
+type WorkflowExecutionAuditPayloadParameters map[string]string
+
+func (s *WorkflowExecutionAuditPayloadParameters) init() WorkflowExecutionAuditPayloadParameters {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
 }
 
 // Current phase of the WorkflowExecution.
@@ -19043,7 +19169,7 @@ type WorkflowLifecycleRequest struct {
 	// Why the lifecycle operation is being performed (mandatory).
 	Reason string `json:"reason"`
 	// Who is performing the operation.
-	UpdatedBy OptString `json:"updated_by"`
+	UpdatedBy OptString `json:"updatedBy"`
 }
 
 // GetReason returns the value of Reason.
@@ -19231,7 +19357,7 @@ func (s *WorkflowResultAuditLabels) init() WorkflowResultAuditLabels {
 // Ref: #/components/schemas/WorkflowSearchFilters
 type WorkflowSearchFilters struct {
 	// Signal type (optional metadata per DD-WORKFLOW-016: OOMKilled, CrashLoopBackOff, etc.).
-	SignalType OptString `json:"signal_type"`
+	SignalType OptString `json:"signalType"`
 	// Severity level (mandatory: critical, high, medium, low).
 	Severity WorkflowSearchFiltersSeverity `json:"severity"`
 	// Component type (mandatory: pod, node, deployment, etc.).
@@ -19240,8 +19366,8 @@ type WorkflowSearchFilters struct {
 	Environment string `json:"environment"`
 	// Priority level (mandatory: P0, P1, P2, P3).
 	Priority       WorkflowSearchFiltersPriority `json:"priority"`
-	CustomLabels   OptCustomLabels               `json:"custom_labels"`
-	DetectedLabels OptDetectedLabels             `json:"detected_labels"`
+	CustomLabels   OptCustomLabels               `json:"customLabels"`
+	DetectedLabels OptDetectedLabels             `json:"detectedLabels"`
 	// Workflow lifecycle status filter.
 	Status []WorkflowSearchFiltersStatusItem `json:"status"`
 }
@@ -19499,9 +19625,9 @@ type WorkflowUpdateRequest struct {
 	// Workflow status (mutable).
 	Status OptWorkflowUpdateRequestStatus `json:"status"`
 	// Who disabled the workflow.
-	DisabledBy OptString `json:"disabled_by"`
+	DisabledBy OptString `json:"disabledBy"`
 	// Why the workflow was disabled.
-	DisabledReason OptString `json:"disabled_reason"`
+	DisabledReason OptString `json:"disabledReason"`
 }
 
 // GetStatus returns the value of Status.

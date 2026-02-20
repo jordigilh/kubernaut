@@ -1,0 +1,15 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: demo-app-cert
+  namespace: demo-cert-failure
+spec:
+  secretName: demo-app-tls
+  issuerRef:
+    name: demo-selfsigned-ca
+    kind: ClusterIssuer
+  dnsNames:
+    - demo-app.demo-cert-failure.svc.cluster.local
+    - demo-app
+  duration: 2160h
+  renewBefore: 360h

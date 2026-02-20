@@ -143,8 +143,8 @@ var _ = Describe("E2E-RO-045-001: Completion Notification", Label("e2e", "notifi
 		analysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 			WorkflowID:      "restart-pod-v1",
 			Version:         "1.0.0",
-			ContainerImage:  "quay.io/kubernaut/restart-pod:v1",
-			ContainerDigest: "sha256:abc123def456",
+			ExecutionBundle:  "quay.io/kubernaut/restart-pod:v1",
+			ExecutionBundleDigest: "sha256:abc123def456",
 			Confidence:      0.95,
 			Rationale:       "High confidence match for pod restart scenario",
 			ExecutionEngine: "tekton",
@@ -210,10 +210,11 @@ var _ = Describe("E2E-RO-045-001: Completion Notification", Label("e2e", "notifi
 		Expect(notification.Spec.Priority).To(Equal(notificationv1.NotificationPriorityLow),
 			"Completion notifications should be low priority (informational)")
 
-		By("11. Validating NotificationRequest labels for routing")
-		Expect(notification.Labels).To(HaveKeyWithValue("kubernaut.ai/notification-type", "completion"))
-		Expect(notification.Labels).To(HaveKeyWithValue("kubernaut.ai/remediation-request", rr.Name))
-		Expect(notification.Labels).To(HaveKeyWithValue("kubernaut.ai/component", "remediation-orchestrator"))
+		By("11. Validating NotificationRequest spec fields for routing (Issue #91)")
+		Expect(notification.Spec.Type).To(Equal(notificationv1.NotificationTypeCompletion))
+		Expect(notification.Spec.RemediationRequestRef).ToNot(BeNil())
+		Expect(notification.Spec.RemediationRequestRef.Name).To(Equal(rr.Name))
+		Expect(notification.Spec.Severity).ToNot(BeEmpty())
 
 		By("12. Validating NotificationRequest metadata")
 		Expect(notification.Spec.Metadata).To(HaveKeyWithValue("remediationRequest", rr.Name))

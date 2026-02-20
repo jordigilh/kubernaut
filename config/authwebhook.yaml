@@ -1,0 +1,24 @@
+# AuthWebhook Admission Controller Configuration
+# ADR-030: Service Configuration Management
+# Per CRD_FIELD_NAMING_CONVENTION.md: camelCase for YAML fields
+
+# ========================================
+# WEBHOOK SERVER
+# ========================================
+webhook:
+  port: 9443
+  certDir: /tmp/k8s-webhook-server/serving-certs
+  healthProbeAddr: ":8081"
+
+# ========================================
+# DATASTORAGE CONNECTIVITY (ADR-030)
+# Audit trail + workflow catalog
+# ========================================
+datastorage:
+  url: http://data-storage-service:8080
+  timeout: 10s
+  buffer:
+    bufferSize: 10000
+    batchSize: 100
+    flushInterval: 1s
+    maxRetries: 3

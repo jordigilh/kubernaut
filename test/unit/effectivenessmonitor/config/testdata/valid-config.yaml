@@ -1,0 +1,27 @@
+# Valid EffectivenessMonitor service configuration for unit tests.
+# ADR-030: Service Configuration Management
+assessment:
+  stabilizationWindow: 5m
+  validityWindow: 30m
+
+controller:
+  metricsAddr: ":9090"
+  healthProbeAddr: ":8081"
+  leaderElection: false
+  leaderElectionId: "effectivenessmonitor.kubernaut.ai"
+
+datastorage:
+  url: "http://data-storage-service:8080"
+  timeout: 10s
+  buffer:
+    bufferSize: 10000
+    batchSize: 100
+    flushInterval: 1s
+    maxRetries: 3
+
+external:
+  prometheusUrl: "http://prometheus:9090"
+  prometheusEnabled: true
+  alertManagerUrl: "http://alertmanager:9093"
+  alertManagerEnabled: true
+  connectionTimeout: 10s

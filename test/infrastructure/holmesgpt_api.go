@@ -1036,15 +1036,29 @@ data:
 	}
 	_, _ = fmt.Fprintf(writer, "   ✅ ConfigMap updated with workflow UUIDs\n")
 
-	// Restart Mock LLM deployment to pick up the new ConfigMap
-	// The Mock LLM reads scenarios.yaml at startup only (no hot-reload)
+	// Restart Mock LLM deployment to pick up the new ConfigMap.
+	// The Mock LLM reads scenarios.yaml at startup only (no hot-reload).
+	// Kubernetes rejects rollout restart if one was triggered within the last
+	// second (e.g. the deployment was just created in SynchronizedBeforeSuite),
+	// so retry with a short backoff.
 	_, _ = fmt.Fprintf(writer, "   🔄 Restarting Mock LLM deployment to reload config...\n")
-	restartCmd := exec.CommandContext(ctx, "kubectl", "rollout", "restart",
-		"deployment/mock-llm", "-n", namespace, "--kubeconfig", kubeconfigPath)
-	restartCmd.Stdout = writer
-	restartCmd.Stderr = writer
-	if err := restartCmd.Run(); err != nil {
-		return fmt.Errorf("failed to restart Mock LLM deployment: %w", err)
+	var restartErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		if attempt > 0 {
+			_, _ = fmt.Fprintf(writer, "   ⏳ Retry %d/2: waiting before rollout restart...\n", attempt)
+			time.Sleep(2 * time.Second)
+		}
+		restartCmd := exec.CommandContext(ctx, "kubectl", "rollout", "restart",
+			"deployment/mock-llm", "-n", namespace, "--kubeconfig", kubeconfigPath)
+		restartCmd.Stdout = writer
+		restartCmd.Stderr = writer
+		restartErr = restartCmd.Run()
+		if restartErr == nil {
+			break
+		}
+	}
+	if restartErr != nil {
+		return fmt.Errorf("failed to restart Mock LLM deployment after retries: %w", restartErr)
 	}
 
 	// Wait for rollout to complete

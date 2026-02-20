@@ -34,7 +34,7 @@ metadata:
   labels:
     app: alertmanager
 spec:
-  replicas: 1
+  replicas: 0  # Disabled for demo: K8s events path only (see issue #96 for AlertManager base64 bug)
   selector:
     matchLabels:
       app: alertmanager

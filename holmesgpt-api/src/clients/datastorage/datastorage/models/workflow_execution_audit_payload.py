@@ -46,7 +46,8 @@ class WorkflowExecutionAuditPayload(BaseModel):
     failed_task_name: Optional[StrictStr] = Field(default=None, description="Name of the failed TaskRun (if identified)")
     error_details: Optional[ErrorDetails] = None
     pipelinerun_name: Optional[StrictStr] = Field(default=None, description="Name of the associated Tekton PipelineRun")
-    __properties: ClassVar[List[str]] = ["event_type", "workflow_id", "workflow_version", "target_resource", "phase", "container_image", "execution_name", "started_at", "completed_at", "duration", "failure_reason", "failure_message", "failed_task_name", "error_details", "pipelinerun_name"]
+    parameters: Optional[Dict[str, StrictStr]] = Field(default=None, description="Post-normalization workflow parameters applied to PipelineRun (map[string]string). SOC2 CC7.1-CC7.3 chain of custody.")
+    __properties: ClassVar[List[str]] = ["event_type", "workflow_id", "workflow_version", "target_resource", "phase", "container_image", "execution_name", "started_at", "completed_at", "duration", "failure_reason", "failure_message", "failed_task_name", "error_details", "pipelinerun_name", "parameters"]
 
     @field_validator('event_type')
     def event_type_validate_enum(cls, value):
@@ -138,7 +139,8 @@ class WorkflowExecutionAuditPayload(BaseModel):
             "failure_message": obj.get("failure_message"),
             "failed_task_name": obj.get("failed_task_name"),
             "error_details": ErrorDetails.from_dict(obj.get("error_details")) if obj.get("error_details") is not None else None,
-            "pipelinerun_name": obj.get("pipelinerun_name")
+            "pipelinerun_name": obj.get("pipelinerun_name"),
+            "parameters": obj.get("parameters")
         })
         return _obj
 

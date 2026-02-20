@@ -32,6 +32,8 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	aianalysispkg "github.com/jordigilh/kubernaut/pkg/aianalysis"
@@ -211,13 +213,76 @@ func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 // BR-AI-017: Track reconciliation outcomes and failures
 // DD-AUDIT-003: Record audit events for terminal states
 
-// SetupWithManager sets up the controller with the Manager
-// DD-CONTROLLER-001: ObservedGeneration provides idempotency without blocking status updates
-// GenerationChangedPredicate removed to allow phase progression via status updates
+// SetupWithManager sets up the controller with the Manager.
+//
+// DD-CONTROLLER-001: Uses a custom predicate that filters Update events to only
+// enqueue reconciles when the generation changed (spec update) or the phase
+// changed (meaningful status transition). Status-only updates that only touch
+// poll tracking fields (PollCount, LastPolled) do NOT trigger re-reconciles,
+// allowing RequeueAfter backoff intervals to work correctly.
 func (r *AIAnalysisReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&aianalysisv1.AIAnalysis{}).
+		WithEventFilter(aiAnalysisUpdatePredicate()).
 		Complete(r)
+}
+
+// aiAnalysisUpdatePredicate returns a predicate that filters Update events.
+// Create, Delete, and Generic events always pass through.
+// Update events only pass if the generation changed (spec update) or the
+// phase changed (meaningful status transition). This prevents status-only
+// writes (PollCount, LastPolled) from triggering immediate re-reconciles
+// that would bypass the intended RequeueAfter backoff intervals.
+func aiAnalysisUpdatePredicate() predicate.Predicate {
+	return predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			return true
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			return true
+		},
+		GenericFunc: func(e event.GenericEvent) bool {
+			return true
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			if e.ObjectOld == nil || e.ObjectNew == nil {
+				return true
+			}
+
+			// Always reconcile on generation change (spec update)
+			if e.ObjectOld.GetGeneration() != e.ObjectNew.GetGeneration() {
+				return true
+			}
+
+			// Reconcile on phase change (meaningful status transition)
+			oldAIA, okOld := e.ObjectOld.(*aianalysisv1.AIAnalysis)
+			newAIA, okNew := e.ObjectNew.(*aianalysisv1.AIAnalysis)
+			if !okOld || !okNew {
+				return true // Can't cast, let it through
+			}
+
+			if oldAIA.Status.Phase != newAIA.Status.Phase {
+				return true
+			}
+
+			// Reconcile when session ID changes (new session created)
+			oldSessionID := ""
+			newSessionID := ""
+			if oldAIA.Status.InvestigationSession != nil {
+				oldSessionID = oldAIA.Status.InvestigationSession.ID
+			}
+			if newAIA.Status.InvestigationSession != nil {
+				newSessionID = newAIA.Status.InvestigationSession.ID
+			}
+			if oldSessionID != newSessionID {
+				return true
+			}
+
+			// Skip: status-only update with no meaningful change
+			// (e.g., PollCount/LastPolled updates during poll-pending)
+			return false
+		},
+	}
 }
 
 // reconcilePending handles AIAnalysis in Pending phase

@@ -24,6 +24,7 @@ import (
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
@@ -111,6 +112,70 @@ var _ = Describe("RequestBuilder", func() {
 			Expect(req.ResourceKind).To(Equal("Pod"))
 			Expect(req.ResourceName).To(Equal("test-pod"))
 			Expect(req.ResourceNamespace).To(Equal("default"))
+		})
+	})
+
+	Describe("BuildIncidentRequest - BusinessClassification mapping (BR-SP-002)", func() {
+		It("should map all BusinessClassification fields to HAPI client types", func() {
+			analysis := helpers.NewAIAnalysis("ai-bizclass", "default")
+			analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.BusinessClassification = &sharedtypes.BusinessClassification{
+				BusinessUnit:   "payments",
+				ServiceOwner:   "team-checkout",
+				Criticality:    "critical",
+				SLARequirement: "platinum",
+			}
+
+			req := builder.BuildIncidentRequest(analysis)
+
+			bc, ok := req.EnrichmentResults.Value.BusinessClassification.Get()
+			Expect(ok).To(BeTrue(), "BusinessClassification should be set")
+			Expect(bc.BusinessUnit.Or("")).To(Equal("payments"))
+			Expect(bc.ServiceOwner.Or("")).To(Equal("team-checkout"))
+			Expect(bc.Criticality.Or("")).To(Equal("critical"))
+			Expect(bc.SlaRequirement.Or("")).To(Equal("platinum"))
+		})
+
+		It("should not set BusinessClassification when nil in enrichment", func() {
+			analysis := helpers.NewAIAnalysis("ai-no-bizclass", "default")
+
+			req := builder.BuildIncidentRequest(analysis)
+
+			Expect(req.EnrichmentResults.Value.BusinessClassification.IsSet()).To(BeFalse())
+		})
+
+		It("should map partial BusinessClassification fields", func() {
+			analysis := helpers.NewAIAnalysis("ai-partial-bizclass", "default")
+			analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.BusinessClassification = &sharedtypes.BusinessClassification{
+				Criticality: "high",
+			}
+
+			req := builder.BuildIncidentRequest(analysis)
+
+			bc, ok := req.EnrichmentResults.Value.BusinessClassification.Get()
+			Expect(ok).To(BeTrue())
+			Expect(bc.Criticality.Or("")).To(Equal("high"))
+			Expect(bc.BusinessUnit.IsSet()).To(BeFalse())
+			Expect(bc.ServiceOwner.IsSet()).To(BeFalse())
+			Expect(bc.SlaRequirement.IsSet()).To(BeFalse())
+		})
+	})
+
+	Describe("BuildRecoveryRequest - BusinessClassification mapping (BR-SP-002)", func() {
+		It("should map BusinessClassification to recovery request enrichment", func() {
+			analysis := helpers.NewAIAnalysis("ai-recovery-bizclass", "default")
+			analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.BusinessClassification = &sharedtypes.BusinessClassification{
+				BusinessUnit:   "platform",
+				Criticality:    "medium",
+				SLARequirement: "silver",
+			}
+
+			req := builder.BuildRecoveryRequest(analysis)
+
+			bc, ok := req.EnrichmentResults.Value.BusinessClassification.Get()
+			Expect(ok).To(BeTrue())
+			Expect(bc.BusinessUnit.Or("")).To(Equal("platform"))
+			Expect(bc.Criticality.Or("")).To(Equal("medium"))
+			Expect(bc.SlaRequirement.Or("")).To(Equal("silver"))
 		})
 	})
 })

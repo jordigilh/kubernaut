@@ -75,12 +75,14 @@ data:
       provider: ""
       model: ""
       endpoint: ""
+      gcp_project_id: ""
+      gcp_region: ""
       max_retries: 3
       timeout_seconds: 120
       temperature: 0.7
 
     data_storage:
-      url: "http://data-storage-service:8080"
+      url: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
 
     audit:
       flush_interval_seconds: 0.1
@@ -101,6 +103,10 @@ spec:
     metadata:
       labels:
         app: holmesgpt-api
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: holmesgpt-api-sa
       containers:
@@ -114,7 +120,7 @@ spec:
             - "/etc/holmesgpt/config.yaml"
           env:
             - name: DATA_STORAGE_URL
-              value: "http://data-storage-service:8080"
+              value: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
             - name: LITELLM_LOG
               value: "DEBUG"
           envFrom:

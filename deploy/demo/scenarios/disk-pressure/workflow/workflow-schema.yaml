@@ -1,0 +1,33 @@
+# Cleanup PVC Workflow Schema - Job Backend (BR-WORKFLOW-004)
+# Scenario: #121 -- Orphaned PVCs consuming disk -> cleanup
+metadata:
+  workflowId: cleanup-pvc-v1
+  version: "1.0.0"
+  description:
+    what: "Deletes orphaned PersistentVolumeClaims that are not mounted by any running pod"
+    whenToUse: "When PVCs from completed or failed batch jobs accumulate and contribute to storage pressure"
+    whenNotToUse: "When PVCs are in use by running workloads, or when the data in the PVCs needs to be preserved for compliance"
+    preconditions: "The PVCs are confirmed orphaned (not mounted by any running pod) and the data does not need to be retained"
+
+actionType: CleanupPVC
+
+labels:
+  signalType: OrphanedPVCs
+  severity: [warning, critical]
+  environment: [production, staging]
+  component: "*"
+  priority: "*"
+
+execution:
+  engine: job
+  bundle: quay.io/kubernaut-cicd/test-workflows/cleanup-pvc-job@sha256:b80b88447871ffecc68bdc5076c80e5f3094210abcbbc733b404b69b47e546ee
+
+parameters:
+  - name: TARGET_NAMESPACE
+    type: string
+    required: true
+    description: "Namespace containing the orphaned PVCs"
+  - name: LABEL_SELECTOR
+    type: string
+    required: false
+    description: "Label selector to identify PVCs to clean up (default: batch-run=completed)"

@@ -32,7 +32,7 @@ import (
 // 1. Build Tekton Pipeline as OCI bundle (tkn bundle push)
 // 2. Load bundle OCI image into Kind cluster
 // 3. Register workflow in DataStorage (POST /api/v1/workflows)
-// 4. WorkflowExecution references the bundle via container_image field
+// 4. WorkflowExecution references the bundle via schema_image field
 //
 // **Design Pattern**: Mirrors production workflow authoring flow
 // - Operators author Tekton Pipelines and package as OCI bundles
@@ -113,11 +113,11 @@ func BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL, 
 }
 
 // registerTestBundleWorkflow registers a workflow in DataStorage using OpenAPI client
-// DD-WORKFLOW-017: Pullspec-only registration — sends only containerImage.
+// DD-WORKFLOW-017: Pullspec-only registration — sends only schemaImage.
 // DataStorage pulls the image, extracts /workflow-schema.yaml, and populates all fields.
 // Includes DD-AUTH-014 ServiceAccount authentication
-func registerTestBundleWorkflow(dataStorageURL, saToken, workflowName, version, containerImage, description string, output io.Writer) error {
-	_, _ = fmt.Fprintf(output, "  Registering: %s (version %s) from %s\n", workflowName, version, containerImage)
+func registerTestBundleWorkflow(dataStorageURL, saToken, workflowName, version, schemaImage, description string, output io.Writer) error {
+	_, _ = fmt.Fprintf(output, "  Registering: %s (version %s) from %s\n", workflowName, version, schemaImage)
 
 	// Create authenticated HTTP client (DD-AUTH-014)
 	httpClient := &http.Client{
@@ -132,7 +132,7 @@ func registerTestBundleWorkflow(dataStorageURL, saToken, workflowName, version, 
 
 	// DD-WORKFLOW-017: Pullspec-only registration request
 	req := &dsgen.CreateWorkflowFromOCIRequest{
-		ContainerImage: containerImage,
+		SchemaImage: schemaImage,
 	}
 
 	// Register workflow via OpenAPI client
@@ -145,7 +145,7 @@ func registerTestBundleWorkflow(dataStorageURL, saToken, workflowName, version, 
 	// Validate response - success returns *RemediationWorkflow
 	if createdWorkflow, ok := resp.(*dsgen.RemediationWorkflow); ok {
 		_, _ = fmt.Fprintf(output, "    ✅ Registered in DataStorage: %s\n", workflowName)
-		if wfID, exists := createdWorkflow.WorkflowID.Get(); exists {
+		if wfID, exists := createdWorkflow.WorkflowId.Get(); exists {
 			_, _ = fmt.Fprintf(output, "       UUID: %s\n", wfID.String())
 		}
 		return nil

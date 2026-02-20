@@ -63,8 +63,8 @@ var _ = Describe("Audit Event Mapper", func() {
 			// Validate SignalAnnotations mapping
 			Expect(rrFields.Spec.SignalAnnotations).To(HaveKeyWithValue("summary", "CPU usage is high"))
 
-			// Validate OriginalPayload mapping ([]byte)
-			Expect(rrFields.Spec.OriginalPayload).To(Equal([]byte(`{"alert":"data"}`)))
+			// Validate OriginalPayload mapping (string, issue #96)
+			Expect(rrFields.Spec.OriginalPayload).To(Equal(`{"alert":"data"}`))
 		})
 
 		It("should return error for missing required alert name", func() {

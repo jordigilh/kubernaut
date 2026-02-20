@@ -119,7 +119,6 @@ class TestRegisterWorkflowDiscoveryToolset:
             # Assert session factory was called (DD-AUTH-005)
             mock_session_factory.assert_called_once()
 
-            # Assert WorkflowDiscoveryToolset was created with correct params
             mock_cls.assert_called_once_with(
                 enabled=True,
                 remediation_id="rem-abc-123",
@@ -130,6 +129,7 @@ class TestRegisterWorkflowDiscoveryToolset:
                 custom_labels={"team": ["payments"]},
                 detected_labels=None,
                 http_session=mock_session,
+                session_state=None,
             )
 
     def test_injects_via_list_server_toolsets_ut_reg_003(self):

@@ -189,6 +189,9 @@ func (b *RequestBuilder) BuildRecoveryRequest(analysis *aianalysisv1.AIAnalysis)
 		"recoveryAttemptNumber", analysis.Spec.RecoveryAttemptNumber,
 	)
 
+	// Map enrichment results (same as incident path)
+	req.EnrichmentResults.SetTo(b.buildEnrichmentResults(enrichment))
+
 	// Map previous execution context (most recent only - API supports single execution)
 	if len(analysis.Spec.PreviousExecutions) > 0 {
 		// Use the most recent execution (last in the array)
@@ -217,7 +220,7 @@ func (b *RequestBuilder) buildPreviousExecution(prev aianalysisv1.PreviousExecut
 	selectedWorkflow := client.SelectedWorkflowSummary{
 		WorkflowID:     prev.SelectedWorkflow.WorkflowID,
 		Version:        prev.SelectedWorkflow.Version,
-		ContainerImage: prev.SelectedWorkflow.ContainerImage,
+		ExecutionBundle: prev.SelectedWorkflow.ExecutionBundle,
 		Rationale:      prev.SelectedWorkflow.Rationale,
 	}
 	// Note: Parameters mapping happens in ResponseProcessor when reading from HAPI
@@ -250,31 +253,9 @@ func (b *RequestBuilder) buildPreviousExecution(prev aianalysisv1.PreviousExecut
 func (b *RequestBuilder) buildEnrichmentResults(enrichment sharedtypes.EnrichmentResults) client.EnrichmentResults {
 	result := client.EnrichmentResults{}
 
-	// Map DetectedLabels if present
-	if enrichment.DetectedLabels != nil {
-		dl := enrichment.DetectedLabels
-		detectedLabels := client.DetectedLabels{
-			FailedDetections: dl.FailedDetections,
-		}
-
-		// Map boolean fields using OptBool
-		detectedLabels.GitOpsManaged.SetTo(dl.GitOpsManaged)
-		detectedLabels.PdbProtected.SetTo(dl.PDBProtected)
-		detectedLabels.HpaEnabled.SetTo(dl.HPAEnabled)
-		detectedLabels.Stateful.SetTo(dl.Stateful)
-		detectedLabels.HelmManaged.SetTo(dl.HelmManaged)
-		detectedLabels.NetworkIsolated.SetTo(dl.NetworkIsolated)
-
-		// Map string fields using OptString
-		if dl.GitOpsTool != "" {
-			detectedLabels.GitOpsTool.SetTo(dl.GitOpsTool)
-		}
-		if dl.ServiceMesh != "" {
-			detectedLabels.ServiceMesh.SetTo(dl.ServiceMesh)
-		}
-
-		result.DetectedLabels.SetTo(detectedLabels)
-	}
+	// ADR-056: DetectedLabels removed from EnrichmentResults.
+	// DetectedLabels are now computed by HAPI post-RCA and returned
+	// in the response (stored in PostRCAContext).
 
 	// Map CustomLabels if present
 	if len(enrichment.CustomLabels) > 0 {
@@ -293,7 +274,24 @@ func (b *RequestBuilder) buildEnrichmentResults(enrichment sharedtypes.Enrichmen
 		result.KubernetesContext.SetToNull() // Mark as present but empty for now
 	}
 
-	// EnrichmentQuality is not set (removed per Dec 2, 2025 decision)
+	// Map BusinessClassification if present (BR-SP-002, BR-SP-080, BR-SP-081)
+	if enrichment.BusinessClassification != nil {
+		bc := enrichment.BusinessClassification
+		clientBC := client.BusinessClassification{}
+		if bc.BusinessUnit != "" {
+			clientBC.BusinessUnit.SetTo(bc.BusinessUnit)
+		}
+		if bc.ServiceOwner != "" {
+			clientBC.ServiceOwner.SetTo(bc.ServiceOwner)
+		}
+		if bc.Criticality != "" {
+			clientBC.Criticality.SetTo(bc.Criticality)
+		}
+		if bc.SLARequirement != "" {
+			clientBC.SlaRequirement.SetTo(bc.SLARequirement)
+		}
+		result.BusinessClassification.SetTo(clientBC)
+	}
 
 	return result
 }

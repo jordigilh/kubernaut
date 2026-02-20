@@ -39,15 +39,17 @@ import (
 // - ✅ Backend-Agnostic: Conditions work for both Tekton PipelineRun and K8s Job backends
 //
 // CONDITION LIFECYCLE:
-// 1. ResourceLocked → Check if target resource is busy (PhaseSkipped)
-// 2. ExecutionCreated → Execution resource created in kubernaut-workflows namespace
-// 3. ExecutionRunning → Execution resource started (PipelineRun or Job)
-// 4. ExecutionComplete → Execution succeeded or failed
-// 5. AuditRecorded → Audit event written to Data Storage (BR-WE-005)
+// 1. ExecutionCreated → Execution resource created in kubernaut-workflows namespace
+// 2. ExecutionRunning → Execution resource started (PipelineRun or Job)
+// 3. ExecutionComplete → Execution succeeded or failed
+// 4. AuditRecorded → Audit event written to Data Storage (BR-WE-005)
 // ========================================
 
 // Condition types for WorkflowExecution
 const (
+	// ConditionReady indicates the WorkflowExecution is ready (or not)
+	ConditionReady = "Ready"
+
 	// ConditionExecutionCreated indicates the execution resource (PipelineRun or Job) was created
 	// Phase Alignment: Pending → Running transition
 	// Set after successful creation of the execution resource
@@ -67,11 +69,6 @@ const (
 	// Phase Alignment: All phases (cross-cutting concern)
 	// Per BR-WE-005: WorkflowExecution is P0 for audit traces
 	ConditionAuditRecorded = "AuditRecorded"
-
-	// ConditionResourceLocked indicates target resource is busy or recently remediated
-	// Phase Alignment: PhaseSkipped
-	// Per DD-WE-001/003: Resource locking prevents parallel execution
-	ConditionResourceLocked = "ResourceLocked"
 )
 
 // Condition reasons for ExecutionCreated
@@ -128,25 +125,19 @@ const (
 	ReasonAuditFailed = "AuditFailed"
 )
 
-// Condition reasons for ResourceLocked
+// Ready condition reasons
 const (
-	// ReasonTargetResourceBusy - Another workflow is executing on target
-	ReasonTargetResourceBusy = "TargetResourceBusy"
-
-	// ReasonRecentlyRemediated - Same workflow executed recently (cooldown active)
-	ReasonRecentlyRemediated = "RecentlyRemediated"
-
-	// ReasonPreviousExecutionFailed - Previous execution failed (retry blocked)
-	ReasonPreviousExecutionFailed = "PreviousExecutionFailed"
+	ReasonReady    = "Ready"
+	ReasonNotReady = "NotReady"
 )
 
 // SetCondition sets or updates a condition on the WorkflowExecution status
 // This is the low-level function used by all condition setters
 //
-// This function delegates to pkg/shared/conditions.Set() for the actual implementation,
-// ensuring consistent behavior across all services.
+// This function delegates to pkg/shared/conditions.SetWithGeneration for the actual implementation,
+// ensuring consistent behavior across all services and proper ObservedGeneration tracking.
 func SetCondition(wfe *workflowexecutionv1.WorkflowExecution, conditionType string, status metav1.ConditionStatus, reason, message string) {
-	conditions.Set(&wfe.Status.Conditions, conditionType, status, reason, message)
+	conditions.SetWithGeneration(&wfe.Status.Conditions, conditionType, status, reason, message, wfe.Generation)
 }
 
 // GetCondition returns the condition with the specified type, or nil if not found
@@ -245,25 +236,11 @@ func SetAuditRecorded(wfe *workflowexecutionv1.WorkflowExecution, succeeded bool
 	SetCondition(wfe, ConditionAuditRecorded, status, reason, message)
 }
 
-// SetResourceLocked sets the ResourceLocked condition
-//
-// Usage:
-//
-//	// Resource busy
-//	SetResourceLocked(wfe, true, ReasonTargetResourceBusy,
-//	    "Another workflow (workflow-exec-xyz789) is executing on target deployment/payment-api")
-//
-//	// Cooldown active
-//	SetResourceLocked(wfe, true, ReasonRecentlyRemediated,
-//	    "Same workflow executed on target 30s ago (cooldown: 5m)")
-//
-//	// Resource available (not typically set, but supported)
-//	SetResourceLocked(wfe, false, "ResourceAvailable",
-//	    "Target resource is available for execution")
-func SetResourceLocked(wfe *workflowexecutionv1.WorkflowExecution, locked bool, reason, message string) {
+// SetReady sets the Ready condition on the WorkflowExecution.
+func SetReady(wfe *workflowexecutionv1.WorkflowExecution, ready bool, reason, message string) {
 	status := metav1.ConditionTrue
-	if !locked {
+	if !ready {
 		status = metav1.ConditionFalse
 	}
-	SetCondition(wfe, ConditionResourceLocked, status, reason, message)
+	SetCondition(wfe, ConditionReady, status, reason, message)
 }

@@ -46,7 +46,6 @@ class TestAIAnalysisAuditPayload(unittest.TestCase):
                 warnings_count = 56,
                 confidence = 1.337,
                 workflow_id = '',
-                target_in_owner_chain = True,
                 reason = '',
                 sub_reason = '',
                 provider_response_summary = datastorage.models.provider_response_summary.ProviderResponseSummary(

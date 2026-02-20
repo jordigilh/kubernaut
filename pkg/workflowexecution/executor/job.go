@@ -191,7 +191,7 @@ func (j *JobExecutor) buildJob(wfe *workflowexecutionv1alpha1.WorkflowExecution,
 					Containers: []corev1.Container{
 						{
 							Name:  "workflow",
-							Image: wfe.Spec.WorkflowRef.ContainerImage,
+							Image: wfe.Spec.WorkflowRef.ExecutionBundle,
 							Env:   envVars,
 						},
 					},

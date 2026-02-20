@@ -142,7 +142,7 @@ var _ = Describe("JobExecutor (BR-WE-014)", func() {
 					TargetResource:  "default/deployment/my-app",
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID:     "restart-deployment",
-						ContainerImage: "ghcr.io/kubernaut/workflows/restart:v1.0.0",
+						ExecutionBundle: "ghcr.io/kubernaut/workflows/restart:v1.0.0",
 					},
 					Parameters: map[string]string{
 						"NAMESPACE": "default",
@@ -203,7 +203,7 @@ var _ = Describe("JobExecutor (BR-WE-014)", func() {
 					TargetResource:  "default/deployment/another-app",
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID:     "restart-deployment",
-						ContainerImage: "ghcr.io/kubernaut/workflows/restart:v1.0.0",
+						ExecutionBundle: "ghcr.io/kubernaut/workflows/restart:v1.0.0",
 					},
 				},
 			}
@@ -939,7 +939,7 @@ func newTestWFE(name, namespace, targetResource, workflowID, containerImage stri
 			TargetResource:  targetResource,
 			WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 				WorkflowID:     workflowID,
-				ContainerImage: containerImage,
+				ExecutionBundle: containerImage,
 			},
 			Parameters: params,
 		},

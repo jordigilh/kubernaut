@@ -1,0 +1,33 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: kubernaut-crashloop-rules
+  namespace: demo-crashloop
+  labels:
+    release: prometheus
+spec:
+  groups:
+  - name: kubernaut-crashloop
+    rules:
+    # Detect rapidly increasing restart counts (CrashLoopBackOff pattern)
+    # Fires when restarts increase by more than 3 in a 10-minute window
+    - alert: KubernautCrashLoopDetected
+      expr: |
+        increase(
+          kube_pod_container_status_restarts_total{
+            namespace="demo-crashloop",
+            container="worker"
+          }[10m]
+        ) > 3
+      for: 1m
+      labels:
+        severity: critical
+      annotations:
+        summary: >
+          Container {{ $labels.container }} in pod {{ $labels.pod }} is in
+          CrashLoopBackOff with {{ $value | humanize }} restarts in the last 10 minutes.
+        description: >
+          The worker container in deployment worker is repeatedly crashing and
+          restarting. This is typically caused by a misconfiguration, missing
+          dependency, or resource constraint. The container's restart count is
+          increasing rapidly, indicating it cannot reach a healthy state.
