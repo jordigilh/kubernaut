@@ -29,8 +29,9 @@ Business Requirements:
   - BR-SP-101: DetectedLabels Auto-Detection (post-RCA via HAPI)
   - BR-HAPI-194: Honor failedDetections in workflow filtering
   - BR-HAPI-250: DetectedLabels integration with Data Storage
+  - BR-HAPI-017-007: cluster_context in list_available_actions response (ADR-056 v1.3)
 
-Test Matrix: 7 tests
+Test Matrix: 8 tests
   - IT-HAPI-056-001: CrashLoopBackOff + PDB -> detected_labels.pdbProtected=true
   - IT-HAPI-056-002: Recovery + HPA -> detected_labels.hpaEnabled=true
   - IT-HAPI-056-003: detected_labels propagated in workflow discovery query params
@@ -38,11 +39,12 @@ Test Matrix: 7 tests
   - IT-HAPI-056-005: RBAC 403 -> failedDetections includes pdbProtected
   - IT-HAPI-056-006: No K8s resources -> all-false labels, no crash
   - IT-HAPI-056-007: Cached labels reused (no recomputation)
+  - IT-HAPI-056-008: cluster_context propagated in list_available_actions with real labels
 """
 
 import json
 import pytest
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import patch, Mock, MagicMock, AsyncMock
 
 from tests.integration.fixtures.k8s_mock_fixtures import (
     create_mock_k8s_with_pdb,
@@ -255,6 +257,101 @@ class TestDetectedLabelsCaching:
             "resolve_owner_chain should be called at most twice "
             "(once for label detection, once for get_resource_context)"
         )
+
+
+class TestClusterContextIntegration:
+    """IT-HAPI-056-008: cluster_context propagated in list_available_actions with real labels.
+
+    Authority: ADR-056 v1.3, DD-HAPI-017 v1.3, BR-HAPI-017-007
+
+    Note: No requires_data_storage marker because this test mocks the HTTP call
+    to DataStorage directly. It tests tool-level integration without requiring
+    the full Go-bootstrapped infrastructure.
+    """
+
+    @patch("src.toolsets.workflow_discovery.requests.get")
+    @patch("src.clients.k8s_client.get_k8s_client")
+    def test_it_hapi_056_008_cluster_context_with_real_labels(
+        self, mock_get_k8s, mock_http_get
+    ):
+        """IT-HAPI-056-008: cluster_context propagated in three-step flow with real labels.
+
+        Given: ArgoCD-managed Deployment (pod annotation argocd.argoproj.io/instance: my-app)
+          And: K8s mock fixtures configured for the Deployment
+          And: DataStorage returns available action types
+        When: list_available_actions._invoke({"offset": 0, "limit": 10}) completes
+        Then: result.data JSON contains "cluster_context" key
+          And: cluster_context["detected_labels"]["gitOpsManaged"] is True
+          And: cluster_context["detected_labels"]["gitOpsTool"] is "argocd"
+          And: cluster_context["detected_labels"]["helmManaged"] is True
+          And: failedDetections is NOT in cluster_context["detected_labels"]
+        """
+        mock_get_k8s.return_value = create_mock_k8s_argocd_helm()
+
+        ds_response = Mock()
+        ds_response.status_code = 200
+        ds_response.json.return_value = {
+            "actionTypes": [
+                {
+                    "actionType": "GitRevertCommit",
+                    "description": {
+                        "what": "Revert a git commit via GitOps",
+                        "when_to_use": "Bad deployment caused by config change",
+                        "when_not_to_use": "Infrastructure failures",
+                        "preconditions": "GitOps-managed resource",
+                    },
+                    "workflowCount": 1,
+                }
+            ],
+            "pagination": {"totalCount": 1, "offset": 0, "limit": 10, "hasMore": False},
+        }
+        mock_http_get.return_value = ds_response
+
+        session_state = {
+            "detected_labels": {
+                "gitOpsManaged": True,
+                "gitOpsTool": "argocd",
+                "helmManaged": True,
+                "pdbProtected": False,
+                "hpaEnabled": False,
+                "serviceMesh": "",
+                "istioEnabled": False,
+            }
+        }
+
+        from src.toolsets.workflow_discovery import ListAvailableActionsTool
+        from holmes.core.tools import StructuredToolResultStatus
+
+        tool = ListAvailableActionsTool(
+            data_storage_url="http://127.0.0.1:18098",
+            severity="critical",
+            component="Pod",
+            environment="production",
+            priority="P0",
+            session_state=session_state,
+        )
+
+        result = tool.invoke(params={"offset": 0, "limit": 10})
+
+        assert result.status == StructuredToolResultStatus.SUCCESS
+        data = json.loads(result.data)
+
+        assert "cluster_context" in data, (
+            "list_available_actions must include cluster_context when detected_labels exist"
+        )
+        ctx_labels = data["cluster_context"]["detected_labels"]
+        assert ctx_labels["gitOpsManaged"] is True
+        assert ctx_labels["gitOpsTool"] == "argocd"
+        assert ctx_labels["helmManaged"] is True
+        assert ctx_labels["pdbProtected"] is False, "False booleans must be preserved"
+        assert ctx_labels["hpaEnabled"] is False, "False booleans must be preserved"
+        assert "failedDetections" not in ctx_labels
+
+        assert "note" in data["cluster_context"], "cluster_context must include a note field"
+        assert len(data["cluster_context"]["note"]) > 0
+
+        assert "actionTypes" in data, "Original DS response fields must be preserved"
+        assert data["actionTypes"][0]["actionType"] == "GitRevertCommit"
 
 
 def _make_incident_request(
