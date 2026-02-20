@@ -1266,16 +1266,23 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
         # BR-HAPI-212: Conditionally include affectedResource in RCA
         # This allows testing scenarios where affectedResource is missing despite workflow being selected
         if scenario.include_affected_resource:
+            # ADR-056 / FP-E2E: Extract actual resource from the HAPI prompt so
+            # the RCA response matches the real workload (namespace, name) instead
+            # of the scenario's hardcoded defaults. This is critical for FP E2E
+            # where the EM queries Prometheus using the namespace from the RCA.
+            actual_kind, actual_name, actual_ns = self._extract_resource_from_messages(
+                messages, scenario
+            )
             affected_resource = {
-                "kind": scenario.rca_resource_kind,
-                "name": scenario.rca_resource_name,
+                "kind": actual_kind,
+                "name": actual_name,
             }
             # Add apiVersion if present (BR-HAPI-212: Optional field for GVK resolution)
             if scenario.rca_resource_api_version:
                 affected_resource["apiVersion"] = scenario.rca_resource_api_version
             # Add namespace if present (not applicable for cluster-scoped resources)
-            if scenario.rca_resource_namespace:
-                affected_resource["namespace"] = scenario.rca_resource_namespace
+            if actual_ns:
+                affected_resource["namespace"] = actual_ns
 
             analysis_json["root_cause_analysis"]["affectedResource"] = affected_resource
 
