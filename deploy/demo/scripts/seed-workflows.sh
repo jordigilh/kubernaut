@@ -125,6 +125,46 @@ register_workflow '{
   "container_image": "quay.io/kubernaut-cicd/test-workflows/rollback-deployment-job:v1.0.0"
 }' "rollback-deployment-job"
 
+# ============================================
+# New Demo Scenario Workflows (#133-#138)
+# ============================================
+
+# Workflow 14: Fix Certificate (#133 -- cert-manager CRD failure)
+# actionType: FixCertificate
+register_workflow '{
+  "container_image": "quay.io/kubernaut-cicd/test-workflows/fix-certificate-job:v1.0.0"
+}' "fix-certificate-job"
+
+# Workflow 15: Fix Certificate GitOps (#134 -- cert-manager + ArgoCD)
+# actionType: GitRevertCommit | detectedLabels: gitOpsTool: "*"
+register_workflow '{
+  "container_image": "quay.io/kubernaut-cicd/test-workflows/fix-certificate-gitops-job:v1.0.0"
+}' "fix-certificate-gitops-job"
+
+# Workflow 16: Helm Rollback (#135 -- Helm-managed CrashLoopBackOff)
+# actionType: HelmRollback | detectedLabels: helmManaged: "true"
+register_workflow '{
+  "container_image": "quay.io/kubernaut-cicd/test-workflows/helm-rollback-job:v1.0.0"
+}' "helm-rollback-job"
+
+# Workflow 17: Fix AuthorizationPolicy (#136 -- Linkerd mesh routing)
+# actionType: FixAuthorizationPolicy | detectedLabels: serviceMesh: "*"
+register_workflow '{
+  "container_image": "quay.io/kubernaut-cicd/test-workflows/fix-authz-policy-job:v1.0.0"
+}' "fix-authz-policy-job"
+
+# Workflow 18: Fix StatefulSet PVC (#137 -- StatefulSet PVC failure)
+# actionType: FixStatefulSetPVC | detectedLabels: stateful: "true"
+register_workflow '{
+  "container_image": "quay.io/kubernaut-cicd/test-workflows/fix-statefulset-pvc-job:v1.0.0"
+}' "fix-statefulset-pvc-job"
+
+# Workflow 19: Fix NetworkPolicy (#138 -- NetworkPolicy traffic block)
+# actionType: FixNetworkPolicy | detectedLabels: networkIsolated: "true"
+register_workflow '{
+  "container_image": "quay.io/kubernaut-cicd/test-workflows/fix-network-policy-job:v1.0.0"
+}' "fix-network-policy-job"
+
 echo ""
-echo "==> Workflow seeding complete (13 workflows)"
+echo "==> Workflow seeding complete (19 workflows)"
 echo "==> Verify: curl -s ${DATASTORAGE_URL}/api/v1/workflows | jq '.'"
