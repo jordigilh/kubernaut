@@ -66,8 +66,8 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-111 to 
 	Context("GW-ERR-001: Transient Error Retry with Exponential Backoff (P0)", func() {
 		It("BR-GATEWAY-113: should retry transient K8s API errors with exponential backoff", func() {
 			// Given: Gateway configured with retry policy (default: 3 attempts, exponential backoff)
-			// When: K8s API returns transient error (429 Too Many Requests, connection timeout)
-			// Then: Gateway retries with exponential backoff
+			// When: Valid alert sent to gateway
+			// Then: CRD is created (201) or deduplicated (202)
 
 			payload := createPrometheusWebhookPayload(PrometheusAlertPayload{
 				AlertName: "TestTransientRetry",
@@ -78,42 +78,27 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-111 to 
 				},
 			})
 
-			req, _ := http.NewRequest("POST",
+			req, err := http.NewRequest("POST",
 				fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL),
 				bytes.NewBuffer(payload))
+			Expect(err).ToNot(HaveOccurred())
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 
-			startTime := time.Now()
 			resp, err := http.DefaultClient.Do(req)
-			_ = err
+			Expect(err).ToNot(HaveOccurred(), "HTTP request to gateway should not fail")
 			defer func() { _ = resp.Body.Close() }()
-			duration := time.Since(startTime)
 
-			// Then: Request should eventually succeed (after retries)
-			// OR return error after exhausting retries
-			if resp.StatusCode == http.StatusOK {
-				// Success (possibly after retries)
-				// If retries occurred, duration should be > 0 (backoff delays)
-				// Validate CRD created
-				Eventually(func() bool {
-					rrList := &remediationv1alpha1.RemediationRequestList{}
-					err := testClient.List(testCtx, rrList, client.InNamespace(testNamespace))
-					_ = err
-					return err == nil && len(rrList.Items) > 0
-				}, 10*time.Second, 1*time.Second).Should(BeTrue())
-			} else {
-				// Failure after retries exhausted
-				// Duration should reflect retry attempts (with backoff)
-				// For 3 retries with exponential backoff (100ms, 200ms, 400ms):
-				// Minimum duration: ~700ms (if retries occurred)
+			Expect(resp.StatusCode).To(Or(Equal(http.StatusCreated), Equal(http.StatusAccepted)),
+				"Gateway should return 201 (created) or 202 (deduplicated/accepted)")
 
-				// Note: This test documents expected retry behavior
-				// In production, this would be tested by simulating transient failures
-				logger.Info("Request failed after retries",
-					"status", resp.StatusCode,
-					"duration", duration)
-			}
+			// Validate CRD was created in the test namespace
+			Eventually(func() bool {
+				rrList := &remediationv1alpha1.RemediationRequestList{}
+				listErr := testClient.List(testCtx, rrList, client.InNamespace(testNamespace))
+				return listErr == nil && len(rrList.Items) > 0
+			}, 10*time.Second, 1*time.Second).Should(BeTrue(),
+				"RemediationRequest CRD should exist in test namespace after successful alert processing")
 		})
 
 		It("should use exponential backoff between retry attempts", func() {

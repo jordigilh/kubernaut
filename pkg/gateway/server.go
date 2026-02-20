@@ -504,10 +504,10 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 	}
 
 	// BR-SCOPE-002: Initialize scope manager for label-based resource opt-in filtering
-	// ADR-053 Decision #5: Uses ctrlClient (cached) for metadata-only informers (0 API calls).
-	// Controller-runtime automatically creates metadata-only informers when Get() is called
-	// with PartialObjectMetadata, so no custom cache configuration is needed.
-	scopeMgr := scope.NewManager(ctrlClient)
+	// Uses apiReader (uncached) so that newly-created namespaces with kubernaut.ai/managed
+	// are visible immediately, avoiding scope-rejection races when alerts arrive before the
+	// informer cache has synced the namespace (same rationale as phaseChecker/lockManager).
+	scopeMgr := scope.NewManager(apiReader)
 
 	// Create server first (crdCreator set below after observer wiring)
 	server := &Server{
