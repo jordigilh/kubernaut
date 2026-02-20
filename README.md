@@ -22,7 +22,9 @@ Kubernaut automates the entire incident response lifecycle for Kubernetes throug
 2. **Signal Processing** — Enriches the signal with Kubernetes context: owner chain, namespace labels, severity classification, deduplication, and signal mode (reactive vs. predictive).
 3. **AI Analysis** — An LLM investigates the incident live — checking pod logs, events, and resource limits via `kubectl` — produces a root cause analysis, and searches a workflow catalog for a matching remediation.
 4. **Workflow Execution** — Runs the selected remediation (e.g., a Kubernetes Job that patches a Deployment's memory limits) via Tekton Pipelines or Kubernetes Jobs, with optional human approval gates.
-5. **Notification** — Keeps the team informed at every stage — whether the fix was applied automatically, is pending approval, or has been flagged for human review.
+5. **Close the Loop** — Two parallel actions after execution completes:
+   - **Notification**: Keeps the team informed — whether the fix was applied automatically, is pending approval, or has been flagged for human review.
+   - **Effectiveness Monitoring**: Evaluates whether the fix actually worked via spec hash comparison, health checks, metric evaluation, and effectiveness scoring.
 
 For SRE teams, the value proposition is: **reduce MTTR on known failure patterns to near-zero, while building a searchable catalog of remediation workflows that encode your team's operational knowledge.** Kubernaut handles the toil; your team focuses on the novel problems.
 
@@ -42,20 +44,20 @@ For SRE teams, the value proposition is: **reduce MTTR on known failure patterns
 
 ## Architecture
 
-Kubernaut follows a microservices architecture with 10 production-ready services (5 CRD controllers + 5 stateless services):
+Kubernaut follows a microservices architecture with 10 production-ready services (6 CRD controllers + 4 stateless services):
 
 ![Kubernaut Layered Architecture](docs/architecture/diagrams/kubernaut-layered-architecture.svg)
 
 ### Architecture Flow
 
 1. **Gateway Service** receives signals (Prometheus alerts, K8s events), validates resource scope via the `kubernaut.ai/managed` label, and creates `RemediationRequest` CRDs
-2. **Remediation Orchestrator** (CRD controller) coordinates remediation lifecycle across 4 other CRD controllers:
+2. **Remediation Orchestrator** (CRD controller) coordinates remediation lifecycle across 5 other CRD controllers:
    - **Signal Processing Service**: Enriches signals with Kubernetes context, classifies signal mode (reactive/predictive), and normalizes signal types
    - **AI Analysis Service**: Performs HolmesGPT investigation and generates recommendations
    - **Workflow Execution**: Orchestrates Tekton Pipelines or Kubernetes Jobs for remediation workflows
    - **Notification Service**: Delivers multi-channel notifications (Slack, Email, etc.)
+   - **Effectiveness Monitor**: Assesses post-remediation health via spec hash comparison, health checks, and metric evaluation
 3. **Data Storage Service** provides centralized PostgreSQL access for audit trails and workflow schemas
-4. **Effectiveness Monitor** provides automated post-remediation assessment: spec hash capture, health checks, metric comparison, and effectiveness scoring
 
 ### Communication Pattern
 
@@ -147,8 +149,8 @@ Kubernaut services use **Kustomize** for Kubernetes deployment. See the [demo de
 
 ### Services
 
-- [CRD Controllers](docs/services/crd-controllers/) — Remediation Orchestrator, Signal Processing, AI Analysis, Workflow Execution
-- [Stateless Services](docs/services/stateless/) — Gateway, Data Storage, HolmesGPT API, Notification, Effectiveness Monitor
+- [CRD Controllers](docs/services/crd-controllers/) — Remediation Orchestrator, Signal Processing, AI Analysis, Workflow Execution, Notification, Effectiveness Monitor
+- [Stateless Services](docs/services/stateless/) — Gateway, Data Storage, HolmesGPT API, Auth Webhook
 
 ### Development
 
