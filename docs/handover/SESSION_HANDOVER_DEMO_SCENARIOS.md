@@ -1,8 +1,8 @@
 # Session Handover: Demo Scenarios (End-to-End Remediation Demos)
 
-**Date**: 2026-02-19  
+**Date**: 2026-02-20 (updated)  
 **Branch**: `feat/effectiveness-monitor-level1-v1.0`  
-**Status**: 3 of 11 scenarios implemented, triaged, and fixes applied. **Uncommitted.**  
+**Status**: 11 of 11 scenarios implemented. Workflow OCI images have real SHA256 digests. None end-to-end tested yet.  
 **Parent GitHub Issue**: #114 (Demo Scenarios umbrella)
 
 ---
@@ -41,7 +41,7 @@ The Kind cluster config is at `deploy/demo/overlays/kind/kind-cluster-config.yam
 
 ---
 
-## 3. Implemented Scenarios (3 of 11)
+## 3. Originally Implemented Scenarios (detailed writeup)
 
 ### 3.1 Scenario #125: GitOps Drift Remediation
 
@@ -192,31 +192,35 @@ deploy/demo/scenarios/slo-burn/
 
 ---
 
-## 4. Unimplemented Scenarios (8 of 11)
+## 4. Additionally Implemented Scenarios (8 of 11)
 
-These directories exist with empty `manifests/` and `workflow/` scaffolding but contain NO files:
+All 8 remaining scenarios are now fully implemented with manifests, workflows, run.sh, README, and cleanup.sh.
 
-| # | Directory | GitHub Issue | Action Type | Signal Type | Description |
-|---|-----------|-------------|-------------|-------------|-------------|
-| #120 | `crashloop/` | #120 | `GracefulRestart` | CrashLoopBackOff | Predictive restart before crash (memory leak) |
-| #121 | `disk-pressure/` | #121 | `CleanupPVC` | DiskPressure | PVC disk space cleanup |
-| #122 | `pending-taint/` | #122 | `RemoveTaint` | FailedScheduling | Node taint prevents scheduling |
-| #123 | `hpa-maxed/` | #123 | `PatchHPA` | HPAMaxedOut | HPA at maxReplicas, traffic still too high |
-| #124 | `pdb-deadlock/` | #124 | `RelaxPDB` | DrainBlocked | PDB prevents node drain |
-| #127 | `node-notready/` | #127 | `CordonDrainNode` | NodeNotReady | Node failing, drain pods to healthy nodes |
-| #129 | `memory-leak/` | #129 | `GracefulRestart` | PredictiveMemoryExhaust | `predict_linear()` detects memory exhaustion before crash |
-| #130 | `stuck-rollout/` | #130 | `GracefulRestart` | StuckRollout | Deployment stuck mid-rollout |
+| # | Directory | Issue | Action Type | Signal | Kind Config | Key Details |
+|---|-----------|-------|-------------|--------|-------------|-------------|
+| #120 | `crashloop/` | #120 | `GracefulRestart` | CrashLoopBackOff | singlenode | Bad ConfigMap injection → rollback. `inject-bad-config.sh` patches ConfigMap. |
+| #121 | `disk-pressure/` | #121 | `CleanupPVC` | DiskPressure | singlenode | `inject-orphan-pvcs.sh` creates orphaned PVCs. Workflow deletes unmounted PVCs. |
+| #122 | `pending-taint/` | #122 | `RemoveTaint` | FailedScheduling | **multinode** | `inject-taint.sh` applies `maintenance=scheduled:NoSchedule` to worker. Workflow removes taint. |
+| #123 | `hpa-maxed/` | #123 | `PatchHPA` | HPAMaxedOut | singlenode | `inject-load.sh` generates CPU load via busybox pod. Workflow patches `maxReplicas`. |
+| #124 | `pdb-deadlock/` | #124 | `RelaxPDB` | DrainBlocked | singlenode | `inject-rolling-update.sh` triggers blocked rollout. Workflow reduces `minAvailable`. |
+| #127 | `node-notready/` | #127 | `CordonDrainNode` | NodeNotReady | **multinode** | `inject-node-failure.sh` uses `podman pause` on worker. Workflow cordons + drains. |
+| #129 | `memory-leak/` | #129 | `GracefulRestart` | PredictiveMemoryExhaust | singlenode | Sidecar leaks ~1MB/15s. `predict_linear()` fires alert. Workflow does rolling restart. |
+| #130 | `stuck-rollout/` | #130 | `GracefulRestart` | StuckRollout | singlenode | `inject-bad-image.sh` patches to non-existent image tag. Workflow does `rollout undo`. |
 
-All 9 `actionType` taxonomy values are already pre-seeded via `migrations/026_demo_action_types.sql`.
+All 9 `actionType` taxonomy values are pre-seeded via `migrations/026_demo_action_types.sql`.
+
+Per-scenario `kind-config.yaml` files are symlinks to shared configs at the `scenarios/` level:
+- `kind-config-singlenode.yaml` (8 scenarios): single control-plane node
+- `kind-config-multinode.yaml` (3 scenarios: autoscale, node-notready, pending-taint): control-plane + worker with `kubernaut.ai/workload-node=true`
 
 ---
 
 ## 5. Shared Infrastructure & Tooling
 
 ### 5.1 Kind Cluster Config
-**File**: `deploy/demo/overlays/kind/kind-cluster-config.yaml`
+**Files**: `deploy/demo/scenarios/kind-config-singlenode.yaml` and `deploy/demo/scenarios/kind-config-multinode.yaml`
 
-2-node cluster (control-plane + worker). Port mappings expose Gateway (30080), DataStorage (30081), Prometheus (9190), AlertManager (9193), Grafana (3000).
+Each scenario directory has a `kind-config.yaml` symlink pointing to the appropriate shared config. Port mappings expose Gateway (30080), DataStorage (30081), Prometheus (9190), AlertManager (9193), Grafana (3000). Multinode config adds a worker node labeled `kubernaut.ai/workload-node=true`.
 
 ### 5.2 Database Migration
 **File**: `migrations/026_demo_action_types.sql`
@@ -236,14 +240,20 @@ Builds multi-architecture OCI images (amd64 + arm64) for all demo workflow bundl
 
 The script validates that each scenario has a `Dockerfile` and `workflow-schema.yaml` (ADR-043 compliance).
 
-**Current workflow-to-image mappings:**
+**Current workflow-to-image mappings (all with real SHA256 digests):**
 | Scenario | Image |
 |----------|-------|
-| `gitops-drift` | `git-revert-job:v1.0.0` |
 | `autoscale` | `provision-node-job:v1.0.0` |
+| `crashloop` | `crashloop-rollback-job:v1.0.0` |
+| `disk-pressure` | `cleanup-pvc-job:v1.0.0` |
+| `gitops-drift` | `git-revert-job:v1.0.0` |
+| `hpa-maxed` | `patch-hpa-job:v1.0.0` |
+| `memory-leak` | `graceful-restart-job:v1.0.0` |
+| `node-notready` | `cordon-drain-job:v1.0.0` |
+| `pdb-deadlock` | `relax-pdb-job:v1.0.0` |
+| `pending-taint` | `remove-taint-job:v1.0.0` |
 | `slo-burn` | `proactive-rollback-job:v1.0.0` |
-
-When adding new scenarios, append to the `WORKFLOWS` array in the script.
+| `stuck-rollout` | `rollback-deployment-job:v1.0.0` |
 
 ### 5.4 Seed Script
 **File**: `deploy/demo/scripts/seed-workflows.sh`
@@ -341,85 +351,22 @@ Issue #131 tracks the documentation gap where `detectedLabels` is not formally d
 
 ## 9. What Needs to Be Done
 
-### 9.1 Immediate: Commit the Demo Scenario Work
-
-All changes are **uncommitted** on branch `feat/effectiveness-monitor-level1-v1.0`. Suggested commit groups:
-
-1. **Kind cluster config**: `deploy/demo/overlays/kind/kind-cluster-config.yaml` (added worker node)
-2. **Database migration**: `migrations/026_demo_action_types.sql` (9 new action types)
-3. **Scenario #125**: `deploy/demo/scenarios/gitops-drift/` + `deploy/demo/scenarios/gitops/scripts/`
-4. **Scenario #126**: `deploy/demo/scenarios/autoscale/`
-5. **Scenario #128**: `deploy/demo/scenarios/slo-burn/`
-6. **Shared tooling**: `deploy/demo/scripts/build-demo-workflows.sh`, `deploy/demo/scripts/seed-workflows.sh`
-
-**Warning**: The branch has many other uncommitted changes unrelated to demo scenarios (see `git status`). Separate carefully.
-
-### 9.2 Build and Push OCI Images
-
-Images have NOT been built or pushed yet. The `workflow-schema.yaml` files all use `@sha256:placeholder` as the digest.
-
-```bash
-# Login to quay.io first
-podman login quay.io
-
-# Build and push all demo workflows
-./deploy/demo/scripts/build-demo-workflows.sh
-
-# Get actual digests
-for img in git-revert-job provision-node-job proactive-rollback-job; do
-  echo "$img: $(podman manifest inspect quay.io/kubernaut-cicd/test-workflows/${img}:v1.0.0 | jq -r '.digest')"
-done
-
-# Update workflow-schema.yaml files with real digests
-# Then re-register in DataStorage
-./deploy/demo/scripts/seed-workflows.sh
-```
-
-### 9.3 Implement Remaining 8 Scenarios
-
-For each unimplemented scenario, the deliverables are:
-1. `manifests/namespace.yaml` with appropriate business labels
-2. `manifests/deployment.yaml` (and any supporting resources)
-3. `manifests/prometheus-rule.yaml` (PrometheusRule CRD with `release: prometheus` label)
-4. `workflow/workflow-schema.yaml` (DD-WORKFLOW-001 v2.7)
-5. `workflow/Dockerfile` (follow ubi9-minimal convention from Section 6)
-6. `workflow/remediate.sh` (Validate → Action → Verify)
-7. `run.sh` (automated end-to-end runner)
-8. `README.md` (BDD spec + manual steps)
-9. `cleanup.sh`
-10. Add entry to `build-demo-workflows.sh` `WORKFLOWS` array
-11. Add entry to `seed-workflows.sh`
-
-The `actionType` taxonomy values already exist in the migration. Use the 3 implemented scenarios as templates.
-
-**Priority order** (suggested by previous session):
-1. #129 memory-leak (predictive `predict_linear()`)
-2. #120 crashloop (predictive restart)
-3. #123 hpa-maxed (detected label: HPA)
-4. #124 pdb-deadlock (detected label: PDB)
-5. #122 pending-taint (node taint removal)
-6. #121 disk-pressure (PVC cleanup)
-7. #127 node-notready (cordon + drain)
-8. #130 stuck-rollout (stuck deployment)
-
-### 9.4 End-to-End Validation
+### 9.1 End-to-End Validation
 
 No scenario has been tested end-to-end yet. Each needs validation:
-1. Build OCI images with real digests
-2. Create Kind cluster with the demo config
-3. Deploy Kubernaut services with real LLM backend
-4. Run `run.sh` and verify the full pipeline completes
-5. Verify EM assessment shows successful remediation
+1. Create Kind cluster with the per-scenario kind-config (symlinks handle singlenode vs multinode)
+2. Deploy Kubernaut services with real LLM backend
+3. Run `run.sh` and verify the full pipeline completes
+4. Verify EM assessment shows successful remediation
+5. Run `cleanup.sh` and verify clean teardown
 
-### 9.5 Open GitHub Issues
+### 9.2 Open GitHub Issues
 
 | Issue | Title | Priority | Status |
 |-------|-------|----------|--------|
-| #114 | Demo Scenarios umbrella | High | In Progress |
-| #125 | GitOps Drift Remediation | High | Implementation complete, untested |
-| #126 | Cluster Autoscaling | High | Implementation complete, untested |
-| #128 | SLO Error Budget Burn | High | Implementation complete, untested |
+| #114 | Demo Scenarios umbrella | High | All 11 scenarios implemented, pending E2E validation |
 | #131 | ADR-043: Add detectedLabels field spec | Normal | Open |
+| #132 | GitOps causality evidence chain and CRD safety guardrails | Normal | Open |
 
 ---
 
@@ -435,13 +382,13 @@ No scenario has been tested end-to-end yet. Each needs validation:
 
 4. **provisioner.sh cleanup**: Scenario #126's provisioner creates real Podman containers that survive `kubectl delete`. The `cleanup.sh` script must also run `podman rm -f` on any nodes it created.
 
-5. **Bundle digest `placeholder`**: All `workflow-schema.yaml` files currently have `@sha256:placeholder`. These MUST be replaced with real digests after building images, or DataStorage won't be able to pull them.
+5. **HAPI LabelDetector dependency**: Scenarios #125 (GitOps detection) and any future detected-label scenarios rely on HAPI's LabelDetector being functional (ADR-056, DD-HAPI-018). If the LabelDetector is broken, the LLM won't get the infrastructure context needed to select the correct workflow.
 
-6. **HAPI LabelDetector dependency**: Scenarios #125 (GitOps detection) and any future detected-label scenarios rely on HAPI's LabelDetector being functional (ADR-056, DD-HAPI-018). If the LabelDetector is broken, the LLM won't get the infrastructure context needed to select the correct workflow.
+6. **kube-state-metrics required**: Most PrometheusRules use `kube_pod_container_status_restarts_total`, `kube_pod_status_phase`, `kube_deployment_status_condition`, etc. -- all from kube-state-metrics. Ensure it's deployed in the demo cluster.
 
-7. **kube-state-metrics required**: The `KubePodCrashLooping` rule (#125) uses `kube_pod_container_status_restarts_total` and the `KubePodSchedulingFailed` rule (#126) uses `kube_pod_status_phase` -- both from kube-state-metrics. Ensure it's deployed in the demo cluster.
+7. **ServiceAccount for seed script**: The `seed-workflows.sh` script creates a short-lived SA token for `holmesgpt-api-sa`. This SA must exist in `kubernaut-system` namespace, or the script falls back to no-auth mode.
 
-8. **ServiceAccount for seed script**: The `seed-workflows.sh` script creates a short-lived SA token for `holmesgpt-api-sa`. This SA must exist in `kubernaut-system` namespace, or the script falls back to no-auth mode.
+8. **Node-notready cleanup**: Scenario #127 pauses a Kind node via `podman pause`. If the demo is interrupted, the node remains paused. `cleanup.sh` handles `podman unpause` + `kubectl uncordon`, but manual intervention may be needed if cleanup fails.
 
 ---
 
@@ -500,14 +447,38 @@ deploy/demo/
     │       ├── workflow-schema.yaml              # ProactiveRollback
     │       ├── Dockerfile                        # ubi9 + kubectl
     │       └── remediate.sh                      # Validate revision → rollout undo → verify CM ref
-    ├── crashloop/      (#120) 📁 EMPTY SCAFFOLD
-    ├── disk-pressure/  (#121) 📁 EMPTY SCAFFOLD
-    ├── pending-taint/  (#122) 📁 EMPTY SCAFFOLD
-    ├── hpa-maxed/      (#123) 📁 EMPTY SCAFFOLD
-    ├── pdb-deadlock/   (#124) 📁 EMPTY SCAFFOLD
-    ├── node-notready/  (#127) 📁 EMPTY SCAFFOLD
-    ├── memory-leak/    (#129) 📁 EMPTY SCAFFOLD
-    └── stuck-rollout/  (#130) 📁 EMPTY SCAFFOLD
+    ├── crashloop/      (#120) ✅ IMPLEMENTED
+    │   ├── README.md, run.sh, cleanup.sh, inject-bad-config.sh
+    │   ├── manifests/ (namespace, configmap, deployment, prometheus-rule)
+    │   └── workflow/ (GracefulRestart, crashloop-rollback-job)
+    ├── disk-pressure/  (#121) ✅ IMPLEMENTED
+    │   ├── README.md, run.sh, cleanup.sh, inject-orphan-pvcs.sh
+    │   ├── manifests/ (namespace, deployment, prometheus-rule)
+    │   └── workflow/ (CleanupPVC, cleanup-pvc-job)
+    ├── pending-taint/  (#122) ✅ IMPLEMENTED
+    │   ├── README.md, run.sh, cleanup.sh, inject-taint.sh
+    │   ├── manifests/ (namespace, deployment, prometheus-rule)
+    │   └── workflow/ (RemoveTaint, remove-taint-job)
+    ├── hpa-maxed/      (#123) ✅ IMPLEMENTED
+    │   ├── README.md, run.sh, cleanup.sh, inject-load.sh
+    │   ├── manifests/ (namespace, deployment, prometheus-rule)
+    │   └── workflow/ (PatchHPA, patch-hpa-job)
+    ├── pdb-deadlock/   (#124) ✅ IMPLEMENTED
+    │   ├── README.md, run.sh, cleanup.sh, inject-rolling-update.sh
+    │   ├── manifests/ (namespace, deployment, prometheus-rule)
+    │   └── workflow/ (RelaxPDB, relax-pdb-job)
+    ├── node-notready/  (#127) ✅ IMPLEMENTED
+    │   ├── README.md, run.sh, cleanup.sh, inject-node-failure.sh
+    │   ├── manifests/ (namespace, deployment, prometheus-rule)
+    │   └── workflow/ (CordonDrainNode, cordon-drain-job)
+    ├── memory-leak/    (#129) ✅ IMPLEMENTED
+    │   ├── README.md, run.sh, cleanup.sh
+    │   ├── manifests/ (namespace, deployment, prometheus-rule)
+    │   └── workflow/ (GracefulRestart, graceful-restart-job)
+    └── stuck-rollout/  (#130) ✅ IMPLEMENTED
+        ├── README.md, run.sh, cleanup.sh, inject-bad-image.sh
+        ├── manifests/ (namespace, deployment, prometheus-rule)
+        └── workflow/ (GracefulRestart, rollback-deployment-job)
 
 migrations/
 └── 026_demo_action_types.sql                     # 9 action types (all scenarios)
