@@ -1,10 +1,11 @@
 # HAPI Test Plan for ADR-056
 
-**Version**: 1.0
+**Version**: 1.1
 **Created**: 2026-02-17
+**Updated**: 2026-02-20
 **Status**: Active
-**Authority**: [ADR-056](../../architecture/decisions/ADR-056-post-rca-label-computation.md), [DD-HAPI-017](../../architecture/decisions/DD-HAPI-017-three-step-workflow-discovery-integration.md), [DD-HAPI-018](../../architecture/decisions/DD-HAPI-018-detected-labels-detection-specification.md)
-**BRs**: BR-SP-101, BR-SP-103, BR-HAPI-194, BR-HAPI-250, BR-HAPI-252
+**Authority**: [ADR-056 v1.3](../../architecture/decisions/ADR-056-post-rca-label-computation.md), [DD-HAPI-017 v1.3](../../architecture/decisions/DD-HAPI-017-three-step-workflow-discovery-integration.md), [DD-HAPI-018 v1.1](../../architecture/decisions/DD-HAPI-018-detected-labels-detection-specification.md)
+**BRs**: BR-SP-101, BR-SP-103, BR-HAPI-194, BR-HAPI-250, BR-HAPI-252, BR-HAPI-017-007
 
 ---
 
@@ -22,6 +23,7 @@ This test plan covers the HAPI (HolmesGPT API, Python) service implementation of
 - **Cycle 2.3**: Prompt removal -- detected_labels no longer injected into LLM prompts
 - **Cycle 2.4**: Session state wiring -- registration code passes session_state to toolsets
 - **Cycle 2.5**: Response model -- detected_labels in HAPI response for AIAnalysis PostRCAContext
+- **Cycle 2.6**: cluster_context -- detected labels surfaced as read-only context in `list_available_actions` tool response (ADR-056 v1.3, BR-HAPI-017-007)
 
 ### Out of Scope
 
@@ -48,8 +50,8 @@ Per [TESTING_GUIDELINES.md](../../development/business-requirements/TESTING_GUID
 
 | Tier | Files | LOC | Coverage | Target |
 |------|-------|-----|----------|--------|
-| Unit | `labels.py`, `k8s_client.py`, `resource_context.py`, `workflow_discovery.py`, `prompt_builder.py` (x2), `llm_config.py`, `incident_models.py`, `recovery_models.py` | ~450 | 80 tests | >= 80% MET |
-| Integration | `test_detected_labels_integration.py` + `k8s_mock_fixtures.py` | ~200 | 7 tests | >= 80% Active |
+| Unit | `labels.py`, `k8s_client.py`, `resource_context.py`, `workflow_discovery.py`, `prompt_builder.py` (x2), `llm_config.py`, `incident_models.py`, `recovery_models.py` | ~450 | 87 tests | >= 80% MET |
+| Integration | `test_detected_labels_integration.py` + `k8s_mock_fixtures.py` | ~200 | 8 tests | >= 80% Active |
 | E2E | `detected_labels_e2e_test.go` | ~150 | 3 tests | >= 80% Active |
 
 ---
@@ -74,6 +76,7 @@ def test_ut_hapi_056_001_argocd_pod_annotation(self):
 | BR-SP-103 | FailedDetections tracking | UT-HAPI-056-018 to 021 | 4 |
 | BR-HAPI-194 | Honor failedDetections in workflow filtering | UT-HAPI-056-043 to 055, 071, 072 | 15 |
 | BR-HAPI-250/252 | DetectedLabels in HAPI response | UT-HAPI-056-063 to 067 | 5 |
+| BR-HAPI-017-007 | cluster_context in list_available_actions response | UT-HAPI-056-081 to 087, IT-HAPI-056-008 | 8 |
 
 ---
 
@@ -1236,6 +1239,167 @@ Same pattern: verify session_state reaches the toolset (059, 060) and flows to i
 
 ---
 
+## Cycle 2.6: cluster_context in list_available_actions (7 unit + 1 integration test)
+
+**File (unit)**: `holmesgpt-api/tests/unit/test_workflow_discovery_cluster_context.py`
+**File (integration)**: `holmesgpt-api/tests/integration/test_detected_labels_integration.py` (extend)
+**Production code**: `holmesgpt-api/src/toolsets/workflow_discovery.py` (`ListAvailableActionsTool._invoke`)
+**Authority**: ADR-056 v1.3, DD-HAPI-017 v1.3, DD-HAPI-018 v1.1
+**BR**: BR-HAPI-017-007
+
+### Context
+
+ADR-056 v1.2 established that detected labels are HAPI-internal and not returned to the LLM. ADR-056 v1.3 revises this: detected labels are still HAPI-computed and not LLM-managed parameters, but they are now **surfaced read-only** to the LLM as a `cluster_context` section in the `list_available_actions` tool response (Step 1 only). This gives the LLM explicit infrastructure context for informed action type selection.
+
+### Summary
+
+| ID | Scenario | Priority | Business Value |
+|----|----------|----------|----------------|
+| UT-HAPI-056-081 | `list_available_actions` includes `cluster_context` when detected_labels present | P0 | LLM receives infrastructure context for informed action type selection |
+| UT-HAPI-056-082 | `cluster_context.detected_labels` excludes failedDetections | P1 | LLM does not see unreliable label values (consistency with DS filter behavior) |
+| UT-HAPI-056-083 | `cluster_context` omitted when session_state has no detected_labels key | P1 | Clean response when detection has not run (e.g., no k8s_client) |
+| UT-HAPI-056-084 | `cluster_context` omitted when detected_labels is empty dict `{}` | P1 | No empty context noise when detection ran but found nothing |
+| UT-HAPI-056-085 | `cluster_context` includes human-readable `note` field | P2 | Guides the LLM to consider labels during selection |
+| UT-HAPI-056-086 | `list_workflows` does NOT include `cluster_context` | P1 | Only Step 1 surfaces labels; Steps 2/3 are unaffected |
+| UT-HAPI-056-087 | `get_workflow` does NOT include `cluster_context` | P1 | Same as above for Step 3 |
+
+---
+
+### UT-HAPI-056-081: list_available_actions includes cluster_context when detected_labels present
+
+**Priority**: P0 | **BR**: BR-HAPI-017-007
+**Business Value**: The LLM receives infrastructure context (e.g., `gitOpsManaged=true`, `hpaEnabled=true`) alongside available action types, enabling informed action type selection rather than blind guessing.
+
+**Given**: `session_state["detected_labels"] = {"gitOpsManaged": True, "gitOpsTool": "argocd", "pdbProtected": False}`
+  And: DataStorage returns `{"actionTypes": [{"action_type": "GracefulRestart"}], "pagination": {"totalCount": 1}}`
+**When**: `list_available_actions._invoke({"offset": 0, "limit": 10})` is called
+**Then**: `result.status` is SUCCESS
+  And: `result.data` JSON contains `"cluster_context"` key
+  And: `cluster_context["detected_labels"]` equals `{"gitOpsManaged": True, "gitOpsTool": "argocd", "pdbProtected": False}`
+  And: `cluster_context["note"]` is a non-empty string
+  And: original `"actionTypes"` and `"pagination"` are preserved unchanged
+
+**Acceptance Criteria**:
+- `cluster_context` present in result when `detected_labels` is non-empty
+- Original DS response fields are not altered
+
+---
+
+### UT-HAPI-056-082: cluster_context.detected_labels excludes failedDetections
+
+**Priority**: P1 | **BR**: BR-HAPI-017-007, BR-SP-103
+**Business Value**: The LLM does not see unreliable label values from failed detections, preventing incorrect reasoning about infrastructure characteristics.
+
+**Given**: `session_state["detected_labels"] = {"gitOpsManaged": True, "pdbProtected": "FAILED", "failedDetections": ["pdbProtected"]}`
+  And: DataStorage returns valid response
+**When**: `list_available_actions._invoke({"offset": 0, "limit": 10})` is called
+**Then**: `cluster_context["detected_labels"]` equals `{"gitOpsManaged": True}`
+  And: `"pdbProtected"` is NOT in `cluster_context["detected_labels"]`
+  And: `"failedDetections"` is NOT in `cluster_context["detected_labels"]`
+
+**Acceptance Criteria**:
+- `strip_failed_detections()` applied to `cluster_context` labels
+- Neither failed fields nor the `failedDetections` array appear in LLM-facing context
+
+---
+
+### UT-HAPI-056-083: cluster_context omitted when session_state has no detected_labels key
+
+**Priority**: P1 | **BR**: BR-HAPI-017-007
+**Business Value**: Clean response when label detection has not run (e.g., no k8s_client available, or `_ensure_detected_labels` was not called).
+
+**Given**: `session_state = {}` (no `"detected_labels"` key)
+  And: DataStorage returns valid response
+**When**: `list_available_actions._invoke({"offset": 0, "limit": 10})` is called
+**Then**: `result.data` JSON does NOT contain `"cluster_context"` key
+  And: `"actionTypes"` and `"pagination"` are present
+
+**Acceptance Criteria**:
+- No `cluster_context` key in response when labels not yet computed
+
+---
+
+### UT-HAPI-056-084: cluster_context omitted when detected_labels is empty dict
+
+**Priority**: P1 | **BR**: BR-HAPI-017-007
+**Business Value**: No empty context noise when detection ran but found nothing (empty sentinel `{}` means "detection ran, no characteristics detected").
+
+**Given**: `session_state["detected_labels"] = {}`
+  And: DataStorage returns valid response
+**When**: `list_available_actions._invoke({"offset": 0, "limit": 10})` is called
+**Then**: `result.data` JSON does NOT contain `"cluster_context"` key
+
+**Acceptance Criteria**:
+- Empty dict sentinel does not produce empty `cluster_context`
+
+---
+
+### UT-HAPI-056-085: cluster_context includes human-readable note field
+
+**Priority**: P2 | **BR**: BR-HAPI-017-007
+**Business Value**: Guides the LLM to actively consider detected labels when selecting an action type.
+
+**Given**: `session_state["detected_labels"] = {"hpaEnabled": True}`
+  And: DataStorage returns valid response
+**When**: `list_available_actions._invoke({"offset": 0, "limit": 10})` is called
+**Then**: `cluster_context["note"]` is a non-empty string
+  And: `cluster_context["note"]` mentions "action type" (guidance to use labels for selection)
+
+**Acceptance Criteria**:
+- `note` field present and non-empty
+- Content guides the LLM to use labels for action type selection
+
+---
+
+### UT-HAPI-056-086: list_workflows does NOT include cluster_context
+
+**Priority**: P1 | **BR**: BR-HAPI-017-007
+**Business Value**: Only Step 1 surfaces labels. By Step 2, the LLM has already selected an action type, so repeating `cluster_context` adds noise without value.
+
+**Given**: `session_state["detected_labels"] = {"gitOpsManaged": True}`
+  And: DataStorage returns valid workflows response
+**When**: `list_workflows._invoke({"action_type": "GitRevertCommit"})` is called
+**Then**: `result.data` JSON does NOT contain `"cluster_context"` key
+
+**Acceptance Criteria**:
+- Step 2 response has no `cluster_context`
+
+---
+
+### UT-HAPI-056-087: get_workflow does NOT include cluster_context
+
+**Priority**: P1 | **BR**: BR-HAPI-017-007
+**Business Value**: Same as UT-HAPI-056-086 but for Step 3.
+
+**Given**: `session_state["detected_labels"] = {"gitOpsManaged": True}`
+  And: DataStorage returns valid single workflow response
+**When**: `get_workflow._invoke({"workflow_id": "git-revert-v1"})` is called
+**Then**: `result.data` JSON does NOT contain `"cluster_context"` key
+
+**Acceptance Criteria**:
+- Step 3 response has no `cluster_context`
+
+---
+
+### IT-HAPI-056-008: cluster_context propagated in three-step flow with real labels
+
+**Priority**: P1 | **BR**: BR-HAPI-017-007
+**Business Value**: End-to-end validation that labels flow from K8s detection (via `_ensure_detected_labels`) through to the LLM tool response.
+
+**Given**: ArgoCD-managed Deployment (pod annotation `argocd.argoproj.io/instance: my-app`)
+  And: K8s mock fixtures configured for the Deployment
+  And: DataStorage returns available action types
+**When**: `list_available_actions._invoke({"offset": 0, "limit": 10})` completes the three-step flow
+**Then**: `result.data` JSON contains `"cluster_context"` key
+  And: `cluster_context["detected_labels"]["gitOpsManaged"]` is `True`
+  And: `cluster_context["detected_labels"]["gitOpsTool"]` is `"argocd"`
+
+**Acceptance Criteria**:
+- Labels computed from real K8s mock fixtures appear in tool response
+- End-to-end flow from K8s detection to LLM-facing response works
+
+---
+
 ## ID Cross-Reference Table
 
 | New ID | Old ID | File | Cycle |
@@ -1321,10 +1485,17 @@ Same pattern: verify session_state reaches the toolset (059, 060) and flows to i
 | UT-HAPI-056-078 | NEW | test_label_detector.py | 3.2 |
 | UT-HAPI-056-079 | NEW | test_label_detector.py | 3.2 |
 | UT-HAPI-056-080 | NEW | test_label_detector.py | 3.2 |
+| UT-HAPI-056-081 | NEW | test_workflow_discovery_cluster_context.py | 2.6 |
+| UT-HAPI-056-082 | NEW | test_workflow_discovery_cluster_context.py | 2.6 |
+| UT-HAPI-056-083 | NEW | test_workflow_discovery_cluster_context.py | 2.6 |
+| UT-HAPI-056-084 | NEW | test_workflow_discovery_cluster_context.py | 2.6 |
+| UT-HAPI-056-085 | NEW | test_workflow_discovery_cluster_context.py | 2.6 |
+| UT-HAPI-056-086 | NEW | test_workflow_discovery_cluster_context.py | 2.6 |
+| UT-HAPI-056-087 | NEW | test_workflow_discovery_cluster_context.py | 2.6 |
 
 ---
 
-## Integration Tests: DetectedLabels End-to-End Flow (7 tests)
+## Integration Tests: DetectedLabels End-to-End Flow (8 tests)
 
 **File**: `holmesgpt-api/tests/integration/test_detected_labels_integration.py`
 **Fixtures**: `holmesgpt-api/tests/integration/fixtures/k8s_mock_fixtures.py`
@@ -1347,6 +1518,7 @@ Same pattern: verify session_state reaches the toolset (059, 060) and flows to i
 | IT-HAPI-056-005 | Given K8s API returns RBAC 403 for PDB list, When analyze_incident completes, Then `failedDetections` includes `pdbProtected` | BR-SP-103 | P1 |
 | IT-HAPI-056-006 | Given no K8s resources found, When analyze_incident completes, Then `detected_labels` contains all-false booleans | BR-SP-101 | P2 |
 | IT-HAPI-056-007 | Given labels computed during list_available_actions, When list_workflows/get_workflow called, Then cached labels reused (no recomputation) | ADR-056 | P2 |
+| IT-HAPI-056-008 | Given ArgoCD-managed Deployment, When three-step discovery runs, Then `list_available_actions` result contains `cluster_context.detected_labels.gitOpsManaged=true` | BR-HAPI-017-007 | P1 |
 
 ---
 
@@ -1363,12 +1535,24 @@ Same pattern: verify session_state reaches the toolset (059, 060) and flows to i
 | E2E-HAPI-056-002 | Given a recovery analysis request, When session completes, Then `detected_labels` present in recovery response | ADR-056 | P0 |
 | E2E-HAPI-056-003 | Given Deployment with PDB and HPA in Kind cluster, When incident analysis runs, Then `detected_labels` correctly detects both | BR-SP-101 | P1 |
 
+### E2E Assessment for `cluster_context` (BR-HAPI-017-007)
+
+**Decision**: No dedicated E2E test for `cluster_context` at this time.
+
+**Rationale**:
+1. **Mock LLM limitation**: E2E tests use Mock LLM which doesn't parse tool result content (it counts tool messages). A dedicated E2E test cannot verify the LLM *uses* `cluster_context` for reasoning.
+2. **Observability gap**: `cluster_context` is injected into the `list_available_actions` tool response (an intermediate LLM tool call), not into the final incident/recovery response. The Go E2E harness validates final responses, not intermediate tool payloads.
+3. **Coverage already provided**: IT-HAPI-056-008 validates tool-level integration with realistic label values. UT-HAPI-056-081 through 087 cover all edge cases (presence, absence, failedDetections, note field, step exclusion).
+4. **Existing E2E regression coverage**: E2E-HAPI-056-001/002/003 already exercise the full pipeline including `list_available_actions`. If `cluster_context` injection causes a regression (e.g., malformed JSON), these tests will catch it.
+
+**When to revisit**: If a real LLM E2E harness is added (replacing Mock LLM with deterministic prompt testing), a dedicated E2E test verifying LLM reasoning uses `cluster_context` would provide significant business value.
+
 ---
 
 ## Updated Code Surface by Tier
 
 | Tier | Files | Tests | Coverage | Target |
 |------|-------|-------|----------|--------|
-| Unit | `labels.py`, `k8s_client.py`, `resource_context.py`, `workflow_discovery.py`, `prompt_builder.py` (x2), `llm_config.py`, `incident_models.py`, `recovery_models.py` | 80 | >= 80% | MET |
-| Integration | `test_detected_labels_integration.py` + fixtures | 7 | >= 80% | Active |
+| Unit | `labels.py`, `k8s_client.py`, `resource_context.py`, `workflow_discovery.py`, `prompt_builder.py` (x2), `llm_config.py`, `incident_models.py`, `recovery_models.py` | 87 | >= 80% | MET |
+| Integration | `test_detected_labels_integration.py` + fixtures | 8 | >= 80% | Active |
 | E2E | `detected_labels_e2e_test.go` | 3 | >= 80% | Active |
