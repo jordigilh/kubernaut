@@ -1,0 +1,27 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: kubernaut-netpol-rules
+  namespace: demo-netpol
+  labels:
+    release: prometheus
+spec:
+  groups:
+  - name: kubernaut-netpol
+    rules:
+    - alert: KubernautDeploymentUnavailable
+      expr: |
+        kube_deployment_status_replicas_unavailable{
+          namespace="demo-netpol",
+          deployment="web-frontend"
+        } > 0
+      for: 3m
+      labels:
+        severity: critical
+      annotations:
+        summary: >
+          Deployment {{ $labels.deployment }} has {{ $value }} unavailable replicas
+          in namespace {{ $labels.namespace }}.
+        description: >
+          The web-frontend deployment has unavailable replicas, likely due to
+          health check failures caused by a NetworkPolicy blocking ingress traffic.

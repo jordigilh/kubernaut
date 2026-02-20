@@ -1,0 +1,29 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: kubernaut-cert-failure-rules
+  namespace: demo-cert-failure
+  labels:
+    release: prometheus
+spec:
+  groups:
+  - name: kubernaut-cert-failure
+    rules:
+    - alert: KubernautCertificateNotReady
+      expr: |
+        certmanager_certificate_ready_status{
+          namespace="demo-cert-failure",
+          name="demo-app-cert",
+          condition="True"
+        } == 0
+      for: 2m
+      labels:
+        severity: critical
+      annotations:
+        summary: >
+          Certificate {{ $labels.name }} in namespace {{ $labels.namespace }}
+          is not ready. The ClusterIssuer may be unable to sign certificates.
+        description: >
+          The demo-app-cert Certificate has been in a non-ready state for more
+          than 2 minutes. This typically indicates that the backing CA Secret
+          has been deleted or the ClusterIssuer is misconfigured.
