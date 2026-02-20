@@ -463,6 +463,15 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	_, _ = fmt.Fprintf(writer, "✅ PHASE 8 complete (%s)\n", time.Since(phase8Start).Round(time.Second))
 
 	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 8b: Verify Prometheus cadvisor scrape target is UP
+	// ═══════════════════════════════════════════════════════════════════════
+	_, _ = fmt.Fprintln(writer, "\n⏳ PHASE 8b: Verifying Prometheus cadvisor scrape target...")
+	promURL := fmt.Sprintf("http://127.0.0.1:%d", PrometheusHostPort)
+	if err := WaitForPrometheusCadvisorTarget(promURL, 60*time.Second, writer); err != nil {
+		return builtImages, fmt.Errorf("PHASE 8b failed: %w", err)
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════
 	// DONE
 	// ═══════════════════════════════════════════════════════════════════════
 	totalDuration := time.Since(startTime).Round(time.Second)
