@@ -42,6 +42,7 @@ metadata:
   namespace: demo-slo
   labels:
     app: blackbox-exporter
+    kubernaut.ai/managed: "true"
 spec:
   selector:
     app: blackbox-exporter

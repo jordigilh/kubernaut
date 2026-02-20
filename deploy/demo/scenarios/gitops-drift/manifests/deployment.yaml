@@ -60,6 +60,9 @@ kind: Service
 metadata:
   name: web-frontend
   namespace: demo-gitops
+  labels:
+    app: web-frontend
+    kubernaut.ai/managed: "true"
 spec:
   selector:
     app: web-frontend

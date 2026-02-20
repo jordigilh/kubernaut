@@ -48,6 +48,7 @@ metadata:
   namespace: demo-hpa
   labels:
     app: api-frontend
+    kubernaut.ai/managed: "true"
 spec:
   selector:
     app: api-frontend

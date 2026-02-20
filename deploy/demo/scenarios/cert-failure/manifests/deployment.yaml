@@ -45,6 +45,7 @@ metadata:
   namespace: demo-cert-failure
   labels:
     app: demo-app
+    kubernaut.ai/managed: "true"
 spec:
   selector:
     app: demo-app
