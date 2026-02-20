@@ -417,6 +417,47 @@ var _ = Describe("BR-GATEWAY-004: RemediationRequest CRD Creation Business Outco
 		})
 	})
 
+	Context("Issue #96: ProviderData and OriginalPayload are plain JSON strings (no base64)", func() {
+		It("stores ProviderData as parseable JSON, not base64-encoded bytes", func() {
+			rawPayload := json.RawMessage(`{"alerts":[{"status":"firing","labels":{"alertname":"HighMemory"}}]}`)
+			signal := &types.NormalizedSignal{
+				AlertName:    "HighMemory",
+				Fingerprint:  "issue96-fingerprint-001",
+				Severity:     "warning",
+				SourceType:   "prometheus-alert",
+				Source:       "alertmanager",
+				Namespace:    testNamespace,
+				ReceivedTime: time.Now(),
+				RawPayload:   rawPayload,
+				Labels: map[string]string{
+					"alertname": "HighMemory",
+					"namespace": testNamespace,
+				},
+				Resource: types.ResourceIdentifier{
+					Kind:      "Pod",
+					Name:      "app-pod-1",
+					Namespace: testNamespace,
+				},
+			}
+
+			rr, err := crdCreator.CreateRemediationRequest(ctx, signal)
+
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(rr.Spec.ProviderData).NotTo(BeEmpty())
+			var providerMap map[string]interface{}
+			Expect(json.Unmarshal([]byte(rr.Spec.ProviderData), &providerMap)).To(Succeed(),
+				"ProviderData must be parseable JSON, not base64-encoded bytes")
+
+			Expect(rr.Spec.OriginalPayload).NotTo(BeEmpty())
+			var payloadMap map[string]interface{}
+			Expect(json.Unmarshal([]byte(rr.Spec.OriginalPayload), &payloadMap)).To(Succeed(),
+				"OriginalPayload must be parseable JSON, not base64-encoded bytes")
+			Expect(payloadMap).To(HaveKey("alerts"),
+				"OriginalPayload must preserve the original alert structure")
+		})
+	})
+
 })
 
 // ============================================================================
@@ -799,4 +840,5 @@ var _ = Describe("BR-GATEWAY-019: CRDCreator Safe Defaults", func() {
 			})
 		})
 	})
+
 })

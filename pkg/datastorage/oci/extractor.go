@@ -105,6 +105,13 @@ func (e *SchemaExtractor) ExtractFromImage(ctx context.Context, imageRef string)
 	}, nil
 }
 
+// ValidateBundleExists checks that the execution.bundle image reference exists in the registry.
+// Called after schema extraction to provide early feedback on typos or missing images
+// rather than failing at workflow execution time.
+func (e *SchemaExtractor) ValidateBundleExists(ctx context.Context, bundleRef string) error {
+	return e.puller.Exists(ctx, bundleRef)
+}
+
 // findFileInImage searches all layers of an OCI image for the given file path.
 // Returns the file content as a string, or an error if not found.
 func findFileInImage(img v1.Image, filePath string) (string, error) {

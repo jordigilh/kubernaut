@@ -126,6 +126,21 @@ func (h *Handler) HandleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Step 5c: Validate execution bundle image exists in the registry.
+	// Early feedback on typos or missing images — better to fail at registration
+	// than to discover the image is unpullable at workflow execution time.
+	if workflow.ExecutionBundle != nil && *workflow.ExecutionBundle != "" {
+		if err := h.schemaExtractor.ValidateBundleExists(r.Context(), *workflow.ExecutionBundle); err != nil {
+			h.logger.Error(err, "Execution bundle image not found in registry",
+				"execution_bundle", *workflow.ExecutionBundle,
+				"schema_image", req.SchemaImage,
+			)
+			response.WriteRFC7807Error(w, http.StatusBadRequest, "bundle-not-found", "Execution Bundle Not Found",
+				fmt.Sprintf("execution.bundle image not found: %v", err), h.logger)
+			return
+		}
+	}
+
 	// Step 6: Create workflow in repository
 	if h.workflowRepo != nil {
 		if err := h.workflowRepo.Create(r.Context(), workflow); err != nil {
