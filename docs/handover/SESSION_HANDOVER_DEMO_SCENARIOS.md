@@ -2,7 +2,7 @@
 
 **Date**: 2026-02-20 (updated)  
 **Branch**: `feat/effectiveness-monitor-level1-v1.0`  
-**Status**: 11 of 11 scenarios implemented. Workflow OCI images have real SHA256 digests. None end-to-end tested yet.  
+**Status**: 17 scenarios implemented (11 original + 6 new label/CRD scenarios). Workflow OCI images have real SHA256 digests. None end-to-end tested yet.  
 **Parent GitHub Issue**: #114 (Demo Scenarios umbrella)
 
 ---
@@ -215,6 +215,46 @@ Per-scenario `kind-config.yaml` files are symlinks to shared configs at the `sce
 
 ---
 
+## 4b. New Label Coverage & CRD/Operator Scenarios (6 of 17)
+
+These 6 scenarios ensure every detected label (DD-HAPI-018) has demo coverage, plus introduce CRD/operator remediation via cert-manager.
+
+| # | Directory | Issue | Action Type | Signal | Detected Labels | Kind Config | Key Details |
+|---|-----------|-------|-------------|--------|-----------------|-------------|-------------|
+| #133 | `cert-failure/` | #133 | `FixCertificate` | CertificateNotReady | (none -- plain operator) | singlenode | cert-manager Certificate NotReady after CA Secret deleted. `inject-broken-issuer.sh` deletes CA Secret. Workflow regenerates CA. |
+| #134 | `cert-failure-gitops/` | #134 | `GitRevertCommit` | CertificateNotReady | `gitOpsTool: "*"` | singlenode | GitOps variant of #133. ArgoCD manages Certificate/Issuer via Gitea. `run.sh` pushes broken ClusterIssuer via git. Workflow does git revert. |
+| #135 | `crashloop-helm/` | #135 | `HelmRollback` | CrashLoopBackOff | `helmManaged: "true"` | singlenode | Helm variant of #120. Workload deployed via Helm chart. `inject-bad-config.sh` runs `helm upgrade` with bad values. Workflow does `helm rollback`. |
+| #136 | `mesh-routing-failure/` | #136 | `FixAuthorizationPolicy` | HighErrorRate | `serviceMesh: "*"` | singlenode | Linkerd-meshed workload blocked by AuthorizationPolicy. `inject-deny-policy.sh` applies deny-all Server+AuthorizationPolicy. Workflow removes policy. |
+| #137 | `statefulset-pvc-failure/` | #137 | `FixStatefulSetPVC` | StatefulSetReplicasMismatch | `stateful: "true"` | singlenode | 3-replica StatefulSet with PVC deleted. `inject-pvc-issue.sh` deletes pod+PVC+PV. Workflow recreates PVC + restarts pod. |
+| #138 | `network-policy-block/` | #138 | `FixNetworkPolicy` | DeploymentUnavailable | `networkIsolated: "true"` | singlenode | Deny-all NetworkPolicy blocks health checks. `inject-deny-all-netpol.sh` applies deny-all ingress. Workflow removes offending policy. |
+
+5 new `actionType` values are seeded via `migrations/029_new_demo_action_types.sql`: `FixCertificate`, `HelmRollback`, `FixAuthorizationPolicy`, `FixStatefulSetPVC`, `FixNetworkPolicy`.
+
+### Detected Label Coverage Matrix
+
+| Detected Label | Detection Source (DD-HAPI-018) | Demo Scenario(s) |
+|----------------|-------------------------------|-------------------|
+| `gitOpsManaged` / `gitOpsTool` | ArgoCD/Flux annotations | `gitops-drift` (#125), `cert-failure-gitops` (#134) |
+| `pdbProtected` | PDB selector match | `pdb-deadlock` (#124) |
+| `hpaEnabled` | HPA scaleTargetRef match | `hpa-maxed` (#123) |
+| `helmManaged` | `app.kubernetes.io/managed-by: Helm` label | `crashloop-helm` (#135) |
+| `serviceMesh` | Linkerd/Istio pod annotations | `mesh-routing-failure` (#136) |
+| `stateful` | StatefulSet in owner chain | `statefulset-pvc-failure` (#137) |
+| `networkIsolated` | NetworkPolicy in namespace | `network-policy-block` (#138) |
+
+### External Dependencies (New Scenarios)
+
+| Scenario | External Dep | Install Method | RAM Footprint |
+|----------|-------------|----------------|---------------|
+| #133, #134 | cert-manager | `kubectl apply -f cert-manager.yaml` (auto in run.sh) | ~100MB |
+| #134 | Gitea + ArgoCD | Shared scripts (`../gitops/scripts/`) | ~1.5GB |
+| #135 | Helm 3 | Pre-installed on host | 0 (CLI only) |
+| #136 | Linkerd | `linkerd install` (auto in run.sh) | ~200MB |
+| #137 | local-path provisioner | Built into Kind | 0 |
+| #138 | kindnet CNI | Built into Kind | 0 |
+
+---
+
 ## 5. Shared Infrastructure & Tooling
 
 ### 5.1 Kind Cluster Config
@@ -222,10 +262,13 @@ Per-scenario `kind-config.yaml` files are symlinks to shared configs at the `sce
 
 Each scenario directory has a `kind-config.yaml` symlink pointing to the appropriate shared config. Port mappings expose Gateway (30080), DataStorage (30081), Prometheus (9190), AlertManager (9193), Grafana (3000). Multinode config adds a worker node labeled `kubernaut.ai/workload-node=true`.
 
-### 5.2 Database Migration
-**File**: `migrations/026_demo_action_types.sql`
+### 5.2 Database Migrations
+**Files**: `migrations/026_demo_action_types.sql` and `migrations/029_new_demo_action_types.sql`
 
-Adds 9 `actionType` taxonomy values to `action_type_taxonomy` table: `GitRevertCommit`, `ProvisionNode`, `GracefulRestart`, `CleanupPVC`, `RemoveTaint`, `PatchHPA`, `RelaxPDB`, `ProactiveRollback`, `CordonDrainNode`. Uses `ON CONFLICT DO NOTHING` for idempotency.
+- **026**: 9 original action types: `GitRevertCommit`, `ProvisionNode`, `GracefulRestart`, `CleanupPVC`, `RemoveTaint`, `PatchHPA`, `RelaxPDB`, `ProactiveRollback`, `CordonDrainNode`
+- **029**: 5 new action types: `FixCertificate`, `HelmRollback`, `FixAuthorizationPolicy`, `FixStatefulSetPVC`, `FixNetworkPolicy`
+
+Both use `ON CONFLICT DO NOTHING` for idempotency.
 
 ### 5.3 Build Script
 **File**: `deploy/demo/scripts/build-demo-workflows.sh`
@@ -254,6 +297,12 @@ The script validates that each scenario has a `Dockerfile` and `workflow-schema.
 | `pending-taint` | `remove-taint-job:v1.0.0` |
 | `slo-burn` | `proactive-rollback-job:v1.0.0` |
 | `stuck-rollout` | `rollback-deployment-job:v1.0.0` |
+| `cert-failure` | `fix-certificate-job:v1.0.0` |
+| `cert-failure-gitops` | `fix-certificate-gitops-job:v1.0.0` |
+| `crashloop-helm` | `helm-rollback-job:v1.0.0` |
+| `mesh-routing-failure` | `fix-authz-policy-job:v1.0.0` |
+| `statefulset-pvc-failure` | `fix-statefulset-pvc-job:v1.0.0` |
+| `network-policy-block` | `fix-network-policy-job:v1.0.0` |
 
 ### 5.4 Seed Script
 **File**: `deploy/demo/scripts/seed-workflows.sh`
@@ -265,7 +314,7 @@ Registers workflow OCI images in the DataStorage catalog via REST API. DataStora
 ./deploy/demo/scripts/seed-workflows.sh http://ds:8080    # Custom DataStorage URL
 ```
 
-Registers 5 workflows (2 existing + 3 demo).
+Registers 19 workflows (2 existing + 11 original demo + 6 new label/CRD demo).
 
 ### 5.5 GitOps Setup Scripts
 **Directory**: `deploy/demo/scenarios/gitops/scripts/`
@@ -275,7 +324,7 @@ Registers 5 workflows (2 existing + 3 demo).
 | `setup-gitea.sh` | Installs Gitea (lightweight Git server) via Helm, creates admin user, creates `demo-gitops-repo` with healthy manifests |
 | `setup-argocd.sh` | Installs ArgoCD core via Helm, registers Gitea repo credentials |
 
-These are shared prerequisites for any scenario that uses GitOps (currently only #125).
+These are shared prerequisites for any scenario that uses GitOps (#125, #134).
 
 ---
 
@@ -364,9 +413,15 @@ No scenario has been tested end-to-end yet. Each needs validation:
 
 | Issue | Title | Priority | Status |
 |-------|-------|----------|--------|
-| #114 | Demo Scenarios umbrella | High | All 11 scenarios implemented, pending E2E validation |
+| #114 | Demo Scenarios umbrella | High | All 17 scenarios implemented, pending E2E validation |
 | #131 | ADR-043: Add detectedLabels field spec | Normal | Open |
 | #132 | GitOps causality evidence chain and CRD safety guardrails | Normal | Open |
+| #133 | cert-manager Certificate failure (CRD/operator) | Normal | Implemented |
+| #134 | cert-manager + GitOps (ArgoCD) | Normal | Implemented |
+| #135 | CrashLoopBackOff with Helm-managed workload | Normal | Implemented |
+| #136 | Linkerd AuthorizationPolicy block (mesh) | Normal | Implemented |
+| #137 | StatefulSet PVC failure (stateful) | Normal | Implemented |
+| #138 | NetworkPolicy traffic block (networkIsolated) | Normal | Implemented |
 
 ---
 
@@ -389,6 +444,18 @@ No scenario has been tested end-to-end yet. Each needs validation:
 7. **ServiceAccount for seed script**: The `seed-workflows.sh` script creates a short-lived SA token for `holmesgpt-api-sa`. This SA must exist in `kubernaut-system` namespace, or the script falls back to no-auth mode.
 
 8. **Node-notready cleanup**: Scenario #127 pauses a Kind node via `podman pause`. If the demo is interrupted, the node remains paused. `cleanup.sh` handles `podman unpause` + `kubectl uncordon`, but manual intervention may be needed if cleanup fails.
+
+9. **cert-manager CRD readiness**: cert-manager webhook takes ~10s after deployment to become ready. Scenario #133/#134 run.sh includes a sleep after install. If Certificate creation fails with webhook errors, wait longer.
+
+10. **Linkerd installation**: Scenario #136 requires `linkerd` CLI on the host. Install via `curl --proto '=https' --tlsv1.2 -sSfL https://run.linkerd.io/install | sh`. Linkerd requires ~200MB RAM in Kind.
+
+11. **Helm 3 required**: Scenario #135 requires `helm` CLI on the host. The inject script uses `helm upgrade` and the workflow uses `helm rollback`.
+
+12. **NetworkPolicy CNI support**: Scenario #138 relies on Kind's kindnet CNI supporting NetworkPolicy enforcement. This works with default Kind configuration but may not work with custom CNI configurations.
+
+13. **StatefulSet PVC recreation**: Scenario #137's inject script force-deletes PVC and PV. If the PVC has a `Retain` reclaim policy, the PV may not be cleanly deleted. Kind's local-path provisioner uses `Delete` by default.
+
+14. **cert-manager metrics**: Scenarios #133/#134 require Prometheus to scrape cert-manager metrics (`certmanager_certificate_ready_status`). Ensure cert-manager ServiceMonitor is deployed or Prometheus is configured to scrape the cert-manager namespace.
 
 ---
 
@@ -475,13 +542,39 @@ deploy/demo/
     │   ├── README.md, run.sh, cleanup.sh
     │   ├── manifests/ (namespace, deployment, prometheus-rule)
     │   └── workflow/ (GracefulRestart, graceful-restart-job)
-    └── stuck-rollout/  (#130) ✅ IMPLEMENTED
-        ├── README.md, run.sh, cleanup.sh, inject-bad-image.sh
-        ├── manifests/ (namespace, deployment, prometheus-rule)
-        └── workflow/ (GracefulRestart, rollback-deployment-job)
+    ├── stuck-rollout/  (#130) ✅ IMPLEMENTED
+    │   ├── README.md, run.sh, cleanup.sh, inject-bad-image.sh
+    │   ├── manifests/ (namespace, deployment, prometheus-rule)
+    │   └── workflow/ (GracefulRestart, rollback-deployment-job)
+    ├── cert-failure/  (#133) ✅ NEW -- CRD/operator scenario
+    │   ├── README.md, run.sh, cleanup.sh, inject-broken-issuer.sh
+    │   ├── manifests/ (namespace, clusterissuer, certificate, ca-secret, deployment, prometheus-rule)
+    │   └── workflow/ (FixCertificate, fix-certificate-job) -- includes openssl for CA regeneration
+    ├── cert-failure-gitops/  (#134) ✅ NEW -- CRD + GitOps
+    │   ├── README.md, run.sh, cleanup.sh
+    │   ├── manifests/ (argocd-application, prometheus-rule)
+    │   └── workflow/ (GitRevertCommit, fix-certificate-gitops-job) -- git + kubectl
+    ├── crashloop-helm/  (#135) ✅ NEW -- helmManaged label
+    │   ├── README.md, run.sh, cleanup.sh, inject-bad-config.sh
+    │   ├── chart/ (Chart.yaml, values.yaml, templates/) -- Helm chart for workload
+    │   ├── manifests/ (prometheus-rule)
+    │   └── workflow/ (HelmRollback, helm-rollback-job) -- kubectl + helm
+    ├── mesh-routing-failure/  (#136) ✅ NEW -- serviceMesh label
+    │   ├── README.md, run.sh, cleanup.sh, inject-deny-policy.sh
+    │   ├── manifests/ (namespace, deployment, deny-policy, prometheus-rule)
+    │   └── workflow/ (FixAuthorizationPolicy, fix-authz-policy-job)
+    ├── statefulset-pvc-failure/  (#137) ✅ NEW -- stateful label
+    │   ├── README.md, run.sh, cleanup.sh, inject-pvc-issue.sh
+    │   ├── manifests/ (namespace, statefulset, prometheus-rule)
+    │   └── workflow/ (FixStatefulSetPVC, fix-statefulset-pvc-job)
+    └── network-policy-block/  (#138) ✅ NEW -- networkIsolated label
+        ├── README.md, run.sh, cleanup.sh, inject-deny-all-netpol.sh
+        ├── manifests/ (namespace, deployment, networkpolicy-allow, deny-all-netpol, prometheus-rule)
+        └── workflow/ (FixNetworkPolicy, fix-network-policy-job)
 
 migrations/
-└── 026_demo_action_types.sql                     # 9 action types (all scenarios)
+├── 026_demo_action_types.sql                     # 9 original action types
+└── 029_new_demo_action_types.sql                 # 5 new action types (#133-#138)
 ```
 
 ---
