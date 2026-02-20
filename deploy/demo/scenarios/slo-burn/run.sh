@@ -13,6 +13,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NAMESPACE="demo-slo"
 
+# shellcheck source=../../scripts/kind-helper.sh
+source "${SCRIPT_DIR}/../../scripts/kind-helper.sh"
+ensure_kind_cluster "${SCRIPT_DIR}/kind-config.yaml" "${1:-}"
+
 echo "============================================="
 echo " SLO Error Budget Burn Demo (#128)"
 echo "============================================="

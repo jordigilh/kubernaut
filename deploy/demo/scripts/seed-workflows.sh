@@ -77,6 +77,54 @@ register_workflow '{
   "container_image": "quay.io/kubernaut-cicd/test-workflows/proactive-rollback-job:v1.0.0"
 }' "proactive-rollback-job"
 
+# Workflow 6: Graceful Restart (#129 -- Predictive memory exhaustion)
+# actionType: GracefulRestart
+register_workflow '{
+  "container_image": "quay.io/kubernaut-cicd/test-workflows/graceful-restart-job:v1.0.0"
+}' "graceful-restart-job"
+
+# Workflow 7: CrashLoop Rollback (#120 -- CrashLoopBackOff remediation)
+# actionType: GracefulRestart
+register_workflow '{
+  "container_image": "quay.io/kubernaut-cicd/test-workflows/crashloop-rollback-job:v1.0.0"
+}' "crashloop-rollback-job"
+
+# Workflow 8: Patch HPA (#123 -- HPA maxed out)
+# actionType: PatchHPA | detectedLabels: hpaEnabled: "true"
+register_workflow '{
+  "container_image": "quay.io/kubernaut-cicd/test-workflows/patch-hpa-job:v1.0.0"
+}' "patch-hpa-job"
+
+# Workflow 9: Relax PDB (#124 -- PDB deadlock)
+# actionType: RelaxPDB | detectedLabels: pdbProtected: "true"
+register_workflow '{
+  "container_image": "quay.io/kubernaut-cicd/test-workflows/relax-pdb-job:v1.0.0"
+}' "relax-pdb-job"
+
+# Workflow 10: Remove Taint (#122 -- Pending pods due to node taint)
+# actionType: RemoveTaint
+register_workflow '{
+  "container_image": "quay.io/kubernaut-cicd/test-workflows/remove-taint-job:v1.0.0"
+}' "remove-taint-job"
+
+# Workflow 11: Cleanup PVC (#121 -- Orphaned PVC disk pressure)
+# actionType: CleanupPVC
+register_workflow '{
+  "container_image": "quay.io/kubernaut-cicd/test-workflows/cleanup-pvc-job:v1.0.0"
+}' "cleanup-pvc-job"
+
+# Workflow 12: Cordon + Drain (#127 -- Node NotReady)
+# actionType: CordonDrainNode
+register_workflow '{
+  "container_image": "quay.io/kubernaut-cicd/test-workflows/cordon-drain-job:v1.0.0"
+}' "cordon-drain-job"
+
+# Workflow 13: Rollback Deployment (#130 -- Stuck rollout)
+# actionType: GracefulRestart
+register_workflow '{
+  "container_image": "quay.io/kubernaut-cicd/test-workflows/rollback-deployment-job:v1.0.0"
+}' "rollback-deployment-job"
+
 echo ""
-echo "==> Workflow seeding complete (5 workflows)"
+echo "==> Workflow seeding complete (13 workflows)"
 echo "==> Verify: curl -s ${DATASTORAGE_URL}/api/v1/workflows | jq '.'"

@@ -18,6 +18,14 @@
 #   quay.io/kubernaut-cicd/test-workflows/git-revert-job:v1.0.0          (#125)
 #   quay.io/kubernaut-cicd/test-workflows/provision-node-job:v1.0.0      (#126)
 #   quay.io/kubernaut-cicd/test-workflows/proactive-rollback-job:v1.0.0  (#128)
+#   quay.io/kubernaut-cicd/test-workflows/graceful-restart-job:v1.0.0    (#129)
+#   quay.io/kubernaut-cicd/test-workflows/crashloop-rollback-job:v1.0.0 (#120)
+#   quay.io/kubernaut-cicd/test-workflows/patch-hpa-job:v1.0.0         (#123)
+#   quay.io/kubernaut-cicd/test-workflows/relax-pdb-job:v1.0.0        (#124)
+#   quay.io/kubernaut-cicd/test-workflows/remove-taint-job:v1.0.0     (#122)
+#   quay.io/kubernaut-cicd/test-workflows/cleanup-pvc-job:v1.0.0      (#121)
+#   quay.io/kubernaut-cicd/test-workflows/cordon-drain-job:v1.0.0     (#127)
+#   quay.io/kubernaut-cicd/test-workflows/rollback-deployment-job:v1.0.0 (#130)
 
 set -euo pipefail
 
@@ -75,6 +83,14 @@ WORKFLOWS=(
     "gitops-drift:git-revert-job"
     "autoscale:provision-node-job"
     "slo-burn:proactive-rollback-job"
+    "memory-leak:graceful-restart-job"
+    "crashloop:crashloop-rollback-job"
+    "hpa-maxed:patch-hpa-job"
+    "pdb-deadlock:relax-pdb-job"
+    "pending-taint:remove-taint-job"
+    "disk-pressure:cleanup-pvc-job"
+    "node-notready:cordon-drain-job"
+    "stuck-rollout:rollback-deployment-job"
 )
 
 build_count=0
