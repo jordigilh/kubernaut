@@ -233,7 +233,7 @@ Edit `.coverage-patterns.yaml` to adjust which packages are unit-testable vs int
 
 ## 📚 References
 
-- **Coverage Analysis Report**: `docs/testing/COVERAGE_ANALYSIS_REPORT.md`
+- **Testing Coverage Methodology**: `docs/testing/TESTING_COVERAGE_METHODOLOGY.md`
 - **Refactoring Analysis**: `docs/development/MAKEFILE_REFACTORING_ANALYSIS.md`
 - **Testing Strategy**: `.cursor/rules/03-testing-strategy.mdc`
 - **Config File**: `.coverage-patterns.yaml`
