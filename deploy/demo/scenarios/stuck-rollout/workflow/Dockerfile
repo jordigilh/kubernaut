@@ -1,3 +1,5 @@
+# Rollback Deployment - Runnable Job Container (BR-WE-014)
+# Scenario: #130 -- Stuck rollout from bad image -> rollback
 FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
 
 ARG TARGETARCH

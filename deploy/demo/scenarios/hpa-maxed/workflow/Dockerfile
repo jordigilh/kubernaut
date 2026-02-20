@@ -1,3 +1,5 @@
+# HPA Patch - Runnable Job Container (BR-WE-014)
+# Scenario: #123 -- HPA at ceiling -> raise maxReplicas
 FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
 
 ARG TARGETARCH
