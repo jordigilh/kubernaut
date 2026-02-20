@@ -1,0 +1,29 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: kubernaut-hpa-maxed-rules
+  namespace: demo-hpa
+  labels:
+    release: prometheus
+spec:
+  groups:
+  - name: kubernaut-hpa-maxed
+    rules:
+    # Detect HPA at maxReplicas while still under CPU pressure
+    - alert: KubernautHPAMaxedOut
+      expr: |
+        kube_horizontalpodautoscaler_status_current_replicas{namespace="demo-hpa", horizontalpodautoscaler="api-frontend"}
+        ==
+        kube_horizontalpodautoscaler_spec_max_replicas{namespace="demo-hpa", horizontalpodautoscaler="api-frontend"}
+      for: 2m
+      labels:
+        severity: warning
+      annotations:
+        summary: >
+          HPA {{ $labels.horizontalpodautoscaler }} in namespace {{ $labels.namespace }}
+          has reached its maxReplicas ceiling and cannot scale further.
+        description: >
+          The api-frontend HPA is at its maximum replica count (3) but the deployment
+          is still under high CPU pressure. The autoscaler cannot add more pods to
+          handle the load. Consider temporarily increasing maxReplicas to allow the
+          HPA to absorb the traffic spike.

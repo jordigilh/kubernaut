@@ -1,0 +1,27 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: kubernaut-pending-taint-rules
+  namespace: demo-taint
+  labels:
+    release: prometheus
+spec:
+  groups:
+  - name: kubernaut-pending-taint
+    rules:
+    # Detect pods stuck in Pending state for more than 3 minutes
+    - alert: KubernautPodsPendingTaint
+      expr: |
+        kube_pod_status_phase{namespace="demo-taint", phase="Pending"} == 1
+      for: 3m
+      labels:
+        severity: warning
+      annotations:
+        summary: >
+          Pod {{ $labels.pod }} in namespace {{ $labels.namespace }} has been
+          in Pending state for more than 3 minutes.
+        description: >
+          One or more pods in the batch-processor deployment are stuck in Pending
+          state, likely due to a node taint preventing scheduling. The pods have
+          a nodeSelector for kubernaut.ai/workload-node=true but the matching
+          node has a NoSchedule taint that blocks scheduling.
