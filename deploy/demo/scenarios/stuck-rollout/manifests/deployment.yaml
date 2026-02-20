@@ -54,6 +54,7 @@ metadata:
   namespace: demo-rollout
   labels:
     app: checkout-api
+    kubernaut.ai/managed: "true"
 spec:
   selector:
     app: checkout-api

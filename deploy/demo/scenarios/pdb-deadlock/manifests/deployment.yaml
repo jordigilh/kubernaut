@@ -48,6 +48,7 @@ metadata:
   namespace: demo-pdb
   labels:
     app: payment-service
+    kubernaut.ai/managed: "true"
 spec:
   selector:
     app: payment-service

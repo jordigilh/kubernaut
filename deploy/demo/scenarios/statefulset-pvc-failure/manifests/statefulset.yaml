@@ -5,6 +5,7 @@ metadata:
   namespace: demo-statefulset
   labels:
     app: kv-store
+    kubernaut.ai/managed: "true"
 spec:
   clusterIP: None
   selector:

@@ -55,6 +55,7 @@ metadata:
   namespace: demo-slo
   labels:
     app: api-gateway
+    kubernaut.ai/managed: "true"
 spec:
   selector:
     app: api-gateway

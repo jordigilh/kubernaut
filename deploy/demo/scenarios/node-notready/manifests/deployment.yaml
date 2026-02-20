@@ -53,6 +53,7 @@ metadata:
   namespace: demo-node
   labels:
     app: web-service
+    kubernaut.ai/managed: "true"
 spec:
   selector:
     app: web-service

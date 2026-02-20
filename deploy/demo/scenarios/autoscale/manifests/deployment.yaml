@@ -50,6 +50,7 @@ metadata:
   namespace: demo-autoscale
   labels:
     app: web-cluster
+    kubernaut.ai/managed: "true"
 spec:
   selector:
     app: web-cluster

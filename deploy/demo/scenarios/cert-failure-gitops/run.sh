@@ -170,6 +170,7 @@ metadata:
   namespace: demo-cert-gitops
   labels:
     app: demo-app
+    kubernaut.ai/managed: "true"
 spec:
   selector:
     app: demo-app

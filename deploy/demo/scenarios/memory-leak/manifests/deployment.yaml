@@ -69,6 +69,7 @@ metadata:
   namespace: demo-memory-leak
   labels:
     app: leaky-app
+    kubernaut.ai/managed: "true"
 spec:
   selector:
     app: leaky-app

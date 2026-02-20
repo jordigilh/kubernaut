@@ -59,6 +59,7 @@ metadata:
   labels:
     {{- include "demo-crashloop-helm.labels" . | nindent 4 }}
     app: worker
+    kubernaut.ai/managed: "true"
 spec:
   selector:
     app: worker
