@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 
@@ -300,6 +301,31 @@ var _ = Describe("UT-DS/WF-017: Execution Bundle Validation", func() {
 				"RFC 7807 type must be validation-error")
 			Expect(problem["detail"]).To(ContainSubstring("execution"),
 				"RFC 7807 detail must reference the missing section")
+		})
+
+		It("UT-WF-017-013: should reject OCI registration when execution.bundle image does not exist in registry", func() {
+			puller := oci.NewMockImagePullerWithFailingExists(
+				validDigestOnlyBundleSchemaYAML,
+				fmt.Errorf("MANIFEST_UNKNOWN: manifest unknown"),
+			)
+			handler := newHandlerWithMockExtractor(puller)
+			req := makeCreateRequest("quay.io/kubernaut/schemas/exec-bundle-test:v1.0.0")
+			rr := httptest.NewRecorder()
+
+			handler.HandleCreateWorkflow(rr, req)
+
+			Expect(rr.Code).To(Equal(http.StatusBadRequest),
+				"non-existent execution.bundle must be rejected with 400")
+			Expect(rr.Header().Get("Content-Type")).To(ContainSubstring("application/problem+json"),
+				"error response must use RFC 7807 content type")
+
+			var problem map[string]interface{}
+			Expect(json.Unmarshal(rr.Body.Bytes(), &problem)).To(Succeed(),
+				"response body must be valid RFC 7807 JSON")
+			Expect(problem["type"]).To(Equal("https://kubernaut.ai/problems/bundle-not-found"),
+				"RFC 7807 type must be bundle-not-found (distinct from validation-error)")
+			Expect(problem["detail"]).To(ContainSubstring("execution.bundle"),
+				"RFC 7807 detail must reference the bundle field")
 		})
 	})
 })
