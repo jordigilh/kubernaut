@@ -6,7 +6,7 @@ ARG TARGETARCH
 ARG KUBECTL_VERSION=v1.31.4
 ARG HELM_VERSION=v3.17.1
 
-RUN microdnf install -y jq && microdnf clean all
+RUN microdnf install -y jq tar gzip && microdnf clean all
 
 RUN curl -fsSL -o /usr/local/bin/kubectl \
     "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${TARGETARCH}/kubectl" && \
