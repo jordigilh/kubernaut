@@ -153,7 +153,7 @@ SignalProcessing                  AIAnalysis              HAPI
 
 1. **Impact vs. target separation.** Business classification (SP) describes signal impact and is stable across RCA outcomes. DetectedLabels (HAPI) describe the remediation target and must be computed post-RCA for the correct resource.
 
-2. **DetectedLabels are HAPI-computed, read-only to the LLM.** Labels are computed by HAPI (on-demand during `list_available_actions`) and stored in session state. They are **not passed as tool parameters** (the LLM cannot set or override them). HAPI transparently injects them into workflow discovery queries as filter criteria. **v1.3**: Labels are also surfaced to the LLM as a read-only `cluster_context` section in the `list_available_actions` tool response, giving the LLM explicit infrastructure context (e.g., "this is ArgoCD-managed") for informed action type selection. The LLM's tool interface remains simple -- no label parameters, no risk of label hallucination -- but the LLM can now reason about detected infrastructure characteristics.
+2. **DetectedLabels are HAPI-computed, read-only to the LLM.** Labels are computed by HAPI during `get_resource_context` (post-RCA) and stored in session state. They are **not passed as tool parameters** (the LLM cannot set or override them). HAPI transparently injects them into workflow discovery queries as filter criteria. **v1.3**: Labels are also surfaced to the LLM as a read-only `cluster_context` section in the `list_available_actions` tool response, giving the LLM explicit infrastructure context (e.g., "this is ArgoCD-managed") for informed action type selection. The LLM's tool interface remains simple -- no label parameters, no risk of label hallucination -- but the LLM can now reason about detected infrastructure characteristics.
 
 3. **Workflow discovery `list_workflows` drops the `detected_labels` parameter.** The LLM calls `list_workflows(action_type)` and HAPI internally applies the stored labels as filter criteria. This is completely transparent from the LLM's perspective.
 
@@ -280,7 +280,7 @@ After the LLM identifies the root cause, trigger a second SP enrichment pass for
 ## Related Decisions
 
 - **[ADR-055](ADR-055-llm-driven-context-enrichment.md)**: LLM-Driven Context Enrichment (Post-RCA) -- prerequisite; established `get_resource_context` tool and post-RCA pattern
-- **[DD-HAPI-018](DD-HAPI-018-detected-labels-detection-specification.md)**: DetectedLabels Detection Specification -- cross-language contract for the 7 detection characteristics, including conformance test vectors. Ensures SP (Go) and HAPI (Python) implementations produce identical results.
+- **[DD-HAPI-018 v1.1](DD-HAPI-018-detected-labels-detection-specification.md)**: DetectedLabels Detection Specification -- cross-language contract for the 7 detection characteristics, including conformance test vectors. Ensures SP (Go) and HAPI (Python) implementations produce identical results. v1.1 adds `cluster_context` consumer guidance.
 - **[DD-HAPI-017 v1.3](DD-HAPI-017-three-step-workflow-discovery-integration.md)**: Three-Step Workflow Discovery Integration -- v1.2 adds tool-level flow enforcement requiring `get_resource_context` before workflow discovery, and removes `detected_labels` from LLM-facing tool parameters. v1.3 adds `cluster_context` to `list_available_actions` response (BR-HAPI-017-007).
 - **DD-WORKFLOW-001 v1.7/v2.1/v2.2**: DetectedLabels schema and validation framework
 - **DD-CONTRACT-002**: Enrichment results schema -- will be updated to remove propagated fields

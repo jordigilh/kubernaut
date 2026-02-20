@@ -354,7 +354,7 @@ When `detected_labels` are available in session state, the response includes:
       "serviceMesh": "",
       "istioEnabled": false
     },
-    "note": "These labels describe the infrastructure characteristics of the resource under analysis. Use them to inform your action type selection."
+    "note": "These infrastructure characteristics were auto-detected for the remediation target resource. Consider them when selecting an action type."
   }
 }
 ```
