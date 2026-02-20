@@ -15,20 +15,21 @@ limitations under the License.
 """
 
 """
-Cycle 2.4: session_state and k8s_client wiring in registration code
+Cycle 2.4: session_state wiring in registration code
 
-ADR-056 SoC Refactoring: register_resource_context_toolset no longer
-accepts session_state (label detection moved to workflow discovery).
-register_workflow_discovery_toolset now also accepts k8s_client +
-resource identity for on-demand label detection.
+ADR-056 v1.4: register_resource_context_toolset accepts session_state so
+that get_resource_context can detect labels and store them in session_state.
+register_workflow_discovery_toolset also accepts session_state so discovery
+tools can read labels written by resource_context (no k8s_client needed --
+labels come from session_state exclusively).
 
-Authority: ADR-056, DD-HAPI-017 Section 8
+Authority: ADR-056 v1.4, DD-HAPI-017 Section 8
 Business Requirement: BR-HAPI-102
 
 Test IDs:
   UT-HAPI-056-059: register_workflow_discovery_toolset passes session_state
-  UT-HAPI-056-060: register_resource_context_toolset no longer accepts session_state
-  UT-HAPI-056-061: register_workflow_discovery_toolset passes k8s_client + resource identity
+  UT-HAPI-056-060: register_resource_context_toolset accepts session_state
+  UT-HAPI-056-061: Both registrations share the same session_state dict instance
   UT-HAPI-056-062: session_state flows to individual tools in discovery toolset
 """
 
@@ -38,8 +39,8 @@ from unittest.mock import patch, MagicMock, AsyncMock, ANY
 
 class TestSessionStateWiring:
     """
-    UT-HAPI-056-059 through UT-HAPI-056-062: Verify session_state and k8s_client
-    wiring from registration functions through to Toolset constructors.
+    UT-HAPI-056-059 through UT-HAPI-056-062: Verify session_state wiring
+    from registration functions through to Toolset constructors.
     """
 
     @patch("src.clients.datastorage_auth_session.create_workflow_discovery_session")
@@ -69,49 +70,54 @@ class TestSessionStateWiring:
         call_kwargs = mock_cls.call_args.kwargs
         assert call_kwargs.get("session_state") is session_state
 
-    def test_ut_hapi_056_060_resource_context_no_session_state(self):
-        """UT-HAPI-056-060: register_resource_context_toolset no longer accepts session_state."""
+    def test_ut_hapi_056_060_resource_context_accepts_session_state(self):
+        """UT-HAPI-056-060: register_resource_context_toolset accepts session_state for label storage."""
         from src.extensions.llm_config import register_resource_context_toolset
         import inspect
 
         sig = inspect.signature(register_resource_context_toolset)
         param_names = set(sig.parameters.keys())
-        assert "session_state" not in param_names
+        assert "session_state" in param_names
 
+    @patch("src.clients.k8s_client.get_k8s_client")
+    @patch("src.toolsets.resource_context.ResourceContextToolset")
     @patch("src.clients.datastorage_auth_session.create_workflow_discovery_session")
     @patch("src.toolsets.workflow_discovery.WorkflowDiscoveryToolset")
-    def test_ut_hapi_056_061_register_discovery_passes_k8s_client(
-        self, mock_cls, mock_session
+    def test_ut_hapi_056_061_both_share_same_session_state(
+        self, mock_discovery_cls, mock_discovery_session, mock_context_cls, mock_k8s
     ):
-        """UT-HAPI-056-061: register_workflow_discovery_toolset passes k8s_client + resource identity."""
-        from src.extensions.llm_config import register_workflow_discovery_toolset
+        """UT-HAPI-056-061: Both registrations share the same session_state dict instance."""
+        from src.extensions.llm_config import (
+            register_resource_context_toolset,
+            register_workflow_discovery_toolset,
+        )
 
-        mock_session.return_value = MagicMock()
-        mock_instance = MagicMock()
-        mock_instance.enabled = True
-        mock_instance.tools = [MagicMock(), MagicMock(), MagicMock()]
-        mock_cls.return_value = mock_instance
+        mock_k8s.return_value = MagicMock()
+        mock_discovery_session.return_value = MagicMock()
+
+        mock_context_instance = MagicMock()
+        mock_context_instance.name = "resource_context"
+        mock_context_instance.tools = [MagicMock()]
+        mock_context_cls.return_value = mock_context_instance
+
+        mock_discovery_instance = MagicMock()
+        mock_discovery_instance.enabled = True
+        mock_discovery_instance.tools = [MagicMock(), MagicMock(), MagicMock()]
+        mock_discovery_cls.return_value = mock_discovery_instance
 
         config = MagicMock()
         config.toolset_manager = MagicMock()
         config.toolset_manager.list_server_toolsets = MagicMock(return_value=[])
 
-        mock_k8s = AsyncMock()
-        register_workflow_discovery_toolset(
-            config,
-            session_state={},
-            severity="critical",
-            component="Pod",
-            k8s_client=mock_k8s,
-            resource_name="api-pod-abc",
-            resource_namespace="production",
-        )
+        session_state = {}
+        register_resource_context_toolset(config, session_state=session_state)
+        register_workflow_discovery_toolset(config, session_state=session_state)
 
-        mock_cls.assert_called_once()
-        call_kwargs = mock_cls.call_args.kwargs
-        assert call_kwargs.get("k8s_client") is mock_k8s
-        assert call_kwargs.get("resource_name") == "api-pod-abc"
-        assert call_kwargs.get("resource_namespace") == "production"
+        context_kwargs = mock_context_cls.call_args.kwargs
+        discovery_kwargs = mock_discovery_cls.call_args.kwargs
+        assert context_kwargs.get("session_state") is session_state
+        assert discovery_kwargs.get("session_state") is session_state
+        assert context_kwargs["session_state"] is discovery_kwargs["session_state"]
 
     @patch("src.clients.datastorage_auth_session.create_workflow_discovery_session")
     def test_ut_hapi_056_062_session_state_flows_to_discovery_tools(self, mock_session):
