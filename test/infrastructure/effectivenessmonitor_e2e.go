@@ -319,6 +319,10 @@ func SetupEMInfrastructure(ctx context.Context, clusterName, kubeconfigPath stri
 		return fmt.Errorf("EM controller not ready: %w", err)
 	}
 
+	if err := WaitForPrometheusCadvisorTarget(promURL, 60*time.Second, writer); err != nil {
+		return fmt.Errorf("Prometheus cadvisor target not UP: %w", err)
+	}
+
 	_, _ = fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "  EM E2E Infrastructure Ready")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")

@@ -933,11 +933,11 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		// ================================================================
 		// AM Step 3: Inject alert into AlertManager and wait for RR
 		// ================================================================
-		// Instead of waiting for Prometheus to scrape cAdvisor metrics and fire
-		// the alert (which is unreliable in K8s 1.34+ due to CRI metrics migration
-		// affecting container_spec_memory_limit_bytes availability), we inject the
-		// MemoryExceedsLimit alert directly into AlertManager via its API.
-		// This still exercises the full AlertManager → Gateway webhook → RR path.
+		// We inject the MemoryExceedsLimit alert directly into AlertManager via
+		// its API rather than waiting for the Prometheus alert rule to fire naturally.
+		// The rule requires `for: 10s` of sustained high memory, adding latency that
+		// makes the test timing unpredictable. Direct injection still exercises the
+		// full AlertManager → Gateway webhook → RR path.
 		By("AM Step 3a: Injecting MemoryExceedsLimit alert into AlertManager")
 		alertManagerURL := fmt.Sprintf("http://localhost:%d", infrastructure.AlertManagerHostPort)
 		injectErr := infrastructure.InjectAlerts(alertManagerURL, []infrastructure.TestAlert{
