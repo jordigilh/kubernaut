@@ -942,9 +942,13 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
         for msg in messages:
             content = str(msg.get("content", ""))
             # Match "Resource: namespace/Kind/name" from prompt_builder.py line 343
-            match = re.search(r"Resource:\s*(\S+)/(\S+)/(\S+)", content)
+            # Use [a-zA-Z0-9._-]+ to only match valid K8s name characters and prevent
+            # capturing trailing \n- from double-encoded JSON or prompt formatting.
+            match = re.search(r"Resource:\s*([a-zA-Z0-9._-]+)/([a-zA-Z0-9._-]+)/([a-zA-Z0-9._-]+)", content)
             if match:
-                namespace, kind, name = match.group(1), match.group(2), match.group(3)
+                namespace = match.group(1).strip()
+                kind = match.group(2).strip()
+                name = match.group(3).strip()
                 logger.info(
                     f"📍 ADR-056: Extracted resource from prompt: "
                     f"{kind}/{name} in {namespace}"
