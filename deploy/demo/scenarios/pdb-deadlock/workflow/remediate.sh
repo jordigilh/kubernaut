@@ -46,5 +46,6 @@ echo "New disruptions allowed: $NEW_ALLOWED"
 if [ "$NEW_ALLOWED" -gt 0 ]; then
   echo "=== SUCCESS: PDB relaxed ($MIN_AVAILABLE -> $NEW_MIN_AVAILABLE), disruptions now allowed: $NEW_ALLOWED ==="
 else
-  echo "WARNING: PDB still shows 0 allowed disruptions after patch -- may need more time to reconcile"
+  echo "ERROR: PDB still shows 0 allowed disruptions after patch"
+  exit 1
 fi

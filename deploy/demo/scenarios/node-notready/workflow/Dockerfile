@@ -1,3 +1,5 @@
+# Cordon + Drain Node - Runnable Job Container (BR-WE-014)
+# Scenario: #127 -- Node NotReady -> cordon and drain
 FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
 
 ARG TARGETARCH

@@ -28,8 +28,17 @@ echo "=== Phase 3: Verify ==="
 REMAINING_TAINTS=$(kubectl get node "$TARGET_NODE" -o jsonpath='{.spec.taints[*].key}')
 echo "Remaining taints: ${REMAINING_TAINTS:-<none>}"
 
-PENDING=$(kubectl get pods --all-namespaces --field-selector=status.phase=Pending \
-  -o name 2>/dev/null | wc -l | tr -d ' ')
-echo "Cluster-wide pending pods: $PENDING"
+if echo "$REMAINING_TAINTS" | grep -q "$TAINT_KEY"; then
+  echo "ERROR: Taint '$TAINT_KEY' still present on $TARGET_NODE after removal attempt"
+  exit 1
+fi
 
-echo "=== SUCCESS: Taint '$TAINT_KEY' removed from $TARGET_NODE, pods should be scheduling ==="
+PENDING=$(kubectl get pods -n "$TARGET_NAMESPACE" --field-selector=status.phase=Pending \
+  -o name 2>/dev/null | wc -l | tr -d ' ')
+echo "Pending pods in $TARGET_NAMESPACE: $PENDING"
+
+if [ "$PENDING" -gt 0 ]; then
+  echo "WARNING: $PENDING pods still Pending -- may need more time to schedule"
+fi
+
+echo "=== SUCCESS: Taint '$TAINT_KEY' removed from $TARGET_NODE ==="

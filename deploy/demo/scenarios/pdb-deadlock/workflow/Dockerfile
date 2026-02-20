@@ -1,3 +1,5 @@
+# Relax PDB - Runnable Job Container (BR-WE-014)
+# Scenario: #124 -- PDB deadlock -> reduce minAvailable
 FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
 
 ARG TARGETARCH

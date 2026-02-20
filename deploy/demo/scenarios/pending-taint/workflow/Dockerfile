@@ -1,3 +1,5 @@
+# Remove Taint - Runnable Job Container (BR-WE-014)
+# Scenario: #122 -- Pending pods from NoSchedule taint -> remove taint
 FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
 
 ARG TARGETARCH

@@ -1,3 +1,5 @@
+# Orphaned PVC Cleanup - Runnable Job Container (BR-WE-014)
+# Scenario: #121 -- Disk pressure -> cleanup orphaned PVCs
 FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
 
 ARG TARGETARCH
