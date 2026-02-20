@@ -668,8 +668,9 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	// Create handlers with REAL HAPI client, metrics, and REAL audit client
 	eventRecorder := k8sManager.GetEventRecorderFor("aianalysis-controller")
 	investigatingHandler := handlers.NewInvestigatingHandler(realHGClient, ctrl.Log.WithName("investigating-handler"), testMetrics, auditClient,
-		handlers.WithRecorder(eventRecorder),  // DD-EVENT-001: Session lifecycle events
-		handlers.WithSessionMode())            // BR-AA-HAPI-064: Async submit/poll/result flow
+		handlers.WithRecorder(eventRecorder),                  // DD-EVENT-001: Session lifecycle events
+		handlers.WithSessionMode(),                            // BR-AA-HAPI-064: Async submit/poll/result flow
+		handlers.WithSessionPollInterval(2*time.Second))       // Fast polling for tests (production default: 15s)
 	analyzingHandler := handlers.NewAnalyzingHandler(realRegoEvaluator, ctrl.Log.WithName("analyzing-handler"), testMetrics, auditClient)
 
 	// Create per-process controller instance and STORE IT (WorkflowExecution pattern)

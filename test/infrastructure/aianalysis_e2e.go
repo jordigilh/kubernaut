@@ -689,7 +689,7 @@ data:
     holmesgpt:
       url: "http://holmesgpt-api:8080"
       timeout: "60s"
-      sessionPollInterval: "15s"
+      sessionPollInterval: "2s"
     datastorage:
       url: "http://data-storage-service:8080"
       timeout: "10s"
