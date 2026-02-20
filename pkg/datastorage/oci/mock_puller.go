@@ -84,6 +84,29 @@ func (m *MockImagePuller) Pull(_ context.Context, ref string) (v1.Image, string,
 	return img, digest.String(), nil
 }
 
+// MockImagePullerWithFailingExists implements ImagePuller where Pull() succeeds
+// (schema extraction works) but Exists() returns an error (bundle image not found).
+// This enables testing the handler's bundle-not-found error path (Step 5c) without
+// failing at the schema extraction stage (Step 4).
+type MockImagePullerWithFailingExists struct {
+	*MockImagePuller
+	existsErr error
+}
+
+// NewMockImagePullerWithFailingExists creates a mock where Pull returns a valid
+// image containing the given schema content, but Exists returns the given error.
+func NewMockImagePullerWithFailingExists(schemaContent string, existsErr error) *MockImagePullerWithFailingExists {
+	return &MockImagePullerWithFailingExists{
+		MockImagePuller: NewMockImagePuller(schemaContent),
+		existsErr:       existsErr,
+	}
+}
+
+// Exists returns the configured error, simulating a missing bundle image.
+func (m *MockImagePullerWithFailingExists) Exists(_ context.Context, _ string) error {
+	return m.existsErr
+}
+
 // FailingMockImagePuller implements ImagePuller and always returns an error.
 type FailingMockImagePuller struct {
 	errMsg string
