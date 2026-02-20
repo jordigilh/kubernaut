@@ -20,7 +20,7 @@ labels:
 
 execution:
   engine: tekton
-  bundle: ghcr.io/kubernaut/workflows/crashloop-config-fix@sha256:a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2
+  bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:18a3bae2340943dad1e350d58c69dc2f35b919c49d17eaec3b9c77990841ef53
 
 parameters:
   - name: NAMESPACE

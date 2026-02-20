@@ -373,6 +373,7 @@ docker-push-%: docker-build-% ## Push service container image
 WORKFLOW_REGISTRY ?= quay.io/kubernaut-cicd/test-workflows
 WORKFLOW_VERSION ?= v1.0.0
 WORKFLOW_FIXTURES_DIR := test/fixtures/workflows
+WORKFLOW_PLACEHOLDER_DIR := test/fixtures/execution-placeholder
 # Platforms to build workflow images for (multi-arch manifest)
 WORKFLOW_PLATFORMS ?= linux/amd64,linux/arm64
 
@@ -391,6 +392,11 @@ build-test-workflows: ## Build all test workflow OCI images (multi-arch: amd64 +
 	@echo "  Version:   $(WORKFLOW_VERSION)"
 	@echo "  Platforms: $(WORKFLOW_PLATFORMS)"
 	@echo ""
+	@# Phase 0: Build placeholder execution image referenced by all Tekton workflow schemas.
+	@# All Tekton workflow-schema.yaml files point their execution.bundle at this image
+	@# so the DataStorage bundle-existence check (crane.Head) passes during registration.
+	@echo "  Building placeholder-execution -> $(WORKFLOW_REGISTRY)/placeholder-execution:$(WORKFLOW_VERSION)"
+	$(call _build_workflow_manifest,$(WORKFLOW_REGISTRY)/placeholder-execution:$(WORKFLOW_VERSION),$(WORKFLOW_PLACEHOLDER_DIR)/Dockerfile,$(WORKFLOW_PLACEHOLDER_DIR)/)
 	@# Phase 1: Build execution images for workflows with per-directory Dockerfiles.
 	@# These contain runnable content (scripts, kubectl, etc.) but NOT workflow-schema.yaml.
 	@# Tagged as :VERSION-exec so they can be referenced by digest in the schema.
@@ -433,6 +439,10 @@ push-test-workflows: ## Push test workflow multi-arch manifests to registry
 	@echo "  Version:   $(WORKFLOW_VERSION)"
 	@echo "  Platforms: $(WORKFLOW_PLATFORMS)"
 	@echo ""
+	@# Push placeholder execution image (referenced by all Tekton workflow schemas)
+	@echo "  Pushing placeholder-execution -> $(WORKFLOW_REGISTRY)/placeholder-execution:$(WORKFLOW_VERSION)"
+	@$(CONTAINER_TOOL) manifest push --all "$(WORKFLOW_REGISTRY)/placeholder-execution:$(WORKFLOW_VERSION)" "docker://$(WORKFLOW_REGISTRY)/placeholder-execution:$(WORKFLOW_VERSION)"
+	@echo "  ✅ Pushed $(WORKFLOW_REGISTRY)/placeholder-execution:$(WORKFLOW_VERSION)"
 	@# Push execution images first (workflows with per-directory Dockerfiles)
 	@for dir in $(WORKFLOW_FIXTURES_DIR)/*/; do \
 		name=$$(basename "$$dir"); \
