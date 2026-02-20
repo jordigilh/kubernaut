@@ -26,6 +26,12 @@
 #   quay.io/kubernaut-cicd/test-workflows/cleanup-pvc-job:v1.0.0      (#121)
 #   quay.io/kubernaut-cicd/test-workflows/cordon-drain-job:v1.0.0     (#127)
 #   quay.io/kubernaut-cicd/test-workflows/rollback-deployment-job:v1.0.0 (#130)
+#   quay.io/kubernaut-cicd/test-workflows/fix-certificate-job:v1.0.0  (#133)
+#   quay.io/kubernaut-cicd/test-workflows/fix-certificate-gitops-job:v1.0.0 (#134)
+#   quay.io/kubernaut-cicd/test-workflows/helm-rollback-job:v1.0.0    (#135)
+#   quay.io/kubernaut-cicd/test-workflows/fix-authz-policy-job:v1.0.0 (#136)
+#   quay.io/kubernaut-cicd/test-workflows/fix-statefulset-pvc-job:v1.0.0 (#137)
+#   quay.io/kubernaut-cicd/test-workflows/fix-network-policy-job:v1.0.0 (#138)
 
 set -euo pipefail
 
@@ -91,6 +97,12 @@ WORKFLOWS=(
     "disk-pressure:cleanup-pvc-job"
     "node-notready:cordon-drain-job"
     "stuck-rollout:rollback-deployment-job"
+    "cert-failure:fix-certificate-job"
+    "cert-failure-gitops:fix-certificate-gitops-job"
+    "crashloop-helm:helm-rollback-job"
+    "mesh-routing-failure:fix-authz-policy-job"
+    "statefulset-pvc-failure:fix-statefulset-pvc-job"
+    "network-policy-block:fix-network-policy-job"
 )
 
 build_count=0
