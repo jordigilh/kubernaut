@@ -112,6 +112,9 @@ sequenceDiagram
     DB-->>DS: Validate action_type exists (FK)
     DS->>DS: Validate mandatory labels (DD-WORKFLOW-001 v2.6)
     DS->>DS: Validate immutability rules (DD-WORKFLOW-012)
+    DS->>DS: Validate execution.bundle has sha256 digest
+    DS->>Reg: HEAD execution.bundle image (crane.Head)
+    Note right of DS: Verifies execution image exists in registry
     DS->>DB: Check duplicate prevention (UNIQUE constraint)
 
     alt Validation passes
@@ -123,6 +126,10 @@ sequenceDiagram
         DS-->>Op: 502 Bad Gateway (image pull failed)
     else Schema not found in image
         DS-->>Op: 422 Unprocessable Entity (missing /workflow-schema.yaml)
+    else execution.bundle digest format invalid
+        DS-->>Op: 400 Bad Request (invalid digest format)
+    else execution.bundle image not found in registry
+        DS-->>Op: 400 Bad Request (execution bundle not found)
     else Validation fails
         DS-->>Op: 400 Bad Request (validation errors)
     end
@@ -144,6 +151,7 @@ DS extracts all workflow metadata from the `/workflow-schema.yaml` inside the im
 - `labels` (severity, component, environment, action_type, etc.)
 - `parameters` (name, type, required, constraints, etc.)
 - `execution.engine` (tekton, job, etc.)
+- `execution.bundle` (OCI image reference with sha256 digest -- the image WE will pull at execution time)
 
 **Why pullspec-only registration?**
 
@@ -176,6 +184,8 @@ After extracting the schema from the image, DS validates the following in order.
 | 6 | `workflow_name` + `version` is unique (UNIQUE constraint) | DD-WORKFLOW-012 | 409 | `duplicate-workflow` |
 | 7 | Description is non-empty | DD-WORKFLOW-012 | 400 | `validation-error` |
 | 8 | At least one parameter defined OR explicit empty list | ADR-043 | 400 | `validation-error` |
+| 9 | `execution.bundle` is present and contains sha256 digest (`tag@sha256:<64hex>` or `@sha256:<64hex>`) | Issue #89 | 400 | `validation-error` |
+| 10 | `execution.bundle` image exists in container registry (HEAD check via `crane.Head`) | Issue #89 | 400 | `bundle-not-found` |
 
 #### RFC 7807 Error Examples
 
@@ -223,6 +233,30 @@ After extracting the schema from the image, DS validates the following in order.
   "title": "Conflict",
   "detail": "Workflow 'scale-conservative' version '1.0.0' already exists (workflow_id: 550e8400-e29b-41d4-a716-446655440000)",
   "status": 409,
+  "instance": "/api/v1/workflows"
+}
+```
+
+**Validation #9 — execution.bundle digest format invalid (400)**:
+
+```json
+{
+  "type": "https://kubernaut.ai/problems/validation-error",
+  "title": "Bad Request",
+  "detail": "execution.bundle: must contain a sha256 digest (e.g., @sha256:<64 hex chars>)",
+  "status": 400,
+  "instance": "/api/v1/workflows"
+}
+```
+
+**Validation #10 — execution.bundle image not found (400)**:
+
+```json
+{
+  "type": "https://kubernaut.ai/problems/bundle-not-found",
+  "title": "Bad Request",
+  "detail": "execution.bundle image not found: HEAD https://quay.io/v2/kubernaut-cicd/test-workflows/crashloop-config-fix-job/manifests/v1.0.0-exec: MANIFEST_UNKNOWN",
+  "status": 400,
   "instance": "/api/v1/workflows"
 }
 ```
@@ -655,16 +689,20 @@ This DD **supersedes**:
 
 - **Category**: WORKFLOW
 - **Priority**: P0 (blocking for V1.0 registration)
-- **Description**: MUST extract `/workflow-schema.yaml` from the OCI image provided during registration and validate that the `action_type` declared in the extracted schema exists in the `action_type_taxonomy` table. The registration payload contains only the OCI image pullspec -- all workflow metadata is extracted from the image. Workflows with unknown action types are rejected at registration time.
+- **Description**: MUST extract `/workflow-schema.yaml` from the OCI image provided during registration and validate that the `action_type` declared in the extracted schema exists in the `action_type_taxonomy` table. Additionally, MUST validate that `execution.bundle` contains a sha256 digest (format: `registry/repo:tag@sha256:<64 hex>` or `registry/repo@sha256:<64 hex>`) and that the referenced image exists in the container registry, providing early feedback on format errors, typos, or missing images rather than deferring failure to workflow execution time. The registration payload contains only the OCI image pullspec -- all workflow metadata is extracted from the image. Workflows with unknown action types, invalid bundle digests, or non-existent bundle images are rejected at registration time.
 - **Acceptance Criteria**:
   - `POST /api/v1/workflows` accepts only `containerImage` (OCI pullspec) in the request body
   - DS pulls the image from the registry and extracts `/workflow-schema.yaml` (per ADR-043)
   - DS records the image's SHA-256 digest for audit trail integrity
   - Registration is rejected if the image is not pullable (502), schema file is missing (422), or schema is invalid (400)
   - `action_type` from extracted schema is validated against `action_type_taxonomy` (FK constraint)
+  - `execution.bundle` is mandatory in the extracted schema; registration is rejected with 400 if missing
+  - `execution.bundle` must contain a sha256 digest in one of two formats: `registry/repo:tag@sha256:<64 hex chars>` (tag+digest) or `registry/repo@sha256:<64 hex chars>` (digest-only); tag-only references are rejected with 400
+  - `execution.bundle` image reference is validated for existence in the container registry via a lightweight HEAD request (`crane.Head`); registration is rejected with 400 `bundle-not-found` if the image does not exist
   - All error responses use RFC 7807 Problem Details format per DD-004 (`Content-Type: application/problem+json`)
   - Error `detail` field clearly indicates the invalid `action_type` and lists valid options
   - Unit tests cover valid images, unpullable images, missing schema, invalid schema, valid/invalid action types
+  - Unit tests cover `execution.bundle` validation: valid references (tag+digest, digest-only), tag-only references (rejected), non-existent bundle images (rejected), truncated digests (rejected), missing bundle field (rejected)
   - Unit tests verify RFC 7807 compliance: `Content-Type` header, required fields (`type`, `title`, `detail`, `status`, `instance`)
 
 ### BR-WORKFLOW-017-002: Disabled Workflow Exclusion from Discovery
