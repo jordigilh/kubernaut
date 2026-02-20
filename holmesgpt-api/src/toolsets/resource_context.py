@@ -323,6 +323,7 @@ class ResourceContextToolset(Toolset):
             prerequisites=[],
             tools=[tool],
             enabled=True,
+            status=ToolsetStatusEnum.ENABLED,
         )
 
     def get_example_config(self) -> Dict[str, Any]:
