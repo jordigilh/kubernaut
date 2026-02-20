@@ -50,6 +50,11 @@ func NewMockImagePuller(schemaContent string) *MockImagePuller {
 	return &MockImagePuller{schemaContent: schemaContent}
 }
 
+// Exists always succeeds for mock images.
+func (m *MockImagePuller) Exists(_ context.Context, _ string) error {
+	return nil
+}
+
 // Pull returns an in-memory OCI image with /workflow-schema.yaml.
 func (m *MockImagePuller) Pull(_ context.Context, ref string) (v1.Image, string, error) {
 	img := empty.Image
@@ -87,6 +92,11 @@ type FailingMockImagePuller struct {
 // NewFailingMockImagePuller creates a mock puller that always fails with the given message.
 func NewFailingMockImagePuller(errMsg string) *FailingMockImagePuller {
 	return &FailingMockImagePuller{errMsg: errMsg}
+}
+
+// Exists always returns an error for the failing mock.
+func (m *FailingMockImagePuller) Exists(_ context.Context, ref string) error {
+	return fmt.Errorf("image %q not found in registry: %s", ref, m.errMsg)
 }
 
 // Pull always returns an error.

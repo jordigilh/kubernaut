@@ -64,7 +64,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		testCancel      context.CancelFunc
 	)
 
-	BeforeAll(func() {
+	BeforeEach(func() {
 		testCtx, testCancel = context.WithTimeout(ctx, 10*time.Minute)
 
 		By("Step 0: Seeding test workflows in DataStorage")
@@ -179,7 +179,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		}
 	})
 
-	AfterAll(func() {
+	AfterEach(func() {
 		if testNamespace != "" {
 			By("Cleaning up K8s event test namespace")
 			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNamespace}}

@@ -391,17 +391,32 @@ build-test-workflows: ## Build all test workflow OCI images (multi-arch: amd64 +
 	@echo "  Version:   $(WORKFLOW_VERSION)"
 	@echo "  Platforms: $(WORKFLOW_PLATFORMS)"
 	@echo ""
+	@# Phase 1: Build execution images for workflows with per-directory Dockerfiles.
+	@# These contain runnable content (scripts, kubectl, etc.) but NOT workflow-schema.yaml.
+	@# Tagged as :VERSION-exec so they can be referenced by digest in the schema.
+	@for dir in $(WORKFLOW_FIXTURES_DIR)/*/; do \
+		name=$$(basename "$$dir"); \
+		if [ "$$name" = "README.md" ] || [ ! -f "$$dir/workflow-schema.yaml" ]; then continue; fi; \
+		case "$$name" in *-v[0-9]*) continue ;; esac; \
+		if [ -f "$$dir/Dockerfile" ]; then \
+			ref="$(WORKFLOW_REGISTRY)/$$name:$(WORKFLOW_VERSION)-exec"; \
+			echo "  Building $$name (exec) -> $$ref"; \
+			$(CONTAINER_TOOL) rmi "$$ref" 2>/dev/null || true; \
+			$(CONTAINER_TOOL) manifest rm "$$ref" 2>/dev/null || true; \
+			$(CONTAINER_TOOL) build --platform $(WORKFLOW_PLATFORMS) --manifest "$$ref" -f "$$dir/Dockerfile" "$$dir" || exit 1; \
+		fi; \
+	done
+	@# Phase 2: Build schema-only images for ALL workflows using shared FROM scratch Dockerfile.
+	@# DataStorage pulls these to extract /workflow-schema.yaml for catalog registration.
 	@for dir in $(WORKFLOW_FIXTURES_DIR)/*/; do \
 		name=$$(basename "$$dir"); \
 		if [ "$$name" = "README.md" ] || [ ! -f "$$dir/workflow-schema.yaml" ]; then continue; fi; \
 		case "$$name" in *-v[0-9]*) continue ;; esac; \
 		ref="$(WORKFLOW_REGISTRY)/$$name:$(WORKFLOW_VERSION)"; \
-		dockerfile="$(WORKFLOW_FIXTURES_DIR)/Dockerfile"; \
-		if [ -f "$$dir/Dockerfile" ]; then dockerfile="$$dir/Dockerfile"; fi; \
-		echo "  Building $$name -> $$ref"; \
+		echo "  Building $$name (schema) -> $$ref"; \
 		$(CONTAINER_TOOL) rmi "$$ref" 2>/dev/null || true; \
 		$(CONTAINER_TOOL) manifest rm "$$ref" 2>/dev/null || true; \
-		$(CONTAINER_TOOL) build --platform $(WORKFLOW_PLATFORMS) --manifest "$$ref" -f "$$dockerfile" "$$dir" || exit 1; \
+		$(CONTAINER_TOOL) build --platform $(WORKFLOW_PLATFORMS) --manifest "$$ref" -f "$(WORKFLOW_FIXTURES_DIR)/Dockerfile" "$$dir" || exit 1; \
 	done
 	@# Multi-version variants for version management E2E tests (07_workflow_version_management_test.go)
 	@echo "  Building oom-recovery:v1.1.0 (version variant)"
@@ -418,12 +433,25 @@ push-test-workflows: ## Push test workflow multi-arch manifests to registry
 	@echo "  Version:   $(WORKFLOW_VERSION)"
 	@echo "  Platforms: $(WORKFLOW_PLATFORMS)"
 	@echo ""
+	@# Push execution images first (workflows with per-directory Dockerfiles)
+	@for dir in $(WORKFLOW_FIXTURES_DIR)/*/; do \
+		name=$$(basename "$$dir"); \
+		if [ "$$name" = "README.md" ] || [ ! -f "$$dir/workflow-schema.yaml" ]; then continue; fi; \
+		case "$$name" in *-v[0-9]*) continue ;; esac; \
+		if [ -f "$$dir/Dockerfile" ]; then \
+			ref="$(WORKFLOW_REGISTRY)/$$name:$(WORKFLOW_VERSION)-exec"; \
+			echo "  Pushing $$name (exec) -> $$ref"; \
+			$(CONTAINER_TOOL) manifest push --all "$$ref" "docker://$$ref" || exit 1; \
+			echo "  ✅ Pushed $$ref"; \
+		fi; \
+	done
+	@# Push schema images for all workflows
 	@for dir in $(WORKFLOW_FIXTURES_DIR)/*/; do \
 		name=$$(basename "$$dir"); \
 		if [ "$$name" = "README.md" ] || [ ! -f "$$dir/workflow-schema.yaml" ]; then continue; fi; \
 		case "$$name" in *-v[0-9]*) continue ;; esac; \
 		ref="$(WORKFLOW_REGISTRY)/$$name:$(WORKFLOW_VERSION)"; \
-		echo "  Pushing $$name -> $$ref"; \
+		echo "  Pushing $$name (schema) -> $$ref"; \
 		$(CONTAINER_TOOL) manifest push --all "$$ref" "docker://$$ref" || exit 1; \
 		echo "  ✅ Pushed $$ref"; \
 	done
@@ -763,7 +791,7 @@ test-e2e-fullpipeline: ginkgo ensure-coverage-dirs ## Run full pipeline E2E test
 	@echo "   All Kubernaut services in a single Kind cluster"
 	@echo "   Event → Gateway → RO → SP → AA → HAPI → WE(Job) → Notification"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v --timeout=50m --procs=1 ./test/e2e/fullpipeline/...
+	@$(GINKGO) -v --timeout=50m --procs=$(TEST_PROCS) ./test/e2e/fullpipeline/...
 	@echo "✅ Full Pipeline E2E tests completed!"
 
 ##@ Legacy Aliases (Backward Compatibility)
