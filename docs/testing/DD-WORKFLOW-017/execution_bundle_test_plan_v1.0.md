@@ -78,7 +78,7 @@ cover OCI extraction and action type FK validation. This test plan extends with 
 
 | Tier | BR Coverage | Code Coverage Target | Scenarios | Focus |
 |------|-------------|---------------------|-----------|-------|
-| **Unit** | 100% of execution.bundle validation logic | 100% of `Validate()` bundle path + handler rejection path | 11 (8 schema + 3 handler) | Parser validation, handler error propagation |
+| **Unit** | 100% of execution.bundle validation logic | 100% of `Validate()` bundle path + handler rejection path + bundle existence check | 12 (8 schema + 4 handler) | Parser validation, handler error propagation, bundle existence |
 | **Integration** | DB storage and API responses | Deferred to GREEN phase | TBD | Repository SQL, API field presence |
 
 ---
@@ -641,6 +641,63 @@ makeCreateRequest := func(schemaImage string) *http.Request {
 
 ---
 
+### UT-WF-017-013: Reject OCI registration when execution.bundle image does not exist in registry
+
+- **BR**: BR-WORKFLOW-017-001 (Validation #10), DD-WORKFLOW-017 (Error handling), Issue #89
+- **Business Outcome**: The OCI registration pipeline provides early feedback when `execution.bundle` references an image that does not exist in the container registry, preventing workflows from being registered that will fail at execution time with `ImagePullBackOff`
+- **Preconditions**:
+  - `MockImagePullerWithFailingExists` configured: `Pull()` succeeds (schema extraction works), `Exists()` returns error (bundle image not found)
+  - Handler wired with mock extractor, no DB (nil repository)
+- **Given**:
+  - Mock OCI puller returns a valid schema image (all fields pass validation including `execution.bundle` format)
+  - `puller.Exists()` returns an error simulating a missing image in the registry
+  - HTTP request: `POST /api/v1/workflows` with body `{"schemaImage": "quay.io/kubernaut/schemas/exec-bundle-test:v1.0.0"}`
+- **When**: `handler.HandleCreateWorkflow(rr, req)` is called
+- **Then**:
+  - `rr.Code` is `400` (Bad Request) -- bundle existence check failed
+  - Response body is RFC 7807 JSON with:
+    - `"type"`: `"https://kubernaut.ai/problems/bundle-not-found"`
+    - `"detail"`: contains `"execution.bundle"` -- identifies the problem as bundle-related
+  - `Content-Type` header is `application/problem+json`
+- **Exit Criteria**:
+  - HTTP 400 is returned (not 500 or 502)
+  - RFC 7807 `type` field is `bundle-not-found` (distinct from `validation-error`)
+  - `detail` field contains enough information for the operator to identify the unreachable bundle
+  - The handler does NOT proceed to DB insertion
+- **Mock Requirement**:
+  - New mock type `MockImagePullerWithFailingExists` that extends `MockImagePuller` (Pull succeeds) but overrides `Exists()` to return an error. This mock is required because the existing `MockImagePuller.Exists()` always returns nil and `FailingMockImagePuller.Pull()` always fails (preventing schema extraction from succeeding).
+- **Implementation Hint**:
+  ```go
+  It("UT-WF-017-013: should reject OCI registration when execution.bundle image does not exist in registry", func() {
+      puller := oci.NewMockImagePullerWithFailingExists(
+          validDigestOnlyBundleSchemaYAML,
+          fmt.Errorf("MANIFEST_UNKNOWN: manifest unknown"),
+      )
+      handler := newHandlerWithMockExtractor(puller)
+      req := makeCreateRequest("quay.io/kubernaut/schemas/exec-bundle-test:v1.0.0")
+      rr := httptest.NewRecorder()
+
+      handler.HandleCreateWorkflow(rr, req)
+
+      Expect(rr.Code).To(Equal(http.StatusBadRequest),
+          "non-existent execution.bundle must be rejected with 400")
+      Expect(rr.Header().Get("Content-Type")).To(ContainSubstring("application/problem+json"))
+
+      var problem map[string]interface{}
+      Expect(json.Unmarshal(rr.Body.Bytes(), &problem)).To(Succeed())
+      Expect(problem["type"]).To(Equal("https://kubernaut.ai/problems/bundle-not-found"),
+          "RFC 7807 type must be bundle-not-found")
+      Expect(problem["detail"]).To(ContainSubstring("execution.bundle"),
+          "RFC 7807 detail must reference the bundle")
+  })
+  ```
+- **Anti-Pattern Warnings**:
+  - Do not use `FailingMockImagePuller` -- it fails on `Pull()` too, preventing schema extraction from succeeding
+  - Do not confuse this with `validation-error` (format validation) -- this is a `bundle-not-found` (existence check)
+  - Do not skip RFC 7807 body assertions -- the error type distinguishes this from other 400 errors
+
+---
+
 ## Test Scenario ID Summary
 
 | ID | Description | Type | TDD Phase | BR/DD Reference |
@@ -656,6 +713,7 @@ makeCreateRequest := func(schemaImage string) *http.Request {
 | UT-WF-017-010 | Valid registration accepted | Positive | RED (passes) | BR-WORKFLOW-004, DD-WORKFLOW-017 |
 | UT-WF-017-011 | Tag-only bundle registration rejected | Negative | RED (fails) | BR-WORKFLOW-004, Issue #89 |
 | UT-WF-017-012 | Missing execution registration rejected | Negative | RED (fails) | BR-WORKFLOW-004, Issue #89 |
+| UT-WF-017-013 | Bundle image not found in registry | Negative | RED (fails) | BR-WORKFLOW-017-001 #10, Issue #89 |
 
 ---
 
