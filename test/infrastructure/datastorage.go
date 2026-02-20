@@ -195,6 +195,9 @@ func MustGatherPodLogs(clusterName, kubeconfigPath, namespace, serviceName strin
 //   - serviceName: Service name for log directory naming (e.g., "gateway", "datastorage")
 //   - testsFailed: If true, exports logs before deletion (must-gather style)
 //   - writer: Output writer for logging
+//   - namespace: Optional namespace override for must-gather (default: "kubernaut-system").
+//     Services that deploy pods in a custom namespace (e.g., HAPI in "holmesgpt-api-e2e")
+//     must pass the actual namespace so MustGatherPodLogs can find the pods.
 //
 // Log Export Behavior (when testsFailed=true):
 //   - CI/CD mode: Collects pod logs via kubectl to /tmp/kubernaut-must-gather/ and preserves cluster
@@ -204,7 +207,8 @@ func MustGatherPodLogs(clusterName, kubeconfigPath, namespace, serviceName strin
 // Example:
 //
 //	err := DeleteCluster("gateway-e2e", "gateway", anyTestFailed, GinkgoWriter)
-func DeleteCluster(clusterName, serviceName string, testsFailed bool, writer io.Writer) error {
+//	err := DeleteCluster("holmesgpt-api-e2e", "holmesgpt-api", anyTestFailed, GinkgoWriter, "holmesgpt-api-e2e")
+func DeleteCluster(clusterName, serviceName string, testsFailed bool, writer io.Writer, namespace ...string) error {
 	// ═══════════════════════════════════════════════════════════════════════
 	// FIX: Preserve cluster in CI/CD when tests fail (for must-gather)
 	// ═══════════════════════════════════════════════════════════════════════
@@ -226,7 +230,11 @@ func DeleteCluster(clusterName, serviceName string, testsFailed bool, writer io.
 			// Collect pod logs to /tmp/kubernaut-must-gather/ for CI artifact collection
 			homeDir, _ := os.UserHomeDir()
 			kubeconfigPath := fmt.Sprintf("%s/.kube/%s-config", homeDir, clusterName)
-			MustGatherPodLogs(clusterName, kubeconfigPath, "kubernaut-system", serviceName, writer)
+			ns := "kubernaut-system"
+			if len(namespace) > 0 && namespace[0] != "" {
+				ns = namespace[0]
+			}
+			MustGatherPodLogs(clusterName, kubeconfigPath, ns, serviceName, writer)
 
 			_, _ = fmt.Fprintf(writer, "🔍 Preserving Kind cluster for must-gather collection\n")
 			_, _ = fmt.Fprintf(writer, "   • Cluster: %s\n", clusterName)

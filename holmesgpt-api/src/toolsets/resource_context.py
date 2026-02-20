@@ -115,14 +115,17 @@ class GetResourceContextTool(Tool):
         return f"Get resource context for {kind}/{namespace}/{name}"
 
     def _invoke(self, params: Dict, user_approved: bool = False) -> StructuredToolResult:
-        """Execute the resource context lookup (sync wrapper for async tool)."""
+        """Execute the resource context lookup (sync wrapper for async tool).
+
+        Uses asyncio.run() to create a fresh event loop because the HolmesGPT
+        SDK invokes tools in a ThreadPoolExecutor thread where no event loop
+        exists.  asyncio.get_event_loop() raises RuntimeError in that context.
+        """
         import asyncio
         kind = params.get("kind", "")
         name = params.get("name", "")
         namespace = params.get("namespace", "")
-        return asyncio.get_event_loop().run_until_complete(
-            self._invoke_async(kind, name, namespace)
-        )
+        return asyncio.run(self._invoke_async(kind, name, namespace))
 
     async def _invoke_async(self, kind: str, name: str, namespace: str = "") -> StructuredToolResult:
         """Async implementation of resource context lookup."""
