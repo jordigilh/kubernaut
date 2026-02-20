@@ -1,11 +1,11 @@
 # HAPI Test Plan for ADR-056
 
-**Version**: 1.1
+**Version**: 1.2
 **Created**: 2026-02-17
 **Updated**: 2026-02-20
 **Status**: Active
-**Authority**: [ADR-056 v1.3](../../architecture/decisions/ADR-056-post-rca-label-computation.md), [DD-HAPI-017 v1.3](../../architecture/decisions/DD-HAPI-017-three-step-workflow-discovery-integration.md), [DD-HAPI-018 v1.1](../../architecture/decisions/DD-HAPI-018-detected-labels-detection-specification.md)
-**BRs**: BR-SP-101, BR-SP-103, BR-HAPI-194, BR-HAPI-250, BR-HAPI-252, BR-HAPI-017-007
+**Authority**: [ADR-056 v1.4](../../architecture/decisions/ADR-056-post-rca-label-computation.md), [DD-HAPI-017 v1.4](../../architecture/decisions/DD-HAPI-017-three-step-workflow-discovery-integration.md), [DD-HAPI-018 v1.1](../../architecture/decisions/DD-HAPI-018-detected-labels-detection-specification.md)
+**BRs**: BR-SP-101, BR-SP-103, BR-HAPI-194, BR-HAPI-250, BR-HAPI-252, BR-HAPI-017-007, BR-HAPI-017-008
 
 ---
 
@@ -50,7 +50,7 @@ Per [TESTING_GUIDELINES.md](../../development/business-requirements/TESTING_GUID
 
 | Tier | Files | LOC | Coverage | Target |
 |------|-------|-----|----------|--------|
-| Unit | `labels.py`, `k8s_client.py`, `resource_context.py`, `workflow_discovery.py`, `prompt_builder.py` (x2), `llm_config.py`, `incident_models.py`, `recovery_models.py` | ~450 | 87 tests | >= 80% MET |
+| Unit | `labels.py`, `k8s_client.py`, `resource_context.py`, `workflow_discovery.py`, `prompt_builder.py` (x2), `llm_config.py`, `incident_models.py`, `recovery_models.py` | ~450 | 90 tests | >= 80% MET |
 | Integration | `test_detected_labels_integration.py` + `k8s_mock_fixtures.py` | ~200 | 8 tests | >= 80% Active |
 | E2E | `detected_labels_e2e_test.go` | ~150 | 3 tests | >= 80% Active |
 
@@ -77,6 +77,7 @@ def test_ut_hapi_056_001_argocd_pod_annotation(self):
 | BR-HAPI-194 | Honor failedDetections in workflow filtering | UT-HAPI-056-043 to 055, 071, 072 | 15 |
 | BR-HAPI-250/252 | DetectedLabels in HAPI response | UT-HAPI-056-063 to 067 | 5 |
 | BR-HAPI-017-007 | cluster_context in list_available_actions response | UT-HAPI-056-081 to 087, IT-HAPI-056-008 | 8 |
+| BR-HAPI-017-008 | One-shot reassessment via detected_infrastructure in get_resource_context | UT-HAPI-056-090 to 092 | 3 |
 
 ---
 
@@ -550,7 +551,7 @@ Same as UT-HAPI-056-032 but for unexpected `Exception`. Returns `None`.
 
 ---
 
-## Cycle 1.3: Resource Context + Session State (9 tests)
+## Cycle 1.3: Resource Context + Session State + Reassessment (12 tests)
 
 **File**: `holmesgpt-api/tests/unit/test_resource_context_session_state.py`
 **Production code**: `holmesgpt-api/src/toolsets/resource_context.py`
@@ -561,13 +562,16 @@ Same as UT-HAPI-056-032 but for unexpected `Exception`. Returns `None`.
 |----|----------|----------|------------------|
 | UT-HAPI-056-034 | Writes detected_labels to session_state | P0 | Labels available for downstream tools |
 | UT-HAPI-056-035 | Writes {} sentinel on None detection | P1 | Downstream tools know detection ran but found nothing |
-| UT-HAPI-056-036 | Preserves return behavior | P1 | Tool result unchanged (root_owner + history) |
+| UT-HAPI-056-036 | Preserves return behavior | P1 | Tool result includes root_owner + history |
 | UT-HAPI-056-037 | Pod->Deployment chain labels | P1 | Correct labels for common ownership pattern |
 | UT-HAPI-056-038 | Deployment-only chain labels | P1 | Correct labels without Pod in chain |
 | UT-HAPI-056-039 | StatefulSet chain labels | P1 | stateful=true for StatefulSet ownership |
 | UT-HAPI-056-040 | Namespace metadata None | P2 | Graceful fallback to empty dicts |
 | UT-HAPI-056-041 | LabelDetector exception | P1 | {} sentinel written, tool succeeds |
 | UT-HAPI-056-042 | No session_state with detector | P2 | Detection runs without crash |
+| UT-HAPI-056-090 | Active labels include detected_infrastructure in response | P0 | LLM receives infrastructure context for RCA reassessment |
+| UT-HAPI-056-091 | All-default labels omit detected_infrastructure | P1 | No unnecessary reassessment when no active labels |
+| UT-HAPI-056-092 | Second call skips re-detection, omits detected_infrastructure | P0 | One-shot guarantee prevents infinite loop |
 
 ---
 
@@ -699,6 +703,57 @@ Same as UT-HAPI-056-032 but for unexpected `Exception`. Returns `None`.
 
 **Acceptance Criteria**:
 - No `AttributeError` or `TypeError`
+
+---
+
+### UT-HAPI-056-090: Active labels include detected_infrastructure in response
+
+**Priority**: P0 | **BR**: BR-HAPI-017-008
+**Business Value**: When infrastructure characteristics are detected for the RCA target (e.g., GitOps management, PDB protection), the LLM receives them immediately in the `get_resource_context` response, enabling RCA reassessment before workflow discovery.
+
+**Given**: K8s context where LabelDetector returns `gitOpsManaged=true, gitOpsTool=argocd`
+**When**: `get_resource_context` invocation completes (first call, session_state has no `detected_labels` key)
+**Then**: Response `data` contains `detected_infrastructure.labels` with active labels AND `detected_infrastructure.note` is present AND `root_owner` is still present AND `remediation_history` is still present
+
+**Acceptance Criteria**:
+- `data["detected_infrastructure"]["labels"]["gitOpsManaged"]` is `True`
+- `data["detected_infrastructure"]["labels"]["gitOpsTool"]` is `"argocd"`
+- `data["detected_infrastructure"]["note"]` is a non-empty string
+- `data["root_owner"]` is present and correct
+- `session_state["detected_labels"]` is populated
+
+---
+
+### UT-HAPI-056-091: All-default labels omit detected_infrastructure from response
+
+**Priority**: P1 | **BR**: BR-HAPI-017-008
+**Business Value**: When no meaningful infrastructure characteristics are detected, the response is clean and does not trigger unnecessary LLM reassessment.
+
+**Given**: K8s context where LabelDetector returns all-default labels (all booleans `false`, all strings empty)
+**When**: `get_resource_context` invocation completes
+**Then**: `detected_infrastructure` is NOT present in response `data` AND `root_owner` + `remediation_history` are present AND `session_state["detected_labels"]` is populated (with the default labels)
+
+**Acceptance Criteria**:
+- `"detected_infrastructure"` not in `data`
+- `data["root_owner"]` is present
+- `session_state["detected_labels"]` exists (detection ran, stored defaults)
+
+---
+
+### UT-HAPI-056-092: Second call skips label re-detection and omits detected_infrastructure
+
+**Priority**: P0 | **BR**: BR-HAPI-017-008
+**Business Value**: One-shot guarantee prevents infinite reassessment loops. Second call resolves context for the revised target but does not re-detect labels or prompt reassessment.
+
+**Given**: `session_state` already has `"detected_labels"` key from a previous `get_resource_context` call (e.g., `{"gitOpsManaged": true}`)
+**When**: `get_resource_context` is called again with a **different** resource (kind=Node, name=worker-3)
+**Then**: LabelDetector is NOT invoked AND `detected_infrastructure` is NOT in response AND `root_owner` resolves to the new target AND `session_state["detected_labels"]` retains the original labels
+
+**Acceptance Criteria**:
+- LabelDetector mock `detect_labels` NOT called
+- `"detected_infrastructure"` not in response `data`
+- `data["root_owner"]` reflects the new target resource
+- `session_state["detected_labels"]` unchanged from before the second call
 
 ---
 
@@ -1446,6 +1501,9 @@ ADR-056 v1.2 established that detected labels are HAPI-internal and not returned
 | UT-HAPI-056-040 | UT-RC-SS-008 | test_resource_context_session_state.py | 1.3 |
 | UT-HAPI-056-041 | UT-RC-SS-009 | test_resource_context_session_state.py | 1.3 |
 | UT-HAPI-056-042 | UT-RC-SS-010 | test_resource_context_session_state.py | 1.3 |
+| UT-HAPI-056-090 | UT-RC-RA-001 | test_resource_context_session_state.py | 1.3 |
+| UT-HAPI-056-091 | UT-RC-RA-002 | test_resource_context_session_state.py | 1.3 |
+| UT-HAPI-056-092 | UT-RC-RA-003 | test_resource_context_session_state.py | 1.3 |
 | UT-HAPI-056-043 | UT-FE-001 | test_workflow_discovery_flow_enforcement.py | 2.1 |
 | UT-HAPI-056-044 | UT-FE-002 | test_workflow_discovery_flow_enforcement.py | 2.1 |
 | UT-HAPI-056-045 | UT-FE-003 | test_workflow_discovery_flow_enforcement.py | 2.1 |
