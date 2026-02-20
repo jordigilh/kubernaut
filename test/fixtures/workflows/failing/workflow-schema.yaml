@@ -20,7 +20,7 @@ labels:
 
 execution:
   engine: tekton
-  bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:18a3bae2340943dad1e350d58c69dc2f35b919c49d17eaec3b9c77990841ef53
+  bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:0526671b6ec27b4ed04c288144e8e66f252442c9b4ff56e2793bb4c1f1c508f5
 
 parameters:
   - name: TARGET_RESOURCE
