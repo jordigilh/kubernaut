@@ -276,6 +276,10 @@ labels:
   team: platform
   environment: production
 
+detectedLabels:
+  hpaEnabled: "true"
+  stateful: "true"
+
 execution:
   engine: tekton
   bundle: quay.io/kubernaut/workflow-oomkill-scale-down:v1.0.0

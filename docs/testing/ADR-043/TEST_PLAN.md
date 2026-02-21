@@ -1,7 +1,7 @@
 # Test Plan: detectedLabels Workflow Schema Field
 
 **Feature**: Add detectedLabels as optional top-level field in workflow-schema.yaml (ADR-043 v1.3)
-**Version**: 1.0
+**Version**: 1.1
 **Created**: 2026-02-20
 **Author**: AI Assistant + Jordi Gil
 **Status**: Ready for Execution
@@ -60,9 +60,12 @@ Both UT and IT tiers are required:
 - **Unit**: Catches validation logic errors, type conversion bugs, parsing edge cases
 - **Integration**: Catches wiring errors in the HTTP handler, DB JSONB fidelity, search/discovery behavior
 
-### Tier Skip Rationale
+### 3-Tier Coverage
 
-- **E2E**: Not needed. `detectedLabels` is a data storage concern. The IT tier covers the full HTTP + PostgreSQL + search chain, which is the business-critical path. No Kubernetes resources or multi-service coordination involved.
+All three tiers are exercised:
+- **Unit**: Catches validation logic errors, type conversion bugs, parsing edge cases
+- **Integration**: Catches wiring errors in the HTTP handler, DB JSONB fidelity, search/discovery behavior
+- **E2E**: Validates the full OCI image registration -> DB persistence -> HTTP retrieval chain through the live DataStorage service
 
 ---
 
@@ -106,6 +109,9 @@ Both UT and IT tiers are required:
 | ADR-043 | Workflow search filters by detectedLabels (HAPI discovery) | P0 | Integration | IT-DS-043-005 | Pending |
 | ADR-043 | Full schema round-trip (all fields) preserves detectedLabels alongside existing fields | P0 | Integration | IT-DS-043-006 | Pending |
 | ADR-043 | Version update with changed detectedLabels stores new values | P1 | Integration | IT-DS-043-007 | Pending |
+| ADR-043 | OCI registration response includes parsed detectedLabels | P0 | E2E | E2E-DS-043-001 | Pending |
+| ADR-043 | GetWorkflowByID returns detectedLabels after DB round-trip | P0 | E2E | E2E-DS-043-002 | Pending |
+| ADR-043 | Workflow with detectedLabels appears in discovery flow (Step 2 + Step 3) | P0 | E2E | E2E-DS-043-003 | Pending |
 
 ---
 
@@ -142,6 +148,16 @@ Both UT and IT tiers are required:
 | `IT-DS-043-005` | Workflow search/discovery filters correctly by detectedLabels (the business purpose: HAPI finds the right workflow for an incident's infrastructure characteristics) | RED |
 | `IT-DS-043-006` | Full realistic schema (all fields: metadata + labels + detectedLabels + execution + parameters) round-trips through POST -> DB -> GET with zero data loss across all fields (no regression on existing fields when detectedLabels is added) | RED |
 | `IT-DS-043-007` | Workflow version update (POST same workflowId, new version) with changed detectedLabels stores the new values and marks the new version as latest | RED |
+
+### Tier 3: E2E Tests
+
+**Testable code scope**: Full OCI image -> DataStorage service -> PostgreSQL -> HTTP API chain. Validates detectedLabels survive the complete production path.
+
+| ID | Business Outcome Under Test | Phase |
+|----|----------------------------|-------|
+| `E2E-DS-043-001` | OCI image containing workflow-schema.yaml with detectedLabels is registered via CreateWorkflow and the response includes the parsed detectedLabels (both set and unset fields verified) | RED |
+| `E2E-DS-043-002` | GetWorkflowByID returns detectedLabels that match the original OCI schema after full DB round-trip (JSONB persistence fidelity) | RED |
+| `E2E-DS-043-003` | Workflow with detectedLabels appears in three-step discovery flow (ListWorkflowsByActionType -> GetWorkflowByID) and Step 3 response includes correct detectedLabels | RED |
 
 ---
 
@@ -208,6 +224,15 @@ Both UT and IT tiers are required:
 - **Infrastructure**: PostgreSQL (existing integration test infra), real HTTP server
 - **Location**: `test/integration/datastorage/workflow_detected_labels_test.go` (new file)
 
+### E2E Tests
+
+- **Framework**: Ginkgo/Gomega BDD
+- **Mocks**: ZERO mocks
+- **Infrastructure**: Live DataStorage service, PostgreSQL, OCI registry (quay.io)
+- **Location**: `test/e2e/datastorage/25_detected_labels_search_e2e_test.go` (new file)
+- **Fixture**: `test/fixtures/workflows/detected-labels-test/workflow-schema.yaml`
+- **OCI Image**: `quay.io/kubernaut-cicd/test-workflows/detected-labels-test:v1.0.0`
+
 ---
 
 ## 8. Execution
@@ -224,6 +249,12 @@ make test-integration-datastorage
 
 # Specific integration tests for this feature
 go test ./test/integration/datastorage/... -ginkgo.focus="ADR-043"
+
+# E2E tests (requires live DataStorage service)
+make test-e2e-datastorage
+
+# Specific E2E tests for this feature
+go test ./test/e2e/datastorage/... -ginkgo.focus="ADR-043"
 ```
 
 ---
@@ -233,3 +264,4 @@ go test ./test/integration/datastorage/... -ginkgo.focus="ADR-043"
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2026-02-20 | Initial test plan: 11 UT + 7 IT scenarios |
+| 1.1 | 2026-02-21 | Added 3 E2E scenarios (E2E-DS-043-001/002/003); updated coverage policy to 3-tier |
