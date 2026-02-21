@@ -37,7 +37,7 @@ route:
   receiver: default-receiver
 receivers:
   - name: default-receiver
-    slack_configs:
+    slackConfigs:
       - channel: '#alerts'
 `
 				config, err := routing.ParseConfig([]byte(configYAML))
@@ -64,13 +64,13 @@ route:
       receiver: slack-ops
 receivers:
   - name: default-receiver
-    slack_configs:
+    slackConfigs:
       - channel: '#alerts'
   - name: pagerduty-oncall
-    pagerduty_configs:
-      - service_key: test-key
+    pagerdutyConfigs:
+      - serviceKey: test-key
   - name: slack-ops
-    slack_configs:
+    slackConfigs:
       - channel: '#ops'
 `
 				config, err := routing.ParseConfig([]byte(configYAML))
@@ -85,10 +85,10 @@ receivers:
 				configYAML := `
 route:
   receiver: default
-  group_by: ['environment', 'severity']
+  groupBy: ['environment', 'severity']
 receivers:
   - name: default
-    slack_configs:
+    slackConfigs:
       - channel: '#alerts'
 `
 				config, err := routing.ParseConfig([]byte(configYAML))
@@ -102,13 +102,12 @@ route:
   receiver: multi-channel
 receivers:
   - name: multi-channel
-    slack_configs:
+    slackConfigs:
       - channel: '#alerts'
-        api_url: 'https://hooks.slack.com/services/xxx'
-    email_configs:
+    emailConfigs:
       - to: 'oncall@example.com'
         from: 'kubernaut@example.com'
-    webhook_configs:
+    webhookConfigs:
       - url: 'https://webhook.example.com/notify'
 `
 				config, err := routing.ParseConfig([]byte(configYAML))
@@ -133,7 +132,7 @@ receivers:
 				configYAML := `
 receivers:
   - name: default
-    slack_configs:
+    slackConfigs:
       - channel: '#alerts'
 `
 				config, err := routing.ParseConfig([]byte(configYAML))
@@ -164,7 +163,7 @@ route:
   receiver: non-existent
 receivers:
   - name: actual-receiver
-    slack_configs:
+    slackConfigs:
       - channel: '#alerts'
 `
 				config, err := routing.ParseConfig([]byte(configYAML))
@@ -199,20 +198,20 @@ route:
       receiver: pagerduty-oncall
 receivers:
   - name: default-receiver
-    slack_configs:
+    slackConfigs:
       - channel: '#alerts'
   - name: pagerduty-critical
-    pagerduty_configs:
-      - service_key: critical-key
+    pagerdutyConfigs:
+      - serviceKey: critical-key
   - name: slack-approvals
-    slack_configs:
+    slackConfigs:
       - channel: '#approvals'
   - name: slack-ops
-    slack_configs:
+    slackConfigs:
       - channel: '#ops'
   - name: pagerduty-oncall
-    pagerduty_configs:
-      - service_key: oncall-key
+    pagerdutyConfigs:
+      - serviceKey: oncall-key
 `
 			var err error
 			config, err = routing.ParseConfig([]byte(configYAML))
@@ -302,13 +301,13 @@ route:
   receiver: default
 receivers:
   - name: default
-    slack_configs:
+    slackConfigs:
       - channel: '#alerts'
   - name: pagerduty-oncall
-    pagerduty_configs:
-      - service_key: test-key
+    pagerdutyConfigs:
+      - serviceKey: test-key
   - name: email-team
-    email_configs:
+    emailConfigs:
       - to: 'team@example.com'
 `
 			var err error
@@ -477,16 +476,16 @@ route:
   receiver: default-slack
 receivers:
   - name: pagerduty-critical
-    pagerduty_configs:
-      - service_key: test-critical-key
+    pagerdutyConfigs:
+      - serviceKey: test-critical-key
   - name: slack-ops
-    slack_configs:
+    slackConfigs:
       - channel: '#kubernaut-ops'
   - name: console-bulk
     console_config:
       enabled: true
   - name: default-slack
-    slack_configs:
+    slackConfigs:
       - channel: '#kubernaut-alerts'
 `
 				var err error
@@ -536,10 +535,10 @@ route:
   receiver: default-console
 receivers:
   - name: pagerduty-immediate
-    pagerduty_configs:
-      - service_key: immediate-key
+    pagerdutyConfigs:
+      - serviceKey: immediate-key
   - name: slack-escalation
-    slack_configs:
+    slackConfigs:
       - channel: '#escalation'
   - name: default-console
     console_config:
@@ -624,10 +623,10 @@ receivers:
   - name: silent-noop
     # No delivery configs = silent/skip notification
   - name: slack-ops
-    slack_configs:
+    slackConfigs:
       - channel: '#ops'
   - name: default-slack
-    slack_configs:
+    slackConfigs:
       - channel: '#alerts'
 `
 				var err error
