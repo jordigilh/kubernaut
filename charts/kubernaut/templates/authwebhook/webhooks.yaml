@@ -1,0 +1,88 @@
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: authwebhook-mutating
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+webhooks:
+  - name: workflowexecution.mutate.kubernaut.ai
+    admissionReviewVersions: ["v1"]
+    clientConfig:
+      service:
+        name: authwebhook
+        namespace: {{ .Release.Namespace }}
+        path: /mutate-workflowexecution
+      caBundle: ""
+    failurePolicy: Fail
+    matchPolicy: Equivalent
+    rules:
+      - apiGroups: ["kubernaut.ai"]
+        apiVersions: ["v1alpha1"]
+        operations: ["UPDATE"]
+        resources: ["workflowexecutions/status"]
+        scope: "Namespaced"
+    sideEffects: None
+    timeoutSeconds: 10
+  - name: remediationapprovalrequest.mutate.kubernaut.ai
+    admissionReviewVersions: ["v1"]
+    clientConfig:
+      service:
+        name: authwebhook
+        namespace: {{ .Release.Namespace }}
+        path: /mutate-remediationapprovalrequest
+      caBundle: ""
+    failurePolicy: Fail
+    matchPolicy: Equivalent
+    rules:
+      - apiGroups: ["kubernaut.ai"]
+        apiVersions: ["v1alpha1"]
+        operations: ["UPDATE"]
+        resources: ["remediationapprovalrequests/status"]
+        scope: "Namespaced"
+    sideEffects: None
+    timeoutSeconds: 10
+  - name: remediationrequest.mutate.kubernaut.ai
+    admissionReviewVersions: ["v1"]
+    clientConfig:
+      service:
+        name: authwebhook
+        namespace: {{ .Release.Namespace }}
+        path: /mutate-remediationrequest
+      caBundle: ""
+    failurePolicy: Fail
+    matchPolicy: Equivalent
+    rules:
+      - apiGroups: ["kubernaut.ai"]
+        apiVersions: ["v1alpha1"]
+        operations: ["UPDATE"]
+        resources: ["remediationrequests/status"]
+        scope: "Namespaced"
+    sideEffects: None
+    timeoutSeconds: 10
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: authwebhook-validating
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+webhooks:
+  - name: notificationrequest.validate.kubernaut.ai
+    admissionReviewVersions: ["v1"]
+    clientConfig:
+      service:
+        name: authwebhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-notificationrequest-delete
+      caBundle: ""
+    failurePolicy: Fail
+    matchPolicy: Equivalent
+    rules:
+      - apiGroups: ["kubernaut.ai"]
+        apiVersions: ["v1alpha1"]
+        operations: ["DELETE"]
+        resources: ["notificationrequests"]
+        scope: "Namespaced"
+    sideEffects: None
+    timeoutSeconds: 10

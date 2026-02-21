@@ -1,0 +1,137 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: datastorage-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: datastorage
+    {{- include "kubernaut.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    server:
+      port: 8080
+      host: "0.0.0.0"
+      readTimeout: 30s
+      writeTimeout: 30s
+    database:
+      host: postgresql.kubernaut-system.svc.cluster.local
+      port: 5432
+      name: action_history
+      user: slm_user
+      sslMode: disable
+      maxOpenConns: 50
+      maxIdleConns: 10
+      connMaxLifetime: 1h
+      connMaxIdleTime: 10m
+      secretsFile: "/etc/datastorage/secrets/db-secrets.yaml"
+      usernameKey: "username"
+      passwordKey: "password"
+    redis:
+      addr: redis.kubernaut-system.svc.cluster.local:6379
+      db: 0
+      dlqStreamName: dlq-stream
+      dlqMaxLen: 1000
+      dlqConsumerGroup: dlq-group
+      secretsFile: "/etc/datastorage/secrets/redis-secrets.yaml"
+      passwordKey: "password"
+    logging:
+      level: debug
+      format: json
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: datastorage
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: datastorage
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.datastorage.replicas }}
+  selector:
+    matchLabels:
+      app: datastorage
+  template:
+    metadata:
+      labels:
+        app: datastorage
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9181"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: data-storage-sa
+      containers:
+        - name: datastorage
+          image: {{ include "kubernaut.image" (dict "service" "datastorage" "global" .Values.global) }}
+          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: metrics
+              containerPort: 9181
+          env:
+            - name: CONFIG_PATH
+              value: /etc/datastorage/config.yaml
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          volumeMounts:
+            - name: config
+              mountPath: /etc/datastorage
+              readOnly: true
+            - name: secrets
+              mountPath: /etc/datastorage/secrets
+              readOnly: true
+          resources:
+            {{- toYaml .Values.datastorage.resources | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+      volumes:
+        - name: config
+          configMap:
+            name: datastorage-config
+        - name: secrets
+          secret:
+            secretName: datastorage-secret
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: data-storage-service
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: datastorage
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.datastorage.service.type }}
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+      {{- if .Values.datastorage.service.nodePort }}
+      nodePort: {{ .Values.datastorage.service.nodePort }}
+      {{- end }}
+    - name: metrics
+      port: 9181
+      targetPort: 9181
+      protocol: TCP
+  selector:
+    app: datastorage

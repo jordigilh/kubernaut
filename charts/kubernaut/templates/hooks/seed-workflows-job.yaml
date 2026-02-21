@@ -1,0 +1,79 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "kubernaut.fullname" . }}-seed-workflows
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "3"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: seed-workflows
+    spec:
+      serviceAccountName: {{ include "kubernaut.fullname" . }}-hook-sa
+      restartPolicy: Never
+      initContainers:
+        - name: wait-for-datastorage
+          image: {{ .Values.hooks.seedWorkflows.image }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Waiting for DataStorage API..."
+              until curl -sf http://data-storage-service.{{ .Release.Namespace }}.svc.cluster.local:8080/health; do
+                echo "  DataStorage not ready, retrying in 3s..."
+                sleep 3
+              done
+              echo "DataStorage is ready."
+      containers:
+        - name: seed
+          image: {{ .Values.hooks.seedWorkflows.image }}
+          env:
+            - name: DATASTORAGE_URL
+              value: "http://data-storage-service.{{ .Release.Namespace }}.svc.cluster.local:8080"
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              echo "==> Seeding workflow catalog at ${DATASTORAGE_URL}"
+
+              register_workflow() {
+                local payload="$1"
+                local name="$2"
+                echo -n "  Registering: ${name}..."
+                HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+                  "${DATASTORAGE_URL}/api/v1/workflows" \
+                  -H "Content-Type: application/json" \
+                  -d "$payload")
+                echo " HTTP ${HTTP_CODE}"
+              }
+
+              register_workflow '{"container_image":"quay.io/kubernaut-cicd/test-workflows/oomkill-increase-memory-job:latest"}' "oomkill-increase-memory-job"
+              register_workflow '{"container_image":"quay.io/kubernaut-cicd/test-workflows/crashloop-config-fix-job:latest"}' "crashloop-config-fix-job"
+              register_workflow '{"container_image":"quay.io/kubernaut-cicd/test-workflows/git-revert-job:v1.0.0"}' "git-revert-job"
+              register_workflow '{"container_image":"quay.io/kubernaut-cicd/test-workflows/provision-node-job:v1.0.0"}' "provision-node-job"
+              register_workflow '{"container_image":"quay.io/kubernaut-cicd/test-workflows/proactive-rollback-job:v1.0.0"}' "proactive-rollback-job"
+              register_workflow '{"container_image":"quay.io/kubernaut-cicd/test-workflows/graceful-restart-job:v1.0.0"}' "graceful-restart-job"
+              register_workflow '{"container_image":"quay.io/kubernaut-cicd/test-workflows/crashloop-rollback-job:v1.0.0"}' "crashloop-rollback-job"
+              register_workflow '{"container_image":"quay.io/kubernaut-cicd/test-workflows/patch-hpa-job:v1.0.0"}' "patch-hpa-job"
+              register_workflow '{"container_image":"quay.io/kubernaut-cicd/test-workflows/relax-pdb-job:v1.0.0"}' "relax-pdb-job"
+              register_workflow '{"container_image":"quay.io/kubernaut-cicd/test-workflows/remove-taint-job:v1.0.0"}' "remove-taint-job"
+              register_workflow '{"container_image":"quay.io/kubernaut-cicd/test-workflows/cleanup-pvc-job:v1.0.0"}' "cleanup-pvc-job"
+              register_workflow '{"container_image":"quay.io/kubernaut-cicd/test-workflows/cordon-drain-job:v1.0.0"}' "cordon-drain-job"
+              register_workflow '{"container_image":"quay.io/kubernaut-cicd/test-workflows/rollback-deployment-job:v1.0.0"}' "rollback-deployment-job"
+              register_workflow '{"container_image":"quay.io/kubernaut-cicd/test-workflows/fix-certificate-job:v1.0.0"}' "fix-certificate-job"
+              register_workflow '{"container_image":"quay.io/kubernaut-cicd/test-workflows/fix-certificate-gitops-job:v1.0.0"}' "fix-certificate-gitops-job"
+              register_workflow '{"container_image":"quay.io/kubernaut-cicd/test-workflows/helm-rollback-job:v1.0.0"}' "helm-rollback-job"
+              register_workflow '{"container_image":"quay.io/kubernaut-cicd/test-workflows/fix-authz-policy-job:v1.0.0"}' "fix-authz-policy-job"
+              register_workflow '{"container_image":"quay.io/kubernaut-cicd/test-workflows/fix-statefulset-pvc-job:v1.0.0"}' "fix-statefulset-pvc-job"
+              register_workflow '{"container_image":"quay.io/kubernaut-cicd/test-workflows/fix-network-policy-job:v1.0.0"}' "fix-network-policy-job"
+
+              echo ""
+              echo "==> Workflow seeding complete (19 workflows)"

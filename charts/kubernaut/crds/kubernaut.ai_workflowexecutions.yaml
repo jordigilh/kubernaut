@@ -1,0 +1,456 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.19.0
+  name: workflowexecutions.kubernaut.ai
+spec:
+  group: kubernaut.ai
+  names:
+    kind: WorkflowExecution
+    listKind: WorkflowExecutionList
+    plural: workflowexecutions
+    shortNames:
+    - wfe
+    singular: workflowexecution
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .spec.workflowRef.workflowId
+      name: WorkflowID
+      type: string
+    - jsonPath: .spec.targetResource
+      name: Target
+      type: string
+    - jsonPath: .status.duration
+      name: Duration
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Ready")].reason
+      name: Reason
+      priority: 1
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: WorkflowExecution is the Schema for the workflowexecutions API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              WorkflowExecutionSpec defines the desired state of WorkflowExecution
+              Simplified per ADR-044 - Tekton handles step orchestration
+
+              ADR-001: Spec Immutability
+              WorkflowExecution represents an immutable event (workflow execution attempt).
+              Once created by RemediationOrchestrator, spec cannot be modified to ensure:
+              - Audit trail integrity (executed spec matches approved spec)
+              - No parameter tampering after HAPI validation
+              - No target resource changes after routing decisions
+
+              To change execution parameters, delete and recreate the WorkflowExecution.
+            properties:
+              confidence:
+                description: Confidence score from LLM (for audit trail)
+                type: number
+              executionConfig:
+                description: ExecutionConfig contains minimal execution settings
+                properties:
+                  serviceAccountName:
+                    description: |-
+                      ServiceAccountName for the PipelineRun
+                      Default: "kubernaut-workflow-runner"
+                    type: string
+                  timeout:
+                    description: |-
+                      Timeout for the entire workflow (Tekton PipelineRun timeout)
+                      Default: use global timeout from RemediationRequest or 30m
+                    type: string
+                type: object
+              executionEngine:
+                default: tekton
+                description: |-
+                  ExecutionEngine specifies the backend engine for workflow execution.
+                  "tekton" creates a Tekton PipelineRun; "job" creates a Kubernetes Job.
+                enum:
+                - tekton
+                - job
+                type: string
+              parameters:
+                additionalProperties:
+                  type: string
+                description: |-
+                  Parameters from LLM selection (per DD-WORKFLOW-003)
+                  Keys are UPPER_SNAKE_CASE for Tekton PipelineRun params
+                type: object
+              rationale:
+                description: Rationale from LLM (for audit trail)
+                type: string
+              remediationRequestRef:
+                description: RemediationRequestRef references the parent RemediationRequest
+                  CRD
+                properties:
+                  apiVersion:
+                    description: API version of the referent.
+                    type: string
+                  fieldPath:
+                    description: |-
+                      If referring to a piece of an object instead of an entire object, this string
+                      should contain a valid JSON/Go field access statement, such as desiredState.manifest.containers[2].
+                      For example, if the object reference is to a container within a pod, this would take on a value like:
+                      "spec.containers{name}" (where "name" refers to the name of the container that triggered
+                      the event) or if no container name is specified "spec.containers[2]" (container with
+                      index 2 in this pod). This syntax is chosen only to have some well-defined way of
+                      referencing a part of an object.
+                    type: string
+                  kind:
+                    description: |-
+                      Kind of the referent.
+                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+                    type: string
+                  name:
+                    description: |-
+                      Name of the referent.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                  namespace:
+                    description: |-
+                      Namespace of the referent.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
+                    type: string
+                  resourceVersion:
+                    description: |-
+                      Specific resourceVersion to which this reference is made, if any.
+                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency
+                    type: string
+                  uid:
+                    description: |-
+                      UID of the referent.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
+              targetResource:
+                description: |-
+                  TargetResource identifies the K8s resource being remediated
+                  Used for resource locking (DD-WE-001) - prevents parallel workflows on same target
+                  Format: "namespace/kind/name" for namespaced resources
+                          "kind/name" for cluster-scoped resources
+                  Example: "payment/deployment/payment-api", "node/worker-node-1"
+                type: string
+              workflowRef:
+                description: |-
+                  WorkflowRef contains the workflow catalog reference
+                  Resolved from AIAnalysis.Status.SelectedWorkflow by RemediationOrchestrator
+                properties:
+                  executionBundle:
+                    description: |-
+                      ExecutionBundle resolved from workflow catalog (Data Storage API)
+                      OCI bundle reference for Tekton PipelineRun
+                    type: string
+                  executionBundleDigest:
+                    description: ExecutionBundleDigest for audit trail and reproducibility
+                    type: string
+                  version:
+                    description: Version of the workflow
+                    type: string
+                  workflowId:
+                    description: WorkflowID is the catalog lookup key
+                    type: string
+                required:
+                - executionBundle
+                - version
+                - workflowId
+                type: object
+            required:
+            - executionEngine
+            - remediationRequestRef
+            - targetResource
+            - workflowRef
+            type: object
+            x-kubernetes-validations:
+            - message: spec is immutable after creation (ADR-001)
+              rule: self == oldSelf
+          status:
+            description: |-
+              WorkflowExecutionStatus defines the observed state
+              Simplified per ADR-044 - just tracks PipelineRun status
+              Enhanced per DD-CONTRACT-001 v1.3 - rich failure details for recovery flow
+              Enhanced per DD-CONTRACT-001 v1.4 - resource locking and Skipped phase
+            properties:
+              blockClearance:
+                description: |-
+                  BlockClearance tracks the clearing of PreviousExecutionFailed blocks
+                  When set, allows new executions despite previous execution failure
+                  Preserves audit trail of WHO cleared the block and WHY
+                properties:
+                  clearMethod:
+                    description: |-
+                      ClearMethod indicates how the block was cleared
+                      Annotation: Via kubernaut.ai/clear-execution-block annotation
+                      APIEndpoint: Via dedicated clearing API endpoint (future)
+                      StatusField: Via direct status field update (future)
+                    enum:
+                    - Annotation
+                    - APIEndpoint
+                    - StatusField
+                    type: string
+                  clearReason:
+                    description: |-
+                      ClearReason is the operator-provided reason for clearing
+                      Required for audit trail accountability
+                      Example: "manual investigation complete, cluster state verified"
+                    type: string
+                  clearedAt:
+                    description: ClearedAt is the timestamp when the block was cleared
+                    format: date-time
+                    type: string
+                  clearedBy:
+                    description: |-
+                      ClearedBy is the Kubernetes user who cleared the block
+                      Extracted from request context (if available) or annotation value
+                      Format: username@domain or service-account:namespace:name
+                      Example: "admin@kubernaut.ai" or "service-account:kubernaut-system:operator"
+                    type: string
+                required:
+                - clearMethod
+                - clearReason
+                - clearedBy
+                type: object
+              completionTime:
+                description: CompletionTime when execution completed (success or failure)
+                format: date-time
+                type: string
+              conditions:
+                description: Conditions provide detailed status information
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              duration:
+                description: Duration of the execution
+                type: string
+              executionRef:
+                description: ExecutionRef references the created execution resource
+                  (PipelineRun or Job)
+                properties:
+                  name:
+                    default: ""
+                    description: |-
+                      Name of the referent.
+                      This field is effectively required, but due to backwards compatibility is
+                      allowed to be empty. Instances of this type with an empty value here are
+                      almost certainly wrong.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
+              executionStatus:
+                description: ExecutionStatus mirrors key execution resource status
+                  fields
+                properties:
+                  completedTasks:
+                    description: CompletedTasks count
+                    type: integer
+                  message:
+                    description: Message from the execution resource
+                    type: string
+                  reason:
+                    description: Reason from the execution resource (e.g., "Succeeded",
+                      "Failed", "Running")
+                    type: string
+                  status:
+                    description: Status of the execution resource (Unknown, True,
+                      False)
+                    type: string
+                  totalTasks:
+                    description: TotalTasks count (from pipeline spec)
+                    type: integer
+                required:
+                - status
+                type: object
+              failureDetails:
+                description: |-
+                  FailureDetails contains structured failure information
+                  Populated when Phase=Failed
+                  RO uses this to populate AIAnalysis.Spec.PreviousExecutions for recovery
+                properties:
+                  executionTimeBeforeFailure:
+                    description: |-
+                      ExecutionTimeBeforeFailure is how long the workflow ran before failing
+                      Format: Go duration string (e.g., "2m30s")
+                    type: string
+                  exitCode:
+                    description: |-
+                      ExitCode from container (if applicable)
+                      Useful for script-based tasks that return specific exit codes
+                    format: int32
+                    type: integer
+                  failedAt:
+                    description: FailedAt is the timestamp when the failure occurred
+                    format: date-time
+                    type: string
+                  failedStepName:
+                    description: |-
+                      FailedStepName is the name of the failed step within the task (if available)
+                      Tekton tasks can have multiple steps; this identifies the specific step
+                    type: string
+                  failedTaskIndex:
+                    description: |-
+                      FailedTaskIndex is 0-indexed position of failed task in pipeline
+                      Used by RO to populate AIAnalysis.Spec.PreviousExecutions[].Failure.FailedStepIndex
+                    type: integer
+                  failedTaskName:
+                    description: |-
+                      FailedTaskName is the name of the failed Tekton Task
+                      Used by RO to populate AIAnalysis.Spec.PreviousExecutions[].Failure.FailedStepName
+                    type: string
+                  message:
+                    description: Message is human-readable error message (for logging/UI/notifications)
+                    type: string
+                  naturalLanguageSummary:
+                    description: |-
+                      NaturalLanguageSummary is a human/LLM-readable failure description
+                      Generated by WE controller from structured data above
+                      Used by:
+                        - RO: Included in AIAnalysis.Spec.PreviousExecutions for LLM context
+                        - Notification: Included in user-facing failure alerts
+                    type: string
+                  reason:
+                    description: |-
+                      Reason is a Kubernetes-style reason code
+                      Used for deterministic recovery decisions by RO
+                    enum:
+                    - OOMKilled
+                    - DeadlineExceeded
+                    - Forbidden
+                    - ResourceExhausted
+                    - ConfigurationError
+                    - ImagePullBackOff
+                    - TaskFailed
+                    - Unknown
+                    type: string
+                  wasExecutionFailure:
+                    description: |-
+                      WasExecutionFailure indicates whether the failure occurred during workflow execution
+                      true = workflow RAN and failed (non-idempotent actions may have occurred)
+                      false = workflow failed BEFORE execution (validation, image pull, quota, etc.)
+                      CRITICAL: Execution failures (true) block ALL future retries for this target
+                                Pre-execution failures (false) get exponential backoff
+                    type: boolean
+                required:
+                - executionTimeBeforeFailure
+                - failedAt
+                - failedTaskIndex
+                - failedTaskName
+                - message
+                - naturalLanguageSummary
+                - reason
+                type: object
+              failureReason:
+                description: |-
+                  FailureReason explains why execution failed (if applicable)
+                  DEPRECATED: Use FailureDetails for structured failure information
+                type: string
+              observedGeneration:
+                description: |-
+                  ObservedGeneration is the most recent generation observed by the controller.
+                  Used to prevent duplicate reconciliations and ensure idempotency.
+                  Per DD-CONTROLLER-001: Standard pattern for all Kubernetes controllers.
+                format: int64
+                type: integer
+              phase:
+                description: |-
+                  Phase tracks current execution stage
+                  V1.0: Skipped phase removed - RO makes routing decisions before WFE creation
+                enum:
+                - Pending
+                - Running
+                - Completed
+                - Failed
+                type: string
+              startTime:
+                description: StartTime when execution started
+                format: date-time
+                type: string
+            type: object
+        type: object
+    selectableFields:
+    - jsonPath: .spec.remediationRequestRef.name
+    served: true
+    storage: true
+    subresources:
+      status: {}

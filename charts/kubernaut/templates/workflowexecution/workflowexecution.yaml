@@ -1,0 +1,191 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kubernaut-workflows
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: workflowexecution-controller
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: workflowexecution-controller
+    {{- include "kubernaut.labels" . | nindent 4 }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kubernaut-workflow-runner
+  namespace: kubernaut-workflows
+  labels:
+    app: kubernaut-workflow-runner
+    {{- include "kubernaut.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: workflowexecution-controller
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["workflowexecutions"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["workflowexecutions/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["workflowexecutions/finalizers"]
+    verbs: ["update"]
+  - apiGroups: ["tekton.dev"]
+    resources: ["pipelineruns"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["tekton.dev"]
+    resources: ["taskruns"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kubernaut-workflow-runner
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "daemonsets"]
+    verbs: ["get", "list", "patch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: workflowexecution-controller
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: workflowexecution-controller
+subjects:
+  - kind: ServiceAccount
+    name: workflowexecution-controller
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubernaut-workflow-runner
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kubernaut-workflow-runner
+subjects:
+  - kind: ServiceAccount
+    name: kubernaut-workflow-runner
+    namespace: kubernaut-workflows
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: workflowexecution-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: workflowexecution
+    {{- include "kubernaut.labels" . | nindent 4 }}
+data:
+  workflowexecution.yaml: |
+    controller:
+      metricsAddr: ":9090"
+      healthProbeAddr: ":8081"
+      leaderElection: false
+      leaderElectionId: workflowexecution.kubernaut.ai
+    execution:
+      namespace: kubernaut-workflows
+      cooldownPeriod: 1m
+      serviceAccount: kubernaut-workflow-runner
+    datastorage:
+      url: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
+      timeout: 10s
+      buffer:
+        bufferSize: 10000
+        batchSize: 50
+        flushInterval: 100ms
+        maxRetries: 3
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: workflowexecution-controller
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: workflowexecution-controller
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: workflowexecution-controller
+  template:
+    metadata:
+      labels:
+        app: workflowexecution-controller
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: workflowexecution-controller
+      containers:
+        - name: workflowexecution-controller
+          image: {{ include "kubernaut.image" (dict "service" "workflowexecution" "global" .Values.global) }}
+          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          args:
+            - "--config=/etc/config/workflowexecution.yaml"
+          ports:
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+          volumeMounts:
+            - name: config
+              mountPath: /etc/config
+              readOnly: true
+          resources:
+            {{- toYaml .Values.workflowexecution.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: workflowexecution-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: workflowexecution-controller-metrics
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: workflowexecution-controller
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: metrics
+      port: 9090
+      targetPort: 9090
+      protocol: TCP
+  selector:
+    app: workflowexecution-controller

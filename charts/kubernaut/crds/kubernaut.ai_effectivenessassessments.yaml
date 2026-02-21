@@ -1,0 +1,312 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.19.0
+  name: effectivenessassessments.kubernaut.ai
+spec:
+  group: kubernaut.ai
+  names:
+    kind: EffectivenessAssessment
+    listKind: EffectivenessAssessmentList
+    plural: effectivenessassessments
+    singular: effectivenessassessment
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.assessmentReason
+      name: Reason
+      type: string
+    - jsonPath: .spec.correlationID
+      name: CorrelationID
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Ready")].reason
+      name: ReadyReason
+      priority: 1
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          EffectivenessAssessment is the Schema for the effectivenessassessments API.
+          It is created by the Remediation Orchestrator and watched by the Effectiveness Monitor.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              EffectivenessAssessmentSpec defines the desired state of an EffectivenessAssessment.
+
+              The spec is set by the Remediation Orchestrator at creation time and is immutable.
+              Immutability is enforced by CEL validation (self == oldSelf) to prevent tampering.
+            properties:
+              config:
+                description: Config contains the assessment configuration parameters.
+                properties:
+                  stabilizationWindow:
+                    description: |-
+                      StabilizationWindow is the duration to wait after remediation before assessment.
+                      Set by the Remediation Orchestrator. The EM uses this to delay assessment
+                      until the system stabilizes post-remediation.
+                    type: string
+                required:
+                - stabilizationWindow
+                type: object
+              correlationID:
+                description: |-
+                  CorrelationID is the name of the parent RemediationRequest.
+                  Used as the correlation ID for audit events (DD-AUDIT-CORRELATION-002).
+                minLength: 1
+                type: string
+              preRemediationSpecHash:
+                description: |-
+                  PreRemediationSpecHash is the canonical spec hash of the target resource BEFORE
+                  remediation was applied. Copied from rr.Status.PreRemediationSpecHash by the RO
+                  at EA creation time. The EM uses this to compare pre vs post-remediation state
+                  for spec drift detection, eliminating the need to query DataStorage audit events.
+                  Reference: ADR-EM-001, DD-EM-002
+                type: string
+              remediationCreatedAt:
+                description: |-
+                  RemediationCreatedAt is the creation timestamp of the parent RemediationRequest.
+                  Set by the RO at EA creation time from rr.CreationTimestamp.
+                  Used by the audit manager to compute resolution_time_seconds in the
+                  assessment.completed event (CompletedAt - RemediationCreatedAt).
+                format: date-time
+                type: string
+              remediationRequestPhase:
+                description: |-
+                  RemediationRequestPhase is the RemediationRequest's OverallPhase at the time
+                  the EA was created. Captured as an immutable spec field so the EM can branch
+                  assessment logic based on the RR outcome (Completed, Failed, TimedOut).
+                  Previously stored as the mutable label kubernaut.ai/rr-phase; moved to spec
+                  for immutability and security.
+                enum:
+                - Completed
+                - Failed
+                - TimedOut
+                type: string
+              signalName:
+                description: |-
+                  SignalName is the original alert/signal name from the parent RemediationRequest.
+                  Set by the RO at EA creation time from rr.Spec.SignalName.
+                  Used by the audit manager to populate the alert_name field in assessment.completed
+                  events (OBS-1: distinct from CorrelationID which is the RR name).
+                type: string
+              targetResource:
+                description: TargetResource identifies the Kubernetes resource that
+                  was remediated.
+                properties:
+                  kind:
+                    description: Kind is the Kubernetes resource kind (e.g., "Deployment",
+                      "StatefulSet").
+                    type: string
+                  name:
+                    description: Name is the resource name.
+                    type: string
+                  namespace:
+                    description: Namespace is the resource namespace.
+                    type: string
+                required:
+                - kind
+                - name
+                - namespace
+                type: object
+            required:
+            - config
+            - correlationID
+            - remediationRequestPhase
+            - targetResource
+            type: object
+            x-kubernetes-validations:
+            - message: spec is immutable after creation (ADR-001)
+              rule: self == oldSelf
+          status:
+            description: EffectivenessAssessmentStatus defines the observed state
+              of an EffectivenessAssessment.
+            properties:
+              alertManagerCheckAfter:
+                description: |-
+                  AlertManagerCheckAfter is the earliest time to check AlertManager for alert resolution.
+                  Computed by the EM controller on first reconciliation as:
+                    EA.creationTimestamp + StabilizationWindow (from EA spec).
+                  Stored in status to avoid recomputation on every reconcile and for
+                  operator observability of the assessment timeline.
+                format: date-time
+                type: string
+              assessmentReason:
+                description: AssessmentReason describes why the assessment completed
+                  with this outcome.
+                enum:
+                - full
+                - partial
+                - no_execution
+                - metrics_timed_out
+                - expired
+                - spec_drift
+                type: string
+              completedAt:
+                description: CompletedAt is the timestamp when the assessment finished.
+                format: date-time
+                type: string
+              components:
+                description: Components tracks the completion state of each assessment
+                  component.
+                properties:
+                  alertAssessed:
+                    description: AlertAssessed indicates whether the alert resolution
+                      check has been completed.
+                    type: boolean
+                  alertScore:
+                    description: AlertScore is the alert resolution score (0.0 or
+                      1.0), nil if not yet assessed.
+                    type: number
+                  currentSpecHash:
+                    description: |-
+                      CurrentSpecHash is the most recent hash of the target resource spec,
+                      re-computed on each reconcile after HashComputed is true (DD-EM-002 v1.1).
+                      If it differs from PostRemediationSpecHash, spec drift was detected.
+                    type: string
+                  hashComputed:
+                    description: HashComputed indicates whether the spec hash comparison
+                      has been completed.
+                    type: boolean
+                  healthAssessed:
+                    description: HealthAssessed indicates whether the health check
+                      has been completed.
+                    type: boolean
+                  healthScore:
+                    description: HealthScore is the health check score (0.0-1.0),
+                      nil if not yet assessed.
+                    type: number
+                  metricsAssessed:
+                    description: MetricsAssessed indicates whether the metric comparison
+                      has been completed.
+                    type: boolean
+                  metricsScore:
+                    description: MetricsScore is the metric comparison score (0.0-1.0),
+                      nil if not yet assessed.
+                    type: number
+                  postRemediationSpecHash:
+                    description: PostRemediationSpecHash is the hash of the target
+                      resource spec after remediation.
+                    type: string
+                type: object
+              conditions:
+                description: Conditions represent the latest available observations
+                  of the EA's state.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              message:
+                description: Message provides human-readable details about the current
+                  state.
+                type: string
+              phase:
+                description: Phase is the current lifecycle phase of the assessment.
+                enum:
+                - Pending
+                - Assessing
+                - Completed
+                - Failed
+                type: string
+              prometheusCheckAfter:
+                description: |-
+                  PrometheusCheckAfter is the earliest time to query Prometheus for metrics.
+                  Computed by the EM controller on first reconciliation as:
+                    EA.creationTimestamp + StabilizationWindow (from EA spec).
+                  Stored in status to avoid recomputation on every reconcile and for
+                  operator observability of the assessment timeline.
+                format: date-time
+                type: string
+              validityDeadline:
+                description: |-
+                  ValidityDeadline is the absolute time after which the assessment expires.
+                  Computed by the EM controller on first reconciliation as:
+                    EA.creationTimestamp + validityWindow (from EM config).
+                  This follows Kubernetes spec/status convention: the RO sets desired state
+                  (StabilizationWindow in spec), and the EM computes observed/derived state
+                  (ValidityDeadline in status). This prevents misconfiguration where
+                  StabilizationWindow > ValidityDeadline.
+                format: date-time
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

@@ -1,0 +1,205 @@
+---
+# DataStorage service RBAC (ServiceAccount + auth middleware)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: data-storage-sa
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: data-storage-service
+    {{- include "kubernaut.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: data-storage-auth-middleware
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["tokenreviews"]
+    verbs: ["create"]
+  - apiGroups: ["authorization.k8s.io"]
+    resources: ["subjectaccessreviews"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: data-storage-auth-middleware
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-auth-middleware
+subjects:
+  - kind: ServiceAccount
+    name: data-storage-sa
+    namespace: {{ .Release.Namespace }}
+---
+# DataStorage client ClusterRole + RoleBindings
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: data-storage-client
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["services"]
+    resourceNames: ["data-storage-service"]
+    verbs: ["create", "get", "list", "update", "delete"]
+---
+# Gateway
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: gateway-data-storage-client
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
+subjects:
+  - kind: ServiceAccount
+    name: gateway
+    namespace: {{ .Release.Namespace }}
+---
+# SignalProcessing
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: signalprocessing-data-storage-client
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
+subjects:
+  - kind: ServiceAccount
+    name: signalprocessing-controller
+    namespace: {{ .Release.Namespace }}
+---
+# RemediationOrchestrator
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: remediationorchestrator-data-storage-client
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
+subjects:
+  - kind: ServiceAccount
+    name: remediationorchestrator-controller
+    namespace: {{ .Release.Namespace }}
+---
+# AuthWebhook
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: authwebhook-data-storage-client
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
+subjects:
+  - kind: ServiceAccount
+    name: authwebhook
+    namespace: {{ .Release.Namespace }}
+---
+# WorkflowExecution
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: workflowexecution-data-storage-client
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
+subjects:
+  - kind: ServiceAccount
+    name: workflowexecution-controller
+    namespace: {{ .Release.Namespace }}
+---
+# HolmesGPT API
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: holmesgpt-api-data-storage-client
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
+subjects:
+  - kind: ServiceAccount
+    name: holmesgpt-api-sa
+    namespace: {{ .Release.Namespace }}
+---
+# EffectivenessMonitor
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: effectivenessmonitor-data-storage-client
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
+subjects:
+  - kind: ServiceAccount
+    name: effectivenessmonitor-controller
+    namespace: {{ .Release.Namespace }}
+---
+# Notification
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: notification-data-storage-client
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
+subjects:
+  - kind: ServiceAccount
+    name: notification-controller
+    namespace: {{ .Release.Namespace }}
+---
+# DataStorage self-access
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: datastorage-self-client
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
+subjects:
+  - kind: ServiceAccount
+    name: data-storage-sa
+    namespace: {{ .Release.Namespace }}

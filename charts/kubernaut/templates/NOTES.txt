@@ -1,0 +1,30 @@
+Kubernaut {{ .Chart.AppVersion }} has been installed in namespace {{ .Release.Namespace }}.
+
+=== Post-Install Steps ===
+
+1. Verify all pods are running:
+
+   kubectl get pods -n {{ .Release.Namespace }}
+
+2. Configure LLM credentials (required for AI analysis):
+
+   cp deploy/demo/credentials/vertex-ai-example.yaml my-llm-credentials.yaml
+   # Edit with your provider credentials
+   kubectl apply -f my-llm-credentials.yaml -n {{ .Release.Namespace }}
+   kubectl rollout restart deployment/holmesgpt-api -n {{ .Release.Namespace }}
+
+3. Check the workflow catalog:
+
+   kubectl port-forward -n {{ .Release.Namespace }} svc/data-storage-service 8080:8080
+   curl -s http://localhost:8080/api/v1/workflows | jq '.'
+
+=== Monitoring ===
+
+Kubernaut is designed to work with kube-prometheus-stack.
+Install it separately for full alerting and remediation capabilities.
+
+=== CRD Upgrades ===
+
+Helm does not upgrade CRDs on `helm upgrade`. To update CRDs:
+
+   kubectl apply -f charts/kubernaut/crds/

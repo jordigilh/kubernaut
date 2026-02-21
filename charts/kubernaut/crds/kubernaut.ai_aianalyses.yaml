@@ -1,0 +1,1297 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.19.0
+  name: aianalyses.kubernaut.ai
+spec:
+  group: kubernaut.ai
+  names:
+    kind: AIAnalysis
+    listKind: AIAnalysisList
+    plural: aianalyses
+    singular: aianalysis
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.selectedWorkflow.confidence
+      name: Confidence
+      type: number
+    - jsonPath: .status.approvalRequired
+      name: ApprovalRequired
+      type: boolean
+    - jsonPath: .status.conditions[?(@.type=="Ready")].reason
+      name: Reason
+      priority: 1
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: AIAnalysis is the Schema for the aianalyses API.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              AIAnalysisSpec defines the desired state of AIAnalysis.
+
+              ADR-001: Spec Immutability
+              AIAnalysis represents an immutable event (AI investigation).
+              Once created by RemediationOrchestrator, spec cannot be modified to ensure:
+              - Audit trail integrity (AI investigation matches original RCA request)
+              - No tampering with RCA targets post-HAPI validation
+              - No workflow selection modification after AI recommendation
+
+              To re-analyze, delete and recreate the AIAnalysis CRD.
+            properties:
+              analysisRequest:
+                description: |-
+                  ========================================
+                  ANALYSIS REQUEST (DD-CONTRACT-002)
+                  ========================================
+                  Complete analysis request with structured context
+                properties:
+                  analysisTypes:
+                    description: Analysis types to perform (e.g., "investigation",
+                      "root-cause", "workflow-selection")
+                    items:
+                      type: string
+                    minItems: 1
+                    type: array
+                  signalContext:
+                    description: Signal context from SignalProcessing enrichment
+                    properties:
+                      businessPriority:
+                        description: |-
+                          Business priority
+                          GAP-C3-01 RELATED: Changed from enum to free-text for consistency
+                          Best practice examples: P0 (critical), P1 (high), P2 (normal), P3 (low)
+                        maxLength: 63
+                        minLength: 1
+                        type: string
+                      enrichmentResults:
+                        description: |-
+                          Complete enrichment results from SignalProcessing
+                          GAP-C3-04 FIX: Uses shared types from pkg/shared/types/enrichment.go
+                        properties:
+                          customLabels:
+                            additionalProperties:
+                              items:
+                                type: string
+                              type: array
+                            description: |-
+                              Custom labels from Rego policies - CUSTOMER DEFINED
+                              Key = subdomain/category (e.g., "constraint", "team", "region")
+                              Value = list of label values (boolean keys or "key=value" pairs)
+                              Example: {"constraint": ["cost-constrained", "stateful-safe"], "team": ["name=payments"]}
+                              Passed through to HolmesGPT-API for workflow filtering + LLM context
+                            type: object
+                          detectedLabels:
+                            description: |-
+                              Auto-detected cluster characteristics - NO CONFIG NEEDED
+                              SignalProcessing detects these from K8s resources automatically
+                              Used by HolmesGPT-API for: workflow filtering + LLM context
+                            properties:
+                              failedDetections:
+                                description: |-
+                                  ========================================
+                                  DETECTION FAILURE TRACKING (DD-WORKFLOW-001 v2.2)
+                                  ========================================
+                                  Lists field names where detection QUERY failed (RBAC, timeout, network error).
+                                  If a field is in this array, its value should be ignored.
+                                  If empty/nil, all detections succeeded.
+                                  Only accepts valid field names: gitOpsManaged, pdbProtected, hpaEnabled,
+                                  stateful, helmManaged, networkIsolated, serviceMesh
+                                items:
+                                  enum:
+                                  - gitOpsManaged
+                                  - pdbProtected
+                                  - hpaEnabled
+                                  - stateful
+                                  - helmManaged
+                                  - networkIsolated
+                                  - serviceMesh
+                                  type: string
+                                type: array
+                              gitOpsManaged:
+                                description: |-
+                                  ========================================
+                                  GITOPS MANAGEMENT
+                                  ========================================
+                                  True if namespace/deployment is managed by GitOps controller
+                                  Detection: ArgoCD annotations, Flux labels
+                                type: boolean
+                              gitOpsTool:
+                                description: GitOps tool managing this resource
+                                enum:
+                                - argocd
+                                - flux
+                                - ""
+                                type: string
+                              helmManaged:
+                                description: True if managed by Helm (has helm.sh/chart
+                                  label)
+                                type: boolean
+                              hpaEnabled:
+                                description: True if HorizontalPodAutoscaler targets
+                                  this workload
+                                type: boolean
+                              networkIsolated:
+                                description: |-
+                                  ========================================
+                                  SECURITY POSTURE
+                                  ========================================
+                                  True if NetworkPolicy exists in namespace
+                                type: boolean
+                              pdbProtected:
+                                description: |-
+                                  ========================================
+                                  WORKLOAD PROTECTION
+                                  ========================================
+                                  True if PodDisruptionBudget exists for this workload
+                                type: boolean
+                              serviceMesh:
+                                description: Service mesh if detected (from sidecar
+                                  or namespace labels)
+                                enum:
+                                - istio
+                                - linkerd
+                                - ""
+                                type: string
+                              stateful:
+                                description: |-
+                                  ========================================
+                                  WORKLOAD CHARACTERISTICS
+                                  ========================================
+                                  True if StatefulSet or has PVCs attached
+                                type: boolean
+                            required:
+                            - gitOpsManaged
+                            - helmManaged
+                            - hpaEnabled
+                            - networkIsolated
+                            - pdbProtected
+                            - stateful
+                            type: object
+                          kubernetesContext:
+                            description: Kubernetes resource context (pod status,
+                              node conditions, etc.)
+                            properties:
+                              deploymentDetails:
+                                description: Deployment/workload context
+                                properties:
+                                  availableReplicas:
+                                    format: int32
+                                    type: integer
+                                  labels:
+                                    additionalProperties:
+                                      type: string
+                                    type: object
+                                  name:
+                                    type: string
+                                  readyReplicas:
+                                    format: int32
+                                    type: integer
+                                  replicas:
+                                    format: int32
+                                    type: integer
+                                  strategy:
+                                    type: string
+                                required:
+                                - availableReplicas
+                                - name
+                                - readyReplicas
+                                - replicas
+                                - strategy
+                                type: object
+                              namespace:
+                                description: Namespace information
+                                type: string
+                              namespaceAnnotations:
+                                additionalProperties:
+                                  type: string
+                                type: object
+                              namespaceLabels:
+                                additionalProperties:
+                                  type: string
+                                type: object
+                              nodeDetails:
+                                description: Node context
+                                properties:
+                                  allocatable:
+                                    description: ResourceList contains resource quantities.
+                                    properties:
+                                      cpu:
+                                        type: string
+                                      memory:
+                                        type: string
+                                    required:
+                                    - cpu
+                                    - memory
+                                    type: object
+                                  capacity:
+                                    description: ResourceList contains resource quantities.
+                                    properties:
+                                      cpu:
+                                        type: string
+                                      memory:
+                                        type: string
+                                    required:
+                                    - cpu
+                                    - memory
+                                    type: object
+                                  conditions:
+                                    items:
+                                      description: NodeCondition contains node condition
+                                        status.
+                                      properties:
+                                        status:
+                                          type: string
+                                        type:
+                                          type: string
+                                      required:
+                                      - status
+                                      - type
+                                      type: object
+                                    type: array
+                                  labels:
+                                    additionalProperties:
+                                      type: string
+                                    type: object
+                                  name:
+                                    type: string
+                                required:
+                                - allocatable
+                                - capacity
+                                - name
+                                type: object
+                              podDetails:
+                                description: Pod context
+                                properties:
+                                  annotations:
+                                    additionalProperties:
+                                      type: string
+                                    type: object
+                                  containers:
+                                    items:
+                                      description: ContainerStatus contains container-level
+                                        status.
+                                      properties:
+                                        image:
+                                          type: string
+                                        name:
+                                          type: string
+                                        ready:
+                                          type: boolean
+                                        restartCount:
+                                          format: int32
+                                          type: integer
+                                        state:
+                                          type: string
+                                      required:
+                                      - image
+                                      - name
+                                      - ready
+                                      - restartCount
+                                      - state
+                                      type: object
+                                    type: array
+                                  creationTimestamp:
+                                    type: string
+                                  labels:
+                                    additionalProperties:
+                                      type: string
+                                    type: object
+                                  name:
+                                    type: string
+                                  phase:
+                                    type: string
+                                  restartCount:
+                                    format: int32
+                                    type: integer
+                                required:
+                                - creationTimestamp
+                                - name
+                                - phase
+                                - restartCount
+                                type: object
+                              relatedConfigMaps:
+                                items:
+                                  description: ConfigMapSummary contains ConfigMap
+                                    targeting information.
+                                  properties:
+                                    keys:
+                                      items:
+                                        type: string
+                                      type: array
+                                    name:
+                                      type: string
+                                  required:
+                                  - keys
+                                  - name
+                                  type: object
+                                type: array
+                              relatedIngresses:
+                                items:
+                                  description: IngressSummary contains ingress targeting
+                                    information.
+                                  properties:
+                                    hosts:
+                                      items:
+                                        type: string
+                                      type: array
+                                    name:
+                                      type: string
+                                    rules:
+                                      items:
+                                        description: IngressRule contains ingress
+                                          rule configuration.
+                                        properties:
+                                          host:
+                                            type: string
+                                          path:
+                                            type: string
+                                        required:
+                                        - host
+                                        - path
+                                        type: object
+                                      type: array
+                                  required:
+                                  - hosts
+                                  - name
+                                  type: object
+                                type: array
+                              relatedServices:
+                                description: Related resources (targeting data only)
+                                items:
+                                  description: ServiceSummary contains service targeting
+                                    information.
+                                  properties:
+                                    clusterIP:
+                                      type: string
+                                    name:
+                                      type: string
+                                    ports:
+                                      items:
+                                        description: ServicePort contains service
+                                          port configuration.
+                                        properties:
+                                          name:
+                                            type: string
+                                          port:
+                                            format: int32
+                                            type: integer
+                                          protocol:
+                                            type: string
+                                          targetPort:
+                                            type: string
+                                        required:
+                                        - name
+                                        - port
+                                        - protocol
+                                        - targetPort
+                                        type: object
+                                      type: array
+                                    type:
+                                      type: string
+                                  required:
+                                  - clusterIP
+                                  - name
+                                  - type
+                                  type: object
+                                type: array
+                            required:
+                            - namespace
+                            type: object
+                          ownerChain:
+                            description: |-
+                              OwnerChain: K8s ownership traversal from signal source resource.
+                              SignalProcessing traverses metadata.ownerReferences to build this chain.
+                              Example: Pod → ReplicaSet → Deployment
+                              Empty chain = orphan resource (no owners)
+
+                              ADR-055: No longer propagated from SP to AIAnalysis or HAPI.
+                              HAPI resolves its own chain post-RCA via get_resource_context tool.
+                              Field retained in shared types for SP internal use (label detection).
+                              ADR-056: Scheduled for relocation to SP-internal types.
+                            items:
+                              description: "OwnerChainEntry represents a single entry
+                                in the K8s ownership chain.\nDD-WORKFLOW-001 v1.8:
+                                SignalProcessing traverses ownerReferences to build
+                                this.\nExample chain for a Pod owned by Deployment:\n\n\t[0]:
+                                {Namespace: \"prod\", Kind: \"ReplicaSet\", Name:
+                                \"api-7d8f9c6b5\"}\n\t[1]: {Namespace: \"prod\", Kind:
+                                \"Deployment\", Name: \"api\"}"
+                              properties:
+                                kind:
+                                  description: Kind of the owner resource (e.g., ReplicaSet,
+                                    Deployment, StatefulSet, DaemonSet)
+                                  type: string
+                                name:
+                                  description: Name of the owner resource
+                                  type: string
+                                namespace:
+                                  description: Namespace of the owner resource (empty
+                                    for cluster-scoped resources like Node)
+                                  type: string
+                              required:
+                              - kind
+                              - name
+                              type: object
+                            type: array
+                        type: object
+                      environment:
+                        description: |-
+                          Environment classification
+                          GAP-C3-01 FIX: Changed from enum to free-text (values defined by Rego policies)
+                          Examples: "production", "staging", "development", "qa-eu", "canary"
+                        maxLength: 63
+                        minLength: 1
+                        type: string
+                      fingerprint:
+                        description: Signal fingerprint for correlation
+                        maxLength: 64
+                        type: string
+                      severity:
+                        description: 'Signal severity: critical, high, medium, low,
+                          unknown (normalized by SignalProcessing Rego - DD-SEVERITY-001
+                          v1.1)'
+                        enum:
+                        - critical
+                        - high
+                        - medium
+                        - low
+                        - unknown
+                        type: string
+                      signalMode:
+                        description: |-
+                          SignalMode indicates whether this is a reactive or predictive signal.
+                          BR-AI-084: Predictive Signal Mode Prompt Strategy
+                          Copied from SignalProcessing status by RemediationOrchestrator.
+                          Used by HAPI to switch investigation prompt (RCA vs. predict & prevent).
+                        enum:
+                        - reactive
+                        - predictive
+                        type: string
+                      signalType:
+                        description: |-
+                          Signal type (e.g., OOMKilled, CrashLoopBackOff)
+                          Normalized by SignalProcessing: predictive types mapped to base types (BR-SP-106)
+                        type: string
+                      targetResource:
+                        description: Target resource identification
+                        properties:
+                          kind:
+                            description: Resource kind (e.g., Pod, Deployment, StatefulSet)
+                            type: string
+                          name:
+                            description: Resource name
+                            type: string
+                          namespace:
+                            description: Resource namespace
+                            type: string
+                        required:
+                        - kind
+                        - name
+                        - namespace
+                        type: object
+                    required:
+                    - businessPriority
+                    - enrichmentResults
+                    - environment
+                    - fingerprint
+                    - severity
+                    - signalType
+                    - targetResource
+                    type: object
+                required:
+                - analysisTypes
+                - signalContext
+                type: object
+              isRecoveryAttempt:
+                description: |-
+                  ========================================
+                  RECOVERY FIELDS (DD-RECOVERY-002)
+                  Populated by RO when this is a recovery attempt
+                  ========================================
+                  True if this AIAnalysis is for a recovery attempt (not initial incident)
+                type: boolean
+              previousExecutions:
+                description: |-
+                  Previous execution history (only set when IsRecoveryAttempt=true)
+                  Contains details about ALL previous attempts - allows LLM to:
+                  1. Avoid repeating failed approaches
+                  2. Learn from multiple failures
+                  3. Consider re-trying earlier approaches after later failures
+                  Ordered chronologically: index 0 = first attempt, last index = most recent
+                items:
+                  description: |-
+                    PreviousExecution contains context from a failed workflow execution
+                    DD-RECOVERY-002: Used when IsRecoveryAttempt=true
+                  properties:
+                    failure:
+                      description: Structured failure information with Kubernetes
+                        reason codes
+                      properties:
+                        executionTime:
+                          description: How long the execution ran before failing (e.g.,
+                            "2m34s")
+                          type: string
+                        exitCode:
+                          description: Exit code if applicable
+                          format: int32
+                          type: integer
+                        failedAt:
+                          description: When the failure occurred
+                          format: date-time
+                          type: string
+                        failedStepIndex:
+                          description: Which step failed (0-indexed)
+                          type: integer
+                        failedStepName:
+                          description: Name of the failed step
+                          type: string
+                        message:
+                          description: Human-readable error message (for logging/debugging)
+                          type: string
+                        reason:
+                          description: |-
+                            Kubernetes reason code (e.g., OOMKilled, DeadlineExceeded)
+                            NOT natural language - structured enum-like value
+                          type: string
+                      required:
+                      - executionTime
+                      - failedAt
+                      - failedStepIndex
+                      - failedStepName
+                      - message
+                      - reason
+                      type: object
+                    originalRCA:
+                      description: Original RCA from initial AIAnalysis
+                      properties:
+                        contributingFactors:
+                          description: Contributing factors
+                          items:
+                            type: string
+                          type: array
+                        severity:
+                          description: Severity determined by original RCA
+                          type: string
+                        signalType:
+                          description: Signal type determined by original RCA
+                          type: string
+                        summary:
+                          description: Brief RCA summary
+                          type: string
+                      required:
+                      - severity
+                      - signalType
+                      - summary
+                      type: object
+                    selectedWorkflow:
+                      description: Selected workflow that was executed and failed
+                      properties:
+                        actionType:
+                          description: Action type from DD-WORKFLOW-016 taxonomy (e.g.,
+                            ScaleReplicas, RestartPod)
+                          type: string
+                        executionBundle:
+                          description: Execution bundle OCI reference (digest-pinned)
+                          type: string
+                        parameters:
+                          additionalProperties:
+                            type: string
+                          description: Parameters passed to workflow
+                          type: object
+                        rationale:
+                          description: Why this workflow was selected
+                          type: string
+                        version:
+                          description: Workflow version
+                          type: string
+                        workflowId:
+                          description: Workflow identifier
+                          type: string
+                      required:
+                      - executionBundle
+                      - rationale
+                      - version
+                      - workflowId
+                      type: object
+                    workflowExecutionRef:
+                      description: Reference to the failed WorkflowExecution CRD
+                      type: string
+                  required:
+                  - failure
+                  - originalRCA
+                  - selectedWorkflow
+                  - workflowExecutionRef
+                  type: object
+                type: array
+              recoveryAttemptNumber:
+                description: Recovery attempt number (1, 2, 3...) - only set when
+                  IsRecoveryAttempt=true
+                minimum: 1
+                type: integer
+              remediationId:
+                description: Remediation ID for audit correlation (DD-WORKFLOW-002
+                  v2.2)
+                minLength: 1
+                type: string
+              remediationRequestRef:
+                description: |-
+                  ========================================
+                  PARENT REFERENCE (Audit/Lineage)
+                  ========================================
+                  Reference to parent RemediationRequest CRD for audit trail
+                properties:
+                  apiVersion:
+                    description: API version of the referent.
+                    type: string
+                  fieldPath:
+                    description: |-
+                      If referring to a piece of an object instead of an entire object, this string
+                      should contain a valid JSON/Go field access statement, such as desiredState.manifest.containers[2].
+                      For example, if the object reference is to a container within a pod, this would take on a value like:
+                      "spec.containers{name}" (where "name" refers to the name of the container that triggered
+                      the event) or if no container name is specified "spec.containers[2]" (container with
+                      index 2 in this pod). This syntax is chosen only to have some well-defined way of
+                      referencing a part of an object.
+                    type: string
+                  kind:
+                    description: |-
+                      Kind of the referent.
+                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+                    type: string
+                  name:
+                    description: |-
+                      Name of the referent.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                  namespace:
+                    description: |-
+                      Namespace of the referent.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
+                    type: string
+                  resourceVersion:
+                    description: |-
+                      Specific resourceVersion to which this reference is made, if any.
+                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency
+                    type: string
+                  uid:
+                    description: |-
+                      UID of the referent.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
+              timeoutConfig:
+                description: |-
+                  ========================================
+                  TIMEOUT CONFIGURATION (REQUEST_RO_TIMEOUT_PASSTHROUGH_CLARIFICATION.md)
+                  Replaces deprecated annotation-based timeout (security + validation)
+                  Passed through from RR.Status.TimeoutConfig.AIAnalysisTimeout by RO (Gap #8: moved to Status)
+                  ========================================
+                  Optional timeout configuration for this analysis
+                  If nil, AIAnalysis controller uses defaults (Investigating: 60s, Analyzing: 5s)
+                properties:
+                  analyzingTimeout:
+                    description: |-
+                      Timeout for Analyzing phase (Rego policy evaluation)
+                      Default: 5s if not specified
+                    type: string
+                  investigatingTimeout:
+                    description: |-
+                      Timeout for Investigating phase (HolmesGPT-API call)
+                      Default: 60s if not specified
+                    type: string
+                type: object
+            required:
+            - analysisRequest
+            - remediationId
+            - remediationRequestRef
+            type: object
+            x-kubernetes-validations:
+            - message: spec is immutable after creation (ADR-001)
+              rule: self == oldSelf
+          status:
+            description: AIAnalysisStatus defines the observed state of AIAnalysis.
+            properties:
+              alternativeWorkflows:
+                description: |-
+                  ========================================
+                  ALTERNATIVE WORKFLOWS (Dec 2025)
+                  ========================================
+                  Alternative workflows considered but not selected.
+                  INFORMATIONAL ONLY - NOT for automatic execution.
+                  Helps operators make informed approval decisions and provides audit trail.
+                  Per HolmesGPT-API team: Alternatives are for CONTEXT, not EXECUTION.
+                items:
+                  description: |-
+                    AlternativeWorkflow contains alternative workflows considered but not selected.
+                    INFORMATIONAL ONLY - NOT for automatic execution.
+                    Helps operators understand AI reasoning during approval decisions.
+                    Per HolmesGPT-API team (Dec 5, 2025): Alternatives are for CONTEXT, not EXECUTION.
+                  properties:
+                    confidence:
+                      description: Confidence score (0.0-1.0) - shows why it wasn't
+                        selected
+                      maximum: 1
+                      minimum: 0
+                      type: number
+                    executionBundle:
+                      description: Execution bundle OCI reference (digest-pinned)
+                        - resolved by HolmesGPT-API
+                      type: string
+                    rationale:
+                      description: Rationale explaining why this workflow was considered
+                      type: string
+                    workflowId:
+                      description: Workflow identifier (catalog lookup key)
+                      type: string
+                  required:
+                  - confidence
+                  - rationale
+                  - workflowId
+                  type: object
+                type: array
+              approvalContext:
+                description: Rich context for approval notification
+                properties:
+                  alternativesConsidered:
+                    description: AlternativesConsidered with pros/cons
+                    items:
+                      description: AlternativeApproach describes an alternative approach
+                        with pros/cons
+                      properties:
+                        approach:
+                          description: Approach description
+                          type: string
+                        prosCons:
+                          description: ProsCons analysis
+                          type: string
+                      required:
+                      - approach
+                      - prosCons
+                      type: object
+                    type: array
+                  confidenceLevel:
+                    description: 'ConfidenceLevel: "low" | "medium" | "high"'
+                    enum:
+                    - low
+                    - medium
+                    - high
+                    type: string
+                  confidenceScore:
+                    description: ConfidenceScore from AI analysis (0.0-1.0)
+                    maximum: 1
+                    minimum: 0
+                    type: number
+                  evidenceCollected:
+                    description: EvidenceCollected that led to this conclusion
+                    items:
+                      type: string
+                    type: array
+                  investigationSummary:
+                    description: InvestigationSummary from HolmesGPT analysis
+                    type: string
+                  policyEvaluation:
+                    description: PolicyEvaluation contains Rego policy evaluation
+                      details (BR-AI-030)
+                    properties:
+                      decision:
+                        description: 'Decision: approved, manual_review_required,
+                          denied'
+                        type: string
+                      matchedRules:
+                        description: Rules that matched
+                        items:
+                          type: string
+                        type: array
+                      policyName:
+                        description: Policy name that was evaluated
+                        type: string
+                    required:
+                    - decision
+                    - policyName
+                    type: object
+                  reason:
+                    description: Reason why approval is required
+                    type: string
+                  recommendedActions:
+                    description: RecommendedActions with rationale
+                    items:
+                      description: RecommendedAction describes a remediation action
+                        with rationale
+                      properties:
+                        action:
+                          description: Action type
+                          type: string
+                        rationale:
+                          description: Rationale explaining why this action is recommended
+                          type: string
+                      required:
+                      - action
+                      - rationale
+                      type: object
+                    type: array
+                  whyApprovalRequired:
+                    description: WhyApprovalRequired explains the need for human review
+                    type: string
+                required:
+                - confidenceLevel
+                - confidenceScore
+                - investigationSummary
+                - reason
+                - recommendedActions
+                - whyApprovalRequired
+                type: object
+              approvalReason:
+                description: Reason why approval is required (when ApprovalRequired=true)
+                type: string
+              approvalRequired:
+                description: |-
+                  ========================================
+                  APPROVAL SIGNALING
+                  ========================================
+                  True if approval is required (confidence < 80% or policy requires)
+                type: boolean
+              completedAt:
+                format: date-time
+                type: string
+              conditions:
+                description: Conditions
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              consecutiveFailures:
+                description: |-
+                  ConsecutiveFailures tracks retry attempts for exponential backoff
+                  BR-AI-009: Reset to 0 on success, increment on transient failure
+                  Used with pkg/shared/backoff for retry logic with jitter
+                format: int32
+                minimum: 0
+                type: integer
+              degradedMode:
+                description: |-
+                  ========================================
+                  OPERATIONAL STATUS
+                  ========================================
+                  DegradedMode indicates if the analysis ran with degraded capabilities
+                  (e.g., Rego policy evaluation failed, using safe defaults)
+                type: boolean
+              humanReviewReason:
+                description: |-
+                  Reason why human review needed (when NeedsHumanReview=true)
+                  BR-HAPI-197: Maps to HAPI's human_review_reason enum values
+                  BR-HAPI-212: Includes "rca_incomplete" for missing affectedResource
+                enum:
+                - workflow_not_found
+                - image_mismatch
+                - parameter_validation_failed
+                - no_matching_workflows
+                - low_confidence
+                - llm_parsing_error
+                - investigation_inconclusive
+                - rca_incomplete
+                type: string
+              investigationId:
+                description: |-
+                  ========================================
+                  INVESTIGATION DETAILS
+                  ========================================
+                  HolmesGPT investigation ID for correlation
+                maxLength: 253
+                type: string
+              investigationSession:
+                description: |-
+                  ========================================
+                  INVESTIGATION SESSION (BR-AA-HAPI-064)
+                  Tracks the async submit/poll session with HAPI
+                  ========================================
+                  InvestigationSession tracks the async HAPI session for submit/poll pattern
+                properties:
+                  createdAt:
+                    description: CreatedAt timestamp when the current session was
+                      created
+                    format: date-time
+                    type: string
+                  generation:
+                    description: Generation counter tracking session regenerations
+                      (0 = first session, incremented on 404)
+                    format: int32
+                    minimum: 0
+                    type: integer
+                  id:
+                    description: Session ID returned by HAPI on submit (cleared on
+                      session loss)
+                    type: string
+                  lastPolled:
+                    description: LastPolled timestamp of the last poll attempt
+                    format: date-time
+                    type: string
+                  pollCount:
+                    description: |-
+                      PollCount tracks the number of poll attempts for backoff calculation
+                      BR-AA-HAPI-064.8: Exponential backoff (10s, 20s, 30s cap)
+                    format: int32
+                    minimum: 0
+                    type: integer
+                required:
+                - generation
+                type: object
+              investigationTime:
+                description: |-
+                  NOTE: TokensUsed REMOVED (Dec 2025)
+                  Reason: LLM token tracking is HAPI's responsibility (they call the LLM)
+                  Observability: HAPI exposes holmesgpt_llm_token_usage_total Prometheus metric
+                  Correlation: Use InvestigationID to link AIAnalysis CRD to HAPI metrics
+                  Design Decision: DD-COST-001 - Cost observability is provider's responsibility
+                  Investigation duration in seconds
+                format: int64
+                minimum: 0
+                type: integer
+              message:
+                type: string
+              needsHumanReview:
+                description: |-
+                  ========================================
+                  HUMAN REVIEW SIGNALING (BR-HAPI-197)
+                  Set by HAPI when AI cannot produce reliable result
+                  ========================================
+                  True if human review required (HAPI decision: RCA incomplete/unreliable)
+                  BR-HAPI-197: Triggers NotificationRequest creation in RO
+                  BR-HAPI-212: Set when workflow selected but affectedResource missing
+                type: boolean
+              observedGeneration:
+                description: |-
+                  ObservedGeneration is the most recent generation observed by the controller.
+                  Used to prevent duplicate reconciliations and ensure idempotency.
+                  Per DD-CONTROLLER-001: Standard pattern for all Kubernetes controllers.
+                format: int64
+                type: integer
+              phase:
+                description: |-
+                  Phase tracking (no "Approving" or "Recommending" phase - simplified 4-phase flow)
+                  Per reconciliation-phases.md v2.0: Pending → Investigating → Analyzing → Completed/Failed
+                enum:
+                - Pending
+                - Investigating
+                - Analyzing
+                - Completed
+                - Failed
+                type: string
+              reason:
+                description: Reason provides the umbrella failure category (e.g.,
+                  "WorkflowResolutionFailed")
+                type: string
+              recoveryStatus:
+                description: |-
+                  ========================================
+                  RECOVERY STATUS (DD-RECOVERY-002)
+                  ========================================
+                  Recovery-specific status fields (only populated for recovery attempts)
+                properties:
+                  currentSignalType:
+                    description: Current signal type (may differ from original after
+                      failed workflow)
+                    type: string
+                  previousAttemptAssessment:
+                    description: Assessment of why previous attempt failed
+                    properties:
+                      failureReasonAnalysis:
+                        description: Analysis of why the failure occurred
+                        type: string
+                      failureUnderstood:
+                        description: Whether the failure was understood
+                        type: boolean
+                    required:
+                    - failureReasonAnalysis
+                    - failureUnderstood
+                    type: object
+                  stateChanged:
+                    description: Whether the signal type changed due to the failed
+                      workflow
+                    type: boolean
+                required:
+                - stateChanged
+                type: object
+              rootCause:
+                description: |-
+                  ========================================
+                  ROOT CAUSE ANALYSIS RESULTS
+                  ========================================
+                  Identified root cause
+                type: string
+              rootCauseAnalysis:
+                description: Root cause analysis details
+                properties:
+                  affectedResource:
+                    description: |-
+                      AffectedResource identifies the actual resource the LLM determined should be remediated.
+                      BR-HAPI-191: The LLM may identify a higher-level resource (e.g., Deployment) rather than
+                      the Pod that generated the signal. The WFE creator should prefer this over the RR's
+                      TargetResource when available to ensure the correct resource is patched.
+                    properties:
+                      kind:
+                        description: Kind is the Kubernetes resource kind (e.g., "Deployment",
+                          "StatefulSet", "DaemonSet")
+                        type: string
+                      name:
+                        description: Name is the resource name
+                        type: string
+                      namespace:
+                        description: Namespace is the resource namespace
+                        type: string
+                    required:
+                    - kind
+                    - name
+                    - namespace
+                    type: object
+                  contributingFactors:
+                    description: Contributing factors
+                    items:
+                      type: string
+                    type: array
+                  severity:
+                    description: |-
+                      Severity determined by RCA (normalized per DD-SEVERITY-001 v1.1)
+                      DD-SEVERITY-001 v1.1: Aligned with HAPI/workflow catalog (critical, high, medium, low, unknown)
+                    enum:
+                    - critical
+                    - high
+                    - medium
+                    - low
+                    - unknown
+                    type: string
+                  signalType:
+                    description: Signal type determined by RCA (may differ from input)
+                    type: string
+                  summary:
+                    description: Brief summary of root cause
+                    type: string
+                required:
+                - severity
+                - signalType
+                - summary
+                type: object
+              selectedWorkflow:
+                description: |-
+                  ========================================
+                  SELECTED WORKFLOW (DD-CONTRACT-002)
+                  ========================================
+                  Selected workflow for execution (populated when phase=Completed)
+                properties:
+                  actionType:
+                    description: |-
+                      Action type from DD-WORKFLOW-016 taxonomy (e.g., ScaleReplicas, RestartPod).
+                      Propagated from HAPI three-step discovery protocol to RO audit events.
+                    type: string
+                  confidence:
+                    description: Confidence score (0.0-1.0)
+                    maximum: 1
+                    minimum: 0
+                    type: number
+                  executionBundle:
+                    description: Execution bundle OCI reference (digest-pinned) -
+                      resolved by HolmesGPT-API
+                    type: string
+                  executionBundleDigest:
+                    description: Execution bundle digest for audit trail
+                    type: string
+                  executionEngine:
+                    description: |-
+                      ExecutionEngine specifies the backend engine for workflow execution.
+                      Populated from HolmesGPT-API workflow recommendation.
+                      "tekton" creates a Tekton PipelineRun; "job" creates a Kubernetes Job.
+                      When empty, defaults to "tekton" for backwards compatibility.
+                    enum:
+                    - tekton
+                    - job
+                    type: string
+                  parameters:
+                    additionalProperties:
+                      type: string
+                    description: Workflow parameters (UPPER_SNAKE_CASE keys per DD-WORKFLOW-003)
+                    type: object
+                  rationale:
+                    description: Rationale explaining why this workflow was selected
+                    type: string
+                  version:
+                    description: Workflow version
+                    type: string
+                  workflowId:
+                    description: Workflow identifier (catalog lookup key)
+                    type: string
+                required:
+                - confidence
+                - executionBundle
+                - rationale
+                - version
+                - workflowId
+                type: object
+              startedAt:
+                description: Timestamps
+                format: date-time
+                type: string
+              subReason:
+                description: |-
+                  SubReason provides specific failure cause within the Reason category
+                  BR-HAPI-197: Maps to needs_human_review triggers from HolmesGPT-API
+                  BR-HAPI-200: Added InvestigationInconclusive, ProblemResolved for new investigation outcomes
+                enum:
+                - WorkflowNotFound
+                - ImageMismatch
+                - ParameterValidationFailed
+                - NoMatchingWorkflows
+                - LowConfidence
+                - LLMParsingError
+                - ValidationError
+                - TransientError
+                - PermanentError
+                - InvestigationInconclusive
+                - ProblemResolved
+                - MaxRetriesExceeded
+                - SessionRegenerationExceeded
+                type: string
+              totalAnalysisTime:
+                description: TotalAnalysisTime is the total duration of the analysis
+                  in seconds
+                format: int64
+                minimum: 0
+                type: integer
+              validationAttemptsHistory:
+                description: |-
+                  ValidationAttemptsHistory contains complete history of all HAPI validation attempts
+                  Per DD-HAPI-002 v1.4: HAPI retries up to 3 times with LLM self-correction
+                  This field provides audit trail for operator notifications and debugging
+                items:
+                  description: |-
+                    ValidationAttempt contains details of a single HAPI validation attempt
+                    Per DD-HAPI-002 v1.4: HAPI retries up to 3 times with LLM self-correction
+                    Each attempt feeds validation errors back to the LLM for correction
+                  properties:
+                    attempt:
+                      description: Attempt number (1, 2, or 3)
+                      maximum: 3
+                      minimum: 1
+                      type: integer
+                    errors:
+                      description: Validation errors encountered
+                      items:
+                        type: string
+                      type: array
+                    isValid:
+                      description: Whether validation passed (always false for failed
+                        attempts in history)
+                      type: boolean
+                    timestamp:
+                      description: When this attempt occurred
+                      format: date-time
+                      type: string
+                    workflowId:
+                      description: WorkflowID that the LLM tried in this attempt
+                      type: string
+                  required:
+                  - attempt
+                  - isValid
+                  - timestamp
+                  - workflowId
+                  type: object
+                type: array
+              warnings:
+                description: |-
+                  ========================================
+                  HAPI RESPONSE METADATA
+                  ========================================
+                  Non-fatal warnings from HolmesGPT-API (e.g., low confidence)
+                items:
+                  type: string
+                type: array
+            required:
+            - approvalRequired
+            - needsHumanReview
+            - phase
+            type: object
+        type: object
+    selectableFields:
+    - jsonPath: .spec.remediationRequestRef.name
+    served: true
+    storage: true
+    subresources:
+      status: {}
