@@ -929,66 +929,6 @@ lint-tdd-compliance: ## Check TDD compliance (BDD framework, BR references)
 	@echo "🔍 Checking TDD compliance..."
 	@./scripts/validation/check-tdd-compliance.sh
 
-##@ Demo Deployment (Issue #94)
-
-# Demo image registry and tag (override for pre-built images)
-DEMO_REGISTRY ?= quay.io/kubernaut-ai
-DEMO_TAG ?= demo-v1.0
-DEMO_CLUSTER_NAME ?= kubernaut-demo
-DEMO_KUBECONFIG ?= $(HOME)/.kube/kubernaut-demo-config
-DEMO_KIND_PROVIDER ?= $(shell command -v podman >/dev/null 2>&1 && echo "podman" || echo "docker")
-
-# Go service → Dockerfile mapping (matches CI pipeline)
-DEMO_SERVICES := datastorage gateway aianalysis authwebhook notification remediationorchestrator signalprocessing workflowexecution effectivenessmonitor
-DEMO_DOCKERFILES_datastorage := docker/data-storage.Dockerfile
-DEMO_DOCKERFILES_gateway := docker/gateway-ubi9.Dockerfile
-DEMO_DOCKERFILES_aianalysis := docker/aianalysis.Dockerfile
-DEMO_DOCKERFILES_authwebhook := docker/authwebhook.Dockerfile
-DEMO_DOCKERFILES_notification := docker/notification-controller-ubi9.Dockerfile
-DEMO_DOCKERFILES_remediationorchestrator := docker/remediationorchestrator-controller.Dockerfile
-DEMO_DOCKERFILES_signalprocessing := docker/signalprocessing-controller.Dockerfile
-DEMO_DOCKERFILES_workflowexecution := docker/workflowexecution-controller.Dockerfile
-DEMO_DOCKERFILES_effectivenessmonitor := docker/effectivenessmonitor-controller.Dockerfile
-
-# _demo_build_one builds a single demo service image.
-# Usage: $(call _demo_build_one,<service>,<dockerfile>)
-define _demo_build_one
-	@echo "  Building $(1) from $(2)..."
-	@$(CONTAINER_TOOL) build -t $(DEMO_REGISTRY)/$(1):$(DEMO_TAG) -f $(2) .
-endef
-
-.PHONY: demo-build-images
-demo-build-images: generate ## Build all demo service images locally
-	@echo "🐳 Building demo images ($(DEMO_REGISTRY):$(DEMO_TAG))..."
-	$(foreach svc,$(DEMO_SERVICES),$(call _demo_build_one,$(svc),$(DEMO_DOCKERFILES_$(svc))))
-	@echo "  Building holmesgpt-api..."
-	@$(CONTAINER_TOOL) build -t $(DEMO_REGISTRY)/holmesgpt-api:$(DEMO_TAG) -f holmesgpt-api/Dockerfile.e2e .
-
-.PHONY: demo-create-cluster
-demo-create-cluster: ## Create Kind cluster for demo
-	@echo "🏗️  Creating Kind cluster '$(DEMO_CLUSTER_NAME)'..."
-	KIND_EXPERIMENTAL_PROVIDER=$(DEMO_KIND_PROVIDER) kind create cluster \
-		--name $(DEMO_CLUSTER_NAME) \
-		--config deploy/demo/overlays/kind/kind-cluster-config.yaml \
-		--kubeconfig $(DEMO_KUBECONFIG)
-	@echo "  Cluster created. KUBECONFIG=$(DEMO_KUBECONFIG)"
-
-.PHONY: demo-load-images
-demo-load-images: ## Load demo images into Kind cluster
-	@echo "📦 Loading images into Kind cluster..."
-	@for svc in $(DEMO_SERVICES); do \
-		echo "  Loading $${svc}..."; \
-		KIND_EXPERIMENTAL_PROVIDER=$(DEMO_KIND_PROVIDER) kind load docker-image \
-			$(DEMO_REGISTRY)/$${svc}:$(DEMO_TAG) \
-			--name $(DEMO_CLUSTER_NAME) ; \
-	done
-	@echo "  Loading holmesgpt-api..."
-	@KIND_EXPERIMENTAL_PROVIDER=$(DEMO_KIND_PROVIDER) kind load docker-image \
-		$(DEMO_REGISTRY)/holmesgpt-api:$(DEMO_TAG) \
-		--name $(DEMO_CLUSTER_NAME)
-	@echo "  All images loaded."
-
-
 ##@ Image Build & Push
 
 # Registry, tag, and architecture (override via env or CLI)
@@ -997,8 +937,17 @@ IMAGE_TAG ?= latest
 # Auto-detect native architecture (maps uname output to Go-style names)
 IMAGE_ARCH ?= $(shell uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/')
 
-# All Go services with their Dockerfile mappings (reuses DEMO_* mappings above)
-IMAGE_SERVICES := $(DEMO_SERVICES)
+# All Go services with their Dockerfile mappings
+IMAGE_SERVICES := datastorage gateway aianalysis authwebhook notification remediationorchestrator signalprocessing workflowexecution effectivenessmonitor
+IMAGE_DOCKERFILES_datastorage := docker/data-storage.Dockerfile
+IMAGE_DOCKERFILES_gateway := docker/gateway-ubi9.Dockerfile
+IMAGE_DOCKERFILES_aianalysis := docker/aianalysis.Dockerfile
+IMAGE_DOCKERFILES_authwebhook := docker/authwebhook.Dockerfile
+IMAGE_DOCKERFILES_notification := docker/notification-controller-ubi9.Dockerfile
+IMAGE_DOCKERFILES_remediationorchestrator := docker/remediationorchestrator-controller.Dockerfile
+IMAGE_DOCKERFILES_signalprocessing := docker/signalprocessing-controller.Dockerfile
+IMAGE_DOCKERFILES_workflowexecution := docker/workflowexecution-controller.Dockerfile
+IMAGE_DOCKERFILES_effectivenessmonitor := docker/effectivenessmonitor-controller.Dockerfile
 
 # _image_build_one builds a single service image (native arch, arch-suffixed tag).
 # Usage: $(call _image_build_one,<service>,<dockerfile>)
@@ -1024,7 +973,7 @@ image-build: ## Build images for all services (native arch, arch-suffixed tag)
 	@echo "   Registry: $(IMAGE_REGISTRY)"
 	@echo "   Tag:      $(IMAGE_TAG)-$(IMAGE_ARCH)"
 	@echo ""
-	$(foreach svc,$(IMAGE_SERVICES),$(call _image_build_one,$(svc),$(DEMO_DOCKERFILES_$(svc))))
+	$(foreach svc,$(IMAGE_SERVICES),$(call _image_build_one,$(svc),$(IMAGE_DOCKERFILES_$(svc))))
 	@echo "  Building holmesgpt-api [$(IMAGE_ARCH)]..."
 	@$(CONTAINER_TOOL) build -t $(IMAGE_REGISTRY)/holmesgpt-api:$(IMAGE_TAG)-$(IMAGE_ARCH) -f holmesgpt-api/Dockerfile .
 	@echo ""
