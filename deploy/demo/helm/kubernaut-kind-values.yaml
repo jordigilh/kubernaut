@@ -1,0 +1,17 @@
+# Kind-specific value overrides for the Kubernaut Helm chart.
+# Exposes gateway, datastorage, and holmesgpt-api via NodePort
+# so they are accessible from the host via Kind's extraPortMappings.
+gateway:
+  service:
+    type: NodePort
+    nodePort: 30080
+
+datastorage:
+  service:
+    type: NodePort
+    nodePort: 30081
+
+holmesgptApi:
+  service:
+    type: NodePort
+    nodePort: 30120

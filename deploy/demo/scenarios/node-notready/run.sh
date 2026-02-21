@@ -4,7 +4,6 @@
 #
 # Prerequisites:
 #   - Kind cluster with worker node (kubernaut.ai/workload-node=true)
-#   - Kubernaut services deployed (HAPI with real LLM backend)
 #   - Prometheus with kube-state-metrics
 #   - Podman (to pause/unpause Kind node container)
 #
@@ -17,6 +16,12 @@ NAMESPACE="demo-node"
 # shellcheck source=../../scripts/kind-helper.sh
 source "${SCRIPT_DIR}/../../scripts/kind-helper.sh"
 ensure_kind_cluster "${SCRIPT_DIR}/kind-config.yaml" "${1:-}"
+
+# shellcheck source=../../scripts/monitoring-helper.sh
+source "${SCRIPT_DIR}/../../scripts/monitoring-helper.sh"
+ensure_monitoring_stack
+source "${SCRIPT_DIR}/../../scripts/platform-helper.sh"
+ensure_platform
 
 echo "============================================="
 echo " Node NotReady Demo (#127)"
@@ -48,7 +53,7 @@ echo ""
 # Step 5: Wait for alert
 echo "==> Step 5: Waiting for NodeNotReady alert to fire (~1-2 min)..."
 echo "  Check: kubectl get nodes -w"
-echo "  Check Prometheus: http://localhost:9190/alerts"
+echo "  Check Prometheus: kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090"
 echo ""
 
 # Step 6: Monitor pipeline
@@ -56,7 +61,7 @@ echo "==> Step 6: Pipeline in progress. Monitor with:"
 echo "    kubectl get rr,sp,aa,we,ea -n ${NAMESPACE} -w"
 echo ""
 echo "  Expected flow:"
-echo "    Alert (NodeNotReady) -> Gateway -> SP -> AA (HAPI) -> RO -> WE"
+echo "    Alert (KubeNodeNotReady) -> Gateway -> SP -> AA (HAPI) -> RO -> WE"
 echo "    LLM diagnoses node failure -> selects CordonDrainNode"
 echo "    WE cordons + drains node -> pods rescheduled to healthy nodes"
 echo "    EM verifies all pods Running on healthy nodes"

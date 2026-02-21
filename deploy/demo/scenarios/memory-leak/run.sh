@@ -4,7 +4,6 @@
 #
 # Prerequisites:
 #   - Kind cluster with deploy/demo/overlays/kind/kind-cluster-config.yaml
-#   - Kubernaut services deployed (HAPI with real LLM backend)
 #   - Prometheus with kube-state-metrics and cAdvisor scraping
 #
 # Usage: ./deploy/demo/scenarios/memory-leak/run.sh
@@ -16,6 +15,12 @@ NAMESPACE="demo-memory-leak"
 # shellcheck source=../../scripts/kind-helper.sh
 source "${SCRIPT_DIR}/../../scripts/kind-helper.sh"
 ensure_kind_cluster "${SCRIPT_DIR}/kind-config.yaml" "${1:-}"
+
+# shellcheck source=../../scripts/monitoring-helper.sh
+source "${SCRIPT_DIR}/../../scripts/monitoring-helper.sh"
+ensure_monitoring_stack
+source "${SCRIPT_DIR}/../../scripts/platform-helper.sh"
+ensure_platform
 
 echo "============================================="
 echo " Predictive Memory Exhaustion Demo (#129)"
@@ -56,9 +61,9 @@ echo "    kubectl top pods -n ${NAMESPACE} --containers"
 echo ""
 
 # Step 6: Wait for alert
-echo "==> Step 6: Waiting for PredictiveMemoryExhaust alert (~12-15 min)..."
-echo "  Check Prometheus: http://localhost:9190/alerts"
-echo "  The KubernautPredictiveMemoryExhaust alert should appear once"
+echo "==> Step 6: Waiting for ContainerMemoryExhaustionPredicted alert (~12-15 min)..."
+echo "  Check Prometheus: kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090"
+echo "  The ContainerMemoryExhaustionPredicted alert should appear once"
 echo "  predict_linear projects the leaker container exceeding 192Mi."
 echo ""
 

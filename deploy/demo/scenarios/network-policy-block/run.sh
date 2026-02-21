@@ -10,6 +10,12 @@ NAMESPACE="demo-netpol"
 source "${SCRIPT_DIR}/../../scripts/kind-helper.sh"
 ensure_kind_cluster "${SCRIPT_DIR}/kind-config.yaml" "${1:-}"
 
+# shellcheck source=../../scripts/monitoring-helper.sh
+source "${SCRIPT_DIR}/../../scripts/monitoring-helper.sh"
+ensure_monitoring_stack
+source "${SCRIPT_DIR}/../../scripts/platform-helper.sh"
+ensure_platform
+
 echo "============================================="
 echo " NetworkPolicy Traffic Block Demo (#138)"
 echo "============================================="
@@ -36,9 +42,9 @@ echo "==> Step 4: Injecting deny-all NetworkPolicy..."
 bash "${SCRIPT_DIR}/inject-deny-all-netpol.sh"
 echo ""
 
-echo "==> Step 5: Waiting for DeploymentUnavailable alert (~3-4 min)..."
+echo "==> Step 5: Waiting for KubeDeploymentReplicasMismatch alert (~3-4 min)..."
 echo "  Health checks will fail -> pods become NotReady -> restarts begin."
-echo "  Check Prometheus: http://localhost:9190/alerts"
+echo "  Check Prometheus: kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090"
 echo ""
 echo "==> Step 6: Pipeline in progress. Monitor with:"
 echo "    kubectl get rr,sp,aa,we,ea -n ${NAMESPACE} -w"

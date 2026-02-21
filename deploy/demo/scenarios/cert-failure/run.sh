@@ -4,7 +4,6 @@
 #
 # Prerequisites:
 #   - Kind cluster
-#   - Kubernaut services deployed (HAPI with real LLM backend)
 #   - Prometheus with cert-manager metrics
 #
 # Usage: ./deploy/demo/scenarios/cert-failure/run.sh
@@ -16,6 +15,13 @@ NAMESPACE="demo-cert-failure"
 # shellcheck source=../../scripts/kind-helper.sh
 source "${SCRIPT_DIR}/../../scripts/kind-helper.sh"
 ensure_kind_cluster "${SCRIPT_DIR}/kind-config.yaml" "${1:-}"
+
+# shellcheck source=../../scripts/monitoring-helper.sh
+source "${SCRIPT_DIR}/../../scripts/monitoring-helper.sh"
+ensure_monitoring_stack
+source "${SCRIPT_DIR}/../../scripts/platform-helper.sh"
+ensure_platform
+ensure_cert_manager
 
 echo "============================================="
 echo " cert-manager Certificate Failure Demo (#133)"
@@ -83,9 +89,9 @@ bash "${SCRIPT_DIR}/inject-broken-issuer.sh"
 echo ""
 
 # Step 7: Wait for alert
-echo "==> Step 7: Waiting for CertificateNotReady alert to fire (~2-3 min)..."
+echo "==> Step 7: Waiting for CertManagerCertNotReady alert to fire (~2-3 min)..."
 echo "  cert-manager will fail to re-issue the certificate."
-echo "  Check Prometheus: http://localhost:9190/alerts"
+echo "  Check Prometheus: kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090"
 echo ""
 
 # Step 8: Monitor pipeline
@@ -94,7 +100,7 @@ echo "    kubectl get certificate -n ${NAMESPACE} -w"
 echo "    kubectl get rr,sp,aa,we,ea -n ${NAMESPACE} -w"
 echo ""
 echo "  Expected flow:"
-echo "    Alert (CertificateNotReady) -> Gateway -> SP -> AA (HAPI)"
+echo "    Alert (CertManagerCertNotReady) -> Gateway -> SP -> AA (HAPI)"
 echo "    LLM diagnoses missing CA Secret -> selects FixCertificate workflow"
 echo "    WE recreates the CA Secret -> cert-manager re-issues certificate"
 echo "    EM verifies Certificate is Ready"

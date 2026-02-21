@@ -4,7 +4,6 @@
 #
 # Prerequisites:
 #   - Kind cluster with worker node (kubernaut.ai/workload-node=true)
-#   - Kubernaut services deployed (HAPI with real LLM backend)
 #   - Prometheus with kube-state-metrics
 #
 # Usage: ./deploy/demo/scenarios/pending-taint/run.sh
@@ -16,6 +15,12 @@ NAMESPACE="demo-taint"
 # shellcheck source=../../scripts/kind-helper.sh
 source "${SCRIPT_DIR}/../../scripts/kind-helper.sh"
 ensure_kind_cluster "${SCRIPT_DIR}/kind-config.yaml" "${1:-}"
+
+# shellcheck source=../../scripts/monitoring-helper.sh
+source "${SCRIPT_DIR}/../../scripts/monitoring-helper.sh"
+ensure_monitoring_stack
+source "${SCRIPT_DIR}/../../scripts/platform-helper.sh"
+ensure_platform
 
 echo "============================================="
 echo " Pending Pods - Taint Removal Demo (#122)"
@@ -45,7 +50,7 @@ echo ""
 
 # Step 5: Wait for alert
 echo "==> Step 5: Waiting for Pending alert to fire (~3 min)..."
-echo "  Check Prometheus: http://localhost:9190/alerts"
+echo "  Check Prometheus: kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090"
 echo ""
 
 # Step 6: Monitor pipeline
@@ -53,7 +58,7 @@ echo "==> Step 6: Pipeline in progress. Monitor with:"
 echo "    kubectl get rr,sp,aa,we,ea -n ${NAMESPACE} -w"
 echo ""
 echo "  Expected flow:"
-echo "    Alert (PodsPendingTaint) -> Gateway -> SP -> AA (HAPI) -> RO -> WE"
+echo "    Alert (KubePodNotScheduled) -> Gateway -> SP -> AA (HAPI) -> RO -> WE"
 echo "    LLM investigates Pending pods, finds node taint"
 echo "    Selects RemoveTaint workflow -> removes maintenance taint"
 echo "    Pods get scheduled -> EM verifies pods Running"

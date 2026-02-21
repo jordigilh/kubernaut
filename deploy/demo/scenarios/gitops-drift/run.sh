@@ -4,7 +4,6 @@
 #
 # Prerequisites:
 #   - Kind cluster with deploy/demo/overlays/kind/kind-cluster-config.yaml
-#   - Kubernaut services deployed (HAPI with real LLM backend)
 #   - Gitea and ArgoCD installed (run setup scripts first)
 #
 # Usage: ./deploy/demo/scenarios/gitops-drift/run.sh
@@ -15,6 +14,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=../../scripts/kind-helper.sh
 source "${SCRIPT_DIR}/../../scripts/kind-helper.sh"
 ensure_kind_cluster "${SCRIPT_DIR}/kind-config.yaml" "${1:-}"
+
+# shellcheck source=../../scripts/monitoring-helper.sh
+source "${SCRIPT_DIR}/../../scripts/monitoring-helper.sh"
+ensure_monitoring_stack
+source "${SCRIPT_DIR}/../../scripts/platform-helper.sh"
+ensure_platform
 
 GITEA_NAMESPACE="gitea"
 GITEA_ADMIN_USER="kubernaut"
