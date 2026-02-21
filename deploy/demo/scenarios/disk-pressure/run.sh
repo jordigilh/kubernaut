@@ -4,7 +4,6 @@
 #
 # Prerequisites:
 #   - Kind cluster with deploy/demo/overlays/kind/kind-cluster-config.yaml
-#   - Kubernaut services deployed (HAPI with real LLM backend)
 #   - Prometheus with kube-state-metrics
 #   - StorageClass "standard" available (default in Kind)
 #
@@ -17,6 +16,12 @@ NAMESPACE="demo-disk"
 # shellcheck source=../../scripts/kind-helper.sh
 source "${SCRIPT_DIR}/../../scripts/kind-helper.sh"
 ensure_kind_cluster "${SCRIPT_DIR}/kind-config.yaml" "${1:-}"
+
+# shellcheck source=../../scripts/monitoring-helper.sh
+source "${SCRIPT_DIR}/../../scripts/monitoring-helper.sh"
+ensure_monitoring_stack
+source "${SCRIPT_DIR}/../../scripts/platform-helper.sh"
+ensure_platform
 
 echo "============================================="
 echo " Disk Pressure / PVC Cleanup Demo (#121)"
@@ -46,8 +51,8 @@ echo ""
 
 # Step 5: Wait for alert
 echo "==> Step 5: Waiting for orphaned PVC alert to fire (~2 min)..."
-echo "  Check Prometheus: http://localhost:9190/alerts"
-echo "  The KubernautOrphanedPVCs alert fires when >3 bound PVCs in namespace."
+echo "  Check Prometheus: kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090"
+echo "  The KubePersistentVolumeClaimOrphaned alert fires when >3 bound PVCs in namespace."
 echo ""
 
 # Step 6: Monitor pipeline
@@ -55,7 +60,7 @@ echo "==> Step 6: Pipeline in progress. Monitor with:"
 echo "    kubectl get rr,sp,aa,we,ea -n ${NAMESPACE} -w"
 echo ""
 echo "  Expected flow:"
-echo "    Alert (OrphanedPVCs) -> Gateway -> SP -> AA (HAPI) -> RO -> WE"
+echo "    Alert (KubePersistentVolumeClaimOrphaned) -> Gateway -> SP -> AA (HAPI) -> RO -> WE"
 echo "    LLM identifies orphaned PVCs from completed batch jobs"
 echo "    Selects CleanupPVC workflow -> deletes unmounted PVCs"
 echo "    EM verifies PVC count reduced"

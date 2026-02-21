@@ -4,7 +4,6 @@
 #
 # Prerequisites:
 #   - Kind cluster with deploy/demo/overlays/kind/kind-cluster-config.yaml
-#   - Kubernaut services deployed (HAPI with real LLM backend)
 #   - Prometheus with kube-state-metrics
 #
 # Usage: ./deploy/demo/scenarios/pdb-deadlock/run.sh
@@ -16,6 +15,12 @@ NAMESPACE="demo-pdb"
 # shellcheck source=../../scripts/kind-helper.sh
 source "${SCRIPT_DIR}/../../scripts/kind-helper.sh"
 ensure_kind_cluster "${SCRIPT_DIR}/kind-config.yaml" "${1:-}"
+
+# shellcheck source=../../scripts/monitoring-helper.sh
+source "${SCRIPT_DIR}/../../scripts/monitoring-helper.sh"
+ensure_monitoring_stack
+source "${SCRIPT_DIR}/../../scripts/platform-helper.sh"
+ensure_platform
 
 echo "============================================="
 echo " PDB Deadlock Demo (#124)"
@@ -53,8 +58,8 @@ echo ""
 
 # Step 6: Wait for alert
 echo "==> Step 6: Waiting for PDB deadlock alert to fire (~3 min)..."
-echo "  Check Prometheus: http://localhost:9190/alerts"
-echo "  The KubernautPDBDeadlock alert fires when allowed disruptions = 0 for 3 min."
+echo "  Check Prometheus: kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090"
+echo "  The KubePodDisruptionBudgetAtLimit alert fires when allowed disruptions = 0 for 3 min."
 echo ""
 
 # Step 7: Monitor pipeline
@@ -62,7 +67,7 @@ echo "==> Step 7: Pipeline in progress. Monitor with:"
 echo "    kubectl get rr,sp,aa,we,ea -n ${NAMESPACE} -w"
 echo ""
 echo "  Expected flow:"
-echo "    Alert (PDBDeadlock) -> Gateway -> SP -> AA (HAPI) -> RO -> WE"
+echo "    Alert (KubePodDisruptionBudgetAtLimit) -> Gateway -> SP -> AA (HAPI) -> RO -> WE"
 echo "    LLM detects PDB (via detectedLabels:pdbProtected) blocking updates"
 echo "    Selects RelaxPDB workflow -> patches minAvailable to 1"
 echo "    Blocked rollout resumes -> EM verifies pods healthy"

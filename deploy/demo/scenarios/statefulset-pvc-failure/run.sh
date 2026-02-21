@@ -10,6 +10,12 @@ NAMESPACE="demo-statefulset"
 source "${SCRIPT_DIR}/../../scripts/kind-helper.sh"
 ensure_kind_cluster "${SCRIPT_DIR}/kind-config.yaml" "${1:-}"
 
+# shellcheck source=../../scripts/monitoring-helper.sh
+source "${SCRIPT_DIR}/../../scripts/monitoring-helper.sh"
+ensure_monitoring_stack
+source "${SCRIPT_DIR}/../../scripts/platform-helper.sh"
+ensure_platform
+
 echo "============================================="
 echo " StatefulSet PVC Failure Demo (#137)"
 echo "============================================="
@@ -34,14 +40,14 @@ echo "==> Step 4: Injecting PVC failure..."
 bash "${SCRIPT_DIR}/inject-pvc-issue.sh"
 echo ""
 
-echo "==> Step 5: Waiting for StatefulSetReplicasMismatch alert (~3-4 min)..."
-echo "  Check Prometheus: http://localhost:9190/alerts"
+echo "==> Step 5: Waiting for KubeStatefulSetReplicasMismatch alert (~3-4 min)..."
+echo "  Check Prometheus: kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090"
 echo ""
 echo "==> Step 6: Pipeline in progress. Monitor with:"
 echo "    kubectl get rr,sp,aa,we,ea -n ${NAMESPACE} -w"
 echo ""
 echo "  Expected flow:"
-echo "    Alert (StatefulSetReplicasMismatch) -> Gateway -> SP -> AA (HAPI)"
+echo "    Alert (KubeStatefulSetReplicasMismatch) -> Gateway -> SP -> AA (HAPI)"
 echo "    LLM detects stateful=true, diagnoses PVC failure"
 echo "    WE recreates PVC, deletes stuck pod"
 echo "    EM verifies all replicas ready"

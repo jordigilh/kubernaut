@@ -4,7 +4,6 @@
 #
 # Prerequisites:
 #   - Kind cluster with deploy/demo/overlays/kind/kind-cluster-config.yaml
-#   - Kubernaut services deployed (HAPI with real LLM backend)
 #   - Prometheus with kube-state-metrics
 #
 # Usage: ./deploy/demo/scenarios/stuck-rollout/run.sh
@@ -16,6 +15,12 @@ NAMESPACE="demo-rollout"
 # shellcheck source=../../scripts/kind-helper.sh
 source "${SCRIPT_DIR}/../../scripts/kind-helper.sh"
 ensure_kind_cluster "${SCRIPT_DIR}/kind-config.yaml" "${1:-}"
+
+# shellcheck source=../../scripts/monitoring-helper.sh
+source "${SCRIPT_DIR}/../../scripts/monitoring-helper.sh"
+ensure_monitoring_stack
+source "${SCRIPT_DIR}/../../scripts/platform-helper.sh"
+ensure_platform
 
 echo "============================================="
 echo " Stuck Rollout Demo (#130)"
@@ -51,8 +56,8 @@ echo ""
 
 # Step 6: Wait for stuck rollout + alert
 echo "==> Step 6: Waiting for rollout to exceed progressDeadlineSeconds (~2 min)..."
-echo "  Then the KubernautStuckRollout alert fires after 1 min more (~3 min total)."
-echo "  Check Prometheus: http://localhost:9190/alerts"
+echo "  Then the KubeDeploymentRolloutStuck alert fires after 1 min more (~3 min total)."
+echo "  Check Prometheus: kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090"
 echo ""
 
 # Step 7: Monitor pipeline
