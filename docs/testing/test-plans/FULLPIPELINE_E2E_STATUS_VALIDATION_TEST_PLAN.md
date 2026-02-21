@@ -548,8 +548,8 @@ It("should check that RAR spec fields are non-nil", func() { ... })
 - [x] Mock LLM with ADR-056 4-step discovery (existing)
 - [x] Workflow seeding infrastructure (existing)
 - [x] RAR scheme registration via `remediationv1.AddToScheme` (existing)
-- [ ] Validator framework (`test/shared/validators/crd_status.go`)
-- [ ] RAR approval flow test (`02_approval_lifecycle_test.go`)
+- [x] Validator framework (`test/shared/validators/crd_status.go`)
+- [x] RAR approval flow test (`02_approval_lifecycle_test.go`)
 - [x] **Issue #113** -- SP KubernetesContext schema finalized (merged). Assertions now use `sharedtypes.KubernetesContext` with `Namespace`, `Workload` (generic `WorkloadDetails`), and `OwnerChain`.
 
 ---
