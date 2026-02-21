@@ -4735,6 +4735,7 @@ type DetectedLabelsFailedDetectionsItem string
 
 const (
 	DetectedLabelsFailedDetectionsItemGitOpsManaged   DetectedLabelsFailedDetectionsItem = "gitOpsManaged"
+	DetectedLabelsFailedDetectionsItemGitOpsTool      DetectedLabelsFailedDetectionsItem = "gitOpsTool"
 	DetectedLabelsFailedDetectionsItemPdbProtected    DetectedLabelsFailedDetectionsItem = "pdbProtected"
 	DetectedLabelsFailedDetectionsItemHpaEnabled      DetectedLabelsFailedDetectionsItem = "hpaEnabled"
 	DetectedLabelsFailedDetectionsItemStateful        DetectedLabelsFailedDetectionsItem = "stateful"
@@ -4747,6 +4748,7 @@ const (
 func (DetectedLabelsFailedDetectionsItem) AllValues() []DetectedLabelsFailedDetectionsItem {
 	return []DetectedLabelsFailedDetectionsItem{
 		DetectedLabelsFailedDetectionsItemGitOpsManaged,
+		DetectedLabelsFailedDetectionsItemGitOpsTool,
 		DetectedLabelsFailedDetectionsItemPdbProtected,
 		DetectedLabelsFailedDetectionsItemHpaEnabled,
 		DetectedLabelsFailedDetectionsItemStateful,
@@ -4760,6 +4762,8 @@ func (DetectedLabelsFailedDetectionsItem) AllValues() []DetectedLabelsFailedDete
 func (s DetectedLabelsFailedDetectionsItem) MarshalText() ([]byte, error) {
 	switch s {
 	case DetectedLabelsFailedDetectionsItemGitOpsManaged:
+		return []byte(s), nil
+	case DetectedLabelsFailedDetectionsItemGitOpsTool:
 		return []byte(s), nil
 	case DetectedLabelsFailedDetectionsItemPdbProtected:
 		return []byte(s), nil
@@ -4783,6 +4787,9 @@ func (s *DetectedLabelsFailedDetectionsItem) UnmarshalText(data []byte) error {
 	switch DetectedLabelsFailedDetectionsItem(data) {
 	case DetectedLabelsFailedDetectionsItemGitOpsManaged:
 		*s = DetectedLabelsFailedDetectionsItemGitOpsManaged
+		return nil
+	case DetectedLabelsFailedDetectionsItemGitOpsTool:
+		*s = DetectedLabelsFailedDetectionsItemGitOpsTool
 		return nil
 	case DetectedLabelsFailedDetectionsItemPdbProtected:
 		*s = DetectedLabelsFailedDetectionsItemPdbProtected
