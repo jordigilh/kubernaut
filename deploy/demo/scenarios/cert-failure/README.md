@@ -42,9 +42,13 @@ certmanager_certificate_ready_status == 0 for 2m → CertManagerCertNotReady ale
 
 ### 1. Install cert-manager (if not present)
 
+`run.sh` installs cert-manager automatically via Helm. For manual setup:
+
 ```bash
-kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.17.1/cert-manager.yaml
-kubectl wait --for=condition=Available deployment/cert-manager -n cert-manager --timeout=120s
+helm repo add jetstack https://charts.jetstack.io
+helm upgrade --install cert-manager jetstack/cert-manager \
+  --namespace cert-manager --create-namespace \
+  --set crds.enabled=true --wait --timeout 3m
 ```
 
 ### 2. Generate CA and deploy scenario resources
