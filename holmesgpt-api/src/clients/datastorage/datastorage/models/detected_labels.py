@@ -48,8 +48,8 @@ class DetectedLabels(BaseModel):
             return value
 
         for i in value:
-            if i not in ('gitOpsManaged', 'pdbProtected', 'hpaEnabled', 'stateful', 'helmManaged', 'networkIsolated', 'serviceMesh'):
-                raise ValueError("each list item must be one of ('gitOpsManaged', 'pdbProtected', 'hpaEnabled', 'stateful', 'helmManaged', 'networkIsolated', 'serviceMesh')")
+            if i not in ('gitOpsManaged', 'gitOpsTool', 'pdbProtected', 'hpaEnabled', 'stateful', 'helmManaged', 'networkIsolated', 'serviceMesh'):
+                raise ValueError("each list item must be one of ('gitOpsManaged', 'gitOpsTool', 'pdbProtected', 'hpaEnabled', 'stateful', 'helmManaged', 'networkIsolated', 'serviceMesh')")
         return value
 
     @field_validator('git_ops_tool')
