@@ -2736,7 +2736,7 @@ components:
           type: array
           items:
             type: string
-            enum: [gitOpsManaged, pdbProtected, hpaEnabled, stateful, helmManaged, networkIsolated, serviceMesh]
+            enum: [gitOpsManaged, gitOpsTool, pdbProtected, hpaEnabled, stateful, helmManaged, networkIsolated, serviceMesh]
           description: "Fields where detection failed (RBAC, timeout, etc.) - consumer should ignore these fields"
           example: ["pdbProtected", "networkIsolated"]
         gitOpsManaged:
