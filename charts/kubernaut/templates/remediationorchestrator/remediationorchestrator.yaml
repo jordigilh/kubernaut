@@ -135,7 +135,7 @@ spec:
       serviceAccountName: remediationorchestrator-controller
       containers:
         - name: remediationorchestrator-controller
-          image: {{ include "kubernaut.image" (dict "service" "remediationorchestrator" "global" .Values.global) }}
+          image: {{ include "kubernaut.image" (dict "service" "remediationorchestrator" "global" .Values.global "appVersion" .Chart.AppVersion) }}
           imagePullPolicy: {{ .Values.global.image.pullPolicy }}
           args:
             - "--config=/etc/config/remediationorchestrator.yaml"

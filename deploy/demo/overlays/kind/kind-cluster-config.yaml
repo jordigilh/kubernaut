@@ -19,6 +19,10 @@ nodes:
   - containerPort: 30081
     hostPort: 30081
     protocol: TCP
+  # HolmesGPT API (LLM integration, debugging)
+  - containerPort: 30120
+    hostPort: 30120
+    protocol: TCP
   # Grafana (kube-prometheus-stack Helm chart NodePort)
   - containerPort: 30300
     hostPort: 3000

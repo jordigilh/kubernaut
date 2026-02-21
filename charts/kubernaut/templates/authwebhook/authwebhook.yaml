@@ -101,7 +101,7 @@ spec:
       serviceAccountName: authwebhook
       containers:
         - name: authwebhook
-          image: {{ include "kubernaut.image" (dict "service" "authwebhook" "global" .Values.global) }}
+          image: {{ include "kubernaut.image" (dict "service" "authwebhook" "global" .Values.global "appVersion" .Chart.AppVersion) }}
           imagePullPolicy: {{ .Values.global.image.pullPolicy }}
           args:
             - -config=/etc/authwebhook/authwebhook.yaml

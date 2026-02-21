@@ -28,22 +28,8 @@ echo " cert-manager Certificate Failure Demo (#133)"
 echo "============================================="
 echo ""
 
-# Step 1: Install cert-manager if not present
-echo "==> Step 1: Ensuring cert-manager is installed..."
-if ! kubectl get namespace cert-manager &>/dev/null; then
-  echo "  Installing cert-manager..."
-  kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.17.1/cert-manager.yaml
-  echo "  Waiting for cert-manager to be ready..."
-  kubectl wait --for=condition=Available deployment/cert-manager -n cert-manager --timeout=120s
-  kubectl wait --for=condition=Available deployment/cert-manager-webhook -n cert-manager --timeout=120s
-  kubectl wait --for=condition=Available deployment/cert-manager-cainjector -n cert-manager --timeout=120s
-  sleep 10
-else
-  echo "  cert-manager already installed."
-fi
-
-# Step 2: Generate a self-signed CA and create the CA Secret
-echo "==> Step 2: Generating self-signed CA key pair..."
+# Step 1: Generate a self-signed CA and create the CA Secret
+echo "==> Step 1: Generating self-signed CA key pair..."
 TMPDIR=$(mktemp -d)
 openssl req -x509 -newkey rsa:2048 -nodes \
   -keyout "${TMPDIR}/ca.key" -out "${TMPDIR}/ca.crt" \

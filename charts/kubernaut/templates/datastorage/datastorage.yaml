@@ -64,7 +64,7 @@ spec:
       serviceAccountName: data-storage-sa
       containers:
         - name: datastorage
-          image: {{ include "kubernaut.image" (dict "service" "datastorage" "global" .Values.global) }}
+          image: {{ include "kubernaut.image" (dict "service" "datastorage" "global" .Values.global "appVersion" .Chart.AppVersion) }}
           imagePullPolicy: {{ .Values.global.image.pullPolicy }}
           ports:
             - name: http

@@ -178,7 +178,7 @@ spec:
       serviceAccountName: aianalysis-controller
       containers:
         - name: aianalysis
-          image: {{ include "kubernaut.image" (dict "service" "aianalysis" "global" .Values.global) }}
+          image: {{ include "kubernaut.image" (dict "service" "aianalysis" "global" .Values.global "appVersion" .Chart.AppVersion) }}
           imagePullPolicy: {{ .Values.global.image.pullPolicy }}
           env:
             - name: CONFIG_PATH

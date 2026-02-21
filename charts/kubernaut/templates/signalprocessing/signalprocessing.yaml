@@ -266,7 +266,7 @@ spec:
       serviceAccountName: signalprocessing-controller
       containers:
         - name: signalprocessing-controller
-          image: {{ include "kubernaut.image" (dict "service" "signalprocessing" "global" .Values.global) }}
+          image: {{ include "kubernaut.image" (dict "service" "signalprocessing" "global" .Values.global "appVersion" .Chart.AppVersion) }}
           imagePullPolicy: {{ .Values.global.image.pullPolicy }}
           args:
             - "--config=/etc/signalprocessing/config.yaml"

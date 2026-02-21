@@ -112,7 +112,7 @@ spec:
       serviceAccountName: notification-controller
       containers:
         - name: manager
-          image: {{ include "kubernaut.image" (dict "service" "notification" "global" .Values.global) }}
+          image: {{ include "kubernaut.image" (dict "service" "notification" "global" .Values.global "appVersion" .Chart.AppVersion) }}
           imagePullPolicy: {{ .Values.global.image.pullPolicy }}
           env:
             - name: CONFIG_PATH

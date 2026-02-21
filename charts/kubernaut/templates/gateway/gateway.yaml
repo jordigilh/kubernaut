@@ -112,7 +112,7 @@ spec:
       serviceAccountName: gateway
       containers:
         - name: gateway
-          image: {{ include "kubernaut.image" (dict "service" "gateway" "global" .Values.global) }}
+          image: {{ include "kubernaut.image" (dict "service" "gateway" "global" .Values.global "appVersion" .Chart.AppVersion) }}
           imagePullPolicy: {{ .Values.global.image.pullPolicy }}
           args:
             - "--config=/etc/gateway/config.yaml"
