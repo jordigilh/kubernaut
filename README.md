@@ -74,7 +74,7 @@ Kubernaut uses **Kubernetes Custom Resources (CRDs)** for all inter-service comm
 ### Prerequisites
 
 - **Go 1.25+** for building services
-- **Kubernetes cluster** (Kind recommended for development, v1.30+)
+- **Kubernetes cluster** (Kind recommended for development, v1.34+)
 - **PostgreSQL** (for Data Storage service)
 - **kubectl** with cluster access
 

@@ -5,8 +5,8 @@ This guide walks through deploying the complete Kubernaut platform on a local Ki
 ## Prerequisites
 
 - **Go** 1.25+
-- **Kind** v0.20+
-- **kubectl** v1.29+
+- **Kind** v0.30+
+- **kubectl** v1.34+
 - **Container runtime**: Podman or Docker
 - **openssl** (for AuthWebhook TLS cert generation)
 - **curl** and **jq** (for workflow seeding and verification)
