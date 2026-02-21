@@ -38,6 +38,7 @@ import (
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	crdvalidators "github.com/jordigilh/kubernaut/test/shared/validators"
 )
@@ -210,6 +211,24 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 			}
 			return ""
 		}, timeout, interval).Should(Equal("Completed"))
+
+		// Scenario-specific: verify production environment classification
+		By("Step 4b: Verifying SP classified environment as production")
+		spList := &signalprocessingv1.SignalProcessingList{}
+		Expect(apiReader.List(ctx, spList, client.InNamespace(testNamespace))).To(Succeed())
+		for i := range spList.Items {
+			sp := &spList.Items[i]
+			if sp.Spec.RemediationRequestRef.Name == remediationRequest.Name {
+				Expect(sp.Status.EnvironmentClassification).ToNot(BeNil())
+				Expect(sp.Status.EnvironmentClassification.Environment).To(Equal("production"),
+					"SP should classify namespace as production (kubernaut.ai/environment label)")
+				Expect(sp.Status.EnvironmentClassification.Source).ToNot(BeEmpty(),
+					"SP should record environment classification source")
+				GinkgoWriter.Printf("  ✅ SP environment: %s (source: %s)\n",
+					sp.Status.EnvironmentClassification.Environment, sp.Status.EnvironmentClassification.Source)
+				break
+			}
+		}
 
 		// ================================================================
 		// Step 5: Wait for AIAnalysis to complete WITH approval required
@@ -430,7 +449,7 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 		var allFailures []string
 
 		// SP
-		spList := &signalprocessingv1.SignalProcessingList{}
+		spList = &signalprocessingv1.SignalProcessingList{}
 		Expect(apiReader.List(ctx, spList, client.InNamespace(testNamespace))).To(Succeed())
 		for i := range spList.Items {
 			sp := &spList.Items[i]
@@ -491,6 +510,68 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 			strings.Join(allFailures, "\n"))
 
 		GinkgoWriter.Println("  ✅ CRD status validation passed (all 7 CRDs + approval fields)")
+
+		// ================================================================
+		// Step 16: Audit trail validation for approval events [E2E-FP-118-006]
+		// Verifies approval-specific audit events are emitted alongside
+		// standard pipeline events.
+		// ================================================================
+		By("Step 16: Verifying audit trail contains approval events [E2E-FP-118-006]")
+
+		correlationID := remediationRequest.Name
+
+		approvalAuditEvents := []string{
+			"orchestrator.approval.requested",
+			"orchestrator.approval.approved",
+		}
+
+		standardPipelineEvents := []string{
+			"gateway.signal.received",
+			"gateway.crd.created",
+			"orchestrator.lifecycle.created",
+			"orchestrator.lifecycle.started",
+			"orchestrator.lifecycle.transitioned",
+			"orchestrator.lifecycle.completed",
+			"signalprocessing.signal.processed",
+			"aianalysis.analysis.completed",
+			"workflowexecution.workflow.completed",
+			"notification.message.sent",
+		}
+
+		allExpectedEvents := append(approvalAuditEvents, standardPipelineEvents...)
+
+		eventTypeCounts := map[string]int{}
+		Eventually(func() []string {
+			resp, err := dataStorageClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
+				CorrelationID: ogenclient.NewOptString(correlationID),
+				Limit:         ogenclient.NewOptInt(200),
+			})
+			if err != nil {
+				return allExpectedEvents
+			}
+
+			eventTypeCounts = map[string]int{}
+			for _, event := range resp.Data {
+				eventTypeCounts[event.EventType]++
+			}
+
+			var missing []string
+			for _, et := range allExpectedEvents {
+				if eventTypeCounts[et] == 0 {
+					missing = append(missing, et)
+				}
+			}
+			GinkgoWriter.Printf("  [Step 16] %d audit events, %d missing\n", len(resp.Data), len(missing))
+			return missing
+		}, 150*time.Second, 2*time.Second).Should(BeEmpty(),
+			"Audit trail must contain approval-specific and standard pipeline events")
+
+		// Verify approval events appeared exactly once
+		for _, et := range approvalAuditEvents {
+			Expect(eventTypeCounts[et]).To(Equal(1),
+				"Approval event %s must appear exactly once, got %d", et, eventTypeCounts[et])
+		}
+		GinkgoWriter.Println("  ✅ Audit trail verified: approval events present (requested + approved)")
 
 		GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		GinkgoWriter.Println("✅ APPROVAL LIFECYCLE COMPLETE")

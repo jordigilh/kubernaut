@@ -194,7 +194,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		testCancel()
 	})
 
-	It("should process a K8s OOMKill event through the complete remediation pipeline", func() {
+	It("should produce complete status records across all pipeline stages for downstream consumers [E2E-FP-118-001]", func() {
 		// ================================================================
 		// Step 1: Create a managed namespace
 		// ================================================================
@@ -951,7 +951,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 	// - Event-exporter does NOT forward K8s events from fp-am-* (prevents duplication)
 	// - Memory-eater runs at 92% memory usage without OOMKill (stays alive for Prometheus scraping)
 	// - Signal arrives via /api/v1/signals/prometheus endpoint (AlertManager webhook)
-	It("should process a Prometheus AlertManager alert through the complete remediation pipeline", func() {
+	It("should produce complete status records from AlertManager signal source for downstream consumers [E2E-FP-118-002]", func() {
 		// ================================================================
 		// AM Step 1: Create a managed namespace (fp-am-*)
 		// ================================================================
