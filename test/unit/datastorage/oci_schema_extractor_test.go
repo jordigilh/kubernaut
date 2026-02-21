@@ -174,7 +174,7 @@ parameters:
 			Expect(desc.Preconditions).To(ContainSubstring("Deployment or StatefulSet"))
 		})
 
-		It("UT-DS-017-011: should accept schema without signalType (DD-WORKFLOW-016)", func() {
+		It("UT-DS-017-019: should accept schema without signalType (DD-WORKFLOW-016)", func() {
 			// DD-WORKFLOW-016: signalType is optional metadata, not required for registration
 			noSignalTypeYAML := `metadata:
   workflowId: no-signal-type
