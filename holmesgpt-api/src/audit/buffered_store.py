@@ -52,7 +52,7 @@ import sys  # noqa: E402
 import threading  # noqa: E402
 import time  # noqa: E402
 from dataclasses import dataclass  # noqa: E402
-from typing import Any, Dict, List, Optional  # noqa: E402
+from typing import List, Optional  # noqa: E402
 
 # Add OpenAPI client path
 sys.path.insert(0, 'src/clients')
@@ -62,9 +62,6 @@ from datastorage import ApiClient, Configuration  # noqa: E402
 from datastorage.api.audit_write_api_api import AuditWriteAPIApi  # noqa: E402
 from datastorage.exceptions import ApiException  # noqa: E402
 from datastorage.models.audit_event_request import AuditEventRequest  # noqa: E402
-from datastorage.models.audit_event_request_event_data import AuditEventRequestEventData  # noqa: E402
-from datastorage.models.audit_event_request import AuditEventRequest  # noqa: E402
-from datastorage_auth_session import ServiceAccountAuthPoolManager  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
