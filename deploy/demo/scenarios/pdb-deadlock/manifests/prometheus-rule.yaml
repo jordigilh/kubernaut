@@ -10,7 +10,7 @@ spec:
   - name: kubernaut-pdb-deadlock
     rules:
     # Detect PDB blocking disruptions (0 allowed disruptions for extended period)
-    - alert: KubernautPDBDeadlock
+    - alert: KubePodDisruptionBudgetAtLimit
       expr: |
         kube_poddisruptionbudget_status_pod_disruptions_allowed{
           namespace="demo-pdb",

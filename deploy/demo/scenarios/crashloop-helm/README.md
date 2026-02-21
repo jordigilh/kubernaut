@@ -6,7 +6,7 @@ Same fault as #120 (bad ConfigMap) but workload deployed via Helm chart. Helm se
 
 ## Signal
 
-- **Alert**: KubernautCrashLoopDetected
+- **Alert**: KubePodCrashLooping
 - **Condition**: Container restarts > 3 in 10 minutes in `demo-crashloop-helm` namespace
 
 ## Remediation
@@ -26,7 +26,7 @@ Feature: Helm-managed CrashLoopBackOff remediation
     And the workload is healthy with 2 replicas
     When an invalid nginx config is applied via "helm upgrade"
     Then the worker pods enter CrashLoopBackOff
-    And the KubernautCrashLoopDetected alert fires
+    And the KubePodCrashLooping alert fires
     And the pipeline detects helmManaged=true
 
   Scenario: Helm rollback remediates CrashLoopBackOff
@@ -42,7 +42,7 @@ Feature: Helm-managed CrashLoopBackOff remediation
 
 - [ ] Helm chart deploys worker deployment with `app.kubernetes.io/managed-by: Helm` label
 - [ ] `helm upgrade` with bad nginx config causes pods to crash on startup
-- [ ] PrometheusRule fires KubernautCrashLoopDetected when restarts > 3 in 10m
+- [ ] PrometheusRule fires KubePodCrashLooping when restarts > 3 in 10m
 - [ ] HAPI/LLM detects `helmManaged: true` and selects helm-rollback-v1 workflow
 - [ ] helm-rollback-v1 job runs `helm rollback` to previous revision
 - [ ] After rollback, pods are Running and deployment has desired replicas ready

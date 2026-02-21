@@ -6,14 +6,14 @@ Same fault as #133 (cert-manager Certificate stuck NotReady) but cert-manager re
 
 **Key differentiator**: The LLM detects `gitOpsManaged=true` and `gitOpsTool=argocd` from the environment and selects the GitOps-aware workflow (`fix-certificate-gitops-v1`) that reverts the bad commit rather than directly recreating the CA Secret.
 
-**Signal**: `KubernautCertificateNotReady` — from `certmanager_certificate_ready_status`  
+**Signal**: `CertManagerCertNotReady` — from `certmanager_certificate_ready_status`  
 **Root cause**: Bad Git commit changed ClusterIssuer to reference non-existent CA Secret  
 **Remediation**: `fix-certificate-gitops-v1` workflow performs git revert
 
 ## Signal Flow
 
 ```
-certmanager_certificate_ready_status == 0 for 2m → KubernautCertificateNotReady alert
+certmanager_certificate_ready_status == 0 for 2m → CertManagerCertNotReady alert
   → Gateway → SP → AA (HAPI + real LLM)
   → HAPI LabelDetector detects gitOpsManaged=true, gitOpsTool=argocd
   → LLM diagnoses broken ClusterIssuer (bad commit) as root cause
@@ -52,7 +52,7 @@ Feature: cert-manager Certificate failure remediation via git revert (GitOps)
       And the TLS secret is deleted to trigger re-issuance
       And cert-manager fails to issue because the ClusterIssuer cannot sign
 
-    Then Prometheus fires "KubernautCertificateNotReady" alert for namespace "demo-cert-gitops"
+    Then Prometheus fires "CertManagerCertNotReady" alert for namespace "demo-cert-gitops"
       And Gateway creates a RemediationRequest
       And Signal Processing enriches with namespace labels (environment=production, criticality=high)
       And HAPI LabelDetector detects "gitOpsManaged=true" and "gitOpsTool=argocd"

@@ -11,7 +11,7 @@ spec:
     rules:
     # Detect rapidly increasing restart counts (CrashLoopBackOff pattern)
     # Fires when restarts increase by more than 3 in a 10-minute window
-    - alert: KubernautCrashLoopDetected
+    - alert: KubePodCrashLooping
       expr: |
         increase(
           kube_pod_container_status_restarts_total{

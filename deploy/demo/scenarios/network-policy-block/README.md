@@ -4,7 +4,7 @@
 
 Demonstrates Kubernaut detecting a Deployment with unavailable replicas caused by a deny-all NetworkPolicy blocking ingress traffic. Health checks fail, pods become NotReady and restart. Remediation removes the offending deny-all NetworkPolicy to restore traffic.
 
-**Signal**: `KubernautDeploymentUnavailable` -- from `kube_deployment_status_replicas_unavailable` > 0
+**Signal**: `KubeDeploymentReplicasMismatch` -- from `kube_deployment_status_replicas_unavailable` > 0
 **Root cause**: Deny-all NetworkPolicy blocks all ingress; liveness/readiness probes fail
 **Remediation**: `fix-network-policy-v1` workflow removes the offending deny-all policy
 
@@ -12,7 +12,7 @@ Demonstrates Kubernaut detecting a Deployment with unavailable replicas caused b
 
 ```
 kube_deployment_status_replicas_unavailable > 0 for 3m
-  → KubernautDeploymentUnavailable alert
+  → KubeDeploymentReplicasMismatch alert
   → Gateway → SP → AA (HAPI + LLM)
   → LLM detects networkIsolated=true, diagnoses NetworkPolicy block
   → Selects FixNetworkPolicy workflow
@@ -70,7 +70,8 @@ The script applies a deny-all NetworkPolicy that blocks all ingress traffic. Liv
 
 ```bash
 # Alert fires after ~3 min of unavailable replicas
-# Check: http://localhost:9190/alerts
+# Check: kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090 &
+#        then open http://localhost:9090/alerts
 kubectl get rr,sp,aa,we,ea -n demo-netpol -w
 ```
 
@@ -102,7 +103,7 @@ Feature: NetworkPolicy Traffic Block remediation
     Then all ingress traffic to pods is blocked
     And liveness and readiness probes fail
     And pods become NotReady and may restart
-    And the KubernautDeploymentUnavailable alert fires (unavailable > 0 for 3 min)
+    And the KubeDeploymentReplicasMismatch alert fires (unavailable > 0 for 3 min)
 
   Scenario: fix-network-policy-v1 remediates traffic block
     Given the Deployment has unavailable replicas due to blocked traffic

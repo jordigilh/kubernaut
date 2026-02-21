@@ -5,14 +5,14 @@
 Demonstrates Kubernaut detecting a CrashLoopBackOff caused by a bad configuration
 change and performing an automatic rollback to the previous working revision.
 
-**Signal**: `KubernautCrashLoopDetected` -- restart count increasing rapidly
+**Signal**: `KubePodCrashLooping` -- restart count increasing rapidly
 **Root cause**: Invalid nginx configuration deployed via ConfigMap swap
 **Remediation**: `kubectl rollout undo` restores the previous healthy revision
 
 ## Signal Flow
 
 ```
-kube_pod_container_status_restarts_total increasing → KubernautCrashLoopDetected alert
+kube_pod_container_status_restarts_total increasing → KubePodCrashLooping alert
   → Gateway → SP → AA (HAPI + real LLM)
   → LLM diagnoses bad config causing CrashLoopBackOff
   → Selects GracefulRestart (rollback) workflow
@@ -75,7 +75,8 @@ kubectl get pods -n demo-crashloop -w
 
 ```bash
 # Alert fires after >3 restarts in 10 min (~2-3 min)
-# Check: http://localhost:9190/alerts
+# Check: kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090 &
+#        then open http://localhost:9090/alerts
 kubectl get rr,sp,aa,we,ea -n demo-crashloop -w
 ```
 
@@ -104,7 +105,7 @@ Given a Kind cluster with Kubernaut services and a real LLM backend
 When a bad ConfigMap is deployed that causes nginx to fail on startup
   And the deployment is patched to reference the bad ConfigMap
   And pods enter CrashLoopBackOff with rapidly increasing restart counts
-  And the KubernautCrashLoopDetected alert fires (>3 restarts in 10 min)
+  And the KubePodCrashLooping alert fires (>3 restarts in 10 min)
 
 Then Kubernaut Gateway receives the alert via Alertmanager webhook
   And Signal Processing enriches the signal with business labels

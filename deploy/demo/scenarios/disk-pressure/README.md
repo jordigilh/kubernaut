@@ -5,7 +5,7 @@
 Orphaned PVCs from completed batch jobs accumulate and consume storage. Kubernaut detects
 the growing PVC count and cleans up PVCs not mounted by any running pod.
 
-**Signal**: `KubernautOrphanedPVCs` -- >3 bound PVCs in namespace for >2 min
+**Signal**: `KubePersistentVolumeClaimOrphaned` -- >3 bound PVCs in namespace for >2 min
 **Remediation**: Delete PVCs labeled `batch-run=completed` that are not mounted
 
 ## Prerequisites
@@ -39,7 +39,7 @@ Given a Kind cluster with Kubernaut services and a real LLM backend
   And the "data-processor" deployment is running in namespace "demo-disk"
 
 When 5 orphaned PVCs (from simulated completed batch jobs) are created
-  And the KubernautOrphanedPVCs alert fires (>3 bound PVCs for 2 min)
+  And the KubePersistentVolumeClaimOrphaned alert fires (>3 bound PVCs for 2 min)
 
 Then the LLM identifies the PVCs as orphaned (not mounted by any running pod)
   And selects the CleanupPVC workflow

@@ -18,7 +18,7 @@ spec:
     # SLO: 99.9% availability (0.1% error budget)
     # Alert when error rate exceeds 14.4x sustainable burn rate (~1h to exhaust budget)
     # Threshold: 0.001 * 14.4 = 1.44% error rate
-    - alert: KubernautSLOBudgetBurning
+    - alert: ErrorBudgetBurn
       expr: |
         job:api_gateway:error_rate_5m > (0.001 * 14.4)
       for: 2m

@@ -6,7 +6,7 @@ A worker node becomes NotReady (simulated by pausing the Kind container with Pod
 Kubernaut detects the node failure, cordons it to prevent new scheduling, and drains
 existing workloads to healthy nodes.
 
-**Signal**: `KubernautNodeNotReady` -- node in NotReady state for >1 min
+**Signal**: `KubeNodeNotReady` -- node in NotReady state for >1 min
 **Fault injection**: `podman pause <worker-node>` (stops kubelet heartbeat)
 **Remediation**: `kubectl cordon` + `kubectl drain`
 

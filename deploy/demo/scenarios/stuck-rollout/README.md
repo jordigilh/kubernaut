@@ -6,7 +6,7 @@ A deployment update gets stuck because the new image tag doesn't exist. After ex
 `progressDeadlineSeconds`, Kubernetes marks the rollout as not progressing. Kubernaut
 detects this and rolls back to the previous working revision.
 
-**Signal**: `KubernautStuckRollout` -- Progressing condition is False for >1 min
+**Signal**: `KubeDeploymentRolloutStuck` -- Progressing condition is False for >1 min
 **Fault injection**: `kubectl set image` with non-existent tag
 **Remediation**: `kubectl rollout undo` to restore previous image
 
@@ -42,7 +42,7 @@ Given a Kind cluster with Kubernaut services and a real LLM backend
 When the deployment image is updated to a non-existent tag
   And new pods enter ImagePullBackOff
   And the rollout exceeds progressDeadlineSeconds (120s)
-  And the KubernautStuckRollout alert fires
+  And the KubeDeploymentRolloutStuck alert fires
 
 Then the LLM diagnoses the stuck rollout from a bad image reference
   And selects the GracefulRestart (rollback) workflow
