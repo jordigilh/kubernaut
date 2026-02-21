@@ -358,7 +358,7 @@ parameters:
 
 ## Slide 11: Notification
 
-**Purpose**: Delivers notifications to configured channels with retries, label-based routing, and circuit breakers. Informs operators about remediation outcomes, approvals, and escalations.
+**Purpose**: Delivers notifications to configured channels with retries, spec-field-based routing, and circuit breakers. Informs operators about remediation outcomes, approvals, and escalations.
 
 **Architecture**: Kubernetes controller (watches `NotificationRequest` CRDs).
 
@@ -366,7 +366,7 @@ parameters:
 
 **Key Features**:
 - Delivery channels: Slack (webhook with circuit breaker), Console, File, Log
-- Label-based routing: ConfigMap-driven rules with hot-reload (no restart required)
+- Spec-field-based routing: ConfigMap-driven rules with hot-reload (no restart required)
 - Exponential backoff retries
 - Circuit breaker: prevents cascading failures to external webhooks
 - Notification types: approval requests, timeout escalations, completion summaries
