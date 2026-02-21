@@ -18,6 +18,8 @@ package models
 
 import (
 	"fmt"
+
+	"gopkg.in/yaml.v3"
 )
 
 // ========================================
@@ -54,6 +56,13 @@ type WorkflowSchema struct {
 
 	// CustomLabels contains operator-defined key-value labels for additional filtering
 	CustomLabels map[string]string `yaml:"customLabels,omitempty" json:"customLabels,omitempty"`
+
+	// DetectedLabels contains author-declared infrastructure requirements (OPTIONAL)
+	// ADR-043 v1.3: Matched against incident DetectedLabels from HAPI LabelDetector
+	// DD-WORKFLOW-001 v2.0: Boolean fields accept only "true"; string fields accept
+	// specific values or "*" wildcard.
+	// nil = section absent from YAML; non-nil empty = explicit empty section
+	DetectedLabels *DetectedLabelsSchema `yaml:"detectedLabels,omitempty" json:"detectedLabels,omitempty"`
 
 	// Execution contains execution engine configuration (optional)
 	Execution *WorkflowExecution `yaml:"execution,omitempty" json:"execution,omitempty"`
@@ -190,6 +199,172 @@ type WorkflowParameter struct {
 
 	// DependsOn references other parameter names that must be set first (OPTIONAL)
 	DependsOn []string `yaml:"dependsOn,omitempty" json:"dependsOn,omitempty" validate:"omitempty"`
+}
+
+// ========================================
+// DETECTED LABELS SCHEMA (ADR-043 v1.3)
+// ========================================
+// Authority: ADR-043 v1.3 (detectedLabels schema field)
+// Authority: DD-WORKFLOW-001 v2.0 (DetectedLabels architecture)
+// Authority: BR-WORKFLOW-004 (Workflow Schema Format Specification)
+//
+// Raw YAML representation of the detectedLabels section. All fields are
+// strings matching the YAML values. Converted to models.DetectedLabels
+// (bool/string) via Parser.ExtractDetectedLabels().
+//
+// PopulatedFields tracks which fields the author explicitly declared,
+// mirroring the Signal Processing pattern for distinguishing "empty"
+// from "not defined" at the field level.
+// ========================================
+
+// detectedLabelFieldSpec describes one detectedLabels field's type and valid values.
+// Single source of truth for field classification, used by UnmarshalYAML and Validate.
+type detectedLabelFieldSpec struct {
+	isBoolean   bool
+	validValues map[string]bool // nil for boolean fields
+}
+
+// detectedLabelsFieldSpecs is the authoritative registry of all valid detectedLabels
+// fields, their type (boolean vs string-enum), and accepted values.
+// Adding a new field requires a single entry here plus the struct field + accessor.
+var detectedLabelsFieldSpecs = map[string]detectedLabelFieldSpec{
+	"gitOpsManaged":   {isBoolean: true},
+	"gitOpsTool":      {validValues: map[string]bool{"argocd": true, "flux": true, "*": true}},
+	"pdbProtected":    {isBoolean: true},
+	"hpaEnabled":      {isBoolean: true},
+	"stateful":        {isBoolean: true},
+	"helmManaged":     {isBoolean: true},
+	"networkIsolated": {isBoolean: true},
+	"serviceMesh":     {validValues: map[string]bool{"istio": true, "linkerd": true, "*": true}},
+}
+
+// DetectedLabelsSchema represents the raw YAML detectedLabels section.
+// Fields are strings matching YAML values; converted to models.DetectedLabels
+// via Parser.ExtractDetectedLabels().
+type DetectedLabelsSchema struct {
+	GitOpsManaged   string `yaml:"-" json:"gitOpsManaged,omitempty"`
+	GitOpsTool      string `yaml:"-" json:"gitOpsTool,omitempty"`
+	PDBProtected    string `yaml:"-" json:"pdbProtected,omitempty"`
+	HPAEnabled      string `yaml:"-" json:"hpaEnabled,omitempty"`
+	Stateful        string `yaml:"-" json:"stateful,omitempty"`
+	HelmManaged     string `yaml:"-" json:"helmManaged,omitempty"`
+	NetworkIsolated string `yaml:"-" json:"networkIsolated,omitempty"`
+	ServiceMesh     string `yaml:"-" json:"serviceMesh,omitempty"`
+
+	// PopulatedFields records which fields the author explicitly declared.
+	// Mirrors the Signal Processing pattern for distinguishing "empty" from
+	// "not defined" at the field level.
+	PopulatedFields []string `yaml:"-" json:"-"`
+}
+
+// UnmarshalYAML implements custom YAML unmarshaling for DetectedLabelsSchema.
+// Iterates over the raw YAML map to track which fields were explicitly declared
+// (PopulatedFields) while assigning values to typed struct fields.
+func (d *DetectedLabelsSchema) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind != yaml.MappingNode {
+		return fmt.Errorf("detectedLabels must be a mapping, got %v", value.Kind)
+	}
+
+	d.PopulatedFields = make([]string, 0, len(value.Content)/2)
+
+	for i := 0; i < len(value.Content)-1; i += 2 {
+		keyNode := value.Content[i]
+		valNode := value.Content[i+1]
+		key := keyNode.Value
+
+		if _, known := detectedLabelsFieldSpecs[key]; !known {
+			return NewSchemaValidationError("detectedLabels."+key,
+				fmt.Sprintf("unknown field %q in detectedLabels", key))
+		}
+
+		d.PopulatedFields = append(d.PopulatedFields, key)
+
+		val := valNode.Value
+		switch key {
+		case "gitOpsManaged":
+			d.GitOpsManaged = val
+		case "gitOpsTool":
+			d.GitOpsTool = val
+		case "pdbProtected":
+			d.PDBProtected = val
+		case "hpaEnabled":
+			d.HPAEnabled = val
+		case "stateful":
+			d.Stateful = val
+		case "helmManaged":
+			d.HelmManaged = val
+		case "networkIsolated":
+			d.NetworkIsolated = val
+		case "serviceMesh":
+			d.ServiceMesh = val
+		}
+	}
+
+	return nil
+}
+
+// fieldValue returns the raw string value for a given field name.
+// Centralizes the field-name-to-struct-field mapping used by both
+// UnmarshalYAML (write) and ValidateDetectedLabels (read).
+func (d *DetectedLabelsSchema) fieldValue(name string) string {
+	switch name {
+	case "gitOpsManaged":
+		return d.GitOpsManaged
+	case "gitOpsTool":
+		return d.GitOpsTool
+	case "pdbProtected":
+		return d.PDBProtected
+	case "hpaEnabled":
+		return d.HPAEnabled
+	case "stateful":
+		return d.Stateful
+	case "helmManaged":
+		return d.HelmManaged
+	case "networkIsolated":
+		return d.NetworkIsolated
+	case "serviceMesh":
+		return d.ServiceMesh
+	default:
+		return ""
+	}
+}
+
+// validValuesSlice returns sorted valid values for error messages.
+func validValuesSlice(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for v := range m {
+		out = append(out, v)
+	}
+	return out
+}
+
+// ValidateDetectedLabels validates the detectedLabels section per BR-WORKFLOW-004.
+// Boolean fields accept only "true"; string fields accept specific values or "*".
+// Uses detectedLabelsFieldSpecs as the single source of truth for field classification.
+func (d *DetectedLabelsSchema) ValidateDetectedLabels() error {
+	if d == nil {
+		return nil
+	}
+
+	for _, field := range d.PopulatedFields {
+		val := d.fieldValue(field)
+		spec := detectedLabelsFieldSpecs[field]
+
+		if spec.isBoolean {
+			if val != "true" {
+				return NewSchemaValidationError("detectedLabels."+field,
+					fmt.Sprintf("%s only accepts \"true\", got %q", field, val))
+			}
+			continue
+		}
+
+		if spec.validValues != nil && !spec.validValues[val] {
+			return NewSchemaValidationError("detectedLabels."+field,
+				fmt.Sprintf("%s must be one of %v, got %q", field, validValuesSlice(spec.validValues), val))
+		}
+	}
+
+	return nil
 }
 
 // ========================================
