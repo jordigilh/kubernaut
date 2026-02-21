@@ -125,9 +125,10 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
 
 			Expect(final.Status.KubernetesContext).ToNot(BeNil())
-			Expect(final.Status.KubernetesContext.Pod).ToNot(BeNil())
-			Expect(final.Status.KubernetesContext.Pod.Labels).To(HaveKeyWithValue("app", "test-app"))
-			Expect(final.Status.KubernetesContext.Pod.Labels).To(HaveKeyWithValue("version", "v1.2.3"))
+			Expect(final.Status.KubernetesContext.Workload).ToNot(BeNil())
+			Expect(final.Status.KubernetesContext.Workload.Kind).To(Equal("Pod"))
+			Expect(final.Status.KubernetesContext.Workload.Labels).To(HaveKeyWithValue("app", "test-app"))
+			Expect(final.Status.KubernetesContext.Workload.Labels).To(HaveKeyWithValue("version", "v1.2.3"))
 		})
 
 		// Deployment enrichment with real K8s API
@@ -165,8 +166,9 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
 
 			Expect(final.Status.KubernetesContext).ToNot(BeNil())
-			Expect(final.Status.KubernetesContext.Deployment).ToNot(BeNil())
-			Expect(final.Status.KubernetesContext.Deployment.Labels).To(HaveKeyWithValue("app", "deploy-test"))
+			Expect(final.Status.KubernetesContext.Workload).ToNot(BeNil())
+			Expect(final.Status.KubernetesContext.Workload.Kind).To(Equal("Deployment"))
+			Expect(final.Status.KubernetesContext.Workload.Labels).To(HaveKeyWithValue("app", "deploy-test"))
 		})
 
 		// NOTE: Node enrichment test moved to E2E tier - ENVTEST does not provide real nodes
@@ -225,8 +227,9 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
 
 			Expect(final.Status.KubernetesContext).ToNot(BeNil())
-			Expect(final.Status.KubernetesContext.StatefulSet).ToNot(BeNil())
-			Expect(final.Status.KubernetesContext.StatefulSet.Labels).To(HaveKeyWithValue("app", "statefulset-test"))
+			Expect(final.Status.KubernetesContext.Workload).ToNot(BeNil())
+			Expect(final.Status.KubernetesContext.Workload.Kind).To(Equal("StatefulSet"))
+			Expect(final.Status.KubernetesContext.Workload.Labels).To(HaveKeyWithValue("app", "statefulset-test"))
 		})
 
 		// Service enrichment
@@ -278,8 +281,9 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
 
 			Expect(final.Status.KubernetesContext).ToNot(BeNil())
-			Expect(final.Status.KubernetesContext.Service).ToNot(BeNil())
-			Expect(final.Status.KubernetesContext.Service.Labels).To(HaveKeyWithValue("app", "service-test"))
+			Expect(final.Status.KubernetesContext.Workload).ToNot(BeNil())
+			Expect(final.Status.KubernetesContext.Workload.Kind).To(Equal("Service"))
+			Expect(final.Status.KubernetesContext.Workload.Labels).To(HaveKeyWithValue("app", "service-test"))
 		})
 
 		// Namespace context enrichment

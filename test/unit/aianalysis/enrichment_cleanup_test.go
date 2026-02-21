@@ -46,31 +46,32 @@ var _ = Describe("EnrichmentResults Cleanup (ADR-056 Phase 4)", func() {
 		It("UT-AA-056-013: should construct EnrichmentResults with only KubernetesContext and CustomLabels", func() {
 			enrichment := sharedtypes.EnrichmentResults{
 				KubernetesContext: &sharedtypes.KubernetesContext{
-					Namespace: "production",
-					PodDetails: &sharedtypes.PodDetails{
-						Name:  "api-pod-abc123",
-						Phase: "Running",
+					Namespace: &sharedtypes.NamespaceContext{Name: "production"},
+					Workload: &sharedtypes.WorkloadDetails{
+						Kind: "Pod",
+						Name: "api-pod-abc123",
 					},
-				},
-				CustomLabels: map[string][]string{
-					"constraint": {"cost-constrained", "stateful-safe"},
-					"team":       {"name=payments"},
+					CustomLabels: map[string][]string{
+						"constraint": {"cost-constrained", "stateful-safe"},
+						"team":       {"name=payments"},
+					},
 				},
 			}
 
 			Expect(enrichment.KubernetesContext).ToNot(BeNil())
-			Expect(enrichment.KubernetesContext.Namespace).To(Equal("production"))
-			Expect(enrichment.CustomLabels).To(HaveLen(2))
-			Expect(enrichment.CustomLabels["constraint"]).To(ContainElement("cost-constrained"))
+			Expect(enrichment.KubernetesContext.Namespace).ToNot(BeNil())
+			Expect(enrichment.KubernetesContext.Namespace.Name).To(Equal("production"))
+			Expect(enrichment.KubernetesContext.CustomLabels).To(HaveLen(2))
+			Expect(enrichment.KubernetesContext.CustomLabels["constraint"]).To(ContainElement("cost-constrained"))
 		})
 
 		It("UT-AA-056-014: should serialize EnrichmentResults JSON without detectedLabels or ownerChain", func() {
 			enrichment := sharedtypes.EnrichmentResults{
 				KubernetesContext: &sharedtypes.KubernetesContext{
-					Namespace: "default",
-				},
-				CustomLabels: map[string][]string{
-					"team": {"platform"},
+					Namespace: &sharedtypes.NamespaceContext{Name: "default"},
+					CustomLabels: map[string][]string{
+						"team": {"platform"},
+					},
 				},
 			}
 
@@ -86,7 +87,8 @@ var _ = Describe("EnrichmentResults Cleanup (ADR-056 Phase 4)", func() {
 			Expect(raw).ToNot(HaveKey("ownerChain"),
 				"ownerChain must not appear in serialized EnrichmentResults")
 			Expect(raw).To(HaveKey("kubernetesContext"))
-			Expect(raw).To(HaveKey("customLabels"))
+			kc := raw["kubernetesContext"].(map[string]interface{})
+			Expect(kc).To(HaveKey("customLabels"))
 		})
 
 		It("UT-AA-056-015: RequestBuilder should produce valid HAPI request without DetectedLabels", func() {
@@ -94,8 +96,10 @@ var _ = Describe("EnrichmentResults Cleanup (ADR-056 Phase 4)", func() {
 
 			analysis := helpers.NewAIAnalysis("ai-cleanup-test", "default")
 			analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults = sharedtypes.EnrichmentResults{
-				CustomLabels: map[string][]string{
-					"constraint": {"cost-constrained"},
+				KubernetesContext: &sharedtypes.KubernetesContext{
+					CustomLabels: map[string][]string{
+						"constraint": {"cost-constrained"},
+					},
 				},
 			}
 
@@ -113,9 +117,11 @@ var _ = Describe("EnrichmentResults Cleanup (ADR-056 Phase 4)", func() {
 
 			analysis := helpers.NewAIAnalysis("ai-validate-test", "default")
 			analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults = sharedtypes.EnrichmentResults{
-				CustomLabels: map[string][]string{
-					"constraint": {"cost-constrained"},
-					"team":       {"name=payments"},
+				KubernetesContext: &sharedtypes.KubernetesContext{
+					CustomLabels: map[string][]string{
+						"constraint": {"cost-constrained"},
+						"team":       {"name=payments"},
+					},
 				},
 			}
 
@@ -140,8 +146,10 @@ var _ = Describe("EnrichmentResults Cleanup (ADR-056 Phase 4)", func() {
 
 			analysis := helpers.NewAIAnalysis("ai-no-old-labels", "default")
 			analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults = sharedtypes.EnrichmentResults{
-				CustomLabels: map[string][]string{
-					"team": {"platform"},
+				KubernetesContext: &sharedtypes.KubernetesContext{
+					CustomLabels: map[string][]string{
+						"team": {"platform"},
+					},
 				},
 			}
 
@@ -153,8 +161,10 @@ var _ = Describe("EnrichmentResults Cleanup (ADR-056 Phase 4)", func() {
 
 		It("UT-AA-056-019: EnrichmentResults JSON schema contains only authorized fields", func() {
 			enrichment := sharedtypes.EnrichmentResults{
-				KubernetesContext: &sharedtypes.KubernetesContext{Namespace: "test"},
-				CustomLabels:      map[string][]string{"k": {"v"}},
+				KubernetesContext: &sharedtypes.KubernetesContext{
+					Namespace:    &sharedtypes.NamespaceContext{Name: "test"},
+					CustomLabels: map[string][]string{"k": {"v"}},
+				},
 			}
 
 			data, err := json.Marshal(enrichment)
@@ -165,8 +175,8 @@ var _ = Describe("EnrichmentResults Cleanup (ADR-056 Phase 4)", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			allowedKeys := map[string]bool{
-				"kubernetesContext": true,
-				"customLabels":     true,
+				"kubernetesContext":   true,
+				"businessClassification": true,
 			}
 			for key := range raw {
 				Expect(allowedKeys).To(HaveKey(key),

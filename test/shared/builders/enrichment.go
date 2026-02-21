@@ -38,11 +38,11 @@ type EnrichmentBuilder struct {
 }
 
 // NewEnrichment creates a new builder with safe default values.
+// Issue #113: CustomLabels removed from EnrichmentResults; now on KubernetesContext.
 func NewEnrichment() *EnrichmentBuilder {
 	return &EnrichmentBuilder{
 		enrichment: &sharedtypes.EnrichmentResults{
 			KubernetesContext: nil,
-			CustomLabels:      nil,
 		},
 	}
 }
@@ -58,31 +58,61 @@ func (b *EnrichmentBuilder) WithKubernetesContext(ctx *sharedtypes.KubernetesCon
 }
 
 // WithNamespace sets the namespace in Kubernetes context.
+// Issue #113: Uses NamespaceContext (Name, Labels, Annotations).
 func (b *EnrichmentBuilder) WithNamespace(namespace string, labels map[string]string) *EnrichmentBuilder {
 	b.ensureKubernetesContext()
-	b.enrichment.KubernetesContext.Namespace = namespace
-	b.enrichment.KubernetesContext.NamespaceLabels = labels
+	b.enrichment.KubernetesContext.Namespace = &sharedtypes.NamespaceContext{
+		Name:   namespace,
+		Labels: labels,
+	}
+	return b
+}
+
+// WithWorkload sets workload details in Kubernetes context.
+// Issue #113: Replaces PodDetails, DeploymentDetails, NodeDetails with WorkloadDetails.
+func (b *EnrichmentBuilder) WithWorkload(kind, name string, labels map[string]string) *EnrichmentBuilder {
+	b.ensureKubernetesContext()
+	b.enrichment.KubernetesContext.Workload = &sharedtypes.WorkloadDetails{
+		Kind:   kind,
+		Name:   name,
+		Labels: labels,
+	}
 	return b
 }
 
 // WithPodDetails sets pod details in Kubernetes context.
+// Deprecated: Use WithWorkload for Issue #113 unified schema. Kept for backward compatibility in tests.
 func (b *EnrichmentBuilder) WithPodDetails(pod *sharedtypes.PodDetails) *EnrichmentBuilder {
 	b.ensureKubernetesContext()
-	b.enrichment.KubernetesContext.PodDetails = pod
+	b.enrichment.KubernetesContext.Workload = &sharedtypes.WorkloadDetails{
+		Kind:   "Pod",
+		Name:   pod.Name,
+		Labels: pod.Labels,
+	}
 	return b
 }
 
 // WithDeploymentDetails sets deployment details in Kubernetes context.
+// Deprecated: Use WithWorkload for Issue #113 unified schema. Kept for backward compatibility in tests.
 func (b *EnrichmentBuilder) WithDeploymentDetails(deployment *sharedtypes.DeploymentDetails) *EnrichmentBuilder {
 	b.ensureKubernetesContext()
-	b.enrichment.KubernetesContext.DeploymentDetails = deployment
+	b.enrichment.KubernetesContext.Workload = &sharedtypes.WorkloadDetails{
+		Kind:   "Deployment",
+		Name:   deployment.Name,
+		Labels: deployment.Labels,
+	}
 	return b
 }
 
 // WithNodeDetails sets node details in Kubernetes context.
+// Deprecated: Use WithWorkload for Issue #113 unified schema. Kept for backward compatibility in tests.
 func (b *EnrichmentBuilder) WithNodeDetails(node *sharedtypes.NodeDetails) *EnrichmentBuilder {
 	b.ensureKubernetesContext()
-	b.enrichment.KubernetesContext.NodeDetails = node
+	b.enrichment.KubernetesContext.Workload = &sharedtypes.WorkloadDetails{
+		Kind:   "Node",
+		Name:   node.Name,
+		Labels: node.Labels,
+	}
 	return b
 }
 
@@ -91,17 +121,21 @@ func (b *EnrichmentBuilder) WithNodeDetails(node *sharedtypes.NodeDetails) *Enri
 // ========================================
 
 // WithCustomLabel adds a custom label category with values.
+// Issue #113: CustomLabels now on KubernetesContext.
 func (b *EnrichmentBuilder) WithCustomLabel(category string, values ...string) *EnrichmentBuilder {
-	if b.enrichment.CustomLabels == nil {
-		b.enrichment.CustomLabels = make(map[string][]string)
+	b.ensureKubernetesContext()
+	if b.enrichment.KubernetesContext.CustomLabels == nil {
+		b.enrichment.KubernetesContext.CustomLabels = make(map[string][]string)
 	}
-	b.enrichment.CustomLabels[category] = values
+	b.enrichment.KubernetesContext.CustomLabels[category] = values
 	return b
 }
 
 // WithCustomLabels sets all custom labels at once.
+// Issue #113: CustomLabels now on KubernetesContext.
 func (b *EnrichmentBuilder) WithCustomLabels(labels map[string][]string) *EnrichmentBuilder {
-	b.enrichment.CustomLabels = labels
+	b.ensureKubernetesContext()
+	b.enrichment.KubernetesContext.CustomLabels = labels
 	return b
 }
 

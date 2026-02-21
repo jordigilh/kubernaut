@@ -105,7 +105,7 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 							},
 							EnrichmentResults: sharedtypes.EnrichmentResults{
 								KubernetesContext: &sharedtypes.KubernetesContext{
-									Namespace: testNamespace,
+									Namespace: &sharedtypes.NamespaceContext{Name: testNamespace},
 								},
 							},
 						},
@@ -198,7 +198,7 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 							},
 							EnrichmentResults: sharedtypes.EnrichmentResults{
 								KubernetesContext: &sharedtypes.KubernetesContext{
-									Namespace: testNamespace,
+									Namespace: &sharedtypes.NamespaceContext{Name: testNamespace},
 								},
 							},
 						},
@@ -272,7 +272,7 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 							},
 							EnrichmentResults: sharedtypes.EnrichmentResults{
 								KubernetesContext: &sharedtypes.KubernetesContext{
-									Namespace: testNamespace,
+									Namespace: &sharedtypes.NamespaceContext{Name: testNamespace},
 								},
 							},
 						},

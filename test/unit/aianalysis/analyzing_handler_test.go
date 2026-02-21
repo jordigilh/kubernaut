@@ -492,10 +492,12 @@ var _ = Describe("AnalyzingHandler", func() {
 			// BR-AI-012: CustomLabels population from EnrichmentResults
 			It("should pass CustomLabels from EnrichmentResults", func() {
 				analysis := createTestAnalysis()
-				analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.CustomLabels = map[string][]string{
-					"constraint": {"cost-constrained", "stateful-safe"},
-					"team":       {"name=payments"},
-					"region":     {"us-east-1"},
+				analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.KubernetesContext = &sharedtypes.KubernetesContext{
+					CustomLabels: map[string][]string{
+						"constraint": {"cost-constrained", "stateful-safe"},
+						"team":       {"name=payments"},
+						"region":     {"us-east-1"},
+					},
 				}
 
 				_, err := handler.Handle(ctx, analysis)
@@ -512,7 +514,9 @@ var _ = Describe("AnalyzingHandler", func() {
 			// BR-AI-012: Empty CustomLabels returns empty map
 			It("should return empty map when CustomLabels is nil", func() {
 				analysis := createTestAnalysis()
-				analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.CustomLabels = nil
+				analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.KubernetesContext = &sharedtypes.KubernetesContext{
+					CustomLabels: nil,
+				}
 
 				_, err := handler.Handle(ctx, analysis)
 

@@ -192,7 +192,9 @@ var _ = Describe("SignalProcessing AuditClient", func() {
 					Namespace: &signalprocessingv1alpha1.NamespaceContext{
 						Name: "test-ns",
 					},
-					Pod: &signalprocessingv1alpha1.PodDetails{
+					Workload: &signalprocessingv1alpha1.WorkloadDetails{
+						Kind:   "Pod",
+						Name:   "test-pod",
 						Labels: map[string]string{"app": "test"},
 					},
 					OwnerChain: []signalprocessingv1alpha1.OwnerChainEntry{

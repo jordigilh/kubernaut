@@ -410,7 +410,7 @@ var _ = Describe("K8sEnricher", func() {
 				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second)
 			})
 
-			It("should return Pod, Node, and OwnerReference data", func() {
+			It("should return Pod and OwnerReference data", func() {
 				signal := createSignal("Pod", "test-pod", "test-namespace")
 				result, err := k8sEnricher.Enrich(ctx, signal)
 
@@ -418,10 +418,9 @@ var _ = Describe("K8sEnricher", func() {
 				Expect(result).NotTo(BeNil())
 				Expect(result.Namespace).NotTo(BeNil())
 				Expect(result.Namespace.Labels).To(HaveKeyWithValue("environment", "staging"))
-				Expect(result.Pod).NotTo(BeNil())
-				Expect(result.Pod.Labels).To(HaveKeyWithValue("app", "test-app"))
-				Expect(result.Node).NotTo(BeNil())
-				Expect(result.Node.Labels).To(HaveKeyWithValue("kubernetes.io/os", "linux"))
+				Expect(result.Workload).NotTo(BeNil())
+				Expect(result.Workload.Kind).To(Equal("Pod"))
+				Expect(result.Workload.Labels).To(HaveKeyWithValue("app", "test-app"))
 				// Owner chain should be populated
 				Expect(result.OwnerChain).NotTo(BeEmpty())
 				Expect(result.OwnerChain[0].Kind).To(Equal("ReplicaSet"))
@@ -454,10 +453,9 @@ var _ = Describe("K8sEnricher", func() {
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(result).NotTo(BeNil())
-				Expect(result.Deployment).NotTo(BeNil())
-				Expect(result.Deployment.Labels).To(HaveKeyWithValue("app", "test-app"))
-				Expect(result.Deployment.Replicas).To(Equal(int32(3)))
-				Expect(result.Deployment.AvailableReplicas).To(Equal(int32(2)))
+				Expect(result.Workload).NotTo(BeNil())
+				Expect(result.Workload.Kind).To(Equal("Deployment"))
+				Expect(result.Workload.Labels).To(HaveKeyWithValue("app", "test-app"))
 			})
 		})
 
@@ -480,7 +478,7 @@ var _ = Describe("K8sEnricher", func() {
 				Expect(result).NotTo(BeNil())
 				Expect(result.DegradedMode).To(BeTrue(), "Should enter degraded mode")
 				Expect(result.Namespace).NotTo(BeNil(), "Namespace should still be populated")
-				Expect(result.Deployment).To(BeNil(), "Deployment should be nil in degraded mode")
+				Expect(result.Workload).To(BeNil(), "Workload should be nil in degraded mode")
 			})
 		})
 
@@ -510,9 +508,9 @@ var _ = Describe("K8sEnricher", func() {
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(result).NotTo(BeNil())
-				Expect(result.StatefulSet).NotTo(BeNil())
-				Expect(result.StatefulSet.Labels).To(HaveKeyWithValue("app", "database"))
-				Expect(result.StatefulSet.Replicas).To(Equal(int32(3)))
+				Expect(result.Workload).NotTo(BeNil())
+				Expect(result.Workload.Kind).To(Equal("StatefulSet"))
+				Expect(result.Workload.Labels).To(HaveKeyWithValue("app", "database"))
 			})
 		})
 
@@ -535,7 +533,7 @@ var _ = Describe("K8sEnricher", func() {
 				Expect(result).NotTo(BeNil())
 				Expect(result.DegradedMode).To(BeTrue(), "Should enter degraded mode")
 				Expect(result.Namespace).NotTo(BeNil(), "Namespace should still be populated")
-				Expect(result.StatefulSet).To(BeNil(), "StatefulSet should be nil in degraded mode")
+				Expect(result.Workload).To(BeNil(), "Workload should be nil in degraded mode")
 			})
 		})
 
@@ -568,9 +566,9 @@ var _ = Describe("K8sEnricher", func() {
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(result).NotTo(BeNil())
-				Expect(result.Service).NotTo(BeNil())
-				Expect(result.Service.Labels).To(HaveKeyWithValue("app", "api"))
-				Expect(result.Service.Type).To(Equal("ClusterIP"))
+				Expect(result.Workload).NotTo(BeNil())
+				Expect(result.Workload.Kind).To(Equal("Service"))
+				Expect(result.Workload.Labels).To(HaveKeyWithValue("app", "api"))
 			})
 		})
 
@@ -593,7 +591,7 @@ var _ = Describe("K8sEnricher", func() {
 				Expect(result).NotTo(BeNil())
 				Expect(result.DegradedMode).To(BeTrue(), "Should enter degraded mode")
 				Expect(result.Namespace).NotTo(BeNil(), "Namespace should still be populated")
-				Expect(result.Service).To(BeNil(), "Service should be nil in degraded mode")
+				Expect(result.Workload).To(BeNil(), "Workload should be nil in degraded mode")
 			})
 		})
 
@@ -621,12 +619,11 @@ var _ = Describe("K8sEnricher", func() {
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(result).NotTo(BeNil())
-				Expect(result.Node).NotTo(BeNil())
-				Expect(result.Node.Labels).To(HaveKeyWithValue("node.kubernetes.io/instance-type", "m5.large"))
-				// Nodes don't have a namespace, so Namespace is nil or empty
-				if result.Namespace != nil {
-					Expect(result.Namespace.Labels).To(BeEmpty())
-				}
+				Expect(result.Workload).NotTo(BeNil())
+				Expect(result.Workload.Kind).To(Equal("Node"))
+				Expect(result.Workload.Labels).To(HaveKeyWithValue("node.kubernetes.io/instance-type", "m5.large"))
+				// Nodes don't have a namespace, so Namespace is nil
+				Expect(result.Namespace).To(BeNil())
 			})
 		})
 
@@ -655,10 +652,10 @@ var _ = Describe("K8sEnricher", func() {
 				result, err := k8sEnricher.Enrich(ctx, signal)
 
 				Expect(err).NotTo(HaveOccurred())
-				// Standard depth for Pod: Namespace + Pod + Node + Owner
-				Expect(result.Namespace.Labels).NotTo(BeNil())
-				Expect(result.Pod).NotTo(BeNil())
-				Expect(result.Node).NotTo(BeNil())
+				// Standard depth for Pod: Namespace + Workload (Pod) + Owner
+				Expect(result.Namespace).NotTo(BeNil())
+				Expect(result.Workload).NotTo(BeNil())
+				Expect(result.Workload.Kind).To(Equal("Pod"))
 				// Should NOT fetch deep nested resources (e.g., no pod's pods)
 			})
 		})
@@ -691,13 +688,13 @@ var _ = Describe("K8sEnricher", func() {
 				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second)
 			})
 
-			It("should return Pod + Node with empty OwnerChain", func() {
+			It("should return Pod with empty OwnerChain", func() {
 				signal := createSignal("Pod", "orphan-pod", "test-namespace")
 				result, err := k8sEnricher.Enrich(ctx, signal)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(result.Pod).NotTo(BeNil())
-				Expect(result.Node).NotTo(BeNil())
+				Expect(result.Workload).NotTo(BeNil())
+				Expect(result.Workload.Kind).To(Equal("Pod"))
 				Expect(result.OwnerChain).To(BeEmpty())
 			})
 		})
@@ -719,13 +716,13 @@ var _ = Describe("K8sEnricher", func() {
 				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second)
 			})
 
-			It("should return Pod with Node=nil, continues without error", func() {
+			It("should return Pod context (Node not fetched for Pod signals)", func() {
 				signal := createSignal("Pod", "test-pod", "test-namespace")
 				result, err := k8sEnricher.Enrich(ctx, signal)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(result.Pod).NotTo(BeNil())
-				Expect(result.Node).To(BeNil()) // Node not found but no error
+				Expect(result.Workload).NotTo(BeNil())
+				Expect(result.Workload.Kind).To(Equal("Pod"))
 			})
 		})
 
@@ -748,14 +745,14 @@ var _ = Describe("K8sEnricher", func() {
 				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second)
 			})
 
-			It("should return Deployment with 0 replicas", func() {
+			It("should return Deployment workload context", func() {
 				signal := createSignal("Deployment", "scaled-down-deployment", "test-namespace")
 				result, err := k8sEnricher.Enrich(ctx, signal)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(result.Deployment).NotTo(BeNil())
-				Expect(result.Deployment.Replicas).To(Equal(int32(0)))
-				Expect(result.Deployment.AvailableReplicas).To(Equal(int32(0)))
+				Expect(result.Workload).NotTo(BeNil())
+				Expect(result.Workload.Kind).To(Equal("Deployment"))
+				Expect(result.Workload.Name).To(Equal("scaled-down-deployment"))
 			})
 		})
 
@@ -810,7 +807,7 @@ var _ = Describe("K8sEnricher", func() {
 				result, err := k8sEnricher.Enrich(ctx, signal)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(result.Pod).NotTo(BeNil())
+				Expect(result.Workload).NotTo(BeNil())
 				Expect(result.OwnerChain).NotTo(BeEmpty())
 				Expect(result.OwnerChain[0].Kind).To(Equal("Node"))
 			})
@@ -885,7 +882,8 @@ var _ = Describe("K8sEnricher", func() {
 				result, err := k8sEnricher.Enrich(ctx, signal)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(result.Pod).NotTo(BeNil())
+				Expect(result.Workload).NotTo(BeNil())
+				Expect(result.Workload.Kind).To(Equal("Pod"))
 			})
 		})
 
@@ -913,7 +911,8 @@ var _ = Describe("K8sEnricher", func() {
 				result, err := k8sEnricher.Enrich(ctx, signal)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(result.Pod).NotTo(BeNil())
+				Expect(result.Workload).NotTo(BeNil())
+				Expect(result.Workload.Kind).To(Equal("Pod"))
 			})
 		})
 
@@ -939,8 +938,8 @@ var _ = Describe("K8sEnricher", func() {
 				result, err := k8sEnricher.Enrich(ctx, signal)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(result.Pod).NotTo(BeNil())
-				Expect(result.Pod.Labels).To(HaveKeyWithValue("k8s-app", "kube-dns"))
+				Expect(result.Workload).NotTo(BeNil())
+				Expect(result.Workload.Labels).To(HaveKeyWithValue("k8s-app", "kube-dns"))
 			})
 		})
 
@@ -966,8 +965,8 @@ var _ = Describe("K8sEnricher", func() {
 				result, err := k8sEnricher.Enrich(ctx, signal)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(result.Pod).NotTo(BeNil())
-				Expect(result.Pod.Labels).To(BeEmpty())
+				Expect(result.Workload).NotTo(BeNil())
+				Expect(result.Workload.Labels).To(BeEmpty())
 			})
 		})
 
@@ -993,8 +992,8 @@ var _ = Describe("K8sEnricher", func() {
 				result, err := k8sEnricher.Enrich(ctx, signal)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(result.Pod).NotTo(BeNil())
-				Expect(result.Pod.Annotations).To(BeEmpty())
+				Expect(result.Workload).NotTo(BeNil())
+				Expect(result.Workload.Annotations).To(BeEmpty())
 			})
 		})
 
@@ -1022,8 +1021,9 @@ var _ = Describe("K8sEnricher", func() {
 				result, err := k8sEnricher.Enrich(ctx, signal)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(result.Pod).NotTo(BeNil())
-				Expect(result.Pod.Phase).To(Equal("")) // Pending deletion
+				Expect(result.Workload).NotTo(BeNil())
+				Expect(result.Workload.Kind).To(Equal("Pod"))
+				Expect(result.Workload.Name).To(Equal("deleting-pod"))
 			})
 		})
 	})
@@ -1100,8 +1100,9 @@ var _ = Describe("K8sEnricher", func() {
 				// Graceful handling - returns partial context, not error
 				Expect(err).NotTo(HaveOccurred())
 				Expect(result).NotTo(BeNil())
-				Expect(result.Pod).To(BeNil())                 // Pod not found
-				Expect(result.Namespace.Labels).NotTo(BeNil()) // Namespace found
+				Expect(result.Workload).To(BeNil())            // Pod not found
+				Expect(result.Namespace).NotTo(BeNil())       // Namespace found
+				Expect(result.DegradedMode).To(BeTrue())
 			})
 		})
 

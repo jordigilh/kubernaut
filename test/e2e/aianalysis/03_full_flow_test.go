@@ -69,9 +69,11 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 								Namespace: "payments",
 							},
 							EnrichmentResults: sharedtypes.EnrichmentResults{
-								CustomLabels: map[string][]string{
-									"team":        {"payments"},
-									"cost_center": {"revenue"},
+								KubernetesContext: &sharedtypes.KubernetesContext{
+									CustomLabels: map[string][]string{
+										"team":        {"payments"},
+										"cost_center": {"revenue"},
+									},
 								},
 							},
 						},
