@@ -402,8 +402,10 @@ func (c *AuditClient) RecordEnrichmentComplete(ctx context.Context, sp *signalpr
 
 	if sp.Status.KubernetesContext != nil {
 		payload.HasNamespace.SetTo(sp.Status.KubernetesContext.Namespace != nil)
-		payload.HasPod.SetTo(sp.Status.KubernetesContext.Pod != nil)
-		payload.HasDeployment.SetTo(sp.Status.KubernetesContext.Deployment != nil)
+		// Issue #113: Workload is unified; derive HasPod/HasDeployment from Workload.Kind
+		w := sp.Status.KubernetesContext.Workload
+		payload.HasPod.SetTo(w != nil && w.Kind == "Pod")
+		payload.HasDeployment.SetTo(w != nil && w.Kind == "Deployment")
 		payload.OwnerChainLength.SetTo(len(sp.Status.KubernetesContext.OwnerChain))
 		payload.DegradedMode.SetTo(sp.Status.KubernetesContext.DegradedMode)
 	}

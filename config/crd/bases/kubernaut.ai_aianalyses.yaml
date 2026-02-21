@@ -118,247 +118,103 @@ spec:
                                   silver, bronze'
                                 type: string
                             type: object
-                          customLabels:
-                            additionalProperties:
-                              items:
-                                type: string
-                              type: array
-                            description: |-
-                              Custom labels from Rego policies - CUSTOMER DEFINED
-                              Key = subdomain/category (e.g., "constraint", "team", "region")
-                              Value = list of label values (boolean keys or "key=value" pairs)
-                              Example: {"constraint": ["cost-constrained", "stateful-safe"], "team": ["name=payments"]}
-                              Passed through to HolmesGPT-API for workflow filtering + LLM context
-                            type: object
                           kubernetesContext:
-                            description: Kubernetes resource context (pod status,
-                              node conditions, etc.)
+                            description: 'Kubernetes resource context (classification-focused:
+                              namespace, workload labels, owner chain)'
                             properties:
-                              deploymentDetails:
-                                description: Deployment/workload context
-                                properties:
-                                  availableReplicas:
-                                    format: int32
-                                    type: integer
-                                  labels:
-                                    additionalProperties:
-                                      type: string
-                                    type: object
-                                  name:
+                              customLabels:
+                                additionalProperties:
+                                  items:
                                     type: string
-                                  readyReplicas:
-                                    format: int32
-                                    type: integer
-                                  replicas:
-                                    format: int32
-                                    type: integer
-                                  strategy:
-                                    type: string
-                                required:
-                                - availableReplicas
-                                - name
-                                - readyReplicas
-                                - replicas
-                                - strategy
+                                  type: array
+                                description: |-
+                                  Custom labels extracted via Rego policies (BR-SP-102)
+                                  DD-WORKFLOW-001 v1.9: map[string][]string (subdomain -> list of values)
                                 type: object
+                              degradedMode:
+                                description: |-
+                                  DegradedMode indicates context was built with partial data
+                                  DD-4: K8s Enrichment Failure Handling (target resource not found)
+                                type: boolean
                               namespace:
-                                description: Namespace information
-                                type: string
-                              namespaceAnnotations:
-                                additionalProperties:
-                                  type: string
-                                type: object
-                              namespaceLabels:
-                                additionalProperties:
-                                  type: string
-                                type: object
-                              nodeDetails:
-                                description: Node context
-                                properties:
-                                  allocatable:
-                                    description: ResourceList contains resource quantities.
-                                    properties:
-                                      cpu:
-                                        type: string
-                                      memory:
-                                        type: string
-                                    required:
-                                    - cpu
-                                    - memory
-                                    type: object
-                                  capacity:
-                                    description: ResourceList contains resource quantities.
-                                    properties:
-                                      cpu:
-                                        type: string
-                                      memory:
-                                        type: string
-                                    required:
-                                    - cpu
-                                    - memory
-                                    type: object
-                                  conditions:
-                                    items:
-                                      description: NodeCondition contains node condition
-                                        status.
-                                      properties:
-                                        status:
-                                          type: string
-                                        type:
-                                          type: string
-                                      required:
-                                      - status
-                                      - type
-                                      type: object
-                                    type: array
-                                  labels:
-                                    additionalProperties:
-                                      type: string
-                                    type: object
-                                  name:
-                                    type: string
-                                required:
-                                - allocatable
-                                - capacity
-                                - name
-                                type: object
-                              podDetails:
-                                description: Pod context
+                                description: Namespace context (nil for cluster-scoped
+                                  resources like Node)
                                 properties:
                                   annotations:
                                     additionalProperties:
                                       type: string
+                                    description: Namespace annotations (used by business
+                                      classifier for kubernaut.ai/ labels)
                                     type: object
-                                  containers:
-                                    items:
-                                      description: ContainerStatus contains container-level
-                                        status.
-                                      properties:
-                                        image:
-                                          type: string
-                                        name:
-                                          type: string
-                                        ready:
-                                          type: boolean
-                                        restartCount:
-                                          format: int32
-                                          type: integer
-                                        state:
-                                          type: string
-                                      required:
-                                      - image
-                                      - name
-                                      - ready
-                                      - restartCount
-                                      - state
-                                      type: object
-                                    type: array
-                                  creationTimestamp:
+                                  labels:
+                                    additionalProperties:
+                                      type: string
+                                    description: Namespace labels (used by environment,
+                                      priority, business classifiers)
+                                    type: object
+                                  name:
+                                    description: Namespace name
+                                    type: string
+                                required:
+                                - name
+                                type: object
+                              ownerChain:
+                                description: |-
+                                  Owner chain from target to top-level controller
+                                  DD-WORKFLOW-001 v1.8: Used for historical remediation context
+                                items:
+                                  description: "OwnerChainEntry represents a single
+                                    entry in the K8s ownership chain.\nDD-WORKFLOW-001
+                                    v1.8: SignalProcessing traverses ownerReferences
+                                    to build this.\nExample chain for a Pod owned
+                                    by Deployment:\n\n\t[0]: {Namespace: \"prod\",
+                                    Kind: \"ReplicaSet\", Name: \"api-7d8f9c6b5\"}\n\t[1]:
+                                    {Namespace: \"prod\", Kind: \"Deployment\", Name:
+                                    \"api\"}"
+                                  properties:
+                                    kind:
+                                      description: Kind of the owner resource (e.g.,
+                                        ReplicaSet, Deployment, StatefulSet, DaemonSet)
+                                      type: string
+                                    name:
+                                      description: Name of the owner resource
+                                      type: string
+                                    namespace:
+                                      description: Namespace of the owner resource
+                                        (empty for cluster-scoped resources like Node)
+                                      type: string
+                                  required:
+                                  - kind
+                                  - name
+                                  type: object
+                                type: array
+                              workload:
+                                description: Target workload context (kind, name,
+                                  labels, annotations)
+                                properties:
+                                  annotations:
+                                    additionalProperties:
+                                      type: string
+                                    description: Resource annotations (used by business
+                                      classifier for kubernaut.ai/ labels)
+                                    type: object
+                                  kind:
+                                    description: Resource kind (e.g., "Deployment",
+                                      "StatefulSet", "Node", "Pod")
                                     type: string
                                   labels:
                                     additionalProperties:
                                       type: string
+                                    description: Resource labels (primary classification
+                                      input for Rego policies)
                                     type: object
                                   name:
+                                    description: Resource name
                                     type: string
-                                  phase:
-                                    type: string
-                                  restartCount:
-                                    format: int32
-                                    type: integer
                                 required:
-                                - creationTimestamp
+                                - kind
                                 - name
-                                - phase
-                                - restartCount
                                 type: object
-                              relatedConfigMaps:
-                                items:
-                                  description: ConfigMapSummary contains ConfigMap
-                                    targeting information.
-                                  properties:
-                                    keys:
-                                      items:
-                                        type: string
-                                      type: array
-                                    name:
-                                      type: string
-                                  required:
-                                  - keys
-                                  - name
-                                  type: object
-                                type: array
-                              relatedIngresses:
-                                items:
-                                  description: IngressSummary contains ingress targeting
-                                    information.
-                                  properties:
-                                    hosts:
-                                      items:
-                                        type: string
-                                      type: array
-                                    name:
-                                      type: string
-                                    rules:
-                                      items:
-                                        description: IngressRule contains ingress
-                                          rule configuration.
-                                        properties:
-                                          host:
-                                            type: string
-                                          path:
-                                            type: string
-                                        required:
-                                        - host
-                                        - path
-                                        type: object
-                                      type: array
-                                  required:
-                                  - hosts
-                                  - name
-                                  type: object
-                                type: array
-                              relatedServices:
-                                description: Related resources (targeting data only)
-                                items:
-                                  description: ServiceSummary contains service targeting
-                                    information.
-                                  properties:
-                                    clusterIP:
-                                      type: string
-                                    name:
-                                      type: string
-                                    ports:
-                                      items:
-                                        description: ServicePort contains service
-                                          port configuration.
-                                        properties:
-                                          name:
-                                            type: string
-                                          port:
-                                            format: int32
-                                            type: integer
-                                          protocol:
-                                            type: string
-                                          targetPort:
-                                            type: string
-                                        required:
-                                        - name
-                                        - port
-                                        - protocol
-                                        - targetPort
-                                        type: object
-                                      type: array
-                                    type:
-                                      type: string
-                                  required:
-                                  - clusterIP
-                                  - name
-                                  - type
-                                  type: object
-                                type: array
-                            required:
-                            - namespace
                             type: object
                         type: object
                       environment:

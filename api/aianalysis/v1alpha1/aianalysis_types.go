@@ -203,38 +203,14 @@ type DetectedLabels = sharedtypes.DetectedLabels
 // KubernetesContext alias - use sharedtypes.KubernetesContext in new code
 type KubernetesContext = sharedtypes.KubernetesContext
 
-// PodDetails alias - use sharedtypes.PodDetails in new code
-type PodDetails = sharedtypes.PodDetails
+// NamespaceContext alias (Issue #113) - use sharedtypes.NamespaceContext in new code
+type NamespaceContext = sharedtypes.NamespaceContext
 
-// NodeDetails alias - use sharedtypes.NodeDetails in new code
-type NodeDetails = sharedtypes.NodeDetails
+// WorkloadDetails alias (Issue #113) - use sharedtypes.WorkloadDetails in new code
+type WorkloadDetails = sharedtypes.WorkloadDetails
 
-// DeploymentDetails alias - use sharedtypes.DeploymentDetails in new code
-type DeploymentDetails = sharedtypes.DeploymentDetails
-
-// ContainerStatus alias - use sharedtypes.ContainerStatus in new code
-type ContainerStatus = sharedtypes.ContainerStatus
-
-// ResourceList alias - use sharedtypes.ResourceList in new code
-type ResourceList = sharedtypes.ResourceList
-
-// NodeCondition alias - use sharedtypes.NodeCondition in new code
-type NodeCondition = sharedtypes.NodeCondition
-
-// ServiceSummary alias - use sharedtypes.ServiceSummary in new code
-type ServiceSummary = sharedtypes.ServiceSummary
-
-// ServicePort alias - use sharedtypes.ServicePort in new code
-type ServicePort = sharedtypes.ServicePort
-
-// IngressSummary alias - use sharedtypes.IngressSummary in new code
-type IngressSummary = sharedtypes.IngressSummary
-
-// IngressRule alias - use sharedtypes.IngressRule in new code
-type IngressRule = sharedtypes.IngressRule
-
-// ConfigMapSummary alias - use sharedtypes.ConfigMapSummary in new code
-type ConfigMapSummary = sharedtypes.ConfigMapSummary
+// BusinessClassification alias - use sharedtypes.BusinessClassification in new code
+type BusinessClassification = sharedtypes.BusinessClassification
 
 // ========================================
 // RECOVERY CONTEXT (DD-RECOVERY-002)

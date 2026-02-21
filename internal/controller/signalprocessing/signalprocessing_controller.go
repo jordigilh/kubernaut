@@ -47,7 +47,6 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/shared/backoff"
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
-	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/metrics"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -386,7 +385,7 @@ func (r *SignalProcessingReconciler) reconcileEnriching(ctx context.Context, sp 
 	if r.RegoEngine != nil {
 		// Build Rego input - simplified approach using map[string]interface{}
 		regoInput := &rego.RegoInput{
-			Kubernetes: r.buildRegoKubernetesContext(k8sCtx),
+			Kubernetes: k8sCtx,
 			Signal: rego.SignalContext{
 				Type:     signal.Type,
 				Severity: signal.Severity,
@@ -966,46 +965,6 @@ func (r *SignalProcessingReconciler) classifyBusiness(k8sCtx *signalprocessingv1
 		case "development", "dev":
 			result.Criticality = "low"
 			result.SLARequirement = "bronze"
-		}
-	}
-
-	return result
-}
-
-// ========================================
-// REGO ENGINE HELPERS (BR-SP-102)
-// ========================================
-
-// buildRegoKubernetesContext builds a KubernetesContext for Rego evaluation.
-// Uses sharedtypes to match Rego Engine expectations.
-func (r *SignalProcessingReconciler) buildRegoKubernetesContext(k8sCtx *signalprocessingv1alpha1.KubernetesContext) *sharedtypes.KubernetesContext {
-	if k8sCtx == nil {
-		return &sharedtypes.KubernetesContext{}
-	}
-
-	result := &sharedtypes.KubernetesContext{}
-
-	// Set namespace information
-	if k8sCtx.Namespace != nil {
-		result.Namespace = k8sCtx.Namespace.Name
-		result.NamespaceLabels = k8sCtx.Namespace.Labels
-		result.NamespaceAnnotations = k8sCtx.Namespace.Annotations
-	}
-
-	// Convert Pod details if available
-	if k8sCtx.Pod != nil {
-		result.PodDetails = &sharedtypes.PodDetails{
-			Labels:      k8sCtx.Pod.Labels,
-			Annotations: k8sCtx.Pod.Annotations,
-			Phase:       k8sCtx.Pod.Phase,
-		}
-	}
-
-	// Convert Deployment details if available
-	if k8sCtx.Deployment != nil {
-		result.DeploymentDetails = &sharedtypes.DeploymentDetails{
-			Labels:   k8sCtx.Deployment.Labels,
-			Replicas: k8sCtx.Deployment.Replicas,
 		}
 	}
 

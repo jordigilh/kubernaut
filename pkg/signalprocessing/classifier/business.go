@@ -286,7 +286,7 @@ func (b *BusinessClassifier) applyDefaults(result *classificationWithConfidence)
 	}
 }
 
-// collectLabels merges namespace and deployment labels.
+// collectLabels merges namespace and workload labels.
 // Per IMPLEMENTATION_PLAN_V1.25.md lines 2399-2413
 func (b *BusinessClassifier) collectLabels(k8sCtx *signalprocessingv1alpha1.KubernetesContext) map[string]string {
 	labels := make(map[string]string)
@@ -295,8 +295,8 @@ func (b *BusinessClassifier) collectLabels(k8sCtx *signalprocessingv1alpha1.Kube
 			labels[k] = v
 		}
 	}
-	if k8sCtx.Deployment != nil {
-		for k, v := range k8sCtx.Deployment.Labels {
+	if k8sCtx.Workload != nil {
+		for k, v := range k8sCtx.Workload.Labels {
 			labels[k] = v
 		}
 	}
@@ -326,10 +326,12 @@ func (b *BusinessClassifier) buildRegoInput(k8sCtx *signalprocessingv1alpha1.Kub
 			"annotations": ensureLabelsMap(k8sCtx.Namespace.Annotations),
 		}
 	}
-	if k8sCtx != nil && k8sCtx.Deployment != nil {
-		input["deployment"] = map[string]interface{}{
-			"labels":      ensureLabelsMap(k8sCtx.Deployment.Labels),
-			"annotations": ensureLabelsMap(k8sCtx.Deployment.Annotations),
+	if k8sCtx != nil && k8sCtx.Workload != nil {
+		input["workload"] = map[string]interface{}{
+			"kind":        k8sCtx.Workload.Kind,
+			"name":        k8sCtx.Workload.Name,
+			"labels":      ensureLabelsMap(k8sCtx.Workload.Labels),
+			"annotations": ensureLabelsMap(k8sCtx.Workload.Annotations),
 		}
 	}
 	return input

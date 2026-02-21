@@ -90,17 +90,13 @@ func ValidateContextSize(ctx *signalprocessingv1alpha1.KubernetesContext) error 
 	// which enforces: max 10 keys, 5 values/key, 63 char keys, 100 char values
 	// Skip redundant validation here.
 
-	// Validate pod labels if present
-	if ctx.Pod != nil {
-		if err := validateLabels(ctx.Pod.Labels, "pod labels"); err != nil {
+	// Validate workload labels and annotations if present (Issue #113: unified Workload field)
+	if ctx.Workload != nil {
+		if err := validateLabels(ctx.Workload.Labels, "workload labels"); err != nil {
 			return err
 		}
-	}
-
-	// Validate deployment labels if present
-	if ctx.Deployment != nil {
-		if err := validateLabels(ctx.Deployment.Labels, "deployment labels"); err != nil {
-			return err
+		if len(ctx.Workload.Annotations) > MaxLabels {
+			return fmt.Errorf("workload annotations count %d exceeds maximum %d", len(ctx.Workload.Annotations), MaxLabels)
 		}
 	}
 

@@ -174,7 +174,12 @@ func (e *K8sEnricher) enrichPodSignal(ctx context.Context, signal *signalprocess
 		e.recordEnrichmentResult("failure")
 		return nil, fmt.Errorf("failed to fetch pod: %w", err)
 	}
-	result.Pod = e.convertPodDetails(pod)
+	result.Workload = &signalprocessingv1alpha1.WorkloadDetails{
+		Kind:        "Pod",
+		Name:        pod.Name,
+		Labels:      ensureMap(pod.Labels),
+		Annotations: ensureMap(pod.Annotations),
+	}
 
 	// 3. Build owner chain using full traversal (BR-SP-100)
 	// DD-WORKFLOW-001 v1.8: Traverses ownerReferences up the chain (Pod → ReplicaSet → Deployment)
@@ -184,14 +189,6 @@ func (e *K8sEnricher) enrichPodSignal(ctx context.Context, signal *signalprocess
 			e.logger.V(1).Info("Owner chain build failed", "error", err)
 		} else {
 			result.OwnerChain = ownerChain
-		}
-	}
-
-	// 4. Fetch node where pod runs (optional)
-	if pod.Spec.NodeName != "" {
-		node, err := e.getNode(ctx, pod.Spec.NodeName)
-		if err == nil {
-			result.Node = e.convertNodeDetails(node)
 		}
 	}
 
@@ -225,7 +222,12 @@ func (e *K8sEnricher) enrichDeploymentSignal(ctx context.Context, signal *signal
 		e.recordEnrichmentResult("failure")
 		return nil, fmt.Errorf("failed to fetch deployment: %w", err)
 	}
-	result.Deployment = e.convertDeploymentDetails(deployment)
+	result.Workload = &signalprocessingv1alpha1.WorkloadDetails{
+		Kind:        "Deployment",
+		Name:        deployment.Name,
+		Labels:      ensureMap(deployment.Labels),
+		Annotations: ensureMap(deployment.Annotations),
+	}
 
 	e.recordEnrichmentResult("success")
 	return result, nil
@@ -257,7 +259,12 @@ func (e *K8sEnricher) enrichStatefulSetSignal(ctx context.Context, signal *signa
 		e.recordEnrichmentResult("failure")
 		return nil, fmt.Errorf("failed to fetch statefulset: %w", err)
 	}
-	result.StatefulSet = e.convertStatefulSetDetails(statefulset)
+	result.Workload = &signalprocessingv1alpha1.WorkloadDetails{
+		Kind:        "StatefulSet",
+		Name:        statefulset.Name,
+		Labels:      ensureMap(statefulset.Labels),
+		Annotations: ensureMap(statefulset.Annotations),
+	}
 
 	e.recordEnrichmentResult("success")
 	return result, nil
@@ -289,7 +296,12 @@ func (e *K8sEnricher) enrichDaemonSetSignal(ctx context.Context, signal *signalp
 		e.recordEnrichmentResult("failure")
 		return nil, fmt.Errorf("failed to fetch daemonset: %w", err)
 	}
-	result.DaemonSet = e.convertDaemonSetDetails(daemonset)
+	result.Workload = &signalprocessingv1alpha1.WorkloadDetails{
+		Kind:        "DaemonSet",
+		Name:        daemonset.Name,
+		Labels:      ensureMap(daemonset.Labels),
+		Annotations: ensureMap(daemonset.Annotations),
+	}
 
 	e.recordEnrichmentResult("success")
 	return result, nil
@@ -321,7 +333,12 @@ func (e *K8sEnricher) enrichReplicaSetSignal(ctx context.Context, signal *signal
 		e.recordEnrichmentResult("failure")
 		return nil, fmt.Errorf("failed to fetch replicaset: %w", err)
 	}
-	result.ReplicaSet = e.convertReplicaSetDetails(replicaset)
+	result.Workload = &signalprocessingv1alpha1.WorkloadDetails{
+		Kind:        "ReplicaSet",
+		Name:        replicaset.Name,
+		Labels:      ensureMap(replicaset.Labels),
+		Annotations: ensureMap(replicaset.Annotations),
+	}
 
 	e.recordEnrichmentResult("success")
 	return result, nil
@@ -353,7 +370,12 @@ func (e *K8sEnricher) enrichServiceSignal(ctx context.Context, signal *signalpro
 		e.recordEnrichmentResult("failure")
 		return nil, fmt.Errorf("failed to fetch service: %w", err)
 	}
-	result.Service = e.convertServiceDetails(service)
+	result.Workload = &signalprocessingv1alpha1.WorkloadDetails{
+		Kind:        "Service",
+		Name:        service.Name,
+		Labels:      ensureMap(service.Labels),
+		Annotations: ensureMap(service.Annotations),
+	}
 
 	e.recordEnrichmentResult("success")
 	return result, nil
@@ -367,7 +389,12 @@ func (e *K8sEnricher) enrichNodeSignal(ctx context.Context, signal *signalproces
 		e.recordEnrichmentResult("failure")
 		return nil, fmt.Errorf("failed to get node %s: %w", signal.TargetResource.Name, err)
 	}
-	result.Node = e.convertNodeDetails(node)
+	result.Workload = &signalprocessingv1alpha1.WorkloadDetails{
+		Kind:        "Node",
+		Name:        node.Name,
+		Labels:      ensureMap(node.Labels),
+		Annotations: ensureMap(node.Annotations),
+	}
 
 	e.recordEnrichmentResult("success")
 	return result, nil
@@ -473,142 +500,6 @@ func (e *K8sEnricher) getService(ctx context.Context, namespace, name string) (*
 		return nil, err
 	}
 	return service, nil
-}
-
-// convertPodDetails converts a corev1.Pod to PodDetails.
-func (e *K8sEnricher) convertPodDetails(pod *corev1.Pod) *signalprocessingv1alpha1.PodDetails {
-	details := &signalprocessingv1alpha1.PodDetails{
-		Labels:      ensureMap(pod.Labels),
-		Annotations: ensureMap(pod.Annotations),
-		Phase:       string(pod.Status.Phase),
-		NodeName:    pod.Spec.NodeName,
-	}
-
-	// Convert container statuses
-	for _, cs := range pod.Status.ContainerStatuses {
-		status := signalprocessingv1alpha1.ContainerStatus{
-			Name:         cs.Name,
-			Ready:        cs.Ready,
-			RestartCount: cs.RestartCount,
-		}
-		if cs.State.Running != nil {
-			status.State = "Running"
-		} else if cs.State.Waiting != nil {
-			status.State = "Waiting"
-		} else if cs.State.Terminated != nil {
-			status.State = "Terminated"
-			status.LastTerminationReason = cs.State.Terminated.Reason
-		}
-		details.ContainerStatuses = append(details.ContainerStatuses, status)
-	}
-
-	return details
-}
-
-// convertNodeDetails converts a corev1.Node to NodeDetails.
-func (e *K8sEnricher) convertNodeDetails(node *corev1.Node) *signalprocessingv1alpha1.NodeDetails {
-	details := &signalprocessingv1alpha1.NodeDetails{
-		Labels: ensureMap(node.Labels),
-	}
-
-	// Convert conditions
-	for _, cond := range node.Status.Conditions {
-		details.Conditions = append(details.Conditions, signalprocessingv1alpha1.NodeCondition{
-			Type:   string(cond.Type),
-			Status: string(cond.Status),
-			Reason: cond.Reason,
-		})
-	}
-
-	// Convert allocatable resources
-	details.Allocatable = make(map[string]string)
-	for key, val := range node.Status.Allocatable {
-		details.Allocatable[string(key)] = val.String()
-	}
-
-	return details
-}
-
-// convertDeploymentDetails converts an appsv1.Deployment to DeploymentDetails.
-func (e *K8sEnricher) convertDeploymentDetails(deployment *appsv1.Deployment) *signalprocessingv1alpha1.DeploymentDetails {
-	var replicas int32
-	if deployment.Spec.Replicas != nil {
-		replicas = *deployment.Spec.Replicas
-	}
-
-	return &signalprocessingv1alpha1.DeploymentDetails{
-		Labels:            ensureMap(deployment.Labels),
-		Annotations:       ensureMap(deployment.Annotations),
-		Replicas:          replicas,
-		AvailableReplicas: deployment.Status.AvailableReplicas,
-		ReadyReplicas:     deployment.Status.ReadyReplicas,
-	}
-}
-
-// convertStatefulSetDetails converts an appsv1.StatefulSet to StatefulSetDetails.
-func (e *K8sEnricher) convertStatefulSetDetails(statefulset *appsv1.StatefulSet) *signalprocessingv1alpha1.StatefulSetDetails {
-	var replicas int32
-	if statefulset.Spec.Replicas != nil {
-		replicas = *statefulset.Spec.Replicas
-	}
-
-	return &signalprocessingv1alpha1.StatefulSetDetails{
-		Labels:          ensureMap(statefulset.Labels),
-		Annotations:     ensureMap(statefulset.Annotations),
-		Replicas:        replicas,
-		ReadyReplicas:   statefulset.Status.ReadyReplicas,
-		CurrentReplicas: statefulset.Status.CurrentReplicas,
-	}
-}
-
-// convertDaemonSetDetails converts an appsv1.DaemonSet to DaemonSetDetails.
-func (e *K8sEnricher) convertDaemonSetDetails(daemonset *appsv1.DaemonSet) *signalprocessingv1alpha1.DaemonSetDetails {
-	return &signalprocessingv1alpha1.DaemonSetDetails{
-		Labels:                 ensureMap(daemonset.Labels),
-		Annotations:            ensureMap(daemonset.Annotations),
-		DesiredNumberScheduled: daemonset.Status.DesiredNumberScheduled,
-		CurrentNumberScheduled: daemonset.Status.CurrentNumberScheduled,
-		NumberReady:            daemonset.Status.NumberReady,
-	}
-}
-
-// convertReplicaSetDetails converts an appsv1.ReplicaSet to ReplicaSetDetails.
-func (e *K8sEnricher) convertReplicaSetDetails(replicaset *appsv1.ReplicaSet) *signalprocessingv1alpha1.ReplicaSetDetails {
-	var replicas int32
-	if replicaset.Spec.Replicas != nil {
-		replicas = *replicaset.Spec.Replicas
-	}
-
-	return &signalprocessingv1alpha1.ReplicaSetDetails{
-		Labels:            ensureMap(replicaset.Labels),
-		Annotations:       ensureMap(replicaset.Annotations),
-		Replicas:          replicas,
-		AvailableReplicas: replicaset.Status.AvailableReplicas,
-		ReadyReplicas:     replicaset.Status.ReadyReplicas,
-	}
-}
-
-// convertServiceDetails converts a corev1.Service to ServiceDetails.
-func (e *K8sEnricher) convertServiceDetails(service *corev1.Service) *signalprocessingv1alpha1.ServiceDetails {
-	details := &signalprocessingv1alpha1.ServiceDetails{
-		Labels:      ensureMap(service.Labels),
-		Annotations: ensureMap(service.Annotations),
-		Type:        string(service.Spec.Type),
-		ClusterIP:   service.Spec.ClusterIP,
-		ExternalIPs: service.Spec.ExternalIPs,
-	}
-
-	// Convert ports
-	for _, p := range service.Spec.Ports {
-		details.Ports = append(details.Ports, signalprocessingv1alpha1.ServicePort{
-			Name:       p.Name,
-			Port:       p.Port,
-			TargetPort: p.TargetPort.String(),
-			Protocol:   string(p.Protocol),
-		})
-	}
-
-	return details
 }
 
 // populateNamespaceContext populates the Namespace struct with namespace details.

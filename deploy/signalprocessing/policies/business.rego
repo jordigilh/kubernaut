@@ -7,9 +7,10 @@
 # Operators MUST customize this policy to match their business structure.
 # The `default` rule at the bottom catches any unmatched combinations.
 #
-# Input Schema:
+# Input Schema (per BR-SP-002, Issue #113):
 # {
 #   "namespace": { "name": "...", "labels": {...}, "annotations": {...} },
+#   "workload": { "kind": "Deployment", "name": "...", "labels": {...}, "annotations": {...} },
 #   "signal": { "severity": "...", "labels": {...} },
 #   "environment": "production"
 # }

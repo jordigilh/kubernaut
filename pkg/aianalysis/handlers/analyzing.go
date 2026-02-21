@@ -375,9 +375,10 @@ func (h *AnalyzingHandler) buildPolicyInput(analysis *aianalysisv1.AIAnalysis) *
 		input.FailedDetections = dl.FailedDetections
 	}
 
-	// Populate CustomLabels from EnrichmentResults
-	if analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.CustomLabels != nil {
-		input.CustomLabels = analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.CustomLabels
+	// Populate CustomLabels from EnrichmentResults (Issue #113: now on KubernetesContext)
+	er := analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults
+	if er.KubernetesContext != nil && er.KubernetesContext.CustomLabels != nil {
+		input.CustomLabels = er.KubernetesContext.CustomLabels
 	} else {
 		input.CustomLabels = make(map[string][]string)
 	}
