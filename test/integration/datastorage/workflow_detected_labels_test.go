@@ -153,12 +153,6 @@ var _ = Describe("Workflow DetectedLabels Integration (ADR-043 v1.3)", func() {
 		})
 	})
 
-	Describe("Schema Validation via OCI Registration", func() {
-		It("IT-DS-043-004: registration with invalid detectedLabels returns field-specific error", func() {
-			Skip("Requires OCI handler HTTP integration -- covered by unit test UT-DS-043-004/005/006")
-		})
-	})
-
 	Describe("Workflow Discovery by DetectedLabels", func() {
 		It("IT-DS-043-005: search filters correctly by detectedLabels", func() {
 			hpaWorkflow := baseWorkflow("with-hpa", models.DetectedLabels{HPAEnabled: true})
