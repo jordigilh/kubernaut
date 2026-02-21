@@ -238,11 +238,11 @@ receivers:
 route:
   routes:
     - match:
-        kubernaut.ai/skip-reason: PreviousExecutionFailed
-        kubernaut.ai/severity: critical
+        skip-reason: PreviousExecutionFailed
+        severity: critical
       receiver: pagerduty-immediate
     - match:
-        kubernaut.ai/skip-reason: PreviousExecutionFailed
+        skip-reason: PreviousExecutionFailed
       receiver: slack-escalation
   receiver: default-console
 receivers:
@@ -501,7 +501,7 @@ go test ./test/unit/notification/... -v --count=1 2>&1 | tail -20
 #     -n kubernaut-system
 #
 # Business Requirements:
-#   - BR-NOT-065: Channel Routing Based on Labels
+#   - BR-NOT-065: Channel Routing Based on Spec Fields
 #   - BR-NOT-066: Alertmanager-Compatible Configuration Format
 #
 # Cross-Team Reference:
@@ -581,8 +581,8 @@ route:
     # that don't match specific skip-reason rules.
     #
     - match:
-        kubernaut.ai/environment: production
-        kubernaut.ai/severity: critical
+        environment: production
+        severity: critical
       receiver: pagerduty-oncall-critical
 
     # =================================================================
@@ -592,7 +592,7 @@ route:
     # Non-production notifications go to Slack #dev
     #
     - match_re:
-        kubernaut.ai/environment: "^(staging|development|test)$"
+        environment: "^(staging|development|test)$"
       receiver: slack-dev-low
 
   # Default fallback receiver
@@ -611,12 +611,12 @@ receivers:
           A workflow execution has FAILED after running.
           Cluster state is UNKNOWN - manual intervention required.
 
-          Skip Reason: {{ index .Labels "kubernaut.ai/skip-reason" }}
-          Target: {{ index .Labels "kubernaut.ai/target-resource" }}
+          Skip Reason: {{ .Spec.Metadata.skip-reason }}
+          Target: {{ .Spec.Metadata.target-resource }}
         details:
-          skip_reason: '{{ index .Labels "kubernaut.ai/skip-reason" }}'
-          environment: '{{ index .Labels "kubernaut.ai/environment" }}'
-          remediation_request: '{{ index .Labels "kubernaut.ai/remediation-request" }}'
+          skip_reason: '{{ .Spec.Metadata.skip-reason }}'
+          environment: '{{ .Spec.Metadata.environment }}'
+          remediation_request: '{{ .Spec.RemediationRequestRef.Name }}'
 
   # HIGH: Slack #ops for team awareness
   - name: slack-ops-high
@@ -625,9 +625,9 @@ receivers:
         channel: '#kubernaut-ops'
         title: '⚠️ Workflow Retries Exhausted'
         text: |
-          *Skip Reason:* {{ index .Labels "kubernaut.ai/skip-reason" }}
-          *Environment:* {{ index .Labels "kubernaut.ai/environment" }}
-          *Remediation:* {{ index .Labels "kubernaut.ai/remediation-request" }}
+          *Skip Reason:* {{ .Spec.Metadata.skip-reason }}
+          *Environment:* {{ .Spec.Metadata.environment }}
+          *Remediation:* {{ .Spec.RemediationRequestRef.Name }}
 
           Infrastructure issues have caused 5+ pre-execution failures.
           Manual investigation required.

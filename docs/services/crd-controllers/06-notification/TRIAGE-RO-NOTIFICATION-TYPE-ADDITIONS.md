@@ -1,5 +1,7 @@
 # Triage: RemediationOrchestrator Notification Type Additions (approval + manual-review)
 
+> **Note (Issue #91):** This document references `kubernaut.ai/*` CRD labels that have since been migrated to immutable spec fields. See [DD-CRD-003](../../../../architecture/DD-CRD-003-field-selectors-operational-queries.md) for the current field-selector-based approach.
+
 **Date**: December 7, 2025
 **Notification Service Team Response**
 **Status**: ✅ **COMPLETE - All Requirements Met for Both Types**
@@ -51,7 +53,7 @@ const (
 
     // NotificationTypeManualReview is used for manual intervention required notifications (BR-ORCH-036)
     // Added Dec 2025 for ExhaustedRetries/PreviousExecutionFailed scenarios requiring operator action
-    // Distinct from 'escalation' to enable label-based routing rules (BR-NOT-065)
+    // Distinct from 'escalation' to enable spec-field-based routing rules (BR-NOT-065)
     NotificationTypeManualReview NotificationType = "manual-review"
 )
 ```

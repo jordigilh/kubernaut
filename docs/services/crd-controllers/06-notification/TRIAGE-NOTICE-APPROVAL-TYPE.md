@@ -1,5 +1,7 @@
 # Triage: NOTICE_NOTIFICATION_TYPE_APPROVAL_ADDITION
 
+> **Note (Issue #91):** This document references `kubernaut.ai/*` CRD labels that have since been migrated to immutable spec fields. See [DD-CRD-003](../../../../architecture/DD-CRD-003-field-selectors-operational-queries.md) for the current field-selector-based approach.
+
 **Date**: December 7, 2025
 **Notification Service Team Response**
 **Status**: ✅ **COMPLETE - All Requirements Met**
@@ -49,7 +51,7 @@ const (
 - **File**: `pkg/notification/routing/labels.go`
 - **Line 31-32**: `LabelNotificationType` constant supports `approval` value
 - **File**: `pkg/notification/routing/resolver.go`
-- **Lines 24-63**: Label-based routing logic operational
+- **Lines 24-63**: Spec-field-based routing logic operational
 
 **Evidence**:
 ```go
@@ -159,7 +161,7 @@ const (
 - `manual-review`: ExhaustedRetries/PreviousExecutionFailed requires operator action (BR-ORCH-036)
 
 **Routing Impact**:
-- Distinct types enable fine-grained label-based routing rules
+- Distinct types enable fine-grained spec-field-based routing rules
 - `approval` → #approvals channel (time-sensitive, action required)
 - `manual-review` → #ops-alerts channel (system blocked, investigation needed)
 

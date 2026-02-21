@@ -640,7 +640,7 @@ func (c *Client) ListRemediationRequestsByFingerprint(ctx context.Context, finge
 
 **File:** `pkg/gateway/processing/crd_creator.go` (NEW)
 
-> **Note (Issue #91):** The labels `kubernaut.ai/signal-type` and `kubernaut.ai/severity` in the example below were migrated to immutable spec fields. See Issue #91.
+> **Note (Issue #91):** `signal-type` and `severity` are now in `spec.signalType` and `spec.severity` (immutable fields). Do not set them as labels.
 
 ```go
 package processing
@@ -658,9 +658,7 @@ func (c *CRDCreator) CreateRemediationRequest(ctx context.Context, signal *gatew
             Name:      crdName,
             Namespace: signal.Namespace,
             Labels: map[string]string{
-                "kubernaut.ai/signal-type":        signal.SourceType,
-                "kubernaut.ai/signal-fingerprint": signal.Fingerprint,
-                "kubernaut.ai/severity":           signal.Severity,
+                "app.kubernetes.io/managed-by": "kubernaut-gateway",
             },
         },
         Spec: remediationv1alpha1.RemediationRequestSpec{

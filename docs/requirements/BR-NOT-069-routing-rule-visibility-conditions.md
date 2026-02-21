@@ -13,7 +13,7 @@
 
 ## Overview
 
-The Notification Service MUST expose routing rule resolution status via Kubernetes Conditions, enabling operators to debug label-based channel routing without accessing controller logs.
+The Notification Service MUST expose routing rule resolution status via Kubernetes Conditions, enabling operators to debug spec-field-based channel routing without accessing controller logs.
 
 **Business Value**: Reduces routing debugging time from 15-30 minutes (log analysis) to <1 minute (kubectl describe), improving operator efficiency and reducing MTTR for misconfigured routing rules.
 
@@ -23,7 +23,7 @@ The Notification Service MUST expose routing rule resolution status via Kubernet
 
 ### Description
 
-When NotificationRequest CRDs are processed, the Notification Service resolves delivery channels using label-based routing rules (BR-NOT-065). Operators need visibility into *which routing rule matched* and *which channels were selected* to debug routing misconfigurations without accessing controller logs.
+When NotificationRequest CRDs are processed, the Notification Service resolves delivery channels using spec-field-based routing rules (BR-NOT-065). Operators need visibility into *which routing rule matched* and *which channels were selected* to debug routing misconfigurations without accessing controller logs.
 
 ### Priority
 
@@ -31,7 +31,7 @@ When NotificationRequest CRDs are processed, the Notification Service resolves d
 
 ### Rationale
 
-Label-based routing (BR-NOT-065) is complex with multiple matchers:
+Spec-field-based routing (BR-NOT-065) is complex with multiple matchers:
 - **Type**: `escalation`, `approval_required`, `completed`, `failed`
 - **Severity**: `critical`, `high`, `medium`, `low`
 - **Environment**: `production`, `staging`, `development`, `test`
@@ -209,7 +209,7 @@ Status:
 
 ### Related Business Requirements
 
-- **BR-NOT-065**: Channel Routing Based on Labels
+- **BR-NOT-065**: Channel Routing Based on Spec Fields
   - Provides the routing functionality that BR-NOT-069 makes visible
 
 - **BR-NOT-066**: Alertmanager-Compatible Configuration Format

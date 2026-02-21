@@ -512,7 +512,7 @@
 #### **Features Implemented**
 
 - ✅ Multi-channel delivery (Console, Slack, File)
-- ✅ Label-based routing (Alertmanager-compatible)
+- ✅ Spec-field-based routing (Alertmanager-compatible)
 - ✅ 9 routing labels (type, severity, environment, etc.)
 - ✅ 5 notification types (escalation, simple, status-update, approval, manual-review)
 - ✅ Data sanitization (22 secret patterns)
