@@ -230,7 +230,7 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 	Context("Invalid Input Rejection (BR-NOT-058)", func() {
 		It("should accept notification with optional fields omitted (BR-NOT-065)", func() {
 			// BEHAVIOR: Recipients and Channels are optional per CRD schema
-			// BR-NOT-065: Empty channels triggers label-based routing rules
+			// BR-NOT-065: Empty channels triggers spec-field-based routing rules
 			// CORRECTNESS: CRD is created successfully and controller processes it
 
 			notifName := fmt.Sprintf("optional-fields-%s", uniqueSuffix)
@@ -282,7 +282,7 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 		})
 
 		It("should accept notification with empty channels array (BR-NOT-065)", func() {
-			// BEHAVIOR: Empty channels triggers label-based routing rules (BR-NOT-065)
+			// BEHAVIOR: Empty channels triggers spec-field-based routing rules (BR-NOT-065)
 			// CORRECTNESS: CRD is created successfully and controller applies routing rules
 
 			notifName := fmt.Sprintf("empty-channels-%s", uniqueSuffix)

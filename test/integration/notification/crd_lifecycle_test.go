@@ -301,12 +301,12 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 
 		// Test 4: CRD with optional fields omitted (BR-NOT-065)
 		// BR-NOT-002: NotificationRequest Schema Validation
-		// BR-NOT-065: Channel Routing Based on Labels
+		// BR-NOT-065: Channel Routing Based on Spec Fields
 		It("should accept NotificationRequest with optional fields omitted (BR-NOT-065)", func() {
 			notifName := fmt.Sprintf("optional-fields-%s", uniqueSuffix)
 
 			// Recipients and Channels are optional per CRD schema
-			// BR-NOT-065: Empty channels triggers label-based routing rules
+			// BR-NOT-065: Empty channels triggers spec-field-based routing rules
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       notifName,
