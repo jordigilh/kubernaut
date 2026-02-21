@@ -1,47 +1,11 @@
-# Grafana for Kubernaut Demo Operational Dashboard
-# Pre-configured with Prometheus datasource and auto-provisioned dashboard
-# Issue #94 + Issue #92
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: grafana-datasources
-  namespace: kubernaut-system
-data:
-  datasources.yaml: |
-    apiVersion: 1
-    datasources:
-    - name: Prometheus
-      type: prometheus
-      access: proxy
-      url: http://prometheus-svc.kubernaut-system.svc.cluster.local:9090
-      isDefault: true
-      editable: false
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: grafana-dashboard-providers
-  namespace: kubernaut-system
-data:
-  dashboards.yaml: |
-    apiVersion: 1
-    providers:
-    - name: 'kubernaut'
-      orgId: 1
-      folder: 'Kubernaut'
-      type: file
-      disableDeletion: false
-      editable: true
-      options:
-        path: /var/lib/grafana/dashboards
-        foldersFromFilesStructure: false
----
+# Kubernaut Operations dashboard for Grafana sidecar autodiscovery.
+# Applied by monitoring-helper.sh after kube-prometheus-stack is installed.
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: grafana-dashboard-kubernaut
-  namespace: kubernaut-system
+  labels:
+    grafana_dashboard: "1"
 data:
   kubernaut-operations.json: |
     {
@@ -544,93 +508,3 @@ data:
       "uid": "kubernaut-ops-demo",
       "version": 1
     }
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: grafana
-  namespace: kubernaut-system
-  labels:
-    app: grafana
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: grafana
-  template:
-    metadata:
-      labels:
-        app: grafana
-    spec:
-      containers:
-        - name: grafana
-          image: grafana/grafana:11.4.0
-          ports:
-            - containerPort: 3000
-              name: http
-              protocol: TCP
-          env:
-            - name: GF_AUTH_ANONYMOUS_ENABLED
-              value: "true"
-            - name: GF_AUTH_ANONYMOUS_ORG_ROLE
-              value: "Viewer"
-            - name: GF_SECURITY_ADMIN_USER
-              value: "admin"
-            - name: GF_SECURITY_ADMIN_PASSWORD
-              value: "kubernaut"
-            - name: GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH
-              value: "/var/lib/grafana/dashboards/kubernaut-operations.json"
-          readinessProbe:
-            httpGet:
-              path: /api/health
-              port: 3000
-            initialDelaySeconds: 10
-            periodSeconds: 5
-          livenessProbe:
-            httpGet:
-              path: /api/health
-              port: 3000
-            initialDelaySeconds: 30
-            periodSeconds: 10
-          volumeMounts:
-            - name: datasources
-              mountPath: /etc/grafana/provisioning/datasources
-              readOnly: true
-            - name: dashboard-providers
-              mountPath: /etc/grafana/provisioning/dashboards
-              readOnly: true
-            - name: dashboards
-              mountPath: /var/lib/grafana/dashboards
-              readOnly: true
-          resources:
-            requests:
-              memory: "128Mi"
-              cpu: "100m"
-            limits:
-              memory: "256Mi"
-              cpu: "500m"
-      volumes:
-        - name: datasources
-          configMap:
-            name: grafana-datasources
-        - name: dashboard-providers
-          configMap:
-            name: grafana-dashboard-providers
-        - name: dashboards
-          configMap:
-            name: grafana-dashboard-kubernaut
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: grafana-svc
-  namespace: kubernaut-system
-spec:
-  type: ClusterIP
-  selector:
-    app: grafana
-  ports:
-    - name: http
-      port: 3000
-      targetPort: 3000
-      protocol: TCP

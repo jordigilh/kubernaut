@@ -1,9 +1,11 @@
 # Kind Cluster Configuration for Kubernaut Demo
-# Based on: test/infrastructure/kind-fullpipeline-config.yaml
 # Usage:
 #   kind create cluster --name kubernaut-demo \
-#     --config deploy/demo/overlays/kind/kind-cluster-config.yaml \
-#     --kubeconfig ~/.kube/kubernaut-demo-config
+#     --config deploy/demo/overlays/kind/kind-cluster-config.yaml
+#
+# Monitoring services (Prometheus, AlertManager, Grafana) are managed by
+# kube-prometheus-stack Helm chart and expose their own NodePorts.  Only
+# Kubernaut platform services need port mappings here.
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
@@ -17,15 +19,7 @@ nodes:
   - containerPort: 30081
     hostPort: 30081
     protocol: TCP
-  # Prometheus (metric queries)
-  - containerPort: 30190
-    hostPort: 9190
-    protocol: TCP
-  # AlertManager (alert resolution)
-  - containerPort: 30193
-    hostPort: 9193
-    protocol: TCP
-  # Grafana (operational dashboard)
+  # Grafana (kube-prometheus-stack Helm chart NodePort)
   - containerPort: 30300
     hostPort: 3000
     protocol: TCP

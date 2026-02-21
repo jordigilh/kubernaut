@@ -29,19 +29,9 @@ images:
 - name: quay.io/kubernaut-ai/workflowexecution
   newTag: demo-v1.0
 
-  # Gateway Service: ClusterIP -> NodePort
-
-  # DataStorage Service: ClusterIP -> NodePort
-
-  # Prometheus Service: ClusterIP -> NodePort
-
-  # AlertManager Service: ClusterIP -> NodePort
-
-  # HolmesGPT API Service: ClusterIP -> NodePort
-
-  # Grafana Service: ClusterIP -> NodePort
-
-  # All Deployments in kubernaut-system: schedule on control-plane node (Kind)
+# Monitoring (Prometheus, AlertManager, Grafana) is now Helm-managed by
+# kube-prometheus-stack.  Only Kubernaut platform services need NodePort
+# patches here.
 patches:
 - patch: |
     - op: replace
@@ -74,43 +64,10 @@ patches:
       value: NodePort
     - op: add
       path: /spec/ports/0/nodePort
-      value: 30190
-  target:
-    kind: Service
-    name: prometheus-svc
-    namespace: kubernaut-system
-- patch: |
-    - op: replace
-      path: /spec/type
-      value: NodePort
-    - op: add
-      path: /spec/ports/0/nodePort
-      value: 30193
-  target:
-    kind: Service
-    name: alertmanager-svc
-    namespace: kubernaut-system
-- patch: |
-    - op: replace
-      path: /spec/type
-      value: NodePort
-    - op: add
-      path: /spec/ports/0/nodePort
       value: 30120
   target:
     kind: Service
     name: holmesgpt-api
-    namespace: kubernaut-system
-- patch: |
-    - op: replace
-      path: /spec/type
-      value: NodePort
-    - op: add
-      path: /spec/ports/0/nodePort
-      value: 30300
-  target:
-    kind: Service
-    name: grafana-svc
     namespace: kubernaut-system
 - patch: |
     - op: add
