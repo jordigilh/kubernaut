@@ -1,6 +1,6 @@
 # HANDOFF: Notification Service Ownership Transfer
 
-> **Note (Issue #91):** CRD routing labels (`kubernaut.ai/signal-type`, `kubernaut.ai/severity`, etc.) referenced in this document were migrated to immutable spec fields. See Issue #91.
+> **Note (Issue #91):** This document references `kubernaut.ai/*` CRD labels that have since been migrated to immutable spec fields. See [DD-CRD-003](../architecture/DD-CRD-003-field-selectors-operational-queries.md) for the current field-selector-based approach.
 
 **Date**: December 11, 2025
 **From**: Platform Integration Team

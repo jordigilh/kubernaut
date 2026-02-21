@@ -1,5 +1,7 @@
 # RO Field Selector Update - Dec 23, 2025
 
+> **Note (Issue #91):** This document references `kubernaut.ai/*` CRD labels that have since been migrated to immutable spec fields. See [DD-CRD-003](../architecture/DD-CRD-003-field-selectors-operational-queries.md) for the current field-selector-based approach.
+
 ## Overview
 Updated NC-INT-4 test to use field selector for fingerprint filtering, following Gateway service pattern (BR-GATEWAY-185 v1.1).
 

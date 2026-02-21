@@ -1,5 +1,7 @@
 # Gateway Service - Implementation Plan v2.28
 
+> **Note (Issue #91):** This document references `kubernaut.ai/*` CRD labels that have since been migrated to immutable spec fields. See [DD-CRD-003](../../../../../architecture/DD-CRD-003-field-selectors-operational-queries.md) for the current field-selector-based approach.
+
 ✅ **CATEGORIZATION MIGRATION COMPLETE** - Classification Removed from Gateway (DD-CATEGORIZATION-001)
 
 **Service**: Gateway Service (Entry Point for All Signals)

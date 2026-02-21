@@ -1,5 +1,7 @@
 # RO: Unstructured Data Triage - December 17, 2025
 
+> **Note (Issue #91):** This document references `kubernaut.ai/*` CRD labels that have since been migrated to immutable spec fields. See [DD-CRD-003](../architecture/DD-CRD-003-field-selectors-operational-queries.md) for the current field-selector-based approach.
+
 **Team**: RemediationOrchestrator (RO)
 **Scope**: Analysis of `map[string]interface{}` and `map[string]string` usage
 **Status**: ⚠️ **MINOR VIOLATIONS FOUND**
