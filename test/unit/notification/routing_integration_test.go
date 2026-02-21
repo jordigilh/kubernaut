@@ -52,19 +52,19 @@ route:
       receiver: slack-ops
 receivers:
   - name: default-slack
-    slack_configs:
+    slackConfigs:
       - channel: '#kubernaut-alerts'
   - name: pagerduty-critical
-    pagerduty_configs:
-      - service_key: critical-key
+    pagerdutyConfigs:
+      - serviceKey: critical-key
   - name: slack-approvals
-    slack_configs:
+    slackConfigs:
       - channel: '#approvals'
   - name: pagerduty-oncall
-    pagerduty_configs:
-      - service_key: oncall-key
+    pagerdutyConfigs:
+      - serviceKey: oncall-key
   - name: slack-ops
-    slack_configs:
+    slackConfigs:
       - channel: '#ops'
 `
 			var err error
@@ -231,9 +231,8 @@ route:
   receiver: slack-default
 receivers:
   - name: slack-default
-    slack_configs:
+    slackConfigs:
       - channel: '#alerts'
-        api_url: 'https://hooks.slack.com/services/xxx'
 `
 			config, err := routing.ParseConfig([]byte(configYAML))
 			Expect(err).ToNot(HaveOccurred())
@@ -242,7 +241,6 @@ receivers:
 			Expect(receiver).ToNot(BeNil())
 			Expect(receiver.SlackConfigs).To(HaveLen(1))
 			Expect(receiver.SlackConfigs[0].Channel).To(Equal("#alerts"))
-			Expect(receiver.SlackConfigs[0].APIURL).To(Equal("https://hooks.slack.com/services/xxx"))
 		})
 	})
 

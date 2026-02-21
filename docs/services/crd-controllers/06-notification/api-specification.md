@@ -636,7 +636,7 @@ route:
       receiver: slack-ops
 
     # LOW: Temporary conditions → Console only
-    - match_re:
+    - matchRe:
         skip-reason: "^(ResourceBusy|RecentlyRemediated)$"
       receiver: console-only
 
@@ -644,16 +644,16 @@ route:
 
 receivers:
   - name: pagerduty-oncall
-    pagerduty_configs:
-      - service_key: ${PAGERDUTY_KEY}
+    pagerdutyConfigs:
+      - serviceKey: ${PAGERDUTY_KEY}
   - name: slack-ops
-    slack_configs:
+    slackConfigs:
       - channel: '#kubernaut-ops'
   - name: console-only
     console_config:
       enabled: true
   - name: default-slack
-    slack_configs:
+    slackConfigs:
       - channel: '#kubernaut-alerts'
 ```
 
@@ -691,10 +691,10 @@ route:
 receivers:
   - name: null-receiver  # Drops notifications silently
   - name: slack-ops
-    slack_configs:
+    slackConfigs:
       - channel: '#kubernaut-ops'
   - name: default-slack
-    slack_configs:
+    slackConfigs:
       - channel: '#kubernaut-alerts'
 ```
 
