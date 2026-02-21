@@ -1,5 +1,7 @@
 # Notification Service - P3 Refactoring Already Complete
 
+> **Note (Issue #91):** This document references `kubernaut.ai/*` CRD labels that have since been migrated to immutable spec fields. See [DD-CRD-003](../architecture/DD-CRD-003-field-selectors-operational-queries.md) for the current field-selector-based approach.
+
 **Date**: December 14, 2025
 **Discovery**: P3 refactoring was already complete in commit `24bbe049`
 **Status**: ✅ **P3 COMPLETE** (no action needed)

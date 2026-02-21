@@ -1,5 +1,7 @@
 # BR-ORCH-034: Bulk Notification Implementation
 
+> **Note (Issue #91):** This document references `kubernaut.ai/*` CRD labels that have since been migrated to immutable spec fields. See [DD-CRD-003](../../../../architecture/DD-CRD-003-field-selectors-operational-queries.md) for the current field-selector-based approach.
+
 **Service**: Remediation Orchestrator
 **Business Requirement**: BR-ORCH-034 - Bulk Notification for Duplicates
 **Status**: ✅ **IMPLEMENTED** (Creator + Metrics)

@@ -1,5 +1,7 @@
 # Test 5 Implementation Complete - Session Summary
 
+> **Note (Issue #91):** This document references `kubernaut.ai/*` CRD labels that have since been migrated to immutable spec fields. See [DD-CRD-003](../architecture/DD-CRD-003-field-selectors-operational-queries.md) for the current field-selector-based approach.
+
 **Date**: 2025-12-12 21:35
 **Duration**: ~1 hour
 **Feature**: Timeout Notification Escalation (BR-ORCH-027)

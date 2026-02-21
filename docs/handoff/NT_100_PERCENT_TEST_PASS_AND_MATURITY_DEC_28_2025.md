@@ -1,5 +1,7 @@
 # Notification Service - 100% Test Pass & Maturity Validation Complete
 
+> **Note (Issue #91):** This document references `kubernaut.ai/*` CRD labels that have since been migrated to immutable spec fields. See [DD-CRD-003](../architecture/DD-CRD-003-field-selectors-operational-queries.md) for the current field-selector-based approach.
+
 **Date**: December 28, 2025
 **Service**: Notification Controller (CRD Controller)
 **Version**: v1.6.0

@@ -1,5 +1,7 @@
 # Notification Service - Refactoring Opportunities Triage
 
+> **Note (Issue #91):** This document references `kubernaut.ai/*` CRD labels that have since been migrated to immutable spec fields. See [DD-CRD-003](../architecture/DD-CRD-003-field-selectors-operational-queries.md) for the current field-selector-based approach.
+
 **Date**: December 13, 2025
 **Service**: Notification Controller
 **Scope**: Code quality, maintainability, and compliance

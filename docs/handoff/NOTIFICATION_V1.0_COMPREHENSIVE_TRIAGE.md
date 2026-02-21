@@ -1,5 +1,7 @@
 # Notification Service V1.0 - Comprehensive Triage vs. Authoritative Documentation
 
+> **Note (Issue #91):** This document references `kubernaut.ai/*` CRD labels that have since been migrated to immutable spec fields. See [DD-CRD-003](../architecture/DD-CRD-003-field-selectors-operational-queries.md) for the current field-selector-based approach.
+
 **Date**: December 14, 2025
 **Triage Type**: Implementation vs. Authoritative Documentation
 **Scope**: Complete service validation against V1.0 requirements

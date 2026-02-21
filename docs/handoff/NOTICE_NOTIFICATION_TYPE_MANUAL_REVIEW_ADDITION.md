@@ -1,5 +1,7 @@
 # NOTICE: NotificationType Enum Addition - `manual-review`
 
+> **Note (Issue #91):** This document references `kubernaut.ai/*` CRD labels that have since been migrated to immutable spec fields. See [DD-CRD-003](../architecture/DD-CRD-003-field-selectors-operational-queries.md) for the current field-selector-based approach.
+
 **From**: RemediationOrchestrator Team
 **To**: Notification Service Team
 **Date**: 2025-12-06
