@@ -52,6 +52,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/controller/notification"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	notificationaudit "github.com/jordigilh/kubernaut/pkg/notification/audit"
+	"github.com/jordigilh/kubernaut/pkg/notification/credentials"
 	"github.com/jordigilh/kubernaut/pkg/notification/delivery"
 	notificationmetrics "github.com/jordigilh/kubernaut/pkg/notification/metrics"
 	notificationstatus "github.com/jordigilh/kubernaut/pkg/notification/status"
@@ -91,9 +92,11 @@ var (
 	// Tests can RegisterChannel() and UnregisterChannel() to inject mocks
 	deliveryOrchestrator *delivery.Orchestrator
 
-	// Original console and slack services for restoration after mock tests
+	// Original console service for restoration after mock tests
 	originalConsoleService *delivery.ConsoleDeliveryService
-	originalSlackService   *delivery.SlackDeliveryService
+
+	// BR-NOT-104: Credential resolver for per-receiver Slack delivery in integration tests
+	credResolver *credentials.Resolver
 
 	// orchestratorMockLock serializes mock registration/test/cleanup to prevent logical races
 	// sync.Map provides thread-safety, but tests still need to lock the sequence:
@@ -352,9 +355,13 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	consoleService := delivery.NewConsoleDeliveryService()
 	originalConsoleService = consoleService // Save for restoration after mock tests
 
-	// Create Slack delivery service with mock webhook URL
-	slackService := delivery.NewSlackDeliveryService(slackWebhookURL)
-	originalSlackService = slackService // Save for restoration after mock tests
+	// BR-NOT-104: Create credential resolver with mock Slack webhook URL
+	credDir, err := os.MkdirTemp("", "it-cred-*")
+	Expect(err).NotTo(HaveOccurred())
+	err = os.WriteFile(filepath.Join(credDir, "slack-default"), []byte(slackWebhookURL), 0644)
+	Expect(err).NotTo(HaveOccurred())
+	credResolver, err = credentials.NewResolver(credDir, ctrl.Log.WithName("test-credential-resolver"))
+	Expect(err).NotTo(HaveOccurred())
 
 	// Create sanitizer
 	sanitizer := sanitization.NewSanitizer()
@@ -430,7 +437,9 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		ctrl.Log.WithName("delivery-orchestrator"),
 	)
 
-	// DD-NOT-007: Register only channels needed for integration tests
+	// DD-NOT-007: Register non-credential channels for integration tests
+	// BR-NOT-104: Slack registered as generic "slack" for existing tests that don't use credential_ref
+	slackService := delivery.NewSlackDeliveryService(slackWebhookURL)
 	deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelConsole), consoleService)
 	deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelSlack), slackService)
 	// Note: fileService and logService NOT registered (E2E only)
@@ -468,7 +477,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		APIReader:            k8sManager.GetAPIReader(), // DD-STATUS-001: Cache-bypassed reader
 		Scheme:               k8sManager.GetScheme(),
 		ConsoleService:       consoleService,
-		SlackService:         slackService,
+		CredentialResolver:   credResolver,          // BR-NOT-104: Per-receiver credential resolution
 		Sanitizer:            sanitizer,
 		CircuitBreaker:       circuitBreakerManager, // BR-NOT-055: Circuit breaker with gobreaker
 		AuditStore:           realAuditStore,        // ✅ REAL audit store (mandate compliance)
