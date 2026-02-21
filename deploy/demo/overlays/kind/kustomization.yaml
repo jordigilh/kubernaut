@@ -1,12 +1,13 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
+# DEPRECATED: The Kubernaut platform is now deployed via the Helm chart
+# at charts/kubernaut/ (see deploy/demo/scripts/platform-helper.sh).
+# This Kustomize overlay is retained only for reference; it is not used
+# by any run.sh script.
+
 resources:
 - ../../base/
-
-# Override image tags for all Kubernaut services.
-# Usage: kustomize edit set image quay.io/kubernaut-ai/*:newTag
-# or set DEMO_TAG in Makefile which patches this via sed.
 images:
 - name: quay.io/kubernaut-ai/aianalysis
   newTag: demo-v1.0

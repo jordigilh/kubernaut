@@ -89,8 +89,11 @@ Feature: cert-manager Certificate failure remediation via git revert (GitOps)
 ### 1. Install Prerequisites
 
 ```bash
-# cert-manager (if not present)
-kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.17.1/cert-manager.yaml
+# cert-manager (run.sh installs via Helm automatically; for manual setup:)
+helm repo add jetstack https://charts.jetstack.io
+helm upgrade --install cert-manager jetstack/cert-manager \
+  --namespace cert-manager --create-namespace \
+  --set crds.enabled=true --wait --timeout 3m
 
 # GitOps infrastructure
 ./deploy/demo/scenarios/gitops/scripts/setup-gitea.sh
