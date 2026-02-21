@@ -18,6 +18,7 @@ package workflow
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -278,10 +279,14 @@ func sanitizeJSONBKey(key string) string {
 	return regexp.MustCompile(`[^a-zA-Z0-9_\-]`).ReplaceAllString(key, "")
 }
 
-// sanitizeSQLString sanitizes string values for SQL queries
-// Escapes single quotes to prevent SQL injection
-func sanitizeSQLString(value string) string {
-	return strings.ReplaceAll(value, "'", "''")
+// sanitizeJSONBValue produces a safe SQL expression for a JSONB string comparison.
+// It JSON-encodes the value (handling ", \, and control characters) and then
+// SQL-escapes the result for embedding in a single-quoted SQL literal.
+// Returns a string safe to embed as '...'::jsonb in SQL.
+func sanitizeJSONBValue(value string) string {
+	jsonBytes, _ := json.Marshal(value)
+	jsonStr := string(jsonBytes)
+	return strings.ReplaceAll(jsonStr, "'", "''")
 }
 
 // buildDetectedLabelsPenaltySQL generates SQL to calculate the label penalty score.
@@ -367,16 +372,15 @@ func (r *Repository) buildCustomLabelsBoostSQLWithWildcard(request *models.Workf
 
 		// For each incident value, generate matching SQL
 		for _, incidentValue := range incidentValues {
-			// Sanitize key and value for SQL injection prevention
 			safeKey := sanitizeJSONBKey(key)
-			safeValue := sanitizeSQLString(incidentValue)
+			safeValue := sanitizeJSONBValue(incidentValue)
 
 			// SQL pattern: Check workflow's custom_labels JSONB
-			//   - Exact match: custom_labels->>'key' ? 'value' → Full boost
-			//   - Wildcard match: custom_labels->>'key' ? '*' → Half boost
+			//   - Exact match: custom_labels->>'key' @> '"value"' → Full boost
+			//   - Wildcard match: custom_labels->>'key' @> '"*"' → Half boost
 			boostCase := fmt.Sprintf(`
 				CASE
-					WHEN custom_labels->'%s' @> '"%s"'::jsonb THEN %.2f
+					WHEN custom_labels->'%s' @> '%s'::jsonb THEN %.2f
 					WHEN custom_labels->'%s' @> '"*"'::jsonb THEN %.2f
 					ELSE 0.0
 				END`,
