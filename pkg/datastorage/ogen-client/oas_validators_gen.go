@@ -1143,6 +1143,8 @@ func (s DetectedLabelsFailedDetectionsItem) Validate() error {
 	switch s {
 	case "gitOpsManaged":
 		return nil
+	case "gitOpsTool":
+		return nil
 	case "pdbProtected":
 		return nil
 	case "hpaEnabled":
