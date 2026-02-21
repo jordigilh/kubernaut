@@ -387,34 +387,6 @@ spec:
                         format: int32
                         type: integer
                     type: object
-                  detectedLabels:
-                    description: Detected labels (auto-detected cluster characteristics)
-                    properties:
-                      gitOpsManaged:
-                        description: Whether the target is managed by ArgoCD/Flux
-                        type: boolean
-                      hasHPA:
-                        description: Whether the target has an HPA (HorizontalPodAutoscaler)
-                        type: boolean
-                      hasPDB:
-                        description: Whether the target has a PDB (PodDisruptionBudget)
-                        type: boolean
-                      hasResourceLimits:
-                        description: Whether the target has resource limits defined
-                        type: boolean
-                      helmManaged:
-                        description: Whether the target is managed by Helm
-                        type: boolean
-                      isProduction:
-                        description: Whether the target is in a production namespace
-                        type: boolean
-                      networkIsolated:
-                        description: Whether the namespace has network isolation
-                        type: boolean
-                      serviceMesh:
-                        description: Whether the namespace is part of a service mesh
-                        type: boolean
-                    type: object
                   namespace:
                     description: Namespace details (per plan specification)
                     properties:
@@ -474,7 +446,7 @@ spec:
                         OwnerChainEntry represents one owner in the ownership chain.
                         BR-SP-100: OwnerChain Builder
                         DD-WORKFLOW-001 v1.8: Namespace, Kind, Name ONLY (no APIVersion/UID)
-                        HolmesGPT-API uses for DetectedLabels validation
+                        HolmesGPT-API uses for context enrichment
                       properties:
                         kind:
                           description: Owner kind (e.g., ReplicaSet, Deployment, StatefulSet,

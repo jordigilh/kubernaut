@@ -14,7 +14,7 @@ import (
 // ========================================
 //
 // Kubernetes Conditions for Notification Service routing visibility.
-// Enables operators to debug label-based routing without accessing controller logs.
+// Enables operators to debug spec-field-based routing without accessing controller logs.
 //
 // WHY BR-NOT-069?
 // - ✅ Routing Rule Visibility: Operators can see which rule matched

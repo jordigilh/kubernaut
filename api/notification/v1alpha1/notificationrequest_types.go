@@ -36,7 +36,7 @@ const (
 	NotificationTypeApproval NotificationType = "approval"
 	// NotificationTypeManualReview is used for manual intervention required notifications (BR-ORCH-036)
 	// Added Dec 2025 for ExhaustedRetries/PreviousExecutionFailed scenarios requiring operator action
-	// Distinct from 'escalation' to enable label-based routing rules (BR-NOT-065)
+	// Distinct from 'escalation' to enable spec-field-based routing rules (BR-NOT-065)
 	NotificationTypeManualReview NotificationType = "manual-review"
 	// NotificationTypeCompletion is used for successful remediation completion notifications (BR-ORCH-045)
 	// Created when WorkflowExecution completes successfully and RR transitions to Completed phase
@@ -176,7 +176,7 @@ type NotificationRequestSpec struct {
 
 	// List of recipients for this notification.
 	// Optional: If not specified, Notification Service routing rules (BR-NOT-065)
-	// will determine recipients based on CRD labels (type, severity, environment, namespace).
+	// will determine recipients based on CRD spec fields (type, severity, environment, namespace).
 	// If specified, these recipients are used in addition to routing rule matches.
 	// +optional
 	Recipients []Recipient `json:"recipients,omitempty"`
@@ -194,7 +194,7 @@ type NotificationRequestSpec struct {
 
 	// Delivery channels to use.
 	// Optional: If not specified, Notification Service routing rules (BR-NOT-065)
-	// will determine channels based on CRD labels (type, severity, environment, namespace).
+	// will determine channels based on CRD spec fields (type, severity, environment, namespace).
 	// If specified, these channels are used in addition to routing rule matches.
 	// +optional
 	Channels []Channel `json:"channels,omitempty"`

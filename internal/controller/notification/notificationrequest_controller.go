@@ -110,7 +110,7 @@ type NotificationRequestReconciler struct {
 	AuditStore   audit.AuditStore           // Buffered store for async audit writes (fire-and-forget)
 	AuditManager *notificationaudit.Manager // Audit event manager (DD-AUDIT-002)
 
-	// BR-NOT-065: Channel Routing Based on Labels
+	// BR-NOT-065: Channel Routing Based on Spec Fields
 	// BR-NOT-067: Routing Configuration Hot-Reload
 	// Thread-safe router with hot-reload support from ConfigMap
 	// See: DD-WE-004 (skip-reason routing)
