@@ -272,6 +272,26 @@ class GetResourceContextTool(Tool):
                         "name": entry["name"],
                         "labels": deploy.metadata.labels or {},
                     }
+                    # DD-HAPI-018: PDB selectors match Pod labels. When target is a
+                    # Deployment, use pod template labels for PDB detection (Pods
+                    # created by the Deployment inherit these labels).
+                    if "pod_details" not in k8s_context and hasattr(
+                        deploy, "spec"
+                    ) and deploy.spec is not None:
+                        template = getattr(deploy.spec, "template", None)
+                        if template is not None:
+                            meta = getattr(template, "metadata", None)
+                            if meta is not None:
+                                pod_labels = getattr(meta, "labels", None) or {}
+                                if pod_labels:
+                                    k8s_context["pod_details"] = {
+                                        "name": entry["name"],
+                                        "labels": pod_labels,
+                                        "annotations": getattr(
+                                            meta, "annotations", None
+                                        )
+                                        or {},
+                                    }
                 break
 
         ns_meta = await self._k8s_client.get_namespace_metadata(namespace)
