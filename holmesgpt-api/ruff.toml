@@ -1,0 +1,8 @@
+[lint.per-file-ignores]
+# License header docstrings cause E402 false positives in the auth package.
+# The imports are at the top of the file, immediately after the standard
+# Apache 2.0 license block and module docstring.
+"src/auth/__init__.py" = ["E402"]
+"src/auth/interfaces.py" = ["E402"]
+"src/auth/k8s_auth.py" = ["E402"]
+"src/auth/mock_auth.py" = ["E402"]
