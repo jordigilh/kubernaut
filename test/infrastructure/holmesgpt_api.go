@@ -603,9 +603,9 @@ subjects:
     name: holmesgpt-api-sa
     namespace: %s
 ---
-# ClusterRole: K8s investigation permissions for HolmesGPT kubernetes/core toolset
-# Required for kubectl-based pod/event investigation during incident analysis
-# Without this, the LLM cannot gather evidence and skips workflow catalog search
+# ClusterRole: K8s investigation + ADR-056 label detection permissions
+# ADR-055: Owner chain traversal, resource context enrichment
+# ADR-056: PDB, HPA, NetworkPolicy detection for DetectedLabels
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -626,6 +626,15 @@ rules:
   - apiGroups: ["events.k8s.io"]
     resources: ["events"]
     verbs: ["get", "list", "watch"]
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["get", "list"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["get", "list"]
 ---
 # ClusterRoleBinding: Grant HAPI investigation permissions cluster-wide
 apiVersion: rbac.authorization.k8s.io/v1

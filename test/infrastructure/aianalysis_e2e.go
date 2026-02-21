@@ -597,6 +597,50 @@ subjects:
   name: holmesgpt-api
   namespace: kubernaut-system
 ---
+# ClusterRole: K8s investigation + ADR-056 label detection permissions
+# ADR-055: Owner chain traversal, resource context enrichment
+# ADR-056: PDB, HPA, NetworkPolicy detection for DetectedLabels
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: holmesgpt-api-investigator
+rules:
+- apiGroups: [""]
+  resources: ["pods", "pods/log", "events", "services", "configmaps", "nodes", "namespaces", "replicationcontrollers", "persistentvolumeclaims"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["batch"]
+  resources: ["jobs", "cronjobs"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["events.k8s.io"]
+  resources: ["events"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["policy"]
+  resources: ["poddisruptionbudgets"]
+  verbs: ["get", "list"]
+- apiGroups: ["autoscaling"]
+  resources: ["horizontalpodautoscalers"]
+  verbs: ["get", "list"]
+- apiGroups: ["networking.k8s.io"]
+  resources: ["networkpolicies"]
+  verbs: ["get", "list"]
+---
+# ClusterRoleBinding: Grant HAPI investigation + label detection permissions cluster-wide
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: holmesgpt-api-investigator-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: holmesgpt-api-investigator
+subjects:
+- kind: ServiceAccount
+  name: holmesgpt-api
+  namespace: kubernaut-system
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:

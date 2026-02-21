@@ -14,20 +14,30 @@ rules:
     resources: ["tokenreviews"]
     verbs: ["create"]
 
-  # Read-only access to pods for investigation context
+  # Read-only access to core resources for investigation context
   - apiGroups: [""]
-    resources: ["pods", "pods/log"]
-    verbs: ["get", "list"]
-
-  # Read-only access to events for investigation context
-  - apiGroups: [""]
-    resources: ["events"]
+    resources: ["pods", "pods/log", "events", "namespaces"]
     verbs: ["get", "list"]
 
   # ADR-055: Read-only access to apps/v1 for owner chain traversal and spec hash
   - apiGroups: ["apps"]
     resources: ["deployments", "statefulsets", "daemonsets", "replicasets"]
-    verbs: ["get"]
+    verbs: ["get", "list"]
+
+  # ADR-056: PDB detection for DetectedLabels
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["get", "list"]
+
+  # ADR-056: HPA detection for DetectedLabels
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list"]
+
+  # ADR-056: NetworkPolicy detection for DetectedLabels
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["get", "list"]
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
