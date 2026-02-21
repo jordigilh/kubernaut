@@ -329,6 +329,13 @@ func (h *Handler) buildWorkflowFromSchema(
 		return nil, fmt.Errorf("unmarshal labels: %w", err)
 	}
 
+	// ADR-043 v1.3: Convert schema detectedLabels to business model
+	detectedLabels, err := schemaParser.ExtractDetectedLabels(parsedSchema)
+	if err != nil {
+		return nil, fmt.Errorf("extract detected labels: %w", err)
+	}
+	workflow.DetectedLabels = *detectedLabels
+
 	// Compute content hash (SHA-256)
 	workflow.ContentHash = computeContentHash(result.RawContent)
 
