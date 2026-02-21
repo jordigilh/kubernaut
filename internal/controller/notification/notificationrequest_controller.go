@@ -39,6 +39,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	kubernautnotif "github.com/jordigilh/kubernaut/pkg/notification"
 	notificationaudit "github.com/jordigilh/kubernaut/pkg/notification/audit"
+	"github.com/jordigilh/kubernaut/pkg/notification/credentials"
 	"github.com/jordigilh/kubernaut/pkg/notification/delivery"
 	notificationmetrics "github.com/jordigilh/kubernaut/pkg/notification/metrics"
 	notificationphase "github.com/jordigilh/kubernaut/pkg/notification/phase"
@@ -57,8 +58,11 @@ type NotificationRequestReconciler struct {
 
 	// Delivery services
 	ConsoleService *delivery.ConsoleDeliveryService
-	SlackService   *delivery.SlackDeliveryService
 	FileService    *delivery.FileDeliveryService // E2E testing only (DD-NOT-002)
+
+	// BR-NOT-104: Per-receiver credential resolution for Slack delivery
+	CredentialResolver    *credentials.Resolver
+	registeredSlackKeys []string
 
 	// ========================================
 	// DELIVERY ORCHESTRATOR (Pattern 3 - P0)
@@ -358,58 +362,6 @@ func (r *NotificationRequestReconciler) Reconcile(ctx context.Context, req ctrl.
 	// NOTE: Delivery attempts are recorded atomically during phase transitions
 	// (DD-PERF-001: Atomic Status Updates - prevents double-counting bug)
 	return r.determinePhaseTransition(ctx, notification, result)
-}
-
-// deliverToConsole delivers notification to console (stdout)
-func (r *NotificationRequestReconciler) deliverToConsole(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error { //nolint:unused
-	if r.ConsoleService == nil {
-		return fmt.Errorf("console service not initialized")
-	}
-
-	// Sanitize notification content before delivery
-	sanitizedNotification := r.sanitizeNotification(notification)
-	return r.ConsoleService.Deliver(ctx, sanitizedNotification)
-}
-
-// deliverToSlack delivers notification to Slack webhook
-func (r *NotificationRequestReconciler) deliverToSlack(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error { //nolint:unused
-	if r.SlackService == nil {
-		return fmt.Errorf("slack service not initialized")
-	}
-
-	// v3.1: Check circuit breaker (Category B - fail fast if Slack API is unhealthy)
-	if r.isSlackCircuitBreakerOpen() {
-		return fmt.Errorf("slack circuit breaker is open (too many failures, preventing cascading failures)")
-	}
-
-	// Sanitize notification content before delivery
-	sanitizedNotification := r.sanitizeNotification(notification)
-	err := r.SlackService.Deliver(ctx, sanitizedNotification)
-
-	// v3.1: Record circuit breaker state (Category B)
-	if r.CircuitBreaker != nil {
-		if err != nil {
-			r.CircuitBreaker.RecordFailure("slack")
-		} else {
-			r.CircuitBreaker.RecordSuccess("slack")
-		}
-	}
-
-	return err
-}
-
-// sanitizeNotification creates a sanitized copy of the notification
-func (r *NotificationRequestReconciler) sanitizeNotification(notification *notificationv1alpha1.NotificationRequest) *notificationv1alpha1.NotificationRequest { //nolint:unused
-	// Create a shallow copy to avoid mutating the original
-	sanitized := notification.DeepCopy()
-
-	// Sanitize subject and body if sanitizer is configured
-	if r.Sanitizer != nil {
-		sanitized.Spec.Subject = r.Sanitizer.Sanitize(sanitized.Spec.Subject)
-		sanitized.Spec.Body = r.Sanitizer.Sanitize(sanitized.Spec.Body)
-	}
-
-	return sanitized
 }
 
 // handleNotFound handles Category A: NotificationRequest Not Found

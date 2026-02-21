@@ -35,13 +35,12 @@ import (
 //
 // ADR-030 Configuration Management:
 // 1. Load from YAML file (ConfigMap in Kubernetes)
-// 2. Override with environment variables (secrets only)
-// 3. Validate configuration before startup
+// 2. Validate configuration before startup
 //
+// BR-NOT-104: Credentials from projected volume (not env vars).
 // Configuration Hierarchy (highest to lowest priority):
-// 1. Environment variables (secrets only - SLACK_WEBHOOK_URL)
-// 2. YAML file (everything else)
-// 3. Defaults (fallback values)
+// 1. YAML file (everything)
+// 2. Defaults (fallback values)
 // ========================================
 
 // Config is the top-level configuration for Notification service.
@@ -69,10 +68,11 @@ type ControllerSettings struct {
 // DeliverySettings contains delivery channel configuration.
 // Single Responsibility: Notification delivery behavior
 type DeliverySettings struct {
-	Console ConsoleSettings `yaml:"console"`
-	File    FileSettings    `yaml:"file"`
-	Log     LogSettings     `yaml:"log"`
-	Slack   SlackSettings   `yaml:"slack"`
+	Console     ConsoleSettings     `yaml:"console"`
+	File        FileSettings        `yaml:"file"`
+	Log         LogSettings         `yaml:"log"`
+	Slack       SlackSettings       `yaml:"slack"`
+	Credentials CredentialsSettings `yaml:"credentials"`
 }
 
 // ConsoleSettings contains console delivery configuration.
@@ -95,10 +95,16 @@ type LogSettings struct {
 	Format  string `yaml:"format"`  // Default: "json"
 }
 
-// SlackSettings contains Slack webhook configuration.
+// SlackSettings contains Slack delivery configuration.
+// BR-NOT-104: WebhookURL removed; per-receiver credentials resolved via CredentialResolver.
 type SlackSettings struct {
-	WebhookURL string        `yaml:"webhookUrl"` // From env or config (secret)
-	Timeout    time.Duration `yaml:"timeout"`    // Default: 10s
+	Timeout time.Duration `yaml:"timeout"` // Default: 10s
+}
+
+// CredentialsSettings contains credential resolver configuration.
+// BR-NOT-104: Credentials are read from files in a projected volume directory.
+type CredentialsSettings struct {
+	Dir string `yaml:"dir"` // Default: /etc/notification/credentials/
 }
 
 // LoadFromFile loads configuration from YAML file.
@@ -122,11 +128,20 @@ func LoadFromFile(path string) (*Config, error) {
 
 // LoadFromEnv overrides configuration with environment variables.
 // ADR-030: Only secrets should come from environment variables, never functional config.
+// BR-NOT-104: SLACK_WEBHOOK_URL removed; credentials come from projected volume files.
 func (c *Config) LoadFromEnv() {
-	// Secrets only (NEVER in ConfigMap)
-	if webhookURL := os.Getenv("SLACK_WEBHOOK_URL"); webhookURL != "" {
-		c.Delivery.Slack.WebhookURL = webhookURL
+	// No env-var secrets to load post BR-NOT-104.
+	// Credentials are resolved from filesystem (projected volumes).
+}
+
+// LoadFromBytes parses configuration from YAML bytes and applies defaults.
+func LoadFromBytes(data []byte) (*Config, error) {
+	var cfg Config
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("failed to parse config YAML: %w", err)
 	}
+	cfg.applyDefaults()
+	return &cfg, nil
 }
 
 // Validate validates configuration.
@@ -187,6 +202,11 @@ func (c *Config) applyDefaults() {
 	if c.Delivery.Slack.Timeout == 0 {
 		c.Delivery.Slack.Timeout = 10 * time.Second
 	}
+
+	// BR-NOT-104: Credentials directory default
+	if c.Delivery.Credentials.Dir == "" {
+		c.Delivery.Credentials.Dir = "/etc/notification/credentials/"
+	}
 }
 
 // DefaultConfig returns default configuration.
@@ -211,6 +231,9 @@ func DefaultConfig() *Config {
 			},
 			Slack: SlackSettings{
 				Timeout: 10 * time.Second,
+			},
+			Credentials: CredentialsSettings{
+				Dir: "/etc/notification/credentials/",
 			},
 		},
 		DataStorage: sharedconfig.DefaultDataStorageConfig(),
