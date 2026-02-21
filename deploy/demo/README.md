@@ -12,7 +12,7 @@ All platform images are pulled from `quay.io/kubernaut-ai/` at runtime -- no loc
 - **Container runtime**: Podman or Docker (for Kind)
 - **LLM Provider credentials**: One of Vertex AI (GCP), Anthropic, or OpenAI
 
-Memory: ~6GB available for the Kind cluster.
+Memory: ~9GB available for the Kind cluster.
 
 ## Quick Start
 

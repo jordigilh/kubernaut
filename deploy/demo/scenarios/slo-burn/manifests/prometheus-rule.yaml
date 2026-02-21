@@ -1,13 +1,13 @@
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
-  name: kubernaut-slo-rules
+  name: slo-burn-rules
   namespace: demo-slo
   labels:
     release: prometheus
 spec:
   groups:
-  - name: kubernaut-slo
+  - name: slo-burn
     rules:
     # 5m rolling error rate from blackbox probe results
     # probe_success is 0 (fail) or 1 (pass), probed every 10s

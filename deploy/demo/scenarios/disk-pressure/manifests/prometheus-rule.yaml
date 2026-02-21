@@ -1,13 +1,13 @@
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
-  name: kubernaut-disk-pressure-rules
+  name: disk-pressure-rules
   namespace: demo-disk
   labels:
     release: prometheus
 spec:
   groups:
-  - name: kubernaut-disk-pressure
+  - name: disk-pressure
     rules:
     # Detect PVCs in namespace that are bound but owned by completed/failed Jobs
     # This is a proxy for "orphaned storage consuming disk"
