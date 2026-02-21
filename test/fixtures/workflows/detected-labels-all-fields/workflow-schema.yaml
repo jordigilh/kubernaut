@@ -1,0 +1,44 @@
+# All 8 DetectedLabels Fields Test (BR-WORKFLOW-004, ADR-043 v1.3)
+# Used by: DataStorage E2E -- E2E-DS-043-005
+# Purpose: Validates all 8 detectedLabels fields survive full OCI -> DB -> HTTP round-trip
+metadata:
+  workflowId: detected-labels-all-fields-v1
+  version: "1.0.0"
+  description:
+    what: "Test workflow with all 8 detectedLabels fields populated"
+    whenToUse: "For E2E testing that all detectedLabels fields survive the production pipeline"
+    whenNotToUse: "Not intended for production use"
+    preconditions: "DataStorage service running with action_type_taxonomy seeded"
+
+actionType: RestartPod
+
+labels:
+  signalType: CrashLoopBackOff
+  severity: [critical]
+  environment: [production]
+  component: pod
+  priority: P0
+
+detectedLabels:
+  hpaEnabled: "true"
+  pdbProtected: "true"
+  stateful: "true"
+  helmManaged: "true"
+  networkIsolated: "true"
+  gitOpsManaged: "true"
+  gitOpsTool: "flux"
+  serviceMesh: "istio"
+
+execution:
+  engine: tekton
+  bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:0526671b6ec27b4ed04c288144e8e66f252442c9b4ff56e2793bb4c1f1c508f5
+
+parameters:
+  - name: NAMESPACE
+    type: string
+    required: true
+    description: "Target namespace containing the affected pod"
+  - name: POD_NAME
+    type: string
+    required: true
+    description: "Name of the pod to restart"
