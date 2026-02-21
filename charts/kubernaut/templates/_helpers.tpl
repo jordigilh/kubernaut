@@ -40,8 +40,8 @@ Chart label value.
 
 {{/*
 Render the container image for a Kubernaut service.
-Usage: {{ include "kubernaut.image" (dict "service" "gateway" "global" .Values.global) }}
+Usage: {{ include "kubernaut.image" (dict "service" "gateway" "global" .Values.global "appVersion" .Chart.AppVersion) }}
 */}}
 {{- define "kubernaut.image" -}}
-{{- printf "%s/%s:%s" .global.image.registry .service (.global.image.tag | default "demo-v1.0") }}
+{{- printf "%s/%s:%s" .global.image.registry .service (.global.image.tag | default .appVersion) }}
 {{- end }}

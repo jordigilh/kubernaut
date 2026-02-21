@@ -153,7 +153,7 @@ spec:
       serviceAccountName: workflowexecution-controller
       containers:
         - name: workflowexecution-controller
-          image: {{ include "kubernaut.image" (dict "service" "workflowexecution" "global" .Values.global) }}
+          image: {{ include "kubernaut.image" (dict "service" "workflowexecution" "global" .Values.global "appVersion" .Chart.AppVersion) }}
           imagePullPolicy: {{ .Values.global.image.pullPolicy }}
           args:
             - "--config=/etc/config/workflowexecution.yaml"

@@ -113,7 +113,7 @@ spec:
       serviceAccountName: holmesgpt-api-sa
       containers:
         - name: holmesgpt-api
-          image: {{ include "kubernaut.image" (dict "service" "holmesgpt-api" "global" .Values.global) }}
+          image: {{ include "kubernaut.image" (dict "service" "holmesgpt-api" "global" .Values.global "appVersion" .Chart.AppVersion) }}
           imagePullPolicy: {{ .Values.global.image.pullPolicy }}
           ports:
             - containerPort: 8080
