@@ -1,0 +1,769 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.19.0
+  name: signalprocessings.kubernaut.ai
+spec:
+  group: kubernaut.ai
+  names:
+    kind: SignalProcessing
+    listKind: SignalProcessingList
+    plural: signalprocessings
+    singular: signalprocessing
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.severity
+      name: Severity
+      type: string
+    - jsonPath: .status.environmentClassification.environment
+      name: Environment
+      type: string
+    - jsonPath: .status.priorityAssignment.priority
+      name: Priority
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Ready")].reason
+      name: Reason
+      priority: 1
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          SignalProcessing is the Schema for the signalprocessings API.
+          DD-SIGNAL-PROCESSING-001: Renamed from RemediationProcessing per ADR-015
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              SignalProcessingSpec defines the desired state of SignalProcessing.
+              Implementation Plan Day 2: Aligned with IMPLEMENTATION_PLAN.md structure
+
+              ADR-001: Spec Immutability
+              SignalProcessing represents an immutable event (signal enrichment).
+              Once created by RemediationOrchestrator, spec cannot be modified to ensure:
+              - Audit trail integrity (processed signal matches original signal)
+              - No signal data tampering during enrichment
+              - Consistent context passed to AIAnalysis
+
+              To reprocess a signal, delete and recreate the SignalProcessing CRD.
+            properties:
+              enrichmentConfig:
+                description: Configuration for processing
+                properties:
+                  enableClusterState:
+                    description: Enable cluster state enrichment
+                    type: boolean
+                  enableHistorical:
+                    description: Enable historical enrichment
+                    type: boolean
+                  enableMetrics:
+                    description: Enable metrics enrichment
+                    type: boolean
+                  timeout:
+                    description: Timeout for enrichment operations
+                    type: string
+                type: object
+              remediationRequestRef:
+                description: Reference to parent RemediationRequest
+                properties:
+                  apiVersion:
+                    description: API version of the referent
+                    type: string
+                  kind:
+                    description: Kind of the referent
+                    type: string
+                  name:
+                    description: Name of the referent
+                    type: string
+                  namespace:
+                    description: Namespace of the referent
+                    type: string
+                  uid:
+                    description: UID of the referent
+                    type: string
+                required:
+                - name
+                type: object
+              signal:
+                description: Signal data (copied from RemediationRequest for processing)
+                properties:
+                  annotations:
+                    additionalProperties:
+                      type: string
+                    description: Signal annotations extracted from provider-specific
+                      data
+                    type: object
+                  fingerprint:
+                    description: Unique fingerprint for deduplication (SHA256 of signal
+                      key fields)
+                    maxLength: 64
+                    pattern: ^[a-f0-9]{64}$
+                    type: string
+                  firingTime:
+                    description: When the signal first started firing
+                    format: date-time
+                    type: string
+                  labels:
+                    additionalProperties:
+                      type: string
+                    description: Signal labels extracted from provider-specific data
+                    type: object
+                  name:
+                    description: Human-readable signal name (e.g., "HighMemoryUsage",
+                      "CrashLoopBackOff")
+                    maxLength: 253
+                    type: string
+                  providerData:
+                    description: 'Provider-specific fields in raw JSON format (issue
+                      #96: string to avoid base64)'
+                    type: string
+                  receivedTime:
+                    description: When Gateway received the signal
+                    format: date-time
+                    type: string
+                  severity:
+                    description: |-
+                      Severity level (external/raw value from monitoring system)
+                      DD-SEVERITY-001: No enum restriction - allows external severity schemes (Sev1-4, P0-P4, etc.)
+                      Normalized severity is stored in Status.Severity
+                    type: string
+                  source:
+                    description: Adapter that ingested the signal
+                    maxLength: 63
+                    type: string
+                  targetResource:
+                    description: Target resource identification
+                    properties:
+                      kind:
+                        description: Resource kind (e.g., "Pod", "Deployment", "StatefulSet")
+                        type: string
+                      name:
+                        description: Resource name
+                        type: string
+                      namespace:
+                        description: Resource namespace
+                        type: string
+                    required:
+                    - kind
+                    - name
+                    - namespace
+                    type: object
+                  targetType:
+                    description: Target system type
+                    enum:
+                    - kubernetes
+                    - aws
+                    - azure
+                    - gcp
+                    - datadog
+                    type: string
+                  type:
+                    description: 'Signal type: "prometheus", "kubernetes-event", "aws-cloudwatch",
+                      etc.'
+                    type: string
+                required:
+                - fingerprint
+                - name
+                - receivedTime
+                - severity
+                - targetResource
+                - targetType
+                - type
+                type: object
+            required:
+            - remediationRequestRef
+            - signal
+            type: object
+            x-kubernetes-validations:
+            - message: remediationRequestRef.name is required for audit trail correlation
+              rule: self.remediationRequestRef.name != ''
+            - message: spec is immutable after creation (ADR-001)
+              rule: self == oldSelf
+          status:
+            description: |-
+              SignalProcessingStatus defines the observed state of SignalProcessing.
+              Implementation Plan Day 2: Aligned with IMPLEMENTATION_PLAN.md structure
+            properties:
+              businessClassification:
+                description: |-
+                  BusinessClassification for multi-dimensional categorization.
+                  BR-SP-080, BR-SP-081: Business Classification
+                properties:
+                  businessUnit:
+                    description: Business unit assignment
+                    type: string
+                  criticality:
+                    description: 'Criticality level: critical, high, medium, low'
+                    type: string
+                  serviceOwner:
+                    description: Service owner
+                    type: string
+                  slaRequirement:
+                    description: 'SLA requirement: platinum, gold, silver, bronze'
+                    type: string
+                type: object
+              completionTime:
+                format: date-time
+                type: string
+              conditions:
+                description: Conditions for detailed status
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              consecutiveFailures:
+                description: |-
+                  ConsecutiveFailures tracks the number of consecutive transient failures.
+                  Used with shared backoff for exponential retry delays (DD-SHARED-001).
+                  Reset to 0 on successful phase transition.
+                format: int32
+                type: integer
+              environmentClassification:
+                description: Categorization results (DD-CATEGORIZATION-001)
+                properties:
+                  classifiedAt:
+                    description: When classification was performed
+                    format: date-time
+                    type: string
+                  environment:
+                    description: 'Environment: production, staging, development, test'
+                    type: string
+                  source:
+                    description: |-
+                      Source of classification: namespace-labels, rego-inference, default
+                      Valid sources per BR-SP-080 V2.0 (signal-labels removed for security)
+                    type: string
+                required:
+                - classifiedAt
+                - environment
+                - source
+                type: object
+              error:
+                description: Error information
+                type: string
+              kubernetesContext:
+                description: Enrichment results
+                properties:
+                  customLabels:
+                    additionalProperties:
+                      items:
+                        type: string
+                      type: array
+                    description: |-
+                      Custom labels (extracted via Rego policies)
+                      DD-WORKFLOW-001 v1.9: map[string][]string (subdomain → list of values)
+                      Example: {"constraint": ["cost-constrained", "stateful-safe"], "team": ["name=payments"]}
+                    type: object
+                  daemonSet:
+                    description: DaemonSet details if target is a daemonset
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        description: DaemonSet annotations
+                        type: object
+                      currentNumberScheduled:
+                        description: Current number scheduled
+                        format: int32
+                        type: integer
+                      desiredNumberScheduled:
+                        description: Desired number of nodes
+                        format: int32
+                        type: integer
+                      labels:
+                        additionalProperties:
+                          type: string
+                        description: DaemonSet labels
+                        type: object
+                      numberReady:
+                        description: Number ready
+                        format: int32
+                        type: integer
+                    type: object
+                  degradedMode:
+                    description: |-
+                      DegradedMode indicates context was built with partial data (target resource not found)
+                      DD-4: K8s Enrichment Failure Handling
+                    type: boolean
+                  deployment:
+                    description: Deployment details if target is managed by deployment
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        description: Deployment annotations
+                        type: object
+                      availableReplicas:
+                        description: Available replicas
+                        format: int32
+                        type: integer
+                      labels:
+                        additionalProperties:
+                          type: string
+                        description: Deployment labels
+                        type: object
+                      readyReplicas:
+                        description: Ready replicas
+                        format: int32
+                        type: integer
+                      replicas:
+                        description: Desired replicas
+                        format: int32
+                        type: integer
+                    type: object
+                  detectedLabels:
+                    description: Detected labels (auto-detected cluster characteristics)
+                    properties:
+                      gitOpsManaged:
+                        description: Whether the target is managed by ArgoCD/Flux
+                        type: boolean
+                      hasHPA:
+                        description: Whether the target has an HPA (HorizontalPodAutoscaler)
+                        type: boolean
+                      hasPDB:
+                        description: Whether the target has a PDB (PodDisruptionBudget)
+                        type: boolean
+                      hasResourceLimits:
+                        description: Whether the target has resource limits defined
+                        type: boolean
+                      helmManaged:
+                        description: Whether the target is managed by Helm
+                        type: boolean
+                      isProduction:
+                        description: Whether the target is in a production namespace
+                        type: boolean
+                      networkIsolated:
+                        description: Whether the namespace has network isolation
+                        type: boolean
+                      serviceMesh:
+                        description: Whether the namespace is part of a service mesh
+                        type: boolean
+                    type: object
+                  namespace:
+                    description: Namespace details (per plan specification)
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        description: Namespace annotations
+                        type: object
+                      labels:
+                        additionalProperties:
+                          type: string
+                        description: Namespace labels
+                        type: object
+                      name:
+                        description: Namespace name
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  node:
+                    description: Node details where the pod is running
+                    properties:
+                      allocatable:
+                        additionalProperties:
+                          type: string
+                        description: Allocatable resources
+                        type: object
+                      conditions:
+                        description: Node conditions
+                        items:
+                          description: NodeCondition represents a node condition.
+                          properties:
+                            reason:
+                              description: Reason for condition
+                              type: string
+                            status:
+                              description: Condition status
+                              type: string
+                            type:
+                              description: Condition type
+                              type: string
+                          required:
+                          - status
+                          - type
+                          type: object
+                        type: array
+                      labels:
+                        additionalProperties:
+                          type: string
+                        description: Node labels
+                        type: object
+                    type: object
+                  ownerChain:
+                    description: Owner chain from target to top-level controller
+                    items:
+                      description: |-
+                        OwnerChainEntry represents one owner in the ownership chain.
+                        BR-SP-100: OwnerChain Builder
+                        DD-WORKFLOW-001 v1.8: Namespace, Kind, Name ONLY (no APIVersion/UID)
+                        HolmesGPT-API uses for DetectedLabels validation
+                      properties:
+                        kind:
+                          description: Owner kind (e.g., ReplicaSet, Deployment, StatefulSet,
+                            DaemonSet)
+                          type: string
+                        name:
+                          description: Owner name
+                          type: string
+                        namespace:
+                          description: Owner namespace (empty for cluster-scoped resources
+                            like Node)
+                          type: string
+                      required:
+                      - kind
+                      - name
+                      type: object
+                    type: array
+                  pod:
+                    description: Pod details if target is a pod
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        description: Pod annotations
+                        type: object
+                      containerStatuses:
+                        description: Container statuses
+                        items:
+                          description: ContainerStatus contains container state information.
+                          properties:
+                            lastTerminationReason:
+                              description: Last termination reason
+                              type: string
+                            name:
+                              description: Container name
+                              type: string
+                            ready:
+                              description: Whether container is ready
+                              type: boolean
+                            restartCount:
+                              description: Restart count
+                              format: int32
+                              type: integer
+                            state:
+                              description: Container state
+                              type: string
+                          required:
+                          - name
+                          - ready
+                          - restartCount
+                          type: object
+                        type: array
+                      labels:
+                        additionalProperties:
+                          type: string
+                        description: Pod labels
+                        type: object
+                      nodeName:
+                        description: Node name where pod is scheduled
+                        type: string
+                      phase:
+                        description: Pod phase
+                        type: string
+                    type: object
+                  replicaSet:
+                    description: ReplicaSet details if target is a replicaset
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        description: ReplicaSet annotations
+                        type: object
+                      availableReplicas:
+                        description: Available replicas
+                        format: int32
+                        type: integer
+                      labels:
+                        additionalProperties:
+                          type: string
+                        description: ReplicaSet labels
+                        type: object
+                      readyReplicas:
+                        description: Ready replicas
+                        format: int32
+                        type: integer
+                      replicas:
+                        description: Desired replicas
+                        format: int32
+                        type: integer
+                    type: object
+                  service:
+                    description: Service details if target is a service
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        description: Service annotations
+                        type: object
+                      clusterIP:
+                        description: Cluster IP
+                        type: string
+                      externalIPs:
+                        description: External IPs
+                        items:
+                          type: string
+                        type: array
+                      labels:
+                        additionalProperties:
+                          type: string
+                        description: Service labels
+                        type: object
+                      ports:
+                        description: Ports
+                        items:
+                          description: ServicePort contains service port information.
+                          properties:
+                            name:
+                              description: Port name
+                              type: string
+                            port:
+                              description: Port number
+                              format: int32
+                              type: integer
+                            protocol:
+                              description: Protocol (TCP, UDP, SCTP)
+                              type: string
+                            targetPort:
+                              description: Target port
+                              type: string
+                          required:
+                          - port
+                          type: object
+                        type: array
+                      type:
+                        description: Service type (ClusterIP, NodePort, LoadBalancer,
+                          ExternalName)
+                        type: string
+                    type: object
+                  statefulSet:
+                    description: StatefulSet details if target is a statefulset
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        description: StatefulSet annotations
+                        type: object
+                      currentReplicas:
+                        description: Current replicas
+                        format: int32
+                        type: integer
+                      labels:
+                        additionalProperties:
+                          type: string
+                        description: StatefulSet labels
+                        type: object
+                      readyReplicas:
+                        description: Ready replicas
+                        format: int32
+                        type: integer
+                      replicas:
+                        description: Desired replicas
+                        format: int32
+                        type: integer
+                    type: object
+                type: object
+              lastFailureTime:
+                description: |-
+                  LastFailureTime records when the last failure occurred.
+                  Used to determine if enough time has passed for retry.
+                format: date-time
+                type: string
+              observedGeneration:
+                description: |-
+                  ObservedGeneration is the most recent generation observed by the controller.
+                  Used to prevent duplicate reconciliations and ensure idempotency.
+                  Per DD-CONTROLLER-001: Standard pattern for all Kubernetes controllers.
+                format: int64
+                type: integer
+              originalSignalType:
+                description: |-
+                  OriginalSignalType preserves the pre-normalization signal type for audit trail.
+                  BR-SP-106: Audit trail preservation (SOC2 CC7.4)
+                  Only populated for predictive signals (e.g., "PredictedOOMKill").
+                  Empty for reactive signals.
+                type: string
+              phase:
+                description: 'Phase: Pending, Enriching, Classifying, Categorizing,
+                  Completed, Failed'
+                enum:
+                - Pending
+                - Enriching
+                - Classifying
+                - Categorizing
+                - Completed
+                - Failed
+                type: string
+              policyHash:
+                description: |-
+                  PolicyHash is the SHA256 hash of the Rego policy used for severity determination
+                  Provides audit trail and policy version tracking for compliance requirements
+                  Expected format: 64-character hexadecimal string (SHA256 hash)
+                type: string
+              priorityAssignment:
+                description: |-
+                  PriorityAssignment from DD-CATEGORIZATION-001.
+                  BR-SP-070-072: Priority Assignment (Updated per BR-SP-080 V2.0)
+                  DD-SP-001 V1.1: Removed Confidence field (redundant with source)
+                properties:
+                  assignedAt:
+                    description: When assignment was performed
+                    format: date-time
+                    type: string
+                  policyName:
+                    description: Which Rego rule matched (if applicable)
+                    type: string
+                  priority:
+                    description: 'Priority level: P0, P1, P2, P3'
+                    type: string
+                  source:
+                    description: |-
+                      Source of assignment: rego-policy, severity-fallback, default
+                      Per BR-SP-071: severity-fallback used when Rego fails (severity-only fallback)
+                    type: string
+                required:
+                - assignedAt
+                - priority
+                - source
+                type: object
+              recoveryContext:
+                description: |-
+                  RecoveryContext holds context for recovery attempts.
+                  DD-001: Recovery Context Enrichment
+                properties:
+                  attemptCount:
+                    description: Number of previous attempts
+                    format: int32
+                    type: integer
+                  lastFailureReason:
+                    description: Last failure reason
+                    type: string
+                  previousRemediationId:
+                    description: Previous remediation attempt ID
+                    type: string
+                  timeSinceFirstFailure:
+                    description: Time since first failure
+                    type: string
+                type: object
+              severity:
+                description: |-
+                  Severity determination (DD-SEVERITY-001 v1.1)
+                  Normalized severity determined by Rego policy: "critical", "high", "medium", "low", or "unknown"
+                  Aligned with HAPI/workflow catalog severity levels for consistency across platform
+                  Enables downstream services (AIAnalysis, RemediationOrchestrator, Notification)
+                  to interpret alert urgency without understanding external severity schemes.
+                enum:
+                - critical
+                - high
+                - medium
+                - low
+                - unknown
+                type: string
+              signalMode:
+                description: |-
+                  SignalMode indicates whether this is a reactive or predictive signal.
+                  BR-SP-106: Predictive Signal Mode Classification
+                  ADR-054: Predictive Signal Mode Classification and Prompt Strategy
+                  Set during the Classifying phase alongside severity, environment, and priority.
+                  All signals MUST be classified — "reactive" is the default for unmapped types.
+                enum:
+                - reactive
+                - predictive
+                type: string
+              signalType:
+                description: |-
+                  SignalType is the normalized signal type after predictive-to-base mapping.
+                  BR-SP-106: Signal Type Normalization
+                  For predictive signals (e.g., "PredictedOOMKill"), this is the base type (e.g., "OOMKilled").
+                  For reactive signals, this matches Spec.Signal.Type unchanged.
+                  This is the AUTHORITATIVE signal type for all downstream consumers (RO, AA, HAPI).
+                type: string
+              startTime:
+                description: Processing timestamps
+                format: date-time
+                type: string
+            type: object
+        type: object
+    selectableFields:
+    - jsonPath: .spec.remediationRequestRef.name
+    served: true
+    storage: true
+    subresources:
+      status: {}

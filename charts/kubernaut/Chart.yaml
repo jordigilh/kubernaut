@@ -1,0 +1,18 @@
+apiVersion: v2
+name: kubernaut
+description: Kubernaut - Autonomous Kubernetes Remediation Platform
+type: application
+version: 0.1.0
+appVersion: "demo-v1.0"
+home: https://github.com/jordigilh/kubernaut
+sources:
+  - https://github.com/jordigilh/kubernaut
+maintainers:
+  - name: Jordi Gil
+    url: https://github.com/jordigilh
+keywords:
+  - kubernetes
+  - remediation
+  - ai
+  - observability
+  - automation

@@ -1,0 +1,104 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "kubernaut.fullname" . }}-db-migration
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "2"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: db-migration
+    spec:
+      serviceAccountName: {{ include "kubernaut.fullname" . }}-hook-sa
+      restartPolicy: Never
+      initContainers:
+        - name: wait-for-postgresql
+          image: {{ .Values.hooks.migrations.image }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Waiting for PostgreSQL..."
+              until pg_isready -h postgresql.{{ .Release.Namespace }}.svc.cluster.local -U {{ .Values.postgresql.auth.username }} -d {{ .Values.postgresql.auth.database }}; do
+                echo "  PostgreSQL not ready, retrying in 2s..."
+                sleep 2
+              done
+              echo "PostgreSQL is ready."
+      containers:
+        - name: migrate
+          image: {{ .Values.hooks.migrations.image }}
+          env:
+            - name: PGHOST
+              value: postgresql.{{ .Release.Namespace }}.svc.cluster.local
+            - name: PGUSER
+              value: {{ .Values.postgresql.auth.username }}
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgresql-secret
+                  key: POSTGRES_PASSWORD
+            - name: PGDATABASE
+              value: {{ .Values.postgresql.auth.database }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              echo "==> Applying SQL migrations"
+              MIGRATIONS_DIR="/migrations"
+              FAILED=0
+              APPLIED=0
+              for migration in $(ls "$MIGRATIONS_DIR"/*.sql 2>/dev/null | sort); do
+                filename=$(basename "$migration")
+                echo -n "  Applying: ${filename}..."
+                if sed -n '1,/^-- +goose Down/p' "$migration" | grep -v '^-- +goose Down' | \
+                  psql -q 2>&1; then
+                  echo " OK"
+                  APPLIED=$((APPLIED + 1))
+                else
+                  echo " FAILED"
+                  FAILED=$((FAILED + 1))
+                fi
+              done
+              echo "  Applied: ${APPLIED}, Failed: ${FAILED}"
+
+              echo "  Granting privileges..."
+              psql -q <<'EOSQL'
+              GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO {{ .Values.postgresql.auth.username }};
+              GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO {{ .Values.postgresql.auth.username }};
+              GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO {{ .Values.postgresql.auth.username }};
+              EOSQL
+              echo "==> Migrations complete"
+          volumeMounts:
+            - name: migrations
+              mountPath: /migrations
+              readOnly: true
+      volumes:
+        - name: migrations
+          configMap:
+            name: {{ include "kubernaut.fullname" . }}-migrations
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "kubernaut.fullname" . }}-migrations
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "1"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+data:
+  {{- $migrationsDir := printf "%s/migrations" $.Chart.Name }}
+  {{- range $path, $_ := .Files.Glob "migrations/*.sql" }}
+  {{ base $path }}: |
+    {{- $.Files.Get $path | nindent 4 }}
+  {{- end }}

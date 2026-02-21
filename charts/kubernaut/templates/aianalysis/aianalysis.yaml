@@ -1,0 +1,239 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aianalysis-policies
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: aianalysis
+    {{- include "kubernaut.labels" . | nindent 4 }}
+data:
+  approval.rego: |
+    package aianalysis.approval
+    import rego.v1
+    default require_approval := false
+    require_approval if { input.environment == "production" }
+    require_approval if { input.is_recovery_attempt == true; input.recovery_attempt_number >= 3 }
+    require_approval if { input.environment == "production"; count(input.warnings) > 0 }
+    require_approval if { input.environment == "production"; count(input.failed_detections) > 0 }
+    risk_factors contains {"score": 100, "reason": msg} if {
+        input.is_recovery_attempt == true
+        input.recovery_attempt_number >= 3
+        msg := sprintf("Multiple recovery attempts (%d) - human approval required", [input.recovery_attempt_number])
+    }
+    risk_factors contains {"score": 70, "reason": "Data quality warnings in production environment"} if {
+        input.environment == "production"
+        count(input.warnings) > 0
+    }
+    risk_factors contains {"score": 60, "reason": "Data quality issues detected in production environment"} if {
+        input.environment == "production"
+        count(input.failed_detections) > 0
+    }
+    risk_factors contains {"score": 40, "reason": "Production environment requires manual approval"} if {
+        input.environment == "production"
+    }
+    all_scores contains f.score if { some f in risk_factors }
+    max_risk_score := max(all_scores) if { count(all_scores) > 0 }
+    reason := f.reason if { some f in risk_factors; f.score == max_risk_score }
+    default reason := "Auto-approved"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aianalysis-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: aianalysis
+    {{- include "kubernaut.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    controller:
+      metricsAddr: ":9090"
+      healthProbeAddr: ":8081"
+      leaderElection: false
+      leaderElectionId: "aianalysis.kubernaut.ai"
+    holmesgpt:
+      url: "http://holmesgpt-api:8080"
+      timeout: "180s"
+      sessionPollInterval: "15s"
+    datastorage:
+      url: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
+      timeout: "10s"
+      buffer:
+        bufferSize: 20000
+        batchSize: 1000
+        flushInterval: "1s"
+        maxRetries: 3
+    rego:
+      policyPath: "/etc/aianalysis/policies/approval.rego"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: aianalysis-controller
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: aianalysis-controller
+    {{- include "kubernaut.labels" . | nindent 4 }}
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: aianalysis-controller
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["aianalyses"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["aianalyses/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: holmesgpt-api-client
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["services"]
+    resourceNames: ["holmesgpt-api"]
+    verbs: ["create", "get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: aianalysis-controller
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: aianalysis-controller
+subjects:
+  - kind: ServiceAccount
+    name: aianalysis-controller
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: aianalysis-controller-holmesgpt-access
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: holmesgpt-api-client
+subjects:
+  - kind: ServiceAccount
+    name: aianalysis-controller
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: aianalysis-controller-datastorage-access
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
+subjects:
+  - kind: ServiceAccount
+    name: aianalysis-controller
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aianalysis-controller
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: aianalysis-controller
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aianalysis-controller
+  template:
+    metadata:
+      labels:
+        app: aianalysis-controller
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: aianalysis-controller
+      containers:
+        - name: aianalysis
+          image: {{ include "kubernaut.image" (dict "service" "aianalysis" "global" .Values.global) }}
+          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          env:
+            - name: CONFIG_PATH
+              value: /etc/aianalysis/config.yaml
+          args:
+            - "-config"
+            - "$(CONFIG_PATH)"
+          ports:
+            - containerPort: 8080
+            - containerPort: 9090
+            - containerPort: 8081
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 30
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          volumeMounts:
+            - name: config
+              mountPath: /etc/aianalysis
+              readOnly: true
+            - name: rego-policies
+              mountPath: /etc/aianalysis/policies
+              readOnly: true
+          resources:
+            {{- toYaml .Values.aianalysis.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: aianalysis-config
+        - name: rego-policies
+          configMap:
+            name: aianalysis-policies
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aianalysis-controller
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: aianalysis-controller
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app: aianalysis-controller
+  ports:
+    - name: api
+      port: 8080
+      targetPort: 8080
+    - name: metrics
+      port: 9090
+      targetPort: 9090
+    - name: health
+      port: 8081
+      targetPort: 8081
