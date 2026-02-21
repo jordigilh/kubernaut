@@ -1,7 +1,6 @@
+# Monitoring is now managed by kube-prometheus-stack (Helm).
+# See deploy/demo/helm/ for values and deploy/demo/scripts/monitoring-helper.sh
+# for the install function sourced by each scenario's run.sh.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-
-resources:
-  - prometheus.yaml
-  - alertmanager.yaml
-  - grafana.yaml
+resources: []

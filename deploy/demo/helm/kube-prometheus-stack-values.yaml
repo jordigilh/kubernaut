@@ -1,0 +1,142 @@
+# kube-prometheus-stack Helm values for Kubernaut demo scenarios.
+#
+# We install the chart for its infrastructure (Prometheus Operator,
+# kube-state-metrics, AlertManager, Grafana) but disable the hundreds of
+# default alerting rules.  Each demo scenario applies its own
+# PrometheusRule CRDs with standard alert names and demo-friendly "for"
+# durations so alerts fire in seconds, not 15 minutes.
+
+# ---------------------------------------------------------------------------
+# Default alerting rules -- DISABLED
+# ---------------------------------------------------------------------------
+defaultRules:
+  create: false
+
+# ---------------------------------------------------------------------------
+# AlertManager -- route demo-namespace alerts to the Kubernaut Gateway
+# ---------------------------------------------------------------------------
+alertmanager:
+  enabled: true
+  alertmanagerSpec:
+    resources:
+      requests:
+        memory: 64Mi
+        cpu: 50m
+      limits:
+        memory: 128Mi
+  config:
+    global:
+      resolve_timeout: 1m
+    route:
+      receiver: "null"
+      group_wait: 5s
+      group_interval: 5s
+      repeat_interval: 1h
+      routes:
+        # All alerts from demo-* namespaces go to the Gateway webhook.
+        - match_re:
+            namespace: "demo-.*"
+          receiver: gateway-webhook
+          continue: false
+        # Cluster-scoped alerts (e.g. KubeNodeNotReady) have no namespace label;
+        # match them explicitly.
+        - match:
+            alertname: KubeNodeNotReady
+          receiver: gateway-webhook
+          continue: false
+    receivers:
+      - name: "null"
+      - name: gateway-webhook
+        webhook_configs:
+          - url: "http://gateway-service.kubernaut-system.svc.cluster.local:8080/api/v1/signals/prometheus"
+            send_resolved: false
+
+# ---------------------------------------------------------------------------
+# Prometheus
+# ---------------------------------------------------------------------------
+prometheus:
+  enabled: true
+  prometheusSpec:
+    # Pick up PrometheusRule CRDs from ALL namespaces (scenarios create them
+    # in their own namespace or in kubernaut-system).
+    ruleSelectorNilUsesHelmValues: false
+    ruleNamespaceSelector: {}
+    ruleSelector: {}
+    # Same for ServiceMonitors and PodMonitors.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    serviceMonitorNamespaceSelector: {}
+    serviceMonitorSelector: {}
+    podMonitorSelectorNilUsesHelmValues: false
+    podMonitorNamespaceSelector: {}
+    podMonitorSelector: {}
+    retention: 1h
+    resources:
+      requests:
+        memory: 256Mi
+        cpu: 100m
+      limits:
+        memory: 512Mi
+    storageSpec: {}
+
+# ---------------------------------------------------------------------------
+# Grafana -- lightweight config for local demos
+# ---------------------------------------------------------------------------
+grafana:
+  enabled: true
+  adminUser: admin
+  adminPassword: kubernaut
+  env:
+    GF_AUTH_ANONYMOUS_ENABLED: "true"
+    GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+  service:
+    type: NodePort
+    nodePort: 30300
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      searchNamespace: ALL
+  resources:
+    requests:
+      memory: 128Mi
+      cpu: 100m
+    limits:
+      memory: 256Mi
+
+# ---------------------------------------------------------------------------
+# kube-state-metrics -- required by most scenario PrometheusRules
+# ---------------------------------------------------------------------------
+kube-state-metrics:
+  enabled: true
+  resources:
+    requests:
+      memory: 64Mi
+      cpu: 50m
+    limits:
+      memory: 128Mi
+
+# ---------------------------------------------------------------------------
+# node-exporter -- useful for node-notready and disk-pressure scenarios
+# ---------------------------------------------------------------------------
+nodeExporter:
+  enabled: true
+
+# ---------------------------------------------------------------------------
+# Components we don't need in demos
+# ---------------------------------------------------------------------------
+kubeApiServer:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false
+kubeEtcd:
+  enabled: false
+coreDns:
+  enabled: false
+kubelet:
+  enabled: true
+  serviceMonitor:
+    cAdvisor: true
