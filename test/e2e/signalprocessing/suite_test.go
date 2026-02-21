@@ -187,6 +187,7 @@ var _ = SynchronizedBeforeSuite(
 var _ = ReportAfterEach(func(report SpecReport) {
 	if report.Failed() {
 		anyTestFailed = true
+		infrastructure.MarkTestFailure(clusterName)
 	}
 })
 
@@ -209,7 +210,8 @@ var _ = SynchronizedAfterSuite(
 		}
 
 		// Determine test results for log export decision
-		anyFailure := setupFailed || anyTestFailed
+		anyFailure := setupFailed || anyTestFailed || infrastructure.CheckTestFailure(clusterName)
+		defer infrastructure.CleanupFailureMarker(clusterName)
 		preserveCluster := os.Getenv("KEEP_CLUSTER") != ""
 
 		if preserveCluster {
