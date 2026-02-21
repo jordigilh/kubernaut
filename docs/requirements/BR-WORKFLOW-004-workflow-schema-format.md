@@ -66,6 +66,10 @@ customLabels:
   team: platform
   costCenter: ops
 
+detectedLabels:
+  hpaEnabled: "true"
+  gitOpsTool: "*"
+
 execution:
   engine: tekton
   bundle: quay.io/kubernaut/oomkill-restart:v1.0.0
