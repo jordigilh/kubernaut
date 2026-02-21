@@ -28,19 +28,20 @@ import (
 )
 
 // ========================================
-// OCI SCHEMA EXTRACTOR TESTS (DD-WORKFLOW-017)
+// OCI SCHEMA EXTRACTOR TESTS (DD-WORKFLOW-017 + ADR-043)
 // ========================================
 // Authority: DD-WORKFLOW-017 (OCI-based Workflow Registration)
 // Authority: BR-WORKFLOW-004 (Workflow Schema Format Specification)
+// Authority: ADR-043 v1.3 (detectedLabels schema field)
+// Authority: DD-WORKFLOW-001 v2.0 (DetectedLabels architecture)
 // Business Requirement: BR-WORKFLOW-001 (Workflow Registry Management)
+// Test Plan: docs/testing/ADR-043/TEST_PLAN.md
 // ========================================
 //
 // Tests cover:
 // - C2: ActionType at top-level + ExtractLabels camelCase keys
 // - C3: OCI schema extraction (pull image, extract /workflow-schema.yaml)
-//
-// BR-WORKFLOW-004 format: plain config file, camelCase fields, no apiVersion/kind,
-// structured description, no riskTolerance
+// - C4: detectedLabels parsing, validation, extraction (ADR-043 v1.3)
 //
 // ========================================
 
@@ -240,6 +241,172 @@ execution:
 			Expect(result.Schema.ActionType).To(Equal("RestartPod"))
 			Expect(result.Digest).ToNot(BeEmpty())
 			Expect(result.RawContent).To(ContainSubstring("actionType"))
+		})
+	})
+
+	// ========================================
+	// C4: detectedLabels (ADR-043 v1.3)
+	// ========================================
+	Context("C4: detectedLabels Parsing and Validation (ADR-043 v1.3)", func() {
+		var parser *schema.Parser
+
+		BeforeEach(func() {
+			parser = schema.NewParser()
+		})
+
+		It("UT-DS-043-001: workflow requiring HPA-enabled targets is correctly represented after parsing", func() {
+			yamlContent := validWorkflowSchemaYAML + `detectedLabels:
+  hpaEnabled: "true"
+  pdbProtected: "true"
+`
+			parsedSchema, err := parser.ParseAndValidate(yamlContent)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(parsedSchema.DetectedLabels).ToNot(BeNil())
+			Expect(parsedSchema.DetectedLabels.HPAEnabled).To(Equal("true"))
+			Expect(parsedSchema.DetectedLabels.PDBProtected).To(Equal("true"))
+		})
+
+		It("UT-DS-043-002: workflow requiring any GitOps tool is correctly represented after parsing", func() {
+			yamlContent := validWorkflowSchemaYAML + `detectedLabels:
+  gitOpsTool: "*"
+`
+			parsedSchema, err := parser.ParseAndValidate(yamlContent)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(parsedSchema.DetectedLabels).ToNot(BeNil())
+			Expect(parsedSchema.DetectedLabels.GitOpsTool).To(Equal("*"))
+		})
+
+		It("UT-DS-043-003: workflow with no infrastructure requirements has nil detectedLabels", func() {
+			parsedSchema, err := parser.ParseAndValidate(validWorkflowSchemaYAML)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(parsedSchema.DetectedLabels).To(BeNil(),
+				"absence of detectedLabels in YAML means no infrastructure constraints")
+		})
+
+		It("UT-DS-043-004: workflow author gets actionable error for invalid boolean value", func() {
+			yamlContent := validWorkflowSchemaYAML + `detectedLabels:
+  hpaEnabled: "false"
+`
+			_, err := parser.ParseAndValidate(yamlContent)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("hpaEnabled"))
+			Expect(err.Error()).To(ContainSubstring("true"),
+				"error should tell the author what values are accepted")
+		})
+
+		It("UT-DS-043-005: workflow author gets actionable error for invalid gitOpsTool", func() {
+			yamlContent := validWorkflowSchemaYAML + `detectedLabels:
+  gitOpsTool: "terraform"
+`
+			_, err := parser.ParseAndValidate(yamlContent)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("gitOpsTool"))
+			Expect(err.Error()).To(ContainSubstring("argocd"))
+		})
+
+		It("UT-DS-043-006: workflow author gets actionable error for invalid serviceMesh", func() {
+			yamlContent := validWorkflowSchemaYAML + `detectedLabels:
+  serviceMesh: "consul"
+`
+			_, err := parser.ParseAndValidate(yamlContent)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("serviceMesh"))
+			Expect(err.Error()).To(ContainSubstring("istio"))
+		})
+
+		It("UT-DS-043-007: all 8 detectedLabels fields survive YAML-to-model conversion with exact values", func() {
+			yamlContent := validWorkflowSchemaYAML + `detectedLabels:
+  gitOpsManaged: "true"
+  gitOpsTool: "argocd"
+  pdbProtected: "true"
+  hpaEnabled: "true"
+  stateful: "true"
+  helmManaged: "true"
+  networkIsolated: "true"
+  serviceMesh: "istio"
+`
+			parsedSchema, err := parser.ParseAndValidate(yamlContent)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(parsedSchema.DetectedLabels.PopulatedFields).To(ConsistOf(
+				"gitOpsManaged", "gitOpsTool", "pdbProtected", "hpaEnabled",
+				"stateful", "helmManaged", "networkIsolated", "serviceMesh",
+			), "all 8 fields should be tracked as populated")
+
+			extracted, err := parser.ExtractDetectedLabels(parsedSchema)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(extracted.GitOpsManaged).To(BeTrue())
+			Expect(extracted.GitOpsTool).To(Equal("argocd"))
+			Expect(extracted.PDBProtected).To(BeTrue())
+			Expect(extracted.HPAEnabled).To(BeTrue())
+			Expect(extracted.Stateful).To(BeTrue())
+			Expect(extracted.HelmManaged).To(BeTrue())
+			Expect(extracted.NetworkIsolated).To(BeTrue())
+			Expect(extracted.ServiceMesh).To(Equal("istio"))
+			Expect(extracted.FailedDetections).To(BeEmpty())
+		})
+
+		It("UT-DS-043-008: multi-field combination mirrors real demo scenario schemas", func() {
+			yamlContent := validWorkflowSchemaYAML + `detectedLabels:
+  pdbProtected: "true"
+  hpaEnabled: "true"
+  gitOpsTool: "*"
+`
+			parsedSchema, err := parser.ParseAndValidate(yamlContent)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(parsedSchema.DetectedLabels.PopulatedFields).To(ConsistOf(
+				"pdbProtected", "hpaEnabled", "gitOpsTool",
+			), "only declared fields should be tracked")
+
+			extracted, err := parser.ExtractDetectedLabels(parsedSchema)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(extracted.PDBProtected).To(BeTrue())
+			Expect(extracted.HPAEnabled).To(BeTrue())
+			Expect(extracted.GitOpsTool).To(Equal("*"))
+			Expect(extracted.GitOpsManaged).To(BeFalse(),
+				"unset boolean fields should be false (no requirement)")
+		})
+
+		It("UT-DS-043-009: OCI extraction pipeline preserves detectedLabels end-to-end", func() {
+			yamlWithDetected := validWorkflowSchemaYAML + `detectedLabels:
+  hpaEnabled: "true"
+  gitOpsTool: "argocd"
+`
+			mockPuller := oci.NewMockImagePuller(yamlWithDetected)
+			extractor := oci.NewSchemaExtractor(mockPuller, schema.NewParser())
+
+			result, err := extractor.ExtractFromImage(context.Background(), "quay.io/test/detected:v1.0.0")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.Schema.DetectedLabels).ToNot(BeNil())
+			Expect(result.Schema.DetectedLabels.HPAEnabled).To(Equal("true"))
+			Expect(result.Schema.DetectedLabels.GitOpsTool).To(Equal("argocd"))
+		})
+
+		It("UT-DS-043-010: unknown field in detectedLabels is rejected with error naming the field", func() {
+			yamlContent := validWorkflowSchemaYAML + `detectedLabels:
+  hpaEnabled: "true"
+  customField: "true"
+`
+			_, err := parser.ParseAndValidate(yamlContent)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("customField"),
+				"error should name the invalid field so the author can fix their typo")
+		})
+
+		It("UT-DS-043-011: empty detectedLabels section produces empty struct, not nil", func() {
+			yamlContent := validWorkflowSchemaYAML + `detectedLabels: {}
+`
+			parsedSchema, err := parser.ParseAndValidate(yamlContent)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(parsedSchema.DetectedLabels).ToNot(BeNil(),
+				"empty detectedLabels section should produce empty struct (distinct from absent)")
+
+			extracted, err := parser.ExtractDetectedLabels(parsedSchema)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(extracted.IsEmpty()).To(BeTrue())
 		})
 	})
 
