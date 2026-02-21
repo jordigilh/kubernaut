@@ -37,3 +37,4 @@ make push-test-workflows WORKFLOW_REGISTRY=ghcr.io/jordigilh/kubernaut/test-work
 | `failing/` | failing | RestartPod | WE |
 | `oomkill-increase-memory-job/` | oomkill-increase-memory-job | IncreaseMemoryLimits | FullPipeline |
 | `crashloop-config-fix-job/` | crashloop-config-fix-job | RestartDeployment | FullPipeline |
+| `detected-labels-test/` | detected-labels-test | ScaleReplicas | DS E2E (ADR-043) |

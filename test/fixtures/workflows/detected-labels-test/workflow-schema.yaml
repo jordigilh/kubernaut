@@ -1,0 +1,39 @@
+# Detected Labels Test Workflow Schema (BR-WORKFLOW-004, ADR-043 v1.3)
+# Used by: DataStorage E2E -- detected_labels_search_e2e_test.go
+# Purpose: Validates full OCI registration -> search with detectedLabels scoring
+metadata:
+  workflowId: detected-labels-test-v1
+  version: "1.0.0"
+  description:
+    what: "Test workflow for detectedLabels end-to-end validation"
+    whenToUse: "For E2E testing that OCI-registered detectedLabels affect search scoring"
+    whenNotToUse: "Not intended for production use"
+    preconditions: "DataStorage service running with action_type_taxonomy seeded"
+
+actionType: ScaleReplicas
+
+labels:
+  signalType: OOMKilled
+  severity: [critical]
+  environment: [production]
+  component: pod
+  priority: P0
+
+detectedLabels:
+  hpaEnabled: "true"
+  gitOpsTool: "argocd"
+
+execution:
+  engine: tekton
+  bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:0526671b6ec27b4ed04c288144e8e66f252442c9b4ff56e2793bb4c1f1c508f5
+
+parameters:
+  - name: NAMESPACE
+    type: string
+    required: true
+    description: "Target namespace containing the affected pod"
+  - name: REPLICA_COUNT
+    type: integer
+    required: false
+    description: "Target replica count"
+    default: 3
