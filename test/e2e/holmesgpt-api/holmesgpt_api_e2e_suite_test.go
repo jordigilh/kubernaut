@@ -287,6 +287,7 @@ var _ = SynchronizedBeforeSuite(
 var _ = ReportAfterEach(func(report SpecReport) {
 	if report.Failed() {
 		anyTestFailed = true
+		infrastructure.MarkTestFailure(clusterName)
 	}
 })
 
@@ -312,7 +313,8 @@ var _ = SynchronizedAfterSuite(
 		}
 
 		// Determine cleanup strategy
-		anyFailure := setupFailed || anyTestFailed
+		anyFailure := setupFailed || anyTestFailed || infrastructure.CheckTestFailure(clusterName)
+		defer infrastructure.CleanupFailureMarker(clusterName)
 		preserveCluster := os.Getenv("KEEP_CLUSTER") == "true"
 
 		// DD-TEST-007: Collect Python E2E coverage BEFORE cluster deletion

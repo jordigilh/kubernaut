@@ -412,6 +412,7 @@ var _ = SynchronizedBeforeSuite(
 var _ = ReportAfterEach(func(report SpecReport) {
 	if report.Failed() {
 		anyTestFailed = true
+		infrastructure.MarkTestFailure(clusterName)
 	}
 })
 
@@ -460,7 +461,8 @@ var _ = SynchronizedAfterSuite(
 		// The safest approach: always export logs if ANY process reported failures
 		// We'll check this by looking at the captured anyTestFailed flag from process cleanup
 		// Also check for setup failures (BeforeSuite failures)
-		suiteFailed := setupFailed || anyTestFailed || keepCluster == "true" || keepCluster == "always"
+		suiteFailed := setupFailed || anyTestFailed || infrastructure.CheckTestFailure(clusterName) || keepCluster == "true" || keepCluster == "always"
+		defer infrastructure.CleanupFailureMarker(clusterName)
 
 		// DD-TEST-007: Collect E2E binary coverage BEFORE cluster deletion
 		if coverageMode {

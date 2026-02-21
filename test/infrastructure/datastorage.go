@@ -77,6 +77,29 @@ func CreateDataStorageCluster(clusterName, kubeconfigPath string, writer io.Writ
 // existing must-gather collection step picks them up automatically.
 //
 // Parameters:
+// MarkTestFailure writes a marker file so that other Ginkgo processes
+// (notably process 1 in SynchronizedAfterSuite) can detect that at least
+// one spec failed. This is necessary because per-process variables like
+// anyTestFailed are not shared across SynchronizedAfterSuite boundaries.
+func MarkTestFailure(clusterName string) {
+	dir := "/tmp/kubernaut-e2e-failures"
+	_ = os.MkdirAll(dir, 0755)
+	_ = os.WriteFile(filepath.Join(dir, clusterName), []byte("1"), 0644)
+}
+
+// CheckTestFailure returns true if any Ginkgo process marked a test
+// failure for the given cluster via MarkTestFailure.
+func CheckTestFailure(clusterName string) bool {
+	_, err := os.Stat(filepath.Join("/tmp/kubernaut-e2e-failures", clusterName))
+	return err == nil
+}
+
+// CleanupFailureMarker removes the marker file after cleanup decisions
+// have been made, preventing stale markers from affecting future runs.
+func CleanupFailureMarker(clusterName string) {
+	_ = os.Remove(filepath.Join("/tmp/kubernaut-e2e-failures", clusterName))
+}
+
 //   - clusterName: Name of the Kind cluster (used for kubeconfig context)
 //   - kubeconfigPath: Path to the kubeconfig file
 //   - namespace: Kubernetes namespace to collect logs from (e.g., "kubernaut-system")

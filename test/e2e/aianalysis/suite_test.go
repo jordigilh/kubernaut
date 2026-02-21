@@ -264,6 +264,7 @@ var _ = SynchronizedBeforeSuite(
 var _ = ReportAfterEach(func(report SpecReport) {
 	if report.Failed() {
 		anyTestFailed = true
+		infrastructure.MarkTestFailure(clusterName)
 	}
 })
 
@@ -335,8 +336,11 @@ var _ = SynchronizedAfterSuite(
 		}
 
 		// Delete cluster (with must-gather log export on failure)
-		// Pass true for testsFailed if EITHER setup failed OR any test failed
-		anyFailure := setupFailed || anyTestFailed
+		// Pass true for testsFailed if EITHER setup failed OR any test failed.
+		// CheckTestFailure bridges multi-process Ginkgo runs where the failing
+		// spec may execute on a process other than process 1.
+		anyFailure := setupFailed || anyTestFailed || infrastructure.CheckTestFailure(clusterName)
+		defer infrastructure.CleanupFailureMarker(clusterName)
 		logger.Info("🗑️  Cleaning up cluster...")
 		err := infrastructure.DeleteAIAnalysisCluster(clusterName, kubeconfigPath, anyFailure, GinkgoWriter)
 		if err != nil {
