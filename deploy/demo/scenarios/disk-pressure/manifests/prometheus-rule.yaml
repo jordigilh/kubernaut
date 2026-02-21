@@ -11,7 +11,7 @@ spec:
     rules:
     # Detect PVCs in namespace that are bound but owned by completed/failed Jobs
     # This is a proxy for "orphaned storage consuming disk"
-    - alert: KubernautOrphanedPVCs
+    - alert: KubePersistentVolumeClaimOrphaned
       expr: |
         count(
           kube_persistentvolumeclaim_status_phase{

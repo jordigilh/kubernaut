@@ -10,7 +10,7 @@ spec:
   - name: kubernaut-hpa-maxed
     rules:
     # Detect HPA at maxReplicas while still under CPU pressure
-    - alert: KubernautHPAMaxedOut
+    - alert: KubeHpaMaxedOut
       expr: |
         kube_horizontalpodautoscaler_status_current_replicas{namespace="demo-hpa", horizontalpodautoscaler="api-frontend"}
         ==

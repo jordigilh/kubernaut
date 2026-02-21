@@ -6,7 +6,7 @@ A worker node has a `maintenance=scheduled:NoSchedule` taint that blocks pod sch
 Pods targeting that node via `nodeSelector` remain stuck in Pending. Kubernaut's LLM
 investigates, identifies the taint as the root cause, and removes it.
 
-**Signal**: `KubernautPodsPendingTaint` -- pods Pending for >3 min
+**Signal**: `KubePodNotScheduled` -- pods Pending for >3 min
 **Root cause**: Node taint blocking scheduling
 **Remediation**: `kubectl taint nodes <node> maintenance-`
 
@@ -43,7 +43,7 @@ Given a Kind cluster with a worker node labeled kubernaut.ai/workload-node=true
 
 When the batch-processor deployment is created with nodeSelector for the worker node
   And pods remain in Pending state because the taint blocks scheduling
-  And the KubernautPodsPendingTaint alert fires after 3 minutes
+  And the KubePodNotScheduled alert fires after 3 minutes
 
 Then the LLM investigates the Pending pods and identifies the node taint
   And selects the RemoveTaint workflow

@@ -12,7 +12,7 @@ graceful rolling restart that resets memory before the crash occurs.
 ## Signal Flow
 
 ```
-predict_linear() → KubernautPredictiveMemoryExhaust alert
+predict_linear() → ContainerMemoryExhaustionPredicted alert
   → Gateway → SP → AA (HAPI + real LLM)
   → LLM diagnoses linear memory growth in "leaker" container
   → Selects GracefulRestart workflow
@@ -56,11 +56,11 @@ watch kubectl top pods -n demo-memory-leak --containers
 
 ### 3. Wait for the predictive alert
 
-The `KubernautPredictiveMemoryExhaust` alert fires once `predict_linear()` projects the
+The `ContainerMemoryExhaustionPredicted` alert fires once `predict_linear()` projects the
 leaker container will exceed its 192Mi limit within 30 minutes. This typically takes
 10-15 minutes of trend data.
 
-Check: `http://localhost:9190/alerts`
+Check: `kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090` then open `http://localhost:9090/alerts`
 
 ### 4. Monitor the Kubernaut pipeline
 
@@ -102,7 +102,7 @@ Given a Kind cluster with Kubernaut services and a real LLM backend
 
 When the "leaker" container's memory usage grows linearly at ~4MB/min
   And Prometheus predict_linear() projects OOM within 30 minutes
-  And the KubernautPredictiveMemoryExhaust alert fires
+  And the ContainerMemoryExhaustionPredicted alert fires
 
 Then Kubernaut Gateway receives the alert via Alertmanager webhook
   And Signal Processing enriches the signal with business labels

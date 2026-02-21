@@ -7,7 +7,7 @@ remediate an HPA that has hit its `maxReplicas` ceiling during a traffic spike. 
 knows an HPA exists and patches it to temporarily raise the ceiling.
 
 **Detected label**: `hpaEnabled: "true"` -- LLM context includes HPA configuration
-**Signal**: `KubernautHPAMaxedOut` -- HPA at maxReplicas for >2 min
+**Signal**: `KubeHpaMaxedOut` -- HPA at maxReplicas for >2 min
 **Remediation**: Patch HPA to increase `maxReplicas` by 2
 
 ## Prerequisites
@@ -60,7 +60,7 @@ kubectl get hpa -n demo-hpa -w
 
 ### 5. Wait for alert and pipeline
 
-The `KubernautHPAMaxedOut` alert fires when currentReplicas == maxReplicas for 2 minutes.
+The `KubeHpaMaxedOut` alert fires when currentReplicas == maxReplicas for 2 minutes.
 
 ### 6. Verify remediation
 
@@ -85,7 +85,7 @@ Given a Kind cluster with Kubernaut services and a real LLM backend
 
 When CPU load drives the HPA to its maxReplicas ceiling
   And the HPA cannot scale further despite continued pressure
-  And the KubernautHPAMaxedOut alert fires
+  And the KubeHpaMaxedOut alert fires
 
 Then Kubernaut detects the hpaEnabled label on the namespace/deployment
   And the LLM receives HPA context in its analysis prompt

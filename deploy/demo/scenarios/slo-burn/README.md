@@ -42,7 +42,7 @@ Feature: SLO Error Budget Burn -> Proactive Rollback
       And health checks (/healthz) continue to pass
 
     Then Prometheus detects the error rate exceeds 14.4x sustainable burn rate
-      And KubernautSLOBudgetBurning alert fires after 5 minutes
+      And ErrorBudgetBurn alert fires after 5 minutes
       And Signal Processing enriches with deployment revision history
       And the LLM correlates the error spike with the recent deployment change
       And the LLM selects the ProactiveRollback action type
@@ -80,7 +80,8 @@ kubectl apply -f deploy/demo/scenarios/slo-burn/manifests/prometheus-rule.yaml
 sleep 30
 
 # 4. Check Prometheus for healthy metrics
-#    http://localhost:9190 -> job:http_requests:error_rate_5m should be ~0
+#    kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090 &
+#    then open http://localhost:9090 -> job:http_requests:error_rate_5m should be ~0
 
 # 5. Inject: deploy bad config (500 errors on /api/)
 ./deploy/demo/scenarios/slo-burn/inject-bad-config.sh

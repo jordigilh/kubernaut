@@ -7,7 +7,7 @@ PodDisruptionBudget deadlock. The PDB has `minAvailable` equal to the replica co
 leaving zero allowed disruptions and blocking all rolling updates and voluntary evictions.
 
 **Detected label**: `pdbProtected: "true"` -- LLM context includes PDB configuration
-**Signal**: `KubernautPDBDeadlock` -- PDB at 0 allowed disruptions for >3 min
+**Signal**: `KubePodDisruptionBudgetAtLimit` -- PDB at 0 allowed disruptions for >3 min
 **Remediation**: Patch PDB `minAvailable` from 2 to 1, unblocking the rollout
 
 ## Prerequisites
@@ -59,7 +59,7 @@ kubectl rollout status deployment/payment-service -n demo-pdb
 
 ### 5. Wait for alert and pipeline
 
-The `KubernautPDBDeadlock` alert fires after 3 minutes at 0 allowed disruptions.
+The `KubePodDisruptionBudgetAtLimit` alert fires after 3 minutes at 0 allowed disruptions.
 
 ### 6. Verify remediation
 
@@ -86,7 +86,7 @@ Given a Kind cluster with Kubernaut services and a real LLM backend
 
 When a rolling update is triggered on payment-service
   And the rolling update stalls because the PDB blocks pod eviction
-  And the KubernautPDBDeadlock alert fires (0 allowed disruptions for 3 min)
+  And the KubePodDisruptionBudgetAtLimit alert fires (0 allowed disruptions for 3 min)
 
 Then Kubernaut detects the pdbProtected label
   And the LLM receives PDB context in its analysis prompt

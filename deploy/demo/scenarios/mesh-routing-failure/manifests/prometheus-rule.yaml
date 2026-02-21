@@ -9,7 +9,7 @@ spec:
   groups:
   - name: kubernaut-mesh-failure
     rules:
-    - alert: KubernautHighErrorRate
+    - alert: LinkerdHighErrorRate
       expr: |
         (
           sum(rate(response_total{namespace="demo-mesh-failure", classification="failure", direction="inbound"}[5m]))
@@ -27,7 +27,7 @@ spec:
           Linkerd proxy metrics show a high failure rate for inbound traffic
           in namespace demo-mesh-failure. This is typically caused by a
           restrictive AuthorizationPolicy blocking legitimate traffic.
-    - alert: KubernautMeshUnauthorized
+    - alert: LinkerdRequestsUnauthorized
       expr: |
         sum(rate(response_total{namespace="demo-mesh-failure", status_code="403", direction="inbound"}[5m])) > 0
       for: 2m

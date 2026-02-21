@@ -4,7 +4,7 @@
 
 Demonstrates Kubernaut detecting a StatefulSet-based workload with PVC disruption causing pods stuck in Pending, and performing automatic remediation by recreating the missing PVC and deleting the stuck pod to allow rescheduling.
 
-**Signal**: `KubernautStatefulSetReplicasMismatch` -- from `kube_statefulset_status_replicas_ready` < `kube_statefulset_status_replicas`
+**Signal**: `KubeStatefulSetReplicasMismatch` -- from `kube_statefulset_status_replicas_ready` < `kube_statefulset_status_replicas`
 **Root cause**: PVC (and backing PV) deleted; pod cannot bind and remains Pending
 **Remediation**: `fix-statefulset-pvc-v1` workflow recreates PVC, deletes stuck pod
 
@@ -12,7 +12,7 @@ Demonstrates Kubernaut detecting a StatefulSet-based workload with PVC disruptio
 
 ```
 kube_statefulset_status_replicas_ready < kube_statefulset_status_replicas for 3m
-  → KubernautStatefulSetReplicasMismatch alert
+  → KubeStatefulSetReplicasMismatch alert
   → Gateway → SP → AA (HAPI + LLM)
   → LLM detects stateful=true, diagnoses PVC failure
   → Selects FixStatefulSetPVC workflow
@@ -69,7 +69,8 @@ The script deletes the pod `kv-store-2`, its PVC `data-kv-store-2`, and the back
 
 ```bash
 # Alert fires after ~3 min of replicas mismatch
-# Check: http://localhost:9190/alerts
+# Check: kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090 &
+#        then open http://localhost:9090/alerts
 kubectl get rr,sp,aa,we,ea -n demo-statefulset -w
 ```
 
@@ -99,7 +100,7 @@ Feature: StatefulSet PVC Failure remediation
     When the PVC "data-kv-store-2" and its backing PV are deleted
     And the pod "kv-store-2" is deleted to trigger recreation
     Then the pod "kv-store-2" is recreated but remains Pending
-    And the KubernautStatefulSetReplicasMismatch alert fires (2/3 ready for 3 min)
+    And the KubeStatefulSetReplicasMismatch alert fires (2/3 ready for 3 min)
 
   Scenario: fix-statefulset-pvc-v1 remediates PVC failure
     Given the StatefulSet has fewer ready replicas than desired

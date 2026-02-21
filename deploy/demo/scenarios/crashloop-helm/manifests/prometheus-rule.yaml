@@ -9,7 +9,7 @@ spec:
   groups:
   - name: kubernaut-crashloop-helm
     rules:
-    - alert: KubernautCrashLoopDetected
+    - alert: KubePodCrashLooping
       expr: |
         increase(
           kube_pod_container_status_restarts_total{
