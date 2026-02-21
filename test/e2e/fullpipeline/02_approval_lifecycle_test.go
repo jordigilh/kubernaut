@@ -222,8 +222,8 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 				Expect(sp.Status.EnvironmentClassification).ToNot(BeNil())
 				Expect(sp.Status.EnvironmentClassification.Environment).To(Equal("production"),
 					"SP should classify namespace as production (kubernaut.ai/environment label)")
-				Expect(sp.Status.EnvironmentClassification.Source).ToNot(BeEmpty(),
-					"SP should record environment classification source")
+				Expect(sp.Status.EnvironmentClassification.Source).To(Equal("namespace-labels"),
+					"SP should classify from namespace labels when kubernaut.ai/environment is set")
 				GinkgoWriter.Printf("  ✅ SP environment: %s (source: %s)\n",
 					sp.Status.EnvironmentClassification.Environment, sp.Status.EnvironmentClassification.Source)
 				break

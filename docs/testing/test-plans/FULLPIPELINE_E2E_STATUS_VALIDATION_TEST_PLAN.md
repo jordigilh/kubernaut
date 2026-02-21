@@ -176,7 +176,7 @@ Step 10b: ValidateNTStatus(completionNR)
 Step 11: Wait for RR OverallPhase=Completed
 Step 11b: ValidateRRStatus(rr, WithApprovalFlow())
 Step 12: Audit trail validation [E2E-FP-118-006]
-         Required events: ApprovalRequired, ApprovalGranted + standard pipeline events
+         Required events: orchestrator.approval.requested, orchestrator.approval.approved + standard pipeline events
 Step 13: Wait for EA terminal phase
 Step 13b: ValidateEAStatus(ea)
 ```
@@ -227,7 +227,7 @@ Expect(k8sClient.Status().Update(testCtx, rar)).To(Succeed())
 
 **Validated within**: Step 12 of E2E-FP-118-003
 
-**Pass Criteria**: Audit trail contains `ApprovalRequired` and `ApprovalGranted` event types linked to the remediation's correlation ID.
+**Pass Criteria**: Audit trail contains `orchestrator.approval.requested` and `orchestrator.approval.approved` event types linked to the remediation's correlation ID.
 
 ---
 
