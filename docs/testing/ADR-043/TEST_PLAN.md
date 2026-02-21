@@ -1,7 +1,7 @@
 # Test Plan: detectedLabels Workflow Schema Field
 
 **Feature**: Add detectedLabels as optional top-level field in workflow-schema.yaml (ADR-043 v1.3)
-**Version**: 1.1
+**Version**: 1.2
 **Created**: 2026-02-20
 **Author**: AI Assistant + Jordi Gil
 **Status**: Ready for Execution
@@ -105,7 +105,7 @@ All three tiers are exercised:
 | ADR-043 | POST stores detectedLabels accurately in catalog (JSONB round-trip) | P0 | Integration | IT-DS-043-001 | Pending |
 | ADR-043 | GET returns exact detectedLabels registered (no field loss) | P0 | Integration | IT-DS-043-002 | Pending |
 | ADR-043 | POST without detectedLabels stores empty DetectedLabels | P0 | Integration | IT-DS-043-003 | Pending |
-| ADR-043 | POST with invalid detectedLabels returns HTTP 400 with field error | P0 | Integration | IT-DS-043-004 | Pending |
+| ADR-043 | POST with invalid detectedLabels returns HTTP 400 with field error | P0 | Unit | UT-DS-043-004/005/006 | Covered (see note 1) |
 | ADR-043 | Workflow search filters by detectedLabels (HAPI discovery) | P0 | Integration | IT-DS-043-005 | Pending |
 | ADR-043 | Full schema round-trip (all fields) preserves detectedLabels alongside existing fields | P0 | Integration | IT-DS-043-006 | Pending |
 | ADR-043 | Version update with changed detectedLabels stores new values | P1 | Integration | IT-DS-043-007 | Pending |
@@ -144,7 +144,6 @@ All three tiers are exercised:
 | `IT-DS-043-001` | Workflow registered via POST /api/v1/workflows with detectedLabels is stored accurately in the catalog (JSONB round-trip fidelity for all 8 fields) | RED |
 | `IT-DS-043-002` | Workflow retrieved via GET /api/v1/workflows returns exact detectedLabels that were registered (no field loss or type coercion on read-back) | RED |
 | `IT-DS-043-003` | Workflow registered without detectedLabels has empty DetectedLabels in catalog (not null, not garbage) | RED |
-| `IT-DS-043-004` | Registration with invalid detectedLabels returns HTTP 400 with field-specific error message (operator can fix their schema) | RED |
 | `IT-DS-043-005` | Workflow search/discovery filters correctly by detectedLabels (the business purpose: HAPI finds the right workflow for an incident's infrastructure characteristics) | RED |
 | `IT-DS-043-006` | Full realistic schema (all fields: metadata + labels + detectedLabels + execution + parameters) round-trips through POST -> DB -> GET with zero data loss across all fields (no regression on existing fields when detectedLabels is added) | RED |
 | `IT-DS-043-007` | Workflow version update (POST same workflowId, new version) with changed detectedLabels stores the new values and marks the new version as latest | RED |
@@ -259,9 +258,16 @@ go test ./test/e2e/datastorage/... -ginkgo.focus="ADR-043"
 
 ---
 
-## 9. Changelog
+## 9. Notes
+
+**Note 1 -- IT-DS-043-004 removed**: Invalid `detectedLabels` validation (HTTP 400 with field-specific error) is covered by unit tests UT-DS-043-004 (boolean), UT-DS-043-005 (gitOpsTool), and UT-DS-043-006 (serviceMesh). The validation logic is pure (no I/O) and lives in `ValidateDetectedLabels()`, making it ideal for UT coverage. The error-to-HTTP-400 propagation path is the same standard pattern already exercised by existing schema validation integration tests (missing actionType, malformed YAML, etc.). Building and maintaining a deliberately-invalid OCI image for a single IT provides near-zero incremental confidence over the existing UT coverage.
+
+---
+
+## 10. Changelog
 
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2026-02-20 | Initial test plan: 11 UT + 7 IT scenarios |
 | 1.1 | 2026-02-21 | Added 3 E2E scenarios (E2E-DS-043-001/002/003); updated coverage policy to 3-tier |
+| 1.2 | 2026-02-21 | Removed IT-DS-043-004 (Skip violation); validation covered by UT-DS-043-004/005/006 (see Note 1) |
