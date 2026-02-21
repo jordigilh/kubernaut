@@ -1,7 +1,7 @@
 # Test Plan: detectedLabels Workflow Schema Field
 
 **Feature**: Add detectedLabels as optional top-level field in workflow-schema.yaml (ADR-043 v1.3)
-**Version**: 1.2
+**Version**: 1.3
 **Created**: 2026-02-20
 **Author**: AI Assistant + Jordi Gil
 **Status**: Ready for Execution
@@ -112,6 +112,8 @@ All three tiers are exercised:
 | ADR-043 | OCI registration response includes parsed detectedLabels | P0 | E2E | E2E-DS-043-001 | Pending |
 | ADR-043 | GetWorkflowByID returns detectedLabels after DB round-trip | P0 | E2E | E2E-DS-043-002 | Pending |
 | ADR-043 | Workflow with detectedLabels appears in discovery flow (Step 2 + Step 3) | P0 | E2E | E2E-DS-043-003 | Pending |
+| ADR-043 | HTTP search with detected_labels query parameter returns filtered results | P0 | E2E | E2E-DS-043-004 | Pending |
+| ADR-043 | All 8 detectedLabels fields survive full OCI -> DB -> HTTP round-trip | P0 | E2E | E2E-DS-043-005 | Pending |
 
 ---
 
@@ -157,6 +159,8 @@ All three tiers are exercised:
 | `E2E-DS-043-001` | OCI image containing workflow-schema.yaml with detectedLabels is registered via CreateWorkflow and the response includes the parsed detectedLabels (both set and unset fields verified) | RED |
 | `E2E-DS-043-002` | GetWorkflowByID returns detectedLabels that match the original OCI schema after full DB round-trip (JSONB persistence fidelity) | RED |
 | `E2E-DS-043-003` | Workflow with detectedLabels appears in three-step discovery flow (ListWorkflowsByActionType -> GetWorkflowByID) and Step 3 response includes correct detectedLabels | RED |
+| `E2E-DS-043-004` | HTTP search with `detected_labels` query parameter filters results: matching filter returns the workflow, non-matching filter excludes or deprioritizes it | RED |
+| `E2E-DS-043-005` | All 8 detectedLabels fields survive full OCI -> DB -> HTTP round-trip using a dedicated fixture with every field populated | RED |
 
 ---
 
@@ -206,6 +210,42 @@ All three tiers are exercised:
 - The returned workflow has `DetectedLabels.HPAEnabled == true`
 - The non-HPA workflow is excluded from results
 
+### E2E-DS-043-004: HTTP search with detected_labels query parameter
+
+**BR**: ADR-043, BR-STORAGE-013
+**Type**: E2E
+**File**: `test/e2e/datastorage/25_detected_labels_search_e2e_test.go`
+
+**Given**: The `detected-labels-test-v1` workflow (hpaEnabled=true, gitOpsTool=argocd) is registered
+**When**: `ListWorkflowsByActionType` is called with `DetectedLabels: '{"hpaEnabled":true}'`
+**Then**: The workflow appears in the response
+
+**When**: Same call with `DetectedLabels: '{"networkIsolated":true}'` (non-matching)
+**Then**: The workflow either does not appear or scores lower than with the matching filter
+
+**Acceptance Criteria**:
+- Matching `detected_labels` JSON query parameter returns the expected workflow
+- Non-matching parameter excludes or deprioritizes the workflow
+- Validates the full HTTP layer: ogen client `OptString` encoding -> query string -> `workflow_handlers.go` JSON deserialization -> repository `SearchByLabels` -> HTTP response
+
+### E2E-DS-043-005: All 8 detectedLabels fields full round-trip
+
+**BR**: ADR-043, BR-WORKFLOW-004
+**Type**: E2E
+**File**: `test/e2e/datastorage/25_detected_labels_search_e2e_test.go`
+
+**Given**: OCI image `detected-labels-all-fields:v1.0.0` with all 8 fields: hpaEnabled=true, pdbProtected=true, stateful=true, helmManaged=true, networkIsolated=true, gitOpsManaged=true, gitOpsTool=flux, serviceMesh=istio
+**When**: Image is registered via `CreateWorkflow`, then retrieved via `GetWorkflowByID`
+**Then**: All 8 ogen `Opt*` fields have `.Set == true` with the correct values, and `failedDetections` is empty
+
+**Acceptance Criteria**:
+- All 6 boolean fields: `.Set == true`, `.Value == true`
+- gitOpsTool: `.Set == true`, `.Value == "flux"`
+- serviceMesh: `.Set == true`, `.Value == "istio"`
+- failedDetections: empty slice
+- Fixture: `test/fixtures/workflows/detected-labels-all-fields/workflow-schema.yaml`
+- OCI image: `quay.io/kubernaut-cicd/test-workflows/detected-labels-all-fields:v1.0.0`
+
 ---
 
 ## 7. Test Infrastructure
@@ -228,9 +268,13 @@ All three tiers are exercised:
 - **Framework**: Ginkgo/Gomega BDD
 - **Mocks**: ZERO mocks
 - **Infrastructure**: Live DataStorage service, PostgreSQL, OCI registry (quay.io)
-- **Location**: `test/e2e/datastorage/25_detected_labels_search_e2e_test.go` (new file)
-- **Fixture**: `test/fixtures/workflows/detected-labels-test/workflow-schema.yaml`
-- **OCI Image**: `quay.io/kubernaut-cicd/test-workflows/detected-labels-test:v1.0.0`
+- **Location**: `test/e2e/datastorage/25_detected_labels_search_e2e_test.go`
+- **Fixtures**:
+  - `test/fixtures/workflows/detected-labels-test/workflow-schema.yaml` (2 fields: hpaEnabled, gitOpsTool)
+  - `test/fixtures/workflows/detected-labels-all-fields/workflow-schema.yaml` (all 8 fields)
+- **OCI Images**:
+  - `quay.io/kubernaut-cicd/test-workflows/detected-labels-test:v1.0.0`
+  - `quay.io/kubernaut-cicd/test-workflows/detected-labels-all-fields:v1.0.0`
 
 ---
 
@@ -271,3 +315,4 @@ go test ./test/e2e/datastorage/... -ginkgo.focus="ADR-043"
 | 1.0 | 2026-02-20 | Initial test plan: 11 UT + 7 IT scenarios |
 | 1.1 | 2026-02-21 | Added 3 E2E scenarios (E2E-DS-043-001/002/003); updated coverage policy to 3-tier |
 | 1.2 | 2026-02-21 | Removed IT-DS-043-004 (Skip violation); validation covered by UT-DS-043-004/005/006 (see Note 1) |
+| 1.3 | 2026-02-21 | Added E2E-DS-043-004 (HTTP search with detected_labels query param) and E2E-DS-043-005 (all 8 fields round-trip); new fixture `detected-labels-all-fields` |
