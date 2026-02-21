@@ -17,6 +17,8 @@ This directory contains comprehensive testing strategy and implementation guidan
 | **[TESTING_PATTERNS_QUICK_REFERENCE.md](TESTING_PATTERNS_QUICK_REFERENCE.md)** | Quick reference for testing patterns | Daily development reference |
 | **[TESTING_MAINTENANCE_CHECKLIST.md](TESTING_MAINTENANCE_CHECKLIST.md)** | Testing maintenance guidelines | Maintaining test quality and performance |
 | **[BEFORE_AFTER_EXAMPLES.md](BEFORE_AFTER_EXAMPLES.md)** | Real transformation examples | Understanding testing improvements |
+| **[TEST_PLAN_TEMPLATE.md](TEST_PLAN_TEMPLATE.md)** | Reusable test plan template | **USE THIS** - When creating a test plan for any new feature or issue |
+| **[TEST_CASE_SPECIFICATION_TEMPLATE.md](TEST_CASE_SPECIFICATION_TEMPLATE.md)** | IEEE 829 individual test case format | Writing detailed test case specifications |
 
 ## 🎯 **Pyramid Testing Strategy Summary**
 
