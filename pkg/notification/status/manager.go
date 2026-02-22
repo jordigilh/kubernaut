@@ -127,8 +127,16 @@ func (m *Manager) AtomicStatusUpdate(
 			notification.Status.Reason = reason
 			notification.Status.Message = message
 
+			// Issue #118 Gap 6+7: Set lifecycle timestamps on phase transitions
+			now := metav1.Now()
+			if newPhase == notificationv1alpha1.NotificationPhasePending && notification.Status.QueuedAt == nil {
+				notification.Status.QueuedAt = &now
+			}
+			if newPhase == notificationv1alpha1.NotificationPhaseSending && notification.Status.ProcessingStartedAt == nil {
+				notification.Status.ProcessingStartedAt = &now
+			}
+
 			if isTerminalPhase(newPhase) {
-				now := metav1.Now()
 				notification.Status.CompletionTime = &now
 			}
 		}
@@ -224,9 +232,17 @@ func (m *Manager) UpdatePhase(ctx context.Context, notification *notificationv1a
 		notification.Status.Reason = reason
 		notification.Status.Message = message
 
+		// Issue #118 Gap 6+7: Set lifecycle timestamps on phase transitions
+		now := metav1.Now()
+		if newPhase == notificationv1alpha1.NotificationPhasePending && notification.Status.QueuedAt == nil {
+			notification.Status.QueuedAt = &now
+		}
+		if newPhase == notificationv1alpha1.NotificationPhaseSending && notification.Status.ProcessingStartedAt == nil {
+			notification.Status.ProcessingStartedAt = &now
+		}
+
 		// 5. Set completion time for terminal phases
 		if isTerminalPhase(newPhase) {
-			now := metav1.Now()
 			notification.Status.CompletionTime = &now
 		}
 

@@ -217,6 +217,54 @@ var _ = Describe("BR-NOT-051: Status Tracking", func() {
 		})
 	})
 
+	Context("Issue #118 Gap 6+7: Timestamp population", func() {
+		It("UT-NT-TS-001: should set QueuedAt when transitioning to Pending", func() {
+			nr := &notificationv1alpha1.NotificationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "queued-ts-test",
+					Namespace: "kubernaut-notifications",
+				},
+				Status: notificationv1alpha1.NotificationRequestStatus{
+					Phase: "", // initial empty phase
+				},
+			}
+			Expect(fakeClient.Create(ctx, nr)).To(Succeed())
+
+			err := statusManager.UpdatePhase(ctx, nr, notificationv1alpha1.NotificationPhasePending, "Initialized", "Queued for processing", nil)
+			Expect(err).ToNot(HaveOccurred())
+
+			updated := &notificationv1alpha1.NotificationRequest{}
+			err = fakeClient.Get(ctx, types.NamespacedName{Name: "queued-ts-test", Namespace: "kubernaut-notifications"}, updated)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(updated.Status.QueuedAt).NotTo(BeNil(),
+				"QueuedAt must be set when transitioning to Pending phase")
+			Expect(updated.Status.QueuedAt.Time).To(BeTemporally("~", time.Now(), 5*time.Second))
+		})
+
+		It("UT-NT-TS-002: should set ProcessingStartedAt when transitioning to Sending", func() {
+			nr := &notificationv1alpha1.NotificationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "processing-ts-test",
+					Namespace: "kubernaut-notifications",
+				},
+				Status: notificationv1alpha1.NotificationRequestStatus{
+					Phase: notificationv1alpha1.NotificationPhasePending,
+				},
+			}
+			Expect(fakeClient.Create(ctx, nr)).To(Succeed())
+
+			err := statusManager.UpdatePhase(ctx, nr, notificationv1alpha1.NotificationPhaseSending, "DeliveryStarted", "Starting delivery", nil)
+			Expect(err).ToNot(HaveOccurred())
+
+			updated := &notificationv1alpha1.NotificationRequest{}
+			err = fakeClient.Get(ctx, types.NamespacedName{Name: "processing-ts-test", Namespace: "kubernaut-notifications"}, updated)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(updated.Status.ProcessingStartedAt).NotTo(BeNil(),
+				"ProcessingStartedAt must be set when transitioning to Sending phase")
+			Expect(updated.Status.ProcessingStartedAt.Time).To(BeTemporally("~", time.Now(), 5*time.Second))
+		})
+	})
+
 	Context("ObservedGeneration tracking", func() {
 		It("should update ObservedGeneration to match Generation", func() {
 			notification := &notificationv1alpha1.NotificationRequest{
