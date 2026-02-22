@@ -9,3 +9,5 @@ extend-exclude = ["src/clients/datastorage/datastorage"]
 "src/auth/interfaces.py" = ["E402"]
 "src/auth/k8s_auth.py" = ["E402"]
 "src/auth/mock_auth.py" = ["E402"]
+# OpenAPI Generator test stubs — auto-generated, unused datetime import is a known generator issue.
+"src/clients/datastorage/test/**" = ["F401"]
