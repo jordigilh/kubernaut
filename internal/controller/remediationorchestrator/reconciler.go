@@ -1281,6 +1281,11 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 				remediationapprovalrequest.SetReady(rar, false, remediationapprovalrequest.ReasonNotReady, "Approval expired", r.Metrics)
 				rar.Status.Decision = remediationv1.ApprovalDecisionExpired
 				rar.Status.DecidedBy = "system"
+				// Status.Expired: Denormalized bool for kubectl printer column and API consumers.
+				// Design: We store it explicitly rather than deriving from Decision==Expired at read time
+				// to support efficient field-indexed queries and avoid coupling status shape to condition logic.
+				rar.Status.Expired = true
+				rar.Status.TimeRemaining = remediationapprovalrequest.ComputeTimeRemaining(rar.Spec.RequiredBy.Time, time.Now())
 				now := metav1.Now()
 				rar.Status.DecidedAt = &now
 				return r.client.Status().Update(ctx, rar)
@@ -1290,7 +1295,17 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 			return r.transitionToFailed(ctx, rr, "approval", fmt.Errorf("approval request expired (timeout)"))
 		}
 
-		// Still waiting for approval
+		// Still waiting for approval - update TimeRemaining for operator visibility (Bug Fix 4)
+		if updateErr := k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+			if err := r.client.Get(ctx, client.ObjectKeyFromObject(rar), rar); err != nil {
+				return err
+			}
+			rar.Status.TimeRemaining = remediationapprovalrequest.ComputeTimeRemaining(rar.Spec.RequiredBy.Time, time.Now())
+			return r.client.Status().Update(ctx, rar)
+		}); updateErr != nil {
+			logger.Error(updateErr, "Failed to update RAR TimeRemaining (non-fatal)")
+		}
+
 		logger.V(1).Info("Waiting for approval decision",
 			"rarName", rarName,
 			"requiredBy", rar.Spec.RequiredBy.Format(time.RFC3339),
