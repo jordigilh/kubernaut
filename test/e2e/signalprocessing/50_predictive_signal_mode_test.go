@@ -66,7 +66,8 @@ var _ = Describe("E2E-SP-106-001: Predictive Signal Mode Classification", Label(
 	})
 
 	Context("Predictive Signal Classification (Real Controller)", func() {
-		It("should classify PredictedOOMKill as predictive and normalize to OOMKilled", func() {
+		// E2E-SP-163-003: Predictive Signal Mode - SignalModeClassifier via predictive_signal_mappings
+		It("E2E-SP-163-003: should classify PredictedOOMKill as predictive and normalize to OOMKilled", func() {
 			// BUSINESS CONTEXT:
 			// BR-SP-106: Real SP controller running in Kind cluster classifies a
 			// PredictedOOMKill signal as predictive, normalizes it to OOMKilled,

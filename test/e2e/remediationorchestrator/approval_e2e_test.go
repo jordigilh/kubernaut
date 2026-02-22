@@ -34,6 +34,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/authwebhook"
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	roaudit "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/audit"
+	rarconditions "github.com/jordigilh/kubernaut/pkg/remediationapprovalrequest"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
@@ -170,6 +171,31 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 
 			Expect(k8sClient.Status().Update(ctx, testRAR)).To(Succeed())
 			GinkgoWriter.Printf("✅ E2E: Approved RAR %s\n", testRAR.Name)
+
+			// E2E-RAR-163-001: Verify approval status fields (re-fetch to get webhook-populated DecidedBy)
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(testRAR), testRAR)).To(Succeed())
+			Expect(testRAR.Status.Decision).To(Equal(remediationv1.ApprovalDecisionApproved))
+			Expect(testRAR.Status.DecidedBy).NotTo(BeEmpty())
+			Expect(testRAR.Status.DecidedAt).NotTo(BeNil(), "DecidedAt (*metav1.Time) should be set")
+			Expect(testRAR.Status.DecisionMessage).NotTo(BeEmpty())
+
+			// E2E-RAR-163-002: Decision conditions (set synchronously by RO controller)
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(testRAR), testRAR)).To(Succeed())
+				g.Expect(testRAR.Status.Conditions).To(ContainElements(
+					And(HaveField("Type", rarconditions.ConditionApprovalPending), HaveField("Status", metav1.ConditionFalse)),
+					And(HaveField("Type", rarconditions.ConditionApprovalDecided), HaveField("Status", metav1.ConditionTrue)),
+					And(HaveField("Type", rarconditions.ConditionReady), HaveField("Status", metav1.ConditionTrue)),
+				))
+			}, 30*time.Second, 2*time.Second).Should(Succeed())
+
+			// AuditRecorded is set in a LATER reconciliation
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(testRAR), testRAR)).To(Succeed())
+				g.Expect(testRAR.Status.Conditions).To(ContainElement(
+					And(HaveField("Type", rarconditions.ConditionAuditRecorded), HaveField("Status", metav1.ConditionTrue)),
+				))
+			}, 30*time.Second, 2*time.Second).Should(Succeed())
 
 			// BUSINESS VALIDATION: Query for audit events with proper filters
 			// FIX: Enhanced error visibility + longer timeout to handle audit buffer flush (1s interval)
@@ -311,6 +337,114 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 			GinkgoWriter.Printf("   • Outcome: failure (remediation blocked) ✅\n")
 			GinkgoWriter.Printf("   • COMPLIANCE: SOC 2 CC6.8 satisfied ✅\n")
 			GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+		})
+	})
+
+	// E2E-RAR-163-003: RAR Expiry (Bug Fix 2-4)
+	// Tests that when spec.requiredBy is in the past, RO controller sets:
+	// Decision=Expired, DecidedBy=system, Expired=true, TimeRemaining=0s
+	Context("E2E-RAR-163-003: RAR Expiry", func() {
+		var (
+			testNamespace string
+			testRR        *remediationv1.RemediationRequest
+			testRAR       *remediationv1.RemediationApprovalRequest
+		)
+
+		BeforeEach(func() {
+			testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "ro-e2e-expiry",
+				helpers.WithLabels(map[string]string{
+					"kubernaut.ai/audit-enabled": "true",
+				}))
+
+			now := metav1.Now()
+			testRR = &remediationv1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fmt.Sprintf("e2e-rar-expiry-%s", uuid.New().String()[:8]),
+					Namespace: testNamespace,
+				},
+				Spec: remediationv1.RemediationRequestSpec{
+					SignalFingerprint: "e2e0000000000000000000000000000000000000000000000000000000000004",
+					SignalName:        "E2ERARExpiryTest",
+					Severity:          "critical",
+					SignalType:        "prometheus",
+					TargetType:        "kubernetes",
+					TargetResource: remediationv1.ResourceIdentifier{
+						Kind:      "Deployment",
+						Name:      "test-app-expiry",
+						Namespace: testNamespace,
+					},
+					FiringTime:   now,
+					ReceivedTime: now,
+				},
+			}
+			Expect(k8sClient.Create(ctx, testRR)).To(Succeed())
+
+			// RAR with requiredBy in the past - RO will detect timeout and mark Expired
+			testRAR = &remediationv1.RemediationApprovalRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fmt.Sprintf("rar-%s", testRR.Name),
+					Namespace: testNamespace,
+				},
+				Spec: remediationv1.RemediationApprovalRequestSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						Name:      testRR.Name,
+						Namespace: testNamespace,
+					},
+					AIAnalysisRef: remediationv1.ObjectRef{
+						Name: "ai-test-expiry",
+					},
+					Confidence:           0.75,
+					ConfidenceLevel:      "medium",
+					Reason:               "E2E expiry test: Confidence below threshold",
+					InvestigationSummary: "E2E test: Simulating RAR expiry for Bug Fix 2-4 validation",
+					WhyApprovalRequired:  "E2E test: Validating Status.Expired and TimeRemaining on timeout",
+					RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{
+						WorkflowID:     "restart-pod-v1",
+						Version:        "1.0.0",
+						ExecutionBundle: "kubernaut/restart-pod:v1",
+						Rationale:      "Standard pod restart",
+					},
+					RecommendedActions: []remediationv1.ApprovalRecommendedAction{
+						{Action: "Restart pod", Rationale: "E2E expiry test"},
+					},
+					RequiredBy: metav1.NewTime(time.Now().Add(-1 * time.Minute)), // Past deadline
+				},
+			}
+			Expect(k8sClient.Create(ctx, testRAR)).To(Succeed())
+
+			// Set RR to AwaitingApproval so RO enters handleAwaitingApprovalPhase
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(testRR), testRR)).To(Succeed())
+			testRR.Status.OverallPhase = remediationv1.PhaseAwaitingApproval
+			testRR.Status.StartTime = &now
+			Expect(k8sClient.Status().Update(ctx, testRR)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
+		})
+
+		It("should set Decision=Expired, DecidedBy=system, Expired=true, TimeRemaining=0s when requiredBy is in the past", func() {
+			By("Waiting for RO controller to detect timeout and update RAR status")
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(testRAR), testRAR)).To(Succeed())
+				g.Expect(testRAR.Status.Decision).To(Equal(remediationv1.ApprovalDecisionExpired),
+					"Decision should be Expired when requiredBy is in the past")
+				g.Expect(testRAR.Status.DecidedBy).To(Equal("system"),
+					"DecidedBy should be 'system' for timeout expiry")
+				g.Expect(testRAR.Status.Expired).To(BeTrue(),
+					"Status.Expired must be true when approval times out (Bug Fix 3)")
+				g.Expect(testRAR.Status.TimeRemaining).To(Equal("0s"),
+					"TimeRemaining must be 0s when expired (Bug Fix 4)")
+			}, 30*time.Second, 2*time.Second).Should(Succeed())
+
+			By("E2E-RAR-163-003: Verifying ApprovalExpired and ApprovalPending conditions")
+			Expect(testRAR.Status.Conditions).To(ContainElements(
+				And(HaveField("Type", rarconditions.ConditionApprovalExpired), HaveField("Status", metav1.ConditionTrue)),
+				And(HaveField("Type", rarconditions.ConditionApprovalPending), HaveField("Status", metav1.ConditionFalse)),
+			))
+
+			GinkgoWriter.Printf("✅ E2E-RAR-163-003: RAR expiry validated - Decision=%s, Expired=%v, TimeRemaining=%s\n",
+				testRAR.Status.Decision, testRAR.Status.Expired, testRAR.Status.TimeRemaining)
 		})
 	})
 

@@ -81,9 +81,20 @@ var _ = Describe("WorkflowExecution Lifecycle E2E", func() {
 			// Verify completion
 			completed, err := getWFE(wfe.Name, wfe.Namespace)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(completed.Status.CompletionTime).ToNot(BeNil())
+			Expect(completed.Status.CompletionTime).NotTo(BeNil(), "CompletionTime should be set")
 
 			GinkgoWriter.Printf("✅ WFE completed with phase: %s\n", completed.Status.Phase)
+
+			// E2E-WE-163-001: Verify ExecutionStatus when WFE reaches Completed
+			if completed.Status.Phase == workflowexecutionv1alpha1.PhaseCompleted {
+				By("E2E-WE-163-001: Verifying ExecutionStatus for success")
+				Expect(completed.Status.ExecutionStatus).NotTo(BeNil())
+				Expect(completed.Status.ExecutionStatus.Status).To(Equal("True"))
+				Expect(completed.Status.ExecutionStatus.TotalTasks).To(BeNumerically(">=", 1))
+				Expect(completed.Status.ExecutionStatus.CompletedTasks).To(BeNumerically(">=", 1))
+				Expect(completed.Status.ExecutionStatus.Reason).To(Equal("Succeeded"))
+				Expect(completed.Status.ExecutionStatus.Message).NotTo(BeEmpty())
+			}
 
 			// BR-WE-006: Verify Kubernetes Conditions are set during lifecycle
 			// Per WE_BR_WE_006_TESTING_TRIAGE.md: Validate conditions in existing E2E tests
@@ -121,8 +132,12 @@ var _ = Describe("WorkflowExecution Lifecycle E2E", func() {
 	}, 30*time.Second, 5*time.Second).Should(BeTrue(),
 		"All final lifecycle conditions (ExecutionCreated, ExecutionComplete, AuditRecorded) should be set")
 
-			// Verify condition details
+			// E2E-WE-163-002: Verify Ready and ExecutionRunning conditions (3 of 5 already asserted above)
 			final, _ := getWFE(wfe.Name, wfe.Namespace)
+			Expect(weconditions.GetCondition(final, weconditions.ConditionReady)).NotTo(BeNil())
+			Expect(weconditions.GetCondition(final, weconditions.ConditionExecutionRunning)).NotTo(BeNil())
+
+			// Verify condition details
 			GinkgoWriter.Println("✅ Kubernetes Conditions verified:")
 			for _, cond := range final.Status.Conditions {
 				GinkgoWriter.Printf("  - %s: %s (reason: %s)\n", cond.Type, cond.Status, cond.Reason)
@@ -187,6 +202,12 @@ var _ = Describe("WorkflowExecution Lifecycle E2E", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(failed.Status.FailureDetails).ToNot(BeNil(), "FailureDetails should be populated")
 			Expect(failed.Status.FailureDetails.Message).ToNot(BeEmpty(), "Failure message should be set")
+
+			// E2E-WE-163-002: Verify FailureDetails exact field validation
+			Expect(failed.Status.FailureDetails.FailedTaskName).NotTo(BeEmpty())
+			Expect(failed.Status.FailureDetails.Reason).To(BeElementOf("OOMKilled", "DeadlineExceeded", "Forbidden", "ResourceExhausted", "ConfigurationError", "ImagePullBackOff", "TaskFailed", "Unknown"))
+			Expect(failed.Status.FailureDetails.FailedAt).NotTo(BeZero())
+			Expect(failed.Status.FailureDetails.NaturalLanguageSummary).NotTo(BeEmpty())
 
 			// BR-WE-004 EXTENDED: Verify ExecutionComplete condition reflects failure
 			// This validation moved from integration tests (EnvTest limitation) to E2E
@@ -268,7 +289,7 @@ var _ = Describe("WorkflowExecution Lifecycle E2E", func() {
 				finalWFE, err := getWFE(wfe.Name, wfe.Namespace)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(finalWFE.Status.Phase).To(Equal(workflowexecutionv1alpha1.PhaseFailed))
-				Expect(finalWFE.Status.FailureDetails).ToNot(BeNil())
+				Expect(finalWFE.Status.FailureDetails).NotTo(BeNil(), "FailureDetails should be populated on failure")
 				Expect(finalWFE.Status.FailureDetails.Reason).To(Equal(workflowexecutionv1alpha1.FailureReasonUnknown))
 
 				GinkgoWriter.Println("✅ BR-WE-010: Controller gracefully handled missing CompletionTime")

@@ -181,24 +181,32 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 		By("Waiting for controller to process notification and fail delivery")
 
 		// Controller will attempt Email delivery, which will fail (service not configured)
-		// Expected phases: Pending → Sending → Failed (or PartiallySent)
-	// Give controller time to process and emit audit event
-	Eventually(func() bool {
-		var n notificationv1alpha1.NotificationRequest
-		if err := apiReader.Get(testCtx, types.NamespacedName{
+		// Expected phases: Pending → Sending → Failed (all channels have permanent errors)
+		By("Waiting for controller to process notification and reach Failed phase")
+		Eventually(func() notificationv1alpha1.NotificationPhase {
+			var n notificationv1alpha1.NotificationRequest
+			if err := apiReader.Get(testCtx, types.NamespacedName{
+				Name:      notificationName,
+				Namespace: notificationNS,
+			}, &n); err != nil {
+				return ""
+			}
+			return n.Status.Phase
+		}, 30*time.Second, 1*time.Second).Should(Equal(notificationv1alpha1.NotificationPhaseFailed),
+			"Controller should mark notification as Failed when all channels fail")
+
+		// ===== STEP 2.5: E2E-NT-163-005 - Failed delivery field validation =====
+		By("Validating NR Failed phase Reason and Message fields")
+		nr := &notificationv1alpha1.NotificationRequest{}
+		err = apiReader.Get(testCtx, types.NamespacedName{
 			Name:      notificationName,
 			Namespace: notificationNS,
-		}, &n); err != nil {
-			return false
-		}
-
-		// Check if controller has processed and recorded failure
-		// Phase might be Failed (all channels failed) or PartiallySent (some succeeded, some failed)
-		// or Sending (still attempting)
-		// We're looking for delivery attempts recorded in status
-		return len(n.Status.DeliveryAttempts) > 0
-	}, 30*time.Second, 1*time.Second).Should(BeTrue(),
-		"Controller should attempt delivery and record delivery attempt")
+		}, nr)
+		Expect(err).ToNot(HaveOccurred(), "Should be able to get NR for field validation")
+		Expect(nr.Status.Phase).To(Equal(notificationv1alpha1.NotificationPhaseFailed))
+		Expect(nr.Status.Reason).To(Equal("AllDeliveriesFailed"),
+			"Reason should be AllDeliveriesFailed when all channels have permanent errors")
+		Expect(nr.Status.Message).To(Equal("All delivery attempts failed or exhausted retries"))
 
 		// ===== STEP 3: Verify failed audit event persisted to PostgreSQL =====
 		By("Verifying notification.message.failed audit event persisted to PostgreSQL")

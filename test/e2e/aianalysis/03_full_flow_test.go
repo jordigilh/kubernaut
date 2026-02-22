@@ -116,7 +116,27 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 			// Should have completion timestamp
 			Expect(analysis.Status.CompletedAt).NotTo(BeZero())
 
-			// ADR-055: Should capture affectedResource in RCA (replaces targetInOwnerChain)
+			// E2E-AA-163-002: TotalAnalysisTime populated by controller
+			Expect(analysis.Status.TotalAnalysisTime).To(BeNumerically(">", 0))
+
+			// E2E-AA-163-001: RootCauseAnalysis populated from mock LLM response
+			Expect(analysis.Status.RootCauseAnalysis).NotTo(BeNil())
+			Expect(analysis.Status.RootCauseAnalysis.Summary).NotTo(BeEmpty())
+			Expect(analysis.Status.RootCauseAnalysis.Severity).To(BeElementOf("critical", "high", "medium", "low", "unknown"))
+			Expect(analysis.Status.RootCauseAnalysis.SignalType).NotTo(BeEmpty())
+			Expect(analysis.Status.RootCauseAnalysis.ContributingFactors).To(ContainElement("identified_by_mock_llm"))
+
+			// E2E-AA-163-001: AffectedResource populated from mock LLM (crashloop scenario returns Deployment)
+			Expect(analysis.Status.RootCauseAnalysis.AffectedResource).NotTo(BeNil())
+			Expect(analysis.Status.RootCauseAnalysis.AffectedResource.Kind).To(Equal("Deployment"))
+
+			// E2E-AA-163-002: Condition assertions for completed AA
+			Expect(analysis.Status.Conditions).To(ContainElements(
+				And(HaveField("Type", "Ready"), HaveField("Status", metav1.ConditionTrue)),
+				And(HaveField("Type", "InvestigationComplete"), HaveField("Status", metav1.ConditionTrue)),
+				And(HaveField("Type", "AnalysisComplete"), HaveField("Status", metav1.ConditionTrue)),
+				And(HaveField("Type", "WorkflowResolved"), HaveField("Status", metav1.ConditionTrue)),
+			))
 		})
 
 		It("should require approval for production environment - BR-AI-013", func() {
@@ -310,6 +330,130 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 
 			By("Verifying approval required due to data quality")
 			Expect(analysis.Status.ApprovalRequired).To(BeTrue())
+		})
+	})
+
+	// E2E-AA-163-003: AlternativeWorkflows - Mock LLM low_confidence scenario returns alternative_workflows
+	Context("Low confidence scenario - alternative workflows", func() {
+		var analysis *aianalysisv1alpha1.AIAnalysis
+
+		BeforeEach(func() {
+			namespace := createTestNamespace("full-flow-low-conf")
+			analysis = &aianalysisv1alpha1.AIAnalysis{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "e2e-low-conf-" + randomSuffix(),
+					Namespace: namespace,
+				},
+				Spec: aianalysisv1alpha1.AIAnalysisSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						Name:      "e2e-remediation-low-conf",
+						Namespace: namespace,
+					},
+					RemediationID: "e2e-rem-low-conf",
+					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
+						SignalContext: aianalysisv1alpha1.SignalContextInput{
+							Fingerprint:      "e2e-fingerprint-low-conf",
+							Severity:         "medium",
+							SignalType:       "MOCK_LOW_CONFIDENCE", // Triggers mock scenario with alternative_workflows
+							Environment:      "staging",
+							BusinessPriority: "P2",
+							TargetResource: aianalysisv1alpha1.TargetResource{
+								Kind:      "Pod",
+								Name:      "web-app",
+								Namespace: "staging",
+							},
+							EnrichmentResults: sharedtypes.EnrichmentResults{},
+						},
+						AnalysisTypes: []string{"investigation", "root-cause", "workflow-selection"},
+					},
+				},
+			}
+		})
+
+		It("should populate AlternativeWorkflows when mock returns alternatives - E2E-AA-163-003", func() {
+			defer func() {
+				_ = k8sClient.Delete(ctx, analysis)
+			}()
+
+			By("Creating AIAnalysis with MOCK_LOW_CONFIDENCE signal type")
+			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
+
+			By("Waiting for completion")
+			Eventually(func() string {
+				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
+				return string(analysis.Status.Phase)
+			}, timeout, interval).Should(Equal("Completed"))
+
+			By("Verifying AlternativeWorkflows populated (mock low_confidence scenario returns exactly 2 alternatives)")
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
+			Expect(analysis.Status.AlternativeWorkflows).To(HaveLen(2))
+			Expect(analysis.Status.AlternativeWorkflows[0].WorkflowID).To(Equal("d3c95ea1-66cb-6bf2-c59e-7dd27f1fec6d"))
+			Expect(analysis.Status.AlternativeWorkflows[0].Rationale).To(Equal("Alternative approach for ambiguous root cause"))
+			Expect(analysis.Status.AlternativeWorkflows[1].WorkflowID).To(Equal("e4d06fb2-77dc-7cg3-d60f-8ee38g2gfd7e"))
+			Expect(analysis.Status.AlternativeWorkflows[1].Rationale).To(Equal("Requires human expertise to determine correct remediation"))
+			Expect(analysis.Status.AlternativeWorkflows[0].Confidence).To(BeNumerically(">", analysis.Status.AlternativeWorkflows[1].Confidence))
+		})
+	})
+
+	// E2E-AA-163-004: ValidationAttemptsHistory - Mock LLM max_retries_exhausted scenario
+	Context("Max retries exhausted - validation attempts history", func() {
+		var analysis *aianalysisv1alpha1.AIAnalysis
+
+		BeforeEach(func() {
+			namespace := createTestNamespace("full-flow-max-retries")
+			analysis = &aianalysisv1alpha1.AIAnalysis{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "e2e-max-retries-" + randomSuffix(),
+					Namespace: namespace,
+				},
+				Spec: aianalysisv1alpha1.AIAnalysisSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						Name:      "e2e-remediation-max-retries",
+						Namespace: namespace,
+					},
+					RemediationID: "e2e-rem-max-retries",
+					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
+						SignalContext: aianalysisv1alpha1.SignalContextInput{
+							Fingerprint:      "e2e-fingerprint-max-retries",
+							Severity:         "high",
+							SignalType:       "MOCK_MAX_RETRIES_EXHAUSTED", // Triggers mock scenario with 3 failed validation attempts
+							Environment:      "staging",
+							BusinessPriority: "P1",
+							TargetResource: aianalysisv1alpha1.TargetResource{
+								Kind:      "Pod",
+								Name:      "llm-parse-fail-pod",
+								Namespace: "staging",
+							},
+							EnrichmentResults: sharedtypes.EnrichmentResults{},
+						},
+						AnalysisTypes: []string{"investigation", "root-cause", "workflow-selection"},
+					},
+				},
+			}
+		})
+
+		It("should populate ValidationAttemptsHistory with 3 failed attempts - E2E-AA-163-004", func() {
+			defer func() {
+				_ = k8sClient.Delete(ctx, analysis)
+			}()
+
+			By("Creating AIAnalysis with MOCK_MAX_RETRIES_EXHAUSTED signal type")
+			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
+
+			By("Waiting for phase to reach Failed or Completed (max_retries returns no workflow)")
+			Eventually(func() string {
+				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
+				return string(analysis.Status.Phase)
+			}, timeout, interval).Should(Or(Equal("Failed"), Equal("Completed")))
+
+			By("Verifying ValidationAttemptsHistory populated with 3 attempts")
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
+			Expect(analysis.Status.ValidationAttemptsHistory).To(HaveLen(3))
+			for i, attempt := range analysis.Status.ValidationAttemptsHistory {
+				Expect(attempt.Attempt).To(Equal(i + 1))
+				Expect(attempt.IsValid).To(BeFalse())
+				Expect(attempt.Errors).NotTo(BeEmpty())
+			}
 		})
 	})
 })

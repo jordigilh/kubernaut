@@ -109,6 +109,9 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking E2E", Label("e2e", "scope"), f
 		fetched := &remediationv1.RemediationRequest{}
 		Expect(apiReader.Get(ctx, client.ObjectKeyFromObject(rr), fetched)).To(Succeed())
 		Expect(fetched.Status.OverallPhase).To(Equal(remediationv1.PhaseBlocked))
+		// E2E-RO-163-003: Blocking fields validation
+		Expect(fetched.Status.BlockReason).NotTo(BeEmpty())
+		Expect(fetched.Status.BlockMessage).NotTo(BeEmpty())
 		Expect(fetched.Status.BlockMessage).To(ContainSubstring("kubernaut.ai/managed=true"),
 			"Block message should include remediation instructions")
 		Expect(fetched.Status.BlockedUntil).ToNot(BeNil(),
@@ -263,4 +266,5 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking E2E", Label("e2e", "scope"), f
 		GinkgoWriter.Printf("✅ E2E-RO-010-003: RR auto-unblocked — final phase: %s, blockReason: %s\n",
 			fetched.Status.OverallPhase, fetched.Status.BlockReason)
 	})
+
 })

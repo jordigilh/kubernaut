@@ -161,7 +161,7 @@ var _ = Describe("BR-SP-001: Node Enrichment Enables Infrastructure Analysis", f
 		var final signalprocessingv1alpha1.SignalProcessing
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &final)).To(Succeed())
 		// Workload should be populated (Pod when target is Pod; Node enrichment via owner chain)
-		Expect(final.Status.KubernetesContext.Workload).ToNot(BeNil())
+		Expect(final.Status.KubernetesContext.Workload).NotTo(BeNil(), "Workload should be populated for Pod enrichment")
 		Expect(final.Status.KubernetesContext.Workload.Kind).To(Equal("Pod"))
 		Expect(final.Status.KubernetesContext.Workload.Labels).To(HaveKeyWithValue("app", "node-test"))
 		// Owner chain or secondary Workload may include Node; verify we got node-level context
@@ -217,7 +217,7 @@ var _ = Describe("BR-SP-001: Node Enrichment Enables Infrastructure Analysis", f
 		var final signalprocessingv1alpha1.SignalProcessing
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &final)).To(Succeed())
 		// Namespace should still be populated
-		Expect(final.Status.KubernetesContext.Namespace).ToNot(BeNil())
+		Expect(final.Status.KubernetesContext.Namespace).NotTo(BeNil(), "Namespace should be populated in degraded mode")
 		Expect(final.Status.KubernetesContext.Namespace.Name).To(Equal(testNs))
 		// But Workload should be nil (target not found)
 		Expect(final.Status.KubernetesContext.Workload).To(BeNil())
@@ -873,6 +873,9 @@ var _ = Describe("BR-SP-090: Categorization Audit Trail Provides Compliance Evid
 			}
 			return updated.Status.Phase
 		}, timeout, interval).Should(Equal(signalprocessingv1alpha1.PhaseCompleted))
+
+		// E2E-SP-163-001 + E2E-SP-163-005: Exact field validation for completed SP
+		expectCompletedSPStatusAssertions(ctx, k8sClient, sp)
 
 		By("Waiting for BufferedStore to flush audit events (2-3 seconds)")
 		// BufferedStore has a 1-second flush interval + round-trip time to DataStorage
@@ -2164,6 +2167,135 @@ var _ = Describe("BR-SP-070-C: P3 Priority Classification", func() {
 		}, timeout, interval).Should(BeTrue())
 	})
 })
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// E2E-SP-163-004: Recovery Context Validation
+// BUSINESS VALUE: SP enriches RecoveryContext when RR has RecoveryAttempts > 0
+// DD-001: Recovery Context Enrichment - buildRecoveryContext() in Enriching phase
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+var _ = Describe("E2E-SP-163-004: Recovery Context Validation", func() {
+	var testNs string
+
+	BeforeEach(func() {
+		testNs = helpers.CreateTestNamespace(ctx, k8sClient, "e2e-recovery", helpers.WithLabels(map[string]string{
+			"kubernaut.ai/environment": "production",
+		}))
+	})
+
+	AfterEach(func() {
+		helpers.DeleteTestNamespace(ctx, k8sClient, testNs)
+	})
+
+	It("E2E-SP-163-004: should populate RecoveryContext when RemediationRequest has RecoveryAttempts > 0", func() {
+		By("Creating RemediationRequest with recovery attempt status")
+		rr := &remediationv1alpha1.RemediationRequest{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "e2e-recovery-rr",
+				Namespace: testNs,
+			},
+			Spec: remediationv1alpha1.RemediationRequestSpec{
+				SignalFingerprint: "e2e1630041234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+				SignalName:        "RecoveryContextTest",
+				Severity:          "critical",
+				SignalType:        "prometheus",
+				SignalSource:      "test-e2e",
+				TargetType:        "kubernetes",
+				FiringTime:        metav1.Now(),
+				ReceivedTime:     metav1.Now(),
+				Deduplication: sharedtypes.DeduplicationInfo{
+					IsDuplicate:     false,
+					FirstOccurrence: metav1.Now(),
+					LastOccurrence:  metav1.Now(),
+					OccurrenceCount: 1,
+				},
+				IsStorm: false,
+				TargetResource: remediationv1alpha1.ResourceIdentifier{
+					Kind:      "Pod",
+					Name:      "recovery-test-pod",
+					Namespace: testNs,
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+
+		By("Patching RemediationRequest status with RecoveryAttempts > 0")
+		rr.Status.RecoveryAttempts = 1
+		rr.Status.StartTime = &metav1.Time{Time: time.Now().Add(-5 * time.Minute)}
+		failureReason := "PreviousExecutionTimedOut"
+		rr.Status.FailureReason = &failureReason
+		Expect(k8sClient.Status().Update(ctx, rr)).To(Succeed())
+
+		By("Creating SignalProcessing CR referencing the RemediationRequest")
+		sp := &signalprocessingv1alpha1.SignalProcessing{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "e2e-recovery-sp",
+				Namespace: testNs,
+			},
+			Spec: signalprocessingv1alpha1.SignalProcessingSpec{
+				RemediationRequestRef: signalprocessingv1alpha1.ObjectReference{
+					APIVersion: remediationv1alpha1.GroupVersion.String(),
+					Kind:       "RemediationRequest",
+					Name:       rr.Name,
+					Namespace:  rr.Namespace,
+					UID:        string(rr.UID),
+				},
+				Signal: signalprocessingv1alpha1.SignalData{
+					Fingerprint:  rr.Spec.SignalFingerprint,
+					Name:         rr.Spec.SignalName,
+					Severity:     rr.Spec.Severity,
+					Type:         rr.Spec.SignalType,
+					TargetType:   rr.Spec.TargetType,
+					ReceivedTime: metav1.Now(),
+					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+						Kind:      rr.Spec.TargetResource.Kind,
+						Name:      rr.Spec.TargetResource.Name,
+						Namespace: rr.Spec.TargetResource.Namespace,
+					},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, sp)).To(Succeed())
+
+		By("Waiting for SignalProcessing to complete")
+		Eventually(func() signalprocessingv1alpha1.SignalProcessingPhase {
+			var updated signalprocessingv1alpha1.SignalProcessing
+			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &updated); err != nil {
+				return ""
+			}
+			return updated.Status.Phase
+		}, timeout, interval).Should(Equal(signalprocessingv1alpha1.PhaseCompleted))
+
+		By("Verifying RecoveryContext is populated")
+		var final signalprocessingv1alpha1.SignalProcessing
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &final)).To(Succeed())
+		Expect(final.Status.RecoveryContext).NotTo(BeNil())
+		Expect(final.Status.RecoveryContext.PreviousRemediationID).To(Equal(rr.Name))
+		Expect(final.Status.RecoveryContext.AttemptCount).To(BeNumerically(">=", 1))
+		Expect(final.Status.RecoveryContext.LastFailureReason).To(Equal("PreviousExecutionTimedOut"))
+	})
+})
+
+// expectCompletedSPStatusAssertions validates E2E-SP-163-001 (timestamps) and E2E-SP-163-005 (all 5 conditions)
+// for a SignalProcessing that has reached PhaseCompleted. Shared by tests that wait for SP completion.
+func expectCompletedSPStatusAssertions(ctx context.Context, k8sClient client.Client, sp *signalprocessingv1alpha1.SignalProcessing) {
+	var final signalprocessingv1alpha1.SignalProcessing
+	Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &final)).To(Succeed())
+
+	// E2E-SP-163-001: Processing timestamps
+	Expect(final.Status.StartTime).NotTo(BeNil())
+	Expect(final.Status.CompletionTime).NotTo(BeNil())
+	Expect(final.Status.CompletionTime.Time).To(BeTemporally(">=", final.Status.StartTime.Time))
+
+	// E2E-SP-163-005: All 5 conditions present and True
+	Expect(final.Status.Conditions).To(ContainElements(
+		And(HaveField("Type", "Ready"), HaveField("Status", metav1.ConditionTrue)),
+		And(HaveField("Type", "EnrichmentComplete"), HaveField("Status", metav1.ConditionTrue)),
+		And(HaveField("Type", "ClassificationComplete"), HaveField("Status", metav1.ConditionTrue)),
+		And(HaveField("Type", "CategorizationComplete"), HaveField("Status", metav1.ConditionTrue)),
+		And(HaveField("Type", "ProcessingComplete"), HaveField("Status", metav1.ConditionTrue)),
+	))
+}
 
 // queryAuditEvents queries DataStorage API for audit events using the typed OpenAPI client.
 // This replaces the previous raw HTTP implementation for type safety and contract validation.
