@@ -242,6 +242,9 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 	analysis.Status.Phase = aianalysis.PhaseCompleted
 	analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
 	analysis.Status.CompletedAt = &now
+	if analysis.Status.StartedAt != nil {
+		analysis.Status.TotalAnalysisTime = int64(now.Sub(analysis.Status.StartedAt.Time).Seconds())
+	}
 	analysis.Status.Message = "Analysis complete"
 
 	// DD-AUDIT-003: Record analysis completion when transitioning to Completed

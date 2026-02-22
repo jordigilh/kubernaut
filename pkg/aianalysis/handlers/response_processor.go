@@ -971,6 +971,7 @@ func ExtractRootCauseAnalysis(rcaData interface{}) *aianalysisv1.RootCauseAnalys
 	rca := &aianalysisv1.RootCauseAnalysis{
 		Summary:             GetStringFromMap(rcaMap, "summary"),
 		Severity:            GetStringFromMap(rcaMap, "severity"),
+		SignalType:          GetStringFromMap(rcaMap, "signal_type"),
 		ContributingFactors: GetStringSliceFromMap(rcaMap, "contributing_factors"),
 	}
 

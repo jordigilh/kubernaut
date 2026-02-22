@@ -592,16 +592,16 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 				"externalSeverity", signal.Severity,
 				"hint", "Check Rego policy has else clause for unmapped values")
 
-			// Transition to Failed phase (Category C: Permanent error)
-			// Policy errors require manual intervention (operator must fix policy)
-			updateErr := r.StatusManager.AtomicStatusUpdate(ctx, sp, func() error {
-				sp.Status.Phase = signalprocessingv1alpha1.PhaseFailed
-				sp.Status.Error = fmt.Sprintf("policy evaluation failed: %v", err)
-				spconditions.SetClassificationComplete(sp, false, spconditions.ReasonRegoEvaluationError, err.Error())
-				// Issue #79 Phase 7b: Set Ready condition on terminal transitions
-				spconditions.SetReady(sp, false, spconditions.ReasonNotReady, "Signal processing failed")
-				return nil
-			})
+		// Transition to Failed phase (Category C: Permanent error)
+		// Policy errors require manual intervention (operator must fix policy)
+		updateErr := r.StatusManager.AtomicStatusUpdate(ctx, sp, func() error {
+			sp.Status.ObservedGeneration = sp.Generation // DD-CONTROLLER-001: inside callback so it survives refetch
+			sp.Status.Phase = signalprocessingv1alpha1.PhaseFailed
+			sp.Status.Error = fmt.Sprintf("policy evaluation failed: %v", err)
+			spconditions.SetClassificationComplete(sp, false, spconditions.ReasonRegoEvaluationError, err.Error())
+			spconditions.SetReady(sp, false, spconditions.ReasonNotReady, "Signal processing failed")
+			return nil
+		})
 			if updateErr != nil {
 				logger.Error(updateErr, "Failed to update status to Failed phase")
 				return ctrl.Result{}, updateErr
@@ -770,18 +770,15 @@ func (r *SignalProcessingReconciler) reconcileCategorizing(ctx context.Context, 
 	// BEFORE: 5 status fields in 1 update (but refetch+update pattern)
 	// AFTER: Atomic refetch → apply all → single Status().Update()
 	// ========================================
-	sp.Status.ObservedGeneration = sp.Generation // DD-CONTROLLER-001
 	oldPhase := sp.Status.Phase
 	updateErr := r.StatusManager.AtomicStatusUpdate(ctx, sp, func() error {
-		// Apply final updates after refetch
+		sp.Status.ObservedGeneration = sp.Generation // DD-CONTROLLER-001: inside callback so it survives refetch
 		sp.Status.BusinessClassification = bizClass
 		sp.Status.Phase = signalprocessingv1alpha1.PhaseCompleted
 		now := metav1.Now()
 		sp.Status.CompletionTime = &now
-		// BR-SP-110: Set conditions AFTER refetch to prevent wipe
 		spconditions.SetCategorizationComplete(sp, true, "", categorizationMessage)
 		spconditions.SetProcessingComplete(sp, true, "", processingMessage)
-		// Issue #79 Phase 7b: Set Ready condition on terminal transitions
 		spconditions.SetReady(sp, true, spconditions.ReasonReady, "Signal processing completed")
 		return nil
 	})
