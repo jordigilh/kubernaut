@@ -33,7 +33,7 @@ var _ = Describe("ApprovalOrchestration", func() {
 		scheme = runtime.NewScheme()
 		Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
 		Expect(aianalysisv1.AddToScheme(scheme)).To(Succeed())
-		fakeClient = fake.NewClientBuilder().WithScheme(scheme).Build()
+		fakeClient = fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&remediationv1.RemediationApprovalRequest{}).Build()
 		ac = creator.NewApprovalCreator(fakeClient, scheme, nil)
 		ctx = context.Background()
 	})

@@ -126,10 +126,17 @@ func (c *ApprovalCreator) Create(
 	remediationapprovalrequest.SetApprovalExpired(rar, false,
 		"Approval has not expired", c.metrics)
 
-	// Create the CRD (persists both spec and initial conditions)
+	// Create the CRD (spec + ownerRef persisted; status stripped by API server
+	// because RAR uses +kubebuilder:subresource:status)
 	if err := c.client.Create(ctx, rar); err != nil {
 		logger.Error(err, "Failed to create RemediationApprovalRequest")
 		return "", fmt.Errorf("failed to create RemediationApprovalRequest: %w", err)
+	}
+
+	// Persist status fields via the status subresource (CreatedAt + conditions)
+	if err := c.client.Status().Update(ctx, rar); err != nil {
+		logger.Error(err, "Failed to update RemediationApprovalRequest status after creation")
+		return "", fmt.Errorf("failed to update RemediationApprovalRequest status: %w", err)
 	}
 
 	logger.Info("Created RemediationApprovalRequest",
