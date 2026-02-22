@@ -30,7 +30,6 @@ import (
 
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
-	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
@@ -151,7 +150,7 @@ func (c *AuditClient) RecordSignalProcessed(ctx context.Context, sp *signalproce
 	}
 
 	// Determine outcome
-	var apiOutcome ogenclient.AuditEventRequestEventOutcome
+	var apiOutcome api.AuditEventRequestEventOutcome
 	if sp.Status.Phase == signalprocessingv1alpha1.PhaseFailed {
 		apiOutcome = audit.OutcomeFailure
 	} else {

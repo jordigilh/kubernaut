@@ -235,7 +235,7 @@ func (b *RequestBuilder) buildPreviousExecution(prev aianalysisv1.PreviousExecut
 		FailedStepName:  prev.Failure.FailedStepName,
 		Reason:          prev.Failure.Reason,
 		Message:         prev.Failure.Message,
-		FailedAt:        prev.Failure.FailedAt.Time.Format("2006-01-02T15:04:05Z07:00"), // ISO 8601
+		FailedAt:        prev.Failure.FailedAt.Format("2006-01-02T15:04:05Z07:00"), // ISO 8601
 		ExecutionTime:   prev.Failure.ExecutionTime,
 	}
 

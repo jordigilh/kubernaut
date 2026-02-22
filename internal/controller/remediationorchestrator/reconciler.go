@@ -70,7 +70,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/status"
 	"github.com/jordigilh/kubernaut/pkg/remediationrequest"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
-	rrconditions "github.com/jordigilh/kubernaut/pkg/remediationrequest"
 	"github.com/jordigilh/kubernaut/pkg/shared/k8serrors"
 	canonicalhash "github.com/jordigilh/kubernaut/pkg/shared/hash"
 )
@@ -707,7 +706,7 @@ func (r *Reconciler) handlePendingPhase(ctx context.Context, rr *remediationv1.R
 		}
 		// Preserve SignalProcessingReady condition from creator
 		// (UpdateRemediationRequestStatus fetches fresh RR, so we need to re-set the condition)
-		rrconditions.SetSignalProcessingReady(rr, true, fmt.Sprintf("SignalProcessing CRD %s created successfully", spName), r.Metrics)
+		remediationrequest.SetSignalProcessingReady(rr, true, fmt.Sprintf("SignalProcessing CRD %s created successfully", spName), r.Metrics)
 		return nil
 	})
 	if err != nil {
@@ -782,7 +781,7 @@ func (r *Reconciler) handleProcessingPhase(ctx context.Context, rr *remediationv
 				Namespace:  rr.Namespace,
 			}
 			// Preserve AIAnalysisReady condition from creator
-			rrconditions.SetAIAnalysisReady(rr, true, fmt.Sprintf("AIAnalysis CRD %s created successfully", aiName), r.Metrics)
+			remediationrequest.SetAIAnalysisReady(rr, true, fmt.Sprintf("AIAnalysis CRD %s created successfully", aiName), r.Metrics)
 			return nil
 		})
 		if err != nil {
@@ -1024,7 +1023,7 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 					ExecutionBundleDigest:  ai.Status.SelectedWorkflow.ExecutionBundleDigest,
 				}
 			}
-			rrconditions.SetWorkflowExecutionReady(rr, true, fmt.Sprintf("WorkflowExecution CRD %s created successfully", weName), r.Metrics)
+			remediationrequest.SetWorkflowExecutionReady(rr, true, fmt.Sprintf("WorkflowExecution CRD %s created successfully", weName), r.Metrics)
 			return nil
 		})
 		if err != nil {
@@ -1251,7 +1250,7 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 				"Approval request expired without a decision")
 		}
 
-		return r.transitionToFailed(ctx, rr, "approval", fmt.Errorf("Approval request expired (timeout)"))
+		return r.transitionToFailed(ctx, rr, "approval", fmt.Errorf("approval request expired (timeout)"))
 
 	default:
 		// Still pending - check if deadline passed (V1.0 timeout handling)
@@ -1288,7 +1287,7 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 			}); updateErr != nil {
 				logger.Error(updateErr, "Failed to update RAR status to Expired")
 			}
-			return r.transitionToFailed(ctx, rr, "approval", fmt.Errorf("Approval request expired (timeout)"))
+			return r.transitionToFailed(ctx, rr, "approval", fmt.Errorf("approval request expired (timeout)"))
 		}
 
 		// Still waiting for approval
@@ -1331,7 +1330,8 @@ func (r *Reconciler) handleExecutingPhase(ctx context.Context, rr *remediationv1
 
 	// Set WorkflowExecutionComplete condition before delegating to handler
 	// DD-PERF-001: Atomic status updates with conditions
-	if we.Status.Phase == workflowexecutionv1.PhaseCompleted {
+	switch we.Status.Phase {
+	case workflowexecutionv1.PhaseCompleted:
 		if err := r.StatusManager.AtomicStatusUpdate(ctx, rr, func() error {
 			remediationrequest.SetWorkflowExecutionComplete(rr, true,
 				remediationrequest.ReasonWorkflowSucceeded,
@@ -1341,7 +1341,7 @@ func (r *Reconciler) handleExecutingPhase(ctx context.Context, rr *remediationv1
 			logger.Error(err, "Failed to update WorkflowExecutionComplete condition")
 			// Continue - condition update is best-effort
 		}
-	} else if we.Status.Phase == workflowexecutionv1.PhaseFailed {
+	case workflowexecutionv1.PhaseFailed:
 		if err := r.StatusManager.AtomicStatusUpdate(ctx, rr, func() error {
 			remediationrequest.SetWorkflowExecutionComplete(rr, false,
 				remediationrequest.ReasonWorkflowFailed,
@@ -2979,22 +2979,22 @@ func (r *Reconciler) validateTimeoutConfig(ctx context.Context, rr *remediationv
 
 	// Validate Global timeout
 	if rr.Status.TimeoutConfig.Global != nil && rr.Status.TimeoutConfig.Global.Duration < 0 {
-		return fmt.Errorf("Global timeout cannot be negative (got: %v): %w", rr.Status.TimeoutConfig.Global.Duration, roaudit.ErrInvalidTimeoutConfig)
+		return fmt.Errorf("global timeout cannot be negative (got: %v): %w", rr.Status.TimeoutConfig.Global.Duration, roaudit.ErrInvalidTimeoutConfig)
 	}
 
 	// Validate Processing timeout
 	if rr.Status.TimeoutConfig.Processing != nil && rr.Status.TimeoutConfig.Processing.Duration < 0 {
-		return fmt.Errorf("Processing timeout cannot be negative (got: %v): %w", rr.Status.TimeoutConfig.Processing.Duration, roaudit.ErrInvalidTimeoutConfig)
+		return fmt.Errorf("processing timeout cannot be negative (got: %v): %w", rr.Status.TimeoutConfig.Processing.Duration, roaudit.ErrInvalidTimeoutConfig)
 	}
 
 	// Validate Analyzing timeout
 	if rr.Status.TimeoutConfig.Analyzing != nil && rr.Status.TimeoutConfig.Analyzing.Duration < 0 {
-		return fmt.Errorf("Analyzing timeout cannot be negative (got: %v): %w", rr.Status.TimeoutConfig.Analyzing.Duration, roaudit.ErrInvalidTimeoutConfig)
+		return fmt.Errorf("analyzing timeout cannot be negative (got: %v): %w", rr.Status.TimeoutConfig.Analyzing.Duration, roaudit.ErrInvalidTimeoutConfig)
 	}
 
 	// Validate Executing timeout
 	if rr.Status.TimeoutConfig.Executing != nil && rr.Status.TimeoutConfig.Executing.Duration < 0 {
-		return fmt.Errorf("Executing timeout cannot be negative (got: %v): %w", rr.Status.TimeoutConfig.Executing.Duration, roaudit.ErrInvalidTimeoutConfig)
+		return fmt.Errorf("executing timeout cannot be negative (got: %v): %w", rr.Status.TimeoutConfig.Executing.Duration, roaudit.ErrInvalidTimeoutConfig)
 	}
 
 	return nil

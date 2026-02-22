@@ -212,13 +212,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	var windowState validity.WindowState
 	if ea.Status.ValidityDeadline != nil {
 		windowState = r.validityChecker.Check(
-			ea.CreationTimestamp.Time,
+			ea.CreationTimestamp,
 			ea.Spec.Config.StabilizationWindow.Duration,
-			ea.Status.ValidityDeadline.Time,
+			*ea.Status.ValidityDeadline,
 		)
 	} else {
 		// No deadline computed yet - check stabilization only
-		stabilizationEnd := ea.CreationTimestamp.Time.Add(ea.Spec.Config.StabilizationWindow.Duration)
+		stabilizationEnd := ea.CreationTimestamp.Add(ea.Spec.Config.StabilizationWindow.Duration)
 		if time.Now().Before(stabilizationEnd) {
 			windowState = validity.WindowStabilizing
 		} else {
@@ -240,7 +240,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	// Step 5: If stabilizing -> requeue
 	if windowState == validity.WindowStabilizing {
 		remaining := r.validityChecker.TimeUntilStabilized(
-			ea.CreationTimestamp.Time,
+			ea.CreationTimestamp,
 			ea.Spec.Config.StabilizationWindow.Duration,
 		)
 		logger.Info("Stabilization window active, requeueing", "remaining", remaining)
@@ -272,8 +272,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		//
 		// The invariant StabilizationWindow < ValidityDeadline is guaranteed because
 		// EM config validation enforces ValidityWindow > StabilizationWindow.
-		deadline := metav1.NewTime(ea.CreationTimestamp.Time.Add(r.Config.ValidityWindow))
-		checkAfter := metav1.NewTime(ea.CreationTimestamp.Time.Add(ea.Spec.Config.StabilizationWindow.Duration))
+		deadline := metav1.NewTime(ea.CreationTimestamp.Add(r.Config.ValidityWindow))
+		checkAfter := metav1.NewTime(ea.CreationTimestamp.Add(ea.Spec.Config.StabilizationWindow.Duration))
 
 		ea.Status.Phase = eav1.PhaseAssessing
 		ea.Status.ValidityDeadline = &deadline
@@ -281,12 +281,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		ea.Status.AlertManagerCheckAfter = &checkAfter
 
 		logger.Info("Computed derived timing (BR-EM-009)",
-			"creationTimestamp", ea.CreationTimestamp.Time,
+			"creationTimestamp", ea.CreationTimestamp,
 			"validityWindow", r.Config.ValidityWindow,
 			"stabilizationWindow", ea.Spec.Config.StabilizationWindow.Duration,
-			"validityDeadline", deadline.Time,
-			"prometheusCheckAfter", checkAfter.Time,
-			"alertManagerCheckAfter", checkAfter.Time,
+			"validityDeadline", deadline,
+			"prometheusCheckAfter", checkAfter,
+			"alertManagerCheckAfter", checkAfter,
 		)
 
 		pendingTransition = true
@@ -702,7 +702,7 @@ func (r *Reconciler) assessMetrics(ctx context.Context, ea *eav1.EffectivenessAs
 	ns := ea.Spec.TargetResource.Namespace
 
 	// Range: from before EA creation to now, capturing pre- and post-remediation samples.
-	start := ea.CreationTimestamp.Time.Add(-r.Config.PrometheusLookback)
+	start := ea.CreationTimestamp.Add(-r.Config.PrometheusLookback)
 	end := time.Now()
 	step := 1 * time.Second
 

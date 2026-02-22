@@ -277,14 +277,14 @@ func (r *NotificationRequestReconciler) Reconcile(ctx context.Context, req ctrl.
 			// Calculate expected next retry time
 			attemptCount := lastFailedAttempt.Attempt
 			nextBackoff := r.calculateBackoffWithPolicy(notification, attemptCount)
-			nextRetryTime := lastFailedAttempt.Timestamp.Time.Add(nextBackoff)
+			nextRetryTime := lastFailedAttempt.Timestamp.Add(nextBackoff)
 			now := time.Now()
 
 			if now.Before(nextRetryTime) {
 				remainingBackoff := nextRetryTime.Sub(now)
 				log.Info("⏸️ BACKOFF ENFORCEMENT: Too early to retry, requeueing",
 					"attemptNumber", attemptCount,
-					"lastAttemptTime", lastFailedAttempt.Timestamp.Time.Format(time.RFC3339),
+					"lastAttemptTime", lastFailedAttempt.Timestamp.Format(time.RFC3339),
 					"nextRetryTime", nextRetryTime.Format(time.RFC3339),
 					"remainingBackoff", remainingBackoff,
 					"channel", lastFailedAttempt.Channel)
@@ -293,7 +293,7 @@ func (r *NotificationRequestReconciler) Reconcile(ctx context.Context, req ctrl.
 
 			log.Info("✅ BACKOFF ELAPSED: Ready to retry",
 				"attemptNumber", attemptCount,
-				"lastAttemptTime", lastFailedAttempt.Timestamp.Time.Format(time.RFC3339),
+				"lastAttemptTime", lastFailedAttempt.Timestamp.Format(time.RFC3339),
 				"elapsedSinceLastAttempt", now.Sub(lastFailedAttempt.Timestamp.Time),
 				"expectedBackoff", nextBackoff)
 		}

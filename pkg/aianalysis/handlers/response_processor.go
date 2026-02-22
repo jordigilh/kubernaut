@@ -337,7 +337,7 @@ func (p *ResponseProcessor) populatePostRCAContext(analysis *aianalysisv1.AIAnal
 	}
 
 	dlMap := GetMapFromOptNil(detectedLabelsRaw)
-	if dlMap == nil || len(dlMap) == 0 {
+	if len(dlMap) == 0 {
 		return
 	}
 

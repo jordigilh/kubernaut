@@ -604,7 +604,7 @@ func (o *Orchestrator) RecordDeliveryAttempt(
 
 	// Only skip if it's a true duplicate (rapid reconciliation of the SAME attempt)
 	if mostRecentAttempt != nil && currentAttemptCount > 0 {
-		timeSinceAttempt := now.Time.Sub(mostRecentAttempt.Timestamp.Time)
+		timeSinceAttempt := now.Sub(mostRecentAttempt.Timestamp.Time)
 		if timeSinceAttempt < 500*time.Millisecond &&
 			mostRecentAttempt.Status == currentStatus &&
 			mostRecentAttempt.Error == currentError {

@@ -25,7 +25,6 @@ import (
 
 	"strconv"
 
-	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 	"github.com/jordigilh/kubernaut/pkg/pii"
@@ -426,7 +425,7 @@ func (s *Server) applyPIIRedaction(response *ogenclient.AuditExportResponse) err
 			redactedData := redactor.RedactMapByFieldNames(eventDataMap, pii.PIIFields)
 
 			// Convert back to map[string]jx.Raw
-			redactedOgen := make(api.AuditExportResponseEventsItemEventData)
+			redactedOgen := make(ogenclient.AuditExportResponseEventsItemEventData)
 			for k, v := range redactedData {
 				jsonBytes, _ := json.Marshal(v)
 				redactedOgen[k] = jsonBytes
