@@ -26,9 +26,9 @@ data:
       leaderElection: false
       leaderElectionId: "effectivenessmonitor.kubernaut.ai"
     external:
-      prometheusUrl: http://prometheus-svc:9090
+      prometheusUrl: http://kube-prometheus-stack-prometheus.monitoring.svc:9090
       prometheusEnabled: true
-      alertManagerUrl: http://alertmanager-svc:9093
+      alertManagerUrl: http://kube-prometheus-stack-alertmanager.monitoring.svc:9093
       alertManagerEnabled: true
       connectionTimeout: 10s
 ---
