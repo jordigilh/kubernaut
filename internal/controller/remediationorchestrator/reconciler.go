@@ -1320,17 +1320,6 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 			return r.transitionToFailed(ctx, rr, "approval", fmt.Errorf("approval request expired (timeout)"))
 		}
 
-		// Still waiting for approval - update TimeRemaining for operator visibility (Bug Fix 4)
-		if updateErr := k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
-			if err := r.client.Get(ctx, client.ObjectKeyFromObject(rar), rar); err != nil {
-				return err
-			}
-			rar.Status.TimeRemaining = remediationapprovalrequest.ComputeTimeRemaining(rar.Spec.RequiredBy.Time, time.Now())
-			return r.client.Status().Update(ctx, rar)
-		}); updateErr != nil {
-			logger.Error(updateErr, "Failed to update RAR TimeRemaining (non-fatal)")
-		}
-
 		logger.V(1).Info("Waiting for approval decision",
 			"rarName", rarName,
 			"requiredBy", rar.Spec.RequiredBy.Format(time.RFC3339),
