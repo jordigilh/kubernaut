@@ -223,36 +223,11 @@ async def analyze_incident(
     remediation_id = request_data.get("remediation_id", "")
 
     # Use HolmesGPT SDK for AI-powered analysis (calls standalone Mock LLM in E2E)
-    # ADR-055: Pre-computation of root_owner, spec hash, and owner-chain-based
-    # history removed. Context enrichment is now post-RCA via get_resource_context tool.
+    # ADR-055: Context enrichment is post-RCA via get_resource_context tool.
     try:
-        # BR-HAPI-016: Query remediation history from DataStorage for prompt enrichment
-        # Graceful degradation: if DS unavailable or module not yet deployed, context is None
-        # ADR-055: Uses signal target directly (no root_owner override). Will be fully
-        # replaced by get_resource_context tool in Phase 2.
-        remediation_history_context = None
-        try:
-            from src.clients.remediation_history_client import (
-                create_remediation_history_api,
-                fetch_remediation_history_for_request,
-            )
-
-            rh_api = create_remediation_history_api(app_config)
-
-            remediation_history_context = fetch_remediation_history_for_request(
-                api=rh_api,
-                request_data=request_data,
-                current_spec_hash="",
-            )
-        except (ImportError, Exception) as rh_err:
-            logger.warning({"event": "remediation_history_unavailable", "error": str(rh_err)})
-
-        # Create base investigation prompt
         # BR-HAPI-211: Sanitize prompt BEFORE sending to LLM to prevent credential leakage
         from src.sanitization import sanitize_for_llm
-        base_prompt = sanitize_for_llm(create_incident_investigation_prompt(
-            request_data, remediation_history_context=remediation_history_context
-        ))
+        base_prompt = sanitize_for_llm(create_incident_investigation_prompt(request_data))
 
         # Create minimal DAL
         dal = MinimalDAL(cluster_name=request_data.get("cluster_name"))
