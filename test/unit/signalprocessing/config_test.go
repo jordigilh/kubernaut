@@ -89,7 +89,7 @@ var _ = Describe("Config.Validate", func() {
 			}
 			err := cfg.Validate()
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("Rego ConfigMap name"))
+			Expect(err.Error()).To(ContainSubstring("rego ConfigMap name"))
 		})
 	})
 
@@ -175,11 +175,13 @@ var _ = Describe("DefaultControllerConfig", func() {
 	It("CFG-01: should return config with default values", func() {
 		cfg := config.DefaultControllerConfig()
 
-		Expect(cfg).ToNot(BeNil())
-		Expect(cfg.MetricsAddr).To(Equal(":9090"))
-		Expect(cfg.HealthProbeAddr).To(Equal(":8081"))
-		Expect(cfg.LeaderElection).To(BeFalse())
-		Expect(cfg.LeaderElectionID).To(Equal("signalprocessing.kubernaut.ai"))
+		Expect(cfg).To(And(
+			Not(BeNil()),
+			HaveField("MetricsAddr", Equal(":9090")),
+			HaveField("HealthProbeAddr", Equal(":8081")),
+			HaveField("LeaderElection", BeFalse()),
+			HaveField("LeaderElectionID", Equal("signalprocessing.kubernaut.ai")),
+		))
 	})
 })
 
@@ -194,7 +196,7 @@ var _ = Describe("LoadFromFile", func() {
 	})
 
 	AfterEach(func() {
-		_ = os.RemoveAll(tempDir)
+		Expect(os.RemoveAll(tempDir)).To(Succeed())
 	})
 
 	It("CFG-02: should load config from valid YAML file", func() {
@@ -221,9 +223,11 @@ datastorage:
 
 		cfg, err := config.LoadFromFile(configPath)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(cfg).ToNot(BeNil())
-		Expect(cfg.Classifier.RegoConfigMapName).To(Equal("signalprocessing-rego-policies"))
-		Expect(cfg.DataStorage.Buffer.BufferSize).To(Equal(1000))
+		Expect(cfg).To(And(
+			Not(BeNil()),
+			HaveField("Classifier.RegoConfigMapName", Equal("signalprocessing-rego-policies")),
+			HaveField("DataStorage.Buffer.BufferSize", Equal(1000)),
+		))
 	})
 
 	It("CFG-03: should return error for missing file", func() {
