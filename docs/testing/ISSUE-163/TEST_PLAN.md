@@ -378,7 +378,7 @@ Format: `E2E-{SERVICE}-163-{SEQUENCE}`
 | E2E-RO-163-004 | RR records skip reason (SkipReason, SkipMessage) when remediation is bypassed | Pending |
 | E2E-RO-163-005 | RR records failure details (FailurePhase, FailureReason, ConsecutiveFailureCount) for post-mortem | Pending |
 | E2E-RO-163-006 | RR populates Outcome == "Remediated" for completed pipeline (also covers NoActionRequired, ManualReviewRequired, Blocked variants) | Pending |
-| E2E-RO-163-007 | RR records exact conditions: SignalProcessingComplete=True, AIAnalysisComplete=True, WorkflowExecutionComplete=True, Ready=True | Pending |
+| E2E-RO-163-007 | RR records exact conditions: SignalProcessingComplete=True, AIAnalysisComplete=True, WorkflowExecutionComplete=True, NotificationDelivered=True, Ready=True | Pending |
 
 **Deferred fields** (not covered by new scenarios):
 - `PreRemediationSpecHash`: Populated during the Executing phase to snapshot the workload spec before remediation. Already validated indirectly by the EA spec-drift E2E tests which depend on this hash being present. Adding an explicit RO E2E assertion would duplicate EA coverage without new business insight.
@@ -624,7 +624,7 @@ Format: `E2E-{SERVICE}-163-{SEQUENCE}`
 
 **Given**: A RemediationApprovalRequest is created with a short expiry window (e.g., 5s TTL)
 **When**: The expiry deadline passes without a decision
-**Then**: `Expired` == true, `Decision` == "Expired" (or the exact expiry decision value from the controller), and the parent RR transitions to "Failed"
+**Then**: `Expired` == true, `Decision` == "Expired", and the parent RR transitions to "Failed"
 
 **Acceptance Criteria**:
 - Expired == true (exact)
