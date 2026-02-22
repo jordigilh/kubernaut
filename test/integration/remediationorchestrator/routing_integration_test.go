@@ -114,20 +114,21 @@ var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
 
 		// Verify RR transitions from Blocked → Failed after controller detects expired cooldown
 		// BR-ORCH-042: Controller checks BlockedUntil on each reconcile
-		Eventually(func() remediationv1.RemediationPhase {
-			_ = k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ns}, rr)
-			return rr.Status.OverallPhase
-		}, timeout, interval).Should(Equal(remediationv1.PhaseFailed),
+		Eventually(func(g Gomega) {
+			g.Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ns}, rr)).To(Succeed())
+			g.Expect(rr.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed))
+		}, timeout, interval).Should(Succeed(),
 			"RR should transition to Failed when BlockedUntil is in the past")
 
-			// Refresh RR to get latest status
-			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ns}, rr)).To(Succeed())
-
 			// Verify failure details indicate cooldown expiry
-			Expect(rr.Status.FailurePhase).ToNot(BeNil())
-			Expect(*rr.Status.FailurePhase).To(Equal("blocked"))
-			Expect(rr.Status.FailureReason).ToNot(BeNil())
-			Expect(*rr.Status.FailureReason).To(ContainSubstring("Cooldown expired"))
+			Expect(rr.Status.FailurePhase).To(And(
+				Not(BeNil()),
+				HaveValue(Equal("blocked")),
+			))
+			Expect(rr.Status.FailureReason).To(And(
+				Not(BeNil()),
+				HaveValue(ContainSubstring("cooldown expired")),
+			))
 
 			GinkgoWriter.Println("✅ TEST PASSED: Cooldown expiry correctly triggered transition to Failed")
 		})
