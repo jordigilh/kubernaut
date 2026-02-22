@@ -1006,7 +1006,7 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 		// BR-ORCH-044: Track child CRD creation
 		r.Metrics.ChildCRDCreationsTotal.WithLabelValues("WorkflowExecution", rr.Namespace).Inc()
 
-		// Set WorkflowExecutionRef in status for aggregator (BR-ORCH-029)
+		// Set WorkflowExecutionRef + SelectedWorkflowRef in status (BR-ORCH-029, Issue #118 Gap 5)
 		// REFACTOR-RO-001: Using retry helper
 		// DD-CRD-002-RR: Also persists WorkflowExecutionReady=True condition set by creator
 		err = helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
@@ -1016,7 +1016,14 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 				Name:       weName,
 				Namespace:  rr.Namespace,
 			}
-			// Preserve WorkflowExecutionReady condition from creator
+			if ai.Status.SelectedWorkflow != nil {
+				rr.Status.SelectedWorkflowRef = &remediationv1.WorkflowReference{
+					WorkflowID:            ai.Status.SelectedWorkflow.WorkflowID,
+					Version:               ai.Status.SelectedWorkflow.Version,
+					ExecutionBundle:        ai.Status.SelectedWorkflow.ExecutionBundle,
+					ExecutionBundleDigest:  ai.Status.SelectedWorkflow.ExecutionBundleDigest,
+				}
+			}
 			rrconditions.SetWorkflowExecutionReady(rr, true, fmt.Sprintf("WorkflowExecution CRD %s created successfully", weName), r.Metrics)
 			return nil
 		})
@@ -1172,7 +1179,7 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 		// BR-ORCH-044: Track child CRD creation
 		r.Metrics.ChildCRDCreationsTotal.WithLabelValues("WorkflowExecution", rr.Namespace).Inc()
 
-		// Set WorkflowExecutionRef in status for aggregator (BR-ORCH-029)
+		// Set WorkflowExecutionRef + SelectedWorkflowRef after approval (BR-ORCH-029, Issue #118 Gap 5)
 		// REFACTOR-RO-001: Using retry helper
 		err = helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
 			rr.Status.WorkflowExecutionRef = &corev1.ObjectReference{
@@ -1180,6 +1187,14 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 				Kind:       "WorkflowExecution",
 				Name:       weName,
 				Namespace:  rr.Namespace,
+			}
+			if ai.Status.SelectedWorkflow != nil {
+				rr.Status.SelectedWorkflowRef = &remediationv1.WorkflowReference{
+					WorkflowID:            ai.Status.SelectedWorkflow.WorkflowID,
+					Version:               ai.Status.SelectedWorkflow.Version,
+					ExecutionBundle:        ai.Status.SelectedWorkflow.ExecutionBundle,
+					ExecutionBundleDigest:  ai.Status.SelectedWorkflow.ExecutionBundleDigest,
+				}
 			}
 			return nil
 		})

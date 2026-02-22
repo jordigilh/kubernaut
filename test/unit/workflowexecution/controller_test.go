@@ -892,6 +892,25 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			Expect(updated.Status.Duration).To(ContainSubstring("m"))
 		})
 
+		It("UT-WE-ES-001: should persist ExecutionStatus when passed as summary", func() {
+			summary := &workflowexecutionv1alpha1.ExecutionStatusSummary{
+				Status:         "Succeeded",
+				Message:        "All tasks completed",
+				TotalTasks:     3,
+				CompletedTasks: 3,
+			}
+			_, err := reconciler.MarkCompleted(ctx, wfe, pr, summary)
+			Expect(err).ToNot(HaveOccurred())
+
+			var updated workflowexecutionv1alpha1.WorkflowExecution
+			err = reconciler.Get(ctx, client.ObjectKeyFromObject(wfe), &updated)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(updated.Status.ExecutionStatus).NotTo(BeNil(),
+				"ExecutionStatus must be persisted through AtomicStatusUpdate")
+			Expect(updated.Status.ExecutionStatus.Status).To(Equal("Succeeded"))
+			Expect(updated.Status.ExecutionStatus.TotalTasks).To(Equal(3))
+		})
+
 		It("should emit WorkflowCompleted event", func() {
 			_, err := reconciler.MarkCompleted(ctx, wfe, pr)
 			Expect(err).ToNot(HaveOccurred())
