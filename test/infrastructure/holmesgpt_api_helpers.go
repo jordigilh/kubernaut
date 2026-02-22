@@ -70,14 +70,14 @@ func waitForDataStorageReady(ctx context.Context, namespace, kubeconfigPath stri
 					httpDeadline := time.Now().Add(2 * time.Minute)
 					for time.Now().Before(httpDeadline) {
 						resp, err := http.Get("http://localhost:8089/health/ready")
-						if err == nil && resp.StatusCode == http.StatusOK {
-							resp.Body.Close()
-							_, _ = fmt.Fprintf(writer, "  ✅ DataStorage HTTP endpoint ready\n")
-							return nil
-						}
-						if resp != nil {
-							resp.Body.Close()
-						}
+					if err == nil && resp.StatusCode == http.StatusOK {
+						_ = resp.Body.Close()
+						_, _ = fmt.Fprintf(writer, "  ✅ DataStorage HTTP endpoint ready\n")
+						return nil
+					}
+					if resp != nil {
+						_ = resp.Body.Close()
+					}
 						time.Sleep(2 * time.Second)
 					}
 					return fmt.Errorf("DataStorage pod ready but HTTP endpoint not responding after 2 minutes")

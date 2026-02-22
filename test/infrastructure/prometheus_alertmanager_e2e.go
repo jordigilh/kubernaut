@@ -545,7 +545,7 @@ func InjectAlerts(amURL string, alerts []TestAlert) error {
 	if err != nil {
 		return fmt.Errorf("failed to POST alerts to AlertManager: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("AlertManager returned status %d for POST /api/v2/alerts", resp.StatusCode)
@@ -627,7 +627,7 @@ func InjectMetrics(promURL string, metrics []TestMetric) error {
 	if err != nil {
 		return fmt.Errorf("failed to POST OTLP metrics to Prometheus: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
