@@ -151,6 +151,12 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 				"OwnerReference required for Owns() watch to trigger RR reconcile on RAR status change")
 			Expect(k8sClient.Create(ctx, testRAR)).To(Succeed())
 			GinkgoWriter.Printf("🚀 E2E: Created RAR %s/%s\n", testNamespace, testRAR.Name)
+
+			// Set RR to AwaitingApproval so RO enters handleAwaitingApprovalPhase
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(testRR), testRR)).To(Succeed())
+			testRR.Status.OverallPhase = remediationv1.PhaseAwaitingApproval
+			testRR.Status.StartTime = &now
+			Expect(k8sClient.Status().Update(ctx, testRR)).To(Succeed())
 		})
 
 		AfterEach(func() {
