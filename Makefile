@@ -1009,3 +1009,32 @@ image-manifest: ## Create and push multi-arch manifests (run after both arches a
 	done
 	@echo ""
 	@echo "✅ All manifests pushed as $(IMAGE_REGISTRY):$(IMAGE_TAG)."
+
+# Per-service image targets (e.g., make image-build-aianalysis IMAGE_TAG=demo-v1.0)
+.PHONY: image-build-%
+image-build-%: ## Build a single service image (native arch)
+	@if [ "$*" = "holmesgpt-api" ]; then \
+	    echo "  Building holmesgpt-api [$(IMAGE_ARCH)]..."; \
+	    $(CONTAINER_TOOL) build -t $(IMAGE_REGISTRY)/holmesgpt-api:$(IMAGE_TAG)-$(IMAGE_ARCH) -f holmesgpt-api/Dockerfile .; \
+	elif [ -n "$(IMAGE_DOCKERFILES_$*)" ]; then \
+	    echo "  Building $* [$(IMAGE_ARCH)]..."; \
+	    $(CONTAINER_TOOL) build -t $(IMAGE_REGISTRY)/$*:$(IMAGE_TAG)-$(IMAGE_ARCH) -f $(IMAGE_DOCKERFILES_$*) .; \
+	else \
+	    echo "ERROR: Unknown service '$*'. Available: $(IMAGE_SERVICES) holmesgpt-api"; exit 1; \
+	fi
+
+.PHONY: image-push-%
+image-push-%: ## Push a single service image (arch-suffixed)
+	@echo "  Pushing $(IMAGE_REGISTRY)/$*:$(IMAGE_TAG)-$(IMAGE_ARCH)..."
+	@$(CONTAINER_TOOL) push $(IMAGE_REGISTRY)/$*:$(IMAGE_TAG)-$(IMAGE_ARCH)
+
+.PHONY: image-manifest-%
+image-manifest-%: ## Create and push multi-arch manifest for a single service
+	@echo "  Manifest: $*"
+	@$(CONTAINER_TOOL) manifest rm $(IMAGE_REGISTRY)/$*:$(IMAGE_TAG) 2>/dev/null || true
+	@$(CONTAINER_TOOL) manifest create $(IMAGE_REGISTRY)/$*:$(IMAGE_TAG) \
+	    $(IMAGE_REGISTRY)/$*:$(IMAGE_TAG)-amd64 \
+	    $(IMAGE_REGISTRY)/$*:$(IMAGE_TAG)-arm64
+	@$(CONTAINER_TOOL) manifest push $(IMAGE_REGISTRY)/$*:$(IMAGE_TAG) \
+	    docker://$(IMAGE_REGISTRY)/$*:$(IMAGE_TAG)
+	@echo "  ✅ Manifest pushed: $(IMAGE_REGISTRY)/$*:$(IMAGE_TAG)"
