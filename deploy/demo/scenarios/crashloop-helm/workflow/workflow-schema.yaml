@@ -12,7 +12,7 @@ metadata:
 actionType: HelmRollback
 
 labels:
-  signalName: CrashLoopBackOff
+  signalType: CrashLoopBackOff
   severity: [critical, low]
   environment: [production, staging]
   component: "*"

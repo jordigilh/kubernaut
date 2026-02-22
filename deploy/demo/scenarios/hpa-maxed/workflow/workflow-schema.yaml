@@ -12,8 +12,8 @@ metadata:
 actionType: PatchHPA
 
 labels:
-  signalName: HPAMaxedOut
-  severity: [low, medium, high, critical]
+  signalType: HPAMaxedOut
+  severity: [low, critical]
   environment: [production, staging]
   component: "*"
   priority: "*"

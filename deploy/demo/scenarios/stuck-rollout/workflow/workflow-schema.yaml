@@ -12,7 +12,7 @@ metadata:
 actionType: GracefulRestart
 
 labels:
-  signalName: StuckRollout
+  signalType: StuckRollout
   severity: [critical, low]
   environment: [production, staging]
   component: "*"
