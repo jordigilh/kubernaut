@@ -789,10 +789,9 @@ spec:
 }
 
 // deployMockSlack deploys a minimal HTTP service that accepts POST requests and
-// returns 200 OK. The notification controller's Slack delivery channel falls back
-// to http://mock-slack:8080/webhook when SLACK_WEBHOOK_URL is not set. Without
-// this service, Slack delivery fails with DNS errors, leaving notifications stuck
-// in the Retrying phase (non-terminal).
+// returns 200 OK. The notification controller registers the plain "slack" channel
+// at startup when SLACK_WEBHOOK_URL is set (Issue #118 Gap 11), pointing it at
+// this mock service. Without it, Slack delivery fails with connection errors.
 func deployMockSlack(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "  📨 Deploying mock-slack (webhook sink)...")
 

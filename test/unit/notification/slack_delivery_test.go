@@ -38,6 +38,7 @@ import (
 	"net/http/httptest"
 	"time"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -549,5 +550,25 @@ var _ = Describe("BR-NOT-053: Slack Delivery Service", func() {
 		// 🆕 OPTION A - PHASE 5: TLS Certificate Validation (BR-NOT-058: Error Handling)
 		// MOVED TO: test/integration/notification/slack_tls_integration_test.go
 		// See also: docs/services/crd-controllers/06-notification/security-tls-policy.md
+	})
+
+	Context("Issue #118 Gap 11: Slack channel registration from env var", func() {
+		It("UT-NT-SR-001: should register plain 'slack' channel via RegisterChannel with SlackDeliveryService", func() {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			}))
+			defer server.Close()
+
+			orch := delivery.NewOrchestrator(nil, nil, nil, logr.Discard())
+
+			Expect(orch.HasChannel("slack")).To(BeFalse(),
+				"'slack' channel should not be registered before explicit registration")
+
+			slackService := delivery.NewSlackDeliveryService(server.URL)
+			orch.RegisterChannel("slack", slackService)
+
+			Expect(orch.HasChannel("slack")).To(BeTrue(),
+				"'slack' channel must be registered after RegisterChannel call (env var fallback path)")
+		})
 	})
 })

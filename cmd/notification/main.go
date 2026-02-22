@@ -365,9 +365,21 @@ func main() {
 	deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelFile), fileService)
 	deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelLog), logService)
 
+	// Issue #118 Gap 11: Legacy env-var fallback for plain "slack" channel registration.
+	// When SLACK_WEBHOOK_URL is set (e.g. in E2E with mock-slack), register a basic
+	// SlackDeliveryService so NotificationRequests with channel "slack" can be delivered.
+	// Per-receiver Slack (BR-NOT-104) still takes precedence when routing config is loaded.
+	startupChannels := []string{"console", "file", "log"}
+	if slackURL := os.Getenv("SLACK_WEBHOOK_URL"); slackURL != "" {
+		slackService := delivery.NewSlackDeliveryService(slackURL)
+		deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelSlack), slackService)
+		startupChannels = append(startupChannels, "slack")
+		logger.Info("Registered legacy Slack channel from SLACK_WEBHOOK_URL env var")
+	}
+
 	logger.Info("Delivery Orchestrator initialized with registration pattern (DD-NOT-007)")
 	logger.Info("Registered startup channels (per-receiver Slack registered on routing config load)",
-		"channels", []string{"console", "file", "log"})
+		"channels", startupChannels)
 
 	// Setup controller with delivery services + sanitization + audit + metrics + EventRecorder + statusManager + deliveryOrchestrator + circuitBreaker
 	if err = (&notification.NotificationRequestReconciler{
