@@ -758,8 +758,14 @@ jobs:
           # Authority: test/infrastructure/tekton_bundles.go
           # v0.40.0+ required for --override flag support
           TKN_VERSION="0.40.0"
-          curl -LO "https://github.com/tektoncd/cli/releases/download/v${TKN_VERSION}/tkn_${TKN_VERSION}_Linux_x86_64.tar.gz"
-          tar xzf "tkn_${TKN_VERSION}_Linux_x86_64.tar.gz" tkn
+          TKN_TARBALL="tkn_${TKN_VERSION}_Linux_x86_64.tar.gz"
+          TKN_URL="https://github.com/tektoncd/cli/releases/download/v${TKN_VERSION}/${TKN_TARBALL}"
+          curl -L --retry 3 --retry-delay 5 -o "${TKN_TARBALL}" "${TKN_URL}"
+          file "${TKN_TARBALL}" | grep -q "gzip" || {
+            echo "::error::Downloaded ${TKN_TARBALL} is not a valid gzip archive (possible CDN issue). Actual type: $(file ${TKN_TARBALL})"
+            exit 1
+          }
+          tar xzf "${TKN_TARBALL}" tkn
           chmod +x tkn
           sudo mv tkn /usr/local/bin/tkn
           tkn version
