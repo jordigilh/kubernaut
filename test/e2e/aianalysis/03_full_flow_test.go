@@ -378,14 +378,20 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 			By("Creating AIAnalysis with MOCK_LOW_CONFIDENCE signal type")
 			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 
-			By("Waiting for completion")
+			By("Waiting for Failed phase (BR-HAPI-197 AC-4: confidence 0.35 < 0.7 threshold -> Failed/LowConfidence)")
 			Eventually(func() string {
 				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
 				return string(analysis.Status.Phase)
-			}, timeout, interval).Should(Equal("Completed"))
+			}, timeout, interval).Should(Equal("Failed"))
+
+			By("Verifying failure reason per BR-HAPI-197 AC-4")
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
+			Expect(analysis.Status.Reason).To(Equal("WorkflowResolutionFailed"))
+			Expect(analysis.Status.SubReason).To(Equal("LowConfidence"))
+			Expect(analysis.Status.NeedsHumanReview).To(BeTrue(),
+				"NeedsHumanReview must be true when confidence < threshold (BR-HAPI-197)")
 
 			By("Verifying AlternativeWorkflows populated (mock low_confidence scenario returns exactly 2 alternatives)")
-			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
 			Expect(analysis.Status.AlternativeWorkflows).To(HaveLen(2))
 			Expect(analysis.Status.AlternativeWorkflows[0].WorkflowID).To(Equal("d3c95ea1-66cb-6bf2-c59e-7dd27f1fec6d"))
 			Expect(analysis.Status.AlternativeWorkflows[0].Rationale).To(Equal("Alternative approach for ambiguous root cause"))
