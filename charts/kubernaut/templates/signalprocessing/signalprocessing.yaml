@@ -98,6 +98,8 @@ data:
     package signalprocessing.severity
     import rego.v1
     determine_severity := "critical" if {
+      lower(input.signal.severity) == "critical"
+    } else := "critical" if {
       lower(input.signal.severity) == "sev1"
     } else := "critical" if {
       lower(input.signal.severity) == "p0"
@@ -106,13 +108,19 @@ data:
     } else := "critical" if {
       lower(input.signal.severity) == "error"
     } else := "high" if {
+      lower(input.signal.severity) == "high"
+    } else := "high" if {
       lower(input.signal.severity) == "sev2"
     } else := "high" if {
       lower(input.signal.severity) == "p2"
     } else := "high" if {
       lower(input.signal.severity) == "warning"
     } else := "medium" if {
+      lower(input.signal.severity) == "medium"
+    } else := "medium" if {
       lower(input.signal.severity) == "sev3"
+    } else := "low" if {
+      lower(input.signal.severity) == "low"
     } else := "low" if {
       lower(input.signal.severity) == "p3"
     } else := "unknown" if {
