@@ -2226,6 +2226,16 @@ var _ = Describe("E2E-SP-163-004: Recovery Context Validation", func() {
 		rr.Status.FailureReason = &failureReason
 		Expect(k8sClient.Status().Update(ctx, rr)).To(Succeed())
 
+		By("Waiting for RR status patch to be visible (informer cache propagation)")
+		Eventually(func() int {
+			var fresh remediationv1alpha1.RemediationRequest
+			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), &fresh); err != nil {
+				return 0
+			}
+			return fresh.Status.RecoveryAttempts
+		}, 10*time.Second, 1*time.Second).Should(Equal(1),
+			"RR status patch must be visible before SP creation")
+
 		By("Creating SignalProcessing CR referencing the RemediationRequest")
 		sp := &signalprocessingv1alpha1.SignalProcessing{
 			ObjectMeta: metav1.ObjectMeta{
