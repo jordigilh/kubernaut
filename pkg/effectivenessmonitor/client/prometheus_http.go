@@ -65,7 +65,7 @@ func (c *prometheusHTTPClient) Query(ctx context.Context, query string, ts time.
 	if err != nil {
 		return nil, fmt.Errorf("executing Prometheus query: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -93,7 +93,7 @@ func (c *prometheusHTTPClient) QueryRange(ctx context.Context, query string, sta
 	if err != nil {
 		return nil, fmt.Errorf("executing Prometheus query_range: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -115,7 +115,7 @@ func (c *prometheusHTTPClient) Ready(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("Prometheus ready check failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("Prometheus not ready: status %d", resp.StatusCode)

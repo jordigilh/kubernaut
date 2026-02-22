@@ -106,7 +106,11 @@ func (r *RemediationHistoryRepository) QueryROEventsByTarget(
 			"target_resource", targetResource, "since", since)
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() {
+		if cerr := rows.Close(); cerr != nil {
+			r.logger.Error(cerr, "Failed to close RO events query rows")
+		}
+	}()
 
 	return scanRawRows(rows)
 }
@@ -136,7 +140,11 @@ func (r *RemediationHistoryRepository) QueryEffectivenessEventsBatch(
 			"correlation_id_count", len(correlationIDs))
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() {
+		if cerr := rows.Close(); cerr != nil {
+			r.logger.Error(cerr, "Failed to close EM events batch query rows")
+		}
+	}()
 
 	results := make(map[string][]*EffectivenessEventRow)
 	for rows.Next() {
@@ -188,7 +196,11 @@ func (r *RemediationHistoryRepository) QueryROEventsBySpecHash(
 			"spec_hash", specHash, "since", since, "until", until)
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() {
+		if cerr := rows.Close(); cerr != nil {
+			r.logger.Error(cerr, "Failed to close RO events by spec hash query rows")
+		}
+	}()
 
 	return scanRawRows(rows)
 }

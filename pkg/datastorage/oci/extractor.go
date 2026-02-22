@@ -143,7 +143,7 @@ func findFileInLayer(layer v1.Layer, searchPath string) (string, bool, error) {
 	if err != nil {
 		return "", false, fmt.Errorf("uncompress layer: %w", err)
 	}
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 
 	tr := tar.NewReader(rc)
 	for {
