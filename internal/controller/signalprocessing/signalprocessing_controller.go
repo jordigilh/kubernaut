@@ -849,9 +849,11 @@ func (r *SignalProcessingReconciler) buildRecoveryContext(ctx context.Context, s
 		rrNamespace = sp.Namespace
 	}
 
-	// Fetch RemediationRequest
+	// Fetch RemediationRequest via APIReader (not cached client) to avoid stale reads.
+	// The RR status (RecoveryAttempts) may have been updated just before SP creation,
+	// and the informer cache may not have caught up yet.
 	rr := &remediationv1alpha1.RemediationRequest{}
-	if err := r.Get(ctx, types.NamespacedName{
+	if err := r.StatusManager.FreshGet(ctx, types.NamespacedName{
 		Name:      rrRef.Name,
 		Namespace: rrNamespace,
 	}, rr); err != nil {

@@ -32,6 +32,13 @@ func NewManager(client client.Client, apiReader client.Reader) *Manager {
 	}
 }
 
+// FreshGet fetches an object directly from the API server, bypassing the informer cache.
+// Use when reading cross-resource status that may have been recently updated by another actor.
+// SP-CACHE-001: Prevents stale reads from informer cache lag.
+func (m *Manager) FreshGet(ctx context.Context, key client.ObjectKey, obj client.Object) error {
+	return m.apiReader.Get(ctx, key, obj)
+}
+
 // GetCurrentPhase fetches the current phase using the non-cached APIReader
 // This is used for idempotency checks to prevent duplicate phase processing
 // SP-BUG-PHASE-TRANSITION-001: Bypass cache to get FRESH phase data
