@@ -23,7 +23,7 @@ detectedLabels:
 
 execution:
   engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/patch-hpa-job@sha256:eaafeedfc7d745f6cd8333755a0c55b9ee7a6a8bf99281e291c9ae01d3f13607
+  bundle: quay.io/kubernaut-cicd/test-workflows/patch-hpa-job@sha256:9bb21b0adaa7a97eb35b88ce8d5be72528172dd3faf4f62e6127bf2a37018d16
 
 parameters:
   - name: TARGET_NAMESPACE

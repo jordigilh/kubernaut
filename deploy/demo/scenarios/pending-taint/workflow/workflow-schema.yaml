@@ -20,7 +20,7 @@ labels:
 
 execution:
   engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/remove-taint-job@sha256:ec6370bdb4e57fdb684d1c385c6bb1f7081c9f4be8061dd31a2d50199bf89a98
+  bundle: quay.io/kubernaut-cicd/test-workflows/remove-taint-job@sha256:026bd256e59aad0716f46cb796745989a28a0b7165f031637b1d6fbc105868fe
 
 parameters:
   - name: TARGET_NODE

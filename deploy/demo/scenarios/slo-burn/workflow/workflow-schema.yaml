@@ -20,7 +20,7 @@ labels:
 
 execution:
   engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/proactive-rollback-job@sha256:c6b96d856249e98ae9585a075f0649ea592e7de7ff4e56e2ae80395b7df4126c
+  bundle: quay.io/kubernaut-cicd/test-workflows/proactive-rollback-job@sha256:28bfd3542db6f2ad89a85ef995836cb482d0a0c01e65d5ece170028096d1937c
 
 parameters:
   - name: TARGET_NAMESPACE
