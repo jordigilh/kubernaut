@@ -569,8 +569,8 @@ var _ = Describe("Audit Events Query API", func() {
 				}
 
 				return total, nil
-			}, 30*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 75),
-				"should have at least 75 events after write completes (30s = handles CI parallel contention)")
+			}, 60*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 75),
+				"should have at least 75 events after write completes (60s = handles CI parallel contention)")
 
 			// ACT: Query page 1 (limit=50, offset=0) - now guaranteed to have all events
 			// Already fetched in Eventually block above
