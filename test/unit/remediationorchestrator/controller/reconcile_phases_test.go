@@ -82,13 +82,14 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).
 				WithObjects(scenario.initialObjects...).
-				WithStatusSubresource(
-					&remediationv1.RemediationRequest{},
-					&signalprocessingv1.SignalProcessing{},
-					&aianalysisv1.AIAnalysis{},
-					&workflowexecutionv1.WorkflowExecution{},
-				).
-				Build()
+			WithStatusSubresource(
+				&remediationv1.RemediationRequest{},
+				&remediationv1.RemediationApprovalRequest{},
+				&signalprocessingv1.SignalProcessing{},
+				&aianalysisv1.AIAnalysis{},
+				&workflowexecutionv1.WorkflowExecution{},
+			).
+			Build()
 
 			// Create reconciler with test dependencies
 			// Use MockRoutingEngine to isolate orchestration logic testing from routing business logic

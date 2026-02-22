@@ -107,13 +107,14 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 		// Create fake client with status subresource
 		fakeClient = fake.NewClientBuilder().
 			WithScheme(scheme).
-			WithStatusSubresource(
-				&remediationv1.RemediationRequest{},
-				&signalprocessingv1.SignalProcessing{},
-				&aianalysisv1.AIAnalysis{},
-				&workflowexecutionv1.WorkflowExecution{},
-			).
-			Build()
+		WithStatusSubresource(
+			&remediationv1.RemediationRequest{},
+			&remediationv1.RemediationApprovalRequest{},
+			&signalprocessingv1.SignalProcessing{},
+			&aianalysisv1.AIAnalysis{},
+			&workflowexecutionv1.WorkflowExecution{},
+		).
+		Build()
 
 		// Create reconciler with mock audit store
 		recorder := record.NewFakeRecorder(20) // DD-EVENT-001: FakeRecorder for K8s event assertions

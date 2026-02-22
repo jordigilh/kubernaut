@@ -66,13 +66,14 @@ var _ = Describe("BR-ORCH-HELPERS: Helper Function Tests", func() {
 		// Create fake client with status subresource
 		fakeClient = fake.NewClientBuilder().
 			WithScheme(scheme).
-			WithStatusSubresource(
-				&remediationv1.RemediationRequest{},
-				&signalprocessingv1.SignalProcessing{},
-				&aianalysisv1.AIAnalysis{},
-				&workflowexecutionv1.WorkflowExecution{},
-			).
-			Build()
+		WithStatusSubresource(
+			&remediationv1.RemediationRequest{},
+			&remediationv1.RemediationApprovalRequest{},
+			&signalprocessingv1.SignalProcessing{},
+			&aianalysisv1.AIAnalysis{},
+			&workflowexecutionv1.WorkflowExecution{},
+		).
+		Build()
 
 		// Create mock audit store
 		mockAuditStore := &MockAuditStore{}
