@@ -129,7 +129,7 @@ Per [TESTING_GUIDELINES.md](../../development/business-requirements/TESTING_GUID
 | BR-ORCH-025 | Phase timestamp tracking | RR | E2E-RO-163-001 | Pending |
 | BR-GATEWAY-185 | Deduplication transparency | RR | E2E-RO-163-002 | Pending |
 | BR-ORCH-042 | Blocking reason visibility | RR | E2E-RO-163-003 | Pending |
-| BR-ORCH-025 | Skip reason visibility | RR | E2E-RO-163-004 | Pending |
+| ~~BR-ORCH-025~~ | ~~Skip reason visibility~~ | ~~RR~~ | ~~E2E-RO-163-004~~ | N/A -- Skip handlers deprecated in V1.0; replaced by blocking (E2E-RO-163-003) |
 | BR-ORCH-025 | Failure post-mortem | RR | E2E-RO-163-005 | Pending |
 | BR-ORCH-025 | Outcome reporting | RR | E2E-RO-163-006 | Pending |
 | ADR-032 | RR conditions | RR | E2E-RO-163-007 | Pending |
@@ -375,7 +375,7 @@ Format: `E2E-{SERVICE}-163-{SEQUENCE}`
 | E2E-RO-163-001 | RR tracks per-phase timestamps (ProcessingStartTime, AnalyzingStartTime, ExecutingStartTime) for latency monitoring | Pending |
 | E2E-RO-163-002 | RR records exact deduplication data (Deduplication.OccurrenceCount == 2, Deduplication.FirstSeenAt, DuplicateOf == original RR name) for transparency | Pending |
 | E2E-RO-163-003 | RR captures blocking reason (BlockReason, BlockMessage, NextAllowedExecution) for operator investigation | Pending |
-| E2E-RO-163-004 | RR records skip reason (SkipReason, SkipMessage) when remediation is bypassed | Pending |
+| ~~E2E-RO-163-004~~ | ~~RR records skip reason (SkipReason, SkipMessage) when remediation is bypassed~~ | N/A -- Skip handlers deprecated in V1.0 |
 | E2E-RO-163-005 | RR records failure details (FailurePhase, FailureReason, ConsecutiveFailureCount) for post-mortem | Pending |
 | E2E-RO-163-006 | RR populates Outcome == "Remediated" for completed pipeline (also covers NoActionRequired, ManualReviewRequired, Blocked variants) | Pending |
 | E2E-RO-163-007 | RR records exact conditions: SignalProcessingComplete=True, AIAnalysisComplete=True, WorkflowExecutionComplete=True, NotificationDelivered=True, Ready=True | Pending |
@@ -870,19 +870,9 @@ Format: `E2E-{SERVICE}-163-{SEQUENCE}`
 
 ---
 
-### E2E-RO-163-004: Skip Reason
+### ~~E2E-RO-163-004: Skip Reason~~ (REMOVED -- Not Applicable in V1.0)
 
-**BR**: BR-ORCH-025
-**Type**: E2E
-**File**: `test/e2e/remediationorchestrator/` (new context or extend needs_human_review_e2e)
-
-**Given**: An RR where the AA phase concludes with NeedsHumanReview (no automated workflow available)
-**When**: RO transitions to a terminal state without executing a workflow
-**Then**: SkipReason and SkipMessage explain why execution was bypassed
-
-**Acceptance Criteria**:
-- SkipReason is populated with the exact skip reason (e.g., from WE SkipDetails or RO logic)
-- SkipMessage describes why remediation was skipped (non-empty, deterministic from AA outcome)
+Skip handlers (`pkg/remediationorchestrator/handler/skip/`) are deprecated in V1.0. The V1.0 flow uses blocking (BlockReason/BlockMessage via E2E-RO-163-003 / BR-ORCH-042) instead of skip. The `SkipReason`/`SkipMessage` CRD fields are not populated by any V1.0 code path. The BR mapping (BR-ORCH-025) was incorrect -- BR-ORCH-025 covers workflow data pass-through, not skip reasons.
 
 ---
 
