@@ -112,6 +112,10 @@ func (c *ApprovalCreator) Create(
 		return "", fmt.Errorf("failed to set owner reference: %w", err)
 	}
 
+	// Issue #118 Gap 10: Set creation timestamp for audit trail
+	now := metav1.Now()
+	rar.Status.CreatedAt = &now
+
 	// DD-CRD-002-RAR: Set initial conditions before creation
 	// Conditions are set in-memory and persisted with the Create() call
 	remediationapprovalrequest.SetApprovalPending(rar, true,

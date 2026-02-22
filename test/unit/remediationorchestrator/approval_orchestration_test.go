@@ -152,6 +152,19 @@ var _ = Describe("ApprovalOrchestration", func() {
 				Expect(rar.Spec.RequiredBy.Time).To(BeTemporally(">", time.Now()))
 				Expect(rar.Spec.RequiredBy.Time).To(BeTemporally("<", time.Now().Add(2*time.Hour)))
 			})
+
+			It("UT-RAR-CA-001: should populate Status.CreatedAt on creation (Issue #118 Gap 10)", func() {
+				beforeCreate := time.Now().Add(-1 * time.Second)
+				name, err := ac.Create(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+
+				rar := &remediationv1.RemediationApprovalRequest{}
+				Expect(fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: "default"}, rar)).To(Succeed())
+
+				Expect(rar.Status.CreatedAt).ToNot(BeNil(), "Status.CreatedAt must be populated for audit trail")
+				Expect(rar.Status.CreatedAt.Time).To(BeTemporally(">=", beforeCreate))
+				Expect(rar.Status.CreatedAt.Time).To(BeTemporally("<=", time.Now()))
+			})
 		})
 
 		Context("Precondition Validation", func() {
