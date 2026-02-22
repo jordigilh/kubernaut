@@ -153,7 +153,6 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 		lifecycleStartedEvents := mockAuditStore.GetEventsByType(roaudit.EventTypeLifecycleStarted)
 		Expect(lifecycleStartedEvents).To(HaveLen(1), "Expected exactly one lifecycle.started event")
 		event := lifecycleStartedEvents[0]
-		Expect(event).ToNot(BeNil())
 		Expect(event.EventType).To(Equal(roaudit.EventTypeLifecycleStarted))
 		Expect(event.EventAction).To(Equal("started"))
 		// Use enum type comparison, not string

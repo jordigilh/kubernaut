@@ -279,11 +279,7 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			expectedPhase:  remediationv1.PhaseFailed,
 			expectedResult: ctrl.Result{}, // Terminal phase, no requeue
 			additionalAsserts: func(rr *remediationv1.RemediationRequest) {
-				// Check FailureReason instead of Message (fake client issue with Message field)
-				Expect(rr.Status.FailureReason).ToNot(BeNil())
-				Expect(*rr.Status.FailureReason).To(ContainSubstring("SignalProcessing failed"))
-				// TODO: Investigate why Message field is not persisted by fake client
-				// Expect(rr.Status.Message).To(ContainSubstring("SignalProcessing failed"))
+				Expect(rr.Status.FailureReason).To(HaveValue(ContainSubstring("SignalProcessing failed")))
 			},
 		}),
 
@@ -316,10 +312,8 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 				RequeueAfter: 5 * time.Second, // Requeue to check AI progress
 			},
 			additionalAsserts: func(rr *remediationv1.RemediationRequest) {
-				// Verify SignalProcessing reference is populated
-				Expect(rr.Status.SignalProcessingRef).ToNot(BeNil())
-				Expect(rr.Status.SignalProcessingRef.Name).To(Equal("test-rr-sp"))
-				Expect(rr.Status.SignalProcessingRef.Namespace).To(Equal("default"))
+				Expect(rr.Status.SignalProcessingRef).To(HaveField("Name", Equal("test-rr-sp")))
+				Expect(rr.Status.SignalProcessingRef).To(HaveField("Namespace", Equal("default")))
 			},
 		}),
 
@@ -334,9 +328,7 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			rrName:        types.NamespacedName{Name: "test-rr", Namespace: "default"},
 			expectedPhase: remediationv1.PhaseFailed,
 			additionalAsserts: func(rr *remediationv1.RemediationRequest) {
-				// fake client doesn't persist Message field reliably - check FailureReason instead
-				Expect(rr.Status.FailureReason).ToNot(BeNil())
-				Expect(*rr.Status.FailureReason).To(ContainSubstring("SignalProcessing not found"))
+				Expect(rr.Status.FailureReason).To(HaveValue(ContainSubstring("SignalProcessing not found")))
 			},
 		}),
 
@@ -433,9 +425,7 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			expectedPhase:  remediationv1.PhaseFailed,
 			expectedResult: ctrl.Result{}, // Terminal phase
 			additionalAsserts: func(rr *remediationv1.RemediationRequest) {
-				// Check FailureReason instead of Message (fake client issue with Message field)
-				Expect(rr.Status.FailureReason).ToNot(BeNil())
-				Expect(*rr.Status.FailureReason).To(ContainSubstring("AIAnalysis failed"))
+				Expect(rr.Status.FailureReason).To(HaveValue(ContainSubstring("AIAnalysis failed")))
 			},
 		}),
 
@@ -472,9 +462,7 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			expectedPhase:  remediationv1.PhaseFailed,
 			expectedResult: ctrl.Result{}, // Terminal phase
 			additionalAsserts: func(rr *remediationv1.RemediationRequest) {
-				// Check FailureReason instead of Message (fake client issue with Message field)
-				Expect(rr.Status.FailureReason).ToNot(BeNil())
-				Expect(*rr.Status.FailureReason).To(ContainSubstring("WorkflowExecution failed"))
+				Expect(rr.Status.FailureReason).To(HaveValue(ContainSubstring("WorkflowExecution failed")))
 			},
 		}),
 
@@ -508,15 +496,9 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			rrName:        types.NamespacedName{Name: "test-rr", Namespace: "default"},
 			expectedPhase: remediationv1.PhaseCompleted,
 			additionalAsserts: func(rr *remediationv1.RemediationRequest) {
-				// Verify all child references are populated with correct names
-				Expect(rr.Status.SignalProcessingRef).ToNot(BeNil())
-				Expect(rr.Status.SignalProcessingRef.Name).To(Equal("test-rr-sp"))
-
-				Expect(rr.Status.AIAnalysisRef).ToNot(BeNil())
-				Expect(rr.Status.AIAnalysisRef.Name).To(Equal("test-rr-ai"))
-
-				Expect(rr.Status.WorkflowExecutionRef).ToNot(BeNil())
-				Expect(rr.Status.WorkflowExecutionRef.Name).To(Equal("test-rr-we"))
+				Expect(rr.Status.SignalProcessingRef).To(HaveField("Name", Equal("test-rr-sp")))
+				Expect(rr.Status.AIAnalysisRef).To(HaveField("Name", Equal("test-rr-ai")))
+				Expect(rr.Status.WorkflowExecutionRef).To(HaveField("Name", Equal("test-rr-we")))
 			},
 		}),
 
@@ -533,9 +515,7 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			rrName:        types.NamespacedName{Name: "test-rr", Namespace: "default"},
 			expectedPhase: remediationv1.PhaseFailed,
 			additionalAsserts: func(rr *remediationv1.RemediationRequest) {
-				// fake client doesn't persist Message field reliably - check FailureReason instead
-				Expect(rr.Status.FailureReason).ToNot(BeNil())
-				Expect(*rr.Status.FailureReason).To(ContainSubstring("WorkflowExecution not found"))
+				Expect(rr.Status.FailureReason).To(HaveValue(ContainSubstring("WorkflowExecution not found")))
 			},
 		}),
 
@@ -574,8 +554,7 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			expectedPhase:  remediationv1.PhaseFailed,
 			expectedResult: ctrl.Result{},
 			additionalAsserts: func(rr *remediationv1.RemediationRequest) {
-				Expect(rr.Status.FailureReason).ToNot(BeNil())
-				Expect(*rr.Status.FailureReason).To(ContainSubstring("Too risky"))
+				Expect(rr.Status.FailureReason).To(HaveValue(ContainSubstring("Too risky")))
 			},
 		}),
 
@@ -593,8 +572,7 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			expectedPhase:  remediationv1.PhaseFailed,
 			expectedResult: ctrl.Result{},
 			additionalAsserts: func(rr *remediationv1.RemediationRequest) {
-				Expect(rr.Status.FailureReason).ToNot(BeNil())
-				Expect(*rr.Status.FailureReason).To(ContainSubstring("expired"))
+				Expect(rr.Status.FailureReason).To(HaveValue(ContainSubstring("expired")))
 			},
 		}),
 
@@ -644,9 +622,8 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			expectedPhase:  remediationv1.PhaseTimedOut,
 			expectedResult: ctrl.Result{},
 			additionalAsserts: func(rr *remediationv1.RemediationRequest) {
-				Expect(rr.Status.TimeoutTime).ToNot(BeNil())
-				Expect(rr.Status.TimeoutPhase).ToNot(BeNil())
-				Expect(*rr.Status.TimeoutPhase).To(Equal("Pending"))
+				Expect(rr.Status.TimeoutTime).To(HaveValue(Not(BeZero())))
+				Expect(rr.Status.TimeoutPhase).To(HaveValue(Equal("Pending")))
 			},
 		}),
 

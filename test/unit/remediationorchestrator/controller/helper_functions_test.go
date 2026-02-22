@@ -211,8 +211,7 @@ var _ = Describe("BR-ORCH-HELPERS: Helper Function Tests", func() {
 			// Verify Gateway-owned deduplication data is preserved
 			updated := &remediationv1.RemediationRequest{}
 			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "test-rr", Namespace: "default"}, updated)).To(Succeed())
-			Expect(updated.Status.Deduplication).ToNot(BeNil())
-			Expect(updated.Status.Deduplication.OccurrenceCount).To(Equal(int32(1)))
+			Expect(updated.Status.Deduplication).To(HaveField("OccurrenceCount", Equal(int32(1))))
 		})
 
 		It("HF-8.6: Reconciler should handle phase transitions with status aggregation", func() {
