@@ -13,7 +13,7 @@ actionType: RemoveTaint
 
 labels:
   signalType: PodsPendingTaint
-  severity: [warning, critical]
+  severity: [low, critical]
   environment: [production, staging]
   component: "*"
   priority: "*"

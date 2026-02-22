@@ -13,7 +13,7 @@ actionType: GracefulRestart
 
 labels:
   signalType: StuckRollout
-  severity: [critical, warning]
+  severity: [critical, low]
   environment: [production, staging]
   component: "*"
   priority: "*"
