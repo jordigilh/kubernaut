@@ -1,7 +1,7 @@
 # Test Plan: CRD Field Validation in Per-Suite E2E Tests
 
 **Feature**: Extend CRD status field validation from fullpipeline E2E to individual CRD controller E2E test suites
-**Version**: 1.0
+**Version**: 1.2
 **Created**: 2026-02-22
 **Author**: AI Assistant
 **Status**: Draft
@@ -60,8 +60,12 @@ Tests validate **business outcomes** -- behavior, correctness, and data accuracy
 
 Specifically:
 - **Behavior**: Does the controller produce the correct terminal state for this scenario?
-- **Correctness**: Are the status fields populated with accurate values reflecting the business scenario?
-- **Accuracy**: Are timestamps, counters, references, and conditions consistent and non-zero?
+- **Correctness**: Are the status fields populated with the exact expected values for the controlled input?
+- **Accuracy**: Are timestamps temporally ordered, counters equal to exact expected counts, and conditions matching exact expected states?
+
+### Deterministic Assertion Policy
+
+Per [TESTING_GUIDELINES.md](../../development/business-requirements/TESTING_GUIDELINES.md): since E2E tests control the input, all assertions MUST use exact expected values. Weak assertions (`>= 1`, `non-empty`, `at least one`) are anti-patterns -- they mask regressions and don't prove the controller produced the correct result for the given input. The only exception is timestamp values, where temporal ordering (A < B) replaces exact value assertions.
 
 ---
 
@@ -187,7 +191,10 @@ Format: `E2E-{SERVICE}-163-{SEQUENCE}`
 | E2E-SP-163-002 | SP records Rego-determined severity and policy hash for downstream prioritization and versioning | Pending |
 | E2E-SP-163-003 | SP distinguishes predictive vs reactive signal modes for routing differentiation | Pending |
 | E2E-SP-163-004 | SP populates RecoveryContext (PreviousRemediationID, AttemptCount) for consecutive failure escalation | Pending |
-| E2E-SP-163-005 | SP records standard conditions (SignalProcessed, EnrichmentComplete) for controller health monitoring | Pending |
+| E2E-SP-163-005 | SP records exact conditions (Ready=True, EnrichmentComplete=True, ClassificationComplete=True, ProcessingComplete=True) for health monitoring | Pending |
+
+**Deferred fields** (not covered by new scenarios):
+- `BusinessClassification`: Only populated when enterprise business-context labels are present on the namespace. Default E2E namespaces do not carry these labels. Deferring until enterprise configuration E2E environment is available.
 
 ---
 
@@ -224,9 +231,13 @@ Format: `E2E-{SERVICE}-163-{SEQUENCE}`
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
 | E2E-AA-163-001 | AA produces structured root cause analysis (Summary, Severity, AffectedResource) for operator review | Pending |
-| E2E-AA-163-002 | AA records total analysis time > 0 for SLA monitoring | Pending |
-| E2E-AA-163-003 | AA surfaces alternative workflows with confidence ordering for operator decision support | Pending |
+| E2E-AA-163-002 | AA records total analysis time (non-zero, wall-clock dependent) for SLA monitoring | Pending |
+| E2E-AA-163-003 | AA surfaces exact alternative workflows (count, names, confidence ordering) for operator decision support | Pending |
 | E2E-AA-163-004 | AA tracks validation attempts for diagnostic transparency on retry failures | Pending |
+
+**Deferred fields** (not covered by new scenarios):
+- `DegradedMode`: Requires HolmesGPT to be unavailable during E2E. Current E2E infrastructure always deploys a healthy mock HolmesGPT. Deferring until a "degraded HolmesGPT" E2E environment variant is supported.
+- `ObservedGeneration`: Standard Kubernetes controller-runtime field automatically managed by the framework. Low business value for explicit E2E validation; controller correctness is already validated by phase transitions.
 
 ---
 
@@ -250,14 +261,14 @@ Format: `E2E-{SERVICE}-163-{SEQUENCE}`
 |-------|----------------|
 | ExecutionStatus (Status, CompletedTasks, TotalTasks) | Runtime progress monitoring for long-running workflows |
 | BlockClearance (ClearedBy, ClearReason, ClearMethod) | SOC 2 attribution for approval/clearance decisions |
-| FailureDetails sub-fields (ExitCode, FailedTaskIndex, NaturalLanguageSummary) | Comprehensive post-mortem details beyond Message/Reason |
+| FailureDetails sub-fields (ExitCode, FailedTaskIndex, FailedTaskName, FailedStepName, NaturalLanguageSummary) | Comprehensive post-mortem details beyond Message/Reason |
 
 **New scenarios**:
 
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
 | E2E-WE-163-001 | WE records execution runtime status (Status, CompletedTasks, TotalTasks) for progress monitoring | Pending |
-| E2E-WE-163-002 | WE captures comprehensive failure details (ExitCode, FailedTaskName, NaturalLanguageSummary) for post-mortem | Pending |
+| E2E-WE-163-002 | WE captures comprehensive failure details (ExitCode, FailedTaskIndex, FailedTaskName, FailedStepName, NaturalLanguageSummary) for post-mortem | Pending |
 | E2E-WE-163-003 | WE records block clearance attribution (ClearedBy, ClearReason) for SOC 2 audit trail | Pending |
 
 ---
@@ -286,8 +297,8 @@ Format: `E2E-{SERVICE}-163-{SEQUENCE}`
 |----|----------------------------|-------|
 | E2E-NT-163-001 | NT records complete delivery timeline (QueuedAt < ProcessingStartedAt < CompletionTime) for audit compliance | Pending |
 | E2E-NT-163-002 | NT provides accurate delivery counts (TotalAttempts, SuccessfulDeliveries, FailedDeliveries) for SLA reporting | Pending |
-| E2E-NT-163-003 | NT captures per-channel delivery details (Channel, Status, DurationSeconds) for troubleshooting | Pending |
-| E2E-NT-163-004 | NT records standard conditions (Queued, Delivered) for controller health monitoring | Pending |
+| E2E-NT-163-003 | NT captures exact per-channel delivery: Channel=="console", Status=="success", DurationSeconds > 0 (wall-clock) | Pending |
+| E2E-NT-163-004 | NT records exact conditions: Ready=True (Reason="Ready"), RoutingResolved=True (Reason="RoutingRuleMatched" or "RoutingFallback") | Pending |
 | E2E-NT-163-005 | NT provides failure explanation (Phase=Failed, Reason, Message) for operator investigation | Pending |
 
 ---
@@ -316,7 +327,7 @@ Format: `E2E-{SERVICE}-163-{SEQUENCE}`
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
 | E2E-EA-163-001 | EA records assessment scheduling fields (ValidityDeadline, PrometheusCheckAfter) for operational visibility | Pending |
-| E2E-EA-163-002 | EA records standard conditions for controller health monitoring | Pending |
+| E2E-EA-163-002 | EA records exact conditions (AssessmentComplete=True, with expected Reason) for controller health monitoring | Pending |
 | E2E-EA-163-003 | EA provides failure explanation (Phase=Failed, Message) when assessment cannot complete | Pending |
 
 ---
@@ -344,7 +355,7 @@ Format: `E2E-{SERVICE}-163-{SEQUENCE}`
 | Field | Why It Matters |
 |-------|----------------|
 | ProcessingStartTime, AnalyzingStartTime, ExecutingStartTime | Latency monitoring per pipeline phase |
-| Deduplication (OccurrenceCount, FirstSeenAt, DuplicateOf) | Duplicate signal transparency for operators |
+| DuplicateOf (top-level field), Deduplication.OccurrenceCount, Deduplication.FirstSeenAt | Duplicate signal transparency for operators |
 | BlockReason, BlockMessage, NextAllowedExecution | Operator investigation of blocked remediations |
 | SkipReason, SkipMessage | Visibility into why a remediation was bypassed |
 | FailurePhase, FailureReason, ConsecutiveFailureCount | Post-mortem for failed remediations |
@@ -358,12 +369,16 @@ Format: `E2E-{SERVICE}-163-{SEQUENCE}`
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
 | E2E-RO-163-001 | RR tracks per-phase timestamps (ProcessingStartTime, AnalyzingStartTime, ExecutingStartTime) for latency monitoring | Pending |
-| E2E-RO-163-002 | RR records deduplication data (OccurrenceCount, FirstSeenAt, DuplicateOf) for duplicate signal transparency | Pending |
+| E2E-RO-163-002 | RR records exact deduplication data (Deduplication.OccurrenceCount == 2, Deduplication.FirstSeenAt, DuplicateOf == original RR name) for transparency | Pending |
 | E2E-RO-163-003 | RR captures blocking reason (BlockReason, BlockMessage, NextAllowedExecution) for operator investigation | Pending |
 | E2E-RO-163-004 | RR records skip reason (SkipReason, SkipMessage) when remediation is bypassed | Pending |
 | E2E-RO-163-005 | RR records failure details (FailurePhase, FailureReason, ConsecutiveFailureCount) for post-mortem | Pending |
-| E2E-RO-163-006 | RR populates correct Outcome (success/failure/timeout) for pipeline result reporting | Pending |
-| E2E-RO-163-007 | RR records standard conditions for controller health monitoring | Pending |
+| E2E-RO-163-006 | RR populates Outcome == "success" for completed pipeline, tested alongside failure and timeout variants | Pending |
+| E2E-RO-163-007 | RR records exact conditions: SignalProcessingComplete=True, AIAnalysisComplete=True, WorkflowExecutionComplete=True, Ready=True | Pending |
+
+**Deferred fields** (not covered by new scenarios):
+- `PreRemediationSpecHash`: Populated during the Executing phase to snapshot the workload spec before remediation. Already validated indirectly by the EA spec-drift E2E tests which depend on this hash being present. Adding an explicit RO E2E assertion would duplicate EA coverage without new business insight.
+- `TimeoutConfig`: A read-only reflection of the controller's timeout configuration. Validating this in E2E confirms config propagation, not business behavior. Deferring in favor of scenarios that test timeout *effects* (e.g., E2E-RO-163-006 timeout variant).
 
 ---
 
@@ -389,8 +404,11 @@ Format: `E2E-{SERVICE}-163-{SEQUENCE}`
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
 | E2E-RAR-163-001 | RAR captures approval rationale (DecisionMessage) for audit trail | Pending |
-| E2E-RAR-163-002 | RAR tracks all business conditions (Pending, Decided, Ready, AuditRecorded) for lifecycle monitoring | Pending |
+| E2E-RAR-163-002 | RAR tracks exact conditions: ApprovalPending=False, ApprovalDecided=True, Ready=True, AuditRecorded=True (approved path) | Pending |
 | E2E-RAR-163-003 | RAR correctly marks expired approvals (Expired=true) for timeout handling | Pending |
+
+**Deferred fields** (not covered by new scenarios):
+- `TimeRemaining`: A computed field that decreases as the approval TTL counts down. Validating exact values is non-deterministic (wall-clock dependent) and would require precise timing control. The business outcome (expiry) is already covered by E2E-RAR-163-003; `TimeRemaining` adds no additional correctness signal.
 
 ---
 
@@ -407,9 +425,9 @@ Format: `E2E-{SERVICE}-163-{SEQUENCE}`
 **Then**: `Status.StartTime` is populated and <= `Status.CompletionTime`, both non-nil
 
 **Acceptance Criteria**:
-- StartTime is not nil
-- CompletionTime is not nil
-- StartTime <= CompletionTime
+- StartTime is populated (HaveValue matcher, not BeNil)
+- CompletionTime is populated (HaveValue matcher, not BeNil)
+- StartTime <= CompletionTime (temporal ordering -- wall-clock dependent, exact values not deterministic)
 
 ---
 
@@ -419,13 +437,13 @@ Format: `E2E-{SERVICE}-163-{SEQUENCE}`
 **Type**: E2E
 **File**: `test/e2e/signalprocessing/business_requirements_test.go` (extend existing)
 
-**Given**: A critical alert fires in the `production` namespace with Rego policies loaded
+**Given**: A critical alert fires in the `production` namespace with Rego policies loaded (which map production + critical alert to severity "critical")
 **When**: SignalProcessing completes Rego evaluation
-**Then**: `Status.Severity` reflects the Rego-determined value (e.g., "critical") and `Status.PolicyHash` is a non-empty hash
+**Then**: `Status.Severity` == "critical" (deterministic from controlled Rego policy + input) and `Status.PolicyHash` matches the SHA256 of the deployed policy ConfigMap
 
 **Acceptance Criteria**:
-- Severity is one of: "critical", "high", "medium", "low"
-- PolicyHash is non-empty string
+- Severity == "critical" (exact match for production namespace + critical alert input)
+- PolicyHash == SHA256 of the deployed Rego policy ConfigMap content (deterministic)
 
 ---
 
@@ -435,14 +453,14 @@ Format: `E2E-{SERVICE}-163-{SEQUENCE}`
 **Type**: E2E
 **File**: `test/e2e/signalprocessing/business_requirements_test.go` (new context)
 
-**Given**: A signal is ingested with predictive signal characteristics
+**Given**: A predictive OOMKill signal is ingested (alert with `signal_mode: predictive` label)
 **When**: SignalProcessing completes classification
-**Then**: `Status.SignalMode` is "predictive", `Status.SignalType` is populated, `Status.OriginalSignalType` preserves the original classification
+**Then**: `Status.SignalMode` == "predictive", `Status.SignalType` == the classified type for OOMKill, `Status.OriginalSignalType` == the original alert type before reclassification
 
 **Acceptance Criteria**:
-- SignalMode is "predictive" or "reactive" (depending on scenario)
-- SignalType is non-empty
-- OriginalSignalType is non-empty
+- SignalMode == "predictive" (exact match for predictive input signal)
+- SignalType == expected classified type (exact, determined by classification logic for OOMKill)
+- OriginalSignalType == original alert type from the ingested signal (exact)
 
 ---
 
@@ -452,14 +470,14 @@ Format: `E2E-{SERVICE}-163-{SEQUENCE}`
 **Type**: E2E
 **File**: `test/e2e/signalprocessing/business_requirements_test.go` (new context)
 
-**Given**: A signal arrives for a resource that has a previous failed remediation
+**Given**: A signal arrives for a resource that has exactly 1 previous failed remediation (RR name known from test setup)
 **When**: SignalProcessing completes with recovery context
-**Then**: `Status.RecoveryContext` is populated with `PreviousRemediationID` (non-empty) and `AttemptCount` > 0
+**Then**: `Status.RecoveryContext` is populated with the exact previous RR name and AttemptCount == 1
 
 **Acceptance Criteria**:
 - RecoveryContext is not nil
-- RecoveryContext.PreviousRemediationID is non-empty
-- RecoveryContext.AttemptCount > 0
+- RecoveryContext.PreviousRemediationID == name of the previous failed RR (exact, from test setup)
+- RecoveryContext.AttemptCount == 1 (exact: one prior failed attempt)
 
 ---
 
@@ -469,13 +487,17 @@ Format: `E2E-{SERVICE}-163-{SEQUENCE}`
 **Type**: E2E
 **File**: `test/e2e/signalprocessing/business_requirements_test.go` (extend existing)
 
-**Given**: Any completed SignalProcessing
+**Given**: A completed SignalProcessing (from an existing happy-path scenario)
 **When**: Phase reaches Completed
-**Then**: Standard K8s conditions are populated (at least one condition with Status=True)
+**Then**: All expected conditions are present with Status=True
 
 **Acceptance Criteria**:
-- Conditions array is non-empty
-- At least one condition has Status="True"
+- Conditions contains `Ready` with Status="True"
+- Conditions contains `EnrichmentComplete` with Status="True"
+- Conditions contains `ClassificationComplete` with Status="True"
+- Conditions contains `ProcessingComplete` with Status="True"
+- No conditions have Status="False" (happy path, no degraded enrichment)
+- Note: Condition type names from `pkg/signalprocessing/conditions.go`
 
 ---
 
@@ -490,11 +512,12 @@ Format: `E2E-{SERVICE}-163-{SEQUENCE}`
 **Then**: `QueuedAt` < `ProcessingStartedAt` < `CompletionTime` (temporal ordering)
 
 **Acceptance Criteria**:
-- QueuedAt is not nil
-- ProcessingStartedAt is not nil
-- CompletionTime is not nil
-- QueuedAt.Before(ProcessingStartedAt)
-- ProcessingStartedAt.Before(CompletionTime)
+- QueuedAt is populated (HaveValue matcher)
+- ProcessingStartedAt is populated (HaveValue matcher)
+- CompletionTime is populated (HaveValue matcher)
+- QueuedAt.Before(ProcessingStartedAt) (temporal ordering)
+- ProcessingStartedAt.Before(CompletionTime) (temporal ordering)
+- Note: Timestamp exact values are wall-clock dependent; temporal ordering is the correctness assertion
 
 ---
 
@@ -504,14 +527,33 @@ Format: `E2E-{SERVICE}-163-{SEQUENCE}`
 **Type**: E2E
 **File**: `test/e2e/notification/01_notification_lifecycle_audit_test.go` (extend existing)
 
-**Given**: A NotificationRequest is delivered to Console channel
+**Given**: A NotificationRequest is created targeting exactly 1 Console channel (no retries configured)
 **When**: Notification reaches Phase=Sent
-**Then**: `TotalAttempts` >= 1, `SuccessfulDeliveries` >= 1, `FailedDeliveries` == 0
+**Then**: Delivery counters reflect exactly 1 successful delivery to 1 channel with 0 failures
 
 **Acceptance Criteria**:
-- TotalAttempts >= 1
-- SuccessfulDeliveries >= 1
-- FailedDeliveries == 0 (happy path)
+- TotalAttempts == 1 (exact: 1 channel, 1 attempt, no retries)
+- SuccessfulDeliveries == 1 (exact: Console delivery succeeded)
+- FailedDeliveries == 0 (exact: no failures in happy path)
+
+---
+
+### E2E-NT-163-003: Per-Channel Delivery Details
+
+**BR**: BR-NOT-069
+**Type**: E2E
+**File**: `test/e2e/notification/01_notification_lifecycle_audit_test.go` (extend existing)
+
+**Given**: A NotificationRequest is created targeting exactly 1 Console channel
+**When**: Notification reaches Phase=Sent
+**Then**: DeliveryAttempts contains exactly 1 entry with exact per-channel details
+
+**Acceptance Criteria**:
+- DeliveryAttempts has exactly 1 entry (exact: 1 channel configured)
+- DeliveryAttempts[0].Channel == "console" (exact: from `ChannelConsole` constant)
+- DeliveryAttempts[0].Status == "success" (exact: from `pkg/notification/delivery/orchestrator.go`)
+- DeliveryAttempts[0].DurationSeconds > 0 (wall-clock dependent, cannot assert exact value)
+- Note: Status values from codebase are lowercase: "success", "failed" (not capitalized)
 
 ---
 
@@ -521,14 +563,14 @@ Format: `E2E-{SERVICE}-163-{SEQUENCE}`
 **Type**: E2E
 **File**: `test/e2e/notification/04_failed_delivery_audit_test.go` (extend existing)
 
-**Given**: A NotificationRequest targets only an unreachable Email channel
+**Given**: A NotificationRequest targets only an unreachable Email channel (no other channels configured)
 **When**: All delivery attempts fail
-**Then**: Phase=Failed, `Reason` is non-empty, `Message` describes the failure
+**Then**: Phase == "Failed", `Reason` contains the specific failure reason code, `Message` contains the channel name and error detail
 
 **Acceptance Criteria**:
-- Phase is "Failed"
-- Reason is non-empty
-- Message is non-empty and describes the delivery failure
+- Phase == "Failed" (exact)
+- Reason == expected failure reason code (e.g., "DeliveryFailed" -- exact, determined by controller logic for exhausted retries)
+- Message contains "email" (channel name) and describes the connection/delivery error (ContainSubstring assertion)
 
 ---
 
@@ -543,10 +585,11 @@ Format: `E2E-{SERVICE}-163-{SEQUENCE}`
 **Then**: Phase timestamps are populated: `ProcessingStartTime`, `AnalyzingStartTime`, `ExecutingStartTime` all non-nil, in temporal order
 
 **Acceptance Criteria**:
-- ProcessingStartTime is not nil
-- AnalyzingStartTime is not nil
-- ExecutingStartTime is not nil
-- ProcessingStartTime <= AnalyzingStartTime <= ExecutingStartTime
+- ProcessingStartTime is populated (HaveValue matcher)
+- AnalyzingStartTime is populated (HaveValue matcher)
+- ExecutingStartTime is populated (HaveValue matcher)
+- ProcessingStartTime <= AnalyzingStartTime <= ExecutingStartTime (temporal ordering)
+- Note: Exact timestamp values are wall-clock dependent; temporal ordering is the correctness assertion
 
 ---
 
@@ -556,15 +599,15 @@ Format: `E2E-{SERVICE}-163-{SEQUENCE}`
 **Type**: E2E
 **File**: `test/e2e/remediationorchestrator/` (new test file or extend existing)
 
-**Given**: A RemediationRequest where the WorkflowExecution fails
+**Given**: A RemediationRequest where the WorkflowExecution fails (first failure for this resource, no prior failures)
 **When**: RO handles the failure and transitions to Failed
-**Then**: `FailurePhase` identifies which phase failed, `FailureReason` describes the cause, `ConsecutiveFailureCount` >= 1
+**Then**: `FailurePhase` == "Executing", `FailureReason` matches the WE failure reason, `ConsecutiveFailureCount` == 1
 
 **Acceptance Criteria**:
-- OverallPhase is "Failed"
-- FailurePhase is not nil and identifies the failing phase (e.g., "Executing")
-- FailureReason is not nil and non-empty
-- ConsecutiveFailureCount >= 1
+- OverallPhase == "Failed" (exact)
+- FailurePhase == "Executing" (exact: WE is the failing phase in this scenario)
+- FailureReason == expected reason string from the WE failure (exact or ContainSubstring for the WE error)
+- ConsecutiveFailureCount == 1 (exact: first failure, no prior consecutive failures)
 
 ---
 
@@ -574,13 +617,14 @@ Format: `E2E-{SERVICE}-163-{SEQUENCE}`
 **Type**: E2E
 **File**: `test/e2e/remediationorchestrator/approval_e2e_test.go` (new context)
 
-**Given**: A RemediationApprovalRequest is created with a short expiry window
+**Given**: A RemediationApprovalRequest is created with a short expiry window (e.g., 5s TTL)
 **When**: The expiry deadline passes without a decision
-**Then**: `Expired` is true, RR transitions to Failed or appropriate terminal state
+**Then**: `Expired` == true, `Decision` == "Expired" (or the exact expiry decision value from the controller), and the parent RR transitions to "Failed"
 
 **Acceptance Criteria**:
-- Expired is true
-- Decision reflects expiry state
+- Expired == true (exact)
+- Decision == "Expired" (exact: the controller sets this when TTL expires without a decision)
+- Parent RR OverallPhase == "Failed" (exact: expiry is a terminal failure)
 
 ---
 
@@ -665,3 +709,5 @@ go test ./test/e2e/notification/... --ginkgo.focus="E2E-NT-163-001"
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2026-02-22 | Initial test plan: 30 scenarios across 7 CRDs, gap analysis, validator extension design |
+| 1.1 | 2026-02-22 | Triage pass 1: Replaced all weak assertions (>=, non-empty, at-least-one) with exact expected values per controlled inputs. Added Deterministic Assertion Policy. |
+| 1.2 | 2026-02-22 | Triage pass 2: Fixed condition type names to match codebase constants (SP: Ready/EnrichmentComplete/ClassificationComplete/ProcessingComplete; NT: Ready/RoutingResolved; RR: SignalProcessingComplete/AIAnalysisComplete/WorkflowExecutionComplete). Fixed DuplicateOf nesting (top-level, not under Deduplication). Added E2E-NT-163-003 detail test case with exact values (Channel=="console", Status=="success"). Added WE FailureDetails sub-fields (FailedTaskName, FailedStepName). Added deferred rationale for 6 gap fields (BusinessClassification, DegradedMode, ObservedGeneration, PreRemediationSpecHash, TimeoutConfig, TimeRemaining). |
