@@ -2195,7 +2195,7 @@ var _ = Describe("E2E-SP-163-004: Recovery Context Validation", func() {
 				Namespace: testNs,
 			},
 			Spec: remediationv1alpha1.RemediationRequestSpec{
-				SignalFingerprint: "e2e1630041234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+				SignalFingerprint: "1a30eddc43a9a86bfdb34058bc861205b62cf2e12dbbfa182968fe0d56819639",
 				SignalName:        "RecoveryContextTest",
 				Severity:          "critical",
 				SignalType:        "prometheus",
