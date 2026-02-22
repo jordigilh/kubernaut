@@ -15,6 +15,7 @@ source "${SCRIPT_DIR}/../../scripts/monitoring-helper.sh"
 ensure_monitoring_stack
 source "${SCRIPT_DIR}/../../scripts/platform-helper.sh"
 ensure_platform
+seed_scenario_workflow "network-policy-block"
 
 echo "============================================="
 echo " NetworkPolicy Traffic Block Demo (#138)"

@@ -21,6 +21,7 @@ source "${SCRIPT_DIR}/../../scripts/monitoring-helper.sh"
 ensure_monitoring_stack
 source "${SCRIPT_DIR}/../../scripts/platform-helper.sh"
 ensure_platform
+seed_scenario_workflow "mesh-routing-failure"
 ensure_linkerd
 
 echo "============================================="

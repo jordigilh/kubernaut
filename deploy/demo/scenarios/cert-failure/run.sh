@@ -21,6 +21,7 @@ source "${SCRIPT_DIR}/../../scripts/monitoring-helper.sh"
 ensure_monitoring_stack
 source "${SCRIPT_DIR}/../../scripts/platform-helper.sh"
 ensure_platform
+seed_scenario_workflow "cert-failure"
 ensure_cert_manager
 
 echo "============================================="

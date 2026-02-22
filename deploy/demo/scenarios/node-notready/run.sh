@@ -22,6 +22,7 @@ source "${SCRIPT_DIR}/../../scripts/monitoring-helper.sh"
 ensure_monitoring_stack
 source "${SCRIPT_DIR}/../../scripts/platform-helper.sh"
 ensure_platform
+seed_scenario_workflow "node-notready"
 
 echo "============================================="
 echo " Node NotReady Demo (#127)"
