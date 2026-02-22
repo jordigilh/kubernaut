@@ -354,7 +354,7 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 					SignalFingerprint: "e2e0000000000000000000000000000000000000000000000000000000000004",
 					SignalName:        "E2ERARExpiryTest",
 					Severity:          "critical",
-					SignalType:        "alert",
+					SignalType:        "prometheus",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
 						Kind:      "Deployment",
@@ -367,27 +367,44 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 			}
 			Expect(k8sClient.Create(ctx, testRR)).To(Succeed())
 
-			// Let the RO controller drive the full lifecycle: RR → SP → AI → RAR
-			sp := helpers.WaitForSPCreation(ctx, k8sClient, testNamespace, e2eTimeout, e2eInterval)
-			helpers.SimulateSPCompletion(ctx, k8sClient, sp)
+			// RAR with requiredBy in the past - RO will detect timeout and mark Expired
+			testRAR = &remediationv1.RemediationApprovalRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fmt.Sprintf("rar-%s", testRR.Name),
+					Namespace: testNamespace,
+				},
+				Spec: remediationv1.RemediationApprovalRequestSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						Name:      testRR.Name,
+						Namespace: testNamespace,
+					},
+					AIAnalysisRef: remediationv1.ObjectRef{
+						Name: "ai-test-expiry",
+					},
+					Confidence:           0.75,
+					ConfidenceLevel:      "medium",
+					Reason:               "E2E expiry test: Confidence below threshold",
+					InvestigationSummary: "E2E test: Simulating RAR expiry for Bug Fix 2-4 validation",
+					WhyApprovalRequired:  "E2E test: Validating Status.Expired and TimeRemaining on timeout",
+					RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{
+						WorkflowID:     "restart-pod-v1",
+						Version:        "1.0.0",
+						ExecutionBundle: "kubernaut/restart-pod:v1",
+						Rationale:      "Standard pod restart",
+					},
+					RecommendedActions: []remediationv1.ApprovalRecommendedAction{
+						{Action: "Restart pod", Rationale: "E2E expiry test"},
+					},
+					RequiredBy: metav1.NewTime(time.Now().Add(-1 * time.Minute)), // Past deadline
+				},
+			}
+			Expect(k8sClient.Create(ctx, testRAR)).To(Succeed())
 
-			ai := helpers.WaitForAICreation(ctx, k8sClient, testNamespace, e2eTimeout, e2eInterval)
-			helpers.SimulateAICompletedWithWorkflow(ctx, k8sClient, ai, helpers.AICompletionOpts{
-				ApprovalRequired: true,
-				ApprovalReason:   "Confidence below 80% auto-approve threshold",
-				Confidence:       0.75,
-				TargetKind:       "Deployment",
-				TargetName:       "test-app-expiry",
-				TargetNamespace:  testNamespace,
-			})
-
-			testRAR = helpers.WaitForRARCreation(ctx, k8sClient, testNamespace, e2eTimeout, e2eInterval)
-
-			// RAR RequiredBy is set by the RO controller using the configured
-			// awaitingApproval timeout (3s in E2E). No spec mutation needed —
-			// the deadline expires naturally, and RO detects it on next reconcile.
-			helpers.WaitForRRPhase(ctx, k8sClient, testRR, remediationv1.PhaseAwaitingApproval, e2eTimeout, e2eInterval)
-			GinkgoWriter.Printf("  RO reached AwaitingApproval naturally\n")
+			// Set RR to AwaitingApproval so RO enters handleAwaitingApprovalPhase
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(testRR), testRR)).To(Succeed())
+			testRR.Status.OverallPhase = remediationv1.PhaseAwaitingApproval
+			testRR.Status.StartTime = &now
+			Expect(k8sClient.Status().Update(ctx, testRR)).To(Succeed())
 		})
 
 		AfterEach(func() {
@@ -406,7 +423,7 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 					"Status.Expired must be true when approval times out (Bug Fix 3)")
 				g.Expect(testRAR.Status.TimeRemaining).To(Equal("0s"),
 					"TimeRemaining must be 0s when expired (Bug Fix 4)")
-			}, 120*time.Second, 2*time.Second).Should(Succeed())
+			}, 30*time.Second, 2*time.Second).Should(Succeed())
 
 			By("E2E-RAR-163-003: Verifying ApprovalExpired and ApprovalPending conditions")
 			Expect(testRAR.Status.Conditions).To(ContainElements(

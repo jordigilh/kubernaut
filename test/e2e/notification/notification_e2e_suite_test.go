@@ -450,8 +450,8 @@ func ValidateNTLifecycleTimestamps(nr *notificationv1alpha1.NotificationRequest)
 	Expect(nr.Status.QueuedAt).NotTo(BeNil(), "QueuedAt should be set")
 	Expect(nr.Status.ProcessingStartedAt).NotTo(BeNil(), "ProcessingStartedAt should be set")
 	Expect(nr.Status.CompletionTime).NotTo(BeNil(), "CompletionTime should be set")
-	Expect(nr.Status.ProcessingStartedAt.Time).To(BeTemporally(">=", nr.Status.QueuedAt.Time),
-		"ProcessingStartedAt should be at or after QueuedAt (same-second allowed per BR-NOT-051)")
+	Expect(nr.Status.ProcessingStartedAt.Time).To(BeTemporally(">", nr.Status.QueuedAt.Time),
+		"ProcessingStartedAt should be after QueuedAt")
 	Expect(nr.Status.CompletionTime.Time).To(BeTemporally(">=", nr.Status.ProcessingStartedAt.Time),
 		"CompletionTime should be after or equal to ProcessingStartedAt")
 }

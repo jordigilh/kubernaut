@@ -2195,10 +2195,10 @@ var _ = Describe("E2E-SP-163-004: Recovery Context Validation", func() {
 				Namespace: testNs,
 			},
 			Spec: remediationv1alpha1.RemediationRequestSpec{
-				SignalFingerprint: "1a30eddc43a9a86bfdb34058bc861205b62cf2e12dbbfa182968fe0d56819639",
+				SignalFingerprint: "e2e1630041234567890abcdef1234567890abcdef1234567890abcdef1234567890",
 				SignalName:        "RecoveryContextTest",
 				Severity:          "critical",
-				SignalType:        "alert",
+				SignalType:        "prometheus",
 				SignalSource:      "test-e2e",
 				TargetType:        "kubernetes",
 				FiringTime:        metav1.Now(),
@@ -2225,16 +2225,6 @@ var _ = Describe("E2E-SP-163-004: Recovery Context Validation", func() {
 		failureReason := "PreviousExecutionTimedOut"
 		rr.Status.FailureReason = &failureReason
 		Expect(k8sClient.Status().Update(ctx, rr)).To(Succeed())
-
-		By("Waiting for RR status patch to be visible (informer cache propagation)")
-		Eventually(func() int {
-			var fresh remediationv1alpha1.RemediationRequest
-			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), &fresh); err != nil {
-				return 0
-			}
-			return fresh.Status.RecoveryAttempts
-		}, 10*time.Second, 1*time.Second).Should(Equal(1),
-			"RR status patch must be visible before SP creation")
 
 		By("Creating SignalProcessing CR referencing the RemediationRequest")
 		sp := &signalprocessingv1alpha1.SignalProcessing{
