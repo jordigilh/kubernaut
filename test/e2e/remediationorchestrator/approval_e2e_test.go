@@ -667,10 +667,12 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 				Limit:         dsgen.NewOptInt(100),
 			})
 			Expect(err).ToNot(HaveOccurred(), "Timestamp range query must succeed")
-			// Note: Includes lifecycle events + webhook events (approval audit now emitted solely by RARReconciler)
-			// Events: 3 lifecycle (started, transitioned, created)
-			//       + 1 webhook (remediationapprovalrequest.decided) + 1 webhook (remediationrequest.timeout_modified)
-			Expect(respByTime.Data).To(HaveLen(5),
+			// Spec-mandated audit events for this scenario (6 total):
+			//   3 lifecycle: started, transitioned, created  (DD-AUDIT-003)
+			//   1 webhook:   remediationapprovalrequest.decided (ADR-034 v1.7 two-event pattern: WHO)
+			//   1 approval:  orchestrator.approval.approved     (ADR-034 v1.7 two-event pattern: WHAT/WHY)
+			//   1 webhook:   remediationrequest.timeout_modified (BR-AUDIT-005 Gap #8)
+			Expect(respByTime.Data).To(HaveLen(6),
 				"COMPLIANCE: Audit events must be queryable by timestamp (SOC 2 CC7.2)")
 
 			eventTypes := make([]string, len(respByTime.Data))
