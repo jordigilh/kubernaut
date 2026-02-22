@@ -680,7 +680,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 			By("Creating a RemediationRequest")
 			now := metav1.Now()
 			fiveMinutesAgo := metav1.NewTime(now.Add(-5 * time.Minute))
-			fingerprint := "f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6"
+			fingerprint := "7e954e3f07affe767999611bc4f06fed5ef1c20a0a79cf0e9b6c5ce74071dbb6"
 			rr := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "rr-dedup-e2e",
