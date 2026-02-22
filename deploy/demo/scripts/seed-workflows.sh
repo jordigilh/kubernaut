@@ -13,6 +13,7 @@ set -euo pipefail
 
 DATASTORAGE_URL="${DATASTORAGE_URL:-http://localhost:30081}"
 SINGLE_SCENARIO=""
+SEED_VERSION=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -20,11 +21,16 @@ while [[ $# -gt 0 ]]; do
             SINGLE_SCENARIO="$2"
             shift 2
             ;;
+        --version)
+            SEED_VERSION="$2"
+            shift 2
+            ;;
         --help|-h)
-            echo "Usage: $0 [--scenario NAME]"
+            echo "Usage: $0 [--scenario NAME] [--version TAG]"
             echo ""
             echo "Options:"
             echo "  --scenario NAME    Seed only the workflow for this scenario"
+            echo "  --version TAG      Workflow image version tag (default: v1.0.0)"
             echo ""
             echo "Environment:"
             echo "  DATASTORAGE_URL    DataStorage API URL (default: http://localhost:30081)"
@@ -67,29 +73,13 @@ register_workflow() {
 }
 
 REGISTRY="quay.io/kubernaut-cicd/test-workflows"
-VERSION="v1.0.0"
+VERSION="${SEED_VERSION:-v1.0.0}"
 
-# scenario:image-name mappings (must match build-demo-workflows.sh)
-# Schema images use the -schema suffix (two-image split: exec + schema)
-WORKFLOWS=(
-    "gitops-drift:git-revert-job"
-    "autoscale:provision-node-job"
-    "slo-burn:proactive-rollback-job"
-    "memory-leak:graceful-restart-job"
-    "crashloop:crashloop-rollback-job"
-    "hpa-maxed:patch-hpa-job"
-    "pdb-deadlock:relax-pdb-job"
-    "pending-taint:remove-taint-job"
-    "disk-pressure:cleanup-pvc-job"
-    "node-notready:cordon-drain-job"
-    "stuck-rollout:rollback-deployment-job"
-    "cert-failure:fix-certificate-job"
-    "cert-failure-gitops:fix-certificate-gitops-job"
-    "crashloop-helm:helm-rollback-job"
-    "mesh-routing-failure:fix-authz-policy-job"
-    "statefulset-pvc-failure:fix-statefulset-pvc-job"
-    "network-policy-block:fix-network-policy-job"
-)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# scenario:image-name mappings (shared across build + seed scripts)
+# shellcheck source=workflow-mappings.sh
+source "${SCRIPT_DIR}/workflow-mappings.sh"
 
 seed_count=0
 skip_count=0
@@ -107,6 +97,12 @@ for entry in "${WORKFLOWS[@]}"; do
     register_workflow "${SCHEMA_REF}" "${IMAGE_NAME}"
     seed_count=$((seed_count + 1))
 done
+
+if [ -n "$SINGLE_SCENARIO" ] && [ "$seed_count" -eq 0 ]; then
+    echo "ERROR: Scenario '${SINGLE_SCENARIO}' not found in workflow mappings."
+    echo "Available scenarios: $(printf '%s\n' "${WORKFLOWS[@]}" | cut -d: -f1 | tr '\n' ' ')"
+    exit 1
+fi
 
 echo ""
 echo "==> Workflow seeding complete (${seed_count} registered)"
