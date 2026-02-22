@@ -32,7 +32,7 @@ spec:
       type: boolean
     - jsonPath: .spec.requiredBy
       name: RequiredBy
-      type: date
+      type: string
     - jsonPath: .status.conditions[?(@.type=="Ready")].reason
       name: Reason
       priority: 1
