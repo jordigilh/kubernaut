@@ -150,7 +150,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 
 			By("3. Set CRD state to Pending (simulate processing)")
 			crd.Status.OverallPhase = "Pending"
-			err = testClient.Status().Update(testCtx, crd) //nolint:ineffassign // Test pattern: error reassignment across phases
+			Expect(testClient.Status().Update(testCtx, crd)).To(Succeed())
 
 		// Wait for status update to propagate
 		Eventually(func() string {
@@ -182,7 +182,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 			Expect(resp2.StatusCode).To(Equal(http.StatusAccepted), "Duplicate alert should return 202 Accepted")
 
 			var response2 gateway.ProcessingResponse
-			err = json.Unmarshal(resp2.Body, &response2) //nolint:ineffassign // Test pattern: error reassignment across phases
+			Expect(json.Unmarshal(resp2.Body, &response2)).To(Succeed())
 			Expect(response2.Status).To(Equal("duplicate"))
 			Expect(response2.Duplicate).To(BeTrue())
 
@@ -266,7 +266,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 			}, 60*time.Second, 2*time.Second).ShouldNot(BeNil(), "CRD should exist after Gateway processes signal")
 
 			crd.Status.OverallPhase = "Processing"
-			err = testClient.Status().Update(testCtx, crd) //nolint:ineffassign // Test pattern: error reassignment across phases
+			Expect(testClient.Status().Update(testCtx, crd)).To(Succeed())
 
 		// Wait for status update to propagate
 		Eventually(func() string {
@@ -365,7 +365,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 			}, 60*time.Second, 2*time.Second).ShouldNot(BeNil(), "CRD should exist after Gateway processes signal")
 
 			crd.Status.OverallPhase = "Completed"
-			err = testClient.Status().Update(testCtx, crd) //nolint:ineffassign // Test pattern: error reassignment across phases
+			Expect(testClient.Status().Update(testCtx, crd)).To(Succeed())
 
 			// Wait for status update to propagate to K8s API cache
 			Eventually(func() string {
@@ -452,7 +452,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 			}, 60*time.Second, 2*time.Second).ShouldNot(BeNil(), "CRD should exist after Gateway processes signal")
 
 			crd.Status.OverallPhase = "Failed"
-			err = testClient.Status().Update(testCtx, crd) //nolint:ineffassign // Test pattern: error reassignment across phases
+			Expect(testClient.Status().Update(testCtx, crd)).To(Succeed())
 
 			// Wait for status update to propagate
 			Eventually(func() string {
@@ -517,7 +517,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 			}, 60*time.Second, 2*time.Second).ShouldNot(BeNil(), "CRD should exist after Gateway processes signal")
 
 			crd.Status.OverallPhase = remediationv1alpha1.PhaseCancelled
-			err = testClient.Status().Update(testCtx, crd) //nolint:ineffassign // Test pattern: error reassignment across phases
+			Expect(testClient.Status().Update(testCtx, crd)).To(Succeed())
 
 			// Wait for status update to propagate
 			Eventually(func() string {
@@ -595,7 +595,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 			}, 60*time.Second, 2*time.Second).ShouldNot(BeNil(), "CRD should exist after Gateway processes signal")
 
 			crd.Status.OverallPhase = remediationv1alpha1.PhaseBlocked // Valid non-terminal phase
-			err = testClient.Status().Update(testCtx, crd) //nolint:ineffassign // Test pattern: error reassignment across phases
+			Expect(testClient.Status().Update(testCtx, crd)).To(Succeed())
 
 			// Wait for status update to propagate
 			Eventually(func() string {
@@ -628,7 +628,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 				"Non-terminal state (Blocked) should trigger duplicate (conservative: assume in-progress)")
 
 			var response2 gateway.ProcessingResponse
-			err = json.Unmarshal(resp2.Body, &response2) //nolint:ineffassign // Test pattern: error reassignment across phases
+			Expect(json.Unmarshal(resp2.Body, &response2)).To(Succeed())
 			Expect(response2.Status).To(Equal("duplicate"))
 			Expect(response2.Duplicate).To(BeTrue())
 
@@ -685,11 +685,11 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 			err := json.Unmarshal(resp.Body, &response)
 			Expect(err).ToNot(HaveOccurred(), "Failed to unmarshal response: %v, body: %s", err, string(resp.Body))
 			Expect(response.Status).To(Equal("created"))
-			Expect(response.RemediationRequestName).ToNot(BeEmpty())
+			Expect(response.RemediationRequestName).To(And(Not(BeEmpty()), MatchRegexp(`^[a-z0-9]`)), "must be a valid K8s resource name")
 
 			By("2. Verify CRD was created")
 			crd := getCRDByName(testCtx, testClient, sharedNamespace, response.RemediationRequestName)
-			Expect(crd).ToNot(BeNil())
+			Expect(crd).To(Not(BeNil()), "CRD must be created after Gateway processes signal")
 			// DD-GATEWAY-011: Check status.deduplication (not spec)
 			Expect(crd.Status.Deduplication).ToNot(BeNil(), "status.deduplication should be initialized")
 			Expect(crd.Status.Deduplication.OccurrenceCount).To(Equal(int32(1)), "Initial occurrence count should be 1")

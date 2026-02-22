@@ -75,10 +75,7 @@ func (m *mockAuditStore) Close() error {
 
 var _ audit.AuditStore = &mockAuditStore{}
 
-// ptr returns a pointer to the given value (helper for test setup)
-func ptr[T any](v T) *T {
-	return &v
-}
+
 
 var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() {
 	var (
@@ -150,7 +147,7 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 				}, updatedSP)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(updatedSP.Status.Phase).To(Equal(signalprocessingv1alpha1.PhasePending))
-				Expect(updatedSP.Status.StartTime).ToNot(BeNil())
+				Expect(updatedSP.Status.StartTime).To(Not(BeNil()), "StartTime must be set on first reconciliation")
 			})
 		})
 
@@ -487,9 +484,8 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 				Expect(err).ToNot(HaveOccurred())
 
 				// Namespace context should be populated
-				Expect(updatedSP.Status.KubernetesContext).ToNot(BeNil())
-				Expect(updatedSP.Status.KubernetesContext.Namespace).ToNot(BeNil())
-				Expect(updatedSP.Status.KubernetesContext.Namespace.Name).To(Equal("test-namespace"))
+				Expect(updatedSP.Status.KubernetesContext).To(Not(BeNil()))
+				Expect(updatedSP.Status.KubernetesContext.Namespace).To(And(Not(BeNil()), HaveField("Name", Equal("test-namespace"))))
 				Expect(updatedSP.Status.KubernetesContext.Namespace.Labels["env"]).To(Equal("production"))
 			})
 		})
@@ -851,7 +847,7 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 
 			// Compile-time interface check
 			var _ reconcile.Reconciler = reconciler
-			Expect(reconciler).ToNot(BeNil())
+			Expect(reconciler).To(Not(BeNil()), "reconciler must be constructible")
 		})
 
 		It("CTRL-IFACE-02: should have SetupWithManager method", func() {
@@ -863,7 +859,7 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 			}
 
 			// Verify method exists
-			Expect(reconciler.SetupWithManager).ToNot(BeNil())
+			Expect(reconciler.SetupWithManager).To(Not(BeNil()), "SetupWithManager method must be defined")
 		})
 	})
 })

@@ -233,7 +233,7 @@ echo "Migrations complete!"`)
 	// ============================================================================
 	_, _ = fmt.Fprintf(writer, "⏳ Waiting for Redis to be ready...\n")
 	if err := WaitForRedisReady(NTIntegrationRedisContainer, writer); err != nil {
-		return fmt.Errorf("Redis failed to become ready: %w", err)
+		return fmt.Errorf("redis failed to become ready: %w", err)
 	}
 	_, _ = fmt.Fprintf(writer, "\n")
 

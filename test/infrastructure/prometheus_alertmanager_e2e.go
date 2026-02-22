@@ -631,7 +631,7 @@ func InjectMetrics(promURL string, metrics []TestMetric) error {
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("Prometheus OTLP endpoint returned status %d: %s", resp.StatusCode, string(respBody))
+		return fmt.Errorf("prometheus OTLP endpoint returned status %d: %s", resp.StatusCode, string(respBody))
 	}
 
 	return nil

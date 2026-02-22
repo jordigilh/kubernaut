@@ -67,7 +67,7 @@ var _ = Describe("Test 20: Security Headers & Observability", Ordered, func() {
 			testLogger.Info("To debug:")
 			testLogger.Info(fmt.Sprintf("  export KUBECONFIG=%s", kubeconfigPath))
 			testLogger.Info(fmt.Sprintf("  kubectl get pods -n %s", testNamespace))
-			testLogger.Info(fmt.Sprintf("  kubectl logs -n kubernaut-system deployment/gateway -f"))
+			testLogger.Info("  kubectl logs -n kubernaut-system deployment/gateway -f")
 			testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 			if testCancel != nil {
 				testCancel()

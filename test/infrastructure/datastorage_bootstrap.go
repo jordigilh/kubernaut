@@ -356,7 +356,7 @@ func StartDSBootstrap(cfg DSBootstrapConfig, writer io.Writer) (*DSBootstrapInfr
 
 	_, _ = fmt.Fprintf(writer, "⏳ Waiting for Redis to be ready...\n")
 	if err := waitForDSBootstrapRedisReady(infra, writer); err != nil {
-		return nil, fmt.Errorf("Redis failed to become ready: %w", err)
+		return nil, fmt.Errorf("redis failed to become ready: %w", err)
 	}
 	_, _ = fmt.Fprintf(writer, "   ✅ Redis ready\n\n")
 
@@ -560,7 +560,7 @@ func waitForDSBootstrapRedisReady(infra *DSBootstrapInfra, writer io.Writer) err
 			return nil
 		}
 		if i == 10 {
-			return fmt.Errorf("Redis failed to become ready after 10 seconds")
+			return fmt.Errorf("redis failed to become ready after 10 seconds")
 		}
 		_, _ = fmt.Fprintf(writer, "   Waiting... (attempt %d/10)\n", i)
 		time.Sleep(1 * time.Second)

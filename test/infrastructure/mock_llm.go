@@ -265,7 +265,7 @@ func StartMockLLMContainer(ctx context.Context, config MockLLMConfig, writer io.
 		// Cleanup on failure
 		rmCmd := exec.CommandContext(ctx, "podman", "rm", "-f", config.ContainerName)
 		_ = rmCmd.Run() // Ignore cleanup errors
-		return "", fmt.Errorf("Mock LLM health check failed: %w", err)
+		return "", fmt.Errorf("mock LLM health check failed: %w", err)
 	}
 
 	_, _ = fmt.Fprintf(writer, "✅ Mock LLM container is healthy and ready\n")
@@ -311,7 +311,7 @@ func WaitForMockLLMHealthy(ctx context.Context, port int, writer io.Writer) erro
 		}
 	}
 
-	return fmt.Errorf("Mock LLM did not become healthy after %d seconds", maxRetries)
+	return fmt.Errorf("mock LLM did not become healthy after %d seconds", maxRetries)
 }
 
 // StopMockLLMContainer stops and removes the Mock LLM container

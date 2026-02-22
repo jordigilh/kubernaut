@@ -33,10 +33,11 @@ import (
 // DD-STORAGE-010: Query API Pagination Strategy (V1.0: offset-based)
 
 // Helper function to create audit events via Write API
-func createTestAuditEvent(baseURL, service, eventType, correlationID string) error {
+func createTestAuditEvent(baseURL, service, _ /* eventType */, correlationID string) error {
 	// Build service-specific event data using ogen discriminated union types
 	var eventData ogenclient.AuditEventRequestEventData
 	var eventCategory ogenclient.AuditEventRequestEventCategory
+	var eventType string
 
 	switch service {
 	case "gateway":

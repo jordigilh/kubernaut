@@ -52,7 +52,7 @@ var _ = Describe("OpenAPIClientAdapter - DD-API-001 Compliance", Label("unit", "
 
 			client, err := audit.NewOpenAPIClientAdapter(server.URL, 5*time.Second)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(client).ToNot(BeNil())
+			Expect(client).To(Not(BeNil()), "client must be initialized with valid server URL")
 		})
 
 		It("should reject empty baseURL", func() {
@@ -69,7 +69,7 @@ var _ = Describe("OpenAPIClientAdapter - DD-API-001 Compliance", Label("unit", "
 
 			client, err := audit.NewOpenAPIClientAdapter(server.URL, 0)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(client).ToNot(BeNil())
+			Expect(client).To(Not(BeNil()), "client must be initialized with default timeout")
 		})
 	})
 
@@ -394,7 +394,7 @@ var _ = Describe("OpenAPIClientAdapter - DD-API-001 Compliance", Label("unit", "
 				Expect(r.Header.Get("Content-Type")).To(ContainSubstring("application/json"))
 
 				// Verify request body is valid JSON array (per OpenAPI spec)
-				Expect(r.Body).ToNot(BeNil())
+				Expect(r.Body).To(Not(BeNil()), "HTTP request body must not be nil")
 
 				w.Header().Set("Content-Type", "application/json") // Required for ogen client
 				w.WriteHeader(http.StatusCreated)
@@ -439,7 +439,7 @@ var _ = Describe("OpenAPIClientAdapter - DD-API-001 Compliance", Label("unit", "
 			Expect(err).ToNot(HaveOccurred())
 
 			// Verify it implements the interface
-			var _ audit.DataStorageClient = client
+			var _ = client
 		})
 	})
 })

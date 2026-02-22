@@ -21,6 +21,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/validity"
 )
@@ -42,9 +43,9 @@ var _ = Describe("Validity Window (BR-EM-006, BR-EM-007)", func() {
 
 			It("UT-EM-VW-001: should return Stabilizing when within stabilization window", func() {
 				now := time.Now()
-				creationTime := now.Add(-1 * time.Minute)      // Created 1 min ago
-				stabilizationWindow := 5 * time.Minute          // 5 min stabilization
-				validityDeadline := now.Add(29 * time.Minute)   // 30 min validity
+				creationTime := metav1.NewTime(now.Add(-1 * time.Minute))   // Created 1 min ago
+				stabilizationWindow := 5 * time.Minute                       // 5 min stabilization
+				validityDeadline := metav1.NewTime(now.Add(29 * time.Minute)) // 30 min validity
 
 				state := checker.Check(creationTime, stabilizationWindow, validityDeadline)
 				Expect(state).To(Equal(validity.WindowStabilizing))
@@ -52,10 +53,11 @@ var _ = Describe("Validity Window (BR-EM-006, BR-EM-007)", func() {
 
 			It("should return Stabilizing at exact creation time", func() {
 				now := time.Now()
+				creationTime := metav1.NewTime(now)
 				stabilizationWindow := 5 * time.Minute
-				validityDeadline := now.Add(30 * time.Minute)
+				validityDeadline := metav1.NewTime(now.Add(30 * time.Minute))
 
-				state := checker.Check(now, stabilizationWindow, validityDeadline)
+				state := checker.Check(creationTime, stabilizationWindow, validityDeadline)
 				Expect(state).To(Equal(validity.WindowStabilizing))
 			})
 		})
@@ -65,9 +67,9 @@ var _ = Describe("Validity Window (BR-EM-006, BR-EM-007)", func() {
 
 			It("UT-EM-VW-002: should return Active when stabilization passed but within validity", func() {
 				now := time.Now()
-				creationTime := now.Add(-10 * time.Minute)     // Created 10 min ago
-				stabilizationWindow := 5 * time.Minute          // 5 min stabilization (passed)
-				validityDeadline := now.Add(20 * time.Minute)   // Still within validity
+				creationTime := metav1.NewTime(now.Add(-10 * time.Minute))  // Created 10 min ago
+				stabilizationWindow := 5 * time.Minute                        // 5 min stabilization (passed)
+				validityDeadline := metav1.NewTime(now.Add(20 * time.Minute))  // Still within validity
 
 				state := checker.Check(creationTime, stabilizationWindow, validityDeadline)
 				Expect(state).To(Equal(validity.WindowActive))
@@ -75,9 +77,9 @@ var _ = Describe("Validity Window (BR-EM-006, BR-EM-007)", func() {
 
 			It("should return Active at exact stabilization boundary", func() {
 				now := time.Now()
-				creationTime := now.Add(-5 * time.Minute)      // Exactly at stabilization boundary
+				creationTime := metav1.NewTime(now.Add(-5 * time.Minute))   // Exactly at stabilization boundary
 				stabilizationWindow := 5 * time.Minute
-				validityDeadline := now.Add(25 * time.Minute)
+				validityDeadline := metav1.NewTime(now.Add(25 * time.Minute))
 
 				state := checker.Check(creationTime, stabilizationWindow, validityDeadline)
 				Expect(state).To(Equal(validity.WindowActive))
@@ -89,9 +91,9 @@ var _ = Describe("Validity Window (BR-EM-006, BR-EM-007)", func() {
 
 			It("UT-EM-VW-003: should return Expired when past validity deadline", func() {
 				now := time.Now()
-				creationTime := now.Add(-60 * time.Minute)     // Created 60 min ago
+				creationTime := metav1.NewTime(now.Add(-60 * time.Minute))  // Created 60 min ago
 				stabilizationWindow := 5 * time.Minute
-				validityDeadline := now.Add(-1 * time.Minute)   // Expired 1 min ago
+				validityDeadline := metav1.NewTime(now.Add(-1 * time.Minute)) // Expired 1 min ago
 
 				state := checker.Check(creationTime, stabilizationWindow, validityDeadline)
 				Expect(state).To(Equal(validity.WindowExpired))
@@ -99,9 +101,9 @@ var _ = Describe("Validity Window (BR-EM-006, BR-EM-007)", func() {
 
 			It("should return Expired at exact validity deadline", func() {
 				now := time.Now()
-				creationTime := now.Add(-30 * time.Minute)
+				creationTime := metav1.NewTime(now.Add(-30 * time.Minute))
 				stabilizationWindow := 5 * time.Minute
-				validityDeadline := now // Exactly at deadline
+				validityDeadline := metav1.NewTime(now) // Exactly at deadline
 
 				state := checker.Check(creationTime, stabilizationWindow, validityDeadline)
 				Expect(state).To(Equal(validity.WindowExpired))
@@ -112,9 +114,9 @@ var _ = Describe("Validity Window (BR-EM-006, BR-EM-007)", func() {
 		Context("edge case: validity < stabilization", func() {
 			It("should return Expired even if stabilization hasn't passed when validity is expired", func() {
 				now := time.Now()
-				creationTime := now.Add(-1 * time.Minute)      // Created 1 min ago
-				stabilizationWindow := 5 * time.Minute          // Not yet stabilized
-				validityDeadline := now.Add(-1 * time.Second)   // But already expired
+				creationTime := metav1.NewTime(now.Add(-1 * time.Minute))   // Created 1 min ago
+				stabilizationWindow := 5 * time.Minute                         // Not yet stabilized
+				validityDeadline := metav1.NewTime(now.Add(-1 * time.Second)) // But already expired
 
 				state := checker.Check(creationTime, stabilizationWindow, validityDeadline)
 				Expect(state).To(Equal(validity.WindowExpired))
@@ -129,7 +131,7 @@ var _ = Describe("Validity Window (BR-EM-006, BR-EM-007)", func() {
 
 		It("should return remaining time when still stabilizing", func() {
 			now := time.Now()
-			creationTime := now.Add(-1 * time.Minute)
+			creationTime := metav1.NewTime(now.Add(-1 * time.Minute))
 			stabilizationWindow := 5 * time.Minute
 
 			remaining := checker.TimeUntilStabilized(creationTime, stabilizationWindow)
@@ -139,7 +141,7 @@ var _ = Describe("Validity Window (BR-EM-006, BR-EM-007)", func() {
 
 		It("should return 0 when already stabilized", func() {
 			now := time.Now()
-			creationTime := now.Add(-10 * time.Minute)
+			creationTime := metav1.NewTime(now.Add(-10 * time.Minute))
 			stabilizationWindow := 5 * time.Minute
 
 			remaining := checker.TimeUntilStabilized(creationTime, stabilizationWindow)

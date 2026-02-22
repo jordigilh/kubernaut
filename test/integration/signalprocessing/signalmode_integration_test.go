@@ -281,7 +281,7 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 
 				event, err := getLatestAuditEvent(spaudit.EventTypeClassificationDecision, correlationID)
 				g.Expect(err).ToNot(HaveOccurred())
-				g.Expect(event).ToNot(BeNil())
+				g.Expect(event).To(Not(BeNil()))
 
 				payload := event.EventData.SignalProcessingAuditPayload
 
@@ -334,7 +334,7 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 
 				event, err := getLatestAuditEvent(spaudit.EventTypeClassificationDecision, correlationID)
 				g.Expect(err).ToNot(HaveOccurred())
-				g.Expect(event).ToNot(BeNil())
+				g.Expect(event).To(Not(BeNil()))
 
 				payload := event.EventData.SignalProcessingAuditPayload
 
@@ -388,7 +388,7 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 
 				event, err := getLatestAuditEvent(spaudit.EventTypeSignalProcessed, correlationID)
 				g.Expect(err).ToNot(HaveOccurred())
-				g.Expect(event).ToNot(BeNil())
+				g.Expect(event).To(Not(BeNil()))
 
 				payload := event.EventData.SignalProcessingAuditPayload
 

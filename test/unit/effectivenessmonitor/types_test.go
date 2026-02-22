@@ -23,7 +23,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/config"
-	emconfig "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/config"
 	"github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/types"
 )
 
@@ -95,19 +94,19 @@ var _ = Describe("Core Types (BR-EM-001 through BR-EM-008)", func() {
 	Describe("Timeout Constants", func() {
 
 		It("should define RequeueStabilizationPending as 30s", func() {
-			Expect(emconfig.RequeueStabilizationPending).To(Equal(30 * time.Second))
+			Expect(config.RequeueStabilizationPending).To(Equal(30 * time.Second))
 		})
 
 		It("should define RequeueAssessmentInProgress as 15s", func() {
-			Expect(emconfig.RequeueAssessmentInProgress).To(Equal(15 * time.Second))
+			Expect(config.RequeueAssessmentInProgress).To(Equal(15 * time.Second))
 		})
 
 		It("should define RequeueGenericError as 5s", func() {
-			Expect(emconfig.RequeueGenericError).To(Equal(5 * time.Second))
+			Expect(config.RequeueGenericError).To(Equal(5 * time.Second))
 		})
 
 		It("should define RequeueExternalServiceDown as 30s", func() {
-			Expect(emconfig.RequeueExternalServiceDown).To(Equal(30 * time.Second))
+			Expect(config.RequeueExternalServiceDown).To(Equal(30 * time.Second))
 		})
 	})
 

@@ -81,7 +81,7 @@ var _ = Describe("Audit Event Validation Helper", func() {
 			// ACT: Post audit event via HTTP API
 			eventID, err := postAuditEvent(ctx, client, auditEvent)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(eventID).ToNot(BeEmpty())
+			Expect(eventID).To(MatchRegexp(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`), "eventID must be a valid UUID")
 
 			// E2E NOTE: No database schema manipulation needed here!
 			// E2E tests use HTTP API only (no direct DB access).
@@ -101,7 +101,7 @@ var _ = Describe("Audit Event Validation Helper", func() {
 				})
 				Expect(err).ToNot(HaveOccurred())
 
-				if resp.Data == nil || len(resp.Data) == 0 {
+				if len(resp.Data) == 0 {
 					break
 				}
 
@@ -114,7 +114,7 @@ var _ = Describe("Audit Event Validation Helper", func() {
 				offset += limit
 			}
 
-			Expect(allEvents).ToNot(BeNil())
+			Expect(allEvents).To(Not(BeNil()), "query must return events")
 			Expect(allEvents).To(HaveLen(1), "should return exactly one event")
 
 			// ASSERT: Validate using testutil helper (V1.0 maturity requirement)

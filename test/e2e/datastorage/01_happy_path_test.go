@@ -103,7 +103,7 @@ var _ = Describe("BR-DS-001: Audit Event Persistence - Complete Remediation Audi
 
 		// Connect to PostgreSQL for verification (using shared NodePort - no port-forward needed)
 		testLogger.Info("🔌 Connecting to PostgreSQL via NodePort...")
-		connStr := fmt.Sprintf("host=localhost port=25433 user=slm_user password=test_password dbname=action_history sslmode=disable") // Per DD-TEST-001
+		connStr := "host=localhost port=25433 user=slm_user password=test_password dbname=action_history sslmode=disable" // Per DD-TEST-001
 		var err error
 		db, err = sql.Open("pgx", connStr)
 		Expect(err).ToNot(HaveOccurred())
@@ -259,7 +259,7 @@ var _ = Describe("BR-DS-001: Audit Event Persistence - Complete Remediation Audi
 			})
 			Expect(err).ToNot(HaveOccurred())
 
-			if queryResp.Data == nil || len(queryResp.Data) == 0 {
+			if len(queryResp.Data) == 0 {
 				break
 			}
 

@@ -633,7 +633,7 @@ func deployFullPipelineGateway(ctx context.Context, namespace, kubeconfigPath, g
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("Gateway deployment failed: %w", err)
+		return fmt.Errorf("gateway deployment failed: %w", err)
 	}
 
 	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for Gateway pod ready...")
@@ -643,7 +643,7 @@ func deployFullPipelineGateway(ctx context.Context, namespace, kubeconfigPath, g
 	waitCmd.Stdout = writer
 	waitCmd.Stderr = writer
 	if err := waitCmd.Run(); err != nil {
-		return fmt.Errorf("Gateway pod not ready: %w", err)
+		return fmt.Errorf("gateway pod not ready: %w", err)
 	}
 
 	return nil

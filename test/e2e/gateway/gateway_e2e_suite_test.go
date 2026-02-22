@@ -169,10 +169,10 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute),
 		// Initialize failure tracking
 		anyTestFailed = false
 
-		logger.Info(fmt.Sprintf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"))
+		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		logger.Info(fmt.Sprintf("Gateway E2E Test Suite - Setup (Process %d)", GinkgoParallelProcess()))
-		logger.Info(fmt.Sprintf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"))
-		logger.Info(fmt.Sprintf("Connecting to cluster created by process 1"))
+		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		logger.Info("Connecting to cluster created by process 1")
 		logger.Info(fmt.Sprintf("  • Kubeconfig: %s", kubeconfigPath))
 
 		// Set KUBECONFIG environment variable for this process
@@ -212,7 +212,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute),
 		logger.Info(fmt.Sprintf("  • Kubeconfig: %s", kubeconfigPath))
 		logger.Info(fmt.Sprintf("  • Gateway URL: %s", gatewayURL))
 		logger.Info(fmt.Sprintf("  • Gateway Namespace: %s", gatewayNamespace))
-		logger.Info(fmt.Sprintf("  • K8s Client: Suite-level (1 per process)"))
+		logger.Info("  • K8s Client: Suite-level (1 per process)")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	},
 )

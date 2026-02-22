@@ -721,7 +721,7 @@ var _ = Describe("OwnerChain Builder", func() {
 						if key.Name == "cancel-deployment" {
 							cancel() // Cancel context before fetch
 							// Small delay to ensure cancellation is processed
-							time.Sleep(10 * time.Millisecond)
+							<-time.After(10 * time.Millisecond)
 							return ctx.Err()
 						}
 						return client.Get(ctx, key, obj, opts...)

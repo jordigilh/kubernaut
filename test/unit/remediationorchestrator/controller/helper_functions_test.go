@@ -37,7 +37,6 @@ import (
 	prodcontroller "github.com/jordigilh/kubernaut/internal/controller/remediationorchestrator"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/helpers"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
-	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -86,7 +85,7 @@ var _ = Describe("BR-ORCH-HELPERS: Helper Function Tests", func() {
 			scheme,
 			mockAuditStore, // Use MockAuditStore for helper tests
 			recorder,       // DD-EVENT-001: FakeRecorder for K8s event assertions
-			rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()), // DD-METRICS-001: required
+			metrics.NewMetricsWithRegistry(prometheus.NewRegistry()), // DD-METRICS-001: required
 			prodcontroller.TimeoutConfig{
 				Global:     1 * time.Hour,
 				Processing: 5 * time.Minute,

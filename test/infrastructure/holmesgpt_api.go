@@ -1077,7 +1077,7 @@ data:
 	rolloutCmd.Stdout = writer
 	rolloutCmd.Stderr = writer
 	if err := rolloutCmd.Run(); err != nil {
-		return fmt.Errorf("Mock LLM rollout failed: %w", err)
+		return fmt.Errorf("mock LLM rollout failed: %w", err)
 	}
 	_, _ = fmt.Fprintf(writer, "   ✅ Mock LLM restarted with workflow UUIDs\n")
 
@@ -1356,7 +1356,7 @@ func resolveAnthropicAPIKey(cfg *hapiLLMConfig) (string, string, error) {
 	}
 
 	return "", "", fmt.Errorf(
-		"Anthropic API key not found. Provide it via one of:\n"+
+		"anthropic API key not found. Provide it via one of:\n"+
 			"  1. ANTHROPIC_API_KEY environment variable\n"+
 			"  2. File at %s (single line, no trailing newline)\n"+
 			"  3. llm.api_key field in %s", keyFilePath, getHAPILLMConfigPath())

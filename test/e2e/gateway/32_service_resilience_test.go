@@ -122,15 +122,14 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 			if resp.StatusCode == http.StatusServiceUnavailable {
 				// Validate RFC 7807 error response
 				var errorResp map[string]interface{}
-				err := json.NewDecoder(resp.Body).Decode(&errorResp)
-				_ = err
+				Expect(json.NewDecoder(resp.Body).Decode(&errorResp)).To(Succeed())
 
 				// Validate Retry-After header present
 				retryAfter := resp.Header.Get("Retry-After")
 				Expect(retryAfter).ToNot(BeEmpty(), "Retry-After header required for HTTP 503 responses")
 
-				// Validate error includes actionable information
-				Expect(errorResp["detail"]).ToNot(BeNil())
+				// Validate error includes actionable information (RFC 7807 detail field)
+				Expect(errorResp["detail"]).To(Not(BeNil()), "RFC 7807 Problem Details must include detail field for HTTP 503")
 				Expect(errorResp["type"]).To(Equal("https://kubernaut.ai/problems/service-unavailable"))
 			} else {
 				// K8s API available, should succeed with CRD creation
@@ -165,7 +164,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 			// If K8s API failure occurs, validate backoff is reasonable
 			if resp.StatusCode == http.StatusServiceUnavailable {
 				retryAfter := resp.Header.Get("Retry-After")
-				Expect(retryAfter).ToNot(BeEmpty())
+				Expect(retryAfter).To(MatchRegexp(`^\d+$`), "Retry-After header should be integer seconds")
 
 				// Retry-After should be between 1-60 seconds for transient failures
 				// (not immediate retry, not excessive delay)
@@ -192,13 +191,13 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 
 			resp, err := http.DefaultClient.Do(req)
-			_ = err
+			Expect(err).ToNot(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
 
 			// Either succeeds (happy path) or returns HTTP 500 with K8s API error details
 			if resp.StatusCode == http.StatusInternalServerError {
 				var errorResp map[string]interface{}
-				err = json.NewDecoder(resp.Body).Decode(&errorResp) //nolint:ineffassign // Test pattern: error reassignment across phases
+				Expect(json.NewDecoder(resp.Body).Decode(&errorResp)).To(Succeed())
 
 				// Validate error message includes K8s context
 				detail := errorResp["detail"].(string)
@@ -232,7 +231,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 
 			resp, err := http.DefaultClient.Do(req)
-			_ = err
+			Expect(err).ToNot(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
 
 			// Then: Gateway should succeed despite DataStorage unavailability
@@ -280,7 +279,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 
 			resp, err := http.DefaultClient.Do(req)
-			_ = err
+			Expect(err).ToNot(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
 
 			// Then: Request should succeed with CRD creation (graceful degradation)
@@ -288,8 +287,9 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 
 			// Parse response to get actual namespace
 			var gwResp GatewayResponse
-			bodyBytes, _ := io.ReadAll(resp.Body)
-			_ = json.Unmarshal(bodyBytes, &gwResp)
+			bodyBytes, err := io.ReadAll(resp.Body)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(json.Unmarshal(bodyBytes, &gwResp)).To(Succeed())
 
 			// And: CRD should be created (audit is best-effort)
 			Eventually(func() bool {
@@ -330,7 +330,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 
 			resp, err := http.DefaultClient.Do(req)
-			_ = err
+			Expect(err).ToNot(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
 
 			// Then: Processing succeeds with CRD creation
@@ -338,8 +338,9 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 
 			// Parse response to get actual namespace
 			var gwResp GatewayResponse
-			bodyBytes, _ := io.ReadAll(resp.Body)
-			_ = json.Unmarshal(bodyBytes, &gwResp)
+			bodyBytes, err := io.ReadAll(resp.Body)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(json.Unmarshal(bodyBytes, &gwResp)).To(Succeed())
 
 			// And: CRD created
 			Eventually(func() bool {
@@ -377,7 +378,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 
 			resp, err := http.DefaultClient.Do(req)
-			_ = err
+			Expect(err).ToNot(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
 
 			// Validation depends on actual infrastructure state

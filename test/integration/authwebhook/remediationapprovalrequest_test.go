@@ -35,10 +35,8 @@ type ApprovalDecisionScenario struct {
 	businessOutcome     string
 	auditorQuestion     string
 	complianceControl   string
-	decision            remediationv1.ApprovalDecision
-	decisionMessage     string
-	forgedDecidedBy     string // User-provided DecidedBy (should be overwritten)
-	shouldRejectRequest bool   // For invalid decision test
+	decision        remediationv1.ApprovalDecision
+	decisionMessage string
 }
 
 var _ = Describe("BR-AUTH-001: RemediationApprovalRequest Decision Attribution", func() {

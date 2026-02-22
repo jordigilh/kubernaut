@@ -434,9 +434,8 @@ var _ = Describe("TektonExecutor (BR-WE-014)", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			// Verify bundle resolver
-			Expect(pr.Spec.PipelineRef).ToNot(BeNil())
-			Expect(pr.Spec.PipelineRef.ResolverRef.Resolver).To(Equal(tektonv1.ResolverName("bundles")))
-			bundleParams := pr.Spec.PipelineRef.ResolverRef.Params
+			Expect(pr.Spec.PipelineRef).To(And(Not(BeNil()), HaveField("Resolver", Equal(tektonv1.ResolverName("bundles")))))
+			bundleParams := pr.Spec.PipelineRef.Params
 			Expect(bundleParams).To(HaveLen(3))
 
 			// Verify bundle param "bundle" = container image
@@ -601,7 +600,7 @@ var _ = Describe("TektonExecutor (BR-WE-014)", func() {
 			Expect(result.Phase).To(Equal(workflowexecutionv1alpha1.PhaseCompleted))
 			Expect(result.Reason).To(Equal("Succeeded"))
 			Expect(result.Message).To(Equal("Pipeline completed successfully"))
-			Expect(result.Summary).ToNot(BeNil())
+			Expect(result.Summary).To(Not(BeNil()), "GetStatus must populate Summary for completed PipelineRun")
 		})
 
 		It("should return PhaseFailed for failed PipelineRun (UT-WE-014-071)", func() {
@@ -727,8 +726,7 @@ var _ = Describe("TektonExecutor (BR-WE-014)", func() {
 
 			result, err := tektonExec.GetStatus(ctx, wfe, "kubernaut-workflows")
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result.Summary).ToNot(BeNil())
-			Expect(result.Summary.TotalTasks).To(Equal(3))
+			Expect(result.Summary).To(And(Not(BeNil()), HaveField("TotalTasks", Equal(3))))
 			Expect(result.Summary.Status).To(Equal(string(corev1.ConditionTrue)))
 			Expect(result.Summary.Reason).To(Equal("Succeeded"))
 		})

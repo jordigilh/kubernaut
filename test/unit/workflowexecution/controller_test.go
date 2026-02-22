@@ -100,8 +100,8 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				CooldownPeriod:     5 * time.Minute,
 			}
 
-			Expect(reconciler.Client).ToNot(BeNil())
-			Expect(reconciler.Scheme).ToNot(BeNil())
+			Expect(reconciler.Client).To(Not(BeNil()), "reconciler client must be initialized after setup")
+			Expect(reconciler.Scheme).To(Not(BeNil()), "reconciler scheme must be registered after setup")
 			Expect(reconciler.ExecutionNamespace).To(Equal("kubernaut-workflows"))
 			Expect(reconciler.CooldownPeriod).To(Equal(5 * time.Minute))
 		})
@@ -405,8 +405,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			err = client.Get(ctx, types.NamespacedName{Name: "test-wfe", Namespace: "default"}, updated)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(updated.Status.Phase).To(Equal(workflowexecutionv1alpha1.PhaseFailed))
-			Expect(updated.Status.FailureDetails).ToNot(BeNil())
-			Expect(updated.Status.FailureDetails.Message).To(ContainSubstring("Race condition"))
+			Expect(updated.Status.FailureDetails).To(And(Not(BeNil()), HaveField("Message", ContainSubstring("Race condition"))))
 		})
 	})
 
@@ -492,13 +491,13 @@ var _ = Describe("WorkflowExecution Controller", func() {
 		It("should use bundle resolver with correct params", func() {
 			pr := reconciler.BuildPipelineRun(wfe)
 
-			Expect(pr.Spec.PipelineRef).ToNot(BeNil())
-			Expect(string(pr.Spec.PipelineRef.ResolverRef.Resolver)).To(Equal("bundles"))
+			Expect(pr.Spec.PipelineRef).To(Not(BeNil()))
+			Expect(string(pr.Spec.PipelineRef.Resolver)).To(Equal("bundles"))
 
 			// Check bundle param
 			var bundleParam, nameParam, kindParam *tektonv1.Param
-			for i := range pr.Spec.PipelineRef.ResolverRef.Params {
-				p := &pr.Spec.PipelineRef.ResolverRef.Params[i]
+			for i := range pr.Spec.PipelineRef.Params {
+				p := &pr.Spec.PipelineRef.Params[i]
 				switch p.Name {
 				case "bundle":
 					bundleParam = p
@@ -509,14 +508,9 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				}
 			}
 
-			Expect(bundleParam).ToNot(BeNil())
-			Expect(bundleParam.Value.StringVal).To(Equal("ghcr.io/kubernaut/workflows/restart-deployment:v1.0.0"))
-
-			Expect(nameParam).ToNot(BeNil())
-			Expect(nameParam.Value.StringVal).To(Equal("workflow"))
-
-			Expect(kindParam).ToNot(BeNil())
-			Expect(kindParam.Value.StringVal).To(Equal("pipeline"))
+			Expect(bundleParam).To(And(Not(BeNil()), HaveField("Value.StringVal", Equal("ghcr.io/kubernaut/workflows/restart-deployment:v1.0.0"))))
+			Expect(nameParam).To(And(Not(BeNil()), HaveField("Value.StringVal", Equal("workflow"))))
+			Expect(kindParam).To(And(Not(BeNil()), HaveField("Value.StringVal", Equal("pipeline"))))
 		})
 
 		It("should pass workflow parameters to PipelineRun", func() {
@@ -741,8 +735,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 			summary := reconciler.BuildPipelineRunStatusSummary(pr)
 
-			Expect(summary).ToNot(BeNil())
-			Expect(summary.Status).To(Equal("Unknown"))
+			Expect(summary).To(And(Not(BeNil()), HaveField("Status", Equal("Unknown"))))
 		})
 
 		It("should return summary with task counts from ChildReferences", func() {
@@ -764,8 +757,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 			summary := reconciler.BuildPipelineRunStatusSummary(pr)
 
-			Expect(summary).ToNot(BeNil())
-			Expect(summary.TotalTasks).To(Equal(3))
+			Expect(summary).To(And(Not(BeNil()), HaveField("TotalTasks", Equal(3))))
 		})
 
 		It("should extract status from Succeeded condition", func() {
@@ -785,10 +777,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 			summary := reconciler.BuildPipelineRunStatusSummary(pr)
 
-			Expect(summary).ToNot(BeNil())
-			Expect(summary.Status).To(Equal("True"))
-			Expect(summary.Reason).To(Equal("Succeeded"))
-			Expect(summary.Message).To(Equal("All tasks completed"))
+			Expect(summary).To(And(Not(BeNil()), HaveField("Status", Equal("True")), HaveField("Reason", Equal("Succeeded")), HaveField("Message", Equal("All tasks completed"))))
 		})
 	})
 
@@ -877,7 +866,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			var updated workflowexecutionv1alpha1.WorkflowExecution
 			err = reconciler.Get(ctx, client.ObjectKeyFromObject(wfe), &updated)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(updated.Status.CompletionTime).ToNot(BeNil())
+			Expect(updated.Status.CompletionTime).To(Not(BeNil()), "CompletionTime must be set after successful workflow execution")
 		})
 
 		It("should calculate Duration from StartTime to CompletionTime", func() {
@@ -887,9 +876,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			var updated workflowexecutionv1alpha1.WorkflowExecution
 			err = reconciler.Get(ctx, client.ObjectKeyFromObject(wfe), &updated)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(updated.Status.Duration).ToNot(BeEmpty())
-			// Duration should be around 2 minutes
-			Expect(updated.Status.Duration).To(ContainSubstring("m"))
+			Expect(updated.Status.Duration).To(And(Not(BeEmpty()), MatchRegexp(`^\d+[hms]`)), "Duration must be a valid time string")
 		})
 
 		It("UT-WE-ES-001: should persist ExecutionStatus when passed as summary", func() {
@@ -1008,8 +995,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			var updated workflowexecutionv1alpha1.WorkflowExecution
 			err = reconciler.Get(ctx, client.ObjectKeyFromObject(wfe), &updated)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(updated.Status.FailureDetails).ToNot(BeNil())
-			Expect(updated.Status.FailureDetails.Message).ToNot(BeEmpty())
+			Expect(updated.Status.FailureDetails).To(And(Not(BeNil()), HaveField("Message", Not(BeEmpty()))))
 		})
 
 		It("should set CompletionTime", func() {
@@ -1019,7 +1005,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			var updated workflowexecutionv1alpha1.WorkflowExecution
 			err = reconciler.Get(ctx, client.ObjectKeyFromObject(wfe), &updated)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(updated.Status.CompletionTime).ToNot(BeNil())
+			Expect(updated.Status.CompletionTime).To(Not(BeNil()), "CompletionTime must be set after workflow failure")
 		})
 
 		It("should calculate Duration", func() {
@@ -1029,7 +1015,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			var updated workflowexecutionv1alpha1.WorkflowExecution
 			err = reconciler.Get(ctx, client.ObjectKeyFromObject(wfe), &updated)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(updated.Status.Duration).ToNot(BeEmpty())
+			Expect(updated.Status.Duration).To(MatchRegexp(`^\d+[hms]`), "Duration must be a valid time string")
 		})
 
 		It("should generate NaturalLanguageSummary", func() {
@@ -1039,7 +1025,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			var updated workflowexecutionv1alpha1.WorkflowExecution
 			err = reconciler.Get(ctx, client.ObjectKeyFromObject(wfe), &updated)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(updated.Status.FailureDetails.NaturalLanguageSummary).ToNot(BeEmpty())
+			Expect(updated.Status.FailureDetails.NaturalLanguageSummary).To(ContainSubstring("restart-deployment"), "NL summary should reference the failed workflow")
 		})
 
 		It("should emit WorkflowFailed event", func() {
@@ -1127,8 +1113,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			startTime := metav1.NewTime(time.Now().Add(-30 * time.Second))
 			details := reconciler.ExtractFailureDetails(ctx, pr, &startTime)
 
-			Expect(details).ToNot(BeNil())
-			Expect(details.Reason).To(Equal(workflowexecutionv1alpha1.FailureReasonForbidden))
+			Expect(details).To(And(Not(BeNil()), HaveField("Reason", Equal(workflowexecutionv1alpha1.FailureReasonForbidden))))
 		})
 
 		It("should extract reason from condition message containing 'oom'", func() {
@@ -1148,8 +1133,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			startTime := metav1.NewTime(time.Now().Add(-30 * time.Second))
 			details := reconciler.ExtractFailureDetails(ctx, pr, &startTime)
 
-			Expect(details).ToNot(BeNil())
-			Expect(details.Reason).To(Equal(workflowexecutionv1alpha1.FailureReasonOOMKilled))
+			Expect(details).To(And(Not(BeNil()), HaveField("Reason", Equal(workflowexecutionv1alpha1.FailureReasonOOMKilled))))
 		})
 
 		It("should extract reason from condition message containing 'timeout'", func() {
@@ -1169,8 +1153,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			startTime := metav1.NewTime(time.Now().Add(-30 * time.Second))
 			details := reconciler.ExtractFailureDetails(ctx, pr, &startTime)
 
-			Expect(details).ToNot(BeNil())
-			Expect(details.Reason).To(Equal(workflowexecutionv1alpha1.FailureReasonDeadlineExceeded))
+			Expect(details).To(And(Not(BeNil()), HaveField("Reason", Equal(workflowexecutionv1alpha1.FailureReasonDeadlineExceeded))))
 		})
 
 		It("should return Unknown reason for unrecognized failure", func() {
@@ -1190,8 +1173,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			startTime := metav1.NewTime(time.Now().Add(-30 * time.Second))
 			details := reconciler.ExtractFailureDetails(ctx, pr, &startTime)
 
-			Expect(details).ToNot(BeNil())
-			Expect(details.Reason).To(Equal(workflowexecutionv1alpha1.FailureReasonUnknown))
+			Expect(details).To(And(Not(BeNil()), HaveField("Reason", Equal(workflowexecutionv1alpha1.FailureReasonUnknown))))
 		})
 
 		It("should calculate ExecutionTimeBeforeFailure", func() {
@@ -1211,9 +1193,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			startTime := metav1.NewTime(time.Now().Add(-2 * time.Minute))
 			details := reconciler.ExtractFailureDetails(ctx, pr, &startTime)
 
-			Expect(details).ToNot(BeNil())
-			Expect(details.ExecutionTimeBeforeFailure).ToNot(BeEmpty())
-			Expect(details.ExecutionTimeBeforeFailure).To(ContainSubstring("m"))
+			Expect(details).To(And(Not(BeNil()), HaveField("ExecutionTimeBeforeFailure", And(Not(BeEmpty()), ContainSubstring("m")))))
 		})
 
 		// ========================================
@@ -1243,7 +1223,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				startTime := metav1.NewTime(time.Now().Add(-30 * time.Second))
 				details := reconciler.ExtractFailureDetails(ctx, pr, &startTime)
 
-				Expect(details).ToNot(BeNil())
+				Expect(details).To(Not(BeNil()))
 				Expect(string(details.Reason)).To(Equal(expectedReason))
 			},
 			// OOMKilled scenarios - matches "oomkilled" or "oom" in message (case-insensitive)
@@ -1356,8 +1336,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 				// Then: Should return the failed TaskRun and its index
 				Expect(err).ToNot(HaveOccurred())
-				Expect(taskRun).ToNot(BeNil())
-				Expect(taskRun.Name).To(Equal("test-pr-task2-def456"))
+				Expect(taskRun).To(And(Not(BeNil()), HaveField("Name", Equal("test-pr-task2-def456"))))
 				Expect(index).To(Equal(1)) // 0-indexed, second task
 			})
 
@@ -1462,8 +1441,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 				// Then: Should find the TaskRun (index 1, after skipping Run)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(taskRun).ToNot(BeNil())
-				Expect(taskRun.Name).To(Equal("test-pr-task-failed"))
+				Expect(taskRun).To(And(Not(BeNil()), HaveField("Name", Equal("test-pr-task-failed"))))
 				Expect(index).To(Equal(1)) // Index in ChildReferences
 			})
 		})
@@ -1528,8 +1506,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				details := reconciler.ExtractFailureDetails(ctx, pr, &startTime)
 
 				// Then: FailedTaskName should be populated
-				Expect(details).ToNot(BeNil())
-				Expect(details.FailedTaskName).To(Equal("test-pr-validate-config"))
+				Expect(details).To(And(Not(BeNil()), HaveField("FailedTaskName", Equal("test-pr-validate-config"))))
 			})
 
 			It("should populate FailedTaskIndex from TaskRun position", func() {
@@ -1564,8 +1541,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				details := reconciler.ExtractFailureDetails(ctx, pr, &startTime)
 
 				// Then: FailedTaskIndex should be 1 (0-indexed)
-				Expect(details).ToNot(BeNil())
-				Expect(details.FailedTaskIndex).To(Equal(1))
+				Expect(details).To(And(Not(BeNil()), HaveField("FailedTaskIndex", Equal(1))))
 			})
 
 			It("should populate ExitCode from TaskRun container status", func() {
@@ -1613,9 +1589,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				details := reconciler.ExtractFailureDetails(ctx, pr, &startTime)
 
 				// Then: ExitCode should be populated
-				Expect(details).ToNot(BeNil())
-				Expect(details.ExitCode).ToNot(BeNil())
-				Expect(*details.ExitCode).To(Equal(int32(137)))
+				Expect(details).To(And(Not(BeNil()), HaveField("ExitCode", HaveValue(Equal(int32(137))))))
 			})
 
 			It("should handle missing TaskRun gracefully in ExtractFailureDetails", func() {
@@ -1637,10 +1611,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				details := reconciler.ExtractFailureDetails(ctx, pr, &startTime)
 
 				// Then: Should still return valid details without TaskRun fields
-				Expect(details).ToNot(BeNil())
-				Expect(details.FailedTaskName).To(BeEmpty())
-				Expect(details.FailedTaskIndex).To(Equal(0))
-				Expect(details.ExitCode).To(BeNil())
+				Expect(details).To(And(Not(BeNil()), HaveField("FailedTaskName", BeEmpty()), HaveField("FailedTaskIndex", Equal(0)), HaveField("ExitCode", BeNil())))
 			})
 		})
 
@@ -1705,9 +1676,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				details := reconciler.ExtractFailureDetails(ctx, pr, &startTime)
 
 				// Then: Should return first non-zero (137 - the root cause)
-				Expect(details).ToNot(BeNil())
-				Expect(details.ExitCode).ToNot(BeNil())
-				Expect(*details.ExitCode).To(Equal(int32(137)))
+				Expect(details).To(And(Not(BeNil()), HaveField("ExitCode", HaveValue(Equal(int32(137))))))
 			})
 
 			It("should return nil exit code when all steps succeed but pipeline fails", func() {
@@ -1753,8 +1722,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				details := reconciler.ExtractFailureDetails(ctx, pr, &startTime)
 
 				// Then: ExitCode should be nil (no step failed)
-				Expect(details).ToNot(BeNil())
-				Expect(details.ExitCode).To(BeNil())
+				Expect(details).To(And(Not(BeNil()), HaveField("ExitCode", BeNil())))
 			})
 
 			It("should handle TaskRun with running step (not terminated)", func() {
@@ -1799,8 +1767,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				details := reconciler.ExtractFailureDetails(ctx, pr, &startTime)
 
 				// Then: ExitCode should be nil (step not terminated)
-				Expect(details).ToNot(BeNil())
-				Expect(details.ExitCode).To(BeNil())
+				Expect(details).To(And(Not(BeNil()), HaveField("ExitCode", BeNil())))
 			})
 		})
 	})
@@ -1897,8 +1864,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			summary := reconciler.GenerateNaturalLanguageSummary(wfe, nil)
 
 			// Then: Should return generic message (not panic, not empty)
-			Expect(summary).ToNot(BeEmpty())
-			Expect(summary).To(ContainSubstring("failed"))
+			Expect(summary).To(And(Not(BeEmpty()), ContainSubstring("failed")))
 			// Should still include workflow context
 			Expect(summary).To(ContainSubstring("restart-deployment"))
 		})
@@ -1922,8 +1888,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			summary := reconciler.GenerateNaturalLanguageSummary(wfe, details)
 
 			// Then: Should return valid summary with workflow context
-			Expect(summary).ToNot(BeEmpty())
-			Expect(summary).To(ContainSubstring("restart-deployment"))
+			Expect(summary).To(And(Not(BeEmpty()), ContainSubstring("restart-deployment")))
 		})
 	})
 
@@ -2433,27 +2398,27 @@ var _ = Describe("WorkflowExecution Controller", func() {
 		Context("workflowexecution_total metric", func() {
 			It("should be accessible from the metrics package", func() {
 				// Per DD-METRICS-001: Verify metrics are accessible via struct
-				Expect(testMetrics.ExecutionTotal).ToNot(BeNil())
+				Expect(testMetrics.ExecutionTotal).To(Not(BeNil()), "ExecutionTotal metric must be registered")
 			})
 
 			It("should have outcome label", func() {
 				// This verifies the metric is defined with correct labels
 				// The actual recording is tested via controller method tests
-				Expect(testMetrics.ExecutionTotal).ToNot(BeNil())
+				Expect(testMetrics.ExecutionTotal).To(Not(BeNil()), "ExecutionTotal metric must be registered")
 			})
 		})
 
 		Context("workflowexecution_duration_seconds metric", func() {
 			It("should be accessible from the metrics package", func() {
 				// Per DD-METRICS-001: Access via metrics struct
-				Expect(testMetrics.ExecutionDuration).ToNot(BeNil())
+				Expect(testMetrics.ExecutionDuration).To(Not(BeNil()), "ExecutionDuration metric must be registered")
 			})
 		})
 
 		Context("workflowexecution_pipelinerun_creation_total metric", func() {
 			It("should be accessible from the metrics package", func() {
 				// Per DD-METRICS-001: Access via metrics struct
-				Expect(testMetrics.ExecutionCreations).ToNot(BeNil())
+				Expect(testMetrics.ExecutionCreations).To(Not(BeNil()), "ExecutionCreations metric must be registered")
 			})
 		})
 
@@ -2604,7 +2569,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 					AuditStore:         mockAuditStore,
 				}
 
-				Expect(reconciler.AuditStore).ToNot(BeNil())
+				Expect(reconciler.AuditStore).To(Not(BeNil()), "AuditStore must be initialized after setup")
 			})
 		})
 
@@ -3079,7 +3044,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				Expect(event.EventTimestamp).ToNot(BeZero())
 
 				// Event Data (structured type - parse and validate)
-				Expect(event.EventData).ToNot(BeNil())
+				Expect(event.EventData).To(Not(BeNil()), "EventData must be populated for workflow.started audit event")
 				eventData := parseEventData(event.EventData)
 				Expect(eventData["workflow_id"]).To(Equal("increase-memory-conservative"))
 				Expect(eventData["target_resource"]).To(Equal("production/deployment/payment-api"))
@@ -3233,8 +3198,8 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				Expect(auditStore.events).To(HaveLen(1))
 
 				eventData := parseEventData(auditStore.events[0].EventData)
-				Expect(eventData["started_at"]).ToNot(BeNil())
-				Expect(eventData["completed_at"]).ToNot(BeNil())
+				Expect(eventData["started_at"]).To(Not(BeNil()), "audit event must include started_at timestamp")
+				Expect(eventData["completed_at"]).To(Not(BeNil()), "audit event must include completed_at timestamp")
 				Expect(eventData["duration"]).To(Equal("1m0s"))
 			})
 		})
@@ -4038,8 +4003,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			details := reconciler.ExtractFailureDetails(ctx, pr, nil)
 
 			// Then: Should extract exit code 137
-			Expect(details.ExitCode).ToNot(BeNil())
-			Expect(*details.ExitCode).To(Equal(int32(137)))
+			Expect(details).To(And(Not(BeNil()), HaveField("ExitCode", HaveValue(Equal(int32(137))))))
 		})
 
 		It("should return nil when no terminated steps exist", func() {
@@ -4618,9 +4582,8 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				// Then: Status should use correct CRD enum
 				Expect(err).ToNot(HaveOccurred())
 				Expect(wfe.Status.Phase).To(Equal(workflowexecutionv1alpha1.PhaseFailed))
-				Expect(wfe.Status.FailureDetails).ToNot(BeNil())
-				Expect(wfe.Status.FailureDetails.Reason).To(Equal(
-					workflowexecutionv1alpha1.FailureReasonOOMKilled))
+				Expect(wfe.Status.FailureDetails).To(And(Not(BeNil()), HaveField("Reason", Equal(
+					workflowexecutionv1alpha1.FailureReasonOOMKilled))))
 				Expect(wfe.Status.FailureDetails.WasExecutionFailure).To(BeFalse())
 
 				// And: Audit event should be emitted

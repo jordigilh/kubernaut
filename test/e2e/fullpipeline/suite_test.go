@@ -91,9 +91,6 @@ var (
 	// DD-AUTH-014: ServiceAccount token for DataStorage authentication
 	e2eAuthToken string
 
-	// Track built images for cleanup
-	builtImages map[string]string
-
 	// Track test failures for cluster cleanup decision
 	anyTestFailed bool
 )

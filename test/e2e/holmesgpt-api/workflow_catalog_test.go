@@ -225,6 +225,8 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			if incidentResp.SelectedWorkflow.Set {
 				// Workflow should match CrashLoopBackOff signal type
 				// (DD-WORKFLOW-002 v3.0: signal_type is singular string)
+				Expect(incidentResp.SelectedWorkflow.Value).ToNot(BeNil(),
+					"selected workflow should be non-nil when Set is true")
 			}
 
 			// BUSINESS IMPACT: Workflows match incident type (no irrelevant suggestions)

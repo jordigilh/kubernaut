@@ -96,7 +96,7 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 				return nil, err
 			}
 
-			if resp.Data == nil || len(resp.Data) == 0 {
+			if len(resp.Data) == 0 {
 				break
 			}
 

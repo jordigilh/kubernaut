@@ -146,7 +146,7 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 			}
 			eventID := createAuditEventOpenAPI(ctx, DSClient, event)
 			// Verify event was created
-			Expect(eventID).ToNot(BeEmpty())
+			Expect(eventID).To(MatchRegexp(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`), "eventID must be a valid UUID")
 			time.Sleep(100 * time.Millisecond) // Small delay to ensure chronological order
 		}
 		testLogger.Info("✅ Created 4 Gateway events")
@@ -169,7 +169,7 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 			}
 			eventID := createAuditEventOpenAPI(ctx, DSClient, event)
 			// Verify event was created
-			Expect(eventID).ToNot(BeEmpty())
+			Expect(eventID).To(MatchRegexp(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`), "eventID must be a valid UUID")
 			time.Sleep(100 * time.Millisecond)
 		}
 		testLogger.Info("✅ Created 3 AIAnalysis events")
@@ -192,7 +192,7 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 			}
 			eventID := createAuditEventOpenAPI(ctx, DSClient, event)
 			// Verify event was created
-			Expect(eventID).ToNot(BeEmpty())
+			Expect(eventID).To(MatchRegexp(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`), "eventID must be a valid UUID")
 			time.Sleep(100 * time.Millisecond)
 		}
 		testLogger.Info("✅ Created 3 Workflow events")
@@ -212,9 +212,9 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 				Offset:        dsgen.NewOptInt(offset),
 			})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(queryResp).ToNot(BeNil())
+			Expect(queryResp).To(Not(BeNil()), "query response must not be nil")
 
-			if queryResp.Data == nil || len(queryResp.Data) == 0 {
+			if len(queryResp.Data) == 0 {
 				break
 			}
 
@@ -249,9 +249,9 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 				Offset:        dsgen.NewOptInt(offset),
 			})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(queryResp).ToNot(BeNil())
+			Expect(queryResp).To(Not(BeNil()), "query response must not be nil")
 
-			if queryResp.Data == nil || len(queryResp.Data) == 0 {
+			if len(queryResp.Data) == 0 {
 				break
 			}
 
@@ -289,9 +289,9 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 				Offset:        dsgen.NewOptInt(offset),
 			})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(queryResp).ToNot(BeNil())
+			Expect(queryResp).To(Not(BeNil()), "query response must not be nil")
 
-			if queryResp.Data == nil || len(queryResp.Data) == 0 {
+			if len(queryResp.Data) == 0 {
 				break
 			}
 
@@ -332,9 +332,9 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 				Offset:        dsgen.NewOptInt(offset),
 			})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(queryResp).ToNot(BeNil())
+			Expect(queryResp).To(Not(BeNil()), "query response must not be nil")
 
-			if queryResp.Data == nil || len(queryResp.Data) == 0 {
+			if len(queryResp.Data) == 0 {
 				break
 			}
 
@@ -364,8 +364,7 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 		})
 		Expect(errStep6).ToNot(HaveOccurred())
 		// Note: ogen client returns typed response struct on success (HTTP 200 implicit)
-		Expect(queryRespStep6).ToNot(BeNil())
-		Expect(queryRespStep6.Data).ToNot(BeNil())
+		Expect(queryRespStep6).To(And(Not(BeNil()), HaveField("Data", Not(BeNil()))))
 
 		data = queryRespStep6.Data
 		Expect(data).To(HaveLen(5), "Should return first 5 events")
@@ -386,8 +385,7 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 		})
 		Expect(errStep7).ToNot(HaveOccurred())
 		// Note: ogen client returns typed response struct on success (HTTP 200 implicit)
-		Expect(queryRespStep7).ToNot(BeNil())
-		Expect(queryRespStep7.Data).ToNot(BeNil())
+		Expect(queryRespStep7).To(And(Not(BeNil()), HaveField("Data", Not(BeNil()))))
 
 		data = queryRespStep7.Data
 		Expect(data).To(HaveLen(5), "Should return next 5 events")
@@ -411,9 +409,9 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 				Offset:        dsgen.NewOptInt(offset),
 			})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(queryResp).ToNot(BeNil())
+			Expect(queryResp).To(Not(BeNil()), "query response must not be nil")
 
-			if queryResp.Data == nil || len(queryResp.Data) == 0 {
+			if len(queryResp.Data) == 0 {
 				break
 			}
 

@@ -127,7 +127,7 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 		}
 		imageName, err := BuildImageForKind(cfg, writer)
 		if err != nil {
-			err = fmt.Errorf("Gateway image build failed: %w", err)
+			err = fmt.Errorf("gateway image build failed: %w", err)
 		}
 		buildResults <- buildResult{name: "Gateway", imageName: imageName, err: err}
 	}()
@@ -158,9 +158,10 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 			_, _ = fmt.Fprintf(writer, "  ❌ %s build failed: %v\n", r.name, r.err)
 		} else {
 			_, _ = fmt.Fprintf(writer, "  ✅ %s build completed\n", r.name)
-			if r.name == "DataStorage" {
+			switch r.name {
+			case "DataStorage":
 				dataStorageImageName = r.imageName
-			} else if r.name == "Gateway" {
+			case "Gateway":
 				gatewayImageName = r.imageName
 			}
 		}
@@ -223,7 +224,7 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 	go func() {
 		err := loadGatewayImageToKind(gatewayImageName, clusterName, writer)
 		if err != nil {
-			err = fmt.Errorf("Gateway image load failed: %w", err)
+			err = fmt.Errorf("gateway image load failed: %w", err)
 		}
 		results <- result{name: "Gateway image", err: err}
 	}()
@@ -232,7 +233,7 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 	go func() {
 		err := LoadImageToKind(dataStorageImageName, "datastorage", clusterName, writer)
 		if err != nil {
-			err = fmt.Errorf("DS image load failed: %w", err)
+			err = fmt.Errorf("ds image load failed: %w", err)
 		}
 		results <- result{name: "DataStorage image", err: err}
 	}()
@@ -241,9 +242,9 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 	go func() {
 		var err error
 		if pgErr := deployPostgreSQLInNamespace(ctx, namespace, kubeconfigPath, writer); pgErr != nil {
-			err = fmt.Errorf("PostgreSQL deploy failed: %w", pgErr)
+			err = fmt.Errorf("postgresql deploy failed: %w", pgErr)
 		} else if redisErr := deployRedisInNamespace(ctx, namespace, kubeconfigPath, writer); redisErr != nil {
-			err = fmt.Errorf("Redis deploy failed: %w", redisErr)
+			err = fmt.Errorf("redis deploy failed: %w", redisErr)
 		}
 		results <- result{name: "PostgreSQL+Redis", err: err}
 	}()
@@ -466,53 +467,6 @@ func createGatewayKindCluster(clusterName, kubeconfigPath string, writer io.Writ
 		ProjectRootAsWorkingDir: true, // DD-TEST-007: For ./coverdata resolution
 	}
 	return CreateKindClusterWithConfig(opts, writer)
-}
-
-// buildGatewayImageOnly builds Gateway image without loading it to Kind.
-// This is Phase 1 of the hybrid E2E pattern (build before cluster creation).
-//
-// Authority: docs/handoff/GATEWAY_VALIDATION_RESULTS_JAN07.md (Option A)
-// Pattern: Build only, load later with loadGatewayImageToKind()
-//
-// Returns: Full image name with localhost/ prefix for later loading (e.g., "localhost/gateway:tag")
-// Note: NO file I/O - image name is passed directly as parameter to deployGatewayService()
-func buildGatewayImageOnly(writer io.Writer) (string, error) {
-	projectRoot := getProjectRoot()
-	if projectRoot == "" {
-		return "", fmt.Errorf("project root not found")
-	}
-
-	dockerfilePath := filepath.Join(projectRoot, "docker", "gateway-ubi9.Dockerfile")
-	if _, err := os.Stat(dockerfilePath); os.IsNotExist(err) {
-		return "", fmt.Errorf("Gateway Dockerfile not found at %s", dockerfilePath)
-	}
-
-	// Generate unique image tag compatible with DD-TEST-001 (same format as shared build script)
-	// Format: gateway-{username}-{hash}-{timestamp}
-	imageTag := GenerateInfraImageName("gateway", "e2e")
-	// GenerateInfraImageName returns "localhost/gateway:tag", use it directly
-	imageName := imageTag
-	_, _ = fmt.Fprintf(writer, "🔨 Building Gateway image: %s\n", imageName)
-
-	// Build with podman (similar to BuildGatewayImageWithCoverage but without --build-arg GOFLAGS=-cover)
-	cmd := exec.Command("podman", "build",
-		"--no-cache",                                 // Force fresh build to include latest code changes
-		"--pull=always",                              // Force pull fresh base image (clears Go build cache in base image)
-		"--build-arg", "GOCACHE=/tmp/go-build-cache", // Force Go to not use cached build artifacts
-		"-t", imageName,
-		"-f", dockerfilePath,
-		projectRoot,
-	)
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-	cmd.Dir = projectRoot
-
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("Gateway image build failed: %w", err)
-	}
-
-	_, _ = fmt.Fprintf(writer, "   ✅ Gateway image built: %s\n", imageName)
-	return imageName, nil
 }
 
 // loadGatewayImageToKind loads a pre-built Gateway image to Kind cluster.
@@ -801,7 +755,7 @@ func deployGatewayService(ctx context.Context, namespace, kubeconfigPath, gatewa
 	waitCmd.Stdout = writer
 	waitCmd.Stderr = writer
 	if err := waitCmd.Run(); err != nil {
-		return fmt.Errorf("Gateway pod not ready: %w", err)
+		return fmt.Errorf("gateway pod not ready: %w", err)
 	}
 
 	return nil
@@ -814,7 +768,7 @@ func BuildGatewayImageWithCoverage(writer io.Writer) error {
 
 	dockerfilePath := filepath.Join(projectRoot, "docker", "gateway-ubi9.Dockerfile")
 	if _, err := os.Stat(dockerfilePath); os.IsNotExist(err) {
-		return fmt.Errorf("Gateway Dockerfile not found at %s", dockerfilePath)
+		return fmt.Errorf("gateway Dockerfile not found at %s", dockerfilePath)
 	}
 
 	containerCmd := "podman"

@@ -264,8 +264,7 @@ func testFailureClassification(ctx context.Context, namespace, testSuffix, tekto
 		updated := &workflowexecutionv1alpha1.WorkflowExecution{}
 		err := k8sClient.Get(ctx, types.NamespacedName{Name: testName, Namespace: namespace}, updated)
 		g.Expect(err).ToNot(HaveOccurred())
-		g.Expect(updated.Status.ExecutionRef).ToNot(BeNil())
-		g.Expect(updated.Status.ExecutionRef.Name).ToNot(BeEmpty())
+		g.Expect(updated.Status.ExecutionRef).To(And(Not(BeNil()), HaveField("Name", Not(BeEmpty()))))
 
 		// Get the created PipelineRun
 		pr = &tektonv1.PipelineRun{}
@@ -282,7 +281,7 @@ func testFailureClassification(ctx context.Context, namespace, testSuffix, tekto
 		err := k8sClient.Get(ctx, types.NamespacedName{Name: testName, Namespace: namespace}, updated)
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(updated.Status.Phase).To(Equal(workflowexecutionv1alpha1.PhaseFailed))
-		g.Expect(updated.Status.FailureDetails).ToNot(BeNil())
+		g.Expect(updated.Status.FailureDetails).To(And(Not(BeNil()), HaveField("Reason", Not(BeEmpty())), HaveField("Message", Not(BeEmpty()))))
 	}, 30*time.Second, 1*time.Second).Should(Succeed())
 
 	By("Verifying failure classification")

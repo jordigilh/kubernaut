@@ -305,7 +305,7 @@ func WaitForRedisReady(containerName string, writer io.Writer) error {
 			time.Sleep(1 * time.Second)
 		}
 	}
-	return fmt.Errorf("Redis failed to become ready after %d attempts", maxAttempts)
+	return fmt.Errorf("redis failed to become ready after %d attempts", maxAttempts)
 }
 
 // WaitForHTTPHealth waits for an HTTP health endpoint to return 200 OK
@@ -895,93 +895,6 @@ func getProjectRoot() string {
 		}
 	}
 	return "."
-}
-func buildImageOnly(name, imageTag, dockerfile, projectRoot string, writer io.Writer) error {
-	return buildImageWithArgs(name, imageTag, dockerfile, projectRoot, nil, writer)
-}
-// ============================================================================
-// Missing E2E Infrastructure Functions (Restored from git history)
-// ============================================================================
-
-// buildImageWithArgs builds a Docker image with optional build arguments
-// This is used by E2E tests to build service images before loading them into Kind
-//
-// CI/CD Optimization:
-//   - If IMAGE_REGISTRY + IMAGE_TAG env vars are set: Pull from registry (ghcr.io)
-//   - Otherwise: Build locally (existing behavior for local dev)
-//   - Automatic fallback to local build if registry pull fails
-func buildImageWithArgs(name, imageTag, dockerfile, projectRoot string, buildArgs []string, writer io.Writer) error {
-	// CI/CD Optimization: Try to pull from registry if configured
-	registry := os.Getenv("IMAGE_REGISTRY")
-	tag := os.Getenv("IMAGE_TAG")
-	
-	if registry != "" && tag != "" {
-		// Extract service name from image tag (e.g., "kubernaut/datastorage:unique" → "datastorage")
-		serviceName := extractServiceNameFromImageTag(imageTag)
-		
-		if serviceName != "" {
-			registryImage := fmt.Sprintf("%s/%s:%s", registry, serviceName, tag)
-			_, _ = fmt.Fprintf(writer, "  🔄 Registry mode detected (IMAGE_REGISTRY + IMAGE_TAG set)\n")
-			
-			// 🚀 OPTIMIZATION: Use skopeo inspect instead of podman pull
-			// Benefits:
-			// - No disk space used (metadata only, ~2KB vs multi-GB image)
-			// - No network transfer of layers (90%+ bandwidth savings)
-			// - Faster execution (~1s vs 10-30s for full pull)
-			// - Podman will pull automatically during container deployment
-			exists, verifyErr := VerifyImageExistsInRegistry(registryImage, writer)
-			
-			if verifyErr == nil && exists {
-				// Image verified in registry - no need to pull!
-				// Podman will pull it automatically when starting the container
-				_, _ = fmt.Fprintf(writer, "  ✅ %s image ready from registry (skipping build)\n", name)
-				_, _ = fmt.Fprintf(writer, "  💡 No pre-pull needed - Podman will fetch during deployment\n")
-				return nil // Skip build, use registry image
-			} else {
-				_, _ = fmt.Fprintf(writer, "  ⚠️  Registry verification failed: %v\n", verifyErr)
-				_, _ = fmt.Fprintf(writer, "  ⚠️  Falling back to local build...\n")
-			}
-		}
-	}
-
-	// Build locally
-	_, _ = fmt.Fprintf(writer, "  🔨 Building %s image locally: %s\n", name, imageTag)
-
-	// ✅ FIX: Resolve Dockerfile path relative to project root
-	// Ensures podman finds the Dockerfile when run from any working directory
-	dockerfilePath := filepath.Join(projectRoot, dockerfile)
-
-	args := []string{"build", "-t", imageTag, "-f", dockerfilePath}
-	args = append(args, buildArgs...)
-	args = append(args, projectRoot)
-
-	cmd := exec.Command("podman", args...)
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to build %s image: %w", name, err)
-	}
-
-	_, _ = fmt.Fprintf(writer, "  ✅ %s image built successfully\n", name)
-	return nil
-}
-
-// extractServiceNameFromImageTag extracts service name from image tag
-// Examples:
-//   - "kubernaut/datastorage:unique-tag" → "datastorage"
-//   - "localhost/mock-llm:latest" → "mock-llm"
-//   - "holmesgpt-api:test" → "holmesgpt-api"
-func extractServiceNameFromImageTag(imageTag string) string {
-	// Remove tag portion (after :)
-	parts := strings.Split(imageTag, ":")
-	imageNameOnly := parts[0]
-	
-	// Extract service name (last component after /)
-	nameParts := strings.Split(imageNameOnly, "/")
-	serviceName := nameParts[len(nameParts)-1]
-	
-	return serviceName
 }
 
 // loadImageToKind loads a pre-built podman image into a Kind cluster using tar archive

@@ -68,10 +68,9 @@ var (
 	k8sClient      client.Client
 	clientset      *kubernetes.Clientset
 	kubeconfigPath string
-	metricsURL     string
-	coverageMode   bool   // E2E coverage capture mode (per E2E_COVERAGE_COLLECTION.md)
-	coverDir       string // Coverage data directory
-	anyTestFailed  bool   // Track test failures for cluster cleanup decision
+	metricsURL    string
+	coverageMode  bool  // E2E coverage capture mode (per E2E_COVERAGE_COLLECTION.md)
+	anyTestFailed bool  // Track test failures for cluster cleanup decision
 	e2eAuthToken   string // DD-AUTH-014: ServiceAccount token for DataStorage authentication
 )
 
@@ -108,7 +107,7 @@ var _ = SynchronizedBeforeSuite(
 
 		By(fmt.Sprintf("Creating Kind cluster '%s'", clusterName))
 		By(fmt.Sprintf("  • Kubeconfig: %s", kubeconfigPath))
-		By(fmt.Sprintf("  • Metrics URL: http://localhost:9182/metrics"))
+		By("  • Metrics URL: http://localhost:9182/metrics")
 
 		ctx := context.Background()
 
@@ -162,7 +161,7 @@ var _ = SynchronizedBeforeSuite(
 		// Create controller-runtime client
 		k8sClient, err = client.New(config, client.Options{})
 		Expect(err).ToNot(HaveOccurred())
-		Expect(k8sClient).ToNot(BeNil())
+		Expect(k8sClient).To(Not(BeNil()), "k8sClient must be initialized from envtest")
 
 		// Register SignalProcessing scheme
 		err = signalprocessingv1alpha1.AddToScheme(k8sClient.Scheme())

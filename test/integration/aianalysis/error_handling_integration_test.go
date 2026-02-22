@@ -176,7 +176,7 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 				}
 
 				// Extract audit events from response
-				if resp.Data == nil || len(resp.Data) == 0 {
+				if len(resp.Data) == 0 {
 					GinkgoWriter.Printf("  ⏳ No aiagent.response.complete events yet\n")
 					return false
 				}
@@ -216,7 +216,7 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 					return false
 				}
 
-				if resp.Data == nil || len(resp.Data) == 0 {
+				if len(resp.Data) == 0 {
 					GinkgoWriter.Printf("  ⏳ No analysis.failed events yet\n")
 					return false
 				}
@@ -374,7 +374,7 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 					return false
 				}
 
-				if resp.Data == nil || len(resp.Data) == 0 {
+				if len(resp.Data) == 0 {
 					GinkgoWriter.Printf("  ⏳ No aiagent.response.complete events yet\n")
 					return false
 				}
@@ -411,7 +411,7 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 					return false
 				}
 
-				if resp.Data == nil || len(resp.Data) == 0 {
+				if len(resp.Data) == 0 {
 					GinkgoWriter.Printf("  ⏳ No analysis.completed events yet\n")
 					return false
 				}
