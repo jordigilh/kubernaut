@@ -35,6 +35,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
+	k8sretry "k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -154,22 +155,15 @@ func (r *RARReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	// Store audit event (fire-and-forget)
 	auditErr := r.auditStore.StoreAudit(ctx, event)
 
-	// Set AuditRecorded condition based on result
+	// Record metrics and log the audit outcome
 	if auditErr != nil {
 		logger.Error(auditErr, "Failed to store approval audit event",
 			"rar", rar.Name,
 			"decision", decision,
 			"namespace", rar.Namespace)
-
-		// REFACTOR: Record audit failure for compliance alerting
 		if r.metrics != nil {
 			r.metrics.RecordAuditEventFailure("RAR", "approval_decision", rar.Namespace)
 		}
-
-		rarconditions.SetAuditRecorded(rar, false,
-			rarconditions.ReasonAuditFailed,
-			fmt.Sprintf("Failed to record audit event: %v", auditErr),
-			r.metrics)
 	} else {
 		logger.Info("Successfully emitted approval audit event",
 			"rar", rar.Name,
@@ -179,23 +173,38 @@ func (r *RARReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 			"decidedBy", decidedBy,
 			"correlationID", parentRRName,
 			"namespace", rar.Namespace)
-
-		// REFACTOR: Record audit success for compliance monitoring
 		if r.metrics != nil {
 			r.metrics.RecordAuditEventSuccess("RAR", "approval_decision", rar.Namespace)
 		}
-
-		rarconditions.SetAuditRecorded(rar, true,
-			rarconditions.ReasonAuditSucceeded,
-			fmt.Sprintf("Approval audit event %s recorded to DataStorage", event.EventType),
-			r.metrics)
 	}
 
-	// Update RAR status with AuditRecorded condition
-	if err := r.client.Status().Update(ctx, rar); err != nil {
-		logger.Error(err, "Failed to update RAR status with AuditRecorded condition", "rar", rar.Name)
-		// Fire-and-forget: Don't fail reconciliation
-		return ctrl.Result{}, nil
+	// Persist AuditRecorded condition with conflict retry.
+	// The main RO reconciler concurrently updates RAR status conditions
+	// (ApprovalPending/Decided/Ready), which can cause optimistic concurrency
+	// conflicts. Without retry, a lost Status().Update() leaves AuditRecorded
+	// unset, causing duplicate audit emission on the next reconciliation.
+	if err := k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+		if err := r.client.Get(ctx, req.NamespacedName, rar); err != nil {
+			return err
+		}
+		auditCond := meta.FindStatusCondition(rar.Status.Conditions, rarconditions.ConditionAuditRecorded)
+		if auditCond != nil && auditCond.Status == "True" {
+			return nil
+		}
+		if auditErr != nil {
+			rarconditions.SetAuditRecorded(rar, false,
+				rarconditions.ReasonAuditFailed,
+				fmt.Sprintf("Failed to record audit event: %v", auditErr),
+				r.metrics)
+		} else {
+			rarconditions.SetAuditRecorded(rar, true,
+				rarconditions.ReasonAuditSucceeded,
+				fmt.Sprintf("Approval audit event %s recorded to DataStorage", event.EventType),
+				r.metrics)
+		}
+		return r.client.Status().Update(ctx, rar)
+	}); err != nil {
+		logger.Error(err, "Failed to persist AuditRecorded condition", "rar", rar.Name)
 	}
 
 	return ctrl.Result{}, nil
