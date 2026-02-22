@@ -31,7 +31,7 @@ var _ = Describe("CredentialResolver (BR-NOT-104)", func() {
 		if resolver != nil {
 			Expect(resolver.Close()).To(Succeed())
 		}
-		os.RemoveAll(tmpDir)
+		Expect(os.RemoveAll(tmpDir)).To(Succeed())
 	})
 
 	Describe("Credential Resolution (BR-NOT-104-001)", func() {
@@ -122,7 +122,7 @@ var _ = Describe("CredentialResolver (BR-NOT-104)", func() {
 			Expect(value).To(Equal("some-url"))
 
 			// When: file is deleted and Reload() called
-			os.Remove(filepath.Join(tmpDir, "slack-temp"))
+			Expect(os.Remove(filepath.Join(tmpDir, "slack-temp"))).To(Succeed())
 			Expect(resolver.Reload()).To(Succeed())
 
 			// Then: credential is no longer resolvable

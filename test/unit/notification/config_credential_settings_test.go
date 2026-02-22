@@ -48,8 +48,8 @@ controller:
 	Describe("LoadFromEnv no longer loads SLACK_WEBHOOK_URL", func() {
 
 		It("UT-NOT-104-016: LoadFromEnv does not set any Slack webhook URL", func() {
-			os.Setenv("SLACK_WEBHOOK_URL", "https://should-be-ignored.example.com")
-			defer os.Unsetenv("SLACK_WEBHOOK_URL")
+			Expect(os.Setenv("SLACK_WEBHOOK_URL", "https://should-be-ignored.example.com")).To(Succeed())
+			defer func() { Expect(os.Unsetenv("SLACK_WEBHOOK_URL")).To(Succeed()) }()
 
 			cfg := notificationconfig.DefaultConfig()
 			cfg.LoadFromEnv()

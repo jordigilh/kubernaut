@@ -37,7 +37,7 @@ var _ = Describe("Credential Resolver Integration (BR-NOT-104)", func() {
 		if resolver != nil {
 			_ = resolver.Close()
 		}
-		os.RemoveAll(tmpDir)
+		Expect(os.RemoveAll(tmpDir)).To(Succeed())
 	})
 
 	writeCredFile := func(name, content string) {
@@ -317,7 +317,7 @@ receivers:
 		It("IT-NOT-104-007: Empty credentials directory rejects all credential_refs", func() {
 			emptyDir, err := os.MkdirTemp("", "it-empty-cred-*")
 			Expect(err).NotTo(HaveOccurred())
-			defer os.RemoveAll(emptyDir)
+			defer func() { Expect(os.RemoveAll(emptyDir)).To(Succeed()) }()
 
 			logger := ctrl.Log.WithName("test")
 			emptyResolver, err := credentials.NewResolver(emptyDir, logger)
