@@ -7,6 +7,7 @@ PLATFORM_NS="${PLATFORM_NS:-kubernaut-system}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 CHART_DIR="${REPO_ROOT}/charts/kubernaut"
 KIND_VALUES="${REPO_ROOT}/deploy/demo/helm/kubernaut-kind-values.yaml"
+LLM_VALUES="${HOME}/.kubernaut/helm/llm-values.yaml"
 
 ensure_platform() {
     if helm status kubernaut -n "${PLATFORM_NS}" &>/dev/null; then
@@ -20,11 +21,22 @@ ensure_platform() {
     echo "  Applying CRDs..."
     kubectl apply -f "${CHART_DIR}/crds/" 2>&1 | sed 's/^/    /'
 
+    local llm_flag=""
+    if [ -f "${LLM_VALUES}" ]; then
+        llm_flag="--values ${LLM_VALUES}"
+        echo "  LLM config loaded from ${LLM_VALUES}"
+    else
+        echo "  WARNING: No LLM config found at ${LLM_VALUES}"
+        echo "  Copy the example and fill in your values:"
+        echo "    cp deploy/demo/helm/llm-values.yaml.example ~/.kubernaut/helm/llm-values.yaml"
+    fi
+
     echo "  Installing Helm chart..."
     helm upgrade --install kubernaut "${CHART_DIR}" \
         --namespace "${PLATFORM_NS}" \
         --create-namespace \
         --values "${KIND_VALUES}" \
+        ${llm_flag} \
         --skip-crds \
         --wait --timeout 10m
 

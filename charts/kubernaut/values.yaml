@@ -96,6 +96,15 @@ holmesgptApi:
   service:
     type: ClusterIP
     nodePort: null
+  llm:
+    provider: ""
+    model: ""
+    endpoint: ""
+    gcpProjectId: ""
+    gcpRegion: ""
+    maxRetries: 3
+    timeoutSeconds: 120
+    temperature: 0.7
 
 # -- AuthWebhook admission controller
 authwebhook:

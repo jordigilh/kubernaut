@@ -73,14 +73,14 @@ data:
     logging:
       level: "INFO"
     llm:
-      provider: ""
-      model: ""
-      endpoint: ""
-      gcp_project_id: ""
-      gcp_region: ""
-      max_retries: 3
-      timeout_seconds: 120
-      temperature: 0.7
+      provider: {{ .Values.holmesgptApi.llm.provider | quote }}
+      model: {{ .Values.holmesgptApi.llm.model | quote }}
+      endpoint: {{ .Values.holmesgptApi.llm.endpoint | quote }}
+      gcp_project_id: {{ .Values.holmesgptApi.llm.gcpProjectId | quote }}
+      gcp_region: {{ .Values.holmesgptApi.llm.gcpRegion | quote }}
+      max_retries: {{ .Values.holmesgptApi.llm.maxRetries }}
+      timeout_seconds: {{ .Values.holmesgptApi.llm.timeoutSeconds }}
+      temperature: {{ .Values.holmesgptApi.llm.temperature }}
     data_storage:
       url: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
     audit:
