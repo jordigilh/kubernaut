@@ -1,18 +1,18 @@
-"""
-Copyright 2026 Jordi Gil.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-"""
+#
+# Copyright 2026 Jordi Gil.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
 
 """
 Shared Session Endpoint Helpers (BR-AA-HAPI-064)
@@ -24,9 +24,9 @@ REFACTOR: Extracted from incident/endpoint.py and recovery/endpoint.py where
 the session status and result GET handlers were 100% identical.
 """
 
-from typing import Any, Callable, Awaitable, Dict, Optional
+from typing import Any, Dict
 from fastapi import HTTPException
-from .session_manager import SessionManager, SessionResultNotReady, get_session_manager
+from .session_manager import SessionResultNotReady, get_session_manager
 
 
 def get_session_or_404(session_id: str) -> Dict[str, Any]:

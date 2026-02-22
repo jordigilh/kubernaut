@@ -121,7 +121,6 @@ class GetResourceContextTool(Tool):
         SDK invokes tools in a ThreadPoolExecutor thread where no event loop
         exists.  asyncio.get_event_loop() raises RuntimeError in that context.
         """
-        import asyncio
         kind = params.get("kind", "")
         name = params.get("name", "")
         namespace = params.get("namespace", "")

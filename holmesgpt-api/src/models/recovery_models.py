@@ -1,18 +1,18 @@
-"""
-Copyright 2025 Jordi Gil.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-"""
+#
+# Copyright 2025 Jordi Gil.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
 
 """
 Recovery Analysis Models
@@ -182,20 +182,15 @@ class RecoveryRequest(BaseModel):
 
     @field_validator('recovery_attempt_number')
     @classmethod
-    def validate_recovery_attempt_number(cls, v: Optional[int]) -> Optional[int]:
+    def validate_recovery_attempt_number(cls, v: Optional[int], info) -> Optional[int]:
         """
-        Validate recovery_attempt_number >= 1 when provided (E2E-HAPI-018).
+        Validate recovery_attempt_number when provided.
+        - Must be >= 1 when provided (E2E-HAPI-018).
+        - When is_recovery_attempt is True, must be between 1 and 3.
         BR-AI-080: Recovery flow validation
         """
         if v is not None and v < 1:
             raise ValueError('recovery_attempt_number must be >= 1')
-        return v
-
-    @field_validator('recovery_attempt_number')
-    @classmethod
-    def validate_recovery_attempt_number(cls, v: Optional[int], info) -> Optional[int]:
-        """Validate recovery_attempt_number when is_recovery_attempt is True."""
-        # Get is_recovery_attempt from the data being validated
         is_recovery = info.data.get('is_recovery_attempt', False)
         if is_recovery:
             if v is None:
