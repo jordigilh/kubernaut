@@ -29,6 +29,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/authwebhook"
@@ -146,6 +147,8 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 					RequiredBy: metav1.NewTime(time.Now().Add(15 * time.Minute)),
 				},
 			}
+			Expect(controllerutil.SetControllerReference(testRR, testRAR, k8sClient.Scheme())).To(Succeed(),
+				"OwnerReference required for Owns() watch to trigger RR reconcile on RAR status change")
 			Expect(k8sClient.Create(ctx, testRAR)).To(Succeed())
 			GinkgoWriter.Printf("🚀 E2E: Created RAR %s/%s\n", testNamespace, testRAR.Name)
 		})
@@ -410,6 +413,8 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 					RequiredBy: metav1.NewTime(time.Now().Add(-1 * time.Minute)), // Past deadline
 				},
 			}
+			Expect(controllerutil.SetControllerReference(testRR, testRAR, k8sClient.Scheme())).To(Succeed(),
+				"OwnerReference required for Owns() watch to trigger RR reconcile on RAR status change")
 			Expect(k8sClient.Create(ctx, testRAR)).To(Succeed())
 
 			// Set RR to AwaitingApproval so RO enters handleAwaitingApprovalPhase
