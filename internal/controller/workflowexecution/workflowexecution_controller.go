@@ -1102,13 +1102,34 @@ func (r *WorkflowExecutionReconciler) FindWFEForPipelineRun(ctx context.Context,
 
 // BuildPipelineRunStatusSummary creates a lightweight status summary from PipelineRun
 // Provides visibility into task progress during execution (v3.2)
-func (r *WorkflowExecutionReconciler) BuildPipelineRunStatusSummary(pr *tektonv1.PipelineRun) *workflowexecutionv1alpha1.ExecutionStatusSummary {
+func (r *WorkflowExecutionReconciler) BuildPipelineRunStatusSummary(ctx context.Context, pr *tektonv1.PipelineRun) *workflowexecutionv1alpha1.ExecutionStatusSummary {
 	summary := &workflowexecutionv1alpha1.ExecutionStatusSummary{
 		Status: "Unknown",
 	}
 
 	// Extract task counts from ChildReferences
 	summary.TotalTasks = len(pr.Status.ChildReferences)
+
+	// Count TaskRuns with ConditionSucceeded True (completed tasks)
+	for _, ref := range pr.Status.ChildReferences {
+		if ref.Kind != "TaskRun" {
+			continue
+		}
+		var tr tektonv1.TaskRun
+		if err := r.Get(ctx, client.ObjectKey{
+			Name:      ref.Name,
+			Namespace: pr.Namespace,
+		}, &tr); err != nil {
+			if apierrors.IsNotFound(err) {
+				continue
+			}
+			continue
+		}
+		cond := tr.Status.GetCondition(apis.ConditionSucceeded)
+		if cond != nil && cond.IsTrue() {
+			summary.CompletedTasks++
+		}
+	}
 
 	// Get Succeeded condition
 	succeededCond := pr.Status.GetCondition(apis.ConditionSucceeded)

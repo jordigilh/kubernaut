@@ -24,6 +24,7 @@ import (
 	"strings"
 
 	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"knative.dev/pkg/apis"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -87,7 +88,7 @@ func (t *TektonExecutor) GetStatus(ctx context.Context, wfe *workflowexecutionv1
 	}
 
 	// Build status summary
-	summary := t.buildStatusSummary(&pr)
+	summary := t.buildStatusSummary(ctx, &pr)
 
 	// Map Tekton condition to execution result
 	succeededCond := pr.Status.GetCondition(apis.ConditionSucceeded)
@@ -191,12 +192,33 @@ func (t *TektonExecutor) buildPipelineRun(wfe *workflowexecutionv1alpha1.Workflo
 }
 
 // buildStatusSummary creates a lightweight status summary from a PipelineRun.
-func (t *TektonExecutor) buildStatusSummary(pr *tektonv1.PipelineRun) *workflowexecutionv1alpha1.ExecutionStatusSummary {
+func (t *TektonExecutor) buildStatusSummary(ctx context.Context, pr *tektonv1.PipelineRun) *workflowexecutionv1alpha1.ExecutionStatusSummary {
 	summary := &workflowexecutionv1alpha1.ExecutionStatusSummary{
 		Status: "Unknown",
 	}
 
 	summary.TotalTasks = len(pr.Status.ChildReferences)
+
+	// Count TaskRuns with ConditionSucceeded True (completed tasks)
+	for _, ref := range pr.Status.ChildReferences {
+		if ref.Kind != "TaskRun" {
+			continue
+		}
+		var tr tektonv1.TaskRun
+		if err := t.Client.Get(ctx, client.ObjectKey{
+			Name:      ref.Name,
+			Namespace: pr.Namespace,
+		}, &tr); err != nil {
+			if apierrors.IsNotFound(err) {
+				continue
+			}
+			continue
+		}
+		cond := tr.Status.GetCondition(apis.ConditionSucceeded)
+		if cond != nil && cond.IsTrue() {
+			summary.CompletedTasks++
+		}
+	}
 
 	succeededCond := pr.Status.GetCondition(apis.ConditionSucceeded)
 	if succeededCond != nil {

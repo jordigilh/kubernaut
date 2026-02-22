@@ -733,7 +733,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				Status: tektonv1.PipelineRunStatus{},
 			}
 
-			summary := reconciler.BuildPipelineRunStatusSummary(pr)
+			summary := reconciler.BuildPipelineRunStatusSummary(ctx, pr)
 
 			Expect(summary).To(And(Not(BeNil()), HaveField("Status", Equal("Unknown"))))
 		})
@@ -755,7 +755,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				},
 			}
 
-			summary := reconciler.BuildPipelineRunStatusSummary(pr)
+			summary := reconciler.BuildPipelineRunStatusSummary(ctx, pr)
 
 			Expect(summary).To(And(Not(BeNil()), HaveField("TotalTasks", Equal(3))))
 		})
@@ -775,10 +775,133 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				Message: "All tasks completed",
 			})
 
-			summary := reconciler.BuildPipelineRunStatusSummary(pr)
+			summary := reconciler.BuildPipelineRunStatusSummary(ctx, pr)
 
 			Expect(summary).To(And(Not(BeNil()), HaveField("Status", Equal("True")), HaveField("Reason", Equal("Succeeded")), HaveField("Message", Equal("All tasks completed"))))
 		})
+
+		It("should set CompletedTasks from ChildReferences with successful TaskRuns", func() {
+			// Given: 3 TaskRuns, 2 completed successfully
+			task1 := &tektonv1.TaskRun{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "task1",
+					Namespace: "kubernaut-workflows",
+				},
+			}
+			task1.Status.SetCondition(&apis.Condition{
+				Type:   apis.ConditionSucceeded,
+				Status: corev1.ConditionTrue,
+			})
+			task2 := &tektonv1.TaskRun{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "task2",
+					Namespace: "kubernaut-workflows",
+				},
+			}
+			task2.Status.SetCondition(&apis.Condition{
+				Type:   apis.ConditionSucceeded,
+				Status: corev1.ConditionTrue,
+			})
+			task3 := &tektonv1.TaskRun{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "task3",
+					Namespace: "kubernaut-workflows",
+				},
+			}
+			task3.Status.SetCondition(&apis.Condition{
+				Type:   apis.ConditionSucceeded,
+				Status: corev1.ConditionFalse,
+			})
+
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(task1, task2, task3).
+				Build()
+			reconciler = &workflowexecution.WorkflowExecutionReconciler{
+				Client:             fakeClient,
+				Scheme:             scheme,
+				ExecutionNamespace: "kubernaut-workflows",
+			}
+
+			pr := &tektonv1.PipelineRun{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pr",
+					Namespace: "kubernaut-workflows",
+				},
+				Status: tektonv1.PipelineRunStatus{
+					PipelineRunStatusFields: tektonv1.PipelineRunStatusFields{
+						ChildReferences: []tektonv1.ChildStatusReference{
+							{TypeMeta: runtime.TypeMeta{Kind: "TaskRun"}, Name: "task1", PipelineTaskName: "build"},
+							{TypeMeta: runtime.TypeMeta{Kind: "TaskRun"}, Name: "task2", PipelineTaskName: "test"},
+							{TypeMeta: runtime.TypeMeta{Kind: "TaskRun"}, Name: "task3", PipelineTaskName: "deploy"},
+						},
+					},
+				},
+			}
+
+			summary := reconciler.BuildPipelineRunStatusSummary(ctx, pr)
+
+			Expect(summary).To(And(Not(BeNil()), HaveField("TotalTasks", Equal(3))))
+			Expect(summary.CompletedTasks).To(Equal(2),
+				"CompletedTasks must count TaskRuns with ConditionSucceeded True")
+		})
+
+		DescribeTable("CompletedTasks table-driven cases",
+			func(taskRuns []*tektonv1.TaskRun, childRefs []tektonv1.ChildStatusReference, expectedCompleted int) {
+				var objects []client.Object
+				for _, tr := range taskRuns {
+					objects = append(objects, tr)
+				}
+				fakeClient := fake.NewClientBuilder().
+					WithScheme(scheme).
+					WithObjects(objects...).
+					Build()
+				reconciler = &workflowexecution.WorkflowExecutionReconciler{
+					Client:             fakeClient,
+					Scheme:             scheme,
+					ExecutionNamespace: "kubernaut-workflows",
+				}
+				pr := &tektonv1.PipelineRun{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-pr",
+						Namespace: "kubernaut-workflows",
+					},
+					Status: tektonv1.PipelineRunStatus{
+						PipelineRunStatusFields: tektonv1.PipelineRunStatusFields{
+							ChildReferences: childRefs,
+						},
+					},
+				}
+				summary := reconciler.BuildPipelineRunStatusSummary(ctx, pr)
+				Expect(summary).To(Not(BeNil()))
+				Expect(summary.CompletedTasks).To(Equal(expectedCompleted))
+			},
+			Entry("0 tasks completed (still running)", nil, []tektonv1.ChildStatusReference{}, 0),
+			Entry("partial completion (2 of 3)", func() []*tektonv1.TaskRun {
+				t1 := &tektonv1.TaskRun{ObjectMeta: metav1.ObjectMeta{Name: "t1", Namespace: "kubernaut-workflows"}}
+				t1.Status.SetCondition(&apis.Condition{Type: apis.ConditionSucceeded, Status: corev1.ConditionTrue})
+				t2 := &tektonv1.TaskRun{ObjectMeta: metav1.ObjectMeta{Name: "t2", Namespace: "kubernaut-workflows"}}
+				t2.Status.SetCondition(&apis.Condition{Type: apis.ConditionSucceeded, Status: corev1.ConditionTrue})
+				t3 := &tektonv1.TaskRun{ObjectMeta: metav1.ObjectMeta{Name: "t3", Namespace: "kubernaut-workflows"}}
+				t3.Status.SetCondition(&apis.Condition{Type: apis.ConditionSucceeded, Status: corev1.ConditionFalse})
+				return []*tektonv1.TaskRun{t1, t2, t3}
+			}(), []tektonv1.ChildStatusReference{
+				{TypeMeta: runtime.TypeMeta{Kind: "TaskRun"}, Name: "t1"},
+				{TypeMeta: runtime.TypeMeta{Kind: "TaskRun"}, Name: "t2"},
+				{TypeMeta: runtime.TypeMeta{Kind: "TaskRun"}, Name: "t3"},
+			}, 2),
+			Entry("all tasks completed", func() []*tektonv1.TaskRun {
+				t1 := &tektonv1.TaskRun{ObjectMeta: metav1.ObjectMeta{Name: "t1", Namespace: "kubernaut-workflows"}}
+				t1.Status.SetCondition(&apis.Condition{Type: apis.ConditionSucceeded, Status: corev1.ConditionTrue})
+				t2 := &tektonv1.TaskRun{ObjectMeta: metav1.ObjectMeta{Name: "t2", Namespace: "kubernaut-workflows"}}
+				t2.Status.SetCondition(&apis.Condition{Type: apis.ConditionSucceeded, Status: corev1.ConditionTrue})
+				return []*tektonv1.TaskRun{t1, t2}
+			}(), []tektonv1.ChildStatusReference{
+				{TypeMeta: runtime.TypeMeta{Kind: "TaskRun"}, Name: "t1"},
+				{TypeMeta: runtime.TypeMeta{Kind: "TaskRun"}, Name: "t2"},
+			}, 2),
+			Entry("PipelineRun with no ChildReferences", nil, []tektonv1.ChildStatusReference{}, 0),
+		)
 	})
 
 	// ========================================
