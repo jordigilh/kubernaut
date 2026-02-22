@@ -26,6 +26,7 @@ SERVICES=""
 WORKFLOW_ONLY=false
 LOCAL_ONLY=false
 SEED_AFTER=false
+CREATE_MANIFEST=false
 IMAGE_TAG="${IMAGE_TAG:-demo-v1.0}"
 VERSION="${VERSION:-v1.0.0}"
 
@@ -51,6 +52,10 @@ while [[ $# -gt 0 ]]; do
             SEED_AFTER=true
             shift
             ;;
+        --manifest)
+            CREATE_MANIFEST=true
+            shift
+            ;;
         --image-tag)
             IMAGE_TAG="$2"
             shift 2
@@ -60,7 +65,7 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         --help|-h)
-            echo "Usage: $0 [--scenario NAME] [--services svc1,svc2] [--workflow-only] [--local] [--seed]"
+            echo "Usage: $0 [--scenario NAME] [--services svc1,svc2] [--workflow-only] [--local] [--seed] [--manifest]"
             echo ""
             echo "Options:"
             echo "  --scenario NAME        Build workflow images for this scenario"
@@ -68,6 +73,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --workflow-only         Only build workflow images (skip services even if --services given)"
             echo "  --local                Local build only (no push to registry)"
             echo "  --seed                 Register workflow in DataStorage after push"
+            echo "  --manifest             Create multi-arch manifests for service images (requires both arches pushed)"
             echo "  --image-tag TAG        Platform service image tag (default: demo-v1.0)"
             echo "  --version TAG          Workflow image version tag (default: v1.0.0)"
             echo ""
@@ -123,7 +129,9 @@ if [ -n "$SERVICES" ] && ! $WORKFLOW_ONLY; then
 
         if ! $LOCAL_ONLY; then
             make -C "${REPO_ROOT}" "image-push-${svc}" IMAGE_TAG="${IMAGE_TAG}"
-            make -C "${REPO_ROOT}" "image-manifest-${svc}" IMAGE_TAG="${IMAGE_TAG}"
+            if $CREATE_MANIFEST; then
+                make -C "${REPO_ROOT}" "image-manifest-${svc}" IMAGE_TAG="${IMAGE_TAG}"
+            fi
         fi
         echo ""
     done

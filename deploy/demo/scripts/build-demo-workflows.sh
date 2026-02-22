@@ -20,7 +20,8 @@
 # Prerequisites:
 #   - podman login quay.io (for push)
 #   - podman with multi-arch manifest support
-#   - jq (for digest extraction)
+#   - skopeo (for registry manifest inspection)
+#   - python3 (for digest computation)
 
 set -euo pipefail
 
@@ -79,29 +80,9 @@ if [ -n "$SINGLE_SCENARIO" ]; then
 fi
 echo ""
 
-# scenario-dir:image-name mappings
-WORKFLOWS=(
-    "gitops-drift:git-revert-job"
-    "autoscale:provision-node-job"
-    "slo-burn:proactive-rollback-job"
-    "memory-leak:graceful-restart-job"
-    "crashloop:crashloop-rollback-job"
-    "hpa-maxed:patch-hpa-job"
-    "pdb-deadlock:relax-pdb-job"
-    "pending-taint:remove-taint-job"
-    "disk-pressure:cleanup-pvc-job"
-    "node-notready:cordon-drain-job"
-    "stuck-rollout:rollback-deployment-job"
-    "cert-failure:fix-certificate-job"
-    "cert-failure-gitops:fix-certificate-gitops-job"
-    "crashloop-helm:helm-rollback-job"
-    "mesh-routing-failure:fix-authz-policy-job"
-    "statefulset-pvc-failure:fix-statefulset-pvc-job"
-    "network-policy-block:fix-network-policy-job"
-)
-with open(f, 'w') as fh: fh.write(content)
-" "${schema_file}" "${new_bundle}"
-}
+# scenario-dir:image-name mappings (shared across build + seed scripts)
+# shellcheck source=workflow-mappings.sh
+source "${SCRIPT_DIR}/workflow-mappings.sh"
 
 # build_and_push_multiarch builds both arch images, creates a manifest list, pushes it,
 # and prints the manifest list digest to stdout.
@@ -127,11 +108,17 @@ build_and_push_multiarch() {
 }
 
 # build_local builds for the current arch only and prints the image digest.
+# Falls back to the image ID (sha256:...) when no registry digest is available.
 # Args: $1=full_ref $2=dockerfile $3=context_dir
 build_local() {
     local ref="$1" dockerfile="$2" context="$3"
     podman build -t "${ref}" -f "${dockerfile}" "${context}" >&2
-    podman inspect "${ref}" --format '{{.Digest}}' 2>/dev/null || echo ""
+    local digest
+    digest=$(podman inspect "${ref}" --format '{{.Digest}}' 2>/dev/null || echo "")
+    if [ -z "${digest}" ] || [ "${digest}" = "<none>" ]; then
+        digest=$(podman inspect "${ref}" --format '{{.Id}}' 2>/dev/null || echo "")
+    fi
+    echo "${digest}"
 }
 
 # update_bundle_digest writes the exec image digest into workflow-schema.yaml
@@ -159,7 +146,6 @@ with open(f, 'w') as fh: fh.write(content)
 
 build_count=0
 skip_count=0
-seeded_schemas=()
 
 for entry in "${WORKFLOWS[@]}"; do
     SCENARIO="${entry%%:*}"
@@ -215,7 +201,6 @@ for entry in "${WORKFLOWS[@]}"; do
         echo "  [schema] Pushed."
     fi
 
-    seeded_schemas+=("${SCHEMA_REF}")
     build_count=$((build_count + 1))
     echo ""
 done
@@ -230,27 +215,25 @@ if ! $LOCAL_ONLY; then
 fi
 echo "============================================"
 
-if $SEED_AFTER && ! $LOCAL_ONLY && [ "${#seeded_schemas[@]}" -gt 0 ]; then
-    echo ""
-    echo "==> Seeding workflow(s) in DataStorage..."
-    SA_TOKEN=$(kubectl create token holmesgpt-api-sa -n kubernaut-system --duration=10m 2>/dev/null || echo "")
-    DS_URL="${DATASTORAGE_URL:-http://localhost:30081}"
-    AUTH_HEADER=""
-    if [ -n "$SA_TOKEN" ]; then
-        AUTH_HEADER="-H \"Authorization: Bearer ${SA_TOKEN}\""
-    fi
-
-    for schema_ref in "${seeded_schemas[@]}"; do
-        echo -n "  Registering ${schema_ref}... "
-        HTTP_CODE=$(eval curl -s -o /dev/null -w '%{http_code}' -X POST "${DS_URL}/api/v1/workflows" \
-            -H "Content-Type: application/json" \
-            ${AUTH_HEADER} \
-            -d "'{ \"schemaImage\": \"${schema_ref}\" }'")
-        echo "HTTP ${HTTP_CODE}"
-    done
+if [ -n "$SINGLE_SCENARIO" ] && [ "$build_count" -eq 0 ]; then
+    echo "ERROR: Scenario '${SINGLE_SCENARIO}' not found in workflow mappings."
+    echo "Available scenarios: $(printf '%s\n' "${WORKFLOWS[@]}" | cut -d: -f1 | tr '\n' ' ')"
+    exit 1
 fi
 
-echo ""
-echo "Next steps:"
-echo "  Seed the workflows in DataStorage (if not using --seed):"
-echo "    ./deploy/demo/scripts/seed-workflows.sh"
+if $SEED_AFTER && ! $LOCAL_ONLY && [ "$build_count" -gt 0 ]; then
+    echo ""
+    echo "==> Seeding workflow(s) in DataStorage..."
+    SEED_ARGS=(--version "${VERSION}")
+    if [ -n "$SINGLE_SCENARIO" ]; then
+        SEED_ARGS+=(--scenario "${SINGLE_SCENARIO}")
+    fi
+    bash "${SCRIPT_DIR}/seed-workflows.sh" "${SEED_ARGS[@]}"
+fi
+
+if ! $SEED_AFTER; then
+    echo ""
+    echo "Next steps:"
+    echo "  Seed the workflows in DataStorage:"
+    echo "    ./deploy/demo/scripts/seed-workflows.sh"
+fi
