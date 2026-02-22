@@ -19,6 +19,7 @@ package delivery
 import (
 	"context"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -234,11 +235,12 @@ func (o *Orchestrator) DeliverToChannels(
 				// Treat as delivery failure - record attempt and continue
 				now := metav1.Now()
 				attempt := notificationv1alpha1.DeliveryAttempt{
-					Channel:   string(channel),
-					Attempt:   attemptCount + 1,
-					Timestamp: now,
-					Status:    "failed",
-					Error:     checkErr.Error(),
+					Channel:         string(channel),
+					Attempt:         attemptCount + 1,
+					Timestamp:       now,
+					Status:          "failed",
+					Error:           checkErr.Error(),
+					DurationSeconds: 0, // Pre-delivery check fails before delivery starts
 				}
 				if auditErr := auditMessageFailed(ctx, notification, string(channel), checkErr); auditErr != nil {
 					log.Error(auditErr, "CRITICAL: Failed to audit message.failed (ADR-032 §1)")
@@ -256,8 +258,14 @@ func (o *Orchestrator) DeliverToChannels(
 		// This ensures concurrent reconciliations see the correct attempt count
 		o.incrementInFlightAttempts(string(notification.UID), string(channel))
 
+		// Record duration for DeliveryAttempt.DurationSeconds
+		start := time.Now()
+
 		// Attempt delivery
 		deliveryErr := o.DeliverToChannel(ctx, notification, channel)
+
+		// Round to milliseconds - sub-ms precision is typically noise for observability
+		durationSeconds := math.Round(time.Since(start).Seconds()*1000) / 1000
 
 		// NT-RACE-FIX: Re-fetch attempt count AFTER in-flight increment
 		// This gives us the correct 1-based attempt number for concurrent reconciliations
@@ -271,9 +279,10 @@ func (o *Orchestrator) DeliverToChannels(
 		now := metav1.Now()
 
 		attempt := notificationv1alpha1.DeliveryAttempt{
-			Channel:   string(channel),
-			Attempt:   attemptCountAfterIncrement, // Use post-increment count for correct numbering
-			Timestamp: now,
+			Channel:         string(channel),
+			Attempt:         attemptCountAfterIncrement, // Use post-increment count for correct numbering
+			Timestamp:       now,
+			DurationSeconds: durationSeconds,
 		}
 
 		if deliveryErr != nil {

@@ -19,6 +19,7 @@ package delivery_test
 import (
 	"context"
 	"errors"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -57,6 +58,8 @@ var _ = Describe("Orchestrator Channel Registration (DD-NOT-007)", func() {
 
 	BeforeEach(func() {
 		// Create orchestrator WITHOUT channel parameters (DD-NOT-007)
+		// Use NoOpRecorder for DeliverToChannels tests (avoids nil metrics panic)
+		metrics = notificationmetrics.NewNoOpRecorder()
 		orchestrator = delivery.NewOrchestrator(
 			sanitizer,
 			metrics,
@@ -239,6 +242,64 @@ var _ = Describe("Orchestrator Channel Registration (DD-NOT-007)", func() {
 			Expect(o.HasChannel("slack")).To(BeFalse(), "slack should not be hardcoded")
 			Expect(o.HasChannel("file")).To(BeFalse(), "file should not be hardcoded")
 			Expect(o.HasChannel("log")).To(BeFalse(), "log should not be hardcoded")
+		})
+	})
+
+	Describe("DeliverToChannels - DeliveryAttempt.DurationSeconds", func() {
+		It("should set DurationSeconds > 0 on successful delivery attempt", func() {
+			// Use a mock service that sleeps to ensure measurable duration
+			delayingService := &mockDeliveryService{
+				deliverFunc: func(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
+					time.Sleep(15 * time.Millisecond)
+					return nil
+				},
+			}
+			orchestrator.RegisterChannel(string(notificationv1alpha1.ChannelConsole), delayingService)
+
+			notification := helpers.NewNotificationRequest("test-duration", "default")
+			policy := &notificationv1alpha1.RetryPolicy{MaxAttempts: 5}
+
+			result, err := orchestrator.DeliverToChannels(
+				ctx,
+				notification,
+				[]notificationv1alpha1.Channel{notificationv1alpha1.ChannelConsole},
+				policy,
+				func(*notificationv1alpha1.NotificationRequest, string) bool { return false },
+				func(*notificationv1alpha1.NotificationRequest, string) bool { return false },
+				func(*notificationv1alpha1.NotificationRequest, string) int { return 0 },
+				func(context.Context, *notificationv1alpha1.NotificationRequest, string) error { return nil },
+				func(context.Context, *notificationv1alpha1.NotificationRequest, string, error) error { return nil },
+				nil,
+			)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.DeliveryAttempts).To(HaveLen(1))
+			Expect(result.DeliveryAttempts[0].Status).To(Equal("success"))
+			Expect(result.DeliveryAttempts[0].DurationSeconds).To(BeNumerically(">", 0),
+				"DurationSeconds must be set after successful delivery")
+		})
+
+		It("should set DurationSeconds >= 0 on instant delivery (e.g. console)", func() {
+			orchestrator.RegisterChannel(string(notificationv1alpha1.ChannelConsole), mockService)
+
+			notification := helpers.NewNotificationRequest("test-instant", "default")
+			policy := &notificationv1alpha1.RetryPolicy{MaxAttempts: 5}
+
+			result, err := orchestrator.DeliverToChannels(
+				ctx,
+				notification,
+				[]notificationv1alpha1.Channel{notificationv1alpha1.ChannelConsole},
+				policy,
+				func(*notificationv1alpha1.NotificationRequest, string) bool { return false },
+				func(*notificationv1alpha1.NotificationRequest, string) bool { return false },
+				func(*notificationv1alpha1.NotificationRequest, string) int { return 0 },
+				func(context.Context, *notificationv1alpha1.NotificationRequest, string) error { return nil },
+				func(context.Context, *notificationv1alpha1.NotificationRequest, string, error) error { return nil },
+				nil,
+			)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.DeliveryAttempts).To(HaveLen(1))
+			Expect(result.DeliveryAttempts[0].DurationSeconds).To(BeNumerically(">=", 0),
+				"DurationSeconds must be >= 0 even for instant delivery")
 		})
 	})
 })
