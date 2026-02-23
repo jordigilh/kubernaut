@@ -733,13 +733,12 @@ func (r *Reconciler) handleProcessingPhase(ctx context.Context, rr *remediationv
 		return r.transitionToFailed(ctx, rr, "signal_processing", fmt.Errorf("SignalProcessing not found"))
 	}
 
-	// Fetch SignalProcessing CRD via informer (cached client).
-	// No correctness requirement for apiReader here — this is a status poll. If the
-	// informer is a few seconds stale, the 5s requeue catches it on the next cycle.
-	// apiReader is reserved for cases that prevent reconciliation bugs or duplicate
-	// audit events (e.g., the initialization dedup check at the top of Reconcile).
+	// Fetch SignalProcessing CRD
+	// DD-STATUS-001: Use apiReader for cache-bypassed read - tests update SP.Status.Phase
+	// and we must see the update immediately to transition Processing→Analyzing.
+	// Cache staleness in CI (parallel procs, resource contention) can cause 120s timeouts.
 	sp := &signalprocessingv1.SignalProcessing{}
-	err := r.client.Get(ctx, client.ObjectKey{
+	err := r.apiReader.Get(ctx, client.ObjectKey{
 		Name:      rr.Status.SignalProcessingRef.Name,
 		Namespace: rr.Status.SignalProcessingRef.Namespace,
 	}, sp)
