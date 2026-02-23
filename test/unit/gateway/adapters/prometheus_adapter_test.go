@@ -183,7 +183,7 @@ var _ = Describe("BR-GATEWAY-002: Prometheus Adapter - Parse AlertManager Webhoo
 			Expect(err).NotTo(HaveOccurred())
 
 			// BUSINESS RULE: Required fields must be populated
-			Expect(signal.AlertName).NotTo(BeEmpty(),
+			Expect(signal.SignalName).NotTo(BeEmpty(),
 				"Alert name required for AI analysis")
 			Expect(signal.Severity).To(BeElementOf([]string{"critical", "warning", "info"}),
 				"Severity must be normalized to standard values")
@@ -191,7 +191,7 @@ var _ = Describe("BR-GATEWAY-002: Prometheus Adapter - Parse AlertManager Webhoo
 				"Namespace required for environment classification")
 			Expect(signal.FiringTime).NotTo(BeZero(),
 				"Timestamp required for timeline analysis")
-			Expect(signal.SourceType).To(Equal("prometheus-alert"),
+			Expect(signal.SourceType).To(Equal("alert"),
 				"Source type distinguishes Prometheus from K8s events")
 		})
 
@@ -236,7 +236,7 @@ var _ = Describe("BR-GATEWAY-002: Prometheus Adapter - Parse AlertManager Webhoo
 			Expect(err).NotTo(HaveOccurred())
 
 			// BUSINESS RULE: First alert processed (server iterates for remaining)
-			Expect(signal.AlertName).To(Equal("FirstAlert"),
+			Expect(signal.SignalName).To(Equal("FirstAlert"),
 				"Adapter processes one alert at a time for simpler deduplication")
 		})
 	})
@@ -306,7 +306,7 @@ var _ = Describe("BR-GATEWAY-002: Prometheus Adapter - Parse AlertManager Webhoo
 
 			sourceType := adapter.GetSourceType()
 
-			Expect(sourceType).To(Equal("prometheus-alert"),
+			Expect(sourceType).To(Equal("alert"),
 				"Must return signal type for classification")
 		})
 
@@ -334,6 +334,183 @@ var _ = Describe("BR-GATEWAY-002: Prometheus Adapter - Parse AlertManager Webhoo
 			// Signal.SourceType must match GetSourceType()
 			Expect(signal.SourceType).To(Equal(adapter.GetSourceType()),
 				"Parse() must use GetSourceType() method")
+		})
+	})
+
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// Issue #178 / BR-GATEWAY-184: Target Resource Extraction Priority
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	//
+	// kube-state-metrics resource-level alerts include a `pod` label
+	// pointing to the metrics exporter, NOT the affected resource.
+	// Gateway must check specific resource labels before `pod`.
+
+	Context("Issue #178 / BR-GATEWAY-184: Target Resource Extraction Priority", func() {
+		It("[GW-RE-01] should extract HPA when both pod and horizontalpodautoscaler labels are present", func() {
+			payload := []byte(`{
+				"alerts": [{
+					"labels": {
+						"alertname": "KubeHpaMaxedOut",
+						"namespace": "demo-hpa",
+						"pod": "kube-prometheus-stack-kube-state-metrics-abc123",
+						"horizontalpodautoscaler": "api-frontend"
+					}
+				}]
+			}`)
+
+			signal, err := adapter.Parse(ctx, payload)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(signal.Resource.Kind).To(Equal("HorizontalPodAutoscaler"),
+				"BR-GATEWAY-184: HPA label must take priority over pod (kube-state-metrics exporter)")
+			Expect(signal.Resource.Name).To(Equal("api-frontend"),
+				"BR-GATEWAY-184: Resource name must come from HPA label, not pod label")
+		})
+
+		It("[GW-RE-02] should extract Deployment when both pod and deployment labels are present", func() {
+			payload := []byte(`{
+				"alerts": [{
+					"labels": {
+						"alertname": "KubeDeploymentReplicasMismatch",
+						"namespace": "production",
+						"pod": "kube-prometheus-stack-kube-state-metrics-abc123",
+						"deployment": "web-api"
+					}
+				}]
+			}`)
+
+			signal, err := adapter.Parse(ctx, payload)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(signal.Resource.Kind).To(Equal("Deployment"),
+				"BR-GATEWAY-184: Deployment label must take priority over pod (kube-state-metrics exporter)")
+			Expect(signal.Resource.Name).To(Equal("web-api"),
+				"BR-GATEWAY-184: Resource name must come from deployment label, not pod label")
+		})
+
+		It("[GW-RE-03] should extract StatefulSet when both pod and statefulset labels are present", func() {
+			payload := []byte(`{
+				"alerts": [{
+					"labels": {
+						"alertname": "KubeStatefulSetReplicasMismatch",
+						"namespace": "data",
+						"pod": "kube-prometheus-stack-kube-state-metrics-abc123",
+						"statefulset": "postgres-primary"
+					}
+				}]
+			}`)
+
+			signal, err := adapter.Parse(ctx, payload)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(signal.Resource.Kind).To(Equal("StatefulSet"),
+				"BR-GATEWAY-184: StatefulSet label must take priority over pod (kube-state-metrics exporter)")
+			Expect(signal.Resource.Name).To(Equal("postgres-primary"),
+				"BR-GATEWAY-184: Resource name must come from statefulset label, not pod label")
+		})
+
+		It("[GW-RE-04] should extract PDB when both pod and poddisruptionbudget labels are present", func() {
+			payload := []byte(`{
+				"alerts": [{
+					"labels": {
+						"alertname": "KubePodDisruptionBudgetAtLimit",
+						"namespace": "critical",
+						"pod": "kube-prometheus-stack-kube-state-metrics-abc123",
+						"poddisruptionbudget": "api-pdb"
+					}
+				}]
+			}`)
+
+			signal, err := adapter.Parse(ctx, payload)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(signal.Resource.Kind).To(Equal("PodDisruptionBudget"),
+				"BR-GATEWAY-184: PDB label must take priority over pod (kube-state-metrics exporter)")
+			Expect(signal.Resource.Name).To(Equal("api-pdb"),
+				"BR-GATEWAY-184: Resource name must come from PDB label, not pod label")
+		})
+
+		It("[GW-RE-05] should still extract Pod when only pod label is present (backward compatible)", func() {
+			payload := []byte(`{
+				"alerts": [{
+					"labels": {
+						"alertname": "KubePodCrashLooping",
+						"namespace": "production",
+						"pod": "payment-api-7f86bb8877-4hv68"
+					}
+				}]
+			}`)
+
+			signal, err := adapter.Parse(ctx, payload)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(signal.Resource.Kind).To(Equal("Pod"),
+				"BR-GATEWAY-184: Pod-only alerts must still extract Pod (backward compatible)")
+			Expect(signal.Resource.Name).To(Equal("payment-api-7f86bb8877-4hv68"),
+				"BR-GATEWAY-184: Resource name must come from pod label when no specific labels present")
+		})
+
+		It("[GW-RE-06] should extract PVC when persistentvolumeclaim label is present", func() {
+			payload := []byte(`{
+				"alerts": [{
+					"labels": {
+						"alertname": "KubePersistentVolumeFillingUp",
+						"namespace": "data",
+						"persistentvolumeclaim": "data-postgres-0"
+					}
+				}]
+			}`)
+
+			signal, err := adapter.Parse(ctx, payload)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(signal.Resource.Kind).To(Equal("PersistentVolumeClaim"),
+				"BR-GATEWAY-184: PVC label must be recognized as a valid resource kind")
+			Expect(signal.Resource.Name).To(Equal("data-postgres-0"),
+				"BR-GATEWAY-184: Resource name must come from PVC label")
+		})
+
+		It("[GW-RE-07] should extract Job when job label is present", func() {
+			payload := []byte(`{
+				"alerts": [{
+					"labels": {
+						"alertname": "KubeJobFailed",
+						"namespace": "batch",
+						"job_name": "data-migration",
+						"pod": "kube-prometheus-stack-kube-state-metrics-abc123",
+						"job": "data-migration"
+					}
+				}]
+			}`)
+
+			signal, err := adapter.Parse(ctx, payload)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(signal.Resource.Kind).To(Equal("Job"),
+				"BR-GATEWAY-184: Job label must take priority over pod (kube-state-metrics exporter)")
+			Expect(signal.Resource.Name).To(Equal("data-migration"),
+				"BR-GATEWAY-184: Resource name must come from job label, not pod label")
+		})
+
+		It("[GW-RE-08] should extract CronJob when cronjob label is present", func() {
+			payload := []byte(`{
+				"alerts": [{
+					"labels": {
+						"alertname": "KubeCronJobRunning",
+						"namespace": "batch",
+						"pod": "kube-prometheus-stack-kube-state-metrics-abc123",
+						"cronjob": "nightly-backup"
+					}
+				}]
+			}`)
+
+			signal, err := adapter.Parse(ctx, payload)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(signal.Resource.Kind).To(Equal("CronJob"),
+				"BR-GATEWAY-184: CronJob label must take priority over pod (kube-state-metrics exporter)")
+			Expect(signal.Resource.Name).To(Equal("nightly-backup"),
+				"BR-GATEWAY-184: Resource name must come from cronjob label, not pod label")
 		})
 	})
 

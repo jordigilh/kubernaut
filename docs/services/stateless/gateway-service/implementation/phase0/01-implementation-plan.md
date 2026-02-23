@@ -1300,28 +1300,42 @@ func determineSeverity(labels map[string]string) string {
     }
 }
 
+// BR-GATEWAY-184: Specific resource labels checked before "pod" because
+// kube-state-metrics resource-level alerts inject "pod" as the metrics
+// exporter, not the affected resource.
+// Priority order: HPA > PDB > PVC > Deployment > StatefulSet > DaemonSet >
+//                 Node > Service > Job > CronJob > Pod > Unknown
 func extractResourceKind(labels map[string]string) string {
-    if _, ok := labels["pod"]; ok {
-        return "Pod"
-    }
-    if _, ok := labels["deployment"]; ok {
-        return "Deployment"
-    }
-    if _, ok := labels["node"]; ok {
-        return "Node"
+    for _, entry := range []struct{ label, kind string }{
+        {"horizontalpodautoscaler", "HorizontalPodAutoscaler"},
+        {"poddisruptionbudget", "PodDisruptionBudget"},
+        {"persistentvolumeclaim", "PersistentVolumeClaim"},
+        {"deployment", "Deployment"},
+        {"statefulset", "StatefulSet"},
+        {"daemonset", "DaemonSet"},
+        {"node", "Node"},
+        {"service", "Service"},
+        {"job", "Job"},
+        {"cronjob", "CronJob"},
+        {"pod", "Pod"},
+    } {
+        if _, ok := labels[entry.label]; ok {
+            return entry.kind
+        }
     }
     return "Unknown"
 }
 
+// BR-GATEWAY-184: Mirrors extractResourceKind priority order.
 func extractResourceName(labels map[string]string) string {
-    if pod, ok := labels["pod"]; ok {
-        return pod
-    }
-    if deployment, ok := labels["deployment"]; ok {
-        return deployment
-    }
-    if node, ok := labels["node"]; ok {
-        return node
+    for _, label := range []string{
+        "horizontalpodautoscaler", "poddisruptionbudget", "persistentvolumeclaim",
+        "deployment", "statefulset", "daemonset",
+        "node", "service", "job", "cronjob", "pod",
+    } {
+        if v, ok := labels[label]; ok {
+            return v
+        }
     }
     return "unknown"
 }

@@ -105,7 +105,7 @@ func (a *PrometheusAdapter) GetSourceService() string {
 
 // GetSourceType returns the signal type identifier (BR-GATEWAY-027)
 //
-// Returns "prometheus-alert" per OpenAPI enum validation and authoritative documentation.
+// Returns "alert" (normalized signal type) per OpenAPI enum validation and authoritative documentation.
 // Used for metrics, logging, signal classification, and audit events.
 func (a *PrometheusAdapter) GetSourceType() string {
 	return SourceTypePrometheusAlert // Prometheus AlertManager signals
@@ -206,7 +206,7 @@ func (a *PrometheusAdapter) Parse(ctx context.Context, rawData []byte) (*types.N
 
 	return &types.NormalizedSignal{
 		Fingerprint:  fingerprint,
-		AlertName:    alert.Labels["alertname"],
+		SignalName:    alert.Labels["alertname"],
 		Severity:     severity, // BR-GATEWAY-111: Preserve external severity value
 		Namespace:    resource.Namespace,
 		Resource:     resource,
@@ -237,7 +237,7 @@ func (a *PrometheusAdapter) Validate(signal *types.NormalizedSignal) error {
 	if signal.Fingerprint == "" {
 		return errors.New("fingerprint is required")
 	}
-	if signal.AlertName == "" {
+	if signal.SignalName == "" {
 		return errors.New("alertName is required")
 	}
 	// BR-GATEWAY-111: Accept ANY severity value (no enum restriction)
@@ -277,22 +277,34 @@ func (a *PrometheusAdapter) GetMetadata() AdapterMetadata {
 //   resource produce redundant RemediationRequests
 // - RCA outcome is independent of which alert triggered it
 
-// extractResourceKind determines Kubernetes resource type from labels
+// extractResourceKind determines Kubernetes resource type from labels.
+//
+// BR-GATEWAY-184: Specific resource labels are checked before "pod" because
+// kube-state-metrics resource-level alerts (kube_hpa_*, kube_deployment_*, etc.)
+// include a "pod" label pointing to the metrics exporter, not the affected resource.
 //
 // Detection order (first match wins):
-// 1. pod label → "Pod"
-// 2. deployment label → "Deployment"
-// 3. statefulset label → "StatefulSet"
-// 4. daemonset label → "DaemonSet"
-// 5. node label → "Node"
-// 6. service label → "Service"
-// 7. default → "Unknown"
-//
-// Returns:
-// - string: Kubernetes resource kind
+//  1. horizontalpodautoscaler → "HorizontalPodAutoscaler"
+//  2. poddisruptionbudget    → "PodDisruptionBudget"
+//  3. persistentvolumeclaim  → "PersistentVolumeClaim"
+//  4. deployment             → "Deployment"
+//  5. statefulset            → "StatefulSet"
+//  6. daemonset              → "DaemonSet"
+//  7. node                   → "Node"
+//  8. service                → "Service"
+//  9. job                    → "Job"
+//  10. cronjob               → "CronJob"
+//  11. pod                   → "Pod" (last: correct for pod-level metrics like kube_pod_*)
+//  12. default               → "Unknown"
 func extractResourceKind(labels map[string]string) string {
-	if _, ok := labels["pod"]; ok {
-		return "Pod"
+	if _, ok := labels["horizontalpodautoscaler"]; ok {
+		return "HorizontalPodAutoscaler"
+	}
+	if _, ok := labels["poddisruptionbudget"]; ok {
+		return "PodDisruptionBudget"
+	}
+	if _, ok := labels["persistentvolumeclaim"]; ok {
+		return "PersistentVolumeClaim"
 	}
 	if _, ok := labels["deployment"]; ok {
 		return "Deployment"
@@ -309,40 +321,70 @@ func extractResourceKind(labels map[string]string) string {
 	if _, ok := labels["service"]; ok {
 		return "Service"
 	}
+	if _, ok := labels["job"]; ok {
+		return "Job"
+	}
+	if _, ok := labels["cronjob"]; ok {
+		return "CronJob"
+	}
+	if _, ok := labels["pod"]; ok {
+		return "Pod"
+	}
 	return "Unknown"
 }
 
-// extractResourceName gets the resource instance name from labels
+// extractResourceName gets the resource instance name from labels.
+//
+// BR-GATEWAY-184: Mirrors extractResourceKind priority order. Specific resource
+// labels are checked before "pod" to avoid returning the kube-state-metrics
+// exporter pod name instead of the actual affected resource name.
 //
 // Extraction order (first match wins):
-// 1. pod label
-// 2. deployment label
-// 3. statefulset label
-// 4. daemonset label
-// 5. node label
-// 6. service label
-// 7. default → "unknown"
-//
-// Returns:
-// - string: Resource name or "unknown"
+//  1. horizontalpodautoscaler
+//  2. poddisruptionbudget
+//  3. persistentvolumeclaim
+//  4. deployment
+//  5. statefulset
+//  6. daemonset
+//  7. node
+//  8. service
+//  9. job
+//  10. cronjob
+//  11. pod (last)
+//  12. default → "unknown"
 func extractResourceName(labels map[string]string) string {
-	if pod, ok := labels["pod"]; ok {
-		return pod
+	if v, ok := labels["horizontalpodautoscaler"]; ok {
+		return v
 	}
-	if deployment, ok := labels["deployment"]; ok {
-		return deployment
+	if v, ok := labels["poddisruptionbudget"]; ok {
+		return v
 	}
-	if statefulset, ok := labels["statefulset"]; ok {
-		return statefulset
+	if v, ok := labels["persistentvolumeclaim"]; ok {
+		return v
 	}
-	if daemonset, ok := labels["daemonset"]; ok {
-		return daemonset
+	if v, ok := labels["deployment"]; ok {
+		return v
 	}
-	if node, ok := labels["node"]; ok {
-		return node
+	if v, ok := labels["statefulset"]; ok {
+		return v
 	}
-	if service, ok := labels["service"]; ok {
-		return service
+	if v, ok := labels["daemonset"]; ok {
+		return v
+	}
+	if v, ok := labels["node"]; ok {
+		return v
+	}
+	if v, ok := labels["service"]; ok {
+		return v
+	}
+	if v, ok := labels["job"]; ok {
+		return v
+	}
+	if v, ok := labels["cronjob"]; ok {
+		return v
+	}
+	if v, ok := labels["pod"]; ok {
+		return v
 	}
 	return "unknown"
 }
