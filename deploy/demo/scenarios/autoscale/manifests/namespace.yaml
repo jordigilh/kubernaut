@@ -7,4 +7,5 @@ metadata:
     kubernaut.ai/business-unit: infrastructure
     kubernaut.ai/service-owner: sre-team
     kubernaut.ai/criticality: high
+    kubernaut.ai/managed: "true"
     kubernaut.ai/sla-tier: tier-2
