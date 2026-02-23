@@ -115,7 +115,7 @@ var eventTypeCatalog = []eventTypeTestCase{
 			}
 		},
 		JSONBQueries: []jsonbQueryTest{
-			{Field: "alert_name", Operator: "->>", Value: "HighCPU", ExpectedRows: 1},
+			{Field: "signal_name", Operator: "->>", Value: "HighCPU", ExpectedRows: 1},
 			{Field: "fingerprint", Operator: "->>", Value: "fp-abc123", ExpectedRows: 1},
 		},
 	},
@@ -148,7 +148,7 @@ var eventTypeCatalog = []eventTypeTestCase{
 			}
 		},
 		JSONBQueries: []jsonbQueryTest{
-			{Field: "alert_name", Operator: "->>", Value: "HighCPU", ExpectedRows: 1},
+			{Field: "signal_name", Operator: "->>", Value: "HighCPU", ExpectedRows: 1},
 			{Field: "fingerprint", Operator: "->>", Value: "fp-dedupe-456", ExpectedRows: 1},
 		},
 	},
@@ -181,7 +181,7 @@ var eventTypeCatalog = []eventTypeTestCase{
 			}
 		},
 		JSONBQueries: []jsonbQueryTest{
-			{Field: "alert_name", Operator: "->>", Value: "CRDCreated", ExpectedRows: 1},
+			{Field: "signal_name", Operator: "->>", Value: "CRDCreated", ExpectedRows: 1},
 			{Field: "fingerprint", Operator: "->>", Value: "fp-crd-012", ExpectedRows: 1},
 		},
 	},
@@ -214,7 +214,7 @@ var eventTypeCatalog = []eventTypeTestCase{
 			}
 		},
 		JSONBQueries: []jsonbQueryTest{
-			{Field: "alert_name", Operator: "->>", Value: "CRDCreationFailed", ExpectedRows: 1},
+			{Field: "signal_name", Operator: "->>", Value: "CRDCreationFailed", ExpectedRows: 1},
 			{Field: "fingerprint", Operator: "->>", Value: "fp-crd-fail-789", ExpectedRows: 1},
 		},
 	},
@@ -1387,7 +1387,10 @@ var _ = Describe("GAP 1.1: Comprehensive Event Type + JSONB Validation", Label("
 					// ACT: Send event using OpenAPI client (replaces raw HTTP POST)
 					resp, err := DSClient.CreateAuditEvent(ctx, &auditEvent)
 					Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Event type %s should be accepted by DataStorage", tc.EventType))
-					Expect(resp).ToNot(BeNil())
+					_, isAuditResp := resp.(*ogenclient.AuditEventResponse)
+					_, isAsyncResp := resp.(*ogenclient.AsyncAcceptanceResponse)
+					Expect(isAuditResp || isAsyncResp).To(BeTrue(),
+						fmt.Sprintf("CreateAuditEvent for %s should return AuditEventResponse or AsyncAcceptanceResponse, got %T", tc.EventType, resp))
 
 					// ASSERT: Event persisted to database (with Eventually for async persistence)
 					correlationID := auditEvent.CorrelationID
