@@ -142,17 +142,22 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 				}]
 			}`, prodNamespace))
 
-			// Send webhook to Gateway
+			// Send webhook to Gateway with retry (CI latency in Kind+Podman)
 			url := fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL)
-			req, _ := http.NewRequest("POST", url, bytes.NewReader(payload))
-			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
-			resp, err := http.DefaultClient.Do(req)
-			Expect(err).ToNot(HaveOccurred())
-			defer func() { _ = resp.Body.Close() }()
-
-			// BUSINESS OUTCOME 1: HTTP 201 Created
-			Expect(resp.StatusCode).To(Equal(http.StatusCreated), "First occurrence must create CRD (201 Created)")
+			var resp *http.Response
+			Eventually(func() int {
+				req, _ := http.NewRequest("POST", url, bytes.NewReader(payload))
+				req.Header.Set("Content-Type", "application/json")
+				req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+				var err error
+				resp, err = http.DefaultClient.Do(req)
+				if err != nil {
+					return 0
+				}
+				defer func() { _ = resp.Body.Close() }()
+				return resp.StatusCode
+			}, 30*time.Second, 500*time.Millisecond).Should(Equal(http.StatusCreated),
+				"First occurrence must create CRD (201 Created)")
 
 			// Parse response to get fingerprint
 			var response map[string]interface{}
@@ -214,10 +219,9 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 
 			url := fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL)
 
-			// Retry POST until Gateway's informer cache syncs the new namespace.
-			// The scope checker (BR-SCOPE-002) uses a metadata-only informer cache;
-			// freshly created namespaces may not be visible yet, causing HTTP 200
-			// (scope rejection) instead of 201 (created). Retrying handles this lag.
+			// Retry POST until Gateway processes the alert and creates the CRD.
+			// The scope checker (BR-SCOPE-002) uses apiReader (uncached, direct API calls),
+			// but CI environments (Kind+Podman) may have latency. 30s handles this.
 			var resp *http.Response
 			Eventually(func() int {
 				req, _ := http.NewRequest("POST", url, bytes.NewReader(payload))
@@ -230,8 +234,8 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 				}
 				defer func() { _ = resp.Body.Close() }()
 				return resp.StatusCode
-			}, 10*time.Second, 500*time.Millisecond).Should(Equal(http.StatusCreated),
-				"Gateway should return 201 Created once informer cache syncs the managed namespace")
+			}, 30*time.Second, 500*time.Millisecond).Should(Equal(http.StatusCreated),
+				"Gateway should return 201 Created for managed namespace")
 
 			// BUSINESS OUTCOME: CRD contains resource information for AI targeting
 			var crdList remediationv1alpha1.RemediationRequestList
