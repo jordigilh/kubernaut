@@ -12,7 +12,7 @@ metadata:
 actionType: RestartDeployment
 
 labels:
-  signalName: CrashLoopBackOff
+  signalType: CrashLoopBackOff
   severity: [critical, low]
   environment: [production, staging]
   component: "*"
@@ -20,7 +20,7 @@ labels:
 
 execution:
   engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/restart-pods-job@sha256:d16c244a19895267bb445b06d2e45cfe68926d5d895b09c6d1e9a37a44b78566
+  bundle: quay.io/kubernaut-cicd/test-workflows/restart-pods-job@sha256:placeholder
 
 parameters:
   - name: TARGET_NAMESPACE

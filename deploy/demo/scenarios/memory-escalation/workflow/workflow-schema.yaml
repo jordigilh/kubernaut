@@ -12,15 +12,15 @@ metadata:
 actionType: IncreaseMemoryLimits
 
 labels:
-  signalName: ContainerOOMKilling
-  severity: [critical, high]
+  signalType: ContainerOOMKilling
+  severity: [critical, warning]
   environment: [production, staging]
   component: "*"
   priority: "*"
 
 execution:
   engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/increase-memory-limits-job@sha256:ec632da2ef307b956101bb180568b8966e80ba76f9b60ace473be5ee41fe6224
+  bundle: quay.io/kubernaut-cicd/test-workflows/increase-memory-limits-job@sha256:placeholder
 
 parameters:
   - name: TARGET_NAMESPACE
