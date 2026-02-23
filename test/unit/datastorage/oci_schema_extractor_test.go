@@ -56,7 +56,7 @@ const validWorkflowSchemaYAML = `metadata:
     preconditions: Pod is managed by a Deployment or StatefulSet
 actionType: RestartPod
 labels:
-  signalType: OOMKilled
+  signalName: OOMKilled
   severity: [critical]
   environment: [production]
   component: pod
@@ -103,7 +103,7 @@ var _ = Describe("OCI Schema Extractor (DD-WORKFLOW-017)", func() {
 
 			var labels map[string]interface{}
 			Expect(json.Unmarshal(labelsJSON, &labels)).To(Succeed())
-			Expect(labels).To(HaveKeyWithValue("signalType", "OOMKilled"))
+			Expect(labels).To(HaveKeyWithValue("signalName", "OOMKilled"))
 			Expect(labels["severity"]).To(Equal([]interface{}{"critical"}))
 			Expect(labels["environment"]).To(Equal([]interface{}{"production"}))
 			Expect(labels).To(HaveKeyWithValue("component", "pod"))
@@ -143,7 +143,7 @@ var _ = Describe("OCI Schema Extractor (DD-WORKFLOW-017)", func() {
     whenToUse: Test
 actionType: RestartPod
 labels:
-  signalType: OOMKilled
+  signalName: OOMKilled
   severity: [critical]
   environment: [staging, production]
   component: pod
@@ -174,14 +174,14 @@ parameters:
 			Expect(desc.Preconditions).To(ContainSubstring("Deployment or StatefulSet"))
 		})
 
-		It("UT-DS-017-019: should accept schema without signalType (DD-WORKFLOW-016)", func() {
-			// DD-WORKFLOW-016: signalType is optional metadata, not required for registration
-			noSignalTypeYAML := `metadata:
-  workflowId: no-signal-type
+		It("UT-DS-017-019: should accept schema without signalName (DD-WORKFLOW-016)", func() {
+			// DD-WORKFLOW-016: signalName is optional metadata, not required for registration
+			noSignalNameYAML := `metadata:
+  workflowId: no-signal-name
   version: "1.0.0"
   description:
-    what: Workflow without signalType
-    whenToUse: When signalType is optional
+    what: Workflow without signalName
+    whenToUse: When signalName is optional
 actionType: RestartPod
 labels:
   severity: [critical]
@@ -197,17 +197,17 @@ execution:
   engine: tekton
   bundle: quay.io/test/no-signal:v1.0.0@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
 `
-			parsedSchema, err := parser.ParseAndValidate(noSignalTypeYAML)
-			Expect(err).ToNot(HaveOccurred(), "schema without signalType should be accepted")
+			parsedSchema, err := parser.ParseAndValidate(noSignalNameYAML)
+			Expect(err).ToNot(HaveOccurred(), "schema without signalName should be accepted")
 			Expect(parsedSchema.Labels.SignalName).To(BeEmpty())
 
-			// Labels JSONB should NOT contain signalType key when empty
+			// Labels JSONB should NOT contain signalName key when empty
 			labelsJSON, err := parser.ExtractLabels(parsedSchema)
 			Expect(err).ToNot(HaveOccurred())
 			var labels map[string]interface{}
 			Expect(json.Unmarshal(labelsJSON, &labels)).To(Succeed())
-			Expect(labels).ToNot(HaveKey("signalType"),
-				"signalType should be omitted from labels JSONB when empty")
+			Expect(labels).ToNot(HaveKey("signalName"),
+				"signalName should be omitted from labels JSONB when empty")
 			Expect(labels["severity"]).To(Equal([]interface{}{"critical"}))
 		})
 
@@ -447,7 +447,7 @@ execution:
     what: Incomplete workflow
     whenToUse: Testing validation
 labels:
-  signalType: OOMKilled
+  signalName: OOMKilled
   severity: [critical]
   environment: [production]
   component: pod
