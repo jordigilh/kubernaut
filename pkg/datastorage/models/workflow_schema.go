@@ -131,7 +131,7 @@ type WorkflowSchemaLabels struct {
 	// SignalName is the signal type this workflow handles (OPTIONAL per DD-WORKFLOW-016)
 	// Was required prior to DD-WORKFLOW-016; now optional metadata for workflow authors.
 	// Examples: "OOMKilled", "CrashLoopBackOff", "NodeNotReady"
-	SignalName string `yaml:"signalName,omitempty" json:"signalName,omitempty" validate:"omitempty"`
+	SignalName string `yaml:"signalType,omitempty" json:"signalType,omitempty" validate:"omitempty"`
 
 	// Severity is the severity level(s) this workflow is designed for (REQUIRED)
 	// Values: "critical", "high", "medium", "low"

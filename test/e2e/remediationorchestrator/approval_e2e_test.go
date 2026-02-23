@@ -137,7 +137,7 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      testRR.Spec.SignalFingerprint,
 							Severity:         "critical",
-							SignalType:       "prometheus",
+							SignalName:       "alert",
 							Environment:      "production",
 							BusinessPriority: "P1",
 							TargetResource: aianalysisv1.TargetResource{
@@ -438,7 +438,7 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 					SignalFingerprint: "e2e0000000000000000000000000000000000000000000000000000000000004",
 					SignalName:        "E2ERARExpiryTest",
 					Severity:          "critical",
-					SignalType:        "prometheus",
+					SignalType:        "alert",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
 						Kind:      "Deployment",
@@ -470,7 +470,7 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      testRR.Spec.SignalFingerprint,
 							Severity:         "critical",
-							SignalType:       "prometheus",
+							SignalName:       "alert",
 							Environment:      "production",
 							BusinessPriority: "P1",
 							TargetResource: aianalysisv1.TargetResource{

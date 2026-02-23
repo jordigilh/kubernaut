@@ -2198,7 +2198,7 @@ var _ = Describe("E2E-SP-163-004: Recovery Context Validation", func() {
 				SignalFingerprint: "1a30eddc43a9a86bfdb34058bc861205b62cf2e12dbbfa182968fe0d56819639",
 				SignalName:        "RecoveryContextTest",
 				Severity:          "critical",
-				SignalType:        "prometheus",
+				SignalType:        "alert",
 				SignalSource:      "test-e2e",
 				TargetType:        "kubernetes",
 				FiringTime:        metav1.Now(),

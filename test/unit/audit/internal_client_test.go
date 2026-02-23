@@ -47,7 +47,7 @@ func createInternalTestEvent(resourceID string) *ogenclient.AuditEventRequest {
 	payload := ogenclient.GatewayAuditPayload{
 		EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewayCrdCreated,
 		SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
-		SignalName:   "test-alert",
+		AlertName:   "test-alert",
 		Namespace:   "default",
 		Fingerprint: "test-fingerprint",
 	}

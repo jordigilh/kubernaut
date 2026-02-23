@@ -93,7 +93,7 @@ var _ = Describe("Reconstruction Business Logic Integration Tests (BR-AUDIT-006)
 			gatewayPayload := ogenclient.GatewayAuditPayload{
 				EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
 				SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
-				SignalName:   "HighCPU",
+				AlertName:   "HighCPU",
 				Namespace:   "default",
 				Fingerprint: "test-fp-123",
 			}
@@ -153,7 +153,7 @@ var _ = Describe("Reconstruction Business Logic Integration Tests (BR-AUDIT-006)
 			gatewayPayload := ogenclient.GatewayAuditPayload{
 				EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
 				SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
-				SignalName:   "HighCPU",
+				AlertName:   "HighCPU",
 				Namespace:   "default",
 				Fingerprint: "test-fp-456",
 				OriginalPayload: ogenclient.NewOptGatewayAuditPayloadOriginalPayload(originalPayloadMap),
@@ -285,7 +285,7 @@ var _ = Describe("Reconstruction Business Logic Integration Tests (BR-AUDIT-006)
 			gatewayPayload := ogenclient.GatewayAuditPayload{
 				EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
 				SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
-				SignalName:   "HighCPU",
+				AlertName:   "HighCPU",
 				Namespace:   "default",
 				Fingerprint: "test-fp-789",
 				// Missing: signal_labels, signal_annotations, original_payload (intentional for incomplete validation test)

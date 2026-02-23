@@ -106,7 +106,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 		// BR: BR-GATEWAY-066
 		// Section: 2.1.2
 		It("[GW-INT-MET-002] should track signals by source (prometheus vs kubernetes-events)", func() {
-			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
+			prometheusAdapter := adapters.NewPrometheusAdapter()
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 			metricsInstance := metrics.NewMetricsWithRegistry(metricsReg)
 			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, sharedAuditStore)

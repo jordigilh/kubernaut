@@ -112,7 +112,7 @@ var _ = Describe("E2E: Reconstruction REST API (BR-AUDIT-006)", Label("e2e", "re
 			gatewayPayload := ogenclient.GatewayAuditPayload{
 				EventType:   "gateway.signal.received",
 				SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
-				SignalName:   "HighCPUUsage",        // string, not OptString
+				AlertName:   "HighCPUUsage",        // string, not OptString
 				Namespace:   "production",          // string, not OptString
 				Fingerprint: "e2e-fingerprint-123", // string, not OptString
 				SignalLabels: ogenclient.NewOptGatewayAuditPayloadSignalLabels(ogenclient.GatewayAuditPayloadSignalLabels{
@@ -420,7 +420,7 @@ var _ = Describe("E2E: Reconstruction REST API (BR-AUDIT-006)", Label("e2e", "re
 				EventData: map[string]interface{}{
 					"event_type":  "gateway.signal.received",
 					"signal_type": "alert",
-					"signal_name": "PartialAlert",
+					"alert_name":  "PartialAlert",
 					"namespace":   "test",
 					"fingerprint": "partial-fp-123",
 					// Note: Missing signal_labels, signal_annotations, original_payload

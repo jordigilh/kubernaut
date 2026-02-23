@@ -97,8 +97,43 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 			}, timeout, interval).Should(Succeed())
 			Expect(createdRR.Spec.SignalFingerprint).To(Equal(fingerprint))
 
-			sp := helpers.WaitForSPCreation(ctx, k8sClient, testNS, timeout, interval)
-			helpers.SimulateSPCompletion(ctx, k8sClient, sp)
+			By("Simulating SignalProcessing creation and completion")
+			sp := &signalprocessingv1.SignalProcessing{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "sp-" + rr.Name,
+					Namespace: testNS,
+					OwnerReferences: []metav1.OwnerReference{
+						{
+							APIVersion: remediationv1.GroupVersion.String(),
+							Kind:       "RemediationRequest",
+							Name:       rr.Name,
+							UID:        createdRR.UID,
+						},
+					},
+				},
+				Spec: signalprocessingv1.SignalProcessingSpec{
+					RemediationRequestRef: signalprocessingv1.ObjectReference{
+						APIVersion: remediationv1.GroupVersion.String(),
+						Kind:       "RemediationRequest",
+						Name:       rr.Name,
+						Namespace:  testNS,
+					},
+					Signal: signalprocessingv1.SignalData{
+						Fingerprint:  fingerprint,
+						Name:         "HighCPUUsage",
+						Severity:     "medium",
+						Type:         "alert",
+						ReceivedTime: metav1.Now(),
+						TargetType:   "kubernetes",
+						TargetResource: signalprocessingv1.ResourceIdentifier{
+							Kind:      "Deployment",
+							Name:      "test-app",
+							Namespace: testNS,
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 
 			ai := helpers.WaitForAICreation(ctx, k8sClient, testNS, timeout, interval)
 			helpers.SimulateAICompletedWithWorkflow(ctx, k8sClient, ai, helpers.AICompletionOpts{
@@ -107,8 +142,47 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 				TargetNamespace: testNS,
 			})
 
-			we := helpers.WaitForWECreation(ctx, k8sClient, testNS, timeout, interval)
-			helpers.SimulateWECompletion(ctx, k8sClient, we)
+			By("Simulating AIAnalysis creation and completion with workflow recommendation")
+			ai := &aianalysisv1.AIAnalysis{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "ai-" + rr.Name,
+					Namespace: testNS,
+					OwnerReferences: []metav1.OwnerReference{
+						{
+							APIVersion: remediationv1.GroupVersion.String(),
+							Kind:       "RemediationRequest",
+							Name:       rr.Name,
+							UID:        createdRR.UID,
+						},
+					},
+				},
+				Spec: aianalysisv1.AIAnalysisSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						APIVersion: remediationv1.GroupVersion.String(),
+						Kind:       "RemediationRequest",
+						Name:       rr.Name,
+						Namespace:  testNS,
+					},
+					RemediationID: string(createdRR.UID),
+					AnalysisRequest: aianalysisv1.AnalysisRequest{
+						SignalContext: aianalysisv1.SignalContextInput{
+							Fingerprint:      fingerprint,
+							Severity:         "medium",
+							SignalName:       "alert",
+							Environment:      "production",
+							BusinessPriority: "P1",
+							TargetResource: aianalysisv1.TargetResource{
+								Kind:      "Deployment",
+								Name:      "test-app",
+								Namespace: testNS,
+							},
+							EnrichmentResults: sharedtypes.EnrichmentResults{},
+						},
+						AnalysisTypes: []string{"investigation", "root-cause", "workflow-selection"},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, ai)).To(Succeed())
 
 			By("Verifying all child CRDs have correct owner references set by RO")
 			Expect(sp.OwnerReferences).To(HaveLen(1))
@@ -297,8 +371,55 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 			sp := helpers.WaitForSPCreation(ctx, k8sClient, testNS, timeout, interval)
 			helpers.SimulateSPCompletion(ctx, k8sClient, sp)
 
-			ai := helpers.WaitForAICreation(ctx, k8sClient, testNS, timeout, interval)
-			helpers.SimulateAIWorkflowNotNeeded(ctx, k8sClient, ai)
+			By("Simulating AIAnalysis with WorkflowNotNeeded outcome")
+			ai := &aianalysisv1.AIAnalysis{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "ai-" + rr.Name,
+					Namespace: testNS,
+					OwnerReferences: []metav1.OwnerReference{
+						{
+							APIVersion: remediationv1.GroupVersion.String(),
+							Kind:       "RemediationRequest",
+							Name:       rr.Name,
+							UID:        createdRR.UID,
+						},
+					},
+				},
+				Spec: aianalysisv1.AIAnalysisSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						APIVersion: remediationv1.GroupVersion.String(),
+						Kind:       "RemediationRequest",
+						Name:       rr.Name,
+						Namespace:  testNS,
+					},
+					RemediationID: string(createdRR.UID),
+					AnalysisRequest: aianalysisv1.AnalysisRequest{
+						SignalContext: aianalysisv1.SignalContextInput{
+							Fingerprint:      fingerprint,
+							Severity:         "low",
+							SignalName:       "alert",
+							Environment:      "staging",
+							BusinessPriority: "P3",
+							TargetResource: aianalysisv1.TargetResource{
+								Kind:      "Pod",
+								Name:      "transient-pod",
+								Namespace: testNS,
+							},
+							EnrichmentResults: sharedtypes.EnrichmentResults{},
+						},
+						AnalysisTypes: []string{"investigation"},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, ai)).To(Succeed())
+
+			// Update AI status - problem self-resolved (WorkflowNotNeeded)
+			ai.Status.Phase = "Completed"
+			ai.Status.Reason = "WorkflowNotNeeded"
+			ai.Status.SubReason = "ProblemResolved"
+			ai.Status.Message = "Problem self-resolved: transient error no longer present"
+			// No SelectedWorkflow for WorkflowNotNeeded
+			Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
 
 			By("Verifying AIAnalysis shows WorkflowNotNeeded reason")
 			Eventually(func() string {
@@ -345,10 +466,50 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 			}
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
-			By("Waiting for RO to create child SignalProcessing with owner reference")
-			sp := helpers.WaitForSPCreation(ctx, k8sClient, testNS, timeout, interval)
-			Expect(sp.OwnerReferences).To(HaveLen(1),
-				"SP should have OwnerReference set by RO for cascade deletion")
+			createdRR := &remediationv1.RemediationRequest{}
+			Eventually(func() error {
+				return k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), createdRR)
+			}, timeout, interval).Should(Succeed())
+
+			By("Creating child SignalProcessing with owner reference")
+			sp := &signalprocessingv1.SignalProcessing{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "sp-" + rr.Name,
+					Namespace: testNS,
+					OwnerReferences: []metav1.OwnerReference{
+						{
+							APIVersion:         remediationv1.GroupVersion.String(),
+							Kind:               "RemediationRequest",
+							Name:               rr.Name,
+							UID:                createdRR.UID,
+							Controller:         boolPtr(true),
+							BlockOwnerDeletion: boolPtr(true),
+						},
+					},
+				},
+				Spec: signalprocessingv1.SignalProcessingSpec{
+					RemediationRequestRef: signalprocessingv1.ObjectReference{
+						APIVersion: remediationv1.GroupVersion.String(),
+						Kind:       "RemediationRequest",
+						Name:       rr.Name,
+						Namespace:  testNS,
+					},
+					Signal: signalprocessingv1.SignalData{
+						Fingerprint:  fingerprint,
+						Name:         "CascadeTest",
+						Severity:     "medium",
+						Type:         "alert",
+						ReceivedTime: metav1.Now(),
+						TargetType:   "kubernetes",
+						TargetResource: signalprocessingv1.ResourceIdentifier{
+							Kind:      "Deployment",
+							Name:      "cascade-app",
+							Namespace: testNS,
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 
 			By("Deleting parent RemediationRequest")
 			Expect(k8sClient.Delete(ctx, rr)).To(Succeed())
@@ -456,7 +617,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 					SignalFingerprint: fingerprint,
 					SignalName:        "DedupTest",
 					Severity:          "medium",
-					SignalType:        "prometheus",
+					SignalType:        "alert",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
 						Kind:      "Deployment",

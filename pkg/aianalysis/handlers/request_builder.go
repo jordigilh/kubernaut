@@ -79,7 +79,7 @@ func (b *RequestBuilder) BuildIncidentRequest(analysis *aianalysisv1.AIAnalysis)
 		// REQUIRED fields per HAPI OpenAPI spec
 		IncidentID:        analysis.Name,    // Q1: Use CR name
 		RemediationID:     correlationID,    // DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name for audit correlation
-		SignalName:        spec.SignalName,
+		SignalType:        spec.SignalName,
 		Severity:          client.Severity(spec.Severity),
 		SignalSource:      "kubernaut",
 		ResourceNamespace: spec.TargetResource.Namespace,
@@ -126,7 +126,7 @@ func (b *RequestBuilder) BuildRecoveryRequest(analysis *aianalysisv1.AIAnalysis)
 	// DEBUG: Log what we're reading from the CRD
 	b.log.Info("🔍 DEBUG: Reading from CRD",
 		"crdName", analysis.Name,
-		"spec.SignalName", spec.SignalName,
+		"spec.SignalType", spec.SignalName,
 		"previousExecutionsCount", len(analysis.Spec.PreviousExecutions),
 	)
 	if len(analysis.Spec.PreviousExecutions) > 0 {
@@ -165,12 +165,12 @@ func (b *RequestBuilder) BuildRecoveryRequest(analysis *aianalysisv1.AIAnalysis)
 	// Optional signal context (may have changed since initial)
 	// DEBUG: Log BEFORE SetTo
 	b.log.Info("🔍 DEBUG: BEFORE SetTo",
-		"spec.SignalName", spec.SignalName,
+		"spec.SignalType", spec.SignalName,
 		"isEmpty", spec.SignalName == "",
-		"req.SignalName.Set", req.SignalName.Set,
+		"req.SignalType.Set", req.SignalType.Set,
 	)
 
-	req.SignalName.SetTo(spec.SignalName)
+	req.SignalType.SetTo(spec.SignalName)
 
 	// DEBUG: Log AFTER SetTo
 	b.log.Info("🔍 DEBUG: AFTER SetTo",

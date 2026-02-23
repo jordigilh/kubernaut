@@ -166,7 +166,7 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 
 				// THEN: Original signal type is empty (no normalization occurred)
 				g.Expect(updated.Status.SourceSignalName).To(BeEmpty(),
-					"SourceSignalName should be empty for reactive signals (no normalization)")
+					"OriginalSignalType should be empty for reactive signals (no normalization)")
 
 				// THEN: SP reaches Completed phase
 				g.Expect(updated.Status.Phase).To(Equal(signalprocessingv1alpha1.PhaseCompleted),

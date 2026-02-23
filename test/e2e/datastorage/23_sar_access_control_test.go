@@ -196,7 +196,7 @@ var _ = Describe("E2E-DS-023: SAR Access Control Validation (DD-AUTH-014, DD-AUT
 					GatewayAuditPayload: dsgen.GatewayAuditPayload{
 						EventType:   dsgen.GatewayAuditPayloadEventTypeGatewaySignalReceived,
 						SignalType:  dsgen.GatewayAuditPayloadSignalTypeAlert,
-						SignalName:   "sar-test-authorized",
+						AlertName:   "sar-test-authorized",
 						Namespace:   "datastorage-e2e",
 						Fingerprint: "test-fingerprint",
 					},
@@ -243,7 +243,7 @@ var _ = Describe("E2E-DS-023: SAR Access Control Validation (DD-AUTH-014, DD-AUT
 					GatewayAuditPayload: dsgen.GatewayAuditPayload{
 						EventType:   dsgen.GatewayAuditPayloadEventTypeGatewaySignalReceived,
 						SignalType:  dsgen.GatewayAuditPayloadSignalTypeAlert,
-						SignalName:   "sar-test-unauthorized",
+						AlertName:   "sar-test-unauthorized",
 						Namespace:   "datastorage-e2e",
 						Fingerprint: "test-fingerprint-unauth",
 					},
@@ -283,7 +283,7 @@ var _ = Describe("E2E-DS-023: SAR Access Control Validation (DD-AUTH-014, DD-AUT
 					GatewayAuditPayload: dsgen.GatewayAuditPayload{
 						EventType:   dsgen.GatewayAuditPayloadEventTypeGatewaySignalReceived,
 						SignalType:  dsgen.GatewayAuditPayloadSignalTypeAlert,
-						SignalName:   "sar-test-readonly",
+						AlertName:   "sar-test-readonly",
 						Namespace:   "datastorage-e2e",
 						Fingerprint: "test-fingerprint-readonly",
 					},

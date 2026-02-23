@@ -50,7 +50,7 @@ var _ = Describe("Audit Event Parser", func() {
 			parsedData, err := reconstructionpkg.ParseAuditEvent(event)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(parsedData.SignalName).To(Equal("HighCPU"))
+			Expect(parsedData).ToNot(BeNil())
 			Expect(parsedData.SignalType).To(Equal("alert"))
 			Expect(parsedData.SignalName).To(Equal("HighCPU"))
 			Expect(parsedData.SignalLabels).To(HaveKeyWithValue("alertname", "HighCPU"))
@@ -118,7 +118,7 @@ func createGatewaySignalReceivedEvent(timestamp time.Time, id uuid.UUID) ogencli
 		EventData: ogenclient.AuditEventEventData{
 			GatewayAuditPayload: ogenclient.GatewayAuditPayload{
 				SignalType:        ogenclient.GatewayAuditPayloadSignalTypeAlert,
-				SignalName:        "HighCPU",
+				AlertName:         "HighCPU",
 				Fingerprint:       "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
 				SignalLabels:      ogenclient.NewOptGatewayAuditPayloadSignalLabels(labels),
 				SignalAnnotations: ogenclient.NewOptGatewayAuditPayloadSignalAnnotations(annotations),
@@ -135,7 +135,7 @@ func createInvalidGatewayEvent(timestamp time.Time, id uuid.UUID) ogenclient.Aud
 		EventData: ogenclient.AuditEventEventData{
 			GatewayAuditPayload: ogenclient.GatewayAuditPayload{
 				SignalType: ogenclient.GatewayAuditPayloadSignalTypeAlert,
-				SignalName: "", // Missing - should cause error in our parser
+				AlertName:  "", // Missing - should cause error in our parser
 			},
 		},
 	}

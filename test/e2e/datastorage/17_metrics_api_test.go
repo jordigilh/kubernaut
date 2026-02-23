@@ -108,7 +108,7 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics Integration", Ordered, func
 			eventData := ogenclient.NewAuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData(ogenclient.GatewayAuditPayload{
 				EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
 				SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
-				SignalName:   "MetricsTest",
+				AlertName:   "MetricsTest",
 				Namespace:   "default",
 				Fingerprint: "test-fingerprint",
 			})
@@ -179,7 +179,7 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics Integration", Ordered, func
 				GatewayAuditPayload: ogenclient.GatewayAuditPayload{
 					EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
 					SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
-					SignalName:   "LagTest",
+					AlertName:   "LagTest",
 					Namespace:   "default",
 					Fingerprint: "test-fingerprint",
 				},
@@ -297,7 +297,7 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics Integration", Ordered, func
 				GatewayAuditPayload: ogenclient.GatewayAuditPayload{
 					EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
 					SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
-					SignalName:   "DurationTest",
+					AlertName:   "DurationTest",
 					Namespace:   "default",
 					Fingerprint: "test-fingerprint",
 				},

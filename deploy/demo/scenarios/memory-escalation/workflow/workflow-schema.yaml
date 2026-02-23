@@ -12,7 +12,7 @@ metadata:
 actionType: IncreaseMemoryLimits
 
 labels:
-  signalType: ContainerOOMKilling
+  signalName: ContainerOOMKilling
   severity: [critical, high]
   environment: [production, staging]
   component: "*"
