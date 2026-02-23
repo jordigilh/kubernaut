@@ -68,7 +68,7 @@ logger = logging.getLogger(__name__)
 class MockScenario:
     """Configuration for a mock LLM scenario."""
     name: str
-    signal_type: str
+    signal_name: str
     severity: str = "critical"
     workflow_name: str = ""  # Workflow name for UUID mapping (e.g., "oomkill-increase-memory-v1")
     workflow_id: str = "mock-workflow-v1"
@@ -89,7 +89,7 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
     "oomkilled": MockScenario(
         name="oomkilled",
         workflow_name="oomkill-increase-memory-v1",  # MUST match test_workflows.go WorkflowID exactly
-        signal_type="OOMKilled",
+        signal_name="OOMKilled",
         severity="critical",
         workflow_id="21053597-2865-572b-89bf-de49b5b685da",  # Placeholder - overwritten by config file
         workflow_title="OOMKill Recovery - Increase Memory Limits",
@@ -110,7 +110,7 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
     "crashloop": MockScenario(
         name="crashloop",
         workflow_name="crashloop-config-fix-v1",  # MUST match test_workflows.go WorkflowID exactly
-        signal_type="CrashLoopBackOff",
+        signal_name="CrashLoopBackOff",
         severity="high",
         workflow_id="42b90a37-0d1b-5561-911a-2939ed9e1c30",  # Placeholder - overwritten by config file
         workflow_title="CrashLoopBackOff - Configuration Fix",
@@ -127,7 +127,7 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
     "node_not_ready": MockScenario(
         name="node_not_ready",
         workflow_name="node-drain-reboot-v1",  # MUST match test_workflows.go WorkflowID exactly
-        signal_type="NodeNotReady",
+        signal_name="NodeNotReady",
         severity="critical",
         workflow_id="node-drain-reboot-v1",  # Placeholder - overwritten by config file
         workflow_title="NodeNotReady - Drain and Reboot",
@@ -143,7 +143,7 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
     "recovery": MockScenario(
         name="recovery",
         workflow_name="memory-optimize-v1",  # MUST match test_workflows.go WorkflowID exactly (alternative workflow)
-        signal_type="OOMKilled",
+        signal_name="OOMKilled",
         severity="critical",
         workflow_id="99f4a9b8-d6b5-5191-85a4-93e5dbf61321",  # Placeholder - overwritten by config file
         workflow_title="Memory Optimization - Alternative Approach",
@@ -159,7 +159,7 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
     "test_signal": MockScenario(
         name="test_signal",
         workflow_name="test-signal-handler-v1",
-        signal_type="TestSignal",
+        signal_name="TestSignal",
         severity="critical",
         workflow_id="2faf3306-1d6c-5d2f-9e9f-2e1a4844ca70",  # DD-WORKFLOW-002 v3.0: Deterministic UUID for test-signal-handler-v1
         workflow_title="Test Signal Handler",
@@ -174,7 +174,7 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
     ),
     "no_workflow_found": MockScenario(
         name="no_workflow_found",
-        signal_type="MOCK_NO_WORKFLOW_FOUND",
+        signal_name="MOCK_NO_WORKFLOW_FOUND",
         severity="critical",
         workflow_id="",  # Empty workflow_id indicates no workflow found
         workflow_title="",
@@ -188,7 +188,7 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
     "low_confidence": MockScenario(
         name="low_confidence",
         workflow_name="generic-restart-v1",
-        signal_type="MOCK_LOW_CONFIDENCE",
+        signal_name="MOCK_LOW_CONFIDENCE",
         severity="critical",
         workflow_id="d2c84d90-55ba-5ae1-b48d-6cc16e0edb5c",  # DD-WORKFLOW-002 v3.0: Deterministic UUID for generic-restart-v1
         workflow_title="Generic Pod Restart",
@@ -204,7 +204,7 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
     "problem_resolved": MockScenario(
         name="problem_resolved",
         workflow_name="",  # No workflow needed - problem self-resolved
-        signal_type="MOCK_PROBLEM_RESOLVED",
+        signal_name="MOCK_PROBLEM_RESOLVED",
         severity="low",  # DD-SEVERITY-001 v1.1: Use normalized severity (critical/high/medium/low/unknown)
         workflow_id="",  # Empty workflow_id indicates no workflow needed
         workflow_title="",
@@ -219,7 +219,7 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
     "max_retries_exhausted": MockScenario(
         name="max_retries_exhausted",
         workflow_name="",  # No workflow - parsing failed
-        signal_type="MOCK_MAX_RETRIES_EXHAUSTED",
+        signal_name="MOCK_MAX_RETRIES_EXHAUSTED",
         severity="high",
         workflow_id="",  # Empty workflow_id - couldn't parse/select workflow
         workflow_title="",
@@ -233,7 +233,7 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
     "rca_incomplete": MockScenario(
         name="rca_incomplete",
         workflow_name="generic-restart-v1",
-        signal_type="MOCK_RCA_INCOMPLETE",
+        signal_name="MOCK_RCA_INCOMPLETE",
         severity="critical",
         workflow_id="d2c84d90-55ba-5ae1-b48d-6cc16e0edb5c",  # DD-WORKFLOW-002 v3.0: Deterministic UUID for generic-restart-v1
         workflow_title="Generic Pod Restart",
@@ -254,7 +254,7 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
     "oomkilled_predictive": MockScenario(
         name="oomkilled_predictive",
         workflow_name="oomkill-increase-memory-v1",  # Same workflow catalog entry as reactive (SP normalizes signal type)
-        signal_type="OOMKilled",  # Already normalized by SP from PredictedOOMKill
+        signal_name="OOMKilled",  # Already normalized by SP from PredictedOOMKill
         severity="critical",
         workflow_id="21053597-2865-572b-89bf-de49b5b685da",  # Same as reactive oomkilled (same workflow)
         workflow_title="OOMKill Recovery - Increase Memory Limits",
@@ -273,7 +273,7 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
     "predictive_no_action": MockScenario(
         name="predictive_no_action",
         workflow_name="",  # No workflow needed - prediction unlikely to materialize
-        signal_type="OOMKilled",  # Normalized signal type
+        signal_name="OOMKilled",  # Normalized signal type
         severity="medium",
         workflow_id="",  # Empty workflow_id - no action needed
         workflow_title="",
@@ -295,7 +295,7 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
     "multi_step_recovery": MockScenario(
         name="multi_step_recovery",
         # workflow_name="autoscaler-enable-v1",  # TODO: Enable when workflow seeded for E2E-HAPI-049
-        signal_type="InsufficientResources",
+        signal_name="InsufficientResources",
         severity="high",
         workflow_id="",  # PHASE 1 FIX: Empty until workflow seeded (returns no_matching_workflows)
         workflow_title="Enable Cluster Autoscaler",
@@ -309,7 +309,7 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
     "cascading_failure": MockScenario(
         name="cascading_failure",
         # workflow_name="memory-increase-v1",  # TODO: Enable when workflow seeded for E2E-HAPI-050
-        signal_type="CrashLoopBackOff",
+        signal_name="CrashLoopBackOff",
         severity="high",
         workflow_id="",  # PHASE 1 FIX: Empty until workflow seeded (returns no_matching_workflows)
         workflow_title="Increase Memory Limit (Leak Mitigation)",
@@ -323,7 +323,7 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
     "near_attempt_limit": MockScenario(
         name="near_attempt_limit",
         # workflow_name="rollback-deployment-v1",  # TODO: Enable when workflow seeded for E2E-HAPI-051
-        signal_type="DatabaseConnectionError",
+        signal_name="DatabaseConnectionError",
         severity="critical",
         workflow_id="",  # PHASE 1 FIX: Empty until workflow seeded (returns no_matching_workflows)
         workflow_title="Rollback to Last Known Good Version",
@@ -337,7 +337,7 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
     "noisy_neighbor": MockScenario(
         name="noisy_neighbor",
         # workflow_name="resource-quota-v1",  # TODO: Enable when workflow seeded for E2E-HAPI-052
-        signal_type="HighDatabaseLatency",
+        signal_name="HighDatabaseLatency",
         severity="high",
         workflow_id="",  # PHASE 1 FIX: Empty until workflow seeded (returns no_matching_workflows)
         workflow_title="Set Resource Quotas for Namespace",
@@ -351,7 +351,7 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
     "network_partition": MockScenario(
         name="network_partition",
         # workflow_name="wait-for-heal-v1",  # TODO: Enable when workflow seeded for E2E-HAPI-053
-        signal_type="NodeUnreachable",
+        signal_name="NodeUnreachable",
         severity="high",
         workflow_id="",  # PHASE 1 FIX: Empty until workflow seeded (returns no_matching_workflows)
         workflow_title="Wait for Network Partition Heal",
@@ -365,7 +365,7 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
     "recovery_basic": MockScenario(
         name="recovery_basic",
         # workflow_name="memory-increase-basic-v1",  # TODO: Enable when workflow seeded for E2E-HAPI-054
-        signal_type="OOMKilled",
+        signal_name="OOMKilled",
         severity="high",
         workflow_id="",  # PHASE 1 FIX: Empty until workflow seeded (returns no_matching_workflows)
         workflow_title="Increase Memory Limit",
@@ -382,7 +382,7 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
 DEFAULT_SCENARIO = MockScenario(
     name="default",
     workflow_name="generic-restart-v1",  # Set workflow_name so UUID gets loaded from config
-    signal_type="Unknown",
+    signal_name="Unknown",
     severity="medium",
     workflow_id="placeholder-uuid-default",  # Placeholder - overwritten by config file
     workflow_title="Generic Pod Restart",
@@ -756,9 +756,9 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
 
         # Check for test-specific signal types first (human review tests)
         # FIX: Check BOTH 'content' (message text) AND 'all_text' (full message objects)
-        # Recovery prompts may embed the signal_type in structured content blocks or
+        # Recovery prompts may embed the signal_name in structured content blocks or
         # JSON payloads that 'content' extraction doesn't capture reliably.
-        # 'all_text' captures everything including {"signal_type": "MOCK_..."} in JSON.
+        # 'all_text' captures everything including {"signal_name": "MOCK_..."} in JSON.
         search_text = content + " " + all_text
         if "mock_no_workflow_found" in search_text or "mock no workflow found" in search_text:
             logger.info("✅ SCENARIO DETECTED: NO_WORKFLOW_FOUND (mock keyword match)")
@@ -1092,9 +1092,9 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
 
         # Build tool call arguments
         tool_args = {
-            "query": f"{scenario.signal_type} {scenario.severity}",
+            "query": f"{scenario.signal_name} {scenario.severity}",
             "rca_resource": {
-                "signal_type": scenario.signal_type,
+                "signal_name": scenario.signal_name,
                 "kind": scenario.rca_resource_kind,
                 "namespace": scenario.rca_resource_namespace,
                 "name": scenario.rca_resource_name
@@ -1236,7 +1236,7 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
             "root_cause_analysis": {
                 "summary": scenario.root_cause,
                 "severity": scenario.severity,
-                "signal_type": scenario.signal_type,
+                "signal_name": scenario.signal_name,
                 "contributing_factors": ["identified_by_mock_llm"] if scenario.workflow_id else []
             },
             # E2E-HAPI-002: Always include confidence field in response
@@ -1295,7 +1295,7 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
             analysis_json["investigation_outcome"] = "resolved"  # BR-HAPI-200: Signal problem self-resolved
             # Note: confidence already set at line 841
             analysis_json["can_recover"] = False  # E2E-HAPI-023: No recovery needed when problem self-resolved
-            content = f"""Based on my investigation of the {scenario.signal_type} signal:
+            content = f"""Based on my investigation of the {scenario.signal_name} signal:
 
 ## Root Cause Analysis
 
@@ -1341,7 +1341,7 @@ The problem has self-resolved. No remediation workflow is needed.
             # Explicitly set needs_human_review=false so HAPI's parser doesn't infer true.
             analysis_json["needs_human_review"] = False
             analysis_json["human_review_reason"] = None
-            content = f"""Based on my investigation of the {scenario.signal_type} signal:
+            content = f"""Based on my investigation of the {scenario.signal_name} signal:
 
 # root_cause_analysis
 {json.dumps(analysis_json["root_cause_analysis"])}
@@ -1430,7 +1430,7 @@ No suitable alternative workflow found. Human review required.
 """
             else:
                 # E2E-HAPI-003: Use section header format for SDK compatibility
-                content = f"""Based on my investigation of the {scenario.signal_type} signal:
+                content = f"""Based on my investigation of the {scenario.signal_name} signal:
 
 # root_cause_analysis
 {json.dumps(analysis_json["root_cause_analysis"])}
@@ -1456,7 +1456,7 @@ No suitable alternative workflow found. Human review required.
                 "title": scenario.workflow_title,
                 "version": "1.0.0",
                 "confidence": scenario.confidence,
-                "rationale": f"Selected based on {scenario.signal_type} signal analysis",
+                "rationale": f"Selected based on {scenario.signal_name} signal analysis",
                 "execution_engine": scenario.execution_engine,  # BR-WE-014
                 "parameters": scenario.parameters
             }
@@ -1486,7 +1486,7 @@ I've identified an alternative remediation workflow from the catalog.
 ```
 """
             else:
-                content = f"""Based on my investigation of the {scenario.signal_type} signal:
+                content = f"""Based on my investigation of the {scenario.signal_name} signal:
 
 ## Root Cause Analysis
 
