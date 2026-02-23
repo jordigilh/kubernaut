@@ -77,4 +77,23 @@ spec:
             timeoutSeconds: 5
       volumes:
         - name: postgresql-data
-          emptyDir: {}
+          persistentVolumeClaim:
+            claimName: postgresql-data
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgresql-data
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: postgresql
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- if .Values.postgresql.storage.storageClassName }}
+  storageClassName: {{ .Values.postgresql.storage.storageClassName }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.postgresql.storage.size }}

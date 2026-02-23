@@ -40,6 +40,9 @@ spec:
           ports:
             - name: redis
               containerPort: 6379
+          volumeMounts:
+            - name: redis-data
+              mountPath: /data
           resources:
             {{- toYaml .Values.redis.resources | nindent 12 }}
           readinessProbe:
@@ -54,3 +57,25 @@ spec:
             initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 5
+      volumes:
+        - name: redis-data
+          persistentVolumeClaim:
+            claimName: redis-data
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redis-data
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: redis
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- if .Values.redis.storage.storageClassName }}
+  storageClassName: {{ .Values.redis.storage.storageClassName }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.redis.storage.size }}
