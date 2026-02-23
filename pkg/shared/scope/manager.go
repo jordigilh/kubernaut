@@ -35,13 +35,12 @@ limitations under the License.
 //
 // # Usage
 //
-// The Manager accepts a client.Reader. Gateway injects the apiReader (uncached) to
-// avoid scope-rejection races when namespaces are created just before alerts arrive.
-// RO injects a cached client (reconciliation runs long after namespace creation).
-// The Manager implements the ScopeChecker interface for DI (see checker.go).
+// The Manager accepts a client.Reader. Both Gateway and RO inject the cached client
+// (informer-backed) because namespace labels are stable — they are set well before
+// alerts or reconciliation runs. This avoids unnecessary API server load under high
+// alert volume. The Manager implements the ScopeChecker interface for DI (see checker.go).
 //
-//	mgr := scope.NewManager(apiReader)    // Gateway: uncached for immediate visibility
-//	mgr := scope.NewManager(cachedClient) // RO: cached is fine for reconciliation
+//	mgr := scope.NewManager(cachedClient) // Gateway + RO: informer-backed reads
 //	managed, err := mgr.IsManaged(ctx, "production", "Deployment", "payment-api")
 package scope
 

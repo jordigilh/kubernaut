@@ -503,11 +503,13 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 		return nil, fmt.Errorf("FATAL: Data Storage URL not configured - audit is MANDATORY per ADR-032 §1.5 (Gateway is P0 service)")
 	}
 
-	// BR-SCOPE-002: Initialize scope manager for label-based resource opt-in filtering
-	// Uses apiReader (uncached) so that newly-created namespaces with kubernaut.ai/managed
-	// are visible immediately, avoiding scope-rejection races when alerts arrive before the
-	// informer cache has synced the namespace (same rationale as phaseChecker/lockManager).
-	scopeMgr := scope.NewManager(apiReader)
+	// BR-SCOPE-002: Initialize scope manager for label-based resource opt-in filtering.
+	// Uses ctrlClient (informer-backed) because namespace labels are stable — they are set
+	// well before alerts arrive and don't change mid-flight. This avoids hitting the API
+	// server with 1-2 Get calls per incoming alert under production load.
+	// Unlike phaseChecker/lockManager (which need apiReader for immediate consistency to
+	// prevent duplicate CRDs and lock races), scope checking tolerates informer sync delay.
+	scopeMgr := scope.NewManager(ctrlClient)
 
 	// Create server first (crdCreator set below after observer wiring)
 	server := &Server{
@@ -711,7 +713,7 @@ func (s *Server) Handler() http.Handler {
 // Used by:
 //   - K8sOwnerResolver (BR-GATEWAY-004): owner chain resolution for K8s event deduplication
 //
-// Note: scope.Manager uses apiReader (uncached) since DD-STATUS-001 — see createServerWithClients.
+// Note: scope.Manager uses ctrlClient (informer-backed) — see createServerWithClients.
 func (s *Server) GetCachedClient() client.Client {
 	return s.ctrlClient
 }
