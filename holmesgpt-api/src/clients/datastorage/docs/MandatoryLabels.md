@@ -1,12 +1,12 @@
 # MandatoryLabels
 
-4 mandatory + 1 optional workflow labels (DD-WORKFLOW-016: signalType now optional)
+4 mandatory + 1 optional workflow labels (DD-WORKFLOW-016: signalName now optional)
 
 ## Properties
 
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
-**signal_type** | **str** | Signal type this workflow handles (optional metadata per DD-WORKFLOW-016) | [optional] 
+**signal_name** | **str** | Signal name this workflow handles (optional metadata per DD-WORKFLOW-016) | [optional] 
 **severity** | **List[str]** | Severity level(s) this workflow is designed for. Always an array. To match any severity, list all levels. | 
 **component** | **str** | Kubernetes resource type this workflow targets (e.g., pod, deployment, node) | 
 **environment** | **List[str]** | Target environments (workflow can declare multiple, &#39;*&#39; matches all) | 

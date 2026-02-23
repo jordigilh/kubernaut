@@ -9,7 +9,7 @@ Name | Type | Description | Notes
 **workflow_id** | **str** | UUID primary key (DD-WORKFLOW-002 v3.0) | 
 **title** | **str** | Human-readable workflow name | 
 **description** | **str** | Workflow description | 
-**signal_type** | **str** | Signal type this workflow handles | [optional] 
+**signal_name** | **str** | Signal name this workflow handles | [optional] 
 **schema_image** | **str** | OCI image used to extract the workflow schema | [optional] 
 **schema_digest** | **str** | OCI schema image digest | [optional] 
 **execution_bundle** | **str** | OCI execution bundle reference (digest-pinned) | [optional] 

@@ -8031,11 +8031,11 @@ func (s *ListWorkflowsStatus) UnmarshalText(data []byte) error {
 // LivenessCheckOK is response for LivenessCheck operation.
 type LivenessCheckOK struct{}
 
-// 4 mandatory + 1 optional workflow labels (DD-WORKFLOW-016: signalType now optional).
+// 4 mandatory + 1 optional workflow labels (DD-WORKFLOW-016: signalName now optional).
 // Ref: #/components/schemas/MandatoryLabels
 type MandatoryLabels struct {
-	// Signal type this workflow handles (optional metadata per DD-WORKFLOW-016).
-	SignalType OptString `json:"signalType"`
+	// Signal name this workflow handles (optional metadata per DD-WORKFLOW-016).
+	SignalName OptString `json:"signalName"`
 	// Severity level(s) this workflow is designed for. Always an array. To match any severity, list all
 	// levels.
 	Severity []MandatoryLabelsSeverityItem `json:"severity"`
@@ -8047,9 +8047,9 @@ type MandatoryLabels struct {
 	Priority MandatoryLabelsPriority `json:"priority"`
 }
 
-// GetSignalType returns the value of SignalType.
-func (s *MandatoryLabels) GetSignalType() OptString {
-	return s.SignalType
+// GetSignalName returns the value of SignalName.
+func (s *MandatoryLabels) GetSignalName() OptString {
+	return s.SignalName
 }
 
 // GetSeverity returns the value of Severity.
@@ -8072,9 +8072,9 @@ func (s *MandatoryLabels) GetPriority() MandatoryLabelsPriority {
 	return s.Priority
 }
 
-// SetSignalType sets the value of SignalType.
-func (s *MandatoryLabels) SetSignalType(val OptString) {
-	s.SignalType = val
+// SetSignalName sets the value of SignalName.
+func (s *MandatoryLabels) SetSignalName(val OptString) {
+	s.SignalName = val
 }
 
 // SetSeverity sets the value of Severity.
@@ -19356,8 +19356,8 @@ func (s *WorkflowResultAuditLabels) init() WorkflowResultAuditLabels {
 
 // Ref: #/components/schemas/WorkflowSearchFilters
 type WorkflowSearchFilters struct {
-	// Signal type (optional metadata per DD-WORKFLOW-016: OOMKilled, CrashLoopBackOff, etc.).
-	SignalType OptString `json:"signalType"`
+	// Signal name (mandatory: OOMKilled, CrashLoopBackOff, etc.).
+	SignalName string `json:"signalName"`
 	// Severity level (mandatory: critical, high, medium, low).
 	Severity WorkflowSearchFiltersSeverity `json:"severity"`
 	// Component type (mandatory: pod, node, deployment, etc.).
@@ -19372,9 +19372,9 @@ type WorkflowSearchFilters struct {
 	Status []WorkflowSearchFiltersStatusItem `json:"status"`
 }
 
-// GetSignalType returns the value of SignalType.
-func (s *WorkflowSearchFilters) GetSignalType() OptString {
-	return s.SignalType
+// GetSignalName returns the value of SignalName.
+func (s *WorkflowSearchFilters) GetSignalName() string {
+	return s.SignalName
 }
 
 // GetSeverity returns the value of Severity.
@@ -19412,9 +19412,9 @@ func (s *WorkflowSearchFilters) GetStatus() []WorkflowSearchFiltersStatusItem {
 	return s.Status
 }
 
-// SetSignalType sets the value of SignalType.
-func (s *WorkflowSearchFilters) SetSignalType(val OptString) {
-	s.SignalType = val
+// SetSignalName sets the value of SignalName.
+func (s *WorkflowSearchFilters) SetSignalName(val string) {
+	s.SignalName = val
 }
 
 // SetSeverity sets the value of Severity.

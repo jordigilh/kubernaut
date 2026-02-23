@@ -41,7 +41,7 @@ class TestWorkflowSearchResponse(unittest.TestCase):
                         workflow_id = '', 
                         title = '', 
                         description = '', 
-                        signal_type = '', 
+                        signal_name = '', 
                         schema_image = 'ghcr.io/kubernaut/workflows/oomkill:v1.0.0@sha256:abc123...', 
                         schema_digest = 'sha256:abc123...', 
                         execution_bundle = '', 
@@ -66,7 +66,7 @@ class TestWorkflowSearchResponse(unittest.TestCase):
                     ],
                 total_results = 56,
                 filters = datastorage.models.workflow_search_filters.WorkflowSearchFilters(
-                    signal_type = 'OOMKilled', 
+                    signal_name = 'OOMKilled', 
                     severity = 'critical', 
                     component = 'pod', 
                     environment = 'production', 

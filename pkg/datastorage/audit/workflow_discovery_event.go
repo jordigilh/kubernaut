@@ -165,9 +165,9 @@ func buildDiscoveryPayload(eventType ogenclient.WorkflowDiscoveryAuditPayloadEve
 			Priority:    ogenclient.WorkflowSearchFiltersPriority(filters.Priority),
 		}
 		if actionType != "" {
-			wsf.SignalType = ogenclient.NewOptString(fmt.Sprintf("discovery:action_type=%s", actionType))
+			wsf.SignalName = fmt.Sprintf("discovery:action_type=%s", actionType)
 		} else {
-			wsf.SignalType = ogenclient.NewOptString("discovery")
+			wsf.SignalName = "discovery"
 		}
 		searchFilters.SetTo(wsf)
 	}

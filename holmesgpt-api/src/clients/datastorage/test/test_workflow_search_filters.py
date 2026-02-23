@@ -36,7 +36,7 @@ class TestWorkflowSearchFilters(unittest.TestCase):
         model = WorkflowSearchFilters()
         if include_optional:
             return WorkflowSearchFilters(
-                signal_type = 'OOMKilled',
+                signal_name = 'OOMKilled',
                 severity = 'critical',
                 component = 'pod',
                 environment = 'production',
@@ -58,6 +58,7 @@ class TestWorkflowSearchFilters(unittest.TestCase):
             )
         else:
             return WorkflowSearchFilters(
+                signal_name = 'OOMKilled',
                 severity = 'critical',
                 component = 'pod',
                 environment = 'production',
