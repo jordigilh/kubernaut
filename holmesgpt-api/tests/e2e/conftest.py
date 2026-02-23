@@ -12,14 +12,12 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
-"""
 
-"""
 E2E Test Configuration and Fixtures
 
 V1.0 ARCHITECTURE (December 2025):
 - Uses SHARED Go infrastructure from test/infrastructure/*.go
-- Data Storage stack deployed via `make test-e2e-datastorage`
+- Data Storage stack deployed via ``make test-e2e-datastorage``
 - HAPI E2E tests connect to existing NodePort services
 - No Python-based Kind/Podman management needed
 
@@ -33,7 +31,8 @@ Per TESTING_GUIDELINES.md section 4:
 - E2E tests must use all real services EXCEPT the LLM
 - If Data Storage is unavailable, E2E tests should FAIL, not skip
 
-USAGE:
+USAGE::
+
   # Option 1: Run with Go infrastructure (recommended)
   make test-e2e-datastorage          # Set up infrastructure (once)
   make test-e2e-holmesgpt            # Run HAPI E2E tests

@@ -12,21 +12,20 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
-"""
 
-"""
 Pytest Configuration and Shared Fixtures
 
 Provides reusable test fixtures for HolmesGPT API Service testing.
 Uses mock LLM server for integration tests - no DEV_MODE anti-pattern.
 """
 
-import pytest
 import os
 import sys
 from pathlib import Path
-from fastapi.testclient import TestClient
 from typing import Dict, Any
+
+import pytest
+from fastapi.testclient import TestClient
 
 # V3.0 (Mock LLM Migration - January 12, 2026):
 # Removed embedded MockLLMServer - now using standalone Mock LLM service

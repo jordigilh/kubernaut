@@ -14,7 +14,7 @@
 
 import unittest
 
-from holmesgpt_api_client.models.human_review_reason import HumanReviewReason
+from holmesgpt_api_client.models.human_review_reason import HumanReviewReason  # noqa: F401
 
 class TestHumanReviewReason(unittest.TestCase):
     """HumanReviewReason unit test stubs"""

@@ -87,7 +87,7 @@ try:
     print(f"   Recreated type: {type(recreated)}")
     print()
 except Exception as e:
-    print(f"❌ Server-side parsing simulation: FAILED")
+    print("❌ Server-side parsing simulation: FAILED")
     print(f"   Error: {e}")
     print()
 
