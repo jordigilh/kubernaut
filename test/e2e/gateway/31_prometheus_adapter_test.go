@@ -226,8 +226,8 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 			url := fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL)
 
 			// Retry POST until Gateway processes the alert and creates the CRD.
-			// Scope checker uses apiReader (uncached, direct API calls) — not informer-bound.
-			// Retries handle CI startup latency (pod readiness, service endpoint propagation).
+			// Scope checker uses ctrlClient (informer-backed) to reduce API server load.
+			// Retries handle informer sync delay and CI startup latency.
 			var resp *http.Response
 			Eventually(func() int {
 				req, _ := http.NewRequest("POST", url, bytes.NewReader(payload))
