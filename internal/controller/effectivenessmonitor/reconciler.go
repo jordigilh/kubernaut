@@ -1016,31 +1016,24 @@ func (r *Reconciler) queryPreRemediationHash(ctx context.Context, correlationID 
 	return preHash
 }
 
-// resolveGVKForKind resolves a Kind string to a schema.GroupVersionKind using the REST mapper.
-// This is needed because the EA spec only stores the Kind, not the full GVR.
+// resolveGVKForKind dynamically resolves a Kind string to a schema.GroupVersionKind
+// using the REST mapper's live API server discovery.
+//
+// Uses meta.UnsafeGuessKindToResource for proper pluralization (handles -s→-ses,
+// -y→-ies, etc.) and passes an empty Group/Version to KindsFor so it searches
+// across all API groups. This supports any resource the cluster serves, including
+// CRDs, without a static lookup table.
 func resolveGVKForKind(rm meta.RESTMapper, kind string) (schema.GroupVersionKind, error) {
-	// First, try to find resources matching this kind
-	// The REST mapper can resolve Kind -> GVR through the API server's discovery
-	gvks, err := rm.KindsFor(schema.GroupVersionResource{Resource: kind})
+	// UnsafeGuessKindToResource pluralizes correctly (e.g. "Ingress"→"ingresses",
+	// "NetworkPolicy"→"networkpolicies"). We pass an empty Group/Version so
+	// KindsFor searches all API groups registered with the API server.
+	pluralGVR, _ := meta.UnsafeGuessKindToResource(schema.GroupVersionKind{Kind: kind})
+	gvks, err := rm.KindsFor(schema.GroupVersionResource{Resource: pluralGVR.Resource})
 	if err == nil && len(gvks) > 0 {
 		return gvks[0], nil
 	}
 
-	// Fallback: try common core kinds
-	coreKinds := map[string]schema.GroupVersionKind{
-		"Deployment":  {Group: "apps", Version: "v1", Kind: "Deployment"},
-		"StatefulSet": {Group: "apps", Version: "v1", Kind: "StatefulSet"},
-		"DaemonSet":   {Group: "apps", Version: "v1", Kind: "DaemonSet"},
-		"Pod":         {Group: "", Version: "v1", Kind: "Pod"},
-		"Service":     {Group: "", Version: "v1", Kind: "Service"},
-		"ConfigMap":   {Group: "", Version: "v1", Kind: "ConfigMap"},
-		"Secret":      {Group: "", Version: "v1", Kind: "Secret"},
-	}
-	if gvk, ok := coreKinds[kind]; ok {
-		return gvk, nil
-	}
-
-	return schema.GroupVersionKind{}, fmt.Errorf("cannot resolve GVK for kind %q: %w", kind, err)
+	return schema.GroupVersionKind{}, fmt.Errorf("cannot resolve GVK for kind %q (tried resource %q): %w", kind, pluralGVR.Resource, err)
 }
 
 // emitHashEvent emits K8s and audit events for the hash computation result.
