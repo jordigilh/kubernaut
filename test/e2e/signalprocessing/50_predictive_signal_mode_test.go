@@ -97,12 +97,12 @@ var _ = Describe("E2E-SP-106-001: Predictive Signal Mode Classification", Label(
 						Namespace:  rr.Namespace,
 						UID:        string(rr.UID),
 					},
-					Signal: signalprocessingv1alpha1.SignalData{
-						Fingerprint:  rr.Spec.SignalFingerprint,
-						Name:         "PredictedOOMKillAlert",
-						Severity:     "critical",
-						Type:         "PredictedOOMKill", // Predictive signal type
-						Source:       "prometheus",
+				Signal: signalprocessingv1alpha1.SignalData{
+					Fingerprint:  rr.Spec.SignalFingerprint,
+					Name:         "PredictedOOMKill",
+					Severity:     "critical",
+					Type:         "alert",
+					Source:       "prometheus",
 						TargetType:   "kubernetes",
 						ReceivedTime: metav1.Now(),
 						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -163,12 +163,12 @@ var _ = Describe("E2E-SP-106-001: Predictive Signal Mode Classification", Label(
 						Namespace:  rr.Namespace,
 						UID:        string(rr.UID),
 					},
-					Signal: signalprocessingv1alpha1.SignalData{
-						Fingerprint:  rr.Spec.SignalFingerprint,
-						Name:         "OOMKilledAlert",
-						Severity:     "critical",
-						Type:         "OOMKilled", // Standard reactive type
-						Source:       "kubernetes",
+				Signal: signalprocessingv1alpha1.SignalData{
+					Fingerprint:  rr.Spec.SignalFingerprint,
+					Name:         "OOMKilled",
+					Severity:     "critical",
+					Type:         "alert",
+					Source:       "kubernetes",
 						TargetType:   "kubernetes",
 						ReceivedTime: metav1.Now(),
 						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
