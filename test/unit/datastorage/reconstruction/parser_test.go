@@ -50,7 +50,7 @@ var _ = Describe("Audit Event Parser", func() {
 			parsedData, err := reconstructionpkg.ParseAuditEvent(event)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(parsedData).ToNot(BeNil())
+			Expect(parsedData.SignalName).To(Equal("HighCPU"))
 			Expect(parsedData.SignalType).To(Equal("alert"))
 			Expect(parsedData.SignalName).To(Equal("HighCPU"))
 			Expect(parsedData.SignalLabels).To(HaveKeyWithValue("alertname", "HighCPU"))
@@ -79,8 +79,6 @@ var _ = Describe("Audit Event Parser", func() {
 			parsedData, err := reconstructionpkg.ParseAuditEvent(event)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(parsedData).ToNot(BeNil())
-			Expect(parsedData.TimeoutConfig).ToNot(BeNil())
 			Expect(parsedData.TimeoutConfig.Global).To(Equal("1h0m0s"))
 			Expect(parsedData.TimeoutConfig.Processing).To(Equal("10m0s"))
 			Expect(parsedData.TimeoutConfig.Analyzing).To(Equal("15m0s"))
@@ -93,7 +91,6 @@ var _ = Describe("Audit Event Parser", func() {
 			parsedData, err := reconstructionpkg.ParseAuditEvent(event)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(parsedData.TimeoutConfig).ToNot(BeNil())
 			Expect(parsedData.TimeoutConfig.Global).To(Equal("1h0m0s"))
 			// Optional fields should be empty strings, not errors
 			Expect(parsedData.TimeoutConfig.Processing).To(Equal(""))

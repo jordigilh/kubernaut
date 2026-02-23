@@ -106,7 +106,7 @@ var _ = Describe("Audit Manager — Typed Sub-Objects (DD-017 v2.5)", func() {
 
 			err := mgr.RecordHealthAssessed(ctx, ea, result, healthData)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(spy.lastEvent).ToNot(BeNil())
+			Expect(spy.lastEvent.EventType).To(Equal("effectiveness.health.assessed"))
 
 			// Extract the EffectivenessAssessmentAuditPayload from EventData
 			payload := extractPayload(spy.lastEvent)
@@ -197,7 +197,7 @@ var _ = Describe("Audit Manager — Typed Sub-Objects (DD-017 v2.5)", func() {
 
 			err := mgr.RecordAlertAssessed(ctx, ea, result, alertData)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(spy.lastEvent).ToNot(BeNil())
+			Expect(spy.lastEvent.EventType).To(Equal("effectiveness.alert.assessed"))
 
 			payload := extractPayload(spy.lastEvent)
 			Expect(payload.AlertResolution.Set).To(BeTrue(), "alert_resolution should be set")
@@ -306,7 +306,7 @@ var _ = Describe("Audit Manager — Typed Sub-Objects (DD-017 v2.5)", func() {
 
 			err := mgr.RecordMetricsAssessed(ctx, ea, result, metricsData)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(spy.lastEvent).ToNot(BeNil())
+			Expect(spy.lastEvent.EventType).To(Equal("effectiveness.metrics.assessed"))
 
 			payload := extractPayload(spy.lastEvent)
 			Expect(payload.MetricDeltas.Set).To(BeTrue(), "metric_deltas should be set")

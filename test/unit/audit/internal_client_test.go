@@ -102,8 +102,8 @@ var _ = Describe("InternalAuditClient", func() {
 				// BR-STORAGE-013: Must use direct PostgreSQL writes (not REST API)
 
 				// BEHAVIOR: Client created successfully (type assertion validates creation)
-				_, ok := client.(*audit.InternalClient)
-				Expect(ok).To(BeTrue(), "client should be *audit.InternalClient")
+				_, ok := client.(*audit.InternalAuditClient)
+				Expect(ok).To(BeTrue(), "client should be *audit.InternalAuditClient")
 
 				// CORRECTNESS: Client implements audit.DataStorageClient interface
 				_ = audit.DataStorageClient(client) // Type assertion validates interface compliance

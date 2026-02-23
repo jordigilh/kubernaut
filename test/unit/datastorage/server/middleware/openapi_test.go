@@ -49,13 +49,15 @@ var _ = Describe("OpenAPI Validator Middleware", func() {
 			nil, // No metrics in unit tests
 		)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(validator).ToNot(BeNil())
+		Expect(validator).To(BeAssignableToTypeOf(&middleware.OpenAPIValidator{}))
 	})
 
 	Describe("Validator Initialization", func() {
 		It("should load embedded OpenAPI spec successfully", func() {
 			// DD-API-002: Spec is embedded at compile time
-			Expect(validator).ToNot(BeNil())
+			// Success validated by err in BeforeEach; validator.Middleware returns usable handler
+			handler := validator.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+			Expect(handler).To(BeAssignableToTypeOf(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})))
 		})
 
 		// NOTE: Cannot test "invalid spec path" with embedded spec
