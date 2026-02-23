@@ -118,7 +118,7 @@ func createGatewaySignalReceivedEvent(timestamp time.Time, id uuid.UUID) ogencli
 		EventData: ogenclient.AuditEventEventData{
 			GatewayAuditPayload: ogenclient.GatewayAuditPayload{
 				SignalType:        ogenclient.GatewayAuditPayloadSignalTypeAlert,
-				AlertName:         "HighCPU",
+				SignalName:        "HighCPU",
 				Fingerprint:       "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
 				SignalLabels:      ogenclient.NewOptGatewayAuditPayloadSignalLabels(labels),
 				SignalAnnotations: ogenclient.NewOptGatewayAuditPayloadSignalAnnotations(annotations),
@@ -135,7 +135,7 @@ func createInvalidGatewayEvent(timestamp time.Time, id uuid.UUID) ogenclient.Aud
 		EventData: ogenclient.AuditEventEventData{
 			GatewayAuditPayload: ogenclient.GatewayAuditPayload{
 				SignalType: ogenclient.GatewayAuditPayloadSignalTypeAlert,
-				AlertName:  "", // Missing - should cause error in our parser
+				SignalName: "", // Missing - should cause error in our parser
 			},
 		},
 	}

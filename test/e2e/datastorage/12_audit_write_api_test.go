@@ -112,7 +112,7 @@ var _ = Describe("Audit Events Write API E2E Tests", Label("e2e", "audit-write-a
 					GatewayAuditPayload: ogenclient.GatewayAuditPayload{
 						EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
 						SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
-						AlertName:   "PodOOMKilled",
+						SignalName:   "PodOOMKilled",
 						Namespace:   "production",
 						Fingerprint: "sha256:abc123",
 					},
@@ -371,7 +371,7 @@ var _ = Describe("Audit Events Write API E2E Tests", Label("e2e", "audit-write-a
 					GatewayAuditPayload: ogenclient.GatewayAuditPayload{
 						EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
 						SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
-						AlertName:   "TestAlert",
+						SignalName:   "TestAlert",
 						Namespace:   "default",
 						Fingerprint: "test-fingerprint",
 					},
@@ -447,7 +447,7 @@ var _ = Describe("Audit Events Write API E2E Tests", Label("e2e", "audit-write-a
 					GatewayAuditPayload: ogenclient.GatewayAuditPayload{
 						EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
 						SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
-						AlertName:   "ChildEvent",
+						SignalName:   "ChildEvent",
 						Namespace:   "production",
 						Fingerprint: "test-fingerprint",
 					},

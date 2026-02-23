@@ -111,7 +111,7 @@ var _ = Describe("Audit Events Batch Write API Integration Tests", func() {
 							GatewayAuditPayload: ogenclient.GatewayAuditPayload{
 								EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
 								SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
-								AlertName:   "BatchTest1",
+								SignalName:   "BatchTest1",
 								Namespace:   "default",
 								Fingerprint: "test-fingerprint-1",
 							},
@@ -130,7 +130,7 @@ var _ = Describe("Audit Events Batch Write API Integration Tests", func() {
 							GatewayAuditPayload: ogenclient.GatewayAuditPayload{
 								EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewayCrdCreated,
 								SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
-								AlertName:   "BatchTest2",
+								SignalName:   "BatchTest2",
 								Namespace:   "default",
 								Fingerprint: "test-fingerprint-2",
 							},
@@ -149,7 +149,7 @@ var _ = Describe("Audit Events Batch Write API Integration Tests", func() {
 							GatewayAuditPayload: ogenclient.GatewayAuditPayload{
 								EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
 								SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
-								AlertName:   "BatchTest3",
+								SignalName:   "BatchTest3",
 								Namespace:   "default",
 								Fingerprint: "test-fingerprint-3",
 							},
@@ -226,7 +226,7 @@ var _ = Describe("Audit Events Batch Write API Integration Tests", func() {
 							GatewayAuditPayload: ogenclient.GatewayAuditPayload{
 								EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
 								SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
-								AlertName:   "LargeBatchTest",
+								SignalName:   "LargeBatchTest",
 								Namespace:   "default",
 								Fingerprint: "test-fingerprint-large",
 							},

@@ -182,7 +182,7 @@ Format: `E2E-{SERVICE}-163-{SEQUENCE}`
 | Severity | Downstream consumers (RO, AA) use severity for routing |
 | PolicyHash | Tracks which Rego policy version produced the result |
 | SignalMode | Distinguishes reactive vs predictive signals |
-| SignalType, OriginalSignalType | Signal classification for routing and analytics |
+| SignalName, SourceSignalName | Signal classification for routing and analytics (Issue #166: was SignalType, OriginalSignalType) |
 | RecoveryContext | Consecutive failure escalation requires previous attempt data |
 | Conditions | Standard K8s conditions for controller health monitoring |
 | BusinessClassification | Business context for prioritization (if populated) |
@@ -459,12 +459,12 @@ Format: `E2E-{SERVICE}-163-{SEQUENCE}`
 
 **Given**: A predictive OOMKill signal is ingested (alert with `signal_mode: predictive` label)
 **When**: SignalProcessing completes classification
-**Then**: `Status.SignalMode` == "predictive", `Status.SignalType` == the classified type for OOMKill, `Status.OriginalSignalType` == the original alert type before reclassification
+**Then**: `Status.SignalMode` == "predictive", `Status.SignalName` == the classified type for OOMKill, `Status.SourceSignalName` == the original alert type before reclassification (Issue #166)
 
 **Acceptance Criteria**:
 - SignalMode == "predictive" (exact match for predictive input signal)
-- SignalType == expected classified type (exact, determined by classification logic for OOMKill)
-- OriginalSignalType == original alert type from the ingested signal (exact)
+- SignalName == expected classified type (exact, determined by classification logic for OOMKill)
+- SourceSignalName == original alert type from the ingested signal (exact)
 
 ---
 

@@ -96,7 +96,7 @@ var _ = Describe("GatewayEventBuilder", func() {
 			gatewayData, ok := data["gateway"].(map[string]interface{})
 			Expect(ok).To(BeTrue())
 			Expect(gatewayData).To(HaveKeyWithValue("signal_type", "alert"))
-			Expect(gatewayData).To(HaveKeyWithValue("alert_name", "PodOOMKilled"))
+			Expect(gatewayData).To(HaveKeyWithValue("signal_name", "PodOOMKilled"))
 		})
 	})
 
@@ -121,7 +121,7 @@ var _ = Describe("GatewayEventBuilder", func() {
 			gatewayData, _ := data["gateway"].(map[string]interface{})
 
 			Expect(gatewayData).To(HaveKeyWithValue("signal_type", "alert"))
-			Expect(gatewayData).To(HaveKeyWithValue("alert_name", "HighMemoryUsage"))
+			Expect(gatewayData).To(HaveKeyWithValue("signal_name", "HighMemoryUsage"))
 			Expect(gatewayData).To(HaveKeyWithValue("fingerprint", "sha256:prometheus-123"))
 			Expect(gatewayData).To(HaveKeyWithValue("namespace", "production"))
 			Expect(gatewayData).To(HaveKeyWithValue("resource_type", "pod"))
@@ -146,7 +146,7 @@ var _ = Describe("GatewayEventBuilder", func() {
 			gatewayData, _ := data["gateway"].(map[string]interface{})
 
 			Expect(gatewayData).To(HaveKeyWithValue("signal_type", "alert"))
-			Expect(gatewayData).To(HaveKeyWithValue("event_reason", "OOMKilled"))
+			Expect(gatewayData).To(HaveKeyWithValue("signal_name", "OOMKilled"))
 			Expect(gatewayData).To(HaveKeyWithValue("fingerprint", "sha256:k8s-event-456"))
 		})
 

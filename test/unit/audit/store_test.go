@@ -163,7 +163,7 @@ func createTestEvent() *ogenclient.AuditEventRequest {
 	payload := ogenclient.GatewayAuditPayload{
 		EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewayCrdCreated,
 		SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert, // Updated enum
-		AlertName:   "test-alert",
+		SignalName:   "test-alert",
 		Namespace:   "default",
 		Fingerprint: "test-fingerprint",
 	}
@@ -206,8 +206,7 @@ var _ = Describe("BufferedAuditStore", func() {
 			store, err = audit.NewBufferedStore(mockClient, config, "test-service", logger)
 
 			Expect(err).ToNot(HaveOccurred())
-			_, ok := store.(*audit.BufferedAuditStore)
-			Expect(ok).To(BeTrue(), "store should be *audit.BufferedAuditStore")
+			Expect(store).To(BeAssignableToTypeOf((*audit.BufferedAuditStore)(nil)))
 		})
 
 		It("should return error if client is nil", func() {
@@ -236,8 +235,7 @@ var _ = Describe("BufferedAuditStore", func() {
 
 			// Should not error, but use defaults instead
 			Expect(err).ToNot(HaveOccurred())
-			_, ok := store.(*audit.BufferedAuditStore)
-			Expect(ok).To(BeTrue(), "store should be *audit.BufferedAuditStore")
+			Expect(store).To(BeAssignableToTypeOf((*audit.BufferedAuditStore)(nil)))
 		})
 	})
 

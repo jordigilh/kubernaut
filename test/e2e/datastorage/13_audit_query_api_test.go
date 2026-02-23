@@ -46,7 +46,7 @@ func createTestAuditEvent(baseURL, service, _ /* eventType */, correlationID str
 			GatewayAuditPayload: ogenclient.GatewayAuditPayload{
 				EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
 				SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
-				AlertName:   "TestAlert",
+				SignalName:   "TestAlert",
 				Namespace:   "default",
 				Fingerprint: "test-fingerprint",
 			},
@@ -138,7 +138,7 @@ var _ = Describe("Audit Events Query API", func() {
 						GatewayAuditPayload: ogenclient.GatewayAuditPayload{
 							EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
 							SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
-							AlertName:   "TestAlert0",
+							SignalName:   "TestAlert0",
 							Namespace:   "default",
 							Fingerprint: "test-fingerprint-0",
 						},
@@ -270,7 +270,7 @@ var _ = Describe("Audit Events Query API", func() {
 						GatewayAuditPayload: ogenclient.GatewayAuditPayload{
 							EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
 							SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
-							AlertName:   "TestAlert-Gateway",
+							SignalName:   "TestAlert-Gateway",
 							Namespace:   "default",
 							Fingerprint: "test-fingerprint",
 						},
@@ -468,7 +468,7 @@ var _ = Describe("Audit Events Query API", func() {
 					GatewayAuditPayload: ogenclient.GatewayAuditPayload{
 						EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
 						SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
-						AlertName:   "TestAlert",
+						SignalName:   "TestAlert",
 						Namespace:   "default",
 						Fingerprint: "test-fingerprint",
 					},
