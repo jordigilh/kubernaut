@@ -154,7 +154,7 @@ class TestFivePhaseWorkflowBehavior:
         # BEHAVIOR VALIDATION: All 5 phases must be present (DD-HAPI-017: Phase 4 is now three-step discovery)
         assert "Phase 1: Investigate the Incident" in prompt, "Missing Phase 1"
         assert "Phase 2: Determine Root Cause" in prompt, "Missing Phase 2"
-        assert "Phase 3: Identify Signal Type" in prompt, "Missing Phase 3"
+        assert "Phase 3: Identify Signal Name" in prompt, "Missing Phase 3"
         assert "Phase 4: Discover and Select Workflow" in prompt, "Missing Phase 4"
         assert "Phase 5: Return Summary" in prompt, "Missing Phase 5"
         
