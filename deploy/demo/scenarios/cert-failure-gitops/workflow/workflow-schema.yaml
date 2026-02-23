@@ -23,7 +23,7 @@ detectedLabels:
 
 execution:
   engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/fix-certificate-gitops-job@sha256:e9cce076f41c46c34c0ecb1e72171b0a42cbe203b985ff237f7af60cd345e3af
+  bundle: quay.io/kubernaut-cicd/test-workflows/fix-certificate-gitops-job@sha256:96811414fbd70e444564e44ad210946f5a954b4ca3e339c3788dee27e0488c3c
 
 parameters:
   - name: GIT_REPO_URL
