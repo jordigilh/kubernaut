@@ -197,8 +197,8 @@ execution:
   engine: tekton
   bundle: quay.io/test/no-signal:v1.0.0@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
 `
-			parsedSchema, err := parser.ParseAndValidate(noSignalTypeYAML)
-			Expect(err).ToNot(HaveOccurred(), "schema without signalType should be accepted")
+			parsedSchema, err := parser.ParseAndValidate(noSignalNameYAML)
+			Expect(err).ToNot(HaveOccurred(), "schema without signalName should be accepted")
 			Expect(parsedSchema.Labels.SignalName).To(BeEmpty())
 
 			// Labels JSONB should NOT contain signalName key when empty
