@@ -210,7 +210,7 @@ def should_include_detected_labels(
 
     Args:
         source_resource: Original signal's resource {namespace, kind, name}
-        rca_resource: LLM's RCA resource {signal_type, namespace, kind, name}
+        rca_resource: LLM's RCA resource {signal_name, namespace, kind, name}
         owner_chain: K8s ownership chain from SignalProcessing enrichment
                     [{kind, namespace, name}, ...] - ordered from direct parent to root
                     Example for Pod: [ReplicaSet, Deployment]
