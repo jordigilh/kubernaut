@@ -156,23 +156,21 @@ var _ = Describe("Test 37: BR-SCOPE-002 Gateway Scope Filtering (E2E)", Ordered,
 			Severity:  "critical",
 		})
 
-		var resp *http.Response
-		Eventually(func() error {
-			var err error
+		Eventually(func() int {
 			req, reqErr := http.NewRequest("POST", gatewayURL+"/api/v1/signals/prometheus", bytes.NewBuffer(payload))
 			if reqErr != nil {
-				return reqErr
+				return 0
 			}
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
-			resp, err = httpClient.Do(req)
-			return err
-		}, 10*time.Second, 1*time.Second).Should(Succeed())
-		defer func() { _ = resp.Body.Close() }()
-
-		By("2. Verify HTTP 201 Created (signal accepted, RR created)")
-		Expect(resp.StatusCode).To(Or(Equal(http.StatusCreated), Equal(http.StatusAccepted)),
-			"E2E-GW-002-001: Managed signal should return HTTP 201/202")
+			resp, err := httpClient.Do(req)
+			if err != nil {
+				return 0
+			}
+			defer func() { _ = resp.Body.Close() }()
+			return resp.StatusCode
+		}, 30*time.Second, 1*time.Second).Should(Or(Equal(http.StatusCreated), Equal(http.StatusAccepted)),
+			"E2E-GW-002-001: Managed signal should return HTTP 201/202 (retries handle informer sync)")
 
 		By("3. Verify RemediationRequest CRD exists in managed namespace")
 		Eventually(func() int {
@@ -241,18 +239,21 @@ var _ = Describe("Test 37: BR-SCOPE-002 Gateway Scope Filtering (E2E)", Ordered,
 			Severity:  "warning",
 		})
 
-		req, err := http.NewRequest("POST", gatewayURL+"/api/v1/signals/prometheus", bytes.NewBuffer(payload))
-		Expect(err).ToNot(HaveOccurred())
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
-
-		resp, err := httpClient.Do(req)
-		Expect(err).ToNot(HaveOccurred())
-		defer func() { _ = resp.Body.Close() }()
-
-		By("2. Verify HTTP 201 (namespace inheritance: pod inherits managed from NS)")
-		Expect(resp.StatusCode).To(Or(Equal(http.StatusCreated), Equal(http.StatusAccepted)),
-			"E2E-GW-002-003: Pod without label must inherit managed from namespace")
+		Eventually(func() int {
+			req, reqErr := http.NewRequest("POST", gatewayURL+"/api/v1/signals/prometheus", bytes.NewBuffer(payload))
+			if reqErr != nil {
+				return 0
+			}
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+			resp, err := httpClient.Do(req)
+			if err != nil {
+				return 0
+			}
+			defer func() { _ = resp.Body.Close() }()
+			return resp.StatusCode
+		}, 30*time.Second, 1*time.Second).Should(Or(Equal(http.StatusCreated), Equal(http.StatusAccepted)),
+			"E2E-GW-002-003: Pod without label must inherit managed from namespace (retries handle informer sync)")
 
 		testLogger.Info("Signal accepted via namespace inheritance",
 			"alertName", alertName, "pod", "scope-inherit-pod")

@@ -83,25 +83,26 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 				},
 			})
 
-			req, _ := http.NewRequest("POST",
-				fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL),
-				bytes.NewBuffer(payload))
-			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+			var statusCode int
+			Eventually(func() int {
+				req, _ := http.NewRequest("POST",
+					fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL),
+					bytes.NewBuffer(payload))
+				req.Header.Set("Content-Type", "application/json")
+				req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+				resp, err := http.DefaultClient.Do(req)
+				if err != nil {
+					return 0
+				}
+				_ = resp.Body.Close()
+				statusCode = resp.StatusCode
+				return statusCode
+			}, 30*time.Second, 1*time.Second).Should(Or(
+				Equal(http.StatusCreated), Equal(http.StatusInternalServerError)),
+				"Should return 201 (success) or 500 (field selector failure), retries handle informer sync")
 
-			resp, err := http.DefaultClient.Do(req)
-			_ = err
-			defer func() { _ = resp.Body.Close() }()
-
-			// If K8s API field selector fails, should return HTTP 500
-			// (not HTTP 200 with degraded deduplication)
-			if resp.StatusCode == http.StatusInternalServerError {
-				// Field selector failure detected
-				// This validates fail-fast behavior (no silent degradation)
+			if statusCode == http.StatusInternalServerError {
 				logger.Info("Field selector failure correctly returned HTTP 500")
-			} else {
-				// K8s API available, deduplication succeeded with CRD creation
-				Expect(resp.StatusCode).To(Equal(http.StatusCreated))
 			}
 		})
 
@@ -215,12 +216,16 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 				return resp
 			}
 
-			// Phase 1: Send one request to establish the dedup anchor
-			anchorResp := sendRequest(makePayload())
-			Expect(anchorResp).NotTo(BeNil())
-			Expect(anchorResp.StatusCode).To(Equal(http.StatusCreated),
+			// Phase 1: Send one request to establish the dedup anchor (retries handle informer sync)
+			Eventually(func() int {
+				anchorResp := sendRequest(makePayload())
+				if anchorResp == nil {
+					return 0
+				}
+				_ = anchorResp.Body.Close()
+				return anchorResp.StatusCode
+			}, 30*time.Second, 1*time.Second).Should(Equal(http.StatusCreated),
 				"First request must create the RemediationRequest (HTTP 201)")
-			_ = anchorResp.Body.Close()
 
 			// Wait for the RR to exist in the API server before sending concurrent requests
 			Eventually(func() int {
@@ -290,19 +295,20 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 				},
 			})
 
-			req, _ := http.NewRequest("POST",
-				fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL),
-				bytes.NewBuffer(payload))
-			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
-
-			resp, err := http.DefaultClient.Do(req)
-			_ = err
-			_ = resp.Body.Close()
-
-			// Verify initial request succeeded
-			Expect(resp.StatusCode).To(Or(Equal(http.StatusCreated), Equal(http.StatusAccepted)),
-				"Initial request should succeed")
+			Eventually(func() int {
+				req, _ := http.NewRequest("POST",
+					fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL),
+					bytes.NewBuffer(payload))
+				req.Header.Set("Content-Type", "application/json")
+				req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+				resp, err := http.DefaultClient.Do(req)
+				if err != nil || resp == nil {
+					return 0
+				}
+				_ = resp.Body.Close()
+				return resp.StatusCode
+			}, 30*time.Second, 1*time.Second).Should(Or(Equal(http.StatusCreated), Equal(http.StatusAccepted)),
+				"Initial request should succeed (retries handle informer sync)")
 
 			// Wait for initial RR to be created
 			// Note: Query by SignalName (alertname) not fingerprint, since Gateway generates fingerprints
