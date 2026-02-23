@@ -80,7 +80,7 @@ var _ = Describe("SignalProcessing Rego Integration", func() {
 				Fingerprint: ValidTestFingerprints["rego-env-01"],
 				Name:        "RegoEnvLoadTest",
 				Severity: "high",
-				Type:        "prometheus",
+				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 					Kind:      "Pod",
@@ -117,7 +117,7 @@ var _ = Describe("SignalProcessing Rego Integration", func() {
 				Fingerprint: ValidTestFingerprints["rego-pri-01"],
 				Name:        "RegoPriLoadTest",
 				Severity:    "critical",
-				Type:        "prometheus",
+				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 					Kind:      "Pod",
@@ -163,7 +163,7 @@ var _ = Describe("SignalProcessing Rego Integration", func() {
 				Fingerprint: ValidTestFingerprints["rego-eve-01"],
 				Name:        "RegoEvalEnvTest",
 				Severity: "high",
-				Type:        "prometheus",
+				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 					Kind:      "Pod",
@@ -200,7 +200,7 @@ var _ = Describe("SignalProcessing Rego Integration", func() {
 				Fingerprint: ValidTestFingerprints["rego-evp-01"],
 				Name:        "RegoEvalPriTest",
 				Severity: "high",
-				Type:        "prometheus",
+				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 					Kind:      "Pod",
@@ -250,7 +250,7 @@ var _ = Describe("SignalProcessing Rego Integration", func() {
 				Fingerprint: ValidTestFingerprints["rego-fms-01"],
 				Name:        "RegoFallbackMissingTest",
 				Severity: "high",
-				Type:        "prometheus",
+				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 					Kind:      "Pod",
@@ -303,7 +303,7 @@ var _ = Describe("SignalProcessing Rego Integration", func() {
 						Fingerprint: GenerateConcurrentFingerprint("rego-concurrent", idx),
 						Name:        "RegoConcurrentTest",
 						Severity: "high",
-						Type:        "prometheus",
+						Type:        "alert",
 						TargetType:  "kubernetes",
 						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 							Kind:      "Pod",
@@ -350,7 +350,7 @@ var _ = Describe("SignalProcessing Rego Integration", func() {
 					Namespace: ns,
 				},
 				Data: map[string]string{
-					"labels.rego": `package signalprocessing.labels
+					"labels.rego": `package signalprocessing.customlabels
 
 import rego.v1
 
@@ -369,7 +369,7 @@ labels["computed"] := [result] if {
 				Fingerprint: ValidTestFingerprints["rego-tim-01"],
 				Name:        "RegoTimeoutTest",
 				Severity: "high",
-				Type:        "prometheus",
+				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 					Kind:      "Pod",
@@ -415,7 +415,7 @@ labels["computed"] := [result] if {
 					Namespace: ns,
 				},
 				Data: map[string]string{
-					"labels.rego": `package signalprocessing.labels
+					"labels.rego": `package signalprocessing.customlabels
 
 import rego.v1
 
@@ -431,7 +431,7 @@ labels["shortvalue"] := ["ok"] if { true }
 				Fingerprint: ValidTestFingerprints["rego-vlv-01"],
 				Name:        "RegoValValueTest",
 				Severity: "high",
-				Type:        "prometheus",
+				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 					Kind:      "Pod",
@@ -468,7 +468,7 @@ labels["shortvalue"] := ["ok"] if { true }
 			By("Creating ConfigMap with more than 10 keys")
 			// Generate policy with 15 keys
 			policyBuilder := strings.Builder{}
-			policyBuilder.WriteString("package signalprocessing.labels\n\nimport rego.v1\n\n")
+			policyBuilder.WriteString("package signalprocessing.customlabels\n\nimport rego.v1\n\n")
 			for i := 0; i < 15; i++ {
 				policyBuilder.WriteString("labels[\"key" + string(rune('a'+i)) + "\"] := [\"value\"] if { true }\n")
 			}
@@ -489,7 +489,7 @@ labels["shortvalue"] := ["ok"] if { true }
 				Fingerprint: ValidTestFingerprints["rego-vmk-01"],
 				Name:        "RegoValMaxKeysTest",
 				Severity: "high",
-				Type:        "prometheus",
+				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 					Kind:      "Pod",

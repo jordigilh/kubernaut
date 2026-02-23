@@ -261,7 +261,7 @@ type RemediationRequestSpec struct {
 	// - SignalProcessingStatus.PriorityAssignment.Priority
 	// RO reads these from SP status, not from RR spec.
 
-	// Signal type: "prometheus", "kubernetes-event", "aws-cloudwatch", "datadog-monitor", etc.
+	// Signal type: "alert" (generic signal type; adapter-specific values are deprecated)
 	// Used for signal-aware remediation strategies
 	SignalType string `json:"signalType"`
 

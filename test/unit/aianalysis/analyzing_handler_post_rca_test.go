@@ -76,7 +76,7 @@ var _ = Describe("AnalyzingHandler PostRCAContext Rego Integration (ADR-056)", f
 					SignalContext: aianalysisv1.SignalContextInput{
 						Fingerprint:      "test-fingerprint-prc",
 						Severity:         "warning",
-						SignalType:       "OOMKilled",
+						SignalName:       "OOMKilled",
 						Environment:      "production",
 						BusinessPriority: "P0",
 						TargetResource: aianalysisv1.TargetResource{

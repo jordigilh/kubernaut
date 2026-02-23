@@ -95,7 +95,7 @@ var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 					SignalFingerprint: "a1b2c3d4e5f60123456789abcdef0123456789abcdef0123456789abcdef0123",
 					SignalName:        "E2EAuditWiringTest",
 					Severity:          "critical",
-					SignalType:        "prometheus",
+					SignalType:        "alert",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
 						Kind:      "Deployment",

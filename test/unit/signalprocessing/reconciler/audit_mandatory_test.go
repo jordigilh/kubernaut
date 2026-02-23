@@ -111,7 +111,7 @@ var _ = Describe("BR-SP-090/ADR-032: Audit Client Mandatory Enforcement", func()
 						Fingerprint:  "abcd1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab",
 						Name:         "TestSignal",
 						Severity:     "critical",
-						Type:         "prometheus",
+						Type:         "alert",
 						TargetType:   "kubernetes",
 						ReceivedTime: metav1.Now(),
 						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{

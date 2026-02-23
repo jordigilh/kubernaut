@@ -157,7 +157,7 @@ class TestIncidentPromptCreation:
         # Arrange: Create request data
         request_data = {
             "incident_id": "inc-integration-test-prompt-001",
-            "signal_type": "OOMKilled",
+            "signal_name": "OOMKilled",
             "severity": "critical",
             "resource_namespace": "production",  # Correct field name per IncidentRequest model
             "resource_kind": "Pod",
@@ -202,7 +202,7 @@ class TestIncidentPromptCreation:
         # Arrange: Create minimal request data
         request_data = {
             "incident_id": "inc-integration-test-prompt-002",
-            "signal_type": "CrashLoopBackOff",
+            "signal_name": "CrashLoopBackOff",
             "severity": "high",
             "resource_namespace": "default",  # Correct field name per IncidentRequest model
             "resource_kind": "Pod",

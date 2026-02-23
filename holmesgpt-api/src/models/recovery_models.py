@@ -47,7 +47,7 @@ class RecoveryStrategy(BaseModel):
 class OriginalRCA(BaseModel):
     """Summary of the original root cause analysis from initial AIAnalysis"""
     summary: str = Field(..., description="Brief RCA summary from initial investigation")
-    signal_type: str = Field(..., description="Signal type determined by original RCA (e.g., 'OOMKilled')")
+    signal_name: str = Field(..., description="Signal name determined by original RCA (e.g., 'OOMKilled')")
     severity: Severity = Field(..., description="Severity determined by original RCA (BR-SEVERITY-001)")
     contributing_factors: List[str] = Field(default_factory=list, description="Factors that contributed to the issue")
 
@@ -149,7 +149,7 @@ class RecoveryRequest(BaseModel):
     enrichment_results: Optional[EnrichmentResults] = Field(None, description="Enriched context including DetectedLabels for workflow filtering")
 
     # Standard signal fields
-    signal_type: Optional[str] = Field(None, description="Current signal type (may have changed)")
+    signal_name: Optional[str] = Field(None, description="Current signal name (may have changed)")
     severity: Optional[Severity] = Field(None, description="Current severity (BR-SEVERITY-001)")
     resource_namespace: Optional[str] = Field(None, description="Kubernetes namespace")
     resource_kind: Optional[str] = Field(None, description="Kubernetes resource kind")
@@ -210,7 +210,7 @@ class RecoveryRequest(BaseModel):
                     "workflow_execution_ref": "req-2025-11-29-abc123-we-1",
                     "original_rca": {
                         "summary": "Memory exhaustion causing OOMKilled in production pod",
-                        "signal_type": "OOMKilled",
+                        "signal_name": "OOMKilled",
                         "severity": "high",
                         "contributing_factors": ["memory leak", "insufficient limits"]
                     },
@@ -232,7 +232,7 @@ class RecoveryRequest(BaseModel):
                     }
                 },
                 "enrichment_results": {"kubernetesContext": {}, "detectedLabels": {}},
-                "signal_type": "OOMKilled",
+                "signal_name": "OOMKilled",
                 "severity": "high",
                 "resource_namespace": "production",
                 "resource_kind": "Deployment",

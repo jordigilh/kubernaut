@@ -70,7 +70,7 @@ var _ = Describe("Notification Lifecycle Integration", Label("integration", "not
 			}(),
 				SignalName:        "NotificationLifecycleTest",
 				Severity:          "warning",
-				SignalType:        "prometheus",
+				SignalType:        "alert",
 				TargetType:        "kubernetes",
 				TargetResource: remediationv1.ResourceIdentifier{
 					Kind:      "Deployment",

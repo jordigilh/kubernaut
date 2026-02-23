@@ -92,7 +92,7 @@ var _ = Describe("Reconstruction Business Logic Integration Tests (BR-AUDIT-006)
 			// ✅ Using typed ogenclient payloads for compile-time validation
 			gatewayPayload := ogenclient.GatewayAuditPayload{
 				EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
-				SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
+				SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
 				AlertName:   "HighCPU",
 				Namespace:   "default",
 				Fingerprint: "test-fp-123",
@@ -152,7 +152,7 @@ var _ = Describe("Reconstruction Business Logic Integration Tests (BR-AUDIT-006)
 			}
 			gatewayPayload := ogenclient.GatewayAuditPayload{
 				EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
-				SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
+				SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
 				AlertName:   "HighCPU",
 				Namespace:   "default",
 				Fingerprint: "test-fp-456",
@@ -221,7 +221,7 @@ var _ = Describe("Reconstruction Business Logic Integration Tests (BR-AUDIT-006)
 
 			// ASSERT: Reconstructed fields match seeded data
 			Expect(rr.Spec.SignalName).To(Equal("HighCPU"))
-			Expect(rr.Spec.SignalType).To(Equal("prometheus-alert"))
+			Expect(rr.Spec.SignalType).To(Equal("alert"))
 			Expect(rr.Spec.SignalLabels).To(HaveKeyWithValue("alertname", "HighCPU"))
 			Expect(rr.Spec.SignalLabels).To(HaveKeyWithValue("severity", "critical"))
 			Expect(rr.Spec.SignalAnnotations).To(HaveKeyWithValue("summary", "CPU usage is high"))
@@ -284,7 +284,7 @@ var _ = Describe("Reconstruction Business Logic Integration Tests (BR-AUDIT-006)
 			// ✅ Using typed ogenclient payload with only required fields
 			gatewayPayload := ogenclient.GatewayAuditPayload{
 				EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
-				SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
+				SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
 				AlertName:   "HighCPU",
 				Namespace:   "default",
 				Fingerprint: "test-fp-789",

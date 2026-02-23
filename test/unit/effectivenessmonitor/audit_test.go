@@ -138,7 +138,7 @@ var _ = Describe("Audit Event Builder (BR-AUDIT-006)", func() {
 
 			Expect(event.Score).ToNot(BeNil())
 			Expect(*event.Score).To(Equal(1.0))
-			Expect(event.AlertName).To(Equal("HighLatency"))
+			Expect(event.SignalName).To(Equal("HighLatency"))
 			Expect(event.AlertResolved).To(BeTrue())
 		})
 

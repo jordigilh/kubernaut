@@ -89,7 +89,7 @@ var _ = Describe("BR-HAPI-197: Recovery Human Review Integration", Label("integr
 							// Special signal type triggers HAPI mock edge case:
 							// - needs_human_review=true
 							// - human_review_reason="no_matching_workflows"
-							SignalType:       "MOCK_NO_WORKFLOW_FOUND",
+							SignalName:       "MOCK_NO_WORKFLOW_FOUND",
 							Environment:      "production",
 							BusinessPriority: "P1",
 							TargetResource: aianalysisv1alpha1.TargetResource{
@@ -196,7 +196,7 @@ var _ = Describe("BR-HAPI-197: Recovery Human Review Integration", Label("integr
 							// Special signal type triggers HAPI mock edge case:
 							// - needs_human_review=true (from low confidence)
 							// - human_review_reason="low_confidence"
-							SignalType:       "MOCK_LOW_CONFIDENCE",
+							SignalName:       "MOCK_LOW_CONFIDENCE",
 							Environment:      "staging",
 							BusinessPriority: "P2",
 							TargetResource: aianalysisv1alpha1.TargetResource{
@@ -292,7 +292,7 @@ var _ = Describe("BR-HAPI-197: Recovery Human Review Integration", Label("integr
 						// Normal signal type (not an edge case)
 						// HAPI returns needs_human_review=false and provides workflow
 						// Severity=high matches crashloop-config-fix-v1 workflow catalog entry
-						SignalType:       "CrashLoopBackOff",
+						SignalName:       "CrashLoopBackOff",
 						Environment:      "production",
 						BusinessPriority: "P1",
 							TargetResource: aianalysisv1alpha1.TargetResource{

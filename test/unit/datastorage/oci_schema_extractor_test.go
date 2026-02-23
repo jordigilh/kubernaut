@@ -199,7 +199,7 @@ execution:
 `
 			parsedSchema, err := parser.ParseAndValidate(noSignalTypeYAML)
 			Expect(err).ToNot(HaveOccurred(), "schema without signalType should be accepted")
-			Expect(parsedSchema.Labels.SignalType).To(BeEmpty())
+			Expect(parsedSchema.Labels.SignalName).To(BeEmpty())
 
 			// Labels JSONB should NOT contain signalType key when empty
 			labelsJSON, err := parser.ExtractLabels(parsedSchema)

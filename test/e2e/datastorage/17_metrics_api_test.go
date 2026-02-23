@@ -107,7 +107,7 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics Integration", Ordered, func
 			// FIX: Use correct helper function for discriminated union (DD-AUDIT-004)
 			eventData := ogenclient.NewAuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData(ogenclient.GatewayAuditPayload{
 				EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
-				SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
+				SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
 				AlertName:   "MetricsTest",
 				Namespace:   "default",
 				Fingerprint: "test-fingerprint",
@@ -178,7 +178,7 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics Integration", Ordered, func
 				Type: ogenclient.AuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData,
 				GatewayAuditPayload: ogenclient.GatewayAuditPayload{
 					EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
-					SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
+					SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
 					AlertName:   "LagTest",
 					Namespace:   "default",
 					Fingerprint: "test-fingerprint",
@@ -296,7 +296,7 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics Integration", Ordered, func
 				Type: ogenclient.AuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData,
 				GatewayAuditPayload: ogenclient.GatewayAuditPayload{
 					EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
-					SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
+					SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
 					AlertName:   "DurationTest",
 					Namespace:   "default",
 					Fingerprint: "test-fingerprint",

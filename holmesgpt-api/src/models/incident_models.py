@@ -253,7 +253,7 @@ class IncidentRequest(BaseModel):
             "do NOT use for RCA analysis or workflow matching."
         )
     )
-    signal_type: str = Field(..., description="Canonical signal type")
+    signal_name: str = Field(..., description="Canonical signal name (e.g., OOMKilled, CrashLoopBackOff)")
     severity: Severity = Field(..., description="Signal severity (BR-SEVERITY-001: critical, high, medium, low, unknown)")
     signal_source: str = Field(..., description="Monitoring system")
     resource_namespace: str = Field(..., description="Kubernetes namespace")

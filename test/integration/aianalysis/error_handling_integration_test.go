@@ -106,7 +106,7 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 							// Use Mock LLM's no_workflow_found scenario
 							// This triggers HAPI to return needs_human_review=true with
 							// human_review_reason="workflow_not_found"
-							SignalType:       "MOCK_NO_WORKFLOW_FOUND",
+							SignalName:       "MOCK_NO_WORKFLOW_FOUND",
 							Severity:         "critical",
 							Environment:      "production",
 							BusinessPriority: "P0",
@@ -287,7 +287,7 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 							// Use Mock LLM's problem_resolved scenario
 							// This triggers HAPI to return investigation_outcome="resolved"
 							// with confidence >= 0.7 and selected_workflow=null
-							SignalType:       "MOCK_PROBLEM_RESOLVED",
+							SignalName:       "MOCK_PROBLEM_RESOLVED",
 							Severity:         "low", // DD-SEVERITY-001 v1.1: Use normalized severity (critical, high, medium, low, unknown)
 							Environment:      "production",
 							BusinessPriority: "P2",

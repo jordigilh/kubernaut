@@ -60,7 +60,7 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      "e2e-fingerprint-001",
 							Severity:        "medium",
-							SignalType:       "CrashLoopBackOff",
+							SignalName:       "CrashLoopBackOff",
 							Environment:      "production",
 							BusinessPriority: "P1",
 							TargetResource: aianalysisv1alpha1.TargetResource{
@@ -181,7 +181,7 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      "e2e-fingerprint-002",
 							Severity:        "medium",
-							SignalType:       "OOMKilled",
+							SignalName:       "OOMKilled",
 							Environment:      "staging", // Non-production = auto-approve
 							BusinessPriority: "P2",
 							TargetResource: aianalysisv1alpha1.TargetResource{
@@ -240,7 +240,7 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 						Fingerprint:      "e2e-fingerprint-003",
 						Severity:         "high",    // Must match crashloop-config-fix-v1 catalog entry
-						SignalType:       "CrashLoopBackOff",
+						SignalName:       "CrashLoopBackOff",
 						Environment:      "staging", // Even staging requires approval for 3+ recovery attempts
 						BusinessPriority: "P1",      // Matches crashloop-config-fix-v1 catalog entry
 							TargetResource: aianalysisv1alpha1.TargetResource{
@@ -297,7 +297,7 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      "e2e-fingerprint-004",
 							Severity:        "medium",
-							SignalType:       "CrashLoopBackOff",
+							SignalName:       "CrashLoopBackOff",
 							Environment:      "production",
 							BusinessPriority: "P2",
 							TargetResource: aianalysisv1alpha1.TargetResource{
@@ -354,7 +354,7 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      "e2e-fingerprint-low-conf",
 							Severity:         "medium",
-							SignalType:       "MOCK_LOW_CONFIDENCE", // Triggers mock scenario with alternative_workflows
+							SignalName:       "MOCK_LOW_CONFIDENCE", // Triggers mock scenario with alternative_workflows
 							Environment:      "staging",
 							BusinessPriority: "P2",
 							TargetResource: aianalysisv1alpha1.TargetResource{
@@ -422,7 +422,7 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      "e2e-fingerprint-max-retries",
 							Severity:         "high",
-							SignalType:       "MOCK_MAX_RETRIES_EXHAUSTED", // Triggers mock scenario with 3 failed validation attempts
+							SignalName:       "MOCK_MAX_RETRIES_EXHAUSTED", // Triggers mock scenario with 3 failed validation attempts
 							Environment:      "staging",
 							BusinessPriority: "P1",
 							TargetResource: aianalysisv1alpha1.TargetResource{

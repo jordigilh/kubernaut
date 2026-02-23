@@ -429,7 +429,7 @@ var _ = Describe("BR-SCOPE-002: Gateway Scope Validation", func() {
 		By("3. Construct signal for cluster-scoped resource (Node)")
 		signal := &types.NormalizedSignal{
 			Fingerprint: "test-fingerprint-node-001",
-			AlertName:   "NodeNotReady",
+			SignalName:   "NodeNotReady",
 			Severity:    "critical",
 			Namespace:   "", // cluster-scoped: no namespace
 			Resource: types.ResourceIdentifier{

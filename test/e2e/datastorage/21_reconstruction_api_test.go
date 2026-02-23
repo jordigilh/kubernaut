@@ -111,7 +111,7 @@ var _ = Describe("E2E: Reconstruction REST API (BR-AUDIT-006)", Label("e2e", "re
 
 			gatewayPayload := ogenclient.GatewayAuditPayload{
 				EventType:   "gateway.signal.received",
-				SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
+				SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
 				AlertName:   "HighCPUUsage",        // string, not OptString
 				Namespace:   "production",          // string, not OptString
 				Fingerprint: "e2e-fingerprint-123", // string, not OptString
@@ -371,7 +371,7 @@ var _ = Describe("E2E: Reconstruction REST API (BR-AUDIT-006)", Label("e2e", "re
 			// ASSERT: Core fields reconstructed correctly (Gaps #1-3)
 			Expect(reconstructionResp.RemediationRequestYaml).To(ContainSubstring("HighCPUUsage"),
 				"YAML should contain signal name")
-			Expect(reconstructionResp.RemediationRequestYaml).To(ContainSubstring("prometheus-alert"),
+			Expect(reconstructionResp.RemediationRequestYaml).To(ContainSubstring("alert"),
 				"YAML should contain signal type")
 			Expect(reconstructionResp.RemediationRequestYaml).To(ContainSubstring("1h"),
 				"YAML should contain timeout config (Gap #8)")
@@ -420,7 +420,7 @@ var _ = Describe("E2E: Reconstruction REST API (BR-AUDIT-006)", Label("e2e", "re
 				ResourceID:     "signal-partial-123",
 				EventData: map[string]interface{}{
 					"event_type":  "gateway.signal.received",
-					"signal_type": "prometheus-alert",
+					"signal_type": "alert",
 					"alert_name":  "PartialAlert",
 					"namespace":   "test",
 					"fingerprint": "partial-fp-123",

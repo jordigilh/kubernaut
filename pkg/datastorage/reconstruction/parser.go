@@ -33,7 +33,7 @@ type ParsedAuditData struct {
 
 	// Gateway fields (from gateway.signal.received)
 	SignalType        string
-	AlertName         string
+	SignalName         string
 	SignalFingerprint string // BR-AUDIT-005: SHA256 deduplication fingerprint
 	SignalLabels      map[string]string
 	SignalAnnotations map[string]string
@@ -97,15 +97,15 @@ func parseGatewaySignalReceived(event ogenclient.AuditEvent) (*ParsedAuditData, 
 	payload := event.EventData.GatewayAuditPayload
 
 	// Validate required fields
-	if payload.AlertName == "" {
+	if payload.SignalName == "" {
 		return nil, fmt.Errorf("missing alert_name in gateway.signal.received event")
 	}
 
 	data := &ParsedAuditData{
 		EventType:         event.EventType,
 		CorrelationID:     event.CorrelationID,
-		SignalType:        string(payload.SignalType),
-		AlertName:         payload.AlertName,
+		SignalType:        normalizeSignalType(string(payload.SignalType)),
+		SignalName:         payload.SignalName,
 		SignalFingerprint: payload.Fingerprint, // BR-AUDIT-005: SHA256 deduplication identity
 		SignalLabels:      make(map[string]string),
 		SignalAnnotations: make(map[string]string),
@@ -161,6 +161,16 @@ func getOptString(opt ogenclient.OptString) string {
 		return opt.Value
 	}
 	return ""
+}
+
+// normalizeSignalType returns "alert" for legacy prometheus-alert/kubernetes-event values.
+// All adapters now normalize to "alert" per OpenAPI spec; reconstruction preserves that.
+func normalizeSignalType(s string) string {
+	switch s {
+	case "prometheus-alert", "kubernetes-event":
+		return "alert"
+	}
+	return s
 }
 
 // parseAIAnalysisCompleted extracts provider data from aianalysis.analysis.completed event (Gap #4).

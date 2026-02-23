@@ -81,10 +81,10 @@ var _ = Describe("ADR-052 Addendum 001: Exponential Backoff with Jitter for Lock
 		lockManager = &mockLockManager{}
 
 		testSignal = &types.NormalizedSignal{
-			AlertName:   "TestAlert",
+			SignalName:   "TestAlert",
 			Fingerprint: "test-fingerprint-123",
 			Severity:    "critical",
-			SourceType:  "prometheus-alert",
+			SourceType:  "alert",
 			Source:      "alertmanager",
 			Namespace:   "default",
 			Resource: types.ResourceIdentifier{

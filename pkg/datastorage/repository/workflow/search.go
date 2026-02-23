@@ -60,12 +60,12 @@ func (r *Repository) SearchByLabels(ctx context.Context, request *models.Workflo
 	// Authority: DD-WORKFLOW-001 v1.6 (5 mandatory labels)
 	// These filters provide the base score of 5.0 (one point per exact match)
 
-	// Mandatory Filter 1: signalType (exact match)
-	if request.Filters.SignalType == "" {
-		return nil, fmt.Errorf("filters.signalType is required")
+	// Mandatory Filter 1: signalName (exact match)
+	if request.Filters.SignalName == "" {
+		return nil, fmt.Errorf("filters.signalName is required")
 	}
-	whereClauses = append(whereClauses, fmt.Sprintf("labels->>'signalType' = $%d", argIndex))
-	args = append(args, request.Filters.SignalType)
+	whereClauses = append(whereClauses, fmt.Sprintf("labels->>'signalName' = $%d", argIndex))
+	args = append(args, request.Filters.SignalName)
 	argIndex++
 
 	// Mandatory Filter 2: severity (JSONB array, use ? operator)
@@ -197,9 +197,9 @@ func (r *Repository) SearchByLabels(ctx context.Context, request *models.Workflo
 	// Build response with DD-WORKFLOW-002 v3.0 flat structure
 	searchResults := make([]models.WorkflowSearchResult, len(results))
 	for i, result := range results {
-		// V1.0: Extract signal_type from structured Labels
+		// V1.0: Extract signal_name from structured Labels
 		// Authority: Zero unstructured data mandate
-		signalType := result.Labels.SignalType
+		signalName := result.Labels.SignalName
 
 		// Handle optional pointer fields
 		schemaImage := ""
@@ -218,7 +218,7 @@ func (r *Repository) SearchByLabels(ctx context.Context, request *models.Workflo
 			WorkflowID:      result.WorkflowID,
 			Title:           result.Name, // DD-WORKFLOW-002 v3.0: "name" renamed to "title"
 			Description:     result.Description,
-			SignalType:      signalType,
+			SignalName:      signalName,
 			SchemaImage:     schemaImage,
 			ExecutionBundle: executionBundle,
 

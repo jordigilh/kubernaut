@@ -256,8 +256,7 @@ def _parse_recovery_specific_result(analysis_text: str, request_data: Dict[str, 
                 "previous_attempt_assessment": {
                     "failure_understood": True,
                     "failure_reason_analysis": rca.get("summary", "Previous workflow execution failed"),
-                    "state_changed": False,
-                    "current_signal_type": rca.get("signal_type", request_data.get("signal_type", "Unknown"))
+                    "state_changed": False
                 }
             }
             logger.info({

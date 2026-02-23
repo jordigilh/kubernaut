@@ -571,7 +571,7 @@ func (m *Manager) RecordAssessmentCompleted(ctx context.Context, ea *eav1.Effect
 	// 1. alert_name: Original alert/signal name from the parent RemediationRequest.
 	//    OBS-1: Uses ea.Spec.SignalName (set by the RO creator from rr.Spec.SignalName),
 	//    which is the actual alert name — distinct from CorrelationID (the RR name).
-	payload.AlertName = ogenclient.NewOptString(ea.Spec.SignalName)
+	payload.SignalName = ogenclient.NewOptString(ea.Spec.SignalName)
 
 	// 2. components_assessed: Build array from EA status component flags.
 	var assessed []string

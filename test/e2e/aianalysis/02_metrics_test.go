@@ -57,7 +57,7 @@ func seedMetricsWithAnalysis() {
 				SignalContext: aianalysisv1alpha1.SignalContextInput{
 					Fingerprint:      "metrics-seed-fp",
 					Severity:        "medium",
-					SignalType:       "PodCrashLooping",
+					SignalName:       "PodCrashLooping",
 					Environment:      "staging",
 					BusinessPriority: "P2",
 					TargetResource: aianalysisv1alpha1.TargetResource{
@@ -99,7 +99,7 @@ func seedMetricsWithAnalysis() {
 				SignalContext: aianalysisv1alpha1.SignalContextInput{
 					Fingerprint:      "TRIGGER_WORKFLOW_RESOLUTION_FAILURE", // Special fingerprint to trigger failure
 					Severity:         "critical",
-					SignalType:       "TestFailureScenario",
+					SignalName:       "TestFailureScenario",
 					Environment:      "staging",
 					BusinessPriority: "P1",
 					TargetResource: aianalysisv1alpha1.TargetResource{

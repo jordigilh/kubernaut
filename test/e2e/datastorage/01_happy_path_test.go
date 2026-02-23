@@ -150,7 +150,7 @@ var _ = Describe("BR-DS-001: Audit Event Persistence - Complete Remediation Audi
 			EventTimestamp: time.Now().UTC(),
 			CorrelationID:  correlationID,
 			EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
-			EventData:      newMinimalGatewayPayload("prometheus-alert", "PodCrashLooping"),
+			EventData:      newMinimalGatewayPayload("alert", "PodCrashLooping"),
 		}
 
 		eventID := createAuditEventOpenAPI(ctx, DSClient, gatewayEvent)

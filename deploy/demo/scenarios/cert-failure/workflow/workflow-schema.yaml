@@ -12,7 +12,7 @@ metadata:
 actionType: FixCertificate
 
 labels:
-  signalType: CertificateNotReady
+  signalName: CertificateNotReady
   severity: [critical, high]
   environment: [production, staging]
   component: "*"

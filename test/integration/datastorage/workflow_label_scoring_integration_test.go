@@ -105,7 +105,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 					Content:      content,
 					ContentHash:  contentHash,
 					Labels: models.MandatoryLabels{
-						SignalType:  "OOMKilled",
+						SignalName:  "OOMKilled",
 						Severity:    []string{"critical"},
 						Component:   "pod",
 						Environment: []string{"production"},
@@ -129,7 +129,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 					Content:      content,
 					ContentHash:  contentHash,
 					Labels: models.MandatoryLabels{
-						SignalType:  "OOMKilled",
+						SignalName:  "OOMKilled",
 						Severity:    []string{"critical"},
 						Component:   "pod",
 						Environment: []string{"production"},
@@ -153,7 +153,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 				// ACT: Search for workflows with GitOps requirement
 				searchRequest := &models.WorkflowSearchRequest{
 					Filters: &models.WorkflowSearchFilters{
-						SignalType:  "OOMKilled",
+						SignalName:  "OOMKilled",
 						Severity:    "critical",
 						Component:   "pod",
 						Environment: "production",
@@ -236,7 +236,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 				Name:         "PDB-Protected Workflow",
 				Description:  models.StructuredDescription{What: "Workflow with PodDisruptionBudget protection", WhenToUse: "Testing"},
 					Labels: models.MandatoryLabels{
-						SignalType:  "HighMemoryUsage",
+						SignalName:  "HighMemoryUsage",
 						Severity:    []string{"high"},
 						Component:   "deployment",
 						Environment: []string{"production"},
@@ -262,7 +262,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 				Name:         "No PDB Workflow",
 				Description:  models.StructuredDescription{What: "Workflow without PDB protection", WhenToUse: "Testing"},
 					Labels: models.MandatoryLabels{
-						SignalType:  "HighMemoryUsage",
+						SignalName:  "HighMemoryUsage",
 						Severity:    []string{"high"},
 						Component:   "deployment",
 						Environment: []string{"production"},
@@ -291,7 +291,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 				// NOTE: Don't add test_run_id to search filters - it would add +0.05 boost and pollute assertions
 				searchRequest := &models.WorkflowSearchRequest{
 					Filters: &models.WorkflowSearchFilters{
-						SignalType:  "HighMemoryUsage",
+						SignalName:  "HighMemoryUsage",
 						Severity:    "high",
 						Component:   "deployment",
 						Environment: "production",
@@ -365,7 +365,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 				Name:         "Manual Workflow (GitOps Required)",
 				Description:  models.StructuredDescription{What: "Manual workflow when GitOps is required", WhenToUse: "Testing"},
 					Labels: models.MandatoryLabels{
-						SignalType:  "DatabaseConnectionLeak",
+						SignalName:  "DatabaseConnectionLeak",
 						Severity:    []string{"critical"},
 						Component:   "deployment",
 						Environment: []string{"production"},
@@ -391,7 +391,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 				// NOTE: Don't add test_run_id to avoid +0.05 boost pollution
 				searchRequest := &models.WorkflowSearchRequest{
 					Filters: &models.WorkflowSearchFilters{
-						SignalType:  "DatabaseConnectionLeak",
+						SignalName:  "DatabaseConnectionLeak",
 						Severity:    "critical",
 						Component:   "deployment",
 						Environment: "production",
@@ -464,7 +464,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 					Content:      content,
 					ContentHash:  contentHash,
 					Labels: models.MandatoryLabels{
-						SignalType:  "CPUThrottling",
+						SignalName:  "CPUThrottling",
 						Severity:    []string{"medium"},
 						Component:   "pod",
 						Environment: []string{"staging"},
@@ -488,7 +488,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 					Content:      content,
 					ContentHash:  contentHash,
 					Labels: models.MandatoryLabels{
-						SignalType:  "CPUThrottling",
+						SignalName:  "CPUThrottling",
 						Severity:    []string{"medium"},
 						Component:   "pod",
 						Environment: []string{"staging"},
@@ -510,7 +510,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 				// ACT: Search with custom labels
 				searchRequest := &models.WorkflowSearchRequest{
 					Filters: &models.WorkflowSearchFilters{
-						SignalType:  "CPUThrottling",
+						SignalName:  "CPUThrottling",
 						Severity:    "medium",
 						Component:   "pod",
 						Environment: "staging",
@@ -588,7 +588,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 				Name:         "Istio Service Mesh Workflow",
 				Description:  models.StructuredDescription{What: "Workflow for Istio service mesh", WhenToUse: "Testing"},
 					Labels: models.MandatoryLabels{
-						SignalType:  "NetworkLatency",
+						SignalName:  "NetworkLatency",
 						Severity:    []string{"high"},
 						Component:   "service",
 						Environment: []string{"production"},
@@ -614,7 +614,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 				Name:         "No Service Mesh Workflow",
 				Description:  models.StructuredDescription{What: "Workflow without service mesh", WhenToUse: "Testing"},
 					Labels: models.MandatoryLabels{
-						SignalType:  "NetworkLatency",
+						SignalName:  "NetworkLatency",
 						Severity:    []string{"high"},
 						Component:   "service",
 						Environment: []string{"production"},
@@ -642,7 +642,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 				// NOTE: Don't add test_run_id to avoid +0.05 boost pollution
 				searchRequest := &models.WorkflowSearchRequest{
 					Filters: &models.WorkflowSearchFilters{
-						SignalType:  "NetworkLatency",
+						SignalName:  "NetworkLatency",
 						Severity:    "high",
 						Component:   "service",
 						Environment: "production",
@@ -711,7 +711,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 				Name:         "Istio Service Mesh Workflow",
 				Description:  models.StructuredDescription{What: "Workflow for Istio service mesh", WhenToUse: "Testing"},
 					Labels: models.MandatoryLabels{
-						SignalType:  "NetworkLatency",
+						SignalName:  "NetworkLatency",
 						Severity:    []string{"high"},
 						Component:   "service",
 						Environment: []string{"production"},
@@ -737,7 +737,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 				// NOTE: Don't add test_run_id to avoid +0.05 boost pollution
 				searchRequest := &models.WorkflowSearchRequest{
 					Filters: &models.WorkflowSearchFilters{
-						SignalType:  "NetworkLatency",
+						SignalName:  "NetworkLatency",
 						Severity:    "high",
 						Component:   "service",
 						Environment: "production",

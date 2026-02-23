@@ -28,8 +28,7 @@ package audit
 // Business Requirement: BR-STORAGE-033-004
 type GatewayEventData struct {
 	SignalType          string            `json:"signal_type"`                    // "prometheus" or "kubernetes"
-	AlertName           string            `json:"alert_name,omitempty"`           // Prometheus alert name
-	EventReason         string            `json:"event_reason,omitempty"`         // K8s event reason (OOMKilled, etc.)
+	SignalName          string            `json:"signal_name,omitempty"`          // Human-readable signal name (e.g., KubePodCrashLooping)
 	Fingerprint         string            `json:"fingerprint,omitempty"`          // Signal fingerprint
 	Namespace           string            `json:"namespace,omitempty"`            // K8s namespace
 	ResourceType        string            `json:"resource_type,omitempty"`        // "pod", "node", etc.
@@ -50,7 +49,7 @@ type GatewayEventData struct {
 //
 //	eventData, err := audit.NewGatewayEvent("signal.received").
 //	    WithSignalType("prometheus").
-//	    WithAlertName("HighMemoryUsage").
+//	    WithSignalName("HighMemoryUsage").
 //	    WithFingerprint("sha256:abc123").
 //	    WithNamespace("production").
 //	    WithResource("pod", "api-server-123").
@@ -97,30 +96,15 @@ func (b *GatewayEventBuilder) WithSignalType(signalType string) *GatewayEventBui
 	return b
 }
 
-// WithAlertName sets the Prometheus alert name.
+// WithSignalName sets the human-readable signal name.
 //
-// Only applicable for Prometheus signals.
-//
-// Example:
-//
-//	builder.WithAlertName("HighMemoryUsage")
-func (b *GatewayEventBuilder) WithAlertName(alertName string) *GatewayEventBuilder {
-	b.gatewayData.AlertName = alertName
-	return b
-}
-
-// WithEventReason sets the Kubernetes event reason.
-//
-// Only applicable for Kubernetes Event signals.
-// Common reasons: "OOMKilled", "FailedScheduling", "Evicted", "FailedMount", "DiskPressure"
+// Examples: "KubePodCrashLooping", "HighMemoryUsage", "NodeNotReady"
 //
 // Example:
 //
-//	builder.WithEventReason("OOMKilled")
-//
-// Business Requirement: BR-STORAGE-033-005
-func (b *GatewayEventBuilder) WithEventReason(reason string) *GatewayEventBuilder {
-	b.gatewayData.EventReason = reason
+//	builder.WithSignalName("HighMemoryUsage")
+func (b *GatewayEventBuilder) WithSignalName(signalName string) *GatewayEventBuilder {
+	b.gatewayData.SignalName = signalName
 	return b
 }
 

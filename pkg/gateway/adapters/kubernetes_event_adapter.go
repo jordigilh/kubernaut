@@ -164,7 +164,7 @@ func (a *KubernetesEventAdapter) GetSourceService() string {
 
 // GetSourceType returns the signal type identifier (BR-GATEWAY-027)
 //
-// Returns "kubernetes-event" per OpenAPI enum validation and authoritative documentation.
+// Returns "alert" (normalized signal type) per OpenAPI enum validation and authoritative documentation.
 // Used for metrics, logging, signal classification, and audit events.
 func (a *KubernetesEventAdapter) GetSourceType() string {
 	return SourceTypeKubernetesEvent // Kubernetes events
@@ -256,7 +256,7 @@ func (a *KubernetesEventAdapter) Parse(ctx context.Context, rawData []byte) (*ty
 	// 7. Populate NormalizedSignal
 	signal := &types.NormalizedSignal{
 		Fingerprint:  fingerprint,
-		AlertName:    event.Reason, // "OOMKilled", "FailedScheduling", etc.
+		SignalName:    event.Reason, // "OOMKilled", "FailedScheduling", etc.
 		Severity:     severity,
 		Namespace:    event.InvolvedObject.Namespace,
 		Resource:     resource,
@@ -280,7 +280,7 @@ func (a *KubernetesEventAdapter) Parse(ctx context.Context, rawData []byte) (*ty
 // - Severity must be valid (critical/warning/info)
 // - Resource kind and name must be populated
 func (a *KubernetesEventAdapter) Validate(signal *types.NormalizedSignal) error {
-	if signal.AlertName == "" {
+	if signal.SignalName == "" {
 		return fmt.Errorf("alertName is required")
 	}
 	if signal.Fingerprint == "" {

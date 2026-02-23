@@ -134,7 +134,7 @@ class TestRecoveryAnalysisLogic:
                 "workflow_execution_ref": "req-test-2025-11-27-001-we-1",
                 "original_rca": {
                     "summary": "High load causing failures",
-                    "signal_type": "OOMKilled",
+                    "signal_name": "OOMKilled",
                     "severity": "high",
                     "contributing_factors": ["high_load"]
                 },
@@ -154,7 +154,7 @@ class TestRecoveryAnalysisLogic:
                     "execution_time": "30s"
                 }
             },
-            "signal_type": "OOMKilled",
+            "signal_name": "OOMKilled",
             "severity": "high",
             "resource_namespace": "test",
             "resource_kind": "Deployment",

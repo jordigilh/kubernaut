@@ -132,7 +132,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 					SignalContext: aianalysisv1.SignalContextInput{
 						Fingerprint:      "test-fingerprint",
 						Severity:         "high",
-						SignalType:       "OOMKilled",
+						SignalName:       "OOMKilled",
 						Environment:      "production",
 						BusinessPriority: "P0",
 						TargetResource: aianalysisv1.TargetResource{

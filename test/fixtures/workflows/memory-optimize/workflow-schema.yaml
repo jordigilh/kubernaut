@@ -12,7 +12,7 @@ metadata:
 actionType: ScaleReplicas
 
 labels:
-  signalType: OOMKilled
+  signalName: OOMKilled
   severity: [high]
   environment: [production, staging, test]
   component: deployment

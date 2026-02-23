@@ -37,7 +37,7 @@ class TestIncidentRequestRemediationId:
         return {
             "incident_id": "inc-2025-11-27-001",
             "remediation_id": "req-2025-11-27-abc123",  # MANDATORY per DD-WORKFLOW-002 v2.2
-            "signal_type": "OOMKilled",
+            "signal_name": "OOMKilled",
             "severity": "critical",
             "signal_source": "prometheus",
             "resource_namespace": "production",
@@ -158,7 +158,7 @@ class TestIncidentRequestRemediationId:
 
         # ASSERT: All OTHER fields should be identical (remediation_id doesn't affect them)
         assert request1.incident_id == request2.incident_id
-        assert request1.signal_type == request2.signal_type
+        assert request1.signal_name == request2.signal_name
         assert request1.severity == request2.severity
 
 

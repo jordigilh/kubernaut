@@ -12,7 +12,7 @@ metadata:
 actionType: RelaxPDB
 
 labels:
-  signalType: PDBDeadlock
+  signalName: PDBDeadlock
   severity: [low, critical]
   environment: [production, staging]
   component: "*"

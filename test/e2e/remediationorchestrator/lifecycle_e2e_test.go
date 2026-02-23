@@ -75,7 +75,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 					SignalFingerprint: fingerprint,
 					SignalName:        "HighCPUUsage",
 					Severity:          "medium",
-					SignalType:        "prometheus",
+					SignalType:        "alert",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
 						Kind:      "Deployment",
@@ -125,7 +125,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 						Fingerprint:  fingerprint,
 						Name:         "HighCPUUsage",
 						Severity:     "medium",
-						Type:         "prometheus",
+						Type:         "alert",
 						ReceivedTime: metav1.Now(),
 						TargetType:   "kubernetes",
 						TargetResource: signalprocessingv1.ResourceIdentifier{
@@ -179,7 +179,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      fingerprint,
 							Severity:         "medium",
-							SignalType:       "prometheus",
+							SignalName:       "alert",
 							Environment:      "production",
 							BusinessPriority: "P1",
 							TargetResource: aianalysisv1.TargetResource{
@@ -279,7 +279,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 					SignalFingerprint: fingerprint,
 					SignalName:        "CriticalError",
 					Severity:          "critical",
-					SignalType:        "prometheus",
+					SignalType:        "alert",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
 						Kind:      "Pod",
@@ -384,7 +384,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 					SignalFingerprint: fingerprint,
 					SignalName:        "DangerousOperation",
 					Severity:          "critical",
-					SignalType:        "prometheus",
+					SignalType:        "alert",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
 						Kind:      "Pod",
@@ -490,7 +490,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 					SignalFingerprint: fingerprint,
 					SignalName:        "TransientError",
 					Severity:          "low",
-					SignalType:        "prometheus",
+					SignalType:        "alert",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
 						Kind:      "Pod",
@@ -539,7 +539,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      fingerprint,
 							Severity:         "low",
-							SignalType:       "prometheus",
+							SignalName:       "alert",
 							Environment:      "staging",
 							BusinessPriority: "P3",
 							TargetResource: aianalysisv1.TargetResource{
@@ -591,7 +591,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 					SignalFingerprint: fingerprint,
 					SignalName:        "CascadeTest",
 					Severity:          "medium",
-					SignalType:        "prometheus",
+					SignalType:        "alert",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
 						Kind:      "Deployment",
@@ -641,7 +641,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 						Fingerprint:  fingerprint,
 						Name:         "CascadeTest",
 						Severity:     "medium",
-						Type:         "prometheus",
+						Type:         "alert",
 						ReceivedTime: metav1.Now(),
 						TargetType:   "kubernetes",
 						TargetResource: signalprocessingv1.ResourceIdentifier{
@@ -690,7 +690,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 					SignalFingerprint: fingerprint,
 					SignalName:        "DedupTest",
 					Severity:          "medium",
-					SignalType:        "prometheus",
+					SignalType:        "alert",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
 						Kind:      "Deployment",

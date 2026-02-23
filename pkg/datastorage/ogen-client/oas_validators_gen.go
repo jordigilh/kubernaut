@@ -1848,9 +1848,7 @@ func (s GatewayAuditPayloadEventType) Validate() error {
 
 func (s GatewayAuditPayloadSignalType) Validate() error {
 	switch s {
-	case "prometheus-alert":
-		return nil
-	case "kubernetes-event":
+	case "alert":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)

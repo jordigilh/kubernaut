@@ -195,7 +195,7 @@ var _ = Describe("E2E-DS-023: SAR Access Control Validation (DD-AUTH-014, DD-AUT
 					Type: dsgen.AuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData,
 					GatewayAuditPayload: dsgen.GatewayAuditPayload{
 						EventType:   dsgen.GatewayAuditPayloadEventTypeGatewaySignalReceived,
-						SignalType:  dsgen.GatewayAuditPayloadSignalTypePrometheusAlert,
+						SignalType:  dsgen.GatewayAuditPayloadSignalTypeAlert,
 						AlertName:   "sar-test-authorized",
 						Namespace:   "datastorage-e2e",
 						Fingerprint: "test-fingerprint",
@@ -242,7 +242,7 @@ var _ = Describe("E2E-DS-023: SAR Access Control Validation (DD-AUTH-014, DD-AUT
 					Type: dsgen.AuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData,
 					GatewayAuditPayload: dsgen.GatewayAuditPayload{
 						EventType:   dsgen.GatewayAuditPayloadEventTypeGatewaySignalReceived,
-						SignalType:  dsgen.GatewayAuditPayloadSignalTypePrometheusAlert,
+						SignalType:  dsgen.GatewayAuditPayloadSignalTypeAlert,
 						AlertName:   "sar-test-unauthorized",
 						Namespace:   "datastorage-e2e",
 						Fingerprint: "test-fingerprint-unauth",
@@ -282,7 +282,7 @@ var _ = Describe("E2E-DS-023: SAR Access Control Validation (DD-AUTH-014, DD-AUT
 					Type: dsgen.AuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData,
 					GatewayAuditPayload: dsgen.GatewayAuditPayload{
 						EventType:   dsgen.GatewayAuditPayloadEventTypeGatewaySignalReceived,
-						SignalType:  dsgen.GatewayAuditPayloadSignalTypePrometheusAlert,
+						SignalType:  dsgen.GatewayAuditPayloadSignalTypeAlert,
 						AlertName:   "sar-test-readonly",
 						Namespace:   "datastorage-e2e",
 						Fingerprint: "test-fingerprint-readonly",

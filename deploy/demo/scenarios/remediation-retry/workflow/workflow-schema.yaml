@@ -12,7 +12,7 @@ metadata:
 actionType: RestartDeployment
 
 labels:
-  signalType: CrashLoopBackOff
+  signalName: CrashLoopBackOff
   severity: [critical, low]
   environment: [production, staging]
   component: "*"

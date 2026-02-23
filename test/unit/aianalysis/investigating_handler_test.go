@@ -190,7 +190,7 @@ var _ = Describe("InvestigatingHandler", func() {
 					SignalContext: aianalysisv1.SignalContextInput{
 						Fingerprint:      "test-fingerprint",
 						Severity:         "warning",
-						SignalType:       "OOMKilled",
+						SignalName:       "OOMKilled",
 						Environment:      "production",
 						BusinessPriority: "P0",
 						TargetResource: aianalysisv1.TargetResource{
@@ -997,7 +997,6 @@ var _ = Describe("InvestigatingHandler", func() {
 				// Business outcome: Operator sees recovery failure assessment
 				Expect(analysis.Status.RecoveryStatus).NotTo(BeNil(), "RecoveryStatus should be populated")
 				Expect(analysis.Status.RecoveryStatus.StateChanged).To(BeFalse(), "StateChanged should match HAPI response")
-				Expect(analysis.Status.RecoveryStatus.CurrentSignalType).To(Equal("OOMKilled"), "CurrentSignalType should be mapped")
 				Expect(analysis.Status.RecoveryStatus.PreviousAttemptAssessment).NotTo(BeNil())
 				Expect(analysis.Status.RecoveryStatus.PreviousAttemptAssessment.FailureUnderstood).To(BeTrue())
 				Expect(analysis.Status.RecoveryStatus.PreviousAttemptAssessment.FailureReasonAnalysis).To(Equal("Previous workflow did not resolve memory leak"))

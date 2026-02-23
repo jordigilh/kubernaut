@@ -49,7 +49,7 @@ class TestADR040SignalContext:
         """ADR-041: Signal source, type, and severity"""
         request_data = {
             "signal_source": "prometheus",
-            "signal_type": "pod_oom_killed",
+            "signal_name": "pod_oom_killed",
             "severity": "high",
             "failed_action": {"type": "test"},
             "failure_context": {"error": "test"}
@@ -65,7 +65,7 @@ class TestADR040SignalContext:
     def test_prompt_includes_signal_source_in_incident_summary(self):
         """Test that signal source appears in natural language incident summary (ADR-041 v3.2)"""
         request_data = {
-            "signal_type": "OOMKilled",
+            "signal_name": "OOMKilled",
             "severity": "critical",
             "resource_namespace": "production",
             "resource_kind": "deployment",
@@ -161,7 +161,7 @@ class TestADR040SignalContext:
         """ADR-041: Prompt works with only required fields"""
         request_data = {
             "signal_source": "prometheus",
-            "signal_type": "pod_oom_killed",
+            "signal_name": "pod_oom_killed",
             "failed_action": {"type": "scale-deployment"},
             "failure_context": {"error": "timeout"}
         }
@@ -176,7 +176,7 @@ class TestADR040SignalContext:
         """ADR-041: Prompt includes all optional fields when provided"""
         request_data = {
             "signal_source": "prometheus",
-            "signal_type": "pod_oom_killed",
+            "signal_name": "pod_oom_killed",
             "severity": "critical",
             "resource_namespace": "payment-service",
             "resource_kind": "Pod",
@@ -307,7 +307,7 @@ class TestADR040MCPIntegration:
     def test_prompt_clarifies_field_usage_for_rca_vs_workflow_search(self):
         """ADR-041: Clear distinction between RCA fields and workflow search fields"""
         request_data = {
-            "signal_type": "pod_oom_killed",
+            "signal_name": "pod_oom_killed",
             "environment": "production",
             "priority": "P1",
             "failed_action": {"type": "test"},
@@ -323,9 +323,9 @@ class TestADR040MCPIntegration:
                 "analysis" in prompt_lower or "search" in prompt_lower)
 
     def test_prompt_includes_workflow_search_parameters(self):
-        """ADR-041: MCP tool parameters (signal_type, severity, component, etc.)"""
+        """ADR-041: MCP tool parameters (signal_name, severity, component, etc.)"""
         request_data = {
-            "signal_type": "pod_oom_killed",
+            "signal_name": "pod_oom_killed",
             "severity": "high",
             "environment": "production",
             "failed_action": {"type": "test"},
@@ -406,7 +406,7 @@ class TestADR040EdgeCases:
         """Edge case: Empty string values in optional fields"""
         request_data = {
             "signal_source": "",
-            "signal_type": "",
+            "signal_name": "",
             "environment": "",
             "failed_action": {"type": "test"},
             "failure_context": {"error": "test"}
@@ -421,7 +421,7 @@ class TestADR040EdgeCases:
         """Edge case: None values in optional fields"""
         request_data = {
             "signal_source": None,
-            "signal_type": None,
+            "signal_name": None,
             "environment": None,
             "failed_action": {"type": "test"},
             "failure_context": {"error": "test"}
@@ -524,7 +524,7 @@ class TestADR040EdgeCases:
         """Edge case: Very long field values"""
         long_value = "x" * 10000
         request_data = {
-            "signal_type": long_value,
+            "signal_name": long_value,
             "failed_action": {"type": "test"},
             "failure_context": {"error": "test"}
         }
@@ -626,7 +626,7 @@ class TestADR040EdgeCases:
         """Edge case: Same input produces same output (deterministic)"""
         request_data = {
             "signal_source": "prometheus",
-            "signal_type": "pod_oom_killed",
+            "signal_name": "pod_oom_killed",
             "severity": "high",
             "failed_action": {"type": "test"},
             "failure_context": {"error": "test"}
@@ -649,7 +649,7 @@ class TestADR040ComplianceValidation:
         """Prompt should be comprehensive but not excessively long"""
         request_data = {
             "signal_source": "prometheus",
-            "signal_type": "pod_oom_killed",
+            "signal_name": "pod_oom_killed",
             "severity": "high",
             "resource_namespace": "payment-service",
             "environment": "production",
@@ -705,7 +705,7 @@ class TestADR040ComplianceValidation:
         """Prompt should not contain TODO or placeholder text"""
         request_data = {
             "signal_source": "prometheus",
-            "signal_type": "pod_oom_killed",
+            "signal_name": "pod_oom_killed",
             "failed_action": {"type": "test"},
             "failure_context": {"error": "test"}
         }
@@ -729,14 +729,14 @@ class TestDDLLM001MCPSearchTaxonomy:
     Tests validate that the prompt includes guidance for constructing
     MCP search queries with correct format and taxonomy.
 
-    Query Format: <signal_type> <severity> [optional_keywords]
-    Label Filters: signal_type, severity, environment, priority, risk_tolerance, business_category
+    Query Format: <signal_name> <severity> [optional_keywords]
+    Label Filters: signal_name, severity, environment, priority, risk_tolerance, business_category
     """
 
     def test_prompt_explains_mcp_search_query_format(self):
         """DD-LLM-001 Section 2: Query format specification"""
         request_data = {
-            "signal_type": "OOMKilled",
+            "signal_name": "OOMKilled",
             "severity": "critical",
             "failed_action": {"type": "test"},
             "failure_context": {"error": "test"}
@@ -746,11 +746,11 @@ class TestDDLLM001MCPSearchTaxonomy:
 
         # Prompt should explain query construction
         assert "search" in prompt.lower() or "workflow" in prompt.lower()
-        # Should mention signal_type and severity as search parameters
+        # Should mention signal_name and severity as search parameters
         assert "signal" in prompt.lower() and "type" in prompt.lower()
         assert "severity" in prompt.lower()
 
-    def test_prompt_lists_canonical_signal_types(self):
+    def test_prompt_lists_canonical_signal_names(self):
         """DD-LLM-001 Section 4: Signal Type Taxonomy"""
         request_data = {
             "failed_action": {"type": "test"},
@@ -770,7 +770,7 @@ class TestDDLLM001MCPSearchTaxonomy:
                 signal_types_found += 1
 
         # Should mention at least some canonical signal types
-        assert signal_types_found >= 3, f"Expected at least 3 canonical signal types in prompt, found {signal_types_found}"
+        assert signal_types_found >= 3, f"Expected at least 3 canonical signal names in prompt, found {signal_types_found}"
 
     def test_prompt_defines_rca_severity_levels(self):
         """DD-LLM-001 Section 5: RCA Severity Taxonomy (4 levels)"""
@@ -815,7 +815,7 @@ class TestDDLLM001MCPSearchTaxonomy:
     def test_prompt_provides_complete_mcp_search_example(self):
         """DD-LLM-001 Section 7: Complete MCP Search Example"""
         request_data = {
-            "signal_type": "OOMKilled",
+            "signal_name": "OOMKilled",
             "severity": "critical",
             "resource_namespace": "production",
             "resource_kind": "deployment",
@@ -846,13 +846,13 @@ class TestDDLLM001QueryFormat:
     """DD-LLM-001 Section 2: Query Format Specification
 
     Tests validate that the prompt explains the correct query format:
-    <signal_type> <severity> [optional_keywords]
+    <signal_name> <severity> [optional_keywords]
     """
 
-    def test_prompt_explains_signal_type_must_be_canonical(self):
+    def test_prompt_explains_signal_name_must_be_canonical(self):
         """DD-LLM-001 Section 4.1: Canonical signal types required"""
         request_data = {
-            "signal_type": "HighMemoryUsage",  # Non-canonical
+            "signal_name": "HighMemoryUsage",  # Non-canonical
             "failed_action": {"type": "test"},
             "failure_context": {"error": "test"}
         }
@@ -914,7 +914,7 @@ class TestDDLLM001LabelParameters:
     def test_prompt_lists_all_six_label_parameters(self):
         """DD-LLM-001 Section 3.1: Complete parameter list"""
         request_data = {
-            "signal_type": "OOMKilled",
+            "signal_name": "OOMKilled",
             "severity": "critical",
             "environment": "production",
             "priority": "P0",
@@ -935,9 +935,9 @@ class TestDDLLM001LabelParameters:
         assert "business" in prompt.lower() or "category" in prompt.lower()
 
     def test_prompt_explains_llm_determines_technical_fields(self):
-        """DD-LLM-001 Section 3.2: LLM determines signal_type and severity"""
+        """DD-LLM-001 Section 3.2: LLM determines signal_name and severity"""
         request_data = {
-            "signal_type": "OOMKilled",
+            "signal_name": "OOMKilled",
             "severity": "critical",
             "failed_action": {"type": "test"},
             "failure_context": {"error": "test"}
@@ -1015,7 +1015,7 @@ class TestDDLLM001ConfidenceOptimization:
     def test_prompt_explains_exact_label_matching(self):
         """DD-LLM-001 Section 1.1: Exact label matching for filtering"""
         request_data = {
-            "signal_type": "OOMKilled",
+            "signal_name": "OOMKilled",
             "severity": "critical",
             "environment": "production",
             "failed_action": {"type": "test"},
@@ -1032,7 +1032,7 @@ class TestDDLLM001ConfidenceOptimization:
     def test_prompt_provides_workflow_search_guidance(self):
         """DD-LLM-001 Section 7: Complete workflow search example"""
         request_data = {
-            "signal_type": "OOMKilled",
+            "signal_name": "OOMKilled",
             "severity": "critical",
             "environment": "production",
             "priority": "P0",

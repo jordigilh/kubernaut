@@ -85,7 +85,7 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 				SignalFingerprint: fingerprint,
 				SignalName:        "IntegrationTestSignal",
 				Severity:          "warning",
-				SignalType:        "prometheus",
+				SignalType:        "alert",
 				TargetType:        "kubernetes",
 				TargetResource: remediationv1.ResourceIdentifier{
 					Kind:      "Pod",

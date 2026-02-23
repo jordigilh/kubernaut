@@ -100,8 +100,8 @@ func (c *AuditClient) RecordSignalProcessed(ctx context.Context, sp *signalproce
 	if sp.Status.SignalMode != "" {
 		payload.SignalMode.SetTo(toSignalProcessingAuditPayloadSignalMode(sp.Status.SignalMode))
 	}
-	if sp.Status.OriginalSignalType != "" {
-		payload.OriginalSignalType.SetTo(sp.Status.OriginalSignalType)
+	if sp.Status.SourceSignalName != "" {
+		payload.SourceSignalName.SetTo(sp.Status.SourceSignalName)
 	}
 
 	// Add environment classification if present
@@ -269,8 +269,8 @@ func (c *AuditClient) RecordClassificationDecision(ctx context.Context, sp *sign
 	if sp.Status.SignalMode != "" {
 		payload.SignalMode.SetTo(toSignalProcessingAuditPayloadSignalMode(sp.Status.SignalMode))
 	}
-	if sp.Status.OriginalSignalType != "" {
-		payload.OriginalSignalType.SetTo(sp.Status.OriginalSignalType)
+	if sp.Status.SourceSignalName != "" {
+		payload.SourceSignalName.SetTo(sp.Status.SourceSignalName)
 	}
 
 	// Add all classification results

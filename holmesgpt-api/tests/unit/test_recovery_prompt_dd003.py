@@ -54,7 +54,7 @@ class TestRecoveryPromptGeneration:
                 "workflow_execution_ref": "req-001-we-1",
                 "original_rca": {
                     "summary": "Memory exhaustion",
-                    "signal_type": "OOMKilled",
+                    "signal_name": "OOMKilled",
                     "severity": "high",
                     "contributing_factors": ["memory leak"]
                 },
@@ -75,7 +75,7 @@ class TestRecoveryPromptGeneration:
                     "execution_time": "2m34s"
                 }
             },
-            "signal_type": "OOMKilled",
+            "signal_name": "OOMKilled",
             "severity": "high"
         }
 
@@ -100,7 +100,7 @@ class TestRecoveryPromptGeneration:
             "recovery_attempt_number": 1,
             "previous_execution": {
                 "workflow_execution_ref": "req-001-we-1",
-                "original_rca": {"summary": "Test", "signal_type": "OOMKilled", "severity": "high"},
+                "original_rca": {"summary": "Test", "signal_name": "OOMKilled", "severity": "high"},
                 "selected_workflow": {
                     "workflow_id": "dangerous-workflow-v1",
                     "version": "1.0.0",
@@ -139,7 +139,7 @@ class TestRecoveryPromptGeneration:
             "recovery_attempt_number": 1,
             "previous_execution": {
                 "workflow_execution_ref": "req-001-we-1",
-                "original_rca": {"summary": "Test", "signal_type": "OOMKilled", "severity": "high"},
+                "original_rca": {"summary": "Test", "signal_name": "OOMKilled", "severity": "high"},
                 "selected_workflow": {
                     "workflow_id": "test-v1",
                     "version": "1.0.0",
@@ -179,7 +179,7 @@ class TestRecoveryPromptGeneration:
             "recovery_attempt_number": 3,  # Third attempt
             "previous_execution": {
                 "workflow_execution_ref": "req-001-we-2",
-                "original_rca": {"summary": "Test", "signal_type": "OOMKilled", "severity": "high"},
+                "original_rca": {"summary": "Test", "signal_name": "OOMKilled", "severity": "high"},
                 "selected_workflow": {
                     "workflow_id": "test-v1",
                     "version": "1.0.0",

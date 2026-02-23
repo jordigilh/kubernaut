@@ -87,7 +87,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 					}(),
 					SignalName: "ProductionOutage",
 					Severity:   "Sev1", // External (Enterprise severity scheme)
-					SignalType: "prometheus",
+					SignalType: "alert",
 					TargetType: "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
 						Kind:      "Deployment",
@@ -168,7 +168,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 					SignalFingerprint: "b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3",
 					SignalName:        "DegradedService",
 					Severity:          "Sev2", // External (Enterprise severity scheme)
-					SignalType:        "prometheus",
+					SignalType:        "alert",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
 						Kind:      "Deployment",
@@ -474,7 +474,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 				"BR-SP-106/ADR-054: AIAnalysis MUST propagate signalMode=predictive from SP.Status.SignalMode")
 
 			By("6. Verify AIAnalysis has NORMALIZED signal type (not original)")
-			Expect(createdAA.Spec.AnalysisRequest.SignalContext.SignalType).To(Equal("OOMKilled"),
+			Expect(createdAA.Spec.AnalysisRequest.SignalContext.SignalName).To(Equal("OOMKilled"),
 				"BR-SP-106/ADR-054: AIAnalysis MUST use normalized SignalType from SP.Status.SignalType (not 'PredictedOOMKill')")
 
 			GinkgoWriter.Printf("✅ Signal mode propagation validated: SP(predictive, OOMKilled) → AA(predictive, OOMKilled)\n")
@@ -544,7 +544,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 
 			Expect(createdAA.Spec.AnalysisRequest.SignalContext.SignalMode).To(Equal("reactive"),
 				"Standard signals should have signalMode=reactive in AIAnalysis")
-			Expect(createdAA.Spec.AnalysisRequest.SignalContext.SignalType).To(Equal("OOMKilled"),
+			Expect(createdAA.Spec.AnalysisRequest.SignalContext.SignalName).To(Equal("OOMKilled"),
 				"Reactive signal type should pass through unchanged")
 
 			GinkgoWriter.Printf("✅ Reactive signal mode propagation validated: SP(reactive, OOMKilled) → AA(reactive, OOMKilled)\n")
@@ -578,7 +578,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 					SignalFingerprint: "e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6",
 					SignalName:        "StandardCritical",
 					Severity:          "critical", // Standard severity value
-					SignalType:        "prometheus",
+					SignalType:        "alert",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
 						Kind:      "Deployment",

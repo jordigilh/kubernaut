@@ -70,7 +70,7 @@ var _ = Describe("BR-GATEWAY-005: Kubernetes Event Adapter", func() {
 				"AI needs resource NAME for kubectl targeting: 'kubectl delete pod payment-api-789'")
 			Expect(signal.Namespace).To(Equal("production"),
 				"AI needs NAMESPACE for kubectl context: 'kubectl -n production'")
-			Expect(signal.AlertName).To(Equal("OOMKilled"),
+			Expect(signal.SignalName).To(Equal("OOMKilled"),
 				"AI needs alert name to understand failure type")
 
 			// Business capability verified:
@@ -124,7 +124,7 @@ var _ = Describe("BR-GATEWAY-005: Kubernetes Event Adapter", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(signal.Resource.Kind).To(Equal("Deployment"),
 				"AI chooses rollback strategy for Deployments")
-			Expect(signal.AlertName).To(Equal("FailedCreate"),
+			Expect(signal.SignalName).To(Equal("FailedCreate"),
 				"AI needs failure type to determine root cause")
 
 			// Business capability verified:
@@ -262,7 +262,7 @@ var _ = Describe("BR-GATEWAY-005: Kubernetes Event Adapter", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// All adapters must populate these fields
-			Expect(signal.AlertName).NotTo(BeEmpty(),
+			Expect(signal.SignalName).NotTo(BeEmpty(),
 				"AlertName required for deduplication fingerprint")
 			Expect(signal.Fingerprint).NotTo(BeEmpty(),
 				"Fingerprint required for Redis deduplication")
@@ -270,7 +270,7 @@ var _ = Describe("BR-GATEWAY-005: Kubernetes Event Adapter", func() {
 				"BR-GATEWAY-181: Severity passed through (normalization happens in SignalProcessing)")
 			Expect(signal.Severity).To(Equal("Warning"),
 				"BR-GATEWAY-181: K8s event type passed through as-is")
-			Expect(signal.SourceType).To(Equal("kubernetes-event"),
+			Expect(signal.SourceType).To(Equal("alert"),
 				"Source type enables adapter-specific metrics")
 
 			// Business capability verified:
@@ -377,7 +377,7 @@ var _ = Describe("BR-GATEWAY-005: Kubernetes Event Adapter", func() {
 
 			sourceType := adapter.GetSourceType()
 
-			Expect(sourceType).To(Equal("kubernetes-event"),
+			Expect(sourceType).To(Equal("alert"),
 				"Must return signal type for classification")
 		})
 

@@ -77,7 +77,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking E2E", Label("e2e", "scope"), f
 				SignalFingerprint: "e2e010001a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2aaa",
 				SignalName:        "HighCPUUsage",
 				Severity:          "critical",
-				SignalType:        "prometheus",
+				SignalType:        "alert",
 				TargetType:        "kubernetes",
 				TargetResource: remediationv1.ResourceIdentifier{
 					Kind:      "Deployment",
@@ -140,7 +140,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking E2E", Label("e2e", "scope"), f
 				SignalFingerprint: "e2e010002b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3bbb",
 				SignalName:        "HighCPUUsage",
 				Severity:          "critical",
-				SignalType:        "prometheus",
+				SignalType:        "alert",
 				TargetType:        "kubernetes",
 				TargetResource: remediationv1.ResourceIdentifier{
 					Kind:      "Deployment",
@@ -203,7 +203,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking E2E", Label("e2e", "scope"), f
 				SignalFingerprint: "e2e010003c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4ccc",
 				SignalName:        "HighCPUUsage",
 				Severity:          "critical",
-				SignalType:        "prometheus",
+				SignalType:        "alert",
 				TargetType:        "kubernetes",
 				TargetResource: remediationv1.ResourceIdentifier{
 					Kind:      "Deployment",

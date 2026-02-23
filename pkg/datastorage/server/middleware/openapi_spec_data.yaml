@@ -3287,7 +3287,7 @@ components:
 
     GatewayAuditPayload:
       type: object
-      required: [signal_type, alert_name, namespace, fingerprint, event_type]
+      required: [signal_type, signal_name, namespace, fingerprint, event_type]
       description: Type-safe audit event payload for Gateway (signal.received, signal.deduplicated, crd.created, crd.failed)
       properties:
         event_type:
@@ -3313,12 +3313,12 @@ components:
         # Gateway-Specific Metadata
         signal_type:
           type: string
-          enum: [prometheus-alert, kubernetes-event]
-          description: Signal type identifier for classification and metrics (prometheus-alert=Prometheus AlertManager, kubernetes-event=Kubernetes events)
-          example: "prometheus-alert"
-        alert_name:
+          enum: [alert]
+          description: Signal type identifier. All adapters normalize to "alert". Adapter identity is preserved in audit actor ID (signal.Source).
+          example: "alert"
+        signal_name:
           type: string
-          description: Name of the alert
+          description: Human-readable signal name (e.g., alert name, event reason)
           example: "HighMemoryUsage"
         namespace:
           type: string
@@ -3605,9 +3605,9 @@ components:
           enum: [reactive, predictive]
           description: Whether this signal is reactive (incident occurred) or predictive (incident predicted). BR-SP-106 Predictive Signal Mode Classification.
           example: "predictive"
-        original_signal_type:
+        source_signal_name:
           type: string
-          description: Original signal type before normalization. Only populated for predictive signals (e.g., PredictedOOMKill). SOC2 CC7.4 audit trail preservation.
+          description: Original signal name before normalization. Only populated for predictive signals (e.g., PredictedOOMKill). SOC2 CC7.4 audit trail preservation.
           example: "PredictedOOMKill"
 
         # Error Fields (conditional)
@@ -4068,10 +4068,10 @@ components:
           example: "full"
 
         # assessment.completed enrichment fields (ADR-EM-001, Batch 3)
-        alert_name:
+        signal_name:
           type: string
           description: |
-            Name of the original alert that triggered the remediation pipeline.
+            Name of the original signal that triggered the remediation pipeline.
             Extracted from EA spec target resource context. Only present for assessment.completed events.
           example: "HighCPUUsage"
         components_assessed:

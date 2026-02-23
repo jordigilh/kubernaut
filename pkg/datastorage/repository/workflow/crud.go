@@ -245,8 +245,8 @@ func (r *Repository) List(ctx context.Context, filters *models.WorkflowSearchFil
 		}
 
 		// Label filters (JSONB queries)
-		if filters.SignalType != "" {
-			builder.Where("labels->>'signalType' = ?", filters.SignalType)
+		if filters.SignalName != "" {
+			builder.Where("labels->>'signalName' = ?", filters.SignalName)
 		}
 		if filters.Severity != "" {
 			// Severity is JSONB array (e.g. ["critical","high"]), use ? operator

@@ -1394,7 +1394,7 @@ func createNormalizedSignal(builder SignalBuilder) *types.NormalizedSignal {
 
 	signal := &types.NormalizedSignal{
 		Fingerprint: fingerprint,
-		AlertName:   builder.AlertName,
+		SignalName:   builder.AlertName,
 		Severity:    builder.Severity,
 		Namespace:   builder.Namespace,
 		Resource: types.ResourceIdentifier{
@@ -1406,7 +1406,7 @@ func createNormalizedSignal(builder SignalBuilder) *types.NormalizedSignal {
 		Annotations:  builder.Annotations,
 		FiringTime:   now,
 		ReceivedTime: now,
-		SourceType:   "prometheus-alert",
+		SourceType:   "alert",
 		Source:       builder.Source,
 		RawPayload:   json.RawMessage("{}"),
 	}

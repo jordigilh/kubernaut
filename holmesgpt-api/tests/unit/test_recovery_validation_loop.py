@@ -81,7 +81,7 @@ def _make_request_data():
         "incident_id": "inc-test",
         "is_recovery_attempt": True,
         "recovery_attempt_number": 1,
-        "signal_type": "OOMKilled",
+        "signal_name": "OOMKilled",
         "severity": "critical",
         "resource_namespace": "production",
         "resource_kind": "Deployment",
@@ -91,7 +91,7 @@ def _make_request_data():
         "previous_execution": {
             "original_rca": {
                 "summary": "Memory exhaustion",
-                "signal_type": "OOMKilled",
+                "signal_name": "OOMKilled",
                 "severity": "critical",
             },
             "selected_workflow": {"workflow_id": "scale-v1", "version": "1.0.0"},

@@ -159,7 +159,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      fmt.Sprintf("fp-workflow-%s", uuid.New().String()[:8]),
 							Severity:         "critical",
-							SignalType:       "CrashLoopBackOff",
+							SignalName:       "CrashLoopBackOff",
 							Environment:      "production",
 							BusinessPriority: "P0",
 							TargetResource: aianalysisv1.TargetResource{
@@ -429,7 +429,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      fmt.Sprintf("fp-investigation-%s", uuid.New().String()[:8]),
 							Severity:         "critical",
-							SignalType:       "CrashLoopBackOff",
+							SignalName:       "CrashLoopBackOff",
 							Environment:      "staging",
 							BusinessPriority: "P1",
 							TargetResource: aianalysisv1.TargetResource{
@@ -540,7 +540,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      fmt.Sprintf("fp-inv-error-%s", uuid.New().String()[:8]),
 							Severity:         "critical",
-							SignalType:       "CrashLoopBackOff",
+							SignalName:       "CrashLoopBackOff",
 							Environment:      "staging",
 							BusinessPriority: "P1",
 							TargetResource: aianalysisv1.TargetResource{
@@ -628,7 +628,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      fmt.Sprintf("fp-approval-%s", uuid.New().String()[:8]),
 							Severity:         "critical",
-							SignalType:       "CrashLoopBackOff",
+							SignalName:       "CrashLoopBackOff",
 							Environment:      "production", // Production requires approval
 							BusinessPriority: "P0",
 							TargetResource: aianalysisv1.TargetResource{
@@ -739,7 +739,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      fmt.Sprintf("fp-rego-%s", uuid.New().String()[:8]),
 							Severity:         "critical",
-							SignalType:       "OOMKilled",
+							SignalName:       "OOMKilled",
 							Environment:      "production", // Mock Rego requires approval for production
 							BusinessPriority: "P0",
 							TargetResource: aianalysisv1.TargetResource{
@@ -848,7 +848,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      fmt.Sprintf("fp-phases-%s", uuid.New().String()[:8]),
 							Severity:         "medium", // DD-SEVERITY-001: Use normalized severity enum
-							SignalType:       "HighMemoryUsage",
+							SignalName:       "HighMemoryUsage",
 							Environment:      "development",
 							BusinessPriority: "P3",
 							TargetResource: aianalysisv1.TargetResource{
@@ -934,7 +934,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      fmt.Sprintf("fp-hapi-error-%s", uuid.New().String()[:8]),
 							Severity:         "critical",
-							SignalType:       "InvalidSignalType", // This may cause HAPI to error
+							SignalName:       "InvalidSignalType", // This may cause HAPI to error
 							Environment:      "staging",
 							BusinessPriority: "P2",
 							TargetResource: aianalysisv1.TargetResource{

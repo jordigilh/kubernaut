@@ -4945,9 +4945,9 @@ type EffectivenessAssessmentAuditPayload struct {
 	Details OptString `json:"details"`
 	// Assessment completion reason (only for assessment.completed events).
 	Reason OptString `json:"reason"`
-	// Name of the original alert that triggered the remediation pipeline.
+	// Name of the original signal that triggered the remediation pipeline.
 	// Extracted from EA spec target resource context. Only present for assessment.completed events.
-	AlertName OptString `json:"alert_name"`
+	SignalName OptString `json:"signal_name"`
 	// List of component names that were assessed (e.g. ["health","hash","alert","metrics"]).
 	// Only present for assessment.completed events.
 	ComponentsAssessed []string `json:"components_assessed"`
@@ -5047,9 +5047,9 @@ func (s *EffectivenessAssessmentAuditPayload) GetReason() OptString {
 	return s.Reason
 }
 
-// GetAlertName returns the value of AlertName.
-func (s *EffectivenessAssessmentAuditPayload) GetAlertName() OptString {
-	return s.AlertName
+// GetSignalName returns the value of SignalName.
+func (s *EffectivenessAssessmentAuditPayload) GetSignalName() OptString {
+	return s.SignalName
 }
 
 // GetComponentsAssessed returns the value of ComponentsAssessed.
@@ -5167,9 +5167,9 @@ func (s *EffectivenessAssessmentAuditPayload) SetReason(val OptString) {
 	s.Reason = val
 }
 
-// SetAlertName sets the value of AlertName.
-func (s *EffectivenessAssessmentAuditPayload) SetAlertName(val OptString) {
-	s.AlertName = val
+// SetSignalName sets the value of SignalName.
+func (s *EffectivenessAssessmentAuditPayload) SetSignalName(val OptString) {
+	s.SignalName = val
 }
 
 // SetComponentsAssessed sets the value of ComponentsAssessed.
@@ -6165,11 +6165,11 @@ type GatewayAuditPayload struct {
 	SignalLabels OptGatewayAuditPayloadSignalLabels `json:"signal_labels"`
 	// Signal annotations for RR.Spec.SignalAnnotations reconstruction.
 	SignalAnnotations OptGatewayAuditPayloadSignalAnnotations `json:"signal_annotations"`
-	// Signal type identifier for classification and metrics (prometheus-alert=Prometheus AlertManager,
-	// kubernetes-event=Kubernetes events).
+	// Signal type identifier. All adapters normalize to "alert". Adapter identity is preserved in audit
+	// actor ID (signal.Source).
 	SignalType GatewayAuditPayloadSignalType `json:"signal_type"`
-	// Name of the alert.
-	AlertName string `json:"alert_name"`
+	// Human-readable signal name (e.g., alert name, event reason).
+	SignalName string `json:"signal_name"`
 	// Kubernetes namespace of the affected resource.
 	Namespace string `json:"namespace"`
 	// Unique identifier for the signal (deduplication).
@@ -6216,9 +6216,9 @@ func (s *GatewayAuditPayload) GetSignalType() GatewayAuditPayloadSignalType {
 	return s.SignalType
 }
 
-// GetAlertName returns the value of AlertName.
-func (s *GatewayAuditPayload) GetAlertName() string {
-	return s.AlertName
+// GetSignalName returns the value of SignalName.
+func (s *GatewayAuditPayload) GetSignalName() string {
+	return s.SignalName
 }
 
 // GetNamespace returns the value of Namespace.
@@ -6291,9 +6291,9 @@ func (s *GatewayAuditPayload) SetSignalType(val GatewayAuditPayloadSignalType) {
 	s.SignalType = val
 }
 
-// SetAlertName sets the value of AlertName.
-func (s *GatewayAuditPayload) SetAlertName(val string) {
-	s.AlertName = val
+// SetSignalName sets the value of SignalName.
+func (s *GatewayAuditPayload) SetSignalName(val string) {
+	s.SignalName = val
 }
 
 // SetNamespace sets the value of Namespace.
@@ -6475,29 +6475,25 @@ func (s *GatewayAuditPayloadSignalLabels) init() GatewayAuditPayloadSignalLabels
 	return m
 }
 
-// Signal type identifier for classification and metrics (prometheus-alert=Prometheus AlertManager,
-// kubernetes-event=Kubernetes events).
+// Signal type identifier. All adapters normalize to "alert". Adapter identity is preserved in audit
+// actor ID (signal.Source).
 type GatewayAuditPayloadSignalType string
 
 const (
-	GatewayAuditPayloadSignalTypePrometheusAlert GatewayAuditPayloadSignalType = "prometheus-alert"
-	GatewayAuditPayloadSignalTypeKubernetesEvent GatewayAuditPayloadSignalType = "kubernetes-event"
+	GatewayAuditPayloadSignalTypeAlert GatewayAuditPayloadSignalType = "alert"
 )
 
 // AllValues returns all GatewayAuditPayloadSignalType values.
 func (GatewayAuditPayloadSignalType) AllValues() []GatewayAuditPayloadSignalType {
 	return []GatewayAuditPayloadSignalType{
-		GatewayAuditPayloadSignalTypePrometheusAlert,
-		GatewayAuditPayloadSignalTypeKubernetesEvent,
+		GatewayAuditPayloadSignalTypeAlert,
 	}
 }
 
 // MarshalText implements encoding.TextMarshaler.
 func (s GatewayAuditPayloadSignalType) MarshalText() ([]byte, error) {
 	switch s {
-	case GatewayAuditPayloadSignalTypePrometheusAlert:
-		return []byte(s), nil
-	case GatewayAuditPayloadSignalTypeKubernetesEvent:
+	case GatewayAuditPayloadSignalTypeAlert:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -6507,11 +6503,8 @@ func (s GatewayAuditPayloadSignalType) MarshalText() ([]byte, error) {
 // UnmarshalText implements encoding.TextUnmarshaler.
 func (s *GatewayAuditPayloadSignalType) UnmarshalText(data []byte) error {
 	switch GatewayAuditPayloadSignalType(data) {
-	case GatewayAuditPayloadSignalTypePrometheusAlert:
-		*s = GatewayAuditPayloadSignalTypePrometheusAlert
-		return nil
-	case GatewayAuditPayloadSignalTypeKubernetesEvent:
-		*s = GatewayAuditPayloadSignalTypeKubernetesEvent
+	case GatewayAuditPayloadSignalTypeAlert:
+		*s = GatewayAuditPayloadSignalTypeAlert
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -16937,9 +16930,9 @@ type SignalProcessingAuditPayload struct {
 	// Whether this signal is reactive (incident occurred) or predictive (incident predicted). BR-SP-106
 	// Predictive Signal Mode Classification.
 	SignalMode OptSignalProcessingAuditPayloadSignalMode `json:"signal_mode"`
-	// Original signal type before normalization. Only populated for predictive signals (e.g.,
+	// Original signal name before normalization. Only populated for predictive signals (e.g.,
 	// PredictedOOMKill). SOC2 CC7.4 audit trail preservation.
-	OriginalSignalType OptString `json:"original_signal_type"`
+	SourceSignalName OptString `json:"source_signal_name"`
 	// Error message if processing failed.
 	Error OptString `json:"error"`
 }
@@ -17069,9 +17062,9 @@ func (s *SignalProcessingAuditPayload) GetSignalMode() OptSignalProcessingAuditP
 	return s.SignalMode
 }
 
-// GetOriginalSignalType returns the value of OriginalSignalType.
-func (s *SignalProcessingAuditPayload) GetOriginalSignalType() OptString {
-	return s.OriginalSignalType
+// GetSourceSignalName returns the value of SourceSignalName.
+func (s *SignalProcessingAuditPayload) GetSourceSignalName() OptString {
+	return s.SourceSignalName
 }
 
 // GetError returns the value of Error.
@@ -17204,9 +17197,9 @@ func (s *SignalProcessingAuditPayload) SetSignalMode(val OptSignalProcessingAudi
 	s.SignalMode = val
 }
 
-// SetOriginalSignalType sets the value of OriginalSignalType.
-func (s *SignalProcessingAuditPayload) SetOriginalSignalType(val OptString) {
-	s.OriginalSignalType = val
+// SetSourceSignalName sets the value of SourceSignalName.
+func (s *SignalProcessingAuditPayload) SetSourceSignalName(val OptString) {
+	s.SourceSignalName = val
 }
 
 // SetError sets the value of Error.

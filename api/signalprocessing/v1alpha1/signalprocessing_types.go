@@ -102,7 +102,7 @@ type SignalData struct {
 	// Normalized severity is stored in Status.Severity
 	Severity string `json:"severity"`
 
-	// Signal type: "prometheus", "kubernetes-event", "aws-cloudwatch", etc.
+	// Signal type: "alert" (generic signal type; adapter-specific values like "prometheus-alert" or "kubernetes-event" are deprecated)
 	Type string `json:"type"`
 
 	// Adapter that ingested the signal
@@ -224,20 +224,20 @@ type SignalProcessingStatus struct {
 	// +optional
 	SignalMode string `json:"signalMode,omitempty"`
 
-	// SignalType is the normalized signal type after predictive-to-base mapping.
-	// BR-SP-106: Signal Type Normalization
-	// For predictive signals (e.g., "PredictedOOMKill"), this is the base type (e.g., "OOMKilled").
-	// For reactive signals, this matches Spec.Signal.Type unchanged.
-	// This is the AUTHORITATIVE signal type for all downstream consumers (RO, AA, HAPI).
+	// SignalName is the normalized signal name after predictive-to-base mapping.
+	// BR-SP-106: Signal Name Normalization
+	// For predictive signals (e.g., "PredictedOOMKill"), this is the base name (e.g., "OOMKilled").
+	// For reactive signals, this matches Spec.Signal.Name unchanged.
+	// This is the AUTHORITATIVE signal name for all downstream consumers (RO, AA, HAPI).
 	// +optional
-	SignalType string `json:"signalType,omitempty"`
+	SignalName string `json:"signalName,omitempty"`
 
-	// OriginalSignalType preserves the pre-normalization signal type for audit trail.
+	// SourceSignalName preserves the pre-normalization signal name for audit trail.
 	// BR-SP-106: Audit trail preservation (SOC2 CC7.4)
 	// Only populated for predictive signals (e.g., "PredictedOOMKill").
 	// Empty for reactive signals.
 	// +optional
-	OriginalSignalType string `json:"originalSignalType,omitempty"`
+	SourceSignalName string `json:"sourceSignalName,omitempty"`
 
 	// Conditions for detailed status
 	Conditions []metav1.Condition `json:"conditions,omitempty"`

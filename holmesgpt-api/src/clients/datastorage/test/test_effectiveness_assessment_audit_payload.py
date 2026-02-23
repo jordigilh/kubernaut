@@ -45,7 +45,7 @@ class TestEffectivenessAssessmentAuditPayload(unittest.TestCase):
                 score = 0.85,
                 details = '1 of 1 replicas ready',
                 reason = 'full',
-                alert_name = 'HighCPUUsage',
+                signal_name = 'HighCPUUsage',
                 components_assessed = ["health","hash","alert"],
                 completed_at = '2026-02-12T15:45Z',
                 assessment_duration_seconds = 1800.5,

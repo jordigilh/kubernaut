@@ -61,8 +61,8 @@ func createAuditEventRequest(
 			Type: ogenclient.AuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData,
 			GatewayAuditPayload: ogenclient.GatewayAuditPayload{
 				EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
-				SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
-				AlertName:   "test-alert",
+				SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
+				SignalName:   "test-alert",
 				Namespace:   "default",
 				Fingerprint: "test-fingerprint",
 			},
@@ -90,8 +90,8 @@ func createAuditEventRequest(
 			Type: ogenclient.AuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData,
 			GatewayAuditPayload: ogenclient.GatewayAuditPayload{
 				EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
-				SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
-				AlertName:   "test-alert",
+				SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
+				SignalName:   "test-alert",
 				Namespace:   "default",
 				Fingerprint: "test-fingerprint",
 			},

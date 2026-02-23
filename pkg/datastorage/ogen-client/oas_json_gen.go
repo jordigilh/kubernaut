@@ -2176,8 +2176,8 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				s.SignalType.Encode(e)
 			}
 			{
-				e.FieldStart("alert_name")
-				e.Str(s.AlertName)
+				e.FieldStart("signal_name")
+				e.Str(s.SignalName)
 			}
 			{
 				e.FieldStart("namespace")
@@ -2591,9 +2591,9 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 			{
-				if s.OriginalSignalType.Set {
-					e.FieldStart("original_signal_type")
-					s.OriginalSignalType.Encode(e)
+				if s.SourceSignalName.Set {
+					e.FieldStart("source_signal_name")
+					s.SourceSignalName.Encode(e)
 				}
 			}
 			{
@@ -3658,9 +3658,9 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 			{
-				if s.AlertName.Set {
-					e.FieldStart("alert_name")
-					s.AlertName.Encode(e)
+				if s.SignalName.Set {
+					e.FieldStart("signal_name")
+					s.SignalName.Encode(e)
 				}
 			}
 			{
@@ -4623,8 +4623,8 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				s.SignalType.Encode(e)
 			}
 			{
-				e.FieldStart("alert_name")
-				e.Str(s.AlertName)
+				e.FieldStart("signal_name")
+				e.Str(s.SignalName)
 			}
 			{
 				e.FieldStart("namespace")
@@ -5038,9 +5038,9 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 			{
-				if s.OriginalSignalType.Set {
-					e.FieldStart("original_signal_type")
-					s.OriginalSignalType.Encode(e)
+				if s.SourceSignalName.Set {
+					e.FieldStart("source_signal_name")
+					s.SourceSignalName.Encode(e)
 				}
 			}
 			{
@@ -6105,9 +6105,9 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 			{
-				if s.AlertName.Set {
-					e.FieldStart("alert_name")
-					s.AlertName.Encode(e)
+				if s.SignalName.Set {
+					e.FieldStart("signal_name")
+					s.SignalName.Encode(e)
 				}
 			}
 			{
@@ -9501,9 +9501,9 @@ func (s *EffectivenessAssessmentAuditPayload) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.AlertName.Set {
-			e.FieldStart("alert_name")
-			s.AlertName.Encode(e)
+		if s.SignalName.Set {
+			e.FieldStart("signal_name")
+			s.SignalName.Encode(e)
 		}
 	}
 	{
@@ -9606,7 +9606,7 @@ var jsonFieldsNameOfEffectivenessAssessmentAuditPayload = [24]string{
 	6:  "score",
 	7:  "details",
 	8:  "reason",
-	9:  "alert_name",
+	9:  "signal_name",
 	10: "components_assessed",
 	11: "completed_at",
 	12: "assessment_duration_seconds",
@@ -9726,15 +9726,15 @@ func (s *EffectivenessAssessmentAuditPayload) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"reason\"")
 			}
-		case "alert_name":
+		case "signal_name":
 			if err := func() error {
-				s.AlertName.Reset()
-				if err := s.AlertName.Decode(d); err != nil {
+				s.SignalName.Reset()
+				if err := s.SignalName.Decode(d); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"alert_name\"")
+				return errors.Wrap(err, "decode field \"signal_name\"")
 			}
 		case "components_assessed":
 			if err := func() error {
@@ -11413,8 +11413,8 @@ func (s *GatewayAuditPayload) encodeFields(e *jx.Encoder) {
 		s.SignalType.Encode(e)
 	}
 	{
-		e.FieldStart("alert_name")
-		e.Str(s.AlertName)
+		e.FieldStart("signal_name")
+		e.Str(s.SignalName)
 	}
 	{
 		e.FieldStart("namespace")
@@ -11474,7 +11474,7 @@ var jsonFieldsNameOfGatewayAuditPayload = [15]string{
 	2:  "signal_labels",
 	3:  "signal_annotations",
 	4:  "signal_type",
-	5:  "alert_name",
+	5:  "signal_name",
 	6:  "namespace",
 	7:  "fingerprint",
 	8:  "severity",
@@ -11545,17 +11545,17 @@ func (s *GatewayAuditPayload) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"signal_type\"")
 			}
-		case "alert_name":
+		case "signal_name":
 			requiredBitSet[0] |= 1 << 5
 			if err := func() error {
 				v, err := d.Str()
-				s.AlertName = string(v)
+				s.SignalName = string(v)
 				if err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"alert_name\"")
+				return errors.Wrap(err, "decode field \"signal_name\"")
 			}
 		case "namespace":
 			requiredBitSet[0] |= 1 << 6
@@ -11978,10 +11978,8 @@ func (s *GatewayAuditPayloadSignalType) Decode(d *jx.Decoder) error {
 	}
 	// Try to use constant string.
 	switch GatewayAuditPayloadSignalType(v) {
-	case GatewayAuditPayloadSignalTypePrometheusAlert:
-		*s = GatewayAuditPayloadSignalTypePrometheusAlert
-	case GatewayAuditPayloadSignalTypeKubernetesEvent:
-		*s = GatewayAuditPayloadSignalTypeKubernetesEvent
+	case GatewayAuditPayloadSignalTypeAlert:
+		*s = GatewayAuditPayloadSignalTypeAlert
 	default:
 		*s = GatewayAuditPayloadSignalType(v)
 	}
@@ -26125,9 +26123,9 @@ func (s *SignalProcessingAuditPayload) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.OriginalSignalType.Set {
-			e.FieldStart("original_signal_type")
-			s.OriginalSignalType.Encode(e)
+		if s.SourceSignalName.Set {
+			e.FieldStart("source_signal_name")
+			s.SourceSignalName.Encode(e)
 		}
 	}
 	{
@@ -26164,7 +26162,7 @@ var jsonFieldsNameOfSignalProcessingAuditPayload = [27]string{
 	22: "from_phase",
 	23: "to_phase",
 	24: "signal_mode",
-	25: "original_signal_type",
+	25: "source_signal_name",
 	26: "error",
 }
 
@@ -26429,15 +26427,15 @@ func (s *SignalProcessingAuditPayload) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"signal_mode\"")
 			}
-		case "original_signal_type":
+		case "source_signal_name":
 			if err := func() error {
-				s.OriginalSignalType.Reset()
-				if err := s.OriginalSignalType.Decode(d); err != nil {
+				s.SourceSignalName.Reset()
+				if err := s.SourceSignalName.Decode(d); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"original_signal_type\"")
+				return errors.Wrap(err, "decode field \"source_signal_name\"")
 			}
 		case "error":
 			if err := func() error {

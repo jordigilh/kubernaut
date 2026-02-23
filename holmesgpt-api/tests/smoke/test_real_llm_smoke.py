@@ -122,7 +122,7 @@ def sample_oomkilled_incident() -> Dict[str, Any]:
     return {
         "incident_id": "smoke-incident-001",
         "remediation_id": "smoke-rem-001",
-        "signal_type": "OOMKilled",
+        "signal_name": "OOMKilled",
         "severity": "critical",
         "signal_source": "prometheus",
         "resource_namespace": "production",
@@ -162,7 +162,7 @@ def sample_crashloop_incident() -> Dict[str, Any]:
     return {
         "incident_id": "smoke-incident-002",
         "remediation_id": "smoke-rem-002",
-        "signal_type": "CrashLoopBackOff",
+        "signal_name": "CrashLoopBackOff",
         "severity": "high",
         "signal_source": "prometheus",
         "resource_namespace": "staging",
@@ -329,7 +329,7 @@ class TestRealLLMToolCalling:
         recovery_request = {
             "incident_id": "smoke-recovery-001",
             "remediation_id": "smoke-rem-003",
-            "signal_type": "OOMKilled",
+            "signal_name": "OOMKilled",
             "severity": "critical",
             "signal_source": "prometheus",
             "resource_namespace": "production",
@@ -347,7 +347,7 @@ class TestRealLLMToolCalling:
                 "workflow_execution_ref": "smoke-rem-002-we-1",
                 "original_rca": {
                     "summary": "Memory exhaustion detected",
-                    "signal_type": "OOMKilled",
+                    "signal_name": "OOMKilled",
                     "severity": "critical",
                     "contributing_factors": ["memory_leak", "traffic_spike"]
                 },

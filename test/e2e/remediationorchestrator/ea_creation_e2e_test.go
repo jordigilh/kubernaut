@@ -79,7 +79,7 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 				}(),
 				SignalName: "HighCPU",
 				Severity:   "critical",
-				SignalType: "prometheus",
+				SignalType: "alert",
 				TargetType: "kubernetes",
 				TargetResource: remediationv1.ResourceIdentifier{
 					Kind:      "Deployment",
@@ -113,7 +113,7 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 		sp.Status.Phase = signalprocessingv1.PhaseCompleted
 		sp.Status.Severity = "critical"
 		sp.Status.SignalMode = "reactive"
-		sp.Status.SignalType = "prometheus"
+		sp.Status.SignalName = "alert"
 		sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
 			Environment:  "production",
 			Source:       "namespace-labels",
@@ -281,7 +281,7 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 					}(),
 					SignalName: "HighCPU",
 					Severity:   "critical",
-					SignalType: "prometheus",
+					SignalType: "alert",
 					TargetType: "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
 						Kind:      "Deployment",
@@ -315,7 +315,7 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 			sp.Status.Phase = signalprocessingv1.PhaseCompleted
 			sp.Status.Severity = "critical"
 			sp.Status.SignalMode = "reactive"
-			sp.Status.SignalType = "prometheus"
+			sp.Status.SignalName = "alert"
 			sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
 				Environment:  "production",
 				Source:       "namespace-labels",

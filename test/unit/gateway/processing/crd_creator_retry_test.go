@@ -75,7 +75,7 @@ func buildScheme() *runtime.Scheme {
 func newTestSignal(fingerprint, alertName string) *types.NormalizedSignal {
 	return &types.NormalizedSignal{
 		Fingerprint: fingerprint,
-		AlertName:   alertName,
+		SignalName:   alertName,
 		Severity:    "critical",
 		Namespace:   "production",
 		Resource: types.ResourceIdentifier{

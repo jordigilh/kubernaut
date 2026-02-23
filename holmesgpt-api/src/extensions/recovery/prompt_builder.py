@@ -385,7 +385,7 @@ def _create_recovery_investigation_prompt(
     failure_reason = failure.get("reason", "Unknown")
 
     # Extract standard fields
-    signal_type = request_data.get("signal_type", "Unknown")
+    signal_name = request_data.get("signal_name", "Unknown")
     severity = request_data.get("severity", "unknown")
     namespace = request_data.get("resource_namespace", "unknown")
     resource_kind = request_data.get("resource_kind", "unknown")
@@ -414,7 +414,7 @@ You must understand what was attempted and why it failed before recommending alt
 
 **Original Root Cause Analysis (from initial investigation)**:
 - **Summary**: {original_rca.get('summary', 'Unknown')}
-- **Signal Type** (RCA determination): `{original_rca.get('signal_type', 'Unknown')}`
+- **Signal Name** (RCA determination): `{original_rca.get('signal_name', 'Unknown')}`
 - **Severity**: {original_rca.get('severity', 'unknown')}
 - **Contributing Factors**: {', '.join(original_rca.get('contributing_factors', ['None recorded']))}
 
@@ -511,7 +511,7 @@ You must understand what was attempted and why it failed before recommending alt
 ## Current Signal Context
 
 **Technical Details**:
-- Signal Type: {signal_type}
+- Signal Name: {signal_name}
 - Severity: {severity}
 - Resource: {namespace}/{resource_kind}/{resource_name}
 - Error: {error_message}
@@ -526,7 +526,7 @@ You must understand what was attempted and why it failed before recommending alt
 - Look for side effects from the partial execution
 
 ### Phase 2: Re-evaluate Root Cause
-- The original RCA was: `{original_rca.get('signal_type', 'Unknown')}`
+- The original RCA was: `{original_rca.get('signal_name', 'Unknown')}`
 - Determine if the signal type has CHANGED after the failed workflow
 - If changed, use the NEW signal type for workflow search
 
@@ -542,7 +542,7 @@ You must understand what was attempted and why it failed before recommending alt
 **If workflow discovery succeeds**:
 
 # recovery_analysis
-{{"previous_attempt_assessment": {{"failure_understood": true, "failure_reason_analysis": "Explanation of why previous attempt failed", "state_changed": true, "current_signal_type": "Current signal type"}}, "current_rca": {{"summary": "Updated RCA", "severity": "current severity", "signal_type": "current signal type", "contributing_factors": ["factor1"]}}}}
+{{"previous_attempt_assessment": {{"failure_understood": true, "failure_reason_analysis": "Explanation of why previous attempt failed", "state_changed": true}}, "current_rca": {{"summary": "Updated RCA", "severity": "current severity", "signal_name": "current signal name", "contributing_factors": ["factor1"]}}}}
 
 # confidence
 0.85
@@ -607,7 +607,7 @@ def _create_investigation_prompt(
             remediation history section is appended to the prompt.
     """
     # Extract fields
-    signal_type = request_data.get("signal_type", "Unknown")
+    signal_name = request_data.get("signal_name", "Unknown")
     severity = request_data.get("severity", "unknown")
     namespace = request_data.get("resource_namespace", "unknown")
     resource_kind = request_data.get("resource_kind", "unknown")
@@ -661,7 +661,7 @@ def _create_investigation_prompt(
     risk_desc = risk_guidance.get(risk_tolerance, f"{risk_tolerance} risk tolerance")
 
     # Build incident summary with natural language
-    incident_summary = f"A **{severity} {signal_type} event** from **{signal_source}** has occurred in the **{namespace}/{resource_kind}/{resource_name}**."
+    incident_summary = f"A **{severity} {signal_name} event** from **{signal_source}** has occurred in the **{namespace}/{resource_kind}/{resource_name}**."
 
     # Add deduplication fact if duplicate
     if is_duplicate and occurrence_count > 0:
@@ -687,7 +687,7 @@ def _create_investigation_prompt(
 - **Risk Tolerance**: {risk_desc}
 
 **Technical Details**:
-- Signal Type: {signal_type}
+- Signal Name: {signal_name}
 - Severity: {severity}
 - Resource: {namespace}/{resource_kind}/{resource_name}
 - Error: {error_message}
@@ -787,14 +787,14 @@ Use available tools to investigate the incident:
 
 **Goal**: Understand what actually happened and why.
 
-**Input Signal Provided**: {signal_type} (starting point for investigation)
+**Input Signal Provided**: {signal_name} (starting point for investigation)
 
 ### Phase 2: Determine Root Cause (RCA)
 Based on your investigation findings, identify the root cause.
 Is the input signal the root cause, or just a symptom?
 
-### Phase 3: Identify Signal Type That Describes the Effect
-Based on your RCA, determine the signal_type that best describes the effect:
+### Phase 3: Identify Signal Name That Describes the Effect
+Based on your RCA, determine the signal_name that best describes the effect:
 
 **If investigation confirms input signal is the root cause**:
 - Input: OOMKilled → Investigation confirms memory limit exceeded → Use "OOMKilled"
@@ -802,7 +802,7 @@ Based on your RCA, determine the signal_type that best describes the effect:
 **If investigation reveals different root cause**:
 - Input: OOMKilled → Investigation shows node memory pressure → Use "NodePressure" or "Evicted"
 
-**Important**: The signal_type for workflow search comes from YOUR investigation findings, not the input signal.
+**Important**: The signal_name for workflow search comes from YOUR investigation findings, not the input signal.
 
 ### Phase 4: Discover and Select Workflow (MANDATORY - Three-Step Protocol)
 **YOU MUST** follow this three-step workflow discovery protocol:

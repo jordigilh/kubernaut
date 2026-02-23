@@ -160,7 +160,7 @@ var _ = Describe("BR-GATEWAY-006: Signal Normalization Across Sources", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// BUSINESS OUTCOME: All signals have consistent structure
-			Expect(signal.AlertName).NotTo(BeEmpty(),
+			Expect(signal.SignalName).NotTo(BeEmpty(),
 				"All signals must have alert identification")
 			Expect(signal.Resource.Kind).NotTo(BeEmpty(),
 				"All signals must identify resource type")

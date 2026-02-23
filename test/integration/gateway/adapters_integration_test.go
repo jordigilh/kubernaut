@@ -67,7 +67,7 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 
 			By("4. Verify signal structure is populated")
 			Expect(signal).ToNot(BeNil(), "Signal must not be nil")
-			Expect(signal.AlertName).To(Equal("HighCPUUsage"),
+			Expect(signal.SignalName).To(Equal("HighCPUUsage"),
 				"BR-GATEWAY-001: AlertName must be extracted from labels")
 			Expect(signal.Namespace).To(Equal(testNamespace),
 				"BR-GATEWAY-001: Namespace must be extracted from labels")
@@ -77,7 +77,7 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 				"BR-GATEWAY-004: Fingerprint must be generated")
 
 			GinkgoWriter.Printf("✅ Prometheus alert parsed: alertName=%s, namespace=%s, severity=%s\n",
-				signal.AlertName, signal.Namespace, signal.Severity)
+				signal.SignalName, signal.Namespace, signal.Severity)
 		})
 
 		It("[GW-INT-ADP-002] should extract alertname from labels correctly", func() {
@@ -100,11 +100,11 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 
 				By("3. Verify alertname extracted correctly")
 				Expect(err).ToNot(HaveOccurred())
-				Expect(signal.AlertName).To(Equal(tc.expectedName),
+				Expect(signal.SignalName).To(Equal(tc.expectedName),
 					"BR-GATEWAY-001: AlertName must match label['alertname']")
 
 				GinkgoWriter.Printf("✅ AlertName extraction validated: %s → %s\n",
-					tc.alertName, signal.AlertName)
+					tc.alertName, signal.SignalName)
 			}
 		})
 
@@ -329,11 +329,11 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 
 				By("3. Verify reason extracted correctly")
 				Expect(err).ToNot(HaveOccurred())
-				Expect(signal.AlertName).To(Equal(tc.expectedReason),
+				Expect(signal.SignalName).To(Equal(tc.expectedReason),
 					"BR-GATEWAY-002: AlertName must be populated from event reason")
 
 				GinkgoWriter.Printf("✅ Reason extraction validated: %s → %s\n",
-					tc.reason, signal.AlertName)
+					tc.reason, signal.SignalName)
 			}
 		})
 

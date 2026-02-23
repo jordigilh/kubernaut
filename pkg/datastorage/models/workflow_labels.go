@@ -33,10 +33,10 @@ import (
 // MandatoryLabels represents the 5 mandatory workflow labels (DD-WORKFLOW-001 v1.4)
 // All fields are required for workflow catalog registration
 type MandatoryLabels struct {
-	// SignalType is the signal type this workflow handles (REQUIRED)
+	// SignalName is the signal type this workflow handles (REQUIRED)
 	// Examples: "OOMKilled", "CrashLoopBackOff", "NodeNotReady"
 	// Source: K8s Event Reason (auto-populated by Signal Processing)
-	SignalType string `json:"signalType" validate:"required"`
+	SignalName string `json:"signalType" validate:"required"`
 
 	// Severity is the severity level(s) this workflow is designed for (REQUIRED)
 	// Values: "critical", "high", "medium", "low"
@@ -276,7 +276,7 @@ func (d StructuredDescription) String() string {
 // DD-WORKFLOW-001 v2.7: severity is []string (always array, no wildcard)
 func NewMandatoryLabels(signalType string, severity []string, component string, environment []string, priority string) *MandatoryLabels {
 	return &MandatoryLabels{
-		SignalType:  signalType,
+		SignalName:  signalType,
 		Severity:    severity,
 		Component:   component,
 		Environment: environment,

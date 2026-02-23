@@ -113,7 +113,7 @@ var _ = Describe("AuditEventsRepository Integration Tests", func() {
 					ActorID:           "gateway-service",
 					Severity:          "info",
 					EventData: map[string]interface{}{
-						"signal_type": "prometheus",
+						"signal_type": "alert",
 						"alert_name":  "HighCPU",
 					},
 				}

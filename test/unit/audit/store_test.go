@@ -162,7 +162,7 @@ func createTestEvent() *ogenclient.AuditEventRequest {
 	// Use GatewayAuditPayload for test event (ogen migration - discriminated union)
 	payload := ogenclient.GatewayAuditPayload{
 		EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewayCrdCreated,
-		SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert, // Updated enum
+		SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert, // Updated enum
 		AlertName:   "test-alert",
 		Namespace:   "default",
 		Fingerprint: "test-fingerprint",

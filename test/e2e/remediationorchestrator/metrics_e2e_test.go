@@ -59,7 +59,7 @@ func seedMetricsWithRemediation() {
 			SignalFingerprint: "abc123def456abc123def456abc123def456abc123def456abc123def456abc1", // Valid 64-char hex
 			SignalName:        "metrics-seed-signal",
 			Severity:          "warning",
-			SignalType:        "kubernetes-event",
+			SignalType:        "alert",
 			TargetType:        "kubernetes",
 			TargetResource: remediationv1.ResourceIdentifier{
 				Kind:      "Pod",

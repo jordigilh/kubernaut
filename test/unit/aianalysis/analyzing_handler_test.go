@@ -96,7 +96,7 @@ var _ = Describe("AnalyzingHandler", func() {
 					SignalContext: aianalysisv1.SignalContextInput{
 						Fingerprint:      "test-fingerprint",
 						Severity:         "warning",
-						SignalType:       "OOMKilled",
+						SignalName:       "OOMKilled",
 						Environment:      "production",
 						BusinessPriority: "P0",
 						TargetResource: aianalysisv1.TargetResource{
@@ -458,7 +458,7 @@ var _ = Describe("AnalyzingHandler", func() {
 			// BR-AI-012: Extended PolicyInput fields (per IMPLEMENTATION_PLAN_V1.0.md)
 			It("should pass signal context fields", func() {
 				analysis := createTestAnalysis()
-				analysis.Spec.AnalysisRequest.SignalContext.SignalType = "OOMKilled"
+				analysis.Spec.AnalysisRequest.SignalContext.SignalName = "OOMKilled"
 				analysis.Spec.AnalysisRequest.SignalContext.Severity = "critical"
 				analysis.Spec.AnalysisRequest.SignalContext.BusinessPriority = "P0"
 

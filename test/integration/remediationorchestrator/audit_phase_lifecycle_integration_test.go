@@ -124,7 +124,7 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 				SignalFingerprint: fingerprint,
 				SignalName:        "PhaseTransitionTest",
 				Severity:          "medium",
-				SignalType:        "prometheus",
+				SignalType:        "alert",
 				TargetType:        "kubernetes",
 				TargetResource: remediationv1.ResourceIdentifier{
 					Kind:      "Pod",

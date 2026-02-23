@@ -35,8 +35,8 @@ class GatewayAuditPayload(BaseModel):
     original_payload: Optional[Dict[str, Any]] = Field(default=None, description="Full signal payload for RR.Spec.OriginalPayload reconstruction")
     signal_labels: Optional[Dict[str, StrictStr]] = Field(default=None, description="Signal labels for RR.Spec.SignalLabels reconstruction")
     signal_annotations: Optional[Dict[str, StrictStr]] = Field(default=None, description="Signal annotations for RR.Spec.SignalAnnotations reconstruction")
-    signal_type: StrictStr = Field(description="Signal type identifier for classification and metrics (prometheus-alert=Prometheus AlertManager, kubernetes-event=Kubernetes events)")
-    alert_name: StrictStr = Field(description="Name of the alert")
+    signal_type: StrictStr = Field(description="Signal type identifier. All adapters normalize to \"alert\". Adapter identity is preserved in audit actor ID (signal.Source).")
+    signal_name: StrictStr = Field(description="Human-readable signal name (e.g., alert name, event reason)")
     namespace: StrictStr = Field(description="Kubernetes namespace of the affected resource")
     fingerprint: StrictStr = Field(description="Unique identifier for the signal (deduplication)")
     severity: Optional[StrictStr] = Field(default=None, description="Raw severity from signal source (pass-through per DD-SEVERITY-001). Gateway does NOT normalize. Accepts ANY value (e.g., \"warning\", \"Sev1\", \"P0\", \"critical\", etc.). SignalProcessing performs normalization via Rego.")
@@ -46,7 +46,7 @@ class GatewayAuditPayload(BaseModel):
     deduplication_status: Optional[StrictStr] = Field(default=None, description="Whether this is a new or duplicate signal")
     occurrence_count: Optional[StrictInt] = Field(default=None, description="Number of times this signal has been seen")
     error_details: Optional[ErrorDetails] = None
-    __properties: ClassVar[List[str]] = ["event_type", "original_payload", "signal_labels", "signal_annotations", "signal_type", "alert_name", "namespace", "fingerprint", "severity", "resource_kind", "resource_name", "remediation_request", "deduplication_status", "occurrence_count", "error_details"]
+    __properties: ClassVar[List[str]] = ["event_type", "original_payload", "signal_labels", "signal_annotations", "signal_type", "signal_name", "namespace", "fingerprint", "severity", "resource_kind", "resource_name", "remediation_request", "deduplication_status", "occurrence_count", "error_details"]
 
     @field_validator('event_type')
     def event_type_validate_enum(cls, value):
@@ -58,8 +58,8 @@ class GatewayAuditPayload(BaseModel):
     @field_validator('signal_type')
     def signal_type_validate_enum(cls, value):
         """Validates the enum"""
-        if value not in ('prometheus-alert', 'kubernetes-event'):
-            raise ValueError("must be one of enum values ('prometheus-alert', 'kubernetes-event')")
+        if value not in ('alert'):
+            raise ValueError("must be one of enum values ('alert')")
         return value
 
     @field_validator('deduplication_status')
@@ -129,7 +129,7 @@ class GatewayAuditPayload(BaseModel):
             "signal_labels": obj.get("signal_labels"),
             "signal_annotations": obj.get("signal_annotations"),
             "signal_type": obj.get("signal_type"),
-            "alert_name": obj.get("alert_name"),
+            "signal_name": obj.get("signal_name"),
             "namespace": obj.get("namespace"),
             "fingerprint": obj.get("fingerprint"),
             "severity": obj.get("severity"),

@@ -511,8 +511,6 @@ func (m *MockHolmesGPTClient) WithRecoverySuccessResponse(
 		recoveryAnalysisMap := make(map[string]jx.Raw)
 		stateChangedBytes, _ := json.Marshal(false)
 		recoveryAnalysisMap["state_changed"] = jx.Raw(stateChangedBytes)
-		currentSignalBytes, _ := json.Marshal("OOMKilled")
-		recoveryAnalysisMap["current_signal_type"] = jx.Raw(currentSignalBytes)
 
 		// Build PreviousAttemptAssessment as a nested map (not marshaled)
 		prevAttemptMap := make(map[string]interface{})

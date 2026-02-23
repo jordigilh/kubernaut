@@ -77,7 +77,7 @@ var _ = Describe("Workflow DetectedLabels Integration (ADR-043 v1.3)", func() {
 			Content:      content,
 			ContentHash:  contentHash,
 			Labels: models.MandatoryLabels{
-				SignalType:  "CrashLoopBackOff",
+				SignalName:  "CrashLoopBackOff",
 				Severity:    []string{"critical"},
 				Component:   "pod",
 				Environment: []string{"production"},
@@ -165,7 +165,7 @@ var _ = Describe("Workflow DetectedLabels Integration (ADR-043 v1.3)", func() {
 
 			searchRequest := &models.WorkflowSearchRequest{
 				Filters: &models.WorkflowSearchFilters{
-					SignalType:  "CrashLoopBackOff",
+					SignalName:  "CrashLoopBackOff",
 					Severity:    "critical",
 					Component:   "pod",
 					Environment: "production",
@@ -203,7 +203,7 @@ var _ = Describe("Workflow DetectedLabels Integration (ADR-043 v1.3)", func() {
 				GitOpsTool:   "flux",
 			}
 			wf := baseWorkflow("full-roundtrip", dl)
-			wf.Labels.SignalType = "NodeNotReady"
+			wf.Labels.SignalName = "NodeNotReady"
 			wf.Labels.Severity = []string{"critical", "high"}
 			wf.CustomLabels = models.CustomLabels{
 				"team": []string{"platform"},
@@ -215,7 +215,7 @@ var _ = Describe("Workflow DetectedLabels Integration (ADR-043 v1.3)", func() {
 			retrieved, err := workflowRepo.GetLatestVersion(ctx, wf.WorkflowName)
 			Expect(err).ToNot(HaveOccurred())
 
-			Expect(retrieved.Labels.SignalType).To(Equal("NodeNotReady"))
+			Expect(retrieved.Labels.SignalName).To(Equal("NodeNotReady"))
 			Expect(retrieved.Labels.Severity).To(ConsistOf("critical", "high"))
 			Expect(retrieved.CustomLabels).To(HaveKey("team"))
 			Expect(retrieved.DetectedLabels.PDBProtected).To(BeTrue())

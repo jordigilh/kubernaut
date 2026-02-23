@@ -311,7 +311,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			Expect(auditEvent.EventAction).To(Equal("received"), "Event action")
 			Expect(string(auditEvent.EventOutcome)).To(Equal("success"), "Event outcome")
 			Expect(auditEvent.ActorType.Value).To(Equal("external"), "Actor type")
-			Expect(auditEvent.ActorID.Value).To(Equal("prometheus-alert"), "Actor ID - ✅ ADAPTER-CONSTANT: PrometheusAdapter uses SourceTypePrometheusAlert")
+			Expect(auditEvent.ActorID.Value).To(Equal("prometheus"), "Actor ID - uses signal.Source (adapter identity)")
 			Expect(auditEvent.ResourceType.Value).To(Equal("Signal"), "Resource type")
 			Expect(auditEvent.CorrelationID).To(Equal(correlationID), "Correlation ID consistency")
 			Expect(auditEvent.EventTimestamp).ToNot(BeZero(), "Event timestamp must be present")

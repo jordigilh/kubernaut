@@ -12,7 +12,7 @@ metadata:
 actionType: RemoveTaint
 
 labels:
-  signalType: PodsPendingTaint
+  signalName: PodsPendingTaint
   severity: [low, critical]
   environment: [production, staging]
   component: "*"

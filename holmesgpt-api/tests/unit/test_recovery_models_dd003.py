@@ -46,13 +46,13 @@ class TestOriginalRCAModel:
 
         rca = OriginalRCA(
             summary="Memory exhaustion causing OOMKilled in production pod",
-            signal_type="OOMKilled",
+            signal_name="OOMKilled",
             severity="high",
             contributing_factors=["memory leak", "insufficient limits"]
         )
 
         assert rca.summary == "Memory exhaustion causing OOMKilled in production pod"
-        assert rca.signal_type == "OOMKilled"
+        assert rca.signal_name == "OOMKilled"
         assert rca.severity == "high"
         assert len(rca.contributing_factors) == 2
 
@@ -64,7 +64,7 @@ class TestOriginalRCAModel:
 
         with pytest.raises(ValidationError):
             OriginalRCA(
-                signal_type="OOMKilled",
+                signal_name="OOMKilled",
                 severity="high"
                 # Missing summary
             )
@@ -77,7 +77,7 @@ class TestOriginalRCAModel:
 
         rca = OriginalRCA(
             summary="Unknown issue",
-            signal_type="Error",
+            signal_name="Error",
             severity="medium"
         )
 
@@ -212,7 +212,7 @@ class TestPreviousExecutionModel:
             workflow_execution_ref="req-2025-11-29-abc123-we-1",
             original_rca=OriginalRCA(
                 summary="Memory exhaustion",
-                signal_type="OOMKilled",
+                signal_name="OOMKilled",
                 severity="high"
             ),
             selected_workflow=SelectedWorkflowSummary(
@@ -232,7 +232,7 @@ class TestPreviousExecutionModel:
         )
 
         assert previous.workflow_execution_ref == "req-2025-11-29-abc123-we-1"
-        assert previous.original_rca.signal_type == "OOMKilled"
+        assert previous.original_rca.signal_name == "OOMKilled"
         assert previous.selected_workflow.workflow_id == "scale-horizontal-v1"
         assert previous.failure.reason == "OOMKilled"
 
@@ -263,7 +263,7 @@ class TestRecoveryRequestWithPreviousExecution:
                 workflow_execution_ref="req-2025-11-29-abc123-we-1",
                 original_rca=OriginalRCA(
                     summary="Memory issue",
-                    signal_type="OOMKilled",
+                    signal_name="OOMKilled",
                     severity="high"
                 ),
                 selected_workflow=SelectedWorkflowSummary(
@@ -466,7 +466,7 @@ class TestIncidentRequestWithEnrichmentResults:
         request = IncidentRequest(
             incident_id="inc-001",
             remediation_id="req-2025-11-29-abc123",
-            signal_type="OOMKilled",
+            signal_name="OOMKilled",
             severity="high",
             signal_source="prometheus",
             resource_namespace="production",
@@ -496,7 +496,7 @@ class TestIncidentRequestWithEnrichmentResults:
         request = IncidentRequest(
             incident_id="inc-001",
             remediation_id="req-2025-11-29-abc123",
-            signal_type="OOMKilled",
+            signal_name="OOMKilled",
             severity="high",
             signal_source="prometheus",
             resource_namespace="production",

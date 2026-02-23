@@ -12,7 +12,7 @@ metadata:
 actionType: GracefulRestart
 
 labels:
-  signalType: PredictiveMemoryExhaust
+  signalName: PredictiveMemoryExhaust
   severity: [low, critical]
   environment: [production, staging]
   component: "*"

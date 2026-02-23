@@ -67,7 +67,7 @@ var _ = Describe("OpenAPI Validator Middleware", func() {
 			// Valid audit event with all required fields
 			// Use GatewayAuditPayload structure for gateway.signal.received event type
 			// NOTE: event_data.event_type is the discriminator field for the oneOf union
-			// signal_type must be "prometheus-alert" or "kubernetes-event" per schema
+			// signal_type must be "alert" per schema (normalized from prometheus-alert/kubernetes-event)
 			body := `{
 			"version": "1.0",
 			"event_type": "gateway.signal.received",
@@ -78,7 +78,7 @@ var _ = Describe("OpenAPI Validator Middleware", func() {
 			"event_timestamp": "2025-12-13T12:00:00Z",
 			"event_data": {
 				"event_type": "gateway.signal.received",
-				"signal_type": "prometheus-alert",
+				"signal_type": "alert",
 				"alert_name": "HighMemoryUsage",
 				"namespace": "default",
 				"fingerprint": "fp-abc123"
@@ -109,7 +109,7 @@ var _ = Describe("OpenAPI Validator Middleware", func() {
 		It("should pass validation with optional fields", func() {
 			// Audit event with optional fields included
 			// Use GatewayAuditPayload structure with all optional fields
-			// NOTE: signal_type must be "prometheus-alert" or "kubernetes-event" per schema
+			// NOTE: signal_type must be "alert" per schema (normalized from prometheus-alert/kubernetes-event)
 			body := `{
 			"version": "1.0",
 			"event_type": "gateway.signal.received",
@@ -120,7 +120,7 @@ var _ = Describe("OpenAPI Validator Middleware", func() {
 			"event_timestamp": "2025-12-13T12:00:00Z",
 			"event_data": {
 				"event_type": "gateway.signal.received",
-				"signal_type": "prometheus-alert",
+				"signal_type": "alert",
 				"alert_name": "HighMemoryUsage",
 				"namespace": "default",
 				"fingerprint": "fp-abc123",

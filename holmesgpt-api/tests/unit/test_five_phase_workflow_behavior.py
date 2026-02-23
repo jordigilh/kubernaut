@@ -33,7 +33,7 @@ class TestFivePhaseWorkflowBehavior:
         WHY: Prevents LLM from searching workflows before understanding root cause.
         """
         request_data = {
-            "signal_type": "OOMKilled",
+            "signal_name": "OOMKilled",
             "severity": "critical",
             "resource_namespace": "production",
             "resource_kind": "deployment",
@@ -61,10 +61,10 @@ class TestFivePhaseWorkflowBehavior:
     def test_workflow_clarifies_input_signal_is_starting_point(self):
         """
         BEHAVIOR: Prompt must clarify input signal is for investigation, not workflow search.
-        WHY: Prevents LLM from directly using input signal_type for MCP search.
+        WHY: Prevents LLM from directly using input signal_name for MCP search.
         """
         request_data = {
-            "signal_type": "OOMKilled",
+            "signal_name": "OOMKilled",
             "severity": "critical",
             "resource_namespace": "production",
             "resource_kind": "deployment",
@@ -83,13 +83,13 @@ class TestFivePhaseWorkflowBehavior:
         # BEHAVIOR VALIDATION: Must show input signal value
         assert "OOMKilled" in prompt, "Input signal value not shown"
     
-    def test_workflow_provides_signal_type_decision_criteria(self):
+    def test_workflow_provides_signal_name_decision_criteria(self):
         """
-        BEHAVIOR: Prompt must provide clear criteria for when to use same vs different signal_type.
-        WHY: LLM needs explicit guidance on signal_type determination logic.
+        BEHAVIOR: Prompt must provide clear criteria for when to use same vs different signal_name.
+        WHY: LLM needs explicit guidance on signal_name determination logic.
         """
         request_data = {
-            "signal_type": "OOMKilled",
+            "signal_name": "OOMKilled",
             "severity": "critical",
             "resource_namespace": "production",
             "resource_kind": "deployment",
@@ -101,23 +101,23 @@ class TestFivePhaseWorkflowBehavior:
         
         prompt = _create_investigation_prompt(request_data)
         
-        # BEHAVIOR VALIDATION: Must explain when to use same signal_type
-        assert "If investigation confirms input signal is the root cause" in prompt,             "Missing criteria for using same signal_type"
-        
-        # BEHAVIOR VALIDATION: Must explain when to use different signal_type
-        assert "If investigation reveals different root cause" in prompt,             "Missing criteria for using different signal_type"
+        # BEHAVIOR VALIDATION: Must explain when to use same signal_name
+        assert "If investigation confirms input signal is the root cause" in prompt,             "Missing criteria for using same signal_name"
+
+        # BEHAVIOR VALIDATION: Must explain when to use different signal_name
+        assert "If investigation reveals different root cause" in prompt,             "Missing criteria for using different signal_name"
         
         # BEHAVIOR VALIDATION: Must provide concrete examples
         assert "Investigation confirms memory limit exceeded" in prompt,             "Missing example of confirming input signal"
         assert "Investigation shows node memory pressure" in prompt,             "Missing example of different root cause"
     
-    def test_workflow_emphasizes_rca_determines_signal_type(self):
+    def test_workflow_emphasizes_rca_determines_signal_name(self):
         """
-        BEHAVIOR: Prompt must explicitly state signal_type comes from RCA, not input.
+        BEHAVIOR: Prompt must explicitly state signal_name comes from RCA, not input.
         WHY: Critical to prevent LLM from bypassing investigation.
         """
         request_data = {
-            "signal_type": "OOMKilled",
+            "signal_name": "OOMKilled",
             "severity": "critical",
             "resource_namespace": "production",
             "resource_kind": "deployment",
@@ -129,8 +129,8 @@ class TestFivePhaseWorkflowBehavior:
         
         prompt = _create_investigation_prompt(request_data)
         
-        # BEHAVIOR VALIDATION: Must explicitly state signal_type source
-        assert "signal_type for workflow search comes from YOUR investigation findings" in prompt,             "Missing explicit statement that signal_type comes from investigation"
+        # BEHAVIOR VALIDATION: Must explicitly state signal_name source
+        assert "signal_name for workflow search comes from YOUR investigation findings" in prompt,             "Missing explicit statement that signal_name comes from investigation"
         assert "not the input signal" in prompt,             "Missing clarification that input signal is not used directly"
     
     def test_workflow_defines_all_five_phases(self):
@@ -139,7 +139,7 @@ class TestFivePhaseWorkflowBehavior:
         WHY: Complete workflow ensures LLM follows entire process.
         """
         request_data = {
-            "signal_type": "OOMKilled",
+            "signal_name": "OOMKilled",
             "severity": "critical",
             "resource_namespace": "production",
             "resource_kind": "deployment",
@@ -173,7 +173,7 @@ class TestFivePhaseWorkflowBehavior:
         WHY: Graceful degradation ensures RCA is still useful even if workflow selection fails.
         """
         request_data = {
-            "signal_type": "OOMKilled",
+            "signal_name": "OOMKilled",
             "severity": "critical",
             "resource_namespace": "production",
             "resource_kind": "deployment",
@@ -193,11 +193,11 @@ class TestFivePhaseWorkflowBehavior:
     
     def test_workflow_specifies_rca_signal_type_in_mcp_search(self):
         """
-        BEHAVIOR: Prompt must specify MCP search uses RCA signal_type, not input.
+        BEHAVIOR: Prompt must specify MCP search uses RCA signal_name, not input.
         WHY: Ensures workflow search is based on investigation findings.
         """
         request_data = {
-            "signal_type": "OOMKilled",
+            "signal_name": "OOMKilled",
             "severity": "critical",
             "resource_namespace": "production",
             "resource_kind": "deployment",
@@ -221,7 +221,7 @@ class TestFivePhaseWorkflowBehavior:
         WHY: Investigation requires actual tool usage, not assumptions.
         """
         request_data = {
-            "signal_type": "OOMKilled",
+            "signal_name": "OOMKilled",
             "severity": "critical",
             "resource_namespace": "production",
             "resource_kind": "deployment",

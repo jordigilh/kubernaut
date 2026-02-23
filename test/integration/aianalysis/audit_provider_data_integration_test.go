@@ -210,7 +210,7 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      fmt.Sprintf("fp-hybrid-%s", uuid.New().String()[:8]),
 							Severity:         "critical",
-							SignalType:       "CrashLoopBackOff", // HAPI mock will return deterministic response
+							SignalName:       "CrashLoopBackOff", // HAPI mock will return deterministic response
 							Environment:      "production",
 							BusinessPriority: "P0",
 							TargetResource: aianalysisv1.TargetResource{
@@ -378,7 +378,7 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      fmt.Sprintf("fp-recon-%s", uuid.New().String()[:8]),
 							Severity:         "critical",
-							SignalType:       "OOMKilled", // Different signal type for variety
+							SignalName:       "OOMKilled", // Different signal type for variety
 							Environment:      "staging",
 							BusinessPriority: "P1",
 							TargetResource: aianalysisv1.TargetResource{
@@ -493,7 +493,7 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      fmt.Sprintf("fp-corr-%s", uuid.New().String()[:8]),
 							Severity:         "medium", // DD-SEVERITY-001: Use normalized severity enum
-							SignalType:       "ImagePullBackOff",
+							SignalName:       "ImagePullBackOff",
 							Environment:      "development",
 							BusinessPriority: "P2",
 							TargetResource: aianalysisv1.TargetResource{

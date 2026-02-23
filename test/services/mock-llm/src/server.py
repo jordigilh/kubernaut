@@ -1250,8 +1250,7 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
                 "previous_attempt_assessment": {
                     "failure_understood": True,
                     "failure_reason_analysis": scenario.root_cause,
-                    "state_changed": False,
-                    "current_signal_type": scenario.signal_type
+                    "state_changed": False
                 }
             }
             # All recovery scenarios with a workflow selected can recover
@@ -1592,8 +1591,7 @@ The previous remediation attempt failed. I've analyzed the current cluster state
     "previous_attempt_assessment": {{
       "failure_understood": true,
       "failure_reason_analysis": "{scenario.root_cause}",
-      "state_changed": false,
-      "current_signal_type": "{scenario.signal_type}"
+      "state_changed": false
     }}
   }},
   "selected_workflow": null,
@@ -1614,8 +1612,7 @@ The previous remediation attempt failed. I've analyzed the current cluster state
     "previous_attempt_assessment": {{
       "failure_understood": true,
       "failure_reason_analysis": "{scenario.root_cause}",
-      "state_changed": false,
-      "current_signal_type": "{scenario.signal_type}"
+      "state_changed": false
     }}
   }},
   "selected_workflow": {{

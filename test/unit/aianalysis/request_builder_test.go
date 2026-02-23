@@ -46,7 +46,7 @@ var _ = Describe("RequestBuilder", func() {
 				// Arrange: AA with reactive signal mode
 				analysis := helpers.NewAIAnalysis("ai-test", "default")
 				analysis.Spec.AnalysisRequest.SignalContext.SignalMode = "reactive"
-				analysis.Spec.AnalysisRequest.SignalContext.SignalType = "OOMKilled"
+				analysis.Spec.AnalysisRequest.SignalContext.SignalName = "OOMKilled"
 
 				// Act
 				req := builder.BuildIncidentRequest(analysis)
@@ -62,7 +62,7 @@ var _ = Describe("RequestBuilder", func() {
 				// Arrange: AA with predictive signal mode
 				analysis := helpers.NewAIAnalysis("ai-test", "default")
 				analysis.Spec.AnalysisRequest.SignalContext.SignalMode = "predictive"
-				analysis.Spec.AnalysisRequest.SignalContext.SignalType = "OOMKilled" // normalized by SP
+				analysis.Spec.AnalysisRequest.SignalContext.SignalName = "OOMKilled" // normalized by SP
 
 				// Act
 				req := builder.BuildIncidentRequest(analysis)
@@ -94,7 +94,7 @@ var _ = Describe("RequestBuilder", func() {
 		It("should set all required HAPI fields", func() {
 			analysis := helpers.NewAIAnalysis("ai-test", "default")
 			analysis.Spec.AnalysisRequest.SignalContext.Severity = "critical"
-			analysis.Spec.AnalysisRequest.SignalContext.SignalType = "OOMKilled"
+			analysis.Spec.AnalysisRequest.SignalContext.SignalName = "OOMKilled"
 			analysis.Spec.AnalysisRequest.SignalContext.Environment = "production"
 			analysis.Spec.AnalysisRequest.SignalContext.BusinessPriority = "P0"
 			analysis.Spec.AnalysisRequest.SignalContext.TargetResource = aianalysisv1.TargetResource{

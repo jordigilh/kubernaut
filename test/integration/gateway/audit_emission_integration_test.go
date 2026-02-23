@@ -139,7 +139,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 					"BR-GATEWAY-056: RemediationRequest CRD must exist in K8s")
 
 				By("5. Validate CRD contains signal metadata")
-				Expect(rr.Spec.SignalType).To(Equal("prometheus-alert"))
+				Expect(rr.Spec.SignalType).To(Equal("alert"))
 				Expect(rr.Spec.SignalFingerprint).To(Equal(signal.Fingerprint))
 				Expect(rr.Spec.SignalName).To(Equal("KubePodCrashLooping"))
 				Expect(rr.Spec.Severity).To(Equal("critical"))
@@ -1208,7 +1208,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 
 				// BR-GATEWAY-058-A: Use readable correlation ID
 				readableCorrelationID := fmt.Sprintf("%s:%s:%s:%s",
-					signal.AlertName,
+					signal.SignalName,
 					signal.Namespace,
 					signal.Resource.Kind,
 					signal.Resource.Name,
@@ -1283,7 +1283,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 
 				// BR-GATEWAY-058-A: Use readable correlation ID
 				readableCorrelationID := fmt.Sprintf("%s:%s:%s:%s",
-					signal.AlertName,
+					signal.SignalName,
 					signal.Namespace,
 					signal.Resource.Kind,
 					signal.Resource.Name,
@@ -1355,7 +1355,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 
 				eventType := gateway.EventTypeCRDFailed
 				readableCorrelationID := fmt.Sprintf("%s:%s:%s:%s",
-					signal.AlertName,
+					signal.SignalName,
 					signal.Namespace,
 					signal.Resource.Kind,
 					signal.Resource.Name,
@@ -1461,7 +1461,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				// BR-GATEWAY-058-A: For failed CRD creation, correlation ID is human-readable
 				// Format: "alertname:namespace:kind:name"
 				readableCorrelationID := fmt.Sprintf("%s:%s:%s:%s",
-					testSignal.AlertName,
+					testSignal.SignalName,
 					testSignal.Namespace,
 					testSignal.Resource.Kind,
 					testSignal.Resource.Name,

@@ -12,7 +12,7 @@ metadata:
 actionType: ProactiveRollback
 
 labels:
-  signalType: ErrorBudgetBurn
+  signalName: ErrorBudgetBurn
   severity: [critical, high]
   environment: [production, staging]
   component: "*"

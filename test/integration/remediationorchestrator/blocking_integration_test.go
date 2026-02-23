@@ -401,7 +401,7 @@ func createRemediationRequestWithFingerprint(namespace, name, fingerprint string
 			SignalFingerprint: fingerprint,
 			SignalName:        fmt.Sprintf("TestAlert-%s", name),
 			Severity:          "critical",
-			SignalType:        "prometheus",
+			SignalType:        "alert",
 			TargetType:        "kubernetes",
 			TargetResource: remediationv1.ResourceIdentifier{
 				Kind:      "Deployment",

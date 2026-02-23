@@ -13,7 +13,7 @@ metadata:
 actionType: RestartPod
 
 labels:
-  signalType: test
+  signalName: test
   severity: [low]
   environment: [test]
   component: deployment

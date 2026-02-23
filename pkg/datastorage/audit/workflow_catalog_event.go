@@ -72,8 +72,8 @@ func NewWorkflowCreatedAuditEvent(workflow *models.RemediationWorkflow) (*ogencl
 	// V2.0: Use OpenAPI-generated typed schema (eliminates map[string]interface{})
 	// Convert workflow.Labels (MandatoryLabels struct) to map[string]interface{}
 	labelsMap := make(map[string]interface{})
-	if workflow.Labels.SignalType != "" {
-		labelsMap["signal_type"] = workflow.Labels.SignalType
+	if workflow.Labels.SignalName != "" {
+		labelsMap["signal_type"] = workflow.Labels.SignalName
 	}
 	if len(workflow.Labels.Severity) > 0 {
 		labelsMap["severity"] = workflow.Labels.Severity

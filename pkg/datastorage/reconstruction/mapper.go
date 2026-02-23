@@ -49,11 +49,11 @@ func MapToRRFields(parsedData *ParsedAuditData) (*ReconstructedRRFields, error) 
 	switch parsedData.EventType {
 	case "gateway.signal.received":
 		// Map Gateway audit data to RR Spec (Gaps #1-3)
-		if parsedData.AlertName == "" {
+		if parsedData.SignalName == "" {
 			return nil, fmt.Errorf("alert name is required for gateway.signal.received event")
 		}
 
-		result.Spec.SignalName = parsedData.AlertName
+		result.Spec.SignalName = parsedData.SignalName
 		result.Spec.SignalType = string(parsedData.SignalType)
 		result.Spec.SignalFingerprint = parsedData.SignalFingerprint // BR-AUDIT-005: deduplication identity
 		result.Spec.SignalLabels = parsedData.SignalLabels

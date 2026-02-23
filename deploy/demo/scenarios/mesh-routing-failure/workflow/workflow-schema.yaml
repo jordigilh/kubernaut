@@ -12,7 +12,7 @@ metadata:
 actionType: FixAuthorizationPolicy
 
 labels:
-  signalType: HighErrorRate
+  signalName: HighErrorRate
   severity: [critical, high]
   environment: [production, staging]
   component: "*"

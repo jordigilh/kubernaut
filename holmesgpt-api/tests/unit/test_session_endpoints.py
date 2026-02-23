@@ -45,7 +45,7 @@ def sample_incident_request():
     return {
         "incident_id": "test-incident-endpoint-001",
         "remediation_id": "rem-endpoint-test-001",
-        "signal_type": "OOMKilled",
+        "signal_name": "OOMKilled",
         "severity": "high",
         "signal_source": "kube-state-metrics",
         "resource_namespace": "default",
@@ -68,7 +68,7 @@ def sample_recovery_request():
         "remediation_id": "rem-recovery-endpoint-001",
         "is_recovery_attempt": True,
         "recovery_attempt_number": 1,
-        "signal_type": "OOMKilled",
+        "signal_name": "OOMKilled",
         "severity": "high",
         "resource_namespace": "default",
         "resource_kind": "Pod",

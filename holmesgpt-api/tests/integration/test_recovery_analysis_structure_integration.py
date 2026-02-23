@@ -39,9 +39,6 @@ HAPI Field → AIAnalysis CRD Field:
   recovery_analysis.previous_attempt_assessment.state_changed
     → status.recoveryStatus.stateChanged
 
-  recovery_analysis.previous_attempt_assessment.current_signal_type
-    → status.recoveryStatus.currentSignalType
-
 TEST STRATEGY (REFACTORED - GO PATTERN):
 ----------------------------------------
 ✅ Direct business logic calls (analyze_recovery function)
@@ -72,7 +69,7 @@ def sample_recovery_request() -> Dict[str, Any]:
     return {
         "incident_id": "test-recovery-001",
         "remediation_id": "req-test-001",
-        "signal_type": "OOMKilled",
+        "signal_name": "OOMKilled",
         "severity": "critical",
         "environment": "production",
         "priority": "P0",
@@ -148,8 +145,7 @@ class TestRecoveryAnalysisStructure:
         required_fields = [
             'failure_understood',
             'failure_reason_analysis',
-            'state_changed',
-            'current_signal_type'
+            'state_changed'
         ]
         for field in required_fields:
             assert field in prev_assessment, f"previous_attempt_assessment must contain '{field}'"
@@ -186,15 +182,10 @@ class TestRecoveryAnalysisStructure:
         assert isinstance(prev_assessment['state_changed'], bool), \
             "state_changed must be boolean"
 
-        # ASSERT: Field type 4 - current_signal_type (string)
-        assert isinstance(prev_assessment['current_signal_type'], str), \
-            "current_signal_type must be string"
-
         print(f"\n✅ Field types validated")
         print(f"   failure_understood: {type(prev_assessment['failure_understood']).__name__}")
         print(f"   failure_reason_analysis: {type(prev_assessment['failure_reason_analysis']).__name__}")
         print(f"   state_changed: {type(prev_assessment['state_changed']).__name__}")
-        print(f"   current_signal_type: {type(prev_assessment['current_signal_type']).__name__}")
 
     @pytest.mark.asyncio
     async def test_failure_reason_analysis_has_substance(self, sample_recovery_request):
@@ -226,34 +217,6 @@ class TestRecoveryAnalysisStructure:
         print(f"\n✅ failure_reason_analysis has substance")
         print(f"   Length: {len(analysis)} characters")
         print(f"   Preview: {analysis[:100]}...")
-
-    @pytest.mark.asyncio
-    async def test_current_signal_type_matches_input(self, sample_recovery_request):
-        """
-        HAPI Integration: current_signal_type reflects the actual signal.
-        
-        Pattern: Direct business logic → Validate field semantics
-        """
-        from src.extensions.recovery.llm_integration import analyze_recovery
-        from src.models.config_models import AppConfig
-        
-        # ACT
-        app_config = AppConfig()
-        result = await analyze_recovery(request_data=sample_recovery_request, app_config=app_config)
-        prev_assessment = result['recovery_analysis']['previous_attempt_assessment']
-
-        # ASSERT: current_signal_type is populated (exact value depends on LLM logic)
-        current_signal = prev_assessment['current_signal_type']
-        
-        assert current_signal is not None, "current_signal_type must not be null"
-        assert len(current_signal) > 0, "current_signal_type must not be empty"
-        
-        # Should be a valid signal type format (CamelCase or alphanumeric)
-        assert current_signal.replace(' ', '').isalnum() or 'OOM' in current_signal.upper(), \
-            "current_signal_type should be valid signal type format"
-
-        print(f"\n✅ current_signal_type validated")
-        print(f"   Value: {current_signal}")
 
     @pytest.mark.asyncio
     async def test_state_changed_is_boolean(self, sample_recovery_request):

@@ -213,10 +213,10 @@ type WorkflowSearchFilters struct {
 	// ========================================
 	// Authority: DD-WORKFLOW-001 v1.6 (Mandatory Workflow Label Schema)
 
-	// SignalType filters by single alert/signal type (MANDATORY)
+	// SignalName filters by single alert/signal type (MANDATORY)
 	// Example: "OOMKilled", "MemoryLeak", "DatabaseConnectionLeak"
 	// DD-WORKFLOW-001 v1.6: camelCase JSON tag
-	SignalType string `json:"signalType" validate:"required"`
+	SignalName string `json:"signalType" validate:"required"`
 
 	// Severity filters by severity level (MANDATORY)
 	// Values: "critical", "high", "medium", "low"
@@ -348,8 +348,8 @@ type WorkflowSearchResult struct {
 	// Description is the structured workflow description (BR-WORKFLOW-004)
 	Description StructuredDescription `json:"description"`
 
-	// SignalType is the signal type this workflow handles (DD-WORKFLOW-002 v3.0: singular, not array)
-	SignalType string `json:"signalType"`
+	// SignalName is the signal name this workflow handles (DD-WORKFLOW-002 v3.0: singular, not array)
+	SignalName string `json:"signalName"`
 
 	// SchemaImage is the OCI image reference used for registration
 	SchemaImage string `json:"schemaImage,omitempty"`

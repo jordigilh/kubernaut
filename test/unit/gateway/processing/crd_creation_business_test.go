@@ -115,10 +115,10 @@ var _ = Describe("BR-GATEWAY-004: RemediationRequest CRD Creation Business Outco
 			// BUSINESS OUTCOME: Operations can identify WHAT failed
 			// RO uses alertName to select appropriate workflow
 			signal := &types.NormalizedSignal{
-				AlertName:    "HighMemoryUsage",
+				SignalName:    "HighMemoryUsage",
 				Fingerprint:  "test-fingerprint-abc123",
 				Severity:     "critical",
-				SourceType:   "prometheus-alert",
+				SourceType:   "alert",
 				Source:       "alertmanager",
 				Namespace:    testNamespace,
 				ReceivedTime: time.Now(),
@@ -142,10 +142,10 @@ var _ = Describe("BR-GATEWAY-004: RemediationRequest CRD Creation Business Outco
 			// BUSINESS OUTCOME: RO prioritizes critical > warning > info
 			// Severity determines urgency of remediation action
 			signal := &types.NormalizedSignal{
-				AlertName:    "PodCrashLooping",
+				SignalName:    "PodCrashLooping",
 				Fingerprint:  "crash-fingerprint-xyz789",
 				Severity:     "critical", // CRITICAL = immediate remediation
-				SourceType:   "prometheus-alert",
+				SourceType:   "alert",
 				Source:       "alertmanager",
 				Namespace:    testNamespace,
 				ReceivedTime: time.Now(),
@@ -168,10 +168,10 @@ var _ = Describe("BR-GATEWAY-004: RemediationRequest CRD Creation Business Outco
 			// BUSINESS OUTCOME: RO selects workflow based on resource Kind
 			// WorkflowExecution targets specific resource Name/Namespace
 			signal := &types.NormalizedSignal{
-				AlertName:    "DeploymentUnhealthy",
+				SignalName:    "DeploymentUnhealthy",
 				Fingerprint:  "deploy-fingerprint-def456",
 				Severity:     "warning",
-				SourceType:   "prometheus-alert",
+				SourceType:   "alert",
 				Source:       "alertmanager",
 				Namespace:    testNamespace,
 				ReceivedTime: time.Now(),
@@ -197,10 +197,10 @@ var _ = Describe("BR-GATEWAY-004: RemediationRequest CRD Creation Business Outco
 			// BUSINESS OUTCOME: Gateway can track duplicate occurrences
 			// DD-GATEWAY-011: Status.Deduplication uses fingerprint as key
 			signal := &types.NormalizedSignal{
-				AlertName:    "HighMemoryUsage",
+				SignalName:    "HighMemoryUsage",
 				Fingerprint:  "dedup-test-fingerprint-unique",
 				Severity:     "warning",
-				SourceType:   "prometheus-alert",
+				SourceType:   "alert",
 				Source:       "alertmanager",
 				Namespace:    testNamespace,
 				ReceivedTime: time.Now(),
@@ -235,10 +235,10 @@ var _ = Describe("BR-GATEWAY-004: RemediationRequest CRD Creation Business Outco
 			)
 
 			signal := &types.NormalizedSignal{
-				AlertName:    "SameIssue",
+				SignalName:    "SameIssue",
 				Fingerprint:  "same-fingerprint",
 				Severity:     "critical",
-				SourceType:   "prometheus-alert",
+				SourceType:   "alert",
 				Source:       "alertmanager",
 				Namespace:    testNamespace,
 				ReceivedTime: time.Now(),
@@ -275,10 +275,10 @@ var _ = Describe("BR-GATEWAY-004: RemediationRequest CRD Creation Business Outco
 			// BUSINESS OUTCOME: V1.0 is Kubernetes-only
 			// Missing Kind means RO cannot select appropriate workflow
 			invalidSignal := &types.NormalizedSignal{
-				AlertName:    "TestAlert",
+				SignalName:    "TestAlert",
 				Fingerprint:  "test-fingerprint",
 				Severity:     "critical",
-				SourceType:   "prometheus-alert",
+				SourceType:   "alert",
 				Source:       "alertmanager",
 				Namespace:    testNamespace,
 				ReceivedTime: time.Now(),
@@ -304,10 +304,10 @@ var _ = Describe("BR-GATEWAY-004: RemediationRequest CRD Creation Business Outco
 			// BUSINESS OUTCOME: Cannot remediate without knowing WHICH instance
 			// WorkflowExecution needs specific resource name for kubectl commands
 			invalidSignal := &types.NormalizedSignal{
-				AlertName:    "TestAlert",
+				SignalName:    "TestAlert",
 				Fingerprint:  "test-fingerprint",
 				Severity:     "critical",
-				SourceType:   "prometheus-alert",
+				SourceType:   "alert",
 				Source:       "alertmanager",
 				Namespace:    testNamespace,
 				ReceivedTime: time.Now(),
@@ -330,10 +330,10 @@ var _ = Describe("BR-GATEWAY-004: RemediationRequest CRD Creation Business Outco
 			// BUSINESS OUTCOME: Cluster-scoped resources don't have namespaces
 			// Node alerts must still be processed for remediation
 			clusterScopedSignal := &types.NormalizedSignal{
-				AlertName:    "NodeNotReady",
+				SignalName:    "NodeNotReady",
 				Fingerprint:  "node-fingerprint-abc",
 				Severity:     "critical",
-				SourceType:   "prometheus-alert",
+				SourceType:   "alert",
 				Source:       "alertmanager",
 				Namespace:    testNamespace,
 				ReceivedTime: time.Now(),
@@ -360,10 +360,10 @@ var _ = Describe("BR-GATEWAY-004: RemediationRequest CRD Creation Business Outco
 			// BUSINESS OUTCOME: Audit trail shows WHERE signal originated
 			// Operations can filter by source: Prometheus vs K8s Events
 			signal := &types.NormalizedSignal{
-				AlertName:    "TestAlert",
+				SignalName:    "TestAlert",
 				Fingerprint:  "audit-test",
 				Severity:     "info",
-				SourceType:   "prometheus-alert", // Prometheus AlertManager source
+				SourceType:   "alert", // Prometheus AlertManager source
 				Source:       "alertmanager",
 				Namespace:    testNamespace,
 				ReceivedTime: time.Now(),
@@ -376,7 +376,7 @@ var _ = Describe("BR-GATEWAY-004: RemediationRequest CRD Creation Business Outco
 			rr, err := crdCreator.CreateRemediationRequest(ctx, signal)
 
 			Expect(err).NotTo(HaveOccurred())
-			Expect(rr.Spec.SignalType).To(Equal("prometheus-alert"),
+			Expect(rr.Spec.SignalType).To(Equal("alert"),
 				"Signal type preserved for audit trail and filtering")
 			Expect(rr.Spec.SignalSource).To(Equal("alertmanager"),
 				"Signal source preserved for troubleshooting")
@@ -391,10 +391,10 @@ var _ = Describe("BR-GATEWAY-004: RemediationRequest CRD Creation Business Outco
 			receivedTime := time.Now()                     // Received just now
 
 			signal := &types.NormalizedSignal{
-				AlertName:    "DelayedAlert",
+				SignalName:    "DelayedAlert",
 				Fingerprint:  "time-test",
 				Severity:     "warning",
-				SourceType:   "prometheus-alert",
+				SourceType:   "alert",
 				Source:       "alertmanager",
 				Namespace:    testNamespace,
 				FiringTime:   firingTime,
@@ -421,10 +421,10 @@ var _ = Describe("BR-GATEWAY-004: RemediationRequest CRD Creation Business Outco
 		It("stores ProviderData as parseable JSON, not base64-encoded bytes", func() {
 			rawPayload := json.RawMessage(`{"alerts":[{"status":"firing","labels":{"alertname":"HighMemory"}}]}`)
 			signal := &types.NormalizedSignal{
-				AlertName:    "HighMemory",
+				SignalName:    "HighMemory",
 				Fingerprint:  "issue96-fingerprint-001",
 				Severity:     "warning",
-				SourceType:   "prometheus-alert",
+				SourceType:   "alert",
 				Source:       "alertmanager",
 				Namespace:    testNamespace,
 				ReceivedTime: time.Now(),
@@ -531,7 +531,7 @@ var _ = Describe("BR-GATEWAY-009: Oversized Annotations Truncation", func() {
 
 			signal := &types.NormalizedSignal{
 				Fingerprint: "oversized-test-fingerprint",
-				AlertName:   "LargePayloadAlert",
+				SignalName:   "LargePayloadAlert",
 				Severity:    "critical",
 				Namespace:   testNamespace,
 				Resource: types.ResourceIdentifier{
@@ -544,7 +544,7 @@ var _ = Describe("BR-GATEWAY-009: Oversized Annotations Truncation", func() {
 				},
 				FiringTime:   time.Now(),
 				ReceivedTime: time.Now(),
-				SourceType:   "prometheus",
+				SourceType:   "alert",
 				RawPayload:   largePayload,
 			}
 
@@ -565,7 +565,7 @@ var _ = Describe("BR-GATEWAY-009: Oversized Annotations Truncation", func() {
 			// BUSINESS OUTCOME: Signals without annotations are valid
 			signal := &types.NormalizedSignal{
 				Fingerprint: "no-annotations-fingerprint",
-				AlertName:   "SimpleAlert",
+				SignalName:   "SimpleAlert",
 				Severity:    "warning",
 				Namespace:   testNamespace,
 				Resource: types.ResourceIdentifier{
@@ -576,7 +576,7 @@ var _ = Describe("BR-GATEWAY-009: Oversized Annotations Truncation", func() {
 				Annotations:  nil, // No annotations
 				FiringTime:   time.Now(),
 				ReceivedTime: time.Now(),
-				SourceType:   "kubernetes-event",
+				SourceType:   "alert",
 			}
 
 			rr, err := crdCreator.CreateRemediationRequest(ctx, signal)
@@ -696,14 +696,14 @@ var _ = Describe("BR-GATEWAY-019: CRDCreator Safe Defaults", func() {
 			)
 		})
 
-		Context("when signal source type is kubernetes-event", func() {
+		Context("when signal source type is alert (normalized from any adapter)", func() {
 			It("correctly sets signalType for event-based signals", func() {
 				// BUSINESS OUTCOME: Different source types tracked for observability
 				signal := &types.NormalizedSignal{
-					AlertName:    "PodEvicted",
+					SignalName:    "PodEvicted",
 					Fingerprint:  "k8s-event-fingerprint",
 					Severity:     "warning",
-					SourceType:   "kubernetes-event", // Different source type
+					SourceType:   "alert", // Different source type
 					Source:       "kube-apiserver",
 					Namespace:    testNamespace,
 					ReceivedTime: time.Now(),
@@ -716,8 +716,8 @@ var _ = Describe("BR-GATEWAY-019: CRDCreator Safe Defaults", func() {
 				rr, err := crdCreator.CreateRemediationRequest(ctx, signal)
 
 				Expect(err).ToNot(HaveOccurred())
-				Expect(rr.Spec.SignalType).To(Equal("kubernetes-event"),
-					"SignalType distinguishes prometheus-alert vs kubernetes-event sources")
+				Expect(rr.Spec.SignalType).To(Equal("alert"),
+					"SignalType distinguishes alert sources (prometheus vs kubernetes-events)")
 				Expect(rr.Labels).NotTo(HaveKey("kubernaut.ai/signal-type"),
 					"Issue #91: signal type is in immutable spec field, not a mutable label")
 			})
@@ -727,10 +727,10 @@ var _ = Describe("BR-GATEWAY-019: CRDCreator Safe Defaults", func() {
 			It("creates CRD without signal labels", func() {
 				// BUSINESS OUTCOME: Minimal signals without labels are valid
 				signal := &types.NormalizedSignal{
-					AlertName:    "MinimalAlert",
+					SignalName:    "MinimalAlert",
 					Fingerprint:  "minimal-fingerprint",
 					Severity:     "info",
-					SourceType:   "prometheus-alert",
+					SourceType:   "alert",
 					Source:       "alertmanager",
 					Namespace:    testNamespace,
 					ReceivedTime: time.Now(),
@@ -753,7 +753,7 @@ var _ = Describe("BR-GATEWAY-019: CRDCreator Safe Defaults", func() {
 			It("creates CRD with custom source type preserved", func() {
 				// BUSINESS OUTCOME: Future extensibility for non-prometheus/k8s sources
 				signal := &types.NormalizedSignal{
-					AlertName:    "CustomSourceAlert",
+					SignalName:    "CustomSourceAlert",
 					Fingerprint:  "custom-source-fingerprint",
 					Severity:     "warning",
 					SourceType:   "custom-monitoring-tool", // Custom source
@@ -779,10 +779,10 @@ var _ = Describe("BR-GATEWAY-019: CRDCreator Safe Defaults", func() {
 				It("creates CRD with empty namespace in ProviderData", func() {
 					// BUSINESS OUTCOME: Cluster-scoped resources without namespace handled
 					signal := &types.NormalizedSignal{
-						AlertName:    "ClusterScopedAlert",
+						SignalName:    "ClusterScopedAlert",
 						Fingerprint:  "cluster-scoped-fingerprint",
 						Severity:     "warning",
-						SourceType:   "prometheus-alert",
+						SourceType:   "alert",
 						Source:       "alertmanager",
 						Namespace:    "", // Empty namespace (cluster-scoped)
 						ReceivedTime: time.Now(),
@@ -812,10 +812,10 @@ var _ = Describe("BR-GATEWAY-019: CRDCreator Safe Defaults", func() {
 				It("creates CRD with null labels in ProviderData", func() {
 					// BUSINESS OUTCOME: Signals without labels are valid
 					signal := &types.NormalizedSignal{
-						AlertName:    "NoLabelsAlert",
+						SignalName:    "NoLabelsAlert",
 						Fingerprint:  "no-labels-fingerprint",
 						Severity:     "info",
-						SourceType:   "kubernetes-event",
+						SourceType:   "alert",
 						Source:       "kubelet",
 						Namespace:    testNamespace,
 						ReceivedTime: time.Now(),

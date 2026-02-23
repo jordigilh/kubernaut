@@ -373,7 +373,7 @@ class TestAuditPipelineE2E:
         request_data = {
             "incident_id": unique_incident_id,
             "remediation_id": unique_remediation_id,
-            "signal_type": "OOMKilled",
+            "signal_name": "OOMKilled",
             "severity": "critical",
             "signal_source": "prometheus",  # REQUIRED field
             "resource_namespace": "production",
@@ -441,7 +441,7 @@ class TestAuditPipelineE2E:
         request_data = {
             "incident_id": unique_incident_id,
             "remediation_id": unique_remediation_id,
-            "signal_type": "CrashLoopBackOff",
+            "signal_name": "CrashLoopBackOff",
             "severity": "high",
             "signal_source": "prometheus",  # REQUIRED field
             "resource_namespace": "default",
@@ -503,7 +503,7 @@ class TestAuditPipelineE2E:
         request_data = {
             "incident_id": unique_incident_id,
             "remediation_id": unique_remediation_id,
-            "signal_type": "OOMKilled",
+            "signal_name": "OOMKilled",
             "severity": "critical",
             "signal_source": "prometheus",  # REQUIRED field
             "resource_namespace": "prod",
@@ -590,7 +590,7 @@ class TestAuditPipelineE2E:
         request_data = {
             "incident_id": unique_incident_id,
             "remediation_id": unique_remediation_id,
-            "signal_type": "OOMKilled",
+            "signal_name": "OOMKilled",
             "severity": "critical",
             "signal_source": "prometheus",  # REQUIRED field
             "resource_namespace": "production",

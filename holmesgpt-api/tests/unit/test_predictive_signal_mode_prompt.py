@@ -81,12 +81,12 @@ for _mod_name in _MOCK_PACKAGES:
 from src.extensions.incident.prompt_builder import create_incident_investigation_prompt
 
 
-def _make_request_data(signal_mode=None, signal_type="OOMKilled", severity="critical"):
+def _make_request_data(signal_mode=None, signal_name="OOMKilled", severity="critical"):
     """Helper to build a minimal IncidentRequest data dict."""
     data = {
         "incident_id": "test-incident-001",
         "remediation_id": "test-remediation-001",
-        "signal_type": signal_type,
+        "signal_name": signal_name,
         "severity": severity,
         "signal_source": "prometheus",
         "resource_namespace": "production",
@@ -160,12 +160,12 @@ class TestPredictiveSignalModePrompt:
         assert "PREDICTIVE MODE" not in prompt
         assert "Predictive Signal Mode" not in prompt
 
-    def test_predictive_mode_preserves_signal_type(self):
+    def test_predictive_mode_preserves_signal_name(self):
         """Signal type in prompt should be the normalized type (from SP), not the predictive original."""
         # SP normalizes PredictedOOMKill -> OOMKilled before passing to HAPI
         request_data = _make_request_data(
             signal_mode="predictive",
-            signal_type="OOMKilled",  # Already normalized by SP
+            signal_name="OOMKilled",  # Already normalized by SP
         )
         prompt = create_incident_investigation_prompt(request_data)
 

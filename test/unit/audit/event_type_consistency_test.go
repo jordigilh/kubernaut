@@ -110,7 +110,7 @@ var _ = Describe("F-3: Event Type / EventData Discriminator Consistency", func()
 			ogenclient.NewAuditEventRequestEventDataGatewayCrdCreatedAuditEventRequestEventData(
 				ogenclient.GatewayAuditPayload{
 					EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewayCrdCreated,
-					SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
+					SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
 					AlertName:   "test-alert",
 					Namespace:   "default",
 					Fingerprint: "test-fp",

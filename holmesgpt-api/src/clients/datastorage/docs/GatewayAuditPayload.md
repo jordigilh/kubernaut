@@ -10,8 +10,8 @@ Name | Type | Description | Notes
 **original_payload** | **Dict[str, object]** | Full signal payload for RR.Spec.OriginalPayload reconstruction | [optional] 
 **signal_labels** | **Dict[str, str]** | Signal labels for RR.Spec.SignalLabels reconstruction | [optional] 
 **signal_annotations** | **Dict[str, str]** | Signal annotations for RR.Spec.SignalAnnotations reconstruction | [optional] 
-**signal_type** | **str** | Signal type identifier for classification and metrics (prometheus-alert&#x3D;Prometheus AlertManager, kubernetes-event&#x3D;Kubernetes events) | 
-**alert_name** | **str** | Name of the alert | 
+**signal_type** | **str** | Signal type identifier. All adapters normalize to \&quot;alert\&quot;. Adapter identity is preserved in audit actor ID (signal.Source). | 
+**signal_name** | **str** | Human-readable signal name (e.g., alert name, event reason) | 
 **namespace** | **str** | Kubernetes namespace of the affected resource | 
 **fingerprint** | **str** | Unique identifier for the signal (deduplication) | 
 **severity** | **str** | Raw severity from signal source (pass-through per DD-SEVERITY-001). Gateway does NOT normalize. Accepts ANY value (e.g., \&quot;warning\&quot;, \&quot;Sev1\&quot;, \&quot;P0\&quot;, \&quot;critical\&quot;, etc.). SignalProcessing performs normalization via Rego. | [optional] 

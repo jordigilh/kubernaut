@@ -34,8 +34,8 @@ var _ = Describe("Audit Event Mapper", func() {
 			// BR-AUDIT-005: signalFingerprint is required for deduplication identity
 			parsedData := &reconstructionpkg.ParsedAuditData{
 				EventType:        "gateway.signal.received",
-				SignalType:       "prometheus-alert",
-				AlertName:        "HighCPU",
+				SignalType:       "alert",
+				SignalName:        "HighCPU",
 				SignalFingerprint: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
 				SignalLabels:     map[string]string{"alertname": "HighCPU", "severity": "critical"},
 				SignalAnnotations: map[string]string{"summary": "CPU usage is high"},
@@ -50,7 +50,7 @@ var _ = Describe("Audit Event Mapper", func() {
 
 			// Validate Signal field mapping
 			Expect(rrFields.Spec.SignalName).To(Equal("HighCPU"))
-			Expect(rrFields.Spec.SignalType).To(Equal("prometheus-alert"))
+			Expect(rrFields.Spec.SignalType).To(Equal("alert"))
 
 			// Validate SignalFingerprint mapping (BR-AUDIT-005)
 			Expect(rrFields.Spec.SignalFingerprint).To(Equal("a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"),
@@ -71,7 +71,7 @@ var _ = Describe("Audit Event Mapper", func() {
 			// Validates error handling when alert name is missing
 			parsedData := &reconstructionpkg.ParsedAuditData{
 				EventType:  "gateway.signal.received",
-				SignalType: "prometheus-alert",
+				SignalType: "alert",
 				// AlertName is missing - should error
 			}
 
@@ -140,8 +140,8 @@ var _ = Describe("Audit Event Mapper", func() {
 			// BR-AUDIT-005: signalFingerprint must survive merge
 			gatewayData := &reconstructionpkg.ParsedAuditData{
 				EventType:        "gateway.signal.received",
-				SignalType:       "prometheus-alert",
-				AlertName:        "HighMemory",
+				SignalType:       "alert",
+				SignalName:        "HighMemory",
 				SignalFingerprint: "b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3",
 				SignalLabels:     map[string]string{"alertname": "HighMemory"},
 				SignalAnnotations: map[string]string{"summary": "Memory usage is high"},

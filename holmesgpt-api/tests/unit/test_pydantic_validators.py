@@ -22,7 +22,7 @@ class TestIncidentRequestValidation:
             IncidentRequest(
                 incident_id="test-001",
                 remediation_id="",  # Empty string
-                signal_type="CrashLoopBackOff",
+                signal_name="CrashLoopBackOff",
                 severity="high",
                 signal_source="kubernetes",
                 resource_namespace="default",
@@ -50,7 +50,7 @@ class TestIncidentRequestValidation:
             IncidentRequest(
                 incident_id="test-001",
                 # remediation_id NOT provided
-                signal_type="CrashLoopBackOff",
+                signal_name="CrashLoopBackOff",
                 severity="high",
                 signal_source="kubernetes",
                 resource_namespace="default",
@@ -73,7 +73,7 @@ class TestIncidentRequestValidation:
         request = IncidentRequest(
             incident_id="test-001",
             remediation_id="test-rem-001",
-            signal_type="CrashLoopBackOff",
+            signal_name="CrashLoopBackOff",
             severity="high",
             signal_source="kubernetes",
             resource_namespace="default",
@@ -100,7 +100,7 @@ class TestRecoveryRequestValidation:
                 remediation_id="test-rem-001",
                 is_recovery_attempt=True,
                 recovery_attempt_number=0,  # Invalid: < 1
-                signal_type="OOMKilled",
+                signal_name="OOMKilled",
                 severity="high"
             )
         
@@ -118,7 +118,7 @@ class TestRecoveryRequestValidation:
                 remediation_id="test-rem-001",
                 is_recovery_attempt=True,
                 recovery_attempt_number=-1,  # Invalid: negative
-                signal_type="OOMKilled",
+                signal_name="OOMKilled",
                 severity="high"
             )
         
@@ -132,7 +132,7 @@ class TestRecoveryRequestValidation:
             remediation_id="test-rem-001",
             is_recovery_attempt=True,
             recovery_attempt_number=1,  # Valid
-            signal_type="OOMKilled",
+            signal_name="OOMKilled",
             severity="high"
         )
         assert request.recovery_attempt_number == 1
@@ -141,13 +141,13 @@ class TestRecoveryRequestValidation:
 class TestEndpointValidation:
     """Test endpoint-level validation (E2E-HAPI-007)"""
 
-    def test_empty_signal_type_raises_error(self):
-        """E2E-HAPI-007: Empty signal_type should raise ValidationError"""
-        # Empty signal_type passes Pydantic but may fail endpoint validation
+    def test_empty_signal_name_raises_error(self):
+        """E2E-HAPI-007: Empty signal_name should raise ValidationError"""
+        # Empty signal_name passes Pydantic but may fail endpoint validation
         request = IncidentRequest(
             incident_id="test-001",
             remediation_id="test-rem-001",
-            signal_type="",  # Empty
+            signal_name="",  # Empty
             severity="high",
             signal_source="kubernetes",
             resource_namespace="default",
@@ -161,7 +161,7 @@ class TestEndpointValidation:
             cluster_name="prod-cluster-1"
         )
         # Pydantic allows empty string, endpoint validation should catch it
-        assert request.signal_type == ""
+        assert request.signal_name == ""
 
     def test_invalid_severity_raises_error(self):
         """E2E-HAPI-007: Invalid severity should raise ValidationError"""
@@ -170,7 +170,7 @@ class TestEndpointValidation:
             IncidentRequest(
                 incident_id="test-001",
                 remediation_id="test-rem-001",
-                signal_type="CrashLoopBackOff",
+                signal_name="CrashLoopBackOff",
                 severity="invalid_severity",
                 signal_source="kubernetes",
                 resource_namespace="default",

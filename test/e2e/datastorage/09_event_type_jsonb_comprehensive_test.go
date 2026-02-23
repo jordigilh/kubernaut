@@ -107,7 +107,7 @@ var eventTypeCatalog = []eventTypeTestCase{
 				CorrelationID:  correlationID,
 				EventData: ogenclient.NewAuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData(ogenclient.GatewayAuditPayload{
 					EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
-					SignalType:  "prometheus-alert",
+					SignalType:  "alert",
 					AlertName:   "HighCPU",
 					Namespace:   "production",
 					Fingerprint: "fp-abc123",
@@ -140,7 +140,7 @@ var eventTypeCatalog = []eventTypeTestCase{
 				CorrelationID:  correlationID,
 				EventData: ogenclient.NewAuditEventRequestEventDataGatewaySignalDeduplicatedAuditEventRequestEventData(ogenclient.GatewayAuditPayload{
 					EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalDeduplicated,
-					SignalType:  "prometheus-alert",
+					SignalType:  "alert",
 					AlertName:   "HighCPU",
 					Namespace:   "production",
 					Fingerprint: "fp-dedupe-456",
@@ -173,7 +173,7 @@ var eventTypeCatalog = []eventTypeTestCase{
 				CorrelationID:  correlationID,
 				EventData: ogenclient.NewAuditEventRequestEventDataGatewayCrdCreatedAuditEventRequestEventData(ogenclient.GatewayAuditPayload{
 					EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewayCrdCreated,
-					SignalType:  "kubernetes-event",
+					SignalType:  "alert",
 					AlertName:   "CRDCreated",
 					Namespace:   "kubernaut-system",
 					Fingerprint: "fp-crd-012",
@@ -206,7 +206,7 @@ var eventTypeCatalog = []eventTypeTestCase{
 				CorrelationID:  correlationID,
 				EventData: ogenclient.NewAuditEventRequestEventDataGatewayCrdFailedAuditEventRequestEventData(ogenclient.GatewayAuditPayload{
 					EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewayCrdFailed,
-					SignalType:  "kubernetes-event",
+					SignalType:  "alert",
 					AlertName:   "CRDCreationFailed",
 					Namespace:   "kubernaut-system",
 					Fingerprint: "fp-crd-fail-789",

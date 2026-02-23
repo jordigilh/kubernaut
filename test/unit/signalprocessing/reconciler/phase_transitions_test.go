@@ -250,7 +250,7 @@ func createTestSP(phase signalprocessingv1alpha1.SignalProcessingPhase) *signalp
 				Fingerprint:  "abcd1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab",
 				Name:         "TestSignal",
 				Severity:     "critical",
-				Type:         "prometheus",
+				Type:         "alert",
 				TargetType:   "kubernetes",
 				ReceivedTime: now,
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{

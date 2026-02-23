@@ -39,7 +39,7 @@ var _ = Describe("Reconstruction Validator", func() {
 			rr := &remediationv1.RemediationRequest{
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalName:        "HighCPU",
-					SignalType:        "prometheus-alert",
+					SignalType:        "alert",
 					SignalLabels:      map[string]string{"alertname": "HighCPU"},
 					SignalAnnotations: map[string]string{"summary": "High CPU"},
 					OriginalPayload:   `{"alert":"data"}`,
@@ -74,7 +74,7 @@ var _ = Describe("Reconstruction Validator", func() {
 			// Validates validator rejects RR without required SignalName
 			rr := &remediationv1.RemediationRequest{
 				Spec: remediationv1.RemediationRequestSpec{
-					SignalType: "prometheus-alert",
+					SignalType: "alert",
 					// SignalName missing - should fail
 				},
 			}
@@ -112,7 +112,7 @@ var _ = Describe("Reconstruction Validator", func() {
 			rr := &remediationv1.RemediationRequest{
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalName:        "HighCPU",
-					SignalType:        "prometheus-alert",
+					SignalType:        "alert",
 					SignalLabels:      map[string]string{"alertname": "HighCPU"},
 					SignalAnnotations: map[string]string{"summary": "CPU usage is high"},
 					OriginalPayload:   `{"alert":"data"}`,
@@ -149,7 +149,7 @@ var _ = Describe("Reconstruction Validator", func() {
 			rr := &remediationv1.RemediationRequest{
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalName: "HighCPU",
-					SignalType: "prometheus-alert",
+					SignalType: "alert",
 					// All 7 optional fields missing (Gaps #1-6, #8)
 				},
 			}
@@ -169,7 +169,7 @@ var _ = Describe("Reconstruction Validator", func() {
 			rr := &remediationv1.RemediationRequest{
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalName: "HighCPU",
-					SignalType: "prometheus-alert",
+					SignalType: "alert",
 					// SignalLabels missing - should warn
 				},
 			}
@@ -186,7 +186,7 @@ var _ = Describe("Reconstruction Validator", func() {
 			rr := &remediationv1.RemediationRequest{
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalName: "HighCPU",
-					SignalType: "prometheus-alert",
+					SignalType: "alert",
 				},
 				// Status.TimeoutConfig missing - should warn
 			}
@@ -204,7 +204,7 @@ var _ = Describe("Reconstruction Validator", func() {
 			rr := &remediationv1.RemediationRequest{
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalName:        "HighCPU",
-					SignalType:        "prometheus-alert",
+					SignalType:        "alert",
 					SignalLabels:      map[string]string{"alertname": "HighCPU"},
 					SignalAnnotations: map[string]string{"summary": "CPU usage is high"},
 					OriginalPayload:   `{"alert":"data"}`,

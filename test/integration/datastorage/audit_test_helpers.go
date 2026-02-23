@@ -86,7 +86,7 @@ func CreateGatewaySignalReceivedEvent(
 		EventOutcome:   "success",
 		CorrelationID:  correlationID,
 		ResourceType:   "Signal",
-		ResourceID:     payload.AlertName,
+		ResourceID:     payload.SignalName,
 		EventData:      eventDataMap,
 	}, nil
 }

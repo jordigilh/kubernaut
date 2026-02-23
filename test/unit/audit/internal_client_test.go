@@ -46,7 +46,7 @@ func createInternalTestEvent(resourceID string) *ogenclient.AuditEventRequest {
 	// Use GatewayAuditPayload as generic test payload (ogen migration - discriminated union)
 	payload := ogenclient.GatewayAuditPayload{
 		EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewayCrdCreated,
-		SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
+		SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
 		AlertName:   "test-alert",
 		Namespace:   "default",
 		Fingerprint: "test-fingerprint",

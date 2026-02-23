@@ -64,7 +64,7 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      "e2e-error-hapi-fingerprint",
 							Severity:         "critical",
-							SignalType:       "UnknownError", // Potentially problematic signal type
+							SignalName:       "UnknownError", // Potentially problematic signal type
 							Environment:      "production",
 							BusinessPriority: "P0",
 							TargetResource: aianalysisv1alpha1.TargetResource{
@@ -130,7 +130,7 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      "e2e-error-retry-fp",
 							Severity:        "medium",
-							SignalType:       "CrashLoopBackOff",
+							SignalName:       "CrashLoopBackOff",
 							Environment:      "staging",
 							BusinessPriority: "P1",
 							TargetResource: aianalysisv1alpha1.TargetResource{
@@ -200,7 +200,7 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      "e2e-error-investigation-fp",
 							Severity:         "critical",
-							SignalType:       "OOMKilled",
+							SignalName:       "OOMKilled",
 							Environment:      "production",
 							BusinessPriority: "P0",
 							TargetResource: aianalysisv1alpha1.TargetResource{
@@ -277,7 +277,7 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      "e2e-restart-fp",
 							Severity:        "medium",
-							SignalType:       "HighMemoryUsage",
+							SignalName:       "HighMemoryUsage",
 							Environment:      "staging",
 							BusinessPriority: "P2",
 							TargetResource: aianalysisv1alpha1.TargetResource{
@@ -354,7 +354,7 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      "e2e-metadata-fp",
 							Severity:         "critical",
-							SignalType:       "CrashLoopBackOff",
+							SignalName:       "CrashLoopBackOff",
 							Environment:      "production",
 							BusinessPriority: "P0",
 							TargetResource: aianalysisv1alpha1.TargetResource{

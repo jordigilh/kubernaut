@@ -38,7 +38,7 @@ var _ = Describe("RemediationRequest Builder", func() {
 			rrFields := &reconstructionpkg.ReconstructedRRFields{
 				Spec: &remediationv1.RemediationRequestSpec{
 					SignalName:        "HighCPU",
-					SignalType:        "prometheus-alert",
+					SignalType:        "alert",
 					SignalLabels:      map[string]string{"alertname": "HighCPU"},
 					SignalAnnotations: map[string]string{"summary": "CPU usage is high"},
 				},
@@ -136,7 +136,7 @@ var _ = Describe("RemediationRequest Builder", func() {
 			rrFields := &reconstructionpkg.ReconstructedRRFields{
 				Spec: &remediationv1.RemediationRequestSpec{
 					// SignalName missing - should error
-					SignalType: "prometheus-alert",
+					SignalType: "alert",
 				},
 			}
 
@@ -152,7 +152,7 @@ var _ = Describe("RemediationRequest Builder", func() {
 			rrFields := &reconstructionpkg.ReconstructedRRFields{
 				Spec: &remediationv1.RemediationRequestSpec{
 					SignalName: "NodeNotReady",
-					SignalType: "kubernetes-event",
+					SignalType: "alert",
 				},
 				Status: &remediationv1.RemediationRequestStatus{
 					// TimeoutConfig missing - should succeed (optional)

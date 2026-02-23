@@ -132,10 +132,10 @@ type SignalContextInput struct {
 	// +kubebuilder:validation:Enum=critical;high;medium;low;unknown
 	Severity string `json:"severity"`
 
-	// Signal type (e.g., OOMKilled, CrashLoopBackOff)
-	// Normalized by SignalProcessing: predictive types mapped to base types (BR-SP-106)
+	// Signal name (e.g., OOMKilled, CrashLoopBackOff)
+	// Normalized by SignalProcessing: predictive names mapped to base names (BR-SP-106)
 	// +kubebuilder:validation:Required
-	SignalType string `json:"signalType"`
+	SignalName string `json:"signalName"`
 
 	// SignalMode indicates whether this is a reactive or predictive signal.
 	// BR-AI-084: Predictive Signal Mode Prompt Strategy
@@ -656,8 +656,6 @@ type RecoveryStatus struct {
 	PreviousAttemptAssessment *PreviousAttemptAssessment `json:"previousAttemptAssessment,omitempty"`
 	// Whether the signal type changed due to the failed workflow
 	StateChanged bool `json:"stateChanged"`
-	// Current signal type (may differ from original after failed workflow)
-	CurrentSignalType string `json:"currentSignalType,omitempty"`
 }
 
 // PreviousAttemptAssessment contains analysis of the failed attempt

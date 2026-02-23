@@ -176,7 +176,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 				Fingerprint: ValidTestFingerprints["reconciler-03"],
 				Name:        "LowDiskSpace",
 				Severity: "low",
-				Type:        "prometheus",
+				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 					Kind:      "Service",
@@ -215,7 +215,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 				Fingerprint: ValidTestFingerprints["reconciler-04"],
 				Name:        "TestAlert",
 				Severity: "high",
-				Type:        "prometheus",
+				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 					Kind:      "Pod",
@@ -453,7 +453,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 				Fingerprint: ValidTestFingerprints["edge-case-01"],
 				Name:        "DefaultEnv",
 				Severity: "high",
-				Type:        "prometheus",
+				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 					Kind:      "Pod",
@@ -531,7 +531,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 						Fingerprint: GenerateConcurrentFingerprint("reconciler-concurrent", idx),
 						Name:        "ConcurrentTest",
 						Severity: "high",
-						Type:        "prometheus",
+						Type:        "alert",
 						TargetType:  "kubernetes",
 						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 							Kind:      "Pod",
@@ -566,7 +566,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 				Fingerprint: ValidTestFingerprints["edge-case-04"],
 				Name:        "MinimalSpec",
 				Severity: "low",
-				Type:        "kubernetes-event",
+				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 					Kind:      "Pod",
@@ -599,7 +599,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 				Fingerprint: ValidTestFingerprints["edge-case-05"],
 				Name:        "SpecialNs",
 				Severity: "high",
-				Type:        "prometheus",
+				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 					Kind:      "Pod",
@@ -674,7 +674,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 				Fingerprint: ValidTestFingerprints["edge-case-06"],
 				Name:        "DeepOwner",
 				Severity: "high",
-				Type:        "prometheus",
+				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 					Kind:      "Pod",
@@ -711,7 +711,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 				Fingerprint: ValidTestFingerprints["edge-case-07"],
 				Name:        "SuccessDetect",
 				Severity: "high",
-				Type:        "prometheus",
+				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 					Kind:      "Pod",
@@ -806,7 +806,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 				Fingerprint: ValidTestFingerprints["error-02"],
 				Name:        "ConflictTest",
 				Severity: "high",
-				Type:        "prometheus",
+				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 					Kind:      "Pod",
@@ -838,7 +838,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 					Namespace: ns,
 				},
 				Data: map[string]string{
-					"labels.rego": `package signalprocessing.labels
+					"labels.rego": `package signalprocessing.customlabels
 // Invalid Rego - missing import
 labels["team"] := ["platform"  // Missing closing bracket
 `,
@@ -851,7 +851,7 @@ labels["team"] := ["platform"  // Missing closing bracket
 				Fingerprint: ValidTestFingerprints["error-04"],
 				Name:        "RegoError",
 				Severity: "high",
-				Type:        "prometheus",
+				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 					Kind:      "Pod",
@@ -889,7 +889,7 @@ labels["team"] := ["platform"  // Missing closing bracket
 				Fingerprint: ValidTestFingerprints["error-06"],
 				Name:        "AuditFail",
 				Severity: "high",
-				Type:        "prometheus",
+				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 					Kind:      "Pod",
@@ -934,7 +934,7 @@ labels["team"] := ["platform"  // Missing closing bracket
 						Fingerprint: "",
 						Name:        "InvalidSpec",
 						Severity: "high",
-						Type:        "prometheus",
+						Type:        "alert",
 						TargetType:  "kubernetes",
 						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 							Kind:      "Pod",
@@ -987,7 +987,7 @@ labels["team"] := ["platform"  // Missing closing bracket
 					SignalFingerprint: ValidTestFingerprints["audit-001"],
 					SignalName:        "RecoveryFirstSignal",
 					Severity:          "critical",
-					SignalType:        "prometheus",
+					SignalType:        "alert",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1alpha1.ResourceIdentifier{
 						Kind:      "Pod",
@@ -1021,7 +1021,7 @@ labels["team"] := ["platform"  // Missing closing bracket
 						Fingerprint: ValidTestFingerprints["audit-001"],
 						Name:        "RecoveryFirst",
 						Severity:    "critical",
-						Type:        "prometheus",
+						Type:        "alert",
 						TargetType:  "kubernetes",
 						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 							Kind:      "Pod",
@@ -1071,7 +1071,7 @@ labels["team"] := ["platform"  // Missing closing bracket
 					SignalFingerprint: ValidTestFingerprints["audit-002"],
 					SignalName:        "RecoveryRetrySignal",
 					Severity:          "critical",
-					SignalType:        "prometheus",
+					SignalType:        "alert",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1alpha1.ResourceIdentifier{
 						Kind:      "Pod",
@@ -1107,7 +1107,7 @@ labels["team"] := ["platform"  // Missing closing bracket
 						Fingerprint: ValidTestFingerprints["audit-002"],
 						Name:        "RecoveryRetry",
 						Severity:    "critical",
-						Type:        "prometheus",
+						Type:        "alert",
 						TargetType:  "kubernetes",
 						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 							Kind:      "Pod",
@@ -1159,7 +1159,7 @@ labels["team"] := ["platform"  // Missing closing bracket
 						Fingerprint: ValidTestFingerprints["audit-003"],
 						Name:        "RecoveryMissing",
 						Severity: "high",
-						Type:        "prometheus",
+						Type:        "alert",
 						TargetType:  "kubernetes",
 						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 							Kind:      "Pod",
@@ -1213,7 +1213,7 @@ labels["team"] := ["platform"  // Missing closing bracket
 						Fingerprint: ValidTestFingerprints["audit-004"],
 						Name:        "NoRRRef",
 						Severity: "low",
-						Type:        "prometheus",
+						Type:        "alert",
 						TargetType:  "kubernetes",
 						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 							Kind:      "Pod",

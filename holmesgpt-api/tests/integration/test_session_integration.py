@@ -134,7 +134,7 @@ class TestIncidentSessionIntegration:
         request_data = {
             "incident_id": f"inc-it-session-001-{unique_test_id}",
             "remediation_id": f"rem-it-session-001-{unique_test_id}",
-            "signal_type": "OOMKilled",
+            "signal_name": "OOMKilled",
             "severity": "critical",
             "signal_source": "prometheus",
             "resource_kind": "Pod",
@@ -185,7 +185,7 @@ class TestIncidentSessionIntegration:
         request_data = {
             "incident_id": f"inc-it-session-002-{unique_test_id}",
             "remediation_id": f"rem-it-session-002-{unique_test_id}",
-            "signal_type": "OOMKilled",
+            "signal_name": "OOMKilled",
             "severity": "critical",
             "signal_source": "prometheus",
             "resource_kind": "Pod",
@@ -233,7 +233,7 @@ class TestIncidentSessionIntegration:
         request_data = {
             "incident_id": f"inc-it-session-003-{unique_test_id}",
             "remediation_id": remediation_id,
-            "signal_type": "OOMKilled",
+            "signal_name": "OOMKilled",
             "severity": "critical",
             "signal_source": "prometheus",
             "resource_kind": "Pod",
@@ -301,7 +301,7 @@ class TestIncidentSessionIntegration:
         request_a = {
             "incident_id": f"inc-it-session-004a-{unique_test_id}",
             "remediation_id": f"rem-it-session-004a-{unique_test_id}",
-            "signal_type": "OOMKilled",
+            "signal_name": "OOMKilled",
             "severity": "critical",
             "signal_source": "prometheus",
             "resource_kind": "Pod",
@@ -318,7 +318,7 @@ class TestIncidentSessionIntegration:
         request_b = {
             "incident_id": f"inc-it-session-004b-{unique_test_id}",
             "remediation_id": f"rem-it-session-004b-{unique_test_id}",
-            "signal_type": "CrashLoopBackOff",
+            "signal_name": "CrashLoopBackOff",
             "severity": "high",
             "signal_source": "prometheus",
             "resource_kind": "Pod",
@@ -370,7 +370,7 @@ class TestRecoverySessionIntegration:
         request_data = {
             "incident_id": f"inc-it-session-005-{unique_test_id}",
             "remediation_id": f"rem-it-session-005-{unique_test_id}",
-            "signal_type": "OOMKilled",
+            "signal_name": "OOMKilled",
             "previous_workflow_id": "oomkill-increase-memory-v1",
             "previous_workflow_result": "Failed",
             "resource_namespace": "default",
@@ -404,7 +404,7 @@ class TestRecoverySessionIntegration:
         request_data = {
             "incident_id": f"inc-it-session-006-{unique_test_id}",
             "remediation_id": remediation_id,
-            "signal_type": "OOMKilled",
+            "signal_name": "OOMKilled",
             "previous_workflow_id": "oomkill-increase-memory-v1",
             "previous_workflow_result": "Failed",
             "resource_namespace": "default",

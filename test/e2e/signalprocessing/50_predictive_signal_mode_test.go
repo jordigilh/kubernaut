@@ -127,9 +127,9 @@ var _ = Describe("E2E-SP-106-001: Predictive Signal Mode Classification", Label(
 				// BR-SP-106: Verify signal mode classification
 				g.Expect(updated.Status.SignalMode).To(Equal("predictive"),
 					"PredictedOOMKill should be classified as predictive")
-				g.Expect(updated.Status.SignalType).To(Equal("OOMKilled"),
+				g.Expect(updated.Status.SignalName).To(Equal("OOMKilled"),
 					"PredictedOOMKill should be normalized to OOMKilled for workflow catalog")
-				g.Expect(updated.Status.OriginalSignalType).To(Equal("PredictedOOMKill"),
+				g.Expect(updated.Status.SourceSignalName).To(Equal("PredictedOOMKill"),
 					"Original signal type must be preserved for SOC2 CC7.4 audit trail")
 			}, "60s", "2s").Should(Succeed())
 
@@ -189,9 +189,9 @@ var _ = Describe("E2E-SP-106-001: Predictive Signal Mode Classification", Label(
 				g.Expect(updated.Status.Phase).To(Equal(signalprocessingv1alpha1.PhaseCompleted))
 				g.Expect(updated.Status.SignalMode).To(Equal("reactive"),
 					"Standard OOMKilled should default to reactive")
-				g.Expect(updated.Status.SignalType).To(Equal("OOMKilled"),
+				g.Expect(updated.Status.SignalName).To(Equal("OOMKilled"),
 					"Reactive signal type should pass through unchanged")
-				g.Expect(updated.Status.OriginalSignalType).To(BeEmpty(),
+				g.Expect(updated.Status.SourceSignalName).To(BeEmpty(),
 					"No original type for reactive signals")
 			}, "60s", "2s").Should(Succeed())
 
@@ -214,7 +214,7 @@ func createPredictiveTestRR(namespace, name string) *remediationv1alpha1.Remedia
 			}(),
 			SignalName:        "E2EPredictiveAlert",
 			Severity:          "critical",
-			SignalType:        "prometheus",
+			SignalType:        "alert",
 			SignalSource:      "test-e2e-source",
 			TargetType:        "kubernetes",
 			FiringTime:        metav1.Now(),

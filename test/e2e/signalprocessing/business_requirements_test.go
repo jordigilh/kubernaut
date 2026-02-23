@@ -130,7 +130,7 @@ var _ = Describe("BR-SP-001: Node Enrichment Enables Infrastructure Analysis", f
 					Fingerprint:  "abcd1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab",
 					Name:         "NodeEnrichTest",
 					Severity:     "high",
-					Type:         "prometheus",
+					Type:         "alert",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
 					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -188,7 +188,7 @@ var _ = Describe("BR-SP-001: Node Enrichment Enables Infrastructure Analysis", f
 					Fingerprint:  "d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6",
 					Name:         "DegradedModeTest",
 					Severity:     "high",
-					Type:         "prometheus",
+					Type:         "alert",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
 					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -266,7 +266,7 @@ var _ = Describe("BR-SP-070: Priority Assignment Delivers Correct Business Outco
 						Fingerprint:  "a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1",
 						Name:         "HighCPU",
 						Severity:     "critical",
-						Type:         "prometheus",
+						Type:         "alert",
 						TargetType:   "kubernetes",
 						ReceivedTime: metav1.Now(),
 						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -318,7 +318,7 @@ var _ = Describe("BR-SP-070: Priority Assignment Delivers Correct Business Outco
 						Fingerprint:  "b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2",
 						Name:         "MemoryPressure",
 						Severity:     "high",
-						Type:         "prometheus",
+						Type:         "alert",
 						TargetType:   "kubernetes",
 						ReceivedTime: metav1.Now(),
 						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -376,7 +376,7 @@ var _ = Describe("BR-SP-070: Priority Assignment Delivers Correct Business Outco
 						Fingerprint:  "c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3",
 						Name:         "StagingCritical",
 						Severity:     "critical",
-						Type:         "prometheus",
+						Type:         "alert",
 						TargetType:   "kubernetes",
 						ReceivedTime: metav1.Now(),
 						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -419,7 +419,7 @@ var _ = Describe("BR-SP-070: Priority Assignment Delivers Correct Business Outco
 						Fingerprint:  "d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4",
 						Name:         "DevInfo",
 						Severity:     "low",
-						Type:         "prometheus",
+						Type:         "alert",
 						TargetType:   "kubernetes",
 						ReceivedTime: metav1.Now(),
 						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -483,7 +483,7 @@ var _ = Describe("BR-SP-051: Environment Classification Enables Correct Routing"
 					Fingerprint:  "e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5",
 					Name:         "TestAlert",
 					Severity:     "high",
-					Type:         "prometheus",
+					Type:         "alert",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
 					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -536,7 +536,7 @@ var _ = Describe("BR-SP-051: Environment Classification Enables Correct Routing"
 					Fingerprint:  "f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6",
 					Name:         "UnclassifiedAlert",
 					Severity:     "high",
-					Type:         "prometheus",
+					Type:         "alert",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
 					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -643,7 +643,7 @@ var _ = Describe("BR-SP-100: Owner Chain Enables Root Cause Analysis", func() {
 					Fingerprint:  "a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7",
 					Name:         "PodAlert",
 					Severity:     "critical",
-					Type:         "prometheus",
+					Type:         "alert",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
 					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -723,7 +723,7 @@ var _ = Describe("BR-SP-102: CustomLabels Enable Business-Specific Routing", fun
 					Fingerprint:  "d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0",
 					Name:         "PaymentsAlert",
 					Severity:     "critical",
-					Type:         "prometheus",
+					Type:         "alert",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
 					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -808,7 +808,7 @@ var _ = Describe("BR-SP-090: Categorization Audit Trail Provides Compliance Evid
 				SignalFingerprint: fingerprint,
 				SignalName:        "AuditTestSignal",
 				Severity:          "critical",
-				SignalType:        "prometheus",
+				SignalType:        "alert",
 				SignalSource:      "prometheus-adapter",
 				TargetType:        "kubernetes",
 				TargetResource: remediationv1alpha1.ResourceIdentifier{
@@ -850,7 +850,7 @@ var _ = Describe("BR-SP-090: Categorization Audit Trail Provides Compliance Evid
 					Fingerprint:    fingerprint,
 					Name:           "AuditTestSignal",
 					Severity:       "critical",
-					Type:           "prometheus",
+					Type:           "alert",
 					TargetType:     "kubernetes",
 					ReceivedTime:   metav1.Now(),
 					TargetResource: targetResource,
@@ -1074,7 +1074,7 @@ var _ = Describe("BR-SP-103: Workload Type Enrichment Enables Workload-Specific 
 					Fingerprint:  "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2",
 					Name:         "StatefulSetPodAlert",
 					Severity:     "high",
-					Type:         "prometheus",
+					Type:         "alert",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
 					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -1167,7 +1167,7 @@ var _ = Describe("BR-SP-103: Workload Type Enrichment Enables Workload-Specific 
 					Fingerprint:  "b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3",
 					Name:         "DaemonSetPodAlert",
 					Severity:     "critical",
-					Type:         "prometheus",
+					Type:         "alert",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
 					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -1278,7 +1278,7 @@ var _ = Describe("BR-SP-103: Workload Type Enrichment Enables Workload-Specific 
 					Fingerprint:  "c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4",
 					Name:         "ServicePodAlert",
 					Severity:     "high",
-					Type:         "prometheus",
+					Type:         "alert",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
 					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -1390,7 +1390,7 @@ var _ = Describe("BR-SP-103-D: Deployment Signal Enrichment", func() {
 					Fingerprint:  "d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2",
 					Name:         "DeploymentRolloutAlert",
 					Severity:     "high",
-					Type:         "prometheus",
+					Type:         "alert",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
 					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -1518,7 +1518,7 @@ var _ = Describe("BR-SP-103-A: StatefulSet Signal Enrichment (Fixed)", func() {
 					Fingerprint:  "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2",
 					Name:         "StatefulSetDataAlert",
 					Severity:     "critical",
-					Type:         "prometheus",
+					Type:         "alert",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
 					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -1626,7 +1626,7 @@ var _ = Describe("BR-SP-103-B: DaemonSet Signal Enrichment (Fixed)", func() {
 					Fingerprint:  "d1a2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2",
 					Name:         "DaemonSetNodeAlert",
 					Severity:     "high",
-					Type:         "prometheus",
+					Type:         "alert",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
 					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -1735,7 +1735,7 @@ var _ = Describe("BR-SP-103-C: ReplicaSet Signal Enrichment", func() {
 					Fingerprint:  "e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2",
 					Name:         "ReplicaSetAlert",
 					Severity:     "high",
-					Type:         "prometheus",
+					Type:         "alert",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
 					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -1863,7 +1863,7 @@ var _ = Describe("BR-SP-103-E: Service Signal Enrichment", func() {
 					Fingerprint:  "f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2",
 					Name:         "ServiceNetworkAlert",
 					Severity:     "critical",
-					Type:         "prometheus",
+					Type:         "alert",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
 					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -1966,7 +1966,7 @@ var _ = Describe("BR-SP-070-A: P0 Priority Classification", func() {
 					Fingerprint:  "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b3",
 					Name:         "ProductionCriticalAlert",
 					Severity:     "critical", // Critical severity
-					Type:         "prometheus",
+					Type:         "alert",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
 					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -2051,7 +2051,7 @@ var _ = Describe("BR-SP-070-B: P2 Priority Classification", func() {
 					Fingerprint:  "b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2",
 					Name:         "StagingWarningAlert",
 					Severity:     "high", // Warning severity
-					Type:         "prometheus",
+					Type:         "alert",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
 					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -2135,7 +2135,7 @@ var _ = Describe("BR-SP-070-C: P3 Priority Classification", func() {
 					Fingerprint:  "c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2",
 					Name:         "ExperimentalInfoAlert",
 					Severity:     "low", // Info severity
-					Type:         "prometheus",
+					Type:         "alert",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
 					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -2198,7 +2198,7 @@ var _ = Describe("E2E-SP-163-004: Recovery Context Validation", func() {
 				SignalFingerprint: "1a30eddc43a9a86bfdb34058bc861205b62cf2e12dbbfa182968fe0d56819639",
 				SignalName:        "RecoveryContextTest",
 				Severity:          "critical",
-				SignalType:        "prometheus",
+				SignalType:        "alert",
 				SignalSource:      "test-e2e",
 				TargetType:        "kubernetes",
 				FiringTime:        metav1.Now(),

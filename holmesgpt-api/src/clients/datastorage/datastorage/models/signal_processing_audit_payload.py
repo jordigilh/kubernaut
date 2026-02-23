@@ -56,9 +56,9 @@ class SignalProcessingAuditPayload(BaseModel):
     from_phase: Optional[StrictStr] = Field(default=None, description="Phase being transitioned from")
     to_phase: Optional[StrictStr] = Field(default=None, description="Phase being transitioned to")
     signal_mode: Optional[StrictStr] = Field(default=None, description="Whether this signal is reactive (incident occurred) or predictive (incident predicted). BR-SP-106 Predictive Signal Mode Classification.")
-    original_signal_type: Optional[StrictStr] = Field(default=None, description="Original signal type before normalization. Only populated for predictive signals (e.g., PredictedOOMKill). SOC2 CC7.4 audit trail preservation.")
+    source_signal_name: Optional[StrictStr] = Field(default=None, description="Original signal name before normalization. Only populated for predictive signals (e.g., PredictedOOMKill). SOC2 CC7.4 audit trail preservation.")
     error: Optional[StrictStr] = Field(default=None, description="Error message if processing failed")
-    __properties: ClassVar[List[str]] = ["event_type", "phase", "signal", "severity", "external_severity", "normalized_severity", "determination_source", "policy_hash", "environment", "environment_source", "priority", "priority_source", "criticality", "sla_requirement", "has_owner_chain", "owner_chain_length", "degraded_mode", "duration_ms", "has_namespace", "has_pod", "has_deployment", "business_unit", "from_phase", "to_phase", "signal_mode", "original_signal_type", "error"]
+    __properties: ClassVar[List[str]] = ["event_type", "phase", "signal", "severity", "external_severity", "normalized_severity", "determination_source", "policy_hash", "environment", "environment_source", "priority", "priority_source", "criticality", "sla_requirement", "has_owner_chain", "owner_chain_length", "degraded_mode", "duration_ms", "has_namespace", "has_pod", "has_deployment", "business_unit", "from_phase", "to_phase", "signal_mode", "source_signal_name", "error"]
 
     @field_validator('event_type')
     def event_type_validate_enum(cls, value):
@@ -248,7 +248,7 @@ class SignalProcessingAuditPayload(BaseModel):
             "from_phase": obj.get("from_phase"),
             "to_phase": obj.get("to_phase"),
             "signal_mode": obj.get("signal_mode"),
-            "original_signal_type": obj.get("original_signal_type"),
+            "source_signal_name": obj.get("source_signal_name"),
             "error": obj.get("error")
         })
         return _obj

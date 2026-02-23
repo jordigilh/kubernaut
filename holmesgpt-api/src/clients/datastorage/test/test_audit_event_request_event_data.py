@@ -44,8 +44,8 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                 signal_annotations = {
                     'key' : ''
                     },
-                signal_type = 'prometheus-alert',
-                alert_name = 'HighCPUUsage',
+                signal_type = 'alert',
+                signal_name = 'HighCPUUsage',
                 namespace = 'production',
                 fingerprint = 'abc123',
                 severity = 'critical',
@@ -109,7 +109,7 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                 has_deployment = True,
                 business_unit = '',
                 signal_mode = 'predictive',
-                original_signal_type = 'PredictedOOMKill',
+                source_signal_name = 'PredictedOOMKill',
                 error = '',
                 analysis_name = 'diagnose-payment-api-2025-12-17-abc123',
                 approval_required = True,
@@ -347,8 +347,8 @@ class TestAuditEventRequestEventData(unittest.TestCase):
         else:
             return AuditEventRequestEventData(
                 event_type = 'effectiveness.health.assessed',
-                signal_type = 'prometheus-alert',
-                alert_name = 'HighCPUUsage',
+                signal_type = 'alert',
+                signal_name = 'HighCPUUsage',
                 namespace = 'production',
                 fingerprint = 'abc123',
                 rr_name = 'rr-payment-restart-123',
