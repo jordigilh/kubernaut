@@ -1,0 +1,33 @@
+# Restart Pods Workflow Schema - Job Backend (BR-WORKFLOW-004)
+# Scenario: Remediation retry -- first-line restart attempt
+metadata:
+  workflowId: restart-pods-v1
+  version: "1.0.0"
+  description:
+    what: "Performs a rolling restart of all pods in a deployment without changing the revision. This is a simpler, less invasive first-line response that resolves transient issues like corrupted caches or stuck connections."
+    whenToUse: "When pods are crashing due to a suspected transient runtime issue. Try this first before more disruptive actions like rollback. If the issue persists after restart, a different workflow (e.g., rollback) should be selected."
+    whenNotToUse: "When the crash is caused by a persistent configuration error or bad image. A restart will not fix these -- use RollbackDeployment instead."
+    preconditions: "The deployment exists and has running or crashing pods."
+
+actionType: RestartDeployment
+
+labels:
+  signalType: CrashLoopBackOff
+  severity: [critical, low]
+  environment: [production, staging]
+  component: "*"
+  priority: "*"
+
+execution:
+  engine: job
+  bundle: quay.io/kubernaut-cicd/test-workflows/restart-pods-job@sha256:placeholder
+
+parameters:
+  - name: TARGET_NAMESPACE
+    type: string
+    required: true
+    description: "Namespace of the affected deployment"
+  - name: TARGET_DEPLOYMENT
+    type: string
+    required: true
+    description: "Name of the deployment to restart"

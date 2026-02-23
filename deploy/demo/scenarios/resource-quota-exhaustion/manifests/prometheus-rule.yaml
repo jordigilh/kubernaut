@@ -1,0 +1,28 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: kubernaut-quota-rules
+  namespace: demo-quota
+  labels:
+    release: prometheus
+spec:
+  groups:
+  - name: kubernaut-resource-quota
+    rules:
+    - alert: KubePodPendingQuotaExhausted
+      expr: |
+        kube_pod_status_phase{
+          namespace="demo-quota",
+          phase="Pending"
+        } > 0
+      for: 1m
+      labels:
+        severity: warning
+      annotations:
+        summary: >
+          Pod {{ $labels.pod }} in namespace {{ $labels.namespace }} is stuck
+          in Pending state, likely due to ResourceQuota exhaustion.
+        description: >
+          One or more pods in the demo-quota namespace are in Pending state.
+          This is typically caused by exceeding the namespace ResourceQuota
+          limits. Check kubectl describe quota -n demo-quota for details.

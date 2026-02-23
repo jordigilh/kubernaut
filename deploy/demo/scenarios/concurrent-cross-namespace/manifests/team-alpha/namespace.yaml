@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: demo-team-alpha
+  labels:
+    kubernaut.ai/managed: "true"
+    kubernaut.ai/environment: production
+    kubernaut.ai/business-unit: platform-engineering
+    kubernaut.ai/service-owner: platform-team
+    kubernaut.ai/criticality: medium
+    kubernaut.ai/sla-tier: tier-2
+    kubernaut.ai/risk-tolerance: high
