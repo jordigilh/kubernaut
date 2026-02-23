@@ -50,7 +50,7 @@ var _ = Describe("Audit Event Parser", func() {
 			parsedData, err := reconstructionpkg.ParseAuditEvent(event)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(parsedData).ToNot(BeNil())
+			Expect(parsedData.SignalName).To(Equal("HighCPU"))
 			Expect(parsedData.SignalType).To(Equal("alert"))
 			Expect(parsedData.SignalName).To(Equal("HighCPU"))
 			Expect(parsedData.SignalLabels).To(HaveKeyWithValue("alertname", "HighCPU"))

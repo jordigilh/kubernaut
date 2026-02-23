@@ -206,7 +206,8 @@ var _ = Describe("BufferedAuditStore", func() {
 			store, err = audit.NewBufferedStore(mockClient, config, "test-service", logger)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(store).To(BeAssignableToTypeOf((*audit.BufferedAuditStore)(nil)))
+			_, ok := store.(*audit.BufferedAuditStore)
+			Expect(ok).To(BeTrue(), "store should be *audit.BufferedAuditStore")
 		})
 
 		It("should return error if client is nil", func() {
@@ -235,7 +236,8 @@ var _ = Describe("BufferedAuditStore", func() {
 
 			// Should not error, but use defaults instead
 			Expect(err).ToNot(HaveOccurred())
-			Expect(store).To(BeAssignableToTypeOf((*audit.BufferedAuditStore)(nil)))
+			_, ok := store.(*audit.BufferedAuditStore)
+			Expect(ok).To(BeTrue(), "store should be *audit.BufferedAuditStore")
 		})
 	})
 
