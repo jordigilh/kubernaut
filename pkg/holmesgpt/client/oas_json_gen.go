@@ -2155,8 +2155,8 @@ func (s *IncidentRequest) encodeFields(e *jx.Encoder) {
 		e.Str(s.RemediationID)
 	}
 	{
-		e.FieldStart("signal_type")
-		e.Str(s.SignalType)
+		e.FieldStart("signal_name")
+		e.Str(s.SignalName)
 	}
 	{
 		e.FieldStart("severity")
@@ -2303,7 +2303,7 @@ func (s *IncidentRequest) encodeFields(e *jx.Encoder) {
 var jsonFieldsNameOfIncidentRequest = [30]string{
 	0:  "incident_id",
 	1:  "remediation_id",
-	2:  "signal_type",
+	2:  "signal_name",
 	3:  "severity",
 	4:  "signal_source",
 	5:  "resource_namespace",
@@ -2367,17 +2367,17 @@ func (s *IncidentRequest) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"remediation_id\"")
 			}
-		case "signal_type":
+		case "signal_name":
 			requiredBitSet[0] |= 1 << 2
 			if err := func() error {
 				v, err := d.Str()
-				s.SignalType = string(v)
+				s.SignalName = string(v)
 				if err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"signal_type\"")
+				return errors.Wrap(err, "decode field \"signal_name\"")
 			}
 		case "severity":
 			requiredBitSet[0] |= 1 << 3
@@ -4380,8 +4380,8 @@ func (s *OriginalRCA) encodeFields(e *jx.Encoder) {
 		e.Str(s.Summary)
 	}
 	{
-		e.FieldStart("signal_type")
-		e.Str(s.SignalType)
+		e.FieldStart("signal_name")
+		e.Str(s.SignalName)
 	}
 	{
 		e.FieldStart("severity")
@@ -4401,7 +4401,7 @@ func (s *OriginalRCA) encodeFields(e *jx.Encoder) {
 
 var jsonFieldsNameOfOriginalRCA = [4]string{
 	0: "summary",
-	1: "signal_type",
+	1: "signal_name",
 	2: "severity",
 	3: "contributing_factors",
 }
@@ -4427,17 +4427,17 @@ func (s *OriginalRCA) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"summary\"")
 			}
-		case "signal_type":
+		case "signal_name":
 			requiredBitSet[0] |= 1 << 1
 			if err := func() error {
 				v, err := d.Str()
-				s.SignalType = string(v)
+				s.SignalName = string(v)
 				if err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"signal_type\"")
+				return errors.Wrap(err, "decode field \"signal_name\"")
 			}
 		case "severity":
 			requiredBitSet[0] |= 1 << 2
@@ -5861,9 +5861,9 @@ func (s *RecoveryRequest) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.SignalType.Set {
-			e.FieldStart("signal_type")
-			s.SignalType.Encode(e)
+		if s.SignalName.Set {
+			e.FieldStart("signal_name")
+			s.SignalName.Encode(e)
 		}
 	}
 	{
@@ -5941,7 +5941,7 @@ var jsonFieldsNameOfRecoveryRequest = [18]string{
 	3:  "recovery_attempt_number",
 	4:  "previous_execution",
 	5:  "enrichment_results",
-	6:  "signal_type",
+	6:  "signal_name",
 	7:  "severity",
 	8:  "resource_namespace",
 	9:  "resource_kind",
@@ -6029,15 +6029,15 @@ func (s *RecoveryRequest) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"enrichment_results\"")
 			}
-		case "signal_type":
+		case "signal_name":
 			if err := func() error {
-				s.SignalType.Reset()
-				if err := s.SignalType.Decode(d); err != nil {
+				s.SignalName.Reset()
+				if err := s.SignalName.Decode(d); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"signal_type\"")
+				return errors.Wrap(err, "decode field \"signal_name\"")
 			}
 		case "severity":
 			if err := func() error {

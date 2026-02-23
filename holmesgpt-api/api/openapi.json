@@ -1262,10 +1262,10 @@
             "title": "Remediation Id",
             "description": "Remediation request ID for audit correlation (e.g., 'req-2025-11-27-abc123'). MANDATORY per DD-WORKFLOW-002 v2.2. This ID is for CORRELATION/AUDIT ONLY - do NOT use for RCA analysis or workflow matching."
           },
-          "signal_type": {
+          "signal_name": {
             "type": "string",
-            "title": "Signal Type",
-            "description": "Canonical signal type"
+            "title": "Signal Name",
+            "description": "Canonical signal name (e.g., OOMKilled, CrashLoopBackOff)"
           },
           "severity": {
             "$ref": "#/components/schemas/Severity",
@@ -1526,7 +1526,7 @@
         "required": [
           "incident_id",
           "remediation_id",
-          "signal_type",
+          "signal_name",
           "severity",
           "signal_source",
           "resource_namespace",
@@ -1658,10 +1658,10 @@
             "title": "Summary",
             "description": "Brief RCA summary from initial investigation"
           },
-          "signal_type": {
+          "signal_name": {
             "type": "string",
-            "title": "Signal Type",
-            "description": "Signal type determined by original RCA (e.g., 'OOMKilled')"
+            "title": "Signal Name",
+            "description": "Signal name determined by original RCA (e.g., 'OOMKilled')"
           },
           "severity": {
             "$ref": "#/components/schemas/Severity",
@@ -1679,7 +1679,7 @@
         "type": "object",
         "required": [
           "summary",
-          "signal_type",
+          "signal_name",
           "severity"
         ],
         "title": "OriginalRCA",
@@ -1781,7 +1781,7 @@
             ],
             "description": "Enriched context including DetectedLabels for workflow filtering"
           },
-          "signal_type": {
+          "signal_name": {
             "anyOf": [
               {
                 "type": "string"
@@ -1790,8 +1790,8 @@
                 "type": "null"
               }
             ],
-            "title": "Signal Type",
-            "description": "Current signal type (may have changed)"
+            "title": "Signal Name",
+            "description": "Current signal name (may have changed)"
           },
           "severity": {
             "anyOf": [
@@ -1933,7 +1933,7 @@
                 "insufficient limits"
               ],
               "severity": "high",
-              "signal_type": "OOMKilled",
+              "signal_name": "OOMKilled",
               "summary": "Memory exhaustion causing OOMKilled in production pod"
             },
             "selected_workflow": {
@@ -1955,7 +1955,7 @@
           "resource_namespace": "production",
           "risk_tolerance": "medium",
           "severity": "high",
-          "signal_type": "OOMKilled"
+          "signal_name": "OOMKilled"
         }
       },
       "RecoveryResponse": {
