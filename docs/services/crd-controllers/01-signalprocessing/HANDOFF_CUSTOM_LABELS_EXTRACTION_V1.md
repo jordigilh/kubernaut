@@ -186,6 +186,25 @@ This design follows the **"Conduit, Not Transformer"** pattern used by:
 
 ---
 
+## Rego Package Convention
+
+Custom label Rego policies must use `package signalprocessing.customlabels` with a `labels` rule that outputs `map[string][]string`:
+
+```rego
+package signalprocessing.customlabels
+
+import rego.v1
+
+labels["risk_tolerance"] := [rt] if {
+    rt := input.kubernetes.namespace.labels["kubernaut.ai/risk-tolerance"]
+    rt != ""
+}
+```
+
+The engine evaluates `data.signalprocessing.customlabels.labels`. Policies using other package names will not produce output. See `HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md` for the full design rationale.
+
+---
+
 ## References
 
 - **DD-WORKFLOW-001 v1.8**: Mandatory label schema + custom labels (snake_case)

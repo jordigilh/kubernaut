@@ -128,7 +128,7 @@ func (e *Engine) LoadPolicy(policyContent string) error {
 func (e *Engine) validatePolicy(policyContent string) error {
     // ✅ Tries to compile - fails fast on syntax errors
     _, err := rego.New(
-        rego.Query("data.signalprocessing.labels.labels"),
+        rego.Query("data.signalprocessing.customlabels.labels"),
         rego.Module("policy.rego", policyContent),
     ).PrepareForEval(context.Background())
     return err

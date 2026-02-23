@@ -179,6 +179,29 @@ The SignalProcessing team ADR should document:
 
 ---
 
+## 📦 Dedicated Package Namespace: `signalprocessing.customlabels`
+
+Custom label Rego policies use the `signalprocessing.customlabels` package, separate from the 5 mandatory label classifiers (environment, priority, severity, business, signal type) that each have their own Rego packages.
+
+| Package | Purpose |
+|---------|---------|
+| `signalprocessing.environment` | Mandatory environment label classifier |
+| `signalprocessing.priority` | Mandatory priority label classifier |
+| `signalprocessing.severity` | Mandatory severity label classifier |
+| `signalprocessing.business` | Mandatory business category classifier |
+| **`signalprocessing.customlabels`** | **User-defined custom labels (this document)** |
+
+**Rationale**: Keeping custom labels in a dedicated package (`customlabels`) rather than a generic `labels` package:
+
+1. **Clarity**: Operators can immediately distinguish user-defined labels from the 5 system-managed mandatory labels
+2. **Consistency**: Follows the same one-package-per-classifier pattern used by all other SP classifiers
+3. **Safety**: The Rego engine queries `data.signalprocessing.customlabels.labels`, so policies in other packages cannot accidentally inject custom labels
+4. **Discoverability**: All custom label policies live under a predictable, documented package name
+
+**Engine query path**: `data.signalprocessing.customlabels.labels`
+
+---
+
 ## 🎯 V1.0 Rego: Focused Scope
 
 ### V1.0 CustomLabels Examples (Documented)
@@ -311,7 +334,7 @@ SignalProcessing enforces a security wrapper that strips system labels from cust
 ```rego
 package signalprocessing.security
 
-import data.signalprocessing.labels as customer_labels
+import data.signalprocessing.customlabels as customer_labels
 
 # System labels that cannot be overridden by customer policies
 # These are the 5 mandatory labels from DD-WORKFLOW-001 v1.8
@@ -348,7 +371,7 @@ startswith_any(key, prefixes) {
 ## 📝 V1.0 Customer Policy Example
 
 ```rego
-package signalprocessing.labels
+package signalprocessing.customlabels
 
 # ============================================
 # RISK TOLERANCE
@@ -780,7 +803,7 @@ Rego is a **full policy language**, not just a label filter. It supports:
 # signal-processing-policies ConfigMap
 # Basic label copying
 
-package signalprocessing.labels
+package signalprocessing.customlabels
 
 # Extract team from namespace label
 labels["team"] = team {
@@ -815,7 +838,7 @@ labels["cost-tier"] = tier {
 ## Example 2: Derive `business-owner` from Namespace (V1.1+ - Transformation)
 
 ```rego
-package signalprocessing.labels
+package signalprocessing.customlabels
 
 # Lookup table: namespace pattern → business owner
 # Platform admins define this mapping
@@ -865,7 +888,7 @@ labels["business-owner"] = "platform-oncall@company.com" {
 ## Example 3: Derive `escalation-path` from Multiple Factors (V1.1+)
 
 ```rego
-package signalprocessing.labels
+package signalprocessing.customlabels
 
 # Complex derivation: escalation path based on team + environment + severity
 # This determines how alerts are routed
@@ -918,7 +941,7 @@ labels["escalation-path"] = path {
 ## Example 4: Derive `cost-center` with Priority Chain (V1.1+)
 
 ```rego
-package signalprocessing.labels
+package signalprocessing.customlabels
 
 # Priority order for cost center derivation:
 # 1. Explicit namespace label (highest priority)
@@ -969,7 +992,7 @@ labels["cost-center"] = "CC-9999-UNALLOCATED" {
 ## Example 5: Derive `workflow-constraints` for Safety (V1.1+)
 
 ```rego
-package signalprocessing.labels
+package signalprocessing.customlabels
 
 import future.keywords.in
 
@@ -1016,7 +1039,7 @@ labels["constraint-read-only"] = "true" {
 ## Example 6: Validation + Allowlist (V1.1+ - Security)
 
 ```rego
-package signalprocessing.labels
+package signalprocessing.customlabels
 
 import future.keywords.in
 
@@ -1056,7 +1079,7 @@ labels[key] = value {
 ## Example 7: External Data Lookup (V2.0+ - Advanced)
 
 ```rego
-package signalprocessing.labels
+package signalprocessing.customlabels
 
 # Load organizational structure from OPA bundle data
 # data.org_structure is loaded from a JSON file
@@ -1204,7 +1227,7 @@ func (r *Reconciler) evaluateRegoPolicy(ctx context.Context, k8sCtx *v1alpha1.Ku
     }
 
     // Evaluate policy
-    results, err := r.regoEngine.Evaluate(ctx, "data.signalprocessing.labels.labels", input)
+    results, err := r.regoEngine.Evaluate(ctx, "data.signalprocessing.customlabels.labels", input)
     if err != nil {
         return nil, err
     }
@@ -1241,7 +1264,7 @@ func NewRegoEngine(policyPath string) (*RegoEngine, error) {
     }
 
     query, err := rego.New(
-        rego.Query("data.signalprocessing.labels.labels"),
+        rego.Query("data.signalprocessing.customlabels.labels"),
         rego.Module("policy.rego", string(policy)),
     ).PrepareForEval(context.Background())
     if err != nil {
@@ -1277,7 +1300,7 @@ metadata:
   namespace: kubernaut-system
 data:
   labels.rego: |
-    package signalprocessing.labels
+    package signalprocessing.customlabels
 
     # Default: extract kubernaut.io/* labels from namespace
     labels[key] = value {
