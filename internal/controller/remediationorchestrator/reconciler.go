@@ -400,7 +400,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 
 	// BR-AUDIT-005 Gap #7: Validate timeout configuration (fail fast on invalid config)
 	// Per test requirement: Negative timeouts should be rejected with ERR_INVALID_TIMEOUT_CONFIG
-	if err := r.validateTimeoutConfig(ctx, rr); err != nil {
+	if err := r.validateTimeoutConfig(rr); err != nil {
 		logger.Error(err, "Invalid timeout configuration, transitioning to Failed")
 		return r.transitionToFailed(ctx, rr, "configuration", err)
 	}
@@ -638,11 +638,10 @@ func (r *Reconciler) handlePendingPhase(ctx context.Context, rr *remediationv1.R
 	// Note: lifecycle.started audit event is emitted during phase initialization (line ~207)
 	// This function handles the business logic of the Pending phase
 
-	// V1.0: Check routing conditions BEFORE creating SignalProcessing (DD-RO-002)
-	// This prevents duplicate RRs from flooding the system with duplicate SP/AI/WFE chains
-	// Primary check: DuplicateInProgress (same fingerprint, active RR exists)
-	// Note: Empty workflowID since we're in Pending phase (before AI selects workflow)
-	blocked, err := r.routingEngine.CheckBlockingConditions(ctx, rr, "")
+	// Pre-AA routing checks: fingerprint-based only (no AI data available yet).
+	// Primary check: DuplicateInProgress (same fingerprint, active RR exists).
+	// Issue #165: Split from CheckBlockingConditions to avoid sentinel empty strings.
+	blocked, err := r.routingEngine.CheckPreAnalysisConditions(ctx, rr)
 	if err != nil {
 		logger.Error(err, "Failed to check routing conditions")
 		return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil
@@ -913,7 +912,7 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 
 			// Emit audit only if transition actually happened (wasn't already in AwaitingApproval)
 			if transitionErr == nil && oldPhaseBeforeTransition != phase.AwaitingApproval {
-				r.emitApprovalRequestedAudit(ctx, rr, ai.Status.SelectedWorkflow.Confidence, ai.Status.SelectedWorkflow.WorkflowID, ai.Status.ApprovalReason)
+				r.emitApprovalRequestedAudit(ctx, rr, ai.Status.SelectedWorkflow.Confidence, ai.Status.SelectedWorkflow.WorkflowID)
 			}
 
 			return transitionResult, transitionErr
@@ -926,17 +925,21 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 		// This checks for blocking conditions BEFORE creating WorkflowExecution:
 		// - ConsecutiveFailures (BR-ORCH-042)
 		// - DuplicateInProgress (DD-RO-002-ADDENDUM)
-		// - ResourceBusy (DD-RO-002)
-		// - RecentlyRemediated (DD-RO-002 Check 4) - workflow-specific cooldown
-		// - ExponentialBackoff (DD-WE-004)
-		//
-		// DD-RO-002 Check 4: Pass workflow ID for workflow-specific cooldown.
-		// Only blocks if SAME workflow was recently executed on same target.
+		// Post-AA routing checks: all checks including resource-level (issue #165).
+		// Caller resolves the effective target from AIAnalysis RCA AffectedResource.
 		workflowID := ""
 		if ai.Status.SelectedWorkflow != nil {
 			workflowID = ai.Status.SelectedWorkflow.WorkflowID
 		}
-		blocked, err := r.routingEngine.CheckBlockingConditions(ctx, rr, workflowID)
+		resolvedKind, resolvedName, resolvedNS := resolveEffectivenessTarget(rr, ai)
+		if resolvedKind != "" {
+			resolvedKind = strings.ToLower(resolvedKind[:1]) + resolvedKind[1:]
+		}
+		targetResource := resolvedKind + "/" + resolvedName
+		if resolvedNS != "" {
+			targetResource = resolvedNS + "/" + targetResource
+		}
+		blocked, err := r.routingEngine.CheckPostAnalysisConditions(ctx, rr, workflowID, targetResource)
 		if err != nil {
 			logger.Error(err, "Failed to check routing conditions")
 			return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil
@@ -1129,6 +1132,13 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 		}); err != nil {
 			logger.Error(err, "Failed to update RAR conditions")
 			// Continue - condition update is best-effort
+		}
+
+		// ADR-040: AIAnalysisRef must be set before AwaitingApproval phase.
+		// Guard defensively: the CRD field is *corev1.ObjectReference (optional pointer).
+		if rr.Status.AIAnalysisRef == nil {
+			logger.Error(nil, "AIAnalysisRef not set on RemediationRequest - cannot create WorkflowExecution (ADR-040 invariant)")
+			return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil // REFACTOR-RO-003
 		}
 
 		// Fetch AIAnalysis CRD to get workflow details for WorkflowExecution
@@ -2356,7 +2366,7 @@ func (r *Reconciler) emitRoutingBlockedAudit(ctx context.Context, rr *remediatio
 // emitApprovalRequestedAudit emits an audit event for approval requested.
 // Per DD-AUDIT-003: orchestrator.approval.requested (P2)
 // Non-blocking - failures are logged but don't affect business logic.
-func (r *Reconciler) emitApprovalRequestedAudit(ctx context.Context, rr *remediationv1.RemediationRequest, confidence float64, workflowID, approvalReason string) {
+func (r *Reconciler) emitApprovalRequestedAudit(ctx context.Context, rr *remediationv1.RemediationRequest, confidence float64, workflowID string) {
 	logger := log.FromContext(ctx)
 
 	if r.auditStore == nil {
@@ -2987,7 +2997,7 @@ func (r *Reconciler) getConsecutiveFailureThreshold() int {
 // BR-AUDIT-005 Gap #7: Validates that all timeouts are non-negative.
 // Gap #8: TimeoutConfig moved from Spec to Status for operator mutability.
 // Returns error with ERR_INVALID_TIMEOUT_CONFIG code if validation fails.
-func (r *Reconciler) validateTimeoutConfig(ctx context.Context, rr *remediationv1.RemediationRequest) error {
+func (r *Reconciler) validateTimeoutConfig(rr *remediationv1.RemediationRequest) error {
 	if rr.Status.TimeoutConfig == nil {
 		return nil // No custom timeout config, use defaults
 	}
