@@ -929,30 +929,23 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 		// Normal completion - check routing conditions before creating WorkflowExecution
 		logger.Info("AIAnalysis completed, checking routing conditions")
 
-		// DD-HAPI-006: AffectedResource MUST be present for routing.
-		// HAPI validates this (ADR-055) and escalates if missing.
-		// Guard: if AA completed but AffectedResource is nil, escalate.
-		if ai.Status.RootCauseAnalysis == nil ||
-			ai.Status.RootCauseAnalysis.AffectedResource == nil ||
-			ai.Status.RootCauseAnalysis.AffectedResource.Kind == "" ||
-			ai.Status.RootCauseAnalysis.AffectedResource.Name == "" {
-			logger.Error(fmt.Errorf("RCA AffectedResource missing on completed AIAnalysis"),
-				"Escalating to human review per DD-HAPI-006",
-				"aianalysis", ai.Name)
-			return r.aiAnalysisHandler.HandleAIAnalysisStatus(ctx, rr, ai)
-		}
-
+		// V1.0: Check routing conditions (DD-RO-002)
+		// This checks for blocking conditions BEFORE creating WorkflowExecution:
+		// - ConsecutiveFailures (BR-ORCH-042)
+		// - DuplicateInProgress (DD-RO-002-ADDENDUM)
 		// Post-AA routing checks: all checks including resource-level (issue #165).
-		// Target is the AI-identified AffectedResource, NOT rr.Spec.TargetResource.
+		// Caller resolves the effective target from AIAnalysis RCA AffectedResource.
 		workflowID := ""
 		if ai.Status.SelectedWorkflow != nil {
 			workflowID = ai.Status.SelectedWorkflow.WorkflowID
 		}
-		ar := ai.Status.RootCauseAnalysis.AffectedResource
-		resolvedKind := strings.ToLower(ar.Kind[:1]) + ar.Kind[1:]
-		targetResource := resolvedKind + "/" + ar.Name
-		if ar.Namespace != "" {
-			targetResource = ar.Namespace + "/" + targetResource
+		resolvedKind, resolvedName, resolvedNS := resolveEffectivenessTarget(rr, ai)
+		if resolvedKind != "" {
+			resolvedKind = strings.ToLower(resolvedKind[:1]) + resolvedKind[1:]
+		}
+		targetResource := resolvedKind + "/" + resolvedName
+		if resolvedNS != "" {
+			targetResource = resolvedNS + "/" + targetResource
 		}
 		blocked, err := r.routingEngine.CheckPostAnalysisConditions(ctx, rr, workflowID, targetResource)
 		if err != nil {
