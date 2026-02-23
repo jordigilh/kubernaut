@@ -34,10 +34,10 @@ import (
 // 4 required fields (severity, component, environment, priority) + 1 optional (signalName).
 // Authority: DD-WORKFLOW-001 v1.4, DD-WORKFLOW-016 (signalName made optional)
 type MandatoryLabels struct {
-	// SignalName is the signal type this workflow handles (REQUIRED)
+	// SignalName is the semantic signal name this workflow handles (OPTIONAL per DD-WORKFLOW-016)
+	// Not used for workflow matching -- LLM selects by actionType, not signalName.
 	// Examples: "OOMKilled", "CrashLoopBackOff", "NodeNotReady"
-	// Source: K8s Event Reason (auto-populated by Signal Processing)
-	SignalName string `json:"signalType" validate:"required"`
+	SignalName string `json:"signalName,omitempty" validate:"omitempty"`
 
 	// Severity is the severity level(s) this workflow is designed for (REQUIRED)
 	// Values: "critical", "high", "medium", "low"
@@ -277,7 +277,7 @@ func (d StructuredDescription) String() string {
 // DD-WORKFLOW-001 v2.7: severity is []string (always array, no wildcard)
 func NewMandatoryLabels(signalName string, severity []string, component string, environment []string, priority string) *MandatoryLabels {
 	return &MandatoryLabels{
-		SignalName:  signalType,
+		SignalName:  signalName,
 		Severity:    severity,
 		Component:   component,
 		Environment: environment,
