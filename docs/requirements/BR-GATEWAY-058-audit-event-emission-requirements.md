@@ -85,8 +85,8 @@ Gateway emits structured audit events with:
   "namespace": "prod-payment-service",
   "event_data": {
     "event_type": "gateway.crd.created",
-    "signal_type": "prometheus",
-    "alert_name": "HighMemoryUsage",
+    "signal_source": "prometheus",
+    "signal_name": "HighMemoryUsage",
     "namespace": "prod-payment-service",
     "fingerprint": "a1b2c3d4...",
     "severity": "critical",
@@ -133,8 +133,8 @@ alertname:namespace:kind:name
   "namespace": "prod-payment-service",
   "event_data": {
     "event_type": "gateway.crd.failed",
-    "signal_type": "prometheus",
-    "alert_name": "HighMemoryUsage",
+    "signal_source": "prometheus",
+    "signal_name": "HighMemoryUsage",
     "namespace": "prod-payment-service",
     "fingerprint": "a1b2c3d4...",
     "severity": "critical",

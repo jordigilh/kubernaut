@@ -498,7 +498,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 					"BR-GATEWAY-056: Namespace must match signal namespace")
 
 				// Validate alert name is preserved
-				Expect(payload.AlertName).To(Equal("PodCrashLoop"),
+				Expect(payload.SignalName).To(Equal("PodCrashLoop"),
 					"BR-GATEWAY-056: Alert name must be preserved")
 
 				// Validate RemediationRequest reference
@@ -510,7 +510,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 					"BR-GATEWAY-056: RR reference must be in namespace/name format (DD-AUDIT-CORRELATION-002)")
 
 				GinkgoWriter.Printf("✅ Target resource metadata preserved: alert=%s, namespace=%s\n",
-					payload.AlertName, payload.Namespace)
+					payload.SignalName, payload.Namespace)
 			})
 		})
 

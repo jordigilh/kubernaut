@@ -97,7 +97,7 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 			// DATA FLOW: SP.Spec.Signal.Name="PredictedOOMKill"
 			//   → Status.SignalMode="predictive"
 			//   → Status.SignalType="OOMKilled" (normalized for workflow catalog)
-			//   → Status.OriginalSignalType="PredictedOOMKill" (SOC2 audit trail)
+			//   → Status.SourceSignalName="PredictedOOMKill" (SOC2 audit trail)
 
 			// GIVEN: SignalProcessing with predictive signal type
 			sp := createSignalModeTestCRD(namespace, "test-predictive-oomkill")
@@ -132,7 +132,7 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 			// BUSINESS OUTCOME VERIFIED:
 			// - RO reads Status.SignalType="OOMKilled" → correct workflow catalog match
 			// - RO reads Status.SignalMode="predictive" → passes to AA for prompt adaptation
-			// - SOC2 auditors see OriginalSignalType="PredictedOOMKill" for traceability
+			// - SOC2 auditors see SourceSignalName="PredictedOOMKill" for traceability
 		})
 
 		It("should classify reactive signals with default mode and unchanged type", func() {
@@ -166,7 +166,7 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 
 				// THEN: Original signal type is empty (no normalization occurred)
 				g.Expect(updated.Status.SourceSignalName).To(BeEmpty(),
-					"OriginalSignalType should be empty for reactive signals (no normalization)")
+					"SourceSignalName should be empty for reactive signals (no normalization)")
 
 				// THEN: SP reaches Completed phase
 				g.Expect(updated.Status.Phase).To(Equal(signalprocessingv1alpha1.PhaseCompleted),
@@ -245,7 +245,7 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 		It("should include signal_mode=predictive in classification.decision audit event", func() {
 			// BUSINESS CONTEXT:
 			// SOC2 CC7.4 requires complete audit trail for signal classification decisions.
-			// Audit events must include signal_mode and original_signal_type for
+			// Audit events must include signal_mode and source_signal_name for
 			// predictive signals to demonstrate proper signal normalization.
 			//
 			// COMPLIANCE: Audit trail shows "PredictedOOMKill → predictive mode, normalized to OOMKilled"
@@ -269,7 +269,7 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 					"SP must complete before checking audit events")
 			}, "30s", "1s").Should(Succeed())
 
-			// THEN: Audit event contains signal_mode and original_signal_type
+			// THEN: Audit event contains signal_mode and source_signal_name
 			flushAuditStoreAndWait()
 
 			Eventually(func(g Gomega) {
@@ -291,10 +291,10 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 				g.Expect(string(payload.SignalMode.Value)).To(Equal("predictive"),
 					"Audit event signal_mode should be 'predictive' for PredictedOOMKill")
 
-				// Validate original_signal_type is preserved
-				g.Expect(payload.OriginalSignalType.IsSet()).To(BeTrue(),
-					"Audit event must include original_signal_type for SOC2 CC7.4")
-				g.Expect(payload.OriginalSignalType.Value).To(Equal("PredictedOOMKill"),
+				// Validate source_signal_name is preserved
+				g.Expect(payload.SourceSignalName.IsSet()).To(BeTrue(),
+					"Audit event must include source_signal_name for SOC2 CC7.4")
+				g.Expect(payload.SourceSignalName.Value).To(Equal("PredictedOOMKill"),
 					"Audit event should preserve original signal type before normalization")
 			}, 60*time.Second, 2*time.Second).Should(Succeed())
 
@@ -325,7 +325,7 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 				g.Expect(updated.Status.Phase).To(Equal(signalprocessingv1alpha1.PhaseCompleted))
 			}, "30s", "1s").Should(Succeed())
 
-			// THEN: Audit event has signal_mode=reactive, no original_signal_type
+			// THEN: Audit event has signal_mode=reactive, no source_signal_name
 			flushAuditStoreAndWait()
 
 			Eventually(func(g Gomega) {
@@ -345,9 +345,9 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 					"Audit event signal_mode should be 'reactive' for standard OOMKilled")
 
 				// Original signal type should NOT be set for reactive signals
-				if payload.OriginalSignalType.IsSet() {
-					g.Expect(payload.OriginalSignalType.Value).To(BeEmpty(),
-						"Reactive signals should not have original_signal_type set")
+				if payload.SourceSignalName.IsSet() {
+					g.Expect(payload.SourceSignalName.Value).To(BeEmpty(),
+						"Reactive signals should not have source_signal_name set")
 				}
 			}, 60*time.Second, 2*time.Second).Should(Succeed())
 
@@ -397,9 +397,9 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 				g.Expect(string(payload.SignalMode.Value)).To(Equal("predictive"),
 					"signal.processed event should have predictive signal_mode")
 
-				g.Expect(payload.OriginalSignalType.IsSet()).To(BeTrue(),
-					"signal.processed event should include original_signal_type")
-				g.Expect(payload.OriginalSignalType.Value).To(Equal("PredictedOOMKill"),
+				g.Expect(payload.SourceSignalName.IsSet()).To(BeTrue(),
+					"signal.processed event should include source_signal_name")
+				g.Expect(payload.SourceSignalName.Value).To(Equal("PredictedOOMKill"),
 					"signal.processed should preserve original signal type")
 
 				g.Expect(event.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeSuccess),

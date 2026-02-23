@@ -10,14 +10,20 @@
 
 ---
 
+## Revision: Issue #166 (2026-02)
+
+**RR.Spec.SignalType values** are now normalized to `"alert"` (generic). The source-specific values `"prometheus-alert"` and `"kubernetes-event"` below were superseded. **Adapter identity** for audit/metrics uses `signal.Source` (e.g., `"prometheus"`, `"kubernetes-events"`).
+
+---
+
 ## 🎯 **TRIAGE SUMMARY**
 
 ### **Current Implementation**
 
-| Adapter | SignalSource (Monitoring System) | SignalType (Event Type) | Consistent? |
-|---------|----------------------------------|-------------------------|-------------|
-| **Prometheus** | `"prometheus"` | `"prometheus-alert"` | ✅ YES |
-| **Kubernetes Event** | `"kubernetes-events"` | `"kubernetes-event"` | ✅ YES |
+| Adapter | SignalSource (Monitoring System) | SignalType (RR.Spec) | Consistent? |
+|---------|----------------------------------|----------------------|-------------|
+| **Prometheus** | `"prometheus"` | `"alert"` | ✅ YES |
+| **Kubernetes Event** | `"kubernetes-events"` | `"alert"` | ✅ YES |
 
 ### **Verdict**: ✅ **IMPLEMENTATION IS CORRECT AND CONSISTENT**
 
@@ -50,21 +56,20 @@ signal_source: "kubernetes-events"
 
 ---
 
-### **SignalType (Event Type) - SINGULAR**
+### **SignalType (Event Type) - Generic (Issue #166)**
 
-**Purpose**: Identifies the **type of signal** received
-**Used By**: Metrics, logging, signal classification
-**Naming Convention**: **SINGULAR** (one event)
+**Purpose**: Identifies the **type of signal** received (generic classification)
+**Used By**: RR.Spec, metrics, logging, signal classification
+**Naming Convention**: **Generic** — `"alert"` for all adapters (Issue #166)
 
 | Adapter | SignalType | Rationale |
 |---------|------------|-----------|
-| Prometheus | `"prometheus-alert"` | ✅ One alert (singular) |
-| Kubernetes Event | `"kubernetes-event"` | ✅ One event (singular) |
+| Prometheus | `"alert"` | ✅ Generic (source identity via SignalSource) |
+| Kubernetes Event | `"alert"` | ✅ Generic (source identity via SignalSource) |
 
-**Why Singular?**
-- Each signal represents **one event/alert** (not multiple)
-- Consistent with event-driven architecture terminology
-- Matches CRD field naming: `SignalType` (singular)
+**Why Generic?**
+- RR.Spec.SignalType is normalized to `"alert"` for all adapters
+- Adapter identity for audit/metrics uses `signal.Source` (e.g., `"prometheus"`, `"kubernetes-events"`)
 
 ---
 

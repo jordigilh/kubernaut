@@ -42,13 +42,13 @@ The field is **required** (not optional) — all signals MUST be classified.
 
 SignalProcessing MUST normalize predictive signal types to their base type so the agent can search the existing workflow catalog. Three new status fields are required:
 
-- **`SignalType`** (string, required): The normalized signal type. For predictive signals, this is the base type (e.g., `OOMKilled`). For reactive signals, this matches the incoming `Spec.SignalData.Type` unchanged. This field is the **authoritative signal type** for all downstream consumers (RO, AA, HAPI).
-- **`OriginalSignalType`** (string, optional): Preserves the pre-normalization signal type for audit trail. Only populated for predictive signals (e.g., `PredictedOOMKill`). Empty for reactive signals.
+- **`SignalName`** (string, required): The normalized signal name. For predictive signals, this is the base type (e.g., `OOMKilled`). For reactive signals, this matches the incoming `Spec.SignalData.Type` unchanged. This field is the **authoritative signal name** for all downstream consumers (RO, AA, HAPI).
+- **`SourceSignalName`** (string, optional): Preserves the pre-normalization signal type for audit trail. Only populated for predictive signals (e.g., `PredictedOOMKill`). Empty for reactive signals.
 - **`SignalMode`** (string, required): See R1.
 
-> **Note**: The raw incoming signal type remains in `Spec.SignalData.Type` (immutable). The normalized value lives in `Status.SignalType`. Downstream consumers (RO → AA → HAPI) MUST read from `Status.SignalType`, not from the spec.
+> **Note**: The raw incoming signal type remains in `Spec.SignalData.Type` (immutable). The normalized value lives in `Status.SignalName`. Downstream consumers (RO → AA → HAPI) MUST read from `Status.SignalName`, not from the spec.
 
-| Incoming Signal Type | Normalized Type | Signal Mode | Original (audit) |
+| Incoming Signal Type | Normalized SignalName | Signal Mode | SourceSignalName (audit) |
 |---|---|---|---|
 | `PredictedOOMKill` | `OOMKilled` | `predictive` | `PredictedOOMKill` |
 | `PredictedCPUThrottling` | `CPUThrottling` | `predictive` | `PredictedCPUThrottling` |
@@ -93,8 +93,8 @@ Prometheus predict_linear() alert (signal_type: PredictedOOMKill)
   → Gateway (receives PredictedOOMKill, passes through unchanged)
     → SignalProcessing
         normalizes: PredictedOOMKill → OOMKilled
-        sets: signalMode = "predictive", originalSignalType = "PredictedOOMKill"
-      → RO (copies signalMode + normalized signalType from SP status to AA spec)
+        sets: signalMode = "predictive", sourceSignalName = "PredictedOOMKill"
+      → RO (copies signalMode + normalized signalName from SP status to AA spec)
         → AIAnalysis (passes signalMode + "OOMKilled" to HAPI)
           → HAPI (searches catalog for "OOMKilled", prompt says: "predict & prevent")
 ```
@@ -141,7 +141,7 @@ Prometheus predict_linear() alert (signal_type: PredictedOOMKill)
 ### Unit Tests
 - Table-driven tests for signal type mapping (known types, unknown types, empty input)
 - Classification logic: predictive signals correctly identified and normalized to base type
-- `OriginalSignalType` preserved for all predictive signals
+- `SourceSignalName` preserved for all predictive signals
 - Config loading and hot-reload
 - Default reactive classification for unmapped types
 
@@ -149,10 +149,10 @@ Prometheus predict_linear() alert (signal_type: PredictedOOMKill)
 - Extend existing enrichment integration tests with predictive signal scenarios
 - Verify `SignalMode` set in SP status after enrichment completes
 - Verify signal type is normalized (`PredictedOOMKill` → `OOMKilled`)
-- Verify `OriginalSignalType` preserved for audit
+- Verify `SourceSignalName` preserved for audit
 
 ### E2E Tests
-- Full pipeline: predictive alert → SP enrichment → verify normalized signalType + signalMode + originalSignalType in status
+- Full pipeline: predictive alert → SP enrichment → verify normalized signalName + signalMode + sourceSignalName in status
 
 > **Note — Mock LLM**: SP-level tests (unit, integration) do not require Mock LLM changes. The E2E test depends on BR-AI-084's Mock LLM enhancement to validate the full pipeline end-to-end.
 
@@ -191,7 +191,7 @@ groups:
 
 ## Audit Trail Integration (SOC2 CC7.4 Compliance)
 
-`signal_mode` and `original_signal_type` MUST be added to `SignalProcessingAuditPayload` in the DataStorage OpenAPI spec (`api/openapi/data-storage-v1.yaml`). This follows the existing pattern for classification metadata (`environment`, `priority`, `criticality`).
+`signal_mode` and `source_signal_name` MUST be added to `SignalProcessingAuditPayload` in the DataStorage OpenAPI spec (`api/openapi/data-storage-v1.yaml`). This follows the existing pattern for classification metadata (`environment`, `priority`, `criticality`).
 
 **Events that MUST include `signal_mode`**:
 - `signalprocessing.classification.decision` — when signal mode is determined during enrichment

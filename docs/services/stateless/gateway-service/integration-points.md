@@ -151,14 +151,15 @@ metadata:
   name: remediation-abc123
   namespace: kubernaut-system
   # Issue #91: kubernaut.ai/severity, kubernaut.ai/signal-type removed; use spec.severity, spec.signalType
+  # Issue #166: kubernaut.ai/alert-name -> kubernaut.ai/signal-name
   labels:
-    kubernaut.ai/alert-name: HighMemoryUsage
+    kubernaut.ai/signal-name: HighMemoryUsage
     kubernaut.ai/environment: prod
     kubernaut.ai/priority: P0
 spec:
   # Core identification
   alertFingerprint: "a1b2c3d4e5..."
-  alertName: "HighMemoryUsage"
+  signalName: "HighMemoryUsage"
   severity: "critical"
 
   # Placeholder values (finalized by SignalProcessing)
@@ -185,8 +186,8 @@ spec:
     lastOccurrence: "2025-10-04T10:00:00Z"
     occurrenceCount: 1
 
-  # Source metadata
-  sourceType: "prometheus"
+  # Source metadata (Issue #166: signalType="alert" for all adapters)
+  signalType: "alert"
 
   # Provider-specific data (namespace, labels, etc.)
   providerData: |
@@ -207,7 +208,7 @@ metadata:
   name: remediation-storm-xyz
   namespace: kubernaut-system
   labels:
-    kubernaut.ai/alert-name: PodOOMKilled
+    kubernaut.ai/signal-name: PodOOMKilled
     kubernaut.ai/storm: "true"
 spec:
   isStorm: true

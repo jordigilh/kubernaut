@@ -306,7 +306,7 @@ func (c *AIAnalysisCreator) buildSignalContext(
 	return aianalysisv1.SignalContextInput{
 		Fingerprint:      rr.Spec.SignalFingerprint,
 		Severity:         rr.Spec.Severity,
-		SignalType:       rr.Spec.SignalType,
+		SignalName:       rr.Spec.SignalName,  // Issue #166: signal name (OOMKilled etc)
 		Environment:      environment,
 		BusinessPriority: priority,
 		TargetResource: aianalysisv1.TargetResource{

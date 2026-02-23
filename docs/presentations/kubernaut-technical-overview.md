@@ -49,7 +49,7 @@ Notification ──> NotificationRequest CRD
 **CRD created**: `RemediationRequest`
 
 **Key Features**:
-- Pluggable adapters: Prometheus AlertManager (`/api/v1/signals/prometheus`), Kubernetes Events (`/api/v1/signals/kubernetes-event`)
+- Pluggable adapters: Prometheus AlertManager (`/api/v1/signals/prometheus`), Kubernetes Events (`/api/v1/signals/kubernetes-event`); RR.Spec.SignalType="alert" (Issue #166)
 - Status-based deduplication using RR fingerprint lookups (no Redis)
 - Replay prevention: header-first with body-fallback freshness validation per adapter
 - Scope filtering: label-based opt-in (`kubernaut.ai/managed=true`) so only managed resources are processed
@@ -287,7 +287,7 @@ metadata:
 actionType: IncreaseMemoryLimits
 
 labels:
-  signalType: OOMKilled
+  signalName: OOMKilled
   severity: [critical, high]
   environment: [production, staging, test]
   component: "*"

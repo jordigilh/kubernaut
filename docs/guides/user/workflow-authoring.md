@@ -141,7 +141,7 @@ The workflow is now available for AI Analysis to select. No additional registrat
 
 ### Required Labels
 
-All Kubernaut workflows MUST include these labels on the Tekton Pipeline resource. These are workflow catalog labels on Tekton Pipelines, distinct from CRD spec fields (e.g., `spec.signalType`, `spec.severity` on RemediationRequest) that replaced routing labels in Issue #91.
+All Kubernaut workflows MUST include these labels on the Tekton Pipeline resource. These are workflow catalog labels on Tekton Pipelines, distinct from CRD spec fields (e.g., `spec.signalType (value "alert" per Issue #166)`, `spec.severity` on RemediationRequest) that replaced routing labels in Issue #91.
 
 ```yaml
 metadata:

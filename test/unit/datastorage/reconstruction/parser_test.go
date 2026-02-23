@@ -60,14 +60,14 @@ var _ = Describe("Audit Event Parser", func() {
 				"Parser must extract fingerprint from gateway audit payload")
 		})
 
-		It("should return error for missing alert name", func() {
+		It("should return error for missing signal name", func() {
 			// Validates error handling for invalid gateway events
 			event := createInvalidGatewayEvent(testTimestamp, testUUID)
 
 			_, err := reconstructionpkg.ParseAuditEvent(event)
 
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("missing alert_name"))
+			Expect(err.Error()).To(ContainSubstring("missing signal_name"))
 		})
 	})
 
@@ -121,7 +121,7 @@ func createGatewaySignalReceivedEvent(timestamp time.Time, id uuid.UUID) ogencli
 		EventData: ogenclient.AuditEventEventData{
 			GatewayAuditPayload: ogenclient.GatewayAuditPayload{
 				SignalType:        ogenclient.GatewayAuditPayloadSignalTypeAlert,
-				AlertName:         "HighCPU",
+				SignalName:        "HighCPU",
 				Fingerprint:       "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
 				SignalLabels:      ogenclient.NewOptGatewayAuditPayloadSignalLabels(labels),
 				SignalAnnotations: ogenclient.NewOptGatewayAuditPayloadSignalAnnotations(annotations),
@@ -131,14 +131,14 @@ func createGatewaySignalReceivedEvent(timestamp time.Time, id uuid.UUID) ogencli
 }
 
 func createInvalidGatewayEvent(timestamp time.Time, id uuid.UUID) ogenclient.AuditEvent {
-	// Minimal invalid: missing alert_name to test error handling
+	// Minimal invalid: missing signal_name to test error handling
 	return ogenclient.AuditEvent{
 		EventType:      "gateway.signal.received",
 		EventTimestamp: timestamp,
 		EventData: ogenclient.AuditEventEventData{
 			GatewayAuditPayload: ogenclient.GatewayAuditPayload{
 				SignalType: ogenclient.GatewayAuditPayloadSignalTypeAlert,
-				AlertName:  "", // Missing - should cause error in our parser
+				SignalName: "", // Missing - should cause error in our parser
 			},
 		},
 	}

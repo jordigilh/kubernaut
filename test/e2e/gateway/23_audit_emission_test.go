@@ -320,7 +320,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 				"signal_type should be 'alert' (all adapters normalize to alert)")
 
 			// Field 13: alert_name
-			Expect(gatewayPayload.AlertName).To(Equal("AuditTestAlert"),
+			Expect(gatewayPayload.SignalName).To(Equal("AuditTestAlert"),
 				"alert_name should match Prometheus alert name")
 
 			// Field 14: namespace
@@ -387,7 +387,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 				"Business outcome: namespace enables tenant-specific audit queries (SOC2 CC1.4)")
 
 			// ✅ OUTCOME 5: Signal metadata for operations
-			Expect(gatewayPayload.AlertName).To(Equal("AuditTestAlert"),
+			Expect(gatewayPayload.SignalName).To(Equal("AuditTestAlert"),
 				"Business outcome: alert_name enables filtering audit by alert type")
 			Expect(string(gatewayPayload.Severity.Value)).To(Equal("warning"),
 				"Business outcome: Gateway passes through RAW severity (DD-SEVERITY-001). No normalization. SignalProcessing performs Rego-based normalization.")
@@ -540,7 +540,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 				"signal_type should be 'alert' (all adapters normalize to alert)")
 
 			// Field 13: alert_name
-			Expect(gatewayPayload.AlertName).To(Equal("AuditTestAlert"),
+			Expect(gatewayPayload.SignalName).To(Equal("AuditTestAlert"),
 				"alert_name should match Prometheus alert name")
 
 			// Field 14: namespace

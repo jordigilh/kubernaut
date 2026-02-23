@@ -49,7 +49,7 @@ The AIAnalysis CRD needs structured data from:
 ```go
 type AIAnalysisSpec struct {
     RemediationRequestRef string `json:"remediationRequestRef"`
-    SignalType    string            `json:"signalType"`
+    SignalName    string            `json:"signalName"`  // Issue #166: was signalType
     SignalContext map[string]string `json:"signalContext"` // ❌ Generic map
     LLMProvider   string            `json:"llmProvider"`
     LLMModel      string            `json:"llmModel"`

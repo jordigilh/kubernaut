@@ -179,7 +179,7 @@ GET /api/v1/remediation-history/context
             {
                 "remediationUID": "rr-abc",
                 "signalFingerprint": "fp-123",
-                "signalType": "HighCPULoad",
+                "signalName": "HighCPULoad",
                 "workflowType": "ScaleUp",
                 "outcome": "Success",
                 "effectivenessScore": 0.4,
@@ -212,7 +212,7 @@ GET /api/v1/remediation-history/context
             {
                 "remediationUID": "rr-def",
                 "signalFingerprint": "fp-123",
-                "signalType": "HighCPULoad",
+                "signalName": "HighCPULoad",
                 "workflowType": "ScaleUp",
                 "outcome": "Success",
                 "effectivenessScore": 0.3,
@@ -249,7 +249,7 @@ GET /api/v1/remediation-history/context
         "chain": [
             {
                 "remediationUID": "rr-old-001",
-                "signalType": "HighCPULoad",
+                "signalName": "HighCPULoad",
                 "workflowType": "ScaleUp",
                 "outcome": "Success",
                 "effectivenessScore": 0.4,
@@ -259,7 +259,7 @@ GET /api/v1/remediation-history/context
             },
             {
                 "remediationUID": "rr-old-002",
-                "signalType": "HighCPULoad",
+                "signalName": "HighCPULoad",
                 "workflowType": "RestartPod",
                 "outcome": "Success",
                 "effectivenessScore": 0.2,
@@ -269,7 +269,7 @@ GET /api/v1/remediation-history/context
             },
             {
                 "remediationUID": "rr-old-003",
-                "signalType": "HighCPULoad",
+                "signalName": "HighCPULoad",
                 "workflowType": null,
                 "outcome": "Escalated",
                 "effectivenessScore": null,
@@ -286,7 +286,7 @@ GET /api/v1/remediation-history/context
 
 DS performs the following when serving this endpoint:
 
-1. **Query Tier 1 — RO events**: Query `remediation.workflow_created` audit events by `target_resource` (JSONB expression index `idx_audit_events_target_resource`) within the Tier 1 time window (default 24h). These events provide the remediation chain skeleton: `correlation_id` (RR name), `pre_remediation_spec_hash`, `workflow_type` (DD-WORKFLOW-016 action type, e.g., "ScaleReplicas"), `outcome`, `signal_type`, `signal_fingerprint`.
+1. **Query Tier 1 — RO events**: Query `remediation.workflow_created` audit events by `target_resource` (JSONB expression index `idx_audit_events_target_resource`) within the Tier 1 time window (default 24h). These events provide the remediation chain skeleton: `correlation_id` (RR name), `pre_remediation_spec_hash`, `workflow_type` (DD-WORKFLOW-016 action type, e.g., "ScaleReplicas"), `outcome`, `signal_name`, `signal_fingerprint`.
 2. **Query Tier 1 — EM component events**: For each RO event's `correlation_id`, batch-query EM component events (`event_category = 'effectiveness'`). The EM emits component-level audit events per ADR-EM-001 v1.3:
    - `effectiveness.health.assessed` — health score + typed `health_checks` sub-object (`pod_running`, `readiness_pass`, `restart_delta`, `crash_loops`, `oom_killed`, `pending_count`)
    - `effectiveness.alert.assessed` — alert score + typed `alert_resolution` sub-object (`alert_resolved`, `active_count`, `resolution_time_seconds`)

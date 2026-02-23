@@ -46,14 +46,14 @@ This ADR implements two Business Requirements:
 Input: PredictedOOMKill
   → Matches predictive pattern (configurable, e.g. "Predicted*" prefix)
   → Set: status.signalMode = "predictive"
-  → Set: status.signalType = "OOMKilled" (normalized — matches existing workflow catalog)
-  → Set: status.originalSignalType = "PredictedOOMKill" (preserved for audit trail)
+  → Set: status.signalName = "OOMKilled" (normalized — matches existing workflow catalog)
+  → Set: status.sourceSignalName = "PredictedOOMKill" (preserved for audit trail)
 
 Input: OOMKilled
   → Does not match any predictive pattern
   → Set: status.signalMode = "reactive"
-  → Set: status.signalType = "OOMKilled" (unchanged)
-  → Set: status.originalSignalType = "" (not applicable)
+  → Set: status.signalName = "OOMKilled" (unchanged)
+  → Set: status.sourceSignalName = "" (not applicable)
 ```
 
 **Configuration**:
@@ -94,9 +94,9 @@ Prometheus predict_linear() alert (signal_type: PredictedOOMKill)
           copies sp.Status.SignalType → aa.Spec.SignalContext.SignalType (normalized)
           (same pattern as severity, environment, priority)
         → AI Analysis
-            passes signalMode + signalType (normalized) to HAPI in IncidentRequest
+            passes signalMode + signalName (normalized) to HAPI in IncidentRequest
           → HolmesGPT API
-              1. Agent receives signal_type = "OOMKilled" (searches catalog normally)
+              1. Agent receives signal_name = "OOMKilled" (searches catalog normally)
               2. Agent receives signal_mode = "predictive" (switches prompt strategy)
               3. Prompt: "This is a predicted incident — investigate how to prevent it"
 ```
@@ -243,9 +243,9 @@ Expose a new `/api/v1/predictive-investigation` endpoint alongside the existing 
 | SP config | `config/signalprocessing/predictive-signal-mappings.yaml` | Predictive signal type → base type mapping config |
 | SP main | `cmd/signalprocessing/main.go` | Wire classifier, load config, start hot-reload |
 | SP audit | `pkg/signalprocessing/audit/client.go` | Populate `signal_mode` in audit payloads |
-| DS OpenAPI | `api/openapi/data-storage-v1.yaml` | Add `signal_mode`, `original_signal_type` to `SignalProcessingAuditPayload` |
+| DS OpenAPI | `api/openapi/data-storage-v1.yaml` | Add `signal_mode`, `source_signal_name` to `SignalProcessingAuditPayload` |
 | AA CRD | `api/aianalysis/v1alpha1/aianalysis_types.go` | Add `SignalMode` to `SignalContextInput` |
-| RO creator | `pkg/remediationorchestrator/creator/aianalysis.go` | Change `SignalType` source to `sp.Status` + copy `SignalMode` in `buildSignalContext()` |
+| RO creator | `pkg/remediationorchestrator/creator/aianalysis.go` | Change `SignalName` source to `sp.Status` + copy `SignalMode` in `buildSignalContext()` |
 | AA builder | `pkg/aianalysis/handlers/request_builder.go` | Pass `SignalMode` in `BuildIncidentRequest()` |
 | HAPI OpenAPI | `holmesgpt-api/api/openapi.json` | Add `signal_mode` to `IncidentRequest` |
 | HAPI prompt | `holmesgpt-api/src/extensions/incident/prompt_builder.py` | Conditional prompt strategy (Phases 1-2, 5) |

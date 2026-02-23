@@ -180,7 +180,7 @@ func (a *PrometheusAdapter) Parse(ctx context.Context, rawData []byte) (*gateway
 
     internalAlert := &gateway.NormalizedSignal{
         Fingerprint:  fingerprint,
-        AlertName:    alert.Labels["alertname"],
+        SignalName:   alert.Labels["alertname"],
         Severity:     getSeverity(alert.Labels),
         Namespace:    alert.Labels["namespace"],
         Resource:     resource,
@@ -188,7 +188,7 @@ func (a *PrometheusAdapter) Parse(ctx context.Context, rawData []byte) (*gateway
         Annotations:  alert.Annotations,
         FiringTime:   alert.StartsAt,
         ReceivedTime: time.Now(),
-        SourceType:   "prometheus",
+        Source:       "prometheus",  // Issue #166: adapter identity
         RawPayload:   json.RawMessage(rawData),
     }
 
@@ -197,7 +197,7 @@ func (a *PrometheusAdapter) Parse(ctx context.Context, rawData []byte) (*gateway
 
 // Validate checks if alert meets minimum requirements
 func (a *PrometheusAdapter) Validate(alert *gateway.NormalizedSignal) error {
-    if alert.AlertName == "" {
+    if alert.SignalName == "" {
         return fmt.Errorf("missing alertname")
     }
     if alert.Namespace == "" {
@@ -311,12 +311,12 @@ var _ = Describe("BR-GATEWAY-001: Prometheus Adapter", func() {
             alert, err := adapter.Parse(ctx, payload)
 
             Expect(err).ToNot(HaveOccurred())
-            Expect(alert.AlertName).To(Equal("HighMemoryUsage"))
+            Expect(alert.SignalName).To(Equal("HighMemoryUsage"))
             Expect(alert.Severity).To(Equal("critical"))
             Expect(alert.Namespace).To(Equal("prod-payment-service"))
             Expect(alert.Resource.Kind).To(Equal("Pod"))
             Expect(alert.Resource.Name).To(Equal("payment-api-789"))
-            Expect(alert.SourceType).To(Equal("prometheus"))
+            Expect(alert.Source).To(Equal("prometheus"))
             Expect(alert.Fingerprint).ToNot(BeEmpty())
         })
     })
@@ -435,7 +435,7 @@ func (a *KubernetesEventAdapter) Parse(ctx context.Context, rawData []byte) (*ga
 
     internalAlert := &gateway.NormalizedSignal{
         Fingerprint:  fingerprint,
-        AlertName:    event.Reason,
+        SignalName:   event.Reason,
         Severity:     severity,
         Namespace:    event.InvolvedObject.Namespace,
         Resource:     resource,
@@ -449,7 +449,7 @@ func (a *KubernetesEventAdapter) Parse(ctx context.Context, rawData []byte) (*ga
         },
         FiringTime:   event.LastTimestamp.Time, // Prefer lastTimestamp for freshness
         ReceivedTime: time.Now(),
-        SourceType:   "kubernetes-event",
+        Source:       "kubernetes-events",  // Issue #166: adapter identity
         RawPayload:   json.RawMessage(rawData),
     }
 
@@ -458,7 +458,7 @@ func (a *KubernetesEventAdapter) Parse(ctx context.Context, rawData []byte) (*ga
 
 // Validate checks if event meets requirements
 func (a *KubernetesEventAdapter) Validate(alert *gateway.NormalizedSignal) error {
-    if alert.AlertName == "" {
+    if alert.SignalName == "" {
         return fmt.Errorf("missing alert name")
     }
     if alert.Resource.Kind == "" || alert.Resource.Name == "" {
@@ -1168,7 +1168,7 @@ func (c *EnvironmentClassifier) Classify(ctx context.Context, alert *gateway.Nor
     }
 
     // Priority 3: Check alert labels (Prometheus alerts only)
-    if alert.SourceType == "prometheus" {
+    if alert.Source == "prometheus" {
         if env, ok := alert.Labels["environment"]; ok && env != "" {
             environmentClassificationTotal.WithLabelValues("alert_label", env).Inc()
             return env, nil
@@ -1178,7 +1178,7 @@ func (c *EnvironmentClassifier) Classify(ctx context.Context, alert *gateway.Nor
     // Priority 4: Default fallback
     log.Warn("Environment classification failed, using default",
         "namespace", alert.Namespace,
-        "alertName", alert.AlertName)
+        "signalName", alert.SignalName)
     environmentClassificationTotal.WithLabelValues("unknown", "unknown").Inc()
     return "unknown", nil
 }
@@ -1302,7 +1302,7 @@ func (e *PriorityEngine) Assign(ctx context.Context, alert *gateway.NormalizedSi
 // evaluateRego evaluates Rego policy for priority
 func (e *PriorityEngine) evaluateRego(ctx context.Context, alert *gateway.NormalizedSignal) (string, error) {
     input := map[string]interface{}{
-        "alertName":   alert.AlertName,
+        "signalName":  alert.SignalName,
         "severity":    alert.Severity,
         "environment": alert.Environment,
         "namespace":   alert.Namespace,

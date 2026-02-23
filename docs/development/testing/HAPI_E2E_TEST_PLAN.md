@@ -821,7 +821,7 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 req := &hapiclient.IncidentRequest{
     IncidentID:        "test-audit-045",
     RemediationID:     remediationID,
-    SignalType:        "OOMKilled",
+    SignalName:        "OOMKilled",  // Issue #166: was SignalType
     Severity:          "high",
     SignalSource:      "kubernetes",
     ResourceNamespace: "default",
@@ -1507,7 +1507,7 @@ var _ = Describe("E2E-HAPI-001: No Workflow Found Returns Human Review", Label("
             req := &hapiogen.IncidentRequest{
                 IncidentID:     hapiogen.NewOptString("test-edge-001"),
                 RemediationID:  hapiogen.NewOptString("test-rem-001"),
-                SignalType:     hapiogen.NewOptString("MOCK_NO_WORKFLOW_FOUND"),
+                SignalName:     hapiogen.NewOptString("MOCK_NO_WORKFLOW_FOUND"),  // Issue #166
                 Severity:       hapiogen.NewOptString("high"),
                 SignalSource:   hapiogen.NewOptString("prometheus"),
                 // ... other required fields
@@ -1676,7 +1676,7 @@ Expect(selectedWorkflow.Confidence.Value).To(And(
 IncidentRequest{
     IncidentID:        "test-001",        // plain string
     RemediationID:     "test-rem-001",    // plain string
-    SignalType:        "OOMKilled",       // plain string
+    SignalName:        "OOMKilled",  // Issue #166: was SignalType       // plain string
     Severity:          "high",            // plain string
     SignalSource:      "kubernetes",      // plain string
     ResourceNamespace: "default",         // plain string
@@ -1698,7 +1698,7 @@ IncidentRequest{
 RecoveryRequest{
     IncidentID:            "test-013",                                    // plain string
     RemediationID:         "test-rem-013",                                // plain string
-    SignalType:            hapiclient.NewOptNilString("CrashLoopBackOff"), // OptNilString
+    SignalName:            hapiclient.NewOptNilString("CrashLoopBackOff"), // OptNilString (Issue #166)
     Severity:              hapiclient.NewOptNilString("high"),             // OptNilString
     IsRecoveryAttempt:     hapiclient.NewOptBool(true),                    // OptBool
     RecoveryAttemptNumber: hapiclient.NewOptNilInt(2),                     // OptNilInt
@@ -1708,7 +1708,7 @@ RecoveryRequest{
 
 **Changes Applied**:
 - ✅ `IncidentID`, `RemediationID` are plain `string`
-- ✅ `SignalType`, `Severity` are `OptNilString` (use `NewOptNilString()`)
+- ✅ `SignalName`, `Severity` are `OptNilString` (use `NewOptNilString()`) (Issue #166: was SignalType)
 - ✅ Optional fields use `NewOptBool()`, `NewOptNilInt()`, `NewOptNilPreviousExecution()`
 
 ### IncidentResponse/RecoveryResponse

@@ -51,7 +51,7 @@ var _ = Describe("GatewayEventBuilder", func() {
 		It("should create gateway event with base structure", func() {
 			// TDD RED: This test will FAIL until we implement GatewayEventBuilder
 			builder := audit.NewGatewayEvent("signal.received")
-			Expect(builder).ToNot(BeNil())
+			Expect(builder).To(BeAssignableToTypeOf(&audit.GatewayEventBuilder{}))
 
 			eventData, err := builder.Build()
 			Expect(err).ToNot(HaveOccurred())
@@ -77,7 +77,7 @@ var _ = Describe("GatewayEventBuilder", func() {
 
 			eventData, err := builder.Build()
 			Expect(err).ToNot(HaveOccurred())
-			Expect(eventData).ToNot(BeEmpty())
+			Expect(eventData).To(HaveKey("data"))
 		})
 
 		It("should include gateway-specific data in nested structure", func() {
@@ -96,7 +96,7 @@ var _ = Describe("GatewayEventBuilder", func() {
 			gatewayData, ok := data["gateway"].(map[string]interface{})
 			Expect(ok).To(BeTrue())
 			Expect(gatewayData).To(HaveKeyWithValue("signal_type", "alert"))
-			Expect(gatewayData).To(HaveKeyWithValue("alert_name", "PodOOMKilled"))
+			Expect(gatewayData).To(HaveKeyWithValue("signal_name", "PodOOMKilled"))
 		})
 	})
 
@@ -121,7 +121,7 @@ var _ = Describe("GatewayEventBuilder", func() {
 			gatewayData, _ := data["gateway"].(map[string]interface{})
 
 			Expect(gatewayData).To(HaveKeyWithValue("signal_type", "alert"))
-			Expect(gatewayData).To(HaveKeyWithValue("alert_name", "HighMemoryUsage"))
+			Expect(gatewayData).To(HaveKeyWithValue("signal_name", "HighMemoryUsage"))
 			Expect(gatewayData).To(HaveKeyWithValue("fingerprint", "sha256:prometheus-123"))
 			Expect(gatewayData).To(HaveKeyWithValue("namespace", "production"))
 			Expect(gatewayData).To(HaveKeyWithValue("resource_type", "pod"))
@@ -132,8 +132,8 @@ var _ = Describe("GatewayEventBuilder", func() {
 
 		It("should build Kubernetes Event signal", func() {
 			builder := audit.NewGatewayEvent("signal.received").
-				WithSignalType("kubernetes").
-				WithEventReason("OOMKilled").
+				WithSignalType("alert").
+				WithSignalName("OOMKilled").
 				WithFingerprint("sha256:k8s-event-456").
 				WithNamespace("production").
 				WithResource("pod", "database-pod-123").
@@ -146,7 +146,7 @@ var _ = Describe("GatewayEventBuilder", func() {
 			gatewayData, _ := data["gateway"].(map[string]interface{})
 
 			Expect(gatewayData).To(HaveKeyWithValue("signal_type", "alert"))
-			Expect(gatewayData).To(HaveKeyWithValue("event_reason", "OOMKilled"))
+			Expect(gatewayData).To(HaveKeyWithValue("signal_name", "OOMKilled"))
 			Expect(gatewayData).To(HaveKeyWithValue("fingerprint", "sha256:k8s-event-456"))
 		})
 
@@ -258,8 +258,8 @@ var _ = Describe("GatewayEventBuilder", func() {
 
 		It("should support resource type and name", func() {
 			builder := audit.NewGatewayEvent("signal.received").
-				WithSignalType("kubernetes").
-				WithEventReason("FailedScheduling").
+				WithSignalType("alert").
+				WithSignalName("FailedScheduling").
 				WithResource("node", "worker-node-01")
 
 			eventData, err := builder.Build()
@@ -305,7 +305,7 @@ var _ = Describe("GatewayEventBuilder", func() {
 
 			eventData, err := builder.Build()
 			Expect(err).ToNot(HaveOccurred())
-			Expect(eventData).ToNot(BeEmpty())
+			Expect(eventData).To(HaveKey("data"))
 		})
 
 		It("should handle empty alert name", func() {
@@ -319,8 +319,8 @@ var _ = Describe("GatewayEventBuilder", func() {
 			data, _ := eventData["data"].(map[string]interface{})
 			gatewayData, _ := data["gateway"].(map[string]interface{})
 
-			// Empty alert_name should not be present or be empty string
-			alertName, ok := gatewayData["alert_name"]
+			// Empty signal_name should not be present or be empty string
+			alertName, ok := gatewayData["signal_name"]
 			if ok {
 				Expect(alertName).To(BeEmpty())
 			}

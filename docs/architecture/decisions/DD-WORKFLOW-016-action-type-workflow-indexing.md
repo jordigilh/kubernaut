@@ -13,10 +13,10 @@
 ## Changelog
 
 ### Version 1.1 (2026-02-13)
-- **BR-WORKFLOW-004**: JSONB labels keys unified to camelCase (`signal_type` -> `signalType`)
+- **BR-WORKFLOW-004**: JSONB labels keys unified to camelCase (`signal_type` -> `signalName`, Issue #166)
 - **BR-WORKFLOW-004**: `riskTolerance` deprecated (never stored in DB, removed from workflow-schema.yaml)
 - **BR-WORKFLOW-004**: `actionType` is now a top-level field in workflow-schema.yaml (not inside labels)
-- SQL queries updated: `labels->>'signal_type'` -> `labels->>'signalType'` (migration 026)
+- SQL queries updated: `labels->>'signal_type'` -> `labels->>'signalName'` (migration 026)
 - See `docs/requirements/BR-WORKFLOW-004-workflow-schema-format.md` for authoritative format specification
 
 ## Changelog
@@ -25,7 +25,7 @@
 
 **INITIAL**: Action-type workflow catalog indexing design
 
-- Replaces `signal_type` as primary workflow matching key with `action_type`
+- Replaces `signalName` (formerly `signal_type`) as primary workflow matching key with `action_type`
 - Defines enforced action type taxonomy (V1.0 initial set)
 - Introduces `ListAvailableActions` and `ListWorkflows` context-aware HAPI tools
 - Defines LLM three-step workflow discovery protocol (list actions -> list workflows -> get parameters)
@@ -37,10 +37,10 @@
 
 ### Cross-Source Signal Type Mismatch
 
-The current workflow catalog matching (DD-WORKFLOW-001 v2.5) requires exact match on `signal_type` as the primary key:
+The current workflow catalog matching (DD-WORKFLOW-001 v2.5) requires exact match on `signalName` as the primary key:
 
 ```sql
-WHERE labels->>'signal_type' = $1  -- Exact match required
+WHERE labels->>'signalName' = $1  -- Exact match required
 ```
 
 Different source adapters produce incompatible signal type vocabularies for overlapping problems:
@@ -96,7 +96,7 @@ The confidence gap comes from the SP normalization's fundamental assumption bein
 
 ## Decision
 
-### Replace `signal_type` with `action_type` as Primary Catalog Key
+### Replace `signalName` with `action_type` as Primary Catalog Key
 
 Workflows are indexed by what they **do** (action type), not what **triggered** them (signal type). The LLM performs RCA, discovers available actions for the current context, and selects the action type that addresses the root cause.
 
@@ -709,7 +709,7 @@ After selecting a workflow from `list_workflows`, the LLM calls `get_workflow` w
 
 **Before (DD-WORKFLOW-001 v2.5)**:
 ```sql
-WHERE labels->>'signal_type' = $1  -- Required, exact match
+WHERE labels->>'signalName' = $1  -- Required, exact match
 ```
 
 **After (DD-WORKFLOW-016)**:
@@ -766,9 +766,9 @@ No pagination needed -- this always returns exactly one workflow or an error if 
 
 ### Signal Type as Optional Secondary Filter
 
-`signal_type` remains on workflow entries as optional metadata (not used for matching in V1.0). It serves as documentation for workflow authors to indicate which signal types the workflow was originally designed for.
+`signalName` remains on workflow entries as optional metadata (not used for matching in V1.0). It serves as documentation for workflow authors to indicate which signal names the workflow was originally designed for.
 
-**Deferred to post-V1.0**: `signal_types []string` as an optional scoring hint for tie-breaking when multiple workflows match the same action type. See "Future Work" section.
+**Deferred to post-V1.0**: `signalNames []string` as an optional scoring hint for tie-breaking when multiple workflows match the same action type. See "Future Work" section.
 
 ---
 
@@ -926,7 +926,7 @@ Seeded with V1.0 taxonomy (10 action types). Authoritative source for action typ
 
 | DD | Change Required | Details |
 |----|----------------|---------|
-| DD-WORKFLOW-001 v2.5 | **Amendment to v2.6** | `action_type` added as mandatory label, `signal_type` becomes optional |
+| DD-WORKFLOW-001 v2.5 | **Amendment to v2.6** | `action_type` added as mandatory label, `signalName` becomes optional |
 | DD-LLM-001 | **Amendment** | Query format changes from `<signal_type>` to `<action_type>` |
 | DD-WORKFLOW-002 | **Amendment** | New `list_available_actions` tool added to MCP toolset |
 | DD-HAPI-016 | **Cross-reference** | History context references action types for correlation |
@@ -939,8 +939,8 @@ Seeded with V1.0 taxonomy (10 action types). Authoritative source for action typ
 ### Migration Strategy
 
 1. **V1.0 catalog is small/empty**: No significant migration burden. Existing workflows (if any) receive an `action_type` assignment as part of the migration.
-2. **Workflow registration API**: Requires `action_type` (must reference a valid taxonomy entry) + per-workflow `description` (free-form text describing the workflow's unique approach) going forward. `signal_type` becomes optional.
-3. **Transition period**: During migration, `list_available_actions` falls back to `signal_type` filtering if `action_type` is absent on a workflow entry. This fallback is removed once all workflows are migrated.
+2. **Workflow registration API**: Requires `action_type` (must reference a valid taxonomy entry) + per-workflow `description` (free-form text describing the workflow's unique approach) going forward. `signalName` becomes optional.
+3. **Transition period**: During migration, `list_available_actions` falls back to `signalName` filtering if `action_type` is absent on a workflow entry. This fallback is removed once all workflows are migrated.
 
 ### ADR-054 Signal Mode Classification
 
@@ -952,10 +952,10 @@ ADR-054's predictive-to-base type mapping (`PredictedOOMKill` -> `OOMKilled`) co
 
 ### Post-V1.0: Signal Types as Scoring Hint
 
-`signal_types []string` may be added as an optional field on workflow entries for secondary scoring when multiple workflows share the same `action_type`. This is deferred because:
+`signalNames []string` may be added as an optional field on workflow entries for secondary scoring when multiple workflows share the same `action_type`. This is deferred because:
 
 1. V1.0 workflow-level descriptions and existing label scoring should suffice for the LLM to distinguish between workflows of the same action type
-2. Signal-type hints add complexity without clear benefit until we observe real-world tie-breaking patterns
+2. Signal-name hints add complexity without clear benefit until we observe real-world tie-breaking patterns
 3. It can be added as an additive change without redesigning the core matching
 
 ### Taxonomy Evolution
@@ -1022,7 +1022,7 @@ The initial V1.0 taxonomy covers common Kubernetes remediation patterns. As new 
   - DS endpoint: `GET /api/v1/workflows/{workflow_id}` with context filters as query parameters
   - Returns exactly one workflow with full parameter schema, or error if not found / not allowed
   - Returns 0 results if `workflow_id` exists but doesn't match the signal context (defense in depth)
-  - `signal_type` is optional metadata on workflow entries, not a filter
+  - `signalName` is optional metadata on workflow entries, not a filter
   - HAPI validation confirms workflow by querying DS directly (current data, not cached)
   - Unit and integration tests cover valid lookups, invalid workflow_id, and context mismatch scenarios
 
@@ -1047,7 +1047,7 @@ The initial V1.0 taxonomy covers common Kubernetes remediation patterns. As new 
 - **Integrates With**: DD-HAPI-016 (Remediation History Context)
 - **Integrates With**: DD-017 v2.0 (Effectiveness Monitor)
 - **Independent Of**: ADR-054 (Predictive Signal Mode Classification -- continues to function for SP signal mode)
-- **Supersedes**: `signal_type` as primary catalog matching key (DD-WORKFLOW-001 v2.5 matching rules)
+- **Supersedes**: `signalName` as primary catalog matching key (DD-WORKFLOW-001 v2.5 matching rules)
 
 ---
 

@@ -79,7 +79,7 @@ var _ = Describe("OpenAPI Validator Middleware", func() {
 			"event_data": {
 				"event_type": "gateway.signal.received",
 				"signal_type": "alert",
-				"alert_name": "HighMemoryUsage",
+				"signal_name": "HighMemoryUsage",
 				"namespace": "default",
 				"fingerprint": "fp-abc123"
 			}
@@ -121,7 +121,7 @@ var _ = Describe("OpenAPI Validator Middleware", func() {
 			"event_data": {
 				"event_type": "gateway.signal.received",
 				"signal_type": "alert",
-				"alert_name": "HighMemoryUsage",
+				"signal_name": "HighMemoryUsage",
 				"namespace": "default",
 				"fingerprint": "fp-abc123",
 				"severity": "critical"

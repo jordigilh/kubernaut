@@ -532,8 +532,8 @@ var _ = Describe("Audit Manager — Assessment Completed Payload (ADR-EM-001, Ba
 		payload := extractPayload(spy.lastEvent)
 
 		// 1. alert_name (OBS-1: uses SignalName, not CorrelationID)
-		Expect(payload.AlertName.Set).To(BeTrue(), "alert_name should be set")
-		Expect(payload.AlertName.Value).To(Equal("PaymentHighCPU"))
+		Expect(payload.SignalName.Set).To(BeTrue(), "signal_name should be set")
+		Expect(payload.SignalName.Value).To(Equal("PaymentHighCPU"))
 
 		// 2. components_assessed
 		Expect(payload.ComponentsAssessed).To(ConsistOf("health", "hash", "alert", "metrics"))
@@ -620,9 +620,9 @@ var _ = Describe("Audit Manager — Assessment Completed Payload (ADR-EM-001, Ba
 		payload := extractPayload(spy.lastEvent)
 
 		// OBS-1: alert_name should be the actual alert name, not the correlationID
-		Expect(payload.AlertName.Set).To(BeTrue(), "alert_name should be set")
-		Expect(payload.AlertName.Value).To(Equal("HighCPUAlert"),
-			"alert_name should use SignalName, not CorrelationID")
+		Expect(payload.SignalName.Set).To(BeTrue(), "signal_name should be set")
+		Expect(payload.SignalName.Value).To(Equal("HighCPUAlert"),
+			"signal_name should use SignalName, not CorrelationID")
 	})
 
 	// ========================================

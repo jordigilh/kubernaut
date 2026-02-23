@@ -215,7 +215,7 @@ sequenceDiagram
     EM->>EA: Update status: healthAssessed=true, hashComputed=true
 
     Note over EM,AM: Step 7b — Alert resolution (immediate, if enabled)
-    EM->>AM: GET /api/v2/alerts?filter=alertname={signal.alertName}
+    EM->>AM: GET /api/v2/alerts?filter=alertname={signal.signalName}
     EM->>DS: audit: effectiveness.alert.assessed (signal_resolved + alert_score)
     EM->>EA: Update status: alertAssessed=true
 
@@ -315,7 +315,7 @@ sequenceDiagram
 
     Note over Ctrl,AM: Step 5 — Alert resolution (immediate, if enabled)
     alt alertmanager.enabled AND EA.status.components.alertAssessed == false
-        Ctrl->>AM: GET /api/v2/alerts?filter=alertname={signal.alertName}
+        Ctrl->>AM: GET /api/v2/alerts?filter=alertname={signal.signalName}
         AM-->>Ctrl: Active alerts (or empty if resolved)
         Ctrl->>Ctrl: Determine: signal_resolved = true/false
         Ctrl->>EA: Update: alertAssessed=true, alertScore=Z
@@ -783,7 +783,7 @@ Emitted immediately after stabilization window (when AlertManager is enabled).
 |-------|------|-------------|
 | `event_type` | string | `"effectiveness.alert.assessed"` |
 | `signal_resolved` | boolean | `true` if triggering alert is no longer active |
-| `alert_name` | string | The alert name queried (Batch 3: `ea.Spec.SignalName` populated via OBS-1) |
+| `signal_name` | string | The signal name queried (Batch 3: `ea.Spec.SignalName` populated via OBS-1) |
 | `active_alerts_count` | integer | Number of matching active alerts at assessment time |
 | `alert_score` | float | 1.0 if resolved, 0.0 if still active; used by DS for scoring |
 | `resolution_time_seconds` | float (nullable) | Time from remediation to alert resolution; `null` if not resolved (Batch 3: computed from `ea.Spec.RemediationCreatedAt`) |
@@ -1022,7 +1022,7 @@ When the EM queries DataStorage for the audit trail of a given `correlation_id` 
 
 | Audit Event Type | Extracted Fields | Used For |
 |------------------|-----------------|----------|
-| `gateway.signal.received` | `alertName`, `fingerprint`, `signalType`, `labels` | Alert identity for AlertManager query, signal metadata |
+| `gateway.signal.received` | `signalName`, `fingerprint`, `signal_source`, `labels` | Signal identity for AlertManager query, adapter identity (Issue #166) |
 | `remediation.workflow_created` | `pre_remediation_spec_hash`, `target_resource`, `workflow_type` | Pre/post hash comparison, target identification |
 | `workflowexecution.workflow.started` | `workflow_id`, `workflow_version`, `parameters`, `container_image` | What was actually executed (SOC2 authoritative) |
 | `workflowexecution.workflow.completed` | `completed_at`, `duration` | Execution outcome, timing for metric windows |
@@ -1093,7 +1093,7 @@ The following items were specified in this ADR and tracked across batches. Items
 
 | Gap | ADR Section | Status |
 |-----|-------------|--------|
-| `alert_name` not in OpenAPI payload | 9.2.3 | **FIXED (Batch 3)**: `SignalName` added to EA spec, used in `RecordAssessmentCompleted` (OBS-1) |
+| `signal_name` not in OpenAPI payload | 9.2.3 | **FIXED (Batch 3)**: `SignalName` added to EA spec, used in `RecordAssessmentCompleted` (OBS-1) |
 | `throughput_before/after_rps` | 9.2.4 | **FIXED (Batch 3)**: 5th PromQL query (`http_throughput_rps`) added; fields populated in `metric_deltas` |
 | `components_assessed` array | 9.2.5 | **FIXED (Batch 3)**: Populated from `ea.Status.Components` flags in `RecordAssessmentCompleted` |
 | `completed_at` in completed event | 9.2.5 | **FIXED (Batch 3)**: Populated from `ea.Status.CompletedAt` in `RecordAssessmentCompleted` |

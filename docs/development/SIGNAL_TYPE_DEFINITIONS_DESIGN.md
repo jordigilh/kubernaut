@@ -1,10 +1,21 @@
 # Signal Type Definitions Design Document
 
 **Date**: 2025-10-07
-**Status**: Design Proposal
+**Status**: Design Proposal (not implemented)
 **Related**: [ADR-015: Alert to Signal Naming Migration](../architecture/decisions/ADR-015-alert-to-signal-naming-migration.md)
 **Phase**: Phase 1 - Core Type Definitions
 **Estimated Effort**: 8-12 hours
+
+---
+
+## Revision: Issue #166 Type vs Name Semantics (2026-02)
+
+**Type vs Name distinction**: Issue #166 established that:
+- **SignalName** = semantic classification (e.g., `OOMKilled`, `HighCPULoad`) — the human-meaningful signal identifier used for workflow catalog matching
+- **SignalType** (in RR.Spec) = generic value `"alert"` — all adapters use this; source identity comes from **SignalSource** (e.g., `"prometheus"`, `"kubernetes-events"`)
+- **SourceSignalName** = pre-normalization signal type (e.g., `PredictedOOMKill`) — preserved for audit trail
+
+If this design is implemented, align with these semantics: use `SignalName` for semantic classification, `SignalSource` for adapter identity, and `SignalType` only for the generic `"alert"` value.
 
 ---
 

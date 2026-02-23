@@ -34,16 +34,16 @@ Without this distinction, HolmesGPT would perform RCA on an incident that hasn't
 
 The AIAnalysis CRD spec MUST include a `SignalMode` field in `SignalContextInput`, populated by RO from the SP status (same copy pattern as severity, environment, priority).
 
-### R1.1: RO SignalType Source Change
+### R1.1: RO SignalName Source Change
 
-The RO creator's `buildSignalContext()` currently copies `SignalType` from `rr.Spec.SignalType` (RemediationRequest). This MUST change to `sp.Status.SignalType` (SP status) so the AA receives the **normalized** signal type. This is a behavioral change to existing code — the RR spec still contains the raw incoming type, but downstream consumers need the normalized value.
+The RO creator's `buildSignalContext()` currently copies `SignalName` from `rr.Spec.SignalName` (RemediationRequest). This MUST change to `sp.Status.SignalName` (SP status) so the AA receives the **normalized** signal name. This is a behavioral change to existing code — the RR spec still contains the raw incoming type, but downstream consumers need the normalized value.
 
 ```go
 // BEFORE (current):
-SignalType: rr.Spec.SignalType,
+SignalName: rr.Spec.SignalName,
 
 // AFTER (required):
-SignalType: sp.Status.SignalType,  // Normalized type from SP status (BR-SP-106)
+SignalName: sp.Status.SignalName,  // Normalized name from SP status (BR-SP-106)
 SignalMode: sp.Status.SignalMode,  // NEW: Copy signal mode from SP status
 ```
 
@@ -73,7 +73,7 @@ HAPI MUST switch its investigation prompt based on the `signal_mode` value. The 
 **Predictive** (Phases 1-2 investigation directive):
 > Evaluate current environment. This incident is **predicted** based on resource trend analysis but has not occurred yet. Assess resource utilization trends, recent deployments, and current state to determine if preemptive action is warranted and how to **prevent** this incident. "No action needed" is a valid outcome if the prediction is unlikely to materialize.
 
-**Why this is clean**: Because SP normalizes the signal type (BR-SP-106), the agent receives `signal_type = "OOMKilled"` in both modes. It searches the same workflow catalog entry regardless of mode. Phases 3-4 are unchanged. The only difference is the investigation directive (Phases 1-2) and the summary format (Phase 5). The LLM never needs to deal with the `Predicted` prefix — that's entirely handled by SP normalization.
+**Why this is clean**: Because SP normalizes the signal name (BR-SP-106), the agent receives `signal_name = "OOMKilled"` in both modes. It searches the same workflow catalog entry regardless of mode. Phases 3-4 are unchanged. The only difference is the investigation directive (Phases 1-2) and the summary format (Phase 5). The LLM never needs to deal with the `Predicted` prefix — that's entirely handled by SP normalization.
 
 ### R5: Valid "No Action" Outcome
 
@@ -94,7 +94,7 @@ Audit events for AI analysis MUST include the `signalMode` value, enabling the E
 RO copies sp.Status.SignalMode → aa.Spec.SignalContext.SignalMode
   → AA request builder includes signalMode in IncidentRequest
     → HAPI reads signal_mode, switches prompt strategy
-      → LLM receives normalized signal_type (e.g., "OOMKilled") + mode context
+        → LLM receives normalized signal_name (e.g., "OOMKilled") + mode context
         → Agent searches workflow catalog for "OOMKilled" (standard search, no special logic)
           → Prompt directs: RCA (reactive) or predict & prevent (predictive)
             → Response: workflow recommendation OR "no action needed"
@@ -106,7 +106,7 @@ RO copies sp.Status.SignalMode → aa.Spec.SignalContext.SignalMode
 
 - [ ] `SignalMode` field in `SignalContextInput` (`api/aianalysis/v1alpha1/aianalysis_types.go`)
 - [ ] RO copies `SignalMode` from SP status to AA spec (`pkg/remediationorchestrator/creator/aianalysis.go`, `buildSignalContext()`)
-- [ ] RO `SignalType` source changed from `rr.Spec.SignalType` to `sp.Status.SignalType` (normalized)
+- [ ] RO `SignalName` source changed from `rr.Spec.SignalName` to `sp.Status.SignalName` (normalized)
 - [ ] AA request builder passes `signalMode` to HAPI (`pkg/aianalysis/handlers/request_builder.go`)
 - [ ] HAPI OpenAPI spec includes `signal_mode` in `IncidentRequest`
 - [ ] Go client regenerated (`make generate-holmesgpt-client`)
@@ -123,7 +123,7 @@ RO copies sp.Status.SignalMode → aa.Spec.SignalContext.SignalMode
 | Component | File(s) | Change |
 |---|---|---|
 | AA CRD spec | `api/aianalysis/v1alpha1/aianalysis_types.go` | Add `SignalMode` to `SignalContextInput` |
-| RO creator | `pkg/remediationorchestrator/creator/aianalysis.go` | Change `SignalType` source from `rr.Spec` → `sp.Status` + copy `SignalMode` in `buildSignalContext()` |
+| RO creator | `pkg/remediationorchestrator/creator/aianalysis.go` | Change `SignalName` source from `rr.Spec` → `sp.Status` + copy `SignalMode` in `buildSignalContext()` |
 | AA request builder | `pkg/aianalysis/handlers/request_builder.go` | Pass `SignalMode` in `BuildIncidentRequest()` |
 | HAPI OpenAPI | `holmesgpt-api/api/openapi.json` | Add `signal_mode` to `IncidentRequest` schema |
 | HAPI Python model | `holmesgpt-api/src/models/incident_models.py` | Add `signal_mode: Optional[str]` to `IncidentRequest` class |

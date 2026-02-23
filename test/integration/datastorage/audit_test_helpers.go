@@ -53,7 +53,7 @@ import (
 //
 // Required fields in payload:
 // - EventType (must be gateway.signal.received)
-// - AlertName
+// - SignalName
 // - Namespace
 // - Fingerprint
 func CreateGatewaySignalReceivedEvent(

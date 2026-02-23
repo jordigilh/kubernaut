@@ -261,7 +261,7 @@ This document provides a comprehensive list of all business requirements for the
 
 **Technical Details**:
 - `GetSourceService()` returns monitoring system name (e.g., "prometheus", "kubernetes-events")
-- `GetSourceType()` returns signal type identifier (e.g., "prometheus-alert", "kubernetes-event")
+- RR.Spec.SignalType is now "alert" (generic) per Issue #166; adapter identity uses signal.Source
 - Adapter names (e.g., "prometheus-adapter") are internal implementation details, not useful for LLM
 - Both methods are part of the `SignalAdapter` interface
 

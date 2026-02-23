@@ -117,7 +117,7 @@ var _ = Describe("Full RR Reconstruction Integration Tests (BR-AUDIT-005 v2.0)",
 
 			gatewayPayload := ogenclient.GatewayAuditPayload{
 				EventType:       ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
-				AlertName:       "HighMemoryUsage",
+				SignalName:       "HighMemoryUsage",
 				Namespace:       "test-namespace",
 				Fingerprint:     "abc123def456",
 				SignalType:      ogenclient.GatewayAuditPayloadSignalTypeAlert,
@@ -319,7 +319,7 @@ var _ = Describe("Full RR Reconstruction Integration Tests (BR-AUDIT-005 v2.0)",
 			// ✅ Using typed ogenclient payloads
 			gatewayPayload := ogenclient.GatewayAuditPayload{
 				EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
-				AlertName:   "PartialAlert",
+				SignalName:   "PartialAlert",
 				Namespace:   "test-namespace",
 				Fingerprint: "partial123",
 				SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
@@ -392,7 +392,7 @@ var _ = Describe("Full RR Reconstruction Integration Tests (BR-AUDIT-005 v2.0)",
 			// ✅ Using typed ogenclient payload
 			gatewayPayload := ogenclient.GatewayAuditPayload{
 				EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
-				AlertName:   "FailureAlert",
+				SignalName:   "FailureAlert",
 				Namespace:   "test-namespace",
 				Fingerprint: "failure123",
 				SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,

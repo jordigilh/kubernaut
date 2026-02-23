@@ -78,7 +78,7 @@ RO after SP has everything needed for operational awareness decisions. Workflow 
 ```json
 {
   "signal_name": "high-memory-payment-api-abc123",
-  "signal_type": "prometheus-alert",
+  "signal_type": "alert",
   "normalized_severity": "critical",
   "environment": "production",
   "priority": "P0",

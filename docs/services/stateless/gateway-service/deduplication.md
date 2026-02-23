@@ -66,7 +66,7 @@
 **Value Structure** (Redis Hash):
 ```redis
 HSET alert:fingerprint:a1b2c3d4e5... fingerprint "a1b2c3d4e5..."
-HSET alert:fingerprint:a1b2c3d4e5... alertName "HighMemoryUsage"
+HSET alert:fingerprint:a1b2c3d4e5... signalName "HighMemoryUsage"
 HSET alert:fingerprint:a1b2c3d4e5... namespace "prod-payment-service"
 HSET alert:fingerprint:a1b2c3d4e5... resource "payment-api-789"
 HSET alert:fingerprint:a1b2c3d4e5... firstSeen "2025-10-04T10:00:00Z"
@@ -309,7 +309,7 @@ func (s *DeduplicationService) Store(ctx context.Context, alert *gateway.Normali
     // Store as Redis hash
     pipe := s.redisClient.Pipeline()
     pipe.HSet(ctx, key, "fingerprint", alert.Fingerprint)
-    pipe.HSet(ctx, key, "alertName", alert.AlertName)
+    pipe.HSet(ctx, key, "signalName", alert.SignalName)
     pipe.HSet(ctx, key, "namespace", alert.Namespace)
     pipe.HSet(ctx, key, "resource", alert.Resource.Name)
     pipe.HSet(ctx, key, "firstSeen", now)
@@ -437,7 +437,7 @@ func (d *StormDetector) Check(ctx context.Context, alert *gateway.NormalizedSign
 
 // checkRateStorm detects if alert firing rate exceeds threshold
 func (d *StormDetector) checkRateStorm(ctx context.Context, alert *gateway.NormalizedSignal) (bool, error) {
-    key := fmt.Sprintf("alert:storm:rate:%s", alert.AlertName)
+    key := fmt.Sprintf("alert:storm:rate:%s", alert.SignalName)
 
     // Increment counter
     count, err := d.redisClient.Incr(ctx, key).Result()
@@ -456,14 +456,14 @@ func (d *StormDetector) checkRateStorm(ctx context.Context, alert *gateway.Norma
 
 // getRateCount retrieves current rate counter value
 func (d *StormDetector) getRateCount(ctx context.Context, alert *gateway.NormalizedSignal) int {
-    key := fmt.Sprintf("alert:storm:rate:%s", alert.AlertName)
+    key := fmt.Sprintf("alert:storm:rate:%s", alert.SignalName)
     count, _ := d.redisClient.Get(ctx, key).Int()
     return count
 }
 
 // checkPatternStorm detects similar alerts across different resources
 func (d *StormDetector) checkPatternStorm(ctx context.Context, alert *gateway.NormalizedSignal) (bool, []gateway.ResourceIdentifier, error) {
-    key := fmt.Sprintf("alert:pattern:%s", alert.AlertName)
+    key := fmt.Sprintf("alert:pattern:%s", alert.SignalName)
     now := float64(time.Now().Unix())
 
     // Add current resource to sorted set
