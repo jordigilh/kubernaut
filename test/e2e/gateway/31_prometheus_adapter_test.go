@@ -152,11 +152,16 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 				var err error
 				resp, err = http.DefaultClient.Do(req)
 				if err != nil {
+					GinkgoWriter.Printf("  Gateway POST error: %v\n", err)
 					return 0
 				}
-				defer func() { _ = resp.Body.Close() }()
+				body, _ := io.ReadAll(resp.Body)
+				_ = resp.Body.Close()
+				if resp.StatusCode != http.StatusCreated {
+					GinkgoWriter.Printf("  Gateway returned %d (expected 201): %s\n", resp.StatusCode, string(body))
+				}
 				return resp.StatusCode
-			}, 30*time.Second, 500*time.Millisecond).Should(Equal(http.StatusCreated),
+			}, 30*time.Second, 1*time.Second).Should(Equal(http.StatusCreated),
 				"First occurrence must create CRD (201 Created)")
 
 			// Parse response to get fingerprint
@@ -220,8 +225,8 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 			url := fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL)
 
 			// Retry POST until Gateway processes the alert and creates the CRD.
-			// The scope checker (BR-SCOPE-002) uses apiReader (uncached, direct API calls),
-			// but CI environments (Kind+Podman) may have latency. 30s handles this.
+			// Scope checker uses apiReader (uncached, direct API calls) — not informer-bound.
+			// Retries handle CI startup latency (pod readiness, service endpoint propagation).
 			var resp *http.Response
 			Eventually(func() int {
 				req, _ := http.NewRequest("POST", url, bytes.NewReader(payload))
@@ -230,11 +235,16 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 				var err error
 				resp, err = http.DefaultClient.Do(req)
 				if err != nil {
+					GinkgoWriter.Printf("  Gateway POST error: %v\n", err)
 					return 0
 				}
-				defer func() { _ = resp.Body.Close() }()
+				body, _ := io.ReadAll(resp.Body)
+				_ = resp.Body.Close()
+				if resp.StatusCode != http.StatusCreated {
+					GinkgoWriter.Printf("  Gateway returned %d (expected 201): %s\n", resp.StatusCode, string(body))
+				}
 				return resp.StatusCode
-			}, 30*time.Second, 500*time.Millisecond).Should(Equal(http.StatusCreated),
+			}, 30*time.Second, 1*time.Second).Should(Equal(http.StatusCreated),
 				"Gateway should return 201 Created for managed namespace")
 
 			// BUSINESS OUTCOME: CRD contains resource information for AI targeting
