@@ -86,7 +86,7 @@ var _ = Describe("Rego Security Wrapper", func() {
 		It("CL-SEC-01: should strip labels with kubernaut.ai/ prefix (BR-SP-104)", func() {
 			// Arrange: Malicious policy attempting to override system labels
 			policy := `
-package signalprocessing.labels
+package signalprocessing.customlabels
 
 import rego.v1
 
@@ -123,7 +123,7 @@ labels["team"] := "payments"
 		It("CL-SEC-02: should strip labels with system/ prefix (BR-SP-104)", func() {
 			// Arrange: Malicious policy attempting to use system/ prefix
 			policy := `
-package signalprocessing.labels
+package signalprocessing.customlabels
 
 import rego.v1
 
