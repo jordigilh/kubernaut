@@ -567,9 +567,9 @@ predictive_signal_mappings:
 	// Initialize CustomLabels Rego engine (BR-SP-102, BR-SP-104, BR-SP-072)
 	labelsPolicyFile, err := os.CreateTemp("", "labels-*.rego")
 	Expect(err).NotTo(HaveOccurred())
-	_, err = labelsPolicyFile.WriteString(`package signalprocessing.labels
+	_, err = labelsPolicyFile.WriteString(`package signalprocessing.customlabels
 import rego.v1
-result := {}
+default labels := {}
 `)
 	Expect(err).NotTo(HaveOccurred())
 	_ = labelsPolicyFile.Close()
