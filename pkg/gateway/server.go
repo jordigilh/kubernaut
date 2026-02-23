@@ -713,7 +713,7 @@ func (s *Server) Handler() http.Handler {
 // Used by:
 //   - K8sOwnerResolver (BR-GATEWAY-004): owner chain resolution for K8s event deduplication
 //
-// Note: scope.Manager uses ctrlClient (informer-backed) — see createServerWithClients.
+// Note: scope.Manager uses apiReader (uncached) since DD-STATUS-001 — see createServerWithClients.
 func (s *Server) GetCachedClient() client.Client {
 	return s.ctrlClient
 }

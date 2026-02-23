@@ -144,14 +144,22 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 
 			// Send webhook to Gateway with retry (CI latency in Kind+Podman)
 			url := fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL)
-			req, _ := http.NewRequest("POST", url, bytes.NewReader(payload))
-			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
-			resp, err := http.DefaultClient.Do(req)
-			Expect(err).ToNot(HaveOccurred())
-			defer func() { _ = resp.Body.Close() }()
+			var resp *http.Response
+			Eventually(func() int {
+				req, _ := http.NewRequest("POST", url, bytes.NewReader(payload))
+				req.Header.Set("Content-Type", "application/json")
+				req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+				var err error
+				resp, err = http.DefaultClient.Do(req)
+				if err != nil {
+					return 0
+				}
+				defer func() { _ = resp.Body.Close() }()
+				return resp.StatusCode
+			}, 30*time.Second, 500*time.Millisecond).Should(Equal(http.StatusCreated),
+				"First occurrence must create CRD (201 Created)")
 
-			// Parse response from captured bytes (body was closed inside Eventually)
+			// Parse response to get fingerprint
 			var response map[string]interface{}
 			Expect(json.NewDecoder(resp.Body).Decode(&response)).To(Succeed())
 			fingerprint, ok := response["fingerprint"].(string)
@@ -213,8 +221,8 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 			url := fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL)
 
 			// Retry POST until Gateway processes the alert and creates the CRD.
-			// Scope checker uses ctrlClient (informer-backed) to reduce API server load.
-			// Retries handle informer sync delay and CI startup latency.
+			// The scope checker (BR-SCOPE-002) uses apiReader (uncached, direct API calls),
+			// but CI environments (Kind+Podman) may have latency. 30s handles this.
 			var resp *http.Response
 			Eventually(func() int {
 				req, _ := http.NewRequest("POST", url, bytes.NewReader(payload))
@@ -232,7 +240,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 					GinkgoWriter.Printf("  Gateway returned %d (expected 201): %s\n", resp.StatusCode, string(body))
 				}
 				return resp.StatusCode
-			}, 30*time.Second, 1*time.Second).Should(Equal(http.StatusCreated),
+			}, 30*time.Second, 500*time.Millisecond).Should(Equal(http.StatusCreated),
 				"Gateway should return 201 Created for managed namespace")
 
 			// BUSINESS OUTCOME: CRD contains resource information for AI targeting
