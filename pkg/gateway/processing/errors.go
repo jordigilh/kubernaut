@@ -100,7 +100,7 @@ type CRDCreationError struct {
 	*OperationError
 	CRDName    string // RemediationRequest name
 	SignalType string // Signal type (alert/event)
-	AlertName  string // Alert name (if applicable)
+	SignalName  string // Alert name (if applicable)
 }
 
 // NewCRDCreationError creates a CRD creation error with full context.
@@ -119,15 +119,15 @@ func NewCRDCreationError(fingerprint, namespace, crdName, signalType, alertName 
 		),
 		CRDName:    crdName,
 		SignalType: signalType,
-		AlertName:  alertName,
+		SignalName:  alertName,
 	}
 }
 
 // Error extends OperationError.Error() with CRD-specific fields.
 func (e *CRDCreationError) Error() string {
 	baseErr := e.OperationError.Error()
-	return fmt.Sprintf("%s, crd_name=%s, signal_type=%s, alert_name=%s",
-		baseErr, e.CRDName, e.SignalType, e.AlertName)
+	return fmt.Sprintf("%s, crd_name=%s, signal_type=%s, signal_name=%s",
+		baseErr, e.CRDName, e.SignalType, e.SignalName)
 }
 
 // DeduplicationError is a specialized error for deduplication failures.

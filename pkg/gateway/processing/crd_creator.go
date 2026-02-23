@@ -301,7 +301,7 @@ func (c *CRDCreator) CreateRemediationRequest(
 	if err := c.validateResourceInfo(signal); err != nil {
 		c.logger.Info("Signal rejected: missing resource info",
 			"fingerprint", signal.Fingerprint,
-			"alertName", signal.SignalName,
+			"signal_name", signal.SignalName,
 			"error", err)
 		return nil, err
 	}
@@ -477,7 +477,7 @@ func (c *CRDCreator) CreateRemediationRequest(
 		"namespace", signal.Namespace,
 		"fingerprint", signal.Fingerprint,
 		"severity", signal.Severity,
-		"alertName", signal.SignalName)
+		"signal_name", signal.SignalName)
 
 	return rr, nil
 }
@@ -495,7 +495,7 @@ func (c *CRDCreator) getFiringTime(signal *types.NormalizedSignal) time.Time {
 	if signal.FiringTime.IsZero() {
 		c.logger.V(1).Info("FiringTime not set by adapter, using ReceivedTime as fallback",
 			"fingerprint", signal.Fingerprint,
-			"alert_name", signal.SignalName)
+			"signal_name", signal.SignalName)
 		return signal.ReceivedTime
 	}
 	return signal.FiringTime

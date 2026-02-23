@@ -98,7 +98,7 @@ func parseGatewaySignalReceived(event ogenclient.AuditEvent) (*ParsedAuditData, 
 
 	// Validate required fields
 	if payload.SignalName == "" {
-		return nil, fmt.Errorf("missing alert_name in gateway.signal.received event")
+		return nil, fmt.Errorf("missing signal_name in gateway.signal.received event")
 	}
 
 	data := &ParsedAuditData{
