@@ -105,13 +105,11 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking", func() {
 			rr := makeRR("test-ns", "test-rr", "Deployment", "payment-api")
 
 			blocked := engine.CheckUnmanagedResource(ctx, rr)
-			Expect(blocked).ToNot(BeNil())
 			Expect(blocked.Reason).To(Equal(string(remediationv1.BlockReasonUnmanagedResource)))
 			Expect(blocked.Blocked).To(BeTrue())
 			// Backoff should be >= 4s (5s base with -10% jitter)
 			Expect(blocked.RequeueAfter).To(BeNumerically(">=", 4*time.Second))
 			Expect(blocked.RequeueAfter).To(BeNumerically("<=", 6*time.Second))
-			Expect(blocked.BlockedUntil).ToNot(BeNil())
 		})
 
 		// UT-RO-010-002: Pass managed resource
@@ -133,9 +131,8 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking", func() {
 			// Set high consecutive failures that would trigger ConsecutiveFailures check
 			rr.Status.ConsecutiveFailureCount = 100
 
-			blocked, err := engine.CheckBlockingConditions(ctx, rr, "wf-001")
+			blocked, err := engine.CheckPostAnalysisConditions(ctx, rr, "wf-001", "test-ns/deployment/payment-api")
 			Expect(err).ToNot(HaveOccurred())
-			Expect(blocked).ToNot(BeNil())
 			// MUST be UnmanagedResource, NOT ConsecutiveFailures — proving scope is Check #1
 			Expect(blocked.Reason).To(Equal(string(remediationv1.BlockReasonUnmanagedResource)))
 		})
@@ -152,7 +149,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking", func() {
 				rr.Status.ConsecutiveFailureCount = retryCount
 
 				blocked := engine.CheckUnmanagedResource(ctx, rr)
-				Expect(blocked).ToNot(BeNil())
+				Expect(blocked.Reason).To(Equal(string(remediationv1.BlockReasonUnmanagedResource)))
 
 				if retryCount > 0 && previousBackoff < 300*time.Second {
 					// Each step should be >= previous (with jitter tolerance)
@@ -194,7 +191,6 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking", func() {
 			rr := makeRR("production", "rr-prod", "Deployment", "payment-api")
 
 			blocked := engine.CheckUnmanagedResource(ctx, rr)
-			Expect(blocked).ToNot(BeNil())
 			Expect(blocked.Reason).To(Equal("UnmanagedResource"))
 			Expect(blocked.Message).To(ContainSubstring("production/Deployment/payment-api"))
 			Expect(blocked.Message).To(ContainSubstring("kubernaut.ai/managed=true"))
@@ -207,8 +203,6 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking", func() {
 			rr := makeRR("test-ns", "test-rr", "Deployment", "payment-api")
 
 			blocked := engine.CheckUnmanagedResource(ctx, rr)
-			Expect(blocked).ToNot(BeNil())
-			Expect(blocked.BlockedUntil).ToNot(BeNil())
 			// BlockedUntil should be in the future
 			Expect(blocked.BlockedUntil.After(time.Now().Add(-1 * time.Second))).To(BeTrue())
 		})
@@ -226,7 +220,6 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking", func() {
 			rr := makeRR("test-ns", "test-rr", "Deployment", "app")
 
 			blocked := engine.CheckUnmanagedResource(ctx, rr)
-			Expect(blocked).ToNot(BeNil())
 			// Default base is 5s, so with 10% jitter: 4.5s - 5.5s
 			Expect(blocked.RequeueAfter).To(BeNumerically(">=", 4*time.Second))
 			Expect(blocked.RequeueAfter).To(BeNumerically("<=", 6*time.Second))

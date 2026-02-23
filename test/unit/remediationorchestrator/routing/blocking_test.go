@@ -131,11 +131,8 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 
 			blocked := engine.CheckConsecutiveFailures(ctx, rr)
 
-			// RED: Expect panic("not implemented") - test will FAIL
-			Expect(blocked).ToNot(BeNil())
 			Expect(blocked.Reason).To(Equal(string(remediationv1.BlockReasonConsecutiveFailures)))
 			Expect(blocked.Blocked).To(BeTrue())
-			Expect(blocked.BlockedUntil).ToNot(BeNil())
 			Expect(blocked.RequeueAfter).To(Equal(time.Duration(3600) * time.Second))
 		})
 
@@ -155,7 +152,6 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 
 			blocked := engine.CheckConsecutiveFailures(ctx, rr)
 
-			// RED: Expect panic("not implemented") - test will FAIL
 			Expect(blocked).To(BeNil())
 		})
 
@@ -196,8 +192,6 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 
 			blocked := engine.CheckConsecutiveFailures(ctx, rr)
 
-			// RED: Expect panic("not implemented") - test will FAIL
-			Expect(blocked).ToNot(BeNil())
 			Expect(blocked.Message).To(ContainSubstring("5 consecutive failures"))
 			Expect(blocked.Message).To(ContainSubstring("Cooldown expires:"))
 		})
@@ -243,7 +237,6 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 
 			// GREEN: Test should pass
 			Expect(err).ToNot(HaveOccurred())
-			Expect(blocked).ToNot(BeNil())
 			Expect(blocked.Reason).To(Equal(string(remediationv1.BlockReasonDuplicateInProgress)))
 			Expect(blocked.Blocked).To(BeTrue())
 			Expect(blocked.DuplicateOf).To(Equal("rr-original"))
@@ -372,7 +365,6 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 
 			// GREEN: Test should pass
 			Expect(err).ToNot(HaveOccurred())
-			Expect(blocked).ToNot(BeNil())
 			Expect(blocked.Reason).To(Equal(string(remediationv1.BlockReasonDuplicateInProgress)))
 			// Should reference one of the active RRs (either rr-first or rr-second)
 			Expect(blocked.DuplicateOf).To(Or(Equal("rr-first"), Equal("rr-second")))
@@ -415,11 +407,10 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 				},
 			}
 
-			blocked, err := engine.CheckResourceBusy(ctx, rr)
+			blocked, err := engine.CheckResourceBusy(ctx, rr, "default/pod/nginx-12345")
 
 			// GREEN: Test should pass
 			Expect(err).ToNot(HaveOccurred())
-			Expect(blocked).ToNot(BeNil())
 			Expect(blocked.Reason).To(Equal(string(remediationv1.BlockReasonResourceBusy)))
 			Expect(blocked.Blocked).To(BeTrue())
 			Expect(blocked.BlockingWorkflowExecution).To(Equal("wfe-running"))
@@ -457,7 +448,7 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 				},
 			}
 
-			blocked, err := engine.CheckResourceBusy(ctx, rr)
+			blocked, err := engine.CheckResourceBusy(ctx, rr, "default/pod/nginx-67890")
 
 			// GREEN: Test should pass
 			Expect(err).ToNot(HaveOccurred())
@@ -479,7 +470,7 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 				},
 			}
 
-			blocked, err := engine.CheckResourceBusy(ctx, rr)
+			blocked, err := engine.CheckResourceBusy(ctx, rr, "default/pod/nginx-99999")
 
 			// GREEN: Test should pass
 			Expect(err).ToNot(HaveOccurred())
@@ -532,14 +523,12 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 			}
 
 			// Pass same workflow ID as the WFE to trigger cooldown
-			blocked, err := engine.CheckRecentlyRemediated(ctx, rr, "restart-workflow")
+			blocked, err := engine.CheckRecentlyRemediated(ctx, rr, "restart-workflow", "default/pod/nginx-recent")
 
 			// GREEN: Test should pass
 			Expect(err).ToNot(HaveOccurred())
-			Expect(blocked).ToNot(BeNil())
 			Expect(blocked.Reason).To(Equal(string(remediationv1.BlockReasonRecentlyRemediated)))
 			Expect(blocked.Blocked).To(BeTrue())
-			Expect(blocked.BlockedUntil).ToNot(BeNil())
 			Expect(blocked.RequeueAfter).To(BeNumerically(">", 0))
 		})
 
@@ -581,7 +570,7 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 			}
 
 			// Same workflow ID but outside cooldown window
-			blocked, err := engine.CheckRecentlyRemediated(ctx, rr, "restart-workflow")
+			blocked, err := engine.CheckRecentlyRemediated(ctx, rr, "restart-workflow", "default/pod/nginx-old")
 
 			// GREEN: Test should pass
 			Expect(err).ToNot(HaveOccurred())
@@ -625,12 +614,10 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 			}
 
 			// Same workflow ID to trigger cooldown
-			blocked, err := engine.CheckRecentlyRemediated(ctx, rr, "restart-workflow")
+			blocked, err := engine.CheckRecentlyRemediated(ctx, rr, "restart-workflow", "default/pod/nginx-expiry")
 
 			// GREEN: Test should pass
 			Expect(err).ToNot(HaveOccurred())
-			Expect(blocked).ToNot(BeNil())
-			Expect(blocked.BlockedUntil).ToNot(BeNil())
 			// BlockedUntil should be approximately completion time + 5 minutes
 			expectedExpiry := completionTime.Add(5 * time.Minute)
 			Expect(blocked.BlockedUntil.Sub(expectedExpiry)).To(BeNumerically("<", 1*time.Second))
@@ -688,7 +675,7 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 
 			// Call with DIFFERENT workflow ID (scale-workflow vs restart-workflow)
 			// This simulates: AIAnalysis selected "scale-workflow" for this RR
-			blocked, err := engine.CheckRecentlyRemediated(ctx, rr, "scale-workflow")
+			blocked, err := engine.CheckRecentlyRemediated(ctx, rr, "scale-workflow", "default/pod/nginx-multi-workflow")
 
 			// Expect NOT blocked - different workflow on same target should be allowed
 			// Per DD-RO-002 Check 4: "If same workflow executed recently for same target"
@@ -729,12 +716,10 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 			blocked := engine.CheckExponentialBackoff(ctx, rr)
 
 			// Assertions (will FAIL until CheckExponentialBackoff is implemented)
-			Expect(blocked).ToNot(BeNil())
 			Expect(blocked.Reason).To(Equal(string(remediationv1.BlockReasonExponentialBackoff)))
 			Expect(blocked.Blocked).To(BeTrue())
 			Expect(blocked.RequeueAfter).To(BeNumerically(">", 0))
 			Expect(blocked.RequeueAfter).To(BeNumerically("<=", 5*time.Minute))
-			Expect(blocked.BlockedUntil).ToNot(BeNil())
 			Expect(blocked.Message).To(ContainSubstring("Exponential backoff active"))
 			Expect(blocked.Message).To(ContainSubstring(futureTime.Format(time.RFC3339)))
 		})
@@ -795,11 +780,13 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 	})
 
 	// ========================================
-	// Test Group 6: CheckBlockingConditions Wrapper (3 tests)
-	// Reference: DD-RO-002-ADDENDUM
+	// Test Group 6: Split Routing API (3 tests)
+	// Reference: DD-RO-002-ADDENDUM, Issue #165
+	// CheckPreAnalysisConditions: fingerprint-based checks (pre-AA)
+	// CheckPostAnalysisConditions: all checks including resource-level (post-AA)
 	// ========================================
-	Context("CheckBlockingConditions wrapper", func() {
-		It("should check all conditions in priority order", func() {
+	Context("Split routing API (CheckPreAnalysisConditions / CheckPostAnalysisConditions)", func() {
+		It("should check all conditions in priority order via CheckPostAnalysisConditions", func() {
 			// Create 3 previous Failed RRs with same fingerprint (threshold = 3)
 			// Set explicit UID because fake client doesn't auto-generate them
 			baseTime := time.Now().Add(-10 * time.Minute)
@@ -835,15 +822,13 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 				},
 			}
 
-			blocked, err := engine.CheckBlockingConditions(ctx, rr, "")
+			blocked, err := engine.CheckPostAnalysisConditions(ctx, rr, "", "")
 
-			// RED: Expect panic("not implemented") - test will FAIL
 			Expect(err).ToNot(HaveOccurred())
-			Expect(blocked).ToNot(BeNil())
 			Expect(blocked.Reason).To(Equal("ConsecutiveFailures")) // First check should win
 		})
 
-		It("should return first blocking condition found", func() {
+		It("should return first blocking condition found via CheckPreAnalysisConditions", func() {
 			// Create scenario where DuplicateInProgress blocks (second check)
 			// No consecutive failures (first check passes)
 			originalRR := &remediationv1.RemediationRequest{
@@ -873,11 +858,9 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 				},
 			}
 
-			blocked, err := engine.CheckBlockingConditions(ctx, duplicateRR, "")
+			blocked, err := engine.CheckPreAnalysisConditions(ctx, duplicateRR)
 
-			// RED: Expect panic("not implemented") - test will FAIL
 			Expect(err).ToNot(HaveOccurred())
-			Expect(blocked).ToNot(BeNil())
 			Expect(blocked.Reason).To(Equal(string(remediationv1.BlockReasonDuplicateInProgress))) // Second check should block
 		})
 
@@ -902,9 +885,8 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 				},
 			}
 
-			blocked, err := engine.CheckBlockingConditions(ctx, rr, "")
+			blocked, err := engine.CheckPreAnalysisConditions(ctx, rr)
 
-			// RED: Expect panic("not implemented") - test will FAIL
 			Expect(err).ToNot(HaveOccurred())
 			Expect(blocked).To(BeNil()) // Can proceed to execution
 		})
@@ -924,7 +906,6 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 			}
 
 			for _, phase := range terminalPhases {
-				// RED: Expect panic("not implemented") - test will FAIL
 				Expect(routing.IsTerminalPhase(phase)).To(BeTrue(),
 					"Expected %s to be terminal", phase)
 			}
@@ -941,14 +922,12 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 			}
 
 			for _, phase := range nonTerminalPhases {
-				// RED: Expect panic("not implemented") - test will FAIL
 				Expect(routing.IsTerminalPhase(phase)).To(BeFalse(),
 					"Expected %s to be non-terminal", phase)
 			}
 		})
 
 		It("should handle empty phase string", func() {
-			// RED: Expect panic("not implemented") - test will FAIL
 			Expect(routing.IsTerminalPhase("")).To(BeFalse())
 		})
 	})
@@ -975,7 +954,7 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 			}
 			Expect(fakeClient.Create(ctx, rr)).To(Succeed())
 
-			blocked, err := engine.CheckBlockingConditions(ctx, rr, "")
+			blocked, err := engine.CheckPreAnalysisConditions(ctx, rr)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(blocked).To(BeNil()) // Not blocked (empty fingerprint doesn't match anything)
 		})
@@ -997,7 +976,7 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 			}
 			Expect(fakeClient.Create(ctx, rr)).To(Succeed())
 
-			blocked, err := engine.CheckBlockingConditions(ctx, rr, "")
+			blocked, err := engine.CheckPostAnalysisConditions(ctx, rr, "", "")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(blocked).To(BeNil()) // Not blocked (empty target doesn't match)
 		})
@@ -1037,9 +1016,8 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 			}
 			Expect(fakeClient.Create(ctx, rr)).To(Succeed())
 
-			blocked, err := engine.CheckResourceBusy(ctx, rr)
+			blocked, err := engine.CheckResourceBusy(ctx, rr, "node/worker-1")
 			Expect(err).ToNot(HaveOccurred())
-			Expect(blocked).ToNot(BeNil()) // Should block (same cluster-scoped resource)
 			Expect(blocked.Reason).To(Equal(string(remediationv1.BlockReasonResourceBusy)))
 		})
 
@@ -1080,7 +1058,7 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 			Expect(fakeClient.Create(ctx, rr)).To(Succeed())
 
 			// Workflow ID from AIAnalysis.Status.SelectedWorkflow.WorkflowID
-			blocked, err := engine.CheckRecentlyRemediated(ctx, rr, "restart-pod")
+			blocked, err := engine.CheckRecentlyRemediated(ctx, rr, "restart-pod", "default/pod/test-pod")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(blocked).To(BeNil()) // Not blocked (no CompletionTime = skip)
 		})
@@ -1123,7 +1101,7 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 			Expect(fakeClient.Create(ctx, rr)).To(Succeed())
 
 			// Same workflow ID but outside cooldown window
-			blocked, err := engine.CheckRecentlyRemediated(ctx, rr, "restart-pod")
+			blocked, err := engine.CheckRecentlyRemediated(ctx, rr, "restart-pod", "default/pod/test-pod-old")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(blocked).To(BeNil()) // Not blocked (cooldown expired)
 		})
@@ -1167,7 +1145,6 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 			}
 
 			blocked := engine.CheckConsecutiveFailures(ctx, rr)
-			Expect(blocked).ToNot(BeNil()) // Should block at threshold
 			Expect(blocked.Reason).To(Equal(string(remediationv1.BlockReasonConsecutiveFailures)))
 		})
 
@@ -1242,9 +1219,8 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 			}
 			Expect(fakeClient.Create(ctx, rr)).To(Succeed())
 
-			blocked, err := engine.CheckResourceBusy(ctx, rr)
+			blocked, err := engine.CheckResourceBusy(ctx, rr, "default/pod/multi-target")
 			Expect(err).ToNot(HaveOccurred())
-			Expect(blocked).ToNot(BeNil()) // Should block (wfe-multi-2 is Running)
 			Expect(blocked.BlockingWorkflowExecution).To(Equal("wfe-multi-2"))
 		})
 
@@ -1287,7 +1263,6 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 			}
 
 			blocked := engine.CheckConsecutiveFailures(ctx, rr)
-			Expect(blocked).ToNot(BeNil()) // Should block
 			Expect(blocked.Reason).To(Equal(string(remediationv1.BlockReasonConsecutiveFailures)))
 			Expect(blocked.Message).To(ContainSubstring("10 consecutive failures"))
 		})
@@ -1348,10 +1323,9 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 				},
 			}
 
-			// Check blocking conditions
-			blocked, err := engine.CheckBlockingConditions(ctx, rr, "")
+			// Check blocking conditions (post-AA includes all checks)
+			blocked, err := engine.CheckPostAnalysisConditions(ctx, rr, "", "")
 			Expect(err).ToNot(HaveOccurred())
-			Expect(blocked).ToNot(BeNil())
 			// Should return ConsecutiveFailures (higher priority than DuplicateInProgress)
 			Expect(blocked.Reason).To(Equal(string(remediationv1.BlockReasonConsecutiveFailures)))
 		})

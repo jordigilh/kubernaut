@@ -32,8 +32,12 @@ import (
 
 // Engine is the interface for routing decision logic.
 // Allows mocking in unit tests while using real implementation in integration tests.
+//
+// Issue #165: Split API separates pre-AA checks (fingerprint-based, no AI data)
+// from post-AA checks (all checks including resource-level with AI-resolved target).
 type Engine interface {
-	CheckBlockingConditions(ctx context.Context, rr *remediationv1.RemediationRequest, workflowID string) (*BlockingCondition, error)
+	CheckPreAnalysisConditions(ctx context.Context, rr *remediationv1.RemediationRequest) (*BlockingCondition, error)
+	CheckPostAnalysisConditions(ctx context.Context, rr *remediationv1.RemediationRequest, workflowID string, targetResource string) (*BlockingCondition, error)
 	CheckUnmanagedResource(ctx context.Context, rr *remediationv1.RemediationRequest) *BlockingCondition
 	Config() Config
 	CalculateExponentialBackoff(consecutiveFailures int32) time.Duration
@@ -123,40 +127,31 @@ func (r *RoutingEngine) Config() Config {
 	return r.config
 }
 
-// CheckBlockingConditions checks all blocking scenarios in priority order.
-// Returns a BlockingCondition if any blocking condition is found, or nil if
-// the RR can proceed to workflow execution.
+// CheckPreAnalysisConditions checks fingerprint-based blocking conditions
+// before AIAnalysis data is available (Pending phase).
 //
-// Priority Order (checked sequentially, first match wins):
-// 1. UnmanagedResource (BR-SCOPE-010, ADR-053) - MUST be first: if not in scope, nothing else matters
-// 2. ConsecutiveFailures (BR-ORCH-042) - consecutive failure protection
-// 3. DuplicateInProgress (DD-RO-002-ADDENDUM) - prevents RR flood
-// 4. ResourceBusy (DD-RO-002) - protects target resources
-// 5. RecentlyRemediated (DD-RO-002 Check 4) - workflow-specific cooldown
-// 6. ExponentialBackoff (DD-WE-004) - graduated retry
+// Issue #165: Split from CheckBlockingConditions to avoid passing sentinel
+// empty strings for workflowID and targetResource that aren't known yet.
 //
-// Parameters:
-//   - workflowID: The workflow ID from AIAnalysis.Status.SelectedWorkflow.WorkflowID
-//     Used for workflow-specific cooldown in Check 5 (RecentlyRemediated).
+// Checks (in priority order):
+// 1. UnmanagedResource (BR-SCOPE-010, ADR-053)
+// 2. ConsecutiveFailures (BR-ORCH-042)
+// 3. DuplicateInProgress (DD-RO-002-ADDENDUM)
+// 4. ExponentialBackoff (DD-WE-004)
 //
 // Reference: DD-RO-002-ADDENDUM (Blocked Phase Semantics)
-func (r *RoutingEngine) CheckBlockingConditions(
+func (r *RoutingEngine) CheckPreAnalysisConditions(
 	ctx context.Context,
 	rr *remediationv1.RemediationRequest,
-	workflowID string,
 ) (*BlockingCondition, error) {
-	// Check 1: UnmanagedResource (BR-SCOPE-010, ADR-053) — MUST be first
-	// If the resource is not in scope, no other checks matter.
 	if blocked := r.CheckUnmanagedResource(ctx, rr); blocked != nil {
 		return blocked, nil
 	}
 
-	// Check 2: Consecutive failures
 	if blocked := r.CheckConsecutiveFailures(ctx, rr); blocked != nil {
 		return blocked, nil
 	}
 
-	// Check 2: Duplicate in progress (critical for Gateway deduplication)
 	blocked, err := r.CheckDuplicateInProgress(ctx, rr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check duplicate: %w", err)
@@ -165,8 +160,57 @@ func (r *RoutingEngine) CheckBlockingConditions(
 		return blocked, nil
 	}
 
-	// Check 3: Resource busy
-	blocked, err = r.CheckResourceBusy(ctx, rr)
+	if blocked := r.CheckExponentialBackoff(ctx, rr); blocked != nil {
+		return blocked, nil
+	}
+
+	return nil, nil
+}
+
+// CheckPostAnalysisConditions checks all blocking conditions after AIAnalysis
+// has completed and the effective target resource is known.
+//
+// Issue #165: The caller resolves targetResource from AIAnalysis RCA
+// AffectedResource (falling back to RR.Spec.TargetResource). This fixes
+// the bug where CheckResourceBusy/CheckRecentlyRemediated used the
+// Gateway-assigned target instead of the AI-identified root cause target.
+//
+// Parameters:
+//   - workflowID: from AIAnalysis.Status.SelectedWorkflow.WorkflowID
+//   - targetResource: AI-resolved target formatted as "namespace/kind/name" or "kind/name"
+//
+// Checks (in priority order):
+// 1. UnmanagedResource (BR-SCOPE-010, ADR-053)
+// 2. ConsecutiveFailures (BR-ORCH-042)
+// 3. DuplicateInProgress (DD-RO-002-ADDENDUM)
+// 4. ResourceBusy (DD-RO-002) - uses targetResource param
+// 5. RecentlyRemediated (DD-RO-002 Check 4) - uses targetResource param
+// 6. ExponentialBackoff (DD-WE-004)
+//
+// Reference: DD-RO-002-ADDENDUM, DD-WE-001 (Resource Locking Safety)
+func (r *RoutingEngine) CheckPostAnalysisConditions(
+	ctx context.Context,
+	rr *remediationv1.RemediationRequest,
+	workflowID string,
+	targetResource string,
+) (*BlockingCondition, error) {
+	if blocked := r.CheckUnmanagedResource(ctx, rr); blocked != nil {
+		return blocked, nil
+	}
+
+	if blocked := r.CheckConsecutiveFailures(ctx, rr); blocked != nil {
+		return blocked, nil
+	}
+
+	blocked, err := r.CheckDuplicateInProgress(ctx, rr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check duplicate: %w", err)
+	}
+	if blocked != nil {
+		return blocked, nil
+	}
+
+	blocked, err = r.CheckResourceBusy(ctx, rr, targetResource)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check resource lock: %w", err)
 	}
@@ -174,8 +218,7 @@ func (r *RoutingEngine) CheckBlockingConditions(
 		return blocked, nil
 	}
 
-	// Check 4: Recently remediated (workflow-specific cooldown per DD-RO-002)
-	blocked, err = r.CheckRecentlyRemediated(ctx, rr, workflowID)
+	blocked, err = r.CheckRecentlyRemediated(ctx, rr, workflowID, targetResource)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check recent remediation: %w", err)
 	}
@@ -183,12 +226,10 @@ func (r *RoutingEngine) CheckBlockingConditions(
 		return blocked, nil
 	}
 
-	// Check 5: Exponential backoff
 	if blocked := r.CheckExponentialBackoff(ctx, rr); blocked != nil {
 		return blocked, nil
 	}
 
-	// No blocking conditions found - can proceed
 	return nil, nil
 }
 
@@ -328,6 +369,10 @@ func (r *RoutingEngine) CheckDuplicateInProgress(
 // CheckResourceBusy checks if another WorkflowExecution is running on the same target.
 // Blocks when an active (Running phase) WFE exists for the same TargetResource.
 //
+// Issue #165: Accepts explicit targetResource parameter instead of reading
+// rr.Spec.TargetResource. The caller resolves the effective target from
+// AIAnalysis RCA AffectedResource (falling back to RR.Spec.TargetResource).
+//
 // BlockReason: "ResourceBusy"
 // RequeueAfter: 30 seconds (to check if WFE completes)
 //
@@ -335,9 +380,9 @@ func (r *RoutingEngine) CheckDuplicateInProgress(
 func (r *RoutingEngine) CheckResourceBusy(
 	ctx context.Context,
 	rr *remediationv1.RemediationRequest,
+	targetResource string,
 ) (*BlockingCondition, error) {
-	// Get target resource string representation
-	targetResourceStr := rr.Spec.TargetResource.String()
+	targetResourceStr := targetResource
 
 	// Find active WFE for the same target resource
 	activeWFE, err := r.FindActiveWFEForTarget(ctx, targetResourceStr)
@@ -362,22 +407,25 @@ func (r *RoutingEngine) CheckResourceBusy(
 // CheckRecentlyRemediated checks if the same workflow+target was recently executed.
 // Blocks when a completed WFE for the same target and workflow exists within cooldown.
 //
+// Issue #165: Accepts explicit targetResource parameter instead of reading
+// rr.Spec.TargetResource. The caller resolves the effective target from
+// AIAnalysis RCA AffectedResource (falling back to RR.Spec.TargetResource).
+//
 // BlockReason: "RecentlyRemediated"
 // RequeueAfter: Remaining cooldown duration
 //
 // Parameters:
-//   - workflowID: The workflow ID from AIAnalysis.Status.SelectedWorkflow.WorkflowID
-//     This is passed by the reconciler after AIAnalysis completes.
-//     Per DD-RO-002 Check 4: Only blocks if SAME workflow was recently executed.
+//   - workflowID: from AIAnalysis.Status.SelectedWorkflow.WorkflowID
+//   - targetResource: AI-resolved target formatted as "namespace/kind/name" or "kind/name"
 //
 // Reference: DD-RO-002 Check 4 (Workflow Cooldown), DD-WE-001 (Cooldown Prevent Redundant Execution)
 func (r *RoutingEngine) CheckRecentlyRemediated(
 	ctx context.Context,
 	rr *remediationv1.RemediationRequest,
 	workflowID string,
+	targetResource string,
 ) (*BlockingCondition, error) {
-	// Get target resource string representation
-	targetResourceStr := rr.Spec.TargetResource.String()
+	targetResourceStr := targetResource
 
 	// DD-RO-002 Check 4: Workflow-specific cooldown
 	// Only block if the SAME workflow was recently executed on the same target.
