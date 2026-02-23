@@ -125,7 +125,7 @@ var _ = Describe("E2E-HAPI ADR-056 DetectedLabels", Label("e2e", "hapi", "adr-05
 			req := &hapiclient.IncidentRequest{
 				IncidentID:        "e2e-dl-001",
 				RemediationID:     "req-e2e-dl-001",
-				SignalType:        "CrashLoopBackOff",
+				SignalName:        "CrashLoopBackOff",
 				Severity:          "critical",
 				SignalSource:      "prometheus",
 				ResourceNamespace: testNS,
@@ -157,7 +157,7 @@ var _ = Describe("E2E-HAPI ADR-056 DetectedLabels", Label("e2e", "hapi", "adr-05
 			resp, err := sessionClient.Investigate(testCtx, &hapiclient.IncidentRequest{
 				IncidentID:        "e2e-dl-002",
 				RemediationID:     "req-e2e-dl-002",
-				SignalType:        "OOMKilled",
+				SignalName:        "OOMKilled",
 				Severity:          "high",
 				SignalSource:      "prometheus",
 				ResourceNamespace: testNS,
@@ -230,7 +230,7 @@ var _ = Describe("E2E-HAPI ADR-056 DetectedLabels", Label("e2e", "hapi", "adr-05
 			resp, err := sessionClient.Investigate(testCtx, &hapiclient.IncidentRequest{
 				IncidentID:        "e2e-dl-003",
 				RemediationID:     "req-e2e-dl-003",
-				SignalType:        "CrashLoopBackOff",
+				SignalName:        "CrashLoopBackOff",
 				Severity:          "critical",
 				SignalSource:      "prometheus",
 				ResourceNamespace: testNS,

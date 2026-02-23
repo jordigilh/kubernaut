@@ -52,7 +52,7 @@ type TestWorkflow struct {
 	Name            string
 	Description     string
 	ActionType      string // DD-WORKFLOW-016: FK to action_type_taxonomy (e.g., "ScaleReplicas", "RestartPod")
-	SignalType      string // Must match test scenarios (e.g., "OOMKilled")
+	SignalName      string // Must match test scenarios (e.g., "OOMKilled"); maps to HAPI signal_name
 	Severity        string // Metadata only: "critical", "high", "medium", "low" (actual value from OCI image)
 	Component       string // Metadata only: "deployment", "pod", "node", etc. (actual value from OCI image)
 	Environment     string // Metadata only + map key: "staging", "production", "test" (actual value from OCI image)

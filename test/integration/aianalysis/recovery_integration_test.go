@@ -94,7 +94,7 @@ var _ = Describe("Recovery Endpoint Integration", Label("integration", "recovery
 					WorkflowExecutionRef: "we-failed-001",
 					OriginalRca: client.OriginalRCA{
 						Summary:             "Initial OOM analysis from integration test",
-						SignalType:          "OOMKilled",
+						SignalName:          "OOMKilled",
 						Severity:            "critical",
 						ContributingFactors: []string{"memory limit too low", "traffic spike"},
 					},
@@ -115,7 +115,7 @@ var _ = Describe("Recovery Endpoint Integration", Label("integration", "recovery
 				}),
 
 				// Optional signal context
-				SignalType:        client.NewOptNilString("CrashLoopBackOff"),
+				SignalName:        client.NewOptNilString("CrashLoopBackOff"),
 				Severity:          client.NewOptNilSeverity(client.SeverityMedium), // DD-SEVERITY-001: Use normalized severity enum
 				ResourceNamespace: client.NewOptNilString("test-ns"),
 				ResourceKind:      client.NewOptNilString("Deployment"),
@@ -174,7 +174,8 @@ var _ = Describe("Recovery Endpoint Integration", Label("integration", "recovery
 
 				resp, err := realHGClient.InvestigateRecovery(testCtx, recoveryReq)
 				Expect(err).ToNot(HaveOccurred(), "Recovery attempt %d should succeed", attemptNum)
-				Expect(resp).ToNot(BeNil())
+				Expect(resp.IncidentID).To(Equal(recoveryReq.IncidentID),
+					"Recovery attempt %d response should contain the matching IncidentID", attemptNum)
 			}
 		})
 	})
@@ -187,7 +188,7 @@ var _ = Describe("Recovery Endpoint Integration", Label("integration", "recovery
 			incidentReq := &client.IncidentRequest{
 				IncidentID:        "test-incident-initial",
 				RemediationID:     "req-initial-001",
-				SignalType:        "OOMKilled",
+				SignalName:        "OOMKilled",
 				Severity:          "critical",
 				SignalSource:      "kubernaut",
 				ResourceNamespace: "production",
@@ -204,8 +205,8 @@ var _ = Describe("Recovery Endpoint Integration", Label("integration", "recovery
 			resp, err := realHGClient.Investigate(testCtx, incidentReq)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(resp).ToNot(BeNil())
-			Expect(resp.IncidentID).ToNot(BeEmpty())
+			Expect(resp.IncidentID).To(Equal(incidentReq.IncidentID),
+				"Response IncidentID should match the request")
 		})
 
 		It("should call recovery endpoint for failed workflow attempts", func() {
@@ -218,7 +219,7 @@ var _ = Describe("Recovery Endpoint Integration", Label("integration", "recovery
 					WorkflowExecutionRef: "we-xyz-failed",
 					OriginalRca: client.OriginalRCA{
 						Summary:    "Memory leak detected",
-						SignalType: "OOMKilled",
+						SignalName: "OOMKilled",
 						Severity:   "critical",
 					},
 					SelectedWorkflow: client.SelectedWorkflowSummary{
@@ -245,7 +246,8 @@ var _ = Describe("Recovery Endpoint Integration", Label("integration", "recovery
 			resp, err := realHGClient.InvestigateRecovery(testCtx, recoveryReq)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(resp).ToNot(BeNil())
+			Expect(resp.IncidentID).To(Equal(recoveryReq.IncidentID),
+				"Response IncidentID should match the recovery request")
 		})
 	})
 
@@ -264,7 +266,7 @@ var _ = Describe("Recovery Endpoint Integration", Label("integration", "recovery
 					WorkflowExecutionRef: "we-full-context-001",
 					OriginalRca: client.OriginalRCA{
 						Summary:             "Database connection pool exhausted",
-						SignalType:          "ConnectionTimeout",
+						SignalName:          "ConnectionTimeout",
 						Severity:            "high",
 						ContributingFactors: []string{"high traffic", "slow queries", "connection leak"},
 					},
@@ -294,7 +296,8 @@ var _ = Describe("Recovery Endpoint Integration", Label("integration", "recovery
 			resp, err := realHGClient.InvestigateRecovery(testCtx, recoveryReq)
 
 			Expect(err).ToNot(HaveOccurred(), "Full context recovery request should succeed")
-			Expect(resp).ToNot(BeNil())
+			Expect(resp.IncidentID).To(Equal(recoveryReq.IncidentID),
+				"Full context recovery response should contain the matching IncidentID")
 		})
 
 		It("should handle multiple previous attempts context", func() {
@@ -308,7 +311,7 @@ var _ = Describe("Recovery Endpoint Integration", Label("integration", "recovery
 					WorkflowExecutionRef: "we-attempt-2-failed",
 					OriginalRca: client.OriginalRCA{
 						Summary:    "Persistent memory issue",
-						SignalType: "OOMKilled",
+						SignalName: "OOMKilled",
 						Severity:   "critical",
 					},
 					SelectedWorkflow: client.SelectedWorkflowSummary{
@@ -334,7 +337,8 @@ var _ = Describe("Recovery Endpoint Integration", Label("integration", "recovery
 			resp, err := realHGClient.InvestigateRecovery(testCtx, recoveryReq)
 
 			Expect(err).ToNot(HaveOccurred(), "Third recovery attempt should succeed")
-			Expect(resp).ToNot(BeNil())
+			Expect(resp.IncidentID).To(Equal(recoveryReq.IncidentID),
+				"Third recovery attempt response should contain the matching IncidentID")
 		})
 	})
 

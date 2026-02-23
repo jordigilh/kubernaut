@@ -52,10 +52,9 @@ var _ = Describe("RequestBuilder", func() {
 				req := builder.BuildIncidentRequest(analysis)
 
 				// Assert
-				Expect(req).ToNot(BeNil())
 				Expect(req.SignalMode.Set).To(BeTrue())
 				Expect(req.SignalMode.Value).To(Equal(client.SignalMode("reactive")))
-				Expect(req.SignalType).To(Equal("OOMKilled"))
+				Expect(req.SignalName).To(Equal("OOMKilled"))
 			})
 
 			It("UT-AA-084-002: should pass signalMode = predictive to HAPI", func() {
@@ -68,11 +67,10 @@ var _ = Describe("RequestBuilder", func() {
 				req := builder.BuildIncidentRequest(analysis)
 
 				// Assert
-				Expect(req).ToNot(BeNil())
 				Expect(req.SignalMode.Set).To(BeTrue())
 				Expect(req.SignalMode.Value).To(Equal(client.SignalMode("predictive")))
-				// SignalType should be the normalized type from SP (not PredictedOOMKill)
-				Expect(req.SignalType).To(Equal("OOMKilled"))
+				// SignalName should be the normalized type from SP (not PredictedOOMKill)
+				Expect(req.SignalName).To(Equal("OOMKilled"))
 			})
 
 			It("should not set signalMode when empty (backwards compatible)", func() {
@@ -84,7 +82,6 @@ var _ = Describe("RequestBuilder", func() {
 				req := builder.BuildIncidentRequest(analysis)
 
 				// Assert
-				Expect(req).ToNot(BeNil())
 				Expect(req.SignalMode.Set).To(BeFalse(), "SignalMode should not be set when empty")
 			})
 		})
@@ -105,7 +102,7 @@ var _ = Describe("RequestBuilder", func() {
 
 			req := builder.BuildIncidentRequest(analysis)
 
-			Expect(req.SignalType).To(Equal("OOMKilled"))
+			Expect(req.SignalName).To(Equal("OOMKilled"))
 			Expect(req.Severity).To(Equal(client.Severity("critical")))
 			Expect(req.Environment).To(Equal("production"))
 			Expect(req.Priority).To(Equal("P0"))

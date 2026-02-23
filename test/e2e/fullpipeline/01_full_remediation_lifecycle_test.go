@@ -85,7 +85,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 			WorkflowID:      "crashloop-config-fix-v1",
 			Name:            "CrashLoopBackOff - Configuration Fix",
 			Description:     "CrashLoop remediation workflow for full pipeline E2E",
-			SignalType:      "CrashLoopBackOff",
+			SignalName:      "CrashLoopBackOff",
 			Severity:        "high",
 			Component:       "deployment",
 			Environment:     "production",
@@ -119,7 +119,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 			WorkflowID:      "oomkill-increase-memory-v1",
 			Name:            "OOMKill Recovery - Increase Memory Limits",
 			Description:     "OOMKill remediation workflow for full pipeline E2E",
-			SignalType:      "OOMKilled",
+			SignalName:      "OOMKilled",
 			Severity:        "critical",
 			Component:       "deployment",
 			Environment:     "production",
@@ -573,7 +573,8 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		// Audit timestamps have second-level precision, so multiple events emitted in the
 		// first second of the pipeline (gateway → RO → SP) share the same timestamp.
 		// We verify gateway.signal.received is present at the earliest timestamp tier.
-		Expect(allAuditEvents).ToNot(BeEmpty())
+		Expect(len(allAuditEvents)).To(BeNumerically(">=", 3),
+			"Full pipeline should produce at least gateway, orchestrator, and workflow audit events")
 		earliestTS := allAuditEvents[0].EventTimestamp
 		for _, event := range allAuditEvents[1:] {
 			if event.EventTimestamp.Before(earliestTS) {
@@ -624,9 +625,8 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		}, 30*time.Second, 2*time.Second).Should(Succeed(),
 			"RR reconstruction should succeed")
 
-		Expect(reconstructionResp).ToNot(BeNil())
-		Expect(reconstructionResp.RemediationRequestYaml).ToNot(BeEmpty(),
-			"Reconstructed RR YAML should not be empty")
+		Expect(reconstructionResp.RemediationRequestYaml).To(ContainSubstring("apiVersion:"),
+			"Reconstructed RR YAML should contain Kubernetes resource structure")
 		Expect(reconstructionResp.Validation.IsValid).To(BeTrue(),
 			"Reconstructed RR should be valid")
 		Expect(reconstructionResp.Validation.Completeness).To(BeNumerically(">=", 80),

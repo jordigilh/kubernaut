@@ -122,7 +122,7 @@ func GetHAPIE2ETestWorkflows() []TestWorkflow {
 	// These images contain /workflow-schema.yaml (BR-WORKFLOW-004) for pullspec-only registration
 	const hapiWorkflowRegistry = "quay.io/kubernaut-cicd/test-workflows"
 	baseWorkflows := []TestWorkflow{
-		{WorkflowID: "oomkill-increase-memory-v1", Name: "OOMKill Remediation - Increase Memory Limits", Description: "Increases memory limits for pods experiencing OOMKilled events", ActionType: "IncreaseMemoryLimits", SignalType: "OOMKilled", Severity: "critical", Component: "pod", Priority: "P0", SchemaImage: hapiWorkflowRegistry + "/oomkill-increase-memory:v1.0.0",
+		{WorkflowID: "oomkill-increase-memory-v1", Name: "OOMKill Remediation - Increase Memory Limits", Description: "Increases memory limits for pods experiencing OOMKilled events", ActionType: "IncreaseMemoryLimits", SignalName: "OOMKilled", Severity: "critical", Component: "pod", Priority: "P0", SchemaImage: hapiWorkflowRegistry + "/oomkill-increase-memory:v1.0.0",
 			// DD-WORKFLOW-017: SchemaParameters mirror OCI image's /workflow-schema.yaml for documentation.
 			// Actual schema comes from OCI image via pullspec-only registration.
 			SchemaParameters: []models.WorkflowParameter{
@@ -130,25 +130,25 @@ func GetHAPIE2ETestWorkflows() []TestWorkflow {
 				{Name: "DEPLOYMENT_NAME", Type: "string", Required: true, Description: "Name of the deployment to update memory limits"},
 				{Name: "MEMORY_INCREASE_PERCENT", Type: "integer", Required: false, Description: "Percentage to increase memory limits by"},
 			}},
-		{WorkflowID: "memory-optimize-v1", Name: "OOMKill Remediation - Scale Down Replicas", Description: "Reduces replica count for deployments experiencing OOMKilled", ActionType: "ScaleReplicas", SignalType: "OOMKilled", Severity: "high", Component: "deployment", Priority: "P1", SchemaImage: hapiWorkflowRegistry + "/memory-optimize:v1.0.0",
+		{WorkflowID: "memory-optimize-v1", Name: "OOMKill Remediation - Scale Down Replicas", Description: "Reduces replica count for deployments experiencing OOMKilled", ActionType: "ScaleReplicas", SignalName: "OOMKilled", Severity: "high", Component: "deployment", Priority: "P1", SchemaImage: hapiWorkflowRegistry + "/memory-optimize:v1.0.0",
 			SchemaParameters: []models.WorkflowParameter{
 				{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target namespace"},
 				{Name: "DEPLOYMENT_NAME", Type: "string", Required: true, Description: "Name of the deployment to scale"},
 				{Name: "REPLICA_COUNT", Type: "integer", Required: false, Description: "Target number of replicas"},
 			}},
-		{WorkflowID: "crashloop-config-fix-v1", Name: "CrashLoopBackOff - Fix Configuration", Description: "Identifies and fixes configuration issues causing CrashLoopBackOff", ActionType: "RestartDeployment", SignalType: "CrashLoopBackOff", Severity: "high", Component: "pod", Priority: "P1", SchemaImage: hapiWorkflowRegistry + "/crashloop-config-fix:v1.0.0",
+		{WorkflowID: "crashloop-config-fix-v1", Name: "CrashLoopBackOff - Fix Configuration", Description: "Identifies and fixes configuration issues causing CrashLoopBackOff", ActionType: "RestartDeployment", SignalName: "CrashLoopBackOff", Severity: "high", Component: "pod", Priority: "P1", SchemaImage: hapiWorkflowRegistry + "/crashloop-config-fix:v1.0.0",
 			SchemaParameters: []models.WorkflowParameter{
 				{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target namespace"},
 				{Name: "DEPLOYMENT_NAME", Type: "string", Required: true, Description: "Name of the deployment to restart"},
 				{Name: "GRACE_PERIOD_SECONDS", Type: "integer", Required: false, Description: "Graceful shutdown period in seconds"},
 			}},
-		{WorkflowID: "node-drain-reboot-v1", Name: "NodeNotReady - Drain and Reboot", Description: "Safely drains and reboots nodes in NotReady state", ActionType: "DrainNode", SignalType: "NodeNotReady", Severity: "critical", Component: "node", Priority: "P0", SchemaImage: hapiWorkflowRegistry + "/node-drain-reboot:v1.0.0",
+		{WorkflowID: "node-drain-reboot-v1", Name: "NodeNotReady - Drain and Reboot", Description: "Safely drains and reboots nodes in NotReady state", ActionType: "DrainNode", SignalName: "NodeNotReady", Severity: "critical", Component: "node", Priority: "P0", SchemaImage: hapiWorkflowRegistry + "/node-drain-reboot:v1.0.0",
 			SchemaParameters: []models.WorkflowParameter{
 				{Name: "NODE_NAME", Type: "string", Required: true, Description: "Name of the node to drain and reboot"},
 				{Name: "DRAIN_TIMEOUT_SECONDS", Type: "integer", Required: false, Description: "Timeout for drain operation in seconds"},
 			}},
-		{WorkflowID: "image-pull-backoff-fix-credentials", Name: "ImagePullBackOff - Fix Registry Credentials", Description: "Fixes ImagePullBackOff errors by updating registry credentials", ActionType: "RollbackDeployment", SignalType: "ImagePullBackOff", Severity: "high", Component: "pod", Priority: "P1", SchemaImage: hapiWorkflowRegistry + "/imagepull-fix-creds:v1.0.0"},
-		{WorkflowID: "generic-restart-v1", Name: "Generic Pod Restart", Description: "Generic pod restart for unknown issues", ActionType: "RestartPod", SignalType: "Unknown", Severity: "medium", Component: "deployment", Priority: "P2", SchemaImage: hapiWorkflowRegistry + "/generic-restart:v1.0.0",
+		{WorkflowID: "image-pull-backoff-fix-credentials", Name: "ImagePullBackOff - Fix Registry Credentials", Description: "Fixes ImagePullBackOff errors by updating registry credentials", ActionType: "RollbackDeployment", SignalName: "ImagePullBackOff", Severity: "high", Component: "pod", Priority: "P1", SchemaImage: hapiWorkflowRegistry + "/imagepull-fix-creds:v1.0.0"},
+		{WorkflowID: "generic-restart-v1", Name: "Generic Pod Restart", Description: "Generic pod restart for unknown issues", ActionType: "RestartPod", SignalName: "Unknown", Severity: "medium", Component: "deployment", Priority: "P2", SchemaImage: hapiWorkflowRegistry + "/generic-restart:v1.0.0",
 			SchemaParameters: []models.WorkflowParameter{
 				{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target namespace"},
 				{Name: "POD_NAME", Type: "string", Required: true, Description: "Name of the pod to restart"},

@@ -67,7 +67,7 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 				WorkflowID:      "crashloop-config-fix-v1",
 				Name:            "CrashLoopBackOff - Configuration Fix",
 				Description:     "CrashLoop remediation workflow for approval E2E",
-				SignalType:      "CrashLoopBackOff",
+				SignalName:      "CrashLoopBackOff",
 				Severity:        "high",
 				Component:       "deployment",
 				Environment:     "production",
@@ -84,7 +84,7 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 				WorkflowID:      "oomkill-increase-memory-v1",
 				Name:            "OOMKill Recovery - Increase Memory Limits",
 				Description:     "OOMKill remediation workflow for approval E2E",
-				SignalType:      "OOMKilled",
+				SignalName:      "OOMKilled",
 				Severity:        "critical",
 				Component:       "deployment",
 				Environment:     "production",
@@ -219,7 +219,6 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 		for i := range spList.Items {
 			sp := &spList.Items[i]
 			if sp.Spec.RemediationRequestRef.Name == remediationRequest.Name {
-				Expect(sp.Status.EnvironmentClassification).ToNot(BeNil())
 				Expect(sp.Status.EnvironmentClassification.Environment).To(Equal("production"),
 					"SP should classify namespace as production (kubernaut.ai/environment label)")
 				Expect(sp.Status.EnvironmentClassification.Source).To(Equal("namespace-labels"),
@@ -487,8 +486,9 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 		}, finalRR)).To(Succeed())
 		allFailures = append(allFailures, crdvalidators.ValidateRRStatus(finalRR, crdvalidators.WithApprovalFlow())...)
 
-		// EA
-		Expect(finalEA).ToNot(BeNil())
+		// EA (guaranteed non-nil by the Eventually block above)
+		Expect(finalEA.Status.Phase).To(Or(Equal(eav1.PhaseCompleted), Equal(eav1.PhaseFailed)),
+			"EA should be in terminal phase after pipeline completes")
 		allFailures = append(allFailures, crdvalidators.ValidateEAStatus(finalEA)...)
 
 		// RAR status
