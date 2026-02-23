@@ -108,7 +108,7 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 			// WaitForFileInPod polls the pod and copies file when found
 			filePath, err := WaitForFileInPod(context.Background(), "notification-e2e-complete-message-*.json", 15*time.Second)
 			Expect(err).ToNot(HaveOccurred(), "Should find notification file in pod")
-			defer CleanupCopiedFile(filePath)
+			defer func() { Expect(CleanupCopiedFile(filePath)).To(Succeed()) }()
 
 			By("Reading and validating JSON file content")
 			// Read the copied file from temp directory
@@ -203,7 +203,7 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 			// Use kubectl exec to find and copy file from pod (emptyDir volume)
 			filePath, err := WaitForFileInPod(context.Background(), "notification-e2e-sanitization-test-*.json", 15*time.Second)
 			Expect(err).ToNot(HaveOccurred(), "Should find notification file in pod")
-			defer CleanupCopiedFile(filePath)
+			defer func() { Expect(CleanupCopiedFile(filePath)).To(Succeed()) }()
 
 			// Read the copied file from temp directory
 			fileContent, err := os.ReadFile(filePath)
@@ -399,7 +399,7 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 				// Use kubectl exec to find and copy file from pod (emptyDir volume)
 				filePath, err := WaitForFileInPod(context.Background(), "notification-"+name+"-*.json", 15*time.Second)
 				Expect(err).ToNot(HaveOccurred(), "Should find notification file for "+name+" in pod")
-				defer CleanupCopiedFile(filePath)
+				defer func() { Expect(CleanupCopiedFile(filePath)).To(Succeed()) }()
 
 				// Verify file content matches notification
 				fileContent, err := os.ReadFile(filePath)
@@ -476,7 +476,7 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 			// Use kubectl exec to find and copy file from pod (emptyDir volume)
 			filePath, err := WaitForFileInPod(context.Background(), "notification-e2e-error-handling-*.json", 15*time.Second)
 			Expect(err).ToNot(HaveOccurred(), "At least one file should be created in pod")
-			defer CleanupCopiedFile(filePath)
+			defer func() { Expect(CleanupCopiedFile(filePath)).To(Succeed()) }()
 
 			By("CRITICAL VALIDATION: Code inspection confirms non-blocking pattern")
 			// The controller code contains:

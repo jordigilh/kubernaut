@@ -202,7 +202,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking (Integration)", Label("scope",
 			"BlockedUntil should be set for time-based scope backoff")
 
 		GinkgoWriter.Printf("✅ IT-RO-010-003: Scope blocking audit verified — reason: %s, blockedUntil: %s\n",
-			fetched.Status.BlockReason, fetched.Status.BlockedUntil.Time.Format(time.RFC3339))
+			fetched.Status.BlockReason, fetched.Status.BlockedUntil.Format(time.RFC3339))
 	})
 
 	// ─────────────────────────────────────────────

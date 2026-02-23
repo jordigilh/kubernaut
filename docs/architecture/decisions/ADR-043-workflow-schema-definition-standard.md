@@ -4,11 +4,18 @@
 **Date**: 2025-11-28
 **Deciders**: Architecture Team
 **Related**: DD-WORKFLOW-003, DD-WORKFLOW-011, DD-NAMING-001, ADR-041
-**Version**: 1.2
+**Version**: 1.3
 
 ---
 
 ## Changelog
+
+### Version 1.3 (2026-02-20)
+- **Issue #131**: Added `detectedLabels` as optional top-level field for workflow-author-declared infrastructure requirements
+- **DD-WORKFLOW-001 v2.0**: 8 supported fields: `gitOpsManaged`, `gitOpsTool`, `pdbProtected`, `hpaEnabled`, `stateful`, `helmManaged`, `networkIsolated`, `serviceMesh`
+- **Validation**: Boolean fields accept only `"true"`; string fields accept specific values or `"*"` wildcard; unknown fields rejected
+- **OCI Extractor**: Parses and stores `detectedLabels` during workflow registration
+- See test plan: `docs/testing/ADR-043/TEST_PLAN.md`
 
 ### Version 1.2 (2026-02-13)
 - **BR-WORKFLOW-004**: Removed `apiVersion` and `kind` fields (plain config file, not K8s resource)
@@ -178,6 +185,25 @@ labels:
   [custom_key]: string  # OPTIONAL
 
 # ============================================
+# DETECTED LABELS (Optional)
+# Author-declared infrastructure requirements
+# DD-WORKFLOW-001 v2.0: matched against incident
+# DetectedLabels from HAPI LabelDetector
+# ============================================
+detectedLabels:  # OPTIONAL
+  # Boolean fields: accept only "true" (absence = no requirement)
+  gitOpsManaged: string   # "true" - requires GitOps management
+  pdbProtected: string    # "true" - requires PDB protection
+  hpaEnabled: string      # "true" - requires HPA
+  stateful: string        # "true" - requires stateful workload
+  helmManaged: string     # "true" - requires Helm management
+  networkIsolated: string # "true" - requires NetworkPolicy
+
+  # String fields: accept specific values or "*" wildcard
+  gitOpsTool: string      # "argocd", "flux", "*" (any tool)
+  serviceMesh: string     # "istio", "linkerd", "*" (any mesh)
+
+# ============================================
 # EXECUTION HINT (Optional for V1, Required for V2)
 # Specifies which execution engine runs this workflow
 # ============================================
@@ -249,6 +275,10 @@ labels:
   business_category: cost-management
   team: platform
   environment: production
+
+detectedLabels:
+  hpaEnabled: "true"
+  stateful: "true"
 
 execution:
   engine: tekton

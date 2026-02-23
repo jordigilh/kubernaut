@@ -205,6 +205,7 @@ var _ = SynchronizedBeforeSuite(
 var _ = ReportAfterEach(func(report SpecReport) {
 	if report.Failed() {
 		anyTestFailed = true
+		infrastructure.MarkTestFailure(clusterName)
 	}
 })
 
@@ -221,7 +222,8 @@ var _ = SynchronizedAfterSuite(
 		By("Cleaning up test environment")
 
 		setupFailed := k8sClient == nil
-		anyFailure := setupFailed || anyTestFailed
+		anyFailure := setupFailed || anyTestFailed || infrastructure.CheckTestFailure(clusterName)
+		defer infrastructure.CleanupFailureMarker(clusterName)
 		preserveCluster := os.Getenv("PRESERVE_E2E_CLUSTER") == "true" || os.Getenv("KEEP_CLUSTER") == "true"
 
 		if preserveCluster {

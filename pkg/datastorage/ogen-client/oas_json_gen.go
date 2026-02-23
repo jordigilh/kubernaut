@@ -9251,6 +9251,8 @@ func (s *DetectedLabelsFailedDetectionsItem) Decode(d *jx.Decoder) error {
 	switch DetectedLabelsFailedDetectionsItem(v) {
 	case DetectedLabelsFailedDetectionsItemGitOpsManaged:
 		*s = DetectedLabelsFailedDetectionsItemGitOpsManaged
+	case DetectedLabelsFailedDetectionsItemGitOpsTool:
+		*s = DetectedLabelsFailedDetectionsItemGitOpsTool
 	case DetectedLabelsFailedDetectionsItemPdbProtected:
 		*s = DetectedLabelsFailedDetectionsItemPdbProtected
 	case DetectedLabelsFailedDetectionsItemHpaEnabled:

@@ -1,18 +1,18 @@
-"""
-Copyright 2025 Jordi Gil.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-"""
+#
+# Copyright 2025 Jordi Gil.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
 
 """
 Main entry point for HolmesGPT API Service
@@ -31,10 +31,11 @@ Business Requirements:
 import logging
 import os
 import signal
+import sys
 import threading
 import yaml
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Optional
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -47,8 +48,6 @@ from src.config.hot_reload import ConfigManager
 # Import config models
 from src.models.config_models import AppConfig
 
-logger = logging.getLogger(__name__)
-
 # Import extensions
 from src.extensions import recovery, incident, health
 # DD-017: PostExec endpoint deferred to V1.1 — EM Level 1 (V1.0, DD-017 v2.0) does not use PostExec; Level 2 (V1.1) is the PostExec consumer
@@ -59,6 +58,8 @@ from src.middleware.rfc7807 import add_rfc7807_exception_handlers
 
 # Import auth components for dependency injection (DD-AUTH-014)
 from src.auth import K8sAuthenticator, K8sAuthorizer, MockAuthenticator, MockAuthorizer
+
+logger = logging.getLogger(__name__)
 
 
 # ========================================
@@ -462,7 +463,6 @@ def create_app(authenticator=None, authorizer=None):
 # Create application instance (production mode - no injected dependencies)
 # Skip module-level app creation during pytest to allow test fixtures to inject mock auth
 # Skip K8s auth during OpenAPI export (OPENAPI_EXPORT=1) to allow spec generation outside cluster
-import sys
 _is_test_mode = "pytest" in sys.modules
 _is_openapi_export = os.getenv("OPENAPI_EXPORT") == "1"
 
@@ -508,7 +508,7 @@ if not _is_test_mode:
             audit_config = config.get("audit", {})
             data_storage_url = config.get("data_storage", {}).get("url", "http://data-storage:8080")
 
-            audit_store = get_audit_store(
+            get_audit_store(
                 data_storage_url=data_storage_url,
                 flush_interval_seconds=audit_config.get("flush_interval_seconds"),
                 buffer_size=audit_config.get("buffer_size"),

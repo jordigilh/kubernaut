@@ -1,5 +1,7 @@
 # NOTICE: BR-NOT-069 Implementation Complete - Notification Service
 
+> **Note (Issue #91):** This document references `kubernaut.ai/*` CRD labels that have since been migrated to immutable spec fields. See [DD-CRD-003](../architecture/DD-CRD-003-field-selectors-operational-queries.md) for the current field-selector-based approach.
+
 **From**: Notification Service Team
 **To**: AIAnalysis Service Team
 **Date**: December 14, 2025

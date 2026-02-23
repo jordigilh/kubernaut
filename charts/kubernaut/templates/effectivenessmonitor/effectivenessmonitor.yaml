@@ -1,0 +1,156 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: effectivenessmonitor-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: effectivenessmonitor
+    {{- include "kubernaut.labels" . | nindent 4 }}
+data:
+  effectivenessmonitor.yaml: |
+    assessment:
+      stabilizationWindow: 30s
+      validityWindow: 120s
+    datastorage:
+      url: http://data-storage-service.kubernaut-system.svc.cluster.local:8080
+      timeout: 10s
+      buffer:
+        bufferSize: 100
+        batchSize: 10
+        flushInterval: 1s
+        maxRetries: 3
+    controller:
+      metricsAddr: ":9090"
+      healthProbeAddr: ":8081"
+      leaderElection: false
+      leaderElectionId: "effectivenessmonitor.kubernaut.ai"
+    external:
+      prometheusUrl: http://kube-prometheus-stack-prometheus.monitoring.svc:9090
+      prometheusEnabled: true
+      alertManagerUrl: http://kube-prometheus-stack-alertmanager.monitoring.svc:9093
+      alertManagerEnabled: true
+      connectionTimeout: 10s
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: effectivenessmonitor-controller
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: effectivenessmonitor-controller
+    {{- include "kubernaut.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: effectivenessmonitor-controller
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["effectivenessassessments"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["effectivenessassessments/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["remediationrequests"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: effectivenessmonitor-controller
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: effectivenessmonitor-controller
+subjects:
+  - kind: ServiceAccount
+    name: effectivenessmonitor-controller
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: effectivenessmonitor-controller
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: effectivenessmonitor-controller
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: effectivenessmonitor-controller
+  template:
+    metadata:
+      labels:
+        app: effectivenessmonitor-controller
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: effectivenessmonitor-controller
+      containers:
+        - name: controller
+          image: {{ include "kubernaut.image" (dict "service" "effectivenessmonitor" "global" .Values.global "appVersion" .Chart.AppVersion) }}
+          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          args:
+            - "--config=/etc/effectivenessmonitor/effectivenessmonitor.yaml"
+          ports:
+            - containerPort: 9090
+              name: metrics
+            - containerPort: 8081
+              name: health
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          volumeMounts:
+            - name: config
+              mountPath: /etc/effectivenessmonitor
+          resources:
+            {{- toYaml .Values.effectivenessmonitor.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: effectivenessmonitor-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: effectivenessmonitor-metrics
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: effectivenessmonitor-controller
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 9090
+      targetPort: 9090
+      name: metrics
+  selector:
+    app: effectivenessmonitor-controller

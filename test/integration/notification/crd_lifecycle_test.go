@@ -301,12 +301,12 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 
 		// Test 4: CRD with optional fields omitted (BR-NOT-065)
 		// BR-NOT-002: NotificationRequest Schema Validation
-		// BR-NOT-065: Channel Routing Based on Labels
+		// BR-NOT-065: Channel Routing Based on Spec Fields
 		It("should accept NotificationRequest with optional fields omitted (BR-NOT-065)", func() {
 			notifName := fmt.Sprintf("optional-fields-%s", uniqueSuffix)
 
 			// Recipients and Channels are optional per CRD schema
-			// BR-NOT-065: Empty channels triggers label-based routing rules
+			// BR-NOT-065: Empty channels triggers spec-field-based routing rules
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       notifName,
@@ -381,7 +381,7 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 			// Valid name should succeed
 			validName := fmt.Sprintf("valid-name-%s", uniqueSuffix)
 			validNotif := invalidNotif.DeepCopy()
-			validNotif.ObjectMeta.Name = validName
+			validNotif.Name = validName
 
 			err = k8sClient.Create(ctx, validNotif)
 			Expect(err).NotTo(HaveOccurred(), "Should accept valid DNS-1123 name")
@@ -788,7 +788,7 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 			GinkgoWriter.Println("✅ Deletion before reconciliation handled gracefully")
 		})
 
-		// Tests 13-17 were placeholder Skip() calls - DELETED per "NO SKIPPED TESTS" rule
+		// Tests 13-17 were placeholder skipped tests - DELETED per "NO SKIPPED TESTS" rule
 		//
 		// These tests were TODOs for future infrastructure that doesn't exist yet:
 		// - Test 13: Delete during Slack API call (requires delayed mock)
@@ -797,6 +797,6 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 		// - Test 16: Delete during audit write (audit is fire-and-forget, no coordination needed)
 		// - Test 17: Delete during circuit breaker OPEN (covered in circuit breaker integration tests)
 		//
-		// Per project rule: No Skip() placeholders allowed. Implement properly when infrastructure exists.
+		// Per project rule: No placeholder skipped tests allowed. Implement properly when infrastructure exists.
 	})
 })

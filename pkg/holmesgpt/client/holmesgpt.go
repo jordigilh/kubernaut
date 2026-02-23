@@ -294,7 +294,7 @@ func (c *HolmesGPTClient) submitSessionRequest(ctx context.Context, path string,
 	if err != nil {
 		return "", &APIError{StatusCode: 0, Message: fmt.Sprintf("HTTP request failed: %v", err)}
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusAccepted {
 		return "", c.readErrorResponse(resp)
@@ -322,7 +322,7 @@ func (c *HolmesGPTClient) sessionGET(ctx context.Context, path string) ([]byte, 
 	if err != nil {
 		return nil, &APIError{StatusCode: 0, Message: fmt.Sprintf("HTTP request failed: %v", err)}
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {

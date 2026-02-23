@@ -234,9 +234,10 @@ func (r *AIAnalysisReconciler) reconcileAnalyzing(ctx context.Context, analysis 
 			}
 
 			// Issue #79 Phase 7b: Set Ready condition on terminal transitions
-			if analysis.Status.Phase == PhaseCompleted {
+			switch analysis.Status.Phase {
+			case PhaseCompleted:
 				aaconditions.SetReady(analysis, true, aaconditions.ReasonReady, "Analysis completed")
-			} else if analysis.Status.Phase == PhaseFailed {
+			case PhaseFailed:
 				aaconditions.SetReady(analysis, false, aaconditions.ReasonNotReady, "Analysis failed: "+analysis.Status.Message)
 			}
 

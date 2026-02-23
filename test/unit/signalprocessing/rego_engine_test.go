@@ -72,11 +72,14 @@ var _ = Describe("Rego Engine", func() {
 	})
 
 	// Helper to create a basic RegoInput
+	// Issue #113: KubernetesContext uses Namespace *NamespaceContext (not flat string/labels)
 	createBasicInput := func(namespace string, labels map[string]string) *rego.RegoInput {
 		return &rego.RegoInput{
 			Kubernetes: &sharedtypes.KubernetesContext{
-				Namespace:       namespace,
-				NamespaceLabels: labels,
+				Namespace: &sharedtypes.NamespaceContext{
+					Name:   namespace,
+					Labels: labels,
+				},
 			},
 			Signal: rego.SignalContext{
 				Type:     "pod_crash",
@@ -108,8 +111,8 @@ package signalprocessing.labels
 
 import rego.v1
 
-labels["team"] := input.kubernetes.namespaceLabels["kubernaut.ai/team"] if {
-    input.kubernetes.namespaceLabels["kubernaut.ai/team"]
+labels["team"] := input.kubernetes.namespace.labels["kubernaut.ai/team"] if {
+    input.kubernetes.namespace.labels["kubernaut.ai/team"]
 }
 `
 			err := engine.LoadPolicy(policy)
@@ -167,12 +170,12 @@ package signalprocessing.labels
 
 import rego.v1
 
-labels["team"] := input.kubernetes.namespaceLabels["kubernaut.ai/team"] if {
-    input.kubernetes.namespaceLabels["kubernaut.ai/team"]
+labels["team"] := input.kubernetes.namespace.labels["kubernaut.ai/team"] if {
+    input.kubernetes.namespace.labels["kubernaut.ai/team"]
 }
 
-labels["region"] := input.kubernetes.namespaceLabels["kubernaut.ai/region"] if {
-    input.kubernetes.namespaceLabels["kubernaut.ai/region"]
+labels["region"] := input.kubernetes.namespace.labels["kubernaut.ai/region"] if {
+    input.kubernetes.namespace.labels["kubernaut.ai/region"]
 }
 
 labels["tier"] := "critical" if {

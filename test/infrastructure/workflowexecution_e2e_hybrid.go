@@ -622,7 +622,7 @@ func findKindConfig(filename string) (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("Kind config file %s not found in any expected location (tried from %s)", filename, projectRoot)
+	return "", fmt.Errorf("kind config file %s not found in any expected location (tried from %s)", filename, projectRoot)
 }
 func installTektonPipelines(kubeconfigPath string, output io.Writer) error {
 	// Install Tekton Pipelines from GitHub releases (v1.0+ use GitHub releases)
@@ -682,7 +682,7 @@ func installTektonPipelines(kubeconfigPath string, output io.Writer) error {
 	waitCmd.Stdout = output
 	waitCmd.Stderr = output
 	if err := waitCmd.Run(); err != nil {
-		return fmt.Errorf("Tekton controller did not become ready: %w", err)
+		return fmt.Errorf("tekton controller did not become ready: %w", err)
 	}
 
 	// Wait for Tekton webhook to be ready
@@ -698,7 +698,7 @@ func installTektonPipelines(kubeconfigPath string, output io.Writer) error {
 	webhookWaitCmd.Stdout = output
 	webhookWaitCmd.Stderr = output
 	if err := webhookWaitCmd.Run(); err != nil {
-		return fmt.Errorf("Tekton webhook did not become ready: %w", err)
+		return fmt.Errorf("tekton webhook did not become ready: %w", err)
 	}
 
 	return nil

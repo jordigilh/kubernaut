@@ -13,7 +13,7 @@ actionType: HelmRollback
 
 labels:
   signalType: CrashLoopBackOff
-  severity: [critical, warning]
+  severity: [critical, low]
   environment: [production, staging]
   component: "*"
   priority: "*"
@@ -23,7 +23,7 @@ detectedLabels:
 
 execution:
   engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/helm-rollback-job:v1.0.0
+  bundle: quay.io/kubernaut-cicd/test-workflows/helm-rollback-job@sha256:68632a4cd51b1f55ad6f080e5ed2680f7c166bdbd323e0c8c9fa83314a72ba22
 
 parameters:
   - name: TARGET_NAMESPACE

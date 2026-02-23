@@ -235,7 +235,7 @@ var _ = SynchronizedBeforeSuite(
 
 		k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 		Expect(err).ToNot(HaveOccurred())
-		Expect(k8sClient).ToNot(BeNil())
+		Expect(k8sClient).NotTo(BeNil(), "k8sClient must be initialized by suite setup")
 
 		// Create direct API reader for Eventually() blocks to bypass client cache
 		// This ensures fresh reads from API server for status polling
@@ -301,6 +301,7 @@ var _ = SynchronizedBeforeSuite(
 var _ = ReportAfterEach(func(report SpecReport) {
 	if report.Failed() {
 		anyTestFailed = true
+		infrastructure.MarkTestFailure(clusterName)
 	}
 })
 
@@ -336,7 +337,8 @@ var _ = SynchronizedAfterSuite(
 		}
 
 		// Determine test results for log export decision
-		anyFailure := setupFailed || anyTestFailed
+		anyFailure := setupFailed || anyTestFailed || infrastructure.CheckTestFailure(clusterName)
+		defer infrastructure.CleanupFailureMarker(clusterName)
 		preserveCluster := os.Getenv("KEEP_CLUSTER") == "true"
 
 		// Keep cluster alive only if explicitly requested for manual debugging
@@ -440,4 +442,16 @@ func WaitForNotificationPhase(ctx context.Context, client client.Client, namespa
 // clientKey creates a types.NamespacedName for namespace/name lookups
 func clientKey(namespace, name string) types.NamespacedName {
 	return types.NamespacedName{Namespace: namespace, Name: name}
+}
+
+// ValidateNTLifecycleTimestamps asserts NR lifecycle timestamp fields and ordering.
+// E2E-NT-163-001: QueuedAt, ProcessingStartedAt, CompletionTime must be set and ordered.
+func ValidateNTLifecycleTimestamps(nr *notificationv1alpha1.NotificationRequest) {
+	Expect(nr.Status.QueuedAt).NotTo(BeNil(), "QueuedAt should be set")
+	Expect(nr.Status.ProcessingStartedAt).NotTo(BeNil(), "ProcessingStartedAt should be set")
+	Expect(nr.Status.CompletionTime).NotTo(BeNil(), "CompletionTime should be set")
+	Expect(nr.Status.ProcessingStartedAt.Time).To(BeTemporally(">=", nr.Status.QueuedAt.Time),
+		"ProcessingStartedAt should be at or after QueuedAt (same-second allowed per BR-NOT-051)")
+	Expect(nr.Status.CompletionTime.Time).To(BeTemporally(">=", nr.Status.ProcessingStartedAt.Time),
+		"CompletionTime should be after or equal to ProcessingStartedAt")
 }

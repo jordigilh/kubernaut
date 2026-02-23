@@ -1,19 +1,20 @@
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
-  name: kubernaut-disk-pressure-rules
+  name: disk-pressure-rules
   namespace: demo-disk
   labels:
     release: prometheus
 spec:
   groups:
-  - name: kubernaut-disk-pressure
+  - name: disk-pressure
     rules:
-    # Detect PVCs in namespace that are bound but owned by completed/failed Jobs
-    # This is a proxy for "orphaned storage consuming disk"
-    - alert: KubernautOrphanedPVCs
+    # Detect PVCs in namespace that are bound but owned by completed/failed Jobs.
+    # "count by (namespace)" preserves the namespace label so AlertManager can
+    # route the alert to the gateway-webhook receiver via match_re: demo-.*
+    - alert: KubePersistentVolumeClaimOrphaned
       expr: |
-        count(
+        count by (namespace)(
           kube_persistentvolumeclaim_status_phase{
             namespace="demo-disk",
             phase="Bound"
@@ -22,6 +23,7 @@ spec:
       for: 2m
       labels:
         severity: warning
+        deployment: data-processor
       annotations:
         summary: >
           Namespace {{ $labels.namespace }} has more than 3 bound PVCs, indicating

@@ -13,7 +13,7 @@ actionType: RelaxPDB
 
 labels:
   signalType: PDBDeadlock
-  severity: [warning, critical]
+  severity: [low, critical]
   environment: [production, staging]
   component: "*"
   priority: "*"
@@ -23,7 +23,7 @@ detectedLabels:
 
 execution:
   engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/relax-pdb-job@sha256:c472f11b88d2366de57057dfa90fb8c8e4ad3d1e9ba0db84b16cd5ebb6d00f91
+  bundle: quay.io/kubernaut-cicd/test-workflows/relax-pdb-job@sha256:1d384c22990a4ec3d906a731ec074b0586543d5dcd273cbe94c26aba45a0edb2
 
 parameters:
   - name: TARGET_NAMESPACE

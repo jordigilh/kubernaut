@@ -1,5 +1,7 @@
 # Remediation Orchestrator Controller - Implementation Plan
 
+> **Note (Issue #91):** This document references `kubernaut.ai/*` CRD labels that have since been migrated to immutable spec fields. See [DD-CRD-003](../../../../../architecture/DD-CRD-003-field-selectors-operational-queries.md) for the current field-selector-based approach.
+
 **Filename**: `IMPLEMENTATION_PLAN_V1.2.md`
 **Version**: 1.2.0 - MODULAR STRUCTURE + COMPLETE TEMPLATE COMPLIANCE (96% Confidence) ✅
 **Date**: 2025-10-14 (Updated: 2025-12-04)

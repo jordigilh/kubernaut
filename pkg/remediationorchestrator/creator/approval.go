@@ -112,6 +112,10 @@ func (c *ApprovalCreator) Create(
 		return "", fmt.Errorf("failed to set owner reference: %w", err)
 	}
 
+	// Issue #118 Gap 10: Set creation timestamp for audit trail
+	now := metav1.Now()
+	rar.Status.CreatedAt = &now
+
 	// DD-CRD-002-RAR: Set initial conditions before creation
 	// Conditions are set in-memory and persisted with the Create() call
 	remediationapprovalrequest.SetApprovalPending(rar, true,
@@ -122,10 +126,21 @@ func (c *ApprovalCreator) Create(
 	remediationapprovalrequest.SetApprovalExpired(rar, false,
 		"Approval has not expired", c.metrics)
 
-	// Create the CRD (persists both spec and initial conditions)
+	// Save status before Create() — the API server strips status from the
+	// response for CRDs with +kubebuilder:subresource:status, and Create()
+	// mutates rar in place with the server response, clearing our status fields.
+	savedStatus := rar.Status
+
 	if err := c.client.Create(ctx, rar); err != nil {
 		logger.Error(err, "Failed to create RemediationApprovalRequest")
 		return "", fmt.Errorf("failed to create RemediationApprovalRequest: %w", err)
+	}
+
+	// Restore status and persist via the status subresource
+	rar.Status = savedStatus
+	if err := c.client.Status().Update(ctx, rar); err != nil {
+		logger.Error(err, "Failed to update RemediationApprovalRequest status after creation")
+		return "", fmt.Errorf("failed to update RemediationApprovalRequest status: %w", err)
 	}
 
 	logger.Info("Created RemediationApprovalRequest",

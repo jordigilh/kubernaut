@@ -17,6 +17,13 @@ NAMESPACE="demo-crashloop-helm"
 source "${SCRIPT_DIR}/../../scripts/kind-helper.sh"
 ensure_kind_cluster "${SCRIPT_DIR}/kind-config.yaml" "${1:-}"
 
+# shellcheck source=../../scripts/monitoring-helper.sh
+source "${SCRIPT_DIR}/../../scripts/monitoring-helper.sh"
+ensure_monitoring_stack
+source "${SCRIPT_DIR}/../../scripts/platform-helper.sh"
+ensure_platform
+seed_scenario_workflow "crashloop-helm"
+
 echo "============================================="
 echo " Helm CrashLoopBackOff Remediation Demo (#135)"
 echo "============================================="
@@ -47,7 +54,7 @@ echo ""
 
 # Step 5: Monitor
 echo "==> Step 5: Waiting for CrashLoop alert to fire (~2-3 min)..."
-echo "  Check Prometheus: http://localhost:9190/alerts"
+echo "  Check Prometheus: kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090"
 echo ""
 echo "==> Step 6: Pipeline in progress. Monitor with:"
 echo "    kubectl get rr,sp,aa,we,ea -n ${NAMESPACE} -w"

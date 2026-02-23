@@ -60,10 +60,11 @@ func (m *Manager) RecordDeliveryAttempt(ctx context.Context, notification *notif
 		failedChannels := make(map[string]bool)
 
 		for _, a := range notification.Status.DeliveryAttempts {
-			if a.Status == "success" {
+			switch a.Status {
+			case "success":
 				successfulChannels[a.Channel] = true
 				delete(failedChannels, a.Channel) // Remove from failed if it later succeeds
-			} else if a.Status == "failed" {
+			case "failed":
 				// Only count as failed if the channel never succeeded
 				if !successfulChannels[a.Channel] {
 					failedChannels[a.Channel] = true
@@ -127,8 +128,16 @@ func (m *Manager) AtomicStatusUpdate(
 			notification.Status.Reason = reason
 			notification.Status.Message = message
 
+			// Issue #118 Gap 6+7: Set lifecycle timestamps on phase transitions
+			now := metav1.Now()
+			if newPhase == notificationv1alpha1.NotificationPhasePending && notification.Status.QueuedAt == nil {
+				notification.Status.QueuedAt = &now
+			}
+			if newPhase == notificationv1alpha1.NotificationPhaseSending && notification.Status.ProcessingStartedAt == nil {
+				notification.Status.ProcessingStartedAt = &now
+			}
+
 			if isTerminalPhase(newPhase) {
-				now := metav1.Now()
 				notification.Status.CompletionTime = &now
 			}
 		}
@@ -146,7 +155,7 @@ func (m *Manager) AtomicStatusUpdate(
 				if existing.Channel == attempt.Channel &&
 					existing.Status == attempt.Status &&
 					existing.Error == attempt.Error &&
-					abs(existing.Timestamp.Time.Sub(attempt.Timestamp.Time)) < time.Second {
+					abs(existing.Timestamp.Sub(attempt.Timestamp.Time)) < time.Second {
 					// Truly identical attempt (same error message at same time)
 					alreadyExists = true
 					break
@@ -168,10 +177,11 @@ func (m *Manager) AtomicStatusUpdate(
 		failedChannels := make(map[string]bool)
 
 		for _, attempt := range notification.Status.DeliveryAttempts {
-			if attempt.Status == "success" {
+			switch attempt.Status {
+			case "success":
 				successfulChannels[attempt.Channel] = true
 				delete(failedChannels, attempt.Channel) // Remove from failed if it later succeeds
-			} else if attempt.Status == "failed" {
+			case "failed":
 				// Only count as failed if the channel never succeeded
 				if !successfulChannels[attempt.Channel] {
 					failedChannels[attempt.Channel] = true
@@ -224,9 +234,17 @@ func (m *Manager) UpdatePhase(ctx context.Context, notification *notificationv1a
 		notification.Status.Reason = reason
 		notification.Status.Message = message
 
+		// Issue #118 Gap 6+7: Set lifecycle timestamps on phase transitions
+		now := metav1.Now()
+		if newPhase == notificationv1alpha1.NotificationPhasePending && notification.Status.QueuedAt == nil {
+			notification.Status.QueuedAt = &now
+		}
+		if newPhase == notificationv1alpha1.NotificationPhaseSending && notification.Status.ProcessingStartedAt == nil {
+			notification.Status.ProcessingStartedAt = &now
+		}
+
 		// 5. Set completion time for terminal phases
 		if isTerminalPhase(newPhase) {
-			now := metav1.Now()
 			notification.Status.CompletionTime = &now
 		}
 

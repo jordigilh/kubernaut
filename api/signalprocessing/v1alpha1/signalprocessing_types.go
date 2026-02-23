@@ -22,6 +22,8 @@ package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // +kubebuilder:object:root=true
@@ -255,192 +257,29 @@ type SignalProcessingStatus struct {
 	LastFailureTime *metav1.Time `json:"lastFailureTime,omitempty"`
 }
 
-// KubernetesContext holds enriched Kubernetes resource information.
-// BR-SP-001: K8s Context Enrichment
-// DD-4: Supports degraded mode when K8s API enrichment fails
-type KubernetesContext struct {
-	// Namespace details (per plan specification)
-	Namespace *NamespaceContext `json:"namespace,omitempty"`
-	// Pod details if target is a pod
-	Pod *PodDetails `json:"pod,omitempty"`
-	// Deployment details if target is managed by deployment
-	Deployment *DeploymentDetails `json:"deployment,omitempty"`
-	// StatefulSet details if target is a statefulset
-	StatefulSet *StatefulSetDetails `json:"statefulSet,omitempty"`
-	// DaemonSet details if target is a daemonset
-	DaemonSet *DaemonSetDetails `json:"daemonSet,omitempty"`
-	// ReplicaSet details if target is a replicaset
-	ReplicaSet *ReplicaSetDetails `json:"replicaSet,omitempty"`
-	// Service details if target is a service
-	Service *ServiceDetails `json:"service,omitempty"`
-	// Node details where the pod is running
-	Node *NodeDetails `json:"node,omitempty"`
-	// Owner chain from target to top-level controller
-	OwnerChain []OwnerChainEntry `json:"ownerChain,omitempty"`
-	// Custom labels (extracted via Rego policies)
-	// DD-WORKFLOW-001 v1.9: map[string][]string (subdomain → list of values)
-	// Example: {"constraint": ["cost-constrained", "stateful-safe"], "team": ["name=payments"]}
-	CustomLabels map[string][]string `json:"customLabels,omitempty"`
-	// DegradedMode indicates context was built with partial data (target resource not found)
-	// DD-4: K8s Enrichment Failure Handling
-	DegradedMode bool `json:"degradedMode,omitempty"`
-}
+// ========================================
+// SHARED TYPE ALIASES (Issue #113)
+// ========================================
+// These types alias the authoritative definitions in pkg/shared/types/enrichment.go.
+// This eliminates CRD-to-shared-type duplication and conversion layers.
+// Pattern matches AIAnalysis CRD (api/aianalysis/v1alpha1/aianalysis_types.go).
 
-// NamespaceContext holds namespace details for classification.
-// Per plan specification for Environment Classifier input.
-type NamespaceContext struct {
-	// Namespace name
-	Name string `json:"name"`
-	// Namespace labels
-	Labels map[string]string `json:"labels,omitempty"`
-	// Namespace annotations
-	Annotations map[string]string `json:"annotations,omitempty"`
-}
+// KubernetesContext aliases the lean, classification-focused shared type.
+// Contains: Namespace, Workload (generic), OwnerChain, CustomLabels, DegradedMode.
+type KubernetesContext = sharedtypes.KubernetesContext
 
-// PodDetails contains pod-specific information.
-type PodDetails struct {
-	// Pod labels
-	Labels map[string]string `json:"labels,omitempty"`
-	// Pod annotations
-	Annotations map[string]string `json:"annotations,omitempty"`
-	// Pod phase
-	Phase string `json:"phase,omitempty"`
-	// Container statuses
-	ContainerStatuses []ContainerStatus `json:"containerStatuses,omitempty"`
-	// Node name where pod is scheduled
-	NodeName string `json:"nodeName,omitempty"`
-}
+// NamespaceContext aliases the shared namespace context type.
+type NamespaceContext = sharedtypes.NamespaceContext
 
-// ContainerStatus contains container state information.
-type ContainerStatus struct {
-	// Container name
-	Name string `json:"name"`
-	// Whether container is ready
-	Ready bool `json:"ready"`
-	// Restart count
-	RestartCount int32 `json:"restartCount"`
-	// Container state
-	State string `json:"state,omitempty"`
-	// Last termination reason
-	LastTerminationReason string `json:"lastTerminationReason,omitempty"`
-}
+// WorkloadDetails aliases the generic workload type (kind, name, labels, annotations).
+// Replaces per-type fields: PodDetails, DeploymentDetails, StatefulSetDetails, etc.
+type WorkloadDetails = sharedtypes.WorkloadDetails
 
-// DeploymentDetails contains deployment-specific information.
-type DeploymentDetails struct {
-	// Deployment labels
-	Labels map[string]string `json:"labels,omitempty"`
-	// Deployment annotations
-	Annotations map[string]string `json:"annotations,omitempty"`
-	// Desired replicas
-	Replicas int32 `json:"replicas,omitempty"`
-	// Available replicas
-	AvailableReplicas int32 `json:"availableReplicas,omitempty"`
-	// Ready replicas
-	ReadyReplicas int32 `json:"readyReplicas,omitempty"`
-}
+// OwnerChainEntry aliases the shared owner chain entry type.
+type OwnerChainEntry = sharedtypes.OwnerChainEntry
 
-// StatefulSetDetails contains statefulset-specific information.
-type StatefulSetDetails struct {
-	// StatefulSet labels
-	Labels map[string]string `json:"labels,omitempty"`
-	// StatefulSet annotations
-	Annotations map[string]string `json:"annotations,omitempty"`
-	// Desired replicas
-	Replicas int32 `json:"replicas,omitempty"`
-	// Ready replicas
-	ReadyReplicas int32 `json:"readyReplicas,omitempty"`
-	// Current replicas
-	CurrentReplicas int32 `json:"currentReplicas,omitempty"`
-}
-
-// DaemonSetDetails contains daemonset-specific information.
-type DaemonSetDetails struct {
-	// DaemonSet labels
-	Labels map[string]string `json:"labels,omitempty"`
-	// DaemonSet annotations
-	Annotations map[string]string `json:"annotations,omitempty"`
-	// Desired number of nodes
-	DesiredNumberScheduled int32 `json:"desiredNumberScheduled,omitempty"`
-	// Current number scheduled
-	CurrentNumberScheduled int32 `json:"currentNumberScheduled,omitempty"`
-	// Number ready
-	NumberReady int32 `json:"numberReady,omitempty"`
-}
-
-// ReplicaSetDetails contains replicaset-specific information.
-type ReplicaSetDetails struct {
-	// ReplicaSet labels
-	Labels map[string]string `json:"labels,omitempty"`
-	// ReplicaSet annotations
-	Annotations map[string]string `json:"annotations,omitempty"`
-	// Desired replicas
-	Replicas int32 `json:"replicas,omitempty"`
-	// Available replicas
-	AvailableReplicas int32 `json:"availableReplicas,omitempty"`
-	// Ready replicas
-	ReadyReplicas int32 `json:"readyReplicas,omitempty"`
-}
-
-// ServiceDetails contains service-specific information.
-type ServiceDetails struct {
-	// Service labels
-	Labels map[string]string `json:"labels,omitempty"`
-	// Service annotations
-	Annotations map[string]string `json:"annotations,omitempty"`
-	// Service type (ClusterIP, NodePort, LoadBalancer, ExternalName)
-	Type string `json:"type,omitempty"`
-	// Cluster IP
-	ClusterIP string `json:"clusterIP,omitempty"`
-	// External IPs
-	ExternalIPs []string `json:"externalIPs,omitempty"`
-	// Ports
-	Ports []ServicePort `json:"ports,omitempty"`
-}
-
-// ServicePort contains service port information.
-type ServicePort struct {
-	// Port name
-	Name string `json:"name,omitempty"`
-	// Port number
-	Port int32 `json:"port"`
-	// Target port
-	TargetPort string `json:"targetPort,omitempty"`
-	// Protocol (TCP, UDP, SCTP)
-	Protocol string `json:"protocol,omitempty"`
-}
-
-// NodeDetails contains node-specific information.
-type NodeDetails struct {
-	// Node labels
-	Labels map[string]string `json:"labels,omitempty"`
-	// Node conditions
-	Conditions []NodeCondition `json:"conditions,omitempty"`
-	// Allocatable resources
-	Allocatable map[string]string `json:"allocatable,omitempty"`
-}
-
-// NodeCondition represents a node condition.
-type NodeCondition struct {
-	// Condition type
-	Type string `json:"type"`
-	// Condition status
-	Status string `json:"status"`
-	// Reason for condition
-	Reason string `json:"reason,omitempty"`
-}
-
-// OwnerChainEntry represents one owner in the ownership chain.
-// BR-SP-100: OwnerChain Builder
-// DD-WORKFLOW-001 v1.8: Namespace, Kind, Name ONLY (no APIVersion/UID)
-// HolmesGPT-API uses for context enrichment
-type OwnerChainEntry struct {
-	// Owner namespace (empty for cluster-scoped resources like Node)
-	Namespace string `json:"namespace,omitempty"`
-	// Owner kind (e.g., ReplicaSet, Deployment, StatefulSet, DaemonSet)
-	Kind string `json:"kind"`
-	// Owner name
-	Name string `json:"name"`
-}
+// BusinessClassification aliases the shared business classification type.
+type BusinessClassification = sharedtypes.BusinessClassification
 
 // RecoveryContext holds context for recovery attempts.
 // DD-001: Recovery Context Enrichment
@@ -483,20 +322,6 @@ type PriorityAssignment struct {
 	PolicyName string `json:"policyName,omitempty"`
 	// When assignment was performed
 	AssignedAt metav1.Time `json:"assignedAt"`
-}
-
-// BusinessClassification for multi-dimensional categorization.
-// BR-SP-080, BR-SP-081: Business Classification
-type BusinessClassification struct {
-	// Business unit assignment
-	BusinessUnit string `json:"businessUnit,omitempty"`
-	// Service owner
-	ServiceOwner string `json:"serviceOwner,omitempty"`
-	// Criticality level: critical, high, medium, low
-	Criticality string `json:"criticality,omitempty"`
-	// SLA requirement: platinum, gold, silver, bronze
-	SLARequirement string `json:"slaRequirement,omitempty"`
-	// Note: OverallConfidence field removed per DD-SP-001 V1.1
 }
 
 // +kubebuilder:object:root=true

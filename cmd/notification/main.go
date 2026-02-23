@@ -38,6 +38,7 @@ import (
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	notificationaudit "github.com/jordigilh/kubernaut/pkg/notification/audit"
 	notificationconfig "github.com/jordigilh/kubernaut/pkg/notification/config"
+	"github.com/jordigilh/kubernaut/pkg/notification/credentials"
 	"github.com/jordigilh/kubernaut/pkg/notification/delivery"
 	notificationmetrics "github.com/jordigilh/kubernaut/pkg/notification/metrics"
 	notificationstatus "github.com/jordigilh/kubernaut/pkg/notification/status"
@@ -147,9 +148,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// ADR-030: Override with environment variables (secrets only)
-	cfg.LoadFromEnv()
-
 	// ADR-030: Validate configuration (fail-fast)
 	if err := cfg.Validate(); err != nil {
 		logger.Error(err, "Invalid configuration (ADR-030)")
@@ -160,7 +158,8 @@ func main() {
 		"service", "notification",
 		"metrics_addr", cfg.Controller.MetricsAddr,
 		"health_probe_addr", cfg.Controller.HealthProbeAddr,
-		"data_storage_url", cfg.DataStorage.URL)
+		"data_storage_url", cfg.DataStorage.URL,
+		"credentials_dir", cfg.Delivery.Credentials.Dir)
 
 	// Set controller-runtime logger (still needed for controller-runtime internals)
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
@@ -189,12 +188,17 @@ func main() {
 	logger.Info("Console delivery service initialized",
 		"enabled", cfg.Delivery.Console.Enabled)
 
-	// Slack delivery (webhook URL from config after LoadFromEnv)
-	slackService := delivery.NewSlackDeliveryService(cfg.Delivery.Slack.WebhookURL)
-	if cfg.Delivery.Slack.WebhookURL == "" {
-		logger.Info("Slack webhook URL not configured, Slack delivery will be disabled")
+	// BR-NOT-104: Initialize credential resolver for per-receiver Slack delivery
+	credResolver, err := credentials.NewResolver(cfg.Delivery.Credentials.Dir, logger)
+	if err != nil {
+		logger.Info("Credential resolver initialization failed (Slack delivery disabled until credentials available)",
+			"error", err,
+			"dir", cfg.Delivery.Credentials.Dir)
+		credResolver = nil
 	} else {
-		logger.Info("Slack delivery service initialized")
+		logger.Info("Credential resolver initialized",
+			"dir", cfg.Delivery.Credentials.Dir,
+			"credentialCount", credResolver.Count())
 	}
 
 	// ========================================
@@ -355,17 +359,27 @@ func main() {
 		ctrl.Log.WithName("delivery-orchestrator"),
 	)
 
-	// DD-NOT-007: Register all production channels
-	// DD-EVENT-001 v1.1: Slack wrapped with CircuitBreakerSlackService for failure tracking + CircuitBreakerOpen event
-	slackServiceWithCB := delivery.NewCircuitBreakerSlackService(slackService, circuitBreakerManager)
+	// DD-NOT-007: Register non-credential channels at startup
+	// BR-NOT-104: Slack channels registered per-receiver on routing config load (not at startup)
 	deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelConsole), consoleService)
-	deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelSlack), slackServiceWithCB)
 	deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelFile), fileService)
 	deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelLog), logService)
 
+	// Issue #118 Gap 11: Legacy env-var fallback for plain "slack" channel registration.
+	// When SLACK_WEBHOOK_URL is set (e.g. in E2E with mock-slack), register a basic
+	// SlackDeliveryService so NotificationRequests with channel "slack" can be delivered.
+	// Per-receiver Slack (BR-NOT-104) still takes precedence when routing config is loaded.
+	startupChannels := []string{"console", "file", "log"}
+	if slackURL := os.Getenv("SLACK_WEBHOOK_URL"); slackURL != "" {
+		slackService := delivery.NewSlackDeliveryService(slackURL)
+		deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelSlack), slackService)
+		startupChannels = append(startupChannels, "slack")
+		logger.Info("Registered legacy Slack channel from SLACK_WEBHOOK_URL env var")
+	}
+
 	logger.Info("Delivery Orchestrator initialized with registration pattern (DD-NOT-007)")
-	logger.Info("Registered channels",
-		"channels", []string{"console", "slack", "file", "log"})
+	logger.Info("Registered startup channels (per-receiver Slack registered on routing config load)",
+		"channels", startupChannels)
 
 	// Setup controller with delivery services + sanitization + audit + metrics + EventRecorder + statusManager + deliveryOrchestrator + circuitBreaker
 	if err = (&notification.NotificationRequestReconciler{
@@ -373,9 +387,9 @@ func main() {
 		APIReader:            mgr.GetAPIReader(),                                 // DD-STATUS-001: Cache-bypassed reader
 		Scheme:               mgr.GetScheme(),
 		ConsoleService:       consoleService,
-		SlackService:         slackService,
 		FileService:          fileService,          // DD-NOT-006: File delivery
 		DeliveryOrchestrator: deliveryOrchestrator, // Pattern 3: Delivery Orchestrator (P0)
+		CredentialResolver:   credResolver,         // BR-NOT-104: Per-receiver credential resolution
 		Sanitizer:            sanitizer,
 		CircuitBreaker:       circuitBreakerManager,                              // BR-NOT-055: Circuit breaker with gobreaker
 		Metrics:              metricsRecorder,                                    // DD-METRICS-001: Injected metrics
@@ -402,6 +416,20 @@ func main() {
 
 	// Setup signal handler for graceful shutdown
 	ctx := ctrl.SetupSignalHandler()
+
+	// BR-NOT-104-002: Start credential hot-reload watcher before manager starts
+	if credResolver != nil {
+		if err := credResolver.StartWatching(ctx); err != nil {
+			logger.Error(err, "Failed to start credential watcher (hot-reload disabled)")
+		} else {
+			logger.Info("Credential file watcher started (BR-NOT-104-002)")
+		}
+		defer func() {
+			if err := credResolver.Close(); err != nil {
+				logger.Error(err, "Failed to close credential resolver")
+			}
+		}()
+	}
 
 	if err := mgr.Start(ctx); err != nil {
 		logger.Error(err, "Problem running manager")

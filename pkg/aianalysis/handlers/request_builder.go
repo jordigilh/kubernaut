@@ -73,6 +73,8 @@ func (b *RequestBuilder) BuildIncidentRequest(analysis *aianalysisv1.AIAnalysis)
 	}
 
 	// BR-AI-080: Build request with all required HAPI fields using generated types
+	// Issue #113: CustomLabels now on enrichment.KubernetesContext
+	customLabels := getCustomLabels(enrichment)
 	req := &client.IncidentRequest{
 		// REQUIRED fields per HAPI OpenAPI spec
 		IncidentID:        analysis.Name,    // Q1: Use CR name
@@ -86,9 +88,9 @@ func (b *RequestBuilder) BuildIncidentRequest(analysis *aianalysisv1.AIAnalysis)
 		ErrorMessage:      "", // Populated from enrichment if available
 		Environment:       spec.Environment,
 		Priority:          spec.BusinessPriority,
-		RiskTolerance:     getOrDefault(enrichment.CustomLabels, "risk_tolerance", "medium"),
-		BusinessCategory:  getOrDefault(enrichment.CustomLabels, "business_category", "standard"),
-		ClusterName:       getOrDefault(enrichment.CustomLabels, "cluster_name", "default"),
+		RiskTolerance:     getOrDefault(customLabels, "risk_tolerance", "medium"),
+		BusinessCategory:  getOrDefault(customLabels, "business_category", "standard"),
+		ClusterName:       getOrDefault(customLabels, "cluster_name", "default"),
 	}
 
 	// Map enrichment results for richer HolmesGPT-API context
@@ -153,10 +155,12 @@ func (b *RequestBuilder) BuildRecoveryRequest(analysis *aianalysisv1.AIAnalysis)
 	}
 
 	// Set environment fields using opt types
+	// Issue #113: CustomLabels now on enrichment.KubernetesContext
+	customLabels := getCustomLabels(enrichment)
 	req.Environment.SetTo(spec.Environment)
 	req.Priority.SetTo(spec.BusinessPriority)
-	req.RiskTolerance.SetTo(getOrDefault(enrichment.CustomLabels, "risk_tolerance", "medium"))
-	req.BusinessCategory.SetTo(getOrDefault(enrichment.CustomLabels, "business_category", "standard"))
+	req.RiskTolerance.SetTo(getOrDefault(customLabels, "risk_tolerance", "medium"))
+	req.BusinessCategory.SetTo(getOrDefault(customLabels, "business_category", "standard"))
 
 	// Optional signal context (may have changed since initial)
 	// DEBUG: Log BEFORE SetTo
@@ -231,7 +235,7 @@ func (b *RequestBuilder) buildPreviousExecution(prev aianalysisv1.PreviousExecut
 		FailedStepName:  prev.Failure.FailedStepName,
 		Reason:          prev.Failure.Reason,
 		Message:         prev.Failure.Message,
-		FailedAt:        prev.Failure.FailedAt.Time.Format("2006-01-02T15:04:05Z07:00"), // ISO 8601
+		FailedAt:        prev.Failure.FailedAt.Format("2006-01-02T15:04:05Z07:00"), // ISO 8601
 		ExecutionTime:   prev.Failure.ExecutionTime,
 	}
 
@@ -257,10 +261,9 @@ func (b *RequestBuilder) buildEnrichmentResults(enrichment sharedtypes.Enrichmen
 	// DetectedLabels are now computed by HAPI post-RCA and returned
 	// in the response (stored in PostRCAContext).
 
-	// Map CustomLabels if present
-	if len(enrichment.CustomLabels) > 0 {
-		// client.EnrichmentResultsCustomLabels is map[string][]string
-		customLabels := client.EnrichmentResultsCustomLabels(enrichment.CustomLabels)
+	// Map CustomLabels if present (Issue #113: CustomLabels now on KubernetesContext)
+	if enrichment.KubernetesContext != nil && len(enrichment.KubernetesContext.CustomLabels) > 0 {
+		customLabels := client.EnrichmentResultsCustomLabels(enrichment.KubernetesContext.CustomLabels)
 		result.CustomLabels.SetTo(customLabels)
 	}
 
@@ -294,6 +297,14 @@ func (b *RequestBuilder) buildEnrichmentResults(enrichment sharedtypes.Enrichmen
 	}
 
 	return result
+}
+
+// getCustomLabels returns CustomLabels from EnrichmentResults (Issue #113: now on KubernetesContext).
+func getCustomLabels(enrichment sharedtypes.EnrichmentResults) map[string][]string {
+	if enrichment.KubernetesContext != nil {
+		return enrichment.KubernetesContext.CustomLabels
+	}
+	return nil
 }
 
 // getOrDefault gets a value from custom labels or returns default

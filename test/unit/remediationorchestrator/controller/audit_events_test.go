@@ -107,13 +107,14 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 		// Create fake client with status subresource
 		fakeClient = fake.NewClientBuilder().
 			WithScheme(scheme).
-			WithStatusSubresource(
-				&remediationv1.RemediationRequest{},
-				&signalprocessingv1.SignalProcessing{},
-				&aianalysisv1.AIAnalysis{},
-				&workflowexecutionv1.WorkflowExecution{},
-			).
-			Build()
+		WithStatusSubresource(
+			&remediationv1.RemediationRequest{},
+			&remediationv1.RemediationApprovalRequest{},
+			&signalprocessingv1.SignalProcessing{},
+			&aianalysisv1.AIAnalysis{},
+			&workflowexecutionv1.WorkflowExecution{},
+		).
+		Build()
 
 		// Create reconciler with mock audit store
 		recorder := record.NewFakeRecorder(20) // DD-EVENT-001: FakeRecorder for K8s event assertions
@@ -152,7 +153,6 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 		lifecycleStartedEvents := mockAuditStore.GetEventsByType(roaudit.EventTypeLifecycleStarted)
 		Expect(lifecycleStartedEvents).To(HaveLen(1), "Expected exactly one lifecycle.started event")
 		event := lifecycleStartedEvents[0]
-		Expect(event).ToNot(BeNil())
 		Expect(event.EventType).To(Equal(roaudit.EventTypeLifecycleStarted))
 		Expect(event.EventAction).To(Equal("started"))
 		// Use enum type comparison, not string
@@ -272,8 +272,9 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 			Expect(event.EventAction).To(Equal("approval_requested"))
 		})
 
-		It("AE-7.6: Should emit approval decision event on RAR approved", func() {
-			// Create RR in AwaitingApproval with approved RAR
+		It("AE-7.6: Should NOT emit approval decision event (delegated to RARReconciler)", func() {
+			// Approval audit events are emitted by the RARReconciler, not the main
+			// reconciler, to avoid duplicate emission (DD-AUDIT-003, ADR-040).
 			rr := newRemediationRequestWithChildRefs("test-rr", "default", remediationv1.PhaseAwaitingApproval, "sp-test-rr", "ai-test-rr", "")
 			Expect(fakeClient.Create(ctx, rr)).To(Succeed())
 
@@ -288,23 +289,20 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 
 			mockAuditStore.Reset()
 
-			// Reconcile to process approval
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: "default"},
 			})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.RequeueAfter).To(Equal(5 * time.Second))
 
-			// Per DD-AUDIT-003: Approval events use specific action types
-			// Filter by event type since phase transition also emits an event
 			approvedEvents := mockAuditStore.GetEventsByType(roaudit.EventTypeApprovalApproved)
-			Expect(approvedEvents).To(HaveLen(1))
-			event := approvedEvents[0]
-			Expect(event.EventAction).To(Equal("approved"))
+			Expect(approvedEvents).To(BeEmpty(),
+				"Main reconciler must not emit approval audit; RARReconciler handles this")
 		})
 
-		It("AE-7.7: Should emit rejection event on RAR rejected", func() {
-			// Create RR in AwaitingApproval with rejected RAR
+		It("AE-7.7: Should NOT emit rejection event (delegated to RARReconciler)", func() {
+			// Rejection audit events are emitted by the RARReconciler, not the main
+			// reconciler, to avoid duplicate emission (DD-AUDIT-003, ADR-040).
 			rr := newRemediationRequestWithChildRefs("test-rr", "default", remediationv1.PhaseAwaitingApproval, "sp-test-rr", "ai-test-rr", "")
 			Expect(fakeClient.Create(ctx, rr)).To(Succeed())
 
@@ -319,19 +317,15 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 
 			mockAuditStore.Reset()
 
-			// Reconcile to process rejection
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: "default"},
 			})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result).To(Equal(ctrl.Result{}))
 
-			// Per DD-AUDIT-003: Rejection events use specific action types
-			// Filter by event type since phase transition also emits an event
 			rejectedEvents := mockAuditStore.GetEventsByType(roaudit.EventTypeApprovalRejected)
-			Expect(rejectedEvents).To(HaveLen(1))
-			event := rejectedEvents[0]
-			Expect(event.EventAction).To(Equal("rejected"))
+			Expect(rejectedEvents).To(BeEmpty(),
+				"Main reconciler must not emit rejection audit; RARReconciler handles this")
 		})
 
 		It("AE-7.8: Should emit timeout event on global timeout", func() {

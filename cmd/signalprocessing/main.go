@@ -45,7 +45,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	// SignalProcessing imports
+	// Kubernaut API imports
+	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/signalprocessing"
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/audit"
@@ -73,6 +74,7 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(signalprocessingv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(remediationv1alpha1.AddToScheme(scheme))
 }
 
 func main() {

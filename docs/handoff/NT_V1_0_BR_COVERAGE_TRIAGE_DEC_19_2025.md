@@ -1,5 +1,7 @@
 addre# Notification Service V1.0 - Business Requirements Coverage Triage
 
+> **Note (Issue #91):** This document references `kubernaut.ai/*` CRD labels that have since been migrated to immutable spec fields. See [DD-CRD-003](../architecture/DD-CRD-003-field-selectors-operational-queries.md) for the current field-selector-based approach.
+
 **Date**: December 19, 2025
 **Triage Type**: Complete BR-to-Test Mapping for V1.0
 **Scope**: Ensure 100% BR test coverage for production readiness

@@ -1,0 +1,337 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: signalprocessing-environment-policy
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: signalprocessing
+    {{- include "kubernaut.labels" . | nindent 4 }}
+data:
+  environment.rego: |
+    package signalprocessing.environment
+    default result := {"environment": "unknown", "source": "default"}
+    result := {"environment": env, "source": "namespace-labels"} if {
+      env := input.namespace.labels["kubernaut.ai/environment"]
+      env != ""
+    }
+    result := {"environment": "production", "source": "namespace-name"} if {
+      not input.namespace.labels["kubernaut.ai/environment"]
+      input.namespace.name == "production"
+    }
+    result := {"environment": "production", "source": "namespace-name"} if {
+      not input.namespace.labels["kubernaut.ai/environment"]
+      input.namespace.name == "prod"
+    }
+    result := {"environment": "staging", "source": "namespace-name"} if {
+      not input.namespace.labels["kubernaut.ai/environment"]
+      input.namespace.name == "staging"
+    }
+    result := {"environment": "development", "source": "namespace-name"} if {
+      not input.namespace.labels["kubernaut.ai/environment"]
+      input.namespace.name == "development"
+    }
+    result := {"environment": "development", "source": "namespace-name"} if {
+      not input.namespace.labels["kubernaut.ai/environment"]
+      input.namespace.name == "dev"
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: signalprocessing-priority-policy
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: signalprocessing
+    {{- include "kubernaut.labels" . | nindent 4 }}
+data:
+  priority.rego: |
+    package signalprocessing.priority
+    import rego.v1
+    severity_score := 3 if { lower(input.signal.severity) == "critical" }
+    severity_score := 2 if { lower(input.signal.severity) == "warning" }
+    severity_score := 2 if { lower(input.signal.severity) == "high" }
+    severity_score := 1 if { lower(input.signal.severity) == "info" }
+    default severity_score := 0
+    env_scores contains 3 if { lower(input.environment) == "production" }
+    env_scores contains 2 if { lower(input.environment) == "staging" }
+    env_scores contains 1 if { lower(input.environment) == "development" }
+    env_scores contains 1 if { lower(input.environment) == "test" }
+    env_scores contains 3 if { input.namespace_labels["tier"] == "critical" }
+    env_scores contains 2 if { input.namespace_labels["tier"] == "high" }
+    env_score := max(env_scores) if { count(env_scores) > 0 }
+    default env_score := 0
+    composite_score := severity_score + env_score
+    result := {"priority": "P0", "policy_name": "score-based"} if { composite_score >= 6 }
+    result := {"priority": "P1", "policy_name": "score-based"} if { composite_score == 5 }
+    result := {"priority": "P2", "policy_name": "score-based"} if { composite_score == 4 }
+    result := {"priority": "P3", "policy_name": "score-based"} if { composite_score < 4; composite_score > 0 }
+    default result := {"priority": "P3", "policy_name": "default-catch-all"}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: signalprocessing-business-policy
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: signalprocessing
+    {{- include "kubernaut.labels" . | nindent 4 }}
+data:
+  business.rego: |
+    package signalprocessing.business
+    import rego.v1
+    default result := {"business_unit": "unknown", "confidence": 0.0, "policy_name": "operator-default"}
+    result := {"business_unit": input.namespace.labels["kubernaut.io/business-unit"], "confidence": 0.95, "policy_name": "namespace-label"} if {
+      input.namespace.labels["kubernaut.io/business-unit"]
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: signalprocessing-severity-policy
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: signalprocessing
+    {{- include "kubernaut.labels" . | nindent 4 }}
+data:
+  severity.rego: |
+    package signalprocessing.severity
+    import rego.v1
+    determine_severity := "critical" if {
+      lower(input.signal.severity) == "critical"
+    } else := "critical" if {
+      lower(input.signal.severity) == "sev1"
+    } else := "critical" if {
+      lower(input.signal.severity) == "p0"
+    } else := "critical" if {
+      lower(input.signal.severity) == "p1"
+    } else := "critical" if {
+      lower(input.signal.severity) == "error"
+    } else := "high" if {
+      lower(input.signal.severity) == "high"
+    } else := "high" if {
+      lower(input.signal.severity) == "sev2"
+    } else := "high" if {
+      lower(input.signal.severity) == "p2"
+    } else := "high" if {
+      lower(input.signal.severity) == "warning"
+    } else := "medium" if {
+      lower(input.signal.severity) == "medium"
+    } else := "medium" if {
+      lower(input.signal.severity) == "sev3"
+    } else := "low" if {
+      lower(input.signal.severity) == "low"
+    } else := "low" if {
+      lower(input.signal.severity) == "p3"
+    } else := "unknown" if {
+      true
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: signalprocessing-customlabels-policy
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: signalprocessing
+    {{- include "kubernaut.labels" . | nindent 4 }}
+data:
+  customlabels.rego: |
+    package signalprocessing.customlabels
+    import rego.v1
+    default result := {"labels": {}, "policy_name": "operator-default"}
+    result := {"labels": extracted, "policy_name": "namespace-annotations"} if {
+      input.namespace.annotations
+      extracted := {k: v | some k, v in input.namespace.annotations; startswith(k, "kubernaut.io/label-")}
+      count(extracted) > 0
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: signalprocessing-predictive-signal-mappings
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: signalprocessing
+    {{- include "kubernaut.labels" . | nindent 4 }}
+data:
+  predictive-signal-mappings.yaml: |
+    predictive_signal_mappings:
+      PredictedOOMKill: OOMKilled
+      PredictedCPUThrottling: CPUThrottling
+      PredictedDiskPressure: DiskPressure
+      PredictedNodeNotReady: NodeNotReady
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: signalprocessing-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: signalprocessing
+    {{- include "kubernaut.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    controller:
+      metricsAddr: ":9090"
+      healthProbeAddr: ":8081"
+      leaderElection: false
+      leaderElectionId: "signalprocessing.kubernaut.ai"
+    enrichment:
+      cacheTtl: "5m"
+      timeout: "10s"
+    classifier:
+      regoConfigMapName: "signalprocessing-rego-policy"
+      regoConfigMapKey: "policy.rego"
+      hotReloadInterval: "30s"
+    datastorage:
+      url: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
+      timeout: "10s"
+      buffer:
+        bufferSize: 10000
+        batchSize: 100
+        flushInterval: "1s"
+        maxRetries: 3
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: signalprocessing-controller
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: signalprocessing-controller
+    {{- include "kubernaut.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: signalprocessing-controller
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["signalprocessings", "remediationrequests"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["signalprocessings/status", "signalprocessings/finalizers"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["pods", "services", "namespaces", "nodes", "configmaps", "secrets", "events"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: signalprocessing-controller
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: signalprocessing-controller
+subjects:
+  - kind: ServiceAccount
+    name: signalprocessing-controller
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: signalprocessing-controller
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: signalprocessing-controller
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: signalprocessing-controller
+  template:
+    metadata:
+      labels:
+        app: signalprocessing-controller
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: signalprocessing-controller
+      containers:
+        - name: signalprocessing-controller
+          image: {{ include "kubernaut.image" (dict "service" "signalprocessing" "global" .Values.global "appVersion" .Chart.AppVersion) }}
+          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          args:
+            - "--config=/etc/signalprocessing/config.yaml"
+          ports:
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+            - name: health
+              containerPort: 8081
+              protocol: TCP
+          volumeMounts:
+            - name: config
+              mountPath: /etc/signalprocessing/config.yaml
+              subPath: config.yaml
+            - name: policies
+              mountPath: /etc/signalprocessing/policies
+              readOnly: true
+            - name: predictive-signal-mappings
+              mountPath: /etc/signalprocessing/predictive-signal-mappings.yaml
+              subPath: predictive-signal-mappings.yaml
+          resources:
+            {{- toYaml .Values.signalprocessing.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: signalprocessing-config
+        - name: policies
+          projected:
+            sources:
+              - configMap:
+                  name: signalprocessing-environment-policy
+              - configMap:
+                  name: signalprocessing-priority-policy
+              - configMap:
+                  name: signalprocessing-business-policy
+              - configMap:
+                  name: signalprocessing-severity-policy
+              - configMap:
+                  name: signalprocessing-customlabels-policy
+        - name: predictive-signal-mappings
+          configMap:
+            name: signalprocessing-predictive-signal-mappings
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: signalprocessing-controller-metrics
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: signalprocessing-controller
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: metrics
+      port: 9090
+      targetPort: 9090
+      protocol: TCP
+  selector:
+    app: signalprocessing-controller

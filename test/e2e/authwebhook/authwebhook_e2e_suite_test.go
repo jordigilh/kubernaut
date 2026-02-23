@@ -249,6 +249,7 @@ var _ = SynchronizedBeforeSuite(
 var _ = ReportAfterEach(func(report SpecReport) {
 	if report.Failed() {
 		anyTestFailed = true
+		infrastructure.MarkTestFailure(clusterName)
 	}
 })
 
@@ -282,7 +283,8 @@ var _ = SynchronizedAfterSuite(
 
 		// Determine test results
 		setupFailed := k8sClient == nil
-		anyFailure := anyTestFailed || setupFailed
+		anyFailure := anyTestFailed || setupFailed || infrastructure.CheckTestFailure(clusterName)
+		defer infrastructure.CleanupFailureMarker(clusterName)
 
 		// Preserve cluster only if KEEP_CLUSTER is explicitly set (manual debugging)
 		// Otherwise: export logs on failure, then always delete cluster

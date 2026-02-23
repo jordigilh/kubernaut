@@ -13,14 +13,14 @@ actionType: GracefulRestart
 
 labels:
   signalType: CrashLoopBackOff
-  severity: [critical, warning]
+  severity: [critical, low]
   environment: [production, staging]
   component: "*"
   priority: "*"
 
 execution:
   engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/crashloop-rollback-job@sha256:6b60efbc4eda9e54ec4402f6bc3e0f8fcec1b99708b27b5e217d4ce7136bf185
+  bundle: quay.io/kubernaut-cicd/test-workflows/crashloop-rollback-job@sha256:3b79b8ef39b8f7d52b04e0a027eeb5eac29940aaec10bd7777d034f29b0edd55
 
 parameters:
   - name: TARGET_NAMESPACE

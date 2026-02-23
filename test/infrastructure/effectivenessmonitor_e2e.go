@@ -306,12 +306,12 @@ func SetupEMInfrastructure(ctx context.Context, clusterName, kubeconfigPath stri
 
 	promURL := fmt.Sprintf("http://127.0.0.1:%d", PrometheusHostPort)
 	if err := WaitForPrometheusReady(promURL, emPrometheusReadyTimeout, writer); err != nil {
-		return fmt.Errorf("Prometheus not ready: %w", err)
+		return fmt.Errorf("prometheus not ready: %w", err)
 	}
 
 	amURL := fmt.Sprintf("http://127.0.0.1:%d", AlertManagerHostPort)
 	if err := WaitForAlertManagerReady(amURL, emAlertManagerReadyTimeout, writer); err != nil {
-		return fmt.Errorf("AlertManager not ready: %w", err)
+		return fmt.Errorf("alertmanager not ready: %w", err)
 	}
 
 	// Wait for EM controller pod to be ready
@@ -320,7 +320,7 @@ func SetupEMInfrastructure(ctx context.Context, clusterName, kubeconfigPath stri
 	}
 
 	if err := WaitForPrometheusCadvisorTarget(promURL, 60*time.Second, writer); err != nil {
-		return fmt.Errorf("Prometheus cadvisor target not UP: %w", err)
+		return fmt.Errorf("prometheus cadvisor target not UP: %w", err)
 	}
 
 	_, _ = fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")

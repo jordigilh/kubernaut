@@ -4,7 +4,7 @@
 
 Demonstrates Kubernaut detecting a Linkerd-meshed workload with high error rates caused by a restrictive AuthorizationPolicy blocking legitimate traffic. The Linkerd proxy returns 403 Forbidden for inbound requests, causing health check failures and service unavailability. Kubernaut automatically remediates by removing or fixing the blocking policy.
 
-**Signal**: `KubernautHighErrorRate` / `KubernautMeshUnauthorized` -- from Linkerd proxy metrics (`response_total` with `classification="failure"` or `status_code="403"`)
+**Signal**: `LinkerdHighErrorRate` / `LinkerdRequestsUnauthorized` -- from Linkerd proxy metrics (`response_total` with `classification="failure"` or `status_code="403"`)
 
 **Root cause**: Restrictive Linkerd AuthorizationPolicy requiring MeshTLSAuthentication with a non-existent identity, denying all inbound traffic
 
@@ -14,7 +14,7 @@ Demonstrates Kubernaut detecting a Linkerd-meshed workload with high error rates
 
 ```
 Linkerd proxy metrics: response_total (failure/403) > 50% for 2m
-  → KubernautHighErrorRate / KubernautMeshUnauthorized alert
+  → LinkerdHighErrorRate / LinkerdRequestsUnauthorized alert
   → Gateway → SP → AA (HAPI + LLM)
   → LLM detects serviceMesh=linkerd, diagnoses AuthorizationPolicy block
   → Selects FixAuthorizationPolicy workflow (fix-authz-policy-v1)
@@ -86,7 +86,8 @@ linkerd viz stat deploy -n demo-mesh-failure
 
 ```bash
 # Alert fires after ~2 min of high error rate
-# Check: http://localhost:9190/alerts
+# Check: kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090 &
+#        then open http://localhost:9090/alerts
 kubectl get rr,sp,aa,we,ea -n demo-mesh-failure -w
 ```
 
@@ -121,7 +122,7 @@ Feature: Linkerd Service Mesh Routing Failure remediation
     And the policy references a non-existent identity
     And the Linkerd proxy denies all inbound traffic with 403 Forbidden
     And health checks fail and pods may become NotReady
-    And the KubernautHighErrorRate or KubernautMeshUnauthorized alert fires (2 min)
+    And the LinkerdHighErrorRate or LinkerdRequestsUnauthorized alert fires (2 min)
 
   Then Kubernaut Gateway receives the alert via Alertmanager webhook
     And Signal Processing enriches the signal with business labels
@@ -139,7 +140,7 @@ Feature: Linkerd Service Mesh Routing Failure remediation
 - [ ] Namespace has `linkerd.io/inject: enabled` annotation; workload gets Linkerd sidecar
 - [ ] Baseline: traffic flows, pods Ready, no high error rate
 - [ ] deny-all AuthorizationPolicy causes Linkerd proxy to return 403 for inbound traffic
-- [ ] PrometheusRule fires KubernautHighErrorRate or KubernautMeshUnauthorized within 2-3 min
+- [ ] PrometheusRule fires LinkerdHighErrorRate or LinkerdRequestsUnauthorized within 2-3 min
 - [ ] LLM correctly detects serviceMesh=linkerd and diagnoses AuthorizationPolicy block
 - [ ] fix-authz-policy-v1 workflow removes the blocking AuthorizationPolicy
 - [ ] After remediation, traffic flows and pods are Ready

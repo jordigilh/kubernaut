@@ -19,7 +19,6 @@ package effectivenessmonitor
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 
@@ -73,7 +72,10 @@ var _ = Describe("DataStorageQuerier (DD-EM-002)", func() {
 				},
 			}
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(events)
+			if err := json.NewEncoder(w).Encode(events); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
 		}))
 
 		querier := emclient.NewDataStorageHTTPQuerier(server.URL)
@@ -85,7 +87,10 @@ var _ = Describe("DataStorageQuerier (DD-EM-002)", func() {
 	It("UT-EM-DSQ-002: should return empty string when no events found", func() {
 		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode([]map[string]interface{}{})
+			if err := json.NewEncoder(w).Encode([]map[string]interface{}{}); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
 		}))
 
 		querier := emclient.NewDataStorageHTTPQuerier(server.URL)
@@ -107,7 +112,10 @@ var _ = Describe("DataStorageQuerier (DD-EM-002)", func() {
 				},
 			}
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(events)
+			if err := json.NewEncoder(w).Encode(events); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
 		}))
 
 		querier := emclient.NewDataStorageHTTPQuerier(server.URL)
@@ -118,8 +126,7 @@ var _ = Describe("DataStorageQuerier (DD-EM-002)", func() {
 
 	It("UT-EM-DSQ-004: should return error on HTTP 500", func() {
 		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusInternalServerError)
-			fmt.Fprintln(w, "internal server error")
+			http.Error(w, "internal server error", http.StatusInternalServerError)
 		}))
 
 		querier := emclient.NewDataStorageHTTPQuerier(server.URL)

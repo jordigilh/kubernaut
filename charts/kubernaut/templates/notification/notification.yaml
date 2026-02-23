@@ -1,0 +1,182 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: notification-controller
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: notification-controller
+    {{- include "kubernaut.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: notification-controller-role
+  labels:
+    app: notification-controller
+    {{- include "kubernaut.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["notificationrequests"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["notificationrequests/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["notificationrequests/finalizers"]
+    verbs: ["update"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+  - apiGroups: [""]
+    resources: ["configmaps", "secrets"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: notification-controller-rolebinding
+  labels:
+    app: notification-controller
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: notification-controller-role
+subjects:
+  - kind: ServiceAccount
+    name: notification-controller
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: notification-controller-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: notification-controller
+    {{- include "kubernaut.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    controller:
+      metricsAddr: ":9186"
+      healthProbeAddr: ":8081"
+      leaderElection: false
+      leaderElectionId: "notification.kubernaut.ai"
+    delivery:
+      console:
+        enabled: true
+      file:
+        outputDir: "/tmp/notifications"
+        format: "json"
+        timeout: 5s
+      log:
+        enabled: true
+        format: "json"
+      slack:
+        timeout: 10s
+    datastorage:
+      url: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
+      timeout: 10s
+      buffer:
+        bufferSize: 10000
+        batchSize: 100
+        flushInterval: 1s
+        maxRetries: 3
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification-controller
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: notification-controller
+    control-plane: controller-manager
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: notification-controller
+      control-plane: controller-manager
+  template:
+    metadata:
+      labels:
+        app: notification-controller
+        control-plane: controller-manager
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9186"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: notification-controller
+      containers:
+        - name: manager
+          image: {{ include "kubernaut.image" (dict "service" "notification" "global" .Values.global "appVersion" .Chart.AppVersion) }}
+          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          env:
+            - name: CONFIG_PATH
+              value: "/etc/notification/config.yaml"
+            - name: SLACK_WEBHOOK_URL
+              valueFrom:
+                secretKeyRef:
+                  name: slack-webhook
+                  key: webhook-url
+          args:
+            - "-config"
+            - "$(CONFIG_PATH)"
+          ports:
+            - containerPort: 9186
+              name: metrics
+              protocol: TCP
+            - containerPort: 8081
+              name: health
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8081
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          volumeMounts:
+            - name: config
+              mountPath: /etc/notification
+              readOnly: true
+            - name: notification-output
+              mountPath: /tmp/notifications
+          resources:
+            {{- toYaml .Values.notification.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: notification-controller-config
+        - name: notification-output
+          emptyDir: {}
+      terminationGracePeriodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notification-metrics
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: notification-controller
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app: notification-controller
+    control-plane: controller-manager
+  ports:
+    - name: metrics
+      protocol: TCP
+      port: 9186
+      targetPort: 9186

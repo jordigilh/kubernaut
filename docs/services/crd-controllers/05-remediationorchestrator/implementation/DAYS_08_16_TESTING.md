@@ -1,5 +1,7 @@
 # Days 8-16: Testing, Documentation & Production Readiness
 
+> **Note (Issue #91):** This document references `kubernaut.ai/*` CRD labels that have since been migrated to immutable spec fields. See [DD-CRD-003](../../../../../architecture/DD-CRD-003-field-selectors-operational-queries.md) for the current field-selector-based approach.
+
 **Parent Document**: [IMPLEMENTATION_PLAN_V1.1.md](./IMPLEMENTATION_PLAN_V1.1.md)
 **Date**: Days 8-16 of 14-16
 **Focus**: Watch coordination, testing, documentation, production readiness

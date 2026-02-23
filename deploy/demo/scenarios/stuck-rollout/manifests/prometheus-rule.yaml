@@ -12,7 +12,7 @@ spec:
     # Detect deployment rollout stuck (not progressing)
     # kube-state-metrics exposes a "Progressing" condition with status "false"
     # when the deployment exceeds its progressDeadlineSeconds
-    - alert: KubernautStuckRollout
+    - alert: KubeDeploymentRolloutStuck
       expr: |
         kube_deployment_status_condition{
           namespace="demo-rollout",

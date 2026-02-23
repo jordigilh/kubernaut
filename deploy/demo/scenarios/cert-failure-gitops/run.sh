@@ -20,26 +20,21 @@ REPO_NAME="demo-cert-gitops-repo"
 source "${SCRIPT_DIR}/../../scripts/kind-helper.sh"
 ensure_kind_cluster "${SCRIPT_DIR}/kind-config.yaml" "${1:-}"
 
+# shellcheck source=../../scripts/monitoring-helper.sh
+source "${SCRIPT_DIR}/../../scripts/monitoring-helper.sh"
+ensure_monitoring_stack
+source "${SCRIPT_DIR}/../../scripts/platform-helper.sh"
+ensure_platform
+seed_scenario_workflow "cert-failure-gitops"
+ensure_cert_manager
+
 echo "============================================="
 echo " cert-manager GitOps Failure Demo (#134)"
 echo "============================================="
 echo ""
 
-# Step 1: Install cert-manager if not present
-echo "==> Step 1: Ensuring cert-manager is installed..."
-if ! kubectl get namespace cert-manager &>/dev/null; then
-  echo "  Installing cert-manager..."
-  kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.17.1/cert-manager.yaml
-  kubectl wait --for=condition=Available deployment/cert-manager -n cert-manager --timeout=120s
-  kubectl wait --for=condition=Available deployment/cert-manager-webhook -n cert-manager --timeout=120s
-  kubectl wait --for=condition=Available deployment/cert-manager-cainjector -n cert-manager --timeout=120s
-  sleep 10
-else
-  echo "  cert-manager already installed."
-fi
-
-# Step 2: Generate self-signed CA
-echo "==> Step 2: Generating self-signed CA key pair..."
+# Step 1: Generate self-signed CA
+echo "==> Step 1: Generating self-signed CA key pair..."
 TMPDIR_CA=$(mktemp -d)
 openssl req -x509 -newkey rsa:2048 -nodes \
   -keyout "${TMPDIR_CA}/ca.key" -out "${TMPDIR_CA}/ca.crt" \
@@ -256,15 +251,15 @@ kubectl annotate certificate demo-app-cert -n "${NAMESPACE}" \
   cert-manager.io/issuing-trigger="manual-$(date +%s)" --overwrite 2>/dev/null || true
 
 echo ""
-echo "==> Step 9: Waiting for CertificateNotReady alert (~2-3 min)..."
+echo "==> Step 9: Waiting for CertManagerCertNotReady alert (~2-3 min)..."
 echo "  ArgoCD synced broken ClusterIssuer -> cert-manager cannot sign."
-echo "  Check Prometheus: http://localhost:9190/alerts"
+echo "  Check Prometheus: kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090"
 echo ""
 echo "==> Step 10: Pipeline in progress. Monitor with:"
 echo "    kubectl get rr,sp,aa,we,ea -n ${NAMESPACE} -w"
 echo ""
 echo "  Expected flow:"
-echo "    Alert (CertificateNotReady) -> Gateway -> SP -> AA (HAPI)"
+echo "    Alert (CertManagerCertNotReady) -> Gateway -> SP -> AA (HAPI)"
 echo "    LLM detects gitOpsManaged=true, gitOpsTool=argocd"
 echo "    LLM selects git-based fix -> workflow reverts the bad commit"
 echo "    ArgoCD re-syncs restored ClusterIssuer"

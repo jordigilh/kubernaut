@@ -43,6 +43,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
+	crdvalidators "github.com/jordigilh/kubernaut/test/shared/validators"
 )
 
 // BR-E2E-001: Full Remediation Lifecycle E2E Test
@@ -193,7 +194,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		testCancel()
 	})
 
-	It("should process a K8s OOMKill event through the complete remediation pipeline", func() {
+	It("should produce complete status records across all pipeline stages for downstream consumers [E2E-FP-118-001]", func() {
 		// ================================================================
 		// Step 1: Create a managed namespace
 		// ================================================================
@@ -865,6 +866,70 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		GinkgoWriter.Println("  └─────────────────────────────────────────────────────────")
 		GinkgoWriter.Println("  ✅ EA CRD verified: created by RO, assessed by EM")
 
+		// ================================================================
+		// Step 14: CRD Status Validation [E2E-FP-118-001]
+		// Validates all pipeline CRDs have complete status fields for
+		// downstream consumers (audit, billing, SLA, dashboards).
+		// Uses collect-all-failures pattern per test plan.
+		// ================================================================
+		By("Step 14: Validating CRD status fields across all pipeline stages [E2E-FP-118-001]")
+
+		var allFailures []string
+
+		// SP: re-fetch and validate
+		spList := &signalprocessingv1.SignalProcessingList{}
+		Expect(apiReader.List(ctx, spList, client.InNamespace(testNamespace))).To(Succeed())
+		for i := range spList.Items {
+			sp := &spList.Items[i]
+			if sp.Spec.RemediationRequestRef.Name == remediationRequest.Name {
+				allFailures = append(allFailures, crdvalidators.ValidateSPStatus(sp)...)
+				break
+			}
+		}
+
+		// AA: already fetched as `aa`
+		allFailures = append(allFailures, crdvalidators.ValidateAAStatus(aa)...)
+
+		// WE: re-fetch
+		weObj := &workflowexecutionv1.WorkflowExecution{}
+		Expect(apiReader.Get(ctx, client.ObjectKey{Name: weName, Namespace: testNamespace}, weObj)).To(Succeed())
+		allFailures = append(allFailures, crdvalidators.ValidateWEStatus(weObj)...)
+
+		// NT: re-fetch completion notification
+		nrList := &notificationv1.NotificationRequestList{}
+		Expect(apiReader.List(ctx, nrList, client.InNamespace(testNamespace))).To(Succeed())
+		for i := range nrList.Items {
+			nr := &nrList.Items[i]
+			if nr.Spec.RemediationRequestRef != nil &&
+				nr.Spec.RemediationRequestRef.Name == remediationRequest.Name &&
+				nr.Spec.Type == notificationv1.NotificationTypeCompletion {
+				allFailures = append(allFailures, crdvalidators.ValidateNTStatus(nr)...)
+				break
+			}
+		}
+
+		// RR: re-fetch
+		finalRR := &remediationv1.RemediationRequest{}
+		Expect(apiReader.Get(ctx, client.ObjectKey{
+			Name: remediationRequest.Name, Namespace: testNamespace,
+		}, finalRR)).To(Succeed())
+		allFailures = append(allFailures, crdvalidators.ValidateRRStatus(finalRR)...)
+
+		// EA: already fetched as `finalEA`
+		allFailures = append(allFailures, crdvalidators.ValidateEAStatus(finalEA)...)
+
+		if len(allFailures) > 0 {
+			GinkgoWriter.Println("  ⚠️  CRD Status Validation Failures:")
+			for _, f := range allFailures {
+				GinkgoWriter.Printf("    - %s\n", f)
+			}
+		}
+		Expect(allFailures).To(BeEmpty(),
+			"All pipeline CRDs should have complete status fields for downstream consumers. Failures:\n%s",
+			strings.Join(allFailures, "\n"))
+
+		GinkgoWriter.Println("  ✅ CRD status validation passed (all 6 CRDs)")
+
 		GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		GinkgoWriter.Println("✅ FULL REMEDIATION LIFECYCLE COMPLETE (with audit verification)")
 		GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -872,6 +937,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		GinkgoWriter.Println("  Audit Trail: complete, non-duplicated, temporally ordered ✅")
 		GinkgoWriter.Println("  RR Reconstruction: valid, high completeness ✅")
 		GinkgoWriter.Println("  EA CRD: created by RO, assessed by EM ✅")
+		GinkgoWriter.Println("  CRD Status Fields: all populated [E2E-FP-118-001] ✅")
 	})
 
 	// ================================================================
@@ -885,7 +951,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 	// - Event-exporter does NOT forward K8s events from fp-am-* (prevents duplication)
 	// - Memory-eater runs at 92% memory usage without OOMKill (stays alive for Prometheus scraping)
 	// - Signal arrives via /api/v1/signals/prometheus endpoint (AlertManager webhook)
-	It("should process a Prometheus AlertManager alert through the complete remediation pipeline", func() {
+	It("should produce complete status records from AlertManager signal source for downstream consumers [E2E-FP-118-002]", func() {
 		// ================================================================
 		// AM Step 1: Create a managed namespace (fp-am-*)
 		// ================================================================
@@ -1316,12 +1382,75 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		}
 		GinkgoWriter.Println("  └─────────────────────────────────────────────────────────")
 
+		// ================================================================
+		// AM Step 13: CRD Status Validation [E2E-FP-118-002]
+		// Same comprehensive status validation as Test 1, for AlertManager signal source.
+		// ================================================================
+		By("AM Step 13: Validating CRD status fields across all pipeline stages [E2E-FP-118-002]")
+
+		var allFailures []string
+
+		// SP: fetch and validate
+		amSPList := &signalprocessingv1.SignalProcessingList{}
+		Expect(apiReader.List(ctx, amSPList, client.InNamespace(testNamespaceAM))).To(Succeed())
+		for i := range amSPList.Items {
+			sp := &amSPList.Items[i]
+			if sp.Spec.RemediationRequestRef.Name == remediationRequest.Name {
+				allFailures = append(allFailures, crdvalidators.ValidateSPStatus(sp)...)
+				break
+			}
+		}
+
+		// AA: already fetched as `aa`
+		allFailures = append(allFailures, crdvalidators.ValidateAAStatus(aa)...)
+
+		// WE: fetch
+		amWE := &workflowexecutionv1.WorkflowExecution{}
+		Expect(apiReader.Get(ctx, client.ObjectKey{Name: weName, Namespace: testNamespaceAM}, amWE)).To(Succeed())
+		allFailures = append(allFailures, crdvalidators.ValidateWEStatus(amWE)...)
+
+		// NT: fetch completion notification
+		amNRList := &notificationv1.NotificationRequestList{}
+		Expect(apiReader.List(ctx, amNRList, client.InNamespace(testNamespaceAM))).To(Succeed())
+		for i := range amNRList.Items {
+			nr := &amNRList.Items[i]
+			if nr.Spec.RemediationRequestRef != nil &&
+				nr.Spec.RemediationRequestRef.Name == remediationRequest.Name &&
+				nr.Spec.Type == notificationv1.NotificationTypeCompletion {
+				allFailures = append(allFailures, crdvalidators.ValidateNTStatus(nr)...)
+				break
+			}
+		}
+
+		// RR: fetch
+		amFinalRR := &remediationv1.RemediationRequest{}
+		Expect(apiReader.Get(ctx, client.ObjectKey{
+			Name: remediationRequest.Name, Namespace: testNamespaceAM,
+		}, amFinalRR)).To(Succeed())
+		allFailures = append(allFailures, crdvalidators.ValidateRRStatus(amFinalRR)...)
+
+		// EA: already fetched as `finalEA`
+		allFailures = append(allFailures, crdvalidators.ValidateEAStatus(finalEA)...)
+
+		if len(allFailures) > 0 {
+			GinkgoWriter.Println("  ⚠️  CRD Status Validation Failures:")
+			for _, f := range allFailures {
+				GinkgoWriter.Printf("    - %s\n", f)
+			}
+		}
+		Expect(allFailures).To(BeEmpty(),
+			"All pipeline CRDs should have complete status fields for downstream consumers. Failures:\n%s",
+			strings.Join(allFailures, "\n"))
+
+		GinkgoWriter.Println("  ✅ CRD status validation passed (all 6 CRDs)")
+
 		GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		GinkgoWriter.Println("✅ ALERTMANAGER SIGNAL SOURCE TEST COMPLETE")
 		GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		GinkgoWriter.Println("  AlertManager → Gateway → RO → SP → AA → HAPI → WE(Job) → Notification → EM ✅")
 		GinkgoWriter.Println("  Audit Trail: complete, non-duplicated ✅")
 		GinkgoWriter.Println("  EA CRD: created by RO, assessed by EM ✅")
+		GinkgoWriter.Println("  CRD Status Fields: all populated [E2E-FP-118-002] ✅")
 	})
 })
 

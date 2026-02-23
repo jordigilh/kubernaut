@@ -248,7 +248,7 @@ func (r *Reconciler) handleBlockedPhase(ctx context.Context, rr *remediationv1.R
 
 		// Transition to terminal Failed (skip blocking check to avoid infinite loop)
 		return r.transitionToFailedTerminal(ctx, rr, "blocked",
-			fmt.Errorf("Cooldown expired after blocking due to %s", blockReason))
+			fmt.Errorf("cooldown expired after blocking due to %s", blockReason))
 	}
 
 	// Still in cooldown - requeue at exact expiry time

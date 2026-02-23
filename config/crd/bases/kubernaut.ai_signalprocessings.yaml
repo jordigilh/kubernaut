@@ -211,20 +211,24 @@ spec:
             properties:
               businessClassification:
                 description: |-
-                  BusinessClassification for multi-dimensional categorization.
-                  BR-SP-080, BR-SP-081: Business Classification
+                  BusinessClassification contains business context derived from SP categorization.
+                  BR-SP-002: Business Classification
+                  BR-SP-080: Business Unit Detection
+                  BR-SP-081: SLA Requirement Mapping
                 properties:
                   businessUnit:
-                    description: Business unit assignment
+                    description: Business unit owning the service (e.g., "payments",
+                      "platform")
                     type: string
                   criticality:
-                    description: 'Criticality level: critical, high, medium, low'
+                    description: 'Business criticality level: critical, high, medium,
+                      low'
                     type: string
                   serviceOwner:
-                    description: Service owner
+                    description: Service owner team or individual
                     type: string
                   slaRequirement:
-                    description: 'SLA requirement: platinum, gold, silver, bronze'
+                    description: 'SLA requirement tier: platinum, gold, silver, bronze'
                     type: string
                 type: object
               completionTime:
@@ -326,107 +330,29 @@ spec:
                         type: string
                       type: array
                     description: |-
-                      Custom labels (extracted via Rego policies)
-                      DD-WORKFLOW-001 v1.9: map[string][]string (subdomain → list of values)
-                      Example: {"constraint": ["cost-constrained", "stateful-safe"], "team": ["name=payments"]}
-                    type: object
-                  daemonSet:
-                    description: DaemonSet details if target is a daemonset
-                    properties:
-                      annotations:
-                        additionalProperties:
-                          type: string
-                        description: DaemonSet annotations
-                        type: object
-                      currentNumberScheduled:
-                        description: Current number scheduled
-                        format: int32
-                        type: integer
-                      desiredNumberScheduled:
-                        description: Desired number of nodes
-                        format: int32
-                        type: integer
-                      labels:
-                        additionalProperties:
-                          type: string
-                        description: DaemonSet labels
-                        type: object
-                      numberReady:
-                        description: Number ready
-                        format: int32
-                        type: integer
+                      Custom labels extracted via Rego policies (BR-SP-102)
+                      DD-WORKFLOW-001 v1.9: map[string][]string (subdomain -> list of values)
                     type: object
                   degradedMode:
                     description: |-
-                      DegradedMode indicates context was built with partial data (target resource not found)
-                      DD-4: K8s Enrichment Failure Handling
+                      DegradedMode indicates context was built with partial data
+                      DD-4: K8s Enrichment Failure Handling (target resource not found)
                     type: boolean
-                  deployment:
-                    description: Deployment details if target is managed by deployment
-                    properties:
-                      annotations:
-                        additionalProperties:
-                          type: string
-                        description: Deployment annotations
-                        type: object
-                      availableReplicas:
-                        description: Available replicas
-                        format: int32
-                        type: integer
-                      labels:
-                        additionalProperties:
-                          type: string
-                        description: Deployment labels
-                        type: object
-                      readyReplicas:
-                        description: Ready replicas
-                        format: int32
-                        type: integer
-                      replicas:
-                        description: Desired replicas
-                        format: int32
-                        type: integer
-                    type: object
-                  detectedLabels:
-                    description: Detected labels (auto-detected cluster characteristics)
-                    properties:
-                      gitOpsManaged:
-                        description: Whether the target is managed by ArgoCD/Flux
-                        type: boolean
-                      hasHPA:
-                        description: Whether the target has an HPA (HorizontalPodAutoscaler)
-                        type: boolean
-                      hasPDB:
-                        description: Whether the target has a PDB (PodDisruptionBudget)
-                        type: boolean
-                      hasResourceLimits:
-                        description: Whether the target has resource limits defined
-                        type: boolean
-                      helmManaged:
-                        description: Whether the target is managed by Helm
-                        type: boolean
-                      isProduction:
-                        description: Whether the target is in a production namespace
-                        type: boolean
-                      networkIsolated:
-                        description: Whether the namespace has network isolation
-                        type: boolean
-                      serviceMesh:
-                        description: Whether the namespace is part of a service mesh
-                        type: boolean
-                    type: object
                   namespace:
-                    description: Namespace details (per plan specification)
+                    description: Namespace context (nil for cluster-scoped resources
+                      like Node)
                     properties:
                       annotations:
                         additionalProperties:
                           type: string
-                        description: Namespace annotations
+                        description: Namespace annotations (used by business classifier
+                          for kubernaut.ai/ labels)
                         type: object
                       labels:
                         additionalProperties:
                           type: string
-                        description: Namespace labels
+                        description: Namespace labels (used by environment, priority,
+                          business classifiers)
                         type: object
                       name:
                         description: Namespace name
@@ -434,210 +360,59 @@ spec:
                     required:
                     - name
                     type: object
-                  node:
-                    description: Node details where the pod is running
-                    properties:
-                      allocatable:
-                        additionalProperties:
-                          type: string
-                        description: Allocatable resources
-                        type: object
-                      conditions:
-                        description: Node conditions
-                        items:
-                          description: NodeCondition represents a node condition.
-                          properties:
-                            reason:
-                              description: Reason for condition
-                              type: string
-                            status:
-                              description: Condition status
-                              type: string
-                            type:
-                              description: Condition type
-                              type: string
-                          required:
-                          - status
-                          - type
-                          type: object
-                        type: array
-                      labels:
-                        additionalProperties:
-                          type: string
-                        description: Node labels
-                        type: object
-                    type: object
                   ownerChain:
-                    description: Owner chain from target to top-level controller
+                    description: |-
+                      Owner chain from target to top-level controller
+                      DD-WORKFLOW-001 v1.8: Used for historical remediation context
                     items:
-                      description: |-
-                        OwnerChainEntry represents one owner in the ownership chain.
-                        BR-SP-100: OwnerChain Builder
-                        DD-WORKFLOW-001 v1.8: Namespace, Kind, Name ONLY (no APIVersion/UID)
-                        HolmesGPT-API uses for DetectedLabels validation
+                      description: "OwnerChainEntry represents a single entry in the
+                        K8s ownership chain.\nDD-WORKFLOW-001 v1.8: SignalProcessing
+                        traverses ownerReferences to build this.\nExample chain for
+                        a Pod owned by Deployment:\n\n\t[0]: {Namespace: \"prod\",
+                        Kind: \"ReplicaSet\", Name: \"api-7d8f9c6b5\"}\n\t[1]: {Namespace:
+                        \"prod\", Kind: \"Deployment\", Name: \"api\"}"
                       properties:
                         kind:
-                          description: Owner kind (e.g., ReplicaSet, Deployment, StatefulSet,
-                            DaemonSet)
+                          description: Kind of the owner resource (e.g., ReplicaSet,
+                            Deployment, StatefulSet, DaemonSet)
                           type: string
                         name:
-                          description: Owner name
+                          description: Name of the owner resource
                           type: string
                         namespace:
-                          description: Owner namespace (empty for cluster-scoped resources
-                            like Node)
+                          description: Namespace of the owner resource (empty for
+                            cluster-scoped resources like Node)
                           type: string
                       required:
                       - kind
                       - name
                       type: object
                     type: array
-                  pod:
-                    description: Pod details if target is a pod
+                  workload:
+                    description: Target workload context (kind, name, labels, annotations)
                     properties:
                       annotations:
                         additionalProperties:
                           type: string
-                        description: Pod annotations
+                        description: Resource annotations (used by business classifier
+                          for kubernaut.ai/ labels)
                         type: object
-                      containerStatuses:
-                        description: Container statuses
-                        items:
-                          description: ContainerStatus contains container state information.
-                          properties:
-                            lastTerminationReason:
-                              description: Last termination reason
-                              type: string
-                            name:
-                              description: Container name
-                              type: string
-                            ready:
-                              description: Whether container is ready
-                              type: boolean
-                            restartCount:
-                              description: Restart count
-                              format: int32
-                              type: integer
-                            state:
-                              description: Container state
-                              type: string
-                          required:
-                          - name
-                          - ready
-                          - restartCount
-                          type: object
-                        type: array
+                      kind:
+                        description: Resource kind (e.g., "Deployment", "StatefulSet",
+                          "Node", "Pod")
+                        type: string
                       labels:
                         additionalProperties:
                           type: string
-                        description: Pod labels
+                        description: Resource labels (primary classification input
+                          for Rego policies)
                         type: object
-                      nodeName:
-                        description: Node name where pod is scheduled
+                      name:
+                        description: Resource name
                         type: string
-                      phase:
-                        description: Pod phase
-                        type: string
-                    type: object
-                  replicaSet:
-                    description: ReplicaSet details if target is a replicaset
-                    properties:
-                      annotations:
-                        additionalProperties:
-                          type: string
-                        description: ReplicaSet annotations
-                        type: object
-                      availableReplicas:
-                        description: Available replicas
-                        format: int32
-                        type: integer
-                      labels:
-                        additionalProperties:
-                          type: string
-                        description: ReplicaSet labels
-                        type: object
-                      readyReplicas:
-                        description: Ready replicas
-                        format: int32
-                        type: integer
-                      replicas:
-                        description: Desired replicas
-                        format: int32
-                        type: integer
-                    type: object
-                  service:
-                    description: Service details if target is a service
-                    properties:
-                      annotations:
-                        additionalProperties:
-                          type: string
-                        description: Service annotations
-                        type: object
-                      clusterIP:
-                        description: Cluster IP
-                        type: string
-                      externalIPs:
-                        description: External IPs
-                        items:
-                          type: string
-                        type: array
-                      labels:
-                        additionalProperties:
-                          type: string
-                        description: Service labels
-                        type: object
-                      ports:
-                        description: Ports
-                        items:
-                          description: ServicePort contains service port information.
-                          properties:
-                            name:
-                              description: Port name
-                              type: string
-                            port:
-                              description: Port number
-                              format: int32
-                              type: integer
-                            protocol:
-                              description: Protocol (TCP, UDP, SCTP)
-                              type: string
-                            targetPort:
-                              description: Target port
-                              type: string
-                          required:
-                          - port
-                          type: object
-                        type: array
-                      type:
-                        description: Service type (ClusterIP, NodePort, LoadBalancer,
-                          ExternalName)
-                        type: string
-                    type: object
-                  statefulSet:
-                    description: StatefulSet details if target is a statefulset
-                    properties:
-                      annotations:
-                        additionalProperties:
-                          type: string
-                        description: StatefulSet annotations
-                        type: object
-                      currentReplicas:
-                        description: Current replicas
-                        format: int32
-                        type: integer
-                      labels:
-                        additionalProperties:
-                          type: string
-                        description: StatefulSet labels
-                        type: object
-                      readyReplicas:
-                        description: Ready replicas
-                        format: int32
-                        type: integer
-                      replicas:
-                        description: Desired replicas
-                        format: int32
-                        type: integer
+                    required:
+                    - kind
+                    - name
                     type: object
                 type: object
               lastFailureTime:

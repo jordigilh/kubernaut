@@ -123,7 +123,7 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("enrichment timeout must be positive, got %v", c.Enrichment.Timeout)
 	}
 	if c.Classifier.RegoConfigMapName == "" {
-		return fmt.Errorf("Rego ConfigMap name is required")
+		return fmt.Errorf("rego ConfigMap name is required")
 	}
 	if c.Classifier.HotReloadInterval <= 0 {
 		return fmt.Errorf("hot-reload interval must be positive, got %v", c.Classifier.HotReloadInterval)

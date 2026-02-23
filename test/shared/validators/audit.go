@@ -135,7 +135,7 @@ func ValidateAuditEvent(event ogenclient.AuditEvent, expected ExpectedAuditEvent
 	// Note: EventData is now a discriminated union (ogen-generated)
 	// For specific field validation, use the appropriate Get method on EventData
 	// Example: eventData := event.EventData.GetWorkflowExecutionAuditPayload()
-	if expected.EventDataFields != nil && len(expected.EventDataFields) > 0 {
+	if len(expected.EventDataFields) > 0 {
 		// EventData validation is now type-specific
 		// Use the appropriate payload Get method in your test code
 		// This generic validator no longer supports unstructured data

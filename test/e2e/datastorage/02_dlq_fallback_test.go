@@ -108,7 +108,7 @@ var _ = Describe("BR-DS-004: DLQ Fallback Reliability - No Data Loss During Outa
 
 		// Connect to PostgreSQL for verification (using shared NodePort - no port-forward needed)
 		testLogger.Info("🔌 Connecting to PostgreSQL via NodePort...")
-		connStr := fmt.Sprintf("host=localhost port=25433 user=slm_user password=test_password dbname=action_history sslmode=disable") // Per DD-TEST-001
+		connStr := "host=localhost port=25433 user=slm_user password=test_password dbname=action_history sslmode=disable" // Per DD-TEST-001
 		var err error
 		db, err = sql.Open("pgx", connStr)
 		Expect(err).ToNot(HaveOccurred())

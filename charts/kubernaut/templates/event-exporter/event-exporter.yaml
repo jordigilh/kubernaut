@@ -1,0 +1,111 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: event-exporter
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: event-exporter
+    {{- include "kubernaut.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: event-exporter
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods", "configmaps", "namespaces"]
+    verbs: ["get", "list"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: event-exporter
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: event-exporter
+subjects:
+  - kind: ServiceAccount
+    name: event-exporter
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: event-exporter-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: event-exporter
+    {{- include "kubernaut.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    logLevel: debug
+    logFormat: json
+    maxEventAgeSeconds: 300
+    kubeQPS: 50
+    kubeBurst: 100
+    namespace: "demo-workloads"
+    route:
+      routes:
+        - match:
+            - receiver: gateway-webhook
+          drop:
+            - type: "Normal"
+            - kind: "RemediationRequest"
+            - kind: "SignalProcessing"
+            - kind: "AIAnalysis"
+            - kind: "EffectivenessAssessment"
+            - kind: "NotificationRequest"
+    receivers:
+      - name: gateway-webhook
+        webhook:
+          endpoint: "http://gateway-service.kubernaut-system.svc.cluster.local:8080/api/v1/signals/kubernetes-event"
+          headers:
+            Content-Type: application/json
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: event-exporter
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: event-exporter
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: event-exporter
+  template:
+    metadata:
+      labels:
+        app: event-exporter
+    spec:
+      serviceAccountName: event-exporter
+      containers:
+        - name: event-exporter
+          image: {{ .Values.eventExporter.image }}
+          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          args:
+            - -conf=/config/config.yaml
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+          resources:
+            {{- toYaml .Values.eventExporter.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: event-exporter-config

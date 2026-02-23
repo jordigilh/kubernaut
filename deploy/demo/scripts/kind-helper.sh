@@ -8,15 +8,15 @@ CLUSTER_NAME="${CLUSTER_NAME:-kubernaut-demo}"
 # Usage: ensure_kind_cluster <kind-config-path> [--create-cluster]
 #
 # Behavior:
-#   - If --create-cluster is passed: creates the cluster from the config (deletes existing first)
+#   - If --create-cluster is passed: recreates the cluster (deletes existing first)
 #   - If cluster exists: validates topology against the config
-#   - If cluster doesn't exist: prints instructions and exits
+#   - If cluster doesn't exist: auto-creates it
 ensure_kind_cluster() {
     local config_path="$1"
     local create_flag="${2:-}"
 
     if [ "$create_flag" = "--create-cluster" ]; then
-        echo "==> Creating Kind cluster '${CLUSTER_NAME}' from ${config_path}..."
+        echo "==> Recreating Kind cluster '${CLUSTER_NAME}' from ${config_path}..."
         kind delete cluster --name "${CLUSTER_NAME}" 2>/dev/null || true
         kind create cluster --name "${CLUSTER_NAME}" --config "${config_path}"
         echo "  Cluster created."
@@ -28,14 +28,10 @@ ensure_kind_cluster() {
         validate_topology "${config_path}"
         return $?
     else
-        echo "ERROR: Kind cluster '${CLUSTER_NAME}' does not exist."
-        echo ""
-        echo "Create it with:"
-        echo "  kind create cluster --name ${CLUSTER_NAME} --config ${config_path}"
-        echo ""
-        echo "Or re-run with --create-cluster:"
-        echo "  $0 --create-cluster"
-        return 1
+        echo "==> Kind cluster '${CLUSTER_NAME}' not found. Creating..."
+        kind create cluster --name "${CLUSTER_NAME}" --config "${config_path}"
+        echo "  Cluster created."
+        return 0
     fi
 }
 

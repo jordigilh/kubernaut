@@ -178,7 +178,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 			// Verify failure details explain the external deletion
 			failed, err := getWFE(wfe.Name, wfe.Namespace)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(failed.Status.FailureDetails).ToNot(BeNil())
+			Expect(failed.Status.FailureDetails).To(Not(BeNil()))
 			Expect(failed.Status.FailureDetails.Message).To(
 				Or(
 					ContainSubstring("not found"),
@@ -629,7 +629,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 				weaudit.EventTypeFailed+" audit event should be present in Data Storage (ADR-034 v1.5)")
 
 			By("Verifying " + weaudit.EventTypeFailed + " event includes complete failure details (ADR-034 v1.5)")
-			Expect(failedEvent).ToNot(BeNil())
+			Expect(failedEvent).To(Not(BeNil()), "workflow.failed audit event must be present in Data Storage")
 
 			// V1.0 Maturity Requirement: Use validators.ValidateAuditEvent (P0 - MANDATORY)
 			// Per SERVICE_MATURITY_REQUIREMENTS.md v1.2.0: Tests MUST use testutil validators
@@ -645,16 +645,14 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 
 			// Additional business-specific validation (complements testutil validation)
 			Expect(failedEvent.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeFailure))
-			Expect(failedEvent.EventData).ToNot(BeNil())
-
 			// Extract and validate event_data payload (type-safe access via ogen client)
 			eventData, ok := failedEvent.EventData.GetWorkflowExecutionAuditPayload()
-			Expect(ok).To(BeTrue(), "EventData should be WorkflowExecutionAuditPayload")
+			Expect(ok).To(BeTrue(), "EventData should be WorkflowExecutionAuditPayload (non-nil correctly typed)")
 
 			// Validate WorkflowExecutionAuditPayload failure fields
-			Expect(eventData.WorkflowID).ToNot(BeEmpty())
-			Expect(eventData.WorkflowVersion).ToNot(BeEmpty())
-			Expect(eventData.TargetResource).ToNot(BeEmpty())
+			Expect(eventData.WorkflowID).To(And(Not(BeEmpty()), MatchRegexp(`^[a-zA-Z0-9_-]+$`)), "WorkflowID must be a valid identifier")
+			Expect(eventData.WorkflowVersion).To(And(Not(BeEmpty()), MatchRegexp(`^[a-zA-Z0-9._-]+$`)), "WorkflowVersion must be a valid identifier")
+			Expect(eventData.TargetResource).To(And(Not(BeEmpty()), MatchRegexp(`^[a-zA-Z0-9/_-]+$`)), "TargetResource must be a valid identifier")
 			Expect(string(eventData.Phase)).To(Equal("Failed"))
 
 			// Critical: Verify failure details are included
@@ -758,9 +756,9 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 				for i := range auditEvents {
 					GinkgoWriter.Printf("   %d: %s\n", i, auditEvents[i].EventType)
 				}
+				Expect(startedEvent).ToNot(BeNil(), weaudit.EventTypeExecutionStarted+" event not found (Gap #6, ADR-034 v1.5)")
+				return
 			}
-
-			Expect(startedEvent).ToNot(BeNil(), weaudit.EventTypeExecutionStarted+" event not found (Gap #6, ADR-034 v1.5)")
 
 			// Extract event_data using type-safe ogen client method
 			eventData, ok := startedEvent.EventData.GetWorkflowExecutionAuditPayload()
@@ -853,7 +851,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 		}, 60*time.Second).Should(BeTrue(), "WFE should track PipelineRun reference")
 
 			runningWFE, _ := getWFE(wfe.Name, wfe.Namespace)
-			Expect(runningWFE.Status.ExecutionRef).ToNot(BeNil())
+			Expect(runningWFE.Status.ExecutionRef).To(And(Not(BeNil()), HaveField("Name", Not(BeEmpty()))), "ExecutionRef must reference PipelineRun")
 			GinkgoWriter.Printf("✅ WFE tracks PipelineRun: %s\n",
 				runningWFE.Status.ExecutionRef.Name)
 

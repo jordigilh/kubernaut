@@ -35,11 +35,13 @@ limitations under the License.
 //
 // # Usage
 //
-// The Manager accepts a client.Reader. Both Gateway and RO inject a cached client
-// (controller-runtime's metadata-only informer cache) for 0 direct API calls.
+// The Manager accepts a client.Reader. Gateway injects the apiReader (uncached) to
+// avoid scope-rejection races when namespaces are created just before alerts arrive.
+// RO injects a cached client (reconciliation runs long after namespace creation).
 // The Manager implements the ScopeChecker interface for DI (see checker.go).
 //
-//	mgr := scope.NewManager(cachedClient) // ADR-053: metadata-only cache
+//	mgr := scope.NewManager(apiReader)    // Gateway: uncached for immediate visibility
+//	mgr := scope.NewManager(cachedClient) // RO: cached is fine for reconciliation
 //	managed, err := mgr.IsManaged(ctx, "production", "Deployment", "payment-api")
 package scope
 
@@ -108,8 +110,8 @@ var clusterScopedKinds = map[string]bool{
 }
 
 // Manager validates resource scope using the 2-level hierarchy defined in ADR-053.
-// It is shared by the Gateway and the Remediation Orchestrator, both using cached readers
-// (controller-runtime metadata-only informers, ADR-053 Decision #5).
+// It is shared by the Gateway (uncached reader for immediate namespace visibility) and
+// the Remediation Orchestrator (cached reader, sufficient for reconciliation).
 // Implements the ScopeChecker interface for dependency injection.
 type Manager struct {
 	client client.Reader

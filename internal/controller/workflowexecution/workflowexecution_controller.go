@@ -528,30 +528,23 @@ func (r *WorkflowExecutionReconciler) reconcileRunning(ctx context.Context, wfe 
 	}
 
 	// ========================================
-	// Step 2: Update ExecutionStatusSummary for visibility
-	// ========================================
-	if result.Summary != nil {
-		wfe.Status.ExecutionStatus = result.Summary
-	}
-
-	// ========================================
-	// Step 3: Map execution result to WFE phase
+	// Step 2: Map execution result to WFE phase
+	// ExecutionStatus is passed into Mark* methods to survive AtomicStatusUpdate refetch
 	// ========================================
 	switch result.Phase {
 	case workflowexecutionv1alpha1.PhaseCompleted:
 		logger.Info("Execution succeeded", "engine", wfe.Spec.ExecutionEngine)
 		if wfe.Spec.ExecutionEngine == "tekton" {
-			// Tekton path: MarkCompleted needs the PipelineRun for detailed failure extraction
 			var pr tektonv1.PipelineRun
 			if err := r.Get(ctx, client.ObjectKey{
 				Name:      wfe.Status.ExecutionRef.Name,
 				Namespace: r.ExecutionNamespace,
 			}, &pr); err != nil {
-				return r.MarkCompleted(ctx, wfe, nil)
+				return r.MarkCompleted(ctx, wfe, nil, result.Summary)
 			}
-			return r.MarkCompleted(ctx, wfe, &pr)
+			return r.MarkCompleted(ctx, wfe, &pr, result.Summary)
 		}
-		return r.MarkCompleted(ctx, wfe, nil)
+		return r.MarkCompleted(ctx, wfe, nil, result.Summary)
 
 	case workflowexecutionv1alpha1.PhaseFailed:
 		logger.Info("Execution failed", "engine", wfe.Spec.ExecutionEngine, "reason", result.Reason)
@@ -561,11 +554,11 @@ func (r *WorkflowExecutionReconciler) reconcileRunning(ctx context.Context, wfe 
 				Name:      wfe.Status.ExecutionRef.Name,
 				Namespace: r.ExecutionNamespace,
 			}, &pr); err != nil {
-				return r.MarkFailed(ctx, wfe, nil)
+				return r.MarkFailed(ctx, wfe, nil, result.Summary)
 			}
-			return r.MarkFailed(ctx, wfe, &pr)
+			return r.MarkFailed(ctx, wfe, &pr, result.Summary)
 		}
-		return r.MarkFailed(ctx, wfe, nil)
+		return r.MarkFailed(ctx, wfe, nil, result.Summary)
 
 	default:
 		// Still running - update conditions and requeue
@@ -1109,13 +1102,34 @@ func (r *WorkflowExecutionReconciler) FindWFEForPipelineRun(ctx context.Context,
 
 // BuildPipelineRunStatusSummary creates a lightweight status summary from PipelineRun
 // Provides visibility into task progress during execution (v3.2)
-func (r *WorkflowExecutionReconciler) BuildPipelineRunStatusSummary(pr *tektonv1.PipelineRun) *workflowexecutionv1alpha1.ExecutionStatusSummary {
+func (r *WorkflowExecutionReconciler) BuildPipelineRunStatusSummary(ctx context.Context, pr *tektonv1.PipelineRun) *workflowexecutionv1alpha1.ExecutionStatusSummary {
 	summary := &workflowexecutionv1alpha1.ExecutionStatusSummary{
 		Status: "Unknown",
 	}
 
 	// Extract task counts from ChildReferences
 	summary.TotalTasks = len(pr.Status.ChildReferences)
+
+	// Count TaskRuns with ConditionSucceeded True (completed tasks)
+	for _, ref := range pr.Status.ChildReferences {
+		if ref.Kind != "TaskRun" {
+			continue
+		}
+		var tr tektonv1.TaskRun
+		if err := r.Get(ctx, client.ObjectKey{
+			Name:      ref.Name,
+			Namespace: pr.Namespace,
+		}, &tr); err != nil {
+			if apierrors.IsNotFound(err) {
+				continue
+			}
+			continue
+		}
+		cond := tr.Status.GetCondition(apis.ConditionSucceeded)
+		if cond != nil && cond.IsTrue() {
+			summary.CompletedTasks++
+		}
+	}
 
 	// Get Succeeded condition
 	succeededCond := pr.Status.GetCondition(apis.ConditionSucceeded)
@@ -1132,7 +1146,7 @@ func (r *WorkflowExecutionReconciler) BuildPipelineRunStatusSummary(pr *tektonv1
 // Calculates Duration from StartTime to CompletionTime (v3.2)
 // Day 6 Extension (BR-WE-012): Resets ConsecutiveFailures counter
 // Records metrics per BR-WE-008 (Day 7)
-func (r *WorkflowExecutionReconciler) MarkCompleted(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, pr *tektonv1.PipelineRun) (ctrl.Result, error) {
+func (r *WorkflowExecutionReconciler) MarkCompleted(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, pr *tektonv1.PipelineRun, summary ...*workflowexecutionv1alpha1.ExecutionStatusSummary) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 	logger.Info("Marking WorkflowExecution as Completed")
 
@@ -1177,6 +1191,11 @@ func (r *WorkflowExecutionReconciler) MarkCompleted(ctx context.Context, wfe *wo
 		// Set duration
 		wfe.Status.Duration = durationStr
 
+		// Issue #118 Gap 4: persist ExecutionStatus inside callback (survives refetch)
+		if len(summary) > 0 && summary[0] != nil {
+			wfe.Status.ExecutionStatus = summary[0]
+		}
+
 		// BR-WE-006: Set TektonPipelineComplete condition
 		weconditions.SetExecutionComplete(wfe, true,
 			weconditions.ReasonExecutionSucceeded,
@@ -1186,7 +1205,6 @@ func (r *WorkflowExecutionReconciler) MarkCompleted(ctx context.Context, wfe *wo
 		weconditions.SetReady(wfe, true, weconditions.ReasonReady, "Workflow execution completed")
 
 		// Day 8: Record audit event for workflow completion (BR-WE-005, ADR-032)
-		// Uses Audit Manager (P3: Audit Manager pattern)
 		if err := r.AuditManager.RecordWorkflowCompleted(ctx, wfe); err != nil {
 			logger.V(1).Info("Failed to record workflow.completed audit event", "error", err)
 			weconditions.SetAuditRecorded(wfe, false,
@@ -1228,7 +1246,7 @@ func (r *WorkflowExecutionReconciler) MarkCompleted(ctx context.Context, wfe *wo
 // Extracts failure information from PipelineRun (v3.2)
 // Day 6 Extension (BR-WE-012): Handles exponential backoff for pre-execution failures
 // Records metrics per BR-WE-008 (Day 7)
-func (r *WorkflowExecutionReconciler) MarkFailed(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, pr *tektonv1.PipelineRun) (ctrl.Result, error) {
+func (r *WorkflowExecutionReconciler) MarkFailed(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, pr *tektonv1.PipelineRun, summary ...*workflowexecutionv1alpha1.ExecutionStatusSummary) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 	logger.Info("Marking WorkflowExecution as Failed")
 
@@ -1297,6 +1315,11 @@ func (r *WorkflowExecutionReconciler) MarkFailed(ctx context.Context, wfe *workf
 
 		// Set failure details
 		wfe.Status.FailureDetails = failureDetails
+
+		// Issue #118 Gap 4: persist ExecutionStatus inside callback (survives refetch)
+		if len(summary) > 0 && summary[0] != nil {
+			wfe.Status.ExecutionStatus = summary[0]
+		}
 
 		// BR-WE-006: Set TektonPipelineComplete condition to False
 		weconditions.SetExecutionComplete(wfe, false,

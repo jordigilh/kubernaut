@@ -4,7 +4,6 @@
 #
 # Prerequisites:
 #   - Kind cluster with deploy/demo/overlays/kind/kind-cluster-config.yaml
-#   - Kubernaut services deployed (HAPI with real LLM backend)
 #   - Prometheus with nginx metrics exporter
 #
 # Usage: ./deploy/demo/scenarios/slo-burn/run.sh
@@ -16,6 +15,14 @@ NAMESPACE="demo-slo"
 # shellcheck source=../../scripts/kind-helper.sh
 source "${SCRIPT_DIR}/../../scripts/kind-helper.sh"
 ensure_kind_cluster "${SCRIPT_DIR}/kind-config.yaml" "${1:-}"
+
+# shellcheck source=../../scripts/monitoring-helper.sh
+source "${SCRIPT_DIR}/../../scripts/monitoring-helper.sh"
+ensure_monitoring_stack
+source "${SCRIPT_DIR}/../../scripts/platform-helper.sh"
+ensure_platform
+seed_scenario_workflow "slo-burn"
+ensure_blackbox_exporter
 
 echo "============================================="
 echo " SLO Error Budget Burn Demo (#128)"
@@ -64,8 +71,8 @@ echo ""
 
 # Step 7: Wait for alert
 echo "==> Step 7: Waiting for SLO burn rate alert to fire (~5 min)..."
-echo "  Check Prometheus: http://localhost:9190/alerts"
-echo "  The KubernautSLOBudgetBurning alert should appear within 5 minutes."
+echo "  Check Prometheus: kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090"
+echo "  The ErrorBudgetBurn alert should appear within 5 minutes."
 echo ""
 
 # Step 8: Monitor
@@ -73,7 +80,7 @@ echo "==> Step 8: Pipeline in progress. Monitor with:"
 echo "    kubectl get rr,sp,aa,we,ea -n ${NAMESPACE} -w"
 echo ""
 echo "  Expected flow:"
-echo "    Alert (SLOBudgetBurning) -> Gateway -> SP -> AA (HAPI) -> RO -> WE"
+echo "    Alert (ErrorBudgetBurn) -> Gateway -> SP -> AA (HAPI) -> RO -> WE"
 echo "    LLM correlates error spike with recent deploy -> selects rollback"
 echo "    WE rolls back deployment -> EM verifies error rate within SLO"
 echo ""

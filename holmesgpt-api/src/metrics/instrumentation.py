@@ -1,18 +1,18 @@
-"""
-Copyright 2025 Jordi Gil.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-"""
+#
+# Copyright 2025 Jordi Gil.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
 
 """
 HAPI Metrics Instrumentation (Go Pattern)
@@ -37,7 +37,7 @@ Reference Implementation: pkg/gateway/metrics/metrics.go
 
 import time
 from typing import Optional
-from prometheus_client import Counter, Histogram, Gauge, CollectorRegistry, REGISTRY
+from prometheus_client import Counter, Histogram, CollectorRegistry, REGISTRY
 
 from .constants import (
     # Investigation Metrics
@@ -50,21 +50,6 @@ from .constants import (
     METRIC_NAME_LLM_TOKEN_USAGE,
     
     # HTTP Metrics
-    METRIC_NAME_HTTP_REQUESTS_TOTAL,
-    METRIC_NAME_HTTP_REQUEST_DURATION,
-    
-    # Config Metrics
-    METRIC_NAME_CONFIG_RELOAD_TOTAL,
-    METRIC_NAME_CONFIG_RELOAD_ERRORS,
-    METRIC_NAME_CONFIG_LAST_RELOAD_TIMESTAMP,
-    
-    # RFC 7807 Metrics
-    METRIC_NAME_RFC7807_ERRORS_TOTAL,
-    
-    # Label constants
-    LABEL_STATUS_SUCCESS,
-    LABEL_STATUS_ERROR,
-    LABEL_STATUS_NEEDS_REVIEW,
     LABEL_TOKEN_TYPE_PROMPT,
     LABEL_TOKEN_TYPE_COMPLETION,
 )
@@ -193,7 +178,7 @@ class HAMetrics:
         self.investigations_total.labels(status=status).inc()
         self.investigations_duration.observe(duration)
         
-        logger.info(f"🔍 METRICS DEBUG: Metrics recorded successfully")
+        logger.info("🔍 METRICS DEBUG: Metrics recorded successfully")
         logger.info(f"🔍 METRICS DEBUG: Registry: {self.registry}")
     
     def record_llm_call(

@@ -66,6 +66,10 @@ customLabels:
   team: platform
   costCenter: ops
 
+detectedLabels:
+  hpaEnabled: "true"
+  gitOpsTool: "*"
+
 execution:
   engine: tekton
   bundle: quay.io/kubernaut/oomkill-restart:v1.0.0
@@ -106,6 +110,7 @@ rollbackParameters:
 | `actionType` | string | Yes | Action type from the taxonomy (PascalCase, e.g., `RestartPod`, `ScaleReplicas`). Must match a valid entry in `action_type_taxonomy`. |
 | `labels` | object | Yes | Mandatory matching/filtering criteria for workflow discovery |
 | `customLabels` | map[string]string | No | Operator-defined key-value labels for additional filtering |
+| `detectedLabels` | object | No | Author-declared infrastructure requirements (DD-WORKFLOW-001 v2.0). Matched against incident DetectedLabels from HAPI during workflow discovery. |
 | `execution` | object | No | Execution engine configuration |
 | `parameters` | array | Yes | Workflow input parameters (at least one required) |
 | `rollbackParameters` | array | No | Parameters needed for rollback |
@@ -148,6 +153,45 @@ These fields are used by the three-step discovery protocol (DD-HAPI-017) to filt
 |-------|------|----------|--------------|-------------|
 | `engine` | string | No | `tekton`, `ansible`, `lambda`, `shell` | Execution engine type. Defaults to `tekton`. |
 | `bundle` | string | No | OCI image reference | Execution bundle or container image |
+
+### `detectedLabels` Fields (Infrastructure Requirements)
+
+Author-declared infrastructure characteristics this workflow requires. Matched against incident DetectedLabels from HAPI LabelDetector during workflow discovery (DD-WORKFLOW-001 v2.0).
+
+All fields are optional. Absence of a field means "no requirement" for that characteristic.
+
+| Field | Type | Valid Values | Description |
+|-------|------|--------------|-------------|
+| `gitOpsManaged` | string | `"true"` | Requires GitOps management (ArgoCD/Flux) |
+| `gitOpsTool` | string | `"argocd"`, `"flux"`, `"*"` | Specific GitOps tool required. `"*"` = any tool. |
+| `pdbProtected` | string | `"true"` | Requires PodDisruptionBudget protection |
+| `hpaEnabled` | string | `"true"` | Requires HorizontalPodAutoscaler |
+| `stateful` | string | `"true"` | Requires stateful workload (StatefulSet/PVC) |
+| `helmManaged` | string | `"true"` | Requires Helm management |
+| `networkIsolated` | string | `"true"` | Requires NetworkPolicy |
+| `serviceMesh` | string | `"istio"`, `"linkerd"`, `"*"` | Service mesh required. `"*"` = any mesh. |
+
+**Validation Rules**:
+- Boolean fields: only `"true"` is accepted. `"false"`, `"yes"`, `"1"` etc. are rejected with a validation error.
+- String fields: only the listed values are accepted. Unknown values are rejected.
+- Unknown field names: rejected with a validation error naming the invalid field.
+
+**Examples** (from demo scenarios):
+
+```yaml
+# Workflow requiring any GitOps tool
+detectedLabels:
+  gitOpsTool: "*"
+
+# Workflow requiring HPA
+detectedLabels:
+  hpaEnabled: "true"
+
+# Workflow requiring PDB + specific mesh
+detectedLabels:
+  pdbProtected: "true"
+  serviceMesh: "istio"
+```
 
 ### `parameters` and `rollbackParameters` Fields
 

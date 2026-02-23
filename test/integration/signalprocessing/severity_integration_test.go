@@ -177,7 +177,8 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 					Name:      sp.Name,
 					Namespace: sp.Namespace,
 				}, &updated)).To(Succeed())
-				g.Expect(updated.Status.Severity).ToNot(BeEmpty())
+				g.Expect(updated.Status.Severity).To(BeElementOf([]string{"critical", "high", "medium", "low"}),
+					"CUSTOM_VALUE should be mapped to a normalized severity by policy")
 				// Note: Could capture initial severity and compare after reload in REFACTOR phase
 			}, "30s", "1s").Should(Succeed())
 
@@ -196,7 +197,7 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 				}, &updated)).To(Succeed())
 
 				// Verify severity can be re-evaluated (policy hot-reload functional)
-				g.Expect(updated.Status.Severity).ToNot(BeEmpty(),
+				g.Expect(updated.Status.Severity).To(BeElementOf([]string{"critical", "high", "medium", "low"}),
 					"Severity determination should continue working after policy reload")
 			}, "60s", "2s").Should(Succeed())
 
@@ -269,7 +270,7 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 			// Get the event for detailed assertions
 			event, err := getLatestAuditEvent(spaudit.EventTypeClassificationDecision, correlationID)
 			Expect(err).ToNot(HaveOccurred(), "Should retrieve audit event by correlation_id")
-			Expect(event).ToNot(BeNil(), "Audit event should exist")
+			Expect(event).To(And(Not(BeNil()), HaveField("EventData", Not(BeNil()))), "Audit event should exist with EventData")
 
 			// Per TDD guidelines: Use structured types, not map-based access
 			payload := event.EventData.SignalProcessingAuditPayload
@@ -353,7 +354,7 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 
 			event, err := getLatestAuditEvent(spaudit.EventTypeClassificationDecision, correlationID)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(event).ToNot(BeNil())
+			Expect(event).To(And(Not(BeNil()), HaveField("EventData", Not(BeNil()))), "Audit event should exist with EventData")
 
 			// Per TDD guidelines: Use structured types, not map-based access
 			payload := event.EventData.SignalProcessingAuditPayload
@@ -559,7 +560,8 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 					Name:      sp.Name,
 					Namespace: sp.Namespace,
 				}, &updated)).To(Succeed())
-				g.Expect(updated.Status.Severity).ToNot(BeEmpty())
+				g.Expect(updated.Status.Severity).To(BeElementOf([]string{"critical", "high", "medium", "low"}),
+					"CustomSeverity should be mapped to normalized severity by policy")
 				initialSeverity = updated.Status.Severity
 			}, "30s", "1s").Should(Succeed())
 

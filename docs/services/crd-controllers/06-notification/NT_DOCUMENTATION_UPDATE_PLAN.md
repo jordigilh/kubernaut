@@ -1,5 +1,7 @@
 # Notification Service (NT) - Documentation Update Plan
 
+> **Note (Issue #91):** This document references `kubernaut.ai/*` CRD labels that have since been migrated to immutable spec fields. See [DD-CRD-003](../../../../architecture/DD-CRD-003-field-selectors-operational-queries.md) for the current field-selector-based approach.
+
 **Date**: December 22, 2025
 **Status**: 📋 **READY FOR EXECUTION**
 **Priority**: P1 (Documentation Debt)
@@ -63,7 +65,7 @@ Update NT service documentation to reflect recent achievements:
 
 3. **Update Component Responsibilities** table (line 236):
    - Add new handler files:
-     - `internal/controller/notification/routing_handler.go` - Label-based routing logic
+     - `internal/controller/notification/routing_handler.go` - Spec-field-based routing logic
      - `internal/controller/notification/retry_circuit_breaker_handler.go` - Retry and circuit breaker logic
 
 4. **Update Observability section** (line 367):
@@ -92,7 +94,7 @@ Update NT service documentation to reflect recent achievements:
    | Component | File | Responsibility | LOC |
    |---|---|---|---|
    | **Main Controller** | `notificationrequest_controller.go` | Orchestration, phase transitions | ~800 |
-   | **Routing Handler** | `routing_handler.go` | Label-based routing, channel selection | ~300 |
+   | **Routing Handler** | `routing_handler.go` | Spec-field-based routing, channel selection | ~300 |
    | **Retry/Circuit Breaker** | `retry_circuit_breaker_handler.go` | Backoff, circuit breaker, error classification | ~187 |
    | **Status Manager** | `pkg/notification/status/manager.go` | CRD status updates | ~200 |
 

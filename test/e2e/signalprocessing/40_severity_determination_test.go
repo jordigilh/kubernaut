@@ -141,6 +141,13 @@ var _ = Describe("Severity Determination E2E Tests", Label("e2e", "severity", "w
 				"SignalProcessing should complete successfully")
 		}, "60s", "2s").Should(Succeed())
 
+		// E2E-SP-163-002: Severity and PolicyHash exact field validation
+		var finalSP signalprocessingv1alpha1.SignalProcessing
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &finalSP)).To(Succeed())
+		Expect(finalSP.Status.Severity).To(Equal("critical"))
+		Expect(finalSP.Status.PolicyHash).To(MatchRegexp("^[a-f0-9]{64}$"),
+			"PolicyHash should be SHA256 hex (64 chars) from SeverityClassifier.GetPolicyHash()")
+
 		// BUSINESS OUTCOME VERIFIED:
 		// ✅ Sev1 (PagerDuty) → critical (kubernaut) → immediate AI investigation
 		// ✅ Workflow prioritization works with any monitoring tool severity scheme

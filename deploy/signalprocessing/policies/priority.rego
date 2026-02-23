@@ -9,12 +9,12 @@
 # Scores are summed into a composite score, then mapped to priority levels
 # via threshold rules. Adding a new severity or environment is a single-line change.
 #
-# Input Schema (per BR-SP-070):
+# Input Schema (per BR-SP-070, Issue #113):
 # {
 #   "signal": { "severity": "critical", "source": "prometheus" },
 #   "environment": "production",
 #   "namespace_labels": { "tier": "critical" },
-#   "deployment_labels": { "app": "payment-service" }
+#   "workload_labels": { "app": "payment-service" }
 # }
 #
 # Output Schema:

@@ -13,7 +13,7 @@ actionType: PatchHPA
 
 labels:
   signalType: HPAMaxedOut
-  severity: [warning, critical]
+  severity: [low, critical]
   environment: [production, staging]
   component: "*"
   priority: "*"
@@ -23,7 +23,7 @@ detectedLabels:
 
 execution:
   engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/patch-hpa-job@sha256:eaafeedfc7d745f6cd8333755a0c55b9ee7a6a8bf99281e291c9ae01d3f13607
+  bundle: quay.io/kubernaut-cicd/test-workflows/patch-hpa-job@sha256:70c7b717b24b83f76b163c2ceb144ea8c8ec5e8290df98ca48ac3a0a5de32939
 
 parameters:
   - name: TARGET_NAMESPACE

@@ -127,7 +127,7 @@ func CreateWorkflowExecutionClusterParallel(clusterName, kubeconfigPath string, 
 		_, _ = fmt.Fprintf(output, "\n🔧 [Goroutine 1] Installing Tekton Pipelines %s...\n", TektonPipelinesVersion)
 		err := installTektonPipelines(kubeconfigPath, output)
 		if err != nil {
-			err = fmt.Errorf("Tekton installation failed: %w", err)
+			err = fmt.Errorf("tekton installation failed: %w", err)
 		} else {
 			_, _ = fmt.Fprintf(output, "✅ [Goroutine 1] Tekton Pipelines installed\n")
 		}
@@ -142,7 +142,7 @@ func CreateWorkflowExecutionClusterParallel(clusterName, kubeconfigPath string, 
 		// Deploy PostgreSQL
 		_, _ = fmt.Fprintf(output, "  🐘 [Goroutine 2] Deploying PostgreSQL...\n")
 		if postgresErr := deployPostgreSQLInNamespace(ctx, WorkflowExecutionNamespace, kubeconfigPath, output); postgresErr != nil {
-			err = fmt.Errorf("PostgreSQL deployment failed: %w", postgresErr)
+			err = fmt.Errorf("postgresql deployment failed: %w", postgresErr)
 			results <- result{name: "PostgreSQL+Redis", err: err}
 			return
 		}
@@ -150,7 +150,7 @@ func CreateWorkflowExecutionClusterParallel(clusterName, kubeconfigPath string, 
 		// Deploy Redis
 		_, _ = fmt.Fprintf(output, "  🔴 [Goroutine 2] Deploying Redis...\n")
 		if redisErr := deployRedisInNamespace(ctx, WorkflowExecutionNamespace, kubeconfigPath, output); redisErr != nil {
-			err = fmt.Errorf("Redis deployment failed: %w", redisErr)
+			err = fmt.Errorf("redis deployment failed: %w", redisErr)
 			results <- result{name: "PostgreSQL+Redis", err: err}
 			return
 		}
@@ -158,14 +158,14 @@ func CreateWorkflowExecutionClusterParallel(clusterName, kubeconfigPath string, 
 		// Wait for both to be ready
 		_, _ = fmt.Fprintf(output, "  ⏳ [Goroutine 2] Waiting for PostgreSQL to be ready...\n")
 		if waitErr := waitForDeploymentReady(kubeconfigPath, "postgresql", output); waitErr != nil {
-			err = fmt.Errorf("PostgreSQL not ready: %w", waitErr)
+			err = fmt.Errorf("postgresql not ready: %w", waitErr)
 			results <- result{name: "PostgreSQL+Redis", err: err}
 			return
 		}
 
 		_, _ = fmt.Fprintf(output, "  ⏳ [Goroutine 2] Waiting for Redis to be ready...\n")
 		if waitErr := waitForDeploymentReady(kubeconfigPath, "redis", output); waitErr != nil {
-			err = fmt.Errorf("Redis not ready: %w", waitErr)
+			err = fmt.Errorf("redis not ready: %w", waitErr)
 			results <- result{name: "PostgreSQL+Redis", err: err}
 			return
 		}
@@ -179,7 +179,7 @@ func CreateWorkflowExecutionClusterParallel(clusterName, kubeconfigPath string, 
 		_, _ = fmt.Fprintf(output, "\n💾 [Goroutine 3] Building Data Storage image...\n")
 		err := buildDataStorageImage(output)
 		if err != nil {
-			err = fmt.Errorf("Data Storage image build failed: %w", err)
+			err = fmt.Errorf("data storage image build failed: %w", err)
 		} else {
 			_, _ = fmt.Fprintf(output, "✅ [Goroutine 3] Data Storage image built\n")
 		}
@@ -219,7 +219,7 @@ func CreateWorkflowExecutionClusterParallel(clusterName, kubeconfigPath string, 
 	// Wait for DS to be ready
 	_, _ = fmt.Fprintf(output, "  ⏳ Waiting for Data Storage to be ready...\n")
 	if err := waitForWEDataStorageReady(kubeconfigPath, output); err != nil {
-		return fmt.Errorf("Data Storage did not become ready: %w", err)
+		return fmt.Errorf("data storage did not become ready: %w", err)
 	}
 	_, _ = fmt.Fprintf(output, "✅ Data Storage deployed and ready\n")
 

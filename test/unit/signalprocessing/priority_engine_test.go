@@ -535,7 +535,7 @@ result := {"priority": "P2", "confidence": 0.60, "policy_name": "default"} if {
 				Namespace: &signalprocessingv1alpha1.NamespaceContext{
 					Name: "test-app",
 				},
-				Deployment: nil, // No deployment context
+				Workload: nil, // No workload context
 			}
 			envClass := &signalprocessingv1alpha1.EnvironmentClassification{
 				Environment: "production",
@@ -566,10 +566,10 @@ result := {"priority": "P2", "confidence": 0.60, "policy_name": "default"} if {
 						"tier": "backend",
 					},
 				},
-				Deployment: &signalprocessingv1alpha1.DeploymentDetails{
-					Labels: map[string]string{
-						"version": "v1",
-					},
+				Workload: &signalprocessingv1alpha1.WorkloadDetails{
+					Kind:   "Deployment",
+					Name:   "payments",
+					Labels: map[string]string{"version": "v1"},
 				},
 			}
 			envClass := &signalprocessingv1alpha1.EnvironmentClassification{

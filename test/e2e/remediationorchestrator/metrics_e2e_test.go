@@ -20,7 +20,6 @@ package remediationorchestrator
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"net/http"
 	"time"
@@ -89,7 +88,7 @@ func seedMetricsWithRemediation() {
 // randomSuffix generates a random suffix for unique resource names
 // Uses nanoseconds to prevent collisions in parallel Ginkgo processes
 func randomSuffix() string {
-	return fmt.Sprintf("%s", uuid.New().String()[:8])
+	return uuid.New().String()[:8]
 }
 
 var _ = Describe("RemediationOrchestrator Metrics E2E", Label("e2e", "metrics"), func() {

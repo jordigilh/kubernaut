@@ -33,6 +33,8 @@ package validity
 
 import (
 	"time"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // WindowState represents the current state of an assessment's validity window.
@@ -70,11 +72,13 @@ func (ws WindowState) String() string {
 type Checker interface {
 	// Check determines the current window state given the EA creation time,
 	// stabilization window duration, and validity deadline.
-	Check(creationTime time.Time, stabilizationWindow time.Duration, validityDeadline time.Time) WindowState
+	// Accepts metav1.Time (QF1008: omit embedded .Time from selector).
+	Check(creationTime metav1.Time, stabilizationWindow time.Duration, validityDeadline metav1.Time) WindowState
 
 	// TimeUntilStabilized returns the remaining time until stabilization expires.
 	// Returns 0 if already stabilized.
-	TimeUntilStabilized(creationTime time.Time, stabilizationWindow time.Duration) time.Duration
+	// Accepts metav1.Time (QF1008: omit embedded .Time from selector).
+	TimeUntilStabilized(creationTime metav1.Time, stabilizationWindow time.Duration) time.Duration
 
 	// TimeUntilExpired returns the remaining time until the validity deadline.
 	// Returns 0 if already expired.
@@ -98,11 +102,11 @@ func NewChecker() Checker {
 //
 // Expired takes priority: if validity has passed, always return Expired
 // even if stabilization hasn't completed (edge case: misconfigured windows).
-func (c *checker) Check(creationTime time.Time, stabilizationWindow time.Duration, validityDeadline time.Time) WindowState {
+func (c *checker) Check(creationTime metav1.Time, stabilizationWindow time.Duration, validityDeadline metav1.Time) WindowState {
 	now := time.Now()
 
-	// Expired takes priority
-	if !now.Before(validityDeadline) {
+	// Expired takes priority (use promoted After to avoid QF1008)
+	if !validityDeadline.After(now) {
 		return WindowExpired
 	}
 
@@ -116,7 +120,7 @@ func (c *checker) Check(creationTime time.Time, stabilizationWindow time.Duratio
 }
 
 // TimeUntilStabilized returns the remaining time until stabilization expires.
-func (c *checker) TimeUntilStabilized(creationTime time.Time, stabilizationWindow time.Duration) time.Duration {
+func (c *checker) TimeUntilStabilized(creationTime metav1.Time, stabilizationWindow time.Duration) time.Duration {
 	stabilizationEnd := creationTime.Add(stabilizationWindow)
 	remaining := time.Until(stabilizationEnd)
 	if remaining < 0 {

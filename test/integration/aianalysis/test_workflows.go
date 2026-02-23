@@ -282,7 +282,7 @@ func UpdateMockLLMWithUUIDs(mockLLMConfig infrastructure.MockLLMConfig, workflow
 
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("Mock LLM returned status %d: %s", resp.StatusCode, string(bodyBytes))
+		return fmt.Errorf("mock LLM returned status %d: %s", resp.StatusCode, string(bodyBytes))
 	}
 
 	var responseData map[string]interface{}

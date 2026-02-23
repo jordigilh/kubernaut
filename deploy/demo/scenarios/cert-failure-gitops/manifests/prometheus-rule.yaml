@@ -9,7 +9,7 @@ spec:
   groups:
   - name: kubernaut-cert-gitops
     rules:
-    - alert: KubernautCertificateNotReady
+    - alert: CertManagerCertNotReady
       expr: |
         certmanager_certificate_ready_status{
           namespace="demo-cert-gitops",

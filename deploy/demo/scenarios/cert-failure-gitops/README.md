@@ -6,14 +6,14 @@ Same fault as #133 (cert-manager Certificate stuck NotReady) but cert-manager re
 
 **Key differentiator**: The LLM detects `gitOpsManaged=true` and `gitOpsTool=argocd` from the environment and selects the GitOps-aware workflow (`fix-certificate-gitops-v1`) that reverts the bad commit rather than directly recreating the CA Secret.
 
-**Signal**: `KubernautCertificateNotReady` — from `certmanager_certificate_ready_status`  
+**Signal**: `CertManagerCertNotReady` — from `certmanager_certificate_ready_status`  
 **Root cause**: Bad Git commit changed ClusterIssuer to reference non-existent CA Secret  
 **Remediation**: `fix-certificate-gitops-v1` workflow performs git revert
 
 ## Signal Flow
 
 ```
-certmanager_certificate_ready_status == 0 for 2m → KubernautCertificateNotReady alert
+certmanager_certificate_ready_status == 0 for 2m → CertManagerCertNotReady alert
   → Gateway → SP → AA (HAPI + real LLM)
   → HAPI LabelDetector detects gitOpsManaged=true, gitOpsTool=argocd
   → LLM diagnoses broken ClusterIssuer (bad commit) as root cause
@@ -52,7 +52,7 @@ Feature: cert-manager Certificate failure remediation via git revert (GitOps)
       And the TLS secret is deleted to trigger re-issuance
       And cert-manager fails to issue because the ClusterIssuer cannot sign
 
-    Then Prometheus fires "KubernautCertificateNotReady" alert for namespace "demo-cert-gitops"
+    Then Prometheus fires "CertManagerCertNotReady" alert for namespace "demo-cert-gitops"
       And Gateway creates a RemediationRequest
       And Signal Processing enriches with namespace labels (environment=production, criticality=high)
       And HAPI LabelDetector detects "gitOpsManaged=true" and "gitOpsTool=argocd"
@@ -89,8 +89,11 @@ Feature: cert-manager Certificate failure remediation via git revert (GitOps)
 ### 1. Install Prerequisites
 
 ```bash
-# cert-manager (if not present)
-kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.17.1/cert-manager.yaml
+# cert-manager (run.sh installs via Helm automatically; for manual setup:)
+helm repo add jetstack https://charts.jetstack.io
+helm upgrade --install cert-manager jetstack/cert-manager \
+  --namespace cert-manager --create-namespace \
+  --set crds.enabled=true --wait --timeout 3m
 
 # GitOps infrastructure
 ./deploy/demo/scenarios/gitops/scripts/setup-gitea.sh

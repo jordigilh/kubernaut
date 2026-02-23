@@ -6,14 +6,14 @@ Demonstrates Kubernaut detecting a cert-manager Certificate stuck in NotReady be
 backing the ClusterIssuer has been deleted, and performing automatic remediation by recreating
 the CA Secret to restore certificate issuance.
 
-**Signal**: `KubernautCertificateNotReady` -- from `certmanager_certificate_ready_status`
+**Signal**: `CertManagerCertNotReady` -- from `certmanager_certificate_ready_status`
 **Root cause**: CA Secret deleted; ClusterIssuer cannot sign certificates
 **Remediation**: `fix-certificate-v1` workflow recreates the CA Secret
 
 ## Signal Flow
 
 ```
-certmanager_certificate_ready_status == 0 for 2m → KubernautCertificateNotReady alert
+certmanager_certificate_ready_status == 0 for 2m → CertManagerCertNotReady alert
   → Gateway → SP → AA (HAPI + real LLM)
   → LLM diagnoses missing CA Secret causing Certificate NotReady
   → Selects FixCertificate workflow
@@ -42,9 +42,13 @@ certmanager_certificate_ready_status == 0 for 2m → KubernautCertificateNotRead
 
 ### 1. Install cert-manager (if not present)
 
+`run.sh` installs cert-manager automatically via Helm. For manual setup:
+
 ```bash
-kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.17.1/cert-manager.yaml
-kubectl wait --for=condition=Available deployment/cert-manager -n cert-manager --timeout=120s
+helm repo add jetstack https://charts.jetstack.io
+helm upgrade --install cert-manager jetstack/cert-manager \
+  --namespace cert-manager --create-namespace \
+  --set crds.enabled=true --wait --timeout 3m
 ```
 
 ### 2. Generate CA and deploy scenario resources
@@ -97,7 +101,8 @@ kubectl get certificate -n demo-cert-failure -w
 
 ```bash
 # Alert fires after 2 min of NotReady
-# Check: http://localhost:9190/alerts
+# Check: kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090 &
+#        then open http://localhost:9090/alerts
 kubectl get rr,sp,aa,we,ea -n demo-cert-failure -w
 ```
 
@@ -128,7 +133,7 @@ Given a Kind cluster with Kubernaut services and a real LLM backend
 When the CA Secret backing the ClusterIssuer is deleted
   And the TLS secret is deleted to trigger re-issuance
   And cert-manager fails to issue the certificate (ClusterIssuer cannot sign)
-  And the KubernautCertificateNotReady alert fires (NotReady for 2 min)
+  And the CertManagerCertNotReady alert fires (NotReady for 2 min)
 
 Then Kubernaut Gateway receives the alert via Alertmanager webhook
   And Signal Processing enriches the signal with business labels

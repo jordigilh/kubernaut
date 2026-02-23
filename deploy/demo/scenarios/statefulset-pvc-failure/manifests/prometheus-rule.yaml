@@ -9,7 +9,7 @@ spec:
   groups:
   - name: kubernaut-statefulset
     rules:
-    - alert: KubernautStatefulSetReplicasMismatch
+    - alert: KubeStatefulSetReplicasMismatch
       expr: |
         kube_statefulset_status_replicas_ready{
           namespace="demo-statefulset",

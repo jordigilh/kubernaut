@@ -929,148 +929,6 @@ lint-tdd-compliance: ## Check TDD compliance (BDD framework, BR references)
 	@echo "🔍 Checking TDD compliance..."
 	@./scripts/validation/check-tdd-compliance.sh
 
-##@ Demo Deployment (Issue #94)
-
-# Demo image registry and tag (override for pre-built images)
-DEMO_REGISTRY ?= quay.io/kubernaut-ai
-DEMO_TAG ?= demo-v1.0
-DEMO_CLUSTER_NAME ?= kubernaut-demo
-DEMO_KUBECONFIG ?= $(HOME)/.kube/kubernaut-demo-config
-DEMO_KIND_PROVIDER ?= $(shell command -v podman >/dev/null 2>&1 && echo "podman" || echo "docker")
-
-# Go service → Dockerfile mapping (matches CI pipeline)
-DEMO_SERVICES := datastorage gateway aianalysis authwebhook notification remediationorchestrator signalprocessing workflowexecution effectivenessmonitor
-DEMO_DOCKERFILES_datastorage := docker/data-storage.Dockerfile
-DEMO_DOCKERFILES_gateway := docker/gateway-ubi9.Dockerfile
-DEMO_DOCKERFILES_aianalysis := docker/aianalysis.Dockerfile
-DEMO_DOCKERFILES_authwebhook := docker/authwebhook.Dockerfile
-DEMO_DOCKERFILES_notification := docker/notification-controller-ubi9.Dockerfile
-DEMO_DOCKERFILES_remediationorchestrator := docker/remediationorchestrator-controller.Dockerfile
-DEMO_DOCKERFILES_signalprocessing := docker/signalprocessing-controller.Dockerfile
-DEMO_DOCKERFILES_workflowexecution := docker/workflowexecution-controller.Dockerfile
-DEMO_DOCKERFILES_effectivenessmonitor := docker/effectivenessmonitor-controller.Dockerfile
-
-# _demo_build_one builds a single demo service image.
-# Usage: $(call _demo_build_one,<service>,<dockerfile>)
-define _demo_build_one
-	@echo "  Building $(1) from $(2)..."
-	@$(CONTAINER_TOOL) build -t $(DEMO_REGISTRY)/$(1):$(DEMO_TAG) -f $(2) .
-endef
-
-.PHONY: demo-build-images
-demo-build-images: generate ## Build all demo service images locally
-	@echo "🐳 Building demo images ($(DEMO_REGISTRY):$(DEMO_TAG))..."
-	$(foreach svc,$(DEMO_SERVICES),$(call _demo_build_one,$(svc),$(DEMO_DOCKERFILES_$(svc))))
-	@echo "  Building holmesgpt-api..."
-	@$(CONTAINER_TOOL) build -t $(DEMO_REGISTRY)/holmesgpt-api:$(DEMO_TAG) -f holmesgpt-api/Dockerfile.e2e .
-
-.PHONY: demo-create-cluster
-demo-create-cluster: ## Create Kind cluster for demo
-	@echo "🏗️  Creating Kind cluster '$(DEMO_CLUSTER_NAME)'..."
-	KIND_EXPERIMENTAL_PROVIDER=$(DEMO_KIND_PROVIDER) kind create cluster \
-		--name $(DEMO_CLUSTER_NAME) \
-		--config deploy/demo/overlays/kind/kind-cluster-config.yaml \
-		--kubeconfig $(DEMO_KUBECONFIG)
-	@echo "  Cluster created. KUBECONFIG=$(DEMO_KUBECONFIG)"
-
-.PHONY: demo-load-images
-demo-load-images: ## Load demo images into Kind cluster
-	@echo "📦 Loading images into Kind cluster..."
-	@for svc in $(DEMO_SERVICES); do \
-		echo "  Loading $${svc}..."; \
-		KIND_EXPERIMENTAL_PROVIDER=$(DEMO_KIND_PROVIDER) kind load docker-image \
-			$(DEMO_REGISTRY)/$${svc}:$(DEMO_TAG) \
-			--name $(DEMO_CLUSTER_NAME) ; \
-	done
-	@echo "  Loading holmesgpt-api..."
-	@KIND_EXPERIMENTAL_PROVIDER=$(DEMO_KIND_PROVIDER) kind load docker-image \
-		$(DEMO_REGISTRY)/holmesgpt-api:$(DEMO_TAG) \
-		--name $(DEMO_CLUSTER_NAME)
-	@echo "  All images loaded."
-
-.PHONY: demo-deploy
-demo-deploy: ## Deploy Kubernaut platform to Kind cluster (DEMO_TAG=<tag> DEMO_REGISTRY=<registry>)
-	@echo "🚀 Deploying Kubernaut demo..."
-	@echo "  Applying CRDs..."
-	KUBECONFIG=$(DEMO_KUBECONFIG) kubectl apply -f config/crd/bases/
-	@echo "  Setting image tags to $(DEMO_REGISTRY)/*:$(DEMO_TAG)..."
-	@cd deploy/demo/overlays/kind && \
-	for svc in $(DEMO_SERVICES) holmesgpt-api; do \
-	    kustomize edit set image $(DEMO_REGISTRY)/$$svc:$(DEMO_TAG); \
-	done
-	KUBECONFIG=$(DEMO_KUBECONFIG) kubectl apply -k deploy/demo/overlays/kind/
-	@echo "  Waiting for PostgreSQL..."
-	KUBECONFIG=$(DEMO_KUBECONFIG) kubectl wait --for=condition=ready pod -l app=postgresql \
-		-n kubernaut-system --timeout=120s
-	@echo "  Applying migrations..."
-	KUBECONFIG=$(DEMO_KUBECONFIG) ./deploy/demo/scripts/apply-migrations.sh
-	@echo "  Generating AuthWebhook TLS certs..."
-	KUBECONFIG=$(DEMO_KUBECONFIG) ./deploy/demo/scripts/generate-webhook-certs.sh
-	@echo "  Waiting for all pods to be ready..."
-	KUBECONFIG=$(DEMO_KUBECONFIG) kubectl wait --for=condition=ready pod --all \
-		-n kubernaut-system --timeout=300s || true
-	@echo "  Seeding workflow catalog..."
-	KUBECONFIG=$(DEMO_KUBECONFIG) ./deploy/demo/scripts/seed-workflows.sh
-	@echo ""
-	@echo "✅ Kubernaut demo deployed!"
-	@echo "   Gateway:      http://localhost:30080"
-	@echo "   DataStorage:  http://localhost:30081"
-	@echo "   Prometheus:   http://localhost:9190"
-	@echo "   AlertManager: http://localhost:9193"
-	@echo "   Grafana:      http://localhost:3000  (admin/kubernaut)"
-
-.PHONY: demo-setup
-demo-setup: demo-build-images demo-create-cluster demo-load-images demo-deploy ## Full demo setup (build, cluster, deploy)
-	@echo ""
-	@echo "🎉 Demo environment ready!"
-	@echo "   Apply LLM credentials:  kubectl --kubeconfig $(DEMO_KUBECONFIG) apply -f deploy/demo/credentials/<your-provider>.yaml"
-	@echo "   Trigger OOMKill demo:    make demo-trigger-oomkill"
-	@echo "   Trigger high-usage demo: make demo-trigger-high-usage"
-	@echo "   Reset workloads:         make demo-reset-workloads"
-
-.PHONY: demo-trigger-oomkill
-demo-trigger-oomkill: ## Deploy memory-eater OOMKill workload (triggers remediation pipeline)
-	@echo "💥 Deploying memory-eater (OOMKill variant) to demo-workloads..."
-	@KUBECONFIG=$(DEMO_KUBECONFIG) kubectl apply -f deploy/demo/base/workloads/namespace.yaml
-	@KUBECONFIG=$(DEMO_KUBECONFIG) kubectl apply -f deploy/demo/base/workloads/memory-eater-oomkill.yaml
-	@echo "  Deployed. Watch the pipeline:"
-	@echo "    kubectl --kubeconfig $(DEMO_KUBECONFIG) get pods -n demo-workloads -w"
-	@echo "    kubectl --kubeconfig $(DEMO_KUBECONFIG) get remediationrequests -A -w"
-
-.PHONY: demo-trigger-high-usage
-demo-trigger-high-usage: ## Deploy memory-eater high-usage workload (Prometheus alert path)
-	@echo "📈 Deploying memory-eater (high-usage variant) to demo-workloads..."
-	@KUBECONFIG=$(DEMO_KUBECONFIG) kubectl apply -f deploy/demo/base/workloads/namespace.yaml
-	@KUBECONFIG=$(DEMO_KUBECONFIG) kubectl apply -f deploy/demo/base/workloads/memory-eater-high-usage.yaml
-	@echo "  Deployed. Watch Prometheus alerts:"
-	@echo "    curl -s http://localhost:9190/api/v1/alerts | jq '.data.alerts[] | {alertname: .labels.alertname, state}'"
-	@echo "    kubectl --kubeconfig $(DEMO_KUBECONFIG) get remediationrequests -A -w"
-
-.PHONY: demo-reset-workloads
-demo-reset-workloads: ## Remove demo workloads (clean slate for re-triggering)
-	@echo "🧹 Removing demo workloads..."
-	@KUBECONFIG=$(DEMO_KUBECONFIG) kubectl delete -f deploy/demo/base/workloads/memory-eater-oomkill.yaml --ignore-not-found
-	@KUBECONFIG=$(DEMO_KUBECONFIG) kubectl delete -f deploy/demo/base/workloads/memory-eater-high-usage.yaml --ignore-not-found
-	@KUBECONFIG=$(DEMO_KUBECONFIG) kubectl delete remediationrequests --all -n demo-workloads --ignore-not-found
-	@KUBECONFIG=$(DEMO_KUBECONFIG) kubectl delete signalprocessings --all -n demo-workloads --ignore-not-found
-	@KUBECONFIG=$(DEMO_KUBECONFIG) kubectl delete aianalyses --all -n demo-workloads --ignore-not-found
-	@KUBECONFIG=$(DEMO_KUBECONFIG) kubectl delete workflowexecutions --all -n demo-workloads --ignore-not-found
-	@KUBECONFIG=$(DEMO_KUBECONFIG) kubectl delete effectivenessassessments --all -n demo-workloads --ignore-not-found
-	@echo "  Workloads removed. Ready to re-trigger."
-
-.PHONY: demo-teardown
-demo-teardown: ## Destroy demo Kind cluster
-	@echo "🧹 Tearing down demo cluster '$(DEMO_CLUSTER_NAME)'..."
-	KIND_EXPERIMENTAL_PROVIDER=$(DEMO_KIND_PROVIDER) kind delete cluster --name $(DEMO_CLUSTER_NAME)
-	rm -f $(DEMO_KUBECONFIG)
-	@echo "  Demo cluster removed."
-
-.PHONY: demo-status
-demo-status: ## Show demo cluster status
-	@echo "📊 Demo cluster status:"
-	@KUBECONFIG=$(DEMO_KUBECONFIG) kubectl get pods -n kubernaut-system -o wide 2>/dev/null || echo "  Cluster not running"
-	@KUBECONFIG=$(DEMO_KUBECONFIG) kubectl get pods -n demo-workloads -o wide 2>/dev/null || true
-
 ##@ Image Build & Push
 
 # Registry, tag, and architecture (override via env or CLI)
@@ -1079,8 +937,17 @@ IMAGE_TAG ?= latest
 # Auto-detect native architecture (maps uname output to Go-style names)
 IMAGE_ARCH ?= $(shell uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/')
 
-# All Go services with their Dockerfile mappings (reuses DEMO_* mappings above)
-IMAGE_SERVICES := $(DEMO_SERVICES)
+# All Go services with their Dockerfile mappings
+IMAGE_SERVICES := datastorage gateway aianalysis authwebhook notification remediationorchestrator signalprocessing workflowexecution effectivenessmonitor
+IMAGE_DOCKERFILES_datastorage := docker/data-storage.Dockerfile
+IMAGE_DOCKERFILES_gateway := docker/gateway-ubi9.Dockerfile
+IMAGE_DOCKERFILES_aianalysis := docker/aianalysis.Dockerfile
+IMAGE_DOCKERFILES_authwebhook := docker/authwebhook.Dockerfile
+IMAGE_DOCKERFILES_notification := docker/notification-controller-ubi9.Dockerfile
+IMAGE_DOCKERFILES_remediationorchestrator := docker/remediationorchestrator-controller.Dockerfile
+IMAGE_DOCKERFILES_signalprocessing := docker/signalprocessing-controller.Dockerfile
+IMAGE_DOCKERFILES_workflowexecution := docker/workflowexecution-controller.Dockerfile
+IMAGE_DOCKERFILES_effectivenessmonitor := docker/effectivenessmonitor-controller.Dockerfile
 
 # _image_build_one builds a single service image (native arch, arch-suffixed tag).
 # Usage: $(call _image_build_one,<service>,<dockerfile>)
@@ -1106,7 +973,7 @@ image-build: ## Build images for all services (native arch, arch-suffixed tag)
 	@echo "   Registry: $(IMAGE_REGISTRY)"
 	@echo "   Tag:      $(IMAGE_TAG)-$(IMAGE_ARCH)"
 	@echo ""
-	$(foreach svc,$(IMAGE_SERVICES),$(call _image_build_one,$(svc),$(DEMO_DOCKERFILES_$(svc))))
+	$(foreach svc,$(IMAGE_SERVICES),$(call _image_build_one,$(svc),$(IMAGE_DOCKERFILES_$(svc))))
 	@echo "  Building holmesgpt-api [$(IMAGE_ARCH)]..."
 	@$(CONTAINER_TOOL) build -t $(IMAGE_REGISTRY)/holmesgpt-api:$(IMAGE_TAG)-$(IMAGE_ARCH) -f holmesgpt-api/Dockerfile .
 	@echo ""
@@ -1142,3 +1009,32 @@ image-manifest: ## Create and push multi-arch manifests (run after both arches a
 	done
 	@echo ""
 	@echo "✅ All manifests pushed as $(IMAGE_REGISTRY):$(IMAGE_TAG)."
+
+# Per-service image targets (e.g., make image-build-aianalysis IMAGE_TAG=demo-v1.0)
+.PHONY: image-build-%
+image-build-%: ## Build a single service image (native arch)
+	@if [ "$*" = "holmesgpt-api" ]; then \
+	    echo "  Building holmesgpt-api [$(IMAGE_ARCH)]..."; \
+	    $(CONTAINER_TOOL) build -t $(IMAGE_REGISTRY)/holmesgpt-api:$(IMAGE_TAG)-$(IMAGE_ARCH) -f holmesgpt-api/Dockerfile .; \
+	elif [ -n "$(IMAGE_DOCKERFILES_$*)" ]; then \
+	    echo "  Building $* [$(IMAGE_ARCH)]..."; \
+	    $(CONTAINER_TOOL) build -t $(IMAGE_REGISTRY)/$*:$(IMAGE_TAG)-$(IMAGE_ARCH) -f $(IMAGE_DOCKERFILES_$*) .; \
+	else \
+	    echo "ERROR: Unknown service '$*'. Available: $(IMAGE_SERVICES) holmesgpt-api"; exit 1; \
+	fi
+
+.PHONY: image-push-%
+image-push-%: ## Push a single service image (arch-suffixed)
+	@echo "  Pushing $(IMAGE_REGISTRY)/$*:$(IMAGE_TAG)-$(IMAGE_ARCH)..."
+	@$(CONTAINER_TOOL) push $(IMAGE_REGISTRY)/$*:$(IMAGE_TAG)-$(IMAGE_ARCH)
+
+.PHONY: image-manifest-%
+image-manifest-%: ## Create and push multi-arch manifest for a single service
+	@echo "  Manifest: $*"
+	@$(CONTAINER_TOOL) manifest rm $(IMAGE_REGISTRY)/$*:$(IMAGE_TAG) 2>/dev/null || true
+	@$(CONTAINER_TOOL) manifest create $(IMAGE_REGISTRY)/$*:$(IMAGE_TAG) \
+	    $(IMAGE_REGISTRY)/$*:$(IMAGE_TAG)-amd64 \
+	    $(IMAGE_REGISTRY)/$*:$(IMAGE_TAG)-arm64
+	@$(CONTAINER_TOOL) manifest push $(IMAGE_REGISTRY)/$*:$(IMAGE_TAG) \
+	    docker://$(IMAGE_REGISTRY)/$*:$(IMAGE_TAG)
+	@echo "  ✅ Manifest pushed: $(IMAGE_REGISTRY)/$*:$(IMAGE_TAG)"

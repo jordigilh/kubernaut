@@ -82,11 +82,11 @@ Expand E2E test coverage to validate all critical Notification service user jour
 
 ---
 
-### **Gap 3: Label-Based Routing E2E Validation** (P1 - HIGH)
+### **Gap 3: Spec-Field-Based Routing E2E Validation** (P1 - HIGH)
 
 **Missing Coverage**:
 - [ ] ConfigMap hot-reload without controller restart
-- [ ] Label-based routing rule evaluation (e.g., `kubernaut.ai/severity: critical` → PagerDuty)
+- [ ] Spec-field-based routing rule evaluation (e.g., `severity: critical` → PagerDuty)
 - [ ] Route conflict resolution (multiple matching rules)
 - [ ] Invalid routing config graceful degradation
 
@@ -230,7 +230,7 @@ Expand E2E test coverage to validate all critical Notification service user jour
 
 ### **Phase 2: Advanced Validation** (P1 - Post-V1.0)
 
-#### **Test 4: Label-Based Routing E2E** (NEW)
+#### **Test 4: Spec-Field-Based Routing E2E** (NEW)
 **File**: `08_label_routing_e2e_test.go`
 **Priority**: P1 (HIGH)
 **Estimated LOC**: ~400 lines
@@ -246,8 +246,8 @@ Expand E2E test coverage to validate all critical Notification service user jour
    - Verify no controller restart
 
 2. **Severity-Based Routing**:
-   - ConfigMap: `kubernaut.ai/severity: critical` → slack + pagerduty
-   - ConfigMap: `kubernaut.ai/severity: low` → console
+   - ConfigMap: `severity: critical` → slack + pagerduty
+   - ConfigMap: `severity: low` → console
    - Create NotificationRequests with both severities
    - Verify correct channels selected
 
@@ -351,7 +351,7 @@ Expand E2E test coverage to validate all critical Notification service user jour
 **V1.0 Impact**: ✅ CRITICAL - These tests validate core delivery guarantees
 
 ### **Phase 2 (Post-V1.0)**:
-- [ ] **Test 4**: Label-based routing with hot-reload
+- [ ] **Test 4**: Spec-field-based routing with hot-reload
 - [ ] **Test 5**: Data sanitization E2E validation
 
 **Estimated Time**: 3 days

@@ -67,7 +67,7 @@ var _ = Describe("Derived Timing Computation (BR-EM-009)", func() {
 			"ValidityDeadline should be set in status after first reconciliation")
 
 		By("Verifying ValidityDeadline = creationTimestamp + validityWindow (30m default)")
-		expectedDeadline := fetchedEA.CreationTimestamp.Time.Add(30 * time.Minute)
+		expectedDeadline := fetchedEA.CreationTimestamp.Add(30 * time.Minute)
 		Expect(fetchedEA.Status.ValidityDeadline.Time).To(
 			BeTemporally("~", expectedDeadline, 2*time.Second),
 			"ValidityDeadline should be creationTimestamp + 30m validityWindow")
@@ -99,7 +99,7 @@ var _ = Describe("Derived Timing Computation (BR-EM-009)", func() {
 			"PrometheusCheckAfter should be set in status after first reconciliation")
 
 		By("Verifying PrometheusCheckAfter = creationTimestamp + stabilizationWindow (1s)")
-		expectedCheckTime := fetchedEA.CreationTimestamp.Time.Add(1 * time.Second)
+		expectedCheckTime := fetchedEA.CreationTimestamp.Add(1 * time.Second)
 		Expect(fetchedEA.Status.PrometheusCheckAfter.Time).To(
 			BeTemporally("~", expectedCheckTime, 2*time.Second),
 			"PrometheusCheckAfter should be creationTimestamp + 1s stabilizationWindow")
@@ -131,7 +131,7 @@ var _ = Describe("Derived Timing Computation (BR-EM-009)", func() {
 			"AlertManagerCheckAfter should be set in status after first reconciliation")
 
 		By("Verifying AlertManagerCheckAfter = creationTimestamp + stabilizationWindow (1s)")
-		expectedCheckTime := fetchedEA.CreationTimestamp.Time.Add(1 * time.Second)
+		expectedCheckTime := fetchedEA.CreationTimestamp.Add(1 * time.Second)
 		Expect(fetchedEA.Status.AlertManagerCheckAfter.Time).To(
 			BeTemporally("~", expectedCheckTime, 2*time.Second),
 			"AlertManagerCheckAfter should be creationTimestamp + 1s stabilizationWindow")
@@ -233,7 +233,7 @@ var _ = Describe("Derived Timing Computation (BR-EM-009)", func() {
 		}, timeout, interval).Should(Succeed())
 
 		By("Verifying ValidityDeadline matches the default 30m window from ReconcilerConfig")
-		expectedDeadline := fetchedEA.CreationTimestamp.Time.Add(30 * time.Minute)
+		expectedDeadline := fetchedEA.CreationTimestamp.Add(30 * time.Minute)
 		Expect(fetchedEA.Status.ValidityDeadline.Time).To(
 			BeTemporally("~", expectedDeadline, 2*time.Second),
 			"ValidityDeadline should be creationTimestamp + 30m (default ReconcilerConfig.ValidityWindow)")

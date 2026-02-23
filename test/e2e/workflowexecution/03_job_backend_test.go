@@ -111,7 +111,11 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(completed.Status.Phase).To(Equal(workflowexecutionv1alpha1.PhaseCompleted),
 				"Job hello-world should complete successfully")
-			Expect(completed.Status.CompletionTime).ToNot(BeNil())
+			Expect(completed.Status.CompletionTime).NotTo(BeNil(), "CompletionTime should be set")
+
+			// E2E-WE-163-001: Job backend has exactly 1 task
+			Expect(completed.Status.ExecutionStatus).NotTo(BeNil())
+			Expect(completed.Status.ExecutionStatus.CompletedTasks).To(Equal(1))
 
 			By("Verifying Kubernetes Conditions are set (BR-WE-006)")
 			Eventually(func() bool {
@@ -218,7 +222,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 			}, 60*time.Second, 2*time.Second).Should(BeTrue(), "WFE should track Job reference")
 
 			runningWFE, _ := getWFE(wfe.Name, wfe.Namespace)
-			Expect(runningWFE.Status.ExecutionRef).ToNot(BeNil())
+			Expect(runningWFE.Status.ExecutionRef).NotTo(BeNil(), "ExecutionRef should be set while running")
 			GinkgoWriter.Printf("WFE tracks Job: %s\n", runningWFE.Status.ExecutionRef.Name)
 
 			By("Waiting for completion")
@@ -310,7 +314,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 				"Job should have MESSAGE parameter as env var")
 
 			By("Verifying Job spec configuration")
-			Expect(job.Spec.BackoffLimit).ToNot(BeNil())
+			Expect(job.Spec.BackoffLimit).To(HaveValue(BeNumerically(">=", 0)))
 			Expect(*job.Spec.BackoffLimit).To(Equal(int32(0)),
 				"Job backoff limit should be 0 (no retries)")
 			Expect(job.Spec.Template.Spec.RestartPolicy).To(Equal(corev1.RestartPolicyNever),
@@ -424,7 +428,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 			By("Verifying ExecutionRef in WFE status matches the deterministic Job name")
 			running, err := getWFE(wfe.Name, wfe.Namespace)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(running.Status.ExecutionRef).ToNot(BeNil())
+			Expect(running.Status.ExecutionRef).NotTo(BeNil(), "ExecutionRef should be set while running")
 			Expect(running.Status.ExecutionRef.Name).To(Equal(job.Name),
 				"WFE ExecutionRef should reference the deterministic Job name")
 
@@ -492,7 +496,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 			By("Verifying failure details explain the external deletion")
 			failed, err := getWFE(wfe.Name, wfe.Namespace)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(failed.Status.FailureDetails).ToNot(BeNil())
+			Expect(failed.Status.FailureDetails).NotTo(BeNil(), "FailureDetails should be populated on failure")
 
 			GinkgoWriter.Printf("E2E-WE-014-007: External Job deletion handled correctly\n")
 			GinkgoWriter.Printf("   Phase: %s\n", failed.Status.Phase)

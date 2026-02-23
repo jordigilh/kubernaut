@@ -20,7 +20,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"time"
 
@@ -74,7 +73,7 @@ var _ = Describe("Audit Events Write API E2E Tests", Label("e2e", "audit-write-a
 		}, "10s", "500ms").Should(Equal(200), "Data Storage Service should be ready")
 
 		// Connect to PostgreSQL for verification
-		connStr := fmt.Sprintf("host=localhost port=25433 user=slm_user password=test_password dbname=action_history sslmode=disable")
+		connStr := "host=localhost port=25433 user=slm_user password=test_password dbname=action_history sslmode=disable"
 		var err error
 		testDB, err = sql.Open("pgx", connStr)
 		Expect(err).ToNot(HaveOccurred())
@@ -138,7 +137,7 @@ var _ = Describe("Audit Events Write API E2E Tests", Label("e2e", "audit-write-a
 				By("Verifying 201 Created response")
 				eventID, err := postAuditEvent(ctx, client, eventRequest)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(eventID).ToNot(BeEmpty())
+				Expect(eventID).To(Not(BeEmpty()))
 
 				By("Verifying event_id is a valid UUID")
 				Expect(eventID).To(MatchRegexp(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`))
@@ -229,7 +228,7 @@ var _ = Describe("Audit Events Write API E2E Tests", Label("e2e", "audit-write-a
 
 				eventID, err := postAuditEvent(ctx, client, eventRequest)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(eventID).ToNot(BeEmpty())
+				Expect(eventID).To(Not(BeEmpty()))
 
 				// ✅ CORRECTNESS TEST: Verify AI Analysis event stored correctly (BR-STORAGE-033)
 				// Schema per ADR-034: event_type, event_category, event_action, event_outcome, actor_id
@@ -306,7 +305,7 @@ var _ = Describe("Audit Events Write API E2E Tests", Label("e2e", "audit-write-a
 
 				eventID, err := postAuditEvent(ctx, client, eventRequest)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(eventID).ToNot(BeEmpty())
+				Expect(eventID).To(MatchRegexp(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`), "eventID must be a valid UUID")
 
 				// ✅ CORRECTNESS TEST: Verify Workflow event stored correctly (BR-STORAGE-033)
 				// Schema per ADR-034: event_type, event_category, event_action, event_outcome, actor_id

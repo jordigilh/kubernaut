@@ -134,6 +134,14 @@ func (h *RemediationApprovalRequestAuthHandler) Handle(ctx context.Context, req 
 		return admission.Allowed("decision already attributed")
 	}
 
+	// CRD spec (remediationapprovalrequest_types.go:197): DecidedBy = "system" for timeout.
+	// When the controller expires an RAR, it sets Decision=Expired and DecidedBy="system".
+	// The webhook must preserve this value rather than overwriting with the controller's SA.
+	if rar.Status.Decision == remediationv1.ApprovalDecisionExpired && rar.Status.DecidedBy == "system" {
+		logger.Info("System-initiated expiry detected, preserving DecidedBy=system per CRD spec")
+		return admission.Allowed("system-initiated expiry, DecidedBy preserved per CRD spec")
+	}
+
 	// SECURITY: This is a NEW decision - Extract authenticated user
 	// Even if user provided DecidedBy in their request, webhook MUST overwrite with authenticated identity
 	authCtx, err := h.authenticator.ExtractUser(ctx, &req.AdmissionRequest)

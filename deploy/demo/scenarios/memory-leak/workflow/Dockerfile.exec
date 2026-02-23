@@ -1,0 +1,21 @@
+# Graceful Restart - Runnable Job Container (BR-WE-014)
+# Authority: ADR-043, DD-WORKFLOW-017, DD-WORKFLOW-003
+# Scenario: #129 -- Predictive memory exhaustion -> graceful restart
+#
+# Execution image: WorkflowExecution Job executor runs this as a K8s Job container
+#
+FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+
+ARG TARGETARCH
+ARG KUBECTL_VERSION=v1.31.4
+
+RUN curl -fsSL -o /usr/local/bin/kubectl \
+    "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${TARGETARCH}/kubectl" && \
+    chmod +x /usr/local/bin/kubectl
+
+COPY remediate.sh /scripts/remediate.sh
+RUN chmod +x /scripts/remediate.sh
+
+USER 1001
+
+ENTRYPOINT ["/scripts/remediate.sh"]

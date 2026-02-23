@@ -21,8 +21,10 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
+	emconditions "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/conditions"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
@@ -136,6 +138,19 @@ var _ = Describe("EffectivenessMonitor Lifecycle E2E Tests", Label("e2e"), func(
 
 		By("Verifying completion timestamp is set")
 		Expect(ea.Status.CompletedAt).ToNot(BeNil(), "CompletedAt should be set")
+
+		// E2E-EA-163-001: Timing fields validation
+		Expect(ea.Status.ValidityDeadline).NotTo(BeNil())
+		Expect(ea.Status.PrometheusCheckAfter).NotTo(BeNil())
+		Expect(ea.Status.AlertManagerCheckAfter).NotTo(BeNil())
+		Expect(ea.Status.Message).To(Equal("Assessment completed: full"))
+
+		// E2E-EA-163-002: Conditions validation (Ready, AssessmentComplete, SpecIntegrity)
+		Expect(ea.Status.Conditions).To(ContainElements(
+			And(HaveField("Type", emconditions.ConditionReady), HaveField("Status", metav1.ConditionTrue)),
+			And(HaveField("Type", emconditions.ConditionAssessmentComplete), HaveField("Status", metav1.ConditionTrue)),
+			And(HaveField("Type", emconditions.ConditionSpecIntegrity), HaveField("Status", metav1.ConditionTrue)),
+		))
 	})
 
 	// ========================================================================

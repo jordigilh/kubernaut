@@ -543,7 +543,7 @@ skip_covered = false
 	if err := os.WriteFile(rcFile, []byte(rcContent), 0644); err != nil {
 		return fmt.Errorf("failed to write .coveragerc: %w", err)
 	}
-	defer os.Remove(rcFile) // Clean up temp file
+	defer func() { _ = os.Remove(rcFile) }()
 
 	// Copy .coverage to project root for coverage tool (it expects .coverage in cwd)
 	tempCovFile := filepath.Join(projectRoot, ".coverage")
@@ -554,7 +554,7 @@ skip_covered = false
 	if err := os.WriteFile(tempCovFile, input, 0644); err != nil {
 		return fmt.Errorf("failed to copy .coverage: %w", err)
 	}
-	defer os.Remove(tempCovFile) // Clean up
+	defer func() { _ = os.Remove(tempCovFile) }()
 
 	// Run `coverage combine` to remap paths (reads .coveragerc [paths] section)
 	combineCmd := exec.Command("python3", "-m", "coverage", "combine",

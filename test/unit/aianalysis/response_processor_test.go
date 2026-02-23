@@ -704,6 +704,23 @@ var _ = Describe("ExtractRootCauseAnalysis", func() {
 		})
 	})
 
+	Context("with signal_type present (Issue #118 Gap 2)", func() {
+		It("UT-AA-RCA-ST-001: should extract SignalType from RCA response", func() {
+			rcaData := client.IncidentResponseRootCauseAnalysis{
+				"summary":     jx.Raw(`"OOM caused by memory leak"`),
+				"severity":    jx.Raw(`"high"`),
+				"signal_type": jx.Raw(`"OOMKilled"`),
+				"contributing_factors": jx.Raw(`["Memory leak in main container"]`),
+			}
+
+			rca := handlers.ExtractRootCauseAnalysis(rcaData)
+
+			Expect(rca).NotTo(BeNil())
+			Expect(rca.SignalType).To(Equal("OOMKilled"),
+				"SignalType must be extracted from HAPI response root_cause_analysis.signal_type")
+		})
+	})
+
 	Context("with affectedResource missing required fields", func() {
 		It("should not populate affectedResource when kind is empty", func() {
 			rcaData := client.IncidentResponseRootCauseAnalysis{

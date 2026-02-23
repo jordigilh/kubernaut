@@ -294,7 +294,11 @@ func (s *Server) queryEffectivenessEvents(_ /* ctx */ interface{}, correlationID
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() {
+		if cerr := rows.Close(); cerr != nil {
+			s.logger.Error(cerr, "Failed to close effectiveness query rows")
+		}
+	}()
 
 	var events []*EffectivenessEvent
 	for rows.Next() {

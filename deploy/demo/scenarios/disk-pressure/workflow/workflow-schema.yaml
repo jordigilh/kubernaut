@@ -13,14 +13,14 @@ actionType: CleanupPVC
 
 labels:
   signalType: OrphanedPVCs
-  severity: [warning, critical]
+  severity: [low, critical]
   environment: [production, staging]
   component: "*"
   priority: "*"
 
 execution:
   engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/cleanup-pvc-job@sha256:b80b88447871ffecc68bdc5076c80e5f3094210abcbbc733b404b69b47e546ee
+  bundle: quay.io/kubernaut-cicd/test-workflows/cleanup-pvc-job@sha256:ebd66856b9c0c1f25b148b0478100d2406ee17a16b38684ef8f3f01382cc5c43
 
 parameters:
   - name: TARGET_NAMESPACE

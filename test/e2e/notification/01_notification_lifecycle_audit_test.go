@@ -30,6 +30,7 @@ import (
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	notificationaudit "github.com/jordigilh/kubernaut/pkg/notification/audit"
+	kubernautnotif "github.com/jordigilh/kubernaut/pkg/notification"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
@@ -185,6 +186,23 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 	}, 30*time.Second, 1*time.Second).Should(Equal(notificationv1alpha1.NotificationPhaseSent),
 		"Controller should process notification and update phase to Sent")
 
+		// ===== STEP 2.5: E2E-NT-163-001/002/003 - Exact field validation =====
+		By("Validating NR lifecycle timestamps, delivery counters, and DeliveryAttempt sub-fields")
+		nr := &notificationv1alpha1.NotificationRequest{}
+		err = apiReader.Get(testCtx, types.NamespacedName{
+			Name:      notificationName,
+			Namespace: notificationNS,
+		}, nr)
+		Expect(err).ToNot(HaveOccurred(), "Should be able to get NR for field validation")
+		ValidateNTLifecycleTimestamps(nr)
+		Expect(nr.Status.TotalAttempts).To(Equal(1), "E2E-NT-163-002: TotalAttempts should be 1 for single-channel success")
+		Expect(nr.Status.SuccessfulDeliveries).To(Equal(1), "E2E-NT-163-002: SuccessfulDeliveries should be 1")
+		Expect(nr.Status.FailedDeliveries).To(Equal(0), "E2E-NT-163-002: FailedDeliveries should be 0")
+		Expect(nr.Status.DeliveryAttempts).To(HaveLen(1), "E2E-NT-163-003: Should have exactly one DeliveryAttempt")
+		Expect(nr.Status.DeliveryAttempts[0].Channel).To(Equal("console"), "E2E-NT-163-003: Channel should be console")
+		Expect(nr.Status.DeliveryAttempts[0].Status).To(Equal("success"), "E2E-NT-163-003: Status should be success")
+		Expect(nr.Status.DeliveryAttempts[0].DurationSeconds).To(BeNumerically(">=", 0), "E2E-NT-163-003: DurationSeconds should be populated (>=0: sub-ms console delivery rounds to 0)")
+
 		// ===== STEP 3: Verify controller emitted audit events (side effect) =====
 		// ✅ CORRECT PATTERN: Verify audit as SIDE EFFECT of business operation
 		By("Verifying controller emitted audit event for message sent")
@@ -247,6 +265,81 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 
 		GinkgoWriter.Printf("✅ Full audit chain validated: Controller → BufferedStore → DataStorage → PostgreSQL\n")
 		GinkgoWriter.Printf("✅ Field matching validation complete: All stored fields match audit helper output\n")
+	})
+
+	// E2E-NT-163-004: Routing Fallback Conditions
+	// When spec.channels is empty, routing rules are used. With default config (no routing ConfigMap),
+	// the controller falls back to console and sets RoutingResolved with Reason=RoutingFallback.
+	It("should set RoutingResolved with RoutingFallback when spec.channels is empty", func() {
+		Expect(dataStorageNodePort).ToNot(Equal(0), "REQUIRED: Data Storage not available")
+
+		// Override notification: empty spec.channels to trigger routing rules (BR-NOT-065)
+		testID := time.Now().Format("20060102-150405")
+		notificationName = "e2e-routing-fallback-" + testID
+		correlationID = "e2e-routing-fallback-" + testID
+		notification = &notificationv1alpha1.NotificationRequest{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      notificationName,
+				Namespace: notificationNS,
+			},
+			Spec: notificationv1alpha1.NotificationRequestSpec{
+				RemediationRequestRef: &corev1.ObjectReference{
+					APIVersion: "kubernaut.ai/v1alpha1",
+					Kind:       "RemediationRequest",
+					Name:       correlationID,
+					Namespace:  notificationNS,
+				},
+				Type:     notificationv1alpha1.NotificationTypeSimple,
+				Priority: notificationv1alpha1.NotificationPriorityCritical,
+				Subject:  "E2E Routing Fallback Test",
+				Body:     "Testing RoutingFallback condition when spec.channels is empty",
+				Channels: nil, // Empty: triggers routing rules → default config → console fallback
+				Recipients: []notificationv1alpha1.Recipient{
+					{Slack: "#e2e-tests"},
+				},
+				Metadata: map[string]string{
+					"remediationRequestName": correlationID,
+					"cluster":                "test-cluster",
+				},
+			},
+		}
+
+		By("Creating NotificationRequest with empty spec.channels")
+		err := k8sClient.Create(testCtx, notification)
+		Expect(err).ToNot(HaveOccurred())
+
+		By("Waiting for controller to process and reach Sent phase")
+		Eventually(func() notificationv1alpha1.NotificationPhase {
+			var n notificationv1alpha1.NotificationRequest
+			if err := apiReader.Get(testCtx, types.NamespacedName{
+				Name:      notificationName,
+				Namespace: notificationNS,
+			}, &n); err != nil {
+				return ""
+			}
+			return n.Status.Phase
+		}, 30*time.Second, 1*time.Second).Should(Equal(notificationv1alpha1.NotificationPhaseSent),
+			"Controller should deliver via console fallback and reach Sent")
+
+		By("Validating RoutingResolved condition with RoutingFallback reason")
+		nr := &notificationv1alpha1.NotificationRequest{}
+		err = apiReader.Get(testCtx, types.NamespacedName{
+			Name:      notificationName,
+			Namespace: notificationNS,
+		}, nr)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(nr.Status.Conditions).To(ContainElements(
+			And(
+				HaveField("Type", kubernautnotif.ConditionReady),
+				HaveField("Status", metav1.ConditionTrue),
+				HaveField("Reason", kubernautnotif.ReasonReady),
+			),
+			And(
+				HaveField("Type", kubernautnotif.ConditionTypeRoutingResolved),
+				HaveField("Status", metav1.ConditionTrue),
+				HaveField("Reason", kubernautnotif.ReasonRoutingFallback),
+			),
+		))
 	})
 })
 

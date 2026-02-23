@@ -116,9 +116,10 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 			_, _ = fmt.Fprintf(writer, "  ❌ %s build failed: %v\n", r.name, r.err)
 		} else {
 			_, _ = fmt.Fprintf(writer, "  ✅ %s build completed\n", r.name)
-			if r.name == "DataStorage" {
+			switch r.name {
+			case "DataStorage":
 				dsImageName = r.imageName
-			} else if r.name == "AuthWebhook" {
+			case "AuthWebhook":
 				awImageName = r.imageName
 			}
 		}
@@ -274,38 +275,6 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 	_, _ = fmt.Fprintf(writer, "  🖼️  DataStorage image: %s\n", dsImageName)
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	return awImageName, dsImageName, nil
-}
-
-// buildAuthWebhookImageWithTag builds the AuthWebhook Docker image with a specific tag
-// buildAuthWebhookImageOnly builds AuthWebhook image without loading it to Kind.
-// This is Phase 1 of the hybrid E2E pattern (build before cluster creation).
-//
-// Returns: Image name with localhost/ prefix for later loading
-func buildAuthWebhookImageOnly(writer io.Writer) (string, error) {
-	workspaceRoot, err := findWorkspaceRoot()
-	if err != nil {
-		return "", fmt.Errorf("failed to find workspace root: %w", err)
-	}
-
-	// Generate unique image tag using DD-TEST-001 pattern
-	imageTag := GenerateInfraImageName("authwebhook", "e2e")
-	_, _ = fmt.Fprintf(writer, "🔨 Building AuthWebhook image: %s\n", imageTag)
-
-	cmd := exec.Command("podman", "build",
-		"--no-cache",
-		"-t", imageTag,
-		"-f", "docker/authwebhook.Dockerfile",
-		".")
-	cmd.Dir = workspaceRoot
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("podman build failed: %w", err)
-	}
-
-	_, _ = fmt.Fprintf(writer, "   ✅ AuthWebhook image built: %s\n", imageTag)
-	return imageTag, nil
 }
 
 // loadAuthWebhookImageOnly loads a pre-built AuthWebhook image to Kind cluster.

@@ -1,0 +1,167 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: holmesgpt-api-sa
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: holmesgpt-api
+    {{- include "kubernaut.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: holmesgpt-api-investigator
+  labels:
+    app: holmesgpt-api
+    component: investigation
+    {{- include "kubernaut.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "events", "services", "configmaps", "nodes", "namespaces", "replicationcontrollers", "persistentvolumeclaims"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["events.k8s.io"]
+    resources: ["events"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: holmesgpt-api-investigator-binding
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: holmesgpt-api-investigator
+subjects:
+  - kind: ServiceAccount
+    name: holmesgpt-api-sa
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: holmesgpt-api-auth-middleware
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-auth-middleware
+subjects:
+  - kind: ServiceAccount
+    name: holmesgpt-api-sa
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: holmesgpt-api-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: holmesgpt-api
+    {{- include "kubernaut.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    logging:
+      level: "INFO"
+    llm:
+      provider: {{ .Values.holmesgptApi.llm.provider | quote }}
+      model: {{ .Values.holmesgptApi.llm.model | quote }}
+      endpoint: {{ .Values.holmesgptApi.llm.endpoint | quote }}
+      gcp_project_id: {{ .Values.holmesgptApi.llm.gcpProjectId | quote }}
+      gcp_region: {{ .Values.holmesgptApi.llm.gcpRegion | quote }}
+      max_retries: {{ .Values.holmesgptApi.llm.maxRetries }}
+      timeout_seconds: {{ .Values.holmesgptApi.llm.timeoutSeconds }}
+      temperature: {{ .Values.holmesgptApi.llm.temperature }}
+    data_storage:
+      url: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
+    audit:
+      flush_interval_seconds: 0.1
+      buffer_size: 10000
+      batch_size: 50
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: holmesgpt-api
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: holmesgpt-api
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.holmesgptApi.replicas }}
+  selector:
+    matchLabels:
+      app: holmesgpt-api
+  template:
+    metadata:
+      labels:
+        app: holmesgpt-api
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: holmesgpt-api-sa
+      containers:
+        - name: holmesgpt-api
+          image: {{ include "kubernaut.image" (dict "service" "holmesgpt-api" "global" .Values.global "appVersion" .Chart.AppVersion) }}
+          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          ports:
+            - containerPort: 8080
+          args:
+            - "-config"
+            - "/etc/holmesgpt/config.yaml"
+          env:
+            - name: DATA_STORAGE_URL
+              value: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
+            - name: LITELLM_LOG
+              value: "DEBUG"
+          envFrom:
+            - secretRef:
+                name: llm-credentials
+                optional: true
+          volumeMounts:
+            - name: config
+              mountPath: /etc/holmesgpt
+              readOnly: true
+            - name: llm-credentials-file
+              mountPath: /etc/holmesgpt/credentials
+              readOnly: true
+          resources:
+            {{- toYaml (.Values.holmesgptApi.resources | default dict) | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: holmesgpt-api-config
+        - name: llm-credentials-file
+          secret:
+            secretName: llm-credentials
+            optional: true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: holmesgpt-api
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: holmesgpt-api
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.holmesgptApi.service.type }}
+  ports:
+    - port: 8080
+      targetPort: 8080
+      {{- if .Values.holmesgptApi.service.nodePort }}
+      nodePort: {{ .Values.holmesgptApi.service.nodePort }}
+      {{- end }}
+  selector:
+    app: holmesgpt-api

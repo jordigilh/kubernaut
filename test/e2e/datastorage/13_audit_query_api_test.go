@@ -33,10 +33,11 @@ import (
 // DD-STORAGE-010: Query API Pagination Strategy (V1.0: offset-based)
 
 // Helper function to create audit events via Write API
-func createTestAuditEvent(baseURL, service, eventType, correlationID string) error {
+func createTestAuditEvent(baseURL, service, _ /* eventType */, correlationID string) error {
 	// Build service-specific event data using ogen discriminated union types
 	var eventData ogenclient.AuditEventRequestEventData
 	var eventCategory ogenclient.AuditEventRequestEventCategory
+	var eventType string
 
 	switch service {
 	case "gateway":
@@ -569,8 +570,8 @@ var _ = Describe("Audit Events Query API", func() {
 				}
 
 				return total, nil
-			}, 30*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 75),
-				"should have at least 75 events after write completes (30s = handles CI parallel contention)")
+			}, 60*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 75),
+				"should have at least 75 events after write completes (60s = handles CI parallel contention)")
 
 			// ACT: Query page 1 (limit=50, offset=0) - now guaranteed to have all events
 			// Already fetched in Eventually block above

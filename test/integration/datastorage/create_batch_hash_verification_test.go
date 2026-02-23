@@ -289,11 +289,11 @@ var _ = Describe("CreateBatch Hash Chain Verification", func() {
 		}
 
 		// Verify chain linkage: each event's previous_event_hash matches the prior event's event_hash
-		Expect(result.Events[0].AuditEvent.PreviousEventHash).To(Equal(""),
+		Expect(result.Events[0].PreviousEventHash).To(Equal(""),
 			"First event should have empty previous_event_hash")
-		Expect(result.Events[1].AuditEvent.PreviousEventHash).To(Equal(result.Events[0].AuditEvent.EventHash),
+		Expect(result.Events[1].PreviousEventHash).To(Equal(result.Events[0].EventHash),
 			"Second event's previous_event_hash should equal first event's event_hash")
-		Expect(result.Events[2].AuditEvent.PreviousEventHash).To(Equal(result.Events[1].AuditEvent.EventHash),
+		Expect(result.Events[2].PreviousEventHash).To(Equal(result.Events[1].EventHash),
 			"Third event's previous_event_hash should equal second event's event_hash")
 	})
 })

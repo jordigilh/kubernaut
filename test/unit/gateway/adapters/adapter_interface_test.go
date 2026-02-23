@@ -17,6 +17,8 @@ limitations under the License.
 package adapters
 
 import (
+	"context"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -320,7 +322,7 @@ var _ = Describe("Kubernetes Event Adapter - Signal Quality Validation", func() 
 				// Malformed JSON payload
 				malformedPayload := []byte(`{"alerts": [{"labels": {incomplete`)
 
-				signal, err := adapter.Parse(nil, malformedPayload)
+				signal, err := adapter.Parse(context.TODO(), malformedPayload)
 
 				// BUSINESS RULE: Parsing error should be returned (not panic)
 				Expect(err).To(HaveOccurred(),
@@ -338,10 +340,10 @@ var _ = Describe("Kubernetes Event Adapter - Signal Quality Validation", func() 
 				}]
 			}`)
 
-				signal2, err2 := adapter.Parse(nil, validPayload)
+				signal2, err2 := adapter.Parse(context.TODO(), validPayload)
 				Expect(err2).ToNot(HaveOccurred(),
 					"BR-GATEWAY-005: Adapter should process valid signals after error")
-				Expect(signal2).ToNot(BeNil())
+				Expect(signal2).To(Not(BeNil()), "Adapter must return valid signal after recovering from error")
 			})
 
 			It("[GW-UNIT-ADP-015] should provide actionable error messages", func() {
@@ -354,7 +356,7 @@ var _ = Describe("Kubernetes Event Adapter - Signal Quality Validation", func() 
 				// Empty payload
 				emptyPayload := []byte(`{}`)
 
-				_, err := adapter.Parse(nil, emptyPayload)
+				_, err := adapter.Parse(context.TODO(), emptyPayload)
 
 				// BUSINESS RULE: Error should indicate what's wrong
 				Expect(err).To(HaveOccurred())
@@ -378,7 +380,7 @@ var _ = Describe("Kubernetes Event Adapter - Signal Quality Validation", func() 
 				}]
 			}`)
 
-				signal, err := adapter.Parse(nil, payload)
+				signal, err := adapter.Parse(context.TODO(), payload)
 
 				// BUSINESS RULE: Validation should catch missing required fields
 				if signal != nil {

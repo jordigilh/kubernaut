@@ -71,7 +71,7 @@ route:
   receiver: default-console
 receivers:
   - name: default-console
-    console_configs:
+    consoleConfigs:
       - enabled: true
 `,
 				},
@@ -90,7 +90,7 @@ route:
   receiver: default-console
 receivers:
   - name: default-console
-    console_configs:
+    consoleConfigs:
       - enabled: true
 `
 			newConfig := `
@@ -102,11 +102,11 @@ route:
       receiver: pagerduty-oncall
 receivers:
   - name: slack-ops
-    slack_configs:
+    slackConfigs:
       - channel: "#ops"
   - name: pagerduty-oncall
-    pagerduty_configs:
-      - service_key: test-key
+    pagerdutyConfigs:
+      - serviceKey: test-key
 `
 			// Verify old and new configs are different
 			Expect(oldConfig).NotTo(Equal(newConfig))
@@ -125,7 +125,7 @@ route:
   receiver: default-console
 receivers:
   - name: default-console
-    console_configs:
+    consoleConfigs:
       - enabled: true
 `
 			err := router.LoadConfig([]byte(initialConfig))
@@ -141,7 +141,7 @@ route:
   receiver: slack-ops
 receivers:
   - name: slack-ops
-    slack_configs:
+    slackConfigs:
       - channel: "#ops"
 `
 			err = router.LoadConfig([]byte(updatedConfig))
@@ -162,7 +162,7 @@ route:
   receiver: default-console
 receivers:
   - name: default-console
-    console_configs:
+    consoleConfigs:
       - enabled: true
 `
 			err := router.LoadConfig([]byte(validConfig))
@@ -196,7 +196,7 @@ route:
   receiver: default-console
 receivers:
   - name: default-console
-    console_configs:
+    consoleConfigs:
       - enabled: true
 `))
 			Expect(err).NotTo(HaveOccurred())
@@ -215,11 +215,11 @@ route:
   receiver: slack-ops
 receivers:
   - name: slack-ops
-    slack_configs:
+    slackConfigs:
       - channel: "#ops"
   - name: pagerduty
-    pagerduty_configs:
-      - service_key: test
+    pagerdutyConfigs:
+      - serviceKey: test
 `))
 			Expect(err).NotTo(HaveOccurred())
 
@@ -246,7 +246,7 @@ route:
   receiver: default-console
 receivers:
   - name: default-console
-    console_configs:
+    consoleConfigs:
       - enabled: true
 `))
 			Expect(err).NotTo(HaveOccurred())
@@ -261,7 +261,7 @@ route:
   receiver: slack-ops
 receivers:
   - name: slack-ops
-    slack_configs:
+    slackConfigs:
       - channel: "#ops"
 `))
 			Expect(err).NotTo(HaveOccurred())
@@ -382,11 +382,11 @@ route:
   receiver: default-console
 receivers:
   - name: default-console
-    console_configs:
+    consoleConfigs:
       - enabled: true
   - name: pagerduty-critical
-    pagerduty_configs:
-      - service_key: test
+    pagerdutyConfigs:
+      - serviceKey: test
 `))
 			Expect(err).NotTo(HaveOccurred())
 

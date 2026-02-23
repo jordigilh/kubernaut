@@ -1,0 +1,151 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: authwebhook
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: authwebhook
+    {{- include "kubernaut.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: authwebhook
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["workflowexecutions", "remediationapprovalrequests", "notificationrequests", "remediationrequests"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["workflowexecutions/status", "remediationapprovalrequests/status", "remediationrequests/status"]
+    verbs: ["update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: authwebhook
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: authwebhook
+subjects:
+  - kind: ServiceAccount
+    name: authwebhook
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: authwebhook
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: authwebhook
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app: authwebhook
+  ports:
+    - name: https
+      port: 443
+      targetPort: webhook
+      protocol: TCP
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: authwebhook-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: authwebhook
+    {{- include "kubernaut.labels" . | nindent 4 }}
+data:
+  authwebhook.yaml: |
+    webhook:
+      port: 9443
+      certDir: /tmp/k8s-webhook-server/serving-certs
+      healthProbeAddr: ":8081"
+    datastorage:
+      url: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
+      timeout: 30s
+      buffer:
+        bufferSize: 1000
+        batchSize: 100
+        flushInterval: 5s
+        maxRetries: 3
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: authwebhook
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: authwebhook
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: authwebhook
+  template:
+    metadata:
+      labels:
+        app: authwebhook
+    spec:
+      serviceAccountName: authwebhook
+      containers:
+        - name: authwebhook
+          image: {{ include "kubernaut.image" (dict "service" "authwebhook" "global" .Values.global "appVersion" .Chart.AppVersion) }}
+          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          args:
+            - -config=/etc/authwebhook/authwebhook.yaml
+          ports:
+            - name: webhook
+              containerPort: 9443
+              protocol: TCP
+            - name: health
+              containerPort: 8081
+              protocol: TCP
+          env:
+            - name: LOG_LEVEL
+              value: "debug"
+          volumeMounts:
+            - name: webhook-certs
+              mountPath: /tmp/k8s-webhook-server/serving-certs
+              readOnly: true
+            - name: config
+              mountPath: /etc/authwebhook
+              readOnly: true
+          resources:
+            {{- toYaml .Values.authwebhook.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+              scheme: HTTP
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+              scheme: HTTP
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+      volumes:
+        - name: webhook-certs
+          secret:
+            secretName: authwebhook-tls
+        - name: config
+          configMap:
+            name: authwebhook-config

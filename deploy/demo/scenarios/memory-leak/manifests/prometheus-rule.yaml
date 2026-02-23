@@ -1,18 +1,18 @@
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
-  name: kubernaut-memory-leak-rules
+  name: memory-leak-rules
   namespace: demo-memory-leak
   labels:
     release: prometheus
 spec:
   groups:
-  - name: kubernaut-memory-leak
+  - name: memory-leak
     rules:
     # Predict memory exhaustion using linear extrapolation
     # Fires when the "leaker" container is projected to exceed its memory limit
     # within 30 minutes (1800s) based on the last 10-minute trend
-    - alert: KubernautPredictiveMemoryExhaust
+    - alert: ContainerMemoryExhaustionPredicted
       expr: |
         predict_linear(
           container_memory_working_set_bytes{

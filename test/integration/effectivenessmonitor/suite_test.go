@@ -49,7 +49,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -502,32 +501,7 @@ func createEffectivenessAssessment(namespace, name, correlationID string) *eav1.
 	return ea
 }
 
-// fetchEA retrieves the current state of an EA from the API server.
-// Returns the fetched EA. Fails the test if the EA cannot be found.
-func fetchEA(namespace, name string) *eav1.EffectivenessAssessment {
-	ea := &eav1.EffectivenessAssessment{}
-	Expect(k8sClient.Get(ctx, types.NamespacedName{
-		Name:      name,
-		Namespace: namespace,
-	}, ea)).To(Succeed())
-	return ea
-}
 
-// waitForEAPhase polls until the EA reaches the expected phase or times out.
-// Returns the final fetched EA for further assertions.
-func waitForEAPhase(namespace, name, expectedPhase string) *eav1.EffectivenessAssessment {
-	var fetched *eav1.EffectivenessAssessment
-	Eventually(func(g Gomega) {
-		fetched = &eav1.EffectivenessAssessment{}
-		g.Expect(k8sClient.Get(ctx, types.NamespacedName{
-			Name:      name,
-			Namespace: namespace,
-		}, fetched)).To(Succeed())
-		g.Expect(fetched.Status.Phase).To(Equal(expectedPhase),
-			fmt.Sprintf("EA %s/%s should reach %s phase", namespace, name, expectedPhase))
-	}, timeout, interval).Should(Succeed())
-	return fetched
-}
 
 // createExpiredEffectivenessAssessment creates an EA with an already-expired validity deadline.
 // ValidityDeadline is computed by the EM controller on first reconcile. To test expired behavior,

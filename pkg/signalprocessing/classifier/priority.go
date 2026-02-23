@@ -142,7 +142,7 @@ func (p *PriorityEngine) Assign(ctx context.Context, k8sCtx *signalprocessingv1a
 }
 
 // buildRegoInput constructs the input map with nil checks.
-// Per BR-SP-070 schema: signal, environment, namespace_labels, deployment_labels
+// Per BR-SP-070 schema: signal, environment, namespace_labels, workload_labels
 func (p *PriorityEngine) buildRegoInput(k8sCtx *signalprocessingv1alpha1.KubernetesContext, envClass *signalprocessingv1alpha1.EnvironmentClassification, signal *signalprocessingv1alpha1.SignalData) map[string]interface{} {
 	input := map[string]interface{}{
 		"signal": map[string]interface{}{
@@ -159,14 +159,14 @@ func (p *PriorityEngine) buildRegoInput(k8sCtx *signalprocessingv1alpha1.Kuberne
 		} else {
 			input["namespace_labels"] = map[string]interface{}{}
 		}
-		if k8sCtx.Deployment != nil {
-			input["deployment_labels"] = ensureLabelsMap(k8sCtx.Deployment.Labels)
+		if k8sCtx.Workload != nil {
+			input["workload_labels"] = ensureLabelsMap(k8sCtx.Workload.Labels)
 		} else {
-			input["deployment_labels"] = map[string]interface{}{}
+			input["workload_labels"] = map[string]interface{}{}
 		}
 	} else {
 		input["namespace_labels"] = map[string]interface{}{}
-		input["deployment_labels"] = map[string]interface{}{}
+		input["workload_labels"] = map[string]interface{}{}
 	}
 
 	return input

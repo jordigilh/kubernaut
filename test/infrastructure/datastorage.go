@@ -77,6 +77,29 @@ func CreateDataStorageCluster(clusterName, kubeconfigPath string, writer io.Writ
 // existing must-gather collection step picks them up automatically.
 //
 // Parameters:
+// MarkTestFailure writes a marker file so that other Ginkgo processes
+// (notably process 1 in SynchronizedAfterSuite) can detect that at least
+// one spec failed. This is necessary because per-process variables like
+// anyTestFailed are not shared across SynchronizedAfterSuite boundaries.
+func MarkTestFailure(clusterName string) {
+	dir := "/tmp/kubernaut-e2e-failures"
+	_ = os.MkdirAll(dir, 0755)
+	_ = os.WriteFile(filepath.Join(dir, clusterName), []byte("1"), 0644)
+}
+
+// CheckTestFailure returns true if any Ginkgo process marked a test
+// failure for the given cluster via MarkTestFailure.
+func CheckTestFailure(clusterName string) bool {
+	_, err := os.Stat(filepath.Join("/tmp/kubernaut-e2e-failures", clusterName))
+	return err == nil
+}
+
+// CleanupFailureMarker removes the marker file after cleanup decisions
+// have been made, preventing stale markers from affecting future runs.
+func CleanupFailureMarker(clusterName string) {
+	_ = os.Remove(filepath.Join("/tmp/kubernaut-e2e-failures", clusterName))
+}
+
 //   - clusterName: Name of the Kind cluster (used for kubeconfig context)
 //   - kubeconfigPath: Path to the kubeconfig file
 //   - namespace: Kubernetes namespace to collect logs from (e.g., "kubernaut-system")
@@ -489,7 +512,7 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 		defer GinkgoRecover() // Required for Ginkgo assertions in goroutines
 		err := deployRedisInNamespace(ctx, namespace, kubeconfigPath, writer)
 		if err != nil {
-			err = fmt.Errorf("Redis deploy failed: %w", err)
+			err = fmt.Errorf("redis deploy failed: %w", err)
 		}
 		results <- result{name: "Redis", err: err}
 	}()
@@ -1642,7 +1665,7 @@ func startRedis(infra *DataStorageInfrastructure, cfg *DataStorageConfig, writer
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		_, _ = fmt.Fprintf(writer, "❌ Failed to start Redis: %s\n", output)
-		return fmt.Errorf("Redis container failed to start: %w", err)
+		return fmt.Errorf("redis container failed to start: %w", err)
 	}
 
 	// Wait for Redis ready
@@ -1652,7 +1675,7 @@ func startRedis(infra *DataStorageInfrastructure, cfg *DataStorageConfig, writer
 		testCmd := exec.Command("podman", "exec", infra.RedisContainer, "redis-cli", "ping")
 		testOutput, err := testCmd.CombinedOutput()
 		if err != nil {
-			return fmt.Errorf("Redis not ready: %v, output: %s", err, string(testOutput))
+			return fmt.Errorf("redis not ready: %v, output: %s", err, string(testOutput))
 		}
 		return nil
 	}, 30*time.Second, 1*time.Second).Should(Succeed(), "Redis should be ready")
@@ -2201,7 +2224,7 @@ func DeployCertManagerDataStorage(ctx context.Context, kubeconfigPath, namespace
 	// Apply Certificate resource first (cert-manager will create Secret)
 	certPath := filepath.Join(workspaceRoot, "deploy", "data-storage", "certificate.yaml")
 	if _, err := os.Stat(certPath); os.IsNotExist(err) {
-		return fmt.Errorf("Certificate manifest not found at %s", certPath)
+		return fmt.Errorf("certificate manifest not found at %s", certPath)
 	}
 
 	_, _ = fmt.Fprintln(writer, "📋 Creating Certificate resource...")

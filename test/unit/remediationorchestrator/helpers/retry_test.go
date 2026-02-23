@@ -174,6 +174,26 @@ var _ = Describe("UpdateRemediationRequestStatus", func() {
 		})
 	})
 
+	Context("Issue #118 Gap 5: SelectedWorkflowRef population", func() {
+		It("UT-RR-SWR-001: should persist SelectedWorkflowRef when set in status update callback", func() {
+			err := prodhelpers.UpdateRemediationRequestStatus(ctx, fakeClient, nil, rr, func(rr *remediationv1.RemediationRequest) error {
+				rr.Status.SelectedWorkflowRef = &remediationv1.WorkflowReference{
+					WorkflowID:      "wf-restart-pod",
+					Version:         "v1.0.0",
+					ExecutionBundle: "kubernaut.io/workflows/restart:v1.0.0",
+				}
+				return nil
+			})
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(rr.Status.SelectedWorkflowRef).NotTo(BeNil(),
+				"SelectedWorkflowRef must be persisted through UpdateRemediationRequestStatus")
+			Expect(rr.Status.SelectedWorkflowRef.WorkflowID).To(Equal("wf-restart-pod"))
+			Expect(rr.Status.SelectedWorkflowRef.Version).To(Equal("v1.0.0"))
+			Expect(rr.Status.SelectedWorkflowRef.ExecutionBundle).To(Equal("kubernaut.io/workflows/restart:v1.0.0"))
+		})
+	})
+
 	Context("REFACTOR-RO-001: Refetch behavior", func() {
 		It("should refetch RR before applying updates", func() {
 			// Update RR externally (simulating concurrent update)

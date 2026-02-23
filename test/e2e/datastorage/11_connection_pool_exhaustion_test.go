@@ -179,14 +179,15 @@ var _ = Describe("BR-DS-006: Connection Pool Efficiency - Handle Traffic Bursts 
 						Equal(http.StatusAccepted), // 202 - DLQ fallback
 					), fmt.Sprintf("Request %d should not be rejected with 503", i))
 
-					if result.statusCode == http.StatusCreated {
+					switch result.statusCode {
+					case http.StatusCreated:
 						successCount++
-					} else if result.statusCode == http.StatusAccepted {
+					case http.StatusAccepted:
 						// Acceptable - DLQ fallback if DB temporarily slow
 						successCount++
-					} else if result.statusCode == http.StatusServiceUnavailable {
+					case http.StatusServiceUnavailable:
 						rejectedCount++
-					} else {
+					default:
 						failureCount++
 					}
 				}

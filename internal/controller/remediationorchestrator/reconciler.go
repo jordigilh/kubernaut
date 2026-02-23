@@ -70,7 +70,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/status"
 	"github.com/jordigilh/kubernaut/pkg/remediationrequest"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
-	rrconditions "github.com/jordigilh/kubernaut/pkg/remediationrequest"
 	"github.com/jordigilh/kubernaut/pkg/shared/k8serrors"
 	canonicalhash "github.com/jordigilh/kubernaut/pkg/shared/hash"
 )
@@ -707,7 +706,7 @@ func (r *Reconciler) handlePendingPhase(ctx context.Context, rr *remediationv1.R
 		}
 		// Preserve SignalProcessingReady condition from creator
 		// (UpdateRemediationRequestStatus fetches fresh RR, so we need to re-set the condition)
-		rrconditions.SetSignalProcessingReady(rr, true, fmt.Sprintf("SignalProcessing CRD %s created successfully", spName), r.Metrics)
+		remediationrequest.SetSignalProcessingReady(rr, true, fmt.Sprintf("SignalProcessing CRD %s created successfully", spName), r.Metrics)
 		return nil
 	})
 	if err != nil {
@@ -782,7 +781,7 @@ func (r *Reconciler) handleProcessingPhase(ctx context.Context, rr *remediationv
 				Namespace:  rr.Namespace,
 			}
 			// Preserve AIAnalysisReady condition from creator
-			rrconditions.SetAIAnalysisReady(rr, true, fmt.Sprintf("AIAnalysis CRD %s created successfully", aiName), r.Metrics)
+			remediationrequest.SetAIAnalysisReady(rr, true, fmt.Sprintf("AIAnalysis CRD %s created successfully", aiName), r.Metrics)
 			return nil
 		})
 		if err != nil {
@@ -1006,7 +1005,7 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 		// BR-ORCH-044: Track child CRD creation
 		r.Metrics.ChildCRDCreationsTotal.WithLabelValues("WorkflowExecution", rr.Namespace).Inc()
 
-		// Set WorkflowExecutionRef in status for aggregator (BR-ORCH-029)
+		// Set WorkflowExecutionRef + SelectedWorkflowRef in status (BR-ORCH-029, Issue #118 Gap 5)
 		// REFACTOR-RO-001: Using retry helper
 		// DD-CRD-002-RR: Also persists WorkflowExecutionReady=True condition set by creator
 		err = helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
@@ -1016,8 +1015,15 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 				Name:       weName,
 				Namespace:  rr.Namespace,
 			}
-			// Preserve WorkflowExecutionReady condition from creator
-			rrconditions.SetWorkflowExecutionReady(rr, true, fmt.Sprintf("WorkflowExecution CRD %s created successfully", weName), r.Metrics)
+			if ai.Status.SelectedWorkflow != nil {
+				rr.Status.SelectedWorkflowRef = &remediationv1.WorkflowReference{
+					WorkflowID:            ai.Status.SelectedWorkflow.WorkflowID,
+					Version:               ai.Status.SelectedWorkflow.Version,
+					ExecutionBundle:        ai.Status.SelectedWorkflow.ExecutionBundle,
+					ExecutionBundleDigest:  ai.Status.SelectedWorkflow.ExecutionBundleDigest,
+				}
+			}
+			remediationrequest.SetWorkflowExecutionReady(rr, true, fmt.Sprintf("WorkflowExecution CRD %s created successfully", weName), r.Metrics)
 			return nil
 		})
 		if err != nil {
@@ -1098,9 +1104,6 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 			"message", rar.Status.DecisionMessage,
 		)
 
-		// Per DD-AUDIT-003: Emit approval decision event
-		r.emitApprovalDecisionAudit(ctx, rr, "Approved", rar.Status.DecidedBy, rar.Status.DecisionMessage)
-
 		// DD-EVENT-001: Emit K8s event for approval granted (BR-ORCH-095)
 		if r.Recorder != nil {
 			r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonApprovalGranted,
@@ -1126,6 +1129,13 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 		}); err != nil {
 			logger.Error(err, "Failed to update RAR conditions")
 			// Continue - condition update is best-effort
+		}
+
+		// ADR-040: AIAnalysisRef must be set before AwaitingApproval phase.
+		// Guard defensively: the CRD field is *corev1.ObjectReference (optional pointer).
+		if rr.Status.AIAnalysisRef == nil {
+			logger.Error(nil, "AIAnalysisRef not set on RemediationRequest - cannot create WorkflowExecution (ADR-040 invariant)")
+			return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil // REFACTOR-RO-003
 		}
 
 		// Fetch AIAnalysis CRD to get workflow details for WorkflowExecution
@@ -1172,7 +1182,7 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 		// BR-ORCH-044: Track child CRD creation
 		r.Metrics.ChildCRDCreationsTotal.WithLabelValues("WorkflowExecution", rr.Namespace).Inc()
 
-		// Set WorkflowExecutionRef in status for aggregator (BR-ORCH-029)
+		// Set WorkflowExecutionRef + SelectedWorkflowRef after approval (BR-ORCH-029, Issue #118 Gap 5)
 		// REFACTOR-RO-001: Using retry helper
 		err = helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
 			rr.Status.WorkflowExecutionRef = &corev1.ObjectReference{
@@ -1180,6 +1190,14 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 				Kind:       "WorkflowExecution",
 				Name:       weName,
 				Namespace:  rr.Namespace,
+			}
+			if ai.Status.SelectedWorkflow != nil {
+				rr.Status.SelectedWorkflowRef = &remediationv1.WorkflowReference{
+					WorkflowID:            ai.Status.SelectedWorkflow.WorkflowID,
+					Version:               ai.Status.SelectedWorkflow.Version,
+					ExecutionBundle:        ai.Status.SelectedWorkflow.ExecutionBundle,
+					ExecutionBundleDigest:  ai.Status.SelectedWorkflow.ExecutionBundleDigest,
+				}
 			}
 			return nil
 		})
@@ -1197,9 +1215,6 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 			"decidedBy", rar.Status.DecidedBy,
 			"message", rar.Status.DecisionMessage,
 		)
-
-		// Per DD-AUDIT-003: Emit approval decision event
-		r.emitApprovalDecisionAudit(ctx, rr, "Rejected", rar.Status.DecidedBy, rar.Status.DecisionMessage)
 
 		// DD-EVENT-001: Emit K8s event for approval rejected (BR-ORCH-095)
 		if r.Recorder != nil {
@@ -1242,7 +1257,7 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 				"Approval request expired without a decision")
 		}
 
-		return r.transitionToFailed(ctx, rr, "approval", fmt.Errorf("Approval request expired (timeout)"))
+		return r.transitionToFailed(ctx, rr, "approval", fmt.Errorf("approval request expired (timeout)"))
 
 	default:
 		// Still pending - check if deadline passed (V1.0 timeout handling)
@@ -1273,16 +1288,31 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 				remediationapprovalrequest.SetReady(rar, false, remediationapprovalrequest.ReasonNotReady, "Approval expired", r.Metrics)
 				rar.Status.Decision = remediationv1.ApprovalDecisionExpired
 				rar.Status.DecidedBy = "system"
+				// Status.Expired: Denormalized bool for kubectl printer column and API consumers.
+				// Design: We store it explicitly rather than deriving from Decision==Expired at read time
+				// to support efficient field-indexed queries and avoid coupling status shape to condition logic.
+				rar.Status.Expired = true
+				rar.Status.TimeRemaining = remediationapprovalrequest.ComputeTimeRemaining(rar.Spec.RequiredBy.Time, time.Now())
 				now := metav1.Now()
 				rar.Status.DecidedAt = &now
 				return r.client.Status().Update(ctx, rar)
 			}); updateErr != nil {
 				logger.Error(updateErr, "Failed to update RAR status to Expired")
 			}
-			return r.transitionToFailed(ctx, rr, "approval", fmt.Errorf("Approval request expired (timeout)"))
+			return r.transitionToFailed(ctx, rr, "approval", fmt.Errorf("approval request expired (timeout)"))
 		}
 
-		// Still waiting for approval
+		// Still waiting for approval - update TimeRemaining for operator visibility (Bug Fix 4)
+		if updateErr := k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+			if err := r.client.Get(ctx, client.ObjectKeyFromObject(rar), rar); err != nil {
+				return err
+			}
+			rar.Status.TimeRemaining = remediationapprovalrequest.ComputeTimeRemaining(rar.Spec.RequiredBy.Time, time.Now())
+			return r.client.Status().Update(ctx, rar)
+		}); updateErr != nil {
+			logger.Error(updateErr, "Failed to update RAR TimeRemaining (non-fatal)")
+		}
+
 		logger.V(1).Info("Waiting for approval decision",
 			"rarName", rarName,
 			"requiredBy", rar.Spec.RequiredBy.Format(time.RFC3339),
@@ -1322,7 +1352,8 @@ func (r *Reconciler) handleExecutingPhase(ctx context.Context, rr *remediationv1
 
 	// Set WorkflowExecutionComplete condition before delegating to handler
 	// DD-PERF-001: Atomic status updates with conditions
-	if we.Status.Phase == workflowexecutionv1.PhaseCompleted {
+	switch we.Status.Phase {
+	case workflowexecutionv1.PhaseCompleted:
 		if err := r.StatusManager.AtomicStatusUpdate(ctx, rr, func() error {
 			remediationrequest.SetWorkflowExecutionComplete(rr, true,
 				remediationrequest.ReasonWorkflowSucceeded,
@@ -1332,7 +1363,7 @@ func (r *Reconciler) handleExecutingPhase(ctx context.Context, rr *remediationv1
 			logger.Error(err, "Failed to update WorkflowExecutionComplete condition")
 			// Continue - condition update is best-effort
 		}
-	} else if we.Status.Phase == workflowexecutionv1.PhaseFailed {
+	case workflowexecutionv1.PhaseFailed:
 		if err := r.StatusManager.AtomicStatusUpdate(ctx, rr, func() error {
 			remediationrequest.SetWorkflowExecutionComplete(rr, false,
 				remediationrequest.ReasonWorkflowFailed,
@@ -2374,82 +2405,6 @@ func (r *Reconciler) emitApprovalRequestedAudit(ctx context.Context, rr *remedia
 	}
 }
 
-// emitApprovalDecisionAudit emits an audit event for approval decision.
-// Per DD-AUDIT-003: orchestrator.approval.approved or orchestrator.approval.rejected (P2)
-// Non-blocking - failures are logged but don't affect business logic.
-func (r *Reconciler) emitApprovalDecisionAudit(ctx context.Context, rr *remediationv1.RemediationRequest, decision, decidedBy, decisionMessage string) {
-	logger := log.FromContext(ctx)
-
-	if r.auditStore == nil {
-		logger.Error(fmt.Errorf("auditStore is nil"),
-			"CRITICAL: Cannot record audit event - violates ADR-032 §1 mandatory requirement",
-			"remediationRequest", rr.Name,
-			"namespace", rr.Namespace,
-			"event", fmt.Sprintf("approval.%s", strings.ToLower(decision)))
-		return
-	}
-
-	// DD-AUDIT-CORRELATION-002: Use rr.Name (not rr.UID) as correlation ID
-	// Per universal standard: All services use RemediationRequest.Name for audit correlation
-	correlationID := rr.Name
-
-	// Determine event type and outcome based on decision
-	var eventType string
-	var outcome api.AuditEventRequestEventOutcome
-	var action string
-
-	switch decision {
-	case "Approved":
-		eventType = roaudit.EventTypeApprovalApproved
-		outcome = audit.OutcomeSuccess
-		action = roaudit.ActionApproved
-	case "Rejected":
-		eventType = roaudit.EventTypeApprovalRejected
-		outcome = audit.OutcomeFailure
-		action = roaudit.ActionRejected
-	default:
-		logger.Info("Unknown approval decision", "decision", decision)
-		return
-	}
-
-	// Use audit helper to create event with proper timestamp (DD-AUDIT-002 V2.0)
-	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
-	audit.SetEventType(event, eventType)
-	audit.SetEventCategory(event, roaudit.CategoryOrchestration)
-	audit.SetEventAction(event, action)
-	audit.SetEventOutcome(event, outcome)
-	audit.SetActor(event, "user", decidedBy)
-	audit.SetResource(event, "RemediationRequest", rr.Name)
-	audit.SetCorrelationID(event, correlationID)
-	audit.SetNamespace(event, rr.Namespace)
-
-	// Build payload using ogen types
-	payload := api.RemediationOrchestratorAuditPayload{
-		EventType: api.RemediationOrchestratorAuditPayloadEventType(eventType),
-		RrName:    rr.Name,
-		Namespace: rr.Namespace,
-		Decision:  roaudit.ToOptDecision(decision), // ToOptDecision returns Opt type, assign directly
-	}
-	if decision == "Approved" {
-		payload.ApprovedBy.SetTo(decidedBy)
-	} else {
-		payload.RejectedBy.SetTo(decidedBy)
-		payload.RejectionReason.SetTo(decisionMessage)
-	}
-
-	// Use the correct union constructor based on decision
-	if decision == "Approved" {
-		event.EventData = api.NewAuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData(payload)
-	} else {
-		event.EventData = api.NewAuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData(payload)
-	}
-
-	if err := r.auditStore.StoreAudit(ctx, event); err != nil {
-		logger.Error(err, "Failed to store approval decision audit event", "decision", decision)
-	}
-}
-
 // emitTimeoutAudit emits an audit event for global or phase timeout.
 // Per DD-AUDIT-003: orchestrator.lifecycle.completed with outcome=failure (P1)
 // Non-blocking - failures are logged but don't affect business logic.
@@ -3046,22 +3001,22 @@ func (r *Reconciler) validateTimeoutConfig(ctx context.Context, rr *remediationv
 
 	// Validate Global timeout
 	if rr.Status.TimeoutConfig.Global != nil && rr.Status.TimeoutConfig.Global.Duration < 0 {
-		return fmt.Errorf("Global timeout cannot be negative (got: %v): %w", rr.Status.TimeoutConfig.Global.Duration, roaudit.ErrInvalidTimeoutConfig)
+		return fmt.Errorf("global timeout cannot be negative (got: %v): %w", rr.Status.TimeoutConfig.Global.Duration, roaudit.ErrInvalidTimeoutConfig)
 	}
 
 	// Validate Processing timeout
 	if rr.Status.TimeoutConfig.Processing != nil && rr.Status.TimeoutConfig.Processing.Duration < 0 {
-		return fmt.Errorf("Processing timeout cannot be negative (got: %v): %w", rr.Status.TimeoutConfig.Processing.Duration, roaudit.ErrInvalidTimeoutConfig)
+		return fmt.Errorf("processing timeout cannot be negative (got: %v): %w", rr.Status.TimeoutConfig.Processing.Duration, roaudit.ErrInvalidTimeoutConfig)
 	}
 
 	// Validate Analyzing timeout
 	if rr.Status.TimeoutConfig.Analyzing != nil && rr.Status.TimeoutConfig.Analyzing.Duration < 0 {
-		return fmt.Errorf("Analyzing timeout cannot be negative (got: %v): %w", rr.Status.TimeoutConfig.Analyzing.Duration, roaudit.ErrInvalidTimeoutConfig)
+		return fmt.Errorf("analyzing timeout cannot be negative (got: %v): %w", rr.Status.TimeoutConfig.Analyzing.Duration, roaudit.ErrInvalidTimeoutConfig)
 	}
 
 	// Validate Executing timeout
 	if rr.Status.TimeoutConfig.Executing != nil && rr.Status.TimeoutConfig.Executing.Duration < 0 {
-		return fmt.Errorf("Executing timeout cannot be negative (got: %v): %w", rr.Status.TimeoutConfig.Executing.Duration, roaudit.ErrInvalidTimeoutConfig)
+		return fmt.Errorf("executing timeout cannot be negative (got: %v): %w", rr.Status.TimeoutConfig.Executing.Duration, roaudit.ErrInvalidTimeoutConfig)
 	}
 
 	return nil

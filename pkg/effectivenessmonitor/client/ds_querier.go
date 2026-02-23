@@ -85,7 +85,7 @@ func (q *dataStorageHTTPQuerier) QueryPreRemediationHash(ctx context.Context, co
 	if err != nil {
 		return "", fmt.Errorf("DS query failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("DS returned HTTP %d for correlation_id=%s", resp.StatusCode, correlationID)
@@ -135,7 +135,7 @@ func (q *dataStorageHTTPQuerier) HasWorkflowStarted(ctx context.Context, correla
 	if err != nil {
 		return false, fmt.Errorf("DS query failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return false, fmt.Errorf("DS returned HTTP %d for correlation_id=%s", resp.StatusCode, correlationID)

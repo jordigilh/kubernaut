@@ -98,6 +98,82 @@ if [ -n "$STAGED_TEST_FILES" ]; then
 fi
 
 # ========================================
+# CHECK 4: Sensitive Data Leak Detection
+# ========================================
+echo ""
+echo "🔍 Checking for sensitive data in staged files..."
+
+STAGED_ALL=$(git diff --cached --name-only --diff-filter=ACM || true)
+
+if [ -n "$STAGED_ALL" ]; then
+    STAGED_DIFF=$(git diff --cached -U0 -- $STAGED_ALL | \
+        grep -v '^---' | grep -v '^+++' | \
+        grep '^+' | \
+        grep -v 'pre-commit:allow-sensitive' | \
+        grep -v 'deploy/demo/credentials/.*-example' || true)
+
+    LEAK_MATCHES=""
+
+    # 4a: Cloud provider API endpoint URLs
+    EP_MATCHES=$(echo "$STAGED_DIFF" | \
+        grep -iE '(aiplatform|bigquery|storage|compute|run)\.googleapis\.com' || true)
+    EP_MATCHES="${EP_MATCHES}$(echo "$STAGED_DIFF" | \
+        grep -iE '(execute-api|lambda|sagemaker|bedrock)\.[a-z0-9-]+\.amazonaws\.com' || true)"
+    EP_MATCHES="${EP_MATCHES}$(echo "$STAGED_DIFF" | \
+        grep -iE '(cognitiveservices|openai)\.azure\.com' || true)"
+    if [ -n "$EP_MATCHES" ]; then
+        LEAK_MATCHES="${LEAK_MATCHES}${EP_MATCHES}\n"
+    fi
+
+    # 4b: Cloud project/account/subscription identifiers in config fields
+    ID_MATCHES=$(echo "$STAGED_DIFF" | \
+        grep -iE '(project_id|account_id|subscription_id|tenant_id)\s*[:=]\s*"[^"]+' | \
+        grep -ivE '(your-|example-|placeholder|REDACTED|<|TODO|""$)' || true)
+    if [ -n "$ID_MATCHES" ]; then
+        LEAK_MATCHES="${LEAK_MATCHES}${ID_MATCHES}\n"
+    fi
+
+    # 4c: Well-known API key formats
+    KEY_MATCHES=$(echo "$STAGED_DIFF" | \
+        grep -oE 'sk-[A-Za-z0-9_-]{20,}' || true)
+    KEY_MATCHES="${KEY_MATCHES}$(echo "$STAGED_DIFF" | \
+        grep -oE 'ghp_[A-Za-z0-9]{36,}' || true)"
+    KEY_MATCHES="${KEY_MATCHES}$(echo "$STAGED_DIFF" | \
+        grep -oE 'ghs_[A-Za-z0-9]{36,}' || true)"
+    KEY_MATCHES="${KEY_MATCHES}$(echo "$STAGED_DIFF" | \
+        grep -oE 'AKIA[A-Z0-9]{16}' || true)"
+    KEY_MATCHES="${KEY_MATCHES}$(echo "$STAGED_DIFF" | \
+        grep -oE 'xox[bpras]-[A-Za-z0-9-]{10,}' || true)"
+    if [ -n "$KEY_MATCHES" ]; then
+        LEAK_MATCHES="${LEAK_MATCHES}${KEY_MATCHES}\n"
+    fi
+
+    # 4d: Absolute paths to credential files
+    CRED_PATH_MATCHES=$(echo "$STAGED_DIFF" | \
+        grep -E '(/home/|/Users/|/root/|/etc/|/var/)[^ ]*credentials[^ ]*\.(json|yaml|yml|key|pem)' | \
+        grep -v '_test\.go' | \
+        grep -v 'GOOGLE_APPLICATION_CREDENTIALS' || true)
+    if [ -n "$CRED_PATH_MATCHES" ]; then
+        LEAK_MATCHES="${LEAK_MATCHES}${CRED_PATH_MATCHES}\n"
+    fi
+
+    if [ -n "$LEAK_MATCHES" ]; then
+        echo "❌ VIOLATION: Potential sensitive data detected in staged changes"
+        echo ""
+        echo "$LEAK_MATCHES" | head -20
+        echo ""
+        echo "   Sensitive data (cloud endpoints, project IDs, API keys, credential paths)"
+        echo "   must not be committed to the repository."
+        echo ""
+        echo "   To fix: move values to Kubernetes Secrets, Helm values files (.gitignored),"
+        echo "   or environment variables."
+        echo "   To override: add '# pre-commit:allow-sensitive' on the flagged line."
+        echo ""
+        VIOLATIONS=$((VIOLATIONS + 1))
+    fi
+fi
+
+# ========================================
 # RESULT
 # ========================================
 echo ""

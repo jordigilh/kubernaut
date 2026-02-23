@@ -22,23 +22,23 @@
 #   - NOTICE_INVESTIGATION_INCONCLUSIVE_BR_HAPI_200.md
 #   - Spec fields set by RemediationOrchestrator (mandatory per BR-NOT-065)
 
-# Global routing configuration (Alertmanager-compatible format)
+# Global routing configuration (camelCase format)
 route:
   # Group notifications by these attributes to reduce alert noise
-  group_by:
+  groupBy:
     - environment
     - skip-reason
     - investigation-outcome
     - remediation-request
 
   # Wait time before sending first notification for a group
-  group_wait: 30s
+  groupWait: 30s
 
   # Time to wait before sending notification about new alerts in a group
-  group_interval: 5m
+  groupInterval: 5m
 
   # Time to wait before re-sending a notification
-  repeat_interval: 4h
+  repeatInterval: 4h
 
   # Child routes - evaluated in order, first match wins
   routes:
@@ -52,8 +52,8 @@ route:
     - match:
         skip-reason: PreviousExecutionFailed
       receiver: pagerduty-oncall-critical
-      group_wait: 0s  # Send immediately
-      repeat_interval: 15m  # Remind every 15 minutes
+      groupWait: 0s  # Send immediately
+      repeatInterval: 15m  # Remind every 15 minutes
 
     # =================================================================
     # HIGH: ExhaustedRetries (DD-WE-004)
@@ -65,8 +65,8 @@ route:
     - match:
         skip-reason: ExhaustedRetries
       receiver: slack-ops-high
-      group_wait: 1m
-      repeat_interval: 1h
+      groupWait: 1m
+      repeatInterval: 1h
 
     # =================================================================
     # LOW: Temporary Conditions (DD-WE-004)
@@ -78,14 +78,14 @@ route:
     - match:
         skip-reason: ResourceBusy
       receiver: console-only-bulk
-      group_wait: 5m
-      group_interval: 30m
+      groupWait: 5m
+      groupInterval: 30m
 
     - match:
         skip-reason: RecentlyRemediated
       receiver: console-only-bulk
-      group_wait: 5m
-      group_interval: 30m
+      groupWait: 5m
+      groupInterval: 30m
 
     # =================================================================
     # SKIP: Resolved (BR-HAPI-200)
@@ -97,7 +97,7 @@ route:
     - match:
         investigation-outcome: resolved
       receiver: silent-noop
-      repeat_interval: 168h  # 1 week (effectively disable repeats)
+      repeatInterval: 168h  # 1 week (effectively disable repeats)
 
     # =================================================================
     # OPS: Investigation Inconclusive (BR-HAPI-200)
@@ -109,8 +109,8 @@ route:
     - match:
         investigation-outcome: inconclusive
       receiver: slack-ops-inconclusive
-      group_wait: 1m
-      repeat_interval: 2h
+      groupWait: 1m
+      repeatInterval: 2h
 
     # =================================================================
     # Production Critical (any notification type)
@@ -164,41 +164,41 @@ receivers:
   # OPS: Slack for inconclusive investigations (BR-HAPI-200)
   # ===================================================================
   - name: slack-ops-inconclusive
-    slack_configs:
+    slackConfigs:
       - channel: '#kubernaut-ops-triage'
 
   # ===================================================================
   # CRITICAL: PagerDuty for 24/7 on-call alerting
   # ===================================================================
   - name: pagerduty-oncall-critical
-    pagerduty_configs:
-      - service_key: ${PAGERDUTY_CRITICAL_SERVICE_KEY}
+    pagerdutyConfigs:
+      - serviceKey: ${PAGERDUTY_CRITICAL_SERVICE_KEY}
         severity: critical
 
   # ===================================================================
   # HIGH: Slack #ops for team awareness
   # ===================================================================
   - name: slack-ops-high
-    slack_configs:
+    slackConfigs:
       - channel: '#kubernaut-ops'
 
   # ===================================================================
   # LOW: Console only for bulk notifications
   # ===================================================================
   - name: console-only-bulk
-    console_configs:
+    consoleConfigs:
       - enabled: true
 
   # ===================================================================
   # MEDIUM: Slack for dev environments
   # ===================================================================
   - name: slack-dev-low
-    slack_configs:
+    slackConfigs:
       - channel: '#kubernaut-dev'
 
   # ===================================================================
   # DEFAULT: Slack fallback
   # ===================================================================
   - name: slack-default
-    slack_configs:
+    slackConfigs:
       - channel: '#kubernaut-alerts'

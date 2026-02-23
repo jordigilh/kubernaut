@@ -268,7 +268,6 @@ func buildContextFilterSQL(filters *models.WorkflowDiscoveryFilters) (string, []
 			END
 		)`, argIdx, argIdx))
 		args = append(args, filters.Priority)
-		argIdx++
 	}
 
 	if len(conditions) == 0 {

@@ -37,7 +37,6 @@ import (
 	prodcontroller "github.com/jordigilh/kubernaut/internal/controller/remediationorchestrator"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/helpers"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
-	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -66,13 +65,14 @@ var _ = Describe("BR-ORCH-HELPERS: Helper Function Tests", func() {
 		// Create fake client with status subresource
 		fakeClient = fake.NewClientBuilder().
 			WithScheme(scheme).
-			WithStatusSubresource(
-				&remediationv1.RemediationRequest{},
-				&signalprocessingv1.SignalProcessing{},
-				&aianalysisv1.AIAnalysis{},
-				&workflowexecutionv1.WorkflowExecution{},
-			).
-			Build()
+		WithStatusSubresource(
+			&remediationv1.RemediationRequest{},
+			&remediationv1.RemediationApprovalRequest{},
+			&signalprocessingv1.SignalProcessing{},
+			&aianalysisv1.AIAnalysis{},
+			&workflowexecutionv1.WorkflowExecution{},
+		).
+		Build()
 
 		// Create mock audit store
 		mockAuditStore := &MockAuditStore{}
@@ -85,7 +85,7 @@ var _ = Describe("BR-ORCH-HELPERS: Helper Function Tests", func() {
 			scheme,
 			mockAuditStore, // Use MockAuditStore for helper tests
 			recorder,       // DD-EVENT-001: FakeRecorder for K8s event assertions
-			rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()), // DD-METRICS-001: required
+			metrics.NewMetricsWithRegistry(prometheus.NewRegistry()), // DD-METRICS-001: required
 			prodcontroller.TimeoutConfig{
 				Global:     1 * time.Hour,
 				Processing: 5 * time.Minute,
@@ -210,8 +210,7 @@ var _ = Describe("BR-ORCH-HELPERS: Helper Function Tests", func() {
 			// Verify Gateway-owned deduplication data is preserved
 			updated := &remediationv1.RemediationRequest{}
 			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "test-rr", Namespace: "default"}, updated)).To(Succeed())
-			Expect(updated.Status.Deduplication).ToNot(BeNil())
-			Expect(updated.Status.Deduplication.OccurrenceCount).To(Equal(int32(1)))
+			Expect(updated.Status.Deduplication).To(HaveField("OccurrenceCount", Equal(int32(1))))
 		})
 
 		It("HF-8.6: Reconciler should handle phase transitions with status aggregation", func() {

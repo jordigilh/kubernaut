@@ -91,9 +91,6 @@ var (
 	// DD-AUTH-014: ServiceAccount token for DataStorage authentication
 	e2eAuthToken string
 
-	// Track built images for cleanup
-	builtImages map[string]string
-
 	// Track test failures for cluster cleanup decision
 	anyTestFailed bool
 )
@@ -195,6 +192,7 @@ var _ = SynchronizedBeforeSuite(
 var _ = ReportAfterEach(func(report SpecReport) {
 	if report.Failed() {
 		anyTestFailed = true
+		infrastructure.MarkTestFailure(clusterName)
 	}
 })
 
@@ -210,7 +208,8 @@ var _ = SynchronizedAfterSuite(
 		By("Cleaning up Full Pipeline E2E environment")
 
 		setupFailed := k8sClient == nil
-		anyFailure := setupFailed || anyTestFailed
+		anyFailure := setupFailed || anyTestFailed || infrastructure.CheckTestFailure(clusterName)
+		defer infrastructure.CleanupFailureMarker(clusterName)
 		preserveCluster := os.Getenv("PRESERVE_E2E_CLUSTER") == "true" || os.Getenv("KEEP_CLUSTER") == "true"
 
 		if preserveCluster {

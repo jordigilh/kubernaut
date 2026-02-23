@@ -64,7 +64,7 @@ func (c *alertManagerHTTPClient) GetAlerts(ctx context.Context, filters AlertFil
 	if err != nil {
 		return nil, fmt.Errorf("executing AlertManager alerts request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -86,7 +86,7 @@ func (c *alertManagerHTTPClient) Ready(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("AlertManager ready check failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("AlertManager not ready: status %d", resp.StatusCode)

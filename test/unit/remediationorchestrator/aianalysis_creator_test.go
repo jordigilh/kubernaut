@@ -195,9 +195,10 @@ var _ = Describe("AIAnalysisCreator", func() {
 
 				// Verify EnrichmentResults.KubernetesContext is populated
 				Expect(createdAI.Spec.AnalysisRequest.SignalContext.EnrichmentResults.KubernetesContext).ToNot(BeNil())
-				// sharedtypes.KubernetesContext has Namespace as string and NamespaceLabels as map
-				Expect(createdAI.Spec.AnalysisRequest.SignalContext.EnrichmentResults.KubernetesContext.Namespace).To(Equal("default"))
-				Expect(createdAI.Spec.AnalysisRequest.SignalContext.EnrichmentResults.KubernetesContext.NamespaceLabels).To(
+				// Issue #113: sharedtypes.KubernetesContext has Namespace as *NamespaceContext
+				Expect(createdAI.Spec.AnalysisRequest.SignalContext.EnrichmentResults.KubernetesContext.Namespace).ToNot(BeNil())
+				Expect(createdAI.Spec.AnalysisRequest.SignalContext.EnrichmentResults.KubernetesContext.Namespace.Name).To(Equal("default"))
+				Expect(createdAI.Spec.AnalysisRequest.SignalContext.EnrichmentResults.KubernetesContext.Namespace.Labels).To(
 					HaveKeyWithValue("environment", "production"))
 			})
 
@@ -503,9 +504,10 @@ var _ = Describe("AIAnalysisCreator", func() {
 			err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, createdAI)
 			Expect(err).ToNot(HaveOccurred())
 
-			Expect(createdAI.Spec.AnalysisRequest.SignalContext.EnrichmentResults.CustomLabels).To(HaveKeyWithValue("team", []string{"platform"}))
-			Expect(createdAI.Spec.AnalysisRequest.SignalContext.EnrichmentResults.CustomLabels).To(HaveKeyWithValue("tier", []string{"critical"}))
-			Expect(createdAI.Spec.AnalysisRequest.SignalContext.EnrichmentResults.CustomLabels).To(HaveKeyWithValue("cost-center", []string{"eng-42"}))
+			Expect(createdAI.Spec.AnalysisRequest.SignalContext.EnrichmentResults.KubernetesContext).ToNot(BeNil())
+			Expect(createdAI.Spec.AnalysisRequest.SignalContext.EnrichmentResults.KubernetesContext.CustomLabels).To(HaveKeyWithValue("team", []string{"platform"}))
+			Expect(createdAI.Spec.AnalysisRequest.SignalContext.EnrichmentResults.KubernetesContext.CustomLabels).To(HaveKeyWithValue("tier", []string{"critical"}))
+			Expect(createdAI.Spec.AnalysisRequest.SignalContext.EnrichmentResults.KubernetesContext.CustomLabels).To(HaveKeyWithValue("cost-center", []string{"eng-42"}))
 		})
 
 		It("should not set CustomLabels when SP has no CustomLabels", func() {
@@ -523,7 +525,9 @@ var _ = Describe("AIAnalysisCreator", func() {
 			err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, createdAI)
 			Expect(err).ToNot(HaveOccurred())
 
-			Expect(createdAI.Spec.AnalysisRequest.SignalContext.EnrichmentResults.CustomLabels).To(BeEmpty())
+			er := createdAI.Spec.AnalysisRequest.SignalContext.EnrichmentResults
+			Expect(er.KubernetesContext == nil || len(er.KubernetesContext.CustomLabels) == 0).To(BeTrue(),
+				"CustomLabels should be empty when SP has no CustomLabels")
 		})
 	})
 

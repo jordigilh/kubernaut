@@ -33,7 +33,6 @@ import (
 	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 
 	"github.com/jordigilh/kubernaut/pkg/audit"
-	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/shared/audit" // BR-AUDIT-005 Gap #7: Standardized error details
 )
 
@@ -127,7 +126,7 @@ func (m *Manager) BuildRemediationCreatedEvent(
 	namespace string,
 	rrName string,
 	timeoutConfig *TimeoutConfig,
-) (*ogenclient.AuditEventRequest, error) {
+) (*api.AuditEventRequest, error) {
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
@@ -180,7 +179,7 @@ func (m *Manager) BuildLifecycleStartedEvent(
 	correlationID string,
 	namespace string,
 	rrName string,
-) (*ogenclient.AuditEventRequest, error) {
+) (*api.AuditEventRequest, error) {
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
@@ -222,7 +221,7 @@ func (m *Manager) BuildPhaseTransitionEvent(
 	rrName string,
 	fromPhase string,
 	toPhase string,
-) (*ogenclient.AuditEventRequest, error) {
+) (*api.AuditEventRequest, error) {
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
@@ -268,7 +267,7 @@ func (m *Manager) BuildCompletionEvent(
 	rrName string,
 	outcome string,
 	durationMs int64,
-) (*ogenclient.AuditEventRequest, error) {
+) (*api.AuditEventRequest, error) {
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
@@ -311,7 +310,7 @@ func (m *Manager) BuildFailureEvent(
 	failurePhase string,
 	failureErr error,
 	durationMs int64,
-) (*ogenclient.AuditEventRequest, error) {
+) (*api.AuditEventRequest, error) {
 	// F-6: Use typed error classification instead of strings.Contains
 	classification := ClassifyError(failureErr)
 
@@ -384,7 +383,7 @@ func (m *Manager) BuildApprovalRequestedEvent(
 	workflowID string,
 	confidence string,
 	requiredBy time.Time,
-) (*ogenclient.AuditEventRequest, error) {
+) (*api.AuditEventRequest, error) {
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
@@ -426,7 +425,7 @@ func (m *Manager) BuildApprovalDecisionEvent(
 	decision string,
 	decidedBy string,
 	message string,
-) (*ogenclient.AuditEventRequest, error) {
+) (*api.AuditEventRequest, error) {
 	// REFACTOR-RO-AUD-001: Get decision mapping (replaces triple switch statement)
 	mapping, _ := GetApprovalDecisionMapping(decision)
 
@@ -482,7 +481,7 @@ func (m *Manager) BuildManualReviewEvent(
 	reason string,
 	subReason string,
 	notificationName string,
-) (*ogenclient.AuditEventRequest, error) {
+) (*api.AuditEventRequest, error) {
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
@@ -540,7 +539,7 @@ func (m *Manager) BuildRoutingBlockedEvent(
 	rrName string,
 	fromPhase string,
 	blockData *RoutingBlockedData,
-) (*ogenclient.AuditEventRequest, error) {
+) (*api.AuditEventRequest, error) {
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
@@ -592,7 +591,7 @@ func (m *Manager) BuildRemediationWorkflowCreatedEvent(
 	workflowID string,
 	workflowVersion string,
 	workflowType string,
-) (*ogenclient.AuditEventRequest, error) {
+) (*api.AuditEventRequest, error) {
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeRemediationWorkflowCreated)

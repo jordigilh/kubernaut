@@ -1,6 +1,6 @@
 # ADR-055: LLM-Driven Context Enrichment (Post-RCA)
 
-**Status**: PROPOSED
+**Status**: ACCEPTED
 **Decision Date**: 2026-02-12
 **Version**: 1.2
 **Confidence**: 90%

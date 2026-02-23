@@ -603,9 +603,9 @@ subjects:
     name: holmesgpt-api-sa
     namespace: %s
 ---
-# ClusterRole: K8s investigation permissions for HolmesGPT kubernetes/core toolset
-# Required for kubectl-based pod/event investigation during incident analysis
-# Without this, the LLM cannot gather evidence and skips workflow catalog search
+# ClusterRole: K8s investigation + ADR-056 label detection permissions
+# ADR-055: Owner chain traversal, resource context enrichment
+# ADR-056: PDB, HPA, NetworkPolicy detection for DetectedLabels
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -626,6 +626,15 @@ rules:
   - apiGroups: ["events.k8s.io"]
     resources: ["events"]
     verbs: ["get", "list", "watch"]
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["get", "list"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["get", "list"]
 ---
 # ClusterRoleBinding: Grant HAPI investigation permissions cluster-wide
 apiVersion: rbac.authorization.k8s.io/v1
@@ -1068,7 +1077,7 @@ data:
 	rolloutCmd.Stdout = writer
 	rolloutCmd.Stderr = writer
 	if err := rolloutCmd.Run(); err != nil {
-		return fmt.Errorf("Mock LLM rollout failed: %w", err)
+		return fmt.Errorf("mock LLM rollout failed: %w", err)
 	}
 	_, _ = fmt.Fprintf(writer, "   ✅ Mock LLM restarted with workflow UUIDs\n")
 
@@ -1347,7 +1356,7 @@ func resolveAnthropicAPIKey(cfg *hapiLLMConfig) (string, string, error) {
 	}
 
 	return "", "", fmt.Errorf(
-		"Anthropic API key not found. Provide it via one of:\n"+
+		"anthropic API key not found. Provide it via one of:\n"+
 			"  1. ANTHROPIC_API_KEY environment variable\n"+
 			"  2. File at %s (single line, no trailing newline)\n"+
 			"  3. llm.api_key field in %s", keyFilePath, getHAPILLMConfigPath())

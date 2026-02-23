@@ -13,14 +13,14 @@ actionType: GracefulRestart
 
 labels:
   signalType: PredictiveMemoryExhaust
-  severity: [warning, critical]
+  severity: [low, critical]
   environment: [production, staging]
   component: "*"
   priority: "*"
 
 execution:
   engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/graceful-restart-job@sha256:56e68593ef8cf813cd6cd17189e6536bb52f129b06e9088bca181a039c457881
+  bundle: quay.io/kubernaut-cicd/test-workflows/graceful-restart-job@sha256:4c24b602a222f18f51f250f0a21fd650e0524a007556773646a835577666f31a
 
 parameters:
   - name: TARGET_NAMESPACE

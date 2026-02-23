@@ -301,6 +301,12 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	}
 	_, _ = fmt.Fprintln(writer, "  ✅ AuthWebhook deployed")
 
+	// 6e: Mock-Slack (accepts Slack webhook POSTs so notifications reach terminal phase)
+	if err := deployMockSlack(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return builtImages, fmt.Errorf("mock-slack deployment failed: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "  ✅ Mock-Slack deployed (http://mock-slack:8080)")
+
 	_, _ = fmt.Fprintf(writer, "✅ PHASE 6 complete (%s)\n", time.Since(phase6Start).Round(time.Second))
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -627,7 +633,7 @@ func deployFullPipelineGateway(ctx context.Context, namespace, kubeconfigPath, g
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("Gateway deployment failed: %w", err)
+		return fmt.Errorf("gateway deployment failed: %w", err)
 	}
 
 	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for Gateway pod ready...")
@@ -637,7 +643,7 @@ func deployFullPipelineGateway(ctx context.Context, namespace, kubeconfigPath, g
 	waitCmd.Stdout = writer
 	waitCmd.Stderr = writer
 	if err := waitCmd.Run(); err != nil {
-		return fmt.Errorf("Gateway pod not ready: %w", err)
+		return fmt.Errorf("gateway pod not ready: %w", err)
 	}
 
 	return nil
@@ -698,7 +704,7 @@ subjects:
   name: event-exporter
   namespace: %[1]s
 ---
-# ConfigMap: route Warning events from fp-e2e-* namespaces only to Gateway
+# ConfigMap: route Warning events from fp-e2e-* and fp-approval-* namespaces to Gateway
 # fp-am-* namespaces are intentionally excluded: the AlertManager E2E test uses
 # Prometheus alerts (not K8s events) as signal source to prevent duplication.
 apiVersion: v1
@@ -715,10 +721,12 @@ data:
     kubeBurst: 100
     route:
       routes:
-        # Only forward K8s events from fp-e2e-* namespaces (K8s event signal source test)
+        # Forward K8s events from fp-e2e-* (K8s event test) and fp-approval-* (approval lifecycle test)
         # fp-am-* namespaces excluded to prevent K8s event duplication in AlertManager test
         - match:
             - namespace: "fp-e2e-*"
+              receiver: gateway-webhook
+            - namespace: "fp-approval-*"
               receiver: gateway-webhook
           drop:
             - type: "Normal"
@@ -771,6 +779,85 @@ spec:
       - name: config
         configMap:
           name: event-exporter-config
+`, namespace)
+
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd.Stdin = strings.NewReader(manifest)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	return cmd.Run()
+}
+
+// deployMockSlack deploys a minimal HTTP service that accepts POST requests and
+// returns 200 OK. The notification controller registers the plain "slack" channel
+// at startup when SLACK_WEBHOOK_URL is set (Issue #118 Gap 11), pointing it at
+// this mock service. Without it, Slack delivery fails with connection errors.
+func deployMockSlack(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+	_, _ = fmt.Fprintln(writer, "  📨 Deploying mock-slack (webhook sink)...")
+
+	manifest := fmt.Sprintf(`---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mock-slack-config
+  namespace: %[1]s
+data:
+  default.conf: |
+    server {
+      listen 8080;
+      location / {
+        return 200 'ok';
+        add_header Content-Type text/plain;
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mock-slack
+  namespace: %[1]s
+  labels:
+    app: mock-slack
+    component: test-infrastructure
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mock-slack
+  template:
+    metadata:
+      labels:
+        app: mock-slack
+        component: test-infrastructure
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:alpine
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+        volumeMounts:
+        - name: config
+          mountPath: /etc/nginx/conf.d
+      volumes:
+      - name: config
+        configMap:
+          name: mock-slack-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mock-slack
+  namespace: %[1]s
+  labels:
+    app: mock-slack
+    component: test-infrastructure
+spec:
+  selector:
+    app: mock-slack
+  ports:
+  - port: 8080
+    targetPort: 8080
 `, namespace)
 
 	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
@@ -909,6 +996,7 @@ func waitForFullPipelineServicesReady(ctx context.Context, namespace, kubeconfig
 		"holmesgpt-api",
 		"gateway",
 		"event-exporter",
+		"mock-slack",   // Accepts Slack webhook POSTs so notifications reach terminal phase
 		"prometheus",   // ADR-EM-001: Prometheus for EM metric comparison
 		"alertmanager", // ADR-EM-001: AlertManager for EM alert resolution
 	}

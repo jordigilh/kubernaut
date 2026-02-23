@@ -129,7 +129,7 @@ UNIT_TEST_*.md
 # Build artifacts (large binaries that should never be committed)
 workflowexecutor
 integration-webhook-server
-kubernaut
+/kubernaut
 webhook.test
 dynamic-toolset-server
 main

@@ -124,10 +124,9 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			var final signalprocessingv1alpha1.SignalProcessing
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
 
-			Expect(final.Status.KubernetesContext).ToNot(BeNil())
-			Expect(final.Status.KubernetesContext.Pod).ToNot(BeNil())
-			Expect(final.Status.KubernetesContext.Pod.Labels).To(HaveKeyWithValue("app", "test-app"))
-			Expect(final.Status.KubernetesContext.Pod.Labels).To(HaveKeyWithValue("version", "v1.2.3"))
+			Expect(final.Status.KubernetesContext).To(And(Not(BeNil()), HaveField("Workload", And(Not(BeNil()), HaveField("Kind", Equal("Pod"))))))
+			Expect(final.Status.KubernetesContext.Workload.Labels).To(HaveKeyWithValue("app", "test-app"))
+			Expect(final.Status.KubernetesContext.Workload.Labels).To(HaveKeyWithValue("version", "v1.2.3"))
 		})
 
 		// Deployment enrichment with real K8s API
@@ -164,9 +163,8 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			var final signalprocessingv1alpha1.SignalProcessing
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
 
-			Expect(final.Status.KubernetesContext).ToNot(BeNil())
-			Expect(final.Status.KubernetesContext.Deployment).ToNot(BeNil())
-			Expect(final.Status.KubernetesContext.Deployment.Labels).To(HaveKeyWithValue("app", "deploy-test"))
+			Expect(final.Status.KubernetesContext).To(And(Not(BeNil()), HaveField("Workload", And(Not(BeNil()), HaveField("Kind", Equal("Deployment"))))))
+			Expect(final.Status.KubernetesContext.Workload.Labels).To(HaveKeyWithValue("app", "deploy-test"))
 		})
 
 		// NOTE: Node enrichment test moved to E2E tier - ENVTEST does not provide real nodes
@@ -224,9 +222,8 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			var final signalprocessingv1alpha1.SignalProcessing
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
 
-			Expect(final.Status.KubernetesContext).ToNot(BeNil())
-			Expect(final.Status.KubernetesContext.StatefulSet).ToNot(BeNil())
-			Expect(final.Status.KubernetesContext.StatefulSet.Labels).To(HaveKeyWithValue("app", "statefulset-test"))
+			Expect(final.Status.KubernetesContext).To(And(Not(BeNil()), HaveField("Workload", And(Not(BeNil()), HaveField("Kind", Equal("StatefulSet"))))))
+			Expect(final.Status.KubernetesContext.Workload.Labels).To(HaveKeyWithValue("app", "statefulset-test"))
 		})
 
 		// Service enrichment
@@ -277,9 +274,8 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			var final signalprocessingv1alpha1.SignalProcessing
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
 
-			Expect(final.Status.KubernetesContext).ToNot(BeNil())
-			Expect(final.Status.KubernetesContext.Service).ToNot(BeNil())
-			Expect(final.Status.KubernetesContext.Service.Labels).To(HaveKeyWithValue("app", "service-test"))
+			Expect(final.Status.KubernetesContext).To(And(Not(BeNil()), HaveField("Workload", And(Not(BeNil()), HaveField("Kind", Equal("Service"))))))
+			Expect(final.Status.KubernetesContext.Workload.Labels).To(HaveKeyWithValue("app", "service-test"))
 		})
 
 		// Namespace context enrichment
@@ -315,10 +311,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			var final signalprocessingv1alpha1.SignalProcessing
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
 
-			Expect(final.Status.KubernetesContext).ToNot(BeNil())
-			Expect(final.Status.KubernetesContext.Namespace).ToNot(BeNil())
-			Expect(final.Status.KubernetesContext.Namespace.Labels).To(HaveKeyWithValue("kubernaut.ai/environment", "staging"))
-			Expect(final.Status.KubernetesContext.Namespace.Labels).To(HaveKeyWithValue("kubernaut.ai/team", "platform"))
+			Expect(final.Status.KubernetesContext).To(And(Not(BeNil()), HaveField("Namespace", And(Not(BeNil()), HaveField("Labels", And(HaveKeyWithValue("kubernaut.ai/environment", "staging"), HaveKeyWithValue("kubernaut.ai/team", "platform")))))))
 		})
 
 		// Degraded mode fallback
@@ -354,8 +347,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			var final signalprocessingv1alpha1.SignalProcessing
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
 
-			Expect(final.Status.KubernetesContext).ToNot(BeNil())
-			Expect(final.Status.KubernetesContext.DegradedMode).To(BeTrue())
+			Expect(final.Status.KubernetesContext).To(And(Not(BeNil()), HaveField("DegradedMode", BeTrue())))
 		})
 	})
 
@@ -397,8 +389,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			var final signalprocessingv1alpha1.SignalProcessing
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
 
-			Expect(final.Status.EnvironmentClassification).ToNot(BeNil())
-			Expect(final.Status.EnvironmentClassification.Environment).To(Equal("production"))
+			Expect(final.Status.EnvironmentClassification).To(And(Not(BeNil()), HaveField("Environment", Equal("production"))))
 		})
 
 		// Namespace label priority over ConfigMap
@@ -434,9 +425,8 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			var final signalprocessingv1alpha1.SignalProcessing
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
 
-			Expect(final.Status.EnvironmentClassification).ToNot(BeNil())
+			Expect(final.Status.EnvironmentClassification).To(And(Not(BeNil()), HaveField("Environment", Equal("staging"))))
 			// Label should override ConfigMap pattern matching
-			Expect(final.Status.EnvironmentClassification.Environment).To(Equal("staging"))
 			// Note: Confidence field removed per DD-SP-001 V1.1
 		})
 
@@ -480,9 +470,8 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			var final signalprocessingv1alpha1.SignalProcessing
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
 
-			Expect(final.Status.PriorityAssignment).ToNot(BeNil())
+			Expect(final.Status.PriorityAssignment).To(And(Not(BeNil()), HaveField("Priority", Equal("P0"))))
 			// Production + Critical = P0 per priority.rego
-			Expect(final.Status.PriorityAssignment.Priority).To(Equal("P0"))
 			Expect(final.Status.PriorityAssignment.Source).To(ContainSubstring("rego"))
 		})
 
@@ -516,10 +505,9 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 		var final signalprocessingv1alpha1.SignalProcessing
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
 
-		Expect(final.Status.PriorityAssignment).ToNot(BeNil())
+		Expect(final.Status.PriorityAssignment).To(And(Not(BeNil()), HaveField("Priority", Equal("P3"))))
 		// Issue #98: Score-based policy: severity_score=3 (critical) + env_score=0 (unknown) = composite 3 → P3
 		// Previously P1 under N*M policy. Score-based treats unknown env as zero contribution.
-		Expect(final.Status.PriorityAssignment.Priority).To(Equal("P3"))
 		})
 
 		// ConfigMap policy load
@@ -557,9 +545,8 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			var final signalprocessingv1alpha1.SignalProcessing
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
 
-			Expect(final.Status.PriorityAssignment).ToNot(BeNil())
+			Expect(final.Status.PriorityAssignment).To(And(Not(BeNil()), HaveField("Priority", Equal("P2"))))
 			// Staging + warning = P2 per ConfigMap policy
-			Expect(final.Status.PriorityAssignment.Priority).To(Equal("P2"))
 		})
 	})
 
@@ -600,8 +587,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			var final signalprocessingv1alpha1.SignalProcessing
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
 
-			Expect(final.Status.BusinessClassification).ToNot(BeNil())
-			Expect(final.Status.BusinessClassification.BusinessUnit).To(Equal("payments"))
+			Expect(final.Status.BusinessClassification).To(And(Not(BeNil()), HaveField("BusinessUnit", Equal("payments"))))
 		})
 
 		// Pattern-based classification
@@ -715,8 +701,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			var final signalprocessingv1alpha1.SignalProcessing
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
 
-			Expect(final.Status.KubernetesContext).ToNot(BeNil())
-			Expect(final.Status.KubernetesContext.OwnerChain).To(HaveLen(2))
+			Expect(final.Status.KubernetesContext).To(And(Not(BeNil()), HaveField("OwnerChain", HaveLen(2))))
 			Expect(final.Status.KubernetesContext.OwnerChain[0].Kind).To(Equal("ReplicaSet"))
 			Expect(final.Status.KubernetesContext.OwnerChain[1].Kind).To(Equal("Deployment"))
 		})
@@ -737,7 +722,3 @@ func parseQuantity(s string) *resource.Quantity {
 	return &q
 }
 
-// ptr is a helper to create bool pointers
-func ptr(b bool) *bool {
-	return &b
-}

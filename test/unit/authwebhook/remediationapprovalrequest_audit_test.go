@@ -362,6 +362,77 @@ var _ = Describe("BR-AUDIT-006: RemediationApprovalRequest Webhook Audit Trail",
 	})
 
 	// ========================================
+	// BUSINESS OUTCOME: System-Initiated Expiry Preserves DecidedBy
+	// CRD spec: DecidedBy = "system" for timeout (remediationapprovalrequest_types.go:197)
+	// ========================================
+
+	Describe("System-Initiated Expiry (CRD spec: DecidedBy=system for timeout)", func() {
+		It("UNIT-RAR-AUDIT-AW-007: should preserve DecidedBy=system when Decision=Expired (controller-initiated)", func() {
+			controllerSA := "system:serviceaccount:kubernaut-system:remediationorchestrator-controller"
+
+			rar := &remediationv1.RemediationApprovalRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "rar-expiry-test",
+					Namespace: "production",
+					UID:       "rar-uid-expiry",
+				},
+				Spec: remediationv1.RemediationApprovalRequestSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						Name: "rr-parent-expiry",
+					},
+					AIAnalysisRef: remediationv1.ObjectRef{
+						Name: "ai-analysis-expiry",
+					},
+				},
+				Status: remediationv1.RemediationApprovalRequestStatus{
+					Decision:  remediationv1.ApprovalDecisionExpired,
+					DecidedBy: "system",
+				},
+			}
+
+			rarJSON, _ := json.Marshal(rar)
+
+			admReq := admission.Request{
+				AdmissionRequest: admissionv1.AdmissionRequest{
+					UID: "admission-req-expiry",
+					Kind: metav1.GroupVersionKind{
+						Group:   "remediation.kubernaut.ai",
+						Version: "v1alpha1",
+						Kind:    "RemediationApprovalRequest",
+					},
+					Name:      rar.Name,
+					Namespace: rar.Namespace,
+					Operation: admissionv1.Update,
+					UserInfo: authv1.UserInfo{
+						Username: controllerSA,
+						UID:      "controller-uid",
+					},
+					Object: runtime.RawExtension{
+						Raw: rarJSON,
+					},
+				},
+			}
+
+			resp := handler.Handle(ctx, admReq)
+
+			Expect(resp.Allowed).To(BeTrue(),
+				"System-initiated expiry must be allowed")
+
+			// CRD spec: DecidedBy should remain "system" for timeout
+			// The webhook must NOT overwrite with the controller service account
+			if len(resp.Patches) > 0 {
+				patchedRAR := &remediationv1.RemediationApprovalRequest{}
+				Expect(json.Unmarshal(rarJSON, patchedRAR)).To(Succeed())
+				// Apply patches conceptually - check no patch targets decidedBy
+				for _, patch := range resp.Patches {
+					Expect(patch.Path).NotTo(ContainSubstring("decidedBy"),
+						"CRD SPEC VIOLATION: webhook must not overwrite DecidedBy for system-initiated expiry")
+				}
+			}
+		})
+	})
+
+	// ========================================
 	// BUSINESS OUTCOME: Audit Event Payload Validation
 	// ========================================
 

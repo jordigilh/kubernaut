@@ -1,18 +1,18 @@
-"""
-Copyright 2025 Jordi Gil.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-"""
+#
+# Copyright 2025 Jordi Gil.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
 
 """
 Incident Analysis Result Parser
@@ -33,7 +33,7 @@ including JSON extraction, workflow validation, and human review determination.
 import json
 import re
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 from datetime import datetime, timezone
 
 # HolmesGPT SDK imports
@@ -155,7 +155,7 @@ def parse_and_validate_investigation_result(
         vah_match = re.search(r'# validation_attempts_history\s*\n\s*(\[.*?\])\s*(?:\n#|$|\n\n)', analysis, re.DOTALL)
         if vah_match:
             parts['validation_attempts_history'] = vah_match.group(1)
-            logger.debug(f"Pattern 2B: Extracted validation_attempts_history")
+            logger.debug("Pattern 2B: Extracted validation_attempts_history")
 
         if parts:
             # Combine into a single dict string

@@ -1,0 +1,5 @@
+# Schema-only OCI image for DataStorage catalog registration (ADR-043)
+# Built with scenario workflow/ dir as context so COPY resolves workflow-schema.yaml.
+# Usage: podman build -f deploy/demo/scenarios/Dockerfile.schema deploy/demo/scenarios/<scenario>/workflow/
+FROM scratch
+COPY workflow-schema.yaml /workflow-schema.yaml

@@ -1,5 +1,7 @@
 # Notification Service - Refactoring Final Status
 
+> **Note (Issue #91):** This document references `kubernaut.ai/*` CRD labels that have since been migrated to immutable spec fields. See [DD-CRD-003](../architecture/DD-CRD-003-field-selectors-operational-queries.md) for the current field-selector-based approach.
+
 **Date**: December 14, 2025
 **Session Type**: Refactoring Triage & Execution
 **Status**: ✅ **P1 + P3 COMPLETE** | ⏸️ **P2 DEFERRED TO V1.1**

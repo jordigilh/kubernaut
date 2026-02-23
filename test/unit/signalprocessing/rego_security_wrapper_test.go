@@ -37,16 +37,9 @@ import (
 // Test Matrix (2 tests):
 //   - Security: CL-SEC-01, CL-SEC-02
 //
-// Reserved Prefixes (must be stripped):
+// Reserved Prefixes (labels with these prefixes are stripped from rego output):
 //   - kubernaut.ai/
 //   - system/
-//
-// 5 Mandatory Labels (cannot be overridden):
-//   - kubernaut.ai/signal-type
-//   - kubernaut.ai/severity
-//   - kubernaut.ai/component
-//   - kubernaut.ai/environment
-//   - kubernaut.ai/priority
 // ========================================================================
 
 var _ = Describe("Rego Security Wrapper", func() {
@@ -67,11 +60,14 @@ var _ = Describe("Rego Security Wrapper", func() {
 	})
 
 	// Helper to create a basic RegoInput
+	// Issue #113: KubernetesContext uses Namespace *NamespaceContext
 	createBasicInput := func() *rego.RegoInput {
 		return &rego.RegoInput{
 			Kubernetes: &sharedtypes.KubernetesContext{
-				Namespace:       "test-ns",
-				NamespaceLabels: map[string]string{},
+				Namespace: &sharedtypes.NamespaceContext{
+					Name:   "test-ns",
+					Labels: map[string]string{},
+				},
 			},
 			Signal: rego.SignalContext{
 				Type:     "pod_crash",

@@ -137,6 +137,13 @@ func (p *Parser) Validate(schema *models.WorkflowSchema) error {
 		}
 	}
 
+	// Validate detectedLabels (ADR-043 v1.3)
+	if schema.DetectedLabels != nil {
+		if err := schema.DetectedLabels.ValidateDetectedLabels(); err != nil {
+			return err
+		}
+	}
+
 	// Validate execution section (Issue #89: execution.bundle is mandatory with sha256 digest)
 	if schema.Execution == nil {
 		return models.NewSchemaValidationError("execution", "execution section is required")
@@ -272,6 +279,34 @@ func (p *Parser) ExtractDescription(schema *models.WorkflowSchema) (json.RawMess
 	}
 
 	return descJSON, nil
+}
+
+// ExtractDetectedLabels converts the YAML-parsed DetectedLabelsSchema (string fields)
+// to the business model DetectedLabels (bool/string fields).
+// ADR-043 v1.3: Boolean fields convert "true" -> true; string fields pass through.
+// Returns a zero-value DetectedLabels if the schema has no detectedLabels section.
+func (p *Parser) ExtractDetectedLabels(schema *models.WorkflowSchema) (*models.DetectedLabels, error) {
+	if schema == nil {
+		return nil, fmt.Errorf("schema is nil")
+	}
+
+	dl := &models.DetectedLabels{}
+
+	if schema.DetectedLabels == nil {
+		return dl, nil
+	}
+
+	src := schema.DetectedLabels
+	dl.GitOpsManaged = src.GitOpsManaged == "true"
+	dl.GitOpsTool = src.GitOpsTool
+	dl.PDBProtected = src.PDBProtected == "true"
+	dl.HPAEnabled = src.HPAEnabled == "true"
+	dl.Stateful = src.Stateful == "true"
+	dl.HelmManaged = src.HelmManaged == "true"
+	dl.NetworkIsolated = src.NetworkIsolated == "true"
+	dl.ServiceMesh = src.ServiceMesh
+
+	return dl, nil
 }
 
 // ExtractExecutionEngine extracts the execution engine from a WorkflowSchema

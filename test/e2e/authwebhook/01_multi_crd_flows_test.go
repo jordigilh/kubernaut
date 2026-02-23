@@ -113,6 +113,11 @@ var _ = Describe("E2E-MULTI-01: Multiple CRDs in Sequence", Ordered, func() {
 
 		GinkgoWriter.Printf("✅ WFE Block Clearance: Cleared by %s\n", wfe.Status.BlockClearance.ClearedBy)
 
+		// E2E-WE-163-003: BlockClearance exact field validation
+		Expect(wfe.Status.BlockClearance.ClearedAt).NotTo(BeZero())
+		Expect(wfe.Status.BlockClearance.ClearReason).To(Equal("E2E test: Verifying complete SOC2 attribution flow across all CRD types"))
+		Expect(wfe.Status.BlockClearance.ClearMethod).To(Equal("StatusField"))
+
 		By("Step 2: Create and approve RemediationApprovalRequest")
 		rar = &remediationv1.RemediationApprovalRequest{
 			ObjectMeta: metav1.ObjectMeta{

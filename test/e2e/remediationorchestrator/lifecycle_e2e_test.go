@@ -46,6 +46,7 @@ import (
 // - Kind cluster running with isolated kubeconfig
 // - All CRDs installed (handled by BeforeSuite)
 // - NO running RO controller (tests simulate controller behavior)
+//
 var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 	var testNS string
 
@@ -667,6 +668,76 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 			err := apiReader.Get(ctx, client.ObjectKeyFromObject(sp), &signalprocessingv1.SignalProcessing{})
 			return err != nil
 		}, timeout, interval).Should(BeTrue())
+		})
+	})
+
+	// ========================================
+	// E2E-RO-163-002: Deduplication preservation
+	// RO does not touch Deduplication (Gateway-owned); test verifies RO preserves it during reconciliation
+	// ========================================
+	Describe("E2E-RO-163-002: Deduplication preservation", func() {
+		It("should preserve pre-populated Deduplication status during RO reconciliation", func() {
+			By("Creating a RemediationRequest")
+			now := metav1.Now()
+			fiveMinutesAgo := metav1.NewTime(now.Add(-5 * time.Minute))
+			fingerprint := "7e954e3f07affe767999611bc4f06fed5ef1c20a0a79cf0e9b6c5ce74071dbb6"
+			rr := &remediationv1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "rr-dedup-e2e",
+					Namespace: testNS,
+				},
+				Spec: remediationv1.RemediationRequestSpec{
+					SignalFingerprint: fingerprint,
+					SignalName:        "DedupTest",
+					Severity:          "medium",
+					SignalType:        "prometheus",
+					TargetType:        "kubernetes",
+					TargetResource: remediationv1.ResourceIdentifier{
+						Kind:      "Deployment",
+						Name:      "dedup-app",
+						Namespace: testNS,
+					},
+					FiringTime:   now,
+					ReceivedTime: now,
+					Deduplication: sharedtypes.DeduplicationInfo{
+						FirstOccurrence: now,
+						LastOccurrence:  now,
+						OccurrenceCount: 1,
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+
+			By("Pre-populating Status.Deduplication and DuplicateOf via status update")
+			createdRR := &remediationv1.RemediationRequest{}
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), createdRR)).To(Succeed())
+			createdRR.Status.Deduplication = &remediationv1.DeduplicationStatus{
+				FirstSeenAt:     &fiveMinutesAgo,
+				LastSeenAt:     &now,
+				OccurrenceCount: 2,
+			}
+			createdRR.Status.DuplicateOf = "rr-original-parent"
+			Expect(k8sClient.Status().Update(ctx, createdRR)).To(Succeed())
+
+			By("Letting RO reconcile (wait for Phase change or conditions)")
+			Eventually(func() bool {
+				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), createdRR)
+				// RO will transition from Pending; any phase change indicates reconciliation
+				return createdRR.Status.OverallPhase != "" || len(createdRR.Status.Conditions) > 0
+			}, timeout, interval).Should(BeTrue(), "RO should reconcile the RR")
+
+			By("Re-fetching RR and asserting Deduplication preserved")
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), createdRR)).To(Succeed())
+			Expect(createdRR.Status.Deduplication).NotTo(BeNil())
+			Expect(createdRR.Status.Deduplication.OccurrenceCount).To(Equal(int32(2)),
+				"Deduplication.OccurrenceCount should be preserved")
+			Expect(createdRR.Status.Deduplication.FirstSeenAt).NotTo(BeNil())
+			Expect(createdRR.Status.Deduplication.LastSeenAt).NotTo(BeNil())
+			Expect(createdRR.Status.DuplicateOf).To(Equal("rr-original-parent"),
+				"DuplicateOf should be preserved during RO reconciliation")
+
+			GinkgoWriter.Printf("E2E-RO-163-002: Deduplication preserved — OccurrenceCount=%d, DuplicateOf=%s\n",
+				createdRR.Status.Deduplication.OccurrenceCount, createdRR.Status.DuplicateOf)
 		})
 	})
 })

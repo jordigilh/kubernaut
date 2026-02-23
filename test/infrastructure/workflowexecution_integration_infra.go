@@ -188,7 +188,7 @@ func StartWEIntegrationInfrastructure(writer io.Writer) error {
 	// Wait for Redis to be ready (using shared utility)
 	_, _ = fmt.Fprintf(writer, "⏳ Waiting for Redis to be ready...\n")
 	if err := WaitForRedisReady(WEIntegrationRedisContainer, writer); err != nil {
-		return fmt.Errorf("Redis failed to become ready: %w", err)
+		return fmt.Errorf("redis failed to become ready: %w", err)
 	}
 	_, _ = fmt.Fprintf(writer, "   ✅ Redis ready\n\n")
 

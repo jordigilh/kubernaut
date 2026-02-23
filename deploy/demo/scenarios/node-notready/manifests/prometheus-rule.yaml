@@ -9,7 +9,7 @@ spec:
   groups:
   - name: kubernaut-node-notready
     rules:
-    - alert: KubernautNodeNotReady
+    - alert: KubeNodeNotReady
       expr: |
         kube_node_status_condition{condition="Ready", status="true"} == 0
       for: 1m

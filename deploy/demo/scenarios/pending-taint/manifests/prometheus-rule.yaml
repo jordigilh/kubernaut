@@ -10,7 +10,7 @@ spec:
   - name: kubernaut-pending-taint
     rules:
     # Detect pods stuck in Pending state for more than 3 minutes
-    - alert: KubernautPodsPendingTaint
+    - alert: KubePodNotScheduled
       expr: |
         kube_pod_status_phase{namespace="demo-taint", phase="Pending"} == 1
       for: 3m

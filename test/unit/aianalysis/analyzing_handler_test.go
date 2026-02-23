@@ -18,6 +18,7 @@ package aianalysis
 
 import (
 	"context"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -311,6 +312,27 @@ var _ = Describe("AnalyzingHandler", func() {
 			})
 		})
 
+		// Issue #118 Gap 3: TotalAnalysisTime computation
+		Context("when analysis completes with StartedAt set", func() {
+			BeforeEach(func() {
+				mockEvaluator.WithAutoApprove("Non-production environment - auto-approved")
+			})
+
+			It("UT-AA-TAT-001: should compute TotalAnalysisTime in seconds from StartedAt to CompletedAt", func() {
+				analysis := createTestAnalysis()
+				analysis.Status.StartedAt = &metav1.Time{Time: time.Now().Add(-30 * time.Second)}
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseCompleted))
+				Expect(analysis.Status.TotalAnalysisTime).To(BeNumerically(">=", int64(29)),
+					"TotalAnalysisTime must be computed as CompletedAt - StartedAt in seconds")
+				Expect(analysis.Status.TotalAnalysisTime).To(BeNumerically("<=", int64(35)),
+					"TotalAnalysisTime should be approximately 30 seconds")
+			})
+		})
+
 		// BR-AI-014: Business outcome - graceful degradation ensures safety when policy fails
 		Context("when Rego evaluation fails gracefully (degraded mode)", func() {
 			BeforeEach(func() {
@@ -492,10 +514,12 @@ var _ = Describe("AnalyzingHandler", func() {
 			// BR-AI-012: CustomLabels population from EnrichmentResults
 			It("should pass CustomLabels from EnrichmentResults", func() {
 				analysis := createTestAnalysis()
-				analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.CustomLabels = map[string][]string{
-					"constraint": {"cost-constrained", "stateful-safe"},
-					"team":       {"name=payments"},
-					"region":     {"us-east-1"},
+				analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.KubernetesContext = &sharedtypes.KubernetesContext{
+					CustomLabels: map[string][]string{
+						"constraint": {"cost-constrained", "stateful-safe"},
+						"team":       {"name=payments"},
+						"region":     {"us-east-1"},
+					},
 				}
 
 				_, err := handler.Handle(ctx, analysis)
@@ -512,7 +536,9 @@ var _ = Describe("AnalyzingHandler", func() {
 			// BR-AI-012: Empty CustomLabels returns empty map
 			It("should return empty map when CustomLabels is nil", func() {
 				analysis := createTestAnalysis()
-				analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.CustomLabels = nil
+				analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.KubernetesContext = &sharedtypes.KubernetesContext{
+					CustomLabels: nil,
+				}
 
 				_, err := handler.Handle(ctx, analysis)
 

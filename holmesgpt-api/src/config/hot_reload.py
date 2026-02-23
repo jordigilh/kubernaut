@@ -22,7 +22,7 @@ import yaml
 
 # Try to import watchdog, fall back to polling if unavailable
 try:
-    from watchdog.events import FileSystemEventHandler, FileModifiedEvent, FileCreatedEvent
+    from watchdog.events import FileSystemEventHandler
     from watchdog.observers import Observer
     WATCHDOG_AVAILABLE = True
 except ImportError:

@@ -75,10 +75,7 @@ func (m *mockAuditStore) Close() error {
 
 var _ audit.AuditStore = &mockAuditStore{}
 
-// ptr returns a pointer to the given value (helper for test setup)
-func ptr[T any](v T) *T {
-	return &v
-}
+
 
 var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() {
 	var (
@@ -150,7 +147,7 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 				}, updatedSP)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(updatedSP.Status.Phase).To(Equal(signalprocessingv1alpha1.PhasePending))
-				Expect(updatedSP.Status.StartTime).ToNot(BeNil())
+				Expect(updatedSP.Status.StartTime).To(Not(BeNil()), "StartTime must be set on first reconciliation")
 			})
 		})
 
@@ -487,9 +484,8 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 				Expect(err).ToNot(HaveOccurred())
 
 				// Namespace context should be populated
-				Expect(updatedSP.Status.KubernetesContext).ToNot(BeNil())
-				Expect(updatedSP.Status.KubernetesContext.Namespace).ToNot(BeNil())
-				Expect(updatedSP.Status.KubernetesContext.Namespace.Name).To(Equal("test-namespace"))
+				Expect(updatedSP.Status.KubernetesContext).To(Not(BeNil()))
+				Expect(updatedSP.Status.KubernetesContext.Namespace).To(And(Not(BeNil()), HaveField("Name", Equal("test-namespace"))))
 				Expect(updatedSP.Status.KubernetesContext.Namespace.Labels["env"]).To(Equal("production"))
 			})
 		})
@@ -743,6 +739,100 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 	// All detection is now performed post-RCA in HAPI.
 
 	// ========================================
+	// ObservedGeneration Tracking (DD-CONTROLLER-001)
+	// Verifies ObservedGeneration is persisted on terminal phase transitions.
+	// Issue #118: E2E validator expects ObservedGeneration > 0 for completed SPs.
+	// Bug: assignment at line 773 was outside AtomicStatusUpdate callback,
+	// lost during refetch.
+	// ========================================
+	Describe("ObservedGeneration tracking (DD-CONTROLLER-001)", func() {
+		var (
+			mockStore   *mockAuditStore
+			auditClient *spaudit.AuditClient
+		)
+
+		BeforeEach(func() {
+			mockStore = &mockAuditStore{}
+			auditClient = spaudit.NewAuditClient(mockStore, logr.Discard())
+		})
+
+		Context("when SP reaches PhaseCompleted via reconcileCategorizing", func() {
+			It("UT-SP-OG-001: should persist ObservedGeneration > 0 through AtomicStatusUpdate", func() {
+				// Given: SP in Categorizing phase, ready to transition to Completed
+				sp := &signalprocessingv1alpha1.SignalProcessing{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:       "og-completed-sp",
+						Namespace:  "default",
+						Generation: 2,
+					},
+					Spec: signalprocessingv1alpha1.SignalProcessingSpec{
+						Signal: signalprocessingv1alpha1.SignalData{
+							Fingerprint: "og-test-fingerprint",
+							Severity:    "high",
+							TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+								Kind:      "Pod",
+								Name:      "test-pod",
+								Namespace: "default",
+							},
+						},
+					},
+					Status: signalprocessingv1alpha1.SignalProcessingStatus{
+						Phase:     signalprocessingv1alpha1.PhaseCategorizing,
+						StartTime: &metav1.Time{Time: metav1.Now().Time},
+						KubernetesContext: &signalprocessingv1alpha1.KubernetesContext{
+							Namespace: &signalprocessingv1alpha1.NamespaceContext{
+								Name: "default",
+							},
+						},
+						EnvironmentClassification: &signalprocessingv1alpha1.EnvironmentClassification{
+							Environment: "production",
+						},
+						PriorityAssignment: &signalprocessingv1alpha1.PriorityAssignment{
+							Priority: "P1",
+						},
+					},
+				}
+
+				fakeClient := fake.NewClientBuilder().
+					WithScheme(scheme).
+					WithObjects(sp).
+					WithStatusSubresource(sp).
+					Build()
+
+				reconciler := &controller.SignalProcessingReconciler{
+					Client:        fakeClient,
+					Scheme:        scheme,
+					StatusManager: spstatus.NewManager(fakeClient, fakeClient),
+					Metrics:       spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+					AuditClient:   auditClient,
+					AuditManager:  spaudit.NewManager(auditClient),
+					K8sEnricher:   newDefaultMockK8sEnricher(),
+				}
+
+				// When: Reconcile triggers Categorizing → Completed
+				_, err := reconciler.Reconcile(context.Background(), reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Name:      sp.Name,
+						Namespace: sp.Namespace,
+					},
+				})
+				Expect(err).ToNot(HaveOccurred())
+
+				// Then: ObservedGeneration must be persisted (survives AtomicStatusUpdate refetch)
+				updatedSP := &signalprocessingv1alpha1.SignalProcessing{}
+				err = fakeClient.Get(context.Background(), types.NamespacedName{
+					Name:      sp.Name,
+					Namespace: sp.Namespace,
+				}, updatedSP)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(updatedSP.Status.Phase).To(Equal(signalprocessingv1alpha1.PhaseCompleted))
+				Expect(updatedSP.Status.ObservedGeneration).To(Equal(int64(2)),
+					"ObservedGeneration must be persisted through AtomicStatusUpdate to match Generation")
+			})
+		})
+	})
+
+	// ========================================
 	// Interface Compliance Tests
 	// Verifies controller implements required interfaces
 	// ========================================
@@ -757,7 +847,7 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 
 			// Compile-time interface check
 			var _ reconcile.Reconciler = reconciler
-			Expect(reconciler).ToNot(BeNil())
+			Expect(reconciler).To(Not(BeNil()), "reconciler must be constructible")
 		})
 
 		It("CTRL-IFACE-02: should have SetupWithManager method", func() {
@@ -769,7 +859,7 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 			}
 
 			// Verify method exists
-			Expect(reconciler.SetupWithManager).ToNot(BeNil())
+			Expect(reconciler.SetupWithManager).To(Not(BeNil()), "SetupWithManager method must be defined")
 		})
 	})
 })

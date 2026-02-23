@@ -1,0 +1,14 @@
+# LLM provider configuration for Kubernaut demo scenarios.
+#
+# Copy this file to ~/.kubernaut/helm/llm-values.yaml and fill in your values:
+#   cp deploy/demo/helm/llm-values.yaml.example ~/.kubernaut/helm/llm-values.yaml
+#
+# The platform-helper.sh script automatically picks up this file during
+# Helm install if it exists at ~/.kubernaut/helm/llm-values.yaml.
+holmesgptApi:
+  llm:
+    provider: ""
+    model: ""
+    endpoint: ""
+    gcpProjectId: ""
+    gcpRegion: ""

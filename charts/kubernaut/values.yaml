@@ -1,0 +1,164 @@
+global:
+  image:
+    registry: quay.io/kubernaut-ai
+    tag: ""  # defaults to Chart.appVersion
+    pullPolicy: IfNotPresent
+
+nameOverride: ""
+fullnameOverride: ""
+
+# -- Gateway service (AlertManager webhook target + external signal ingestion)
+gateway:
+  replicas: 1
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m
+    limits:
+      memory: 512Mi
+      cpu: 500m
+  service:
+    type: ClusterIP
+    nodePort: null
+
+# -- DataStorage service (audit trail, workflow catalog)
+datastorage:
+  replicas: 1
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 250m
+    limits:
+      memory: 512Mi
+      cpu: 500m
+  service:
+    type: ClusterIP
+    nodePort: null
+
+# -- AIAnalysis controller
+aianalysis:
+  resources:
+    requests: {}
+    limits: {}
+
+# -- SignalProcessing controller
+signalprocessing:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+# -- RemediationOrchestrator controller
+remediationorchestrator:
+  resources:
+    requests: {}
+    limits: {}
+
+# -- WorkflowExecution controller
+workflowexecution:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+# -- Notification controller
+notification:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# -- EffectivenessMonitor controller
+effectivenessmonitor:
+  resources:
+    requests:
+      memory: 64Mi
+      cpu: 50m
+    limits:
+      memory: 256Mi
+      cpu: 500m
+
+# -- HolmesGPT API (LLM integration service)
+holmesgptApi:
+  replicas: 1
+  resources:
+    requests: {}
+    limits: {}
+  service:
+    type: ClusterIP
+    nodePort: null
+  llm:
+    provider: ""
+    model: ""
+    endpoint: ""
+    gcpProjectId: ""
+    gcpRegion: ""
+    maxRetries: 3
+    timeoutSeconds: 120
+    temperature: 0.7
+
+# -- AuthWebhook admission controller
+authwebhook:
+  resources:
+    requests:
+      memory: 128Mi
+      cpu: 100m
+    limits:
+      memory: 256Mi
+      cpu: 200m
+
+# -- Event Exporter (forwards K8s Warning events to Gateway)
+eventExporter:
+  image: ghcr.io/resmoio/kubernetes-event-exporter:latest
+  resources:
+    requests:
+      memory: 32Mi
+      cpu: 50m
+    limits:
+      memory: 128Mi
+      cpu: 200m
+
+# -- PostgreSQL (DataStorage backend)
+postgresql:
+  image: postgres:16-alpine
+  auth:
+    username: slm_user
+    password: demo-password
+    database: action_history
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 250m
+    limits:
+      memory: 512Mi
+      cpu: 500m
+
+# -- Redis (DataStorage DLQ)
+redis:
+  image: quay.io/jordigilh/redis:7-alpine
+  password: ""
+  resources:
+    requests:
+      memory: 128Mi
+      cpu: 100m
+    limits:
+      memory: 256Mi
+      cpu: 200m
+
+# -- Hooks (post-install Jobs)
+hooks:
+  migrations:
+    image: postgres:16-alpine
+  seedWorkflows:
+    image: curlimages/curl:latest
+  tlsCerts:
+    image: bitnami/kubectl:latest

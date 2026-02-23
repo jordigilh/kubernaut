@@ -24,6 +24,7 @@ package routing
 
 import (
 	"fmt"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -48,13 +49,13 @@ type Route struct {
 	Receiver string `yaml:"receiver" json:"receiver"`
 
 	// GroupBy specifies attributes to group notifications by
-	GroupBy []string `yaml:"group_by,omitempty" json:"group_by,omitempty"`
+	GroupBy []string `yaml:"groupBy,omitempty" json:"groupBy,omitempty"`
 
 	// Match is the exact match criteria for routing attributes
 	Match map[string]string `yaml:"match,omitempty" json:"match,omitempty"`
 
 	// MatchRE is the regex match criteria for routing attributes (not implemented in V1.0)
-	MatchRE map[string]string `yaml:"match_re,omitempty" json:"match_re,omitempty"`
+	MatchRE map[string]string `yaml:"matchRe,omitempty" json:"matchRe,omitempty"`
 
 	// Continue indicates whether to continue to sibling routes after matching
 	// BR-NOT-068: Multi-Channel Fanout support
@@ -70,43 +71,46 @@ type Receiver struct {
 	Name string `yaml:"name" json:"name"`
 
 	// SlackConfigs is the list of Slack channel configurations
-	SlackConfigs []SlackConfig `yaml:"slack_configs,omitempty" json:"slack_configs,omitempty"`
+	SlackConfigs []SlackConfig `yaml:"slackConfigs,omitempty" json:"slackConfigs,omitempty"`
 
 	// PagerDutyConfigs is the list of PagerDuty configurations
-	PagerDutyConfigs []PagerDutyConfig `yaml:"pagerduty_configs,omitempty" json:"pagerduty_configs,omitempty"`
+	PagerDutyConfigs []PagerDutyConfig `yaml:"pagerdutyConfigs,omitempty" json:"pagerdutyConfigs,omitempty"`
 
 	// EmailConfigs is the list of email configurations
-	EmailConfigs []EmailConfig `yaml:"email_configs,omitempty" json:"email_configs,omitempty"`
+	EmailConfigs []EmailConfig `yaml:"emailConfigs,omitempty" json:"emailConfigs,omitempty"`
 
 	// WebhookConfigs is the list of webhook configurations
-	WebhookConfigs []WebhookConfig `yaml:"webhook_configs,omitempty" json:"webhook_configs,omitempty"`
+	WebhookConfigs []WebhookConfig `yaml:"webhookConfigs,omitempty" json:"webhookConfigs,omitempty"`
 
 	// ConsoleConfigs is the list of console (stdout) configurations
-	ConsoleConfigs []ConsoleConfig `yaml:"console_configs,omitempty" json:"console_configs,omitempty"`
+	ConsoleConfigs []ConsoleConfig `yaml:"consoleConfigs,omitempty" json:"consoleConfigs,omitempty"`
 }
 
 // SlackConfig represents Slack webhook configuration.
+// BR-NOT-104-004: credentialRef is the sole mechanism for specifying webhook URLs.
 type SlackConfig struct {
 	// Channel is the Slack channel (e.g., "#alerts")
 	Channel string `yaml:"channel" json:"channel"`
 
-	// APIURL is the Slack webhook URL (can be templated)
-	APIURL string `yaml:"api_url,omitempty" json:"api_url,omitempty"`
+	// CredentialRef is the name of the credential file in the projected volume
+	// that contains the Slack webhook URL. Required for all Slack receivers.
+	// DD-NOT-104: Replaces APIURL; no fallback mechanism.
+	CredentialRef string `yaml:"credentialRef" json:"credentialRef"`
 
 	// Username is the bot username
 	Username string `yaml:"username,omitempty" json:"username,omitempty"`
 
 	// IconEmoji is the bot icon emoji
-	IconEmoji string `yaml:"icon_emoji,omitempty" json:"icon_emoji,omitempty"`
+	IconEmoji string `yaml:"iconEmoji,omitempty" json:"iconEmoji,omitempty"`
 }
 
 // PagerDutyConfig represents PagerDuty configuration.
 type PagerDutyConfig struct {
 	// ServiceKey is the PagerDuty service integration key
-	ServiceKey string `yaml:"service_key" json:"service_key"`
+	ServiceKey string `yaml:"serviceKey" json:"serviceKey"`
 
 	// RoutingKey is an alternative routing key (v2 API)
-	RoutingKey string `yaml:"routing_key,omitempty" json:"routing_key,omitempty"`
+	RoutingKey string `yaml:"routingKey,omitempty" json:"routingKey,omitempty"`
 
 	// Severity is the PagerDuty severity (critical, error, warning, info)
 	Severity string `yaml:"severity,omitempty" json:"severity,omitempty"`
@@ -124,7 +128,7 @@ type EmailConfig struct {
 	SmartHost string `yaml:"smarthost,omitempty" json:"smarthost,omitempty"`
 
 	// RequireTLS specifies whether TLS is required
-	RequireTLS bool `yaml:"require_tls,omitempty" json:"require_tls,omitempty"`
+	RequireTLS bool `yaml:"requireTls,omitempty" json:"requireTls,omitempty"`
 }
 
 // WebhookConfig represents generic webhook configuration.
@@ -133,16 +137,16 @@ type WebhookConfig struct {
 	URL string `yaml:"url" json:"url"`
 
 	// HTTPConfig contains HTTP client configuration
-	HTTPConfig *HTTPConfig `yaml:"http_config,omitempty" json:"http_config,omitempty"`
+	HTTPConfig *HTTPConfig `yaml:"httpConfig,omitempty" json:"httpConfig,omitempty"`
 }
 
 // HTTPConfig represents HTTP client configuration.
 type HTTPConfig struct {
 	// BearerToken is the bearer token for authentication
-	BearerToken string `yaml:"bearer_token,omitempty" json:"bearer_token,omitempty"`
+	BearerToken string `yaml:"bearerToken,omitempty" json:"bearerToken,omitempty"`
 
 	// BasicAuth contains basic authentication credentials
-	BasicAuth *BasicAuth `yaml:"basic_auth,omitempty" json:"basic_auth,omitempty"`
+	BasicAuth *BasicAuth `yaml:"basicAuth,omitempty" json:"basicAuth,omitempty"`
 }
 
 // BasicAuth represents basic authentication credentials.
@@ -210,6 +214,25 @@ func (c *Config) Validate() error {
 		return err
 	}
 
+	return nil
+}
+
+// ValidateCredentialRefs validates that all SlackConfigs have a non-empty credentialRef.
+// BR-NOT-104-004: Called during rebuildDeliveryServices, not during general Validate().
+// This separation of concerns keeps routing validation focused on structure,
+// while credential validation happens where credentials are actually resolved.
+func (c *Config) ValidateCredentialRefs() error {
+	var missing []string
+	for _, r := range c.Receivers {
+		for i, sc := range r.SlackConfigs {
+			if sc.CredentialRef == "" {
+				missing = append(missing, fmt.Sprintf("receiver %q slackConfigs[%d]", r.Name, i))
+			}
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("credentialRef is required: %s", strings.Join(missing, "; "))
+	}
 	return nil
 }
 
@@ -288,6 +311,40 @@ func (r *Receiver) GetChannels() []string {
 
 	if len(r.SlackConfigs) > 0 {
 		channels = append(channels, "slack")
+	}
+	if len(r.PagerDutyConfigs) > 0 {
+		channels = append(channels, "pagerduty")
+	}
+	if len(r.EmailConfigs) > 0 {
+		channels = append(channels, "email")
+	}
+	if len(r.WebhookConfigs) > 0 {
+		channels = append(channels, "webhook")
+	}
+	if len(r.ConsoleConfigs) > 0 {
+		channels = append(channels, "console")
+	}
+
+	return channels
+}
+
+// QualifiedChannels returns channel names qualified with the receiver name for
+// channels that support per-receiver credentials (e.g., "slack:sre-critical").
+// Non-credential channels (console, email, webhook, pagerduty) use unqualified names.
+// BR-NOT-104-004: Per-receiver delivery binding via receiver-qualified orchestrator keys.
+func (r *Receiver) QualifiedChannels() []string {
+	var channels []string
+
+	for i, sc := range r.SlackConfigs {
+		if sc.CredentialRef != "" {
+			if len(r.SlackConfigs) > 1 {
+				channels = append(channels, fmt.Sprintf("slack:%s:%d", r.Name, i))
+			} else {
+				channels = append(channels, fmt.Sprintf("slack:%s", r.Name))
+			}
+		} else {
+			channels = append(channels, "slack")
+		}
 	}
 	if len(r.PagerDutyConfigs) > 0 {
 		channels = append(channels, "pagerduty")

@@ -1,0 +1,138 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "kubernaut.fullname" . }}-tls-cert-gen
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "1"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: tls-cert-gen
+    spec:
+      serviceAccountName: {{ include "kubernaut.fullname" . }}-hook-sa
+      restartPolicy: Never
+      containers:
+        - name: tls-cert-gen
+          image: {{ .Values.hooks.tlsCerts.image }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              NAMESPACE="{{ .Release.Namespace }}"
+              SERVICE="authwebhook"
+
+              if kubectl get secret authwebhook-tls -n "$NAMESPACE" >/dev/null 2>&1; then
+                echo "authwebhook-tls secret already exists, skipping generation."
+                exit 0
+              fi
+
+              TMPDIR=$(mktemp -d)
+
+              echo "==> Generating TLS certificates for AuthWebhook"
+              openssl genrsa -out "$TMPDIR/ca.key" 2048 2>/dev/null
+              openssl req -new -x509 -days 365 -key "$TMPDIR/ca.key" \
+                -out "$TMPDIR/ca.crt" -subj "/CN=authwebhook-ca" 2>/dev/null
+
+              openssl genrsa -out "$TMPDIR/tls.key" 2048 2>/dev/null
+              openssl req -new -key "$TMPDIR/tls.key" \
+                -out "$TMPDIR/tls.csr" \
+                -subj "/CN=${SERVICE}.${NAMESPACE}.svc" \
+                -addext "subjectAltName=DNS:${SERVICE},DNS:${SERVICE}.${NAMESPACE},DNS:${SERVICE}.${NAMESPACE}.svc,DNS:${SERVICE}.${NAMESPACE}.svc.cluster.local" \
+                2>/dev/null
+
+              echo "subjectAltName=DNS:${SERVICE},DNS:${SERVICE}.${NAMESPACE},DNS:${SERVICE}.${NAMESPACE}.svc,DNS:${SERVICE}.${NAMESPACE}.svc.cluster.local" > "$TMPDIR/san.cnf"
+
+              openssl x509 -req -in "$TMPDIR/tls.csr" \
+                -CA "$TMPDIR/ca.crt" -CAkey "$TMPDIR/ca.key" -CAcreateserial \
+                -out "$TMPDIR/tls.crt" -days 365 \
+                -extfile "$TMPDIR/san.cnf" \
+                2>/dev/null
+
+              kubectl create secret tls authwebhook-tls \
+                --cert="$TMPDIR/tls.crt" \
+                --key="$TMPDIR/tls.key" \
+                -n "$NAMESPACE" \
+                --dry-run=client -o yaml | kubectl apply -f -
+
+              CA_BUNDLE=$(base64 < "$TMPDIR/ca.crt" | tr -d '\n')
+
+              echo "  Patching MutatingWebhookConfiguration..."
+              kubectl patch mutatingwebhookconfiguration authwebhook-mutating --type='json' \
+                -p "[
+                  {\"op\":\"replace\",\"path\":\"/webhooks/0/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"},
+                  {\"op\":\"replace\",\"path\":\"/webhooks/1/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"},
+                  {\"op\":\"replace\",\"path\":\"/webhooks/2/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"}
+                ]"
+
+              echo "  Patching ValidatingWebhookConfiguration..."
+              kubectl patch validatingwebhookconfiguration authwebhook-validating --type='json' \
+                -p "[{\"op\":\"replace\",\"path\":\"/webhooks/0/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"}]"
+
+              rm -rf "$TMPDIR"
+              echo "==> AuthWebhook TLS setup complete"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "kubernaut.fullname" . }}-hook-sa
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "kubernaut.fullname" . }}-hook-role
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "create", "update", "patch"]
+  - apiGroups: ["admissionregistration.k8s.io"]
+    resources: ["mutatingwebhookconfigurations", "validatingwebhookconfigurations"]
+    verbs: ["get", "patch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "kubernaut.fullname" . }}-hook-rolebinding
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "kubernaut.fullname" . }}-hook-role
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "kubernaut.fullname" . }}-hook-sa
+    namespace: {{ .Release.Namespace }}

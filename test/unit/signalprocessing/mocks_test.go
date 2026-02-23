@@ -101,7 +101,9 @@ func (m *mockK8sEnricher) Enrich(ctx context.Context, signal *signalprocessingv1
 				Namespace: signal.TargetResource.Namespace,
 			}
 			if err := m.Client.Get(ctx, podKey, pod); err == nil {
-				k8sCtx.Pod = &signalprocessingv1alpha1.PodDetails{
+				k8sCtx.Workload = &signalprocessingv1alpha1.WorkloadDetails{
+					Kind:   "Pod",
+					Name:   pod.Name,
 					Labels: pod.Labels,
 				}
 			}
