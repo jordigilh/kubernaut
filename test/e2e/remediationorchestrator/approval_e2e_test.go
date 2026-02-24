@@ -383,15 +383,9 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 
 			testRAR = helpers.WaitForRARCreation(ctx, k8sClient, testNamespace, e2eTimeout, e2eInterval)
 
-			// Set RequiredBy to the past so RO detects timeout and marks Expired
-			Expect(k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
-				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testRAR), testRAR); err != nil {
-					return err
-				}
-				testRAR.Spec.RequiredBy = metav1.NewTime(time.Now().Add(-1 * time.Minute))
-				return k8sClient.Update(ctx, testRAR)
-			})).To(Succeed())
-
+			// RAR RequiredBy is set by the RO controller using the configured
+			// awaitingApproval timeout (3s in E2E). No spec mutation needed —
+			// the deadline expires naturally, and RO detects it on next reconcile.
 			helpers.WaitForRRPhase(ctx, k8sClient, testRR, remediationv1.PhaseAwaitingApproval, e2eTimeout, e2eInterval)
 			GinkgoWriter.Printf("  RO reached AwaitingApproval naturally\n")
 		})

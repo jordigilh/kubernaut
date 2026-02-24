@@ -34,7 +34,7 @@ var _ = Describe("ApprovalOrchestration", func() {
 		Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
 		Expect(aianalysisv1.AddToScheme(scheme)).To(Succeed())
 		fakeClient = fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&remediationv1.RemediationApprovalRequest{}).Build()
-		ac = creator.NewApprovalCreator(fakeClient, scheme, nil)
+		ac = creator.NewApprovalCreator(fakeClient, scheme, nil, creator.DefaultApprovalTimeout)
 		ctx = context.Background()
 	})
 
