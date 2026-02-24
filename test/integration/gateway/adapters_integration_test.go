@@ -28,6 +28,7 @@ import (
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
+	"github.com/jordigilh/kubernaut/pkg/gateway/types"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -58,7 +59,7 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 			prometheusAlert := createPrometheusAlert(testNamespace, "HighCPUUsage", "critical", "", "")
 
 			By("2. Parse alert through Prometheus adapter")
-			prometheusAdapter := adapters.NewPrometheusAdapter()
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 			signal, err := prometheusAdapter.Parse(ctx, prometheusAlert)
 
 			By("3. Verify parsing succeeded")
@@ -91,7 +92,7 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 				{"DiskSpaceLow", "DiskSpaceLow"},
 			}
 
-			prometheusAdapter := adapters.NewPrometheusAdapter()
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 
 			for _, tc := range testCases {
 				By(fmt.Sprintf("2. Parse alert with alertname=%s", tc.alertName))
@@ -116,7 +117,7 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 
 			By("2. Create alert with explicit namespace label")
 			prometheusAlert := createPrometheusAlert(testNamespace, "ServiceDown", "critical", "", "")
-			prometheusAdapter := adapters.NewPrometheusAdapter()
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 			signal, err := prometheusAdapter.Parse(ctx, prometheusAlert)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -153,7 +154,7 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 				{"P0", "P0"},     // PagerDuty scheme
 			}
 
-			prometheusAdapter := adapters.NewPrometheusAdapter()
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 
 			for _, tc := range testCases {
 				By(fmt.Sprintf("2. Parse alert with severity=%s", tc.inputSeverity))
@@ -172,7 +173,7 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 
 		It("[GW-INT-ADP-005] should generate stable fingerprints for deduplication (BR-GATEWAY-004)", func() {
 			By("1. Create identical alerts at different times")
-			prometheusAdapter := adapters.NewPrometheusAdapter()
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 			alertPayload1 := createPrometheusAlert(testNamespace, "RepeatedAlert", "warning", "", "")
 			alertPayload2 := createPrometheusAlert(testNamespace, "RepeatedAlert", "warning", "", "")
 
@@ -220,7 +221,7 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 			}`, testNamespace))
 
 			By("2. Parse alert through adapter")
-			prometheusAdapter := adapters.NewPrometheusAdapter()
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 			signal, err := prometheusAdapter.Parse(ctx, alertPayload)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -262,7 +263,7 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 			}`, testNamespace, longDescription))
 
 			By("2. Parse alert through adapter")
-			prometheusAdapter := adapters.NewPrometheusAdapter()
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 			signal, err := prometheusAdapter.Parse(ctx, alertPayload)
 
 			By("3. Verify parsing succeeded despite long annotation")
@@ -503,10 +504,12 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 						fmt.Sprintf("BR-GATEWAY-005: %s should cause validation failure", tc.description))
 					Expect(signal).To(BeNil(),
 						"BR-GATEWAY-005: Signal must be nil when required field is empty")
-				} else {
-					Expect(err).ToNot(HaveOccurred())
-					Expect(signal).ToNot(BeNil())
-				}
+			} else {
+				Expect(err).ToNot(HaveOccurred(),
+					"BR-GATEWAY-005: Valid fields should parse without error")
+				Expect(signal.Resource.Kind).ToNot(BeEmpty(),
+					"BR-GATEWAY-005: Parsed signal must have a resource kind")
+			}
 
 				GinkgoWriter.Printf("✅ Empty field handling validated: %s (fail=%v)\n",
 					tc.description, tc.shouldFail)
@@ -550,6 +553,238 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 				"BR-GATEWAY-005: Subsequent signals must be processed normally")
 
 			GinkgoWriter.Printf("✅ Adapter error non-fatal: Gateway continues processing\n")
+		})
+	})
+
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// BR-GATEWAY-184: Monitoring Metadata Label Filtering (Issue #191)
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	//
+	// These tests validate that the LabelFilter correctly integrates with the
+	// adapter parse → signal processing → CRD creation pipeline, ensuring the
+	// remediation pipeline always targets the correct workload resource.
+	//
+	// Coverage: FR-4 (excluded labels), FR-5 (monitoring metadata filtering), FR-6 (job_name)
+	Context("BR-GATEWAY-184: Monitoring Metadata Label Filtering (Issue #191)", func() {
+
+		It("[IT-GW-184-001] should target the crashing pod, not the monitoring service, for LLM investigation", func() {
+			By("1. Create Gateway server for full pipeline verification")
+			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
+			gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient, sharedAuditStore)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("2. Create adapter with monitoring metadata filter wired")
+			filter := adapters.NewMonitoringMetadataFilter(logger)
+			adapterWithFilter := adapters.NewPrometheusAdapter(nil, filter)
+
+			By("3. Parse alert where service label points to monitoring infrastructure")
+			payload := []byte(fmt.Sprintf(`{
+				"alerts": [{
+					"labels": {
+						"alertname": "KubePodCrashLooping",
+						"namespace": "%s",
+						"severity": "critical",
+						"service": "kube-prometheus-stack-kube-state-metrics",
+						"pod": "payment-api-7f86bb8877-4hv68"
+					},
+					"annotations": {
+						"summary": "Pod is crash looping"
+					},
+					"startsAt": "2026-02-17T10:00:00Z"
+				}]
+			}`, testNamespace))
+
+			signal, err := adapterWithFilter.Parse(ctx, payload)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("4. Verify the actual crashing pod is the target — NOT the monitoring service")
+			Expect(signal.Resource.Kind).To(Equal("Pod"),
+				"BR-GATEWAY-184 FR-5: LLM must investigate the crashing pod, not the monitoring service")
+			Expect(signal.Resource.Name).To(Equal("payment-api-7f86bb8877-4hv68"),
+				"BR-GATEWAY-184 FR-5: Target name must be the crashing pod, not kube-state-metrics")
+			Expect(signal.Resource.Kind).ToNot(Equal("Service"),
+				"BR-GATEWAY-184 FR-5: Monitoring service must be filtered — selecting it would cause false 'self-resolved'")
+
+			By("5. Verify fingerprint is based on the correct target (accurate deduplication)")
+			expectedFingerprint := types.CalculateOwnerFingerprint(types.ResourceIdentifier{
+				Namespace: testNamespace,
+				Kind:      "Pod",
+				Name:      "payment-api-7f86bb8877-4hv68",
+			})
+			Expect(signal.Fingerprint).To(Equal(expectedFingerprint),
+				"BR-GATEWAY-184 FR-5: Fingerprint must be SHA256(ns:Pod:payment-api-...) for correct deduplication")
+
+			By("6. Process through full pipeline and verify CRD has correct target")
+			response, err := gwServer.ProcessSignal(ctx, signal)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(response.Status).To(Equal("created"))
+
+			rr := &remediationv1alpha1.RemediationRequest{}
+			err = k8sClient.Get(ctx, client.ObjectKey{
+				Name:      response.RemediationRequestName,
+				Namespace: testNamespace,
+			}, rr)
+			Expect(err).ToNot(HaveOccurred(),
+				"BR-GATEWAY-184: RemediationRequest CRD must be created")
+			Expect(rr.Spec.TargetResource.Kind).To(Equal("Pod"),
+				"BR-GATEWAY-184 FR-5: CRD target must be the crashing pod for correct LLM investigation")
+			Expect(rr.Spec.TargetResource.Name).To(Equal("payment-api-7f86bb8877-4hv68"),
+				"BR-GATEWAY-184 FR-5: CRD target name must match the actual affected workload")
+
+			GinkgoWriter.Printf("✅ IT-GW-184-001: Monitoring service filtered, LLM targets crashing pod: %s/%s\n",
+				rr.Spec.TargetResource.Kind, rr.Spec.TargetResource.Name)
+		})
+
+		It("[IT-GW-184-002] should NOT filter legitimate workload services (no false positives)", func() {
+			By("1. Create adapter with monitoring metadata filter wired")
+			filter := adapters.NewMonitoringMetadataFilter(logger)
+			adapterWithFilter := adapters.NewPrometheusAdapter(nil, filter)
+
+			By("2. Parse alert where service label is a real workload service")
+			payload := []byte(fmt.Sprintf(`{
+				"alerts": [{
+					"labels": {
+						"alertname": "ServiceHighLatency",
+						"namespace": "%s",
+						"severity": "warning",
+						"service": "payment-api",
+						"pod": "payment-api-7f86bb8877-4hv68"
+					},
+					"annotations": {
+						"summary": "Service latency above threshold"
+					},
+					"startsAt": "2026-02-17T10:00:00Z"
+				}]
+			}`, testNamespace))
+
+			signal, err := adapterWithFilter.Parse(ctx, payload)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("3. Verify the workload service is the target — NOT filtered as monitoring")
+			Expect(signal.Resource.Kind).To(Equal("Service"),
+				"BR-GATEWAY-184 FR-5: Workload service must pass through filter — false positive would misidentify target")
+			Expect(signal.Resource.Name).To(Equal("payment-api"),
+				"BR-GATEWAY-184 FR-5: Workload service name must be preserved as target")
+
+			GinkgoWriter.Printf("✅ IT-GW-184-002: Workload service 'payment-api' correctly passes through filter\n")
+		})
+
+		It("[IT-GW-184-003] should target the failed K8s Job, not the Prometheus scrape job", func() {
+			By("1. Create Gateway server for full pipeline verification")
+			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
+			gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient, sharedAuditStore)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("2. Parse alert with both job_name (K8s Job) and job (Prometheus scrape job)")
+			adapterNoFilter := adapters.NewPrometheusAdapter(nil, nil)
+			payload := []byte(fmt.Sprintf(`{
+				"alerts": [{
+					"labels": {
+						"alertname": "KubeJobFailed",
+						"namespace": "%s",
+						"severity": "warning",
+						"job_name": "data-migration",
+						"job": "kube-state-metrics",
+						"pod": "kube-state-metrics-abc123"
+					},
+					"annotations": {
+						"summary": "Job has failed"
+					},
+					"startsAt": "2026-02-17T10:00:00Z"
+				}]
+			}`, testNamespace))
+
+			signal, err := adapterNoFilter.Parse(ctx, payload)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("3. Verify the failed K8s Job is the target — NOT the Prometheus scrape job")
+			Expect(signal.Resource.Kind).To(Equal("Job"),
+				"BR-GATEWAY-184 FR-6: LLM must investigate the failed K8s Job, not the Prometheus scrape job")
+			Expect(signal.Resource.Name).To(Equal("data-migration"),
+				"BR-GATEWAY-184 FR-6: Target must be the actual failed Job name from job_name label")
+			Expect(signal.Resource.Name).ToNot(Equal("kube-state-metrics"),
+				"BR-GATEWAY-184 FR-4: Prometheus scrape job name must be ignored — it would send LLM to a healthy component")
+
+			By("4. Verify fingerprint is based on the K8s Job, not the scrape job or exporter pod")
+			expectedFingerprint := types.CalculateOwnerFingerprint(types.ResourceIdentifier{
+				Namespace: testNamespace,
+				Kind:      "Job",
+				Name:      "data-migration",
+			})
+			Expect(signal.Fingerprint).To(Equal(expectedFingerprint),
+				"BR-GATEWAY-184 FR-6: Fingerprint must be SHA256(ns:Job:data-migration) for accurate deduplication")
+
+			By("5. Process through full pipeline and verify CRD targets the correct Job")
+			response, err := gwServer.ProcessSignal(ctx, signal)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(response.Status).To(Equal("created"))
+
+			rr := &remediationv1alpha1.RemediationRequest{}
+			err = k8sClient.Get(ctx, client.ObjectKey{
+				Name:      response.RemediationRequestName,
+				Namespace: testNamespace,
+			}, rr)
+			Expect(err).ToNot(HaveOccurred(),
+				"BR-GATEWAY-184: RemediationRequest CRD must be created")
+			Expect(rr.Spec.TargetResource.Kind).To(Equal("Job"),
+				"BR-GATEWAY-184 FR-6: CRD must target the failed K8s Job for LLM investigation")
+			Expect(rr.Spec.TargetResource.Name).To(Equal("data-migration"),
+				"BR-GATEWAY-184 FR-6: CRD target name must be the actual failed Job")
+
+			GinkgoWriter.Printf("✅ IT-GW-184-003: Scrape job ignored, LLM targets failed K8s Job: %s/%s\n",
+				rr.Spec.TargetResource.Kind, rr.Spec.TargetResource.Name)
+		})
+
+		It("[IT-GW-184-004] should ignore scrape metadata labels and target the correct Deployment", func() {
+			By("1. Parse alert with all 3 scrape metadata labels alongside the deployment label")
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
+			payload := []byte(fmt.Sprintf(`{
+				"alerts": [{
+					"labels": {
+						"alertname": "KubeDeploymentReplicasMismatch",
+						"namespace": "%s",
+						"severity": "warning",
+						"deployment": "api-server",
+						"job": "kube-state-metrics",
+						"endpoint": "http",
+						"instance": "10.244.0.5:8443",
+						"pod": "kube-state-metrics-abc123"
+					},
+					"annotations": {
+						"summary": "Deployment replicas mismatch"
+					},
+					"startsAt": "2026-02-17T10:00:00Z"
+				}]
+			}`, testNamespace))
+
+			signal, err := prometheusAdapter.Parse(ctx, payload)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("2. Verify the Deployment is the target — scrape metadata must not pollute extraction")
+			Expect(signal.Resource.Kind).To(Equal("Deployment"),
+				"BR-GATEWAY-184 FR-4: Deployment label must take priority; scrape metadata (job/endpoint/instance) excluded from candidates")
+			Expect(signal.Resource.Name).To(Equal("api-server"),
+				"BR-GATEWAY-184 FR-4: Target must be the mismatched Deployment, not any scrape metadata value")
+
+			By("3. Verify no scrape metadata values leaked into the resource fields")
+			Expect(signal.Resource.Name).ToNot(Equal("kube-state-metrics"),
+				"BR-GATEWAY-184 FR-4: Prometheus scrape job name must never appear as target resource name")
+			Expect(signal.Resource.Name).ToNot(Equal("http"),
+				"BR-GATEWAY-184 FR-4: ServiceMonitor endpoint name must never appear as target resource name")
+			Expect(signal.Resource.Name).ToNot(Equal("10.244.0.5:8443"),
+				"BR-GATEWAY-184 FR-4: Scrape target address must never appear as target resource name")
+
+			By("4. Verify fingerprint is based on the correct Deployment target")
+			expectedFingerprint := types.CalculateOwnerFingerprint(types.ResourceIdentifier{
+				Namespace: testNamespace,
+				Kind:      "Deployment",
+				Name:      "api-server",
+			})
+			Expect(signal.Fingerprint).To(Equal(expectedFingerprint),
+				"BR-GATEWAY-184 FR-4: Fingerprint must reflect the Deployment target, not scrape metadata")
+
+			GinkgoWriter.Printf("✅ IT-GW-184-004: Scrape metadata ignored, correct target: %s/%s\n",
+				signal.Resource.Kind, signal.Resource.Name)
 		})
 	})
 })

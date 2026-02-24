@@ -19,6 +19,7 @@ package adapters
 import (
 	"context"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -35,7 +36,7 @@ var _ = Describe("BR-GATEWAY-002: Prometheus Adapter - Parse AlertManager Webhoo
 	)
 
 	BeforeEach(func() {
-		adapter = adapters.NewPrometheusAdapter()
+		adapter = adapters.NewPrometheusAdapter(nil, nil)
 		ctx = context.Background()
 	})
 
@@ -288,7 +289,7 @@ var _ = Describe("BR-GATEWAY-002: Prometheus Adapter - Parse AlertManager Webhoo
 			// - "prometheus" → LLM uses Prometheus queries
 			// - NOT "prometheus-adapter" (internal implementation detail)
 
-			adapter := adapters.NewPrometheusAdapter()
+			adapter := adapters.NewPrometheusAdapter(nil, nil)
 
 			sourceName := adapter.GetSourceService()
 
@@ -302,7 +303,7 @@ var _ = Describe("BR-GATEWAY-002: Prometheus Adapter - Parse AlertManager Webhoo
 			// BUSINESS LOGIC: Signal type distinguishes alert sources for metrics/logging
 			// Used for: metrics labels, logging, signal classification
 
-			adapter := adapters.NewPrometheusAdapter()
+			adapter := adapters.NewPrometheusAdapter(nil, nil)
 
 			sourceType := adapter.GetSourceType()
 
@@ -314,7 +315,7 @@ var _ = Describe("BR-GATEWAY-002: Prometheus Adapter - Parse AlertManager Webhoo
 			// BR-GATEWAY-027: Ensure Parse() uses method instead of hardcoded value
 			// BUSINESS LOGIC: Consistency between method and Parse() output
 
-			adapter := adapters.NewPrometheusAdapter()
+			adapter := adapters.NewPrometheusAdapter(nil, nil)
 			payload := []byte(`{
 				"alerts": [{
 					"labels": {
@@ -470,7 +471,7 @@ var _ = Describe("BR-GATEWAY-002: Prometheus Adapter - Parse AlertManager Webhoo
 				"BR-GATEWAY-184: Resource name must come from PVC label")
 		})
 
-		It("[GW-RE-07] should extract Job when job label is present", func() {
+		It("[GW-RE-07] should extract Job via job_name label (FR-6: job_name semantics)", func() {
 			payload := []byte(`{
 				"alerts": [{
 					"labels": {
@@ -478,7 +479,7 @@ var _ = Describe("BR-GATEWAY-002: Prometheus Adapter - Parse AlertManager Webhoo
 						"namespace": "batch",
 						"job_name": "data-migration",
 						"pod": "kube-prometheus-stack-kube-state-metrics-abc123",
-						"job": "data-migration"
+						"job": "kube-state-metrics"
 					}
 				}]
 			}`)
@@ -487,9 +488,9 @@ var _ = Describe("BR-GATEWAY-002: Prometheus Adapter - Parse AlertManager Webhoo
 			Expect(err).NotTo(HaveOccurred())
 
 			Expect(signal.Resource.Kind).To(Equal("Job"),
-				"BR-GATEWAY-184: Job label must take priority over pod (kube-state-metrics exporter)")
+				"BR-GATEWAY-184 FR-6: job_name label must identify Kubernetes Job resources")
 			Expect(signal.Resource.Name).To(Equal("data-migration"),
-				"BR-GATEWAY-184: Resource name must come from job label, not pod label")
+				"BR-GATEWAY-184 FR-6: Resource name must come from job_name label, not job (scrape metadata)")
 		})
 
 		It("[GW-RE-08] should extract CronJob when cronjob label is present", func() {
@@ -511,6 +512,95 @@ var _ = Describe("BR-GATEWAY-002: Prometheus Adapter - Parse AlertManager Webhoo
 				"BR-GATEWAY-184: CronJob label must take priority over pod (kube-state-metrics exporter)")
 			Expect(signal.Resource.Name).To(Equal("nightly-backup"),
 				"BR-GATEWAY-184: Resource name must come from cronjob label, not pod label")
+		})
+
+		It("[GW-RE-11] should fall through to pod when service label is filtered as monitoring metadata", func() {
+			filter := adapters.NewMonitoringMetadataFilter(logr.Discard())
+			adapterWithFilter := adapters.NewPrometheusAdapter(nil, filter)
+
+			payload := []byte(`{
+				"alerts": [{
+					"labels": {
+						"alertname": "KubePodCrashLooping",
+						"namespace": "monitoring",
+						"service": "kube-prometheus-stack-kube-state-metrics",
+						"pod": "payment-api-7f86bb8877-4hv68"
+					}
+				}]
+			}`)
+
+			signal, err := adapterWithFilter.Parse(ctx, payload)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(signal.Resource.Kind).To(Equal("Pod"),
+				"BR-GATEWAY-184 FR-5: When service label matches monitoring pattern, extraction must fall through to pod")
+			Expect(signal.Resource.Name).To(Equal("payment-api-7f86bb8877-4hv68"),
+				"BR-GATEWAY-184 FR-5: Resource name must come from pod label after service is filtered")
+		})
+
+		It("[GW-RE-12] should ignore job label entirely and use job_name for K8s Jobs (FR-4, FR-6)", func() {
+			payload := []byte(`{
+				"alerts": [{
+					"labels": {
+						"alertname": "KubeJobFailed",
+						"namespace": "batch",
+						"job": "kube-state-metrics",
+						"pod": "kube-prometheus-stack-kube-state-metrics-abc123"
+					}
+				}]
+			}`)
+
+			signal, err := adapter.Parse(ctx, payload)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(signal.Resource.Kind).To(Equal("Pod"),
+				"BR-GATEWAY-184 FR-4: job label must be excluded from candidates; falls through to pod")
+			Expect(signal.Resource.Name).To(Equal("kube-prometheus-stack-kube-state-metrics-abc123"),
+				"BR-GATEWAY-184 FR-4: Without job_name label, pod becomes the target")
+		})
+
+		It("[GW-RE-13] should ignore endpoint and instance labels during extraction (FR-4)", func() {
+			payload := []byte(`{
+				"alerts": [{
+					"labels": {
+						"alertname": "TargetDown",
+						"namespace": "monitoring",
+						"endpoint": "http",
+						"instance": "10.244.0.5:8443",
+						"pod": "api-server-6b9f4d7c88-x2k9m"
+					}
+				}]
+			}`)
+
+			signal, err := adapter.Parse(ctx, payload)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(signal.Resource.Kind).To(Equal("Pod"),
+				"BR-GATEWAY-184 FR-4: endpoint and instance labels must be excluded from candidates")
+			Expect(signal.Resource.Name).To(Equal("api-server-6b9f4d7c88-x2k9m"),
+				"BR-GATEWAY-184 FR-4: With only scrape metadata + pod, pod is the correct target")
+		})
+
+		It("[GW-RE-14] should not filter when LabelFilter is nil (backward compatible)", func() {
+			adapterNoFilter := adapters.NewPrometheusAdapter(nil, nil)
+
+			payload := []byte(`{
+				"alerts": [{
+					"labels": {
+						"alertname": "ServiceDown",
+						"namespace": "production",
+						"service": "kube-prometheus-stack-kube-state-metrics"
+					}
+				}]
+			}`)
+
+			signal, err := adapterNoFilter.Parse(ctx, payload)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(signal.Resource.Kind).To(Equal("Service"),
+				"BR-GATEWAY-184 FR-5: With nil filter, service label must pass through unfiltered")
+			Expect(signal.Resource.Name).To(Equal("kube-prometheus-stack-kube-state-metrics"),
+				"BR-GATEWAY-184 FR-5: Nil filter means no monitoring metadata filtering")
 		})
 	})
 
