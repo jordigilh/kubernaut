@@ -18,14 +18,12 @@ package helpers
 
 import (
 	"context"
-	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2" //nolint:revive
 	. "github.com/onsi/gomega"     //nolint:revive
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	k8sretry "k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
@@ -53,45 +51,23 @@ func WaitForSPCreation(ctx context.Context, k8sClient client.Client, namespace s
 
 // SimulateSPCompletion updates the given SP status to Completed with standard
 // enrichment fields, simulating what the SP controller would do.
-// Uses RetryOnConflict to handle races with the RO controller.
 func SimulateSPCompletion(ctx context.Context, k8sClient client.Client, sp *signalprocessingv1.SignalProcessing) {
 	By("Simulating SP completion (SP controller behavior)")
-	Expect(k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
-		if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), sp); err != nil {
-			return err
-		}
-		sp.Status.Phase = signalprocessingv1.PhaseCompleted
-		sp.Status.Severity = normalizeSeverity(sp.Spec.Signal.Severity)
-		sp.Status.SignalMode = "reactive"
-		sp.Status.SignalName = sp.Spec.Signal.Name
-		sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
-			Environment:  "production",
-			Source:       "namespace-labels",
-			ClassifiedAt: metav1.Now(),
-		}
-		sp.Status.PriorityAssignment = &signalprocessingv1.PriorityAssignment{
-			Priority:   "P1",
-			Source:     "rego-policy",
-			AssignedAt: metav1.Now(),
-		}
-		return k8sClient.Status().Update(ctx, sp)
-	})).To(Succeed())
-}
-
-// normalizeSeverity maps raw severity values (from RR/signal sources) to the
-// SP CRD status enum: critical, high, medium, low, unknown.
-// The SP spec.signal.severity has no enum restriction, but status.severity does.
-func normalizeSeverity(raw string) string {
-	switch strings.ToLower(raw) {
-	case "critical", "high", "medium", "low", "unknown":
-		return strings.ToLower(raw)
-	case "warning":
-		return "medium"
-	case "info", "informational":
-		return "low"
-	default:
-		return "unknown"
+	sp.Status.Phase = signalprocessingv1.PhaseCompleted
+	sp.Status.Severity = sp.Spec.Signal.Severity
+	sp.Status.SignalMode = "reactive"
+	sp.Status.SignalName = sp.Spec.Signal.Name
+	sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
+		Environment:  "production",
+		Source:       "namespace-labels",
+		ClassifiedAt: metav1.Now(),
 	}
+	sp.Status.PriorityAssignment = &signalprocessingv1.PriorityAssignment{
+		Priority:   "P1",
+		Source:     "rego-policy",
+		AssignedAt: metav1.Now(),
+	}
+	Expect(k8sClient.Status().Update(ctx, sp)).To(Succeed())
 }
 
 // WaitForAICreation waits for the RO controller to create an AIAnalysis CRD
