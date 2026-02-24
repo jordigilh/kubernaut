@@ -3153,6 +3153,10 @@ func resolveGVKForKind(mapper meta.RESTMapper, kind string) (schema.GroupVersion
 		return schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Service"}, nil
 	case "ConfigMap":
 		return schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"}, nil
+	case "HorizontalPodAutoscaler":
+		return schema.GroupVersionKind{Group: "autoscaling", Version: "v2", Kind: "HorizontalPodAutoscaler"}, nil
+	case "PodDisruptionBudget":
+		return schema.GroupVersionKind{Group: "policy", Version: "v1", Kind: "PodDisruptionBudget"}, nil
 	}
 
 	// Fall back to REST mapper for custom resources
