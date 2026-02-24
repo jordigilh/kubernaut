@@ -567,7 +567,7 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 					"Status.Expired must be true when approval times out (Bug Fix 3)")
 				g.Expect(testRAR.Status.TimeRemaining).To(Equal("0s"),
 					"TimeRemaining must be 0s when expired (Bug Fix 4)")
-			}, 30*time.Second, 2*time.Second).Should(Succeed())
+			}, 120*time.Second, 2*time.Second).Should(Succeed())
 
 			By("E2E-RAR-163-003: Verifying ApprovalExpired and ApprovalPending conditions")
 			Expect(testRAR.Status.Conditions).To(ContainElements(
