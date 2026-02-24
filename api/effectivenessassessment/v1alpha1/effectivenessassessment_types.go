@@ -87,9 +87,17 @@ type EffectivenessAssessmentSpec struct {
 	// +kubebuilder:validation:Enum=Completed;Failed;TimedOut
 	RemediationRequestPhase string `json:"remediationRequestPhase"`
 
-	// TargetResource identifies the Kubernetes resource that was remediated.
+	// SignalTarget is the resource that triggered the alert.
+	// Source: RR.Spec.TargetResource (from Gateway alert extraction).
+	// Used by: health assessment, alert resolution, metrics queries (DD-EM-003).
 	// +kubebuilder:validation:Required
-	TargetResource TargetResource `json:"targetResource"`
+	SignalTarget TargetResource `json:"signalTarget"`
+
+	// RemediationTarget is the resource the workflow modified.
+	// Source: AA.Status.RootCauseAnalysis.AffectedResource (from HAPI RCA resolution).
+	// Used by: spec hash computation, drift detection (DD-EM-003).
+	// +kubebuilder:validation:Required
+	RemediationTarget TargetResource `json:"remediationTarget"`
 
 	// Config contains the assessment configuration parameters.
 	// +kubebuilder:validation:Required
@@ -228,6 +236,7 @@ type EAComponents struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:resource:shortName=ea
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.assessmentReason`
 // +kubebuilder:printcolumn:name="CorrelationID",type=string,JSONPath=`.spec.correlationID`

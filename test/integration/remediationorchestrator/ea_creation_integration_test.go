@@ -132,9 +132,9 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 		// Verify EA spec fields
 		Expect(ea.Spec.CorrelationID).To(Equal(rr.Name))
 		Expect(ea.Spec.RemediationRequestPhase).To(Equal("Completed"))
-		Expect(ea.Spec.TargetResource.Kind).To(Equal("Deployment"))
-		Expect(ea.Spec.TargetResource.Name).To(Equal("test-app"))
-		Expect(ea.Spec.TargetResource.Namespace).To(Equal(ns))
+		Expect(ea.Spec.RemediationTarget.Kind).To(Equal("Deployment"))
+		Expect(ea.Spec.RemediationTarget.Name).To(Equal("test-app"))
+		Expect(ea.Spec.RemediationTarget.Namespace).To(Equal(ns))
 		Expect(ea.Spec.Config.StabilizationWindow.Duration).To(BeNumerically(">", 0))
 
 		// Verify owner reference (cascade deletion)
@@ -334,8 +334,269 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 		// ADR-EM-001 Section 8: blockOwnerDeletion must be false so RR deletion
 		// does not block on EA finalizers; GC still deletes EA when RR is removed.
 		By("Verifying owner reference is set correctly for cascade deletion (BR-ORCH-031)")
-		Expect(ownerRef.BlockOwnerDeletion).ToNot(BeNil())
-		Expect(*ownerRef.BlockOwnerDeletion).To(BeFalse(),
+		Expect(ownerRef.BlockOwnerDeletion).To(HaveValue(BeFalse()),
 			"ADR-EM-001 Section 8: blockOwnerDeletion must be false to prevent RR deletion blocking on EA finalizers")
+	})
+})
+
+// ============================================================================
+// EA DUAL-TARGET RESOLUTION INTEGRATION TESTS (Issue #188, DD-EM-003)
+// Business Requirement: resolveDualTargets correctly derives SignalTarget from RR
+// and RemediationTarget from AA.status.rootCauseAnalysis.affectedResource.
+// ============================================================================
+var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
+
+	// ========================================
+	// IT-RO-188-003: Divergent targets when AA has a different affectedResource
+	// ========================================
+	It("IT-RO-188-003: should create EA with divergent targets when AA identifies a different affected resource", func() {
+		ns := createTestNamespace("ro-dt-003")
+		defer deleteTestNamespace(ns)
+
+		By("Creating a RemediationRequest")
+		rr := createRemediationRequest(ns, "rr-dt-003")
+
+		By("Driving RR to Processing phase")
+		Eventually(func() remediationv1.RemediationPhase {
+			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
+			return rr.Status.OverallPhase
+		}, timeout, interval).Should(Equal(remediationv1.PhaseProcessing))
+
+		By("Completing SignalProcessing")
+		spName := fmt.Sprintf("sp-%s", rr.Name)
+		sp := &signalprocessingv1.SignalProcessing{}
+		Eventually(func() error {
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ns}, sp)
+		}, timeout, interval).Should(Succeed())
+		Expect(updateSPStatus(ns, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
+
+		By("Waiting for Analyzing phase")
+		Eventually(func() remediationv1.RemediationPhase {
+			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
+			return rr.Status.OverallPhase
+		}, timeout, interval).Should(Equal(remediationv1.PhaseAnalyzing))
+
+		By("Completing AIAnalysis with a DIFFERENT affectedResource than RR target")
+		aiName := fmt.Sprintf("ai-%s", rr.Name)
+		ai := &aianalysisv1.AIAnalysis{}
+		Eventually(func() error {
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ns}, ai)
+		}, timeout, interval).Should(Succeed())
+		ai.Status.Phase = aianalysisv1.PhaseCompleted
+		ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+			WorkflowID:      "wf-scale-hpa",
+			Version:         "v1.0.0",
+			ExecutionBundle: "test-image:latest",
+			Confidence:      0.90,
+		}
+		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+			Summary:    "HPA maxed out, scaling target pod autoscaler",
+			Severity:   "critical",
+			SignalType: "alert",
+			AffectedResource: &aianalysisv1.AffectedResource{
+				Kind:      "HorizontalPodAutoscaler",
+				Name:      "api-frontend-hpa",
+				Namespace: ns,
+			},
+		}
+		now := metav1.Now()
+		ai.Status.CompletedAt = &now
+		Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
+
+		By("Waiting for Executing phase")
+		Eventually(func() remediationv1.RemediationPhase {
+			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
+			return rr.Status.OverallPhase
+		}, timeout, interval).Should(Equal(remediationv1.PhaseExecuting))
+
+		By("Completing WorkflowExecution")
+		weName := fmt.Sprintf("we-%s", rr.Name)
+		we := &workflowexecutionv1.WorkflowExecution{}
+		Eventually(func() error {
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: weName, Namespace: ns}, we)
+		}, timeout, interval).Should(Succeed())
+		we.Status.Phase = workflowexecutionv1.PhaseCompleted
+		completionTime := metav1.Now()
+		we.Status.CompletionTime = &completionTime
+		Expect(k8sClient.Status().Update(ctx, we)).To(Succeed())
+
+		By("Waiting for Completed phase")
+		Eventually(func() remediationv1.RemediationPhase {
+			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
+			return rr.Status.OverallPhase
+		}, timeout, interval).Should(Equal(remediationv1.PhaseCompleted))
+
+		By("Verifying EA was created with divergent targets")
+		eaName := fmt.Sprintf("ea-%s", rr.Name)
+		ea := &eav1.EffectivenessAssessment{}
+		Eventually(func() error {
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: eaName, Namespace: ns}, ea)
+		}, 30*time.Second, interval).Should(Succeed(), "EA should be created after RR completion")
+
+		// DD-EM-003: SignalTarget = RR target (the alerting resource)
+		Expect(ea.Spec.SignalTarget.Kind).To(Equal("Deployment"),
+			"DD-EM-003: SignalTarget.Kind should come from RR.Spec.TargetResource")
+		Expect(ea.Spec.SignalTarget.Name).To(Equal("test-app"),
+			"DD-EM-003: SignalTarget.Name should come from RR.Spec.TargetResource")
+		Expect(ea.Spec.SignalTarget.Namespace).To(Equal(ns))
+
+		// DD-EM-003: RemediationTarget = AA's AffectedResource (the modified resource)
+		Expect(ea.Spec.RemediationTarget.Kind).To(Equal("HorizontalPodAutoscaler"),
+			"DD-EM-003: RemediationTarget.Kind should come from AA.status.rootCauseAnalysis.affectedResource")
+		Expect(ea.Spec.RemediationTarget.Name).To(Equal("api-frontend-hpa"),
+			"DD-EM-003: RemediationTarget.Name should come from AA.status.rootCauseAnalysis.affectedResource")
+		Expect(ea.Spec.RemediationTarget.Namespace).To(Equal(ns))
+	})
+
+	// ========================================
+	// IT-RO-188-003b: Fallback when AA has empty affectedResource
+	// ========================================
+	It("IT-RO-188-003b: should fall back to RR target when AA has empty affectedResource", func() {
+		ns := createTestNamespace("ro-dt-003b")
+		defer deleteTestNamespace(ns)
+
+		By("Creating a RemediationRequest")
+		rr := createRemediationRequest(ns, "rr-dt-003b")
+
+		By("Driving pipeline to Analyzing phase")
+		Eventually(func() remediationv1.RemediationPhase {
+			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
+			return rr.Status.OverallPhase
+		}, timeout, interval).Should(Equal(remediationv1.PhaseProcessing))
+
+		spName := fmt.Sprintf("sp-%s", rr.Name)
+		sp := &signalprocessingv1.SignalProcessing{}
+		Eventually(func() error {
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ns}, sp)
+		}, timeout, interval).Should(Succeed())
+		Expect(updateSPStatus(ns, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
+
+		Eventually(func() remediationv1.RemediationPhase {
+			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
+			return rr.Status.OverallPhase
+		}, timeout, interval).Should(Equal(remediationv1.PhaseAnalyzing))
+
+		By("Completing AIAnalysis with EMPTY affectedResource (no RCA resource identified)")
+		aiName := fmt.Sprintf("ai-%s", rr.Name)
+		ai := &aianalysisv1.AIAnalysis{}
+		Eventually(func() error {
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ns}, ai)
+		}, timeout, interval).Should(Succeed())
+		ai.Status.Phase = aianalysisv1.PhaseCompleted
+		ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+			WorkflowID:      "wf-restart-pods",
+			Version:         "v1.0.0",
+			ExecutionBundle: "test-image:latest",
+			Confidence:      0.85,
+		}
+		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+			Summary:    "Generic OOM detected",
+			Severity:   "high",
+			SignalType: "alert",
+			AffectedResource: &aianalysisv1.AffectedResource{
+				Kind:      "",
+				Name:      "",
+				Namespace: "",
+			},
+		}
+		aiNow := metav1.Now()
+		ai.Status.CompletedAt = &aiNow
+		Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
+
+		By("Completing WorkflowExecution")
+		Eventually(func() remediationv1.RemediationPhase {
+			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
+			return rr.Status.OverallPhase
+		}, timeout, interval).Should(Equal(remediationv1.PhaseExecuting))
+
+		weName := fmt.Sprintf("we-%s", rr.Name)
+		we := &workflowexecutionv1.WorkflowExecution{}
+		Eventually(func() error {
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: weName, Namespace: ns}, we)
+		}, timeout, interval).Should(Succeed())
+		we.Status.Phase = workflowexecutionv1.PhaseCompleted
+		weNow := metav1.Now()
+		we.Status.CompletionTime = &weNow
+		Expect(k8sClient.Status().Update(ctx, we)).To(Succeed())
+
+		By("Waiting for Completed phase")
+		Eventually(func() remediationv1.RemediationPhase {
+			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
+			return rr.Status.OverallPhase
+		}, timeout, interval).Should(Equal(remediationv1.PhaseCompleted))
+
+		By("Verifying EA targets both fall back to RR target")
+		eaName := fmt.Sprintf("ea-%s", rr.Name)
+		ea := &eav1.EffectivenessAssessment{}
+		Eventually(func() error {
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: eaName, Namespace: ns}, ea)
+		}, 30*time.Second, interval).Should(Succeed())
+
+		// DD-EM-003 fallback: Both targets should equal RR.Spec.TargetResource
+		Expect(ea.Spec.SignalTarget.Kind).To(Equal("Deployment"))
+		Expect(ea.Spec.SignalTarget.Name).To(Equal("test-app"))
+		Expect(ea.Spec.SignalTarget.Namespace).To(Equal(ns))
+
+		Expect(ea.Spec.RemediationTarget.Kind).To(Equal("Deployment"),
+			"DD-EM-003: RemediationTarget should fall back to RR target when AA has empty affectedResource")
+		Expect(ea.Spec.RemediationTarget.Name).To(Equal("test-app"),
+			"DD-EM-003: RemediationTarget should fall back to RR target when AA has empty affectedResource")
+		Expect(ea.Spec.RemediationTarget.Namespace).To(Equal(ns))
+	})
+
+	// ========================================
+	// IT-RO-188-003c: Fallback when no AIAnalysis exists (SP failure path)
+	// ========================================
+	It("IT-RO-188-003c: should fall back to RR target when no AIAnalysis exists (SP failure)", func() {
+		ns := createTestNamespace("ro-dt-003c")
+		defer deleteTestNamespace(ns)
+
+		By("Creating a RemediationRequest")
+		rr := createRemediationRequest(ns, "rr-dt-003c")
+
+		By("Driving RR to Processing phase")
+		Eventually(func() remediationv1.RemediationPhase {
+			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
+			return rr.Status.OverallPhase
+		}, timeout, interval).Should(Equal(remediationv1.PhaseProcessing))
+
+		By("Failing SignalProcessing (no AIAnalysis will be created)")
+		spName := fmt.Sprintf("sp-%s", rr.Name)
+		sp := &signalprocessingv1.SignalProcessing{}
+		Eventually(func() error {
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ns}, sp)
+		}, timeout, interval).Should(Succeed())
+		sp.Status.Phase = signalprocessingv1.PhaseFailed
+		failedNow := metav1.Now()
+		sp.Status.CompletionTime = &failedNow
+		sp.Status.Error = "Simulated SP failure for dual-target fallback test"
+		Expect(k8sClient.Status().Update(ctx, sp)).To(Succeed())
+
+		By("Waiting for Failed phase (no AA was ever created)")
+		Eventually(func() remediationv1.RemediationPhase {
+			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
+			return rr.Status.OverallPhase
+		}, timeout, interval).Should(Equal(remediationv1.PhaseFailed))
+
+		By("Verifying EA targets both fall back to RR target (nil dualTarget path)")
+		eaName := fmt.Sprintf("ea-%s", rr.Name)
+		ea := &eav1.EffectivenessAssessment{}
+		Eventually(func() error {
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: eaName, Namespace: ns}, ea)
+		}, 30*time.Second, interval).Should(Succeed(), "EA should be created even on SP failure")
+
+		// DD-EM-003 nil fallback: When no AIAnalysis exists, dualTarget is nil,
+		// and CreateEffectivenessAssessment falls back to RR.Spec.TargetResource for both.
+		Expect(ea.Spec.SignalTarget.Kind).To(Equal("Deployment"))
+		Expect(ea.Spec.SignalTarget.Name).To(Equal("test-app"))
+		Expect(ea.Spec.SignalTarget.Namespace).To(Equal(ns))
+
+		Expect(ea.Spec.RemediationTarget.Kind).To(Equal("Deployment"),
+			"DD-EM-003: RemediationTarget should fall back to RR target when no AA exists")
+		Expect(ea.Spec.RemediationTarget.Name).To(Equal("test-app"),
+			"DD-EM-003: RemediationTarget should fall back to RR target when no AA exists")
+		Expect(ea.Spec.RemediationTarget.Namespace).To(Equal(ns))
+
+		Expect(ea.Spec.RemediationRequestPhase).To(Equal("Failed"))
 	})
 })

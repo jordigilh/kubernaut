@@ -23,6 +23,7 @@
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 2.2 | 2026-02-24 | Architecture Team | **Dual-target EA (Issue #188, DD-EM-003)**: Renamed `resolveEffectivenessTarget` to `resolveDualTargets` returning `*creator.DualTarget{Signal, Remediation}`. Sequence diagram and EA CRD example updated to reflect the new function name and dual-target fields (`signalTarget`, `remediationTarget`). Removed single `targetResource` field from EA spec. |
 | 2.1 | 2026-02-15 | Architecture Team | **Two-phase hash model**: Phase 1 (hash component check): capture current spec as `PostRemediationSpecHash`, compare `pre != post` (workflow changed spec?), set `CurrentSpecHash = PostRemediationSpecHash` as baseline. Phase 2 (drift guard, subsequent reconciles): re-capture current hash, compare `post != current` (spec drift?), abort if drifted. Fixes single-pass completion bug where `CurrentSpecHash` was never set. |
 | 2.0 | 2026-02-15 | Architecture Team | **Pre-remediation hash on CRD path**: RO now computes `PreRemediationSpecHash` before WFE creation and stores it on `RR.Status.PreRemediationSpecHash` (immutable via CEL). EA creator copies it to `EA.Spec.PreRemediationSpecHash`. EM reads from EA spec with DataStorage fallback for backward compatibility. Eliminates EM→DS round-trip for hash comparison. Principle 1 updated. |
 | 1.9 | 2026-02-14 | Architecture Team | **Batch 2 implementation**: `remediation.workflow_created` wired at both WFE creation sites (GAP-RO-1). `workflow_type` (DD-WORKFLOW-016 action_type) added end-to-end HAPI→AA→RO (GAP-RO-4). `blockOwnerDeletion` overridden to `false`. `EACreated` K8s event emitted. `no_execution` guard implemented in EM reconciler (Section 5). StabilizationWindow default corrected to 5m. Section 13.1 gap table updated with resolution status. |
@@ -179,7 +180,7 @@ sequenceDiagram
     AA->>DS: audit: aianalysis.analysis.completed
 
     Note over RO,WFE: Phase 5 — Execution
-    RO->>RO: resolveEffectivenessTarget(rr, ai) — prefer AffectedResource (BR-HAPI-191)
+    RO->>RO: resolveDualTargets(rr, ai) — DD-EM-003: signal from RR, remediation from AffectedResource
     RO->>K8s: GET AI-resolved target resource .spec (uncached, direct API)
     RO->>RO: Compute SHA-256 pre-remediation hash
     RO->>K8s: Store hash on RR.Status.PreRemediationSpecHash (immutable CEL)
@@ -858,11 +859,16 @@ metadata:
 spec:
   correlationID: "{rr.name}"
   remediationRequestPhase: "{rr.status.overallPhase}"  # Completed|Failed|TimedOut — immutable spec field
-  targetResource:
+  signalTarget:           # DD-EM-003: from RR.Spec.TargetResource (the alerting resource)
     kind: Deployment
     name: my-app
     namespace: prod
-  # TargetResource is resolved from AI AffectedResource when available (BR-HAPI-191), falling back to RR.Spec.TargetResource — same logic as WorkflowExecution creator (resolveEffectivenessTarget in RO reconciler).
+  remediationTarget:      # DD-EM-003: from AA.Status.RootCauseAnalysis.AffectedResource (fallback: RR target)
+    kind: Deployment
+    name: my-app
+    namespace: prod
+  # Dual targets resolved by resolveDualTargets(rr, ai) in RO reconciler (DD-EM-003).
+  # SignalTarget always from RR. RemediationTarget prefers AI AffectedResource, falls back to RR target.
   config:
     stabilizationWindow: 5m
 status:

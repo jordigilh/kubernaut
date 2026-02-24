@@ -1,7 +1,7 @@
 # DD-EM-003: Dual-Target Effectiveness Assessment (Signal Target + Remediation Target)
 
-**Version**: 1.0
-**Date**: 2026-02-23
+**Version**: 1.2
+**Date**: 2026-02-24
 **Status**: ✅ APPROVED
 **Author**: EffectivenessMonitor Team
 **Reviewers**: RemediationOrchestrator Team, AIAnalysis Team
@@ -39,7 +39,7 @@ During the `hpa-maxed` demo scenario, the EA target was `Deployment/api-frontend
 Both targets are already available in the Remediation Orchestrator:
 
 - **Signal target**: Extracted by the Gateway from alert labels, propagated through the RR
-- **Remediation target**: Determined by HAPI's RCA resolution and workflow selection, available in the AA's selected workflow
+- **Remediation target**: Determined by HAPI's RCA resolution, available in the AA's `status.rootCauseAnalysis.affectedResource`
 
 This is a plumbing change -- no new data needs to be generated.
 
@@ -59,14 +59,9 @@ type EffectivenessAssessmentSpec struct {
     SignalTarget TargetResource `json:"signalTarget"`
 
     // RemediationTarget is the resource the workflow modified.
-    // Source: AA.status.selectedWorkflow.targetResource (from HAPI RCA resolution).
+    // Source: AA.status.rootCauseAnalysis.affectedResource (from HAPI RCA resolution).
     // Used by: spec hash computation, drift detection.
     RemediationTarget TargetResource `json:"remediationTarget"`
-
-    // TargetResource is DEPRECATED. Retained for backward compatibility.
-    // New EAs populate signalTarget and remediationTarget instead.
-    // +optional
-    TargetResource *TargetResource `json:"targetResource,omitempty"`
 }
 
 type TargetResource struct {
@@ -82,29 +77,21 @@ type TargetResource struct {
 |-----------|-------------|-----------|
 | Spec hash (DD-EM-002) | `remediationTarget` | Hash the resource that was actually modified to detect drift |
 | Health (BR-EM-001) | `signalTarget` | Check if the workload that triggered the alert is healthy |
-| Alert resolution (BR-EM-003) | signal name (unchanged) | Alert is keyed by signal name, not by a specific resource |
-| Metrics (BR-EM-002) | `signalTarget` | Query workload metrics for the resource under pressure |
+| Alert resolution (BR-EM-003) | `signalTarget.Namespace` + signal name | AlertContext uses signal name for matching and `signalTarget.Namespace` for scoping |
+| Metrics (BR-EM-002) | `signalTarget.Namespace` | PromQL queries scoped to the signal target's namespace |
 
 ### EM Reconciler Changes
 
 ```go
 // assessHash uses remediationTarget (the resource the workflow modified)
 func (r *Reconciler) assessHash(ctx context.Context, ea *eav1.EffectivenessAssessment) hash.ComputeResult {
-    target := ea.Spec.RemediationTarget
-    if target.Kind == "" {
-        // Backward compatibility: fall back to single targetResource
-        target = *ea.Spec.TargetResource
-    }
-    spec := r.getTargetSpec(ctx, target)
+    spec := r.getTargetSpec(ctx, ea.Spec.RemediationTarget)
     // ...
 }
 
 // assessHealth uses signalTarget (the resource the alert is about)
 func (r *Reconciler) assessHealth(ctx context.Context, ea *eav1.EffectivenessAssessment) health.Result {
-    target := ea.Spec.SignalTarget
-    if target.Kind == "" {
-        target = *ea.Spec.TargetResource
-    }
+    status := r.getTargetHealthStatus(ctx, ea.Spec.SignalTarget)
     // ...
 }
 ```
@@ -125,9 +112,9 @@ func (r *Reconciler) createEffectivenessAssessment(ctx context.Context, rr *rrv1
             },
             // Remediation target from the AA (HAPI RCA resolution)
             RemediationTarget: eav1.TargetResource{
-                Kind:      aa.Status.SelectedWorkflow.TargetResource.Kind,
-                Name:      aa.Status.SelectedWorkflow.TargetResource.Name,
-                Namespace: aa.Status.SelectedWorkflow.TargetResource.Namespace,
+                Kind:      aa.Status.RootCauseAnalysis.AffectedResource.Kind,
+                Name:      aa.Status.RootCauseAnalysis.AffectedResource.Name,
+                Namespace: aa.Status.RootCauseAnalysis.AffectedResource.Namespace,
             },
             // ...
         },
@@ -161,15 +148,13 @@ EA
 EM
   ├─ spec hash    → reads remediationTarget (HPA)
   ├─ health       → reads signalTarget (Deployment)
-  ├─ alert        → reads signalName
-  └─ metrics      → reads signalTarget namespace
+  ├─ alert        → reads signalName + signalTarget.Namespace
+  └─ metrics      → reads signalTarget.Namespace
 ```
 
 ### Backward Compatibility
 
-- EAs with only `targetResource` (no `signalTarget`/`remediationTarget`) continue to work; the EM falls back to the single field for all components.
-- New EAs populate both dual targets. The deprecated `targetResource` field is omitted.
-- No migration needed for existing completed EAs.
+No backward compatibility is needed. This is pre-release v1.0 with no production EAs. The single `targetResource` field is removed entirely and replaced by `signalTarget` and `remediationTarget`.
 
 ---
 
@@ -177,11 +162,11 @@ EM
 
 | Component | Team | Change |
 |-----------|------|--------|
-| EA CRD types | EffectivenessMonitor | Add `signalTarget`, `remediationTarget` fields |
-| EA CRD manifest | EffectivenessMonitor | Update CRD YAML with new fields |
+| EA CRD types | EffectivenessMonitor | Replace `targetResource` with `signalTarget` + `remediationTarget` |
+| EA CRD manifest | EffectivenessMonitor | Regenerate CRD YAML with new schema |
 | EM reconciler | EffectivenessMonitor | Route each component to the correct target |
-| RO controller | RemediationOrchestrator | Populate both targets when creating EA |
-| EM pre-remediation hash | EffectivenessMonitor | Compute pre-hash from `remediationTarget` |
+| RO controller | RemediationOrchestrator | Populate both targets via `resolveDualTargets()` |
+| RO EA creator | RemediationOrchestrator | Accept `DualTarget` struct, set both fields on EA |
 
 ---
 
@@ -197,8 +182,8 @@ EM
 ### Negative
 
 1. **CRD schema change**: Requires updating the EA CRD and reapplying to the cluster
-   - Mitigation: Additive change, backward compatible
-2. **RO must read from AA status**: RO needs to extract the remediation target from the AA's selected workflow
+   - Mitigation: Pre-release v1.0, no production EAs to migrate
+2. **RO must read from AA status**: RO needs to extract the remediation target from the AA's `rootCauseAnalysis.affectedResource`
    - Mitigation: RO already reads AA status for other fields (confidence, approval required)
 
 ### Neutral
@@ -221,3 +206,5 @@ EM
 | Date | Version | Changes |
 |------|---------|---------|
 | 2026-02-23 | 1.0 | Initial decision - dual-target EA for accurate per-component assessment |
+| 2026-02-24 | 1.2 | Issue #188: Clarified alert resolution routing -- uses `signalTarget.Namespace` + signal name (not just signal name). Metrics routing clarified as `signalTarget.Namespace`. Updated data flow diagram. |
+| 2026-02-24 | 1.1 | Issue #188: Fix remediation target source to `rootCauseAnalysis.affectedResource` (not `selectedWorkflow.targetResource`). Remove deprecated `targetResource` field (pre-release v1.0, no backward compat needed). Update RO to use `resolveDualTargets()` with `DualTarget` struct. |

@@ -255,9 +255,9 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 		By("10. Validating EA spec fields")
 		Expect(ea.Spec.CorrelationID).To(Equal(rrName),
 			"EA correlation ID should match RR name")
-		Expect(ea.Spec.TargetResource.Kind).To(Equal("Deployment"))
-		Expect(ea.Spec.TargetResource.Name).To(Equal("test-app-ea"))
-		Expect(ea.Spec.TargetResource.Namespace).To(Equal(testNS))
+		Expect(ea.Spec.RemediationTarget.Kind).To(Equal("Deployment"))
+		Expect(ea.Spec.RemediationTarget.Name).To(Equal("test-app-ea"))
+		Expect(ea.Spec.RemediationTarget.Namespace).To(Equal(testNS))
 		Expect(ea.Spec.Config.StabilizationWindow.Duration).To(BeNumerically(">", 0),
 			"Stabilization window should be set from RO config")
 

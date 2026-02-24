@@ -972,13 +972,12 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 		// Routing checks passed - create WorkflowExecution
 		logger.Info("Routing checks passed, creating WorkflowExecution")
 
-		// DD-EM-002: Capture pre-remediation spec hash BEFORE workflow modifies the resource.
-		// BR-HAPI-191: Use the AI-identified target (e.g., Deployment) rather than the
-		// signal-sourced target (e.g., Pod) — the hash must match what the workflow modifies.
-		hashKind, hashName, hashNs := resolveEffectivenessTarget(rr, ai)
+		// DD-EM-002 + DD-EM-003: Capture pre-remediation spec hash of the remediation target
+		// BEFORE the workflow modifies it. The hash must match the resource the workflow patches.
+		remTarget := resolveDualTargets(rr, ai).Remediation
 		preHash, hashErr := CapturePreRemediationHash(
 			ctx, r.apiReader, r.restMapper,
-			hashKind, hashName, hashNs,
+			remTarget.Kind, remTarget.Name, remTarget.Namespace,
 		)
 		if hashErr != nil {
 			logger.Error(hashErr, "Failed to capture pre-remediation hash (non-fatal)")
@@ -992,7 +991,7 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 			} else {
 				logger.Info("Pre-remediation spec hash stored on RR status",
 					"hash", preHash[:min(23, len(preHash))]+"...",
-					"target", fmt.Sprintf("%s/%s", hashKind, hashName))
+					"target", fmt.Sprintf("%s/%s", remTarget.Kind, remTarget.Name))
 			}
 		}
 
@@ -1167,12 +1166,11 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 			return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil // REFACTOR-RO-003
 		}
 
-		// DD-EM-002: Capture pre-remediation spec hash BEFORE workflow modifies the resource.
-		// BR-HAPI-191: Use the AI-identified target (same as first capture site).
-		hashKind, hashName, hashNs := resolveEffectivenessTarget(rr, ai)
+		// DD-EM-002 + DD-EM-003: Capture pre-remediation spec hash of the remediation target.
+		remTarget := resolveDualTargets(rr, ai).Remediation
 		preHash, hashErr := CapturePreRemediationHash(
 			ctx, r.apiReader, r.restMapper,
-			hashKind, hashName, hashNs,
+			remTarget.Kind, remTarget.Name, remTarget.Namespace,
 		)
 		if hashErr != nil {
 			logger.Error(hashErr, "Failed to capture pre-remediation hash after approval (non-fatal)")
@@ -1990,9 +1988,10 @@ func (r *Reconciler) createEffectivenessAssessmentIfNeeded(ctx context.Context, 
 
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
 
-	// BR-HAPI-191: Resolve the AI-identified target for the EA.
-	// Fetch the AIAnalysis CRD to check for AffectedResource.
-	var resolved *creator.ResolvedTarget
+	// DD-EM-003: Resolve dual targets for the EA.
+	// Signal target: from RR (always available).
+	// Remediation target: from AIAnalysis AffectedResource (when available), else RR fallback.
+	var dualTarget *creator.DualTarget
 	if rr.Status.AIAnalysisRef != nil {
 		ai := &aianalysisv1.AIAnalysis{}
 		if err := r.client.Get(ctx, client.ObjectKey{
@@ -2002,12 +2001,11 @@ func (r *Reconciler) createEffectivenessAssessmentIfNeeded(ctx context.Context, 
 			logger.V(1).Info("Could not fetch AIAnalysis for target resolution (non-fatal), using RR target",
 				"error", err)
 		} else {
-			kind, name, ns := resolveEffectivenessTarget(rr, ai)
-			resolved = &creator.ResolvedTarget{Kind: kind, Name: name, Namespace: ns}
+			dualTarget = resolveDualTargets(rr, ai)
 		}
 	}
 
-	name, err := r.eaCreator.CreateEffectivenessAssessment(ctx, rr, resolved)
+	name, err := r.eaCreator.CreateEffectivenessAssessment(ctx, rr, dualTarget)
 	if err != nil {
 		logger.Error(err, "Failed to create EffectivenessAssessment (non-fatal per ADR-EM-001)")
 		return
@@ -2116,9 +2114,9 @@ func (r *Reconciler) emitWorkflowCreatedAudit(ctx context.Context, rr *remediati
 	}
 
 	correlationID := rr.Name
-	// BR-HAPI-191: Use AI-identified target for audit trail consistency
-	auditKind, auditName, auditNs := resolveEffectivenessTarget(rr, ai)
-	targetResource := fmt.Sprintf("%s/%s/%s", auditNs, auditKind, auditName)
+	// DD-EM-003: Use remediation target for audit trail consistency
+	remTarget := resolveDualTargets(rr, ai).Remediation
+	targetResource := fmt.Sprintf("%s/%s/%s", remTarget.Namespace, remTarget.Kind, remTarget.Name)
 
 	// Extract workflow metadata from AIAnalysis status
 	var workflowID, workflowVersion, workflowType string
@@ -3047,31 +3045,35 @@ func (r *Reconciler) SetRESTMapper(mapper meta.RESTMapper) {
 	r.restMapper = mapper
 }
 
-// resolveEffectivenessTarget determines the Kubernetes resource that the workflow
-// actually modifies for effectiveness assessment purposes.
+// resolveDualTargets resolves both signal and remediation targets for the EA (DD-EM-003).
 //
-// BR-HAPI-191: Prefers the LLM-identified AffectedResource from the AIAnalysis
-// RootCauseAnalysis (e.g., Deployment) over the signal-sourced TargetResource
-// on the RR (e.g., Pod). Pods should never be the assessment target when a parent
-// workload resource (Deployment/ReplicaSet/StatefulSet) exists, because the
-// workflow patches the parent, not the individual pod.
-//
-// Falls back to RR.Spec.TargetResource when:
-//   - ai is nil (EA created before AI analysis, e.g., early failure)
-//   - AffectedResource is not set (LLM did not identify a specific resource)
-func resolveEffectivenessTarget(
+// Signal target: Always from RR.Spec.TargetResource (the resource that triggered the alert).
+// Remediation target: Prefers the LLM-identified AffectedResource from the AIAnalysis
+// RootCauseAnalysis. Falls back to RR.Spec.TargetResource when AI analysis is unavailable
+// or did not identify a specific resource.
+func resolveDualTargets(
 	rr *remediationv1.RemediationRequest,
 	ai *aianalysisv1.AIAnalysis,
-) (kind, name, namespace string) {
-	// Prefer AffectedResource from RCA if available
+) *creator.DualTarget {
+	signal := eav1.TargetResource{
+		Kind:      rr.Spec.TargetResource.Kind,
+		Name:      rr.Spec.TargetResource.Name,
+		Namespace: rr.Spec.TargetResource.Namespace,
+	}
+
+	remediation := signal
 	if ai != nil && ai.Status.RootCauseAnalysis != nil && ai.Status.RootCauseAnalysis.AffectedResource != nil {
 		ar := ai.Status.RootCauseAnalysis.AffectedResource
 		if ar.Kind != "" && ar.Name != "" {
-			return ar.Kind, ar.Name, ar.Namespace
+			remediation = eav1.TargetResource{
+				Kind:      ar.Kind,
+				Name:      ar.Name,
+				Namespace: ar.Namespace,
+			}
 		}
 	}
-	// Fall back to RR's signal-sourced target resource
-	return rr.Spec.TargetResource.Kind, rr.Spec.TargetResource.Name, rr.Spec.TargetResource.Namespace
+
+	return &creator.DualTarget{Signal: signal, Remediation: remediation}
 }
 
 // CapturePreRemediationHash fetches the target resource via an uncached reader,

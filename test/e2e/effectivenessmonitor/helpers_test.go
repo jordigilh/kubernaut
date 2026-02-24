@@ -46,7 +46,12 @@ func createEA(namespace, name, correlationID string, opts ...eaOption) *eav1.Eff
 		Spec: eav1.EffectivenessAssessmentSpec{
 			CorrelationID:           correlationID,
 			RemediationRequestPhase: "Completed",
-			TargetResource: eav1.TargetResource{
+			SignalTarget: eav1.TargetResource{
+				Kind:      "Pod",
+				Name:      "target-pod",
+				Namespace: namespace,
+			},
+			RemediationTarget: eav1.TargetResource{
 				Kind:      "Pod",
 				Name:      "target-pod",
 				Namespace: namespace,
@@ -93,7 +98,12 @@ func createExpiredEA(namespace, name, correlationID string) *eav1.EffectivenessA
 		Spec: eav1.EffectivenessAssessmentSpec{
 			CorrelationID:           correlationID,
 			RemediationRequestPhase: "Completed",
-			TargetResource: eav1.TargetResource{
+			SignalTarget: eav1.TargetResource{
+				Kind:      "Pod",
+				Name:      "target-pod",
+				Namespace: namespace,
+			},
+			RemediationTarget: eav1.TargetResource{
 				Kind:      "Pod",
 				Name:      "target-pod",
 				Namespace: namespace,
@@ -139,7 +149,8 @@ func createExpiredEA(namespace, name, correlationID string) *eav1.EffectivenessA
 // withTargetPod sets the target pod name in the EA spec.
 func withTargetPod(name string) eaOption {
 	return func(ea *eav1.EffectivenessAssessment) {
-		ea.Spec.TargetResource.Name = name
+		ea.Spec.SignalTarget.Name = name
+		ea.Spec.RemediationTarget.Name = name
 	}
 }
 

@@ -93,7 +93,10 @@ var _ = Describe("Assessment Reason: metrics_timed_out (ADR-EM-001, Batch 3)", f
 			Spec: eav1.EffectivenessAssessmentSpec{
 				CorrelationID:           "corr-" + name,
 				RemediationRequestPhase: "Completed",
-				TargetResource: eav1.TargetResource{
+				SignalTarget: eav1.TargetResource{
+					Kind: "Deployment", Name: "test-app", Namespace: ns,
+				},
+				RemediationTarget: eav1.TargetResource{
 					Kind: "Deployment", Name: "test-app", Namespace: ns,
 				},
 				Config: eav1.EAConfig{

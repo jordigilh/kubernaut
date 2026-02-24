@@ -56,7 +56,12 @@ func newTestEA() *eav1.EffectivenessAssessment {
 		},
 		Spec: eav1.EffectivenessAssessmentSpec{
 			CorrelationID: "rr-test-001",
-			TargetResource: eav1.TargetResource{
+			SignalTarget: eav1.TargetResource{
+				Kind:      "Deployment",
+				Name:      "nginx",
+				Namespace: "default",
+			},
+			RemediationTarget: eav1.TargetResource{
 				Kind:      "Deployment",
 				Name:      "nginx",
 				Namespace: "default",
@@ -505,7 +510,10 @@ var _ = Describe("Audit Manager — Assessment Completed Payload (ADR-EM-001, Ba
 				CorrelationID:           "rr-payment-restart",
 				SignalName:              "PaymentHighCPU",
 				RemediationRequestPhase: "Completed",
-				TargetResource: eav1.TargetResource{
+				SignalTarget: eav1.TargetResource{
+					Kind: "Deployment", Name: "payment-api", Namespace: "production",
+				},
+				RemediationTarget: eav1.TargetResource{
 					Kind: "Deployment", Name: "payment-api", Namespace: "production",
 				},
 				Config: eav1.EAConfig{
@@ -559,7 +567,10 @@ var _ = Describe("Audit Manager — Assessment Completed Payload (ADR-EM-001, Ba
 			Spec: eav1.EffectivenessAssessmentSpec{
 				CorrelationID:           "rr-partial",
 				RemediationRequestPhase: "Completed",
-				TargetResource: eav1.TargetResource{
+				SignalTarget: eav1.TargetResource{
+					Kind: "Deployment", Name: "api", Namespace: "staging",
+				},
+				RemediationTarget: eav1.TargetResource{
 					Kind: "Deployment", Name: "api", Namespace: "staging",
 				},
 				Config: eav1.EAConfig{StabilizationWindow: metav1.Duration{}},
@@ -598,7 +609,10 @@ var _ = Describe("Audit Manager — Assessment Completed Payload (ADR-EM-001, Ba
 				CorrelationID:           "rr-payment-restart",
 				SignalName:              "HighCPUAlert",
 				RemediationRequestPhase: "Completed",
-				TargetResource: eav1.TargetResource{
+				SignalTarget: eav1.TargetResource{
+					Kind: "Deployment", Name: "payment-api", Namespace: "production",
+				},
+				RemediationTarget: eav1.TargetResource{
 					Kind: "Deployment", Name: "payment-api", Namespace: "production",
 				},
 				Config: eav1.EAConfig{StabilizationWindow: metav1.Duration{}},
@@ -637,7 +651,10 @@ var _ = Describe("Audit Manager — Assessment Completed Payload (ADR-EM-001, Ba
 			Spec: eav1.EffectivenessAssessmentSpec{
 				CorrelationID:           "rr-no-created-at",
 				RemediationRequestPhase: "Completed",
-				TargetResource: eav1.TargetResource{
+				SignalTarget: eav1.TargetResource{
+					Kind: "Deployment", Name: "app", Namespace: "default",
+				},
+				RemediationTarget: eav1.TargetResource{
 					Kind: "Deployment", Name: "app", Namespace: "default",
 				},
 				Config: eav1.EAConfig{StabilizationWindow: metav1.Duration{}},

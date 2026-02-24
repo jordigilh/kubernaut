@@ -111,7 +111,12 @@ var _ = Describe("Spec Hash Integration (BR-EM-004)", func() {
 			Spec: eav1.EffectivenessAssessmentSpec{
 				CorrelationID:           "rr-sh-004",
 				RemediationRequestPhase: "Completed",
-				TargetResource: eav1.TargetResource{
+				SignalTarget: eav1.TargetResource{
+					Kind:      "Deployment",
+					Name:      "test-app",
+					Namespace: ns,
+				},
+				RemediationTarget: eav1.TargetResource{
 					Kind:      "Deployment",
 					Name:      "test-app",
 					Namespace: ns,

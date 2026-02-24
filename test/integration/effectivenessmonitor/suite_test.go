@@ -486,7 +486,12 @@ func createEffectivenessAssessment(namespace, name, correlationID string) *eav1.
 		Spec: eav1.EffectivenessAssessmentSpec{
 			CorrelationID:           correlationID,
 			RemediationRequestPhase: "Completed",
-			TargetResource: eav1.TargetResource{
+			SignalTarget: eav1.TargetResource{
+				Kind:      "Deployment",
+				Name:      "test-app",
+				Namespace: namespace,
+			},
+			RemediationTarget: eav1.TargetResource{
 				Kind:      "Deployment",
 				Name:      "test-app",
 				Namespace: namespace,
@@ -517,7 +522,12 @@ func createExpiredEffectivenessAssessment(namespace, name, correlationID string)
 		Spec: eav1.EffectivenessAssessmentSpec{
 			CorrelationID:           correlationID,
 			RemediationRequestPhase: "Completed",
-			TargetResource: eav1.TargetResource{
+			SignalTarget: eav1.TargetResource{
+				Kind:      "Deployment",
+				Name:      "test-app",
+				Namespace: namespace,
+			},
+			RemediationTarget: eav1.TargetResource{
 				Kind:      "Deployment",
 				Name:      "test-app",
 				Namespace: namespace,

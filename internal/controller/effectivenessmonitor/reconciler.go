@@ -299,7 +299,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	// was modified (likely by another remediation) and the assessment is invalid.
 	// Metrics and alerts would measure the wrong resource state.
 	if ea.Status.Components.HashComputed && ea.Status.Components.PostRemediationSpecHash != "" {
-		currentSpec := r.getTargetSpec(ctx, ea)
+		currentSpec := r.getTargetSpec(ctx, ea.Spec.RemediationTarget)
 		currentHash, hashErr := canonicalhash.CanonicalSpecHash(currentSpec)
 		if hashErr != nil {
 			logger.Error(hashErr, "Failed to compute current spec hash for drift check")
@@ -548,8 +548,8 @@ type healthAssessResult struct {
 func (r *Reconciler) assessHealth(ctx context.Context, ea *eav1.EffectivenessAssessment) healthAssessResult {
 	logger := log.FromContext(ctx)
 
-	// Build target status from K8s API
-	status := r.getTargetHealthStatus(ctx, ea)
+	// Build target status from K8s API (DD-EM-003: health uses SignalTarget)
+	status := r.getTargetHealthStatus(ctx, ea.Spec.SignalTarget)
 
 	result := r.healthScorer.Score(ctx, status)
 	logger.Info("Health assessment complete",
@@ -565,8 +565,8 @@ func (r *Reconciler) assessHealth(ctx context.Context, ea *eav1.EffectivenessAss
 func (r *Reconciler) assessHash(ctx context.Context, ea *eav1.EffectivenessAssessment) hash.ComputeResult {
 	logger := log.FromContext(ctx)
 
-	// Step 1: Fetch target spec from K8s API
-	spec := r.getTargetSpec(ctx, ea)
+	// Step 1: Fetch target spec from K8s API (DD-EM-003: hash uses RemediationTarget)
+	spec := r.getTargetSpec(ctx, ea.Spec.RemediationTarget)
 
 	// Step 2: Read pre-remediation hash from EA spec (set by RO via RR status).
 	// Falls back to DataStorage query for backward compatibility with EAs created
@@ -614,7 +614,7 @@ func (r *Reconciler) assessAlert(ctx context.Context, ea *eav1.EffectivenessAsse
 	}
 	alertCtx := alert.AlertContext{
 		AlertName: alertName,
-		Namespace: ea.Spec.TargetResource.Namespace,
+		Namespace: ea.Spec.SignalTarget.Namespace,
 	}
 
 	result := r.alertScorer.Score(ctx, r.AlertManagerClient, alertCtx)
@@ -699,7 +699,7 @@ type metricQueryResult struct {
 //   - nil: Not assessed (no data available for any metric)
 func (r *Reconciler) assessMetrics(ctx context.Context, ea *eav1.EffectivenessAssessment) metricsAssessResult {
 	logger := log.FromContext(ctx)
-	ns := ea.Spec.TargetResource.Namespace
+	ns := ea.Spec.SignalTarget.Namespace
 
 	// Range: from before EA creation to now, capturing pre- and post-remediation samples.
 	start := ea.CreationTimestamp.Add(-r.Config.PrometheusLookback)
@@ -838,17 +838,18 @@ func (r *Reconciler) executeMetricQuery(ctx context.Context, spec metricQuerySpe
 // HELPER METHODS
 // ============================================================================
 
-// getTargetHealthStatus queries the K8s API for the target resource health.
+// getTargetHealthStatus queries the K8s API for a target resource's health.
 // Kind-aware: uses label-based listing for workload resources (Deployment,
 // ReplicaSet, StatefulSet, DaemonSet) and direct pod lookup for Pod targets.
 // Non-pod-owning resources (ConfigMap, Secret, Node, etc.) are checked for
-// existence only — they have no pod health to assess.
-func (r *Reconciler) getTargetHealthStatus(ctx context.Context, ea *eav1.EffectivenessAssessment) health.TargetStatus {
+// existence only -- they have no pod health to assess.
+// DD-EM-003: Caller decides which target to pass (SignalTarget for health, etc.).
+func (r *Reconciler) getTargetHealthStatus(ctx context.Context, target eav1.TargetResource) health.TargetStatus {
 	logger := log.FromContext(ctx)
 
-	targetKind := ea.Spec.TargetResource.Kind
-	targetName := ea.Spec.TargetResource.Name
-	targetNs := ea.Spec.TargetResource.Namespace
+	targetKind := target.Kind
+	targetName := target.Name
+	targetNs := target.Namespace
 
 	var podList *corev1.PodList
 
@@ -935,59 +936,57 @@ func (r *Reconciler) getTargetHealthStatus(ctx context.Context, ea *eav1.Effecti
 	}
 }
 
-// getTargetSpec retrieves the target resource's .spec as an unstructured map from the K8s API.
+// getTargetSpec retrieves a target resource's .spec as an unstructured map from the K8s API.
 // Uses the REST mapper to resolve the Kind to a GVR, then fetches via unstructured client.
 // Returns an empty map on error (graceful degradation — hash is still computed, just from empty spec).
-func (r *Reconciler) getTargetSpec(ctx context.Context, ea *eav1.EffectivenessAssessment) map[string]interface{} {
+// DD-EM-003: Caller decides which target to pass (RemediationTarget for hash, etc.).
+func (r *Reconciler) getTargetSpec(ctx context.Context, target eav1.TargetResource) map[string]interface{} {
 	logger := log.FromContext(ctx)
 
 	if r.restMapper == nil {
-		logger.V(1).Info("RESTMapper not configured, falling back to EA metadata spec")
+		logger.V(1).Info("RESTMapper not configured, falling back to metadata spec")
 		return map[string]interface{}{
-			"kind":      ea.Spec.TargetResource.Kind,
-			"name":      ea.Spec.TargetResource.Name,
-			"namespace": ea.Spec.TargetResource.Namespace,
+			"kind":      target.Kind,
+			"name":      target.Name,
+			"namespace": target.Namespace,
 		}
 	}
 
-	// Resolve Kind -> GVR
-	gvk, err := resolveGVKForKind(r.restMapper, ea.Spec.TargetResource.Kind)
+	gvk, err := resolveGVKForKind(r.restMapper, target.Kind)
 	if err != nil {
 		logger.Error(err, "Failed to resolve GVK for target resource kind",
-			"kind", ea.Spec.TargetResource.Kind)
+			"kind", target.Kind)
 		return map[string]interface{}{}
 	}
 
-	// Fetch target resource via unstructured client
 	obj := &unstructured.Unstructured{}
 	obj.SetGroupVersionKind(gvk)
 	key := client.ObjectKey{
-		Namespace: ea.Spec.TargetResource.Namespace,
-		Name:      ea.Spec.TargetResource.Name,
+		Namespace: target.Namespace,
+		Name:      target.Name,
 	}
 	if err := r.Get(ctx, key, obj); err != nil {
 		if apierrors.IsNotFound(err) {
 			logger.Info("Target resource not found, computing hash from empty spec",
-				"kind", ea.Spec.TargetResource.Kind,
-				"name", ea.Spec.TargetResource.Name)
+				"kind", target.Kind,
+				"name", target.Name)
 		} else {
 			logger.Error(err, "Failed to fetch target resource")
 		}
 		return map[string]interface{}{}
 	}
 
-	// Extract .spec field
 	spec, found, err := unstructured.NestedMap(obj.Object, "spec")
 	if err != nil || !found {
 		logger.V(1).Info("Target resource has no .spec field",
-			"kind", ea.Spec.TargetResource.Kind,
-			"name", ea.Spec.TargetResource.Name)
+			"kind", target.Kind,
+			"name", target.Name)
 		return map[string]interface{}{}
 	}
 
 	logger.V(2).Info("Target spec retrieved",
-		"kind", ea.Spec.TargetResource.Kind,
-		"name", ea.Spec.TargetResource.Name)
+		"kind", target.Kind,
+		"name", target.Name)
 	return spec
 }
 

@@ -255,7 +255,12 @@ var _ = Describe("Derived Timing Computation (BR-EM-009)", func() {
 			Spec: eav1.EffectivenessAssessmentSpec{
 				CorrelationID:           "rr-dt-010",
 				RemediationRequestPhase: "Completed",
-				TargetResource: eav1.TargetResource{
+				SignalTarget: eav1.TargetResource{
+					Kind:      "Deployment",
+					Name:      "test-app",
+					Namespace: ns,
+				},
+				RemediationTarget: eav1.TargetResource{
 					Kind:      "Deployment",
 					Name:      "test-app",
 					Namespace: ns,

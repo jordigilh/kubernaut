@@ -7,6 +7,7 @@
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2026-02-13 | Architecture Team | Initial DD: canonical JSON + SHA-256 algorithm specification, guarantees, non-guarantees, testing requirements |
+| 1.2 | 2026-02-24 | Architecture Team | **Issue #188 (DD-EM-003)**: Updated RO consumer description to reference `resolveDualTargets` (renamed from `resolveEffectivenessTarget`). Hash is now explicitly computed from the `RemediationTarget` (the AI-resolved resource), not the single `TargetResource`. |
 | 1.1 | 2026-02-14 | Architecture Team | Added Spec Drift Guard: re-hash on each reconcile, spec_drift reason, DS score=0.0 short-circuit |
 
 ---
@@ -126,7 +127,7 @@ Both the RO and EM import `pkg/shared/hash` to compute their respective hashes.
 
 | Consumer | Usage | Phase |
 |----------|-------|-------|
-| **Remediation Orchestrator** | `CanonicalSpecHash(targetResource.spec)` before WFE creation, targeting the AI-resolved resource (`resolveEffectivenessTarget` — `AffectedResource` when available, else `RR.Spec.TargetResource`; BR-HAPI-191). Hash stored on `RR.Status.PreRemediationSpecHash` and passed to `emitWorkflowCreatedAudit` as a parameter (no redundant API call). Emitted in `remediation.workflow_created` audit event as `pre_remediation_spec_hash`. | RO Analyzing phase |
+| **Remediation Orchestrator** | `CanonicalSpecHash(targetResource.spec)` before WFE creation, targeting the AI-resolved resource (`resolveDualTargets(rr, ai).Remediation` — DD-EM-003: `AffectedResource` when available, else `RR.Spec.TargetResource`). Hash stored on `RR.Status.PreRemediationSpecHash` and passed to `emitWorkflowCreatedAudit` as a parameter (no redundant API call). Emitted in `remediation.workflow_created` audit event as `pre_remediation_spec_hash`. | RO Analyzing phase |
 | **Effectiveness Monitor** | `CanonicalSpecHash(targetResource.spec)` after stabilization window. Compared against pre-hash from DS audit trail. Result emitted in `effectiveness.hash.computed` audit event. | EM assessment Step 4 |
 | **DataStorage** | Stores both hashes in audit events. Returns pre-hash to EM via `queryAuditEvents` API. May use `hash_match` boolean in effectiveness score computation. | Audit storage + query |
 

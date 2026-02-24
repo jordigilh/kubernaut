@@ -109,9 +109,9 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 		// Verify EA spec
 		Expect(ea.Spec.CorrelationID).To(Equal(rrName))
 		Expect(ea.Spec.RemediationRequestPhase).To(Equal("Completed"))
-		Expect(ea.Spec.TargetResource.Kind).To(Equal("Deployment"))
-		Expect(ea.Spec.TargetResource.Name).To(Equal("test-app"))
-		Expect(ea.Spec.TargetResource.Namespace).To(Equal(namespace))
+		Expect(ea.Spec.RemediationTarget.Kind).To(Equal("Deployment"))
+		Expect(ea.Spec.RemediationTarget.Name).To(Equal("test-app"))
+		Expect(ea.Spec.RemediationTarget.Namespace).To(Equal(namespace))
 		Expect(ea.Spec.Config.StabilizationWindow.Duration).To(Equal(stabilizationWindow))
 
 		// Verify owner reference (ADR-EM-001 Section 8: blockOwnerDeletion=false)
@@ -228,7 +228,10 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 			Spec: eav1.EffectivenessAssessmentSpec{
 				CorrelationID:           rrName,
 				RemediationRequestPhase: "Completed",
-				TargetResource: eav1.TargetResource{
+				SignalTarget: eav1.TargetResource{
+					Kind: "Deployment", Name: "test-app", Namespace: namespace,
+				},
+				RemediationTarget: eav1.TargetResource{
 					Kind: "Deployment", Name: "test-app", Namespace: namespace,
 				},
 				Config: eav1.EAConfig{
@@ -465,11 +468,11 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 		// The EA must also carry the identity of the remediation it's assessing
 		Expect(ea.Spec.CorrelationID).To(Equal(rrName),
 			"EA must correlate to the RR so assessment results map to the right remediation")
-		Expect(ea.Spec.TargetResource.Kind).To(Equal(rr.Spec.TargetResource.Kind),
+		Expect(ea.Spec.RemediationTarget.Kind).To(Equal(rr.Spec.TargetResource.Kind),
 			"EA must target the same resource the RR remediated")
-		Expect(ea.Spec.TargetResource.Name).To(Equal(rr.Spec.TargetResource.Name),
+		Expect(ea.Spec.RemediationTarget.Name).To(Equal(rr.Spec.TargetResource.Name),
 			"EA must target the same resource the RR remediated")
-		Expect(ea.Spec.TargetResource.Namespace).To(Equal(rr.Spec.TargetResource.Namespace),
+		Expect(ea.Spec.RemediationTarget.Namespace).To(Equal(rr.Spec.TargetResource.Namespace),
 			"EA must target the same resource the RR remediated")
 		Expect(ea.Spec.RemediationRequestPhase).To(Equal("Completed"),
 			"EA must record the RR terminal phase for assessment branching")
@@ -532,9 +535,9 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 			"EA should not fabricate a pre-hash when RR has none")
 		Expect(ea.Spec.CorrelationID).To(Equal(rrName),
 			"EA must still correlate to the RR for audit trail continuity")
-		Expect(ea.Spec.TargetResource.Kind).To(Equal(rr.Spec.TargetResource.Kind),
+		Expect(ea.Spec.RemediationTarget.Kind).To(Equal(rr.Spec.TargetResource.Kind),
 			"EA must still identify the remediated resource")
-		Expect(ea.Spec.TargetResource.Name).To(Equal(rr.Spec.TargetResource.Name),
+		Expect(ea.Spec.RemediationTarget.Name).To(Equal(rr.Spec.TargetResource.Name),
 			"EA must still identify the remediated resource")
 		Expect(ea.Spec.Config.StabilizationWindow.Duration).To(Equal(stabilizationWindow),
 			"EA must carry the stabilization window even without pre-hash")
@@ -653,5 +656,132 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 		Expect(ea.Spec.RemediationRequestPhase).To(Equal("TimedOut"),
 			"EA should record TimedOut as the RR terminal phase")
 		Expect(ea.Spec.CorrelationID).To(Equal(rrName))
+	})
+})
+
+// ============================================================================
+// EA DUAL-TARGET CREATION TESTS (Issue #188, DD-EM-003)
+// Business Requirement: BR-EM-004 (correct target routing for effectiveness assessment)
+//
+// Verifies that the RO populates SignalTarget from the RR's TargetResource
+// and RemediationTarget from the AI's AffectedResource.
+// ============================================================================
+var _ = Describe("EA Dual-Target Creation (DD-EM-003)", func() {
+
+	var (
+		ctx                 context.Context
+		scheme              = setupScheme()
+		stabilizationWindow = 30 * time.Second
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+	})
+
+	// UT-RO-188-001: EA should have different SignalTarget and RemediationTarget
+	// when AI analysis identifies a different resource than the signal source.
+	It("UT-RO-188-001: should set SignalTarget from RR and RemediationTarget from AIAnalysis", func() {
+		rrName := "rr-dual-001"
+		namespace := "test-ns"
+		aiName := "ai-" + rrName
+		weName := "we-" + rrName
+
+		rr := newRemediationRequestWithChildRefs(rrName, namespace, remediationv1.PhaseExecuting, "", aiName, weName)
+		ai := newAIAnalysisCompleted(aiName, namespace, rrName, 0.95, "restart-deployment")
+		we := newWorkflowExecutionCompleted(weName, namespace, rrName)
+
+		k8sClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(rr, ai, we).
+			WithStatusSubresource(rr).
+			Build()
+
+		roMetrics := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
+		recorder := record.NewFakeRecorder(20)
+		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, recorder, stabilizationWindow)
+		reconciler := controller.NewReconciler(
+			k8sClient, k8sClient, scheme,
+			nil, recorder, roMetrics,
+			controller.TimeoutConfig{},
+			&MockRoutingEngine{},
+			eaCreator,
+		)
+
+		_, err := reconciler.Reconcile(ctx, ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: rrName, Namespace: namespace},
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		ea := &eav1.EffectivenessAssessment{}
+		err = k8sClient.Get(ctx, types.NamespacedName{
+			Name:      "ea-" + rrName,
+			Namespace: namespace,
+		}, ea)
+		Expect(err).ToNot(HaveOccurred(), "EA should have been created")
+
+		// DD-EM-003: SignalTarget comes from RR (the alert source)
+		Expect(ea.Spec.SignalTarget.Kind).To(Equal(rr.Spec.TargetResource.Kind),
+			"DD-EM-003: SignalTarget.Kind must come from the RR (signal source)")
+		Expect(ea.Spec.SignalTarget.Name).To(Equal(rr.Spec.TargetResource.Name),
+			"DD-EM-003: SignalTarget.Name must come from the RR (signal source)")
+		Expect(ea.Spec.SignalTarget.Namespace).To(Equal(rr.Spec.TargetResource.Namespace),
+			"DD-EM-003: SignalTarget.Namespace must come from the RR (signal source)")
+
+		// DD-EM-003: RemediationTarget comes from AI's AffectedResource
+		Expect(ea.Spec.RemediationTarget.Kind).To(Equal("Deployment"),
+			"DD-EM-003: RemediationTarget.Kind must come from AI AffectedResource")
+		Expect(ea.Spec.RemediationTarget.Name).To(Equal("test-deployment"),
+			"DD-EM-003: RemediationTarget.Name must come from AI AffectedResource")
+		Expect(ea.Spec.RemediationTarget.Namespace).To(Equal(namespace),
+			"DD-EM-003: RemediationTarget.Namespace must come from AI AffectedResource")
+
+		// The targets should differ (the whole point of dual-target)
+		Expect(ea.Spec.SignalTarget.Name).ToNot(Equal(ea.Spec.RemediationTarget.Name),
+			"DD-EM-003: In this scenario, signal and remediation targets should differ")
+	})
+
+	// UT-RO-188-002: Without AI analysis, both targets should fall back to RR
+	It("UT-RO-188-002: should set both targets from RR when no AI analysis available", func() {
+		rrName := "rr-dual-002"
+		namespace := "test-ns"
+		weName := "we-" + rrName
+
+		rr := newRemediationRequestWithChildRefs(rrName, namespace, remediationv1.PhaseExecuting, "", "", weName)
+		we := newWorkflowExecutionCompleted(weName, namespace, rrName)
+
+		k8sClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(rr, we).
+			WithStatusSubresource(rr).
+			Build()
+
+		roMetrics := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
+		recorder := record.NewFakeRecorder(20)
+		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, recorder, stabilizationWindow)
+		reconciler := controller.NewReconciler(
+			k8sClient, k8sClient, scheme,
+			nil, recorder, roMetrics,
+			controller.TimeoutConfig{},
+			&MockRoutingEngine{},
+			eaCreator,
+		)
+
+		_, err := reconciler.Reconcile(ctx, ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: rrName, Namespace: namespace},
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		ea := &eav1.EffectivenessAssessment{}
+		err = k8sClient.Get(ctx, types.NamespacedName{
+			Name:      "ea-" + rrName,
+			Namespace: namespace,
+		}, ea)
+		Expect(err).ToNot(HaveOccurred(), "EA should have been created")
+
+		// Without AI analysis, both targets should match the RR's TargetResource
+		Expect(ea.Spec.SignalTarget.Kind).To(Equal(rr.Spec.TargetResource.Kind))
+		Expect(ea.Spec.SignalTarget.Name).To(Equal(rr.Spec.TargetResource.Name))
+		Expect(ea.Spec.RemediationTarget.Kind).To(Equal(rr.Spec.TargetResource.Kind))
+		Expect(ea.Spec.RemediationTarget.Name).To(Equal(rr.Spec.TargetResource.Name))
 	})
 })

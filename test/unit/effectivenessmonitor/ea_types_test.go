@@ -76,12 +76,12 @@ var _ = Describe("EffectivenessAssessment CRD Types (ADR-EM-001)", func() {
 			gvk := eav1.GroupVersion.WithKind("EffectivenessAssessment")
 			obj, err := s.New(gvk)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(obj).ToNot(BeNil())
+			Expect(obj).To(BeAssignableToTypeOf(&eav1.EffectivenessAssessment{}))
 
 			listGVK := eav1.GroupVersion.WithKind("EffectivenessAssessmentList")
 			listObj, err := s.New(listGVK)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(listObj).ToNot(BeNil())
+			Expect(listObj).To(BeAssignableToTypeOf(&eav1.EffectivenessAssessmentList{}))
 		})
 	})
 
@@ -101,7 +101,12 @@ var _ = Describe("EffectivenessAssessment CRD Types (ADR-EM-001)", func() {
 				},
 				Spec: eav1.EffectivenessAssessmentSpec{
 					CorrelationID: "rr-001",
-					TargetResource: eav1.TargetResource{
+					SignalTarget: eav1.TargetResource{
+						Kind:      "Deployment",
+						Name:      "app",
+						Namespace: "production",
+					},
+					RemediationTarget: eav1.TargetResource{
 						Kind:      "Deployment",
 						Name:      "app",
 						Namespace: "production",
@@ -127,7 +132,7 @@ var _ = Describe("EffectivenessAssessment CRD Types (ADR-EM-001)", func() {
 			// Verify deep copy
 			Expect(copy.Name).To(Equal("ea-test"))
 			Expect(copy.Spec.CorrelationID).To(Equal("rr-001"))
-			Expect(copy.Spec.TargetResource.Kind).To(Equal("Deployment"))
+			Expect(copy.Spec.SignalTarget.Kind).To(Equal("Deployment"))
 			Expect(copy.Status.Phase).To(Equal(eav1.PhaseAssessing))
 			Expect(copy.Status.Components.HealthAssessed).To(BeTrue())
 			Expect(*copy.Status.Components.HealthScore).To(Equal(0.85))
@@ -170,7 +175,12 @@ var _ = Describe("EffectivenessAssessment CRD Types (ADR-EM-001)", func() {
 		It("should construct a well-formed EA spec", func() {
 			spec := eav1.EffectivenessAssessmentSpec{
 				CorrelationID: "rr-test-001",
-				TargetResource: eav1.TargetResource{
+				SignalTarget: eav1.TargetResource{
+					Kind:      "Deployment",
+					Name:      "my-app",
+					Namespace: "production",
+				},
+				RemediationTarget: eav1.TargetResource{
 					Kind:      "Deployment",
 					Name:      "my-app",
 					Namespace: "production",
@@ -181,7 +191,7 @@ var _ = Describe("EffectivenessAssessment CRD Types (ADR-EM-001)", func() {
 			}
 
 			Expect(spec.CorrelationID).To(Equal("rr-test-001"))
-			Expect(spec.TargetResource.Kind).To(Equal("Deployment"))
+			Expect(spec.SignalTarget.Kind).To(Equal("Deployment"))
 			Expect(spec.Config.StabilizationWindow.Duration).To(Equal(5 * time.Minute))
 		})
 	})

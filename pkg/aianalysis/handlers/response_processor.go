@@ -958,7 +958,7 @@ func mapWarningsToSubReason(warnings []string) string {
 
 // ExtractRootCauseAnalysis extracts RCA from an IncidentResponse, including affectedResource.
 // Issue #97: Centralizes RCA extraction (was duplicated in 5 handler functions) and adds
-// affectedResource extraction so RO's resolveEffectivenessTarget can target the correct resource.
+// affectedResource extraction so RO's resolveDualTargets (DD-EM-003) can target the correct resource.
 func ExtractRootCauseAnalysis(rcaData interface{}) *aianalysisv1.RootCauseAnalysis {
 	rcaMap := GetMapFromOptNil(rcaData)
 	if rcaMap == nil {

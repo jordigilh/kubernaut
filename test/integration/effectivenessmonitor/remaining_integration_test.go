@@ -148,7 +148,10 @@ var _ = Describe("Validity Window Gaps (BR-EM-006, BR-EM-007)", func() {
 			Spec: eav1.EffectivenessAssessmentSpec{
 				CorrelationID:           "rr-vw-003",
 				RemediationRequestPhase: "Completed",
-				TargetResource: eav1.TargetResource{
+				SignalTarget: eav1.TargetResource{
+					Kind: "Deployment", Name: "test-app", Namespace: ns,
+				},
+				RemediationTarget: eav1.TargetResource{
 					Kind: "Deployment", Name: "test-app", Namespace: ns,
 				},
 				Config: eav1.EAConfig{
@@ -420,7 +423,10 @@ var _ = Describe("Restart/Resume (BR-EM-005)", func() {
 			Spec: eav1.EffectivenessAssessmentSpec{
 				CorrelationID:           "rr-rr-001",
 				RemediationRequestPhase: "Completed",
-				TargetResource: eav1.TargetResource{
+				SignalTarget: eav1.TargetResource{
+					Kind: "Deployment", Name: "test-app", Namespace: ns,
+				},
+				RemediationTarget: eav1.TargetResource{
 					Kind: "Deployment", Name: "test-app", Namespace: ns,
 				},
 				Config: eav1.EAConfig{

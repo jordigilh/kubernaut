@@ -740,12 +740,12 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		Expect(ea.Spec.CorrelationID).To(Equal(remediationRequest.Name),
 			"EA correlationID should match RR name")
 		GinkgoWriter.Printf("  Found EA: %s/%s\n", ea.Namespace, ea.Name)
-		Expect(ea.Spec.TargetResource.Kind).ToNot(BeEmpty(),
-			"EA targetResource.kind should be set")
-		Expect(ea.Spec.TargetResource.Name).ToNot(BeEmpty(),
-			"EA targetResource.name should be set")
-		Expect(ea.Spec.TargetResource.Namespace).ToNot(BeEmpty(),
-			"EA targetResource.namespace should be set (RO must populate)")
+		Expect(ea.Spec.RemediationTarget.Kind).ToNot(BeEmpty(),
+			"EA remediationTarget.kind should be set")
+		Expect(ea.Spec.RemediationTarget.Name).ToNot(BeEmpty(),
+			"EA remediationTarget.name should be set")
+		Expect(ea.Spec.RemediationTarget.Namespace).ToNot(BeEmpty(),
+			"EA remediationTarget.namespace should be set (RO must populate)")
 		Expect(ea.Spec.Config.StabilizationWindow.Duration).To(BeNumerically(">", 0),
 			"EA stabilizationWindow should be positive (set by RO config)")
 		Expect(ea.Spec.RemediationRequestPhase).To(Equal("Completed"),
@@ -768,9 +768,9 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		Expect(foundOwnerRef).To(BeTrue(),
 			"EA owner reference should point to the parent RemediationRequest")
 
-		GinkgoWriter.Printf("  EA spec: correlationID=%s, target=%s/%s/%s, stabilizationWindow=%v, signalName=%s\n",
-			ea.Spec.CorrelationID, ea.Spec.TargetResource.Kind, ea.Spec.TargetResource.Name,
-			ea.Spec.TargetResource.Namespace, ea.Spec.Config.StabilizationWindow.Duration,
+		GinkgoWriter.Printf("  EA spec: correlationID=%s, remediationTarget=%s/%s/%s, stabilizationWindow=%v, signalName=%s\n",
+			ea.Spec.CorrelationID, ea.Spec.RemediationTarget.Kind, ea.Spec.RemediationTarget.Name,
+			ea.Spec.RemediationTarget.Namespace, ea.Spec.Config.StabilizationWindow.Duration,
 			ea.Spec.SignalName)
 
 		// 13c: Verify EA reached terminal phase (from 02_ and 03_ assertions)
@@ -824,7 +824,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		GinkgoWriter.Printf("  │ Phase:   %s\n", finalEA.Status.Phase)
 		GinkgoWriter.Printf("  │ Reason:  %s\n", finalEA.Status.AssessmentReason)
 		GinkgoWriter.Printf("  │ Target:  %s/%s (%s)\n",
-			finalEA.Spec.TargetResource.Kind, finalEA.Spec.TargetResource.Name, testNamespace)
+			finalEA.Spec.RemediationTarget.Kind, finalEA.Spec.RemediationTarget.Name, testNamespace)
 		GinkgoWriter.Println("  ├─── Component Scores ────────────────────────────────────")
 		if finalEA.Status.Components.HealthScore != nil {
 			GinkgoWriter.Printf("  │ Health:  %.2f (assessed=%v)\n", *finalEA.Status.Components.HealthScore, finalEA.Status.Components.HealthAssessed)
@@ -1335,7 +1335,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		GinkgoWriter.Printf("  │ Phase:   %s\n", finalEA.Status.Phase)
 		GinkgoWriter.Printf("  │ Reason:  %s\n", finalEA.Status.AssessmentReason)
 		GinkgoWriter.Printf("  │ Target:  %s/%s (%s)\n",
-			finalEA.Spec.TargetResource.Kind, finalEA.Spec.TargetResource.Name, testNamespaceAM)
+			finalEA.Spec.RemediationTarget.Kind, finalEA.Spec.RemediationTarget.Name, testNamespaceAM)
 		GinkgoWriter.Println("  ├─── Component Scores ────────────────────────────────────")
 		if finalEA.Status.Components.HealthScore != nil {
 			GinkgoWriter.Printf("  │ Health:  %.2f (assessed=%v)\n", *finalEA.Status.Components.HealthScore, finalEA.Status.Components.HealthAssessed)
