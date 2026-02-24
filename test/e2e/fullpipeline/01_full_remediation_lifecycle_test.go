@@ -729,22 +729,17 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		// guaranteed. The unique assertions are consolidated here.
 		By("Step 13: Verifying EffectivenessAssessment CRD created by RO and assessed by EM")
 
-		// 13a: List EA CRDs in the test namespace — RO creates them in the RR's namespace
-		eaList := &eav1.EffectivenessAssessmentList{}
-		Eventually(func() int {
-			if err := apiReader.List(testCtx, eaList, client.InNamespace(testNamespace)); err != nil {
-				return 0
-			}
-			return len(eaList.Items)
-		}, 30*time.Second, 2*time.Second).Should(BeNumerically(">=", 1),
-			"At least one EA should be created by RO after remediation completion")
-
-		ea := eaList.Items[0]
-		GinkgoWriter.Printf("  Found EA: %s/%s\n", ea.Namespace, ea.Name)
-
-		// 13b: Verify EA spec fields — all RO-populated fields must be present
+		// 13a: Get EA by deterministic name (ea-<RR.Name>) — avoids selecting wrong EA in shared namespace
+		eaName := fmt.Sprintf("ea-%s", remediationRequest.Name)
+		eaKey := client.ObjectKey{Name: eaName, Namespace: testNamespace}
+		ea := &eav1.EffectivenessAssessment{}
+		Eventually(func() error {
+			return apiReader.Get(testCtx, eaKey, ea)
+		}, 30*time.Second, 2*time.Second).Should(Succeed(),
+			"EA with deterministic name ea-<RR.Name> should be created by RO")
 		Expect(ea.Spec.CorrelationID).To(Equal(remediationRequest.Name),
 			"EA correlationID should match RR name")
+		GinkgoWriter.Printf("  Found EA: %s/%s\n", ea.Namespace, ea.Name)
 		Expect(ea.Spec.TargetResource.Kind).ToNot(BeEmpty(),
 			"EA targetResource.kind should be set")
 		Expect(ea.Spec.TargetResource.Name).ToNot(BeEmpty(),
@@ -781,9 +776,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		// 13c: Verify EA reached terminal phase (from 02_ and 03_ assertions)
 		Eventually(func() string {
 			fetched := &eav1.EffectivenessAssessment{}
-			if err := apiReader.Get(testCtx, client.ObjectKey{
-				Name: ea.Name, Namespace: testNamespace,
-			}, fetched); err != nil {
+			if err := apiReader.Get(testCtx, eaKey, fetched); err != nil {
 				return ""
 			}
 			return fetched.Status.Phase
@@ -793,9 +786,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 
 		// Re-fetch to get final state
 		finalEA := &eav1.EffectivenessAssessment{}
-		Expect(apiReader.Get(testCtx, client.ObjectKey{
-			Name: ea.Name, Namespace: testNamespace,
-		}, finalEA)).To(Succeed())
+		Expect(apiReader.Get(testCtx, eaKey, finalEA)).To(Succeed())
 
 		// 13d: Verify health and hash components assessed (from 03_ assertions)
 		Expect(finalEA.Status.Components.HealthAssessed).To(BeTrue(),
@@ -1312,25 +1303,21 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		// AM Step 12: Verify EffectivenessAssessment CRD
 		// ================================================================
 		By("AM Step 12: Verifying EffectivenessAssessment CRD created and assessed")
-		eaList := &eav1.EffectivenessAssessmentList{}
-		Eventually(func() int {
-			if err := apiReader.List(testCtx, eaList, client.InNamespace(testNamespaceAM)); err != nil {
-				return 0
-			}
-			return len(eaList.Items)
-		}, 30*time.Second, 2*time.Second).Should(BeNumerically(">=", 1),
-			"At least one EA should be created by RO after remediation completion")
+		eaName := fmt.Sprintf("ea-%s", remediationRequest.Name)
+		eaKey := client.ObjectKey{Name: eaName, Namespace: testNamespaceAM}
 
-		ea := eaList.Items[0]
+		ea := &eav1.EffectivenessAssessment{}
+		Eventually(func() error {
+			return apiReader.Get(testCtx, eaKey, ea)
+		}, 30*time.Second, 2*time.Second).Should(Succeed(),
+			"EA with deterministic name ea-<RR.Name> should be created by RO")
 		Expect(ea.Spec.CorrelationID).To(Equal(remediationRequest.Name),
 			"EA correlationID should match RR name")
 
 		// Verify EA reached terminal phase
 		Eventually(func() string {
 			fetched := &eav1.EffectivenessAssessment{}
-			if err := apiReader.Get(testCtx, client.ObjectKey{
-				Name: ea.Name, Namespace: testNamespaceAM,
-			}, fetched); err != nil {
+			if err := apiReader.Get(testCtx, eaKey, fetched); err != nil {
 				return ""
 			}
 			return fetched.Status.Phase
@@ -1340,9 +1327,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 
 		// Re-fetch to get final state with all component scores
 		finalEA := &eav1.EffectivenessAssessment{}
-		Expect(apiReader.Get(testCtx, client.ObjectKey{
-			Name: ea.Name, Namespace: testNamespaceAM,
-		}, finalEA)).To(Succeed())
+		Expect(apiReader.Get(testCtx, eaKey, finalEA)).To(Succeed())
 
 		GinkgoWriter.Println("  ┌─────────────────────────────────────────────────────────")
 		GinkgoWriter.Println("  │ EFFECTIVENESS ASSESSMENT RESULTS (AlertManager Test)")

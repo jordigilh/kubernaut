@@ -421,23 +421,17 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 		// Step 14: Wait for EffectivenessAssessment
 		// ================================================================
 		By("Step 14: Waiting for EffectivenessAssessment to reach terminal phase")
-		var finalEA *eav1.EffectivenessAssessment
-		Eventually(func() bool {
-			eaList := &eav1.EffectivenessAssessmentList{}
-			if err := apiReader.List(testCtx, eaList, client.InNamespace(testNamespace)); err != nil {
-				return false
+		eaKey := client.ObjectKey{Name: fmt.Sprintf("ea-%s", remediationRequest.Name), Namespace: testNamespace}
+		finalEA := &eav1.EffectivenessAssessment{}
+		Eventually(func() string {
+			if err := apiReader.Get(testCtx, eaKey, finalEA); err != nil {
+				return ""
 			}
-			for i := range eaList.Items {
-				ea := &eaList.Items[i]
-				if ea.Status.Phase == eav1.PhaseCompleted || ea.Status.Phase == eav1.PhaseFailed {
-					finalEA = ea
-					GinkgoWriter.Printf("  ✅ EA %s phase: %s\n", ea.Name, ea.Status.Phase)
-					return true
-				}
-			}
-			return false
-		}, 3*time.Minute, 5*time.Second).Should(BeTrue(),
+			return finalEA.Status.Phase
+		}, 3*time.Minute, 5*time.Second).Should(
+			BeElementOf(eav1.PhaseCompleted, eav1.PhaseFailed),
 			"EA should reach terminal phase")
+		GinkgoWriter.Printf("  EA %s phase: %s\n", finalEA.Name, finalEA.Status.Phase)
 
 		// ================================================================
 		// Step 15: CRD Status Validation with Approval Flow [E2E-FP-118-003..006]
