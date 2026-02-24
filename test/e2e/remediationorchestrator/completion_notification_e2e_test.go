@@ -152,6 +152,17 @@ var _ = Describe("E2E-RO-045-001: Completion Notification", Label("e2e", "notifi
 				"TARGET_POD": "test-pod-completion",
 			},
 		}
+		// DD-HAPI-006: AffectedResource is required for routing to WorkflowExecution
+		analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+			Summary:    "Memory exhaustion due to unbounded cache growth",
+			Severity:   "critical",
+			SignalType: "alert",
+			AffectedResource: &aianalysisv1.AffectedResource{
+				Kind:      "Pod",
+				Name:      "test-pod-completion",
+				Namespace: testNS,
+			},
+		}
 		Expect(k8sClient.Status().Update(ctx, analysis)).To(Succeed())
 
 		By("6. Waiting for RO to create WorkflowExecution CRD")

@@ -150,6 +150,17 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 			Confidence:     0.92,
 			Rationale:      "High confidence match for CPU remediation",
 		}
+		// DD-HAPI-006: AffectedResource is required for routing to WorkflowExecution
+		analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+			Summary:    "CPU throttling due to resource limits",
+			Severity:   "critical",
+			SignalType: "alert",
+			AffectedResource: &aianalysisv1.AffectedResource{
+				Kind:      "Deployment",
+				Name:      "test-app-ea",
+				Namespace: testNS,
+			},
+		}
 		Expect(k8sClient.Status().Update(ctx, analysis)).To(Succeed())
 
 		By("6. Waiting for RO to create WorkflowExecution CRD")
@@ -351,6 +362,17 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 				ExecutionBundle: "quay.io/kubernaut/restart-deployment:v1",
 				Confidence:      0.92,
 				Rationale:       "High confidence match for CPU remediation",
+			}
+			// DD-HAPI-006: AffectedResource is required for routing to WorkflowExecution
+			analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+				Summary:    "CPU throttling due to resource limits",
+				Severity:   "critical",
+				SignalType: "alert",
+				AffectedResource: &aianalysisv1.AffectedResource{
+					Kind:      "Deployment",
+					Name:      "test-app-fail",
+					Namespace: testNS,
+				},
 			}
 			Expect(k8sClient.Status().Update(ctx, analysis)).To(Succeed())
 

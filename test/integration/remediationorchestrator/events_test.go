@@ -126,6 +126,17 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 				ExecutionBundle: "kubernaut/workflows:latest",
 				Rationale:      "High confidence auto-approve",
 			}
+			// DD-HAPI-006: AffectedResource is required for routing to WorkflowExecution
+			ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+				Summary:    "OOM kill detected",
+				Severity:   "critical",
+				SignalType: "alert",
+				AffectedResource: &aianalysisv1.AffectedResource{
+					Kind:      "Deployment",
+					Name:      "test-app",
+					Namespace: namespace,
+				},
+			}
 			now := metav1.Now()
 			ai.Status.CompletedAt = &now
 			Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
