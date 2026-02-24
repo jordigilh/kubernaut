@@ -13,6 +13,7 @@
 #
 # Usage:
 #   ./build-demo-workflows.sh                    # Build and push multi-arch (amd64 + arm64)
+#   ./build-demo-workflows.sh --arch arm64       # Build and push single arch (arm64 only)
 #   ./build-demo-workflows.sh --local            # Build local-only (no push, current arch)
 #   ./build-demo-workflows.sh --scenario NAME    # Build a single scenario
 #   ./build-demo-workflows.sh --scenario crashloop --seed
@@ -33,6 +34,7 @@ VERSION="v1.0.0"
 LOCAL_ONLY=false
 SINGLE_SCENARIO=""
 SEED_AFTER=false
+ARCHITECTURES=(amd64 arm64)
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -48,15 +50,20 @@ while [[ $# -gt 0 ]]; do
             VERSION="$2"
             shift 2
             ;;
+        --arch)
+            IFS=',' read -ra ARCHITECTURES <<< "$2"
+            shift 2
+            ;;
         --seed)
             SEED_AFTER=true
             shift
             ;;
         --help|-h)
-            echo "Usage: $0 [--local] [--scenario NAME] [--version TAG] [--seed]"
+            echo "Usage: $0 [--local] [--arch ARCH[,ARCH]] [--scenario NAME] [--version TAG] [--seed]"
             echo ""
             echo "Options:"
             echo "  --local            Build for current arch only (no push)"
+            echo "  --arch ARCH        Comma-separated architectures (default: amd64,arm64)"
             echo "  --scenario NAME    Build a single scenario (e.g., crashloop)"
             echo "  --version TAG      Override version tag (default: v1.0.0)"
             echo "  --seed             Register workflow(s) in DataStorage after push"
@@ -74,7 +81,7 @@ echo "Building Demo Scenario Workflow Images"
 echo "============================================"
 echo "Registry: ${REGISTRY}"
 echo "Version:  ${VERSION}"
-echo "Mode:     $(if $LOCAL_ONLY; then echo 'LOCAL ONLY (current arch)'; else echo 'MULTI-ARCH (amd64 + arm64) + PUSH'; fi)"
+echo "Mode:     $(if $LOCAL_ONLY; then echo 'LOCAL ONLY (current arch)'; else echo "PUSH (${ARCHITECTURES[*]})"; fi)"
 if [ -n "$SINGLE_SCENARIO" ]; then
     echo "Scenario: ${SINGLE_SCENARIO}"
 fi
@@ -84,21 +91,20 @@ echo ""
 # shellcheck source=workflow-mappings.sh
 source "${SCRIPT_DIR}/workflow-mappings.sh"
 
-# build_and_push_multiarch builds both arch images, creates a manifest list, pushes it,
-# and prints the manifest list digest to stdout.
+# build_and_push builds images for each architecture in ARCHITECTURES, creates a
+# manifest list, pushes it, and prints the manifest list digest to stdout.
 # All podman build/push output goes to stderr so only the digest reaches stdout.
 # Args: $1=full_ref $2=dockerfile $3=context_dir
-build_and_push_multiarch() {
+build_and_push() {
     local ref="$1" dockerfile="$2" context="$3"
 
     podman manifest rm "${ref}" &>/dev/null || true
     podman manifest create "${ref}" >/dev/null
 
-    podman build --platform linux/amd64 -t "${ref}-amd64" -f "${dockerfile}" "${context}" >&2
-    podman build --platform linux/arm64 -t "${ref}-arm64" -f "${dockerfile}" "${context}" >&2
-
-    podman manifest add "${ref}" "${ref}-amd64" >/dev/null
-    podman manifest add "${ref}" "${ref}-arm64" >/dev/null
+    for arch in "${ARCHITECTURES[@]}"; do
+        podman build --platform "linux/${arch}" -t "${ref}-${arch}" -f "${dockerfile}" "${context}" >&2
+        podman manifest add "${ref}" "${ref}-${arch}" >/dev/null
+    done
 
     podman manifest push "${ref}" "docker://${ref}" >&2
 
@@ -179,7 +185,7 @@ for entry in "${WORKFLOWS[@]}"; do
         EXEC_DIGEST=$(build_local "${EXEC_REF}" "${BUILD_DIR}/Dockerfile.exec" "${BUILD_DIR}")
         echo "  [exec] Built (local arch only)"
     else
-        EXEC_DIGEST=$(build_and_push_multiarch "${EXEC_REF}" "${BUILD_DIR}/Dockerfile.exec" "${BUILD_DIR}")
+        EXEC_DIGEST=$(build_and_push "${EXEC_REF}" "${BUILD_DIR}/Dockerfile.exec" "${BUILD_DIR}")
         echo "  [exec] Pushed. Digest: ${EXEC_DIGEST}"
     fi
 
@@ -197,7 +203,7 @@ for entry in "${WORKFLOWS[@]}"; do
         build_local "${SCHEMA_REF}" "${SCHEMA_DOCKERFILE}" "${BUILD_DIR}" > /dev/null
         echo "  [schema] Built (local arch only)"
     else
-        build_and_push_multiarch "${SCHEMA_REF}" "${SCHEMA_DOCKERFILE}" "${BUILD_DIR}" > /dev/null
+        build_and_push "${SCHEMA_REF}" "${SCHEMA_DOCKERFILE}" "${BUILD_DIR}" > /dev/null
         echo "  [schema] Pushed."
     fi
 
