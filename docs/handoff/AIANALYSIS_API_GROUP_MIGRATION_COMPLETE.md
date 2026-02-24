@@ -241,7 +241,7 @@ Reference this migration as a template:
 - ⏭️ SignalProcessing (pending)
 - ⏭️ WorkflowExecution (pending)
 - ⏭️ RemediationOrchestrator (pending - 3 CRDs)
-- ⏭️ KubernetesExecution (deferred)
+- ⏭️ KubernetesExecution (DEPRECATED - ADR-025) (deferred)
 
 ---
 

@@ -36,7 +36,7 @@
 | **Remediation Processor** | `remediation-processor-sa` | `kubernaut-system` | ✅ Standard |
 | **AI Analysis** | `ai-analysis-sa` | `kubernaut-system` | ✅ Standard |
 | **Workflow Execution** | `workflow-execution-sa` | `kubernaut-system` | ✅ Standard |
-| **Kubernetes Executor** | `kubernetes-executor-sa` | `kubernaut-system` | ✅ Standard |
+| ~~**Kubernetes Executor**~~ (DEPRECATED - ADR-025) | `kubernetes-executor-sa` | `kubernaut-system` | ✅ Standard |
 
 ---
 
@@ -248,7 +248,7 @@ CRD Controllers (with -sa suffix):
 ├── remediation-processor-sa
 ├── ai-analysis-sa
 ├── workflow-execution-sa
-└── kubernetes-executor-sa
+└── kubernetes-executor-sa  # DEPRECATED - ADR-025
 ```
 
 **Total**: 11 ServiceAccounts

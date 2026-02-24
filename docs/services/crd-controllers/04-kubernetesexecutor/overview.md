@@ -1,5 +1,7 @@
 ## Overview
 
+> **DEPRECATED**: KubernetesExecution CRD and KubernetesExecutor service were eliminated by ADR-025 and replaced by Tekton TaskRun via WorkflowExecution. This documentation is retained for historical reference only. API types and CRD manifests have been removed from the codebase.
+
 **Purpose**: Execute individual Kubernetes remediation actions with safety validation, dry-run testing, and comprehensive audit trails using native Kubernetes Jobs.
 
 **Core Responsibilities**:

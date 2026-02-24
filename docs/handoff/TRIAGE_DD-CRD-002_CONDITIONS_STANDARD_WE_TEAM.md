@@ -14,7 +14,7 @@ DD-CRD-002 mandates that **ALL 7 CRD controllers** must implement Kubernetes Con
 
 **WE Team Responsibilities**:
 - ✅ **WorkflowExecution**: COMPLETE (already implemented)
-- 🔴 **KubernetesExecution**: NOT IMPLEMENTED (controller doesn't exist yet)
+- 🔴 **KubernetesExecution** (DEPRECATED - ADR-025): NOT IMPLEMENTED (controller doesn't exist yet)
 
 **Status**: ⚠️ **BLOCKED** - KubernetesExecution controller is not yet implemented.
 

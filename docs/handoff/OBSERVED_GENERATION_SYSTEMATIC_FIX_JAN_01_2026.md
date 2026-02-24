@@ -13,7 +13,7 @@ Implement `ObservedGeneration` field across all controller-managed CRDs to follo
 | AIAnalysis | ✅ **DONE** | `api/aianalysis/v1alpha1/aianalysis_types.go` |
 | SignalProcessing | ✅ **DONE** | `api/signalprocessing/v1alpha1/signalprocessing_types.go` |
 | WorkflowExecution | ✅ **DONE** | `api/workflowexecution/v1alpha1/workflowexecution_types.go` |
-| KubernetesExecution | ⏭️ **SKIPPED** | (Deprecated and removed) |
+| KubernetesExecution (DEPRECATED - ADR-025) | ⏭️ **SKIPPED** | (Deprecated and removed) |
 
 ### Controller Logic Updates
 | Controller | Status | Test Result |

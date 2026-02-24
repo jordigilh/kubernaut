@@ -36,7 +36,7 @@
 | **RemediationProcessing** | 🚧 5% | 3-4 weeks | CRITICAL |
 | **AIAnalysis** | 🚧 5% | 4-5 weeks | CRITICAL |
 | **WorkflowExecution** | 🚧 5% | 4-5 weeks | CRITICAL |
-| **KubernetesExecution** | 🚧 5% | 3-4 weeks | CRITICAL |
+| **KubernetesExecution** (DEPRECATED - ADR-025) | 🚧 5% | 3-4 weeks | CRITICAL |
 
 **Total Development Time**: **15-20 weeks (3.75-5 months)**
 

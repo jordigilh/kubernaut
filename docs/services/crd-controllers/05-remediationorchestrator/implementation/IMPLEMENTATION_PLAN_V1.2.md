@@ -149,7 +149,7 @@
 - ✅ **CRD-based central orchestration** (RemediationRequest CRD)
 - ✅ **Targeting Data Pattern** (immutable data snapshot in .spec.targetingData)
 - ✅ **Flat sibling hierarchy** (RemediationRequest owns all 4 child CRDs)
-- ✅ **Child CRD creation** (RemediationProcessing, AIAnalysis, WorkflowExecution, KubernetesExecution)
+- ✅ **Child CRD creation** (RemediationProcessing, AIAnalysis, WorkflowExecution, KubernetesExecution (DEPRECATED - ADR-025))
 - ✅ **Watch-based coordination** (monitor 4 CRD types simultaneously)
 - ✅ **Status aggregation** (combine status from all children)
 - ✅ **Phase transitions** (Pending → Processing → Analyzing → Executing → Complete)
@@ -309,7 +309,7 @@ status:
 **Core Responsibilities**:
 1. **CRD Reconciliation** - Watch and reconcile RemediationRequest CRDs
 2. **Targeting Data Management** - Create immutable data snapshot in .spec.targetingData
-3. **Child CRD Creation** - Create RemediationProcessing, AIAnalysis, WorkflowExecution, KubernetesExecution
+3. **Child CRD Creation** - Create RemediationProcessing, AIAnalysis, WorkflowExecution, KubernetesExecution (DEPRECATED - ADR-025)
 4. **Watch-Based Coordination** - Monitor 4 child CRD types simultaneously
 5. **Status Aggregation** - Combine status updates from all children
 6. **Phase Management** - Orchestrate Pending → Processing → Analyzing → Executing → Complete
@@ -354,7 +354,7 @@ status:
 | **Day 4** | Child CRD Creation (RemediationProcessing) | 8h | SignalProcessing CRD creation, owner references, watch setup |
 | **Day 5** | Child CRD Creation (AIAnalysis) | 8h | AIAnalysis CRD creation, conditional creation (if needed), watch setup |
 | **Day 6** | Child CRD Creation (WorkflowExecution) | 8h | WorkflowExecution CRD creation, recommendation translation, watch setup |
-| **Day 7** | Child CRD Creation (KubernetesExecution) | 8h | KubernetesExecution CRD creation, action mapping, watch setup, `03-day7-complete.md` |
+| **Day 7** | Child CRD Creation (KubernetesExecution (DEPRECATED - ADR-025)) | 8h | KubernetesExecution CRD creation, action mapping, watch setup, `03-day7-complete.md` |
 | **Day 8** | Watch-Based Coordination | 8h | Multi-CRD watch setup, status change detection, reconciliation triggers |
 | **Day 9** | Status Aggregation Engine | 8h | Aggregate status from 4 children, combined phase calculation, conditions |
 | **Day 10** | Timeout Detection System | 8h | Phase timeout monitoring, stuck detection, auto-escalation |
@@ -378,13 +378,13 @@ Before starting Day 1, ensure:
 - [ ] **All Phase 3+4 controllers operational**:
   - [ ] RemediationProcessor Controller (Phase 3)
   - [ ] WorkflowExecution Controller (Phase 3)
-  - [ ] KubernetesExecutor Controller (Phase 3)
+  - [ ] KubernetesExecutor (DEPRECATED - ADR-025) Controller (Phase 3)
   - [ ] AIAnalysis Controller (Phase 4)
 - [ ] **Gateway Service operational** (creates RemediationRequest CRDs)
 - [ ] **Notification Service operational** (escalation integration)
 - [ ] **Kind cluster available** (`make kind-setup` completed)
 - [ ] RemediationRequest CRD API defined (`api/remediation/v1alpha1/remediationrequest_types.go`)
-- [ ] All child CRD APIs defined (RemediationProcessing, AIAnalysis, WorkflowExecution, KubernetesExecution)
+- [ ] All child CRD APIs defined (RemediationProcessing, AIAnalysis, WorkflowExecution, KubernetesExecution (DEPRECATED - ADR-025))
 - [ ] Template patterns understood ([IMPLEMENTATION_PLAN_V3.0.md](../../06-notification/implementation/IMPLEMENTATION_PLAN_V3.0.md))
 - [ ] **Critical Decisions Approved**:
   - Orchestration Model: Central controller with flat sibling hierarchy
@@ -463,7 +463,7 @@ ls -la api/kubernetesexecution/v1alpha1/
 - RemediationProcessor Controller (Phase 3)
 - AIAnalysis Controller (Phase 4)
 - WorkflowExecution Controller (Phase 3)
-- KubernetesExecutor Controller (Phase 3)
+- KubernetesExecutor (DEPRECATED - ADR-025) Controller (Phase 3)
 - Notification Service (escalation)
 - Controller-runtime (manager, client, reconciler, watches)
 - Kubernetes client-go (CRD operations, owner references)
@@ -479,7 +479,7 @@ ls -la api/kubernetesexecution/v1alpha1/
 - **Unit tests** (70%+ coverage target):
   - Reconciliation logic (state machine, phase transitions)
   - Targeting Data Pattern (snapshot creation, immutability)
-  - Child CRD creation (RemediationProcessing, AIAnalysis, WorkflowExecution, KubernetesExecution)
+  - Child CRD creation (RemediationProcessing, AIAnalysis, WorkflowExecution, KubernetesExecution (DEPRECATED - ADR-025))
   - Owner reference management (flat sibling hierarchy)
   - Status aggregation (4 child CRD statuses)
   - Timeout detection (phase staleness)
@@ -1080,7 +1080,7 @@ func (r *RemediationRequestReconciler) SetupWithManager(mgr ctrl.Manager) error 
 		Owns(&remediationprocessingv1alpha1.RemediationProcessing{}).
 		Owns(&aianalysisv1alpha1.AIAnalysis{}).
 		Owns(&workflowexecutionv1alpha1.WorkflowExecution{}).
-		Owns(&kubernetesexecutionv1alpha1.KubernetesExecution{}).
+		Owns(&kubernetesexecutionv1alpha1.KubernetesExecution{}). // DEPRECATED - ADR-025
 		Complete(r)
 }
 ```
@@ -1931,7 +1931,7 @@ func (r *RemediationRequestReconciler) SetupWithManager(mgr ctrl.Manager) error 
 		Owns(&remediationprocessingv1alpha1.RemediationProcessing{}).
 		Owns(&aianalysisv1alpha1.AIAnalysis{}).
 		Owns(&workflowexecutionv1alpha1.WorkflowExecution{}).
-		Owns(&kubernetesexecutionv1alpha1.KubernetesExecution{}).
+		Owns(&kubernetesexecutionv1alpha1.KubernetesExecution{}). // DEPRECATED - ADR-025
 		// Note: We do NOT own NotificationRequest (created for escalation but not owned)
 		Complete(r)
 
@@ -2223,14 +2223,14 @@ Days 2-16 follow the same APDC pattern covering:
 - RemediationProcessor Controller (creates SignalProcessing CRD)
 - AIAnalysis Controller (creates AIAnalysis CRD)
 - WorkflowExecution Controller (creates WorkflowExecution CRD)
-- KubernetesExecutor Controller (indirectly via WorkflowExecution)
+- KubernetesExecutor (DEPRECATED - ADR-025) Controller (indirectly via WorkflowExecution)
 - Notification Service (creates NotificationRequest CRD for escalation)
 
 **Child CRDs Owned**:
 - RemediationProcessing (first in chain)
 - AIAnalysis (second in chain)
 - WorkflowExecution (third in chain)
-- KubernetesExecution (indirectly owned via WorkflowExecution)
+- KubernetesExecution (DEPRECATED - ADR-025) (indirectly owned via WorkflowExecution)
 
 ---
 
@@ -2249,7 +2249,7 @@ Days 2-16 follow the same APDC pattern covering:
 **Confidence**: 95% (Enhanced with WorkflowExecution v1.2 patterns)
 **Timeline**: 14-16 days (longest service)
 **Next Action**: Begin Day 1 - Foundation + CRD Controller Setup
-**Dependencies**: All Phase 3+4 controllers operational (RemediationProcessor, AIAnalysis, WorkflowExecution, KubernetesExecutor)
+**Dependencies**: All Phase 3+4 controllers operational (RemediationProcessor, AIAnalysis, WorkflowExecution, KubernetesExecutor (DEPRECATED - ADR-025))
 **Note**: MUST be implemented LAST - requires all other controllers operational
 
 ---

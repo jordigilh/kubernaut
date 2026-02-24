@@ -35,7 +35,7 @@ The AlertRemediation CRD serves as the central coordination point for all alert 
 
 ### **Scope**
 - **Central State Management**: Master record for all alert remediation activities
-- **Cross-Service Coordination**: Orchestrates AlertProcessing, AIAnalysis, WorkflowExecution, and KubernetesExecution CRDs
+- **Cross-Service Coordination**: Orchestrates AlertProcessing, AIAnalysis, WorkflowExecution, and ~~KubernetesExecution~~ (DEPRECATED - ADR-025) CRDs
 - **Duplicate Detection**: Implements BR-WH-008 request deduplication for identical alerts
 - **Progress Tracking**: Real-time visibility into remediation progress across all services
 - **Timeout Management**: Configurable timeouts with automatic escalation
@@ -569,7 +569,7 @@ status:
 ## 🔄 **CONTROLLER RESPONSIBILITIES**
 
 ### **Primary Functions**
-1. **Watch Service CRDs**: Monitor AlertProcessing, AIAnalysis, WorkflowExecution, and KubernetesExecution CRDs
+1. **Watch Service CRDs**: Monitor AlertProcessing, AIAnalysis, WorkflowExecution, and ~~KubernetesExecution~~ (DEPRECATED - ADR-025) CRDs
 2. **Status Aggregation**: Collect and aggregate status from all service controllers
 3. **Progress Calculation**: Calculate overall progress based on service completion
 4. **Timeout Management**: Monitor remediation timeouts and trigger escalation
@@ -596,7 +596,7 @@ The controller watches:
 - **AlertProcessing CRDs**: For alert processor status updates
 - **AIAnalysis CRDs**: For AI analysis status updates
 - **WorkflowExecution CRDs**: For workflow status updates
-- **KubernetesExecution CRDs**: For executor status updates
+- **~~KubernetesExecution~~ (DEPRECATED - ADR-025) CRDs**: For executor status updates
 
 ---
 
@@ -712,7 +712,7 @@ rules:
 - [AlertProcessing CRD Design](./02_ALERT_PROCESSING_CRD.md) *(Next)*
 - [AIAnalysis CRD Design](./03_AI_ANALYSIS_CRD.md) *(Planned)*
 - [WorkflowExecution CRD Design](./04_WORKFLOW_EXECUTION_CRD.md) *(Planned)*
-- [KubernetesExecution CRD Design](./05_KUBERNETES_EXECUTION_CRD.md) *(Planned)*
+- [KubernetesExecution CRD Design](./05_KUBERNETES_EXECUTION_CRD.md) *(DEPRECATED - ADR-025)*
 
 ---
 

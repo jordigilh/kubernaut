@@ -89,7 +89,7 @@ sequenceDiagram
 | **Remediation Processor** | `rp` | `rp-2025-10-06-ghi789` | Only if generating new ID |
 | **AI Analysis** | `ai` | `ai-2025-10-06-jkl012` | Only if generating new ID |
 | **Workflow Execution** | `wf` | `wf-2025-10-06-mno345` | Only if generating new ID |
-| **Kubernetes Executor** | `ke` | `ke-2025-10-06-pqr678` | Only if generating new ID |
+| **Kubernetes Executor** (DEPRECATED - ADR-025) | `ke` | `ke-2025-10-06-pqr678` | Only if generating new ID |
 | **Notification Service** | `ntf` | `ntf-2025-10-06-stu901` | Only if generating new ID |
 | **HolmesGPT API** | `hg` | `hg-2025-10-06-vwx234` | Only if generating new ID |
 | **Context API** | `ctx` | `ctx-2025-10-06-yza567` | Only if generating new ID |
@@ -839,7 +839,7 @@ curl -G -s "http://loki:3100/loki/api/v1/query_range" \
 ```bash
 # Using kubectl logs with correlation ID filter
 for service in gateway-service remediation-orchestrator remediation-processor \
-               ai-analysis workflow-execution kubernetes-executor; do
+               ai-analysis workflow-execution kubernetes-executor; do  # kubernetes-executor DEPRECATED - ADR-025
   echo "=== $service ==="
   kubectl logs -n kubernaut-system deployment/$service | \
     grep "req-2025-10-06-abc123" | \
@@ -949,7 +949,7 @@ Remediation Orchestrator
   │
   └── WorkflowExecution CRD
         ↓ CRD label (propagate)
-      KubernetesExecution CRD
+      ~~KubernetesExecution CRD~~ (DEPRECATED - ADR-025)
 ```
 
 ---

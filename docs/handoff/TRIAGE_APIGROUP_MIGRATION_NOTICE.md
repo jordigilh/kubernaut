@@ -35,7 +35,7 @@
 | **AIAnalysis** | "Needs migration" | Resource-specific group | Document CORRECT |
 | **WorkflowExecution** | "Needs migration" | Resource-specific group | Document CORRECT |
 | **RemediationOrchestrator** | "Needs migration (3 CRDs)" | Resource-specific group | Document CORRECT |
-| **KubernetesExecution** | "Deferred (low priority)" | Still using `.io` | Document CORRECT |
+| **KubernetesExecution** (DEPRECATED - ADR-025) | "Deferred (low priority)" | Still using `.io` | Document CORRECT |
 
 **Current Migration Status**: **1 out of 7 CRDs migrated (14%)** ❌
 

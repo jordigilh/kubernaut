@@ -189,7 +189,7 @@ env:
 | **AIAnalysis** | Controller-only status | Controller manages AI investigation results |
 | **RemediationRequest** | Controller-only status | RO controller manages routing logic |
 
-**Note**: **KubernetesExecution** was deprecated 2025-10-19 (never implemented, replaced by Tekton Pipelines). See [DEPRECATED.md](../../services/crd-controllers/04-kubernetesexecutor/DEPRECATED.md)
+**Note**: **KubernetesExecution** was deprecated 2025-10-19 (ADR-025; never implemented, replaced by Tekton Pipelines). See [DEPRECATED.md](../../services/crd-controllers/04-kubernetesexecutor/DEPRECATED.md)
 
 ---
 

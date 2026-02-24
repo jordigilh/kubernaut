@@ -16,7 +16,7 @@
 | AIAnalysis | ✅ **DONE** | `api/aianalysis/v1alpha1/aianalysis_types.go` | +6 lines |
 | SignalProcessing | ✅ **DONE** | `api/signalprocessing/v1alpha1/signalprocessing_types.go` | +6 lines |
 | WorkflowExecution | ✅ **DONE** | `api/workflowexecution/v1alpha1/workflowexecution_types.go` | +6 lines |
-| KubernetesExecution | ⏭️ **SKIPPED** | (Deprecated and removed per user) | N/A |
+| KubernetesExecution (DEPRECATED - ADR-025) | ⏭️ **SKIPPED** | (Deprecated and removed per user) | N/A |
 
 ### Controller Logic Updates (4/4 Complete)
 | Controller | Status | Test Result | Improvement |

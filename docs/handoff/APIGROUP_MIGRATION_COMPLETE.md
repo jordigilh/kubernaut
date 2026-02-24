@@ -33,7 +33,7 @@
 | **RemediationApprovalRequest** | remediation.kubernaut.ai | **`kubernaut.ai`** | ✅ COMPLETE |
 | **RemediationOrchestrator** | remediationorchestrator.kubernaut.ai | **`kubernaut.ai`** | ✅ COMPLETE |
 
-**KubernetesExecution**: ⏸️ **Deferred** (still using `kubernetesexecution.kubernaut.io` - low priority service)
+**KubernetesExecution** (DEPRECATED - ADR-025): ⏸️ **Deferred** (still using `kubernetesexecution.kubernaut.io` - low priority service)
 
 ---
 

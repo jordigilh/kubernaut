@@ -65,7 +65,7 @@
 
 - [ ] **Implement RemediationRequestReconciler**
   - [ ] Core reconciliation logic with phase orchestration
-  - [ ] Sequential service CRD creation (RemediationProcessing → AIAnalysis → WorkflowExecution → KubernetesExecution)
+  - [ ] Sequential service CRD creation (RemediationProcessing → AIAnalysis → WorkflowExecution → KubernetesExecution (DEPRECATED - ADR-025))
   - [ ] Data snapshot pattern for CRD spec population
   - [ ] Owner reference management for cascade deletion
 
@@ -73,7 +73,7 @@
   - [ ] Watch RemediationProcessing status for completion
   - [ ] Watch AIAnalysis status for completion
   - [ ] Watch WorkflowExecution status for completion
-  - [ ] Watch KubernetesExecution status for completion
+  - [ ] Watch KubernetesExecution (DEPRECATED - ADR-025) status for completion
   - [ ] Mapping functions for all watches
 
 - [ ] **Implement Timeout Detection**

@@ -4,7 +4,7 @@
 **Decision Date**: 2026-02-05
 **Version**: 1.0
 **Authority Level**: FOUNDATIONAL
-**Applies To**: All CRD controllers (AA, WE, RO, SP, Notification, RAR)
+**Applies To**: All CRD controllers (AA, WE, RO, SP, Notification, RAR). KubernetesExecution excluded (DEPRECATED - ADR-025).
 
 ---
 

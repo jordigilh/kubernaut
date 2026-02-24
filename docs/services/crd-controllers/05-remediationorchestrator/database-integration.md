@@ -17,7 +17,7 @@ CREATE TABLE remediation_audit (
     alert_processing_name VARCHAR(255),
     ai_analysis_name VARCHAR(255),
     workflow_execution_name VARCHAR(255),
-    kubernetes_execution_name VARCHAR(255),
+    kubernetes_execution_name VARCHAR(255),  -- DEPRECATED - ADR-025
 
     -- Service CRD statuses (JSONB for flexibility)
     service_crd_statuses JSONB,

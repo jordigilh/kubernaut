@@ -37,7 +37,7 @@ Kubernetes Conditions are a standard pattern for surfacing detailed status infor
 
 **ALL CRD controllers MUST implement Kubernetes Conditions infrastructure by V1.0 release.**
 
-**Excluded**: KubernetesExecution is deprecated and excluded from conditions implementation.
+**Excluded**: KubernetesExecution is deprecated (ADR-025) and excluded from conditions implementation.
 
 ### Requirements
 

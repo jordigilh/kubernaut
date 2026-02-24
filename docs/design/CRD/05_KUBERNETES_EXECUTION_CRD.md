@@ -53,6 +53,8 @@
 
 # KubernetesExecution CRD Design Document
 
+**⚠️ DEPRECATED (ADR-025)**: KubernetesExecution CRD and KubernetesExecutor service eliminated. Replaced by Tekton TaskRun. API types and CRD manifests have been deleted.
+
 **Document Version**: 1.0
 **Date**: January 2025
 **Status**: **DEPRECATED** - See banner above (was: "APPROVED")

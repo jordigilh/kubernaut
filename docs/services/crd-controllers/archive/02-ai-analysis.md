@@ -90,7 +90,7 @@ This document provides the detailed CRD schema, controller reconciliation logic,
         ┌───────────────┼───────────────┬───────────────┬───────────────┐
         │ (owns)        │ (owns)        │ (owns)        │ (owns)        │ (owns)
         ▼               ▼               ▼               ▼               ▼
-  AlertProcessing  AIAnalysis  WorkflowExecution  KubernetesExecution  AIApprovalRequest
+  AlertProcessing  AIAnalysis  WorkflowExecution  KubernetesExecution (DEPRECATED - ADR-025)  AIApprovalRequest
    (Sibling 1)     (Sibling 2)    (Sibling 3)        (Sibling 4)       (Optional)
                        ▲
                        │

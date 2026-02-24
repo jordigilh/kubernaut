@@ -212,7 +212,7 @@ It("should set RoutingResolved condition when rule matches", func() {
 | SignalProcessing | 0 | 0 | - | 🔴 **Missing** |
 | RemediationRequest | 0 | 0 | - | 🔴 **Missing** |
 | RemediationApprovalRequest | 0 | 0 | - | 🔴 **Missing** |
-| KubernetesExecution | 0 | 0 | - | 🔴 **Missing** |
+| KubernetesExecution (DEPRECATED - ADR-025) | 0 | 0 | - | 🔴 **Missing** |
 
 **Notification's Position**: ✅ **One of 3 complete services** (43% of total)
 

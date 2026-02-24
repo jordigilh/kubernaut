@@ -34,7 +34,7 @@ graph TB
         RP[RemediationProcessing]
         AI[AIAnalysis]
         WE[WorkflowExecution]
-        KE[KubernetesExecution]
+        KE[KubernetesExecution (DEPRECATED - ADR-025)]
         NR[NotificationRequest<br/>⭐ NEW]
     end
 
@@ -51,7 +51,7 @@ graph TB
     NR -->|Updates Status| RR
 ```
 
-**Key Principle**: **RemediationOrchestrator is the ONLY component that creates child CRDs** (except WorkflowExecution → KubernetesExecution)
+**Key Principle**: **RemediationOrchestrator is the ONLY component that creates child CRDs** (except WorkflowExecution → KubernetesExecution (DEPRECATED - ADR-025))
 
 ---
 
@@ -141,7 +141,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 ```go
 // From docs/services/crd-controllers/03-workflowexecution/reconciliation-phases.md:
 "RemediationRequest creates ALL service CRDs (centralized orchestration)"
-"WorkflowExecution does NOT create KubernetesExecution (common misconception)"
+"WorkflowExecution does NOT create KubernetesExecution (DEPRECATED - ADR-025) (common misconception)"
 ```
 
 **2. Global Visibility** (⭐ CRITICAL)
@@ -149,7 +149,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
   - RemediationProcessing status (enrichment failures)
   - AIAnalysis status (investigation failures, timeout)
   - WorkflowExecution status (workflow failures, timeout)
-  - KubernetesExecution status (action failures)
+  - KubernetesExecution (DEPRECATED - ADR-025) status (action failures)
 - Can determine **correct notification severity** based on phase
 - Can aggregate **multiple failures** into single notification
 
@@ -257,7 +257,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 **Evidence**:
 ```
 From reconciliation-phases.md:
-"❌ WorkflowExecution does NOT create KubernetesExecution (RemediationRequest does this)"
+"❌ WorkflowExecution does NOT create KubernetesExecution (DEPRECATED - ADR-025) (RemediationRequest does this)"
 "✅ Centralized Orchestration: RemediationRequest manages the entire workflow sequence"
 ```
 
@@ -269,7 +269,7 @@ From reconciliation-phases.md:
 **3. Duplicate Notification Logic** (HIGH)
 - Need to duplicate notification creation in:
   - WorkflowExecution (workflow failures)
-  - KubernetesExecution (action failures)
+  - KubernetesExecution (DEPRECATED - ADR-025) (action failures)
   - AIAnalysis (investigation failures)
   - RemediationProcessing (enrichment failures)
 - **DRY violation** (Don't Repeat Yourself)
@@ -277,7 +277,7 @@ From reconciliation-phases.md:
 **4. Notification Deduplication Complexity** (HIGH)
 - Multiple controllers might send notifications for same root cause
 - Example: Workflow fails → WorkflowExecution sends notification
-          - Each failed action → KubernetesExecution sends notification
+          - Each failed action → KubernetesExecution (DEPRECATED - ADR-025) sends notification
           - **Result**: User spammed with 5 notifications for 1 failure
 
 **5. Orphaned NotificationRequests** (MEDIUM)
@@ -305,9 +305,9 @@ From reconciliation-phases.md:
 
 ---
 
-### **Alternative 3: KubernetesExecution/Executor Creates NotificationRequest CRDs**
+### **Alternative 3: KubernetesExecution (DEPRECATED - ADR-025)/Executor Creates NotificationRequest CRDs**
 
-**Approach**: Leaf controllers (KubernetesExecution, Executor) create NotificationRequest CRDs when actions fail
+**Approach**: Leaf controllers (KubernetesExecution (DEPRECATED - ADR-025), Executor) create NotificationRequest CRDs when actions fail
 
 ---
 
@@ -323,12 +323,12 @@ From reconciliation-phases.md:
 #### ❌ **Cons**
 
 **1. Architectural Inconsistency** (⭐ CRITICAL BLOCKER)
-- **VIOLATES Leaf Controller Pattern**: KubernetesExecution is a leaf controller
+- **VIOLATES Leaf Controller Pattern**: KubernetesExecution (DEPRECATED - ADR-025) is a leaf controller
 - Even worse than Alternative 2 (deeper nesting)
-- Creates 3-level CRD hierarchy: RemediationRequest → WorkflowExecution → KubernetesExecution → NotificationRequest
+- Creates 3-level CRD hierarchy: RemediationRequest → WorkflowExecution → KubernetesExecution (DEPRECATED - ADR-025) → NotificationRequest
 
 **2. Zero Visibility** (⭐ CRITICAL)
-- KubernetesExecution **only knows about its own action**
+- KubernetesExecution (DEPRECATED - ADR-025) **only knows about its own action**
 - No context about workflow, alert, or upstream failures
 - Cannot determine if notification is even needed (maybe workflow will retry)
 
@@ -399,7 +399,7 @@ func (r *TriggerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 - **YAGNI violation** (You Aren't Gonna Need It)
 
 **2. Watch Overhead** (HIGH)
-- Must watch **all CRDs** (RemediationRequest, WorkflowExecution, AIAnalysis, KubernetesExecution)
+- Must watch **all CRDs** (RemediationRequest, WorkflowExecution, AIAnalysis, KubernetesExecution (DEPRECATED - ADR-025))
 - Kubernetes API server load increases
 - Cache memory usage increases
 

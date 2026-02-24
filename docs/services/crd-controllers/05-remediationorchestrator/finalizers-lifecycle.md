@@ -119,7 +119,7 @@ import (
     processingv1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1"
     aianalysisv1 "github.com/jordigilh/kubernaut/api/ai/analysis/v1"
     workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflow/execution/v1"
-    kubernetesexecutionv1 "github.com/jordigilh/kubernaut/api/kubernetes/execution/v1"
+    kubernetesexecutionv1 "github.com/jordigilh/kubernaut/api/kubernetes/execution/v1" // DEPRECATED - ADR-025
 
     apierrors "k8s.io/apimachinery/pkg/api/errors"
     "sigs.k8s.io/controller-runtime/pkg/client"
@@ -208,7 +208,7 @@ func (r *RemediationRequestReconciler) cleanupChildCRDs(
         }
     }
 
-    // Delete ALL KubernetesExecution CRDs owned by this RemediationRequest
+    // Delete ALL KubernetesExecution (DEPRECATED - ADR-025) CRDs owned by this RemediationRequest
     keList := &kubernetesexecutionv1.KubernetesExecutionList{}
     if err := r.List(ctx, keList, client.InNamespace(namespace)); err == nil {
         for _, ke := range keList.Items {
@@ -216,7 +216,7 @@ func (r *RemediationRequestReconciler) cleanupChildCRDs(
             for _, ownerRef := range ke.OwnerReferences {
                 if ownerRef.UID == ar.UID {
                     if err := r.Delete(ctx, &ke); err != nil && !apierrors.IsNotFound(err) {
-                        r.Log.Error(err, "Failed to delete KubernetesExecution", "name", ke.Name)
+                        r.Log.Error(err, "Failed to delete KubernetesExecution (DEPRECATED - ADR-025)", "name", ke.Name)
                     } else {
                         r.Log.Info("Deleted KubernetesExecution CRD", "name", ke.Name)
                     }
@@ -255,7 +255,7 @@ func (r *RemediationRequestReconciler) recordFinalAudit(
 - ✅ **Delete child CRDs**: Best-effort deletion of all owned CRDs (owner references ensure cascade)
 - ✅ **Record final audit**: Capture complete remediation lifecycle (best-effort)
 - ✅ **Emit deletion event**: Operational visibility
-- ✅ **Multiple child CRDs**: Handles 4 different child CRD types (RemediationProcessing, AIAnalysis, WorkflowExecution, KubernetesExecution)
+- ✅ **Multiple child CRDs**: Handles 4 different child CRD types (RemediationProcessing, AIAnalysis, WorkflowExecution, KubernetesExecution (DEPRECATED - ADR-025))
 - ✅ **Parallel deletion**: Kubernetes garbage collector handles cascade deletion in parallel
 - ✅ **Non-blocking**: Child deletion and audit failures don't block deletion (best-effort)
 
@@ -486,7 +486,7 @@ Child CRDs update status (processing → completed)
     ↓ (watch triggers <100ms)
 RemediationRequest orchestrates next phase
     ↓
-Creates next child CRD (AIAnalysis, WorkflowExecution, KubernetesExecution)
+Creates next child CRD (AIAnalysis, WorkflowExecution, KubernetesExecution (DEPRECATED - ADR-025))
     ↓
 Repeats until all phases completed
     ↓
@@ -571,7 +571,7 @@ RemediationRequest.deletionTimestamp set
 RemediationRequest Controller reconciles (detects deletion)
     ↓
 Finalizer cleanup executes:
-  - Delete ALL child CRDs (RemediationProcessing, AIAnalysis, WorkflowExecution, KubernetesExecution)
+  - Delete ALL child CRDs (RemediationProcessing, AIAnalysis, WorkflowExecution, KubernetesExecution (DEPRECATED - ADR-025))
   - Record final remediation audit
   - Emit deletion event
     ↓
@@ -583,7 +583,7 @@ Kubernetes garbage collector cascade-deletes ALL owned CRDs in parallel:
   - RemediationProcessing → deleted
   - AIAnalysis (+ AIApprovalRequest) → deleted
   - WorkflowExecution → deleted
-  - KubernetesExecution (+ Kubernetes Jobs) → deleted
+  - KubernetesExecution (DEPRECATED - ADR-025) (+ Kubernetes Jobs) → deleted
 ```
 
 **Retention**:
@@ -636,7 +636,7 @@ func (r *RemediationRequestReconciler) emitLifecycleEvents(
             fmt.Sprintf("WorkflowExecution CRD created: %s", ar.Status.WorkflowExecutionRef.Name))
     }
     for _, keRef := range ar.Status.KubernetesExecutionRefs {
-        r.Recorder.Event(ar, "Normal", "KubernetesExecutionCreated",
+        r.Recorder.Event(ar, "Normal", "KubernetesExecutionCreated", // DEPRECATED - ADR-025
             fmt.Sprintf("KubernetesExecution CRD created: %s", keRef.Name))
     }
 

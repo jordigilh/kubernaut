@@ -19,7 +19,7 @@ Kubernaut requires building **10+ CRD-based controllers** following a microservi
 
 **Current State**:
 - ✅ 3 controllers implemented: `remediationprocessor`, `datastorage`, `gateway`
-- ⏳ 5+ controllers remaining: `aianalysis`, `workflowexecution`, `kubernetesexecution`, `notification`, and more
+- ⏳ 5+ controllers remaining: `aianalysis`, `workflowexecution`, ~~`kubernetesexecution`~~ (DEPRECATED - ADR-025), `notification`, and more
 - ⏱️ Average controller implementation time: **10-15 hours** per controller (including configuration, metrics, deployment)
 
 **Key Challenges**:

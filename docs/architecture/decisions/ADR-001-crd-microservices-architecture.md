@@ -97,7 +97,7 @@ Separate Kubernetes controllers, each managing its own Custom Resource Definitio
    - Manages step dependencies (DAG)
    - Creates KubernetesExecution children
 
-4. Kubernetes Executor → KubernetesExecution CRD
+4. ~~Kubernetes Executor~~ (DEPRECATED - ADR-025) → KubernetesExecution CRD
    - Executes remediation actions via Jobs
    - Per-action RBAC isolation
    - Dry-run validation

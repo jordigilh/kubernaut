@@ -106,7 +106,7 @@ apiVersion: kubernetesexecution.kubernaut.ai/v1alpha1  # (still .io - pending mi
 | `WorkflowExecution` | Execute remediation workflows (phase 3) | **Tightly coupled to RR** |
 | `NotificationRequest` | Send notifications about workflow state | **Tightly coupled to RR** |
 | `RemediationOrchestrator` | Orchestrate multi-phase workflow | **Core orchestration** |
-| `KubernetesExecution` | Execute K8s commands | **Tightly coupled to WE** |
+| `KubernetesExecution` (DEPRECATED - ADR-025) | Execute K8s commands | **Tightly coupled to WE** |
 
 **Analysis**:
 - ✅ All CRDs are part of a **single unified workflow**

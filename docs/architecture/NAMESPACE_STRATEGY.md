@@ -50,7 +50,7 @@ Kubernaut uses a **dual-namespace architecture** to separate concerns between HT
 1. RemediationProcessor Controller
 2. AIAnalysis Controller
 3. WorkflowExecution Controller
-4. KubernetesExecutor Controller
+4. ~~KubernetesExecutor Controller~~ (DEPRECATED - ADR-025)
 5. RemediationOrchestrator Controller
 
 **Characteristics**:
@@ -244,7 +244,7 @@ Controllers don't expose HTTP services, only metrics endpoints:
 remediation-processor-controller.kubernaut-system.svc.cluster.local:9090/metrics
 ai-analysis-controller.kubernaut-system.svc.cluster.local:9090/metrics
 workflow-execution-controller.kubernaut-system.svc.cluster.local:9090/metrics
-kubernetes-executor-controller.kubernaut-system.svc.cluster.local:9090/metrics
+kubernetes-executor-controller.kubernaut-system.svc.cluster.local:9090/metrics  # DEPRECATED - ADR-025
 remediation-orchestrator-controller.kubernaut-system.svc.cluster.local:9090/metrics
 ```
 
@@ -319,7 +319,7 @@ If unification is required:
 - [ ] Deploy RemediationProcessor in `kubernaut-system`
 - [ ] Deploy AIAnalysis in `kubernaut-system`
 - [ ] Deploy WorkflowExecution in `kubernaut-system`
-- [ ] Deploy KubernetesExecutor in `kubernaut-system`
+- [ ] ~~Deploy KubernetesExecutor~~ (DEPRECATED - ADR-025) in `kubernaut-system`
 - [ ] Deploy RemediationOrchestrator in `kubernaut-system`
 
 ### **Validation**

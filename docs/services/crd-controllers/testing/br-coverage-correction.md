@@ -14,7 +14,7 @@ The BR Coverage Matrices created for Phase 3 services show a **simple pyramid** 
 |---------|------|-------------|-----|-------|
 | **Workflow Execution** | 68.6% | 22.9% | 8.6% | **100%** ❌ |
 | **Remediation Processor** | 59.3% | 33.3% | 7.4% | **100%** ❌ |
-| **Kubernetes Executor** | 61.5% | 33.3% | 5.1% | **100%** ❌ |
+| **Kubernetes Executor** (DEPRECATED - ADR-025) | 61.5% | 33.3% | 5.1% | **100%** ❌ |
 
 **This is WRONG** according to the actual testing strategy rule (03-testing-strategy.mdc)!
 
@@ -114,7 +114,7 @@ The BR Coverage Matrices created for Phase 3 services show a **simple pyramid** 
 
 ---
 
-### Kubernetes Executor (39 BRs)
+### Kubernetes Executor (39 BRs) (DEPRECATED - ADR-025)
 
 **Current** (WRONG):
 - Unit: 24 tests (61.5%) ❌ Below 70% minimum
@@ -202,7 +202,7 @@ The BR Coverage Matrices created for Phase 3 services show a **simple pyramid** 
 |---------|------|-------------|-----|---------|-------|--------|
 | **Workflow Execution** | 77-86% | 57-71% | 11-14% | 45-71% | **140-165%** | ✅ Corrected |
 | **Remediation Processor** | 74-89% | 56-67% | 11-15% | 41-71% | **141-171%** | ✅ Corrected |
-| **Kubernetes Executor** | 72-90% | 56-72% | 10-15% | 38-77% | **138-177%** | ✅ Corrected |
+| **Kubernetes Executor** (DEPRECATED - ADR-025) | 72-90% | 56-72% | 10-15% | 38-77% | **138-177%** | ✅ Corrected |
 
 **Average Total Coverage**: **140-171%** (defense-in-depth with overlapping validation)
 
@@ -226,7 +226,7 @@ The BR Coverage Matrices created for Phase 3 services show a **simple pyramid** 
    - Document overlapping coverage
    - **File**: `docs/services/crd-controllers/02-signalprocessing/implementation/testing/BR_COVERAGE_MATRIX_V2.md`
 
-3. **Kubernetes Executor BR Coverage Matrix**
+3. **Kubernetes Executor** (DEPRECATED - ADR-025) **BR Coverage Matrix**
    - Add 4-11 unit tests to reach 72%+ minimum
    - Add 9-15 integration tests to reach 56%+ minimum
    - Add 2-4 E2E tests to reach 10%+ minimum
@@ -295,7 +295,7 @@ Before considering correction complete:
 **Corrected Confidence** (with proper defense-in-depth):
 - **Remediation Processor**: 99.5% → **99%** (✅ No change - testing strategy clarification doesn't reduce confidence)
 - **Workflow Execution**: 100% → **100%** (✅ No change - already comprehensive)
-- **Kubernetes Executor**: 99% → **99%** (✅ No change - testing strategy clarification)
+- **Kubernetes Executor** (DEPRECATED - ADR-025): 99% → **99%** (✅ No change - testing strategy clarification)
 
 **Why No Confidence Reduction?**:
 - The testing is already comprehensive (101 BRs with 101 tests)

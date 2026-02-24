@@ -19,7 +19,7 @@
 - 🔴 SignalProcessing - Schema only, infrastructure needed
 - 🔴 RemediationRequest - Schema only, infrastructure needed
 - 🔴 RemediationApprovalRequest - Schema only, infrastructure needed
-- 🔴 KubernetesExecution - Schema only, infrastructure needed
+- 🔴 KubernetesExecution (DEPRECATED - ADR-025) - Schema only, infrastructure needed
 
 **Total Effort**: 10-14 hours across 3 teams
 **Business Value**: Critical for operator UX, automation, and debugging

@@ -16,7 +16,7 @@ Kubernaut is an **AIOps platform** for Kubernetes that uses Custom Resource Defi
 
 **Current State** (as of 2025-12-13): Resource-specific groups with `.ai` domain
 - 7 CRDs use resource-specific groups: `<resource>.kubernaut.ai` (e.g., `remediation.kubernaut.ai`)
-- 1 CRD still uses legacy `.io`: `kubernetesexecution.kubernaut.io` (deferred migration)
+- 1 CRD ~~still uses legacy `.io`~~: `kubernetesexecution.kubernaut.io` (DEPRECATED - ADR-025, CRD eliminated)
 
 **Key Requirements**:
 - Consistent API group naming across all CRDs

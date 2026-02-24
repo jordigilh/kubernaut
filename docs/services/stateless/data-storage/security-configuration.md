@@ -235,7 +235,7 @@ func isAuthorized(userInfo *authv1.UserInfo, method, path string) bool {
         "system:serviceaccount:kubernaut-system:gateway-sa",
         "system:serviceaccount:kubernaut-system:aianalysis-controller-sa",
         "system:serviceaccount:kubernaut-system:workflowexecution-controller-sa",
-        "system:serviceaccount:kubernaut-system:kubernetes-executor-sa",
+        "system:serviceaccount:kubernaut-system:kubernetes-executor-sa",  // DEPRECATED - ADR-025
     }
 
     for _, sa := range authorizedServiceAccounts {
@@ -378,7 +378,7 @@ spec:
           app: workflowexecution-controller
     - podSelector:
         matchLabels:
-          app: kubernetes-executor
+          app: kubernetes-executor  # DEPRECATED - ADR-025
     ports:
     - protocol: TCP
       port: 8080

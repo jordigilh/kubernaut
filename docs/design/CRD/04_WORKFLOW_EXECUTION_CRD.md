@@ -835,7 +835,7 @@ spec:
       description: "Create backup of current pod configuration"
       actionType: "kubernetes"
       actionConfig:
-        executor: "kubernetes-executor"
+        executor: "kubernetes-executor"  # DEPRECATED - ADR-025
         parameters:
           action: "backup-pod"
           namespace: "production-web"
@@ -855,7 +855,7 @@ spec:
       description: "Restart the pod experiencing high CPU usage"
       actionType: "kubernetes"
       actionConfig:
-        executor: "kubernetes-executor"
+        executor: "kubernetes-executor"  # DEPRECATED - ADR-025
         parameters:
           action: "restart-pod"
           namespace: "production-web"
@@ -1139,7 +1139,7 @@ func (r *WorkflowExecutionController) Reconcile(ctx context.Context, req ctrl.Re
 ### **Integration Points**
 - **Input**: Receives workflow definition from `AIAnalysis CRD`
 - **Executor Services**: Coordinates with Kubernetes Executor, Monitoring Service, Notification Service
-- **Output**: Creates `KubernetesExecution CRDs` for Kubernetes-specific actions
+- **Output**: Creates `~~KubernetesExecution~~ (DEPRECATED - ADR-025) CRDs` for Kubernetes-specific actions
 - **Parent Update**: Updates `AlertRemediation CRD` with workflow execution results
 - **Audit**: Persists execution data for historical analysis and learning
 
@@ -1240,10 +1240,10 @@ func (r *WorkflowExecutionController) Reconcile(ctx context.Context, req ctrl.Re
 - **Requirements**: [Workflow Engine & Orchestration Requirements](../requirements/04_WORKFLOW_ENGINE_ORCHESTRATION.md)
 - **Parent CRD**: [AlertRemediation CRD](01_ALERT_REMEDIATION_CRD.md)
 - **Input CRD**: [AIAnalysis CRD](03_AI_ANALYSIS_CRD.md)
-- **Next CRD**: [KubernetesExecution CRD](05_KUBERNETES_EXECUTION_CRD.md)
+- **Next CRD**: [KubernetesExecution CRD](05_KUBERNETES_EXECUTION_CRD.md) (DEPRECATED - ADR-025)
 
 ---
 
 **Status**: ✅ **APPROVED** - Ready for V1 Implementation
-**Next Step**: Proceed with KubernetesExecution CRD design
+**Next Step**: ~~Proceed with KubernetesExecution CRD design~~ (DEPRECATED - ADR-025)
 

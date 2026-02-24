@@ -262,7 +262,7 @@ Data Storage Service acts as the **centralized write gateway** in the Kubernaut 
 │  • Gateway Service                                          │
 │  • AI Analysis Controller                                   │
 │  • Workflow Execution Controller                            │
-│  • Kubernetes Executor Controller                           │
+│  • Kubernetes Executor Controller (DEPRECATED - ADR-025)   │
 └────────────────────┬────────────────────────────────────────┘
                      │
                      │ HTTP POST /api/v1/audit/*
@@ -600,7 +600,7 @@ func (c *DataStorageClient) WriteWorkflowAudit(ctx context.Context, req *Workflo
 
 ---
 
-### **4. Kubernetes Executor Controller**
+### **4. Kubernetes Executor Controller** (DEPRECATED - ADR-025)
 
 **Purpose**: Writes Kubernetes action execution audit trail
 
@@ -868,7 +868,7 @@ func (s *DataStorageService) FindSimilarIncidents(ctx context.Context, embedding
 
 ### **Pattern 1: Synchronous Write with Best-Effort Guarantee**
 
-**Used by**: Gateway, AI Analysis, Workflow Execution, Kubernetes Executor
+**Used by**: Gateway, AI Analysis, Workflow Execution, Kubernetes Executor (DEPRECATED - ADR-025)
 
 **Characteristics**:
 - Audit write failure does **NOT** block primary operation

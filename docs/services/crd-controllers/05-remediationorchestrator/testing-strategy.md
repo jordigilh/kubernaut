@@ -738,7 +738,7 @@ var _ = Describe("BR-E2E-AR-001: Complete Auto-Remediation Workflow", func() {
         }, "120s", "5s").Should(BeTrue())
 
         // Wait for complete remediation pipeline:
-        // RemediationRequest → RemediationProcessing → AIAnalysis → WorkflowExecution → KubernetesExecution → Completed
+        // RemediationRequest → RemediationProcessing → AIAnalysis → WorkflowExecution → KubernetesExecution (DEPRECATED - ADR-025) → Completed
         Eventually(func() string {
             k8sClient.Get(ctx, client.ObjectKeyFromObject(ar), ar)
             return ar.Status.Phase
@@ -968,7 +968,7 @@ flowchart TD
 - ✅ Test remains **readable and maintainable** with Fake K8s Client
 
 **RemediationOrchestrator Unit Test Examples**:
-- Child CRD creation logic (RemediationProcessing, AIAnalysis, WorkflowExecution, KubernetesExecutor)
+- Child CRD creation logic (RemediationProcessing, AIAnalysis, WorkflowExecution, KubernetesExecutor (DEPRECATED - ADR-025))
 - Phase transition rules (pending → processing → analyzing → planning → executing → completed)
 - Owner reference validation (cascade deletion setup)
 - Timeout detection logic (phase duration monitoring)
@@ -1024,7 +1024,7 @@ flowchart TD
 mockWatcher.On("Watch", "RemediationProcessing").Return(watchChan1)
 mockWatcher.On("Watch", "AIAnalysis").Return(watchChan2)
 mockWatcher.On("Watch", "WorkflowExecution").Return(watchChan3)
-mockWatcher.On("Watch", "KubernetesExecutor").Return(watchChan4)
+mockWatcher.On("Watch", "KubernetesExecutor").Return(watchChan4) // DEPRECATED - ADR-025
 // ... 90+ more lines of event coordination
 // BETTER: Integration test with real controller-runtime informers
 ```
@@ -1346,7 +1346,7 @@ var _ = Describe("BR-INTEGRATION-AR-020: Multi-Phase Orchestration", func() {
         Expect(ar.Status.ChildCRDs.RemediationProcessing).ToNot(BeEmpty())
         Expect(ar.Status.ChildCRDs.AIAnalysis).ToNot(BeEmpty())
         Expect(ar.Status.ChildCRDs.WorkflowExecution).ToNot(BeEmpty())
-        Expect(ar.Status.ChildCRDs.KubernetesExecutor).ToNot(BeEmpty())
+        Expect(ar.Status.ChildCRDs.KubernetesExecutor).ToNot(BeEmpty()) // DEPRECATED - ADR-025
     })
 })
 ```

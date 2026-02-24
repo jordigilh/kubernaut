@@ -3,7 +3,7 @@
 **Purpose**: Coordinates end-to-end alert remediation workflow through watch-based state aggregation and lifecycle management.
 
 **Core Responsibilities**:
-1. **CRD Orchestration** - Create service CRDs (RemediationProcessing, AIAnalysis, WorkflowExecution, KubernetesExecution) based on phase progression
+1. **CRD Orchestration** - Create service CRDs (RemediationProcessing, AIAnalysis, WorkflowExecution, KubernetesExecution (DEPRECATED - ADR-025)) based on phase progression
 2. **Status Aggregation** - Watch all service CRD statuses and aggregate overall remediation state
 3. **Lifecycle Management** - 24-hour retention with automatic cleanup and cascade deletion
 4. **Timeout Management** - Detect phase timeouts and trigger escalation (BR-SP-062 (RemediationProcessor))
@@ -12,7 +12,7 @@
 **V1 Scope - Remediation Coordination Only**:
 - Single RemediationRequest CRD per alert (created by Gateway Service)
 - Watch-based event-driven coordination (no polling)
-- Sequential phase CRD creation (RemediationProcessing → AIAnalysis → WorkflowExecution → KubernetesExecution)
+- Sequential phase CRD creation (RemediationProcessing → AIAnalysis → WorkflowExecution → KubernetesExecution (DEPRECATED - ADR-025))
 - **V1.0 Approval Notification Triggering** (ADR-018): Watches AIAnalysis phase and creates NotificationRequest CRDs when approval is required (BR-ORCH-001), reducing approval miss rate from 40-60% to <5% and enabling $392K savings per approval-required incident
 - 24-hour retention with configurable cleanup
 - Per-phase timeout detection with escalation
@@ -115,6 +115,7 @@ graph TB
         AP[SignalProcessing CRD]
         AIA[AIAnalysis CRD]
         WE[WorkflowExecution CRD]
+        KE[KubernetesExecution CRD (DEPRECATED - ADR-025)]
     end
 
     subgraph "External Services"

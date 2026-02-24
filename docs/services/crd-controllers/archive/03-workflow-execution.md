@@ -17,7 +17,7 @@
 **CRD Design Specification**: [docs/design/CRD/04_WORKFLOW_EXECUTION_CRD.md](../../design/CRD/04_WORKFLOW_EXECUTION_CRD.md)
 
 **Related Services**:
-- **Creates & Watches**: KubernetesExecution CRD (for step execution)
+- **Creates & Watches**: KubernetesExecution (DEPRECATED - ADR-025) CRD (for step execution)
 - **Integrates With**: Workflow Engine, Executor Service, Data Storage Service
 
 **Architecture References**:

@@ -23,7 +23,7 @@
 - ✅ **Added**: `workflowexecution_consecutive_failures{target_resource}` gauge (pre-execution failures only)
 
 ### Version 3.0 (2025-12-02)
-- ✅ **Removed**: All KubernetesExecution metrics (replaced by Tekton PipelineRun)
+- ✅ **Removed**: All KubernetesExecution (DEPRECATED - ADR-025) metrics (replaced by Tekton PipelineRun)
 - ✅ **Added**: Resource locking metrics (DD-WE-001)
 
 ---

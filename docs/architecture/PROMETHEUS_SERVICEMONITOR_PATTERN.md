@@ -311,7 +311,7 @@ spec:
 
 ---
 
-#### 5. Kubernetes Executor
+#### 5. Kubernetes Executor (DEPRECATED - ADR-025)
 
 ```yaml
 apiVersion: monitoring.coreos.com/v1
@@ -734,7 +734,7 @@ kubectl apply -f deploy/remediation-orchestrator-deployment.yaml
 kubectl apply -f deploy/remediation-processor-deployment.yaml
 kubectl apply -f deploy/ai-analysis-deployment.yaml
 kubectl apply -f deploy/workflow-execution-deployment.yaml
-kubectl apply -f deploy/kubernetes-executor-deployment.yaml
+kubectl apply -f deploy/kubernetes-executor-deployment.yaml  # DEPRECATED - ADR-025
 kubectl apply -f deploy/gateway-service-deployment.yaml
 kubectl apply -f deploy/notification-service-deployment.yaml
 kubectl apply -f deploy/holmesgpt-api-deployment.yaml
@@ -761,7 +761,7 @@ kubectl apply -f deploy/servicemonitors/remediation-orchestrator-servicemonitor.
 kubectl apply -f deploy/servicemonitors/remediation-processor-servicemonitor.yaml
 kubectl apply -f deploy/servicemonitors/ai-analysis-servicemonitor.yaml
 kubectl apply -f deploy/servicemonitors/workflow-execution-servicemonitor.yaml
-kubectl apply -f deploy/servicemonitors/kubernetes-executor-servicemonitor.yaml
+kubectl apply -f deploy/servicemonitors/kubernetes-executor-servicemonitor.yaml  # DEPRECATED - ADR-025
 kubectl apply -f deploy/servicemonitors/gateway-service-servicemonitor.yaml
 kubectl apply -f deploy/servicemonitors/notification-service-servicemonitor.yaml
 kubectl apply -f deploy/servicemonitors/holmesgpt-api-servicemonitor.yaml
@@ -943,6 +943,7 @@ echo "Testing ServiceMonitor Integration..."
 
 # 1. Check all ServiceMonitors exist
 echo "Checking ServiceMonitors..."
+# Note: kubernetes-executor DEPRECATED - ADR-025
 for service in remediation-orchestrator remediation-processor ai-analysis \
                 workflow-execution kubernetes-executor gateway-service \
                 notification-service holmesgpt-api; do
@@ -957,6 +958,7 @@ done
 # 2. Check all Services exist
 echo ""
 echo "Checking Services..."
+# Note: kubernetes-executor DEPRECATED - ADR-025
 for service in remediation-orchestrator remediation-processor ai-analysis \
                 workflow-execution kubernetes-executor gateway-service \
                 notification-service holmesgpt-api; do
@@ -1022,7 +1024,7 @@ up{namespace="kubernaut-system"} == 0
 | 2 | Remediation Processor | ✅ | ✅ | 9090 | TokenReviewer |
 | 3 | AI Analysis | ✅ | ✅ | 9090 | TokenReviewer |
 | 4 | Workflow Execution | ✅ | ✅ | 9090 | TokenReviewer |
-| 5 | Kubernetes Executor | ✅ | ✅ | 9090 | TokenReviewer |
+| 5 | ~~Kubernetes Executor~~ (DEPRECATED - ADR-025) | ✅ | ✅ | 9090 | TokenReviewer |
 | 6 | Gateway Service | ✅ | ✅ | 9090 | TokenReviewer |
 | 7 | Notification Service | ✅ | ✅ | 9090 | TokenReviewer |
 | 8 | HolmesGPT API | ✅ | ✅ | 9090 | TokenReviewer |

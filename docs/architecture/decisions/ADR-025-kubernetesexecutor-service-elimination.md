@@ -1,6 +1,6 @@
 # ADR-025: KubernetesExecutor Service Elimination
 
-**Status**: ✅ **Approved**
+**Status**: ✅ **Approved** — **Code removed** (API types and CRD manifests deleted)
 **Date**: 2025-10-19
 **Confidence**: **98%** (Very High)
 **Supersedes**: Original KubernetesExecutor service design

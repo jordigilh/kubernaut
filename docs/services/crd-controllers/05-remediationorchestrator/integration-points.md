@@ -298,7 +298,7 @@ func (r *RemediationRequestReconciler) createWorkflowExecution(
 
 ---
 
-#### **2.4. KubernetesExecution CRD Creation**
+#### **2.4. KubernetesExecution (DEPRECATED - ADR-025) CRD Creation**
 
 ```go
 // In RemediationRequestReconciler
@@ -307,7 +307,7 @@ func (r *RemediationRequestReconciler) createKubernetesExecution(
     remediation *remediationv1.RemediationRequest,
     workflowExecution *workflowv1.WorkflowExecution,
 ) error {
-    // When WorkflowExecution completes, create KubernetesExecution
+    // When WorkflowExecution completes, create KubernetesExecution (DEPRECATED - ADR-025)
     if workflowExecution.Status.Phase == "completed" {
         kubernetesExecution := &executorv1.KubernetesExecution{
             ObjectMeta: metav1.ObjectMeta{
@@ -379,7 +379,7 @@ func (r *RemediationRequestReconciler) SetupWithManager(mgr ctrl.Manager) error 
             handler.EnqueueRequestsFromMapFunc(r.workflowExecutionToRemediation),
         ).
 
-        // Watch KubernetesExecution for completion
+        // Watch KubernetesExecution (DEPRECATED - ADR-025) for completion
         Watches(
             &source.Kind{Type: &executorv1.KubernetesExecution{}},
             handler.EnqueueRequestsFromMapFunc(r.kubernetesExecutionToRemediation),
@@ -684,7 +684,7 @@ type ServiceCRDStatus struct {
 - **RemediationProcessing Controller** - Enrichment & classification service
 - **AIAnalysis Controller** - HolmesGPT investigation service
 - **WorkflowExecution Controller** - Multi-step orchestration service
-- **KubernetesExecution Controller** - Infrastructure operations service
+- **KubernetesExecution Controller** (DEPRECATED - ADR-025) - Infrastructure operations service
 
 **External Services**:
 - **Notification Service** - HTTP POST for timeout escalation

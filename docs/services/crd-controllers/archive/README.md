@@ -15,7 +15,7 @@ This directory contains the **original monolithic service specification document
 | `01-alert-processor.md` | 178K | ~5,007 | [../01-alertprocessor/](../01-alertprocessor/) (14 documents) |
 | `02-ai-analysis.md` | 178K | ~5,249 | [../02-aianalysis/](../02-aianalysis/) (15 documents) |
 | `03-workflow-execution.md` | 106K | ~2,807 | [../03-workflowexecution/](../03-workflowexecution/) (14 documents) |
-| `04-kubernetes-executor.md` | 83K | ~2,359 | [../04-kubernetesexecutor/](../04-kubernetesexecutor/) (15 documents) |
+| `04-kubernetes-executor.md` | 83K | ~2,359 | [../04-kubernetesexecutor/](../04-kubernetesexecutor/) (15 documents) (DEPRECATED - ADR-025) |
 | `05-remediation-orchestrator.md` | 109K | ~3,046 | [../05-remediationorchestrator/](../05-remediationorchestrator/) (15 documents) |
 | `05-central-controller.md` | 110K | ~3,149 | **OBSOLETE** - Uses deprecated "AlertRemediation" CRD naming (removed 2025-10-06) |
 
@@ -96,7 +96,7 @@ docs/services/crd-controllers/
 │   ├── README.md (navigation hub)
 │   └── [13 focused documents]
 │
-├── 04-kubernetesexecutor/          ✅ USE THIS
+├── 04-kubernetesexecutor/          ✅ USE THIS (DEPRECATED - ADR-025)
 │   ├── README.md (navigation hub)
 │   └── [14 focused documents]
 │

@@ -24,7 +24,7 @@ import (
     processingv1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1"
     aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1"
     workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1"
-    kubernetesexecutionv1 "github.com/jordigilh/kubernaut/api/kubernetesexecution/v1"
+    kubernetesexecutionv1 "github.com/jordigilh/kubernaut/api/kubernetesexecution/v1" // DEPRECATED - ADR-025
 )
 
 type RemediationRequestReconciler struct {
@@ -158,7 +158,7 @@ func (r *RemediationRequestReconciler) orchestratePhase(
         }
 
     case "executing":
-        // Wait for WorkflowExecution completion, then create KubernetesExecution
+        // Wait for WorkflowExecution completion, then create KubernetesExecution (DEPRECATED - ADR-025)
         var workflowExecution workflowexecutionv1.WorkflowExecution
         if err := r.Get(ctx, client.ObjectKey{
             Name:      remediation.Status.WorkflowExecutionRef.Name,
@@ -174,11 +174,11 @@ func (r *RemediationRequestReconciler) orchestratePhase(
 
         if workflowExecution.Status.Phase == "completed" {
             if remediation.Status.KubernetesExecutionRef == nil {
-                if err := r.createKubernetesExecution(ctx, remediation, &workflowExecution); err != nil {
+                if err := r.createKubernetesExecution(ctx, remediation, &workflowExecution); err != nil { // DEPRECATED - ADR-025
                     return ctrl.Result{}, err
                 }
 
-                // Wait for KubernetesExecution to complete
+                // Wait for KubernetesExecution (DEPRECATED - ADR-025) to complete
                 var kubernetesExecution kubernetesexecutionv1.KubernetesExecution
                 if err := r.Get(ctx, client.ObjectKey{
                     Name:      remediation.Status.KubernetesExecutionRef.Name,
@@ -576,7 +576,7 @@ func (r *RemediationRequestReconciler) SetupWithManager(mgr ctrl.Manager) error 
         Owns(&processingv1.RemediationProcessing{}).
         Owns(&aianalysisv1.AIAnalysis{}).
         Owns(&workflowexecutionv1.WorkflowExecution{}).  // CRITICAL: Watch for workflow failures
-        Owns(&kubernetesexecutionv1.KubernetesExecution{}).
+        Owns(&kubernetesexecutionv1.KubernetesExecution{}). // DEPRECATED - ADR-025
         Complete(r)
 }
 ```

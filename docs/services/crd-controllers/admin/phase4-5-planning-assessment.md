@@ -74,7 +74,7 @@
 - **Timeline**: 35 days sequential implementation for Phase 3
 
 **Why This Blocks Planning**:
-- RemediationOrchestrator orchestrates ALL CRDs (RemediationProcessing, AIAnalysis, WorkflowExecution, KubernetesExecution)
+- RemediationOrchestrator orchestrates ALL CRDs (RemediationProcessing, AIAnalysis, WorkflowExecution, KubernetesExecution (DEPRECATED - ADR-025))
 - Cannot design orchestration logic without CRD behavior
 - Cannot create integration tests without real CRDs
 - Cannot determine status aggregation patterns without CRD status structures

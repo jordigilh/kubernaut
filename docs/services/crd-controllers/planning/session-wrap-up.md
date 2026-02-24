@@ -99,7 +99,7 @@
 ### Implementation Plans (3 Complete)
 1. **Remediation Processor**: `docs/services/crd-controllers/02-signalprocessing/implementation/IMPLEMENTATION_PLAN_V1.0.md`
 2. **Workflow Execution**: `docs/services/crd-controllers/03-workflowexecution/implementation/IMPLEMENTATION_PLAN_V1.0.md`
-3. **Kubernetes Executor**: `docs/services/crd-controllers/04-kubernetesexecutor/implementation/IMPLEMENTATION_PLAN_V1.0.md`
+3. **Kubernetes Executor** (DEPRECATED - ADR-025): `docs/services/crd-controllers/04-kubernetesexecutor/implementation/IMPLEMENTATION_PLAN_V1.0.md`
 
 ### Testing Infrastructure (7 Components)
 1. `pkg/testutil/timing/anti_flaky_patterns.go` (400+ lines)
@@ -123,7 +123,7 @@
 - `deploy/workflow-execution/servicemonitor.yaml`
 - `docs/services/crd-controllers/03-workflowexecution/PRODUCTION_RUNBOOK.md`
 
-**Kubernetes Executor**:
+**Kubernetes Executor** (DEPRECATED - ADR-025):
 - `deploy/kubernetes-executor/deployment.yaml`
 - `deploy/kubernetes-executor/rbac.yaml`
 - `deploy/kubernetes-executor/policies-configmap.yaml`
@@ -273,7 +273,7 @@ make bootstrap-executor-dev
 ### Implementation Plans
 - `docs/services/crd-controllers/02-signalprocessing/implementation/IMPLEMENTATION_PLAN_V1.0.md`
 - `docs/services/crd-controllers/03-workflowexecution/implementation/IMPLEMENTATION_PLAN_V1.0.md`
-- `docs/services/crd-controllers/04-kubernetesexecutor/implementation/IMPLEMENTATION_PLAN_V1.0.md`
+- `docs/services/crd-controllers/04-kubernetesexecutor/implementation/IMPLEMENTATION_PLAN_V1.0.md` (DEPRECATED - ADR-025)
 
 ### Summary Documents
 - `docs/services/crd-controllers/CATEGORY1_FINAL_SUMMARY.md` (comprehensive overview)

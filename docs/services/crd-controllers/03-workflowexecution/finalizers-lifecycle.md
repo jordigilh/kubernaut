@@ -10,7 +10,7 @@
 ## Changelog
 
 ### Version 3.1 (2025-12-02)
-- ✅ **Removed**: All KubernetesExecution references
+- ✅ **Removed**: All KubernetesExecution (DEPRECATED - ADR-025) references
 - ✅ **Updated**: Lifecycle documentation for Tekton-based architecture
 
 ---

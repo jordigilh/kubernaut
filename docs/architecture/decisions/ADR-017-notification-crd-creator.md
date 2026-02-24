@@ -15,7 +15,7 @@ The Notification Service uses a CRD-based architecture (`NotificationRequest` CR
 Candidates:
 1. RemediationOrchestrator (RemediationRequest controller)
 2. WorkflowExecution controller
-3. KubernetesExecution/Executor controller
+3. KubernetesExecution/Executor controller (DEPRECATED - ADR-025)
 4. Dedicated Notification Trigger Service
 
 This decision impacts:

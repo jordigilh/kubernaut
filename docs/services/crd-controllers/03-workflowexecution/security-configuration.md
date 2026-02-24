@@ -18,7 +18,7 @@
 - ✅ **Updated**: All PipelineRuns run in `kubernaut-workflows` namespace
 
 ### Version 3.1 (2025-12-02)
-- ✅ **Removed**: All KubernetesExecution RBAC and code references
+- ✅ **Removed**: All KubernetesExecution (DEPRECATED - ADR-025) RBAC and code references
 - ✅ **Updated**: RBAC to use Tekton PipelineRun permissions
 - ✅ **Updated**: Code examples for Tekton-based architecture
 

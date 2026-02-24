@@ -1377,7 +1377,7 @@ rules:
 - [Environment Classification Requirements](../requirements/16_ENVIRONMENT_CLASSIFICATION_NAMESPACE_MANAGEMENT.md)
 - [AIAnalysis CRD Design](./03_AI_ANALYSIS_CRD.md) *(Next)*
 - [WorkflowExecution CRD Design](./04_WORKFLOW_EXECUTION_CRD.md) *(Planned)*
-- [KubernetesExecution CRD Design](./05_KUBERNETES_EXECUTION_CRD.md) *(Planned)*
+- [KubernetesExecution CRD Design](./05_KUBERNETES_EXECUTION_CRD.md) *(Planned)* *(DEPRECATED - ADR-025)*
 
 ---
 

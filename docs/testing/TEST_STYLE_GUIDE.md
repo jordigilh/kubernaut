@@ -459,7 +459,7 @@ test/
 │   │   └── suite_test.go
 │   ├── workflowexecution/
 │   │   └── orchestrator_test.go
-│   └── kubernetesexecution/
+│   └── kubernetesexecution/  # DEPRECATED - ADR-025
 │       └── executor_test.go
 ├── integration/
 │   ├── remediationprocessing/
@@ -468,7 +468,7 @@ test/
 │   │   └── suite_test.go
 │   ├── workflowexecution/
 │   │   └── coordination_test.go
-│   └── kubernetesexecution/
+│   └── kubernetesexecution/  # DEPRECATED - ADR-025
 │       └── job_execution_test.go
 └── e2e/
     ├── complete_remediation_flow_test.go
@@ -529,7 +529,7 @@ For complex integration tests:
 //
 // This test validates that WorkflowExecution correctly:
 // 1. Resolves step dependencies using topological sort
-// 2. Creates KubernetesExecution CRDs for parallel steps
+// 2. Creates KubernetesExecution (DEPRECATED - ADR-025) CRDs for parallel steps
 // 3. Respects concurrency limits (max 5 concurrent steps)
 // 4. Coordinates execution through watch-based status updates
 //

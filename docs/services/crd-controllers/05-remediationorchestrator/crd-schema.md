@@ -322,13 +322,13 @@ type RemediationRequestStatus struct {
     RemediationProcessingRef *RemediationProcessingReference     `json:"remediationProcessingRef,omitempty"` // Deprecated: Use remediationProcessingRefs[0]
     AIAnalysisRef          *AIAnalysisReference          `json:"aiAnalysisRef,omitempty"`          // Deprecated: Use aiAnalysisRefs
     WorkflowExecutionRef   *WorkflowExecutionReference   `json:"workflowExecutionRef,omitempty"`   // Deprecated: Use workflowExecutionRefs
-    KubernetesExecutionRef *KubernetesExecutionReference `json:"kubernetesExecutionRef,omitempty"` // Unchanged (single executor per workflow)
+    KubernetesExecutionRef *KubernetesExecutionReference `json:"kubernetesExecutionRef,omitempty"` // DEPRECATED - ADR-025 (single executor per workflow)
 
     // Aggregated status from service CRDs
     RemediationProcessingStatus     *RemediationProcessingStatusSummary     `json:"remediationProcessingStatus,omitempty"`
     AIAnalysisStatus          *AIAnalysisStatusSummary          `json:"aiAnalysisStatus,omitempty"`
     WorkflowExecutionStatus   *WorkflowExecutionStatusSummary   `json:"workflowExecutionStatus,omitempty"`
-    KubernetesExecutionStatus *KubernetesExecutionStatusSummary `json:"kubernetesExecutionStatus,omitempty"`
+    KubernetesExecutionStatus *KubernetesExecutionStatusSummary `json:"kubernetesExecutionStatus,omitempty"` // DEPRECATED - ADR-025
 
     // Timeout tracking
     TimeoutPhase *string      `json:"timeoutPhase,omitempty"` // Which phase timed out
@@ -440,7 +440,7 @@ This CRD specification uses **fully structured types** for all status aggregatio
 | **RemediationProcessingStatusSummary** | `map[string]interface{}` | Structured type with phase, timestamp, environment | Compile-time safety for aggregation |
 | **AIAnalysisStatusSummary** | `map[string]interface{}` | Structured type with phase, recommendation count | Type-safe AI status aggregation |
 | **WorkflowExecutionStatusSummary** | `map[string]interface{}` | Structured type with step progress | Type-safe workflow status tracking |
-| **KubernetesExecutionStatusSummary** | `map[string]interface{}` | Structured type with operation counts | Type-safe execution result aggregation |
+| **KubernetesExecutionStatusSummary** (DEPRECATED - ADR-025) | `map[string]interface{}` | Structured type with operation counts | Type-safe execution result aggregation |
 | **Service CRD References** | `map[string]interface{}` | 4 structured reference types | Clear ownership and lifecycle management |
 
 **Design Principle**: RemediationRequest aggregates status from 4 service CRDs. All aggregation uses lightweight structured types, not full data copies.

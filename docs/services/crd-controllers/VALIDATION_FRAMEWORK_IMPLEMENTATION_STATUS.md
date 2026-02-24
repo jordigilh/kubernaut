@@ -74,7 +74,7 @@
 
 ---
 
-### Task 3: Update KubernetesExecutor Implementation Plan 🟡 **NOT STARTED**
+### Task 3: Update KubernetesExecutor (DEPRECATED - ADR-025) Implementation Plan 🟡 **NOT STARTED**
 
 **File**: `docs/services/crd-controllers/04-kubernetesexecutor/implementation/IMPLEMENTATION_PLAN_V1.0.md`
 **Status**: 🔴 Not started
@@ -131,7 +131,7 @@
 |---|---|---|---|
 | **Integration Guide** | ✅ Complete | 2,429 lines | 88% |
 | **WorkflowExecution Plan** | 🟡 75% Complete | Updated sections | 92% |
-| **KubernetesExecutor Plan** | 🔴 Not Started | Pending | 92% |
+| **KubernetesExecutor Plan** (DEPRECATED - ADR-025) | 🔴 Not Started | Pending | 92% |
 | **Handoff Document** | ✅ Complete | 1,069 lines | 95% |
 
 **Overall Completion**: **80%** (2.75 of 3 major tasks complete)
@@ -311,7 +311,7 @@ Add section after Day 4 completion:
 - 🔲 BR coverage matrix includes validation BRs
 - 🔲 References include integration guide
 
-### Task 3 (KubernetesExecutor Plan) Complete When:
+### Task 3 (KubernetesExecutor (DEPRECATED - ADR-025) Plan) Complete When:
 - 🔲 Header updated to v1.1
 - 🔲 Timeline extended to 25-28 days
 - 🔲 Business requirements show 41 BRs
@@ -394,7 +394,7 @@ docs/services/crd-controllers/VALIDATION_FRAMEWORK_INTEGRATION_HANDOFF.md
 - [DD-002: Per-Step Validation Framework](../../architecture/DESIGN_DECISIONS.md)
 - [Step Validation Business Requirements](../../requirements/STEP_VALIDATION_BUSINESS_REQUIREMENTS.md)
 - [WorkflowExecution CRD Schema](../03-workflowexecution/crd-schema.md) (already updated)
-- [KubernetesExecutor CRD Schema](../04-kubernetesexecutor/crd-schema.md) (already updated)
+- [KubernetesExecutor CRD Schema](../04-kubernetesexecutor/crd-schema.md) (DEPRECATED - ADR-025) (already updated)
 
 ---
 

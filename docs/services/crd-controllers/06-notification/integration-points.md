@@ -134,7 +134,7 @@ func (r *WorkflowExecutionReconciler) HandleExecutionFailure(ctx context.Context
 **Integration Pattern**:
 ```go
 // internal/controller/kubernetesexecutor/notification.go
-func (r *KubernetesExecutorReconciler) NotifySafetyViolation(ctx context.Context, action *KubernetesAction) error {
+func (r *KubernetesExecutorReconciler) NotifySafetyViolation(ctx context.Context, action *KubernetesAction) error { // DEPRECATED - ADR-025
     return r.notificationClient.SendEscalation(ctx, &EscalationRequest{
         Recipient: "platform-ops@company.com",
         Channels:  []string{"email", "slack", "pagerduty"},
