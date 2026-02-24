@@ -135,10 +135,11 @@ type Reconciler struct {
 // Provides defaults for all remediations, can be overridden per-RR via spec.timeoutConfig.
 // Reference: BR-ORCH-027 (Global timeout), BR-ORCH-028 (Per-phase timeouts)
 type TimeoutConfig struct {
-	Global     time.Duration // Default: 1 hour
-	Processing time.Duration // Default: 5 minutes
-	Analyzing  time.Duration // Default: 10 minutes
-	Executing  time.Duration // Default: 30 minutes
+	Global           time.Duration // Default: 1 hour
+	Processing       time.Duration // Default: 5 minutes
+	Analyzing        time.Duration // Default: 10 minutes
+	Executing        time.Duration // Default: 30 minutes
+	AwaitingApproval time.Duration // Default: 15 minutes (ADR-040)
 }
 
 // NewReconciler creates a new Reconciler with all dependencies.
@@ -166,6 +167,9 @@ func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, 
 	}
 	if timeouts.Executing == 0 {
 		timeouts.Executing = 30 * time.Minute
+	}
+	if timeouts.AwaitingApproval == 0 {
+		timeouts.AwaitingApproval = 15 * time.Minute
 	}
 
 	nc := creator.NewNotificationCreator(c, s, m)
@@ -210,7 +214,7 @@ func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, 
 		spCreator:           creator.NewSignalProcessingCreator(c, s, m),
 		aiAnalysisCreator:   creator.NewAIAnalysisCreator(c, s, m),
 		weCreator:           creator.NewWorkflowExecutionCreator(c, s, m),
-		approvalCreator:     creator.NewApprovalCreator(c, s, m),
+		approvalCreator:     creator.NewApprovalCreator(c, s, m, timeouts.AwaitingApproval),
 		timeouts:            timeouts,
 		auditStore:          auditStore,
 		auditManager:        roaudit.NewManager(roaudit.ServiceName),

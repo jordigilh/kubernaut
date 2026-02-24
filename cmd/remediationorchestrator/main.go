@@ -197,10 +197,11 @@ func main() {
 		mgr.GetEventRecorderFor("remediationorchestrator-controller"), // V1.0 P1: EventRecorder for debugging
 		roMetrics, // V1.0 P0: Metrics for observability (DD-METRICS-001)
 		controller.TimeoutConfig{
-			Global:     cfg.Timeouts.Global,
-			Processing: cfg.Timeouts.Processing,
-			Analyzing:  cfg.Timeouts.Analyzing,
-			Executing:  cfg.Timeouts.Executing,
+			Global:           cfg.Timeouts.Global,
+			Processing:       cfg.Timeouts.Processing,
+			Analyzing:        cfg.Timeouts.Analyzing,
+			Executing:        cfg.Timeouts.Executing,
+			AwaitingApproval: cfg.Timeouts.AwaitingApproval,
 		},
 		nil,       // Use default routing engine (production)
 		eaCreator, // ADR-EM-001: EA creation on terminal phases
