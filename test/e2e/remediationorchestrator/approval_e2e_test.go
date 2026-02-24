@@ -228,17 +228,18 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 			// BUSINESS ACTION: Operator approves remediation via AuthWebhook
 			By("Simulating operator approval (webhook sets DecidedBy)")
 
-			// Get latest RAR
-			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(testRAR), testRAR)).To(Succeed())
-
-			// Update RAR status to approved (simulates webhook mutation)
-			testRAR.Status.Decision = remediationv1.ApprovalDecisionApproved
-			testRAR.Status.DecidedBy = "e2e-test-user@example.com" // Simulates webhook auth
-			now := metav1.Now()
-			testRAR.Status.DecidedAt = &now
-			testRAR.Status.DecisionMessage = "E2E test approval - root cause confirmed"
-
-			Expect(k8sClient.Status().Update(ctx, testRAR)).To(Succeed())
+			// Get latest RAR and update with retry to handle concurrent RO modifications
+			Expect(k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testRAR), testRAR); err != nil {
+					return err
+				}
+				testRAR.Status.Decision = remediationv1.ApprovalDecisionApproved
+				testRAR.Status.DecidedBy = "e2e-test-user@example.com"
+				now := metav1.Now()
+				testRAR.Status.DecidedAt = &now
+				testRAR.Status.DecisionMessage = "E2E test approval - root cause confirmed"
+				return k8sClient.Status().Update(ctx, testRAR)
+			})).To(Succeed())
 			GinkgoWriter.Printf("✅ E2E: Approved RAR %s\n", testRAR.Name)
 
 			// E2E-RAR-163-001: Verify approval status fields (re-fetch to get webhook-populated DecidedBy)
@@ -350,15 +351,17 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 			// BUSINESS ACTION: Operator rejects remediation
 			By("Simulating operator rejection")
 
-			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(testRAR), testRAR)).To(Succeed())
-
-			testRAR.Status.Decision = remediationv1.ApprovalDecisionRejected
-			testRAR.Status.DecidedBy = "e2e-test-user@example.com"
-			now := metav1.Now()
-			testRAR.Status.DecidedAt = &now
-			testRAR.Status.DecisionMessage = "Risk too high - potential cascading failures"
-
-			Expect(k8sClient.Status().Update(ctx, testRAR)).To(Succeed())
+			Expect(k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testRAR), testRAR); err != nil {
+					return err
+				}
+				testRAR.Status.Decision = remediationv1.ApprovalDecisionRejected
+				testRAR.Status.DecidedBy = "e2e-test-user@example.com"
+				now := metav1.Now()
+				testRAR.Status.DecidedAt = &now
+				testRAR.Status.DecisionMessage = "Risk too high - potential cascading failures"
+				return k8sClient.Status().Update(ctx, testRAR)
+			})).To(Succeed())
 
 			// BUSINESS VALIDATION: Query for orchestration events
 			By("Querying for rejection audit event")
@@ -662,14 +665,18 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 			}
 			Expect(k8sClient.Create(ctx, testRAR)).To(Succeed())
 
-			// Approve RAR (triggers audit events)
-			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(testRAR), testRAR)).To(Succeed())
-			testRAR.Status.Decision = remediationv1.ApprovalDecisionApproved
-			testRAR.Status.DecidedBy = "e2e-auditor@example.com"
-			now = metav1.Now()
-			testRAR.Status.DecidedAt = &now
-			testRAR.Status.DecisionMessage = "Approved for persistence test"
-			Expect(k8sClient.Status().Update(ctx, testRAR)).To(Succeed())
+			// Approve RAR with retry to handle concurrent RO modifications
+			Expect(k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testRAR), testRAR); err != nil {
+					return err
+				}
+				testRAR.Status.Decision = remediationv1.ApprovalDecisionApproved
+				testRAR.Status.DecidedBy = "e2e-auditor@example.com"
+				now = metav1.Now()
+				testRAR.Status.DecidedAt = &now
+				testRAR.Status.DecisionMessage = "Approved for persistence test"
+				return k8sClient.Status().Update(ctx, testRAR)
+			})).To(Succeed())
 
 			// Wait for BOTH webhook and orchestration approval audit events to be persisted
 			// FIX: Enhanced error visibility + longer timeout to handle audit buffer flush (1s interval)
