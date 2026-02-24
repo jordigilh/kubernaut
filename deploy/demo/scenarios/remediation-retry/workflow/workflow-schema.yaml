@@ -20,7 +20,7 @@ labels:
 
 execution:
   engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/restart-pods-job@sha256:d16c244a19895267bb445b06d2e45cfe68926d5d895b09c6d1e9a37a44b78566
+  bundle: quay.io/kubernaut-cicd/test-workflows/restart-pods-job@sha256:d2cbb5fee07baa7e5fa197a65d01c3181c56b12358064d427e79ec585abdd0e9
 
 parameters:
   - name: TARGET_NAMESPACE

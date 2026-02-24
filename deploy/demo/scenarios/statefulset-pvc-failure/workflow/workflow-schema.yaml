@@ -23,7 +23,7 @@ detectedLabels:
 
 execution:
   engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/fix-statefulset-pvc-job@sha256:f1d0bedd0d248106e2b936509f6a74bd16c3073ab068ad11c5b427644d486ec6
+  bundle: quay.io/kubernaut-cicd/test-workflows/fix-statefulset-pvc-job@sha256:29e64d191f497438ac62caf054f52fcd5d6bd4bf4946c80f9a484d80691c600d
 
 parameters:
   - name: TARGET_NAMESPACE

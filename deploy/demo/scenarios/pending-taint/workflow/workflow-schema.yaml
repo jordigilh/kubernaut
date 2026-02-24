@@ -12,15 +12,15 @@ metadata:
 actionType: RemoveTaint
 
 labels:
-  signalName: PodsPendingTaint
-  severity: [low, critical]
+  signalName: KubePodNotScheduled
+  severity: [low, medium, high, critical]
   environment: [production, staging]
   component: "*"
   priority: "*"
 
 execution:
   engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/remove-taint-job@sha256:4492bb66f50dd381b6d7e8ea9c7d72e2b1f849796c4bd4f95922db446fa46947
+  bundle: quay.io/kubernaut-cicd/test-workflows/remove-taint-job@sha256:1b4c592cd736e3d31edcf51c071fc3d62f2223b846ef351ef611e1511347d13d
 
 parameters:
   - name: TARGET_NODE

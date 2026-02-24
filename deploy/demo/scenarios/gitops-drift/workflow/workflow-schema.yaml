@@ -25,7 +25,7 @@ detectedLabels:
 
 execution:
   engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/git-revert-job@sha256:e4515f687543a3831e11b8a9eff74ce97a2238a2ec35cb952ef9a1dfd54ba714
+  bundle: quay.io/kubernaut-cicd/test-workflows/git-revert-job@sha256:ca61f4bb12e3a8ecfd47bcf4bc0f58004d45199f50494ce9cfd202203b40bc79
 
 parameters:
   - name: GIT_REPO_URL
