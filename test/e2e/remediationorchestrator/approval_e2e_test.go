@@ -155,11 +155,23 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 
 			testAI.Status.Phase = aianalysisv1.PhaseCompleted
 			testAI.Status.Message = "Analysis complete"
+			testAI.Status.ApprovalRequired = true
+			testAI.Status.ApprovalReason = "Confidence below 80% auto-approve threshold"
 			testAI.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowID:      "restart-pod-v1",
 				Version:         "1.0.0",
 				ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-pod:v1.0.0",
 				Confidence:      0.75,
+			}
+			testAI.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+				Summary:    "Memory leak detected in payment service",
+				Severity:   "critical",
+				SignalType: "alert",
+				AffectedResource: &aianalysisv1.AffectedResource{
+					Kind:      "Deployment",
+					Name:      "test-app",
+					Namespace: testNamespace,
+				},
 			}
 			Expect(k8sClient.Status().Update(ctx, testAI)).To(Succeed())
 
@@ -199,47 +211,18 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 			Expect(k8sClient.Create(ctx, testRAR)).To(Succeed())
 			GinkgoWriter.Printf("🚀 E2E: Created RAR %s/%s\n", testNamespace, testRAR.Name)
 
-			// Wait for the RO controller to finish initialization and reach a stable phase.
-			// The RO's handlePendingPhase creates SP, sets SignalProcessingRef, then calls
-			// transitionPhase(Processing) which unconditionally overwrites OverallPhase.
-			// If we set AwaitingApproval before handlePendingPhase completes, it gets overwritten.
+			// With ApprovalRequired=true and AffectedResource set on the AI, the RO
+			// naturally reaches AwaitingApproval: Pending → Processing → Analyzing →
+			// (ApprovalRequired=true) → creates RAR (finds existing) → AwaitingApproval.
 			Eventually(func() remediationv1.RemediationPhase {
 				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testRR), testRR); err != nil {
 					return ""
 				}
 				return testRR.Status.OverallPhase
-			}, 30*time.Second, 500*time.Millisecond).ShouldNot(
-				BeElementOf(remediationv1.RemediationPhase(""), remediationv1.PhasePending),
-				"RR should be past Pending before test overrides phase to AwaitingApproval")
-			GinkgoWriter.Printf("  RO stabilized at phase: %s\n", testRR.Status.OverallPhase)
-
-			// Override to AwaitingApproval. Retry in a polling loop: the RO may still be
-			// transitioning (Processing → Analyzing) and could overwrite our update.
-			Eventually(func() remediationv1.RemediationPhase {
-				_ = k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
-					if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testRR), testRR); err != nil {
-						return err
-					}
-					if testRR.Status.OverallPhase == remediationv1.PhaseAwaitingApproval {
-						return nil
-					}
-					testRR.Status.OverallPhase = remediationv1.PhaseAwaitingApproval
-					testRR.Status.StartTime = &now
-					testRR.Status.AIAnalysisRef = &corev1.ObjectReference{
-						APIVersion: aianalysisv1.GroupVersion.String(),
-						Kind:       "AIAnalysis",
-						Name:       aiName,
-						Namespace:  testNamespace,
-					}
-					return k8sClient.Status().Update(ctx, testRR)
-				})
-				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testRR), testRR); err != nil {
-					return ""
-				}
-				return testRR.Status.OverallPhase
-			}, 30*time.Second, 500*time.Millisecond).Should(
+			}, 60*time.Second, 500*time.Millisecond).Should(
 				Equal(remediationv1.PhaseAwaitingApproval),
-				"RR phase should stick at AwaitingApproval after RO stabilizes")
+				"RO should naturally reach AwaitingApproval via ApprovalRequired=true on AI")
+			GinkgoWriter.Printf("  RO reached AwaitingApproval naturally\n")
 		})
 
 		AfterEach(func() {
@@ -298,7 +281,7 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 			correlationID := testRR.Name // Per DD-AUDIT-CORRELATION-002
 
 			var webhookEvents, orchestrationApprovalEvents []dsgen.AuditEvent
-			Eventually(func() error {
+			Eventually(func() ([2]int, error) {
 				// Query webhook events with all 3 required filters (correlationID, EventCategory, EventType)
 				// All 3 filters ensure we find the CORRECT event (BR-AUDIT-006)
 				webhookResp, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
@@ -308,7 +291,7 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 					Limit:         dsgen.NewOptInt(100),
 				})
 				if err != nil {
-					return fmt.Errorf("webhook query failed: %w", err)
+					return [2]int{0, 0}, fmt.Errorf("webhook query failed: %w", err)
 				}
 				webhookEvents = webhookResp.Data
 
@@ -320,46 +303,32 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 					Limit:         dsgen.NewOptInt(100),
 				})
 				if err != nil {
-					return fmt.Errorf("orchestration query failed: %w", err)
+					return [2]int{len(webhookEvents), 0}, fmt.Errorf("orchestration query failed: %w", err)
 				}
 				orchestrationApprovalEvents = orchestrationResp.Data
 
-				GinkgoWriter.Printf("📊 E2E: Found webhook=%d, orchestration=%d\n",
-					len(webhookEvents), len(orchestrationApprovalEvents))
+				counts := [2]int{len(webhookEvents), len(orchestrationApprovalEvents)}
+				GinkgoWriter.Printf("📊 E2E: Found webhook=%d, orchestration=%d\n", counts[0], counts[1])
 
-				// Compliance: at least 1 webhook event (AuthWebhook captures WHO) and
-				// exactly 1 orchestration event (RO records WHAT/WHY). The RO's natural
-				// phase flow (Pending→Processing→Analyzing) may generate additional webhook
-				// events via RAR status updates; these are harmless duplicate attributions.
-				if len(webhookEvents) < 1 {
-					return fmt.Errorf("need >=1 webhook events, got %d", len(webhookEvents))
+				if counts != [2]int{1, 1} {
+					return counts, fmt.Errorf("incomplete: webhook=%d, orchestration=%d (expecting [1, 1])", counts[0], counts[1])
 				}
-				if len(orchestrationApprovalEvents) != 1 {
-					return fmt.Errorf("need exactly 1 orchestration event, got %d", len(orchestrationApprovalEvents))
-				}
-				return nil
-			}, e2eTimeout, e2eInterval).Should(Succeed(),
-				"COMPLIANCE FAILURE: Need >=1 webhook event and exactly 1 orchestration approval event")
+				return counts, nil
+			}, e2eTimeout, e2eInterval).Should(Equal([2]int{1, 1}),
+				"COMPLIANCE FAILURE: Need exactly 1 webhook event and 1 orchestration approval event")
 
 			// BUSINESS OUTCOME 1: Webhook audit event exists (AuthWebhook)
-			Expect(len(webhookEvents)).To(BeNumerically(">=", 1),
-				"COMPLIANCE: AuthWebhook must emit at least one audit event (DD-WEBHOOK-003)")
+			Expect(webhookEvents).To(HaveLen(1),
+				"COMPLIANCE: AuthWebhook must emit exactly 1 audit event (DD-WEBHOOK-003)")
 
-			// Find the webhook event with event_action=approval_decided for detailed validation
-			var webhookEvent dsgen.AuditEvent
-			for _, ev := range webhookEvents {
-				if ev.EventAction == "approval_decided" {
-					webhookEvent = ev
-					break
-				}
-			}
-			Expect(webhookEvent.EventAction).To(Equal("approval_decided"),
-				"At least one webhook event must have action=approval_decided")
+			webhookEvent := webhookEvents[0]
 			actorID, _ := webhookEvent.ActorID.Get()
 			// SECURITY: In E2E, authenticated user is "kubernetes-admin" (kubectl context)
 			// AuthWebhook correctly overwrites user-provided "e2e-test-user@example.com"
 			Expect(actorID).To(Equal("kubernetes-admin"),
 				"BUSINESS OUTCOME: Webhook captured authenticated user (SOC 2 CC8.1)")
+			Expect(webhookEvent.EventAction).To(Equal("approval_decided"),
+				"BUSINESS OUTCOME: Webhook action is clear")
 
 			// BUSINESS OUTCOME 2: RO approval audit event exists (RO Controller)
 			Expect(orchestrationApprovalEvents).To(HaveLen(1),
@@ -525,11 +494,23 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 
 			testAI.Status.Phase = aianalysisv1.PhaseCompleted
 			testAI.Status.Message = "Analysis complete"
+			testAI.Status.ApprovalRequired = true
+			testAI.Status.ApprovalReason = "Confidence below 80% auto-approve threshold"
 			testAI.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowID:      "restart-pod-v1",
 				Version:         "1.0.0",
 				ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-pod:v1.0.0",
 				Confidence:      0.75,
+			}
+			testAI.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+				Summary:    "Memory leak detected in payment service",
+				Severity:   "critical",
+				SignalType: "alert",
+				AffectedResource: &aianalysisv1.AffectedResource{
+					Kind:      "Deployment",
+					Name:      "test-app-expiry",
+					Namespace: testNamespace,
+				},
 			}
 			Expect(k8sClient.Status().Update(ctx, testAI)).To(Succeed())
 
@@ -568,45 +549,19 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 				"OwnerReference required for Owns() watch to trigger RR reconcile on RAR status change")
 			Expect(k8sClient.Create(ctx, testRAR)).To(Succeed())
 
-			// Wait for the RO controller to finish initialization and reach a stable phase.
-			// Same race as AUD006-001: handlePendingPhase's transitionPhase(Processing)
-			// unconditionally overwrites OverallPhase, clobbering our AwaitingApproval.
+			// With ApprovalRequired=true and AffectedResource set on the AI, the RO
+			// naturally reaches AwaitingApproval: Pending → Processing → Analyzing →
+			// (ApprovalRequired=true) → creates RAR (finds existing with past RequiredBy) → AwaitingApproval.
+			// Then handleAwaitingApprovalPhase detects the expired RequiredBy and marks Decision=Expired.
 			Eventually(func() remediationv1.RemediationPhase {
 				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testRR), testRR); err != nil {
 					return ""
 				}
 				return testRR.Status.OverallPhase
-			}, 30*time.Second, 500*time.Millisecond).ShouldNot(
-				BeElementOf(remediationv1.RemediationPhase(""), remediationv1.PhasePending),
-				"RR should be past Pending before test overrides phase to AwaitingApproval")
-			GinkgoWriter.Printf("  RO stabilized at phase: %s\n", testRR.Status.OverallPhase)
-
-			// Override to AwaitingApproval. Retry in a polling loop until phase sticks.
-			Eventually(func() remediationv1.RemediationPhase {
-				_ = k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
-					if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testRR), testRR); err != nil {
-						return err
-					}
-					if testRR.Status.OverallPhase == remediationv1.PhaseAwaitingApproval {
-						return nil
-					}
-					testRR.Status.OverallPhase = remediationv1.PhaseAwaitingApproval
-					testRR.Status.StartTime = &now
-					testRR.Status.AIAnalysisRef = &corev1.ObjectReference{
-						APIVersion: aianalysisv1.GroupVersion.String(),
-						Kind:       "AIAnalysis",
-						Name:       aiName,
-						Namespace:  testNamespace,
-					}
-					return k8sClient.Status().Update(ctx, testRR)
-				})
-				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testRR), testRR); err != nil {
-					return ""
-				}
-				return testRR.Status.OverallPhase
-			}, 30*time.Second, 500*time.Millisecond).Should(
+			}, 60*time.Second, 500*time.Millisecond).Should(
 				Equal(remediationv1.PhaseAwaitingApproval),
-				"RR phase should stick at AwaitingApproval after RO stabilizes")
+				"RO should naturally reach AwaitingApproval via ApprovalRequired=true on AI")
+			GinkgoWriter.Printf("  RO reached AwaitingApproval naturally\n")
 		})
 
 		AfterEach(func() {
