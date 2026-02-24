@@ -51,6 +51,7 @@ import (
 	roaudit "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/audit"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
@@ -120,6 +121,10 @@ var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 
 		GinkgoWriter.Printf("🚀 E2E: Created RemediationRequest %s/%s (correlation_id: %s)\n",
 			testNamespace, testRR.Name, correlationID)
+
+		By("Completing SP lifecycle so RR progresses past Processing")
+		sp := helpers.WaitForSPCreation(ctx, k8sClient, testNamespace, e2eTimeout, e2eInterval)
+		helpers.SimulateSPCompletion(ctx, k8sClient, sp)
 		})
 
 		AfterEach(func() {

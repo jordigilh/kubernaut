@@ -286,6 +286,10 @@ var _ = Describe("E2E: Gap #8 - RemediationRequest TimeoutConfig Mutation Webhoo
 			GinkgoWriter.Printf("   • Event ID: %s\n", webhookEvent.EventID)
 			GinkgoWriter.Printf("   • Correlation ID: %s\n", webhookEvent.CorrelationID)
 			GinkgoWriter.Printf("   • SOC2 compliance: WHO + WHAT + WHEN captured\n")
+
+			By("Completing SP lifecycle to clean up dangling CRDs")
+			sp := helpers.WaitForSPCreation(ctx, k8sClient, testNamespace, 30*time.Second, 1*time.Second)
+			helpers.SimulateSPCompletion(ctx, k8sClient, sp)
 		})
 	})
 })

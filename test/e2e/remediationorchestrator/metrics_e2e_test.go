@@ -30,6 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 
 	"github.com/google/uuid"
 )
@@ -81,6 +82,9 @@ func seedMetricsWithRemediation() {
 		}
 		return updated.Status.OverallPhase
 	}, 30*time.Second, 1*time.Second).ShouldNot(BeEmpty(), "Metrics seeding RR should be processed")
+
+	sp := helpers.WaitForSPCreation(ctx, k8sClient, "kubernaut-system", 30*time.Second, 1*time.Second)
+	helpers.SimulateSPCompletion(ctx, k8sClient, sp)
 
 	GinkgoWriter.Println("✅ Metrics seeding complete")
 }

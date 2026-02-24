@@ -30,12 +30,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sretry "k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/authwebhook"
-	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	roaudit "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/audit"
 	rarconditions "github.com/jordigilh/kubernaut/pkg/remediationapprovalrequest"
@@ -117,111 +114,24 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 			Expect(k8sClient.Create(ctx, testRR)).To(Succeed())
 			GinkgoWriter.Printf("🚀 E2E: Created RemediationRequest %s/%s\n", testNamespace, testRR.Name)
 
-			// ADR-040: Create AIAnalysis (prerequisite for AwaitingApproval phase).
-			// The RO controller accesses rr.Status.AIAnalysisRef when processing approved RARs.
-			aiName := fmt.Sprintf("ai-%s", testRR.Name)
-			testAI := &aianalysisv1.AIAnalysis{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      aiName,
-					Namespace: testNamespace,
-				},
-				Spec: aianalysisv1.AIAnalysisSpec{
-					RemediationRequestRef: corev1.ObjectReference{
-						APIVersion: remediationv1.GroupVersion.String(),
-						Kind:       "RemediationRequest",
-						Name:       testRR.Name,
-						Namespace:  testNamespace,
-					},
-					RemediationID: string(testRR.UID),
-					AnalysisRequest: aianalysisv1.AnalysisRequest{
-						SignalContext: aianalysisv1.SignalContextInput{
-							Fingerprint:      testRR.Spec.SignalFingerprint,
-							Severity:         "critical",
-							SignalName:       "alert",
-							Environment:      "production",
-							BusinessPriority: "P1",
-							TargetResource: aianalysisv1.TargetResource{
-								Kind:      "Deployment",
-								Name:      "test-app",
-								Namespace: testNamespace,
-							},
-							EnrichmentResults: sharedtypes.EnrichmentResults{},
-						},
-						AnalysisTypes: []string{"investigation", "workflow-selection"},
-					},
-				},
-			}
-			Expect(k8sClient.Create(ctx, testAI)).To(Succeed())
+			// Let the RO controller drive the full lifecycle: RR → SP → AI → RAR
+			sp := helpers.WaitForSPCreation(ctx, k8sClient, testNamespace, e2eTimeout, e2eInterval)
+			helpers.SimulateSPCompletion(ctx, k8sClient, sp)
 
-			testAI.Status.Phase = aianalysisv1.PhaseCompleted
-			testAI.Status.Message = "Analysis complete"
-			testAI.Status.ApprovalRequired = true
-			testAI.Status.ApprovalReason = "Confidence below 80% auto-approve threshold"
-			testAI.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-				WorkflowID:      "restart-pod-v1",
-				Version:         "1.0.0",
-				ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-pod:v1.0.0",
-				Confidence:      0.75,
-			}
-			testAI.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
-				Summary:    "Memory leak detected in payment service",
-				Severity:   "critical",
-				SignalType: "alert",
-				AffectedResource: &aianalysisv1.AffectedResource{
-					Kind:      "Deployment",
-					Name:      "test-app",
-					Namespace: testNamespace,
-				},
-			}
-			Expect(k8sClient.Status().Update(ctx, testAI)).To(Succeed())
+			ai := helpers.WaitForAICreation(ctx, k8sClient, testNamespace, e2eTimeout, e2eInterval)
+			helpers.SimulateAICompletedWithWorkflow(ctx, k8sClient, ai, helpers.AICompletionOpts{
+				ApprovalRequired: true,
+				ApprovalReason:   "Confidence below 80% auto-approve threshold",
+				Confidence:       0.75,
+				TargetKind:       "Deployment",
+				TargetName:       "test-app",
+				TargetNamespace:  testNamespace,
+			})
 
-			// Manually create RAR to test audit trail
-			testRAR = &remediationv1.RemediationApprovalRequest{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      fmt.Sprintf("rar-%s", testRR.Name),
-					Namespace: testNamespace,
-				},
-				Spec: remediationv1.RemediationApprovalRequestSpec{
-					RemediationRequestRef: corev1.ObjectReference{
-						Name:      testRR.Name,
-						Namespace: testNamespace,
-					},
-					AIAnalysisRef: remediationv1.ObjectRef{
-						Name: aiName,
-					},
-					Confidence:           0.75,
-					ConfidenceLevel:      "medium",
-					Reason:               "Confidence below 80% auto-approve threshold",
-					InvestigationSummary: "Memory leak detected in payment service",
-					WhyApprovalRequired:  "Medium confidence requires human validation",
-					RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{
-						WorkflowID:      "restart-pod-v1",
-						Version:         "1.0.0",
-						ExecutionBundle: "kubernaut/restart-pod:v1",
-						Rationale:       "Standard pod restart",
-					},
-					RecommendedActions: []remediationv1.ApprovalRecommendedAction{
-						{Action: "Restart pod", Rationale: "Clear memory leak"},
-					},
-					RequiredBy: metav1.NewTime(time.Now().Add(15 * time.Minute)),
-				},
-			}
-			Expect(controllerutil.SetControllerReference(testRR, testRAR, k8sClient.Scheme())).To(Succeed(),
-				"OwnerReference required for Owns() watch to trigger RR reconcile on RAR status change")
-			Expect(k8sClient.Create(ctx, testRAR)).To(Succeed())
-			GinkgoWriter.Printf("🚀 E2E: Created RAR %s/%s\n", testNamespace, testRAR.Name)
+			testRAR = helpers.WaitForRARCreation(ctx, k8sClient, testNamespace, e2eTimeout, e2eInterval)
+			GinkgoWriter.Printf("🚀 E2E: RO created RAR %s/%s\n", testNamespace, testRAR.Name)
 
-			// With ApprovalRequired=true and AffectedResource set on the AI, the RO
-			// naturally reaches AwaitingApproval: Pending → Processing → Analyzing →
-			// (ApprovalRequired=true) → creates RAR (finds existing) → AwaitingApproval.
-			Eventually(func() remediationv1.RemediationPhase {
-				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testRR), testRR); err != nil {
-					return ""
-				}
-				return testRR.Status.OverallPhase
-			}, 60*time.Second, 500*time.Millisecond).Should(
-				Equal(remediationv1.PhaseAwaitingApproval),
-				"RO should naturally reach AwaitingApproval via ApprovalRequired=true on AI")
+			helpers.WaitForRRPhase(ctx, k8sClient, testRR, remediationv1.PhaseAwaitingApproval, e2eTimeout, e2eInterval)
 			GinkgoWriter.Printf("  RO reached AwaitingApproval naturally\n")
 		})
 
@@ -457,110 +367,32 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 			}
 			Expect(k8sClient.Create(ctx, testRR)).To(Succeed())
 
-			// ADR-040: Create AIAnalysis (prerequisite for AwaitingApproval phase)
-			aiName := fmt.Sprintf("ai-%s", testRR.Name)
-			testAI := &aianalysisv1.AIAnalysis{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      aiName,
-					Namespace: testNamespace,
-				},
-				Spec: aianalysisv1.AIAnalysisSpec{
-					RemediationRequestRef: corev1.ObjectReference{
-						APIVersion: remediationv1.GroupVersion.String(),
-						Kind:       "RemediationRequest",
-						Name:       testRR.Name,
-						Namespace:  testNamespace,
-					},
-					RemediationID: string(testRR.UID),
-					AnalysisRequest: aianalysisv1.AnalysisRequest{
-						SignalContext: aianalysisv1.SignalContextInput{
-							Fingerprint:      testRR.Spec.SignalFingerprint,
-							Severity:         "critical",
-							SignalName:       "alert",
-							Environment:      "production",
-							BusinessPriority: "P1",
-							TargetResource: aianalysisv1.TargetResource{
-								Kind:      "Deployment",
-								Name:      "test-app-expiry",
-								Namespace: testNamespace,
-							},
-							EnrichmentResults: sharedtypes.EnrichmentResults{},
-						},
-						AnalysisTypes: []string{"investigation", "workflow-selection"},
-					},
-				},
-			}
-			Expect(k8sClient.Create(ctx, testAI)).To(Succeed())
+			// Let the RO controller drive the full lifecycle: RR → SP → AI → RAR
+			sp := helpers.WaitForSPCreation(ctx, k8sClient, testNamespace, e2eTimeout, e2eInterval)
+			helpers.SimulateSPCompletion(ctx, k8sClient, sp)
 
-			testAI.Status.Phase = aianalysisv1.PhaseCompleted
-			testAI.Status.Message = "Analysis complete"
-			testAI.Status.ApprovalRequired = true
-			testAI.Status.ApprovalReason = "Confidence below 80% auto-approve threshold"
-			testAI.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-				WorkflowID:      "restart-pod-v1",
-				Version:         "1.0.0",
-				ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-pod:v1.0.0",
-				Confidence:      0.75,
-			}
-			testAI.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
-				Summary:    "Memory leak detected in payment service",
-				Severity:   "critical",
-				SignalType: "alert",
-				AffectedResource: &aianalysisv1.AffectedResource{
-					Kind:      "Deployment",
-					Name:      "test-app-expiry",
-					Namespace: testNamespace,
-				},
-			}
-			Expect(k8sClient.Status().Update(ctx, testAI)).To(Succeed())
+			ai := helpers.WaitForAICreation(ctx, k8sClient, testNamespace, e2eTimeout, e2eInterval)
+			helpers.SimulateAICompletedWithWorkflow(ctx, k8sClient, ai, helpers.AICompletionOpts{
+				ApprovalRequired: true,
+				ApprovalReason:   "Confidence below 80% auto-approve threshold",
+				Confidence:       0.75,
+				TargetKind:       "Deployment",
+				TargetName:       "test-app-expiry",
+				TargetNamespace:  testNamespace,
+			})
 
-			// RAR with requiredBy in the past - RO will detect timeout and mark Expired
-			testRAR = &remediationv1.RemediationApprovalRequest{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      fmt.Sprintf("rar-%s", testRR.Name),
-					Namespace: testNamespace,
-				},
-				Spec: remediationv1.RemediationApprovalRequestSpec{
-					RemediationRequestRef: corev1.ObjectReference{
-						Name:      testRR.Name,
-						Namespace: testNamespace,
-					},
-					AIAnalysisRef: remediationv1.ObjectRef{
-						Name: aiName,
-					},
-					Confidence:           0.75,
-					ConfidenceLevel:      "medium",
-					Reason:               "E2E expiry test: Confidence below threshold",
-					InvestigationSummary: "E2E test: Simulating RAR expiry for Bug Fix 2-4 validation",
-					WhyApprovalRequired:  "E2E test: Validating Status.Expired and TimeRemaining on timeout",
-					RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{
-						WorkflowID:      "restart-pod-v1",
-						Version:         "1.0.0",
-						ExecutionBundle: "kubernaut/restart-pod:v1",
-						Rationale:       "Standard pod restart",
-					},
-					RecommendedActions: []remediationv1.ApprovalRecommendedAction{
-						{Action: "Restart pod", Rationale: "E2E expiry test"},
-					},
-					RequiredBy: metav1.NewTime(time.Now().Add(-1 * time.Minute)), // Past deadline
-				},
-			}
-			Expect(controllerutil.SetControllerReference(testRR, testRAR, k8sClient.Scheme())).To(Succeed(),
-				"OwnerReference required for Owns() watch to trigger RR reconcile on RAR status change")
-			Expect(k8sClient.Create(ctx, testRAR)).To(Succeed())
+			testRAR = helpers.WaitForRARCreation(ctx, k8sClient, testNamespace, e2eTimeout, e2eInterval)
 
-			// With ApprovalRequired=true and AffectedResource set on the AI, the RO
-			// naturally reaches AwaitingApproval: Pending → Processing → Analyzing →
-			// (ApprovalRequired=true) → creates RAR (finds existing with past RequiredBy) → AwaitingApproval.
-			// Then handleAwaitingApprovalPhase detects the expired RequiredBy and marks Decision=Expired.
-			Eventually(func() remediationv1.RemediationPhase {
-				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testRR), testRR); err != nil {
-					return ""
+			// Set RequiredBy to the past so RO detects timeout and marks Expired
+			Expect(k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testRAR), testRAR); err != nil {
+					return err
 				}
-				return testRR.Status.OverallPhase
-			}, 60*time.Second, 500*time.Millisecond).Should(
-				Equal(remediationv1.PhaseAwaitingApproval),
-				"RO should naturally reach AwaitingApproval via ApprovalRequired=true on AI")
+				testRAR.Spec.RequiredBy = metav1.NewTime(time.Now().Add(-1 * time.Minute))
+				return k8sClient.Update(ctx, testRAR)
+			})).To(Succeed())
+
+			helpers.WaitForRRPhase(ctx, k8sClient, testRR, remediationv1.PhaseAwaitingApproval, e2eTimeout, e2eInterval)
 			GinkgoWriter.Printf("  RO reached AwaitingApproval naturally\n")
 		})
 

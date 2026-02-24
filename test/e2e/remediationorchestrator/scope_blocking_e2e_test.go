@@ -181,6 +181,12 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking E2E", Label("e2e", "scope"), f
 
 		GinkgoWriter.Printf("✅ E2E-RO-010-002: RR in managed namespace proceeded — phase: %s\n",
 			fetched.Status.OverallPhase)
+
+		By("Completing SP/AI lifecycle to avoid dangling CRDs")
+		sp := helpers.WaitForSPCreation(ctx, k8sClient, managedNS, timeout, interval)
+		helpers.SimulateSPCompletion(ctx, k8sClient, sp)
+		ai := helpers.WaitForAICreation(ctx, k8sClient, managedNS, timeout, interval)
+		helpers.SimulateAIWorkflowNotNeeded(ctx, k8sClient, ai)
 	})
 
 	// ─────────────────────────────────────────────
@@ -265,6 +271,12 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking E2E", Label("e2e", "scope"), f
 		Expect(apiReader.Get(ctx, client.ObjectKeyFromObject(rr), fetched)).To(Succeed())
 		GinkgoWriter.Printf("✅ E2E-RO-010-003: RR auto-unblocked — final phase: %s, blockReason: %s\n",
 			fetched.Status.OverallPhase, fetched.Status.BlockReason)
+
+		By("Completing SP/AI lifecycle to avoid dangling CRDs")
+		sp := helpers.WaitForSPCreation(ctx, k8sClient, ns, timeout, interval)
+		helpers.SimulateSPCompletion(ctx, k8sClient, sp)
+		ai := helpers.WaitForAICreation(ctx, k8sClient, ns, timeout, interval)
+		helpers.SimulateAIWorkflowNotNeeded(ctx, k8sClient, ai)
 	})
 
 })
