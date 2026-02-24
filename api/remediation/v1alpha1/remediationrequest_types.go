@@ -772,6 +772,7 @@ type DeduplicationStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:resource:shortName=rr
 // +kubebuilder:selectablefield:JSONPath=.spec.signalFingerprint
 // +kubebuilder:selectablefield:JSONPath=.spec.signalType
 // +kubebuilder:selectablefield:JSONPath=.spec.severity
