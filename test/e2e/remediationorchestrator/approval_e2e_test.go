@@ -199,24 +199,47 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 			Expect(k8sClient.Create(ctx, testRAR)).To(Succeed())
 			GinkgoWriter.Printf("🚀 E2E: Created RAR %s/%s\n", testNamespace, testRAR.Name)
 
-			// Set RR to AwaitingApproval with AIAnalysisRef (ADR-040 prerequisite).
-			// Use retry-on-conflict: the RO controller may reconcile the RR concurrently
-			// after Create, bumping resourceVersion before our status update lands.
-			err = k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+			// Wait for the RO controller to finish initialization and reach a stable phase.
+			// The RO's handlePendingPhase creates SP, sets SignalProcessingRef, then calls
+			// transitionPhase(Processing) which unconditionally overwrites OverallPhase.
+			// If we set AwaitingApproval before handlePendingPhase completes, it gets overwritten.
+			Eventually(func() remediationv1.RemediationPhase {
 				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testRR), testRR); err != nil {
-					return err
+					return ""
 				}
-				testRR.Status.OverallPhase = remediationv1.PhaseAwaitingApproval
-				testRR.Status.StartTime = &now
-				testRR.Status.AIAnalysisRef = &corev1.ObjectReference{
-					APIVersion: aianalysisv1.GroupVersion.String(),
-					Kind:       "AIAnalysis",
-					Name:       aiName,
-					Namespace:  testNamespace,
+				return testRR.Status.OverallPhase
+			}, 30*time.Second, 500*time.Millisecond).ShouldNot(
+				BeElementOf(remediationv1.RemediationPhase(""), remediationv1.PhasePending),
+				"RR should be past Pending before test overrides phase to AwaitingApproval")
+			GinkgoWriter.Printf("  RO stabilized at phase: %s\n", testRR.Status.OverallPhase)
+
+			// Override to AwaitingApproval. Retry in a polling loop: the RO may still be
+			// transitioning (Processing → Analyzing) and could overwrite our update.
+			Eventually(func() remediationv1.RemediationPhase {
+				_ = k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+					if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testRR), testRR); err != nil {
+						return err
+					}
+					if testRR.Status.OverallPhase == remediationv1.PhaseAwaitingApproval {
+						return nil
+					}
+					testRR.Status.OverallPhase = remediationv1.PhaseAwaitingApproval
+					testRR.Status.StartTime = &now
+					testRR.Status.AIAnalysisRef = &corev1.ObjectReference{
+						APIVersion: aianalysisv1.GroupVersion.String(),
+						Kind:       "AIAnalysis",
+						Name:       aiName,
+						Namespace:  testNamespace,
+					}
+					return k8sClient.Status().Update(ctx, testRR)
+				})
+				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testRR), testRR); err != nil {
+					return ""
 				}
-				return k8sClient.Status().Update(ctx, testRR)
-			})
-			Expect(err).ToNot(HaveOccurred(), "Failed to set RR to AwaitingApproval after retries")
+				return testRR.Status.OverallPhase
+			}, 30*time.Second, 500*time.Millisecond).Should(
+				Equal(remediationv1.PhaseAwaitingApproval),
+				"RR phase should stick at AwaitingApproval after RO stabilizes")
 		})
 
 		AfterEach(func() {
@@ -531,24 +554,45 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 				"OwnerReference required for Owns() watch to trigger RR reconcile on RAR status change")
 			Expect(k8sClient.Create(ctx, testRAR)).To(Succeed())
 
-			// Set RR to AwaitingApproval with AIAnalysisRef (ADR-040 prerequisite).
-			// Use retry-on-conflict: the RO controller may reconcile the RR concurrently
-			// after Create, bumping resourceVersion before our status update lands.
-			err := k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+			// Wait for the RO controller to finish initialization and reach a stable phase.
+			// Same race as AUD006-001: handlePendingPhase's transitionPhase(Processing)
+			// unconditionally overwrites OverallPhase, clobbering our AwaitingApproval.
+			Eventually(func() remediationv1.RemediationPhase {
 				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testRR), testRR); err != nil {
-					return err
+					return ""
 				}
-				testRR.Status.OverallPhase = remediationv1.PhaseAwaitingApproval
-				testRR.Status.StartTime = &now
-				testRR.Status.AIAnalysisRef = &corev1.ObjectReference{
-					APIVersion: aianalysisv1.GroupVersion.String(),
-					Kind:       "AIAnalysis",
-					Name:       aiName,
-					Namespace:  testNamespace,
+				return testRR.Status.OverallPhase
+			}, 30*time.Second, 500*time.Millisecond).ShouldNot(
+				BeElementOf(remediationv1.RemediationPhase(""), remediationv1.PhasePending),
+				"RR should be past Pending before test overrides phase to AwaitingApproval")
+			GinkgoWriter.Printf("  RO stabilized at phase: %s\n", testRR.Status.OverallPhase)
+
+			// Override to AwaitingApproval. Retry in a polling loop until phase sticks.
+			Eventually(func() remediationv1.RemediationPhase {
+				_ = k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+					if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testRR), testRR); err != nil {
+						return err
+					}
+					if testRR.Status.OverallPhase == remediationv1.PhaseAwaitingApproval {
+						return nil
+					}
+					testRR.Status.OverallPhase = remediationv1.PhaseAwaitingApproval
+					testRR.Status.StartTime = &now
+					testRR.Status.AIAnalysisRef = &corev1.ObjectReference{
+						APIVersion: aianalysisv1.GroupVersion.String(),
+						Kind:       "AIAnalysis",
+						Name:       aiName,
+						Namespace:  testNamespace,
+					}
+					return k8sClient.Status().Update(ctx, testRR)
+				})
+				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testRR), testRR); err != nil {
+					return ""
 				}
-				return k8sClient.Status().Update(ctx, testRR)
-			})
-			Expect(err).ToNot(HaveOccurred(), "Failed to set RR to AwaitingApproval after retries")
+				return testRR.Status.OverallPhase
+			}, 30*time.Second, 500*time.Millisecond).Should(
+				Equal(remediationv1.PhaseAwaitingApproval),
+				"RR phase should stick at AwaitingApproval after RO stabilizes")
 		})
 
 		AfterEach(func() {
