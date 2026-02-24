@@ -24,6 +24,7 @@ spec:
       for: 2m
       labels:
         severity: critical
+        deployment: api-gateway
       annotations:
         summary: >
           Service api-gateway burning SLO error budget at

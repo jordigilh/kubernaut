@@ -19,6 +19,7 @@ spec:
       for: 2m
       labels:
         severity: critical
+        deployment: demo-app
       annotations:
         summary: >
           Certificate {{ $labels.name }} in namespace {{ $labels.namespace }}

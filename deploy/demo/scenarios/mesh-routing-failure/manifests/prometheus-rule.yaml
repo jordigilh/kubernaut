@@ -12,9 +12,9 @@ spec:
     - alert: LinkerdHighErrorRate
       expr: |
         (
-          sum(rate(response_total{namespace="demo-mesh-failure", classification="failure", direction="inbound"}[5m]))
+          sum by (namespace, deployment)(rate(response_total{namespace="demo-mesh-failure", classification="failure", direction="inbound"}[5m]))
           /
-          sum(rate(response_total{namespace="demo-mesh-failure", direction="inbound"}[5m]))
+          sum by (namespace, deployment)(rate(response_total{namespace="demo-mesh-failure", direction="inbound"}[5m]))
         ) > 0.5
       for: 2m
       labels:
@@ -29,7 +29,7 @@ spec:
           restrictive AuthorizationPolicy blocking legitimate traffic.
     - alert: LinkerdRequestsUnauthorized
       expr: |
-        sum(rate(response_total{namespace="demo-mesh-failure", status_code="403", direction="inbound"}[5m])) > 0
+        sum by (namespace, deployment)(rate(response_total{namespace="demo-mesh-failure", status_code="403", direction="inbound"}[5m])) > 0
       for: 2m
       labels:
         severity: critical

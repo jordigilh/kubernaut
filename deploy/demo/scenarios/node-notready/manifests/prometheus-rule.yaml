@@ -15,6 +15,7 @@ spec:
       for: 1m
       labels:
         severity: critical
+        namespace: demo-node
       annotations:
         summary: >
           Node {{ $labels.node }} is in NotReady state for more than 1 minute.
