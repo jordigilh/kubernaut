@@ -144,29 +144,28 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 
 			// Send webhook to Gateway with retry (CI latency in Kind+Podman)
 			url := fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL)
-			var resp *http.Response
+			var bodyBytes []byte
 			Eventually(func() int {
 				req, _ := http.NewRequest("POST", url, bytes.NewReader(payload))
 				req.Header.Set("Content-Type", "application/json")
 				req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
-				var err error
-				resp, err = http.DefaultClient.Do(req)
+				resp, err := http.DefaultClient.Do(req)
 				if err != nil {
 					GinkgoWriter.Printf("  Gateway POST error: %v\n", err)
 					return 0
 				}
-				body, _ := io.ReadAll(resp.Body)
+				bodyBytes, _ = io.ReadAll(resp.Body)
 				_ = resp.Body.Close()
 				if resp.StatusCode != http.StatusCreated {
-					GinkgoWriter.Printf("  Gateway returned %d (expected 201): %s\n", resp.StatusCode, string(body))
+					GinkgoWriter.Printf("  Gateway returned %d (expected 201): %s\n", resp.StatusCode, string(bodyBytes))
 				}
 				return resp.StatusCode
 			}, 30*time.Second, 1*time.Second).Should(Equal(http.StatusCreated),
 				"First occurrence must create CRD (201 Created)")
 
-			// Parse response to get fingerprint
+			// Parse response from captured bytes (body was closed inside Eventually)
 			var response map[string]interface{}
-			Expect(json.NewDecoder(resp.Body).Decode(&response)).To(Succeed())
+			Expect(json.NewDecoder(bytes.NewReader(bodyBytes)).Decode(&response)).To(Succeed())
 			fingerprint, ok := response["fingerprint"].(string)
 			Expect(ok).To(BeTrue(), "Response should contain fingerprint")
 			Expect(fingerprint).NotTo(BeEmpty(), "Fingerprint should not be empty")
