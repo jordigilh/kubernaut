@@ -1,0 +1,29 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: kubernaut-dedup-rules
+  namespace: demo-alert-storm
+  labels:
+    release: prometheus
+spec:
+  groups:
+  - name: kubernaut-alert-storm
+    rules:
+    - alert: KubePodCrashLooping
+      expr: |
+        increase(
+          kube_pod_container_status_restarts_total{
+            namespace="demo-alert-storm",
+            container="nginx"
+          }[3m]
+        ) > 3
+      for: 1m
+      labels:
+        severity: critical
+      annotations:
+        summary: >
+          Container {{ $labels.container }} in pod {{ $labels.pod }} is in
+          CrashLoopBackOff with {{ $value | humanize }} restarts in the last 3 minutes.
+        description: >
+          Multiple pods in the api-gateway deployment are crashing simultaneously.
+          This creates an alert storm that tests the Gateway deduplication logic.

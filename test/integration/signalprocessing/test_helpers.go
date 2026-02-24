@@ -148,7 +148,7 @@ func CreateTestRemediationRequest(name, namespace, fingerprint, severity string,
 			SignalFingerprint: fingerprint,
 			SignalName:        "TestSignal",
 			Severity:          severity,
-			SignalType:        "prometheus",
+			SignalType:        "alert",
 			SignalSource:      "test-adapter",
 			TargetType:        "kubernetes",
 

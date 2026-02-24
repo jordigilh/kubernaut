@@ -105,7 +105,7 @@ var _ = Describe("SignalProcessingCreator", func() {
 					Severity:    "critical",
 					Priority:    "P0",
 					Environment: "production",
-					SignalType:  "kubernetes-event",
+					SignalType:  "alert",
 				})
 				rr.Spec.SignalLabels = map[string]string{"label1": "value1"}
 

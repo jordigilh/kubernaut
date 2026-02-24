@@ -119,7 +119,7 @@ package gateway
 
 type NormalizedSignal struct {
     Fingerprint   string
-    AlertName     string
+    SignalName    string  // Issue #166: was AlertName
     Severity      string
     Namespace     string
     Resource      ResourceIdentifier
@@ -127,7 +127,7 @@ type NormalizedSignal struct {
     Annotations   map[string]string
     FiringTime    time.Time
     ReceivedTime  time.Time
-    SourceType    string
+    Source        string  // Issue #166: adapter identity (was SourceType)
     RawPayload    json.RawMessage
 }
 
@@ -335,7 +335,7 @@ func (s *DeduplicationService) Store(ctx context.Context, signal *gateway.Normal
 
     pipe := s.redisClient.Pipeline()
     pipe.HSet(ctx, key, "fingerprint", signal.Fingerprint)
-    pipe.HSet(ctx, key, "alertName", signal.AlertName)
+    pipe.HSet(ctx, key, "signalName", signal.SignalName)
     pipe.HSet(ctx, key, "namespace", signal.Namespace)
     pipe.HSet(ctx, key, "resource", signal.Resource.Name)
     pipe.HSet(ctx, key, "firstSeen", now)
@@ -1063,7 +1063,7 @@ func (s *Server) processSignal(ctx context.Context, signal *gateway.NormalizedSi
     }
 
     if isDuplicate {
-        metrics.AlertsDeduplicatedTotal.WithLabelValues(signal.AlertName, "unknown").Inc()
+        metrics.AlertsDeduplicatedTotal.WithLabelValues(signal.SignalName, "unknown").Inc()
 
         s.logger.WithFields(logrus.Fields{
             "fingerprint": signal.Fingerprint,
@@ -1118,7 +1118,7 @@ func (s *Server) processSignal(ctx context.Context, signal *gateway.NormalizedSi
 
     s.logger.WithFields(logrus.Fields{
         "fingerprint":            signal.Fingerprint,
-        "alertName":              signal.AlertName,
+        "signalName":             signal.SignalName,
         "environment":            environment,
         "priority":               priority,
         "remediationRequestRef":  rr.Name,
@@ -1247,7 +1247,7 @@ func (a *PrometheusAdapter) Parse(ctx context.Context, rawData []byte) (*gateway
 
     return &gateway.NormalizedSignal{
         Fingerprint:  fingerprint,
-        AlertName:    alert.Labels["alertname"],
+        SignalName:   alert.Labels["alertname"],
         Severity:     determineSeverity(alert.Labels),
         Namespace:    resource.Namespace,
         Resource:     resource,
@@ -1255,7 +1255,7 @@ func (a *PrometheusAdapter) Parse(ctx context.Context, rawData []byte) (*gateway
         Annotations:  annotations,
         FiringTime:   alert.StartsAt,
         ReceivedTime: time.Now(),
-        SourceType:   "prometheus-alert",
+        Source:       "prometheus",  // Issue #166: adapter identity (RR.Spec.SignalType="alert")
         RawPayload:   rawData,
     }, nil
 }
@@ -1264,8 +1264,8 @@ func (a *PrometheusAdapter) Validate(signal *gateway.NormalizedSignal) error {
     if signal.Fingerprint == "" {
         return errors.New("fingerprint is required")
     }
-    if signal.AlertName == "" {
-        return errors.New("alertName is required")
+    if signal.SignalName == "" {
+        return errors.New("signalName is required")
     }
     return nil
 }
@@ -1300,28 +1300,42 @@ func determineSeverity(labels map[string]string) string {
     }
 }
 
+// BR-GATEWAY-184: Specific resource labels checked before "pod" because
+// kube-state-metrics resource-level alerts inject "pod" as the metrics
+// exporter, not the affected resource.
+// Priority order: HPA > PDB > PVC > Deployment > StatefulSet > DaemonSet >
+//                 Node > Service > Job > CronJob > Pod > Unknown
 func extractResourceKind(labels map[string]string) string {
-    if _, ok := labels["pod"]; ok {
-        return "Pod"
-    }
-    if _, ok := labels["deployment"]; ok {
-        return "Deployment"
-    }
-    if _, ok := labels["node"]; ok {
-        return "Node"
+    for _, entry := range []struct{ label, kind string }{
+        {"horizontalpodautoscaler", "HorizontalPodAutoscaler"},
+        {"poddisruptionbudget", "PodDisruptionBudget"},
+        {"persistentvolumeclaim", "PersistentVolumeClaim"},
+        {"deployment", "Deployment"},
+        {"statefulset", "StatefulSet"},
+        {"daemonset", "DaemonSet"},
+        {"node", "Node"},
+        {"service", "Service"},
+        {"job", "Job"},
+        {"cronjob", "CronJob"},
+        {"pod", "Pod"},
+    } {
+        if _, ok := labels[entry.label]; ok {
+            return entry.kind
+        }
     }
     return "Unknown"
 }
 
+// BR-GATEWAY-184: Mirrors extractResourceKind priority order.
 func extractResourceName(labels map[string]string) string {
-    if pod, ok := labels["pod"]; ok {
-        return pod
-    }
-    if deployment, ok := labels["deployment"]; ok {
-        return deployment
-    }
-    if node, ok := labels["node"]; ok {
-        return node
+    for _, label := range []string{
+        "horizontalpodautoscaler", "poddisruptionbudget", "persistentvolumeclaim",
+        "deployment", "statefulset", "daemonset",
+        "node", "service", "job", "cronjob", "pod",
+    } {
+        if v, ok := labels[label]; ok {
+            return v
+        }
     }
     return "unknown"
 }

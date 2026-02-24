@@ -61,7 +61,7 @@ ENRICHMENT_WITH_LABELS = {
 
 INCIDENT_REQUEST = {
     "severity": "critical",
-    "signal_type": "CrashLoopBackOff",
+    "signal_name": "CrashLoopBackOff",
     "resource_namespace": "production",
     "resource_kind": "Pod",
     "resource_name": "api-xyz",
@@ -78,7 +78,7 @@ INCIDENT_REQUEST = {
 
 RECOVERY_REQUEST = {
     "severity": "critical",
-    "signal_type": "CrashLoopBackOff",
+    "signal_name": "CrashLoopBackOff",
     "resource_namespace": "production",
     "resource_kind": "Pod",
     "resource_name": "api-xyz",
@@ -94,7 +94,7 @@ RECOVERY_REQUEST = {
     "attempt_number": 2,
     "original_rca": {
         "summary": "OOMKilled",
-        "signal_type": "OOMKilled",
+        "signal_name": "OOMKilled",
     },
     "selected_workflow": {
         "workflow_id": "wf-001",

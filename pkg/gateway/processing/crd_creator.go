@@ -301,7 +301,7 @@ func (c *CRDCreator) CreateRemediationRequest(
 	if err := c.validateResourceInfo(signal); err != nil {
 		c.logger.Info("Signal rejected: missing resource info",
 			"fingerprint", signal.Fingerprint,
-			"alertName", signal.AlertName,
+			"signal_name", signal.SignalName,
 			"error", err)
 		return nil, err
 	}
@@ -342,7 +342,7 @@ func (c *CRDCreator) CreateRemediationRequest(
 		Spec: remediationv1alpha1.RemediationRequestSpec{
 			// Core signal identification
 			SignalFingerprint: signal.Fingerprint,
-			SignalName:        signal.AlertName,
+			SignalName:        signal.SignalName,
 
 			// Classification (environment/priority removed - SP owns these now)
 			Severity:     signal.Severity,
@@ -425,7 +425,7 @@ func (c *CRDCreator) CreateRemediationRequest(
 					signal.Namespace,
 					crdName,
 					signal.SourceType,
-					signal.AlertName,
+					signal.SignalName,
 					maxFetchAttempts,
 					startTime,
 					fmt.Errorf("CRD exists but failed to fetch after %d attempts: %w", maxFetchAttempts, fetchErr),
@@ -459,7 +459,7 @@ func (c *CRDCreator) CreateRemediationRequest(
 			signal.Namespace,
 			crdName,
 			signal.SourceType,
-			signal.AlertName,
+			signal.SignalName,
 			c.retryConfig.MaxAttempts,
 			startTime,
 			err,
@@ -469,7 +469,7 @@ func (c *CRDCreator) CreateRemediationRequest(
 	// Record success metric
 	// Note: Metric labels changed from (environment, priority) to (sourceType, "created")
 	// since environment/priority classification moved to SP per DD-CATEGORIZATION-001
-	c.metrics.CRDsCreatedTotal.WithLabelValues(signal.SourceType, "created").Inc()
+	c.metrics.CRDsCreatedTotal.WithLabelValues(signal.Source, "created").Inc()
 
 	// Log creation event
 	c.logger.Info("Created RemediationRequest CRD",
@@ -477,7 +477,7 @@ func (c *CRDCreator) CreateRemediationRequest(
 		"namespace", signal.Namespace,
 		"fingerprint", signal.Fingerprint,
 		"severity", signal.Severity,
-		"alertName", signal.AlertName)
+		"signal_name", signal.SignalName)
 
 	return rr, nil
 }
@@ -495,7 +495,7 @@ func (c *CRDCreator) getFiringTime(signal *types.NormalizedSignal) time.Time {
 	if signal.FiringTime.IsZero() {
 		c.logger.V(1).Info("FiringTime not set by adapter, using ReceivedTime as fallback",
 			"fingerprint", signal.Fingerprint,
-			"alert_name", signal.AlertName)
+			"signal_name", signal.SignalName)
 		return signal.ReceivedTime
 	}
 	return signal.FiringTime

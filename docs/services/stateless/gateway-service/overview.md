@@ -329,7 +329,7 @@ Both sources converted to `NormalizedSignal` format:
 ```go
 type NormalizedSignal struct {
     Fingerprint   string             // SHA256(alertname:namespace:kind:name)
-    AlertName     string             // "HighMemoryUsage"
+    SignalName    string             // "HighMemoryUsage" (Issue #166: was AlertName)
     Severity      string             // "critical"
     Namespace     string             // "prod-payment-service"
     Resource      ResourceIdentifier // Pod/payment-api-789
@@ -337,7 +337,7 @@ type NormalizedSignal struct {
     Annotations   map[string]string  // Source annotations
     FiringTime    time.Time          // 2025-10-04T10:00:00Z
     ReceivedTime  time.Time          // 2025-10-04T10:00:05Z
-    SourceType    string             // "prometheus" or "kubernetes-event"
+    Source        string             // "prometheus" or "kubernetes-events" (Issue #166: adapter identity)
     RawPayload    json.RawMessage    // Original for audit
 }
 ```
@@ -379,11 +379,12 @@ metadata:
   name: remediation-abc123
   namespace: kubernaut-system
   # Issue #91: kubernaut.ai/severity, kubernaut.ai/signal-type removed; use spec.severity, spec.signalType
+  # Issue #166: kubernaut.ai/alert-name -> kubernaut.ai/signal-name
   labels:
-    kubernaut.ai/alert-name: HighMemoryUsage
+    kubernaut.ai/signal-name: HighMemoryUsage
 spec:
   alertFingerprint: "a1b2c3d4..."
-  alertName: "HighMemoryUsage"
+  signalName: "HighMemoryUsage"
   severity: "critical"
   targetResource:
     kind: Pod

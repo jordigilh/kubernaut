@@ -49,7 +49,7 @@ def sample_incident_request_data():
     return {
         "incident_id": "test-incident-001",
         "remediation_id": "rem-session-test-001",
-        "signal_type": "OOMKilled",
+        "signal_name": "OOMKilled",
         "severity": "high",
         "environment": "production",
         "business_priority": "P0",
@@ -67,7 +67,7 @@ def sample_recovery_request_data():
     return {
         "incident_id": "test-recovery-001",
         "remediation_id": "rem-recovery-session-001",
-        "signal_type": "OOMKilled",
+        "signal_name": "OOMKilled",
         "severity": "high",
         "is_recovery_attempt": True,
         "recovery_attempt_number": 1,

@@ -47,7 +47,7 @@ class TestIncidentPromptDetectedLabels:
 
         request_data = {
             "incident_id": "inc-001",
-            "signal_type": "OOMKilled",
+            "signal_name": "OOMKilled",
             "severity": "high",
             "signal_source": "prometheus",
             "resource_namespace": "production",
@@ -81,7 +81,7 @@ class TestIncidentPromptDetectedLabels:
 
         request_data = {
             "incident_id": "inc-001",
-            "signal_type": "OOMKilled",
+            "signal_name": "OOMKilled",
             "severity": "high",
             "signal_source": "prometheus",
             "resource_namespace": "production",
@@ -110,7 +110,7 @@ class TestIncidentPromptDetectedLabels:
 
         request_data = {
             "incident_id": "inc-001",
-            "signal_type": "OOMKilled",
+            "signal_name": "OOMKilled",
             "severity": "high",
             "signal_source": "prometheus",
             "resource_namespace": "production",
@@ -145,7 +145,7 @@ class TestIncidentPromptDetectedLabels:
 
         request_data = {
             "incident_id": "inc-001",
-            "signal_type": "OOMKilled",
+            "signal_name": "OOMKilled",
             "severity": "high",
             "signal_source": "prometheus",
             "resource_namespace": "production",
@@ -172,7 +172,7 @@ class TestIncidentPromptDetectedLabels:
 
         request_data = {
             "incident_id": "inc-001",
-            "signal_type": "OOMKilled",
+            "signal_name": "OOMKilled",
             "severity": "high",
             "signal_source": "prometheus",
             "resource_namespace": "production",

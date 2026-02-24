@@ -81,12 +81,12 @@ def hapi_recovery_api(hapi_service_url, hapi_auth_token):
     return RecoveryAnalysisApi(api_client=api_client)
 
 
-def make_incident_request(signal_type: str) -> dict:
-    """Create a valid IncidentRequest with the specified signal_type."""
+def make_incident_request(signal_name: str) -> dict:
+    """Create a valid IncidentRequest with the specified signal_name."""
     return {
-        "incident_id": f"test-edge-case-{signal_type.lower()}",
-        "remediation_id": f"test-remediation-{signal_type.lower()}",  # REQUIRED per DD-WORKFLOW-002
-        "signal_type": signal_type,
+        "incident_id": f"test-edge-case-{signal_name.lower()}",
+        "remediation_id": f"test-remediation-{signal_name.lower()}",  # REQUIRED per DD-WORKFLOW-002
+        "signal_name": signal_name,
         "severity": "high",  # REQUIRED
         "signal_source": "prometheus",  # REQUIRED
         "resource_kind": "Pod",
@@ -97,16 +97,16 @@ def make_incident_request(signal_type: str) -> dict:
         "priority": "P2",  # REQUIRED
         "risk_tolerance": "medium",  # REQUIRED
         "business_category": "test",  # REQUIRED
-        "error_message": f"Test edge case for {signal_type}",  # REQUIRED
+        "error_message": f"Test edge case for {signal_name}",  # REQUIRED
     }
 
 
-def make_recovery_request(signal_type: str) -> dict:
-    """Create a valid RecoveryRequest with the specified signal_type."""
+def make_recovery_request(signal_name: str) -> dict:
+    """Create a valid RecoveryRequest with the specified signal_name."""
     return {
-        "incident_id": f"test-recovery-{signal_type.lower()}",
-        "remediation_id": f"test-remediation-{signal_type.lower()}",
-        "signal_type": signal_type,
+        "incident_id": f"test-recovery-{signal_name.lower()}",
+        "remediation_id": f"test-remediation-{signal_name.lower()}",
+        "signal_name": signal_name,
         "previous_workflow_id": "mock-previous-workflow-v1",
         "previous_workflow_result": "Failed",
         "resource_namespace": "default",

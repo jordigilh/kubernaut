@@ -28,7 +28,11 @@ import (
 // Per DD-RO-002: Routing engine is MANDATORY, so tests must provide mock implementation
 type MockRoutingEngine struct{}
 
-func (m *MockRoutingEngine) CheckBlockingConditions(ctx context.Context, rr *remediationv1.RemediationRequest, workflowID string) (*routing.BlockingCondition, error) {
+func (m *MockRoutingEngine) CheckPreAnalysisConditions(ctx context.Context, rr *remediationv1.RemediationRequest) (*routing.BlockingCondition, error) {
+	return nil, nil // Always return not blocked for unit tests
+}
+
+func (m *MockRoutingEngine) CheckPostAnalysisConditions(ctx context.Context, rr *remediationv1.RemediationRequest, workflowID string, targetResource string) (*routing.BlockingCondition, error) {
 	return nil, nil // Always return not blocked for unit tests
 }
 

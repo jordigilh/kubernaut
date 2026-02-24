@@ -611,7 +611,7 @@ func createRemediationRequest(namespace, name string) *remediationv1.Remediation
 			}(),
 			SignalName: "TestHighMemoryAlert",
 			Severity:   "critical",
-			SignalType: "prometheus",
+			SignalType: "alert",
 			TargetType: "kubernetes",
 			TargetResource: remediationv1.ResourceIdentifier{
 				Kind:      "Deployment",
@@ -655,7 +655,7 @@ func updateSPStatus(namespace, name string, phase signalprocessingv1.SignalProce
 		// Default to "reactive" with type pass-through (backwards compatible)
 		// Tests that need predictive mode should use updateSPStatusPredictive()
 		sp.Status.SignalMode = "reactive"
-		sp.Status.SignalType = sp.Spec.Signal.Type // Pass-through for reactive signals
+		sp.Status.SignalName = sp.Spec.Signal.Name // Pass-through for reactive signals
 		// Set environment classification for downstream use
 		// Per SP Team Response (2025-12-10): ClassifiedAt is REQUIRED when struct is set
 		// V1.1 Note: Confidence field removed per DD-SP-001 V1.1 (redundant with source)
@@ -694,8 +694,8 @@ func updateSPStatusPredictive(namespace, name string, normalizedType, originalTy
 	sp.Status.Severity = severity
 	// BR-SP-106: Predictive signal mode fields
 	sp.Status.SignalMode = "predictive"
-	sp.Status.SignalType = normalizedType
-	sp.Status.OriginalSignalType = originalType
+	sp.Status.SignalName = normalizedType
+	sp.Status.SourceSignalName = originalType
 	// Standard classification fields
 	sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
 		Environment:  "production",

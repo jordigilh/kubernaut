@@ -90,7 +90,7 @@ FULL_CONTEXT = {
 }
 
 MINIMAL_REQUEST = {
-    "signal_type": "HighCPULoad",
+    "signal_name": "HighCPULoad",
     "severity": "critical",
     "resource_namespace": "production",
     "resource_kind": "Deployment",
@@ -100,7 +100,7 @@ MINIMAL_REQUEST = {
 }
 
 MINIMAL_RECOVERY_REQUEST = {
-    "signal_type": "HighCPULoad",
+    "signal_name": "HighCPULoad",
     "severity": "critical",
     "resource_namespace": "production",
     "resource_kind": "Deployment",
@@ -112,7 +112,7 @@ MINIMAL_RECOVERY_REQUEST = {
     "previous_execution": {
         "original_rca": {
             "summary": "CPU spike due to load",
-            "signal_type": "HighCPULoad",
+            "signal_name": "HighCPULoad",
             "severity": "critical",
             "contributing_factors": ["high_traffic"],
         },

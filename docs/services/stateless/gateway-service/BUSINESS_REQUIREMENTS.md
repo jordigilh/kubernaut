@@ -1,14 +1,15 @@
 # Gateway Service - Business Requirements
 
-**Version**: v1.7
-**Last Updated**: 2026-01-29
+**Version**: v1.8
+**Last Updated**: 2026-02-23
 **Status**: ✅ APPROVED
 **Owner**: Gateway Team
-**Total BRs**: 77 identified BRs (BR-GATEWAY-001 through BR-GATEWAY-183)
+**Total BRs**: 78 identified BRs (BR-GATEWAY-001 through BR-GATEWAY-184)
 
 > **📋 Changelog**
 > | Version | Date | Changes | Reference |
 > |---------|------|---------|-----------|
+> | v1.8 | 2026-02-23 | **NEW BR-GATEWAY-184**: Target Resource Extraction Priority. Gateway MUST check specific Kubernetes resource labels (HPA, PDB, PVC, Deployment, StatefulSet, etc.) before `pod` when extracting target resource from Prometheus alerts. Fixes kube-state-metrics misidentification. | [Issue #178](https://github.com/jordigilh/kubernaut/issues/178), [BR-GATEWAY-184](../../../../requirements/BR-GATEWAY-184-target-resource-extraction-priority.md) |
 > | v1.7 | 2026-01-29 | **NEW BR-GATEWAY-182, BR-GATEWAY-183**: ServiceAccount Authentication and SAR Authorization. Gateway MUST authenticate webhook requests using Kubernetes TokenReview and authorize using SubjectAccessReview for defense-in-depth security and SOC2 compliance. Supersedes DD-GATEWAY-006 (network-only security). | [DD-AUTH-014 V2.0](../../../architecture/decisions/DD-AUTH-014-middleware-based-sar-authentication.md) |
 > | v1.6 | 2026-01-09 | **NEW BR-GATEWAY-181**: Signal Pass-Through Architecture. Gateway MUST preserve external severity/environment/priority values WITHOUT transformation. Removes hardcoded severity mappings. Enables customer extensibility (Sev1-4, P0-P4 schemes). | [DD-SEVERITY-001](../../../architecture/decisions/DD-SEVERITY-001-severity-determination-refactoring.md), [TRIAGE-SEVERITY-EXTENSIBILITY](../../../architecture/decisions/TRIAGE-SEVERITY-EXTENSIBILITY.md) |
 > | v1.5 | 2025-12-07 | BR-GATEWAY-038: Rate limiting code REMOVED (middleware + tests). Proxy delegation complete. | [ADR-048](../../../architecture/decisions/ADR-048-rate-limiting-proxy-delegation.md) |
@@ -260,7 +261,7 @@ This document provides a comprehensive list of all business requirements for the
 
 **Technical Details**:
 - `GetSourceService()` returns monitoring system name (e.g., "prometheus", "kubernetes-events")
-- `GetSourceType()` returns signal type identifier (e.g., "prometheus-alert", "kubernetes-event")
+- RR.Spec.SignalType is now "alert" (generic) per Issue #166; adapter identity uses signal.Source
 - Adapter names (e.g., "prometheus-adapter") are internal implementation details, not useful for LLM
 - Both methods are part of the `SignalAdapter` interface
 
@@ -860,3 +861,18 @@ roleRef:
 - ✅ Fail-closed: API server unavailability blocks requests (secure default)**Related Requirements**:
 - BR-GATEWAY-182: ServiceAccount Authentication (prerequisite)
 - BR-GATEWAY-053: RBAC Permissions (general RBAC requirement)**Decision Reference**: [DD-AUTH-014 V2.0](../../../architecture/decisions/DD-AUTH-014-middleware-based-sar-authentication.md)**Authority**: DD-AUTH-014 V2.0 (January 29, 2026)
+
+---
+
+## 🎯 **Target Resource Extraction** (BR-GATEWAY-184)
+
+### **BR-GATEWAY-184: Target Resource Extraction Priority Order** 🆕
+**Description**: Gateway MUST check specific Kubernetes resource labels before the generic `pod` label when extracting the target resource from Prometheus AlertManager webhooks. The `pod` label in kube-state-metrics resource-level alerts points to the metrics exporter, not the affected resource.
+**Priority**: P0 (Critical - Blocks correct remediation for resource-level alerts)
+**Status**: ✅ **COMPLETE** (2026-02-23)
+**Category**: Signal Normalization / Resource Identification
+**Test Coverage**: ✅ Unit (GW-RE-01 through GW-RE-08)
+**Implementation**: `pkg/gateway/adapters/prometheus_adapter.go` (`extractResourceKind`, `extractResourceName`)
+**Tests**: `test/unit/gateway/adapters/prometheus_adapter_test.go`
+**Full Specification**: [BR-GATEWAY-184](../../../../requirements/BR-GATEWAY-184-target-resource-extraction-priority.md)
+**GitHub Issue**: [#178](https://github.com/jordigilh/kubernaut/issues/178)

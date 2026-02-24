@@ -48,7 +48,7 @@ var _ = Describe("Adapter Interface - Business Metadata", func() {
 		var adapter adapters.RoutableAdapter
 
 		BeforeEach(func() {
-			adapter = adapters.NewPrometheusAdapter()
+			adapter = adapters.NewPrometheusAdapter(nil, nil)
 		})
 
 		It("provides correct adapter name for metrics and logging", func() {
@@ -153,7 +153,7 @@ var _ = Describe("Kubernetes Event Adapter - Signal Quality Validation", func() 
 			// BUSINESS OUTCOME: Well-formed K8s Events are accepted
 			// Remediation workflow can proceed for valid signals
 			validSignal := &types.NormalizedSignal{
-				AlertName:   "PodCrashLooping",
+				SignalName:   "PodCrashLooping",
 				Fingerprint: "k8s-event-fingerprint-abc123",
 				Severity:    "critical",
 				Resource: types.ResourceIdentifier{
@@ -172,7 +172,7 @@ var _ = Describe("Kubernetes Event Adapter - Signal Quality Validation", func() 
 			// BUSINESS OUTCOME: Cannot remediate without knowing WHAT failed
 			// Gateway rejects early to prevent incomplete CRD creation
 			invalidSignal := &types.NormalizedSignal{
-				AlertName:   "", // MISSING
+				SignalName:   "", // MISSING
 				Fingerprint: "fingerprint-123",
 				Severity:    "critical",
 				Resource: types.ResourceIdentifier{
@@ -193,7 +193,7 @@ var _ = Describe("Kubernetes Event Adapter - Signal Quality Validation", func() 
 			// BUSINESS OUTCOME: Cannot deduplicate without fingerprint
 			// Gateway rejects to prevent duplicate RemediationRequests
 			invalidSignal := &types.NormalizedSignal{
-				AlertName:   "PodCrashLooping",
+				SignalName:   "PodCrashLooping",
 				Fingerprint: "", // MISSING
 				Severity:    "critical",
 				Resource: types.ResourceIdentifier{
@@ -216,7 +216,7 @@ var _ = Describe("Kubernetes Event Adapter - Signal Quality Validation", func() 
 			// SignalProcessing Rego policies determine normalized severity downstream
 			// Authority: BR-GATEWAY-181, DD-SEVERITY-001 v1.1
 			invalidSignal := &types.NormalizedSignal{
-				AlertName:   "PodCrashLooping",
+				SignalName:   "PodCrashLooping",
 				Fingerprint: "fingerprint-123",
 				Severity:    "", // INVALID (empty string)
 				Resource: types.ResourceIdentifier{
@@ -237,7 +237,7 @@ var _ = Describe("Kubernetes Event Adapter - Signal Quality Validation", func() 
 			// BUSINESS OUTCOME: Cannot remediate without knowing WHAT to fix
 			// Gateway rejects early - RO needs resource kind for workflow selection
 			invalidSignal := &types.NormalizedSignal{
-				AlertName:   "PodCrashLooping",
+				SignalName:   "PodCrashLooping",
 				Fingerprint: "fingerprint-123",
 				Severity:    "critical",
 				Resource: types.ResourceIdentifier{
@@ -258,7 +258,7 @@ var _ = Describe("Kubernetes Event Adapter - Signal Quality Validation", func() 
 			// BUSINESS OUTCOME: Cannot remediate without knowing WHICH instance to fix
 			// Gateway rejects early - workflow execution needs specific resource name
 			invalidSignal := &types.NormalizedSignal{
-				AlertName:   "PodCrashLooping",
+				SignalName:   "PodCrashLooping",
 				Fingerprint: "fingerprint-123",
 				Severity:    "critical",
 				Resource: types.ResourceIdentifier{
@@ -294,7 +294,7 @@ var _ = Describe("Kubernetes Event Adapter - Signal Quality Validation", func() 
 
 			for _, severity := range validSeverities {
 				signal := &types.NormalizedSignal{
-					AlertName:   "TestAlert",
+					SignalName:   "TestAlert",
 					Fingerprint: "fingerprint-123",
 					Severity:    severity,
 					Resource: types.ResourceIdentifier{
@@ -317,7 +317,7 @@ var _ = Describe("Kubernetes Event Adapter - Signal Quality Validation", func() 
 				// BUSINESS LOGIC: One bad payload should not affect other signals
 				// Unit Test: Error handling without infrastructure
 
-				adapter := adapters.NewPrometheusAdapter()
+				adapter := adapters.NewPrometheusAdapter(nil, nil)
 
 				// Malformed JSON payload
 				malformedPayload := []byte(`{"alerts": [{"labels": {incomplete`)
@@ -351,7 +351,7 @@ var _ = Describe("Kubernetes Event Adapter - Signal Quality Validation", func() 
 				// BUSINESS LOGIC: Clear errors enable faster incident resolution
 				// Unit Test: Error message quality
 
-				adapter := adapters.NewPrometheusAdapter()
+				adapter := adapters.NewPrometheusAdapter(nil, nil)
 
 				// Empty payload
 				emptyPayload := []byte(`{}`)
@@ -369,7 +369,7 @@ var _ = Describe("Kubernetes Event Adapter - Signal Quality Validation", func() 
 				// BUSINESS LOGIC: Defensive programming for external inputs
 				// Unit Test: Edge case handling
 
-				adapter := adapters.NewPrometheusAdapter()
+				adapter := adapters.NewPrometheusAdapter(nil, nil)
 
 				// Missing alertname
 				payload := []byte(`{

@@ -74,7 +74,7 @@ var _ = Describe("E2E-HAPI Audit Pipeline", Label("e2e", "hapi", "audit"), func(
 			req := &hapiclient.IncidentRequest{
 				IncidentID:        "test-audit-045",
 				RemediationID:     remediationID,
-				SignalType:        "OOMKilled",
+				SignalName:        "OOMKilled",
 				Severity:          "high",
 				SignalSource:      "kubernetes",
 				ResourceNamespace: "default",
@@ -159,7 +159,7 @@ var _ = Describe("E2E-HAPI Audit Pipeline", Label("e2e", "hapi", "audit"), func(
 			req := &hapiclient.IncidentRequest{
 				IncidentID:        "test-audit-046",
 				RemediationID:     remediationID,
-				SignalType:        "CrashLoopBackOff",
+				SignalName:        "CrashLoopBackOff",
 				Severity:          "high",
 				SignalSource:      "kubernetes",
 				ResourceNamespace: "default",
@@ -241,7 +241,7 @@ var _ = Describe("E2E-HAPI Audit Pipeline", Label("e2e", "hapi", "audit"), func(
 			req := &hapiclient.IncidentRequest{
 				IncidentID:        "test-audit-047",
 				RemediationID:     remediationID,
-				SignalType:        "OOMKilled",
+				SignalName:        "OOMKilled",
 				Severity:          "high",
 				SignalSource:      "kubernetes",
 				ResourceNamespace: "default",
@@ -323,7 +323,7 @@ var _ = Describe("E2E-HAPI Audit Pipeline", Label("e2e", "hapi", "audit"), func(
 			req := &hapiclient.IncidentRequest{
 				IncidentID:        "test-audit-048",
 				RemediationID:     remediationID,
-				SignalType:        "CrashLoopBackOff",
+				SignalName:        "CrashLoopBackOff",
 				Severity:          "critical",
 				SignalSource:      "kubernetes",
 				ResourceNamespace: "default",

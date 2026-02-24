@@ -39,7 +39,7 @@ def _make_incident_request_data(**overrides):
     """Build a minimal IncidentRequest-like dict for prompt generation."""
     data = {
         "incident_id": "inc-test-001",
-        "signal_type": "OOMKilled",
+        "signal_name": "OOMKilled",
         "severity": "high",
         "signal_source": "prometheus",
         "resource_namespace": "production",
@@ -62,7 +62,7 @@ def _make_recovery_request_data(**overrides):
         "incident_id": "inc-test-001",
         "is_recovery_attempt": True,
         "recovery_attempt_number": 2,
-        "signal_type": "OOMKilled",
+        "signal_name": "OOMKilled",
         "severity": "high",
         "signal_source": "prometheus",
         "resource_namespace": "production",
@@ -78,7 +78,7 @@ def _make_recovery_request_data(**overrides):
             "workflow_execution_ref": "req-001-we-1",
             "original_rca": {
                 "summary": "Memory exhaustion due to leak",
-                "signal_type": "OOMKilled",
+                "signal_name": "OOMKilled",
                 "severity": "high",
                 "contributing_factors": ["memory leak"],
             },

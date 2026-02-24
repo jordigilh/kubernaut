@@ -277,7 +277,7 @@ CREATE TABLE action_assessments (
     trace_id VARCHAR(255) NOT NULL,  -- NOT UNIQUE (allows retries)
     action_type VARCHAR(100) NOT NULL,
     context_hash VARCHAR(64) NOT NULL,
-    alert_name VARCHAR(255) NOT NULL,
+    signal_name VARCHAR(255) NOT NULL,
     namespace VARCHAR(255) NOT NULL,
     resource_name VARCHAR(255) NOT NULL,
     executed_at TIMESTAMP WITH TIME ZONE NOT NULL,
@@ -331,12 +331,12 @@ func (s *EffectivenessStorage) CreateAssessmentIfNotExists(
 ) (created bool, err error) {
     result, err := s.db.ExecContext(ctx, `
         INSERT INTO action_assessments (
-            trace_id, action_type, context_hash, alert_name,
+            trace_id, action_type, context_hash, signal_name,
             namespace, resource_name, executed_at, scheduled_for, status
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending')
         ON CONFLICT (trace_id) DO NOTHING
-    `, assessment.TraceID, assessment.ActionType, assessment.ContextHash,
-       assessment.AlertName, assessment.Namespace, assessment.ResourceName,
+    `,        assessment.TraceID, assessment.ActionType, assessment.ContextHash,
+       assessment.SignalName, assessment.Namespace, assessment.ResourceName,
        assessment.ExecutedAt, assessment.ScheduledFor)
     
     if err != nil {

@@ -74,7 +74,7 @@ var _ = Describe("ADR-056 PostRCAContext Integration", Label("integration", "adr
 					SignalContext: aianalysisv1alpha1.SignalContextInput{
 						Fingerprint:      "fp-it-aa-056-" + suffix,
 						Severity:         "critical",
-						SignalType:       "CrashLoopBackOff",
+						SignalName:       "CrashLoopBackOff",
 						Environment:      "staging",
 						BusinessPriority: "P1",
 						TargetResource: aianalysisv1alpha1.TargetResource{

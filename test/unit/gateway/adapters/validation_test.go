@@ -35,7 +35,7 @@ var _ = Describe("BR-GATEWAY-003: Payload Validation", func() {
 	)
 
 	BeforeEach(func() {
-		adapter = adapters.NewPrometheusAdapter()
+		adapter = adapters.NewPrometheusAdapter(nil, nil)
 		ctx = context.Background()
 	})
 

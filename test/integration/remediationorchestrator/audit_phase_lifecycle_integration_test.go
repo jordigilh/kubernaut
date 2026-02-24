@@ -124,7 +124,7 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 				SignalFingerprint: fingerprint,
 				SignalName:        "PhaseTransitionTest",
 				Severity:          "medium",
-				SignalType:        "prometheus",
+				SignalType:        "alert",
 				TargetType:        "kubernetes",
 				TargetResource: remediationv1.ResourceIdentifier{
 					Kind:      "Pod",
@@ -332,6 +332,17 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 				WorkflowID:     "test-workflow",
 				Version:        "1.0.0",
 				ExecutionBundle: "test-image:latest",
+			}
+			// DD-HAPI-006: AffectedResource is required for routing to WorkflowExecution
+			ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+				Summary:    "Test root cause",
+				Severity:   "medium",
+				SignalType: "alert",
+				AffectedResource: &aianalysisv1.AffectedResource{
+					Kind:      "Pod",
+					Name:      "test-pod",
+					Namespace: testNamespace,
+				},
 			}
 			Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
 

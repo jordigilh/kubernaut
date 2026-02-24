@@ -71,7 +71,7 @@ var _ = Describe("E2E-HAPI-017: Three-Step Workflow Discovery", Label("e2e", "ha
 			req := &hapiclient.IncidentRequest{
 				IncidentID:        "test-discovery-017-001",
 				RemediationID:     "test-rem-017-001",
-				SignalType:        "OOMKilled",
+				SignalName:        "OOMKilled",
 				Severity:          "critical",
 				SignalSource:      "prometheus",
 				ResourceNamespace: "production",
@@ -133,7 +133,7 @@ var _ = Describe("E2E-HAPI-017: Three-Step Workflow Discovery", Label("e2e", "ha
 			req := &hapiclient.IncidentRequest{
 				IncidentID:        "test-discovery-017-001b",
 				RemediationID:     "test-rem-017-001b",
-				SignalType:        "CrashLoopBackOff",
+				SignalName:        "CrashLoopBackOff",
 				Severity:          "high",
 				SignalSource:      "kubernetes",
 				ResourceNamespace: "staging",
@@ -175,7 +175,7 @@ var _ = Describe("E2E-HAPI-017: Three-Step Workflow Discovery", Label("e2e", "ha
 				WorkflowExecutionRef: "workflow-exec-" + failedWorkflowID,
 				OriginalRca: hapiclient.OriginalRCA{
 					Summary:             "Initial OOMKilled RCA — memory limit exceeded",
-					SignalType:          "OOMKilled",
+					SignalName:          "OOMKilled",
 					Severity:            "critical",
 					ContributingFactors: []string{"memory_exhaustion", "traffic_spike"},
 				},
@@ -213,7 +213,7 @@ var _ = Describe("E2E-HAPI-017: Three-Step Workflow Discovery", Label("e2e", "ha
 			req := &hapiclient.RecoveryRequest{
 				IncidentID:            "test-recovery-017-002",
 				RemediationID:         "test-rem-017-002",
-				SignalType:            hapiclient.NewOptNilString("OOMKilled"),
+				SignalName:            hapiclient.NewOptNilString("OOMKilled"),
 				Severity:              hapiclient.NewOptNilSeverity(hapiclient.SeverityCritical),
 				IsRecoveryAttempt:     hapiclient.NewOptBool(true),
 				RecoveryAttemptNumber: hapiclient.NewOptNilInt(2),

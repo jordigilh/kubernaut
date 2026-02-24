@@ -88,7 +88,7 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 						Fingerprint:      "e2e-recovery-fp-001",
 						Severity:         "critical",
-						SignalType:       "OOMKilled",
+						SignalName:       "OOMKilled",
 						Environment:      "staging",
 						BusinessPriority: "P1", // Must match oomkill-increase-memory-v1 catalog entry
 							TargetResource: aianalysisv1alpha1.TargetResource{
@@ -182,7 +182,7 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 						Fingerprint:      "e2e-recovery-fp-002",
 						Severity:         "critical",
-						SignalType:       "OOMKilled",
+						SignalName:       "OOMKilled",
 						Environment:      "staging",
 						BusinessPriority: "P1", // Must match oomkill-increase-memory-v1 catalog entry
 							TargetResource: aianalysisv1alpha1.TargetResource{
@@ -250,7 +250,7 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 						Fingerprint:      "e2e-recovery-fp-003",
 						Severity:         "high",  // Must match crashloop-config-fix-v1 catalog entry
-						SignalType:       "CrashLoopBackOff",
+						SignalName:       "CrashLoopBackOff",
 						Environment:      "staging", // Must be in [staging,production,test]
 						BusinessPriority: "P1",      // Must match crashloop-config-fix-v1 catalog entry
 							TargetResource: aianalysisv1alpha1.TargetResource{
@@ -370,7 +370,7 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      "e2e-recovery-fp-004",
 							Severity:         "critical",
-							SignalType:       "OOMKilled",
+							SignalName:       "OOMKilled",
 							Environment:      "staging", // Even staging requires approval for 3+ attempts
 							BusinessPriority: "P1",      // Must match oomkill-increase-memory-v1 catalog entry
 							TargetResource: aianalysisv1alpha1.TargetResource{
@@ -437,7 +437,7 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 						Fingerprint:      "e2e-recovery-fp-005",
 						Severity:         "high",  // Must match crashloop-config-fix-v1 catalog entry
-						SignalType:       "CrashLoopBackOff",
+						SignalName:       "CrashLoopBackOff",
 						Environment:      "staging",
 						BusinessPriority: "P1", // Must match crashloop-config-fix-v1 catalog entry
 							TargetResource: aianalysisv1alpha1.TargetResource{
@@ -518,7 +518,7 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 							// MOCK_NO_WORKFLOW_FOUND triggers HAPI mock edge case:
 							// - needs_human_review=true
 							// - human_review_reason="no_matching_workflows"
-							SignalType:       "MOCK_NO_WORKFLOW_FOUND",
+							SignalName:       "MOCK_NO_WORKFLOW_FOUND",
 							Environment:      "staging",
 							BusinessPriority: "P1",
 							TargetResource: aianalysisv1alpha1.TargetResource{

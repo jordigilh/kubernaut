@@ -109,8 +109,8 @@ var _ = Describe("E2E-RO-106-001: Predictive Signal Mode Propagation", Label("e2
 		sp.Status.Severity = "critical"
 		// BR-SP-106: Predictive signal mode fields
 		sp.Status.SignalMode = "predictive"
-		sp.Status.SignalType = "OOMKilled"                   // Normalized from PredictedOOMKill
-		sp.Status.OriginalSignalType = "PredictedOOMKill"    // Preserved for SOC2 audit trail
+		sp.Status.SignalName = "OOMKilled"                   // Normalized from PredictedOOMKill
+		sp.Status.SourceSignalName = "PredictedOOMKill"    // Preserved for SOC2 audit trail
 		sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
 			Environment:  "production",
 			Source:       "namespace-labels",
@@ -140,7 +140,7 @@ var _ = Describe("E2E-RO-106-001: Predictive Signal Mode Propagation", Label("e2
 			"BR-SP-106/ADR-054: AIAnalysis MUST propagate signalMode=predictive from SP.Status")
 
 		By("6. Verifying AIAnalysis has NORMALIZED signal type")
-		Expect(analysis.Spec.AnalysisRequest.SignalContext.SignalType).To(Equal("OOMKilled"),
+		Expect(analysis.Spec.AnalysisRequest.SignalContext.SignalName).To(Equal("OOMKilled"),
 			"BR-SP-106/ADR-054: AIAnalysis MUST use normalized SignalType from SP.Status (not PredictedOOMKill)")
 
 		GinkgoWriter.Println("E2E-RO-106-001: Predictive signal mode propagation validated in Kind cluster")
@@ -196,7 +196,7 @@ var _ = Describe("E2E-RO-106-001: Predictive Signal Mode Propagation", Label("e2
 		sp.Status.Phase = signalprocessingv1.PhaseCompleted
 		sp.Status.Severity = "critical"
 		sp.Status.SignalMode = "reactive"
-		sp.Status.SignalType = "OOMKilled" // Unchanged for reactive
+		sp.Status.SignalName = "OOMKilled" // Unchanged for reactive
 		sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
 			Environment:  "production",
 			Source:       "namespace-labels",
@@ -223,7 +223,7 @@ var _ = Describe("E2E-RO-106-001: Predictive Signal Mode Propagation", Label("e2
 
 		Expect(analysis.Spec.AnalysisRequest.SignalContext.SignalMode).To(Equal("reactive"),
 			"Standard signals should have signalMode=reactive in AIAnalysis")
-		Expect(analysis.Spec.AnalysisRequest.SignalContext.SignalType).To(Equal("OOMKilled"),
+		Expect(analysis.Spec.AnalysisRequest.SignalContext.SignalName).To(Equal("OOMKilled"),
 			"Reactive signal type should pass through unchanged")
 
 		GinkgoWriter.Println("E2E-RO-106-001: Reactive signal mode propagation validated in Kind cluster")

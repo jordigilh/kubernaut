@@ -56,7 +56,7 @@ var _ = Describe("BR-GATEWAY-001: Adapter Registry enables multi-source signal i
 
 		It("tracks registered adapter count for startup validation", func() {
 			// BUSINESS OUTCOME: Operators know how many signal sources are active
-			_ = registry.Register(adapters.NewPrometheusAdapter())
+			_ = registry.Register(adapters.NewPrometheusAdapter(nil, nil))
 			_ = registry.Register(adapters.NewKubernetesEventAdapter())
 
 			Expect(registry.Count()).To(Equal(2),
@@ -67,7 +67,7 @@ var _ = Describe("BR-GATEWAY-001: Adapter Registry enables multi-source signal i
 	Context("HTTP route registration for each signal source", func() {
 		It("exposes Prometheus route for AlertManager webhook integration", func() {
 			// BUSINESS OUTCOME: AlertManager can POST to /api/v1/signals/prometheus
-			_ = registry.Register(adapters.NewPrometheusAdapter())
+			_ = registry.Register(adapters.NewPrometheusAdapter(nil, nil))
 
 			adapter, found := registry.GetAdapter("prometheus")
 
@@ -92,9 +92,9 @@ var _ = Describe("BR-GATEWAY-001: Adapter Registry enables multi-source signal i
 		It("rejects duplicate adapter registration with clear error", func() {
 			// BUSINESS OUTCOME: Misconfiguration detected at startup, not runtime
 			// Prevents: accidental double-registration overwriting adapter settings
-			_ = registry.Register(adapters.NewPrometheusAdapter())
+			_ = registry.Register(adapters.NewPrometheusAdapter(nil, nil))
 
-			err := registry.Register(adapters.NewPrometheusAdapter())
+			err := registry.Register(adapters.NewPrometheusAdapter(nil, nil))
 
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("already registered"),
@@ -104,7 +104,7 @@ var _ = Describe("BR-GATEWAY-001: Adapter Registry enables multi-source signal i
 
 	Context("Runtime adapter lookup for request handling", func() {
 		BeforeEach(func() {
-			_ = registry.Register(adapters.NewPrometheusAdapter())
+			_ = registry.Register(adapters.NewPrometheusAdapter(nil, nil))
 		})
 
 		It("retrieves correct adapter for incoming HTTP request", func() {
@@ -151,7 +151,7 @@ var _ = Describe("BR-GATEWAY-003: Prometheus signal validation prevents invalid 
 	var adapter *adapters.PrometheusAdapter
 
 	BeforeEach(func() {
-		adapter = adapters.NewPrometheusAdapter()
+		adapter = adapters.NewPrometheusAdapter(nil, nil)
 	})
 
 	Context("Fingerprint required for deduplication", func() {
@@ -159,7 +159,7 @@ var _ = Describe("BR-GATEWAY-003: Prometheus signal validation prevents invalid 
 			// BUSINESS OUTCOME: Cannot deduplicate signals without fingerprint
 			// Prevents: duplicate RemediationRequest CRDs for same alert
 			signal := &types.NormalizedSignal{
-				AlertName: "HighMemoryUsage",
+				SignalName: "HighMemoryUsage",
 				Severity:  "critical",
 				// Missing: Fingerprint
 			}
@@ -209,7 +209,7 @@ var _ = Describe("BR-GATEWAY-003: Prometheus signal validation prevents invalid 
 			for _, tc := range testCases {
 				signal := &types.NormalizedSignal{
 					Fingerprint: "abc123",
-					AlertName:   "TestAlert",
+					SignalName:   "TestAlert",
 					Severity:    tc.severity,
 				}
 
@@ -223,7 +223,7 @@ var _ = Describe("BR-GATEWAY-003: Prometheus signal validation prevents invalid 
 		It("rejects empty severity - required for downstream policy", func() {
 			signal := &types.NormalizedSignal{
 				Fingerprint: "abc123",
-				AlertName:   "OOMKilled",
+				SignalName:   "OOMKilled",
 				Severity:    "", // Empty
 			}
 
@@ -270,7 +270,7 @@ var _ = Describe("BR-GATEWAY-002: K8s Event parsing extracts remediation targeti
 			signal, err := adapter.Parse(context.Background(), payload)
 
 			Expect(err).NotTo(HaveOccurred())
-			Expect(signal.AlertName).To(Equal("BackOff"),
+			Expect(signal.SignalName).To(Equal("BackOff"),
 				"AlertName=BackOff enables RO to select backoff-specific workflow")
 			Expect(signal.Resource.Kind).To(Equal("Pod"),
 				"Kind=Pod enables WE to target: kubectl delete pod")

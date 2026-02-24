@@ -1,0 +1,28 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: kubernaut-alpha-rules
+  namespace: demo-team-alpha
+  labels:
+    release: prometheus
+spec:
+  groups:
+  - name: kubernaut-team-alpha
+    rules:
+    - alert: KubePodCrashLooping
+      expr: |
+        increase(
+          kube_pod_container_status_restarts_total{
+            namespace="demo-team-alpha",
+            container="worker"
+          }[3m]
+        ) > 3
+      for: 1m
+      labels:
+        severity: critical
+      annotations:
+        summary: >
+          Container {{ $labels.container }} in pod {{ $labels.pod }} (team-alpha)
+          is in CrashLoopBackOff.
+        description: >
+          Worker in team-alpha namespace is crashing. Team has high risk tolerance.

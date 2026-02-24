@@ -62,7 +62,7 @@ var _ = Describe("Audit Events Batch Handler Unit Tests (DD-AUDIT-002)", func() 
 				"event_outcome":   "success",
 				"event_timestamp": time.Now().UTC().Format(time.RFC3339Nano),
 				"correlation_id":  "test-correlation-001",
-				"event_data":      map[string]interface{}{"signal_type": "prometheus"},
+				"event_data":      map[string]interface{}{"signal_type": "alert"},
 			}
 
 			body, err := json.Marshal(singleEvent)
@@ -104,7 +104,7 @@ var _ = Describe("Audit Events Batch Handler Unit Tests (DD-AUDIT-002)", func() 
 				"event_outcome":   "success",
 				"event_timestamp": time.Now().UTC().Format(time.RFC3339Nano),
 				"correlation_id":  correlationID,
-				"event_data":      map[string]interface{}{"signal_type": "prometheus"},
+				"event_data":      map[string]interface{}{"signal_type": "alert"},
 			}
 		}
 
@@ -137,7 +137,7 @@ var _ = Describe("Audit Events Batch Handler Unit Tests (DD-AUDIT-002)", func() 
 				"outcome":         "success",  // legacy for event_outcome
 				"event_timestamp": time.Now().UTC().Format(time.RFC3339Nano),
 				"correlation_id":  "test-legacy-001",
-				"event_data":      map[string]interface{}{"signal_type": "prometheus"},
+				"event_data":      map[string]interface{}{"signal_type": "alert"},
 			}
 
 			// Verify legacy fields are present

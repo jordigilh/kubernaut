@@ -22,7 +22,7 @@ class TestRCAIncompleteScenario:
 
         # Verify scenario identity
         assert scenario.name == "rca_incomplete"
-        assert scenario.signal_type == "MOCK_RCA_INCOMPLETE"
+        assert scenario.signal_name == "MOCK_RCA_INCOMPLETE"
 
         # Verify workflow IS selected (BR-HAPI-212: Workflow selected but affectedResource missing)
         assert scenario.workflow_id != "", "rca_incomplete should have a workflow_id (not empty)"
@@ -65,7 +65,7 @@ class TestRCAIncompleteScenario:
             "no_workflow_found should have zero confidence (no workflow match)"
 
         # Different signal types
-        assert rca_incomplete.signal_type != no_workflow_found.signal_type, \
+        assert rca_incomplete.signal_name != no_workflow_found.signal_name, \
             "rca_incomplete and no_workflow_found should have distinct signal types"
 
     def test_rca_incomplete_parameters(self):
@@ -112,12 +112,12 @@ class TestRCAIncompleteIntegrationPattern:
         assert actual_scenarios == expected_scenarios, \
             f"Expected {expected_scenarios}, got {actual_scenarios}"
 
-    def test_rca_incomplete_unique_signal_type(self):
+    def test_rca_incomplete_unique_signal_name(self):
         """Verify rca_incomplete has a unique signal type (no collisions)."""
-        signal_types = [scenario.signal_type for scenario in MOCK_SCENARIOS.values()]
+        signal_names = [scenario.signal_name for scenario in MOCK_SCENARIOS.values()]
 
         # Count occurrences of MOCK_RCA_INCOMPLETE
-        rca_incomplete_count = signal_types.count("MOCK_RCA_INCOMPLETE")
+        rca_incomplete_count = signal_names.count("MOCK_RCA_INCOMPLETE")
         assert rca_incomplete_count == 1, \
             "MOCK_RCA_INCOMPLETE should appear exactly once in scenarios"
 

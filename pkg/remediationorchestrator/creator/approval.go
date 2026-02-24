@@ -42,17 +42,23 @@ const DefaultApprovalTimeout = 15 * time.Minute
 // ApprovalCreator creates RemediationApprovalRequest CRDs.
 // Reference: ADR-040, BR-ORCH-026
 type ApprovalCreator struct {
-	client  client.Client
-	scheme  *runtime.Scheme
-	metrics *metrics.Metrics // DD-METRICS-001: Dependency-injected metrics
+	client          client.Client
+	scheme          *runtime.Scheme
+	metrics         *metrics.Metrics // DD-METRICS-001: Dependency-injected metrics
+	approvalTimeout time.Duration    // ADR-040: Configurable approval deadline
 }
 
 // NewApprovalCreator creates a new ApprovalCreator.
-func NewApprovalCreator(c client.Client, s *runtime.Scheme, m *metrics.Metrics) *ApprovalCreator {
+// The approvalTimeout parameter sets the RequiredBy deadline on new RARs.
+func NewApprovalCreator(c client.Client, s *runtime.Scheme, m *metrics.Metrics, approvalTimeout time.Duration) *ApprovalCreator {
+	if approvalTimeout <= 0 {
+		approvalTimeout = DefaultApprovalTimeout
+	}
 	return &ApprovalCreator{
-		client:  c,
-		scheme:  s,
-		metrics: m,
+		client:          c,
+		scheme:          s,
+		metrics:         m,
+		approvalTimeout: approvalTimeout,
 	}
 }
 
@@ -158,8 +164,7 @@ func (c *ApprovalCreator) buildApprovalRequest(
 	ai *aianalysisv1.AIAnalysis,
 	name string,
 ) *remediationv1.RemediationApprovalRequest {
-	// Calculate deadline (V1.0: default 15 minutes)
-	requiredBy := metav1.NewTime(time.Now().Add(DefaultApprovalTimeout))
+	requiredBy := metav1.NewTime(time.Now().Add(c.approvalTimeout))
 
 	// Determine confidence level
 	confidence := float64(0)

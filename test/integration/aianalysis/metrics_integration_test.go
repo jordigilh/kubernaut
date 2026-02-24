@@ -117,7 +117,7 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      "test-fp-001",
 							Severity:         "critical",
-							SignalType:       "OOMKilled",
+							SignalName:       "OOMKilled",
 							Environment:      "staging",
 							BusinessPriority: "P1",
 							TargetResource: aianalysisv1alpha1.TargetResource{
@@ -192,7 +192,7 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      "test-fp-002",
 							Severity:         "critical",
-							SignalType:       "OOMKilled",
+							SignalName:       "OOMKilled",
 							Environment:      "staging",
 							BusinessPriority: "P1",
 							TargetResource: aianalysisv1alpha1.TargetResource{
@@ -253,7 +253,7 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      "test-fp-003",
 							Severity:         "critical",
-							SignalType:       "CrashLoopBackOff",
+							SignalName:       "CrashLoopBackOff",
 							Environment:      "production", // Production should require approval
 							BusinessPriority: "P0",
 							TargetResource: aianalysisv1alpha1.TargetResource{
@@ -317,7 +317,7 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      "test-fp-004",
 							Severity:         "critical",
-							SignalType:       "ImagePullBackOff",
+							SignalName:       "ImagePullBackOff",
 							Environment:      "staging",
 							BusinessPriority: "P2",
 							TargetResource: aianalysisv1alpha1.TargetResource{
@@ -374,7 +374,7 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      "test-fp-005",
 							Severity:         "medium", // DD-SEVERITY-001: Use normalized severity enum
-							SignalType:       "PodEviction",
+							SignalName:       "PodEviction",
 							Environment:      "development",
 							BusinessPriority: "P3",
 							TargetResource: aianalysisv1alpha1.TargetResource{

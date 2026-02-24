@@ -61,7 +61,7 @@ class TestSignalProcessingAuditPayload(unittest.TestCase):
                 from_phase = '',
                 to_phase = '',
                 signal_mode = 'predictive',
-                original_signal_type = 'PredictedOOMKill',
+                source_signal_name = 'PredictedOOMKill',
                 error = ''
             )
         else:

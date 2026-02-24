@@ -53,7 +53,11 @@ func setupScheme() *runtime.Scheme {
 // MockRoutingEngine is a mock implementation for unit tests
 type MockRoutingEngine struct{}
 
-func (m *MockRoutingEngine) CheckBlockingConditions(ctx context.Context, rr *remediationv1.RemediationRequest, workflowID string) (*routing.BlockingCondition, error) {
+func (m *MockRoutingEngine) CheckPreAnalysisConditions(ctx context.Context, rr *remediationv1.RemediationRequest) (*routing.BlockingCondition, error) {
+	return nil, nil // Always return not blocked for unit tests
+}
+
+func (m *MockRoutingEngine) CheckPostAnalysisConditions(ctx context.Context, rr *remediationv1.RemediationRequest, workflowID string, targetResource string) (*routing.BlockingCondition, error) {
 	return nil, nil // Always return not blocked for unit tests
 }
 
@@ -101,7 +105,7 @@ func newRemediationRequest(name, namespace string, phase remediationv1.Remediati
 			SignalName:        "test-signal",
 			SignalFingerprint: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
 			Severity:          "critical",
-			SignalType:        "prometheus",
+			SignalType:        "alert",
 			TargetType:        "kubernetes",
 			FiringTime:        now,
 			ReceivedTime:      now,
@@ -194,6 +198,7 @@ func newSignalProcessing(name, namespace, rrName string, phase signalprocessingv
 }
 
 // newAIAnalysisCompleted creates a completed AIAnalysis CRD
+// DD-HAPI-006: AffectedResource is mandatory for completed AA (HAPI validates via ADR-055)
 func newAIAnalysisCompleted(name, namespace, rrName string, confidence float64, workflowID string) *aianalysisv1.AIAnalysis {
 	ai := newAIAnalysis(name, namespace, rrName, aianalysisv1.PhaseCompleted)
 	now := metav1.Now()
@@ -203,6 +208,15 @@ func newAIAnalysisCompleted(name, namespace, rrName string, confidence float64, 
 		Version:        "v1",
 		ExecutionBundle: "test-image:latest",
 		Confidence:     confidence,
+	}
+	ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+		Summary:  "Test root cause",
+		Severity: "high",
+		AffectedResource: &aianalysisv1.AffectedResource{
+			Kind:      "Deployment",
+			Name:      "test-deployment",
+			Namespace: namespace,
+		},
 	}
 
 	// Set approval required based on confidence
@@ -394,7 +408,7 @@ func newRemediationRequestWithTimeout(name, namespace string, phase remediationv
 			SignalName:        "test-signal",
 			SignalFingerprint: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
 			Severity:          "critical",
-			SignalType:        "prometheus",
+			SignalType:        "alert",
 			TargetType:        "kubernetes",
 			FiringTime:        creationTime,
 			ReceivedTime:      creationTime,

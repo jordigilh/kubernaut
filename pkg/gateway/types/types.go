@@ -39,9 +39,9 @@ type NormalizedSignal struct {
 	// Example: "a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456"
 	Fingerprint string
 
-	// AlertName is the human-readable signal name
+	// SignalName is the human-readable signal name
 	// Examples: "HighMemoryUsage", "CrashLoopBackOff", "NodeNotReady"
-	AlertName string
+	SignalName string
 
 	// Severity indicates signal criticality
 	// Valid values: "critical", "warning", "info"
@@ -71,7 +71,7 @@ type NormalizedSignal struct {
 	ReceivedTime time.Time
 
 	// SourceType indicates the signal source
-	// Examples: "prometheus-alert", "kubernetes-event", "grafana-alert"
+	// Examples: "alert" (normalized signal type for all adapters)
 	// Stored in RemediationRequest.Spec.SignalType
 	SourceType string
 
@@ -91,7 +91,9 @@ type NormalizedSignal struct {
 // different signal types (alerts may reference pods, events may reference nodes, etc.)
 type ResourceIdentifier struct {
 	// Kind is the Kubernetes resource type
-	// Examples: "Pod", "Deployment", "Node", "StatefulSet", "Service"
+	// Examples: "Pod", "Deployment", "StatefulSet", "DaemonSet", "Node", "Service",
+	//           "HorizontalPodAutoscaler", "PodDisruptionBudget", "PersistentVolumeClaim",
+	//           "Job", "CronJob"
 	Kind string
 
 	// Name is the resource instance name

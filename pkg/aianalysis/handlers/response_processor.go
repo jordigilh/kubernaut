@@ -80,7 +80,7 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 	)
 
 	// BR-AI-OBSERVABILITY-004: Record confidence score for AI quality tracking
-	p.metrics.RecordConfidenceScore(analysis.Spec.AnalysisRequest.SignalContext.SignalType, resp.Confidence)
+	p.metrics.RecordConfidenceScore(analysis.Spec.AnalysisRequest.SignalContext.SignalName, resp.Confidence)
 
 	// BR-HAPI-197: Check if HAPI explicitly requires human review (Layer 1 - Primary)
 	// CRITICAL: This MUST be checked FIRST. HAPI's explicit needs_human_review=true
@@ -221,7 +221,7 @@ func (p *ResponseProcessor) ProcessRecoveryResponse(ctx context.Context, analysi
 	)
 
 	// BR-AI-OBSERVABILITY-004: Record confidence score for AI quality tracking
-	p.metrics.RecordConfidenceScore(analysis.Spec.AnalysisRequest.SignalContext.SignalType, resp.AnalysisConfidence)
+	p.metrics.RecordConfidenceScore(analysis.Spec.AnalysisRequest.SignalContext.SignalName, resp.AnalysisConfidence)
 
 	// BR-HAPI-197: Check if recovery requires human review (validation failures)
 	// This handles cases where HAPI flagged validation failures explicitly
@@ -321,10 +321,6 @@ func (p *ResponseProcessor) PopulateRecoveryStatusFromRecovery(analysis *aianaly
 	if raMap["state_changed"] == true {
 		analysis.Status.RecoveryStatus.StateChanged = true
 	}
-	if currentSignal := GetStringFromMap(raMap, "current_signal_type"); currentSignal != "" {
-		analysis.Status.RecoveryStatus.CurrentSignalType = currentSignal
-	}
-
 	return true
 }
 
@@ -971,7 +967,7 @@ func ExtractRootCauseAnalysis(rcaData interface{}) *aianalysisv1.RootCauseAnalys
 	rca := &aianalysisv1.RootCauseAnalysis{
 		Summary:             GetStringFromMap(rcaMap, "summary"),
 		Severity:            GetStringFromMap(rcaMap, "severity"),
-		SignalType:          GetStringFromMap(rcaMap, "signal_type"),
+		SignalType:          GetStringFromMap(rcaMap, "signal_name"),
 		ContributingFactors: GetStringSliceFromMap(rcaMap, "contributing_factors"),
 	}
 

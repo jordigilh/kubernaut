@@ -93,7 +93,7 @@ def sample_previous_execution():
         "workflow_execution_ref": "we-test-e2e-001",
         "original_rca": {
             "summary": "Container exceeded memory limits",
-            "signal_type": "OOMKilled",
+            "signal_name": "OOMKilled",
             "severity": "critical",
             "contributing_factors": ["memory_leak", "high_load"]
         },
@@ -140,7 +140,7 @@ class TestRecoveryEndpointE2EHappyPath:
         recovery_request = RecoveryRequest(
             incident_id="e2e-recovery-001",
             remediation_id="req-e2e-2025-12-13-001",
-            signal_type="OOMKilled",
+            signal_name="OOMKilled",
             severity="critical",
             resource_namespace="production",
             resource_kind="Deployment",
@@ -191,7 +191,7 @@ class TestRecoveryEndpointE2EFieldValidation:
         recovery_request = RecoveryRequest(
             incident_id="e2e-recovery-002",
             remediation_id="req-e2e-2025-12-13-002",
-            signal_type="OOMKilled",
+            signal_name="OOMKilled",
             severity="critical",
             environment="production",
             priority="P0",
@@ -243,7 +243,7 @@ class TestRecoveryEndpointE2EPreviousExecution:
         recovery_request = RecoveryRequest(
             incident_id="e2e-recovery-003",
             remediation_id="req-e2e-2025-12-13-003",
-            signal_type="OOMKilled",
+            signal_name="OOMKilled",
             severity="critical",
             environment="production",
             priority="P0",
@@ -284,7 +284,7 @@ class TestRecoveryEndpointE2EDetectedLabels:
         recovery_request = RecoveryRequest(
             incident_id="e2e-recovery-004",
             remediation_id="req-e2e-2025-12-13-004",
-            signal_type="OOMKilled",
+            signal_name="OOMKilled",
             severity="critical",
             environment="production",
             priority="P0",
@@ -327,7 +327,7 @@ class TestRecoveryEndpointE2EMockMode:
         recovery_request = RecoveryRequest(
             incident_id="e2e-recovery-mock-001",
             remediation_id="req-e2e-mock-2025-12-13-001",
-            signal_type="CrashLoopBackOff",
+            signal_name="CrashLoopBackOff",
             severity="high",
             environment="staging",
             priority="P1",
@@ -372,7 +372,7 @@ class TestRecoveryEndpointE2EErrorScenarios:
             recovery_request = RecoveryRequest(
                 incident_id="e2e-recovery-invalid-001",
                 remediation_id="req-e2e-invalid-001",
-                signal_type="OOMKilled",
+                signal_name="OOMKilled",
                 severity="critical",
                 is_recovery_attempt=True,
                 recovery_attempt_number=0  # Invalid: must be >= 1
@@ -389,7 +389,7 @@ class TestRecoveryEndpointE2EErrorScenarios:
         recovery_request = RecoveryRequest(
             incident_id="e2e-recovery-invalid-002",
             remediation_id="req-e2e-invalid-002",
-            signal_type="OOMKilled",
+            signal_name="OOMKilled",
             severity="critical",
             is_recovery_attempt=True,
             recovery_attempt_number=1
@@ -424,7 +424,7 @@ class TestRecoveryEndpointE2EDataStorageIntegration:
         recovery_request = RecoveryRequest(
             incident_id="e2e-recovery-ds-001",
             remediation_id="req-e2e-ds-001",
-            signal_type="OOMKilled",
+            signal_name="OOMKilled",
             severity="critical",
             resource_namespace="production",
             environment="production",
@@ -461,7 +461,7 @@ class TestRecoveryEndpointE2EWorkflowValidation:
         recovery_request = RecoveryRequest(
             incident_id="e2e-recovery-exec-001",
             remediation_id="req-e2e-exec-001",
-            signal_type="OOMKilled",
+            signal_name="OOMKilled",
             severity="critical",
             environment="production",
             priority="P0",
@@ -519,7 +519,7 @@ class TestRecoveryEndpointE2EEndToEndFlow:
         incident_request = IncidentRequest(
             incident_id="e2e-flow-001",
             remediation_id="req-e2e-flow-001",
-            signal_type="OOMKilled",
+            signal_name="OOMKilled",
             severity="critical",
             signal_source="prometheus",
             resource_namespace="production",
@@ -546,7 +546,7 @@ class TestRecoveryEndpointE2EEndToEndFlow:
             "workflow_execution_ref": "we-e2e-flow-001",
             "original_rca": {
                 "summary": incident_response.root_cause_analysis.get("summary", "OOM"),
-                "signal_type": "OOMKilled",
+                "signal_name": "OOMKilled",
                 "severity": "critical"
             },
             "selected_workflow": {
@@ -575,7 +575,7 @@ class TestRecoveryEndpointE2EEndToEndFlow:
         recovery_request = RecoveryRequest(
             incident_id="e2e-flow-001",
             remediation_id="req-e2e-flow-001",
-            signal_type="OOMKilled",
+            signal_name="OOMKilled",
             severity="critical",
             environment="production",
             priority="P0",

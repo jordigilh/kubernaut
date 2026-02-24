@@ -428,7 +428,7 @@ func createTestRemediationRequest(namespace, name string) *remediationv1alpha1.R
 			SignalFingerprint: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", // SHA256 hash
 			SignalName:        "TestE2EAlert",
 			Severity:          "critical", // Default, overridden by tests
-			SignalType:        "prometheus",
+			SignalType:        "alert",
 			SignalSource:      "test-e2e-source",
 			TargetType:        "kubernetes",
 			FiringTime:        metav1.Now(), // When signal started firing

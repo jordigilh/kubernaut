@@ -85,7 +85,7 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 				SignalFingerprint: fingerprint,
 				SignalName:        "IntegrationTestSignal",
 				Severity:          "warning",
-				SignalType:        "prometheus",
+				SignalType:        "alert",
 				TargetType:        "kubernetes",
 				TargetResource: remediationv1.ResourceIdentifier{
 					Kind:      "Pod",
@@ -265,6 +265,17 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 				Confidence:     0.95,
 			}
 			ai.Status.ApprovalRequired = false
+			// DD-HAPI-006: AffectedResource is required for routing to WorkflowExecution
+			ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+				Summary:    "Test root cause",
+				Severity:   "critical",
+				SignalType: "alert",
+				AffectedResource: &aianalysisv1.AffectedResource{
+					Kind:      "Pod",
+					Name:      "test-pod",
+					Namespace: testNamespace,
+				},
+			}
 			Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
 
 			// Wait for Executing

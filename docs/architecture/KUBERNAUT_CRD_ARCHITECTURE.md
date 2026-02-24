@@ -375,7 +375,7 @@ Kubernaut's V1.0 architecture consists of:
 ```yaml
 spec:
   alertFingerprint: string          # Deduplication key
-  alertName: string
+  signalName: string               # Semantic signal/alert name (Issue #166)
   severity: string                   # critical, warning, info
   environment: string                # prod, staging, dev
   priority: string                   # P0, P1, P2, P3
@@ -427,7 +427,7 @@ status:
 ```yaml
 spec:
   alertData:                         # From RemediationRequest
-    alertName: string
+    signalName: string               # Semantic signal/alert name (Issue #166)
     namespace: string
     resource: object
   isRecoveryAttempt: boolean         # Fetch recovery context?
@@ -1480,7 +1480,7 @@ func (r *RemediationOrchestratorReconciler) createSignalProcessing(
         },
         Spec: processingv1.SignalProcessingSpec{
             AlertData: processingv1.AlertData{
-                AlertName: remediation.Spec.AlertName,
+                SignalName: remediation.Spec.SignalName,
                 Namespace: remediation.Spec.Namespace,
                 Resource:  remediation.Spec.Resource,
             },

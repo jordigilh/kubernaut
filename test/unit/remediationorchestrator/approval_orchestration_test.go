@@ -34,7 +34,7 @@ var _ = Describe("ApprovalOrchestration", func() {
 		Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
 		Expect(aianalysisv1.AddToScheme(scheme)).To(Succeed())
 		fakeClient = fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&remediationv1.RemediationApprovalRequest{}).Build()
-		ac = creator.NewApprovalCreator(fakeClient, scheme, nil)
+		ac = creator.NewApprovalCreator(fakeClient, scheme, nil, creator.DefaultApprovalTimeout)
 		ctx = context.Background()
 	})
 
@@ -56,7 +56,7 @@ var _ = Describe("ApprovalOrchestration", func() {
 						SignalName:        "TestAlert",
 						SignalFingerprint: "fp12345678901234567890123456789012345678901234567890123456789012",
 						Severity:          "critical",
-						SignalType:        "prometheus",
+						SignalType:        "alert",
 						TargetType:        "kubernetes",
 						TargetResource: remediationv1.ResourceIdentifier{
 							Kind:      "Deployment",

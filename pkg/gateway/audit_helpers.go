@@ -46,8 +46,7 @@ import (
 //
 // **Authority**: api/openapi/data-storage-v1.yaml (GatewayAuditPayload.signal_type enum)
 var signalTypeMapping = map[string]api.GatewayAuditPayloadSignalType{
-	adapters.SourceTypePrometheusAlert: api.GatewayAuditPayloadSignalTypePrometheusAlert,
-	adapters.SourceTypeKubernetesEvent: api.GatewayAuditPayloadSignalTypeKubernetesEvent,
+	adapters.SourceTypeAlert: api.GatewayAuditPayloadSignalTypeAlert,
 }
 
 // ❌ REMOVED: severityMapping (DD-SEVERITY-001 v1.2)

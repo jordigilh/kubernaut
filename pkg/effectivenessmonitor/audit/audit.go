@@ -83,8 +83,8 @@ type AlertEvent struct {
 	EventData
 	// Score is the alert resolution score (0.0 or 1.0).
 	Score *float64
-	// AlertName is the name of the checked alert.
-	AlertName string
+	// SignalName is the name of the checked alert.
+	SignalName string
 	// AlertResolved indicates whether the alert has resolved.
 	AlertResolved bool
 }
@@ -185,7 +185,7 @@ func (b *builder) BuildAlertEvent(data EventData, score *float64, alertName stri
 	return AlertEvent{
 		EventData:     data,
 		Score:         score,
-		AlertName:     alertName,
+		SignalName:     alertName,
 		AlertResolved: resolved,
 	}
 }

@@ -620,23 +620,23 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 	}
 
 	// 4. Signal Mode Classification (BR-SP-106, ADR-054) - OPTIONAL (defaults to reactive)
-	// Determines if the signal is predictive or reactive, and normalizes the signal type
+	// Determines if the signal is predictive or reactive, and normalizes the signal name
 	// for downstream workflow catalog matching.
 	var signalModeResult classifier.SignalModeResult
 	if r.SignalModeClassifier != nil {
-		signalModeResult = r.SignalModeClassifier.Classify(signal.Type)
+		signalModeResult = r.SignalModeClassifier.Classify(signal.Name)
 	} else {
-		// Default: reactive mode, type unchanged (backwards compatible)
+		// Default: reactive mode, name unchanged (backwards compatible)
 		signalModeResult = classifier.SignalModeResult{
-			SignalMode:         "reactive",
-			NormalizedType:     signal.Type,
-			OriginalSignalType: "",
+			SignalMode:       "reactive",
+			SignalName:       signal.Name,
+			SourceSignalName: "",
 		}
 	}
 	logger.V(1).Info("Signal mode classified",
 		"signalMode", signalModeResult.SignalMode,
-		"normalizedType", signalModeResult.NormalizedType,
-		"originalType", signalModeResult.OriginalSignalType)
+		"signalName", signalModeResult.SignalName,
+		"sourceSignalName", signalModeResult.SourceSignalName)
 
 	// BR-SP-110: Prepare classification condition message (will be set inside atomic update)
 	classificationMessage := fmt.Sprintf("Classified: environment=%s (source=%s), priority=%s (source=%s)",
@@ -654,7 +654,7 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 	// Add signal mode to classification message
 	if signalModeResult.SignalMode == "predictive" {
 		classificationMessage += fmt.Sprintf(", signalMode=predictive (normalized: %s → %s)",
-			signalModeResult.OriginalSignalType, signalModeResult.NormalizedType)
+			signalModeResult.SourceSignalName, signalModeResult.SignalName)
 	}
 
 	// ========================================
@@ -675,12 +675,12 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 		if r.SeverityClassifier != nil {
 			sp.Status.PolicyHash = r.SeverityClassifier.GetPolicyHash()
 		}
-		// BR-SP-106: Set signal mode and normalized signal type (ADR-054)
+		// BR-SP-106: Set signal mode and normalized signal name (ADR-054)
 		// SignalType is set for ALL signals (not just predictive) — it is the
-		// authoritative signal type for all downstream consumers (RO, AA, HAPI).
+		// authoritative signal name for all downstream consumers (RO, AA, HAPI).
 		sp.Status.SignalMode = signalModeResult.SignalMode
-		sp.Status.SignalType = signalModeResult.NormalizedType
-		sp.Status.OriginalSignalType = signalModeResult.OriginalSignalType
+		sp.Status.SignalName = signalModeResult.SignalName
+		sp.Status.SourceSignalName = signalModeResult.SourceSignalName
 		sp.Status.Phase = signalprocessingv1alpha1.PhaseCategorizing
 		// BR-SP-110: Set condition AFTER refetch to prevent wipe
 		spconditions.SetClassificationComplete(sp, true, "", classificationMessage)

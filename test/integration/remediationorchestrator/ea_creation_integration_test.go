@@ -84,6 +84,17 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 			ExecutionBundle: "test-image:latest",
 			Confidence:     0.95,
 		}
+		// DD-HAPI-006: AffectedResource is required for routing to WorkflowExecution
+		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+			Summary:    "OOM kill detected",
+			Severity:   "critical",
+			SignalType: "alert",
+			AffectedResource: &aianalysisv1.AffectedResource{
+				Kind:      "Deployment",
+				Name:      "test-app",
+				Namespace: ns,
+			},
+		}
 		now := metav1.Now()
 		ai.Status.CompletedAt = &now
 		Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
@@ -266,6 +277,17 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 		ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 			WorkflowID: "wf-restart-pods", Version: "v1.0.0",
 			ExecutionBundle: "test-image:latest", Confidence: 0.95,
+		}
+		// DD-HAPI-006: AffectedResource is required for routing to WorkflowExecution
+		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+			Summary:    "OOM kill detected",
+			Severity:   "critical",
+			SignalType: "alert",
+			AffectedResource: &aianalysisv1.AffectedResource{
+				Kind:      "Deployment",
+				Name:      "test-app",
+				Namespace: ns,
+			},
 		}
 		completedAt := metav1.Now()
 		ai.Status.CompletedAt = &completedAt

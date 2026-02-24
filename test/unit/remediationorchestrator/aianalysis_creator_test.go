@@ -118,7 +118,7 @@ var _ = Describe("AIAnalysisCreator", func() {
 			aiCreator := creator.NewAIAnalysisCreator(fakeClient, scheme, nil)
 			rr := helpers.NewRemediationRequest("test-remediation", "default", helpers.RemediationRequestOpts{
 				Severity:   "sev1", // External severity (not used by AIAnalysis per DD-SEVERITY-001)
-				SignalType: "kubernetes-event",
+				SignalType: "alert",
 			})
 
 				// Act
@@ -144,7 +144,7 @@ var _ = Describe("AIAnalysisCreator", func() {
 			// Fingerprint comes from RR.Spec
 			Expect(createdAI.Spec.AnalysisRequest.SignalContext.Fingerprint).To(Equal(rr.Spec.SignalFingerprint))
 			// BR-SP-106: SignalType now comes from SP.Status (normalized by signal mode classifier)
-			Expect(createdAI.Spec.AnalysisRequest.SignalContext.SignalType).To(Equal(completedSP.Status.SignalType))
+			Expect(createdAI.Spec.AnalysisRequest.SignalContext.SignalName).To(Equal(completedSP.Status.SignalName))
 			// DD-SEVERITY-001: Severity, Environment, and Priority come from SP.Status (normalized)
 			Expect(createdAI.Spec.AnalysisRequest.SignalContext.Severity).To(Equal(completedSP.Status.Severity))
 			Expect(createdAI.Spec.AnalysisRequest.SignalContext.Environment).To(Equal(completedSP.Status.EnvironmentClassification.Environment))
@@ -403,8 +403,8 @@ var _ = Describe("AIAnalysisCreator", func() {
 				// Arrange: SP has predictive signal mode
 				completedSP := helpers.NewCompletedSignalProcessing("sp-test-remediation", "default")
 				completedSP.Status.SignalMode = "predictive"
-				completedSP.Status.SignalType = "OOMKilled"             // normalized
-				completedSP.Status.OriginalSignalType = "PredictedOOMKill" // preserved for audit
+				completedSP.Status.SignalName = "OOMKilled"             // normalized
+				completedSP.Status.SourceSignalName = "PredictedOOMKill" // preserved for audit
 
 				fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
 					WithStatusSubresource(completedSP).Build()
@@ -431,8 +431,8 @@ var _ = Describe("AIAnalysisCreator", func() {
 				// Arrange: SP has normalized signal type
 				completedSP := helpers.NewCompletedSignalProcessing("sp-test-remediation", "default")
 				completedSP.Status.SignalMode = "predictive"
-				completedSP.Status.SignalType = "OOMKilled"             // Normalized by SP
-				completedSP.Status.OriginalSignalType = "PredictedOOMKill"
+				completedSP.Status.SignalName = "OOMKilled"             // Normalized by SP
+				completedSP.Status.SourceSignalName = "PredictedOOMKill"
 
 				fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
 					WithStatusSubresource(completedSP).Build()
@@ -452,8 +452,8 @@ var _ = Describe("AIAnalysisCreator", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				// SignalType should come from SP status (normalized), NOT from RR spec
-				Expect(createdAI.Spec.AnalysisRequest.SignalContext.SignalType).To(Equal("OOMKilled"))
-				Expect(createdAI.Spec.AnalysisRequest.SignalContext.SignalType).ToNot(Equal("PredictedOOMKill"))
+				Expect(createdAI.Spec.AnalysisRequest.SignalContext.SignalName).To(Equal("OOMKilled"))
+				Expect(createdAI.Spec.AnalysisRequest.SignalContext.SignalName).ToNot(Equal("PredictedOOMKill"))
 			})
 
 			It("should default to reactive signal mode for reactive signals", func() {
@@ -478,7 +478,7 @@ var _ = Describe("AIAnalysisCreator", func() {
 
 				Expect(createdAI.Spec.AnalysisRequest.SignalContext.SignalMode).To(Equal("reactive"))
 				// SignalType for reactive comes from SP status (which mirrors Spec.Signal.Type)
-				Expect(createdAI.Spec.AnalysisRequest.SignalContext.SignalType).To(Equal("prometheus"))
+				Expect(createdAI.Spec.AnalysisRequest.SignalContext.SignalName).To(Equal("alert"))
 			})
 		})
 	})

@@ -42,7 +42,7 @@ class EffectivenessAssessmentAuditPayload(BaseModel):
     score: Optional[Union[StrictFloat, StrictInt]] = Field(default=None, description="Component score (0.0-1.0), null if not assessed")
     details: Optional[StrictStr] = Field(default=None, description="Human-readable details about the assessment result")
     reason: Optional[StrictStr] = Field(default=None, description="Assessment completion reason (only for assessment.completed events)")
-    alert_name: Optional[StrictStr] = Field(default=None, description="Name of the original alert that triggered the remediation pipeline. Extracted from EA spec target resource context. Only present for assessment.completed events. ")
+    signal_name: Optional[StrictStr] = Field(default=None, description="Name of the original signal that triggered the remediation pipeline. Extracted from EA spec target resource context. Only present for assessment.completed events. ")
     components_assessed: Optional[List[StrictStr]] = Field(default=None, description="List of component names that were assessed (e.g. [\"health\",\"hash\",\"alert\",\"metrics\"]). Only present for assessment.completed events. ")
     completed_at: Optional[datetime] = Field(default=None, description="Timestamp when the assessment completed (EA status.completedAt). Only present for assessment.completed events. ")
     assessment_duration_seconds: Optional[Union[StrictFloat, StrictInt]] = Field(default=None, description="Seconds from RemediationRequest creation to assessment completion. Computed as (completedAt - remediationCreatedAt). Null if remediationCreatedAt is not set. Only present for assessment.completed events. Distinct from alert_resolution.resolution_time_seconds which measures alert-level resolution. ")
@@ -57,7 +57,7 @@ class EffectivenessAssessmentAuditPayload(BaseModel):
     health_checks: Optional[EffectivenessAssessmentAuditPayloadHealthChecks] = None
     metric_deltas: Optional[EffectivenessAssessmentAuditPayloadMetricDeltas] = None
     alert_resolution: Optional[EffectivenessAssessmentAuditPayloadAlertResolution] = None
-    __properties: ClassVar[List[str]] = ["event_type", "correlation_id", "namespace", "ea_name", "component", "assessed", "score", "details", "reason", "alert_name", "components_assessed", "completed_at", "assessment_duration_seconds", "validity_deadline", "prometheus_check_after", "alertmanager_check_after", "validity_window", "stabilization_window", "pre_remediation_spec_hash", "post_remediation_spec_hash", "hash_match", "health_checks", "metric_deltas", "alert_resolution"]
+    __properties: ClassVar[List[str]] = ["event_type", "correlation_id", "namespace", "ea_name", "component", "assessed", "score", "details", "reason", "signal_name", "components_assessed", "completed_at", "assessment_duration_seconds", "validity_deadline", "prometheus_check_after", "alertmanager_check_after", "validity_window", "stabilization_window", "pre_remediation_spec_hash", "post_remediation_spec_hash", "hash_match", "health_checks", "metric_deltas", "alert_resolution"]
 
     @field_validator('event_type')
     def event_type_validate_enum(cls, value):
@@ -150,7 +150,7 @@ class EffectivenessAssessmentAuditPayload(BaseModel):
             "score": obj.get("score"),
             "details": obj.get("details"),
             "reason": obj.get("reason"),
-            "alert_name": obj.get("alert_name"),
+            "signal_name": obj.get("signal_name"),
             "components_assessed": obj.get("components_assessed"),
             "completed_at": obj.get("completed_at"),
             "assessment_duration_seconds": obj.get("assessment_duration_seconds"),

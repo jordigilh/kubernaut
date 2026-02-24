@@ -497,6 +497,7 @@ data:
       processing: "5m"
       analyzing: "10m"
       executing: "30m"
+      awaitingApproval: "3s"
     datastorage:
       url: "http://data-storage-service:8080"
       timeout: "10s"

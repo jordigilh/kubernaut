@@ -112,7 +112,7 @@ def sample_incident_request() -> Dict[str, Any]:
     return {
         "incident_id": "e2e-incident-001",
         "remediation_id": "e2e-rem-001",
-        "signal_type": "OOMKilled",
+        "signal_name": "OOMKilled",
         "severity": "critical",
         "signal_source": "prometheus",
         "resource_namespace": "production",
@@ -154,7 +154,7 @@ def sample_recovery_request() -> Dict[str, Any]:
     return {
         "incident_id": "e2e-recovery-001",
         "remediation_id": "e2e-rem-002",
-        "signal_type": "OOMKilled",
+        "signal_name": "OOMKilled",
         "severity": "critical",
         "signal_source": "prometheus",
         "resource_namespace": "production",
@@ -172,7 +172,7 @@ def sample_recovery_request() -> Dict[str, Any]:
             "workflow_execution_ref": "e2e-rem-001-we-1",
             "original_rca": {
                 "summary": "Memory exhaustion detected",
-                "signal_type": "OOMKilled",
+                "signal_name": "OOMKilled",
                 "severity": "high",
                 "contributing_factors": ["memory_leak"]
             },
@@ -373,7 +373,7 @@ class TestErrorHandlingE2E:
         invalid_request_data = {
             "incident_id": "test-001",
             # Missing remediation_id (mandatory)
-            "signal_type": "OOMKilled",
+            "signal_name": "OOMKilled",
             "severity": "critical",
             "signal_source": "prometheus",
             "resource_namespace": "default",

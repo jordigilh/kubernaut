@@ -124,7 +124,6 @@ var _ = Describe("Test 08: Kubernetes Event Ingestion (BR-GATEWAY-002)", Ordered
 			}, 10*time.Second, 1*time.Second).Should(Succeed())
 			_ = resp.Body.Close()
 
-			// CORRECTNESS: Gateway should accept (201/202) or handle gracefully
 			if resp.StatusCode == http.StatusCreated || resp.StatusCode == http.StatusAccepted {
 				acceptedCount++
 			}

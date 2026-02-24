@@ -37,7 +37,7 @@ var _ = Describe("BR-GATEWAY-002: Signal Ingestion - Prometheus Adapter", func()
 	)
 
 	BeforeEach(func() {
-		adapter = adapters.NewPrometheusAdapter()
+		adapter = adapters.NewPrometheusAdapter(nil, nil)
 		ctx = context.Background()
 	})
 
@@ -142,7 +142,7 @@ var _ = Describe("BR-GATEWAY-006: Signal Normalization Across Sources", func() {
 			// Business outcome: Downstream RemediationRequest controller doesn't care
 			// if signal came from Prometheus, Grafana, or Kubernetes Events
 
-			prometheusAdapter := adapters.NewPrometheusAdapter()
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 			ctx := context.Background()
 
 			prometheusWebhook := []byte(`{
@@ -160,7 +160,7 @@ var _ = Describe("BR-GATEWAY-006: Signal Normalization Across Sources", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// BUSINESS OUTCOME: All signals have consistent structure
-			Expect(signal.AlertName).NotTo(BeEmpty(),
+			Expect(signal.SignalName).NotTo(BeEmpty(),
 				"All signals must have alert identification")
 			Expect(signal.Resource.Kind).NotTo(BeEmpty(),
 				"All signals must identify resource type")
@@ -182,7 +182,7 @@ var _ = Describe("BR-GATEWAY-004: Signal Fingerprinting", func() {
 	)
 
 	BeforeEach(func() {
-		adapter = adapters.NewPrometheusAdapter()
+		adapter = adapters.NewPrometheusAdapter(nil, nil)
 		ctx = context.Background()
 	})
 
@@ -269,7 +269,7 @@ var _ = Describe("BR-GATEWAY-003: Payload Validation", func() {
 	)
 
 	BeforeEach(func() {
-		adapter = adapters.NewPrometheusAdapter()
+		adapter = adapters.NewPrometheusAdapter(nil, nil)
 		ctx = context.Background()
 	})
 

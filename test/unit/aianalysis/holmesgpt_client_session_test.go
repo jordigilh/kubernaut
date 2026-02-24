@@ -80,7 +80,7 @@ var _ = Describe("HolmesGPTClient Session Methods [BR-AA-HAPI-064]", func() {
 				sessionID, err := hgClient.SubmitInvestigation(ctx, &client.IncidentRequest{
 					IncidentID:        "test-incident-001",
 					RemediationID:     "test-rem-001",
-					SignalType:        "OOMKilled",
+					SignalName:        "OOMKilled",
 					ResourceNamespace: "default",
 					ResourceKind:      "Pod",
 					ResourceName:      "test-pod",

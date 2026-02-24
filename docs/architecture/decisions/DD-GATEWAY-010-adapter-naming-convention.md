@@ -7,6 +7,16 @@
 
 ---
 
+## Revision: Issue #166 SignalType Rename (2026-02)
+
+**SignalType values are now normalized to `"alert"`** (generic). The source-specific values `"prometheus-alert"` and `"kubernetes-event"` documented below were superseded by Issue #166. RR.Spec.SignalType now uses the generic value `"alert"` for all adapters.
+
+**Adapter identity for audit/metrics** now uses `signal.Source` (e.g., `"prometheus"`, `"kubernetes-events"`) rather than `signal.SourceType` or source-specific SignalType values. This provides adapter identity for observability while keeping RR.Spec.SignalType generic.
+
+The historical content below documents the original design rationale; implementation follows the Issue #166 conventions.
+
+---
+
 ## Context & Problem
 
 The Gateway service uses adapters to convert signals from various monitoring systems (Prometheus, Kubernetes Events, Grafana, etc.) into a unified `NormalizedSignal` format. Each adapter must provide two key identifiers:

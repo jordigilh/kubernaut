@@ -25,19 +25,19 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// SignalModeResult contains the classification outcome for a signal type.
+// SignalModeResult contains the classification outcome for a signal name.
 // BR-SP-106: Predictive Signal Mode Classification
 // ADR-054: Predictive Signal Mode Classification and Prompt Strategy
 type SignalModeResult struct {
 	// SignalMode is "reactive" (default) or "predictive"
 	SignalMode string
-	// NormalizedType is the base signal type for workflow catalog matching.
-	// For predictive signals, this is the mapped base type (e.g., "OOMKilled").
-	// For reactive signals, this is the original type unchanged.
-	NormalizedType string
-	// OriginalSignalType is preserved for audit trail (SOC2 CC7.4).
+	// SignalName is the base signal name for workflow catalog matching.
+	// For predictive signals, this is the mapped base name (e.g., "OOMKilled").
+	// For reactive signals, this is the original name unchanged.
+	SignalName string
+	// SourceSignalName is preserved for audit trail (SOC2 CC7.4).
 	// Only populated for predictive signals; empty for reactive.
-	OriginalSignalType string
+	SourceSignalName string
 }
 
 // signalModeConfig is the YAML structure for predictive signal mappings.
@@ -57,7 +57,7 @@ type signalModeConfig struct {
 type SignalModeClassifier struct {
 	logger   logr.Logger
 	mu       sync.RWMutex
-	mappings map[string]string // predictive type -> base type
+	mappings map[string]string // predictive signal name -> base signal name
 }
 
 // NewSignalModeClassifier creates a new signal mode classifier.
@@ -101,29 +101,29 @@ func (c *SignalModeClassifier) LoadConfig(configPath string) error {
 	return nil
 }
 
-// Classify determines the signal mode and normalized type for a given signal type.
+// Classify determines the signal mode and normalized name for a given signal name.
 //
-// - If the signal type is in the predictive mappings, it returns mode "predictive"
-//   with the normalized (base) type and preserves the original for audit.
-// - Otherwise, it returns mode "reactive" with the type unchanged.
+// - If the signal name is in the predictive mappings, it returns mode "predictive"
+//   with the normalized (base) name and preserves the original for audit.
+// - Otherwise, it returns mode "reactive" with the name unchanged.
 //
 // This is a pure function (no I/O) after config is loaded. Safe for concurrent use.
-func (c *SignalModeClassifier) Classify(signalType string) SignalModeResult {
+func (c *SignalModeClassifier) Classify(signalName string) SignalModeResult {
 	c.mu.RLock()
-	baseType, found := c.mappings[signalType]
+	baseName, found := c.mappings[signalName]
 	c.mu.RUnlock()
 
 	if found {
 		return SignalModeResult{
-			SignalMode:         "predictive",
-			NormalizedType:     baseType,
-			OriginalSignalType: signalType,
+			SignalMode:       "predictive",
+			SignalName:       baseName,
+			SourceSignalName: signalName,
 		}
 	}
 
 	return SignalModeResult{
-		SignalMode:         "reactive",
-		NormalizedType:     signalType,
-		OriginalSignalType: "",
+		SignalMode:       "reactive",
+		SignalName:       signalName,
+		SourceSignalName: "",
 	}
 }

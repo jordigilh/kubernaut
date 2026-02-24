@@ -61,7 +61,7 @@ var _ = Describe("E2E-HAPI-084: Predictive Signal Mode Investigation", Label("e2
 			req := &hapiclient.IncidentRequest{
 				IncidentID:        "test-predictive-055",
 				RemediationID:     "test-rem-predictive-055",
-				SignalType:        "OOMKilled", // Normalized by SP from PredictedOOMKill (ADR-054)
+				SignalName:        "OOMKilled", // Normalized by SP from PredictedOOMKill (ADR-054)
 				Severity:          "critical",
 				SignalSource:      "prometheus",
 				ResourceNamespace: "production",
@@ -142,7 +142,7 @@ var _ = Describe("E2E-HAPI-084: Predictive Signal Mode Investigation", Label("e2
 			req := &hapiclient.IncidentRequest{
 				IncidentID:        "test-reactive-056",
 				RemediationID:     "test-rem-reactive-056",
-				SignalType:        "OOMKilled",
+				SignalName:        "OOMKilled",
 				Severity:          "critical",
 				SignalSource:      "prometheus",
 				ResourceNamespace: "production",
@@ -200,7 +200,7 @@ var _ = Describe("E2E-HAPI-084: Predictive Signal Mode Investigation", Label("e2
 			req := &hapiclient.IncidentRequest{
 				IncidentID:        "test-default-057",
 				RemediationID:     "test-rem-default-057",
-				SignalType:        "OOMKilled",
+				SignalName:        "OOMKilled",
 				Severity:          "critical",
 				SignalSource:      "prometheus",
 				ResourceNamespace: "production",

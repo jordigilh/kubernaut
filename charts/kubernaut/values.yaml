@@ -134,6 +134,9 @@ postgresql:
     username: slm_user
     password: demo-password
     database: action_history
+  storage:
+    size: 10Gi
+    storageClassName: ""  # empty = cluster default
   resources:
     requests:
       memory: 256Mi
@@ -146,6 +149,9 @@ postgresql:
 redis:
   image: quay.io/jordigilh/redis:7-alpine
   password: ""
+  storage:
+    size: 512Mi
+    storageClassName: ""  # empty = cluster default
   resources:
     requests:
       memory: 128Mi

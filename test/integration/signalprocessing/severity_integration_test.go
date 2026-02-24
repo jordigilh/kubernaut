@@ -661,7 +661,7 @@ func createTestSignalProcessingCRD(namespace, name string) *signalprocessingv1al
 				Fingerprint:  "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", // Valid 64-char hex fingerprint
 				Name:         "TestAlert",
 				Severity:     "critical", // Default, overridden by tests
-				Type:         "prometheus",
+				Type:         "alert",
 				Source:       "test-source",
 				TargetType:   "kubernetes",
 				ReceivedTime: metav1.Now(),

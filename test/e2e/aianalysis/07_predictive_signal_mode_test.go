@@ -75,7 +75,7 @@ var _ = Describe("E2E-AA-084-001: Predictive Signal Mode Investigation", Label("
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      "e2e-predictive-fingerprint-001",
 							Severity:         "critical",
-							SignalType:       "OOMKilled",    // Normalized by SP from PredictedOOMKill
+							SignalName:       "OOMKilled",    // Normalized by SP from PredictedOOMKill
 							SignalMode:       "predictive",   // BR-AI-084: Predictive signal mode
 							Environment:      "production",
 							BusinessPriority: "P1",
@@ -142,7 +142,7 @@ var _ = Describe("E2E-AA-084-001: Predictive Signal Mode Investigation", Label("
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      "e2e-reactive-fingerprint-001",
 							Severity:         "critical",
-							SignalType:       "OOMKilled",
+							SignalName:       "OOMKilled",
 							SignalMode:       "reactive",   // Explicit reactive mode
 							Environment:      "production",
 							BusinessPriority: "P1",

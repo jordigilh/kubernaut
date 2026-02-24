@@ -97,15 +97,15 @@ var _ = Describe("OpenAPIClientAdapter - DD-API-001 Compliance", Label("unit", "
 				// Create test events using ogen union constructors (ogen migration)
 				payload1 := ogenclient.GatewayAuditPayload{
 					EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewayCrdCreated,
-					SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert, // Updated enum
-					AlertName:   "test-alert-1",
+					SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert, // Updated enum
+					SignalName:   "test-alert-1",
 					Namespace:   "default",
 					Fingerprint: "test-fingerprint-1",
 				}
 				payload2 := ogenclient.GatewayAuditPayload{
 					EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewayCrdCreated,
-					SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert, // Updated enum
-					AlertName:   "test-alert-2",
+					SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert, // Updated enum
+					SignalName:   "test-alert-2",
 					Namespace:   "default",
 					Fingerprint: "test-fingerprint-2",
 				}
@@ -160,8 +160,8 @@ var _ = Describe("OpenAPIClientAdapter - DD-API-001 Compliance", Label("unit", "
 				// Create test event using ogen union constructor (ogen migration)
 				payload := ogenclient.GatewayAuditPayload{
 					EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewayCrdCreated,
-					SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert, // Updated enum
-					AlertName:   "test-alert",
+					SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert, // Updated enum
+					SignalName:   "test-alert",
 					Namespace:   "default",
 					Fingerprint: "test-fingerprint",
 				}
@@ -196,8 +196,8 @@ var _ = Describe("OpenAPIClientAdapter - DD-API-001 Compliance", Label("unit", "
 				// Create test event using ogen union constructor (ogen migration)
 				payload := ogenclient.GatewayAuditPayload{
 					EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewayCrdCreated,
-					SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert, // Updated enum
-					AlertName:   "test-alert",
+					SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert, // Updated enum
+					SignalName:   "test-alert",
 					Namespace:   "default",
 					Fingerprint: "test-fingerprint",
 				}
@@ -236,8 +236,8 @@ var _ = Describe("OpenAPIClientAdapter - DD-API-001 Compliance", Label("unit", "
 				// Create test event using ogen union constructor (ogen migration)
 				payload := ogenclient.GatewayAuditPayload{
 					EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewayCrdCreated,
-					SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert, // Updated enum
-					AlertName:   "test-alert",
+					SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert, // Updated enum
+					SignalName:   "test-alert",
 					Namespace:   "default",
 					Fingerprint: "test-fingerprint",
 				}
@@ -275,8 +275,8 @@ var _ = Describe("OpenAPIClientAdapter - DD-API-001 Compliance", Label("unit", "
 				// Create test event using ogen union constructor (ogen migration)
 				payload := ogenclient.GatewayAuditPayload{
 					EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewayCrdCreated,
-					SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert, // Updated enum
-					AlertName:   "test-alert",
+					SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert, // Updated enum
+					SignalName:   "test-alert",
 					Namespace:   "default",
 					Fingerprint: "test-fingerprint",
 				}
@@ -316,8 +316,8 @@ var _ = Describe("OpenAPIClientAdapter - DD-API-001 Compliance", Label("unit", "
 				// Create test event using ogen union constructor (ogen migration)
 				payload := ogenclient.GatewayAuditPayload{
 					EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewayCrdCreated,
-					SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert, // Updated enum
-					AlertName:   "test-alert",
+					SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert, // Updated enum
+					SignalName:   "test-alert",
 					Namespace:   "default",
 					Fingerprint: "test-fingerprint",
 				}
@@ -355,8 +355,8 @@ var _ = Describe("OpenAPIClientAdapter - DD-API-001 Compliance", Label("unit", "
 				// Create test event using ogen union constructor (ogen migration)
 				payload := ogenclient.GatewayAuditPayload{
 					EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewayCrdCreated,
-					SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert, // Updated enum
-					AlertName:   "test-alert",
+					SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert, // Updated enum
+					SignalName:   "test-alert",
 					Namespace:   "default",
 					Fingerprint: "test-fingerprint",
 				}
@@ -407,8 +407,8 @@ var _ = Describe("OpenAPIClientAdapter - DD-API-001 Compliance", Label("unit", "
 			// Create test event using ogen union constructor (ogen migration - DD-API-001 compliance)
 			payload := ogenclient.GatewayAuditPayload{
 				EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewayCrdCreated,
-				SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert, // Updated enum
-				AlertName:   "dd-api-001-compliance-test",
+				SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert, // Updated enum
+				SignalName:   "dd-api-001-compliance-test",
 				Namespace:   "default",
 				Fingerprint: "compliance-fingerprint",
 			}

@@ -941,8 +941,8 @@ type IncidentRequest struct {
 	// DD-WORKFLOW-002 v2.2. This ID is for CORRELATION/AUDIT ONLY - do NOT use for RCA analysis or
 	// workflow matching.
 	RemediationID string `json:"remediation_id"`
-	// Canonical signal type.
-	SignalType string `json:"signal_type"`
+	// Canonical signal name (e.g., OOMKilled, CrashLoopBackOff).
+	SignalName string `json:"signal_name"`
 	// Signal severity (BR-SEVERITY-001: critical, high, medium, low, unknown).
 	Severity Severity `json:"severity"`
 	// Monitoring system.
@@ -1009,9 +1009,9 @@ func (s *IncidentRequest) GetRemediationID() string {
 	return s.RemediationID
 }
 
-// GetSignalType returns the value of SignalType.
-func (s *IncidentRequest) GetSignalType() string {
-	return s.SignalType
+// GetSignalName returns the value of SignalName.
+func (s *IncidentRequest) GetSignalName() string {
+	return s.SignalName
 }
 
 // GetSeverity returns the value of Severity.
@@ -1159,9 +1159,9 @@ func (s *IncidentRequest) SetRemediationID(val string) {
 	s.RemediationID = val
 }
 
-// SetSignalType sets the value of SignalType.
-func (s *IncidentRequest) SetSignalType(val string) {
-	s.SignalType = val
+// SetSignalName sets the value of SignalName.
+func (s *IncidentRequest) SetSignalName(val string) {
+	s.SignalName = val
 }
 
 // SetSeverity sets the value of Severity.
@@ -2859,8 +2859,8 @@ func (o OptString) Or(d string) string {
 type OriginalRCA struct {
 	// Brief RCA summary from initial investigation.
 	Summary string `json:"summary"`
-	// Signal type determined by original RCA (e.g., 'OOMKilled').
-	SignalType string `json:"signal_type"`
+	// Signal name determined by original RCA (e.g., 'OOMKilled').
+	SignalName string `json:"signal_name"`
 	// Severity determined by original RCA (BR-SEVERITY-001).
 	Severity Severity `json:"severity"`
 	// Factors that contributed to the issue.
@@ -2872,9 +2872,9 @@ func (s *OriginalRCA) GetSummary() string {
 	return s.Summary
 }
 
-// GetSignalType returns the value of SignalType.
-func (s *OriginalRCA) GetSignalType() string {
-	return s.SignalType
+// GetSignalName returns the value of SignalName.
+func (s *OriginalRCA) GetSignalName() string {
+	return s.SignalName
 }
 
 // GetSeverity returns the value of Severity.
@@ -2892,9 +2892,9 @@ func (s *OriginalRCA) SetSummary(val string) {
 	s.Summary = val
 }
 
-// SetSignalType sets the value of SignalType.
-func (s *OriginalRCA) SetSignalType(val string) {
-	s.SignalType = val
+// SetSignalName sets the value of SignalName.
+func (s *OriginalRCA) SetSignalName(val string) {
+	s.SignalName = val
 }
 
 // SetSeverity sets the value of Severity.
@@ -3433,8 +3433,8 @@ type RecoveryRequest struct {
 	PreviousExecution OptNilPreviousExecution `json:"previous_execution"`
 	// Enriched context including DetectedLabels for workflow filtering.
 	EnrichmentResults OptNilEnrichmentResults `json:"enrichment_results"`
-	// Current signal type (may have changed).
-	SignalType OptNilString `json:"signal_type"`
+	// Current signal name (may have changed).
+	SignalName OptNilString `json:"signal_name"`
 	// Current severity (BR-SEVERITY-001).
 	Severity OptNilSeverity `json:"severity"`
 	// Kubernetes namespace.
@@ -3489,9 +3489,9 @@ func (s *RecoveryRequest) GetEnrichmentResults() OptNilEnrichmentResults {
 	return s.EnrichmentResults
 }
 
-// GetSignalType returns the value of SignalType.
-func (s *RecoveryRequest) GetSignalType() OptNilString {
-	return s.SignalType
+// GetSignalName returns the value of SignalName.
+func (s *RecoveryRequest) GetSignalName() OptNilString {
+	return s.SignalName
 }
 
 // GetSeverity returns the value of Severity.
@@ -3579,9 +3579,9 @@ func (s *RecoveryRequest) SetEnrichmentResults(val OptNilEnrichmentResults) {
 	s.EnrichmentResults = val
 }
 
-// SetSignalType sets the value of SignalType.
-func (s *RecoveryRequest) SetSignalType(val OptNilString) {
-	s.SignalType = val
+// SetSignalName sets the value of SignalName.
+func (s *RecoveryRequest) SetSignalName(val OptNilString) {
+	s.SignalName = val
 }
 
 // SetSeverity sets the value of Severity.

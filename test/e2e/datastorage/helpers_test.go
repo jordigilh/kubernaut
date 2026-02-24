@@ -112,7 +112,7 @@ func newMinimalGatewayPayload(signalType, alertName string) dsgen.AuditEventRequ
 		GatewayAuditPayload: dsgen.GatewayAuditPayload{
 			EventType:   dsgen.GatewayAuditPayloadEventTypeGatewaySignalReceived,
 			SignalType:  dsgen.GatewayAuditPayloadSignalType(signalType),
-			AlertName:   alertName,
+			SignalName:   alertName,
 			Namespace:   "default",
 			Fingerprint: "test-fingerprint",
 		},

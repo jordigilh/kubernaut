@@ -12,7 +12,7 @@ metadata:
 actionType: RollbackDeployment
 
 labels:
-  signalType: DeploymentFailed
+  signalName: DeploymentFailed
   severity: [high]
   environment: [production, staging, test]
   component: deployment

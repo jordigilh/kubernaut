@@ -113,7 +113,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 
 				// V1.0: Use structured MandatoryLabels
 				labels := models.MandatoryLabels{
-					SignalType:  "prometheus",
+					SignalName:  "alert",
 					Severity:    []string{"critical"},
 					Component:   "kube-apiserver",
 					Priority:    "P0",
@@ -197,7 +197,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 			var persistedLabels map[string]interface{}
 			err = json.Unmarshal(dbLabels, &persistedLabels)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(persistedLabels).To(HaveKeyWithValue("signalType", "prometheus"))
+			Expect(persistedLabels).To(HaveKeyWithValue("signalName", "alert"))
 			// DD-WORKFLOW-001 v2.7: severity is now []string, stored as JSONB array
 			Expect(persistedLabels["severity"]).To(Equal([]interface{}{"critical"}))
 			// Verify environment is an array
@@ -216,7 +216,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 
 				// V1.0: Use structured MandatoryLabels
 				labels := models.MandatoryLabels{
-					SignalType:  "test",
+					SignalName:  "test",
 					Severity:    []string{"low"},
 					Component:   "test",
 					Priority:    "P3",
@@ -282,7 +282,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 
 			// V1.0: Use structured MandatoryLabels
 			labels := models.MandatoryLabels{
-				SignalType:  "test",
+				SignalName:  "test",
 				Severity:    []string{"low"},
 				Component:   "test",
 				Priority:    "P3",
@@ -331,7 +331,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				Expect(retrievedWorkflow.UpdatedAt).ToNot(BeZero())
 
 			// CRITICAL: Verify structured labels deserialized correctly
-			Expect(retrievedWorkflow.Labels.SignalType).To(Equal("test"))
+			Expect(retrievedWorkflow.Labels.SignalName).To(Equal("test"))
 			Expect(retrievedWorkflow.Labels.Severity).To(Equal([]string{"low"}))
 			Expect(retrievedWorkflow.Labels.Component).To(Equal("test"))
 			Expect(retrievedWorkflow.Labels.Priority).To(Equal("P3"))
@@ -374,7 +374,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 
 				// V1.0: Use structured MandatoryLabels
 				labels := models.MandatoryLabels{
-					SignalType:  "test",
+					SignalName:  "test",
 					Severity:    []string{"low"},
 					Component:   "test",
 					Priority:    "P3",
@@ -513,7 +513,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 
 			// V1.0: Use structured MandatoryLabels
 			labels := models.MandatoryLabels{
-				SignalType:  "test",
+				SignalName:  "test",
 				Severity:    []string{"low"},
 				Component:   "test",
 				Priority:    "P3",

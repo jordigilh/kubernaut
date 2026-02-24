@@ -257,7 +257,7 @@ Expect(k8sClient.Status().Update(testCtx, rar)).To(Succeed())
 | 18 | `Status.BusinessClassification` | non-nil | Y | Y |
 | 19 | `Status.Severity` | non-empty | Y | Y |
 | 20 | `Status.SignalMode` | non-empty | Y | Y |
-| 21 | `Status.SignalType` | non-empty | Y | Y |
+| 21 | `Status.SignalName` | non-empty | Y | Y |
 | 22 | `Status.PolicyHash` | non-empty | Y | Y |
 | 23 | `Status.Conditions` | len > 0 | Y | Y |
 
@@ -280,7 +280,7 @@ Expect(k8sClient.Status().Update(testCtx, rar)).To(Succeed())
 | 5 | `Status.RootCauseAnalysis` | non-nil | Y | Y |
 | 6 | `Status.RootCauseAnalysis.Summary` | non-empty | Y | Y |
 | 7 | `Status.RootCauseAnalysis.Severity` | non-empty | Y | Y |
-| 8 | `Status.RootCauseAnalysis.SignalType` | non-empty | Y | Y |
+| 8 | `Status.RootCauseAnalysis.SignalName` | non-empty | Y | Y |
 | 9 | `Status.SelectedWorkflow` | non-nil | Y | Y |
 | 10 | `Status.SelectedWorkflow.WorkflowID` | non-empty | Y | Y |
 | 11 | `Status.SelectedWorkflow.ExecutionEngine` | non-empty | Y | Y |

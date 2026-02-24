@@ -82,8 +82,8 @@ var _ = Describe("Signal Mode Classifier (YAML)", func() {
 		result := signalModeClassifier.Classify("PredictedOOMKill")
 
 		Expect(result.SignalMode).To(Equal("predictive"))
-		Expect(result.NormalizedType).To(Equal("OOMKilled"))
-		Expect(result.OriginalSignalType).To(Equal("PredictedOOMKill"))
+		Expect(result.SignalName).To(Equal("OOMKilled"))
+		Expect(result.SourceSignalName).To(Equal("PredictedOOMKill"))
 	})
 
 	// UT-SP-106-002: Classify OOMKilled as reactive (unchanged)
@@ -93,23 +93,23 @@ var _ = Describe("Signal Mode Classifier (YAML)", func() {
 		result := signalModeClassifier.Classify("OOMKilled")
 
 		Expect(result.SignalMode).To(Equal("reactive"))
-		Expect(result.NormalizedType).To(Equal("OOMKilled"))
-		Expect(result.OriginalSignalType).To(BeEmpty())
+		Expect(result.SignalName).To(Equal("OOMKilled"))
+		Expect(result.SourceSignalName).To(BeEmpty())
 	})
 
-	// UT-SP-106-003: Classify unmapped type as reactive (default)
-	It("UT-SP-106-003: should classify unmapped signal type as reactive by default", func() {
+	// UT-SP-106-003: Classify unmapped name as reactive (default)
+	It("UT-SP-106-003: should classify unmapped signal name as reactive by default", func() {
 		createAndLoadConfig(standardConfig)
 
 		result := signalModeClassifier.Classify("CrashLoopBackOff")
 
 		Expect(result.SignalMode).To(Equal("reactive"))
-		Expect(result.NormalizedType).To(Equal("CrashLoopBackOff"))
-		Expect(result.OriginalSignalType).To(BeEmpty())
+		Expect(result.SignalName).To(Equal("CrashLoopBackOff"))
+		Expect(result.SourceSignalName).To(BeEmpty())
 	})
 
-	// UT-SP-106-004: Preserve OriginalSignalType for predictive signals
-	It("UT-SP-106-004: should preserve OriginalSignalType for all predictive mappings", func() {
+	// UT-SP-106-004: Preserve SourceSignalName for predictive signals
+	It("UT-SP-106-004: should preserve SourceSignalName for all predictive mappings", func() {
 		createAndLoadConfig(standardConfig)
 
 		// Test all mapped predictive types
@@ -127,20 +127,20 @@ var _ = Describe("Signal Mode Classifier (YAML)", func() {
 		for _, e := range entries {
 			result := signalModeClassifier.Classify(e.input)
 			Expect(result.SignalMode).To(Equal("predictive"), "mode for %s", e.input)
-			Expect(result.NormalizedType).To(Equal(e.expectedType), "normalized type for %s", e.input)
-			Expect(result.OriginalSignalType).To(Equal(e.expectedOriginal), "original for %s", e.input)
+			Expect(result.SignalName).To(Equal(e.expectedType), "normalized type for %s", e.input)
+			Expect(result.SourceSignalName).To(Equal(e.expectedOriginal), "original for %s", e.input)
 		}
 	})
 
-	// UT-SP-106-005: Empty/nil signal type handling
-	It("UT-SP-106-005: should classify empty signal type as reactive", func() {
+	// UT-SP-106-005: Empty/nil signal name handling
+	It("UT-SP-106-005: should classify empty signal name as reactive", func() {
 		createAndLoadConfig(standardConfig)
 
 		result := signalModeClassifier.Classify("")
 
 		Expect(result.SignalMode).To(Equal("reactive"))
-		Expect(result.NormalizedType).To(BeEmpty())
-		Expect(result.OriginalSignalType).To(BeEmpty())
+		Expect(result.SignalName).To(BeEmpty())
+		Expect(result.SourceSignalName).To(BeEmpty())
 	})
 
 	// UT-SP-106-006: Config loading from YAML file
@@ -157,7 +157,7 @@ var _ = Describe("Signal Mode Classifier (YAML)", func() {
 			// Verify loaded config works
 			result := c.Classify("PredictedOOMKill")
 			Expect(result.SignalMode).To(Equal("predictive"))
-			Expect(result.NormalizedType).To(Equal("OOMKilled"))
+			Expect(result.SignalName).To(Equal("OOMKilled"))
 		})
 
 		It("UT-SP-106-006b: should return error for missing config file", func() {
@@ -182,7 +182,7 @@ var _ = Describe("Signal Mode Classifier (YAML)", func() {
 			// All signals should default to reactive
 			result := signalModeClassifier.Classify("PredictedOOMKill")
 			Expect(result.SignalMode).To(Equal("reactive"))
-			Expect(result.NormalizedType).To(Equal("PredictedOOMKill"))
+			Expect(result.SignalName).To(Equal("PredictedOOMKill"))
 		})
 	})
 
@@ -213,20 +213,20 @@ var _ = Describe("Signal Mode Classifier (YAML)", func() {
 
 			result = signalModeClassifier.Classify("PredictedMemoryLeak")
 			Expect(result.SignalMode).To(Equal("predictive"), "after reload: new mapping should work")
-			Expect(result.NormalizedType).To(Equal("MemoryLeak"))
-			Expect(result.OriginalSignalType).To(Equal("PredictedMemoryLeak"))
+			Expect(result.SignalName).To(Equal("MemoryLeak"))
+			Expect(result.SourceSignalName).To(Equal("PredictedMemoryLeak"))
 		})
 	})
 
-	// Case sensitivity - signal types are case-sensitive (exact match)
+	// Case sensitivity - signal names are case-sensitive (exact match)
 	Describe("Case sensitivity", func() {
-		It("should treat signal types as case-sensitive", func() {
+		It("should treat signal names as case-sensitive", func() {
 			createAndLoadConfig(standardConfig)
 
 			// Lowercase variant should NOT match (case-sensitive lookup)
 			result := signalModeClassifier.Classify("predictedoomkill")
 			Expect(result.SignalMode).To(Equal("reactive"))
-			Expect(result.NormalizedType).To(Equal("predictedoomkill"))
+			Expect(result.SignalName).To(Equal("predictedoomkill"))
 		})
 	})
 })

@@ -111,8 +111,8 @@ var _ = Describe("E2E: Reconstruction REST API (BR-AUDIT-006)", Label("e2e", "re
 
 			gatewayPayload := ogenclient.GatewayAuditPayload{
 				EventType:   "gateway.signal.received",
-				SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
-				AlertName:   "HighCPUUsage",        // string, not OptString
+				SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
+				SignalName:   "HighCPUUsage",        // string, not OptString
 				Namespace:   "production",          // string, not OptString
 				Fingerprint: "e2e-fingerprint-123", // string, not OptString
 				SignalLabels: ogenclient.NewOptGatewayAuditPayloadSignalLabels(ogenclient.GatewayAuditPayloadSignalLabels{
@@ -352,11 +352,10 @@ var _ = Describe("E2E: Reconstruction REST API (BR-AUDIT-006)", Label("e2e", "re
 			// ASSERT: Response is successful reconstruction
 			reconstructionResp, ok := response.(*ogenclient.ReconstructionResponse)
 			Expect(ok).To(BeTrue(), "Response should be ReconstructionResponse type")
-			Expect(reconstructionResp).ToNot(BeNil())
 
-			// ASSERT: Reconstructed YAML is not empty
-			Expect(reconstructionResp.RemediationRequestYaml).ToNot(BeEmpty(),
-				"Reconstructed YAML should not be empty")
+			// ASSERT: Reconstructed YAML contains expected structure
+			Expect(reconstructionResp.RemediationRequestYaml).To(ContainSubstring("apiVersion:"),
+				"Reconstructed YAML should contain Kubernetes resource structure")
 
 			// ASSERT: Validation passed
 			Expect(reconstructionResp.Validation.IsValid).To(BeTrue(),
@@ -371,7 +370,7 @@ var _ = Describe("E2E: Reconstruction REST API (BR-AUDIT-006)", Label("e2e", "re
 			// ASSERT: Core fields reconstructed correctly (Gaps #1-3)
 			Expect(reconstructionResp.RemediationRequestYaml).To(ContainSubstring("HighCPUUsage"),
 				"YAML should contain signal name")
-			Expect(reconstructionResp.RemediationRequestYaml).To(ContainSubstring("prometheus-alert"),
+			Expect(reconstructionResp.RemediationRequestYaml).To(ContainSubstring("alert"),
 				"YAML should contain signal type")
 			Expect(reconstructionResp.RemediationRequestYaml).To(ContainSubstring("1h"),
 				"YAML should contain timeout config (Gap #8)")
@@ -420,8 +419,8 @@ var _ = Describe("E2E: Reconstruction REST API (BR-AUDIT-006)", Label("e2e", "re
 				ResourceID:     "signal-partial-123",
 				EventData: map[string]interface{}{
 					"event_type":  "gateway.signal.received",
-					"signal_type": "prometheus-alert",
-					"alert_name":  "PartialAlert",
+					"signal_type": "alert",
+					"signal_name": "PartialAlert",
 					"namespace":   "test",
 					"fingerprint": "partial-fp-123",
 					// Note: Missing signal_labels, signal_annotations, original_payload
@@ -442,13 +441,12 @@ var _ = Describe("E2E: Reconstruction REST API (BR-AUDIT-006)", Label("e2e", "re
 
 			// ASSERT: Request succeeded (partial reconstruction is valid)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(response).ToNot(BeNil())
 
 			// Check response type - could be success OR bad request for partial data
 			switch resp := response.(type) {
 			case *ogenclient.ReconstructionResponse:
-				// Success case: Reconstruction succeeded but is incomplete
-				Expect(resp.RemediationRequestYaml).ToNot(BeEmpty())
+				Expect(resp.RemediationRequestYaml).To(ContainSubstring("apiVersion:"),
+					"Partial reconstruction YAML should contain Kubernetes resource structure")
 				Expect(resp.Validation.IsValid).To(BeTrue(),
 					"Partial reconstruction should still be valid")
 
@@ -459,8 +457,8 @@ var _ = Describe("E2E: Reconstruction REST API (BR-AUDIT-006)", Label("e2e", "re
 					"Completeness should be less than 80% for partial data")
 
 				// Warnings present for missing fields
-				Expect(resp.Validation.Warnings).ToNot(BeEmpty(),
-					"Should have warnings for missing optional fields")
+				Expect(len(resp.Validation.Warnings)).To(BeNumerically(">=", 1),
+					"Should have at least 1 warning for missing optional fields")
 
 				GinkgoWriter.Printf("✅ Partial reconstruction succeeded: completeness=%d%%, warnings=%d\n",
 					resp.Validation.Completeness,
@@ -493,12 +491,12 @@ var _ = Describe("E2E: Reconstruction REST API (BR-AUDIT-006)", Label("e2e", "re
 
 			// ASSERT: Should receive 404 Not Found response (ogen doesn't return error for 4xx)
 			Expect(err).ToNot(HaveOccurred(), "OpenAPI client should not return error for 404")
-			Expect(response).ToNot(BeNil())
 
 			// Check response type is NotFound
 			notFoundResp, ok := response.(*ogenclient.ReconstructRemediationRequestNotFound)
 			Expect(ok).To(BeTrue(), "Response should be ReconstructRemediationRequestNotFound type")
-			Expect(notFoundResp).ToNot(BeNil())
+			Expect(notFoundResp.Title).To(Equal("Audit Events Not Found"),
+				"404 response title should match handler_reconstruction.go RFC7807 title")
 
 			GinkgoWriter.Printf("✅ Correctly returned 404 NotFound for non-existent correlation ID\n")
 		})
@@ -535,12 +533,12 @@ var _ = Describe("E2E: Reconstruction REST API (BR-AUDIT-006)", Label("e2e", "re
 
 			// ASSERT: Should receive 400 Bad Request response (ogen doesn't return error for 4xx)
 			Expect(err).ToNot(HaveOccurred(), "OpenAPI client should not return error for 400")
-			Expect(response).ToNot(BeNil())
 
 			// Check response type is BadRequest
 			badRequestResp, ok := response.(*ogenclient.ReconstructRemediationRequestBadRequest)
 			Expect(ok).To(BeTrue(), "Response should be ReconstructRemediationRequestBadRequest type")
-			Expect(badRequestResp).ToNot(BeNil())
+			Expect(badRequestResp.Title).To(Equal("Reconstruction Failed"),
+				"400 response title should match handler_reconstruction.go RFC7807 title")
 
 			GinkgoWriter.Printf("✅ Correctly returned 400 BadRequest for missing required gateway event\n")
 		})

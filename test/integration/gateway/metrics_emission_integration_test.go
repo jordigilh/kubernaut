@@ -74,11 +74,11 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 		It("[GW-INT-MET-001] should increment gateway_signals_received_total when signal processed", func() {
 			By("1. Get initial metric value")
 			initialValue := getCounterValue(metricsReg, "gateway_signals_received_total", map[string]string{
-				"source_type": "prometheus-alert",
+				"source_type": "prometheus",
 			})
 
 			By("2. Process Prometheus signal")
-			prometheusAdapter := adapters.NewPrometheusAdapter()
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 			alert := createPrometheusAlert(testNamespace, "HighCPU", "critical", "", "")
 			signal, err := prometheusAdapter.Parse(ctx, alert)
 			Expect(err).ToNot(HaveOccurred())
@@ -93,7 +93,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 
 			By("3. Verify metric incremented")
 			finalValue := getCounterValue(metricsReg, "gateway_signals_received_total", map[string]string{
-				"source_type": "prometheus-alert",
+				"source_type": "prometheus",
 			})
 			Expect(finalValue).To(Equal(initialValue+1), "BR-GATEWAY-066: Signals received counter must increment")
 
@@ -105,16 +105,16 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 		// Scenario: Signals By Type Counter
 		// BR: BR-GATEWAY-066
 		// Section: 2.1.2
-		It("[GW-INT-MET-002] should track signals by source type (prometheus vs k8s-event)", func() {
-			prometheusAdapter := adapters.NewPrometheusAdapter()
+		It("[GW-INT-MET-002] should track signals by source (prometheus vs kubernetes-events)", func() {
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 			metricsInstance := metrics.NewMetricsWithRegistry(metricsReg)
 			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, sharedAuditStore)
 			Expect(err).ToNot(HaveOccurred())
 
-			By("1. Get initial prometheus-alert metric value")
+			By("1. Get initial prometheus metric value")
 			initialPrometheusValue := getCounterValue(metricsReg, "gateway_signals_received_total", map[string]string{
-				"source_type": "prometheus-alert",
+				"source_type": "prometheus",
 				"severity":    "critical",
 			})
 
@@ -126,15 +126,15 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 			_, err = gwServer.ProcessSignal(ctx, prometheusSignal)
 			Expect(err).ToNot(HaveOccurred())
 
-			By("3. Verify prometheus-alert metric incremented with correct label")
+			By("3. Verify prometheus metric incremented with correct label")
 			finalPrometheusValue := getCounterValue(metricsReg, "gateway_signals_received_total", map[string]string{
-				"source_type": "prometheus-alert",
+				"source_type": "prometheus",
 				"severity":    "critical",
 			})
 			Expect(finalPrometheusValue).To(Equal(initialPrometheusValue+1),
 				"BR-GATEWAY-066: Prometheus signal counter must increment by 1")
 
-			GinkgoWriter.Printf("✅ Metric labeled correctly: source_type=prometheus-alert, %.0f→%.0f\n",
+			GinkgoWriter.Printf("✅ Metric labeled correctly: source_type=prometheus, %.0f→%.0f\n",
 				initialPrometheusValue, finalPrometheusValue)
 		})
 
@@ -144,18 +144,18 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 		// Section: 2.1.3
 		It("[GW-INT-MET-003] should track signals by severity level", func() {
 			By("1. Get initial metric values for both severity levels")
-			prometheusAdapter := adapters.NewPrometheusAdapter()
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 			metricsInstance := metrics.NewMetricsWithRegistry(metricsReg)
 			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, sharedAuditStore)
 			Expect(err).ToNot(HaveOccurred())
 
 			initialCriticalValue := getCounterValue(metricsReg, "gateway_signals_received_total", map[string]string{
-				"source_type": "prometheus-alert",
+				"source_type": "prometheus",
 				"severity":    "critical",
 			})
 			initialWarningValue := getCounterValue(metricsReg, "gateway_signals_received_total", map[string]string{
-				"source_type": "prometheus-alert",
+				"source_type": "prometheus",
 				"severity":    "warning",
 			})
 
@@ -177,11 +177,11 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 			By("3. Verify severity labels are tracked and incremented correctly")
 			// Gateway metric has labels: source_type AND severity
 			finalCriticalValue := getCounterValue(metricsReg, "gateway_signals_received_total", map[string]string{
-				"source_type": "prometheus-alert",
+				"source_type": "prometheus",
 				"severity":    "critical",
 			})
 			finalWarningValue := getCounterValue(metricsReg, "gateway_signals_received_total", map[string]string{
-				"source_type": "prometheus-alert",
+				"source_type": "prometheus",
 				"severity":    "warning",
 			})
 
@@ -220,12 +220,12 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 		It("[GW-INT-MET-006] should increment gateway_crds_created_total on successful CRD creation", func() {
 			By("1. Get initial metric value")
 			initialValue := getCounterValue(metricsReg, "gateway_crds_created_total", map[string]string{
-				"source_type": "prometheus-alert",
+				"source_type": "prometheus",
 				"status":      "created",
 			})
 
 			By("2. Process signal to create CRD")
-			prometheusAdapter := adapters.NewPrometheusAdapter()
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 			alert := createPrometheusAlert(testNamespace, "HighMemory", "critical", "", "")
 			signal, err := prometheusAdapter.Parse(ctx, alert)
 			Expect(err).ToNot(HaveOccurred())
@@ -241,7 +241,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 
 			By("3. Verify CRD creation metric incremented")
 			finalValue := getCounterValue(metricsReg, "gateway_crds_created_total", map[string]string{
-				"source_type": "prometheus-alert",
+				"source_type": "prometheus",
 				"status":      "created",
 			})
 			Expect(finalValue).To(Equal(initialValue+1),
@@ -256,7 +256,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 		// BR: BR-GATEWAY-069
 		// Section: 2.2.3
 		It("[GW-INT-MET-008] should track CRD creation metrics per namespace", func() {
-			prometheusAdapter := adapters.NewPrometheusAdapter()
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 			metricsInstance := metrics.NewMetricsWithRegistry(metricsReg)
 			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, sharedAuditStore)
@@ -264,7 +264,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 
 			By("1. Get initial CRD creation counter value")
 			initialTotalValue := getCounterValue(metricsReg, "gateway_crds_created_total", map[string]string{
-				"source_type": "prometheus-alert",
+				"source_type": "prometheus",
 				"status":      "created",
 			})
 
@@ -292,7 +292,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 			By("4. Verify metrics incremented by 2 for both namespaces")
 			// Gateway's current metrics use source_type, not namespace, but CRDs are created
 			finalTotalValue := getCounterValue(metricsReg, "gateway_crds_created_total", map[string]string{
-				"source_type": "prometheus-alert",
+				"source_type": "prometheus",
 				"status":      "created",
 			})
 			Expect(finalTotalValue).To(Equal(initialTotalValue+2),
@@ -326,7 +326,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 
 		It("[GW-INT-MET-011] should increment gateway_signals_deduplicated_total on deduplication", func() {
 			By("1. Create initial RR")
-			prometheusAdapter := adapters.NewPrometheusAdapter()
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 			metricsInstance := metrics.NewMetricsWithRegistry(metricsReg)
 			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, sharedAuditStore)
@@ -373,7 +373,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 		// BR: BR-GATEWAY-066
 		// Section: 2.3.2
 		It("[GW-INT-MET-012] should update gateway_deduplication_rate gauge", func() {
-			prometheusAdapter := adapters.NewPrometheusAdapter()
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 			metricsInstance := metrics.NewMetricsWithRegistry(metricsReg)
 			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, sharedAuditStore)
@@ -451,7 +451,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 
 		It("[GW-INT-MET-004] should populate gateway_http_request_duration_seconds histogram", func() {
 			By("1. Process multiple signals to generate histogram samples")
-			prometheusAdapter := adapters.NewPrometheusAdapter()
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 			metricsInstance := metrics.NewMetricsWithRegistry(metricsReg)
 			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, sharedAuditStore)
@@ -483,7 +483,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 		// BR: BR-GATEWAY-066
 		// Section: 2.1.5
 		It("[GW-INT-MET-005] should track metrics with accurate labels for source_type and severity", func() {
-			prometheusAdapter := adapters.NewPrometheusAdapter()
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 			metricsInstance := metrics.NewMetricsWithRegistry(metricsReg)
 			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, sharedAuditStore)
@@ -491,15 +491,15 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 
 			By("1. Get initial metric values for correct and incorrect labels")
 			initialCorrectValue := getCounterValue(metricsReg, "gateway_signals_received_total", map[string]string{
-				"source_type": "prometheus-alert",
+				"source_type": "prometheus",
 				"severity":    "critical",
 			})
 			initialWrongSourceValue := getCounterValue(metricsReg, "gateway_signals_received_total", map[string]string{
-				"source_type": "k8s-event",
+				"source_type": "kubernetes-events",
 				"severity":    "critical",
 			})
 			initialWrongSeverityValue := getCounterValue(metricsReg, "gateway_signals_received_total", map[string]string{
-				"source_type": "prometheus-alert",
+				"source_type": "prometheus",
 				"severity":    "warning",
 			})
 
@@ -513,7 +513,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 
 			By("3. Verify exact label values match signal properties")
 			finalCorrectValue := getCounterValue(metricsReg, "gateway_signals_received_total", map[string]string{
-				"source_type": "prometheus-alert",
+				"source_type": "prometheus",
 				"severity":    "critical",
 			})
 
@@ -529,7 +529,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 				"BR-GATEWAY-066: Metric with incorrect source_type label should not increment")
 
 			finalWrongSeverityValue := getCounterValue(metricsReg, "gateway_signals_received_total", map[string]string{
-				"source_type": "prometheus-alert",
+				"source_type": "prometheus",
 				"severity":    "warning", // Wrong severity
 			})
 			Expect(finalWrongSeverityValue).To(Equal(initialWrongSeverityValue),
@@ -563,7 +563,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 
 		// Test ID: GW-INT-MET-007
 		It("[GW-INT-MET-007] should track CRDs created with status label", func() {
-			prometheusAdapter := adapters.NewPrometheusAdapter()
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 			metricsInstance := metrics.NewMetricsWithRegistry(metricsReg)
 			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, sharedAuditStore)
@@ -571,7 +571,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 
 			By("1. Get initial CRD creation counter value")
 			initialCreatedValue := getCounterValue(metricsReg, "gateway_crds_created_total", map[string]string{
-				"source_type": "prometheus-alert",
+				"source_type": "prometheus",
 				"status":      "created",
 			})
 
@@ -588,7 +588,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 
 			By("3. Verify CRD creation counter incremented by 2")
 			finalCreatedValue := getCounterValue(metricsReg, "gateway_crds_created_total", map[string]string{
-				"source_type": "prometheus-alert",
+				"source_type": "prometheus",
 				"status":      "created",
 			})
 
@@ -601,7 +601,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 		// Test ID: GW-INT-MET-009
 		It("[GW-INT-MET-009] should track CRD creation duration in histogram", func() {
 			By("1. Create CRDs to generate duration samples")
-			prometheusAdapter := adapters.NewPrometheusAdapter()
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 			metricsInstance := metrics.NewMetricsWithRegistry(metricsReg)
 			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, sharedAuditStore)
@@ -629,7 +629,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 		// Test ID: GW-INT-MET-010
 		It("[GW-INT-MET-010] should maintain metric accuracy across CRD lifecycle", func() {
 			By("1. Create, deduplicate, and verify metrics persist")
-			prometheusAdapter := adapters.NewPrometheusAdapter()
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 			metricsInstance := metrics.NewMetricsWithRegistry(metricsReg)
 			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, sharedAuditStore)
@@ -643,7 +643,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 			Expect(err).ToNot(HaveOccurred())
 
 			initialCreatedValue := getCounterValue(metricsReg, "gateway_crds_created_total", map[string]string{
-				"source_type": "prometheus-alert",
+				"source_type": "prometheus",
 				"status":      "created",
 			})
 
@@ -657,7 +657,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 
 			By("2. Verify CRD creation metric didn't increment for duplicate")
 			finalCreatedValue := getCounterValue(metricsReg, "gateway_crds_created_total", map[string]string{
-				"source_type": "prometheus-alert",
+				"source_type": "prometheus",
 				"status":      "created",
 			})
 
@@ -692,7 +692,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 
 		// Test ID: GW-INT-MET-013
 		It("[GW-INT-MET-013] should track deduplications by signal name", func() {
-			prometheusAdapter := adapters.NewPrometheusAdapter()
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 			metricsInstance := metrics.NewMetricsWithRegistry(metricsReg)
 			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, sharedAuditStore)
@@ -756,7 +756,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 
 		// Test ID: GW-INT-MET-014
 		It("[GW-INT-MET-014] should demonstrate deduplication savings", func() {
-			prometheusAdapter := adapters.NewPrometheusAdapter()
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 			metricsInstance := metrics.NewMetricsWithRegistry(metricsReg)
 			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, sharedAuditStore)
@@ -764,7 +764,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 
 			By("1. Get initial metric values")
 			initialReceived := getCounterValue(metricsReg, "gateway_signals_received_total", map[string]string{
-				"source_type": "prometheus-alert",
+				"source_type": "prometheus",
 				"severity":    "critical",
 			})
 			initialDeduplicated := getCounterValue(metricsReg, "gateway_signals_deduplicated_total", map[string]string{
@@ -792,7 +792,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 
 			By("3. Verify deduplication savings (5 duplicates prevented CRD creation)")
 			finalReceived := getCounterValue(metricsReg, "gateway_signals_received_total", map[string]string{
-				"source_type": "prometheus-alert",
+				"source_type": "prometheus",
 				"severity":    "critical",
 			})
 			finalDeduplicated := getCounterValue(metricsReg, "gateway_signals_deduplicated_total", map[string]string{
@@ -814,7 +814,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 
 		// Test ID: GW-INT-MET-015
 		It("[GW-INT-MET-015] should correlate metrics with audit events", func() {
-			prometheusAdapter := adapters.NewPrometheusAdapter()
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 			metricsInstance := metrics.NewMetricsWithRegistry(metricsReg)
 			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, sharedAuditStore)
@@ -822,7 +822,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 
 			By("1. Get initial signals received counter value")
 			initialMetricValue := getCounterValue(metricsReg, "gateway_signals_received_total", map[string]string{
-				"source_type": "prometheus-alert",
+				"source_type": "prometheus",
 				"severity":    "critical",
 			})
 
@@ -835,7 +835,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 
 			By("3. Verify metric incremented")
 			finalMetricValue := getCounterValue(metricsReg, "gateway_signals_received_total", map[string]string{
-				"source_type": "prometheus-alert",
+				"source_type": "prometheus",
 				"severity":    "critical",
 			})
 			Expect(finalMetricValue).To(Equal(initialMetricValue+1),

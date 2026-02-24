@@ -45,15 +45,15 @@ spec:
         command: ["sh", "-c"]
         args:
         - |
-          # Simulate gradual memory leak via /dev/shm
-          # Allocates ~1MB every 15 seconds (~4MB/min)
-          # With 192Mi limit, reaches ~80% in ~35 min, triggering predict_linear alert
           i=0
           while true; do
-            dd if=/dev/urandom of=/dev/shm/leak_$i bs=1M count=1 2>/dev/null
+            dd if=/dev/urandom of=/data/leak_$i bs=1M count=1 2>/dev/null
             i=$((i + 1))
-            sleep 15
+            sleep 5
           done
+        volumeMounts:
+        - name: memory-sink
+          mountPath: /data
         resources:
           requests:
             memory: "32Mi"
@@ -61,6 +61,11 @@ spec:
           limits:
             memory: "192Mi"
             cpu: "20m"
+      volumes:
+      - name: memory-sink
+        emptyDir:
+          medium: Memory
+          sizeLimit: 256Mi
 ---
 apiVersion: v1
 kind: Service

@@ -150,7 +150,7 @@ func ValidateSPStatus(sp *signalprocessingv1.SignalProcessing) []string {
 	f = appendIfNonEmpty(f, checkNonNil("SP: BusinessClassification", "business context unavailable for SLA routing", s.BusinessClassification))
 	f = appendIfNonEmpty(f, checkNonEmpty("SP: Severity", "severity-based routing and notification escalation unavailable", s.Severity))
 	f = appendIfNonEmpty(f, checkNonEmpty("SP: SignalMode", "reactive vs predictive classification missing", s.SignalMode))
-	f = appendIfNonEmpty(f, checkNonEmpty("SP: SignalType", "signal type unknown, workflow matching may fail", s.SignalType))
+	f = appendIfNonEmpty(f, checkNonEmpty("SP: SignalType", "signal type unknown, workflow matching may fail", s.SignalName))
 	f = appendIfNonEmpty(f, checkNonEmpty("SP: PolicyHash", "policy versioning broken, cannot detect policy drift", s.PolicyHash))
 	f = appendIfNonEmpty(f, checkConditions("SP: Conditions", "controller status conditions missing", s.Conditions))
 

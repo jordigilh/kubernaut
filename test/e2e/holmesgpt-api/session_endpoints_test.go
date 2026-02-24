@@ -68,7 +68,7 @@ var _ = Describe("E2E-HAPI-064: Session-Based Endpoints", Label("e2e", "hapi", "
 			req := &hapiclient.IncidentRequest{
 				IncidentID:        "test-session-001",
 				RemediationID:     "test-rem-session-001",
-				SignalType:        "CrashLoopBackOff",
+				SignalName:        "CrashLoopBackOff",
 				Severity:          "high",
 				SignalSource:      "kubernetes",
 				ResourceNamespace: "default",
@@ -140,7 +140,7 @@ var _ = Describe("E2E-HAPI-064: Session-Based Endpoints", Label("e2e", "hapi", "
 			req := &hapiclient.IncidentRequest{
 				IncidentID:        "test-session-002",
 				RemediationID:     "test-rem-session-002",
-				SignalType:        "OOMKilled",
+				SignalName:        "OOMKilled",
 				Severity:          "high",
 				SignalSource:      "kubernetes",
 				ResourceNamespace: "default",
@@ -160,7 +160,8 @@ var _ = Describe("E2E-HAPI-064: Session-Based Endpoints", Label("e2e", "hapi", "
 			By("Submitting OOMKilled incident via session endpoint")
 			sessionID, err := sessionClient.SubmitInvestigation(ctx, req)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(sessionID).ToNot(BeEmpty())
+			Expect(len(sessionID)).To(BeNumerically(">", 0),
+				"SubmitInvestigation should return a non-empty session ID")
 
 			By("Polling session status until completed")
 			Eventually(func() string {
@@ -203,7 +204,7 @@ var _ = Describe("E2E-HAPI-064: Session-Based Endpoints", Label("e2e", "hapi", "
 			req := &hapiclient.IncidentRequest{
 				IncidentID:        "test-session-003",
 				RemediationID:     "test-rem-session-003",
-				SignalType:        "MOCK_NO_WORKFLOW_FOUND",
+				SignalName:        "MOCK_NO_WORKFLOW_FOUND",
 				Severity:          "high",
 				SignalSource:      "prometheus",
 				ResourceNamespace: "default",
@@ -269,7 +270,7 @@ var _ = Describe("E2E-HAPI-064: Session-Based Endpoints", Label("e2e", "hapi", "
 			req := &hapiclient.IncidentRequest{
 				IncidentID:        "test-session-004",
 				RemediationID:     "test-rem-session-004",
-				SignalType:        "MOCK_LOW_CONFIDENCE",
+				SignalName:        "MOCK_LOW_CONFIDENCE",
 				Severity:          "high",
 				SignalSource:      "prometheus",
 				ResourceNamespace: "default",
@@ -331,7 +332,7 @@ var _ = Describe("E2E-HAPI-064: Session-Based Endpoints", Label("e2e", "hapi", "
 			req := &hapiclient.IncidentRequest{
 				IncidentID:        "test-session-005",
 				RemediationID:     "test-rem-session-005",
-				SignalType:        "MOCK_MAX_RETRIES_EXHAUSTED",
+				SignalName:        "MOCK_MAX_RETRIES_EXHAUSTED",
 				Severity:          "high",
 				SignalSource:      "prometheus",
 				ResourceNamespace: "default",
@@ -406,7 +407,7 @@ var _ = Describe("E2E-HAPI-064: Session-Based Endpoints", Label("e2e", "hapi", "
 			req := &hapiclient.IncidentRequest{
 				IncidentID:        "test-session-006",
 				RemediationID:     "test-rem-session-006",
-				SignalType:        "CrashLoopBackOff",
+				SignalName:        "CrashLoopBackOff",
 				Severity:          "medium",
 				SignalSource:      "kubernetes",
 				ResourceNamespace: "default",
@@ -475,7 +476,7 @@ var _ = Describe("E2E-HAPI-064: Session-Based Endpoints", Label("e2e", "hapi", "
 				WorkflowExecutionRef: "workflow-exec-session-failed",
 				OriginalRca: hapiclient.OriginalRCA{
 					Summary:             "Initial RCA for session test",
-					SignalType:          "CrashLoopBackOff",
+					SignalName:          "CrashLoopBackOff",
 					Severity:            "high",
 					ContributingFactors: []string{"resource_exhaustion"},
 				},
@@ -498,7 +499,7 @@ var _ = Describe("E2E-HAPI-064: Session-Based Endpoints", Label("e2e", "hapi", "
 			req := &hapiclient.RecoveryRequest{
 				IncidentID:            "test-session-007",
 				RemediationID:         "test-rem-session-007",
-				SignalType:            hapiclient.NewOptNilString("CrashLoopBackOff"),
+				SignalName:            hapiclient.NewOptNilString("CrashLoopBackOff"),
 				Severity:              hapiclient.NewOptNilSeverity(hapiclient.SeverityHigh),
 				IsRecoveryAttempt:     hapiclient.NewOptBool(true),
 				RecoveryAttemptNumber: hapiclient.NewOptNilInt(2),
@@ -564,7 +565,7 @@ var _ = Describe("E2E-HAPI-064: Session-Based Endpoints", Label("e2e", "hapi", "
 				WorkflowExecutionRef: "workflow-exec-not-repro",
 				OriginalRca: hapiclient.OriginalRCA{
 					Summary:    "Issue appeared transient",
-					SignalType: "OOMKilled",
+					SignalName: "OOMKilled",
 					Severity:   "medium",
 				},
 				SelectedWorkflow: hapiclient.SelectedWorkflowSummary{
@@ -582,7 +583,7 @@ var _ = Describe("E2E-HAPI-064: Session-Based Endpoints", Label("e2e", "hapi", "
 			req := &hapiclient.RecoveryRequest{
 				IncidentID:            "test-session-008",
 				RemediationID:         "test-rem-session-008",
-				SignalType:            hapiclient.NewOptNilString("MOCK_NOT_REPRODUCIBLE"),
+				SignalName:            hapiclient.NewOptNilString("MOCK_NOT_REPRODUCIBLE"),
 				Severity:              hapiclient.NewOptNilSeverity(hapiclient.SeverityHigh),
 				IsRecoveryAttempt:     hapiclient.NewOptBool(true),
 				RecoveryAttemptNumber: hapiclient.NewOptNilInt(2),
@@ -636,7 +637,7 @@ var _ = Describe("E2E-HAPI-064: Session-Based Endpoints", Label("e2e", "hapi", "
 				WorkflowExecutionRef: "workflow-exec-no-recovery",
 				OriginalRca: hapiclient.OriginalRCA{
 					Summary:    "Complex failure requiring manual intervention",
-					SignalType: "CrashLoopBackOff",
+					SignalName: "CrashLoopBackOff",
 					Severity:   "critical",
 				},
 				SelectedWorkflow: hapiclient.SelectedWorkflowSummary{
@@ -654,7 +655,7 @@ var _ = Describe("E2E-HAPI-064: Session-Based Endpoints", Label("e2e", "hapi", "
 			req := &hapiclient.RecoveryRequest{
 				IncidentID:            "test-session-009",
 				RemediationID:         "test-rem-session-009",
-				SignalType:            hapiclient.NewOptNilString("MOCK_NO_WORKFLOW_FOUND"),
+				SignalName:            hapiclient.NewOptNilString("MOCK_NO_WORKFLOW_FOUND"),
 				Severity:              hapiclient.NewOptNilSeverity(hapiclient.SeverityHigh),
 				IsRecoveryAttempt:     hapiclient.NewOptBool(true),
 				RecoveryAttemptNumber: hapiclient.NewOptNilInt(2),
@@ -715,7 +716,7 @@ var _ = Describe("E2E-HAPI-064: Session-Based Endpoints", Label("e2e", "hapi", "
 			incidentReq := &hapiclient.IncidentRequest{
 				IncidentID:        "test-lifecycle-010",
 				RemediationID:     "test-rem-lifecycle-010",
-				SignalType:        "CrashLoopBackOff",
+				SignalName:        "CrashLoopBackOff",
 				Severity:          "high",
 				SignalSource:      "kubernetes",
 				ResourceNamespace: "default",
@@ -726,7 +727,8 @@ var _ = Describe("E2E-HAPI-064: Session-Based Endpoints", Label("e2e", "hapi", "
 
 			incidentSessionID, err := sessionClient.SubmitInvestigation(ctx, incidentReq)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(incidentSessionID).ToNot(BeEmpty())
+			Expect(len(incidentSessionID)).To(BeNumerically(">", 0),
+				"SubmitInvestigation should return a non-empty session ID")
 
 			// ========================================
 			// STEP 2: Wait for incident session to complete
@@ -756,7 +758,7 @@ var _ = Describe("E2E-HAPI-064: Session-Based Endpoints", Label("e2e", "hapi", "
 				WorkflowExecutionRef: "workflow-exec-lifecycle-failed",
 				OriginalRca: hapiclient.OriginalRCA{
 					Summary:             "Initial analysis from incident session",
-					SignalType:          "CrashLoopBackOff",
+					SignalName:          "CrashLoopBackOff",
 					Severity:            "high",
 					ContributingFactors: []string{"resource_exhaustion"},
 				},
@@ -776,7 +778,7 @@ var _ = Describe("E2E-HAPI-064: Session-Based Endpoints", Label("e2e", "hapi", "
 			recoveryReq := &hapiclient.RecoveryRequest{
 				IncidentID:            "test-lifecycle-010",
 				RemediationID:         "test-rem-lifecycle-010",
-				SignalType:            hapiclient.NewOptNilString("CrashLoopBackOff"),
+				SignalName:            hapiclient.NewOptNilString("CrashLoopBackOff"),
 				Severity:              hapiclient.NewOptNilSeverity(hapiclient.SeverityHigh),
 				IsRecoveryAttempt:     hapiclient.NewOptBool(true),
 				RecoveryAttemptNumber: hapiclient.NewOptNilInt(2),
@@ -785,7 +787,8 @@ var _ = Describe("E2E-HAPI-064: Session-Based Endpoints", Label("e2e", "hapi", "
 
 			recoverySessionID, err := sessionClient.SubmitRecoveryInvestigation(ctx, recoveryReq)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(recoverySessionID).ToNot(BeEmpty())
+			Expect(len(recoverySessionID)).To(BeNumerically(">", 0),
+				"SubmitRecoveryInvestigation should return a non-empty session ID")
 
 			// ========================================
 			// STEP 5: Wait for recovery session to complete

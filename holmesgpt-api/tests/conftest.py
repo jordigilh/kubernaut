@@ -12,21 +12,20 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
-"""
 
-"""
 Pytest Configuration and Shared Fixtures
 
 Provides reusable test fixtures for HolmesGPT API Service testing.
 Uses mock LLM server for integration tests - no DEV_MODE anti-pattern.
 """
 
-import pytest
 import os
 import sys
 from pathlib import Path
-from fastapi.testclient import TestClient
 from typing import Dict, Any
+
+import pytest
+from fastapi.testclient import TestClient
 
 # V3.0 (Mock LLM Migration - January 12, 2026):
 # Removed embedded MockLLMServer - now using standalone Mock LLM service
@@ -167,7 +166,7 @@ def sample_recovery_request() -> Dict[str, Any]:
             "workflow_execution_ref": "req-test-2025-11-27-001-we-1",
             "original_rca": {
                 "summary": "Resource exhaustion causing scaling issue",
-                "signal_type": "ResourcePressure",
+                "signal_name": "ResourcePressure",
                 "severity": "medium",
                 "contributing_factors": ["insufficient_resources"]
             },
@@ -193,7 +192,7 @@ def sample_recovery_request() -> Dict[str, Any]:
                 "pdbProtected": False
             }
         },
-        "signal_type": "ResourcePressure",
+        "signal_name": "ResourcePressure",
         "severity": "medium",
         "resource_namespace": "test",
         "resource_kind": "Deployment",
@@ -218,7 +217,7 @@ def sample_recovery_request_with_previous_execution() -> Dict[str, Any]:
             "workflow_execution_ref": "req-test-2025-11-29-001-we-1",
             "original_rca": {
                 "summary": "Memory exhaustion causing OOMKilled in test pod",
-                "signal_type": "OOMKilled",
+                "signal_name": "OOMKilled",
                 "severity": "high",
                 "contributing_factors": ["memory leak", "insufficient limits"]
             },
@@ -247,7 +246,7 @@ def sample_recovery_request_with_previous_execution() -> Dict[str, Any]:
                 "stateful": False
             }
         },
-        "signal_type": "OOMKilled",
+        "signal_name": "OOMKilled",
         "severity": "high",
         "resource_namespace": "test",
         "resource_kind": "Deployment",
@@ -271,7 +270,7 @@ def sample_incident_request_with_detected_labels() -> Dict[str, Any]:
     return {
         "incident_id": "test-inc-003",
         "remediation_id": "req-test-2025-11-29-003",
-        "signal_type": "OOMKilled",
+        "signal_name": "OOMKilled",
         "severity": "high",
         "signal_source": "prometheus",
         "resource_namespace": "production",

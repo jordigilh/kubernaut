@@ -12,7 +12,7 @@ metadata:
 actionType: RestartPod
 
 labels:
-  signalType: CrashLoopBackOff
+  signalName: CrashLoopBackOff
   severity: [critical]
   environment: [production, staging, test]
   component: pod

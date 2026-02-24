@@ -105,7 +105,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 				Fingerprint: ValidTestFingerprints["enrich-pod"],
 				Name:        "PodEnrichTest",
 				Severity: "high",
-				Type:        "prometheus",
+				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 					Kind:      "Pod",
@@ -144,7 +144,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 				Fingerprint: ValidTestFingerprints["enrich-deploy"],
 				Name:        "DeployEnrichTest",
 				Severity: "high",
-				Type:        "prometheus",
+				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 					Kind:      "Deployment",
@@ -203,7 +203,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 				Fingerprint: ValidTestFingerprints["enrich-sts"],
 				Name:        "StsEnrichTest",
 				Severity: "high",
-				Type:        "prometheus",
+				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 					Kind:      "StatefulSet",
@@ -255,7 +255,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 				Fingerprint: ValidTestFingerprints["enrich-svc"],
 				Name:        "SvcEnrichTest",
 				Severity: "high",
-				Type:        "prometheus",
+				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 					Kind:      "Service",
@@ -292,7 +292,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 				Fingerprint: ValidTestFingerprints["enrich-ns"],
 				Name:        "NsContextTest",
 				Severity: "high",
-				Type:        "prometheus",
+				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 					Kind:      "Pod",
@@ -325,7 +325,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 				Fingerprint: ValidTestFingerprints["enrich-degraded"],
 				Name:        "DegradedTest",
 				Severity:    "critical",
-				Type:        "prometheus",
+				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 					Kind:      "Pod",
@@ -370,7 +370,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 				Fingerprint: ValidTestFingerprints["env-configmap"],
 				Name:        "EnvConfigMapTest",
 				Severity: "high",
-				Type:        "prometheus",
+				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 					Kind:      "Pod",
@@ -406,7 +406,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 				Fingerprint: ValidTestFingerprints["env-label"],
 				Name:        "LabelPriorityTest",
 				Severity: "high",
-				Type:        "prometheus",
+				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 					Kind:      "Pod",
@@ -451,7 +451,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 				Fingerprint: ValidTestFingerprints["priority-rego"],
 				Name:        "PriorityRegoTest",
 				Severity:    "critical",
-				Type:        "prometheus",
+				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 					Kind:      "Pod",
@@ -486,7 +486,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 				Fingerprint: ValidTestFingerprints["priority-fallback"],
 				Name:        "SeverityFallbackTest",
 				Severity:    "critical",
-				Type:        "prometheus",
+				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 					Kind:      "Pod",
@@ -526,7 +526,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 				Fingerprint: ValidTestFingerprints["priority-cm"],
 				Name:        "PriorityConfigMapTest",
 				Severity: "high",
-				Type:        "prometheus",
+				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 					Kind:      "Pod",
@@ -568,7 +568,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 				Fingerprint: ValidTestFingerprints["business-label"],
 				Name:        "BusinessLabelTest",
 				Severity: "high",
-				Type:        "prometheus",
+				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 					Kind:      "Pod",
@@ -601,7 +601,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 				Fingerprint: ValidTestFingerprints["business-pattern"],
 				Name:        "BusinessPatternTest",
 				Severity: "high",
-				Type:        "prometheus",
+				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 					Kind:      "Pod",
@@ -682,7 +682,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 				Fingerprint: ValidTestFingerprints["ownerchain"],
 				Name:        "OwnerChainRealTest",
 				Severity: "high",
-				Type:        "prometheus",
+				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 					Kind:      "Pod",

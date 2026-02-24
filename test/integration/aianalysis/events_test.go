@@ -98,7 +98,7 @@ var _ = Describe("AIAnalysis K8s Event Observability (DD-EVENT-001, BR-AA-095)",
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      "test-fingerprint-events-001",
 							Severity:         "medium",
-							SignalType:       "CrashLoopBackOff",
+							SignalName:       "CrashLoopBackOff",
 							Environment:      "staging",
 							BusinessPriority: "P2",
 							TargetResource: aianalysisv1alpha1.TargetResource{
@@ -171,7 +171,7 @@ var _ = Describe("AIAnalysis K8s Event Observability (DD-EVENT-001, BR-AA-095)",
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      "test-fingerprint-events-fail",
 							Severity:         "medium",
-							SignalType:       "MOCK_RCA_PERMANENT_ERROR",
+							SignalName:       "MOCK_RCA_PERMANENT_ERROR",
 							Environment:      "staging",
 							BusinessPriority: "P2",
 							TargetResource: aianalysisv1alpha1.TargetResource{
@@ -238,7 +238,7 @@ var _ = Describe("AIAnalysis K8s Event Observability (DD-EVENT-001, BR-AA-095)",
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      "test-fingerprint-events-hr",
 							Severity:         "critical",
-							SignalType:       "MOCK_NO_WORKFLOW_FOUND",
+							SignalName:       "MOCK_NO_WORKFLOW_FOUND",
 							Environment:      "production",
 							BusinessPriority: "P1",
 							TargetResource: aianalysisv1alpha1.TargetResource{
@@ -308,7 +308,7 @@ var _ = Describe("AIAnalysis K8s Event Observability (DD-EVENT-001, BR-AA-095)",
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      "test-fingerprint-session-created",
 							Severity:         "medium",
-							SignalType:       "CrashLoopBackOff",
+							SignalName:       "CrashLoopBackOff",
 							Environment:      "staging",
 							BusinessPriority: "P2",
 							TargetResource: aianalysisv1alpha1.TargetResource{

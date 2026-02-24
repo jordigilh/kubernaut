@@ -656,7 +656,19 @@ type MockBlockingRoutingEngine struct {
 	BlockCondition *MockBlockCondition
 }
 
-func (m *MockBlockingRoutingEngine) CheckBlockingConditions(ctx context.Context, rr *remediationv1.RemediationRequest, workflowID string) (*routing.BlockingCondition, error) {
+func (m *MockBlockingRoutingEngine) CheckPreAnalysisConditions(ctx context.Context, rr *remediationv1.RemediationRequest) (*routing.BlockingCondition, error) {
+	if m.BlockCondition != nil {
+		return &routing.BlockingCondition{
+			Blocked:      true,
+			Reason:       m.BlockCondition.Reason,
+			Message:      m.BlockCondition.Message,
+			RequeueAfter: m.BlockCondition.RequeueAfter,
+		}, nil
+	}
+	return nil, nil
+}
+
+func (m *MockBlockingRoutingEngine) CheckPostAnalysisConditions(ctx context.Context, rr *remediationv1.RemediationRequest, workflowID string, targetResource string) (*routing.BlockingCondition, error) {
 	if m.BlockCondition != nil {
 		return &routing.BlockingCondition{
 			Blocked:      true,

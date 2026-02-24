@@ -12,7 +12,7 @@ metadata:
 actionType: DeletePod
 
 labels:
-  signalType: TestSignal
+  signalName: TestSignal
   severity: [low]
   environment: [test]
   component: pod

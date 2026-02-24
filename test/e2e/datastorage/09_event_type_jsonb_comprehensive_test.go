@@ -107,15 +107,15 @@ var eventTypeCatalog = []eventTypeTestCase{
 				CorrelationID:  correlationID,
 				EventData: ogenclient.NewAuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData(ogenclient.GatewayAuditPayload{
 					EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
-					SignalType:  "prometheus-alert",
-					AlertName:   "HighCPU",
+					SignalType:  "alert",
+					SignalName:   "HighCPU",
 					Namespace:   "production",
 					Fingerprint: "fp-abc123",
 				}),
 			}
 		},
 		JSONBQueries: []jsonbQueryTest{
-			{Field: "alert_name", Operator: "->>", Value: "HighCPU", ExpectedRows: 1},
+			{Field: "signal_name", Operator: "->>", Value: "HighCPU", ExpectedRows: 1},
 			{Field: "fingerprint", Operator: "->>", Value: "fp-abc123", ExpectedRows: 1},
 		},
 	},
@@ -140,15 +140,15 @@ var eventTypeCatalog = []eventTypeTestCase{
 				CorrelationID:  correlationID,
 				EventData: ogenclient.NewAuditEventRequestEventDataGatewaySignalDeduplicatedAuditEventRequestEventData(ogenclient.GatewayAuditPayload{
 					EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalDeduplicated,
-					SignalType:  "prometheus-alert",
-					AlertName:   "HighCPU",
+					SignalType:  "alert",
+					SignalName:   "HighCPU",
 					Namespace:   "production",
 					Fingerprint: "fp-dedupe-456",
 				}),
 			}
 		},
 		JSONBQueries: []jsonbQueryTest{
-			{Field: "alert_name", Operator: "->>", Value: "HighCPU", ExpectedRows: 1},
+			{Field: "signal_name", Operator: "->>", Value: "HighCPU", ExpectedRows: 1},
 			{Field: "fingerprint", Operator: "->>", Value: "fp-dedupe-456", ExpectedRows: 1},
 		},
 	},
@@ -173,15 +173,15 @@ var eventTypeCatalog = []eventTypeTestCase{
 				CorrelationID:  correlationID,
 				EventData: ogenclient.NewAuditEventRequestEventDataGatewayCrdCreatedAuditEventRequestEventData(ogenclient.GatewayAuditPayload{
 					EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewayCrdCreated,
-					SignalType:  "kubernetes-event",
-					AlertName:   "CRDCreated",
+					SignalType:  "alert",
+					SignalName:   "CRDCreated",
 					Namespace:   "kubernaut-system",
 					Fingerprint: "fp-crd-012",
 				}),
 			}
 		},
 		JSONBQueries: []jsonbQueryTest{
-			{Field: "alert_name", Operator: "->>", Value: "CRDCreated", ExpectedRows: 1},
+			{Field: "signal_name", Operator: "->>", Value: "CRDCreated", ExpectedRows: 1},
 			{Field: "fingerprint", Operator: "->>", Value: "fp-crd-012", ExpectedRows: 1},
 		},
 	},
@@ -206,15 +206,15 @@ var eventTypeCatalog = []eventTypeTestCase{
 				CorrelationID:  correlationID,
 				EventData: ogenclient.NewAuditEventRequestEventDataGatewayCrdFailedAuditEventRequestEventData(ogenclient.GatewayAuditPayload{
 					EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewayCrdFailed,
-					SignalType:  "kubernetes-event",
-					AlertName:   "CRDCreationFailed",
+					SignalType:  "alert",
+					SignalName:   "CRDCreationFailed",
 					Namespace:   "kubernaut-system",
 					Fingerprint: "fp-crd-fail-789",
 				}),
 			}
 		},
 		JSONBQueries: []jsonbQueryTest{
-			{Field: "alert_name", Operator: "->>", Value: "CRDCreationFailed", ExpectedRows: 1},
+			{Field: "signal_name", Operator: "->>", Value: "CRDCreationFailed", ExpectedRows: 1},
 			{Field: "fingerprint", Operator: "->>", Value: "fp-crd-fail-789", ExpectedRows: 1},
 		},
 	},
@@ -1387,7 +1387,10 @@ var _ = Describe("GAP 1.1: Comprehensive Event Type + JSONB Validation", Label("
 					// ACT: Send event using OpenAPI client (replaces raw HTTP POST)
 					resp, err := DSClient.CreateAuditEvent(ctx, &auditEvent)
 					Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Event type %s should be accepted by DataStorage", tc.EventType))
-					Expect(resp).ToNot(BeNil())
+					_, isAuditResp := resp.(*ogenclient.AuditEventResponse)
+					_, isAsyncResp := resp.(*ogenclient.AsyncAcceptanceResponse)
+					Expect(isAuditResp || isAsyncResp).To(BeTrue(),
+						fmt.Sprintf("CreateAuditEvent for %s should return AuditEventResponse or AsyncAcceptanceResponse, got %T", tc.EventType, resp))
 
 					// ASSERT: Event persisted to database (with Eventually for async persistence)
 					correlationID := auditEvent.CorrelationID

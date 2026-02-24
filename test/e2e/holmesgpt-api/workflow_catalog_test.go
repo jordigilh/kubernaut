@@ -56,7 +56,7 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			req := &hapiclient.IncidentRequest{
 				IncidentID:        "test-catalog-030",
 				RemediationID:     "test-rem-030",
-				SignalType:        "OOMKilled",
+				SignalName:        "OOMKilled",
 				Severity:          "critical",
 				SignalSource:      "kubernetes",
 				ResourceNamespace: "default",
@@ -105,7 +105,7 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			req := &hapiclient.IncidentRequest{
 				IncidentID:        "test-catalog-031",
 				RemediationID:     "test-rem-031",
-				SignalType:        "OOMKilled",
+				SignalName:        "OOMKilled",
 				Severity:          "critical",
 				SignalSource:      "kubernetes",
 				ResourceNamespace: "default",
@@ -153,7 +153,7 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 		req := &hapiclient.IncidentRequest{
 			IncidentID:        "test-catalog-032",
 			RemediationID:     "test-rem-032",
-			SignalType:        "MOCK_NO_WORKFLOW_FOUND",  // Mock LLM scenario
+			SignalName:        "MOCK_NO_WORKFLOW_FOUND",  // Mock LLM scenario
 			Severity:          "high",
 			SignalSource:      "kubernetes",
 			ResourceNamespace: "default",
@@ -199,7 +199,7 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			req := &hapiclient.IncidentRequest{
 				IncidentID:        "test-catalog-033",
 				RemediationID:     "test-rem-033",
-				SignalType:        "CrashLoopBackOff",
+				SignalName:        "CrashLoopBackOff",
 				Severity:          "high",
 				SignalSource:      "kubernetes",
 				ResourceNamespace: "default",
@@ -247,7 +247,7 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			req := &hapiclient.IncidentRequest{
 				IncidentID:        "test-catalog-034",
 				RemediationID:     "test-rem-034",
-				SignalType:        "OOMKilled",
+				SignalName:        "OOMKilled",
 				Severity:          "high",
 				SignalSource:      "kubernetes",
 				ResourceNamespace: "default",
@@ -313,7 +313,7 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			req := &hapiclient.IncidentRequest{
 				IncidentID:        "test-catalog-036",
 				RemediationID:     "test-rem-036",
-				SignalType:        "OOMKilled",
+				SignalName:        "OOMKilled",
 				Severity:          "critical",
 				SignalSource:      "kubernetes",
 				ResourceNamespace: "default",
@@ -361,7 +361,7 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			req := &hapiclient.IncidentRequest{
 				IncidentID:        "test-catalog-037",
 				RemediationID:     "test-rem-037",
-				SignalType:        "CrashLoopBackOff",
+				SignalName:        "CrashLoopBackOff",
 				Severity:          "critical",
 				SignalSource:      "kubernetes",
 				ResourceNamespace: "default",
@@ -408,7 +408,7 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 		req := &hapiclient.IncidentRequest{
 			IncidentID:        "test-catalog-038",
 			RemediationID:     "test-rem-038",
-			SignalType:        "MOCK_NO_WORKFLOW_FOUND",  // Mock LLM scenario
+			SignalName:        "MOCK_NO_WORKFLOW_FOUND",  // Mock LLM scenario
 			Severity:          "high",
 			SignalSource:      "kubernetes",
 			ResourceNamespace: "default",
@@ -471,7 +471,7 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			req := &hapiclient.IncidentRequest{
 				IncidentID:        "test-catalog-040",
 				RemediationID:     "test-rem-040",
-				SignalType:        "OOMKilled",
+				SignalName:        "OOMKilled",
 				Severity:          "critical",
 				SignalSource:      "kubernetes",
 				ResourceNamespace: "default",
@@ -515,7 +515,7 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			req := &hapiclient.IncidentRequest{
 				IncidentID:        "test-catalog-041",
 				RemediationID:     "test-rem-041",
-				SignalType:        "OOMKilled",
+				SignalName:        "OOMKilled",
 				Severity:          "critical",
 				SignalSource:      "kubernetes",
 				ResourceNamespace: "default",
@@ -559,7 +559,7 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			req := &hapiclient.IncidentRequest{
 				IncidentID:        "test-catalog-042",
 				RemediationID:     "test-rem-042",
-				SignalType:        "OOMKilled",
+				SignalName:        "OOMKilled",
 				Severity:          "critical",
 				SignalSource:      "kubernetes",
 				ResourceNamespace: "default",
@@ -603,7 +603,7 @@ var _ = Describe("E2E-HAPI Workflow Catalog", Label("e2e", "hapi", "catalog"), f
 			req := &hapiclient.IncidentRequest{
 				IncidentID:        "test-catalog-043",
 				RemediationID:     "test-rem-043",
-				SignalType:        "CrashLoopBackOff",
+				SignalName:        "CrashLoopBackOff",
 				Severity:          "high",
 				SignalSource:      "kubernetes",
 				ResourceNamespace: "default",

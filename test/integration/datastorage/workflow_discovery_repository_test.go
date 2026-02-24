@@ -91,7 +91,7 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 		hash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
 
 		labels := models.MandatoryLabels{
-			SignalType:  "OOMKilled",
+			SignalName:  "OOMKilled",
 			Severity:    []string{severity},
 			Component:   component,
 			Environment: []string{environment},

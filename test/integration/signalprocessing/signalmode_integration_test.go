@@ -94,14 +94,14 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 			//
 			// ADR-054: Separation of concerns — SP normalizes, HAPI adapts prompt.
 			//
-			// DATA FLOW: SP.Spec.Signal.Type="PredictedOOMKill"
+			// DATA FLOW: SP.Spec.Signal.Name="PredictedOOMKill"
 			//   → Status.SignalMode="predictive"
 			//   → Status.SignalType="OOMKilled" (normalized for workflow catalog)
-			//   → Status.OriginalSignalType="PredictedOOMKill" (SOC2 audit trail)
+			//   → Status.SourceSignalName="PredictedOOMKill" (SOC2 audit trail)
 
 			// GIVEN: SignalProcessing with predictive signal type
 			sp := createSignalModeTestCRD(namespace, "test-predictive-oomkill")
-			sp.Spec.Signal.Type = "PredictedOOMKill"
+			sp.Spec.Signal.Name = "PredictedOOMKill"
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 
 			// WHEN: Controller reconciles and classifies signal mode
@@ -117,11 +117,11 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 					"PredictedOOMKill should be classified as predictive signal mode")
 
 				// THEN: Signal type is normalized for workflow catalog matching
-				g.Expect(updated.Status.SignalType).To(Equal("OOMKilled"),
+				g.Expect(updated.Status.SignalName).To(Equal("OOMKilled"),
 					"PredictedOOMKill should be normalized to OOMKilled for workflow catalog")
 
 				// THEN: Original signal type is preserved for SOC2 audit trail
-				g.Expect(updated.Status.OriginalSignalType).To(Equal("PredictedOOMKill"),
+				g.Expect(updated.Status.SourceSignalName).To(Equal("PredictedOOMKill"),
 					"Original signal type must be preserved for SOC2 CC7.4 audit trail")
 
 				// THEN: SP reaches Completed phase (full pipeline works with predictive signals)
@@ -132,7 +132,7 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 			// BUSINESS OUTCOME VERIFIED:
 			// - RO reads Status.SignalType="OOMKilled" → correct workflow catalog match
 			// - RO reads Status.SignalMode="predictive" → passes to AA for prompt adaptation
-			// - SOC2 auditors see OriginalSignalType="PredictedOOMKill" for traceability
+			// - SOC2 auditors see SourceSignalName="PredictedOOMKill" for traceability
 		})
 
 		It("should classify reactive signals with default mode and unchanged type", func() {
@@ -145,7 +145,7 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 
 			// GIVEN: SignalProcessing with standard reactive signal type
 			sp := createSignalModeTestCRD(namespace, "test-reactive-oomkilled")
-			sp.Spec.Signal.Type = "OOMKilled"
+			sp.Spec.Signal.Name = "OOMKilled"
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 
 			// WHEN: Controller reconciles
@@ -161,12 +161,12 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 					"OOMKilled should be classified as reactive (not in predictive mappings)")
 
 				// THEN: Signal type is unchanged (no normalization needed)
-				g.Expect(updated.Status.SignalType).To(Equal("OOMKilled"),
+				g.Expect(updated.Status.SignalName).To(Equal("OOMKilled"),
 					"Reactive signal type should pass through unchanged")
 
 				// THEN: Original signal type is empty (no normalization occurred)
-				g.Expect(updated.Status.OriginalSignalType).To(BeEmpty(),
-					"OriginalSignalType should be empty for reactive signals (no normalization)")
+				g.Expect(updated.Status.SourceSignalName).To(BeEmpty(),
+					"SourceSignalName should be empty for reactive signals (no normalization)")
 
 				// THEN: SP reaches Completed phase
 				g.Expect(updated.Status.Phase).To(Equal(signalprocessingv1alpha1.PhaseCompleted),
@@ -183,7 +183,7 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 
 			// GIVEN: SignalProcessing with a different predictive signal type
 			sp := createSignalModeTestCRD(namespace, "test-predictive-cpu")
-			sp.Spec.Signal.Type = "PredictedCPUThrottling"
+			sp.Spec.Signal.Name = "PredictedCPUThrottling"
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 
 			// WHEN: Controller reconciles
@@ -197,9 +197,9 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 				// THEN: Classified as predictive with correct normalization
 				g.Expect(updated.Status.SignalMode).To(Equal("predictive"),
 					"PredictedCPUThrottling should be classified as predictive")
-				g.Expect(updated.Status.SignalType).To(Equal("CPUThrottling"),
+				g.Expect(updated.Status.SignalName).To(Equal("CPUThrottling"),
 					"PredictedCPUThrottling should normalize to CPUThrottling")
-				g.Expect(updated.Status.OriginalSignalType).To(Equal("PredictedCPUThrottling"),
+				g.Expect(updated.Status.SourceSignalName).To(Equal("PredictedCPUThrottling"),
 					"Original type preserved for audit trail")
 				g.Expect(updated.Status.Phase).To(Equal(signalprocessingv1alpha1.PhaseCompleted))
 			}, "30s", "1s").Should(Succeed())
@@ -213,7 +213,7 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 
 			// GIVEN: SignalProcessing with an unknown signal type not in any mapping
 			sp := createSignalModeTestCRD(namespace, "test-unknown-type")
-			sp.Spec.Signal.Type = "CustomAlertType"
+			sp.Spec.Signal.Name = "CustomAlertType"
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 
 			// WHEN: Controller reconciles
@@ -227,9 +227,9 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 				// THEN: Defaults to reactive with type unchanged
 				g.Expect(updated.Status.SignalMode).To(Equal("reactive"),
 					"Unknown signal types should default to reactive")
-				g.Expect(updated.Status.SignalType).To(Equal("CustomAlertType"),
+				g.Expect(updated.Status.SignalName).To(Equal("CustomAlertType"),
 					"Unknown signal type should pass through unchanged")
-				g.Expect(updated.Status.OriginalSignalType).To(BeEmpty(),
+				g.Expect(updated.Status.SourceSignalName).To(BeEmpty(),
 					"No original type for reactive signals")
 				g.Expect(updated.Status.Phase).To(Equal(signalprocessingv1alpha1.PhaseCompleted))
 			}, "30s", "1s").Should(Succeed())
@@ -245,14 +245,14 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 		It("should include signal_mode=predictive in classification.decision audit event", func() {
 			// BUSINESS CONTEXT:
 			// SOC2 CC7.4 requires complete audit trail for signal classification decisions.
-			// Audit events must include signal_mode and original_signal_type for
+			// Audit events must include signal_mode and source_signal_name for
 			// predictive signals to demonstrate proper signal normalization.
 			//
 			// COMPLIANCE: Audit trail shows "PredictedOOMKill → predictive mode, normalized to OOMKilled"
 
 			// GIVEN: SignalProcessing with predictive signal type
 			sp := createSignalModeTestCRD(namespace, "test-audit-predictive")
-			sp.Spec.Signal.Type = "PredictedOOMKill"
+			sp.Spec.Signal.Name = "PredictedOOMKill"
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 
 			// Get unique correlation ID for audit event query
@@ -269,7 +269,7 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 					"SP must complete before checking audit events")
 			}, "30s", "1s").Should(Succeed())
 
-			// THEN: Audit event contains signal_mode and original_signal_type
+			// THEN: Audit event contains signal_mode and source_signal_name
 			flushAuditStoreAndWait()
 
 			Eventually(func(g Gomega) {
@@ -291,10 +291,10 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 				g.Expect(string(payload.SignalMode.Value)).To(Equal("predictive"),
 					"Audit event signal_mode should be 'predictive' for PredictedOOMKill")
 
-				// Validate original_signal_type is preserved
-				g.Expect(payload.OriginalSignalType.IsSet()).To(BeTrue(),
-					"Audit event must include original_signal_type for SOC2 CC7.4")
-				g.Expect(payload.OriginalSignalType.Value).To(Equal("PredictedOOMKill"),
+				// Validate source_signal_name is preserved
+				g.Expect(payload.SourceSignalName.IsSet()).To(BeTrue(),
+					"Audit event must include source_signal_name for SOC2 CC7.4")
+				g.Expect(payload.SourceSignalName.Value).To(Equal("PredictedOOMKill"),
 					"Audit event should preserve original signal type before normalization")
 			}, 60*time.Second, 2*time.Second).Should(Succeed())
 
@@ -310,7 +310,7 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 
 			// GIVEN: SignalProcessing with reactive signal type
 			sp := createSignalModeTestCRD(namespace, "test-audit-reactive")
-			sp.Spec.Signal.Type = "OOMKilled"
+			sp.Spec.Signal.Name = "OOMKilled"
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 
 			correlationID := sp.Spec.RemediationRequestRef.Name
@@ -325,7 +325,7 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 				g.Expect(updated.Status.Phase).To(Equal(signalprocessingv1alpha1.PhaseCompleted))
 			}, "30s", "1s").Should(Succeed())
 
-			// THEN: Audit event has signal_mode=reactive, no original_signal_type
+			// THEN: Audit event has signal_mode=reactive, no source_signal_name
 			flushAuditStoreAndWait()
 
 			Eventually(func(g Gomega) {
@@ -345,9 +345,9 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 					"Audit event signal_mode should be 'reactive' for standard OOMKilled")
 
 				// Original signal type should NOT be set for reactive signals
-				if payload.OriginalSignalType.IsSet() {
-					g.Expect(payload.OriginalSignalType.Value).To(BeEmpty(),
-						"Reactive signals should not have original_signal_type set")
+				if payload.SourceSignalName.IsSet() {
+					g.Expect(payload.SourceSignalName.Value).To(BeEmpty(),
+						"Reactive signals should not have source_signal_name set")
 				}
 			}, 60*time.Second, 2*time.Second).Should(Succeed())
 
@@ -361,7 +361,7 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 
 			// GIVEN: SignalProcessing with predictive signal
 			sp := createSignalModeTestCRD(namespace, "test-audit-processed")
-			sp.Spec.Signal.Type = "PredictedOOMKill"
+			sp.Spec.Signal.Name = "PredictedOOMKill"
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 
 			correlationID := sp.Spec.RemediationRequestRef.Name
@@ -397,9 +397,9 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 				g.Expect(string(payload.SignalMode.Value)).To(Equal("predictive"),
 					"signal.processed event should have predictive signal_mode")
 
-				g.Expect(payload.OriginalSignalType.IsSet()).To(BeTrue(),
-					"signal.processed event should include original_signal_type")
-				g.Expect(payload.OriginalSignalType.Value).To(Equal("PredictedOOMKill"),
+				g.Expect(payload.SourceSignalName.IsSet()).To(BeTrue(),
+					"signal.processed event should include source_signal_name")
+				g.Expect(payload.SourceSignalName.Value).To(Equal("PredictedOOMKill"),
 					"signal.processed should preserve original signal type")
 
 				g.Expect(event.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeSuccess),
@@ -423,7 +423,7 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 
 			// GIVEN: SignalProcessing with predictive signal
 			sp := createSignalModeTestCRD(namespace, "test-condition-predictive")
-			sp.Spec.Signal.Type = "PredictedOOMKill"
+			sp.Spec.Signal.Name = "PredictedOOMKill"
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 
 			// WHEN: Controller classifies
@@ -462,7 +462,7 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 
 // createSignalModeTestCRD creates a SignalProcessing CRD for signal mode integration tests.
 // Uses unique naming per test for parallel execution safety.
-// Signal.Type should be overridden by each test case.
+// Signal.Name should be overridden by each test case (classifier reads Name, not Type).
 func createSignalModeTestCRD(namespace, name string) *signalprocessingv1alpha1.SignalProcessing {
 	// Generate unique RR name with timestamp to avoid stale audit event collisions
 	// Per DD-AUDIT-CORRELATION-001: RR name must be unique per remediation flow
@@ -483,7 +483,7 @@ func createSignalModeTestCRD(namespace, name string) *signalprocessingv1alpha1.S
 				Fingerprint:  "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", // Valid 64-char hex fingerprint
 				Name:         "TestPredictiveAlert",
 				Severity:     "critical",
-				Type:         "prometheus", // Overridden by each test case
+				Type:         "alert", // Overridden by each test case
 				Source:       "test-source",
 				TargetType:   "kubernetes",
 				ReceivedTime: metav1.Now(),

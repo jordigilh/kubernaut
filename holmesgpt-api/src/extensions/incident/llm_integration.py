@@ -214,7 +214,7 @@ async def analyze_incident(
     logger.info({
         "event": "incident_analysis_started",
         "incident_id": incident_id,
-        "signal_type": request_data.get("signal_type")
+        "signal_name": request_data.get("signal_name")
     })
 
     # BR-AUDIT-005: Initialize audit store
@@ -354,12 +354,12 @@ async def analyze_incident(
             # Create investigation request
             investigation_request = InvestigateRequest(
                 source="kubernaut",
-                title=f"Incident analysis for {request_data.get('signal_type')}",
+                title=f"Incident analysis for {request_data.get('signal_name')}",
                 description=investigation_prompt,
                 subject={
                     "type": "incident",
                     "incident_id": incident_id,
-                    "signal_type": request_data.get("signal_type")
+                    "signal_name": request_data.get("signal_name")
                 },
                 context={
                     "incident_id": incident_id,

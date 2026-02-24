@@ -666,7 +666,7 @@ func createTestSignalProcessing(name, namespace string) *signalprocessingv1alpha
 				Fingerprint:  "test-fingerprint-abc123",
 				Name:         "TestAlert",
 				Severity:     "critical", // Default, overridden by tests
-				Type:         "prometheus",
+				Type:         "alert",
 				Source:       "test-source",
 				TargetType:   "kubernetes",
 				ReceivedTime: metav1.Now(),

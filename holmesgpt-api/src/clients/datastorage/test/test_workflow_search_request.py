@@ -38,7 +38,7 @@ class TestWorkflowSearchRequest(unittest.TestCase):
             return WorkflowSearchRequest(
                 remediation_id = '',
                 filters = datastorage.models.workflow_search_filters.WorkflowSearchFilters(
-                    signal_type = 'OOMKilled', 
+                    signal_name = 'OOMKilled', 
                     severity = 'critical', 
                     component = 'pod', 
                     environment = 'production', 
@@ -64,7 +64,7 @@ class TestWorkflowSearchRequest(unittest.TestCase):
         else:
             return WorkflowSearchRequest(
                 filters = datastorage.models.workflow_search_filters.WorkflowSearchFilters(
-                    signal_type = 'OOMKilled', 
+                    signal_name = 'OOMKilled', 
                     severity = 'critical', 
                     component = 'pod', 
                     environment = 'production', 

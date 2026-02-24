@@ -12,9 +12,7 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
-"""
 
-"""
 E2E Tests for Audit Pipeline
 
 Business Requirement: BR-AUDIT-005 (Workflow Selection Audit Trail)
@@ -373,7 +371,7 @@ class TestAuditPipelineE2E:
         request_data = {
             "incident_id": unique_incident_id,
             "remediation_id": unique_remediation_id,
-            "signal_type": "OOMKilled",
+            "signal_name": "OOMKilled",
             "severity": "critical",
             "signal_source": "prometheus",  # REQUIRED field
             "resource_namespace": "production",
@@ -441,7 +439,7 @@ class TestAuditPipelineE2E:
         request_data = {
             "incident_id": unique_incident_id,
             "remediation_id": unique_remediation_id,
-            "signal_type": "CrashLoopBackOff",
+            "signal_name": "CrashLoopBackOff",
             "severity": "high",
             "signal_source": "prometheus",  # REQUIRED field
             "resource_namespace": "default",
@@ -503,7 +501,7 @@ class TestAuditPipelineE2E:
         request_data = {
             "incident_id": unique_incident_id,
             "remediation_id": unique_remediation_id,
-            "signal_type": "OOMKilled",
+            "signal_name": "OOMKilled",
             "severity": "critical",
             "signal_source": "prometheus",  # REQUIRED field
             "resource_namespace": "prod",
@@ -590,7 +588,7 @@ class TestAuditPipelineE2E:
         request_data = {
             "incident_id": unique_incident_id,
             "remediation_id": unique_remediation_id,
-            "signal_type": "OOMKilled",
+            "signal_name": "OOMKilled",
             "severity": "critical",
             "signal_source": "prometheus",  # REQUIRED field
             "resource_namespace": "production",

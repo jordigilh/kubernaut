@@ -126,12 +126,12 @@ type WorkflowMaintainer struct {
 // workflows for a given incident context. Stored in the labels JSONB column.
 //
 // BR-WORKFLOW-004: severity, environment, component, priority are required.
-// DD-WORKFLOW-016: signalType changed to optional metadata (not used for matching in V1.0).
+// DD-WORKFLOW-016: signalName is optional metadata (not used for matching -- LLM uses actionType).
 type WorkflowSchemaLabels struct {
-	// SignalType is the signal type this workflow handles (OPTIONAL per DD-WORKFLOW-016)
+	// SignalName is the signal type this workflow handles (OPTIONAL per DD-WORKFLOW-016)
 	// Was required prior to DD-WORKFLOW-016; now optional metadata for workflow authors.
 	// Examples: "OOMKilled", "CrashLoopBackOff", "NodeNotReady"
-	SignalType string `yaml:"signalType,omitempty" json:"signalType,omitempty" validate:"omitempty"`
+	SignalName string `yaml:"signalName,omitempty" json:"signalName,omitempty" validate:"omitempty"`
 
 	// Severity is the severity level(s) this workflow is designed for (REQUIRED)
 	// Values: "critical", "high", "medium", "low"

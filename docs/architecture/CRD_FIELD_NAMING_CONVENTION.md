@@ -358,8 +358,8 @@ import (
 // RemediationRequestSpec defines the desired state of RemediationRequest
 type RemediationRequestSpec struct {
     // Signal identification
-    SignalType      string `json:"signalType"`      // "prometheus", "kubernetes-event"
-    SignalName      string `json:"signalName"`      // Alert/event name
+    SignalType      string `json:"signalType"`      // "alert" (generic, Issue #166)
+    SignalName      string `json:"signalName"`      // Semantic signal/alert name
     SignalNamespace string `json:"signalNamespace"` // Source namespace
 
     // Target resource
@@ -435,8 +435,8 @@ type RemediationProcessingSpec struct {
     RemediationRequestRef string `json:"remediationRequestRef"` // Parent CRD name
 
     // Signal details (copied from parent for convenience)
-    SignalType      string `json:"signalType"`
-    SignalName      string `json:"signalName"`
+    SignalType      string `json:"signalType"`      // "alert" (generic)
+    SignalName      string `json:"signalName"`      // Semantic signal name
     SignalNamespace string `json:"signalNamespace"`
 
     // Target details
@@ -490,7 +490,7 @@ type AIAnalysisSpec struct {
     RemediationRequestRef string `json:"remediationRequestRef"`
 
     // Analysis input
-    SignalType    string            `json:"signalType"`
+    SignalName    string            `json:"signalName"`    // Semantic signal name
     SignalContext map[string]string `json:"signalContext"` // Enriched context from RemediationProcessing
 
     // Analysis configuration
@@ -710,7 +710,7 @@ type <CRD>Status struct {
 metadata:
   labels:
     kubernaut.io/correlation-id: "req-2025-10-06-abc123"  // Correlation ID
-    kubernaut.io/signal-type: "prometheus"                // Signal type
+    kubernaut.io/signal-name: "prometheus"                 // Signal name (Issue #166)
     kubernaut.io/priority: "P0"                           // Priority
     kubernaut.io/environment: "production"                // Environment
     kubernaut.io/parent-name: "remediation-abc123"        // Parent CRD (child CRDs only)
@@ -771,7 +771,7 @@ type WorkflowExecutionSpec struct {
 ```go
 // ❌ WRONG - Redundant "Remediation" prefix
 type RemediationRequestSpec struct {
-    RemediationSignalType      string `json:"remediationSignalType"`
+    SignalType                 string `json:"signalType"`
     RemediationTargetNamespace string `json:"remediationTargetNamespace"`
 }
 
@@ -961,8 +961,8 @@ For **future V2 migrations**:
 
 | Pattern | Rule | Example |
 |---------|------|---------|
-| **Go Struct Fields** | PascalCase | `SignalType`, `TargetNamespace` |
-| **JSON/YAML Fields** | camelCase | `signalType`, `targetNamespace` |
+| **Go Struct Fields** | PascalCase | `SignalName`, `TargetNamespace` |
+| **JSON/YAML Fields** | camelCase | `signalName`, `targetNamespace` |
 | **Reference Fields** | `Ref` suffix | `remediationRequestRef` |
 | **Timestamp Fields** | `At` suffix | `startedAt`, `completedAt` |
 | **Boolean Fields** | `is`, `has`, `should`, `enable` prefix | `isAutoApproved`, `hasManualSteps` |

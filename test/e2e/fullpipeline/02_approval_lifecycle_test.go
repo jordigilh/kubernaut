@@ -67,7 +67,7 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 				WorkflowID:      "crashloop-config-fix-v1",
 				Name:            "CrashLoopBackOff - Configuration Fix",
 				Description:     "CrashLoop remediation workflow for approval E2E",
-				SignalType:      "CrashLoopBackOff",
+				SignalName:      "CrashLoopBackOff",
 				Severity:        "high",
 				Component:       "deployment",
 				Environment:     "production",
@@ -84,7 +84,7 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 				WorkflowID:      "oomkill-increase-memory-v1",
 				Name:            "OOMKill Recovery - Increase Memory Limits",
 				Description:     "OOMKill remediation workflow for approval E2E",
-				SignalType:      "OOMKilled",
+				SignalName:      "OOMKilled",
 				Severity:        "critical",
 				Component:       "deployment",
 				Environment:     "production",
@@ -219,7 +219,6 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 		for i := range spList.Items {
 			sp := &spList.Items[i]
 			if sp.Spec.RemediationRequestRef.Name == remediationRequest.Name {
-				Expect(sp.Status.EnvironmentClassification).ToNot(BeNil())
 				Expect(sp.Status.EnvironmentClassification.Environment).To(Equal("production"),
 					"SP should classify namespace as production (kubernaut.ai/environment label)")
 				Expect(sp.Status.EnvironmentClassification.Source).To(Equal("namespace-labels"),
@@ -422,23 +421,17 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 		// Step 14: Wait for EffectivenessAssessment
 		// ================================================================
 		By("Step 14: Waiting for EffectivenessAssessment to reach terminal phase")
-		var finalEA *eav1.EffectivenessAssessment
-		Eventually(func() bool {
-			eaList := &eav1.EffectivenessAssessmentList{}
-			if err := apiReader.List(testCtx, eaList, client.InNamespace(testNamespace)); err != nil {
-				return false
+		eaKey := client.ObjectKey{Name: fmt.Sprintf("ea-%s", remediationRequest.Name), Namespace: testNamespace}
+		finalEA := &eav1.EffectivenessAssessment{}
+		Eventually(func() string {
+			if err := apiReader.Get(testCtx, eaKey, finalEA); err != nil {
+				return ""
 			}
-			for i := range eaList.Items {
-				ea := &eaList.Items[i]
-				if ea.Status.Phase == eav1.PhaseCompleted || ea.Status.Phase == eav1.PhaseFailed {
-					finalEA = ea
-					GinkgoWriter.Printf("  ✅ EA %s phase: %s\n", ea.Name, ea.Status.Phase)
-					return true
-				}
-			}
-			return false
-		}, 3*time.Minute, 5*time.Second).Should(BeTrue(),
+			return finalEA.Status.Phase
+		}, 3*time.Minute, 5*time.Second).Should(
+			BeElementOf(eav1.PhaseCompleted, eav1.PhaseFailed),
 			"EA should reach terminal phase")
+		GinkgoWriter.Printf("  EA %s phase: %s\n", finalEA.Name, finalEA.Status.Phase)
 
 		// ================================================================
 		// Step 15: CRD Status Validation with Approval Flow [E2E-FP-118-003..006]
@@ -487,8 +480,9 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 		}, finalRR)).To(Succeed())
 		allFailures = append(allFailures, crdvalidators.ValidateRRStatus(finalRR, crdvalidators.WithApprovalFlow())...)
 
-		// EA
-		Expect(finalEA).ToNot(BeNil())
+		// EA (guaranteed non-nil by the Eventually block above)
+		Expect(finalEA.Status.Phase).To(Or(Equal(eav1.PhaseCompleted), Equal(eav1.PhaseFailed)),
+			"EA should be in terminal phase after pipeline completes")
 		allFailures = append(allFailures, crdvalidators.ValidateEAStatus(finalEA)...)
 
 		// RAR status

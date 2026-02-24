@@ -45,8 +45,8 @@ func createTestAuditEvent(baseURL, service, _ /* eventType */, correlationID str
 			Type: ogenclient.AuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData,
 			GatewayAuditPayload: ogenclient.GatewayAuditPayload{
 				EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
-				SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
-				AlertName:   "TestAlert",
+				SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
+				SignalName:   "TestAlert",
 				Namespace:   "default",
 				Fingerprint: "test-fingerprint",
 			},
@@ -137,8 +137,8 @@ var _ = Describe("Audit Events Query API", func() {
 						Type: ogenclient.AuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData,
 						GatewayAuditPayload: ogenclient.GatewayAuditPayload{
 							EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
-							SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
-							AlertName:   "TestAlert0",
+							SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
+							SignalName:   "TestAlert0",
 							Namespace:   "default",
 							Fingerprint: "test-fingerprint-0",
 						},
@@ -269,8 +269,8 @@ var _ = Describe("Audit Events Query API", func() {
 						Type: ogenclient.AuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData,
 						GatewayAuditPayload: ogenclient.GatewayAuditPayload{
 							EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
-							SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
-							AlertName:   "TestAlert-Gateway",
+							SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
+							SignalName:   "TestAlert-Gateway",
 							Namespace:   "default",
 							Fingerprint: "test-fingerprint",
 						},
@@ -467,8 +467,8 @@ var _ = Describe("Audit Events Query API", func() {
 					Type: ogenclient.AuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData,
 					GatewayAuditPayload: ogenclient.GatewayAuditPayload{
 						EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
-						SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
-						AlertName:   "TestAlert",
+						SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
+						SignalName:   "TestAlert",
 						Namespace:   "default",
 						Fingerprint: "test-fingerprint",
 					},

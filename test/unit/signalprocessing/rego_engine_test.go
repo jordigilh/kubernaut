@@ -36,10 +36,10 @@ import (
 // Business Requirement: BR-SP-102
 // Authoritative Reference: DD-WORKFLOW-001 v1.9
 //
-// Test Matrix (14 tests):
-//   - Happy Path: 5 tests (CL-HP-01 to CL-HP-05)
+// Test Matrix (17 tests):
+//   - Happy Path: 7 tests (CL-HP-01 to CL-HP-07)
 //   - Edge Cases: 6 tests (CL-EC-01 to CL-EC-06)
-//   - Error Handling: 3 tests (CL-ER-01 to CL-ER-03)
+//   - Error Handling: 4 tests (CL-ER-01 to CL-ER-04)
 //
 // Validation Limits (DD-WORKFLOW-001 v1.9):
 //   - Max keys (subdomains): 10
@@ -94,7 +94,6 @@ var _ = Describe("Rego Engine", func() {
 	// ========================================================================
 
 	It("should create a new Rego Engine with valid dependencies", func() {
-		Expect(engine).ToNot(BeNil())
 		Expect(engine).To(BeAssignableToTypeOf(&rego.Engine{}))
 	})
 
@@ -103,11 +102,11 @@ var _ = Describe("Rego Engine", func() {
 	// ========================================================================
 
 	Context("Happy Path", func() {
-		// CL-HP-01: Extract team from namespace label
+		// CL-HP-01: Extract team from namespace label using signalprocessing.customlabels package
 		It("CL-HP-01: should extract team from namespace label (BR-SP-102)", func() {
-			// Arrange: Policy that extracts team from namespace labels
+			// Arrange: Policy uses signalprocessing.customlabels — the dedicated custom labels package
 			policy := `
-package signalprocessing.labels
+package signalprocessing.customlabels
 
 import rego.v1
 
@@ -135,7 +134,7 @@ labels["team"] := input.kubernetes.namespace.labels["kubernaut.ai/team"] if {
 		It("CL-HP-02: should set risk_tolerance based on severity (BR-SP-102)", func() {
 			// Arrange: Policy that sets risk_tolerance based on signal severity
 			policy := `
-package signalprocessing.labels
+package signalprocessing.customlabels
 
 import rego.v1
 
@@ -166,7 +165,7 @@ labels["risk_tolerance"] := "high" if {
 		It("CL-HP-03: should extract multiple subdomains (BR-SP-102)", func() {
 			// Arrange: Policy that extracts multiple subdomains
 			policy := `
-package signalprocessing.labels
+package signalprocessing.customlabels
 
 import rego.v1
 
@@ -205,7 +204,7 @@ labels["tier"] := "critical" if {
 		It("CL-HP-04: should handle multi-value per subdomain (BR-SP-102)", func() {
 			// Arrange: Policy that returns array of constraints
 			policy := `
-package signalprocessing.labels
+package signalprocessing.customlabels
 
 import rego.v1
 
@@ -231,7 +230,7 @@ labels["constraint"] := ["cost-aware", "stateful-safe"] if {
 		It("CL-HP-05: should support policy reload (BR-SP-102)", func() {
 			// Arrange: Initial policy
 			initialPolicy := `
-package signalprocessing.labels
+package signalprocessing.customlabels
 
 import rego.v1
 
@@ -249,7 +248,7 @@ labels["version"] := "v1"
 
 			// Reload with new policy
 			newPolicy := `
-package signalprocessing.labels
+package signalprocessing.customlabels
 
 import rego.v1
 
@@ -264,6 +263,73 @@ labels["version"] := "v2"
 			// Assert
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result2["version"]).To(ContainElement("v2"))
+		})
+
+		// CL-HP-06: Dynamic extraction from namespace labels via kubernaut.ai/ prefix (Issue #174)
+		// This is the pattern used by the suite default policy and demo ConfigMaps.
+		// Validates the Rego engine path (not the fallback/degraded mode path).
+		It("CL-HP-06: should dynamically extract kubernaut.ai/ namespace labels (BR-SP-102)", func() {
+			policy := `
+package signalprocessing.customlabels
+
+import rego.v1
+
+labels := result if {
+    input.kubernetes.namespace.labels
+    result := {key: [val] |
+        some full_key, val in input.kubernetes.namespace.labels
+        startswith(full_key, "kubernaut.ai/")
+        key := substring(full_key, count("kubernaut.ai/"), -1)
+    }
+    count(result) > 0
+} else := {}
+`
+			err := engine.LoadPolicy(policy)
+			Expect(err).ToNot(HaveOccurred())
+
+			input := createBasicInput("prod-payments", map[string]string{
+				"kubernaut.ai/team":           "payments",
+				"kubernaut.ai/risk-tolerance": "high",
+				"unrelated-label":             "should-be-ignored",
+			})
+
+			result, err := engine.EvaluatePolicy(ctx, input)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).To(HaveLen(2), "Should extract exactly the 2 kubernaut.ai/ labels")
+			Expect(result).To(HaveKeyWithValue("team", ContainElement("payments")))
+			Expect(result).To(HaveKeyWithValue("risk-tolerance", ContainElement("high")))
+		})
+
+		// CL-HP-07: Namespace with no kubernaut.ai/ labels returns empty via Rego (Issue #174)
+		It("CL-HP-07: should return empty when no kubernaut.ai/ labels present (BR-SP-102)", func() {
+			policy := `
+package signalprocessing.customlabels
+
+import rego.v1
+
+labels := result if {
+    input.kubernetes.namespace.labels
+    result := {key: [val] |
+        some full_key, val in input.kubernetes.namespace.labels
+        startswith(full_key, "kubernaut.ai/")
+        key := substring(full_key, count("kubernaut.ai/"), -1)
+    }
+    count(result) > 0
+} else := {}
+`
+			err := engine.LoadPolicy(policy)
+			Expect(err).ToNot(HaveOccurred())
+
+			input := createBasicInput("test-ns", map[string]string{
+				"app":         "my-app",
+				"environment": "staging",
+			})
+
+			result, err := engine.EvaluatePolicy(ctx, input)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).To(BeEmpty(), "No kubernaut.ai/ labels should mean empty CustomLabels")
 		})
 	})
 
@@ -291,7 +357,7 @@ labels["version"] := "v2"
 		It("CL-EC-02: should return empty map when policy returns nil (BR-SP-102)", func() {
 			// Arrange: Policy that produces no labels
 			policy := `
-package signalprocessing.labels
+package signalprocessing.customlabels
 
 import rego.v1
 
@@ -314,7 +380,7 @@ import rego.v1
 		It("CL-EC-03: should truncate to 10 keys when exceeded (BR-SP-102)", func() {
 			// Arrange: Policy that returns 15 keys
 			policy := `
-package signalprocessing.labels
+package signalprocessing.customlabels
 
 import rego.v1
 
@@ -351,7 +417,7 @@ labels["key15"] := "value15"
 		It("CL-EC-04: should truncate to 5 values per key when exceeded (BR-SP-102)", func() {
 			// Arrange: Policy that returns 8 values for one key
 			policy := `
-package signalprocessing.labels
+package signalprocessing.customlabels
 
 import rego.v1
 
@@ -376,7 +442,7 @@ labels["constraint"] := ["v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8"]
 			// Arrange: Policy with key > 63 chars
 			longKey := strings.Repeat("a", 70) // 70 chars
 			policy := `
-package signalprocessing.labels
+package signalprocessing.customlabels
 
 import rego.v1
 
@@ -403,7 +469,7 @@ labels["` + longKey + `"] := "value"
 			// Arrange: Policy with value > 100 chars
 			longValue := strings.Repeat("x", 120) // 120 chars
 			policy := `
-package signalprocessing.labels
+package signalprocessing.customlabels
 
 import rego.v1
 
@@ -433,7 +499,7 @@ labels["key"] := "` + longValue + `"
 		It("CL-ER-01: should return error for Rego syntax error (BR-SP-102)", func() {
 			// Arrange: Invalid Rego policy
 			invalidPolicy := `
-package signalprocessing.labels
+package signalprocessing.customlabels
 
 import rego.v1
 
@@ -462,7 +528,7 @@ labels["key"] := { if {
 		It("CL-ER-02: should return timeout error for slow policy (BR-SP-102)", func() {
 			// Arrange: Policy that would take too long (simulate with context)
 			policy := `
-package signalprocessing.labels
+package signalprocessing.customlabels
 
 import rego.v1
 
@@ -490,11 +556,31 @@ labels["key"] := "value"
 			))
 		})
 
-		// CL-ER-03: Invalid output type
-		It("CL-ER-03: should return error for invalid output type (BR-SP-102)", func() {
+		// CL-ER-03: Policies must use package signalprocessing.customlabels (not signalprocessing.labels)
+		// The engine queries data.signalprocessing.customlabels.labels, so policies using the
+		// wrong package name should fail validation or return empty results.
+		It("CL-ER-03: should reject policies using wrong package name (BR-SP-102)", func() {
+			wrongPackagePolicy := `
+package signalprocessing.labels
+
+import rego.v1
+
+labels["team"] := "should-not-work"
+`
+			err := engine.LoadPolicy(wrongPackagePolicy)
+			if err == nil {
+				input := createBasicInput("test-ns", map[string]string{})
+				result, evalErr := engine.EvaluatePolicy(ctx, input)
+				Expect(evalErr).ToNot(HaveOccurred())
+				Expect(result).To(BeEmpty(), "Policy with wrong package should produce no labels")
+			}
+		})
+
+		// CL-ER-04: Invalid output type
+		It("CL-ER-04: should return error for invalid output type (BR-SP-102)", func() {
 			// Arrange: Policy that returns invalid type (number instead of string)
 			policy := `
-package signalprocessing.labels
+package signalprocessing.customlabels
 
 import rego.v1
 

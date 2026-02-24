@@ -69,6 +69,11 @@ type TimeoutsConfig struct {
 	// Executing is the timeout for the WorkflowExecution phase.
 	// BR-ORCH-028, AC-028-1. Default: 30m.
 	Executing time.Duration `yaml:"executing"`
+
+	// AwaitingApproval is the timeout for the AwaitingApproval phase.
+	// ADR-040: Maximum duration before an unanswered approval request expires.
+	// Default: 15m.
+	AwaitingApproval time.Duration `yaml:"awaitingApproval"`
 }
 
 // EACreationConfig controls EffectivenessAssessment CRD creation by the RO.
@@ -92,10 +97,11 @@ func DefaultConfig() *Config {
 			LeaderElectionID: "remediationorchestrator.kubernaut.ai",
 		},
 		Timeouts: TimeoutsConfig{
-			Global:     1 * time.Hour,
-			Processing: 5 * time.Minute,
-			Analyzing:  10 * time.Minute,
-			Executing:  30 * time.Minute,
+			Global:           1 * time.Hour,
+			Processing:       5 * time.Minute,
+			Analyzing:        10 * time.Minute,
+			Executing:        30 * time.Minute,
+			AwaitingApproval: 15 * time.Minute,
 		},
 		EA: EACreationConfig{
 			StabilizationWindow: 5 * time.Minute,
@@ -157,7 +163,10 @@ func (c *Config) Validate() error {
 	if c.Timeouts.Executing <= 0 {
 		return fmt.Errorf("timeouts.executing must be positive, got %v", c.Timeouts.Executing)
 	}
-	phaseSum := c.Timeouts.Processing + c.Timeouts.Analyzing + c.Timeouts.Executing
+	if c.Timeouts.AwaitingApproval <= 0 {
+		return fmt.Errorf("timeouts.awaitingApproval must be positive, got %v", c.Timeouts.AwaitingApproval)
+	}
+	phaseSum := c.Timeouts.Processing + c.Timeouts.Analyzing + c.Timeouts.AwaitingApproval + c.Timeouts.Executing
 	if c.Timeouts.Global < phaseSum {
 		return fmt.Errorf("timeouts.global (%v) must be >= sum of phase timeouts (%v)", c.Timeouts.Global, phaseSum)
 	}

@@ -96,371 +96,126 @@ spec:
                           Complete enrichment results from SignalProcessing
                           GAP-C3-04 FIX: Uses shared types from pkg/shared/types/enrichment.go
                         properties:
-                          customLabels:
-                            additionalProperties:
-                              items:
-                                type: string
-                              type: array
+                          businessClassification:
                             description: |-
-                              Custom labels from Rego policies - CUSTOMER DEFINED
-                              Key = subdomain/category (e.g., "constraint", "team", "region")
-                              Value = list of label values (boolean keys or "key=value" pairs)
-                              Example: {"constraint": ["cost-constrained", "stateful-safe"], "team": ["name=payments"]}
-                              Passed through to HolmesGPT-API for workflow filtering + LLM context
-                            type: object
-                          detectedLabels:
-                            description: |-
-                              Auto-detected cluster characteristics - NO CONFIG NEEDED
-                              SignalProcessing detects these from K8s resources automatically
-                              Used by HolmesGPT-API for: workflow filtering + LLM context
+                              Business classification from SP categorization phase
+                              BR-SP-002, BR-SP-080, BR-SP-081: Business unit, criticality, SLA
+                              Passed through to HolmesGPT-API for workflow filtering and Rego approval decisions
                             properties:
-                              failedDetections:
-                                description: |-
-                                  ========================================
-                                  DETECTION FAILURE TRACKING (DD-WORKFLOW-001 v2.2)
-                                  ========================================
-                                  Lists field names where detection QUERY failed (RBAC, timeout, network error).
-                                  If a field is in this array, its value should be ignored.
-                                  If empty/nil, all detections succeeded.
-                                  Only accepts valid field names: gitOpsManaged, pdbProtected, hpaEnabled,
-                                  stateful, helmManaged, networkIsolated, serviceMesh
-                                items:
-                                  enum:
-                                  - gitOpsManaged
-                                  - pdbProtected
-                                  - hpaEnabled
-                                  - stateful
-                                  - helmManaged
-                                  - networkIsolated
-                                  - serviceMesh
-                                  type: string
-                                type: array
-                              gitOpsManaged:
-                                description: |-
-                                  ========================================
-                                  GITOPS MANAGEMENT
-                                  ========================================
-                                  True if namespace/deployment is managed by GitOps controller
-                                  Detection: ArgoCD annotations, Flux labels
-                                type: boolean
-                              gitOpsTool:
-                                description: GitOps tool managing this resource
-                                enum:
-                                - argocd
-                                - flux
-                                - ""
+                              businessUnit:
+                                description: Business unit owning the service (e.g.,
+                                  "payments", "platform")
                                 type: string
-                              helmManaged:
-                                description: True if managed by Helm (has helm.sh/chart
-                                  label)
-                                type: boolean
-                              hpaEnabled:
-                                description: True if HorizontalPodAutoscaler targets
-                                  this workload
-                                type: boolean
-                              networkIsolated:
-                                description: |-
-                                  ========================================
-                                  SECURITY POSTURE
-                                  ========================================
-                                  True if NetworkPolicy exists in namespace
-                                type: boolean
-                              pdbProtected:
-                                description: |-
-                                  ========================================
-                                  WORKLOAD PROTECTION
-                                  ========================================
-                                  True if PodDisruptionBudget exists for this workload
-                                type: boolean
-                              serviceMesh:
-                                description: Service mesh if detected (from sidecar
-                                  or namespace labels)
-                                enum:
-                                - istio
-                                - linkerd
-                                - ""
+                              criticality:
+                                description: 'Business criticality level: critical,
+                                  high, medium, low'
                                 type: string
-                              stateful:
-                                description: |-
-                                  ========================================
-                                  WORKLOAD CHARACTERISTICS
-                                  ========================================
-                                  True if StatefulSet or has PVCs attached
-                                type: boolean
-                            required:
-                            - gitOpsManaged
-                            - helmManaged
-                            - hpaEnabled
-                            - networkIsolated
-                            - pdbProtected
-                            - stateful
+                              serviceOwner:
+                                description: Service owner team or individual
+                                type: string
+                              slaRequirement:
+                                description: 'SLA requirement tier: platinum, gold,
+                                  silver, bronze'
+                                type: string
                             type: object
                           kubernetesContext:
-                            description: Kubernetes resource context (pod status,
-                              node conditions, etc.)
+                            description: 'Kubernetes resource context (classification-focused:
+                              namespace, workload labels, owner chain)'
                             properties:
-                              deploymentDetails:
-                                description: Deployment/workload context
-                                properties:
-                                  availableReplicas:
-                                    format: int32
-                                    type: integer
-                                  labels:
-                                    additionalProperties:
-                                      type: string
-                                    type: object
-                                  name:
+                              customLabels:
+                                additionalProperties:
+                                  items:
                                     type: string
-                                  readyReplicas:
-                                    format: int32
-                                    type: integer
-                                  replicas:
-                                    format: int32
-                                    type: integer
-                                  strategy:
-                                    type: string
-                                required:
-                                - availableReplicas
-                                - name
-                                - readyReplicas
-                                - replicas
-                                - strategy
+                                  type: array
+                                description: |-
+                                  Custom labels extracted via Rego policies (BR-SP-102)
+                                  DD-WORKFLOW-001 v1.9: map[string][]string (subdomain -> list of values)
                                 type: object
+                              degradedMode:
+                                description: |-
+                                  DegradedMode indicates context was built with partial data
+                                  DD-4: K8s Enrichment Failure Handling (target resource not found)
+                                type: boolean
                               namespace:
-                                description: Namespace information
-                                type: string
-                              namespaceAnnotations:
-                                additionalProperties:
-                                  type: string
-                                type: object
-                              namespaceLabels:
-                                additionalProperties:
-                                  type: string
-                                type: object
-                              nodeDetails:
-                                description: Node context
-                                properties:
-                                  allocatable:
-                                    description: ResourceList contains resource quantities.
-                                    properties:
-                                      cpu:
-                                        type: string
-                                      memory:
-                                        type: string
-                                    required:
-                                    - cpu
-                                    - memory
-                                    type: object
-                                  capacity:
-                                    description: ResourceList contains resource quantities.
-                                    properties:
-                                      cpu:
-                                        type: string
-                                      memory:
-                                        type: string
-                                    required:
-                                    - cpu
-                                    - memory
-                                    type: object
-                                  conditions:
-                                    items:
-                                      description: NodeCondition contains node condition
-                                        status.
-                                      properties:
-                                        status:
-                                          type: string
-                                        type:
-                                          type: string
-                                      required:
-                                      - status
-                                      - type
-                                      type: object
-                                    type: array
-                                  labels:
-                                    additionalProperties:
-                                      type: string
-                                    type: object
-                                  name:
-                                    type: string
-                                required:
-                                - allocatable
-                                - capacity
-                                - name
-                                type: object
-                              podDetails:
-                                description: Pod context
+                                description: Namespace context (nil for cluster-scoped
+                                  resources like Node)
                                 properties:
                                   annotations:
                                     additionalProperties:
                                       type: string
+                                    description: Namespace annotations (used by business
+                                      classifier for kubernaut.ai/ labels)
                                     type: object
-                                  containers:
-                                    items:
-                                      description: ContainerStatus contains container-level
-                                        status.
-                                      properties:
-                                        image:
-                                          type: string
-                                        name:
-                                          type: string
-                                        ready:
-                                          type: boolean
-                                        restartCount:
-                                          format: int32
-                                          type: integer
-                                        state:
-                                          type: string
-                                      required:
-                                      - image
-                                      - name
-                                      - ready
-                                      - restartCount
-                                      - state
-                                      type: object
-                                    type: array
-                                  creationTimestamp:
+                                  labels:
+                                    additionalProperties:
+                                      type: string
+                                    description: Namespace labels (used by environment,
+                                      priority, business classifiers)
+                                    type: object
+                                  name:
+                                    description: Namespace name
+                                    type: string
+                                required:
+                                - name
+                                type: object
+                              ownerChain:
+                                description: |-
+                                  Owner chain from target to top-level controller
+                                  DD-WORKFLOW-001 v1.8: Used for historical remediation context
+                                items:
+                                  description: "OwnerChainEntry represents a single
+                                    entry in the K8s ownership chain.\nDD-WORKFLOW-001
+                                    v1.8: SignalProcessing traverses ownerReferences
+                                    to build this.\nExample chain for a Pod owned
+                                    by Deployment:\n\n\t[0]: {Namespace: \"prod\",
+                                    Kind: \"ReplicaSet\", Name: \"api-7d8f9c6b5\"}\n\t[1]:
+                                    {Namespace: \"prod\", Kind: \"Deployment\", Name:
+                                    \"api\"}"
+                                  properties:
+                                    kind:
+                                      description: Kind of the owner resource (e.g.,
+                                        ReplicaSet, Deployment, StatefulSet, DaemonSet)
+                                      type: string
+                                    name:
+                                      description: Name of the owner resource
+                                      type: string
+                                    namespace:
+                                      description: Namespace of the owner resource
+                                        (empty for cluster-scoped resources like Node)
+                                      type: string
+                                  required:
+                                  - kind
+                                  - name
+                                  type: object
+                                type: array
+                              workload:
+                                description: Target workload context (kind, name,
+                                  labels, annotations)
+                                properties:
+                                  annotations:
+                                    additionalProperties:
+                                      type: string
+                                    description: Resource annotations (used by business
+                                      classifier for kubernaut.ai/ labels)
+                                    type: object
+                                  kind:
+                                    description: Resource kind (e.g., "Deployment",
+                                      "StatefulSet", "Node", "Pod")
                                     type: string
                                   labels:
                                     additionalProperties:
                                       type: string
+                                    description: Resource labels (primary classification
+                                      input for Rego policies)
                                     type: object
                                   name:
+                                    description: Resource name
                                     type: string
-                                  phase:
-                                    type: string
-                                  restartCount:
-                                    format: int32
-                                    type: integer
                                 required:
-                                - creationTimestamp
+                                - kind
                                 - name
-                                - phase
-                                - restartCount
                                 type: object
-                              relatedConfigMaps:
-                                items:
-                                  description: ConfigMapSummary contains ConfigMap
-                                    targeting information.
-                                  properties:
-                                    keys:
-                                      items:
-                                        type: string
-                                      type: array
-                                    name:
-                                      type: string
-                                  required:
-                                  - keys
-                                  - name
-                                  type: object
-                                type: array
-                              relatedIngresses:
-                                items:
-                                  description: IngressSummary contains ingress targeting
-                                    information.
-                                  properties:
-                                    hosts:
-                                      items:
-                                        type: string
-                                      type: array
-                                    name:
-                                      type: string
-                                    rules:
-                                      items:
-                                        description: IngressRule contains ingress
-                                          rule configuration.
-                                        properties:
-                                          host:
-                                            type: string
-                                          path:
-                                            type: string
-                                        required:
-                                        - host
-                                        - path
-                                        type: object
-                                      type: array
-                                  required:
-                                  - hosts
-                                  - name
-                                  type: object
-                                type: array
-                              relatedServices:
-                                description: Related resources (targeting data only)
-                                items:
-                                  description: ServiceSummary contains service targeting
-                                    information.
-                                  properties:
-                                    clusterIP:
-                                      type: string
-                                    name:
-                                      type: string
-                                    ports:
-                                      items:
-                                        description: ServicePort contains service
-                                          port configuration.
-                                        properties:
-                                          name:
-                                            type: string
-                                          port:
-                                            format: int32
-                                            type: integer
-                                          protocol:
-                                            type: string
-                                          targetPort:
-                                            type: string
-                                        required:
-                                        - name
-                                        - port
-                                        - protocol
-                                        - targetPort
-                                        type: object
-                                      type: array
-                                    type:
-                                      type: string
-                                  required:
-                                  - clusterIP
-                                  - name
-                                  - type
-                                  type: object
-                                type: array
-                            required:
-                            - namespace
                             type: object
-                          ownerChain:
-                            description: |-
-                              OwnerChain: K8s ownership traversal from signal source resource.
-                              SignalProcessing traverses metadata.ownerReferences to build this chain.
-                              Example: Pod → ReplicaSet → Deployment
-                              Empty chain = orphan resource (no owners)
-
-                              ADR-055: No longer propagated from SP to AIAnalysis or HAPI.
-                              HAPI resolves its own chain post-RCA via get_resource_context tool.
-                              Field retained in shared types for SP internal use (label detection).
-                              ADR-056: Scheduled for relocation to SP-internal types.
-                            items:
-                              description: "OwnerChainEntry represents a single entry
-                                in the K8s ownership chain.\nDD-WORKFLOW-001 v1.8:
-                                SignalProcessing traverses ownerReferences to build
-                                this.\nExample chain for a Pod owned by Deployment:\n\n\t[0]:
-                                {Namespace: \"prod\", Kind: \"ReplicaSet\", Name:
-                                \"api-7d8f9c6b5\"}\n\t[1]: {Namespace: \"prod\", Kind:
-                                \"Deployment\", Name: \"api\"}"
-                              properties:
-                                kind:
-                                  description: Kind of the owner resource (e.g., ReplicaSet,
-                                    Deployment, StatefulSet, DaemonSet)
-                                  type: string
-                                name:
-                                  description: Name of the owner resource
-                                  type: string
-                                namespace:
-                                  description: Namespace of the owner resource (empty
-                                    for cluster-scoped resources like Node)
-                                  type: string
-                              required:
-                              - kind
-                              - name
-                              type: object
-                            type: array
                         type: object
                       environment:
                         description: |-
@@ -495,10 +250,10 @@ spec:
                         - reactive
                         - predictive
                         type: string
-                      signalType:
+                      signalName:
                         description: |-
-                          Signal type (e.g., OOMKilled, CrashLoopBackOff)
-                          Normalized by SignalProcessing: predictive types mapped to base types (BR-SP-106)
+                          Signal name (e.g., OOMKilled, CrashLoopBackOff)
+                          Normalized by SignalProcessing: predictive names mapped to base names (BR-SP-106)
                         type: string
                       targetResource:
                         description: Target resource identification
@@ -523,7 +278,7 @@ spec:
                     - environment
                     - fingerprint
                     - severity
-                    - signalType
+                    - signalName
                     - targetResource
                     type: object
                 required:
@@ -1056,6 +811,111 @@ spec:
                 - Completed
                 - Failed
                 type: string
+              postRCAContext:
+                description: |-
+                  ========================================
+                  POST-RCA CONTEXT (ADR-056)
+                  Runtime-computed cluster characteristics from HAPI
+                  ========================================
+                  PostRCAContext holds data computed by HAPI after RCA (e.g., DetectedLabels).
+                  Immutable once set — use CEL validation on the PostRCAContext type.
+                properties:
+                  detectedLabels:
+                    description: |-
+                      DetectedLabels contains cluster characteristics computed by HAPI's
+                      LabelDetector during the get_resource_context tool invocation.
+                    properties:
+                      failedDetections:
+                        description: |-
+                          ========================================
+                          DETECTION FAILURE TRACKING (DD-WORKFLOW-001 v2.2)
+                          ========================================
+                          Lists field names where detection QUERY failed (RBAC, timeout, network error).
+                          If a field is in this array, its value should be ignored.
+                          If empty/nil, all detections succeeded.
+                          Only accepts valid field names: gitOpsManaged, pdbProtected, hpaEnabled,
+                          stateful, helmManaged, networkIsolated, serviceMesh
+                        items:
+                          enum:
+                          - gitOpsManaged
+                          - pdbProtected
+                          - hpaEnabled
+                          - stateful
+                          - helmManaged
+                          - networkIsolated
+                          - serviceMesh
+                          type: string
+                        type: array
+                      gitOpsManaged:
+                        description: |-
+                          ========================================
+                          GITOPS MANAGEMENT
+                          ========================================
+                          True if namespace/deployment is managed by GitOps controller
+                          Detection: ArgoCD annotations, Flux labels
+                        type: boolean
+                      gitOpsTool:
+                        description: GitOps tool managing this resource
+                        enum:
+                        - argocd
+                        - flux
+                        - ""
+                        type: string
+                      helmManaged:
+                        description: True if managed by Helm (has helm.sh/chart label)
+                        type: boolean
+                      hpaEnabled:
+                        description: True if HorizontalPodAutoscaler targets this
+                          workload
+                        type: boolean
+                      networkIsolated:
+                        description: |-
+                          ========================================
+                          SECURITY POSTURE
+                          ========================================
+                          True if NetworkPolicy exists in namespace
+                        type: boolean
+                      pdbProtected:
+                        description: |-
+                          ========================================
+                          WORKLOAD PROTECTION
+                          ========================================
+                          True if PodDisruptionBudget exists for this workload
+                        type: boolean
+                      serviceMesh:
+                        description: Service mesh if detected (from sidecar or namespace
+                          labels)
+                        enum:
+                        - istio
+                        - linkerd
+                        - ""
+                        type: string
+                      stateful:
+                        description: |-
+                          ========================================
+                          WORKLOAD CHARACTERISTICS
+                          ========================================
+                          True if StatefulSet or has PVCs attached
+                        type: boolean
+                    required:
+                    - gitOpsManaged
+                    - helmManaged
+                    - hpaEnabled
+                    - networkIsolated
+                    - pdbProtected
+                    - stateful
+                    type: object
+                  setAt:
+                    description: |-
+                      SetAt records when the PostRCAContext was populated.
+                      Used as the immutability guard: once SetAt is non-nil, the entire
+                      PostRCAContext becomes immutable via CEL validation.
+                    format: date-time
+                    type: string
+                type: object
+                x-kubernetes-validations:
+                - message: postRCAContext is immutable once setAt is populated (ADR-056)
+                  rule: '!has(oldSelf.setAt) || self == oldSelf'
               reason:
                 description: Reason provides the umbrella failure category (e.g.,
                   "WorkflowResolutionFailed")
@@ -1067,10 +927,6 @@ spec:
                   ========================================
                   Recovery-specific status fields (only populated for recovery attempts)
                 properties:
-                  currentSignalType:
-                    description: Current signal type (may differ from original after
-                      failed workflow)
-                    type: string
                   previousAttemptAssessment:
                     description: Assessment of why previous attempt failed
                     properties:

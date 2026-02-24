@@ -162,8 +162,8 @@ func createTestEvent() *ogenclient.AuditEventRequest {
 	// Use GatewayAuditPayload for test event (ogen migration - discriminated union)
 	payload := ogenclient.GatewayAuditPayload{
 		EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewayCrdCreated,
-		SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert, // Updated enum
-		AlertName:   "test-alert",
+		SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert, // Updated enum
+		SignalName:   "test-alert",
 		Namespace:   "default",
 		Fingerprint: "test-fingerprint",
 	}
@@ -206,7 +206,8 @@ var _ = Describe("BufferedAuditStore", func() {
 			store, err = audit.NewBufferedStore(mockClient, config, "test-service", logger)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(store).ToNot(BeNil())
+			_, ok := store.(*audit.BufferedAuditStore)
+			Expect(ok).To(BeTrue(), "store should be *audit.BufferedAuditStore")
 		})
 
 		It("should return error if client is nil", func() {
@@ -235,7 +236,8 @@ var _ = Describe("BufferedAuditStore", func() {
 
 			// Should not error, but use defaults instead
 			Expect(err).ToNot(HaveOccurred())
-			Expect(store).ToNot(BeNil())
+			_, ok := store.(*audit.BufferedAuditStore)
+			Expect(ok).To(BeTrue(), "store should be *audit.BufferedAuditStore")
 		})
 	})
 

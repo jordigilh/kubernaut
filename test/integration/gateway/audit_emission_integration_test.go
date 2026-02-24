@@ -93,7 +93,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 		Context("when Prometheus signal is processed (GW-INT-AUD-001, BR-GATEWAY-055)", func() {
 			It("[GW-INT-AUD-001] should create RemediationRequest CRD for new signal", func() {
 				By("1. Create Prometheus alert fixture")
-				prometheusAdapter := adapters.NewPrometheusAdapter()
+				prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 				alertPayload := []byte(fmt.Sprintf(`{
 					"alerts": [{
 						"labels": {
@@ -112,9 +112,8 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 
 				By("2. Parse signal through Prometheus adapter")
 				signal, err := prometheusAdapter.Parse(ctx, alertPayload)
-				Expect(err).ToNot(HaveOccurred(), "Prometheus adapter parse must succeed")
-				Expect(signal).ToNot(BeNil())
-				Expect(signal.Fingerprint).ToNot(BeEmpty(), "Signal must have fingerprint")
+			Expect(err).ToNot(HaveOccurred(), "Prometheus adapter parse must succeed")
+			Expect(signal.Fingerprint).ToNot(BeEmpty(), "Signal must have fingerprint")
 
 				By("3. Process signal through Gateway")
 				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
@@ -122,9 +121,8 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				Expect(err).ToNot(HaveOccurred())
 
 				response, err := gwServer.ProcessSignal(ctx, signal)
-				Expect(err).ToNot(HaveOccurred(), "Signal processing must succeed")
-				Expect(response).ToNot(BeNil())
-				Expect(response.RemediationRequestName).ToNot(BeEmpty(), "CRD must be created")
+			Expect(err).ToNot(HaveOccurred(), "Signal processing must succeed")
+			Expect(response.RemediationRequestName).ToNot(BeEmpty(), "CRD must be created")
 
 				By("4. Verify RemediationRequest CRD was created in K8s")
 				var rr remediationv1alpha1.RemediationRequest
@@ -139,7 +137,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 					"BR-GATEWAY-056: RemediationRequest CRD must exist in K8s")
 
 				By("5. Validate CRD contains signal metadata")
-				Expect(rr.Spec.SignalType).To(Equal("prometheus-alert"))
+				Expect(rr.Spec.SignalType).To(Equal("alert"))
 				Expect(rr.Spec.SignalFingerprint).To(Equal(signal.Fingerprint))
 				Expect(rr.Spec.SignalName).To(Equal("KubePodCrashLooping"))
 				Expect(rr.Spec.Severity).To(Equal("critical"))
@@ -159,7 +157,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 		Context("when duplicate signal is received (GW-INT-AUD-002, BR-GATEWAY-057)", func() {
 			It("[GW-INT-AUD-002] should deduplicate based on fingerprint and NOT create duplicate CRD", func() {
 				By("1. Create first signal")
-				prometheusAdapter := adapters.NewPrometheusAdapter()
+				prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 				// Generate valid 64-character hex fingerprint (SHA256 format)
 				fingerprint := fmt.Sprintf("%064x", uuid.New().ID())
 
@@ -188,7 +186,8 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				response1, err := gwServer.ProcessSignal(ctx, signal1)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(response1.Status).To(Equal("created"), "First signal should create CRD")
-				Expect(response1.RemediationRequestName).ToNot(BeEmpty())
+				Expect(response1.RemediationRequestName).ToNot(BeEmpty(),
+				"BR-AUDIT-001: First signal must create a named RR CRD for dedup comparison")
 
 				firstCRDName := response1.RemediationRequestName
 
@@ -232,7 +231,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 			It("[GW-INT-AUD-003] should generate correlation IDs with correct format for audit traceability", func() {
 				By("1. Process multiple Prometheus signals targeting different pods")
 				// Issue #63: alertname excluded from fingerprint — use different pods for different fingerprints
-				prometheusAdapter := adapters.NewPrometheusAdapter()
+				prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 				signal1Payload := createPrometheusAlertForPod(testNamespace, "test-alert-1", "critical", "", "", "pod-alpha")
 				signal2Payload := createPrometheusAlertForPod(testNamespace, "test-alert-2", "warning", "", "", "pod-beta")
 
@@ -281,7 +280,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 		Context("when processing signals with custom labels (GW-INT-AUD-004, BR-GATEWAY-055)", func() {
 			It("[GW-INT-AUD-004] should preserve all signal labels and annotations in audit events", func() {
 				By("1. Create Prometheus alert with custom labels")
-				prometheusAdapter := adapters.NewPrometheusAdapter()
+				prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 				customPayload := []byte(fmt.Sprintf(`{
 					"alerts": [{
 						"labels": {
@@ -379,7 +378,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 		Context("when CRD is created (GW-INT-AUD-006, BR-GATEWAY-056)", func() {
 			It("[GW-INT-AUD-006] should emit gateway.crd.created audit event after RemediationRequest creation", func() {
 				By("1. Process Prometheus signal to create CRD")
-				prometheusAdapter := adapters.NewPrometheusAdapter()
+				prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 				signalPayload := createPrometheusAlert(testNamespace, "test-crd-audit", "critical", "", "")
 
 				signal, err := prometheusAdapter.Parse(ctx, signalPayload)
@@ -439,7 +438,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 		Context("when CRD has target resource (GW-INT-AUD-007, BR-GATEWAY-056)", func() {
 			It("[GW-INT-AUD-007] should include target resource metadata in CRD created audit event", func() {
 				By("1. Create Prometheus alert with resource information")
-				prometheusAdapter := adapters.NewPrometheusAdapter()
+				prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 				// Prometheus alerts include pod/namespace in labels
 				payloadWithResource := []byte(fmt.Sprintf(`{
 					"alerts": [{
@@ -498,7 +497,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 					"BR-GATEWAY-056: Namespace must match signal namespace")
 
 				// Validate alert name is preserved
-				Expect(payload.AlertName).To(Equal("PodCrashLoop"),
+				Expect(payload.SignalName).To(Equal("PodCrashLoop"),
 					"BR-GATEWAY-056: Alert name must be preserved")
 
 				// Validate RemediationRequest reference
@@ -510,7 +509,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 					"BR-GATEWAY-056: RR reference must be in namespace/name format (DD-AUDIT-CORRELATION-002)")
 
 				GinkgoWriter.Printf("✅ Target resource metadata preserved: alert=%s, namespace=%s\n",
-					payload.AlertName, payload.Namespace)
+					payload.SignalName, payload.Namespace)
 			})
 		})
 
@@ -521,7 +520,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 		Context("when validating fingerprint in CRD audit (GW-INT-AUD-008, BR-GATEWAY-056)", func() {
 			It("[GW-INT-AUD-008] should include fingerprint in gateway.crd.created audit event for dedup tracking", func() {
 				By("1. Process Prometheus signal to create CRD")
-				prometheusAdapter := adapters.NewPrometheusAdapter()
+				prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 				signalPayload := createPrometheusAlert(testNamespace, "high-cpu-usage", "warning", "", "")
 
 				signal, err := prometheusAdapter.Parse(ctx, signalPayload)
@@ -572,7 +571,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 			It("[GW-INT-AUD-010] should emit unique correlation IDs for each CRD creation", func() {
 				By("1. Process multiple Prometheus signals targeting different pods")
 				// Issue #63: alertname excluded from fingerprint — use different pods for different fingerprints
-				prometheusAdapter := adapters.NewPrometheusAdapter()
+				prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 				signal1Payload := createPrometheusAlertForPod(testNamespace, "alert-multi-1", "critical", "", "", "pod-multi-1")
 				signal2Payload := createPrometheusAlertForPod(testNamespace, "alert-multi-2", "warning", "", "", "pod-multi-2")
 
@@ -642,7 +641,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 		Context("when duplicate signal arrives (GW-INT-AUD-011, BR-GATEWAY-057)", func() {
 			It("[GW-INT-AUD-011] should emit gateway.signal.deduplicated audit event for duplicate signal", func() {
 				By("1. Create first RemediationRequest CRD")
-				prometheusAdapter := adapters.NewPrometheusAdapter()
+				prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 				// Use identical fingerprint to trigger deduplication
 				firstSignalPayload := createPrometheusAlert(testNamespace, "repeated-error", "error", "", "")
 
@@ -709,7 +708,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 		Context("when tracking existing RR (GW-INT-AUD-012, BR-GATEWAY-057)", func() {
 			It("[GW-INT-AUD-012] should include existing RR reference in deduplicated audit event", func() {
 				By("1. Create first RemediationRequest CRD")
-				prometheusAdapter := adapters.NewPrometheusAdapter()
+				prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 				firstSignalPayload := createPrometheusAlert(testNamespace, "existing-rr-test", "critical", "", "")
 
 				signal1, err := prometheusAdapter.Parse(ctx, firstSignalPayload)
@@ -776,7 +775,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 		Context("when creating CRD (GW-INT-AUD-009, BR-GATEWAY-056)", func() {
 			It("[GW-INT-AUD-009] should include occurrence_count=1 in CRD created audit event for new signal", func() {
 				By("1. Create unique Prometheus alert")
-				prometheusAdapter := adapters.NewPrometheusAdapter()
+				prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 				fingerprint := fmt.Sprintf("aaa%s000000000000000000000000000000000000000000000000000000000", uuid.New().String()[:8])
 				correlationID := fmt.Sprintf("rr-%s-%d", uuid.New().String()[:12], time.Now().Unix())
 				alertPayload := createPrometheusAlert(testNamespace, "TestAlert", "critical", fingerprint, correlationID)
@@ -831,7 +830,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 		Context("when processing duplicate signals (GW-INT-AUD-013, BR-GATEWAY-057)", func() {
 			It("[GW-INT-AUD-013] should include incremented occurrence_count in deduplication audit events", func() {
 				By("1. Create initial signal and process")
-				prometheusAdapter := adapters.NewPrometheusAdapter()
+				prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 				fingerprint := fmt.Sprintf("bbb%s000000000000000000000000000000000000000000000000000000000", uuid.New().String()[:8])
 				correlationID1 := fmt.Sprintf("rr-%s-%d", uuid.New().String()[:12], time.Now().Unix())
 				alert1 := createPrometheusAlert(testNamespace, "HighCPU", "critical", fingerprint, correlationID1)
@@ -896,7 +895,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 			It("[GW-INT-AUD-014] should handle deduplication independently for different fingerprints", func() {
 				By("1. Create first signal with fingerprint A (pod-memory)")
 				// Issue #63: alertname excluded from fingerprint — use different pods for different fingerprints
-				prometheusAdapter := adapters.NewPrometheusAdapter()
+				prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 				fingerprintA := fmt.Sprintf("ccc%s000000000000000000000000000000000000000000000000000000000", uuid.New().String()[:8])
 				correlationID1 := fmt.Sprintf("rr-%s-%08x", uuid.New().String()[:12], uuid.New().ID())
 				alert1 := createPrometheusAlertForPod(testNamespace, "HighMemory", "warning", fingerprintA, correlationID1, "pod-memory")
@@ -974,7 +973,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 		Context("when signal arrives for completed RR (GW-INT-AUD-015, BR-GATEWAY-057)", func() {
 			It("[GW-INT-AUD-015] should NOT deduplicate signals for RRs in terminal phases", func() {
 				By("1. Create initial signal and process")
-				prometheusAdapter := adapters.NewPrometheusAdapter()
+				prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 				correlationID1 := fmt.Sprintf("rr-%s-%d", uuid.New().String()[:12], time.Now().Unix())
 				alert1 := createPrometheusAlert(testNamespace, "ServiceDown", "critical", "", correlationID1)
 
@@ -1072,7 +1071,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 
 		It("[GW-INT-AUD-020] should assign globally unique audit IDs to all events", func() {
 			By("1. Create and process 3 unique signals")
-			prometheusAdapter := adapters.NewPrometheusAdapter()
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 			gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient, sharedAuditStore)
 			Expect(err).ToNot(HaveOccurred())
@@ -1177,7 +1176,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 		Context("when K8s API fails (GW-INT-AUD-016, BR-GATEWAY-058)", func() {
 			It("[GW-INT-AUD-016] should emit gateway.crd.failed audit event when K8s API fails", func() {
 				By("1. Create signal and process with failing K8s client")
-				prometheusAdapter := adapters.NewPrometheusAdapter()
+				prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 				fingerprint := fmt.Sprintf("%064x", uuid.New().ID())
 				correlationID := fmt.Sprintf("rr-%s-%d", uuid.New().String()[:12], time.Now().Unix())
 				alert := createPrometheusAlert(testNamespace, "TestK8sFailure", "critical", fingerprint, correlationID)
@@ -1208,7 +1207,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 
 				// BR-GATEWAY-058-A: Use readable correlation ID
 				readableCorrelationID := fmt.Sprintf("%s:%s:%s:%s",
-					signal.AlertName,
+					signal.SignalName,
 					signal.Namespace,
 					signal.Resource.Kind,
 					signal.Resource.Name,
@@ -1252,7 +1251,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 		Context("when classifying error types (GW-INT-AUD-017, BR-GATEWAY-058)", func() {
 			It("[GW-INT-AUD-017] should include error_type (transient vs permanent) in audit event", func() {
 				By("1. Create signal and process with transient K8s error")
-				prometheusAdapter := adapters.NewPrometheusAdapter()
+				prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 				fingerprint := fmt.Sprintf("%064x", uuid.New().ID())
 				correlationID := fmt.Sprintf("rr-%s-%d", uuid.New().String()[:12], time.Now().Unix())
 				alert := createPrometheusAlert(testNamespace, "TestErrorType", "critical", fingerprint, correlationID)
@@ -1283,7 +1282,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 
 				// BR-GATEWAY-058-A: Use readable correlation ID
 				readableCorrelationID := fmt.Sprintf("%s:%s:%s:%s",
-					signal.AlertName,
+					signal.SignalName,
 					signal.Namespace,
 					signal.Resource.Kind,
 					signal.Resource.Name,
@@ -1322,7 +1321,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 		Context("when retrying failed CRD creation (GW-INT-AUD-018, BR-GATEWAY-058)", func() {
 			It("[GW-INT-AUD-018] should emit separate audit events for each retry attempt", func() {
 				By("1. Create signal and process with retryable (503) K8s client error")
-				prometheusAdapter := adapters.NewPrometheusAdapter()
+				prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 				fingerprint := fmt.Sprintf("%064x", uuid.New().ID())
 				correlationID := fmt.Sprintf("rr-%s-%d", uuid.New().String()[:12], time.Now().Unix())
 				alert := createPrometheusAlert(testNamespace, "TestRetryAudit018", "critical", fingerprint, correlationID)
@@ -1355,7 +1354,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 
 				eventType := gateway.EventTypeCRDFailed
 				readableCorrelationID := fmt.Sprintf("%s:%s:%s:%s",
-					signal.AlertName,
+					signal.SignalName,
 					signal.Namespace,
 					signal.Resource.Kind,
 					signal.Resource.Name,
@@ -1410,7 +1409,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 			It("[GW-INT-AUD-019] should emit gateway.crd.failed audit event with circuit breaker error details", func() {
 				By("1. Create circuit breaker that starts in OPEN state (immediate fail-fast)")
 				// Simulate circuit breaker being open by making it trip immediately
-				prometheusAdapter := adapters.NewPrometheusAdapter()
+				prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 				failingK8sClient := &ErrorInjectableK8sClient{
 					Client:     k8sClient,
 					failCreate: true,
@@ -1461,7 +1460,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				// BR-GATEWAY-058-A: For failed CRD creation, correlation ID is human-readable
 				// Format: "alertname:namespace:kind:name"
 				readableCorrelationID := fmt.Sprintf("%s:%s:%s:%s",
-					testSignal.AlertName,
+					testSignal.SignalName,
 					testSignal.Namespace,
 					testSignal.Resource.Kind,
 					testSignal.Resource.Name,

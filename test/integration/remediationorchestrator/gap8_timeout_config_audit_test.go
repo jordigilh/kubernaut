@@ -82,7 +82,7 @@ var _ = Describe("Gap #8: TimeoutConfig Audit Capture", func() {
 					SignalFingerprint: fingerprint,
 					SignalName:        "Gap8TestSignal",
 					Severity:          "warning",
-					SignalType:        "prometheus",
+					SignalType:        "alert",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
 						Kind:      "Pod",
@@ -214,7 +214,7 @@ correlationID := rr.Name
 					SignalFingerprint: fingerprint,
 					SignalName:        "Gap8TimingSignal",
 					Severity:          "warning",
-					SignalType:        "prometheus",
+					SignalType:        "alert",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
 						Kind:      "Service",

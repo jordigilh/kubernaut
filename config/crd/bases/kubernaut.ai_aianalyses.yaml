@@ -250,10 +250,10 @@ spec:
                         - reactive
                         - predictive
                         type: string
-                      signalType:
+                      signalName:
                         description: |-
-                          Signal type (e.g., OOMKilled, CrashLoopBackOff)
-                          Normalized by SignalProcessing: predictive types mapped to base types (BR-SP-106)
+                          Signal name (e.g., OOMKilled, CrashLoopBackOff)
+                          Normalized by SignalProcessing: predictive names mapped to base names (BR-SP-106)
                         type: string
                       targetResource:
                         description: Target resource identification
@@ -278,7 +278,7 @@ spec:
                     - environment
                     - fingerprint
                     - severity
-                    - signalType
+                    - signalName
                     - targetResource
                     type: object
                 required:
@@ -927,10 +927,6 @@ spec:
                   ========================================
                   Recovery-specific status fields (only populated for recovery attempts)
                 properties:
-                  currentSignalType:
-                    description: Current signal type (may differ from original after
-                      failed workflow)
-                    type: string
                   previousAttemptAssessment:
                     description: Assessment of why previous attempt failed
                     properties:

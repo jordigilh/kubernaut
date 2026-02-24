@@ -46,33 +46,31 @@ var _ = Describe("RequestBuilder", func() {
 				// Arrange: AA with reactive signal mode
 				analysis := helpers.NewAIAnalysis("ai-test", "default")
 				analysis.Spec.AnalysisRequest.SignalContext.SignalMode = "reactive"
-				analysis.Spec.AnalysisRequest.SignalContext.SignalType = "OOMKilled"
+				analysis.Spec.AnalysisRequest.SignalContext.SignalName = "OOMKilled"
 
 				// Act
 				req := builder.BuildIncidentRequest(analysis)
 
 				// Assert
-				Expect(req).ToNot(BeNil())
 				Expect(req.SignalMode.Set).To(BeTrue())
 				Expect(req.SignalMode.Value).To(Equal(client.SignalMode("reactive")))
-				Expect(req.SignalType).To(Equal("OOMKilled"))
+				Expect(req.SignalName).To(Equal("OOMKilled"))
 			})
 
 			It("UT-AA-084-002: should pass signalMode = predictive to HAPI", func() {
 				// Arrange: AA with predictive signal mode
 				analysis := helpers.NewAIAnalysis("ai-test", "default")
 				analysis.Spec.AnalysisRequest.SignalContext.SignalMode = "predictive"
-				analysis.Spec.AnalysisRequest.SignalContext.SignalType = "OOMKilled" // normalized by SP
+				analysis.Spec.AnalysisRequest.SignalContext.SignalName = "OOMKilled" // normalized by SP
 
 				// Act
 				req := builder.BuildIncidentRequest(analysis)
 
 				// Assert
-				Expect(req).ToNot(BeNil())
 				Expect(req.SignalMode.Set).To(BeTrue())
 				Expect(req.SignalMode.Value).To(Equal(client.SignalMode("predictive")))
-				// SignalType should be the normalized type from SP (not PredictedOOMKill)
-				Expect(req.SignalType).To(Equal("OOMKilled"))
+				// SignalName should be the normalized type from SP (not PredictedOOMKill)
+				Expect(req.SignalName).To(Equal("OOMKilled"))
 			})
 
 			It("should not set signalMode when empty (backwards compatible)", func() {
@@ -84,7 +82,6 @@ var _ = Describe("RequestBuilder", func() {
 				req := builder.BuildIncidentRequest(analysis)
 
 				// Assert
-				Expect(req).ToNot(BeNil())
 				Expect(req.SignalMode.Set).To(BeFalse(), "SignalMode should not be set when empty")
 			})
 		})
@@ -94,7 +91,7 @@ var _ = Describe("RequestBuilder", func() {
 		It("should set all required HAPI fields", func() {
 			analysis := helpers.NewAIAnalysis("ai-test", "default")
 			analysis.Spec.AnalysisRequest.SignalContext.Severity = "critical"
-			analysis.Spec.AnalysisRequest.SignalContext.SignalType = "OOMKilled"
+			analysis.Spec.AnalysisRequest.SignalContext.SignalName = "OOMKilled"
 			analysis.Spec.AnalysisRequest.SignalContext.Environment = "production"
 			analysis.Spec.AnalysisRequest.SignalContext.BusinessPriority = "P0"
 			analysis.Spec.AnalysisRequest.SignalContext.TargetResource = aianalysisv1.TargetResource{
@@ -105,7 +102,7 @@ var _ = Describe("RequestBuilder", func() {
 
 			req := builder.BuildIncidentRequest(analysis)
 
-			Expect(req.SignalType).To(Equal("OOMKilled"))
+			Expect(req.SignalName).To(Equal("OOMKilled"))
 			Expect(req.Severity).To(Equal(client.Severity("critical")))
 			Expect(req.Environment).To(Equal("production"))
 			Expect(req.Priority).To(Equal("P0"))

@@ -51,7 +51,7 @@ var _ = Describe("Prometheus Adapter - Resource Extraction for Workflow Selectio
 	)
 
 	BeforeEach(func() {
-		adapter = adapters.NewPrometheusAdapter()
+		adapter = adapters.NewPrometheusAdapter(nil, nil)
 		ctx = context.Background()
 	})
 

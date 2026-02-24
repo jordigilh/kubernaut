@@ -12,7 +12,7 @@ metadata:
 actionType: CleanupPVC
 
 labels:
-  signalType: OrphanedPVCs
+  signalName: OrphanedPVCs
   severity: [low, critical]
   environment: [production, staging]
   component: "*"

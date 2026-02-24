@@ -46,7 +46,7 @@ class TestPredictiveSignalModePromptAdaptation:
         # Arrange: Create request data with predictive signal mode
         request_data = {
             "incident_id": "inc-predictive-integration-001",
-            "signal_type": "OOMKilled",  # Normalized type from SP (not PredictedOOMKill)
+            "signal_name": "OOMKilled",  # Normalized name from SP (not PredictedOOMKill)
             "signal_mode": "predictive",
             "severity": "critical",
             "signal_source": "prometheus",
@@ -84,7 +84,7 @@ class TestPredictiveSignalModePromptAdaptation:
         # Arrange
         request_data = {
             "incident_id": "inc-predictive-integration-002",
-            "signal_type": "OOMKilled",
+            "signal_name": "OOMKilled",
             "signal_mode": "predictive",
             "severity": "critical",
             "signal_source": "prometheus",
@@ -124,7 +124,7 @@ class TestReactiveSignalModePromptUnchanged:
         # Arrange: Create request data with explicit reactive signal mode
         request_data = {
             "incident_id": "inc-reactive-integration-001",
-            "signal_type": "OOMKilled",
+            "signal_name": "OOMKilled",
             "signal_mode": "reactive",
             "severity": "critical",
             "signal_source": "prometheus",
@@ -156,7 +156,7 @@ class TestReactiveSignalModePromptUnchanged:
         # Arrange
         request_data = {
             "incident_id": "inc-reactive-integration-002",
-            "signal_type": "OOMKilled",
+            "signal_name": "OOMKilled",
             "signal_mode": "reactive",
             "severity": "high",
             "signal_source": "kubernetes",
@@ -195,7 +195,7 @@ class TestSignalModeDefaultBehavior:
         # Arrange: Request without signal_mode field
         request_data = {
             "incident_id": "inc-default-integration-001",
-            "signal_type": "CrashLoopBackOff",
+            "signal_name": "CrashLoopBackOff",
             "severity": "high",
             "signal_source": "kubernetes",
             "resource_namespace": "default",
@@ -225,7 +225,7 @@ class TestSignalModeDefaultBehavior:
         # Arrange: Request with empty signal_mode
         request_data = {
             "incident_id": "inc-empty-mode-integration-001",
-            "signal_type": "NodeNotReady",
+            "signal_name": "NodeNotReady",
             "signal_mode": "",  # Explicitly empty
             "severity": "critical",
             "signal_source": "kubernetes",

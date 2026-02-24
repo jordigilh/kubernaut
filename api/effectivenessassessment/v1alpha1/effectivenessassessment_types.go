@@ -104,7 +104,7 @@ type EffectivenessAssessmentSpec struct {
 
 	// SignalName is the original alert/signal name from the parent RemediationRequest.
 	// Set by the RO at EA creation time from rr.Spec.SignalName.
-	// Used by the audit manager to populate the alert_name field in assessment.completed
+	// Used by the audit manager to populate the signal_name field in assessment.completed
 	// events (OBS-1: distinct from CorrelationID which is the RR name).
 	// +optional
 	SignalName string `json:"signalName,omitempty"`

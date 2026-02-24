@@ -67,7 +67,7 @@ Per [ADR-055: LLM-Driven Context Enrichment](../architecture/decisions/ADR-055-l
 ```go
 type PolicyInput struct {
     // Existing fields
-    SignalType       string                `json:"signal_type"`
+    SignalName       string                `json:"signal_name"`
     Severity         string                `json:"severity"`
     SeverityLevel    string                `json:"severity_level"`
     Environment      string                `json:"environment"`
@@ -114,7 +114,7 @@ type TargetResourceInput struct {
 ```go
 func (h *AnalyzingHandler) buildPolicyInput(analysis *aianalysisv1.AIAnalysis) (*rego.PolicyInput, error) {
     input := &rego.PolicyInput{
-        SignalType:      analysis.Status.SignalType,
+        SignalName:      analysis.Status.SignalName,
         Severity:        analysis.Status.RootCauseAnalysis.Severity,
         SeverityLevel:   mapSeverityToLevel(analysis.Status.RootCauseAnalysis.Severity),
         Environment:     analysis.Spec.AnalysisRequest.SignalContext.Environment,

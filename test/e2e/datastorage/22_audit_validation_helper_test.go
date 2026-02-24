@@ -60,8 +60,8 @@ var _ = Describe("Audit Event Validation Helper", func() {
 				Type: ogenclient.AuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData,
 				GatewayAuditPayload: ogenclient.GatewayAuditPayload{
 					EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
-					SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
-					AlertName:   "ValidationTest",
+					SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
+					SignalName:   "ValidationTest",
 					Namespace:   "default",
 					Fingerprint: "test-fingerprint",
 				},

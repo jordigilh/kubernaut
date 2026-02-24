@@ -117,6 +117,8 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 		By("Manually updating SignalProcessing status to Completed (simulating SP controller)")
 		sp.Status.Phase = signalprocessingv1.PhaseCompleted
 		sp.Status.Severity = "critical"
+		sp.Status.SignalMode = "reactive"
+		sp.Status.SignalName = sp.Spec.Signal.Name
 		sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
 			Environment:  "production",
 			Source:       "namespace-labels",
@@ -252,6 +254,8 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 		By("Manually updating SignalProcessing status to Completed (simulating SP controller)")
 		sp.Status.Phase = signalprocessingv1.PhaseCompleted
 		sp.Status.Severity = "critical"
+		sp.Status.SignalMode = "reactive"
+		sp.Status.SignalName = sp.Spec.Signal.Name
 		sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
 			Environment:  "production",
 			Source:       "namespace-labels",
@@ -288,6 +292,17 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 			ExecutionBundle: "quay.io/kubernaut/restart-pod:v1",
 			Confidence:     0.95,
 			Rationale:      "High confidence workflow match for pod restart scenario",
+		}
+		// DD-HAPI-006: AffectedResource is required for routing to WorkflowExecution
+		analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+			Summary:    "OOM kill detected on pod",
+			Severity:   "critical",
+			SignalType: "alert",
+			AffectedResource: &aianalysisv1.AffectedResource{
+				Kind:      "Pod",
+				Name:      "test-pod-oomkilled",
+				Namespace: testNS,
+			},
 		}
 		Expect(k8sClient.Status().Update(ctx, analysis)).To(Succeed())
 

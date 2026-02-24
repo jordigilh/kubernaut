@@ -91,7 +91,7 @@ var _ = Describe("BR-AUDIT-005 Gap #7: RemediationOrchestrator Error Audit Stand
 					SignalFingerprint: fingerprint,
 					SignalName:        "IntegrationTestSignal",
 					Severity:          "warning",
-					SignalType:        "prometheus",
+					SignalType:        "alert",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
 						Kind:      "Pod",

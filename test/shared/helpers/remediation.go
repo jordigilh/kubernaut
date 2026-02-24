@@ -48,7 +48,7 @@ func NewRemediationRequest(name, namespace string, opts ...RemediationRequestOpt
 	signalName := "TestSignal"
 	severity := "warning"
 	// NOTE: Environment and Priority removed per NOTICE_RO_REMEDIATIONREQUEST_SCHEMA_UPDATE.md
-	signalType := "prometheus"
+	signalType := "alert"
 	targetKind := "Pod"
 	targetName := "test-pod"
 	targetNamespace := namespace // Default to RR namespace for namespaced resources
@@ -157,7 +157,7 @@ func NewSignalProcessing(name, namespace string, opts ...SignalProcessingOpts) *
 				Fingerprint: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
 				Name:        "TestSignal",
 				Severity:    "warning",
-				Type:        "prometheus",
+				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1.ResourceIdentifier{
 					Kind:      "Pod",
@@ -214,7 +214,7 @@ func NewCompletedSignalProcessing(name, namespace string) *signalprocessingv1.Si
 	// BR-SP-106: Set default signal mode and normalized type for downstream consumers
 	// Defaults to reactive with Spec.Signal.Type as the normalized type
 	sp.Status.SignalMode = "reactive"
-	sp.Status.SignalType = sp.Spec.Signal.Type
+	sp.Status.SignalName = sp.Spec.Signal.Type
 	return sp
 }
 

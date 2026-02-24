@@ -201,7 +201,7 @@ func SeedTestWorkflowsInDataStorage(client *ogenclient.Client, output io.Writer)
 			WorkflowID:       wf.WorkflowID,
 			Name:             wf.Name,
 			Description:      wf.Description,
-			SignalType:       wf.SignalType,
+			SignalName:       wf.SignalType,
 			Severity:         wf.Severity,
 			Component:        wf.Component,
 			Environment:      wf.Environment,

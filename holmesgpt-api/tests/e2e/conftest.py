@@ -12,14 +12,12 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
-"""
 
-"""
 E2E Test Configuration and Fixtures
 
 V1.0 ARCHITECTURE (December 2025):
 - Uses SHARED Go infrastructure from test/infrastructure/*.go
-- Data Storage stack deployed via `make test-e2e-datastorage`
+- Data Storage stack deployed via ``make test-e2e-datastorage``
 - HAPI E2E tests connect to existing NodePort services
 - No Python-based Kind/Podman management needed
 
@@ -33,7 +31,8 @@ Per TESTING_GUIDELINES.md section 4:
 - E2E tests must use all real services EXCEPT the LLM
 - If Data Storage is unavailable, E2E tests should FAIL, not skip
 
-USAGE:
+USAGE::
+
   # Option 1: Run with Go infrastructure (recommended)
   make test-e2e-datastorage          # Set up infrastructure (once)
   make test-e2e-holmesgpt            # Run HAPI E2E tests
@@ -54,7 +53,7 @@ from pathlib import Path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
 # Import workflow fixtures (DD-API-001 compliant)
-from tests.fixtures import bootstrap_workflows, get_test_workflows
+from tests.fixtures import bootstrap_workflows, get_test_workflows  # noqa: F401 - bootstrap_workflows used as pytest fixture
 
 
 def load_test_config():
@@ -146,7 +145,7 @@ def data_storage_stack():
         try:
             response = requests.get(f"{data_storage_url}/health/ready", timeout=5)
             if response.status_code == 200:
-                print(f"✅ Data Storage is ready")
+                print("✅ Data Storage is ready")
                 break
         except requests.exceptions.RequestException:
             pass
@@ -214,13 +213,13 @@ def setup_e2e_environment(data_storage_stack, mock_llm_service_e2e):
     - LLM environment variables set by mock_llm_service_e2e fixture
     """
     # E2E environment ready (all config from YAML per ADR-030)
-    print(f"\n{'='*60}")
-    print(f"E2E Environment Ready (V2.0 - Mock LLM Migration)")
-    print(f"{'='*60}")
+    print("\n" + "=" * 60)
+    print("E2E Environment Ready (V2.0 - Mock LLM Migration)")
+    print("=" * 60)
     print(f"Data Storage URL: {data_storage_stack}")
     print(f"Mock LLM URL: {mock_llm_service_e2e.url}")
-    print(f"LLM: Standalone Mock LLM (ClusterIP in kubernaut-system)")
-    print(f"{'='*60}\n")
+    print("LLM: Standalone Mock LLM (ClusterIP in kubernaut-system)")
+    print("=" * 60 + "\n")
 
     yield
 
@@ -300,9 +299,9 @@ def test_workflows_bootstrapped(data_storage_stack):
     See: test/e2e/holmesgpt-api/test_workflows.go for Go bootstrap implementation
     """
     data_storage_url = data_storage_stack
-    print(f"\n✅ DD-TEST-011 v2.0: Workflows already seeded by Go suite setup")
+    print("\n✅ DD-TEST-011 v2.0: Workflows already seeded by Go suite setup")
     print(f"   Data Storage URL: {data_storage_url}")
-    print(f"   Pattern: Matches AIAnalysis integration tests")
+    print("   Pattern: Matches AIAnalysis integration tests")
     
     # Return empty results (workflows already seeded by Go before pytest started)
     return {

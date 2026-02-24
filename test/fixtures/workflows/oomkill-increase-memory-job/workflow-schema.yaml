@@ -12,7 +12,7 @@ metadata:
 actionType: IncreaseMemoryLimits
 
 labels:
-  signalType: OOMKilled
+  signalName: OOMKilled
   severity: [critical, high]
   environment: [production, staging, test]
   component: "*"

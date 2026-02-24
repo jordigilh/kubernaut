@@ -387,7 +387,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 			crd := crdList.Items[0]
 			Expect(crd.Spec.SignalName).To(Equal("OOMKilled"),
 				"Event reason helps AI identify root cause")
-			Expect(crd.Spec.SignalType).To(Equal("kubernetes-event"),
+			Expect(crd.Spec.SignalType).To(Equal("alert"),
 				"Signal type - ✅ ADAPTER-CONSTANT: KubernetesEventAdapter uses SourceTypeKubernetesEvent")
 
 			// BUSINESS CAPABILITY VERIFIED:
@@ -524,7 +524,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 			// Find the CRD for this event
 			var targetCRD *remediationv1alpha1.RemediationRequest
 			for i := range crdList.Items {
-				if crdList.Items[i].Spec.SignalType == "kubernetes-event" { // ✅ ADAPTER-CONSTANT: KubernetesEventAdapter uses SourceTypeKubernetesEvent
+				if crdList.Items[i].Spec.SignalType == "alert" { // All adapters normalize to "alert"; adapter identity in SignalSource
 					targetCRD = &crdList.Items[i]
 					break
 				}

@@ -125,11 +125,11 @@ data:
   customlabels.rego: |
     package signalprocessing.customlabels
     import rego.v1
-    default result := {"labels": {}, "policy_name": "operator-default"}
-    result := {"labels": extracted, "policy_name": "namespace-annotations"} if {
-      input.namespace.annotations
-      extracted := {k: v | some k, v in input.namespace.annotations; startswith(k, "kubernaut.io/label-")}
-      count(extracted) > 0
+    labels[key] := value if {
+      some k, v in input.kubernetes.namespace.labels
+      startswith(k, "kubernaut.ai/label-")
+      key := trim_prefix(k, "kubernaut.ai/label-")
+      value := v
     }
 ---
 # 6. Predictive Signal Mode Mappings (BR-SP-106, ADR-054)

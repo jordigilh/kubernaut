@@ -112,11 +112,11 @@ async def incident_analyze_endpoint(
     if not incident_req.remediation_id or not incident_req.remediation_id.strip():
         raise HTTPException(status_code=400, detail="remediation_id is required")
 
-    # E2E-HAPI-007: Validate signal_type is not empty or obviously invalid
-    if not incident_req.signal_type or not incident_req.signal_type.strip():
-        raise HTTPException(status_code=400, detail="signal_type is required and cannot be empty")
-    if "INVALID_SIGNAL_TYPE" in incident_req.signal_type.upper():
-        raise HTTPException(status_code=400, detail=f"signal_type '{incident_req.signal_type}' is not valid")
+    # E2E-HAPI-007: Validate signal_name is not empty or obviously invalid
+    if not incident_req.signal_name or not incident_req.signal_name.strip():
+        raise HTTPException(status_code=400, detail="signal_name is required and cannot be empty")
+    if "INVALID_SIGNAL_TYPE" in incident_req.signal_name.upper():
+        raise HTTPException(status_code=400, detail=f"signal_name '{incident_req.signal_name}' is not valid")
 
     # E2E-HAPI-007: Validate severity
     valid_severities = ["critical", "high", "medium", "low", "unknown"]

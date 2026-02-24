@@ -22,7 +22,7 @@ class TestProblemResolvedScenario:
 
         # Verify scenario identity
         assert scenario.name == "problem_resolved"
-        assert scenario.signal_type == "MOCK_PROBLEM_RESOLVED"
+        assert scenario.signal_name == "MOCK_PROBLEM_RESOLVED"
 
         # Verify no workflow (problem self-resolved)
         assert scenario.workflow_id == "", "problem_resolved should have empty workflow_id"
@@ -56,7 +56,7 @@ class TestProblemResolvedScenario:
             "no_workflow_found should have low confidence (needs human review)"
 
         # Different signal types
-        assert problem_resolved.signal_type != no_workflow_found.signal_type, \
+        assert problem_resolved.signal_name != no_workflow_found.signal_name, \
             "problem_resolved and no_workflow_found should have distinct signal types"
 
         # Different severities
@@ -106,11 +106,11 @@ class TestProblemResolvedIntegrationPattern:
         assert actual_scenarios == expected_scenarios, \
             f"Expected {expected_scenarios}, got {actual_scenarios}"
 
-    def test_problem_resolved_unique_signal_type(self):
+    def test_problem_resolved_unique_signal_name(self):
         """Verify problem_resolved has a unique signal type (no collisions)."""
-        signal_types = [scenario.signal_type for scenario in MOCK_SCENARIOS.values()]
+        signal_names = [scenario.signal_name for scenario in MOCK_SCENARIOS.values()]
 
         # Count occurrences of MOCK_PROBLEM_RESOLVED
-        problem_resolved_count = signal_types.count("MOCK_PROBLEM_RESOLVED")
+        problem_resolved_count = signal_names.count("MOCK_PROBLEM_RESOLVED")
         assert problem_resolved_count == 1, \
             "MOCK_PROBLEM_RESOLVED should appear exactly once in scenarios"

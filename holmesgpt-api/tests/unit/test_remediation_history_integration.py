@@ -42,7 +42,7 @@ from src.clients.remediation_history_client import (
 
 # Minimal valid request data for creating a prompt
 MINIMAL_REQUEST = {
-    "signal_type": "OOMKilled",
+    "signal_name": "OOMKilled",
     "severity": "critical",
     "resource_namespace": "production",
     "resource_kind": "Deployment",
@@ -124,7 +124,7 @@ class TestRemediationHistoryPromptIntegration:
 
 # Minimal recovery request data with previous execution context
 MINIMAL_RECOVERY_REQUEST = {
-    "signal_type": "OOMKilled",
+    "signal_name": "OOMKilled",
     "severity": "critical",
     "resource_namespace": "production",
     "resource_kind": "Deployment",
@@ -136,7 +136,7 @@ MINIMAL_RECOVERY_REQUEST = {
     "previous_execution": {
         "original_rca": {
             "summary": "Memory limit exceeded due to leak",
-            "signal_type": "OOMKilled",
+            "signal_name": "OOMKilled",
             "severity": "critical",
             "contributing_factors": ["memory_leak"],
         },

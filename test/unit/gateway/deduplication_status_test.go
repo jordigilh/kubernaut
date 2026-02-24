@@ -106,7 +106,7 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 						SignalFingerprint: testFingerprint("abc123"),
 						SignalName:        "PodCrashLooping",
 						Severity:          "warning",
-						SignalType:        "prometheus",
+						SignalType:        "alert",
 						ReceivedTime:      now,
 						Deduplication: sharedtypes.DeduplicationInfo{
 							FirstOccurrence: now,
@@ -156,7 +156,7 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 						SignalFingerprint: testFingerprint("xyz789"),
 						SignalName:        "HighMemoryUsage",
 						Severity:          "warning",
-						SignalType:        "prometheus",
+						SignalType:        "alert",
 						ReceivedTime:      now,
 						Deduplication: sharedtypes.DeduplicationInfo{
 							FirstOccurrence: now,
@@ -205,7 +205,7 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 						SignalFingerprint: testFingerprint("newsig"),
 						SignalName:        "NewAlert",
 						Severity:          "info",
-						SignalType:        "prometheus",
+						SignalType:        "alert",
 						ReceivedTime:      now,
 						Deduplication: sharedtypes.DeduplicationInfo{
 							FirstOccurrence: now,
@@ -250,7 +250,7 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 						SignalFingerprint: testFingerprint("immut"),
 						SignalName:        "TestAlert",
 						Severity:          "warning",
-						SignalType:        "prometheus",
+						SignalType:        "alert",
 						ReceivedTime:      now,
 						Deduplication: sharedtypes.DeduplicationInfo{
 							FirstOccurrence: now,
@@ -303,7 +303,7 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 						SignalFingerprint: fp,
 						SignalName:        "PendingAlert",
 						Severity:          "warning",
-						SignalType:        "prometheus",
+						SignalType:        "alert",
 						ReceivedTime:      now,
 						Deduplication: sharedtypes.DeduplicationInfo{
 							FirstOccurrence: now,
@@ -343,7 +343,7 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 						SignalFingerprint: fp,
 						SignalName:        "ProcessingAlert",
 						Severity:          "warning",
-						SignalType:        "prometheus",
+						SignalType:        "alert",
 						ReceivedTime:      now,
 						Deduplication: sharedtypes.DeduplicationInfo{
 							FirstOccurrence: now,
@@ -380,7 +380,7 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 						SignalFingerprint: fp,
 						SignalName:        "CompletedAlert",
 						Severity:          "warning",
-						SignalType:        "prometheus",
+						SignalType:        "alert",
 						ReceivedTime:      now,
 						Deduplication: sharedtypes.DeduplicationInfo{
 							FirstOccurrence: now,
@@ -419,7 +419,7 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 						SignalFingerprint: fp,
 						SignalName:        "FailedAlert",
 						Severity:          "warning",
-						SignalType:        "prometheus",
+						SignalType:        "alert",
 						ReceivedTime:      now,
 						Deduplication: sharedtypes.DeduplicationInfo{
 							FirstOccurrence: now,
@@ -489,7 +489,7 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 						SignalFingerprint: testFingerprint("conflt"),
 						SignalName:        "ConflictAlert",
 						Severity:          "warning",
-						SignalType:        "prometheus",
+						SignalType:        "alert",
 						ReceivedTime:      now,
 						Deduplication: sharedtypes.DeduplicationInfo{
 							FirstOccurrence: now,

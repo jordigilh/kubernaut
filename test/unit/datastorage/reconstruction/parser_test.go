@@ -50,9 +50,9 @@ var _ = Describe("Audit Event Parser", func() {
 			parsedData, err := reconstructionpkg.ParseAuditEvent(event)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(parsedData).ToNot(BeNil())
-			Expect(parsedData.SignalType).To(Equal("prometheus-alert"))
-			Expect(parsedData.AlertName).To(Equal("HighCPU"))
+			Expect(parsedData.SignalName).To(Equal("HighCPU"))
+			Expect(parsedData.SignalType).To(Equal("alert"))
+			Expect(parsedData.SignalName).To(Equal("HighCPU"))
 			Expect(parsedData.SignalLabels).To(HaveKeyWithValue("alertname", "HighCPU"))
 			Expect(parsedData.SignalAnnotations).To(HaveKeyWithValue("summary", "CPU usage is high"))
 			// BR-AUDIT-005: Fingerprint must be extracted for RR.Spec.SignalFingerprint
@@ -60,14 +60,14 @@ var _ = Describe("Audit Event Parser", func() {
 				"Parser must extract fingerprint from gateway audit payload")
 		})
 
-		It("should return error for missing alert name", func() {
+		It("should return error for missing signal name", func() {
 			// Validates error handling for invalid gateway events
 			event := createInvalidGatewayEvent(testTimestamp, testUUID)
 
 			_, err := reconstructionpkg.ParseAuditEvent(event)
 
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("missing alert_name"))
+			Expect(err.Error()).To(ContainSubstring("missing signal_name"))
 		})
 	})
 
@@ -79,8 +79,6 @@ var _ = Describe("Audit Event Parser", func() {
 			parsedData, err := reconstructionpkg.ParseAuditEvent(event)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(parsedData).ToNot(BeNil())
-			Expect(parsedData.TimeoutConfig).ToNot(BeNil())
 			Expect(parsedData.TimeoutConfig.Global).To(Equal("1h0m0s"))
 			Expect(parsedData.TimeoutConfig.Processing).To(Equal("10m0s"))
 			Expect(parsedData.TimeoutConfig.Analyzing).To(Equal("15m0s"))
@@ -93,7 +91,6 @@ var _ = Describe("Audit Event Parser", func() {
 			parsedData, err := reconstructionpkg.ParseAuditEvent(event)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(parsedData.TimeoutConfig).ToNot(BeNil())
 			Expect(parsedData.TimeoutConfig.Global).To(Equal("1h0m0s"))
 			// Optional fields should be empty strings, not errors
 			Expect(parsedData.TimeoutConfig.Processing).To(Equal(""))
@@ -120,8 +117,8 @@ func createGatewaySignalReceivedEvent(timestamp time.Time, id uuid.UUID) ogencli
 		CorrelationID:  "test-correlation-id",
 		EventData: ogenclient.AuditEventEventData{
 			GatewayAuditPayload: ogenclient.GatewayAuditPayload{
-				SignalType:        ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
-				AlertName:         "HighCPU",
+				SignalType:        ogenclient.GatewayAuditPayloadSignalTypeAlert,
+				SignalName:        "HighCPU",
 				Fingerprint:       "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
 				SignalLabels:      ogenclient.NewOptGatewayAuditPayloadSignalLabels(labels),
 				SignalAnnotations: ogenclient.NewOptGatewayAuditPayloadSignalAnnotations(annotations),
@@ -131,14 +128,14 @@ func createGatewaySignalReceivedEvent(timestamp time.Time, id uuid.UUID) ogencli
 }
 
 func createInvalidGatewayEvent(timestamp time.Time, id uuid.UUID) ogenclient.AuditEvent {
-	// Minimal invalid: missing alert_name to test error handling
+	// Minimal invalid: missing signal_name to test error handling
 	return ogenclient.AuditEvent{
 		EventType:      "gateway.signal.received",
 		EventTimestamp: timestamp,
 		EventData: ogenclient.AuditEventEventData{
 			GatewayAuditPayload: ogenclient.GatewayAuditPayload{
-				SignalType: ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
-				AlertName:  "", // Missing - should cause error in our parser
+				SignalType: ogenclient.GatewayAuditPayloadSignalTypeAlert,
+				SignalName: "", // Missing - should cause error in our parser
 			},
 		},
 	}

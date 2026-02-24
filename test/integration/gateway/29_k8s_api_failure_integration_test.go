@@ -120,7 +120,7 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 
 		// Test signal
 		testSignal = &types.NormalizedSignal{
-			AlertName: "HighMemoryUsage",
+			SignalName: "HighMemoryUsage",
 			Namespace: "production",
 			Resource: types.ResourceIdentifier{
 				Kind: "Pod",
@@ -219,7 +219,7 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 
 			// Signal 1: K8s API down
 			signal1 := &types.NormalizedSignal{
-				AlertName:   "HighMemoryUsage",
+				SignalName:   "HighMemoryUsage",
 				Namespace:   "production",
 				Fingerprint: "signal-1",
 				Resource: types.ResourceIdentifier{
@@ -233,7 +233,7 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 
 			// Signal 2: K8s API recovers
 			signal2 := &types.NormalizedSignal{
-				AlertName:   "HighCPU",
+				SignalName:   "HighCPU",
 				Namespace:   "staging",
 				Fingerprint: "signal-2",
 				Resource: types.ResourceIdentifier{
@@ -352,7 +352,7 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 
 			// Trigger 10 consecutive failures to trip circuit breaker
 			signal := &types.NormalizedSignal{
-				AlertName: "HighCPU",
+				SignalName: "HighCPU",
 				Namespace: "default",
 				Resource: types.ResourceIdentifier{
 					Kind: "Pod",
@@ -404,7 +404,7 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 			ctx := context.Background()
 
 			signal := &types.NormalizedSignal{
-				AlertName: "DiskFull",
+				SignalName: "DiskFull",
 				Namespace: "default",
 				Resource: types.ResourceIdentifier{
 					Kind: "Node",

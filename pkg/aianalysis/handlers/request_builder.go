@@ -79,7 +79,7 @@ func (b *RequestBuilder) BuildIncidentRequest(analysis *aianalysisv1.AIAnalysis)
 		// REQUIRED fields per HAPI OpenAPI spec
 		IncidentID:        analysis.Name,    // Q1: Use CR name
 		RemediationID:     correlationID,    // DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name for audit correlation
-		SignalType:        spec.SignalType,
+		SignalName:        spec.SignalName,
 		Severity:          client.Severity(spec.Severity),
 		SignalSource:      "kubernaut",
 		ResourceNamespace: spec.TargetResource.Namespace,
@@ -126,7 +126,7 @@ func (b *RequestBuilder) BuildRecoveryRequest(analysis *aianalysisv1.AIAnalysis)
 	// DEBUG: Log what we're reading from the CRD
 	b.log.Info("🔍 DEBUG: Reading from CRD",
 		"crdName", analysis.Name,
-		"spec.SignalType", spec.SignalType,
+		"spec.SignalName", spec.SignalName,
 		"previousExecutionsCount", len(analysis.Spec.PreviousExecutions),
 	)
 	if len(analysis.Spec.PreviousExecutions) > 0 {
@@ -165,18 +165,18 @@ func (b *RequestBuilder) BuildRecoveryRequest(analysis *aianalysisv1.AIAnalysis)
 	// Optional signal context (may have changed since initial)
 	// DEBUG: Log BEFORE SetTo
 	b.log.Info("🔍 DEBUG: BEFORE SetTo",
-		"spec.SignalType", spec.SignalType,
-		"isEmpty", spec.SignalType == "",
-		"req.SignalType.Set", req.SignalType.Set,
+		"spec.SignalName", spec.SignalName,
+		"isEmpty", spec.SignalName == "",
+		"req.SignalName.Set", req.SignalName.Set,
 	)
 
-	req.SignalType.SetTo(spec.SignalType)
+	req.SignalName.SetTo(spec.SignalName)
 
 	// DEBUG: Log AFTER SetTo
 	b.log.Info("🔍 DEBUG: AFTER SetTo",
 		"crdName", analysis.Name,
-		"req.SignalType.Set", req.SignalType.Set,
-		"req.SignalType.Value", req.SignalType.Value,
+		"req.SignalName.Set", req.SignalName.Set,
+		"req.SignalName.Value", req.SignalName.Value,
 		"requestPointer", fmt.Sprintf("%p", req),
 	)
 
@@ -187,8 +187,8 @@ func (b *RequestBuilder) BuildRecoveryRequest(analysis *aianalysisv1.AIAnalysis)
 
 	// DEBUG: Log signal type being sent to HAPI (BR-HAPI-197 investigation)
 	b.log.Info("🔍 DEBUG: Building recovery request",
-		"signalType", spec.SignalType,
-		"signalTypeQuoted", fmt.Sprintf("%q", spec.SignalType),
+		"signalType", spec.SignalName,
+		"signalTypeQuoted", fmt.Sprintf("%q", spec.SignalName),
 		"isRecoveryAttempt", true,
 		"recoveryAttemptNumber", analysis.Spec.RecoveryAttemptNumber,
 	)
@@ -215,7 +215,7 @@ func (b *RequestBuilder) buildPreviousExecution(prev aianalysisv1.PreviousExecut
 	// Map OriginalRCA
 	originalRCA := client.OriginalRCA{
 		Summary:             prev.OriginalRCA.Summary,
-		SignalType:          prev.OriginalRCA.SignalType,
+		SignalName:          prev.OriginalRCA.SignalType,
 		Severity:            client.Severity(prev.OriginalRCA.Severity),
 		ContributingFactors: prev.OriginalRCA.ContributingFactors,
 	}

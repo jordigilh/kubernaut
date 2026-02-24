@@ -14,7 +14,7 @@ import json
 test_data = {
     "incident_id": "test-123",
     "remediation_id": "rem-456",
-    "signal_type": "OOMKilled",
+    "signal_name": "OOMKilled",
     "severity": "critical",
     "signal_source": "prometheus",
     "resource_namespace": "production",
@@ -87,7 +87,7 @@ try:
     print(f"   Recreated type: {type(recreated)}")
     print()
 except Exception as e:
-    print(f"❌ Server-side parsing simulation: FAILED")
+    print("❌ Server-side parsing simulation: FAILED")
     print(f"   Error: {e}")
     print()
 

@@ -80,7 +80,7 @@ var _ = Describe("BR-GATEWAY-181: Custom Severity Pass-Through", Label("integrat
 			Expect(err).ToNot(HaveOccurred())
 
 			By("2. Process Prometheus alert with 'critical' severity")
-			prometheusAdapter := adapters.NewPrometheusAdapter()
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 			prometheusAlert := createPrometheusAlert(testNamespace, "HighCPU", "critical", "", "")
 			signal, err := prometheusAdapter.Parse(ctx, prometheusAlert)
 			Expect(err).ToNot(HaveOccurred())
@@ -113,7 +113,7 @@ var _ = Describe("BR-GATEWAY-181: Custom Severity Pass-Through", Label("integrat
 			Expect(err).ToNot(HaveOccurred())
 
 			By("2. Process Prometheus alert with 'warning' severity")
-			prometheusAdapter := adapters.NewPrometheusAdapter()
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 			prometheusAlert := createPrometheusAlert(testNamespace, "ModerateMemory", "warning", "", "")
 			signal, err := prometheusAdapter.Parse(ctx, prometheusAlert)
 			Expect(err).ToNot(HaveOccurred())
@@ -145,7 +145,7 @@ var _ = Describe("BR-GATEWAY-181: Custom Severity Pass-Through", Label("integrat
 			Expect(err).ToNot(HaveOccurred())
 
 			By("2. Process Prometheus alert with 'info' severity")
-			prometheusAdapter := adapters.NewPrometheusAdapter()
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 			prometheusAlert := createPrometheusAlert(testNamespace, "LowDiskSpace", "info", "", "")
 			signal, err := prometheusAdapter.Parse(ctx, prometheusAlert)
 			Expect(err).ToNot(HaveOccurred())
@@ -172,7 +172,7 @@ var _ = Describe("BR-GATEWAY-181: Custom Severity Pass-Through", Label("integrat
 
 		It("[GW-INT-SEV-004] should default to 'unknown' only if severity missing entirely", func() {
 			By("1. Create Prometheus alert without severity label")
-			prometheusAdapter := adapters.NewPrometheusAdapter()
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 			prometheusAlert := createPrometheusAlertWithoutSeverity(testNamespace, "NoSeverityAlert")
 			signal, err := prometheusAdapter.Parse(ctx, prometheusAlert)
 			Expect(err).ToNot(HaveOccurred())
@@ -191,7 +191,7 @@ var _ = Describe("BR-GATEWAY-181: Custom Severity Pass-Through", Label("integrat
 			Expect(err).ToNot(HaveOccurred())
 
 			By("2. Process Prometheus alert with 'Sev1' severity")
-			prometheusAdapter := adapters.NewPrometheusAdapter()
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 			prometheusAlert := createPrometheusAlert(testNamespace, "EnterpriseCritical", "Sev1", "", "")
 			signal, err := prometheusAdapter.Parse(ctx, prometheusAlert)
 			Expect(err).ToNot(HaveOccurred())
@@ -224,7 +224,7 @@ var _ = Describe("BR-GATEWAY-181: Custom Severity Pass-Through", Label("integrat
 			Expect(err).ToNot(HaveOccurred())
 
 			By("2. Process Prometheus alert with 'P0' severity")
-			prometheusAdapter := adapters.NewPrometheusAdapter()
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 			prometheusAlert := createPrometheusAlert(testNamespace, "PagerDutyCritical", "P0", "", "")
 			signal, err := prometheusAdapter.Parse(ctx, prometheusAlert)
 			Expect(err).ToNot(HaveOccurred())
@@ -298,7 +298,7 @@ var _ = Describe("BR-GATEWAY-181: Custom Severity Pass-Through", Label("integrat
 	Context("Adapter Validation - Pass-Through Enforcement", func() {
 		It("[GW-INT-SEV-010] should accept ANY non-empty severity string in validation", func() {
 			By("1. Create signals with various severity values")
-			prometheusAdapter := adapters.NewPrometheusAdapter()
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 
 			testCases := []struct {
 				severity         string

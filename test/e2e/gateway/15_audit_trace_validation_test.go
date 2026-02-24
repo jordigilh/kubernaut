@@ -277,8 +277,8 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 
 		// Validate Gateway-specific fields exist (using strongly-typed payload)
 		Expect(gatewayPayload.SignalType).ToNot(BeEmpty(),
-			"Gateway event_data should include signal_type (e.g., 'prometheus-alert')")
-		Expect(gatewayPayload.AlertName).To(Equal("AuditTestAlert"),
+			"Gateway event_data should include signal_type (e.g., 'alert')")
+		Expect(gatewayPayload.SignalName).To(Equal("AuditTestAlert"),
 			"Gateway event_data should include alert_name")
 		Expect(gatewayPayload.Namespace).To(Equal(testNamespace),
 			"Gateway event_data should include namespace")

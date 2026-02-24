@@ -408,12 +408,12 @@ Day 4 (Multi-Tenant) → Day 5 (Overflow) → Day 6 (Integration) → Day 7 (Met
 
        // 2. If storm, buffer alert instead of creating CRD
        if isStorm {
-           bufferSize, err := s.stormBuffer.Add(ctx, signal.Namespace, signal.AlertName, signal)
+           bufferSize, err := s.stormBuffer.Add(ctx, signal.Namespace, signal.SignalName, signal)
            if bufferSize >= s.config.Storm.Threshold {
                // Threshold reached, close window and create aggregated CRD
-               alerts, _ := s.stormBuffer.GetBufferedAlerts(ctx, signal.Namespace, signal.AlertName)
+               alerts, _ := s.stormBuffer.GetBufferedAlerts(ctx, signal.Namespace, signal.SignalName)
                crd, _ := s.crdCreator.CreateAggregatedCRD(ctx, alerts)
-               s.stormBuffer.Clear(ctx, signal.Namespace, signal.AlertName)
+               s.stormBuffer.Clear(ctx, signal.Namespace, signal.SignalName)
                return &processing.ProcessingResponse{StatusCode: http.StatusCreated, CRDName: crd.Name}, nil
            }
            // Buffered, waiting for more alerts
@@ -1333,7 +1333,7 @@ func (a *StormAggregator) StartAggregationWithBuffer(
     bufferedSignals []*types.NormalizedSignal,
     stormMetadata *StormMetadata,
 ) (string, error) {
-    windowID := generateWindowID(stormMetadata.AlertName)
+    windowID := generateWindowID(stormMetadata.SignalName)
 
     // Add all buffered signals to aggregation window
     for _, signal := range bufferedSignals {
@@ -1370,7 +1370,7 @@ func (a *StormAggregator) AddResource(ctx context.Context, windowID string, sign
 
     // ✨ SLIDING WINDOW: Reset timer on each new alert
     // Window closes after 60s of INACTIVITY, not 60s from first alert
-    windowKey := fmt.Sprintf("alert:storm:aggregate:%s", signal.AlertName)
+    windowKey := fmt.Sprintf("alert:storm:aggregate:%s", signal.SignalName)
 
     // Reset BOTH keys to full window duration (timer reset)
     if err := a.redisClient.Expire(ctx, key, a.windowDuration).Err(); err != nil {
@@ -2304,20 +2304,20 @@ var _ = Describe("StormBuffer", func() {
             It("should buffer alert and start window", func() {
                 signal := &types.NormalizedSignal{
                     Namespace: "prod-api",
-                    AlertName: "PodCrashLooping",
+                    SignalName: "PodCrashLooping",
                     Resource: types.ResourceIdentifier{
                         Kind: "Pod",
                         Name: "payment-api-1",
                     },
                 }
 
-                bufferSize, err := buffer.Add(ctx, signal.Namespace, signal.AlertName, signal)
+                bufferSize, err := buffer.Add(ctx, signal.Namespace, signal.SignalName, signal)
 
                 Expect(err).ToNot(HaveOccurred())
                 Expect(bufferSize).To(Equal(1))
 
                 // Verify window was started
-                window, err := buffer.GetWindow(ctx, signal.Namespace, signal.AlertName)
+                window, err := buffer.GetWindow(ctx, signal.Namespace, signal.SignalName)
                 Expect(err).ToNot(HaveOccurred())
                 Expect(window).ToNot(BeNil())
                 Expect(window.AlertCount).To(Equal(1))
@@ -2328,7 +2328,7 @@ var _ = Describe("StormBuffer", func() {
             It("should extend window timer (sliding window behavior)", func() {
                 signal := &types.NormalizedSignal{
                     Namespace: "prod-api",
-                    AlertName: "PodCrashLooping",
+                    SignalName: "PodCrashLooping",
                     Resource: types.ResourceIdentifier{
                         Kind: "Pod",
                         Name: "payment-api-1",
@@ -2336,11 +2336,11 @@ var _ = Describe("StormBuffer", func() {
                 }
 
                 // Add first alert
-                _, err := buffer.Add(ctx, signal.Namespace, signal.AlertName, signal)
+                _, err := buffer.Add(ctx, signal.Namespace, signal.SignalName, signal)
                 Expect(err).ToNot(HaveOccurred())
 
                 // Get initial window expiry
-                window1, _ := buffer.GetWindow(ctx, signal.Namespace, signal.AlertName)
+                window1, _ := buffer.GetWindow(ctx, signal.Namespace, signal.SignalName)
                 initialExpiry := window1.ExpiryTime
 
                 // Wait 2 seconds
@@ -2348,11 +2348,11 @@ var _ = Describe("StormBuffer", func() {
 
                 // Add second alert (should reset timer)
                 signal.Resource.Name = "payment-api-2"
-                _, err = buffer.Add(ctx, signal.Namespace, signal.AlertName, signal)
+                _, err = buffer.Add(ctx, signal.Namespace, signal.SignalName, signal)
                 Expect(err).ToNot(HaveOccurred())
 
                 // Get updated window expiry
-                window2, _ := buffer.GetWindow(ctx, signal.Namespace, signal.AlertName)
+                window2, _ := buffer.GetWindow(ctx, signal.Namespace, signal.SignalName)
                 newExpiry := window2.ExpiryTime
 
                 // New expiry should be later than initial (timer was reset)
@@ -2369,7 +2369,7 @@ var _ = Describe("StormBuffer", func() {
                 for i := 1; i <= 5; i++ {
                     signal := &types.NormalizedSignal{
                         Namespace: namespace,
-                        AlertName: alertName,
+                        SignalName: alertName,
                         Resource: types.ResourceIdentifier{
                             Kind: "Pod",
                             Name: fmt.Sprintf("payment-api-%d", i),
@@ -2408,14 +2408,14 @@ var _ = Describe("StormBuffer", func() {
                 for i := 1; i <= 3; i++ {
                     signal := &types.NormalizedSignal{
                         Namespace: namespace,
-                        AlertName: fmt.Sprintf("Alert-%d", i),
+                        SignalName: fmt.Sprintf("Alert-%d", i),
                         Resource: types.ResourceIdentifier{
                             Kind: "Pod",
                             Name: fmt.Sprintf("pod-%d", i),
                         },
                     }
 
-                    _, err := buffer.Add(ctx, namespace, signal.AlertName, signal)
+                    _, err := buffer.Add(ctx, namespace, signal.SignalName, signal)
 
                     if i <= 2 {
                         Expect(err).ToNot(HaveOccurred())
@@ -2475,7 +2475,7 @@ var _ = Describe("StormBuffer", func() {
                 for i := 1; i <= 3; i++ {
                     signal := &types.NormalizedSignal{
                         Namespace: namespace,
-                        AlertName: alertName,
+                        SignalName: alertName,
                         Resource: types.ResourceIdentifier{
                             Kind: "Pod",
                             Name: fmt.Sprintf("payment-api-%d", i),
@@ -2515,7 +2515,7 @@ var _ = Describe("StormBuffer", func() {
                 // Add alert (should trigger force close)
                 signal := &types.NormalizedSignal{
                     Namespace: namespace,
-                    AlertName: alertName,
+                    SignalName: alertName,
                     Resource: types.ResourceIdentifier{
                         Kind: "Pod",
                         Name: "payment-api-1",
@@ -2543,7 +2543,7 @@ var _ = Describe("StormBuffer", func() {
                 alertName := fmt.Sprintf("Alert-%d", (i%2)+1)
                 signal := &types.NormalizedSignal{
                     Namespace: namespace,
-                    AlertName: alertName,
+                    SignalName: alertName,
                     Resource: types.ResourceIdentifier{
                         Kind: "Pod",
                         Name: fmt.Sprintf("pod-%d", i),
@@ -2573,7 +2573,7 @@ var _ = Describe("StormBuffer", func() {
                 for i := 1; i <= 96; i++ {
                     signal := &types.NormalizedSignal{
                         Namespace: namespace,
-                        AlertName: "HighLoad",
+                        SignalName: "HighLoad",
                         Resource: types.ResourceIdentifier{
                             Kind: "Pod",
                             Name: fmt.Sprintf("pod-%d", i),
@@ -2587,7 +2587,7 @@ var _ = Describe("StormBuffer", func() {
                 for i := 97; i <= 116; i++ {
                     signal := &types.NormalizedSignal{
                         Namespace: namespace,
-                        AlertName: "HighLoad",
+                        SignalName: "HighLoad",
                         Resource: types.ResourceIdentifier{
                             Kind: "Pod",
                             Name: fmt.Sprintf("pod-%d", i),
@@ -2744,7 +2744,7 @@ var _ = Describe("StormBuffer Integration", Ordered, func() {
                 for i := 1; i <= 3; i++ {
                     signal := &types.NormalizedSignal{
                         Namespace: namespace,
-                        AlertName: alertName,
+                        SignalName: alertName,
                         Resource: types.ResourceIdentifier{
                             Kind: "Pod",
                             Name: fmt.Sprintf("payment-api-%d", i),
@@ -2772,7 +2772,7 @@ var _ = Describe("StormBuffer Integration", Ordered, func() {
                 // Add alert with very short TTL (2 seconds for testing)
                 signal := &types.NormalizedSignal{
                     Namespace: namespace,
-                    AlertName: alertName,
+                    SignalName: alertName,
                     Resource: types.ResourceIdentifier{
                         Kind: "Pod",
                         Name: "payment-api-1",
@@ -2806,7 +2806,7 @@ var _ = Describe("StormBuffer Integration", Ordered, func() {
                 alertName := "PodCrashLooping"
                 signal := &types.NormalizedSignal{
                     Namespace: namespace,
-                    AlertName: alertName,
+                    SignalName: alertName,
                     Resource: types.ResourceIdentifier{
                         Kind: "Pod",
                         Name: "payment-api-1",
@@ -2834,7 +2834,7 @@ var _ = Describe("StormBuffer Integration", Ordered, func() {
                 for i := 1; i <= 5; i++ {
                     signal := &types.NormalizedSignal{
                         Namespace: namespace,
-                        AlertName: alertName,
+                        SignalName: alertName,
                         Resource: types.ResourceIdentifier{
                             Kind: "Pod",
                             Name: fmt.Sprintf("payment-api-%d", i),
@@ -2872,7 +2872,7 @@ var _ = Describe("StormBuffer Integration", Ordered, func() {
                 go func(index int) {
                     signal := &types.NormalizedSignal{
                         Namespace: namespace,
-                        AlertName: alertName,
+                        SignalName: alertName,
                         Resource: types.ResourceIdentifier{
                             Kind: "Pod",
                             Name: fmt.Sprintf("pod-%d", index),
@@ -3003,7 +3003,7 @@ var _ = Describe("Storm Buffer E2E", Ordered, func() {
                 // Send 15 alerts for same pod
                 for i := 1; i <= 15; i++ {
                     payload := createPrometheusWebhookPayload(PrometheusAlertPayload{
-                        AlertName: alertName,
+                        SignalName: alertName,
                         Namespace: testNS,
                         Severity:  "critical",
                         PodName:   podName,
@@ -3079,7 +3079,7 @@ var _ = Describe("Storm Buffer E2E", Ordered, func() {
                 // Send 4 alerts with 30s gaps (total 90s, but window should stay open)
                 for i := 1; i <= 4; i++ {
                     payload := createPrometheusWebhookPayload(PrometheusAlertPayload{
-                        AlertName: alertName,
+                        SignalName: alertName,
                         Namespace: testNS,
                         Severity:  "warning",
                         PodName:   fmt.Sprintf("api-server-%d", i),
@@ -3134,7 +3134,7 @@ var _ = Describe("Storm Buffer E2E", Ordered, func() {
 
                 for time.Since(startTime) < 6*time.Minute {
                     payload := createPrometheusWebhookPayload(PrometheusAlertPayload{
-                        AlertName: alertName,
+                        SignalName: alertName,
                         Namespace: testNS,
                         Severity:  "warning",
                         PodName:   fmt.Sprintf("worker-%d", alertCount+1),
@@ -3191,7 +3191,7 @@ var _ = Describe("Storm Buffer E2E", Ordered, func() {
                     for i := 1; i <= 5; i++ {
                         go func(namespace string, index int) {
                             payload := createPrometheusWebhookPayload(PrometheusAlertPayload{
-                                AlertName: "PodCrashLooping",
+                                SignalName: "PodCrashLooping",
                                 Namespace: namespace,
                                 Severity:  "critical",
                                 PodName:   fmt.Sprintf("pod-%d", index),
@@ -3357,37 +3357,37 @@ var _ = Describe("Storm Buffer E2E", Ordered, func() {
 StormBufferSize *prometheus.GaugeVec
   Name: "gateway_storm_buffer_size"
   Help: "Current number of alerts in storm buffer"
-  Labels: namespace, alert_name
+  Labels: namespace, signal_name
 
 // Buffer overflow tracking
 StormBufferOverflowTotal *prometheus.CounterVec
   Name: "gateway_storm_buffer_overflow_total"
   Help: "Total storm buffer overflows (capacity reached)"
-  Labels: namespace, alert_name
+  Labels: namespace, signal_name
 
 // Sampling state
 StormBufferSamplingEnabled *prometheus.GaugeVec
   Name: "gateway_storm_buffer_sampling_enabled"
   Help: "Whether sampling is active (1=active, 0=inactive)"
-  Labels: namespace, alert_name
+  Labels: namespace, signal_name
 
 // Forced closures
 StormBufferForceClosedTotal *prometheus.CounterVec
   Name: "gateway_storm_buffer_force_closed_total"
   Help: "Total forced window closures due to capacity"
-  Labels: namespace, alert_name
+  Labels: namespace, signal_name
 
 // Buffer effectiveness
 StormBufferHitRate *prometheus.GaugeVec
   Name: "gateway_storm_buffer_hit_rate"
   Help: "Percentage of buffered alerts that reached threshold (0.0-1.0)"
-  Labels: namespace, alert_name
+  Labels: namespace, signal_name
 
 // Fallback tracking
 StormBufferFallbackTotal *prometheus.CounterVec
   Name: "gateway_storm_buffer_fallback_total"
   Help: "Total buffer failures requiring individual CRDs"
-  Labels: namespace, alert_name, reason
+  Labels: namespace, signal_name, reason
 ```
 
 ---
@@ -3401,26 +3401,26 @@ StormBufferFallbackTotal *prometheus.CounterVec
 StormWindowDurationSeconds *prometheus.HistogramVec
   Name: "gateway_storm_window_duration_seconds"
   Help: "Histogram of actual storm window durations"
-  Labels: namespace, alert_name
+  Labels: namespace, signal_name
   Buckets: []float64{5, 10, 30, 60, 120, 180, 240, 300} // 5s to 5min
 
 // Window extensions (sliding window resets)
 StormWindowExtensionsTotal *prometheus.CounterVec
   Name: "gateway_storm_window_extensions_total"
   Help: "Total window TTL resets (sliding window behavior)"
-  Labels: namespace, alert_name
+  Labels: namespace, signal_name
 
 // Maximum duration hits
 StormWindowMaxDurationReached *prometheus.CounterVec
   Name: "gateway_storm_window_max_duration_reached_total"
   Help: "Total times 5-minute maximum window duration was hit"
-  Labels: namespace, alert_name
+  Labels: namespace, signal_name
 
 // Alerts per window histogram
 StormWindowAlertsPerWindow *prometheus.HistogramVec
   Name: "gateway_storm_window_alerts_per_window"
   Help: "Histogram of alerts per aggregation window"
-  Labels: namespace, alert_name
+  Labels: namespace, signal_name
   Buckets: []float64{2, 5, 10, 20, 50, 100, 200, 500, 1000}
 ```
 
@@ -3435,21 +3435,21 @@ StormWindowAlertsPerWindow *prometheus.HistogramVec
 StormAggregationRatio *prometheus.GaugeVec
   Name: "gateway_storm_aggregation_ratio"
   Help: "Ratio of alerts received to CRDs created (higher = better aggregation)"
-  Labels: namespace, alert_name
+  Labels: namespace, signal_name
   Calculation: alerts_received / crds_created
 
 // Cost savings percentage
 StormCostSavingsPercent *prometheus.GaugeVec
   Name: "gateway_storm_cost_savings_percent"
   Help: "Estimated cost savings percentage from aggregation (0-100)"
-  Labels: namespace, alert_name
+  Labels: namespace, signal_name
   Calculation: (1 - crds_created/alerts_received) * 100
 
 // Individual CRDs prevented
 StormIndividualCRDsPrevented *prometheus.CounterVec
   Name: "gateway_storm_individual_crds_prevented_total"
   Help: "Total individual CRDs prevented by aggregation"
-  Labels: namespace, alert_name
+  Labels: namespace, signal_name
   Calculation: alerts_received - crds_created
 ```
 
@@ -3476,7 +3476,7 @@ DeduplicationByState *prometheus.CounterVec
 DeduplicationOccurrenceCount *prometheus.HistogramVec
   Name: "gateway_deduplication_occurrence_count"
   Help: "Histogram of occurrence counts for deduplicated signals"
-  Labels: namespace, alert_name
+  Labels: namespace, signal_name
   Buckets: []float64{1, 2, 5, 10, 20, 50, 100, 200, 500}
 
 // NEW: Graceful degradation tracking
@@ -3616,7 +3616,7 @@ func (b *StormBuffer) updateNamespaceUtilization(namespace string, currentSize, 
 2. **Threshold reached**: `INFO` with buffered alert count, namespace
 3. **Window extended**: `DEBUG` with extension count, new TTL
 4. **Window max duration**: `WARN` with duration, alert count
-5. **Buffer overflow**: `ERROR` with namespace, alert_name, capacity
+5. **Buffer overflow**: `ERROR` with namespace, signal_name, capacity
 6. **Sampling enabled**: `WARN` with namespace, sampling rate
 7. **Forced closure**: `ERROR` with namespace, reason
 8. **Buffer failure**: `ERROR` with failure reason, fallback action
@@ -3627,7 +3627,7 @@ func (b *StormBuffer) updateNamespaceUtilization(namespace string, currentSize, 
 ```go
 logger.Info("Storm buffer threshold reached",
     zap.String("namespace", signal.Namespace),
-    zap.String("alert_name", signal.AlertName),
+    zap.String("signal_name", signal.SignalName),
     zap.Int("buffered_alerts", bufferSize),
     zap.Int("threshold", threshold),
     zap.Duration("buffer_age", time.Since(bufferStartTime)))

@@ -279,7 +279,7 @@ var _ = Describe("E2E-DS-017-001: Three-Step Workflow Discovery (DD-HAPI-017)", 
 
 			// Use AuthHTTPClient for raw HTTP request (endpoint no longer in ogen client)
 			searchURL := fmt.Sprintf("%s/api/v1/workflows/search", dataStorageURL)
-			body := bytes.NewBufferString(`{"filters":{"signalType":"OOMKilled","severity":"critical","component":"pod","environment":"production","priority":"P0"}}`)
+			body := bytes.NewBufferString(`{"filters":{"signalName":"OOMKilled","severity":"critical","component":"pod","environment":"production","priority":"P0"}}`)
 
 			req, err := http.NewRequestWithContext(testCtx, http.MethodPost, searchURL, body)
 			Expect(err).ToNot(HaveOccurred())

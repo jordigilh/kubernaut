@@ -123,7 +123,7 @@ func (e *Engine) LoadPolicy(policyContent string) error {
 func (e *Engine) validatePolicy(policyContent string) error {
 	// Try to compile the policy to check syntax
 	_, err := rego.New(
-		rego.Query("data.signalprocessing.labels.labels"),
+		rego.Query("data.signalprocessing.customlabels.labels"),
 		rego.Module("policy.rego", policyContent),
 	).PrepareForEval(context.Background())
 
@@ -156,7 +156,7 @@ func (e *Engine) EvaluatePolicy(ctx context.Context, input *RegoInput) (map[stri
 	}
 
 	r := rego.New(
-		rego.Query("data.signalprocessing.labels.labels"),
+		rego.Query("data.signalprocessing.customlabels.labels"),
 		rego.Module("policy.rego", policyModule),
 		rego.Input(input),
 		rego.StrictBuiltinErrors(true),    // Strict mode for safety

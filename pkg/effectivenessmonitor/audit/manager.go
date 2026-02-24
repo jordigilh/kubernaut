@@ -537,7 +537,7 @@ func (m *Manager) RecordAssessmentScheduled(ctx context.Context, ea *eav1.Effect
 // This is called when the EA transitions to the Completed phase.
 //
 // ADR-EM-001 Section 9.2: Populates all enrichment fields:
-//   - alert_name: Original alert name from EA spec SignalName (OBS-1)
+//   - signal_name: Original signal name from EA spec SignalName (OBS-1)
 //   - components_assessed: List of assessed component names
 //   - completed_at: EA completion timestamp
 //   - assessment_duration_seconds: Time from RR creation to assessment completion (OBS-2)
@@ -568,10 +568,10 @@ func (m *Manager) RecordAssessmentCompleted(ctx context.Context, ea *eav1.Effect
 
 	// ADR-EM-001, Batch 3: Populate all 5 audit payload gaps.
 
-	// 1. alert_name: Original alert/signal name from the parent RemediationRequest.
+	// 1. signal_name: Original signal name from the parent RemediationRequest.
 	//    OBS-1: Uses ea.Spec.SignalName (set by the RO creator from rr.Spec.SignalName),
 	//    which is the actual alert name — distinct from CorrelationID (the RR name).
-	payload.AlertName = ogenclient.NewOptString(ea.Spec.SignalName)
+	payload.SignalName = ogenclient.NewOptString(ea.Spec.SignalName)
 
 	// 2. components_assessed: Build array from EA status component flags.
 	var assessed []string
@@ -624,7 +624,7 @@ func (m *Manager) RecordAssessmentCompleted(ctx context.Context, ea *eav1.Effect
 	m.logger.V(1).Info("Assessment completed audit event stored",
 		"correlationID", ea.Spec.CorrelationID,
 		"reason", reason,
-		"alertName", ea.Spec.SignalName,
+		"signalName", ea.Spec.SignalName,
 		"componentsAssessed", assessed,
 	)
 	return nil

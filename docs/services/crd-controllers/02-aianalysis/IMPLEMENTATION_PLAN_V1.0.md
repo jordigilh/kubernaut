@@ -118,7 +118,7 @@
 - **v1.7** (2025-12-05): PolicyInput schema implementation complete
   - ✅ **Day 3 Complete**: AnalyzingHandler + Rego Policy Engine fully implemented
   - ✅ **PolicyInput Schema**: Extended to match plan lines 1756-1785 (ApprovalInput)
-    - Signal context: `SignalType`, `Severity`, `BusinessPriority`
+    - Signal context: `SignalName`, `Severity`, `BusinessPriority` (Issue #166: was SignalType)
     - Target resource: `Kind`, `Name`, `Namespace`
     - Recovery context: `IsRecoveryAttempt`, `RecoveryAttemptNumber`
   - ✅ **Recovery Rules**: Test policy includes 3+ attempt escalation, high severity + recovery
@@ -1219,8 +1219,8 @@ func (h *ValidatingHandler) Handle(ctx context.Context, analysis *aianalysisv1.A
         result.AddError("signalContext.fingerprint is required")
     }
 
-    if sc.SignalType == "" {
-        result.AddError("signalContext.signalType is required")
+    if sc.SignalName == "" {
+        result.AddError("signalContext.signalName is required")
     }
 
     if sc.Environment == "" {
@@ -1416,7 +1416,7 @@ var _ = Describe("BR-AI-020: Validating Phase Handler", func() {
                     AnalysisRequest: aianalysisv1.AnalysisRequest{
                         SignalContext: aianalysisv1.SignalContextInput{
                             Fingerprint:      "sha256:abc123",
-                            SignalType:       "OOMKilled",
+                            SignalName:       "OOMKilled",
                             Environment:      "production",
                             BusinessPriority: "P0",
                             TargetResource: aianalysisv1.TargetResource{
@@ -1448,7 +1448,7 @@ var _ = Describe("BR-AI-020: Validating Phase Handler", func() {
                     AnalysisRequest: aianalysisv1.AnalysisRequest{
                         SignalContext: aianalysisv1.SignalContextInput{
                             Fingerprint:      "sha256:abc123",
-                            SignalType:       "OOMKilled",
+                            SignalName:       "OOMKilled",
                             Environment:      "production",
                             BusinessPriority: "P0",
                             TargetResource: aianalysisv1.TargetResource{
@@ -1479,7 +1479,7 @@ var _ = Describe("BR-AI-020: Validating Phase Handler", func() {
                     AnalysisRequest: aianalysisv1.AnalysisRequest{
                         SignalContext: aianalysisv1.SignalContextInput{
                             Fingerprint:      "sha256:abc123",
-                            SignalType:       "OOMKilled",
+                            SignalName:       "OOMKilled",
                             Environment:      "production",
                             BusinessPriority: "P0",
                             TargetResource: aianalysisv1.TargetResource{
@@ -1681,7 +1681,7 @@ func (h *InvestigatingHandler) buildIncidentRequest(analysis *aianalysisv1.AIAna
 
     return &holmesgpt.IncidentRequest{
         Fingerprint:      sc.Fingerprint,
-        SignalType:       sc.SignalType,
+        SignalName:       sc.SignalName,
         Severity:         sc.Severity,
         Environment:      sc.Environment,
         BusinessPriority: sc.BusinessPriority,
@@ -1870,7 +1870,7 @@ import sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 // Per REGO_POLICY_EXAMPLES.md v1.4
 type ApprovalInput struct {
     // Signal context
-    SignalType       string `json:"signal_type"`
+    SignalName       string `json:"signal_name"`  // Issue #166: was signal_type
     Severity         string `json:"severity"`
     Environment      string `json:"environment"`
     BusinessPriority string `json:"business_priority"`

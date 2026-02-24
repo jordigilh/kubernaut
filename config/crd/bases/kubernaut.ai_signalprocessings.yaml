@@ -183,8 +183,8 @@ spec:
                     - datadog
                     type: string
                   type:
-                    description: 'Signal type: "prometheus", "kubernetes-event", "aws-cloudwatch",
-                      etc.'
+                    description: 'Signal type: "alert" (generic signal type; adapter-specific
+                      values like "prometheus-alert" or "kubernetes-event" are deprecated)'
                     type: string
                 required:
                 - fingerprint
@@ -428,13 +428,6 @@ spec:
                   Per DD-CONTROLLER-001: Standard pattern for all Kubernetes controllers.
                 format: int64
                 type: integer
-              originalSignalType:
-                description: |-
-                  OriginalSignalType preserves the pre-normalization signal type for audit trail.
-                  BR-SP-106: Audit trail preservation (SOC2 CC7.4)
-                  Only populated for predictive signals (e.g., "PredictedOOMKill").
-                  Empty for reactive signals.
-                type: string
               phase:
                 description: 'Phase: Pending, Enriching, Classifying, Categorizing,
                   Completed, Failed'
@@ -522,13 +515,20 @@ spec:
                 - reactive
                 - predictive
                 type: string
-              signalType:
+              signalName:
                 description: |-
-                  SignalType is the normalized signal type after predictive-to-base mapping.
-                  BR-SP-106: Signal Type Normalization
-                  For predictive signals (e.g., "PredictedOOMKill"), this is the base type (e.g., "OOMKilled").
-                  For reactive signals, this matches Spec.Signal.Type unchanged.
-                  This is the AUTHORITATIVE signal type for all downstream consumers (RO, AA, HAPI).
+                  SignalName is the normalized signal name after predictive-to-base mapping.
+                  BR-SP-106: Signal Name Normalization
+                  For predictive signals (e.g., "PredictedOOMKill"), this is the base name (e.g., "OOMKilled").
+                  For reactive signals, this matches Spec.Signal.Name unchanged.
+                  This is the AUTHORITATIVE signal name for all downstream consumers (RO, AA, HAPI).
+                type: string
+              sourceSignalName:
+                description: |-
+                  SourceSignalName preserves the pre-normalization signal name for audit trail.
+                  BR-SP-106: Audit trail preservation (SOC2 CC7.4)
+                  Only populated for predictive signals (e.g., "PredictedOOMKill").
+                  Empty for reactive signals.
                 type: string
               startTime:
                 description: Processing timestamps

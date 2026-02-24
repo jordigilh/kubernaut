@@ -47,7 +47,7 @@ var _ = Describe("BR-001, BR-008: Edge Case Handling - Adapter Validation", func
 	)
 
 	BeforeEach(func() {
-		adapter = adapters.NewPrometheusAdapter()
+		adapter = adapters.NewPrometheusAdapter(nil, nil)
 	})
 
 	Context("BR-008: Fingerprint Validation Edge Cases", func() {
@@ -62,7 +62,7 @@ var _ = Describe("BR-001, BR-008: Edge Case Handling - Adapter Validation", func
 
 			signal := &types.NormalizedSignal{
 				Fingerprint:  "", // Edge case: empty fingerprint
-				AlertName:    "TestAlert",
+				SignalName:    "TestAlert",
 				Severity:     "critical",
 				Namespace:    "production",
 				FiringTime:   time.Now(),
@@ -85,7 +85,7 @@ var _ = Describe("BR-001, BR-008: Edge Case Handling - Adapter Validation", func
 
 			signal := &types.NormalizedSignal{
 				Fingerprint:  "valid-fingerprint-12345",
-				AlertName:    "", // Edge case: empty alert name
+				SignalName:    "", // Edge case: empty alert name
 				Severity:     "critical",
 				Namespace:    "production",
 				FiringTime:   time.Now(),
@@ -113,7 +113,7 @@ var _ = Describe("BR-001, BR-008: Edge Case Handling - Adapter Validation", func
 
 			signal := &types.NormalizedSignal{
 				Fingerprint:  "valid-fingerprint-12345",
-				AlertName:    "TestAlert",
+				SignalName:    "TestAlert",
 				Severity:     "", // Edge case: empty severity
 				Namespace:    "production",
 				FiringTime:   time.Now(),
@@ -141,7 +141,7 @@ var _ = Describe("BR-001, BR-008: Edge Case Handling - Adapter Validation", func
 			for _, severity := range validSeverities {
 				signal := &types.NormalizedSignal{
 					Fingerprint:  "valid-fingerprint-12345",
-					AlertName:    "TestAlert",
+					SignalName:    "TestAlert",
 					Severity:     severity,
 					Namespace:    "production",
 					FiringTime:   time.Now(),
@@ -165,7 +165,7 @@ var _ = Describe("BR-001, BR-008: Edge Case Handling - Adapter Validation", func
 
 			signal := &types.NormalizedSignal{
 				Fingerprint:  "valid-fingerprint-12345",
-				AlertName:    "NodeNotReady",
+				SignalName:    "NodeNotReady",
 				Severity:     "critical",
 				Namespace:    "", // Edge case: empty namespace (cluster-scoped)
 				FiringTime:   time.Now(),

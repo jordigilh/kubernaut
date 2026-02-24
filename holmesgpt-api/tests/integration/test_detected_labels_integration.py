@@ -72,7 +72,7 @@ class TestDetectedLabelsIncidentIntegration:
         from src.extensions.incident.llm_integration import analyze_incident
 
         request_data = _make_incident_request(
-            signal_type="CrashLoopBackOff",
+            signal_name="CrashLoopBackOff",
             resource_kind="Pod",
             resource_name="api-pod-abc",
             resource_namespace="production",
@@ -98,7 +98,7 @@ class TestDetectedLabelsIncidentIntegration:
         from src.extensions.incident.llm_integration import analyze_incident
 
         request_data = _make_incident_request(
-            signal_type="CrashLoopBackOff",
+            signal_name="CrashLoopBackOff",
             resource_kind="Pod",
             resource_name="api-pod-abc",
             resource_namespace="production",
@@ -124,7 +124,7 @@ class TestDetectedLabelsIncidentIntegration:
         from src.extensions.incident.llm_integration import analyze_incident
 
         request_data = _make_incident_request(
-            signal_type="CrashLoopBackOff",
+            signal_name="CrashLoopBackOff",
             resource_kind="Pod",
             resource_name="api-pod-abc",
             resource_namespace="production",
@@ -151,7 +151,7 @@ class TestDetectedLabelsIncidentIntegration:
         from src.extensions.incident.llm_integration import analyze_incident
 
         request_data = _make_incident_request(
-            signal_type="CrashLoopBackOff",
+            signal_name="CrashLoopBackOff",
             resource_kind="Pod",
             resource_name="api-pod-abc",
             resource_namespace="production",
@@ -177,7 +177,7 @@ class TestDetectedLabelsIncidentIntegration:
         from src.extensions.incident.llm_integration import analyze_incident
 
         request_data = _make_incident_request(
-            signal_type="CrashLoopBackOff",
+            signal_name="CrashLoopBackOff",
             resource_kind="Deployment",
             resource_name="missing",
             resource_namespace="production",
@@ -241,7 +241,7 @@ class TestDetectedLabelsCaching:
         from src.extensions.incident.llm_integration import analyze_incident
 
         request_data = _make_incident_request(
-            signal_type="CrashLoopBackOff",
+            signal_name="CrashLoopBackOff",
             resource_kind="Pod",
             resource_name="api-pod-abc",
             resource_namespace="production",
@@ -355,22 +355,22 @@ class TestClusterContextIntegration:
 
 
 def _make_incident_request(
-    signal_type: str = "CrashLoopBackOff",
+    signal_name: str = "CrashLoopBackOff",
     resource_kind: str = "Pod",
     resource_name: str = "api-pod-abc",
     resource_namespace: str = "production",
 ) -> dict:
     """Create a minimal incident request for testing."""
     return {
-        "incident_id": f"it-hapi-056-{signal_type.lower()}",
+        "incident_id": f"it-hapi-056-{signal_name.lower()}",
         "remediation_id": "req-it-056-001",
-        "signal_type": signal_type,
+        "signal_name": signal_name,
         "severity": "critical",
         "signal_source": "prometheus",
         "resource_namespace": resource_namespace,
         "resource_kind": resource_kind,
         "resource_name": resource_name,
-        "error_message": f"Container in {signal_type}",
+        "error_message": f"Container in {signal_name}",
         "environment": "production",
         "priority": "P0",
         "risk_tolerance": "medium",
@@ -389,7 +389,7 @@ def _make_recovery_request(
     return {
         "incident_id": "it-hapi-056-recovery",
         "remediation_id": "req-it-056-002",
-        "signal_type": "OOMKilled",
+        "signal_name": "OOMKilled",
         "severity": "high",
         "signal_source": "prometheus",
         "resource_namespace": resource_namespace,

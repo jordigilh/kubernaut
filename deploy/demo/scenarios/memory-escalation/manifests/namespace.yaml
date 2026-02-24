@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: demo-memory-escalation
+  labels:
+    kubernaut.ai/managed: "true"
+    kubernaut.ai/environment: production
+    kubernaut.ai/business-unit: data-engineering
+    kubernaut.ai/service-owner: ml-team
+    kubernaut.ai/criticality: high
+    kubernaut.ai/sla-tier: tier-1

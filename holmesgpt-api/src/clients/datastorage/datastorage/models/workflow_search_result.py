@@ -35,7 +35,7 @@ class WorkflowSearchResult(BaseModel):
     workflow_id: StrictStr = Field(description="UUID primary key (DD-WORKFLOW-002 v3.0)", alias="workflowId")
     title: StrictStr = Field(description="Human-readable workflow name")
     description: StrictStr = Field(description="Workflow description")
-    signal_type: Optional[StrictStr] = Field(default=None, description="Signal type this workflow handles", alias="signalType")
+    signal_name: Optional[StrictStr] = Field(default=None, description="Signal name this workflow handles", alias="signalName")
     schema_image: Optional[StrictStr] = Field(default=None, description="OCI image used to extract the workflow schema", alias="schemaImage")
     schema_digest: Optional[StrictStr] = Field(default=None, description="OCI schema image digest", alias="schemaDigest")
     execution_bundle: Optional[StrictStr] = Field(default=None, description="OCI execution bundle reference (digest-pinned)", alias="executionBundle")
@@ -48,7 +48,7 @@ class WorkflowSearchResult(BaseModel):
     custom_labels: Optional[Dict[str, List[StrictStr]]] = Field(default=None, description="Customer-defined labels (DD-WORKFLOW-001 v1.5) - subdomain-based format", alias="customLabels")
     detected_labels: Optional[DetectedLabels] = Field(default=None, alias="detectedLabels")
     parameters: Optional[Dict[str, Any]] = Field(default=None, description="Workflow parameter schema (JSONB) - describes expected parameters")
-    __properties: ClassVar[List[str]] = ["workflowId", "title", "description", "signalType", "schemaImage", "schemaDigest", "executionBundle", "executionBundleDigest", "confidence", "labelBoost", "labelPenalty", "finalScore", "rank", "customLabels", "detectedLabels", "parameters"]
+    __properties: ClassVar[List[str]] = ["workflowId", "title", "description", "signalName", "schemaImage", "schemaDigest", "executionBundle", "executionBundleDigest", "confidence", "labelBoost", "labelPenalty", "finalScore", "rank", "customLabels", "detectedLabels", "parameters"]
 
     model_config = {
         "populate_by_name": True,
@@ -105,7 +105,7 @@ class WorkflowSearchResult(BaseModel):
             "workflowId": obj.get("workflowId"),
             "title": obj.get("title"),
             "description": obj.get("description"),
-            "signalType": obj.get("signalType"),
+            "signalName": obj.get("signalName"),
             "schemaImage": obj.get("schemaImage"),
             "schemaDigest": obj.get("schemaDigest"),
             "executionBundle": obj.get("executionBundle"),

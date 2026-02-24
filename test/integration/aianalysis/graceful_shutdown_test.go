@@ -95,7 +95,7 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      fmt.Sprintf("shutdown-test-%s", uniqueSuffix),
 							Severity:         "critical",
-							SignalType:       "TestSignal",
+							SignalName:       "TestSignal",
 							Environment:      "test",
 							BusinessPriority: "P1",
 							TargetResource: aianalysisv1alpha1.TargetResource{
@@ -188,7 +188,7 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      fmt.Sprintf("post-shutdown-%s", uniqueSuffix),
 							Severity:         "medium", // DD-SEVERITY-001: Use normalized severity enum
-							SignalType:       "TestSignal",
+							SignalName:       "TestSignal",
 							Environment:      "test",
 							BusinessPriority: "P3",
 							TargetResource: aianalysisv1alpha1.TargetResource{
@@ -262,7 +262,7 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      fmt.Sprintf("audit-test-%s", uniqueSuffix),
 							Severity:         "critical",
-							SignalType:       "AuditTest",
+							SignalName:       "AuditTest",
 							Environment:      "test",
 							BusinessPriority: "P2",
 							TargetResource: aianalysisv1alpha1.TargetResource{

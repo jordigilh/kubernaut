@@ -12,7 +12,7 @@ metadata:
 actionType: ProvisionNode
 
 labels:
-  signalType: FailedScheduling
+  signalName: FailedScheduling
   severity: [critical, high]
   environment: [production, staging]
   component: "*"

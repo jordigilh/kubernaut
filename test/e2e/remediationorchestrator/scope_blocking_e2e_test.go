@@ -77,7 +77,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking E2E", Label("e2e", "scope"), f
 				SignalFingerprint: "e2e010001a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2aaa",
 				SignalName:        "HighCPUUsage",
 				Severity:          "critical",
-				SignalType:        "prometheus",
+				SignalType:        "alert",
 				TargetType:        "kubernetes",
 				TargetResource: remediationv1.ResourceIdentifier{
 					Kind:      "Deployment",
@@ -140,7 +140,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking E2E", Label("e2e", "scope"), f
 				SignalFingerprint: "e2e010002b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3bbb",
 				SignalName:        "HighCPUUsage",
 				Severity:          "critical",
-				SignalType:        "prometheus",
+				SignalType:        "alert",
 				TargetType:        "kubernetes",
 				TargetResource: remediationv1.ResourceIdentifier{
 					Kind:      "Deployment",
@@ -181,6 +181,12 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking E2E", Label("e2e", "scope"), f
 
 		GinkgoWriter.Printf("✅ E2E-RO-010-002: RR in managed namespace proceeded — phase: %s\n",
 			fetched.Status.OverallPhase)
+
+		By("Completing SP/AI lifecycle to avoid dangling CRDs")
+		sp := helpers.WaitForSPCreation(ctx, k8sClient, managedNS, timeout, interval)
+		helpers.SimulateSPCompletion(ctx, k8sClient, sp)
+		ai := helpers.WaitForAICreation(ctx, k8sClient, managedNS, timeout, interval)
+		helpers.SimulateAIWorkflowNotNeeded(ctx, k8sClient, ai)
 	})
 
 	// ─────────────────────────────────────────────
@@ -203,7 +209,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking E2E", Label("e2e", "scope"), f
 				SignalFingerprint: "e2e010003c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4ccc",
 				SignalName:        "HighCPUUsage",
 				Severity:          "critical",
-				SignalType:        "prometheus",
+				SignalType:        "alert",
 				TargetType:        "kubernetes",
 				TargetResource: remediationv1.ResourceIdentifier{
 					Kind:      "Deployment",
@@ -265,6 +271,17 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking E2E", Label("e2e", "scope"), f
 		Expect(apiReader.Get(ctx, client.ObjectKeyFromObject(rr), fetched)).To(Succeed())
 		GinkgoWriter.Printf("✅ E2E-RO-010-003: RR auto-unblocked — final phase: %s, blockReason: %s\n",
 			fetched.Status.OverallPhase, fetched.Status.BlockReason)
+
+		By("Completing SP/AI lifecycle if RR progressed past Pending")
+		fetched = &remediationv1.RemediationRequest{}
+		Expect(apiReader.Get(ctx, client.ObjectKeyFromObject(rr), fetched)).To(Succeed())
+		if fetched.Status.OverallPhase == remediationv1.PhaseProcessing ||
+			fetched.Status.OverallPhase == remediationv1.PhaseAnalyzing {
+			sp := helpers.WaitForSPCreation(ctx, k8sClient, ns, timeout, interval)
+			helpers.SimulateSPCompletion(ctx, k8sClient, sp)
+			ai := helpers.WaitForAICreation(ctx, k8sClient, ns, timeout, interval)
+			helpers.SimulateAIWorkflowNotNeeded(ctx, k8sClient, ai)
+		}
 	})
 
 })

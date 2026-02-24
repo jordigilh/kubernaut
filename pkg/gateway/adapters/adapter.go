@@ -107,16 +107,16 @@ type SignalAdapter interface {
 	// the specific type of signal within that system.
 	//
 	// Examples:
-	// - PrometheusAdapter returns "prometheus-alert" (alert from Prometheus)
-	// - KubernetesEventAdapter returns "kubernetes-event" (event from K8s API)
+	// - PrometheusAdapter returns "alert"
+	// - KubernetesEventAdapter returns "alert"
 	//
 	// Used for:
-	// - Metrics labels (signal_type="prometheus-alert")
+	// - Metrics labels (signal_type="alert")
 	// - Logging categorization
 	// - Signal classification and routing
 	//
 	// Returns:
-	// - string: Signal type identifier (e.g., "prometheus-alert", "kubernetes-event")
+	// - string: Signal type identifier (e.g., "alert")
 	GetSourceType() string
 }
 

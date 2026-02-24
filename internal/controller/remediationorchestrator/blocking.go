@@ -39,7 +39,6 @@ import (
 	"sort"
 	"time"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -148,74 +147,6 @@ func (r *Reconciler) countConsecutiveFailures(ctx context.Context, fingerprint s
 		"totalRRsChecked", len(rrList.Items),
 	)
 	return consecutiveFailures
-}
-
-// shouldBlockSignal determines if a signal should be blocked based on failure history.
-// Returns (shouldBlock, reason) tuple.
-//
-// Reference: BR-ORCH-042.1
-func (r *Reconciler) shouldBlockSignal(ctx context.Context, fingerprint string) (bool, string) { //nolint:unused
-	consecutiveFailures := r.countConsecutiveFailures(ctx, fingerprint)
-
-	// Note: We check >= threshold because this is called AFTER the current
-	// failure has been recorded, so the count already includes this failure.
-	if consecutiveFailures >= DefaultBlockThreshold {
-		return true, string(remediationv1.BlockReasonConsecutiveFailures)
-	}
-	return false, ""
-}
-
-// transitionToBlocked transitions the RR to Blocked phase with cooldown.
-// This is a non-terminal phase - Gateway will see this RR as "active" and
-// update deduplication instead of creating new RRs.
-//
-// Reference: BR-ORCH-042.2, BR-ORCH-042.3
-func (r *Reconciler) transitionToBlocked(ctx context.Context, rr *remediationv1.RemediationRequest, reason string, cooldown time.Duration) (ctrl.Result, error) { //nolint:unused
-	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
-
-	blockedUntil := metav1.NewTime(time.Now().Add(cooldown))
-	blockMessage := fmt.Sprintf("Signal blocked due to %s. Will unblock at %s",
-		reason, blockedUntil.Format(time.RFC3339))
-
-	// REFACTOR-RO-001: Using retry helper
-	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
-		// Transition to Blocked phase
-		rr.Status.OverallPhase = phase.Blocked
-		rr.Status.BlockedUntil = &blockedUntil
-		rr.Status.BlockReason = reason
-		rr.Status.Message = blockMessage
-
-		// BR-ORCH-043: Set RecoveryComplete condition (blocked = in progress, not terminal)
-		remediationrequest.SetRecoveryComplete(rr, false,
-			remediationrequest.ReasonBlockedByConsecutiveFailures,
-			blockMessage, r.Metrics)
-
-		return nil
-	})
-	if err != nil {
-		logger.Error(err, "Failed to transition to Blocked phase")
-		return ctrl.Result{}, fmt.Errorf("failed to transition to Blocked: %w", err)
-	}
-
-	// BR-ORCH-042: Record blocking metrics (TDD validated)
-	r.Metrics.BlockedTotal.WithLabelValues(rr.Namespace, reason).Inc()
-	r.Metrics.CurrentBlockedGauge.WithLabelValues(rr.Namespace).Inc()
-
-	// Record phase transition metric
-	r.Metrics.PhaseTransitionsTotal.WithLabelValues(
-		string(phase.Failed),  // from_phase (metrics need string)
-		string(phase.Blocked), // to_phase (metrics need string)
-		rr.Namespace,
-	).Inc()
-
-	logger.Info("Signal blocked due to consecutive failures",
-		"reason", reason,
-		"blockedUntil", blockedUntil.Format(time.RFC3339),
-		"cooldownDuration", cooldown,
-	)
-
-	// Requeue at exactly blockedUntil time for efficient handling
-	return ctrl.Result{RequeueAfter: cooldown}, nil
 }
 
 // handleBlockedPhase handles the Blocked phase.

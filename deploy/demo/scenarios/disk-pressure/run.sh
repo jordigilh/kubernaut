@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
-# Disk Pressure / Orphaned PVC Cleanup Demo -- Automated Runner
-# Scenario #121: Orphaned PVCs from batch jobs -> cleanup
+# No-Action-Required Demo -- Automated Runner
+# Scenario #122: Disk pressure alert -> LLM determines no remediation workflow needed
+#
+# KEY: No workflow is seeded in DataStorage for this scenario. The LLM
+# evaluates the alert, finds no matching workflow, and sets the AIAnalysis
+# outcome to WorkflowNotNeeded. The RO then marks the RR as NoActionRequired.
 #
 # Prerequisites:
 #   - Kind cluster with deploy/demo/overlays/kind/kind-cluster-config.yaml
@@ -23,8 +27,13 @@ ensure_monitoring_stack
 source "${SCRIPT_DIR}/../../scripts/platform-helper.sh"
 ensure_platform
 
+# NOTE: We intentionally do NOT seed a workflow for this scenario.
+# The absence of a matching workflow forces the LLM to conclude that
+# no automated remediation is available, yielding WorkflowNotNeeded.
+
 echo "============================================="
-echo " Disk Pressure / PVC Cleanup Demo (#121)"
+echo " No-Action-Required Demo (#122)"
+echo " Disk Pressure -> WorkflowNotNeeded"
 echo "============================================="
 echo ""
 
@@ -60,11 +69,15 @@ echo "==> Step 6: Pipeline in progress. Monitor with:"
 echo "    kubectl get rr,sp,aa,we,ea -n ${NAMESPACE} -w"
 echo ""
 echo "  Expected flow:"
-echo "    Alert (KubePersistentVolumeClaimOrphaned) -> Gateway -> SP -> AA (HAPI) -> RO -> WE"
-echo "    LLM identifies orphaned PVCs from completed batch jobs"
-echo "    Selects CleanupPVC workflow -> deletes unmounted PVCs"
-echo "    EM verifies PVC count reduced"
+echo "    Alert (KubePersistentVolumeClaimOrphaned) -> Gateway -> SP -> AA (HAPI)"
+echo "    LLM identifies orphaned PVCs but finds NO matching workflow in catalog"
+echo "    AA sets outcome: WorkflowNotNeeded (no automated remediation available)"
+echo "    RO marks RR as Completed with outcome: NoActionRequired"
 echo ""
-echo "==> To verify remediation succeeded:"
-echo "    kubectl get pvc -n ${NAMESPACE}"
-echo "    # Orphaned PVCs should be deleted"
+echo "==> To verify pipeline outcome:"
+echo "    kubectl get rr -n ${NAMESPACE} -o jsonpath='{.items[0].status.overallPhase}'"
+echo "    # Should show 'Completed'"
+echo "    kubectl get rr -n ${NAMESPACE} -o jsonpath='{.items[0].status.outcome}'"
+echo "    # Should show 'NoActionRequired'"
+echo "    kubectl get aa -n ${NAMESPACE} -o jsonpath='{.items[0].status.outcome}'"
+echo "    # Should show 'WorkflowNotNeeded'"

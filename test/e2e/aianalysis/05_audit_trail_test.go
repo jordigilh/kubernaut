@@ -166,7 +166,7 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      "e2e-audit-fingerprint",
 							Severity:        "medium",
-							SignalType:       "CrashLoopBackOff",
+							SignalName:       "CrashLoopBackOff",
 							Environment:      "production",
 							BusinessPriority: "P1",
 							TargetResource: aianalysisv1alpha1.TargetResource{
@@ -299,7 +299,7 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      "e2e-audit-phases",
 							Severity:         "critical",
-							SignalType:       "OOMKilled",
+							SignalName:       "OOMKilled",
 							Environment:      "staging",
 							BusinessPriority: "P1",
 							TargetResource: aianalysisv1alpha1.TargetResource{
@@ -362,7 +362,7 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      "e2e-audit-hapi",
 							Severity:        "medium",
-							SignalType:       "HighMemory",
+							SignalName:       "HighMemory",
 							Environment:      "development",
 							BusinessPriority: "P1",
 							TargetResource: aianalysisv1alpha1.TargetResource{
@@ -428,7 +428,7 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      "e2e-audit-rego",
 							Severity:        "medium",
-							SignalType:       "CrashLoopBackOff",
+							SignalName:       "CrashLoopBackOff",
 							Environment:      "staging", // Auto-approve in staging
 							BusinessPriority: "P1",
 							TargetResource: aianalysisv1alpha1.TargetResource{
@@ -493,7 +493,7 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      "e2e-audit-approval",
 							Severity:         "critical",
-							SignalType:       "CrashLoopBackOff",
+							SignalName:       "CrashLoopBackOff",
 							Environment:      "production", // Production requires approval
 							BusinessPriority: "P0",
 							TargetResource: aianalysisv1alpha1.TargetResource{

@@ -10,8 +10,8 @@ Name | Type | Description | Notes
 **original_payload** | **Dict[str, object]** | Full signal payload for RR.Spec.OriginalPayload reconstruction | [optional] 
 **signal_labels** | **Dict[str, str]** | Signal labels for RR.Spec.SignalLabels reconstruction | [optional] 
 **signal_annotations** | **Dict[str, str]** | Signal annotations for RR.Spec.SignalAnnotations reconstruction | [optional] 
-**signal_type** | **str** | Signal type identifier for classification and metrics (prometheus-alert&#x3D;Prometheus AlertManager, kubernetes-event&#x3D;Kubernetes events) | 
-**alert_name** | **str** | Name of the original alert that triggered the remediation pipeline. Extracted from EA spec target resource context. Only present for assessment.completed events.  | 
+**signal_type** | **str** | Signal type identifier. All adapters normalize to \&quot;alert\&quot;. Adapter identity is preserved in audit actor ID (signal.Source). | 
+**signal_name** | **str** | Name of the original signal that triggered the remediation pipeline. Extracted from EA spec target resource context. Only present for assessment.completed events.  | 
 **namespace** | **str** | Kubernetes namespace of the EffectivenessAssessment | 
 **fingerprint** | **str** | Unique identifier for the signal (deduplication) | 
 **severity** | **str** | Normalized severity level (DD-SEVERITY-001 v1.1) | [optional] 
@@ -66,7 +66,7 @@ Name | Type | Description | Notes
 **has_deployment** | **bool** | Whether deployment context was enriched | [optional] 
 **business_unit** | **str** | Owning business unit | [optional] 
 **signal_mode** | **str** | Whether this signal is reactive (incident occurred) or predictive (incident predicted). BR-SP-106 Predictive Signal Mode Classification. | [optional] 
-**original_signal_type** | **str** | Original signal type before normalization. Only populated for predictive signals (e.g., PredictedOOMKill). SOC2 CC7.4 audit trail preservation. | [optional] 
+**source_signal_name** | **str** | Original signal name before normalization. Only populated for predictive signals (e.g., PredictedOOMKill). SOC2 CC7.4 audit trail preservation. | [optional] 
 **error** | **str** |  | [optional] 
 **analysis_name** | **str** | Name of the AIAnalysis CRD | 
 **approval_required** | **bool** | Whether manual approval is required | 

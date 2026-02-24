@@ -12,7 +12,7 @@ metadata:
 actionType: FixStatefulSetPVC
 
 labels:
-  signalType: StatefulSetReplicasMismatch
+  signalName: StatefulSetReplicasMismatch
   severity: [critical, high]
   environment: [production, staging]
   component: "*"
@@ -23,7 +23,7 @@ detectedLabels:
 
 execution:
   engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/fix-statefulset-pvc-job@sha256:c8609c08d0e3dd1e1d6f721286523ec09d29d32bca0ab7f7e55d0839724d4d5d
+  bundle: quay.io/kubernaut-cicd/test-workflows/fix-statefulset-pvc-job@sha256:f1d0bedd0d248106e2b936509f6a74bd16c3073ab068ad11c5b427644d486ec6
 
 parameters:
   - name: TARGET_NAMESPACE

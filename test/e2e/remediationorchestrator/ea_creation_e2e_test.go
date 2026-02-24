@@ -79,7 +79,7 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 				}(),
 				SignalName: "HighCPU",
 				Severity:   "critical",
-				SignalType: "prometheus",
+				SignalType: "alert",
 				TargetType: "kubernetes",
 				TargetResource: remediationv1.ResourceIdentifier{
 					Kind:      "Deployment",
@@ -113,7 +113,7 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 		sp.Status.Phase = signalprocessingv1.PhaseCompleted
 		sp.Status.Severity = "critical"
 		sp.Status.SignalMode = "reactive"
-		sp.Status.SignalType = "prometheus"
+		sp.Status.SignalName = sp.Spec.Signal.Name // Issue #166: Use signal name, not type ("alert")
 		sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
 			Environment:  "production",
 			Source:       "namespace-labels",
@@ -149,6 +149,17 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 			ExecutionBundle: "quay.io/kubernaut/restart-deployment:v1",
 			Confidence:     0.92,
 			Rationale:      "High confidence match for CPU remediation",
+		}
+		// DD-HAPI-006: AffectedResource is required for routing to WorkflowExecution
+		analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+			Summary:    "CPU throttling due to resource limits",
+			Severity:   "critical",
+			SignalType: "alert",
+			AffectedResource: &aianalysisv1.AffectedResource{
+				Kind:      "Deployment",
+				Name:      "test-app-ea",
+				Namespace: testNS,
+			},
 		}
 		Expect(k8sClient.Status().Update(ctx, analysis)).To(Succeed())
 
@@ -281,7 +292,7 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 					}(),
 					SignalName: "HighCPU",
 					Severity:   "critical",
-					SignalType: "prometheus",
+					SignalType: "alert",
 					TargetType: "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
 						Kind:      "Deployment",
@@ -315,7 +326,7 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 			sp.Status.Phase = signalprocessingv1.PhaseCompleted
 			sp.Status.Severity = "critical"
 			sp.Status.SignalMode = "reactive"
-			sp.Status.SignalType = "prometheus"
+			sp.Status.SignalName = sp.Spec.Signal.Name // Issue #166: Use signal name, not type ("alert")
 			sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
 				Environment:  "production",
 				Source:       "namespace-labels",
@@ -351,6 +362,17 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 				ExecutionBundle: "quay.io/kubernaut/restart-deployment:v1",
 				Confidence:      0.92,
 				Rationale:       "High confidence match for CPU remediation",
+			}
+			// DD-HAPI-006: AffectedResource is required for routing to WorkflowExecution
+			analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+				Summary:    "CPU throttling due to resource limits",
+				Severity:   "critical",
+				SignalType: "alert",
+				AffectedResource: &aianalysisv1.AffectedResource{
+					Kind:      "Deployment",
+					Name:      "test-app-fail",
+					Namespace: testNS,
+				},
 			}
 			Expect(k8sClient.Status().Update(ctx, analysis)).To(Succeed())
 

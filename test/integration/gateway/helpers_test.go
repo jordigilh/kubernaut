@@ -294,7 +294,7 @@ func StartTestGatewayWithOptions(ctx context.Context, k8sClient *K8sTestClient, 
 	}
 
 	// Register Prometheus adapter (required for webhook endpoint)
-	prometheusAdapter := adapters.NewPrometheusAdapter()
+	prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 	if err := server.RegisterAdapter(prometheusAdapter); err != nil {
 		return nil, fmt.Errorf("failed to register Prometheus adapter: %w", err)
 	}
@@ -1394,7 +1394,7 @@ func createNormalizedSignal(builder SignalBuilder) *types.NormalizedSignal {
 
 	signal := &types.NormalizedSignal{
 		Fingerprint: fingerprint,
-		AlertName:   builder.AlertName,
+		SignalName:   builder.AlertName,
 		Severity:    builder.Severity,
 		Namespace:   builder.Namespace,
 		Resource: types.ResourceIdentifier{
@@ -1406,7 +1406,7 @@ func createNormalizedSignal(builder SignalBuilder) *types.NormalizedSignal {
 		Annotations:  builder.Annotations,
 		FiringTime:   now,
 		ReceivedTime: now,
-		SourceType:   "prometheus-alert",
+		SourceType:   "alert",
 		Source:       builder.Source,
 		RawPayload:   json.RawMessage("{}"),
 	}

@@ -12,7 +12,7 @@ metadata:
 actionType: GracefulRestart
 
 labels:
-  signalType: StuckRollout
+  signalName: StuckRollout
   severity: [critical, low]
   environment: [production, staging]
   component: "*"
@@ -20,7 +20,7 @@ labels:
 
 execution:
   engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/rollback-deployment-job@sha256:0d22e1c6a7f34398187a469df72b609c453441d439c9deabd6f6c9578fcbbb9d
+  bundle: quay.io/kubernaut-cicd/test-workflows/rollback-deployment-job@sha256:f3a54303e05e2437e6a7396154f0565135fd3704e5072b2516b6eb5265416a42
 
 parameters:
   - name: TARGET_NAMESPACE

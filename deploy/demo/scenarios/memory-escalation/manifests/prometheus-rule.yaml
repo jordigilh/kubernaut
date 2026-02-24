@@ -1,0 +1,31 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: kubernaut-memory-rules
+  namespace: demo-memory-escalation
+  labels:
+    release: prometheus
+spec:
+  groups:
+  - name: kubernaut-memory-escalation
+    rules:
+    - alert: ContainerOOMKilling
+      expr: |
+        increase(
+          kube_pod_container_status_last_terminated_reason{
+            namespace="demo-memory-escalation",
+            reason="OOMKilled"
+          }[5m]
+        ) > 0
+      for: 30s
+      labels:
+        severity: critical
+      annotations:
+        summary: >
+          Container {{ $labels.container }} in pod {{ $labels.pod }} was OOMKilled
+          in the last 5 minutes.
+        description: >
+          The ml-worker container is being OOMKilled because its memory limit
+          is too low for the workload. Kubernaut will attempt to increase
+          memory limits. If the issue persists after multiple limit increases,
+          this indicates a memory leak requiring human investigation.

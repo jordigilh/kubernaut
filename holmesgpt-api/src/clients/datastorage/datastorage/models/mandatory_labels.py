@@ -29,14 +29,14 @@ except ImportError:
 
 class MandatoryLabels(BaseModel):
     """
-    4 mandatory + 1 optional workflow labels (DD-WORKFLOW-016: signalType now optional)
+    4 mandatory + 1 optional workflow labels (DD-WORKFLOW-016: signalName now optional)
     """ # noqa: E501
-    signal_type: Optional[StrictStr] = Field(default=None, description="Signal type this workflow handles (optional metadata per DD-WORKFLOW-016)", alias="signalType")
+    signal_name: Optional[StrictStr] = Field(default=None, description="Signal name this workflow handles (optional metadata per DD-WORKFLOW-016)", alias="signalName")
     severity: Annotated[List[StrictStr], Field(min_length=1)] = Field(description="Severity level(s) this workflow is designed for. Always an array. To match any severity, list all levels.")
     component: StrictStr = Field(description="Kubernetes resource type this workflow targets (e.g., pod, deployment, node)")
     environment: Annotated[List[StrictStr], Field(min_length=1)] = Field(description="Target environments (workflow can declare multiple, '*' matches all)")
     priority: StrictStr = Field(description="Business priority level (P0, P1, P2, P3, * for any)")
-    __properties: ClassVar[List[str]] = ["signalType", "severity", "component", "environment", "priority"]
+    __properties: ClassVar[List[str]] = ["signalName", "severity", "component", "environment", "priority"]
 
     @field_validator('severity')
     def severity_validate_enum(cls, value):
@@ -110,7 +110,7 @@ class MandatoryLabels(BaseModel):
             return cls.model_validate(obj)
 
         _obj = cls.model_validate({
-            "signalType": obj.get("signalType"),
+            "signalName": obj.get("signalName"),
             "severity": obj.get("severity"),
             "component": obj.get("component"),
             "environment": obj.get("environment"),

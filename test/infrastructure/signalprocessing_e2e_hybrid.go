@@ -724,15 +724,11 @@ data:
 
     import rego.v1
 
-    # Default: Return empty labels when no specific rule matches
-    # Operators define their own label extraction rules.
-    default result := {"labels": {}, "policy_name": "operator-default"}
-
-    # Example: Extract labels from namespace annotations
-    result := {"labels": extracted, "policy_name": "namespace-annotations"} if {
-      input.namespace.annotations
-      extracted := {k: v | some k, v in input.namespace.annotations; startswith(k, "kubernaut.io/label-")}
-      count(extracted) > 0
+    labels[key] := value if {
+      some k, v in input.kubernetes.namespace.labels
+      startswith(k, "kubernaut.ai/label-")
+      key := trim_prefix(k, "kubernaut.ai/label-")
+      value := v
     }
 ---
 # 6. Predictive Signal Mode Mappings (BR-SP-106, ADR-054)

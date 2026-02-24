@@ -59,7 +59,7 @@ class TestWorkflowListResponse(unittest.TestCase):
                         execution_bundle = 'ghcr.io/kubernaut/workflows/oomkill@sha256:abc123...', 
                         execution_bundle_digest = 'sha256:abc123...', 
                         labels = datastorage.models.mandatory_labels.MandatoryLabels(
-                            signal_type = 'OOMKilled', 
+                            signal_name = 'OOMKilled', 
                             severity = ["critical"], 
                             component = 'pod', 
                             environment = ["staging","production"], 

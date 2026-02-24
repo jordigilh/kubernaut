@@ -62,7 +62,7 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      "test-fingerprint-001",
 							Severity:         "medium", // DD-SEVERITY-001: Use normalized severity enum
-							SignalType:       "CrashLoopBackOff",
+							SignalName:       "CrashLoopBackOff",
 							Environment:      "staging",
 							BusinessPriority: "P2",
 							TargetResource: aianalysisv1alpha1.TargetResource{
@@ -189,7 +189,7 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      "test-fingerprint-002",
 							Severity:         "medium", // DD-SEVERITY-001: Use normalized severity enum
-							SignalType:       "CrashLoopBackOff",
+							SignalName:       "CrashLoopBackOff",
 							Environment:      "staging",
 							BusinessPriority: "P2",
 							TargetResource: aianalysisv1alpha1.TargetResource{

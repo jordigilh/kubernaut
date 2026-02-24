@@ -73,7 +73,7 @@ var _ = Describe("BR-GATEWAY-092: Notification Metadata in RemediationRequest CR
 
 			signal := &types.NormalizedSignal{
 				Fingerprint: "abc123def456ghi789jkl012mno345", // Must be >=16 chars
-				AlertName:   "PodCrashLooping",
+				SignalName:   "PodCrashLooping",
 				Severity:    "critical",
 				Namespace:   "production",
 				Resource: types.ResourceIdentifier{
@@ -86,7 +86,7 @@ var _ = Describe("BR-GATEWAY-092: Notification Metadata in RemediationRequest CR
 				},
 				FiringTime:   time.Now().Add(-5 * time.Minute),
 				ReceivedTime: time.Now(),
-				SourceType:   "prometheus-alert",
+				SourceType:   "alert",
 				Source:       "prometheus-adapter",
 				RawPayload:   json.RawMessage(`{"alerts":[{"status":"firing"}]}`),
 			}
@@ -120,7 +120,7 @@ var _ = Describe("BR-GATEWAY-092: Notification Metadata in RemediationRequest CR
 
 			signal := &types.NormalizedSignal{
 				Fingerprint: "timeline123abc456def789ghi012jk", // Must be >=16 chars
-				AlertName:   "HighLatency",
+				SignalName:   "HighLatency",
 				Severity:    "warning",
 				Namespace:   "production",
 				Resource: types.ResourceIdentifier{
@@ -130,7 +130,7 @@ var _ = Describe("BR-GATEWAY-092: Notification Metadata in RemediationRequest CR
 				},
 				FiringTime:   firingTime,
 				ReceivedTime: receivedTime,
-				SourceType:   "prometheus-alert",
+				SourceType:   "alert",
 				Source:       "prometheus-adapter",
 				RawPayload:   json.RawMessage(`{}`),
 			}
@@ -166,7 +166,7 @@ var _ = Describe("BR-GATEWAY-092: Notification Metadata in RemediationRequest CR
 
 			signal := &types.NormalizedSignal{
 				Fingerprint: "details789abc123def456ghi789jkl", // Must be >=16 chars
-				AlertName:   "PodMemoryHigh",
+				SignalName:   "PodMemoryHigh",
 				Severity:    "critical",
 				Namespace:   "production",
 				Resource: types.ResourceIdentifier{
@@ -190,7 +190,7 @@ var _ = Describe("BR-GATEWAY-092: Notification Metadata in RemediationRequest CR
 				},
 				FiringTime:   time.Now(),
 				ReceivedTime: time.Now(),
-				SourceType:   "prometheus-alert",
+				SourceType:   "alert",
 				Source:       "prometheus-adapter",
 				RawPayload:   json.RawMessage(`{"alerts":[{"labels":{"alertname":"PodMemoryHigh"},"annotations":{"summary":"Pod memory > 90%"}}]}`),
 			}
@@ -238,7 +238,7 @@ var _ = Describe("BR-GATEWAY-092: Notification Metadata in RemediationRequest CR
 
 			signal := &types.NormalizedSignal{
 				Fingerprint: "storm123abc456def789ghi012jkl34", // Must be >=16 chars
-				AlertName:   "PodCrashLooping",
+				SignalName:   "PodCrashLooping",
 				Severity:    "critical",
 				Namespace:   "production",
 				Resource: types.ResourceIdentifier{
@@ -248,7 +248,7 @@ var _ = Describe("BR-GATEWAY-092: Notification Metadata in RemediationRequest CR
 				},
 				FiringTime:   time.Now(),
 				ReceivedTime: time.Now(),
-				SourceType:   "prometheus-alert",
+				SourceType:   "alert",
 				Source:       "prometheus-adapter",
 				RawPayload:   json.RawMessage(`{}`),
 				// Storm metadata removed (DD-GATEWAY-015)
@@ -274,7 +274,7 @@ var _ = Describe("BR-GATEWAY-092: Notification Metadata in RemediationRequest CR
 
 			signal := &types.NormalizedSignal{
 				Fingerprint: "recurring456abc789def012ghi345jk", // Must be >=16 chars
-				AlertName:   "DiskSpaceRunningOut",
+				SignalName:   "DiskSpaceRunningOut",
 				Severity:    "warning",
 				Namespace:   "production",
 				Resource: types.ResourceIdentifier{
@@ -284,7 +284,7 @@ var _ = Describe("BR-GATEWAY-092: Notification Metadata in RemediationRequest CR
 				},
 				FiringTime:   time.Now(),
 				ReceivedTime: time.Now(),
-				SourceType:   "prometheus-alert",
+				SourceType:   "alert",
 				Source:       "prometheus-adapter",
 				RawPayload:   json.RawMessage(`{}`),
 			}
@@ -334,7 +334,7 @@ var _ = Describe("BR-GATEWAY-092: Notification Metadata in RemediationRequest CR
 
 				signal := &types.NormalizedSignal{
 					Fingerprint: "fp-long-label-test12345678901234567890",
-					AlertName:   "HighMemory",
+					SignalName:   "HighMemory",
 					Severity:    "critical",
 					Namespace:   "production",
 					Resource: types.ResourceIdentifier{
@@ -344,7 +344,7 @@ var _ = Describe("BR-GATEWAY-092: Notification Metadata in RemediationRequest CR
 					},
 					FiringTime:   time.Now(),
 					ReceivedTime: time.Now(),
-					SourceType:   "prometheus-alert",
+					SourceType:   "alert",
 					Source:       "prometheus-adapter",
 					RawPayload:   json.RawMessage(`{}`),
 					Labels: map[string]string{
@@ -380,7 +380,7 @@ var _ = Describe("BR-GATEWAY-092: Notification Metadata in RemediationRequest CR
 
 				signal := &types.NormalizedSignal{
 					Fingerprint: "fp-large-annotation-1234567890123",
-					AlertName:   "HighMemory",
+					SignalName:   "HighMemory",
 					Severity:    "critical",
 					Namespace:   "production",
 					Resource: types.ResourceIdentifier{
@@ -390,7 +390,7 @@ var _ = Describe("BR-GATEWAY-092: Notification Metadata in RemediationRequest CR
 					},
 					FiringTime:   time.Now(),
 					ReceivedTime: time.Now(),
-					SourceType:   "prometheus-alert",
+					SourceType:   "alert",
 					Source:       "prometheus-adapter",
 					RawPayload:   json.RawMessage(`{}`),
 					Annotations: map[string]string{
@@ -461,7 +461,7 @@ var _ = Describe("BR-GATEWAY-TARGET-RESOURCE-VALIDATION: Resource Info Validatio
 
 			signal := &types.NormalizedSignal{
 				Fingerprint: "fp-missing-kind-12345678901234567890",
-				AlertName:   "HighMemoryUsage",
+				SignalName:   "HighMemoryUsage",
 				Severity:    "critical",
 				Namespace:   "production",
 				Resource: types.ResourceIdentifier{
@@ -471,7 +471,7 @@ var _ = Describe("BR-GATEWAY-TARGET-RESOURCE-VALIDATION: Resource Info Validatio
 				},
 				FiringTime:   time.Now(),
 				ReceivedTime: time.Now(),
-				SourceType:   "prometheus-alert",
+				SourceType:   "alert",
 				Source:       "prometheus-adapter",
 				RawPayload:   json.RawMessage(`{}`),
 			}
@@ -498,7 +498,7 @@ var _ = Describe("BR-GATEWAY-TARGET-RESOURCE-VALIDATION: Resource Info Validatio
 
 			signal := &types.NormalizedSignal{
 				Fingerprint: "fp-missing-name-12345678901234567890",
-				AlertName:   "CrashLoopBackOff",
+				SignalName:   "CrashLoopBackOff",
 				Severity:    "warning",
 				Namespace:   "staging",
 				Resource: types.ResourceIdentifier{
@@ -508,7 +508,7 @@ var _ = Describe("BR-GATEWAY-TARGET-RESOURCE-VALIDATION: Resource Info Validatio
 				},
 				FiringTime:   time.Now(),
 				ReceivedTime: time.Now(),
-				SourceType:   "prometheus-alert",
+				SourceType:   "alert",
 				Source:       "prometheus-adapter",
 				RawPayload:   json.RawMessage(`{}`),
 			}
@@ -535,7 +535,7 @@ var _ = Describe("BR-GATEWAY-TARGET-RESOURCE-VALIDATION: Resource Info Validatio
 
 			signal := &types.NormalizedSignal{
 				Fingerprint: "fp-empty-resource-12345678901234567890",
-				AlertName:   "UnknownAlert",
+				SignalName:   "UnknownAlert",
 				Severity:    "info",
 				Namespace:   "default",
 				Resource: types.ResourceIdentifier{
@@ -545,7 +545,7 @@ var _ = Describe("BR-GATEWAY-TARGET-RESOURCE-VALIDATION: Resource Info Validatio
 				},
 				FiringTime:   time.Now(),
 				ReceivedTime: time.Now(),
-				SourceType:   "prometheus-alert",
+				SourceType:   "alert",
 				Source:       "prometheus-adapter",
 				RawPayload:   json.RawMessage(`{}`),
 			}
@@ -568,7 +568,7 @@ var _ = Describe("BR-GATEWAY-TARGET-RESOURCE-VALIDATION: Resource Info Validatio
 
 			signal := &types.NormalizedSignal{
 				Fingerprint: "fp-valid-resource-12345678901234567890",
-				AlertName:   "HighCPUUsage",
+				SignalName:   "HighCPUUsage",
 				Severity:    "warning",
 				Namespace:   "production",
 				Resource: types.ResourceIdentifier{
@@ -578,7 +578,7 @@ var _ = Describe("BR-GATEWAY-TARGET-RESOURCE-VALIDATION: Resource Info Validatio
 				},
 				FiringTime:   time.Now(),
 				ReceivedTime: time.Now(),
-				SourceType:   "prometheus-alert",
+				SourceType:   "alert",
 				Source:       "prometheus-adapter",
 				RawPayload:   json.RawMessage(`{}`),
 			}
@@ -604,7 +604,7 @@ var _ = Describe("BR-GATEWAY-TARGET-RESOURCE-VALIDATION: Resource Info Validatio
 
 			signal := &types.NormalizedSignal{
 				Fingerprint: "fp-cluster-scoped-12345678901234567890",
-				AlertName:   "NodeNotReady",
+				SignalName:   "NodeNotReady",
 				Severity:    "critical",
 				Namespace:   "default", // Signal namespace (for CRD placement)
 				Resource: types.ResourceIdentifier{
@@ -614,8 +614,8 @@ var _ = Describe("BR-GATEWAY-TARGET-RESOURCE-VALIDATION: Resource Info Validatio
 				},
 				FiringTime:   time.Now(),
 				ReceivedTime: time.Now(),
-				SourceType:   "kubernetes-event",
-				Source:       "kubernetes-event-adapter",
+				SourceType:   "alert",
+				Source:       "kubernetes-events",
 				RawPayload:   json.RawMessage(`{}`),
 			}
 

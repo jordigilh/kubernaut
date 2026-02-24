@@ -110,8 +110,8 @@ var _ = Describe("Audit Events Batch Write API Integration Tests", func() {
 							Type: ogenclient.AuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData,
 							GatewayAuditPayload: ogenclient.GatewayAuditPayload{
 								EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
-								SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
-								AlertName:   "BatchTest1",
+								SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
+								SignalName:   "BatchTest1",
 								Namespace:   "default",
 								Fingerprint: "test-fingerprint-1",
 							},
@@ -129,8 +129,8 @@ var _ = Describe("Audit Events Batch Write API Integration Tests", func() {
 							Type: ogenclient.AuditEventRequestEventDataGatewayCrdCreatedAuditEventRequestEventData,
 							GatewayAuditPayload: ogenclient.GatewayAuditPayload{
 								EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewayCrdCreated,
-								SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
-								AlertName:   "BatchTest2",
+								SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
+								SignalName:   "BatchTest2",
 								Namespace:   "default",
 								Fingerprint: "test-fingerprint-2",
 							},
@@ -148,8 +148,8 @@ var _ = Describe("Audit Events Batch Write API Integration Tests", func() {
 							Type: ogenclient.AuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData,
 							GatewayAuditPayload: ogenclient.GatewayAuditPayload{
 								EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
-								SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
-								AlertName:   "BatchTest3",
+								SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
+								SignalName:   "BatchTest3",
 								Namespace:   "default",
 								Fingerprint: "test-fingerprint-3",
 							},
@@ -225,8 +225,8 @@ var _ = Describe("Audit Events Batch Write API Integration Tests", func() {
 							Type: ogenclient.AuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData,
 							GatewayAuditPayload: ogenclient.GatewayAuditPayload{
 								EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
-								SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
-								AlertName:   "LargeBatchTest",
+								SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
+								SignalName:   "LargeBatchTest",
 								Namespace:   "default",
 								Fingerprint: "test-fingerprint-large",
 							},

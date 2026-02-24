@@ -98,7 +98,7 @@ var _ = Describe("HolmesGPTClient", func() {
 				resp, err := hgClient.Investigate(ctx, &client.IncidentRequest{
 					IncidentID:        "test-incident-001",
 					RemediationID:     "test-rem-001",
-					SignalType:        "OOMKilled",
+					SignalName:        "OOMKilled",
 					Severity:          "critical",
 					ResourceNamespace: "default",
 					ResourceKind:      "Pod",
@@ -220,7 +220,7 @@ var _ = Describe("HolmesGPTClient", func() {
 				_, err := hgClient.Investigate(ctx, &client.IncidentRequest{
 					IncidentID:        "test-fail-session",
 					RemediationID:     "test-rem-fail",
-					SignalType:        "OOMKilled",
+					SignalName:        "OOMKilled",
 					Severity:          "critical",
 					ResourceNamespace: "default",
 					ResourceKind:      "Pod",
@@ -262,16 +262,15 @@ var _ = Describe("HolmesGPTClient", func() {
 
 			It("should return error when context is cancelled", func() {
 				cancelCtx, cancel := context.WithCancel(ctx)
-				// Cancel after a short delay to allow submit + first poll
 				go func() {
-					time.Sleep(1500 * time.Millisecond)
+					time.Sleep(1500 * time.Millisecond) // ✅ APPROVED EXCEPTION: delayed cancel to test context cancellation mid-poll
 					cancel()
 				}()
 
 				_, err := hgClient.Investigate(cancelCtx, &client.IncidentRequest{
 					IncidentID:        "test-stuck-session",
 					RemediationID:     "test-rem-stuck",
-					SignalType:        "OOMKilled",
+					SignalName:        "OOMKilled",
 					Severity:          "critical",
 					ResourceNamespace: "default",
 					ResourceKind:      "Pod",

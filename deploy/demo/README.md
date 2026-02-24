@@ -118,7 +118,9 @@ Each scenario's `README.md` contains its BDD specification, acceptance criteria,
 
 ## Scenario Catalog
 
-17 scenarios are available, organized by category. Each scenario deploys into its own namespace and can be run independently.
+22 scenarios are available, organized by category. Each scenario deploys into its own namespace and can be run independently.
+
+For the formal specification of scenario structure, deliverables, and authoring guidelines, see [BR-PLATFORM-002: Demo Scenario Specification](../../docs/requirements/BR-PLATFORM-002-demo-scenario-specification.md).
 
 Some scenarios require additional components beyond the base platform:
 
@@ -143,6 +145,8 @@ Each scenario's `README.md` lists its specific prerequisites. All dependencies a
 | **memory-leak** | `ContainerMemoryExhaustionPredicted` | Linear memory growth predicted to OOM | Graceful restart (rolling) | `./deploy/demo/scenarios/memory-leak/run.sh` |
 | **stuck-rollout** | `KubeDeploymentRolloutStuck` | Non-existent image tag | `kubectl rollout undo` | `./deploy/demo/scenarios/stuck-rollout/run.sh` |
 | **slo-burn** | `ErrorBudgetBurn` | Blackbox probe error rate >1.44% | Proactive rollback | `./deploy/demo/scenarios/slo-burn/run.sh` |
+| **memory-escalation** | `ContainerMemoryHigh` | Memory usage exceeds threshold | Increase memory limits | `./deploy/demo/scenarios/memory-escalation/run.sh` |
+| **remediation-retry** | `KubePodCrashLooping` | Bad config persists after first fix | Restart deployment (retry cycle) | `./deploy/demo/scenarios/remediation-retry/run.sh` |
 
 ### Autoscaling and Resources
 
@@ -158,7 +162,7 @@ Each scenario's `README.md` lists its specific prerequisites. All dependencies a
 |----------|---------------|-----------------|-------------|-----|
 | **pending-taint** | `KubePodNotScheduled` | NoSchedule taint on node | Remove taint | `./deploy/demo/scenarios/pending-taint/run.sh` |
 | **node-notready** | `KubeNodeNotReady` | Node failure simulation | Cordon + drain node | `./deploy/demo/scenarios/node-notready/run.sh` |
-| **disk-pressure** | `KubePersistentVolumeClaimOrphaned` | Orphaned PVCs accumulate | Cleanup unused PVCs | `./deploy/demo/scenarios/disk-pressure/run.sh` |
+| **disk-pressure** | `KubePersistentVolumeClaimOrphaned` | Orphaned PVCs accumulate | No action (no workflow seeded) | `./deploy/demo/scenarios/disk-pressure/run.sh` |
 | **statefulset-pvc-failure** | `KubeStatefulSetReplicasMismatch` | PVC binding failure | Fix StatefulSet PVC | `./deploy/demo/scenarios/statefulset-pvc-failure/run.sh` |
 
 ### Network and Service Mesh
@@ -180,6 +184,14 @@ Each scenario's `README.md` lists its specific prerequisites. All dependencies a
 |----------|---------------|-----------------|-------------|-----|
 | **cert-failure** | `CertManagerCertNotReady` | cert-manager Certificate NotReady | Fix Certificate resource | `./deploy/demo/scenarios/cert-failure/run.sh` |
 | **cert-failure-gitops** | `CertManagerCertNotReady` | Certificate NotReady (GitOps) | `git revert` cert config | `./deploy/demo/scenarios/cert-failure-gitops/run.sh` |
+
+### Platform Behavior
+
+| Scenario | Signal / Alert | Fault Injection | Behavior Tested | Run |
+|----------|---------------|-----------------|-----------------|-----|
+| **duplicate-alert-suppression** | `KubePodCrashLooping` | Bad config (same as crashloop) | Deduplication suppresses duplicate RRs | `./deploy/demo/scenarios/duplicate-alert-suppression/run.sh` |
+| **resource-quota-exhaustion** | `KubeResourceQuotaExhausted` | Exhaust namespace ResourceQuota | Pipeline handles quota-blocked scenarios | `./deploy/demo/scenarios/resource-quota-exhaustion/run.sh` |
+| **concurrent-cross-namespace** | `KubePodCrashLooping` (x2) | Bad config in two namespaces | Concurrent pipelines with cross-namespace rego policy | `./deploy/demo/scenarios/concurrent-cross-namespace/run.sh` |
 
 ## Cleanup
 
@@ -302,7 +314,7 @@ charts/kubernaut/                  # Kubernaut platform Helm chart (Issue #80)
   templates/                       # 10 services + infrastructure + RBAC + hooks
 
 deploy/demo/
-  scenarios/                       # 17 demo scenarios (see Scenario Catalog above)
+  scenarios/                       # 22 demo scenarios (see Scenario Catalog above)
     <name>/
       run.sh                       # Single entry point (cluster + monitoring + platform + scenario)
       cleanup.sh                   # Teardown script (if applicable)

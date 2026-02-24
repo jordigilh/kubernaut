@@ -503,11 +503,13 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 		return nil, fmt.Errorf("FATAL: Data Storage URL not configured - audit is MANDATORY per ADR-032 §1.5 (Gateway is P0 service)")
 	}
 
-	// BR-SCOPE-002: Initialize scope manager for label-based resource opt-in filtering
-	// Uses apiReader (uncached) so that newly-created namespaces with kubernaut.ai/managed
-	// are visible immediately, avoiding scope-rejection races when alerts arrive before the
-	// informer cache has synced the namespace (same rationale as phaseChecker/lockManager).
-	scopeMgr := scope.NewManager(apiReader)
+	// BR-SCOPE-002: Initialize scope manager for label-based resource opt-in filtering.
+	// Uses ctrlClient (informer-backed) because namespace labels are stable — they are set
+	// well before alerts arrive and don't change mid-flight. This avoids hitting the API
+	// server with 1-2 Get calls per incoming alert under production load.
+	// Unlike phaseChecker/lockManager (which need apiReader for immediate consistency to
+	// prevent duplicate CRDs and lock races), scope checking tolerates informer sync delay.
+	scopeMgr := scope.NewManager(ctrlClient)
 
 	// Create server first (crdCreator set below after observer wiring)
 	server := &Server{
@@ -709,10 +711,9 @@ func (s *Server) Handler() http.Handler {
 // This client uses metadata-only informers (PartialObjectMetadata) for resource lookups.
 //
 // Used by:
-//   - scope.Manager (ADR-053): label-based resource opt-in filtering
 //   - K8sOwnerResolver (BR-GATEWAY-004): owner chain resolution for K8s event deduplication
 //
-// Both consumers share the same informer cache — zero additional API calls.
+// Note: scope.Manager uses ctrlClient (informer-backed) — see createServerWithClients.
 func (s *Server) GetCachedClient() client.Client {
 	return s.ctrlClient
 }
@@ -732,7 +733,7 @@ func (s *Server) GetCachedClient() client.Client {
 //
 // Example:
 //
-//	prometheusAdapter := adapters.NewPrometheusAdapter(logger)
+//	prometheusAdapter := adapters.NewPrometheusAdapter(ownerResolver, labelFilter)
 //	server.RegisterAdapter(prometheusAdapter)
 //	// Now POST /api/v1/signals/prometheus is active
 func (s *Server) RegisterAdapter(adapter adapters.RoutableAdapter) error {
@@ -1082,7 +1083,7 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 	logger := middleware.GetLogger(ctx)
 
 	// Record ingestion metric (environment label removed - SP owns classification)
-	s.metricsInstance.AlertsReceivedTotal.WithLabelValues(signal.SourceType, signal.Severity).Inc()
+	s.metricsInstance.AlertsReceivedTotal.WithLabelValues(signal.Source, signal.Severity).Inc()
 
 	// BR-SCOPE-002: Validate resource is within Kubernaut's management scope
 	if rejection, err := s.validateScope(ctx, signal); err != nil {
@@ -1190,7 +1191,7 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 		}
 
 		// Record metrics
-		s.metricsInstance.AlertsDeduplicatedTotal.WithLabelValues(signal.AlertName).Inc()
+		s.metricsInstance.AlertsDeduplicatedTotal.WithLabelValues(signal.SignalName).Inc()
 
 		// BR-GATEWAY-069: Cache hit metric (deduplication detected)
 		s.metricsInstance.DeduplicationCacheHitsTotal.Inc()
@@ -1493,7 +1494,7 @@ func (s *Server) emitSignalReceivedAudit(ctx context.Context, signal *types.Norm
 	audit.SetEventCategory(event, CategoryGateway)
 	audit.SetEventAction(event, ActionReceived)
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)
-	audit.SetActor(event, "external", signal.SourceType) // e.g., "prometheus", "kubernetes"
+	audit.SetActor(event, "external", signal.Source) // e.g., "prometheus", "kubernetes-events"
 	audit.SetResource(event, "Signal", signal.Fingerprint)
 	audit.SetCorrelationID(event, rrName) // Use RR name as correlation
 	audit.SetNamespace(event, signal.Namespace)
@@ -1519,7 +1520,7 @@ func (s *Server) emitSignalReceivedAudit(ctx context.Context, signal *types.Norm
 
 		// Gateway-Specific Metadata
 		SignalType:  toGatewayAuditPayloadSignalType(signal.SourceType),
-		AlertName:   signal.AlertName,
+		SignalName:   signal.SignalName,
 		Namespace:   signal.Namespace,
 		Fingerprint: signal.Fingerprint,
 	}
@@ -1567,7 +1568,7 @@ func (s *Server) emitSignalDeduplicatedAudit(ctx context.Context, signal *types.
 	audit.SetEventCategory(event, CategoryGateway)
 	audit.SetEventAction(event, ActionDeduplicated)
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)
-	audit.SetActor(event, "external", signal.SourceType)
+	audit.SetActor(event, "external", signal.Source)
 	audit.SetResource(event, "Signal", signal.Fingerprint)
 	audit.SetCorrelationID(event, rrName)
 	audit.SetNamespace(event, signal.Namespace)
@@ -1583,7 +1584,7 @@ func (s *Server) emitSignalDeduplicatedAudit(ctx context.Context, signal *types.
 
 		// Gateway-Specific Metadata
 		SignalType:  toGatewayAuditPayloadSignalType(signal.SourceType),
-		AlertName:   signal.AlertName,
+		SignalName:   signal.SignalName,
 		Namespace:   signal.Namespace,
 		Fingerprint: signal.Fingerprint,
 	}
@@ -1639,7 +1640,7 @@ func (s *Server) emitCRDCreatedAudit(ctx context.Context, signal *types.Normaliz
 		EventType: EventTypeCRDCreated, // Required for discriminator
 
 		SignalType:  toGatewayAuditPayloadSignalType(signal.SourceType),
-		AlertName:   signal.AlertName,
+		SignalName:   signal.SignalName,
 		Namespace:   signal.Namespace,
 		Fingerprint: signal.Fingerprint,
 	}
@@ -1666,7 +1667,7 @@ func (s *Server) emitCRDCreatedAudit(ctx context.Context, signal *types.Normaliz
 		"event_type_discriminator", payload.EventType,
 		"signal_type", payload.SignalType,
 		"severity_is_set", payload.Severity.IsSet(),
-		"alert_name", payload.AlertName)
+		"signal_name", payload.SignalName)
 
 	// Fire-and-forget: StoreAudit is non-blocking per DD-AUDIT-002
 	if err := s.auditStore.StoreAudit(ctx, event); err != nil {
@@ -1750,7 +1751,7 @@ func (s *Server) emitCRDCreationFailedAudit(ctx context.Context, signal *types.N
 		EventType: EventTypeCRDFailed, // Required for discriminator
 
 		SignalType:  toGatewayAuditPayloadSignalType(signal.SourceType),
-		AlertName:   signal.AlertName,
+		SignalName:   signal.SignalName,
 		Namespace:   signal.Namespace,
 		Fingerprint: signal.Fingerprint,
 	}
@@ -1791,7 +1792,7 @@ func (s *Server) emitCRDCreationFailedAudit(ctx context.Context, signal *types.N
 //   - string: Human-readable correlation ID (30-150 chars depending on names)
 func constructReadableCorrelationID(signal *types.NormalizedSignal) string {
 	return fmt.Sprintf("%s:%s:%s:%s",
-		signal.AlertName,
+		signal.SignalName,
 		signal.Namespace,
 		signal.Resource.Kind,
 		signal.Resource.Name,
@@ -1833,7 +1834,7 @@ func (s *Server) handleDuplicateSignal(ctx context.Context, signal *types.Normal
 	}
 
 	// Record metrics for monitoring dashboard
-	s.metricsInstance.AlertsDeduplicatedTotal.WithLabelValues(signal.AlertName).Inc()
+	s.metricsInstance.AlertsDeduplicatedTotal.WithLabelValues(signal.SignalName).Inc()
 	s.metricsInstance.DeduplicationCacheHitsTotal.Inc()
 
 	// Emit audit event for compliance (DD-AUDIT-003)

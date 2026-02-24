@@ -46,7 +46,7 @@ var _ = Describe("Prometheus Adapter - Resource Extraction for Workflow Selectio
 	var adapter *adapters.PrometheusAdapter
 
 	BeforeEach(func() {
-		adapter = adapters.NewPrometheusAdapter()
+		adapter = adapters.NewPrometheusAdapter(nil, nil)
 	})
 
 	Context("BR-GATEWAY-001: Resource Kind Extraction (Workflow Selection)", func() {
@@ -258,10 +258,11 @@ var _ = Describe("Prometheus Adapter - Resource Extraction for Workflow Selectio
 		})
 	})
 
-	Context("BR-GATEWAY-001: Priority-Based Resource Extraction", func() {
-		It("prioritizes Pod over Deployment when both labels present", func() {
-			// BUSINESS OUTCOME: Most specific resource kind selected for targeted remediation
-			// Pod-level issue requires pod restart, not deployment rollout
+	Context("BR-GATEWAY-184: Priority-Based Resource Extraction", func() {
+		It("prioritizes Deployment over Pod when both labels present", func() {
+			// BR-GATEWAY-184: Deployment takes priority over Pod because
+			// kube-state-metrics alerts inject "pod" as the metrics exporter,
+			// not the affected resource. The LLM traces to pods via the Deployment.
 			payload := `{
 				"alerts": [{
 					"status": "firing",
@@ -278,10 +279,10 @@ var _ = Describe("Prometheus Adapter - Resource Extraction for Workflow Selectio
 			signal, err := adapter.Parse(context.Background(), []byte(payload))
 
 			Expect(err).NotTo(HaveOccurred())
-			Expect(signal.Resource.Kind).To(Equal("Pod"),
-				"Pod priority: More specific than Deployment for container-level issues")
-			Expect(signal.Resource.Name).To(Equal("payment-api-789"),
-				"Specific pod name enables targeted remediation (not all deployment pods)")
+			Expect(signal.Resource.Kind).To(Equal("Deployment"),
+				"BR-GATEWAY-184: Deployment takes priority over pod to avoid kube-state-metrics misidentification")
+			Expect(signal.Resource.Name).To(Equal("payment-api"),
+				"BR-GATEWAY-184: Resource name from deployment label, not pod label")
 		})
 
 		It("falls back to Deployment when only deployment label present", func() {

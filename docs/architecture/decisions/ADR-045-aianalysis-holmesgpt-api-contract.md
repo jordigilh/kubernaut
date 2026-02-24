@@ -99,15 +99,15 @@ SignalContext:
   type: object
   required:
     - signalId
-    - signalType
+    - signalName
     - targetResource
   properties:
     signalId:
       type: string
       description: Unique signal identifier
-    signalType:
+    signalName:
       type: string
-      description: Type of signal (e.g., PrometheusAlert, OOMKilled)
+      description: Semantic signal name (e.g., OOMKilled, HighCPULoad)
     severity:
       type: string
       enum: [critical, high, medium, low]
@@ -274,7 +274,7 @@ RootCauseAnalysis:
     severity:
       type: string
       enum: [critical, high, medium, low]
-    signalType:
+    signalName:
       type: string
     confidence:
       type: number

@@ -111,8 +111,8 @@ var _ = Describe("Audit Events Write API E2E Tests", Label("e2e", "audit-write-a
 					Type: ogenclient.AuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData,
 					GatewayAuditPayload: ogenclient.GatewayAuditPayload{
 						EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
-						SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
-						AlertName:   "PodOOMKilled",
+						SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
+						SignalName:   "PodOOMKilled",
 						Namespace:   "production",
 						Fingerprint: "sha256:abc123",
 					},
@@ -190,8 +190,8 @@ var _ = Describe("Audit Events Write API E2E Tests", Label("e2e", "audit-write-a
 
 				// Verify signal_type is present somewhere in the event_data (nested or flat)
 				jsonBytes, _ := json.Marshal(storedEventData)
-				Expect(string(jsonBytes)).To(ContainSubstring("prometheus"), "event_data should contain prometheus signal_type")
-				Expect(string(jsonBytes)).To(ContainSubstring("PodOOMKilled"), "event_data should contain PodOOMKilled alert_name")
+				Expect(string(jsonBytes)).To(ContainSubstring("alert"), "event_data should contain alert signal_type")
+				Expect(string(jsonBytes)).To(ContainSubstring("PodOOMKilled"), "event_data should contain PodOOMKilled signal_name")
 			})
 		})
 
@@ -370,8 +370,8 @@ var _ = Describe("Audit Events Write API E2E Tests", Label("e2e", "audit-write-a
 					Type: ogenclient.AuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData,
 					GatewayAuditPayload: ogenclient.GatewayAuditPayload{
 						EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
-						SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
-						AlertName:   "TestAlert",
+						SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
+						SignalName:   "TestAlert",
 						Namespace:   "default",
 						Fingerprint: "test-fingerprint",
 					},
@@ -446,8 +446,8 @@ var _ = Describe("Audit Events Write API E2E Tests", Label("e2e", "audit-write-a
 					Type: ogenclient.AuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData,
 					GatewayAuditPayload: ogenclient.GatewayAuditPayload{
 						EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
-						SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
-						AlertName:   "ChildEvent",
+						SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
+						SignalName:   "ChildEvent",
 						Namespace:   "production",
 						Fingerprint: "test-fingerprint",
 					},

@@ -36,7 +36,7 @@ class TestMandatoryLabels(unittest.TestCase):
         model = MandatoryLabels()
         if include_optional:
             return MandatoryLabels(
-                signal_type = 'OOMKilled',
+                signal_name = 'OOMKilled',
                 severity = ["critical"],
                 component = 'pod',
                 environment = ["staging","production"],

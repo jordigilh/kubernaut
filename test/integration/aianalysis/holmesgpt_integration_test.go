@@ -77,7 +77,7 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 			resp, err := realHGClient.Investigate(testCtx, &client.IncidentRequest{
 				IncidentID:        "test-crashloop-001",
 				RemediationID:     "req-test-001",
-				SignalType:        "CrashLoopBackOff",
+				SignalName:        "CrashLoopBackOff",
 				Severity:          "critical",
 				SignalSource:      "kubernaut",
 				ResourceNamespace: "staging",
@@ -103,7 +103,7 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 			_, err := realHGClient.Investigate(testCtx, &client.IncidentRequest{
 				IncidentID:        "test-memory-001",
 				RemediationID:     "req-test-002",
-				SignalType:        "MemoryPressure",
+				SignalName:        "MemoryPressure",
 				Severity:          "medium", // DD-SEVERITY-001: Use normalized severity enum
 				SignalSource:      "kubernaut",
 				ResourceNamespace: testNamespace, // DD-TEST-002: Use dynamic namespace
@@ -127,7 +127,7 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 			resp, err := realHGClient.Investigate(testCtx, &client.IncidentRequest{
 				IncidentID:        "test-oom-001",
 				RemediationID:     "req-test-003",
-				SignalType:        "OOMKilled",
+				SignalName:        "OOMKilled",
 				Severity:          "critical",
 				SignalSource:      "kubernaut",
 				ResourceNamespace: testNamespace, // DD-TEST-002: Use dynamic namespace
@@ -159,7 +159,7 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 			resp, err := realHGClient.Investigate(testCtx, &client.IncidentRequest{
 				IncidentID:        "test-prod-001",
 				RemediationID:     "req-test-004",
-				SignalType:        "CrashLoopBackOff",
+				SignalName:        "CrashLoopBackOff",
 				Severity:          "critical",
 				SignalSource:      "kubernaut",
 				ResourceNamespace: "production",
@@ -187,7 +187,7 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 			resp, err := realHGClient.Investigate(testCtx, &client.IncidentRequest{
 				IncidentID:        "test-hr-001",
 				RemediationID:     "req-hr-001",
-				SignalType:        "Unknown",
+				SignalName:        "Unknown",
 				Severity:          "critical",
 				SignalSource:      "kubernaut",
 				ResourceNamespace: "production",
@@ -261,7 +261,7 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 				resp, err := realHGClient.Investigate(testCtx, &client.IncidentRequest{
 					IncidentID:        "test-hr-" + tc.signalType,
 					RemediationID:     "req-hr-" + tc.signalType,
-					SignalType:        tc.signalType,
+					SignalName:        tc.signalType,
 					Severity:          "medium",
 					SignalSource:      "kubernaut",
 					ResourceNamespace: testNamespace,
@@ -301,7 +301,7 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 			resp, err := realHGClient.Investigate(testCtx, &client.IncidentRequest{
 				IncidentID:        "test-resolved-001",
 				RemediationID:     "req-resolved-001",
-				SignalType:        "MOCK_PROBLEM_RESOLVED", // Mock LLM scenario trigger
+				SignalName:        "MOCK_PROBLEM_RESOLVED", // Mock LLM scenario trigger
 				Severity:          "medium",
 				SignalSource:      "kubernaut",
 				ResourceNamespace: testNamespace,
@@ -339,7 +339,7 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 			resp, err := realHGClient.Investigate(testCtx, &client.IncidentRequest{
 				IncidentID:        "test-max-retries-001",
 				RemediationID:     "req-max-retries-001",
-				SignalType:        "MOCK_MAX_RETRIES_EXHAUSTED", // Mock LLM scenario trigger
+				SignalName:        "MOCK_MAX_RETRIES_EXHAUSTED", // Mock LLM scenario trigger
 				Severity:          "high",
 				SignalSource:      "kubernaut",
 				ResourceNamespace: testNamespace,
@@ -373,7 +373,7 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 			resp, err := realHGClient.Investigate(testCtx, &client.IncidentRequest{
 				IncidentID:        "test-inconclusive-001",
 				RemediationID:     "req-inconclusive-001",
-				SignalType:        "NetworkFailure",
+				SignalName:        "NetworkFailure",
 				Severity:          "medium", // DD-SEVERITY-001: Use normalized severity enum
 				SignalSource:      "kubernaut",
 				ResourceNamespace: testNamespace, // DD-TEST-002: Use dynamic namespace
@@ -403,7 +403,7 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 			resp, err := realHGClient.Investigate(testCtx, &client.IncidentRequest{
 				IncidentID:        "test-validation-001",
 				RemediationID:     "req-validation-001",
-				SignalType:        "DatabaseTimeout",
+				SignalName:        "DatabaseTimeout",
 				Severity:          "medium", // DD-SEVERITY-001: Use normalized severity enum
 				SignalSource:      "kubernaut",
 				ResourceNamespace: "staging",
@@ -439,13 +439,12 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 			shortCtx, cancel := context.WithTimeout(context.Background(), 1*time.Nanosecond)
 			defer cancel()
 
-			// Wait for context to expire
-			time.Sleep(2 * time.Millisecond)
+			time.Sleep(2 * time.Millisecond) // ✅ APPROVED EXCEPTION: ensure nanosecond-timeout context expires
 
 			_, err = shortClient.Investigate(shortCtx, &client.IncidentRequest{
 				IncidentID:        "test-timeout-001",
 				RemediationID:     "req-timeout-001",
-				SignalType:        "Test",
+				SignalName:        "Test",
 				Severity:          "info",
 				SignalSource:      "kubernaut",
 				ResourceNamespace: testNamespace, // DD-TEST-002: Use dynamic namespace
@@ -478,7 +477,7 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 			_, err := realHGClient.Investigate(testCtx, &client.IncidentRequest{
 				IncidentID:        "test-validation-error",
 				RemediationID:     "", // EMPTY - violates DD-WORKFLOW-002
-				SignalType:        "Test",
+				SignalName:        "Test",
 				Severity:          "info",
 				SignalSource:      "kubernaut",
 				ResourceNamespace: testNamespace, // DD-TEST-002: Use dynamic namespace

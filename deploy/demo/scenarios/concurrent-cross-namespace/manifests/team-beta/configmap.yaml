@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: worker-config
+  namespace: demo-team-beta
+data:
+  nginx.conf: |
+    worker_processes auto;
+    error_log /var/log/nginx/error.log warn;
+    pid /tmp/nginx.pid;
+    events { worker_connections 1024; }
+    http {
+        server {
+            listen 8080;
+            server_name _;
+            location / { return 200 'healthy\n'; add_header Content-Type text/plain; }
+            location /healthz { return 200 'ok\n'; add_header Content-Type text/plain; }
+        }
+    }

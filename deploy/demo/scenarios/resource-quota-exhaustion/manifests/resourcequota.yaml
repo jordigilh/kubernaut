@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: namespace-quota
+  namespace: demo-quota
+spec:
+  hard:
+    requests.memory: "512Mi"
+    limits.memory: "512Mi"
+    requests.cpu: "500m"
+    limits.cpu: "1"

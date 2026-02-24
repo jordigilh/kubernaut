@@ -176,7 +176,7 @@ Expect(err).ToNot(HaveOccurred(), "Failed to create Gateway server")
 ```go
 // Send HTTP webhook
 payload := createPrometheusWebhookPayload(PrometheusAlertPayload{
-	AlertName: alertName,
+	SignalName: alertName,
 	Namespace: testNamespace,
 	PodName:   podName,
 	Severity:  "critical",
@@ -193,7 +193,7 @@ Expect(resp.StatusCode).To(Equal(201))
 // Call business logic directly
 signal := &types.NormalizedSignal{
 	Fingerprint:  generateFingerprint(alertName, testNamespace, "Pod", podName),
-	AlertName:    alertName,
+	SignalName:   alertName,
 	Severity:     "critical",
 	Namespace:    testNamespace,
 	Resource: types.ResourceIdentifier{
@@ -213,7 +213,7 @@ signal := &types.NormalizedSignal{
 	},
 	FiringTime:   time.Now(),
 	ReceivedTime: time.Now(),
-	SourceType:   "prometheus-alert",
+	Source:       "prometheus",  // Issue #166: adapter identity
 	Source:       "test-adapter",
 }
 

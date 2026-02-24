@@ -5,7 +5,7 @@
 
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
-**signal_type** | **str** | Signal type (optional metadata per DD-WORKFLOW-016: OOMKilled, CrashLoopBackOff, etc.) | [optional] 
+**signal_name** | **str** | Signal name (mandatory: OOMKilled, CrashLoopBackOff, etc.) | 
 **severity** | **str** | Severity level (mandatory: critical, high, medium, low) | 
 **component** | **str** | Component type (mandatory: pod, node, deployment, etc.) | 
 **environment** | **str** | Environment filter (mandatory, single value from Signal Processing) | 

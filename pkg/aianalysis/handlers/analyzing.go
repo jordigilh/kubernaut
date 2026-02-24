@@ -335,7 +335,7 @@ func (h *AnalyzingHandler) populateApprovalContext(analysis *aianalysisv1.AIAnal
 func (h *AnalyzingHandler) buildPolicyInput(analysis *aianalysisv1.AIAnalysis) *rego.PolicyInput {
 	input := &rego.PolicyInput{
 		// Signal context (from Spec.AnalysisRequest.SignalContext)
-		SignalType:       analysis.Spec.AnalysisRequest.SignalContext.SignalType,
+		SignalType:       analysis.Spec.AnalysisRequest.SignalContext.SignalName,
 		Severity:         analysis.Spec.AnalysisRequest.SignalContext.Severity,
 		Environment:      analysis.Spec.AnalysisRequest.SignalContext.Environment,
 		BusinessPriority: analysis.Spec.AnalysisRequest.SignalContext.BusinessPriority,

@@ -75,18 +75,16 @@ func updateLabelsPolicyFile(policyContent string) {
 // DD-TEST-010: This is one of the few valid reasons to keep Serial
 var _ = Describe("SignalProcessing Hot-Reload Integration", Serial, func() {
 	// Original policy content to restore after each test
-	const originalLabelPolicy = `package signalprocessing.labels
+	const originalLabelPolicy = `package signalprocessing.customlabels
 
 import rego.v1
 
-# BR-SP-102: CustomLabels extraction with degraded mode support
-# Extract kubernaut.ai/* labels from namespace (degraded mode)
-
-# Extract all kubernaut.ai/* labels dynamically
+# BR-SP-102: CustomLabels extraction
+# Extract kubernaut.ai/* labels from namespace context
 labels := result if {
-	input.kubernetes.namespaceLabels
+	input.kubernetes.namespace.labels
 	result := {key: [val] |
-		some full_key, val in input.kubernetes.namespaceLabels
+		some full_key, val in input.kubernetes.namespace.labels
 		startswith(full_key, "kubernaut.ai/")
 		key := substring(full_key, count("kubernaut.ai/"), -1)
 	}
@@ -114,7 +112,7 @@ labels := result if {
 			defer deleteTestNamespace(ns)
 
 			By("Updating policy file to v1")
-			updateLabelsPolicyFile(`package signalprocessing.labels
+			updateLabelsPolicyFile(`package signalprocessing.customlabels
 
 import rego.v1
 
@@ -129,7 +127,7 @@ labels := result if {
 				Fingerprint: ValidTestFingerprints["hr-file-watch-01"],
 				Name:        "HRFileWatchTest1",
 				Severity: "high",
-				Type:        "prometheus",
+				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 					Kind:      "Pod",
@@ -151,7 +149,7 @@ labels := result if {
 			Expect(result1.Status.KubernetesContext.CustomLabels).To(HaveKeyWithValue("version", ContainElement("v1")))
 
 			By("Updating policy file to v2 (triggers hot-reload)")
-			updateLabelsPolicyFile(`package signalprocessing.labels
+			updateLabelsPolicyFile(`package signalprocessing.customlabels
 
 import rego.v1
 
@@ -166,7 +164,7 @@ labels := result if {
 				Fingerprint: ValidTestFingerprints["hr-file-watch-02"],
 				Name:        "HRFileWatchTest2",
 				Severity: "high",
-				Type:        "prometheus",
+				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 					Kind:      "Pod",
@@ -201,7 +199,7 @@ labels := result if {
 			defer deleteTestNamespace(ns)
 
 			By("Updating policy file to initial policy (status=alpha)")
-			updateLabelsPolicyFile(`package signalprocessing.labels
+			updateLabelsPolicyFile(`package signalprocessing.customlabels
 
 import rego.v1
 
@@ -216,7 +214,7 @@ labels := result if {
 				Fingerprint: ValidTestFingerprints["hr-reload-valid-01"],
 				Name:        "HRReloadValidTest1",
 				Severity: "high",
-				Type:        "prometheus",
+				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 					Kind:      "Pod",
@@ -238,7 +236,7 @@ labels := result if {
 			Expect(result1.Status.KubernetesContext.CustomLabels).To(HaveKeyWithValue("status", ContainElement("alpha")))
 
 			By("Updating policy file to new policy (status=beta) - triggers hot-reload")
-			updateLabelsPolicyFile(`package signalprocessing.labels
+			updateLabelsPolicyFile(`package signalprocessing.customlabels
 
 import rego.v1
 
@@ -253,7 +251,7 @@ labels := result if {
 				Fingerprint: ValidTestFingerprints["hr-reload-valid-02"],
 				Name:        "HRReloadValidTest2",
 				Severity: "high",
-				Type:        "prometheus",
+				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 					Kind:      "Pod",
@@ -288,7 +286,7 @@ labels := result if {
 			defer deleteTestNamespace(ns)
 
 			By("Updating policy file to valid policy (stage=prod)")
-			updateLabelsPolicyFile(`package signalprocessing.labels
+			updateLabelsPolicyFile(`package signalprocessing.customlabels
 
 import rego.v1
 
@@ -303,7 +301,7 @@ labels := result if {
 				Fingerprint: ValidTestFingerprints["hr-graceful-01"],
 				Name:        "HRGracefulTest1",
 				Severity: "high",
-				Type:        "prometheus",
+				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 					Kind:      "Pod",
@@ -327,7 +325,7 @@ labels := result if {
 			By("Attempting to update policy file to INVALID Rego syntax")
 			// Write invalid policy directly (without helper to bypass sleep)
 			policyFileWriteMu.Lock()
-			_ = os.WriteFile(labelsPolicyFilePath, []byte(`package signalprocessing.labels
+			_ = os.WriteFile(labelsPolicyFilePath, []byte(`package signalprocessing.customlabels
 // INVALID REGO - Missing import, broken syntax
 labels["broken" := ["syntax"  // Missing bracket
 `), 0644)
@@ -341,7 +339,7 @@ labels["broken" := ["syntax"  // Missing bracket
 				Fingerprint: ValidTestFingerprints["hr-graceful-02"],
 				Name:        "HRGracefulTest2",
 				Severity: "high",
-				Type:        "prometheus",
+				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 					Kind:      "Pod",

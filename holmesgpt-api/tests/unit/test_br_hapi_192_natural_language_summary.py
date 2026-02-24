@@ -36,7 +36,7 @@ class TestPreviousExecutionNaturalLanguageSummary:
             workflow_execution_ref="we-12345",
             original_rca=OriginalRCA(
                 summary="Memory exhaustion causing OOMKilled",
-                signal_type="OOMKilled",
+                signal_name="OOMKilled",
                 severity="high",
                 contributing_factors=["memory leak"]
             ),
@@ -77,7 +77,7 @@ class TestPreviousExecutionNaturalLanguageSummary:
             workflow_execution_ref="we-12345",
             original_rca=OriginalRCA(
                 summary="Memory issue",
-                signal_type="OOMKilled",
+                signal_name="OOMKilled",
                 severity="high"
             ),
             selected_workflow=SelectedWorkflowSummary(
@@ -109,7 +109,7 @@ class TestPreviousExecutionNaturalLanguageSummary:
             workflow_execution_ref="we-12345",
             original_rca=OriginalRCA(
                 summary="Memory issue",
-                signal_type="OOMKilled",
+                signal_name="OOMKilled",
                 severity="high"
             ),
             selected_workflow=SelectedWorkflowSummary(
@@ -152,7 +152,7 @@ class TestRecoveryRequestWithNaturalLanguageSummary:
                 workflow_execution_ref="we-12345",
                 original_rca=OriginalRCA(
                     summary="Memory exhaustion",
-                    signal_type="OOMKilled",
+                    signal_name="OOMKilled",
                     severity="high"
                 ),
                 selected_workflow=SelectedWorkflowSummary(
@@ -196,7 +196,7 @@ class TestRecoveryPromptInclusion:
                 "workflow_execution_ref": "we-12345",
                 "original_rca": {
                     "summary": "Memory exhaustion",
-                    "signal_type": "OOMKilled",
+                    "signal_name": "OOMKilled",
                     "severity": "high",
                     "contributing_factors": []
                 },
@@ -221,7 +221,7 @@ class TestRecoveryPromptInclusion:
                                            "Pod was OOMKilled with exit code 137. "
                                            "Memory limit of 512Mi was exceeded."
             },
-            "signal_type": "OOMKilled",
+            "signal_name": "OOMKilled",
             "severity": "high",
             "resource_namespace": "production",
             "resource_kind": "Deployment",
@@ -250,7 +250,7 @@ class TestRecoveryPromptInclusion:
                 "workflow_execution_ref": "we-12345",
                 "original_rca": {
                     "summary": "Memory exhaustion",
-                    "signal_type": "OOMKilled",
+                    "signal_name": "OOMKilled",
                     "severity": "high",
                     "contributing_factors": []
                 },
@@ -272,7 +272,7 @@ class TestRecoveryPromptInclusion:
                 }
                 # Note: natural_language_summary NOT provided
             },
-            "signal_type": "OOMKilled",
+            "signal_name": "OOMKilled",
             "severity": "high"
         }
 

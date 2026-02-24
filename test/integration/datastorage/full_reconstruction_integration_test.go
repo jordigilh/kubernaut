@@ -117,10 +117,10 @@ var _ = Describe("Full RR Reconstruction Integration Tests (BR-AUDIT-005 v2.0)",
 
 			gatewayPayload := ogenclient.GatewayAuditPayload{
 				EventType:       ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
-				AlertName:       "HighMemoryUsage",
+				SignalName:       "HighMemoryUsage",
 				Namespace:       "test-namespace",
 				Fingerprint:     "abc123def456",
-				SignalType:      ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
+				SignalType:      ogenclient.GatewayAuditPayloadSignalTypeAlert,
 				OriginalPayload: ogenclient.NewOptGatewayAuditPayloadOriginalPayload(originalPayloadMap),
 				SignalLabels: ogenclient.NewOptGatewayAuditPayloadSignalLabels(map[string]string{
 					"app":      "frontend",
@@ -269,7 +269,7 @@ var _ = Describe("Full RR Reconstruction Integration Tests (BR-AUDIT-005 v2.0)",
 
 			// Gap #1-3: Gateway fields
 			Expect(rr.Spec.SignalName).To(Equal("HighMemoryUsage"), "Gap #1: SignalName from gateway.signal.received")
-			Expect(rr.Spec.SignalType).To(Equal("prometheus-alert"), "Gap #2: SignalType from gateway.signal.received")
+			Expect(rr.Spec.SignalType).To(Equal("alert"), "Gap #2: SignalType from gateway.signal.received")
 			Expect(rr.Spec.SignalLabels).To(HaveKeyWithValue("app", "frontend"), "Gap #3: SignalLabels from gateway.signal.received")
 			Expect(rr.Spec.SignalAnnotations).To(HaveKeyWithValue("summary", "Memory usage above 90%"), "Gap #3: SignalAnnotations from gateway.signal.received")
 			Expect(string(rr.Spec.OriginalPayload)).To(ContainSubstring("memory-high"), "Gap #3: OriginalPayload from gateway.signal.received")
@@ -319,10 +319,10 @@ var _ = Describe("Full RR Reconstruction Integration Tests (BR-AUDIT-005 v2.0)",
 			// ✅ Using typed ogenclient payloads
 			gatewayPayload := ogenclient.GatewayAuditPayload{
 				EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
-				AlertName:   "PartialAlert",
+				SignalName:   "PartialAlert",
 				Namespace:   "test-namespace",
 				Fingerprint: "partial123",
-				SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
+				SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
 			}
 			gatewayEvent, err := CreateGatewaySignalReceivedEvent(correlationID, gatewayPayload)
 			Expect(err).ToNot(HaveOccurred())
@@ -392,10 +392,10 @@ var _ = Describe("Full RR Reconstruction Integration Tests (BR-AUDIT-005 v2.0)",
 			// ✅ Using typed ogenclient payload
 			gatewayPayload := ogenclient.GatewayAuditPayload{
 				EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
-				AlertName:   "FailureAlert",
+				SignalName:   "FailureAlert",
 				Namespace:   "test-namespace",
 				Fingerprint: "failure123",
-				SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
+				SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
 			}
 			gatewayEvent, err := CreateGatewaySignalReceivedEvent(correlationID, gatewayPayload)
 			Expect(err).ToNot(HaveOccurred())

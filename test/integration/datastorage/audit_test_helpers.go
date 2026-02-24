@@ -53,7 +53,7 @@ import (
 //
 // Required fields in payload:
 // - EventType (must be gateway.signal.received)
-// - AlertName
+// - SignalName
 // - Namespace
 // - Fingerprint
 func CreateGatewaySignalReceivedEvent(
@@ -86,7 +86,7 @@ func CreateGatewaySignalReceivedEvent(
 		EventOutcome:   "success",
 		CorrelationID:  correlationID,
 		ResourceType:   "Signal",
-		ResourceID:     payload.AlertName,
+		ResourceID:     payload.SignalName,
 		EventData:      eventDataMap,
 	}, nil
 }

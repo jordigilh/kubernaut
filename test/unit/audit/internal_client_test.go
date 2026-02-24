@@ -46,8 +46,8 @@ func createInternalTestEvent(resourceID string) *ogenclient.AuditEventRequest {
 	// Use GatewayAuditPayload as generic test payload (ogen migration - discriminated union)
 	payload := ogenclient.GatewayAuditPayload{
 		EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewayCrdCreated,
-		SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
-		AlertName:   "test-alert",
+		SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
+		SignalName:   "test-alert",
 		Namespace:   "default",
 		Fingerprint: "test-fingerprint",
 	}
@@ -101,8 +101,9 @@ var _ = Describe("InternalAuditClient", func() {
 				// BUSINESS SCENARIO: Data Storage Service initializes audit client
 				// BR-STORAGE-013: Must use direct PostgreSQL writes (not REST API)
 
-				// BEHAVIOR: Client created successfully
-				Expect(client).ToNot(BeNil())
+				// BEHAVIOR: Client created successfully (type assertion validates creation)
+				_, ok := client.(*audit.InternalAuditClient)
+				Expect(ok).To(BeTrue(), "client should be *audit.InternalAuditClient")
 
 				// CORRECTNESS: Client implements audit.DataStorageClient interface
 				_ = audit.DataStorageClient(client) // Type assertion validates interface compliance
