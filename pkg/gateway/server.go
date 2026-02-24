@@ -733,7 +733,7 @@ func (s *Server) GetCachedClient() client.Client {
 //
 // Example:
 //
-//	prometheusAdapter := adapters.NewPrometheusAdapter(logger)
+//	prometheusAdapter := adapters.NewPrometheusAdapter(ownerResolver, labelFilter)
 //	server.RegisterAdapter(prometheusAdapter)
 //	// Now POST /api/v1/signals/prometheus is active
 func (s *Server) RegisterAdapter(adapter adapters.RoutableAdapter) error {

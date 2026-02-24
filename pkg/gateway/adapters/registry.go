@@ -38,7 +38,7 @@ import (
 // Usage:
 //
 //	registry := NewAdapterRegistry(logger)
-//	registry.Register(NewPrometheusAdapter())
+//	registry.Register(NewPrometheusAdapter(nil, nil))
 //	registry.Register(NewKubernetesEventAdapter())
 //
 //	// HTTP server iterates over adapters to register routes

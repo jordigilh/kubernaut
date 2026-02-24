@@ -104,7 +104,9 @@ func main() {
 
 	// Prometheus AlertManager webhook adapter
 	// Issue #63: alertname excluded from fingerprint; OwnerResolver resolves Pod→Deployment
-	prometheusAdapter := adapters.NewPrometheusAdapter(ownerResolver)
+	// Issue #191 / BR-GATEWAY-184: Filter monitoring metadata labels during target extraction
+	labelFilter := adapters.NewMonitoringMetadataFilter(logger)
+	prometheusAdapter := adapters.NewPrometheusAdapter(ownerResolver, labelFilter)
 	if err := srv.RegisterAdapter(prometheusAdapter); err != nil {
 		logger.Error(err, "Failed to register Prometheus adapter")
 		os.Exit(1)
