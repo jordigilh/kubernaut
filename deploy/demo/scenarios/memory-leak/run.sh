@@ -53,16 +53,16 @@ echo ""
 
 # Step 5: Memory leak in progress
 echo "==> Step 5: Memory leak is building..."
-echo "  The 'leaker' sidecar allocates ~1MB every 15 seconds (~4MB/min)."
+echo "  The 'leaker' sidecar allocates ~1MB every 5 seconds (~12MB/min) via a Memory-backed emptyDir."
 echo "  With a 192Mi limit, predict_linear will fire once it projects OOM"
-echo "  within 30 minutes, typically after 10-15 minutes of trend data."
+echo "  within 30 minutes, typically after 5-7 minutes of trend data."
 echo ""
 echo "  Monitor memory growth:"
 echo "    kubectl top pods -n ${NAMESPACE} --containers"
 echo ""
 
 # Step 6: Wait for alert
-echo "==> Step 6: Waiting for ContainerMemoryExhaustionPredicted alert (~12-15 min)..."
+echo "==> Step 6: Waiting for ContainerMemoryExhaustionPredicted alert (~6-7 min)..."
 echo "  Check Prometheus: kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090"
 echo "  The ContainerMemoryExhaustionPredicted alert should appear once"
 echo "  predict_linear projects the leaker container exceeding 192Mi."
