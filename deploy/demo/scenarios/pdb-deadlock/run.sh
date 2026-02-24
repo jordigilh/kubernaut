@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # PDB Deadlock Demo -- Automated Runner
-# Scenario #124: Overly restrictive PDB blocks rolling update -> relax PDB
+# Scenario #124: Overly restrictive PDB blocks node drain -> relax PDB
 #
 # Prerequisites:
-#   - Kind cluster with deploy/demo/overlays/kind/kind-cluster-config.yaml
+#   - Kind cluster with worker node (kubernaut.ai/workload-node=true)
 #   - Prometheus with kube-state-metrics
 #
 # Usage: ./deploy/demo/scenarios/pdb-deadlock/run.sh
@@ -38,11 +38,11 @@ echo "==> Step 2: Deploying PDB deadlock alerting rule..."
 kubectl apply -f "${SCRIPT_DIR}/manifests/prometheus-rule.yaml"
 
 # Step 3: Wait for healthy deployment
-echo "==> Step 3: Waiting for payment-service to be ready..."
+echo "==> Step 3: Waiting for payment-service to be ready on worker node..."
 kubectl wait --for=condition=Available deployment/payment-service \
   -n "${NAMESPACE}" --timeout=120s
-echo "  payment-service is running (2 replicas)."
-kubectl get pods -n "${NAMESPACE}"
+echo "  payment-service is running (2 replicas on worker node)."
+kubectl get pods -n "${NAMESPACE}" -o wide
 kubectl get pdb -n "${NAMESPACE}"
 echo ""
 
@@ -52,9 +52,9 @@ sleep 15
 echo "  PDB shows: ALLOWED DISRUPTIONS = 0 (this is the problem)."
 echo ""
 
-# Step 5: Trigger rolling update (will be blocked by PDB)
-echo "==> Step 5: Triggering rolling update (blocked by PDB)..."
-bash "${SCRIPT_DIR}/inject-rolling-update.sh"
+# Step 5: Drain worker node (will be blocked by PDB)
+echo "==> Step 5: Draining worker node (blocked by PDB)..."
+bash "${SCRIPT_DIR}/inject-drain.sh"
 echo ""
 
 # Step 6: Wait for alert
@@ -69,11 +69,40 @@ echo "    kubectl get rr,sp,aa,we,ea -n ${NAMESPACE} -w"
 echo ""
 echo "  Expected flow:"
 echo "    Alert (KubePodDisruptionBudgetAtLimit) -> Gateway -> SP -> AA (HAPI) -> RO -> WE"
-echo "    LLM detects PDB (via detectedLabels:pdbProtected) blocking updates"
+echo "    LLM detects PDB (via detectedLabels:pdbProtected) blocking node drain"
 echo "    Selects RelaxPDB workflow -> patches minAvailable to 1"
-echo "    Blocked rollout resumes -> EM verifies pods healthy"
+echo "    Blocked drain resumes -> pods reschedule to control-plane"
+echo "    EM verifies pods healthy after drain"
 echo ""
 echo "==> To verify remediation succeeded:"
 echo "    kubectl get pdb -n ${NAMESPACE}"
 echo "    # ALLOWED DISRUPTIONS should be > 0"
-echo "    kubectl rollout status deployment/payment-service -n ${NAMESPACE}"
+echo "    kubectl get nodes"
+echo "    # Worker node should complete drain (SchedulingDisabled)"
+echo "    kubectl get pods -n ${NAMESPACE} -o wide"
+echo "    # Pods should be Running on control-plane node"
+echo ""
+
+# Step 8: Post-maintenance -- uncordon worker and verify recovery
+echo "==> Step 8: Post-maintenance -- uncordoning worker node..."
+WORKER_NODE=$(kubectl get nodes -l kubernaut.ai/workload-node=true \
+  -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+if [ -n "${WORKER_NODE}" ]; then
+  kubectl uncordon "${WORKER_NODE}"
+  echo "  Worker node ${WORKER_NODE} uncordoned."
+else
+  echo "  WARNING: No worker node found with label kubernaut.ai/workload-node=true"
+fi
+
+echo "  Waiting for all pods to be ready (60s timeout)..."
+kubectl wait --for=condition=Available deployment/payment-service \
+  -n "${NAMESPACE}" --timeout=60s
+echo ""
+echo "==> Final state:"
+kubectl get nodes
+kubectl get pdb -n "${NAMESPACE}"
+kubectl get pods -n "${NAMESPACE}" -o wide
+echo ""
+echo "============================================="
+echo " PDB Deadlock Demo -- COMPLETE"
+echo "============================================="

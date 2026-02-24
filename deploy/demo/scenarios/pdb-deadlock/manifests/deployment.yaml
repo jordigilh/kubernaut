@@ -16,6 +16,11 @@ spec:
       labels:
         app: payment-service
     spec:
+      nodeSelector:
+        kubernaut.ai/workload-node: "true"
+      tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        effect: NoSchedule
       containers:
       - name: payment
         image: nginx:1.27-alpine

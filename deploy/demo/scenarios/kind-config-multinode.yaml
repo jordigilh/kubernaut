@@ -1,6 +1,6 @@
 # Kind cluster config: control-plane + 1 worker node
 # Used by scenarios that require a separate worker node:
-#   #122 pending-taint, #126 autoscale, #127 node-notready
+#   #122 pending-taint, #124 pdb-deadlock, #126 autoscale, #127 node-notready
 #
 # Usage:
 #   kind create cluster --name kubernaut-demo --config deploy/demo/scenarios/kind-config-multinode.yaml
