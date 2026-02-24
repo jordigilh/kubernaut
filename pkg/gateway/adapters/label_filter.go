@@ -115,5 +115,9 @@ func isKnownMonitoringServiceName(lower string) bool {
 		}
 	}
 
-	return strings.HasSuffix(lower, "-operator")
+	if strings.HasSuffix(lower, "-operator") {
+		return true
+	}
+
+	return false
 }

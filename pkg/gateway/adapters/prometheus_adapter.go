@@ -280,116 +280,58 @@ func (a *PrometheusAdapter) GetMetadata() AdapterMetadata {
 //   resource produce redundant RemediationRequests
 // - RCA outcome is independent of which alert triggered it
 
-// extractResourceKind determines Kubernetes resource type from labels.
-//
-// BR-GATEWAY-184: Specific resource labels are checked before "pod" because
-// kube-state-metrics resource-level alerts (kube_hpa_*, kube_deployment_*, etc.)
-// include a "pod" label pointing to the metrics exporter, not the affected resource.
-//
-// Detection order (first match wins):
-//  1. horizontalpodautoscaler → "HorizontalPodAutoscaler"
-//  2. poddisruptionbudget    → "PodDisruptionBudget"
-//  3. persistentvolumeclaim  → "PersistentVolumeClaim"
-//  4. deployment             → "Deployment"
-//  5. statefulset            → "StatefulSet"
-//  6. daemonset              → "DaemonSet"
-//  7. node                   → "Node"
-//  8. service                → "Service"
-//  9. job                    → "Job"
-//  10. cronjob               → "CronJob"
-//  11. pod                   → "Pod" (last: correct for pod-level metrics like kube_pod_*)
-//  12. default               → "Unknown"
-func extractResourceKind(labels map[string]string) string {
-	if _, ok := labels["horizontalpodautoscaler"]; ok {
-		return "HorizontalPodAutoscaler"
-	}
-	if _, ok := labels["poddisruptionbudget"]; ok {
-		return "PodDisruptionBudget"
-	}
-	if _, ok := labels["persistentvolumeclaim"]; ok {
-		return "PersistentVolumeClaim"
-	}
-	if _, ok := labels["deployment"]; ok {
-		return "Deployment"
-	}
-	if _, ok := labels["statefulset"]; ok {
-		return "StatefulSet"
-	}
-	if _, ok := labels["daemonset"]; ok {
-		return "DaemonSet"
-	}
-	if _, ok := labels["node"]; ok {
-		return "Node"
-	}
-	if _, ok := labels["service"]; ok {
-		return "Service"
-	}
-	if _, ok := labels["job"]; ok {
-		return "Job"
-	}
-	if _, ok := labels["cronjob"]; ok {
-		return "CronJob"
-	}
-	if _, ok := labels["pod"]; ok {
-		return "Pod"
-	}
-	return "Unknown"
+// resourceCandidate maps a Prometheus alert label key to the Kubernetes resource
+// kind it represents. Used by extractTargetResource for priority-ordered scanning.
+type resourceCandidate struct {
+	labelKey string
+	kind     string
 }
 
-// extractResourceName gets the resource instance name from labels.
+// resourceCandidates defines the priority-ordered detection list for target
+// resource extraction from Prometheus alert labels (first match wins).
 //
-// BR-GATEWAY-184: Mirrors extractResourceKind priority order. Specific resource
-// labels are checked before "pod" to avoid returning the kube-state-metrics
-// exporter pod name instead of the actual affected resource name.
+// BR-GATEWAY-184 / Issue #191: Specific resource labels are checked before "pod"
+// because kube-state-metrics resource-level alerts include a "pod" label pointing
+// to the metrics exporter, not the affected resource.
 //
-// Extraction order (first match wins):
-//  1. horizontalpodautoscaler
-//  2. poddisruptionbudget
-//  3. persistentvolumeclaim
-//  4. deployment
-//  5. statefulset
-//  6. daemonset
-//  7. node
-//  8. service
-//  9. job
-//  10. cronjob
-//  11. pod (last)
-//  12. default → "unknown"
-func extractResourceName(labels map[string]string) string {
-	if v, ok := labels["horizontalpodautoscaler"]; ok {
-		return v
+// Excluded labels (not in this list — see SME review #191):
+//   - "job": Always the Prometheus scrape job name (e.g., "kube-state-metrics"),
+//     never a Kubernetes Job resource. K8s Jobs use "job_name" instead.
+//   - "endpoint": ServiceMonitor endpoint name (e.g., "http", "metrics").
+//   - "instance": Scrape target IP:port.
+var resourceCandidates = []resourceCandidate{
+	{"horizontalpodautoscaler", "HorizontalPodAutoscaler"},
+	{"poddisruptionbudget", "PodDisruptionBudget"},
+	{"persistentvolumeclaim", "PersistentVolumeClaim"},
+	{"deployment", "Deployment"},
+	{"statefulset", "StatefulSet"},
+	{"daemonset", "DaemonSet"},
+	{"node", "Node"},
+	{"service", "Service"},
+	{"job_name", "Job"},
+	{"cronjob", "CronJob"},
+	{"pod", "Pod"},
+}
+
+// extractTargetResource determines the Kubernetes target resource (kind + name)
+// from Prometheus alert labels using the priority-ordered candidate list.
+//
+// When a LabelFilter is provided, candidates matched by the filter are skipped
+// and extraction continues to the next priority level. This allows filtering
+// monitoring infrastructure metadata (e.g., "service: kube-state-metrics")
+// without losing the correct target from a lower-priority label (e.g., "pod").
+//
+// When filter is nil, no filtering occurs (all candidates pass through).
+func extractTargetResource(labels map[string]string, filter LabelFilter) (kind, name string) {
+	for _, c := range resourceCandidates {
+		if v, ok := labels[c.labelKey]; ok {
+			if filter != nil && filter.IsMonitoringMetadata(c.labelKey, v) {
+				continue
+			}
+			return c.kind, v
+		}
 	}
-	if v, ok := labels["poddisruptionbudget"]; ok {
-		return v
-	}
-	if v, ok := labels["persistentvolumeclaim"]; ok {
-		return v
-	}
-	if v, ok := labels["deployment"]; ok {
-		return v
-	}
-	if v, ok := labels["statefulset"]; ok {
-		return v
-	}
-	if v, ok := labels["daemonset"]; ok {
-		return v
-	}
-	if v, ok := labels["node"]; ok {
-		return v
-	}
-	if v, ok := labels["service"]; ok {
-		return v
-	}
-	if v, ok := labels["job"]; ok {
-		return v
-	}
-	if v, ok := labels["cronjob"]; ok {
-		return v
-	}
-	if v, ok := labels["pod"]; ok {
-		return v
-	}
-	return "unknown"
+	return "Unknown", "unknown"
 }
 
 // extractNamespace gets the Kubernetes namespace from labels
