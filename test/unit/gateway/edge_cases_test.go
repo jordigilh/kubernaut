@@ -47,7 +47,7 @@ var _ = Describe("BR-001, BR-008: Edge Case Handling - Adapter Validation", func
 	)
 
 	BeforeEach(func() {
-		adapter = adapters.NewPrometheusAdapter()
+		adapter = adapters.NewPrometheusAdapter(nil, nil)
 	})
 
 	Context("BR-008: Fingerprint Validation Edge Cases", func() {

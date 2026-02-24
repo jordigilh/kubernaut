@@ -294,7 +294,7 @@ func StartTestGatewayWithOptions(ctx context.Context, k8sClient *K8sTestClient, 
 	}
 
 	// Register Prometheus adapter (required for webhook endpoint)
-	prometheusAdapter := adapters.NewPrometheusAdapter()
+	prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
 	if err := server.RegisterAdapter(prometheusAdapter); err != nil {
 		return nil, fmt.Errorf("failed to register Prometheus adapter: %w", err)
 	}

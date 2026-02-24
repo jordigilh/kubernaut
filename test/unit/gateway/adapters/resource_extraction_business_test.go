@@ -46,7 +46,7 @@ var _ = Describe("Prometheus Adapter - Resource Extraction for Workflow Selectio
 	var adapter *adapters.PrometheusAdapter
 
 	BeforeEach(func() {
-		adapter = adapters.NewPrometheusAdapter()
+		adapter = adapters.NewPrometheusAdapter(nil, nil)
 	})
 
 	Context("BR-GATEWAY-001: Resource Kind Extraction (Workflow Selection)", func() {
