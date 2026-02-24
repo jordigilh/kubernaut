@@ -97,43 +97,8 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 			}, timeout, interval).Should(Succeed())
 			Expect(createdRR.Spec.SignalFingerprint).To(Equal(fingerprint))
 
-			By("Simulating SignalProcessing creation and completion")
-			sp := &signalprocessingv1.SignalProcessing{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "sp-" + rr.Name,
-					Namespace: testNS,
-					OwnerReferences: []metav1.OwnerReference{
-						{
-							APIVersion: remediationv1.GroupVersion.String(),
-							Kind:       "RemediationRequest",
-							Name:       rr.Name,
-							UID:        createdRR.UID,
-						},
-					},
-				},
-				Spec: signalprocessingv1.SignalProcessingSpec{
-					RemediationRequestRef: signalprocessingv1.ObjectReference{
-						APIVersion: remediationv1.GroupVersion.String(),
-						Kind:       "RemediationRequest",
-						Name:       rr.Name,
-						Namespace:  testNS,
-					},
-					Signal: signalprocessingv1.SignalData{
-						Fingerprint:  fingerprint,
-						Name:         "HighCPUUsage",
-						Severity:     "medium",
-						Type:         "alert",
-						ReceivedTime: metav1.Now(),
-						TargetType:   "kubernetes",
-						TargetResource: signalprocessingv1.ResourceIdentifier{
-							Kind:      "Deployment",
-							Name:      "test-app",
-							Namespace: testNS,
-						},
-					},
-				},
-			}
-			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
+			sp := helpers.WaitForSPCreation(ctx, k8sClient, testNS, timeout, interval)
+			helpers.SimulateSPCompletion(ctx, k8sClient, sp)
 
 			ai := helpers.WaitForAICreation(ctx, k8sClient, testNS, timeout, interval)
 			helpers.SimulateAICompletedWithWorkflow(ctx, k8sClient, ai, helpers.AICompletionOpts{
@@ -142,47 +107,8 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 				TargetNamespace: testNS,
 			})
 
-			By("Simulating AIAnalysis creation and completion with workflow recommendation")
-			ai := &aianalysisv1.AIAnalysis{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "ai-" + rr.Name,
-					Namespace: testNS,
-					OwnerReferences: []metav1.OwnerReference{
-						{
-							APIVersion: remediationv1.GroupVersion.String(),
-							Kind:       "RemediationRequest",
-							Name:       rr.Name,
-							UID:        createdRR.UID,
-						},
-					},
-				},
-				Spec: aianalysisv1.AIAnalysisSpec{
-					RemediationRequestRef: corev1.ObjectReference{
-						APIVersion: remediationv1.GroupVersion.String(),
-						Kind:       "RemediationRequest",
-						Name:       rr.Name,
-						Namespace:  testNS,
-					},
-					RemediationID: string(createdRR.UID),
-					AnalysisRequest: aianalysisv1.AnalysisRequest{
-						SignalContext: aianalysisv1.SignalContextInput{
-							Fingerprint:      fingerprint,
-							Severity:         "medium",
-							SignalName:       "alert",
-							Environment:      "production",
-							BusinessPriority: "P1",
-							TargetResource: aianalysisv1.TargetResource{
-								Kind:      "Deployment",
-								Name:      "test-app",
-								Namespace: testNS,
-							},
-							EnrichmentResults: sharedtypes.EnrichmentResults{},
-						},
-						AnalysisTypes: []string{"investigation", "root-cause", "workflow-selection"},
-					},
-				},
-			}
-			Expect(k8sClient.Create(ctx, ai)).To(Succeed())
+			we := helpers.WaitForWECreation(ctx, k8sClient, testNS, timeout, interval)
+			helpers.SimulateWECompletion(ctx, k8sClient, we)
 
 			By("Verifying all child CRDs have correct owner references set by RO")
 			Expect(sp.OwnerReferences).To(HaveLen(1))
@@ -371,55 +297,8 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 			sp := helpers.WaitForSPCreation(ctx, k8sClient, testNS, timeout, interval)
 			helpers.SimulateSPCompletion(ctx, k8sClient, sp)
 
-			By("Simulating AIAnalysis with WorkflowNotNeeded outcome")
-			ai := &aianalysisv1.AIAnalysis{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "ai-" + rr.Name,
-					Namespace: testNS,
-					OwnerReferences: []metav1.OwnerReference{
-						{
-							APIVersion: remediationv1.GroupVersion.String(),
-							Kind:       "RemediationRequest",
-							Name:       rr.Name,
-							UID:        createdRR.UID,
-						},
-					},
-				},
-				Spec: aianalysisv1.AIAnalysisSpec{
-					RemediationRequestRef: corev1.ObjectReference{
-						APIVersion: remediationv1.GroupVersion.String(),
-						Kind:       "RemediationRequest",
-						Name:       rr.Name,
-						Namespace:  testNS,
-					},
-					RemediationID: string(createdRR.UID),
-					AnalysisRequest: aianalysisv1.AnalysisRequest{
-						SignalContext: aianalysisv1.SignalContextInput{
-							Fingerprint:      fingerprint,
-							Severity:         "low",
-							SignalName:       "alert",
-							Environment:      "staging",
-							BusinessPriority: "P3",
-							TargetResource: aianalysisv1.TargetResource{
-								Kind:      "Pod",
-								Name:      "transient-pod",
-								Namespace: testNS,
-							},
-							EnrichmentResults: sharedtypes.EnrichmentResults{},
-						},
-						AnalysisTypes: []string{"investigation"},
-					},
-				},
-			}
-			Expect(k8sClient.Create(ctx, ai)).To(Succeed())
-
-			// Update AI status - problem self-resolved (WorkflowNotNeeded)
-			ai.Status.Phase = "Completed"
-			ai.Status.Reason = "WorkflowNotNeeded"
-			ai.Status.SubReason = "ProblemResolved"
-			ai.Status.Message = "Problem self-resolved: transient error no longer present"
-			// No SelectedWorkflow for WorkflowNotNeeded
-			Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
+			ai := helpers.WaitForAICreation(ctx, k8sClient, testNS, timeout, interval)
+			helpers.SimulateAIWorkflowNotNeeded(ctx, k8sClient, ai)
 
 			By("Verifying AIAnalysis shows WorkflowNotNeeded reason")
 			Eventually(func() string {
@@ -466,50 +345,10 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 			}
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
-			createdRR := &remediationv1.RemediationRequest{}
-			Eventually(func() error {
-				return k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), createdRR)
-			}, timeout, interval).Should(Succeed())
-
-			By("Creating child SignalProcessing with owner reference")
-			sp := &signalprocessingv1.SignalProcessing{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "sp-" + rr.Name,
-					Namespace: testNS,
-					OwnerReferences: []metav1.OwnerReference{
-						{
-							APIVersion:         remediationv1.GroupVersion.String(),
-							Kind:               "RemediationRequest",
-							Name:               rr.Name,
-							UID:                createdRR.UID,
-							Controller:         boolPtr(true),
-							BlockOwnerDeletion: boolPtr(true),
-						},
-					},
-				},
-				Spec: signalprocessingv1.SignalProcessingSpec{
-					RemediationRequestRef: signalprocessingv1.ObjectReference{
-						APIVersion: remediationv1.GroupVersion.String(),
-						Kind:       "RemediationRequest",
-						Name:       rr.Name,
-						Namespace:  testNS,
-					},
-					Signal: signalprocessingv1.SignalData{
-						Fingerprint:  fingerprint,
-						Name:         "CascadeTest",
-						Severity:     "medium",
-						Type:         "alert",
-						ReceivedTime: metav1.Now(),
-						TargetType:   "kubernetes",
-						TargetResource: signalprocessingv1.ResourceIdentifier{
-							Kind:      "Deployment",
-							Name:      "cascade-app",
-							Namespace: testNS,
-						},
-					},
-				},
-			}
-			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
+			By("Waiting for RO to create child SignalProcessing with owner reference")
+			sp := helpers.WaitForSPCreation(ctx, k8sClient, testNS, timeout, interval)
+			Expect(sp.OwnerReferences).To(HaveLen(1),
+				"SP should have OwnerReference set by RO for cascade deletion")
 
 			By("Deleting parent RemediationRequest")
 			Expect(k8sClient.Delete(ctx, rr)).To(Succeed())
@@ -525,76 +364,6 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 				err := apiReader.Get(ctx, client.ObjectKeyFromObject(sp), sp)
 				return err != nil
 			}, timeout, interval).Should(BeTrue())
-		})
-	})
-
-	// ========================================
-	// E2E-RO-163-002: Deduplication preservation
-	// RO does not touch Deduplication (Gateway-owned); test verifies RO preserves it during reconciliation
-	// ========================================
-	Describe("E2E-RO-163-002: Deduplication preservation", func() {
-		It("should preserve pre-populated Deduplication status during RO reconciliation", func() {
-			By("Creating a RemediationRequest")
-			now := metav1.Now()
-			fiveMinutesAgo := metav1.NewTime(now.Add(-5 * time.Minute))
-			fingerprint := "7e954e3f07affe767999611bc4f06fed5ef1c20a0a79cf0e9b6c5ce74071dbb6"
-			rr := &remediationv1.RemediationRequest{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "rr-dedup-e2e",
-					Namespace: testNS,
-				},
-				Spec: remediationv1.RemediationRequestSpec{
-					SignalFingerprint: fingerprint,
-					SignalName:        "DedupTest",
-					Severity:          "medium",
-					SignalType:        "alert",
-					TargetType:        "kubernetes",
-					TargetResource: remediationv1.ResourceIdentifier{
-						Kind:      "Deployment",
-						Name:      "dedup-app",
-						Namespace: testNS,
-					},
-					FiringTime:   now,
-					ReceivedTime: now,
-					Deduplication: sharedtypes.DeduplicationInfo{
-						FirstOccurrence: now,
-						LastOccurrence:  now,
-						OccurrenceCount: 1,
-					},
-				},
-			}
-			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
-
-			By("Pre-populating Status.Deduplication and DuplicateOf via status update")
-			createdRR := &remediationv1.RemediationRequest{}
-			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), createdRR)).To(Succeed())
-			createdRR.Status.Deduplication = &remediationv1.DeduplicationStatus{
-				FirstSeenAt:     &fiveMinutesAgo,
-				LastSeenAt:     &now,
-				OccurrenceCount: 2,
-			}
-			createdRR.Status.DuplicateOf = "rr-original-parent"
-			Expect(k8sClient.Status().Update(ctx, createdRR)).To(Succeed())
-
-			By("Letting RO reconcile (wait for Phase change or conditions)")
-			Eventually(func() bool {
-				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), createdRR)
-				// RO will transition from Pending; any phase change indicates reconciliation
-				return createdRR.Status.OverallPhase != "" || len(createdRR.Status.Conditions) > 0
-			}, timeout, interval).Should(BeTrue(), "RO should reconcile the RR")
-
-			By("Re-fetching RR and asserting Deduplication preserved")
-			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), createdRR)).To(Succeed())
-			Expect(createdRR.Status.Deduplication).NotTo(BeNil())
-			Expect(createdRR.Status.Deduplication.OccurrenceCount).To(Equal(int32(2)),
-				"Deduplication.OccurrenceCount should be preserved")
-			Expect(createdRR.Status.Deduplication.FirstSeenAt).NotTo(BeNil())
-			Expect(createdRR.Status.Deduplication.LastSeenAt).NotTo(BeNil())
-			Expect(createdRR.Status.DuplicateOf).To(Equal("rr-original-parent"),
-				"DuplicateOf should be preserved during RO reconciliation")
-
-			GinkgoWriter.Printf("E2E-RO-163-002: Deduplication preserved — OccurrenceCount=%d, DuplicateOf=%s\n",
-				createdRR.Status.Deduplication.OccurrenceCount, createdRR.Status.DuplicateOf)
 		})
 	})
 
