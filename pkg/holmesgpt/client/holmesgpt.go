@@ -320,8 +320,7 @@ func (c *HolmesGPTClient) SubmitInvestigation(ctx context.Context, req *Incident
 
 // PollSession polls the status of an investigation session.
 // BR-AA-HAPI-064.2: GET /api/v1/incident/session/{id}
-// Note: Uses incident session endpoint. Both incident and recovery share the same
-// global SessionManager in HAPI, so any session ID works on either endpoint.
+// Note: Uses incident session endpoint with HAPI's global SessionManager.
 func (c *HolmesGPTClient) PollSession(ctx context.Context, sessionID string) (*SessionStatus, error) {
 	body, err := c.sessionGET(ctx, "/api/v1/incident/session/"+sessionID)
 	if err != nil {

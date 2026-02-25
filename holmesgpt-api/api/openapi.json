@@ -660,7 +660,7 @@
         },
         "type": "object",
         "title": "EnrichmentResults",
-        "description": "Enrichment results from SignalProcessing.\n\nContains Kubernetes context, custom labels, and business classification\nused for workflow filtering and LLM context.\n\nADR-056: detectedLabels removed -- now computed by HAPI post-RCA via LabelDetector.\nADR-055: ownerChain removed -- resolved by HAPI via get_resource_context tool.\n\nDesign Decision: DD-RECOVERY-003, DD-HAPI-001\n\nCustom Labels (DD-HAPI-001):\n- Format: map[string][]string (subdomain \u2192 list of values)\n- Keys are subdomains (e.g., \"constraint\", \"team\")\n- Values are lists of strings (boolean keys or \"key=value\" pairs)\n- Example: {\"constraint\": [\"cost-constrained\"], \"team\": [\"name=payments\"]}\n- Auto-appended to MCP workflow search (invisible to LLM)"
+        "description": "Enrichment results from SignalProcessing.\n\nContains Kubernetes context, custom labels, and business classification\nused for workflow filtering and LLM context.\n\nADR-056: detectedLabels removed -- now computed by HAPI post-RCA via LabelDetector.\nADR-055: ownerChain removed -- resolved by HAPI via get_resource_context tool.\n\nDesign Decision: DD-HAPI-001\n\nCustom Labels (DD-HAPI-001):\n- Format: map[string][]string (subdomain \u2192 list of values)\n- Keys are subdomains (e.g., \"constraint\", \"team\")\n- Values are lists of strings (boolean keys or \"key=value\" pairs)\n- Example: {\"constraint\": [\"cost-constrained\"], \"team\": [\"name=payments\"]}\n- Auto-appended to MCP workflow search (invisible to LLM)"
       },
       "HTTPError": {
         "properties": {
@@ -1034,7 +1034,7 @@
           "cluster_name"
         ],
         "title": "IncidentRequest",
-        "description": "Request model for initial incident analysis endpoint\n\nBusiness Requirements:\n- BR-HAPI-002: Incident analysis request schema\n- BR-AUDIT-001: Unified audit trail (remediation_id)\n\nDesign Decision: DD-WORKFLOW-002 v2.2\n- remediation_id is MANDATORY for audit trail correlation\n- remediation_id is for CORRELATION ONLY - do NOT use for RCA or workflow matching\n\nDesign Decision: DD-RECOVERY-003\n- enrichment_results contains DetectedLabels for workflow filtering"
+        "description": "Request model for initial incident analysis endpoint\n\nBusiness Requirements:\n- BR-HAPI-002: Incident analysis request schema\n- BR-AUDIT-001: Unified audit trail (remediation_id)\n\nDesign Decision: DD-WORKFLOW-002 v2.2\n- remediation_id is MANDATORY for audit trail correlation\n- remediation_id is for CORRELATION ONLY - do NOT use for RCA or workflow matching\n\nDesign Decision: DD-HAPI-001\n- enrichment_results contains DetectedLabels for workflow filtering"
       },
       "IncidentResponse": {
         "properties": {

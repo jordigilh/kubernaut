@@ -197,7 +197,7 @@ spec:
             description: |-
               WorkflowExecutionStatus defines the observed state
               Simplified per ADR-044 - just tracks PipelineRun status
-              Enhanced per DD-CONTRACT-001 v1.3 - rich failure details for recovery flow
+              Enhanced per DD-CONTRACT-001 v1.3 - rich failure details for failure classification
               Enhanced per DD-CONTRACT-001 v1.4 - resource locking and Skipped phase
             properties:
               blockClearance:
@@ -388,7 +388,7 @@ spec:
                   reason:
                     description: |-
                       Reason is a Kubernetes-style reason code
-                      Used for deterministic recovery decisions by RO
+                      Used for deterministic failure classification by RO
                     enum:
                     - OOMKilled
                     - DeadlineExceeded

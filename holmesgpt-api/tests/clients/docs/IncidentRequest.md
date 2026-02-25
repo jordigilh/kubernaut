@@ -1,6 +1,6 @@
 # IncidentRequest
 
-Request model for initial incident analysis endpoint  Business Requirements: - BR-HAPI-002: Incident analysis request schema - BR-AUDIT-001: Unified audit trail (remediation_id)  Design Decision: DD-WORKFLOW-002 v2.2 - remediation_id is MANDATORY for audit trail correlation - remediation_id is for CORRELATION ONLY - do NOT use for RCA or workflow matching  Design Decision: DD-RECOVERY-003 - enrichment_results contains DetectedLabels for workflow filtering
+Request model for initial incident analysis endpoint  Business Requirements: - BR-HAPI-002: Incident analysis request schema - BR-AUDIT-001: Unified audit trail (remediation_id)  Design Decision: DD-WORKFLOW-002 v2.2 - remediation_id is MANDATORY for audit trail correlation - remediation_id is for CORRELATION ONLY - do NOT use for RCA or workflow matching  Design Decision: DD-HAPI-001 - enrichment_results contains DetectedLabels for workflow filtering
 
 ## Properties
 

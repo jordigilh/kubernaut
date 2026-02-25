@@ -19,7 +19,7 @@ Incident Analysis Prompt Builder
 
 Business Requirements: BR-HAPI-002 (Incident Analysis)
 Design Decisions:
-- DD-RECOVERY-003 (DetectedLabels for workflow filtering)
+- DD-HAPI-001 (DetectedLabels for workflow filtering)
 - DD-WORKFLOW-001 v2.1 (Honor failedDetections)
 - DD-HAPI-002 v1.2 (LLM Self-Correction feedback)
 
@@ -45,7 +45,7 @@ def build_cluster_context_section(detected_labels: DetectedLabels) -> str:
     This helps the LLM understand the cluster environment and make
     appropriate workflow recommendations.
 
-    Design Decision: DD-RECOVERY-003, DD-WORKFLOW-001 v2.1
+    Design Decision: DD-HAPI-001, DD-WORKFLOW-001 v2.1
 
     DD-WORKFLOW-001 v2.1: Honor failedDetections
     - Fields in failedDetections are EXCLUDED from cluster context
@@ -107,7 +107,7 @@ def build_mcp_filter_instructions(detected_labels: DetectedLabels) -> str:
     """
     Build workflow discovery filter instructions based on DetectedLabels.
 
-    Design Decision: DD-RECOVERY-003, DD-WORKFLOW-001 v2.1
+    Design Decision: DD-HAPI-001, DD-WORKFLOW-001 v2.1
 
     DD-WORKFLOW-001 v2.1: Honor failedDetections
     - Fields in failedDetections are EXCLUDED from filter instructions

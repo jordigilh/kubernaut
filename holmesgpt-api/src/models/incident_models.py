@@ -20,8 +20,7 @@ Incident Analysis Models
 Business Requirement: BR-HAPI-002 (Incident analysis request schema)
 Business Requirement: BR-AUDIT-001 (Unified audit trail - remediation_id)
 Design Decision: DD-WORKFLOW-002 v2.2 (remediation_id mandatory)
-Design Decision: DD-RECOVERY-003 (DetectedLabels for workflow filtering)
-Design Decision: DD-HAPI-001 (Custom Labels Auto-Append Architecture)
+Design Decision: DD-HAPI-001 (Custom Labels Auto-Append Architecture, DetectedLabels for workflow filtering)
 """
 
 from typing import Dict, Any, Optional, List
@@ -114,7 +113,7 @@ CustomLabels = Dict[str, List[str]]
 
 
 # ========================================
-# DETECTED LABELS MODELS (DD-RECOVERY-003)
+# DETECTED LABELS MODELS (DD-HAPI-001)
 # ========================================
 
 # Valid field names for failedDetections validation
@@ -133,7 +132,7 @@ class DetectedLabels(BaseModel):
     1. LLM context (natural language) - help LLM understand cluster environment
     2. MCP workflow filtering - filter workflows to only compatible ones
 
-    Design Decision: DD-WORKFLOW-001 v2.2, DD-RECOVERY-003
+    Design Decision: DD-WORKFLOW-001 v2.2, DD-HAPI-001
 
     Changes:
     - v2.1: Added `failedDetections` field to track which detections failed
@@ -208,7 +207,7 @@ class EnrichmentResults(BaseModel):
     ADR-056: detectedLabels removed -- now computed by HAPI post-RCA via LabelDetector.
     ADR-055: ownerChain removed -- resolved by HAPI via get_resource_context tool.
 
-    Design Decision: DD-RECOVERY-003, DD-HAPI-001
+    Design Decision: DD-HAPI-001
 
     Custom Labels (DD-HAPI-001):
     - Format: map[string][]string (subdomain → list of values)
@@ -240,7 +239,7 @@ class IncidentRequest(BaseModel):
     - remediation_id is MANDATORY for audit trail correlation
     - remediation_id is for CORRELATION ONLY - do NOT use for RCA or workflow matching
 
-    Design Decision: DD-RECOVERY-003
+    Design Decision: DD-HAPI-001
     - enrichment_results contains DetectedLabels for workflow filtering
     """
     incident_id: str = Field(..., description="Unique incident identifier")
@@ -280,7 +279,7 @@ class IncidentRequest(BaseModel):
     last_seen: Optional[str] = Field(None, description="Last seen")
     signal_labels: Optional[Dict[str, str]] = Field(default_factory=dict, description="Signal labels")
 
-    # Enrichment results with DetectedLabels (DD-RECOVERY-003)
+    # Enrichment results with DetectedLabels (DD-HAPI-001)
     enrichment_results: Optional[EnrichmentResults] = Field(None, description="Enriched context from SignalProcessing")
 
     # Signal mode: reactive (incident occurred) or predictive (incident predicted)

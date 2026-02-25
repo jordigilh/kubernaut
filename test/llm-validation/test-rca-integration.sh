@@ -32,8 +32,8 @@ cleanup() {
 trap cleanup EXIT
 
 echo ""
-echo "=== TEST 1: Send Recovery Request ===" 
-curl -s -X POST http://localhost:8080/api/v1/recovery/analyze \
+echo "=== TEST 1: Send Incident Analysis Request ===" 
+curl -s -X POST http://localhost:8080/api/v1/incident/analyze \
   -H "Content-Type: application/json" \
   -d @test/llm-validation/test-e2e-with-rca.json > /tmp/rca-response.json
 

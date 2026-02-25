@@ -102,7 +102,7 @@ SHARED_CLIENT_DIRS=(
 # Forbidden patterns (manual HTTP client usage)
 FORBIDDEN_PATTERNS=(
     "http\\.NewRequestWithContext.*(holmesgpt|datastorage|api/v1)"
-    "json\\.Marshal.*(IncidentRequest|RecoveryRequest|AlertRequest)"
+    "json\\.Marshal.*(IncidentRequest|AlertRequest)"
     "http\\.MethodPost.*(holmesgpt|datastorage)"
     "http\\.Do.*(holmesgpt|datastorage)"
     "http\\.Post.*(holmesgpt|datastorage)"

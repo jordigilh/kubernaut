@@ -146,7 +146,7 @@ var _ = Describe("RegoEvaluator", func() {
 		// Confidence-based auto-approval for production environments
 		// When confidence >= 0.9 and no critical safety conditions, production should auto-approve
 		DescribeTable("confidence-based auto-approval in production",
-			func(confidence float64, affectedResource *rego.AffectedResourceInput, failedDetections []string, warnings []string, isRecovery bool, recoveryAttempt int, expectedApproval bool, expectedReasonSubstring string) {
+			func(confidence float64, affectedResource *rego.AffectedResourceInput, failedDetections []string, warnings []string, expectedApproval bool, expectedReasonSubstring string) {
 				input := &rego.PolicyInput{
 					Environment:      "production",
 					AffectedResource: affectedResource,
@@ -168,35 +168,35 @@ var _ = Describe("RegoEvaluator", func() {
 			// High confidence (>= 0.9) + clean state → auto-approve
 			Entry("UT-AIA-CONF-001: high confidence + clean state → auto-approve",
 				0.95, &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "production"},
-				[]string{}, []string{}, false, 0,
+				[]string{}, []string{},
 				false, "Auto-approved"),
 			Entry("UT-AIA-CONF-002: confidence exactly 0.9 + clean state → auto-approve",
 				0.9, &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "production"},
-				[]string{}, []string{}, false, 0,
+				[]string{}, []string{},
 				false, "Auto-approved"),
 			// High confidence + failed detections → auto-approve (minor data quality issues)
 			Entry("UT-AIA-CONF-003: high confidence + failed detections → auto-approve",
 				0.95, &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "production"},
-				[]string{"gitOpsManaged"}, []string{}, false, 0,
+				[]string{"gitOpsManaged"}, []string{},
 				false, "Auto-approved"),
 			// High confidence + warnings → auto-approve
 			Entry("UT-AIA-CONF-004: high confidence + warnings → auto-approve",
 				0.92, &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "production"},
-				[]string{}, []string{"High memory pressure"}, false, 0,
+				[]string{}, []string{"High memory pressure"},
 				false, "Auto-approved"),
 			// Low confidence (< 0.9) → still require approval
 			Entry("UT-AIA-CONF-005: low confidence + clean state → require approval",
 				0.85, &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "production"},
-				[]string{}, []string{}, false, 0,
+				[]string{}, []string{},
 				true, "Production environment"),
 			Entry("UT-AIA-CONF-006: confidence 0.89 (just below threshold) → require approval",
 				0.89, &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "production"},
-				[]string{}, []string{}, false, 0,
+				[]string{}, []string{},
 				true, "Production environment"),
 			// Safety: missing affected resource → ALWAYS require approval regardless of confidence
 			Entry("UT-AIA-CONF-007: high confidence + missing affected resource → require approval",
 				0.99, (*rego.AffectedResourceInput)(nil),
-				[]string{}, []string{}, false, 0,
+				[]string{}, []string{},
 				true, "Missing affected resource"),
 		)
 

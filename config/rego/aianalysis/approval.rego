@@ -4,7 +4,7 @@
 # Issue #98: Refactored from exclusion chains to scored risk factors
 # Confidence-based auto-approval: High-confidence (>= 0.9) production analyses
 # auto-approve unless critical safety conditions are present (missing affected_resource,
-# sensitive resources, multiple recovery attempts).
+# sensitive resources).
 
 package aianalysis.approval
 

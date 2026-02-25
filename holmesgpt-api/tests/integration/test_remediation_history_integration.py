@@ -161,8 +161,8 @@ class TestClientFactory:
 # ============================================================================
 # 3.2 End-to-End Wiring Tests (fetch -> build prompt)
 #
-# These test the full business logic pipeline that the analyze_incident /
-# analyze_recovery functions execute:
+# These test the full business logic pipeline that the analyze_incident
+# function executes:
 #   1. fetch_remediation_history_for_request (client query)
 #   2. create_*_investigation_prompt (prompt enrichment)
 #

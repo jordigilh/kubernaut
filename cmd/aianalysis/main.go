@@ -18,7 +18,7 @@ limitations under the License.
 // This controller orchestrates AI-based incident analysis using HolmesGPT-API.
 //
 // Business Requirements: BR-AI-001 to BR-AI-083 (V1.0)
-// Architecture: DD-CONTRACT-002, DD-RECOVERY-002, DD-AIANALYSIS-001
+// Architecture: DD-CONTRACT-002, DD-AIANALYSIS-001
 package main
 
 import (

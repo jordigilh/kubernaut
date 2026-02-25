@@ -304,13 +304,8 @@ func (h *InvestigatingHandler) setRetryCount(analysis *aianalysisv1.AIAnalysis, 
 // have been replaced by generated-type versions:
 // - handleWorkflowResolutionFailureFromIncident (for IncidentResponse)
 // - handleProblemResolvedFromIncident (for IncidentResponse)
-// - handleRecoveryNotPossible (for RecoveryResponse)
 
 // P1.1 Refactoring: mapEnumToSubReason and mapWarningsToSubReason moved to response_processor.go
-
-// DD-HAPI-002 v1.4: Maps HAPI response to CRD status for audit/debugging
-// NOTE: Old convertValidationAttempts and populateRecoveryStatus methods deleted
-// - populateRecoveryStatus: Replaced by populateRecoveryStatusFromRecovery (for generated.RecoveryResponse)
 
 // mapErrorTypeToSubReason maps error classifier ErrorType to valid AIAnalysis CRD SubReason enum values
 // per config/crd/bases/kubernaut.ai_aianalyses.yaml line 134-144

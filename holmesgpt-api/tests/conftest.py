@@ -154,7 +154,7 @@ def sample_incident_request_with_detected_labels() -> Dict[str, Any]:
     """
     Sample incident request with DetectedLabels for testing
 
-    Design Decision: DD-RECOVERY-003 (DetectedLabels)
+    Design Decision: DD-HAPI-001 (DetectedLabels)
     Business Outcome: Test incident flow with cluster context
     """
     return {

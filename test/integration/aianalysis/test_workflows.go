@@ -115,7 +115,7 @@ func GetAIAnalysisTestWorkflows() []TestWorkflow {
 			Severity:    "critical",
 			Component:   "deployment",
 			Priority:    "P0",
-			// Mock LLM "recovery" scenario returns: NAMESPACE, DEPLOYMENT_NAME
+			// Mock LLM returns: NAMESPACE, DEPLOYMENT_NAME
 			SchemaParameters: []models.WorkflowParameter{
 				{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target namespace"},
 				{Name: "DEPLOYMENT_NAME", Type: "string", Required: true, Description: "Name of the deployment to scale"},

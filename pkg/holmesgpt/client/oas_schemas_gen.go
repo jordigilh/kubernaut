@@ -135,7 +135,7 @@ func (s *BusinessClassification) SetSlaRequirement(val OptNilString) {
 // used for workflow filtering and LLM context.
 // ADR-056: detectedLabels removed -- now computed by HAPI post-RCA via LabelDetector.
 // ADR-055: ownerChain removed -- resolved by HAPI via get_resource_context tool.
-// Design Decision: DD-RECOVERY-003, DD-HAPI-001
+// Design Decision: DD-HAPI-001
 // Custom Labels (DD-HAPI-001):
 // - Format: map[string][]string (subdomain → list of values)
 // - Keys are subdomains (e.g., "constraint", "team")
@@ -828,7 +828,7 @@ func (*IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntityApplica
 // Design Decision: DD-WORKFLOW-002 v2.2
 // - remediation_id is MANDATORY for audit trail correlation
 // - remediation_id is for CORRELATION ONLY - do NOT use for RCA or workflow matching
-// Design Decision: DD-RECOVERY-003
+// Design Decision: DD-HAPI-001
 // - enrichment_results contains DetectedLabels for workflow filtering.
 // Ref: #/components/schemas/IncidentRequest
 type IncidentRequest struct {

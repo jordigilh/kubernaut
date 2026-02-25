@@ -226,7 +226,7 @@ const (
 
 // WorkflowExecutionStatus defines the observed state
 // Simplified per ADR-044 - just tracks PipelineRun status
-// Enhanced per DD-CONTRACT-001 v1.3 - rich failure details for recovery flow
+// Enhanced per DD-CONTRACT-001 v1.3 - rich failure details for failure classification
 // Enhanced per DD-CONTRACT-001 v1.4 - resource locking and Skipped phase
 type WorkflowExecutionStatus struct {
 	// ObservedGeneration is the most recent generation observed by the controller.
@@ -268,8 +268,8 @@ type WorkflowExecutionStatus struct {
 
 	// ========================================
 	// ENHANCED FAILURE INFORMATION (v3.0)
-	// DD-CONTRACT-001 v1.3: Rich failure data for recovery flow
-	// Consumers: RO (for recovery AIAnalysis), Notification (for user alerts)
+	// DD-CONTRACT-001 v1.3: Rich failure data for failure classification
+	// Consumers: RO (for failure reporting), Notification (for user alerts)
 	// ========================================
 
 	// FailureDetails contains structured failure information
@@ -308,7 +308,7 @@ type WorkflowExecutionStatus struct {
 
 // ========================================
 // FAILURE DETAILS (v3.0)
-// DD-CONTRACT-001 v1.3: Structured failure information for recovery
+// DD-CONTRACT-001 v1.3: Structured failure classification
 // ========================================
 
 // FailureDetails contains structured failure classification information
@@ -325,7 +325,7 @@ type FailureDetails struct {
 	FailedStepName string `json:"failedStepName,omitempty"`
 
 	// Reason is a Kubernetes-style reason code
-	// Used for deterministic recovery decisions by RO
+	// Used for deterministic failure classification by RO
 	// +kubebuilder:validation:Enum=OOMKilled;DeadlineExceeded;Forbidden;ResourceExhausted;ConfigurationError;ImagePullBackOff;TaskFailed;Unknown
 	Reason string `json:"reason"`
 
@@ -346,7 +346,7 @@ type FailureDetails struct {
 
 	// ========================================
 	// NATURAL LANGUAGE SUMMARY
-	// For LLM recovery context and user notifications
+	// For failure reporting and user notifications
 	// ========================================
 
 	// NaturalLanguageSummary is a human/LLM-readable failure description

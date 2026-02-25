@@ -1,4 +1,7 @@
-# Recovery.py Refactoring Plan
+# [Deprecated - Issue #180] Recovery.py Refactoring Plan
+
+> **DEPRECATED**: Recovery flow removed in Issue #180. The `src/extensions/recovery/` module
+> and all associated endpoints have been deleted. This plan is retained for historical reference only.
 
 ## 📊 **Current State**
 

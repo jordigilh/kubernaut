@@ -18,7 +18,7 @@
 Incident Analysis Package
 
 Business Requirements: BR-HAPI-002 (Incident Analysis)
-Design Decision: DD-RECOVERY-003 (DetectedLabels for workflow filtering)
+Design Decision: DD-HAPI-001 (DetectedLabels for workflow filtering)
 
 Provides AI-powered Root Cause Analysis (RCA) and workflow selection for initial incidents.
 

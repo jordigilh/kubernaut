@@ -1,6 +1,6 @@
 # DetectedLabels
 
-Auto-detected cluster characteristics from SignalProcessing.  These labels are used for: 1. LLM context (natural language) - help LLM understand cluster environment 2. MCP workflow filtering - filter workflows to only compatible ones  Design Decision: DD-WORKFLOW-001 v2.2, DD-RECOVERY-003  Changes: - v2.1: Added `failedDetections` field to track which detections failed - v2.2: Removed `podSecurityLevel` (PSP deprecated, PSS is namespace-level)  Consumer logic: if field is in failedDetections, ignore its value
+Auto-detected cluster characteristics from SignalProcessing.  These labels are used for: 1. LLM context (natural language) - help LLM understand cluster environment 2. MCP workflow filtering - filter workflows to only compatible ones  Design Decision: DD-WORKFLOW-001 v2.2, DD-HAPI-001  Changes: - v2.1: Added `failedDetections` field to track which detections failed - v2.2: Removed `podSecurityLevel` (PSP deprecated, PSS is namespace-level)  Consumer logic: if field is in failedDetections, ignore its value
 
 ## Properties
 

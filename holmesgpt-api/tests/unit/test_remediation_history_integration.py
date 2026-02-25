@@ -16,7 +16,7 @@
 Tests for remediation history integration into prompt builders.
 
 BR-HAPI-016: Remediation history context for LLM prompt enrichment.
-DD-HAPI-016 v1.1: Remediation history section in incident and recovery analysis prompts.
+DD-HAPI-016 v1.1: Remediation history section in incident analysis prompts.
 
 Tests verify:
   - create_incident_investigation_prompt accepts remediation_history_context parameter
