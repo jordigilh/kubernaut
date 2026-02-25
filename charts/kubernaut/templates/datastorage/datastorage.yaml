@@ -62,6 +62,10 @@ spec:
         prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: data-storage-sa
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox:1.37
+          command: ['sh', '-c', 'until nc -z postgresql.kubernaut-system.svc.cluster.local 5432; do echo "waiting for postgresql..."; sleep 2; done']
       containers:
         - name: datastorage
           image: {{ include "kubernaut.image" (dict "service" "datastorage" "global" .Values.global "appVersion" .Chart.AppVersion) }}
