@@ -46,8 +46,6 @@ import (
 	dsmiddleware "github.com/jordigilh/kubernaut/pkg/datastorage/server/middleware"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
-
-	_ "github.com/jackc/pgx/v5/stdlib" // PostgreSQL driver (DD-010: Migrated from lib/pq)
 )
 
 // Server is the HTTP server for Data Storage Service
@@ -152,7 +150,9 @@ func NewServer(
 	}
 
 	// Connect to PostgreSQL using pgx driver (DD-010)
-	db, err := sql.Open("pgx", dbConnStr)
+	// Bug fix #200: Uses OpenPostgresDB which configures QueryExecModeExec
+	// to prevent stale prepared statement caches after schema migrations
+	db, err := OpenPostgresDB(dbConnStr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to PostgreSQL: %w", err)
 	}
