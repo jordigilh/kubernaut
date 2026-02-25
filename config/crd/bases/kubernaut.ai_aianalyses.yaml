@@ -24,7 +24,7 @@ spec:
       name: Confidence
       type: number
     - jsonPath: .status.approvalRequired
-      name: ApprovalRequired
+      name: Approval Required
       type: boolean
     - jsonPath: .status.conditions[?(@.type=="Ready")].reason
       name: Reason
