@@ -26,9 +26,23 @@ echo "=== Phase 2: Action ==="
 echo "Rolling back deployment/$TARGET_DEPLOYMENT to previous revision..."
 kubectl rollout undo "deployment/$TARGET_DEPLOYMENT" -n "$TARGET_NAMESPACE"
 
-echo "Waiting for rollout to complete..."
-kubectl rollout status "deployment/$TARGET_DEPLOYMENT" \
-  -n "$TARGET_NAMESPACE" --timeout=120s
+echo "Waiting for rollback replicas to become ready..."
+for i in $(seq 1 24); do
+  READY=$(kubectl get "deployment/$TARGET_DEPLOYMENT" -n "$TARGET_NAMESPACE" \
+    -o jsonpath='{.status.readyReplicas}')
+  DESIRED=$(kubectl get "deployment/$TARGET_DEPLOYMENT" -n "$TARGET_NAMESPACE" \
+    -o jsonpath='{.spec.replicas}')
+  if [ "${READY:-0}" = "$DESIRED" ] && [ -n "$DESIRED" ]; then
+    echo "Rollout complete: $READY/$DESIRED replicas ready"
+    break
+  fi
+  if [ "$i" -eq 24 ]; then
+    echo "ERROR: Rollout did not complete within 120s"
+    exit 1
+  fi
+  echo "Waiting... (${READY:-0}/$DESIRED ready)"
+  sleep 5
+done
 
 echo "=== Phase 3: Verify ==="
 NEW_REV=$(kubectl get "deployment/$TARGET_DEPLOYMENT" -n "$TARGET_NAMESPACE" \
