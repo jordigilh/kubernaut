@@ -3,7 +3,7 @@
 # Scenario #127: Node failure -> cordon + drain
 #
 # Prerequisites:
-#   - Kind cluster with worker node (kubernaut.ai/workload-node=true)
+#   - Kind cluster with worker node (kubernaut.ai/managed=true)
 #   - Prometheus with kube-state-metrics
 #   - Podman (to pause/unpause Kind node container)
 #
@@ -72,6 +72,6 @@ echo "    kubectl get nodes"
 echo "    kubectl get pods -n ${NAMESPACE} -o wide"
 echo ""
 echo "==> To restore the node after demo:"
-echo "    WORKER=\$(kubectl get nodes -l kubernaut.ai/workload-node=true -o name | head -1 | sed 's|node/||')"
+echo "    WORKER=\$(kubectl get nodes -l kubernaut.ai/managed=true -o name | head -1 | sed 's|node/||')"
 echo "    podman unpause \$WORKER"
 echo "    kubectl uncordon \$WORKER"

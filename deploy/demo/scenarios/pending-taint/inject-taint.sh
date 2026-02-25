@@ -2,10 +2,10 @@
 # Add a NoSchedule taint to the worker node to block pod scheduling
 set -euo pipefail
 
-WORKER_NODE=$(kubectl get nodes -l kubernaut.ai/workload-node=true -o name | head -1)
+WORKER_NODE=$(kubectl get nodes -l kubernaut.ai/managed=true -o name | head -1)
 
 if [ -z "$WORKER_NODE" ]; then
-  echo "ERROR: No worker node with label kubernaut.ai/workload-node=true found."
+  echo "ERROR: No worker node with label kubernaut.ai/managed=true found."
   echo "Ensure the Kind cluster was created with the multi-node config."
   exit 1
 fi

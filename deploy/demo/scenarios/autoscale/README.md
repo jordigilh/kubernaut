@@ -53,7 +53,7 @@ Feature: Cluster Autoscaling via Node Provisioning
       And the WE Job creates a ScaleRequest ConfigMap in kubernaut-system
       And the provisioner agent detects the request
       And the provisioner creates a new Kind node via podman + kubeadm join
-      And the provisioner labels the new node kubernaut.ai/workload-node=true
+      And the provisioner labels the new node kubernaut.ai/managed=true
       And the WE Job verifies the new node is Ready
       And previously-Pending pods schedule on the new node
       And EffectivenessAssessment confirms all pods are Running

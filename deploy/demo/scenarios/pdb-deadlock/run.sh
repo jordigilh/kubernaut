@@ -3,7 +3,7 @@
 # Scenario #124: Overly restrictive PDB blocks node drain -> relax PDB
 #
 # Prerequisites:
-#   - Kind cluster with worker node (kubernaut.ai/workload-node=true)
+#   - Kind cluster with worker node (kubernaut.ai/managed=true)
 #   - Prometheus with kube-state-metrics
 #
 # Usage: ./deploy/demo/scenarios/pdb-deadlock/run.sh
@@ -85,13 +85,13 @@ echo ""
 
 # Step 8: Post-maintenance -- uncordon worker and verify recovery
 echo "==> Step 8: Post-maintenance -- uncordoning worker node..."
-WORKER_NODE=$(kubectl get nodes -l kubernaut.ai/workload-node=true \
+WORKER_NODE=$(kubectl get nodes -l kubernaut.ai/managed=true \
   -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
 if [ -n "${WORKER_NODE}" ]; then
   kubectl uncordon "${WORKER_NODE}"
   echo "  Worker node ${WORKER_NODE} uncordoned."
 else
-  echo "  WARNING: No worker node found with label kubernaut.ai/workload-node=true"
+  echo "  WARNING: No worker node found with label kubernaut.ai/managed=true"
 fi
 
 echo "  Waiting for all pods to be ready (60s timeout)..."

@@ -41,7 +41,7 @@ while true; do
     kubectl wait --for=condition=Ready "node/$NEW_NODE" --timeout=120s
 
     echo "[provisioner] Labeling node as workload node..."
-    kubectl label node "$NEW_NODE" kubernaut.ai/workload-node=true
+    kubectl label node "$NEW_NODE" kubernaut.ai/managed=true
 
     kubectl patch cm scale-request -n kubernaut-system \
       --type=merge -p '{"data":{"status":"fulfilled","node_name":"'"$NEW_NODE"'"}}'

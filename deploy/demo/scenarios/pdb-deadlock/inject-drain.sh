@@ -9,10 +9,10 @@ set -euo pipefail
 
 NAMESPACE="demo-pdb"
 
-WORKER_NODE=$(kubectl get nodes -l kubernaut.ai/workload-node=true -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+WORKER_NODE=$(kubectl get nodes -l kubernaut.ai/managed=true -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
 
 if [ -z "$WORKER_NODE" ]; then
-  echo "ERROR: No worker node with label kubernaut.ai/workload-node=true found."
+  echo "ERROR: No worker node with label kubernaut.ai/managed=true found."
   echo "Ensure the Kind cluster was created with the multi-node config."
   exit 1
 fi

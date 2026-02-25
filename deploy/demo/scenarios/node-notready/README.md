@@ -14,7 +14,7 @@ existing workloads to healthy nodes.
 
 | Component | Requirement |
 |-----------|-------------|
-| Kind cluster | Multi-node with `kubernaut.ai/workload-node=true` label |
+| Kind cluster | Multi-node with `kubernaut.ai/managed=true` label |
 | Kubernaut services | Gateway, SP, AA, RO, WE, EM deployed |
 | LLM backend | Real LLM (not mock) via HAPI |
 | Prometheus | With kube-state-metrics |
@@ -30,7 +30,7 @@ existing workloads to healthy nodes.
 ## Cleanup
 
 ```bash
-WORKER=$(kubectl get nodes -l kubernaut.ai/workload-node=true -o name | head -1 | sed 's|node/||')
+WORKER=$(kubectl get nodes -l kubernaut.ai/managed=true -o name | head -1 | sed 's|node/||')
 podman unpause $WORKER
 kubectl uncordon $WORKER
 kubectl delete namespace demo-node

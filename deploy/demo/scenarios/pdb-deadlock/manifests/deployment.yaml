@@ -17,7 +17,7 @@ spec:
         app: payment-service
     spec:
       nodeSelector:
-        kubernaut.ai/workload-node: "true"
+        kubernaut.ai/managed: "true"
       tolerations:
       - key: node-role.kubernetes.io/control-plane
         effect: NoSchedule

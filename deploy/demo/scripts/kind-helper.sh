@@ -46,16 +46,16 @@ validate_topology() {
 
     if $needs_worker; then
         local worker_count
-        worker_count=$(kubectl get nodes -l kubernaut.ai/workload-node=true --no-headers 2>/dev/null | wc -l | tr -d ' ')
+        worker_count=$(kubectl get nodes -l kubernaut.ai/managed=true --no-headers 2>/dev/null | wc -l | tr -d ' ')
         if [ "$worker_count" -eq 0 ]; then
-            echo "WARNING: Scenario requires a worker node with label kubernaut.ai/workload-node=true"
+            echo "WARNING: Scenario requires a worker node with label kubernaut.ai/managed=true"
             echo "  Found 0 matching nodes. The scenario may not work correctly."
             echo ""
             echo "  Recreate the cluster with:"
             echo "    kind create cluster --name ${CLUSTER_NAME} --config ${config_path}"
             return 1
         fi
-        echo "  Topology OK: ${worker_count} worker node(s) with kubernaut.ai/workload-node=true"
+        echo "  Topology OK: ${worker_count} worker node(s) with kubernaut.ai/managed=true"
     else
         echo "  Topology OK: single-node cluster sufficient"
     fi

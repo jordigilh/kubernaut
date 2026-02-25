@@ -23,5 +23,5 @@ spec:
         description: >
           One or more pods in the batch-processor deployment are stuck in Pending
           state, likely due to a node taint preventing scheduling. The pods have
-          a nodeSelector for kubernaut.ai/workload-node=true but the matching
-          node has a NoSchedule taint that blocks scheduling.
+          a nodeSelector for kubernaut.ai/managed=true but the matching node
+          has a NoSchedule taint that blocks scheduling.
