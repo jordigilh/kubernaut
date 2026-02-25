@@ -27,11 +27,8 @@ import sys
 sys.path.insert(0, 'tests/clients')
 
 from holmesgpt_api_client import ApiClient, Configuration
-from holmesgpt_api_client.api.incidents_api import IncidentsApi
-from holmesgpt_api_client.api.recovery_analysis_api import RecoveryAnalysisApi
+from holmesgpt_api_client.api.incident_analysis_api import IncidentAnalysisApi
 from holmesgpt_api_client.models.incident_request import IncidentRequest
-from holmesgpt_api_client.models.recovery_request import RecoveryRequest
-from holmesgpt_api_client.models.previous_execution import PreviousExecution
 from holmesgpt_api_client.exceptions import ApiException"""
 
     content = content.replace(old_imports, new_imports)
@@ -51,30 +48,18 @@ from holmesgpt_api_client.exceptions import ApiException"""
 
 # Helper functions for OpenAPI client usage
 def create_incident_api(hapi_service_url):
-    """Create IncidentsApi instance"""
+    """Create IncidentAnalysisApi instance"""
     config = Configuration(host=hapi_service_url)
     client = ApiClient(configuration=config)
-    return IncidentsApi(client)
-
-def create_recovery_api(hapi_service_url):
-    """Create RecoveryAnalysisApi instance"""
-    config = Configuration(host=hapi_service_url)
-    client = ApiClient(configuration=config)
-    return RecoveryAnalysisApi(client)
+    return IncidentAnalysisApi(client)
 
 def dict_to_incident_request(data):
     """Convert dict to IncidentRequest model"""
     return IncidentRequest(**data)
 
-def dict_to_recovery_request(data):
-    """Convert dict to RecoveryRequest model"""
-    # Handle previous_execution conversion
-    if "previous_execution" in data and data["previous_execution"]:
-        data["previous_execution"] = PreviousExecution(**data["previous_execution"])
-    return RecoveryRequest(**data)
 '''
 
-    # Insert helpers after the sample_recovery_request fixture
+    # Insert helpers before first test class
     fixture_end = content.find('class TestMockModeIncidentIntegration:')
     if fixture_end > 0:
         content = content[:fixture_end] + helper_functions + '\n\n' + content[fixture_end:]
@@ -100,20 +85,7 @@ def dict_to_recovery_request(data):
 
     content = re.sub(incident_pattern, replace_incident, content)
 
-    # Step 5: Convert recovery endpoint calls
-    recovery_pattern = r'response = requests\.post\(\s*f"{hapi_service_url}/api/v1/recovery/analyze",\s*json=([^)]+)\s*\)'
-
-    def replace_recovery(match):
-        request_var = match.group(1).strip()
-        return f'''recovery_api = create_recovery_api(hapi_service_url)
-        recovery_request = dict_to_recovery_request({request_var})
-        response = recovery_api.recovery_analyze_endpoint_api_v1_recovery_analyze_post(
-            recovery_request=recovery_request
-        )'''
-
-    content = re.sub(recovery_pattern, replace_recovery, content)
-
-    # Step 6: Update assertions from response.status_code to direct field access
+    # Step 5: Update assertions from response.status_code to direct field access
     # Most assertions check response.status_code == 200, which becomes implicit with OpenAPI client
     # Some check response.json()["field"], which becomes response.field
 

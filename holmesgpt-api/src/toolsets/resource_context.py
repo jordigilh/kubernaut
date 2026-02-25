@@ -319,8 +319,8 @@ class GetResourceContextTool(Tool):
 class ResourceContextToolset(Toolset):
     """Toolset providing get_resource_context to the LLM.
 
-    ADR-055: Registered alongside WorkflowDiscoveryToolset in both
-    incident and recovery tool registries.
+    ADR-055: Registered alongside WorkflowDiscoveryToolset in the
+    incident tool registry.
     ADR-056 v1.4: Computes DetectedLabels for the RCA target and stores
     in session_state for downstream workflow discovery tools.
     """

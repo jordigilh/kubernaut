@@ -15,7 +15,7 @@ limitations under the License.
 """
 
 
-from src.extensions.recovery import _create_investigation_prompt
+from src.extensions.incident.prompt_builder import create_incident_investigation_prompt as _create_investigation_prompt
 
 
 class TestFivePhaseWorkflowBehavior:
@@ -39,8 +39,7 @@ class TestFivePhaseWorkflowBehavior:
             "resource_kind": "deployment",
             "resource_name": "payment-service",
             "signal_source": "prometheus-adapter",
-            "failure_context": {"error_message": "Container exceeded memory limit"},
-            "failed_action": {"type": "restart", "target": "pod"}
+            "error_message": "Container exceeded memory limit",
         }
         
         prompt = _create_investigation_prompt(request_data)
@@ -70,8 +69,7 @@ class TestFivePhaseWorkflowBehavior:
             "resource_kind": "deployment",
             "resource_name": "payment-service",
             "signal_source": "prometheus-adapter",
-            "failure_context": {"error_message": "Container exceeded memory limit"},
-            "failed_action": {"type": "restart", "target": "pod"}
+            "error_message": "Container exceeded memory limit",
         }
         
         prompt = _create_investigation_prompt(request_data)
@@ -95,8 +93,7 @@ class TestFivePhaseWorkflowBehavior:
             "resource_kind": "deployment",
             "resource_name": "payment-service",
             "signal_source": "prometheus-adapter",
-            "failure_context": {"error_message": "Container exceeded memory limit"},
-            "failed_action": {"type": "restart", "target": "pod"}
+            "error_message": "Container exceeded memory limit",
         }
         
         prompt = _create_investigation_prompt(request_data)
@@ -123,8 +120,7 @@ class TestFivePhaseWorkflowBehavior:
             "resource_kind": "deployment",
             "resource_name": "payment-service",
             "signal_source": "prometheus-adapter",
-            "failure_context": {"error_message": "Container exceeded memory limit"},
-            "failed_action": {"type": "restart", "target": "pod"}
+            "error_message": "Container exceeded memory limit",
         }
         
         prompt = _create_investigation_prompt(request_data)
@@ -145,8 +141,7 @@ class TestFivePhaseWorkflowBehavior:
             "resource_kind": "deployment",
             "resource_name": "payment-service",
             "signal_source": "prometheus-adapter",
-            "failure_context": {"error_message": "Container exceeded memory limit"},
-            "failed_action": {"type": "restart", "target": "pod"}
+            "error_message": "Container exceeded memory limit",
         }
         
         prompt = _create_investigation_prompt(request_data)
@@ -179,8 +174,7 @@ class TestFivePhaseWorkflowBehavior:
             "resource_kind": "deployment",
             "resource_name": "payment-service",
             "signal_source": "prometheus-adapter",
-            "failure_context": {"error_message": "Container exceeded memory limit"},
-            "failed_action": {"type": "restart", "target": "pod"}
+            "error_message": "Container exceeded memory limit",
         }
         
         prompt = _create_investigation_prompt(request_data)
@@ -203,8 +197,7 @@ class TestFivePhaseWorkflowBehavior:
             "resource_kind": "deployment",
             "resource_name": "payment-service",
             "signal_source": "prometheus-adapter",
-            "failure_context": {"error_message": "Container exceeded memory limit"},
-            "failed_action": {"type": "restart", "target": "pod"}
+            "error_message": "Container exceeded memory limit",
         }
         
         prompt = _create_investigation_prompt(request_data)
@@ -227,8 +220,7 @@ class TestFivePhaseWorkflowBehavior:
             "resource_kind": "deployment",
             "resource_name": "payment-service",
             "signal_source": "prometheus-adapter",
-            "failure_context": {"error_message": "Container exceeded memory limit"},
-            "failed_action": {"type": "restart", "target": "pod"}
+            "error_message": "Container exceeded memory limit",
         }
         
         prompt = _create_investigation_prompt(request_data)

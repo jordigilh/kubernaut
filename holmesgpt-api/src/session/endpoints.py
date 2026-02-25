@@ -18,9 +18,9 @@
 Shared Session Endpoint Helpers (BR-AA-HAPI-064)
 
 Provides reusable FastAPI endpoint logic for session status polling and result retrieval.
-Used by both incident and recovery routers to avoid code duplication.
+Used by the incident router.
 
-REFACTOR: Extracted from incident/endpoint.py and recovery/endpoint.py where
+REFACTOR: Extracted from incident/endpoint.py where
 the session status and result GET handlers were 100% identical.
 """
 

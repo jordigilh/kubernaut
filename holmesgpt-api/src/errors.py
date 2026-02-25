@@ -65,7 +65,7 @@ class HTTPError(BaseModel):
                 "title": "Bad Request",
                 "detail": "Missing required field: 'namespace'",
                 "status": 400,
-                "instance": "/api/v1/recovery/analyze",
+                "instance": "/api/v1/incident/analyze",
                 "request_id": "abc-123-def-456"
             }
         }
@@ -76,7 +76,7 @@ RFC7807Error = HTTPError
 
 
 # Shared error responses for OpenAPI spec (application/problem+json)
-# Used by incident and recovery endpoints to ensure consistent error schema
+# Used by incident endpoint to ensure consistent error schema
 # Authority: BR-HAPI-200 (RFC 7807 Error Response Standard), DD-AUTH-014 (Middleware-Based SAR Authentication)
 PROBLEM_JSON_ERROR_RESPONSES = {
     401: {

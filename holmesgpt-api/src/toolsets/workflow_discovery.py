@@ -298,7 +298,7 @@ def should_include_detected_labels(
 # SHARED CONTEXT FOR ALL DISCOVERY TOOLS
 # ========================================
 # Signal context filters are set once at toolset creation time
-# (from the incident/recovery signal) and propagated to all three
+# (from the incident signal) and propagated to all three
 # discovery steps as query parameters.
 # The LLM does NOT provide these — they come from the signal context.
 

@@ -59,7 +59,7 @@ def test_rfc7807_error_model_structure():
         title="Bad Request",
         detail="Invalid JSON in request body",
         status=400,
-        instance="/api/v1/recovery/analyze",
+        instance="/api/v1/incident/analyze",
         request_id="test-request-123"
     )
 
@@ -68,7 +68,7 @@ def test_rfc7807_error_model_structure():
     assert error.title == "Bad Request"
     assert error.detail == "Invalid JSON in request body"
     assert error.status == 400
-    assert error.instance == "/api/v1/recovery/analyze"
+    assert error.instance == "/api/v1/incident/analyze"
     assert error.request_id == "test-request-123"
 
     # Verify model can be serialized to dict
@@ -133,7 +133,7 @@ def test_bad_request_400_error():
     error = create_rfc7807_error(
         status_code=400,
         detail="Missing required field: 'namespace'",
-        instance="/api/v1/recovery/analyze",
+        instance="/api/v1/incident/analyze",
         request_id="req-400-test"
     )
 
@@ -141,7 +141,7 @@ def test_bad_request_400_error():
     assert error.type == "https://kubernaut.ai/problems/validation-error"
     assert error.title == "Bad Request"
     assert error.detail == "Missing required field: 'namespace'"
-    assert error.instance == "/api/v1/recovery/analyze"
+    assert error.instance == "/api/v1/incident/analyze"
     assert error.request_id == "req-400-test"
 
 
@@ -165,7 +165,7 @@ def test_unauthorized_401_error():
     error = create_rfc7807_error(
         status_code=401,
         detail="Invalid or missing authentication token",
-        instance="/api/v1/recovery/analyze",
+        instance="/api/v1/incident/analyze",
         request_id="req-401-test"
     )
 
@@ -195,7 +195,7 @@ def test_not_found_404_error():
     error = create_rfc7807_error(
         status_code=404,
         detail="Analysis ID 'abc-123' not found",
-        instance="/api/v1/recovery/status/abc-123",
+        instance="/api/v1/incident/session/abc-123",
         request_id="req-404-test"
     )
 
@@ -225,7 +225,7 @@ def test_internal_server_error_500():
     error = create_rfc7807_error(
         status_code=500,
         detail="Unexpected error during LLM analysis",
-        instance="/api/v1/recovery/analyze",
+        instance="/api/v1/incident/analyze",
         request_id="req-500-test"
     )
 
@@ -256,7 +256,7 @@ def test_service_unavailable_503_error():
     error = create_rfc7807_error(
         status_code=503,
         detail="Service is shutting down gracefully",
-        instance="/api/v1/recovery/analyze",
+        instance="/api/v1/incident/analyze",
         request_id="req-503-test"
     )
 

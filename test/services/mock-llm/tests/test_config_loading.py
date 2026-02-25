@@ -27,6 +27,16 @@ class TestFileBasedConfigLoading:
         MOCK_SCENARIOS["oomkilled"].workflow_id = "21053597-2865-572b-89bf-de49b5b685da"
         MOCK_SCENARIOS["crashloop"].workflow_id = "30152a85-3975-682c-8ae8-cf50b6c796eb"
 
+    def _minimal_complete_config(self):
+        """Config with all workflow names required by validation (DD-TEST-011)."""
+        return {
+            'oomkill-increase-memory-v1:production': 'test-uuid-123',
+            'crashloop-config-fix-v1:production': 'test-uuid-456',
+            'node-drain-reboot-v1:production': 'test-uuid-789',
+            'test-signal-handler-v1:test': 'test-uuid-abc',
+            'generic-restart-v1:production': 'test-uuid-def',
+        }
+
     def test_load_scenarios_from_valid_yaml_file(self):
         """
         Test loading scenarios from a valid YAML configuration file.
@@ -36,14 +46,9 @@ class TestFileBasedConfigLoading:
         - Scenarios are updated with new UUIDs
         - Function returns True on success
         """
-        # Create temp config file
+        # Create temp config file (must include all workflow names for validation)
         with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
-            config = {
-                'scenarios': {
-                    'oomkill-increase-memory-v1:production': 'test-uuid-123',
-                    'crashloop-config-fix-v1:production': 'test-uuid-456',
-                }
-            }
+            config = {'scenarios': self._minimal_complete_config()}
             yaml.dump(config, f)
             config_path = f.name
 
@@ -76,7 +81,9 @@ class TestFileBasedConfigLoading:
                 'scenarios': {
                     'oomkill-increase-memory-v1:production': 'prod-uuid-123',
                     'crashloop-config-fix-v1:production': 'prod-uuid-456',
-                    'oomkill-increase-memory-v1:test': 'test-uuid-789',
+                    'node-drain-reboot-v1:production': 'prod-uuid-aaa',
+                    'test-signal-handler-v1:test': 'test-uuid-bbb',
+                    'generic-restart-v1:production': 'prod-uuid-ccc',
                 }
             }
             yaml.dump(config, f)
@@ -86,7 +93,7 @@ class TestFileBasedConfigLoading:
             result = load_scenarios_from_file(config_path)
             assert result is True
 
-            # Production scenario should use production UUID
+            # Production scenarios use production UUIDs
             assert MOCK_SCENARIOS['oomkilled'].workflow_id == 'prod-uuid-123'
             assert MOCK_SCENARIOS['crashloop'].workflow_id == 'prod-uuid-456'
         finally:
@@ -193,6 +200,9 @@ class TestFileBasedConfigLoading:
                     'oomkill-increase-memory-v1:production': 'valid-uuid-123',
                     'invalid-key-without-env': 'should-be-skipped',  # Invalid format
                     'crashloop-config-fix-v1:production': 'valid-uuid-456',
+                    'node-drain-reboot-v1:production': 'valid-uuid-789',
+                    'test-signal-handler-v1:test': 'valid-uuid-abc',
+                    'generic-restart-v1:production': 'valid-uuid-def',
                 }
             }
             yaml.dump(config, f)
@@ -212,20 +222,17 @@ class TestFileBasedConfigLoading:
 
     def test_load_scenarios_partial_match(self):
         """
-        Test loading when config file only has subset of scenarios.
+        Test loading when config file has all required workflows.
+        Scenarios sharing workflow_name (e.g. oomkilled + oomkilled_predictive) get same UUID.
 
         Validates:
-        - Matched scenarios are updated
-        - Unmatched scenarios retain defaults
-        - Function returns True (partial success is success)
+        - All scenarios with workflow_name get UUIDs (DD-TEST-011 validation)
+        - Multiple scenarios can share same workflow_name and receive same UUID
         """
         with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
-            config = {
-                'scenarios': {
-                    'oomkill-increase-memory-v1:production': 'partial-uuid-123',
-                    # crashloop not included
-                }
-            }
+            scenarios = self._minimal_complete_config()
+            scenarios['oomkill-increase-memory-v1:production'] = 'partial-uuid-123'
+            config = {'scenarios': scenarios}
             yaml.dump(config, f)
             config_path = f.name
 
@@ -233,11 +240,12 @@ class TestFileBasedConfigLoading:
             result = load_scenarios_from_file(config_path)
             assert result is True
 
-            # Matched scenario updated
+            # oomkilled and oomkilled_predictive share workflow_name, both get same UUID
             assert MOCK_SCENARIOS['oomkilled'].workflow_id == 'partial-uuid-123'
+            assert MOCK_SCENARIOS['oomkilled_predictive'].workflow_id == 'partial-uuid-123'
 
-            # Unmatched scenario retains default
-            assert MOCK_SCENARIOS['crashloop'].workflow_id == "30152a85-3975-682c-8ae8-cf50b6c796eb"
+            # crashloop gets its own UUID
+            assert MOCK_SCENARIOS['crashloop'].workflow_id == 'test-uuid-456'
         finally:
             os.unlink(config_path)
 
@@ -257,7 +265,6 @@ class TestFileBasedConfigLoading:
                     'oomkill-increase-memory-v1:production': '42b90a37-0d1b-5561-911a-2939ed9e1c30',
                     'crashloop-config-fix-v1:production': '5e8f2a1b-3c7d-4e0f-9a6b-1d2c3e4f5a6b',
                     'node-drain-reboot-v1:production': '6f9a3b2c-4d8e-5f1a-0b7c-2e3f4a5b6c7d',
-                    'memory-optimize-v1:production': '7a0b4c3d-5e9f-6a2b-1c8d-3e4f5a6b7c8d',
                     'generic-restart-v1:production': '8b1c5d4e-6f0a-7b3c-2d9e-4f5a6b7c8d9e',
                     # Test workflows
                     'test-signal-handler-v1:test': 'test-uuid-e2e-789',
@@ -274,7 +281,6 @@ class TestFileBasedConfigLoading:
             assert MOCK_SCENARIOS['oomkilled'].workflow_id == '42b90a37-0d1b-5561-911a-2939ed9e1c30'
             assert MOCK_SCENARIOS['crashloop'].workflow_id == '5e8f2a1b-3c7d-4e0f-9a6b-1d2c3e4f5a6b'
             assert MOCK_SCENARIOS['node_not_ready'].workflow_id == '6f9a3b2c-4d8e-5f1a-0b7c-2e3f4a5b6c7d'
-            assert MOCK_SCENARIOS['recovery'].workflow_id == '7a0b4c3d-5e9f-6a2b-1c8d-3e4f5a6b7c8d'
             assert MOCK_SCENARIOS['low_confidence'].workflow_id == '8b1c5d4e-6f0a-7b3c-2d9e-4f5a6b7c8d9e'
         finally:
             os.unlink(config_path)
@@ -297,11 +303,15 @@ class TestConfigFileIntegration:
         config_path = os.path.join(config_dir, "scenarios.yaml")
 
         try:
-            # Write config (simulating kubectl apply)
+            # Write config (simulating kubectl apply) - full config required by DD-TEST-011
             with open(config_path, 'w') as f:
                 config = {
                     'scenarios': {
                         'oomkill-increase-memory-v1:production': 'configmap-uuid-123',
+                        'crashloop-config-fix-v1:production': 'configmap-uuid-456',
+                        'node-drain-reboot-v1:production': 'configmap-uuid-789',
+                        'test-signal-handler-v1:test': 'configmap-uuid-abc',
+                        'generic-restart-v1:production': 'configmap-uuid-def',
                     }
                 }
                 yaml.dump(config, f)
@@ -328,6 +338,10 @@ class TestConfigFileIntegration:
             config = {
                 'scenarios': {
                     'oomkill-increase-memory-v1:production': 'integration-uuid-789',
+                    'crashloop-config-fix-v1:production': 'integration-uuid-456',
+                    'node-drain-reboot-v1:production': 'integration-uuid-aaa',
+                    'test-signal-handler-v1:test': 'integration-uuid-bbb',
+                    'generic-restart-v1:production': 'integration-uuid-ccc',
                 }
             }
             yaml.dump(config, f)

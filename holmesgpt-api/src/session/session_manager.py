@@ -74,7 +74,7 @@ class SessionManager:
         BR-AA-HAPI-064.1: Returns UUID immediately, stores session as "pending".
 
         Args:
-            request_type: "incident" or "recovery"
+            request_type: "incident"
             request_data: The original request payload
 
         Returns:
@@ -125,7 +125,7 @@ class SessionManager:
             session_id: UUID of the session
 
         Returns:
-            dict: The full IncidentResponse or RecoveryResponse
+            dict: The full IncidentResponse
 
         Raises:
             SessionResultNotReady: If session is not in "completed" status

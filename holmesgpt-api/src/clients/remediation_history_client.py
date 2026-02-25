@@ -160,17 +160,17 @@ def fetch_remediation_history_for_request(
     request_data: Dict[str, Any],
     current_spec_hash: str,
 ) -> Optional[Dict[str, Any]]:
-    """Convenience function to fetch remediation history for an incident/recovery request.
+    """Convenience function to fetch remediation history for an incident request.
 
     Extracts resource_kind, resource_name, resource_namespace from request_data
-    and delegates to query_remediation_history. Used by analyze_incident and
-    analyze_recovery to wire remediation history into prompt construction.
+    and delegates to query_remediation_history. Used by analyze_incident to
+    wire remediation history into prompt construction.
 
     BR-HAPI-016: Remediation history context for LLM prompt enrichment.
 
     Args:
         api: RemediationHistoryAPIApi instance, or None if DS not configured.
-        request_data: Incident or recovery request data dict containing
+        request_data: Incident request data dict containing
             resource_kind, resource_name, resource_namespace.
         current_spec_hash: SHA-256 canonical hash of the current target resource
             spec. Empty string means spec hash is unavailable (skip query).

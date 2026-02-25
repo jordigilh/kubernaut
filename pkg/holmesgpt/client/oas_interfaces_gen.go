@@ -12,15 +12,3 @@ type IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetRes inte
 type IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRes interface {
 	incidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRes()
 }
-
-type RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes interface {
-	recoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes()
-}
-
-type RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetRes interface {
-	recoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetRes()
-}
-
-type RecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGetRes interface {
-	recoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGetRes()
-}

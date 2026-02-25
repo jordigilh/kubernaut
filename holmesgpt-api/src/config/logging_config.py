@@ -104,7 +104,6 @@ def setup_logging(app_config: Optional[AppConfig] = None) -> None:
     holmesgpt_modules = [
         "src.extensions.llm_config",
         "src.extensions.incident",
-        "src.extensions.recovery",
         "src.toolsets.workflow_discovery",
         "src.config",
         "src.auth",        # Authentication/authorization (DD-AUTH-014)

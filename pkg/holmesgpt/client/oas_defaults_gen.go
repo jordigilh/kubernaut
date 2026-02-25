@@ -29,35 +29,3 @@ func (s *IncidentResponse) setDefaults() {
 		s.NeedsHumanReview.SetTo(val)
 	}
 }
-
-// setDefaults set default value of fields.
-func (s *RecoveryRequest) setDefaults() {
-	{
-		val := bool(false)
-		s.IsRecoveryAttempt.SetTo(val)
-	}
-	{
-		val := string("unknown")
-		s.Environment.SetTo(val)
-	}
-	{
-		val := string("P2")
-		s.Priority.SetTo(val)
-	}
-	{
-		val := string("medium")
-		s.RiskTolerance.SetTo(val)
-	}
-	{
-		val := string("standard")
-		s.BusinessCategory.SetTo(val)
-	}
-}
-
-// setDefaults set default value of fields.
-func (s *RecoveryResponse) setDefaults() {
-	{
-		val := bool(false)
-		s.NeedsHumanReview.SetTo(val)
-	}
-}

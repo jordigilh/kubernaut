@@ -23,7 +23,7 @@ Design Decisions:
   - ADR-038: Async Buffered Audit Ingestion
 
 Provides centralized initialization of BufferedAuditStore singleton
-to avoid duplication across incident.py, recovery.py, and postexec.py.
+to avoid duplication across incident.py and postexec.py.
 
 Per ADR-032 §2: Audit is MANDATORY for LLM interactions (P1 service).
 Service MUST crash if audit store cannot be initialized.

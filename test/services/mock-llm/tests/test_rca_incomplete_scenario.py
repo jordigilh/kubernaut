@@ -72,7 +72,9 @@ class TestRCAIncompleteScenario:
         """Verify rca_incomplete has parameters (workflow is selected, needs parameters)."""
         scenario = MOCK_SCENARIOS["rca_incomplete"]
         assert scenario.parameters != {}, "rca_incomplete should have parameters (workflow selected)"
-        assert "ACTION" in scenario.parameters, "rca_incomplete should have ACTION parameter"
+        # generic-restart-v1 uses NAMESPACE and POD_NAME (BR-HAPI-191)
+        assert "NAMESPACE" in scenario.parameters, "rca_incomplete should have NAMESPACE parameter"
+        assert "POD_NAME" in scenario.parameters, "rca_incomplete should have POD_NAME parameter"
 
     def test_rca_incomplete_rca_context(self):
         """Verify rca_incomplete includes RCA context (even though affectedResource won't be in response)."""
@@ -95,17 +97,19 @@ class TestRCAIncompleteIntegrationPattern:
     """Tests for how rca_incomplete scenario integrates with test suite."""
 
     def test_rca_incomplete_scenario_count(self):
-        """Verify we have the expected number of scenarios (9 total including rca_incomplete)."""
+        """Verify we have the expected number of scenarios (11 total including rca_incomplete)."""
         expected_scenarios = {
             "oomkilled",
             "crashloop",
             "node_not_ready",
-            "recovery",
             "test_signal",
             "no_workflow_found",
             "low_confidence",
             "problem_resolved",
-            "rca_incomplete"  # NEW: BR-HAPI-212
+            "rca_incomplete",  # BR-HAPI-212
+            "max_retries_exhausted",
+            "oomkilled_predictive",
+            "predictive_no_action",
         }
 
         actual_scenarios = set(MOCK_SCENARIOS.keys())

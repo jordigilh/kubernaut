@@ -61,19 +61,6 @@ def sample_incident_request_data():
     }
 
 
-@pytest.fixture
-def sample_recovery_request_data():
-    """Minimal recovery request data for session creation."""
-    return {
-        "incident_id": "test-recovery-001",
-        "remediation_id": "rem-recovery-session-001",
-        "signal_name": "OOMKilled",
-        "severity": "high",
-        "is_recovery_attempt": True,
-        "recovery_attempt_number": 1,
-    }
-
-
 # ========================================
 # 2.1 SessionManager Core
 # ========================================

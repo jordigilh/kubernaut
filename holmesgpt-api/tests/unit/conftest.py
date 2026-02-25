@@ -155,42 +155,6 @@ def mock_llm_mode():
 
 
 @pytest.fixture
-def mock_analyze_recovery():
-    """
-    Mock fixture for analyze_recovery function in unit tests.
-
-    Recovery endpoint tests need this to avoid real LLM calls.
-    Returns a mock that simulates successful recovery analysis.
-    """
-    from unittest.mock import AsyncMock, patch
-
-    mock_response = {
-        "incident_id": "test-inc-001",
-        "can_recover": True,
-        "strategies": [
-            {
-                "action_type": "scale_horizontal",
-                "confidence": 0.85,
-                "rationale": "Scale out to handle increased load",
-                "estimated_risk": "low"
-            }
-        ],
-        "primary_recommendation": "scale_horizontal",
-        "analysis_confidence": 0.85,
-        "needs_human_review": False,
-        "human_review_reason": None,
-        "warnings": [],
-        "metadata": {
-            "analysis_time_ms": 1500
-        }
-    }
-
-    with patch('src.extensions.recovery.endpoint.analyze_recovery', new_callable=AsyncMock) as mock:
-        mock.return_value = mock_response
-        yield mock
-
-
-@pytest.fixture
 def client():
     """Create authenticated FastAPI test client for unit tests with mock auth"""
     from fastapi.testclient import TestClient

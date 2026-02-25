@@ -55,7 +55,7 @@ SLO: Success rate > 95%
 
 METRIC_NAME_INVESTIGATIONS_DURATION = 'holmesgpt_api_investigations_duration_seconds'
 """
-Time spent processing investigation requests (incident + recovery).
+Time spent processing investigation requests (incident).
 
 Business Requirement: BR-HAPI-011
 Type: Histogram

@@ -94,30 +94,3 @@ class TestSDKErrorHandling:
         response = client.get("/health")
         assert response.status_code == 200
 
-
-@pytest.mark.integration
-class TestEndToEndFlow:
-    """End-to-end integration tests"""
-
-    def test_recovery_endpoint_end_to_end(self, client, sample_recovery_request, mock_analyze_recovery):
-        """
-        Business Requirement: Complete recovery flow (async session pattern)
-        Expected: Request flows through all layers successfully via submit/poll/result
-        BR-AA-HAPI-064: Async-first endpoints
-        """
-        # Submit (202)
-        submit_resp = client.post("/api/v1/recovery/analyze", json=sample_recovery_request)
-        assert submit_resp.status_code == 202
-        session_id = submit_resp.json()["session_id"]
-
-        # Get result (200) -- BackgroundTasks run synchronously in TestClient
-        result_resp = client.get(f"/api/v1/recovery/session/{session_id}/result")
-        assert result_resp.status_code == 200
-        data = result_resp.json()
-
-        # Verify response structure
-        assert "incident_id" in data
-        assert "can_recover" in data
-        assert "strategies" in data
-        assert "analysis_confidence" in data
-

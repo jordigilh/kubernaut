@@ -99,39 +99,6 @@ MINIMAL_REQUEST = {
     "error_message": "CPU usage at 95%",
 }
 
-MINIMAL_RECOVERY_REQUEST = {
-    "signal_name": "HighCPULoad",
-    "severity": "critical",
-    "resource_namespace": "production",
-    "resource_kind": "Deployment",
-    "resource_name": "payment-api",
-    "environment": "production",
-    "error_message": "CPU usage at 95%",
-    "is_recovery_attempt": True,
-    "recovery_attempt_number": 2,
-    "previous_execution": {
-        "original_rca": {
-            "summary": "CPU spike due to load",
-            "signal_name": "HighCPULoad",
-            "severity": "critical",
-            "contributing_factors": ["high_traffic"],
-        },
-        "selected_workflow": {
-            "workflow_id": "scale-up-v1",
-            "version": "1.0.0",
-            "execution_bundle": "kubernaut/scale-up:1.0",
-            "rationale": "Scale up replicas to handle load",
-        },
-        "failure": {
-            "reason": "BackoffLimitExceeded",
-            "message": "Job has reached the specified backoff limit",
-            "failed_step_index": 0,
-            "failed_step_name": "scale-replicas",
-        },
-    },
-}
-
-
 # ============================================================================
 # 3.1 Client Factory Tests
 # ============================================================================
@@ -316,16 +283,3 @@ class TestPromptWiring:
             "spec_drift score 0.0 should not be presented as 'poor' effectiveness"
         )
 
-    def test_recovery_prompt_with_remediation_history(self):
-        """IT-HAPI-016-007: Recovery prompt includes remediation history section."""
-        from extensions.recovery.prompt_builder import _create_recovery_investigation_prompt
-
-        prompt = _create_recovery_investigation_prompt(
-            MINIMAL_RECOVERY_REQUEST,
-            remediation_history_context=FULL_CONTEXT,
-        )
-
-        prompt_upper = prompt.upper()
-        assert "REMEDIATION HISTORY" in prompt_upper
-        assert "rr-full-001" in prompt
-        assert "ScaleUp" in prompt or "scaleup" in prompt.lower()
