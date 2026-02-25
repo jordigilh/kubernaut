@@ -2,9 +2,9 @@
 # DD-WORKFLOW-001 v2.2: Approval determination based on environment, data quality, and confidence
 # Business Requirements: BR-AI-011 (policy evaluation), BR-AI-013 (approval scenarios), BR-AI-014 (graceful degradation)
 # Issue #98: Refactored from exclusion chains to scored risk factors
-# Confidence-based auto-approval: High-confidence (>= 0.9) production analyses
-# auto-approve unless critical safety conditions are present (missing affected_resource,
-# sensitive resources).
+# Issue #197: Confidence-based auto-approval for high-confidence (>= 0.9) production
+# analyses. Auto-approves unless critical safety conditions are present (missing
+# affected_resource, sensitive resources).
 
 package aianalysis.approval
 
