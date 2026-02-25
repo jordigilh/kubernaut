@@ -24,7 +24,7 @@ limitations under the License.
 //
 // Test Strategy: Two integration test categories:
 // 1. **Envtest-only tests** (this file): Use mock HAPI for fast controller testing
-// 2. **Real service tests** (recovery_integration_test.go): Use real HAPI (auto-started)
+// 2. **Real service tests**: Use real HAPI (auto-started)
 //
 // Defense-in-Depth (per 03-testing-strategy.mdc):
 // - Unit tests (70%+): Mock K8s client + mock HAPI

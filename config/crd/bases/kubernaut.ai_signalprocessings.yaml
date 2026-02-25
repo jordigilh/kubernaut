@@ -473,25 +473,6 @@ spec:
                 - priority
                 - source
                 type: object
-              recoveryContext:
-                description: |-
-                  RecoveryContext holds context for recovery attempts.
-                  DD-001: Recovery Context Enrichment
-                properties:
-                  attemptCount:
-                    description: Number of previous attempts
-                    format: int32
-                    type: integer
-                  lastFailureReason:
-                    description: Last failure reason
-                    type: string
-                  previousRemediationId:
-                    description: Previous remediation attempt ID
-                    type: string
-                  timeSinceFirstFailure:
-                    description: Time since first failure
-                    type: string
-                type: object
               severity:
                 description: |-
                   Severity determination (DD-SEVERITY-001 v1.1)

@@ -705,14 +705,7 @@ type RemediationRequestStatus struct {
 	// +optional
 	LastModifiedAt *metav1.Time `json:"lastModifiedAt,omitempty"`
 
-	// ========================================
-	// RECOVERY TRACKING
-	// ========================================
-
-	// RecoveryAttempts tracks the number of recovery attempts for this remediation
-	RecoveryAttempts int `json:"recoveryAttempts,omitempty"`
-
-	// CurrentProcessingRef references the current SignalProcessing CRD (may differ during recovery)
+	// CurrentProcessingRef references the current SignalProcessing CRD
 	CurrentProcessingRef *corev1.ObjectReference `json:"currentProcessingRef,omitempty"`
 
 	// ========================================

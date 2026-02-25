@@ -403,8 +403,8 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 
 				// Verify endpoint is valid
 				endpoint := payload.Endpoint
-				Expect(endpoint).To(Or(Equal("/api/v1/incident/analyze"), Equal("/api/v1/recovery/investigate")),
-					"Endpoint should be incident/analyze or recovery/investigate")
+				Expect(endpoint).To(Equal("/api/v1/incident/analyze"),
+					"Endpoint should be incident/analyze")
 
 				// Verify HTTP status is 2xx for successful calls
 				statusCode := payload.HTTPStatusCode

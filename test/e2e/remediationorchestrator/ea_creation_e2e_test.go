@@ -236,7 +236,7 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 			"SignalProcessingReady", "SignalProcessingComplete",
 			"AIAnalysisReady", "AIAnalysisComplete",
 			"WorkflowExecutionReady", "WorkflowExecutionComplete",
-			"RecoveryComplete", "Ready",
+			"Ready",
 			"NotificationDelivered",
 		}
 		for _, condType := range expectedConditions {

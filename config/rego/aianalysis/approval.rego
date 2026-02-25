@@ -83,25 +83,9 @@ not_production if {
     input.environment == "test"
 }
 
-# Recovery attempt detection
-is_recovery_attempt if {
-    input.is_recovery_attempt == true
-}
-
-# Multiple recovery attempts (3+) = higher risk
-is_multiple_recovery if {
-    is_recovery_attempt
-    input.recovery_attempt_number >= 3
-}
-
 # ========================================
 # APPROVAL RULES (unchanged — independent boolean checks)
 # ========================================
-
-# Multiple recovery attempts require approval (any environment)
-require_approval if {
-    is_multiple_recovery
-}
 
 # BR-AI-085-005: Default-deny when affected_resource is missing (ADR-055)
 require_approval if {
@@ -143,11 +127,6 @@ require_approval if {
 # Each risk factor independently contributes a scored entry.
 # The highest-scored reason wins. No exclusion chains needed —
 # adding a new factor is a single rule addition.
-
-risk_factors contains {"score": 100, "reason": msg} if {
-    is_multiple_recovery
-    msg := sprintf("Multiple recovery attempts (%d) - human approval required", [input.recovery_attempt_number])
-}
 
 risk_factors contains {"score": 90, "reason": "Missing affected resource - cannot determine remediation target (BR-AI-085-005)"} if {
     not has_affected_resource

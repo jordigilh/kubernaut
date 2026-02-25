@@ -56,9 +56,6 @@ const (
 	// ConditionWorkflowExecutionComplete indicates WE completed/failed
 	ConditionWorkflowExecutionComplete = "WorkflowExecutionComplete"
 
-	// ConditionRecoveryComplete indicates terminal phase reached
-	ConditionRecoveryComplete = "RecoveryComplete"
-
 	// ConditionNotificationDelivered indicates notification delivery outcome
 	ConditionNotificationDelivered = "NotificationDelivered"
 )
@@ -100,15 +97,6 @@ const (
 	ReasonWorkflowFailed                  = "WorkflowFailed"
 	ReasonWorkflowTimeout                 = "WorkflowTimeout"
 	ReasonApprovalPending                 = "ApprovalPending"
-)
-
-// Recovery reasons
-const (
-	ReasonRecoverySucceeded            = "RecoverySucceeded"
-	ReasonRecoveryFailed               = "RecoveryFailed"
-	ReasonMaxAttemptsReached           = "MaxAttemptsReached"
-	ReasonBlockedByConsecutiveFailures = "BlockedByConsecutiveFailures"
-	ReasonInProgress                   = "InProgress"
 )
 
 // Notification delivery reasons
@@ -243,15 +231,6 @@ func SetWorkflowExecutionComplete(rr *remediationv1.RemediationRequest, succeede
 		status = metav1.ConditionFalse
 	}
 	SetCondition(rr, ConditionWorkflowExecutionComplete, status, reason, message, m)
-}
-
-// SetRecoveryComplete sets the RecoveryComplete condition
-func SetRecoveryComplete(rr *remediationv1.RemediationRequest, succeeded bool, reason, message string, m *rometrics.Metrics) {
-	status := metav1.ConditionTrue
-	if !succeeded {
-		status = metav1.ConditionFalse
-	}
-	SetCondition(rr, ConditionRecoveryComplete, status, reason, message, m)
 }
 
 // SetNotificationDelivered sets the NotificationDelivered condition

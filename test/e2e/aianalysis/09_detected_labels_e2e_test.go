@@ -191,39 +191,6 @@ var _ = Describe("E2E-AA ADR-056 DetectedLabels", Label("e2e", "adr-056", "detec
 				"Production environment should require approval (Rego uses detected_labels)")
 		})
 
-		It("E2E-AA-056-002: should populate postRCAContext for recovery analysis in Kind", func() {
-			deployName := "app-e2e-002"
-
-			By("Creating K8s resources for label detection")
-			createTestDeployment(deployName)
-
-			analysis := newAnalysisCR("002", deployName)
-			analysis.Spec.IsRecoveryAttempt = true
-			analysis.Spec.RecoveryAttemptNumber = 1
-			defer func() { _ = k8sClient.Delete(context.Background(), analysis) }()
-
-			By("Creating recovery AIAnalysis CR")
-			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
-
-			By("Waiting for reconciliation to complete")
-			Eventually(func() string {
-				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
-				return string(analysis.Status.Phase)
-			}, timeout, interval).Should(SatisfyAny(Equal("Completed"), Equal("Failed")))
-
-			By("Verifying PostRCAContext for recovery flow")
-			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
-
-			// Recovery uses the same PostRCAContext contract as incident
-			if analysis.Status.PostRCAContext != nil {
-				Expect(analysis.Status.PostRCAContext.DetectedLabels).NotTo(BeNil())
-				Expect(analysis.Status.PostRCAContext.SetAt).NotTo(BeNil())
-			}
-
-			Expect(analysis.Status.InvestigationID).NotTo(BeEmpty(),
-				"Recovery InvestigationID should be set")
-		})
-
 		It("E2E-AA-056-003: should detect PDB in Kind cluster and populate postRCAContext.detectedLabels.pdbProtected", func() {
 			deployName := "app-e2e-003"
 

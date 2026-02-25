@@ -134,49 +134,16 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 			Expect(analysis.Status.ApprovalRequired).To(BeTrue())
 			Expect(analysis.Status.ApprovalContext).NotTo(BeNil())
 		})
-
-		It("should handle recovery attempts with escalation - BR-AI-013", func() {
-			// Per 03-testing-strategy.mdc: Cleanup in defer for extra safety
-			defer func() {
-				_ = k8sClient.Delete(ctx, analysis)
-			}()
-
-			// Mark as recovery attempt #3 (escalation threshold)
-			analysis.Spec.IsRecoveryAttempt = true
-			analysis.Spec.RecoveryAttemptNumber = 3
-
-			// DD-HAPI-017: Recovery path uses security gate context filters.
-			// CrashLoopBackOff → crashloop-config-fix-v1 (OCI labels):
-			//   severity=high, component=deployment, environment=[production,staging,test], priority=P1
-			// Override BeforeEach defaults to match the workflow labels so the
-			// security gate validation passes.
-			analysis.Spec.AnalysisRequest.SignalContext.Severity = "high"
-			analysis.Spec.AnalysisRequest.SignalContext.BusinessPriority = "P1"
-			analysis.Spec.AnalysisRequest.SignalContext.TargetResource.Kind = "Deployment"
-
-			By("Creating recovery attempt AIAnalysis")
-			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
-
-			By("Waiting for completion")
-			Eventually(func() string {
-				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
-				return string(analysis.Status.Phase)
-			}, timeout, interval).Should(Equal("Completed"))
-
-			By("Verifying approval required due to multiple recovery attempts")
-			// Per Rego policy: multiple recovery attempts require approval
-			Expect(analysis.Status.ApprovalRequired).To(BeTrue())
-		})
 	})
 
-	Context("Error recovery scenarios - BR-AI-009", func() {
+	Context("Error handling scenarios - BR-AI-009", func() {
 		var analysis *aianalysisv1alpha1.AIAnalysis
 
 		BeforeEach(func() {
 			rrName := helpers.UniqueTestName("test-remediation")
 			analysis = &aianalysisv1alpha1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      helpers.UniqueTestName("error-recovery"),
+					Name:      helpers.UniqueTestName("error-retry"),
 					Namespace: testNamespace, // DD-TEST-002: Use dynamic namespace
 				},
 				Spec: aianalysisv1alpha1.AIAnalysisSpec{

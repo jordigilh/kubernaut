@@ -42,7 +42,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 
 	"github.com/jordigilh/kubernaut/pkg/shared/backoff"
@@ -52,7 +51,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/audit"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/classifier"
@@ -425,13 +423,6 @@ func (r *SignalProcessingReconciler) reconcileEnriching(ctx context.Context, sp 
 		k8sCtx.CustomLabels = customLabels
 	}
 
-	// 6. Build recovery context (BR-SP-003)
-	recoveryCtx, err := r.buildRecoveryContext(ctx, sp, logger)
-	if err != nil {
-		logger.Error(err, "Failed to build recovery context")
-		// Non-fatal - continue without recovery context
-	}
-
 	// BR-SP-110: Prepare enrichment condition (will be set inside atomic update)
 	var enrichmentReason, enrichmentMessage string
 	if k8sCtx.DegradedMode {
@@ -447,7 +438,7 @@ func (r *SignalProcessingReconciler) reconcileEnriching(ctx context.Context, sp 
 
 	// ========================================
 	// DD-PERF-001: ATOMIC STATUS UPDATE
-	// Consolidate: KubernetesContext + RecoveryContext + Phase + Conditions → 1 API call
+	// Consolidate: KubernetesContext + Phase + Conditions → 1 API call
 	// BEFORE: 4 separate fields in 1 update (but refetch+update pattern)
 	// AFTER: Atomic refetch → apply all → single Status().Update()
 	// ========================================
@@ -460,7 +451,6 @@ func (r *SignalProcessingReconciler) reconcileEnriching(ctx context.Context, sp 
 		// Apply enrichment updates after refetch
 		// DD-CONTROLLER-001: ObservedGeneration NOT set here - will be set by Classifying handler after processing
 		sp.Status.KubernetesContext = k8sCtx
-		sp.Status.RecoveryContext = recoveryCtx
 		sp.Status.Phase = signalprocessingv1alpha1.PhaseClassifying
 		// BR-SP-110: Set condition AFTER refetch to prevent wipe
 		spconditions.SetEnrichmentComplete(sp, true, enrichmentReason, enrichmentMessage)
@@ -831,69 +821,6 @@ func (r *SignalProcessingReconciler) reconcileCategorizing(ctx context.Context, 
 	}
 
 	return ctrl.Result{}, nil
-}
-
-// buildRecoveryContext extracts recovery context from the RemediationRequest.
-// BR-SP-003: Recovery Context Integration
-// DD-001: Recovery Context Enrichment
-func (r *SignalProcessingReconciler) buildRecoveryContext(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, logger logr.Logger) (*signalprocessingv1alpha1.RecoveryContext, error) {
-	// Get RemediationRequest reference
-	rrRef := sp.Spec.RemediationRequestRef
-	if rrRef.Name == "" {
-		return nil, nil // No RemediationRequest, no recovery context
-	}
-
-	// Determine namespace - use ref namespace or default to SP namespace
-	rrNamespace := rrRef.Namespace
-	if rrNamespace == "" {
-		rrNamespace = sp.Namespace
-	}
-
-	// Fetch RemediationRequest via APIReader (not cached client) to avoid stale reads.
-	// The RR status (RecoveryAttempts) may have been updated just before SP creation,
-	// and the informer cache may not have caught up yet.
-	rr := &remediationv1alpha1.RemediationRequest{}
-	if err := r.StatusManager.FreshGet(ctx, types.NamespacedName{
-		Name:      rrRef.Name,
-		Namespace: rrNamespace,
-	}, rr); err != nil {
-		if apierrors.IsNotFound(err) {
-			logger.V(1).Info("RemediationRequest not found, skipping recovery context",
-				"name", rrRef.Name, "namespace", rrNamespace)
-			return nil, nil
-		}
-		return nil, fmt.Errorf("failed to fetch RemediationRequest: %w", err)
-	}
-
-	// Only build recovery context if this is a retry (RecoveryAttempts > 0)
-	if rr.Status.RecoveryAttempts == 0 {
-		logger.V(1).Info("First attempt, no recovery context needed")
-		return nil, nil
-	}
-
-	recoveryCtx := &signalprocessingv1alpha1.RecoveryContext{
-		AttemptCount:          int32(rr.Status.RecoveryAttempts),
-		PreviousRemediationID: rr.Name,
-	}
-
-	// Set failure reason if available
-	if rr.Status.FailureReason != nil && *rr.Status.FailureReason != "" {
-		recoveryCtx.LastFailureReason = *rr.Status.FailureReason
-	}
-
-	// Calculate time since first failure (using RR StartTime)
-	if rr.Status.StartTime != nil {
-		duration := time.Since(rr.Status.StartTime.Time)
-		recoveryCtx.TimeSinceFirstFailure = &metav1.Duration{Duration: duration}
-	}
-
-	logger.V(1).Info("Built recovery context",
-		"attemptCount", recoveryCtx.AttemptCount,
-		"previousId", recoveryCtx.PreviousRemediationID,
-		"lastFailureReason", recoveryCtx.LastFailureReason,
-	)
-
-	return recoveryCtx, nil
 }
 
 // classifyEnvironment determines the environment classification.

@@ -39,7 +39,7 @@ import (
 
 // ADR-056 SoC: E2E tests for DetectedLabels in HAPI responses.
 //
-// These tests verify that when HAPI processes incident/recovery analysis in a Kind cluster
+// These tests verify that when HAPI processes incident analysis in a Kind cluster
 // with real K8s resources, the response includes correctly computed detected_labels.
 //
 // Business Requirements:
@@ -148,34 +148,6 @@ var _ = Describe("E2E-HAPI ADR-056 DetectedLabels", Label("e2e", "hapi", "adr-05
 			// and includes them in the response via inject_detected_labels.
 			Expect(resp.DetectedLabels.Set).To(BeTrue(),
 				"detected_labels should be present in HAPI response (ADR-056)")
-		})
-	})
-
-	Context("Recovery Analysis with DetectedLabels", func() {
-		It("E2E-HAPI-056-002: should include detected_labels in recovery analysis response", func() {
-			By("Sending recovery analysis request targeting test namespace resources")
-			resp, err := sessionClient.Investigate(testCtx, &hapiclient.IncidentRequest{
-				IncidentID:        "e2e-dl-002",
-				RemediationID:     "req-e2e-dl-002",
-				SignalName:        "OOMKilled",
-				Severity:          "high",
-				SignalSource:      "prometheus",
-				ResourceNamespace: testNS,
-				ResourceKind:      "Pod",
-				ResourceName:      "test-app",
-				ErrorMessage:      "Recovery attempt after OOMKill",
-				Environment:       "production",
-				Priority:          "P1",
-				RiskTolerance:     "medium",
-				BusinessCategory:  "standard",
-				ClusterName:       "e2e-test",
-			})
-
-			Expect(err).NotTo(HaveOccurred(), "Recovery analysis should succeed")
-			Expect(resp).NotTo(BeNil())
-
-			Expect(resp.DetectedLabels.Set).To(BeTrue(),
-				"detected_labels should be present in recovery response")
 		})
 	})
 

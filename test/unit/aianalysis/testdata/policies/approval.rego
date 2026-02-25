@@ -16,17 +16,6 @@ is_production if {
     input.environment == "production"
 }
 
-# Recovery attempt detection
-is_recovery_attempt if {
-    input.is_recovery_attempt == true
-}
-
-# Multiple recovery attempts (3+) = higher risk
-is_multiple_recovery if {
-    is_recovery_attempt
-    input.recovery_attempt_number >= 3
-}
-
 # High severity signal
 is_high_severity if {
     input.severity == "critical"
@@ -58,17 +47,6 @@ require_approval if {
     is_production
 }
 
-# Multiple recovery attempts = approval required (any environment)
-# BR-AI-013: Escalating approval for repeated failures
-require_approval if {
-    is_multiple_recovery
-}
-
-# High severity + recovery = approval required
-require_approval if {
-    is_high_severity
-    is_recovery_attempt
-}
 
 # =============================================================================
 # Scored Risk Factors for Reason Generation
@@ -78,16 +56,6 @@ require_approval if {
 
 risk_factors contains {"score": 90, "reason": "Missing affected resource - cannot determine remediation target (BR-AI-085-005)"} if {
     not has_affected_resource
-}
-
-risk_factors contains {"score": 100, "reason": msg} if {
-    is_multiple_recovery
-    msg := sprintf("Multiple recovery attempts (%d) - human approval required", [input.recovery_attempt_number])
-}
-
-risk_factors contains {"score": 80, "reason": "High severity + recovery attempt - human approval required"} if {
-    is_high_severity
-    is_recovery_attempt
 }
 
 risk_factors contains {"score": 40, "reason": "Production environment requires manual approval"} if {

@@ -31,7 +31,7 @@ import (
 // Purpose: Validate workflow catalog search functionality and DataStorage integration
 //
 // NOTE: These tests validate the workflow catalog tool (used by HAPI internally for LLM-driven workflow search).
-// The workflow catalog is not a direct HTTP endpoint, but is invoked as part of incident/recovery analysis.
+// The workflow catalog is not a direct HTTP endpoint, but is invoked as part of incident analysis.
 //
 // BR-AA-HAPI-064: All success-path tests migrated from ogen direct client (sync 200) to
 // sessionClient.Investigate() (async submit/poll/result wrapper) because HAPI

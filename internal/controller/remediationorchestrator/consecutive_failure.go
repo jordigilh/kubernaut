@@ -40,7 +40,7 @@ import (
 //
 // Design Decision: RO owns this logic (not Gateway) because:
 // - RO knows *why* failures happened (timeout, workflow failure, approval rejection)
-// - RO already tracks recovery attempts
+// - RO tracks consecutive failures for blocking decisions
 // - Routing decisions are orchestration responsibility
 // - Gateway should be a "dumb pipe" for signal ingestion
 //

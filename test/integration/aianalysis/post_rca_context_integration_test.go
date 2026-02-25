@@ -129,31 +129,6 @@ var _ = Describe("ADR-056 PostRCAContext Integration", Label("integration", "adr
 				"InvestigationID should be set after HAPI call")
 		})
 
-		It("IT-AA-056-002: should populate PostRCAContext for recovery analysis", func() {
-			analysis := newIncidentAnalysis("002")
-			analysis.Spec.IsRecoveryAttempt = true
-			analysis.Spec.RecoveryAttemptNumber = 1
-			defer func() { _ = k8sClient.Delete(ctx, analysis) }()
-
-			By("Creating recovery AIAnalysis CR")
-			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
-
-			By("Waiting for reconciliation to complete")
-			waitForTerminalPhase(analysis)
-
-			By("Verifying PostRCAContext handling for recovery flow")
-			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
-
-			// Recovery analysis follows the same PostRCAContext contract as incident
-			if analysis.Status.PostRCAContext != nil {
-				Expect(analysis.Status.PostRCAContext.DetectedLabels).NotTo(BeNil(),
-					"Recovery: When PostRCAContext is set, DetectedLabels must be non-nil")
-			}
-
-			Expect(analysis.Status.InvestigationID).NotTo(BeEmpty(),
-				"Recovery InvestigationID should be set after HAPI call")
-		})
-
 		It("IT-AA-056-003: should reach Analyzing phase with detected_labels in Rego input", func() {
 			analysis := newIncidentAnalysis("003")
 			// Use production to trigger approval-required path (Rego evaluation)

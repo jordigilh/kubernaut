@@ -157,22 +157,4 @@ var _ = Describe("RequestBuilder", func() {
 		})
 	})
 
-	Describe("BuildRecoveryRequest - BusinessClassification mapping (BR-SP-002)", func() {
-		It("should map BusinessClassification to recovery request enrichment", func() {
-			analysis := helpers.NewAIAnalysis("ai-recovery-bizclass", "default")
-			analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.BusinessClassification = &sharedtypes.BusinessClassification{
-				BusinessUnit:   "platform",
-				Criticality:    "medium",
-				SLARequirement: "silver",
-			}
-
-			req := builder.BuildRecoveryRequest(analysis)
-
-			bc, ok := req.EnrichmentResults.Value.BusinessClassification.Get()
-			Expect(ok).To(BeTrue())
-			Expect(bc.BusinessUnit.Or("")).To(Equal("platform"))
-			Expect(bc.Criticality.Or("")).To(Equal("medium"))
-			Expect(bc.SlaRequirement.Or("")).To(Equal("silver"))
-		})
-	})
 })

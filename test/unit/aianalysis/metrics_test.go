@@ -177,7 +177,7 @@ var _ = Describe("AIAnalysis Metrics", func() {
 			By("Verifying operators can identify top reasons for manual review")
 			// Business value: Understanding bottlenecks guides policy tuning
 			Expect(func() {
-				m.ApprovalDecisionsTotal.WithLabelValues("multiple_recovery_attempts", "production").Inc()
+				m.ApprovalDecisionsTotal.WithLabelValues("low_confidence", "production").Inc()
 			}).NotTo(Panic(), "Approval reason breakdown guides policy optimization efforts")
 		})
 	})

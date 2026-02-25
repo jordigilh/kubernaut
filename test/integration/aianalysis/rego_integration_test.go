@@ -258,10 +258,6 @@ var _ = Describe("Rego Policy Integration", Label("integration", "rego"), func()
 
 				// Failed detections
 				FailedDetections: []string{},
-
-				// Recovery context
-				IsRecoveryAttempt:     false,
-				RecoveryAttemptNumber: 0,
 			})
 
 			Expect(err).NotTo(HaveOccurred())

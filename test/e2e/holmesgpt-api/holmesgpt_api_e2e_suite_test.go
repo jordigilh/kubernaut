@@ -280,7 +280,6 @@ var _ = SynchronizedBeforeSuite(
 // Main E2E test suite - individual test files will be imported here
 // Test files:
 // - incident_analysis_test.go (E2E-HAPI-001 to 008)
-// - recovery_analysis_test.go (E2E-HAPI-013 to 029)
 // - workflow_catalog_test.go (E2E-HAPI-030 to 044)
 // - audit_pipeline_test.go (E2E-HAPI-045 to 048)
 

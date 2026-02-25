@@ -756,7 +756,7 @@ metadata:
     component: e2e-testing
     authorization: dd-auth-014
 rules:
-  # SAR check: POST /api/v1/incident/analyze and /api/v1/recovery/analyze
+  # SAR check: POST /api/v1/incident/analyze
   - apiGroups: [""]
     resources: ["services"]
     resourceNames: ["holmesgpt-api"]

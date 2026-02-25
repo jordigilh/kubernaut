@@ -270,7 +270,7 @@ func (r *WorkflowExecutionReconciler) mapTektonReasonToFailureReason(reason, mes
 }
 
 // GenerateNaturalLanguageSummary creates a human/LLM-readable failure description
-// For recovery context and user notifications
+// For failure reporting and user notifications
 // Day 9 (v3.5): Handles nil FailureDetails gracefully per Q4 decision
 func (r *WorkflowExecutionReconciler) GenerateNaturalLanguageSummary(wfe *workflowexecutionv1alpha1.WorkflowExecution, details *workflowexecutionv1alpha1.FailureDetails) string {
 	var sb strings.Builder

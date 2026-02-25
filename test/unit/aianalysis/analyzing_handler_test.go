@@ -116,7 +116,7 @@ var _ = Describe("AnalyzingHandler", func() {
 					WorkflowID:     "wf-restart-pod",
 					ExecutionBundle: "kubernaut.io/workflows/restart:v1.0.0",
 					Confidence:     0.92,
-					Rationale:      "Selected for OOM recovery",
+					Rationale:      "Selected for OOM remediation",
 				},
 			},
 		}
@@ -484,31 +484,6 @@ var _ = Describe("AnalyzingHandler", func() {
 				Expect(mockEvaluator.LastInput.TargetResource.Kind).To(Equal("Deployment"))
 				Expect(mockEvaluator.LastInput.TargetResource.Name).To(Equal("my-app"))
 				Expect(mockEvaluator.LastInput.TargetResource.Namespace).To(Equal("production"))
-			})
-
-			It("should pass recovery context fields", func() {
-				analysis := createTestAnalysis()
-				analysis.Spec.IsRecoveryAttempt = true
-				analysis.Spec.RecoveryAttemptNumber = 3
-
-				_, err := handler.Handle(ctx, analysis)
-
-				Expect(err).NotTo(HaveOccurred())
-				Expect(mockEvaluator.LastInput).NotTo(BeNil())
-				Expect(mockEvaluator.LastInput.IsRecoveryAttempt).To(BeTrue())
-				Expect(mockEvaluator.LastInput.RecoveryAttemptNumber).To(Equal(3))
-			})
-
-			It("should default recovery fields when not recovery", func() {
-				analysis := createTestAnalysis()
-				analysis.Spec.IsRecoveryAttempt = false
-
-				_, err := handler.Handle(ctx, analysis)
-
-				Expect(err).NotTo(HaveOccurred())
-				Expect(mockEvaluator.LastInput).NotTo(BeNil())
-				Expect(mockEvaluator.LastInput.IsRecoveryAttempt).To(BeFalse())
-				Expect(mockEvaluator.LastInput.RecoveryAttemptNumber).To(Equal(0))
 			})
 
 			// BR-AI-012: CustomLabels population from EnrichmentResults

@@ -538,7 +538,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			if isSuccess {
 				if updateErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
 					remediationrequest.SetReady(rr, true, remediationrequest.ReasonReady, "Terminal phase: "+string(rr.Status.OverallPhase), r.Metrics)
-					remediationrequest.SetRecoveryComplete(rr, true, "RecoveryComplete", "Terminal phase: "+string(rr.Status.OverallPhase), r.Metrics)
 					return nil
 				}); updateErr != nil {
 					logger.Error(updateErr, "Failed to set Ready safety net")
@@ -546,7 +545,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			} else {
 				if updateErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
 					remediationrequest.SetReady(rr, false, remediationrequest.ReasonNotReady, "Terminal phase: "+string(rr.Status.OverallPhase), r.Metrics)
-					remediationrequest.SetRecoveryComplete(rr, false, "RecoveryIncomplete", "Terminal phase: "+string(rr.Status.OverallPhase), r.Metrics)
 					return nil
 				}); updateErr != nil {
 					logger.Error(updateErr, "Failed to set Ready safety net")
@@ -1600,11 +1598,6 @@ func (r *Reconciler) transitionToCompleted(ctx context.Context, rr *remediationv
 		// Reset consecutive failure count (fresh start after success)
 		rr.Status.ConsecutiveFailureCount = 0
 
-		// BR-ORCH-043: Set RecoveryComplete condition (terminal state)
-		remediationrequest.SetRecoveryComplete(rr, true,
-			remediationrequest.ReasonRecoverySucceeded,
-			fmt.Sprintf("Remediation completed successfully with outcome: %s", outcome), r.Metrics)
-
 		return nil
 	})
 	if err != nil {
@@ -1766,11 +1759,6 @@ func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.R
 			}
 		}
 
-		// BR-ORCH-043: Set RecoveryComplete condition (terminal failure state)
-		remediationrequest.SetRecoveryComplete(rr, false,
-			remediationrequest.ReasonRecoveryFailed,
-			fmt.Sprintf("Remediation failed during %s: %s", failurePhase, failureReason), r.Metrics)
-
 		return nil
 	})
 	if err != nil {
@@ -1824,9 +1812,8 @@ func (r *Reconciler) handleGlobalTimeout(ctx context.Context, rr *remediationv1.
 		rr.Status.TimeoutTime = &now
 		rr.Status.TimeoutPhase = &timeoutPhase
 
-		// BR-ORCH-043: Set Ready and RecoveryComplete conditions (terminal timeout)
+		// BR-ORCH-043: Set Ready condition (terminal timeout)
 		remediationrequest.SetReady(rr, false, remediationrequest.ReasonNotReady, "Remediation timed out", r.Metrics)
-		remediationrequest.SetRecoveryComplete(rr, false, "RecoveryTimedOut", "Global timeout exceeded", r.Metrics)
 
 		return nil
 	})

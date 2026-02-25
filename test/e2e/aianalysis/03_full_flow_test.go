@@ -217,66 +217,6 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 		})
 	})
 
-	Context("Recovery attempt escalation - BR-AI-013", func() {
-		var analysis *aianalysisv1alpha1.AIAnalysis
-
-		BeforeEach(func() {
-			namespace := createTestNamespace("full-flow-recovery")
-			analysis = &aianalysisv1alpha1.AIAnalysis{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "e2e-recovery-" + randomSuffix(),
-					Namespace: namespace,
-				},
-				Spec: aianalysisv1alpha1.AIAnalysisSpec{
-					RemediationRequestRef: corev1.ObjectReference{
-						Name:      "e2e-remediation-recovery",
-						Namespace: namespace,
-					},
-					RemediationID: "e2e-rem-003",
-					// Recovery attempt fields
-					IsRecoveryAttempt:     true,
-					RecoveryAttemptNumber: 3, // 3+ attempts = escalation
-					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
-						SignalContext: aianalysisv1alpha1.SignalContextInput{
-						Fingerprint:      "e2e-fingerprint-003",
-						Severity:         "high",    // Must match crashloop-config-fix-v1 catalog entry
-						SignalName:       "CrashLoopBackOff",
-						Environment:      "staging", // Even staging requires approval for 3+ recovery attempts
-						BusinessPriority: "P1",      // Matches crashloop-config-fix-v1 catalog entry
-							TargetResource: aianalysisv1alpha1.TargetResource{
-								Kind:      "Deployment", // Must match workflow component label "deployment"
-								Name:      "critical-app",
-								Namespace: "staging",
-							},
-							EnrichmentResults: sharedtypes.EnrichmentResults{},
-						},
-						AnalysisTypes: []string{"investigation"},
-					},
-				},
-			}
-		})
-
-		It("should require approval for multiple recovery attempts", func() {
-			// Per 03-testing-strategy.mdc: Cleanup in defer for extra safety
-			defer func() {
-				_ = k8sClient.Delete(ctx, analysis)
-			}()
-
-			By("Creating recovery attempt AIAnalysis")
-			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
-
-			By("Waiting for completion")
-			Eventually(func() string {
-				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
-				return string(analysis.Status.Phase)
-			}, timeout, interval).Should(Equal("Completed"))
-
-			By("Verifying approval required due to recovery escalation")
-			// Per Rego policy: 3+ recovery attempts require approval
-			Expect(analysis.Status.ApprovalRequired).To(BeTrue())
-		})
-	})
-
 	Context("Data quality warnings - BR-AI-011", func() {
 		var analysis *aianalysisv1alpha1.AIAnalysis
 

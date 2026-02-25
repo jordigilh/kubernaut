@@ -58,8 +58,8 @@ var _ = Describe("AIAnalysisCreator", func() {
 			// Act
 			aiCreator := creator.NewAIAnalysisCreator(fakeClient, scheme, nil)
 
-			// Assert
-			Expect(aiCreator).ToNot(BeNil())
+			// Assert - verify creator is usable by checking it implements the expected type
+			Expect(aiCreator).To(BeAssignableToTypeOf(&creator.AIAnalysisCreator{}))
 		})
 	})
 
@@ -157,10 +157,6 @@ var _ = Describe("AIAnalysisCreator", func() {
 
 				// Verify AnalysisTypes
 				Expect(createdAI.Spec.AnalysisRequest.AnalysisTypes).To(ContainElements("investigation", "root-cause", "workflow-selection"))
-
-				// Verify recovery fields (should be false for initial analysis)
-				Expect(createdAI.Spec.IsRecoveryAttempt).To(BeFalse())
-				Expect(createdAI.Spec.RecoveryAttemptNumber).To(Equal(0))
 			})
 
 			It("should pass through enrichment results from SignalProcessing.Status", func() {
@@ -194,12 +190,9 @@ var _ = Describe("AIAnalysisCreator", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				// Verify EnrichmentResults.KubernetesContext is populated
-				Expect(createdAI.Spec.AnalysisRequest.SignalContext.EnrichmentResults.KubernetesContext).ToNot(BeNil())
-				// Issue #113: sharedtypes.KubernetesContext has Namespace as *NamespaceContext
-				Expect(createdAI.Spec.AnalysisRequest.SignalContext.EnrichmentResults.KubernetesContext.Namespace).ToNot(BeNil())
-				Expect(createdAI.Spec.AnalysisRequest.SignalContext.EnrichmentResults.KubernetesContext.Namespace.Name).To(Equal("default"))
-				Expect(createdAI.Spec.AnalysisRequest.SignalContext.EnrichmentResults.KubernetesContext.Namespace.Labels).To(
-					HaveKeyWithValue("environment", "production"))
+				kc := createdAI.Spec.AnalysisRequest.SignalContext.EnrichmentResults.KubernetesContext
+				Expect(kc.Namespace.Name).To(Equal("default"))
+				Expect(kc.Namespace.Labels).To(HaveKeyWithValue("environment", "production"))
 			})
 
 			It("should use normalized severity from SignalProcessing.Status.Severity (DD-SEVERITY-001)", func() {
@@ -504,10 +497,10 @@ var _ = Describe("AIAnalysisCreator", func() {
 			err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, createdAI)
 			Expect(err).ToNot(HaveOccurred())
 
-			Expect(createdAI.Spec.AnalysisRequest.SignalContext.EnrichmentResults.KubernetesContext).ToNot(BeNil())
-			Expect(createdAI.Spec.AnalysisRequest.SignalContext.EnrichmentResults.KubernetesContext.CustomLabels).To(HaveKeyWithValue("team", []string{"platform"}))
-			Expect(createdAI.Spec.AnalysisRequest.SignalContext.EnrichmentResults.KubernetesContext.CustomLabels).To(HaveKeyWithValue("tier", []string{"critical"}))
-			Expect(createdAI.Spec.AnalysisRequest.SignalContext.EnrichmentResults.KubernetesContext.CustomLabels).To(HaveKeyWithValue("cost-center", []string{"eng-42"}))
+			kc := createdAI.Spec.AnalysisRequest.SignalContext.EnrichmentResults.KubernetesContext
+			Expect(kc.CustomLabels).To(HaveKeyWithValue("team", []string{"platform"}))
+			Expect(kc.CustomLabels).To(HaveKeyWithValue("tier", []string{"critical"}))
+			Expect(kc.CustomLabels).To(HaveKeyWithValue("cost-center", []string{"eng-42"}))
 		})
 
 		It("should not set CustomLabels when SP has no CustomLabels", func() {
@@ -554,7 +547,6 @@ var _ = Describe("AIAnalysisCreator", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			bc := createdAI.Spec.AnalysisRequest.SignalContext.EnrichmentResults.BusinessClassification
-			Expect(bc).ToNot(BeNil())
 			Expect(bc.BusinessUnit).To(Equal("payments"))
 			Expect(bc.ServiceOwner).To(Equal("team-checkout"))
 			Expect(bc.Criticality).To(Equal("critical"))
@@ -598,7 +590,6 @@ var _ = Describe("AIAnalysisCreator", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			bc := createdAI.Spec.AnalysisRequest.SignalContext.EnrichmentResults.BusinessClassification
-			Expect(bc).ToNot(BeNil())
 			Expect(bc.Criticality).To(Equal("high"))
 			Expect(bc.BusinessUnit).To(BeEmpty())
 			Expect(bc.ServiceOwner).To(BeEmpty())

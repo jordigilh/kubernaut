@@ -58,8 +58,7 @@ var _ = Describe("EnrichmentResults Cleanup (ADR-056 Phase 4)", func() {
 				},
 			}
 
-			Expect(enrichment.KubernetesContext).ToNot(BeNil())
-			Expect(enrichment.KubernetesContext.Namespace).ToNot(BeNil())
+			Expect(enrichment.KubernetesContext.Workload.Kind).To(Equal("Pod"))
 			Expect(enrichment.KubernetesContext.Namespace.Name).To(Equal("production"))
 			Expect(enrichment.KubernetesContext.CustomLabels).To(HaveLen(2))
 			Expect(enrichment.KubernetesContext.CustomLabels["constraint"]).To(ContainElement("cost-constrained"))
@@ -105,14 +104,13 @@ var _ = Describe("EnrichmentResults Cleanup (ADR-056 Phase 4)", func() {
 
 			req := builder.BuildIncidentRequest(analysis)
 
-			Expect(req).ToNot(BeNil())
 			Expect(req.EnrichmentResults.Set).To(BeTrue(),
 				"EnrichmentResults should be set in HAPI request")
 			Expect(req.EnrichmentResults.Value.CustomLabels.Set).To(BeTrue(),
 				"CustomLabels should be forwarded to HAPI")
 		})
 
-		It("UT-AA-056-016: both incident and recovery requests build without removed fields", func() {
+		It("UT-AA-056-016: incident request builds without removed fields", func() {
 			builder := handlers.NewRequestBuilder(logr.Discard())
 
 			analysis := helpers.NewAIAnalysis("ai-validate-test", "default")
@@ -126,12 +124,8 @@ var _ = Describe("EnrichmentResults Cleanup (ADR-056 Phase 4)", func() {
 			}
 
 			incidentReq := builder.BuildIncidentRequest(analysis)
-			Expect(incidentReq).ToNot(BeNil())
 			Expect(incidentReq.EnrichmentResults.Set).To(BeTrue(),
 				"EnrichmentResults should be set in incident request")
-
-			recoveryReq := builder.BuildRecoveryRequest(analysis)
-			Expect(recoveryReq).ToNot(BeNil())
 		})
 	})
 

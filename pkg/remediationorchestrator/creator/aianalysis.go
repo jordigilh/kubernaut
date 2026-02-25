@@ -114,9 +114,6 @@ func (c *AIAnalysisCreator) Create(
 					"workflow-selection",
 				},
 			},
-			// Recovery fields (false for initial analysis)
-			IsRecoveryAttempt:     false,
-			RecoveryAttemptNumber: 0,
 		},
 	}
 

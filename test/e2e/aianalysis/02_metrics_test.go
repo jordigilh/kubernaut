@@ -239,29 +239,6 @@ var _ = Describe("Metrics Endpoint E2E", Label("e2e", "metrics"), func() {
 				"Missing approval decisions metric")
 		})
 
-		It("should include recovery status metrics", func() {
-			resp, err := httpClient.Get(metricsURL + "/metrics")
-			Expect(err).NotTo(HaveOccurred())
-			defer func() { _ = resp.Body.Close() }()
-
-			body, err := io.ReadAll(resp.Body)
-			Expect(err).NotTo(HaveOccurred())
-			metricsText := string(body)
-
-			// Recovery observability (BR-AI-082)
-			// Business value: Track recovery attempt outcomes
-			// DD-005 V3.0: Use constants from production code
-			expectedRecoveryMetrics := []string{
-				aametrics.MetricNameRecoveryStatusPopulatedTotal,
-				aametrics.MetricNameRecoveryStatusSkippedTotal,
-			}
-
-			for _, metric := range expectedRecoveryMetrics {
-				Expect(metricsText).To(ContainSubstring(metric),
-					"Missing recovery metric: %s", metric)
-			}
-		})
-
 		It("should include Go runtime metrics", func() {
 			resp, err := httpClient.Get(metricsURL + "/metrics")
 			Expect(err).NotTo(HaveOccurred())

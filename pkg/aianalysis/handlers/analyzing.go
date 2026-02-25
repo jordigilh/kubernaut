@@ -349,10 +349,6 @@ func (h *AnalyzingHandler) buildPolicyInput(analysis *aianalysisv1.AIAnalysis) *
 
 		// HolmesGPT-API response data
 		Warnings: analysis.Status.Warnings,
-
-		// Recovery context (from Spec)
-		IsRecoveryAttempt:     analysis.Spec.IsRecoveryAttempt,
-		RecoveryAttemptNumber: analysis.Spec.RecoveryAttemptNumber,
 	}
 
 	// Get confidence from SelectedWorkflow (populated by InvestigatingHandler)
