@@ -14,13 +14,13 @@ actionType: GracefulRestart
 labels:
   signalName: KubeDeploymentRolloutStuck
   severity: [critical, low]
-  environment: [production, staging]
+  environment: [production, staging, "*"]
   component: "*"
   priority: "*"
 
 execution:
   engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/rollback-deployment-job@sha256:0107e7e24cf4ebabda3de671a6a7d45732c5bf525487a91da4038d33680aee98
+  bundle: quay.io/kubernaut-cicd/test-workflows/rollback-deployment-job@sha256:f1e3615cf8cc6b5ac2cd0a5f5f8138537d481b5af0beb788e6b36710e09e50c8
 
 parameters:
   - name: TARGET_NAMESPACE

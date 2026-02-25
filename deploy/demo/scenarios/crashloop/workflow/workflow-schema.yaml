@@ -14,7 +14,7 @@ actionType: GracefulRestart
 labels:
   signalName: KubePodCrashLooping
   severity: [critical, low]
-  environment: [production, staging]
+  environment: [production, staging, "*"]
   component: "*"
   priority: "*"
 
