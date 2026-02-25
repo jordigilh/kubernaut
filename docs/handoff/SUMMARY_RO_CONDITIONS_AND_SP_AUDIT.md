@@ -47,7 +47,7 @@
 | `AIAnalysisComplete` | AI finished | Analyzing → AwaitingApproval/Executing |
 | `WorkflowExecutionReady` | WE CRD created | Executing phase |
 | `WorkflowExecutionComplete` | WE finished | Executing → Completed/Failed |
-| `RecoveryComplete` | Overall remediation done | Terminal phase |
+| `RecoveryComplete` [Deprecated - Issue #180] | Overall remediation done | Terminal phase |
 
 #### **4. Implementation Plan**
 
@@ -101,7 +101,7 @@ Status:
 **Operator Benefits**:
 - ✅ **Single Resource View**: See entire remediation from one CRD
 - ✅ **Fast Debugging**: No querying 4 child CRDs
-- ✅ **Automation Ready**: `kubectl wait --for=condition=RecoveryComplete`
+- ✅ **Automation Ready**: `kubectl wait --for=condition=RecoveryComplete` [Deprecated - Issue #180]
 - ✅ **Standard Tooling**: Kubernetes ecosystem integration
 
 ---

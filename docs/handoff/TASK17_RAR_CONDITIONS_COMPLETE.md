@@ -16,8 +16,8 @@
 
 **BR-ORCH-043 Scope** (Separate, Larger Effort):
 - **CRD**: RemediationRequest (NOT RemediationApprovalRequest)
-- **Conditions**: 7 types (SignalProcessing, AIAnalysis, WorkflowExecution lifecycle + RecoveryComplete)
-- **Status**: Partially complete (RecoveryComplete done, 6 child CRD lifecycle conditions remain)
+- **Conditions**: 7 types (SignalProcessing, AIAnalysis, WorkflowExecution lifecycle + RecoveryComplete) [Deprecated - Issue #180]
+- **Status**: Partially complete (RecoveryComplete done [Deprecated], 6 child CRD lifecycle conditions remain)
 - **Future Work**: Tasks 18-20
 
 **See**: `docs/handoff/TRIAGE_TASK17_AUTHORITATIVE_COMPARISON.md` for detailed analysis

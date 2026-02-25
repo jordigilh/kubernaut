@@ -145,13 +145,13 @@
 
 ---
 
-### **AC-043-5: RecoveryComplete Terminal Condition** ✅ **COMPLIANT**
+### **AC-043-5: RecoveryComplete Terminal Condition** [Deprecated - Issue #180] ✅ **COMPLIANT**
 
 **Requirement** (from BR-ORCH-043):
-> "RO MUST set RecoveryComplete condition at terminal phases."
+> "RO MUST set RecoveryComplete condition at terminal phases." [Deprecated - Issue #180]
 
 **Required Condition**:
-- **RecoveryComplete** - Terminal phase reached (success/failure)
+- **RecoveryComplete** - Terminal phase reached (success/failure) [Deprecated - Issue #180]
 
 **Implementation Verification**:
 
@@ -159,11 +159,11 @@
 |-----------|-------------|----------------|--------|
 | **Condition Type Constant** | Defined in `pkg/remediationrequest/conditions.go` | Line 57 ✅ | ✅ Complete |
 | **Reason Constants** | 5 reasons (Succeeded, Failed, MaxAttempts, Blocked, InProgress) | Lines 94-100 ✅ | ✅ Complete |
-| **Setter Function** | `SetRecoveryComplete()` | Exists ✅ | ✅ Complete |
+| **Setter Function** | `SetRecoveryComplete()` [Deprecated] | Exists ✅ | ✅ Complete |
 | **Success Integration** | `reconciler.go:transitionToCompleted` | Implemented by previous team ✅ | ✅ Complete |
 | **Failure Integration** | `reconciler.go:transitionToFailed` | Implemented by previous team ✅ | ✅ Complete |
 | **Blocked Integration** | `reconciler.go:transitionToBlocked` | Implemented by previous team ✅ | ✅ Complete |
-| **Unit Tests** | RecoveryComplete tested | 27 tests pass ✅ | ✅ Complete |
+| **Unit Tests** | RecoveryComplete tested [Deprecated] | 27 tests pass ✅ | ✅ Complete |
 
 **Compliance**: ✅ **100%**
 
@@ -172,7 +172,7 @@
 - `pkg/remediationorchestrator/controller/reconciler.go` sets condition at terminal transitions
 - Unit tests validate all terminal paths
 
-**Note**: RecoveryComplete was implemented by previous team; Task 18 ensured consistency.
+**Note**: RecoveryComplete was implemented by previous team; Task 18 ensured consistency. [Deprecated - Issue #180]
 
 ---
 
@@ -193,7 +193,7 @@
 | `AIAnalysisComplete` | DD-CRD-002-RR | ✅ Implemented |
 | `WorkflowExecutionReady` | DD-CRD-002-RR | ✅ Implemented |
 | `WorkflowExecutionComplete` | DD-CRD-002-RR | ✅ Implemented |
-| `RecoveryComplete` | DD-CRD-002-RR | ✅ Implemented |
+| `RecoveryComplete` [Deprecated] | DD-CRD-002-RR | ✅ Implemented |
 
 **Compliance**: ✅ **100%** (7/7 conditions)
 
@@ -214,8 +214,8 @@
 | `controller/reconciler.go:handleAnalyzingPhase` | AIAnalysisComplete | DD-CRD-002-RR | ✅ Verified |
 | `creator/workflowexecution.go` | WorkflowExecutionReady | DD-CRD-002-RR | ✅ Verified |
 | `controller/reconciler.go:handleExecutingPhase` | WorkflowExecutionComplete | DD-CRD-002-RR | ✅ Verified |
-| `controller/reconciler.go:transitionToCompleted` | RecoveryComplete (success) | DD-CRD-002-RR | ✅ Verified |
-| `controller/reconciler.go:transitionToFailed` | RecoveryComplete (failure) | DD-CRD-002-RR | ✅ Verified |
+| `controller/reconciler.go:transitionToCompleted` | RecoveryComplete (success) [Deprecated] | DD-CRD-002-RR | ✅ Verified |
+| `controller/reconciler.go:transitionToFailed` | RecoveryComplete (failure) [Deprecated] | DD-CRD-002-RR | ✅ Verified |
 
 **Compliance**: ✅ **100%** (8/8 integration points)
 
@@ -302,11 +302,11 @@ import (
 **Impact on Compliance**:
 - ⚠️ Integration tests for Task 18 conditions cannot be verified
 - ✅ Unit tests provide comprehensive coverage (27 tests, 100% pass)
-- ✅ Pattern matches existing RecoveryComplete implementation (proven working)
+- ✅ Pattern matches existing RecoveryComplete implementation (proven working) [Deprecated - Issue #180]
 
 **Mitigation**:
 - Unit tests cover all condition setters and reason constants
-- Code follows same pattern as RecoveryComplete (already in production)
+- Code follows same pattern as RecoveryComplete (already in production) [Deprecated - Issue #180]
 - Separate infrastructure team will resolve integration test blocker
 
 **Compliance**: ⏸️ **BLOCKED** (but not due to Task 18 implementation quality)
@@ -465,7 +465,7 @@ import (
 **Breakdown**:
 | Aspect | Confidence | Justification |
 |--------|------------|---------------|
-| **Code Correctness** | 98% | All unit tests pass, pattern matches proven RecoveryComplete |
+| **Code Correctness** | 98% | All unit tests pass, pattern matches proven RecoveryComplete [Deprecated] |
 | **BR-ORCH-043 Compliance** | 95% | 100% of required conditions implemented |
 | **DD-CRD-002-RR Compliance** | 98% | All specifications followed exactly |
 | **Pattern Consistency** | 100% | Matches established AIAnalysis pattern |
@@ -482,7 +482,7 @@ import (
 **Mitigation**:
 - Comprehensive unit test coverage (27/27 passing)
 - Pattern consistency with existing implementations
-- Code follows proven RecoveryComplete pattern
+- Code follows proven RecoveryComplete pattern [Deprecated - Issue #180]
 
 ---
 
@@ -587,7 +587,7 @@ import (
 
 | Authoritative Source | Compliance | Evidence |
 |----------------------|------------|----------|
-| **BR-ORCH-043** (Business Requirement) | ✅ 100% | All 6 conditions + RecoveryComplete implemented |
+| **BR-ORCH-043** (Business Requirement) | ✅ 100% | All 6 conditions + RecoveryComplete [Deprecated] implemented |
 | **DD-CRD-002-RR** (Design Decision) | ✅ 100% | All specs followed exactly |
 | **03-testing-strategy.mdc** (Testing Guidelines) | ✅ 90% | Unit tests 100%, integration blocked |
 | **DD-CRD-002** (Parent Standard) | ✅ 100% | Canonical functions used throughout |

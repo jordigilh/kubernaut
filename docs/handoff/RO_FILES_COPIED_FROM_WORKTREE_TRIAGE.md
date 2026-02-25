@@ -23,8 +23,8 @@
 
 ### Modified Controller Files (Integration)
 ```
-✅ pkg/remediationorchestrator/controller/reconciler.go (with SetRecoveryComplete integration)
-✅ pkg/remediationorchestrator/controller/blocking.go (with SetRecoveryComplete integration)
+✅ pkg/remediationorchestrator/controller/reconciler.go (with SetRecoveryComplete integration) [Deprecated - Issue #180]
+✅ pkg/remediationorchestrator/controller/blocking.go (with SetRecoveryComplete integration) [Deprecated - Issue #180]
 ✅ pkg/remediationorchestrator/routing/blocking.go (with workflow-specific cooldown)
 ✅ test/unit/remediationorchestrator/routing/blocking_test.go (34 tests)
 ```
@@ -58,18 +58,18 @@ make test-unit-remediationorchestrator
 
 #### Reconciler Integration (reconciler.go)
 ```bash
-grep -n "SetRecoveryComplete" pkg/remediationorchestrator/controller/reconciler.go
+grep -n "SetRecoveryComplete" pkg/remediationorchestrator/controller/reconciler.go  # [Deprecated - Issue #180]
 ```
 **Found**:
-- Line 782: `transitionToCompleted` sets `RecoveryComplete=True`
-- Line 859: `transitionToFailed` sets `RecoveryComplete=False`
+- Line 782: `transitionToCompleted` sets `RecoveryComplete=True` [Deprecated]
+- Line 859: `transitionToFailed` sets `RecoveryComplete=False` [Deprecated]
 
 #### Blocking Integration (blocking.go)
 ```bash
-grep -n "SetRecoveryComplete" pkg/remediationorchestrator/controller/blocking.go
+grep -n "SetRecoveryComplete" pkg/remediationorchestrator/controller/blocking.go  # [Deprecated - Issue #180]
 ```
 **Found**:
-- Line 187: `transitionToBlocked` sets `RecoveryComplete=False` (BlockedByConsecutiveFailures)
+- Line 187: `transitionToBlocked` sets `RecoveryComplete=False` (BlockedByConsecutiveFailures) [Deprecated]
 
 #### Workflow-Specific Cooldown (routing/blocking.go)
 ```bash
@@ -94,7 +94,7 @@ grep -n "workflowID string" pkg/remediationorchestrator/routing/blocking.go
 - `AIAnalysisComplete` - AI completed/failed
 - `WorkflowExecutionReady` - WE CRD created
 - `WorkflowExecutionComplete` - WE completed/failed
-- `RecoveryComplete` - Terminal phase reached ✅ **INTEGRATED**
+- `RecoveryComplete` - Terminal phase reached ✅ **INTEGRATED** [Deprecated - Issue #180]
 
 **RemediationApprovalRequest Conditions** (3 types):
 - `ApprovalPending` - Awaiting decision
@@ -142,7 +142,7 @@ This commit is **ahead of current HEAD** (`df760b9e`) in the other worktree's br
 ### Completed Work ✅
 1. ✅ DD-CRD-002 condition helpers created (RR + RAR)
 2. ✅ 43 unit tests passing (27 RR + 16 RAR)
-3. ✅ Terminal state conditions integrated (RecoveryComplete)
+3. ✅ Terminal state conditions integrated (RecoveryComplete) [Deprecated - Issue #180]
 4. ✅ Workflow-specific cooldown implemented
 5. ✅ 34 routing tests passing
 6. ✅ Documentation complete

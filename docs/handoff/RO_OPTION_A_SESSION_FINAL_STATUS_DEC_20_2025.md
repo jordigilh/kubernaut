@@ -67,10 +67,10 @@ approvalCreator:   creator.NewApprovalCreator(c, s, m),
 **Line 188**:
 ```go
 // Before:
-remediationrequest.SetRecoveryComplete(rr, bool, reason, message)
+remediationrequest.SetRecoveryComplete(rr, bool, reason, message)  // [Deprecated - Issue #180: RecoveryComplete removed]
 
 // After:
-remediationrequest.SetRecoveryComplete(rr, bool, reason, message, r.Metrics)
+remediationrequest.SetRecoveryComplete(rr, bool, reason, message, r.Metrics)  // [Deprecated - Issue #180]
 ```
 
 #### **2. reconciler.go** (7 calls)

@@ -26,7 +26,7 @@ All condition setters now require `*metrics.Metrics` as the last parameter:
 - `SetAIAnalysisComplete(rr, complete bool, reason, message string, m *metrics.Metrics)`
 - `SetWorkflowExecutionReady(rr, ready bool, reason, message string, m *metrics.Metrics)`
 - `SetWorkflowExecutionComplete(rr, complete bool, reason, message string, m *metrics.Metrics)`
-- `SetRecoveryComplete(rr, complete bool, reason, message string, m *metrics.Metrics)`
+- `SetRecoveryComplete(rr, complete bool, reason, message string, m *metrics.Metrics)` [Deprecated - Issue #180]
 
 ###  **2. RemediationApprovalRequest Condition Helpers** (`pkg/remediationapprovalrequest/conditions.go`)
 

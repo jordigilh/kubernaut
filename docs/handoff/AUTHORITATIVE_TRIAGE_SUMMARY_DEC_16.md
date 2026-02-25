@@ -33,7 +33,7 @@
 | **AC-043-2**: SignalProcessing lifecycle tracking | ✅ Complete | Ready + Complete conditions |
 | **AC-043-3**: AIAnalysis lifecycle tracking | ✅ Complete | Ready + Complete conditions |
 | **AC-043-4**: WorkflowExecution lifecycle tracking | ✅ Complete | Ready + Complete conditions |
-| **AC-043-5**: RecoveryComplete terminal condition | ✅ Complete | Previous team + Task 18 |
+| **AC-043-5**: RecoveryComplete terminal condition [Deprecated - Issue #180] | ✅ Complete | Previous team + Task 18 |
 
 **BR-ORCH-043 Compliance**: ✅ **100%** (5/5 acceptance criteria met)
 
@@ -106,7 +106,7 @@
 
 **Key Strengths**:
 1. ✅ Clear scope alignment (no mislabeling like Task 17)
-2. ✅ Comprehensive implementation (6 conditions + RecoveryComplete)
+2. ✅ Comprehensive implementation (6 conditions + RecoveryComplete) [Deprecated - Issue #180]
 3. ✅ Pattern consistency (matches proven AIAnalysis pattern)
 4. ✅ Excellent test coverage (90%+ unit tests)
 5. ✅ Thorough documentation (3 handoff docs)
@@ -245,7 +245,7 @@
    - Authoritative sources aligned perfectly
 
 2. **Comprehensive Implementation**:
-   - All 6 conditions + RecoveryComplete implemented
+   - All 6 conditions + RecoveryComplete implemented [Deprecated - Issue #180]
    - All 8 integration points covered
    - Pattern consistency with proven AIAnalysis approach
 

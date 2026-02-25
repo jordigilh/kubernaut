@@ -57,7 +57,7 @@ To prevent accidental overwrites between teams, each service has its own REQUEST
 - `AIAnalysisComplete` - AIAnalysis finished
 - `WorkflowExecutionReady` - WorkflowExecution CRD created
 - `WorkflowExecutionComplete` - Workflow execution finished
-- `RecoveryComplete` - Overall remediation finished
+- `RecoveryComplete` - Overall remediation finished [Deprecated - Issue #180]
 
 **Effort**: 4-6 hours
 **Priority**: 🔥 **HIGH** (orchestration visibility is critical)

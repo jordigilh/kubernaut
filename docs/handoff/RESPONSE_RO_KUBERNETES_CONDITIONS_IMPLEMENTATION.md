@@ -55,7 +55,7 @@
 - [x] AIAnalysisComplete (tracks child AIAnalysis completion)
 - [x] WorkflowExecutionReady (tracks child WorkflowExecution CRD creation)
 - [x] WorkflowExecutionComplete (tracks child WorkflowExecution completion)
-- [x] RecoveryComplete (tracks overall remediation outcome)
+- [x] RecoveryComplete (tracks overall remediation outcome) [Deprecated - Issue #180]
 
 **Additional Conditions** (RO-specific):
 - [x] SignalProcessingReady (tracks child SignalProcessing CRD creation)
@@ -73,7 +73,7 @@
 **Create**: `pkg/remediationorchestrator/conditions.go`
 
 **Contents**:
-1. **8 Condition Types** (3 orchestration phases × 2 conditions each + RecoveryComplete + BlockedForCooldown)
+1. **8 Condition Types** (3 orchestration phases × 2 conditions each + RecoveryComplete [Deprecated - Issue #180] + BlockedForCooldown)
 2. **15+ Condition Reasons** (success/failure/timeout reasons for each)
 3. **Helper Functions**:
    - `SetCondition(rr, conditionType, status, reason, message)`
@@ -206,13 +206,13 @@ if rr.Status.OverallPhase == "Completed" {
         reason = ro.ReasonManualReviewRequired
     }
 
-    ro.SetRecoveryComplete(rr, true, reason,
+    ro.SetRecoveryComplete(rr, true, reason, // [Deprecated - Issue #180: RecoveryComplete removed]
         fmt.Sprintf("Remediation completed with outcome: %s", outcome))
 }
 
 // When remediation fails
 if rr.Status.OverallPhase == "Failed" {
-    ro.SetRecoveryComplete(rr, false, ro.ReasonRecoveryFailed, rr.Status.Message)
+    ro.SetRecoveryComplete(rr, false, ro.ReasonRecoveryFailed, rr.Status.Message) // [Deprecated - Issue #180]
 }
 ```
 
@@ -272,7 +272,7 @@ func (r *Reconciler) handleBlockedPhase(ctx context.Context, rr *remediationv1.R
    - AIAnalysis completion sets `AIAnalysisComplete`
    - WorkflowExecution creation sets `WorkflowExecutionReady`
    - WorkflowExecution completion sets `WorkflowExecutionComplete`
-   - Terminal state sets `RecoveryComplete`
+   - Terminal state sets `RecoveryComplete` [Deprecated - Issue #180]
    - Blocking sets `BlockedForCooldown`
 
 3. **E2E Tests** (add to existing suites):
@@ -364,7 +364,7 @@ Status:
 
 ```bash
 # Wait for specific condition
-kubectl wait --for=condition=RecoveryComplete remediationrequest rr-abc123 --timeout=10m
+kubectl wait --for=condition=RecoveryComplete remediationrequest rr-abc123 --timeout=10m  # [Deprecated - Issue #180: RecoveryComplete removed]
 
 # Check if blocked
 kubectl get rr rr-abc123 -o jsonpath='{.status.conditions[?(@.type=="BlockedForCooldown")].status}'
@@ -464,7 +464,7 @@ kubectl explain remediationrequest.status.conditions
 kubectl describe remediationrequest rr-abc123 | grep -A 10 "Conditions:"
 
 # Verify wait works
-kubectl wait --for=condition=RecoveryComplete rr rr-abc123 --timeout=10m
+kubectl wait --for=condition=RecoveryComplete rr rr-abc123 --timeout=10m  # [Deprecated - Issue #180: RecoveryComplete removed]
 ```
 
 ---

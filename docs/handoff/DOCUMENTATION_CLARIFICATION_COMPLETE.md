@@ -95,7 +95,7 @@ go build ./pkg/remediationorchestrator/...
 ### **What BR-ORCH-043 Actually Requires**:
 - ⏳ RemediationRequest conditions (7 types)
 - ⏳ Child CRD lifecycle visibility (SignalProcessing, AIAnalysis, WorkflowExecution)
-- ⏳ RecoveryComplete (partially done - terminal transitions only)
+- ⏳ RecoveryComplete (partially done - terminal transitions only) [Deprecated - Issue #180]
 - ⏳ 80% MTTD reduction through single-resource visibility
 
 ---

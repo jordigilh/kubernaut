@@ -334,7 +334,7 @@ if err != nil || resp.StatusCode != http.StatusOK {
   4. `AIAnalysisComplete`
   5. `WorkflowExecutionReady`
   6. `WorkflowExecutionComplete`
-  7. `RecoveryComplete`
+  7. `RecoveryComplete` [Deprecated - Issue #180]
 
 - **20+ Reason Constants**: Success/failure/timeout reasons for each condition
 
@@ -406,7 +406,7 @@ Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge"
 - SignalProcessing conditions populated during lifecycle
 - AIAnalysis conditions populated during lifecycle
 - WorkflowExecution conditions populated during lifecycle
-- RecoveryComplete set on success/failure
+- RecoveryComplete set on success/failure [Deprecated - Issue #180]
 - Blocking conditions (BR-ORCH-042 integration)
 
 ---
@@ -432,7 +432,7 @@ Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge"
 6. ✅ E2E tests validate full lifecycle
 7. ✅ Documentation updated (4 files)
 8. ✅ Manual validation: `kubectl describe remediationrequest` shows conditions
-9. ✅ Automation validation: `kubectl wait --for=condition=RecoveryComplete` works
+9. ✅ Automation validation: `kubectl wait --for=condition=RecoveryComplete` works [Deprecated - Issue #180]
 
 **Why This Matters**:
 - **80% reduction in MTTD** (Mean Time To Diagnose): 10-15 min → 2-3 min
