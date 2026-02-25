@@ -16,16 +16,10 @@ data:
     default require_approval := false
 
     require_approval if { input.environment == "production" }
-    require_approval if { input.is_recovery_attempt == true; input.recovery_attempt_number >= 3 }
     require_approval if { input.environment == "production"; count(input.warnings) > 0 }
     require_approval if { input.environment == "production"; count(input.failed_detections) > 0 }
 
     # Scored risk factors for reason generation
-    risk_factors contains {"score": 100, "reason": msg} if {
-        input.is_recovery_attempt == true
-        input.recovery_attempt_number >= 3
-        msg := sprintf("Multiple recovery attempts (%d) - human approval required", [input.recovery_attempt_number])
-    }
     risk_factors contains {"score": 70, "reason": "Data quality warnings in production environment"} if {
         input.environment == "production"
         count(input.warnings) > 0

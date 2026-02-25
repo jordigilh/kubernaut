@@ -14,11 +14,11 @@
 # 5. HolmesGPT API receives authenticated request
 #
 # Services (1 total):
-# - AIAnalysis Controller (calls HAPI for investigation/recovery analysis)
+# - AIAnalysis Controller (calls HAPI for investigation analysis)
 #
 # Why Only AIAnalysis?
 # - AIAnalysis controller orchestrates the investigation workflow
-# - AIAnalysis is responsible for calling LLM for incident/recovery analysis
+# - AIAnalysis is responsible for calling LLM for incident analysis
 # - Gateway receives alerts but does NOT call HAPI (it creates AIAnalysis CRDs instead)
 # - This minimizes LLM API surface area and cost exposure
 #

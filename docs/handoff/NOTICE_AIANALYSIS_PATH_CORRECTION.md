@@ -87,8 +87,8 @@ AIAnalysisSpec
 │   │       ├── customLabels     ✅
 │   │       └── enrichmentQuality
 │   └── analysisTypes
-├── isRecoveryAttempt
-├── recoveryAttemptNumber
+├── isRecoveryAttempt [Deprecated - Issue #180]
+├── recoveryAttemptNumber [Deprecated - Issue #180]
 └── previousExecutions
 ```
 

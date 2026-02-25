@@ -428,9 +428,11 @@ status:
 
 ---
 
-## Recovery Flow Integration
+## Recovery Flow Integration [Deprecated - Issue #180]
 
-### RO Creates Recovery AIAnalysis
+**Status**: Recovery flow (DD-RECOVERY-002) removed. See Issue #180.
+
+### RO Creates Recovery AIAnalysis (Deprecated)
 
 When a `WorkflowExecution` fails, RO creates a new `AIAnalysis` with recovery context:
 

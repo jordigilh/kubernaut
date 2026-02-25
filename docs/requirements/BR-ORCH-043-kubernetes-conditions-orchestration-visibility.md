@@ -130,11 +130,11 @@ kubectl describe remediationrequest <name> | grep -A5 "WorkflowExecution"
 
 ---
 
-### **AC-043-5: Overall Recovery Status**
+### **AC-043-5: Overall Recovery Status** [Deprecated - Issue #180]
 
 **Requirement**: RO MUST set condition tracking overall remediation outcome.
 
-**Condition**: **RecoveryComplete**
+**Condition**: **RecoveryComplete** (Deprecated - recovery flow removed)
 - **Status**: `True` when remediation reaches terminal phase (Completed/Failed)
 - **Status**: `False` during active processing
 - **Reason Success**: `RecoverySucceeded`

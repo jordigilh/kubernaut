@@ -13,7 +13,7 @@
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2026-02-12 | Architecture Team | Initial proposal: move context enrichment (owner chain, spec hash, remediation history) from pre-LLM computation to post-RCA tool-driven flow. |
-| 1.1 | 2026-02-12 | Architecture Team | Address 8 triage gaps: include recovery flow (§1), replace `target_in_owner_chain` with `affected_resource` Rego input (§2), preserve `ExtractRootCauseAnalysis` (§3), enforce `affectedResource` as required LLM response field (§4), clarify CRD deprecation (§5), clarify `current_spec_hash` scope (§6), document new `resolve_owner_chain` function + RBAC expansion (§7), update latency estimate (§8). |
+| 1.1 | 2026-02-12 | Architecture Team | Address 8 triage gaps: replace `target_in_owner_chain` with `affected_resource` Rego input (§2), preserve `ExtractRootCauseAnalysis` (§3), enforce `affectedResource` as required LLM response field (§4), clarify CRD deprecation (§5), clarify `current_spec_hash` scope (§6), document new `resolve_owner_chain` function + RBAC expansion (§7), update latency estimate (§8). [Deprecated - Issue #180: Recovery flow reference removed] |
 | 1.3 | 2026-02-24 | Architecture Team | **Issue #188 (DD-EM-003)**: Renamed `resolveEffectivenessTarget` to `resolveDualTargets` throughout. The function now returns `*creator.DualTarget{Signal, Remediation}` with explicit dual-target semantics. Updated compatibility table and data quality section. |
 | 1.2 | 2026-02-12 | Architecture Team | Refine tool return contract: `get_resource_context` returns only `root_owner` and `remediation_history` to the LLM. Owner chain traversal and spec hash computation are internal implementation details not exposed in the tool response. Update prompt Phase 3b accordingly. See also ADR-056 for DetectedLabels relocation. |
 
@@ -37,7 +37,7 @@ Signal -> SP enriches with OwnerChain
   -> LLM selects workflow based on pre-computed context
 ```
 
-This applies to both the **incident flow** (`extensions/incident/llm_integration.py`) and the **recovery flow** (`extensions/recovery/llm_integration.py`), which have identical pre-computation blocks.
+This applies to the **incident flow** (`extensions/incident/llm_integration.py`). [Deprecated - Issue #180: Recovery flow reference removed]
 
 ### Problems
 
@@ -85,7 +85,7 @@ Signal -> AIAnalysis Controller passes signal context to HAPI
   -> LLM returns complete result: RCA + affected resource + workflow recommendation
 ```
 
-This flow applies to both the incident and recovery paths.
+This flow applies to the incident path.
 
 ### Key Design Principles
 
@@ -105,13 +105,12 @@ This flow applies to both the incident and recovery paths.
 
 ### Phase 1: Revert Issue #97 Pre-Computation Path
 
-#### HAPI (Python) -- Incident and Recovery Flows
+#### HAPI (Python) -- Incident Flow
 
 | File | Change | Rationale |
 |------|--------|-----------|
 | `holmesgpt-api/src/extensions/incident/llm_integration.py` | Remove pre-LLM root owner resolution, spec hash computation, remediation history fetch via root owner, and Phase C `affectedResource` population (~lines 227-278, 593-608) | Pre-computation targets wrong resource |
-| `holmesgpt-api/src/extensions/recovery/llm_integration.py` | Remove identical pre-computation block (~lines 290-341) | Same as incident flow |
-| `holmesgpt-api/src/extensions/incident/result_parser.py` | Remove `target_in_owner_chain` from `parse_and_validate_investigation_result` and `parse_and_validate_recovery_result`. Remove `is_target_in_owner_chain()` function. | Replaced by `affected_resource` Rego input |
+| `holmesgpt-api/src/extensions/incident/result_parser.py` | Remove `target_in_owner_chain` from `parse_and_validate_investigation_result`. Remove `is_target_in_owner_chain()` function. | Replaced by `affected_resource` Rego input |
 | `holmesgpt-api/src/clients/k8s_client.py` | Remove `resolve_root_owner()` function. Keep `compute_spec_hash()` (reused by new tool). | `resolve_root_owner` was a trivial list[-1]; new tool traverses K8s API instead |
 | `holmesgpt-api/tests/unit/test_k8s_client_owner_resolution.py` | Remove tests for `resolve_root_owner()` | Function removed |
 
@@ -285,7 +284,7 @@ Note: `replicasets` added (needed for Pod -> ReplicaSet traversal). `pods` added
 
 #### Tool Registration
 
-The `get_resource_context` tool must be registered in **both** the incident and recovery tool registries, alongside the existing DD-HAPI-017 workflow discovery tools.
+The `get_resource_context` tool must be registered in the incident tool registry, alongside the existing DD-HAPI-017 workflow discovery tools.
 
 #### Updated Prompt Flow
 
@@ -331,7 +330,7 @@ The Go-side `CapturePreRemediationHash` in the RO reconciler independently compu
 #### Remove `target_in_owner_chain`
 
 Removed from:
-- HAPI response (`result_parser.py` -- both incident and recovery parse functions)
+- HAPI response (`result_parser.py` -- incident parse function)
 - `is_target_in_owner_chain()` function in `result_parser.py`
 - AIAnalysis CRD status (`TargetInOwnerChain *bool`)
 - Rego evaluator input (`RegoInput` struct)

@@ -275,8 +275,6 @@ func (r *Reconciler) CheckManagedResource(ctx context.Context, rr *remediationv1
 - **BR-SCOPE-001**: Resource Scope Management (referenced - no changes)
 - **BR-SCOPE-002**: Gateway Signal Filtering (referenced - no changes)
 - **BR-SCOPE-010**: RO Routing Validation (impacted - needs update)
-- **BR-AI-080**: Recovery analysis support (referenced - no changes)
-
 ### Architecture Decisions
 - **ADR-053**: Resource Scope Management (impacted - needs update)
 - **ADR-001**: CRD-based Microservices Architecture (referenced - no changes)

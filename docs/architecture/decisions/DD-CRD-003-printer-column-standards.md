@@ -155,7 +155,7 @@ Issue #79 implemented a unified `Ready` condition across all 7 active CRD types 
 |------------|----------------|------------|--------|
 | AIAnalysis | 6 | Yes | `InvestigationComplete=False` wired on all failure paths; `WorkflowResolved`/`ApprovalRequired` gap fixed |
 | WorkflowExecution | 5 | Yes | `ResourceLocked` dead code removed; `ObservedGeneration` fixed |
-| RemediationOrchestrator (RR) | 9 | Yes | `NotificationDelivered` uses centralized constants; `RemediationExecuted` removed (never implemented); `RecoveryComplete` gap fixed on timeout/blocked-terminal paths |
+| RemediationOrchestrator (RR) | 9 | Yes | `NotificationDelivered` uses centralized constants; `RemediationExecuted` removed (never implemented); `RecoveryComplete` [Deprecated - Issue #180] |
 | RemediationOrchestrator (RAR) | 4 | Yes | Ready wired on Approved/Rejected/Expired paths |
 | SignalProcessing | 5 | Yes | `ClassificationComplete=False` and `EnrichmentComplete=False` wired on failure paths |
 | Notification | 2 | Yes | `RoutingResolved` persistence bug fixed (conditions parameter); fallback reason bug fixed; `meta.SetStatusCondition` used |

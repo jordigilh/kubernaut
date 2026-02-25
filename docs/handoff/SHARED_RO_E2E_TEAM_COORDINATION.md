@@ -793,7 +793,7 @@ Validation: status.phase transitions continue from last checkpoint
 **Current Status**: AIAnalysis controller is production-ready with:
 - ✅ Full 4-phase reconciliation (Pending → Investigating → Analyzing → Completed)
 - ✅ HAPI integration with mock mode support
-- ✅ Recovery flow implementation
+- [Deprecated - Issue #180] Recovery flow implementation
 - ✅ Rego policy-based approval decisions
 - ✅ E2E test infrastructure deployed and functional
 

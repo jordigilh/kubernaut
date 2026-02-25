@@ -1,3 +1,10 @@
+> **DEPRECATED (Issue #180)**: The recovery flow (DD-RECOVERY-002/003) has been deprecated.
+> The existing DS remediation-history flow (ADR-055) provides historical context on signal re-arrival.
+> This document is preserved for historical reference only.
+
+---
+
+
 # Failure Recovery Flow - Approved Sequence Diagram
 
 **Document Version**: 1.1

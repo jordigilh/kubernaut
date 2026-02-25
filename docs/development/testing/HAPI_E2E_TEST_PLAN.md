@@ -280,7 +280,9 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 ---
 
-### Category B: Recovery Analysis (17 scenarios)
+### Category B: Recovery Analysis (17 scenarios) [Deprecated - Issue #180]
+
+**Note**: Recovery flow (DD-RECOVERY-002) removed. These scenarios are retained for reference but the recovery endpoint may be deprecated.
 
 #### E2E-HAPI-013: Recovery Endpoint Happy Path
 

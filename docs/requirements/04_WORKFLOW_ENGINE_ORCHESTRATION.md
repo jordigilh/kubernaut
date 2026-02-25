@@ -118,14 +118,14 @@ The Workflow Engine & Orchestration layer provides sophisticated automation capa
 ##### Recovery Attempt Limits
 - **BR-WF-RECOVERY-001**: MUST limit recovery attempts to maximum of 3 per RemediationRequest
   - **Rationale**: Prevents infinite recovery loops and resource exhaustion
-  - **Implementation**: Track `recoveryAttempts` counter in RemediationRequest.status
+  - **Implementation**: [Deprecated - Issue #180] Recovery flow removed
   - **Success Criteria**: System escalates to manual review after 3 failed recovery attempts
   - **Monitoring**: Track `kubernaut_recovery_attempts_total` metric
 
 - **BR-WF-RECOVERY-002**: MUST increment recovery attempt counter each time a new recovery AIAnalysis CRD is created
   - **Rationale**: Accurate tracking of recovery progression
   - **Implementation**: Increment in Remediation Orchestrator when creating recovery AIAnalysis
-  - **Success Criteria**: Counter accurately reflects number of recovery workflows executed
+  - **Success Criteria**: [Deprecated - Issue #180] Recovery flow removed
 
 ##### Pattern Detection & Escalation
 - **BR-WF-RECOVERY-003**: MUST detect repeated failure patterns and escalate to manual review

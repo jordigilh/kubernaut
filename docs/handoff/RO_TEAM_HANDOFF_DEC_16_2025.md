@@ -40,7 +40,7 @@ All code follows TDD methodology with 77 passing tests (27 RR + 16 RAR + 34 rout
 | `AIAnalysisComplete` | AI completed/failed |
 | `WorkflowExecutionReady` | WE CRD created |
 | `WorkflowExecutionComplete` | WE completed/failed |
-| `RecoveryComplete` | Terminal phase reached |
+| `RecoveryComplete` | [Deprecated - Issue #180] Terminal phase reached |
 
 #### RemediationApprovalRequest Conditions (3 types)
 

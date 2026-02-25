@@ -154,7 +154,7 @@ Conditions:
 | `SignalProcessingReady` | `Ready` | `NotReady` | After SP CRD created |
 | `AIAnalysisReady` | `Ready` | `NotReady` | After AA CRD created |
 | `WorkflowExecutionReady` | `Ready` | `NotReady` | After WE CRD created |
-| `RecoveryComplete` | `RecoverySucceeded`, `RecoverySkipped` | `RecoveryFailed` | After recovery lifecycle |
+| `RecoveryComplete` | `RecoverySucceeded`, `RecoverySkipped` | `RecoveryFailed` | [Deprecated - Issue #180] After recovery lifecycle |
 
 ---
 

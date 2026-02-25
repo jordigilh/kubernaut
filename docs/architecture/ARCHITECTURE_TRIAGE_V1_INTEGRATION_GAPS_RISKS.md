@@ -214,37 +214,9 @@ grep -A 20 "approvalContext" config/crd/bases/aianalysis.kubernaut.io_aianalyses
 
 ---
 
-### **GAP-7: RemediationRequest CRD Missing "Recovering" Phase** ⚠️
+### **GAP-7: RemediationRequest CRD Missing "Recovering" Phase** [Deprecated - Issue #180]
 
-**Severity**: 🟡 **HIGH** (P1 - Failure Recovery)
-**Discovery**: [Failure Recovery Documentation Triage](./FAILURE_RECOVERY_DOCUMENTATION_TRIAGE.md) - Issue C2
-**Impact**: Cannot track failure recovery state
-
-**Current Phases**:
-```go
-// +kubebuilder:validation:Enum=Pending;Processing;Analyzing;Executing;Completed;Failed
-Phase string `json:"phase"`
-```
-
-**Approved Phases** (from PROPOSED_FAILURE_RECOVERY_SEQUENCE.md):
-```
-Pending → Processing → Analyzing → Executing → [FAILURE] → Recovering → Completed/Failed
-```
-
-**Required Changes**:
-1. Add `"Recovering"` to RemediationRequest phase enum
-2. Update RemediationOrchestrator controller to handle "recovering" phase
-3. Add recovery tracking fields: `recoveryAttempts`, `maxRecoveryAttempts`, `lastRecoveryTime`
-
-**Business Requirements Missing**:
-- **BR-WF-RECOVERY-001**: Max recovery attempts (3)
-- **BR-WF-RECOVERY-002**: Pattern detection (same failure 2x → escalate)
-- **BR-WF-RECOVERY-003**: Termination rate monitoring (<10%)
-
-**Estimated Effort**: 4 hours (CRD update + BRs)
-**Risk**: **MEDIUM** - Failure recovery less critical for V1.0 MVP
-
-**Mitigation**: Defer to V1.1 if V1.0 timeline tight, document as known limitation
+**Status**: Deprecated - Recovery flow (DD-RECOVERY-002) removed. See Issue #180.
 
 ---
 
@@ -328,7 +300,7 @@ graph TD
 2. **Watch 5 CRD types**: Own + 4 children
 3. **Manage lifecycle**: Pending → Processing → Analyzing → Executing → Recovering → Completed/Failed
 4. **Handle approval notifications**: BR-ORCH-001 (create NotificationRequest when `aiAnalysis.phase="approving"`)
-5. **Coordinate recovery**: Watch for failures, create recovery AIAnalysis
+5. **Coordinate workflow lifecycle**: [Deprecated - Issue #180] Recovery flow removed
 
 **Complexity Indicators**:
 - **50+ BRs**: BR-ORCH-001 to BR-ORCH-050 documented
@@ -767,7 +739,7 @@ env:
 **Question**: Should we defer any features to V1.1 to accelerate V1.0 delivery?
 
 **Candidates for Deferral**:
-1. **Failure recovery workflow**: "recovering" phase, BR-WF-RECOVERY-001 to BR-WF-RECOVERY-006 (4 hours)
+1. **Failure recovery workflow**: [Deprecated - Issue #180] Recovery flow removed
 2. **18 P2 remediation actions**: Keep 11 P0+P1 actions (70%+20% = 90% coverage) (saves 1-2 weeks)
 3. **GitOps integration**: Optional PR generation (saves 1 week)
 4. **Per-step validation**: DD-002 per-step precondition/postcondition checks (saves 1-2 weeks)
