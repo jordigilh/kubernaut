@@ -160,8 +160,8 @@ class TestADR040SignalContext:
         prompt = _create_investigation_prompt(request_data)
 
         assert len(prompt) > 100  # Prompt is generated
-        # Hybrid format v3.0: signal_source not included
-        assert "scale-deployment" in prompt.lower()
+        assert "pod_oom_killed" in prompt.lower()
+        assert "selected_workflow" in prompt.lower()
 
     def test_prompt_with_all_optional_fields(self):
         """ADR-041: Prompt includes all optional fields when provided"""
@@ -517,8 +517,8 @@ class TestADR040EdgeCases:
         prompt = _create_investigation_prompt(request_data)
 
         assert prompt is not None
-        # Hybrid format v3.0: uses error_message, not nested dict details
-        assert "Unknown error" in prompt or "unknown error" in prompt.lower()
+        assert "timeout" in prompt.lower()
+        assert "nested details" in prompt.lower()
 
     def test_prompt_with_all_priority_levels(self):
         """Edge case: Test all priority levels (P0, P1, P2, P3)"""
