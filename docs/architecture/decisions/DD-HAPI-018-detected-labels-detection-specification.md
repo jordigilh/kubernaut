@@ -2,7 +2,7 @@
 
 **Status**: APPROVED
 **Decision Date**: 2026-02-12
-**Version**: 1.1
+**Version**: 1.2
 **Confidence**: 96%
 **Applies To**: SignalProcessing (Go, reference implementation), HolmesGPT API (Python, new implementation per ADR-056)
 
@@ -14,6 +14,7 @@
 |---------|------|--------|---------|
 | 1.0 | 2026-02-12 | Architecture Team | Initial specification extracted from SP reference implementation (`pkg/signalprocessing/detection/labels.go`). Cross-language contract for HAPI Python reimplementation. |
 | 1.1 | 2026-02-20 | Architecture Team | Update consumer guidance: detected labels are now both used as DS query filters AND surfaced to the LLM as read-only `cluster_context` in `list_available_actions` response. `failedDetections` fields excluded from both uses. See ADR-056 v1.3, DD-HAPI-017 v1.3. |
+| 1.2 | 2026-02-25 | Architecture Team | Add non-workload target context building (Issue #196). When the RCA target is a PodDisruptionBudget, `_build_k8s_context` resolves pod context from the PDB's selector. Node target deferred to Issue #203. New K8s client method: `list_pods_by_selector`. New conformance vectors: DL-HP-10, DL-EC-04. |
 
 ---
 
@@ -305,6 +306,31 @@ API-based detections SHOULD use a TTL cache keyed by namespace to reduce K8s API
 
 ---
 
+## Non-Workload Target Context Building (v1.2)
+
+The original specification assumes workload resources (Pod, Deployment, StatefulSet) as the RCA target. ADR-056 notes that ~30-40% of RCAs identify a resource outside the signal source's owner chain (e.g., Node, PodDisruptionBudget, ConfigMap). This section defines how `_build_k8s_context` MUST handle non-workload targets so that label detection can still produce meaningful results.
+
+### PodDisruptionBudget as RCA Target
+
+**Scenario**: The LLM identifies a PodDisruptionBudget as the root cause (e.g., "PDB is blocking drain/rollout"). The PDB itself does not have pod labels, but it has a `spec.selector` that selects pods.
+
+**Context Building Logic**:
+
+1. Find the target PDB: List PDBs in the target namespace and match by name.
+2. Read the PDB's `spec.selector.matchLabels`.
+3. If matchLabels is non-empty: List pods in the same namespace matching those labels via `list_pods_by_selector(namespace, matchLabels)`.
+4. If matching pods are found: Populate `pod_details` from the first matched pod (labels, annotations). This allows PDB detection to correctly match the PDB's selector against the pod's labels.
+5. If no pods match or the PDB has no selector: `pod_details` remains absent. PDB detection will return `pdbProtected=false` per Detection 2 rules.
+
+**K8s API Call**: `List core/v1 Pod` with label selector (new method: `list_pods_by_selector`)
+**RBAC Required**: `list` on `pods` in `""` (core) API group (already granted in existing RBAC)
+
+### Node as RCA Target
+
+**Deferred to Issue #203** (v1.1 milestone). Node targets are cluster-scoped with no namespace and no owner chain. All namespace-scoped detections (PDB, HPA, NetworkPolicy) would need a strategy for selecting the relevant namespace (e.g., from the alert's namespace). The current behavior (`pdbProtected=false`, all-default labels) is safe and conservative.
+
+---
+
 ## Conformance Test Vectors
 
 Both SP and HAPI test suites MUST pass the following test vectors. Test IDs are from the SP reference test suite (`test/unit/signalprocessing/label_detector_test.go`).
@@ -323,6 +349,12 @@ Both SP and HAPI test suites MUST pass the following test vectors. Test IDs are 
 | DL-HP-08 | Pod annotation `sidecar.istio.io/status: {"version":"1.18.0"}` | `serviceMesh="istio"` |
 | DL-HP-09 | Pod annotation `linkerd.io/proxy-version: stable-2.14.0` | `serviceMesh="linkerd"` |
 
+### Non-Workload Target Vectors (v1.2)
+
+| Test ID | Input | Expected Output |
+|---------|-------|-----------------|
+| DL-HP-10 | RCA target is PDB `my-pdb` with `selector.matchLabels: {app: api}`. Pods in namespace have `labels: {app: api}`. A PDB exists whose selector matches those pod labels. | `pdbProtected=true` (pod context resolved from PDB selector) |
+
 ### Edge Case Vectors
 
 | Test ID | Input | Expected Output |
@@ -330,6 +362,7 @@ Both SP and HAPI test suites MUST pass the following test vectors. Test IDs are 
 | DL-EC-01 | Plain deployment, no special annotations/labels/resources | All fields `false`/empty, `failedDetections=[]` |
 | DL-EC-02 | Nil/None KubernetesContext | Return nil/None (no DetectedLabels object) |
 | DL-EC-03 | ArgoCD + PDB + HPA all present simultaneously | `gitOpsManaged=true`, `pdbProtected=true`, `hpaEnabled=true` |
+| DL-EC-04 | RCA target is PDB with no `spec.selector` or no matching pods | `pdbProtected=false`, `failedDetections=[]` (no query failure, just no matching pods) |
 
 ### Error Handling Vectors
 
@@ -392,8 +425,8 @@ The current SP implementation in `pkg/signalprocessing/detection/labels.go` is t
 
 ---
 
-**Document Version**: 1.1
-**Last Updated**: February 20, 2026
+**Document Version**: 1.2
+**Last Updated**: February 25, 2026
 **Status**: APPROVED
 **Authority**: Cross-team detection specification for DetectedLabels (SP + HAPI)
 **Confidence**: 96%
