@@ -12,7 +12,7 @@ metadata:
 actionType: CordonDrainNode
 
 labels:
-  signalName: NodeNotReady
+  signalName: KubeNodeNotReady
   severity: [critical]
   environment: [production, staging]
   component: "*"
