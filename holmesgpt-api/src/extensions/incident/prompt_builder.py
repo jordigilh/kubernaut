@@ -412,6 +412,28 @@ that a **{signal_name}** event will occur for **{namespace}/{resource_kind}/{res
     # by the get_resource_context tool (LabelDetector) and injected into
     # DataStorage queries via session_state. No longer included in the prompt.
 
+    # Issue #198: PDB-specific guidance for KubePodDisruptionBudgetAtLimit signals
+    pdb_signal_guidance = ""
+    if signal_name and "PodDisruptionBudget" in signal_name:
+        pdb_signal_guidance = """
+## PDB-Specific Investigation Guidance (Issue #198)
+
+**IMPORTANT**: This signal indicates a PodDisruptionBudget is blocking voluntary
+disruptions (drain/eviction). Before concluding this is a taint or scheduling issue:
+
+1. **Inspect the PDB spec**: Call `get_resource_context` for the PDB itself
+   (kind=PodDisruptionBudget) to understand its selector and minAvailable/maxUnavailable.
+2. **Check matched pods**: The PDB's selector identifies which pods it protects.
+   Verify the replica count vs minAvailable constraint.
+3. **Prefer RelaxPDB over RemoveTaint**: A drained node with SchedulingDisabled is a
+   SYMPTOM of the PDB blocking eviction, not the root cause. The root cause is the
+   PDB constraint preventing the eviction needed for the drain to complete.
+4. **RCA target**: The affected resource should be the PDB, not the Node.
+"""
+
+    if pdb_signal_guidance:
+        prompt += pdb_signal_guidance
+
     # BR-HAPI-016: Add remediation history section if context is available
     if remediation_history_context:
         from extensions.remediation_history_prompt import build_remediation_history_section

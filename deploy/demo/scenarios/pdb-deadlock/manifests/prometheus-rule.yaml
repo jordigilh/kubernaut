@@ -32,8 +32,15 @@ spec:
       annotations:
         summary: >
           PDB {{ $labels.poddisruptionbudget }} in namespace {{ $labels.namespace }}
-          is blocking all voluntary disruptions despite all pods being healthy.
+          is at disruption limit - blocking node drain/eviction
         description: >
-          The payment-service PDB has minAvailable=2 with 2 replicas, leaving zero
-          allowed disruptions. This blocks rolling updates, node drains, and any
-          voluntary eviction. The PDB should be relaxed to allow at least 1 disruption.
+          The PodDisruptionBudget is preventing pod evictions because minAvailable
+          equals current available pods. This typically occurs during node maintenance
+          (drain/cordon) when the PDB blocks eviction of the last available replica.
+          The PDB should be temporarily relaxed to allow at least 1 disruption.
+        runbook_url: "https://kubernaut.ai/runbooks/relax-pdb"
+        kubernaut.ai/hint_action_type: "RelaxPDB"
+        kubernaut.ai/hint_context: >
+          PDB is blocking node drain. Temporarily relaxing minAvailable will
+          unblock evictions. Investigate the PDB spec and matched pods before
+          selecting a remediation workflow.
