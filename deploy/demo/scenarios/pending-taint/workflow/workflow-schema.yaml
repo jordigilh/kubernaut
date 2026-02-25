@@ -14,7 +14,7 @@ actionType: RemoveTaint
 labels:
   signalName: KubePodNotScheduled
   severity: [low, medium, high, critical]
-  environment: [production, staging]
+  environment: [production, staging, "*"]
   component: "*"
   priority: "*"
 
