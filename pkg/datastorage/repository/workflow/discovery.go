@@ -268,6 +268,52 @@ func buildContextFilterSQL(filters *models.WorkflowDiscoveryFilters) (string, []
 			END
 		)`, argIdx, argIdx))
 		args = append(args, filters.Priority)
+		argIdx++
+	}
+
+	// Issue #197: DetectedLabels filtering per DD-WORKFLOW-001 v2.7
+	if filters.DetectedLabels != nil {
+		dl := filters.DetectedLabels
+
+		// Boolean fields: when true, match workflows that require it OR have no requirement (absent)
+		boolFields := []struct {
+			jsonKey string
+			value   bool
+		}{
+			{"gitOpsManaged", dl.GitOpsManaged},
+			{"pdbProtected", dl.PDBProtected},
+			{"hpaEnabled", dl.HPAEnabled},
+			{"stateful", dl.Stateful},
+			{"helmManaged", dl.HelmManaged},
+			{"networkIsolated", dl.NetworkIsolated},
+		}
+		for _, f := range boolFields {
+			if f.value {
+				conditions = append(conditions, fmt.Sprintf(
+					"(detected_labels->>'%s' = $%d OR detected_labels->>'%s' IS NULL)",
+					f.jsonKey, argIdx, f.jsonKey))
+				args = append(args, "true")
+				argIdx++
+			}
+		}
+
+		// String fields: exact match, wildcard "*", or absent (no requirement)
+		stringFields := []struct {
+			jsonKey string
+			value   string
+		}{
+			{"gitOpsTool", dl.GitOpsTool},
+			{"serviceMesh", dl.ServiceMesh},
+		}
+		for _, f := range stringFields {
+			if f.value != "" {
+				conditions = append(conditions, fmt.Sprintf(
+					"(detected_labels->>'%s' = $%d OR detected_labels->>'%s' = '*' OR detected_labels->>'%s' IS NULL)",
+					f.jsonKey, argIdx, f.jsonKey, f.jsonKey))
+				args = append(args, f.value)
+				argIdx++
+			}
+		}
 	}
 
 	if len(conditions) == 0 {
