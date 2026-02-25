@@ -18,6 +18,12 @@ defaultRules:
 alertmanager:
   enabled: true
   alertmanagerSpec:
+    nodeSelector:
+      node-role.kubernetes.io/control-plane: ""
+    tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
     resources:
       requests:
         memory: 64Mi
@@ -54,6 +60,14 @@ alertmanager:
 # ---------------------------------------------------------------------------
 # Prometheus
 # ---------------------------------------------------------------------------
+prometheusOperator:
+  nodeSelector:
+    node-role.kubernetes.io/control-plane: ""
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+
 prometheus:
   enabled: true
   prometheusSpec:
@@ -69,6 +83,12 @@ prometheus:
     podMonitorSelectorNilUsesHelmValues: false
     podMonitorNamespaceSelector: {}
     podMonitorSelector: {}
+    nodeSelector:
+      node-role.kubernetes.io/control-plane: ""
+    tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
     retention: 1h
     resources:
       requests:
@@ -83,6 +103,12 @@ prometheus:
 # ---------------------------------------------------------------------------
 grafana:
   enabled: true
+  nodeSelector:
+    node-role.kubernetes.io/control-plane: ""
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
   adminUser: admin
   adminPassword: kubernaut
   env:
@@ -108,6 +134,12 @@ grafana:
 # ---------------------------------------------------------------------------
 kube-state-metrics:
   enabled: true
+  nodeSelector:
+    node-role.kubernetes.io/control-plane: ""
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
   resources:
     requests:
       memory: 64Mi

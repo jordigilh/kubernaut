@@ -266,14 +266,29 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		// Compute all derived timing fields on first reconciliation.
 		// These are persisted in status to avoid recomputation and for operator observability.
 		//
-		// ValidityDeadline = EA.creationTimestamp + config.ValidityWindow (BR-EM-009.1)
+		// ValidityDeadline = EA.creationTimestamp + effectiveValidity (BR-EM-009.1)
 		// PrometheusCheckAfter = EA.creationTimestamp + StabilizationWindow (BR-EM-009.2)
 		// AlertManagerCheckAfter = EA.creationTimestamp + StabilizationWindow (BR-EM-009.3)
 		//
-		// The invariant StabilizationWindow < ValidityDeadline is guaranteed because
-		// EM config validation enforces ValidityWindow > StabilizationWindow.
-		deadline := metav1.NewTime(ea.CreationTimestamp.Add(r.Config.ValidityWindow))
-		checkAfter := metav1.NewTime(ea.CreationTimestamp.Add(ea.Spec.Config.StabilizationWindow.Duration))
+		// Runtime guard (Issue #188): EA.StabilizationWindow comes from RO config and
+		// may exceed EM's ValidityWindow. When StabilizationWindow >= ValidityWindow,
+		// extend the effective validity to StabilizationWindow + ValidityWindow so the
+		// EM always has the full validity window after stabilization completes.
+		stabilizationWindow := ea.Spec.Config.StabilizationWindow.Duration
+		effectiveValidity := r.Config.ValidityWindow
+		if stabilizationWindow >= effectiveValidity {
+			effectiveValidity = stabilizationWindow + r.Config.ValidityWindow
+			logger.Info("Runtime guard: extended ValidityDeadline (StabilizationWindow >= ValidityWindow)",
+				"originalValidity", r.Config.ValidityWindow,
+				"effectiveValidity", effectiveValidity,
+				"stabilizationWindow", stabilizationWindow,
+			)
+			r.Recorder.Eventf(ea, corev1.EventTypeWarning, "ValidityWindowExtended",
+				"StabilizationWindow (%v) >= ValidityWindow (%v); extended deadline to %v",
+				stabilizationWindow, r.Config.ValidityWindow, effectiveValidity)
+		}
+		deadline := metav1.NewTime(ea.CreationTimestamp.Add(effectiveValidity))
+		checkAfter := metav1.NewTime(ea.CreationTimestamp.Add(stabilizationWindow))
 
 		ea.Status.Phase = eav1.PhaseAssessing
 		ea.Status.ValidityDeadline = &deadline
@@ -282,8 +297,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 
 		logger.Info("Computed derived timing (BR-EM-009)",
 			"creationTimestamp", ea.CreationTimestamp,
-			"validityWindow", r.Config.ValidityWindow,
-			"stabilizationWindow", ea.Spec.Config.StabilizationWindow.Duration,
+			"configuredValidityWindow", r.Config.ValidityWindow,
+			"effectiveValidity", effectiveValidity,
+			"stabilizationWindow", stabilizationWindow,
 			"validityDeadline", deadline,
 			"prometheusCheckAfter", checkAfter,
 			"alertManagerCheckAfter", checkAfter,

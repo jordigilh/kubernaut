@@ -309,4 +309,69 @@ var _ = Describe("Derived Timing Computation (BR-EM-009)", func() {
 		Expect(fetchedEA.Status.ValidityDeadline.Time.After(fetchedEA.Status.PrometheusCheckAfter.Time)).To(BeTrue(),
 			"ValidityDeadline must be after PrometheusCheckAfter (invariant: ValidityWindow > StabilizationWindow)")
 	})
+
+	// ========================================
+	// IT-EM-VWG-001: Runtime guard extends ValidityDeadline when StabilizationWindow >= ValidityWindow
+	// Issue #188: EA.StabilizationWindow comes from RO config, which can exceed EM's ValidityWindow.
+	// The guard should extend ValidityDeadline = StabilizationWindow + ValidityWindow.
+	// ========================================
+	It("IT-EM-VWG-001: should extend ValidityDeadline when StabilizationWindow exceeds ValidityWindow", func() {
+		ns := createTestNamespace("em-vwg-001")
+		defer deleteTestNamespace(ns)
+
+		By("Creating an EA with StabilizationWindow (35m) > default ValidityWindow (30m)")
+		ea := &eav1.EffectivenessAssessment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "ea-vwg-001",
+				Namespace: ns,
+			},
+			Spec: eav1.EffectivenessAssessmentSpec{
+				CorrelationID:           "rr-vwg-001",
+				RemediationRequestPhase: "Completed",
+				SignalTarget: eav1.TargetResource{
+					Kind:      "Deployment",
+					Name:      "test-app",
+					Namespace: ns,
+				},
+				RemediationTarget: eav1.TargetResource{
+					Kind:      "Deployment",
+					Name:      "test-app",
+					Namespace: ns,
+				},
+				Config: eav1.EAConfig{
+					StabilizationWindow: metav1.Duration{Duration: 35 * time.Minute},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, ea)).To(Succeed())
+
+		By("Waiting for the controller to compute derived timing fields")
+		fetchedEA := &eav1.EffectivenessAssessment{}
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name:      "ea-vwg-001",
+				Namespace: ns,
+			}, fetchedEA)).To(Succeed())
+			g.Expect(fetchedEA.Status.ValidityDeadline).NotTo(BeNil())
+			g.Expect(fetchedEA.Status.PrometheusCheckAfter).NotTo(BeNil())
+		}, timeout, interval).Should(Succeed())
+
+		creation := fetchedEA.CreationTimestamp.Time
+
+		By("Verifying ValidityDeadline is extended to creation + 35m + 30m = 65m (not creation + 30m)")
+		expectedExtendedDeadline := creation.Add(35*time.Minute + 30*time.Minute)
+		Expect(fetchedEA.Status.ValidityDeadline.Time).To(
+			BeTemporally("~", expectedExtendedDeadline, 5*time.Second),
+			"ValidityDeadline should be creation + StabilizationWindow + ValidityWindow (35m+30m=65m)")
+
+		By("Verifying PrometheusCheckAfter is still creation + StabilizationWindow")
+		expectedCheckAfter := creation.Add(35 * time.Minute)
+		Expect(fetchedEA.Status.PrometheusCheckAfter.Time).To(
+			BeTemporally("~", expectedCheckAfter, 5*time.Second),
+			"PrometheusCheckAfter should be creation + 35m StabilizationWindow")
+
+		By("Verifying the invariant: ValidityDeadline > PrometheusCheckAfter")
+		Expect(fetchedEA.Status.ValidityDeadline.Time.After(fetchedEA.Status.PrometheusCheckAfter.Time)).To(BeTrue(),
+			"ValidityDeadline must be after PrometheusCheckAfter (runtime guard invariant)")
+	})
 })

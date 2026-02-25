@@ -180,8 +180,9 @@ type TargetResource struct {
 	Kind string `json:"kind"`
 	// Resource name
 	Name string `json:"name"`
-	// Resource namespace
-	Namespace string `json:"namespace"`
+	// Resource namespace. Empty for cluster-scoped resources (e.g., Node, PersistentVolume).
+	// +optional
+	Namespace string `json:"namespace,omitempty"`
 }
 
 // ========================================
@@ -573,9 +574,9 @@ type AffectedResource struct {
 	// Name is the resource name
 	// +kubebuilder:validation:Required
 	Name string `json:"name"`
-	// Namespace is the resource namespace
-	// +kubebuilder:validation:Required
-	Namespace string `json:"namespace"`
+	// Namespace is the resource namespace. Empty for cluster-scoped resources (e.g., Node, PersistentVolume).
+	// +optional
+	Namespace string `json:"namespace,omitempty"`
 }
 
 // SelectedWorkflow contains the AI-selected workflow for execution

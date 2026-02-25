@@ -138,6 +138,9 @@ type Server struct {
 	lockManager   *processing.DistributedLockManager // BR-GATEWAY-190: K8s Lease-based distributed locking
 	scopeChecker  ScopeChecker                       // BR-SCOPE-002: nil = no scope filtering (backward compat)
 
+	// ADR-057: Controller namespace where all CRDs are created and queried
+	controllerNamespace string
+
 	// Infrastructure clients
 	// DD-GATEWAY-012: Redis REMOVED - Gateway is now Redis-free
 	k8sClient  *k8s.Client
@@ -258,24 +261,31 @@ func NewServerForTesting(cfg *config.ServerConfig, logger logr.Logger, metricsIn
 		lockManager = processing.NewDistributedLockManager(ctrlClient, namespace, podName)
 	}
 
+	// ADR-057: Resolve controller namespace for CRD operations and deduplication
+	controllerNS, err := scope.GetControllerNamespace()
+	if err != nil {
+		return nil, fmt.Errorf("failed to determine controller namespace: %w", err)
+	}
+
 	// Create server first (crdCreator set below after observer wiring)
 	server := &Server{
-		config:          cfg,
-		adapterRegistry: adapterRegistry,
-		statusUpdater:   statusUpdater,
-		phaseChecker:    phaseChecker,
-		k8sClient:       k8sClient,
-		ctrlClient:      ctrlClient,
-		lockManager:     lockManager,  // BR-GATEWAY-190: Multi-replica deduplication safety
-		auditStore:      auditStore,   // Injected for testing
-		scopeChecker:    scopeChecker, // BR-SCOPE-002: nil = no scope filtering
-		metricsInstance: metricsInstance,
-		logger:          logger,
+		config:              cfg,
+		adapterRegistry:     adapterRegistry,
+		statusUpdater:       statusUpdater,
+		phaseChecker:        phaseChecker,
+		k8sClient:           k8sClient,
+		ctrlClient:          ctrlClient,
+		lockManager:         lockManager,  // BR-GATEWAY-190: Multi-replica deduplication safety
+		auditStore:          auditStore,   // Injected for testing
+		scopeChecker:        scopeChecker, // BR-SCOPE-002: nil = no scope filtering
+		controllerNamespace: controllerNS, // Issue #195: Used by ShouldDeduplicate
+		metricsInstance:     metricsInstance,
+		logger:              logger,
 	}
 
 	// Create CRD creator with retry observer wired to server audit emission
 	// BR-GATEWAY-058: retryAuditObserver emits gateway.crd.failed per retry attempt
-	server.crdCreator = processing.NewCRDCreator(cbClient, logger, metricsInstance, &cfg.Processing.Retry, &retryAuditObserver{server: server})
+	server.crdCreator = processing.NewCRDCreator(cbClient, logger, metricsInstance, &cfg.Processing.Retry, &retryAuditObserver{server: server}, controllerNS)
 
 	// Setup HTTP server with routes
 	router := server.setupRoutes()
@@ -313,13 +323,28 @@ func NewServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger, metricsI
 	_ = corev1.AddToScheme(scheme)         // Add core types (Namespace, Pod, etc.)
 	_ = coordinationv1.AddToScheme(scheme) // BR-GATEWAY-190: Add Lease type for distributed locking
 
+	// ADR-057: Discover controller namespace for CRD watch restriction
+	controllerNS, err := scope.GetControllerNamespace()
+	if err != nil {
+		return nil, fmt.Errorf("failed to determine controller namespace: %w", err)
+	}
+
 	// ========================================
 	// BR-GATEWAY-185 v1.1: Create cached client with field index
 	// Use spec.signalFingerprint (immutable, 64-char SHA256) instead of truncated labels
 	// ========================================
 
-	// Create cache for efficient queries
-	k8sCache, err := cache.New(kubeConfig, cache.Options{Scheme: scheme})
+	// Create cache for efficient queries (ADR-057: restrict RR to controller namespace)
+	k8sCache, err := cache.New(kubeConfig, cache.Options{
+		Scheme: scheme,
+		ByObject: map[client.Object]cache.ByObject{
+			&remediationv1alpha1.RemediationRequest{}: {
+				Namespaces: map[string]cache.Config{
+					controllerNS: {},
+				},
+			},
+		},
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Kubernetes cache: %w", err)
 	}
@@ -407,6 +432,12 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 	// If nil, create a new metrics instance with default registry (production mode)
 	if metricsInstance == nil {
 		metricsInstance = metrics.NewMetrics()
+	}
+
+	// ADR-057: Controller namespace for CRD creation
+	controllerNS, err := scope.GetControllerNamespace()
+	if err != nil {
+		return nil, fmt.Errorf("failed to determine controller namespace: %w", err)
 	}
 
 	// Initialize processing pipeline components
@@ -513,23 +544,23 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 
 	// Create server first (crdCreator set below after observer wiring)
 	server := &Server{
-		config:          cfg,
-		adapterRegistry: adapterRegistry,
-		// DD-GATEWAY-011: crdUpdater field removed (replaced by statusUpdater)
-		statusUpdater:   statusUpdater,
-		phaseChecker:    phaseChecker,
-		lockManager:     lockManager,
-		k8sClient:       k8sClient,
-		ctrlClient:      ctrlClient,
-		auditStore:      auditStore,
-		scopeChecker:    scopeMgr, // BR-SCOPE-002: Label-based scope filtering
-		metricsInstance: metricsInstance,
-		logger:          logger,
+		config:              cfg,
+		adapterRegistry:     adapterRegistry,
+		statusUpdater:       statusUpdater,
+		phaseChecker:        phaseChecker,
+		lockManager:         lockManager,
+		k8sClient:           k8sClient,
+		ctrlClient:          ctrlClient,
+		auditStore:          auditStore,
+		scopeChecker:        scopeMgr,     // BR-SCOPE-002: Label-based scope filtering
+		controllerNamespace: controllerNS, // Issue #195: Used by ShouldDeduplicate
+		metricsInstance:     metricsInstance,
+		logger:              logger,
 	}
 
 	// Create CRD creator with retry observer wired to server audit emission
 	// BR-GATEWAY-058: retryAuditObserver emits gateway.crd.failed per retry attempt
-	server.crdCreator = processing.NewCRDCreator(cbClient, logger, metricsInstance, &cfg.Processing.Retry, &retryAuditObserver{server: server})
+	server.crdCreator = processing.NewCRDCreator(cbClient, logger, metricsInstance, &cfg.Processing.Retry, &retryAuditObserver{server: server}, controllerNS)
 
 	// 6. Setup HTTP server with routes
 	router := server.setupRoutes()
@@ -1143,7 +1174,8 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 			time.Sleep(backoffDuration)
 
 			// Retry deduplication check (other pod may have created RR by now)
-			shouldDeduplicate, existingRR, err := s.phaseChecker.ShouldDeduplicate(ctx, signal.Namespace, signal.Fingerprint)
+			// Issue #195: Use controllerNamespace — RRs live in controller NS per ADR-057
+			shouldDeduplicate, existingRR, err := s.phaseChecker.ShouldDeduplicate(ctx, s.controllerNamespace, signal.Fingerprint)
 			if err != nil {
 				return nil, fmt.Errorf("deduplication check failed after lock contention: %w", err)
 			}
@@ -1167,7 +1199,8 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 
 	// 1. Deduplication check (DD-GATEWAY-011: K8s status-based, NOT Redis)
 	// BR-GATEWAY-185: Redis deprecation - use PhaseBasedDeduplicationChecker
-	shouldDeduplicate, existingRR, err := s.phaseChecker.ShouldDeduplicate(ctx, signal.Namespace, signal.Fingerprint)
+	// Issue #195: Use controllerNamespace — RRs live in controller NS per ADR-057
+	shouldDeduplicate, existingRR, err := s.phaseChecker.ShouldDeduplicate(ctx, s.controllerNamespace, signal.Fingerprint)
 	if err != nil {
 		logger.Error(err, "Deduplication check failed",
 			"fingerprint", signal.Fingerprint)

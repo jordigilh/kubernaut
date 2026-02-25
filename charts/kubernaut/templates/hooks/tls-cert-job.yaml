@@ -18,6 +18,7 @@ spec:
     spec:
       serviceAccountName: {{ include "kubernaut.fullname" . }}-hook-sa
       restartPolicy: Never
+      {{- include "kubernaut.scheduling" (dict "component" .Values.hooks "global" .Values.global) | nindent 6 }}
       containers:
         - name: tls-cert-gen
           image: {{ .Values.hooks.tlsCerts.image }}

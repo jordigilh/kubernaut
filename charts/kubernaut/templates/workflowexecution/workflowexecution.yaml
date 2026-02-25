@@ -166,6 +166,7 @@ spec:
         prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: workflowexecution-controller
+      {{- include "kubernaut.scheduling" (dict "component" .Values.workflowexecution "global" .Values.global) | nindent 6 }}
       containers:
         - name: workflowexecution-controller
           image: {{ include "kubernaut.image" (dict "service" "workflowexecution" "global" .Values.global "appVersion" .Chart.AppVersion) }}

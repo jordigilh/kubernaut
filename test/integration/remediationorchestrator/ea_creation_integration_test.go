@@ -17,9 +17,12 @@ limitations under the License.
 package remediationorchestrator
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -30,6 +33,7 @@ import (
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 )
@@ -596,6 +600,95 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 		Expect(ea.Spec.RemediationTarget.Name).To(Equal("test-app"),
 			"DD-EM-003: RemediationTarget should fall back to RR target when no AA exists")
 		Expect(ea.Spec.RemediationTarget.Namespace).To(Equal(ns))
+
+		Expect(ea.Spec.RemediationRequestPhase).To(Equal("Failed"))
+	})
+
+	// ========================================
+	// IT-RO-192-001: Cluster-scoped Node target with empty namespace
+	// Issue #192: EA creation fails when TargetResource.Namespace is empty
+	// because the CRD schema marks it as Required. Envtest enforces this.
+	// ========================================
+	It("IT-RO-192-001: should create EA with empty namespace for cluster-scoped Node target", func() {
+		ns := createTestNamespace("ro-192-001")
+		defer deleteTestNamespace(ns)
+
+		By("Creating a RemediationRequest targeting a cluster-scoped Node (empty namespace)")
+		now := metav1.Now()
+		rr := &remediationv1.RemediationRequest{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "rr-node-192",
+				Namespace: ns,
+			},
+			Spec: remediationv1.RemediationRequestSpec{
+				SignalFingerprint: func() string {
+					h := sha256.Sum256([]byte(uuid.New().String()))
+					return hex.EncodeToString(h[:])
+				}(),
+				SignalName: "NodeNotReady",
+				Severity:   "critical",
+				SignalType: "alert",
+				TargetType: "kubernetes",
+				TargetResource: remediationv1.ResourceIdentifier{
+					Kind: "Node",
+					Name: "worker-1",
+				},
+				FiringTime:   now,
+				ReceivedTime: now,
+				Deduplication: sharedtypes.DeduplicationInfo{
+					FirstOccurrence: now,
+					LastOccurrence:  now,
+					OccurrenceCount: 1,
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+
+		By("Driving RR to Processing phase")
+		Eventually(func() remediationv1.RemediationPhase {
+			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
+			return rr.Status.OverallPhase
+		}, timeout, interval).Should(Equal(remediationv1.PhaseProcessing))
+
+		By("Failing SignalProcessing to trigger EA creation on Failed path")
+		spName := fmt.Sprintf("sp-%s", rr.Name)
+		sp := &signalprocessingv1.SignalProcessing{}
+		Eventually(func() error {
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ns}, sp)
+		}, timeout, interval).Should(Succeed())
+		sp.Status.Phase = signalprocessingv1.PhaseFailed
+		failedNow := metav1.Now()
+		sp.Status.CompletionTime = &failedNow
+		sp.Status.Error = "Simulated SP failure for cluster-scoped Node test"
+		Expect(k8sClient.Status().Update(ctx, sp)).To(Succeed())
+
+		By("Waiting for Failed phase")
+		Eventually(func() remediationv1.RemediationPhase {
+			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
+			return rr.Status.OverallPhase
+		}, timeout, interval).Should(Equal(remediationv1.PhaseFailed))
+
+		By("Verifying EA was created with empty namespace on both targets")
+		eaName := fmt.Sprintf("ea-%s", rr.Name)
+		ea := &eav1.EffectivenessAssessment{}
+		Eventually(func() error {
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: eaName, Namespace: ns}, ea)
+		}, 30*time.Second, interval).Should(Succeed(),
+			"Issue #192: EA should be created even when TargetResource has empty namespace (cluster-scoped Node)")
+
+		Expect(ea.Spec.SignalTarget.Kind).To(Equal("Node"),
+			"Issue #192: SignalTarget.Kind must be Node")
+		Expect(ea.Spec.SignalTarget.Name).To(Equal("worker-1"),
+			"Issue #192: SignalTarget.Name must be worker-1")
+		Expect(ea.Spec.SignalTarget.Namespace).To(BeEmpty(),
+			"Issue #192: SignalTarget.Namespace must be empty for cluster-scoped resources")
+
+		Expect(ea.Spec.RemediationTarget.Kind).To(Equal("Node"),
+			"Issue #192: RemediationTarget.Kind must be Node (fallback to RR)")
+		Expect(ea.Spec.RemediationTarget.Name).To(Equal("worker-1"),
+			"Issue #192: RemediationTarget.Name must be worker-1 (fallback to RR)")
+		Expect(ea.Spec.RemediationTarget.Namespace).To(BeEmpty(),
+			"Issue #192: RemediationTarget.Namespace must be empty for cluster-scoped resources")
 
 		Expect(ea.Spec.RemediationRequestPhase).To(Equal("Failed"))
 	})

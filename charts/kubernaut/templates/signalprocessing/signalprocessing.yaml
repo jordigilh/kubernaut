@@ -272,6 +272,7 @@ spec:
         prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: signalprocessing-controller
+      {{- include "kubernaut.scheduling" (dict "component" .Values.signalprocessing "global" .Values.global) | nindent 6 }}
       containers:
         - name: signalprocessing-controller
           image: {{ include "kubernaut.image" (dict "service" "signalprocessing" "global" .Values.global "appVersion" .Chart.AppVersion) }}

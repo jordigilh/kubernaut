@@ -60,7 +60,7 @@ rules:
     resources: ["configmaps"]
     verbs: ["get", "list", "watch"]
   - apiGroups: [""]
-    resources: ["pods", "services", "secrets", "persistentvolumes"]
+    resources: ["nodes", "pods", "services", "secrets", "persistentvolumes"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["apps"]
     resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
@@ -110,6 +110,7 @@ spec:
         prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: gateway
+      {{- include "kubernaut.scheduling" (dict "component" .Values.gateway "global" .Values.global) | nindent 6 }}
       containers:
         - name: gateway
           image: {{ include "kubernaut.image" (dict "service" "gateway" "global" .Values.global "appVersion" .Chart.AppVersion) }}

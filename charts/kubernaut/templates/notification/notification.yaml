@@ -110,6 +110,7 @@ spec:
         prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: notification-controller
+      {{- include "kubernaut.scheduling" (dict "component" .Values.notification "global" .Values.global) | nindent 6 }}
       containers:
         - name: manager
           image: {{ include "kubernaut.image" (dict "service" "notification" "global" .Values.global "appVersion" .Chart.AppVersion) }}

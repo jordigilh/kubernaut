@@ -28,11 +28,14 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
+	scope "github.com/jordigilh/kubernaut/pkg/shared/scope"
 	"github.com/jordigilh/kubernaut/internal/controller/notification"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
@@ -154,6 +157,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	// ADR-057: Discover controller namespace for CRD watch restriction
+	controllerNS, err := scope.GetControllerNamespace()
+	if err != nil {
+		logger.Error(err, "Unable to determine controller namespace")
+		os.Exit(1)
+	}
+
 	logger.Info("Configuration loaded successfully (ADR-030)",
 		"service", "notification",
 		"metrics_addr", cfg.Controller.MetricsAddr,
@@ -165,8 +175,18 @@ func main() {
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
 	// ADR-030: Use configuration values for controller manager
+	// ADR-057: ConfigMaps NOT restricted (workload resources for hot-reload)
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,
+		Cache: cache.Options{
+			ByObject: map[client.Object]cache.ByObject{
+				&notificationv1alpha1.NotificationRequest{}: {
+					Namespaces: map[string]cache.Config{
+						controllerNS: {},
+					},
+				},
+			},
+		},
 		Metrics: metricsserver.Options{
 			BindAddress: cfg.Controller.MetricsAddr,
 		},
@@ -294,9 +314,9 @@ func main() {
 
 	// Initialize metrics with zero values to ensure they appear in Prometheus immediately
 	// This is critical for E2E metrics validation tests
-	metricsRecorder.UpdatePhaseCount("default", "Pending", 0)
-	metricsRecorder.RecordDeliveryAttempt("default", "console", "success")
-	metricsRecorder.RecordDeliveryDuration("default", "console", 0)
+	metricsRecorder.UpdatePhaseCount(controllerNS, "Pending", 0)
+	metricsRecorder.RecordDeliveryAttempt(controllerNS, "console", "success")
+	metricsRecorder.RecordDeliveryDuration(controllerNS, "console", 0)
 	logger.Info("Notification metrics initialized (DD-METRICS-001 compliant)")
 
 	// ========================================

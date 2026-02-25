@@ -539,14 +539,15 @@ func (r *RoutingEngine) CheckUnmanagedResource(
 ) *BlockingCondition {
 	logger := log.FromContext(ctx)
 
+	// ADR-057 bug fix: use target resource namespace, not CRD namespace.
+	// CRD lives in kubernaut-system; scope check must evaluate the workload's namespace.
 	managed, err := r.scopeChecker.IsManaged(ctx,
-		rr.Namespace,
+		rr.Spec.TargetResource.Namespace,
 		rr.Spec.TargetResource.Kind,
 		rr.Spec.TargetResource.Name)
 	if err != nil {
-		// Scope infra error — log and pass through (don't block on infra issues)
 		logger.Error(err, "Scope validation failed — allowing RR to proceed",
-			"namespace", rr.Namespace,
+			"namespace", rr.Spec.TargetResource.Namespace,
 			"kind", rr.Spec.TargetResource.Kind,
 			"name", rr.Spec.TargetResource.Name)
 		return nil
@@ -562,7 +563,7 @@ func (r *RoutingEngine) CheckUnmanagedResource(
 	blockedUntil := time.Now().Add(backoffDuration)
 
 	logger.Info("Blocking RR: target resource is not managed by Kubernaut",
-		"namespace", rr.Namespace,
+		"targetNamespace", rr.Spec.TargetResource.Namespace,
 		"kind", rr.Spec.TargetResource.Kind,
 		"name", rr.Spec.TargetResource.Name,
 		"backoff", backoffDuration,
@@ -573,7 +574,7 @@ func (r *RoutingEngine) CheckUnmanagedResource(
 		Reason:  string(remediationv1.BlockReasonUnmanagedResource),
 		Message: fmt.Sprintf("Resource %s/%s/%s not managed by Kubernaut. "+
 			"Add label kubernaut.ai/managed=true to namespace or resource.",
-			rr.Namespace, rr.Spec.TargetResource.Kind, rr.Spec.TargetResource.Name),
+			rr.Spec.TargetResource.Namespace, rr.Spec.TargetResource.Kind, rr.Spec.TargetResource.Name),
 		RequeueAfter: backoffDuration,
 		BlockedUntil: &blockedUntil,
 	}

@@ -125,6 +125,94 @@ var _ = Describe("BR-GATEWAY-181: Phase Checker initialization for Gateway", fun
 })
 
 // ============================================================================
+// ISSUE #195: Gateway deduplication must search controller namespace (ADR-057)
+// ============================================================================
+//
+// BUG: After ADR-057, all RRs live in the controller namespace (kubernaut-system),
+// but ShouldDeduplicate was called with signal.Namespace (workload namespace).
+// This caused deduplication to always miss existing RRs.
+//
+// BUSINESS VALUE:
+// - Deduplication prevents duplicate remediations for the same signal
+// - After ADR-057 namespace consolidation, dedup must search the correct namespace
+// ============================================================================
+
+var _ = Describe("Issue #195: Deduplication must search controller namespace, not signal namespace", func() {
+	var (
+		ctx       context.Context
+		k8sClient client.Client
+		scheme    *runtime.Scheme
+		checker   *processing.PhaseBasedDeduplicationChecker
+	)
+
+	const (
+		controllerNS = "kubernaut-system"
+		workloadNS   = "demo-taint"
+		fingerprint  = "a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456"
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		scheme = runtime.NewScheme()
+		Expect(remediationv1alpha1.AddToScheme(scheme)).To(Succeed())
+
+		k8sClient = fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithStatusSubresource(&remediationv1alpha1.RemediationRequest{}).
+			WithIndex(&remediationv1alpha1.RemediationRequest{}, "spec.signalFingerprint", func(o client.Object) []string {
+				rr := o.(*remediationv1alpha1.RemediationRequest)
+				return []string{rr.Spec.SignalFingerprint}
+			}).
+			Build()
+
+		checker = processing.NewPhaseBasedDeduplicationChecker(k8sClient)
+
+		// Create an active (non-terminal) RR in the controller namespace — this is where
+		// ADR-057 mandates all CRDs live after namespace consolidation
+		rr := &remediationv1alpha1.RemediationRequest{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "rr-dedup-195",
+				Namespace: controllerNS,
+			},
+			Spec: remediationv1alpha1.RemediationRequestSpec{
+				SignalFingerprint: fingerprint,
+			},
+			Status: remediationv1alpha1.RemediationRequestStatus{
+				OverallPhase: remediationv1alpha1.PhaseProcessing,
+			},
+		}
+		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+	})
+
+	// UT-GW-195-001: This test DEMONSTRATES the bug — querying workload NS misses the RR
+	It("UT-GW-195-001: should NOT find active RR when searching workload namespace (bug reproduction)", func() {
+		// BUG: Before fix, Gateway passed signal.Namespace ("demo-taint") to ShouldDeduplicate.
+		// The RR lives in "kubernaut-system", so the query returns nothing — dedup is broken.
+		shouldDedup, existingRR, err := checker.ShouldDeduplicate(ctx, workloadNS, fingerprint)
+		Expect(err).NotTo(HaveOccurred())
+
+		// This PASSES (proving the bug exists): searching the wrong namespace finds nothing
+		Expect(shouldDedup).To(BeFalse(),
+			"Bug #195: Searching workload namespace misses the RR in controller namespace")
+		Expect(existingRR).To(BeNil())
+	})
+
+	// UT-GW-195-002: This test validates the CORRECT behavior — querying controller NS finds the RR
+	It("UT-GW-195-002: should find active RR when searching controller namespace (correct behavior)", func() {
+		// CORRECT: After fix, Gateway must pass controllerNamespace to ShouldDeduplicate
+		shouldDedup, existingRR, err := checker.ShouldDeduplicate(ctx, controllerNS, fingerprint)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(shouldDedup).To(BeTrue(),
+			"Issue #195: Deduplication must find existing RR in controller namespace")
+		Expect(existingRR).NotTo(BeNil())
+		Expect(existingRR.Name).To(Equal("rr-dedup-195"))
+		Expect(existingRR.Namespace).To(Equal(controllerNS),
+			"Issue #195: Existing RR lives in controller namespace per ADR-057")
+	})
+})
+
+// ============================================================================
 // BUSINESS OUTCOME TESTS: Status Updater for Occurrence Tracking
 // ============================================================================
 //

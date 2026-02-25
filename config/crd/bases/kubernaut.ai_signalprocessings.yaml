@@ -168,12 +168,12 @@ spec:
                         description: Resource name
                         type: string
                       namespace:
-                        description: Resource namespace
+                        description: Resource namespace. Empty for cluster-scoped
+                          resources (e.g., Node, PersistentVolume).
                         type: string
                     required:
                     - kind
                     - name
-                    - namespace
                     type: object
                   targetType:
                     description: Target system type

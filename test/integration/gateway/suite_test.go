@@ -176,6 +176,9 @@ var _ = SynchronizedBeforeSuite(
 		logger.Info(fmt.Sprintf("Gateway Integration Suite - PHASE 2: Process %d Setup", processNum))
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
+		// ADR-057: Set controller namespace for CRD creation and cache restriction
+		os.Setenv("KUBERNAUT_CONTROLLER_NAMESPACE", "kubernaut-system")
+
 		// Create root context
 		ctx, cancel = context.WithCancel(context.Background())
 

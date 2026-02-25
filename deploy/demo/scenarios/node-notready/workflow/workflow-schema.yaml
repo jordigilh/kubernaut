@@ -14,7 +14,7 @@ actionType: CordonDrainNode
 labels:
   signalName: KubeNodeNotReady
   severity: [critical]
-  environment: [production, staging]
+  environment: [production, staging, "*"]
   component: "*"
   priority: "*"
 

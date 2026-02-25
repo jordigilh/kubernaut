@@ -25,11 +25,14 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	scope "github.com/jordigilh/kubernaut/pkg/shared/scope"
 	"github.com/jordigilh/kubernaut/internal/controller/workflowexecution"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	weaudit "github.com/jordigilh/kubernaut/pkg/workflowexecution/audit"
@@ -88,8 +91,25 @@ func main() {
 		os.Exit(1)
 	}
 
+	// ADR-057: Discover controller namespace for CRD watch restriction
+	// Note: PipelineRun and Job (Tekton/K8s) are watched in kubernaut-workflows - not restricted
+	controllerNS, err := scope.GetControllerNamespace()
+	if err != nil {
+		setupLog.Error(err, "unable to determine controller namespace")
+		os.Exit(1)
+	}
+
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,
+		Cache: cache.Options{
+			ByObject: map[client.Object]cache.ByObject{
+				&workflowexecutionv1alpha1.WorkflowExecution{}: {
+					Namespaces: map[string]cache.Config{
+						controllerNS: {},
+					},
+				},
+			},
+		},
 		Metrics: metricsserver.Options{
 			BindAddress: cfg.Controller.MetricsAddr,
 		},

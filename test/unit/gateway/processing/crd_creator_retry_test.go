@@ -169,7 +169,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			k8sClient := k8s.NewClient(fakeClient)
 
 			// Create CRD creator with retry config
-			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, retryConfig, &mocks.NoopRetryObserver{})
+			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, retryConfig, &mocks.NoopRetryObserver{}, "kubernaut-system")
 
 			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
 			signal := newTestSignal("test-fingerprint-429", "TestAlert429")
@@ -179,7 +179,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 
 			// Verify: Success after retry
 			Expect(err).ToNot(HaveOccurred())
-			Expect(rr).ToNot(BeNil())
+			Expect(rr.Name).ToNot(BeEmpty(), "RR must be created with a name")
 			Expect(rr.Name).To(ContainSubstring("rr-"))
 			Expect(callCount.Load()).To(Equal(int32(2)), "Should have made exactly 2 attempts")
 
@@ -212,7 +212,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			k8sClient := k8s.NewClient(fakeClient)
 
 			// Create CRD creator with retry config
-			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, retryConfig, &mocks.NoopRetryObserver{})
+			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, retryConfig, &mocks.NoopRetryObserver{}, "kubernaut-system")
 
 			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
 			signal := newTestSignal("test-fingerprint-503", "TestAlert503")
@@ -222,7 +222,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 
 			// Verify: Success after retry
 			Expect(err).ToNot(HaveOccurred())
-			Expect(rr).ToNot(BeNil())
+			Expect(rr.Name).ToNot(BeEmpty(), "RR must be created with a name")
 			Expect(callCount.Load()).To(Equal(int32(3)), "Should have made exactly 3 attempts")
 
 			// Note: Timing verification removed - backoff logic is tested in integration tests
@@ -248,7 +248,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			k8sClient := k8s.NewClient(fakeClient)
 
 			// Create CRD creator with retry config
-			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, retryConfig, &mocks.NoopRetryObserver{})
+			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, retryConfig, &mocks.NoopRetryObserver{}, "kubernaut-system")
 
 			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
 			signal := newTestSignal("test-fingerprint-503-fail", "TestAlert503Fail")
@@ -296,7 +296,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			k8sClient := k8s.NewClient(fakeClient)
 
 			// Create CRD creator with retry config
-			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, retryConfig, &mocks.NoopRetryObserver{})
+			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, retryConfig, &mocks.NoopRetryObserver{}, "kubernaut-system")
 
 			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
 			signal := newTestSignal("test-fingerprint-504", "TestAlert504")
@@ -306,7 +306,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 
 			// Verify: Success after retry
 			Expect(err).ToNot(HaveOccurred())
-			Expect(rr).ToNot(BeNil())
+			Expect(rr.Name).ToNot(BeEmpty(), "RR must be created with a name")
 			Expect(callCount.Load()).To(Equal(int32(2)), "Should have made exactly 2 attempts")
 		})
 
@@ -335,7 +335,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			k8sClient := k8s.NewClient(fakeClient)
 
 			// Create CRD creator with retry config
-			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, retryConfig, &mocks.NoopRetryObserver{})
+			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, retryConfig, &mocks.NoopRetryObserver{}, "kubernaut-system")
 
 			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
 			signal := newTestSignal("test-fingerprint-timeout", "TestAlertTimeout")
@@ -345,7 +345,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 
 			// Verify: Success after retry
 			Expect(err).ToNot(HaveOccurred())
-			Expect(rr).ToNot(BeNil())
+			Expect(rr.Name).ToNot(BeEmpty(), "RR must be created with a name")
 			Expect(callCount.Load()).To(Equal(int32(2)), "Should have made exactly 2 attempts")
 		})
 	})
@@ -371,7 +371,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			k8sClient := k8s.NewClient(fakeClient)
 
 			// Create CRD creator with retry config
-			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, retryConfig, &mocks.NoopRetryObserver{})
+			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, retryConfig, &mocks.NoopRetryObserver{}, "kubernaut-system")
 
 			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
 			signal := newTestSignal("test-fingerprint-400", "TestAlert400")
@@ -410,7 +410,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			k8sClient := k8s.NewClient(fakeClient)
 
 			// Create CRD creator with retry config
-			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, retryConfig, &mocks.NoopRetryObserver{})
+			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, retryConfig, &mocks.NoopRetryObserver{}, "kubernaut-system")
 
 			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
 			signal := newTestSignal("test-fingerprint-403", "TestAlert403")
@@ -449,7 +449,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			k8sClient := k8s.NewClient(fakeClient)
 
 			// Create CRD creator with retry config
-			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, retryConfig, &mocks.NoopRetryObserver{})
+			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, retryConfig, &mocks.NoopRetryObserver{}, "kubernaut-system")
 
 			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
 			signal := newTestSignal("test-fingerprint-422", "TestAlert422")
@@ -489,7 +489,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			k8sClient := k8s.NewClient(fakeClient)
 
 			// Create CRD creator with retry config
-			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, retryConfig, &mocks.NoopRetryObserver{})
+			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, retryConfig, &mocks.NoopRetryObserver{}, "kubernaut-system")
 
 			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
 			signal := newTestSignal("test-fingerprint-409", "TestAlert409")
@@ -530,7 +530,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			k8sClient := k8s.NewClient(fakeClient)
 
 			// Create CRD creator with retry config
-			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, retryConfig, &mocks.NoopRetryObserver{})
+			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, retryConfig, &mocks.NoopRetryObserver{}, "kubernaut-system")
 
 			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
 			signal := newTestSignal("test-fingerprint-connrefused", "TestAlertConnRefused")
@@ -540,7 +540,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 
 			// Verify: Success after retry
 			Expect(err).ToNot(HaveOccurred())
-			Expect(rr).ToNot(BeNil())
+			Expect(rr.Name).ToNot(BeEmpty(), "RR must be created with a name")
 			Expect(callCount.Load()).To(Equal(int32(2)), "Should have made exactly 2 attempts")
 		})
 
@@ -569,7 +569,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			k8sClient := k8s.NewClient(fakeClient)
 
 			// Create CRD creator with retry config
-			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, retryConfig, &mocks.NoopRetryObserver{})
+			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, retryConfig, &mocks.NoopRetryObserver{}, "kubernaut-system")
 
 			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
 			signal := newTestSignal("test-fingerprint-connreset", "TestAlertConnReset")
@@ -579,7 +579,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 
 			// Verify: Success after retry
 			Expect(err).ToNot(HaveOccurred())
-			Expect(rr).ToNot(BeNil())
+			Expect(rr.Name).ToNot(BeEmpty(), "RR must be created with a name")
 			Expect(callCount.Load()).To(Equal(int32(2)), "Should have made exactly 2 attempts")
 		})
 	})
@@ -615,7 +615,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			k8sClient := k8s.NewClient(fakeClient)
 
 			// Create CRD creator with custom retry config
-			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, customRetryConfig, &mocks.NoopRetryObserver{})
+			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, customRetryConfig, &mocks.NoopRetryObserver{}, "kubernaut-system")
 
 			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
 			signal := newTestSignal("test-fingerprint-backoff-cap", "TestAlertBackoffCap")
@@ -625,7 +625,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 
 			// Verify: Success after retry
 			Expect(err).ToNot(HaveOccurred())
-			Expect(rr).ToNot(BeNil())
+			Expect(rr.Name).ToNot(BeEmpty(), "RR must be created with a name")
 			Expect(callCount.Load()).To(Equal(int32(4)), "Should have made exactly 4 attempts")
 			// Note: Backoff timing verification is in integration tests
 		})
@@ -660,7 +660,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			k8sClient := k8s.NewClient(fakeClient)
 
 			// Create CRD creator with custom retry config
-			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, customRetryConfig, &mocks.NoopRetryObserver{})
+			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, customRetryConfig, &mocks.NoopRetryObserver{}, "kubernaut-system")
 
 			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
 			signal := newTestSignal("test-fingerprint-initial-backoff", "TestAlertInitialBackoff")
@@ -670,7 +670,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 
 			// Verify: Success after retry
 			Expect(err).ToNot(HaveOccurred())
-			Expect(rr).ToNot(BeNil())
+			Expect(rr.Name).ToNot(BeEmpty(), "RR must be created with a name")
 			Expect(callCount.Load()).To(Equal(int32(2)), "Should have made exactly 2 attempts")
 		})
 	})
@@ -705,7 +705,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			k8sClient := k8s.NewClient(fakeClient)
 
 			// Create CRD creator with retry config
-			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, retryConfig, &mocks.NoopRetryObserver{})
+			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, retryConfig, &mocks.NoopRetryObserver{}, "kubernaut-system")
 
 			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
 			signal := newTestSignal("test-fingerprint-ctx-cancel", "TestAlertCtxCancel")
@@ -745,7 +745,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			k8sClient := k8s.NewClient(fakeClient)
 
 			// Create CRD creator with retry config
-			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, retryConfig, &mocks.NoopRetryObserver{})
+			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, retryConfig, &mocks.NoopRetryObserver{}, "kubernaut-system")
 
 			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
 			signal := newTestSignal("test-fingerprint-ctx-deadline", "TestAlertCtxDeadline")
@@ -787,7 +787,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			k8sClient := k8s.NewClient(fakeClient)
 
 			// Create CRD creator with nil retry config (should use defaults)
-			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, nil, &mocks.NoopRetryObserver{})
+			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, nil, &mocks.NoopRetryObserver{}, "kubernaut-system")
 
 			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
 			signal := newTestSignal("test-fingerprint-default-config", "TestAlertDefaultConfig")
@@ -797,7 +797,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 
 			// Verify: Success after retry (default config allows retries)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(rr).ToNot(BeNil())
+			Expect(rr.Name).ToNot(BeEmpty(), "RR must be created with a name")
 			Expect(callCount.Load()).To(Equal(int32(2)), "Should have made 2 attempts with default config")
 		})
 
@@ -893,7 +893,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 				Build()
 			k8sClient := k8s.NewClient(fakeClient)
 
-			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, retryConfig, observer)
+			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, retryConfig, observer, "kubernaut-system")
 
 			signal := newTestSignal("test-fingerprint-obs-001", "TestAlertObs001")
 			_, err := creator.CreateRemediationRequest(ctx, signal)
@@ -931,7 +931,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 				Build()
 			k8sClient := k8s.NewClient(fakeClient)
 
-			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, retryConfig, observer)
+			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, retryConfig, observer, "kubernaut-system")
 
 			signal := newTestSignal("test-fingerprint-obs-002", "TestAlertObs002")
 			_, err := creator.CreateRemediationRequest(ctx, signal)
@@ -959,14 +959,14 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 				Build()
 			k8sClient := k8s.NewClient(fakeClient)
 
-			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, retryConfig, observer)
+			creator = processing.NewCRDCreator(k8sClient, logger, metricsInst, retryConfig, observer, "kubernaut-system")
 
 			signal := newTestSignal("test-fingerprint-obs-003", "TestAlertObs003")
 			rr, err := creator.CreateRemediationRequest(ctx, signal)
 
 			// Verify: Success
 			Expect(err).ToNot(HaveOccurred())
-			Expect(rr).ToNot(BeNil())
+			Expect(rr.Name).ToNot(BeEmpty(), "RR must be created with a name")
 
 			// Verify: Observer never called (no retries needed)
 			Expect(observerCalled).To(BeFalse())

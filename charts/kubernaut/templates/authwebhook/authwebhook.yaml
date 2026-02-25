@@ -99,6 +99,7 @@ spec:
         app: authwebhook
     spec:
       serviceAccountName: authwebhook
+      {{- include "kubernaut.scheduling" (dict "component" .Values.authwebhook "global" .Values.global) | nindent 6 }}
       containers:
         - name: authwebhook
           image: {{ include "kubernaut.image" (dict "service" "authwebhook" "global" .Values.global "appVersion" .Chart.AppVersion) }}

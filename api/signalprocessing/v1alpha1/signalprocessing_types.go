@@ -139,8 +139,9 @@ type ResourceIdentifier struct {
 	Kind string `json:"kind"`
 	// Resource name
 	Name string `json:"name"`
-	// Resource namespace
-	Namespace string `json:"namespace"`
+	// Resource namespace. Empty for cluster-scoped resources (e.g., Node, PersistentVolume).
+	// +optional
+	Namespace string `json:"namespace,omitempty"`
 }
 
 // EnrichmentConfig specifies enrichment settings.

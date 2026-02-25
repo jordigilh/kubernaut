@@ -399,16 +399,17 @@ type KubernetesProviderData struct {
 type ResourceIdentifier struct {
     Kind      string `json:"kind"`
     Name      string `json:"name"`
-    Namespace string `json:"namespace"`
+    // +optional — empty for cluster-scoped resources (e.g., Node, PersistentVolume)
+    Namespace string `json:"namespace,omitempty"`
 }
 ```
 
 **Fields**:
-- `namespace` (string, **required**): Kubernetes namespace where signal originated
+- `namespace` (string, **optional**): Kubernetes namespace where signal originated. Empty for cluster-scoped resources (e.g., Node, PersistentVolume)
 - `resource` (object, **required**): Target Kubernetes resource
   - `kind` (string, **required**): Resource kind (Pod, Deployment, StatefulSet, etc.)
   - `name` (string, **required**): Resource name
-  - `namespace` (string, **required**): Resource namespace (may differ from signal namespace)
+  - `namespace` (string, **optional**): Resource namespace. Empty for cluster-scoped resources (e.g., Node, PersistentVolume)
 - `alertmanagerURL` (string, optional): Link to Alertmanager alert view
 - `grafanaURL` (string, optional): Link to Grafana dashboard
 - `prometheusQuery` (string, optional): Prometheus query that triggered the alert

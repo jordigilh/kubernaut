@@ -114,6 +114,7 @@ spec:
         prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: effectivenessmonitor-controller
+      {{- include "kubernaut.scheduling" (dict "component" .Values.effectivenessmonitor "global" .Values.global) | nindent 6 }}
       containers:
         - name: controller
           image: {{ include "kubernaut.image" (dict "service" "effectivenessmonitor" "global" .Values.global "appVersion" .Chart.AppVersion) }}

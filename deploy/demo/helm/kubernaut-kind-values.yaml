@@ -1,6 +1,18 @@
 # Kind-specific value overrides for the Kubernaut Helm chart.
 # Exposes gateway, datastorage, and holmesgpt-api via NodePort
 # so they are accessible from the host via Kind's extraPortMappings.
+#
+# All platform pods are pinned to the control-plane node so that
+# worker nodes remain available for demo fault-injection scenarios
+# (e.g. podman pause) without disrupting the platform.
+global:
+  nodeSelector:
+    node-role.kubernetes.io/control-plane: ""
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+
 gateway:
   service:
     type: NodePort

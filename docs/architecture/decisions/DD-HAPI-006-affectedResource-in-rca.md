@@ -95,7 +95,7 @@ HolmesGPT-API's `/incident/analyze` endpoint **MUST** return an `affectedResourc
     - When missing: RO uses static mapping for core Kubernetes resources (Pod, Deployment, Service, etc.)
     - Recommended for signal sources that provide it (Kubernetes Events, Prometheus)
   - **`name`**: REQUIRED string - Resource name
-  - **`namespace`**: CONDITIONALLY REQUIRED - Required for namespace-scoped resources, omit for cluster-scoped resources
+  - **`namespace`**: CONDITIONALLY REQUIRED - Required for namespace-scoped resources, omit for cluster-scoped resources (e.g., Node, PersistentVolume). The CRD schema marks this field as `+optional` (Issue #192) so cluster-scoped targets pass K8s validation.
 - **LLM response format** MUST include `affectedResource` when selecting a workflow for remediation
 - **HAPI validation logic** (DD-HAPI-002 v1.2 - 3-attempt self-correction loop):
   - If `selected_workflow` present AND `affectedResource` missing → Set `needs_human_review=true`, `human_review_reason=rca_incomplete`

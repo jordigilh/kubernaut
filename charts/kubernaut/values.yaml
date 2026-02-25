@@ -3,6 +3,8 @@ global:
     registry: quay.io/kubernaut-ai
     tag: ""  # defaults to Chart.appVersion
     pullPolicy: IfNotPresent
+  nodeSelector: {}
+  tolerations: []
 
 nameOverride: ""
 fullnameOverride: ""

@@ -135,8 +135,9 @@ type TargetResource struct {
 	// +kubebuilder:validation:Required
 	Name string `json:"name"`
 	// Namespace is the resource namespace.
-	// +kubebuilder:validation:Required
-	Namespace string `json:"namespace"`
+	// Empty for cluster-scoped resources (e.g., Node, PersistentVolume).
+	// +optional
+	Namespace string `json:"namespace,omitempty"`
 }
 
 // EAConfig contains assessment configuration set by RO at creation time.

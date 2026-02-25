@@ -69,10 +69,15 @@ var _ = Describe("BR-GATEWAY-004: RemediationRequest CRD Creation Business Outco
 		ctx = context.Background()
 		testNamespace = "test-signals"
 
-		// Create test namespace
+		// Create test namespace and controller namespace (ADR-057)
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: testNamespace,
+			},
+		}
+		controllerNS := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "kubernaut-system",
 			},
 		}
 
@@ -83,7 +88,7 @@ var _ = Describe("BR-GATEWAY-004: RemediationRequest CRD Creation Business Outco
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
-			WithObjects(ns).
+			WithObjects(ns, controllerNS).
 			Build()
 
 		// Create real K8s client wrapper
@@ -100,13 +105,14 @@ var _ = Describe("BR-GATEWAY-004: RemediationRequest CRD Creation Business Outco
 			MaxBackoff:     200 * time.Millisecond,
 		}
 
-		// Create CRD creator
+		// Create CRD creator (ADR-057: CRDs created in controller namespace)
 		crdCreator = processing.NewCRDCreator(
 			k8sClient,
 			logr.Discard(),
 			metricsInstance,
 			retryConfig,
 			&mocks.NoopRetryObserver{},
+			"kubernaut-system",
 		)
 	})
 
@@ -231,6 +237,7 @@ var _ = Describe("BR-GATEWAY-004: RemediationRequest CRD Creation Business Outco
 				metricsInstance,
 				retryConfig,
 				&mocks.NoopRetryObserver{},
+				"kubernaut-system",
 				mockClock,
 			)
 
@@ -458,6 +465,96 @@ var _ = Describe("BR-GATEWAY-004: RemediationRequest CRD Creation Business Outco
 		})
 	})
 
+	// ============================================================================
+	// ADR-057: CRD Namespace Consolidation
+	// Tests validate that CRDs are created in the controller namespace (security
+	// boundary) while preserving the target resource namespace for downstream
+	// controllers (enrichment, health checks, scope validation).
+	// ============================================================================
+	Context("ADR-057: CRD Namespace Consolidation", func() {
+		It("UT-GW-057-001: signal from workload NS produces CRD in controller NS", func() {
+			// BUSINESS OUTCOME: Security boundary enforced — CRDs land in controller
+			// namespace, not in workload namespaces where untrusted users could create them
+			signal := &types.NormalizedSignal{
+				SignalName:   "HighMemoryUsage",
+				Fingerprint:  "adr057-ns-test-fingerprint",
+				Severity:     "critical",
+				SourceType:   "alert",
+				Source:       "alertmanager",
+				Namespace:    "production",
+				ReceivedTime: time.Now(),
+				Resource: types.ResourceIdentifier{
+					Kind:      "Pod",
+					Name:      "payment-api-789",
+					Namespace: "production",
+				},
+			}
+
+			rr, err := crdCreator.CreateRemediationRequest(ctx, signal)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rr.Namespace).To(Equal("kubernaut-system"),
+				"CRD must be created in controller namespace per ADR-057, not signal namespace")
+			Expect(rr.Namespace).NotTo(Equal("production"),
+				"CRD must NOT be in the workload namespace")
+		})
+
+		It("UT-GW-057-002: target resource namespace preserved for downstream controllers", func() {
+			// BUSINESS OUTCOME: Accuracy — downstream controllers (SP enricher, EM health
+			// checker) need the original workload namespace to read the target resource
+			signal := &types.NormalizedSignal{
+				SignalName:   "HighCPU",
+				Fingerprint:  "adr057-target-ns-test",
+				Severity:     "warning",
+				SourceType:   "alert",
+				Source:       "alertmanager",
+				Namespace:    "staging",
+				ReceivedTime: time.Now(),
+				Resource: types.ResourceIdentifier{
+					Kind:      "Deployment",
+					Name:      "checkout-service",
+					Namespace: "staging",
+				},
+			}
+
+			rr, err := crdCreator.CreateRemediationRequest(ctx, signal)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rr.Spec.TargetResource.Namespace).To(Equal("staging"),
+				"Target resource namespace must be preserved from signal for downstream enrichment/health checks")
+		})
+
+		It("UT-GW-057-003: duplicate signal returns existing CRD from controller namespace", func() {
+			// BUSINESS OUTCOME: Dedup correctness — a second signal with the same
+			// fingerprint retrieves the existing CRD from the controller namespace,
+			// not from the signal namespace
+			signal := &types.NormalizedSignal{
+				SignalName:   "HighMemoryUsage",
+				Fingerprint:  "adr057-dedup-test",
+				Severity:     "critical",
+				SourceType:   "alert",
+				Source:       "alertmanager",
+				Namespace:    "production",
+				ReceivedTime: time.Now(),
+				Resource: types.ResourceIdentifier{
+					Kind:      "Pod",
+					Name:      "payment-api-789",
+					Namespace: "production",
+				},
+			}
+
+			rr1, err := crdCreator.CreateRemediationRequest(ctx, signal)
+			Expect(err).NotTo(HaveOccurred())
+
+			rr2, err := crdCreator.CreateRemediationRequest(ctx, signal)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rr2.Namespace).To(Equal("kubernaut-system"),
+				"Existing CRD returned by dedup must be in controller namespace")
+			Expect(rr2.Spec.SignalFingerprint).To(Equal(rr1.Spec.SignalFingerprint),
+				"Dedup must return CRD with matching fingerprint")
+		})
+	})
+
 })
 
 // ============================================================================
@@ -518,6 +615,7 @@ var _ = Describe("BR-GATEWAY-009: Oversized Annotations Truncation", func() {
 			metricsInstance,
 			retryConfig,
 			&mocks.NoopRetryObserver{},
+			"kubernaut-system",
 		)
 	})
 
@@ -583,7 +681,7 @@ var _ = Describe("BR-GATEWAY-009: Oversized Annotations Truncation", func() {
 
 			Expect(err).ToNot(HaveOccurred(),
 				"CRD creation succeeds without annotations")
-			Expect(rr).ToNot(BeNil())
+			Expect(rr.Name).ToNot(BeEmpty(), "CRD must have a generated name")
 		})
 	})
 })
@@ -629,6 +727,7 @@ var _ = Describe("BR-GATEWAY-019: CRDCreator Safe Defaults", func() {
 				metricsInstance,
 				nil, // nil retry config
 				&mocks.NoopRetryObserver{},
+				"kubernaut-system",
 			)
 
 			Expect(crdCreator).NotTo(BeNil(),
@@ -693,6 +792,7 @@ var _ = Describe("BR-GATEWAY-019: CRDCreator Safe Defaults", func() {
 				metricsInstance,
 				retryConfig,
 				&mocks.NoopRetryObserver{},
+				"kubernaut-system",
 			)
 		})
 
@@ -832,13 +932,14 @@ var _ = Describe("BR-GATEWAY-019: CRDCreator Safe Defaults", func() {
 					Expect(rr.Spec.ProviderData).ToNot(BeNil(),
 						"ProviderData should be populated even with nil labels")
 					// ProviderData JSON string should handle nil labels gracefully
-					var providerDataMap map[string]interface{}
-					jsonErr := json.Unmarshal([]byte(rr.Spec.ProviderData), &providerDataMap)
-					Expect(jsonErr).ToNot(HaveOccurred(),
-						"ProviderData JSON should be valid even with nil labels")
-				})
+				var providerDataMap map[string]interface{}
+				jsonErr := json.Unmarshal([]byte(rr.Spec.ProviderData), &providerDataMap)
+				Expect(jsonErr).ToNot(HaveOccurred(),
+					"ProviderData JSON should be valid even with nil labels")
 			})
+		})
 		})
 	})
 
 })
+

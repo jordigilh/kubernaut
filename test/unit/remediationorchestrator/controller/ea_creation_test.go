@@ -784,4 +784,67 @@ var _ = Describe("EA Dual-Target Creation (DD-EM-003)", func() {
 		Expect(ea.Spec.RemediationTarget.Kind).To(Equal(rr.Spec.TargetResource.Kind))
 		Expect(ea.Spec.RemediationTarget.Name).To(Equal(rr.Spec.TargetResource.Name))
 	})
+
+	// UT-RO-192-001: Cluster-scoped resource (Node) with empty namespace.
+	// Validates the code path creates an EA with empty namespace on both targets.
+	// The fake client does not enforce CRD schema validation, so this test
+	// confirms the reconciler propagates the empty namespace correctly.
+	// The corresponding IT-RO-192-001 catches the actual schema rejection.
+	It("UT-RO-192-001: should create EA with empty namespace for cluster-scoped Node target", func() {
+		rrName := "rr-node-192"
+		controllerNS := "kubernaut-system"
+		weName := "we-" + rrName
+
+		rr := newRemediationRequestWithChildRefs(rrName, controllerNS, remediationv1.PhaseExecuting, "", "", weName)
+		rr.Spec.TargetResource = remediationv1.ResourceIdentifier{
+			Kind:      "Node",
+			Name:      "worker-1",
+			Namespace: "",
+		}
+
+		we := newWorkflowExecutionCompleted(weName, controllerNS, rrName)
+
+		k8sClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(rr, we).
+			WithStatusSubresource(rr).
+			Build()
+
+		roMetrics := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
+		recorder := record.NewFakeRecorder(20)
+		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, recorder, stabilizationWindow)
+		reconciler := controller.NewReconciler(
+			k8sClient, k8sClient, scheme,
+			nil, recorder, roMetrics,
+			controller.TimeoutConfig{},
+			&MockRoutingEngine{},
+			eaCreator,
+		)
+
+		_, err := reconciler.Reconcile(ctx, ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: rrName, Namespace: controllerNS},
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		ea := &eav1.EffectivenessAssessment{}
+		err = k8sClient.Get(ctx, types.NamespacedName{
+			Name:      "ea-" + rrName,
+			Namespace: controllerNS,
+		}, ea)
+		Expect(err).ToNot(HaveOccurred(), "EA should have been created for cluster-scoped Node target")
+
+		Expect(ea.Spec.SignalTarget.Kind).To(Equal("Node"),
+			"Issue #192: SignalTarget.Kind must be Node")
+		Expect(ea.Spec.SignalTarget.Name).To(Equal("worker-1"),
+			"Issue #192: SignalTarget.Name must be worker-1")
+		Expect(ea.Spec.SignalTarget.Namespace).To(BeEmpty(),
+			"Issue #192: SignalTarget.Namespace must be empty for cluster-scoped resources")
+
+		Expect(ea.Spec.RemediationTarget.Kind).To(Equal("Node"),
+			"Issue #192: RemediationTarget.Kind must be Node (fallback to RR)")
+		Expect(ea.Spec.RemediationTarget.Name).To(Equal("worker-1"),
+			"Issue #192: RemediationTarget.Name must be worker-1 (fallback to RR)")
+		Expect(ea.Spec.RemediationTarget.Namespace).To(BeEmpty(),
+			"Issue #192: RemediationTarget.Namespace must be empty for cluster-scoped resources")
+	})
 })

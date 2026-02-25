@@ -59,27 +59,28 @@ type RetryObserver interface {
 // - Example: rr-a1b2c3d4e5f6789
 // - Reason: Unique, deterministic, short (Kubernetes name limit: 253 chars)
 type CRDCreator struct {
-	k8sClient   k8s.ClientInterface  // TDD GREEN: Interface supports circuit breaker (BR-GATEWAY-093)
-	logger      logr.Logger           // DD-005: logr.Logger for unified logging
-	metrics     *metrics.Metrics      // Day 9 Phase 6B Option C1: Centralized metrics
-	retryConfig *config.RetrySettings // BR-GATEWAY-111: Retry configuration
-	clock             Clock                 // Clock for time-dependent operations (enables fast testing)
-	retryObserver     RetryObserver         // BR-GATEWAY-058: Notified on each retry attempt
+	k8sClient           k8s.ClientInterface  // TDD GREEN: Interface supports circuit breaker (BR-GATEWAY-093)
+	logger              logr.Logger           // DD-005: logr.Logger for unified logging
+	metrics             *metrics.Metrics      // Day 9 Phase 6B Option C1: Centralized metrics
+	retryConfig         *config.RetrySettings // BR-GATEWAY-111: Retry configuration
+	clock               Clock                 // Clock for time-dependent operations (enables fast testing)
+	retryObserver       RetryObserver         // BR-GATEWAY-058: Notified on each retry attempt
+	controllerNamespace string                // ADR-057: Namespace where CRDs are created
 }
 
 // NewCRDCreator creates a new CRD creator
 // BR-GATEWAY-111: Accepts retry configuration for K8s API retry logic
 // BR-GATEWAY-058: Accepts RetryObserver for per-attempt audit compliance
 // DD-005: Uses logr.Logger for unified logging
-func NewCRDCreator(k8sClient k8s.ClientInterface, logger logr.Logger, metricsInstance *metrics.Metrics, retryConfig *config.RetrySettings, retryObserver RetryObserver) *CRDCreator {
-	return NewCRDCreatorWithClock(k8sClient, logger, metricsInstance, retryConfig, retryObserver, nil)
+func NewCRDCreator(k8sClient k8s.ClientInterface, logger logr.Logger, metricsInstance *metrics.Metrics, retryConfig *config.RetrySettings, retryObserver RetryObserver, controllerNamespace string) *CRDCreator {
+	return NewCRDCreatorWithClock(k8sClient, logger, metricsInstance, retryConfig, retryObserver, controllerNamespace, nil)
 }
 
 // NewCRDCreatorWithClock creates a new CRD creator with a custom clock
 // This variant enables testing with MockClock for time-dependent behavior
 //
 // TDD GREEN: Accepts ClientInterface to support circuit breaker (BR-GATEWAY-093)
-func NewCRDCreatorWithClock(k8sClient k8s.ClientInterface, logger logr.Logger, metricsInstance *metrics.Metrics, retryConfig *config.RetrySettings, retryObserver RetryObserver, clock Clock) *CRDCreator {
+func NewCRDCreatorWithClock(k8sClient k8s.ClientInterface, logger logr.Logger, metricsInstance *metrics.Metrics, retryConfig *config.RetrySettings, retryObserver RetryObserver, controllerNamespace string, clock Clock) *CRDCreator {
 	// Metrics are mandatory for observability
 	if metricsInstance == nil {
 		panic("metrics cannot be nil: metrics are mandatory for observability")
@@ -102,12 +103,13 @@ func NewCRDCreatorWithClock(k8sClient k8s.ClientInterface, logger logr.Logger, m
 	}
 
 	return &CRDCreator{
-		k8sClient:   k8sClient,
-		logger:      logger,
-		metrics:     metricsInstance,
-		retryConfig: retryConfig,
-		clock:       clock,
-		retryObserver: retryObserver,
+		k8sClient:           k8sClient,
+		logger:              logger,
+		metrics:             metricsInstance,
+		retryConfig:         retryConfig,
+		clock:               clock,
+		retryObserver:       retryObserver,
+		controllerNamespace: controllerNamespace,
 	}
 }
 
@@ -326,10 +328,11 @@ func (c *CRDCreator) CreateRemediationRequest(
 	crdName := fmt.Sprintf("rr-%s-%s", fingerprintPrefix, shortUUID)
 
 	// Build RemediationRequest CRD
+	// ADR-057: CRD created in controller namespace, not signal namespace
 	rr := &remediationv1alpha1.RemediationRequest{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      crdName,
-			Namespace: signal.Namespace,
+			Namespace: c.controllerNamespace,
 			Labels: map[string]string{
 				"app.kubernetes.io/managed-by": "gateway-service",
 				"app.kubernetes.io/component":  "remediation",
@@ -386,21 +389,16 @@ func (c *CRDCreator) CreateRemediationRequest(
 		if k8serrors.IsAlreadyExists(err) {
 			c.logger.V(1).Info("RemediationRequest CRD already exists (Redis TTL expired, CRD persists)",
 				"name", crdName,
-				"namespace", signal.Namespace,
+				"namespace", c.controllerNamespace,
 				"fingerprint", signal.Fingerprint,
 			)
 
-			// Fetch existing CRD and return it
-			// This allows deduplication metadata to be updated in Redis
-			//
-			// Note: Use retry logic here because in concurrent scenarios, another goroutine
-			// may have just created the CRD, and K8s API might not have fully committed it yet.
-			// Retry with exponential backoff to allow K8s API time to sync.
+			// Fetch existing CRD and return it (ADR-057: from controller namespace)
 			var existing *remediationv1alpha1.RemediationRequest
 			var fetchErr error
 			maxFetchAttempts := 3
 			for attempt := 1; attempt <= maxFetchAttempts; attempt++ {
-				existing, fetchErr = c.k8sClient.GetRemediationRequest(ctx, signal.Namespace, crdName)
+				existing, fetchErr = c.k8sClient.GetRemediationRequest(ctx, c.controllerNamespace, crdName)
 				if fetchErr == nil {
 					break // Successfully fetched
 				}
@@ -419,10 +417,9 @@ func (c *CRDCreator) CreateRemediationRequest(
 
 			if fetchErr != nil {
 				c.metrics.CRDCreationErrors.WithLabelValues("fetch_existing_failed").Inc()
-				// GAP-10: Wrap error with full context
 				return nil, NewCRDCreationError(
 					signal.Fingerprint,
-					signal.Namespace,
+					c.controllerNamespace,
 					crdName,
 					signal.SourceType,
 					signal.SignalName,
@@ -434,7 +431,7 @@ func (c *CRDCreator) CreateRemediationRequest(
 
 			c.logger.Info("Reusing existing RemediationRequest CRD (Redis TTL expired)",
 				"name", crdName,
-				"namespace", signal.Namespace,
+				"namespace", c.controllerNamespace,
 				"fingerprint", signal.Fingerprint,
 			)
 
@@ -450,13 +447,12 @@ func (c *CRDCreator) CreateRemediationRequest(
 
 		c.logger.Error(err, "Failed to create RemediationRequest CRD",
 			"name", crdName,
-			"namespace", signal.Namespace,
+			"namespace", c.controllerNamespace,
 			"fingerprint", signal.Fingerprint)
 
-		// GAP-10: Wrap error with full CRD creation context
 		return nil, NewCRDCreationError(
 			signal.Fingerprint,
-			signal.Namespace,
+			c.controllerNamespace,
 			crdName,
 			signal.SourceType,
 			signal.SignalName,
@@ -474,7 +470,7 @@ func (c *CRDCreator) CreateRemediationRequest(
 	// Log creation event
 	c.logger.Info("Created RemediationRequest CRD",
 		"name", crdName,
-		"namespace", signal.Namespace,
+		"namespace", c.controllerNamespace,
 		"fingerprint", signal.Fingerprint,
 		"severity", signal.Severity,
 		"signal_name", signal.SignalName)

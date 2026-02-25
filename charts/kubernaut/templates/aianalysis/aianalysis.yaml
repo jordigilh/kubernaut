@@ -176,6 +176,7 @@ spec:
         prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: aianalysis-controller
+      {{- include "kubernaut.scheduling" (dict "component" .Values.aianalysis "global" .Values.global) | nindent 6 }}
       containers:
         - name: aianalysis
           image: {{ include "kubernaut.image" (dict "service" "aianalysis" "global" .Values.global "appVersion" .Chart.AppVersion) }}

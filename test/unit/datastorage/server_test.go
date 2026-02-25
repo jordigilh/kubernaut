@@ -292,31 +292,3 @@ var _ = Describe("Server Connection Pool Configuration (BR-STORAGE-027)", func()
 	})
 })
 
-// ========================================
-// INTEGRATION WITH ACTUAL SERVER.NEWSERVER()
-// ========================================
-//
-// Note: Full integration test requires running PostgreSQL and Redis
-// This is tested in test/integration/datastorage/suite_test.go
-//
-// The unit tests above validate the BEHAVIOR we expect from server.NewServer()
-// Once server.go is fixed, these patterns should be applied there.
-// ========================================
-
-var _ = Describe("Server.NewServer() Configuration Application (Integration-like)", func() {
-	Context("when NewServer applies config to sql.DB", func() {
-		PIt("should use cfg.Database.MaxOpenConns instead of hardcoded 25", func() {
-			// PENDING: Requires actual PostgreSQL/Redis for full server creation
-			// This test is a placeholder for the integration test
-			//
-			// TEST PLAN:
-			// 1. Start test PostgreSQL and Redis (test/infrastructure)
-			// 2. Create cfg with MaxOpenConns=100
-			// 3. Call server.NewServer(dbConnStr, redisAddr, "", logger, cfg, 0)
-			// 4. Verify server.db.Stats().MaxOpenConnections == 100
-			//
-			// EXPECTED OUTCOME:
-			// After server.go fix, this test should PASS showing config is applied
-		})
-	})
-})

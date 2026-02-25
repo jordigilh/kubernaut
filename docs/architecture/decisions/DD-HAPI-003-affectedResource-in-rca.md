@@ -1,8 +1,8 @@
 # DD-HAPI-003: Affected Resource in Root Cause Analysis
 
 **Status**: ✅ Approved
-**Version**: 1.0
-**Date**: 2026-01-20
+**Version**: 1.1
+**Date**: 2026-02-25
 **Confidence**: 95%
 **Authority**: Authoritative (Approved)
 
@@ -65,7 +65,7 @@ HolmesGPT-API's `/incident/analyze` endpoint **MUST** return an `affectedResourc
 
 **Contract Guarantees**:
 - `affectedResource` is **OPTIONAL** (defaults to signal source if not provided)
-- When provided, `kind`, `name`, and `namespace` are **REQUIRED**
+- When provided, `kind` and `name` are **REQUIRED**; `namespace` is optional for cluster-scoped resources (e.g., Node, PersistentVolume)
 - LLM response format includes `affectedResource` in the RCA structure
 - HAPI validates `affectedResource` is in OwnerChain (already implemented)
 
@@ -333,7 +333,8 @@ Support hierarchical resource relationships:
 type TargetResource struct {
     Kind      string   `json:"kind"`
     Name      string   `json:"name"`
-    Namespace string   `json:"namespace"`
+    // +optional — empty for cluster-scoped resources (e.g., Node, PersistentVolume)
+    Namespace string   `json:"namespace,omitempty"`
     
     // V2.0: Resource hierarchy (future)
     // +optional
@@ -387,7 +388,13 @@ type TargetResource struct {
 
 **Document Control**:
 - **Created**: 2026-01-20
-- **Last Updated**: 2026-01-20
-- **Version**: 1.0
+- **Last Updated**: 2026-02-25
+- **Version**: 1.1
 - **Status**: ✅ Approved
 - **Next Review**: After implementation (estimated 2026-01-22)
+
+**Changelog**:
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.0 | 2026-01-20 | Initial document |
+| 1.1 | 2026-02-25 | Issue #192: `AffectedResource.Namespace` changed from required to optional for cluster-scoped resources (Node, PersistentVolume). Updated contract guarantees and TargetResource struct. |

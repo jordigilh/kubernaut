@@ -62,6 +62,7 @@ spec:
         prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: data-storage-sa
+      {{- include "kubernaut.scheduling" (dict "component" .Values.datastorage "global" .Values.global) | nindent 6 }}
       initContainers:
         - name: wait-for-postgres
           image: busybox:1.37

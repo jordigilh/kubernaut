@@ -188,7 +188,8 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking", func() {
 		It("UT-RO-010-007: should produce correct blocking condition fields", func() {
 			fakeClient := makeFakeClient().Build()
 			engine := routing.NewRoutingEngine(fakeClient, fakeClient, "default", config, &mocks.NeverManagedScopeChecker{})
-			rr := makeRR("production", "rr-prod", "Deployment", "payment-api")
+			rr := makeRR("kubernaut-system", "rr-prod", "Deployment", "payment-api")
+			rr.Spec.TargetResource.Namespace = "production"
 
 			blocked := engine.CheckUnmanagedResource(ctx, rr)
 			Expect(blocked.Reason).To(Equal("UnmanagedResource"))
@@ -205,6 +206,77 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking", func() {
 			blocked := engine.CheckUnmanagedResource(ctx, rr)
 			// BlockedUntil should be in the future
 			Expect(blocked.BlockedUntil.After(time.Now().Add(-1 * time.Second))).To(BeTrue())
+		})
+
+		// ============================================================
+		// ADR-057: Bug fix — CheckUnmanagedResource must use
+		// TargetResource.Namespace, not rr.Namespace (CRD namespace)
+		// ============================================================
+
+		// UT-RO-057-001: RR in kubernaut-system with target in managed workload NS
+		It("UT-RO-057-001: should evaluate scope using target resource namespace, not CRD namespace", func() {
+			// BUSINESS OUTCOME: RO correctly routes RRs for workload resources even
+			// when the RR itself lives in kubernaut-system (per ADR-057 consolidation)
+			fakeClient := makeFakeClient().Build()
+			var capturedNamespace string
+			checker := &capturingScopeChecker{
+				managed: true,
+				onCall: func(ns, kind, name string) {
+					capturedNamespace = ns
+				},
+			}
+			engine := routing.NewRoutingEngine(fakeClient, fakeClient, "default", config, checker)
+			rr := makeRR("kubernaut-system", "rr-node-crash", "Pod", "payment-api-789")
+			rr.Spec.TargetResource.Namespace = "production"
+
+			blocked := engine.CheckUnmanagedResource(ctx, rr)
+			Expect(blocked).To(BeNil(), "Managed target resource should not be blocked")
+			Expect(capturedNamespace).To(Equal("production"),
+				"IsManaged must receive target resource namespace 'production', not CRD namespace 'kubernaut-system'")
+		})
+
+		// UT-RO-057-002: RR in kubernaut-system with target in unmanaged workload NS
+		It("UT-RO-057-002: should block when target resource namespace is unmanaged", func() {
+			// BUSINESS OUTCOME: RO correctly blocks remediation for unmanaged resources
+			fakeClient := makeFakeClient().Build()
+			var capturedNamespace string
+			checker := &capturingScopeChecker{
+				managed: false,
+				onCall: func(ns, kind, name string) {
+					capturedNamespace = ns
+				},
+			}
+			engine := routing.NewRoutingEngine(fakeClient, fakeClient, "default", config, checker)
+			rr := makeRR("kubernaut-system", "rr-staging-pod", "Deployment", "checkout-svc")
+			rr.Spec.TargetResource.Namespace = "staging"
+
+			blocked := engine.CheckUnmanagedResource(ctx, rr)
+			Expect(blocked).NotTo(BeNil())
+			Expect(blocked.Reason).To(Equal(string(remediationv1.BlockReasonUnmanagedResource)))
+			Expect(capturedNamespace).To(Equal("staging"),
+				"IsManaged must receive target resource namespace 'staging', not CRD namespace 'kubernaut-system'")
+		})
+
+		// UT-RO-057-003: RR in kubernaut-system with cluster-scoped target (Node)
+		It("UT-RO-057-003: should use empty namespace for cluster-scoped targets", func() {
+			// BUSINESS OUTCOME: Cluster-scoped resources (Nodes) are evaluated by
+			// resource label only — empty namespace is passed to scope checker
+			fakeClient := makeFakeClient().Build()
+			var capturedNamespace string
+			checker := &capturingScopeChecker{
+				managed: true,
+				onCall: func(ns, kind, name string) {
+					capturedNamespace = ns
+				},
+			}
+			engine := routing.NewRoutingEngine(fakeClient, fakeClient, "default", config, checker)
+			rr := makeRR("kubernaut-system", "rr-node-issue", "Node", "worker-1")
+			// TargetResource.Namespace is empty for cluster-scoped resources
+
+			blocked := engine.CheckUnmanagedResource(ctx, rr)
+			Expect(blocked).To(BeNil())
+			Expect(capturedNamespace).To(BeEmpty(),
+				"Cluster-scoped resources must pass empty namespace to scope checker")
 		})
 
 		// UT-RO-010-009: Backoff uses default config when not specified
@@ -226,3 +298,16 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking", func() {
 		})
 	})
 })
+
+// capturingScopeChecker captures the namespace parameter for assertion.
+type capturingScopeChecker struct {
+	managed bool
+	onCall  func(namespace, kind, name string)
+}
+
+func (c *capturingScopeChecker) IsManaged(_ context.Context, namespace, kind, name string) (bool, error) {
+	if c.onCall != nil {
+		c.onCall(namespace, kind, name)
+	}
+	return c.managed, nil
+}

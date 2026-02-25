@@ -111,6 +111,7 @@ spec:
         prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: holmesgpt-api-sa
+      {{- include "kubernaut.scheduling" (dict "component" .Values.holmesgptApi "global" .Values.global) | nindent 6 }}
       containers:
         - name: holmesgpt-api
           image: {{ include "kubernaut.image" (dict "service" "holmesgpt-api" "global" .Values.global "appVersion" .Chart.AppVersion) }}

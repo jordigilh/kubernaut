@@ -300,7 +300,7 @@ The HAPI system prompt instructs the LLM:
 The `WorkflowResponseValidator` (3-attempt self-correction loop) is updated to validate that `affectedResource` is present in the RCA output. If the LLM omits it, the validator returns:
 
 ```
-"missing required field: root_cause_analysis.affectedResource (kind, name, namespace)"
+"missing required field: root_cause_analysis.affectedResource (kind, name required; namespace required for namespace-scoped resources, omit for cluster-scoped)"
 ```
 
 The LLM retries with the signal context (which includes the target resource kind/name) available to produce the field. This is the same validation pattern used for `severity`, `summary`, and `selected_workflow`.

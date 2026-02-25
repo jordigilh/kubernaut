@@ -1,7 +1,7 @@
 # DD-EM-003: Dual-Target Effectiveness Assessment (Signal Target + Remediation Target)
 
-**Version**: 1.2
-**Date**: 2026-02-24
+**Version**: 1.3
+**Date**: 2026-02-25
 **Status**: ✅ APPROVED
 **Author**: EffectivenessMonitor Team
 **Reviewers**: RemediationOrchestrator Team, AIAnalysis Team
@@ -64,9 +64,13 @@ type EffectivenessAssessmentSpec struct {
     RemediationTarget TargetResource `json:"remediationTarget"`
 }
 
+// TargetResource identifies a Kubernetes resource by kind, name, and namespace.
+// Namespace is optional for cluster-scoped resources (Node, PersistentVolume).
+// Issue #192: Changed from +kubebuilder:validation:Required to +optional.
 type TargetResource struct {
     Kind      string `json:"kind"`
     Name      string `json:"name"`
+    // +optional — empty for cluster-scoped resources (e.g., Node, PersistentVolume)
     Namespace string `json:"namespace,omitempty"`
 }
 ```
@@ -189,6 +193,7 @@ No backward compatibility is needed. This is pre-release v1.0 with no production
 ### Neutral
 
 1. **Same-target scenarios**: When signal and remediation targets are the same (e.g., restart a crashing Deployment), both fields have the same value -- no behavioral change
+2. **Cluster-scoped resources**: When the target is cluster-scoped (e.g., `Node/worker-1`), `Namespace` is empty on both `signalTarget` and `remediationTarget`. The EM assessment components handle this gracefully: health checks use the resource directly, and namespace-scoped queries (alert, metrics) operate at cluster scope when namespace is empty
 
 ---
 
@@ -198,6 +203,7 @@ No backward compatibility is needed. This is pre-release v1.0 with no production
 - [DD-WE-005: Workflow-Scoped RBAC](./DD-WE-005-workflow-scoped-rbac.md) -- RBAC rules also identify the modified resource
 - [Issue #183: EM spec hash empty for HPA](https://github.com/jordigilh/kubernaut/issues/183) -- Fixed empty hash, revealed dual-target gap
 - [Issue #184: Propagate full GVK through pipeline](https://github.com/jordigilh/kubernaut/issues/184) -- GVK propagation complements dual-target
+- [Issue #192: EA creation fails with 'Required value' for empty namespace](https://github.com/jordigilh/kubernaut/issues/192) -- TargetResource.Namespace changed to optional for cluster-scoped resources
 
 ---
 
@@ -206,5 +212,6 @@ No backward compatibility is needed. This is pre-release v1.0 with no production
 | Date | Version | Changes |
 |------|---------|---------|
 | 2026-02-23 | 1.0 | Initial decision - dual-target EA for accurate per-component assessment |
-| 2026-02-24 | 1.2 | Issue #188: Clarified alert resolution routing -- uses `signalTarget.Namespace` + signal name (not just signal name). Metrics routing clarified as `signalTarget.Namespace`. Updated data flow diagram. |
 | 2026-02-24 | 1.1 | Issue #188: Fix remediation target source to `rootCauseAnalysis.affectedResource` (not `selectedWorkflow.targetResource`). Remove deprecated `targetResource` field (pre-release v1.0, no backward compat needed). Update RO to use `resolveDualTargets()` with `DualTarget` struct. |
+| 2026-02-24 | 1.2 | Issue #188: Clarified alert resolution routing -- uses `signalTarget.Namespace` + signal name (not just signal name). Metrics routing clarified as `signalTarget.Namespace`. Updated data flow diagram. |
+| 2026-02-25 | 1.3 | Issue #192: `TargetResource.Namespace` changed from `+kubebuilder:validation:Required` to `+optional` with `omitempty` to support cluster-scoped resources (Node, PersistentVolume). CRD manifests regenerated. Tests: UT-RO-192-001 + IT-RO-192-001. |
