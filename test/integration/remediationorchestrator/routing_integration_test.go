@@ -17,17 +17,22 @@ limitations under the License.
 package remediationorchestrator
 
 import (
+	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 )
 
 // ========================================
@@ -311,6 +316,118 @@ var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
 
 			GinkgoWriter.Println("✅ TEST PASSED: RR allowed after original completed")
 		})
+	})
+})
+
+// ========================================
+// IT-RO-WE001: Target Resource Casing Preservation (Issue #203)
+// Test Plan: docs/testing/COOLDOWN_GW_RO/TEST_PLAN.md
+//
+// BUSINESS VALUE:
+// Validates the reconciler preserves AffectedResource.Kind casing
+// when building the targetResource string for routing checks. The
+// routing engine uses a field-indexed lookup on WFE.spec.targetResource,
+// so a case mismatch silently bypasses the RecentlyRemediated cooldown.
+// ========================================
+var _ = Describe("Target Resource Casing Preservation (Issue #203)", func() {
+
+	It("IT-RO-WE001-001: should block with RecentlyRemediated when Kind casing matches WFE", func() {
+		ns := createTestNamespace("ro-we001-001")
+		defer deleteTestNamespace(ns)
+
+		By("Creating a RemediationRequest")
+		rr := createRemediationRequest(ns, "rr-we001-001")
+
+		By("Driving RR to Processing phase")
+		Eventually(func() remediationv1.RemediationPhase {
+			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
+			return rr.Status.OverallPhase
+		}, timeout, interval).Should(Equal(remediationv1.PhaseProcessing))
+
+		By("Completing SignalProcessing")
+		spName := fmt.Sprintf("sp-%s", rr.Name)
+		sp := &signalprocessingv1.SignalProcessing{}
+		Eventually(func() error {
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ns}, sp)
+		}, timeout, interval).Should(Succeed())
+		Expect(updateSPStatus(ns, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
+
+		By("Waiting for Analyzing phase")
+		Eventually(func() remediationv1.RemediationPhase {
+			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
+			return rr.Status.OverallPhase
+		}, timeout, interval).Should(Equal(remediationv1.PhaseAnalyzing))
+
+		By("Pre-creating a completed WFE with uppercase Kind in spec.targetResource")
+		// The targetResource format is "namespace/Kind/name" (preserving Kind casing).
+		// Before the fix (issue #203), the reconciler lowercased the first letter of Kind,
+		// producing "namespace/deployment/name" which would NOT match this WFE.
+		targetResource := ns + "/Deployment/test-app"
+		wfe := &workflowexecutionv1.WorkflowExecution{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "wfe-recently-completed",
+				Namespace: ns,
+			},
+			Spec: workflowexecutionv1.WorkflowExecutionSpec{
+				RemediationRequestRef: corev1.ObjectReference{
+					Name:      "rr-previous",
+					Namespace: ns,
+				},
+				WorkflowRef: workflowexecutionv1.WorkflowRef{
+					WorkflowID:      "wf-restart-pods",
+					Version:         "v1.0.0",
+					ExecutionBundle: "test-image:latest",
+				},
+				TargetResource:  targetResource,
+				ExecutionEngine: "job",
+			},
+		}
+		Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+		recentCompletion := metav1.NewTime(time.Now().Add(-1 * time.Minute))
+		wfe.Status.Phase = workflowexecutionv1.PhaseCompleted
+		wfe.Status.CompletionTime = &recentCompletion
+		Expect(k8sClient.Status().Update(ctx, wfe)).To(Succeed())
+
+		By("Completing AIAnalysis with AffectedResource.Kind = 'Deployment' (uppercase)")
+		aiName := fmt.Sprintf("ai-%s", rr.Name)
+		ai := &aianalysisv1.AIAnalysis{}
+		Eventually(func() error {
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ns}, ai)
+		}, timeout, interval).Should(Succeed())
+		ai.Status.Phase = aianalysisv1.PhaseCompleted
+		ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+			WorkflowID:      "wf-restart-pods",
+			Version:         "v1.0.0",
+			ExecutionBundle: "test-image:latest",
+			Confidence:      0.95,
+		}
+		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+			Summary:    "OOM kill detected",
+			Severity:   "critical",
+			SignalType: "alert",
+			AffectedResource: &aianalysisv1.AffectedResource{
+				Kind:      "Deployment",
+				Name:      "test-app",
+				Namespace: ns,
+			},
+		}
+		aiCompletedAt := metav1.Now()
+		ai.Status.CompletedAt = &aiCompletedAt
+		Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
+
+		By("Asserting RR transitions to Blocked with RecentlyRemediated reason")
+		// BUSINESS OUTCOME: The routing engine finds the pre-created WFE because
+		// the reconciler now preserves "Deployment" (not "deployment") when building
+		// the targetResource query. This prevents redundant remediation on a target
+		// that was just successfully fixed.
+		Eventually(func(g Gomega) {
+			g.Expect(k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)).To(Succeed())
+			g.Expect(rr.Status.OverallPhase).To(Equal(remediationv1.PhaseBlocked))
+			g.Expect(rr.Status.BlockReason).To(Equal(string(remediationv1.BlockReasonRecentlyRemediated)))
+		}, timeout, interval).Should(Succeed(),
+			"RR must be blocked as RecentlyRemediated when Kind casing matches WFE")
+
+		GinkgoWriter.Println("TEST PASSED: Casing-preserved targetResource matched WFE (RecentlyRemediated)")
 	})
 })
 

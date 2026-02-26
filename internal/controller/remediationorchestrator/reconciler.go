@@ -952,8 +952,7 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 			workflowID = ai.Status.SelectedWorkflow.WorkflowID
 		}
 		ar := ai.Status.RootCauseAnalysis.AffectedResource
-		resolvedKind := strings.ToLower(ar.Kind[:1]) + ar.Kind[1:]
-		targetResource := resolvedKind + "/" + ar.Name
+		targetResource := ar.Kind + "/" + ar.Name
 		if ar.Namespace != "" {
 			targetResource = ar.Namespace + "/" + targetResource
 		}

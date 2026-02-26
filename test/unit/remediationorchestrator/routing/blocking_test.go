@@ -686,6 +686,113 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 	})
 
 	// ========================================
+	// Test Group 4b: Target resource casing (Issue #203)
+	// Test Plan: docs/testing/COOLDOWN_GW_RO/TEST_PLAN.md
+	// Reference: DD-WE-001 (target resource format namespace/Kind/name)
+	//
+	// BUSINESS VALUE:
+	// - Correct casing ensures CheckRecentlyRemediated and CheckResourceBusy
+	//   find previously completed WFEs, enabling defense-in-depth cooldown
+	// - Case mismatch breaks field selectors, silently disabling cooldown
+	// ========================================
+	Context("UT-RO-WE001: Target resource casing must match WFE storage format (#203)", func() {
+		It("UT-RO-WE001-001: should find recently completed WFE when target casing matches", func() {
+			// BUSINESS OUTCOME: RO correctly detects that the same workflow+target
+			// was recently executed, preventing redundant remediation that would waste
+			// LLM calls and potentially conflict with the previous remediation.
+			completionTime := metav1.Now()
+			wfe := &workflowexecutionv1.WorkflowExecution{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "wfe-casing-match",
+					Namespace: "default",
+				},
+				Spec: workflowexecutionv1.WorkflowExecutionSpec{
+					TargetResource: "demo-hpa/Deployment/api-frontend",
+					WorkflowRef: workflowexecutionv1.WorkflowRef{
+						WorkflowID: "patch-hpa-v1",
+						Version:    "v1",
+					},
+				},
+				Status: workflowexecutionv1.WorkflowExecutionStatus{
+					Phase:          workflowexecutionv1.PhaseCompleted,
+					CompletionTime: &completionTime,
+				},
+			}
+			Expect(fakeClient.Create(ctx, wfe)).To(Succeed())
+
+			rr := &remediationv1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "rr-casing-match",
+					Namespace: "default",
+				},
+				Spec: remediationv1.RemediationRequestSpec{
+					TargetResource: remediationv1.ResourceIdentifier{
+						Kind:      "Deployment",
+						Name:      "api-frontend",
+						Namespace: "demo-hpa",
+					},
+				},
+			}
+
+			blocked, err := engine.CheckRecentlyRemediated(ctx, rr, "patch-hpa-v1", "demo-hpa/Deployment/api-frontend")
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(blocked).ToNot(BeNil(),
+				"Same casing (Deployment) must match the WFE and trigger cooldown")
+			Expect(blocked.Blocked).To(BeTrue())
+			Expect(blocked.Reason).To(Equal(string(remediationv1.BlockReasonRecentlyRemediated)))
+		})
+
+		It("UT-RO-WE001-002: should NOT find WFE when target uses lowercase Kind (bug reproduction)", func() {
+			// BUSINESS OUTCOME: This test proves the case mismatch bug exists.
+			// The WFE stores "Deployment" (original casing from AIAnalysis) but the
+			// RO reconciler lowercases it to "deployment" before passing to routing.
+			// Field selectors are case-sensitive, so the query returns no results,
+			// and cooldown is silently bypassed -- leading to redundant remediations.
+			completionTime := metav1.Now()
+			wfe := &workflowexecutionv1.WorkflowExecution{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "wfe-casing-mismatch",
+					Namespace: "default",
+				},
+				Spec: workflowexecutionv1.WorkflowExecutionSpec{
+					TargetResource: "demo-hpa/Deployment/api-frontend",
+					WorkflowRef: workflowexecutionv1.WorkflowRef{
+						WorkflowID: "patch-hpa-v1",
+						Version:    "v1",
+					},
+				},
+				Status: workflowexecutionv1.WorkflowExecutionStatus{
+					Phase:          workflowexecutionv1.PhaseCompleted,
+					CompletionTime: &completionTime,
+				},
+			}
+			Expect(fakeClient.Create(ctx, wfe)).To(Succeed())
+
+			rr := &remediationv1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "rr-casing-mismatch",
+					Namespace: "default",
+				},
+				Spec: remediationv1.RemediationRequestSpec{
+					TargetResource: remediationv1.ResourceIdentifier{
+						Kind:      "Deployment",
+						Name:      "api-frontend",
+						Namespace: "demo-hpa",
+					},
+				},
+			}
+
+			// Pass lowercase "deployment" (as the buggy reconciler does on line 955)
+			blocked, err := engine.CheckRecentlyRemediated(ctx, rr, "patch-hpa-v1", "demo-hpa/deployment/api-frontend")
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(blocked).To(BeNil(),
+				"Bug #203: Lowercase 'deployment' does not match WFE's 'Deployment' -- cooldown bypassed")
+		})
+	})
+
+	// ========================================
 	// Test Group 5: CheckExponentialBackoff (3 tests)
 	// Reference: DD-WE-004 (V1.0 Implementation)
 	// TDD RED PHASE: Tests will FAIL until CheckExponentialBackoff is implemented
