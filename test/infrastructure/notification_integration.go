@@ -200,7 +200,7 @@ func StartNotificationIntegrationInfrastructure(writer io.Writer) error {
 		"-e", fmt.Sprintf("PGPASSWORD=%s", NTIntegrationDBPassword),
 		"-e", fmt.Sprintf("PGDATABASE=%s", NTIntegrationDBName),
 		"-v", filepath.Join(projectRoot, "migrations")+":/migrations:ro",
-		"postgres:16-alpine",
+		"docker.io/library/postgres:16-alpine",
 		"sh", "-c",
 		`set -e
 echo "Applying migrations (Up sections only)..."

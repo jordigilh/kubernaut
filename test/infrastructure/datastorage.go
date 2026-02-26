@@ -913,7 +913,7 @@ spec:
     spec:
       containers:
       - name: postgresql
-        image: postgres:16-alpine
+        image: docker.io/library/postgres:16-alpine
         ports:
         - name: postgresql
           containerPort: 5432
@@ -1630,7 +1630,7 @@ func startPostgreSQL(infra *DataStorageInfrastructure, cfg *DataStorageConfig, w
 		"-e", fmt.Sprintf("POSTGRES_DB=%s", cfg.DBName),
 		"-e", fmt.Sprintf("POSTGRES_USER=%s", cfg.DBUser),
 		"-e", fmt.Sprintf("POSTGRES_PASSWORD=%s", cfg.DBPassword),
-		"postgres:16-alpine")
+		"docker.io/library/postgres:16-alpine")
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {

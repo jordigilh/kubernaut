@@ -504,7 +504,7 @@ func startPostgreSQL() {
 		"-e", "POSTGRES_DB=action_history",
 		"-e", "POSTGRES_USER=slm_user",
 		"-e", "POSTGRES_PASSWORD=test_password",
-		"postgres:16-alpine",
+		"docker.io/library/postgres:16-alpine",
 		"-c", "max_connections=200")
 
 	output, err := cmd.CombinedOutput()

@@ -492,7 +492,7 @@ func startDSBootstrapPostgreSQL(infra *DSBootstrapInfra, writer io.Writer) error
 		"-e", fmt.Sprintf("POSTGRES_USER=%s", defaultPostgresUser),
 		"-e", fmt.Sprintf("POSTGRES_PASSWORD=%s", defaultPostgresPassword),
 		"-e", fmt.Sprintf("POSTGRES_DB=%s", defaultPostgresDB),
-		"postgres:16-alpine",
+		"docker.io/library/postgres:16-alpine",
 	)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
@@ -526,7 +526,7 @@ func runDSBootstrapMigrations(infra *DSBootstrapInfra, projectRoot string, write
 		"-e", fmt.Sprintf("PGUSER=%s", defaultPostgresUser),
 		"-e", fmt.Sprintf("PGPASSWORD=%s", defaultPostgresPassword),
 		"-e", fmt.Sprintf("PGDATABASE=%s", defaultPostgresDB),
-		"postgres:16-alpine",
+		"docker.io/library/postgres:16-alpine",
 		"bash", "-c", migrationScript,
 	)
 	cmd.Stdout = writer
