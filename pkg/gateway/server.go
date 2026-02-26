@@ -238,7 +238,7 @@ func NewServerForTesting(cfg *config.ServerConfig, logger logr.Logger, metricsIn
 	// Create phaseChecker (for deduplication)
 	// DD-GATEWAY-011: Use ctrlClient as apiReader for deduplication (test environment uses direct API access)
 	// This ensures concurrent requests see each other's CRD creations immediately (GW-DEDUP-002 fix)
-	phaseChecker := processing.NewPhaseBasedDeduplicationChecker(ctrlClient)
+	phaseChecker := processing.NewPhaseBasedDeduplicationChecker(ctrlClient, cfg.Processing.Deduplication.CooldownPeriod)
 
 	// Create statusUpdater
 	statusUpdater := processing.NewStatusUpdater(ctrlClient, ctrlClient)
@@ -481,7 +481,7 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 	statusUpdater := processing.NewStatusUpdater(ctrlClient, apiReader)
 	// DD-GATEWAY-011: Use apiReader for deduplication to eliminate race conditions (cache-bypassed reads)
 	// This ensures concurrent requests see each other's CRD creations immediately (GW-DEDUP-002 fix)
-	phaseChecker := processing.NewPhaseBasedDeduplicationChecker(apiReader)
+	phaseChecker := processing.NewPhaseBasedDeduplicationChecker(apiReader, cfg.Processing.Deduplication.CooldownPeriod)
 
 	// BR-GATEWAY-190: Initialize distributed lock manager for multi-replica safety
 	// Uses K8s Lease resources for distributed locking (no external dependencies)
