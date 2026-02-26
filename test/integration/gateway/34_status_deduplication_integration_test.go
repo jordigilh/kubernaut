@@ -49,7 +49,7 @@ import (
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/onsi/gomega/gstruct"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -161,10 +161,12 @@ var _ = Describe("Test 34: DD-GATEWAY-011 Status-Based Tracking (Integration)", 
 			Expect(err).ToNot(HaveOccurred())
 
 			// Business requirement: RO needs to see deduplication data in status
-			Expect(crd.Status.Deduplication).To(gstruct.PointTo(HaveField("OccurrenceCount", BeNumerically(">=", 1))),
+			Expect(crd.Status.Deduplication).ToNot(BeNil(), "Deduplication status must be populated")
+			Expect(crd.Status.Deduplication.OccurrenceCount).To(BeNumerically(">=", 1),
 				"Duplicate tracking should be visible to RO (BR-GATEWAY-181)")
-			Expect(crd.Status.Deduplication.LastSeenAt).To(gstruct.PointTo(Not(BeZero())),
+			Expect(crd.Status.Deduplication.LastSeenAt).ToNot(BeNil(),
 				"RO needs timestamp for SLA tracking")
+			Expect(crd.Status.Deduplication.LastSeenAt.IsZero()).To(BeFalse())
 
 			testLogger.Info("✅ RO can read duplicate tracking from RR status",
 				"occurrences", crd.Status.Deduplication.OccurrenceCount,
@@ -230,7 +232,8 @@ var _ = Describe("Test 34: DD-GATEWAY-011 Status-Based Tracking (Integration)", 
 			err = k8sClient.Get(ctx, client.ObjectKey{Namespace: controllerNamespace, Name: crdName}, crd)
 			Expect(err).ToNot(HaveOccurred())
 
-			Expect(crd.Status.Deduplication).To(gstruct.PointTo(HaveField("OccurrenceCount", BeNumerically(">=", 2))),
+			Expect(crd.Status.Deduplication).ToNot(BeNil(), "Deduplication status must be populated")
+			Expect(crd.Status.Deduplication.OccurrenceCount).To(BeNumerically(">=", 2),
 				"Duplicate tracking should be visible to RO; SLA reporting requires accurate occurrence count (BR-GATEWAY-181)")
 
 			testLogger.Info("✅ SLA Report - Alert occurrence count",
@@ -299,7 +302,8 @@ var _ = Describe("Test 34: DD-GATEWAY-011 Status-Based Tracking (Integration)", 
 			err = k8sClient.Get(ctx, client.ObjectKey{Namespace: controllerNamespace, Name: crdName}, crd)
 			Expect(err).ToNot(HaveOccurred())
 
-			Expect(crd.Status.Deduplication).To(gstruct.PointTo(HaveField("OccurrenceCount", BeNumerically(">=", 5))),
+			Expect(crd.Status.Deduplication).ToNot(BeNil(), "Deduplication status must be populated")
+			Expect(crd.Status.Deduplication.OccurrenceCount).To(BeNumerically(">=", 5),
 				"Status.deduplication must track storm pattern")
 			occurrenceCount := crd.Status.Deduplication.OccurrenceCount
 			Expect(occurrenceCount).To(BeNumerically(">=", 5),
@@ -321,8 +325,9 @@ var _ = Describe("Test 34: DD-GATEWAY-011 Status-Based Tracking (Integration)", 
 			// Verify business-meaningful assertions
 			Expect(occurrenceCount).To(BeNumerically(">=", 5),
 				"Storm pattern: 5+ occurrences indicates persistent issue")
-			Expect(crd.Status.Deduplication.LastSeenAt).To(gstruct.PointTo(Not(BeZero())),
+			Expect(crd.Status.Deduplication.LastSeenAt).ToNot(BeNil(),
 				"LastSeenAt required for SLA tracking")
+			Expect(crd.Status.Deduplication.LastSeenAt.IsZero()).To(BeFalse())
 
 			testLogger.Info("✅ Test 34 PASSED: Status-based deduplication tracking validated",
 				"occurrences", occurrenceCount)

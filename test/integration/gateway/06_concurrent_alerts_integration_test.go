@@ -199,9 +199,17 @@ var _ = Describe("Test 06: Concurrent Signal Handling (Integration)", Ordered, L
 		crdList := &remediationv1alpha1.RemediationRequestList{}
 		err := k8sClient.List(ctx, crdList, client.InNamespace(controllerNamespace))
 		Expect(err).ToNot(HaveOccurred())
-		crdCount := len(crdList.Items)
 
-		testLogger.Info(fmt.Sprintf("  Found %d CRDs", crdCount))
+		// Filter by this test's signal name to exclude RRs from parallel test suites
+		var testCRDs []remediationv1alpha1.RemediationRequest
+		for i := range crdList.Items {
+			if crdList.Items[i].Spec.SignalName == sharedSignalName {
+				testCRDs = append(testCRDs, crdList.Items[i])
+			}
+		}
+		crdCount := len(testCRDs)
+
+		testLogger.Info(fmt.Sprintf("  Found %d CRDs (filtered from %d total)", crdCount, len(crdList.Items)))
 
 		// CRD count should be less than total signals (due to storm aggregation)
 		// but greater than 0
@@ -216,13 +224,13 @@ var _ = Describe("Test 06: Concurrent Signal Handling (Integration)", Ordered, L
 		testLogger.Info("")
 		testLogger.Info("Step 5: Verify CRD data integrity (no race conditions)")
 
-		for i, crd := range crdList.Items {
+		for i, crd := range testCRDs {
 			Expect(crd.Spec.SignalName).To(Equal(sharedSignalName),
 				fmt.Sprintf("CRD %d signal name should match expected", i))
 			Expect(crd.Spec.Severity).ToNot(BeEmpty(),
 				fmt.Sprintf("CRD %d severity should not be empty", i))
-			Expect(crd.Namespace).To(Equal(testNamespace),
-				fmt.Sprintf("CRD %d namespace should match test namespace", i))
+			Expect(crd.Namespace).To(Equal(controllerNamespace),
+				fmt.Sprintf("CRD %d namespace should match controller namespace", i))
 		}
 
 		testLogger.Info("  ✅ All CRD fields are valid (no race conditions)")
