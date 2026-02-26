@@ -79,6 +79,9 @@ const (
 	serviceName = "signalprocessing"
 	timeout     = 60 * time.Second
 	interval    = 2 * time.Second
+
+	// ADR-057: RR and SP CRs live in controller namespace; SP controller watches kubernaut-system only
+	controllerNamespace = "kubernaut-system"
 )
 
 func TestSignalProcessingE2E(t *testing.T) {
