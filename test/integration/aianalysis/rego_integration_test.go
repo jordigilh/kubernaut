@@ -164,12 +164,13 @@ var _ = Describe("Rego Policy Integration", Label("integration", "rego"), func()
 
 	Context("Warning Handling - BR-AI-011", func() {
 		It("should require approval for production with warnings", func() {
+			// Confidence < 0.9 so auto-approval (Issue #197) does not apply
 			result, err := evaluator.Evaluate(evalCtx, &rego.PolicyInput{
 				Environment:      "production",
 				AffectedResource: &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "production"},
 				FailedDetections: []string{},
 				Warnings:         []string{"High resource utilization detected"},
-				Confidence:       0.90,
+				Confidence:       0.85,
 			})
 
 			Expect(err).NotTo(HaveOccurred())
@@ -184,11 +185,12 @@ var _ = Describe("Rego Policy Integration", Label("integration", "rego"), func()
 			// from the is_sensitive_resource rule (score 80). StatefulSet triggers BOTH rules,
 			// and the higher-scoring sensitive_resource reason wins, masking the stateful reason.
 			// A Deployment with detected_labels.stateful=true exercises the stateful path exclusively.
+			// Confidence < 0.9 so auto-approval (Issue #197) does not apply.
 			result, err := evaluator.Evaluate(evalCtx, &rego.PolicyInput{
 				Environment:      "production",
 				AffectedResource: &rego.AffectedResourceInput{Kind: "Deployment", Name: "db", Namespace: "production"},
 				FailedDetections: []string{},
-				Confidence:       0.95,
+				Confidence:       0.85,
 				DetectedLabels: map[string]interface{}{
 					"stateful": true,
 				},
