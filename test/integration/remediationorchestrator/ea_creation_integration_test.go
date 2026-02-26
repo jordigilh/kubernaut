@@ -453,9 +453,11 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 	})
 
 	// ========================================
-	// IT-RO-188-003b: Fallback when AA has empty affectedResource
+	// IT-RO-188-003b: Defense-in-depth when AA has empty affectedResource
+	// DD-HAPI-006 v1.2 / BR-ORCH-036 v4.0: RO must fail with ManualReviewRequired
+	// when AffectedResource is nil or has empty Kind/Name.
 	// ========================================
-	It("IT-RO-188-003b: should fall back to RR target when AA has empty affectedResource", func() {
+	It("IT-RO-188-003b: should fail with ManualReviewRequired when AA has empty affectedResource", func() {
 		ns := createTestNamespace("ro-dt-003b")
 		defer deleteTestNamespace(ns)
 
@@ -507,45 +509,17 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 		ai.Status.CompletedAt = &aiNow
 		Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
 
-		By("Completing WorkflowExecution")
+		By("Waiting for RR to transition to Failed (DD-HAPI-006 v1.2 defense-in-depth)")
 		Eventually(func() remediationv1.RemediationPhase {
 			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
 			return rr.Status.OverallPhase
-		}, timeout, interval).Should(Equal(remediationv1.PhaseExecuting))
+		}, timeout, interval).Should(Equal(remediationv1.PhaseFailed))
 
-		weName := fmt.Sprintf("we-%s", rr.Name)
-		we := &workflowexecutionv1.WorkflowExecution{}
-		Eventually(func() error {
-			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: weName, Namespace: ns}, we)
-		}, timeout, interval).Should(Succeed())
-		we.Status.Phase = workflowexecutionv1.PhaseCompleted
-		weNow := metav1.Now()
-		we.Status.CompletionTime = &weNow
-		Expect(k8sClient.Status().Update(ctx, we)).To(Succeed())
-
-		By("Waiting for Completed phase")
-		Eventually(func() remediationv1.RemediationPhase {
-			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
-			return rr.Status.OverallPhase
-		}, timeout, interval).Should(Equal(remediationv1.PhaseCompleted))
-
-		By("Verifying EA targets both fall back to RR target")
-		eaName := fmt.Sprintf("ea-%s", rr.Name)
-		ea := &eav1.EffectivenessAssessment{}
-		Eventually(func() error {
-			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: eaName, Namespace: ns}, ea)
-		}, 30*time.Second, interval).Should(Succeed())
-
-		// DD-EM-003 fallback: Both targets should equal RR.Spec.TargetResource
-		Expect(ea.Spec.SignalTarget.Kind).To(Equal("Deployment"))
-		Expect(ea.Spec.SignalTarget.Name).To(Equal("test-app"))
-		Expect(ea.Spec.SignalTarget.Namespace).To(Equal(ns))
-
-		Expect(ea.Spec.RemediationTarget.Kind).To(Equal("Deployment"),
-			"DD-EM-003: RemediationTarget should fall back to RR target when AA has empty affectedResource")
-		Expect(ea.Spec.RemediationTarget.Name).To(Equal("test-app"),
-			"DD-EM-003: RemediationTarget should fall back to RR target when AA has empty affectedResource")
-		Expect(ea.Spec.RemediationTarget.Namespace).To(Equal(ns))
+		By("Verifying ManualReviewRequired is set")
+		Expect(rr.Status.RequiresManualReview).To(BeTrue(),
+			"BR-ORCH-036 v4.0: RR should have RequiresManualReview=true when AffectedResource is missing")
+		Expect(rr.Status.Outcome).To(Equal("ManualReviewRequired"),
+			"BR-ORCH-036 v4.0: RR outcome should be ManualReviewRequired")
 	})
 
 	// ========================================

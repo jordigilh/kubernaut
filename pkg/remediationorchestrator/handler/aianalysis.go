@@ -413,6 +413,35 @@ func (h *AIAnalysisHandler) propagateFailure(
 	return h.createManualReviewAndUpdateStatus(ctx, logger, rr, reviewCtx, ai.Status.Reason, ai.Status.SubReason)
 }
 
+// HandleAffectedResourceMissing handles the defense-in-depth case where AIAnalysis completed
+// with a SelectedWorkflow but AffectedResource is nil or has empty Kind/Name.
+// This is the RO layer of the three-layer defense chain (HAPI -> AA -> RO) per DD-HAPI-006 v1.2
+// and BR-ORCH-036 v4.0. Produces the same seamless response as handleHumanReviewRequired:
+// Failed + ManualReviewRequired + NotificationRequest.
+func (h *AIAnalysisHandler) HandleAffectedResourceMissing(
+	ctx context.Context,
+	rr *remediationv1.RemediationRequest,
+	ai *aianalysisv1.AIAnalysis,
+) (ctrl.Result, error) {
+	logger := log.FromContext(ctx).WithValues(
+		"remediationRequest", rr.Name,
+		"aiAnalysis", ai.Name,
+	)
+
+	logger.Info("AffectedResource missing on completed AIAnalysis - creating manual review notification (DD-HAPI-006 defense-in-depth)")
+
+	reviewCtx := &creator.ManualReviewContext{
+		Source:    creator.ManualReviewSourceAIAnalysis,
+		Reason:    "AffectedResourceMissing",
+		SubReason: "rca_resource_missing",
+		Message:   "AIAnalysis completed with a selected workflow but the RCA target resource (AffectedResource) is missing or empty. This indicates the AI identified a remediation action but could not determine the specific Kubernetes resource to target.",
+	}
+
+	h.populateManualReviewContext(reviewCtx, ai)
+
+	return h.createManualReviewAndUpdateStatus(ctx, logger, rr, reviewCtx, "AffectedResourceMissing", "rca_resource_missing")
+}
+
 // IsWorkflowResolutionFailed checks if AIAnalysis failed due to workflow resolution issues.
 // Helper function for use in reconciler.
 func IsWorkflowResolutionFailed(ai *aianalysisv1.AIAnalysis) bool {

@@ -927,39 +927,35 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 		// Normal completion - check routing conditions before creating WorkflowExecution
 		logger.Info("AIAnalysis completed, checking routing conditions")
 
-		// DD-HAPI-006: AffectedResource MUST be present for routing when AI identified a specific resource.
-		// When AffectedResource is nil, escalate to human review.
-		// DD-EM-003: When AffectedResource is present but empty (no RCA resource identified), use RR.Spec.TargetResource
-		// as fallback for routing and WE creation (IT-RO-188-003b).
-		if ai.Status.RootCauseAnalysis == nil || ai.Status.RootCauseAnalysis.AffectedResource == nil {
+		// DD-HAPI-006 v1.2 defense-in-depth: AffectedResource MUST be present for routing.
+		// This is the RO layer of the three-layer chain (HAPI -> AA -> RO).
+		// WorkflowNotNeeded and ApprovalRequired are already handled above.
+		// Reaching here with empty AffectedResource means a data integrity issue.
+		if ai.Status.RootCauseAnalysis == nil ||
+			ai.Status.RootCauseAnalysis.AffectedResource == nil ||
+			ai.Status.RootCauseAnalysis.AffectedResource.Kind == "" ||
+			ai.Status.RootCauseAnalysis.AffectedResource.Name == "" {
 			logger.Error(fmt.Errorf("RCA AffectedResource missing on completed AIAnalysis"),
-				"Escalating to human review per DD-HAPI-006",
+				"Failing RR with ManualReviewRequired per DD-HAPI-006 v1.2 / BR-ORCH-036 v4.0",
 				"aianalysis", ai.Name)
-			return r.aiAnalysisHandler.HandleAIAnalysisStatus(ctx, rr, ai)
+			if r.Recorder != nil {
+				r.Recorder.Event(rr, corev1.EventTypeWarning, events.EventReasonEscalatedToManualReview,
+					"AffectedResource missing on completed AIAnalysis - manual investigation required")
+			}
+			return r.aiAnalysisHandler.HandleAffectedResourceMissing(ctx, rr, ai)
 		}
 
 		// Post-AA routing checks: all checks including resource-level (issue #165).
-		// Target is AI-identified AffectedResource when present; else RR.Spec.TargetResource (DD-EM-003 fallback).
+		// Target is the AI-identified AffectedResource, NOT rr.Spec.TargetResource.
 		workflowID := ""
 		if ai.Status.SelectedWorkflow != nil {
 			workflowID = ai.Status.SelectedWorkflow.WorkflowID
 		}
 		ar := ai.Status.RootCauseAnalysis.AffectedResource
-		var targetResource string
-		if ar.Kind != "" && ar.Name != "" {
-			resolvedKind := strings.ToLower(ar.Kind[:1]) + ar.Kind[1:]
-			targetResource = resolvedKind + "/" + ar.Name
-			if ar.Namespace != "" {
-				targetResource = ar.Namespace + "/" + targetResource
-			}
-		} else {
-			// DD-EM-003: Empty AffectedResource - use RR target for routing
-			tr := rr.Spec.TargetResource
-			resolvedKind := strings.ToLower(tr.Kind[:1]) + tr.Kind[1:]
-			targetResource = resolvedKind + "/" + tr.Name
-			if tr.Namespace != "" {
-				targetResource = tr.Namespace + "/" + targetResource
-			}
+		resolvedKind := strings.ToLower(ar.Kind[:1]) + ar.Kind[1:]
+		targetResource := resolvedKind + "/" + ar.Name
+		if ar.Namespace != "" {
+			targetResource = ar.Namespace + "/" + targetResource
 		}
 		blocked, err := r.routingEngine.CheckPostAnalysisConditions(ctx, rr, workflowID, targetResource)
 		if err != nil {

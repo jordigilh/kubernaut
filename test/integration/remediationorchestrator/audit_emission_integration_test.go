@@ -415,7 +415,7 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 			Expect(errorDetails.Component).To(Equal(ogenclient.ErrorDetailsComponentRemediationorchestrator))
 			Expect(errorDetails.Code).To(ContainSubstring("ERR_"))
 			Expect(errorDetails.Message).To(ContainSubstring("ERR_"), "error message should reference the error code")
-			Expect(*errorDetails.RetryPossible).To(BeFalse(), "terminal failures should not be retryable")
+			Expect(errorDetails.RetryPossible).To(BeFalse(), "terminal failures should not be retryable")
 
 			// DD-TESTING-001 Pattern 6: Validate top-level DurationMs field (performance tracking)
 			topLevelDuration, hasDuration := event.DurationMs.Get()
