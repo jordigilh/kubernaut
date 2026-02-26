@@ -631,6 +631,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 						Kind:       "Deployment",
 						Name:       deployment.Name,
 						UID:        deployment.UID,
+						Controller: func() *bool { t := true; return &t }(), // Required for owner chain traversal
 					}},
 				},
 				Spec: appsv1.ReplicaSetSpec{
@@ -652,6 +653,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 				Kind:       "ReplicaSet",
 				Name:       rs.Name,
 				UID:        rs.UID,
+				Controller: func() *bool { t := true; return &t }(), // Required for owner chain traversal
 			}})
 
 			By("Creating SignalProcessing CR")
