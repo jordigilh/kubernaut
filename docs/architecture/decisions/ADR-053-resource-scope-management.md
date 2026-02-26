@@ -5,6 +5,12 @@
 **Deciders**: Platform Team, Gateway Team, RemediationOrchestrator Team
 **Confidence**: 95%
 
+> **Note (2026-02-24)**: [ADR-057](ADR-057-crd-namespace-consolidation.md) supersedes this ADR's
+> implicit assumption that CRDs are created in the signal/workload namespace. Per ADR-057, **all
+> kubernaut CRDs are created in the controller namespace** (`kubernaut-system`). The target resource
+> namespace is preserved in `Spec.TargetResource.Namespace`. Scope validation in this ADR remains
+> authoritative — it now evaluates `TargetResource.Namespace` instead of the CRD's own namespace.
+
 ---
 
 ## Context
