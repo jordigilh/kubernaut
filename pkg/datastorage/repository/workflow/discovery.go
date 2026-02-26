@@ -32,6 +32,8 @@ import (
 // Authority: DD-WORKFLOW-016 (Action-Type Workflow Catalog Indexing)
 // Authority: DD-HAPI-017 (Three-Step Workflow Discovery Integration)
 // Business Requirement: BR-HAPI-017-001 (Three-Step Tool Implementation)
+// CONVENTION (#213, DD-WORKFLOW-016): All paginated queries on remediation_workflow_catalog
+// must use workflow_id ASC as a deterministic tiebreaker in ORDER BY.
 //
 // Step 1: ListActions -- list action types with active workflow counts
 // Step 2: ListWorkflowsByActionType -- list workflows for an action type
@@ -154,7 +156,7 @@ func (r *Repository) ListWorkflowsByActionType(ctx context.Context, actionType s
 	mainQuery := fmt.Sprintf(`
 		SELECT * FROM remediation_workflow_catalog
 		WHERE %s
-		ORDER BY actual_success_rate DESC NULLS LAST, created_at DESC
+		ORDER BY actual_success_rate DESC NULLS LAST, created_at DESC, workflow_id ASC
 		OFFSET $%d LIMIT $%d
 	`, whereClause, len(args)+1, len(args)+2)
 

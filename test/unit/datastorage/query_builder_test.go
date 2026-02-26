@@ -122,5 +122,15 @@ var _ = Describe("SQL Query Builder - BR-STORAGE-021, BR-STORAGE-022", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(sql).To(ContainSubstring("ORDER BY"))
 		})
+
+		// #213: Paginated queries must include PK tiebreaker for deterministic ordering
+		It("UT-DS-213-005: ORDER BY must include id DESC tiebreaker for pagination correctness", func() {
+			builder := query.NewBuilder()
+			sql, _, err := builder.Build()
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(sql).To(ContainSubstring("ORDER BY action_timestamp DESC, id DESC"),
+				"Paginated queries on resource_action_traces need id tiebreaker to prevent items shifting between pages")
+		})
 	})
 })
