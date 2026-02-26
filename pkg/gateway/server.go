@@ -272,6 +272,7 @@ func NewServerForTesting(cfg *config.ServerConfig, logger logr.Logger, metricsIn
 	}
 
 	// Create server first (crdCreator set below after observer wiring)
+	// DD-STATUS-001: Use ctrlClient as apiReader for readiness/dedup (test env uses direct API, no cache)
 	server := &Server{
 		config:              cfg,
 		adapterRegistry:     adapterRegistry,
@@ -279,8 +280,9 @@ func NewServerForTesting(cfg *config.ServerConfig, logger logr.Logger, metricsIn
 		phaseChecker:        phaseChecker,
 		k8sClient:           k8sClient,
 		ctrlClient:          ctrlClient,
-		lockManager:         lockManager,  // BR-GATEWAY-190: Multi-replica deduplication safety
-		auditStore:          auditStore,   // Injected for testing
+		apiReader:           ctrlClient, // Test env: ctrlClient is uncached, works for readiness List
+		lockManager:         lockManager, // BR-GATEWAY-190: Multi-replica deduplication safety
+		auditStore:          auditStore, // Injected for testing
 		scopeChecker:        scopeChecker, // BR-SCOPE-002: nil = no scope filtering
 		controllerNamespace: controllerNS, // Issue #195: Used by ShouldDeduplicate
 		metricsInstance:     metricsInstance,
