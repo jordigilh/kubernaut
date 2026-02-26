@@ -3,8 +3,8 @@
 **Service**: RemediationOrchestrator Controller
 **Category**: V1.0 Core Requirements
 **Priority**: P0 (CRITICAL)
-**Version**: 3.0
-**Date**: 2026-02-09
+**Version**: 4.0
+**Date**: 2026-02-24
 **Status**: 🚧 Planned
 **Related BRs**: BR-ORCH-032 (WE Skip Handling), BR-ORCH-001 (Approval Notification), BR-HAPI-197 (needs_human_review), BR-HAPI-200 (resolved/inconclusive)
 **Related DDs**: DD-WE-004 (Exponential Backoff Cooldown), DD-AIANALYSIS-003 (Completion Substates)
@@ -54,6 +54,14 @@ RemediationOrchestrator MUST create NotificationRequest CRDs when:
 | `APIError` / `PermanentError` | Non-retryable HAPI error (4xx, auth failure, bad request) | High | BR-ORCH-036 v3.0 |
 
 **Rationale (v3.0)**: Prior to this version, infrastructure failures in AIAnalysis (e.g., HAPI timeout after all retries) silently transitioned the RemediationRequest to `Failed` without creating a NotificationRequest. This left operators unaware that a remediation attempt had failed due to infrastructure issues. The principle is: **any failure without automatic recovery MUST generate an escalation notification**.
+
+### Source: AIAnalysis Completed with Missing AffectedResource (v4.0)
+
+| Reason / SubReason | Description | Priority | Source |
+|--------------------|-------------|----------|--------|
+| `AffectedResourceMissing` / `rca_resource_missing` | AA completed with SelectedWorkflow but AffectedResource nil or empty Kind/Name | High | DD-HAPI-006 v1.2, BR-ORCH-036 v4.0 |
+
+**Rationale (v4.0)**: Completes the three-layer defense-in-depth chain (HAPI → AA → RO) for the "cannot identify RCA target" scenario. HAPI catches this at the LLM level (BR-HAPI-212), AA catches it during extraction (response_processor.go), and the RO guard catches any remaining cases. All three layers produce the same operator experience: Failed + ManualReviewRequired + NotificationRequest.
 
 ---
 
@@ -227,6 +235,15 @@ func (c *NotificationCreator) CreateManualReviewNotification(
 | AC-036-34 | `spec.metadata.failureSource=AIAnalysis` set | Unit |
 | AC-036-35 | No failure transitions to RR `Failed` without a notification | Integration |
 
+### AIAnalysis Missing AffectedResource (v4.0)
+
+| ID | Criterion | Test Coverage |
+|----|-----------|---------------|
+| AC-036-40 | NotificationRequest created when AA completed with empty AffectedResource | Integration |
+| AC-036-41 | RR transitions to Failed with RequiresManualReview=true | Integration |
+| AC-036-42 | RR Outcome set to "ManualReviewRequired" | Integration |
+| AC-036-43 | K8s Warning event emitted with reason EscalatedToManualReview | Integration |
+
 ### Common
 
 | ID | Criterion | Test Coverage |
@@ -320,6 +337,22 @@ Scenario: Escalation notification for AIAnalysis permanent HAPI error
     | type | manual-review |
     | priority | high |
   And notification body should contain "PermanentError"
+
+# v4.0: Defense-in-Depth - Missing AffectedResource
+Scenario: Manual review notification for AA completed but AffectedResource missing
+  Given AIAnalysis "ai-1" has:
+    | phase | Completed |
+    | selectedWorkflow | wf-restart-pods |
+    | affectedResource.kind | (empty) |
+    | affectedResource.name | (empty) |
+  When RemediationOrchestrator reconciles "rr-1"
+  Then NotificationRequest should be created with:
+    | type | manual-review |
+    | priority | high |
+    | spec.metadata.failureSource | AIAnalysis |
+    | spec.metadata.failureReason | AffectedResourceMissing |
+  And RemediationRequest "rr-1" should have requiresManualReview = true
+  And RemediationRequest "rr-1" should have phase = Failed
 ```
 
 ---
@@ -467,12 +500,13 @@ kubernaut_remediationorchestrator_manual_review_notifications_total{
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 4.0 | 2026-02-24 | **Defense-in-depth guard**: Added RO guard for AA completed with missing AffectedResource (nil or empty Kind/Name). Completes three-layer chain (HAPI → AA → RO) for "cannot identify RCA target" scenario. All layers produce same response: Failed + ManualReviewRequired + NotificationRequest. See DD-HAPI-006 v1.2. |
 | 3.0 | 2026-02-09 | **Escalation principle**: Any failure without automatic recovery MUST be notified. Added AIAnalysis infrastructure failures (APIError/MaxRetriesExceeded, TransientError, PermanentError) as notification triggers. Previously, these failures silently transitioned RR to Failed without operator notification. Also increased AA controller default HAPI timeout from 60s to 10m to accommodate real LLM response times (temporary; will be replaced by session-based pulling design). |
 | 2.0 | 2025-12-07 | Extended to include all AIAnalysis WorkflowResolutionFailed scenarios (7 SubReasons), added BR-HAPI-200 InvestigationInconclusive |
 | 1.0 | 2025-12-06 | Initial BR creation for WE failures only |
 
 ---
 
-**Document Version**: 3.0
-**Last Updated**: February 9, 2026
+**Document Version**: 4.0
+**Last Updated**: February 24, 2026
 **Maintained By**: Kubernaut Architecture Team

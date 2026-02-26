@@ -1,9 +1,9 @@
 # DD-HAPI-006: Affected Resource in Root Cause Analysis
 
 **Status**: ✅ Approved
-**Version**: 1.1
-**Date**: 2026-01-20
-**Last Updated**: 2026-01-20 (Added apiVersion requirement)
+**Version**: 1.2
+**Date**: 2026-02-24
+**Last Updated**: 2026-02-24 (Added defense-in-depth documentation)
 **Confidence**: 95%
 **Authority**: Authoritative (Approved)
 
@@ -414,6 +414,34 @@ metadata:
 
 ---
 
+## Defense-in-Depth: Three-Layer AffectedResource Validation (v1.2)
+
+Three independent layers validate `affectedResource` presence, ensuring a consistent operator experience regardless of which layer catches the issue:
+
+### Layer 1: HAPI (LLM Level)
+- **File**: `holmesgpt-api/src/extensions/incident/result_parser.py`
+- **Check**: If `selected_workflow` present AND `affectedResource` missing → `needs_human_review=true`, `human_review_reason=rca_incomplete`
+- **Reference**: BR-HAPI-212 scenario #7
+
+### Layer 2: AIAnalysis (Extraction Level)
+- **File**: `pkg/aianalysis/handlers/response_processor.go` (lines 618-634)
+- **Check**: Only stores `AffectedResource` when `kind != ""` AND `name != ""`. Otherwise stays nil.
+- **Reference**: DD-HAPI-006 Section 2
+
+### Layer 3: RemediationOrchestrator (Routing Level)
+- **File**: `internal/controller/remediationorchestrator/reconciler.go`
+- **Check**: If `AffectedResource` is nil or has empty Kind/Name → `HandleAffectedResourceMissing` → Failed + ManualReviewRequired + NotificationRequest
+- **Preconditions**: `WorkflowNotNeeded` and `ApprovalRequired` are already checked before this guard runs. Reaching the guard means a genuine data integrity issue.
+- **Reference**: BR-ORCH-036 v4.0
+
+**Operator Experience**: All three layers produce the same response:
+- RR transitions to `Failed`
+- `RequiresManualReview = true`
+- `NotificationRequest` created with `type=manual-review`
+- K8s Warning event emitted
+
+---
+
 ## Future Enhancements (V2.0)
 
 ### Multiple Target Resources
@@ -475,9 +503,18 @@ type RootCauseAnalysis struct {
 
 ---
 
+## Changelog
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.1 | 2026-01-20 | Added apiVersion requirement |
+| 1.2 | 2026-02-24 | Added defense-in-depth documentation. Section 5 describes the three-layer model (HAPI → AA → RO) for handling missing AffectedResource. RO guard produces same seamless response as HAPI/AA layers: Failed + ManualReviewRequired + NotificationRequest (BR-ORCH-036 v4.0). |
+
+---
+
 **Document Control**:
 - **Created**: 2026-01-20
-- **Last Updated**: 2026-01-20 (v1.1 - Added apiVersion requirement)
-- **Version**: 1.1
+- **Last Updated**: 2026-02-24 (v1.2 - Added defense-in-depth documentation)
+- **Version**: 1.2
 - **Status**: ✅ Approved
 - **Next Review**: After implementation (estimated 2026-01-22)

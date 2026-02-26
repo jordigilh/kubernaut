@@ -20,7 +20,7 @@ Previously, `ValidityDeadline` was set by the RO in the EA spec. This created a 
 
 ### BR-EM-009.1: ValidityDeadline Computation
 
-**The EM controller MUST compute `ValidityDeadline` on first reconciliation** (Pending → Assessing transition) as:
+**The EM controller MUST compute `ValidityDeadline` on first reconciliation** (Pending → Stabilizing transition when StabilizationWindow > 0, or Pending → Assessing when StabilizationWindow == 0) as:
 
 ```
 ValidityDeadline = EA.creationTimestamp + config.ValidityWindow
@@ -36,7 +36,7 @@ Where `config.ValidityWindow` comes from the EM's `ReconcilerConfig` (default: 3
 
 ### BR-EM-009.2: PrometheusCheckAfter Computation
 
-**The EM controller MUST compute `PrometheusCheckAfter` on first reconciliation** as:
+**The EM controller MUST compute `PrometheusCheckAfter` on first reconciliation** (Pending → Stabilizing transition when StabilizationWindow > 0, or Pending → Assessing when StabilizationWindow == 0) as:
 
 ```
 PrometheusCheckAfter = EA.creationTimestamp + StabilizationWindow
@@ -51,7 +51,7 @@ Where `StabilizationWindow` comes from `EA.Spec.Config.StabilizationWindow`. The
 
 ### BR-EM-009.3: AlertManagerCheckAfter Computation
 
-**The EM controller MUST compute `AlertManagerCheckAfter` on first reconciliation** as:
+**The EM controller MUST compute `AlertManagerCheckAfter` on first reconciliation** (Pending → Stabilizing transition when StabilizationWindow > 0, or Pending → Assessing when StabilizationWindow == 0) as:
 
 ```
 AlertManagerCheckAfter = EA.creationTimestamp + StabilizationWindow
@@ -89,6 +89,17 @@ AlertManagerCheckAfter = EA.creationTimestamp + StabilizationWindow
 - Validated: minimum 5m, maximum 24h
 - EM config validation enforces `ValidityWindow > StabilizationWindow`
 - Wired into `ReconcilerConfig.ValidityWindow`
+
+### BR-EM-009.6: Stabilizing Phase Transition
+
+**The EM controller MUST transition EA from Pending to Stabilizing on first reconciliation when StabilizationWindow > 0.** Derived timing fields MUST be pre-computed and persisted in this phase. When StabilizationWindow == 0, the EM transitions directly from Pending to Assessing.
+
+**Acceptance Criteria:**
+- When StabilizationWindow > 0: EM transitions EA from Pending to Stabilizing on first reconciliation
+- When StabilizationWindow > 0: ValidityDeadline, PrometheusCheckAfter, and AlertManagerCheckAfter are computed and persisted in EA status during Stabilizing phase
+- When StabilizationWindow == 0: EM transitions EA directly from Pending to Assessing (no Stabilizing phase)
+- Phase state machine: Pending → Stabilizing → Assessing → Completed/Failed when StabilizationWindow > 0
+- Phase state machine: Pending → Assessing → Completed/Failed when StabilizationWindow == 0
 
 ## Design Rationale
 
