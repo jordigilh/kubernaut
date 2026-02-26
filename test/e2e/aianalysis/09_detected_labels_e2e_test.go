@@ -120,17 +120,18 @@ var _ = Describe("E2E-AA ADR-056 DetectedLabels", Label("e2e", "adr-056", "detec
 		Expect(err).NotTo(HaveOccurred(), "Failed to create PDB for %s", deployName)
 	}
 
-	// newAnalysisCR creates an AIAnalysis CR for the test namespace.
+	// newAnalysisCR creates an AIAnalysis CR. ADR-057: AIAnalysis lives in kubernaut-system.
+	// TargetResource.Namespace stays as testNS (where Deployment/PDB exist for label detection).
 	newAnalysisCR := func(suffix, deployName string) *aianalysisv1alpha1.AIAnalysis {
 		return &aianalysisv1alpha1.AIAnalysis{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "e2e-aa-056-" + suffix + "-" + randomSuffix(),
-				Namespace: testNS,
+				Namespace: controllerNamespace,
 			},
 			Spec: aianalysisv1alpha1.AIAnalysisSpec{
 				RemediationRequestRef: corev1.ObjectReference{
 					Name:      "e2e-rr-" + suffix,
-					Namespace: testNS,
+					Namespace: controllerNamespace,
 				},
 				RemediationID: "e2e-rem-056-" + suffix,
 				AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{

@@ -85,7 +85,7 @@ var _ = Describe("EffectivenessMonitor Alert Resolution E2E Tests", Label("e2e")
 		)
 
 		By("Waiting for EM to complete the assessment")
-		ea := waitForEAPhase(testNS, name, eav1.PhaseCompleted)
+		ea := waitForEAPhase(name, eav1.PhaseCompleted)
 
 		By("Verifying alert was assessed with score 1.0 (resolved)")
 		Expect(ea.Status.Components.AlertAssessed).To(BeTrue(),
@@ -135,7 +135,7 @@ var _ = Describe("EffectivenessMonitor Alert Resolution E2E Tests", Label("e2e")
 		)
 
 		By("Waiting for EM to complete the assessment")
-		ea := waitForEAPhase(testNS, name, eav1.PhaseCompleted)
+		ea := waitForEAPhase(name, eav1.PhaseCompleted)
 
 		By("Verifying alert was assessed with score 0.0 (still firing)")
 		Expect(ea.Status.Components.AlertAssessed).To(BeTrue(),

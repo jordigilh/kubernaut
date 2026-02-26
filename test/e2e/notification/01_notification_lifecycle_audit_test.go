@@ -86,7 +86,7 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 		// Generate unique identifiers for this test
 		testID := time.Now().Format("20060102-150405")
 		notificationName = "e2e-lifecycle-test-" + testID
-		notificationNS = "default"
+		notificationNS = controllerNamespace
 		correlationID = "e2e-remediation-" + testID
 
 		// Use real Data Storage URL from Kind cluster

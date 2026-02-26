@@ -74,7 +74,7 @@ var _ = Describe("Multi-Channel Fanout E2E (BR-NOT-053)", func() {
 			notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-multi-channel-fanout",
-					Namespace: "default",
+					Namespace: controllerNamespace,
 					Labels: map[string]string{
 						"test-scenario": "multi-channel-fanout",
 						"test-priority": "P0",
@@ -186,7 +186,7 @@ var _ = Describe("Multi-Channel Fanout E2E (BR-NOT-053)", func() {
 			notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-log-channel-test",
-					Namespace: "default",
+					Namespace: controllerNamespace,
 					Labels: map[string]string{
 						"test-scenario": "log-channel",
 						"test-priority": "P1",

@@ -56,7 +56,7 @@ var _ = Describe("EffectivenessMonitor Health Check E2E Tests", Label("e2e"), fu
 		)
 
 		By("Waiting for EM to complete the assessment")
-		ea := waitForEAPhase(testNS, name, eav1.PhaseCompleted)
+		ea := waitForEAPhase(name, eav1.PhaseCompleted)
 
 		By("Verifying health was assessed with score 0.0")
 		Expect(ea.Status.Components.HealthAssessed).To(BeTrue(),

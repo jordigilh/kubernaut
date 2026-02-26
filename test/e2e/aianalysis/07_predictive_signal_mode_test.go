@@ -55,20 +55,15 @@ var _ = Describe("E2E-AA-084-001: Predictive Signal Mode Investigation", Label("
 			// This E2E test validates the full AA → HAPI → Mock LLM pipeline with
 			// predictive signal mode context flowing through all components.
 
-			namespace := createTestNamespace("aa-predictive")
-			defer func() {
-				// Cleanup handled by namespace deletion
-			}()
-
 			analysis := &aianalysisv1alpha1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-predictive-oomkill-" + randomSuffix(),
-					Namespace: namespace,
+					Namespace: controllerNamespace,
 				},
 				Spec: aianalysisv1alpha1.AIAnalysisSpec{
 					RemediationRequestRef: corev1.ObjectReference{
 						Name:      "e2e-predictive-remediation",
-						Namespace: namespace,
+						Namespace: controllerNamespace,
 					},
 					RemediationID: "e2e-predictive-rem-001",
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
@@ -82,7 +77,7 @@ var _ = Describe("E2E-AA-084-001: Predictive Signal Mode Investigation", Label("
 							TargetResource: aianalysisv1alpha1.TargetResource{
 								Kind:      "Deployment",
 								Name:      "api-server",
-								Namespace: namespace,
+								Namespace: controllerNamespace,
 							},
 							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
@@ -125,17 +120,15 @@ var _ = Describe("E2E-AA-084-001: Predictive Signal Mode Investigation", Label("
 			// Existing reactive signals should continue working with standard RCA.
 			// signalMode=reactive (or empty) should produce normal investigation results.
 
-			namespace := createTestNamespace("aa-reactive-mode")
-
 			analysis := &aianalysisv1alpha1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-reactive-oomkill-" + randomSuffix(),
-					Namespace: namespace,
+					Namespace: controllerNamespace,
 				},
 				Spec: aianalysisv1alpha1.AIAnalysisSpec{
 					RemediationRequestRef: corev1.ObjectReference{
 						Name:      "e2e-reactive-remediation",
-						Namespace: namespace,
+						Namespace: controllerNamespace,
 					},
 					RemediationID: "e2e-reactive-rem-001",
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
@@ -149,7 +142,7 @@ var _ = Describe("E2E-AA-084-001: Predictive Signal Mode Investigation", Label("
 							TargetResource: aianalysisv1alpha1.TargetResource{
 								Kind:      "Pod",
 								Name:      "worker-pod",
-								Namespace: namespace,
+								Namespace: controllerNamespace,
 							},
 							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},

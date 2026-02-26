@@ -142,7 +142,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      testName,
-					Namespace: "default",
+					Namespace: controllerNamespace,
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					ExecutionEngine: "job",
@@ -150,7 +150,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 						APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
 						Kind:       "RemediationRequest",
 						Name:       "test-rr-" + testName,
-						Namespace:  "default",
+						Namespace:  controllerNamespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID: "test-job-intentional-failure",
@@ -339,7 +339,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      testName,
-					Namespace: "default",
+					Namespace: controllerNamespace,
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					ExecutionEngine: "ansible", // Invalid: not in enum [tekton, job]
@@ -347,7 +347,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 						APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
 						Kind:       "RemediationRequest",
 						Name:       "test-rr-" + testName,
-						Namespace:  "default",
+						Namespace:  controllerNamespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID:     "test-invalid-engine",
@@ -367,7 +367,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 				fmt.Sprintf("Expected validation error, got: %v", err))
 
 			By("Verifying no WFE was persisted")
-			_, getErr := getWFE(testName, "default")
+			_, getErr := getWFE(testName, controllerNamespace)
 			Expect(apierrors.IsNotFound(getErr)).To(BeTrue(),
 				"WFE should not exist after validation rejection")
 
@@ -518,7 +518,7 @@ func createTestJobWFE(name, targetResource string) *workflowexecutionv1alpha1.Wo
 	return &workflowexecutionv1alpha1.WorkflowExecution{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: "default",
+			Namespace: controllerNamespace,
 		},
 		Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 			ExecutionEngine: "job",
@@ -527,7 +527,7 @@ func createTestJobWFE(name, targetResource string) *workflowexecutionv1alpha1.Wo
 				APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
 				Kind:       "RemediationRequest",
 				Name:       "test-rr-" + name,
-				Namespace:  "default",
+				Namespace:  controllerNamespace,
 			},
 			WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 				WorkflowID: "test-job-hello-world",

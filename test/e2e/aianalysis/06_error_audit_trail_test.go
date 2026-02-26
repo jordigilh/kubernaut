@@ -52,11 +52,10 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 		It("should audit AI agent calls even when API returns HTTP 500", func() {
 			By("Creating AIAnalysis with signal type that might trigger HAPI error")
 			suffix := randomSuffix()
-			namespace := createTestNamespace("error-audit-hapi")
 			analysis := &aianalysisv1alpha1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-error-audit-hapi-" + suffix,
-					Namespace: namespace,
+					Namespace: controllerNamespace,
 				},
 				Spec: aianalysisv1alpha1.AIAnalysisSpec{
 					RemediationID: "e2e-error-audit-hapi-" + suffix,
@@ -118,11 +117,10 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 		It("should create audit trail even when AIAnalysis remains in retry loop", func() {
 			By("Creating AIAnalysis that may experience repeated errors")
 			suffix := randomSuffix()
-			namespace := createTestNamespace("error-audit-retry")
 			analysis := &aianalysisv1alpha1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-error-retry-" + suffix,
-					Namespace: namespace,
+					Namespace: controllerNamespace,
 				},
 				Spec: aianalysisv1alpha1.AIAnalysisSpec{
 					RemediationID: "e2e-error-retry-" + suffix,
@@ -136,7 +134,7 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 							TargetResource: aianalysisv1alpha1.TargetResource{
 								Kind:      "Deployment",
 								Name:      "unstable-service",
-								Namespace: namespace,
+								Namespace: controllerNamespace,
 							},
 						},
 						AnalysisTypes: []string{"investigation"},
@@ -188,11 +186,10 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 		It("should audit errors during investigation phase", func() {
 			By("Creating AIAnalysis that will be processed by controller")
 			suffix := randomSuffix()
-			namespace := createTestNamespace("error-audit-investigation")
 			analysis := &aianalysisv1alpha1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-error-investigation-" + suffix,
-					Namespace: namespace,
+					Namespace: controllerNamespace,
 				},
 				Spec: aianalysisv1alpha1.AIAnalysisSpec{
 					RemediationID: "e2e-error-investigation-" + suffix,
@@ -206,7 +203,7 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 							TargetResource: aianalysisv1alpha1.TargetResource{
 								Kind:      "Pod",
 								Name:      "memory-hog",
-								Namespace: namespace,
+								Namespace: controllerNamespace,
 							},
 							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
@@ -265,11 +262,10 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 		It("should maintain audit integrity across controller restarts", func() {
 			By("Creating AIAnalysis before simulated controller restart")
 			suffix := randomSuffix()
-			namespace := createTestNamespace("error-audit-restart")
 			analysis := &aianalysisv1alpha1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-restart-audit-" + suffix,
-					Namespace: namespace,
+					Namespace: controllerNamespace,
 				},
 				Spec: aianalysisv1alpha1.AIAnalysisSpec{
 					RemediationID: "e2e-restart-audit-" + suffix,
@@ -283,7 +279,7 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 							TargetResource: aianalysisv1alpha1.TargetResource{
 								Kind:      "Deployment",
 								Name:      "backend-api",
-								Namespace: namespace,
+								Namespace: controllerNamespace,
 							},
 							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
@@ -342,11 +338,10 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 		It("should include complete metadata in all error audit events", func() {
 			By("Creating AIAnalysis that will generate audit events")
 			suffix := randomSuffix()
-			namespace := createTestNamespace("error-audit-metadata")
 			analysis := &aianalysisv1alpha1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-metadata-" + suffix,
-					Namespace: namespace,
+					Namespace: controllerNamespace,
 				},
 				Spec: aianalysisv1alpha1.AIAnalysisSpec{
 					RemediationID: "e2e-metadata-" + suffix,
@@ -360,7 +355,7 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 							TargetResource: aianalysisv1alpha1.TargetResource{
 								Kind:      "Pod",
 								Name:      "critical-pod",
-								Namespace: namespace,
+								Namespace: controllerNamespace,
 							},
 						},
 						AnalysisTypes: []string{"investigation"},

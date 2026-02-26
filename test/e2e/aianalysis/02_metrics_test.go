@@ -36,21 +36,21 @@ import (
 var skipMetricsSeeding bool
 
 // seedMetricsWithAnalysis creates a simple AIAnalysis and waits for completion
-// to ensure all metrics are populated before tests run
+// to ensure all metrics are populated before tests run.
+// ADR-057: AIAnalysis must be in kubernaut-system (controller watch scope).
 func seedMetricsWithAnalysis() {
 	ctx := context.Background()
-	namespace := createTestNamespace("metrics-seed")
 
 	// Create successful analysis to populate success metrics
 	analysis := &aianalysisv1alpha1.AIAnalysis{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "metrics-seed-success-" + randomSuffix(),
-			Namespace: namespace,
+			Namespace: controllerNamespace,
 		},
 		Spec: aianalysisv1alpha1.AIAnalysisSpec{
 			RemediationRequestRef: corev1.ObjectReference{
 				Name:      "metrics-seed-rem",
-				Namespace: namespace,
+				Namespace: controllerNamespace,
 			},
 			RemediationID: "metrics-seed-001",
 			AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
@@ -87,12 +87,12 @@ func seedMetricsWithAnalysis() {
 	failedAnalysis := &aianalysisv1alpha1.AIAnalysis{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "metrics-seed-failed-" + randomSuffix(),
-			Namespace: namespace,
+			Namespace: controllerNamespace,
 		},
 		Spec: aianalysisv1alpha1.AIAnalysisSpec{
 			RemediationRequestRef: corev1.ObjectReference{
 				Name:      "metrics-seed-rem-fail",
-				Namespace: namespace,
+				Namespace: controllerNamespace,
 			},
 			RemediationID: "metrics-seed-fail-001",
 			AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{

@@ -69,6 +69,11 @@ const (
 	interval = 500 * time.Millisecond
 
 	clusterName = "em-e2e"
+
+	// controllerNamespace is where the EM controller watches EAs (ADR-057).
+	// EAs must be created here; Spec.SignalTarget.Namespace and Spec.RemediationTarget.Namespace
+	// point to the test namespace where workload resources (Pods, etc.) live.
+	controllerNamespace = "kubernaut-system"
 )
 
 // Package-level variables
@@ -279,7 +284,21 @@ func createTestNamespace(prefix string) string {
 	return helpers.CreateTestNamespaceAndWait(k8sClient, prefix)
 }
 
-// deleteTestNamespace cleans up a test namespace.
+// deleteTestNamespace cleans up a test namespace and any EAs in the controller
+// namespace that target it (ADR-057: EAs live in kubernaut-system, not in test NS).
 func deleteTestNamespace(name string) {
+	if name == "" {
+		return
+	}
+	// Delete EAs in controller namespace that target this test namespace
+	list := &eav1.EffectivenessAssessmentList{}
+	if err := k8sClient.List(ctx, list, client.InNamespace(controllerNamespace)); err == nil {
+		for i := range list.Items {
+			ea := &list.Items[i]
+			if ea.Spec.SignalTarget.Namespace == name || ea.Spec.RemediationTarget.Namespace == name {
+				_ = k8sClient.Delete(ctx, ea)
+			}
+		}
+	}
 	helpers.DeleteTestNamespace(ctx, k8sClient, name)
 }

@@ -105,7 +105,7 @@ var _ = SynchronizedBeforeSuite(
 		logger.Info("  • Kind cluster (2 nodes: control-plane + worker)")
 		logger.Info("  • NotificationRequest CRD (cluster-wide)")
 		logger.Info("  • Notification Controller Docker image (build + load)")
-		logger.Info("  • Shared Notification Controller (notification-e2e namespace)")
+		logger.Info("  • Shared Notification Controller (" + controllerNamespace + " namespace)")
 		logger.Info("  • Kubeconfig: ~/.kube/notification-e2e-config")
 		logger.Info("")
 		logger.Info("Note: All tests share the same controller instance")
@@ -347,15 +347,15 @@ var _ = SynchronizedAfterSuite(
 			logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 			logger.Info("🔍 CLUSTER DEBUGGING INFORMATION:")
 			logger.Info("  Cluster name: notification-e2e")
-			logger.Info("  Namespace: notification-e2e")
+			logger.Info("  Namespace: " + controllerNamespace)
 			logger.Info("  Kubeconfig: ~/.kube/notification-e2e-config")
 			logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 			logger.Info("📋 REQUIRED DIAGNOSTIC COMMANDS (per DS team):")
-			logger.Info("  Step 1: kubectl get pods -n notification-e2e -l app=datastorage -o wide")
-			logger.Info("  Step 2: kubectl logs -n notification-e2e -l app=datastorage --tail=100")
-			logger.Info("  Step 3: kubectl get events -n notification-e2e --field-selector involvedObject.kind=Pod | grep datastorage")
-			logger.Info("  Step 4a: kubectl get configmap datastorage-config -n notification-e2e -o yaml")
-			logger.Info("  Step 4b: kubectl get secret datastorage-secret -n notification-e2e -o jsonpath='{.data}'")
+			logger.Info("  Step 1: kubectl get pods -n " + controllerNamespace + " -l app=datastorage -o wide")
+			logger.Info("  Step 2: kubectl logs -n " + controllerNamespace + " -l app=datastorage --tail=100")
+			logger.Info("  Step 3: kubectl get events -n " + controllerNamespace + " --field-selector involvedObject.kind=Pod | grep datastorage")
+			logger.Info("  Step 4a: kubectl get configmap datastorage-config -n " + controllerNamespace + " -o yaml")
+			logger.Info("  Step 4b: kubectl get secret datastorage-secret -n " + controllerNamespace + " -o jsonpath='{.data}'")
 			logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 			logger.Info("🗑️  TO DELETE CLUSTER WHEN DONE:")
 			logger.Info("  kind delete cluster --name notification-e2e")
@@ -370,7 +370,7 @@ var _ = SynchronizedAfterSuite(
 				ServiceName:    "notification",
 				ClusterName:    clusterName,
 				DeploymentName: "notification-controller",
-				Namespace:      "notification-e2e",
+				Namespace:      controllerNamespace,
 				KubeconfigPath: kubeconfigPath,
 			}, GinkgoWriter); err != nil {
 				logger.Error(err, "Failed to collect E2E binary coverage (non-fatal)")

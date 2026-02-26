@@ -611,6 +611,8 @@ spec:
         env:
         - name: CONFIG_PATH
           value: "/etc/notification/config.yaml"
+        - name: KUBERNAUT_CONTROLLER_NAMESPACE
+          value: "%s"
         - name: SLACK_WEBHOOK_URL
           value: "%s"%s
         args:
@@ -657,7 +659,7 @@ spec:
       - name: notification-output
         emptyDir: {}%s
       terminationGracePeriodSeconds: 10
-`, namespace, namespace, coverageSecurityContextYAML, imageName, pullPolicy, slackWebhookURL, coverageEnvYAML, coverageVolumeMountYAML, coverageVolumeYAML)
+`, namespace, namespace, namespace, coverageSecurityContextYAML, imageName, pullPolicy, slackWebhookURL, coverageEnvYAML, coverageVolumeMountYAML, coverageVolumeYAML)
 }
 
 // DeployNotificationDataStorageServices deploys DataStorage with OAuth2-Proxy for Notification E2E.

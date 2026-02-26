@@ -540,7 +540,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      testName,
-					Namespace: "default",
+					Namespace: controllerNamespace,
 				},
 			Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 				ExecutionEngine: "tekton", // BR-WE-014: Required field
@@ -548,7 +548,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 					APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
 					Kind:       "RemediationRequest",
 					Name:       "test-rr-" + testName,
-					Namespace:  "default",
+					Namespace:  controllerNamespace,
 				},
 			WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 				WorkflowID: "test-intentional-failure",

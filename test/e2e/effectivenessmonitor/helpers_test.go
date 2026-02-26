@@ -35,13 +35,15 @@ import (
 // EA CRD Helpers
 // ============================================================================
 
-// createEA creates an EffectivenessAssessment CRD in the given namespace.
-// It sets reasonable defaults for fields not explicitly provided.
-func createEA(namespace, name, correlationID string, opts ...eaOption) *eav1.EffectivenessAssessment {
+// createEA creates an EffectivenessAssessment CRD in the controller namespace (ADR-057).
+// targetNamespace is where workload resources (Pods, etc.) live; Spec.SignalTarget and
+// Spec.RemediationTarget reference this namespace. The EA object itself is created in
+// controllerNamespace so the EM controller (which only watches kubernaut-system) can see it.
+func createEA(targetNamespace, name, correlationID string, opts ...eaOption) *eav1.EffectivenessAssessment {
 	ea := &eav1.EffectivenessAssessment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: namespace,
+			Namespace: controllerNamespace,
 		},
 		Spec: eav1.EffectivenessAssessmentSpec{
 			CorrelationID:           correlationID,
@@ -49,12 +51,12 @@ func createEA(namespace, name, correlationID string, opts ...eaOption) *eav1.Eff
 			SignalTarget: eav1.TargetResource{
 				Kind:      "Pod",
 				Name:      "target-pod",
-				Namespace: namespace,
+				Namespace: targetNamespace,
 			},
 			RemediationTarget: eav1.TargetResource{
 				Kind:      "Pod",
 				Name:      "target-pod",
-				Namespace: namespace,
+				Namespace: targetNamespace,
 			},
 			Config: eav1.EAConfig{
 				StabilizationWindow: metav1.Duration{Duration: 10 * time.Second},
@@ -67,7 +69,7 @@ func createEA(namespace, name, correlationID string, opts ...eaOption) *eav1.Eff
 	}
 
 	GinkgoHelper()
-	Expect(k8sClient.Create(ctx, ea)).To(Succeed(), "Failed to create EA %s/%s", namespace, name)
+	Expect(k8sClient.Create(ctx, ea)).To(Succeed(), "Failed to create EA %s/%s", controllerNamespace, name)
 	return ea
 }
 
@@ -89,11 +91,11 @@ type eaOption func(*eav1.EffectivenessAssessment)
 //
 // This mirrors the integration helper createExpiredEffectivenessAssessment
 // but adapts for E2E where the controller runs asynchronously in a pod.
-func createExpiredEA(namespace, name, correlationID string) *eav1.EffectivenessAssessment {
+func createExpiredEA(targetNamespace, name, correlationID string) *eav1.EffectivenessAssessment {
 	ea := &eav1.EffectivenessAssessment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: namespace,
+			Namespace: controllerNamespace,
 		},
 		Spec: eav1.EffectivenessAssessmentSpec{
 			CorrelationID:           correlationID,
@@ -101,12 +103,12 @@ func createExpiredEA(namespace, name, correlationID string) *eav1.EffectivenessA
 			SignalTarget: eav1.TargetResource{
 				Kind:      "Pod",
 				Name:      "target-pod",
-				Namespace: namespace,
+				Namespace: targetNamespace,
 			},
 			RemediationTarget: eav1.TargetResource{
 				Kind:      "Pod",
 				Name:      "target-pod",
-				Namespace: namespace,
+				Namespace: targetNamespace,
 			},
 			Config: eav1.EAConfig{
 				// Long stabilization ensures the reconciler's first reconcile
@@ -119,7 +121,7 @@ func createExpiredEA(namespace, name, correlationID string) *eav1.EffectivenessA
 	}
 
 	GinkgoHelper()
-	Expect(k8sClient.Create(ctx, ea)).To(Succeed(), "Failed to create EA %s/%s", namespace, name)
+	Expect(k8sClient.Create(ctx, ea)).To(Succeed(), "Failed to create EA %s/%s", controllerNamespace, name)
 
 	// Patch status with an expired ValidityDeadline via the status subresource.
 	// Use Eventually to handle potential resourceVersion conflicts if the
@@ -127,17 +129,17 @@ func createExpiredEA(namespace, name, correlationID string) *eav1.EffectivenessA
 	Eventually(func(g Gomega) {
 		fetched := &eav1.EffectivenessAssessment{}
 		g.Expect(apiReader.Get(ctx, client.ObjectKey{
-			Namespace: namespace, Name: name,
+			Namespace: controllerNamespace, Name: name,
 		}, fetched)).To(Succeed())
 
 		expired := metav1.NewTime(time.Now().Add(-1 * time.Minute))
 		fetched.Status.ValidityDeadline = &expired
 		g.Expect(k8sClient.Status().Update(ctx, fetched)).To(Succeed())
 	}, 10*time.Second, 200*time.Millisecond).Should(Succeed(),
-		"Failed to patch expired ValidityDeadline on EA %s/%s", namespace, name)
+		"Failed to patch expired ValidityDeadline on EA %s/%s", controllerNamespace, name)
 
 	GinkgoWriter.Printf("✅ Created expired EA: %s/%s (correlationID: %s)\n",
-		namespace, name, correlationID)
+		controllerNamespace, name, correlationID)
 	return ea
 }
 
@@ -218,16 +220,17 @@ func waitForPodReady(namespace, name string) {
 // ============================================================================
 
 // waitForEAPhase waits until the EA reaches the specified phase.
-func waitForEAPhase(namespace, name, expectedPhase string) *eav1.EffectivenessAssessment {
+// EAs are always in controllerNamespace (ADR-057).
+func waitForEAPhase(name, expectedPhase string) *eav1.EffectivenessAssessment {
 	GinkgoHelper()
 	ea := &eav1.EffectivenessAssessment{}
 	Eventually(func() string {
-		if err := apiReader.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, ea); err != nil {
+		if err := apiReader.Get(ctx, client.ObjectKey{Namespace: controllerNamespace, Name: name}, ea); err != nil {
 			return ""
 		}
 		return ea.Status.Phase
 	}, timeout, interval).Should(Equal(expectedPhase),
-		"EA %s/%s did not reach phase %s", namespace, name, expectedPhase)
+		"EA %s/%s did not reach phase %s", controllerNamespace, name, expectedPhase)
 	return ea
 }
 

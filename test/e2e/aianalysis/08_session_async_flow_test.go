@@ -47,16 +47,15 @@ var _ = Describe("E2E-AA-064: Session-Based Async Flow", Label("e2e", "session",
 		var analysis *aianalysisv1alpha1.AIAnalysis
 
 		BeforeEach(func() {
-			namespace := createTestNamespace("session-async")
 			analysis = &aianalysisv1alpha1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-session-async-" + randomSuffix(),
-					Namespace: namespace,
+					Namespace: controllerNamespace,
 				},
 				Spec: aianalysisv1alpha1.AIAnalysisSpec{
 					RemediationRequestRef: corev1.ObjectReference{
 						Name:      "e2e-remediation-session",
-						Namespace: namespace,
+						Namespace: controllerNamespace,
 					},
 					RemediationID: "e2e-rem-session-001",
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{

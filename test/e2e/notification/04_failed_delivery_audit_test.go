@@ -92,7 +92,7 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 		// Generate unique identifiers for this test
 		testID := time.Now().Format("20060102-150405")
 		notificationName = "e2e-failed-delivery-" + testID
-		notificationNS = "default"
+		notificationNS = controllerNamespace
 		correlationID = "e2e-failed-remediation-" + testID
 
 		// Use real Data Storage URL from Kind cluster
@@ -362,7 +362,7 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 		notification = &notificationv1alpha1.NotificationRequest{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      notificationName,
-				Namespace: "default",
+				Namespace: controllerNamespace,
 				Labels: map[string]string{
 					"test-type": "partial-failure-audit",
 				},
@@ -373,7 +373,7 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 					APIVersion: "kubernaut.ai/v1alpha1",
 					Kind:       "RemediationRequest",
 					Name:       correlationID,
-					Namespace:  "default",
+					Namespace:  controllerNamespace,
 				},
 				Type:     notificationv1alpha1.NotificationTypeSimple,
 				Priority: notificationv1alpha1.NotificationPriorityCritical,
@@ -402,7 +402,7 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 		var n notificationv1alpha1.NotificationRequest
 		if err := apiReader.Get(testCtx, types.NamespacedName{
 			Name:      notificationName,
-			Namespace: "default",
+			Namespace: controllerNamespace,
 		}, &n); err != nil {
 			return 0
 		}

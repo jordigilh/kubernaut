@@ -111,7 +111,7 @@ var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", 
 			notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      correlationID + "-notification-" + string(rune('0'+i)),
-					Namespace: "default",
+					Namespace: controllerNamespace,
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					// FIX: Set RemediationRequestRef to enable correlation_id matching in audit queries
@@ -120,7 +120,7 @@ var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", 
 						APIVersion: "kubernaut.ai/v1alpha1",
 						Kind:       "RemediationRequest",
 						Name:       correlationID,
-						Namespace:  "default",
+						Namespace:  controllerNamespace,
 					},
 					Type:     notificationv1alpha1.NotificationTypeSimple,
 					Priority: notificationv1alpha1.NotificationPriority([]string{"low", "medium", "high"}[i-1]),

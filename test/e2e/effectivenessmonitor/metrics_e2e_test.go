@@ -99,7 +99,7 @@ var _ = Describe("EffectivenessMonitor Metric Comparison E2E Tests", Label("e2e"
 		)
 
 		By("Waiting for EM to complete the assessment")
-		ea := waitForEAPhase(testNS, name, eav1.PhaseCompleted)
+		ea := waitForEAPhase(name, eav1.PhaseCompleted)
 
 		By("Verifying metrics were assessed with score > 0 (improvement)")
 		Expect(ea.Status.Components.MetricsAssessed).To(BeTrue(),
@@ -163,7 +163,7 @@ var _ = Describe("EffectivenessMonitor Metric Comparison E2E Tests", Label("e2e"
 		)
 
 		By("Waiting for EM to complete the assessment")
-		ea := waitForEAPhase(testNS, name, eav1.PhaseCompleted)
+		ea := waitForEAPhase(name, eav1.PhaseCompleted)
 
 		By("Verifying metrics were assessed with score 0.0 (no change)")
 		Expect(ea.Status.Components.MetricsAssessed).To(BeTrue(),

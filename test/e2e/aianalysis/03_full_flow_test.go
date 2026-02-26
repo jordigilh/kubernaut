@@ -165,16 +165,15 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 		var analysis *aianalysisv1alpha1.AIAnalysis
 
 		BeforeEach(func() {
-			namespace := createTestNamespace("full-flow-staging")
 			analysis = &aianalysisv1alpha1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-staging-incident-" + randomSuffix(),
-					Namespace: namespace,
+					Namespace: controllerNamespace,
 				},
 				Spec: aianalysisv1alpha1.AIAnalysisSpec{
 					RemediationRequestRef: corev1.ObjectReference{
 						Name:      "e2e-remediation-staging",
-						Namespace: namespace,
+						Namespace: controllerNamespace,
 					},
 					RemediationID: "e2e-rem-002",
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
