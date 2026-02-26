@@ -124,12 +124,13 @@ spec:
                     description: Name is the resource name.
                     type: string
                   namespace:
-                    description: Namespace is the resource namespace.
+                    description: |-
+                      Namespace is the resource namespace.
+                      Empty for cluster-scoped resources (e.g., Node, PersistentVolume).
                     type: string
                 required:
                 - kind
                 - name
-                - namespace
                 type: object
               signalName:
                 description: |-
@@ -152,12 +153,13 @@ spec:
                     description: Name is the resource name.
                     type: string
                   namespace:
-                    description: Namespace is the resource namespace.
+                    description: |-
+                      Namespace is the resource namespace.
+                      Empty for cluster-scoped resources (e.g., Node, PersistentVolume).
                     type: string
                 required:
                 - kind
                 - name
-                - namespace
                 type: object
             required:
             - config
@@ -306,6 +308,7 @@ spec:
                 description: Phase is the current lifecycle phase of the assessment.
                 enum:
                 - Pending
+                - Stabilizing
                 - Assessing
                 - Completed
                 - Failed
