@@ -145,6 +145,10 @@ type Server struct {
 	// DD-GATEWAY-012: Redis REMOVED - Gateway is now Redis-free
 	k8sClient  *k8s.Client
 	ctrlClient client.Client
+	// apiReader: Uncached client for cache-bypassed reads (readiness K8s check, dedup, status refetch)
+	// ADR-057 fix: Readiness List(NamespaceList) must use apiReader—ctrlClient's cache only watches
+	// RemediationRequest in controllerNS; NamespaceList may fail when served from restricted cache.
+	apiReader client.Reader
 
 	// DD-AUDIT-003: Audit store for async buffered audit event emission
 	// Gateway is P0 service - MUST emit audit events per DD-AUDIT-003
@@ -551,6 +555,7 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 		lockManager:         lockManager,
 		k8sClient:           k8sClient,
 		ctrlClient:          ctrlClient,
+		apiReader:           apiReader, // ADR-057: Used for readiness K8s check (bypasses cache)
 		auditStore:          auditStore,
 		scopeChecker:        scopeMgr,     // BR-SCOPE-002: Label-based scope filtering
 		controllerNamespace: controllerNS, // Issue #195: Used by ShouldDeduplicate
@@ -1327,8 +1332,14 @@ func (s *Server) readinessHandler(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	// Check Kubernetes API connectivity by listing namespaces
+	// ADR-057: Use apiReader (uncached) — ctrlClient's cache only watches RemediationRequest
+	// in controllerNS; List(NamespaceList) may fail when served from restricted cache.
+	reader := s.apiReader
+	if reader == nil {
+		reader = s.ctrlClient
+	}
 	namespaceList := &corev1.NamespaceList{}
-	if err := s.ctrlClient.List(ctx, namespaceList, client.Limit(1)); err != nil {
+	if err := reader.List(ctx, namespaceList, client.Limit(1)); err != nil {
 		s.logger.Info("Readiness check failed: Kubernetes API not reachable", "error", err)
 
 		w.Header().Set("Content-Type", "application/problem+json")
