@@ -247,42 +247,42 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			ea.Spec.Config.StabilizationWindow.Duration,
 		)
 
-		// Persist derived timing on first reconcile even during stabilization (BR-EM-009)
+		// BR-EM-009: Pre-compute and persist ValidityDeadline during stabilization so
+		// operators can observe the deadline immediately. Transition to Stabilizing phase.
 		if ea.Status.ValidityDeadline == nil && (currentPhase == eav1.PhasePending || currentPhase == "") {
-			if phase.CanTransition(currentPhase, eav1.PhaseAssessing) {
-				stabilizationWindow := ea.Spec.Config.StabilizationWindow.Duration
-				effectiveValidity := r.Config.ValidityWindow
-				if stabilizationWindow >= effectiveValidity {
-					effectiveValidity = stabilizationWindow + r.Config.ValidityWindow
-					logger.Info("Runtime guard: extended ValidityDeadline (StabilizationWindow >= ValidityWindow)",
-						"originalValidity", r.Config.ValidityWindow,
-						"effectiveValidity", effectiveValidity,
-						"stabilizationWindow", stabilizationWindow,
-					)
-					r.Recorder.Eventf(ea, corev1.EventTypeWarning, "ValidityWindowExtended",
-						"StabilizationWindow (%v) >= ValidityWindow (%v); extended deadline to %v",
-						stabilizationWindow, r.Config.ValidityWindow, effectiveValidity)
-				}
-				deadline := metav1.NewTime(ea.CreationTimestamp.Add(effectiveValidity))
-				checkAfter := metav1.NewTime(ea.CreationTimestamp.Add(stabilizationWindow))
-
-				ea.Status.Phase = eav1.PhaseAssessing
-				ea.Status.ValidityDeadline = &deadline
-				ea.Status.PrometheusCheckAfter = &checkAfter
-				ea.Status.AlertManagerCheckAfter = &checkAfter
-
-				logger.Info("Computed derived timing during stabilization (BR-EM-009)",
-					"creationTimestamp", ea.CreationTimestamp,
+			stabilizationWindow := ea.Spec.Config.StabilizationWindow.Duration
+			effectiveValidity := r.Config.ValidityWindow
+			if stabilizationWindow >= effectiveValidity {
+				effectiveValidity = stabilizationWindow + r.Config.ValidityWindow
+				logger.Info("Runtime guard: extended ValidityDeadline (StabilizationWindow >= ValidityWindow)",
+					"originalValidity", r.Config.ValidityWindow,
 					"effectiveValidity", effectiveValidity,
 					"stabilizationWindow", stabilizationWindow,
-					"validityDeadline", deadline,
 				)
+				r.Recorder.Eventf(ea, corev1.EventTypeWarning, "ValidityWindowExtended",
+					"StabilizationWindow (%v) >= ValidityWindow (%v); extended deadline to %v",
+					stabilizationWindow, r.Config.ValidityWindow, effectiveValidity)
+			}
+			deadline := metav1.NewTime(ea.CreationTimestamp.Add(effectiveValidity))
+			checkAfter := metav1.NewTime(ea.CreationTimestamp.Add(stabilizationWindow))
 
-				if err := r.Status().Update(ctx, ea); err != nil {
-					logger.Error(err, "Failed to persist derived timing during stabilization")
-					r.Metrics.RecordReconcile("error", time.Since(startTime).Seconds())
-					return ctrl.Result{RequeueAfter: r.Config.RequeueGenericError}, err
-				}
+			ea.Status.Phase = eav1.PhaseStabilizing
+			ea.Status.ValidityDeadline = &deadline
+			ea.Status.PrometheusCheckAfter = &checkAfter
+			ea.Status.AlertManagerCheckAfter = &checkAfter
+
+			logger.Info("Transitioned to Stabilizing, persisted derived timing (BR-EM-009)",
+				"creationTimestamp", ea.CreationTimestamp,
+				"effectiveValidity", effectiveValidity,
+				"stabilizationWindow", stabilizationWindow,
+				"validityDeadline", deadline,
+			)
+			r.Metrics.RecordPhaseTransition(currentPhase, eav1.PhaseStabilizing)
+
+			if err := r.Status().Update(ctx, ea); err != nil {
+				logger.Error(err, "Failed to persist Stabilizing phase and derived timing")
+				r.Metrics.RecordReconcile("error", time.Since(startTime).Seconds())
+				return ctrl.Result{RequeueAfter: r.Config.RequeueGenericError}, err
 			}
 		}
 
@@ -292,14 +292,14 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{RequeueAfter: remaining}, nil
 	}
 
-	// Step 6: Transition Pending -> Assessing + compute derived timing (BR-EM-009)
+	// Step 6: Transition Pending/Stabilizing -> Assessing + compute derived timing (BR-EM-009)
 	//
 	// We set phase and derived timing in-memory here but defer the status write to
 	// Step 9 (single atomic update). This avoids an intermediate Status().Update()
 	// that would change the resourceVersion and cause optimistic concurrency conflicts
 	// when component checks later attempt their own status update.
 	pendingTransition := false
-	if currentPhase == eav1.PhasePending || currentPhase == "" {
+	if currentPhase == eav1.PhasePending || currentPhase == eav1.PhaseStabilizing || currentPhase == "" {
 		if !phase.CanTransition(currentPhase, eav1.PhaseAssessing) {
 			logger.Error(nil, "Invalid phase transition", "from", currentPhase, "to", eav1.PhaseAssessing)
 			r.Metrics.RecordReconcile("error", time.Since(startTime).Seconds())

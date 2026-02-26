@@ -308,6 +308,7 @@ spec:
                 description: Phase is the current lifecycle phase of the assessment.
                 enum:
                 - Pending
+                - Stabilizing
                 - Assessing
                 - Completed
                 - Failed

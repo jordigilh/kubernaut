@@ -40,6 +40,11 @@ import (
 const (
 	// PhasePending indicates the EA has been created by RO but EM has not yet reconciled it.
 	PhasePending = "Pending"
+	// PhaseStabilizing indicates EM is waiting for the stabilization window to elapse
+	// before beginning assessment checks. Derived timing fields (ValidityDeadline,
+	// PrometheusCheckAfter, AlertManagerCheckAfter) are pre-computed and persisted
+	// in this phase so operators can observe the assessment timeline immediately.
+	PhaseStabilizing = "Stabilizing"
 	// PhaseAssessing indicates EM is actively performing assessment checks.
 	PhaseAssessing = "Assessing"
 	// PhaseCompleted indicates all assessment checks have finished (or validity expired).
@@ -158,7 +163,7 @@ type EAConfig struct {
 // EffectivenessAssessmentStatus defines the observed state of an EffectivenessAssessment.
 type EffectivenessAssessmentStatus struct {
 	// Phase is the current lifecycle phase of the assessment.
-	// +kubebuilder:validation:Enum=Pending;Assessing;Completed;Failed
+	// +kubebuilder:validation:Enum=Pending;Stabilizing;Assessing;Completed;Failed
 	Phase string `json:"phase,omitempty"`
 
 	// ValidityDeadline is the absolute time after which the assessment expires.

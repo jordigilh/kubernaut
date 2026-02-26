@@ -345,7 +345,7 @@ var _ = Describe("Derived Timing Computation (BR-EM-009)", func() {
 		}
 		Expect(k8sClient.Create(ctx, ea)).To(Succeed())
 
-		By("Waiting for the controller to compute derived timing fields")
+		By("Waiting for the controller to compute derived timing fields and enter Stabilizing phase")
 		fetchedEA := &eav1.EffectivenessAssessment{}
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, types.NamespacedName{
@@ -354,6 +354,8 @@ var _ = Describe("Derived Timing Computation (BR-EM-009)", func() {
 			}, fetchedEA)).To(Succeed())
 			g.Expect(fetchedEA.Status.ValidityDeadline).NotTo(BeNil())
 			g.Expect(fetchedEA.Status.PrometheusCheckAfter).NotTo(BeNil())
+			g.Expect(fetchedEA.Status.Phase).To(Equal(eav1.PhaseStabilizing),
+				"EA should be in Stabilizing phase while stabilization window is active")
 		}, timeout, interval).Should(Succeed())
 
 		creation := fetchedEA.CreationTimestamp.Time
