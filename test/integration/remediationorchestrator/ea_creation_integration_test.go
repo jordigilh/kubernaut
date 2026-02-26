@@ -26,6 +26,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -586,6 +587,20 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 	It("IT-RO-192-001: should create EA with empty namespace for cluster-scoped Node target", func() {
 		ns := createTestNamespace("ro-192-001")
 		defer deleteTestNamespace(ns)
+
+		By("Creating a Node with kubernaut managed label")
+		node := &corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "worker-1",
+				Labels: map[string]string{
+					"kubernaut.ai/managed": "true",
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, node)).To(Succeed())
+		defer func() {
+			_ = k8sClient.Delete(ctx, node)
+		}()
 
 		By("Creating a RemediationRequest targeting a cluster-scoped Node (empty namespace)")
 		now := metav1.Now()

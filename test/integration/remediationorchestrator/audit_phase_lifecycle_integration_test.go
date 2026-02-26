@@ -129,7 +129,7 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 				TargetResource: remediationv1.ResourceIdentifier{
 					Kind:      "Pod",
 					Name:      "test-pod",
-					Namespace: "default",
+					Namespace: testNamespace,
 				},
 				FiringTime:   now,
 				ReceivedTime: now,
