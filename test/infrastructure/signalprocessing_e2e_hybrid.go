@@ -983,6 +983,8 @@ spec:
         args:
         - "--config=/etc/signalprocessing/config.yaml"
         env:
+        - name: KUBERNAUT_CONTROLLER_NAMESPACE
+          value: kubernaut-system
         - name: NAMESPACE
           valueFrom:
             fieldRef:

@@ -606,6 +606,8 @@ spec:
           args:
             - "--config=/etc/gateway/config.yaml"
           env:%s
+            - name: KUBERNAUT_CONTROLLER_NAMESPACE
+              value: kubernaut-system
             - name: POD_NAME
               valueFrom:
                 fieldRef:
