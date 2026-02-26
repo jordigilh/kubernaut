@@ -217,24 +217,22 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 		testLogger.Info(fmt.Sprintf("  Querying CRDs in namespace: %s", gatewayNamespace))
 
 		// Use Eventually to handle transient K8s API connection issues
+		// ADR-057: Filter by test's target namespace (gatewayNamespace has RRs from all tests)
 		var crdCount int
 		Eventually(func() error {
-			// Get fresh client to handle API server reconnection
-			// Use suite k8sClient (DD-E2E-K8S-CLIENT-001)
-			// freshClient removed - using suite k8sClient
-			if false { // SKIP: freshClient error check no longer needed
-				if err := GetLastK8sClientError(); err != nil {
-					return fmt.Errorf("failed to create K8s client: %w", err)
-				}
-				return fmt.Errorf("failed to create K8s client (unknown error)")
-			}
 			crdList := &remediationv1alpha1.RemediationRequestList{}
 			if err := k8sClient.List(testCtx, crdList, client.InNamespace(gatewayNamespace)); err != nil {
 				testLogger.V(1).Info("  Retrying CRD list...", "error", err)
 				return err
 			}
-			crdCount = len(crdList.Items)
-			testLogger.Info(fmt.Sprintf("  Found %d CRDs", crdCount))
+			// Filter by this test's signals (TargetResource.Namespace == testNamespace)
+			crdCount = 0
+			for i := range crdList.Items {
+				if crdList.Items[i].Spec.TargetResource.Namespace == testNamespace {
+					crdCount++
+				}
+			}
+			testLogger.Info(fmt.Sprintf("  Found %d CRDs for this test (namespace %s)", crdCount, testNamespace))
 			return nil
 		}, 60*time.Second, 2*time.Second).Should(Succeed(), "Should be able to list CRDs")
 

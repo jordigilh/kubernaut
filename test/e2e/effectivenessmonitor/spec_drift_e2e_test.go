@@ -122,7 +122,7 @@ var _ = Describe("Spec Drift Guard E2E Tests (DD-EM-002 v1.1)", Label("e2e"), fu
 		Eventually(func(g Gomega) {
 			fetched := &eav1.EffectivenessAssessment{}
 			g.Expect(apiReader.Get(ctx, client.ObjectKey{
-				Namespace: testNS, Name: name,
+				Namespace: controllerNamespace, Name: name,
 			}, fetched)).To(Succeed())
 			g.Expect(fetched.Status.Phase).To(Equal(eav1.PhaseCompleted))
 			g.Expect(fetched.Status.AssessmentReason).To(Equal(eav1.AssessmentReasonSpecDrift))

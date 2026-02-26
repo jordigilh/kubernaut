@@ -44,16 +44,16 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 		var analysis *aianalysisv1alpha1.AIAnalysis
 
 		BeforeEach(func() {
-			namespace := createTestNamespace("full-flow-prod")
+			_ = createTestNamespace("full-flow-prod")
 			analysis = &aianalysisv1alpha1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-prod-incident-" + randomSuffix(),
-					Namespace: namespace,
+					Namespace: controllerNamespace,
 				},
 				Spec: aianalysisv1alpha1.AIAnalysisSpec{
 					RemediationRequestRef: corev1.ObjectReference{
 						Name:      "e2e-remediation",
-						Namespace: namespace,
+						Namespace: controllerNamespace,
 					},
 					RemediationID: "e2e-rem-001",
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
@@ -220,16 +220,16 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 		var analysis *aianalysisv1alpha1.AIAnalysis
 
 		BeforeEach(func() {
-			namespace := createTestNamespace("full-flow-data-quality")
+			_ = createTestNamespace("full-flow-data-quality")
 			analysis = &aianalysisv1alpha1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-data-quality-" + randomSuffix(),
-					Namespace: namespace,
+					Namespace: controllerNamespace,
 				},
 				Spec: aianalysisv1alpha1.AIAnalysisSpec{
 					RemediationRequestRef: corev1.ObjectReference{
 						Name:      "e2e-remediation-dq",
-						Namespace: namespace,
+						Namespace: controllerNamespace,
 					},
 					RemediationID: "e2e-rem-004",
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
@@ -277,16 +277,16 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 		var analysis *aianalysisv1alpha1.AIAnalysis
 
 		BeforeEach(func() {
-			namespace := createTestNamespace("full-flow-low-conf")
+			_ = createTestNamespace("full-flow-low-conf")
 			analysis = &aianalysisv1alpha1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-low-conf-" + randomSuffix(),
-					Namespace: namespace,
+					Namespace: controllerNamespace,
 				},
 				Spec: aianalysisv1alpha1.AIAnalysisSpec{
 					RemediationRequestRef: corev1.ObjectReference{
 						Name:      "e2e-remediation-low-conf",
-						Namespace: namespace,
+						Namespace: controllerNamespace,
 					},
 					RemediationID: "e2e-rem-low-conf",
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
@@ -345,16 +345,16 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 		var analysis *aianalysisv1alpha1.AIAnalysis
 
 		BeforeEach(func() {
-			namespace := createTestNamespace("full-flow-max-retries")
+			_ = createTestNamespace("full-flow-max-retries")
 			analysis = &aianalysisv1alpha1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-max-retries-" + randomSuffix(),
-					Namespace: namespace,
+					Namespace: controllerNamespace,
 				},
 				Spec: aianalysisv1alpha1.AIAnalysisSpec{
 					RemediationRequestRef: corev1.ObjectReference{
 						Name:      "e2e-remediation-max-retries",
-						Namespace: namespace,
+						Namespace: controllerNamespace,
 					},
 					RemediationID: "e2e-rem-max-retries",
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{

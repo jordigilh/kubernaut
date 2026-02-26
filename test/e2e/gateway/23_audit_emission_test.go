@@ -27,7 +27,7 @@ import (
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/onsi/gomega/gstruct"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
@@ -350,8 +350,8 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			Expect(gatewayPayload.ResourceName.Value).To(ContainSubstring("audit-test-pod-"),
 				"resource_name should match test pod name")
 
-			// Field 19: remediation_request
-			Expect(gatewayPayload.RemediationRequest.Value).To(Equal(fmt.Sprintf("%s/%s", sharedNamespace, correlationID)),
+			// Field 19: remediation_request (ADR-057: RRs in gatewayNamespace)
+			Expect(gatewayPayload.RemediationRequest.Value).To(Equal(fmt.Sprintf("%s/%s", gatewayNamespace, correlationID)),
 				"remediation_request should be namespace/name format")
 
 			// Field 20: deduplication_status
@@ -427,8 +427,8 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 
 			// Set RR to Pending (required for duplicate detection)
 			crd := getCRDByName(testCtx, testClient, gatewayNamespace, correlationID)
-			Expect(crd).To(gstruct.PointTo(HaveField("Name", Equal(correlationID))),
-				"CRD must exist for status update")
+			Expect(crd).ToNot(BeNil(), "CRD must exist for status update")
+			Expect(crd.Name).To(Equal(correlationID))
 			crd.Status.OverallPhase = "Pending"
 			err = testClient.Status().Update(testCtx, crd)
 			Expect(err).ToNot(HaveOccurred())
@@ -557,8 +557,8 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			Expect(gatewayPayload.Fingerprint).To(Equal(event.ResourceID.Value),
 				"fingerprint in event_data should match resource_id")
 
-			// Field 16: remediation_request
-			Expect(gatewayPayload.RemediationRequest.Value).To(Equal(fmt.Sprintf("%s/%s", sharedNamespace, correlationID)),
+			// Field 16: remediation_request (ADR-057: RRs in gatewayNamespace)
+			Expect(gatewayPayload.RemediationRequest.Value).To(Equal(fmt.Sprintf("%s/%s", gatewayNamespace, correlationID)),
 				"remediation_request should be namespace/name format")
 
 			// Field 17: deduplication_status

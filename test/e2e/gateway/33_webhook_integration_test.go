@@ -21,13 +21,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/onsi/gomega/gstruct"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -126,32 +127,30 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated),
 				"First occurrence must create CRD (201 Created)")
 
-			// Parse response to get fingerprint (for deduplication check while CRD active)
-			var response map[string]interface{}
-			err := json.Unmarshal(resp.Body, &response)
+			// Parse response to get RR name and fingerprint (ADR-057: Get by name in shared gatewayNamespace)
+			var gwResp GatewayResponse
+			err := json.Unmarshal(resp.Body, &gwResp)
 			Expect(err).NotTo(HaveOccurred(), "Should parse JSON response")
-			fingerprint, ok := response["fingerprint"].(string)
-			Expect(ok).To(BeTrue(), "Response should contain fingerprint")
-			Expect(fingerprint).NotTo(BeEmpty(), "Fingerprint should not be empty")
+			Expect(gwResp.Fingerprint).NotTo(BeEmpty(), "Response should contain fingerprint")
+			Expect(gwResp.RemediationRequestName).NotTo(BeEmpty(), "Response should contain RR name")
 
 			// DD-GATEWAY-012: Redis check REMOVED - Gateway is now Redis-free
 			// DD-GATEWAY-011: BUSINESS OUTCOME 2: Deduplication tracked in RR status
 			// Fingerprint-based deduplication validated in dd_gateway_011_status_deduplication_test.go
 
 			// BUSINESS OUTCOME 3: CRD created in Kubernetes
-			var crdList remediationv1alpha1.RemediationRequestList
-			err = k8sClient.List(testCtx, &crdList, client.InNamespace(gatewayNamespace))
-			Expect(err).NotTo(HaveOccurred(), "Should list CRDs in test namespace")
-			Expect(crdList.Items).To(HaveLen(1), "One CRD should be created")
-
-			crd := crdList.Items[0]
+			var crd remediationv1alpha1.RemediationRequest
+			Expect(k8sClient.Get(testCtx, client.ObjectKey{
+				Namespace: gatewayNamespace,
+				Name:      gwResp.RemediationRequestName,
+			}, &crd)).To(Succeed(), "One CRD should be created for this signal")
 			// Note: Priority and Environment assertions removed (2025-12-06)
 			// Classification moved to Signal Processing per DD-CATEGORIZATION-001
 			Expect(crd.Spec.SignalName).To(Equal("HighMemoryUsage"),
 				"Alert name enables AI to understand failure type")
 
 			// Verify fingerprint is stored in spec (not as label — SHA256 exceeds 63-char label limit)
-			Expect(crd.Spec.SignalFingerprint).To(Equal(fingerprint),
+			Expect(crd.Spec.SignalFingerprint).To(Equal(gwResp.Fingerprint),
 				"Full fingerprint stored in spec.signalFingerprint (BR-GATEWAY-185 v1.1)")
 
 			// BUSINESS CAPABILITY VERIFIED:
@@ -196,17 +195,20 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 			Expect(resp1.StatusCode).To(Equal(http.StatusCreated),
 				"First alert must create CRD")
 
-			// BUSINESS OUTCOME 1: First CRD created
-			// Use Eventually to handle Kubernetes API caching/propagation delays
-			var crdList1 remediationv1alpha1.RemediationRequestList
-			var firstCRDName string
-			Eventually(func() int {
-				listErr := k8sClient.List(testCtx, &crdList1, client.InNamespace(gatewayNamespace))
-				Expect(listErr).NotTo(HaveOccurred())
-				return len(crdList1.Items)
-			}, "5s", "100ms").Should(Equal(1), "First alert creates CRD")
+			// Parse response to get RR name (ADR-057: Get by name in shared gatewayNamespace)
+			var gwResp1 GatewayResponse
+			Expect(json.Unmarshal(resp1.Body, &gwResp1)).To(Succeed())
+			Expect(gwResp1.RemediationRequestName).NotTo(BeEmpty())
+			firstCRDName := gwResp1.RemediationRequestName
 
-			firstCRDName = crdList1.Items[0].Name
+			// BUSINESS OUTCOME 1: First CRD created
+			var crd1 remediationv1alpha1.RemediationRequest
+			Eventually(func() error {
+				return k8sClient.Get(testCtx, client.ObjectKey{
+					Namespace: gatewayNamespace,
+					Name:      firstCRDName,
+				}, &crd1)
+			}, "5s", "100ms").Should(Succeed(), "First alert creates CRD")
 
 			// Second alert: Duplicate (CRD still in non-terminal phase)
 			req2, err := http.NewRequest("POST", url, bytes.NewReader(payload))
@@ -223,14 +225,18 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 			Expect(resp2.StatusCode).To(Equal(http.StatusAccepted),
 				"Duplicate alert must return 202 Accepted")
 
-			// BUSINESS OUTCOME 2: NO new CRD created
-			var crdList2 remediationv1alpha1.RemediationRequestList
-			err = k8sClient.List(testCtx, &crdList2, client.InNamespace(gatewayNamespace))
-			Expect(err).NotTo(HaveOccurred())
-			Expect(crdList2.Items).To(HaveLen(1),
+			// BUSINESS OUTCOME 2: NO new CRD created (ADR-057: 202 returns same RR name)
+			resp2Body, _ := io.ReadAll(resp2.Body)
+			var gwResp2 GatewayResponse
+			Expect(json.Unmarshal(resp2Body, &gwResp2)).To(Succeed())
+			Expect(gwResp2.RemediationRequestName).To(Equal(firstCRDName),
+				"Duplicate must return same RR name")
+			var crd2 remediationv1alpha1.RemediationRequest
+			Expect(k8sClient.Get(testCtx, client.ObjectKey{
+				Namespace: gatewayNamespace,
+				Name:      firstCRDName,
+			}, &crd2)).To(Succeed(),
 				"Duplicate alert must NOT create new CRD")
-			Expect(crdList2.Items[0].Name).To(Equal(firstCRDName),
-				"Same CRD name confirms deduplication")
 
 			// Third alert: Still duplicate
 			req3, err := http.NewRequest("POST", url, bytes.NewReader(payload))
@@ -247,12 +253,13 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 			Expect(resp3.StatusCode).To(Equal(http.StatusAccepted),
 				"Third duplicate must also return 202 Accepted")
 
-			// BUSINESS OUTCOME 3: Still only 1 CRD
-			var crdList3 remediationv1alpha1.RemediationRequestList
-			err = k8sClient.List(testCtx, &crdList3, client.InNamespace(gatewayNamespace))
-			Expect(err).NotTo(HaveOccurred())
-			Expect(crdList3.Items).To(HaveLen(1),
-				"Third duplicate must NOT create new CRD (still only 1 CRD)")
+			// BUSINESS OUTCOME 3: Still only 1 CRD (ADR-057: Get by name)
+			var crd3 remediationv1alpha1.RemediationRequest
+			Expect(k8sClient.Get(testCtx, client.ObjectKey{
+				Namespace: gatewayNamespace,
+				Name:      firstCRDName,
+			}, &crd3)).To(Succeed(),
+				"Third duplicate must NOT create new CRD (same CRD still exists)")
 
 			// BUSINESS CAPABILITY VERIFIED:
 			// ✅ Deduplication prevents CRD spam (1 CRD, not 3)
@@ -285,13 +292,11 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 			// BR-SCOPE-002: Use Eventually() to handle informer cache race
 			resp1 := sendWebhookExpectCreated(gatewayURL, "/api/v1/signals/prometheus", payload)
 
-			// Parse response to get full fingerprint
-			var response map[string]interface{}
-			err := json.Unmarshal(resp1.Body, &response)
-			Expect(err).NotTo(HaveOccurred(), "Should parse JSON response")
-			fingerprint, ok := response["fingerprint"].(string)
-			Expect(ok).To(BeTrue(), "Response should contain fingerprint")
-			Expect(fingerprint).NotTo(BeEmpty(), "Fingerprint should not be empty")
+			// Parse response to get RR name (ADR-057: Get by name in shared gatewayNamespace)
+			var gwResp1 GatewayResponse
+			Expect(json.Unmarshal(resp1.Body, &gwResp1)).To(Succeed())
+			Expect(gwResp1.RemediationRequestName).NotTo(BeEmpty())
+			rrName := gwResp1.RemediationRequestName
 
 			// Send 4 more duplicates
 			for i := 0; i < 4; i++ {
@@ -310,26 +315,30 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 
 			// DD-GATEWAY-012: Redis metadata check REMOVED - Gateway is now Redis-free
 			// DD-GATEWAY-011: BUSINESS OUTCOME: RR status.deduplication tracks duplicate count
-			// Verify duplicate count via K8s CRD status
+			// Verify duplicate count via K8s CRD status (ADR-057: Get by RR name)
+			var crd remediationv1alpha1.RemediationRequest
 			Eventually(func() int32 {
-				// Get the first (and only) CRD
-				crds := ListRemediationRequests(testCtx, k8sClient, gatewayNamespace)
-				if len(crds) == 0 || crds[0].Status.Deduplication == nil {
+				err := k8sClient.Get(testCtx, client.ObjectKey{
+					Namespace: gatewayNamespace,
+					Name:      rrName,
+				}, &crd)
+				if err != nil || crd.Status.Deduplication == nil {
 					return 0
 				}
-				return crds[0].Status.Deduplication.OccurrenceCount
+				return crd.Status.Deduplication.OccurrenceCount
 			}, "5s", "100ms").Should(BeNumerically(">=", 5),
 				"Count shows alert fired 5 times (1 original + 4 duplicates)")
 
 			// Verify timestamps in status.deduplication
-			crds := ListRemediationRequests(testCtx, k8sClient, gatewayNamespace)
-			Expect(crds).To(HaveLen(1))
-			Expect(crds[0].Status.Deduplication).To(gstruct.PointTo(HaveField("OccurrenceCount", BeNumerically(">=", 5))),
+			Expect(crd.Status.Deduplication).ToNot(BeNil(), "Deduplication status must be populated")
+			Expect(crd.Status.Deduplication.OccurrenceCount).To(BeNumerically(">=", 5),
 				"Deduplication must track occurrence count")
-			Expect(crds[0].Status.Deduplication.FirstSeenAt).To(gstruct.PointTo(Not(BeZero())),
+			Expect(crd.Status.Deduplication.FirstSeenAt).ToNot(BeNil(),
 				"First occurrence timestamp shows when issue started")
-			Expect(crds[0].Status.Deduplication.LastSeenAt).To(gstruct.PointTo(Not(BeZero())),
+			Expect(crd.Status.Deduplication.FirstSeenAt.IsZero()).To(BeFalse())
+			Expect(crd.Status.Deduplication.LastSeenAt).ToNot(BeNil(),
 				"Last occurrence timestamp shows issue is ongoing")
+			Expect(crd.Status.Deduplication.LastSeenAt.IsZero()).To(BeFalse())
 
 			// BUSINESS CAPABILITY VERIFIED:
 			// ✅ Duplicate tracking provides operational visibility
@@ -380,13 +389,19 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 				"Warning event must create CRD for AI analysis")
 			defer func() { _ = resp.Body.Close() }()
 
-			// BUSINESS OUTCOME 2: CRD created in Kubernetes
-			var crdList remediationv1alpha1.RemediationRequestList
-			listErr := k8sClient.List(testCtx, &crdList, client.InNamespace(gatewayNamespace))
-			Expect(listErr).NotTo(HaveOccurred())
-			Expect(crdList.Items).To(HaveLen(1), "K8s event should create CRD")
+			// Parse response to get RR name (ADR-057: Get by name in shared gatewayNamespace)
+			bodyBytes, err := io.ReadAll(resp.Body)
+			Expect(err).NotTo(HaveOccurred())
+			var gwResp GatewayResponse
+			Expect(json.Unmarshal(bodyBytes, &gwResp)).To(Succeed())
+			Expect(gwResp.RemediationRequestName).NotTo(BeEmpty())
 
-			crd := crdList.Items[0]
+			// BUSINESS OUTCOME 2: CRD created in Kubernetes
+			var crd remediationv1alpha1.RemediationRequest
+			Expect(k8sClient.Get(testCtx, client.ObjectKey{
+				Namespace: gatewayNamespace,
+				Name:      gwResp.RemediationRequestName,
+			}, &crd)).To(Succeed(), "K8s event should create CRD")
 			Expect(crd.Spec.SignalName).To(Equal("OOMKilled"),
 				"Event reason helps AI identify root cause")
 			Expect(crd.Spec.SignalType).To(Equal("alert"),
@@ -443,15 +458,21 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated),
 				"Alert should create CRD")
 
-			// BUSINESS OUTCOME: CRD has spec.targetResource populated
-			var crdList remediationv1alpha1.RemediationRequestList
-			Eventually(func() int {
-				err = k8sClient.List(testCtx, &crdList, client.InNamespace(gatewayNamespace))
-				Expect(err).NotTo(HaveOccurred())
-				return len(crdList.Items)
-			}, "5s", "100ms").Should(Equal(1), "CRD should be created")
+			// Parse response to get RR name (ADR-057: Get by name in shared gatewayNamespace)
+			bodyBytes, err := io.ReadAll(resp.Body)
+			Expect(err).NotTo(HaveOccurred())
+			var gwResp GatewayResponse
+			Expect(json.Unmarshal(bodyBytes, &gwResp)).To(Succeed())
+			Expect(gwResp.RemediationRequestName).NotTo(BeEmpty())
 
-			crd := crdList.Items[0]
+			// BUSINESS OUTCOME: CRD has spec.targetResource populated
+			var crd remediationv1alpha1.RemediationRequest
+			Eventually(func() error {
+				return k8sClient.Get(testCtx, client.ObjectKey{
+					Namespace: gatewayNamespace,
+					Name:      gwResp.RemediationRequestName,
+				}, &crd)
+			}, "5s", "100ms").Should(Succeed(), "CRD should be created")
 
 			// INTEGRATION VERIFICATION: TargetResource is populated in actual K8s CRD
 			// TargetResource is a REQUIRED value type (per API_CONTRACT_TRIAGE.md)
@@ -504,35 +525,38 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 			// BR-GATEWAY-074: K8s Event adapter uses body-level freshness validation
 			// BR-SCOPE-002: Retry to handle scope checker informer cache propagation delay.
 			var resp *http.Response
+			var bodyBytes []byte
 			Eventually(func() int {
 				req, err := http.NewRequest("POST", url, bytes.NewReader(payload))
 				Expect(err).ToNot(HaveOccurred())
 				req.Header.Set("Content-Type", "application/json")
 				resp, err = http.DefaultClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())
-				return resp.StatusCode
+				if resp != nil && resp.Body != nil {
+					bodyBytes, _ = io.ReadAll(resp.Body)
+					_ = resp.Body.Close()
+				}
+				if resp != nil {
+					return resp.StatusCode
+				}
+				return 0
 			}, "30s", "1s").Should(Equal(http.StatusCreated),
 				"Warning event should create CRD")
-			defer func() { _ = resp.Body.Close() }()
+			defer func() { if resp != nil && resp.Body != nil { _ = resp.Body.Close() } }()
+
+			// Parse response to get RR name (ADR-057: Get by name in shared gatewayNamespace)
+			var gwResp GatewayResponse
+			Expect(json.Unmarshal(bodyBytes, &gwResp)).To(Succeed())
+			Expect(gwResp.RemediationRequestName).NotTo(BeEmpty())
 
 			// Verify CRD was created with TargetResource
-			var crdList remediationv1alpha1.RemediationRequestList
-			Eventually(func() int {
-				listErr := k8sClient.List(testCtx, &crdList, client.InNamespace(gatewayNamespace))
-				Expect(listErr).NotTo(HaveOccurred())
-				return len(crdList.Items)
-			}, "5s", "100ms").Should(BeNumerically(">=", 1), "CRD should be created")
-
-			// Find the CRD for this event
-			var targetCRD *remediationv1alpha1.RemediationRequest
-			for i := range crdList.Items {
-				if crdList.Items[i].Spec.SignalType == "alert" { // All adapters normalize to "alert"; adapter identity in SignalSource
-					targetCRD = &crdList.Items[i]
-					break
-				}
-			}
-
-			Expect(targetCRD).NotTo(BeNil(), "K8s event CRD should exist")
+			var targetCRD remediationv1alpha1.RemediationRequest
+			Eventually(func() error {
+				return k8sClient.Get(testCtx, client.ObjectKey{
+					Namespace: gatewayNamespace,
+					Name:      gwResp.RemediationRequestName,
+				}, &targetCRD)
+			}, "5s", "100ms").Should(Succeed(), "CRD should be created")
 
 			// INTEGRATION VERIFICATION: TargetResource populated from K8s event
 			// TargetResource is a REQUIRED value type (per API_CONTRACT_TRIAGE.md)

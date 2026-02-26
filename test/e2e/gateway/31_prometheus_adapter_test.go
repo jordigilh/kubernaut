@@ -164,21 +164,21 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 				"First occurrence must create CRD (201 Created)")
 
 			// Parse response from captured bytes (body was closed inside Eventually)
-			var response map[string]interface{}
-			Expect(json.NewDecoder(bytes.NewReader(bodyBytes)).Decode(&response)).To(Succeed())
-			fingerprint, ok := response["fingerprint"].(string)
-			Expect(ok).To(BeTrue(), "Response should contain fingerprint")
-			Expect(fingerprint).NotTo(BeEmpty(), "Fingerprint should not be empty")
+			var gwResp GatewayResponse
+			Expect(json.NewDecoder(bytes.NewReader(bodyBytes)).Decode(&gwResp)).To(Succeed())
+			Expect(gwResp.Fingerprint).NotTo(BeEmpty(), "Response should contain fingerprint")
+			Expect(gwResp.RemediationRequestName).NotTo(BeEmpty(), "Response should contain RR name")
 
 			// DD-GATEWAY-012: Redis check REMOVED - Gateway is now Redis-free
 			// DD-GATEWAY-011: Deduplication now verified via K8s CRD status (validated in other tests)
 
 			// BUSINESS OUTCOME 3: CRD created in Kubernetes with correct business metadata
-			var crdList remediationv1alpha1.RemediationRequestList
-			Expect(k8sClient.List(testCtx, &crdList, client.InNamespace(gatewayNamespace))).To(Succeed())
-			Expect(crdList.Items).To(HaveLen(1), "Exactly one CRD should be created")
-
-			crd := crdList.Items[0]
+			// ADR-057: Use Get by RR name (shared gatewayNamespace has RRs from all tests)
+			var crd remediationv1alpha1.RemediationRequest
+			Expect(k8sClient.Get(testCtx, client.ObjectKey{
+				Namespace: gatewayNamespace,
+				Name:      gwResp.RemediationRequestName,
+			}, &crd)).To(Succeed(), "Exactly one CRD should be created for this signal")
 
 			// Verify business metadata for AI analysis
 			Expect(crd.Spec.SignalName).To(Equal("HighMemoryUsage"), "AI needs alert name to understand failure type")
@@ -188,7 +188,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 			Expect(crd.Namespace).To(Equal(gatewayNamespace), "ADR-057: RRs created in controller namespace (kubernaut-system)")
 
 			// Verify fingerprint is stored in spec (not as label — SHA256 exceeds 63-char label limit)
-			Expect(crd.Spec.SignalFingerprint).To(Equal(fingerprint),
+			Expect(crd.Spec.SignalFingerprint).To(Equal(gwResp.Fingerprint),
 				"Full fingerprint stored in spec.signalFingerprint (BR-GATEWAY-185 v1.1)")
 
 			// BUSINESS CAPABILITY VERIFIED:
@@ -228,6 +228,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 			// Scope checker uses ctrlClient (informer-backed) to reduce API server load.
 			// Retries handle informer sync delay and CI startup latency.
 			var resp *http.Response
+			var bodyBytes []byte
 			Eventually(func() int {
 				req, _ := http.NewRequest("POST", url, bytes.NewReader(payload))
 				req.Header.Set("Content-Type", "application/json")
@@ -238,21 +239,26 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 					GinkgoWriter.Printf("  Gateway POST error: %v\n", err)
 					return 0
 				}
-				body, _ := io.ReadAll(resp.Body)
+				bodyBytes, _ = io.ReadAll(resp.Body)
 				_ = resp.Body.Close()
 				if resp.StatusCode != http.StatusCreated {
-					GinkgoWriter.Printf("  Gateway returned %d (expected 201): %s\n", resp.StatusCode, string(body))
+					GinkgoWriter.Printf("  Gateway returned %d (expected 201): %s\n", resp.StatusCode, string(bodyBytes))
 				}
 				return resp.StatusCode
 			}, 30*time.Second, 1*time.Second).Should(Equal(http.StatusCreated),
 				"Gateway should return 201 Created for managed namespace")
 
-			// BUSINESS OUTCOME: CRD contains resource information for AI targeting
-			var crdList remediationv1alpha1.RemediationRequestList
-			Expect(k8sClient.List(testCtx, &crdList, client.InNamespace(gatewayNamespace))).To(Succeed())
-			Expect(crdList.Items).To(HaveLen(1))
+			// Parse response to get RR name (ADR-057: Get by name in shared gatewayNamespace)
+			var gwResp GatewayResponse
+			Expect(json.Unmarshal(bodyBytes, &gwResp)).To(Succeed())
+			Expect(gwResp.RemediationRequestName).NotTo(BeEmpty())
 
-			crd := crdList.Items[0]
+			// BUSINESS OUTCOME: CRD contains resource information for AI targeting
+			var crd remediationv1alpha1.RemediationRequest
+			Expect(k8sClient.Get(testCtx, client.ObjectKey{
+				Namespace: gatewayNamespace,
+				Name:      gwResp.RemediationRequestName,
+			}, &crd)).To(Succeed())
 
 			// Verify resource information enables AI to target specific resources
 			Expect(crd.Spec.SignalLabels["pod"]).To(Equal("database-replica-2"), "Pod name enables AI to run: kubectl delete pod database-replica-2 -n staging")
@@ -301,19 +307,20 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 			defer func() { _ = resp1.Body.Close() }()
 			Expect(resp1.StatusCode).To(Equal(http.StatusCreated), "First alert must create CRD (201 Created)")
 
-			// Parse response to get full fingerprint
-			var response1 map[string]interface{}
-			Expect(json.NewDecoder(resp1.Body).Decode(&response1)).To(Succeed())
-			fingerprint, ok := response1["fingerprint"].(string)
-			Expect(ok).To(BeTrue(), "Response should contain fingerprint")
-			Expect(fingerprint).NotTo(BeEmpty(), "Fingerprint should not be empty")
+			// Parse response to get RR name and fingerprint (ADR-057: Get by name in shared gatewayNamespace)
+			var gwResp1 GatewayResponse
+			Expect(json.NewDecoder(resp1.Body).Decode(&gwResp1)).To(Succeed())
+			Expect(gwResp1.Fingerprint).NotTo(BeEmpty(), "Response should contain fingerprint")
+			Expect(gwResp1.RemediationRequestName).NotTo(BeEmpty(), "Response should contain RR name")
+
+			firstCRDName := gwResp1.RemediationRequestName
 
 			// BUSINESS OUTCOME 1: First CRD created in K8s
-			var crdList1 remediationv1alpha1.RemediationRequestList
-			Expect(k8sClient.List(testCtx, &crdList1, client.InNamespace(gatewayNamespace))).To(Succeed())
-			Expect(crdList1.Items).To(HaveLen(1), "First alert creates exactly one CRD")
-
-			firstCRDName := crdList1.Items[0].Name
+			var crd remediationv1alpha1.RemediationRequest
+			Expect(k8sClient.Get(testCtx, client.ObjectKey{
+				Namespace: gatewayNamespace,
+				Name:      firstCRDName,
+			}, &crd)).To(Succeed(), "First alert creates exactly one CRD")
 
 			// DD-GATEWAY-012: Redis check REMOVED - Gateway is now Redis-free
 			// DD-GATEWAY-011: Deduplication validated via RR status.deduplication (tested elsewhere)
@@ -340,10 +347,15 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 			Expect(resp2.StatusCode).To(Equal(http.StatusAccepted), "Duplicate alert must return 202 Accepted (not 201 Created)")
 
 			// BUSINESS OUTCOME 2: NO new CRD created (deduplication works)
-			var crdList2 remediationv1alpha1.RemediationRequestList
-			Expect(k8sClient.List(testCtx, &crdList2, client.InNamespace(gatewayNamespace))).To(Succeed())
-			Expect(crdList2.Items).To(HaveLen(1), "Duplicate alert must NOT create new CRD (still only 1 CRD)")
-			Expect(crdList2.Items[0].Name).To(Equal(firstCRDName), "Same CRD name confirms no duplicate CRD created")
+			// 202 response returns same RR name; verify CRD still exists (ADR-057: Get by name)
+			var gwResp2 GatewayResponse
+			Expect(json.NewDecoder(resp2.Body).Decode(&gwResp2)).To(Succeed())
+			Expect(gwResp2.RemediationRequestName).To(Equal(firstCRDName), "Duplicate must return same RR name")
+			var crd2 remediationv1alpha1.RemediationRequest
+			Expect(k8sClient.Get(testCtx, client.ObjectKey{
+				Namespace: gatewayNamespace,
+				Name:      firstCRDName,
+			}, &crd2)).To(Succeed(), "Duplicate alert must NOT create new CRD (same CRD still exists)")
 
 			// DD-GATEWAY-012: Redis metadata check REMOVED - Gateway is now Redis-free
 			// DD-GATEWAY-011: BUSINESS OUTCOME 3: Deduplication count tracked in RR status
