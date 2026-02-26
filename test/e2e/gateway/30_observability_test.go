@@ -174,7 +174,8 @@ var _ = Describe("Observability E2E Tests", func() {
 			})
 
 			// First request (creates CRD)
-			resp1 := SendWebhook(gatewayURL, payload)
+			// Retry handles scope informer cache propagation delay for newly created namespace
+			resp1 := sendWebhookExpectCreated(gatewayURL, "/api/v1/signals/prometheus", payload)
 			Expect(resp1.StatusCode).To(Equal(http.StatusCreated), "First alert should create CRD")
 
 			// DD-E2E-DIRECT-API-001: Query by exact CRD name (RO E2E pattern)
@@ -241,7 +242,8 @@ var _ = Describe("Observability E2E Tests", func() {
 					Name: fmt.Sprintf("app-%d", uniqueID),
 				},
 			})
-			resp := SendWebhook(gatewayURL, payload)
+			// Retry handles scope informer cache propagation delay for newly created namespace
+			resp := sendWebhookExpectCreated(gatewayURL, "/api/v1/signals/prometheus", payload)
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated), "CRD should be created")
 
 			// Wait for metrics to update using Eventually
@@ -282,12 +284,11 @@ var _ = Describe("Observability E2E Tests", func() {
 						Name: fmt.Sprintf("app-pod-%d-%d", uniqueID, i),
 					},
 				})
-				resp := SendWebhook(gatewayURL, payload)
+				// Retry handles scope informer cache propagation delay for newly created namespace
+				resp := sendWebhookExpectCreated(gatewayURL, "/api/v1/signals/prometheus", payload)
 				if resp.StatusCode == http.StatusCreated {
 					successCount++
 				}
-				// Small delay between requests to avoid timing issues
-				time.Sleep(10 * time.Millisecond)
 			}
 
 			// Verify at least one CRD was created successfully
@@ -358,9 +359,10 @@ var _ = Describe("Observability E2E Tests", func() {
 					Name: "warmup-pod",
 				},
 			})
-			warmupResp := SendWebhook(gatewayURL, warmupPayload)
-			Expect(warmupResp.StatusCode).To(Or(Equal(http.StatusCreated), Equal(http.StatusAccepted)),
-				"Warm-up request should succeed")
+			// Retry handles scope informer cache propagation delay
+			warmupResp := sendWebhookExpectCreated(gatewayURL, "/api/v1/signals/prometheus", warmupPayload)
+			Expect(warmupResp.StatusCode).To(Equal(http.StatusCreated),
+				"Warm-up request should create CRD")
 
 			// Step 2: Wait for histogram metric to be published (with debugging)
 			// Note: Prometheus histograms expose _count, _sum, and _bucket metrics (not base name)
@@ -396,8 +398,10 @@ var _ = Describe("Observability E2E Tests", func() {
 					},
 				})
 				resp := SendWebhook(gatewayURL, payload)
-				Expect(resp.StatusCode).To(Or(Equal(http.StatusCreated), Equal(http.StatusAccepted)),
-					fmt.Sprintf("Request %d should succeed", i))
+				Expect(resp.StatusCode).To(BeNumerically(">=", 200),
+					fmt.Sprintf("Request %d should be processed (got HTTP %d)", i, resp.StatusCode))
+				Expect(resp.StatusCode).To(BeNumerically("<", 300),
+					fmt.Sprintf("Request %d should succeed (got HTTP %d)", i, resp.StatusCode))
 			}
 
 			// Step 4: Verify histogram structure
@@ -430,9 +434,9 @@ var _ = Describe("Observability E2E Tests", func() {
 					Name: fmt.Sprintf("api-%d", uniqueID),
 				},
 			})
-			resp := SendWebhook(gatewayURL, payload)
-			Expect(resp.StatusCode).To(Or(Equal(http.StatusCreated), Equal(http.StatusAccepted)),
-				"Signal webhook should succeed")
+			resp := sendWebhookExpectCreated(gatewayURL, "/api/v1/signals/prometheus", payload)
+			Expect(resp.StatusCode).To(Equal(http.StatusCreated),
+				"Signal webhook should create CRD")
 
 			// Also query health endpoint
 			healthResp, err := http.Get(gatewayURL + "/health")

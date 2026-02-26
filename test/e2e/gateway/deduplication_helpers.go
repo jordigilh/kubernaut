@@ -323,3 +323,17 @@ func ListRemediationRequests(ctx context.Context, k8sClient client.Client, names
 	}
 	return rrList.Items
 }
+
+// dumpRRsForDiagnostics writes all RemediationRequests in a namespace to GinkgoWriter
+// for CI debugging when a specific RR is unexpectedly missing.
+func dumpRRsForDiagnostics(ctx context.Context, k8sClient client.Client, namespace, expectedName, label string) {
+	var allRRs remediationv1alpha1.RemediationRequestList
+	_ = k8sClient.List(ctx, &allRRs, client.InNamespace(namespace))
+	GinkgoWriter.Printf("DIAGNOSTIC [%s]: RR %q not found in %s. Total RRs: %d\n",
+		label, expectedName, namespace, len(allRRs.Items))
+	for i, rr := range allRRs.Items {
+		GinkgoWriter.Printf("  RR[%d]: name=%s, phase=%s, fingerprint=%s, created=%s\n",
+			i, rr.Name, rr.Status.OverallPhase, rr.Spec.SignalFingerprint,
+			rr.CreationTimestamp.Format(time.RFC3339))
+	}
+}

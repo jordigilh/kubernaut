@@ -98,6 +98,18 @@ var _ = Describe("BR-GATEWAY-019: Graceful Shutdown Foundation - E2E Tests", fun
 			//
 			// TDD GREEN PHASE: This test should PASS (validates existing functionality)
 
+			// Warmup: ensure scope informer cache has propagated for test namespace
+			warmupPayload := GeneratePrometheusAlert(PrometheusAlertPayload{
+				AlertName: fmt.Sprintf("ConcurrentWarmup-%d", time.Now().UnixNano()),
+				Namespace: testNamespace,
+				Severity:  "info",
+				Resource: ResourceIdentifier{
+					Kind: "Pod",
+					Name: "warmup-pod",
+				},
+			})
+			sendWebhookExpectCreated(gatewayURL, "/api/v1/signals/prometheus", warmupPayload)
+
 			var (
 				completedRequests int32
 				failedRequests    int32

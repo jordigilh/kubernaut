@@ -90,6 +90,7 @@ var _ = Describe("Test 08: Kubernetes Event Ingestion (BR-GATEWAY-002)", Ordered
 		eventReason := "BackOff"
 		eventMessage := "Back-off restarting failed container"
 		acceptedCount := 0
+		var firstRRName string
 
 		for i, podName := range podNames {
 			payload := map[string]interface{}{
@@ -111,71 +112,69 @@ var _ = Describe("Test 08: Kubernetes Event Ingestion (BR-GATEWAY-002)", Ordered
 			}
 			payloadBytes, _ := json.Marshal(payload)
 
-			var resp *http.Response
-			Eventually(func() error {
-				req, err := http.NewRequest("POST", gatewayURL+"/api/v1/signals/kubernetes-event", bytes.NewBuffer(payloadBytes))
-				if err != nil {
-					return err
-				}
-				req.Header.Set("Content-Type", "application/json")
-				req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
-				resp, err = httpClient.Do(req)
-				return err
-			}, 10*time.Second, 1*time.Second).Should(Succeed())
-			_ = resp.Body.Close()
-
-			if resp.StatusCode == http.StatusCreated || resp.StatusCode == http.StatusAccepted {
+			if i == 0 {
+				// First event: use retry to handle scope informer cache propagation delay
+				resp := sendWebhookExpectCreated(gatewayURL, "/api/v1/signals/kubernetes-event", payloadBytes)
 				acceptedCount++
+				// Capture the RR name from the first successfully created event
+				var gwResp GatewayResponse
+				if err := json.Unmarshal(resp.Body, &gwResp); err == nil && gwResp.RemediationRequestName != "" {
+					firstRRName = gwResp.RemediationRequestName
+				}
+				testLogger.V(1).Info(fmt.Sprintf("  Event %d for pod %s: HTTP %d (retried for scope cache)",
+					i+1, podName, resp.StatusCode))
+			} else {
+				var resp *http.Response
+				Eventually(func() error {
+					req, err := http.NewRequest("POST", gatewayURL+"/api/v1/signals/kubernetes-event", bytes.NewBuffer(payloadBytes))
+					if err != nil {
+						return err
+					}
+					req.Header.Set("Content-Type", "application/json")
+					req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+					resp, err = httpClient.Do(req)
+					return err
+				}, 10*time.Second, 1*time.Second).Should(Succeed())
+				_ = resp.Body.Close()
+
+				if resp.StatusCode == http.StatusCreated || resp.StatusCode == http.StatusAccepted {
+					acceptedCount++
+				}
+				testLogger.V(1).Info(fmt.Sprintf("  Event %d for pod %s: HTTP %d", i+1, podName, resp.StatusCode))
 			}
-			testLogger.V(1).Info(fmt.Sprintf("  Event %d for pod %s: HTTP %d", i+1, podName, resp.StatusCode))
 		}
 
 		// BEHAVIOR: At least some events should be accepted
 		Expect(acceptedCount).To(BeNumerically(">=", 1),
 			"Gateway should accept at least 1 K8s Event (BR-GATEWAY-002)")
-		testLogger.Info(fmt.Sprintf("  ✅ Gateway accepted %d/%d K8s Events", acceptedCount, len(podNames)))
-
-		// BEHAVIOR TEST: K8s Events trigger CRD creation
-		// CORRECTNESS: CRDs are created in the correct namespace
-		testLogger.Info("")
-		testLogger.Info("Step 2: Verify CRDs are created from K8s Events")
-
-		var crdList *remediationv1alpha1.RemediationRequestList
-		Eventually(func() int {
-			// Use suite k8sClient (DD-E2E-K8S-CLIENT-001)
-			// freshClient removed - using suite k8sClient
-			if false { // SKIP: freshClient error check no longer needed
-				if err := GetLastK8sClientError(); err != nil {
-					testLogger.V(1).Info("Failed to create K8s client", "error", err)
-				}
-				return -1
-			}
-			crdList = &remediationv1alpha1.RemediationRequestList{}
-			if err := k8sClient.List(testCtx, crdList, client.InNamespace(gatewayNamespace)); err != nil {
-				testLogger.V(1).Info("Failed to list CRDs", "error", err)
-				return -1
-			}
-			return len(crdList.Items)
-		}, 60*time.Second, 2*time.Second).Should(BeNumerically(">=", 1),
-			"K8s Events should result in CRD creation (BR-GATEWAY-002)")
-
-		testLogger.Info(fmt.Sprintf("  ✅ Created %d CRDs from K8s Events", len(crdList.Items)))
+		testLogger.Info(fmt.Sprintf("  Gateway accepted %d/%d K8s Events", acceptedCount, len(podNames)))
 
 		// CORRECTNESS TEST: CRD contains correct resource information
+		// Use the specific RR name from the first event instead of listing all RRs
+		// (avoids test isolation issues from stale RRs in shared gatewayNamespace)
 		testLogger.Info("")
-		testLogger.Info("Step 3: Verify CRD contains correct resource information")
+		testLogger.Info("Step 2: Verify CRD contains correct resource information")
 
-		crd := crdList.Items[0]
+		Expect(firstRRName).ToNot(BeEmpty(), "First event should return an RR name in the response")
+
+		var crd remediationv1alpha1.RemediationRequest
+		Eventually(func() error {
+			return k8sClient.Get(testCtx, client.ObjectKey{
+				Namespace: gatewayNamespace,
+				Name:      firstRRName,
+			}, &crd)
+		}, 30*time.Second, 1*time.Second).Should(Succeed(),
+			"CRD should be queryable by name from first event response")
 
 		// CORRECTNESS: CRD in controller namespace (ADR-057); target resource matches event
 		Expect(crd.Namespace).To(Equal(gatewayNamespace),
 			"ADR-057: RRs created in controller namespace")
-		testLogger.Info(fmt.Sprintf("  ✅ CRD namespace correct: %s", crd.Namespace))
+		testLogger.Info(fmt.Sprintf("  CRD namespace correct: %s", crd.Namespace))
 
 		// CORRECTNESS: CRD has target resource populated (from involvedObject)
 		Expect(crd.Spec.TargetResource.Name).ToNot(BeEmpty(),
 			"CRD should have target resource from K8s Event")
-		testLogger.Info(fmt.Sprintf("  ✅ CRD target resource: %s/%s/%s",
+		testLogger.Info(fmt.Sprintf("  CRD target resource: %s/%s/%s",
 			crd.Spec.TargetResource.Namespace,
 			crd.Spec.TargetResource.Kind,
 			crd.Spec.TargetResource.Name))
@@ -183,18 +182,18 @@ var _ = Describe("Test 08: Kubernetes Event Ingestion (BR-GATEWAY-002)", Ordered
 		// CORRECTNESS: Target resource matches event involvedObject (Pod)
 		Expect(crd.Spec.TargetResource.Kind).To(Equal("Pod"),
 			"Target resource should be Pod from K8s Event involvedObject")
-		testLogger.Info(fmt.Sprintf("  ✅ Target resource kind: %s", crd.Spec.TargetResource.Kind))
+		testLogger.Info(fmt.Sprintf("  Target resource kind: %s", crd.Spec.TargetResource.Kind))
 
 		testLogger.Info("")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		testLogger.Info("✅ Test 08 PASSED: Kubernetes Event Ingestion")
+		testLogger.Info("Test 08 PASSED: Kubernetes Event Ingestion")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		testLogger.Info("Behavior Validated:")
-		testLogger.Info(fmt.Sprintf("  ✅ Gateway accepts K8s Event payloads: %d accepted", acceptedCount))
-		testLogger.Info(fmt.Sprintf("  ✅ K8s Events trigger CRD creation: %d CRDs", len(crdList.Items)))
+		testLogger.Info(fmt.Sprintf("  Gateway accepts K8s Event payloads: %d accepted", acceptedCount))
 		testLogger.Info("Correctness Validated:")
-		testLogger.Info(fmt.Sprintf("  ✅ CRD in controller namespace; target: %s", crd.Spec.TargetResource.Namespace))
-		testLogger.Info("  ✅ CRD contains Pod resource from involvedObject")
+		testLogger.Info(fmt.Sprintf("  CRD in controller namespace; target: %s/%s",
+			crd.Spec.TargetResource.Kind, crd.Spec.TargetResource.Name))
+		testLogger.Info("  CRD contains Pod resource from involvedObject")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	})
 })

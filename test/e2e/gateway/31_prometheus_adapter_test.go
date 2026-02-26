@@ -296,20 +296,13 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 				}]
 			}`, prodNamespace))
 
-			url := fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL)
-
 			// First alert: Creates CRD
-			req1, _ := http.NewRequest("POST", url, bytes.NewReader(payload))
-			req1.Header.Set("Content-Type", "application/json")
-			req1.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
-			resp1, err := http.DefaultClient.Do(req1)
-			Expect(err).ToNot(HaveOccurred())
-			defer func() { _ = resp1.Body.Close() }()
-			Expect(resp1.StatusCode).To(Equal(http.StatusCreated), "First alert must create CRD (201 Created)")
+			// Retry handles scope informer cache propagation delay for newly created namespace
+			webhookResp1 := sendWebhookExpectCreated(gatewayURL, "/api/v1/signals/prometheus", payload)
 
 			// Parse response to get RR name and fingerprint (ADR-057: Get by name in shared gatewayNamespace)
 			var gwResp1 GatewayResponse
-			Expect(json.NewDecoder(resp1.Body).Decode(&gwResp1)).To(Succeed())
+			Expect(json.Unmarshal(webhookResp1.Body, &gwResp1)).To(Succeed())
 			Expect(gwResp1.Fingerprint).NotTo(BeEmpty(), "Response should contain fingerprint")
 			Expect(gwResp1.RemediationRequestName).NotTo(BeEmpty(), "Response should contain RR name")
 
@@ -337,25 +330,34 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 				"CRD should be queryable by name within 30s (matches RO E2E pattern)")
 
 			// Second alert: Duplicate (CRD still in non-terminal phase)
-			req2, err := http.NewRequest("POST", url, bytes.NewReader(payload))
-			Expect(err).ToNot(HaveOccurred())
-			req2.Header.Set("Content-Type", "application/json")
-			req2.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
-			resp2, err := http.DefaultClient.Do(req2)
-			Expect(err).ToNot(HaveOccurred())
-			defer func() { _ = resp2.Body.Close() }()
-			Expect(resp2.StatusCode).To(Equal(http.StatusAccepted), "Duplicate alert must return 202 Accepted (not 201 Created)")
+			webhookResp2 := sendWebhook(gatewayURL, "/api/v1/signals/prometheus", payload)
+			Expect(webhookResp2.StatusCode).To(Equal(http.StatusAccepted),
+				fmt.Sprintf("Duplicate alert must return 202 Accepted (not %d); body: %s",
+					webhookResp2.StatusCode, string(webhookResp2.Body)))
 
 			// BUSINESS OUTCOME 2: NO new CRD created (deduplication works)
 			// 202 response returns same RR name; verify CRD still exists (ADR-057: Get by name)
 			var gwResp2 GatewayResponse
-			Expect(json.NewDecoder(resp2.Body).Decode(&gwResp2)).To(Succeed())
+			Expect(json.Unmarshal(webhookResp2.Body, &gwResp2)).To(Succeed())
 			Expect(gwResp2.RemediationRequestName).To(Equal(firstCRDName), "Duplicate must return same RR name")
+
+			// Diagnostic: if this Get fails, dump all RRs in namespace for debugging
 			var crd2 remediationv1alpha1.RemediationRequest
-			Expect(k8sClient.Get(testCtx, client.ObjectKey{
+			err := k8sClient.Get(testCtx, client.ObjectKey{
 				Namespace: gatewayNamespace,
 				Name:      firstCRDName,
-			}, &crd2)).To(Succeed(), "Duplicate alert must NOT create new CRD (same CRD still exists)")
+			}, &crd2)
+			if err != nil {
+				var allRRs remediationv1alpha1.RemediationRequestList
+				_ = k8sClient.List(testCtx, &allRRs, client.InNamespace(gatewayNamespace))
+				GinkgoWriter.Printf("DIAGNOSTIC: RR %q not found after 202 dedup response. "+
+					"Total RRs in %s: %d\n", firstCRDName, gatewayNamespace, len(allRRs.Items))
+				for i, rr := range allRRs.Items {
+					GinkgoWriter.Printf("  RR[%d]: name=%s, phase=%s, fingerprint=%s\n",
+						i, rr.Name, rr.Status.OverallPhase, rr.Spec.SignalFingerprint)
+				}
+			}
+			Expect(err).ToNot(HaveOccurred(), "Duplicate alert must NOT create new CRD (same CRD still exists)")
 
 			// DD-GATEWAY-012: Redis metadata check REMOVED - Gateway is now Redis-free
 			// DD-GATEWAY-011: BUSINESS OUTCOME 3: Deduplication count tracked in RR status
@@ -441,26 +443,14 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 					}]
 				}`, tc.severity, tc.namespace))
 
-				url := fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL)
-				req, _ := http.NewRequest("POST", url, bytes.NewReader(payload))
-				req.Header.Set("Content-Type", "application/json")
-				req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
-				resp, err := http.DefaultClient.Do(req)
-				Expect(err).ToNot(HaveOccurred())
-				defer func() { _ = resp.Body.Close() }()
-
-				// Read response body and parse CRD name (DD-E2E-DIRECT-API-001)
-				bodyBytes, _ := io.ReadAll(resp.Body)
-				GinkgoWriter.Printf("🔍 %s: HTTP %d - %s\n", tc.namespace, resp.StatusCode, string(bodyBytes))
-
-				// Check HTTP status - should be 201 for new CRD or 202 for duplicate
-				Expect(resp.StatusCode).To(BeNumerically(">=", 200))
-				Expect(resp.StatusCode).To(BeNumerically("<", 300),
-					"Alert for %s should succeed (got HTTP %d): %s", tc.namespace, resp.StatusCode, string(bodyBytes))
+				// Retry handles scope informer cache propagation delay for managed namespace
+				webhookResp := sendWebhookExpectCreated(gatewayURL, "/api/v1/signals/prometheus", payload)
+				GinkgoWriter.Printf("[env-classification] %s: HTTP %d - %s\n",
+					tc.namespace, webhookResp.StatusCode, string(webhookResp.Body))
 
 				// Parse Gateway response to get CRD name
 				var gwResp GatewayResponse
-				Expect(json.Unmarshal(bodyBytes, &gwResp)).To(Succeed())
+				Expect(json.Unmarshal(webhookResp.Body, &gwResp)).To(Succeed())
 				Expect(gwResp.RemediationRequestName).NotTo(BeEmpty(), "Gateway should return CRD name")
 
 				// DD-E2E-DIRECT-API-001: Query CRD by exact name (RO E2E pattern)
