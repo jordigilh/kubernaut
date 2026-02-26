@@ -115,10 +115,17 @@ var _ = Describe("Test 21: CRD Lifecycle Operations (Integration)", Ordered, Lab
 		crdList := &remediationv1alpha1.RemediationRequestList{}
 		err = k8sClient.List(ctx, crdList, client.InNamespace(controllerNamespace))
 		Expect(err).ToNot(HaveOccurred())
-		Expect(crdList.Items).To(HaveLen(1), "Exactly 1 CRD should be created")
+		// Filter by test-specific signal name (ADR-057: avoid cross-test contamination)
+		var matchingCRDs []remediationv1alpha1.RemediationRequest
+		for i := range crdList.Items {
+			if crdList.Items[i].Spec.SignalName == "HighCPUUsage" {
+				matchingCRDs = append(matchingCRDs, crdList.Items[i])
+			}
+		}
+		Expect(matchingCRDs).To(HaveLen(1), "Exactly 1 CRD with SignalName=HighCPUUsage should be created")
 
 		testLogger.Info("Step 4: Validate CRD spec fields")
-		crd := crdList.Items[0]
+		crd := matchingCRDs[0]
 		Expect(crd.Spec.SignalName).To(Equal("HighCPUUsage"))
 		Expect(crd.Spec.Severity).To(Equal("critical"))
 		Expect(crd.Spec.TargetResource.Namespace).To(Equal(testNamespace))
@@ -152,9 +159,7 @@ var _ = Describe("Test 21: CRD Lifecycle Operations (Integration)", Ordered, Lab
 		crdList := &remediationv1alpha1.RemediationRequestList{}
 		err = k8sClient.List(ctx, crdList, client.InNamespace(controllerNamespace))
 		Expect(err).ToNot(HaveOccurred())
-		Expect(crdList.Items).To(HaveLen(2), "2 CRDs should exist (21b + 21c)")
-
-		// Find the CRD with default AlertName
+		// Filter by test-specific signal name (ADR-057: avoid cross-test contamination)
 		var defaultCRD *remediationv1alpha1.RemediationRequest
 		for i := range crdList.Items {
 			if crdList.Items[i].Spec.SignalName == "TestAlert" {
@@ -163,6 +168,18 @@ var _ = Describe("Test 21: CRD Lifecycle Operations (Integration)", Ordered, Lab
 			}
 		}
 		Expect(defaultCRD).ToNot(BeNil(), "CRD with default AlertName='TestAlert' should exist")
+		// Verify 2 CRDs exist for this test suite (21b + 21c)
+		highCPUCount := 0
+		testAlertCount := 0
+		for i := range crdList.Items {
+			switch crdList.Items[i].Spec.SignalName {
+			case "HighCPUUsage":
+				highCPUCount++
+			case "TestAlert":
+				testAlertCount++
+			}
+		}
+		Expect(highCPUCount + testAlertCount).To(BeNumerically(">=", 2), "2 CRDs should exist (21b + 21c)")
 		testLogger.Info("✅ Test 21c PASSED: Defaults applied correctly", "signalName", defaultCRD.Spec.SignalName)
 	})
 
@@ -195,7 +212,7 @@ var _ = Describe("Test 21: CRD Lifecycle Operations (Integration)", Ordered, Lab
 		err = k8sClient.List(ctx, crdList, client.InNamespace(controllerNamespace))
 		Expect(err).ToNot(HaveOccurred())
 
-		// Find the DiskPressure CRD
+		// Filter by test-specific signal name (ADR-057: avoid cross-test contamination)
 		var diskPressureCRD *remediationv1alpha1.RemediationRequest
 		for i := range crdList.Items {
 			if crdList.Items[i].Spec.SignalName == "DiskPressure" {

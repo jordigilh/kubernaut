@@ -193,7 +193,14 @@ var _ = Describe("Test 02: State-Based Deduplication (Integration)", Ordered, La
 		crdList := &remediationv1alpha1.RemediationRequestList{}
 		err = k8sClient.List(ctx, crdList, client.InNamespace(controllerNamespace))
 		Expect(err).ToNot(HaveOccurred())
-		crdCount := len(crdList.Items)
+		// Filter by test-specific signal names (ADR-057: avoid cross-test contamination)
+		var matchingCRDs []remediationv1alpha1.RemediationRequest
+		for i := range crdList.Items {
+			if crdList.Items[i].Spec.SignalName == signalName1 || crdList.Items[i].Spec.SignalName == signalName2 {
+				matchingCRDs = append(matchingCRDs, crdList.Items[i])
+			}
+		}
+		crdCount := len(matchingCRDs)
 
 		testLogger.Info(fmt.Sprintf("  Found %d CRDs", crdCount))
 
