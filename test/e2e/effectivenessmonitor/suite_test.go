@@ -27,7 +27,7 @@ limitations under the License.
 // - DataStorage (PostgreSQL + Redis) for audit event verification
 //
 // CRITICAL: Uses isolated kubeconfig to avoid overwriting ~/.kube/config
-// Per TESTING_GUIDELINES.md: kubeconfig at ~/.kube/em-e2e-config
+// Per TESTING_GUIDELINES.md: kubeconfig at ~/.kube/em-e2e-config (pattern: {clusterName}-config)
 //
 // Test Execution (parallel, 4 procs):
 //
@@ -113,7 +113,7 @@ var _ = SynchronizedBeforeSuite(
 		homeDir, err := os.UserHomeDir()
 		Expect(err).ToNot(HaveOccurred())
 
-		tempKubeconfigPath := fmt.Sprintf("%s/.kube/%s-e2e-config", homeDir, clusterName)
+		tempKubeconfigPath := fmt.Sprintf("%s/.kube/%s-config", homeDir, clusterName)
 		GinkgoWriter.Printf("  Using isolated kubeconfig: %s\n", tempKubeconfigPath)
 
 		By("Setting up EM E2E infrastructure using HYBRID PARALLEL approach (DD-TEST-002)")

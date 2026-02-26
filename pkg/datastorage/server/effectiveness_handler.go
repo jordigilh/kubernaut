@@ -186,7 +186,13 @@ func BuildEffectivenessResponse(correlationID string, events []*EffectivenessEve
 
 		case "effectiveness.assessment.completed":
 			if reason, ok := eventData["reason"].(string); ok {
-				resp.AssessmentStatus = reason
+				// DD-EM-002 v1.1: spec_drift is terminal and takes priority over
+				// all other reasons. When multiple completed events exist (e.g.,
+				// "full" followed by "spec_drift" after EA re-assessment), spec_drift
+				// must not be overwritten by an earlier reason that sorts later.
+				if resp.AssessmentStatus != "spec_drift" {
+					resp.AssessmentStatus = reason
+				}
 			}
 		}
 	}

@@ -23,7 +23,7 @@ limitations under the License.
 // - E2E tests (10-15%): Complete workflow validation with KIND (this file)
 //
 // CRITICAL: Uses isolated kubeconfig to avoid overwriting ~/.kube/config
-// Per TESTING_GUIDELINES.md: kubeconfig at ~/.kube/remediationorchestrator-e2e-config
+// Per TESTING_GUIDELINES.md: kubeconfig at ~/.kube/ro-e2e-config
 //
 // Test Execution (parallel, 4 procs):
 //
@@ -119,7 +119,7 @@ var _ = SynchronizedBeforeSuite(
 		// CRITICAL: Use isolated kubeconfig - NEVER use ~/.kube/config
 		// This prevents accidentally overwriting user's real cluster credentials
 		// ============================================================================
-		tempKubeconfigPath := fmt.Sprintf("%s/.kube/%s-e2e-config", homeDir, clusterName)
+		tempKubeconfigPath := fmt.Sprintf("%s/.kube/%s-config", homeDir, clusterName)
 		GinkgoWriter.Printf("📂 Using isolated kubeconfig: %s\n", tempKubeconfigPath)
 
 		By("Setting up RO E2E infrastructure using HYBRID PARALLEL approach (DD-TEST-002)")

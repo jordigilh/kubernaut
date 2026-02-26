@@ -183,7 +183,7 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 		var remediationRequest *remediationv1.RemediationRequest
 		Eventually(func() bool {
 			rrList := &remediationv1.RemediationRequestList{}
-			if err := apiReader.List(ctx, rrList, client.InNamespace(testNamespace)); err != nil {
+			if err := apiReader.List(ctx, rrList, client.InNamespace(namespace)); err != nil {
 				return false
 			}
 			for i := range rrList.Items {
@@ -200,7 +200,7 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 		By("Step 4: Waiting for SignalProcessing to complete")
 		Eventually(func() string {
 			spList := &signalprocessingv1.SignalProcessingList{}
-			if err := apiReader.List(ctx, spList, client.InNamespace(testNamespace)); err != nil {
+			if err := apiReader.List(ctx, spList, client.InNamespace(namespace)); err != nil {
 				return ""
 			}
 			for _, sp := range spList.Items {
@@ -215,7 +215,7 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 		// Scenario-specific: verify production environment classification
 		By("Step 4b: Verifying SP classified environment as production")
 		spList := &signalprocessingv1.SignalProcessingList{}
-		Expect(apiReader.List(ctx, spList, client.InNamespace(testNamespace))).To(Succeed())
+		Expect(apiReader.List(ctx, spList, client.InNamespace(namespace))).To(Succeed())
 		for i := range spList.Items {
 			sp := &spList.Items[i]
 			if sp.Spec.RemediationRequestRef.Name == remediationRequest.Name {
@@ -236,7 +236,7 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 		var aaObj *aianalysisv1.AIAnalysis
 		Eventually(func() bool {
 			aaList := &aianalysisv1.AIAnalysisList{}
-			if err := apiReader.List(ctx, aaList, client.InNamespace(testNamespace)); err != nil {
+			if err := apiReader.List(ctx, aaList, client.InNamespace(namespace)); err != nil {
 				return false
 			}
 			for i := range aaList.Items {
@@ -266,7 +266,7 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 		Eventually(func() bool {
 			rar := &remediationv1.RemediationApprovalRequest{}
 			if err := apiReader.Get(ctx, client.ObjectKey{
-				Name: rarName, Namespace: testNamespace,
+				Name: rarName, Namespace: namespace,
 			}, rar); err != nil {
 				return false
 			}
@@ -283,7 +283,7 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 		By("Step 7: Waiting for approval NotificationRequest (BR-ORCH-029)")
 		Eventually(func() bool {
 			nrList := &notificationv1.NotificationRequestList{}
-			if err := apiReader.List(ctx, nrList, client.InNamespace(testNamespace)); err != nil {
+			if err := apiReader.List(ctx, nrList, client.InNamespace(namespace)); err != nil {
 				return false
 			}
 			for _, nr := range nrList.Items {
@@ -303,7 +303,7 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 		Eventually(func() string {
 			rr := &remediationv1.RemediationRequest{}
 			if err := apiReader.Get(ctx, client.ObjectKey{
-				Name: remediationRequest.Name, Namespace: testNamespace,
+				Name: remediationRequest.Name, Namespace: namespace,
 			}, rr); err != nil {
 				return ""
 			}
@@ -316,7 +316,7 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 		// ================================================================
 		By("Step 8: Approving RemediationApprovalRequest (simulating operator)")
 		Expect(apiReader.Get(ctx, client.ObjectKey{
-			Name: rarName, Namespace: testNamespace,
+			Name: rarName, Namespace: namespace,
 		}, rarObj)).To(Succeed())
 
 		rarObj.Status.Decision = remediationv1.ApprovalDecisionApproved
@@ -334,7 +334,7 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 		var weName string
 		Eventually(func() string {
 			weList := &workflowexecutionv1.WorkflowExecutionList{}
-			if err := apiReader.List(ctx, weList, client.InNamespace(testNamespace)); err != nil {
+			if err := apiReader.List(ctx, weList, client.InNamespace(namespace)); err != nil {
 				return ""
 			}
 			for _, we := range weList.Items {
@@ -376,7 +376,7 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 		Eventually(func() string {
 			we := &workflowexecutionv1.WorkflowExecution{}
 			if err := apiReader.Get(ctx, client.ObjectKey{
-				Name: weName, Namespace: testNamespace,
+				Name: weName, Namespace: namespace,
 			}, we); err != nil {
 				return ""
 			}
@@ -389,7 +389,7 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 		By("Step 12: Waiting for completion NotificationRequest")
 		Eventually(func() bool {
 			nrList := &notificationv1.NotificationRequestList{}
-			if err := apiReader.List(ctx, nrList, client.InNamespace(testNamespace)); err != nil {
+			if err := apiReader.List(ctx, nrList, client.InNamespace(namespace)); err != nil {
 				return false
 			}
 			for _, nr := range nrList.Items {
@@ -410,7 +410,7 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 		Eventually(func() string {
 			rr := &remediationv1.RemediationRequest{}
 			if err := apiReader.Get(ctx, client.ObjectKey{
-				Name: remediationRequest.Name, Namespace: testNamespace,
+				Name: remediationRequest.Name, Namespace: namespace,
 			}, rr); err != nil {
 				return ""
 			}
@@ -421,7 +421,7 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 		// Step 14: Wait for EffectivenessAssessment
 		// ================================================================
 		By("Step 14: Waiting for EffectivenessAssessment to reach terminal phase")
-		eaKey := client.ObjectKey{Name: fmt.Sprintf("ea-%s", remediationRequest.Name), Namespace: testNamespace}
+		eaKey := client.ObjectKey{Name: fmt.Sprintf("ea-%s", remediationRequest.Name), Namespace: namespace}
 		finalEA := &eav1.EffectivenessAssessment{}
 		Eventually(func() string {
 			if err := apiReader.Get(testCtx, eaKey, finalEA); err != nil {
@@ -443,7 +443,7 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 
 		// SP
 		spList = &signalprocessingv1.SignalProcessingList{}
-		Expect(apiReader.List(ctx, spList, client.InNamespace(testNamespace))).To(Succeed())
+		Expect(apiReader.List(ctx, spList, client.InNamespace(namespace))).To(Succeed())
 		for i := range spList.Items {
 			sp := &spList.Items[i]
 			if sp.Spec.RemediationRequestRef.Name == remediationRequest.Name {
@@ -454,17 +454,17 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 
 		// AA (with approval)
 		freshAA := &aianalysisv1.AIAnalysis{}
-		Expect(apiReader.Get(ctx, client.ObjectKey{Name: aaObj.Name, Namespace: testNamespace}, freshAA)).To(Succeed())
+		Expect(apiReader.Get(ctx, client.ObjectKey{Name: aaObj.Name, Namespace: namespace}, freshAA)).To(Succeed())
 		allFailures = append(allFailures, crdvalidators.ValidateAAStatus(freshAA, crdvalidators.WithApprovalFlow())...)
 
 		// WE
 		weObj := &workflowexecutionv1.WorkflowExecution{}
-		Expect(apiReader.Get(ctx, client.ObjectKey{Name: weName, Namespace: testNamespace}, weObj)).To(Succeed())
+		Expect(apiReader.Get(ctx, client.ObjectKey{Name: weName, Namespace: namespace}, weObj)).To(Succeed())
 		allFailures = append(allFailures, crdvalidators.ValidateWEStatus(weObj)...)
 
 		// NT: validate both approval and completion notifications
 		nrList := &notificationv1.NotificationRequestList{}
-		Expect(apiReader.List(ctx, nrList, client.InNamespace(testNamespace))).To(Succeed())
+		Expect(apiReader.List(ctx, nrList, client.InNamespace(namespace))).To(Succeed())
 		for i := range nrList.Items {
 			nr := &nrList.Items[i]
 			if nr.Spec.RemediationRequestRef != nil &&
@@ -476,7 +476,7 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 		// RR (with approval)
 		finalRR := &remediationv1.RemediationRequest{}
 		Expect(apiReader.Get(ctx, client.ObjectKey{
-			Name: remediationRequest.Name, Namespace: testNamespace,
+			Name: remediationRequest.Name, Namespace: namespace,
 		}, finalRR)).To(Succeed())
 		allFailures = append(allFailures, crdvalidators.ValidateRRStatus(finalRR, crdvalidators.WithApprovalFlow())...)
 
@@ -487,7 +487,7 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 
 		// RAR status
 		freshRAR := &remediationv1.RemediationApprovalRequest{}
-		Expect(apiReader.Get(ctx, client.ObjectKey{Name: rarName, Namespace: testNamespace}, freshRAR)).To(Succeed())
+		Expect(apiReader.Get(ctx, client.ObjectKey{Name: rarName, Namespace: namespace}, freshRAR)).To(Succeed())
 		allFailures = append(allFailures, crdvalidators.ValidateRARStatus(freshRAR)...)
 
 		// RAR spec
