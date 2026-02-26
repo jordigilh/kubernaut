@@ -71,6 +71,9 @@ const (
 
 	// Cluster configuration
 	clusterName = "ro-e2e"
+
+	// ADR-057: RemediationRequests live in kubernaut-system, not test namespaces
+	controllerNamespace = "kubernaut-system"
 )
 
 // Package-level variables for test environment

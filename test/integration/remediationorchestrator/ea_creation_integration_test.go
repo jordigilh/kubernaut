@@ -66,9 +66,9 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 		spName := fmt.Sprintf("sp-%s", rr.Name)
 		sp := &signalprocessingv1.SignalProcessing{}
 		Eventually(func() error {
-			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ns}, sp)
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, sp)
 		}, timeout, interval).Should(Succeed())
-		Expect(updateSPStatus(ns, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
+		Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
 
 		By("Waiting for Analyzing phase")
 		Eventually(func() remediationv1.RemediationPhase {
@@ -80,7 +80,7 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 		aiName := fmt.Sprintf("ai-%s", rr.Name)
 		ai := &aianalysisv1.AIAnalysis{}
 		Eventually(func() error {
-			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ns}, ai)
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ROControllerNamespace}, ai)
 		}, timeout, interval).Should(Succeed())
 		ai.Status.Phase = aianalysisv1.PhaseCompleted
 		ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
@@ -114,7 +114,7 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 		weName := fmt.Sprintf("we-%s", rr.Name)
 		we := &workflowexecutionv1.WorkflowExecution{}
 		Eventually(func() error {
-			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: weName, Namespace: ns}, we)
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: weName, Namespace: ROControllerNamespace}, we)
 		}, timeout, interval).Should(Succeed())
 		we.Status.Phase = workflowexecutionv1.PhaseCompleted
 		completionTime := metav1.Now()
@@ -131,7 +131,7 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 		eaName := fmt.Sprintf("ea-%s", rr.Name)
 		ea := &eav1.EffectivenessAssessment{}
 		Eventually(func() error {
-			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: eaName, Namespace: ns}, ea)
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: eaName, Namespace: ROControllerNamespace}, ea)
 		}, 30*time.Second, interval).Should(Succeed(), "EA should be created after RR completion")
 
 		// Verify EA spec fields
@@ -168,7 +168,7 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 		spName := fmt.Sprintf("sp-%s", rr.Name)
 		sp := &signalprocessingv1.SignalProcessing{}
 		Eventually(func() error {
-			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ns}, sp)
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, sp)
 		}, timeout, interval).Should(Succeed())
 
 		sp.Status.Phase = signalprocessingv1.PhaseFailed
@@ -187,7 +187,7 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 		eaName := fmt.Sprintf("ea-%s", rr.Name)
 		ea := &eav1.EffectivenessAssessment{}
 		Eventually(func() error {
-			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: eaName, Namespace: ns}, ea)
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: eaName, Namespace: ROControllerNamespace}, ea)
 		}, 30*time.Second, interval).Should(Succeed(), "EA should be created after RR failure")
 
 		Expect(ea.Spec.RemediationRequestPhase).To(Equal("Failed"))
@@ -238,7 +238,7 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 		eaName := fmt.Sprintf("ea-%s", rr.Name)
 		ea := &eav1.EffectivenessAssessment{}
 		Eventually(func() error {
-			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: eaName, Namespace: ns}, ea)
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: eaName, Namespace: ROControllerNamespace}, ea)
 		}, 30*time.Second, interval).Should(Succeed(), "EA should be created after RR timeout")
 
 		Expect(ea.Spec.RemediationRequestPhase).To(Equal("TimedOut"))
@@ -264,9 +264,9 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 		spName := fmt.Sprintf("sp-%s", rr.Name)
 		sp := &signalprocessingv1.SignalProcessing{}
 		Eventually(func() error {
-			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ns}, sp)
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, sp)
 		}, timeout, interval).Should(Succeed())
-		Expect(updateSPStatus(ns, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
+		Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
 
 		Eventually(func() remediationv1.RemediationPhase {
 			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
@@ -276,7 +276,7 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 		aiName := fmt.Sprintf("ai-%s", rr.Name)
 		ai := &aianalysisv1.AIAnalysis{}
 		Eventually(func() error {
-			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ns}, ai)
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ROControllerNamespace}, ai)
 		}, timeout, interval).Should(Succeed())
 		ai.Status.Phase = aianalysisv1.PhaseCompleted
 		ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
@@ -306,7 +306,7 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 		weName := fmt.Sprintf("we-%s", rr.Name)
 		we := &workflowexecutionv1.WorkflowExecution{}
 		Eventually(func() error {
-			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: weName, Namespace: ns}, we)
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: weName, Namespace: ROControllerNamespace}, we)
 		}, timeout, interval).Should(Succeed())
 		we.Status.Phase = workflowexecutionv1.PhaseCompleted
 		weCompletionTime := metav1.Now()
@@ -322,7 +322,7 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 		eaName := fmt.Sprintf("ea-%s", rr.Name)
 		ea := &eav1.EffectivenessAssessment{}
 		Eventually(func() error {
-			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: eaName, Namespace: ns}, ea)
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: eaName, Namespace: ROControllerNamespace}, ea)
 		}, 30*time.Second, interval).Should(Succeed())
 
 		Expect(ea.OwnerReferences).To(HaveLen(1))
@@ -371,9 +371,9 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 		spName := fmt.Sprintf("sp-%s", rr.Name)
 		sp := &signalprocessingv1.SignalProcessing{}
 		Eventually(func() error {
-			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ns}, sp)
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, sp)
 		}, timeout, interval).Should(Succeed())
-		Expect(updateSPStatus(ns, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
+		Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
 
 		By("Waiting for Analyzing phase")
 		Eventually(func() remediationv1.RemediationPhase {
@@ -385,7 +385,7 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 		aiName := fmt.Sprintf("ai-%s", rr.Name)
 		ai := &aianalysisv1.AIAnalysis{}
 		Eventually(func() error {
-			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ns}, ai)
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ROControllerNamespace}, ai)
 		}, timeout, interval).Should(Succeed())
 		ai.Status.Phase = aianalysisv1.PhaseCompleted
 		ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
@@ -418,7 +418,7 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 		weName := fmt.Sprintf("we-%s", rr.Name)
 		we := &workflowexecutionv1.WorkflowExecution{}
 		Eventually(func() error {
-			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: weName, Namespace: ns}, we)
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: weName, Namespace: ROControllerNamespace}, we)
 		}, timeout, interval).Should(Succeed())
 		we.Status.Phase = workflowexecutionv1.PhaseCompleted
 		completionTime := metav1.Now()
@@ -435,7 +435,7 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 		eaName := fmt.Sprintf("ea-%s", rr.Name)
 		ea := &eav1.EffectivenessAssessment{}
 		Eventually(func() error {
-			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: eaName, Namespace: ns}, ea)
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: eaName, Namespace: ROControllerNamespace}, ea)
 		}, 30*time.Second, interval).Should(Succeed(), "EA should be created after RR completion")
 
 		// DD-EM-003: SignalTarget = RR target (the alerting resource)
@@ -474,9 +474,9 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 		spName := fmt.Sprintf("sp-%s", rr.Name)
 		sp := &signalprocessingv1.SignalProcessing{}
 		Eventually(func() error {
-			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ns}, sp)
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, sp)
 		}, timeout, interval).Should(Succeed())
-		Expect(updateSPStatus(ns, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
+		Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
 
 		Eventually(func() remediationv1.RemediationPhase {
 			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
@@ -487,7 +487,7 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 		aiName := fmt.Sprintf("ai-%s", rr.Name)
 		ai := &aianalysisv1.AIAnalysis{}
 		Eventually(func() error {
-			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ns}, ai)
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ROControllerNamespace}, ai)
 		}, timeout, interval).Should(Succeed())
 		ai.Status.Phase = aianalysisv1.PhaseCompleted
 		ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
@@ -543,7 +543,7 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 		spName := fmt.Sprintf("sp-%s", rr.Name)
 		sp := &signalprocessingv1.SignalProcessing{}
 		Eventually(func() error {
-			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ns}, sp)
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, sp)
 		}, timeout, interval).Should(Succeed())
 		sp.Status.Phase = signalprocessingv1.PhaseFailed
 		failedNow := metav1.Now()
@@ -561,7 +561,7 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 		eaName := fmt.Sprintf("ea-%s", rr.Name)
 		ea := &eav1.EffectivenessAssessment{}
 		Eventually(func() error {
-			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: eaName, Namespace: ns}, ea)
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: eaName, Namespace: ROControllerNamespace}, ea)
 		}, 30*time.Second, interval).Should(Succeed(), "EA should be created even on SP failure")
 
 		// DD-EM-003 nil fallback: When no AIAnalysis exists, dualTarget is nil,
@@ -643,7 +643,7 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 		spName := fmt.Sprintf("sp-%s", rr.Name)
 		sp := &signalprocessingv1.SignalProcessing{}
 		Eventually(func() error {
-			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ns}, sp)
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, sp)
 		}, timeout, interval).Should(Succeed())
 		sp.Status.Phase = signalprocessingv1.PhaseFailed
 		failedNow := metav1.Now()
@@ -661,7 +661,7 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 		eaName := fmt.Sprintf("ea-%s", rr.Name)
 		ea := &eav1.EffectivenessAssessment{}
 		Eventually(func() error {
-			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: eaName, Namespace: ns}, ea)
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: eaName, Namespace: ROControllerNamespace}, ea)
 		}, 30*time.Second, interval).Should(Succeed(),
 			"Issue #192: EA should be created even when TargetResource has empty namespace (cluster-scoped Node)")
 
