@@ -597,7 +597,7 @@ spec:
         app: notification-controller
         control-plane: controller-manager
     spec:
-      serviceAccountName: notification-controller%s
+      serviceAccountName: notification-controller
       nodeSelector:
         node-role.kubernetes.io/control-plane: ""
       tolerations:
@@ -658,8 +658,8 @@ spec:
           name: notification-controller-config
       - name: notification-output
         emptyDir: {}%s
-      terminationGracePeriodSeconds: 10
-`, namespace, namespace, namespace, coverageSecurityContextYAML, imageName, pullPolicy, slackWebhookURL, coverageEnvYAML, coverageVolumeMountYAML, coverageVolumeYAML)
+      terminationGracePeriodSeconds: 10%s
+`, namespace, namespace, imageName, pullPolicy, namespace, slackWebhookURL, coverageEnvYAML, coverageVolumeMountYAML, coverageVolumeYAML, coverageSecurityContextYAML)
 }
 
 // DeployNotificationDataStorageServices deploys DataStorage with OAuth2-Proxy for Notification E2E.
