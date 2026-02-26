@@ -172,7 +172,7 @@ var _ = Describe("Test 10: CRD Creation Lifecycle (BR-GATEWAY-018, BR-GATEWAY-02
 		// NEW: No Eventually() needed! CRDs are visible immediately because
 		// Gateway and test use the SAME K8s client (no cache mismatch)
 		crdList := &remediationv1alpha1.RemediationRequestList{}
-		err := k8sClient.List(testCtx, crdList, client.InNamespace(testNamespace))
+		err := k8sClient.List(testCtx, crdList, client.InNamespace(controllerNamespace))
 		Expect(err).ToNot(HaveOccurred(), "Should list CRDs successfully")
 		Expect(len(crdList.Items)).To(BeNumerically(">=", 1),
 			"At least 1 CRD should be created")
@@ -185,9 +185,9 @@ var _ = Describe("Test 10: CRD Creation Lifecycle (BR-GATEWAY-018, BR-GATEWAY-02
 
 		crd := crdList.Items[0]
 
-		// Verify CRD is in correct namespace
-		Expect(crd.Namespace).To(Equal(testNamespace),
-			"CRD should be in test namespace")
+		// Verify CRD is in correct namespace (ADR-057: RRs live in controller namespace)
+		Expect(crd.Namespace).To(Equal(controllerNamespace),
+			"CRD should be in controller namespace")
 		testLogger.Info(fmt.Sprintf("  ✅ CRD namespace: %s", crd.Namespace))
 
 		// Verify CRD has a name

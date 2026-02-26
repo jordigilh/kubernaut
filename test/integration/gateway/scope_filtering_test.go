@@ -175,15 +175,17 @@ var _ = Describe("BR-SCOPE-002: Gateway Scope Filtering (Integration)", Ordered,
 		By("2. Verify signal is rejected (not an error)")
 		Expect(err).ToNot(HaveOccurred(),
 			"IT-GW-002-001: Scope rejection is not an error")
-		Expect(response).ToNot(BeNil())
-		Expect(response.Status).To(Equal(gateway.StatusRejected),
+		Expect(response).To(HaveField("Status", Equal(gateway.StatusRejected)),
 			"IT-GW-002-001: Unmanaged signal must be rejected")
 
-		By("3. Verify no RemediationRequest CRD was created")
+		By("3. Verify no RemediationRequest CRD was created (ADR-057: check controller namespace)")
 		var rrList remediationv1alpha1.RemediationRequestList
-		Expect(k8sClient.List(ctx, &rrList, client.InNamespace(unmanagedNS))).To(Succeed())
+		Expect(k8sClient.List(ctx, &rrList,
+			client.InNamespace(controllerNamespace),
+			client.MatchingFields{"spec.signalFingerprint": signal.Fingerprint},
+		)).To(Succeed())
 		Expect(rrList.Items).To(BeEmpty(),
-			"IT-GW-002-001: No RR should exist in unmanaged namespace")
+			"IT-GW-002-001: No RR should exist for rejected unmanaged signal")
 	})
 
 	// IT-GW-002-002: RR created for managed signal
@@ -201,19 +203,18 @@ var _ = Describe("BR-SCOPE-002: Gateway Scope Filtering (Integration)", Ordered,
 
 		By("2. Verify signal is accepted and RR created")
 		Expect(err).ToNot(HaveOccurred())
-		Expect(response).ToNot(BeNil())
-		Expect(response.Status).To(Equal(gateway.StatusCreated),
+		Expect(response).To(HaveField("Status", Equal(gateway.StatusCreated)),
 			"IT-GW-002-002: Managed signal must result in CRD creation")
-		Expect(response.RemediationRequestName).ToNot(BeEmpty())
+		Expect(response.RemediationRequestName).To(HavePrefix("rr-"))
 
-		By("3. Verify RemediationRequest CRD exists in K8s")
+		By("3. Verify RemediationRequest CRD exists in K8s (ADR-057: RRs in controller namespace)")
 		var rr remediationv1alpha1.RemediationRequest
 		rrKey := client.ObjectKey{
 			Name:      response.RemediationRequestName,
-			Namespace: managedNS,
+			Namespace: controllerNamespace,
 		}
 		Expect(k8sClient.Get(ctx, rrKey, &rr)).To(Succeed(),
-			"IT-GW-002-002: RR CRD must exist in managed namespace")
+			"IT-GW-002-002: RR CRD must exist in controller namespace")
 	})
 
 	// IT-GW-002-003: Scope validation latency < 10ms
@@ -254,16 +255,15 @@ var _ = Describe("BR-SCOPE-002: Gateway Scope Filtering (Integration)", Ordered,
 
 		By("2. Verify signal is accepted via namespace inheritance")
 		Expect(err).ToNot(HaveOccurred())
-		Expect(response).ToNot(BeNil())
-		Expect(response.Status).To(Equal(gateway.StatusCreated),
+		Expect(response).To(HaveField("Status", Equal(gateway.StatusCreated)),
 			"IT-GW-002-004: Pod without label must inherit managed from namespace")
 
 		By("3. Verify RR CRD was created")
-		Expect(response.RemediationRequestName).ToNot(BeEmpty())
+		Expect(response.RemediationRequestName).To(HavePrefix("rr-"))
 		var rr remediationv1alpha1.RemediationRequest
 		Expect(k8sClient.Get(ctx, client.ObjectKey{
 			Name:      response.RemediationRequestName,
-			Namespace: managedNS,
+			Namespace: controllerNamespace,
 		}, &rr)).To(Succeed(),
 			"IT-GW-002-004: RR must be created for inherited-managed pod")
 	})
@@ -283,14 +283,13 @@ var _ = Describe("BR-SCOPE-002: Gateway Scope Filtering (Integration)", Ordered,
 
 		By("2. Verify signal is rejected (resource opt-out overrides NS)")
 		Expect(err).ToNot(HaveOccurred())
-		Expect(response).ToNot(BeNil())
-		Expect(response.Status).To(Equal(gateway.StatusRejected),
+		Expect(response).To(HaveField("Status", Equal(gateway.StatusRejected)),
 			"IT-GW-002-005: Resource opt-out must override managed namespace")
 
-		By("3. Verify no RR was created for this signal")
+		By("3. Verify no RR was created for this signal (ADR-057: check controller namespace)")
 		var rrList remediationv1alpha1.RemediationRequestList
 		Expect(k8sClient.List(ctx, &rrList,
-			client.InNamespace(managedNS),
+			client.InNamespace(controllerNamespace),
 			client.MatchingFields{"spec.signalFingerprint": signal.Fingerprint},
 		)).To(Succeed())
 		Expect(rrList.Items).To(BeEmpty(),
@@ -312,16 +311,15 @@ var _ = Describe("BR-SCOPE-002: Gateway Scope Filtering (Integration)", Ordered,
 
 		By("2. Verify signal is accepted (resource opt-in overrides unmanaged NS)")
 		Expect(err).ToNot(HaveOccurred())
-		Expect(response).ToNot(BeNil())
-		Expect(response.Status).To(Equal(gateway.StatusCreated),
+		Expect(response).To(HaveField("Status", Equal(gateway.StatusCreated)),
 			"IT-GW-002-006: Resource opt-in must override unmanaged namespace")
 
-		By("3. Verify RR CRD was created in unmanaged namespace")
-		Expect(response.RemediationRequestName).ToNot(BeEmpty())
+		By("3. Verify RR CRD was created (ADR-057: RRs in controller namespace)")
+		Expect(response.RemediationRequestName).To(HavePrefix("rr-"))
 		var rr remediationv1alpha1.RemediationRequest
 		Expect(k8sClient.Get(ctx, client.ObjectKey{
 			Name:      response.RemediationRequestName,
-			Namespace: unmanagedNS,
+			Namespace: controllerNamespace,
 		}, &rr)).To(Succeed(),
 			"IT-GW-002-006: RR must be created for opt-in resource in unmanaged NS")
 	})
@@ -397,8 +395,7 @@ var _ = Describe("BR-SCOPE-002: Gateway Scope Filtering (Integration)", Ordered,
 
 		By("2. Verify rejection is adapter-agnostic")
 		Expect(err).ToNot(HaveOccurred())
-		Expect(response).ToNot(BeNil())
-		Expect(response.Status).To(Equal(gateway.StatusRejected),
+		Expect(response).To(HaveField("Status", Equal(gateway.StatusRejected)),
 			"IT-GW-002-008: Scope filtering must be adapter-agnostic (K8s Event)")
 	})
 
@@ -444,11 +441,10 @@ var _ = Describe("BR-SCOPE-002: Gateway Scope Filtering (Integration)", Ordered,
 
 		By("2. Verify rejection response structure")
 		Expect(err).ToNot(HaveOccurred())
-		Expect(response).ToNot(BeNil())
-		Expect(response.Status).To(Equal(gateway.StatusRejected))
+		Expect(response).To(HaveField("Status", Equal(gateway.StatusRejected)))
 
 		By("3. Verify rejection details with real namespace names")
-		Expect(response.Rejection).ToNot(BeNil(),
+		Expect(response.Rejection).To(HaveField("Reason", Equal(gateway.RejectionReasonUnmanagedResource)),
 			"IT-GW-002-010: Rejection struct must be populated")
 		Expect(response.Rejection.Reason).To(Equal(gateway.RejectionReasonUnmanagedResource),
 			"IT-GW-002-010: Reason must be 'unmanaged_resource'")

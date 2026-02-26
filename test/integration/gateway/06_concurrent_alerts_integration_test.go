@@ -197,7 +197,7 @@ var _ = Describe("Test 06: Concurrent Signal Handling (Integration)", Ordered, L
 		testLogger.Info("Step 4: Verify CRDs were created")
 
 		crdList := &remediationv1alpha1.RemediationRequestList{}
-		err := k8sClient.List(ctx, crdList, client.InNamespace(testNamespace))
+		err := k8sClient.List(ctx, crdList, client.InNamespace(controllerNamespace))
 		Expect(err).ToNot(HaveOccurred())
 		crdCount := len(crdList.Items)
 

@@ -73,6 +73,9 @@ import (
 // ========================================
 
 const (
+	// controllerNamespace is where all RemediationRequests are created (ADR-057)
+	controllerNamespace = "kubernaut-system"
+
 	// Port Configuration - Per DD-TEST-001: Port Allocation Strategy
 	gatewayPostgresPort     = 15437 // PostgreSQL port
 	gatewayRedisPort        = 16380 // Redis port

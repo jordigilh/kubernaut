@@ -191,7 +191,7 @@ var _ = Describe("Test 02: State-Based Deduplication (Integration)", Ordered, La
 		testLogger.Info("Step 4: Verify CRD creation")
 
 		crdList := &remediationv1alpha1.RemediationRequestList{}
-		err = k8sClient.List(ctx, crdList, client.InNamespace(testNamespace))
+		err = k8sClient.List(ctx, crdList, client.InNamespace(controllerNamespace))
 		Expect(err).ToNot(HaveOccurred())
 		crdCount := len(crdList.Items)
 

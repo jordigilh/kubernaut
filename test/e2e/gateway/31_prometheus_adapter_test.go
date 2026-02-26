@@ -175,7 +175,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 
 			// BUSINESS OUTCOME 3: CRD created in Kubernetes with correct business metadata
 			var crdList remediationv1alpha1.RemediationRequestList
-			Expect(k8sClient.List(testCtx, &crdList, client.InNamespace(prodNamespace))).To(Succeed())
+			Expect(k8sClient.List(testCtx, &crdList, client.InNamespace(gatewayNamespace))).To(Succeed())
 			Expect(crdList.Items).To(HaveLen(1), "Exactly one CRD should be created")
 
 			crd := crdList.Items[0]
@@ -185,7 +185,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 			// Note: Priority and Environment assertions removed (2025-12-06)
 			// Classification moved to Signal Processing per DD-CATEGORIZATION-001
 			Expect(crd.Spec.Severity).To(Equal("critical"), "Severity helps AI choose remediation strategy")
-			Expect(crd.Namespace).To(Equal(prodNamespace), "Namespace enables kubectl targeting: 'kubectl -n production'")
+			Expect(crd.Namespace).To(Equal(gatewayNamespace), "ADR-057: RRs created in controller namespace (kubernaut-system)")
 
 			// Verify fingerprint is stored in spec (not as label — SHA256 exceeds 63-char label limit)
 			Expect(crd.Spec.SignalFingerprint).To(Equal(fingerprint),
@@ -249,7 +249,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 
 			// BUSINESS OUTCOME: CRD contains resource information for AI targeting
 			var crdList remediationv1alpha1.RemediationRequestList
-			Expect(k8sClient.List(testCtx, &crdList, client.InNamespace(stagingNamespace))).To(Succeed())
+			Expect(k8sClient.List(testCtx, &crdList, client.InNamespace(gatewayNamespace))).To(Succeed())
 			Expect(crdList.Items).To(HaveLen(1))
 
 			crd := crdList.Items[0]
@@ -310,7 +310,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 
 			// BUSINESS OUTCOME 1: First CRD created in K8s
 			var crdList1 remediationv1alpha1.RemediationRequestList
-			Expect(k8sClient.List(testCtx, &crdList1, client.InNamespace(prodNamespace))).To(Succeed())
+			Expect(k8sClient.List(testCtx, &crdList1, client.InNamespace(gatewayNamespace))).To(Succeed())
 			Expect(crdList1.Items).To(HaveLen(1), "First alert creates exactly one CRD")
 
 			firstCRDName := crdList1.Items[0].Name
@@ -323,7 +323,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 			var confirmedCRD remediationv1alpha1.RemediationRequest
 			Eventually(func() error {
 				return k8sClient.Get(testCtx, client.ObjectKey{
-					Namespace: prodNamespace,
+					Namespace: gatewayNamespace,
 					Name:      firstCRDName,
 				}, &confirmedCRD)
 			}, 30*time.Second, 1*time.Second).Should(Succeed(),
@@ -341,7 +341,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 
 			// BUSINESS OUTCOME 2: NO new CRD created (deduplication works)
 			var crdList2 remediationv1alpha1.RemediationRequestList
-			Expect(k8sClient.List(testCtx, &crdList2, client.InNamespace(prodNamespace))).To(Succeed())
+			Expect(k8sClient.List(testCtx, &crdList2, client.InNamespace(gatewayNamespace))).To(Succeed())
 			Expect(crdList2.Items).To(HaveLen(1), "Duplicate alert must NOT create new CRD (still only 1 CRD)")
 			Expect(crdList2.Items[0].Name).To(Equal(firstCRDName), "Same CRD name confirms no duplicate CRD created")
 
@@ -351,7 +351,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 				var updatedCRD remediationv1alpha1.RemediationRequest
 				err := k8sClient.Get(testCtx, client.ObjectKey{
 					Name:      firstCRDName,
-					Namespace: prodNamespace,
+					Namespace: gatewayNamespace,
 				}, &updatedCRD)
 				if err != nil {
 					return 0
@@ -412,9 +412,9 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 			}
 
 			for _, tc := range testCases {
-				// Clean K8s namespace before each test case
+				// Clean K8s namespace before each test case (ADR-057: RRs live in controller namespace)
 				_ = k8sClient.DeleteAllOf(testCtx, &remediationv1alpha1.RemediationRequest{},
-					client.InNamespace(tc.namespace))
+					client.InNamespace(gatewayNamespace))
 
 				payload := []byte(fmt.Sprintf(`{
 					"alerts": [{
@@ -453,10 +453,11 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 
 				// DD-E2E-DIRECT-API-001: Query CRD by exact name (RO E2E pattern)
 				// Direct Get() is 2x faster (30s vs 60s) and more reliable
+				// ADR-057: RRs created in controller namespace (kubernaut-system)
 				var crd remediationv1alpha1.RemediationRequest
 				Eventually(func() error {
 					return k8sClient.Get(testCtx, client.ObjectKey{
-						Namespace: tc.namespace,
+						Namespace: gatewayNamespace,
 						Name:      gwResp.RemediationRequestName,
 					}, &crd)
 				}, 30*time.Second, 1*time.Second).Should(Succeed(),
@@ -464,7 +465,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 				// Note: Environment/Priority assertions removed (2025-12-06)
 				// Classification moved to Signal Processing per DD-CATEGORIZATION-001
 				// Gateway only creates CRD, SP enriches with classification
-				Expect(crd.Namespace).To(Equal(tc.namespace), "CRD should be created in correct namespace")
+				Expect(crd.Namespace).To(Equal(gatewayNamespace), "ADR-057: RRs created in controller namespace")
 			}
 
 			// BUSINESS CAPABILITY VERIFIED:

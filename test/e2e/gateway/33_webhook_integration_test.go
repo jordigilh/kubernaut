@@ -27,6 +27,7 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/gstruct"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -139,7 +140,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 
 			// BUSINESS OUTCOME 3: CRD created in Kubernetes
 			var crdList remediationv1alpha1.RemediationRequestList
-			err = k8sClient.List(testCtx, &crdList, client.InNamespace(testNamespace))
+			err = k8sClient.List(testCtx, &crdList, client.InNamespace(gatewayNamespace))
 			Expect(err).NotTo(HaveOccurred(), "Should list CRDs in test namespace")
 			Expect(crdList.Items).To(HaveLen(1), "One CRD should be created")
 
@@ -200,7 +201,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 			var crdList1 remediationv1alpha1.RemediationRequestList
 			var firstCRDName string
 			Eventually(func() int {
-				listErr := k8sClient.List(testCtx, &crdList1, client.InNamespace(testNamespace))
+				listErr := k8sClient.List(testCtx, &crdList1, client.InNamespace(gatewayNamespace))
 				Expect(listErr).NotTo(HaveOccurred())
 				return len(crdList1.Items)
 			}, "5s", "100ms").Should(Equal(1), "First alert creates CRD")
@@ -224,7 +225,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 
 			// BUSINESS OUTCOME 2: NO new CRD created
 			var crdList2 remediationv1alpha1.RemediationRequestList
-			err = k8sClient.List(testCtx, &crdList2, client.InNamespace(testNamespace))
+			err = k8sClient.List(testCtx, &crdList2, client.InNamespace(gatewayNamespace))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(crdList2.Items).To(HaveLen(1),
 				"Duplicate alert must NOT create new CRD")
@@ -248,7 +249,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 
 			// BUSINESS OUTCOME 3: Still only 1 CRD
 			var crdList3 remediationv1alpha1.RemediationRequestList
-			err = k8sClient.List(testCtx, &crdList3, client.InNamespace(testNamespace))
+			err = k8sClient.List(testCtx, &crdList3, client.InNamespace(gatewayNamespace))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(crdList3.Items).To(HaveLen(1),
 				"Third duplicate must NOT create new CRD (still only 1 CRD)")
@@ -312,7 +313,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 			// Verify duplicate count via K8s CRD status
 			Eventually(func() int32 {
 				// Get the first (and only) CRD
-				crds := ListRemediationRequests(testCtx, k8sClient, testNamespace)
+				crds := ListRemediationRequests(testCtx, k8sClient, gatewayNamespace)
 				if len(crds) == 0 || crds[0].Status.Deduplication == nil {
 					return 0
 				}
@@ -321,12 +322,13 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 				"Count shows alert fired 5 times (1 original + 4 duplicates)")
 
 			// Verify timestamps in status.deduplication
-			crds := ListRemediationRequests(testCtx, k8sClient, testNamespace)
+			crds := ListRemediationRequests(testCtx, k8sClient, gatewayNamespace)
 			Expect(crds).To(HaveLen(1))
-			Expect(crds[0].Status.Deduplication).ToNot(BeNil())
-			Expect(crds[0].Status.Deduplication.FirstSeenAt).ToNot(BeNil(),
+			Expect(crds[0].Status.Deduplication).To(gstruct.PointTo(HaveField("OccurrenceCount", BeNumerically(">=", 5))),
+				"Deduplication must track occurrence count")
+			Expect(crds[0].Status.Deduplication.FirstSeenAt).To(gstruct.PointTo(Not(BeZero())),
 				"First occurrence timestamp shows when issue started")
-			Expect(crds[0].Status.Deduplication.LastSeenAt).ToNot(BeNil(),
+			Expect(crds[0].Status.Deduplication.LastSeenAt).To(gstruct.PointTo(Not(BeZero())),
 				"Last occurrence timestamp shows issue is ongoing")
 
 			// BUSINESS CAPABILITY VERIFIED:
@@ -380,7 +382,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 
 			// BUSINESS OUTCOME 2: CRD created in Kubernetes
 			var crdList remediationv1alpha1.RemediationRequestList
-			listErr := k8sClient.List(testCtx, &crdList, client.InNamespace(testNamespace))
+			listErr := k8sClient.List(testCtx, &crdList, client.InNamespace(gatewayNamespace))
 			Expect(listErr).NotTo(HaveOccurred())
 			Expect(crdList.Items).To(HaveLen(1), "K8s event should create CRD")
 
@@ -444,7 +446,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 			// BUSINESS OUTCOME: CRD has spec.targetResource populated
 			var crdList remediationv1alpha1.RemediationRequestList
 			Eventually(func() int {
-				err = k8sClient.List(testCtx, &crdList, client.InNamespace(testNamespace))
+				err = k8sClient.List(testCtx, &crdList, client.InNamespace(gatewayNamespace))
 				Expect(err).NotTo(HaveOccurred())
 				return len(crdList.Items)
 			}, "5s", "100ms").Should(Equal(1), "CRD should be created")
@@ -516,7 +518,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 			// Verify CRD was created with TargetResource
 			var crdList remediationv1alpha1.RemediationRequestList
 			Eventually(func() int {
-				listErr := k8sClient.List(testCtx, &crdList, client.InNamespace(testNamespace))
+				listErr := k8sClient.List(testCtx, &crdList, client.InNamespace(gatewayNamespace))
 				Expect(listErr).NotTo(HaveOccurred())
 				return len(crdList.Items)
 			}, "5s", "100ms").Should(BeNumerically(">=", 1), "CRD should be created")

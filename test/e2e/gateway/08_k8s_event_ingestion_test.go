@@ -151,7 +151,7 @@ var _ = Describe("Test 08: Kubernetes Event Ingestion (BR-GATEWAY-002)", Ordered
 				return -1
 			}
 			crdList = &remediationv1alpha1.RemediationRequestList{}
-			if err := k8sClient.List(testCtx, crdList, client.InNamespace(testNamespace)); err != nil {
+			if err := k8sClient.List(testCtx, crdList, client.InNamespace(gatewayNamespace)); err != nil {
 				testLogger.V(1).Info("Failed to list CRDs", "error", err)
 				return -1
 			}
@@ -167,9 +167,9 @@ var _ = Describe("Test 08: Kubernetes Event Ingestion (BR-GATEWAY-002)", Ordered
 
 		crd := crdList.Items[0]
 
-		// CORRECTNESS: CRD namespace matches event namespace
-		Expect(crd.Namespace).To(Equal(testNamespace),
-			"CRD namespace should match K8s Event namespace")
+		// CORRECTNESS: CRD in controller namespace (ADR-057); target resource matches event
+		Expect(crd.Namespace).To(Equal(gatewayNamespace),
+			"ADR-057: RRs created in controller namespace")
 		testLogger.Info(fmt.Sprintf("  ✅ CRD namespace correct: %s", crd.Namespace))
 
 		// CORRECTNESS: CRD has target resource populated (from involvedObject)
@@ -193,7 +193,7 @@ var _ = Describe("Test 08: Kubernetes Event Ingestion (BR-GATEWAY-002)", Ordered
 		testLogger.Info(fmt.Sprintf("  ✅ Gateway accepts K8s Event payloads: %d accepted", acceptedCount))
 		testLogger.Info(fmt.Sprintf("  ✅ K8s Events trigger CRD creation: %d CRDs", len(crdList.Items)))
 		testLogger.Info("Correctness Validated:")
-		testLogger.Info(fmt.Sprintf("  ✅ CRD namespace matches event: %s", testNamespace))
+		testLogger.Info(fmt.Sprintf("  ✅ CRD in controller namespace; target: %s", crd.Spec.TargetResource.Namespace))
 		testLogger.Info("  ✅ CRD contains Pod resource from involvedObject")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	})

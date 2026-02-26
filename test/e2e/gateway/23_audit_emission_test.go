@@ -27,6 +27,7 @@ import (
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/gstruct"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
@@ -425,14 +426,15 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			correlationID := resp1Data.RemediationRequestName
 
 			// Set RR to Pending (required for duplicate detection)
-			crd := getCRDByName(testCtx, testClient, sharedNamespace, correlationID)
-			Expect(crd).ToNot(BeNil())
+			crd := getCRDByName(testCtx, testClient, gatewayNamespace, correlationID)
+			Expect(crd).To(gstruct.PointTo(HaveField("Name", Equal(correlationID))),
+				"CRD must exist for status update")
 			crd.Status.OverallPhase = "Pending"
 			err = testClient.Status().Update(testCtx, crd)
 			Expect(err).ToNot(HaveOccurred())
 
 			Eventually(func() string {
-				c := getCRDByName(testCtx, testClient, sharedNamespace, correlationID)
+				c := getCRDByName(testCtx, testClient, gatewayNamespace, correlationID)
 				if c == nil {
 					return ""
 				}

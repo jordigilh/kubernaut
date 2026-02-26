@@ -113,7 +113,7 @@ var _ = Describe("Test 21: CRD Lifecycle Operations (Integration)", Ordered, Lab
 
 		testLogger.Info("Step 3: Verify CRD created in Kubernetes")
 		crdList := &remediationv1alpha1.RemediationRequestList{}
-		err = k8sClient.List(ctx, crdList, client.InNamespace(testNamespace))
+		err = k8sClient.List(ctx, crdList, client.InNamespace(controllerNamespace))
 		Expect(err).ToNot(HaveOccurred())
 		Expect(crdList.Items).To(HaveLen(1), "Exactly 1 CRD should be created")
 
@@ -150,7 +150,7 @@ var _ = Describe("Test 21: CRD Lifecycle Operations (Integration)", Ordered, Lab
 
 		testLogger.Info("Step 3: Verify CRD was created with defaults")
 		crdList := &remediationv1alpha1.RemediationRequestList{}
-		err = k8sClient.List(ctx, crdList, client.InNamespace(testNamespace))
+		err = k8sClient.List(ctx, crdList, client.InNamespace(controllerNamespace))
 		Expect(err).ToNot(HaveOccurred())
 		Expect(crdList.Items).To(HaveLen(2), "2 CRDs should exist (21b + 21c)")
 
@@ -192,7 +192,7 @@ var _ = Describe("Test 21: CRD Lifecycle Operations (Integration)", Ordered, Lab
 
 		testLogger.Info("Step 3: Retrieve CRD and validate all fields")
 		crdList := &remediationv1alpha1.RemediationRequestList{}
-		err = k8sClient.List(ctx, crdList, client.InNamespace(testNamespace))
+		err = k8sClient.List(ctx, crdList, client.InNamespace(controllerNamespace))
 		Expect(err).ToNot(HaveOccurred())
 
 		// Find the DiskPressure CRD

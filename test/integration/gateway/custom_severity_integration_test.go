@@ -97,7 +97,7 @@ var _ = Describe("BR-GATEWAY-181: Custom Severity Pass-Through", Label("integrat
 			rr := &remediationv1alpha1.RemediationRequest{}
 			err = k8sClient.Get(ctx, client.ObjectKey{
 				Name:      response.RemediationRequestName,
-				Namespace: testNamespace,
+				Namespace: controllerNamespace,
 			}, rr)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(rr.Spec.Severity).To(Equal("critical"),
@@ -129,7 +129,7 @@ var _ = Describe("BR-GATEWAY-181: Custom Severity Pass-Through", Label("integrat
 			rr := &remediationv1alpha1.RemediationRequest{}
 			err = k8sClient.Get(ctx, client.ObjectKey{
 				Name:      response.RemediationRequestName,
-				Namespace: testNamespace,
+				Namespace: controllerNamespace,
 			}, rr)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(rr.Spec.Severity).To(Equal("warning"),
@@ -161,7 +161,7 @@ var _ = Describe("BR-GATEWAY-181: Custom Severity Pass-Through", Label("integrat
 			rr := &remediationv1alpha1.RemediationRequest{}
 			err = k8sClient.Get(ctx, client.ObjectKey{
 				Name:      response.RemediationRequestName,
-				Namespace: testNamespace,
+				Namespace: controllerNamespace,
 			}, rr)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(rr.Spec.Severity).To(Equal("info"),
@@ -208,7 +208,7 @@ var _ = Describe("BR-GATEWAY-181: Custom Severity Pass-Through", Label("integrat
 			rr := &remediationv1alpha1.RemediationRequest{}
 			err = k8sClient.Get(ctx, client.ObjectKey{
 				Name:      response.RemediationRequestName,
-				Namespace: testNamespace,
+				Namespace: controllerNamespace,
 			}, rr)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(rr.Spec.Severity).To(Equal("Sev1"),
@@ -241,7 +241,7 @@ var _ = Describe("BR-GATEWAY-181: Custom Severity Pass-Through", Label("integrat
 			rr := &remediationv1alpha1.RemediationRequest{}
 			err = k8sClient.Get(ctx, client.ObjectKey{
 				Name:      response.RemediationRequestName,
-				Namespace: testNamespace,
+				Namespace: controllerNamespace,
 			}, rr)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(rr.Spec.Severity).To(Equal("P0"),

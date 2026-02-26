@@ -205,7 +205,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 
 				By("4. Verify only ONE CRD exists for this fingerprint")
 				var rrList remediationv1alpha1.RemediationRequestList
-				err = k8sClient.List(ctx, &rrList, client.InNamespace(testNamespace))
+				err = k8sClient.List(ctx, &rrList, client.InNamespace(controllerNamespace))
 				Expect(err).ToNot(HaveOccurred())
 
 				// Count CRDs with matching fingerprint
