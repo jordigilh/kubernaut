@@ -90,7 +90,7 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 				TargetResource: remediationv1.ResourceIdentifier{
 					Kind:      "Pod",
 					Name:      "test-pod",
-					Namespace: "default",
+					Namespace: testNamespace, // Use test namespace (has kubernaut.ai/managed=true); "default" is unmanaged and blocks routing
 				},
 				FiringTime:   now,
 				ReceivedTime: now,
@@ -172,17 +172,11 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 			return rr.Status.OverallPhase
 		}, timeout, interval).Should(Equal(remediationv1.PhaseAnalyzing))
 
-		// Wait for controller to emit event, then flush once
-		time.Sleep(500 * time.Millisecond)
-		err := auditStore.Flush(ctx)
-		Expect(err).ToNot(HaveOccurred())
-
-		// Query for phase transition audit event using Eventually (accounts for buffer flush)
-		// Timeout increased to 10s for consistency with other audit event queries (AE-INT-3, AE-INT-4, AE-INT-8)
-		// and to account for audit store flush interval (1s) + network latency + query processing
+		// Query for phase transition audit event using Eventually with flush-per-attempt
 		eventType := string(ogenclient.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleTransitioned)
 		var transitionEvent *ogenclient.AuditEvent
 		Eventually(func() bool {
+			_ = auditStore.Flush(ctx)
 			events := queryAuditEventsOpenAPI(dsClient, correlationID, eventType)
 			if len(events) == 0 {
 				GinkgoWriter.Printf("No phase_transition events found for correlation_id=%s\n", correlationID)
@@ -299,18 +293,11 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 			return rr.Status.OverallPhase
 		}, timeout, interval).Should(Equal(remediationv1.PhaseCompleted))
 
-		// Wait for controller to emit event, then flush once
-		time.Sleep(500 * time.Millisecond)
-		flushCtx, flushCancel := context.WithTimeout(context.Background(), 5*time.Second)
-		err := auditStore.Flush(flushCtx)
-		flushCancel()
-		Expect(err).ToNot(HaveOccurred())
-
-		// RACE CONDITION FIX: Controller emits lifecycle_completed AFTER status update completes (async)
-		// Wait for audit event to be queryable (after flush)
-		// Expected: 5 events total (lifecycle_started + 3 transitions + lifecycle_completed)
+		// Query for lifecycle_completed event using Eventually with flush-per-attempt
 		Eventually(func() bool {
-			// Query for lifecycle_completed event
+			flushCtx, flushCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			_ = auditStore.Flush(flushCtx)
+			flushCancel()
 			params := ogenclient.QueryAuditEventsParams{
 				CorrelationID: ogenclient.NewOptString(correlationID),
 				EventCategory: ogenclient.NewOptString(audit.EventCategoryOrchestration),
@@ -427,8 +414,8 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 			errorDetails := payload.ErrorDetails.Value
 			Expect(errorDetails.Component).To(Equal(ogenclient.ErrorDetailsComponentRemediationorchestrator))
 			Expect(errorDetails.Code).To(ContainSubstring("ERR_"))
-			Expect(errorDetails.Message).ToNot(BeEmpty())
-			Expect(errorDetails.RetryPossible).ToNot(BeNil())
+			Expect(errorDetails.Message).To(ContainSubstring("ERR_"), "error message should reference the error code")
+			Expect(*errorDetails.RetryPossible).To(BeFalse(), "terminal failures should not be retryable")
 
 			// DD-TESTING-001 Pattern 6: Validate top-level DurationMs field (performance tracking)
 			topLevelDuration, hasDuration := event.DurationMs.Get()
@@ -496,24 +483,20 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 			return rr.Status.OverallPhase
 		}, timeout, interval).Should(Equal(remediationv1.PhaseAwaitingApproval))
 
-		// Wait for controller to emit event, then flush once
-		time.Sleep(500 * time.Millisecond)
-		err := auditStore.Flush(ctx)
-		Expect(err).ToNot(HaveOccurred())
-
-		// Query for approval requested audit event using Eventually (accounts for buffer flush)
+		// Query for approval requested audit event using Eventually with flush-per-attempt
 		// Per DataStorage batch flushing: Default 60s flush interval in integration tests
 		// Use 90s timeout to account for: 60s flush + 30s safety margin for processing
 		eventType := string(ogenclient.RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalRequested)
 		var events []ogenclient.AuditEvent
 		Eventually(func() int {
+			_ = auditStore.Flush(ctx)
 			events = queryAuditEventsOpenAPI(dsClient, correlationID, eventType)
 			if len(events) != 1 {
 				GinkgoWriter.Printf("Found %d approval_requested events (expected 1) for correlation_id=%s\n",
 					len(events), correlationID)
 			}
 			return len(events)
-		}, "90s", "1s").Should(Equal(1), "Expected exactly 1 approval_requested audit event after buffer flush")
+		}, "90s", "1s").Should(Equal(1), "Expected exactly 1 approval_requested audit event")
 
 			// Validate event
 			event := events[0]
@@ -521,8 +504,7 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 			Expect(event.EventAction).To(Equal(audit.ActionApprovalRequested)) // ✅ Use authoritative constant
 			Expect(string(event.EventOutcome)).To(Equal("pending"))
 
-			// Validate event_data
-			Expect(event.EventData).ToNot(BeNil())
+			Expect(event.EventData.RemediationOrchestratorAuditPayload).ToNot(BeZero(), "event_data should contain typed audit payload")
 			// Validate event_data (strongly-typed per DD-AUDIT-004)
 			payload := event.EventData.RemediationOrchestratorAuditPayload
 			Expect(payload.RarName.IsSet()).To(BeTrue(), "rar_name should be present for approval events")

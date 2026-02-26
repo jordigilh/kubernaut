@@ -237,12 +237,55 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return r.completeAssessment(ctx, ea, startTime)
 	}
 
-	// Step 5: If stabilizing -> requeue
+	// Step 5: If stabilizing -> persist derived timing if not yet set, then requeue
+	// BR-EM-009: ValidityDeadline is computed on first reconciliation. When StabilizationWindow
+	// is long (e.g., 35m), we must persist it during stabilization so operators see the
+	// deadline and integration tests can assert it within a reasonable timeout.
 	if windowState == validity.WindowStabilizing {
 		remaining := r.validityChecker.TimeUntilStabilized(
 			ea.CreationTimestamp,
 			ea.Spec.Config.StabilizationWindow.Duration,
 		)
+
+		// Persist derived timing on first reconcile even during stabilization (BR-EM-009)
+		if ea.Status.ValidityDeadline == nil && (currentPhase == eav1.PhasePending || currentPhase == "") {
+			if phase.CanTransition(currentPhase, eav1.PhaseAssessing) {
+				stabilizationWindow := ea.Spec.Config.StabilizationWindow.Duration
+				effectiveValidity := r.Config.ValidityWindow
+				if stabilizationWindow >= effectiveValidity {
+					effectiveValidity = stabilizationWindow + r.Config.ValidityWindow
+					logger.Info("Runtime guard: extended ValidityDeadline (StabilizationWindow >= ValidityWindow)",
+						"originalValidity", r.Config.ValidityWindow,
+						"effectiveValidity", effectiveValidity,
+						"stabilizationWindow", stabilizationWindow,
+					)
+					r.Recorder.Eventf(ea, corev1.EventTypeWarning, "ValidityWindowExtended",
+						"StabilizationWindow (%v) >= ValidityWindow (%v); extended deadline to %v",
+						stabilizationWindow, r.Config.ValidityWindow, effectiveValidity)
+				}
+				deadline := metav1.NewTime(ea.CreationTimestamp.Add(effectiveValidity))
+				checkAfter := metav1.NewTime(ea.CreationTimestamp.Add(stabilizationWindow))
+
+				ea.Status.Phase = eav1.PhaseAssessing
+				ea.Status.ValidityDeadline = &deadline
+				ea.Status.PrometheusCheckAfter = &checkAfter
+				ea.Status.AlertManagerCheckAfter = &checkAfter
+
+				logger.Info("Computed derived timing during stabilization (BR-EM-009)",
+					"creationTimestamp", ea.CreationTimestamp,
+					"effectiveValidity", effectiveValidity,
+					"stabilizationWindow", stabilizationWindow,
+					"validityDeadline", deadline,
+				)
+
+				if err := r.Status().Update(ctx, ea); err != nil {
+					logger.Error(err, "Failed to persist derived timing during stabilization")
+					r.Metrics.RecordReconcile("error", time.Since(startTime).Seconds())
+					return ctrl.Result{RequeueAfter: r.Config.RequeueGenericError}, err
+				}
+			}
+		}
+
 		logger.Info("Stabilization window active, requeueing", "remaining", remaining)
 		r.Metrics.RecordStabilizationWait()
 		r.Metrics.RecordReconcile("requeue", time.Since(startTime).Seconds())
