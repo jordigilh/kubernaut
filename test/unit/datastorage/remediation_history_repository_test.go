@@ -163,6 +163,24 @@ var _ = Describe("RemediationHistoryRepository", func() {
 			})
 		})
 
+		// #211: ORDER BY must include event_id tiebreaker for deterministic ordering
+		Context("deterministic ordering (#211)", func() {
+			It("UT-DS-211-001: should order by event_timestamp ASC, event_id ASC", func() {
+				rows := sqlmock.NewRows([]string{
+					"event_type", "event_data", "event_timestamp", "correlation_id",
+				})
+
+				sqlMock.ExpectQuery(`ORDER BY event_timestamp ASC, event_id ASC`).
+					WithArgs(targetResource, sqlmock.AnyArg()).
+					WillReturnRows(rows)
+
+				results, err := repo.QueryROEventsByTarget(ctx, targetResource, since)
+
+				Expect(err).ToNot(HaveOccurred())
+				Expect(results).To(BeEmpty())
+			})
+		})
+
 		Context("when database returns an error", func() {
 			It("UT-RH-004: should propagate the error", func() {
 				sqlMock.ExpectQuery(`SELECT event_type, event_data, event_timestamp, correlation_id FROM audit_events`).
@@ -286,6 +304,25 @@ var _ = Describe("RemediationHistoryRepository", func() {
 				// Key assertion: event_type from column must be present in EventData
 				Expect(results["rr-rc2-test"][0].EventData).To(HaveKeyWithValue("event_type", "effectiveness.health.assessed"),
 					"event_type column must be merged into EventData for BuildEffectivenessResponse routing")
+			})
+		})
+
+		// #211: ORDER BY must include event_id tiebreaker for deterministic ordering
+		Context("deterministic ordering (#211)", func() {
+			It("UT-DS-211-002: should order by event_timestamp ASC, event_id ASC", func() {
+				rows := sqlmock.NewRows([]string{
+					"correlation_id", "event_type", "event_data",
+				})
+
+				sqlMock.ExpectQuery(`ORDER BY event_timestamp ASC, event_id ASC`).
+					WithArgs(sqlmock.AnyArg()).
+					WillReturnRows(rows)
+
+				correlationIDs := []string{"rr-order-test"}
+				results, err := repo.QueryEffectivenessEventsBatch(ctx, correlationIDs)
+
+				Expect(err).ToNot(HaveOccurred())
+				Expect(results).To(BeEmpty())
 			})
 		})
 
@@ -419,6 +456,25 @@ var _ = Describe("RemediationHistoryRepository", func() {
 
 				Expect(err).To(HaveOccurred())
 				Expect(results).To(BeNil())
+			})
+		})
+
+		// #211: ORDER BY must include event_id tiebreaker for deterministic ordering
+		// when multiple events share the same event_timestamp.
+		Context("deterministic ordering (#211)", func() {
+			It("UT-DS-211-003: should order by event_timestamp ASC, event_id ASC", func() {
+				rows := sqlmock.NewRows([]string{
+					"event_type", "event_data", "event_timestamp", "correlation_id",
+				})
+
+				sqlMock.ExpectQuery(`ORDER BY event_timestamp ASC, event_id ASC`).
+					WithArgs(specHash, sqlmock.AnyArg(), sqlmock.AnyArg()).
+					WillReturnRows(rows)
+
+				results, err := repo.QueryROEventsBySpecHash(ctx, specHash, since, until)
+
+				Expect(err).ToNot(HaveOccurred())
+				Expect(results).To(BeEmpty())
 			})
 		})
 

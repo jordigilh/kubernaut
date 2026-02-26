@@ -283,12 +283,16 @@ func (s *Server) handleGetEffectivenessScore(w http.ResponseWriter, r *http.Requ
 
 // queryEffectivenessEvents queries audit events for a given correlation ID.
 // Returns events filtered by event_category='effectiveness'.
+//
+// Convention (#211): All audit_events ORDER BY clauses MUST include event_id
+// as a deterministic tiebreaker. Without it, same-timestamp events return in
+// non-deterministic order, causing flaky tests and wrong assessment status.
 func (s *Server) queryEffectivenessEvents(_ /* ctx */ interface{}, correlationID string) ([]*EffectivenessEvent, error) {
 	// Query audit events from the database
 	query := `SELECT event_data FROM audit_events
 		WHERE correlation_id = $1
 		AND event_category = 'effectiveness'
-		ORDER BY event_timestamp ASC`
+		ORDER BY event_timestamp ASC, event_id ASC`
 
 	rows, err := s.db.Query(query, correlationID)
 	if err != nil {

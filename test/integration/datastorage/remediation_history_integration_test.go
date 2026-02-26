@@ -414,6 +414,45 @@ var _ = Describe("BR-HAPI-016: Remediation History Integration Tests (DD-HAPI-01
 				"HashMatch should indicate preRemediation match")
 		})
 
+		// #211: Same-timestamp events must return in deterministic order (event_id tiebreaker)
+		It("IT-DS-211-001: same-timestamp events return deterministic order across repeated queries", func() {
+			now := time.Now().UTC()
+			cid := fmt.Sprintf("corr-order-%s", testID)
+			ts := now.Add(-1 * time.Hour)
+
+			// Insert 5 events all at the SAME timestamp
+			insertAuditEvent("effectiveness.health.assessed", "effectiveness", cid,
+				map[string]interface{}{"assessed": true, "score": 0.85}, ts)
+			insertAuditEvent("effectiveness.alert.assessed", "effectiveness", cid,
+				map[string]interface{}{"assessed": true, "score": 0.9}, ts)
+			insertAuditEvent("effectiveness.metrics.assessed", "effectiveness", cid,
+				map[string]interface{}{"assessed": true, "score": 0.8}, ts)
+			insertAuditEvent("effectiveness.hash.computed", "effectiveness", cid,
+				map[string]interface{}{"pre_remediation_spec_hash": "sha256:pre", "post_remediation_spec_hash": "sha256:post"}, ts)
+			insertAuditEvent("effectiveness.assessment.completed", "effectiveness", cid,
+				map[string]interface{}{"reason": "spec_drift"}, ts)
+
+			// Query 10 times and verify event ordering is identical every time
+			var referenceOrder []string
+			for i := 0; i < 10; i++ {
+				result, err := rhRepo.QueryEffectivenessEventsBatch(testCtx, []string{cid})
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result[cid]).To(HaveLen(5))
+
+				var order []string
+				for _, ev := range result[cid] {
+					order = append(order, ev.EventData["event_type"].(string))
+				}
+
+				if i == 0 {
+					referenceOrder = order
+				} else {
+					Expect(order).To(Equal(referenceOrder),
+						fmt.Sprintf("Query %d returned different order than query 0 — non-deterministic ordering detected", i))
+				}
+			}
+		})
+
 		It("IT-DS-016-008: Non-existent target produces empty entries and no regression", func() {
 			// Business outcome: Empty history gracefully handled (no errors, no false positives).
 			now := time.Now().UTC()
