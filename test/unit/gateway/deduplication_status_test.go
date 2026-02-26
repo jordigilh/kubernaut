@@ -359,7 +359,7 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 
 				// BEHAVIOR: Check if should deduplicate
 				checker := processing.NewPhaseBasedDeduplicationChecker(k8sClient, 0)
-				isDuplicate, existingRR, err := checker.ShouldDeduplicate(ctx, "kubernaut-system", fp)
+				isDuplicate, _, err := checker.ShouldDeduplicate(ctx, "kubernaut-system", fp)
 
 				// CORRECTNESS: Should deduplicate (RR is in-progress)
 				Expect(err).ToNot(HaveOccurred())
