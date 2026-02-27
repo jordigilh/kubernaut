@@ -12,15 +12,15 @@ metadata:
 actionType: ProvisionNode
 
 labels:
-  signalName: FailedScheduling
+  signalName: KubePodSchedulingFailed
   severity: [critical, high]
-  environment: [production, staging]
+  environment: [production, staging, "*"]
   component: "*"
   priority: "*"
 
 execution:
   engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/provision-node-job@sha256:a9d8d3cbe21561f9f79368a0fac89e7bc234db92d8ebc4b54088dfcdc7fb815e
+  bundle: quay.io/kubernaut-cicd/test-workflows/provision-node-job:demo-v1.2
 
 parameters:
   - name: TARGET_NAMESPACE

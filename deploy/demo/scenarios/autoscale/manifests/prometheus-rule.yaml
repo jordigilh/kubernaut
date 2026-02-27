@@ -12,7 +12,7 @@ spec:
     - alert: KubePodSchedulingFailed
       expr: |
         kube_pod_status_phase{namespace="demo-autoscale", phase="Pending"} > 0
-      for: 2m
+      for: 1m
       labels:
         severity: critical
       annotations:
