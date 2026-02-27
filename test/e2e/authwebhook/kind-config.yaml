@@ -4,8 +4,8 @@
 # Port Mappings (AuthWebhook E2E):
 # - PostgreSQL: 25442 (host) -> 30442 (NodePort) -> 5432 (container)
 # - Redis: 26386 (host) -> 30386 (NodePort) -> 6379 (container)
-# - Data Storage: 28099 (host) -> 30099 (NodePort) -> 8080 (container)
-# - AuthWebhook: 30443 (NodePort) -> 9443 (container)
+# - Data Storage: 28099 (host) -> 30081 (NodePort) -> 8080 (container)
+# - AuthWebhook: 30099 (NodePort) -> 9443 (container) per DD-TEST-001
 
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
@@ -26,12 +26,12 @@ nodes:
       - containerPort: 30386
         hostPort: 26386
         protocol: TCP
-      # Data Storage NodePort mapping (per DD-TEST-001 line 219-224)
-      - containerPort: 30099
+      # Data Storage NodePort mapping (per DD-TEST-001 - standard 30081)
+      - containerPort: 30081
         hostPort: 28099
         protocol: TCP
-      # AuthWebhook NodePort mapping (per DD-TEST-001 line 216-218)
-      - containerPort: 30443
-        hostPort: 30443
+      # AuthWebhook NodePort mapping (per DD-TEST-001 - nodePort 30099)
+      - containerPort: 30099
+        hostPort: 30099
         protocol: TCP
 

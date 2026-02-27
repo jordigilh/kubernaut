@@ -15,15 +15,17 @@ spec:
     metadata:
       labels:
         app: web-frontend
+        kubernaut.ai/managed: "true"
     spec:
       containers:
       - name: nginx
         image: nginx:1.27-alpine
         ports:
-        - containerPort: 80
-        envFrom:
-        - configMapRef:
-            name: nginx-config
+        - containerPort: 8080
+        volumeMounts:
+        - name: config
+          mountPath: /etc/nginx/nginx.conf
+          subPath: nginx.conf
         resources:
           requests:
             memory: "64Mi"
@@ -33,16 +35,20 @@ spec:
             cpu: "100m"
         livenessProbe:
           httpGet:
-            path: /
-            port: 80
-          initialDelaySeconds: 5
-          periodSeconds: 10
-        readinessProbe:
-          httpGet:
-            path: /
-            port: 80
+            path: /healthz
+            port: 8080
           initialDelaySeconds: 3
           periodSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 2
+          periodSeconds: 3
+      volumes:
+      - name: config
+        configMap:
+          name: nginx-config
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -52,8 +58,31 @@ metadata:
   labels:
     app: web-frontend
 data:
-  NGINX_PORT: "80"
-  NGINX_WORKER_PROCESSES: "auto"
+  nginx.conf: |
+    worker_processes auto;
+    error_log /var/log/nginx/error.log warn;
+    pid /tmp/nginx.pid;
+
+    events {
+        worker_connections 1024;
+    }
+
+    http {
+        server {
+            listen 8080;
+            server_name _;
+
+            location / {
+                return 200 'healthy\n';
+                add_header Content-Type text/plain;
+            }
+
+            location /healthz {
+                return 200 'ok\n';
+                add_header Content-Type text/plain;
+            }
+        }
+    }
 ---
 apiVersion: v1
 kind: Service
@@ -67,5 +96,5 @@ spec:
   selector:
     app: web-frontend
   ports:
-  - port: 80
-    targetPort: 80
+  - port: 8080
+    targetPort: 8080

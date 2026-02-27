@@ -14,8 +14,11 @@ spec:
       app: worker
   template:
     metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
       labels:
         app: worker
+        kubernaut.ai/managed: "true"
         {{- include "demo-crashloop-helm.labels" . | nindent 8 }}
     spec:
       containers:

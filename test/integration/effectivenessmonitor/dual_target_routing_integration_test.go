@@ -80,6 +80,12 @@ func createDivergentTargetEA(namespace, name, correlationID, signalNs, remediati
 
 var _ = Describe("Dual-Target Routing (Issue #188, DD-EM-003)", func() {
 
+	// Reset mock AM request log before each test to avoid cross-test pollution
+	// (e.g., IT-EM-188-006 must not see requests from other tests like rr-dt-010)
+	BeforeEach(func() {
+		mockAM.ResetRequestLog()
+	})
+
 	// ========================================================================
 	// IT-EM-188-007: assessMetrics uses SignalTarget.Namespace in PromQL queries
 	// ========================================================================
@@ -246,9 +252,6 @@ var _ = Describe("Dual-Target Routing (Issue #188, DD-EM-003)", func() {
 			}),
 		})
 		defer mockAM.SetAlertsResponse([]infrastructure.AMAlert{})
-
-		By("Resetting AM request log")
-		mockAM.ResetRequestLog()
 
 		By("Creating EA with divergent targets")
 		ea := createDivergentTargetEA(ns, "ea-rt-006", "rr-rt-006", signalNs, remediationNs)

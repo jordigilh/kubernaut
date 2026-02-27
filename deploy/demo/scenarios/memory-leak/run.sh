@@ -2,8 +2,13 @@
 # Predictive Memory Exhaustion Demo -- Automated Runner
 # Scenario #129: predict_linear detects OOM trend -> graceful restart
 #
+# The 'leaker' sidecar allocates ~1MB every 5 seconds (~12MB/min) via a
+# memory-backed emptyDir. predict_linear projects OOM within 30 minutes,
+# triggering ContainerMemoryExhaustionPredicted. The LLM selects
+# GracefulRestart (rolling restart) to reset memory before OOM.
+#
 # Prerequisites:
-#   - Kind cluster with deploy/demo/overlays/kind/kind-cluster-config.yaml
+#   - Kind cluster (kubernaut-demo) with platform installed
 #   - Prometheus with kube-state-metrics and cAdvisor scraping
 #
 # Usage: ./deploy/demo/scenarios/memory-leak/run.sh
@@ -14,7 +19,7 @@ NAMESPACE="demo-memory-leak"
 
 # shellcheck source=../../scripts/kind-helper.sh
 source "${SCRIPT_DIR}/../../scripts/kind-helper.sh"
-ensure_kind_cluster "${SCRIPT_DIR}/kind-config.yaml" "${1:-}"
+ensure_kind_cluster "${SCRIPT_DIR}/../kind-config-singlenode.yaml" "${1:-}"
 
 # shellcheck source=../../scripts/monitoring-helper.sh
 source "${SCRIPT_DIR}/../../scripts/monitoring-helper.sh"
@@ -41,44 +46,14 @@ kubectl apply -f "${SCRIPT_DIR}/manifests/prometheus-rule.yaml"
 echo "==> Step 3: Waiting for leaky-app to be ready..."
 kubectl wait --for=condition=Available deployment/leaky-app \
   -n "${NAMESPACE}" --timeout=120s
-echo "  leaky-app is running."
+echo "  leaky-app is running (2 pods with leaker sidecar)."
 kubectl get pods -n "${NAMESPACE}"
 echo ""
 
-# Step 4: Register workflow in DataStorage (placeholder)
-echo "==> Step 4: Workflow registration..."
-echo "  TODO: Build and push graceful-restart-v1 OCI bundle, register via DataStorage API."
-echo "  For now, ensure the workflow is pre-seeded in the catalog."
+echo "==> Step 4: Memory leak building (~12MB/min per pod)."
+echo "    predict_linear will fire once it projects OOM within 30 minutes,"
+echo "    typically after 5-7 minutes of trend data."
 echo ""
-
-# Step 5: Memory leak in progress
-echo "==> Step 5: Memory leak is building..."
-echo "  The 'leaker' sidecar allocates ~1MB every 5 seconds (~12MB/min) via a Memory-backed emptyDir."
-echo "  With a 192Mi limit, predict_linear will fire once it projects OOM"
-echo "  within 30 minutes, typically after 5-7 minutes of trend data."
-echo ""
-echo "  Monitor memory growth:"
-echo "    kubectl top pods -n ${NAMESPACE} --containers"
-echo ""
-
-# Step 6: Wait for alert
-echo "==> Step 6: Waiting for ContainerMemoryExhaustionPredicted alert (~6-7 min)..."
-echo "  Check Prometheus: kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090"
-echo "  The ContainerMemoryExhaustionPredicted alert should appear once"
-echo "  predict_linear projects the leaker container exceeding 192Mi."
-echo ""
-
-# Step 7: Monitor pipeline
-echo "==> Step 7: Pipeline in progress. Monitor with:"
-echo "    kubectl get rr,sp,aa,we,ea -n ${NAMESPACE} -w"
-echo ""
-echo "  Expected flow:"
-echo "    Alert (PredictiveMemoryExhaust) -> Gateway -> SP -> AA (HAPI) -> RO -> WE"
-echo "    LLM identifies linear memory growth -> selects GracefulRestart"
-echo "    WE performs rolling restart -> memory usage resets"
-echo "    EM verifies pod memory back to baseline"
-echo ""
-echo "==> To verify remediation succeeded:"
-echo "    kubectl top pods -n ${NAMESPACE} --containers"
-echo "    # Memory for 'leaker' should be back near baseline after restart"
-echo "    kubectl rollout history deployment/leaky-app -n ${NAMESPACE}"
+echo "  Expected pipeline:"
+echo "    Alert (ContainerMemoryExhaustionPredicted) -> Gateway -> SP -> AIAnalysis"
+echo "    -> LLM selects GracefulRestart -> WFE (rolling restart) -> EA (memory reset)"

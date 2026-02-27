@@ -1,7 +1,7 @@
 # Demo Scenario Validation Tracker
 
 **Branch**: `feature/demo-scenarios-validation`
-**Last updated**: 2026-02-24
+**Last updated**: 2026-02-26
 
 ---
 
@@ -23,18 +23,18 @@
 
 | # | Scenario | Issue | Status | Notes |
 |---|----------|-------|--------|-------|
-| P1 | crashloop | #145 | PASS | Pipeline validated E2E in prior session (branch `feature/demo-scenarios-v1.0`). Re-run on `demo-scenarios-validation` hit DataStorage 500 (corrupt `pdbProtected` string→bool in DB, fixed manually). Needs clean re-run on fresh cluster to fully reconfirm. |
+| P1 | crashloop | #145 | PASS | Re-validated E2E on 2026-02-26. LLM 0.95 confidence, GracefulRestart rollback restored healthy pods (rev 3). validate.sh 10/10 pass. Fixed run.sh kind-config path. |
 | P2 | stuck-rollout | #148 | PASS | Fully validated E2E on 2026-02-24. Auto-approved at 95% confidence after Rego policy update. Remediation succeeded (readiness poll confirmed all replicas ready). |
-| P3 | pending-taint | #147 | PENDING | Multi-node. Workflow image not yet built. |
-| P4 | node-notready | #149 | PENDING | Multi-node. Workflow image not yet built. |
+| P3 | pending-taint | #147 | PASS | Validated E2E on 2026-02-26. Fixed: kind-config path, inject script (taint single target worker only), deployment nodeSelector (demo-taint-target label). LLM 0.90 confidence, RemoveTaint. Auto-approved. WFE removed maintenance taint, pods scheduled successfully. |
+| P4 | node-notready | #149 | PASS | Validated E2E on 2026-02-26. Fixed: kind-config path. LLM 0.90 confidence, CordonDrainNode. Auto-approved. WFE cordoned and drained paused worker node. Drain timed out on some evictions (expected, node paused), but pods rescheduled to healthy worker. |
 
 ### Tier 2 — Differentiated
 
 | # | Scenario | Issue | Status | Notes |
 |---|----------|-------|--------|-------|
-| P5 | memory-leak | #150 | PENDING | Predictive signal. Workflow image built (private on Quay). |
-| P6 | slo-burn | #151 | PENDING | Needs blackbox-exporter. Workflow image built (private on Quay). PrometheusRule label fix needed. |
-| P7 | hpa-maxed | #153 | PENDING | Needs metrics-server. Workflow image built (private on Quay). PrometheusRule label fix needed. |
+| P5 | memory-leak | #150 | PASS | Validated E2E on 2026-02-25. predict_linear fired at ~5min, LLM identified linear memory growth with 0.90 confidence, selected GracefulRestart. Rolling restart reset memory from ~30Mi to baseline. validate.sh 8/8 pass. |
+| P6 | slo-burn | #151 | BLOCKED | Validated infra E2E on 2026-02-26: blackbox-exporter installed, Probe CRD label fixed (release: kube-prometheus-stack), image rebuilt+pushed (v1.0.0), environment wildcard added. ErrorBudgetBurn alert fires correctly (100% error rate). Blocked by #217: LLM selects RestartDeployment instead of ProactiveRollback (classifies as config issue, not deployment regression). |
+| P7 | hpa-maxed | #153 | PASS | Validated E2E on 2026-02-25. AIAnalysis 0.85 confidence, PatchHPA workflow executed (maxReplicas 3→5). Manual approval required due to #206 (confidence threshold inverted). Slack notifications failed due to #207 (routing not configured). EA completed. |
 | P8 | pdb-deadlock | #154 | BLOCKED | LLM consistently selects `RemoveTaint` instead of `RelaxPDB`. Blocked by HAPI bugs: #196 (prompt engineering), #197 (DataStorage discovery SQL ignores detectedLabels), #198 (HAPI `_build_k8s_context` doesn't populate pod_details). Workflow image built (private on Quay). PrometheusRule label fix needed. |
 | P9 | autoscale | #152 | PENDING | Multi-node + Kind provisioner. Workflow image built (public on Quay). |
 
@@ -43,16 +43,16 @@
 | # | Scenario | Issue | Status | Notes |
 |---|----------|-------|--------|-------|
 | P10 | gitops-drift | #158 | PENDING | Needs Gitea + ArgoCD. Workflow image built (public on Quay). |
-| P11 | crashloop-helm | #161 | PENDING | Needs Helm release setup. Workflow image not yet built. |
-| P12 | cert-failure | #159 | PENDING | Needs cert-manager. Workflow image not yet built. PrometheusRule label fix needed. |
-| P13 | disk-pressure | #146 | PENDING | Original design flawed (orphaned PVCs = housekeeping). Redesigned as predictive. Workflow image built (public on Quay). |
-| P14 | statefulset-pvc-failure | #155 | PENDING | Workflow image not yet built. |
+| P11 | crashloop-helm | #161 | PASS | Validated E2E on 2026-02-26. Built workflow image (helm+kubectl+jq). Fixed: kind-config path, signalName (CrashLoopBackOff→KubePodCrashLooping), severity (low→high), environment wildcard, PrometheusRule release label, pod template checksum annotation (trigger restart on ConfigMap change), kubernaut.ai/managed label on pod template, RBAC (namespaces, services, events for Helm operations). LLM 0.90 confidence, HelmRollback, auto-approved. WFE executed helm rollback (rev 2→3=Rollback to 1). EA completed. |
+| P12 | cert-failure | #159 | PASS | Validated E2E on 2026-02-26. Installed cert-manager v1.19.4 (+ ServiceMonitor with kube-prometheus-stack label). Fixed: signalName (CertificateNotReady→CertManagerCertNotReady), PromQL (namespace→exported_namespace), added namespace label override in alert, environment wildcard, remediate.sh resilient name lookup (secretName fallback). LLM 0.90 confidence, FixCertificate, auto-approved. WFE recreated CA Secret, cert re-issued. EA: health=1.0, alert=1.0. |
+| P13 | orphaned-pvc-no-action (was disk-pressure) | #146 | PASS | Renamed from disk-pressure. Validated E2E on 2026-02-25. 5 orphaned PVCs created (housekeeping, not a real issue), LLM correctly dismissed as benign → NoActionRequired. validate.sh 8/8 pass. |
+| P14 | statefulset-pvc-failure | #155 | PASS | Validated E2E on 2026-02-26. Fixed: kind-config path, signalName mismatch, PromQL (spec vs status replicas), inject script (broken-storage-class PVC for Kind), remediate.sh (handles non-Bound PVC). LLM 0.85 confidence, FixStatefulSetPVC. Manual approval (bug #206). RBAC patched for PVC perms. Images v1.0.2. |
 
 ### Tier 4 — Niche/Combo
 
 | # | Scenario | Issue | Status | Notes |
 |---|----------|-------|--------|-------|
-| P15 | network-policy-block | #156 | PENDING | Workflow image not yet built. |
+| P15 | network-policy-block | #156 | PASS | Validated E2E on 2026-02-26. Built+pushed workflow image (v1.0.0). Fixed: signalName (DeploymentUnavailable→KubePodCrashLooping), added environment wildcard. RBAC patched for networkpolicies delete. LLM 0.85 confidence, FixNetworkPolicy. Manual approval (bug #207). WFE auto-detected+removed deny-all-ingress policy via label selector. EA completed (health=0.75, alert still clearing). |
 | P16 | mesh-routing-failure | #157 | PENDING | Needs Linkerd. Workflow image not yet built. PrometheusRule label fix needed. |
 | P17 | cert-failure-gitops | #160 | PENDING | Needs cert-manager + Gitea + ArgoCD. Workflow image not yet built. PrometheusRule label fix needed. |
 
@@ -60,11 +60,11 @@
 
 | Scenario | Issue | Status | Notes |
 |----------|-------|--------|-------|
-| remediation-retry | #167 | PENDING | Tests escalation (1st fails, 2nd succeeds). Has workflow schema. |
-| memory-escalation | #168 | PENDING | OOMKill → increase memory → OOMKill again → escalation. Has workflow schema. |
+| remediation-retry | #167 | PASS | Validated E2E on 2026-02-26. LLM-driven escalation. Fixed signalName (CrashLoopBackOff→KubePodCrashLooping), actionType (GracefulRestart→RollbackDeployment for crashloop-rollback-v1). LLM correctly selected RollbackDeployment on first attempt based on workflow descriptions. |
+| memory-escalation | #168 | BLOCKED | Design gap (#214): CheckConsecutiveFailures only counts Failed RRs, breaks chain on Completed. Scenario expects completed-but-ineffective remediations to trigger escalation, but code treats Completed as success. |
 | concurrent-cross-namespace | #172 | N/A | Two teams, same issue, different risk tolerance. No workflow schema yet. |
-| duplicate-alert-suppression | #170 | N/A | Alert storm dedup demo. No workflow schema (tests Gateway dedup). |
-| resource-quota-exhaustion | — | N/A | LLM escalates to human review. No workflow by design. |
+| duplicate-alert-suppression | #170 | BLOCKED | Circular duplicate blocking deadlock (#209): both RRs with same fingerprint block each other. AA completed successfully (GracefulRestart) but RO retroactively blocked the original RR. Reuses crashloop workflow. |
+| resource-quota-exhaustion | #171 | PASS | PromQL fixed: uses ReplicaSet spec vs status metrics instead of pod Pending (pods never created under quota rejection). Alert fires correctly. AA identifies no matching workflow, escalates to ManualReviewRequired. Fixed KSM label leak with `max by(replicaset, namespace)`. |
 
 ---
 
@@ -91,6 +91,15 @@
 | #200 | DataStorage 500 on workflow listing (pgx cached plan) | FIXED | Switched to `QueryExecModeDescribeExec` |
 | — | Corrupt `pdbProtected` string→bool in DB | FIXED | Manual SQL fix. Root cause likely related to #197 |
 | — | AIAnalysis `approvalRequired=true` despite high confidence | FIXED | Rego policy updated with confidence-based gating |
+| #205 | RO creates EA for Failed/ManualReviewRequired RR with no WFE | OPEN | EA created when no remediation was executed |
+| #206 | RO confidence threshold comparison inverted — RAR created at 85% > 80% | OPEN | Auto-approval never triggers; all RRs require manual approval |
+| #207 | Notification Slack delivery not enabled / routing ConfigMap missing | OPEN | No Slack notifications sent; requires `notification-routing-config` ConfigMap in `kubernaut-notifications` namespace |
+| #209 | RO circular duplicate blocking deadlock — both RRs block each other | OPEN | Deduplication deadlock: RRs with same fingerprint each mark the other as `duplicateOf`, neither progresses. Blocks duplicate-alert-suppression scenario. |
+| #212 | Custom labels not scored in workflow discovery (3 gaps in DS pipeline) | OPEN | Schema customLabels not persisted to DB; discovery endpoints ignore custom_labels; SearchByLabels not exposed via API. |
+| #214 | RO CheckConsecutiveFailures ignores completed-but-ineffective remediations | OPEN | Blocks memory-escalation scenario (#168). Consecutive failure chain breaks on Completed RR even if remediation was ineffective. |
+| #215 | DataStorage wildcard support gaps in severity and detectedLabels | OPEN | `severity` JSONB array missing `OR ? '*'` in SQL; `detectedLabels` string fields have inverted wildcard logic (check query instead of schema). Affects workflow scoring accuracy. |
+| #216 | Hardcoded PostgreSQL/Redis credentials in Helm chart values.yaml | OPEN | Plaintext `demo-password` for PostgreSQL, empty password for Redis in `charts/kubernaut/values.yaml`. Should use `existingSecret` pattern. |
+| #217 | HAPI prompt engineering: LLM misclassifies SLO burn rate as config issue | OPEN | LLM selects RestartDeployment instead of ProactiveRollback for ErrorBudgetBurn. Fails to correlate ConfigMap swap (new deployment revision) with error spike. Blocks P6 slo-burn. |
 
 ---
 
@@ -110,9 +119,9 @@
 
 | Group | Cluster Type | Scenarios | Extra Deps | Status |
 |-------|-------------|-----------|------------|--------|
-| **A** | Single node | crashloop, disk-pressure, stuck-rollout, gitops-drift, crashloop-helm, network-policy-block, statefulset-pvc-failure, pdb-deadlock, memory-leak | None | 2/9 (crashloop PASS, stuck-rollout PASS, pdb-deadlock BLOCKED) |
-| **B** | Multi-node | node-notready, pending-taint | None | 0/2 |
-| **C** | Multi-node | hpa-maxed, autoscale | metrics-server | 0/2 |
-| **D** | Single node | cert-failure, cert-failure-gitops | cert-manager | 0/2 |
+| **A** | Single node | crashloop, orphaned-pvc-no-action, stuck-rollout, gitops-drift, crashloop-helm, network-policy-block, statefulset-pvc-failure, pdb-deadlock, memory-leak | None | 7/9 (crashloop PASS, stuck-rollout PASS, orphaned-pvc-no-action PASS, memory-leak PASS, statefulset-pvc-failure PASS, network-policy-block PASS, crashloop-helm PASS, pdb-deadlock BLOCKED) |
+| **B** | Multi-node | node-notready, pending-taint | None | 2/2 (node-notready PASS, pending-taint PASS) |
+| **C** | Multi-node | hpa-maxed, autoscale | metrics-server | 1/2 (hpa-maxed PASS) |
+| **D** | Single node | cert-failure, cert-failure-gitops | cert-manager | 1/2 (cert-failure PASS) |
 | **E** | Single node | mesh-routing-failure | Linkerd | 0/1 |
 | **F** | Single node | slo-burn | blackbox-exporter | 0/1 |

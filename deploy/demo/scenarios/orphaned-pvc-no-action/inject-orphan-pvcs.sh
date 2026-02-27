@@ -6,7 +6,7 @@
 # then delete the pods — leaving behind Bound PVCs that no running pod uses.
 set -euo pipefail
 
-NAMESPACE="demo-disk"
+NAMESPACE="demo-orphaned-pvc"
 PVC_COUNT=5
 
 echo "==> Creating ${PVC_COUNT} PVCs and temporary binder pods in ${NAMESPACE}..."

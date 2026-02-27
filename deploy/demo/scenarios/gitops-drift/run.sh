@@ -13,7 +13,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # shellcheck source=../../scripts/kind-helper.sh
 source "${SCRIPT_DIR}/../../scripts/kind-helper.sh"
-ensure_kind_cluster "${SCRIPT_DIR}/kind-config.yaml" "${1:-}"
+ensure_kind_cluster "${SCRIPT_DIR}/../kind-config-singlenode.yaml" "${1:-}"
 
 # shellcheck source=../../scripts/monitoring-helper.sh
 source "${SCRIPT_DIR}/../../scripts/monitoring-helper.sh"
@@ -45,21 +45,27 @@ if ! kubectl get namespace argocd &>/dev/null; then
 fi
 echo "  GitOps infrastructure ready."
 
-# Step 2: Deploy Prometheus rules
-echo "==> Step 2: Deploying Prometheus alerting rules..."
-kubectl apply -f "${SCRIPT_DIR}/manifests/prometheus-rule.yaml"
-
-# Step 3: Create ArgoCD Application (namespace + workload managed by ArgoCD)
-echo "==> Step 3: Creating ArgoCD Application..."
+# Step 2: Create ArgoCD Application (namespace + workload managed by ArgoCD)
+echo "==> Step 2: Creating ArgoCD Application..."
 kubectl apply -f "${SCRIPT_DIR}/manifests/argocd-application.yaml"
 
-echo "==> Step 4: Waiting for ArgoCD to sync and pods to be ready..."
-sleep 10
+echo "==> Step 3: Waiting for ArgoCD to sync and pods to be ready..."
+echo "  Waiting for namespace to be created by ArgoCD..."
+for i in $(seq 1 60); do
+  if kubectl get namespace "${NAMESPACE}" &>/dev/null; then
+    break
+  fi
+  sleep 5
+done
 kubectl wait --for=condition=Available deployment/web-frontend \
-  -n "${NAMESPACE}" --timeout=120s
+  -n "${NAMESPACE}" --timeout=180s
 echo "  web-frontend is healthy."
 
-# Step 5: Show initial state
+# Step 4: Deploy Prometheus rules (namespace now exists)
+echo "==> Step 4: Deploying Prometheus alerting rules..."
+kubectl apply -f "${SCRIPT_DIR}/manifests/prometheus-rule.yaml"
+
+# Step 5: Establish baseline
 echo ""
 echo "==> Step 5: Initial state (healthy):"
 kubectl get pods -n "${NAMESPACE}" -o wide
@@ -76,7 +82,8 @@ cd "${WORK_DIR}"
 git clone "http://${GITEA_ADMIN_USER}:${GITEA_ADMIN_PASS}@localhost:3000/${GITEA_ADMIN_USER}/${REPO_NAME}.git" repo
 cd repo
 
-# Break the ConfigMap: set an invalid NGINX_PORT that causes nginx to crash
+# Break the ConfigMap: inject an invalid nginx directive
+# Also update the deployment annotation to force a rollout
 cat > manifests/configmap.yaml <<'EOF'
 apiVersion: v1
 kind: ConfigMap
@@ -86,9 +93,92 @@ metadata:
   labels:
     app: web-frontend
 data:
-  NGINX_PORT: "INVALID_PORT_CAUSES_CRASH"
-  NGINX_WORKER_PROCESSES: "auto"
+  nginx.conf: |
+    worker_processes auto;
+    error_log /var/log/nginx/error.log warn;
+    pid /tmp/nginx.pid;
+
+    events {
+        worker_connections 1024;
+    }
+
+    http {
+        # INVALID: causes nginx to fail on startup
+        invalid_directive_that_breaks_nginx on;
+
+        server {
+            listen 8080;
+            server_name _;
+
+            location / {
+                return 200 'healthy\n';
+                add_header Content-Type text/plain;
+            }
+
+            location /healthz {
+                return 200 'ok\n';
+                add_header Content-Type text/plain;
+            }
+        }
+    }
 EOF
+
+# Also update deployment to force a pod rollout with the new config
+cat > manifests/deployment.yaml <<'DEPLOY_EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-frontend
+  namespace: demo-gitops
+  labels:
+    app: web-frontend
+    kubernaut.ai/managed: "true"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: web-frontend
+  template:
+    metadata:
+      labels:
+        app: web-frontend
+        kubernaut.ai/managed: "true"
+      annotations:
+        kubernaut.ai/config-version: "broken"
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.27-alpine
+        ports:
+        - containerPort: 8080
+        volumeMounts:
+        - name: config
+          mountPath: /etc/nginx/nginx.conf
+          subPath: nginx.conf
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 3
+          periodSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 2
+          periodSeconds: 3
+      volumes:
+      - name: config
+        configMap:
+          name: nginx-config
+DEPLOY_EOF
 
 git add .
 git config user.email "bad-actor@example.com"
@@ -103,9 +193,10 @@ rm -rf "${WORK_DIR}"
 echo "  Bad commit pushed to Gitea. ArgoCD will sync the broken ConfigMap."
 echo ""
 
-# Step 7: Wait for pods to crash
-echo "==> Step 7: Waiting for pods to enter CrashLoopBackOff..."
-sleep 30
+# Step 7: Wait for ArgoCD to sync and pods to crash
+echo "==> Step 7: Waiting for ArgoCD to sync and pods to enter CrashLoopBackOff..."
+echo "  ArgoCD poll interval is ~3 min. Waiting..."
+sleep 60
 kubectl get pods -n "${NAMESPACE}"
 echo ""
 

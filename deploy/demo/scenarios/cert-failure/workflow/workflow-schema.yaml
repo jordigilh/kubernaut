@@ -12,15 +12,15 @@ metadata:
 actionType: FixCertificate
 
 labels:
-  signalName: CertificateNotReady
+  signalName: CertManagerCertNotReady
   severity: [critical, high]
-  environment: [production, staging]
+  environment: [production, staging, "*"]
   component: "*"
   priority: "*"
 
 execution:
   engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/fix-certificate-job@sha256:8aa9bea499614c96f8c075ce08794ed71a4126e874be8d0c9d401d9c87196a62
+  bundle: quay.io/kubernaut-cicd/test-workflows/fix-certificate-job@sha256:62dc796515f3247101274c7e7e137a9275b725118c272b24ecd6711f34553936
 
 parameters:
   - name: TARGET_NAMESPACE

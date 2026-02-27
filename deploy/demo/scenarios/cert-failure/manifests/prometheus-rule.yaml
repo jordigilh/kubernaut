@@ -12,7 +12,7 @@ spec:
     - alert: CertManagerCertNotReady
       expr: |
         certmanager_certificate_ready_status{
-          namespace="demo-cert-failure",
+          exported_namespace="demo-cert-failure",
           name="demo-app-cert",
           condition="True"
         } == 0
@@ -20,6 +20,7 @@ spec:
       labels:
         severity: critical
         deployment: demo-app
+        namespace: demo-cert-failure
       annotations:
         summary: >
           Certificate {{ $labels.name }} in namespace {{ $labels.namespace }}

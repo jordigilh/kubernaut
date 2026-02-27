@@ -250,7 +250,7 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 
 	// Deploy DataStorage service (E2E ports per DD-TEST-001)
 	_, _ = fmt.Fprintln(writer, "  📦 Deploying DataStorage service...")
-	if err := deployDataStorageToKind(kubeconfigPath, namespace, dsImageName, "28099", "30099", writer); err != nil {
+	if err := deployDataStorageToKind(kubeconfigPath, namespace, dsImageName, "28099", "30081", writer); err != nil {
 		return "", "", fmt.Errorf("failed to deploy DataStorage: %w", err)
 	}
 
@@ -347,7 +347,7 @@ spec:
     port: 443
     targetPort: webhook
     protocol: TCP
-    nodePort: 30443
+    nodePort: 30099
   type: NodePort
 ---
 apiVersion: v1

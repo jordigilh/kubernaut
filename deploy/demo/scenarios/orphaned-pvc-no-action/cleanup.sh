@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# Cleanup for Disk Pressure / Orphaned PVC Demo (#121)
+# Cleanup for Orphaned PVC Demo (#122)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-echo "==> Cleaning up Disk Pressure demo..."
+echo "==> Cleaning up Orphaned PVC demo..."
 
 kubectl delete -f "${SCRIPT_DIR}/manifests/prometheus-rule.yaml" --ignore-not-found
-kubectl delete namespace demo-disk --ignore-not-found --wait=true
+kubectl delete namespace demo-orphaned-pvc --ignore-not-found --wait=true
 
 echo "==> Waiting for namespace deletion to complete..."
-while kubectl get ns demo-disk &>/dev/null; do
+while kubectl get ns demo-orphaned-pvc &>/dev/null; do
   sleep 2
 done
 

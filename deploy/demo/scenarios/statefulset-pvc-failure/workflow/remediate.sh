@@ -42,7 +42,7 @@ else
   MISSING_PVC=""
   for i in $(seq 0 $((DESIRED - 1))); do
     PVC_NAME="${VCT_NAME}-${TARGET_STATEFULSET}-${i}"
-    if ! kubectl get pvc "${PVC_NAME}" -n "${TARGET_NAMESPACE}" &>/dev/null; then
+    if ! kubectl get pvc "${PVC_NAME}" -n "${TARGET_NAMESPACE}" >/dev/null 2>&1; then
       MISSING_PVC="${PVC_NAME}"
       break
     fi
@@ -57,14 +57,26 @@ echo "Missing PVC: ${MISSING_PVC}"
 echo "Validated: StatefulSet has missing PVC causing stuck pod."
 
 echo "=== Phase 2: Action ==="
-echo "Recreating PVC ${MISSING_PVC}..."
 
-SC_SPEC=""
-if [ -n "${STORAGE_CLASS}" ]; then
-  SC_SPEC="storageClassName: ${STORAGE_CLASS}"
-fi
+EXISTING_PHASE=$(kubectl get pvc "${MISSING_PVC}" -n "${TARGET_NAMESPACE}" \
+  -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
 
-kubectl apply -f - <<EOF
+if [ -n "${EXISTING_PHASE}" ] && [ "${EXISTING_PHASE}" = "Bound" ]; then
+  echo "PVC ${MISSING_PVC} already exists and is Bound (auto-healed by StatefulSet controller)."
+  echo "Skipping PVC creation. Ensuring pod is rescheduled..."
+elif [ -n "${EXISTING_PHASE}" ]; then
+  echo "PVC ${MISSING_PVC} exists but is ${EXISTING_PHASE} (not Bound). Deleting..."
+  kubectl delete pvc "${MISSING_PVC}" -n "${TARGET_NAMESPACE}" --wait=false 2>/dev/null || true
+  sleep 3
+
+  RECHECK_PHASE=$(kubectl get pvc "${MISSING_PVC}" -n "${TARGET_NAMESPACE}" \
+    -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
+  if [ "${RECHECK_PHASE}" = "Bound" ]; then
+    echo "PVC was auto-recreated and bound by StatefulSet controller."
+  else
+    echo "Recreating PVC ${MISSING_PVC}..."
+    PVC_YAML="/tmp/pvc-${MISSING_PVC}.yaml"
+    cat > "${PVC_YAML}" <<PVCEOF
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -73,14 +85,44 @@ metadata:
   labels:
     app: ${TARGET_STATEFULSET}
 spec:
-  accessModes: ["ReadWriteOnce"]
-  ${SC_SPEC}
+  accessModes:
+  - ReadWriteOnce
   resources:
     requests:
       storage: ${STORAGE_SIZE}
-EOF
+PVCEOF
+    if [ -n "${STORAGE_CLASS}" ]; then
+      echo "  storageClassName: ${STORAGE_CLASS}" >> "${PVC_YAML}"
+    fi
+    kubectl apply -f "${PVC_YAML}"
+    rm -f "${PVC_YAML}"
+  fi
+else
+  echo "PVC ${MISSING_PVC} does not exist. Creating..."
+  PVC_YAML="/tmp/pvc-${MISSING_PVC}.yaml"
+  cat > "${PVC_YAML}" <<PVCEOF
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ${MISSING_PVC}
+  namespace: ${TARGET_NAMESPACE}
+  labels:
+    app: ${TARGET_STATEFULSET}
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: ${STORAGE_SIZE}
+PVCEOF
+  if [ -n "${STORAGE_CLASS}" ]; then
+    echo "  storageClassName: ${STORAGE_CLASS}" >> "${PVC_YAML}"
+  fi
+  kubectl apply -f "${PVC_YAML}"
+  rm -f "${PVC_YAML}"
+fi
 
-echo "PVC recreated. Deleting stuck pod to trigger reschedule..."
+echo "Deleting stuck pod to trigger reschedule..."
 POD_INDEX=$(echo "${MISSING_PVC}" | grep -o '[0-9]*$')
 STUCK_POD="${TARGET_STATEFULSET}-${POD_INDEX}"
 kubectl delete pod "${STUCK_POD}" -n "${TARGET_NAMESPACE}" --ignore-not-found --grace-period=0
@@ -98,7 +140,7 @@ PVC_STATUS=$(kubectl get pvc "${MISSING_PVC}" -n "${TARGET_NAMESPACE}" \
 echo "PVC ${MISSING_PVC} status: ${PVC_STATUS}"
 
 if [ "${NEW_READY}" = "${DESIRED}" ]; then
-  echo "=== SUCCESS: PVC recreated, all ${DESIRED} StatefulSet replicas ready ==="
+  echo "=== SUCCESS: PVC fixed, all ${DESIRED} StatefulSet replicas ready ==="
 else
   echo "WARNING: Not all replicas ready yet (${NEW_READY}/${DESIRED}). May need more time."
   exit 1

@@ -470,120 +470,11 @@ func LoadROCoverageImage(clusterName string, writer io.Writer) error {
 // Deploy Functions
 // ============================================================================
 
-// DeployROCoverageManifest deploys the RemediationOrchestrator controller with coverage enabled
-// Per DD-TEST-007: Mounts coverdata directory as hostPath volume
-// Per ADR-030: Mounts audit config file for E2E audit testing
-// Per consolidated API migration: Accepts dynamic image name as parameter
-func DeployROCoverageManifest(kubeconfigPath, imageName string, writer io.Writer) error {
-	// Create manifest with coverage volume mount + audit config
-	manifest := fmt.Sprintf(`
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: remediationorchestrator-config
-  namespace: kubernaut-system
-data:
-  remediationorchestrator.yaml: |
-    # RemediationOrchestrator E2E Configuration
-    # Per ADR-030: YAML-based service configuration
-    # Per CRD_FIELD_NAMING_CONVENTION.md: camelCase for YAML fields
-    controller:
-      metricsAddr: ":9090"
-      healthProbeAddr: ":8081"
-      leaderElection: false
-      leaderElectionId: "remediationorchestrator.kubernaut.ai"
-    timeouts:
-      global: "1h"
-      processing: "5m"
-      analyzing: "10m"
-      executing: "30m"
-      awaitingApproval: "3s"
-    datastorage:
-      url: "http://data-storage-service:8080"
-      timeout: "10s"
-      buffer:
-        bufferSize: 10000
-        batchSize: 50
-        flushInterval: "100ms"
-        maxRetries: 3
-    effectivenessAssessment:
-      stabilizationWindow: "10s"
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: remediationorchestrator-controller
-  namespace: kubernaut-system
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: remediationorchestrator-controller
-  template:
-    metadata:
-      labels:
-        app: remediationorchestrator-controller
-    spec:
-      serviceAccountName: remediationorchestrator-controller
-      containers:
-      - name: controller
-        image: %s
-        imagePullPolicy: %s
-        args:
-        - --config=/etc/config/remediationorchestrator.yaml
-        ports:
-        - containerPort: 8081
-          name: health
-          protocol: TCP
-        - containerPort: 9090
-          name: metrics
-          protocol: TCP
-        env:
-        - name: GOCOVERDIR
-          value: /coverdata
-        volumeMounts:
-        - name: coverdata
-          mountPath: /coverdata
-        - name: config
-          mountPath: /etc/config
-          readOnly: true
-        livenessProbe:
-          httpGet:
-            path: /healthz
-            port: health
-          initialDelaySeconds: 15
-          periodSeconds: 20
-        readinessProbe:
-          httpGet:
-            path: /readyz
-            port: health
-          initialDelaySeconds: 5
-          periodSeconds: 10
-      volumes:
-      - name: coverdata
-        hostPath:
-          path: /coverdata
-          type: DirectoryOrCreate
-      - name: config
-        configMap:
-          name: remediationorchestrator-config
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: remediationorchestrator-controller
-  namespace: kubernaut-system
-spec:
-  type: NodePort
-  ports:
-  - port: 9090
-    targetPort: 9090
-    nodePort: 30183
-    protocol: TCP
-    name: metrics
-  selector:
-    app: remediationorchestrator-controller
----
+// roRBACManifest returns ServiceAccount + ClusterRole + ClusterRoleBinding YAML.
+// Applied first to avoid Kubernetes API propagation race where SA may not be visible
+// when the pod is created.
+func roRBACManifest() string {
+	return `---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -659,15 +550,156 @@ subjects:
 - kind: ServiceAccount
   name: remediationorchestrator-controller
   namespace: kubernaut-system
+`
+}
+
+// roWorkloadManifest returns ConfigMap + Deployment + Service YAML.
+// Applied after RBAC with 2s propagation delay.
+func roWorkloadManifest(imageName string) string {
+	return fmt.Sprintf(`
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: remediationorchestrator-config
+  namespace: kubernaut-system
+data:
+  remediationorchestrator.yaml: |
+    # RemediationOrchestrator E2E Configuration
+    # Per ADR-030: YAML-based service configuration
+    # Per CRD_FIELD_NAMING_CONVENTION.md: camelCase for YAML fields
+    controller:
+      metricsAddr: ":9090"
+      healthProbeAddr: ":8081"
+      leaderElection: false
+      leaderElectionId: "remediationorchestrator.kubernaut.ai"
+    timeouts:
+      global: "1h"
+      processing: "5m"
+      analyzing: "10m"
+      executing: "30m"
+      awaitingApproval: "3s"
+    datastorage:
+      url: "http://data-storage-service:8080"
+      timeout: "10s"
+      buffer:
+        bufferSize: 10000
+        batchSize: 50
+        flushInterval: "100ms"
+        maxRetries: 3
+    effectivenessAssessment:
+      stabilizationWindow: "10s"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: remediationorchestrator-controller
+  namespace: kubernaut-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: remediationorchestrator-controller
+  template:
+    metadata:
+      labels:
+        app: remediationorchestrator-controller
+    spec:
+      serviceAccountName: remediationorchestrator-controller
+      containers:
+      - name: controller
+        image: %s
+        imagePullPolicy: %s
+        args:
+        - --config=/etc/config/remediationorchestrator.yaml
+        ports:
+        - containerPort: 8081
+          name: health
+          protocol: TCP
+        - containerPort: 9090
+          name: metrics
+          protocol: TCP
+        env:
+        - name: GOCOVERDIR
+          value: /coverdata
+        volumeMounts:
+        - name: coverdata
+          mountPath: /coverdata
+        - name: config
+          mountPath: /etc/config
+          readOnly: true
+        startupProbe:
+          httpGet:
+            path: /healthz
+            port: health
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          failureThreshold: 30
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: health
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: health
+          initialDelaySeconds: 5
+          periodSeconds: 10
+      volumes:
+      - name: coverdata
+        hostPath:
+          path: /coverdata
+          type: DirectoryOrCreate
+      - name: config
+        configMap:
+          name: remediationorchestrator-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: remediationorchestrator-controller
+  namespace: kubernaut-system
+spec:
+  type: NodePort
+  ports:
+  - port: 9090
+    targetPort: 9090
+    nodePort: 30183
+    protocol: TCP
+    name: metrics
+  selector:
+    app: remediationorchestrator-controller
 `, imageName, GetImagePullPolicy())
+}
 
-	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
-	cmd.Stdin = bytes.NewReader([]byte(manifest))
-	cmd.Stdout = writer
-	cmd.Stderr = writer
+// DeployROCoverageManifest deploys the RemediationOrchestrator controller with coverage enabled
+// Per DD-TEST-007: Mounts coverdata directory as hostPath volume
+// Per ADR-030: Mounts audit config file for E2E audit testing
+// Per consolidated API migration: Accepts dynamic image name as parameter
+// Applies RBAC first, then workload after 2s propagation delay to avoid API race.
+func DeployROCoverageManifest(kubeconfigPath, imageName string, writer io.Writer) error {
+	// Apply RBAC first (SA + ClusterRole + ClusterRoleBinding)
+	rbacManifest := roRBACManifest()
+	rbacCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	rbacCmd.Stdin = bytes.NewReader([]byte(rbacManifest))
+	rbacCmd.Stdout = writer
+	rbacCmd.Stderr = writer
+	if err := rbacCmd.Run(); err != nil {
+		return fmt.Errorf("failed to apply RemediationOrchestrator RBAC: %w", err)
+	}
 
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to deploy RemediationOrchestrator: %w", err)
+	_, _ = fmt.Fprintln(writer, "   Waiting 2s for RBAC API propagation...")
+	time.Sleep(2 * time.Second)
+
+	// Apply workload (ConfigMap + Deployment + Service)
+	workloadManifest := roWorkloadManifest(imageName)
+	workloadCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	workloadCmd.Stdin = bytes.NewReader([]byte(workloadManifest))
+	workloadCmd.Stdout = writer
+	workloadCmd.Stderr = writer
+	if err := workloadCmd.Run(); err != nil {
+		return fmt.Errorf("failed to deploy RemediationOrchestrator workload: %w", err)
 	}
 
 	// Wait for RemediationOrchestrator to be ready with retry loop (matches PostgreSQL pattern)

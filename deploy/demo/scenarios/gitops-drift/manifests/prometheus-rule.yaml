@@ -4,15 +4,20 @@ metadata:
   name: kubernaut-gitops-drift-rules
   namespace: demo-gitops
   labels:
-    release: prometheus
+    release: kube-prometheus-stack
 spec:
   groups:
   - name: gitops-drift-alerts
     rules:
     - alert: KubePodCrashLooping
       expr: |
-        rate(kube_pod_container_status_restarts_total{namespace="demo-gitops"}[5m]) > 0
-      for: 30s
+        increase(
+          kube_pod_container_status_restarts_total{
+            namespace="demo-gitops",
+            container="nginx"
+          }[10m]
+        ) > 3
+      for: 1m
       labels:
         severity: critical
         scenario: gitops-drift

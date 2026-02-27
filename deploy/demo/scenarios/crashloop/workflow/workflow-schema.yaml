@@ -1,15 +1,15 @@
-# Graceful Restart Workflow Schema - Job Backend (BR-WORKFLOW-004)
+# Rollback Deployment Workflow Schema - Job Backend (BR-WORKFLOW-004)
 # Scenario: #120 -- CrashLoopBackOff -> rollback to working config
 metadata:
   workflowId: crashloop-rollback-v1
-  version: "1.0.0"
+  version: "1.0.1"
   description:
     what: "Rolls back a deployment to its previous revision to recover from CrashLoopBackOff caused by a bad configuration change"
     whenToUse: "When a deployment enters CrashLoopBackOff immediately after a config or image change, and the previous revision was healthy"
     whenNotToUse: "When the crash is caused by an external dependency failure (database down, network partition) rather than a local configuration change"
     preconditions: "The deployment has at least one previous healthy revision in its rollout history"
 
-actionType: GracefulRestart
+actionType: RollbackDeployment
 
 labels:
   signalName: KubePodCrashLooping

@@ -75,6 +75,8 @@ data:
         format: "json"
       slack:
         timeout: 10s
+      credentials:
+        dir: "/etc/notification/credentials"
     datastorage:
       url: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
       timeout: 10s
@@ -118,11 +120,6 @@ spec:
           env:
             - name: CONFIG_PATH
               value: "/etc/notification/config.yaml"
-            - name: SLACK_WEBHOOK_URL
-              valueFrom:
-                secretKeyRef:
-                  name: slack-webhook
-                  key: webhook-url
           args:
             - "-config"
             - "$(CONFIG_PATH)"
@@ -151,6 +148,9 @@ spec:
             - name: config
               mountPath: /etc/notification
               readOnly: true
+            - name: credentials
+              mountPath: /etc/notification/credentials
+              readOnly: true
             - name: notification-output
               mountPath: /tmp/notifications
           resources:
@@ -159,6 +159,16 @@ spec:
         - name: config
           configMap:
             name: notification-controller-config
+        - name: credentials
+          projected:
+            sources:
+            {{- range .Values.notification.credentials }}
+              - secret:
+                  name: {{ .secretName }}
+                  items:
+                    - key: {{ .secretKey | default "webhook-url" }}
+                      path: {{ .name }}
+            {{- end }}
         - name: notification-output
           emptyDir: {}
       terminationGracePeriodSeconds: 10

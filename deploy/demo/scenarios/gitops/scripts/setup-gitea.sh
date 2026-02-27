@@ -39,11 +39,19 @@ kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=gitea \
 
 GITEA_URL="http://gitea-http.${GITEA_NAMESPACE}:3000"
 
-echo "==> Creating repository: ${REPO_NAME}"
-kubectl exec -n "${GITEA_NAMESPACE}" deployment/gitea -- \
-  gitea admin create-repo \
-    --owner "${GITEA_ADMIN_USER}" \
-    --name "${REPO_NAME}" 2>/dev/null || echo "Repository may already exist"
+echo "==> Creating repository via Gitea API..."
+kubectl port-forward -n "${GITEA_NAMESPACE}" svc/gitea-http 3000:3000 &
+PF_SETUP_PID=$!
+sleep 3
+
+curl -sf -X POST "http://localhost:3000/api/v1/user/repos" \
+  -u "${GITEA_ADMIN_USER}:${GITEA_ADMIN_PASS}" \
+  -H "Content-Type: application/json" \
+  -d "{\"name\": \"${REPO_NAME}\", \"auto_init\": false, \"private\": false}" \
+  -o /dev/null 2>/dev/null || echo "  Repository may already exist"
+
+kill "${PF_SETUP_PID}" 2>/dev/null || true
+sleep 1
 
 echo "==> Pushing initial manifests to Gitea..."
 WORK_DIR=$(mktemp -d)
@@ -76,8 +84,31 @@ metadata:
   labels:
     app: web-frontend
 data:
-  NGINX_PORT: "80"
-  NGINX_WORKER_PROCESSES: "auto"
+  nginx.conf: |
+    worker_processes auto;
+    error_log /var/log/nginx/error.log warn;
+    pid /tmp/nginx.pid;
+
+    events {
+        worker_connections 1024;
+    }
+
+    http {
+        server {
+            listen 8080;
+            server_name _;
+
+            location / {
+                return 200 'healthy\n';
+                add_header Content-Type text/plain;
+            }
+
+            location /healthz {
+                return 200 'ok\n';
+                add_header Content-Type text/plain;
+            }
+        }
+    }
 EOF
 
 cat > manifests/deployment.yaml <<'EOF'
@@ -98,15 +129,17 @@ spec:
     metadata:
       labels:
         app: web-frontend
+        kubernaut.ai/managed: "true"
     spec:
       containers:
       - name: nginx
         image: nginx:1.27-alpine
         ports:
-        - containerPort: 80
-        envFrom:
-        - configMapRef:
-            name: nginx-config
+        - containerPort: 8080
+        volumeMounts:
+        - name: config
+          mountPath: /etc/nginx/nginx.conf
+          subPath: nginx.conf
         resources:
           requests:
             memory: "64Mi"
@@ -116,16 +149,20 @@ spec:
             cpu: "100m"
         livenessProbe:
           httpGet:
-            path: /
-            port: 80
-          initialDelaySeconds: 5
-          periodSeconds: 10
-        readinessProbe:
-          httpGet:
-            path: /
-            port: 80
+            path: /healthz
+            port: 8080
           initialDelaySeconds: 3
           periodSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 2
+          periodSeconds: 3
+      volumes:
+      - name: config
+        configMap:
+          name: nginx-config
 EOF
 
 cat > manifests/service.yaml <<'EOF'
@@ -134,12 +171,15 @@ kind: Service
 metadata:
   name: web-frontend
   namespace: demo-gitops
+  labels:
+    app: web-frontend
+    kubernaut.ai/managed: "true"
 spec:
   selector:
     app: web-frontend
   ports:
-  - port: 80
-    targetPort: 80
+  - port: 8080
+    targetPort: 8080
 EOF
 
 git add .

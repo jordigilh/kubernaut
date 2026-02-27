@@ -6,8 +6,8 @@ metadata:
   labels:
     {{- include "kubernaut.labels" . | nindent 4 }}
   annotations:
-    "helm.sh/hook": post-install,post-upgrade
-    "helm.sh/hook-weight": "1"
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "5"
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 spec:
   backoffLimit: 3
@@ -80,6 +80,9 @@ spec:
               rm -rf "$TMPDIR"
               echo "==> AuthWebhook TLS setup complete"
 ---
+# Shared RBAC for all Helm hooks (pre-install TLS cert + post-install migration).
+# Uses both pre- and post- phases so the SA exists across all hook jobs.
+# Only cleaned up on next install/upgrade (before-hook-creation), not on success.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -88,9 +91,9 @@ metadata:
   labels:
     {{- include "kubernaut.labels" . | nindent 4 }}
   annotations:
-    "helm.sh/hook": post-install,post-upgrade
-    "helm.sh/hook-weight": "0"
-    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    "helm.sh/hook": pre-install,pre-upgrade,post-install,post-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -99,9 +102,9 @@ metadata:
   labels:
     {{- include "kubernaut.labels" . | nindent 4 }}
   annotations:
-    "helm.sh/hook": post-install,post-upgrade
-    "helm.sh/hook-weight": "0"
-    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    "helm.sh/hook": pre-install,pre-upgrade,post-install,post-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation
 rules:
   - apiGroups: [""]
     resources: ["secrets"]
@@ -126,9 +129,9 @@ metadata:
   labels:
     {{- include "kubernaut.labels" . | nindent 4 }}
   annotations:
-    "helm.sh/hook": post-install,post-upgrade
-    "helm.sh/hook-weight": "0"
-    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    "helm.sh/hook": pre-install,pre-upgrade,post-install,post-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole

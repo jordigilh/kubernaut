@@ -16,9 +16,8 @@ spec:
       labels:
         app: batch-processor
     spec:
-      # Force scheduling on the worker node (which will be tainted)
       nodeSelector:
-        kubernaut.ai/managed: "true"
+        kubernaut.ai/demo-taint-target: "true"
       containers:
       - name: processor
         image: nginx:1.27-alpine

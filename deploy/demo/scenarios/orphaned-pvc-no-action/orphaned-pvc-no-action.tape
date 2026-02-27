@@ -11,7 +11,7 @@
 #   - NO cleanup workflow seeded (intentionally absent)
 #   - VHS installed (brew install charmbracelet/tap/vhs)
 #
-# Run: vhs deploy/demo/scenarios/disk-pressure/disk-pressure.tape
+# Run: vhs deploy/demo/scenarios/orphaned-pvc-no-action/orphaned-pvc-no-action.tape
 #
 # NOTE: Each sentinel uses TWO defenses:
 #   1. String concatenation (e.g. echo SETUP"_"COMPLETE) so the TYPED command text
@@ -23,8 +23,8 @@
 # Visible annotations use bash comments (# ...) instead of echo to avoid the
 # visual artifact where the echo command text and its output both appear.
 
-Output deploy/demo/scenarios/disk-pressure/disk-pressure.gif
-Output deploy/demo/scenarios/disk-pressure/disk-pressure.mp4
+Output deploy/demo/scenarios/orphaned-pvc-no-action/orphaned-pvc-no-action.gif
+Output deploy/demo/scenarios/orphaned-pvc-no-action/orphaned-pvc-no-action.mp4
 
 Require kubectl
 Require bash
@@ -48,11 +48,11 @@ Type `export PS1='$ '`
 Enter
 Sleep 500ms
 
-Type `bash deploy/demo/scenarios/disk-pressure/cleanup.sh 2>/dev/null; true`
+Type `bash deploy/demo/scenarios/orphaned-pvc-no-action/cleanup.sh 2>/dev/null; true`
 Enter
 Sleep 5s
 
-Type `kubectl apply -f deploy/demo/scenarios/disk-pressure/manifests/namespace.yaml -f deploy/demo/scenarios/disk-pressure/manifests/deployment.yaml -f deploy/demo/scenarios/disk-pressure/manifests/prometheus-rule.yaml >/dev/null 2>&1 && kubectl wait --for=condition=Available deployment/data-processor -n demo-disk --timeout=120s >/dev/null 2>&1 && clear && echo SETUP"_"COMPLETE`
+Type `kubectl apply -f deploy/demo/scenarios/orphaned-pvc-no-action/manifests/namespace.yaml -f deploy/demo/scenarios/orphaned-pvc-no-action/manifests/deployment.yaml -f deploy/demo/scenarios/orphaned-pvc-no-action/manifests/prometheus-rule.yaml >/dev/null 2>&1 && kubectl wait --for=condition=Available deployment/data-processor -n demo-orphaned-pvc-no-action --timeout=120s >/dev/null 2>&1 && clear && echo SETUP"_"COMPLETE`
 Enter
 Wait+Screen@300s /SETUP_COMPLETE/
 
@@ -78,7 +78,7 @@ Sleep 3s
 Type "# Healthy workload running in a production-labeled namespace"
 Enter
 Sleep 2s
-Type "kubectl get pods -n demo-disk"
+Type "kubectl get pods -n demo-orphaned-pvc-no-action"
 Enter
 Sleep 5s
 
@@ -89,7 +89,7 @@ Sleep 2s
 # Hidden: run PVC injection and wait for alert
 Hide
 Set TypingSpeed 1ms
-Type `bash deploy/demo/scenarios/disk-pressure/inject-orphan-pvcs.sh >/dev/null 2>&1 && clear && echo PVCS"_"CREATED`
+Type `bash deploy/demo/scenarios/orphaned-pvc-no-action/inject-orphan-pvcs.sh >/dev/null 2>&1 && clear && echo PVCS"_"CREATED`
 Enter
 Wait+Screen@300s /PVCS_CREATED/
 Type "clear"
@@ -101,7 +101,7 @@ Show
 Type "# 5 orphaned Bound PVCs now exist -- no running pods use them"
 Enter
 Sleep 2s
-Type "kubectl get pvc -n demo-disk"
+Type "kubectl get pvc -n demo-orphaned-pvc-no-action"
 Enter
 Sleep 6s
 
@@ -135,7 +135,7 @@ Sleep 3s
 # Hidden wait: poll until RR exists
 Hide
 Set TypingSpeed 1ms
-Type `while ! kubectl get remediationrequests -n demo-disk 2>/dev/null | grep -q rr-; do sleep 5; done && clear && echo RR"_"CREATED`
+Type `while ! kubectl get remediationrequests -n demo-orphaned-pvc-no-action 2>/dev/null | grep -q rr-; do sleep 5; done && clear && echo RR"_"CREATED`
 Enter
 Wait+Screen@120s /RR_CREATED/
 Type "clear"
@@ -151,7 +151,7 @@ Show
 Type "# The pipeline is processing: SP -> AA (HAPI / LLM)"
 Enter
 Sleep 2s
-Type "kubectl get rr,sp,aa -n demo-disk"
+Type "kubectl get rr,sp,aa -n demo-orphaned-pvc-no-action"
 Enter
 Sleep 6s
 
@@ -165,7 +165,7 @@ Sleep 3s
 # Hidden wait: poll until RR reaches Completed or Failed
 Hide
 Set TypingSpeed 1ms
-Type `while true; do PHASE=$(kubectl get remediationrequests -n demo-disk -o jsonpath='{.items[0].status.overallPhase}' 2>/dev/null); [ "$PHASE" = "Completed" ] || [ "$PHASE" = "Failed" ] && break; sleep 10; done && clear && echo PIPELINE"_"DONE`
+Type `while true; do PHASE=$(kubectl get remediationrequests -n demo-orphaned-pvc-no-action -o jsonpath='{.items[0].status.overallPhase}' 2>/dev/null); [ "$PHASE" = "Completed" ] || [ "$PHASE" = "Failed" ] && break; sleep 10; done && clear && echo PIPELINE"_"DONE`
 Enter
 Wait+Screen@600s /PIPELINE_DONE/
 Type "clear"
@@ -182,28 +182,28 @@ Type "# Pipeline completed -- let's check the outcome"
 Enter
 Sleep 2s
 
-Type "kubectl get rr,sp,aa -n demo-disk"
+Type "kubectl get rr,sp,aa -n demo-orphaned-pvc-no-action"
 Enter
 Sleep 6s
 
 Type "# RemediationRequest outcome:"
 Enter
 Sleep 2s
-Type `kubectl get rr -n demo-disk -o jsonpath='Phase: {.items[0].status.overallPhase}  Outcome: {.items[0].status.outcome}' && echo`
+Type `kubectl get rr -n demo-orphaned-pvc-no-action -o jsonpath='Phase: {.items[0].status.overallPhase}  Outcome: {.items[0].status.outcome}' && echo`
 Enter
 Sleep 6s
 
 Type "# AIAnalysis outcome:"
 Enter
 Sleep 2s
-Type `kubectl get aa -n demo-disk -o jsonpath='Phase: {.items[0].status.phase}  Outcome: {.items[0].status.outcome}' && echo`
+Type `kubectl get aa -n demo-orphaned-pvc-no-action -o jsonpath='Phase: {.items[0].status.phase}  Outcome: {.items[0].status.outcome}' && echo`
 Enter
 Sleep 6s
 
 Type "# Confirm: no WorkflowExecution was created (correct -- no action needed)"
 Enter
 Sleep 2s
-Type "kubectl get wfe -n demo-disk"
+Type "kubectl get wfe -n demo-orphaned-pvc-no-action"
 Enter
 Sleep 5s
 

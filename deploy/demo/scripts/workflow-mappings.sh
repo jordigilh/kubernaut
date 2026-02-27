@@ -17,7 +17,7 @@ WORKFLOWS=(
     "hpa-maxed:patch-hpa-job"
     "pdb-deadlock:relax-pdb-job"
     "pending-taint:remove-taint-job"
-    "disk-pressure:cleanup-pvc-job"
+    "orphaned-pvc-no-action:cleanup-pvc-job"
     "node-notready:cordon-drain-job"
     "stuck-rollout:rollback-deployment-job"
     "cert-failure:fix-certificate-job"

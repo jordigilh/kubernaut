@@ -1,21 +1,19 @@
 #!/usr/bin/env bash
-# Add a NoSchedule taint to ALL managed worker nodes to block pod scheduling.
-# Multi-node support: taints every node with kubernaut.ai/managed=true so that
-# pods using that nodeSelector have nowhere to schedule.
+# Add a NoSchedule taint to the designated taint-target worker node.
+# Only one worker is tainted so that WFE remediation jobs can still schedule
+# on the other untainted worker.
 set -euo pipefail
 
-WORKER_NODES=$(kubectl get nodes -l kubernaut.ai/managed=true -o name)
+TARGET_NODE=$(kubectl get nodes -l kubernaut.ai/demo-taint-target=true -o name | head -1)
 
-if [ -z "$WORKER_NODES" ]; then
-  echo "ERROR: No worker nodes with label kubernaut.ai/managed=true found."
-  echo "Ensure the Kind cluster was created with the multi-node config."
+if [ -z "$TARGET_NODE" ]; then
+  echo "ERROR: No worker node with label kubernaut.ai/demo-taint-target=true found."
+  echo "Label a worker first: kubectl label node <worker> kubernaut.ai/demo-taint-target=true"
   exit 1
 fi
 
-for node in $WORKER_NODES; do
-  echo "==> Adding NoSchedule taint to ${node}..."
-  kubectl taint nodes "${node}" maintenance=scheduled:NoSchedule --overwrite
-done
+echo "==> Adding NoSchedule taint to ${TARGET_NODE}..."
+kubectl taint nodes "${TARGET_NODE}" maintenance=scheduled:NoSchedule --overwrite
 
-echo "==> Taint applied to all managed workers. Pods with nodeSelector will remain Pending."
+echo "==> Taint applied to ${TARGET_NODE}. Pods pinned to this node will remain Pending."
 echo "    Watch: kubectl get pods -n demo-taint -w"

@@ -8,7 +8,7 @@ NAMESPACE="demo-netpol"
 
 # shellcheck source=../../scripts/kind-helper.sh
 source "${SCRIPT_DIR}/../../scripts/kind-helper.sh"
-ensure_kind_cluster "${SCRIPT_DIR}/kind-config.yaml" "${1:-}"
+ensure_kind_cluster "${SCRIPT_DIR}/../kind-config-singlenode.yaml" "${1:-}"
 
 # shellcheck source=../../scripts/monitoring-helper.sh
 source "${SCRIPT_DIR}/../../scripts/monitoring-helper.sh"

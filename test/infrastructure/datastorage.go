@@ -208,7 +208,7 @@ func MustGatherPodLogs(clusterName, kubeconfigPath, namespace, serviceName strin
 	}
 
 	_, _ = fmt.Fprintf(writer, "✅ Must-gather collected %d log files to %s\n", collectedCount, mustGatherDir)
-	_, _ = fmt.Fprintf(writer, "   (Events and pod status also captured)\n\n")
+	_, _ = fmt.Fprintf(writer, "   (Events, pod status, deployments, replicasets also captured)\n\n")
 }
 
 // DeleteCluster deletes a Kind cluster and optionally exports logs on test failure

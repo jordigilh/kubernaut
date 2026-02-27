@@ -60,7 +60,7 @@ metadata:
   name: api-gateway-probe
   namespace: demo-slo
   labels:
-    release: prometheus
+    release: kube-prometheus-stack
 spec:
   interval: 10s
   module: http_2xx

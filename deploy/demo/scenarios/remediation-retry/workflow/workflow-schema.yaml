@@ -2,7 +2,7 @@
 # Scenario: Remediation retry -- first-line restart attempt
 metadata:
   workflowId: restart-pods-v1
-  version: "1.0.0"
+  version: "1.0.1"
   description:
     what: "Performs a rolling restart of all pods in a deployment without changing the revision. This is a simpler, less invasive first-line response that resolves transient issues like corrupted caches or stuck connections."
     whenToUse: "When pods are crashing due to a suspected transient runtime issue. Try this first before more disruptive actions like rollback. If the issue persists after restart, a different workflow (e.g., rollback) should be selected."
@@ -12,7 +12,7 @@ metadata:
 actionType: RestartDeployment
 
 labels:
-  signalName: CrashLoopBackOff
+  signalName: KubePodCrashLooping
   severity: [critical, low]
   environment: [production, staging]
   component: "*"
@@ -20,7 +20,7 @@ labels:
 
 execution:
   engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/restart-pods-job@sha256:d2cbb5fee07baa7e5fa197a65d01c3181c56b12358064d427e79ec585abdd0e9
+  bundle: quay.io/kubernaut-cicd/test-workflows/restart-pods-job@sha256:5a902fe0be32665f593bd4a4dea25c6e11d2b8c06200853cf836daa9e40e47f6
 
 parameters:
   - name: TARGET_NAMESPACE

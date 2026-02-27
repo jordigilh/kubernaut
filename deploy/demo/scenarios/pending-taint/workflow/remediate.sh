@@ -33,12 +33,16 @@ if echo "$REMAINING_TAINTS" | grep -q "$TAINT_KEY"; then
   exit 1
 fi
 
-PENDING=$(kubectl get pods -n "$TARGET_NAMESPACE" --field-selector=status.phase=Pending \
-  -o name 2>/dev/null | wc -l | tr -d ' ')
-echo "Pending pods in $TARGET_NAMESPACE: $PENDING"
+if [ -n "${TARGET_NAMESPACE:-}" ]; then
+  PENDING=$(kubectl get pods -n "$TARGET_NAMESPACE" --field-selector=status.phase=Pending \
+    -o name 2>/dev/null | wc -l | tr -d ' ')
+  echo "Pending pods in $TARGET_NAMESPACE: $PENDING"
 
-if [ "$PENDING" -gt 0 ]; then
-  echo "WARNING: $PENDING pods still Pending -- may need more time to schedule"
+  if [ "$PENDING" -gt 0 ]; then
+    echo "WARNING: $PENDING pods still Pending -- may need more time to schedule"
+  fi
+else
+  echo "TARGET_NAMESPACE not set; skipping namespace-level pod check."
 fi
 
 echo "=== SUCCESS: Taint '$TAINT_KEY' removed from $TARGET_NODE ==="
