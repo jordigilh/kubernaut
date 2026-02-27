@@ -67,7 +67,7 @@ var _ = Describe("E2E-RO-045-001: Completion Notification", Label("e2e", "notifi
 		rr := &remediationv1.RemediationRequest{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      rrName,
-				Namespace: testNS,
+				Namespace: controllerNamespace,
 			},
 			Spec: remediationv1.RemediationRequestSpec{
 				SignalFingerprint: func() string {
@@ -93,12 +93,13 @@ var _ = Describe("E2E-RO-045-001: Completion Notification", Label("e2e", "notifi
 			},
 		}
 		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 
 		By("2. Waiting for RO to create SignalProcessing CRD")
 		var sp *signalprocessingv1.SignalProcessing
 		Eventually(func() bool {
 			spList := &signalprocessingv1.SignalProcessingList{}
-			_ = k8sClient.List(ctx, spList, client.InNamespace(testNS))
+			_ = k8sClient.List(ctx, spList, client.InNamespace(controllerNamespace))
 			if len(spList.Items) == 0 {
 				return false
 			}
@@ -127,7 +128,7 @@ var _ = Describe("E2E-RO-045-001: Completion Notification", Label("e2e", "notifi
 		var analysis *aianalysisv1.AIAnalysis
 		Eventually(func() bool {
 			analysisList := &aianalysisv1.AIAnalysisList{}
-			_ = k8sClient.List(ctx, analysisList, client.InNamespace(testNS))
+			_ = k8sClient.List(ctx, analysisList, client.InNamespace(controllerNamespace))
 			if len(analysisList.Items) == 0 {
 				return false
 			}
@@ -169,7 +170,7 @@ var _ = Describe("E2E-RO-045-001: Completion Notification", Label("e2e", "notifi
 		var we *workflowexecutionv1.WorkflowExecution
 		Eventually(func() bool {
 			weList := &workflowexecutionv1.WorkflowExecutionList{}
-			_ = k8sClient.List(ctx, weList, client.InNamespace(testNS))
+			_ = k8sClient.List(ctx, weList, client.InNamespace(controllerNamespace))
 			if len(weList.Items) == 0 {
 				return false
 			}
@@ -193,7 +194,7 @@ var _ = Describe("E2E-RO-045-001: Completion Notification", Label("e2e", "notifi
 		var notification *notificationv1.NotificationRequest
 		Eventually(func() bool {
 			notificationList := &notificationv1.NotificationRequestList{}
-			_ = k8sClient.List(ctx, notificationList, client.InNamespace(testNS))
+			_ = k8sClient.List(ctx, notificationList, client.InNamespace(controllerNamespace))
 			if len(notificationList.Items) == 0 {
 				return false
 			}
@@ -223,9 +224,8 @@ var _ = Describe("E2E-RO-045-001: Completion Notification", Label("e2e", "notifi
 
 		By("11. Validating NotificationRequest spec fields for routing (Issue #91)")
 		Expect(notification.Spec.Type).To(Equal(notificationv1.NotificationTypeCompletion))
-		Expect(notification.Spec.RemediationRequestRef).ToNot(BeNil())
 		Expect(notification.Spec.RemediationRequestRef.Name).To(Equal(rr.Name))
-		Expect(notification.Spec.Severity).ToNot(BeEmpty())
+		Expect(notification.Spec.Severity).To(Equal("critical"))
 
 		By("12. Validating NotificationRequest metadata")
 		Expect(notification.Spec.Metadata).To(HaveKeyWithValue("remediationRequest", rr.Name))

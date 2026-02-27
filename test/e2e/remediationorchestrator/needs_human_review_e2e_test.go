@@ -73,7 +73,7 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 			rr := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "rr-e2e-human-review-001",
-					Namespace: testNS,
+					Namespace: controllerNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: fingerprint,
@@ -96,6 +96,7 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 				},
 			}
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 
 			By("Verifying RemediationRequest was created")
 			Eventually(func() error {
@@ -106,7 +107,7 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 		var sp *signalprocessingv1.SignalProcessing
 		Eventually(func() bool {
 			spList := &signalprocessingv1.SignalProcessingList{}
-			_ = k8sClient.List(ctx, spList, client.InNamespace(testNS))
+			_ = k8sClient.List(ctx, spList, client.InNamespace(controllerNamespace))
 			if len(spList.Items) == 0 {
 				return false
 			}
@@ -135,7 +136,7 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 		var analysis *aianalysisv1.AIAnalysis
 		Eventually(func() bool {
 			analysisList := &aianalysisv1.AIAnalysisList{}
-			_ = k8sClient.List(ctx, analysisList, client.InNamespace(testNS))
+			_ = k8sClient.List(ctx, analysisList, client.InNamespace(controllerNamespace))
 			if len(analysisList.Items) == 0 {
 				return false
 			}
@@ -161,7 +162,7 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 			var notification *notificationv1.NotificationRequest
 			Eventually(func() bool {
 				notificationList := &notificationv1.NotificationRequestList{}
-				_ = k8sClient.List(ctx, notificationList, client.InNamespace(testNS))
+				_ = k8sClient.List(ctx, notificationList, client.InNamespace(controllerNamespace))
 				if len(notificationList.Items) == 0 {
 					return false
 				}
@@ -188,7 +189,7 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 			By("Verifying NO WorkflowExecution was created (blocked by human review)")
 			weList := &workflowexecutionv1.WorkflowExecutionList{}
 			Consistently(func() int {
-				_ = k8sClient.List(ctx, weList, client.InNamespace(testNS))
+				_ = k8sClient.List(ctx, weList, client.InNamespace(controllerNamespace))
 				return len(weList.Items)
 			}, 10*time.Second, interval).Should(Equal(0), "NO WorkflowExecution should exist - remediation blocked")
 
@@ -210,7 +211,7 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 			rr := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "rr-e2e-normal-flow-002",
-					Namespace: testNS,
+					Namespace: controllerNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: fingerprint,
@@ -233,6 +234,7 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 				},
 			}
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 
 			By("Verifying RemediationRequest was created")
 			Eventually(func() error {
@@ -243,7 +245,7 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 		var sp *signalprocessingv1.SignalProcessing
 		Eventually(func() bool {
 			spList := &signalprocessingv1.SignalProcessingList{}
-			_ = k8sClient.List(ctx, spList, client.InNamespace(testNS))
+			_ = k8sClient.List(ctx, spList, client.InNamespace(controllerNamespace))
 			if len(spList.Items) == 0 {
 				return false
 			}
@@ -272,7 +274,7 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 		var analysis *aianalysisv1.AIAnalysis
 		Eventually(func() bool {
 			analysisList := &aianalysisv1.AIAnalysisList{}
-			_ = k8sClient.List(ctx, analysisList, client.InNamespace(testNS))
+			_ = k8sClient.List(ctx, analysisList, client.InNamespace(controllerNamespace))
 			if len(analysisList.Items) == 0 {
 				return false
 			}
@@ -315,7 +317,7 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 			var we *workflowexecutionv1.WorkflowExecution
 			Eventually(func() bool {
 				weList := &workflowexecutionv1.WorkflowExecutionList{}
-				_ = k8sClient.List(ctx, weList, client.InNamespace(testNS))
+				_ = k8sClient.List(ctx, weList, client.InNamespace(controllerNamespace))
 				if len(weList.Items) == 0 {
 					return false
 				}
@@ -330,7 +332,7 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 			By("Verifying NO NotificationRequest was created (no human review needed)")
 			notificationList := &notificationv1.NotificationRequestList{}
 			Consistently(func() int {
-				_ = k8sClient.List(ctx, notificationList, client.InNamespace(testNS))
+				_ = k8sClient.List(ctx, notificationList, client.InNamespace(controllerNamespace))
 				return len(notificationList.Items)
 			}, 10*time.Second, interval).Should(Equal(0), "NO NotificationRequest should exist - normal flow")
 

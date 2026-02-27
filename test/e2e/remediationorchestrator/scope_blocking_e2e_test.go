@@ -71,7 +71,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking E2E", Label("e2e", "scope"), f
 		rr := &remediationv1.RemediationRequest{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "rr-scope-unmanaged-e2e",
-				Namespace: unmanagedNS,
+				Namespace: controllerNamespace,
 			},
 			Spec: remediationv1.RemediationRequestSpec{
 				SignalFingerprint: "e2e010001a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2aaa",
@@ -94,6 +94,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking E2E", Label("e2e", "scope"), f
 			},
 		}
 		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 
 		By("Waiting for the RO controller to block the RR with UnmanagedResource reason")
 		Eventually(func() string {
@@ -134,7 +135,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking E2E", Label("e2e", "scope"), f
 		rr := &remediationv1.RemediationRequest{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "rr-scope-managed-e2e",
-				Namespace: managedNS,
+				Namespace: controllerNamespace,
 			},
 			Spec: remediationv1.RemediationRequestSpec{
 				SignalFingerprint: "e2e010002b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3bbb",
@@ -157,6 +158,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking E2E", Label("e2e", "scope"), f
 			},
 		}
 		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 
 		By("Waiting for the RO controller to process the RR (should NOT be blocked for scope)")
 		// The controller should pick it up and transition it past Pending
@@ -183,9 +185,9 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking E2E", Label("e2e", "scope"), f
 			fetched.Status.OverallPhase)
 
 		By("Completing SP/AI lifecycle to avoid dangling CRDs")
-		sp := helpers.WaitForSPCreation(ctx, k8sClient, managedNS, timeout, interval)
+		sp := helpers.WaitForSPCreation(ctx, k8sClient, controllerNamespace, timeout, interval)
 		helpers.SimulateSPCompletion(ctx, k8sClient, sp)
-		ai := helpers.WaitForAICreation(ctx, k8sClient, managedNS, timeout, interval)
+		ai := helpers.WaitForAICreation(ctx, k8sClient, controllerNamespace, timeout, interval)
 		helpers.SimulateAIWorkflowNotNeeded(ctx, k8sClient, ai)
 	})
 
@@ -198,12 +200,12 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking E2E", Label("e2e", "scope"), f
 			helpers.WithoutManagedLabel())
 		defer helpers.DeleteTestNamespace(ctx, k8sClient, ns)
 
-		By("Creating a RemediationRequest in unmanaged namespace")
+		By("Creating a RemediationRequest in controllerNamespace targeting unmanaged namespace")
 		now := metav1.Now()
 		rr := &remediationv1.RemediationRequest{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "rr-scope-unblock-e2e",
-				Namespace: ns,
+				Namespace: controllerNamespace,
 			},
 			Spec: remediationv1.RemediationRequestSpec{
 				SignalFingerprint: "e2e010003c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4ccc",
@@ -226,6 +228,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking E2E", Label("e2e", "scope"), f
 			},
 		}
 		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 
 		By("Waiting for RR to be blocked with UnmanagedResource")
 		Eventually(func() string {
@@ -277,9 +280,9 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking E2E", Label("e2e", "scope"), f
 		Expect(apiReader.Get(ctx, client.ObjectKeyFromObject(rr), fetched)).To(Succeed())
 		if fetched.Status.OverallPhase == remediationv1.PhaseProcessing ||
 			fetched.Status.OverallPhase == remediationv1.PhaseAnalyzing {
-			sp := helpers.WaitForSPCreation(ctx, k8sClient, ns, timeout, interval)
+			sp := helpers.WaitForSPCreation(ctx, k8sClient, controllerNamespace, timeout, interval)
 			helpers.SimulateSPCompletion(ctx, k8sClient, sp)
-			ai := helpers.WaitForAICreation(ctx, k8sClient, ns, timeout, interval)
+			ai := helpers.WaitForAICreation(ctx, k8sClient, controllerNamespace, timeout, interval)
 			helpers.SimulateAIWorkflowNotNeeded(ctx, k8sClient, ai)
 		}
 	})

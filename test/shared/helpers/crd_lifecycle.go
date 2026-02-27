@@ -123,6 +123,7 @@ type AICompletionOpts struct {
 
 // SimulateAICompletedWithWorkflow updates AI status as completed with a workflow
 // selection and AffectedResource (required for routing to WorkflowExecution).
+// Uses RetryOnConflict to handle races with the RO controller.
 func SimulateAICompletedWithWorkflow(ctx context.Context, k8sClient client.Client, ai *aianalysisv1.AIAnalysis, opts AICompletionOpts) {
 	By("Simulating AI completion with workflow selection (AA controller behavior)")
 	confidence := opts.Confidence
@@ -138,52 +139,69 @@ func SimulateAICompletedWithWorkflow(ctx context.Context, k8sClient client.Clien
 		targetName = "test-app"
 	}
 
-	ai.Status.Phase = aianalysisv1.PhaseCompleted
-	ai.Status.Reason = "AnalysisCompleted"
-	ai.Status.Message = "Workflow recommended"
-	ai.Status.RootCause = "Root cause identified"
-	ai.Status.ApprovalRequired = opts.ApprovalRequired
-	if opts.ApprovalReason != "" {
-		ai.Status.ApprovalReason = opts.ApprovalReason
-	}
-	ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-		WorkflowID:      "restart-pod-v1",
-		Version:         "1.0.0",
-		ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-pod:v1.0.0",
-		Confidence:      confidence,
-	}
-	ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
-		Summary:    "Root cause identified",
-		Severity:   "critical",
-		SignalType: "alert",
-		AffectedResource: &aianalysisv1.AffectedResource{
-			Kind:      targetKind,
-			Name:      targetName,
-			Namespace: opts.TargetNamespace,
-		},
-	}
-	Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
+	Expect(k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+		if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(ai), ai); err != nil {
+			return err
+		}
+		ai.Status.Phase = aianalysisv1.PhaseCompleted
+		ai.Status.Reason = "AnalysisCompleted"
+		ai.Status.Message = "Workflow recommended"
+		ai.Status.RootCause = "Root cause identified"
+		ai.Status.ApprovalRequired = opts.ApprovalRequired
+		if opts.ApprovalReason != "" {
+			ai.Status.ApprovalReason = opts.ApprovalReason
+		}
+		ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+			WorkflowID:      "restart-pod-v1",
+			Version:         "1.0.0",
+			ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-pod:v1.0.0",
+			Confidence:      confidence,
+		}
+		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+			Summary:    "Root cause identified",
+			Severity:   "critical",
+			SignalType: "alert",
+			AffectedResource: &aianalysisv1.AffectedResource{
+				Kind:      targetKind,
+				Name:      targetName,
+				Namespace: opts.TargetNamespace,
+			},
+		}
+		return k8sClient.Status().Update(ctx, ai)
+	})).To(Succeed())
 }
 
 // SimulateAIWorkflowNotNeeded updates AI status as completed with WorkflowNotNeeded outcome.
+// Uses RetryOnConflict to handle races with the RO controller.
 func SimulateAIWorkflowNotNeeded(ctx context.Context, k8sClient client.Client, ai *aianalysisv1.AIAnalysis) {
 	By("Simulating AI completion with WorkflowNotNeeded (AA controller behavior)")
-	ai.Status.Phase = aianalysisv1.PhaseCompleted
-	ai.Status.Reason = "WorkflowNotNeeded"
-	ai.Status.SubReason = "ProblemResolved"
-	ai.Status.Message = "Problem self-resolved: transient error no longer present"
-	Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
+	Expect(k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+		if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(ai), ai); err != nil {
+			return err
+		}
+		ai.Status.Phase = aianalysisv1.PhaseCompleted
+		ai.Status.Reason = "WorkflowNotNeeded"
+		ai.Status.SubReason = "ProblemResolved"
+		ai.Status.Message = "Problem self-resolved: transient error no longer present"
+		return k8sClient.Status().Update(ctx, ai)
+	})).To(Succeed())
 }
 
 // SimulateAINeedsHumanReview updates AI status as failed with NeedsHumanReview.
+// Uses RetryOnConflict to handle races with the RO controller.
 func SimulateAINeedsHumanReview(ctx context.Context, k8sClient client.Client, ai *aianalysisv1.AIAnalysis) {
 	By("Simulating AI failure with NeedsHumanReview (AA controller behavior)")
-	ai.Status.Phase = aianalysisv1.PhaseFailed
-	ai.Status.Reason = "WorkflowResolutionFailed"
-	ai.Status.NeedsHumanReview = true
-	ai.Status.HumanReviewReason = "rca_incomplete"
-	ai.Status.Message = "RCA analysis incomplete: missing affectedResource field in incident data"
-	Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
+	Expect(k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+		if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(ai), ai); err != nil {
+			return err
+		}
+		ai.Status.Phase = aianalysisv1.PhaseFailed
+		ai.Status.Reason = "WorkflowResolutionFailed"
+		ai.Status.NeedsHumanReview = true
+		ai.Status.HumanReviewReason = "rca_incomplete"
+		ai.Status.Message = "RCA analysis incomplete: missing affectedResource field in incident data"
+		return k8sClient.Status().Update(ctx, ai)
+	})).To(Succeed())
 }
 
 // WaitForWECreation waits for the RO controller to create a WorkflowExecution CRD
@@ -204,10 +222,16 @@ func WaitForWECreation(ctx context.Context, k8sClient client.Client, namespace s
 }
 
 // SimulateWECompletion updates the given WE status to Completed.
+// Uses RetryOnConflict to handle races with the RO controller.
 func SimulateWECompletion(ctx context.Context, k8sClient client.Client, we *workflowexecutionv1.WorkflowExecution) {
 	By("Simulating WE completion (WE controller behavior)")
-	we.Status.Phase = workflowexecutionv1.PhaseCompleted
-	Expect(k8sClient.Status().Update(ctx, we)).To(Succeed())
+	Expect(k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+		if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(we), we); err != nil {
+			return err
+		}
+		we.Status.Phase = workflowexecutionv1.PhaseCompleted
+		return k8sClient.Status().Update(ctx, we)
+	})).To(Succeed())
 }
 
 // WaitForRARCreation waits for the RO controller to create a RemediationApprovalRequest CRD

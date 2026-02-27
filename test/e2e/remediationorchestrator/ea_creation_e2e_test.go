@@ -70,7 +70,7 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 		rr := &remediationv1.RemediationRequest{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      rrName,
-				Namespace: testNS,
+				Namespace: controllerNamespace,
 			},
 			Spec: remediationv1.RemediationRequestSpec{
 				SignalFingerprint: func() string {
@@ -96,12 +96,13 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 			},
 		}
 		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 
 		By("2. Waiting for RO to create SignalProcessing CRD")
 		var sp *signalprocessingv1.SignalProcessing
 		Eventually(func() bool {
 			spList := &signalprocessingv1.SignalProcessingList{}
-			_ = k8sClient.List(ctx, spList, client.InNamespace(testNS))
+			_ = k8sClient.List(ctx, spList, client.InNamespace(controllerNamespace))
 			if len(spList.Items) == 0 {
 				return false
 			}
@@ -130,7 +131,7 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 		var analysis *aianalysisv1.AIAnalysis
 		Eventually(func() bool {
 			analysisList := &aianalysisv1.AIAnalysisList{}
-			_ = k8sClient.List(ctx, analysisList, client.InNamespace(testNS))
+			_ = k8sClient.List(ctx, analysisList, client.InNamespace(controllerNamespace))
 			if len(analysisList.Items) == 0 {
 				return false
 			}
@@ -167,7 +168,7 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 		var we *workflowexecutionv1.WorkflowExecution
 		Eventually(func() bool {
 			weList := &workflowexecutionv1.WorkflowExecutionList{}
-			_ = k8sClient.List(ctx, weList, client.InNamespace(testNS))
+			_ = k8sClient.List(ctx, weList, client.InNamespace(controllerNamespace))
 			if len(weList.Items) == 0 {
 				return false
 			}
@@ -206,7 +207,7 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 		var nr *notificationv1.NotificationRequest
 		Eventually(func() bool {
 			nrList := &notificationv1.NotificationRequestList{}
-			_ = k8sClient.List(ctx, nrList, client.InNamespace(testNS))
+			_ = k8sClient.List(ctx, nrList, client.InNamespace(controllerNamespace))
 			for i := range nrList.Items {
 				if nrList.Items[i].Spec.RemediationRequestRef != nil &&
 					nrList.Items[i].Spec.RemediationRequestRef.Name == rrName {
@@ -249,7 +250,7 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 		eaName := fmt.Sprintf("ea-%s", rrName)
 		ea := &eav1.EffectivenessAssessment{}
 		Eventually(func() error {
-			return k8sClient.Get(ctx, client.ObjectKey{Name: eaName, Namespace: testNS}, ea)
+			return k8sClient.Get(ctx, client.ObjectKey{Name: eaName, Namespace: controllerNamespace}, ea)
 		}, timeout, interval).Should(Succeed(), "EffectivenessAssessment should be created after RR completion")
 
 		By("10. Validating EA spec fields")
@@ -283,7 +284,7 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 			rr := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      rrName,
-					Namespace: testNS,
+					Namespace: controllerNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: func() string {
@@ -309,12 +310,13 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 				},
 			}
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 
 			By("2. Waiting for RO to create SignalProcessing CRD")
 			var sp *signalprocessingv1.SignalProcessing
 			Eventually(func() bool {
 				spList := &signalprocessingv1.SignalProcessingList{}
-				_ = k8sClient.List(ctx, spList, client.InNamespace(testNS))
+				_ = k8sClient.List(ctx, spList, client.InNamespace(controllerNamespace))
 				if len(spList.Items) == 0 {
 					return false
 				}
@@ -343,7 +345,7 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 			var analysis *aianalysisv1.AIAnalysis
 			Eventually(func() bool {
 				analysisList := &aianalysisv1.AIAnalysisList{}
-				_ = k8sClient.List(ctx, analysisList, client.InNamespace(testNS))
+				_ = k8sClient.List(ctx, analysisList, client.InNamespace(controllerNamespace))
 				if len(analysisList.Items) == 0 {
 					return false
 				}
@@ -380,7 +382,7 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 			var we *workflowexecutionv1.WorkflowExecution
 			Eventually(func() bool {
 				weList := &workflowexecutionv1.WorkflowExecutionList{}
-				_ = k8sClient.List(ctx, weList, client.InNamespace(testNS))
+				_ = k8sClient.List(ctx, weList, client.InNamespace(controllerNamespace))
 				if len(weList.Items) == 0 {
 					return false
 				}
