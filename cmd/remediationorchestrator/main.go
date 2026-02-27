@@ -268,6 +268,7 @@ func main() {
 	setupLog.Info("Setting up RemediationApprovalRequest audit controller (BR-AUDIT-006)")
 	if err = controller.NewRARReconciler(
 		mgr.GetClient(),
+		mgr.GetAPIReader(), // DD-STATUS-001: Cache-bypassed reads for idempotency guard
 		mgr.GetScheme(),
 		auditStore,
 		roMetrics, // REFACTOR: Pass metrics for business value tracking

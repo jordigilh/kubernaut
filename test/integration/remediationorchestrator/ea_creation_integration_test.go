@@ -603,11 +603,12 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 		}()
 
 		By("Creating a RemediationRequest targeting a cluster-scoped Node (empty namespace)")
+		// ADR-057: RR must be in ROControllerNamespace; controller only watches this NS
 		now := metav1.Now()
 		rr := &remediationv1.RemediationRequest{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "rr-node-192",
-				Namespace: ns,
+				Namespace: ROControllerNamespace,
 			},
 			Spec: remediationv1.RemediationRequestSpec{
 				SignalFingerprint: func() string {

@@ -113,12 +113,13 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 	}
 
 	// Helper to create valid RemediationRequest
+	// ADR-057: RR must be in ROControllerNamespace; controller only watches this NS
 	newValidRemediationRequest := func(name, fingerprint string) *remediationv1.RemediationRequest {
 		now := metav1.Now()
 		return &remediationv1.RemediationRequest{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      name,
-				Namespace: testNamespace,
+				Namespace: ROControllerNamespace,
 			},
 			Spec: remediationv1.RemediationRequestSpec{
 				SignalFingerprint: fingerprint,
@@ -153,7 +154,7 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 		Eventually(func() bool {
 			err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
 				Name:      spName,
-				Namespace: testNamespace,
+				Namespace: ROControllerNamespace,
 			}, sp)
 			return err == nil
 		}, timeout, interval).Should(BeTrue(), "SignalProcessing should be created")
@@ -164,7 +165,7 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 			Eventually(func() remediationv1.RemediationPhase {
 				_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
 					Name:      rr.Name, // Fixed: was incorrectly using spName
-					Namespace: testNamespace,
+					Namespace: ROControllerNamespace,
 				}, rr)
 				return rr.Status.OverallPhase
 			}, timeout, interval).Should(Equal(remediationv1.PhaseProcessing),
@@ -225,19 +226,19 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 			Eventually(func() bool {
 				err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
 					Name:      spName,
-					Namespace: testNamespace,
+					Namespace: ROControllerNamespace,
 				}, sp)
 				return err == nil
 			}, timeout, interval).Should(BeTrue())
 
-			Expect(updateSPStatus(testNamespace, sp.Name, signalprocessingv1.PhaseCompleted, "medium")).To(Succeed())
+			Expect(updateSPStatus(ROControllerNamespace, sp.Name, signalprocessingv1.PhaseCompleted, "medium")).To(Succeed())
 
 			// Wait for RO to create AIAnalysis
 			ai := &aianalysisv1.AIAnalysis{}
 			Eventually(func() bool {
 				err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
 					Name:      aiName,
-					Namespace: testNamespace,
+					Namespace: ROControllerNamespace,
 				}, ai)
 				return err == nil
 			}, timeout, interval).Should(BeTrue(), "AIAnalysis should be created")
@@ -250,7 +251,7 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 			Eventually(func() remediationv1.RemediationPhase {
 				_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
 					Name:      rr.Name, // Fixed: was incorrectly using spName
-					Namespace: testNamespace,
+					Namespace: ROControllerNamespace,
 				}, rr)
 				return rr.Status.OverallPhase
 			}, timeout, interval).Should(Equal(remediationv1.PhaseAnalyzing),
@@ -310,19 +311,19 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 			Eventually(func() bool {
 				err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
 					Name:      spName,
-					Namespace: testNamespace,
+					Namespace: ROControllerNamespace,
 				}, sp)
 				return err == nil
 			}, timeout, interval).Should(BeTrue())
 
-			Expect(updateSPStatus(testNamespace, sp.Name, signalprocessingv1.PhaseCompleted, "medium")).To(Succeed())
+			Expect(updateSPStatus(ROControllerNamespace, sp.Name, signalprocessingv1.PhaseCompleted, "medium")).To(Succeed())
 
 			// Complete AIAnalysis
 			ai := &aianalysisv1.AIAnalysis{}
 			Eventually(func() bool {
 				err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
 					Name:      aiName,
-					Namespace: testNamespace,
+					Namespace: ROControllerNamespace,
 				}, ai)
 				return err == nil
 			}, timeout, interval).Should(BeTrue())
@@ -341,7 +342,7 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 				AffectedResource: &aianalysisv1.AffectedResource{
 					Kind:      "Pod",
 					Name:      "test-pod",
-					Namespace: testNamespace,
+					Namespace: ROControllerNamespace,
 				},
 			}
 			Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
@@ -351,7 +352,7 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 			Eventually(func() bool {
 				err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
 					Name:      weName,
-					Namespace: testNamespace,
+					Namespace: ROControllerNamespace,
 				}, we)
 				return err == nil
 			}, timeout, interval).Should(BeTrue())
@@ -363,7 +364,7 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 			Eventually(func() remediationv1.RemediationPhase {
 				_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
 					Name:      rr.Name, // Fixed: was incorrectly using spName
-					Namespace: testNamespace,
+					Namespace: ROControllerNamespace,
 				}, rr)
 				return rr.Status.OverallPhase
 			}, timeout, interval).Should(Equal(remediationv1.PhaseCompleted),
@@ -421,19 +422,19 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 			Eventually(func() bool {
 				err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
 					Name:      spName,
-					Namespace: testNamespace,
+					Namespace: ROControllerNamespace,
 				}, sp)
 				return err == nil
 			}, timeout, interval).Should(BeTrue())
 
-			Expect(updateSPStatus(testNamespace, sp.Name, signalprocessingv1.PhaseCompleted, "medium")).To(Succeed())
+			Expect(updateSPStatus(ROControllerNamespace, sp.Name, signalprocessingv1.PhaseCompleted, "medium")).To(Succeed())
 
 			// Fail AIAnalysis to trigger remediation failure
 			ai := &aianalysisv1.AIAnalysis{}
 			Eventually(func() bool {
 				err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
 					Name:      aiName,
-					Namespace: testNamespace,
+					Namespace: ROControllerNamespace,
 				}, ai)
 				return err == nil
 			}, timeout, interval).Should(BeTrue())
@@ -446,7 +447,7 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 			Eventually(func() remediationv1.RemediationPhase {
 				_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
 					Name:      rr.Name, // Fixed: was incorrectly using spName
-					Namespace: testNamespace,
+					Namespace: ROControllerNamespace,
 				}, rr)
 				GinkgoWriter.Printf("⏳ RR phase: %s, AIPhase: %s\n", rr.Status.OverallPhase, ai.Status.Phase)
 				return rr.Status.OverallPhase

@@ -53,6 +53,7 @@ import (
 // REFACTOR Phase: Enhanced with metrics integration and structured logging.
 type RARReconciler struct {
 	client       client.Client
+	apiReader    client.Reader      // DD-STATUS-001: Cache-bypassed reads for idempotency guard
 	scheme       *runtime.Scheme
 	auditStore   audit.AuditStore
 	auditManager *roaudit.Manager
@@ -63,6 +64,7 @@ type RARReconciler struct {
 //
 // Parameters:
 //   - client: Kubernetes client for CRD operations
+//   - apiReader: Cache-bypassed reader for idempotency guard (DD-STATUS-001)
 //   - scheme: Kubernetes scheme for type registration
 //   - auditStore: Buffered audit store for event emission
 //   - metrics: Metrics instance for observability (DD-METRICS-001)
@@ -70,12 +72,14 @@ type RARReconciler struct {
 // Returns configured RARReconciler ready for controller-runtime registration.
 func NewRARReconciler(
 	client client.Client,
+	apiReader client.Reader,
 	scheme *runtime.Scheme,
 	auditStore audit.AuditStore,
 	metrics *rometrics.Metrics,
 ) *RARReconciler {
 	return &RARReconciler{
 		client:       client,
+		apiReader:    apiReader,
 		scheme:       scheme,
 		auditStore:   auditStore,
 		auditManager: roaudit.NewManager(roaudit.ServiceName), // Use RO audit manager (category="orchestration" per ADR-034 v1.7)
@@ -90,7 +94,7 @@ func NewRARReconciler(
 func (r *RARReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
-	// Fetch RAR
+	// Fetch RAR from cache for initial check
 	rar := &remediationv1.RemediationApprovalRequest{}
 	if err := r.client.Get(ctx, req.NamespacedName, rar); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
@@ -99,15 +103,19 @@ func (r *RARReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	// Idempotency: Only emit audit if decision is made AND not yet audited
 	// Per ADR-040: Decision is immutable once set (natural idempotency for decision itself)
 	if rar.Status.Decision == "" {
-		// No decision yet - nothing to do
 		return ctrl.Result{}, nil
 	}
 
-	// Check if we already emitted audit event (per WorkflowExecution pattern)
-	// Use AuditRecorded condition for idempotency (secure, tamper-proof)
+	// DD-STATUS-001: Refetch via apiReader (cache-bypassed) to confirm AuditRecorded
+	// condition is genuinely absent. The informer cache is eventually consistent — a
+	// second reconcile may start before the first reconcile's Status().Update() for
+	// AuditRecorded is reflected in the cache, causing duplicate audit emission.
+	if err := r.apiReader.Get(ctx, req.NamespacedName, rar); err != nil {
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+
 	auditCondition := meta.FindStatusCondition(rar.Status.Conditions, rarconditions.ConditionAuditRecorded)
 	if auditCondition != nil && auditCondition.Status == "True" {
-		// Already emitted - skip
 		return ctrl.Result{}, nil
 	}
 

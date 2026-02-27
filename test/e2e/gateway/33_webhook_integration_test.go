@@ -43,7 +43,7 @@ import (
 // These tests verify the COMPLETE end-to-end business flow:
 // 1. Webhook arrives (Prometheus or K8s Event)
 // 2. CRD created in Kubernetes with correct business metadata
-// 3. Fingerprint stored in Redis for deduplication
+// 3. Deduplication tracked via CRD status.deduplication (DD-GATEWAY-011)
 // 4. Duplicate alerts return 202 and NO new CRD created
 // 5. Storm detection aggregates multiple alerts into single CRD
 //
@@ -253,10 +253,10 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 			// ✅ Duplicate alerts tracked but don't create new CRDs
 		})
 
-		It("tracks duplicate count and timestamps in Redis metadata", func() {
+		It("tracks duplicate count and timestamps in CRD status.deduplication", func() {
 			// BR-GATEWAY-005: Duplicate metadata for operational visibility
 			// BUSINESS SCENARIO: Alert fires 5 times → Ops sees escalation pattern
-			// Expected: Redis metadata includes count, first seen, last seen
+			// Expected: CRD status.deduplication includes count, first seen, last seen
 
 			payload := []byte(fmt.Sprintf(`{
 				"alerts": [{
@@ -292,7 +292,6 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 					fmt.Sprintf("Duplicate %d must return 202 Accepted (got %d)", i+2, dupResp.StatusCode))
 			}
 
-			// DD-GATEWAY-012: Redis metadata check REMOVED - Gateway is now Redis-free
 			// DD-GATEWAY-011: BUSINESS OUTCOME: RR status.deduplication tracks duplicate count
 			// Verify duplicate count via K8s CRD status (ADR-057: Get by RR name)
 			var crd remediationv1alpha1.RemediationRequest
@@ -301,9 +300,17 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 					Namespace: gatewayNamespace,
 					Name:      rrName,
 				}, &crd)
-				if err != nil || crd.Status.Deduplication == nil {
+				if err != nil {
+					GinkgoWriter.Printf("[dedup-poll] k8sClient.Get error: %v\n", err)
 					return 0
 				}
+				if crd.Status.Deduplication == nil {
+					GinkgoWriter.Printf("[dedup-poll] RR %s found (phase=%s, rv=%s) but Status.Deduplication is nil\n",
+						rrName, crd.Status.OverallPhase, crd.ResourceVersion)
+					return 0
+				}
+				GinkgoWriter.Printf("[dedup-poll] RR %s: OccurrenceCount=%d, rv=%s\n",
+					rrName, crd.Status.Deduplication.OccurrenceCount, crd.ResourceVersion)
 				return crd.Status.Deduplication.OccurrenceCount
 			}, "5s", "100ms").Should(BeNumerically(">=", 5),
 				"Count shows alert fired 5 times (1 original + 4 duplicates)")

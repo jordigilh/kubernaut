@@ -48,22 +48,17 @@ var _ = Describe("Notification Lifecycle Integration", Label("integration", "not
 	)
 
 	BeforeEach(func() {
-		// Create unique namespace using standard helper (ensures uniqueness)
+		// Create unique namespace for TargetResource scope validation
 		testNamespace = createTestNamespace("ro-notif-lifecycle")
 
-		// Create test RemediationRequest with all required fields
-		// Note: These tests focus on notification tracking, not full RR lifecycle
-		// The controller will manage phase naturally (starts in Pending)
+		// ADR-057: RR must be in ROControllerNamespace; controller only watches this NS
 		now := metav1.Now()
 		testRR = &remediationv1.RemediationRequest{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      fmt.Sprintf("test-rr-%d", time.Now().UnixNano()),
-				Namespace: testNamespace,
+				Namespace: ROControllerNamespace,
 			},
 		Spec: remediationv1.RemediationRequestSpec{
-			// Valid 64-char hex fingerprint (SHA256 format per CRD validation)
-			// UNIQUE per test to avoid routing deduplication
-			// Using SHA256(UUID) for guaranteed uniqueness in parallel execution
 			SignalFingerprint: func() string {
 				h := sha256.Sum256([]byte(uuid.New().String()))
 				return hex.EncodeToString(h[:])
@@ -105,11 +100,11 @@ var _ = Describe("Notification Lifecycle Integration", Label("integration", "not
 
 	Describe("BR-ORCH-029: User-Initiated Cancellation", func() {
 		It("should update status when user deletes NotificationRequest", func() {
-			// Create NotificationRequest with owner reference
+			// ADR-057: NR must be in ROControllerNamespace (same as parent RR)
 			notif := &notificationv1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("test-notif-%d", time.Now().UnixNano()),
-					Namespace: testNamespace,
+					Namespace: ROControllerNamespace,
 				},
 				Spec: notificationv1.NotificationRequestSpec{
 					Type:     notificationv1.NotificationTypeApproval, // Fixed: was "approval-required", should be "approval"
@@ -179,10 +174,8 @@ var _ = Describe("Notification Lifecycle Integration", Label("integration", "not
 			}, 2*time.Second, 250*time.Millisecond).Should(Equal(phaseAfterCancellation),
 				"Phase should remain stable after notification cancellation")
 
-			// Verify condition set
 			cond := meta.FindStatusCondition(testRR.Status.Conditions, "NotificationDelivered")
-			Expect(cond).ToNot(BeNil())
-			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(cond).To(HaveField("Status", Equal(metav1.ConditionFalse)))
 			Expect(cond.Reason).To(Equal("UserCancelled"))
 		})
 
@@ -191,7 +184,7 @@ var _ = Describe("Notification Lifecycle Integration", Label("integration", "not
 			notif1 := &notificationv1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("test-notif-1-%d", time.Now().UnixNano()),
-					Namespace: testNamespace,
+					Namespace: ROControllerNamespace,
 				},
 				Spec: notificationv1.NotificationRequestSpec{
 					Type:     notificationv1.NotificationTypeApproval,
@@ -207,7 +200,7 @@ var _ = Describe("Notification Lifecycle Integration", Label("integration", "not
 			notif2 := &notificationv1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("test-notif-2-%d", time.Now().UnixNano()),
-					Namespace: testNamespace,
+					Namespace: ROControllerNamespace,
 				},
 				Spec: notificationv1.NotificationRequestSpec{
 					Type:     notificationv1.NotificationTypeEscalation,
@@ -262,11 +255,11 @@ var _ = Describe("Notification Lifecycle Integration", Label("integration", "not
 	Describe("BR-ORCH-030: Status Tracking", func() {
 		DescribeTable("should track NotificationRequest phase changes",
 			func(nrPhase notificationv1.NotificationPhase, expectedStatus string, shouldSetCondition bool) {
-				// Create NotificationRequest
+				// ADR-057: NR must be in ROControllerNamespace (same as parent RR)
 				notif := &notificationv1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      fmt.Sprintf("test-notif-%d", time.Now().UnixNano()),
-						Namespace: testNamespace,
+						Namespace: ROControllerNamespace,
 					},
 					Spec: notificationv1.NotificationRequestSpec{
 						Type:     notificationv1.NotificationTypeApproval,
@@ -317,7 +310,7 @@ var _ = Describe("Notification Lifecycle Integration", Label("integration", "not
 				if shouldSetCondition {
 					Expect(k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(testRR), testRR)).To(Succeed())
 					cond := meta.FindStatusCondition(testRR.Status.Conditions, "NotificationDelivered")
-					Expect(cond).ToNot(BeNil())
+					Expect(cond).To(HaveField("Status", Not(BeEmpty())), "NotificationDelivered condition must be set")
 				}
 			},
 			Entry("BR-ORCH-030: Pending phase", notificationv1.NotificationPhasePending, "Pending", false),
@@ -327,11 +320,11 @@ var _ = Describe("Notification Lifecycle Integration", Label("integration", "not
 		)
 
 		It("BR-ORCH-030: should set positive condition when notification delivery succeeds", func() {
-			// Create NotificationRequest
+			// ADR-057: NR must be in ROControllerNamespace (same as parent RR)
 			notif := &notificationv1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("test-notif-%d", time.Now().UnixNano()),
-					Namespace: testNamespace,
+					Namespace: ROControllerNamespace,
 				},
 				Spec: notificationv1.NotificationRequestSpec{
 					Type:     notificationv1.NotificationTypeApproval,
@@ -386,11 +379,11 @@ var _ = Describe("Notification Lifecycle Integration", Label("integration", "not
 		})
 
 		It("BR-ORCH-030: should set failure condition with reason when notification delivery fails", func() {
-			// Create NotificationRequest
+			// ADR-057: NR must be in ROControllerNamespace (same as parent RR)
 			notif := &notificationv1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("test-notif-%d", time.Now().UnixNano()),
-					Namespace: testNamespace,
+					Namespace: ROControllerNamespace,
 				},
 				Spec: notificationv1.NotificationRequestSpec{
 					Type:     notificationv1.NotificationTypeApproval,
