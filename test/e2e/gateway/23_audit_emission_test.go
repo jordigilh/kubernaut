@@ -30,6 +30,7 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	gateway "github.com/jordigilh/kubernaut/pkg/gateway"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
@@ -440,6 +441,23 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 				}
 				return string(c.Status.OverallPhase)
 			}, 3*time.Second, 500*time.Millisecond).Should(Equal("Pending"))
+
+			// Verify Gateway can query this CRD by fingerprint (direct API server check)
+			// Query using the same field selector Gateway uses for deduplication
+			// This ensures the CRD is indexed and queryable before testing duplicate detection
+			// Pattern: 36_deduplication_state_test.go (prevents flaky 201 vs 202 in CI)
+			Eventually(func() int {
+				var rrList remediationv1alpha1.RemediationRequestList
+				err := testClient.List(testCtx, &rrList,
+					client.InNamespace(gatewayNamespace),
+					client.MatchingFields{"spec.signalFingerprint": crd.Spec.SignalFingerprint},
+				)
+				if err != nil {
+					return 0
+				}
+				return len(rrList.Items)
+			}, 10*time.Second, 500*time.Millisecond).Should(Equal(1),
+				"CRD should be queryable by fingerprint before testing deduplication")
 
 			By("2. Send duplicate alert (triggers deduplication)")
 			resp2 := sendWebhook(gatewayURL, "/api/v1/signals/prometheus", prometheusPayload)

@@ -130,12 +130,13 @@ var _ = Describe("Gateway Error Handling (Infrastructure Gaps)", Label("integrat
 			}
 
 			// Verify CRD was created regardless of audit timeout
+			// ADR-057: CRDs are created in controller namespace, not signal namespace
 			if response != nil && response.RemediationRequestName != "" {
 				rr := &remediationv1alpha1.RemediationRequest{}
 				Eventually(func() error {
 					return k8sClient.Get(ctx, client.ObjectKey{
 						Name:      response.RemediationRequestName,
-						Namespace: testNamespace,
+						Namespace: controllerNamespace,
 					}, rr)
 				}, 5*time.Second, 500*time.Millisecond).Should(Succeed(),
 					"BR-GATEWAY-058: CRD creation must succeed even if audit times out")

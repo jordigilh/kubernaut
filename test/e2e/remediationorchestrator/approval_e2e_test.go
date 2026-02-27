@@ -18,6 +18,8 @@ package remediationorchestrator
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"time"
@@ -97,7 +99,10 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 					Namespace: controllerNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
-					SignalFingerprint: "e2e0000000000000000000000000000000000000000000000000000000000001",
+					SignalFingerprint: func() string {
+						h := sha256.Sum256([]byte(uuid.New().String()))
+						return hex.EncodeToString(h[:])
+					}(),
 					SignalName:        "E2ERARAuditTest",
 					Severity:          "critical",
 					SignalType:        "alert",
@@ -354,7 +359,10 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 					Namespace: controllerNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
-					SignalFingerprint: "e2e0000000000000000000000000000000000000000000000000000000000004",
+					SignalFingerprint: func() string {
+						h := sha256.Sum256([]byte("e2e-rar-expiry-" + uuid.New().String()))
+						return hex.EncodeToString(h[:])
+					}(),
 					SignalName:        "E2ERARExpiryTest",
 					Severity:          "critical",
 					SignalType:        "alert",
@@ -460,7 +468,10 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 					Namespace: controllerNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
-					SignalFingerprint: "e2e0000000000000000000000000000000000000000000000000000000000003",
+					SignalFingerprint: func() string {
+						h := sha256.Sum256([]byte("e2e-rar-persist-" + uuid.New().String()))
+						return hex.EncodeToString(h[:])
+					}(),
 					SignalName:        "E2ERARAuditPersistenceTest",
 					Severity:          "critical",
 					SignalType:        "alert",
