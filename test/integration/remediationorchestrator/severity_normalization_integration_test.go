@@ -242,7 +242,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			rr := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      rrName,
-					Namespace: namespace,
+					Namespace: ROControllerNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: "c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
@@ -410,7 +410,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			rr := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      rrName,
-					Namespace: namespace,
+					Namespace: ROControllerNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: func() string {
@@ -441,21 +441,21 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			spName := fmt.Sprintf("sp-%s", rrName)
 			sp := &signalprocessingv1.SignalProcessing{}
 			Eventually(func() error {
-				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, sp)
 			}, timeout, interval).Should(Succeed(),
 				"RO should create SignalProcessing when RR is created")
 
 			By("3. Simulate SignalProcessing predictive mode classification (BR-SP-106)")
 			// Simulate what the SignalModeClassifier would do:
 			// PredictedOOMKill → signalMode=predictive, signalType=OOMKilled, originalSignalType=PredictedOOMKill
-			Expect(updateSPStatusPredictive(namespace, spName, "OOMKilled", "PredictedOOMKill", "critical")).To(Succeed())
+			Expect(updateSPStatusPredictive(ROControllerNamespace, spName, "OOMKilled", "PredictedOOMKill", "critical")).To(Succeed())
 
 			By("4. Wait for RO to create AIAnalysis")
 			var createdAA *aianalysisv1.AIAnalysis
 			Eventually(func() bool {
 				var aaList aianalysisv1.AIAnalysisList
 				err := k8sManager.GetAPIReader().List(ctx, &aaList,
-					client.InNamespace(namespace))
+					client.InNamespace(ROControllerNamespace))
 				if err != nil {
 					return false
 				}

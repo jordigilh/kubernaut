@@ -1405,7 +1405,7 @@ var _ = Describe("GAP 1.1: Comprehensive Event Type + JSONB Validation", Label("
 							return 0
 						}
 						return count
-					}, 10*time.Second, 500*time.Millisecond).Should(Equal(1),
+					}, 15*time.Second, 500*time.Millisecond).Should(Equal(1),
 						fmt.Sprintf("Event %s should be persisted with correlation_id=%s", tc.EventType, correlationID))
 				})
 

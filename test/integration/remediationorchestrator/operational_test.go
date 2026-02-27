@@ -131,14 +131,22 @@ var _ = Describe("Operational Visibility (Priority 3)", func() {
 				"All %d RRs should start processing (no rate limiting)", numRRs)
 
 			// Then: All RRs should have SignalProcessing created
+			// Filter by SP name prefix (sp-load-rr-*) to avoid pollution from parallel tests
 			Eventually(func() int {
 				spList := &signalprocessingv1.SignalProcessingList{}
 				if err := k8sManager.GetAPIReader().List(ctx, spList, client.InNamespace(ROControllerNamespace)); err != nil {
 					return 0
 				}
-				return len(spList.Items)
+				count := 0
+				prefix := "sp-load-rr-"
+				for i := range spList.Items {
+					if len(spList.Items[i].Name) >= len(prefix) && spList.Items[i].Name[:len(prefix)] == prefix {
+						count++
+					}
+				}
+				return count
 			}, "60s", "1s").Should(Equal(numRRs),
-				"All %d SignalProcessing CRDs should be created", numRRs)
+				"All %d SignalProcessing CRDs should be created for load-rr-* RRs", numRRs)
 		})
 	})
 })

@@ -263,13 +263,12 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 				"RR with unique fingerprint should not be blocked (no failure history)")
 
 			// Verify: SignalProcessing is created (RR processes normally)
-			Eventually(func() int {
-				spList := &signalprocessingv1.SignalProcessingList{}
-				if err := k8sManager.GetAPIReader().List(ctx, spList, client.InNamespace(ROControllerNamespace)); err != nil {
-					return 0
-				}
-				return len(spList.Items)
-			}, "10s", "500ms").Should(Equal(1),
+			// Filter by RR ref to avoid pollution from parallel tests (all SPs in ROControllerNamespace)
+			spName := "sp-" + rr.Name
+			Eventually(func() bool {
+				sp := &signalprocessingv1.SignalProcessing{}
+				return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: spName, Namespace: ROControllerNamespace}, sp) == nil
+			}, "10s", "500ms").Should(BeTrue(),
 				"RR with unique fingerprint must create SignalProcessing (blocking doesn't interfere)")
 		})
 
@@ -291,7 +290,8 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 		nsB := createTestNamespace("ro-fingerprint-b")
 		defer deleteTestNamespace(nsB)
 
-		sharedFP := "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+		// Unique fingerprint per test to avoid cross-test blocking (parallel tests share ROControllerNamespace)
+		sharedFP := "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2" + uuid.New().String()[:8]
 
 		// PHASE 1: Create 3 failed RRs in namespace A
 		// Each RR progresses naturally to Processing, then we set to Failed

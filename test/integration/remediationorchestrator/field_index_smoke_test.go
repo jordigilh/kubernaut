@@ -17,6 +17,8 @@ limitations under the License.
 package remediationorchestrator
 
 import (
+	"fmt"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -42,9 +44,10 @@ var _ = Describe("Field Index Smoke Test", func() {
 	It("should successfully query by spec.signalFingerprint using field index", func() {
 		By("Creating a test RemediationRequest")
 		testFingerprint := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+		rrName := fmt.Sprintf("smoke-test-rr-%s", testNamespace[len(testNamespace)-8:])
 		rr := &remediationv1.RemediationRequest{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      "smoke-test-rr",
+				Name:      rrName,
 				Namespace: ROControllerNamespace,
 			},
 			Spec: remediationv1.RemediationRequestSpec{
@@ -63,6 +66,9 @@ var _ = Describe("Field Index Smoke Test", func() {
 			},
 		}
 		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+		DeferCleanup(func() {
+			_ = k8sClient.Delete(ctx, rr)
+		})
 		GinkgoWriter.Printf("✅ Created RR: %s with fingerprint: %s\n", rr.Name, testFingerprint)
 
 		By("Querying by field selector (spec.signalFingerprint) - server-side with CRD selectableFields")
@@ -96,7 +102,7 @@ var _ = Describe("Field Index Smoke Test", func() {
 		}
 
 		Expect(len(indexedRRs.Items)).To(Equal(1), "Field index should return 1 RR")
-		Expect(indexedRRs.Items[0].Name).To(Equal("smoke-test-rr"))
+		Expect(indexedRRs.Items[0].Name).To(Equal(rrName))
 		Expect(indexedRRs.Items[0].Spec.SignalFingerprint).To(Equal(testFingerprint))
 
 		GinkgoWriter.Println("✅ SMOKE TEST PASSED: Field index working correctly")

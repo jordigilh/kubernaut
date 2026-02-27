@@ -98,15 +98,24 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-HAPI-197)", func() {
 			Expect(k8sClient.Status().Update(ctx, analysis)).To(Succeed())
 
 			// Step 6: Wait for NotificationRequest to be created by RO
+			// Filter by RR ref to avoid pollution from parallel tests (all NRs in ROControllerNamespace)
 			var notificationList *notificationv1.NotificationRequestList
-			Eventually(func() int {
+			var notification *notificationv1.NotificationRequest
+			Eventually(func() bool {
 				notificationList = &notificationv1.NotificationRequestList{}
 				_ = k8sManager.GetAPIReader().List(ctx, notificationList, client.InNamespace(ROControllerNamespace))
-				return len(notificationList.Items)
-			}, 60*time.Second, 500*time.Millisecond).Should(Equal(1), "NotificationRequest should be created")
+				for i := range notificationList.Items {
+					nr := &notificationList.Items[i]
+					if (nr.Spec.RemediationRequestRef != nil && nr.Spec.RemediationRequestRef.Name == rrName) ||
+						(nr.Spec.Metadata != nil && nr.Spec.Metadata["remediationRequest"] == rrName) {
+						notification = nr
+						return true
+					}
+				}
+				return false
+			}, 60*time.Second, 500*time.Millisecond).Should(BeTrue(), "NotificationRequest for this RR should be created")
 
 			// Validate NotificationRequest
-			notification := notificationList.Items[0]
 			Expect(notification.Name).To(Equal("nr-manual-review-" + rrName), "Notification name should follow pattern")
 			Expect(notification.Spec.Type).To(Equal(notificationv1.NotificationTypeManualReview), "Notification type should be manual-review")
 			Expect(notification.Spec.Metadata).To(HaveKeyWithValue("humanReviewReason", "workflow_not_found"), "Metadata should include humanReviewReason")
@@ -180,19 +189,32 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-HAPI-197)", func() {
 			}
 			Expect(k8sClient.Status().Update(ctx, analysis)).To(Succeed())
 
-			// Step 6: Wait for NotificationRequest to be created
-			Eventually(func() int {
+			// Step 6: Wait for NotificationRequest to be created (filter by RR ref for parallel test isolation)
+			Eventually(func() bool {
 				notificationList := &notificationv1.NotificationRequestList{}
 				_ = k8sManager.GetAPIReader().List(ctx, notificationList, client.InNamespace(ROControllerNamespace))
-				return len(notificationList.Items)
-			}, 60*time.Second, 500*time.Millisecond).Should(Equal(1), "NotificationRequest should be created")
+				for i := range notificationList.Items {
+					nr := &notificationList.Items[i]
+					if (nr.Spec.RemediationRequestRef != nil && nr.Spec.RemediationRequestRef.Name == rrName) ||
+						(nr.Spec.Metadata != nil && nr.Spec.Metadata["remediationRequest"] == rrName) {
+						return true
+					}
+				}
+				return false
+			}, 60*time.Second, 500*time.Millisecond).Should(BeTrue(), "NotificationRequest for this RR should be created")
 
-			// Step 6: Verify NO WorkflowExecution was created
+			// Step 6: Verify NO WorkflowExecution was created for this RR (filter for parallel test isolation)
 			Consistently(func() int {
 				weList := &workflowexecutionv1.WorkflowExecutionList{}
 				_ = k8sManager.GetAPIReader().List(ctx, weList, client.InNamespace(ROControllerNamespace))
-				return len(weList.Items)
-			}, 5*time.Second, 500*time.Millisecond).Should(Equal(0), "WorkflowExecution should NOT be created")
+				count := 0
+				for i := range weList.Items {
+					if weList.Items[i].Spec.RemediationRequestRef.Name == rrName {
+						count++
+					}
+				}
+				return count
+			}, 5*time.Second, 500*time.Millisecond).Should(Equal(0), "WorkflowExecution should NOT be created for this RR")
 
 			// Step 7: Verify NO RemediationApprovalRequest was created (approval is different from review)
 			// Note: RemediationApprovalRequest would only be created if approvalRequired=true (Rego decision)
@@ -243,16 +265,24 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-HAPI-197)", func() {
 			}
 			Expect(k8sClient.Status().Update(ctx, analysis)).To(Succeed())
 
-			// Step 6: Wait for NotificationRequest to be created
+			// Step 6: Wait for NotificationRequest to be created (filter by RR ref for parallel test isolation)
 			var notificationList *notificationv1.NotificationRequestList
-			Eventually(func() int {
+			var notification *notificationv1.NotificationRequest
+			Eventually(func() bool {
 				notificationList = &notificationv1.NotificationRequestList{}
 				_ = k8sManager.GetAPIReader().List(ctx, notificationList, client.InNamespace(ROControllerNamespace))
-				return len(notificationList.Items)
-			}, 60*time.Second, 500*time.Millisecond).Should(Equal(1), "NotificationRequest should be created")
+				for i := range notificationList.Items {
+					nr := &notificationList.Items[i]
+					if (nr.Spec.RemediationRequestRef != nil && nr.Spec.RemediationRequestRef.Name == rrName) ||
+						(nr.Spec.Metadata != nil && nr.Spec.Metadata["remediationRequest"] == rrName) {
+						notification = nr
+						return true
+					}
+				}
+				return false
+			}, 60*time.Second, 500*time.Millisecond).Should(BeTrue(), "NotificationRequest for this RR should be created")
 
 			// Validate NotificationRequest has correct humanReviewReason
-			notification := notificationList.Items[0]
 			Expect(notification.Spec.Type).To(Equal(notificationv1.NotificationTypeManualReview))
 			Expect(notification.Spec.Metadata).To(HaveKeyWithValue("humanReviewReason", "rca_incomplete"))
 			Expect(notification.Spec.Metadata).To(HaveKeyWithValue("remediationRequest", rrName))
