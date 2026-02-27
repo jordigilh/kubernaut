@@ -100,6 +100,146 @@ class TestLabelDetectorHappyPath:
         assert result["failedDetections"] == []
 
     @pytest.mark.asyncio
+    async def test_ut_hapi_056_022_argocd_v3_pod_tracking_id(self):
+        """UT-HAPI-056-022: Pod annotation argocd.argoproj.io/tracking-id (ArgoCD v3) -> gitOpsManaged=true, gitOpsTool=argocd.
+
+        ArgoCD v3.x uses annotation-based tracking by default, setting
+        argocd.argoproj.io/tracking-id on managed resources. This is the
+        highest-precedence GitOps signal.
+        """
+        from detection.labels import LabelDetector
+
+        queries = _make_k8s_queries()
+        detector = LabelDetector(queries)
+
+        k8s_context = {
+            "namespace": "demo-gitops",
+            "pod_details": {
+                "name": "web-frontend-abc",
+                "labels": {"app": "web-frontend"},
+                "annotations": {
+                    "argocd.argoproj.io/tracking-id": "demo-gitops-app:apps/Deployment:demo-gitops/web-frontend",
+                },
+            },
+            "deployment_details": {
+                "name": "web-frontend",
+                "labels": {"app": "web-frontend"},
+                "annotations": {},
+            },
+        }
+
+        result = await detector.detect_labels(k8s_context, [])
+
+        assert result is not None
+        assert result["gitOpsManaged"] is True
+        assert result["gitOpsTool"] == "argocd"
+        assert result["failedDetections"] == []
+
+    @pytest.mark.asyncio
+    async def test_ut_hapi_056_023_argocd_v3_deploy_tracking_id(self):
+        """UT-HAPI-056-023: Deployment annotation argocd.argoproj.io/tracking-id -> gitOpsManaged=true.
+
+        When pod has no ArgoCD annotations but the parent Deployment has
+        ArgoCD v3 tracking-id, detection still succeeds.
+        """
+        from detection.labels import LabelDetector
+
+        queries = _make_k8s_queries()
+        detector = LabelDetector(queries)
+
+        k8s_context = {
+            "namespace": "demo-gitops",
+            "pod_details": {
+                "name": "web-frontend-abc",
+                "labels": {"app": "web-frontend"},
+                "annotations": {},
+            },
+            "deployment_details": {
+                "name": "web-frontend",
+                "labels": {"app": "web-frontend"},
+                "annotations": {
+                    "argocd.argoproj.io/tracking-id": "demo-gitops-app:apps/Deployment:demo-gitops/web-frontend",
+                },
+            },
+        }
+
+        result = await detector.detect_labels(k8s_context, [])
+
+        assert result is not None
+        assert result["gitOpsManaged"] is True
+        assert result["gitOpsTool"] == "argocd"
+
+    @pytest.mark.asyncio
+    async def test_ut_hapi_056_024_argocd_v3_namespace_tracking_id(self):
+        """UT-HAPI-056-024: Namespace annotation argocd.argoproj.io/tracking-id -> gitOpsManaged=true.
+
+        When neither pod nor deployment carry ArgoCD markers, the namespace
+        annotation is the last ArgoCD v3 fallback.
+        """
+        from detection.labels import LabelDetector
+
+        queries = _make_k8s_queries()
+        detector = LabelDetector(queries)
+
+        k8s_context = {
+            "namespace": "demo-gitops",
+            "pod_details": {
+                "name": "web-frontend-abc",
+                "labels": {"app": "web-frontend"},
+                "annotations": {},
+            },
+            "deployment_details": {
+                "name": "web-frontend",
+                "labels": {},
+                "annotations": {},
+            },
+            "namespace_labels": {},
+            "namespace_annotations": {
+                "argocd.argoproj.io/tracking-id": "demo-gitops-app:v1/Namespace:demo-gitops",
+            },
+        }
+
+        result = await detector.detect_labels(k8s_context, [])
+
+        assert result is not None
+        assert result["gitOpsManaged"] is True
+        assert result["gitOpsTool"] == "argocd"
+
+    @pytest.mark.asyncio
+    async def test_ut_hapi_056_025_argocd_v3_precedence_over_v2(self):
+        """UT-HAPI-056-025: Pod tracking-id (v3) takes precedence over deployment instance label (v2).
+
+        When both v3 tracking-id annotation and v2 instance label are present,
+        the v3 pod annotation wins due to higher precedence.
+        """
+        from detection.labels import LabelDetector
+
+        queries = _make_k8s_queries()
+        detector = LabelDetector(queries)
+
+        k8s_context = {
+            "namespace": "demo-gitops",
+            "pod_details": {
+                "name": "web-frontend-abc",
+                "labels": {"app": "web-frontend"},
+                "annotations": {
+                    "argocd.argoproj.io/tracking-id": "demo-gitops-app:apps/Deployment:demo-gitops/web-frontend",
+                },
+            },
+            "deployment_details": {
+                "name": "web-frontend",
+                "labels": {"argocd.argoproj.io/instance": "demo-gitops-app"},
+                "annotations": {},
+            },
+        }
+
+        result = await detector.detect_labels(k8s_context, [])
+
+        assert result is not None
+        assert result["gitOpsManaged"] is True
+        assert result["gitOpsTool"] == "argocd"
+
+    @pytest.mark.asyncio
     async def test_ut_hapi_056_003_flux_gitops(self):
         """UT-HAPI-056-003: Deployment label fluxcd.io/sync-gc-mark -> gitOpsManaged=true, gitOpsTool=flux."""
         from detection.labels import LabelDetector
@@ -490,6 +630,149 @@ class TestLabelDetectorEdgeCases:
         assert result["pdbProtected"] is True
         assert result["hpaEnabled"] is True
         assert result["failedDetections"] == []
+
+
+class TestGitOpsToolMutualExclusivity:
+    """BR-HAPI-254: gitOpsTool mutual exclusivity tests.
+
+    Only ONE gitOpsTool value may be returned. When multiple GitOps indicators
+    coexist on the same resource, first-match-wins per DD-HAPI-018 v1.3.
+    """
+
+    @pytest.mark.asyncio
+    async def test_ut_hapi_056_026_argocd_v3_wins_over_flux(self):
+        """UT-HAPI-056-026: ArgoCD v3 tracking-id on pod + Flux label on deployment -> argocd wins.
+
+        BR-HAPI-254: In the unlikely event both ArgoCD and Flux annotations
+        coexist, ArgoCD takes precedence (pod annotations checked first).
+        """
+        from detection.labels import LabelDetector
+
+        queries = _make_k8s_queries()
+        detector = LabelDetector(queries)
+
+        k8s_context = {
+            "namespace": "prod",
+            "pod_details": {
+                "name": "web-pod",
+                "labels": {"app": "web"},
+                "annotations": {
+                    "argocd.argoproj.io/tracking-id": "app:apps/Deployment:prod/web",
+                },
+            },
+            "deployment_details": {
+                "name": "web",
+                "labels": {"fluxcd.io/sync-gc-mark": "sha256:abc123"},
+                "annotations": {},
+            },
+        }
+
+        result = await detector.detect_labels(k8s_context, [])
+
+        assert result["gitOpsManaged"] is True
+        assert result["gitOpsTool"] == "argocd"
+
+    @pytest.mark.asyncio
+    async def test_ut_hapi_056_027_argocd_v2_wins_over_flux(self):
+        """UT-HAPI-056-027: ArgoCD v2 instance on pod + Flux label on deployment -> argocd wins.
+
+        BR-HAPI-254: Pod-level ArgoCD v2 annotation has higher precedence
+        than deployment-level Flux label.
+        """
+        from detection.labels import LabelDetector
+
+        queries = _make_k8s_queries()
+        detector = LabelDetector(queries)
+
+        k8s_context = {
+            "namespace": "prod",
+            "pod_details": {
+                "name": "web-pod",
+                "labels": {"app": "web"},
+                "annotations": {
+                    "argocd.argoproj.io/instance": "my-app",
+                },
+            },
+            "deployment_details": {
+                "name": "web",
+                "labels": {"fluxcd.io/sync-gc-mark": "sha256:abc123"},
+                "annotations": {},
+            },
+        }
+
+        result = await detector.detect_labels(k8s_context, [])
+
+        assert result["gitOpsManaged"] is True
+        assert result["gitOpsTool"] == "argocd"
+
+    @pytest.mark.asyncio
+    async def test_ut_hapi_056_028_flux_wins_when_no_argocd_on_pod(self):
+        """UT-HAPI-056-028: No ArgoCD on pod + Flux on deployment + ArgoCD on namespace -> flux wins.
+
+        BR-HAPI-254: Deployment-level Flux label (priority 3) beats
+        namespace-level ArgoCD label (priority 6).
+        """
+        from detection.labels import LabelDetector
+
+        queries = _make_k8s_queries()
+        detector = LabelDetector(queries)
+
+        k8s_context = {
+            "namespace": "prod",
+            "pod_details": {
+                "name": "web-pod",
+                "labels": {"app": "web"},
+                "annotations": {},
+            },
+            "deployment_details": {
+                "name": "web",
+                "labels": {"fluxcd.io/sync-gc-mark": "sha256:abc123"},
+                "annotations": {},
+            },
+            "namespace_labels": {"argocd.argoproj.io/instance": "my-app"},
+        }
+
+        result = await detector.detect_labels(k8s_context, [])
+
+        assert result["gitOpsManaged"] is True
+        assert result["gitOpsTool"] == "flux"
+
+    @pytest.mark.asyncio
+    async def test_ut_hapi_056_029_argocd_v3_and_v2_coexist(self):
+        """UT-HAPI-056-029: ArgoCD v3 tracking-id + v2 instance both present -> argocd (one result only).
+
+        BR-HAPI-254: v3 tracking-id (priority 1) beats v2 instance (priority 2).
+        Both resolve to gitOpsTool="argocd" — the version is an internal
+        detection concern, not a consumer concern.
+        """
+        from detection.labels import LabelDetector
+
+        queries = _make_k8s_queries()
+        detector = LabelDetector(queries)
+
+        k8s_context = {
+            "namespace": "prod",
+            "pod_details": {
+                "name": "web-pod",
+                "labels": {"app": "web"},
+                "annotations": {
+                    "argocd.argoproj.io/tracking-id": "app:apps/Deployment:prod/web",
+                    "argocd.argoproj.io/instance": "my-app",
+                },
+            },
+            "deployment_details": {
+                "name": "web",
+                "labels": {"argocd.argoproj.io/instance": "my-app"},
+                "annotations": {
+                    "argocd.argoproj.io/tracking-id": "app:apps/Deployment:prod/web",
+                },
+            },
+        }
+
+        result = await detector.detect_labels(k8s_context, [])
+
+        assert result["gitOpsManaged"] is True
+        assert result["gitOpsTool"] == "argocd"
 
 
 class TestLabelDetectorErrorHandling:

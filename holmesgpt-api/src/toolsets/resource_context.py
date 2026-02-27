@@ -278,6 +278,7 @@ class GetResourceContextTool(Tool):
                     k8s_context["deployment_details"] = {
                         "name": entry["name"],
                         "labels": deploy.metadata.labels or {},
+                        "annotations": deploy.metadata.annotations or {},
                     }
                     # DD-HAPI-018: PDB selectors match Pod labels. When target is a
                     # Deployment, use pod template labels for PDB detection (Pods
