@@ -927,6 +927,24 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 		// Normal completion - check routing conditions before creating WorkflowExecution
 		logger.Info("AIAnalysis completed, checking routing conditions")
 
+		// Idempotency guard: refetch RR from API server to detect stale-cache replays.
+		// Without this, a stale informer cache can cause re-entry into handleAnalyzingPhase
+		// after a WFE was already created in a prior reconcile, triggering a false
+		// ResourceBusy block from CheckPostAnalysisConditions.
+		freshRR := &remediationv1.RemediationRequest{}
+		if err := r.apiReader.Get(ctx, client.ObjectKeyFromObject(rr), freshRR); err == nil {
+			if freshRR.Status.OverallPhase != phase.Analyzing {
+				logger.Info("Phase already advanced past Analyzing (stale cache), no-op",
+					"freshPhase", freshRR.Status.OverallPhase)
+				return ctrl.Result{}, nil
+			}
+			if freshRR.Status.WorkflowExecutionRef != nil {
+				logger.Info("WFE already created but phase still Analyzing, completing transition",
+					"wfeName", freshRR.Status.WorkflowExecutionRef.Name)
+				return r.transitionPhase(ctx, freshRR, phase.Executing)
+			}
+		}
+
 		// DD-HAPI-006 v1.2 defense-in-depth: AffectedResource MUST be present for routing.
 		// This is the RO layer of the three-layer chain (HAPI -> AA -> RO).
 		// WorkflowNotNeeded and ApprovalRequired are already handled above.

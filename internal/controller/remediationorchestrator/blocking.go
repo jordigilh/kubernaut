@@ -39,11 +39,14 @@ import (
 	"sort"
 	"time"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/config"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/helpers"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/phase"
 	"github.com/jordigilh/kubernaut/pkg/remediationrequest"
@@ -157,10 +160,18 @@ func (r *Reconciler) countConsecutiveFailures(ctx context.Context, fingerprint s
 func (r *Reconciler) handleBlockedPhase(ctx context.Context, rr *remediationv1.RemediationRequest) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
 
-	// Manual block without auto-expiry
+	// Blocks without auto-expiry: event-based blocks need periodic rechecks,
+	// manual blocks stay until explicitly cleared.
 	if rr.Status.BlockedUntil == nil {
-		logger.V(1).Info("RR is manually blocked, no auto-expiry")
-		return ctrl.Result{}, nil
+		switch remediationv1.BlockReason(rr.Status.BlockReason) {
+		case remediationv1.BlockReasonResourceBusy:
+			return r.recheckResourceBusyBlock(ctx, rr)
+		case remediationv1.BlockReasonDuplicateInProgress:
+			return r.recheckDuplicateBlock(ctx, rr)
+		default:
+			logger.V(1).Info("RR is manually blocked, no auto-expiry")
+			return ctrl.Result{}, nil
+		}
 	}
 
 	// Check if cooldown has expired
@@ -231,4 +242,105 @@ func (r *Reconciler) transitionToFailedTerminal(ctx context.Context, rr *remedia
 		"reason", failureReason,
 	)
 	return ctrl.Result{}, nil
+}
+
+// recheckResourceBusyBlock handles Blocked RRs with BlockReason=ResourceBusy.
+// Uses apiReader to check if the blocking WFE has reached a terminal phase.
+// If cleared, resets the RR to Analyzing so routing checks can re-run.
+//
+// Reference: DD-RO-002 (Resource Locking), DD-RO-002-ADDENDUM (Blocked Phase Semantics)
+func (r *Reconciler) recheckResourceBusyBlock(ctx context.Context, rr *remediationv1.RemediationRequest) (ctrl.Result, error) {
+	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
+
+	if rr.Status.BlockingWorkflowExecution == "" {
+		logger.Info("ResourceBusy block has no blocking WFE reference, clearing")
+		return r.clearEventBasedBlock(ctx, rr, phase.Analyzing)
+	}
+
+	wfe := &workflowexecutionv1.WorkflowExecution{}
+	err := r.apiReader.Get(ctx, client.ObjectKey{
+		Name:      rr.Status.BlockingWorkflowExecution,
+		Namespace: rr.Namespace,
+	}, wfe)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			logger.Info("Blocking WFE no longer exists, clearing ResourceBusy block",
+				"blockingWFE", rr.Status.BlockingWorkflowExecution)
+			return r.clearEventBasedBlock(ctx, rr, phase.Analyzing)
+		}
+		logger.Error(err, "Failed to check blocking WFE status")
+		return ctrl.Result{RequeueAfter: config.RequeueResourceBusy}, nil
+	}
+
+	if wfe.Status.Phase == workflowexecutionv1.PhaseCompleted ||
+		wfe.Status.Phase == workflowexecutionv1.PhaseFailed {
+		logger.Info("Blocking WFE reached terminal phase, clearing ResourceBusy block",
+			"blockingWFE", wfe.Name, "wfePhase", wfe.Status.Phase)
+		return r.clearEventBasedBlock(ctx, rr, phase.Analyzing)
+	}
+
+	logger.V(1).Info("Blocking WFE still active, requeueing",
+		"blockingWFE", wfe.Name, "wfePhase", wfe.Status.Phase)
+	return ctrl.Result{RequeueAfter: config.RequeueResourceBusy}, nil
+}
+
+// recheckDuplicateBlock handles Blocked RRs with BlockReason=DuplicateInProgress.
+// Uses apiReader to check if the original RR has reached a terminal phase.
+// If cleared, resets the RR to Pending so the full pipeline can re-run.
+//
+// Reference: DD-RO-002-ADDENDUM (Blocked Phase Semantics)
+func (r *Reconciler) recheckDuplicateBlock(ctx context.Context, rr *remediationv1.RemediationRequest) (ctrl.Result, error) {
+	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
+
+	if rr.Status.DuplicateOf == "" {
+		logger.Info("DuplicateInProgress block has no original RR reference, clearing")
+		return r.clearEventBasedBlock(ctx, rr, phase.Pending)
+	}
+
+	originalRR := &remediationv1.RemediationRequest{}
+	err := r.apiReader.Get(ctx, client.ObjectKey{
+		Name:      rr.Status.DuplicateOf,
+		Namespace: rr.Namespace,
+	}, originalRR)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			logger.Info("Original RR no longer exists, clearing DuplicateInProgress block",
+				"duplicateOf", rr.Status.DuplicateOf)
+			return r.clearEventBasedBlock(ctx, rr, phase.Pending)
+		}
+		logger.Error(err, "Failed to check original RR status")
+		return ctrl.Result{RequeueAfter: config.RequeueResourceBusy}, nil
+	}
+
+	if IsTerminalPhase(originalRR.Status.OverallPhase) {
+		logger.Info("Original RR reached terminal phase, clearing DuplicateInProgress block",
+			"duplicateOf", originalRR.Name, "originalPhase", originalRR.Status.OverallPhase)
+		return r.clearEventBasedBlock(ctx, rr, phase.Pending)
+	}
+
+	logger.V(1).Info("Original RR still active, requeueing",
+		"duplicateOf", originalRR.Name, "originalPhase", originalRR.Status.OverallPhase)
+	return ctrl.Result{RequeueAfter: config.RequeueResourceBusy}, nil
+}
+
+// clearEventBasedBlock clears event-based block fields and resets the RR phase
+// so the reconciliation pipeline can resume.
+func (r *Reconciler) clearEventBasedBlock(ctx context.Context, rr *remediationv1.RemediationRequest, resumePhase phase.Phase) (ctrl.Result, error) {
+	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
+
+	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+		rr.Status.OverallPhase = resumePhase
+		rr.Status.BlockReason = ""
+		rr.Status.BlockMessage = ""
+		rr.Status.BlockingWorkflowExecution = ""
+		rr.Status.DuplicateOf = ""
+		return nil
+	})
+	if err != nil {
+		logger.Error(err, "Failed to clear event-based block")
+		return ctrl.Result{}, fmt.Errorf("failed to clear event-based block: %w", err)
+	}
+
+	r.Metrics.CurrentBlockedGauge.WithLabelValues(rr.Namespace).Dec()
+	return ctrl.Result{Requeue: true}, nil
 }
