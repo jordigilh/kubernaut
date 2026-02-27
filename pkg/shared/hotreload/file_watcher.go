@@ -200,11 +200,26 @@ func (w *FileWatcher) loadInitial(ctx context.Context) error {
 	return nil
 }
 
-// watchLoop runs the fsnotify event loop.
+// debounceDuration is the quiet period after the last fsnotify event before
+// triggering a reload. fsnotify commonly emits multiple events for a single
+// file operation (e.g., WRITE + CHMOD). Debouncing coalesces these into one
+// reload, preventing duplicate callback invocations and incorrect error counts.
+const debounceDuration = 200 * time.Millisecond
+
+// watchLoop runs the fsnotify event loop with timer-based debouncing.
 func (w *FileWatcher) watchLoop(ctx context.Context) {
 	defer close(w.doneCh)
 
 	filename := filepath.Base(w.path)
+
+	var debounceTimer *time.Timer
+	var debounceCh <-chan time.Time
+
+	defer func() {
+		if debounceTimer != nil {
+			debounceTimer.Stop()
+		}
+	}()
 
 	for {
 		select {
@@ -229,8 +244,17 @@ func (w *FileWatcher) watchLoop(ctx context.Context) {
 				w.logger.V(1).Info("File change detected",
 					"event", event.Op.String(),
 					"name", event.Name)
-				w.handleFileChange()
+
+				if debounceTimer != nil {
+					debounceTimer.Stop()
+				}
+				debounceTimer = time.NewTimer(debounceDuration)
+				debounceCh = debounceTimer.C
 			}
+
+		case <-debounceCh:
+			debounceCh = nil
+			w.handleFileChange()
 
 		case err, ok := <-w.watcher.Errors:
 			if !ok {
@@ -243,11 +267,9 @@ func (w *FileWatcher) watchLoop(ctx context.Context) {
 }
 
 // handleFileChange processes a file change event.
+// Called after the debounce timer fires, ensuring burst events from fsnotify
+// (e.g., WRITE + CHMOD for a single file operation) are coalesced into one reload.
 func (w *FileWatcher) handleFileChange() {
-	// Small delay to allow file write to complete
-	// ConfigMap updates involve symlink changes
-	time.Sleep(100 * time.Millisecond)
-
 	content, err := os.ReadFile(w.path)
 	if err != nil {
 		w.mu.Lock()
