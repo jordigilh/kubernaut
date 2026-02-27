@@ -79,7 +79,7 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 		return &remediationv1.RemediationRequest{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      name,
-				Namespace: testNamespace,
+				Namespace: ROControllerNamespace,
 			},
 			Spec: remediationv1.RemediationRequestSpec{
 				SignalFingerprint: fingerprint,
@@ -135,7 +135,7 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 			// Validate event_data (strongly-typed per DD-AUDIT-004)
 			payload := event.EventData.RemediationOrchestratorAuditPayload
 			Expect(payload.RrName).To(Equal("rr-lifecycle-started"))
-			Expect(payload.Namespace).To(Equal(testNamespace))
+			Expect(payload.Namespace).To(Equal(ROControllerNamespace))
 		})
 	})
 
@@ -160,11 +160,11 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 		spName := fmt.Sprintf("sp-%s", rr.Name)
 		Eventually(func() error {
 			sp := &signalprocessingv1.SignalProcessing{}
-			return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: spName, Namespace: testNamespace}, sp)
+			return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: spName, Namespace: ROControllerNamespace}, sp)
 		}, timeout, interval).Should(Succeed(), "Expected RO to create SignalProcessing CRD")
 
 		// Update SP status to Completed (including severity per DD-SEVERITY-001)
-		Expect(updateSPStatus(testNamespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
+		Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
 
 		// Wait for transition to Analyzing
 		Eventually(func() remediationv1.RemediationPhase {
@@ -235,9 +235,9 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 		spName := fmt.Sprintf("sp-%s", rr.Name)
 		Eventually(func() error {
 			sp := &signalprocessingv1.SignalProcessing{}
-			return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: spName, Namespace: testNamespace}, sp)
+			return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: spName, Namespace: ROControllerNamespace}, sp)
 		}, timeout, interval).Should(Succeed())
-		Expect(updateSPStatus(testNamespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
+		Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
 
 		// Wait for Analyzing
 		Eventually(func() remediationv1.RemediationPhase {
@@ -249,7 +249,7 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 			aiName := fmt.Sprintf("ai-%s", rr.Name)
 			ai := &aianalysisv1.AIAnalysis{}
 			Eventually(func() error {
-				return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: aiName, Namespace: testNamespace}, ai)
+				return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: aiName, Namespace: ROControllerNamespace}, ai)
 			}, timeout, interval).Should(Succeed())
 			ai.Status.Phase = aianalysisv1.PhaseCompleted
 			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
@@ -282,7 +282,7 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 			weName := fmt.Sprintf("we-%s", rr.Name)
 			we := &workflowexecutionv1.WorkflowExecution{}
 			Eventually(func() error {
-				return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: weName, Namespace: testNamespace}, we)
+				return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: weName, Namespace: ROControllerNamespace}, we)
 			}, timeout, interval).Should(Succeed())
 			we.Status.Phase = workflowexecutionv1.PhaseCompleted
 			Expect(k8sClient.Status().Update(ctx, we)).To(Succeed())
@@ -360,7 +360,7 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 			spName := fmt.Sprintf("sp-%s", rr.Name)
 			sp := &signalprocessingv1.SignalProcessing{}
 			Eventually(func() error {
-				return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: spName, Namespace: testNamespace}, sp)
+				return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: spName, Namespace: ROControllerNamespace}, sp)
 			}, timeout, interval).Should(Succeed())
 			sp.Status.Phase = signalprocessingv1.PhaseFailed
 			sp.Status.Error = "Simulated SP failure for testing"
@@ -451,9 +451,9 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 		spName := fmt.Sprintf("sp-%s", rr.Name)
 		Eventually(func() error {
 			sp := &signalprocessingv1.SignalProcessing{}
-			return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: spName, Namespace: testNamespace}, sp)
+			return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: spName, Namespace: ROControllerNamespace}, sp)
 		}, timeout, interval).Should(Succeed())
-		Expect(updateSPStatus(testNamespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
+		Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
 
 		Eventually(func() remediationv1.RemediationPhase {
 			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
@@ -464,7 +464,7 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 			aiName := fmt.Sprintf("ai-%s", rr.Name)
 			ai := &aianalysisv1.AIAnalysis{}
 			Eventually(func() error {
-				return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: aiName, Namespace: testNamespace}, ai)
+				return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: aiName, Namespace: ROControllerNamespace}, ai)
 			}, timeout, interval).Should(Succeed())
 			ai.Status.Phase = aianalysisv1.PhaseCompleted
 			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{

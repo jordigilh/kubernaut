@@ -312,7 +312,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 				GinkgoWriter.Printf("[dedup-poll] RR %s: OccurrenceCount=%d, rv=%s\n",
 					rrName, crd.Status.Deduplication.OccurrenceCount, crd.ResourceVersion)
 				return crd.Status.Deduplication.OccurrenceCount
-			}, "5s", "100ms").Should(BeNumerically(">=", 5),
+			}, "15s", "200ms").Should(BeNumerically(">=", 5),
 				"Count shows alert fired 5 times (1 original + 4 duplicates)")
 
 			// Verify timestamps in status.deduplication

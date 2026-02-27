@@ -101,22 +101,22 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 			spName := fmt.Sprintf("sp-%s", rrName)
 			Eventually(func() error {
 				sp := &signalprocessingv1.SignalProcessing{}
-				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, sp)
 			}, timeout, interval).Should(Succeed())
 
 			By("Simulating SignalProcessing completion")
-			Expect(updateSPStatus(namespace, spName, signalprocessingv1.PhaseCompleted)).To(Succeed())
+			Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted)).To(Succeed())
 
 			By("Waiting for AIAnalysis to be created")
 			aiName := fmt.Sprintf("ai-%s", rrName)
 			Eventually(func() error {
 				ai := &aianalysisv1.AIAnalysis{}
-				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: namespace}, ai)
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ROControllerNamespace}, ai)
 			}, timeout, interval).Should(Succeed())
 
 			By("Simulating AIAnalysis completion (high confidence, no approval)")
 			ai := &aianalysisv1.AIAnalysis{}
-			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: namespace}, ai)).To(Succeed())
+			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ROControllerNamespace}, ai)).To(Succeed())
 			ai.Status.Phase = "Completed"
 			ai.Status.ApprovalRequired = false
 			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
@@ -151,7 +151,7 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 			weName := fmt.Sprintf("we-%s", rrName)
 			we := &workflowexecutionv1.WorkflowExecution{}
 			Eventually(func() error {
-				return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: weName, Namespace: namespace}, we)
+				return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: weName, Namespace: ROControllerNamespace}, we)
 			}, timeout, interval).Should(Succeed())
 			we.Status.Phase = workflowexecutionv1.PhaseCompleted
 			completionTime := metav1.Now()
@@ -168,7 +168,7 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 			var evts []corev1.Event
 			Eventually(func() bool {
 				var err error
-				evts, err = listEventsForObjectRO(ctx, k8sClient, rrName, namespace)
+				evts, err = listEventsForObjectRO(ctx, k8sClient, rrName, ROControllerNamespace)
 				if err != nil {
 					return false
 				}
@@ -193,25 +193,25 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 			rrName := fmt.Sprintf("rr-events-appr-%s", uuid.New().String()[:13])
 			_ = createRemediationRequest(namespace, rrName)
 			rr := &remediationv1.RemediationRequest{}
-			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, rr)).To(Succeed())
+			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rrName, Namespace: ROControllerNamespace}, rr)).To(Succeed())
 
 			By("Progressing through SP phase")
 			spName := fmt.Sprintf("sp-%s", rrName)
 			Eventually(func() error {
 				sp := &signalprocessingv1.SignalProcessing{}
-				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, sp)
 			}, timeout, interval).Should(Succeed())
-			Expect(updateSPStatus(namespace, spName, signalprocessingv1.PhaseCompleted)).To(Succeed())
+			Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted)).To(Succeed())
 
 			By("Progressing through AI with approval required")
 			aiName := fmt.Sprintf("ai-%s", rrName)
 			Eventually(func() error {
 				ai := &aianalysisv1.AIAnalysis{}
-				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: namespace}, ai)
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ROControllerNamespace}, ai)
 			}, timeout, interval).Should(Succeed())
 
 			ai := &aianalysisv1.AIAnalysis{}
-			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: namespace}, ai)).To(Succeed())
+			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ROControllerNamespace}, ai)).To(Succeed())
 			ai.Status.Phase = "Completed"
 			ai.Status.ApprovalRequired = true
 			ai.Status.ApprovalReason = "Confidence below threshold"
@@ -236,7 +236,7 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 			rarName := fmt.Sprintf("rar-%s", rrName)
 			rar := &remediationv1.RemediationApprovalRequest{}
 			Eventually(func() error {
-				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rarName, Namespace: namespace}, rar)
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rarName, Namespace: ROControllerNamespace}, rar)
 			}, timeout, interval).Should(Succeed())
 			rar.Status.Decision = remediationv1.ApprovalDecisionApproved
 			rar.Status.DecidedBy = "test-admin@kubernaut.ai"
@@ -255,7 +255,7 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 			weName := fmt.Sprintf("we-%s", rrName)
 			we := &workflowexecutionv1.WorkflowExecution{}
 			Eventually(func() error {
-				return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: weName, Namespace: namespace}, we)
+				return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: weName, Namespace: ROControllerNamespace}, we)
 			}, timeout, interval).Should(Succeed())
 			we.Status.Phase = workflowexecutionv1.PhaseCompleted
 			completionTime := metav1.Now()
@@ -272,7 +272,7 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 			var evts []corev1.Event
 			Eventually(func() bool {
 				var err error
-				evts, err = listEventsForObjectRO(ctx, k8sClient, rrName, namespace)
+				evts, err = listEventsForObjectRO(ctx, k8sClient, rrName, ROControllerNamespace)
 				if err != nil {
 					return false
 				}
@@ -291,16 +291,10 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 		})
 	})
 
-	Context("IT-RO-095-03: Timeout event trail", func() {
-		It("should emit RemediationCreated and RemediationTimeout when RR exceeds global timeout", func() {
-			// NOTE: Per timeout_integration_test.go and docs/handoff/RO_TIMEOUT_TESTS_TRIAGE_DEC_24_2025.md:
-			// Integration tests for timeout are NOT FEASIBLE in envtest because CreationTimestamp
-			// is immutable (set by K8s API server). We cannot create an RR with an expired StartTime.
-			// Actual timeout detection is covered by unit tests (timeout_detector_test.go).
-			// This test is structurally present for completeness; skip when timeout cannot be simulated.
-			Skip("Timeout integration test not feasible: CreationTimestamp is immutable in envtest")
-		})
-	})
+	// IT-RO-095-03: Timeout event trail — NOT FEASIBLE in envtest.
+	// CreationTimestamp is immutable (set by K8s API server), so we cannot create
+	// an RR with an expired StartTime. Covered by unit tests (timeout_detector_test.go).
+	// Ref: docs/handoff/RO_TIMEOUT_TESTS_TRIAGE_DEC_24_2025.md
 
 	Context("IT-RO-095-04: Consecutive failure blocking event trail", func() {
 		It("should emit RemediationCreated and ConsecutiveFailureBlocked when target at threshold", func() {
@@ -314,7 +308,7 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 				rr := &remediationv1.RemediationRequest{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      fmt.Sprintf("rr-cf-events-%d", i),
-						Namespace: namespace,
+						Namespace: ROControllerNamespace,
 					},
 					Spec: remediationv1.RemediationRequestSpec{
 						SignalFingerprint: fingerprint,
@@ -346,7 +340,7 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 				spName := fmt.Sprintf("sp-%s", rr.Name)
 				sp := &signalprocessingv1.SignalProcessing{}
 				Eventually(func() error {
-					return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: spName, Namespace: namespace}, sp)
+					return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: spName, Namespace: ROControllerNamespace}, sp)
 				}, timeout, interval).Should(Succeed())
 				sp.Status.Phase = signalprocessingv1.PhaseFailed
 				sp.Status.Error = "Simulated failure for consecutive failure event test"
@@ -363,7 +357,7 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 			rr4 := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      rr4Name,
-					Namespace: namespace,
+					Namespace: ROControllerNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: fingerprint,
@@ -397,7 +391,7 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 			var evts []corev1.Event
 			Eventually(func() bool {
 				var err error
-				evts, err = listEventsForObjectRO(ctx, k8sClient, rr4Name, namespace)
+				evts, err = listEventsForObjectRO(ctx, k8sClient, rr4Name, ROControllerNamespace)
 				if err != nil {
 					return false
 				}

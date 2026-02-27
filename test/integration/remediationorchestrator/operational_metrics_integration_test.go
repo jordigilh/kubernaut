@@ -158,7 +158,7 @@ var _ = Describe("Operational Metrics Integration Tests (BR-ORCH-044)", Serial, 
 			rr := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "rr-reconcile-total",
-					Namespace: testNamespace,
+					Namespace: ROControllerNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: GenerateTestFingerprint(testNamespace, "m-int-1"),
@@ -186,7 +186,7 @@ var _ = Describe("Operational Metrics Integration Tests (BR-ORCH-044)", Serial, 
 			// Verify metric was incremented via registry inspection
 			Eventually(func() float64 {
 				return getCounterValue(rometrics.MetricNameReconcileTotal, map[string]string{
-					"namespace": testNamespace,
+					"namespace": ROControllerNamespace,
 				})
 			}, timeout, interval).Should(BeNumerically(">", 0),
 				"reconcile_total counter should be incremented after reconciliation")
@@ -203,7 +203,7 @@ var _ = Describe("Operational Metrics Integration Tests (BR-ORCH-044)", Serial, 
 			rr := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "rr-reconcile-duration",
-					Namespace: testNamespace,
+					Namespace: ROControllerNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: GenerateTestFingerprint(testNamespace, "m-int-2"),
@@ -231,7 +231,7 @@ var _ = Describe("Operational Metrics Integration Tests (BR-ORCH-044)", Serial, 
 			// Verify histogram recorded samples via registry inspection
 			Eventually(func() bool {
 				return histogramHasSamples(rometrics.MetricNameReconcileDuration, map[string]string{
-					"namespace": testNamespace,
+					"namespace": ROControllerNamespace,
 				})
 			}, timeout, interval).Should(BeTrue(),
 				"reconcile_duration histogram should have recorded samples")
@@ -248,7 +248,7 @@ var _ = Describe("Operational Metrics Integration Tests (BR-ORCH-044)", Serial, 
 			rr := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "rr-phase-transitions",
-					Namespace: testNamespace,
+					Namespace: ROControllerNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: GenerateTestFingerprint(testNamespace, "m-int-3"),
@@ -276,7 +276,7 @@ var _ = Describe("Operational Metrics Integration Tests (BR-ORCH-044)", Serial, 
 			// Verify metric was incremented via registry inspection
 			Eventually(func() float64 {
 				return getCounterValue(rometrics.MetricNamePhaseTransitionsTotal, map[string]string{
-					"namespace": testNamespace,
+					"namespace": ROControllerNamespace,
 					"to_phase":  string(remediationv1.PhaseProcessing),
 				})
 			}, timeout, interval).Should(BeNumerically(">", 0),

@@ -45,7 +45,7 @@ var _ = Describe("Field Index Smoke Test", func() {
 		rr := &remediationv1.RemediationRequest{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "smoke-test-rr",
-				Namespace: testNamespace,
+				Namespace: ROControllerNamespace,
 			},
 			Spec: remediationv1.RemediationRequestSpec{
 				SignalFingerprint: testFingerprint,
@@ -67,7 +67,7 @@ var _ = Describe("Field Index Smoke Test", func() {
 
 		By("Verifying RR exists via direct query")
 		allRRs := &remediationv1.RemediationRequestList{}
-		err := k8sManager.GetAPIReader().List(ctx, allRRs, client.InNamespace(testNamespace))
+		err := k8sManager.GetAPIReader().List(ctx, allRRs, client.InNamespace(ROControllerNamespace))
 		Expect(err).ToNot(HaveOccurred())
 		GinkgoWriter.Printf("📊 Direct query found %d RRs in namespace\n", len(allRRs.Items))
 		Expect(len(allRRs.Items)).To(Equal(1), "Should find 1 RR via direct query")
@@ -75,7 +75,7 @@ var _ = Describe("Field Index Smoke Test", func() {
 		By("Querying by field selector (spec.signalFingerprint) - server-side with CRD selectableFields")
 		indexedRRs := &remediationv1.RemediationRequestList{}
 		err = k8sManager.GetAPIReader().List(ctx, indexedRRs,
-			client.InNamespace(testNamespace),
+			client.InNamespace(ROControllerNamespace),
 			client.MatchingFields{"spec.signalFingerprint": testFingerprint},
 		)
 
