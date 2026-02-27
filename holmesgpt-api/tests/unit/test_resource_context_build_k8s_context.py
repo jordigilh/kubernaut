@@ -24,10 +24,11 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock
 
 
-def _make_deployment_with_pod_template(labels, annotations=None):
+def _make_deployment_with_pod_template(labels, annotations=None, deploy_annotations=None):
     """Build a mock Deployment with spec.template.metadata.labels."""
     deploy = MagicMock()
     deploy.metadata.labels = {"app": "api"}
+    deploy.metadata.annotations = deploy_annotations or {}
     deploy.spec = MagicMock()
     deploy.spec.template = MagicMock()
     deploy.spec.template.metadata = MagicMock()
@@ -202,3 +203,48 @@ async def test_pdb_target_not_found_in_namespace():
     )
 
     assert "pod_details" not in k8s_context
+
+
+@pytest.mark.asyncio
+async def test_regression_deployment_details_includes_annotations():
+    """Regression: deployment_details must include annotations for ArgoCD v3 detection.
+
+    Bug: resource_context.py built deployment_details with only {name, labels},
+    omitting annotations. This caused LabelDetector._detect_gitops to miss
+    ArgoCD v3 tracking-id on the Deployment, returning gitOpsManaged=false for
+    ArgoCD-managed resources in the gitops-drift scenario.
+
+    Fix: deployment_details now includes annotations from deploy.metadata.annotations.
+
+    BR-HAPI-255, DD-HAPI-018 v1.3
+    """
+    from toolsets.resource_context import GetResourceContextTool
+
+    argocd_annotations = {
+        "argocd.argoproj.io/tracking-id": "demo-gitops-app:apps/Deployment:demo-gitops/web-frontend",
+    }
+    deploy = _make_deployment_with_pod_template(
+        labels={"app": "web-frontend"},
+        deploy_annotations=argocd_annotations,
+    )
+
+    mock_k8s = AsyncMock()
+    mock_k8s.resolve_owner_chain.return_value = [
+        {"kind": "Deployment", "name": "web-frontend", "namespace": "demo-gitops"},
+    ]
+    mock_k8s._get_resource_metadata = AsyncMock(return_value=deploy)
+    mock_k8s.get_namespace_metadata = AsyncMock(return_value=_make_ns_metadata())
+
+    tool = GetResourceContextTool(k8s_client=mock_k8s, session_state={})
+    k8s_context = await tool._build_k8s_context(
+        kind="Deployment",
+        name="web-frontend",
+        namespace="demo-gitops",
+        owner_chain=[{"kind": "Deployment", "name": "web-frontend", "namespace": "demo-gitops"}],
+    )
+
+    assert "deployment_details" in k8s_context
+    assert "annotations" in k8s_context["deployment_details"], (
+        "deployment_details must include annotations for ArgoCD v3 tracking-id detection"
+    )
+    assert k8s_context["deployment_details"]["annotations"] == argocd_annotations

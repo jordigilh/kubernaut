@@ -15,9 +15,9 @@ spec:
           kube_pod_container_status_restarts_total{
             namespace="demo-gitops",
             container="nginx"
-          }[10m]
-        ) > 3
-      for: 1m
+          }[5m]
+        ) > 2
+      for: 30s
       labels:
         severity: critical
         scenario: gitops-drift

@@ -775,6 +775,99 @@ class TestGitOpsToolMutualExclusivity:
         assert result["gitOpsTool"] == "argocd"
 
 
+class TestGitOpsDriftRegressions:
+    """Regression tests for gitops-drift scenario ArgoCD v3 detection failure.
+
+    Bug: In production, ArgoCD v3 sets argocd.argoproj.io/tracking-id on the
+    Deployment's annotations (not labels, not pod annotations). The old code
+    had two defects:
+      1. labels.py didn't check tracking-id at all
+      2. resource_context.py didn't include annotations in deployment_details
+
+    These tests reproduce the exact conditions observed in the gitops-drift
+    scenario and verify detection works correctly.
+
+    BR-HAPI-255, DD-HAPI-018 v1.3
+    """
+
+    @pytest.mark.asyncio
+    async def test_regression_gitops_drift_exact_scenario(self):
+        """Regression: exact gitops-drift production conditions.
+
+        Pod: annotations={kubernaut.ai/config-version: broken} (NO ArgoCD)
+        Deployment: labels={app: web-frontend} (NO ArgoCD labels)
+                    annotations={argocd.argoproj.io/tracking-id: ...} (ArgoCD v3)
+        Expected: gitOpsManaged=true, gitOpsTool=argocd
+        """
+        from detection.labels import LabelDetector
+
+        queries = _make_k8s_queries()
+        detector = LabelDetector(queries)
+
+        k8s_context = {
+            "namespace": "demo-gitops",
+            "pod_details": {
+                "name": "web-frontend-cdbdbc4f8-wsws9",
+                "labels": {"app": "web-frontend", "kubernaut.ai/managed": "true"},
+                "annotations": {"kubernaut.ai/config-version": "broken"},
+            },
+            "deployment_details": {
+                "name": "web-frontend",
+                "labels": {"app": "web-frontend", "kubernaut.ai/managed": "true"},
+                "annotations": {
+                    "argocd.argoproj.io/tracking-id": "web-frontend:apps/Deployment:demo-gitops/web-frontend",
+                    "deployment.kubernetes.io/revision": "1",
+                },
+            },
+            "namespace_labels": {},
+            "namespace_annotations": {},
+        }
+
+        result = await detector.detect_labels(k8s_context, [])
+
+        assert result is not None
+        assert result["gitOpsManaged"] is True, (
+            "Deployment annotation tracking-id must trigger gitOpsManaged=true"
+        )
+        assert result["gitOpsTool"] == "argocd"
+
+    @pytest.mark.asyncio
+    async def test_regression_missing_annotations_key_returns_false(self):
+        """Regression: old-format deployment_details without annotations key.
+
+        Before the fix, resource_context.py built deployment_details as
+        {name, labels} without annotations. The detection code must handle
+        this gracefully (return false, not crash).
+        """
+        from detection.labels import LabelDetector
+
+        queries = _make_k8s_queries()
+        detector = LabelDetector(queries)
+
+        k8s_context = {
+            "namespace": "demo-gitops",
+            "pod_details": {
+                "name": "web-frontend-abc",
+                "labels": {"app": "web-frontend"},
+                "annotations": {"kubernaut.ai/config-version": "broken"},
+            },
+            "deployment_details": {
+                "name": "web-frontend",
+                "labels": {"app": "web-frontend"},
+            },
+            "namespace_labels": {},
+            "namespace_annotations": {},
+        }
+
+        result = await detector.detect_labels(k8s_context, [])
+
+        assert result is not None
+        assert result["gitOpsManaged"] is False, (
+            "Without annotations key in deployment_details, tracking-id cannot be found"
+        )
+        assert result["gitOpsTool"] == ""
+
+
 class TestLabelDetectorErrorHandling:
     """UT-HAPI-056-018 through UT-HAPI-056-021: Error handling vectors."""
 

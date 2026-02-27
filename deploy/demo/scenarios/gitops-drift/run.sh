@@ -134,7 +134,7 @@ metadata:
     app: web-frontend
     kubernaut.ai/managed: "true"
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: web-frontend
