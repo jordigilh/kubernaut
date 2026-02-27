@@ -1,6 +1,6 @@
 # HolmesGPT REST API Wrapper - Business Requirements
 
-**Document Version**: 1.1
+**Document Version**: 1.2
 **Date**: November 2025
 **Status**: Business Requirements Specification
 **Module**: HolmesGPT REST API Wrapper (`pkg/ai/holmesgpt/api-server/`)
@@ -11,6 +11,7 @@
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.2 | 2026-02-24 | Added BR-HAPI-253-256 (DetectedLabels Auto-Detection, relocated from BR-SP-101 per ADR-056). Mutual exclusivity for gitOpsTool and serviceMesh. ArgoCD v3 tracking-id support. Issue #218. |
 | 1.1 | 2025-11-30 | Added BR-HAPI-250-252 (MCP Workflow Catalog Integration) |
 | 1.0 | 2025-01-15 | Initial version |
 
@@ -135,6 +136,40 @@ graph TB
   - **Filtering**: Data Storage uses labels for workflow pre-filtering
   - **Context**: Labels also expressed in natural language for LLM context
   - **Reference**: DD-WORKFLOW-001 v1.8
+
+#### 2.1.9 DetectedLabels Auto-Detection (v1.2)
+
+> **Added**: v1.2 (2026-02-24) - Relocated from BR-SP-101 per ADR-056. Detection runs post-RCA against the RCA target resource (not the signal source). Issue #218.
+
+- **BR-HAPI-253**: MUST auto-detect 8 cluster characteristics from the RCA target resource
+  - **gitOpsManaged** (bool): Whether the resource is managed by a GitOps controller
+  - **gitOpsTool** (string): `"argocd"`, `"flux"`, or `""`
+  - **pdbProtected** (bool): Whether a PDB selector matches the workload's pod labels
+  - **hpaEnabled** (bool): Whether an HPA targets the workload
+  - **stateful** (bool): Whether the owner chain contains a StatefulSet
+  - **helmManaged** (bool): Whether `app.kubernetes.io/managed-by: Helm` or `helm.sh/chart` is present
+  - **networkIsolated** (bool): Whether any NetworkPolicy exists in the namespace
+  - **serviceMesh** (string): `"istio"`, `"linkerd"`, or `""`
+  - **Reference**: DD-HAPI-018 v1.3, ADR-056
+
+- **BR-HAPI-254**: `gitOpsTool` MUST be mutually exclusive — exactly ONE value is returned
+  - Detection uses a first-match-wins precedence order (DD-HAPI-018 v1.3, priorities 1–10)
+  - When multiple GitOps indicators coexist on a resource (e.g., ArgoCD v3 tracking-id AND Flux sync-gc-mark), the highest-precedence match wins and no further detection is attempted
+  - Valid values: `"argocd"` (covers both v2 and v3), `"flux"`, or `""` (no GitOps detected)
+  - **ArgoCD v2 and v3 are NOT distinguished in the output** — both resolve to `"argocd"`. The version difference is an internal detection concern, not a consumer concern.
+  - **ArgoCD and Flux are mutually exclusive** — in the unlikely event both annotations are present on the same resource, ArgoCD takes precedence (pod-level annotations are checked before deployment-level labels)
+  - **Reference**: DD-HAPI-018 v1.3
+
+- **BR-HAPI-255**: MUST detect ArgoCD v3 annotation-based resource tracking
+  - ArgoCD v3.x defaults to annotation-based tracking, setting `argocd.argoproj.io/tracking-id` on managed resources
+  - Detection MUST check for `argocd.argoproj.io/tracking-id` on: pod annotations, deployment annotations, namespace annotations
+  - ArgoCD v2 detection (`argocd.argoproj.io/instance` label) MUST remain supported for backward compatibility
+  - **Reference**: DD-HAPI-018 v1.3, Issue #218
+
+- **BR-HAPI-256**: `serviceMesh` MUST be mutually exclusive — exactly ONE value is returned
+  - When multiple service mesh indicators coexist on a resource (e.g., Istio sidecar AND Linkerd proxy), Istio takes precedence per DD-HAPI-018
+  - Valid values: `"istio"`, `"linkerd"`, or `""` (no service mesh detected)
+  - **Reference**: DD-HAPI-018 v1.3
 
 ### 2.2 Management Endpoints
 
