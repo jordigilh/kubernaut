@@ -35,6 +35,8 @@ import (
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"time"
@@ -93,7 +95,10 @@ var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 					Namespace: controllerNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
-					SignalFingerprint: "a1b2c3d4e5f60123456789abcdef0123456789abcdef0123456789abcdef0123",
+					SignalFingerprint: func() string {
+					h := sha256.Sum256([]byte(uuid.New().String()))
+					return hex.EncodeToString(h[:])
+				}(),
 					SignalName:        "E2EAuditWiringTest",
 					Severity:          "critical",
 					SignalType:        "alert",
