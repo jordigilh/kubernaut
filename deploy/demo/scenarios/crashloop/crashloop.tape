@@ -23,7 +23,6 @@
 # visual artifact where the echo command text and its output both appear.
 
 Output deploy/demo/scenarios/crashloop/crashloop.gif
-Output deploy/demo/scenarios/crashloop/crashloop.mp4
 
 Require kubectl
 Require bash

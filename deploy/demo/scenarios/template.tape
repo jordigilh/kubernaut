@@ -23,7 +23,6 @@
 # visual artifact where the echo command text and its output both appear.
 
 Output deploy/demo/scenarios/<SCENARIO_DIR>/<SCENARIO_DIR>.gif
-Output deploy/demo/scenarios/<SCENARIO_DIR>/<SCENARIO_DIR>.mp4
 
 Require kubectl
 Require bash

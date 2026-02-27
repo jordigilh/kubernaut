@@ -126,6 +126,9 @@ UNIT_TEST_*.md
 *SUCCESS*.md
 *BREAKTHROUGH*.md
 
+# VHS recording artifacts (GIFs are committed, MP4s are too large for GitHub)
+*.mp4
+
 # Build artifacts (large binaries that should never be committed)
 workflowexecutor
 integration-webhook-server

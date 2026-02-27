@@ -24,7 +24,6 @@
 # visual artifact where the echo command text and its output both appear.
 
 Output deploy/demo/scenarios/orphaned-pvc-no-action/orphaned-pvc-no-action.gif
-Output deploy/demo/scenarios/orphaned-pvc-no-action/orphaned-pvc-no-action.mp4
 
 Require kubectl
 Require bash
