@@ -28,6 +28,7 @@ Output deploy/demo/scenarios/orphaned-pvc-no-action/orphaned-pvc-no-action.mp4
 
 Require kubectl
 Require bash
+Require python3
 
 Set Shell "bash"
 Set FontSize 14
@@ -48,11 +49,15 @@ Type `export PS1='$ '`
 Enter
 Sleep 500ms
 
+Type `export PLATFORM_NS=kubernaut-system`
+Enter
+Sleep 500ms
+
 Type `bash deploy/demo/scenarios/orphaned-pvc-no-action/cleanup.sh 2>/dev/null; true`
 Enter
 Sleep 5s
 
-Type `kubectl apply -f deploy/demo/scenarios/orphaned-pvc-no-action/manifests/namespace.yaml -f deploy/demo/scenarios/orphaned-pvc-no-action/manifests/deployment.yaml -f deploy/demo/scenarios/orphaned-pvc-no-action/manifests/prometheus-rule.yaml >/dev/null 2>&1 && kubectl wait --for=condition=Available deployment/data-processor -n demo-orphaned-pvc-no-action --timeout=120s >/dev/null 2>&1 && clear && echo SETUP"_"COMPLETE`
+Type `kubectl apply -f deploy/demo/scenarios/orphaned-pvc-no-action/manifests/namespace.yaml -f deploy/demo/scenarios/orphaned-pvc-no-action/manifests/deployment.yaml -f deploy/demo/scenarios/orphaned-pvc-no-action/manifests/prometheus-rule.yaml >/dev/null 2>&1 && kubectl wait --for=condition=Available deployment/data-processor -n demo-orphaned-pvc --timeout=120s >/dev/null 2>&1 && clear && echo SETUP"_"COMPLETE`
 Enter
 Wait+Screen@300s /SETUP_COMPLETE/
 
@@ -78,7 +83,7 @@ Sleep 3s
 Type "# Healthy workload running in a production-labeled namespace"
 Enter
 Sleep 2s
-Type "kubectl get pods -n demo-orphaned-pvc-no-action"
+Type "kubectl get pods -n demo-orphaned-pvc"
 Enter
 Sleep 5s
 
@@ -101,7 +106,7 @@ Show
 Type "# 5 orphaned Bound PVCs now exist -- no running pods use them"
 Enter
 Sleep 2s
-Type "kubectl get pvc -n demo-orphaned-pvc-no-action"
+Type "kubectl get pvc -n demo-orphaned-pvc"
 Enter
 Sleep 6s
 
@@ -124,7 +129,7 @@ Show
 Type "# Alert is now firing -- orphaned PVCs detected"
 Enter
 Sleep 2s
-Type "kubectl exec -n monitoring alertmanager-kube-prometheus-stack-alertmanager-0 -- amtool alert query alertname=KubePersistentVolumeClaimOrphaned --alertmanager.url=http://localhost:9093 2>/dev/null | head -5"
+Type "bash deploy/demo/scripts/show-alert.sh KubePersistentVolumeClaimOrphaned"
 Enter
 Sleep 8s
 
@@ -135,7 +140,7 @@ Sleep 3s
 # Hidden wait: poll until RR exists
 Hide
 Set TypingSpeed 1ms
-Type `while ! kubectl get remediationrequests -n demo-orphaned-pvc-no-action 2>/dev/null | grep -q rr-; do sleep 5; done && clear && echo RR"_"CREATED`
+Type `while ! kubectl get remediationrequests -n ${PLATFORM_NS} 2>/dev/null | grep -q rr-; do sleep 5; done && clear && echo RR"_"CREATED`
 Enter
 Wait+Screen@120s /RR_CREATED/
 Type "clear"
@@ -151,7 +156,7 @@ Show
 Type "# The pipeline is processing: SP -> AA (HAPI / LLM)"
 Enter
 Sleep 2s
-Type "kubectl get rr,sp,aa -n demo-orphaned-pvc-no-action"
+Type "kubectl get rr,sp,aa -n ${PLATFORM_NS}"
 Enter
 Sleep 6s
 
@@ -165,7 +170,7 @@ Sleep 3s
 # Hidden wait: poll until RR reaches Completed or Failed
 Hide
 Set TypingSpeed 1ms
-Type `while true; do PHASE=$(kubectl get remediationrequests -n demo-orphaned-pvc-no-action -o jsonpath='{.items[0].status.overallPhase}' 2>/dev/null); [ "$PHASE" = "Completed" ] || [ "$PHASE" = "Failed" ] && break; sleep 10; done && clear && echo PIPELINE"_"DONE`
+Type `while true; do PHASE=$(kubectl get remediationrequests -n ${PLATFORM_NS} -o jsonpath='{.items[0].status.overallPhase}' 2>/dev/null); [ "$PHASE" = "Completed" ] || [ "$PHASE" = "Failed" ] && break; sleep 10; done && clear && echo PIPELINE"_"DONE`
 Enter
 Wait+Screen@600s /PIPELINE_DONE/
 Type "clear"
@@ -182,28 +187,28 @@ Type "# Pipeline completed -- let's check the outcome"
 Enter
 Sleep 2s
 
-Type "kubectl get rr,sp,aa -n demo-orphaned-pvc-no-action"
+Type "kubectl get rr,sp,aa -n ${PLATFORM_NS}"
 Enter
 Sleep 6s
 
 Type "# RemediationRequest outcome:"
 Enter
 Sleep 2s
-Type `kubectl get rr -n demo-orphaned-pvc-no-action -o jsonpath='Phase: {.items[0].status.overallPhase}  Outcome: {.items[0].status.outcome}' && echo`
+Type `kubectl get rr -n ${PLATFORM_NS} -o jsonpath='Phase: {.items[0].status.overallPhase}  Outcome: {.items[0].status.outcome}' && echo`
 Enter
 Sleep 6s
 
 Type "# AIAnalysis outcome:"
 Enter
 Sleep 2s
-Type `kubectl get aa -n demo-orphaned-pvc-no-action -o jsonpath='Phase: {.items[0].status.phase}  Outcome: {.items[0].status.outcome}' && echo`
+Type `kubectl get aa -n ${PLATFORM_NS} -o jsonpath='Phase: {.items[0].status.phase}  Outcome: {.items[0].status.outcome}' && echo`
 Enter
 Sleep 6s
 
 Type "# Confirm: no WorkflowExecution was created (correct -- no action needed)"
 Enter
 Sleep 2s
-Type "kubectl get wfe -n demo-orphaned-pvc-no-action"
+Type "kubectl get wfe -n ${PLATFORM_NS}"
 Enter
 Sleep 5s
 

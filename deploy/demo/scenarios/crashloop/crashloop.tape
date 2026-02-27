@@ -27,6 +27,7 @@ Output deploy/demo/scenarios/crashloop/crashloop.mp4
 
 Require kubectl
 Require bash
+Require python3
 
 Set Shell "bash"
 Set FontSize 14
@@ -47,11 +48,15 @@ Type `export PS1='$ '`
 Enter
 Sleep 500ms
 
+Type `export PLATFORM_NS=kubernaut-system`
+Enter
+Sleep 500ms
+
 Type `bash deploy/demo/scenarios/crashloop/cleanup.sh 2>/dev/null; true`
 Enter
 Sleep 5s
 
-Type `kubectl get configmap remediationorchestrator-config -n kubernaut-system -o yaml | sed 's/stabilizationWindow: "5m"/stabilizationWindow: "1m"/' | kubectl apply -f - >/dev/null 2>&1 && kubectl rollout restart deployment/remediationorchestrator-controller -n kubernaut-system >/dev/null 2>&1 && kubectl rollout status deployment/remediationorchestrator-controller -n kubernaut-system --timeout=60s >/dev/null 2>&1`
+Type `kubectl get configmap remediationorchestrator-config -n ${PLATFORM_NS} -o yaml | sed 's/stabilizationWindow: "5m"/stabilizationWindow: "1m"/' | kubectl apply -f - >/dev/null 2>&1 && kubectl rollout restart deployment/remediationorchestrator-controller -n ${PLATFORM_NS} >/dev/null 2>&1 && kubectl rollout status deployment/remediationorchestrator-controller -n ${PLATFORM_NS} --timeout=60s >/dev/null 2>&1`
 Enter
 Sleep 30s
 
@@ -130,7 +135,7 @@ Show
 Type "# Alert is now firing -- querying AlertManager"
 Enter
 Sleep 2s
-Type "bash deploy/demo/scenarios/crashloop/show-alert.sh"
+Type "bash deploy/demo/scripts/show-alert.sh KubePodCrashLooping"
 Enter
 Sleep 8s
 
@@ -141,7 +146,7 @@ Sleep 3s
 # Hidden wait: poll until RR reaches AwaitingApproval (pipeline completed analysis)
 Hide
 Set TypingSpeed 1ms
-Type `while ! kubectl get remediationrequests -n demo-crashloop 2>/dev/null | grep -q AwaitingApproval; do sleep 10; done && clear && echo PIPELINE"_"READY`
+Type `while ! kubectl get remediationrequests -n ${PLATFORM_NS} 2>/dev/null | grep -q AwaitingApproval; do sleep 10; done && clear && echo PIPELINE"_"READY`
 Enter
 Wait+Screen@600s /PIPELINE_READY/
 Type "clear"
@@ -158,49 +163,49 @@ Type "# The pipeline completed AI-driven analysis"
 Enter
 Sleep 3s
 
-Type "kubectl get remediationrequests,signalprocessings,aianalyses -n demo-crashloop"
+Type "kubectl get remediationrequests,signalprocessings,aianalyses -n ${PLATFORM_NS}"
 Enter
 Sleep 6s
 
 Type "# Root cause analysis and recommended workflow:"
 Enter
 Sleep 2s
-Type "bash deploy/demo/scenarios/crashloop/show-ai-analysis.sh"
+Type "bash deploy/demo/scripts/show-ai-analysis.sh demo-crashloop"
 Enter
 Sleep 12s
 
 Type "# Approval required -- rego policy matched because environment=production"
 Enter
 Sleep 3s
-Type "kubectl get rar -n demo-crashloop"
+Type "kubectl get rar -n ${PLATFORM_NS}"
 Enter
 Sleep 6s
 
 Type "# Why is approval required? Let's check the rego policy"
 Enter
 Sleep 2s
-Type "bash deploy/demo/scenarios/crashloop/show-approval-reason.sh"
+Type "bash deploy/demo/scripts/show-approval-reason.sh demo-crashloop"
 Enter
 Sleep 12s
 
 Type "# Approving the RemediationApprovalRequest..."
 Enter
 Sleep 2s
-Type "bash deploy/demo/scenarios/crashloop/approve-rar.sh"
+Type "bash deploy/demo/scripts/approve-rar.sh"
 Enter
 Sleep 4s
 
 Type "# RAR status after approval:"
 Enter
 Sleep 2s
-Type "kubectl get rar -n demo-crashloop"
+Type "kubectl get rar -n ${PLATFORM_NS}"
 Enter
 Sleep 6s
 
 Type "# The Remediation Orchestrator will create a WorkflowExecution -- watching live"
 Enter
 Sleep 2s
-Type "kubectl get wfe -n demo-crashloop -w"
+Type "kubectl get wfe -n ${PLATFORM_NS} -w"
 Enter
 Wait+Screen@120s /Completed/
 Sleep 5s
@@ -219,7 +224,7 @@ Type "kubectl get pods -n demo-crashloop"
 Enter
 Sleep 5s
 
-Type "kubectl get remediationrequests -n demo-crashloop"
+Type "kubectl get remediationrequests -n ${PLATFORM_NS}"
 Enter
 Sleep 5s
 
@@ -230,7 +235,7 @@ Sleep 2s
 # Hidden wait: poll until EA reaches Completed or Failed
 Hide
 Set TypingSpeed 1ms
-Type `while true; do PHASE=$(kubectl get effectivenessassessments -n demo-crashloop -o jsonpath='{.items[0].status.phase}' 2>/dev/null); [ "$PHASE" = "Completed" ] || [ "$PHASE" = "Failed" ] && break; sleep 10; done && clear && echo EA"_"DONE`
+Type `while true; do PHASE=$(kubectl get effectivenessassessments -n ${PLATFORM_NS} -o jsonpath='{.items[0].status.phase}' 2>/dev/null); [ "$PHASE" = "Completed" ] || [ "$PHASE" = "Failed" ] && break; sleep 10; done && clear && echo EA"_"DONE`
 Enter
 Wait+Screen@600s /EA_DONE/
 Type "clear"
@@ -242,7 +247,7 @@ Show
 Type "# EffectivenessAssessment result:"
 Enter
 Sleep 2s
-Type "bash deploy/demo/scenarios/crashloop/show-effectiveness.sh"
+Type "bash deploy/demo/scripts/show-effectiveness.sh demo-crashloop"
 Enter
 Sleep 10s
 

@@ -1,17 +1,25 @@
 #!/usr/bin/env bash
-# Display the EffectivenessAssessment result for the demo recording.
+# Display the EffectivenessAssessment result for demo recordings.
+# Usage: bash deploy/demo/scripts/show-effectiveness.sh <scenario-namespace>
+# Example: bash deploy/demo/scripts/show-effectiveness.sh demo-crashloop
 set -euo pipefail
 
-NAMESPACE="${1:-demo-crashloop}"
+SCENARIO_NS="${1:?Usage: show-effectiveness.sh <scenario-namespace>}"
+PLATFORM_NS="${PLATFORM_NS:-kubernaut-system}"
 
-EA_NAME=$(kubectl get effectivenessassessments -n "$NAMESPACE" -o jsonpath='{.items[0].metadata.name}')
+EA_NAME=$(kubectl get effectivenessassessments -n "$PLATFORM_NS" -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.signalTarget.namespace}{"\n"}{end}' 2>/dev/null \
+  | grep "$SCENARIO_NS" | tail -1 | cut -f1)
 
-PHASE=$(kubectl get effectivenessassessments "$EA_NAME" -n "$NAMESPACE" -o jsonpath='{.status.phase}')
-REASON=$(kubectl get effectivenessassessments "$EA_NAME" -n "$NAMESPACE" -o jsonpath='{.status.assessmentReason}')
-MESSAGE=$(kubectl get effectivenessassessments "$EA_NAME" -n "$NAMESPACE" -o jsonpath='{.status.message}')
-ALERT_SCORE=$(kubectl get effectivenessassessments "$EA_NAME" -n "$NAMESPACE" -o jsonpath='{.status.components.alertScore}')
-HEALTH_SCORE=$(kubectl get effectivenessassessments "$EA_NAME" -n "$NAMESPACE" -o jsonpath='{.status.components.healthScore}')
-METRICS_SCORE=$(kubectl get effectivenessassessments "$EA_NAME" -n "$NAMESPACE" -o jsonpath='{.status.components.metricsScore}')
+if [ -z "$EA_NAME" ]; then
+  EA_NAME=$(kubectl get effectivenessassessments -n "$PLATFORM_NS" -o jsonpath='{.items[-1].metadata.name}' 2>/dev/null)
+fi
+
+PHASE=$(kubectl get effectivenessassessments "$EA_NAME" -n "$PLATFORM_NS" -o jsonpath='{.status.phase}' 2>/dev/null)
+REASON=$(kubectl get effectivenessassessments "$EA_NAME" -n "$PLATFORM_NS" -o jsonpath='{.status.assessmentReason}' 2>/dev/null)
+MESSAGE=$(kubectl get effectivenessassessments "$EA_NAME" -n "$PLATFORM_NS" -o jsonpath='{.status.message}' 2>/dev/null)
+ALERT_SCORE=$(kubectl get effectivenessassessments "$EA_NAME" -n "$PLATFORM_NS" -o jsonpath='{.status.components.alertScore}' 2>/dev/null)
+HEALTH_SCORE=$(kubectl get effectivenessassessments "$EA_NAME" -n "$PLATFORM_NS" -o jsonpath='{.status.components.healthScore}' 2>/dev/null)
+METRICS_SCORE=$(kubectl get effectivenessassessments "$EA_NAME" -n "$PLATFORM_NS" -o jsonpath='{.status.components.metricsScore}' 2>/dev/null)
 
 printf '\n'
 printf '  ┌─────────────────────────────────────────────────────────┐\n'
@@ -27,7 +35,6 @@ printf '\n'
 printf '  Component Scores  (0.0 = worst, 1.0 = best)\n'
 printf '  ────────────────\n'
 
-# Alert Resolution: 1.0 means the alert cleared from AlertManager, 0.0 still firing
 if [ -n "$ALERT_SCORE" ]; then
   printf '  Alert Resolution:  %s' "$ALERT_SCORE"
   if [ "$ALERT_SCORE" = "1" ]; then
@@ -39,7 +46,6 @@ else
   printf '  Alert Resolution:  pending\n'
 fi
 
-# Health Check: ratio of ready replicas to desired (1.0 = all healthy)
 if [ -n "$HEALTH_SCORE" ]; then
   printf '  Health Check:      %s' "$HEALTH_SCORE"
   if [ "$HEALTH_SCORE" = "1" ]; then
@@ -51,7 +57,6 @@ else
   printf '  Health Check:      pending\n'
 fi
 
-# Metrics: pre/post Prometheus comparison (average improvement across available queries)
 if [ -n "$METRICS_SCORE" ]; then
   printf '  Metrics:           %s' "$METRICS_SCORE"
   if [ "$METRICS_SCORE" = "0" ]; then

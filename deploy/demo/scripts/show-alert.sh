@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# Query AlertManager for the KubePodCrashLooping alert and display it.
+# Query AlertManager for active alerts and display them.
+# Usage: bash deploy/demo/scripts/show-alert.sh <alert-name>
+# Example: bash deploy/demo/scripts/show-alert.sh KubePodCrashLooping
 set -euo pipefail
 
-ALERT_NAME="${1:-KubePodCrashLooping}"
+ALERT_NAME="${1:?Usage: show-alert.sh <alert-name>}"
 AM_POD="alertmanager-kube-prometheus-stack-alertmanager-0"
 
 ALERTS_JSON=$(kubectl exec -n monitoring "$AM_POD" -- \

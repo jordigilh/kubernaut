@@ -27,6 +27,7 @@ Output deploy/demo/scenarios/<SCENARIO_DIR>/<SCENARIO_DIR>.mp4
 
 Require kubectl
 Require bash
+Require python3
 
 Set Shell "bash"
 Set FontSize 14
@@ -49,6 +50,10 @@ Type `export PS1='$ '`
 Enter
 Sleep 500ms
 
+Type `export PLATFORM_NS=kubernaut-system`
+Enter
+Sleep 500ms
+
 # Clean up any previous run
 Type `bash deploy/demo/scenarios/<SCENARIO_DIR>/cleanup.sh 2>/dev/null; true`
 Enter
@@ -57,7 +62,7 @@ Sleep 5s
 # [OPTIONAL] Platform config tweaks for demo speed (e.g. shorter stabilization window)
 # Uncomment and adapt if the scenario needs non-default platform settings:
 #
-# Type `kubectl get configmap remediationorchestrator-config -n kubernaut-system -o yaml | sed 's/stabilizationWindow: "5m"/stabilizationWindow: "1m"/' | kubectl apply -f - >/dev/null 2>&1 && kubectl rollout restart deployment/remediationorchestrator-controller -n kubernaut-system >/dev/null 2>&1 && kubectl rollout status deployment/remediationorchestrator-controller -n kubernaut-system --timeout=60s >/dev/null 2>&1`
+# Type `kubectl get configmap remediationorchestrator-config -n ${PLATFORM_NS} -o yaml | sed 's/stabilizationWindow: "5m"/stabilizationWindow: "1m"/' | kubectl apply -f - >/dev/null 2>&1 && kubectl rollout restart deployment/remediationorchestrator-controller -n ${PLATFORM_NS} >/dev/null 2>&1 && kubectl rollout status deployment/remediationorchestrator-controller -n ${PLATFORM_NS} --timeout=60s >/dev/null 2>&1`
 # Enter
 # Sleep 30s
 
@@ -143,8 +148,7 @@ Show
 Type "# Alert is now firing"
 Enter
 Sleep 2s
-# CUSTOMIZE: show alert details (amtool query, helper script, or kubectl)
-Type "kubectl exec -n monitoring alertmanager-kube-prometheus-stack-alertmanager-0 -- amtool alert query alertname=<ALERT_NAME> --alertmanager.url=http://localhost:9093 2>/dev/null | head -5"
+Type "bash deploy/demo/scripts/show-alert.sh <ALERT_NAME>"
 Enter
 Sleep 8s
 
@@ -161,7 +165,7 @@ Sleep 3s
 #   Completed        -- fast-path scenarios (NoActionRequired)
 Hide
 Set TypingSpeed 1ms
-Type `while ! kubectl get remediationrequests -n <NAMESPACE> 2>/dev/null | grep -qE '<ACT2_RR_PHASE_PATTERN>'; do sleep 10; done && clear && echo PIPELINE"_"READY`
+Type `while ! kubectl get remediationrequests -n ${PLATFORM_NS} 2>/dev/null | grep -qE '<ACT2_RR_PHASE_PATTERN>'; do sleep 10; done && clear && echo PIPELINE"_"READY`
 Enter
 Wait+Screen@600s /PIPELINE_READY/
 Type "clear"
@@ -179,25 +183,30 @@ Show
 # Common building blocks (copy/uncomment as needed):
 #
 # --- Show pipeline CRDs ---
-# Type "kubectl get rr,sp,aa -n <NAMESPACE>"
+# Type "kubectl get rr,sp,aa -n ${PLATFORM_NS}"
 # Enter
 # Sleep 6s
 #
 # --- Show AI analysis details ---
-# Type "bash deploy/demo/scenarios/<SCENARIO_DIR>/show-ai-analysis.sh"
+# Type "bash deploy/demo/scripts/show-ai-analysis.sh <NAMESPACE>"
 # Enter
 # Sleep 12s
 #
+# --- Show approval reason ---
+# Type "bash deploy/demo/scripts/show-approval-reason.sh <NAMESPACE>"
+# Enter
+# Sleep 8s
+#
 # --- Show and approve RAR (approval scenarios) ---
-# Type "kubectl get rar -n <NAMESPACE>"
+# Type "kubectl get rar -n ${PLATFORM_NS}"
 # Enter
 # Sleep 6s
-# Type "bash deploy/demo/scenarios/<SCENARIO_DIR>/approve-rar.sh"
+# Type "bash deploy/demo/scripts/approve-rar.sh"
 # Enter
 # Sleep 4s
 #
 # --- Watch WFE live (execution scenarios) ---
-# Type "kubectl get wfe -n <NAMESPACE> -w"
+# Type "kubectl get wfe -n ${PLATFORM_NS} -w"
 # Enter
 # Wait+Screen@120s /Completed/
 # Sleep 5s
@@ -207,7 +216,7 @@ Show
 Type "# The pipeline is processing"
 Enter
 Sleep 2s
-Type "kubectl get rr,sp,aa -n <NAMESPACE>"
+Type "kubectl get rr,sp,aa -n ${PLATFORM_NS}"
 Enter
 Sleep 6s
 
@@ -216,7 +225,7 @@ Sleep 6s
 # Hidden wait: poll until the RR reaches a terminal state
 Hide
 Set TypingSpeed 1ms
-Type `while true; do PHASE=$(kubectl get remediationrequests -n <NAMESPACE> -o jsonpath='{.items[0].status.overallPhase}' 2>/dev/null); [ "$PHASE" = "Completed" ] || [ "$PHASE" = "Failed" ] && break; sleep 10; done && clear && echo RR"_"DONE`
+Type `while true; do PHASE=$(kubectl get remediationrequests -n ${PLATFORM_NS} -o jsonpath='{.items[0].status.overallPhase}' 2>/dev/null); [ "$PHASE" = "Completed" ] || [ "$PHASE" = "Failed" ] && break; sleep 10; done && clear && echo RR"_"DONE`
 Enter
 Wait+Screen@600s /RR_DONE/
 Type "clear"
@@ -235,14 +244,14 @@ Type "# Pipeline completed -- verifying outcome"
 Enter
 Sleep 2s
 
-Type "kubectl get rr,sp,aa,wfe,ea -n <NAMESPACE>"
+Type "kubectl get rr,sp,aa,wfe,ea -n ${PLATFORM_NS}"
 Enter
 Sleep 6s
 
 Type "# RemediationRequest result:"
 Enter
 Sleep 2s
-Type `kubectl get rr -n <NAMESPACE> -o jsonpath='Phase: {.items[0].status.overallPhase}  Outcome: {.items[0].status.outcome}' && echo`
+Type `kubectl get rr -n ${PLATFORM_NS} -o jsonpath='Phase: {.items[0].status.overallPhase}  Outcome: {.items[0].status.outcome}' && echo`
 Enter
 Sleep 6s
 
@@ -255,7 +264,7 @@ Sleep 6s
 #
 # Hide
 # Set TypingSpeed 1ms
-# Type `while true; do PHASE=$(kubectl get effectivenessassessments -n <NAMESPACE> -o jsonpath='{.items[0].status.phase}' 2>/dev/null); [ "$PHASE" = "Completed" ] || [ "$PHASE" = "Failed" ] && break; sleep 10; done && clear && echo EA"_"DONE`
+# Type `while true; do PHASE=$(kubectl get effectivenessassessments -n ${PLATFORM_NS} -o jsonpath='{.items[0].status.phase}' 2>/dev/null); [ "$PHASE" = "Completed" ] || [ "$PHASE" = "Failed" ] && break; sleep 10; done && clear && echo EA"_"DONE`
 # Enter
 # Wait+Screen@600s /EA_DONE/
 # Type "clear"
@@ -267,7 +276,7 @@ Sleep 6s
 # Type "# EffectivenessAssessment result:"
 # Enter
 # Sleep 2s
-# Type "bash deploy/demo/scenarios/<SCENARIO_DIR>/show-effectiveness.sh"
+# Type "bash deploy/demo/scripts/show-effectiveness.sh <NAMESPACE>"
 # Enter
 # Sleep 10s
 
