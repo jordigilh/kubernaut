@@ -264,6 +264,9 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 			}
 			for i := range rrList.Items {
 				rr := &rrList.Items[i]
+				if rr.Spec.TargetResource.Namespace != testNamespace {
+					continue
+				}
 				remediationRequest = rr
 				GinkgoWriter.Printf("  ✅ RemediationRequest found: %s\n", rr.Name)
 				return true
@@ -1048,6 +1051,9 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 			}
 			for i := range rrList.Items {
 				rr := &rrList.Items[i]
+				if rr.Spec.TargetResource.Namespace != testNamespaceAM {
+					continue
+				}
 				remediationRequest = rr
 				GinkgoWriter.Printf("  ✅ RemediationRequest found (from AlertManager): %s\n", rr.Name)
 				return true

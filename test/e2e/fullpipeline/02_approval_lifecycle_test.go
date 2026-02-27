@@ -187,7 +187,11 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 				return false
 			}
 			for i := range rrList.Items {
-				remediationRequest = &rrList.Items[i]
+				rr := &rrList.Items[i]
+				if rr.Spec.TargetResource.Namespace != testNamespace {
+					continue
+				}
+				remediationRequest = rr
 				GinkgoWriter.Printf("  ✅ RemediationRequest found: %s\n", remediationRequest.Name)
 				return true
 			}
