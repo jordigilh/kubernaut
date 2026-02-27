@@ -144,21 +144,28 @@ var _ = Describe("Test 04: Metrics Endpoint (BR-GATEWAY-017)", Ordered, func() {
 			},
 		})
 
-		alertResp, err := func() (*http.Response, error) {
+		// BR-SCOPE-002: Wrap in Eventually to tolerate informer cache warm-up delays.
+		// The managed namespace label may not be visible to the Gateway's scope cache
+		// immediately after namespace creation (ADR-053: lazy informer cold-start 200ms-2s).
+		var alertResp *http.Response
+		Eventually(func() int {
 			req5, err := http.NewRequest("POST", gatewayURL+"/api/v1/signals/prometheus", bytes.NewBuffer(payload))
-			if err != nil {
-				return nil, err
-			}
+			Expect(err).ToNot(HaveOccurred())
 			req5.Header.Set("Content-Type", "application/json")
 			req5.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
-			return httpClient.Do(req5)
-		}()
-		Expect(err).ToNot(HaveOccurred())
+			alertResp, err = httpClient.Do(req5)
+			Expect(err).ToNot(HaveOccurred())
+			statusCode := alertResp.StatusCode
+			if statusCode != http.StatusCreated && statusCode != http.StatusAccepted {
+				_ = alertResp.Body.Close()
+			}
+			return statusCode
+		}, 10*time.Second, 500*time.Millisecond).Should(
+			Or(Equal(http.StatusCreated), Equal(http.StatusAccepted)),
+			"Alert should be accepted (may retry while scope cache syncs)")
 		_ = alertResp.Body.Close()
 
 		testLogger.Info(fmt.Sprintf("  Alert sent: HTTP %d", alertResp.StatusCode))
-		Expect(alertResp.StatusCode).To(Or(Equal(http.StatusCreated), Equal(http.StatusAccepted)),
-			"Alert should be accepted")
 
 		// Step 4: Verify metrics updated
 		testLogger.Info("")

@@ -269,6 +269,18 @@ func (r *RoutingEngine) CheckConsecutiveFailures(
 		"queriedRRs", len(list.Items),
 		"threshold", r.config.ConsecutiveFailureThreshold)
 
+	// ADR-057: Post-filter by TargetResource.Namespace for multi-tenant isolation (#222).
+	// Since all CRDs live in ROControllerNamespace, client.InNamespace(rr.Namespace) no longer
+	// provides tenant isolation. We scope by workload namespace instead.
+	incomingTargetNS := rr.Spec.TargetResource.Namespace
+	filtered := make([]remediationv1.RemediationRequest, 0, len(list.Items))
+	for i := range list.Items {
+		if list.Items[i].Spec.TargetResource.Namespace == incomingTargetNS {
+			filtered = append(filtered, list.Items[i])
+		}
+	}
+	list.Items = filtered
+
 	// Sort ALL RRs by creation timestamp (newest first)
 	// We need to check consecutive failures from most recent
 	sort.Slice(list.Items, func(i, j int) bool {

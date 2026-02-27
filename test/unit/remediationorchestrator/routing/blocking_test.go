@@ -155,6 +155,65 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 			Expect(blocked).To(BeNil())
 		})
 
+		It("should isolate consecutive failure counting by TargetResource.Namespace (#222)", func() {
+			// BUG REPRODUCTION: ADR-057 consolidated all CRDs into ROControllerNamespace.
+			// CheckConsecutiveFailures uses client.InNamespace(rr.Namespace) which is always
+			// ROControllerNamespace, so failures from tenant-A's workloads incorrectly
+			// block tenant-B's workloads if they share a fingerprint.
+			//
+			// Reference: https://github.com/jordigilh/kubernaut/issues/222
+
+			sharedFingerprint := "shared-fp-multitenant"
+
+			// Create 3 Failed RRs targeting namespace "tenant-a"
+			baseTime := time.Now().Add(-10 * time.Minute)
+			for i := 0; i < 3; i++ {
+				failedRR := &remediationv1.RemediationRequest{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              fmt.Sprintf("tenant-a-failed-%d", i),
+						Namespace:         "default",
+						UID:               types.UID(fmt.Sprintf("tenant-a-uid-%d", i)),
+						CreationTimestamp: metav1.Time{Time: baseTime.Add(time.Duration(i) * time.Minute)},
+					},
+					Spec: remediationv1.RemediationRequestSpec{
+						SignalFingerprint: sharedFingerprint,
+						TargetResource: remediationv1.ResourceIdentifier{
+							Kind:      "Deployment",
+							Name:      "app",
+							Namespace: "tenant-a",
+						},
+					},
+					Status: remediationv1.RemediationRequestStatus{
+						OverallPhase: remediationv1.PhaseFailed,
+					},
+				}
+				Expect(fakeClient.Create(ctx, failedRR)).To(Succeed())
+			}
+
+			// Incoming RR targets namespace "tenant-b" with the SAME fingerprint
+			incomingRR := &remediationv1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "tenant-b-new",
+					Namespace:         "default",
+					UID:               types.UID("tenant-b-uid"),
+					CreationTimestamp: metav1.Time{Time: time.Now()},
+				},
+				Spec: remediationv1.RemediationRequestSpec{
+					SignalFingerprint: sharedFingerprint,
+					TargetResource: remediationv1.ResourceIdentifier{
+						Kind:      "Deployment",
+						Name:      "app",
+						Namespace: "tenant-b",
+					},
+				},
+			}
+
+			blocked := engine.CheckConsecutiveFailures(ctx, incomingRR)
+
+			Expect(blocked).To(BeNil(),
+				"Tenant-B should NOT be blocked by tenant-A's 3 failures (namespace isolation)")
+		})
+
 		It("should set cooldown message with expiry time", func() {
 			// Create 5 previous Failed RRs with same fingerprint
 			// Set explicit UID because fake client doesn't auto-generate them
