@@ -794,12 +794,6 @@ clean-authwebhook-integration: ## Clean webhook integration test infrastructure
 # Deploys ALL services in a single Kind cluster - requires ~6GB RAM
 # CI/CD: Set IMAGE_REGISTRY + IMAGE_TAG to use pre-built images (fast)
 # Local: Builds 3 images at a time (slow, ~20-30 min)
-#
-# IMPORTANT: Must run with --procs=1 (serial execution). Each test's BeforeEach
-# calls UpdateMockLLMConfigMap which does kubectl rollout restart on the shared
-# mock-llm deployment. Parallel processes cause double-restart within 1s (K8s
-# rejects). Tests also need different workflow UUIDs (fullpipeline-e2e vs
-# approval-e2e) — parallel would overwrite config. See E2E-FP-118-003 triage.
 .PHONY: test-e2e-fullpipeline
 test-e2e-fullpipeline: ginkgo ensure-coverage-dirs ## Run full pipeline E2E tests (all services, Kind cluster, ~30 min)
 	@echo "════════════════════════════════════════════════════════════════════════"
@@ -807,7 +801,7 @@ test-e2e-fullpipeline: ginkgo ensure-coverage-dirs ## Run full pipeline E2E test
 	@echo "   All Kubernaut services in a single Kind cluster"
 	@echo "   Event → Gateway → RO → SP → AA → HAPI → WE(Job) → Notification"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v --timeout=50m --procs=1 ./test/e2e/fullpipeline/...
+	@$(GINKGO) -v --timeout=50m --procs=$(TEST_PROCS) ./test/e2e/fullpipeline/...
 	@echo "✅ Full Pipeline E2E tests completed!"
 
 ##@ Legacy Aliases (Backward Compatibility)

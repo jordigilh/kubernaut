@@ -98,11 +98,15 @@ var _ = Describe("E2E-RO-106-001: Predictive Signal Mode Propagation", Label("e2
 		Eventually(func() bool {
 			spList := &signalprocessingv1.SignalProcessingList{}
 			_ = k8sClient.List(ctx, spList, client.InNamespace(controllerNamespace))
-			if len(spList.Items) == 0 {
-				return false
+			for i := range spList.Items {
+				if len(spList.Items[i].OwnerReferences) > 0 &&
+					spList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
+					spList.Items[i].OwnerReferences[0].Name == rrName {
+					sp = &spList.Items[i]
+					return true
+				}
 			}
-			sp = &spList.Items[0]
-			return true
+			return false
 		}, timeout, interval).Should(BeTrue(), "SignalProcessing should be created by RO")
 
 		By("3. Manually updating SP status with predictive signal mode (simulating SP controller)")
@@ -129,11 +133,15 @@ var _ = Describe("E2E-RO-106-001: Predictive Signal Mode Propagation", Label("e2
 		Eventually(func() bool {
 			analysisList := &aianalysisv1.AIAnalysisList{}
 			_ = k8sClient.List(ctx, analysisList, client.InNamespace(controllerNamespace))
-			if len(analysisList.Items) == 0 {
-				return false
+			for i := range analysisList.Items {
+				if len(analysisList.Items[i].OwnerReferences) > 0 &&
+					analysisList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
+					analysisList.Items[i].OwnerReferences[0].Name == rrName {
+					analysis = &analysisList.Items[i]
+					return true
+				}
 			}
-			analysis = &analysisList.Items[0]
-			return true
+			return false
 		}, timeout, interval).Should(BeTrue(), "AIAnalysis should be created by RO")
 
 		By("5. Verifying AIAnalysis has predictive signal mode from SP.Status")
@@ -187,11 +195,15 @@ var _ = Describe("E2E-RO-106-001: Predictive Signal Mode Propagation", Label("e2
 		Eventually(func() bool {
 			spList := &signalprocessingv1.SignalProcessingList{}
 			_ = k8sClient.List(ctx, spList, client.InNamespace(controllerNamespace))
-			if len(spList.Items) == 0 {
-				return false
+			for i := range spList.Items {
+				if len(spList.Items[i].OwnerReferences) > 0 &&
+					spList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
+					spList.Items[i].OwnerReferences[0].Name == rrName {
+					sp = &spList.Items[i]
+					return true
+				}
 			}
-			sp = &spList.Items[0]
-			return true
+			return false
 		}, timeout, interval).Should(BeTrue())
 
 		By("3. Manually updating SP status with reactive signal mode")
@@ -216,11 +228,15 @@ var _ = Describe("E2E-RO-106-001: Predictive Signal Mode Propagation", Label("e2
 		Eventually(func() bool {
 			analysisList := &aianalysisv1.AIAnalysisList{}
 			_ = k8sClient.List(ctx, analysisList, client.InNamespace(controllerNamespace))
-			if len(analysisList.Items) == 0 {
-				return false
+			for i := range analysisList.Items {
+				if len(analysisList.Items[i].OwnerReferences) > 0 &&
+					analysisList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
+					analysisList.Items[i].OwnerReferences[0].Name == rrName {
+					analysis = &analysisList.Items[i]
+					return true
+				}
 			}
-			analysis = &analysisList.Items[0]
-			return true
+			return false
 		}, timeout, interval).Should(BeTrue())
 
 		Expect(analysis.Spec.AnalysisRequest.SignalContext.SignalMode).To(Equal("reactive"),

@@ -288,7 +288,7 @@ var _ = Describe("E2E: Gap #8 - RemediationRequest TimeoutConfig Mutation Webhoo
 			GinkgoWriter.Printf("   • SOC2 compliance: WHO + WHAT + WHEN captured\n")
 
 			By("Completing SP lifecycle to clean up dangling CRDs")
-			sp := helpers.WaitForSPCreation(ctx, k8sClient, controllerNamespace, 30*time.Second, 1*time.Second)
+			sp := helpers.WaitForSPCreation(ctx, k8sClient, controllerNamespace, rr.Name, 30*time.Second, 1*time.Second)
 			helpers.SimulateSPCompletion(ctx, k8sClient, sp)
 		})
 	})

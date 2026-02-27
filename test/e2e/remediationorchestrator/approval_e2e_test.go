@@ -115,10 +115,10 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 			GinkgoWriter.Printf("🚀 E2E: Created RemediationRequest %s/%s\n", controllerNamespace, testRR.Name)
 
 			// Let the RO controller drive the full lifecycle: RR → SP → AI → RAR
-			sp := helpers.WaitForSPCreation(ctx, k8sClient, controllerNamespace, e2eTimeout, e2eInterval)
+			sp := helpers.WaitForSPCreation(ctx, k8sClient, controllerNamespace, testRR.Name, e2eTimeout, e2eInterval)
 			helpers.SimulateSPCompletion(ctx, k8sClient, sp)
 
-			ai := helpers.WaitForAICreation(ctx, k8sClient, controllerNamespace, e2eTimeout, e2eInterval)
+			ai := helpers.WaitForAICreation(ctx, k8sClient, controllerNamespace, testRR.Name, e2eTimeout, e2eInterval)
 			helpers.SimulateAICompletedWithWorkflow(ctx, k8sClient, ai, helpers.AICompletionOpts{
 				ApprovalRequired: true,
 				ApprovalReason:   "Confidence below 80% auto-approve threshold",
@@ -128,7 +128,7 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 				TargetNamespace:  testNamespace,
 			})
 
-			testRAR = helpers.WaitForRARCreation(ctx, k8sClient, controllerNamespace, e2eTimeout, e2eInterval)
+			testRAR = helpers.WaitForRARCreation(ctx, k8sClient, controllerNamespace, testRR.Name, e2eTimeout, e2eInterval)
 			GinkgoWriter.Printf("🚀 E2E: RO created RAR %s/%s\n", controllerNamespace, testRAR.Name)
 
 			helpers.WaitForRRPhase(ctx, k8sClient, testRR, remediationv1.PhaseAwaitingApproval, e2eTimeout, e2eInterval)
@@ -371,10 +371,10 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 			Expect(k8sClient.Create(ctx, testRR)).To(Succeed())
 
 			// Let the RO controller drive the full lifecycle: RR → SP → AI → RAR
-			sp := helpers.WaitForSPCreation(ctx, k8sClient, controllerNamespace, e2eTimeout, e2eInterval)
+			sp := helpers.WaitForSPCreation(ctx, k8sClient, controllerNamespace, testRR.Name, e2eTimeout, e2eInterval)
 			helpers.SimulateSPCompletion(ctx, k8sClient, sp)
 
-			ai := helpers.WaitForAICreation(ctx, k8sClient, controllerNamespace, e2eTimeout, e2eInterval)
+			ai := helpers.WaitForAICreation(ctx, k8sClient, controllerNamespace, testRR.Name, e2eTimeout, e2eInterval)
 			helpers.SimulateAICompletedWithWorkflow(ctx, k8sClient, ai, helpers.AICompletionOpts{
 				ApprovalRequired: true,
 				ApprovalReason:   "Confidence below 80% auto-approve threshold",
@@ -384,7 +384,7 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 				TargetNamespace:  testNamespace,
 			})
 
-			testRAR = helpers.WaitForRARCreation(ctx, k8sClient, controllerNamespace, e2eTimeout, e2eInterval)
+			testRAR = helpers.WaitForRARCreation(ctx, k8sClient, controllerNamespace, testRR.Name, e2eTimeout, e2eInterval)
 
 			// RAR RequiredBy is set by the RO controller using the configured
 			// awaitingApproval timeout (3s in E2E). No spec mutation needed —

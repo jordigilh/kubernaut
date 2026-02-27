@@ -185,9 +185,9 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking E2E", Label("e2e", "scope"), f
 			fetched.Status.OverallPhase)
 
 		By("Completing SP/AI lifecycle to avoid dangling CRDs")
-		sp := helpers.WaitForSPCreation(ctx, k8sClient, controllerNamespace, timeout, interval)
+		sp := helpers.WaitForSPCreation(ctx, k8sClient, controllerNamespace, rr.Name, timeout, interval)
 		helpers.SimulateSPCompletion(ctx, k8sClient, sp)
-		ai := helpers.WaitForAICreation(ctx, k8sClient, controllerNamespace, timeout, interval)
+		ai := helpers.WaitForAICreation(ctx, k8sClient, controllerNamespace, rr.Name, timeout, interval)
 		helpers.SimulateAIWorkflowNotNeeded(ctx, k8sClient, ai)
 	})
 
@@ -280,9 +280,9 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking E2E", Label("e2e", "scope"), f
 		Expect(apiReader.Get(ctx, client.ObjectKeyFromObject(rr), fetched)).To(Succeed())
 		if fetched.Status.OverallPhase == remediationv1.PhaseProcessing ||
 			fetched.Status.OverallPhase == remediationv1.PhaseAnalyzing {
-			sp := helpers.WaitForSPCreation(ctx, k8sClient, controllerNamespace, timeout, interval)
+			sp := helpers.WaitForSPCreation(ctx, k8sClient, controllerNamespace, rr.Name, timeout, interval)
 			helpers.SimulateSPCompletion(ctx, k8sClient, sp)
-			ai := helpers.WaitForAICreation(ctx, k8sClient, controllerNamespace, timeout, interval)
+			ai := helpers.WaitForAICreation(ctx, k8sClient, controllerNamespace, rr.Name, timeout, interval)
 			helpers.SimulateAIWorkflowNotNeeded(ctx, k8sClient, ai)
 		}
 	})

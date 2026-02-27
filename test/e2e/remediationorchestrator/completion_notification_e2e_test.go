@@ -100,11 +100,15 @@ var _ = Describe("E2E-RO-045-001: Completion Notification", Label("e2e", "notifi
 		Eventually(func() bool {
 			spList := &signalprocessingv1.SignalProcessingList{}
 			_ = k8sClient.List(ctx, spList, client.InNamespace(controllerNamespace))
-			if len(spList.Items) == 0 {
-				return false
+			for i := range spList.Items {
+				if len(spList.Items[i].OwnerReferences) > 0 &&
+					spList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
+					spList.Items[i].OwnerReferences[0].Name == rrName {
+					sp = &spList.Items[i]
+					return true
+				}
 			}
-			sp = &spList.Items[0]
-			return true
+			return false
 		}, timeout, interval).Should(BeTrue(), "SignalProcessing should be created by RO")
 
 		By("3. Manually updating SP status to Completed (simulating SP controller)")
@@ -129,11 +133,15 @@ var _ = Describe("E2E-RO-045-001: Completion Notification", Label("e2e", "notifi
 		Eventually(func() bool {
 			analysisList := &aianalysisv1.AIAnalysisList{}
 			_ = k8sClient.List(ctx, analysisList, client.InNamespace(controllerNamespace))
-			if len(analysisList.Items) == 0 {
-				return false
+			for i := range analysisList.Items {
+				if len(analysisList.Items[i].OwnerReferences) > 0 &&
+					analysisList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
+					analysisList.Items[i].OwnerReferences[0].Name == rrName {
+					analysis = &analysisList.Items[i]
+					return true
+				}
 			}
-			analysis = &analysisList.Items[0]
-			return true
+			return false
 		}, timeout, interval).Should(BeTrue(), "AIAnalysis should be created by RO")
 
 		By("5. Manually updating AIAnalysis status to Completed with SelectedWorkflow (simulating AA controller)")
@@ -171,11 +179,15 @@ var _ = Describe("E2E-RO-045-001: Completion Notification", Label("e2e", "notifi
 		Eventually(func() bool {
 			weList := &workflowexecutionv1.WorkflowExecutionList{}
 			_ = k8sClient.List(ctx, weList, client.InNamespace(controllerNamespace))
-			if len(weList.Items) == 0 {
-				return false
+			for i := range weList.Items {
+				if len(weList.Items[i].OwnerReferences) > 0 &&
+					weList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
+					weList.Items[i].OwnerReferences[0].Name == rrName {
+					we = &weList.Items[i]
+					return true
+				}
 			}
-			we = &weList.Items[0]
-			return true
+			return false
 		}, timeout, interval).Should(BeTrue(), "WorkflowExecution should be created by RO")
 
 		By("7. Manually updating WorkflowExecution status to Completed (simulating WE controller)")
@@ -195,12 +207,11 @@ var _ = Describe("E2E-RO-045-001: Completion Notification", Label("e2e", "notifi
 		Eventually(func() bool {
 			notificationList := &notificationv1.NotificationRequestList{}
 			_ = k8sClient.List(ctx, notificationList, client.InNamespace(controllerNamespace))
-			if len(notificationList.Items) == 0 {
-				return false
-			}
-			// Find the completion notification (may also have bulk duplicate)
 			for i := range notificationList.Items {
-				if notificationList.Items[i].Spec.Type == notificationv1.NotificationTypeCompletion {
+				if len(notificationList.Items[i].OwnerReferences) > 0 &&
+					notificationList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
+					notificationList.Items[i].OwnerReferences[0].Name == rrName &&
+					notificationList.Items[i].Spec.Type == notificationv1.NotificationTypeCompletion {
 					notification = &notificationList.Items[i]
 					return true
 				}

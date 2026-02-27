@@ -108,11 +108,15 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 		Eventually(func() bool {
 			spList := &signalprocessingv1.SignalProcessingList{}
 			_ = k8sClient.List(ctx, spList, client.InNamespace(controllerNamespace))
-			if len(spList.Items) == 0 {
-				return false
+			for i := range spList.Items {
+				if len(spList.Items[i].OwnerReferences) > 0 &&
+					spList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
+					spList.Items[i].OwnerReferences[0].Name == rr.Name {
+					sp = &spList.Items[i]
+					return true
+				}
 			}
-			sp = &spList.Items[0]
-			return true
+			return false
 		}, timeout, interval).Should(BeTrue(), "SignalProcessing should be created by RO")
 
 		By("Manually updating SignalProcessing status to Completed (simulating SP controller)")
@@ -137,11 +141,15 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 		Eventually(func() bool {
 			analysisList := &aianalysisv1.AIAnalysisList{}
 			_ = k8sClient.List(ctx, analysisList, client.InNamespace(controllerNamespace))
-			if len(analysisList.Items) == 0 {
-				return false
+			for i := range analysisList.Items {
+				if len(analysisList.Items[i].OwnerReferences) > 0 &&
+					analysisList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
+					analysisList.Items[i].OwnerReferences[0].Name == rr.Name {
+					analysis = &analysisList.Items[i]
+					return true
+				}
 			}
-			analysis = &analysisList.Items[0]
-			return true
+			return false
 		}, timeout, interval).Should(BeTrue(), "AIAnalysis should be created by RO")
 
 		By("Manually updating AIAnalysis status with needsHumanReview=true (simulating HAPI response)")
@@ -163,11 +171,15 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 			Eventually(func() bool {
 				notificationList := &notificationv1.NotificationRequestList{}
 				_ = k8sClient.List(ctx, notificationList, client.InNamespace(controllerNamespace))
-				if len(notificationList.Items) == 0 {
-					return false
+				for i := range notificationList.Items {
+					if len(notificationList.Items[i].OwnerReferences) > 0 &&
+						notificationList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
+						notificationList.Items[i].OwnerReferences[0].Name == rr.Name {
+						notification = &notificationList.Items[i]
+						return true
+					}
 				}
-				notification = &notificationList.Items[0]
-				return true
+				return false
 			}, timeout, interval).Should(BeTrue(), "NotificationRequest should be created by RO")
 
 			By("Validating NotificationRequest content")
@@ -187,10 +199,16 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 			Expect(updatedRR.Status.RequiresManualReview).To(BeTrue(), "RequiresManualReview flag must be true")
 
 			By("Verifying NO WorkflowExecution was created (blocked by human review)")
-			weList := &workflowexecutionv1.WorkflowExecutionList{}
 			Consistently(func() int {
+				weList := &workflowexecutionv1.WorkflowExecutionList{}
 				_ = k8sClient.List(ctx, weList, client.InNamespace(controllerNamespace))
-				return len(weList.Items)
+				count := 0
+				for _, item := range weList.Items {
+					if len(item.OwnerReferences) > 0 && item.OwnerReferences[0].Kind == "RemediationRequest" && item.OwnerReferences[0].Name == rr.Name {
+						count++
+					}
+				}
+				return count
 			}, 10*time.Second, interval).Should(Equal(0), "NO WorkflowExecution should exist - remediation blocked")
 
 		// Note: Audit trail validation for "orchestrator.routing.human_review" event
@@ -246,11 +264,15 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 		Eventually(func() bool {
 			spList := &signalprocessingv1.SignalProcessingList{}
 			_ = k8sClient.List(ctx, spList, client.InNamespace(controllerNamespace))
-			if len(spList.Items) == 0 {
-				return false
+			for i := range spList.Items {
+				if len(spList.Items[i].OwnerReferences) > 0 &&
+					spList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
+					spList.Items[i].OwnerReferences[0].Name == rr.Name {
+					sp = &spList.Items[i]
+					return true
+				}
 			}
-			sp = &spList.Items[0]
-			return true
+			return false
 		}, timeout, interval).Should(BeTrue(), "SignalProcessing should be created by RO")
 
 		By("Manually updating SignalProcessing status to Completed (simulating SP controller)")
@@ -275,11 +297,15 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 		Eventually(func() bool {
 			analysisList := &aianalysisv1.AIAnalysisList{}
 			_ = k8sClient.List(ctx, analysisList, client.InNamespace(controllerNamespace))
-			if len(analysisList.Items) == 0 {
-				return false
+			for i := range analysisList.Items {
+				if len(analysisList.Items[i].OwnerReferences) > 0 &&
+					analysisList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
+					analysisList.Items[i].OwnerReferences[0].Name == rr.Name {
+					analysis = &analysisList.Items[i]
+					return true
+				}
 			}
-			analysis = &analysisList.Items[0]
-			return true
+			return false
 		}, timeout, interval).Should(BeTrue(), "AIAnalysis should be created by RO")
 
 		By("Manually updating AIAnalysis status with needsHumanReview=false (simulating HAPI response)")
@@ -318,11 +344,15 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 			Eventually(func() bool {
 				weList := &workflowexecutionv1.WorkflowExecutionList{}
 				_ = k8sClient.List(ctx, weList, client.InNamespace(controllerNamespace))
-				if len(weList.Items) == 0 {
-					return false
+				for i := range weList.Items {
+					if len(weList.Items[i].OwnerReferences) > 0 &&
+						weList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
+						weList.Items[i].OwnerReferences[0].Name == rr.Name {
+						we = &weList.Items[i]
+						return true
+					}
 				}
-				we = &weList.Items[0]
-				return true
+				return false
 			}, timeout, interval).Should(BeTrue(), "WorkflowExecution should be created for normal flow")
 
 			By("Validating WorkflowExecution was created")
@@ -330,10 +360,16 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 			Expect(we.Spec.WorkflowRef.Version).ToNot(BeEmpty(), "WorkflowExecution should have workflow version")
 
 			By("Verifying NO NotificationRequest was created (no human review needed)")
-			notificationList := &notificationv1.NotificationRequestList{}
 			Consistently(func() int {
+				notificationList := &notificationv1.NotificationRequestList{}
 				_ = k8sClient.List(ctx, notificationList, client.InNamespace(controllerNamespace))
-				return len(notificationList.Items)
+				count := 0
+				for _, item := range notificationList.Items {
+					if len(item.OwnerReferences) > 0 && item.OwnerReferences[0].Kind == "RemediationRequest" && item.OwnerReferences[0].Name == rr.Name {
+						count++
+					}
+				}
+				return count
 			}, 10*time.Second, interval).Should(Equal(0), "NO NotificationRequest should exist - normal flow")
 
 			By("Validating RemediationRequest status (Executing)")

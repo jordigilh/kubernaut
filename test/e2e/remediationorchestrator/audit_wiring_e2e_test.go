@@ -123,7 +123,7 @@ var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 			controllerNamespace, testRR.Name, correlationID)
 
 		By("Completing SP lifecycle so RR progresses past Processing")
-		sp := helpers.WaitForSPCreation(ctx, k8sClient, controllerNamespace, e2eTimeout, e2eInterval)
+		sp := helpers.WaitForSPCreation(ctx, k8sClient, controllerNamespace, testRR.Name, e2eTimeout, e2eInterval)
 		helpers.SimulateSPCompletion(ctx, k8sClient, sp)
 		})
 

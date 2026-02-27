@@ -35,19 +35,22 @@ import (
 )
 
 // WaitForSPCreation waits for the RO controller to create a SignalProcessing CRD
-// in the given namespace. Returns the first SP found.
-func WaitForSPCreation(ctx context.Context, k8sClient client.Client, namespace string, timeout, interval time.Duration) *signalprocessingv1.SignalProcessing {
+// owned by the given RR in the given namespace. Filters by OwnerReference to
+// avoid cross-test contamination when multiple RRs coexist in controllerNamespace.
+func WaitForSPCreation(ctx context.Context, k8sClient client.Client, namespace, rrName string, timeout, interval time.Duration) *signalprocessingv1.SignalProcessing {
 	var sp *signalprocessingv1.SignalProcessing
-	By("Waiting for RO to create SignalProcessing CRD")
+	By("Waiting for RO to create SignalProcessing CRD for RR " + rrName)
 	Eventually(func() bool {
 		spList := &signalprocessingv1.SignalProcessingList{}
 		_ = k8sClient.List(ctx, spList, client.InNamespace(namespace))
-		if len(spList.Items) == 0 {
-			return false
+		for i := range spList.Items {
+			if isOwnedByRR(&spList.Items[i], rrName) {
+				sp = &spList.Items[i]
+				return true
+			}
 		}
-		sp = &spList.Items[0]
-		return true
-	}, timeout, interval).Should(BeTrue(), "SignalProcessing should be created by RO")
+		return false
+	}, timeout, interval).Should(BeTrue(), "SignalProcessing should be created by RO for RR "+rrName)
 	return sp
 }
 
@@ -95,19 +98,22 @@ func normalizeSeverity(raw string) string {
 }
 
 // WaitForAICreation waits for the RO controller to create an AIAnalysis CRD
-// in the given namespace. Returns the first AI found.
-func WaitForAICreation(ctx context.Context, k8sClient client.Client, namespace string, timeout, interval time.Duration) *aianalysisv1.AIAnalysis {
+// owned by the given RR in the given namespace. Filters by OwnerReference to
+// avoid cross-test contamination when multiple RRs coexist in controllerNamespace.
+func WaitForAICreation(ctx context.Context, k8sClient client.Client, namespace, rrName string, timeout, interval time.Duration) *aianalysisv1.AIAnalysis {
 	var ai *aianalysisv1.AIAnalysis
-	By("Waiting for RO to create AIAnalysis CRD")
+	By("Waiting for RO to create AIAnalysis CRD for RR " + rrName)
 	Eventually(func() bool {
 		aiList := &aianalysisv1.AIAnalysisList{}
 		_ = k8sClient.List(ctx, aiList, client.InNamespace(namespace))
-		if len(aiList.Items) == 0 {
-			return false
+		for i := range aiList.Items {
+			if isOwnedByRR(&aiList.Items[i], rrName) {
+				ai = &aiList.Items[i]
+				return true
+			}
 		}
-		ai = &aiList.Items[0]
-		return true
-	}, timeout, interval).Should(BeTrue(), "AIAnalysis should be created by RO")
+		return false
+	}, timeout, interval).Should(BeTrue(), "AIAnalysis should be created by RO for RR "+rrName)
 	return ai
 }
 
@@ -205,19 +211,22 @@ func SimulateAINeedsHumanReview(ctx context.Context, k8sClient client.Client, ai
 }
 
 // WaitForWECreation waits for the RO controller to create a WorkflowExecution CRD
-// in the given namespace. Returns the first WE found.
-func WaitForWECreation(ctx context.Context, k8sClient client.Client, namespace string, timeout, interval time.Duration) *workflowexecutionv1.WorkflowExecution {
+// owned by the given RR in the given namespace. Filters by OwnerReference to
+// avoid cross-test contamination when multiple RRs coexist in controllerNamespace.
+func WaitForWECreation(ctx context.Context, k8sClient client.Client, namespace, rrName string, timeout, interval time.Duration) *workflowexecutionv1.WorkflowExecution {
 	var we *workflowexecutionv1.WorkflowExecution
-	By("Waiting for RO to create WorkflowExecution CRD")
+	By("Waiting for RO to create WorkflowExecution CRD for RR " + rrName)
 	Eventually(func() bool {
 		weList := &workflowexecutionv1.WorkflowExecutionList{}
 		_ = k8sClient.List(ctx, weList, client.InNamespace(namespace))
-		if len(weList.Items) == 0 {
-			return false
+		for i := range weList.Items {
+			if isOwnedByRR(&weList.Items[i], rrName) {
+				we = &weList.Items[i]
+				return true
+			}
 		}
-		we = &weList.Items[0]
-		return true
-	}, timeout, interval).Should(BeTrue(), "WorkflowExecution should be created by RO")
+		return false
+	}, timeout, interval).Should(BeTrue(), "WorkflowExecution should be created by RO for RR "+rrName)
 	return we
 }
 
@@ -235,20 +244,46 @@ func SimulateWECompletion(ctx context.Context, k8sClient client.Client, we *work
 }
 
 // WaitForRARCreation waits for the RO controller to create a RemediationApprovalRequest CRD
-// in the given namespace. Returns the first RAR found.
-func WaitForRARCreation(ctx context.Context, k8sClient client.Client, namespace string, timeout, interval time.Duration) *remediationv1.RemediationApprovalRequest {
+// owned by the given RR in the given namespace. Filters by OwnerReference to
+// avoid cross-test contamination when multiple RRs coexist in controllerNamespace.
+func WaitForRARCreation(ctx context.Context, k8sClient client.Client, namespace, rrName string, timeout, interval time.Duration) *remediationv1.RemediationApprovalRequest {
 	var rar *remediationv1.RemediationApprovalRequest
-	By("Waiting for RO to create RemediationApprovalRequest CRD")
+	By("Waiting for RO to create RemediationApprovalRequest CRD for RR " + rrName)
 	Eventually(func() bool {
 		rarList := &remediationv1.RemediationApprovalRequestList{}
 		_ = k8sClient.List(ctx, rarList, client.InNamespace(namespace))
-		if len(rarList.Items) == 0 {
-			return false
+		for i := range rarList.Items {
+			if isOwnedByRR(&rarList.Items[i], rrName) {
+				rar = &rarList.Items[i]
+				return true
+			}
 		}
-		rar = &rarList.Items[0]
-		return true
-	}, timeout, interval).Should(BeTrue(), "RemediationApprovalRequest should be created by RO")
+		return false
+	}, timeout, interval).Should(BeTrue(), "RemediationApprovalRequest should be created by RO for RR "+rrName)
 	return rar
+}
+
+// isOwnedByRR checks whether a Kubernetes object has an OwnerReference
+// with Kind=RemediationRequest and the given name.
+func isOwnedByRR(obj client.Object, rrName string) bool {
+	for _, ref := range obj.GetOwnerReferences() {
+		if ref.Kind == "RemediationRequest" && ref.Name == rrName {
+			return true
+		}
+	}
+	return false
+}
+
+// CountOwnedBy counts how many items in a list are owned by the given RR name.
+// Useful for "NOT exists" assertions in parallel test scenarios.
+func CountOwnedBy[T client.Object](items []T, rrName string) int {
+	count := 0
+	for _, item := range items {
+		if isOwnedByRR(item, rrName) {
+			count++
+		}
+	}
+	return count
 }
 
 // WaitForRRPhase waits for a RemediationRequest to reach the specified phase.
