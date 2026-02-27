@@ -291,7 +291,7 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 		defer deleteTestNamespace(nsB)
 
 		// Unique fingerprint per test to avoid cross-test blocking (parallel tests share ROControllerNamespace)
-		sharedFP := "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2" + uuid.New().String()[:8]
+		sharedFP := "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4" + uuid.New().String()[:8]
 
 		// PHASE 1: Create 3 failed RRs in namespace A
 		// Each RR progresses naturally to Processing, then we set to Failed
