@@ -4,41 +4,37 @@ metadata:
   name: kubernaut-mesh-failure-rules
   namespace: demo-mesh-failure
   labels:
-    release: prometheus
+    release: kube-prometheus-stack
 spec:
   groups:
   - name: kubernaut-mesh-failure
     rules:
     - alert: LinkerdHighErrorRate
       expr: |
-        (
-          sum by (namespace, deployment)(rate(response_total{namespace="demo-mesh-failure", classification="failure", direction="inbound"}[5m]))
-          /
-          sum by (namespace, deployment)(rate(response_total{namespace="demo-mesh-failure", direction="inbound"}[5m]))
-        ) > 0.5
+        sum by (namespace)(rate(inbound_http_authz_deny_total{namespace="demo-mesh-failure"}[5m])) > 0
       for: 2m
       labels:
         severity: critical
       annotations:
         summary: >
-          High error rate detected in mesh-proxied namespace demo-mesh-failure.
-          More than 50% of inbound requests are failing.
+          Linkerd AuthorizationPolicy is denying inbound HTTP requests
+          in namespace demo-mesh-failure.
         description: >
-          Linkerd proxy metrics show a high failure rate for inbound traffic
-          in namespace demo-mesh-failure. This is typically caused by a
-          restrictive AuthorizationPolicy blocking legitimate traffic.
+          The inbound_http_authz_deny_total metric is rising, indicating
+          a Linkerd AuthorizationPolicy is blocking legitimate traffic.
+          This is typically caused by a restrictive policy requiring an
+          identity that no client possesses.
     - alert: LinkerdRequestsUnauthorized
       expr: |
-        sum by (namespace, deployment)(rate(response_total{namespace="demo-mesh-failure", status_code="403", direction="inbound"}[5m])) > 0
-      for: 2m
+        sum by (namespace)(rate(inbound_http_authz_deny_total{namespace="demo-mesh-failure"}[2m])) > 0.1
+      for: 1m
       labels:
         severity: critical
       annotations:
         summary: >
-          Linkerd proxy is returning 403 Forbidden for inbound traffic in
-          namespace demo-mesh-failure, indicating an AuthorizationPolicy is
-          blocking requests.
+          Sustained Linkerd authorization denials detected in
+          namespace demo-mesh-failure.
         description: >
-          A Linkerd AuthorizationPolicy appears to be denying traffic to
-          workloads in namespace demo-mesh-failure. This causes health check
-          failures and service unavailability.
+          A Linkerd AuthorizationPolicy is actively denying inbound traffic
+          to workloads in namespace demo-mesh-failure, causing service
+          unavailability for meshed clients.

@@ -1,0 +1,22 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: linkerd-proxy
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  namespaceSelector:
+    any: true
+  selector:
+    matchExpressions:
+    - key: linkerd.io/proxy-deployment
+      operator: Exists
+  podMetricsEndpoints:
+  - port: linkerd-admin
+    path: /metrics
+    interval: 15s
+    relabelings:
+    - sourceLabels: [__meta_kubernetes_pod_container_name]
+      regex: linkerd-proxy
+      action: keep
