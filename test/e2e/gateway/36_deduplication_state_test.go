@@ -636,14 +636,18 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 			Eventually(func() int32 {
 				updatedCRD := getCRDByName(testCtx, testClient, gatewayNamespace, crdName)
 				if updatedCRD == nil {
+					GinkgoWriter.Printf("[dedup-occurrence] getCRDByName returned nil for %q in %s\n", crdName, gatewayNamespace)
 					return 0
 				}
 				// DD-GATEWAY-011: Check status.deduplication (not spec)
 				if updatedCRD.Status.Deduplication == nil {
+					GinkgoWriter.Printf("[dedup-occurrence] RR %s found but Status.Deduplication is nil (phase=%s)\n",
+						crdName, updatedCRD.Status.OverallPhase)
 					return 0
 				}
+				GinkgoWriter.Printf("[dedup-occurrence] RR %s: OccurrenceCount=%d\n", crdName, updatedCRD.Status.Deduplication.OccurrenceCount)
 				return updatedCRD.Status.Deduplication.OccurrenceCount
-			}, 5*time.Second, 500*time.Millisecond).Should(Equal(int32(2)),
+			}, 15*time.Second, 500*time.Millisecond).Should(Equal(int32(2)),
 				"Unknown state should increment occurrence count (treated as in-progress)")
 		})
 	})

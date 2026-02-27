@@ -309,11 +309,15 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 			firstCRDName := gwResp1.RemediationRequestName
 
 			// BUSINESS OUTCOME 1: First CRD created in K8s
+			// Wrap in Eventually: CRD may not be propagated yet (scope informer cache delay)
 			var crd remediationv1alpha1.RemediationRequest
-			Expect(k8sClient.Get(testCtx, client.ObjectKey{
-				Namespace: gatewayNamespace,
-				Name:      firstCRDName,
-			}, &crd)).To(Succeed(), "First alert creates exactly one CRD")
+			Eventually(func() error {
+				return k8sClient.Get(testCtx, client.ObjectKey{
+					Namespace: gatewayNamespace,
+					Name:      firstCRDName,
+				}, &crd)
+			}, 15*time.Second, 200*time.Millisecond).Should(Succeed(),
+				"First alert creates exactly one CRD")
 
 			// DD-GATEWAY-012: Redis check REMOVED - Gateway is now Redis-free
 			// DD-GATEWAY-011: Deduplication validated via RR status.deduplication (tested elsewhere)

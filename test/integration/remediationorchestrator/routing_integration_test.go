@@ -366,12 +366,12 @@ var _ = Describe("Target Resource Casing Preservation (Issue #203)", func() {
 		wfe := &workflowexecutionv1.WorkflowExecution{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "wfe-recently-completed",
-				Namespace: ns,
+				Namespace: ROControllerNamespace,
 			},
 			Spec: workflowexecutionv1.WorkflowExecutionSpec{
 				RemediationRequestRef: corev1.ObjectReference{
 					Name:      "rr-previous",
-					Namespace: ns,
+					Namespace: ROControllerNamespace,
 				},
 				WorkflowRef: workflowexecutionv1.WorkflowRef{
 					WorkflowID:      "wf-restart-pods",

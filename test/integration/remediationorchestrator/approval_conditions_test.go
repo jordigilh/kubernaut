@@ -56,12 +56,12 @@ var _ = Describe("RemediationApprovalRequest Conditions Integration", Label("int
 			rar := &remediationv1.RemediationApprovalRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      rarName,
-					Namespace: namespace,
+					Namespace: ROControllerNamespace,
 				},
 				Spec: remediationv1.RemediationApprovalRequestSpec{
 					RemediationRequestRef: corev1.ObjectReference{
 						Name:      rrName,
-						Namespace: namespace,
+						Namespace: ROControllerNamespace,
 					},
 					AIAnalysisRef: remediationv1.ObjectRef{
 						Name: "ai-" + rrName,
@@ -89,7 +89,7 @@ var _ = Describe("RemediationApprovalRequest Conditions Integration", Label("int
 
 			// Fetch the created object to get server-set fields (UID, ResourceVersion, etc.)
 			Eventually(func() error {
-				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rarName, Namespace: namespace}, rar)
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rarName, Namespace: ROControllerNamespace}, rar)
 			}, timeout, interval).Should(Succeed(), "Failed to fetch created RAR")
 
 			// Set initial conditions on the fetched object (simulating creator logic)
@@ -105,7 +105,7 @@ var _ = Describe("RemediationApprovalRequest Conditions Integration", Label("int
 			By("Verifying ApprovalPending=True condition")
 			fetched := &remediationv1.RemediationApprovalRequest{}
 			Eventually(func() bool {
-				if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rarName, Namespace: namespace}, fetched); err != nil {
+				if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rarName, Namespace: ROControllerNamespace}, fetched); err != nil {
 					return false
 				}
 				cond := meta.FindStatusCondition(fetched.Status.Conditions, rarconditions.ConditionApprovalPending)

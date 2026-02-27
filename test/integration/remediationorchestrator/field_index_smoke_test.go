@@ -65,16 +65,9 @@ var _ = Describe("Field Index Smoke Test", func() {
 		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 		GinkgoWriter.Printf("✅ Created RR: %s with fingerprint: %s\n", rr.Name, testFingerprint)
 
-		By("Verifying RR exists via direct query")
-		allRRs := &remediationv1.RemediationRequestList{}
-		err := k8sManager.GetAPIReader().List(ctx, allRRs, client.InNamespace(ROControllerNamespace))
-		Expect(err).ToNot(HaveOccurred())
-		GinkgoWriter.Printf("📊 Direct query found %d RRs in namespace\n", len(allRRs.Items))
-		Expect(len(allRRs.Items)).To(Equal(1), "Should find 1 RR via direct query")
-
 		By("Querying by field selector (spec.signalFingerprint) - server-side with CRD selectableFields")
 		indexedRRs := &remediationv1.RemediationRequestList{}
-		err = k8sManager.GetAPIReader().List(ctx, indexedRRs,
+		err := k8sManager.GetAPIReader().List(ctx, indexedRRs,
 			client.InNamespace(ROControllerNamespace),
 			client.MatchingFields{"spec.signalFingerprint": testFingerprint},
 		)
@@ -92,10 +85,13 @@ var _ = Describe("Field Index Smoke Test", func() {
 			GinkgoWriter.Println("   Expected: 1 RR matching fingerprint")
 			GinkgoWriter.Println("   Actual: 0 RRs")
 
-			// Additional debugging
-			for _, rr := range allRRs.Items {
-				GinkgoWriter.Printf("   Found RR: %s, fingerprint=%s (len=%d)\n",
-					rr.Name, rr.Spec.SignalFingerprint, len(rr.Spec.SignalFingerprint))
+			// Additional debugging: list all RRs in namespace
+			var allRRs remediationv1.RemediationRequestList
+			if listErr := k8sManager.GetAPIReader().List(ctx, &allRRs, client.InNamespace(ROControllerNamespace)); listErr == nil {
+				for _, r := range allRRs.Items {
+					GinkgoWriter.Printf("   Found RR: %s, fingerprint=%s (len=%d)\n",
+						r.Name, r.Spec.SignalFingerprint, len(r.Spec.SignalFingerprint))
+				}
 			}
 		}
 

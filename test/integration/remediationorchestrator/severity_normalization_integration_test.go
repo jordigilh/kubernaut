@@ -78,7 +78,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			rr := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      rrName,
-					Namespace: namespace,
+					Namespace: ROControllerNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: func() string { // UNIQUE per test to avoid routing deduplication (DD-RO-002)
@@ -110,7 +110,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			sp := &signalprocessingv1.SignalProcessing{}
 
 			Eventually(func() error {
-				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, sp)
 			}, timeout, interval).Should(Succeed(),
 				"RO should create SignalProcessing when RR is created")
 
@@ -121,14 +121,14 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			By("4. Simulate SignalProcessing Rego normalization by updating Status")
 			// In real environment, SignalProcessing controller runs Rego policy
 			// For integration test, we use helper to consistently set normalized severity
-			Expect(updateSPStatus(namespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
+			Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
 
 			By("5. Wait for RO to create AIAnalysis")
 			var createdAA *aianalysisv1.AIAnalysis
 			Eventually(func() bool {
 				var aaList aianalysisv1.AIAnalysisList
 				err := k8sManager.GetAPIReader().List(ctx, &aaList,
-					client.InNamespace(namespace))
+					client.InNamespace(ROControllerNamespace))
 				if err != nil {
 					return false
 				}
@@ -148,7 +148,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 
 			By("7. Verify RemediationRequest still has external severity")
 			var updatedRR remediationv1.RemediationRequest
-			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, &updatedRR)).To(Succeed())
+			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rrName, Namespace: ROControllerNamespace}, &updatedRR)).To(Succeed())
 			Expect(updatedRR.Spec.Severity).To(Equal("Sev1"),
 				"RemediationRequest should preserve external severity for operator-facing messages")
 
@@ -162,7 +162,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			rr := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      rrName,
-					Namespace: namespace,
+					Namespace: ROControllerNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: "b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3",
@@ -190,18 +190,18 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			spName := fmt.Sprintf("sp-%s", rrName)
 			sp := &signalprocessingv1.SignalProcessing{}
 			Eventually(func() error {
-				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, sp)
 			}, timeout, interval).Should(Succeed())
 
 			// Simulate SignalProcessing Rego normalization using helper (DD-SEVERITY-001)
-			Expect(updateSPStatus(namespace, spName, signalprocessingv1.PhaseCompleted, "high")).To(Succeed())
+			Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted, "high")).To(Succeed())
 
 			By("3. Wait for AIAnalysis and verify normalized severity")
 			var createdAA *aianalysisv1.AIAnalysis
 			Eventually(func() bool {
 				var aaList aianalysisv1.AIAnalysisList
 				err := k8sManager.GetAPIReader().List(ctx, &aaList,
-					client.InNamespace(namespace))
+					client.InNamespace(ROControllerNamespace))
 				if err != nil {
 					return false
 				}
@@ -270,21 +270,21 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			spName := fmt.Sprintf("sp-%s", rrName)
 			sp := &signalprocessingv1.SignalProcessing{}
 			Eventually(func() error {
-				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, sp)
 			}, timeout, interval).Should(Succeed())
 
 			Expect(sp.Spec.Signal.Severity).To(Equal("P0"),
 				"SignalProcessing should preserve external 'P0' in Spec")
 
 			// Simulate SignalProcessing Rego normalization using helper (DD-SEVERITY-001)
-			Expect(updateSPStatus(namespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
+			Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
 
 			By("3. Wait for AIAnalysis and verify normalized severity")
 			var createdAA *aianalysisv1.AIAnalysis
 			Eventually(func() bool {
 				var aaList aianalysisv1.AIAnalysisList
 				err := k8sManager.GetAPIReader().List(ctx, &aaList,
-					client.InNamespace(namespace))
+					client.InNamespace(ROControllerNamespace))
 				if err != nil {
 					return false
 				}
@@ -312,7 +312,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			rr := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      rrName,
-					Namespace: namespace,
+					Namespace: ROControllerNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: hex.EncodeToString(hash[:]),
@@ -340,17 +340,17 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			spName := fmt.Sprintf("sp-%s", rrName)
 			sp := &signalprocessingv1.SignalProcessing{}
 			Eventually(func() error {
-				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, sp)
 			}, timeout, interval).Should(Succeed())
 
 			// Simulate SignalProcessing Rego normalization using helper (DD-SEVERITY-001)
-			Expect(updateSPStatus(namespace, spName, signalprocessingv1.PhaseCompleted, "medium")).To(Succeed())
+			Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted, "medium")).To(Succeed())
 
 			// RACE FIX: Ensure SignalProcessing status is fully propagated before expecting AIAnalysis
 			// In CI's faster environment, the RO controller might not see the SP status update
 			// immediately, causing it to delay AIAnalysis creation
 			Eventually(func() signalprocessingv1.SignalProcessingPhase {
-				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, sp)
 				if err != nil {
 					return ""
 				}
@@ -363,7 +363,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			Eventually(func() bool {
 				var aaList aianalysisv1.AIAnalysisList
 				err := k8sManager.GetAPIReader().List(ctx, &aaList,
-					client.InNamespace(namespace))
+					client.InNamespace(ROControllerNamespace))
 				if err != nil {
 					return false
 				}
@@ -487,7 +487,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			rr := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      rrName,
-					Namespace: namespace,
+					Namespace: ROControllerNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: func() string {
@@ -518,18 +518,18 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			spName := fmt.Sprintf("sp-%s", rrName)
 			sp := &signalprocessingv1.SignalProcessing{}
 			Eventually(func() error {
-				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, sp)
 			}, timeout, interval).Should(Succeed())
 
 			// Use standard updateSPStatus which now sets reactive defaults
-			Expect(updateSPStatus(namespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
+			Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
 
 			By("3. Wait for AIAnalysis and verify reactive signal mode")
 			var createdAA *aianalysisv1.AIAnalysis
 			Eventually(func() bool {
 				var aaList aianalysisv1.AIAnalysisList
 				err := k8sManager.GetAPIReader().List(ctx, &aaList,
-					client.InNamespace(namespace))
+					client.InNamespace(ROControllerNamespace))
 				if err != nil {
 					return false
 				}
@@ -572,7 +572,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			rr := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      rrName,
-					Namespace: namespace,
+					Namespace: ROControllerNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: "e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6",
@@ -600,18 +600,18 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			spName := fmt.Sprintf("sp-%s", rrName)
 			sp := &signalprocessingv1.SignalProcessing{}
 			Eventually(func() error {
-				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, sp)
 			}, timeout, interval).Should(Succeed())
 
 			// Simulate SignalProcessing Rego normalization using helper (DD-SEVERITY-001)
-			Expect(updateSPStatus(namespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
+			Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
 
 			By("3. Wait for AIAnalysis and verify severity")
 			var createdAA *aianalysisv1.AIAnalysis
 			Eventually(func() bool {
 				var aaList aianalysisv1.AIAnalysisList
 				err := k8sManager.GetAPIReader().List(ctx, &aaList,
-					client.InNamespace(namespace))
+					client.InNamespace(ROControllerNamespace))
 				if err != nil {
 					return false
 				}
