@@ -56,15 +56,14 @@
 | P16 | mesh-routing-failure | #157 | PENDING | Needs Linkerd. Workflow image not yet built. PrometheusRule label fix needed. |
 | P17 | cert-failure-gitops | #160 | BLOCKED | Validated infra E2E on 2026-02-27: workflow image built+loaded, workflow registered in catalog, PrometheusRule label+PromQL fixed (exported_namespace), CA Secret+Gitea repo+ArgoCD Application deployed, Certificate Ready then broken via bad git commit. LabelDetector correctly detected gitOpsManaged=true, gitOpsTool=argocd. Blocked by #219: LLM selects FixCertificate (direct kubectl) instead of GitRevertCommit (git revert) despite gitOpsManaged=true. Same class as #217. |
 
-### Newer Scenarios (added post-initial plan)
+### Tier 5 — Newer Scenarios
 
-| Scenario | Issue | Status | Notes |
-|----------|-------|--------|-------|
-| remediation-retry | #167 | PASS | Validated E2E on 2026-02-26. LLM-driven escalation. Fixed signalName (CrashLoopBackOff→KubePodCrashLooping), actionType (GracefulRestart→RollbackDeployment for crashloop-rollback-v1). LLM correctly selected RollbackDeployment on first attempt based on workflow descriptions. |
-| memory-escalation | #168 | BLOCKED | Design gap (#214): CheckConsecutiveFailures only counts Failed RRs, breaks chain on Completed. Scenario expects completed-but-ineffective remediations to trigger escalation, but code treats Completed as success. |
-| concurrent-cross-namespace | #172 | N/A | Two teams, same issue, different risk tolerance. No workflow schema yet. |
-| duplicate-alert-suppression | #170 | BLOCKED | Circular duplicate blocking deadlock (#209): both RRs with same fingerprint block each other. AA completed successfully (GracefulRestart) but RO retroactively blocked the original RR. Reuses crashloop workflow. |
-| resource-quota-exhaustion | #171 | PASS | PromQL fixed: uses ReplicaSet spec vs status metrics instead of pod Pending (pods never created under quota rejection). Alert fires correctly. AA identifies no matching workflow, escalates to ManualReviewRequired. Fixed KSM label leak with `max by(replicaset, namespace)`. |
+| # | Scenario | Issue | Status | Notes |
+|---|----------|-------|--------|-------|
+| P18 | memory-escalation | #168 | BLOCKED | Design gap (#214): CheckConsecutiveFailures only counts Failed RRs, breaks chain on Completed. Scenario expects completed-but-ineffective remediations to trigger escalation, but code treats Completed as success. |
+| P19 | concurrent-cross-namespace | #172 | N/A | Two teams, same issue, different risk tolerance. No workflow schema yet. |
+| P20 | duplicate-alert-suppression | #170 | BLOCKED | Circular duplicate blocking deadlock (#209): both RRs with same fingerprint block each other. AA completed successfully (GracefulRestart) but RO retroactively blocked the original RR. Reuses crashloop workflow. |
+| P21 | resource-quota-exhaustion | #171 | PASS | PromQL fixed: uses ReplicaSet spec vs status metrics instead of pod Pending (pods never created under quota rejection). Alert fires correctly. AA identifies no matching workflow, escalates to ManualReviewRequired. Fixed KSM label leak with `max by(replicaset, namespace)`. |
 
 ---
 

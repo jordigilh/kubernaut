@@ -44,10 +44,8 @@ kubectl rollout restart deployment/signalprocessing-controller -n kubernaut-syst
 kubectl rollout status deployment/signalprocessing-controller -n kubernaut-system --timeout=60s
 echo ""
 
-# Step 1: Seed both workflows
+# Step 1: Seed workflows
 echo "==> Step 1: Seeding workflows..."
-echo "  restart-pods-v1 (for high risk-tolerance teams)..."
-seed_scenario_workflow "remediation-retry"
 echo "  crashloop-rollback-v1 (for low risk-tolerance teams)..."
 seed_scenario_workflow "crashloop"
 echo ""

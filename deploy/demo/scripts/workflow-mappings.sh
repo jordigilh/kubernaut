@@ -13,7 +13,6 @@ WORKFLOWS=(
     "memory-leak:graceful-restart-job"
     "memory-escalation:increase-memory-limits-job"
     "crashloop:crashloop-rollback-job"
-    "remediation-retry:restart-pods-job"
     "hpa-maxed:patch-hpa-job"
     "pdb-deadlock:relax-pdb-job"
     "pending-taint:remove-taint-job"

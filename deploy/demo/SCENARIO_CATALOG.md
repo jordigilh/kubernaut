@@ -41,8 +41,7 @@
 
 | # | Scenario | Description |
 |---|----------|-------------|
-| — | **remediation-retry** | First remediation fails → LLM-driven escalation selects a different workflow |
-| — | **memory-escalation** | Repeated OOM remediations without resolution → escalates to human review |
-| — | **concurrent-cross-namespace** | Same alert in two namespaces with different risk tolerances → different workflows |
-| — | **duplicate-alert-suppression** | Multiple pod alerts deduplicated via OwnerResolver into a single RR |
-| — | **resource-quota-exhaustion** | Pods Pending due to ResourceQuota → escalates to human review (no auto-fix) |
+| P18 | **memory-escalation** | Repeated OOM remediations without resolution → escalates to human review |
+| P19 | **concurrent-cross-namespace** | Same alert in two namespaces with different risk tolerances → different workflows |
+| P20 | **duplicate-alert-suppression** | Multiple pod alerts deduplicated via OwnerResolver into a single RR |
+| P21 | **resource-quota-exhaustion** | Pods Pending due to ResourceQuota → escalates to human review (no auto-fix) |
