@@ -6,10 +6,15 @@
 #   - Kind cluster with deploy/demo/overlays/kind/kind-cluster-config.yaml
 #   - Gitea and ArgoCD installed (run setup scripts first)
 #
-# Usage: ./deploy/demo/scenarios/gitops-drift/run.sh
+# Usage: ./deploy/demo/scenarios/gitops-drift/run.sh [setup|inject|all]
+#   setup  -- deploy infrastructure, ArgoCD app, and establish healthy baseline
+#   inject -- push bad ConfigMap via git (assumes setup already ran)
+#   all    -- run full flow (default)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SUBCOMMAND="${1:-all}"
+if [[ "$SUBCOMMAND" =~ ^(setup|inject|all)$ ]]; then shift || true; fi
 
 # shellcheck source=../../scripts/kind-helper.sh
 source "${SCRIPT_DIR}/../../scripts/kind-helper.sh"
@@ -28,6 +33,7 @@ GITEA_ADMIN_PASS="kubernaut123"
 REPO_NAME="demo-gitops-repo"
 NAMESPACE="demo-gitops"
 
+run_setup() {
 echo "============================================="
 echo " GitOps Drift Remediation Demo (#125)"
 echo "============================================="
@@ -70,7 +76,9 @@ echo ""
 echo "==> Step 5: Initial state (healthy):"
 kubectl get pods -n "${NAMESPACE}" -o wide
 echo ""
+}
 
+run_inject() {
 # Step 6: Inject failure -- push bad ConfigMap to Gitea
 echo "==> Step 6: Injecting failure (bad ConfigMap via Git commit)..."
 WORK_DIR=$(mktemp -d)
@@ -192,7 +200,9 @@ rm -rf "${WORK_DIR}"
 
 echo "  Bad commit pushed to Gitea. ArgoCD will sync the broken ConfigMap."
 echo ""
+}
 
+run_monitor() {
 # Step 7: Wait for ArgoCD to sync and pods to crash
 echo "==> Step 7: Waiting for ArgoCD to sync and pods to enter CrashLoopBackOff..."
 echo "  ArgoCD poll interval is ~3 min. Waiting..."
@@ -215,3 +225,11 @@ echo ""
 echo "==> To verify remediation succeeded:"
 echo "    kubectl get pods -n ${NAMESPACE}"
 echo "    # All pods should return to Running after git revert"
+}
+
+case "$SUBCOMMAND" in
+  setup)  run_setup ;;
+  inject) run_inject ;;
+  all)    run_setup; run_inject; run_monitor ;;
+  *)      echo "Usage: $0 [setup|inject|all]"; exit 1 ;;
+esac
