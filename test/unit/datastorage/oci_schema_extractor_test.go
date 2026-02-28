@@ -309,11 +309,10 @@ parameters:
 
 			result, err := extractor.ExtractFromImage(context.Background(), "quay.io/test/workflow:v1.0.0")
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result).ToNot(BeNil())
-			Expect(result.Schema).ToNot(BeNil())
 			Expect(result.Schema.Metadata.WorkflowID).To(Equal("oomkill-scale-down"))
 			Expect(result.Schema.ActionType).To(Equal("RestartPod"))
-			Expect(result.Digest).ToNot(BeEmpty())
+			Expect(result.Digest).To(HavePrefix("sha256:"),
+				"digest must be a valid sha256 content-addressable identifier")
 			Expect(result.RawContent).To(ContainSubstring("actionType"))
 		})
 	})
@@ -335,7 +334,6 @@ parameters:
 `
 			parsedSchema, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(parsedSchema.DetectedLabels).ToNot(BeNil())
 			Expect(parsedSchema.DetectedLabels.HPAEnabled).To(Equal("true"))
 			Expect(parsedSchema.DetectedLabels.PDBProtected).To(Equal("true"))
 		})
@@ -346,7 +344,6 @@ parameters:
 `
 			parsedSchema, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(parsedSchema.DetectedLabels).ToNot(BeNil())
 			Expect(parsedSchema.DetectedLabels.GitOpsTool).To(Equal("*"))
 		})
 
@@ -454,7 +451,6 @@ parameters:
 
 			result, err := extractor.ExtractFromImage(context.Background(), "quay.io/test/detected:v1.0.0")
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result.Schema.DetectedLabels).ToNot(BeNil())
 			Expect(result.Schema.DetectedLabels.HPAEnabled).To(Equal("true"))
 			Expect(result.Schema.DetectedLabels.GitOpsTool).To(Equal("argocd"))
 		})
