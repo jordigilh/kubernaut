@@ -39,6 +39,8 @@ datastorage:
 
 # -- AIAnalysis controller
 aianalysis:
+  rego:
+    confidenceThreshold: null  # nil = use Rego default (0.8 per BR-AI-076)
   resources:
     requests: {}
     limits: {}
