@@ -1,12 +1,12 @@
 # Gateway Service - Deduplication & Storm Detection
 
-**Version**: v1.2
-**Last Updated**: February 9, 2026
+**Version**: v1.4
+**Last Updated**: February 24, 2026
 **Status**: ✅ Design Complete
 
 **Changelog**:
 - **v1.4** (2026-02-28): Issue #228: Shared `types.ResolveFingerprint()` function extracted. Both adapters now delegate fingerprint generation to a single shared function, eliminating duplicated logic. `OwnerResolver` interface moved from adapters to `types` package.
-- **v1.3** (2026-02-28): Issue #227: K8s Event adapter now excludes reason from fingerprint even without OwnerResolver (consistency with Prometheus adapter). All adapters use `CalculateOwnerFingerprint(resource)` as the default behavior.
+- **v1.3** (2026-02-28): Issue #227: K8s Event adapter now excludes reason from fingerprint even without OwnerResolver (consistency with Prometheus adapter). Default behavior changed to reason-excluded fingerprinting (superseded by v1.4 shared `ResolveFingerprint` delegation).
 - **v1.2** (2026-02-09): Prometheus adapter: alertname excluded from fingerprint; OwnerResolver added for Pod→Deployment resolution (Issue #63). Fingerprint now uses `SHA256(namespace:ownerKind:ownerName)` with OwnerResolver (same pattern as K8s event adapter). This ensures multiple alertnames (KubePodCrashLooping, KubePodNotReady, KubeContainerOOMKilled) for the same resource produce a single fingerprint. Rationale: LLM investigates resource state, not signal type.
 - **v1.1** (2026-02-09): Updated fingerprint generation to document adapter-specific strategies. Kubernetes events now use owner-chain-based fingerprinting (`SHA256(namespace:ownerKind:ownerName)`) to deduplicate events across pod restarts and different event reasons.
 - **v1.0** (2025-10-04): Initial design.
@@ -132,25 +132,18 @@ Prometheus alerts use **owner chain resolution** to fingerprint at the controlle
 - **Architectural rationale**: The LLM investigates resource state, not signal type. The RCA outcome is independent of which alert triggered it.
 
 The `PrometheusAdapter` resolves the top-level controller owner via the optional
-`OwnerResolver` interface, which traverses Kubernetes `ownerReferences`:
+`types.OwnerResolver` interface (shared across all adapters, Issue #228), which
+traverses Kubernetes `ownerReferences`:
 
 ```
 Pod "payment-api-789abc" → ReplicaSet "payment-api-xyz" → Deployment "payment-api"
 ```
 
 ```go
-// Format: SHA256(namespace:ownerKind:ownerName) with OwnerResolver
-// Format: SHA256(namespace:kind:name) without OwnerResolver
-// alertname is NEVER included in the fingerprint.
-func CalculateOwnerFingerprint(resource ResourceIdentifier) string {
-    key := fmt.Sprintf("%s:%s:%s",
-        resource.Namespace,
-        resource.Kind,  // e.g., "Deployment" (resolved owner) or "Pod" (fallback)
-        resource.Name,  // e.g., "payment-api" (resolved owner) or "payment-api-789abc" (fallback)
-    )
-    hash := sha256.Sum256([]byte(key))
-    return fmt.Sprintf("%x", hash)
-}
+// Both adapters delegate to the shared ResolveFingerprint function (Issue #228).
+// Internally produces SHA256(namespace:ownerKind:ownerName) with OwnerResolver,
+// or SHA256(namespace:kind:name) without. alertname is NEVER included.
+fingerprint := types.ResolveFingerprint(ctx, a.ownerResolver, resource)
 ```
 
 **Examples** (all produce the same fingerprint):
@@ -183,17 +176,10 @@ Pod "payment-api-789abc" → ReplicaSet "payment-api-xyz" → Deployment "paymen
 ```
 
 ```go
-// Format: SHA256(namespace:ownerKind:ownerName)
+// Both adapters use the same shared function (Issue #228).
 // Reason is EXCLUDED from the fingerprint.
-func CalculateOwnerFingerprint(resource ResourceIdentifier) string {
-    key := fmt.Sprintf("%s:%s:%s",
-        resource.Namespace,
-        resource.Kind,  // e.g., "Deployment"
-        resource.Name,  // e.g., "payment-api"
-    )
-    hash := sha256.Sum256([]byte(key))
-    return fmt.Sprintf("%x", hash)
-}
+fingerprint := types.ResolveFingerprint(ctx, a.ownerResolver, resource)
+// Internally: SHA256(namespace:ownerKind:ownerName) or SHA256(namespace:kind:name)
 ```
 
 **Examples** (all produce the same fingerprint):

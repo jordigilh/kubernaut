@@ -121,8 +121,10 @@ func (m *DeduplicationLockManager) WithLock(fingerprint string, fn func() error)
 }
 
 // In Gateway.ProcessSignal():
-func (s *Server) ProcessSignal(ctx context.Context, signal types.Signal) error {
-    fingerprint := types.CalculateFingerprint(signal.AlertName, signal.Resource)
+// Note: As of Issue #228 (2026-02-24), fingerprinting is done in the adapter
+// via types.ResolveFingerprint. The fingerprint arrives on the NormalizedSignal.
+func (s *Server) ProcessSignal(ctx context.Context, signal types.NormalizedSignal) error {
+    fingerprint := signal.Fingerprint
 
     // Critical section: check + create if needed
     return s.dedupLockManager.WithLock(fingerprint, func() error {

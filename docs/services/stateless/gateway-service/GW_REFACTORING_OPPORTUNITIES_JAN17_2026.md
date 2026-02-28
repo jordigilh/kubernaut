@@ -201,40 +201,25 @@ import (
 	"fmt"
 )
 
-// CalculateFingerprint generates a unique fingerprint for signal deduplication.
-//
-// Fingerprint format: SHA256(identifier:namespace:kind:name)
-// Examples:
-//   - Prometheus: SHA256("HighMemoryUsage:prod:Pod:payment-api")
-//   - K8s Event:  SHA256("OOMKilled:prod:Pod:payment-api")
-//
-// Business Requirement: BR-GATEWAY-069 (Deduplication)
-// Authority: Shared across all adapters for consistent deduplication
-func CalculateFingerprint(identifier string, resource ResourceIdentifier) string {
-	input := fmt.Sprintf("%s:%s:%s:%s",
-		identifier,
-		resource.Namespace,
-		resource.Kind,
-		resource.Name)
-	hash := sha256.Sum256([]byte(input))
-	return fmt.Sprintf("%x", hash)
-}
+// SUPERSEDED by Issue #228 (2026-02-24): CalculateFingerprint removed.
+// All adapters now use types.ResolveFingerprint which excludes identifiers
+// (alertname/reason) from the fingerprint and delegates to CalculateOwnerFingerprint.
+// See: pkg/gateway/types/fingerprint.go (ResolveFingerprint, CalculateOwnerFingerprint)
+// See: pkg/gateway/types/owner_resolver.go (shared OwnerResolver interface)
 ```
 
-**Update adapters**:
-```go
-// prometheus_adapter.go
-fingerprint := types.CalculateFingerprint(alert.Labels["alertname"], resource)
+**Status**: ✅ Completed (Issue #228, 2026-02-24)
 
-// kubernetes_event_adapter.go
-fingerprint := types.CalculateFingerprint(event.Reason, resource)
+Both adapters now call:
+```go
+fingerprint := types.ResolveFingerprint(ctx, a.ownerResolver, resource)
 ```
 
 **Impact**:
-- **Before**: 10 lines duplicated in 2 files (20 lines total)
-- **After**: 15 lines in shared utility (single source of truth)
-- **Benefit**: Future adapters automatically use correct fingerprint algorithm
-- **Risk**: Very low (pure function with no side effects, well-tested)
+- **Before**: 10 lines duplicated in 2 files with different identifier semantics
+- **After**: Single `ResolveFingerprint` shared function used by all adapters
+- **Benefit**: Cross-adapter fingerprint consistency guaranteed; future adapters automatically use correct algorithm
+- **Risk**: None (completed and validated with unit tests)
 
 ---
 
@@ -533,10 +518,9 @@ func getErrorTypeString(err error) string {
 ## 🚀 **RECOMMENDED IMPLEMENTATION SEQUENCE**
 
 ### **Phase 1: Low-Hanging Fruit** (2 hours)
-1. **Refactor #2**: Extract `CalculateFingerprint()` to shared utility
-   - **TDD RED**: Verify existing adapter tests still pass
-   - **TDD GREEN**: Create `pkg/gateway/types/fingerprint.go`
-   - **TDD REFACTOR**: Update both adapters to use shared function
+1. **Refactor #2**: ~~Extract `CalculateFingerprint()` to shared utility~~ ✅ **Completed** (Issue #228, 2026-02-24)
+   - Superseded by `types.ResolveFingerprint` and `types.CalculateOwnerFingerprint`
+   - `OwnerResolver` interface moved to `pkg/gateway/types/owner_resolver.go`
 
 2. **Refactor #4**: Extract label/annotation truncation
    - **TDD RED**: Verify existing CRD creation tests still pass

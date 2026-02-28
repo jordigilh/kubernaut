@@ -4,7 +4,7 @@
 **Service**: Remediation Orchestrator (RO)  
 **Component**: `pkg/remediationorchestrator/routing` (RoutingEngine)  
 **Date**: 2026-02-28  
-**Status**: Draft
+**Status**: Implemented
 
 ---
 
@@ -13,7 +13,7 @@
 Issue #214 adds a three-layer detection algorithm to `CheckPostAnalysisConditions`
 that detects consecutive ineffective remediations using DataStorage audit traces.
 When the chain length exceeds the configured threshold, the RR is blocked with
-`BlockReasonIneffectiveChain` and escalated to human review via `NotificationRequest`.
+`BlockReasonIneffectiveChain` and escalated to human review (`Outcome = "ManualReviewRequired"`).
 
 ### Detection Layers
 
@@ -45,9 +45,11 @@ When the chain length exceeds the configured threshold, the RR is blocked with
 
 ---
 
-## Unit Tests (RO Routing Engine -- mock DS client)
+## Unit Tests
 
-Test file: `test/unit/remediationorchestrator/routing/blocking_test.go`
+### RO Routing Engine -- mock DS client
+
+Test file: `test/unit/remediationorchestrator/routing/ineffective_chain_test.go`
 
 ### Layer 1+2: Hash chain + spec_drift (DS audit traces)
 
@@ -75,9 +77,24 @@ Test file: `test/unit/remediationorchestrator/routing/blocking_test.go`
 
 ### Additional: CapturePreRemediationHash failure
 
+Test file: `test/unit/remediationorchestrator/controller/reconcile_phases_test.go`
+
 | ID            | Description                                                  | Expected Result           |
 |---------------|--------------------------------------------------------------|---------------------------|
 | UT-RO-214-010 | `CapturePreRemediationHash` returns `hashErr != nil`         | RR transitions to Failed  |
+
+### DSHistoryAdapter -- client-side adapter for DS history queries
+
+Test file: `test/unit/remediationorchestrator/routing/ds_history_adapter_test.go`
+
+| ID             | Description                                                    | Expected Result                         |
+|----------------|----------------------------------------------------------------|-----------------------------------------|
+| DS-ADAPT-001   | Maps TargetResource and window to ogen params correctly        | Params match input                      |
+| DS-ADAPT-002   | Returns Tier1.Chain entries from a successful response         | Entries match response                  |
+| DS-ADAPT-003   | Returns empty slice when Tier1.Chain is empty                  | Empty slice, no error                   |
+| DS-ADAPT-004   | Propagates transport errors from the ogen client               | Error with "connection refused"         |
+| DS-ADAPT-005   | Returns error for BadRequest responses                         | Error with "unexpected response type"   |
+| DS-ADAPT-006   | Returns error for InternalServerError responses                | Error with "unexpected response type"   |
 
 ---
 
@@ -85,9 +102,11 @@ Test file: `test/unit/remediationorchestrator/routing/blocking_test.go`
 
 1. `CheckIneffectiveRemediationChain` is called LAST in `CheckPostAnalysisConditions` (after `CheckExponentialBackoff`)
 2. DS query failures are fail-open (log + nil return)
-3. `handleBlocked` creates `NotificationRequest` BEFORE status update for `BlockReasonIneffectiveChain`
-4. Status update sets `Outcome = "ManualReviewRequired"` and `RequiresManualReview = true` in a single API call
+3. `handleBlocked` sets `Outcome = "ManualReviewRequired"` and `RequiresManualReview = true` for `BlockReasonIneffectiveChain`
+4. Status update for blocked RR is performed in a single API call
 5. `RequeueAfter` = `IneffectiveTimeWindow` for `BlockReasonIneffectiveChain` blocks
 6. `CapturePreRemediationHash` error (`hashErr != nil`) is terminal (RR -> Failed)
 7. Empty `preRemediationSpecHash` (no error) skips hash-based checks but allows RR to proceed
 8. All 9 existing `CheckConsecutiveFailures` / routing tests continue to pass (regression)
+9. `DSHistoryAdapter` is wired in production (`cmd/remediationorchestrator/main.go`) via `SetDSClient`
+10. `NewDSHistoryAdapter` panics on nil client (programming error guard)
