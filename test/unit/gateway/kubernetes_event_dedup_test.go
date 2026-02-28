@@ -161,24 +161,24 @@ var _ = Describe("K8s Event Deduplication with Owner Chain Resolution", func() {
 		})
 	})
 
-	// Test 4: No OwnerResolver (nil) → legacy behavior preserved
-	Describe("Legacy behavior without OwnerResolver", func() {
-		It("should use legacy fingerprint (with reason) when no OwnerResolver is configured", func() {
-			// No resolver - legacy behavior
+	// Test 4: No OwnerResolver (nil) → reason excluded from fingerprint (Issue #227)
+	Describe("Default behavior without OwnerResolver", func() {
+		It("should exclude reason from fingerprint when no OwnerResolver is configured", func() {
 			adapter := adapters.NewKubernetesEventAdapter()
 
 			event := newK8sEventJSON("BackOff", "Warning", "payment-api-789", "prod")
 			signal, err := adapter.Parse(ctx, event)
 			Expect(err).ToNot(HaveOccurred())
 
-			// Legacy fingerprint includes reason
-			expectedFingerprint := types.CalculateFingerprint("BackOff", types.ResourceIdentifier{
+			// Issue #227: Reason must be excluded from fingerprint even without OwnerResolver,
+			// matching Prometheus adapter behavior for cross-adapter deduplication consistency
+			expectedFingerprint := types.CalculateOwnerFingerprint(types.ResourceIdentifier{
 				Namespace: "prod",
 				Kind:      "Pod",
 				Name:      "payment-api-789",
 			})
 			Expect(signal.Fingerprint).To(Equal(expectedFingerprint),
-				"Without OwnerResolver, should use legacy fingerprint (reason + involvedObject)")
+				"Without OwnerResolver, should use resource-level fingerprint (reason excluded, matching Prometheus adapter)")
 		})
 	})
 })

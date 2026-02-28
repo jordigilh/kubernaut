@@ -249,8 +249,8 @@ func (a *KubernetesEventAdapter) Parse(ctx context.Context, rawData []byte) (*ty
 			fingerprint = types.CalculateOwnerFingerprint(resource)
 		}
 	} else {
-		// Legacy behavior: includes reason in fingerprint
-		fingerprint = types.CalculateFingerprint(event.Reason, resource)
+		// Issue #227: Reason excluded from fingerprint (consistent with Prometheus adapter)
+		fingerprint = types.CalculateOwnerFingerprint(resource)
 	}
 
 	// 7. Populate NormalizedSignal
