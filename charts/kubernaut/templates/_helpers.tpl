@@ -77,13 +77,25 @@ postgresql-secret
 {{- end }}
 
 {{/*
-Return the Secret name for DataStorage DB+Redis credentials.
-Uses existingSecret if set, otherwise the chart-managed "datastorage-secret".
+Return the Secret name for DataStorage DB credentials.
+Uses existingSecret if set, otherwise the chart-managed "datastorage-db-secret".
 */}}
-{{- define "kubernaut.datastorage.secretName" -}}
+{{- define "kubernaut.datastorage.dbSecretName" -}}
 {{- if .Values.postgresql.auth.existingSecret -}}
 {{- .Values.postgresql.auth.existingSecret -}}
 {{- else -}}
-datastorage-secret
+datastorage-db-secret
+{{- end -}}
+{{- end }}
+
+{{/*
+Return the Secret name for Redis credentials.
+Uses existingSecret if set, otherwise the chart-managed "redis-secret".
+*/}}
+{{- define "kubernaut.redis.secretName" -}}
+{{- if .Values.redis.existingSecret -}}
+{{- .Values.redis.existingSecret -}}
+{{- else -}}
+redis-secret
 {{- end -}}
 {{- end }}

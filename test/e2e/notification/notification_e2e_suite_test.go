@@ -355,7 +355,7 @@ var _ = SynchronizedAfterSuite(
 			logger.Info("  Step 2: kubectl logs -n " + controllerNamespace + " -l app=datastorage --tail=100")
 			logger.Info("  Step 3: kubectl get events -n " + controllerNamespace + " --field-selector involvedObject.kind=Pod | grep datastorage")
 			logger.Info("  Step 4a: kubectl get configmap datastorage-config -n " + controllerNamespace + " -o yaml")
-			logger.Info("  Step 4b: kubectl get secret datastorage-secret -n " + controllerNamespace + " -o jsonpath='{.data}'")
+			logger.Info("  Step 4b: kubectl get secret datastorage-db-secret redis-secret -n " + controllerNamespace + " -o jsonpath='{.data}'")
 			logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 			logger.Info("🗑️  TO DELETE CLUSTER WHEN DONE:")
 			logger.Info("  kind delete cluster --name notification-e2e")

@@ -113,8 +113,18 @@ spec:
           configMap:
             name: datastorage-config
         - name: secrets
-          secret:
-            secretName: {{ include "kubernaut.datastorage.secretName" . }}
+          projected:
+            sources:
+              - secret:
+                  name: {{ include "kubernaut.datastorage.dbSecretName" . }}
+                  items:
+                    - key: db-secrets.yaml
+                      path: db-secrets.yaml
+              - secret:
+                  name: {{ include "kubernaut.redis.secretName" . }}
+                  items:
+                    - key: redis-secrets.yaml
+                      path: redis-secrets.yaml
 ---
 apiVersion: v1
 kind: Service

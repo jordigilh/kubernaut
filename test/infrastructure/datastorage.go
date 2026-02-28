@@ -1138,11 +1138,17 @@ data:
 apiVersion: v1
 kind: Secret
 metadata:
-  name: datastorage-secret
+  name: datastorage-db-secret
 stringData:
   db-secrets.yaml: |
     username: slm_user
     password: test_password
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: redis-secret
+stringData:
   redis-secrets.yaml: |
     password: ""
 ---
@@ -1281,8 +1287,18 @@ spec:
         configMap:
           name: datastorage-config
       - name: secrets
-        secret:
-          secretName: datastorage-secret%[8]s
+        projected:
+          sources:
+          - secret:
+              name: datastorage-db-secret
+              items:
+              - key: db-secrets.yaml
+                path: db-secrets.yaml
+          - secret:
+              name: redis-secret
+              items:
+              - key: redis-secrets.yaml
+                path: redis-secrets.yaml%[8]s
 `, namespace, nodePort, coverageSecurityContextYAML, dataStorageImage, pullPolicy,
 		coverageEnvYAML, coverageVolumeMountYAML, coverageVolumeYAML)
 

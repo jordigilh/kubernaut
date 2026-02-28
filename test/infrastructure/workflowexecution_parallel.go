@@ -380,17 +380,24 @@ data:
 		return fmt.Errorf("failed to create ConfigMap: %w", err)
 	}
 
-	// Deploy Secret with credentials in YAML format (ADR-030 Section 6)
+	// Deploy Secrets with credentials in YAML format (ADR-030 Section 6)
 	secretManifest := `
 apiVersion: v1
 kind: Secret
 metadata:
-  name: datastorage-secrets
+  name: datastorage-db-secret
   namespace: kubernaut-system
 stringData:
   db-credentials.yaml: |
     username: slm_user
     password: test_password
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: redis-secret
+  namespace: kubernaut-system
+stringData:
   redis-credentials.yaml: |
     password: ""
 `
@@ -399,7 +406,7 @@ stringData:
 	cmd.Stdout = output
 	cmd.Stderr = output
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to create Secret: %w", err)
+		return fmt.Errorf("failed to create Secrets: %w", err)
 	}
 
 	// Deploy Data Storage with proper volumes and CONFIG_PATH
@@ -456,8 +463,18 @@ spec:
         configMap:
           name: datastorage-config
       - name: secrets
-        secret:
-          secretName: datastorage-secrets
+        projected:
+          sources:
+          - secret:
+              name: datastorage-db-secret
+              items:
+              - key: db-credentials.yaml
+                path: db-credentials.yaml
+          - secret:
+              name: redis-secret
+              items:
+              - key: redis-credentials.yaml
+                path: redis-credentials.yaml
 ---
 apiVersion: v1
 kind: Service
