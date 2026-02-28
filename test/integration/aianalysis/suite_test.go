@@ -671,7 +671,12 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 		handlers.WithRecorder(eventRecorder),                  // DD-EVENT-001: Session lifecycle events
 		handlers.WithSessionMode(),                            // BR-AA-HAPI-064: Async submit/poll/result flow
 		handlers.WithSessionPollInterval(2*time.Second))       // Fast polling for tests (production default: 15s)
-	analyzingHandler := handlers.NewAnalyzingHandler(realRegoEvaluator, ctrl.Log.WithName("analyzing-handler"), testMetrics, auditClient)
+	// #225: Set confidence threshold to 0.9 so mock LLM responses (~0.88)
+	// fall below the threshold and trigger approval for production tests.
+	// Matches E2E configuration (test/infrastructure/aianalysis_e2e.go).
+	intThreshold := 0.9
+	analyzingHandler := handlers.NewAnalyzingHandler(realRegoEvaluator, ctrl.Log.WithName("analyzing-handler"), testMetrics, auditClient).
+		WithConfidenceThreshold(&intThreshold)
 
 	// Create per-process controller instance and STORE IT (WorkflowExecution pattern)
 	// Storing reconciler enables tests to access metrics via reconciler.Metrics
