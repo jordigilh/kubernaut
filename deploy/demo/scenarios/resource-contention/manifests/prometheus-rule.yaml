@@ -9,14 +9,15 @@ spec:
   groups:
   - name: contention-app
     rules:
-    - alert: ContainerOOMKilled
+    - alert: ContainerOOMKilling
       expr: |
-        kube_pod_container_status_last_terminated_reason{
-          reason="OOMKilled",
-          namespace="demo-resource-contention",
-          container="worker"
-        } > 0
-      for: 0m
+        increase(
+          kube_pod_container_status_last_terminated_reason{
+            reason="OOMKilled",
+            namespace="demo-resource-contention"
+          }[5m]
+        ) > 0
+      for: 30s
       labels:
         severity: critical
         namespace: demo-resource-contention

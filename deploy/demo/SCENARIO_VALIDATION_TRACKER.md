@@ -64,6 +64,7 @@
 | P19 | concurrent-cross-namespace | #172 | N/A | Two teams, same issue, different risk tolerance. No workflow schema yet. |
 | P20 | duplicate-alert-suppression | #170 | BLOCKED | Circular duplicate blocking deadlock (#209): both RRs with same fingerprint block each other. AA completed successfully (GracefulRestart) but RO retroactively blocked the original RR. Reuses crashloop workflow. |
 | P21 | resource-quota-exhaustion | #171 | PASS | PromQL fixed: uses ReplicaSet spec vs status metrics instead of pod Pending (pods never created under quota rejection). Alert fires correctly. AA identifies no matching workflow, escalates to ManualReviewRequired. Fixed KSM label leak with `max by(replicaset, namespace)`. |
+| P22 | resource-contention | #231 | BLOCKED | Fixtures validated: alert name aligned to ContainerOOMKilling, workflow mapping added, standard files (README, cleanup, validate) created. Blocked by #214 (CheckConsecutiveFailures ignores completed-but-ineffective remediations). |
 
 ---
 

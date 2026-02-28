@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Resource Contention Demo -- Automated Runner
-# Issue #214: Demonstrates external actor interference pattern
+# Issue #231: Demonstrates external actor interference pattern
 #
 # Scenario: Kubernaut remediates a Deployment with OOMKill by increasing memory
 # limits, but an external actor (simulating GitOps or another controller) reverts
@@ -37,7 +37,7 @@ ensure_platform
 seed_scenario_workflow "resource-contention"
 
 echo "============================================="
-echo " Resource Contention Demo (Issue #214)"
+echo " Resource Contention Demo (Issue #231)"
 echo " OOMKill -> Fix -> External Revert -> Repeat -> Escalate"
 echo "============================================="
 echo ""
