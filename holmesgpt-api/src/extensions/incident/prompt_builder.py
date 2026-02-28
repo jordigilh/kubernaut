@@ -245,6 +245,7 @@ Your previous workflow response had validation errors:
 def create_incident_investigation_prompt(
     request_data: Dict[str, Any],
     remediation_history_context: Optional[Dict[str, Any]] = None,
+    escalation_threshold: Optional[int] = None,
 ) -> str:
     """
     Create investigation prompt for initial incident analysis (ADR-041 v3.3).
@@ -259,6 +260,8 @@ def create_incident_investigation_prompt(
             DataStorage (BR-HAPI-016, DD-HAPI-016 v1.1). When provided, a
             remediation history section is appended to the prompt to inform
             the LLM about past remediations for the affected resource.
+        escalation_threshold: Optional override for repeated-remediation
+            escalation threshold (Issue #224). Defaults to config/constant.
     """
     # Extract fields from IncidentRequest
     signal_name = request_data.get("signal_name", "Unknown")
@@ -438,7 +441,10 @@ disruptions (drain/eviction). Before concluding this is a taint or scheduling is
     if remediation_history_context:
         from extensions.remediation_history_prompt import build_remediation_history_section
 
-        history_section = build_remediation_history_section(remediation_history_context)
+        history_section = build_remediation_history_section(
+            remediation_history_context,
+            escalation_threshold=escalation_threshold,
+        )
         if history_section:
             prompt += f"""
 ## Remediation History Context (AUTO-DETECTED)
@@ -512,6 +518,11 @@ Determine the resource that the remediation should target:
 **Step 1**: Call `list_available_actions` to discover available remediation action types.
 Review all returned action types and their descriptions. Choose the action type that
 best matches your RCA findings.
+
+**Action Type Selection Rules** (apply BEFORE calling Step 2):
+- If `cluster_context` in the Step 1 response shows `gitOpsManaged=true`, you MUST prefer git-based action types (e.g., GitRevertCommit) over direct kubectl actions (e.g., FixCertificate, RollbackDeployment). GitOps environments require remediation via git to preserve source-of-truth integrity.
+- If your RCA reveals an error rate spike or SLO degradation that temporally correlates with a recent deployment revision change (e.g., ConfigMap swap, image update, Helm upgrade), prefer ProactiveRollback. A deployment rollback reverts the revision that introduced the regression.
+- Always cross-reference each action type's `when_to_use` and `when_not_to_use` guidance against your RCA findings before selecting.
 
 **Step 2**: Call `list_workflows` with `action_type` set to your chosen action type.
 **CRITICAL**: If `pagination.hasMore` is true, call again with increased `offset` to

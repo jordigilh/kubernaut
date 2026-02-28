@@ -255,6 +255,85 @@ class TestClusterContextNote:
         assert "action type" in note.lower(), "Note must guide LLM to use labels for action type selection"
 
 
+class TestClusterContextGitOpsNote:
+    """UT-HAPI-219-001: cluster_context note is prescriptive when gitOpsManaged=true.
+
+    Issue #219: LLM selected FixCertificate instead of GitRevertCommit because the
+    generic cluster_context note was too weak. When gitOpsManaged=true, the note must
+    explicitly instruct the LLM to prefer git-based action types.
+    """
+
+    @patch("src.toolsets.workflow_discovery.requests.get")
+    def test_ut_hapi_219_001_gitops_note_prescriptive(self, mock_get):
+        """UT-HAPI-219-001: When gitOpsManaged=true, cluster_context note must prescribe git-based actions."""
+        from src.toolsets.workflow_discovery import ListAvailableActionsTool
+
+        mock_get.return_value = _mock_ds_response(DS_ACTION_TYPES_RESPONSE.copy())
+
+        session_state = {
+            "detected_labels": {
+                "gitOpsManaged": True,
+                "gitOpsTool": "argocd",
+                "pdbProtected": False,
+            }
+        }
+
+        tool = ListAvailableActionsTool(
+            data_storage_url="http://mock:8080",
+            severity="critical",
+            component="Pod",
+            environment="production",
+            priority="P0",
+            session_state=session_state,
+        )
+
+        result = tool.invoke(params={"offset": 0, "limit": 10})
+
+        assert result.status == StructuredToolResultStatus.SUCCESS
+        data = json.loads(result.data)
+
+        assert "cluster_context" in data
+        note = data["cluster_context"]["note"]
+        assert "gitOpsManaged" in note, "Note must reference gitOpsManaged when it is true"
+        assert "git-based" in note.lower() or "gitrevert" in note.lower(), \
+            "Note must instruct LLM to prefer git-based action types"
+        assert "source-of-truth" in note.lower() or "direct" in note.lower(), \
+            "Note must warn against direct kubectl actions in GitOps environments"
+
+    @patch("src.toolsets.workflow_discovery.requests.get")
+    def test_ut_hapi_219_002_non_gitops_note_remains_generic(self, mock_get):
+        """UT-HAPI-219-002: When gitOpsManaged=false/absent, cluster_context note remains generic."""
+        from src.toolsets.workflow_discovery import ListAvailableActionsTool
+
+        mock_get.return_value = _mock_ds_response(DS_ACTION_TYPES_RESPONSE.copy())
+
+        session_state = {
+            "detected_labels": {
+                "gitOpsManaged": False,
+                "hpaEnabled": True,
+            }
+        }
+
+        tool = ListAvailableActionsTool(
+            data_storage_url="http://mock:8080",
+            severity="warning",
+            component="Deployment",
+            environment="production",
+            priority="P1",
+            session_state=session_state,
+        )
+
+        result = tool.invoke(params={"offset": 0, "limit": 10})
+
+        assert result.status == StructuredToolResultStatus.SUCCESS
+        data = json.loads(result.data)
+
+        assert "cluster_context" in data
+        note = data["cluster_context"]["note"]
+        assert "gitOpsManaged" not in note, \
+            "Generic note must NOT reference gitOpsManaged when it is false"
+
+
 class TestClusterContextNotInSteps2And3:
     """UT-HAPI-056-086, 087: list_workflows and get_workflow do NOT include cluster_context."""
 

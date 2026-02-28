@@ -86,6 +86,17 @@ AUDIT_FLUSH_INTERVAL_SECONDS = 5.0
 # Referenced in incident/constants.py but defined here for consistency
 MAX_VALIDATION_ATTEMPTS = 3
 
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# PROMPT CONFIGURATION (Issue #224, BR-HAPI-016)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# Number of completed remediations for the same workflow+signal before
+# the prompt warns the LLM to escalate to human review.
+# Issue #224: LLM should escalate when remediation history shows repeated
+# ineffective completions. Decision: #214 Option C (LLM-driven escalation).
+# Configurable via config.yaml: prompt.repeated_remediation_escalation_threshold
+REPEATED_REMEDIATION_ESCALATION_THRESHOLD = 2
+
 
 
 

@@ -554,13 +554,27 @@ class ListAvailableActionsTool(_DiscoveryToolBase):
                 if raw_labels:
                     clean_dict = _build_cluster_context_labels(raw_labels)
                     if clean_dict:
-                        data["cluster_context"] = {
-                            "detected_labels": clean_dict,
-                            "note": (
+                        # Issue #219: When gitOpsManaged=true, use a prescriptive note
+                        # that explicitly instructs the LLM to prefer git-based actions.
+                        if clean_dict.get("gitOpsManaged") is True:
+                            tool_name = clean_dict.get("gitOpsTool", "unknown")
+                            context_note = (
+                                f"IMPORTANT: gitOpsManaged=true detected (tool: {tool_name}). "
+                                "ALWAYS prefer git-based action types (e.g., GitRevertCommit) "
+                                "over direct kubectl actions (e.g., FixCertificate, "
+                                "RollbackDeployment). GitOps environments must be remediated "
+                                "via git to maintain source-of-truth integrity."
+                            )
+                        else:
+                            context_note = (
                                 "These infrastructure characteristics were auto-detected "
                                 "for the remediation target resource. Consider them when "
                                 "selecting an action type."
-                            ),
+                            )
+
+                        data["cluster_context"] = {
+                            "detected_labels": clean_dict,
+                            "note": context_note,
                         }
                         logger.info(
                             f"📋 BR-HAPI-017-007: Surfaced {len(clean_dict)} detected labels "

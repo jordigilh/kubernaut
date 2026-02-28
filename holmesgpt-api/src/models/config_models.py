@@ -57,6 +57,15 @@ class AuditConfig(TypedDict, total=False):
     batch_size: int
 
 
+class PromptConfig(TypedDict, total=False):
+    """
+    Prompt engineering configuration (Issue #224, BR-HAPI-016).
+
+    Controls thresholds and behavior for LLM prompt enrichment.
+    """
+    repeated_remediation_escalation_threshold: int
+
+
 class AppConfig(TypedDict, total=False):
     """
     Main application configuration structure.
@@ -90,6 +99,7 @@ class AppConfig(TypedDict, total=False):
     kubernetes: KubernetesConfig
     metrics: MetricsConfig
     audit: AuditConfig
+    prompt: PromptConfig
 
 
 

@@ -23,3 +23,7 @@ audit:
   flush_interval_seconds: 0.1    # Fast flush for integration tests (0.1s)
   buffer_size: 10000              # Maximum events to buffer in memory
   batch_size: 50                  # Events per HTTP batch to Data Storage
+
+# Prompt engineering configuration (Issue #224, BR-HAPI-016)
+prompt:
+  repeated_remediation_escalation_threshold: 2  # Escalate after N completed-but-recurring remediations
