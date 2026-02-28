@@ -349,6 +349,10 @@ func (r *RoutingEngine) CheckConsecutiveFailures(
 // CheckDuplicateInProgress checks if this RR is a duplicate of an active RR.
 // Finds active (non-terminal) RRs with the same SignalFingerprint.
 //
+// #209: Uses creationTimestamp as a deterministic tiebreaker — the oldest RR
+// is always the "original" and is never blocked as a duplicate. This prevents
+// circular deadlocks where both RRs block each other.
+//
 // BlockReason: "DuplicateInProgress"
 // RequeueAfter: 30 seconds (to check if original completes)
 //
@@ -366,6 +370,19 @@ func (r *RoutingEngine) CheckDuplicateInProgress(
 
 	if originalRR == nil {
 		return nil, nil // Not a duplicate
+	}
+
+	// #209: Deterministic tiebreaker — the oldest RR is always the original.
+	// If the found RR was created AFTER us, we are the original and must not be blocked.
+	// This prevents circular deadlocks (A blocks B, B blocks A).
+	if !rr.CreationTimestamp.IsZero() && !originalRR.CreationTimestamp.IsZero() {
+		if originalRR.CreationTimestamp.Time.After(rr.CreationTimestamp.Time) {
+			return nil, nil // We are older → we are the original
+		}
+		// Same timestamp: use name as secondary tiebreaker (lexicographic)
+		if originalRR.CreationTimestamp.Time.Equal(rr.CreationTimestamp.Time) && originalRR.Name > rr.Name {
+			return nil, nil // Same time, we sort first → we are the original
+		}
 	}
 
 	// This is a duplicate - block it

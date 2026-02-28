@@ -257,7 +257,7 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 	})
 
 	// ========================================
-	// Test Group 2: CheckDuplicateInProgress (6 tests)
+	// Test Group 2: CheckDuplicateInProgress (8 tests)
 	// Reference: DD-RO-002-ADDENDUM
 	// CRITICAL: Prevents Gateway RR flood
 	// ========================================
@@ -313,6 +313,112 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(blocked).To(BeNil(),
 				"Tenant-B should NOT be blocked as duplicate of tenant-A's active RR (namespace isolation)")
+		})
+
+		It("should not block the older RR when a newer duplicate exists (#209)", func() {
+			// BUG REPRODUCTION: Circular duplicate deadlock.
+			// Two RRs with the same fingerprint arrive close together.
+			// RR-A (older) progresses to Processing. RR-B (newer) is blocked as duplicate.
+			// On re-reconcile, RR-A's CheckDuplicateInProgress finds RR-B (Blocked,
+			// non-terminal) and blocks RR-A → circular deadlock.
+			//
+			// Fix: Deterministic tiebreaker — the oldest RR is always the original.
+			// Reference: https://github.com/jordigilh/kubernaut/issues/209
+
+			sharedFP := "circular-deadlock-fp"
+
+			// RR-A: older, already progressed to Processing
+			rrA := &remediationv1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "rr-a-older",
+					Namespace:         "default",
+					CreationTimestamp: metav1.Time{Time: time.Now().Add(-2 * time.Minute)},
+				},
+				Spec: remediationv1.RemediationRequestSpec{
+					SignalFingerprint: sharedFP,
+					TargetResource: remediationv1.ResourceIdentifier{
+						Kind: "Deployment", Name: "app", Namespace: "ns-a",
+					},
+				},
+				Status: remediationv1.RemediationRequestStatus{
+					OverallPhase: remediationv1.PhaseProcessing,
+				},
+			}
+			Expect(fakeClient.Create(ctx, rrA)).To(Succeed())
+
+			// RR-B: newer, blocked as duplicate of A (non-terminal)
+			rrB := &remediationv1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "rr-b-newer",
+					Namespace:         "default",
+					CreationTimestamp: metav1.Time{Time: time.Now().Add(-1 * time.Minute)},
+				},
+				Spec: remediationv1.RemediationRequestSpec{
+					SignalFingerprint: sharedFP,
+					TargetResource: remediationv1.ResourceIdentifier{
+						Kind: "Deployment", Name: "app", Namespace: "ns-a",
+					},
+				},
+				Status: remediationv1.RemediationRequestStatus{
+					OverallPhase: remediationv1.PhaseBlocked,
+					BlockReason:  string(remediationv1.BlockReasonDuplicateInProgress),
+					DuplicateOf:  "rr-a-older",
+				},
+			}
+			Expect(fakeClient.Create(ctx, rrB)).To(Succeed())
+
+			// When RR-A is re-reconciled, it should NOT be blocked by RR-B
+			blocked, err := engine.CheckDuplicateInProgress(ctx, rrA)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(blocked).To(BeNil(),
+				"Older RR-A should NOT be blocked by newer RR-B — prevents circular deadlock (#209)")
+		})
+
+		It("should block the newer RR when an older active RR exists (#209)", func() {
+			// Counterpart to the circular deadlock test: the NEWER RR should still be blocked.
+			sharedFP := "tiebreaker-fp"
+
+			// RR-A: older, actively processing
+			rrA := &remediationv1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "rr-older-active",
+					Namespace:         "default",
+					CreationTimestamp: metav1.Time{Time: time.Now().Add(-5 * time.Minute)},
+				},
+				Spec: remediationv1.RemediationRequestSpec{
+					SignalFingerprint: sharedFP,
+					TargetResource: remediationv1.ResourceIdentifier{
+						Kind: "Deployment", Name: "app", Namespace: "ns-a",
+					},
+				},
+				Status: remediationv1.RemediationRequestStatus{
+					OverallPhase: remediationv1.PhaseProcessing,
+				},
+			}
+			Expect(fakeClient.Create(ctx, rrA)).To(Succeed())
+
+			// RR-B: newer, in Pending phase
+			rrB := &remediationv1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "rr-newer-pending",
+					Namespace:         "default",
+					CreationTimestamp: metav1.Time{Time: time.Now()},
+				},
+				Spec: remediationv1.RemediationRequestSpec{
+					SignalFingerprint: sharedFP,
+					TargetResource: remediationv1.ResourceIdentifier{
+						Kind: "Deployment", Name: "app", Namespace: "ns-a",
+					},
+				},
+			}
+
+			blocked, err := engine.CheckDuplicateInProgress(ctx, rrB)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(blocked).ToNot(BeNil(), "Newer RR-B should be blocked by older RR-A")
+			Expect(blocked.Reason).To(Equal(string(remediationv1.BlockReasonDuplicateInProgress)))
+			Expect(blocked.DuplicateOf).To(Equal("rr-older-active"))
 		})
 
 		It("should block when active RR with same fingerprint exists", func() {
