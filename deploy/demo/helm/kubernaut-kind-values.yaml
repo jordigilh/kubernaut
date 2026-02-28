@@ -26,4 +26,4 @@ datastorage:
 holmesgptApi:
   service:
     type: NodePort
-    nodePort: 30120
+    nodePort: 30088

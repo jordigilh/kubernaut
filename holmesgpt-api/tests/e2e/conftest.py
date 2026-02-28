@@ -163,13 +163,13 @@ def hapi_service_url():
     HAPI service URL for E2E tests.
 
     Uses HAPI_BASE_URL environment variable (set by E2E infrastructure).
-    For E2E: http://localhost:30120 (Kind NodePort)
+    For E2E: http://localhost:8088 (Kind NodePort per DD-TEST-001)
     For Integration: http://127.0.0.1:18120 (local server)
 
     Authority: ADR-030 Configuration Management Standard
     Loaded from test_config.yaml (no environment variables)
 
-    For E2E: http://localhost:30120 (Kind NodePort per DD-TEST-001)
+    For E2E: http://localhost:8088 (Kind NodePort per DD-TEST-001)
     For Integration: http://localhost:18120 (local server)
     """
     config = load_test_config()
