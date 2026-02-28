@@ -257,11 +257,64 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 	})
 
 	// ========================================
-	// Test Group 2: CheckDuplicateInProgress (5 tests)
+	// Test Group 2: CheckDuplicateInProgress (6 tests)
 	// Reference: DD-RO-002-ADDENDUM
 	// CRITICAL: Prevents Gateway RR flood
 	// ========================================
 	Context("CheckDuplicateInProgress", func() {
+		It("should isolate duplicate detection by TargetResource.Namespace (#222)", func() {
+			// BUG REPRODUCTION: Same ADR-057 regression as CheckConsecutiveFailures.
+			// FindActiveRRForFingerprint uses client.InNamespace(rr.Namespace) which is
+			// always ROControllerNamespace, so an active/blocked RR targeting tenant-A
+			// incorrectly blocks a new RR targeting tenant-B with the same fingerprint.
+			//
+			// Reference: https://github.com/jordigilh/kubernaut/issues/222
+
+			sharedFingerprint := "dup-multitenant-fp"
+
+			// Create an active RR targeting namespace "tenant-a"
+			activeRR := &remediationv1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "tenant-a-active",
+					Namespace: "default",
+				},
+				Spec: remediationv1.RemediationRequestSpec{
+					SignalFingerprint: sharedFingerprint,
+					TargetResource: remediationv1.ResourceIdentifier{
+						Kind:      "Deployment",
+						Name:      "app",
+						Namespace: "tenant-a",
+					},
+				},
+				Status: remediationv1.RemediationRequestStatus{
+					OverallPhase: remediationv1.PhaseBlocked,
+				},
+			}
+			Expect(fakeClient.Create(ctx, activeRR)).To(Succeed())
+
+			// Incoming RR targets "tenant-b" — should NOT be a duplicate
+			incomingRR := &remediationv1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "tenant-b-new",
+					Namespace: "default",
+				},
+				Spec: remediationv1.RemediationRequestSpec{
+					SignalFingerprint: sharedFingerprint,
+					TargetResource: remediationv1.ResourceIdentifier{
+						Kind:      "Deployment",
+						Name:      "app",
+						Namespace: "tenant-b",
+					},
+				},
+			}
+
+			blocked, err := engine.CheckDuplicateInProgress(ctx, incomingRR)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(blocked).To(BeNil(),
+				"Tenant-B should NOT be blocked as duplicate of tenant-A's active RR (namespace isolation)")
+		})
+
 		It("should block when active RR with same fingerprint exists", func() {
 			// Create original RR (active - non-terminal phase)
 			originalRR := &remediationv1.RemediationRequest{

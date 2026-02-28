@@ -358,8 +358,8 @@ func (r *RoutingEngine) CheckDuplicateInProgress(
 	rr *remediationv1.RemediationRequest,
 ) (*BlockingCondition, error) {
 	// Find active RR with same fingerprint (excluding self)
-	// Multi-tenant isolation: Pass rr.Namespace to scope search to current namespace
-	originalRR, err := r.FindActiveRRForFingerprint(ctx, rr.Namespace, rr.Spec.SignalFingerprint, rr.Name)
+	// ADR-057 (#222): Pass TargetResource.Namespace for multi-tenant isolation
+	originalRR, err := r.FindActiveRRForFingerprint(ctx, rr.Namespace, rr.Spec.SignalFingerprint, rr.Name, rr.Spec.TargetResource.Namespace)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check for duplicate: %w", err)
 	}
@@ -681,6 +681,7 @@ func (r *RoutingEngine) FindActiveRRForFingerprint(
 	namespace string,
 	fingerprint string,
 	excludeName string,
+	targetNamespace string,
 ) (*remediationv1.RemediationRequest, error) {
 	logger := log.FromContext(ctx)
 
@@ -703,6 +704,10 @@ func (r *RoutingEngine) FindActiveRRForFingerprint(
 		rr := &rrList.Items[i]
 		if rr.Name == excludeName {
 			continue // Skip self
+		}
+		// ADR-057 (#222): Multi-tenant isolation — only consider RRs targeting the same workload namespace
+		if targetNamespace != "" && rr.Spec.TargetResource.Namespace != targetNamespace {
+			continue
 		}
 
 		// Refetch with APIReader to bypass cache and get fresh status
