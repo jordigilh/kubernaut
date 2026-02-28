@@ -1,17 +1,17 @@
 """
-Integration Tests: Predictive Signal Mode Prompt Adaptation
+Integration Tests: Proactive Signal Mode Prompt Adaptation
 
-Business Requirement: BR-AI-084 (Predictive Signal Mode Prompt Strategy)
-Architecture: ADR-054 (Predictive Signal Mode Classification and Prompt Strategy)
+Business Requirement: BR-AI-084 (Proactive Signal Mode Prompt Strategy)
+Architecture: ADR-054 (Proactive Signal Mode Classification and Prompt Strategy)
 Pattern: Direct Python function calls (bypass FastAPI)
 
 Defense-in-Depth Layer: Tier 2 (Integration)
 - Tests prompt building components directly
 - Validates signal_mode drives prompt content changes
-- Ensures predictive vs. reactive investigation strategies differ
+- Ensures proactive vs. reactive investigation strategies differ
 
 Test Scenarios:
-- IT-HAPI-084-001: Predictive signal mode adapts prompt for preemptive analysis
+- IT-HAPI-084-001: Proactive signal mode adapts prompt for preemptive analysis
 - IT-HAPI-084-002: Reactive signal mode produces standard RCA prompt
 - IT-HAPI-084-003: Missing signal_mode defaults to reactive
 """
@@ -20,34 +20,34 @@ import pytest
 from src.extensions.incident.prompt_builder import create_incident_investigation_prompt
 
 
-class TestPredictiveSignalModePromptAdaptation:
-    """IT-HAPI-084-001: Predictive signal mode adapts investigation prompt
+class TestProactiveSignalModePromptAdaptation:
+    """IT-HAPI-084-001: Proactive signal mode adapts investigation prompt
 
     Business Context:
-    When SP classifies a signal as "predictive" (e.g., Prometheus predict_linear()),
+    When SP classifies a signal as "proactive" (e.g., Prometheus predict_linear()),
     HAPI must adapt its 5-phase investigation prompt to perform preemptive analysis
     instead of reactive RCA.
 
     Data Flow:
-    SP(signalMode=predictive) → RO → AA(signalMode=predictive) → HAPI(prompt adaptation)
+    SP(signalMode=proactive) → RO → AA(signalMode=proactive) → HAPI(prompt adaptation)
 
-    BR: BR-AI-084 (Predictive Signal Mode Prompt Strategy)
-    ADR: ADR-054 (Predictive Signal Mode Classification)
+    BR: BR-AI-084 (Proactive Signal Mode Prompt Strategy)
+    ADR: ADR-054 (Proactive Signal Mode Classification)
     """
 
-    def test_predictive_mode_includes_prediction_context_in_prompt(self):
+    def test_proactive_mode_includes_prediction_context_in_prompt(self):
         """
-        Given: Incident request with signal_mode="predictive"
+        Given: Incident request with signal_mode="proactive"
         When: Building incident investigation prompt
-        Then: Prompt includes predictive analysis context (not RCA)
+        Then: Prompt includes proactive analysis context (not RCA)
 
         Business Value: LLM performs preemptive analysis instead of root cause investigation
         """
-        # Arrange: Create request data with predictive signal mode
+        # Arrange: Create request data with proactive signal mode
         request_data = {
-            "incident_id": "inc-predictive-integration-001",
+            "incident_id": "inc-proactive-integration-001",
             "signal_name": "OOMKilled",  # Normalized name from SP (not PredictedOOMKill)
-            "signal_mode": "predictive",
+            "signal_mode": "proactive",
             "severity": "critical",
             "signal_source": "prometheus",
             "resource_namespace": "production",
@@ -63,19 +63,19 @@ class TestPredictiveSignalModePromptAdaptation:
         assert isinstance(prompt, str), "Prompt should be string"
         assert len(prompt) > 0, "Prompt should not be empty"
 
-        # Business outcome: Predictive context included
+        # Business outcome: Proactive context included
         prompt_lower = prompt.lower()
         assert "predict" in prompt_lower, \
-            "Predictive prompt should mention prediction/predicted (not just RCA)"
+            "Proactive prompt should mention prediction/predicted (not just RCA)"
 
         # Business outcome: Should NOT use standard RCA language
-        # In predictive mode, the incident has NOT yet occurred
+        # In proactive mode, the incident has NOT yet occurred
         assert "has not" in prompt_lower or "not yet" in prompt_lower or "predicted" in prompt_lower, \
-            "Predictive prompt should indicate incident has not yet occurred"
+            "Proactive prompt should indicate incident has not yet occurred"
 
-    def test_predictive_mode_includes_prevention_guidance(self):
+    def test_proactive_mode_includes_prevention_guidance(self):
         """
-        Given: Incident request with signal_mode="predictive"
+        Given: Incident request with signal_mode="proactive"
         When: Building incident investigation prompt
         Then: Prompt includes prevention/preemptive action guidance
 
@@ -83,9 +83,9 @@ class TestPredictiveSignalModePromptAdaptation:
         """
         # Arrange
         request_data = {
-            "incident_id": "inc-predictive-integration-002",
+            "incident_id": "inc-proactive-integration-002",
             "signal_name": "OOMKilled",
-            "signal_mode": "predictive",
+            "signal_mode": "proactive",
             "severity": "critical",
             "signal_source": "prometheus",
             "resource_namespace": "production",
@@ -100,7 +100,7 @@ class TestPredictiveSignalModePromptAdaptation:
         # Assert: Prevention guidance included
         prompt_lower = prompt.lower()
         assert "prevent" in prompt_lower or "preemptive" in prompt_lower or "no action" in prompt_lower, \
-            "Predictive prompt should include prevention or preemptive guidance"
+            "Proactive prompt should include prevention or preemptive guidance"
 
 
 class TestReactiveSignalModePromptUnchanged:
@@ -110,7 +110,7 @@ class TestReactiveSignalModePromptUnchanged:
     Reactive signals (standard incidents that have occurred) must produce
     the standard RCA investigation prompt. This validates backwards compatibility.
 
-    BR: BR-AI-084 (Predictive Signal Mode Prompt Strategy)
+    BR: BR-AI-084 (Proactive Signal Mode Prompt Strategy)
     """
 
     def test_reactive_mode_produces_standard_rca_prompt(self):
@@ -145,13 +145,13 @@ class TestReactiveSignalModePromptUnchanged:
         assert "root cause" in prompt_lower or "occurred" in prompt_lower or "investigate" in prompt_lower, \
             "Reactive prompt should include RCA investigation language"
 
-    def test_reactive_mode_does_not_include_predictive_context(self):
+    def test_reactive_mode_does_not_include_proactive_context(self):
         """
         Given: Incident request with signal_mode="reactive"
         When: Building incident investigation prompt
-        Then: Prompt does NOT include "Predictive Signal Mode" context section
+        Then: Prompt does NOT include "Proactive Signal Mode" context section
 
-        Business Value: Reactive prompt is not polluted with predictive language
+        Business Value: Reactive prompt is not polluted with proactive language
         """
         # Arrange
         request_data = {
@@ -169,9 +169,9 @@ class TestReactiveSignalModePromptUnchanged:
         # Act
         prompt = create_incident_investigation_prompt(request_data)
 
-        # Assert: No predictive-specific context block
-        assert "Predictive Signal Mode" not in prompt, \
-            "Reactive prompt should NOT contain 'Predictive Signal Mode' context section"
+        # Assert: No proactive-specific context block
+        assert "Proactive Signal Mode" not in prompt, \
+            "Reactive prompt should NOT contain 'Proactive Signal Mode' context section"
 
 
 class TestSignalModeDefaultBehavior:
@@ -181,7 +181,7 @@ class TestSignalModeDefaultBehavior:
     For backwards compatibility, requests without signal_mode should
     default to reactive behavior (standard RCA).
 
-    BR: BR-AI-084 (Predictive Signal Mode Prompt Strategy)
+    BR: BR-AI-084 (Proactive Signal Mode Prompt Strategy)
     """
 
     def test_missing_signal_mode_defaults_to_reactive(self):
@@ -209,8 +209,8 @@ class TestSignalModeDefaultBehavior:
 
         # Assert: Standard RCA behavior (default)
         assert isinstance(prompt, str), "Prompt should be string"
-        assert "Predictive Signal Mode" not in prompt, \
-            "Default (no signal_mode) should NOT include predictive context"
+        assert "Proactive Signal Mode" not in prompt, \
+            "Default (no signal_mode) should NOT include proactive context"
         assert len(prompt) > 100, \
             "Prompt should be substantive (multi-phase investigation)"
 
@@ -240,5 +240,5 @@ class TestSignalModeDefaultBehavior:
 
         # Assert: Defaults to reactive
         assert isinstance(prompt, str), "Prompt should be string"
-        assert "Predictive Signal Mode" not in prompt, \
-            "Empty signal_mode should default to reactive (no predictive context)"
+        assert "Proactive Signal Mode" not in prompt, \
+            "Empty signal_mode should default to reactive (no proactive context)"

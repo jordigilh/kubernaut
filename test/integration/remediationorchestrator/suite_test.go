@@ -691,7 +691,7 @@ func updateSPStatus(namespace, name string, phase signalprocessingv1.SignalProce
 		sp.Status.Severity = severityValue // Normalized severity (required for AIAnalysis creation)
 		// BR-SP-106: Set signal mode defaults for downstream services (RO → AA)
 		// Default to "reactive" with type pass-through (backwards compatible)
-		// Tests that need predictive mode should use updateSPStatusPredictive()
+		// Tests that need proactive mode should use updateSPStatusProactive()
 		sp.Status.SignalMode = "reactive"
 		sp.Status.SignalName = sp.Spec.Signal.Name // Pass-through for reactive signals
 		// Set environment classification for downstream use
@@ -714,13 +714,13 @@ func updateSPStatus(namespace, name string, phase signalprocessingv1.SignalProce
 	return k8sClient.Status().Update(ctx, sp)
 }
 
-// updateSPStatusPredictive updates the SignalProcessing status to simulate completion
-// with predictive signal mode classification (BR-SP-106, ADR-054).
+// updateSPStatusProactive updates the SignalProcessing status to simulate completion
+// with proactive signal mode classification (BR-SP-106, ADR-054).
 // This simulates what the SignalModeClassifier would do in production:
-// - signalMode = "predictive"
+// - signalMode = "proactive"
 // - signalType = normalizedType (base type for workflow catalog matching)
-// - originalSignalType = original predictive type (SOC2 audit trail)
-func updateSPStatusPredictive(namespace, name string, normalizedType, originalType, severity string) error {
+// - originalSignalType = original proactive type (SOC2 audit trail)
+func updateSPStatusProactive(namespace, name string, normalizedType, originalType, severity string) error {
 	sp := &signalprocessingv1.SignalProcessing{}
 	if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, sp); err != nil {
 		return err
@@ -730,8 +730,8 @@ func updateSPStatusPredictive(namespace, name string, normalizedType, originalTy
 	sp.Status.Phase = signalprocessingv1.PhaseCompleted
 	sp.Status.CompletionTime = &now
 	sp.Status.Severity = severity
-	// BR-SP-106: Predictive signal mode fields
-	sp.Status.SignalMode = "predictive"
+		// BR-SP-106: Proactive signal mode fields
+		sp.Status.SignalMode = "proactive"
 	sp.Status.SignalName = normalizedType
 	sp.Status.SourceSignalName = originalType
 	// Standard classification fields

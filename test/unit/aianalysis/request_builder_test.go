@@ -29,8 +29,8 @@ import (
 )
 
 // Unit Tests: RequestBuilder - Signal Mode Pass-through
-// BR-AI-084: Predictive Signal Mode Prompt Strategy
-// ADR-054: Predictive Signal Mode Classification and Prompt Strategy
+// BR-AI-084: Proactive Signal Mode Prompt Strategy
+// ADR-054: Proactive Signal Mode Classification and Prompt Strategy
 var _ = Describe("RequestBuilder", func() {
 	var (
 		builder *handlers.RequestBuilder
@@ -57,10 +57,10 @@ var _ = Describe("RequestBuilder", func() {
 				Expect(req.SignalName).To(Equal("OOMKilled"))
 			})
 
-			It("UT-AA-084-002: should pass signalMode = predictive to HAPI", func() {
-				// Arrange: AA with predictive signal mode
+			It("UT-AA-084-002: should pass signalMode = proactive to HAPI", func() {
+				// Arrange: AA with proactive signal mode
 				analysis := helpers.NewAIAnalysis("ai-test", "default")
-				analysis.Spec.AnalysisRequest.SignalContext.SignalMode = "predictive"
+				analysis.Spec.AnalysisRequest.SignalContext.SignalMode = "proactive"
 				analysis.Spec.AnalysisRequest.SignalContext.SignalName = "OOMKilled" // normalized by SP
 
 				// Act
@@ -68,7 +68,7 @@ var _ = Describe("RequestBuilder", func() {
 
 				// Assert
 				Expect(req.SignalMode.Set).To(BeTrue())
-				Expect(req.SignalMode.Value).To(Equal(client.SignalMode("predictive")))
+				Expect(req.SignalMode.Value).To(Equal(client.SignalMode("proactive")))
 				// SignalName should be the normalized type from SP (not PredictedOOMKill)
 				Expect(req.SignalName).To(Equal("OOMKilled"))
 			})

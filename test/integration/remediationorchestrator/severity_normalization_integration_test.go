@@ -384,11 +384,11 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 	})
 
 	// ========================================
-	// TEST SUITE: Predictive Signal Mode Propagation (BR-SP-106, ADR-054)
+	// TEST SUITE: Proactive Signal Mode Propagation (BR-SP-106, ADR-054)
 	// Business Context: RO must copy signal mode and normalized type to AA
 	// ========================================
 
-	Context("IT-RO-084-001: Predictive Signal Mode Propagation", func() {
+	Context("IT-RO-084-001: Proactive Signal Mode Propagation", func() {
 		var (
 			namespace string
 		)
@@ -401,11 +401,11 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			deleteTestNamespace(namespace)
 		})
 
-		It("[RO-INT-SM-001] should create AIAnalysis with signalMode=predictive and normalized signalType", func() {
+		It("[RO-INT-SM-001] should create AIAnalysis with signalMode=proactive and normalized signalType", func() {
 			By("1. Create RemediationRequest with OOMKilled signal type")
 			// Note: In production, RR has the original type (PredictedOOMKill) and SP normalizes it.
 			// For this integration test, we simulate the SP normalization step manually.
-			rrName := fmt.Sprintf("rr-predictive-%s", uuid.New().String()[:13])
+			rrName := fmt.Sprintf("rr-proactive-%s", uuid.New().String()[:13])
 			now := metav1.Now()
 			rr := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
@@ -445,10 +445,10 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			}, timeout, interval).Should(Succeed(),
 				"RO should create SignalProcessing when RR is created")
 
-			By("3. Simulate SignalProcessing predictive mode classification (BR-SP-106)")
+			By("3. Simulate SignalProcessing proactive mode classification (BR-SP-106)")
 			// Simulate what the SignalModeClassifier would do:
-			// PredictedOOMKill → signalMode=predictive, signalType=OOMKilled, originalSignalType=PredictedOOMKill
-			Expect(updateSPStatusPredictive(ROControllerNamespace, spName, "OOMKilled", "PredictedOOMKill", "critical")).To(Succeed())
+			// PredictedOOMKill → signalMode=proactive, signalType=OOMKilled, originalSignalType=PredictedOOMKill
+			Expect(updateSPStatusProactive(ROControllerNamespace, spName, "OOMKilled", "PredictedOOMKill", "critical")).To(Succeed())
 
 			By("4. Wait for RO to create AIAnalysis")
 			var createdAA *aianalysisv1.AIAnalysis
@@ -469,15 +469,15 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			}, timeout, interval).Should(BeTrue(),
 				"RO should create AIAnalysis when SignalProcessing reaches Completed phase")
 
-			By("5. Verify AIAnalysis has predictive signal mode from SP.Status")
-			Expect(createdAA.Spec.AnalysisRequest.SignalContext.SignalMode).To(Equal("predictive"),
-				"BR-SP-106/ADR-054: AIAnalysis MUST propagate signalMode=predictive from SP.Status.SignalMode")
+			By("5. Verify AIAnalysis has proactive signal mode from SP.Status")
+			Expect(createdAA.Spec.AnalysisRequest.SignalContext.SignalMode).To(Equal("proactive"),
+				"BR-SP-106/ADR-054: AIAnalysis MUST propagate signalMode=proactive from SP.Status.SignalMode")
 
 			By("6. Verify AIAnalysis has NORMALIZED signal type (not original)")
 			Expect(createdAA.Spec.AnalysisRequest.SignalContext.SignalName).To(Equal("OOMKilled"),
 				"BR-SP-106/ADR-054: AIAnalysis MUST use normalized SignalType from SP.Status.SignalType (not 'PredictedOOMKill')")
 
-			GinkgoWriter.Printf("✅ Signal mode propagation validated: SP(predictive, OOMKilled) → AA(predictive, OOMKilled)\n")
+			GinkgoWriter.Printf("✅ Signal mode propagation validated: SP(proactive, OOMKilled) → AA(proactive, OOMKilled)\n")
 		})
 
 		It("[RO-INT-SM-002] should create AIAnalysis with signalMode=reactive for standard signals", func() {
