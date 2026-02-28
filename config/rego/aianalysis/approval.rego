@@ -2,8 +2,9 @@
 # DD-WORKFLOW-001 v2.2: Approval determination based on environment, data quality, and confidence
 # Business Requirements: BR-AI-011 (policy evaluation), BR-AI-013 (approval scenarios), BR-AI-014 (graceful degradation)
 # Issue #98: Refactored from exclusion chains to scored risk factors
-# Issue #197: Confidence-based auto-approval for high-confidence (>= 0.9) production
-# analyses. Auto-approves unless critical safety conditions are present (missing
+# Issue #197: Confidence-based auto-approval for high-confidence production analyses.
+# Issue #206: Threshold corrected from 0.9 to 0.8 to match documented 80% auto-approval.
+# Auto-approves unless critical safety conditions are present (missing
 # affected_resource, sensitive resources).
 
 package aianalysis.approval
@@ -81,14 +82,14 @@ not_production if {
 }
 
 is_high_confidence if {
-    input.confidence >= 0.9
+    input.confidence >= 0.8
 }
 
 # ========================================
 # APPROVAL RULES
 # ========================================
 # Critical safety rules: ALWAYS require approval regardless of confidence.
-# Production environment rules: Only require approval when confidence < 0.9.
+# Production environment rules: Only require approval when confidence < 0.8.
 
 # BR-AI-085-005: Default-deny when affected_resource is missing (ADR-055)
 require_approval if {

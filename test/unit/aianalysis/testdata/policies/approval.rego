@@ -38,9 +38,9 @@ has_failed_detections if {
     count(input.failed_detections) > 0
 }
 
-# Confidence >= 0.9 enables auto-approval for production (unless safety conditions)
+# #206: Confidence >= 0.8 enables auto-approval for production (unless safety conditions)
 is_high_confidence if {
-    input.confidence >= 0.9
+    input.confidence >= 0.8
 }
 
 # =============================================================================
