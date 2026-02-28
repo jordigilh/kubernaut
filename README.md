@@ -19,7 +19,7 @@ The result: **mean time to resolution drops from 60 minutes to under 5**, while 
 Kubernaut automates the entire incident response lifecycle for Kubernetes through a five-stage AIOps pipeline:
 
 1. **Signal Detection** — Receives alerts from Prometheus AlertManager (including predictive `predict_linear()` alerts) and Kubernetes Events, validates resource scope, and creates a `RemediationRequest`.
-2. **Signal Processing** — Enriches the signal with Kubernetes context: owner chain, namespace labels, severity classification, deduplication, and signal mode (reactive vs. predictive).
+2. **Signal Processing** — Enriches the signal with Kubernetes context: owner chain, namespace labels, severity classification, deduplication, and signal mode (reactive vs. proactive).
 3. **AI Analysis** — An LLM investigates the incident live — checking pod logs, events, and resource limits via `kubectl` — produces a root cause analysis, and searches a workflow catalog for a matching remediation.
 4. **Workflow Execution** — Runs the selected remediation (e.g., a Kubernetes Job that patches a Deployment's memory limits) via Tekton Pipelines or Kubernetes Jobs, with optional human approval gates.
 5. **Close the Loop** — Two parallel actions after execution completes:
@@ -30,7 +30,7 @@ For SRE teams, the value proposition is: **reduce MTTR on known failure patterns
 
 ### Key Capabilities
 
-- **Multi-Source Signal Processing**: Prometheus alerts (reactive and predictive), Kubernetes events with deduplication, signal mode classification, and signal type normalization
+- **Multi-Source Signal Processing**: Prometheus alerts (reactive and proactive), Kubernetes events with deduplication, signal mode classification, and signal type normalization
 - **AI-Powered Root Cause Analysis**: HolmesGPT integration with LLM providers (Vertex AI, OpenAI, and others via LiteLLM) for intelligent investigation with live `kubectl` access
 - **Remediation Workflow Catalog**: Searchable catalog of OCI-containerized workflows with label-based matching (signal type, severity, component, environment), wildcard support, and confidence scoring
 - **Flexible Execution**: Tekton Pipelines (multi-step) or Kubernetes Jobs (single-step) with parameterized actions following the Validate-Action-Verify pattern
@@ -52,7 +52,7 @@ Kubernaut follows a microservices architecture with 10 production-ready services
 
 1. **Gateway Service** receives signals (Prometheus alerts, K8s events), validates resource scope via the `kubernaut.ai/managed` label, and creates `RemediationRequest` CRDs
 2. **Remediation Orchestrator** (CRD controller) coordinates remediation lifecycle across 5 other CRD controllers:
-   - **Signal Processing Service**: Enriches signals with Kubernetes context, classifies signal mode (reactive/predictive), and normalizes signal types
+   - **Signal Processing Service**: Enriches signals with Kubernetes context, classifies signal mode (reactive/proactive), and normalizes signal types
    - **AI Analysis Service**: Performs HolmesGPT investigation and generates recommendations
    - **Workflow Execution**: Orchestrates Tekton Pipelines or Kubernetes Jobs for remediation workflows
    - **Notification Service**: Delivers multi-channel notifications (Slack, Email, etc.)

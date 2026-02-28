@@ -1,4 +1,4 @@
-# BR-SP-106: Predictive Signal Mode Classification
+# BR-SP-106: Proactive Signal Mode Classification
 
 **Document Version**: 1.0
 **Date**: February 8, 2026
@@ -17,13 +17,13 @@
 
 Kubernaut is reactive by design: it processes signals (Prometheus alerts, Kubernetes events) that represent incidents that have **already occurred**. However, enterprise environments need preemptive remediation for predicted incidents — e.g., Prometheus `predict_linear()` alerts that fire **before** resource exhaustion.
 
-The challenge is twofold: (1) predictive signal types from Prometheus (e.g., `PredictedOOMKill`) don't match existing workflows in the catalog, which are registered under base signal types (e.g., `OOMKilled`), so the signal type must be normalized; and (2) the downstream AI investigation must know whether to perform root cause analysis (reactive) or evaluate the current environment for preemptive action (predictive). Normalization at the SP layer also generalizes the workflow catalog, decoupling it from signal source naming conventions — workflows are defined once per base signal type and work for any source.
+The challenge is twofold: (1) proactive signal types from Prometheus (e.g., `PredictedOOMKill`) don't match existing workflows in the catalog, which are registered under base signal types (e.g., `OOMKilled`), so the signal type must be normalized; and (2) the downstream AI investigation must know whether to perform root cause analysis (reactive) or evaluate the current environment for preemptive action (proactive). Normalization at the SP layer also generalizes the workflow catalog, decoupling it from signal source naming conventions — workflows are defined once per base signal type and work for any source.
 
 ### Business Value
 
 1. **Proactive incident prevention**: Remediate before impact, not after
-2. **ROI proof**: Track predictive vs. reactive remediations separately in the Effectiveness Monitor ("How often did predictions prevent incidents?")
-3. **Enterprise differentiation**: Closes the "predictive capabilities" gap identified in enterprise feedback
+2. **ROI proof**: Track proactive vs. reactive remediations separately in the Effectiveness Monitor ("How often did predictions prevent incidents?")
+3. **Enterprise differentiation**: Closes the "proactive capabilities" gap identified in enterprise feedback
 4. **Zero-code Prometheus integration**: `predict_linear()` alerting rules require no Kubernaut code changes to generate signals
 
 ---
@@ -34,38 +34,38 @@ The challenge is twofold: (1) predictive signal types from Prometheus (e.g., `Pr
 
 SignalProcessing CRD status MUST include a `SignalMode` field with values:
 - `reactive` — Standard alert processing (incident has occurred)
-- `predictive` — Predicted incident (has not yet occurred)
+- `proactive` — Predicted incident (has not yet occurred)
 
 The field is **required** (not optional) — all signals MUST be classified.
 
 ### R2: Signal Type Normalization and Status Fields
 
-SignalProcessing MUST normalize predictive signal types to their base type so the agent can search the existing workflow catalog. Three new status fields are required:
+SignalProcessing MUST normalize proactive signal types to their base type so the agent can search the existing workflow catalog. Three new status fields are required:
 
-- **`SignalName`** (string, required): The normalized signal name. For predictive signals, this is the base type (e.g., `OOMKilled`). For reactive signals, this matches the incoming `Spec.SignalData.Type` unchanged. This field is the **authoritative signal name** for all downstream consumers (RO, AA, HAPI).
-- **`SourceSignalName`** (string, optional): Preserves the pre-normalization signal type for audit trail. Only populated for predictive signals (e.g., `PredictedOOMKill`). Empty for reactive signals.
+- **`SignalName`** (string, required): The normalized signal name. For proactive signals, this is the base type (e.g., `OOMKilled`). For reactive signals, this matches the incoming `Spec.SignalData.Type` unchanged. This field is the **authoritative signal name** for all downstream consumers (RO, AA, HAPI).
+- **`SourceSignalName`** (string, optional): Preserves the pre-normalization signal type for audit trail. Only populated for proactive signals (e.g., `PredictedOOMKill`). Empty for reactive signals.
 - **`SignalMode`** (string, required): See R1.
 
 > **Note**: The raw incoming signal type remains in `Spec.SignalData.Type` (immutable). The normalized value lives in `Status.SignalName`. Downstream consumers (RO → AA → HAPI) MUST read from `Status.SignalName`, not from the spec.
 
 | Incoming Signal Type | Normalized SignalName | Signal Mode | SourceSignalName (audit) |
 |---|---|---|---|
-| `PredictedOOMKill` | `OOMKilled` | `predictive` | `PredictedOOMKill` |
-| `PredictedCPUThrottling` | `CPUThrottling` | `predictive` | `PredictedCPUThrottling` |
-| `PredictedDiskPressure` | `DiskPressure` | `predictive` | `PredictedDiskPressure` |
-| `PredictedNodeNotReady` | `NodeNotReady` | `predictive` | `PredictedNodeNotReady` |
+| `PredictedOOMKill` | `OOMKilled` | `proactive` | `PredictedOOMKill` |
+| `PredictedCPUThrottling` | `CPUThrottling` | `proactive` | `PredictedCPUThrottling` |
+| `PredictedDiskPressure` | `DiskPressure` | `proactive` | `PredictedDiskPressure` |
+| `PredictedNodeNotReady` | `NodeNotReady` | `proactive` | `PredictedNodeNotReady` |
 | `OOMKilled` | `OOMKilled` | `reactive` | _(empty)_ |
 | _(any unmapped type)_ | _(unchanged)_ | `reactive` | _(empty)_ |
 
-This normalization generalizes the workflow catalog: workflows are defined once per base signal type and work regardless of signal source (Prometheus predictive alerts, reactive alerts, Kubernetes events, future integrations).
+This normalization generalizes the workflow catalog: workflows are defined once per base signal type and work regardless of signal source (Prometheus proactive alerts, reactive alerts, Kubernetes events, future integrations).
 
 ### R3: Configurable Signal Type Mappings
 
-The predictive-to-base signal type mappings MUST be loaded from an operator-configurable YAML file, supporting hot-reload (per BR-SP-072 pattern).
+The proactive-to-base signal type mappings MUST be loaded from an operator-configurable YAML file, supporting hot-reload (per BR-SP-072 pattern).
 
 ```yaml
-# config/signalprocessing/predictive-signal-mappings.yaml
-predictive_signal_mappings:
+# config/signalprocessing/proactive-signal-mappings.yaml
+proactive_signal_mappings:
   PredictedOOMKill: OOMKilled
   PredictedCPUThrottling: CPUThrottling
   PredictedDiskPressure: DiskPressure
@@ -93,7 +93,7 @@ Prometheus predict_linear() alert (signal_type: PredictedOOMKill)
   → Gateway (receives PredictedOOMKill, passes through unchanged)
     → SignalProcessing
         normalizes: PredictedOOMKill → OOMKilled
-        sets: signalMode = "predictive", sourceSignalName = "PredictedOOMKill"
+        sets: signalMode = "proactive", sourceSignalName = "PredictedOOMKill"
       → RO (copies signalMode + normalized signalName from SP status to AA spec)
         → AIAnalysis (passes signalMode + "OOMKilled" to HAPI)
           → HAPI (searches catalog for "OOMKilled", prompt says: "predict & prevent")
@@ -107,11 +107,11 @@ Prometheus predict_linear() alert (signal_type: PredictedOOMKill)
 
 ## Acceptance Criteria
 
-- [ ] CRD status field: `Status.SignalMode` (string: `reactive` | `predictive`) in `api/signalprocessing/v1alpha1/signalprocessing_types.go`
+- [ ] CRD status field: `Status.SignalMode` (string: `reactive` | `proactive`) in `api/signalprocessing/v1alpha1/signalprocessing_types.go`
 - [ ] CRD status field: `Status.SignalType` (string) — normalized signal type (authoritative for downstream consumers)
 - [ ] CRD status field: `Status.OriginalSignalType` (string) — preserves pre-normalization signal type for audit
 - [ ] Signal type normalization: `PredictedOOMKill` → `OOMKilled` via configurable mapping
-- [ ] Config file: `predictive-signal-mappings.yaml` (hot-reloadable per BR-SP-072)
+- [ ] Config file: `proactive-signal-mappings.yaml` (hot-reloadable per BR-SP-072)
 - [ ] Default initial mappings: OOMKill, CPUThrottling, DiskPressure, NodeNotReady
 - [ ] Unmapped signal types: classify as `reactive`, log warning
 - [ ] Enrichment pipeline integration: set alongside severity, environment, priority
@@ -128,7 +128,7 @@ Prometheus predict_linear() alert (signal_type: PredictedOOMKill)
 | SP CRD status | `api/signalprocessing/v1alpha1/signalprocessing_types.go` | Add `SignalMode`, `SignalType`, `OriginalSignalType` fields |
 | SP enrichment | `internal/controller/signalprocessing/signalprocessing_controller.go` | Signal mode classification + signal type normalization in `reconcileClassifying()` |
 | SP classifier | `pkg/signalprocessing/classifier/signalmode.go` (new file) | Signal mode classification + normalization mapping logic |
-| SP config | `config/signalprocessing/predictive-signal-mappings.yaml` | Predictive signal type → base type mapping config |
+| SP config | `config/signalprocessing/proactive-signal-mappings.yaml` | Proactive signal type → base type mapping config |
 | SP main | `cmd/signalprocessing/main.go` | Wire classifier, load config, start hot-reload |
 | SP audit | `pkg/signalprocessing/audit/client.go` | Populate `signal_mode` + `original_signal_type` in audit payloads |
 | DS OpenAPI | `api/openapi/data-storage-v1.yaml` | Add `signal_mode`, `original_signal_type` to `SignalProcessingAuditPayload` |
@@ -140,19 +140,19 @@ Prometheus predict_linear() alert (signal_type: PredictedOOMKill)
 
 ### Unit Tests
 - Table-driven tests for signal type mapping (known types, unknown types, empty input)
-- Classification logic: predictive signals correctly identified and normalized to base type
-- `SourceSignalName` preserved for all predictive signals
+- Classification logic: proactive signals correctly identified and normalized to base type
+- `SourceSignalName` preserved for all proactive signals
 - Config loading and hot-reload
 - Default reactive classification for unmapped types
 
 ### Integration Tests
-- Extend existing enrichment integration tests with predictive signal scenarios
+- Extend existing enrichment integration tests with proactive signal scenarios
 - Verify `SignalMode` set in SP status after enrichment completes
 - Verify signal type is normalized (`PredictedOOMKill` → `OOMKilled`)
 - Verify `SourceSignalName` preserved for audit
 
 ### E2E Tests
-- Full pipeline: predictive alert → SP enrichment → verify normalized signalName + signalMode + sourceSignalName in status
+- Full pipeline: proactive alert → SP enrichment → verify normalized signalName + signalMode + sourceSignalName in status
 
 > **Note — Mock LLM**: SP-level tests (unit, integration) do not require Mock LLM changes. The E2E test depends on BR-AI-084's Mock LLM enhancement to validate the full pipeline end-to-end.
 
@@ -160,11 +160,11 @@ Prometheus predict_linear() alert (signal_type: PredictedOOMKill)
 
 ## Example Prometheus Alerting Rules
 
-These rules generate predictive signals that flow into Kubernaut with zero code changes:
+These rules generate proactive signals that flow into Kubernaut with zero code changes:
 
 ```yaml
 groups:
-  - name: kubernaut-predictive
+  - name: kubernaut-proactive
     rules:
       - alert: PredictedOOMKill
         expr: predict_linear(container_memory_working_set_bytes[1h], 1800) > container_spec_memory_limit_bytes
@@ -199,7 +199,7 @@ groups:
 
 **Rationale**:
 - No new audit event type is needed — `signal_mode` is classification metadata, not a new event category
-- Enables Effectiveness Monitor tracking: "How often did predictive remediations prevent actual incidents?"
+- Enables Effectiveness Monitor tracking: "How often did proactive remediations prevent actual incidents?"
 - Supports enterprise ROI proof requirements (SOC2 Type II, CC7.2 monitoring activities)
 
 ---
@@ -209,9 +209,9 @@ groups:
 ### Prometheus Documentation
 
 - [predict_linear() function reference](https://prometheus.io/docs/prometheus/latest/querying/functions/#predict_linear) — Official PromQL documentation for the `predict_linear(v range-vector, t scalar)` function. Uses simple linear regression to predict future metric values based on a time series range.
-- [Prometheus Alerting Rules](https://prometheus.io/docs/prometheus/latest/configuration/alerting_rules/) — Alerting rule configuration that generates the predictive signals consumed by Kubernaut.
+- [Prometheus Alerting Rules](https://prometheus.io/docs/prometheus/latest/configuration/alerting_rules/) — Alerting rule configuration that generates the proactive signals consumed by Kubernaut.
 - [Prometheus Recording Rules](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/) — Recording rules can pre-compute `predict_linear()` expressions for efficiency at scale.
-- [Prometheus Best Practices: Alerting](https://prometheus.io/docs/practices/alerting/) — Guidelines for designing effective alerting rules, including predictive alerting patterns.
+- [Prometheus Best Practices: Alerting](https://prometheus.io/docs/practices/alerting/) — Guidelines for designing effective alerting rules, including proactive alerting patterns.
 
 ### Key `predict_linear()` Considerations
 
@@ -222,7 +222,7 @@ groups:
 
 ### Related Documents
 
-- [BR-AI-084: Predictive Signal Mode Prompt Strategy](BR-AI-084-predictive-signal-mode-prompt-strategy.md)
-- [Issue #55: Predictive remediation pipeline](https://github.com/jordigilh/kubernaut/issues/55)
+- [BR-AI-084: Proactive Signal Mode Prompt Strategy](BR-AI-084-proactive-signal-mode-prompt-strategy.md)
+- [Issue #55: Proactive remediation pipeline](https://github.com/jordigilh/kubernaut/issues/55)
 - [DD-WORKFLOW-001: Mandatory Label Schema](../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md)
 - [SP Business Requirements](../services/crd-controllers/01-signalprocessing/BUSINESS_REQUIREMENTS.md)
