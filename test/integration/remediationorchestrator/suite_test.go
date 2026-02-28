@@ -443,6 +443,13 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	)
 	// DD-EM-002: Set REST mapper for pre-remediation hash Kind resolution
 	reconciler.SetRESTMapper(k8sManager.GetRESTMapper())
+
+	// Issue #214: Wire DSHistoryAdapter for CheckIneffectiveRemediationChain
+	// Uses the authenticated OpenAPI client (same token as audit) for DS history queries
+	dsHistoryAdapter := routing.NewDSHistoryAdapter(dsClients.OpenAPIClient)
+	reconciler.SetDSClient(dsHistoryAdapter)
+	GinkgoWriter.Println("✅ DSHistoryAdapter wired for ineffective chain detection (Issue #214)")
+
 	err = reconciler.SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 

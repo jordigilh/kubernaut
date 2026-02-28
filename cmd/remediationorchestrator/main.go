@@ -44,6 +44,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
 	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
+	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/routing"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -257,6 +258,17 @@ func main() {
 	)
 	// DD-EM-002: Set REST mapper for pre-remediation hash Kind resolution
 	roReconciler.SetRESTMapper(mgr.GetRESTMapper())
+
+	// Issue #214: Wire DataStorage history querier for ineffective chain detection.
+	// Uses the same URL/timeout as the audit client but a separate ogen client instance.
+	dsHistoryAdapter, err := routing.NewDSHistoryAdapterFromConfig(cfg.DataStorage.URL, cfg.DataStorage.Timeout)
+	if err != nil {
+		setupLog.Error(err, "Failed to create DataStorage history adapter (Issue #214)",
+			"url", cfg.DataStorage.URL)
+		os.Exit(1)
+	}
+	roReconciler.SetDSClient(dsHistoryAdapter)
+	setupLog.Info("DataStorage history querier wired for ineffective chain detection (Issue #214)")
 	if err = roReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "RemediationOrchestrator")
 		os.Exit(1)

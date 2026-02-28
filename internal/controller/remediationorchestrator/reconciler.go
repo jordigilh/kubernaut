@@ -249,6 +249,17 @@ func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, 
 	return r
 }
 
+// SetDSClient wires the DataStorage history querier into the routing engine.
+// Must be called after NewReconciler if the default routing engine is used in production.
+// Issue #214: Enables CheckIneffectiveRemediationChain to query real DS data.
+func (r *Reconciler) SetDSClient(dsClient routing.RemediationHistoryQuerier) {
+	if re, ok := r.routingEngine.(*routing.RoutingEngine); ok {
+		re.SetDSClient(dsClient)
+	} else {
+		log.Log.Info("SetDSClient skipped: routing engine is not *routing.RoutingEngine (mock or custom implementation)")
+	}
+}
+
 // ========================================
 // TIMEOUT CONFIGURATION INITIALIZATION
 // BR-ORCH-027/028, BR-AUDIT-005 Gap #8

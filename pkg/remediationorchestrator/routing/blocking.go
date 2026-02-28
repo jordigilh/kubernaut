@@ -147,6 +147,13 @@ func NewRoutingEngine(client client.Client, apiReader client.Reader, namespace s
 	return engine
 }
 
+// SetDSClient sets the DataStorage history querier on the routing engine.
+// Called after construction when the DS client is wired separately from the
+// routing engine (e.g., from main.go via reconciler.SetDSClient).
+func (r *RoutingEngine) SetDSClient(dsClient RemediationHistoryQuerier) {
+	r.dsClient = dsClient
+}
+
 // Config returns the routing engine's configuration.
 // Used by reconciler to access threshold values for exponential backoff integration.
 func (r *RoutingEngine) Config() Config {
