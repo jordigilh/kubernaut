@@ -28,6 +28,9 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/rego"
 )
 
+// ptr returns a pointer to the given float64 value (#225 test helper)
+func ptr(v float64) *float64 { return &v }
+
 // BR-AI-011: Rego policy evaluation tests
 var _ = Describe("RegoEvaluator", func() {
 	var (
@@ -237,8 +240,52 @@ var _ = Describe("RegoEvaluator", func() {
 					"P0", "staging", false),
 			)
 
-			// BR-AI-013: Signal context in policy input
-			Context("handles signal context fields", func() {
+		// #225: Configurable confidence threshold via input.confidence_threshold
+		// The Rego policy should read confidence_threshold from input when provided,
+		// falling back to its built-in default (0.8) when not provided.
+		DescribeTable("configurable confidence threshold (#225)",
+			func(confidence float64, threshold *float64, expectedApproval bool, desc string) {
+				input := &rego.PolicyInput{
+					Environment: "production",
+					AffectedResource: &rego.AffectedResourceInput{
+						Kind: "Deployment", Name: "api", Namespace: "production",
+					},
+					Confidence:          confidence,
+					ConfidenceThreshold: threshold,
+					FailedDetections:    []string{},
+					Warnings:            []string{},
+				}
+
+				result, err := evaluator.Evaluate(ctx, input)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result.ApprovalRequired).To(Equal(expectedApproval), desc)
+			},
+			Entry("UT-AIA-THR-001: threshold 0.9, confidence 0.85 → require approval",
+				0.85, ptr(0.9), true,
+				"0.85 < 0.9 threshold → low confidence → require approval"),
+			Entry("UT-AIA-THR-002: threshold 0.7, confidence 0.85 → auto-approve",
+				0.85, ptr(0.7), false,
+				"0.85 >= 0.7 threshold → high confidence → auto-approve"),
+			Entry("UT-AIA-THR-003: threshold 0.8 (explicit), confidence 0.8 → auto-approve",
+				0.8, ptr(0.8), false,
+				"0.8 >= 0.8 explicit threshold → auto-approve (same as default)"),
+			Entry("UT-AIA-THR-004: no threshold (nil), confidence 0.85 → auto-approve (Rego default 0.8)",
+				0.85, (*float64)(nil), false,
+				"nil threshold → Rego default 0.8 → 0.85 >= 0.8 → auto-approve"),
+			Entry("UT-AIA-THR-005: no threshold (nil), confidence 0.79 → require approval (Rego default 0.8)",
+				0.79, (*float64)(nil), true,
+				"nil threshold → Rego default 0.8 → 0.79 < 0.8 → require approval"),
+			Entry("UT-AIA-THR-006: threshold 0.95, confidence 0.92 → require approval",
+				0.92, ptr(0.95), true,
+				"0.92 < 0.95 threshold → stricter policy → require approval"),
+			Entry("UT-AIA-THR-007: threshold 0.5, confidence 0.6 → auto-approve",
+				0.6, ptr(0.5), false,
+				"0.6 >= 0.5 threshold → permissive policy → auto-approve"),
+		)
+
+		// BR-AI-013: Signal context in policy input
+		Context("handles signal context fields", func() {
 				It("should pass all signal context fields to policy", func() {
 					input := &rego.PolicyInput{
 						SignalType:       "OOMKilled",
