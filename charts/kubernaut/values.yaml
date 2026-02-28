@@ -42,8 +42,12 @@ aianalysis:
   rego:
     confidenceThreshold: null  # nil = use Rego default (0.8 per BR-AI-076)
   resources:
-    requests: {}
-    limits: {}
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
 
 # -- SignalProcessing controller
 signalprocessing:
@@ -58,8 +62,12 @@ signalprocessing:
 # -- RemediationOrchestrator controller
 remediationorchestrator:
   resources:
-    requests: {}
-    limits: {}
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
 
 # -- WorkflowExecution controller
 workflowexecution:
@@ -102,8 +110,12 @@ effectivenessmonitor:
 holmesgptApi:
   replicas: 1
   resources:
-    requests: {}
-    limits: {}
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
   service:
     type: ClusterIP
     nodePort: null
