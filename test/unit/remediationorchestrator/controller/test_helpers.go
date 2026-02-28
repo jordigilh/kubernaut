@@ -22,8 +22,10 @@ import (
 
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -647,4 +649,18 @@ func verifyChildrenExistence(ctx context.Context, c client.Client, rr *remediati
 			Expect(err).To(HaveOccurred(), "Expected WorkflowExecution to not exist")
 		}
 	}
+}
+
+// newTestRESTMapper creates a REST mapper that resolves Deployment to apps/v1.
+// Used by tests that exercise CapturePreRemediationHash (DD-EM-002, Issue #214).
+func newTestRESTMapper() *meta.DefaultRESTMapper {
+	mapper := meta.NewDefaultRESTMapper([]schema.GroupVersion{
+		{Group: "apps", Version: "v1"},
+		{Group: "", Version: "v1"},
+	})
+	mapper.Add(
+		schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "Deployment"},
+		meta.RESTScopeNamespace,
+	)
+	return mapper
 }
