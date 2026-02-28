@@ -1,8 +1,9 @@
 # AIAnalysis Approval Policy - Test Version (scored risk factors + confidence-based auto-approval)
 # BR-AI-013: Determines if human approval is required for remediation
 # Issue #98: Refactored from exclusion chains to scored risk factors
-# Confidence-based auto-approval: High-confidence (>= 0.9) production analyses
+# Confidence-based auto-approval: High-confidence (>= threshold) production analyses
 # auto-approve unless critical safety conditions are present.
+# #225: Threshold configurable via input.confidence_threshold (default 0.8).
 
 package aianalysis.approval
 
@@ -38,9 +39,15 @@ has_failed_detections if {
     count(input.failed_detections) > 0
 }
 
-# #206: Confidence >= 0.8 enables auto-approval for production (unless safety conditions)
+# #225: Configurable confidence threshold — operators can override via input.confidence_threshold
+default confidence_threshold := 0.8
+
+confidence_threshold := input.confidence_threshold if {
+    input.confidence_threshold
+}
+
 is_high_confidence if {
-    input.confidence >= 0.8
+    input.confidence >= confidence_threshold
 }
 
 # =============================================================================

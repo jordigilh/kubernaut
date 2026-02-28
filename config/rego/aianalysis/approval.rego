@@ -4,6 +4,7 @@
 # Issue #98: Refactored from exclusion chains to scored risk factors
 # Issue #197: Confidence-based auto-approval for high-confidence production analyses.
 # Issue #206: Threshold corrected from 0.9 to 0.8 to match documented 80% auto-approval.
+# Issue #225: Threshold now configurable via input.confidence_threshold (default 0.8).
 # Auto-approves unless critical safety conditions are present (missing
 # affected_resource, sensitive resources).
 
@@ -81,15 +82,22 @@ not_production if {
     input.environment == "test"
 }
 
+# #225: Configurable confidence threshold — operators can override via input.confidence_threshold
+default confidence_threshold := 0.8
+
+confidence_threshold := input.confidence_threshold if {
+    input.confidence_threshold
+}
+
 is_high_confidence if {
-    input.confidence >= 0.8
+    input.confidence >= confidence_threshold
 }
 
 # ========================================
 # APPROVAL RULES
 # ========================================
 # Critical safety rules: ALWAYS require approval regardless of confidence.
-# Production environment rules: Only require approval when confidence < 0.8.
+# Production environment rules: Only require approval when confidence < confidence_threshold.
 
 # BR-AI-085-005: Default-deny when affected_resource is missing (ADR-055)
 require_approval if {

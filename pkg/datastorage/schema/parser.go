@@ -253,10 +253,8 @@ func (p *Parser) ExtractLabels(schema *models.WorkflowSchema) (json.RawMessage, 
 		labels["priority"] = strings.ToUpper(schema.Labels.Priority)
 	}
 
-	// Add custom labels
-	for k, v := range schema.CustomLabels {
-		labels[k] = v
-	}
+	// #212: Custom labels are NOT merged here -- they go into the custom_labels column
+	// via ExtractCustomLabels
 
 	labelsJSON, err := json.Marshal(labels)
 	if err != nil {
@@ -264,6 +262,22 @@ func (p *Parser) ExtractLabels(schema *models.WorkflowSchema) (json.RawMessage, 
 	}
 
 	return labelsJSON, nil
+}
+
+// ExtractCustomLabels extracts custom labels from a WorkflowSchema
+// and converts them to the DB model format (map[string][]string).
+// #212: Custom labels must be stored separately in the custom_labels column,
+// not merged into the mandatory labels map.
+func (p *Parser) ExtractCustomLabels(schema *models.WorkflowSchema) models.CustomLabels {
+	if schema == nil || len(schema.CustomLabels) == 0 {
+		return models.CustomLabels{}
+	}
+
+	result := make(models.CustomLabels, len(schema.CustomLabels))
+	for k, v := range schema.CustomLabels {
+		result[k] = []string{v}
+	}
+	return result
 }
 
 // ExtractDescription extracts the structured description as JSON

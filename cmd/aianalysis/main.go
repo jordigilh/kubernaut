@@ -240,7 +240,8 @@ func main() {
 		handlers.WithRecorder(eventRecorder),                              // DD-EVENT-001: Session lifecycle events
 		handlers.WithSessionMode(),                                        // BR-AA-HAPI-064: Async submit/poll/result flow
 		handlers.WithSessionPollInterval(cfg.HolmesGPT.SessionPollInterval)) // BR-AA-HAPI-064.8: From config
-	analyzingHandler := handlers.NewAnalyzingHandler(regoEvaluator, controllerLog, aianalysisMetrics, auditClient)
+	analyzingHandler := handlers.NewAnalyzingHandler(regoEvaluator, controllerLog, aianalysisMetrics, auditClient).
+		WithConfidenceThreshold(cfg.Rego.ConfidenceThreshold) // #225: operator-configurable threshold
 
 	// ========================================
 	// DD-PERF-001: Atomic Status Updates

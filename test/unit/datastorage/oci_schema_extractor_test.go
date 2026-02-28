@@ -224,6 +224,80 @@ execution:
 			Expect(desc).To(HaveKey("what"))
 			Expect(desc).To(HaveKey("whenToUse"))
 		})
+
+		It("UT-DS-212-001: ExtractLabels must NOT include custom labels (#212)", func() {
+			schemaWithCustom := `metadata:
+  workflowId: test-custom
+  version: "1.0.0"
+  description:
+    what: Test
+    whenToUse: Test
+actionType: RestartPod
+labels:
+  signalName: OOMKilled
+  severity: [critical]
+  environment: [production]
+  component: pod
+  priority: P1
+customLabels:
+  constraint: cost-constrained
+  team: payments
+execution:
+  engine: job
+  bundle: quay.io/test/wf:v1@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
+parameters:
+  - name: NAMESPACE
+    type: string
+    required: true
+    description: Target namespace
+`
+			parsedSchema, err := parser.ParseAndValidate(schemaWithCustom)
+			Expect(err).ToNot(HaveOccurred())
+
+			labelsJSON, err := parser.ExtractLabels(parsedSchema)
+			Expect(err).ToNot(HaveOccurred())
+
+			var labels map[string]interface{}
+			Expect(json.Unmarshal(labelsJSON, &labels)).To(Succeed())
+			Expect(labels).ToNot(HaveKey("constraint"),
+				"custom labels must NOT be merged into mandatory labels map")
+			Expect(labels).ToNot(HaveKey("team"),
+				"custom labels must NOT be merged into mandatory labels map")
+		})
+
+		It("UT-DS-212-002: ExtractCustomLabels must return custom labels as map[string][]string (#212)", func() {
+			schemaWithCustom := `metadata:
+  workflowId: test-custom
+  version: "1.0.0"
+  description:
+    what: Test
+    whenToUse: Test
+actionType: RestartPod
+labels:
+  signalName: OOMKilled
+  severity: [critical]
+  environment: [production]
+  component: pod
+  priority: P1
+customLabels:
+  constraint: cost-constrained
+  team: payments
+execution:
+  engine: job
+  bundle: quay.io/test/wf:v1@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
+parameters:
+  - name: NAMESPACE
+    type: string
+    required: true
+    description: Target namespace
+`
+			parsedSchema, err := parser.ParseAndValidate(schemaWithCustom)
+			Expect(err).ToNot(HaveOccurred())
+
+			customLabels := parser.ExtractCustomLabels(parsedSchema)
+			Expect(customLabels).To(HaveKeyWithValue("constraint", []string{"cost-constrained"}))
+			Expect(customLabels).To(HaveKeyWithValue("team", []string{"payments"}))
+		})
 	})
 
 	Context("C3: OCI Schema Extraction — Happy Path", func() {

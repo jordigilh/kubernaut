@@ -336,6 +336,9 @@ func (h *Handler) buildWorkflowFromSchema(
 	}
 	workflow.DetectedLabels = *detectedLabels
 
+	// #212: Extract custom labels into separate column
+	workflow.CustomLabels = schemaParser.ExtractCustomLabels(parsedSchema)
+
 	// Compute content hash (SHA-256)
 	workflow.ContentHash = computeContentHash(result.RawContent)
 
