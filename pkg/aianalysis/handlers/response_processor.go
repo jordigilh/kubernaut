@@ -95,7 +95,10 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 	// problem (inconclusive investigation, no matching workflows). This catches edge cases
 	// where the LLM incorrectly overrides needs_human_review=false but HAPI still appends
 	// diagnostic warnings from its investigation_outcome parsing.
-	if !hasSelectedWorkflow && resp.Confidence >= 0.7 && !hasNoWorkflowWarningSignal(resp.Warnings) {
+	// #208 (Layer 3): If the LLM provided a substantive RCA (with contributing factors),
+	// it identified a real problem. Route to human review since no workflow was selected,
+	// rather than silently closing as "no action required."
+	if !hasSelectedWorkflow && resp.Confidence >= 0.7 && !hasNoWorkflowWarningSignal(resp.Warnings) && !hasSubstantiveRCA(resp.RootCauseAnalysis) {
 		return p.handleProblemResolvedFromIncident(ctx, analysis, resp)
 	}
 
@@ -576,6 +579,21 @@ func hasNoWorkflowWarningSignal(warnings []string) bool {
 		}
 	}
 	return false
+}
+
+// hasSubstantiveRCA checks if the LLM response contains a root cause analysis
+// with contributing factors, indicating a real problem was identified.
+// #208: When no workflow is selected but a real problem exists, the system should
+// escalate to human review rather than silently completing as "NoActionRequired."
+func hasSubstantiveRCA(rca client.IncidentResponseRootCauseAnalysis) bool {
+	if len(rca) == 0 {
+		return false
+	}
+	extracted := ExtractRootCauseAnalysis(rca)
+	if extracted == nil {
+		return false
+	}
+	return extracted.Summary != "" && len(extracted.ContributingFactors) > 0
 }
 
 // mapWarningsToSubReason extracts SubReason from HAPI warnings
