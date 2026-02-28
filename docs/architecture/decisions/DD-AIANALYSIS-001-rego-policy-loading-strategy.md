@@ -235,7 +235,7 @@ import rego.v1
 default decision := "manual_review_required"
 
 # #225: Configurable confidence threshold — operators override via input.confidence_threshold
-default confidence_threshold := 0.90
+default confidence_threshold := 0.8
 
 confidence_threshold := input.confidence_threshold if {
     input.confidence_threshold
@@ -271,7 +271,7 @@ decision := "approved" if {
 # ============================================================
 decision := "manual_review_required" if {
     input.recommendation.confidence >= 0.70
-    input.recommendation.confidence < 0.90
+    input.recommendation.confidence < 0.8
     input.business_context.environment == "production"
 }
 

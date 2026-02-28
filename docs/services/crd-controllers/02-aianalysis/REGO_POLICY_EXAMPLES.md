@@ -636,7 +636,7 @@ import future.keywords.if
 # Confidence thresholds — defaults that operators can override via input.confidence_threshold (#225)
 # The high_confidence_threshold is configurable: if input.confidence_threshold is set by the
 # controller config (rego.confidenceThreshold), it overrides the Rego default.
-default high_confidence_threshold := 0.90
+default high_confidence_threshold := 0.8
 
 high_confidence_threshold := input.confidence_threshold if {
     input.confidence_threshold
