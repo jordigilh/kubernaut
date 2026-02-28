@@ -104,12 +104,12 @@ The **AIAnalysis Service** is a Kubernetes CRD controller that orchestrates Holm
 
 **Implementation**:
 - `status.selectedWorkflow.confidence`: Workflow selection confidence
-- `status.approvalRequired`: Set based on confidence threshold (80%)
+- `status.approvalRequired`: Set based on confidence threshold (default 80%, configurable via Rego policy — #225)
 - `metrics.RecordConfidenceScore()`: Track confidence distribution
 
 **Acceptance Criteria**:
 - ✅ Confidence score between 0.0 and 1.0
-- ✅ `approvalRequired = true` when confidence < 80%
+- ✅ `approvalRequired = true` when confidence < threshold (default 80%, configurable via `input.confidence_threshold` — #225)
 - ✅ Metrics track confidence distribution by signal type
 
 **Test Coverage**:
@@ -217,7 +217,7 @@ The **AIAnalysis Service** is a Kubernetes CRD controller that orchestrates Holm
 
 #### BR-AI-076: Approval Context for Low Confidence
 
-**Description**: AIAnalysis MUST populate comprehensive `approvalContext` when confidence is below 80% threshold, providing operators with sufficient information to make informed approval decisions.
+**Description**: AIAnalysis MUST populate comprehensive `approvalContext` when confidence is below the configured threshold (default 80%, configurable via Rego policy — #225), providing operators with sufficient information to make informed approval decisions.
 
 **Priority**: P0 (CRITICAL)
 
@@ -232,7 +232,7 @@ The **AIAnalysis Service** is a Kubernetes CRD controller that orchestrates Holm
 - `status.approvalContext.alternativesConsidered`: Other workflow options
 
 **Acceptance Criteria**:
-- ✅ `approvalRequired = true` when confidence < 80%
+- ✅ `approvalRequired = true` when confidence < threshold (default 80% — #225)
 - ✅ `approvalReason` explains why approval needed
 - ✅ `approvalContext` includes investigation summary
 - ✅ Evidence and alternatives provided for review

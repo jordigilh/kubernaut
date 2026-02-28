@@ -83,6 +83,14 @@ type PolicyInput struct {
     // +optional (nil if HAPI didn't determine different target)
     AffectedResource *TargetResourceInput  `json:"affected_resource,omitempty"`
 
+    // #225: Operator-configurable confidence threshold for auto-approval.
+    // When set, passed as input.confidence_threshold to the Rego policy,
+    // overriding the policy's built-in default (0.8).
+    // Configured via rego.confidenceThreshold in the AIAnalysis config YAML.
+    // nil means "use the Rego policy's built-in default".
+    // +optional
+    ConfidenceThreshold *float64           `json:"confidence_threshold,omitempty"`
+
     // Workflow metadata
     WorkflowID       string                `json:"workflow_id"`
     WorkflowName     string                `json:"workflow_name"`
@@ -103,6 +111,7 @@ type TargetResourceInput struct {
 2. ✅ `TargetResourceInput` includes `api_version` field (snake_case for Rego)
 3. ✅ `AffectedResource` is optional (pointer type) - nil if not provided by HAPI
 4. ✅ Existing `TargetResource` field remains unchanged (backward compatibility)
+5. ✅ `PolicyInput` struct includes `ConfidenceThreshold *float64` field (#225) — optional, nil means Rego default
 
 ---
 
@@ -485,7 +494,8 @@ require_approval if {
 **Document Control**:
 - **Created**: 2026-01-20
 - **Last Updated**: 2026-02-12
-- **Version**: 1.1
+- **Version**: 1.2
 - **Status**: ✅ Approved
 - **Changes in 1.1**: Added FR-AI-085-005 (default-deny for missing `affected_resource`), added ADR-055 reference, documented `target_in_owner_chain` supersession, added Example 5 (default-deny safety pattern).
-- **Next Review**: After ADR-055 implementation
+- **Changes in 1.2**: Added `ConfidenceThreshold *float64` to PolicyInput schema (#225). Confidence threshold is now configurable via `input.confidence_threshold` in the Rego policy, with a built-in default of 0.8. Stepping stone toward BR-HAPI-198.
+- **Next Review**: After BR-HAPI-198 V1.1 implementation
