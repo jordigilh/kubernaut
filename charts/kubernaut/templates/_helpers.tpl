@@ -63,3 +63,27 @@ Usage: {{ include "kubernaut.image" (dict "service" "gateway" "global" .Values.g
 {{- define "kubernaut.image" -}}
 {{- printf "%s/%s:%s" .global.image.registry .service (.global.image.tag | default .appVersion) }}
 {{- end }}
+
+{{/*
+Return the Secret name for PostgreSQL credentials.
+Uses existingSecret if set, otherwise the chart-managed "postgresql-secret".
+*/}}
+{{- define "kubernaut.postgresql.secretName" -}}
+{{- if .Values.postgresql.auth.existingSecret -}}
+{{- .Values.postgresql.auth.existingSecret -}}
+{{- else -}}
+postgresql-secret
+{{- end -}}
+{{- end }}
+
+{{/*
+Return the Secret name for DataStorage DB+Redis credentials.
+Uses existingSecret if set, otherwise the chart-managed "datastorage-secret".
+*/}}
+{{- define "kubernaut.datastorage.secretName" -}}
+{{- if .Values.postgresql.auth.existingSecret -}}
+{{- .Values.postgresql.auth.existingSecret -}}
+{{- else -}}
+datastorage-secret
+{{- end -}}
+{{- end }}

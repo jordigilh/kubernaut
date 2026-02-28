@@ -1,0 +1,12 @@
+# Demo credentials overlay for local development and Kind clusters.
+# Usage: helm install kubernaut charts/kubernaut -f charts/kubernaut/values-demo.yaml
+#
+# WARNING: These credentials are for demo/development use only.
+# For production, use existingSecret to reference pre-created K8s Secrets.
+
+postgresql:
+  auth:
+    password: demo-password
+
+redis:
+  password: ""
