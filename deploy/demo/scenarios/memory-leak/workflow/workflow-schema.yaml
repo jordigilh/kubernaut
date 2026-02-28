@@ -1,11 +1,11 @@
 # Graceful Restart Workflow Schema - Job Backend (BR-WORKFLOW-004)
-# Scenario: #129 -- Predictive memory exhaustion -> graceful restart
+# Scenario: #129 -- Proactive memory exhaustion -> graceful restart
 metadata:
   workflowId: graceful-restart-v1
   version: "1.0.0"
   description:
     what: "Performs a graceful rolling restart of a deployment to reset its runtime state and reclaim leaked memory"
-    whenToUse: "When predictive analysis indicates a container is trending toward OOM based on memory growth rate, and a restart will reset the leak without data loss"
+    whenToUse: "When proactive analysis indicates a container is trending toward OOM based on memory growth rate, and a restart will reset the leak without data loss"
     whenNotToUse: "When the memory growth is from legitimate workload (cache warming, data loading) rather than a leak, or when the application cannot tolerate restarts"
     preconditions: "The deployment supports rolling restarts without data loss, and the memory growth pattern is confirmed as a leak (linear, unbounded)"
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Predictive Memory Exhaustion Demo -- Automated Runner
+# Proactive Memory Exhaustion Demo -- Automated Runner
 # Scenario #129: predict_linear detects OOM trend -> graceful restart
 #
 # The 'leaker' sidecar allocates ~1MB every 5 seconds (~12MB/min) via a
@@ -29,7 +29,7 @@ ensure_platform
 seed_scenario_workflow "memory-leak"
 
 echo "============================================="
-echo " Predictive Memory Exhaustion Demo (#129)"
+echo " Proactive Memory Exhaustion Demo (#129)"
 echo "============================================="
 echo ""
 

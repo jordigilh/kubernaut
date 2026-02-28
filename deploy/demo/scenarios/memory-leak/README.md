@@ -1,8 +1,8 @@
-# Scenario #129: Predictive Memory Exhaustion
+# Scenario #129: Proactive Memory Exhaustion
 
 ## Overview
 
-Demonstrates Kubernaut's **predictive remediation** capability. Instead of waiting for
+Demonstrates Kubernaut's **proactive remediation** capability. Instead of waiting for
 an OOM kill, Prometheus `predict_linear()` detects that a container's memory is growing
 linearly and will exceed its limit within 30 minutes. Kubernaut intervenes with a
 graceful rolling restart that resets memory before the crash occurs.
@@ -54,7 +54,7 @@ kubectl wait --for=condition=Available deployment/leaky-app -n demo-memory-leak 
 watch kubectl top pods -n demo-memory-leak --containers
 ```
 
-### 3. Wait for the predictive alert
+### 3. Wait for the proactive alert
 
 The `ContainerMemoryExhaustionPredicted` alert fires once `predict_linear()` projects the
 leaker container will exceed its 192Mi limit within 30 minutes. This typically takes
@@ -70,7 +70,7 @@ kubectl get rr,sp,aa,we,ea -n demo-memory-leak -w
 
 Expected flow:
 - **SP** enriches the alert with business labels
-- **AA (HAPI)** diagnoses predictive memory exhaustion, selects GracefulRestart
+- **AA (HAPI)** diagnoses proactive memory exhaustion, selects GracefulRestart
 - **RO** creates the WorkflowExecution
 - **WE** runs `kubectl rollout restart deployment/leaky-app`
 - **EM** confirms memory usage is back near baseline
@@ -106,7 +106,7 @@ When the "leaker" container's memory usage grows linearly at ~4MB/min
 
 Then Kubernaut Gateway receives the alert via Alertmanager webhook
   And Signal Processing enriches the signal with business labels
-  And AI Analysis (HAPI + LLM) diagnoses a predictive memory exhaustion
+  And AI Analysis (HAPI + LLM) diagnoses a proactive memory exhaustion
   And the LLM selects the "GracefulRestart" workflow (graceful-restart-v1)
   And Remediation Orchestrator creates a WorkflowExecution
   And Workflow Execution runs a rolling restart of the deployment
