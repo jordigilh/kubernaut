@@ -18,6 +18,7 @@ package notification
 
 import (
 	"context"
+	"os"
 
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
@@ -280,44 +281,49 @@ receivers:
 			configMap := &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      routing.DefaultConfigMapName,
-					Namespace: routing.DefaultConfigMapNamespace,
+					Namespace: routing.GetConfigMapNamespace(),
 				},
 			}
 
-			// Verify ConfigMap matches expected name/namespace
-			// Namespace matches deploy/notification/00-namespace.yaml
 			Expect(configMap.Name).To(Equal("notification-routing-config"))
-			Expect(configMap.Namespace).To(Equal("kubernaut-notifications"))
+			Expect(routing.IsRoutingConfigMap(configMap.Name, configMap.Namespace)).To(BeTrue())
 		})
 
 		It("should ignore ConfigMaps with different name", func() {
-			// BR-NOT-067: Only react to the routing ConfigMap
-			unrelatedConfigMap := &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "some-other-config",
-					Namespace: routing.DefaultConfigMapNamespace,
-				},
-			}
-
-			// Handler should ignore unrelated ConfigMaps
-			isRoutingConfigMap := unrelatedConfigMap.Name == routing.DefaultConfigMapName &&
-				unrelatedConfigMap.Namespace == routing.DefaultConfigMapNamespace
-			Expect(isRoutingConfigMap).To(BeFalse())
+			Expect(routing.IsRoutingConfigMap("some-other-config", routing.GetConfigMapNamespace())).To(BeFalse())
 		})
 
 		It("should ignore ConfigMaps with different namespace", func() {
-			// BR-NOT-067: Only react to the routing ConfigMap
-			unrelatedConfigMap := &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      routing.DefaultConfigMapName,
-					Namespace: "some-other-namespace",
-				},
-			}
+			Expect(routing.IsRoutingConfigMap(routing.DefaultConfigMapName, "some-other-namespace")).To(BeFalse())
+		})
+	})
 
-			// Handler should ignore unrelated ConfigMaps
-			isRoutingConfigMap := unrelatedConfigMap.Name == routing.DefaultConfigMapName &&
-				unrelatedConfigMap.Namespace == routing.DefaultConfigMapNamespace
-			Expect(isRoutingConfigMap).To(BeFalse())
+	Context("Configurable Namespace (#207)", func() {
+
+		It("should use POD_NAMESPACE env var when set", func() {
+			// #207: Routing ConfigMap namespace must match the pod's namespace
+			original := os.Getenv("POD_NAMESPACE")
+			defer os.Setenv("POD_NAMESPACE", original)
+
+			os.Setenv("POD_NAMESPACE", "kubernaut-system")
+			Expect(routing.GetConfigMapNamespace()).To(Equal("kubernaut-system"))
+		})
+
+		It("should fall back to DefaultConfigMapNamespace when POD_NAMESPACE is not set", func() {
+			original := os.Getenv("POD_NAMESPACE")
+			defer os.Setenv("POD_NAMESPACE", original)
+
+			os.Unsetenv("POD_NAMESPACE")
+			Expect(routing.GetConfigMapNamespace()).To(Equal(routing.DefaultConfigMapNamespace))
+		})
+
+		It("should use POD_NAMESPACE in IsRoutingConfigMap matching", func() {
+			original := os.Getenv("POD_NAMESPACE")
+			defer os.Setenv("POD_NAMESPACE", original)
+
+			os.Setenv("POD_NAMESPACE", "kubernaut-system")
+			Expect(routing.IsRoutingConfigMap("notification-routing-config", "kubernaut-system")).To(BeTrue())
+			Expect(routing.IsRoutingConfigMap("notification-routing-config", "kubernaut-notifications")).To(BeFalse())
 		})
 	})
 
@@ -347,18 +353,13 @@ var _ = Describe("BR-NOT-067: Controller ConfigMap Watch Integration", func() {
 
 		It("should watch ConfigMaps in routing namespace", func() {
 			// BR-NOT-067: Controller should watch ConfigMap for changes
-			// This test documents the expected behavior that will be implemented
-
-			// The controller SetupWithManager should:
-			// 1. Watch ConfigMap with name "notification-routing-config"
-			// 2. In namespace "kubernaut-system"
-			// 3. Call SetRoutingConfig on change
+			// #207: Namespace is dynamic (from POD_NAMESPACE env var)
 
 			expectedConfigMapName := routing.DefaultConfigMapName
-			expectedNamespace := routing.DefaultConfigMapNamespace
+			expectedNamespace := routing.GetConfigMapNamespace()
 
 			Expect(expectedConfigMapName).To(Equal("notification-routing-config"))
-			Expect(expectedNamespace).To(Equal("kubernaut-notifications"))
+			Expect(expectedNamespace).NotTo(BeEmpty())
 		})
 	})
 

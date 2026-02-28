@@ -197,7 +197,7 @@ func (r *NotificationRequestReconciler) loadRoutingConfigFromCluster(ctx context
 	configMap := &corev1.ConfigMap{}
 	key := types.NamespacedName{
 		Name:      routing.DefaultConfigMapName,
-		Namespace: routing.DefaultConfigMapNamespace,
+		Namespace: routing.GetConfigMapNamespace(),
 	}
 
 	if err := r.Get(ctx, key, configMap); err != nil {
