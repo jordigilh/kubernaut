@@ -909,7 +909,7 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 			// DD-EVENT-001: Emit K8s event for approval required (BR-ORCH-095)
 			if r.Recorder != nil {
 				r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonApprovalRequired,
-					fmt.Sprintf("Human approval required: confidence %.2f below threshold", ai.Status.SelectedWorkflow.Confidence))
+					fmt.Sprintf("Human approval required (confidence %.0f%%): %s", ai.Status.SelectedWorkflow.Confidence*100, ai.Status.ApprovalReason))
 			}
 
 			// Create approval notification (BR-ORCH-001)
