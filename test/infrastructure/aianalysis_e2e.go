@@ -744,6 +744,7 @@ data:
         maxRetries: 3
     rego:
       policyPath: "/etc/aianalysis/policies/approval.rego"
+      confidenceThreshold: 0.9
 ---
 apiVersion: v1
 kind: ServiceAccount

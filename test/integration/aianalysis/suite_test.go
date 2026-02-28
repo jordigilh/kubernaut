@@ -671,7 +671,12 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 		handlers.WithRecorder(eventRecorder),                  // DD-EVENT-001: Session lifecycle events
 		handlers.WithSessionMode(),                            // BR-AA-HAPI-064: Async submit/poll/result flow
 		handlers.WithSessionPollInterval(2*time.Second))       // Fast polling for tests (production default: 15s)
-	analyzingHandler := handlers.NewAnalyzingHandler(realRegoEvaluator, ctrl.Log.WithName("analyzing-handler"), testMetrics, auditClient)
+	// #225: Mock LLM current_scenario persists across analyses (statefulness),
+	// so unrecognized signals inherit high confidence (e.g., 0.88 from crashloop).
+	// Threshold 0.9 ensures mock scenarios requiring approval stay below threshold.
+	testThreshold := 0.9
+	analyzingHandler := handlers.NewAnalyzingHandler(realRegoEvaluator, ctrl.Log.WithName("analyzing-handler"), testMetrics, auditClient).
+		WithConfidenceThreshold(&testThreshold)
 
 	// Create per-process controller instance and STORE IT (WorkflowExecution pattern)
 	// Storing reconciler enables tests to access metrics via reconciler.Metrics
