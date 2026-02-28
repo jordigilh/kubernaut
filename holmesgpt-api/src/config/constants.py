@@ -28,9 +28,11 @@ of the service's AI analysis and validation logic.
 # CONFIDENCE THRESHOLDS (BR-HAPI-197, BR-HAPI-200)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-# Minimum confidence score for workflow selection without human review
+# Minimum confidence score for workflow selection without human review.
 # Business Requirement: BR-HAPI-197 (needs_human_review field)
-# Values below this threshold trigger needs_human_review=True
+# Values below this threshold trigger needs_human_review=True.
+# Configurable via config.yaml: prompt.confidence_threshold_human_review
+# This constant serves as the fallback default when not configured.
 CONFIDENCE_THRESHOLD_HUMAN_REVIEW = 0.7  # 70%
 
 # Default confidence for mock responses

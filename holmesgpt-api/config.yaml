@@ -27,3 +27,4 @@ audit:
 # Prompt engineering configuration (Issue #224, BR-HAPI-016)
 prompt:
   repeated_remediation_escalation_threshold: 2  # Escalate after N completed-but-recurring remediations
+  confidence_threshold_human_review: 0.7  # BR-HAPI-198: Threshold for needs_human_review flag

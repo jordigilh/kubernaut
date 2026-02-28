@@ -64,6 +64,7 @@ class PromptConfig(TypedDict, total=False):
     Controls thresholds and behavior for LLM prompt enrichment.
     """
     repeated_remediation_escalation_threshold: int
+    confidence_threshold_human_review: float  # BR-HAPI-198: configurable via config.yaml
 
 
 class AppConfig(TypedDict, total=False):
