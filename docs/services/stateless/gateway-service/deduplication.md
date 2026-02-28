@@ -5,6 +5,8 @@
 **Status**: ✅ Design Complete
 
 **Changelog**:
+- **v1.4** (2026-02-28): Issue #228: Shared `types.ResolveFingerprint()` function extracted. Both adapters now delegate fingerprint generation to a single shared function, eliminating duplicated logic. `OwnerResolver` interface moved from adapters to `types` package.
+- **v1.3** (2026-02-28): Issue #227: K8s Event adapter now excludes reason from fingerprint even without OwnerResolver (consistency with Prometheus adapter). All adapters use `CalculateOwnerFingerprint(resource)` as the default behavior.
 - **v1.2** (2026-02-09): Prometheus adapter: alertname excluded from fingerprint; OwnerResolver added for Pod→Deployment resolution (Issue #63). Fingerprint now uses `SHA256(namespace:ownerKind:ownerName)` with OwnerResolver (same pattern as K8s event adapter). This ensures multiple alertnames (KubePodCrashLooping, KubePodNotReady, KubeContainerOOMKilled) for the same resource produce a single fingerprint. Rationale: LLM investigates resource state, not signal type.
 - **v1.1** (2026-02-09): Updated fingerprint generation to document adapter-specific strategies. Kubernetes events now use owner-chain-based fingerprinting (`SHA256(namespace:ownerKind:ownerName)`) to deduplicate events across pod restarts and different event reasons.
 - **v1.0** (2025-10-04): Initial design.
@@ -171,8 +173,10 @@ Kubernetes events use **owner chain resolution** to fingerprint at the controlle
 - **Different pod names** (after pod recreation by ReplicaSet) from the same Deployment
   should produce the same fingerprint.
 
+Both adapters delegate fingerprint generation to the shared `types.ResolveFingerprint(ctx, resolver, resource)` function (Issue #228). This ensures cross-adapter consistency: the same resource always produces the same fingerprint regardless of which adapter ingested the signal.
+
 The `KubernetesEventAdapter` resolves the top-level controller owner via the
-`OwnerResolver` interface, which traverses Kubernetes `ownerReferences`:
+`types.OwnerResolver` interface, which traverses Kubernetes `ownerReferences`:
 
 ```
 Pod "payment-api-789abc" → ReplicaSet "payment-api-xyz" → Deployment "payment-api"
@@ -200,9 +204,11 @@ Event: BackOff     on Pod "payment-api-def456" → Owner: Deployment "payment-ap
 All → SHA256("prod:Deployment:payment-api") → same fingerprint → deduplicated
 ```
 
-**Fallback**: If owner resolution fails (RBAC error, timeout), the adapter falls back
-to fingerprinting with the involvedObject directly (without reason):
-`SHA256(namespace:involvedObjectKind:involvedObjectName)`.
+**Fallback**: If owner resolution fails (RBAC error, timeout) or no OwnerResolver is
+configured, the adapter falls back to fingerprinting with the involvedObject directly
+(reason excluded, Issue #227): `SHA256(namespace:involvedObjectKind:involvedObjectName)`.
+This matches the Prometheus adapter's behavior, ensuring cross-adapter deduplication
+consistency.
 
 ### Why SHA256 (Not MD5)
 
