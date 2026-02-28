@@ -131,7 +131,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking", func() {
 			// Set high consecutive failures that would trigger ConsecutiveFailures check
 			rr.Status.ConsecutiveFailureCount = 100
 
-			blocked, err := engine.CheckPostAnalysisConditions(ctx, rr, "wf-001", "test-ns/deployment/payment-api")
+			blocked, err := engine.CheckPostAnalysisConditions(ctx, rr, "wf-001", "test-ns/deployment/payment-api", "")
 			Expect(err).ToNot(HaveOccurred())
 			// MUST be UnmanagedResource, NOT ConsecutiveFailures — proving scope is Check #1
 			Expect(blocked.Reason).To(Equal(string(remediationv1.BlockReasonUnmanagedResource)))

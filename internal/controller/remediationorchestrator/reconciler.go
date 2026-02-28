@@ -974,33 +974,26 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 		if ar.Namespace != "" {
 			targetResource = ar.Namespace + "/" + targetResource
 		}
-		blocked, err := r.routingEngine.CheckPostAnalysisConditions(ctx, rr, workflowID, targetResource)
-		if err != nil {
-			logger.Error(err, "Failed to check routing conditions")
-			return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil
-		}
-
-		// If blocked, update status and requeue
-		if blocked != nil {
-			logger.Info("Routing blocked - will not create WorkflowExecution",
-				"reason", blocked.Reason,
-				"message", blocked.Message,
-				"requeueAfter", blocked.RequeueAfter)
-			return r.handleBlocked(ctx, rr, blocked, string(remediationv1.PhaseAnalyzing), workflowID)
-		}
-
-		// Routing checks passed - create WorkflowExecution
-		logger.Info("Routing checks passed, creating WorkflowExecution")
-
-		// DD-EM-002 + DD-EM-003: Capture pre-remediation spec hash of the remediation target
-		// BEFORE the workflow modifies it. The hash must match the resource the workflow patches.
+		// Issue #214: Capture pre-remediation hash BEFORE routing so CheckIneffectiveRemediationChain can use it.
+		// DD-EM-002 + DD-EM-003: Hash must match the resource the workflow patches.
 		remTarget := resolveDualTargets(rr, ai).Remediation
 		preHash, hashErr := CapturePreRemediationHash(
 			ctx, r.apiReader, r.restMapper,
 			remTarget.Kind, remTarget.Name, remTarget.Namespace,
 		)
 		if hashErr != nil {
-			logger.Error(hashErr, "Failed to capture pre-remediation hash (non-fatal)")
+			// Issue #214: hashErr != nil is terminal -- cannot safely remediate without knowing target state
+			logger.Error(hashErr, "Failed to capture pre-remediation hash (terminal)")
+			if updateErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+				rr.Status.OverallPhase = remediationv1.PhaseFailed
+				reason := fmt.Sprintf("Cannot determine target resource state: %v", hashErr)
+				rr.Status.FailureReason = &reason
+				return nil
+			}); updateErr != nil {
+				logger.Error(updateErr, "Failed to update RR to Failed after hash error")
+				return ctrl.Result{}, updateErr
+			}
+			return ctrl.Result{}, nil
 		}
 		if preHash != "" && rr.Status.PreRemediationSpecHash == "" {
 			if updateErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
@@ -1014,6 +1007,23 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 					"target", fmt.Sprintf("%s/%s", remTarget.Kind, remTarget.Name))
 			}
 		}
+
+		blocked, err := r.routingEngine.CheckPostAnalysisConditions(ctx, rr, workflowID, targetResource, preHash)
+		if err != nil {
+			logger.Error(err, "Failed to check routing conditions")
+			return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil
+		}
+
+		if blocked != nil {
+			logger.Info("Routing blocked - will not create WorkflowExecution",
+				"reason", blocked.Reason,
+				"message", blocked.Message,
+				"requeueAfter", blocked.RequeueAfter)
+			return r.handleBlocked(ctx, rr, blocked, string(remediationv1.PhaseAnalyzing), workflowID)
+		}
+
+		// Routing checks passed - create WorkflowExecution
+		logger.Info("Routing checks passed, creating WorkflowExecution")
 
 		// ADR-EM-001, GAP-RO-1: Emit remediation.workflow_created audit event
 		r.emitWorkflowCreatedAudit(ctx, rr, ai, preHash)
@@ -1445,7 +1455,17 @@ func (r *Reconciler) handleBlocked(
 		case remediationv1.BlockReasonConsecutiveFailures:
 			r.Recorder.Event(rr, corev1.EventTypeWarning, events.EventReasonConsecutiveFailureBlocked,
 				fmt.Sprintf("Target blocked: %s", blocked.Message))
+		case remediationv1.BlockReasonIneffectiveChain:
+			r.Recorder.Event(rr, corev1.EventTypeWarning, "IneffectiveChainDetected",
+				fmt.Sprintf("Escalating to manual review: %s", blocked.Message))
 		}
+	}
+
+	// Issue #214: Log escalation intent for IneffectiveChain blocks.
+	// NotificationRequest creation is handled by the notification controller watching for ManualReviewRequired.
+	if remediationv1.BlockReason(blocked.Reason) == remediationv1.BlockReasonIneffectiveChain {
+		logger.Info("Ineffective chain detected - escalating to manual review",
+			"remediationRequest", rr.Name)
 	}
 
 	// Update RR status to Blocked phase (REFACTOR-RO-001: using retry helper)
@@ -1473,6 +1493,12 @@ func (r *Reconciler) handleBlocked(
 			rr.Status.DuplicateOf = blocked.DuplicateOf
 		} else {
 			rr.Status.DuplicateOf = "" // Clear if not set
+		}
+
+		// Issue #214: Set ManualReviewRequired for IneffectiveChain blocks
+		if remediationv1.BlockReason(blocked.Reason) == remediationv1.BlockReasonIneffectiveChain {
+			rr.Status.Outcome = "ManualReviewRequired"
+			rr.Status.RequiresManualReview = true
 		}
 
 		return nil

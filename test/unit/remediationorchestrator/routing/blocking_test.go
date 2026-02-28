@@ -1147,7 +1147,7 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 				},
 			}
 
-			blocked, err := engine.CheckPostAnalysisConditions(ctx, rr, "", "")
+			blocked, err := engine.CheckPostAnalysisConditions(ctx, rr, "", "", "")
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(blocked.Reason).To(Equal("ConsecutiveFailures")) // First check should win
@@ -1301,7 +1301,7 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 			}
 			Expect(fakeClient.Create(ctx, rr)).To(Succeed())
 
-			blocked, err := engine.CheckPostAnalysisConditions(ctx, rr, "", "")
+			blocked, err := engine.CheckPostAnalysisConditions(ctx, rr, "", "", "")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(blocked).To(BeNil()) // Not blocked (empty target doesn't match)
 		})
@@ -1649,7 +1649,7 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 			}
 
 			// Check blocking conditions (post-AA includes all checks)
-			blocked, err := engine.CheckPostAnalysisConditions(ctx, rr, "", "")
+			blocked, err := engine.CheckPostAnalysisConditions(ctx, rr, "", "", "")
 			Expect(err).ToNot(HaveOccurred())
 			// Should return ConsecutiveFailures (higher priority than DuplicateInProgress)
 			Expect(blocked.Reason).To(Equal(string(remediationv1.BlockReasonConsecutiveFailures)))

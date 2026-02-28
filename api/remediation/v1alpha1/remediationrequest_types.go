@@ -172,6 +172,12 @@ const (
 	// RO will retry with exponential backoff (5s → 10s → ... → 5min) until RR times out.
 	// Reference: BR-SCOPE-001, FR-SCOPE-003
 	BlockReasonUnmanagedResource BlockReason = "UnmanagedResource"
+
+	// BlockReasonIneffectiveChain indicates consecutive remediations for the same target
+	// have been ineffective (resource keeps reverting or health doesn't improve).
+	// Escalates to human review via NotificationRequest.
+	// Reference: BR-ORCH-042, Issue #214
+	BlockReasonIneffectiveChain BlockReason = "IneffectiveChain"
 )
 
 // ========================================
