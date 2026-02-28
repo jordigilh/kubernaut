@@ -158,6 +158,36 @@ func TestBuildDetectedLabelsBoostSQL_ServiceMesh_WorkflowWildcard(t *testing.T) 
 	}
 }
 
+// --- Query-side wildcard: query passes "*" to match any workflow value ---
+
+func TestBuildDetectedLabelsBoostSQL_ServiceMesh_QueryWildcard(t *testing.T) {
+	dl := &models.DetectedLabels{ServiceMesh: "*"}
+	result := buildDetectedLabelsBoostSQL(dl)
+	if !strings.Contains(result, "serviceMesh") {
+		t.Errorf("expected SQL to reference serviceMesh for query-side wildcard, got: %s", result)
+	}
+	if !strings.Contains(result, "IS NOT NULL") {
+		t.Errorf("expected IS NOT NULL check for query-side wildcard, got: %s", result)
+	}
+	if !strings.Contains(result, "0.03") {
+		t.Errorf("expected half-boost (0.03 = 0.05/2 rounded) for query-side wildcard, got: %s", result)
+	}
+}
+
+func TestBuildDetectedLabelsBoostSQL_GitOpsTool_QueryWildcard(t *testing.T) {
+	dl := &models.DetectedLabels{GitOpsTool: "*"}
+	result := buildDetectedLabelsBoostSQL(dl)
+	if !strings.Contains(result, "gitOpsTool") {
+		t.Errorf("expected SQL to reference gitOpsTool for query-side wildcard, got: %s", result)
+	}
+	if !strings.Contains(result, "IS NOT NULL") {
+		t.Errorf("expected IS NOT NULL check for query-side wildcard, got: %s", result)
+	}
+	if !strings.Contains(result, "0.05") {
+		t.Errorf("expected half-boost (0.05 = 0.10/2) for query-side wildcard, got: %s", result)
+	}
+}
+
 // --- Phase 6: Custom labels wired into discovery scoring (#212 Gap 2+3) ---
 
 func TestBuildCustomLabelsBoostSQL_MultipleKeys(t *testing.T) {

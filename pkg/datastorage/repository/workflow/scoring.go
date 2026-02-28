@@ -67,14 +67,21 @@ func buildDetectedLabelsBoostSQL(dl *models.DetectedLabels) string {
 			fmt.Sprintf("CASE WHEN detected_labels->>'gitOpsManaged' = 'true' THEN %.2f ELSE 0.0 END", weight))
 	}
 
-	// GitOpsTool (string -- workflow-side wildcard: #215 Gap 2 fix)
+	// GitOpsTool (string -- bidirectional wildcard: #215 Gap 2 fix)
 	if dl.GitOpsTool != "" {
 		weight := detectedLabelWeights["git_ops_tool"]
-		tool := sanitizeEnumValue(dl.GitOpsTool, []string{"argocd", "flux"})
-		if tool != "" {
+		if dl.GitOpsTool == "*" {
+			// Query-side wildcard: match any workflow with a non-empty gitOpsTool → half boost
 			boostCases = append(boostCases,
-				fmt.Sprintf("CASE WHEN detected_labels->>'gitOpsTool' = '%s' THEN %.2f WHEN detected_labels->>'gitOpsTool' = '*' THEN %.2f ELSE 0.0 END",
-					tool, weight, weight/2))
+				fmt.Sprintf("CASE WHEN detected_labels->>'gitOpsTool' IS NOT NULL AND detected_labels->>'gitOpsTool' != '' THEN %.2f ELSE 0.0 END",
+					weight/2))
+		} else {
+			tool := sanitizeEnumValue(dl.GitOpsTool, []string{"argocd", "flux"})
+			if tool != "" {
+				boostCases = append(boostCases,
+					fmt.Sprintf("CASE WHEN detected_labels->>'gitOpsTool' = '%s' THEN %.2f WHEN detected_labels->>'gitOpsTool' = '*' THEN %.2f ELSE 0.0 END",
+						tool, weight, weight/2))
+			}
 		}
 	}
 
@@ -85,14 +92,21 @@ func buildDetectedLabelsBoostSQL(dl *models.DetectedLabels) string {
 			fmt.Sprintf("CASE WHEN detected_labels->>'pdbProtected' = 'true' THEN %.2f ELSE 0.0 END", weight))
 	}
 
-	// ServiceMesh (string -- workflow-side wildcard: #215 Gap 2 fix)
+	// ServiceMesh (string -- bidirectional wildcard: #215 Gap 2 fix)
 	if dl.ServiceMesh != "" {
 		weight := detectedLabelWeights["service_mesh"]
-		mesh := sanitizeEnumValue(dl.ServiceMesh, []string{"istio", "linkerd"})
-		if mesh != "" {
+		if dl.ServiceMesh == "*" {
+			// Query-side wildcard: match any workflow with a non-empty serviceMesh → half boost
 			boostCases = append(boostCases,
-				fmt.Sprintf("CASE WHEN detected_labels->>'serviceMesh' = '%s' THEN %.2f WHEN detected_labels->>'serviceMesh' = '*' THEN %.2f ELSE 0.0 END",
-					mesh, weight, weight/2))
+				fmt.Sprintf("CASE WHEN detected_labels->>'serviceMesh' IS NOT NULL AND detected_labels->>'serviceMesh' != '' THEN %.2f ELSE 0.0 END",
+					weight/2))
+		} else {
+			mesh := sanitizeEnumValue(dl.ServiceMesh, []string{"istio", "linkerd"})
+			if mesh != "" {
+				boostCases = append(boostCases,
+					fmt.Sprintf("CASE WHEN detected_labels->>'serviceMesh' = '%s' THEN %.2f WHEN detected_labels->>'serviceMesh' = '*' THEN %.2f ELSE 0.0 END",
+						mesh, weight, weight/2))
+			}
 		}
 	}
 
