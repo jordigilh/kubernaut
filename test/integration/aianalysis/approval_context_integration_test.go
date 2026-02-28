@@ -289,10 +289,10 @@ var _ = Describe("Approval Context Integration", Label("integration", "approval"
 			}{
 			{
 				scenario:           "high_confidence_production",
-				signalType:         "OOMKilled", // Mock: 0.88 (measured from test run)
-				expectedConfidence: 0.88,
-				expectedApproval:   true, // Production ALWAYS requires approval (per approval.rego:119-122)
-				description:        "High confidence (>=0.8) in production requires approval per Rego policy",
+				signalType:         "OOMKilled", // Mock: 0.95 (oomkilled scenario)
+				expectedConfidence: 0.95,
+				expectedApproval:   false, // BR-AI-076: confidence >= 0.8 (Rego default) auto-approves in production
+				description:        "High confidence (>=0.8) in production auto-approves per Rego policy",
 			},
 				{
 					scenario:           "low_confidence_require_approval",
