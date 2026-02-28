@@ -28,7 +28,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
 )
 
-// mockOwnerResolver implements adapters.OwnerResolver for testing
+// mockOwnerResolver implements types.OwnerResolver for testing
 type mockOwnerResolver struct {
 	// resolveFunc allows per-test customization of resolve behavior
 	resolveFunc func(ctx context.Context, namespace, kind, name string) (string, string, error)
