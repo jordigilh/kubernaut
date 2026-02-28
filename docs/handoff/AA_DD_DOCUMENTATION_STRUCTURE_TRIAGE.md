@@ -24,7 +24,7 @@
 
 ### Pattern: Service-Specific DD Subdocuments
 
-**Discovered Pattern** (from SignalProcessing & KubernetesExecution):
+**Discovered Pattern** (from SignalProcessing & KubernetesExecution (DEPRECATED - ADR-025)):
 
 ```
 Cross-Service Standard (Parent)
@@ -75,7 +75,7 @@ DD-CRD-002 (Parent: Kubernetes Conditions Standard)
 
 ---
 
-### KubernetesExecution Team (WE Team)
+### KubernetesExecution (DEPRECATED - ADR-025) Team (WE Team)
 
 **Structure**:
 ```

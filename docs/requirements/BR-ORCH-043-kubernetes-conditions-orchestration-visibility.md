@@ -130,11 +130,11 @@ kubectl describe remediationrequest <name> | grep -A5 "WorkflowExecution"
 
 ---
 
-### **AC-043-5: Overall Recovery Status**
+### **AC-043-5: Overall Recovery Status** [Deprecated - Issue #180]
 
 **Requirement**: RO MUST set condition tracking overall remediation outcome.
 
-**Condition**: **RecoveryComplete**
+**Condition**: **RecoveryComplete** [Deprecated - Issue #180]
 - **Status**: `True` when remediation reaches terminal phase (Completed/Failed)
 - **Status**: `False` during active processing
 - **Reason Success**: `RecoverySucceeded`
@@ -149,6 +149,7 @@ kubectl describe remediationrequest <name> | grep -A5 "WorkflowExecution"
 
 **Validation**:
 ```bash
+# [Deprecated - Issue #180: RecoveryComplete removed]
 kubectl wait --for=condition=RecoveryComplete remediationrequest <name> --timeout=10m
 ```
 
@@ -184,8 +185,9 @@ kubectl get remediationrequest <name> -o jsonpath='{.status.conditions[*].type}'
 **Requirement**: Conditions MUST support `kubectl wait` for automation.
 
 **Test Cases**:
-1. **Wait for Recovery**:
+1. **Wait for Recovery** [Deprecated - Issue #180]:
    ```bash
+   # [Deprecated - Issue #180: RecoveryComplete removed]
    kubectl wait --for=condition=RecoveryComplete rr/<name> --timeout=10m
    ```
 
@@ -194,8 +196,9 @@ kubectl get remediationrequest <name> -o jsonpath='{.status.conditions[*].type}'
    kubectl wait --for=condition=AIAnalysisComplete rr/<name> --timeout=5m
    ```
 
-3. **Check Blocking State**:
+3. **Check Blocking State** [Deprecated - Issue #180]:
    ```bash
+   # [Deprecated - Issue #180: RecoveryComplete removed]
    kubectl get rr/<name> -o jsonpath='{.status.conditions[?(@.type=="RecoveryComplete")].reason}'
    ```
 
@@ -207,16 +210,16 @@ kubectl get remediationrequest <name> -o jsonpath='{.status.conditions[*].type}'
 
 **Requirement**: Conditions SHOULD be exposed as Prometheus metrics for alerting.
 
-**Metrics**:
+**Metrics** [Deprecated - Issue #180 for RecoveryComplete examples]:
 ```prometheus
-# Condition state gauge
+# Condition state gauge [Deprecated - Issue #180: RecoveryComplete removed]
 kube_customresource_condition{
   customresource="remediationrequest",
   condition="RecoveryComplete",
   status="true|false|unknown"
 } 1
 
-# Example alert rule
+# Example alert rule [Deprecated - Issue #180]
 - alert: RemediationBlockedForCooldown
   expr: |
     kube_customresource_condition{
@@ -321,7 +324,7 @@ Status:
 **What Conditions Help With**:
 - ✅ **Diagnosis**: "Is AI analysis stuck?" → Check `AIAnalysisComplete` condition (instant answer)
 - ✅ **Visibility**: "Which child CRD failed?" → See conditions in one place
-- ✅ **Troubleshooting**: "Why is remediation blocked?" → `RecoveryComplete` reason explains
+- ✅ **Troubleshooting**: "Why is remediation blocked?" → `RecoveryComplete` reason explains [Deprecated - Issue #180]
 
 **What Conditions DON'T Help With**:
 - ❌ **Resolution Speed**: If workflow fails, Conditions won't make it succeed faster
@@ -347,9 +350,9 @@ Status:
 | **handleProcessingPhase** | `pkg/remediationorchestrator/controller/reconciler.go:195` | SignalProcessingComplete |
 | **handleAnalyzingPhase** | `pkg/remediationorchestrator/controller/reconciler.go:207` | AIAnalysisComplete |
 | **handleExecutingPhase** | `pkg/remediationorchestrator/controller/reconciler.go:237` | WorkflowExecutionComplete |
-| **transitionToFailed** | `pkg/remediationorchestrator/controller/reconciler.go:~300` | RecoveryComplete (failure) |
-| **transitionToCompleted** | `pkg/remediationorchestrator/controller/reconciler.go:~320` | RecoveryComplete (success) |
-| **timeout/blocked-terminal paths** | `pkg/remediationorchestrator/controller/reconciler.go` | RecoveryComplete (Issue #79 gap fix) |
+| **transitionToFailed** | `pkg/remediationorchestrator/controller/reconciler.go:~300` | RecoveryComplete (failure) [Deprecated] |
+| **transitionToCompleted** | `pkg/remediationorchestrator/controller/reconciler.go:~320` | RecoveryComplete (success) [Deprecated] |
+| **timeout/blocked-terminal paths** | `pkg/remediationorchestrator/controller/reconciler.go` | RecoveryComplete (Issue #79 gap fix) [Deprecated] |
 
 ---
 
@@ -401,7 +404,7 @@ Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge"
 4. **AIAnalysis Completion** (Analyzing → AwaitingApproval/Executing)
 5. **WorkflowExecution Creation** (Executing phase)
 6. **WorkflowExecution Completion** (Executing → Completed/Failed)
-7. **Terminal Phase Transitions** (RecoveryComplete)
+7. **Terminal Phase Transitions** (RecoveryComplete) [Deprecated - Issue #180]
 
 **Pattern**:
 ```go
@@ -433,7 +436,7 @@ conditions.SetSignalProcessingReady(rr, true,
 - SignalProcessing conditions populated during lifecycle
 - AIAnalysis conditions populated during lifecycle
 - WorkflowExecution conditions populated during lifecycle
-- RecoveryComplete set on success/failure
+- RecoveryComplete set on success/failure [Deprecated - Issue #180]
 - Blocking conditions (BR-ORCH-042 integration)
 
 **E2E Tests**: Add to existing suites (~1 scenario)
@@ -521,7 +524,7 @@ kubectl explain remediationrequest.status.conditions
 # Functional validation
 kubectl describe remediationrequest rr-test-123 | grep -A 20 "Conditions:"
 
-# Automation validation
+# Automation validation [Deprecated - Issue #180: RecoveryComplete removed]
 kubectl wait --for=condition=RecoveryComplete rr rr-test-123 --timeout=10m
 ```
 

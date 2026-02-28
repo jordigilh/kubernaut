@@ -133,7 +133,7 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 			rr := &remediationv1alpha1.RemediationRequest{}
 			err = k8sClient.Get(ctx, client.ObjectKey{
 				Name:      response.RemediationRequestName,
-				Namespace: testNamespace,
+				Namespace: controllerNamespace,
 			}, rr)
 			Expect(err).ToNot(HaveOccurred(),
 				"BR-GATEWAY-001: CRD must be created in namespace from alert labels")
@@ -366,7 +366,7 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 			rr := &remediationv1alpha1.RemediationRequest{}
 			err = k8sClient.Get(ctx, client.ObjectKey{
 				Name:      response.RemediationRequestName,
-				Namespace: testNamespace,
+				Namespace: controllerNamespace,
 			}, rr)
 			Expect(err).ToNot(HaveOccurred(),
 				"BR-GATEWAY-002: CRD must be created for involvedObject resource")
@@ -622,7 +622,7 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 			rr := &remediationv1alpha1.RemediationRequest{}
 			err = k8sClient.Get(ctx, client.ObjectKey{
 				Name:      response.RemediationRequestName,
-				Namespace: testNamespace,
+				Namespace: controllerNamespace,
 			}, rr)
 			Expect(err).ToNot(HaveOccurred(),
 				"BR-GATEWAY-184: RemediationRequest CRD must be created")
@@ -722,7 +722,7 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 			rr := &remediationv1alpha1.RemediationRequest{}
 			err = k8sClient.Get(ctx, client.ObjectKey{
 				Name:      response.RemediationRequestName,
-				Namespace: testNamespace,
+				Namespace: controllerNamespace,
 			}, rr)
 			Expect(err).ToNot(HaveOccurred(),
 				"BR-GATEWAY-184: RemediationRequest CRD must be created")

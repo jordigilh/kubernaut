@@ -44,6 +44,8 @@ var _ = Describe("Phase State Machine (BR-EM-005)", func() {
 			// Non-terminal states
 			Entry("UT-EM-PH-003: Pending is NOT terminal",
 				phase.Pending, false, "Pending indicates EA created but not reconciled"),
+			Entry("UT-EM-PH-003b: Stabilizing is NOT terminal",
+				phase.Stabilizing, false, "Stabilizing indicates stabilization window active"),
 			Entry("UT-EM-PH-004: Assessing is NOT terminal",
 				phase.Assessing, false, "Assessing indicates checks in progress"),
 
@@ -65,8 +67,11 @@ var _ = Describe("Phase State Machine (BR-EM-005)", func() {
 					Expect(phase.CanTransition(from, to)).To(BeTrue(),
 						"transition %s -> %s should be allowed", from, to)
 				},
-				Entry("Pending -> Assessing", phase.Pending, phase.Assessing),
+				Entry("Pending -> Stabilizing", phase.Pending, phase.Stabilizing),
+				Entry("Pending -> Assessing (no stabilization window)", phase.Pending, phase.Assessing),
 				Entry("Pending -> Failed", phase.Pending, phase.Failed),
+				Entry("Stabilizing -> Assessing", phase.Stabilizing, phase.Assessing),
+				Entry("Stabilizing -> Failed", phase.Stabilizing, phase.Failed),
 				Entry("Assessing -> Completed", phase.Assessing, phase.Completed),
 				Entry("Assessing -> Failed", phase.Assessing, phase.Failed),
 			)
@@ -87,10 +92,13 @@ var _ = Describe("Phase State Machine (BR-EM-005)", func() {
 				Entry("Failed -> Assessing", phase.Failed, phase.Assessing),
 
 				// Cannot skip phases
-				Entry("Pending -> Completed (skip Assessing)", phase.Pending, phase.Completed),
+				Entry("Pending -> Completed (skip Stabilizing+Assessing)", phase.Pending, phase.Completed),
+				Entry("Stabilizing -> Completed (skip Assessing)", phase.Stabilizing, phase.Completed),
 
 				// Cannot go backwards
 				Entry("Assessing -> Pending (backwards)", phase.Assessing, phase.Pending),
+				Entry("Assessing -> Stabilizing (backwards)", phase.Assessing, phase.Stabilizing),
+				Entry("Stabilizing -> Pending (backwards)", phase.Stabilizing, phase.Pending),
 			)
 		})
 
@@ -112,6 +120,7 @@ var _ = Describe("Phase State Machine (BR-EM-005)", func() {
 				Expect(phase.Validate(p)).To(Succeed())
 			},
 			Entry("Pending", phase.Pending),
+			Entry("Stabilizing", phase.Stabilizing),
 			Entry("Assessing", phase.Assessing),
 			Entry("Completed", phase.Completed),
 			Entry("Failed", phase.Failed),

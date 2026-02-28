@@ -1,5 +1,7 @@
 # ⚠️ DEPRECATED: KubernetesExecutor Service
 
+> **DEPRECATED**: KubernetesExecution CRD and KubernetesExecutor service were eliminated by ADR-025 and replaced by Tekton TaskRun via WorkflowExecution. This documentation is retained for historical reference only. API types and CRD manifests have been removed from the codebase.
+
 **Status**: ❌ **DEPRECATED - Not Implemented**
 **Date**: 2025-10-19
 **Confidence**: **98%** (Very High)

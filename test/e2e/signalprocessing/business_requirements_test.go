@@ -117,14 +117,14 @@ var _ = Describe("BR-SP-001: Node Enrichment Enables Infrastructure Analysis", f
 		sp := &signalprocessingv1alpha1.SignalProcessing{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "e2e-node-enrich",
-				Namespace: testNs,
+				Namespace: controllerNamespace,
 			},
 			Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 				RemediationRequestRef: signalprocessingv1alpha1.ObjectReference{
 					APIVersion: "kubernaut.ai/v1alpha1",
 					Kind:       "RemediationRequest",
 					Name:       "e2e-node-enrich-rr",
-					Namespace:  testNs,
+					Namespace:  controllerNamespace,
 				},
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "abcd1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab",
@@ -175,14 +175,14 @@ var _ = Describe("BR-SP-001: Node Enrichment Enables Infrastructure Analysis", f
 		sp := &signalprocessingv1alpha1.SignalProcessing{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "e2e-degraded-mode",
-				Namespace: testNs,
+				Namespace: controllerNamespace,
 			},
 			Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 				RemediationRequestRef: signalprocessingv1alpha1.ObjectReference{
 					APIVersion: "kubernaut.ai/v1alpha1",
 					Kind:       "RemediationRequest",
 					Name:       "e2e-degraded-mode-rr",
-					Namespace:  testNs,
+					Namespace:  controllerNamespace,
 				},
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6",
@@ -253,14 +253,14 @@ var _ = Describe("BR-SP-070: Priority Assignment Delivers Correct Business Outco
 			sp := &signalprocessingv1alpha1.SignalProcessing{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-priority-p0",
-					Namespace: testNs,
+					Namespace: controllerNamespace,
 				},
 				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 					RemediationRequestRef: signalprocessingv1alpha1.ObjectReference{
 						APIVersion: "kubernaut.ai/v1alpha1",
 						Kind:       "RemediationRequest",
 						Name:       "e2e-priority-p0-rr",
-						Namespace:  testNs,
+						Namespace:  controllerNamespace,
 					},
 					Signal: signalprocessingv1alpha1.SignalData{
 						Fingerprint:  "a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1",
@@ -305,14 +305,14 @@ var _ = Describe("BR-SP-070: Priority Assignment Delivers Correct Business Outco
 			sp := &signalprocessingv1alpha1.SignalProcessing{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-priority-p1",
-					Namespace: testNs,
+					Namespace: controllerNamespace,
 				},
 				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 					RemediationRequestRef: signalprocessingv1alpha1.ObjectReference{
 						APIVersion: "kubernaut.ai/v1alpha1",
 						Kind:       "RemediationRequest",
 						Name:       "e2e-priority-p1-rr",
-						Namespace:  testNs,
+						Namespace:  controllerNamespace,
 					},
 					Signal: signalprocessingv1alpha1.SignalData{
 						Fingerprint:  "b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2",
@@ -363,14 +363,14 @@ var _ = Describe("BR-SP-070: Priority Assignment Delivers Correct Business Outco
 			sp := &signalprocessingv1alpha1.SignalProcessing{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-priority-p2",
-					Namespace: stagingNs,
+					Namespace: controllerNamespace,
 				},
 				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 					RemediationRequestRef: signalprocessingv1alpha1.ObjectReference{
 						APIVersion: "kubernaut.ai/v1alpha1",
 						Kind:       "RemediationRequest",
 						Name:       "e2e-priority-p2-rr",
-						Namespace:  stagingNs,
+						Namespace:  controllerNamespace,
 					},
 					Signal: signalprocessingv1alpha1.SignalData{
 						Fingerprint:  "c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3",
@@ -406,14 +406,14 @@ var _ = Describe("BR-SP-070: Priority Assignment Delivers Correct Business Outco
 			sp := &signalprocessingv1alpha1.SignalProcessing{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-priority-p3",
-					Namespace: devNs,
+					Namespace: controllerNamespace,
 				},
 				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 					RemediationRequestRef: signalprocessingv1alpha1.ObjectReference{
 						APIVersion: "kubernaut.ai/v1alpha1",
 						Kind:       "RemediationRequest",
 						Name:       "e2e-priority-p3-rr",
-						Namespace:  devNs,
+						Namespace:  controllerNamespace,
 					},
 					Signal: signalprocessingv1alpha1.SignalData{
 						Fingerprint:  "d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4",
@@ -470,14 +470,14 @@ var _ = Describe("BR-SP-051: Environment Classification Enables Correct Routing"
 		sp := &signalprocessingv1alpha1.SignalProcessing{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "e2e-env-prod",
-				Namespace: testNs,
+				Namespace: controllerNamespace,
 			},
 			Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 				RemediationRequestRef: signalprocessingv1alpha1.ObjectReference{
 					APIVersion: "kubernaut.ai/v1alpha1",
 					Kind:       "RemediationRequest",
 					Name:       "e2e-env-prod-rr",
-					Namespace:  testNs,
+					Namespace:  controllerNamespace,
 				},
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5",
@@ -523,14 +523,14 @@ var _ = Describe("BR-SP-051: Environment Classification Enables Correct Routing"
 		sp := &signalprocessingv1alpha1.SignalProcessing{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "e2e-env-unknown",
-				Namespace: testNs,
+				Namespace: controllerNamespace,
 			},
 			Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 				RemediationRequestRef: signalprocessingv1alpha1.ObjectReference{
 					APIVersion: "kubernaut.ai/v1alpha1",
 					Kind:       "RemediationRequest",
 					Name:       "e2e-env-unknown-rr",
-					Namespace:  testNs,
+					Namespace:  controllerNamespace,
 				},
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6",
@@ -630,14 +630,14 @@ var _ = Describe("BR-SP-100: Owner Chain Enables Root Cause Analysis", func() {
 		sp := &signalprocessingv1alpha1.SignalProcessing{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "e2e-owner-chain",
-				Namespace: testNs,
+				Namespace: controllerNamespace,
 			},
 			Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 				RemediationRequestRef: signalprocessingv1alpha1.ObjectReference{
 					APIVersion: "kubernaut.ai/v1alpha1",
 					Kind:       "RemediationRequest",
 					Name:       "e2e-owner-chain-rr",
-					Namespace:  testNs,
+					Namespace:  controllerNamespace,
 				},
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7",
@@ -710,14 +710,14 @@ var _ = Describe("BR-SP-102: CustomLabels Enable Business-Specific Routing", fun
 		sp := &signalprocessingv1alpha1.SignalProcessing{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "e2e-custom-labels",
-				Namespace: testNs,
+				Namespace: controllerNamespace,
 			},
 			Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 				RemediationRequestRef: signalprocessingv1alpha1.ObjectReference{
 					APIVersion: "kubernaut.ai/v1alpha1",
 					Kind:       "RemediationRequest",
 					Name:       "e2e-custom-labels-rr",
-					Namespace:  testNs,
+					Namespace:  controllerNamespace,
 				},
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0",
@@ -799,10 +799,11 @@ var _ = Describe("BR-SP-090: Categorization Audit Trail Provides Compliance Evid
 		}
 
 		// Create parent RemediationRequest (RO creates this in production)
+		// ADR-057: RR lives in controller namespace; SP controller watches kubernaut-system only
 		rr := &remediationv1alpha1.RemediationRequest{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "e2e-audit-test-rr",
-				Namespace: testNs,
+				Namespace: controllerNamespace,
 			},
 			Spec: remediationv1alpha1.RemediationRequestSpec{
 				SignalFingerprint: fingerprint,
@@ -830,10 +831,11 @@ var _ = Describe("BR-SP-090: Categorization Audit Trail Provides Compliance Evid
 		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 		By("Creating SignalProcessing CR with RemediationRequestRef")
+		// ADR-057: SP lives in controller namespace; SP controller watches kubernaut-system only
 		sp := &signalprocessingv1alpha1.SignalProcessing{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "e2e-audit-test",
-				Namespace: testNs,
+				Namespace: controllerNamespace,
 				OwnerReferences: []metav1.OwnerReference{
 					*metav1.NewControllerRef(rr, remediationv1alpha1.GroupVersion.WithKind("RemediationRequest")),
 				},
@@ -1061,14 +1063,14 @@ var _ = Describe("BR-SP-103: Workload Type Enrichment Enables Workload-Specific 
 		sp := &signalprocessingv1alpha1.SignalProcessing{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "e2e-statefulset-test",
-				Namespace: testNs,
+				Namespace: controllerNamespace,
 			},
 			Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 				RemediationRequestRef: signalprocessingv1alpha1.ObjectReference{
 					APIVersion: "kubernaut.ai/v1alpha1",
 					Kind:       "RemediationRequest",
 					Name:       "e2e-statefulset-rr",
-					Namespace:  testNs,
+					Namespace:  controllerNamespace,
 				},
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2",
@@ -1154,14 +1156,14 @@ var _ = Describe("BR-SP-103: Workload Type Enrichment Enables Workload-Specific 
 		sp := &signalprocessingv1alpha1.SignalProcessing{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "e2e-daemonset-test",
-				Namespace: testNs,
+				Namespace: controllerNamespace,
 			},
 			Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 				RemediationRequestRef: signalprocessingv1alpha1.ObjectReference{
 					APIVersion: "kubernaut.ai/v1alpha1",
 					Kind:       "RemediationRequest",
 					Name:       "e2e-daemonset-rr",
-					Namespace:  testNs,
+					Namespace:  controllerNamespace,
 				},
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3",
@@ -1265,14 +1267,14 @@ var _ = Describe("BR-SP-103: Workload Type Enrichment Enables Workload-Specific 
 		sp := &signalprocessingv1alpha1.SignalProcessing{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "e2e-service-test",
-				Namespace: testNs,
+				Namespace: controllerNamespace,
 			},
 			Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 				RemediationRequestRef: signalprocessingv1alpha1.ObjectReference{
 					APIVersion: "kubernaut.ai/v1alpha1",
 					Kind:       "RemediationRequest",
 					Name:       "e2e-service-rr",
-					Namespace:  testNs,
+					Namespace:  controllerNamespace,
 				},
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4",
@@ -1377,14 +1379,14 @@ var _ = Describe("BR-SP-103-D: Deployment Signal Enrichment", func() {
 		sp := &signalprocessingv1alpha1.SignalProcessing{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "e2e-deployment-signal",
-				Namespace: testNs,
+				Namespace: controllerNamespace,
 			},
 			Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 				RemediationRequestRef: signalprocessingv1alpha1.ObjectReference{
 					APIVersion: "kubernaut.ai/v1alpha1",
 					Kind:       "RemediationRequest",
 					Name:       "e2e-deployment-rr",
-					Namespace:  testNs,
+					Namespace:  controllerNamespace,
 				},
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2",
@@ -1505,14 +1507,14 @@ var _ = Describe("BR-SP-103-A: StatefulSet Signal Enrichment (Fixed)", func() {
 		sp := &signalprocessingv1alpha1.SignalProcessing{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "e2e-statefulset-signal",
-				Namespace: testNs,
+				Namespace: controllerNamespace,
 			},
 			Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 				RemediationRequestRef: signalprocessingv1alpha1.ObjectReference{
 					APIVersion: "kubernaut.ai/v1alpha1",
 					Kind:       "RemediationRequest",
 					Name:       "e2e-statefulset-rr",
-					Namespace:  testNs,
+					Namespace:  controllerNamespace,
 				},
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2",
@@ -1613,14 +1615,14 @@ var _ = Describe("BR-SP-103-B: DaemonSet Signal Enrichment (Fixed)", func() {
 		sp := &signalprocessingv1alpha1.SignalProcessing{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "e2e-daemonset-signal",
-				Namespace: testNs,
+				Namespace: controllerNamespace,
 			},
 			Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 				RemediationRequestRef: signalprocessingv1alpha1.ObjectReference{
 					APIVersion: "kubernaut.ai/v1alpha1",
 					Kind:       "RemediationRequest",
 					Name:       "e2e-daemonset-rr",
-					Namespace:  testNs,
+					Namespace:  controllerNamespace,
 				},
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "d1a2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2",
@@ -1722,14 +1724,14 @@ var _ = Describe("BR-SP-103-C: ReplicaSet Signal Enrichment", func() {
 		sp := &signalprocessingv1alpha1.SignalProcessing{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "e2e-replicaset-signal",
-				Namespace: testNs,
+				Namespace: controllerNamespace,
 			},
 			Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 				RemediationRequestRef: signalprocessingv1alpha1.ObjectReference{
 					APIVersion: "kubernaut.ai/v1alpha1",
 					Kind:       "RemediationRequest",
 					Name:       "e2e-replicaset-rr",
-					Namespace:  testNs,
+					Namespace:  controllerNamespace,
 				},
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2",
@@ -1850,14 +1852,14 @@ var _ = Describe("BR-SP-103-E: Service Signal Enrichment", func() {
 		sp := &signalprocessingv1alpha1.SignalProcessing{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "e2e-service-signal",
-				Namespace: testNs,
+				Namespace: controllerNamespace,
 			},
 			Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 				RemediationRequestRef: signalprocessingv1alpha1.ObjectReference{
 					APIVersion: "kubernaut.ai/v1alpha1",
 					Kind:       "RemediationRequest",
 					Name:       "e2e-service-rr",
-					Namespace:  testNs,
+					Namespace:  controllerNamespace,
 				},
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2",
@@ -1953,14 +1955,14 @@ var _ = Describe("BR-SP-070-A: P0 Priority Classification", func() {
 		sp := &signalprocessingv1alpha1.SignalProcessing{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "e2e-p0-signal",
-				Namespace: testNs,
+				Namespace: controllerNamespace,
 			},
 			Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 				RemediationRequestRef: signalprocessingv1alpha1.ObjectReference{
 					APIVersion: "kubernaut.ai/v1alpha1",
 					Kind:       "RemediationRequest",
 					Name:       "e2e-p0-rr",
-					Namespace:  testNs,
+					Namespace:  controllerNamespace,
 				},
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b3",
@@ -2038,14 +2040,14 @@ var _ = Describe("BR-SP-070-B: P2 Priority Classification", func() {
 		sp := &signalprocessingv1alpha1.SignalProcessing{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "e2e-p2-signal",
-				Namespace: testNs,
+				Namespace: controllerNamespace,
 			},
 			Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 				RemediationRequestRef: signalprocessingv1alpha1.ObjectReference{
 					APIVersion: "kubernaut.ai/v1alpha1",
 					Kind:       "RemediationRequest",
 					Name:       "e2e-p2-rr",
-					Namespace:  testNs,
+					Namespace:  controllerNamespace,
 				},
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2",
@@ -2122,14 +2124,14 @@ var _ = Describe("BR-SP-070-C: P3 Priority Classification", func() {
 		sp := &signalprocessingv1alpha1.SignalProcessing{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "e2e-p3-signal",
-				Namespace: testNs,
+				Namespace: controllerNamespace,
 			},
 			Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 				RemediationRequestRef: signalprocessingv1alpha1.ObjectReference{
 					APIVersion: "kubernaut.ai/v1alpha1",
 					Kind:       "RemediationRequest",
 					Name:       "e2e-p3-rr",
-					Namespace:  testNs,
+					Namespace:  controllerNamespace,
 				},
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2",
@@ -2165,124 +2167,6 @@ var _ = Describe("BR-SP-070-C: P3 Priority Classification", func() {
 			priority := updated.Status.PriorityAssignment.Priority
 			return priority == "P0" || priority == "P1" || priority == "P2" || priority == "P3"
 		}, timeout, interval).Should(BeTrue())
-	})
-})
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// E2E-SP-163-004: Recovery Context Validation
-// BUSINESS VALUE: SP enriches RecoveryContext when RR has RecoveryAttempts > 0
-// DD-001: Recovery Context Enrichment - buildRecoveryContext() in Enriching phase
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-var _ = Describe("E2E-SP-163-004: Recovery Context Validation", func() {
-	var testNs string
-
-	BeforeEach(func() {
-		testNs = helpers.CreateTestNamespace(ctx, k8sClient, "e2e-recovery", helpers.WithLabels(map[string]string{
-			"kubernaut.ai/environment": "production",
-		}))
-	})
-
-	AfterEach(func() {
-		helpers.DeleteTestNamespace(ctx, k8sClient, testNs)
-	})
-
-	It("E2E-SP-163-004: should populate RecoveryContext when RemediationRequest has RecoveryAttempts > 0", func() {
-		By("Creating RemediationRequest with recovery attempt status")
-		rr := &remediationv1alpha1.RemediationRequest{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "e2e-recovery-rr",
-				Namespace: testNs,
-			},
-			Spec: remediationv1alpha1.RemediationRequestSpec{
-				SignalFingerprint: "1a30eddc43a9a86bfdb34058bc861205b62cf2e12dbbfa182968fe0d56819639",
-				SignalName:        "RecoveryContextTest",
-				Severity:          "critical",
-				SignalType:        "alert",
-				SignalSource:      "test-e2e",
-				TargetType:        "kubernetes",
-				FiringTime:        metav1.Now(),
-				ReceivedTime:     metav1.Now(),
-				Deduplication: sharedtypes.DeduplicationInfo{
-					IsDuplicate:     false,
-					FirstOccurrence: metav1.Now(),
-					LastOccurrence:  metav1.Now(),
-					OccurrenceCount: 1,
-				},
-				IsStorm: false,
-				TargetResource: remediationv1alpha1.ResourceIdentifier{
-					Kind:      "Pod",
-					Name:      "recovery-test-pod",
-					Namespace: testNs,
-				},
-			},
-		}
-		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
-
-		By("Patching RemediationRequest status with RecoveryAttempts > 0")
-		rr.Status.RecoveryAttempts = 1
-		rr.Status.StartTime = &metav1.Time{Time: time.Now().Add(-5 * time.Minute)}
-		failureReason := "PreviousExecutionTimedOut"
-		rr.Status.FailureReason = &failureReason
-		Expect(k8sClient.Status().Update(ctx, rr)).To(Succeed())
-
-		By("Waiting for RR status patch to be visible (informer cache propagation)")
-		Eventually(func() int {
-			var fresh remediationv1alpha1.RemediationRequest
-			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), &fresh); err != nil {
-				return 0
-			}
-			return fresh.Status.RecoveryAttempts
-		}, 10*time.Second, 1*time.Second).Should(Equal(1),
-			"RR status patch must be visible before SP creation")
-
-		By("Creating SignalProcessing CR referencing the RemediationRequest")
-		sp := &signalprocessingv1alpha1.SignalProcessing{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "e2e-recovery-sp",
-				Namespace: testNs,
-			},
-			Spec: signalprocessingv1alpha1.SignalProcessingSpec{
-				RemediationRequestRef: signalprocessingv1alpha1.ObjectReference{
-					APIVersion: remediationv1alpha1.GroupVersion.String(),
-					Kind:       "RemediationRequest",
-					Name:       rr.Name,
-					Namespace:  rr.Namespace,
-					UID:        string(rr.UID),
-				},
-				Signal: signalprocessingv1alpha1.SignalData{
-					Fingerprint:  rr.Spec.SignalFingerprint,
-					Name:         rr.Spec.SignalName,
-					Severity:     rr.Spec.Severity,
-					Type:         rr.Spec.SignalType,
-					TargetType:   rr.Spec.TargetType,
-					ReceivedTime: metav1.Now(),
-					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
-						Kind:      rr.Spec.TargetResource.Kind,
-						Name:      rr.Spec.TargetResource.Name,
-						Namespace: rr.Spec.TargetResource.Namespace,
-					},
-				},
-			},
-		}
-		Expect(k8sClient.Create(ctx, sp)).To(Succeed())
-
-		By("Waiting for SignalProcessing to complete")
-		Eventually(func() signalprocessingv1alpha1.SignalProcessingPhase {
-			var updated signalprocessingv1alpha1.SignalProcessing
-			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &updated); err != nil {
-				return ""
-			}
-			return updated.Status.Phase
-		}, timeout, interval).Should(Equal(signalprocessingv1alpha1.PhaseCompleted))
-
-		By("Verifying RecoveryContext is populated")
-		var final signalprocessingv1alpha1.SignalProcessing
-		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &final)).To(Succeed())
-		Expect(final.Status.RecoveryContext).NotTo(BeNil())
-		Expect(final.Status.RecoveryContext.PreviousRemediationID).To(Equal(rr.Name))
-		Expect(final.Status.RecoveryContext.AttemptCount).To(BeNumerically(">=", 1))
-		Expect(final.Status.RecoveryContext.LastFailureReason).To(Equal("PreviousExecutionTimedOut"))
 	})
 })
 

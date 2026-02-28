@@ -12,15 +12,15 @@ metadata:
 actionType: CordonDrainNode
 
 labels:
-  signalName: NodeNotReady
+  signalName: KubeNodeNotReady
   severity: [critical]
-  environment: [production, staging]
+  environment: [production, staging, "*"]
   component: "*"
   priority: "*"
 
 execution:
   engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/cordon-drain-job@sha256:c19b314ea8517aef05139cc39dc666848b8969d7688adda695d67ec7c576b7f2
+  bundle: quay.io/kubernaut-cicd/test-workflows/cordon-drain-job@sha256:205f629a6b2753f9afb557176b2e77f5dd1a09765c07c560ac36ff3e1ce05afd
 
 parameters:
   - name: TARGET_NODE

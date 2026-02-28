@@ -23,12 +23,10 @@ Client Generation:
 
 Source Models:
 - src/models/incident_models.py - IncidentRequest, IncidentResponse, DetectedLabels
-- src/models/recovery_models.py - RecoveryRequest, RecoveryResponse
 - src/models/postexec_models.py - Post-execution analysis models
 
 Related:
-- DD-RECOVERY-002: Direct AIAnalysis recovery flow
-- DD-RECOVERY-003: Recovery prompt design with DetectedLabels
+- DD-HAPI-001: DetectedLabels for workflow filtering
 """
 
 import json

@@ -1139,7 +1139,7 @@ func (r *WorkflowExecutionController) Reconcile(ctx context.Context, req ctrl.Re
 ### **Integration Points**
 - **Input**: Receives workflow definition from `AIAnalysis CRD`
 - **Executor Services**: Coordinates with Kubernetes Executor, Monitoring Service, Notification Service
-- **Output**: Creates `KubernetesExecution CRDs` for Kubernetes-specific actions
+- **Output**: Creates `KubernetesExecution (DEPRECATED - ADR-025) CRDs` for Kubernetes-specific actions
 - **Parent Update**: Updates `AlertRemediation CRD` with workflow execution results
 - **Audit**: Persists execution data for historical analysis and learning
 

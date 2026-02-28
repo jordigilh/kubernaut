@@ -24,7 +24,7 @@ Business Requirements:
 - BR-AA-HAPI-064.1: POST /analyze returns 202 with session_id
 - BR-AA-HAPI-064.2: GET /session/{id} returns session status
 - BR-AA-HAPI-064.3: GET /session/{id}/result returns full result
-- BR-AA-HAPI-064.9: Recovery session lifecycle mirrors incident
+- BR-AA-HAPI-064: Session lifecycle
 
 Architecture:
 - TestClient runs in-process (no Docker container for HAPI)
@@ -78,7 +78,7 @@ def _submit_and_get_result(client, endpoint_prefix: str, request_data: dict) -> 
 
     Args:
         client: FastAPI TestClient
-        endpoint_prefix: "/api/v1/incident" or "/api/v1/recovery"
+        endpoint_prefix: "/api/v1/incident"
         request_data: Request payload
 
     Returns:
@@ -348,99 +348,6 @@ class TestIncidentSessionIntegration:
         # Verify results contain correct incident IDs
         assert result_a["result_response"]["incident_id"] == request_a["incident_id"]
         assert result_b["result_response"]["incident_id"] == request_b["incident_id"]
-
-
-# ========================================
-# RECOVERY SESSION FLOW TESTS
-# ========================================
-
-class TestRecoverySessionIntegration:
-    """
-    IT-HAPI-064-005 to 006: Recovery session lifecycle via HTTP endpoints.
-    """
-
-    def test_recovery_submit_poll_result_lifecycle(
-        self, hapi_client, unique_test_id
-    ):
-        """
-        IT-HAPI-064-005: Recovery submit + poll + result via TestClient.
-
-        BR-AA-HAPI-064.9: Full recovery session lifecycle mirrors incident.
-        """
-        request_data = {
-            "incident_id": f"inc-it-session-005-{unique_test_id}",
-            "remediation_id": f"rem-it-session-005-{unique_test_id}",
-            "signal_name": "OOMKilled",
-            "previous_workflow_id": "oomkill-increase-memory-v1",
-            "previous_workflow_result": "Failed",
-            "resource_namespace": "default",
-            "resource_name": "recovery-session-pod",
-            "resource_kind": "Pod",
-        }
-
-        result = _submit_and_get_result(hapi_client, "/api/v1/recovery", request_data)
-
-        # Verify session completed
-        assert result["status_response"]["status"] == "completed"
-
-        # Verify result contains expected recovery fields
-        recovery_result = result["result_response"]
-        assert "incident_id" in recovery_result, "Result should contain incident_id"
-
-    def test_recovery_session_audit_events_exact_counts(
-        self, hapi_client, audit_store, unique_test_id
-    ):
-        """
-        IT-HAPI-064-006: Recovery session audit events emitted with exact counts.
-
-        BR-AA-HAPI-064.9, BR-AUDIT-005: Recovery audit trail.
-
-        Expected exact counts:
-        - aiagent.llm.request: exactly 1
-        - aiagent.llm.response: exactly 1
-        - Total HAPI events: at least 2
-        """
-        remediation_id = f"rem-it-session-006-{unique_test_id}"
-        request_data = {
-            "incident_id": f"inc-it-session-006-{unique_test_id}",
-            "remediation_id": remediation_id,
-            "signal_name": "OOMKilled",
-            "previous_workflow_id": "oomkill-increase-memory-v1",
-            "previous_workflow_result": "Failed",
-            "resource_namespace": "default",
-            "resource_name": "recovery-audit-pod",
-            "resource_kind": "Pod",
-        }
-
-        result = _submit_and_get_result(hapi_client, "/api/v1/recovery", request_data)
-        assert result["status_response"]["status"] == "completed"
-
-        # Verify audit events
-        all_events = query_audit_events_with_retry(
-            audit_store=audit_store,
-            correlation_id=remediation_id,
-            event_category="aiagent",
-            event_type=None,
-            min_expected_events=2,
-            timeout_seconds=15,
-        )
-
-        event_counts = {}
-        for e in all_events:
-            event_counts[e.event_type] = event_counts.get(e.event_type, 0) + 1
-
-        assert event_counts.get("aiagent.llm.request", 0) == 1, (
-            f"Expected exactly 1 aiagent.llm.request. Got: {event_counts}"
-        )
-        assert event_counts.get("aiagent.llm.response", 0) == 1, (
-            f"Expected exactly 1 aiagent.llm.response. Got: {event_counts}"
-        )
-
-        # Verify correlation ID
-        for event in all_events:
-            assert event.correlation_id == remediation_id, (
-                f"Event correlation_id mismatch: {event.correlation_id} != {remediation_id}"
-            )
 
 
 # ========================================

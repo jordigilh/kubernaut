@@ -26,7 +26,7 @@ Task 18 implements **6 Kubernetes Conditions** on the RemediationRequest CRD to 
 | **WorkflowExecutionReady** | Ready | Tracks WE CRD creation | ✅ Complete |
 | **WorkflowExecutionComplete** | Complete | Tracks workflow execution completion | ✅ Complete |
 
-**Plus**: `RecoveryComplete` (terminal condition, implemented by previous team)
+**Plus**: `RecoveryComplete` (terminal condition, implemented by previous team) [Deprecated - Issue #180]
 
 ---
 
@@ -152,7 +152,7 @@ WorkflowExecution completed
   → WorkflowExecutionComplete = True (Reason: WorkflowSucceeded)
   ↓
 Remediation completed
-  → RecoveryComplete = True (Reason: RecoverySucceeded)
+  → RecoveryComplete = True (Reason: RecoverySucceeded) [Deprecated - Issue #180]
 ```
 
 ### **Example 2: Failed During AI Analysis**
@@ -173,7 +173,7 @@ AIAnalysis failed
   → AIAnalysisComplete = False (Reason: AIAnalysisFailed)
   ↓
 Remediation failed
-  → RecoveryComplete = False (Reason: RecoveryFailed)
+  → RecoveryComplete = False (Reason: RecoveryFailed) [Deprecated - Issue #180]
 ```
 
 ### **Example 3: SignalProcessing Creation Failed**
@@ -228,7 +228,7 @@ kubectl get remediationrequest <name> -n <namespace> --watch \
 
 **Implementation**:
 - ✅ 6 child CRD lifecycle conditions implemented
-- ✅ 1 terminal condition (RecoveryComplete) implemented by previous team
+- ✅ 1 terminal condition (RecoveryComplete) implemented by previous team [Deprecated - Issue #180]
 - ✅ All conditions follow Kubernetes standard format
 - ✅ Real-time visibility into remediation progress
 
@@ -384,7 +384,7 @@ case string(signalprocessingv1.PhaseFailed):
 
 **Justification**:
 - ✅ All 27 unit tests pass without modification
-- ✅ Pattern matches existing RecoveryComplete implementation
+- ✅ Pattern matches existing RecoveryComplete implementation [Deprecated - Issue #180]
 - ✅ Follows established DD-CRD-002-RR standard
 - ✅ No lint errors in any modified files
 - ✅ Canonical reason constants used throughout

@@ -29,7 +29,6 @@ import (
 // ========================================
 // AIAnalysisSpec - Design Decision: DD-CONTRACT-002
 // V1.0: HolmesGPT-API only (no LLM config fields)
-// Recovery: DD-RECOVERY-002 (direct recovery flow)
 // ========================================
 
 // AIAnalysisSpec defines the desired state of AIAnalysis.
@@ -63,25 +62,6 @@ type AIAnalysisSpec struct {
 	// Complete analysis request with structured context
 	// +kubebuilder:validation:Required
 	AnalysisRequest AnalysisRequest `json:"analysisRequest"`
-
-	// ========================================
-	// RECOVERY FIELDS (DD-RECOVERY-002)
-	// Populated by RO when this is a recovery attempt
-	// ========================================
-	// True if this AIAnalysis is for a recovery attempt (not initial incident)
-	IsRecoveryAttempt bool `json:"isRecoveryAttempt,omitempty"`
-
-	// Recovery attempt number (1, 2, 3...) - only set when IsRecoveryAttempt=true
-	// +kubebuilder:validation:Minimum=1
-	RecoveryAttemptNumber int `json:"recoveryAttemptNumber,omitempty"`
-
-	// Previous execution history (only set when IsRecoveryAttempt=true)
-	// Contains details about ALL previous attempts - allows LLM to:
-	// 1. Avoid repeating failed approaches
-	// 2. Learn from multiple failures
-	// 3. Consider re-trying earlier approaches after later failures
-	// Ordered chronologically: index 0 = first attempt, last index = most recent
-	PreviousExecutions []PreviousExecution `json:"previousExecutions,omitempty"`
 
 	// ========================================
 	// TIMEOUT CONFIGURATION (REQUEST_RO_TIMEOUT_PASSTHROUGH_CLARIFICATION.md)
@@ -180,8 +160,9 @@ type TargetResource struct {
 	Kind string `json:"kind"`
 	// Resource name
 	Name string `json:"name"`
-	// Resource namespace
-	Namespace string `json:"namespace"`
+	// Resource namespace. Empty for cluster-scoped resources (e.g., Node, PersistentVolume).
+	// +optional
+	Namespace string `json:"namespace,omitempty"`
 }
 
 // ========================================
@@ -211,79 +192,6 @@ type WorkloadDetails = sharedtypes.WorkloadDetails
 
 // BusinessClassification alias - use sharedtypes.BusinessClassification in new code
 type BusinessClassification = sharedtypes.BusinessClassification
-
-// ========================================
-// RECOVERY CONTEXT (DD-RECOVERY-002)
-// ========================================
-
-// PreviousExecution contains context from a failed workflow execution
-// DD-RECOVERY-002: Used when IsRecoveryAttempt=true
-type PreviousExecution struct {
-	// Reference to the failed WorkflowExecution CRD
-	// +kubebuilder:validation:Required
-	WorkflowExecutionRef string `json:"workflowExecutionRef"`
-
-	// Original RCA from initial AIAnalysis
-	// +kubebuilder:validation:Required
-	OriginalRCA OriginalRCA `json:"originalRCA"`
-
-	// Selected workflow that was executed and failed
-	// +kubebuilder:validation:Required
-	SelectedWorkflow SelectedWorkflowSummary `json:"selectedWorkflow"`
-
-	// Structured failure information with Kubernetes reason codes
-	// +kubebuilder:validation:Required
-	Failure ExecutionFailure `json:"failure"`
-}
-
-// OriginalRCA summarizes the original root cause analysis
-type OriginalRCA struct {
-	// Brief RCA summary
-	Summary string `json:"summary"`
-	// Signal type determined by original RCA
-	SignalType string `json:"signalType"`
-	// Severity determined by original RCA
-	Severity string `json:"severity"`
-	// Contributing factors
-	ContributingFactors []string `json:"contributingFactors,omitempty"`
-}
-
-// SelectedWorkflowSummary describes the workflow that was executed
-type SelectedWorkflowSummary struct {
-	// Workflow identifier
-	WorkflowID string `json:"workflowId"`
-	// Action type from DD-WORKFLOW-016 taxonomy (e.g., ScaleReplicas, RestartPod)
-	ActionType string `json:"actionType,omitempty"`
-	// Workflow version
-	Version string `json:"version"`
-	// Execution bundle OCI reference (digest-pinned)
-	ExecutionBundle string `json:"executionBundle"`
-	// Parameters passed to workflow
-	Parameters map[string]string `json:"parameters,omitempty"`
-	// Why this workflow was selected
-	Rationale string `json:"rationale"`
-}
-
-// ExecutionFailure contains structured failure information
-// Uses Kubernetes reason codes as API contract (DD-RECOVERY-003)
-type ExecutionFailure struct {
-	// Which step failed (0-indexed)
-	FailedStepIndex int `json:"failedStepIndex"`
-	// Name of the failed step
-	FailedStepName string `json:"failedStepName"`
-	// Kubernetes reason code (e.g., OOMKilled, DeadlineExceeded)
-	// NOT natural language - structured enum-like value
-	// +kubebuilder:validation:Required
-	Reason string `json:"reason"`
-	// Human-readable error message (for logging/debugging)
-	Message string `json:"message"`
-	// Exit code if applicable
-	ExitCode *int32 `json:"exitCode,omitempty"`
-	// When the failure occurred
-	FailedAt metav1.Time `json:"failedAt"`
-	// How long the execution ran before failing (e.g., "2m34s")
-	ExecutionTime string `json:"executionTime"`
-}
 
 // ========================================
 // APPROVAL CONTEXT (BR-AI-059, BR-AI-076)
@@ -476,12 +384,6 @@ type AIAnalysisStatus struct {
 	ConsecutiveFailures int32 `json:"consecutiveFailures,omitempty"`
 
 	// ========================================
-	// RECOVERY STATUS (DD-RECOVERY-002)
-	// ========================================
-	// Recovery-specific status fields (only populated for recovery attempts)
-	RecoveryStatus *RecoveryStatus `json:"recoveryStatus,omitempty"`
-
-	// ========================================
 	// INVESTIGATION SESSION (BR-AA-HAPI-064)
 	// Tracks the async submit/poll session with HAPI
 	// ========================================
@@ -573,9 +475,9 @@ type AffectedResource struct {
 	// Name is the resource name
 	// +kubebuilder:validation:Required
 	Name string `json:"name"`
-	// Namespace is the resource namespace
-	// +kubebuilder:validation:Required
-	Namespace string `json:"namespace"`
+	// Namespace is the resource namespace. Empty for cluster-scoped resources (e.g., Node, PersistentVolume).
+	// +optional
+	Namespace string `json:"namespace,omitempty"`
 }
 
 // SelectedWorkflow contains the AI-selected workflow for execution
@@ -649,29 +551,13 @@ type ValidationAttempt struct {
 	Timestamp metav1.Time `json:"timestamp"`
 }
 
-// RecoveryStatus contains recovery-specific status information
-// DD-RECOVERY-002: Tracks recovery attempt progress
-type RecoveryStatus struct {
-	// Assessment of why previous attempt failed
-	PreviousAttemptAssessment *PreviousAttemptAssessment `json:"previousAttemptAssessment,omitempty"`
-	// Whether the signal type changed due to the failed workflow
-	StateChanged bool `json:"stateChanged"`
-}
-
-// PreviousAttemptAssessment contains analysis of the failed attempt
-type PreviousAttemptAssessment struct {
-	// Whether the failure was understood
-	FailureUnderstood bool `json:"failureUnderstood"`
-	// Analysis of why the failure occurred
-	FailureReasonAnalysis string `json:"failureReasonAnalysis"`
-}
-
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:resource:shortName=aia
 // +kubebuilder:selectablefield:JSONPath=.spec.remediationRequestRef.name
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="Confidence",type=number,JSONPath=`.status.selectedWorkflow.confidence`
-// +kubebuilder:printcolumn:name="ApprovalRequired",type=boolean,JSONPath=`.status.approvalRequired`
+// +kubebuilder:printcolumn:name="Approval Required",type=boolean,JSONPath=`.status.approvalRequired`
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`,priority=1
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 

@@ -98,7 +98,7 @@ func (r *RemediationHistoryRepository) QueryROEventsByTarget(
 		WHERE event_data->>'target_resource' = $1
 		AND event_type = 'remediation.workflow_created'
 		AND event_timestamp >= $2
-		ORDER BY event_timestamp ASC`
+		ORDER BY event_timestamp ASC, event_id ASC`
 
 	rows, err := r.db.QueryContext(ctx, query, targetResource, since)
 	if err != nil {
@@ -132,7 +132,7 @@ func (r *RemediationHistoryRepository) QueryEffectivenessEventsBatch(
 		FROM audit_events
 		WHERE correlation_id = ANY($1)
 		AND event_category = 'effectiveness'
-		ORDER BY event_timestamp ASC`
+		ORDER BY event_timestamp ASC, event_id ASC`
 
 	rows, err := r.db.QueryContext(ctx, query, pq.Array(correlationIDs))
 	if err != nil {
@@ -188,7 +188,7 @@ func (r *RemediationHistoryRepository) QueryROEventsBySpecHash(
 		AND event_type = 'remediation.workflow_created'
 		AND event_timestamp >= $2
 		AND event_timestamp < $3
-		ORDER BY event_timestamp ASC`
+		ORDER BY event_timestamp ASC, event_id ASC`
 
 	rows, err := r.db.QueryContext(ctx, query, specHash, since, until)
 	if err != nil {

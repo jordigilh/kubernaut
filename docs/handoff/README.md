@@ -140,7 +140,7 @@ This directory contains questions and coordination documents across teams for:
 
 | Decision | Summary |
 |----------|---------|
-| **naturalLanguageSummary** | HAPI consumes WE-generated summary for recovery prompts |
+| **naturalLanguageSummary** | [Deprecated - Issue #180] HAPI consumes WE-generated summary for recovery prompts |
 | **No Retry in HAPI** | HAPI reports results, RO decides all retry/recovery actions |
 | **Flexible Parameters** | No hardcoded format - workflow schema defines parameter casing |
 
@@ -164,8 +164,8 @@ This directory contains questions and coordination documents across teams for:
 
 | ID | To Team | Resolution |
 |----|---------|------------|
-| WE→HAPI-001 | HolmesGPT-API | ✅ Yes - will use `naturalLanguageSummary` for recovery prompts |
-| WE→HAPI-002 | HolmesGPT-API | ✅ HAPI doesn't retry - RO decides retry/recovery policy |
+| WE→HAPI-001 | HolmesGPT-API | [Deprecated - Issue #180] Will use `naturalLanguageSummary` for recovery prompts |
+| WE→HAPI-002 | HolmesGPT-API | [Deprecated - Issue #180] HAPI doesn't retry - RO decides retry/recovery policy |
 | WE→HAPI-003 | HolmesGPT-API | ✅ No hardcoded format - workflow defines parameter casing |
 | WE→GW-* | Gateway | ✅ All resolved - namespace empty for cluster-scoped, uses NormalizedSignal |
 | WE→DS-* | DataStorage | ✅ **CANCELLED** - BR-WE-001 cancelled, HAPI is sole validator |

@@ -35,6 +35,8 @@ import (
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"time"
@@ -85,15 +87,18 @@ var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 			dsClient, err = dsgen.NewClient(dataStorageURL, dsgen.WithClient(httpClient))
 			Expect(err).ToNot(HaveOccurred(), "Failed to create authenticated DataStorage OpenAPI client")
 
-			// Create RemediationRequest
+			// Create RemediationRequest (ADR-057: RRs live in kubernaut-system)
 			now := metav1.Now()
 			testRR = &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("e2e-audit-test-%s", uuid.New().String()[:8]),
-					Namespace: testNamespace,
+					Namespace: controllerNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
-					SignalFingerprint: "a1b2c3d4e5f60123456789abcdef0123456789abcdef0123456789abcdef0123",
+					SignalFingerprint: func() string {
+					h := sha256.Sum256([]byte(uuid.New().String()))
+					return hex.EncodeToString(h[:])
+				}(),
 					SignalName:        "E2EAuditWiringTest",
 					Severity:          "critical",
 					SignalType:        "alert",
@@ -101,7 +106,7 @@ var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 					TargetResource: remediationv1.ResourceIdentifier{
 						Kind:      "Deployment",
 						Name:      "e2e-test-app",
-						Namespace: testNamespace,
+						Namespace: testNamespace, // workload namespace
 					},
 					FiringTime:   now,
 					ReceivedTime: now,
@@ -120,15 +125,18 @@ var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 		correlationID = testRR.Name
 
 		GinkgoWriter.Printf("🚀 E2E: Created RemediationRequest %s/%s (correlation_id: %s)\n",
-			testNamespace, testRR.Name, correlationID)
+			controllerNamespace, testRR.Name, correlationID)
 
 		By("Completing SP lifecycle so RR progresses past Processing")
-		sp := helpers.WaitForSPCreation(ctx, k8sClient, testNamespace, e2eTimeout, e2eInterval)
+		sp := helpers.WaitForSPCreation(ctx, k8sClient, controllerNamespace, testRR.Name, e2eTimeout, e2eInterval)
 		helpers.SimulateSPCompletion(ctx, k8sClient, sp)
 		})
 
 		AfterEach(func() {
-			// Cleanup namespace
+			// Cleanup RR (ADR-057: RR lives in controllerNamespace)
+			if testRR != nil {
+				_ = k8sClient.Delete(ctx, testRR)
+			}
 			deleteTestNamespace(testNamespace)
 		})
 

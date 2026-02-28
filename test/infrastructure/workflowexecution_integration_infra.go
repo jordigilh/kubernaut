@@ -279,7 +279,7 @@ func runWEMigrations(projectRoot string, writer io.Writer) error {
 		"-e", "PGUSER="+WEIntegrationDBUser,
 		"-e", "PGPASSWORD="+WEIntegrationDBPassword,
 		"-e", "PGDATABASE="+WEIntegrationDBName,
-		"postgres:16-alpine",
+		"docker.io/library/postgres:16-alpine",
 		"bash", "-c", migrationScript,
 	)
 	cmd.Stdout = writer

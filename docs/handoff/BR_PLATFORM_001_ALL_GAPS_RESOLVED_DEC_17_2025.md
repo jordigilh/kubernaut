@@ -249,7 +249,7 @@ BR-PLATFORM-001 is now:
 
 ## 📋 **COMMIT HISTORY**
 
-1. **`f45a46c6`**: Removed unused CRD scaffolds (RemediationOrchestrator, KubernetesExecution)
+1. **`f45a46c6`**: Removed unused CRD scaffolds (RemediationOrchestrator, KubernetesExecution (DEPRECATED - ADR-025))
 2. **`624a34c0`**: Created DD-WORKFLOW-015 and DD-REGISTRY-001
 3. **`69051b15`**: Fixed Phase 0 & Phase 1 (invalid items + critical gaps)
 4. **`8dcfc226`**: Fixed Phase 2 & Phase 3 (remaining P1 gaps + inconsistencies)

@@ -46,7 +46,7 @@ class TestHealthEndpoint:
         data = response.json()
 
         endpoints = data["endpoints"]
-        assert "/api/v1/recovery/analyze" in endpoints
+        assert "/api/v1/incident/analyze" in endpoints
         # DD-017: PostExec endpoint deferred to V1.1 - Effectiveness Monitor not in V1.0
         # assert "/api/v1/postexec/analyze" in endpoints
         assert "/health" in endpoints
@@ -58,7 +58,7 @@ class TestHealthEndpoint:
         data = response.json()
 
         features = data["features"]
-        assert features["recovery_analysis"] is True
+        assert features["incident_analysis"] is True
         # DD-017: PostExec feature deferred to V1.1 - Effectiveness Monitor not in V1.0
         # assert features["postexec_analysis"] is True
         assert features["authentication"] is True

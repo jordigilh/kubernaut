@@ -2,7 +2,7 @@
 
 **Version**: 1.0
 **Date**: 2025-10-13
-**Applies To**: Remediation Processor, Workflow Execution, Kubernetes Executor
+**Applies To**: Remediation Processor, Workflow Execution, Kubernetes Executor (DEPRECATED - ADR-025)
 **Target Environment**: Production Kubernetes clusters
 **High Availability**: Active-Passive with leader election
 
@@ -51,7 +51,7 @@
 │  └────────────────────────────────────────────────────────┘ │
 │                                                               │
 │  ┌────────────────────────────────────────────────────────┐ │
-│  │ Kubernetes Executor Controller                         │ │
+│  │ Kubernetes Executor Controller (DEPRECATED - ADR-025)  │ │
 │  │ - Replicas: 2 (HA)                                     │ │
 │  │ - Leader Election: Yes                                 │ │
 │  │ - Port 9090: Metrics                                   │ │
@@ -90,7 +90,7 @@ Ensure all CRDs are installed before deploying controllers:
 # Install CRDs
 kubectl apply -f config/crd/bases/remediationprocessing.kubernaut.ai_remediationprocessings.yaml
 kubectl apply -f config/crd/bases/kubernaut.ai_workflowexecutions.yaml
-kubectl apply -f config/crd/bases/kubernetesexecution.kubernaut.ai_kubernetesexecutions.yaml
+kubectl apply -f config/crd/bases/kubernetesexecution.kubernaut.ai_kubernetesexecutions.yaml  # DEPRECATED - ADR-025
 
 # Verify CRDs
 kubectl get crds | grep kubernaut.ai
@@ -372,7 +372,7 @@ spec:
               topologyKey: kubernetes.io/hostname
 ```
 
-### Kubernetes Executor Deployment
+### Kubernetes Executor Deployment (DEPRECATED - ADR-025)
 
 **File**: `deploy/crd-controllers/kubernetes-executor-deployment.yaml`
 
@@ -552,7 +552,7 @@ data:
   circular-dependency-detection: "true"
 ```
 
-### Kubernetes Executor ConfigMap
+### Kubernetes Executor ConfigMap (DEPRECATED - ADR-025)
 
 **File**: `deploy/crd-controllers/kubernetes-executor-configmap.yaml`
 
@@ -583,7 +583,7 @@ data:
   rbac-cleanup-enabled: "true"
 ```
 
-### Kubernetes Executor Rego Policies ConfigMap
+### Kubernetes Executor Rego Policies ConfigMap (DEPRECATED - ADR-025)
 
 **File**: `deploy/crd-controllers/kubernetes-executor-policies-configmap.yaml`
 
@@ -739,17 +739,17 @@ rules:
   resources: ["workflowexecutions/finalizers"]
   verbs: ["update"]
 
-- apiGroups: ["kubernetesexecution.kubernaut.ai"]
+- apiGroups: ["kubernetesexecution.kubernaut.ai"]  # DEPRECATED - ADR-025
   resources: ["kubernetesexecutions"]
   verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-- apiGroups: ["kubernetesexecution.kubernaut.ai"]
+- apiGroups: ["kubernetesexecution.kubernaut.ai"]  # DEPRECATED - ADR-025
   resources: ["kubernetesexecutions/status"]
   verbs: ["get", "update", "patch"]
-- apiGroups: ["kubernetesexecution.kubernaut.ai"]
+- apiGroups: ["kubernetesexecution.kubernaut.ai"]  # DEPRECATED - ADR-025
   resources: ["kubernetesexecutions/finalizers"]
   verbs: ["update"]
 
-# Kubernetes Job management (for Kubernetes Executor)
+# Kubernetes Job management (for Kubernetes Executor) (DEPRECATED - ADR-025)
 - apiGroups: ["batch"]
   resources: ["jobs"]
   verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
@@ -884,7 +884,7 @@ terminationGracePeriodSeconds: 10
 |------------|-------------|-----------|----------------|--------------|
 | **Remediation Processor** | 200m | 500m | 256Mi | 512Mi |
 | **Workflow Execution** | 300m | 700m | 384Mi | 768Mi |
-| **Kubernetes Executor** | 150m | 500m | 128Mi | 256Mi |
+| **Kubernetes Executor** (DEPRECATED - ADR-025) | 150m | 500m | 128Mi | 256Mi |
 
 ### Resource Tuning Guidelines
 
@@ -1058,7 +1058,7 @@ spec:
         summary: "Workflow timeouts detected"
         description: "{{ $value }} workflows exceeded timeout in last 5 minutes"
 
-  - name: kubernetes-executor
+  - name: kubernetes-executor  # DEPRECATED - ADR-025
     interval: 30s
     rules:
     - alert: HighJobFailureRate

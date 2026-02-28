@@ -55,7 +55,7 @@ func (m *Manager) GetCurrentPhase(ctx context.Context, sp *signalprocessingv1alp
 //
 // This method consolidates:
 // - Phase transition
-// - Multiple status field updates (KubernetesContext, RecoveryContext, Classifications, etc.)
+// - Multiple status field updates (KubernetesContext, Classifications, etc.)
 // - Condition updates
 // - Consecutive failure tracking
 // - Error state management
@@ -71,7 +71,6 @@ func (m *Manager) GetCurrentPhase(ctx context.Context, sp *signalprocessingv1alp
 //
 //	    // Update contexts
 //	    sp.Status.KubernetesContext = k8sCtx
-//	    sp.Status.RecoveryContext = recoveryCtx
 //
 //	    return nil
 //	})

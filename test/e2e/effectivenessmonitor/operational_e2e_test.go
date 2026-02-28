@@ -66,7 +66,7 @@ var _ = Describe("EffectivenessMonitor Operational E2E Tests", Label("e2e"), fun
 			createExpiredEA(testNS, name, correlationID)
 
 			By("Waiting for EM to mark the EA as Completed with expired reason")
-			ea := waitForEAPhase(testNS, name, eav1.PhaseCompleted)
+			ea := waitForEAPhase(name, eav1.PhaseCompleted)
 
 			Expect(ea.Status.AssessmentReason).To(Equal(eav1.AssessmentReasonExpired),
 				"EA should have assessment reason 'expired'")
@@ -250,7 +250,7 @@ spec:
 			By("Verifying the EA was eventually processed (may have been picked up by new pod)")
 			ea := &eav1.EffectivenessAssessment{}
 			Eventually(func() string {
-				if err := apiReader.Get(ctx, client.ObjectKey{Namespace: gsNS, Name: name}, ea); err != nil {
+				if err := apiReader.Get(ctx, client.ObjectKey{Namespace: controllerNamespace, Name: name}, ea); err != nil {
 					return ""
 				}
 				return ea.Status.Phase

@@ -6,7 +6,7 @@
 **Confidence**: 100% (Template-based design)
 
 **Related Services**:
-- **Creates & Watches**: AlertProcessing, AIAnalysis, WorkflowExecution, KubernetesExecution CRDs
+- **Creates & Watches**: AlertProcessing, AIAnalysis, WorkflowExecution, KubernetesExecution (DEPRECATED - ADR-025) CRDs
 - **Integrates With**: All 4 service controllers + Gateway Service
 
 ---

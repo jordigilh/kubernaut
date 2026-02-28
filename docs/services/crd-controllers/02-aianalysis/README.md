@@ -109,7 +109,7 @@
 | **HolmesGPT-API Integration** | Single AI provider for investigation | DD-CONTRACT-002 |
 | **Workflow Selection** | Select workflow from catalog | DD-WORKFLOW-001 v1.8 |
 | **Rego Approval Policies** | ConfigMap-based policy evaluation | DD-AIANALYSIS-001 |
-| **Recovery Flow** | Handle failed workflow retries | DD-RECOVERY-002 |
+| **Recovery Flow** | [Deprecated - Issue #180] Handle failed workflow retries | DD-RECOVERY-002 |
 | **DetectedLabels** (ADR-056: removed from EnrichmentResults) | Auto-detected cluster characteristics | DD-WORKFLOW-001 v1.8 |
 | **CustomLabels** | Customer-defined via Rego | DD-WORKFLOW-001 v1.5 |
 | **OwnerChain** (ADR-055: removed from EnrichmentResults) | K8s ownership for DetectedLabels validation | DD-WORKFLOW-001 v1.8 |
@@ -152,7 +152,7 @@
 | **Data Management** | 3 | Payload handling, timeouts, fallback |
 | **Quality Assurance** | 5 | Catalog validation, schema validation |
 | **Workflow Selection** | 2 | Output format, approval context |
-| **Recovery Flow** | 4 | Recovery attempt handling |
+| **Recovery Flow** | [Deprecated - Issue #180] | Recovery attempt handling |
 | ~~Dependency Validation~~ | ~~3~~ | ~~Deferred to V2.0+ (predefined workflows)~~ |
 
 **See**: [BR_MAPPING.md](./BR_MAPPING.md) for complete mapping.
@@ -166,7 +166,7 @@
 | **AI Provider** | HolmesGPT-API only | Specialized K8s analysis, V1.0 simplicity | DD-CONTRACT-002 |
 | **Approval Mechanism** | Rego policies + signaling | Flexible policies, RO orchestrates | DD-AIANALYSIS-001 |
 | **State Management** | CRD-based with watch | Watch-based coordination | [Controller Impl](./controller-implementation.md) |
-| **Recovery Pattern** | Direct AIAnalysis creation | RO creates new AIAnalysis for recovery | DD-RECOVERY-002 |
+| **Recovery Pattern** | [Deprecated - Issue #180] | RO creates new AIAnalysis for recovery | DD-RECOVERY-002 |
 | **Labels Architecture** | DetectedLabels + CustomLabels + OwnerChain | Dual-use: LLM context + workflow filtering | DD-WORKFLOW-001 v1.8 |
 | **V1.0 Approval Flow** | `approvalRequired=true` → RO notifies | No AIApprovalRequest CRD in V1.0 | ADR-040 |
 

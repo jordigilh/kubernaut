@@ -66,7 +66,7 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 			notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-complete-message",
-					Namespace: "default",
+					Namespace: controllerNamespace,
 					Labels: map[string]string{
 						"test-scenario": "message-content",
 					},
@@ -121,7 +121,7 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 
 			By("Verifying complete message fields (BR-NOT-053)")
 			Expect(savedNotification.Name).To(Equal("e2e-complete-message"))
-			Expect(savedNotification.Namespace).To(Equal("default"))
+			Expect(savedNotification.Namespace).To(Equal(controllerNamespace))
 			Expect(savedNotification.Spec.Subject).To(Equal("E2E Test: Complete Message Validation"))
 			Expect(savedNotification.Spec.Body).To(Equal("This is a comprehensive test message with multiple fields to validate complete delivery."))
 			Expect(savedNotification.Spec.Priority).To(Equal(notificationv1alpha1.NotificationPriorityCritical))
@@ -159,7 +159,7 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 			notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-sanitization-test",
-					Namespace: "default",
+					Namespace: controllerNamespace,
 					Labels: map[string]string{
 						"test-scenario": "data-sanitization",
 					},
@@ -251,7 +251,7 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 			notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-priority-validation",
-					Namespace: "default",
+					Namespace: controllerNamespace,
 					Labels: map[string]string{
 						"test-scenario": "priority-validation",
 					},
@@ -355,7 +355,7 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 				notification := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      name,
-						Namespace: "default",
+						Namespace: controllerNamespace,
 						Labels: map[string]string{
 							"test-scenario": "concurrent-delivery",
 						},
@@ -385,7 +385,7 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 					notification := &notificationv1alpha1.NotificationRequest{}
 					err := k8sClient.Get(ctx, client.ObjectKey{
 						Name:      name,
-						Namespace: "default",
+						Namespace: controllerNamespace,
 					}, notification)
 					if err != nil {
 						return ""
@@ -435,7 +435,7 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 			notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-error-handling",
-					Namespace: "default",
+					Namespace: controllerNamespace,
 					Labels: map[string]string{
 						"test-scenario": "error-handling",
 					},

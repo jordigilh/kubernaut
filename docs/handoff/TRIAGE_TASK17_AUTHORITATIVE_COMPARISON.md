@@ -33,13 +33,13 @@
 4. **AIAnalysisComplete** - AI completed/failed
 5. **WorkflowExecutionReady** - WE CRD created
 6. **WorkflowExecutionComplete** - WE completed/failed
-7. **RecoveryComplete** - Terminal phase reached ✅ **ALREADY IMPLEMENTED**
+7. **RecoveryComplete** - Terminal phase reached ✅ **ALREADY IMPLEMENTED** [Deprecated - Issue #180]
 
 **Integration Points** (per BR-ORCH-043):
 - AC-043-2: SignalProcessing lifecycle tracking (`creator/signalprocessing.go`, `handleProcessingPhase`)
 - AC-043-3: AIAnalysis lifecycle tracking (`creator/aianalysis.go`, `handleAnalyzingPhase`)
 - AC-043-4: WorkflowExecution lifecycle tracking (`creator/workflowexecution.go`, `handleExecutingPhase`)
-- AC-043-5: RecoveryComplete (`transitionToCompleted`, `transitionToFailed`, `transitionToBlocked`)
+- AC-043-5: RecoveryComplete (`transitionToCompleted`, `transitionToFailed`, `transitionToBlocked`) [Deprecated - Issue #180]
 
 ---
 
@@ -80,7 +80,7 @@
 - SignalProcessingReady/Complete (AC-043-2)
 - AIAnalysisReady/Complete (AC-043-3)
 - WorkflowExecutionReady/Complete (AC-043-4)
-- RecoveryComplete - **PARTIALLY DONE** (terminal transitions only)
+- RecoveryComplete - **PARTIALLY DONE** (terminal transitions only) [Deprecated - Issue #180]
 
 ---
 
@@ -130,7 +130,7 @@
 
 | Condition Type | Source CRD | Target CRD | Status |
 |---|---|---|---|
-| RecoveryComplete | RR | RR | ✅ Complete (terminal transitions) |
+| RecoveryComplete [Deprecated] | RR | RR | ✅ Complete (terminal transitions) |
 | SignalProcessingReady | RR | SP | ❌ Not implemented |
 | SignalProcessingComplete | RR | SP | ❌ Not implemented |
 | AIAnalysisReady | RR | AI | ❌ Not implemented |
@@ -164,7 +164,7 @@
 - **Authoritative Requirement**: BR-ORCH-043 (Orchestration Visibility)
 - **Business Value**: Child CRD orchestration visibility (80% MTTD reduction)
 - **Conditions**: 7 types (4 child CRD lifecycle + 1 recovery)
-- **Status**: ⚠️ **PARTIALLY COMPLETE** (RecoveryComplete done, 6 remain)
+- **Status**: ⚠️ **PARTIALLY COMPLETE** (RecoveryComplete done [Deprecated], 6 remain)
 
 ---
 
@@ -178,7 +178,7 @@
 
 ### **What BR-ORCH-043 Should Be Called**:
 > "BR-ORCH-043: RemediationRequest Child CRD Lifecycle Conditions"
-> - Task 17a: RecoveryComplete (terminal transitions) ✅ DONE
+> - Task 17a: RecoveryComplete (terminal transitions) ✅ DONE [Deprecated - Issue #180]
 > - Task 18: SignalProcessing lifecycle conditions ⏳ PENDING
 > - Task 19: AIAnalysis lifecycle conditions ⏳ PENDING
 > - Task 20: WorkflowExecution lifecycle conditions ⏳ PENDING
@@ -210,7 +210,7 @@
 > - SignalProcessing conditions populated during lifecycle
 > - AIAnalysis conditions populated during lifecycle
 > - WorkflowExecution conditions populated during lifecycle
-> - RecoveryComplete set on success/failure
+> - RecoveryComplete set on success/failure [Deprecated - Issue #180]
 > - Blocking conditions (BR-ORCH-042 integration)
 
 **Actual Coverage**: ~0% (skeleton exists but non-functional)

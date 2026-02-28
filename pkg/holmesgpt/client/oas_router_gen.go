@@ -61,9 +61,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				break
 			}
 			switch elem[0] {
-			case 'a': // Prefix: "api/v1/"
+			case 'a': // Prefix: "api/v1/incident/"
 
-				if l := len("api/v1/"); len(elem) >= l && elem[0:l] == "api/v1/" {
+				if l := len("api/v1/incident/"); len(elem) >= l && elem[0:l] == "api/v1/incident/" {
 					elem = elem[l:]
 				} else {
 					break
@@ -73,21 +73,59 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					break
 				}
 				switch elem[0] {
-				case 'i': // Prefix: "incident/"
+				case 'a': // Prefix: "analyze"
 
-					if l := len("incident/"); len(elem) >= l && elem[0:l] == "incident/" {
+					if l := len("analyze"); len(elem) >= l && elem[0:l] == "analyze" {
 						elem = elem[l:]
 					} else {
 						break
 					}
 
 					if len(elem) == 0 {
+						// Leaf node.
+						switch r.Method {
+						case "POST":
+							s.handleIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostRequest([0]string{}, elemIsEscaped, w, r)
+						default:
+							s.notAllowed(w, r, "POST")
+						}
+
+						return
+					}
+
+				case 's': // Prefix: "session/"
+
+					if l := len("session/"); len(elem) >= l && elem[0:l] == "session/" {
+						elem = elem[l:]
+					} else {
 						break
 					}
-					switch elem[0] {
-					case 'a': // Prefix: "analyze"
 
-						if l := len("analyze"); len(elem) >= l && elem[0:l] == "analyze" {
+					// Param: "session_id"
+					// Match until "/"
+					idx := strings.IndexByte(elem, '/')
+					if idx < 0 {
+						idx = len(elem)
+					}
+					args[0] = elem[:idx]
+					elem = elem[idx:]
+
+					if len(elem) == 0 {
+						switch r.Method {
+						case "GET":
+							s.handleIncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRequest([1]string{
+								args[0],
+							}, elemIsEscaped, w, r)
+						default:
+							s.notAllowed(w, r, "GET")
+						}
+
+						return
+					}
+					switch elem[0] {
+					case '/': // Prefix: "/result"
+
+						if l := len("/result"); len(elem) >= l && elem[0:l] == "/result" {
 							elem = elem[l:]
 						} else {
 							break
@@ -96,36 +134,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 						if len(elem) == 0 {
 							// Leaf node.
 							switch r.Method {
-							case "POST":
-								s.handleIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostRequest([0]string{}, elemIsEscaped, w, r)
-							default:
-								s.notAllowed(w, r, "POST")
-							}
-
-							return
-						}
-
-					case 's': // Prefix: "session/"
-
-						if l := len("session/"); len(elem) >= l && elem[0:l] == "session/" {
-							elem = elem[l:]
-						} else {
-							break
-						}
-
-						// Param: "session_id"
-						// Match until "/"
-						idx := strings.IndexByte(elem, '/')
-						if idx < 0 {
-							idx = len(elem)
-						}
-						args[0] = elem[:idx]
-						elem = elem[idx:]
-
-						if len(elem) == 0 {
-							switch r.Method {
 							case "GET":
-								s.handleIncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRequest([1]string{
+								s.handleIncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetRequest([1]string{
 									args[0],
 								}, elemIsEscaped, w, r)
 							default:
@@ -133,118 +143,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 							}
 
 							return
-						}
-						switch elem[0] {
-						case '/': // Prefix: "/result"
-
-							if l := len("/result"); len(elem) >= l && elem[0:l] == "/result" {
-								elem = elem[l:]
-							} else {
-								break
-							}
-
-							if len(elem) == 0 {
-								// Leaf node.
-								switch r.Method {
-								case "GET":
-									s.handleIncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetRequest([1]string{
-										args[0],
-									}, elemIsEscaped, w, r)
-								default:
-									s.notAllowed(w, r, "GET")
-								}
-
-								return
-							}
-
-						}
-
-					}
-
-				case 'r': // Prefix: "recovery/"
-
-					if l := len("recovery/"); len(elem) >= l && elem[0:l] == "recovery/" {
-						elem = elem[l:]
-					} else {
-						break
-					}
-
-					if len(elem) == 0 {
-						break
-					}
-					switch elem[0] {
-					case 'a': // Prefix: "analyze"
-
-						if l := len("analyze"); len(elem) >= l && elem[0:l] == "analyze" {
-							elem = elem[l:]
-						} else {
-							break
-						}
-
-						if len(elem) == 0 {
-							// Leaf node.
-							switch r.Method {
-							case "POST":
-								s.handleRecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRequest([0]string{}, elemIsEscaped, w, r)
-							default:
-								s.notAllowed(w, r, "POST")
-							}
-
-							return
-						}
-
-					case 's': // Prefix: "session/"
-
-						if l := len("session/"); len(elem) >= l && elem[0:l] == "session/" {
-							elem = elem[l:]
-						} else {
-							break
-						}
-
-						// Param: "session_id"
-						// Match until "/"
-						idx := strings.IndexByte(elem, '/')
-						if idx < 0 {
-							idx = len(elem)
-						}
-						args[0] = elem[:idx]
-						elem = elem[idx:]
-
-						if len(elem) == 0 {
-							switch r.Method {
-							case "GET":
-								s.handleRecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGetRequest([1]string{
-									args[0],
-								}, elemIsEscaped, w, r)
-							default:
-								s.notAllowed(w, r, "GET")
-							}
-
-							return
-						}
-						switch elem[0] {
-						case '/': // Prefix: "/result"
-
-							if l := len("/result"); len(elem) >= l && elem[0:l] == "/result" {
-								elem = elem[l:]
-							} else {
-								break
-							}
-
-							if len(elem) == 0 {
-								// Leaf node.
-								switch r.Method {
-								case "GET":
-									s.handleRecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetRequest([1]string{
-										args[0],
-									}, elemIsEscaped, w, r)
-								default:
-									s.notAllowed(w, r, "GET")
-								}
-
-								return
-							}
-
 						}
 
 					}
@@ -411,9 +309,9 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 				break
 			}
 			switch elem[0] {
-			case 'a': // Prefix: "api/v1/"
+			case 'a': // Prefix: "api/v1/incident/"
 
-				if l := len("api/v1/"); len(elem) >= l && elem[0:l] == "api/v1/" {
+				if l := len("api/v1/incident/"); len(elem) >= l && elem[0:l] == "api/v1/incident/" {
 					elem = elem[l:]
 				} else {
 					break
@@ -423,21 +321,67 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 					break
 				}
 				switch elem[0] {
-				case 'i': // Prefix: "incident/"
+				case 'a': // Prefix: "analyze"
 
-					if l := len("incident/"); len(elem) >= l && elem[0:l] == "incident/" {
+					if l := len("analyze"); len(elem) >= l && elem[0:l] == "analyze" {
 						elem = elem[l:]
 					} else {
 						break
 					}
 
 					if len(elem) == 0 {
+						// Leaf node.
+						switch method {
+						case "POST":
+							r.name = IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostOperation
+							r.summary = "Incident Analyze Endpoint"
+							r.operationID = "incident_analyze_endpoint_api_v1_incident_analyze_post"
+							r.operationGroup = ""
+							r.pathPattern = "/api/v1/incident/analyze"
+							r.args = args
+							r.count = 0
+							return r, true
+						default:
+							return
+						}
+					}
+
+				case 's': // Prefix: "session/"
+
+					if l := len("session/"); len(elem) >= l && elem[0:l] == "session/" {
+						elem = elem[l:]
+					} else {
 						break
 					}
-					switch elem[0] {
-					case 'a': // Prefix: "analyze"
 
-						if l := len("analyze"); len(elem) >= l && elem[0:l] == "analyze" {
+					// Param: "session_id"
+					// Match until "/"
+					idx := strings.IndexByte(elem, '/')
+					if idx < 0 {
+						idx = len(elem)
+					}
+					args[0] = elem[:idx]
+					elem = elem[idx:]
+
+					if len(elem) == 0 {
+						switch method {
+						case "GET":
+							r.name = IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetOperation
+							r.summary = "Incident Session Status Endpoint"
+							r.operationID = "incident_session_status_endpoint_api_v1_incident_session__session_id__get"
+							r.operationGroup = ""
+							r.pathPattern = "/api/v1/incident/session/{session_id}"
+							r.args = args
+							r.count = 1
+							return r, true
+						default:
+							return
+						}
+					}
+					switch elem[0] {
+					case '/': // Prefix: "/result"
+
+						if l := len("/result"); len(elem) >= l && elem[0:l] == "/result" {
 							elem = elem[l:]
 						} else {
 							break
@@ -446,177 +390,18 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 						if len(elem) == 0 {
 							// Leaf node.
 							switch method {
-							case "POST":
-								r.name = IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostOperation
-								r.summary = "Incident Analyze Endpoint"
-								r.operationID = "incident_analyze_endpoint_api_v1_incident_analyze_post"
-								r.operationGroup = ""
-								r.pathPattern = "/api/v1/incident/analyze"
-								r.args = args
-								r.count = 0
-								return r, true
-							default:
-								return
-							}
-						}
-
-					case 's': // Prefix: "session/"
-
-						if l := len("session/"); len(elem) >= l && elem[0:l] == "session/" {
-							elem = elem[l:]
-						} else {
-							break
-						}
-
-						// Param: "session_id"
-						// Match until "/"
-						idx := strings.IndexByte(elem, '/')
-						if idx < 0 {
-							idx = len(elem)
-						}
-						args[0] = elem[:idx]
-						elem = elem[idx:]
-
-						if len(elem) == 0 {
-							switch method {
 							case "GET":
-								r.name = IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetOperation
-								r.summary = "Incident Session Status Endpoint"
-								r.operationID = "incident_session_status_endpoint_api_v1_incident_session__session_id__get"
+								r.name = IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetOperation
+								r.summary = "Incident Session Result Endpoint"
+								r.operationID = "incident_session_result_endpoint_api_v1_incident_session__session_id__result_get"
 								r.operationGroup = ""
-								r.pathPattern = "/api/v1/incident/session/{session_id}"
+								r.pathPattern = "/api/v1/incident/session/{session_id}/result"
 								r.args = args
 								r.count = 1
 								return r, true
 							default:
 								return
 							}
-						}
-						switch elem[0] {
-						case '/': // Prefix: "/result"
-
-							if l := len("/result"); len(elem) >= l && elem[0:l] == "/result" {
-								elem = elem[l:]
-							} else {
-								break
-							}
-
-							if len(elem) == 0 {
-								// Leaf node.
-								switch method {
-								case "GET":
-									r.name = IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetOperation
-									r.summary = "Incident Session Result Endpoint"
-									r.operationID = "incident_session_result_endpoint_api_v1_incident_session__session_id__result_get"
-									r.operationGroup = ""
-									r.pathPattern = "/api/v1/incident/session/{session_id}/result"
-									r.args = args
-									r.count = 1
-									return r, true
-								default:
-									return
-								}
-							}
-
-						}
-
-					}
-
-				case 'r': // Prefix: "recovery/"
-
-					if l := len("recovery/"); len(elem) >= l && elem[0:l] == "recovery/" {
-						elem = elem[l:]
-					} else {
-						break
-					}
-
-					if len(elem) == 0 {
-						break
-					}
-					switch elem[0] {
-					case 'a': // Prefix: "analyze"
-
-						if l := len("analyze"); len(elem) >= l && elem[0:l] == "analyze" {
-							elem = elem[l:]
-						} else {
-							break
-						}
-
-						if len(elem) == 0 {
-							// Leaf node.
-							switch method {
-							case "POST":
-								r.name = RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostOperation
-								r.summary = "Recovery Analyze Endpoint"
-								r.operationID = "recovery_analyze_endpoint_api_v1_recovery_analyze_post"
-								r.operationGroup = ""
-								r.pathPattern = "/api/v1/recovery/analyze"
-								r.args = args
-								r.count = 0
-								return r, true
-							default:
-								return
-							}
-						}
-
-					case 's': // Prefix: "session/"
-
-						if l := len("session/"); len(elem) >= l && elem[0:l] == "session/" {
-							elem = elem[l:]
-						} else {
-							break
-						}
-
-						// Param: "session_id"
-						// Match until "/"
-						idx := strings.IndexByte(elem, '/')
-						if idx < 0 {
-							idx = len(elem)
-						}
-						args[0] = elem[:idx]
-						elem = elem[idx:]
-
-						if len(elem) == 0 {
-							switch method {
-							case "GET":
-								r.name = RecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGetOperation
-								r.summary = "Recovery Session Status Endpoint"
-								r.operationID = "recovery_session_status_endpoint_api_v1_recovery_session__session_id__get"
-								r.operationGroup = ""
-								r.pathPattern = "/api/v1/recovery/session/{session_id}"
-								r.args = args
-								r.count = 1
-								return r, true
-							default:
-								return
-							}
-						}
-						switch elem[0] {
-						case '/': // Prefix: "/result"
-
-							if l := len("/result"); len(elem) >= l && elem[0:l] == "/result" {
-								elem = elem[l:]
-							} else {
-								break
-							}
-
-							if len(elem) == 0 {
-								// Leaf node.
-								switch method {
-								case "GET":
-									r.name = RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetOperation
-									r.summary = "Recovery Session Result Endpoint"
-									r.operationID = "recovery_session_result_endpoint_api_v1_recovery_session__session_id__result_get"
-									r.operationGroup = ""
-									r.pathPattern = "/api/v1/recovery/session/{session_id}/result"
-									r.args = args
-									r.count = 1
-									return r, true
-								default:
-									return
-								}
-							}
-
 						}
 
 					}

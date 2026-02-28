@@ -42,9 +42,7 @@ import pytest
 # HAPI OpenAPI Client imports (DD-API-001)
 from holmesgpt_api_client import ApiClient as HAPIApiClient, Configuration as HAPIConfiguration
 from holmesgpt_api_client.api.incident_analysis_api import IncidentAnalysisApi
-from holmesgpt_api_client.api.recovery_analysis_api import RecoveryAnalysisApi
 from holmesgpt_api_client.models.incident_request import IncidentRequest
-from holmesgpt_api_client.models.recovery_request import RecoveryRequest
 
 # Skip entire module if not in mock mode
 pytestmark = [
@@ -68,19 +66,6 @@ def hapi_incident_api(hapi_service_url, hapi_auth_token):
     return IncidentAnalysisApi(api_client=api_client)
 
 
-@pytest.fixture(scope="module")
-def hapi_recovery_api(hapi_service_url, hapi_auth_token):
-    """HAPI Recovery Analysis API client for E2E tests (DD-API-001)."""
-    config = HAPIConfiguration(host=hapi_service_url)
-    config.timeout = 60  # CRITICAL: Prevent "read timeout=0" errors
-    # WORKAROUND: OpenAPI spec doesn't apply security to endpoints
-    # Manually inject Authorization header via default_headers
-    api_client = HAPIApiClient(configuration=config)
-    # DD-AUTH-014: Auth ALWAYS enabled in E2E/INT for ALL services
-    api_client.default_headers['Authorization'] = f'Bearer {hapi_auth_token}'
-    return RecoveryAnalysisApi(api_client=api_client)
-
-
 def make_incident_request(signal_name: str) -> dict:
     """Create a valid IncidentRequest with the specified signal_name."""
     return {
@@ -98,20 +83,6 @@ def make_incident_request(signal_name: str) -> dict:
         "risk_tolerance": "medium",  # REQUIRED
         "business_category": "test",  # REQUIRED
         "error_message": f"Test edge case for {signal_name}",  # REQUIRED
-    }
-
-
-def make_recovery_request(signal_name: str) -> dict:
-    """Create a valid RecoveryRequest with the specified signal_name."""
-    return {
-        "incident_id": f"test-recovery-{signal_name.lower()}",
-        "remediation_id": f"test-remediation-{signal_name.lower()}",
-        "signal_name": signal_name,
-        "previous_workflow_id": "mock-previous-workflow-v1",
-        "previous_workflow_result": "Failed",
-        "resource_namespace": "default",
-        "resource_name": "test-pod",
-        "resource_kind": "Pod"
     }
 
 
@@ -228,104 +199,6 @@ class TestIncidentEdgeCases:
             assert attempt["is_valid"] is False, "All attempts should have failed"
 
 
-class TestRecoveryEdgeCases:
-    """E2E tests for recovery analysis edge cases."""
-
-    def test_signal_not_reproducible_returns_no_recovery(self, hapi_recovery_api):
-        """
-        BR-HAPI-212: When signal is not reproducible (issue self-resolved):
-        - Set can_recover=false (no action needed)
-        - Set needs_human_review=false (no decision needed)
-        - Set selected_workflow=null (no workflow to run)
-        - High confidence that issue resolved
-
-        This tests the AIAnalysis consumer's ability to handle
-        "nothing to do" scenarios gracefully.
-        """
-        request_data = make_recovery_request("MOCK_NOT_REPRODUCIBLE")
-        recovery_request = RecoveryRequest(**request_data)
-
-        response = hapi_recovery_api.recovery_analyze_endpoint_api_v1_recovery_analyze_post(
-            recovery_request=recovery_request,
-            _request_timeout=30
-        )
-
-        # Convert response model to dict for assertions
-        data = response.model_dump()
-
-        # Key assertion: can_recover=false means no action needed
-        assert data["can_recover"] is False, "can_recover should be False for self-resolved issues"
-        assert data["needs_human_review"] is False, "No review needed when issue resolved"
-        assert data["selected_workflow"] is None, "No workflow needed"
-
-        # High confidence in the assessment
-        assert data["analysis_confidence"] > 0.8, \
-            f"Should have high confidence issue resolved, got {data['analysis_confidence']}"
-
-        # Verify recovery_analysis indicates state changed
-        recovery_analysis = data.get("recovery_analysis", {})
-        prev_assessment = recovery_analysis.get("previous_attempt_assessment", {})
-        assert prev_assessment.get("state_changed") is True, \
-            "state_changed should be True (resource is now healthy)"
-
-    def test_no_recovery_workflow_returns_human_review(self, hapi_recovery_api):
-        """
-        BR-HAPI-197: When no recovery workflow is available:
-        - Set can_recover=true (recovery might be possible)
-        - Set needs_human_review=true (human must find solution)
-        - Set human_review_reason="no_matching_workflows"
-        - Set selected_workflow=null
-
-        This tests handling of "we can't help automatically" scenarios.
-        """
-        request_data = make_recovery_request("MOCK_NO_WORKFLOW_FOUND")
-        recovery_request = RecoveryRequest(**request_data)
-
-        response = hapi_recovery_api.recovery_analyze_endpoint_api_v1_recovery_analyze_post(
-            recovery_request=recovery_request,
-            _request_timeout=30
-        )
-
-        # Convert response model to dict for assertions
-        data = response.model_dump()
-
-        # Recovery might be possible but we don't have a workflow
-        assert data["can_recover"] is True, "can_recover=true (manual intervention possible)"
-        assert data["needs_human_review"] is True, "needs_human_review should be True"
-        assert data["human_review_reason"] == "no_matching_workflows"
-        assert data["selected_workflow"] is None
-
-    def test_low_confidence_recovery_returns_human_review(self, hapi_recovery_api):
-        """
-        BR-HAPI-197: When recovery confidence is low:
-        - Set can_recover=true
-        - Set needs_human_review=true
-        - Set human_review_reason="low_confidence"
-        - Provide tentative workflow with low confidence
-
-        This tests handling of uncertain recovery scenarios.
-        """
-        request_data = make_recovery_request("MOCK_LOW_CONFIDENCE")
-        recovery_request = RecoveryRequest(**request_data)
-
-        response = hapi_recovery_api.recovery_analyze_endpoint_api_v1_recovery_analyze_post(
-            recovery_request=recovery_request,
-            _request_timeout=30
-        )
-
-        # Convert response model to dict for assertions
-        data = response.model_dump()
-
-        assert data["can_recover"] is True
-        assert data["needs_human_review"] is True
-        assert data["human_review_reason"] == "low_confidence"
-        assert data["analysis_confidence"] < 0.5
-
-        # Tentative workflow provided
-        assert data["selected_workflow"] is not None
-        assert data["selected_workflow"]["confidence"] < 0.5
-
-
 class TestHappyPathComparison:
     """Verify happy path still works with mock mode."""
 
@@ -350,25 +223,4 @@ class TestHappyPathComparison:
         assert data["selected_workflow"] is not None
         assert data["confidence"] > 0.8
         assert "mock-oomkill" in data["selected_workflow"]["workflow_id"]
-
-    def test_normal_recovery_analysis_succeeds(self, hapi_recovery_api):
-        """
-        Verify that normal signal types still produce happy-path recovery responses.
-        """
-        request_data = make_recovery_request("CrashLoopBackOff")
-        recovery_request = RecoveryRequest(**request_data)
-
-        response = hapi_recovery_api.recovery_analyze_endpoint_api_v1_recovery_analyze_post(
-            recovery_request=recovery_request,
-            _request_timeout=30
-        )
-
-        # Convert response model to dict for assertions
-        data = response.model_dump()
-
-        # Happy path assertions
-        assert data["can_recover"] is True
-        assert data["needs_human_review"] is False
-        assert data["selected_workflow"] is not None
-        assert data["analysis_confidence"] > 0.7
 

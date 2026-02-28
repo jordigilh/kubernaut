@@ -12,9 +12,9 @@ metadata:
 actionType: FixNetworkPolicy
 
 labels:
-  signalName: DeploymentUnavailable
+  signalName: KubePodCrashLooping
   severity: [critical, high]
-  environment: [production, staging]
+  environment: [production, staging, "*"]
   component: "*"
   priority: "*"
 
@@ -23,7 +23,7 @@ detectedLabels:
 
 execution:
   engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/fix-network-policy-job@sha256:eb21af502e8c2fd11d85e277e312084ace255657e3ebbebd48573c55f8672d2f
+  bundle: quay.io/kubernaut-cicd/test-workflows/fix-network-policy-job@sha256:4e0030f3fdd601045710eda3cef0fa2adbf15d77f7dca6f59aedbe492647eccb
 
 parameters:
   - name: TARGET_NAMESPACE

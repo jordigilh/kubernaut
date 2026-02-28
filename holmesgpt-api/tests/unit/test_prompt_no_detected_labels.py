@@ -29,15 +29,13 @@ Business Requirement: BR-HAPI-102
 
 Test IDs:
   UT-HAPI-056-056: Incident prompt omits cluster context section
-  UT-HAPI-056-057: Recovery prompt omits cluster context section
-  UT-HAPI-056-058: Both prompts still build correctly without cluster context
+  UT-HAPI-056-058: Incident prompt still builds correctly without cluster context
 """
 
 import pytest
 from unittest.mock import patch, MagicMock
 
 from src.extensions.incident.prompt_builder import create_incident_investigation_prompt
-from src.extensions.recovery.prompt_builder import _create_recovery_investigation_prompt
 
 
 ENRICHMENT_WITH_LABELS = {
@@ -76,35 +74,6 @@ INCIDENT_REQUEST = {
 }
 
 
-RECOVERY_REQUEST = {
-    "severity": "critical",
-    "signal_name": "CrashLoopBackOff",
-    "resource_namespace": "production",
-    "resource_kind": "Pod",
-    "resource_name": "api-xyz",
-    "environment": "production",
-    "priority": "P0",
-    "risk_tolerance": "medium",
-    "business_category": "standard",
-    "error_message": "Container restarting",
-    "cluster_name": "prod-us-east-1",
-    "signal_source": "alertmanager",
-    "enrichment_results": ENRICHMENT_WITH_LABELS,
-    "remediation_id": "rem-001",
-    "attempt_number": 2,
-    "original_rca": {
-        "summary": "OOMKilled",
-        "signal_name": "OOMKilled",
-    },
-    "selected_workflow": {
-        "workflow_id": "wf-001",
-        "workflow_name": "restart-pod",
-        "action_type": "RestartPod",
-    },
-    "failure_reason": "pod did not recover",
-}
-
-
 class TestPromptNoDetectedLabels:
     """
     UT-HAPI-056-056 through UT-HAPI-056-058: Verify prompts no longer inject the
@@ -120,21 +89,9 @@ class TestPromptNoDetectedLabels:
         assert "GitOps (argocd)" not in prompt
         assert "PodDisruptionBudget protects" not in prompt
 
-    def test_ut_hapi_056_057_recovery_prompt_omits_cluster_context(self):
-        """UT-HAPI-056-057: Recovery prompt does not include Cluster Environment section."""
-        prompt = _create_recovery_investigation_prompt(RECOVERY_REQUEST)
-
-        assert "Cluster Environment Characteristics" not in prompt
-        assert "AUTO-DETECTED" not in prompt
-        assert "GitOps (argocd)" not in prompt
-        assert "PodDisruptionBudget protects" not in prompt
-
-    def test_ut_hapi_056_058_prompts_build_correctly_without_cluster_context(self):
-        """UT-HAPI-056-058: Both prompts still produce valid output without the section."""
+    def test_ut_hapi_056_058_incident_prompt_builds_correctly_without_cluster_context(self):
+        """UT-HAPI-056-058: Incident prompt still produces valid output without the section."""
         incident_prompt = create_incident_investigation_prompt(INCIDENT_REQUEST)
-        recovery_prompt = _create_recovery_investigation_prompt(RECOVERY_REQUEST)
 
         assert "Incident Analysis Request" in incident_prompt
-        assert "Recovery Analysis Request" in recovery_prompt
         assert len(incident_prompt) > 500
-        assert len(recovery_prompt) > 500

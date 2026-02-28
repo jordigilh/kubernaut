@@ -70,10 +70,6 @@ type PolicyInput struct {
 
 	// FailedDetections (DD-WORKFLOW-001 v2.1)
 	FailedDetections []string `json:"failed_detections,omitempty"`
-
-	// Recovery context
-	IsRecoveryAttempt     bool `json:"is_recovery_attempt"`
-	RecoveryAttemptNumber int  `json:"recovery_attempt_number,omitempty"`
 }
 
 // TargetResourceInput contains target resource identification
@@ -194,9 +190,6 @@ func (e *Evaluator) Evaluate(ctx context.Context, input *PolicyInput) (*PolicyRe
 		"affected_resource": input.AffectedResource,
 		// FailedDetections
 		"failed_detections": input.FailedDetections,
-		// Recovery context
-		"is_recovery_attempt":     input.IsRecoveryAttempt,
-		"recovery_attempt_number": input.RecoveryAttemptNumber,
 	}
 
 	// Evaluate policy

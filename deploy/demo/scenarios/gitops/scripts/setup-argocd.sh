@@ -11,7 +11,7 @@ echo "==> Installing ArgoCD in namespace ${ARGOCD_NAMESPACE}..."
 
 kubectl create namespace "${ARGOCD_NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f -
 
-kubectl apply -n "${ARGOCD_NAMESPACE}" \
+kubectl apply -n "${ARGOCD_NAMESPACE}" --server-side --force-conflicts \
   -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/core-install.yaml
 
 echo "==> Waiting for ArgoCD pods to be ready..."

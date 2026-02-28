@@ -21,27 +21,44 @@ while true; do
 
     echo "[provisioner] Provisioning node: $NEW_NODE (image: $IMAGE)"
 
+    VOL_NAME="kind-${NEW_NODE}-var"
+    podman volume create "$VOL_NAME" >/dev/null 2>&1
+
     podman run -d --privileged \
+      --security-opt unmask=all \
       --name "$NEW_NODE" \
       --hostname "$NEW_NODE" \
       --network kind \
-      "$IMAGE"
+      --tmpfs /run:rprivate,nosuid,nodev,tmpcopyup \
+      --tmpfs /tmp:rprivate,nosuid,nodev,tmpcopyup \
+      -v "${VOL_NAME}:/var" \
+      -v /lib/modules:/lib/modules:ro \
+      -v /dev/mapper:/dev/mapper \
+      --entrypoint /usr/local/bin/entrypoint \
+      "$IMAGE" \
+      /sbin/init
 
     echo "[provisioner] Container created. Waiting for kubelet bootstrap..."
-    sleep 5
+    sleep 10
 
     echo "[provisioner] Obtaining join command from control plane..."
     JOIN_CMD=$(podman exec "${CLUSTER}-control-plane" \
       kubeadm token create --print-join-command)
 
     echo "[provisioner] Joining node to cluster..."
-    podman exec "$NEW_NODE" $JOIN_CMD
+    podman exec "$NEW_NODE" $JOIN_CMD --ignore-preflight-errors=SystemVerification
+
+    echo "[provisioner] Waiting for node to register..."
+    for i in $(seq 1 30); do
+      kubectl get "node/$NEW_NODE" >/dev/null 2>&1 && break
+      sleep 2
+    done
 
     echo "[provisioner] Waiting for node to become Ready..."
-    kubectl wait --for=condition=Ready "node/$NEW_NODE" --timeout=120s
+    kubectl wait --for=condition=Ready "node/$NEW_NODE" --timeout=180s
 
     echo "[provisioner] Labeling node as workload node..."
-    kubectl label node "$NEW_NODE" kubernaut.ai/workload-node=true
+    kubectl label node "$NEW_NODE" kubernaut.ai/managed=true
 
     kubectl patch cm scale-request -n kubernaut-system \
       --type=merge -p '{"data":{"status":"fulfilled","node_name":"'"$NEW_NODE"'"}}'

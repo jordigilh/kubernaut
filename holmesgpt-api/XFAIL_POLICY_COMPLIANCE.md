@@ -121,8 +121,7 @@ Since these tests:
 |-----------|-------|--------|--------|
 | **Unit Tests** | 575 | 575 | ✅ 100% |
 | **Integration Tests** | 66 | 66 | ✅ 100% (+1 from bug fix) |
-| **E2E Tests (Recovery)** | 10 | 10 | ✅ 100% |
-| **TOTAL** | **651** | **651** | ✅ **100%** |
+| **TOTAL** | **641** | **641** | ✅ **100%** |
 
 **Note**: 8 PostExec tests marked as V1.1 (not running, `run=False`)
 

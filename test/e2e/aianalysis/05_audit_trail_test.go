@@ -154,11 +154,10 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 		It("should create audit events in Data Storage for full reconciliation cycle", func() {
 			By("Creating AIAnalysis for production incident")
 			suffix := randomSuffix()
-			namespace := createTestNamespace("audit-test")
 			analysis := &aianalysisv1alpha1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-audit-test-" + suffix,
-					Namespace: namespace,
+					Namespace: controllerNamespace,
 				},
 				Spec: aianalysisv1alpha1.AIAnalysisSpec{
 					RemediationID: "e2e-audit-test-" + suffix,
@@ -287,11 +286,10 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 		It("should audit phase transitions with correct old/new phase values", func() {
 			By("Creating AIAnalysis that will go through multiple phases")
 			suffix := randomSuffix()
-			namespace := createTestNamespace("audit-phases")
 			analysis := &aianalysisv1alpha1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-audit-phases-" + suffix,
-					Namespace: namespace,
+					Namespace: controllerNamespace,
 				},
 				Spec: aianalysisv1alpha1.AIAnalysisSpec{
 					RemediationID: "e2e-audit-phases-" + suffix,
@@ -350,11 +348,10 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 		It("should audit AI agent API calls with correct endpoint and status", func() {
 			By("Creating AIAnalysis that will trigger AI agent API call")
 			suffix := randomSuffix()
-			namespace := createTestNamespace("audit-hapi")
 			analysis := &aianalysisv1alpha1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-audit-hapi-" + suffix,
-					Namespace: namespace,
+					Namespace: controllerNamespace,
 				},
 				Spec: aianalysisv1alpha1.AIAnalysisSpec{
 					RemediationID: "e2e-audit-hapi-" + suffix,
@@ -403,8 +400,8 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 
 				// Verify endpoint is valid
 				endpoint := payload.Endpoint
-				Expect(endpoint).To(Or(Equal("/api/v1/incident/analyze"), Equal("/api/v1/recovery/investigate")),
-					"Endpoint should be incident/analyze or recovery/investigate")
+				Expect(endpoint).To(Equal("/api/v1/incident/analyze"),
+					"Endpoint should be incident/analyze")
 
 				// Verify HTTP status is 2xx for successful calls
 				statusCode := payload.HTTPStatusCode
@@ -416,11 +413,10 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 		It("should audit Rego policy evaluations with correct outcome", func() {
 			By("Creating AIAnalysis that will trigger Rego evaluation")
 			suffix := randomSuffix()
-			namespace := createTestNamespace("audit-rego")
 			analysis := &aianalysisv1alpha1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-audit-rego-" + suffix,
-					Namespace: namespace,
+					Namespace: controllerNamespace,
 				},
 				Spec: aianalysisv1alpha1.AIAnalysisSpec{
 					RemediationID: "e2e-audit-rego-" + suffix,
@@ -481,11 +477,10 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 		It("should audit approval decisions with correct approval_required flag", func() {
 			By("Creating AIAnalysis for production (requires approval)")
 			suffix := randomSuffix()
-			namespace := createTestNamespace("audit-approval")
 			analysis := &aianalysisv1alpha1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-audit-approval-" + suffix,
-					Namespace: namespace,
+					Namespace: controllerNamespace,
 				},
 				Spec: aianalysisv1alpha1.AIAnalysisSpec{
 					RemediationID: "e2e-audit-approval-" + suffix,

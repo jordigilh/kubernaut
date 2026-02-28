@@ -345,7 +345,7 @@ func (r *RemediationRequestReconciler) SetupWithManager(mgr ctrl.Manager) error 
 		Owns(&remediationprocessingv1alpha1.RemediationProcessing{}).
 		Owns(&aianalysisv1alpha1.AIAnalysis{}).
 		Owns(&workflowexecutionv1alpha1.WorkflowExecution{}).
-		Owns(&kubernetesexecutionv1alpha1.KubernetesExecution{}).
+		Owns(&kubernetesexecutionv1alpha1.KubernetesExecution{}). // DEPRECATED - ADR-025
 		// Note: We do NOT own NotificationRequest (created for escalation but not owned)
 		Complete(r)
 
@@ -975,7 +975,7 @@ kubectl logs -n kubernaut-system deployment/remediation-orchestrator | \
 - Review AIAnalysis controller logs
 
 **If WorkflowExecution stuck**:
-- Check KubernetesExecution creation rate
+- Check KubernetesExecution (DEPRECATED - ADR-025) creation rate
 - Check workflow complexity (>10 steps trigger complexity approval)
 - Review WorkflowExecution controller logs
 

@@ -20,7 +20,7 @@
 | SignalProcessing | SignalProcessing | ✅ Yes | ❌ Missing | ❌ Missing | 🔴 **SCHEMA ONLY** | SP Team |
 | RemediationRequest | RO | ✅ Yes | ❌ Missing | ❌ Missing | 🔴 **SCHEMA ONLY** | RO Team |
 | RemediationApprovalRequest | RO | ✅ Yes | ❌ Missing | ❌ Missing | 🔴 **SCHEMA ONLY** | RO Team |
-| KubernetesExecution | WE | ✅ Yes | ❌ Missing | ❌ Missing | 🔴 **SCHEMA ONLY** | WE Team |
+| KubernetesExecution (DEPRECATED - ADR-025) | WE | ✅ Yes | ❌ Missing | ❌ Missing | 🔴 **SCHEMA ONLY** | WE Team |
 
 **Summary**:
 - ✅ **Complete**: 3/7 CRDs (43%)

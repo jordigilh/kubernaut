@@ -103,7 +103,7 @@ var _ = Describe("E2E: Gap #8 - RemediationRequest TimeoutConfig Mutation Webhoo
 			rr = &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "rr-gap8-webhook",
-					Namespace: testNamespace,
+					Namespace: controllerNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
 					// SignalFingerprint must be valid 64-char hex string (SHA-256 format)
@@ -112,11 +112,11 @@ var _ = Describe("E2E: Gap #8 - RemediationRequest TimeoutConfig Mutation Webhoo
 					Severity:          "warning",
 					SignalType:        "alert",
 					TargetType:        "kubernetes",
-					TargetResource: remediationv1.ResourceIdentifier{
-						Kind:      "Deployment",
-						Name:      "test-deployment",
-						Namespace: "production",
-					},
+				TargetResource: remediationv1.ResourceIdentifier{
+					Kind:      "Deployment",
+					Name:      "test-deployment",
+					Namespace: testNamespace,
+				},
 					FiringTime:   now,
 					ReceivedTime: now,
 				},
@@ -133,7 +133,7 @@ var _ = Describe("E2E: Gap #8 - RemediationRequest TimeoutConfig Mutation Webhoo
 			// This is the realistic scenario - controller manages TimeoutConfig lifecycle
 			Eventually(func() bool {
 				err := k8sClient.Get(ctx, client.ObjectKey{
-					Namespace: testNamespace,
+					Namespace: controllerNamespace,
 					Name:      "rr-gap8-webhook",
 				}, rr)
 				if err != nil {
@@ -152,7 +152,7 @@ var _ = Describe("E2E: Gap #8 - RemediationRequest TimeoutConfig Mutation Webhoo
 			// ========================================
 			// Re-fetch the latest RR to avoid conflicts with controller updates
 			err = k8sClient.Get(ctx, client.ObjectKey{
-				Namespace: testNamespace,
+				Namespace: controllerNamespace,
 				Name:      "rr-gap8-webhook",
 			}, rr)
 			Expect(err).ToNot(HaveOccurred())
@@ -264,7 +264,7 @@ var _ = Describe("E2E: Gap #8 - RemediationRequest TimeoutConfig Mutation Webhoo
 			// THEN: LastModifiedBy/LastModifiedAt populated by webhook
 			// ========================================
 			err = k8sClient.Get(ctx, client.ObjectKey{
-				Namespace: testNamespace,
+				Namespace: controllerNamespace,
 				Name:      "rr-gap8-webhook",
 			}, rr)
 			Expect(err).ToNot(HaveOccurred())
@@ -288,7 +288,7 @@ var _ = Describe("E2E: Gap #8 - RemediationRequest TimeoutConfig Mutation Webhoo
 			GinkgoWriter.Printf("   • SOC2 compliance: WHO + WHAT + WHEN captured\n")
 
 			By("Completing SP lifecycle to clean up dangling CRDs")
-			sp := helpers.WaitForSPCreation(ctx, k8sClient, testNamespace, 30*time.Second, 1*time.Second)
+			sp := helpers.WaitForSPCreation(ctx, k8sClient, controllerNamespace, rr.Name, 30*time.Second, 1*time.Second)
 			helpers.SimulateSPCompletion(ctx, k8sClient, sp)
 		})
 	})

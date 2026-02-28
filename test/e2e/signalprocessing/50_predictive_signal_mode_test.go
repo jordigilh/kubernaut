@@ -75,16 +75,19 @@ var _ = Describe("E2E-SP-106-001: Predictive Signal Mode Classification", Label(
 			//
 			// This validates the full pipeline: ConfigMap → SignalModeClassifier → Status
 
-			By("1. Create parent RemediationRequest")
-			rr := createPredictiveTestRR(namespace, "rr-predictive-oomkill")
+			By("1. Create target pod (aligns with BR-SP-001 - controller enriches real resources)")
+			createTargetPod(ctx, k8sClient, namespace, "api-server-e2e")
+
+			By("2. Create parent RemediationRequest (ADR-057: RR in controller namespace)")
+			rr := createPredictiveTestRR(controllerNamespace, namespace, "rr-predictive-oomkill")
 			rr.Spec.SignalType = "PredictedOOMKill"
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
-			By("2. Create SignalProcessing with PredictedOOMKill type")
+			By("3. Create SignalProcessing with PredictedOOMKill type (ADR-057: SP in controller namespace)")
 			sp := &signalprocessingv1alpha1.SignalProcessing{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "sp-predictive-oomkill",
-					Namespace: namespace,
+					Namespace: controllerNamespace,
 					OwnerReferences: []metav1.OwnerReference{
 						*metav1.NewControllerRef(rr, remediationv1alpha1.GroupVersion.WithKind("RemediationRequest")),
 					},
@@ -115,7 +118,7 @@ var _ = Describe("E2E-SP-106-001: Predictive Signal Mode Classification", Label(
 			}
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 
-			By("3. Wait for SP to reach Completed phase")
+			By("4. Wait for SP to reach Completed phase")
 			Eventually(func(g Gomega) {
 				var updated signalprocessingv1alpha1.SignalProcessing
 				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &updated)).To(Succeed())
@@ -141,16 +144,19 @@ var _ = Describe("E2E-SP-106-001: Predictive Signal Mode Classification", Label(
 			// BR-SP-106: Standard signals not in predictive mappings default to reactive.
 			// This validates backwards compatibility in the real Kind cluster.
 
-			By("1. Create parent RemediationRequest")
-			rr := createPredictiveTestRR(namespace, "rr-reactive-oomkilled")
+			By("1. Create target pod (aligns with BR-SP-001)")
+			createTargetPod(ctx, k8sClient, namespace, "worker-e2e")
+
+			By("2. Create parent RemediationRequest (ADR-057: RR in controller namespace)")
+			rr := createPredictiveTestRR(controllerNamespace, namespace, "rr-reactive-oomkilled")
 			rr.Spec.SignalType = "OOMKilled"
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
-			By("2. Create SignalProcessing with standard OOMKilled type")
+			By("3. Create SignalProcessing with standard OOMKilled type (ADR-057: SP in controller namespace)")
 			sp := &signalprocessingv1alpha1.SignalProcessing{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "sp-reactive-oomkilled",
-					Namespace: namespace,
+					Namespace: controllerNamespace,
 					OwnerReferences: []metav1.OwnerReference{
 						*metav1.NewControllerRef(rr, remediationv1alpha1.GroupVersion.WithKind("RemediationRequest")),
 					},
@@ -181,7 +187,7 @@ var _ = Describe("E2E-SP-106-001: Predictive Signal Mode Classification", Label(
 			}
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 
-			By("3. Wait for SP to reach Completed phase")
+			By("4. Wait for SP to reach Completed phase")
 			Eventually(func(g Gomega) {
 				var updated signalprocessingv1alpha1.SignalProcessing
 				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &updated)).To(Succeed())
@@ -201,11 +207,12 @@ var _ = Describe("E2E-SP-106-001: Predictive Signal Mode Classification", Label(
 })
 
 // createPredictiveTestRR creates a RemediationRequest for predictive signal mode E2E tests.
-func createPredictiveTestRR(namespace, name string) *remediationv1alpha1.RemediationRequest {
+// ADR-057: RR lives in controller namespace; targetResourceNamespace is the workload namespace.
+func createPredictiveTestRR(rrNamespace, targetResourceNamespace, name string) *remediationv1alpha1.RemediationRequest {
 	return &remediationv1alpha1.RemediationRequest{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: namespace,
+			Namespace: rrNamespace,
 		},
 		Spec: remediationv1alpha1.RemediationRequestSpec{
 			SignalFingerprint: func() string {
@@ -222,7 +229,7 @@ func createPredictiveTestRR(namespace, name string) *remediationv1alpha1.Remedia
 			TargetResource: remediationv1alpha1.ResourceIdentifier{
 				Kind:      "Pod",
 				Name:      "test-e2e-pod",
-				Namespace: namespace,
+				Namespace: targetResourceNamespace,
 			},
 		},
 	}

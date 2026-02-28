@@ -26,6 +26,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
@@ -37,6 +38,9 @@ import (
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 )
+
+// controllerNamespace is where all RemediationRequests are created (ADR-057)
+const controllerNamespace = "kubernaut-system"
 
 // Suite-level resources
 var (
@@ -151,6 +155,15 @@ var _ = BeforeSuite(func() {
 	}
 	Expect(k8sClient.Create(suiteCtx, testNS)).To(Succeed())
 
+	// ADR-057: Create controller namespace (where RRs are created)
+	controllerNS := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{Name: controllerNamespace},
+	}
+	err = k8sClient.Create(suiteCtx, controllerNS)
+	if err != nil && !apierrors.IsAlreadyExists(err) {
+		Expect(err).ToNot(HaveOccurred(), "Failed to create controller namespace")
+	}
+
 	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	suiteLogger.Info("Processing Integration Test Infrastructure - Ready")
 	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -170,7 +183,7 @@ var _ = AfterSuite(func() {
 		suiteCancel()
 	}
 
-	// Wait for manager to stop
+	// ✅ APPROVED EXCEPTION: AfterSuite teardown grace period for controller-runtime manager shutdown
 	time.Sleep(1 * time.Second)
 
 	// Stop envtest

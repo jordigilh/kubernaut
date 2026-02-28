@@ -191,8 +191,8 @@ llm:
   model: recovered-model
 """)
 
-            # Wait for recovery (typically <100ms instead of 1.5s sleep)
-            wait_for(lambda: manager.get_llm_model() == "recovered-model", timeout=2.0, error_msg="Should recover with valid config")
+            # Wait for reload (typically <100ms instead of 1.5s sleep)
+            wait_for(lambda: manager.get_llm_model() == "recovered-model", timeout=2.0, error_msg="Should reload with valid config")
 
             manager.stop()
         finally:

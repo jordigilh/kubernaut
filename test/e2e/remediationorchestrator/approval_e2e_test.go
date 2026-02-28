@@ -18,6 +18,8 @@ package remediationorchestrator
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"time"
@@ -89,15 +91,18 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 			dsClient, err = dsgen.NewClient(dataStorageURL, dsgen.WithClient(httpClient))
 			Expect(err).ToNot(HaveOccurred())
 
-			// Create RemediationRequest (triggers RO controller)
+			// Create RemediationRequest (ADR-057: RRs live in kubernaut-system)
 			now := metav1.Now()
 			testRR = &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("e2e-rar-audit-%s", uuid.New().String()[:8]),
-					Namespace: testNamespace,
+					Namespace: controllerNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
-					SignalFingerprint: "e2e0000000000000000000000000000000000000000000000000000000000001",
+					SignalFingerprint: func() string {
+						h := sha256.Sum256([]byte(uuid.New().String()))
+						return hex.EncodeToString(h[:])
+					}(),
 					SignalName:        "E2ERARAuditTest",
 					Severity:          "critical",
 					SignalType:        "alert",
@@ -105,20 +110,20 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 					TargetResource: remediationv1.ResourceIdentifier{
 						Kind:      "Deployment",
 						Name:      "test-app",
-						Namespace: testNamespace,
+						Namespace: testNamespace, // workload namespace
 					},
 					FiringTime:   now,
 					ReceivedTime: now,
 				},
 			}
 			Expect(k8sClient.Create(ctx, testRR)).To(Succeed())
-			GinkgoWriter.Printf("🚀 E2E: Created RemediationRequest %s/%s\n", testNamespace, testRR.Name)
+			GinkgoWriter.Printf("🚀 E2E: Created RemediationRequest %s/%s\n", controllerNamespace, testRR.Name)
 
 			// Let the RO controller drive the full lifecycle: RR → SP → AI → RAR
-			sp := helpers.WaitForSPCreation(ctx, k8sClient, testNamespace, e2eTimeout, e2eInterval)
+			sp := helpers.WaitForSPCreation(ctx, k8sClient, controllerNamespace, testRR.Name, e2eTimeout, e2eInterval)
 			helpers.SimulateSPCompletion(ctx, k8sClient, sp)
 
-			ai := helpers.WaitForAICreation(ctx, k8sClient, testNamespace, e2eTimeout, e2eInterval)
+			ai := helpers.WaitForAICreation(ctx, k8sClient, controllerNamespace, testRR.Name, e2eTimeout, e2eInterval)
 			helpers.SimulateAICompletedWithWorkflow(ctx, k8sClient, ai, helpers.AICompletionOpts{
 				ApprovalRequired: true,
 				ApprovalReason:   "Confidence below 80% auto-approve threshold",
@@ -128,15 +133,18 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 				TargetNamespace:  testNamespace,
 			})
 
-			testRAR = helpers.WaitForRARCreation(ctx, k8sClient, testNamespace, e2eTimeout, e2eInterval)
-			GinkgoWriter.Printf("🚀 E2E: RO created RAR %s/%s\n", testNamespace, testRAR.Name)
+			testRAR = helpers.WaitForRARCreation(ctx, k8sClient, controllerNamespace, testRR.Name, e2eTimeout, e2eInterval)
+			GinkgoWriter.Printf("🚀 E2E: RO created RAR %s/%s\n", controllerNamespace, testRAR.Name)
 
 			helpers.WaitForRRPhase(ctx, k8sClient, testRR, remediationv1.PhaseAwaitingApproval, e2eTimeout, e2eInterval)
 			GinkgoWriter.Printf("  RO reached AwaitingApproval naturally\n")
 		})
 
 		AfterEach(func() {
-			// Cleanup namespace
+			// Cleanup RR (ADR-057: RR lives in controllerNamespace)
+			if testRR != nil {
+				_ = k8sClient.Delete(ctx, testRR)
+			}
 			helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 		})
 
@@ -348,10 +356,13 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 			testRR = &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("e2e-rar-expiry-%s", uuid.New().String()[:8]),
-					Namespace: testNamespace,
+					Namespace: controllerNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
-					SignalFingerprint: "e2e0000000000000000000000000000000000000000000000000000000000004",
+					SignalFingerprint: func() string {
+						h := sha256.Sum256([]byte("e2e-rar-expiry-" + uuid.New().String()))
+						return hex.EncodeToString(h[:])
+					}(),
 					SignalName:        "E2ERARExpiryTest",
 					Severity:          "critical",
 					SignalType:        "alert",
@@ -368,10 +379,10 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 			Expect(k8sClient.Create(ctx, testRR)).To(Succeed())
 
 			// Let the RO controller drive the full lifecycle: RR → SP → AI → RAR
-			sp := helpers.WaitForSPCreation(ctx, k8sClient, testNamespace, e2eTimeout, e2eInterval)
+			sp := helpers.WaitForSPCreation(ctx, k8sClient, controllerNamespace, testRR.Name, e2eTimeout, e2eInterval)
 			helpers.SimulateSPCompletion(ctx, k8sClient, sp)
 
-			ai := helpers.WaitForAICreation(ctx, k8sClient, testNamespace, e2eTimeout, e2eInterval)
+			ai := helpers.WaitForAICreation(ctx, k8sClient, controllerNamespace, testRR.Name, e2eTimeout, e2eInterval)
 			helpers.SimulateAICompletedWithWorkflow(ctx, k8sClient, ai, helpers.AICompletionOpts{
 				ApprovalRequired: true,
 				ApprovalReason:   "Confidence below 80% auto-approve threshold",
@@ -381,7 +392,7 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 				TargetNamespace:  testNamespace,
 			})
 
-			testRAR = helpers.WaitForRARCreation(ctx, k8sClient, testNamespace, e2eTimeout, e2eInterval)
+			testRAR = helpers.WaitForRARCreation(ctx, k8sClient, controllerNamespace, testRR.Name, e2eTimeout, e2eInterval)
 
 			// RAR RequiredBy is set by the RO controller using the configured
 			// awaitingApproval timeout (3s in E2E). No spec mutation needed —
@@ -391,6 +402,9 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 		})
 
 		AfterEach(func() {
+			if testRR != nil {
+				_ = k8sClient.Delete(ctx, testRR)
+			}
 			helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 		})
 
@@ -446,15 +460,18 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 			dsClient, err = dsgen.NewClient(dataStorageURL, dsgen.WithClient(httpClient))
 			Expect(err).ToNot(HaveOccurred())
 
-			// Create RemediationRequest
+			// Create RemediationRequest (ADR-057: RRs live in kubernaut-system)
 			now := metav1.Now()
 			testRR = &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("e2e-rar-persist-%s", uuid.New().String()[:8]),
-					Namespace: testNamespace,
+					Namespace: controllerNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
-					SignalFingerprint: "e2e0000000000000000000000000000000000000000000000000000000000003",
+					SignalFingerprint: func() string {
+						h := sha256.Sum256([]byte("e2e-rar-persist-" + uuid.New().String()))
+						return hex.EncodeToString(h[:])
+					}(),
 					SignalName:        "E2ERARAuditPersistenceTest",
 					Severity:          "critical",
 					SignalType:        "alert",
@@ -471,16 +488,16 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 			Expect(k8sClient.Create(ctx, testRR)).To(Succeed())
 			correlationID = testRR.Name
 
-			// Create RAR
+			// Create RAR (RAR lives in same namespace as RR per RO controller)
 			testRAR = &remediationv1.RemediationApprovalRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("rar-%s", testRR.Name),
-					Namespace: testNamespace,
+					Namespace: controllerNamespace,
 				},
 				Spec: remediationv1.RemediationApprovalRequestSpec{
 					RemediationRequestRef: corev1.ObjectReference{
 						Name:      testRR.Name,
-						Namespace: testNamespace,
+						Namespace: controllerNamespace,
 					},
 					AIAnalysisRef: remediationv1.ObjectRef{
 						Name: "ai-test-persist",
@@ -571,7 +588,9 @@ var _ = Describe("BR-AUDIT-006: RAR Audit Trail E2E", Label("e2e", "audit", "app
 		})
 
 		AfterEach(func() {
-			// Cleanup namespace
+			if testRR != nil {
+				_ = k8sClient.Delete(ctx, testRR)
+			}
 			helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 		})
 

@@ -2,7 +2,7 @@
 
 **Status**: ACCEPTED
 **Decision Date**: 2026-02-12
-**Version**: 1.2
+**Version**: 1.3
 **Confidence**: 90%
 **Applies To**: HolmesGPT API (HAPI), AIAnalysis Controller, SignalProcessing
 
@@ -13,7 +13,8 @@
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2026-02-12 | Architecture Team | Initial proposal: move context enrichment (owner chain, spec hash, remediation history) from pre-LLM computation to post-RCA tool-driven flow. |
-| 1.1 | 2026-02-12 | Architecture Team | Address 8 triage gaps: include recovery flow (§1), replace `target_in_owner_chain` with `affected_resource` Rego input (§2), preserve `ExtractRootCauseAnalysis` (§3), enforce `affectedResource` as required LLM response field (§4), clarify CRD deprecation (§5), clarify `current_spec_hash` scope (§6), document new `resolve_owner_chain` function + RBAC expansion (§7), update latency estimate (§8). |
+| 1.1 | 2026-02-12 | Architecture Team | Address 8 triage gaps: replace `target_in_owner_chain` with `affected_resource` Rego input (§2), preserve `ExtractRootCauseAnalysis` (§3), enforce `affectedResource` as required LLM response field (§4), clarify CRD deprecation (§5), clarify `current_spec_hash` scope (§6), document new `resolve_owner_chain` function + RBAC expansion (§7), update latency estimate (§8). [Deprecated - Issue #180: Recovery flow reference removed] |
+| 1.3 | 2026-02-24 | Architecture Team | **Issue #188 (DD-EM-003)**: Renamed `resolveEffectivenessTarget` to `resolveDualTargets` throughout. The function now returns `*creator.DualTarget{Signal, Remediation}` with explicit dual-target semantics. Updated compatibility table and data quality section. |
 | 1.2 | 2026-02-12 | Architecture Team | Refine tool return contract: `get_resource_context` returns only `root_owner` and `remediation_history` to the LLM. Owner chain traversal and spec hash computation are internal implementation details not exposed in the tool response. Update prompt Phase 3b accordingly. See also ADR-056 for DetectedLabels relocation. |
 
 ---
@@ -36,7 +37,7 @@ Signal -> SP enriches with OwnerChain
   -> LLM selects workflow based on pre-computed context
 ```
 
-This applies to both the **incident flow** (`extensions/incident/llm_integration.py`) and the **recovery flow** (`extensions/recovery/llm_integration.py`), which have identical pre-computation blocks.
+This applies to the **incident flow** (`extensions/incident/llm_integration.py`). [Deprecated - Issue #180: Recovery flow reference removed]
 
 ### Problems
 
@@ -84,7 +85,7 @@ Signal -> AIAnalysis Controller passes signal context to HAPI
   -> LLM returns complete result: RCA + affected resource + workflow recommendation
 ```
 
-This flow applies to both the incident and recovery paths.
+This flow applies to the incident path.
 
 ### Key Design Principles
 
@@ -104,13 +105,12 @@ This flow applies to both the incident and recovery paths.
 
 ### Phase 1: Revert Issue #97 Pre-Computation Path
 
-#### HAPI (Python) -- Incident and Recovery Flows
+#### HAPI (Python) -- Incident Flow
 
 | File | Change | Rationale |
 |------|--------|-----------|
 | `holmesgpt-api/src/extensions/incident/llm_integration.py` | Remove pre-LLM root owner resolution, spec hash computation, remediation history fetch via root owner, and Phase C `affectedResource` population (~lines 227-278, 593-608) | Pre-computation targets wrong resource |
-| `holmesgpt-api/src/extensions/recovery/llm_integration.py` | Remove identical pre-computation block (~lines 290-341) | Same as incident flow |
-| `holmesgpt-api/src/extensions/incident/result_parser.py` | Remove `target_in_owner_chain` from `parse_and_validate_investigation_result` and `parse_and_validate_recovery_result`. Remove `is_target_in_owner_chain()` function. | Replaced by `affected_resource` Rego input |
+| `holmesgpt-api/src/extensions/incident/result_parser.py` | Remove `target_in_owner_chain` from `parse_and_validate_investigation_result`. Remove `is_target_in_owner_chain()` function. | Replaced by `affected_resource` Rego input |
 | `holmesgpt-api/src/clients/k8s_client.py` | Remove `resolve_root_owner()` function. Keep `compute_spec_hash()` (reused by new tool). | `resolve_root_owner` was a trivial list[-1]; new tool traverses K8s API instead |
 | `holmesgpt-api/tests/unit/test_k8s_client_owner_resolution.py` | Remove tests for `resolve_root_owner()` | Function removed |
 
@@ -284,7 +284,7 @@ Note: `replicasets` added (needed for Pod -> ReplicaSet traversal). `pods` added
 
 #### Tool Registration
 
-The `get_resource_context` tool must be registered in **both** the incident and recovery tool registries, alongside the existing DD-HAPI-017 workflow discovery tools.
+The `get_resource_context` tool must be registered in the incident tool registry, alongside the existing DD-HAPI-017 workflow discovery tools.
 
 #### Updated Prompt Flow
 
@@ -299,7 +299,7 @@ The HAPI system prompt instructs the LLM:
 The `WorkflowResponseValidator` (3-attempt self-correction loop) is updated to validate that `affectedResource` is present in the RCA output. If the LLM omits it, the validator returns:
 
 ```
-"missing required field: root_cause_analysis.affectedResource (kind, name, namespace)"
+"missing required field: root_cause_analysis.affectedResource (kind, name required; namespace required for namespace-scoped resources, omit for cluster-scoped)"
 ```
 
 The LLM retries with the signal context (which includes the target resource kind/name) available to produce the field. This is the same validation pattern used for `severity`, `summary`, and `selected_workflow`.
@@ -330,7 +330,7 @@ The Go-side `CapturePreRemediationHash` in the RO reconciler independently compu
 #### Remove `target_in_owner_chain`
 
 Removed from:
-- HAPI response (`result_parser.py` -- both incident and recovery parse functions)
+- HAPI response (`result_parser.py` -- incident parse function)
 - `is_target_in_owner_chain()` function in `result_parser.py`
 - AIAnalysis CRD status (`TargetInOwnerChain *bool`)
 - Rego evaluator input (`RegoInput` struct)
@@ -351,7 +351,7 @@ Issue #97 introduced these capabilities:
 | **Spec hash computation** | `k8s_client.py` computes hash pre-LLM from signal source's root owner | **SUPERSEDED**: `compute_spec_hash()` preserved, invoked by tool for the RCA-identified target. |
 | **`affectedResource` population** | Derived from pre-computed root owner in `llm_integration.py` Phase C | **SUPERSEDED**: LLM identifies affected resource directly during RCA. Enforced as required field via response validator. |
 | **`ExtractRootCauseAnalysis` centralization** | `response_processor.go` helper deduplicating 5 handler methods | **RETAINED**: Centralization is valuable. The Go-side extraction of `affectedResource` from the RCA JSON is correct regardless of how the LLM populates it. |
-| **`resolveEffectivenessTarget`** | `reconciler.go` uses `AffectedResource` for EA targeting | **RETAINED**: Predates Issue #97 (BR-HAPI-191). Continues to work -- the `AffectedResource` field is now populated by the LLM directly rather than by HAPI's Phase C fallback. |
+| **`resolveDualTargets`** | `reconciler.go` uses `AffectedResource` for EA targeting (DD-EM-003) | **RETAINED + RENAMED**: Renamed from `resolveEffectivenessTarget` in Issue #188. Now returns `*creator.DualTarget{Signal, Remediation}` with explicit dual-target semantics. The `AffectedResource` field is populated by the LLM directly rather than by HAPI's Phase C fallback. |
 | **RBAC for apps/v1** | `03-rbac.yaml` grants read access for spec hash | **RETAINED + EXPANDED**: Still needed for the `get_resource_context` tool. Expanded to include `replicasets` and `pods` for owner chain traversal. |
 | **`target_in_owner_chain` validation** | `result_parser.py` checks RCA target against pre-computed chain | **REPLACED**: Removed. `affected_resource` exposed as structured Rego input for granular per-kind approval policies. |
 
@@ -366,7 +366,7 @@ Issue #97 introduced these capabilities:
 5. **Agentic pattern**: Aligns with modern LLM tool-use patterns where the agent drives information gathering based on its analysis.
 6. **Graceful degradation**: If the `get_resource_context` tool fails (K8s API unavailable, RBAC issues), the LLM can still complete RCA and workflow selection without historical context, and it can reason about the failure explicitly.
 7. **Better Rego policies**: `affected_resource` (kind, name, namespace) as Rego input enables granular, per-kind approval rules -- strictly more powerful than the previous boolean `target_in_owner_chain`.
-8. **Enforced data quality**: `affectedResource` as a required response field with validation ensures downstream consumers (`resolveEffectivenessTarget`, WFE creator, audit trail) always have the target resource.
+8. **Enforced data quality**: `affectedResource` as a required response field with validation ensures downstream consumers (`resolveDualTargets` (DD-EM-003), WFE creator, audit trail) always have the target resource.
 
 ---
 

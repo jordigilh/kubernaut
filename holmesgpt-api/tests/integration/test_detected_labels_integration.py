@@ -16,7 +16,7 @@
 Integration tests for DetectedLabels on-demand computation (ADR-056 SoC).
 
 These tests verify the full detected_labels flow end-to-end within HAPI:
-1. Incident/recovery request arrives
+1. Incident request arrives
 2. WorkflowDiscoveryToolset is registered with K8s client + resource identity
 3. Mock LLM calls list_available_actions -> triggers on-demand label detection
 4. Labels are cached in session_state
@@ -33,7 +33,6 @@ Business Requirements:
 
 Test Matrix: 8 tests
   - IT-HAPI-056-001: CrashLoopBackOff + PDB -> detected_labels.pdbProtected=true
-  - IT-HAPI-056-002: Recovery + HPA -> detected_labels.hpaEnabled=true
   - IT-HAPI-056-003: detected_labels propagated in workflow discovery query params
   - IT-HAPI-056-004: ArgoCD + Helm managed -> gitOpsManaged + helmManaged
   - IT-HAPI-056-005: RBAC 403 -> failedDetections includes pdbProtected
@@ -194,36 +193,6 @@ class TestDetectedLabelsIncidentIntegration:
 
 
 @pytest.mark.requires_data_storage
-class TestDetectedLabelsRecoveryIntegration:
-    """IT-HAPI-056-002: Recovery analysis with detected_labels."""
-
-    @patch("src.clients.k8s_client.get_k8s_client")
-    def test_it_hapi_056_002_recovery_with_hpa(self, mock_get_k8s):
-        """IT-HAPI-056-002: Recovery request with HPA-enabled Deployment.
-
-        Given: K8s cluster has Deployment(api) + HPA targeting it
-        When: analyze_recovery completes
-        Then: response detected_labels contains hpaEnabled=true
-        """
-        mock_get_k8s.return_value = create_mock_k8s_with_hpa()
-
-        from src.extensions.recovery.llm_integration import analyze_recovery
-
-        request_data = _make_recovery_request(
-            resource_kind="Pod",
-            resource_name="api-pod-abc",
-            resource_namespace="production",
-        )
-
-        result = analyze_recovery(request_data, app_config=_mock_app_config())
-
-        assert result is not None
-        assert "detected_labels" in result, "Recovery response must include detected_labels"
-        labels = result["detected_labels"]
-        assert labels.get("hpaEnabled") is True
-
-
-@pytest.mark.requires_data_storage
 class TestDetectedLabelsCaching:
     """IT-HAPI-056-007: Label caching across workflow discovery steps."""
 
@@ -377,33 +346,6 @@ def _make_incident_request(
         "business_category": "standard",
         "cluster_name": "integration-test",
         "enrichment_results": {},
-    }
-
-
-def _make_recovery_request(
-    resource_kind: str = "Pod",
-    resource_name: str = "api-pod-abc",
-    resource_namespace: str = "production",
-) -> dict:
-    """Create a minimal recovery request for testing."""
-    return {
-        "incident_id": "it-hapi-056-recovery",
-        "remediation_id": "req-it-056-002",
-        "signal_name": "OOMKilled",
-        "severity": "high",
-        "signal_source": "prometheus",
-        "resource_namespace": resource_namespace,
-        "resource_kind": resource_kind,
-        "resource_name": resource_name,
-        "error_message": "Recovery attempt after OOMKilled",
-        "environment": "production",
-        "priority": "P1",
-        "risk_tolerance": "medium",
-        "business_category": "standard",
-        "cluster_name": "integration-test",
-        "enrichment_results": {},
-        "is_recovery_attempt": True,
-        "previous_attempt_count": 1,
     }
 
 

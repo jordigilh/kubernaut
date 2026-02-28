@@ -51,7 +51,7 @@
 
 ---
 
-# KubernetesExecution CRD Design Document
+# KubernetesExecution (DEPRECATED - ADR-025) CRD Design Document
 
 **Document Version**: 1.0
 **Date**: January 2025

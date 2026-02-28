@@ -17,17 +17,22 @@ limitations under the License.
 package remediationorchestrator
 
 import (
+	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 )
 
 // ========================================
@@ -87,7 +92,7 @@ var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
 		// RC-11 pattern: Wait for Processing + ObservedGeneration to prevent race
 		// where controller overwrites our manually set Blocked phase
 		Eventually(func() bool {
-			if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ns}, rr); err != nil {
+			if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ROControllerNamespace}, rr); err != nil {
 				return false
 			}
 			return rr.Status.OverallPhase == remediationv1.PhaseProcessing &&
@@ -99,7 +104,7 @@ var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
 		// This simulates a cooldown that has already expired
 		pastTime := metav1.NewTime(time.Now().Add(-10 * time.Second))
 		Eventually(func() error {
-			if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ns}, rr); err != nil {
+			if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ROControllerNamespace}, rr); err != nil {
 				return err
 			}
 
@@ -115,7 +120,7 @@ var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
 		// Verify RR transitions from Blocked → Failed after controller detects expired cooldown
 		// BR-ORCH-042: Controller checks BlockedUntil on each reconcile
 		Eventually(func(g Gomega) {
-			g.Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ns}, rr)).To(Succeed())
+			g.Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ROControllerNamespace}, rr)).To(Succeed())
 			g.Expect(rr.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed))
 		}, timeout, interval).Should(Succeed(),
 			"RR should transition to Failed when BlockedUntil is in the past")
@@ -161,7 +166,7 @@ var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
 			GinkgoWriter.Println("⏳ Waiting for RR1 to be initialized...")
 			Eventually(func() string {
 				rr := &remediationv1.RemediationRequest{}
-				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr1.Name, Namespace: ns}, rr)
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr1.Name, Namespace: ROControllerNamespace}, rr)
 				if err != nil {
 					return ""
 				}
@@ -187,7 +192,7 @@ var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
 			GinkgoWriter.Println("⏳ Waiting for RR2 to transition to Blocked phase...")
 			Eventually(func() string {
 				rr := &remediationv1.RemediationRequest{}
-				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr2.Name, Namespace: ns}, rr)
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr2.Name, Namespace: ROControllerNamespace}, rr)
 				if err != nil {
 					return ""
 				}
@@ -197,7 +202,7 @@ var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
 			// Verify BlockReason is DuplicateInProgress
 			GinkgoWriter.Println("✅ Verifying BlockReason is DuplicateInProgress...")
 			rr2Updated := &remediationv1.RemediationRequest{}
-			err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr2.Name, Namespace: ns}, rr2Updated)
+			err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr2.Name, Namespace: ROControllerNamespace}, rr2Updated)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(rr2Updated.Status.BlockReason).To(Equal("DuplicateInProgress"),
 				"BlockReason should be DuplicateInProgress")
@@ -213,8 +218,8 @@ var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
 			Consistently(func() bool {
 				sp := &signalprocessingv1.SignalProcessing{}
 				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
-					Name:      rr2.Name + "-sp",
-					Namespace: ns,
+					Name:      "sp-" + rr2.Name,
+					Namespace: ROControllerNamespace,
 				}, sp)
 				return apierrors.IsNotFound(err)
 			}, 5*time.Second, interval).Should(BeTrue(),
@@ -238,7 +243,7 @@ var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
 		GinkgoWriter.Println("⏳ Waiting for RR1 to reach Processing phase...")
 		Eventually(func() string {
 			rr := &remediationv1.RemediationRequest{}
-			err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr1.Name, Namespace: ns}, rr)
+			err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr1.Name, Namespace: ROControllerNamespace}, rr)
 			if err != nil {
 				return ""
 			}
@@ -254,7 +259,7 @@ var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
 		// Delete SignalProcessing CRD if it exists
 		spName := "sp-rr-signal-complete-1"
 		sp := &signalprocessingv1.SignalProcessing{}
-		err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ns}, sp)
+		err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, sp)
 		if err == nil {
 			GinkgoWriter.Println("🗑️  Deleting SP CRD to unblock RR1...")
 			Expect(k8sClient.Delete(ctx, sp)).To(Succeed())
@@ -264,7 +269,7 @@ var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
 		GinkgoWriter.Println("✅ Manually setting RR1 to Completed...")
 		Eventually(func() error {
 			rr := &remediationv1.RemediationRequest{}
-			err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr1.Name, Namespace: ns}, rr)
+			err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr1.Name, Namespace: ROControllerNamespace}, rr)
 			if err != nil {
 				return err
 			}
@@ -278,7 +283,7 @@ var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
 		GinkgoWriter.Println("⏳ Waiting for RR1 completion to be observed by controller...")
 		Eventually(func() bool {
 			rr := &remediationv1.RemediationRequest{}
-			err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr1.Name, Namespace: ns}, rr)
+			err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr1.Name, Namespace: ROControllerNamespace}, rr)
 			if err != nil {
 				return false
 			}
@@ -300,7 +305,7 @@ var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
 		GinkgoWriter.Println("⏳ Waiting for RR2 to proceed (not blocked)...")
 		Eventually(func() bool {
 			rr := &remediationv1.RemediationRequest{}
-			err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr2.Name, Namespace: ns}, rr)
+			err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr2.Name, Namespace: ROControllerNamespace}, rr)
 			if err != nil {
 				return false
 			}
@@ -311,6 +316,118 @@ var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
 
 			GinkgoWriter.Println("✅ TEST PASSED: RR allowed after original completed")
 		})
+	})
+})
+
+// ========================================
+// IT-RO-WE001: Target Resource Casing Preservation (Issue #203)
+// Test Plan: docs/testing/COOLDOWN_GW_RO/TEST_PLAN.md
+//
+// BUSINESS VALUE:
+// Validates the reconciler preserves AffectedResource.Kind casing
+// when building the targetResource string for routing checks. The
+// routing engine uses a field-indexed lookup on WFE.spec.targetResource,
+// so a case mismatch silently bypasses the RecentlyRemediated cooldown.
+// ========================================
+var _ = Describe("Target Resource Casing Preservation (Issue #203)", func() {
+
+	It("IT-RO-WE001-001: should block with RecentlyRemediated when Kind casing matches WFE", func() {
+		ns := createTestNamespace("ro-we001-001")
+		defer deleteTestNamespace(ns)
+
+		By("Creating a RemediationRequest")
+		rr := createRemediationRequest(ns, "rr-we001-001")
+
+		By("Driving RR to Processing phase")
+		Eventually(func() remediationv1.RemediationPhase {
+			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
+			return rr.Status.OverallPhase
+		}, timeout, interval).Should(Equal(remediationv1.PhaseProcessing))
+
+		By("Completing SignalProcessing")
+		spName := fmt.Sprintf("sp-%s", rr.Name)
+		sp := &signalprocessingv1.SignalProcessing{}
+		Eventually(func() error {
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, sp)
+		}, timeout, interval).Should(Succeed())
+		Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
+
+		By("Waiting for Analyzing phase")
+		Eventually(func() remediationv1.RemediationPhase {
+			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
+			return rr.Status.OverallPhase
+		}, timeout, interval).Should(Equal(remediationv1.PhaseAnalyzing))
+
+		By("Pre-creating a completed WFE with uppercase Kind in spec.targetResource")
+		// The targetResource format is "namespace/Kind/name" (preserving Kind casing).
+		// Before the fix (issue #203), the reconciler lowercased the first letter of Kind,
+		// producing "namespace/deployment/name" which would NOT match this WFE.
+		targetResource := ns + "/Deployment/test-app"
+		wfe := &workflowexecutionv1.WorkflowExecution{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "wfe-recently-completed",
+				Namespace: ROControllerNamespace,
+			},
+			Spec: workflowexecutionv1.WorkflowExecutionSpec{
+				RemediationRequestRef: corev1.ObjectReference{
+					Name:      "rr-previous",
+					Namespace: ROControllerNamespace,
+				},
+				WorkflowRef: workflowexecutionv1.WorkflowRef{
+					WorkflowID:      "wf-restart-pods",
+					Version:         "v1.0.0",
+					ExecutionBundle: "test-image:latest",
+				},
+				TargetResource:  targetResource,
+				ExecutionEngine: "job",
+			},
+		}
+		Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+		recentCompletion := metav1.NewTime(time.Now().Add(-1 * time.Minute))
+		wfe.Status.Phase = workflowexecutionv1.PhaseCompleted
+		wfe.Status.CompletionTime = &recentCompletion
+		Expect(k8sClient.Status().Update(ctx, wfe)).To(Succeed())
+
+		By("Completing AIAnalysis with AffectedResource.Kind = 'Deployment' (uppercase)")
+		aiName := fmt.Sprintf("ai-%s", rr.Name)
+		ai := &aianalysisv1.AIAnalysis{}
+		Eventually(func() error {
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ROControllerNamespace}, ai)
+		}, timeout, interval).Should(Succeed())
+		ai.Status.Phase = aianalysisv1.PhaseCompleted
+		ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+			WorkflowID:      "wf-restart-pods",
+			Version:         "v1.0.0",
+			ExecutionBundle: "test-image:latest",
+			Confidence:      0.95,
+		}
+		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+			Summary:    "OOM kill detected",
+			Severity:   "critical",
+			SignalType: "alert",
+			AffectedResource: &aianalysisv1.AffectedResource{
+				Kind:      "Deployment",
+				Name:      "test-app",
+				Namespace: ns,
+			},
+		}
+		aiCompletedAt := metav1.Now()
+		ai.Status.CompletedAt = &aiCompletedAt
+		Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
+
+		By("Asserting RR transitions to Blocked with RecentlyRemediated reason")
+		// BUSINESS OUTCOME: The routing engine finds the pre-created WFE because
+		// the reconciler now preserves "Deployment" (not "deployment") when building
+		// the targetResource query. This prevents redundant remediation on a target
+		// that was just successfully fixed.
+		Eventually(func(g Gomega) {
+			g.Expect(k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)).To(Succeed())
+			g.Expect(rr.Status.OverallPhase).To(Equal(remediationv1.PhaseBlocked))
+			g.Expect(rr.Status.BlockReason).To(Equal(string(remediationv1.BlockReasonRecentlyRemediated)))
+		}, timeout, interval).Should(Succeed(),
+			"RR must be blocked as RecentlyRemediated when Kind casing matches WFE")
+
+		GinkgoWriter.Println("TEST PASSED: Casing-preserved targetResource matched WFE (RecentlyRemediated)")
 	})
 })
 

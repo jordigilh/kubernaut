@@ -208,7 +208,7 @@ func MustGatherPodLogs(clusterName, kubeconfigPath, namespace, serviceName strin
 	}
 
 	_, _ = fmt.Fprintf(writer, "✅ Must-gather collected %d log files to %s\n", collectedCount, mustGatherDir)
-	_, _ = fmt.Fprintf(writer, "   (Events and pod status also captured)\n\n")
+	_, _ = fmt.Fprintf(writer, "   (Events, pod status, deployments, replicasets also captured)\n\n")
 }
 
 // DeleteCluster deletes a Kind cluster and optionally exports logs on test failure
@@ -913,7 +913,7 @@ spec:
     spec:
       containers:
       - name: postgresql
-        image: postgres:16-alpine
+        image: docker.io/library/postgres:16-alpine
         ports:
         - name: postgresql
           containerPort: 5432
@@ -1630,7 +1630,7 @@ func startPostgreSQL(infra *DataStorageInfrastructure, cfg *DataStorageConfig, w
 		"-e", fmt.Sprintf("POSTGRES_DB=%s", cfg.DBName),
 		"-e", fmt.Sprintf("POSTGRES_USER=%s", cfg.DBUser),
 		"-e", fmt.Sprintf("POSTGRES_PASSWORD=%s", cfg.DBPassword),
-		"postgres:16-alpine")
+		"docker.io/library/postgres:16-alpine")
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {

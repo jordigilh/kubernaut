@@ -258,12 +258,15 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		var remediationRequest *remediationv1.RemediationRequest
 		Eventually(func() bool {
 			rrList := &remediationv1.RemediationRequestList{}
-			// Gateway creates RR in the signal's namespace (testNamespace), not the infrastructure namespace
-			if err := apiReader.List(ctx, rrList, client.InNamespace(testNamespace)); err != nil {
+			// ADR-057: Gateway creates RR in controller namespace (kubernaut-system)
+			if err := apiReader.List(ctx, rrList, client.InNamespace(namespace)); err != nil {
 				return false
 			}
 			for i := range rrList.Items {
 				rr := &rrList.Items[i]
+				if rr.Spec.TargetResource.Namespace != testNamespace {
+					continue
+				}
 				remediationRequest = rr
 				GinkgoWriter.Printf("  ✅ RemediationRequest found: %s\n", rr.Name)
 				return true
@@ -277,7 +280,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		By("Step 4: Waiting for SignalProcessing to complete")
 		Eventually(func() string {
 			spList := &signalprocessingv1.SignalProcessingList{}
-			if err := apiReader.List(ctx, spList, client.InNamespace(testNamespace)); err != nil {
+			if err := apiReader.List(ctx, spList, client.InNamespace(namespace)); err != nil {
 				return ""
 			}
 			for _, sp := range spList.Items {
@@ -297,7 +300,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		var aaName string
 		Eventually(func() string {
 			aaList := &aianalysisv1.AIAnalysisList{}
-			if err := apiReader.List(ctx, aaList, client.InNamespace(testNamespace)); err != nil {
+			if err := apiReader.List(ctx, aaList, client.InNamespace(namespace)); err != nil {
 				return ""
 			}
 			for _, aa := range aaList.Items {
@@ -314,7 +317,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		// Verify AIAnalysis selected a workflow with job engine
 		By("Step 5b: Verifying AIAnalysis selected workflow with job engine")
 		aa := &aianalysisv1.AIAnalysis{}
-		Expect(apiReader.Get(ctx, client.ObjectKey{Name: aaName, Namespace: testNamespace}, aa)).To(Succeed())
+		Expect(apiReader.Get(ctx, client.ObjectKey{Name: aaName, Namespace: namespace}, aa)).To(Succeed())
 		Expect(aa.Status.SelectedWorkflow).ToNot(BeNil(), "AIAnalysis should have selectedWorkflow")
 		Expect(aa.Status.SelectedWorkflow.ExecutionEngine).To(Equal("job"),
 			"AIAnalysis should select job execution engine")
@@ -326,7 +329,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		var weName string
 		Eventually(func() string {
 			weList := &workflowexecutionv1.WorkflowExecutionList{}
-			if err := apiReader.List(ctx, weList, client.InNamespace(testNamespace)); err != nil {
+			if err := apiReader.List(ctx, weList, client.InNamespace(namespace)); err != nil {
 				return ""
 			}
 			for _, we := range weList.Items {
@@ -367,7 +370,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		Eventually(func() string {
 			we := &workflowexecutionv1.WorkflowExecution{}
 			if err := apiReader.Get(ctx, client.ObjectKey{
-				Name: weName, Namespace: testNamespace,
+				Name: weName, Namespace: namespace,
 			}, we); err != nil {
 				return ""
 			}
@@ -383,19 +386,19 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		Eventually(func() bool {
 			pollCount++
 			nrList := &notificationv1.NotificationRequestList{}
-			if listErr := apiReader.List(ctx, nrList, client.InNamespace(testNamespace)); listErr != nil {
+			if listErr := apiReader.List(ctx, nrList, client.InNamespace(namespace)); listErr != nil {
 				GinkgoWriter.Printf("  [Step 9 poll %d] List NR error: %v\n", pollCount, listErr)
 				return false
 			}
 			// Diagnostic: every 10 polls, dump RR phase and all NRs
 			if pollCount%10 == 1 {
 				rr := &remediationv1.RemediationRequest{}
-				if getErr := apiReader.Get(ctx, client.ObjectKey{Name: remediationRequest.Name, Namespace: testNamespace}, rr); getErr == nil {
+				if getErr := apiReader.Get(ctx, client.ObjectKey{Name: remediationRequest.Name, Namespace: namespace}, rr); getErr == nil {
 					GinkgoWriter.Printf("  [Step 9 poll %d] RR %s phase=%s outcome=%s\n", pollCount, rr.Name, rr.Status.OverallPhase, rr.Status.Outcome)
 				} else {
 					GinkgoWriter.Printf("  [Step 9 poll %d] RR Get error: %v\n", pollCount, getErr)
 				}
-				GinkgoWriter.Printf("  [Step 9 poll %d] Found %d NotificationRequests in %s\n", pollCount, len(nrList.Items), testNamespace)
+				GinkgoWriter.Printf("  [Step 9 poll %d] Found %d NotificationRequests in %s\n", pollCount, len(nrList.Items), namespace)
 				for _, nr := range nrList.Items {
 					refName := "<nil>"
 					if nr.Spec.RemediationRequestRef != nil {
@@ -423,7 +426,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		Eventually(func() string {
 			rr := &remediationv1.RemediationRequest{}
 			if err := apiReader.Get(ctx, client.ObjectKey{
-				Name: remediationRequest.Name, Namespace: testNamespace,
+				Name: remediationRequest.Name, Namespace: namespace,
 			}, rr); err != nil {
 				return ""
 			}
@@ -653,7 +656,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		// Fetch the live RR (post-completion, all status fields populated)
 		liveRR := &remediationv1.RemediationRequest{}
 		Expect(apiReader.Get(ctx, client.ObjectKey{
-			Name: remediationRequest.Name, Namespace: testNamespace,
+			Name: remediationRequest.Name, Namespace: namespace,
 		}, liveRR)).To(Succeed(), "Should fetch the live RR")
 
 		// Parse reconstructed YAML into an RR struct
@@ -731,7 +734,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 
 		// 13a: Get EA by deterministic name (ea-<RR.Name>) — avoids selecting wrong EA in shared namespace
 		eaName := fmt.Sprintf("ea-%s", remediationRequest.Name)
-		eaKey := client.ObjectKey{Name: eaName, Namespace: testNamespace}
+		eaKey := client.ObjectKey{Name: eaName, Namespace: namespace}
 		ea := &eav1.EffectivenessAssessment{}
 		Eventually(func() error {
 			return apiReader.Get(testCtx, eaKey, ea)
@@ -740,12 +743,12 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		Expect(ea.Spec.CorrelationID).To(Equal(remediationRequest.Name),
 			"EA correlationID should match RR name")
 		GinkgoWriter.Printf("  Found EA: %s/%s\n", ea.Namespace, ea.Name)
-		Expect(ea.Spec.TargetResource.Kind).ToNot(BeEmpty(),
-			"EA targetResource.kind should be set")
-		Expect(ea.Spec.TargetResource.Name).ToNot(BeEmpty(),
-			"EA targetResource.name should be set")
-		Expect(ea.Spec.TargetResource.Namespace).ToNot(BeEmpty(),
-			"EA targetResource.namespace should be set (RO must populate)")
+		Expect(ea.Spec.RemediationTarget.Kind).ToNot(BeEmpty(),
+			"EA remediationTarget.kind should be set")
+		Expect(ea.Spec.RemediationTarget.Name).ToNot(BeEmpty(),
+			"EA remediationTarget.name should be set")
+		Expect(ea.Spec.RemediationTarget.Namespace).ToNot(BeEmpty(),
+			"EA remediationTarget.namespace should be set (RO must populate)")
 		Expect(ea.Spec.Config.StabilizationWindow.Duration).To(BeNumerically(">", 0),
 			"EA stabilizationWindow should be positive (set by RO config)")
 		Expect(ea.Spec.RemediationRequestPhase).To(Equal("Completed"),
@@ -768,9 +771,9 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		Expect(foundOwnerRef).To(BeTrue(),
 			"EA owner reference should point to the parent RemediationRequest")
 
-		GinkgoWriter.Printf("  EA spec: correlationID=%s, target=%s/%s/%s, stabilizationWindow=%v, signalName=%s\n",
-			ea.Spec.CorrelationID, ea.Spec.TargetResource.Kind, ea.Spec.TargetResource.Name,
-			ea.Spec.TargetResource.Namespace, ea.Spec.Config.StabilizationWindow.Duration,
+		GinkgoWriter.Printf("  EA spec: correlationID=%s, remediationTarget=%s/%s/%s, stabilizationWindow=%v, signalName=%s\n",
+			ea.Spec.CorrelationID, ea.Spec.RemediationTarget.Kind, ea.Spec.RemediationTarget.Name,
+			ea.Spec.RemediationTarget.Namespace, ea.Spec.Config.StabilizationWindow.Duration,
 			ea.Spec.SignalName)
 
 		// 13c: Verify EA reached terminal phase (from 02_ and 03_ assertions)
@@ -824,7 +827,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		GinkgoWriter.Printf("  │ Phase:   %s\n", finalEA.Status.Phase)
 		GinkgoWriter.Printf("  │ Reason:  %s\n", finalEA.Status.AssessmentReason)
 		GinkgoWriter.Printf("  │ Target:  %s/%s (%s)\n",
-			finalEA.Spec.TargetResource.Kind, finalEA.Spec.TargetResource.Name, testNamespace)
+			finalEA.Spec.RemediationTarget.Kind, finalEA.Spec.RemediationTarget.Name, testNamespace)
 		GinkgoWriter.Println("  ├─── Component Scores ────────────────────────────────────")
 		if finalEA.Status.Components.HealthScore != nil {
 			GinkgoWriter.Printf("  │ Health:  %.2f (assessed=%v)\n", *finalEA.Status.Components.HealthScore, finalEA.Status.Components.HealthAssessed)
@@ -869,7 +872,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 
 		// SP: re-fetch and validate
 		spList := &signalprocessingv1.SignalProcessingList{}
-		Expect(apiReader.List(ctx, spList, client.InNamespace(testNamespace))).To(Succeed())
+		Expect(apiReader.List(ctx, spList, client.InNamespace(namespace))).To(Succeed())
 		for i := range spList.Items {
 			sp := &spList.Items[i]
 			if sp.Spec.RemediationRequestRef.Name == remediationRequest.Name {
@@ -883,12 +886,12 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 
 		// WE: re-fetch
 		weObj := &workflowexecutionv1.WorkflowExecution{}
-		Expect(apiReader.Get(ctx, client.ObjectKey{Name: weName, Namespace: testNamespace}, weObj)).To(Succeed())
+		Expect(apiReader.Get(ctx, client.ObjectKey{Name: weName, Namespace: namespace}, weObj)).To(Succeed())
 		allFailures = append(allFailures, crdvalidators.ValidateWEStatus(weObj)...)
 
 		// NT: re-fetch completion notification
 		nrList := &notificationv1.NotificationRequestList{}
-		Expect(apiReader.List(ctx, nrList, client.InNamespace(testNamespace))).To(Succeed())
+		Expect(apiReader.List(ctx, nrList, client.InNamespace(namespace))).To(Succeed())
 		for i := range nrList.Items {
 			nr := &nrList.Items[i]
 			if nr.Spec.RemediationRequestRef != nil &&
@@ -902,7 +905,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		// RR: re-fetch
 		finalRR := &remediationv1.RemediationRequest{}
 		Expect(apiReader.Get(ctx, client.ObjectKey{
-			Name: remediationRequest.Name, Namespace: testNamespace,
+			Name: remediationRequest.Name, Namespace: namespace,
 		}, finalRR)).To(Succeed())
 		allFailures = append(allFailures, crdvalidators.ValidateRRStatus(finalRR)...)
 
@@ -1043,11 +1046,14 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		Eventually(func() bool {
 			pollCount++
 			rrList := &remediationv1.RemediationRequestList{}
-			if err := apiReader.List(ctx, rrList, client.InNamespace(testNamespaceAM)); err != nil {
+			if err := apiReader.List(ctx, rrList, client.InNamespace(namespace)); err != nil {
 				return false
 			}
 			for i := range rrList.Items {
 				rr := &rrList.Items[i]
+				if rr.Spec.TargetResource.Namespace != testNamespaceAM {
+					continue
+				}
 				remediationRequest = rr
 				GinkgoWriter.Printf("  ✅ RemediationRequest found (from AlertManager): %s\n", rr.Name)
 				return true
@@ -1072,7 +1078,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		By("AM Step 4: Waiting for SignalProcessing to complete")
 		Eventually(func() string {
 			spList := &signalprocessingv1.SignalProcessingList{}
-			if err := apiReader.List(ctx, spList, client.InNamespace(testNamespaceAM)); err != nil {
+			if err := apiReader.List(ctx, spList, client.InNamespace(namespace)); err != nil {
 				return ""
 			}
 			for _, sp := range spList.Items {
@@ -1092,7 +1098,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		var aaName string
 		Eventually(func() string {
 			aaList := &aianalysisv1.AIAnalysisList{}
-			if err := apiReader.List(ctx, aaList, client.InNamespace(testNamespaceAM)); err != nil {
+			if err := apiReader.List(ctx, aaList, client.InNamespace(namespace)); err != nil {
 				return ""
 			}
 			for _, aa := range aaList.Items {
@@ -1109,7 +1115,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		// Verify AIAnalysis selected a workflow with job engine
 		By("AM Step 5b: Verifying AIAnalysis selected workflow with job engine")
 		aa := &aianalysisv1.AIAnalysis{}
-		Expect(apiReader.Get(ctx, client.ObjectKey{Name: aaName, Namespace: testNamespaceAM}, aa)).To(Succeed())
+		Expect(apiReader.Get(ctx, client.ObjectKey{Name: aaName, Namespace: namespace}, aa)).To(Succeed())
 		Expect(aa.Status.SelectedWorkflow).ToNot(BeNil(), "AIAnalysis should have selectedWorkflow")
 		Expect(aa.Status.SelectedWorkflow.ExecutionEngine).To(Equal("job"),
 			"AIAnalysis should select job execution engine")
@@ -1121,7 +1127,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		var weName string
 		Eventually(func() string {
 			weList := &workflowexecutionv1.WorkflowExecutionList{}
-			if err := apiReader.List(ctx, weList, client.InNamespace(testNamespaceAM)); err != nil {
+			if err := apiReader.List(ctx, weList, client.InNamespace(namespace)); err != nil {
 				return ""
 			}
 			for _, we := range weList.Items {
@@ -1164,7 +1170,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		Eventually(func() string {
 			we := &workflowexecutionv1.WorkflowExecution{}
 			if err := apiReader.Get(ctx, client.ObjectKey{
-				Name: weName, Namespace: testNamespaceAM,
+				Name: weName, Namespace: namespace,
 			}, we); err != nil {
 				return ""
 			}
@@ -1178,7 +1184,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		By("AM Step 9: Waiting for completion NotificationRequest")
 		Eventually(func() bool {
 			nrList := &notificationv1.NotificationRequestList{}
-			if listErr := apiReader.List(ctx, nrList, client.InNamespace(testNamespaceAM)); listErr != nil {
+			if listErr := apiReader.List(ctx, nrList, client.InNamespace(namespace)); listErr != nil {
 				return false
 			}
 			for _, nr := range nrList.Items {
@@ -1200,7 +1206,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		Eventually(func() string {
 			rr := &remediationv1.RemediationRequest{}
 			if err := apiReader.Get(ctx, client.ObjectKey{
-				Name: remediationRequest.Name, Namespace: testNamespaceAM,
+				Name: remediationRequest.Name, Namespace: namespace,
 			}, rr); err != nil {
 				return ""
 			}
@@ -1304,7 +1310,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		// ================================================================
 		By("AM Step 12: Verifying EffectivenessAssessment CRD created and assessed")
 		eaName := fmt.Sprintf("ea-%s", remediationRequest.Name)
-		eaKey := client.ObjectKey{Name: eaName, Namespace: testNamespaceAM}
+		eaKey := client.ObjectKey{Name: eaName, Namespace: namespace}
 
 		ea := &eav1.EffectivenessAssessment{}
 		Eventually(func() error {
@@ -1335,7 +1341,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		GinkgoWriter.Printf("  │ Phase:   %s\n", finalEA.Status.Phase)
 		GinkgoWriter.Printf("  │ Reason:  %s\n", finalEA.Status.AssessmentReason)
 		GinkgoWriter.Printf("  │ Target:  %s/%s (%s)\n",
-			finalEA.Spec.TargetResource.Kind, finalEA.Spec.TargetResource.Name, testNamespaceAM)
+			finalEA.Spec.RemediationTarget.Kind, finalEA.Spec.RemediationTarget.Name, testNamespaceAM)
 		GinkgoWriter.Println("  ├─── Component Scores ────────────────────────────────────")
 		if finalEA.Status.Components.HealthScore != nil {
 			GinkgoWriter.Printf("  │ Health:  %.2f (assessed=%v)\n", *finalEA.Status.Components.HealthScore, finalEA.Status.Components.HealthAssessed)
@@ -1377,7 +1383,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 
 		// SP: fetch and validate
 		amSPList := &signalprocessingv1.SignalProcessingList{}
-		Expect(apiReader.List(ctx, amSPList, client.InNamespace(testNamespaceAM))).To(Succeed())
+		Expect(apiReader.List(ctx, amSPList, client.InNamespace(namespace))).To(Succeed())
 		for i := range amSPList.Items {
 			sp := &amSPList.Items[i]
 			if sp.Spec.RemediationRequestRef.Name == remediationRequest.Name {
@@ -1391,12 +1397,12 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 
 		// WE: fetch
 		amWE := &workflowexecutionv1.WorkflowExecution{}
-		Expect(apiReader.Get(ctx, client.ObjectKey{Name: weName, Namespace: testNamespaceAM}, amWE)).To(Succeed())
+		Expect(apiReader.Get(ctx, client.ObjectKey{Name: weName, Namespace: namespace}, amWE)).To(Succeed())
 		allFailures = append(allFailures, crdvalidators.ValidateWEStatus(amWE)...)
 
 		// NT: fetch completion notification
 		amNRList := &notificationv1.NotificationRequestList{}
-		Expect(apiReader.List(ctx, amNRList, client.InNamespace(testNamespaceAM))).To(Succeed())
+		Expect(apiReader.List(ctx, amNRList, client.InNamespace(namespace))).To(Succeed())
 		for i := range amNRList.Items {
 			nr := &amNRList.Items[i]
 			if nr.Spec.RemediationRequestRef != nil &&
@@ -1410,7 +1416,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		// RR: fetch
 		amFinalRR := &remediationv1.RemediationRequest{}
 		Expect(apiReader.Get(ctx, client.ObjectKey{
-			Name: remediationRequest.Name, Namespace: testNamespaceAM,
+			Name: remediationRequest.Name, Namespace: namespace,
 		}, amFinalRR)).To(Succeed())
 		allFailures = append(allFailures, crdvalidators.ValidateRRStatus(amFinalRR)...)
 

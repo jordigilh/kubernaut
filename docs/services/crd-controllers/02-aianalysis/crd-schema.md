@@ -27,7 +27,7 @@
 |----------|---------------|
 | **DD-CONTRACT-002** | Self-contained CRD pattern - all data in spec |
 | **DD-WORKFLOW-001 v1.8** | DetectedLabels (ADR-056: removed), CustomLabels, OwnerChain (ADR-055: removed) in EnrichmentResults |
-| **DD-RECOVERY-002** | Recovery flow with `PreviousExecutions` slice |
+| **DD-RECOVERY-002** | [Deprecated - Issue #180] Recovery flow with `PreviousExecutions` slice |
 | **DD-RECOVERY-003** | Kubernetes reason codes for failure (not natural language) |
 | **ADR-040** | Approval orchestration handled by RO, not AIAnalysis |
 | **ADR-041** | LLM response contract defines `selected_workflow` format |
@@ -88,7 +88,7 @@ type AIAnalysis struct {
 // AIAnalysisSpec defines the desired state of AIAnalysis.
 // Design Decision: DD-CONTRACT-002 (self-contained CRD pattern)
 // V1.0: HolmesGPT-API only (no LLM config fields)
-// Recovery: DD-RECOVERY-002 (direct recovery flow)
+// Recovery: [Deprecated - Issue #180] DD-RECOVERY-002 (direct recovery flow)
 type AIAnalysisSpec struct {
     // ========================================
     // PARENT REFERENCE (Audit/Lineage)

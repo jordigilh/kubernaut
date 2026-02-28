@@ -114,7 +114,8 @@ type PostgreSQLConfig struct {
 }
 
 // StartPostgreSQL starts a PostgreSQL container for integration tests
-// Uses postgres:16-alpine image for consistency across all services
+// Uses docker.io/library/postgres:16-alpine to avoid Podman registry resolution
+// (unqualified postgres:16-alpine may resolve to quay.io on some CI runners, causing 404)
 //
 // Pattern: DD-TEST-002 Sequential Startup
 // - Cleanup existing container first
@@ -148,7 +149,7 @@ func StartPostgreSQL(cfg PostgreSQLConfig, writer io.Writer) error {
 		args = append(args, "--network", cfg.Network)
 	}
 
-	args = append(args, "postgres:16-alpine")
+	args = append(args, "docker.io/library/postgres:16-alpine")
 
 	// Add max_connections if specified
 	if cfg.MaxConnections > 0 {

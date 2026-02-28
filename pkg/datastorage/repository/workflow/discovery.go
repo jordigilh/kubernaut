@@ -32,6 +32,8 @@ import (
 // Authority: DD-WORKFLOW-016 (Action-Type Workflow Catalog Indexing)
 // Authority: DD-HAPI-017 (Three-Step Workflow Discovery Integration)
 // Business Requirement: BR-HAPI-017-001 (Three-Step Tool Implementation)
+// CONVENTION (#213, DD-WORKFLOW-016): All paginated queries on remediation_workflow_catalog
+// must use workflow_id ASC as a deterministic tiebreaker in ORDER BY.
 //
 // Step 1: ListActions -- list action types with active workflow counts
 // Step 2: ListWorkflowsByActionType -- list workflows for an action type
@@ -154,7 +156,7 @@ func (r *Repository) ListWorkflowsByActionType(ctx context.Context, actionType s
 	mainQuery := fmt.Sprintf(`
 		SELECT * FROM remediation_workflow_catalog
 		WHERE %s
-		ORDER BY actual_success_rate DESC NULLS LAST, created_at DESC
+		ORDER BY actual_success_rate DESC NULLS LAST, created_at DESC, workflow_id ASC
 		OFFSET $%d LIMIT $%d
 	`, whereClause, len(args)+1, len(args)+2)
 
@@ -268,6 +270,52 @@ func buildContextFilterSQL(filters *models.WorkflowDiscoveryFilters) (string, []
 			END
 		)`, argIdx, argIdx))
 		args = append(args, filters.Priority)
+		argIdx++
+	}
+
+	// Issue #197: DetectedLabels filtering per DD-WORKFLOW-001 v2.7
+	if filters.DetectedLabels != nil {
+		dl := filters.DetectedLabels
+
+		// Boolean fields: when true, match workflows that require it OR have no requirement (absent)
+		boolFields := []struct {
+			jsonKey string
+			value   bool
+		}{
+			{"gitOpsManaged", dl.GitOpsManaged},
+			{"pdbProtected", dl.PDBProtected},
+			{"hpaEnabled", dl.HPAEnabled},
+			{"stateful", dl.Stateful},
+			{"helmManaged", dl.HelmManaged},
+			{"networkIsolated", dl.NetworkIsolated},
+		}
+		for _, f := range boolFields {
+			if f.value {
+				conditions = append(conditions, fmt.Sprintf(
+					"(detected_labels->>'%s' = $%d OR detected_labels->>'%s' IS NULL)",
+					f.jsonKey, argIdx, f.jsonKey))
+				args = append(args, "true")
+				argIdx++
+			}
+		}
+
+		// String fields: exact match, wildcard "*", or absent (no requirement)
+		stringFields := []struct {
+			jsonKey string
+			value   string
+		}{
+			{"gitOpsTool", dl.GitOpsTool},
+			{"serviceMesh", dl.ServiceMesh},
+		}
+		for _, f := range stringFields {
+			if f.value != "" {
+				conditions = append(conditions, fmt.Sprintf(
+					"(detected_labels->>'%s' = $%d OR detected_labels->>'%s' = '*' OR detected_labels->>'%s' IS NULL)",
+					f.jsonKey, argIdx, f.jsonKey, f.jsonKey))
+				args = append(args, f.value)
+				argIdx++
+			}
+		}
 	}
 
 	if len(conditions) == 0 {

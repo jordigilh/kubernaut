@@ -368,7 +368,7 @@ func createTestWFE(name, targetResource string) *workflowexecutionv1alpha1.Workf
 	return &workflowexecutionv1alpha1.WorkflowExecution{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: "default",
+			Namespace: controllerNamespace,
 		},
 		Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 			ExecutionEngine: "tekton", // BR-WE-014: Required field (enum: tekton, job)
@@ -377,7 +377,7 @@ func createTestWFE(name, targetResource string) *workflowexecutionv1alpha1.Workf
 				APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
 				Kind:       "RemediationRequest",
 				Name:       "test-rr-" + name,
-				Namespace:  "default",
+				Namespace:  controllerNamespace,
 			},
 			WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 				WorkflowID: "test-hello-world",

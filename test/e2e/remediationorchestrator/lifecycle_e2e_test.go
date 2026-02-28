@@ -66,7 +66,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 			rr := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "rr-lifecycle-e2e",
-					Namespace: testNS,
+					Namespace: controllerNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: fingerprint,
@@ -89,6 +89,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 				},
 			}
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 
 			By("Verifying RemediationRequest was created")
 			createdRR := &remediationv1.RemediationRequest{}
@@ -97,17 +98,17 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 			}, timeout, interval).Should(Succeed())
 			Expect(createdRR.Spec.SignalFingerprint).To(Equal(fingerprint))
 
-			sp := helpers.WaitForSPCreation(ctx, k8sClient, testNS, timeout, interval)
+			sp := helpers.WaitForSPCreation(ctx, k8sClient, controllerNamespace, rr.Name, timeout, interval)
 			helpers.SimulateSPCompletion(ctx, k8sClient, sp)
 
-			ai := helpers.WaitForAICreation(ctx, k8sClient, testNS, timeout, interval)
+			ai := helpers.WaitForAICreation(ctx, k8sClient, controllerNamespace, rr.Name, timeout, interval)
 			helpers.SimulateAICompletedWithWorkflow(ctx, k8sClient, ai, helpers.AICompletionOpts{
 				TargetKind:      "Deployment",
 				TargetName:      "test-app",
 				TargetNamespace: testNS,
 			})
 
-			we := helpers.WaitForWECreation(ctx, k8sClient, testNS, timeout, interval)
+			we := helpers.WaitForWECreation(ctx, k8sClient, controllerNamespace, rr.Name, timeout, interval)
 			helpers.SimulateWECompletion(ctx, k8sClient, we)
 
 			By("Verifying all child CRDs have correct owner references set by RO")
@@ -133,7 +134,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 			rr := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "rr-approval-e2e",
-					Namespace: testNS,
+					Namespace: controllerNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: fingerprint,
@@ -156,11 +157,12 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 				},
 			}
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 
-			sp := helpers.WaitForSPCreation(ctx, k8sClient, testNS, timeout, interval)
+			sp := helpers.WaitForSPCreation(ctx, k8sClient, controllerNamespace, rr.Name, timeout, interval)
 			helpers.SimulateSPCompletion(ctx, k8sClient, sp)
 
-			ai := helpers.WaitForAICreation(ctx, k8sClient, testNS, timeout, interval)
+			ai := helpers.WaitForAICreation(ctx, k8sClient, controllerNamespace, rr.Name, timeout, interval)
 			helpers.SimulateAICompletedWithWorkflow(ctx, k8sClient, ai, helpers.AICompletionOpts{
 				ApprovalRequired: true,
 				ApprovalReason:   "Confidence below auto-approve threshold",
@@ -171,7 +173,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 			})
 
 			By("Waiting for RO to create RemediationApprovalRequest")
-			rar := helpers.WaitForRARCreation(ctx, k8sClient, testNS, timeout, interval)
+			rar := helpers.WaitForRARCreation(ctx, k8sClient, controllerNamespace, rr.Name, timeout, interval)
 
 			By("Verifying RAR was created correctly by RO")
 			Expect(rar.Spec.Confidence).To(Equal(float64(0.65)))
@@ -201,7 +203,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 			rr := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "rr-rejection-e2e",
-					Namespace: testNS,
+					Namespace: controllerNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: fingerprint,
@@ -224,11 +226,12 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 				},
 			}
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 
-			sp := helpers.WaitForSPCreation(ctx, k8sClient, testNS, timeout, interval)
+			sp := helpers.WaitForSPCreation(ctx, k8sClient, controllerNamespace, rr.Name, timeout, interval)
 			helpers.SimulateSPCompletion(ctx, k8sClient, sp)
 
-			ai := helpers.WaitForAICreation(ctx, k8sClient, testNS, timeout, interval)
+			ai := helpers.WaitForAICreation(ctx, k8sClient, controllerNamespace, rr.Name, timeout, interval)
 			helpers.SimulateAICompletedWithWorkflow(ctx, k8sClient, ai, helpers.AICompletionOpts{
 				ApprovalRequired: true,
 				ApprovalReason:   "Confidence below auto-approve threshold",
@@ -239,7 +242,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 			})
 
 			By("Waiting for RO to create RemediationApprovalRequest")
-			rar := helpers.WaitForRARCreation(ctx, k8sClient, testNS, timeout, interval)
+			rar := helpers.WaitForRARCreation(ctx, k8sClient, controllerNamespace, rr.Name, timeout, interval)
 
 			By("Simulating operator rejection")
 			rar.Status.Decision = remediationv1.ApprovalDecisionRejected
@@ -270,7 +273,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 			rr := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "rr-no-workflow-e2e",
-					Namespace: testNS,
+					Namespace: controllerNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: fingerprint,
@@ -293,11 +296,12 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 				},
 			}
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 
-			sp := helpers.WaitForSPCreation(ctx, k8sClient, testNS, timeout, interval)
+			sp := helpers.WaitForSPCreation(ctx, k8sClient, controllerNamespace, rr.Name, timeout, interval)
 			helpers.SimulateSPCompletion(ctx, k8sClient, sp)
 
-			ai := helpers.WaitForAICreation(ctx, k8sClient, testNS, timeout, interval)
+			ai := helpers.WaitForAICreation(ctx, k8sClient, controllerNamespace, rr.Name, timeout, interval)
 			helpers.SimulateAIWorkflowNotNeeded(ctx, k8sClient, ai)
 
 			By("Verifying AIAnalysis shows WorkflowNotNeeded reason")
@@ -321,7 +325,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 			rr := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "rr-cascade-e2e",
-					Namespace: testNS,
+					Namespace: controllerNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: fingerprint,
@@ -344,9 +348,10 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 				},
 			}
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 
 			By("Waiting for RO to create child SignalProcessing with owner reference")
-			sp := helpers.WaitForSPCreation(ctx, k8sClient, testNS, timeout, interval)
+			sp := helpers.WaitForSPCreation(ctx, k8sClient, controllerNamespace, rr.Name, timeout, interval)
 			Expect(sp.OwnerReferences).To(HaveLen(1),
 				"SP should have OwnerReference set by RO for cascade deletion")
 
@@ -380,7 +385,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 			rr := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "rr-dedup-e2e",
-					Namespace: testNS,
+					Namespace: controllerNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: fingerprint,
@@ -403,6 +408,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 				},
 			}
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 
 			By("Pre-populating Status.Deduplication and DuplicateOf via status update")
 			createdRR := &remediationv1.RemediationRequest{}

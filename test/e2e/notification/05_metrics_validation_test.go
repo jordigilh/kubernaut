@@ -72,7 +72,7 @@ var _ = Describe("Metrics E2E Validation", Label("metrics"), func() {
 			notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "metrics-test-requests-total",
-					Namespace: "default",
+					Namespace: controllerNamespace,
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Type:    notificationv1alpha1.NotificationTypeSimple,
@@ -138,7 +138,7 @@ var _ = Describe("Metrics E2E Validation", Label("metrics"), func() {
 			notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "metrics-test-delivery-attempts",
-					Namespace: "default",
+					Namespace: controllerNamespace,
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Type:    notificationv1alpha1.NotificationTypeSimple,
@@ -204,7 +204,7 @@ var _ = Describe("Metrics E2E Validation", Label("metrics"), func() {
 			notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "metrics-test-delivery-duration",
-					Namespace: "default",
+					Namespace: controllerNamespace,
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Type:    notificationv1alpha1.NotificationTypeSimple,
@@ -273,7 +273,7 @@ var _ = Describe("Metrics E2E Validation", Label("metrics"), func() {
 			notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "metrics-test-all-metrics",
-					Namespace: "default",
+					Namespace: controllerNamespace,
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Type:    notificationv1alpha1.NotificationTypeSimple,

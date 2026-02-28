@@ -52,15 +52,14 @@ var _ = Describe("RemediationRequest Conditions", func() {
 	// ========================================
 
 	Describe("Condition Type Constants", func() {
-		It("should define all 7 condition types per DD-CRD-002-remediationrequest-conditions", func() {
-			// BR-ORCH-043: 7 conditions for orchestration visibility
+		It("should define all 6 pipeline condition types per DD-CRD-002-remediationrequest-conditions", func() {
+			// BR-ORCH-043: 6 pipeline conditions for orchestration visibility (Ready is aggregate)
 			Expect(remediationrequest.ConditionSignalProcessingReady).To(Equal("SignalProcessingReady"))
 			Expect(remediationrequest.ConditionSignalProcessingComplete).To(Equal("SignalProcessingComplete"))
 			Expect(remediationrequest.ConditionAIAnalysisReady).To(Equal("AIAnalysisReady"))
 			Expect(remediationrequest.ConditionAIAnalysisComplete).To(Equal("AIAnalysisComplete"))
 			Expect(remediationrequest.ConditionWorkflowExecutionReady).To(Equal("WorkflowExecutionReady"))
 			Expect(remediationrequest.ConditionWorkflowExecutionComplete).To(Equal("WorkflowExecutionComplete"))
-			Expect(remediationrequest.ConditionRecoveryComplete).To(Equal("RecoveryComplete"))
 		})
 	})
 
@@ -91,13 +90,6 @@ var _ = Describe("RemediationRequest Conditions", func() {
 			Expect(remediationrequest.ReasonApprovalPending).To(Equal("ApprovalPending"))
 		})
 
-		It("should define Recovery reasons", func() {
-			Expect(remediationrequest.ReasonRecoverySucceeded).To(Equal("RecoverySucceeded"))
-			Expect(remediationrequest.ReasonRecoveryFailed).To(Equal("RecoveryFailed"))
-			Expect(remediationrequest.ReasonMaxAttemptsReached).To(Equal("MaxAttemptsReached"))
-			Expect(remediationrequest.ReasonBlockedByConsecutiveFailures).To(Equal("BlockedByConsecutiveFailures"))
-			Expect(remediationrequest.ReasonInProgress).To(Equal("InProgress"))
-		})
 	})
 
 	// ========================================
@@ -140,8 +132,8 @@ var _ = Describe("RemediationRequest Conditions", func() {
 				metav1.ConditionTrue, remediationrequest.ReasonSignalProcessingCreated, "SP ready", nil)
 			remediationrequest.SetCondition(rr, remediationrequest.ConditionAIAnalysisReady,
 				metav1.ConditionTrue, remediationrequest.ReasonAIAnalysisCreated, "AI ready", nil)
-			remediationrequest.SetCondition(rr, remediationrequest.ConditionRecoveryComplete,
-				metav1.ConditionFalse, remediationrequest.ReasonInProgress, "In progress", nil)
+			remediationrequest.SetCondition(rr, remediationrequest.ConditionWorkflowExecutionReady,
+				metav1.ConditionTrue, remediationrequest.ReasonWorkflowExecutionCreated, "WE ready", nil)
 
 			Expect(rr.Status.Conditions).To(HaveLen(3))
 		})
@@ -149,17 +141,16 @@ var _ = Describe("RemediationRequest Conditions", func() {
 
 	Describe("GetCondition", func() {
 		It("should return nil when condition doesn't exist", func() {
-			cond := remediationrequest.GetCondition(rr, remediationrequest.ConditionRecoveryComplete)
+			cond := remediationrequest.GetCondition(rr, remediationrequest.ConditionWorkflowExecutionComplete)
 			Expect(cond).To(BeNil())
 		})
 
 		It("should return existing condition", func() {
-			remediationrequest.SetCondition(rr, remediationrequest.ConditionRecoveryComplete,
-				metav1.ConditionTrue, remediationrequest.ReasonRecoverySucceeded, "Done", nil)
+			remediationrequest.SetCondition(rr, remediationrequest.ConditionWorkflowExecutionComplete,
+				metav1.ConditionTrue, remediationrequest.ReasonWorkflowSucceeded, "Done", nil)
 
-			cond := remediationrequest.GetCondition(rr, remediationrequest.ConditionRecoveryComplete)
-			Expect(cond).ToNot(BeNil())
-			Expect(cond.Type).To(Equal(remediationrequest.ConditionRecoveryComplete))
+			cond := remediationrequest.GetCondition(rr, remediationrequest.ConditionWorkflowExecutionComplete)
+			Expect(cond.Type).To(Equal(remediationrequest.ConditionWorkflowExecutionComplete))
 			Expect(cond.Status).To(Equal(metav1.ConditionTrue))
 		})
 	})
@@ -173,7 +164,7 @@ var _ = Describe("RemediationRequest Conditions", func() {
 			remediationrequest.SetSignalProcessingReady(rr, true, "SP CRD sp-test created", nil)
 
 			cond := remediationrequest.GetCondition(rr, remediationrequest.ConditionSignalProcessingReady)
-			Expect(cond).ToNot(BeNil())
+			Expect(cond.Type).To(Equal(remediationrequest.ConditionSignalProcessingReady))
 			Expect(cond.Status).To(Equal(metav1.ConditionTrue))
 			Expect(cond.Reason).To(Equal(remediationrequest.ReasonSignalProcessingCreated))
 			Expect(cond.Message).To(Equal("SP CRD sp-test created"))
@@ -183,7 +174,7 @@ var _ = Describe("RemediationRequest Conditions", func() {
 			remediationrequest.SetSignalProcessingReady(rr, false, "Failed to create SP: timeout", nil)
 
 			cond := remediationrequest.GetCondition(rr, remediationrequest.ConditionSignalProcessingReady)
-			Expect(cond).ToNot(BeNil())
+			Expect(cond.Type).To(Equal(remediationrequest.ConditionSignalProcessingReady))
 			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
 			Expect(cond.Reason).To(Equal(remediationrequest.ReasonSignalProcessingCreationFailed))
 		})
@@ -195,7 +186,7 @@ var _ = Describe("RemediationRequest Conditions", func() {
 				remediationrequest.ReasonSignalProcessingSucceeded, "Completed (env: prod)", nil)
 
 			cond := remediationrequest.GetCondition(rr, remediationrequest.ConditionSignalProcessingComplete)
-			Expect(cond).ToNot(BeNil())
+			Expect(cond.Type).To(Equal(remediationrequest.ConditionSignalProcessingComplete))
 			Expect(cond.Status).To(Equal(metav1.ConditionTrue))
 			Expect(cond.Reason).To(Equal(remediationrequest.ReasonSignalProcessingSucceeded))
 		})
@@ -205,7 +196,7 @@ var _ = Describe("RemediationRequest Conditions", func() {
 				remediationrequest.ReasonSignalProcessingTimeout, "Timed out after 5m", nil)
 
 			cond := remediationrequest.GetCondition(rr, remediationrequest.ConditionSignalProcessingComplete)
-			Expect(cond).ToNot(BeNil())
+			Expect(cond.Type).To(Equal(remediationrequest.ConditionSignalProcessingComplete))
 			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
 			Expect(cond.Reason).To(Equal(remediationrequest.ReasonSignalProcessingTimeout))
 		})
@@ -216,7 +207,7 @@ var _ = Describe("RemediationRequest Conditions", func() {
 			remediationrequest.SetAIAnalysisReady(rr, true, "AI CRD ai-test created", nil)
 
 			cond := remediationrequest.GetCondition(rr, remediationrequest.ConditionAIAnalysisReady)
-			Expect(cond).ToNot(BeNil())
+			Expect(cond.Type).To(Equal(remediationrequest.ConditionAIAnalysisReady))
 			Expect(cond.Status).To(Equal(metav1.ConditionTrue))
 			Expect(cond.Reason).To(Equal(remediationrequest.ReasonAIAnalysisCreated))
 		})
@@ -225,7 +216,7 @@ var _ = Describe("RemediationRequest Conditions", func() {
 			remediationrequest.SetAIAnalysisReady(rr, false, "Failed to create AI: resource quota exceeded", nil)
 
 			cond := remediationrequest.GetCondition(rr, remediationrequest.ConditionAIAnalysisReady)
-			Expect(cond).ToNot(BeNil())
+			Expect(cond.Type).To(Equal(remediationrequest.ConditionAIAnalysisReady))
 			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
 			Expect(cond.Reason).To(Equal(remediationrequest.ReasonAIAnalysisCreationFailed))
 		})
@@ -237,7 +228,7 @@ var _ = Describe("RemediationRequest Conditions", func() {
 				remediationrequest.ReasonAIAnalysisSucceeded, "Completed (workflow: restart-pod)", nil)
 
 			cond := remediationrequest.GetCondition(rr, remediationrequest.ConditionAIAnalysisComplete)
-			Expect(cond).ToNot(BeNil())
+			Expect(cond.Type).To(Equal(remediationrequest.ConditionAIAnalysisComplete))
 			Expect(cond.Status).To(Equal(metav1.ConditionTrue))
 			Expect(cond.Reason).To(Equal(remediationrequest.ReasonAIAnalysisSucceeded))
 		})
@@ -247,7 +238,7 @@ var _ = Describe("RemediationRequest Conditions", func() {
 				remediationrequest.ReasonNoWorkflowSelected, "Analysis complete but no workflow selected", nil)
 
 			cond := remediationrequest.GetCondition(rr, remediationrequest.ConditionAIAnalysisComplete)
-			Expect(cond).ToNot(BeNil())
+			Expect(cond.Type).To(Equal(remediationrequest.ConditionAIAnalysisComplete))
 			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
 			Expect(cond.Reason).To(Equal(remediationrequest.ReasonNoWorkflowSelected))
 		})
@@ -258,7 +249,7 @@ var _ = Describe("RemediationRequest Conditions", func() {
 			remediationrequest.SetWorkflowExecutionReady(rr, true, "WE CRD we-test created", nil)
 
 			cond := remediationrequest.GetCondition(rr, remediationrequest.ConditionWorkflowExecutionReady)
-			Expect(cond).ToNot(BeNil())
+			Expect(cond.Type).To(Equal(remediationrequest.ConditionWorkflowExecutionReady))
 			Expect(cond.Status).To(Equal(metav1.ConditionTrue))
 			Expect(cond.Reason).To(Equal(remediationrequest.ReasonWorkflowExecutionCreated))
 		})
@@ -267,7 +258,7 @@ var _ = Describe("RemediationRequest Conditions", func() {
 			remediationrequest.SetWorkflowExecutionReady(rr, false, "Waiting for approval", nil)
 
 			cond := remediationrequest.GetCondition(rr, remediationrequest.ConditionWorkflowExecutionReady)
-			Expect(cond).ToNot(BeNil())
+			Expect(cond.Type).To(Equal(remediationrequest.ConditionWorkflowExecutionReady))
 			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
 			// Default failure reason for WE ready is ApprovalPending
 			Expect(cond.Reason).To(Equal(remediationrequest.ReasonWorkflowExecutionCreationFailed))
@@ -280,7 +271,7 @@ var _ = Describe("RemediationRequest Conditions", func() {
 				remediationrequest.ReasonWorkflowSucceeded, "Workflow executed successfully", nil)
 
 			cond := remediationrequest.GetCondition(rr, remediationrequest.ConditionWorkflowExecutionComplete)
-			Expect(cond).ToNot(BeNil())
+			Expect(cond.Type).To(Equal(remediationrequest.ConditionWorkflowExecutionComplete))
 			Expect(cond.Status).To(Equal(metav1.ConditionTrue))
 			Expect(cond.Reason).To(Equal(remediationrequest.ReasonWorkflowSucceeded))
 		})
@@ -290,41 +281,9 @@ var _ = Describe("RemediationRequest Conditions", func() {
 				remediationrequest.ReasonWorkflowTimeout, "Workflow timed out after 10m", nil)
 
 			cond := remediationrequest.GetCondition(rr, remediationrequest.ConditionWorkflowExecutionComplete)
-			Expect(cond).ToNot(BeNil())
+			Expect(cond.Type).To(Equal(remediationrequest.ConditionWorkflowExecutionComplete))
 			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
 			Expect(cond.Reason).To(Equal(remediationrequest.ReasonWorkflowTimeout))
-		})
-	})
-
-	Describe("SetRecoveryComplete", func() {
-		It("should set True with RecoverySucceeded reason on success", func() {
-			remediationrequest.SetRecoveryComplete(rr, true,
-				remediationrequest.ReasonRecoverySucceeded, "Remediation completed successfully", nil)
-
-			cond := remediationrequest.GetCondition(rr, remediationrequest.ConditionRecoveryComplete)
-			Expect(cond).ToNot(BeNil())
-			Expect(cond.Status).To(Equal(metav1.ConditionTrue))
-			Expect(cond.Reason).To(Equal(remediationrequest.ReasonRecoverySucceeded))
-		})
-
-		It("should set False with BlockedByConsecutiveFailures reason when blocked", func() {
-			remediationrequest.SetRecoveryComplete(rr, false,
-				remediationrequest.ReasonBlockedByConsecutiveFailures, "Blocked after 3 consecutive failures", nil)
-
-			cond := remediationrequest.GetCondition(rr, remediationrequest.ConditionRecoveryComplete)
-			Expect(cond).ToNot(BeNil())
-			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
-			Expect(cond.Reason).To(Equal(remediationrequest.ReasonBlockedByConsecutiveFailures))
-		})
-
-		It("should set False with InProgress reason during active processing", func() {
-			remediationrequest.SetRecoveryComplete(rr, false,
-				remediationrequest.ReasonInProgress, "Remediation in progress (phase: Analyzing)", nil)
-
-			cond := remediationrequest.GetCondition(rr, remediationrequest.ConditionRecoveryComplete)
-			Expect(cond).ToNot(BeNil())
-			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
-			Expect(cond.Reason).To(Equal(remediationrequest.ReasonInProgress))
 		})
 	})
 
@@ -343,18 +302,18 @@ var _ = Describe("RemediationRequest Conditions", func() {
 			}
 
 			// Should not panic
-			remediationrequest.SetCondition(rrNil, remediationrequest.ConditionRecoveryComplete,
-				metav1.ConditionFalse, remediationrequest.ReasonInProgress, "Starting", nil)
+			remediationrequest.SetCondition(rrNil, remediationrequest.ConditionReady,
+				metav1.ConditionFalse, remediationrequest.ReasonNotReady, "Starting", nil)
 
 			Expect(rrNil.Status.Conditions).To(HaveLen(1))
 		})
 
 		It("should handle empty message", func() {
-			remediationrequest.SetCondition(rr, remediationrequest.ConditionRecoveryComplete,
-				metav1.ConditionTrue, remediationrequest.ReasonRecoverySucceeded, "", nil)
+			remediationrequest.SetCondition(rr, remediationrequest.ConditionReady,
+				metav1.ConditionTrue, remediationrequest.ReasonReady, "", nil)
 
-			cond := remediationrequest.GetCondition(rr, remediationrequest.ConditionRecoveryComplete)
-			Expect(cond).ToNot(BeNil())
+			cond := remediationrequest.GetCondition(rr, remediationrequest.ConditionReady)
+			Expect(cond.Type).To(Equal(remediationrequest.ConditionReady))
 			Expect(cond.Message).To(Equal(""))
 		})
 	})

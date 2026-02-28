@@ -17,18 +17,17 @@ limitations under the License.
 """
 Cycle 2.5: HAPI response includes detected_labels for PostRCAContext
 
-Verifies that IncidentResponse and RecoveryResponse models include a
-detected_labels field, and that the integration code populates it from
-session_state before returning the response.
+Verifies that IncidentResponse model includes a detected_labels field,
+and that the integration code populates it from session_state before
+returning the response.
 
 Authority: ADR-056, DD-HAPI-018
 Business Requirement: BR-HAPI-102
 
 Test IDs:
   UT-HAPI-056-063: IncidentResponse model includes detected_labels field
-  UT-HAPI-056-064: RecoveryResponse model includes detected_labels field
   UT-HAPI-056-065: detected_labels injected into incident result from session_state
-  UT-HAPI-056-066: detected_labels injected into recovery result from session_state
+  UT-HAPI-056-066: inject_detected_labels works for result dicts
   UT-HAPI-056-067: detected_labels defaults to None when not in session_state
 """
 
@@ -38,7 +37,7 @@ from typing import Dict, Any, Optional
 
 class TestResponseDetectedLabelsModel:
     """
-    UT-HAPI-056-063, UT-HAPI-056-064: Verify response models include detected_labels.
+    UT-HAPI-056-063: Verify IncidentResponse model includes detected_labels.
     """
 
     def test_ut_hapi_056_063_incident_response_has_detected_labels_field(self):
@@ -54,18 +53,6 @@ class TestResponseDetectedLabelsModel:
             detected_labels={"gitOpsManaged": True, "pdbProtected": False},
         )
         assert response.detected_labels == {"gitOpsManaged": True, "pdbProtected": False}
-
-    def test_ut_hapi_056_064_recovery_response_has_detected_labels_field(self):
-        """UT-HAPI-056-064: RecoveryResponse model has detected_labels optional field."""
-        from src.models.recovery_models import RecoveryResponse
-
-        response = RecoveryResponse(
-            incident_id="inc-001",
-            can_recover=True,
-            analysis_confidence=0.8,
-            detected_labels={"stateful": True, "helmManaged": False},
-        )
-        assert response.detected_labels == {"stateful": True, "helmManaged": False}
 
 
 class TestResponseDetectedLabelsInjection:
@@ -84,8 +71,8 @@ class TestResponseDetectedLabelsInjection:
 
         assert result["detected_labels"] == {"gitOpsManaged": True}
 
-    def test_ut_hapi_056_066_recovery_result_includes_detected_labels(self):
-        """UT-HAPI-056-066: inject_detected_labels works for recovery results too."""
+    def test_ut_hapi_056_066_result_includes_detected_labels(self):
+        """UT-HAPI-056-066: inject_detected_labels works for result dicts."""
         from src.extensions.llm_config import inject_detected_labels
 
         result = {"incident_id": "inc-001", "can_recover": True}

@@ -12,9 +12,9 @@ metadata:
 actionType: GitRevertCommit
 
 labels:
-  signalName: CrashLoopBackOff
+  signalName: KubePodCrashLooping
   severity: [critical, high]
-  environment: [production, staging]
+  environment: [production, staging, "*"]
   component: "*"
   priority: "*"
 
@@ -25,7 +25,7 @@ detectedLabels:
 
 execution:
   engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/git-revert-job@sha256:e4515f687543a3831e11b8a9eff74ce97a2238a2ec35cb952ef9a1dfd54ba714
+  bundle: quay.io/kubernaut-cicd/test-workflows/git-revert-job@sha256:3177c568c6a055d118ae1f6d0782f301405de9646eff205892299de2ce5b6555
 
 parameters:
   - name: GIT_REPO_URL

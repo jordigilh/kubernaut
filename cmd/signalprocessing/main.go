@@ -41,6 +41,8 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -48,6 +50,7 @@ import (
 	// Kubernaut API imports
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+	scope "github.com/jordigilh/kubernaut/pkg/shared/scope"
 	"github.com/jordigilh/kubernaut/internal/controller/signalprocessing"
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/audit"
 	spaudit "github.com/jordigilh/kubernaut/pkg/signalprocessing/audit"
@@ -117,6 +120,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	// ADR-057: Discover controller namespace for CRD watch restriction
+	controllerNS, err := scope.GetControllerNamespace()
+	if err != nil {
+		setupLog.Error(err, "unable to determine controller namespace")
+		os.Exit(1)
+	}
+
 	setupLog.Info("SignalProcessing controller configuration",
 		"metricsAddr", cfg.Controller.MetricsAddr,
 		"healthProbeAddr", cfg.Controller.HealthProbeAddr,
@@ -128,6 +138,15 @@ func main() {
 	// ADR-030: Controller settings from YAML config (not hardcoded defaults)
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,
+		Cache: cache.Options{
+			ByObject: map[client.Object]cache.ByObject{
+				&signalprocessingv1alpha1.SignalProcessing{}: {
+					Namespaces: map[string]cache.Config{
+						controllerNS: {},
+					},
+				},
+			},
+		},
 		Metrics: metricsserver.Options{
 			BindAddress: cfg.Controller.MetricsAddr,
 		},

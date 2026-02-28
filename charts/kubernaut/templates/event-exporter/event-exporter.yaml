@@ -93,6 +93,7 @@ spec:
         app: event-exporter
     spec:
       serviceAccountName: event-exporter
+      {{- include "kubernaut.scheduling" (dict "component" .Values.eventExporter "global" .Values.global) | nindent 6 }}
       containers:
         - name: event-exporter
           image: {{ .Values.eventExporter.image }}

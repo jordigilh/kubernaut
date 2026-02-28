@@ -249,7 +249,7 @@ var _ = Describe("Test 11: Fingerprint Stability (Integration)", Ordered, Label(
 		testLogger.Info("Step 2: Verify deduplication occurred")
 
 		crdList := &remediationv1alpha1.RemediationRequestList{}
-		err := k8sClient.List(ctx, crdList, client.InNamespace(testNamespace))
+		err := k8sClient.List(ctx, crdList, client.InNamespace(controllerNamespace))
 		Expect(err).ToNot(HaveOccurred())
 
 		// Find CRDs for this signal

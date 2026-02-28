@@ -230,7 +230,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 			// Wait for the RR to exist in the API server before sending concurrent requests
 			Eventually(func() int {
 				rrList := &remediationv1alpha1.RemediationRequestList{}
-				if err := testClient.List(testCtx, rrList, client.InNamespace(testNamespace)); err != nil {
+				if err := testClient.List(testCtx, rrList, client.InNamespace(gatewayNamespace)); err != nil {
 					return 0
 				}
 				count := 0
@@ -268,7 +268,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 
 			// Final check: Still only one RemediationRequest
 			rrList := &remediationv1alpha1.RemediationRequestList{}
-			Expect(testClient.List(testCtx, rrList, client.InNamespace(testNamespace))).To(Succeed())
+			Expect(testClient.List(testCtx, rrList, client.InNamespace(gatewayNamespace))).To(Succeed())
 			count := 0
 			for _, rr := range rrList.Items {
 				if rr.Spec.SignalName == "TestConcurrentDedup" {
@@ -315,7 +315,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 			Eventually(func() int {
 				rrList := &remediationv1alpha1.RemediationRequestList{}
 				err := testClient.List(testCtx, rrList,
-					client.InNamespace(testNamespace))
+					client.InNamespace(gatewayNamespace))
 				if err != nil {
 					return 0
 				}
@@ -359,7 +359,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 			// Note: Increased timeout to 20s to allow for K8s optimistic concurrency retries under CI load
 			Eventually(func() int32 {
 				var rrList remediationv1alpha1.RemediationRequestList
-				_ = testClient.List(testCtx, &rrList, client.InNamespace(testNamespace))
+				_ = testClient.List(testCtx, &rrList, client.InNamespace(gatewayNamespace))
 
 				for _, rr := range rrList.Items {
 					if rr.Spec.SignalName == "TestAtomicHitCount" && rr.Status.Deduplication != nil {

@@ -188,42 +188,9 @@ func (c *HolmesGPTClient) Investigate(ctx context.Context, req *IncidentRequest)
 	return c.GetSessionResult(ctx, sessionID)
 }
 
-// InvestigateRecovery calls the HolmesGPT-API recovery analyze endpoint.
-//
-// BR-AI-082: POST /api/v1/recovery/analyze
-// DD-RECOVERY-002: Direct recovery flow implementation
-// DD-HAPI-003: Uses generated OpenAPI client for type safety and contract compliance.
-//
-// Example:
-//
-//	req := &client.RecoveryRequest{
-//	    IncidentID: "incident-123",
-//	    // ... other fields
-//	}
-//	resp, err := hapiClient.InvestigateRecovery(ctx, req)
-//
-// Returns:
-//   - *RecoveryResponse: Successful response with recovery strategies
-//   - *APIError: HTTP error (4xx, 5xx)
-func (c *HolmesGPTClient) InvestigateRecovery(ctx context.Context, req *RecoveryRequest) (*RecoveryResponse, error) {
-	// BR-AA-HAPI-064: HAPI endpoints are async-only (202 Accepted).
-	// Sync wrapper: submit -> poll -> get result. Same pattern as Investigate().
-	sessionID, err := c.SubmitRecoveryInvestigation(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-
-	// Poll until session completes (1s interval, bounded by ctx deadline)
-	if err := c.awaitSession(ctx, sessionID); err != nil {
-		return nil, err
-	}
-
-	return c.GetRecoverySessionResult(ctx, sessionID)
-}
-
 // awaitSession polls a HAPI session until it reaches a terminal state ("completed" or "failed").
-// Used by the sync wrappers Investigate() and InvestigateRecovery() to block until the
-// async investigation finishes. The poll interval is 1s, bounded by the ctx deadline.
+// Used by the sync wrapper Investigate() to block until the async investigation finishes.
+// The poll interval is 1s, bounded by the ctx deadline.
 //
 // BR-AA-HAPI-064: Internal helper for sync-over-async wrapping.
 func (c *HolmesGPTClient) awaitSession(ctx context.Context, sessionID string) error {
@@ -351,16 +318,9 @@ func (c *HolmesGPTClient) SubmitInvestigation(ctx context.Context, req *Incident
 	return c.submitSessionRequest(ctx, "/api/v1/incident/analyze", req)
 }
 
-// SubmitRecoveryInvestigation submits a recovery investigation request and returns a session ID.
-// BR-AA-HAPI-064.9: POST /api/v1/recovery/analyze returns 202 with session_id
-func (c *HolmesGPTClient) SubmitRecoveryInvestigation(ctx context.Context, req *RecoveryRequest) (string, error) {
-	return c.submitSessionRequest(ctx, "/api/v1/recovery/analyze", req)
-}
-
 // PollSession polls the status of an investigation session.
 // BR-AA-HAPI-064.2: GET /api/v1/incident/session/{id}
-// Note: Uses incident session endpoint. Both incident and recovery share the same
-// global SessionManager in HAPI, so any session ID works on either endpoint.
+// Note: Uses incident session endpoint with HAPI's global SessionManager.
 func (c *HolmesGPTClient) PollSession(ctx context.Context, sessionID string) (*SessionStatus, error) {
 	body, err := c.sessionGET(ctx, "/api/v1/incident/session/"+sessionID)
 	if err != nil {
@@ -386,22 +346,6 @@ func (c *HolmesGPTClient) GetSessionResult(ctx context.Context, sessionID string
 	var resp IncidentResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return nil, &APIError{StatusCode: 0, Message: fmt.Sprintf("failed to decode incident result: %v", err)}
-	}
-
-	return &resp, nil
-}
-
-// GetRecoverySessionResult retrieves the result of a completed recovery investigation session.
-// BR-AA-HAPI-064.9: GET /api/v1/recovery/session/{id}/result
-func (c *HolmesGPTClient) GetRecoverySessionResult(ctx context.Context, sessionID string) (*RecoveryResponse, error) {
-	body, err := c.sessionGET(ctx, "/api/v1/recovery/session/"+sessionID+"/result")
-	if err != nil {
-		return nil, err
-	}
-
-	var resp RecoveryResponse
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, &APIError{StatusCode: 0, Message: fmt.Sprintf("failed to decode recovery result: %v", err)}
 	}
 
 	return &resp, nil

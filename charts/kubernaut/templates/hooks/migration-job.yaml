@@ -18,6 +18,7 @@ spec:
     spec:
       serviceAccountName: {{ include "kubernaut.fullname" . }}-hook-sa
       restartPolicy: Never
+      {{- include "kubernaut.scheduling" (dict "component" .Values.hooks "global" .Values.global) | nindent 6 }}
       initContainers:
         - name: wait-for-postgresql
           image: {{ .Values.hooks.migrations.image }}

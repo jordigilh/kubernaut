@@ -19,7 +19,7 @@
 ### What Needs to Be Done
 🔲 **Create Integration Guide** (Option B) - 4-6 hours, 88% confidence
 🔲 **Update WorkflowExecution Implementation Plan** (Option A) - 3-4 hours, 92% confidence
-🔲 **Update KubernetesExecutor Implementation Plan** (Option A) - 3-4 hours, 92% confidence
+🔲 **Update KubernetesExecutor (DEPRECATED - ADR-025) Implementation Plan** (Option A) - 3-4 hours, 92% confidence
 
 ### Why Consolidation Needed
 The integration work requires:
@@ -51,7 +51,7 @@ The integration work requires:
   - Days 9-11: Integration testing
   - Day 13: Production readiness
 
-#### 2. KubernetesExecutor Implementation Plan
+#### 2. KubernetesExecutor (DEPRECATED - ADR-025) Implementation Plan
 **Location**: `docs/services/crd-controllers/04-kubernetesexecutor/implementation/IMPLEMENTATION_PLAN_V1.0.md`
 - **Version**: 1.0 - Production Ready (94% confidence)
 - **Timeline**: 11-12 days (88-96 hours)
@@ -161,7 +161,7 @@ The integration work requires:
 - Add condition-specific Prometheus metrics
 - Integration tests for condition flow
 
-#### KubernetesExecutor Changes (Days 13-20)
+#### KubernetesExecutor (DEPRECATED - ADR-025) Changes (Days 13-20)
 **Days 13-14: CRD Schema Extensions** (2 days)
 - Add `PreConditions []ActionCondition` to `KubernetesExecutionSpec`
 - Add `PostConditions []ActionCondition` to `KubernetesExecutionSpec`
@@ -367,7 +367,7 @@ All 5 risk mitigations were explicitly approved by stakeholder:
 
 **Extended Timeline**: 12-13 days → **27-30 days** (with validation framework)
 
-### KubernetesExecutor Integration Points
+### KubernetesExecutor (DEPRECATED - ADR-025) Integration Points
 
 | Integration Point | Base Plan Day | Validation Framework Phase | Effort |
 |---|---|---|---|
@@ -379,7 +379,7 @@ All 5 risk mitigations were explicitly approved by stakeholder:
 
 **Extended Timeline**: 11-12 days → **25-28 days** (with validation framework)
 
-### 🔑 Critical Leverage Point: KubernetesExecutor Day 4
+### 🔑 Critical Leverage Point: KubernetesExecutor (DEPRECATED - ADR-025) Day 4
 
 **Existing Day 4 Infrastructure**:
 - ✅ Rego policy engine already integrated
@@ -812,7 +812,7 @@ Add links to:
 
 ---
 
-### Task 3: Update KubernetesExecutor Implementation Plan (Option A)
+### Task 3: Update KubernetesExecutor (DEPRECATED - ADR-025) Implementation Plan (Option A)
 **File**: `docs/services/crd-controllers/04-kubernetesexecutor/implementation/IMPLEMENTATION_PLAN_V1.0.md`
 **Estimated Time**: 3-4 hours (with integration guide as reference)
 **Confidence**: 92%

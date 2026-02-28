@@ -4,7 +4,7 @@ metadata:
   name: kubernaut-cert-gitops-rules
   namespace: demo-cert-gitops
   labels:
-    release: prometheus
+    release: kube-prometheus-stack
 spec:
   groups:
   - name: kubernaut-cert-gitops
@@ -12,13 +12,15 @@ spec:
     - alert: CertManagerCertNotReady
       expr: |
         certmanager_certificate_ready_status{
-          namespace="demo-cert-gitops",
+          exported_namespace="demo-cert-gitops",
           name="demo-app-cert",
           condition="True"
         } == 0
       for: 2m
       labels:
         severity: critical
+        deployment: demo-app
+        namespace: demo-cert-gitops
       annotations:
         summary: >
           Certificate {{ $labels.name }} in namespace {{ $labels.namespace }}

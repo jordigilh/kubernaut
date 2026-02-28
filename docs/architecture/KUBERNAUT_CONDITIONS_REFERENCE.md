@@ -30,7 +30,7 @@ This document provides a **comprehensive inventory** of all Kubernetes Condition
 | RemediationRequest | RO | 5 conditions (incl. Ready) | ✅ Complete | `pkg/remediationrequest/conditions.go` |
 | RemediationApprovalRequest | RO | 4 conditions (incl. Ready) | ✅ Complete | `pkg/remediationapprovalrequest/conditions.go` |
 | EffectivenessAssessment | EM | 3 conditions (incl. Ready) | ✅ Complete | `pkg/effectivenessmonitor/conditions/conditions.go` |
-| KubernetesExecution | WE | 0 | ⚠️ **Deprecated/Excluded** | - |
+| KubernetesExecution | WE | 0 | ⚠️ **Deprecated/Excluded (ADR-025)** | - |
 
 **Total**: All 7 active CRDs have conditions wired and implemented. All condition setters set `ObservedGeneration`.
 
@@ -154,7 +154,7 @@ Conditions:
 | `SignalProcessingReady` | `Ready` | `NotReady` | After SP CRD created |
 | `AIAnalysisReady` | `Ready` | `NotReady` | After AA CRD created |
 | `WorkflowExecutionReady` | `Ready` | `NotReady` | After WE CRD created |
-| `RecoveryComplete` | `RecoverySucceeded`, `RecoverySkipped` | `RecoveryFailed` | After recovery lifecycle |
+| `RecoveryComplete` | `RecoverySucceeded`, `RecoverySkipped` | `RecoveryFailed` | [Deprecated - Issue #180] After recovery lifecycle |
 
 ---
 
@@ -185,9 +185,9 @@ Conditions:
 
 ---
 
-### **KubernetesExecution Service** ⚠️ **DEPRECATED / EXCLUDED**
+### **KubernetesExecution Service** ⚠️ **DEPRECATED / EXCLUDED (ADR-025)**
 
-**Status**: Excluded from conditions implementation. KubernetesExecution is deprecated; WorkflowExecution handles job execution via Tekton PipelineRun.
+**Status**: Excluded from conditions implementation. KubernetesExecution CRD and KubernetesExecutor service eliminated by ADR-025; replaced by Tekton TaskRun. WorkflowExecution handles job execution via Tekton PipelineRun.
 
 ---
 

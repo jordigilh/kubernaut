@@ -81,7 +81,7 @@ graph TB
 **What It Does**:
 - Watches for `AIAnalysis` CRDs (incident detection)
 - Creates `WorkflowExecution` CRDs (remediation tasks)
-- Monitors `KubernetesExecution` CRDs (action status)
+- Monitors `KubernetesExecution` (DEPRECATED - ADR-025) CRDs (action status)
 - Tracks remediation lifecycle end-to-end
 
 **Key Features**:
@@ -161,7 +161,7 @@ graph TB
     Safety --> Execute[K8s Execution Service]
     Execute --> K8s[Kubernetes API]
     
-    K8s --> Status[KubernetesExecution CRD<br/>Status: Running/Complete/Failed]
+    K8s --> Status[KubernetesExecution (DEPRECATED - ADR-025) CRD<br/>Status: Running/Complete/Failed]
     
     style Workflow fill:#9C27B0,stroke:#000,stroke-width:2px,color:#fff
     style Safety fill:#FF9800,stroke:#000,stroke-width:2px,color:#fff

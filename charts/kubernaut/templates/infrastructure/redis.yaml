@@ -34,6 +34,7 @@ spec:
       labels:
         app: redis
     spec:
+      {{- include "kubernaut.scheduling" (dict "component" .Values.redis "global" .Values.global) | nindent 6 }}
       containers:
         - name: redis
           image: {{ .Values.redis.image }}

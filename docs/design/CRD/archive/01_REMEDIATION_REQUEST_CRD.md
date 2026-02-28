@@ -82,7 +82,7 @@ The AlertRemediation CRD serves as the central coordination point for all alert 
 
 ### **Scope**
 - **Central State Management**: Master record for all alert remediation activities
-- **Cross-Service Coordination**: Orchestrates AlertProcessing, AIAnalysis, WorkflowExecution, and KubernetesExecution CRDs
+- **Cross-Service Coordination**: Orchestrates AlertProcessing, AIAnalysis, WorkflowExecution, and KubernetesExecution (DEPRECATED - ADR-025) CRDs
 - **Duplicate Detection**: Implements BR-WH-008 request deduplication for identical alerts
 - **Progress Tracking**: Real-time visibility into remediation progress across all services
 - **Timeout Management**: Configurable timeouts with automatic escalation

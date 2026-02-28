@@ -155,6 +155,65 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 			Expect(blocked).To(BeNil())
 		})
 
+		It("should isolate consecutive failure counting by TargetResource.Namespace (#222)", func() {
+			// BUG REPRODUCTION: ADR-057 consolidated all CRDs into ROControllerNamespace.
+			// CheckConsecutiveFailures uses client.InNamespace(rr.Namespace) which is always
+			// ROControllerNamespace, so failures from tenant-A's workloads incorrectly
+			// block tenant-B's workloads if they share a fingerprint.
+			//
+			// Reference: https://github.com/jordigilh/kubernaut/issues/222
+
+			sharedFingerprint := "shared-fp-multitenant"
+
+			// Create 3 Failed RRs targeting namespace "tenant-a"
+			baseTime := time.Now().Add(-10 * time.Minute)
+			for i := 0; i < 3; i++ {
+				failedRR := &remediationv1.RemediationRequest{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              fmt.Sprintf("tenant-a-failed-%d", i),
+						Namespace:         "default",
+						UID:               types.UID(fmt.Sprintf("tenant-a-uid-%d", i)),
+						CreationTimestamp: metav1.Time{Time: baseTime.Add(time.Duration(i) * time.Minute)},
+					},
+					Spec: remediationv1.RemediationRequestSpec{
+						SignalFingerprint: sharedFingerprint,
+						TargetResource: remediationv1.ResourceIdentifier{
+							Kind:      "Deployment",
+							Name:      "app",
+							Namespace: "tenant-a",
+						},
+					},
+					Status: remediationv1.RemediationRequestStatus{
+						OverallPhase: remediationv1.PhaseFailed,
+					},
+				}
+				Expect(fakeClient.Create(ctx, failedRR)).To(Succeed())
+			}
+
+			// Incoming RR targets namespace "tenant-b" with the SAME fingerprint
+			incomingRR := &remediationv1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "tenant-b-new",
+					Namespace:         "default",
+					UID:               types.UID("tenant-b-uid"),
+					CreationTimestamp: metav1.Time{Time: time.Now()},
+				},
+				Spec: remediationv1.RemediationRequestSpec{
+					SignalFingerprint: sharedFingerprint,
+					TargetResource: remediationv1.ResourceIdentifier{
+						Kind:      "Deployment",
+						Name:      "app",
+						Namespace: "tenant-b",
+					},
+				},
+			}
+
+			blocked := engine.CheckConsecutiveFailures(ctx, incomingRR)
+
+			Expect(blocked).To(BeNil(),
+				"Tenant-B should NOT be blocked by tenant-A's 3 failures (namespace isolation)")
+		})
+
 		It("should set cooldown message with expiry time", func() {
 			// Create 5 previous Failed RRs with same fingerprint
 			// Set explicit UID because fake client doesn't auto-generate them
@@ -198,11 +257,64 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 	})
 
 	// ========================================
-	// Test Group 2: CheckDuplicateInProgress (5 tests)
+	// Test Group 2: CheckDuplicateInProgress (6 tests)
 	// Reference: DD-RO-002-ADDENDUM
 	// CRITICAL: Prevents Gateway RR flood
 	// ========================================
 	Context("CheckDuplicateInProgress", func() {
+		It("should isolate duplicate detection by TargetResource.Namespace (#222)", func() {
+			// BUG REPRODUCTION: Same ADR-057 regression as CheckConsecutiveFailures.
+			// FindActiveRRForFingerprint uses client.InNamespace(rr.Namespace) which is
+			// always ROControllerNamespace, so an active/blocked RR targeting tenant-A
+			// incorrectly blocks a new RR targeting tenant-B with the same fingerprint.
+			//
+			// Reference: https://github.com/jordigilh/kubernaut/issues/222
+
+			sharedFingerprint := "dup-multitenant-fp"
+
+			// Create an active RR targeting namespace "tenant-a"
+			activeRR := &remediationv1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "tenant-a-active",
+					Namespace: "default",
+				},
+				Spec: remediationv1.RemediationRequestSpec{
+					SignalFingerprint: sharedFingerprint,
+					TargetResource: remediationv1.ResourceIdentifier{
+						Kind:      "Deployment",
+						Name:      "app",
+						Namespace: "tenant-a",
+					},
+				},
+				Status: remediationv1.RemediationRequestStatus{
+					OverallPhase: remediationv1.PhaseBlocked,
+				},
+			}
+			Expect(fakeClient.Create(ctx, activeRR)).To(Succeed())
+
+			// Incoming RR targets "tenant-b" — should NOT be a duplicate
+			incomingRR := &remediationv1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "tenant-b-new",
+					Namespace: "default",
+				},
+				Spec: remediationv1.RemediationRequestSpec{
+					SignalFingerprint: sharedFingerprint,
+					TargetResource: remediationv1.ResourceIdentifier{
+						Kind:      "Deployment",
+						Name:      "app",
+						Namespace: "tenant-b",
+					},
+				},
+			}
+
+			blocked, err := engine.CheckDuplicateInProgress(ctx, incomingRR)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(blocked).To(BeNil(),
+				"Tenant-B should NOT be blocked as duplicate of tenant-A's active RR (namespace isolation)")
+		})
+
 		It("should block when active RR with same fingerprint exists", func() {
 			// Create original RR (active - non-terminal phase)
 			originalRR := &remediationv1.RemediationRequest{
@@ -682,6 +794,113 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 			// Since workflow is DIFFERENT, cooldown should NOT apply
 			Expect(err).ToNot(HaveOccurred())
 			Expect(blocked).To(BeNil()) // Not blocked (different workflow)
+		})
+	})
+
+	// ========================================
+	// Test Group 4b: Target resource casing (Issue #203)
+	// Test Plan: docs/testing/COOLDOWN_GW_RO/TEST_PLAN.md
+	// Reference: DD-WE-001 (target resource format namespace/Kind/name)
+	//
+	// BUSINESS VALUE:
+	// - Correct casing ensures CheckRecentlyRemediated and CheckResourceBusy
+	//   find previously completed WFEs, enabling defense-in-depth cooldown
+	// - Case mismatch breaks field selectors, silently disabling cooldown
+	// ========================================
+	Context("UT-RO-WE001: Target resource casing must match WFE storage format (#203)", func() {
+		It("UT-RO-WE001-001: should find recently completed WFE when target casing matches", func() {
+			// BUSINESS OUTCOME: RO correctly detects that the same workflow+target
+			// was recently executed, preventing redundant remediation that would waste
+			// LLM calls and potentially conflict with the previous remediation.
+			completionTime := metav1.Now()
+			wfe := &workflowexecutionv1.WorkflowExecution{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "wfe-casing-match",
+					Namespace: "default",
+				},
+				Spec: workflowexecutionv1.WorkflowExecutionSpec{
+					TargetResource: "demo-hpa/Deployment/api-frontend",
+					WorkflowRef: workflowexecutionv1.WorkflowRef{
+						WorkflowID: "patch-hpa-v1",
+						Version:    "v1",
+					},
+				},
+				Status: workflowexecutionv1.WorkflowExecutionStatus{
+					Phase:          workflowexecutionv1.PhaseCompleted,
+					CompletionTime: &completionTime,
+				},
+			}
+			Expect(fakeClient.Create(ctx, wfe)).To(Succeed())
+
+			rr := &remediationv1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "rr-casing-match",
+					Namespace: "default",
+				},
+				Spec: remediationv1.RemediationRequestSpec{
+					TargetResource: remediationv1.ResourceIdentifier{
+						Kind:      "Deployment",
+						Name:      "api-frontend",
+						Namespace: "demo-hpa",
+					},
+				},
+			}
+
+			blocked, err := engine.CheckRecentlyRemediated(ctx, rr, "patch-hpa-v1", "demo-hpa/Deployment/api-frontend")
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(blocked).ToNot(BeNil(),
+				"Same casing (Deployment) must match the WFE and trigger cooldown")
+			Expect(blocked.Blocked).To(BeTrue())
+			Expect(blocked.Reason).To(Equal(string(remediationv1.BlockReasonRecentlyRemediated)))
+		})
+
+		It("UT-RO-WE001-002: should NOT find WFE when target uses lowercase Kind (bug reproduction)", func() {
+			// BUSINESS OUTCOME: This test proves the case mismatch bug exists.
+			// The WFE stores "Deployment" (original casing from AIAnalysis) but the
+			// RO reconciler lowercases it to "deployment" before passing to routing.
+			// Field selectors are case-sensitive, so the query returns no results,
+			// and cooldown is silently bypassed -- leading to redundant remediations.
+			completionTime := metav1.Now()
+			wfe := &workflowexecutionv1.WorkflowExecution{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "wfe-casing-mismatch",
+					Namespace: "default",
+				},
+				Spec: workflowexecutionv1.WorkflowExecutionSpec{
+					TargetResource: "demo-hpa/Deployment/api-frontend",
+					WorkflowRef: workflowexecutionv1.WorkflowRef{
+						WorkflowID: "patch-hpa-v1",
+						Version:    "v1",
+					},
+				},
+				Status: workflowexecutionv1.WorkflowExecutionStatus{
+					Phase:          workflowexecutionv1.PhaseCompleted,
+					CompletionTime: &completionTime,
+				},
+			}
+			Expect(fakeClient.Create(ctx, wfe)).To(Succeed())
+
+			rr := &remediationv1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "rr-casing-mismatch",
+					Namespace: "default",
+				},
+				Spec: remediationv1.RemediationRequestSpec{
+					TargetResource: remediationv1.ResourceIdentifier{
+						Kind:      "Deployment",
+						Name:      "api-frontend",
+						Namespace: "demo-hpa",
+					},
+				},
+			}
+
+			// Pass lowercase "deployment" (as the buggy reconciler does on line 955)
+			blocked, err := engine.CheckRecentlyRemediated(ctx, rr, "patch-hpa-v1", "demo-hpa/deployment/api-frontend")
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(blocked).To(BeNil(),
+				"Bug #203: Lowercase 'deployment' does not match WFE's 'Deployment' -- cooldown bypassed")
 		})
 	})
 

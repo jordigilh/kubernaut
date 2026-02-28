@@ -15,7 +15,7 @@
 - **SignalProcessing** (renamed from RemediationProcessor) ← THIS SERVICE
 - AIAnalysis
 - WorkflowExecution
-- KubernetesExecutor
+- KubernetesExecutor (DEPRECATED - ADR-025)
 - RemediationOrchestrator
 
 ---

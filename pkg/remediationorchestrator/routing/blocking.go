@@ -269,6 +269,18 @@ func (r *RoutingEngine) CheckConsecutiveFailures(
 		"queriedRRs", len(list.Items),
 		"threshold", r.config.ConsecutiveFailureThreshold)
 
+	// ADR-057: Post-filter by TargetResource.Namespace for multi-tenant isolation (#222).
+	// Since all CRDs live in ROControllerNamespace, client.InNamespace(rr.Namespace) no longer
+	// provides tenant isolation. We scope by workload namespace instead.
+	incomingTargetNS := rr.Spec.TargetResource.Namespace
+	filtered := make([]remediationv1.RemediationRequest, 0, len(list.Items))
+	for i := range list.Items {
+		if list.Items[i].Spec.TargetResource.Namespace == incomingTargetNS {
+			filtered = append(filtered, list.Items[i])
+		}
+	}
+	list.Items = filtered
+
 	// Sort ALL RRs by creation timestamp (newest first)
 	// We need to check consecutive failures from most recent
 	sort.Slice(list.Items, func(i, j int) bool {
@@ -346,8 +358,8 @@ func (r *RoutingEngine) CheckDuplicateInProgress(
 	rr *remediationv1.RemediationRequest,
 ) (*BlockingCondition, error) {
 	// Find active RR with same fingerprint (excluding self)
-	// Multi-tenant isolation: Pass rr.Namespace to scope search to current namespace
-	originalRR, err := r.FindActiveRRForFingerprint(ctx, rr.Namespace, rr.Spec.SignalFingerprint, rr.Name)
+	// ADR-057 (#222): Pass TargetResource.Namespace for multi-tenant isolation
+	originalRR, err := r.FindActiveRRForFingerprint(ctx, rr.Namespace, rr.Spec.SignalFingerprint, rr.Name, rr.Spec.TargetResource.Namespace)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check for duplicate: %w", err)
 	}
@@ -539,14 +551,15 @@ func (r *RoutingEngine) CheckUnmanagedResource(
 ) *BlockingCondition {
 	logger := log.FromContext(ctx)
 
+	// ADR-057 bug fix: use target resource namespace, not CRD namespace.
+	// CRD lives in kubernaut-system; scope check must evaluate the workload's namespace.
 	managed, err := r.scopeChecker.IsManaged(ctx,
-		rr.Namespace,
+		rr.Spec.TargetResource.Namespace,
 		rr.Spec.TargetResource.Kind,
 		rr.Spec.TargetResource.Name)
 	if err != nil {
-		// Scope infra error — log and pass through (don't block on infra issues)
 		logger.Error(err, "Scope validation failed — allowing RR to proceed",
-			"namespace", rr.Namespace,
+			"namespace", rr.Spec.TargetResource.Namespace,
 			"kind", rr.Spec.TargetResource.Kind,
 			"name", rr.Spec.TargetResource.Name)
 		return nil
@@ -562,7 +575,7 @@ func (r *RoutingEngine) CheckUnmanagedResource(
 	blockedUntil := time.Now().Add(backoffDuration)
 
 	logger.Info("Blocking RR: target resource is not managed by Kubernaut",
-		"namespace", rr.Namespace,
+		"targetNamespace", rr.Spec.TargetResource.Namespace,
 		"kind", rr.Spec.TargetResource.Kind,
 		"name", rr.Spec.TargetResource.Name,
 		"backoff", backoffDuration,
@@ -573,7 +586,7 @@ func (r *RoutingEngine) CheckUnmanagedResource(
 		Reason:  string(remediationv1.BlockReasonUnmanagedResource),
 		Message: fmt.Sprintf("Resource %s/%s/%s not managed by Kubernaut. "+
 			"Add label kubernaut.ai/managed=true to namespace or resource.",
-			rr.Namespace, rr.Spec.TargetResource.Kind, rr.Spec.TargetResource.Name),
+			rr.Spec.TargetResource.Namespace, rr.Spec.TargetResource.Kind, rr.Spec.TargetResource.Name),
 		RequeueAfter: backoffDuration,
 		BlockedUntil: &blockedUntil,
 	}
@@ -668,6 +681,7 @@ func (r *RoutingEngine) FindActiveRRForFingerprint(
 	namespace string,
 	fingerprint string,
 	excludeName string,
+	targetNamespace string,
 ) (*remediationv1.RemediationRequest, error) {
 	logger := log.FromContext(ctx)
 
@@ -690,6 +704,10 @@ func (r *RoutingEngine) FindActiveRRForFingerprint(
 		rr := &rrList.Items[i]
 		if rr.Name == excludeName {
 			continue // Skip self
+		}
+		// ADR-057 (#222): Multi-tenant isolation — only consider RRs targeting the same workload namespace
+		if targetNamespace != "" && rr.Spec.TargetResource.Namespace != targetNamespace {
+			continue
 		}
 
 		// Refetch with APIReader to bypass cache and get fresh status

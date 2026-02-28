@@ -102,7 +102,9 @@ var _ = Describe("Audit Manager", func() {
 	Describe("NewManager", func() {
 		It("should create manager with correct service name", func() {
 			m := prodaudit.NewManager("test-service")
-			Expect(m).ToNot(BeNil())
+			event, err := m.BuildLifecycleStartedEvent("corr-1", "ns", "rr-1")
+			Expect(err).ToNot(HaveOccurred(), "Manager must be functional after construction")
+			Expect(event.Version).To(Equal("1.0"))
 		})
 	})
 
@@ -483,7 +485,7 @@ var _ = Describe("Audit Manager", func() {
 
 				errorDetails := eventData["error_details"].(map[string]interface{})
 				Expect(errorDetails["code"]).To(Equal("ERR_INTERNAL_ORCHESTRATION"), "Unknown errors should map to ERR_INTERNAL_ORCHESTRATION")
-				Expect(errorDetails["retry_possible"]).To(BeTrue(), "Default to retryable")
+				Expect(errorDetails["retry_possible"]).To(BeFalse(), "DD-ERROR-001: unrecognized errors default to non-retryable")
 				Expect(errorDetails["message"]).To(ContainSubstring("unexpected panic"))
 			})
 
@@ -677,7 +679,7 @@ var _ = Describe("Audit Manager", func() {
 				"nr-manual-review-001",
 			)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(event.Severity).ToNot(BeNil())
+			Expect(event.Severity.IsSet()).To(BeTrue(), "Severity must be set for manual review events")
 			Expect(event.Severity.Value).To(Equal("warning"))
 		})
 
@@ -853,7 +855,7 @@ var _ = Describe("Audit Manager", func() {
 				"ScaleReplicas",
 			)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(event).ToNot(BeNil())
+			Expect(event.Version).To(Equal("1.0"), "Event must have valid version even with empty workflow version")
 
 			// Event should still be valid even with empty version
 			eventDataBytes, _ := json.Marshal(event.EventData)

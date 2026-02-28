@@ -30,7 +30,7 @@
 │  │  Confidence: 95%                       │                 │
 │  └────────────────────────────────────────┘                 │
 │                                                              │
-│  Service 3: Kubernetes Executor                             │
+│  Service 3: Kubernetes Executor (DEPRECATED - ADR-025)      │
 │  ┌────────────────────────────────────────┐                 │
 │  │  Kind (Full Kubernetes)                │                 │
 │  │  Real Job execution                    │                 │
@@ -97,7 +97,7 @@ test-integration-workflowexecution: install-envtest
 
 ---
 
-### Service 3: Kubernetes Executor
+### Service 3: Kubernetes Executor (DEPRECATED - ADR-025)
 
 **Infrastructure**: **Kind cluster**
 **Confidence**: **95%** ✅
@@ -220,7 +220,7 @@ test-integration-workflowexecution: install-envtest
 # No bootstrap/cleanup needed - Envtest handles CRDs in test setup
 
 # ==========================================
-# Service 3: Kubernetes Executor (Kind)
+# Service 3: Kubernetes Executor (Kind) (DEPRECATED - ADR-025)
 # ==========================================
 
 .PHONY: test-unit-kubernetesexecutor
@@ -415,7 +415,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
 	workflowv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
-	kubernetesexecutionv1 "github.com/jordigilh/kubernaut/api/kubernetesexecution/v1alpha1"
+	kubernetesexecutionv1 "github.com/jordigilh/kubernaut/api/kubernetesexecution/v1alpha1" // DEPRECATED - ADR-025
 )
 
 var (
@@ -438,7 +438,7 @@ var _ = BeforeSuite(func() {
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths: []string{
 			filepath.Join("..", "..", "..", "api", "workflowexecution", "v1alpha1"),
-			filepath.Join("..", "..", "..", "api", "kubernetesexecution", "v1alpha1"),
+			filepath.Join("..", "..", "..", "api", "kubernetesexecution", "v1alpha1"), // DEPRECATED - ADR-025
 		},
 		ErrorIfCRDPathMissing: true,
 	}
@@ -473,7 +473,7 @@ var _ = AfterSuite(func() {
 
 ---
 
-### Kubernetes Executor: Kind Pattern (Existing)
+### Kubernetes Executor: Kind Pattern (Existing) (DEPRECATED - ADR-025)
 
 **File**: `test/integration/kubernetesexecution/suite_test.go`
 
@@ -540,7 +540,7 @@ var _ = AfterSuite(func() {
 |---------|-------|----------------|---------|-----------|
 | **Remediation Processor** (Envtest + Podman) | 5s | 15s | 2s | **22s** |
 | **Workflow Execution** (Envtest) | 2s | 10s | 1s | **13s** |
-| **Kubernetes Executor** (Kind) | 35s | 60s | 5s | **100s** |
+| **Kubernetes Executor** (Kind) (DEPRECATED - ADR-025) | 35s | 60s | 5s | **100s** |
 | **All 3 Services** | 42s | 85s | 8s | **135s** |
 
 **vs All Kind** (180s total): **1.3x faster** ✅
@@ -573,7 +573,7 @@ var _ = AfterSuite(func() {
 - [ ] **Run integration tests**: Verify Envtest orchestration
 - [ ] **Document no external deps**: Note simplicity
 
-### Service 3: Kubernetes Executor (30 minutes)
+### Service 3: Kubernetes Executor (30 minutes) (DEPRECATED - ADR-025)
 
 - [ ] **Keep Kind approach**: No changes needed (already planned)
 - [ ] **Verify Job execution**: Ensure real Jobs run
@@ -656,7 +656,7 @@ jobs:
           flags: integration-workflow
 
   test-executor-kind:
-    name: Kubernetes Executor (Kind)
+    name: Kubernetes Executor (Kind) (DEPRECATED - ADR-025)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -699,7 +699,7 @@ jobs:
 **Workflow Execution**:
 - Envtest binaries (auto-installed)
 
-**Kubernetes Executor**:
+**Kubernetes Executor** (DEPRECATED - ADR-025):
 - Kind (`brew install kind` on macOS)
 
 ---
@@ -722,7 +722,7 @@ jobs:
 ### Confidence Levels
 
 ✅ **High Confidence**: 96% overall (98% + 95% + 95%)
-✅ **Real Execution**: Kubernetes Executor tests actual Job runs
+✅ **Real Execution**: Kubernetes Executor (DEPRECATED - ADR-025) tests actual Job runs
 ✅ **CRD Orchestration**: Envtest perfect for CRD-only controllers
 
 ---
@@ -763,7 +763,7 @@ jobs:
 - Status propagation through watches
 - Rollback logic triggered correctly
 
-### Kubernetes Executor:
+### Kubernetes Executor (DEPRECATED - ADR-025):
 - Real Jobs execute (kubectl scale, etc.)
 - Rego policies enforce correctly
 - Rollback info captured from Job logs
@@ -788,7 +788,7 @@ jobs:
 **Architecture**:
 - Remediation Processor: Envtest + Podman (98% confidence)
 - Workflow Execution: Envtest (95% confidence)
-- Kubernetes Executor: Kind (95% confidence)
+- Kubernetes Executor (DEPRECATED - ADR-025): Kind (95% confidence)
 
 **Overall Confidence**: **96%**
 **Speed Improvement**: **1.3-1.5x faster**

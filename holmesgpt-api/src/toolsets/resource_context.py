@@ -249,7 +249,12 @@ class GetResourceContextTool(Tool):
     async def _build_k8s_context(
         self, kind: str, name: str, namespace: str, owner_chain: List[Dict[str, str]]
     ) -> Dict[str, Any]:
-        """Build k8s_context dict for LabelDetector from K8s resource metadata."""
+        """Build k8s_context dict for LabelDetector from K8s resource metadata.
+
+        DD-HAPI-018 v1.2: Handles workload targets (Pod, Deployment) and
+        non-workload targets (PodDisruptionBudget). For PDB targets, resolves
+        pod context from the PDB's spec.selector.matchLabels.
+        """
         k8s_context: Dict[str, Any] = {"namespace": namespace}
 
         if kind == "Pod":
@@ -261,6 +266,9 @@ class GetResourceContextTool(Tool):
                     "annotations": pod.metadata.annotations or {},
                 }
 
+        elif kind == "PodDisruptionBudget":
+            await self._build_pdb_target_context(name, namespace, k8s_context)
+
         for entry in owner_chain:
             if entry["kind"] == "Deployment":
                 deploy = await self._k8s_client._get_resource_metadata(
@@ -270,6 +278,7 @@ class GetResourceContextTool(Tool):
                     k8s_context["deployment_details"] = {
                         "name": entry["name"],
                         "labels": deploy.metadata.labels or {},
+                        "annotations": deploy.metadata.annotations or {},
                     }
                     # DD-HAPI-018: PDB selectors match Pod labels. When target is a
                     # Deployment, use pod template labels for PDB detection (Pods
@@ -303,6 +312,69 @@ class GetResourceContextTool(Tool):
 
         return k8s_context
 
+    async def _build_pdb_target_context(
+        self, pdb_name: str, namespace: str, k8s_context: Dict[str, Any]
+    ) -> None:
+        """Resolve pod context when the RCA target is a PodDisruptionBudget.
+
+        DD-HAPI-018 v1.2: Lists PDBs in namespace, finds the target by name,
+        reads its spec.selector.matchLabels, lists matching pods, and populates
+        pod_details from the first matched pod.
+        """
+        try:
+            pdbs, error = await self._k8s_client.list_pdbs(namespace)
+            if error:
+                logger.warning({
+                    "event": "pdb_target_list_failed",
+                    "pdb_name": pdb_name,
+                    "namespace": namespace,
+                    "error": error,
+                })
+                return
+
+            target_pdb = None
+            for pdb in pdbs:
+                if pdb.metadata.name == pdb_name:
+                    target_pdb = pdb
+                    break
+
+            if target_pdb is None:
+                logger.info({
+                    "event": "pdb_target_not_found",
+                    "pdb_name": pdb_name,
+                    "namespace": namespace,
+                })
+                return
+
+            selector = getattr(target_pdb.spec, "selector", None)
+            if selector is None:
+                return
+
+            match_labels = getattr(selector, "match_labels", None) or {}
+            if not match_labels:
+                return
+
+            pods, pod_error = await self._k8s_client.list_pods_by_selector(
+                namespace, match_labels
+            )
+            if pod_error or not pods:
+                return
+
+            first_pod = pods[0]
+            k8s_context["pod_details"] = {
+                "name": first_pod.metadata.name,
+                "labels": first_pod.metadata.labels or {},
+                "annotations": first_pod.metadata.annotations or {},
+            }
+
+        except Exception as e:
+            logger.warning({
+                "event": "pdb_target_context_failed",
+                "pdb_name": pdb_name,
+                "namespace": namespace,
+                "error": str(e),
+            })
+
     @staticmethod
     def _has_active_labels(labels: Dict[str, Any]) -> bool:
         """Check if any label is active (boolean True or non-empty string)."""
@@ -319,8 +391,8 @@ class GetResourceContextTool(Tool):
 class ResourceContextToolset(Toolset):
     """Toolset providing get_resource_context to the LLM.
 
-    ADR-055: Registered alongside WorkflowDiscoveryToolset in both
-    incident and recovery tool registries.
+    ADR-055: Registered alongside WorkflowDiscoveryToolset in the
+    incident tool registry.
     ADR-056 v1.4: Computes DetectedLabels for the RCA target and stores
     in session_state for downstream workflow discovery tools.
     """

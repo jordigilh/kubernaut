@@ -2,6 +2,7 @@
 set -e
 
 : "${TARGET_NAMESPACE:?TARGET_NAMESPACE is required}"
+: "${TARGET_POLICY:?TARGET_POLICY is required}"
 
 echo "=== Phase 1: Validate ==="
 echo "Checking AuthorizationPolicies in namespace ${TARGET_NAMESPACE}..."
@@ -18,12 +19,7 @@ fi
 echo "Found AuthorizationPolicies:"
 echo "${POLICIES}"
 
-if [ -n "${TARGET_POLICY:-}" ]; then
-  POLICY_NAME="${TARGET_POLICY}"
-else
-  POLICY_NAME=$(echo "${POLICIES}" | head -1 | sed 's|.*/||')
-  echo "No specific policy specified, targeting first found: ${POLICY_NAME}"
-fi
+POLICY_NAME="${TARGET_POLICY}"
 
 echo "Checking pods status..."
 NOT_READY=$(kubectl get pods -n "${TARGET_NAMESPACE}" \

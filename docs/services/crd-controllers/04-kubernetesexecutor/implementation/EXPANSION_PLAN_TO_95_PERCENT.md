@@ -1,5 +1,7 @@
 # Kubernetes Executor - Expansion Plan to 95% Confidence
 
+> **DEPRECATED**: KubernetesExecution CRD and KubernetesExecutor service were eliminated by ADR-025 and replaced by Tekton TaskRun via WorkflowExecution. This documentation is retained for historical reference only. API types and CRD manifests have been removed from the codebase.
+
 **Current Status**: 1,303 lines, 70% confidence
 **Target Status**: 5,100 lines, 95% confidence
 **Gap**: +3,797 lines

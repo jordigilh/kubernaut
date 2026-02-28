@@ -74,7 +74,7 @@ var _ = Describe("Priority-Based Routing E2E (BR-NOT-052)", func() {
 			notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-priority-critical",
-					Namespace: "default",
+					Namespace: controllerNamespace,
 					Labels: map[string]string{
 						"test-scenario": "priority-critical",
 						"test-priority": "P0",
@@ -208,7 +208,7 @@ var _ = Describe("Priority-Based Routing E2E (BR-NOT-052)", func() {
 				notification := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      p.name,
-						Namespace: "default",
+						Namespace: controllerNamespace,
 						Labels: map[string]string{
 							"test-scenario": "priority-ordering",
 							"priority":      string(p.priority),
@@ -248,7 +248,7 @@ var _ = Describe("Priority-Based Routing E2E (BR-NOT-052)", func() {
 					notification := &notificationv1alpha1.NotificationRequest{}
 					err := k8sClient.Get(ctx, client.ObjectKey{
 						Name:      p.name,
-						Namespace: "default",
+						Namespace: controllerNamespace,
 					}, notification)
 					if err != nil {
 						return ""
@@ -313,7 +313,7 @@ var _ = Describe("Priority-Based Routing E2E (BR-NOT-052)", func() {
 			notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-multichannel-high",
-					Namespace: "default",
+					Namespace: controllerNamespace,
 					Labels: map[string]string{
 						"test-scenario": "priority-high-multi-channel",
 						"test-priority": "P1",

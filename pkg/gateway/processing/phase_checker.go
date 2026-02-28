@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -52,14 +53,18 @@ import (
 
 // PhaseBasedDeduplicationChecker checks for existing in-progress RRs by fingerprint
 type PhaseBasedDeduplicationChecker struct {
-	client client.Reader // Changed to Reader (can be apiReader or ctrlClient)
+	client         client.Reader // Changed to Reader (can be apiReader or ctrlClient)
+	cooldownPeriod time.Duration
 }
 
-// NewPhaseBasedDeduplicationChecker creates a new phase-based checker
-// DD-GATEWAY-011: Accepts client.Reader to allow apiReader (cache-bypassed) for race-free deduplication
-func NewPhaseBasedDeduplicationChecker(k8sClient client.Reader) *PhaseBasedDeduplicationChecker {
+// NewPhaseBasedDeduplicationChecker creates a new phase-based checker.
+// DD-GATEWAY-011: Accepts client.Reader to allow apiReader (cache-bypassed) for race-free deduplication.
+// cooldownPeriod controls how long after a successful remediation new signals are suppressed.
+// Set to 0 to disable post-completion cooldown.
+func NewPhaseBasedDeduplicationChecker(k8sClient client.Reader, cooldownPeriod time.Duration) *PhaseBasedDeduplicationChecker {
 	return &PhaseBasedDeduplicationChecker{
-		client: k8sClient,
+		client:         k8sClient,
+		cooldownPeriod: cooldownPeriod,
 	}
 }
 
@@ -126,20 +131,33 @@ func (c *PhaseBasedDeduplicationChecker) ShouldDeduplicate(ctx context.Context, 
 		return false, nil, fmt.Errorf("deduplication check failed: %w", err)
 	}
 
-	// Check each RR for non-terminal phase
+	// Check each RR: non-terminal phases always deduplicate, Completed RRs within
+	// cooldown also deduplicate to prevent stale signals reaching the LLM pipeline.
+	var mostRecentCooldownRR *remediationv1alpha1.RemediationRequest
+
 	for i := range rrList.Items {
 		rr := &rrList.Items[i]
 
-		// Skip if in terminal phase (allow new RR creation)
-		if IsTerminalPhase(rr.Status.OverallPhase) {
-			continue
+		if !IsTerminalPhase(rr.Status.OverallPhase) {
+			return true, rr, nil
 		}
 
-		// Found in-progress RR → should deduplicate
-		return true, rr, nil
+		// Post-completion cooldown: only Completed (not Failed/TimedOut/Skipped/Cancelled)
+		if c.cooldownPeriod > 0 &&
+			rr.Status.OverallPhase == remediationv1alpha1.PhaseCompleted &&
+			rr.Status.CompletedAt != nil &&
+			time.Since(rr.Status.CompletedAt.Time) < c.cooldownPeriod {
+			if mostRecentCooldownRR == nil ||
+				rr.Status.CompletedAt.Time.After(mostRecentCooldownRR.Status.CompletedAt.Time) {
+				mostRecentCooldownRR = rr
+			}
+		}
 	}
 
-	// No in-progress RR found → allow new RR creation
+	if mostRecentCooldownRR != nil {
+		return true, mostRecentCooldownRR, nil
+	}
+
 	return false, nil, nil
 }
 

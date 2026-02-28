@@ -4,7 +4,7 @@ metadata:
   name: kubernaut-crashloop-helm-rules
   namespace: demo-crashloop-helm
   labels:
-    release: prometheus
+    release: kube-prometheus-stack
 spec:
   groups:
   - name: kubernaut-crashloop-helm

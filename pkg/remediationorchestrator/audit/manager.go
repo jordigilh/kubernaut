@@ -320,7 +320,8 @@ func (m *Manager) BuildFailureEvent(
 	}
 
 	// BR-AUDIT-005 Gap #7: Build standardized error_details
-	errorMessage := fmt.Sprintf("Remediation failed at phase '%s': %s", failurePhase, failureReason)
+	// Include error code in message for SOC2 traceability (AE-INT-4 assertion)
+	errorMessage := fmt.Sprintf("Remediation failed at phase '%s' [%s]: %s", failurePhase, classification.Code, failureReason)
 
 	errorDetails := sharedaudit.NewErrorDetails(
 		"remediationorchestrator",

@@ -28,7 +28,7 @@ Design Decisions:
   - ADR-038 (Async Buffered Audit Ingestion)
 
 DRY helpers for LLM investigation audit and post-loop exhaustion handling,
-shared by both incident and recovery analysis flows.
+shared by the incident analysis flow.
 """
 
 import logging

@@ -65,7 +65,7 @@ var _ = Describe("Issue #88: Terminal-Phase Notification Tracking Integration", 
 		rr := &remediationv1.RemediationRequest{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      rrName,
-				Namespace: testNamespace,
+				Namespace: ROControllerNamespace,
 			},
 			Spec: remediationv1.RemediationRequestSpec{
 				SignalFingerprint: func() string {
@@ -122,7 +122,7 @@ var _ = Describe("Issue #88: Terminal-Phase Notification Tracking Integration", 
 		notif := &notificationv1.NotificationRequest{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      notifName,
-				Namespace: testNamespace,
+				Namespace: ROControllerNamespace,
 			},
 			Spec: notificationv1.NotificationRequestSpec{
 				Type:     notificationv1.NotificationTypeCompletion,
@@ -196,7 +196,7 @@ var _ = Describe("Issue #88: Terminal-Phase Notification Tracking Integration", 
 		rr := &remediationv1.RemediationRequest{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      rrName,
-				Namespace: testNamespace,
+				Namespace: ROControllerNamespace,
 			},
 			Spec: remediationv1.RemediationRequestSpec{
 				SignalFingerprint: func() string {
@@ -249,7 +249,7 @@ var _ = Describe("Issue #88: Terminal-Phase Notification Tracking Integration", 
 		notif := &notificationv1.NotificationRequest{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      notifName,
-				Namespace: testNamespace,
+				Namespace: ROControllerNamespace,
 			},
 			Spec: notificationv1.NotificationRequestSpec{
 				Type:     notificationv1.NotificationTypeEscalation,

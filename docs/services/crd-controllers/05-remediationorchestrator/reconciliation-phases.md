@@ -27,9 +27,9 @@ RemediationRequest creates WorkflowExecution
          ↓
    (watch triggers)
          ↓
-RemediationRequest creates KubernetesExecution
+RemediationRequest creates KubernetesExecution (DEPRECATED - ADR-025)
          ↓
-   KubernetesExecution.status.phase = "completed"
+   KubernetesExecution.status.phase = "completed" (DEPRECATED - ADR-025)
          ↓
    (watch triggers)
          ↓
@@ -209,7 +209,7 @@ err = c.Watch(
 
 #### 4. **executing** Phase (Workflow Execution & Kubernetes Operations)
 
-**Purpose**: Wait for WorkflowExecution CRD completion, then create KubernetesExecution CRD
+**Purpose**: Wait for WorkflowExecution CRD completion, then create KubernetesExecution (DEPRECATED - ADR-025) CRD
 
 **Trigger**: WorkflowExecution.status.phase = "completed" (watch event)
 
@@ -217,7 +217,7 @@ err = c.Watch(
 - **Watch** WorkflowExecution CRD status
 - When `status.phase = "completed"`:
   - Extract workflow results from WorkflowExecution.status
-  - **Create KubernetesExecution CRD** with data snapshot (operations to execute)
+  - **Create KubernetesExecution (DEPRECATED - ADR-025) CRD** with data snapshot (operations to execute)
   - Wait for KubernetesExecution completion
 - **Timeout Detection**: If WorkflowExecution exceeds timeout threshold, escalate
 
@@ -225,7 +225,7 @@ err = c.Watch(
 ```go
 switch workflowExecution.Status.Phase {
 case "Completed":
-    // Create KubernetesExecution CRD
+    // Create KubernetesExecution (DEPRECATED - ADR-025) CRD
     createKubernetesExecution(ctx, alertRemediation, workflowExecution.Status)
 
     // Wait for KubernetesExecution to complete before final transition
@@ -262,7 +262,7 @@ err = c.Watch(
     handler.EnqueueRequestsFromMapFunc(r.workflowExecutionToRemediation),
 )
 
-// Watch KubernetesExecution
+// Watch KubernetesExecution (DEPRECATED - ADR-025)
 err = c.Watch(
     &source.Kind{Type: &executorv1.KubernetesExecution{}},
     handler.EnqueueRequestsFromMapFunc(r.kubernetesExecutionToRemediation),
@@ -366,7 +366,7 @@ func (r *RemediationRequestReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 **No Timeout** (terminal state)
 
-**Cascade Deletion**: All service CRDs (RemediationProcessing, AIAnalysis, WorkflowExecution, KubernetesExecution) are deleted automatically via owner references.
+**Cascade Deletion**: All service CRDs (RemediationProcessing, AIAnalysis, WorkflowExecution, KubernetesExecution (DEPRECATED - ADR-025)) are deleted automatically via owner references.
 
 ---
 
@@ -403,7 +403,7 @@ func (r *RemediationRequestReconciler) Reconcile(ctx context.Context, req ctrl.R
 | **Alert Processing** | 5 minutes | Slack: #platform-ops |
 | **AI Analysis** | 10 minutes | Slack: #ai-team, Email: ai-oncall |
 | **Workflow Execution** | 20 minutes | Slack: #sre-team |
-| **Kubernetes Execution** | 10 minutes | Slack: #platform-oncall, PagerDuty |
+| **Kubernetes Execution** (DEPRECATED - ADR-025) | 10 minutes | Slack: #platform-oncall, PagerDuty |
 | **Overall Workflow** | 1 hour | Slack: #incident-response, PagerDuty: P1 |
 
 **No Requeue** (terminal state)

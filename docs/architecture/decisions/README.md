@@ -34,7 +34,7 @@
 || 009 | [HolmesGPT BR Legacy Mapping](./009-holmesgpt-br-legacy-mapping.md) | HolmesGPT API | ✅ Accepted | BR mapping for AI service |
 || 010 | [HolmesGPT BR Migration Plan](./010-holmesgpt-br-migration-plan.md) | HolmesGPT API | ✅ Accepted | BR migration execution plan |
 || 011 | [Remediation Processor BR Migration](./011-remediationprocessor-br-migration.md) | Remediation Processor | ✅ Accepted | BR standardization for processor |
-|| 012 | [Kubernetes Executor BR Migration](./012-kubernetesexecutor-br-migration.md) | Kubernetes Executor | ✅ Accepted | BR standardization for executor |
+|| 012 | [Kubernetes Executor BR Migration](./012-kubernetesexecutor-br-migration.md) | ~~Kubernetes Executor~~ (DEPRECATED - ADR-025) | ✅ Accepted | BR standardization for executor |
 || 013 | [Remediation Orchestrator BR Migration](./013-remediationorchestrator-br-migration.md) | Remediation Orchestrator | ✅ Accepted | BR standardization for orchestrator |
 
 ### **Design Decisions (DD-PREFIX)**

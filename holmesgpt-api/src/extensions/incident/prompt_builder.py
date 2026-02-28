@@ -19,7 +19,7 @@ Incident Analysis Prompt Builder
 
 Business Requirements: BR-HAPI-002 (Incident Analysis)
 Design Decisions:
-- DD-RECOVERY-003 (DetectedLabels for workflow filtering)
+- DD-HAPI-001 (DetectedLabels for workflow filtering)
 - DD-WORKFLOW-001 v2.1 (Honor failedDetections)
 - DD-HAPI-002 v1.2 (LLM Self-Correction feedback)
 
@@ -45,7 +45,7 @@ def build_cluster_context_section(detected_labels: DetectedLabels) -> str:
     This helps the LLM understand the cluster environment and make
     appropriate workflow recommendations.
 
-    Design Decision: DD-RECOVERY-003, DD-WORKFLOW-001 v2.1
+    Design Decision: DD-HAPI-001, DD-WORKFLOW-001 v2.1
 
     DD-WORKFLOW-001 v2.1: Honor failedDetections
     - Fields in failedDetections are EXCLUDED from cluster context
@@ -107,7 +107,7 @@ def build_mcp_filter_instructions(detected_labels: DetectedLabels) -> str:
     """
     Build workflow discovery filter instructions based on DetectedLabels.
 
-    Design Decision: DD-RECOVERY-003, DD-WORKFLOW-001 v2.1
+    Design Decision: DD-HAPI-001, DD-WORKFLOW-001 v2.1
 
     DD-WORKFLOW-001 v2.1: Honor failedDetections
     - Fields in failedDetections are EXCLUDED from filter instructions
@@ -411,6 +411,28 @@ that a **{signal_name}** event will occur for **{namespace}/{resource_kind}/{res
     # ADR-056: Cluster environment characteristics are now computed at runtime
     # by the get_resource_context tool (LabelDetector) and injected into
     # DataStorage queries via session_state. No longer included in the prompt.
+
+    # Issue #198: PDB-specific guidance for KubePodDisruptionBudgetAtLimit signals
+    pdb_signal_guidance = ""
+    if signal_name and "PodDisruptionBudget" in signal_name:
+        pdb_signal_guidance = """
+## PDB-Specific Investigation Guidance (Issue #198)
+
+**IMPORTANT**: This signal indicates a PodDisruptionBudget is blocking voluntary
+disruptions (drain/eviction). Before concluding this is a taint or scheduling issue:
+
+1. **Inspect the PDB spec**: Call `get_resource_context` for the PDB itself
+   (kind=PodDisruptionBudget) to understand its selector and minAvailable/maxUnavailable.
+2. **Check matched pods**: The PDB's selector identifies which pods it protects.
+   Verify the replica count vs minAvailable constraint.
+3. **Prefer RelaxPDB over RemoveTaint**: A drained node with SchedulingDisabled is a
+   SYMPTOM of the PDB blocking eviction, not the root cause. The root cause is the
+   PDB constraint preventing the eviction needed for the drain to complete.
+4. **RCA target**: The affected resource should be the PDB, not the Node.
+"""
+
+    if pdb_signal_guidance:
+        prompt += pdb_signal_guidance
 
     # BR-HAPI-016: Add remediation history section if context is available
     if remediation_history_context:

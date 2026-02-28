@@ -89,17 +89,19 @@ class TestProblemResolvedIntegrationPattern:
     """Tests for how problem_resolved scenario integrates with test suite."""
 
     def test_problem_resolved_scenario_count(self):
-        """Verify we have the expected number of scenarios (9 total including problem_resolved and rca_incomplete)."""
+        """Verify we have the expected number of scenarios (11 total including problem_resolved and rca_incomplete)."""
         expected_scenarios = {
             "oomkilled",
             "crashloop",
             "node_not_ready",
-            "recovery",
             "test_signal",
             "no_workflow_found",
             "low_confidence",
             "problem_resolved",  # BR-HAPI-200
-            "rca_incomplete"  # BR-HAPI-212
+            "rca_incomplete",  # BR-HAPI-212
+            "max_retries_exhausted",
+            "oomkilled_predictive",
+            "predictive_no_action",
         }
 
         actual_scenarios = set(MOCK_SCENARIOS.keys())

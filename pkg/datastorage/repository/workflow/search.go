@@ -28,6 +28,8 @@ import (
 
 // ========================================
 // WORKFLOW SEARCH OPERATIONS
+// CONVENTION (#213, DD-WORKFLOW-016): All paginated queries on remediation_workflow_catalog
+// must use workflow_id ASC as a deterministic tiebreaker in ORDER BY.
 // ========================================
 // V1.0: Label-only search with wildcard support
 // Authority: DD-WORKFLOW-004 v1.5 (Label-Only Scoring)
@@ -166,7 +168,7 @@ func (r *Repository) SearchByLabels(ctx context.Context, request *models.Workflo
 			%s
 		) scored_workflows
 		WHERE final_score >= $%d
-		ORDER BY final_score DESC, created_at DESC
+		ORDER BY final_score DESC, workflow_id ASC
 		LIMIT $%d
 	`, detectedLabelBoostSQL, customLabelBoostSQL, labelPenaltySQL,
 		detectedLabelBoostSQL, customLabelBoostSQL, labelPenaltySQL,

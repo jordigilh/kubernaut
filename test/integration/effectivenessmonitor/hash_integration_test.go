@@ -23,10 +23,15 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/ptr"
 
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
+	canonicalhash "github.com/jordigilh/kubernaut/pkg/shared/hash"
 )
 
 var _ = Describe("Spec Hash Integration (BR-EM-004)", func() {
@@ -111,7 +116,12 @@ var _ = Describe("Spec Hash Integration (BR-EM-004)", func() {
 			Spec: eav1.EffectivenessAssessmentSpec{
 				CorrelationID:           "rr-sh-004",
 				RemediationRequestPhase: "Completed",
-				TargetResource: eav1.TargetResource{
+				SignalTarget: eav1.TargetResource{
+					Kind:      "Deployment",
+					Name:      "test-app",
+					Namespace: ns,
+				},
+				RemediationTarget: eav1.TargetResource{
 					Kind:      "Deployment",
 					Name:      "test-app",
 					Namespace: ns,
@@ -261,5 +271,267 @@ var _ = Describe("Spec Hash Integration (BR-EM-004)", func() {
 		Expect(fetchedEA1.Status.Components.PostRemediationSpecHash).To(
 			Equal(fetchedEA2.Status.Components.PostRemediationSpecHash),
 			"same target spec should produce identical hashes")
+	})
+
+	// ========================================
+	// IT-EM-183-001: HPA spec hash reflects real HPA spec content
+	// BR: BR-EM-004 (Spec Hash Comparison), Issue #183
+	//
+	// Business outcome: When the RemediationTarget is an HPA that exists in the
+	// cluster, the spec hash must be derived from the HPA's actual spec (scaleTargetRef,
+	// minReplicas, maxReplicas, metrics). The hash must NOT be the empty-map sentinel
+	// that results from a 404 fallback.
+	// ========================================
+	It("IT-EM-183-001: should compute spec hash from real HPA spec, not empty map (Issue #183)", func() {
+		ns := createTestNamespace("em-183-001")
+		defer deleteTestNamespace(ns)
+
+		emptyMapHash, err := canonicalhash.CanonicalSpecHash(map[string]interface{}{})
+		Expect(err).ToNot(HaveOccurred())
+
+		By("Creating a Deployment as the HPA scale target")
+		dep := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "api-frontend",
+				Namespace: ns,
+			},
+			Spec: appsv1.DeploymentSpec{
+				Replicas: ptr.To(int32(2)),
+				Selector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"app": "api-frontend"},
+				},
+				Template: corev1.PodTemplateSpec{
+					ObjectMeta: metav1.ObjectMeta{
+						Labels: map[string]string{"app": "api-frontend"},
+					},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{{
+							Name:  "app",
+							Image: "nginx:1.25",
+						}},
+					},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, dep)).To(Succeed())
+
+		By("Creating an HPA targeting the Deployment")
+		hpa := &autoscalingv2.HorizontalPodAutoscaler{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "api-frontend-hpa",
+				Namespace: ns,
+			},
+			Spec: autoscalingv2.HorizontalPodAutoscalerSpec{
+				ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{
+					APIVersion: "apps/v1",
+					Kind:       "Deployment",
+					Name:       "api-frontend",
+				},
+				MinReplicas: ptr.To(int32(2)),
+				MaxReplicas: 10,
+				Metrics: []autoscalingv2.MetricSpec{{
+					Type: autoscalingv2.ResourceMetricSourceType,
+					Resource: &autoscalingv2.ResourceMetricSource{
+						Name: corev1.ResourceCPU,
+						Target: autoscalingv2.MetricTarget{
+							Type:               autoscalingv2.UtilizationMetricType,
+							AverageUtilization: ptr.To(int32(80)),
+						},
+					},
+				}},
+			},
+		}
+		Expect(k8sClient.Create(ctx, hpa)).To(Succeed())
+
+		By("Creating EA with RemediationTarget pointing to the real HPA")
+		ea := &eav1.EffectivenessAssessment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "ea-183-001",
+				Namespace: ns,
+			},
+			Spec: eav1.EffectivenessAssessmentSpec{
+				CorrelationID:           "rr-183-001",
+				RemediationRequestPhase: "Completed",
+				SignalTarget: eav1.TargetResource{
+					Kind:      "Deployment",
+					Name:      "api-frontend",
+					Namespace: ns,
+				},
+				RemediationTarget: eav1.TargetResource{
+					Kind:      "HorizontalPodAutoscaler",
+					Name:      "api-frontend-hpa",
+					Namespace: ns,
+				},
+				Config: eav1.EAConfig{
+					StabilizationWindow: metav1.Duration{Duration: 1 * time.Second},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, ea)).To(Succeed())
+
+		By("Waiting for EA to complete with hash computed")
+		fetchedEA := &eav1.EffectivenessAssessment{}
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name: ea.Name, Namespace: ea.Namespace,
+			}, fetchedEA)).To(Succeed())
+			g.Expect(fetchedEA.Status.Phase).To(Equal(eav1.PhaseCompleted))
+		}, timeout, interval).Should(Succeed())
+
+		Expect(fetchedEA.Status.Components.HashComputed).To(BeTrue(),
+			"Issue #183: hash should be computed for HPA target")
+		Expect(fetchedEA.Status.Components.PostRemediationSpecHash).To(HavePrefix("sha256:"),
+			"Issue #183: hash should use canonical sha256: prefix")
+		Expect(fetchedEA.Status.Components.PostRemediationSpecHash).NotTo(Equal(emptyMapHash),
+			"Issue #183: hash must reflect real HPA spec content, not the empty-map fallback "+
+				"(empty map hash = %s)", emptyMapHash)
+	})
+
+	// ========================================
+	// IT-EM-183-002: HPA spec change produces a different hash
+	// BR: BR-EM-004 (Spec Drift Detection), Issue #183
+	//
+	// Business outcome: When the HPA spec changes between two assessments, the
+	// hashes must differ. This proves drift detection works for HPA targets.
+	// ========================================
+	It("IT-EM-183-002: should detect HPA spec change via different hash (drift detection)", func() {
+		ns := createTestNamespace("em-183-002")
+		defer deleteTestNamespace(ns)
+
+		By("Creating a Deployment as the HPA scale target")
+		dep := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "api-frontend",
+				Namespace: ns,
+			},
+			Spec: appsv1.DeploymentSpec{
+				Replicas: ptr.To(int32(2)),
+				Selector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"app": "api-frontend"},
+				},
+				Template: corev1.PodTemplateSpec{
+					ObjectMeta: metav1.ObjectMeta{
+						Labels: map[string]string{"app": "api-frontend"},
+					},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{{
+							Name:  "app",
+							Image: "nginx:1.25",
+						}},
+					},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, dep)).To(Succeed())
+
+		By("Creating an HPA with maxReplicas=10")
+		hpa := &autoscalingv2.HorizontalPodAutoscaler{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "api-frontend-hpa",
+				Namespace: ns,
+			},
+			Spec: autoscalingv2.HorizontalPodAutoscalerSpec{
+				ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{
+					APIVersion: "apps/v1",
+					Kind:       "Deployment",
+					Name:       "api-frontend",
+				},
+				MinReplicas: ptr.To(int32(2)),
+				MaxReplicas: 10,
+				Metrics: []autoscalingv2.MetricSpec{{
+					Type: autoscalingv2.ResourceMetricSourceType,
+					Resource: &autoscalingv2.ResourceMetricSource{
+						Name: corev1.ResourceCPU,
+						Target: autoscalingv2.MetricTarget{
+							Type:               autoscalingv2.UtilizationMetricType,
+							AverageUtilization: ptr.To(int32(80)),
+						},
+					},
+				}},
+			},
+		}
+		Expect(k8sClient.Create(ctx, hpa)).To(Succeed())
+
+		By("Creating first EA targeting the HPA")
+		ea1 := &eav1.EffectivenessAssessment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "ea-183-002a",
+				Namespace: ns,
+			},
+			Spec: eav1.EffectivenessAssessmentSpec{
+				CorrelationID:           "rr-183-002a",
+				RemediationRequestPhase: "Completed",
+				SignalTarget: eav1.TargetResource{
+					Kind: "Deployment", Name: "api-frontend", Namespace: ns,
+				},
+				RemediationTarget: eav1.TargetResource{
+					Kind: "HorizontalPodAutoscaler", Name: "api-frontend-hpa", Namespace: ns,
+				},
+				Config: eav1.EAConfig{
+					StabilizationWindow: metav1.Duration{Duration: 1 * time.Second},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, ea1)).To(Succeed())
+
+		By("Waiting for first EA to complete")
+		fetchedEA1 := &eav1.EffectivenessAssessment{}
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name: ea1.Name, Namespace: ea1.Namespace,
+			}, fetchedEA1)).To(Succeed())
+			g.Expect(fetchedEA1.Status.Phase).To(Equal(eav1.PhaseCompleted))
+		}, timeout, interval).Should(Succeed())
+
+		hash1 := fetchedEA1.Status.Components.PostRemediationSpecHash
+		Expect(hash1).To(HavePrefix("sha256:"))
+
+		By("Modifying the HPA spec (maxReplicas 10 -> 20)")
+		Eventually(func(g Gomega) {
+			freshHPA := &autoscalingv2.HorizontalPodAutoscaler{}
+			g.Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name: "api-frontend-hpa", Namespace: ns,
+			}, freshHPA)).To(Succeed())
+			freshHPA.Spec.MaxReplicas = 20
+			freshHPA.Spec.Metrics[0].Resource.Target.AverageUtilization = ptr.To(int32(60))
+			g.Expect(k8sClient.Update(ctx, freshHPA)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		By("Creating second EA targeting the modified HPA")
+		ea2 := &eav1.EffectivenessAssessment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "ea-183-002b",
+				Namespace: ns,
+			},
+			Spec: eav1.EffectivenessAssessmentSpec{
+				CorrelationID:           "rr-183-002b",
+				RemediationRequestPhase: "Completed",
+				SignalTarget: eav1.TargetResource{
+					Kind: "Deployment", Name: "api-frontend", Namespace: ns,
+				},
+				RemediationTarget: eav1.TargetResource{
+					Kind: "HorizontalPodAutoscaler", Name: "api-frontend-hpa", Namespace: ns,
+				},
+				Config: eav1.EAConfig{
+					StabilizationWindow: metav1.Duration{Duration: 1 * time.Second},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, ea2)).To(Succeed())
+
+		By("Waiting for second EA to complete")
+		fetchedEA2 := &eav1.EffectivenessAssessment{}
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name: ea2.Name, Namespace: ea2.Namespace,
+			}, fetchedEA2)).To(Succeed())
+			g.Expect(fetchedEA2.Status.Phase).To(Equal(eav1.PhaseCompleted))
+		}, timeout, interval).Should(Succeed())
+
+		hash2 := fetchedEA2.Status.Components.PostRemediationSpecHash
+		Expect(hash2).To(HavePrefix("sha256:"))
+		Expect(hash2).NotTo(Equal(hash1),
+			"Issue #183: HPA spec change (maxReplicas 10->20, CPU target 80%%->60%%) "+
+				"must produce a different hash for drift detection to work")
 	})
 })

@@ -62,7 +62,7 @@ Multi-step workflow orchestration and execution with phases: `planning → valid
 ---
 
 #### ⚡ 4. [Kubernetes Executor Service](services/crd-controllers/04-kubernetes-executor.md)
-**Port**: 8084 | **CRD**: KubernetesExecution | **Status**: ⚠️ **NEEDS CRD IMPLEMENTATION**
+**Port**: 8084 | **CRD**: KubernetesExecution (DEPRECATED - ADR-025) | **Status**: ⚠️ **NEEDS CRD IMPLEMENTATION**
 
 Kubernetes operations execution with safety validation and phases: `validating → executing → verifying → completed`
 
@@ -203,7 +203,7 @@ Multi-channel notification delivery
 
 ### **PHASE 3: Service CRDs - Workflow & Execution (Weeks 6-7)**
 
-**Objective**: Implement WorkflowExecution and KubernetesExecution CRDs
+**Objective**: Implement WorkflowExecution and KubernetesExecution (DEPRECATED - ADR-025) CRDs
 
 **Week 6**: [Workflow Service](services/crd-controllers/03-workflow.md) - Orchestration logic
 **Week 7**: [Kubernetes Executor](services/crd-controllers/04-kubernetes-executor.md) - Infrastructure operations

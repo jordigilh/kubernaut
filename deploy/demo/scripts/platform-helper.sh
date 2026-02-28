@@ -18,6 +18,8 @@ ensure_platform() {
 
     echo "==> Installing Kubernaut platform..."
 
+    _ensure_pre_install_secrets
+
     echo "  Applying CRDs..."
     kubectl apply -f "${CHART_DIR}/crds/" 2>&1 | sed 's/^/    /'
 
@@ -76,6 +78,47 @@ seed_scenario_workflow() {
     fi
 
     echo "  Workflow seeded for ${scenario}."
+}
+
+# Create secrets that must exist before Helm install:
+#   - llm-credentials (VertexAI ADC for holmesgpt-api)
+#   - slack-webhook (notification credential store, issue #104)
+# Also labels the namespace for Helm adoption if it was pre-created.
+_ensure_pre_install_secrets() {
+    kubectl create namespace "${PLATFORM_NS}" --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null
+
+    # Helm namespace adoption labels
+    kubectl label namespace "${PLATFORM_NS}" app.kubernetes.io/managed-by=Helm --overwrite 2>/dev/null
+    kubectl annotate namespace "${PLATFORM_NS}" \
+        meta.helm.sh/release-name=kubernaut \
+        meta.helm.sh/release-namespace="${PLATFORM_NS}" --overwrite 2>/dev/null
+
+    # LLM credentials (VertexAI ADC)
+    local adc_file="${HOME}/.config/gcloud/application_default_credentials.json"
+    local llm_values_file="${LLM_VALUES}"
+    if [ -f "${adc_file}" ] && [ -f "${llm_values_file}" ]; then
+        local project region
+        project=$(grep 'gcpProjectId' "${llm_values_file}" | awk -F'"' '{print $2}')
+        region=$(grep 'gcpRegion' "${llm_values_file}" | awk -F'"' '{print $2}')
+        kubectl create secret generic llm-credentials \
+            -n "${PLATFORM_NS}" \
+            --from-literal=VERTEXAI_PROJECT="${project}" \
+            --from-literal=VERTEXAI_LOCATION="${region}" \
+            --from-literal=GOOGLE_APPLICATION_CREDENTIALS="/etc/holmesgpt/credentials/application_default_credentials.json" \
+            --from-file=application_default_credentials.json="${adc_file}" \
+            --dry-run=client -o yaml | kubectl apply -f - 2>&1 | sed 's/^/    /'
+    fi
+
+    # Slack webhook (issue #104: named credential store)
+    local slack_file="${HOME}/.kubernaut/notification/slack-webhook.url"
+    if [ -f "${slack_file}" ]; then
+        local webhook_url
+        webhook_url=$(cat "${slack_file}")
+        kubectl create secret generic slack-webhook \
+            -n "${PLATFORM_NS}" \
+            --from-literal=webhook-url="${webhook_url}" \
+            --dry-run=client -o yaml | kubectl apply -f - 2>&1 | sed 's/^/    /'
+    fi
 }
 
 _check_llm_credentials() {

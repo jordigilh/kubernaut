@@ -129,7 +129,7 @@
 
 ### 2.6 resolveTargetResource (workflowexecution.go L194, 28.6%)
 
-**Highest impact – lowest coverage.** Package-private; exercised via `WorkflowExecutionCreator.Create()`. **Note**: EA target resolution (`resolveEffectivenessTarget` in RO reconciler) now uses the same AffectedResource logic as the WE creator — AI-identified target when available, fallback to RR.Spec.TargetResource.
+**Highest impact – lowest coverage.** Package-private; exercised via `WorkflowExecutionCreator.Create()`. **Note**: EA target resolution (`resolveDualTargets` in RO reconciler, DD-EM-003) now returns explicit `DualTarget{Signal, Remediation}` using the same AffectedResource logic as the WE creator — AI-identified target for remediation when available, RR.Spec.TargetResource for signal (always) and remediation (fallback).
 
 **Uncovered branches**:
 1. **AffectedResource with namespace** → `"namespace/kind/name"`.

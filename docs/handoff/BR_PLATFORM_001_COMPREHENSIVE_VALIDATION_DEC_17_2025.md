@@ -107,7 +107,7 @@ Comprehensive triage of `BR-PLATFORM-001-must-gather-diagnostic-collection.md` a
 **BR States** (Lines 65-66, 279, 401):
 ```
 - `remediationorchestrators.kubernaut.ai`
-- `kubernetesexecutions.kubernetesexecution.kubernaut.io`
+- `kubernetesexecutions.kubernetesexecution.kubernaut.io` (DEPRECATED - ADR-025)
 ...
 "crds_collected": 8
 ...

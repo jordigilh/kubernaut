@@ -31,7 +31,6 @@ import (
 // ========================================
 // HOLMESGPT-API CLIENT INTERFACE
 // BR-AI-007: HolmesGPT-API integration for investigation
-// BR-AI-082: Recovery flow support via InvestigateRecovery
 // ========================================
 
 // HolmesGPTClientInterface defines the contract for calling HolmesGPT-API.
@@ -39,23 +38,17 @@ import (
 //
 // Methods:
 // - Investigate: (Legacy sync) Analyzes incidents via /incident/analyze endpoint
-// - InvestigateRecovery: (Legacy sync) Analyzes recovery scenarios via /recovery/analyze endpoint
 // - SubmitInvestigation: (Async) Submits investigation, returns session ID (BR-AA-HAPI-064.1)
-// - SubmitRecoveryInvestigation: (Async) Submits recovery investigation, returns session ID (BR-AA-HAPI-064.9)
 // - PollSession: (Async) Polls session status (BR-AA-HAPI-064.2)
 // - GetSessionResult: (Async) Retrieves incident investigation result (BR-AA-HAPI-064.3)
-// - GetRecoverySessionResult: (Async) Retrieves recovery investigation result (BR-AA-HAPI-064.9)
 type HolmesGPTClientInterface interface {
 	// Legacy synchronous methods (will be deprecated)
 	Investigate(ctx context.Context, req *client.IncidentRequest) (*client.IncidentResponse, error)
-	InvestigateRecovery(ctx context.Context, req *client.RecoveryRequest) (*client.RecoveryResponse, error)
 
 	// Async session methods (BR-AA-HAPI-064)
 	SubmitInvestigation(ctx context.Context, req *client.IncidentRequest) (string, error)
-	SubmitRecoveryInvestigation(ctx context.Context, req *client.RecoveryRequest) (string, error)
 	PollSession(ctx context.Context, sessionID string) (*client.SessionStatus, error)
 	GetSessionResult(ctx context.Context, sessionID string) (*client.IncidentResponse, error)
-	GetRecoverySessionResult(ctx context.Context, sessionID string) (*client.RecoveryResponse, error)
 }
 
 // ========================================

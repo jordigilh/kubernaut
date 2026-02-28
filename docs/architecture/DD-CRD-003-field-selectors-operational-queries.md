@@ -344,7 +344,7 @@ kubectl get aianalyses --field-selector status.phase=Completed
 
 ---
 
-#### 6. KubernetesExecution
+#### 6. KubernetesExecution (DEPRECATED - ADR-025)
 ```go
 // Spec fields
 "spec.remediationRequestRef.name"     // Parent RR lookup (if exists)
@@ -616,7 +616,7 @@ kubectl get workflowexecutions --field-selector spec.remediationRequestRef.name=
 - [ ] AIAnalysis: Add selectablefield annotations
 - [ ] SignalProcessing: Add selectablefield annotations
 - [ ] RemediationApprovalRequest: Add selectablefield annotations
-- [ ] KubernetesExecution: Add selectablefield annotations
+- [ ] ~~KubernetesExecution~~ (DEPRECATED - ADR-025): Add selectablefield annotations
 - [ ] Run `make manifests` to regenerate CRDs
 - [ ] Verify selectableFields in generated CRD YAML
 
@@ -626,7 +626,7 @@ kubectl get workflowexecutions --field-selector spec.remediationRequestRef.name=
 - [ ] AIAnalysis field indexers
 - [ ] SignalProcessing field indexers
 - [ ] RemediationApprovalRequest field indexers
-- [ ] KubernetesExecution field indexers
+- [ ] ~~KubernetesExecution~~ (DEPRECATED - ADR-025) field indexers
 - [ ] Unit tests for field indexers
 - [ ] Integration tests for programmatic field selector queries
 

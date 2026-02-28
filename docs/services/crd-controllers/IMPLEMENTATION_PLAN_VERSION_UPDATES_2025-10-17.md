@@ -221,7 +221,7 @@ All version updates reference the following ADRs created during this session:
    - RemediationOrchestrator (4-6 weeks) + BR-ORCH-001
    - AIAnalysis base + v1.1 extension (18-19 days total)
    - WorkflowExecution base + v1.2 extension (30-33 days total)
-   - KubernetesExecution (2-3 weeks)
+   - KubernetesExecution (2-3 weeks) (DEPRECATED - ADR-025)
 4. ⏳ **Integration testing** - Cross-controller validation (2 days)
 5. ⏳ **V1.0 validation** - E2E, unit, integration tests (1-2 weeks)
 

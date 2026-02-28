@@ -40,7 +40,7 @@ All code follows TDD methodology with 77 passing tests (27 RR + 16 RAR + 34 rout
 | `AIAnalysisComplete` | AI completed/failed |
 | `WorkflowExecutionReady` | WE CRD created |
 | `WorkflowExecutionComplete` | WE completed/failed |
-| `RecoveryComplete` | Terminal phase reached |
+| `RecoveryComplete` | [Deprecated - Issue #180] Terminal phase reached |
 
 #### RemediationApprovalRequest Conditions (3 types)
 
@@ -430,7 +430,7 @@ func (c *Creator) Create(ctx, rr) (string, error) {
 | WorkflowExecution | ✅ `pkg/workflowexecution/` | Exists (check if DD-compliant) |
 | NotificationRequest | ✅ `pkg/notification/` | Exists (check if DD-compliant) |
 | SignalProcessing | ❌ None | Needs `pkg/signalprocessing/conditions.go` |
-| KubernetesExecution | ❌ None | Needs `pkg/kubernetesexecution/conditions.go` |
+| KubernetesExecution (DEPRECATED - ADR-025) | ❌ None | Needs `pkg/kubernetesexecution/conditions.go` |
 
 **Tracking**: `docs/handoff/HANDOFF_DD-CRD-002_COMPLIANCE_REQUEST.md` was created for other teams.
 

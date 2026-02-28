@@ -26,8 +26,6 @@ These tests validate HAPI's complete HTTP API surface (FastAPI endpoints) in a p
 | test_incident_request_with_custom_labels_in_enrichment_results | Custom labels flow through incident analysis pipeline |
 | test_incident_request_without_custom_labels | System handles requests without custom labels |
 | test_incident_request_with_empty_custom_labels | System handles empty custom labels |
-| test_recovery_request_with_custom_labels_in_enrichment_results | Custom labels flow through recovery pipeline |
-| test_recovery_request_without_custom_labels | Recovery works without custom labels |
 
 **Pattern**:
 ```python
@@ -51,18 +49,6 @@ assert response.status_code == 200
 | test_incident_validation_still_enforced_in_mock_mode | Request validation remains active |
 | test_incident_mock_response_indicates_mock_mode | Response indicates mock mode active |
 | test_incident_different_signal_types_produce_different_workflows | Signal types affect workflow selection |
-| test_recovery_endpoint_returns_200_in_mock_mode | Recovery endpoint works in mock mode |
-| test_recovery_response_has_required_fields | Recovery response is complete |
-| test_recovery_response_strategies_are_deterministic | Mock mode produces consistent strategies |
-| test_recovery_validation_enforced_in_mock_mode | Recovery validation remains active |
-| test_recovery_mock_response_indicates_mock_mode | Recovery response indicates mock mode |
-| test_recovery_different_signal_types_produce_different_strategies | Signal types affect strategy selection |
-
-### 3. `test_recovery_dd003_e2e.py` (0 tests - placeholder)
-
-**Business Requirement**: DD-003 (Recovery Prompt Enhancement)
-**Status**: ⏸️ To be implemented
-
 ---
 
 ## 🏗️ **Infrastructure Requirements**

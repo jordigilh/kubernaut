@@ -342,7 +342,7 @@ It("should timeout Job exactly at activeDeadlineSeconds", func() {
     ctx := context.Background()
 
     // Create Job with 5 second timeout
-    ke := createKubernetesExecution("timeout-test", withTimeout(5))
+    ke := createKubernetesExecution("timeout-test", withTimeout(5))  // DEPRECATED - ADR-025
     Expect(k8sClient.Create(ctx, ke)).To(Succeed())
 
     // Wait for timeout (with buffer)
@@ -601,7 +601,7 @@ It("should handle empty historical context gracefully", func() {
 
 **Common Scenarios**:
 - Circular dependency detection
-- Orphaned KubernetesExecution CRDs
+- Orphaned KubernetesExecution (DEPRECATED - ADR-025) CRDs
 - Watch connection interrupted
 - Concurrent step completion
 - Rollback cascade failures

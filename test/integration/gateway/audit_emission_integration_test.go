@@ -205,7 +205,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 
 				By("4. Verify only ONE CRD exists for this fingerprint")
 				var rrList remediationv1alpha1.RemediationRequestList
-				err = k8sClient.List(ctx, &rrList, client.InNamespace(testNamespace))
+				err = k8sClient.List(ctx, &rrList, client.InNamespace(controllerNamespace))
 				Expect(err).ToNot(HaveOccurred())
 
 				// Count CRDs with matching fingerprint
@@ -503,8 +503,8 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				// Validate RemediationRequest reference
 				rrRef, hasRR := payload.RemediationRequest.Get()
 				Expect(hasRR).To(BeTrue())
-				Expect(rrRef).To(ContainSubstring(testNamespace),
-					"BR-GATEWAY-056: RR reference must contain namespace")
+				Expect(rrRef).To(ContainSubstring(controllerNamespace),
+					"BR-GATEWAY-056: RR reference must contain namespace (ADR-057: RRs live in kubernaut-system)")
 				Expect(rrRef).To(MatchRegexp(`^[^/]+/rr-[a-f0-9]{12}-[a-f0-9]{8}$`),
 					"BR-GATEWAY-056: RR reference must be in namespace/name format (DD-AUDIT-CORRELATION-002)")
 
@@ -604,7 +604,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				Eventually(func() error {
 					return k8sClient.Get(ctx, client.ObjectKey{
 						Name:      correlationID1,
-						Namespace: testNamespace,
+						Namespace: controllerNamespace,
 					}, &rr1)
 				}, 10*time.Second, 500*time.Millisecond).Should(Succeed(),
 					"BR-GATEWAY-056: Correlation ID must match CRD name for audit-to-CRD mapping")
@@ -761,8 +761,8 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				Expect(rrRef).To(ContainSubstring(existingRRName),
 					"BR-GATEWAY-057: RR reference must contain existing RR name")
 
-				// Validate namespace is included
-				Expect(rrRef).To(ContainSubstring(testNamespace))
+				// Validate namespace is included (ADR-057: RRs live in kubernaut-system)
+				Expect(rrRef).To(ContainSubstring(controllerNamespace))
 
 				GinkgoWriter.Printf("✅ Existing RR reference validated: %s\n", rrRef)
 			})
@@ -994,7 +994,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				Eventually(func() error {
 					return k8sClient.Get(ctx, client.ObjectKey{
 						Name:      existingRRName,
-						Namespace: testNamespace,
+						Namespace: controllerNamespace,
 					}, &rr)
 				}, 10*time.Second, 500*time.Millisecond).Should(Succeed())
 

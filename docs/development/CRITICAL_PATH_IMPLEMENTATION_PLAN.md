@@ -18,7 +18,7 @@
 | 2 | **RemediationProcessing** | 🚧 5% | ✅ 100% | 3-4 weeks | Gateway |
 | 3 | **AIAnalysis** | 🚧 5% | ✅ 100% | 4-5 weeks | RemediationProcessing |
 | 4 | **WorkflowExecution** | 🚧 5% | ✅ 100% | 4-5 weeks | AIAnalysis |
-| 5 | **KubernetesExecution** | 🚧 5% | ✅ 100% | 3-4 weeks | WorkflowExecution |
+| 5 | **KubernetesExecution** (DEPRECATED - ADR-025) | 🚧 5% | ✅ 100% | 3-4 weeks | WorkflowExecution |
 
 **Total Timeline**: 15-20 weeks (optimistic-realistic)
 **Target Deployment**: Week 19-26
@@ -615,7 +615,7 @@
 
 ---
 
-## 🎯 **Phase 4: KubernetesExecution Controller**
+## 🎯 **Phase 4: KubernetesExecution Controller** (DEPRECATED - ADR-025)
 
 **Timeline**: Week 17-20 (3-4 weeks)
 **Status**: 🚧 5% → ✅ 100%
@@ -940,7 +940,7 @@
 | **1** | RemediationProcessing | 3-4 weeks | Week 6 | ❌ Not Started |
 | **2** | AIAnalysis | 4-5 weeks | Week 11 | ❌ Not Started |
 | **3** | WorkflowExecution | 4-5 weeks | Week 16 | ❌ Not Started |
-| **4** | KubernetesExecution | 3-4 weeks | Week 20 | ❌ Not Started |
+| **4** | KubernetesExecution (DEPRECATED - ADR-025) | 3-4 weeks | Week 20 | ❌ Not Started |
 | **5** | Integration Testing | 2-3 weeks | Week 23 | ❌ Not Started |
 | **6** | Deployment Prep | 1 week | Week 24 | ❌ Not Started |
 

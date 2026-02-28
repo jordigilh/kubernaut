@@ -111,7 +111,7 @@ go test ./test/unit/remediationorchestrator/remediationrequest/... -v
   - AIAnalysisComplete ✅
   - WorkflowExecutionReady ✅
   - WorkflowExecutionComplete ✅
-  - RecoveryComplete ✅
+  - RecoveryComplete ✅ [Deprecated - Issue #180]
 
 ### **Integration Tests**: ⏸️ BLOCKED (Pre-existing issue)
 
@@ -218,7 +218,7 @@ All child CRD lifecycle conditions implemented:
 - ✅ WorkflowExecutionComplete
 
 Plus terminal condition:
-- ✅ RecoveryComplete (implemented by previous team)
+- ✅ RecoveryComplete (implemented by previous team) [Deprecated - Issue #180]
 
 ### **DD-CRD-002-RR Compliance**: ✅ COMPLETE
 
@@ -297,7 +297,7 @@ Part B Complete conditions follow the same pattern as Part A Ready conditions:
 
 **Justification**:
 - All 27 unit tests pass without modification
-- Pattern matches existing RecoveryComplete implementation
+- Pattern matches existing RecoveryComplete implementation [Deprecated - Issue #180]
 - Follows established DD-CRD-002-RR standard
 - No lint errors
 - Canonical reason constants used throughout

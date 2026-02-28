@@ -13,7 +13,7 @@
 **Recommendation**:
 - ✅ **Remediation Processor**: Use **Envtest + Podman** (98% confidence)
 - ✅ **Workflow Execution**: Use **Envtest + Podman** (95% confidence)
-- ⚠️ **Kubernetes Executor**: Use **Kind + Podman** (60% confidence with Envtest)
+- ⚠️ **Kubernetes Executor** (DEPRECATED - ADR-025): Use **Kind + Podman** (60% confidence with Envtest)
 
 **Alternative**: Use **Envtest for all 3** if willing to mock Job execution in Kubernetes Executor (85% confidence)
 
@@ -145,14 +145,14 @@ var _ = AfterSuite(func() {
 **What It Does**:
 - Receives WorkflowExecution CRD with multi-step workflow
 - Resolves step dependencies (topological sort)
-- Creates KubernetesExecution child CRDs for each step
+- Creates KubernetesExecution (DEPRECATED - ADR-025) child CRDs for each step
 - Watches child CRD status updates
 - Coordinates parallel execution with concurrency limits
 - Handles rollback on failures
 
 **What It Needs for Integration Tests**:
 - ✅ CRD create/read/update operations → **Envtest provides**
-- ✅ Watch child KubernetesExecution CRDs → **Envtest provides**
+- ✅ Watch child KubernetesExecution (DEPRECATED - ADR-025) CRDs → **Envtest provides**
 - ✅ Parent-child coordination via owner refs → **Envtest provides**
 - ✅ Status propagation through watches → **Envtest provides**
 - ✅ Concurrent CRD creation → **Envtest provides**
@@ -177,7 +177,7 @@ It("should coordinate parallel step execution", func() {
 
     // Verify all 3 KubernetesExecution CRDs created
     Eventually(func() int {
-        execList := &kubernetesexecution.KubernetesExecutionList{}
+        execList := &kubernetesexecution.KubernetesExecutionList{} // DEPRECATED - ADR-025
         k8sClient.List(ctx, execList, client.InNamespace("test"))
         return len(execList.Items)
     }).Should(Equal(3))
@@ -212,10 +212,10 @@ It("should coordinate parallel step execution", func() {
 
 ---
 
-### 3. Kubernetes Executor: **60%** ⚠️ ENVTEST WITH LIMITATIONS
+### 3. Kubernetes Executor: **60%** ⚠️ ENVTEST WITH LIMITATIONS (DEPRECATED - ADR-025)
 
 **What It Does**:
-- Receives KubernetesExecution CRD with action spec
+- Receives KubernetesExecution (DEPRECATED - ADR-025) CRD with action spec
 - Validates action against Rego policies
 - Creates native Kubernetes Job to execute action
 - **Waits for Job to complete** ⚠️
@@ -245,7 +245,7 @@ It("should coordinate parallel step execution", func() {
 
 ```go
 It("should execute ScaleDeployment action via Job", func() {
-    // Create KubernetesExecution CRD
+    // Create KubernetesExecution (DEPRECATED - ADR-025) CRD
     exec := createScaleDeploymentExecution()
     Expect(k8sClient.Create(ctx, exec)).To(Succeed())
 
@@ -262,7 +262,7 @@ It("should execute ScaleDeployment action via Job", func() {
     job.Status.CompletionTime = &metav1.Time{Time: time.Now()}
     Expect(k8sClient.Status().Update(ctx, job)).To(Succeed())
 
-    // Verify KubernetesExecution status updated
+    // Verify KubernetesExecution (DEPRECATED - ADR-025) status updated
     Eventually(func() string {
         k8sClient.Get(ctx, execKey, exec)
         return exec.Status.Phase
@@ -295,7 +295,7 @@ It("should execute ScaleDeployment action via Job", func() {
 
 ```go
 It("should execute ScaleDeployment action via real Job", func() {
-    // Create KubernetesExecution CRD
+    // Create KubernetesExecution (DEPRECATED - ADR-025) CRD
     exec := createScaleDeploymentExecution()
     Expect(k8sClient.Create(ctx, exec)).To(Succeed())
 
@@ -311,13 +311,13 @@ It("should execute ScaleDeployment action via real Job", func() {
         return job.Status.Succeeded
     }, 30*time.Second).Should(Equal(int32(1)))
 
-    // Verify KubernetesExecution status updated
+    // Verify KubernetesExecution (DEPRECATED - ADR-025) status updated
     Eventually(func() string {
         k8sClient.Get(ctx, execKey, exec)
         return exec.Status.Phase
     }).Should(Equal("Completed"))
 
-    // Verify rollback info captured from real Job logs
+    // Verify rollback info captured from real Job logs (exec DEPRECATED - ADR-025)
     Expect(exec.Status.RollbackInfo).ToNot(BeEmpty())
 })
 ```
@@ -364,7 +364,7 @@ Kubernetes Executor:   Kind + Podman (or just Kind)
 **Rationale**:
 1. **Remediation Processor** doesn't need Job execution → Envtest perfect
 2. **Workflow Execution** orchestrates, doesn't execute → Envtest perfect
-3. **Kubernetes Executor** needs real Job execution → Kind necessary
+3. **Kubernetes Executor** (DEPRECATED - ADR-025) needs real Job execution → Kind necessary
 
 **Benefits**:
 - ✅ Fast iteration for 2 out of 3 services (Envtest)
@@ -414,7 +414,7 @@ Kubernetes Executor:   Envtest (with mocked Job completion)
 - ✅ Simpler Makefile (no Kind management)
 
 **Trade-offs**:
-- ⚠️ Kubernetes Executor Job execution tested only in E2E
+- ⚠️ Kubernetes Executor (DEPRECATED - ADR-025) Job execution tested only in E2E
 - ⚠️ Rollback info capture not tested in integration layer
 - ⚠️ Must carefully mock Job status transitions
 
@@ -433,7 +433,7 @@ Kubernetes Executor:   Envtest (with mocked Job completion)
 |---------|------------------|---------------|---------|
 | **Remediation Processor** | 15s | 55s | **3.7x faster** |
 | **Workflow Execution** | 10s | 45s | **4.5x faster** |
-| **Kubernetes Executor** | 12s (mocked) | 60s (real) | **5x faster** |
+| **Kubernetes Executor** (DEPRECATED - ADR-025) | 12s (mocked) | 60s (real) | **5x faster** |
 | **All 3 Services** | **37s** | **160s** | **4.3x faster** |
 
 **CI Pipeline Impact**:
@@ -531,7 +531,7 @@ var _ = AfterSuite(func() {
 ### **PRIMARY RECOMMENDATION: Hybrid Approach** ✅
 
 **Use Envtest for**: Remediation Processor, Workflow Execution
-**Use Kind for**: Kubernetes Executor
+**Use Kind for**: Kubernetes Executor (DEPRECATED - ADR-025)
 
 **Confidence**: **96%** (weighted average)
 - Remediation Processor: 98%
@@ -621,7 +621,7 @@ install-envtest:
 **Architecture**:
 - Remediation Processor: Envtest + Podman
 - Workflow Execution: Envtest
-- Kubernetes Executor: Kind
+- Kubernetes Executor (DEPRECATED - ADR-025): Kind
 
 **Confidence**: **96%**
 **Speed Improvement**: **1.5x faster** than all Kind

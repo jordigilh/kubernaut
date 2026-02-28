@@ -137,7 +137,7 @@
   - should use parallel execution harness for concurrency validation
 
 **Go Code Features**:
-- ✅ Complete import statements (context, workflowv1alpha1, kubernetesexecutionv1alpha1, testutil/parallel, testutil/timing)
+- ✅ Complete import statements (context, workflowv1alpha1, kubernetesexecutionv1alpha1 (DEPRECATED - ADR-025), testutil/parallel, testutil/timing)
 - ✅ Ginkgo/Gomega BDD structure
 - ✅ Proper namespace isolation (GinkgoRandomSeed())
 - ✅ Anti-flaky patterns (Eventually, Consistently, sync.WaitGroup)

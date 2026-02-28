@@ -67,31 +67,34 @@ func NewEffectivenessAssessmentCreator(c client.Client, s *runtime.Scheme, m *me
 	}
 }
 
-// ResolvedTarget carries the Kubernetes resource that the workflow actually modified.
-// BR-HAPI-191: This may differ from RR.Spec.TargetResource when the LLM identified
-// a higher-level owner resource (e.g., Deployment instead of Pod).
-type ResolvedTarget struct {
-	Kind      string
-	Name      string
-	Namespace string
+// DualTarget carries both the signal-sourced and remediation-sourced targets for
+// effectiveness assessment (DD-EM-003).
+//
+// Signal: The resource that triggered the alert (from RR.Spec.TargetResource).
+// Remediation: The resource the workflow actually modified (from AA.Status.RootCauseAnalysis.AffectedResource).
+// These may differ (e.g., alert on Deployment, workflow patches HPA).
+type DualTarget struct {
+	Signal      eav1.TargetResource
+	Remediation eav1.TargetResource
 }
 
 // CreateEffectivenessAssessment creates an EffectivenessAssessment CRD for a completed remediation.
 // ADR-EM-001: The EA is created with:
 //   - CorrelationID: RR.Name (used for audit trail correlation)
-//   - TargetResource: from resolvedTarget (AI-identified) or RR.Spec.TargetResource (fallback)
+//   - SignalTarget: from dualTarget.Signal (signal-sourced resource)
+//   - RemediationTarget: from dualTarget.Remediation (AI-identified resource)
 //   - Config.StabilizationWindow: from RO's EACreationConfig
 //   - RemediationRequestPhase: RR.Status.OverallPhase at creation time (immutable spec field)
 //   - OwnerReference: RR (for cascade deletion, BR-ORCH-031)
 //
-// The resolvedTarget parameter is optional. When non-nil, it overrides RR.Spec.TargetResource
-// with the AI-identified resource (BR-HAPI-191). When nil, falls back to RR.Spec.TargetResource.
+// The dualTarget parameter is optional. When non-nil, it provides both signal and remediation
+// targets (DD-EM-003). When nil, falls back to RR.Spec.TargetResource for both.
 //
 // Returns the EA name if created (or already exists), or an error.
 func (c *EffectivenessAssessmentCreator) CreateEffectivenessAssessment(
 	ctx context.Context,
 	rr *remediationv1.RemediationRequest,
-	resolvedTarget *ResolvedTarget,
+	dualTarget *DualTarget,
 ) (string, error) {
 	logger := log.FromContext(ctx).WithValues(
 		"remediationRequest", rr.Name,
@@ -113,16 +116,16 @@ func (c *EffectivenessAssessmentCreator) CreateEffectivenessAssessment(
 		return "", fmt.Errorf("failed to check existing EffectivenessAssessment: %w", err)
 	}
 
-	// BR-HAPI-191: Use AI-identified target when available, fall back to RR target.
-	// The resolved target is the resource the workflow actually modified (e.g., Deployment),
-	// which may differ from the signal-sourced RR target (e.g., Pod).
-	targetKind := rr.Spec.TargetResource.Kind
-	targetName := rr.Spec.TargetResource.Name
-	targetNamespace := rr.Spec.TargetResource.Namespace
-	if resolvedTarget != nil && resolvedTarget.Kind != "" && resolvedTarget.Name != "" {
-		targetKind = resolvedTarget.Kind
-		targetName = resolvedTarget.Name
-		targetNamespace = resolvedTarget.Namespace
+	// DD-EM-003: Resolve signal and remediation targets.
+	signalTarget := eav1.TargetResource{
+		Kind:      rr.Spec.TargetResource.Kind,
+		Name:      rr.Spec.TargetResource.Name,
+		Namespace: rr.Spec.TargetResource.Namespace,
+	}
+	remediationTarget := signalTarget
+	if dualTarget != nil {
+		signalTarget = dualTarget.Signal
+		remediationTarget = dualTarget.Remediation
 	}
 
 	// Build EffectivenessAssessment CRD
@@ -133,13 +136,10 @@ func (c *EffectivenessAssessmentCreator) CreateEffectivenessAssessment(
 			Namespace: rr.Namespace,
 		},
 		Spec: eav1.EffectivenessAssessmentSpec{
-			CorrelationID:          rr.Name,
+			CorrelationID:           rr.Name,
 			RemediationRequestPhase: string(rr.Status.OverallPhase),
-			TargetResource: eav1.TargetResource{
-				Kind:      targetKind,
-				Name:      targetName,
-				Namespace: targetNamespace,
-			},
+			SignalTarget:            signalTarget,
+			RemediationTarget:       remediationTarget,
 			Config: eav1.EAConfig{
 				StabilizationWindow: metav1.Duration{Duration: c.stabilizationWindow},
 			},
@@ -180,7 +180,8 @@ func (c *EffectivenessAssessmentCreator) CreateEffectivenessAssessment(
 	logger.Info("Created EffectivenessAssessment",
 		"name", name,
 		"correlationID", rr.Name,
-		"targetResource", fmt.Sprintf("%s/%s/%s", targetNamespace, targetKind, targetName),
+		"signalTarget", fmt.Sprintf("%s/%s/%s", signalTarget.Namespace, signalTarget.Kind, signalTarget.Name),
+		"remediationTarget", fmt.Sprintf("%s/%s/%s", remediationTarget.Namespace, remediationTarget.Kind, remediationTarget.Name),
 		"stabilizationWindow", c.stabilizationWindow,
 	)
 

@@ -24,7 +24,7 @@ import (
     processingv1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1"
     aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1"
     workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1"
-    kubernetesexecutionv1 "github.com/jordigilh/kubernaut/api/kubernetesexecution/v1"
+    kubernetesexecutionv1 "github.com/jordigilh/kubernaut/api/kubernetesexecution/v1" // DEPRECATED - ADR-025
 )
 
 type RemediationRequestReconciler struct {
@@ -158,7 +158,7 @@ func (r *RemediationRequestReconciler) orchestratePhase(
         }
 
     case "executing":
-        // Wait for WorkflowExecution completion, then create KubernetesExecution
+        // Wait for WorkflowExecution completion, then create KubernetesExecution (DEPRECATED - ADR-025)
         var workflowExecution workflowexecutionv1.WorkflowExecution
         if err := r.Get(ctx, client.ObjectKey{
             Name:      remediation.Status.WorkflowExecutionRef.Name,
@@ -174,11 +174,11 @@ func (r *RemediationRequestReconciler) orchestratePhase(
 
         if workflowExecution.Status.Phase == "completed" {
             if remediation.Status.KubernetesExecutionRef == nil {
-                if err := r.createKubernetesExecution(ctx, remediation, &workflowExecution); err != nil {
+                if err := r.createKubernetesExecution(ctx, remediation, &workflowExecution); err != nil { // DEPRECATED - ADR-025
                     return ctrl.Result{}, err
                 }
 
-                // Wait for KubernetesExecution to complete
+                // Wait for KubernetesExecution (DEPRECATED - ADR-025) to complete
                 var kubernetesExecution kubernetesexecutionv1.KubernetesExecution
                 if err := r.Get(ctx, client.ObjectKey{
                     Name:      remediation.Status.KubernetesExecutionRef.Name,
@@ -203,75 +203,7 @@ func (r *RemediationRequestReconciler) orchestratePhase(
             return r.handleWorkflowExecutionSkipped(ctx, remediation, &workflowExecution)
         }
 
-    case "recovering":
-        // ========================================
-        // ALTERNATIVE 2: Watch RemediationProcessing (recovery) completion
-        // 📋 Design Decision: DD-001 | ✅ Approved Design
-        // See: docs/architecture/DESIGN_DECISIONS.md#dd-001-recovery-context-enrichment-alternative-2
-        // See: docs/architecture/PROPOSED_FAILURE_RECOVERY_SEQUENCE.md (Version 1.2)
-        // ========================================
-        //
-        // Remediation Orchestrator waits for RemediationProcessing Controller to:
-        // 1. Enrich with FRESH monitoring context
-        // 2. Enrich with FRESH business context
-        // 3. Enrich with recovery context from Context API
-        // Then creates AIAnalysis CRD with complete enrichment data
-
-        // Get current RemediationProcessing (recovery attempt)
-        var recoveryRP processingv1.RemediationProcessing
-        if err := r.Get(ctx, client.ObjectKey{
-            Name:      remediation.Status.CurrentProcessingRef.Name,
-            Namespace: remediation.Namespace,
-        }, &recoveryRP); err != nil {
-            return ctrl.Result{}, err
-        }
-
-        // Check timeout
-        if r.isPhaseTimedOut(&recoveryRP, remediation.Status.TimeoutConfig) {
-            return r.handleTimeout(ctx, remediation, "recovery_processing")
-        }
-
-        if recoveryRP.Status.Phase == "completed" {
-            // RemediationProcessing (recovery) enrichment completed
-            // Create AIAnalysis with ALL contexts (monitoring + business + recovery)
-
-            log := ctrl.LoggerFrom(ctx)
-            log.Info("Recovery RemediationProcessing completed - creating AIAnalysis",
-                "remediationProcessing", recoveryRP.Name,
-                "attemptNumber", recoveryRP.Spec.RecoveryAttemptNumber,
-                "monitoringContextQuality", func() string {
-                    if recoveryRP.Status.EnrichmentResults != nil &&
-                       recoveryRP.Status.EnrichmentResults.KubernetesContext != nil {
-                        return "available"
-                    }
-                    return "unavailable"
-                }(),
-                "recoveryContextQuality", func() string {
-                    if recoveryRP.Status.EnrichmentResults != nil &&
-                       recoveryRP.Status.EnrichmentResults.RecoveryContext != nil {
-                        return recoveryRP.Status.EnrichmentResults.RecoveryContext.ContextQuality
-                    }
-                    return "unavailable"
-                }())
-
-            // Create AIAnalysis with enriched recovery context
-            if err := r.createAIAnalysis(ctx, remediation, &recoveryRP); err != nil {
-                return ctrl.Result{}, err
-            }
-
-            // Transition to analyzing phase (normal flow continues)
-            remediation.Status.OverallPhase = "analyzing"
-            return ctrl.Result{}, r.Status().Update(ctx, remediation)
-
-        } else if recoveryRP.Status.Phase == "failed" {
-            // Recovery enrichment failed - escalate to manual review
-            log.Warn("Recovery RemediationProcessing failed - escalating to manual review",
-                "remediationProcessing", recoveryRP.Name,
-                "attemptNumber", remediation.Status.RecoveryAttempts)
-
-            return r.escalateToManualReview(ctx, remediation,
-                fmt.Sprintf("recovery_processing_failed_attempt_%d", remediation.Status.RecoveryAttempts))
-        }
+    // case "recovering": [Deprecated - Issue #180] Recovery flow (DD-RECOVERY-002) removed
     }
 
     // Requeue to check progress
@@ -548,107 +480,18 @@ const remediationFinalizerName = "kubernaut.ai/remediation-retention"
 
 ---
 
-## 🔄 **Recovery Evaluation Logic**
+## 🔄 **Recovery Evaluation Logic** [Deprecated - Issue #180]
 
-**Status**: ✅ Phase 1 Critical Fix (C7) - Updated for Option B
-**Reference**: [`docs/architecture/PROPOSED_FAILURE_RECOVERY_SEQUENCE.md`](../../../architecture/PROPOSED_FAILURE_RECOVERY_SEQUENCE.md)
-**Design Decision**: [`OPTION_B_IMPLEMENTATION_SUMMARY.md`](../../../architecture/OPTION_B_IMPLEMENTATION_SUMMARY.md)
-**Business Requirements**: BR-WF-RECOVERY-001 through BR-WF-RECOVERY-011
+**Status**: Deprecated - Recovery flow (DD-RECOVERY-002) removed. See Issue #180.
 
-### Overview
-
-When a WorkflowExecution fails, the Remediation Orchestrator:
-1. Evaluates whether recovery is viable (prevents infinite loops)
-2. **Queries Context API** for historical context
-3. **Embeds historical context** in new AIAnalysis CRD spec
-4. Creates AIAnalysis CRD with self-contained data
-
-**Key Responsibility**: Context API integration happens HERE, not in AIAnalysis controller (Option B design).
-
-**For detailed Context API integration**: See [`OPTION_B_CONTEXT_API_INTEGRATION.md`](./OPTION_B_CONTEXT_API_INTEGRATION.md)
-
-### Controller Setup with WorkflowExecution Watch
-
-```go
-func (r *RemediationRequestReconciler) SetupWithManager(mgr ctrl.Manager) error {
-    return ctrl.NewControllerManagedBy(mgr).
-        For(&remediationv1.RemediationRequest{}).
-        Owns(&processingv1.RemediationProcessing{}).
-        Owns(&aianalysisv1.AIAnalysis{}).
-        Owns(&workflowexecutionv1.WorkflowExecution{}).  // CRITICAL: Watch for workflow failures
-        Owns(&kubernetesexecutionv1.KubernetesExecution{}).
-        Complete(r)
-}
-```
-
-### Enhanced Reconciliation with Failure Detection
-
-```go
-func (r *RemediationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-    log := ctrl.LoggerFrom(ctx)
-
-    var remediation remediationv1.RemediationRequest
-    if err := r.Get(ctx, req.NamespacedName, &remediation); err != nil {
-        return ctrl.Result{}, client.IgnoreNotFound(err)
-    }
-
-    // Handle finalizer...
-
-    // Initialize if new...
-
-    // Handle terminal states...
-
-    // ========================================
-    // NEW: Check for workflow failure and evaluate recovery
-    // ========================================
-    if remediation.Status.CurrentWorkflowExecutionRef != nil &&
-       remediation.Status.OverallPhase == "executing" {
-
-        var workflow workflowexecutionv1.WorkflowExecution
-        if err := r.Get(ctx, client.ObjectKey{
-            Name:      *remediation.Status.CurrentWorkflowExecutionRef,
-            Namespace: remediation.Namespace,
-        }, &workflow); err == nil {
-
-            // Workflow failure detected
-            if workflow.Status.Phase == "failed" {
-                log.Info("Workflow failure detected",
-                    "workflow", workflow.Name,
-                    "failedStep", *workflow.Status.FailedStep,
-                    "errorType", *workflow.Status.ErrorType,
-                    "failureReason", *workflow.Status.FailureReason)
-
-                // Evaluate recovery viability (BR-WF-RECOVERY-010)
-                canRecover, reason := r.evaluateRecoveryViability(ctx, &remediation, &workflow)
-
-                if canRecover {
-                    // Transition to recovering phase and create new AIAnalysis
-                    log.Info("Recovery viability evaluation passed - initiating recovery",
-                        "recoveryAttempt", remediation.Status.RecoveryAttempts+1)
-                    return r.initiateRecovery(ctx, &remediation, &workflow)
-                } else {
-                    // Escalate to manual review
-                    log.Warn("Recovery viability evaluation failed - escalating to manual review",
-                        "reason", reason,
-                        "attempts", remediation.Status.RecoveryAttempts)
-                    return r.escalateToManualReview(ctx, &remediation, reason)
-                }
-            }
-        }
-    }
-
-    // Continue with normal phase orchestration...
-    return r.orchestratePhase(ctx, &remediation)
-}
-```
-
-### Recovery Viability Evaluation (BR-WF-RECOVERY-010)
+---
 
 This is the core decision logic that prevents infinite recovery loops:
 
 ```go
 // evaluateRecoveryViability determines if recovery attempt is viable
 // Returns (canRecover bool, reason string)
+// [Deprecated - Issue #180: Recovery flow removed]
 func (r *RemediationRequestReconciler) evaluateRecoveryViability(
     ctx context.Context,
     remediation *remediationv1.RemediationRequest,

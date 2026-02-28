@@ -1,6 +1,6 @@
 # EnrichmentResults
 
-Enrichment results from SignalProcessing.  Contains Kubernetes context, auto-detected labels, and custom labels that are used for workflow filtering and LLM context.  Design Decision: DD-RECOVERY-003, DD-HAPI-001  Custom Labels (DD-HAPI-001): - Format: map[string][]string (subdomain → list of values) - Keys are subdomains (e.g., \"constraint\", \"team\") - Values are lists of strings (boolean keys or \"key=value\" pairs) - Example: {\"constraint\": [\"cost-constrained\"], \"team\": [\"name=payments\"]} - Auto-appended to MCP workflow search (invisible to LLM)
+Enrichment results from SignalProcessing.  Contains Kubernetes context, auto-detected labels, and custom labels that are used for workflow filtering and LLM context.  Design Decision: DD-HAPI-001  Custom Labels (DD-HAPI-001): - Format: map[string][]string (subdomain → list of values) - Keys are subdomains (e.g., \"constraint\", \"team\") - Values are lists of strings (boolean keys or \"key=value\" pairs) - Example: {\"constraint\": [\"cost-constrained\"], \"team\": [\"name=payments\"]} - Auto-appended to MCP workflow search (invisible to LLM)
 
 ## Properties
 

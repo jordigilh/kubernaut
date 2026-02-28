@@ -1,9 +1,0 @@
-apiVersion: kubernetesexecution.kubernaut.io/v1alpha1
-kind: KubernetesExecution
-metadata:
-  labels:
-    app.kubernetes.io/name: kubernaut
-    app.kubernetes.io/managed-by: kustomize
-  name: kubernetesexecution-sample
-spec:
-  # TODO(user): Add fields here

@@ -24,7 +24,7 @@ Each team should create their CRD-specific conditions document following this na
 | **AA Team** | AIAnalysis | `docs/architecture/decisions/DD-CRD-002-aianalysis-conditions.md` |
 | **SP Team** | SignalProcessing | `docs/architecture/decisions/DD-CRD-002-signalprocessing-conditions.md` |
 | **NOT Team** | NotificationRequest | `docs/architecture/decisions/DD-CRD-002-notificationrequest-conditions.md` |
-| **KE Team** | KubernetesExecution | `docs/architecture/decisions/DD-CRD-002-kubernetesexecution-conditions.md` |
+| **KE Team** | KubernetesExecution (DEPRECATED - ADR-025) | `docs/architecture/decisions/DD-CRD-002-kubernetesexecution-conditions.md` |
 
 ---
 

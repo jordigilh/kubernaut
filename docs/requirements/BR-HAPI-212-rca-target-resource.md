@@ -339,6 +339,8 @@ root_cause_analysis:
 - RemediationOrchestrator validates RCA target is managed by Kubernaut
 - RemediationOrchestrator blocks remediation if RCA target is unmanaged
 
+**Defense-in-Depth (BR-ORCH-036 v4.0)**: The RO has its own guard that validates AffectedResource presence before routing. If HAPI and AA both miss the issue, the RO catches it and produces the same Failed + ManualReviewRequired response. See DD-HAPI-006 v1.2 for the complete three-layer model.
+
 ---
 
 ## ✅ **Success Criteria**

@@ -40,4 +40,4 @@ nodes:
         kube-api-burst: "200"
 - role: worker
   labels:
-    kubernaut.ai/workload-node: "true"
+    kubernaut.ai/managed: "true"

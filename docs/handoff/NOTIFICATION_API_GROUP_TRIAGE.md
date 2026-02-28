@@ -116,7 +116,7 @@ For context, here's the compliance status across all Kubernaut CRDs:
 | WorkflowExecution | `kubernaut.ai` | ✅ COMPLIANT | Migrated |
 | Remediation | `remediation.kubernaut.ai` | ✅ COMPLIANT | DD-CRD-001 comment in code |
 | RemediationOrchestrator | `remediationorchestrator.kubernaut.ai` | ✅ COMPLIANT | DD-CRD-001 comment in code |
-| KubernetesExecution | `kubernetesexecution.kubernaut.io` | ❌ LEGACY | **Deferred migration** (per DD-CRD-001) |
+| KubernetesExecution (DEPRECATED - ADR-025) | `kubernetesexecution.kubernaut.io` | ❌ LEGACY | **Deferred migration** (per DD-CRD-001) |
 
 **Platform Compliance**: 7/8 CRDs compliant (87.5%)
 

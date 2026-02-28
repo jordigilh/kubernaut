@@ -476,7 +476,7 @@ Finalizer removed
 Kubernetes deletes SignalProcessing CRD
 ```
 
-**Parallel Deletion**: All service CRDs (SignalProcessing, AIAnalysis, WorkflowExecution, KubernetesExecution) deleted in parallel when RemediationRequest is deleted.
+**Parallel Deletion**: All service CRDs (SignalProcessing, AIAnalysis, WorkflowExecution, KubernetesExecution (DEPRECATED - ADR-025)) deleted in parallel when RemediationRequest is deleted.
 
 **Retention**:
 - **SignalProcessing**: No independent retention (deleted with parent)

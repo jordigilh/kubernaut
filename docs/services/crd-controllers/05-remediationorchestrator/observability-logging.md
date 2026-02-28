@@ -564,12 +564,12 @@ Span: RemediationRequest.Reconcile (10.5s)
   └─ Span: RemediationRequest.OrchestrateWorkflowExecution (4.8s)
       └─ Span: WorkflowExecution.Reconcile (4.8s) [child service]
           ├─ Span: WorkflowExecution.ExecuteStep [step-1] (1.2s)
-          │   └─ Span: KubernetesExecution.Reconcile (1.2s) [child service]
+          │   └─ Span: KubernetesExecution.Reconcile (1.2s) [child service] (DEPRECATED - ADR-025)
           │       └─ Span: Job.Execution (1.0s)
           ├─ Span: WorkflowExecution.ExecuteStep [step-2] (1.3s) [parallel]
-          │   └─ Span: KubernetesExecution.Reconcile (1.3s) [child service]
+          │   └─ Span: KubernetesExecution.Reconcile (1.3s) [child service] (DEPRECATED - ADR-025)
           └─ Span: WorkflowExecution.ExecuteStep [step-3] (2.3s)
-              └─ Span: KubernetesExecution.Reconcile (2.3s) [child service]
+              └─ Span: KubernetesExecution.Reconcile (2.3s) [child service] (DEPRECATED - ADR-025)
 ```
 
 ---
@@ -627,8 +627,8 @@ RemediationProcessing (correlationID: abc-123)
 AIAnalysis (correlationID: abc-123)
     ↓ (creates WorkflowExecution with correlationID in annotation)
 WorkflowExecution (correlationID: abc-123)
-    ↓ (creates KubernetesExecution with correlationID in annotation)
-KubernetesExecution (correlationID: abc-123)
+    ↓ (creates KubernetesExecution (DEPRECATED - ADR-025) with correlationID in annotation)
+KubernetesExecution (correlationID: abc-123) (DEPRECATED - ADR-025)
     ↓ (creates Job with correlationID in label)
 Kubernetes Job (correlationID: abc-123)
 ```
@@ -636,7 +636,7 @@ Kubernetes Job (correlationID: abc-123)
 **Query Logs by Correlation ID** (Across All Services):
 ```bash
 # Query all service logs with same correlation ID
-for service in alertremediation alertprocessing aianalysis workflowexecution kubernetesexecution; do
+for service in alertremediation alertprocessing aianalysis workflowexecution kubernetesexecution; do  # kubernetesexecution DEPRECATED - ADR-025
   echo "=== $service logs ==="
   kubectl logs -n kubernaut-system deployment/${service}-controller | grep "correlationID: abc-123"
 done

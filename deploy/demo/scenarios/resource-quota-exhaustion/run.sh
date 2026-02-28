@@ -1,9 +1,17 @@
 #!/usr/bin/env bash
 # Resource Quota Exhaustion Demo -- Automated Runner
-# Scenario: ResourceQuota prevents pod scheduling -> LLM escalates to human review
+# Scenario #171: ResourceQuota prevents pod creation -> LLM escalates to human review
 #
-# No workflow is seeded -- the LLM should recognize this as a policy issue
-# and escalate with needs_human_review: true
+# No workflow is seeded -- the LLM should recognize this as a policy constraint
+# and escalate with needs_human_review: true (ManualReviewRequired).
+#
+# The alert uses ReplicaSet-level metrics (spec vs status replicas) because
+# quota-rejected pods are never created (FailedCreate at admission, never
+# reach Pending state).
+#
+# Prerequisites:
+#   - Kind cluster (kubernaut-demo) with platform installed
+#   - Prometheus with kube-state-metrics
 #
 # Usage: ./deploy/demo/scenarios/resource-quota-exhaustion/run.sh
 set -euo pipefail
@@ -13,7 +21,7 @@ NAMESPACE="demo-quota"
 
 # shellcheck source=../../scripts/kind-helper.sh
 source "${SCRIPT_DIR}/../../scripts/kind-helper.sh"
-ensure_kind_cluster "${SCRIPT_DIR}/kind-config.yaml" "${1:-}"
+ensure_kind_cluster "${SCRIPT_DIR}/../kind-config-singlenode.yaml" "${1:-}"
 
 # shellcheck source=../../scripts/monitoring-helper.sh
 source "${SCRIPT_DIR}/../../scripts/monitoring-helper.sh"
@@ -23,6 +31,7 @@ ensure_platform
 
 echo "============================================="
 echo " Resource Quota Exhaustion Demo (#171)"
+echo " Policy Constraint -> ManualReviewRequired"
 echo "============================================="
 echo ""
 
@@ -52,15 +61,9 @@ echo "==> Step 4: Exhausting ResourceQuota..."
 bash "${SCRIPT_DIR}/exhaust-quota.sh"
 echo ""
 
-# Step 5: Print monitoring instructions
-echo "==> Step 5: Pipeline in progress. Monitor with:"
-echo "    kubectl get rr,sp,aa,we,ea -n ${NAMESPACE} -w"
+echo "==> Step 5: Fault injected. Waiting for KubeResourceQuotaExhausted alert (~1-2 min)."
+echo "    New RS has spec_replicas>0 but status_replicas=0 (FailedCreate)."
 echo ""
-echo "  Expected flow:"
-echo "    Alert (KubePodPendingQuotaExhausted) -> Gateway -> SP -> RR -> AA (NeedsHumanReview)"
-echo "    LLM distinguishes policy constraints from infrastructure failures"
-echo "    -> ManualReviewNotification (escalation to human)"
-echo ""
-echo "  Check Prometheus: kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090"
-echo "  The KubePodPendingQuotaExhausted alert fires after pods are Pending for 1m."
-echo ""
+echo "  Expected pipeline:"
+echo "    Alert -> Gateway -> SP -> AIAnalysis (policy constraint, no workflow)"
+echo "    -> ManualReviewRequired (escalation to human)"

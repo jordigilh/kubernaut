@@ -125,7 +125,7 @@ var _ = SynchronizedBeforeSuite(
 
 		logger.Info("Creating Kind cluster with NodePort exposure...")
 		logger.Info("  • Kind cluster (single node: control-plane only)")
-		logger.Info("  • NodePort exposure: Data Storage (30099→8080), PostgreSQL (30442→5432), Webhook (30443→9443)")
+		logger.Info("  • NodePort exposure: Data Storage (30099→8080), PostgreSQL (30442→5432), Webhook (30099→9443)")
 		logger.Info("  • PostgreSQL 16 (workflow catalog)")
 		logger.Info("  • Redis (DLQ fallback)")
 		logger.Info("  • Data Storage Docker image (build + load)")
@@ -174,20 +174,20 @@ var _ = SynchronizedBeforeSuite(
 		// Wait for AuthWebhook HTTPS endpoint to be responsive via NodePort
 		logger.Info("⏳ Waiting for AuthWebhook NodePort to be responsive...")
 		Eventually(func() error {
-			conn, err := net.DialTimeout("tcp", "localhost:30443", 2*time.Second) // Per DD-TEST-001
+			conn, err := net.DialTimeout("tcp", "localhost:30099", 2*time.Second) // Per DD-TEST-001
 			if err != nil {
 				return err
 			}
 			_ = conn.Close()
 			return nil
 		}, 120*time.Second, 2*time.Second).Should(Succeed(), "AuthWebhook NodePort did not become responsive")
-		logger.Info("✅ AuthWebhook is ready via NodePort (localhost:30443)")
+		logger.Info("✅ AuthWebhook is ready via NodePort (localhost:30099)")
 
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		logger.Info("Cluster Setup Complete - Broadcasting to all processes")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		logger.Info("Cluster configuration", "cluster", clusterName, "kubeconfig", kubeconfigPath)
-		logger.Info("Service URLs (per DD-TEST-001)", "dataStorage", "http://localhost:28099", "postgresql", "localhost:25442", "webhook", "https://localhost:30443")
+		logger.Info("Service URLs (per DD-TEST-001)", "dataStorage", "http://localhost:28099", "postgresql", "localhost:25442", "webhook", "https://localhost:30099")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		// Return kubeconfig path to all processes
@@ -208,7 +208,7 @@ var _ = SynchronizedBeforeSuite(
 		kubeconfigPath = string(data)
 		clusterName = "authwebhook-e2e"
 
-		// Set shared URLs - Per DD-TEST-001: AuthWebhook E2E uses ports 25442, 26386, 28099, 30443
+		// Set shared URLs - Per DD-TEST-001: AuthWebhook E2E uses ports 25442, 26386, 28099, 30099
 		dataStorageURL = "http://localhost:28099"
 		postgresURL = "postgresql://slm_user:test_password@localhost:25442/action_history?sslmode=disable"
 

@@ -220,7 +220,7 @@ var _ = Describe("AIAnalysis K8s Event Observability (DD-EVENT-001, BR-AA-095)",
 		It("should emit AIAnalysisCreated and HumanReviewRequired when HAPI flags needs_human_review=true", func() {
 			// NOTE: This test requires Mock HAPI configured with a scenario that returns
 			// needs_human_review=true. SignalType "MOCK_NO_WORKFLOW_FOUND" in production
-			// environment triggers this in the recovery human review flow.
+			// environment triggers the human review flow.
 			rrName := helpers.UniqueTestName("test-remediation-hr")
 			analysisName := helpers.UniqueTestName("integration-events-hr")
 			analysis := &aianalysisv1alpha1.AIAnalysis{
@@ -248,7 +248,7 @@ var _ = Describe("AIAnalysis K8s Event Observability (DD-EVENT-001, BR-AA-095)",
 							},
 							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
-						AnalysisTypes: []string{"recovery-analysis", "workflow-selection"},
+						AnalysisTypes: []string{"incident-analysis", "workflow-selection"},
 					},
 				},
 			}
@@ -367,7 +367,7 @@ var _ = Describe("AIAnalysis K8s Event Observability (DD-EVENT-001, BR-AA-095)",
 	//   - UT-AA-064-009: Multiple regenerations under cap
 	//   - UT-AA-064-010: Regeneration cap exceeded (Phase=Failed, SubReason, K8s events)
 	//   - UT-AA-064-002: Submit after session regeneration (ID cleared, Generation preserved)
-	//   - UT-AA-064-017: Recovery session lost -- same regeneration cap
+	//   - UT-AA-064-017: Session lost -- same regeneration cap
 	//
 	// See: test/unit/aianalysis/investigating_handler_session_test.go
 })

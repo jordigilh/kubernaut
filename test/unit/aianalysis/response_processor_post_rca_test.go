@@ -23,7 +23,6 @@ limitations under the License.
 //
 // Business Requirements:
 //   - BR-AI-056: DetectedLabels in AIAnalysis CRD status (PostRCAContext)
-//   - BR-AI-082: Recovery flow support (PostRCAContext for recovery responses)
 package aianalysis
 
 import (
@@ -84,10 +83,8 @@ var _ = Describe("ResponseProcessor PostRCAContext Population (ADR-056)", func()
 
 		// THEN: PostRCAContext should be populated
 		Expect(err).ToNot(HaveOccurred())
-		Expect(analysis.Status.PostRCAContext).ToNot(BeNil(),
-			"ADR-056: PostRCAContext must be populated when detected_labels present")
-		Expect(analysis.Status.PostRCAContext.DetectedLabels).ToNot(BeNil(),
-			"ADR-056: DetectedLabels must be set within PostRCAContext")
+		Expect(analysis.Status.PostRCAContext.DetectedLabels.GitOpsManaged).To(BeTrue(),
+			"ADR-056: PostRCAContext.DetectedLabels must be populated when detected_labels present")
 
 		// AND: Individual label values must match HAPI response
 		dl := analysis.Status.PostRCAContext.DetectedLabels
@@ -99,44 +96,6 @@ var _ = Describe("ResponseProcessor PostRCAContext Population (ADR-056)", func()
 		Expect(dl.NetworkIsolated).To(BeTrue(), "networkIsolated must be true")
 		Expect(dl.ServiceMesh).To(Equal("istio"), "serviceMesh must be istio")
 		Expect(dl.GitOpsTool).To(Equal("argocd"), "gitOpsTool must be argocd")
-	})
-
-	// ═══════════════════════════════════════════════════════════════════════
-	// UT-AA-056-004: ProcessRecoveryResponse populates PostRCAContext
-	// ADR-056: Same extraction logic for recovery flow
-	// ═══════════════════════════════════════════════════════════════════════
-
-	It("UT-AA-056-004: should populate PostRCAContext.DetectedLabels from recovery response", func() {
-		// GIVEN: An AIAnalysis in Investigating phase with no PostRCAContext
-		analysis = createAnalysisForPostRCA()
-		Expect(analysis.Status.PostRCAContext).To(BeNil(), "PostRCAContext must be nil initially")
-
-		// AND: A successful HAPI recovery response with detected_labels
-		recoveryResp := buildRecoveryResponseWithDetectedLabels(map[string]jx.Raw{
-			"gitOpsManaged":   jx.Raw(`false`),
-			"pdbProtected":    jx.Raw(`false`),
-			"hpaEnabled":      jx.Raw(`true`),
-			"stateful":        jx.Raw(`false`),
-			"helmManaged":     jx.Raw(`true`),
-			"networkIsolated": jx.Raw(`false`),
-			"serviceMesh":     jx.Raw(`""`),
-		})
-
-		// WHEN: Processing the recovery response
-		_, err := processor.ProcessRecoveryResponse(ctx, analysis, recoveryResp)
-
-		// THEN: PostRCAContext should be populated
-		Expect(err).ToNot(HaveOccurred())
-		Expect(analysis.Status.PostRCAContext).ToNot(BeNil(),
-			"ADR-056: PostRCAContext must be populated from recovery response")
-		Expect(analysis.Status.PostRCAContext.DetectedLabels).ToNot(BeNil(),
-			"ADR-056: DetectedLabels must be set from recovery response")
-
-		// AND: Values must match
-		dl := analysis.Status.PostRCAContext.DetectedLabels
-		Expect(dl.HPAEnabled).To(BeTrue(), "hpaEnabled must be true")
-		Expect(dl.HelmManaged).To(BeTrue(), "helmManaged must be true")
-		Expect(dl.Stateful).To(BeFalse(), "stateful must be false")
 	})
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -158,7 +117,6 @@ var _ = Describe("ResponseProcessor PostRCAContext Population (ADR-056)", func()
 
 		// THEN: SetAt must be non-nil (immutability guard)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(analysis.Status.PostRCAContext).ToNot(BeNil())
 		Expect(analysis.Status.PostRCAContext.SetAt).ToNot(BeNil(),
 			"ADR-056: SetAt must be populated for CEL immutability guard")
 		Expect(analysis.Status.PostRCAContext.SetAt.Time).ToNot(BeZero(),
@@ -225,9 +183,6 @@ var _ = Describe("ResponseProcessor PostRCAContext Population (ADR-056)", func()
 
 		// THEN: PostRCAContext should be populated with failedDetections
 		Expect(err).ToNot(HaveOccurred())
-		Expect(analysis.Status.PostRCAContext).ToNot(BeNil())
-		Expect(analysis.Status.PostRCAContext.DetectedLabels).ToNot(BeNil())
-
 		dl := analysis.Status.PostRCAContext.DetectedLabels
 		Expect(dl.FailedDetections).To(ConsistOf("pdbProtected", "hpaEnabled"),
 			"failedDetections must be propagated from HAPI response")
@@ -316,25 +271,6 @@ func buildIncidentResponseWithDetectedLabels(labels map[string]jx.Raw) *client.I
 		},
 		DetectedLabels: client.NewOptNilIncidentResponseDetectedLabels(
 			client.IncidentResponseDetectedLabels(labels),
-		),
-	}
-}
-
-func buildRecoveryResponseWithDetectedLabels(labels map[string]jx.Raw) *client.RecoveryResponse {
-	return &client.RecoveryResponse{
-		IncidentID:         "test-recovery-with-labels-001",
-		CanRecover:         true,
-		AnalysisConfidence: 0.85,
-		SelectedWorkflow: client.OptNilRecoveryResponseSelectedWorkflow{
-			Value: client.RecoveryResponseSelectedWorkflow{
-				"workflow_id":      jx.Raw(`"scale-up-v1"`),
-				"execution_bundle": jx.Raw(`"ghcr.io/kubernaut/scale-up:v1.0"`),
-				"confidence":       jx.Raw(`0.85`),
-			},
-			Set: true,
-		},
-		DetectedLabels: client.NewOptNilRecoveryResponseDetectedLabels(
-			client.RecoveryResponseDetectedLabels(labels),
 		),
 	}
 }

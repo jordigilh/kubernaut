@@ -137,7 +137,7 @@ docs/services/crd-controllers/
 **Service Type**: [CRD Controller / Central Coordinator]
 **Health/Ready Port**: 8080 (`/health`, `/ready` - no auth required)
 **Metrics Port**: 9090 (`/metrics` - with auth filter)
-**CRD**: [CRD Name] (e.g., WorkflowExecution, KubernetesExecution)
+**CRD**: [CRD Name] (e.g., WorkflowExecution, KubernetesExecution (DEPRECATED - ADR-025))
 **Controller**: [Controller Name]Reconciler
 **Status**: [⚠️ NEEDS IMPLEMENTATION / ✅ IMPLEMENTED / 🚧 IN PROGRESS]
 **Priority**: [P0 - CRITICAL / P1 - HIGH / P2 - MEDIUM]
@@ -261,7 +261,7 @@ internal/controller/            → CRD controller (INTERNAL)
 | **RemediationProcessing** | `signalprocessing.kubernaut.io` | `processingv1 "...api/alertprocessor/v1"` | Remediation Processor (owns), AI Analysis (reads) |
 | **AIAnalysis** | `aianalysis.kubernaut.io` | `aianalysisv1 "...api/aianalysis/v1"` | AI Analysis (owns), Workflow Execution (reads) |
 | **WorkflowExecution** | `workflowexecution.kubernaut.io` | `workflowexecutionv1 "...api/workflowexecution/v1"` | Workflow Execution (owns) |
-| **KubernetesExecution** | `kubernetesexecution.kubernaut.io` | `kubernetesexecutionv1 "...api/kubernetesexecution/v1"` | Kubernetes Executor (owns), Workflow watches |
+| **KubernetesExecution** (DEPRECATED - ADR-025) | `kubernetesexecution.kubernaut.io` | `kubernetesexecutionv1 "...api/kubernetesexecution/v1"` | Kubernetes Executor (owns), Workflow watches |
 
 ### **Import Pattern Per Service**
 

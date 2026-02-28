@@ -1,4 +1,4 @@
-# KubernetesExecutor BR Migration Mapping
+# KubernetesExecutor BR Migration Mapping (DEPRECATED - ADR-025)
 
 **Date**: October 6, 2025
 **Purpose**: Migrate BR-KE-* → BR-EXEC-* for V2 multi-cloud readiness

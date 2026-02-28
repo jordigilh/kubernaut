@@ -69,7 +69,7 @@ graph TB
     end
 
     subgraph "Execution Layer"
-        KE[Kubernetes Executor<br/>Port 9090]
+        KE[~~Kubernetes Executor~~ (DEPRECATED - ADR-025)<br/>Port 9090]
     end
 
     subgraph "Support Services"
@@ -110,7 +110,7 @@ graph TB
     AI -->|HTTP GET /api/v1/context/historical| Context
     WE -->|HTTP GET /api/v1/context/success-rates| Context
 
-    %% Execution Layer
+    %% Execution Layer (DEPRECATED - ADR-025: KE replaced by Tekton TaskRun)
     WE -->|Create KubernetesExecution CRD| KE
     KE -->|kubectl apply/patch| K8sAPI[Kubernetes API]
 
@@ -202,7 +202,7 @@ graph LR
     AI -->|Audit| DS
     AI -->|Notify| NS
 
-    %% Workflow Execution dependencies
+    %% Workflow Execution dependencies (KE DEPRECATED - ADR-025)
     WE -->|Create CRD| KE
     WE -->|Context| CA
     WE -->|Audit| DS
@@ -255,7 +255,7 @@ graph TD
     HolmesGPT --> Phase3
     Notification --> Phase3
 
-    Phase3 --> CRDs[Create all CRDs:<br/>- RemediationRequest<br/>- RemediationProcessing<br/>- AIAnalysis<br/>- WorkflowExecution<br/>- KubernetesExecution]
+    Phase3 --> CRDs[Create all CRDs:<br/>- RemediationRequest<br/>- RemediationProcessing<br/>- AIAnalysis<br/>- WorkflowExecution<br/>- ~~KubernetesExecution~~ (DEPRECATED - ADR-025)]
 
     CRDs --> Phase4[Phase 4: Controllers]
 
@@ -305,8 +305,8 @@ graph TD
 | **4** | 9 | Remediation Orchestrator | CRD Controller | CRDs | Child controllers |
 | **5** | 10 | Remediation Processor | CRD Controller | Context API, Data Storage | None (parallel) |
 | **5** | 11 | AI Analysis | CRD Controller | HolmesGPT, Context API, Data Storage | None (parallel) |
-| **5** | 12 | Workflow Execution | CRD Controller | Context API, Data Storage | Kubernetes Executor |
-| **6** | 13 | Kubernetes Executor | CRD Controller | Kubernetes API, Data Storage | None |
+| **5** | 12 | Workflow Execution | CRD Controller | Context API, Data Storage | ~~Kubernetes Executor~~ (DEPRECATED - ADR-025) |
+| **6** | 13 | ~~Kubernetes Executor~~ (DEPRECATED - ADR-025) | CRD Controller | Kubernetes API, Data Storage | None |
 | **7** | 14 | Gateway | HTTP | Redis, Remediation Orchestrator | None (entry point) |
 
 ---
@@ -327,7 +327,7 @@ graph TD
 - **Workflow Execution** - Multi-step orchestration
 
 #### Execution Services (1)
-- **Kubernetes Executor** - Action execution
+- ~~**Kubernetes Executor**~~ (DEPRECATED - ADR-025) - Action execution
 
 #### Support Services (4)
 - **Notification Controller** - CRD-based multi-channel delivery with zero data loss (CRD, migrated 2025-10-12)
@@ -347,7 +347,7 @@ graph TD
 2. Remediation Processor
 3. AI Analysis
 4. Workflow Execution
-5. Kubernetes Executor
+5. ~~Kubernetes Executor~~ (DEPRECATED - ADR-025)
 
 ---
 
@@ -408,7 +408,7 @@ sequenceDiagram
             RO->>WE: Create WorkflowExecution CRD
             WE->>CA: GET /api/v1/context/success-rates
             CA-->>WE: Success rate data
-            WE->>KE: Create KubernetesExecution CRD
+            WE->>KE: Create KubernetesExecution CRD  # DEPRECATED - ADR-025
             KE->>K8: kubectl apply
             K8-->>KE: Result
             KE->>DS: POST /api/v1/audit
@@ -533,7 +533,7 @@ graph TB
 | **HolmesGPT API** | OpenAI API | HTTPS | LLM inference | Optional (one required) |
 | **HolmesGPT API** | Anthropic Claude | HTTPS | LLM inference | Optional (one required) |
 | **HolmesGPT API** | Local LLM | HTTP | LLM inference | Optional (one required) |
-| **Kubernetes Executor** | Kubernetes API | K8s API | Action execution | Yes |
+| ~~**Kubernetes Executor**~~ (DEPRECATED - ADR-025) | Kubernetes API | K8s API | Action execution | Yes |
 | **All CRD Controllers** | Kubernetes API | K8s API | CRD operations | Yes |
 
 ---
@@ -659,7 +659,7 @@ graph TB
 | **Remediation Processor** | RemediationProcessing | None | RemediationProcessing.status |
 | **AI Analysis** | AIAnalysis | None | AIAnalysis.status |
 | **Workflow Execution** | WorkflowExecution | KubernetesExecution | WorkflowExecution.status |
-| **Kubernetes Executor** | KubernetesExecution | None | KubernetesExecution.status |
+| ~~**Kubernetes Executor**~~ (DEPRECATED - ADR-025) | KubernetesExecution | None | KubernetesExecution.status |
 
 ---
 
@@ -740,7 +740,7 @@ graph TD
 | **Remediation Processor** | Data Storage | Remediation Orchestrator | P1 (High) |
 | **AI Analysis** | HolmesGPT, Data Storage | Remediation Orchestrator | P1 (High) |
 | **Workflow Execution** | Data Storage | Remediation Orchestrator | P1 (High) |
-| **Kubernetes Executor** | K8s API, Data Storage | Workflow Execution | P1 (High) |
+| ~~**Kubernetes Executor**~~ (DEPRECATED - ADR-025) | K8s API, Data Storage | Workflow Execution | P1 (High) |
 | **Notification** | External channels | All controllers | P2 (Medium) |
 | **HolmesGPT API** | External LLM | AI Analysis | P2 (Medium) |
 | **Data Storage** | PostgreSQL, Vector DB | All controllers | P2 (Medium) |

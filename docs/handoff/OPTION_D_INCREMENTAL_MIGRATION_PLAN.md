@@ -143,7 +143,7 @@ grep -r "apiVersion: notification.kubernaut.ai" docs/handoff/SHARED_RO_E2E_TEAM_
 ```bash
 # Verify all CRD manifests use kubernaut.ai
 ls -la config/crd/bases/
-# Should only show kubernaut.ai_*.yaml (and kubernetesexecution.kubernaut.io for deferred service)
+# Should only show kubernaut.ai_*.yaml (and kubernetesexecution.kubernaut.io (DEPRECATED - ADR-025) for deferred service)
 
 # Verify all API definitions
 grep "Group:" api/*/v1alpha1/groupversion_info.go
@@ -298,7 +298,7 @@ kind: RemediationRequest
 - [ ] Code compiles (`make build`)
 
 ### **Overall Migration**:
-- [ ] All 7 CRDs use `kubernaut.ai` (except KubernetesExecution - deferred)
+- [ ] All 7 CRDs use `kubernaut.ai` (except KubernetesExecution (DEPRECATED - ADR-025) - deferred)
 - [ ] E2E coordination document updated (39 test scenarios)
 - [ ] Migration notice updated with completion status
 - [ ] Completion summary document created

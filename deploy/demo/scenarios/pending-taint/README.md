@@ -14,7 +14,7 @@ investigates, identifies the taint as the root cause, and removes it.
 
 | Component | Requirement |
 |-----------|-------------|
-| Kind cluster | Multi-node with `kubernaut.ai/workload-node=true` label |
+| Kind cluster | Multi-node with `kubernaut.ai/managed=true` label |
 | Kubernaut services | Gateway, SP, AA, RO, WE, EM deployed |
 | LLM backend | Real LLM (not mock) via HAPI |
 | Prometheus | With kube-state-metrics |
@@ -31,13 +31,13 @@ investigates, identifies the taint as the root cause, and removes it.
 ```bash
 kubectl delete namespace demo-taint
 # Remove taint if still present
-kubectl taint nodes -l kubernaut.ai/workload-node=true maintenance- 2>/dev/null || true
+kubectl taint nodes -l kubernaut.ai/managed=true maintenance- 2>/dev/null || true
 ```
 
 ## BDD Specification
 
 ```gherkin
-Given a Kind cluster with a worker node labeled kubernaut.ai/workload-node=true
+Given a Kind cluster with a worker node labeled kubernaut.ai/managed=true
   And the worker node has a maintenance=scheduled:NoSchedule taint
   And the "remove-taint-v1" workflow is registered in DataStorage
 

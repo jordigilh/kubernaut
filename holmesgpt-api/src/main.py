@@ -49,7 +49,7 @@ from src.config.hot_reload import ConfigManager
 from src.models.config_models import AppConfig
 
 # Import extensions
-from src.extensions import recovery, incident, health
+from src.extensions import incident, health
 # DD-017: PostExec endpoint deferred to V1.1 — EM Level 1 (V1.0, DD-017 v2.0) does not use PostExec; Level 2 (V1.1) is the PostExec consumer
 # from src.extensions import postexec
 from src.middleware.auth import AuthenticationMiddleware
@@ -411,7 +411,6 @@ def create_app(authenticator=None, authorizer=None):
     # Register extension routers
     # All configuration is now via environment variables (LLM_ENDPOINT, LLM_MODEL, LLM_PROVIDER)
     # No router.config anti-pattern - tests use mock LLM server instead
-    app.include_router(recovery.router, prefix="/api/v1", tags=["Recovery Analysis"])
     app.include_router(incident.router, prefix="/api/v1", tags=["Incident Analysis"])
     # DD-017: PostExec endpoint deferred to V1.1 — EM Level 1 (V1.0, DD-017 v2.0) does not use PostExec; Level 2 (V1.1) is the PostExec consumer
     # Logic preserved in src/extensions/postexec.py for V1.1

@@ -416,7 +416,7 @@ spec:
         description: "Workflow Execution has been down for more than 2 minutes. Automated remediation workflows are unavailable."
         runbook_url: https://docs.kubernaut.io/runbooks/workflow-execution/service-down
 
-    # Kubernetes Executor
+    # Kubernetes Executor (DEPRECATED - ADR-025)
     - alert: KubernetesExecutorDown
       expr: up{job="kubernetes-executor"} == 0
       for: 2m
@@ -793,7 +793,7 @@ spec:
 
 ---
 
-### Kubernetes Executor Alerts
+### Kubernetes Executor Alerts (DEPRECATED - ADR-025)
 
 ```yaml
 apiVersion: monitoring.coreos.com/v1
@@ -1066,7 +1066,7 @@ kubectl apply -f deploy/prometheus-rules/gateway-service-alerts.yaml
 kubectl apply -f deploy/prometheus-rules/remediation-orchestrator-alerts.yaml
 kubectl apply -f deploy/prometheus-rules/ai-analysis-alerts.yaml
 kubectl apply -f deploy/prometheus-rules/workflow-execution-alerts.yaml
-kubectl apply -f deploy/prometheus-rules/kubernetes-executor-alerts.yaml
+kubectl apply -f deploy/prometheus-rules/kubernetes-executor-alerts.yaml  # DEPRECATED - ADR-025
 kubectl apply -f deploy/prometheus-rules/notification-service-alerts.yaml
 kubectl apply -f deploy/prometheus-rules/holmesgpt-api-alerts.yaml
 kubectl apply -f deploy/prometheus-rules/business-logic-alerts.yaml
@@ -1306,7 +1306,7 @@ curl -X POST https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK \
 | **Remediation Orchestrator** | 3 | Orchestrator-specific |
 | **AI Analysis** | 4 | AI-specific |
 | **Workflow Execution** | 3 | Workflow-specific |
-| **Kubernetes Executor** | 4 | Executor-specific |
+| ~~**Kubernetes Executor**~~ (DEPRECATED - ADR-025) | 4 | Executor-specific |
 | **Notification Service** | 3 | Notification-specific |
 | **HolmesGPT API** | 4 | HolmesGPT-specific |
 | **Business Logic** | 3 | Platform-wide |

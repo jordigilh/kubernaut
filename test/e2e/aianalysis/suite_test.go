@@ -86,6 +86,9 @@ var (
 	// Namespace for infrastructure (fixed)
 	infraNamespace = "kubernaut-system" //nolint:unused
 
+	// ADR-057: Controller only watches kubernaut-system - AIAnalysis and RemediationRequest CRs must live here
+	controllerNamespace = "kubernaut-system"
+
 	// Kubernetes client
 	k8sClient client.Client
 

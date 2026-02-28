@@ -18,12 +18,11 @@
 FastAPI extension routers for HolmesGPT API
 """
 
-from . import recovery, health
+from . import health
 # DD-017: PostExec extension deferred to V1.1 - Effectiveness Monitor not in V1.0
 # from . import postexec
 
 __all__ = [
-    "recovery",
     # "postexec",  # DD-017: Deferred to V1.1
     "health",
 ]

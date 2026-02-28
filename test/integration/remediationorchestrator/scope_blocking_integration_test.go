@@ -73,7 +73,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking (Integration)", Label("scope",
 			fetched := &remediationv1.RemediationRequest{}
 			if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 				Name:      rr.Name,
-				Namespace: ns,
+				Namespace: ROControllerNamespace,
 			}, fetched); err != nil {
 				return ""
 			}
@@ -85,7 +85,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking (Integration)", Label("scope",
 		fetched := &remediationv1.RemediationRequest{}
 		Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 			Name:      rr.Name,
-			Namespace: ns,
+			Namespace: ROControllerNamespace,
 		}, fetched)).To(Succeed())
 
 		if fetched.Status.OverallPhase == remediationv1.PhaseBlocked {
@@ -120,7 +120,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking (Integration)", Label("scope",
 			fetched := &remediationv1.RemediationRequest{}
 			if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 				Name:      rrName,
-				Namespace: ns,
+				Namespace: ROControllerNamespace,
 			}, fetched); err != nil {
 				return ""
 			}
@@ -146,7 +146,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking (Integration)", Label("scope",
 			fetched := &remediationv1.RemediationRequest{}
 			if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 				Name:      rrName,
-				Namespace: ns,
+				Namespace: ROControllerNamespace,
 			}, fetched); err != nil {
 				return false
 			}
@@ -179,7 +179,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking (Integration)", Label("scope",
 			fetched := &remediationv1.RemediationRequest{}
 			if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 				Name:      rrName,
-				Namespace: ns,
+				Namespace: ROControllerNamespace,
 			}, fetched); err != nil {
 				return ""
 			}
@@ -191,7 +191,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking (Integration)", Label("scope",
 		fetched := &remediationv1.RemediationRequest{}
 		Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 			Name:      rrName,
-			Namespace: ns,
+			Namespace: ROControllerNamespace,
 		}, fetched)).To(Succeed())
 
 		Expect(fetched.Status.OverallPhase).To(Equal(remediationv1.PhaseBlocked))
@@ -222,7 +222,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking (Integration)", Label("scope",
 			fetched := &remediationv1.RemediationRequest{}
 			if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 				Name:      rrName,
-				Namespace: ns,
+				Namespace: ROControllerNamespace,
 			}, fetched); err != nil {
 				return false
 			}
@@ -236,7 +236,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking (Integration)", Label("scope",
 		fetched := &remediationv1.RemediationRequest{}
 		Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 			Name:      rrName,
-			Namespace: ns,
+			Namespace: ROControllerNamespace,
 		}, fetched)).To(Succeed())
 
 		firstBlockedUntil := fetched.Status.BlockedUntil.Time

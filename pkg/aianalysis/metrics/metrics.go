@@ -64,12 +64,6 @@ const (
 
 	// MetricNameDetectedLabelsFailuresTotal is the name of the label detection failures counter metric
 	MetricNameDetectedLabelsFailuresTotal = "aianalysis_quality_detected_labels_failures_total"
-
-	// MetricNameRecoveryStatusPopulatedTotal is the name of the recovery status populated counter metric
-	MetricNameRecoveryStatusPopulatedTotal = "aianalysis_recovery_status_populated_total"
-
-	// MetricNameRecoveryStatusSkippedTotal is the name of the recovery status skipped counter metric
-	MetricNameRecoveryStatusSkippedTotal = "aianalysis_recovery_status_skipped_total"
 )
 
 // Label value constants for common metric dimensions
@@ -193,20 +187,6 @@ type Metrics struct {
 	// DetectedLabelsFailuresTotal tracks detection failures
 	// Quality: "Are there enrichment/detection issues?"
 	DetectedLabelsFailuresTotal *prometheus.CounterVec
-
-	// ========================================
-	// RECOVERY METRICS (aianalysis_recovery_*)
-	// BR-AI-082: Track RecoveryStatus population
-	// Business Value: MEDIUM - Recovery observability
-	// ========================================
-
-	// RecoveryStatusPopulatedTotal tracks successful RecoveryStatus population
-	// Business: "How many recovery attempts populate status?"
-	RecoveryStatusPopulatedTotal *prometheus.CounterVec
-
-	// RecoveryStatusSkippedTotal tracks when HAPI doesn't return recovery_analysis
-	// Quality: "How often is HAPI not returning recovery analysis?"
-	RecoveryStatusSkippedTotal prometheus.Counter
 }
 
 // ========================================
@@ -281,19 +261,6 @@ func NewMetrics() *Metrics {
 			},
 			[]string{"field_name"},
 		),
-		RecoveryStatusPopulatedTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameRecoveryStatusPopulatedTotal, // DD-005 V3.0: Use constant
-				Help: "Total number of times RecoveryStatus was populated from HAPI recovery_analysis",
-			},
-			[]string{"failure_understood", "state_changed"},
-		),
-		RecoveryStatusSkippedTotal: prometheus.NewCounter(
-			prometheus.CounterOpts{
-				Name: MetricNameRecoveryStatusSkippedTotal, // DD-005 V3.0: Use constant
-				Help: "Total number of times RecoveryStatus was skipped (nil recovery_analysis from HAPI)",
-			},
-		),
 		}
 
 		// Register with controller-runtime's global registry
@@ -309,9 +276,6 @@ func NewMetrics() *Metrics {
 			// Audit/Quality metrics (2)
 			registeredMetrics.ValidationAttemptsTotal,
 			registeredMetrics.DetectedLabelsFailuresTotal,
-			// Recovery metrics (2)
-			registeredMetrics.RecoveryStatusPopulatedTotal,
-			registeredMetrics.RecoveryStatusSkippedTotal,
 		)
 
 		// Initialize FailuresTotal with known failure types so metric appears in /metrics
@@ -321,19 +285,6 @@ func NewMetrics() *Metrics {
 		registeredMetrics.FailuresTotal.WithLabelValues("APIError", "HolmesGPTAPICallFailed").Add(0)
 		registeredMetrics.FailuresTotal.WithLabelValues("RegoEvaluationError", "PolicyEvaluationFailed").Add(0)
 		registeredMetrics.FailuresTotal.WithLabelValues("WorkflowResolutionFailed", "NoWorkflowResolved").Add(0)
-		registeredMetrics.FailuresTotal.WithLabelValues("RecoveryWorkflowResolutionFailed", "NoRecoveryWorkflowResolved").Add(0)
-		registeredMetrics.FailuresTotal.WithLabelValues("RecoveryNotPossible", "NoRecoveryStrategy").Add(0)
-
-		// Initialize RecoveryStatusPopulatedTotal with all label combinations
-		// Required for E2E metric existence tests (BR-AI-082)
-		registeredMetrics.RecoveryStatusPopulatedTotal.WithLabelValues("true", "true").Add(0)
-		registeredMetrics.RecoveryStatusPopulatedTotal.WithLabelValues("true", "false").Add(0)
-		registeredMetrics.RecoveryStatusPopulatedTotal.WithLabelValues("false", "true").Add(0)
-		registeredMetrics.RecoveryStatusPopulatedTotal.WithLabelValues("false", "false").Add(0)
-
-		// Initialize RecoveryStatusSkippedTotal
-		// Required for E2E metric existence tests (BR-AI-082)
-		registeredMetrics.RecoveryStatusSkippedTotal.Add(0)
 
 		// Initialize RegoEvaluationsTotal with known label combinations
 		// Required for E2E metric existence tests (BR-AI-030)
@@ -422,19 +373,6 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 			},
 			[]string{"field_name"},
 		),
-		RecoveryStatusPopulatedTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameRecoveryStatusPopulatedTotal, // DD-005 V3.0: Use constant
-				Help: "Total number of times RecoveryStatus was populated from HAPI recovery_analysis",
-			},
-			[]string{"failure_understood", "state_changed"},
-		),
-		RecoveryStatusSkippedTotal: prometheus.NewCounter(
-			prometheus.CounterOpts{
-				Name: MetricNameRecoveryStatusSkippedTotal, // DD-005 V3.0: Use constant
-				Help: "Total number of times RecoveryStatus was skipped (nil recovery_analysis from HAPI)",
-			},
-		),
 	}
 
 	// Register with provided registry (test registry)
@@ -447,8 +385,6 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 		m.FailuresTotal,
 		m.ValidationAttemptsTotal,
 		m.DetectedLabelsFailuresTotal,
-		m.RecoveryStatusPopulatedTotal,
-		m.RecoveryStatusSkippedTotal,
 	)
 
 	// Initialize metrics for E2E tests
@@ -456,15 +392,6 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 	m.FailuresTotal.WithLabelValues("APIError", "HolmesGPTAPICallFailed").Add(0)
 	m.FailuresTotal.WithLabelValues("RegoEvaluationError", "PolicyEvaluationFailed").Add(0)
 	m.FailuresTotal.WithLabelValues("WorkflowResolutionFailed", "NoWorkflowResolved").Add(0)
-	m.FailuresTotal.WithLabelValues("RecoveryWorkflowResolutionFailed", "NoRecoveryWorkflowResolved").Add(0)
-	m.FailuresTotal.WithLabelValues("RecoveryNotPossible", "NoRecoveryStrategy").Add(0)
-
-	m.RecoveryStatusPopulatedTotal.WithLabelValues("true", "true").Add(0)
-	m.RecoveryStatusPopulatedTotal.WithLabelValues("true", "false").Add(0)
-	m.RecoveryStatusPopulatedTotal.WithLabelValues("false", "true").Add(0)
-	m.RecoveryStatusPopulatedTotal.WithLabelValues("false", "false").Add(0)
-
-	m.RecoveryStatusSkippedTotal.Add(0)
 
 	return m
 }
@@ -529,26 +456,4 @@ func (m *Metrics) RecordValidationAttempt(workflowID string, isValid bool) {
 // Quality: Data quality tracking
 func (m *Metrics) RecordDetectedLabelsFailure(fieldName string) {
 	m.DetectedLabelsFailuresTotal.WithLabelValues(fieldName).Inc()
-}
-
-// RecordRecoveryStatusPopulated records successful RecoveryStatus population
-// Business: Recovery observability (BR-AI-082)
-func (m *Metrics) RecordRecoveryStatusPopulated(failureUnderstood, stateChanged bool) {
-	failureStr := boolToString(failureUnderstood)
-	stateStr := boolToString(stateChanged)
-	m.RecoveryStatusPopulatedTotal.WithLabelValues(failureStr, stateStr).Inc()
-}
-
-// RecordRecoveryStatusSkipped records when HAPI doesn't return recovery_analysis
-// Quality: HAPI contract compliance tracking
-func (m *Metrics) RecordRecoveryStatusSkipped() {
-	m.RecoveryStatusSkippedTotal.Inc()
-}
-
-// boolToString converts bool to string for metric labels
-func boolToString(b bool) string {
-	if b {
-		return "true"
-	}
-	return "false"
 }

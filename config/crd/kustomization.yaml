@@ -6,7 +6,6 @@ resources:
 - bases/signalprocessing.kubernaut.ai_signalprocessings.yaml
 - bases/aianalysis.kubernaut.io_aianalyses.yaml
 - bases/workflowexecution.kubernaut.io_workflowexecutions.yaml
-- bases/kubernetesexecution.kubernaut.io_kubernetesexecutions.yaml
 - bases/remediationorchestrator.kubernaut.ai_remediationorchestrators.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 

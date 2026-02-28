@@ -119,7 +119,7 @@ var _ = Describe("EffectivenessMonitor Lifecycle E2E Tests", Label("e2e"), func(
 		)
 
 		By("Waiting for EM to complete the assessment")
-		ea := waitForEAPhase(testNS, name, eav1.PhaseCompleted)
+		ea := waitForEAPhase(name, eav1.PhaseCompleted)
 
 		By("Verifying all 4 components were assessed")
 		Expect(ea.Status.Components.HealthAssessed).To(BeTrue(), "Health should be assessed")
@@ -205,7 +205,7 @@ var _ = Describe("EffectivenessMonitor Lifecycle E2E Tests", Label("e2e"), func(
 		)
 
 		By("Waiting for EA to complete")
-		waitForEAPhase(testNS, name, eav1.PhaseCompleted)
+		waitForEAPhase(name, eav1.PhaseCompleted)
 
 		By("Querying DataStorage for audit events with this correlation ID")
 		// The EM should have emitted 5 events:
@@ -253,7 +253,7 @@ var _ = Describe("EffectivenessMonitor Lifecycle E2E Tests", Label("e2e"), func(
 		)
 
 		By("Waiting for EA to complete")
-		ea := waitForEAPhase(testNS, name, eav1.PhaseCompleted)
+		ea := waitForEAPhase(name, eav1.PhaseCompleted)
 
 		By("Verifying hash was computed")
 		Expect(ea.Status.Components.HashComputed).To(BeTrue(),

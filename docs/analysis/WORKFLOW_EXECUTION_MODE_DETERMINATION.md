@@ -393,7 +393,7 @@ func (r *WorkflowExecutionReconciler) handleExecutingPhase(
         return ctrl.Result{}, r.Status().Update(ctx, workflow)
     }
 
-    // Create KubernetesExecution CRDs for all steps in batch
+    // Create KubernetesExecution (DEPRECATED - ADR-025) CRDs for all steps in batch
     if nextBatch.Parallel {
         // PARALLEL: Create all KubernetesExecution CRDs at once
         log.Info("Executing parallel batch",

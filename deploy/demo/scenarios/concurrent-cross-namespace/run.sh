@@ -18,7 +18,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # shellcheck source=../../scripts/kind-helper.sh
 source "${SCRIPT_DIR}/../../scripts/kind-helper.sh"
-ensure_kind_cluster "${SCRIPT_DIR}/kind-config.yaml" "${1:-}"
+ensure_kind_cluster "${SCRIPT_DIR}/../kind-config-singlenode.yaml" "${1:-}"
 
 # shellcheck source=../../scripts/monitoring-helper.sh
 source "${SCRIPT_DIR}/../../scripts/monitoring-helper.sh"
@@ -44,10 +44,8 @@ kubectl rollout restart deployment/signalprocessing-controller -n kubernaut-syst
 kubectl rollout status deployment/signalprocessing-controller -n kubernaut-system --timeout=60s
 echo ""
 
-# Step 1: Seed both workflows
+# Step 1: Seed workflows
 echo "==> Step 1: Seeding workflows..."
-echo "  restart-pods-v1 (for high risk-tolerance teams)..."
-seed_scenario_workflow "remediation-retry"
 echo "  crashloop-rollback-v1 (for low risk-tolerance teams)..."
 seed_scenario_workflow "crashloop"
 echo ""

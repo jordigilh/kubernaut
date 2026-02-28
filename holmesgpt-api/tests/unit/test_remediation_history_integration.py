@@ -16,24 +16,18 @@
 Tests for remediation history integration into prompt builders.
 
 BR-HAPI-016: Remediation history context for LLM prompt enrichment.
-DD-HAPI-016 v1.1: Remediation history section in incident and recovery analysis prompts.
+DD-HAPI-016 v1.1: Remediation history section in incident analysis prompts.
 
 Tests verify:
   - create_incident_investigation_prompt accepts remediation_history_context parameter
   - When context is provided, history section is included in the prompt
   - When context is None, prompt is unchanged (backward compatible)
-  - _create_recovery_investigation_prompt accepts remediation_history_context parameter
-  - _create_investigation_prompt accepts remediation_history_context parameter
 """
 
 import pytest
 from unittest.mock import MagicMock, patch
 
-from extensions.incident.prompt_builder import create_incident_investigation_prompt
-from extensions.recovery.prompt_builder import (
-    _create_recovery_investigation_prompt,
-    _create_investigation_prompt,
-)
+from src.extensions.incident.prompt_builder import create_incident_investigation_prompt
 from src.clients.remediation_history_client import (
     query_remediation_history,
     create_remediation_history_api,
@@ -122,41 +116,8 @@ class TestRemediationHistoryPromptIntegration:
         assert "REGRESSION" in prompt.upper()
 
 
-# Minimal recovery request data with previous execution context
-MINIMAL_RECOVERY_REQUEST = {
-    "signal_name": "OOMKilled",
-    "severity": "critical",
-    "resource_namespace": "production",
-    "resource_kind": "Deployment",
-    "resource_name": "memory-eater",
-    "environment": "production",
-    "error_message": "Container memory-eater exceeded limit",
-    "is_recovery_attempt": True,
-    "recovery_attempt_number": 2,
-    "previous_execution": {
-        "original_rca": {
-            "summary": "Memory limit exceeded due to leak",
-            "signal_name": "OOMKilled",
-            "severity": "critical",
-            "contributing_factors": ["memory_leak"],
-        },
-        "selected_workflow": {
-            "workflow_id": "restart-deployment-v1",
-            "version": "1.0.0",
-            "execution_bundle": "kubernaut/restart:1.0",
-            "rationale": "Restart to clear memory",
-        },
-        "failure": {
-            "reason": "BackoffLimitExceeded",
-            "message": "Job has reached the specified backoff limit",
-            "failed_step_index": 1,
-            "failed_step_name": "restart-pod",
-        },
-    },
-}
-
-# Shared remediation history context fixture for recovery tests
-RECOVERY_HISTORY_CONTEXT = {
+# Shared remediation history context fixture for tests
+HISTORY_CONTEXT = {
     "targetResource": "production/Deployment/memory-eater",
     "currentSpecHash": "sha256:abc123",
     "regressionDetected": False,
@@ -178,42 +139,6 @@ RECOVERY_HISTORY_CONTEXT = {
 }
 
 
-class TestRecoveryPromptRemediationHistoryIntegration:
-    """UT-RH-INTEGRATION-004 through UT-RH-INTEGRATION-007: Recovery prompt builder integration."""
-
-    def test_recovery_prompt_backward_compatible(self):
-        """UT-RH-INTEGRATION-004: Recovery prompt unchanged when no context provided."""
-        prompt = _create_recovery_investigation_prompt(MINIMAL_RECOVERY_REQUEST)
-        assert "REMEDIATION HISTORY" not in prompt
-        assert "Recovery Analysis Request" in prompt
-
-    def test_recovery_prompt_includes_history(self):
-        """UT-RH-INTEGRATION-005: Recovery prompt includes history when context provided."""
-        prompt = _create_recovery_investigation_prompt(
-            MINIMAL_RECOVERY_REQUEST,
-            remediation_history_context=RECOVERY_HISTORY_CONTEXT,
-        )
-
-        assert "REMEDIATION HISTORY" in prompt
-        assert "rr-prev-001" in prompt
-        assert "restart" in prompt
-
-    def test_investigation_prompt_backward_compatible(self):
-        """UT-RH-INTEGRATION-006: Investigation prompt unchanged when no context provided."""
-        prompt = _create_investigation_prompt(MINIMAL_REQUEST)
-        assert "REMEDIATION HISTORY" not in prompt
-
-    def test_investigation_prompt_includes_history(self):
-        """UT-RH-INTEGRATION-007: Investigation prompt includes history when context provided."""
-        prompt = _create_investigation_prompt(
-            MINIMAL_REQUEST,
-            remediation_history_context=RECOVERY_HISTORY_CONTEXT,
-        )
-
-        assert "REMEDIATION HISTORY" in prompt
-        assert "rr-prev-001" in prompt
-
-
 class TestRemediationHistoryWiring:
     """UT-RH-WIRING-001 through UT-RH-WIRING-005: End-to-end DS query and prompt enrichment wiring."""
 
@@ -223,7 +148,7 @@ class TestRemediationHistoryWiring:
 
         mock_api = MagicMock()
         mock_context = MagicMock()
-        mock_context.to_dict.return_value = RECOVERY_HISTORY_CONTEXT
+        mock_context.to_dict.return_value = HISTORY_CONTEXT
         mock_api.get_remediation_history_context.return_value = mock_context
 
         result = fetch_remediation_history_for_request(
@@ -292,7 +217,7 @@ class TestRemediationHistoryWiring:
 
         mock_api = MagicMock()
         mock_context = MagicMock()
-        mock_context.to_dict.return_value = RECOVERY_HISTORY_CONTEXT
+        mock_context.to_dict.return_value = HISTORY_CONTEXT
         mock_api.get_remediation_history_context.return_value = mock_context
 
         # Step 1: Fetch context (as analyze_incident would)

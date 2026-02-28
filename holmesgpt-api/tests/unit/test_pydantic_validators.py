@@ -10,7 +10,6 @@ Run with: pytest holmesgpt-api/tests/unit/test_pydantic_validators.py -v
 import pytest
 from pydantic import ValidationError
 from src.models.incident_models import IncidentRequest
-from src.models.recovery_models import RecoveryRequest
 
 
 class TestIncidentRequestValidation:
@@ -87,55 +86,6 @@ class TestIncidentRequestValidation:
             cluster_name="prod-cluster-1"
         )
         assert request.remediation_id == "test-rem-001"
-
-
-class TestRecoveryRequestValidation:
-    """Test RecoveryRequest Pydantic validators (E2E-HAPI-018)"""
-
-    def test_invalid_recovery_attempt_number_raises_error(self):
-        """E2E-HAPI-018: recovery_attempt_number < 1 should raise ValidationError"""
-        with pytest.raises(ValidationError) as exc_info:
-            RecoveryRequest(
-                incident_id="test-recovery-001",
-                remediation_id="test-rem-001",
-                is_recovery_attempt=True,
-                recovery_attempt_number=0,  # Invalid: < 1
-                signal_name="OOMKilled",
-                severity="high"
-            )
-        
-        # Verify error message
-        errors = exc_info.value.errors()
-        assert len(errors) == 1
-        assert errors[0]['loc'] == ('recovery_attempt_number',)
-        assert '>= 1' in errors[0]['msg'] or 'greater' in errors[0]['msg'].lower()
-
-    def test_negative_recovery_attempt_number_raises_error(self):
-        """E2E-HAPI-018: Negative recovery_attempt_number should raise ValidationError"""
-        with pytest.raises(ValidationError) as exc_info:
-            RecoveryRequest(
-                incident_id="test-recovery-001",
-                remediation_id="test-rem-001",
-                is_recovery_attempt=True,
-                recovery_attempt_number=-1,  # Invalid: negative
-                signal_name="OOMKilled",
-                severity="high"
-            )
-        
-        errors = exc_info.value.errors()
-        assert any('recovery_attempt_number' in str(err['loc']) for err in errors)
-
-    def test_valid_recovery_attempt_number_passes(self):
-        """E2E-HAPI-018: Valid recovery_attempt_number should pass"""
-        request = RecoveryRequest(
-            incident_id="test-recovery-001",
-            remediation_id="test-rem-001",
-            is_recovery_attempt=True,
-            recovery_attempt_number=1,  # Valid
-            signal_name="OOMKilled",
-            severity="high"
-        )
-        assert request.recovery_attempt_number == 1
 
 
 class TestEndpointValidation:

@@ -1,5 +1,7 @@
 ## Enhanced Metrics & SLOs
 
+> **DEPRECATED**: KubernetesExecution CRD and KubernetesExecutor service were eliminated by ADR-025 and replaced by Tekton TaskRun via WorkflowExecution. This documentation is retained for historical reference only. API types and CRD manifests have been removed from the codebase.
+
 ### SLI/SLO Definitions
 
 **Service Level Indicators (SLIs)**:

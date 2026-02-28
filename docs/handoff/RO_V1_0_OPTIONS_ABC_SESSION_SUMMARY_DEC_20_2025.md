@@ -108,7 +108,7 @@ After completing DD-METRICS-001 metrics wiring (dependency injection), multiple 
    - `SetAIAnalysisComplete(..., m *metrics.Metrics)`
    - `SetWorkflowExecutionReady(..., m *metrics.Metrics)`
    - `SetWorkflowExecutionComplete(..., m *metrics.Metrics)`
-   - `SetRecoveryComplete(..., m *metrics.Metrics)`
+   - `SetRecoveryComplete(..., m *metrics.Metrics)` [Deprecated - Issue #180]
 
 2. **RemediationApprovalRequest Condition Helpers** (12 calls)
    - `SetApprovalPending(..., m *metrics.Metrics)`

@@ -14,13 +14,13 @@ actionType: ProactiveRollback
 labels:
   signalName: ErrorBudgetBurn
   severity: [critical, high]
-  environment: [production, staging]
+  environment: [production, staging, "*"]
   component: "*"
   priority: "*"
 
 execution:
   engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/proactive-rollback-job@sha256:a3b9c2f8f12c0cf0cecc69aedb841ef9f376ff065e1d536c73b731d00b2a5395
+  bundle: quay.io/kubernaut-cicd/test-workflows/proactive-rollback-job@sha256:47bb5fc766807f56e281fb6a74bfa40c51856bd75d8ade9aa074f75a0dca247f
 
 parameters:
   - name: TARGET_NAMESPACE

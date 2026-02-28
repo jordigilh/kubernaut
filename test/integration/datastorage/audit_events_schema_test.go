@@ -142,10 +142,11 @@ var _ = Describe("Audit Events Schema Integration Tests", func() {
 		}
 
 			// Query by correlation ID
+			// Convention: all audit_events queries use event_id as tiebreaker (#211)
 			rows, err := db.Query(`
 				SELECT event_id, event_type FROM audit_events
 				WHERE correlation_id = $1
-				ORDER BY event_timestamp
+				ORDER BY event_timestamp ASC, event_id ASC
 			`, correlationID)
 			Expect(err).ToNot(HaveOccurred())
 			defer func() { _ = rows.Close() }()

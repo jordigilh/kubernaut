@@ -258,22 +258,12 @@ check_crd() {
 check_crd "api/remediation/v1alpha1/remediationrequest_types.go" "RemediationRequest"
 check_crd "api/remediationprocessing/v1alpha1/remediationprocessing_types.go" "RemediationProcessing"
 check_crd "api/workflowexecution/v1alpha1/workflowexecution_types.go" "WorkflowExecution"
-check_crd "api/kubernetesexecution/v1alpha1/kubernetesexecution_types.go" "KubernetesExecution"
-
 echo ""
 
 # ==========================================
 # Check Test Fixtures
 # ==========================================
 echo -e "${BLUE}Checking test fixtures...${NC}"
-
-if [ -f "test/integration/kubernetesexecution/fixtures/test-resources.yaml" ]; then
-    echo -e "${GREEN}✅${NC} Kubernetes Executor fixtures: found"
-else
-    echo -e "${YELLOW}⚠️${NC} Kubernetes Executor fixtures: not found"
-    echo -e "${YELLOW}   Expected at: test/integration/kubernetesexecution/fixtures/test-resources.yaml${NC}"
-    WARNING_COUNT=$((WARNING_COUNT + 1))
-fi
 
 echo ""
 

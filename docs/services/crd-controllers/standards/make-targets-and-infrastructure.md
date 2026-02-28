@@ -161,7 +161,7 @@ bootstrap-integration-env-workflowexecution:
 		$(MAKE) create-test-cluster; \
 	fi
 
-	# Install CRDs (WorkflowExecution + KubernetesExecution for child CRDs)
+	# Install CRDs (WorkflowExecution + KubernetesExecution (DEPRECATED - ADR-025) for child CRDs)
 	kubectl apply -f api/workflowexecution/v1alpha1/workflowexecution_crd.yaml
 	kubectl apply -f api/kubernetesexecution/v1alpha1/kubernetesexecution_crd.yaml
 

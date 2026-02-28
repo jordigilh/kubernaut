@@ -12,9 +12,9 @@ metadata:
 actionType: GitRevertCommit
 
 labels:
-  signalName: CertificateNotReady
+  signalName: CertManagerCertNotReady
   severity: [critical, high]
-  environment: [production, staging]
+  environment: ["*"]
   component: "*"
   priority: "*"
 
@@ -23,7 +23,7 @@ detectedLabels:
 
 execution:
   engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/fix-certificate-gitops-job@sha256:96811414fbd70e444564e44ad210946f5a954b4ca3e339c3788dee27e0488c3c
+  bundle: quay.io/kubernaut-cicd/test-workflows/fix-certificate-gitops-job:demo-v1.2
 
 parameters:
   - name: GIT_REPO_URL

@@ -2,7 +2,7 @@
 
 **Health/Ready Port**: 8080 (`/health`, `/ready` - no auth required)
 **Metrics Port**: 9090 (`/metrics` - with auth filter)
-**CRD**: KubernetesExecution
+**CRD**: KubernetesExecution (DEPRECATED - ADR-025)
 **Controller**: KubernetesExecutionReconciler
 **Status**: ⚠️ **NEEDS CRD IMPLEMENTATION**
 **Priority**: **P0 - HIGH**

@@ -92,7 +92,10 @@ var _ = Describe("Config-Disabled Reconciler (BR-EM-006, BR-EM-007, BR-EM-008)",
 			Spec: eav1.EffectivenessAssessmentSpec{
 				CorrelationID:           corrID,
 				RemediationRequestPhase: "Completed",
-				TargetResource: eav1.TargetResource{
+				SignalTarget: eav1.TargetResource{
+					Kind: "Deployment", Name: "test-app", Namespace: ns,
+				},
+				RemediationTarget: eav1.TargetResource{
 					Kind: "Deployment", Name: "test-app", Namespace: ns,
 				},
 				Config: eav1.EAConfig{

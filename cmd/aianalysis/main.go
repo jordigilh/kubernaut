@@ -18,7 +18,7 @@ limitations under the License.
 // This controller orchestrates AI-based incident analysis using HolmesGPT-API.
 //
 // Business Requirements: BR-AI-001 to BR-AI-083 (V1.0)
-// Architecture: DD-CONTRACT-002, DD-RECOVERY-002, DD-AIANALYSIS-001
+// Architecture: DD-CONTRACT-002, DD-AIANALYSIS-001
 package main
 
 import (
@@ -33,11 +33,14 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	scope "github.com/jordigilh/kubernaut/pkg/shared/scope"
 	config "github.com/jordigilh/kubernaut/internal/config/aianalysis"
 	"github.com/jordigilh/kubernaut/internal/controller/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/audit"
@@ -105,8 +108,24 @@ func main() {
 		os.Exit(1)
 	}
 
+	// ADR-057: Discover controller namespace for CRD watch restriction
+	controllerNS, err := scope.GetControllerNamespace()
+	if err != nil {
+		setupLog.Error(err, "unable to determine controller namespace")
+		os.Exit(1)
+	}
+
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,
+		Cache: cache.Options{
+			ByObject: map[crclient.Object]cache.ByObject{
+				&aianalysisv1.AIAnalysis{}: {
+					Namespaces: map[string]cache.Config{
+						controllerNS: {},
+					},
+				},
+			},
+		},
 		Metrics: metricsserver.Options{
 			BindAddress: cfg.Controller.MetricsAddr,
 		},

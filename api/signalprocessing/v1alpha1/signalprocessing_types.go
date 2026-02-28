@@ -28,6 +28,7 @@ import (
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:resource:shortName=sp
 // +kubebuilder:selectablefield:JSONPath=.spec.remediationRequestRef.name
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="Severity",type=string,JSONPath=`.status.severity`
@@ -138,8 +139,9 @@ type ResourceIdentifier struct {
 	Kind string `json:"kind"`
 	// Resource name
 	Name string `json:"name"`
-	// Resource namespace
-	Namespace string `json:"namespace"`
+	// Resource namespace. Empty for cluster-scoped resources (e.g., Node, PersistentVolume).
+	// +optional
+	Namespace string `json:"namespace,omitempty"`
 }
 
 // EnrichmentConfig specifies enrichment settings.
@@ -193,7 +195,6 @@ type SignalProcessingStatus struct {
 
 	// Enrichment results
 	KubernetesContext *KubernetesContext `json:"kubernetesContext,omitempty"`
-	RecoveryContext   *RecoveryContext   `json:"recoveryContext,omitempty"`
 
 	// Categorization results (DD-CATEGORIZATION-001)
 	EnvironmentClassification *EnvironmentClassification `json:"environmentClassification,omitempty"`
@@ -280,19 +281,6 @@ type OwnerChainEntry = sharedtypes.OwnerChainEntry
 
 // BusinessClassification aliases the shared business classification type.
 type BusinessClassification = sharedtypes.BusinessClassification
-
-// RecoveryContext holds context for recovery attempts.
-// DD-001: Recovery Context Enrichment
-type RecoveryContext struct {
-	// Previous remediation attempt ID
-	PreviousRemediationID string `json:"previousRemediationId,omitempty"`
-	// Number of previous attempts
-	AttemptCount int32 `json:"attemptCount,omitempty"`
-	// Last failure reason
-	LastFailureReason string `json:"lastFailureReason,omitempty"`
-	// Time since first failure
-	TimeSinceFirstFailure *metav1.Duration `json:"timeSinceFirstFailure,omitempty"`
-}
 
 // EnvironmentClassification from DD-CATEGORIZATION-001.
 // BR-SP-051-053: Environment Classification (Updated per BR-SP-080 V2.0)

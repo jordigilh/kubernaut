@@ -36,7 +36,7 @@
 - [x] AIAnalysisComplete - AI finished workflow selection
 - [x] WorkflowExecutionReady - WE CRD created
 - [x] WorkflowExecutionComplete - Workflow finished execution
-- [x] RecoveryComplete - Overall remediation finished (success/failure)
+- [x] RecoveryComplete - Overall remediation finished (success/failure) [Deprecated - Issue #180]
 
 ---
 
@@ -150,7 +150,7 @@ Message: Workflow wf-restart-pod completed successfully (exit code: 0)
 
 ---
 
-### **Condition 7: RecoveryComplete**
+### **Condition 7: RecoveryComplete** [Deprecated - Issue #180]
 
 **Type**: `RecoveryComplete`
 **When**: Overall remediation finished (terminal phase reached)
@@ -183,7 +183,7 @@ const (
     ConditionAIAnalysisComplete        = "AIAnalysisComplete"
     ConditionWorkflowExecutionReady    = "WorkflowExecutionReady"
     ConditionWorkflowExecutionComplete = "WorkflowExecutionComplete"
-    ConditionRecoveryComplete          = "RecoveryComplete"
+    ConditionRecoveryComplete          = "RecoveryComplete" // [Deprecated - Issue #180]
 )
 
 const (
@@ -227,7 +227,7 @@ const (
 - `SetAIAnalysisComplete(rr, succeeded, message)`
 - `SetWorkflowExecutionReady(rr, ready, reason, message)`
 - `SetWorkflowExecutionComplete(rr, succeeded, message)`
-- `SetRecoveryComplete(rr, succeeded, reason, message)`
+- `SetRecoveryComplete(rr, succeeded, reason, message)` [Deprecated - Issue #180]
 
 **Lines**: ~150 lines (7 conditions + reasons)
 
@@ -350,7 +350,7 @@ conditions.SetWorkflowExecutionReady(rr, true,
 if aggregatedStatus.WorkflowExecutionPhase == workflowexecution.PhaseCompleted {
     conditions.SetWorkflowExecutionComplete(rr, true,
         fmt.Sprintf("Workflow %s completed successfully", workflowID))
-    conditions.SetRecoveryComplete(rr, true,
+    conditions.SetRecoveryComplete(rr, true, // [Deprecated - Issue #180: RecoveryComplete removed]
         conditions.ReasonRecoverySucceeded,
         "Remediation completed successfully after 1 attempt")
 }
@@ -362,12 +362,12 @@ if aggregatedStatus.WorkflowExecutionPhase == workflowexecution.PhaseCompleted {
 
 ```go
 // When transitioning to Failed
-conditions.SetRecoveryComplete(rr, false,
+conditions.SetRecoveryComplete(rr, false, // [Deprecated - Issue #180: RecoveryComplete removed]
     conditions.ReasonRecoveryFailed,
     fmt.Sprintf("Remediation failed: %s", failureReason))
 
 // When transitioning to Blocked
-conditions.SetRecoveryComplete(rr, false,
+conditions.SetRecoveryComplete(rr, false, // [Deprecated - Issue #180: RecoveryComplete removed]
     conditions.ReasonBlockedByConsecutiveFailures,
     fmt.Sprintf("Blocked due to %d consecutive failures", failureCount))
 ```
@@ -394,7 +394,7 @@ conditions.SetRecoveryComplete(rr, false,
 1. SignalProcessing conditions populated during Pending → Processing
 2. AIAnalysis conditions populated during Processing → Analyzing
 3. WorkflowExecution conditions populated during Analyzing → Executing
-4. RecoveryComplete set on successful remediation
+4. RecoveryComplete set on successful remediation [Deprecated - Issue #180]
 5. Failure conditions set correctly
 6. Blocked conditions set on consecutive failures (BR-ORCH-042)
 
@@ -484,7 +484,7 @@ Status:
 ### **Operator Benefits**:
 - ✅ **Single Resource View**: See entire orchestration state from one CRD
 - ✅ **Fast Debugging**: No need to query 4 child CRDs separately
-- ✅ **Automation Ready**: Scripts can use `kubectl wait --for=condition=RecoveryComplete`
+- ✅ **Automation Ready**: Scripts can use `kubectl wait --for=condition=RecoveryComplete` [Deprecated - Issue #180]
 - ✅ **Standard Tooling**: Works with existing Kubernetes ecosystem tools
 
 ---
@@ -545,7 +545,7 @@ RO Conditions implementation will be considered complete when:
 5. ✅ Integration tests pass (5-7 tests for condition population)
 6. ✅ Documentation updated (4 files: crd-schema, impl plan, testing strategy, CONDITIONS.md)
 7. ✅ Manual validation: `kubectl describe remediationrequest` shows conditions
-8. ✅ Automation test: `kubectl wait --for=condition=RecoveryComplete` works
+8. ✅ Automation test: `kubectl wait --for=condition=RecoveryComplete` works [Deprecated - Issue #180]
 
 ---
 

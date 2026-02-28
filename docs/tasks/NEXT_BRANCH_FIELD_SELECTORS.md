@@ -47,7 +47,7 @@ Implement custom field selectors across all Kubernaut CRDs using BOTH mechanisms
   - `spec.approvalType`
   - `status.decision`
 
-- [ ] **KubernetesExecution**: Add selectablefield annotations
+- [ ] **KubernetesExecution** (DEPRECATED - ADR-025): Add selectablefield annotations
   - `spec.remediationRequestRef.name` (if exists)
   - `spec.targetResource.name`
   - `status.phase`

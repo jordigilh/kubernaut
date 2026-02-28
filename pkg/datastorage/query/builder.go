@@ -240,7 +240,8 @@ func (b *Builder) Build() (string, []interface{}, error) {
 	}
 
 	// BR-STORAGE-021: Add ORDER BY for consistent ordering
-	sql += " ORDER BY action_timestamp DESC"
+	// #213: id DESC tiebreaker ensures deterministic pagination when timestamps collide
+	sql += " ORDER BY action_timestamp DESC, id DESC"
 
 	// BR-STORAGE-023: Add pagination
 	sql += fmt.Sprintf(" LIMIT $%d OFFSET $%d", argIndex, argIndex+1)

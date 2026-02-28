@@ -191,7 +191,7 @@ config := backoff.Config{
 From production deployment documentation:
 - **RO Deployment**: 2+ replicas with leader election (HA)
 - **Multiple Concurrent RRs**: Common in production (multiple failures simultaneously)
-- **Downstream Services**: AIAnalysis, WorkflowExecution, KubernetesExecution
+- **Downstream Services**: AIAnalysis, WorkflowExecution, KubernetesExecution (DEPRECATED - ADR-025)
 
 ### **Thundering Herd Problem**
 

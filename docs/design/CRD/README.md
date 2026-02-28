@@ -12,7 +12,7 @@
 ```
 api/
 ├── aianalysis/v1alpha1/aianalysis_types.go
-├── kubernetesexecution/v1alpha1/kubernetesexecution_types.go
+├── ~~kubernetesexecution/v1alpha1/kubernetesexecution_types.go~~ (DEPRECATED - ADR-025)
 ├── remediation/v1alpha1/remediationrequest_types.go
 ├── remediationorchestrator/v1alpha1/remediationorchestrator_types.go
 ├── remediationprocessing/v1alpha1/remediationprocessing_types.go
@@ -29,7 +29,7 @@ api/
 ```
 config/crd/bases/
 ├── aianalysis.kubernaut.io_aianalyses.yaml
-├── kubernetesexecution.kubernaut.io_kubernetesexecutions.yaml
+├── ~~kubernetesexecution.kubernaut.io_kubernetesexecutions.yaml~~ (DEPRECATED - ADR-025)
 ├── remediation.kubernaut.io_remediationrequests.yaml
 ├── remediationorchestrator.kubernaut.io_remediationorchestrators.yaml
 ├── signalprocessing.kubernaut.io_remediationprocessings.yaml
@@ -72,7 +72,7 @@ docs/services/crd-controllers/
 │   ├── workflow-dependency-resolution.md
 │   └── [12 more documents]
 │
-├── 04-kubernetesexecutor/       (~2,000 lines)
+├── 04-kubernetesexecutor/       (~2,000 lines) (DEPRECATED - ADR-025)
 │   ├── README.md
 │   ├── crd-schema.md
 │   ├── step-validation-pattern.md
@@ -99,7 +99,7 @@ docs/services/crd-controllers/
 | 02_REMEDIATION_PROCESSING_CRD.md | ~30% | Missing 18 Phase 1 self-contained fields |
 | 03_AI_ANALYSIS_CRD.md | ~50% | Missing LLM-driven patterns, dependency specification |
 | 04_WORKFLOW_EXECUTION_CRD.md | ~40% | Missing validation chain, dependency analysis |
-| 05_KUBERNETES_EXECUTION_CRD.md | ~40% | Missing step-level validation pattern |
+| 05_KUBERNETES_EXECUTION_CRD.md | ~40% | Missing step-level validation pattern. **DEPRECATED (ADR-025)** - CRD eliminated |
 
 **Common Issues**:
 - ⛔ **Wrong CRD names** (e.g., `alertremediations` vs `remediationrequests`)

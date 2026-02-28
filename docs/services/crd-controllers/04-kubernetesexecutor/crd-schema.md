@@ -1,5 +1,7 @@
 ## CRD Schema Specification
 
+> **DEPRECATED**: KubernetesExecution CRD and KubernetesExecutor service were eliminated by ADR-025 and replaced by Tekton TaskRun via WorkflowExecution. This documentation is retained for historical reference only. API types and CRD manifests have been removed from the codebase.
+
 **Full Schema**: See [docs/design/CRD/04_KUBERNETES_EXECUTION_CRD.md](../../design/CRD/04_KUBERNETES_EXECUTION_CRD.md)
 
 **Note**: The examples below show the conceptual structure. The authoritative OpenAPI v3 schema is defined in `04_KUBERNETES_EXECUTION_CRD.md`.

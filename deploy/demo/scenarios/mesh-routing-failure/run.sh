@@ -14,7 +14,7 @@ NAMESPACE="demo-mesh-failure"
 
 # shellcheck source=../../scripts/kind-helper.sh
 source "${SCRIPT_DIR}/../../scripts/kind-helper.sh"
-ensure_kind_cluster "${SCRIPT_DIR}/kind-config.yaml" "${1:-}"
+ensure_kind_cluster "${SCRIPT_DIR}/../kind-config-singlenode.yaml" "${1:-}"
 
 # shellcheck source=../../scripts/monitoring-helper.sh
 source "${SCRIPT_DIR}/../../scripts/monitoring-helper.sh"
@@ -29,24 +29,12 @@ echo " Linkerd Mesh Routing Failure Demo (#136)"
 echo "============================================="
 echo ""
 
-# Step 1: Install Linkerd if not present
-echo "==> Step 1: Ensuring Linkerd is installed..."
-if ! kubectl get namespace linkerd &>/dev/null; then
-  echo "  Installing Linkerd CRDs..."
-  linkerd install --crds | kubectl apply -f -
-  echo "  Installing Linkerd control plane..."
-  linkerd install | kubectl apply -f -
-  echo "  Waiting for Linkerd to be ready..."
-  linkerd check --wait 120s
-else
-  echo "  Linkerd already installed."
-fi
-
-# Step 2: Deploy workload
-echo "==> Step 2: Deploying namespace and meshed workload..."
+# Step 1: Deploy workload
+echo "==> Step 1: Deploying namespace and meshed workload..."
 kubectl apply -f "${SCRIPT_DIR}/manifests/namespace.yaml"
 kubectl apply -f "${SCRIPT_DIR}/manifests/deployment.yaml"
 kubectl apply -f "${SCRIPT_DIR}/manifests/prometheus-rule.yaml"
+kubectl apply -f "${SCRIPT_DIR}/manifests/linkerd-podmonitor.yaml"
 
 echo "  Waiting for deployment to be ready..."
 kubectl wait --for=condition=Available deployment/api-server \
@@ -55,24 +43,24 @@ echo "  Workload deployed with Linkerd sidecar."
 kubectl get pods -n "${NAMESPACE}"
 echo ""
 
-# Step 3: Baseline
-echo "==> Step 3: Establishing healthy baseline (20s)..."
+# Step 2: Baseline
+echo "==> Step 2: Establishing healthy baseline (20s)..."
 sleep 20
 echo "  Baseline established. Traffic flowing through Linkerd proxy."
 echo ""
 
-# Step 4: Inject
-echo "==> Step 4: Injecting restrictive AuthorizationPolicy..."
+# Step 3: Inject
+echo "==> Step 3: Injecting restrictive AuthorizationPolicy..."
 bash "${SCRIPT_DIR}/inject-deny-policy.sh"
 echo ""
 
-# Step 5: Monitor
-echo "==> Step 5: Waiting for high error rate alert (~2-3 min)..."
+# Step 4: Monitor
+echo "==> Step 4: Waiting for high error rate alert (~2-3 min)..."
 echo "  Linkerd proxy will deny all inbound traffic (403 Forbidden)."
 echo "  Check Prometheus: kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090"
 echo ""
-echo "==> Step 6: Pipeline in progress. Monitor with:"
-echo "    kubectl get rr,sp,aa,we,ea -n ${NAMESPACE} -w"
+echo "==> Step 5: Pipeline in progress. Monitor with:"
+echo "    kubectl get rr,sp,aa,wfe,ea -n kubernaut-system -w"
 echo ""
 echo "  Expected flow:"
 echo "    Alert (HighErrorRate/MeshUnauthorized) -> Gateway -> SP -> AA (HAPI)"

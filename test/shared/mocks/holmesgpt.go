@@ -29,38 +29,22 @@ import (
 // MockHolmesGPTClient is a mock implementation of HolmesGPTClientInterface for unit tests.
 // Now uses generated types from HAPI OpenAPI spec for type-safe testing.
 // BR-AI-006: Mock for API call testing
-// BR-AI-082: Updated with InvestigateRecovery support
 // BR-AA-HAPI-064: Extended with async session methods
 type MockHolmesGPTClient struct {
 	// InvestigateFunc allows tests to customize the Investigate behavior
 	InvestigateFunc func(ctx context.Context, req *client.IncidentRequest) (*client.IncidentResponse, error)
 
-	// InvestigateRecoveryFunc allows tests to customize the InvestigateRecovery behavior
-	InvestigateRecoveryFunc func(ctx context.Context, req *client.RecoveryRequest) (*client.RecoveryResponse, error)
-
 	// CallCount tracks how many times Investigate was called
 	CallCount int
-
-	// RecoveryCallCount tracks how many times InvestigateRecovery was called
-	RecoveryCallCount int
 
 	// LastRequest stores the last request passed to Investigate
 	LastRequest *client.IncidentRequest
 
-	// LastRecoveryRequest stores the last request passed to InvestigateRecovery
-	LastRecoveryRequest *client.RecoveryRequest
-
 	// Response is the default response to return (if InvestigateFunc is nil)
 	Response *client.IncidentResponse
 
-	// RecoveryResponse is the default recovery response
-	RecoveryResponse *client.RecoveryResponse
-
 	// Err is the default error to return
 	Err error
-
-	// RecoveryErr is the default error for recovery calls (uses Err if nil)
-	RecoveryErr error
 
 	// ========================================
 	// Async session fields (BR-AA-HAPI-064)
@@ -69,23 +53,14 @@ type MockHolmesGPTClient struct {
 	// SubmitInvestigationFunc allows tests to customize SubmitInvestigation behavior
 	SubmitInvestigationFunc func(ctx context.Context, req *client.IncidentRequest) (string, error)
 
-	// SubmitRecoveryInvestigationFunc allows tests to customize SubmitRecoveryInvestigation behavior
-	SubmitRecoveryInvestigationFunc func(ctx context.Context, req *client.RecoveryRequest) (string, error)
-
 	// PollSessionFunc allows tests to customize PollSession behavior
 	PollSessionFunc func(ctx context.Context, sessionID string) (*client.SessionStatus, error)
 
 	// GetSessionResultFunc allows tests to customize GetSessionResult behavior
 	GetSessionResultFunc func(ctx context.Context, sessionID string) (*client.IncidentResponse, error)
 
-	// GetRecoverySessionResultFunc allows tests to customize GetRecoverySessionResult behavior
-	GetRecoverySessionResultFunc func(ctx context.Context, sessionID string) (*client.RecoveryResponse, error)
-
 	// SubmitCallCount tracks how many times SubmitInvestigation was called
 	SubmitCallCount int
-
-	// SubmitRecoveryCallCount tracks how many times SubmitRecoveryInvestigation was called
-	SubmitRecoveryCallCount int
 
 	// PollCallCount tracks how many times PollSession was called
 	PollCallCount int
@@ -93,10 +68,7 @@ type MockHolmesGPTClient struct {
 	// GetResultCallCount tracks how many times GetSessionResult was called
 	GetResultCallCount int
 
-	// GetRecoveryResultCallCount tracks how many times GetRecoverySessionResult was called
-	GetRecoveryResultCallCount int
-
-	// DefaultSessionID is returned by SubmitInvestigation/SubmitRecoveryInvestigation when no func is set
+	// DefaultSessionID is returned by SubmitInvestigation when no func is set
 	DefaultSessionID string
 
 	// DefaultSessionStatus is returned by PollSession when no func is set
@@ -117,24 +89,6 @@ type MockHolmesGPTClient struct {
 
 // NewMockHolmesGPTClient creates a new mock HolmesGPT client with default success behavior.
 func NewMockHolmesGPTClient() *MockHolmesGPTClient {
-	// Build default SelectedWorkflow for recovery response
-	swMap := make(map[string]jx.Raw)
-	idBytes, _ := json.Marshal("mock-workflow-001")
-	swMap["workflow_id"] = jx.Raw(idBytes)
-	imgBytes, _ := json.Marshal("kubernaut.io/workflows/restart-pod:v1.0.0")
-	swMap["execution_bundle"] = jx.Raw(imgBytes)
-	confBytes, _ := json.Marshal(0.8)
-	swMap["confidence"] = jx.Raw(confBytes)
-
-	recoveryResp := &client.RecoveryResponse{
-		IncidentID:         "mock-recovery-001",
-		CanRecover:         true,
-		Strategies:         []client.RecoveryStrategy{},
-		AnalysisConfidence: 0.8,
-		Warnings:           []string{},
-	}
-	recoveryResp.SelectedWorkflow.SetTo(swMap)
-
 	return &MockHolmesGPTClient{
 		Response: &client.IncidentResponse{
 			IncidentID: "mock-incident-001",
@@ -143,9 +97,6 @@ func NewMockHolmesGPTClient() *MockHolmesGPTClient {
 			Timestamp:  "2025-12-05T10:00:00Z",
 			Warnings:   []string{},
 		},
-		// CRITICAL: Provide default RecoveryResponse to prevent nil pointer panics
-		// when tests use IsRecoveryAttempt=true (BR-AI-083: Recovery endpoint routing)
-		RecoveryResponse: recoveryResp,
 	}
 }
 
@@ -159,19 +110,6 @@ func (m *MockHolmesGPTClient) Investigate(ctx context.Context, req *client.Incid
 	}
 
 	return m.Response, m.Err
-}
-
-// InvestigateRecovery implements HolmesGPTClientInterface for recovery attempts.
-// BR-AI-082: Recovery endpoint implementation
-func (m *MockHolmesGPTClient) InvestigateRecovery(ctx context.Context, req *client.RecoveryRequest) (*client.RecoveryResponse, error) {
-	m.RecoveryCallCount++
-	m.LastRecoveryRequest = req
-
-	if m.InvestigateRecoveryFunc != nil {
-		return m.InvestigateRecoveryFunc(ctx, req)
-	}
-
-	return m.RecoveryResponse, m.Err
 }
 
 // WithResponse configures the mock to return a specific response.
@@ -295,28 +233,6 @@ func (m *MockHolmesGPTClient) SubmitInvestigation(ctx context.Context, req *clie
 	return sessionID, nil
 }
 
-// SubmitRecoveryInvestigation implements HolmesGPTClientInterface for async recovery submit.
-func (m *MockHolmesGPTClient) SubmitRecoveryInvestigation(ctx context.Context, req *client.RecoveryRequest) (string, error) {
-	m.mu.Lock()
-	m.SubmitRecoveryCallCount++
-	m.LastRecoveryRequest = req
-	m.mu.Unlock()
-
-	if m.SubmitRecoveryInvestigationFunc != nil {
-		return m.SubmitRecoveryInvestigationFunc(ctx, req)
-	}
-
-	if m.SubmitErr != nil {
-		return "", m.SubmitErr
-	}
-
-	sessionID := m.DefaultSessionID
-	if sessionID == "" {
-		sessionID = "mock-recovery-session-001"
-	}
-	return sessionID, nil
-}
-
 // PollSession implements HolmesGPTClientInterface for session polling.
 func (m *MockHolmesGPTClient) PollSession(ctx context.Context, sessionID string) (*client.SessionStatus, error) {
 	m.mu.Lock()
@@ -353,23 +269,6 @@ func (m *MockHolmesGPTClient) GetSessionResult(ctx context.Context, sessionID st
 	}
 
 	return m.Response, m.Err
-}
-
-// GetRecoverySessionResult implements HolmesGPTClientInterface for recovery result retrieval.
-func (m *MockHolmesGPTClient) GetRecoverySessionResult(ctx context.Context, sessionID string) (*client.RecoveryResponse, error) {
-	m.mu.Lock()
-	m.GetRecoveryResultCallCount++
-	m.mu.Unlock()
-
-	if m.GetRecoverySessionResultFunc != nil {
-		return m.GetRecoverySessionResultFunc(ctx, sessionID)
-	}
-
-	if m.GetResultErr != nil {
-		return nil, m.GetResultErr
-	}
-
-	return m.RecoveryResponse, m.RecoveryErr
 }
 
 // ========================================
@@ -446,94 +345,10 @@ func (m *MockHolmesGPTClient) WithSessionPollFailThenRecover(failCount int, sess
 // Reset resets the mock's state (call count and last request).
 func (m *MockHolmesGPTClient) Reset() {
 	m.CallCount = 0
-	m.RecoveryCallCount = 0
 	m.LastRequest = nil
-	m.LastRecoveryRequest = nil
 	m.SubmitCallCount = 0
-	m.SubmitRecoveryCallCount = 0
 	m.PollCallCount = 0
 	m.GetResultCallCount = 0
-	m.GetRecoveryResultCallCount = 0
-}
-
-// ========================================
-// BR-AI-082: Recovery Test Helpers
-// ========================================
-
-// WithRecoveryResponse configures the mock to return a specific response for recovery calls.
-func (m *MockHolmesGPTClient) WithRecoveryResponse(resp *client.RecoveryResponse) *MockHolmesGPTClient {
-	m.RecoveryResponse = resp
-	m.RecoveryErr = nil
-	return m
-}
-
-// WithRecoveryError configures the mock to return an error for recovery calls.
-func (m *MockHolmesGPTClient) WithRecoveryError(err error) *MockHolmesGPTClient {
-	m.RecoveryResponse = nil
-	m.RecoveryErr = err
-	return m
-}
-
-// WithRecoverySuccessResponse configures the mock to return a successful recovery response.
-func (m *MockHolmesGPTClient) WithRecoverySuccessResponse(
-	confidence float64,
-	workflowID string,
-	containerImage string,
-	workflowConfidence float64,
-	includeRecoveryAnalysis ...bool, // Optional parameter - defaults to false
-) *MockHolmesGPTClient {
-	// Build SelectedWorkflow as map[string]jx.Raw
-	swMap := make(map[string]jx.Raw)
-	if workflowID != "" {
-		idBytes, _ := json.Marshal(workflowID)
-		swMap["workflow_id"] = jx.Raw(idBytes)
-		imgBytes, _ := json.Marshal(containerImage)
-		swMap["execution_bundle"] = jx.Raw(imgBytes)
-		confBytes, _ := json.Marshal(workflowConfidence)
-		swMap["confidence"] = jx.Raw(confBytes)
-	}
-
-	m.RecoveryResponse = &client.RecoveryResponse{
-		IncidentID:         "mock-recovery-001",
-		CanRecover:         true,
-		AnalysisConfidence: confidence,
-		Strategies:         []client.RecoveryStrategy{},
-		Warnings:           []string{},
-	}
-
-	if len(swMap) > 0 {
-		m.RecoveryResponse.SelectedWorkflow.SetTo(swMap)
-	}
-
-	// Only include recovery_analysis if explicitly requested
-	if len(includeRecoveryAnalysis) > 0 && includeRecoveryAnalysis[0] {
-		// Build RecoveryAnalysis with default mock data
-		recoveryAnalysisMap := make(map[string]jx.Raw)
-		stateChangedBytes, _ := json.Marshal(false)
-		recoveryAnalysisMap["state_changed"] = jx.Raw(stateChangedBytes)
-
-		// Build PreviousAttemptAssessment as a nested map (not marshaled)
-		prevAttemptMap := make(map[string]interface{})
-		prevAttemptMap["failure_understood"] = true
-		prevAttemptMap["failure_reason_analysis"] = "Previous workflow did not resolve memory leak"
-		prevAttemptBytes, _ := json.Marshal(prevAttemptMap)
-		recoveryAnalysisMap["previous_attempt_assessment"] = jx.Raw(prevAttemptBytes)
-
-		if len(recoveryAnalysisMap) > 0 {
-			m.RecoveryResponse.RecoveryAnalysis.SetTo(recoveryAnalysisMap)
-		}
-	}
-
-	m.RecoveryErr = nil
-	return m
-}
-
-// AssertRecoveryCalled returns an error if InvestigateRecovery was not called the expected number of times.
-func (m *MockHolmesGPTClient) AssertRecoveryCalled(expectedCount int) error {
-	if m.RecoveryCallCount != expectedCount {
-		return fmt.Errorf("expected InvestigateRecovery to be called %d times, but was called %d times", expectedCount, m.RecoveryCallCount)
-	}
-	return nil
 }
 
 // AssertCalled returns an error if Investigate was not called the expected number of times.
@@ -753,27 +568,6 @@ func BuildMockSelectedWorkflow(workflowID string, containerImage string, confide
 	}
 
 	return swMap
-}
-
-// BuildMockRecoveryAnalysis creates a mock RecoveryAnalysis as map[string]jx.Raw
-func BuildMockRecoveryAnalysis(failureUnderstood bool, failureReason string, stateChanged bool) map[string]jx.Raw {
-	raMap := make(map[string]jx.Raw)
-
-	// Build previous_attempt_assessment
-	prevMap := map[string]interface{}{
-		"failure_understood":      failureUnderstood,
-		"failure_reason_analysis": failureReason,
-	}
-	prevBytes, _ := json.Marshal(prevMap)
-	raMap["previous_attempt_assessment"] = jx.Raw(prevBytes)
-
-	// Add state_changed if needed
-	if stateChanged {
-		bytes, _ := json.Marshal(stateChanged)
-		raMap["state_changed"] = jx.Raw(bytes)
-	}
-
-	return raMap
 }
 
 // NewMockValidationAttempts creates mock validation attempts for testing.

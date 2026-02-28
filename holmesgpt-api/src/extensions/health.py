@@ -101,7 +101,6 @@ async def health_check():
         "service": "holmesgpt-api",
         "endpoints": [
             "/api/v1/incident/analyze",
-            "/api/v1/recovery/analyze",
             # DD-017: PostExec endpoint deferred to V1.1 - Effectiveness Monitor not in V1.0
             # "/api/v1/postexec/analyze",
             "/health",
@@ -109,7 +108,6 @@ async def health_check():
         ],
         "features": {
             "incident_analysis": True,
-            "recovery_analysis": True,
             # DD-017: PostExec feature deferred to V1.1 - Effectiveness Monitor not in V1.0
             # "postexec_analysis": True,
             "authentication": True

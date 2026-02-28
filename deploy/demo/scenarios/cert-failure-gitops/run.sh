@@ -6,7 +6,10 @@
 #   - Kind cluster with Kubernaut services
 #   - cert-manager installed (or run cert-failure scenario first)
 #
-# Usage: ./deploy/demo/scenarios/cert-failure-gitops/run.sh
+# Usage: ./deploy/demo/scenarios/cert-failure-gitops/run.sh [setup|inject|all]
+#   setup  -- deploy CA, GitOps infra, ArgoCD app, and establish healthy baseline
+#   inject -- push broken ClusterIssuer via git (assumes setup already ran)
+#   all    -- run full flow (default)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -16,9 +19,12 @@ GITEA_ADMIN_USER="kubernaut"
 GITEA_ADMIN_PASS="kubernaut123"
 REPO_NAME="demo-cert-gitops-repo"
 
+SUBCOMMAND="${1:-all}"
+if [[ "$SUBCOMMAND" =~ ^(setup|inject|all)$ ]]; then shift || true; fi
+
 # shellcheck source=../../scripts/kind-helper.sh
 source "${SCRIPT_DIR}/../../scripts/kind-helper.sh"
-ensure_kind_cluster "${SCRIPT_DIR}/kind-config.yaml" "${1:-}"
+ensure_kind_cluster "${SCRIPT_DIR}/../kind-config-singlenode.yaml" "${1:-}"
 
 # shellcheck source=../../scripts/monitoring-helper.sh
 source "${SCRIPT_DIR}/../../scripts/monitoring-helper.sh"
@@ -28,6 +34,7 @@ ensure_platform
 seed_scenario_workflow "cert-failure-gitops"
 ensure_cert_manager
 
+run_setup() {
 echo "============================================="
 echo " cert-manager GitOps Failure Demo (#134)"
 echo "============================================="
@@ -210,7 +217,9 @@ echo "==> Step 7: Establishing healthy baseline (20s)..."
 sleep 20
 echo "  Baseline established."
 echo ""
+}
 
+run_inject() {
 # Step 8: Inject failure via git push
 echo "==> Step 8: Injecting failure (pushing broken ClusterIssuer via git)..."
 WORK_DIR=$(mktemp -d)
@@ -251,6 +260,9 @@ kubectl annotate certificate demo-app-cert -n "${NAMESPACE}" \
   cert-manager.io/issuing-trigger="manual-$(date +%s)" --overwrite 2>/dev/null || true
 
 echo ""
+}
+
+run_monitor() {
 echo "==> Step 9: Waiting for CertManagerCertNotReady alert (~2-3 min)..."
 echo "  ArgoCD synced broken ClusterIssuer -> cert-manager cannot sign."
 echo "  Check Prometheus: kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090"
@@ -267,3 +279,11 @@ echo "    EM verifies Certificate is Ready"
 echo ""
 echo "==> Verify remediation:"
 echo "    kubectl get certificate -n ${NAMESPACE}"
+}
+
+case "$SUBCOMMAND" in
+  setup)  run_setup ;;
+  inject) run_inject ;;
+  all)    run_setup; run_inject; run_monitor ;;
+  *)      echo "Usage: $0 [setup|inject|all]"; exit 1 ;;
+esac

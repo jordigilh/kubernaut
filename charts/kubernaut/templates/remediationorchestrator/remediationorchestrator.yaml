@@ -133,6 +133,7 @@ spec:
         prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: remediationorchestrator-controller
+      {{- include "kubernaut.scheduling" (dict "component" .Values.remediationorchestrator "global" .Values.global) | nindent 6 }}
       containers:
         - name: remediationorchestrator-controller
           image: {{ include "kubernaut.image" (dict "service" "remediationorchestrator" "global" .Values.global "appVersion" .Chart.AppVersion) }}

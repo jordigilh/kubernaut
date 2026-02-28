@@ -15,10 +15,10 @@ limitations under the License.
 """
 
 """
-Incident Analysis DetectedLabels Integration Tests (DD-RECOVERY-003)
+Incident Analysis DetectedLabels Integration Tests (DD-HAPI-001)
 
 Business Requirements: BR-HAPI-002 (Incident Analysis)
-Design Decision: DD-RECOVERY-003 (DetectedLabels for workflow filtering)
+Design Decision: DD-HAPI-001 (DetectedLabels for workflow filtering)
 
 Tests validate BUSINESS OUTCOMES:
 - Incident prompts include DetectedLabels when provided

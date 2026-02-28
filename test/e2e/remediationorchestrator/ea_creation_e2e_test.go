@@ -70,7 +70,7 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 		rr := &remediationv1.RemediationRequest{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      rrName,
-				Namespace: testNS,
+				Namespace: controllerNamespace,
 			},
 			Spec: remediationv1.RemediationRequestSpec{
 				SignalFingerprint: func() string {
@@ -96,17 +96,22 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 			},
 		}
 		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 
 		By("2. Waiting for RO to create SignalProcessing CRD")
 		var sp *signalprocessingv1.SignalProcessing
 		Eventually(func() bool {
 			spList := &signalprocessingv1.SignalProcessingList{}
-			_ = k8sClient.List(ctx, spList, client.InNamespace(testNS))
-			if len(spList.Items) == 0 {
-				return false
+			_ = k8sClient.List(ctx, spList, client.InNamespace(controllerNamespace))
+			for i := range spList.Items {
+				if len(spList.Items[i].OwnerReferences) > 0 &&
+					spList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
+					spList.Items[i].OwnerReferences[0].Name == rrName {
+					sp = &spList.Items[i]
+					return true
+				}
 			}
-			sp = &spList.Items[0]
-			return true
+			return false
 		}, timeout, interval).Should(BeTrue(), "SignalProcessing should be created by RO")
 
 		By("3. Manually updating SP status to Completed")
@@ -130,12 +135,16 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 		var analysis *aianalysisv1.AIAnalysis
 		Eventually(func() bool {
 			analysisList := &aianalysisv1.AIAnalysisList{}
-			_ = k8sClient.List(ctx, analysisList, client.InNamespace(testNS))
-			if len(analysisList.Items) == 0 {
-				return false
+			_ = k8sClient.List(ctx, analysisList, client.InNamespace(controllerNamespace))
+			for i := range analysisList.Items {
+				if len(analysisList.Items[i].OwnerReferences) > 0 &&
+					analysisList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
+					analysisList.Items[i].OwnerReferences[0].Name == rrName {
+					analysis = &analysisList.Items[i]
+					return true
+				}
 			}
-			analysis = &analysisList.Items[0]
-			return true
+			return false
 		}, timeout, interval).Should(BeTrue(), "AIAnalysis should be created by RO")
 
 		By("5. Manually updating AIAnalysis status to Completed with SelectedWorkflow")
@@ -167,12 +176,16 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 		var we *workflowexecutionv1.WorkflowExecution
 		Eventually(func() bool {
 			weList := &workflowexecutionv1.WorkflowExecutionList{}
-			_ = k8sClient.List(ctx, weList, client.InNamespace(testNS))
-			if len(weList.Items) == 0 {
-				return false
+			_ = k8sClient.List(ctx, weList, client.InNamespace(controllerNamespace))
+			for i := range weList.Items {
+				if len(weList.Items[i].OwnerReferences) > 0 &&
+					weList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
+					weList.Items[i].OwnerReferences[0].Name == rrName {
+					we = &weList.Items[i]
+					return true
+				}
 			}
-			we = &weList.Items[0]
-			return true
+			return false
 		}, timeout, interval).Should(BeTrue(), "WorkflowExecution should be created by RO")
 
 		By("7. Manually updating WorkflowExecution status to Completed")
@@ -206,7 +219,7 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 		var nr *notificationv1.NotificationRequest
 		Eventually(func() bool {
 			nrList := &notificationv1.NotificationRequestList{}
-			_ = k8sClient.List(ctx, nrList, client.InNamespace(testNS))
+			_ = k8sClient.List(ctx, nrList, client.InNamespace(controllerNamespace))
 			for i := range nrList.Items {
 				if nrList.Items[i].Spec.RemediationRequestRef != nil &&
 					nrList.Items[i].Spec.RemediationRequestRef.Name == rrName {
@@ -236,7 +249,7 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 			"SignalProcessingReady", "SignalProcessingComplete",
 			"AIAnalysisReady", "AIAnalysisComplete",
 			"WorkflowExecutionReady", "WorkflowExecutionComplete",
-			"RecoveryComplete", "Ready",
+			"Ready",
 			"NotificationDelivered",
 		}
 		for _, condType := range expectedConditions {
@@ -249,15 +262,15 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 		eaName := fmt.Sprintf("ea-%s", rrName)
 		ea := &eav1.EffectivenessAssessment{}
 		Eventually(func() error {
-			return k8sClient.Get(ctx, client.ObjectKey{Name: eaName, Namespace: testNS}, ea)
+			return k8sClient.Get(ctx, client.ObjectKey{Name: eaName, Namespace: controllerNamespace}, ea)
 		}, timeout, interval).Should(Succeed(), "EffectivenessAssessment should be created after RR completion")
 
 		By("10. Validating EA spec fields")
 		Expect(ea.Spec.CorrelationID).To(Equal(rrName),
 			"EA correlation ID should match RR name")
-		Expect(ea.Spec.TargetResource.Kind).To(Equal("Deployment"))
-		Expect(ea.Spec.TargetResource.Name).To(Equal("test-app-ea"))
-		Expect(ea.Spec.TargetResource.Namespace).To(Equal(testNS))
+		Expect(ea.Spec.RemediationTarget.Kind).To(Equal("Deployment"))
+		Expect(ea.Spec.RemediationTarget.Name).To(Equal("test-app-ea"))
+		Expect(ea.Spec.RemediationTarget.Namespace).To(Equal(testNS))
 		Expect(ea.Spec.Config.StabilizationWindow.Duration).To(BeNumerically(">", 0),
 			"Stabilization window should be set from RO config")
 
@@ -283,7 +296,7 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 			rr := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      rrName,
-					Namespace: testNS,
+					Namespace: controllerNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: func() string {
@@ -309,17 +322,22 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 				},
 			}
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, rr) })
 
 			By("2. Waiting for RO to create SignalProcessing CRD")
 			var sp *signalprocessingv1.SignalProcessing
 			Eventually(func() bool {
 				spList := &signalprocessingv1.SignalProcessingList{}
-				_ = k8sClient.List(ctx, spList, client.InNamespace(testNS))
-				if len(spList.Items) == 0 {
-					return false
+				_ = k8sClient.List(ctx, spList, client.InNamespace(controllerNamespace))
+				for i := range spList.Items {
+					if len(spList.Items[i].OwnerReferences) > 0 &&
+						spList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
+						spList.Items[i].OwnerReferences[0].Name == rrName {
+						sp = &spList.Items[i]
+						return true
+					}
 				}
-				sp = &spList.Items[0]
-				return true
+				return false
 			}, timeout, interval).Should(BeTrue(), "SignalProcessing should be created by RO")
 
 			By("3. Manually updating SP status to Completed")
@@ -343,12 +361,16 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 			var analysis *aianalysisv1.AIAnalysis
 			Eventually(func() bool {
 				analysisList := &aianalysisv1.AIAnalysisList{}
-				_ = k8sClient.List(ctx, analysisList, client.InNamespace(testNS))
-				if len(analysisList.Items) == 0 {
-					return false
+				_ = k8sClient.List(ctx, analysisList, client.InNamespace(controllerNamespace))
+				for i := range analysisList.Items {
+					if len(analysisList.Items[i].OwnerReferences) > 0 &&
+						analysisList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
+						analysisList.Items[i].OwnerReferences[0].Name == rrName {
+						analysis = &analysisList.Items[i]
+						return true
+					}
 				}
-				analysis = &analysisList.Items[0]
-				return true
+				return false
 			}, timeout, interval).Should(BeTrue(), "AIAnalysis should be created by RO")
 
 			By("5. Manually updating AIAnalysis status to Completed with SelectedWorkflow")
@@ -380,12 +402,16 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 			var we *workflowexecutionv1.WorkflowExecution
 			Eventually(func() bool {
 				weList := &workflowexecutionv1.WorkflowExecutionList{}
-				_ = k8sClient.List(ctx, weList, client.InNamespace(testNS))
-				if len(weList.Items) == 0 {
-					return false
+				_ = k8sClient.List(ctx, weList, client.InNamespace(controllerNamespace))
+				for i := range weList.Items {
+					if len(weList.Items[i].OwnerReferences) > 0 &&
+						weList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
+						weList.Items[i].OwnerReferences[0].Name == rrName {
+						we = &weList.Items[i]
+						return true
+					}
 				}
-				we = &weList.Items[0]
-				return true
+				return false
 			}, timeout, interval).Should(BeTrue(), "WorkflowExecution should be created by RO")
 
 			By("7. Manually updating WorkflowExecution status to Failed with FailureDetails")

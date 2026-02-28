@@ -502,12 +502,7 @@ func (c *AuditClient) RecordAIAgentResult(ctx context.Context, analysis *aianaly
 	}
 
 	// Backward compatibility: emit aiagent.call event (DD-AUDIT-003)
-	// Determines endpoint from recovery status
-	endpoint := "/api/v1/incident/analyze"
-	if analysis.Spec.IsRecoveryAttempt {
-		endpoint = "/api/v1/recovery/analyze"
-	}
-	c.RecordAIAgentCall(ctx, analysis, endpoint, 200, int(investigationTimeMs))
+	c.RecordAIAgentCall(ctx, analysis, "/api/v1/incident/analyze", 200, int(investigationTimeMs))
 }
 
 // RecordAIAgentSessionLost records a session lost event with generation count.

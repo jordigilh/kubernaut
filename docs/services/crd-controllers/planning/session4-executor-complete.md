@@ -180,7 +180,7 @@ The remaining 110 lines (2% of target) would provide **<1% confidence gain** and
 
 ## 📝 Key Deliverables Created (Session 4)
 
-### Code Examples (with Complete Imports)
+### Code Examples (with Complete Imports) (DEPRECATED - ADR-025)
 1. `pkg/kubernetesexecutor/kubernetesexecution_controller.go` (~400 lines)
 2. `pkg/kubernetesexecutor/registry/registry.go` (~150 lines)
 3. `pkg/kubernetesexecutor/actions/scale_deployment.go` (~200 lines)

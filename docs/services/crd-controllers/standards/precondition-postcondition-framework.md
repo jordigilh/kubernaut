@@ -13,7 +13,7 @@
 ## Executive Summary
 
 ### Purpose
-Implement a per-step precondition/postcondition validation framework across WorkflowExecution and KubernetesExecutor services to improve remediation effectiveness from 70% to 85-90% through defense-in-depth validation.
+Implement a per-step precondition/postcondition validation framework across WorkflowExecution and KubernetesExecutor (DEPRECATED - ADR-025) services to improve remediation effectiveness from 70% to 85-90% through defense-in-depth validation.
 
 ### Scope
 - **Architecture**: Framework design with StepCondition/ActionCondition types, Rego policy integration
@@ -78,7 +78,7 @@ type ConditionResult struct {
 }
 ```
 
-#### KubernetesExecution CRD
+#### KubernetesExecution (DEPRECATED - ADR-025) CRD
 ```go
 // KubernetesExecutionSpec extensions
 type KubernetesExecutionSpec struct {
@@ -110,7 +110,7 @@ type ValidationResults struct {
 **Leverages Existing Infrastructure**: BR-REGO-001 to BR-REGO-010
 - **Policy Source**: ConfigMap (`kubernaut-workflow-conditions`)
 - **Policy Format**: Rego decision-making language
-- **Evaluation Engine**: Reuse existing Rego evaluator from KubernetesExecutor
+- **Evaluation Engine**: Reuse existing Rego evaluator from KubernetesExecutor (DEPRECATED - ADR-025)
 - **Policy Loading**: Watch-based ConfigMap updates for hot-reload
 
 #### Cluster State Queries
@@ -155,13 +155,13 @@ func (r *WorkflowExecutionReconciler) verifyPostcondition(
 
 ```
 WorkflowExecution Controller:
-1. Evaluate step.preConditions[] before creating KubernetesExecution CRD
+1. Evaluate step.preConditions[] before creating KubernetesExecution (DEPRECATED - ADR-025) CRD
    - Rego policy evaluation with current cluster state
    - Block if required=true condition fails
    - Log warning if required=false condition fails
-2. Create KubernetesExecution CRD (only if preconditions pass)
+2. Create KubernetesExecution (DEPRECATED - ADR-025) CRD (only if preconditions pass)
 
-KubernetesExecutor Controller:
+KubernetesExecutor (DEPRECATED - ADR-025) Controller:
 3. Evaluate spec.preConditions[] during validating phase
    - Additional action-specific validation
    - Integrated with existing dry-run validation
@@ -173,7 +173,7 @@ KubernetesExecutor Controller:
    - Mark failed if required=true postcondition fails
 
 WorkflowExecution Controller:
-7. Detect KubernetesExecution completion
+7. Detect KubernetesExecution (DEPRECATED - ADR-025) completion
 8. Evaluate step.postConditions[] during monitoring phase
    - Workflow-level verification
    - Aggregate results across steps
@@ -201,12 +201,12 @@ WorkflowExecution Controller:
 ### Phase 2: Validation Framework (Weeks 1-2)
 **Duration**: 7-10 days
 **Deliverables**:
-- Rego policy evaluator wrapper (reuse from KubernetesExecutor)
+- Rego policy evaluator wrapper (reuse from KubernetesExecutor (DEPRECATED - ADR-025))
 - Cluster state query utilities
 - Async verification framework with timeout handling
 - ConfigMap-based policy loading (BR-WF-053)
 - Integration with WorkflowExecution reconciliation phases
-- Integration with KubernetesExecutor reconciliation phases
+- Integration with KubernetesExecutor (DEPRECATED - ADR-025) reconciliation phases
 
 **Success Criteria**:
 - ✅ Rego policies can be evaluated with cluster state input
@@ -269,8 +269,8 @@ timeout: "2m"
 **Deliverables**:
 - Integration tests for WorkflowExecution precondition evaluation
 - Integration tests for WorkflowExecution postcondition verification
-- Integration tests for KubernetesExecutor precondition evaluation
-- Integration tests for KubernetesExecutor postcondition verification
+- Integration tests for KubernetesExecutor (DEPRECATED - ADR-025) precondition evaluation
+- Integration tests for KubernetesExecutor (DEPRECATED - ADR-025) postcondition verification
 - Integration tests for ConfigMap-based policy loading
 - Integration tests for async verification with timeout
 - Failure scenario tests (required condition fails, cascading failures prevented)
@@ -502,22 +502,22 @@ Validation Flow for scale_deployment:
    - deployment_exists (blocking)
    - current_replicas_match (warning)
    - cluster_capacity_available (blocking)
-4. Create KubernetesExecution CRD
-5. KubernetesExecutor: Parameter validation (existing)
-6. KubernetesExecutor: RBAC validation (existing)
-7. KubernetesExecutor: Resource existence check (existing)
-8. KubernetesExecutor: Rego policy validation (existing)
-9. KubernetesExecutor: Action preconditions (NEW)
+4. Create KubernetesExecution (DEPRECATED - ADR-025) CRD
+5. KubernetesExecutor (DEPRECATED - ADR-025): Parameter validation (existing)
+6. KubernetesExecutor (DEPRECATED - ADR-025): RBAC validation (existing)
+7. KubernetesExecutor (DEPRECATED - ADR-025): Resource existence check (existing)
+8. KubernetesExecutor (DEPRECATED - ADR-025): Rego policy validation (existing)
+9. KubernetesExecutor (DEPRECATED - ADR-025): Action preconditions (NEW)
    - image_pull_secrets_valid (blocking)
    - node_selector_matches (warning)
-10. KubernetesExecutor: Dry-run execution (existing)
+10. KubernetesExecutor (DEPRECATED - ADR-025): Dry-run execution (existing)
 11. Create Kubernetes Job
 12. Monitor Job execution
-13. KubernetesExecutor: Action postconditions (NEW)
+13. KubernetesExecutor (DEPRECATED - ADR-025): Action postconditions (NEW)
     - desired_replicas_running (blocking)
     - deployment_health_check (blocking)
     - resource_usage_acceptable (blocking)
-14. Mark KubernetesExecution complete
+14. Mark KubernetesExecution (DEPRECATED - ADR-025) complete
 15. WorkflowExecution: Step postconditions (NEW)
     - Same as action postconditions (workflow-level verification)
 16. Mark workflow complete
@@ -543,7 +543,7 @@ Expected:
   - deployment_exists: PASS
   - cluster_capacity_available: FAIL (blocking)
   - Execution blocked
-  - KubernetesExecution CRD NOT created
+  - KubernetesExecution (DEPRECATED - ADR-025) CRD NOT created
   - Step marked as "blocked" with error message
 ```
 
@@ -1076,10 +1076,10 @@ replicas_match(current, desired) if {
 - **Business Requirements**: [STEP_VALIDATION_BUSINESS_REQUIREMENTS.md](../../requirements/STEP_VALIDATION_BUSINESS_REQUIREMENTS.md)
 - **CRD Schema Documentation**:
   - [WorkflowExecution CRD Schema](03-workflowexecution/crd-schema.md)
-  - [KubernetesExecution CRD Schema](04-kubernetesexecutor/crd-schema.md)
+  - [KubernetesExecution (DEPRECATED - ADR-025) CRD Schema](04-kubernetesexecutor/crd-schema.md)
 - **Reconciliation Flow Documentation**:
   - [WorkflowExecution Reconciliation Phases](03-workflowexecution/reconciliation-phases.md)
-  - [KubernetesExecutor Reconciliation Phases](04-kubernetesexecutor/reconciliation-phases.md)
+  - [KubernetesExecutor (DEPRECATED - ADR-025) Reconciliation Phases](04-kubernetesexecutor/reconciliation-phases.md)
 - **Rego Policy Integration**: [REGO_POLICY_INTEGRATION.md](04-kubernetesexecutor/implementation/REGO_POLICY_INTEGRATION.md)
 - **APDC Methodology**: [.cursor/rules/00-core-development-methodology.mdc](../../../.cursor/rules/00-core-development-methodology.mdc)
 

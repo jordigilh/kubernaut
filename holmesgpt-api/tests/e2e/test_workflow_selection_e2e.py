@@ -25,17 +25,15 @@ Business Requirements:
 Design Decisions:
 - DD-WORKFLOW-002: MCP Workflow Catalog Architecture
 - DD-HAPI-001: Custom Labels Auto-Append Architecture
-- DD-RECOVERY-003: Recovery Prompt Design
-
 V3.0 ARCHITECTURE (Mock LLM Migration - January 12, 2026):
 - Migrated from TestClient (in-process) to OpenAPI Client (real HTTP)
 - Uses standalone Mock LLM service deployed in Kind cluster
-- Consistent with other E2E tests (test_recovery_endpoint_e2e.py, test_audit_pipeline_e2e.py)
+- Consistent with other E2E tests (test_audit_pipeline_e2e.py)
 - Removed internal LLM behavior tests (tool call inspection)
 - Focuses on business outcomes and API contract validation
 
 These E2E tests validate the complete flow:
-1. HolmesGPT-API receives incident/recovery request
+1. HolmesGPT-API receives incident request
 2. LLM is called and processes the request
 3. Response structure is validated
 4. Error handling is verified
@@ -63,7 +61,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent / 'clients'))
 # Import OpenAPI client (from tests/clients/holmesgpt_api_client)
 from holmesgpt_api_client import ApiClient, Configuration
 from holmesgpt_api_client.api.incident_analysis_api import IncidentAnalysisApi
-from holmesgpt_api_client.api.recovery_analysis_api import RecoveryAnalysisApi
 
 
 # ========================================
@@ -90,20 +87,6 @@ def incidents_api(hapi_client_config, hapi_auth_token):
     if hapi_auth_token:
         client.set_default_header('Authorization', f'Bearer {hapi_auth_token}')
     return IncidentAnalysisApi(client)
-
-
-@pytest.fixture
-def recovery_api(hapi_client_config, hapi_auth_token):
-    """
-    Create Recovery API instance with authentication.
-    
-    DD-AUTH-014: Injects ServiceAccount Bearer token for E2E tests.
-    """
-    client = ApiClient(configuration=hapi_client_config)
-    # DD-AUTH-014: Inject Bearer token via set_default_header
-    if hapi_auth_token:
-        client.set_default_header('Authorization', f'Bearer {hapi_auth_token}')
-    return RecoveryAnalysisApi(client)
 
 
 @pytest.fixture
@@ -143,64 +126,6 @@ def sample_incident_request() -> Dict[str, Any]:
             "customLabels": {
                 "constraint": ["cost-constrained", "stateful-safe"],
                 "team": ["name=payments"]
-            }
-        }
-    }
-
-
-@pytest.fixture
-def sample_recovery_request() -> Dict[str, Any]:
-    """Sample recovery request for E2E testing."""
-    return {
-        "incident_id": "e2e-recovery-001",
-        "remediation_id": "e2e-rem-002",
-        "signal_name": "OOMKilled",
-        "severity": "critical",
-        "signal_source": "prometheus",
-        "resource_namespace": "production",
-        "resource_kind": "Pod",
-        "resource_name": "api-server-abc123",
-        "error_message": "Container killed due to OOM - recovery attempt",
-        "environment": "production",
-        "priority": "P1",
-        "risk_tolerance": "low",
-        "business_category": "payments",
-        "cluster_name": "prod-cluster-1",
-        "is_recovery_attempt": True,
-        "recovery_attempt_number": 1,
-        "previous_execution": {
-            "workflow_execution_ref": "e2e-rem-001-we-1",
-            "original_rca": {
-                "summary": "Memory exhaustion detected",
-                "signal_name": "OOMKilled",
-                "severity": "high",
-                "contributing_factors": ["memory_leak"]
-            },
-            "selected_workflow": {
-                "workflow_id": "scale-horizontal-v1",
-                "title": "Horizontal Scaling",
-                "version": "1.0.0",
-                "execution_bundle": "ghcr.io/kubernaut/scale:v1.0.0",
-                "parameters": {"TARGET_REPLICAS": "5"},
-                "rationale": "Scale out to distribute load"
-            },
-            "failure": {
-                "failed_step_index": 1,
-                "failed_step_name": "scale-deployment",
-                "reason": "InsufficientResources",
-                "message": "Insufficient cluster resources for scaling",
-                "exit_code": 1,
-                "failed_at": "2025-11-30T12:00:00Z",
-                "execution_time": "45s"
-            }
-        },
-        "enrichment_results": {
-            "detectedLabels": {
-                "gitOpsManaged": True,
-                "gitOpsTool": "argocd"
-            },
-            "customLabels": {
-                "constraint": ["cost-constrained"]
             }
         }
     }
@@ -267,68 +192,6 @@ class TestIncidentAnalysisE2E:
 
         # Workflow selection should consider labels
         # (No direct tool call inspection - validates business outcome)
-
-
-# ========================================
-# E2E TESTS: RECOVERY ANALYSIS
-# ========================================
-
-class TestRecoveryAnalysisE2E:
-    """E2E tests for recovery analysis flow."""
-
-    @pytest.mark.e2e
-    def test_recovery_analysis_returns_valid_response(
-        self,
-        recovery_api,
-        sample_recovery_request,
-        test_workflows_bootstrapped
-    ):
-        """
-        DD-RECOVERY-003: Verify recovery response structure.
-
-        V3.0: Uses OpenAPI client for true E2E testing.
-        """
-        from holmesgpt_api_client.models.recovery_request import RecoveryRequest as RecoveryAnalysisRequest
-
-        request = RecoveryAnalysisRequest(**sample_recovery_request)
-        response = recovery_api.recovery_analyze_endpoint_api_v1_recovery_analyze_post(
-            recovery_request=request
-        )
-
-        # Validate required recovery response fields
-        assert response is not None, "Response should not be None"
-        assert response.incident_id is not None, "Incident ID should not be None"
-        assert response.can_recover is not None, "can_recover should not be None"
-        assert response.strategies is not None, "Strategies should not be None"
-        assert response.analysis_confidence is not None, "Analysis confidence should not be None"
-        assert 0.0 <= response.analysis_confidence <= 1.0, \
-            f"Analysis confidence should be between 0.0 and 1.0, got {response.analysis_confidence}"
-
-    @pytest.mark.e2e
-    def test_recovery_with_previous_execution_context(
-        self,
-        recovery_api,
-        sample_recovery_request,
-        test_workflows_bootstrapped
-    ):
-        """
-        DD-RECOVERY-003: Verify previous execution context is processed.
-
-        Recovery requests should generate different workflows than initial attempts.
-        V3.0: Validates business outcome without inspecting LLM internals.
-        """
-        from holmesgpt_api_client.models.recovery_request import RecoveryRequest as RecoveryAnalysisRequest
-
-        request = RecoveryAnalysisRequest(**sample_recovery_request)
-        response = recovery_api.recovery_analyze_endpoint_api_v1_recovery_analyze_post(
-            recovery_request=request
-        )
-
-        assert response is not None
-        assert response.strategies is not None, "Strategies should be present for recovery attempt"
-
-        # Recovery should provide strategies
-        # (Business outcome: recovery attempts yield strategies)
 
 
 # ========================================

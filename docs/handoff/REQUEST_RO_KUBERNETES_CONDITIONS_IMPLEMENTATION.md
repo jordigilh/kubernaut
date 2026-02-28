@@ -108,9 +108,9 @@ Message: Workflow wf-restart-pod completed successfully (exit code: 0)
 
 ---
 
-### **Condition 5: RecoveryComplete**
+### **Condition 5: RecoveryComplete** [Deprecated - Issue #180]
 
-**Type**: `RecoveryComplete`
+**Type**: `RecoveryComplete` [Deprecated - Issue #180]
 **When**: Overall remediation finished (success or failure)
 **Success Reason**: `RecoverySucceeded`
 **Failure Reason**: `RecoveryFailed`, `MaxAttemptsReached`
@@ -163,7 +163,7 @@ const (
     ConditionAIAnalysisComplete       = "AIAnalysisComplete"
     ConditionWorkflowExecutionReady   = "WorkflowExecutionReady"
     ConditionWorkflowExecutionComplete = "WorkflowExecutionComplete"
-    ConditionRecoveryComplete         = "RecoveryComplete"
+    ConditionRecoveryComplete         = "RecoveryComplete" // [Deprecated - Issue #180]
 )
 
 // Condition reasons
@@ -247,6 +247,7 @@ func SetWorkflowExecutionComplete(ro *rov1.RemediationOrchestrator, succeeded bo
 }
 
 // SetRecoveryComplete sets the RecoveryComplete condition
+// [Deprecated - Issue #180: RecoveryComplete removed]
 func SetRecoveryComplete(ro *rov1.RemediationOrchestrator, succeeded bool, reason, message string) {
     status := metav1.ConditionTrue
     if !succeeded {
@@ -423,7 +424,7 @@ Please respond to this request by updating the section below:
 - [x] AIAnalysisComplete
 - [x] WorkflowExecutionReady
 - [x] WorkflowExecutionComplete
-- [x] RecoveryComplete
+- [x] RecoveryComplete [Deprecated - Issue #180]
 
 **Implementation Approach**:
 Follow AIAnalysis pattern with RO-specific adaptations:
@@ -449,7 +450,7 @@ Follow AIAnalysis pattern with RO-specific adaptations:
 | **Orchestration Controller** | Shows state of 2+ child CRDs in one place |
 | **Operator Experience** | Single `kubectl describe` shows full remediation state |
 | **Debugging** | Faster troubleshooting without multiple queries |
-| **Automation** | Scripts can wait for `RecoveryComplete` condition |
+| **Automation** | Scripts can wait for `RecoveryComplete` condition [Deprecated] |
 | **Production Readiness** | Essential for production operations |
 
 **Recommendation**: Prioritize RO for V1.1 implementation

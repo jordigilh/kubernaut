@@ -296,9 +296,9 @@ bootstrap-integration-env-workflowexecution:
 	@if ! kind get clusters | grep -q kubernaut-test; then \
 		$(MAKE) create-test-cluster; \
 	fi
-	@# Install all required CRDs (Workflow depends on KubernetesExecution)
+	@# Install all required CRDs (Workflow depends on KubernetesExecution) (DEPRECATED - ADR-025)
 	kubectl apply -f api/workflowexecution/v1alpha1/workflowexecution_crd.yaml
-	kubectl apply -f api/kubernetesexecution/v1alpha1/kubernetesexecution_crd.yaml
+	kubectl apply -f api/kubernetesexecution/v1alpha1/kubernetesexecution_crd.yaml  # DEPRECATED - ADR-025
 	@# Workflow Execution doesn't need external dependencies
 	@echo "✅ Integration environment ready"
 
@@ -307,7 +307,7 @@ cleanup-integration-env-workflowexecution:
 	@echo "✅ No external dependencies to cleanup"
 
 # ============================================
-# Kubernetes Executor Targets
+# Kubernetes Executor Targets (DEPRECATED - ADR-025)
 # ============================================
 
 .PHONY: test-unit-kubernetesexecutor
@@ -332,7 +332,7 @@ bootstrap-integration-env-kubernetesexecutor:
 		$(MAKE) create-test-cluster; \
 	fi
 	@# Install CRDs
-	kubectl apply -f api/kubernetesexecution/v1alpha1/kubernetesexecution_crd.yaml
+	kubectl apply -f api/kubernetesexecution/v1alpha1/kubernetesexecution_crd.yaml  # DEPRECATED - ADR-025
 	@# Create test resources (deployments, pods, etc.)
 	kubectl apply -f test/integration/kubernetesexecution/fixtures/test-resources.yaml
 	@# Kubernetes Executor uses real K8s Jobs - no external dependencies

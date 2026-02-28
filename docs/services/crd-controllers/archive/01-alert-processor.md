@@ -1963,7 +1963,7 @@ Finalizer removed
 Kubernetes deletes AlertProcessing CRD
 ```
 
-**Parallel Deletion**: All service CRDs (AlertProcessing, AIAnalysis, WorkflowExecution, KubernetesExecution) deleted in parallel when AlertRemediation is deleted.
+**Parallel Deletion**: All service CRDs (AlertProcessing, AIAnalysis, WorkflowExecution, KubernetesExecution (DEPRECATED - ADR-025)) deleted in parallel when AlertRemediation is deleted.
 
 **Retention**:
 - **AlertProcessing**: No independent retention (deleted with parent)

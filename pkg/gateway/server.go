@@ -138,10 +138,17 @@ type Server struct {
 	lockManager   *processing.DistributedLockManager // BR-GATEWAY-190: K8s Lease-based distributed locking
 	scopeChecker  ScopeChecker                       // BR-SCOPE-002: nil = no scope filtering (backward compat)
 
+	// ADR-057: Controller namespace where all CRDs are created and queried
+	controllerNamespace string
+
 	// Infrastructure clients
 	// DD-GATEWAY-012: Redis REMOVED - Gateway is now Redis-free
 	k8sClient  *k8s.Client
 	ctrlClient client.Client
+	// apiReader: Uncached client for cache-bypassed reads (readiness K8s check, dedup, status refetch)
+	// ADR-057 fix: Readiness List(NamespaceList) must use apiReader—ctrlClient's cache only watches
+	// RemediationRequest in controllerNS; NamespaceList may fail when served from restricted cache.
+	apiReader client.Reader
 
 	// DD-AUDIT-003: Audit store for async buffered audit event emission
 	// Gateway is P0 service - MUST emit audit events per DD-AUDIT-003
@@ -235,7 +242,7 @@ func NewServerForTesting(cfg *config.ServerConfig, logger logr.Logger, metricsIn
 	// Create phaseChecker (for deduplication)
 	// DD-GATEWAY-011: Use ctrlClient as apiReader for deduplication (test environment uses direct API access)
 	// This ensures concurrent requests see each other's CRD creations immediately (GW-DEDUP-002 fix)
-	phaseChecker := processing.NewPhaseBasedDeduplicationChecker(ctrlClient)
+	phaseChecker := processing.NewPhaseBasedDeduplicationChecker(ctrlClient, cfg.Processing.Deduplication.CooldownPeriod)
 
 	// Create statusUpdater
 	statusUpdater := processing.NewStatusUpdater(ctrlClient, ctrlClient)
@@ -258,24 +265,33 @@ func NewServerForTesting(cfg *config.ServerConfig, logger logr.Logger, metricsIn
 		lockManager = processing.NewDistributedLockManager(ctrlClient, namespace, podName)
 	}
 
+	// ADR-057: Resolve controller namespace for CRD operations and deduplication
+	controllerNS, err := scope.GetControllerNamespace()
+	if err != nil {
+		return nil, fmt.Errorf("failed to determine controller namespace: %w", err)
+	}
+
 	// Create server first (crdCreator set below after observer wiring)
+	// DD-STATUS-001: Use ctrlClient as apiReader for readiness/dedup (test env uses direct API, no cache)
 	server := &Server{
-		config:          cfg,
-		adapterRegistry: adapterRegistry,
-		statusUpdater:   statusUpdater,
-		phaseChecker:    phaseChecker,
-		k8sClient:       k8sClient,
-		ctrlClient:      ctrlClient,
-		lockManager:     lockManager,  // BR-GATEWAY-190: Multi-replica deduplication safety
-		auditStore:      auditStore,   // Injected for testing
-		scopeChecker:    scopeChecker, // BR-SCOPE-002: nil = no scope filtering
-		metricsInstance: metricsInstance,
-		logger:          logger,
+		config:              cfg,
+		adapterRegistry:     adapterRegistry,
+		statusUpdater:       statusUpdater,
+		phaseChecker:        phaseChecker,
+		k8sClient:           k8sClient,
+		ctrlClient:          ctrlClient,
+		apiReader:           ctrlClient, // Test env: ctrlClient is uncached, works for readiness List
+		lockManager:         lockManager, // BR-GATEWAY-190: Multi-replica deduplication safety
+		auditStore:          auditStore, // Injected for testing
+		scopeChecker:        scopeChecker, // BR-SCOPE-002: nil = no scope filtering
+		controllerNamespace: controllerNS, // Issue #195: Used by ShouldDeduplicate
+		metricsInstance:     metricsInstance,
+		logger:              logger,
 	}
 
 	// Create CRD creator with retry observer wired to server audit emission
 	// BR-GATEWAY-058: retryAuditObserver emits gateway.crd.failed per retry attempt
-	server.crdCreator = processing.NewCRDCreator(cbClient, logger, metricsInstance, &cfg.Processing.Retry, &retryAuditObserver{server: server})
+	server.crdCreator = processing.NewCRDCreator(cbClient, logger, metricsInstance, &cfg.Processing.Retry, &retryAuditObserver{server: server}, controllerNS)
 
 	// Setup HTTP server with routes
 	router := server.setupRoutes()
@@ -313,13 +329,28 @@ func NewServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger, metricsI
 	_ = corev1.AddToScheme(scheme)         // Add core types (Namespace, Pod, etc.)
 	_ = coordinationv1.AddToScheme(scheme) // BR-GATEWAY-190: Add Lease type for distributed locking
 
+	// ADR-057: Discover controller namespace for CRD watch restriction
+	controllerNS, err := scope.GetControllerNamespace()
+	if err != nil {
+		return nil, fmt.Errorf("failed to determine controller namespace: %w", err)
+	}
+
 	// ========================================
 	// BR-GATEWAY-185 v1.1: Create cached client with field index
 	// Use spec.signalFingerprint (immutable, 64-char SHA256) instead of truncated labels
 	// ========================================
 
-	// Create cache for efficient queries
-	k8sCache, err := cache.New(kubeConfig, cache.Options{Scheme: scheme})
+	// Create cache for efficient queries (ADR-057: restrict RR to controller namespace)
+	k8sCache, err := cache.New(kubeConfig, cache.Options{
+		Scheme: scheme,
+		ByObject: map[client.Object]cache.ByObject{
+			&remediationv1alpha1.RemediationRequest{}: {
+				Namespaces: map[string]cache.Config{
+					controllerNS: {},
+				},
+			},
+		},
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Kubernetes cache: %w", err)
 	}
@@ -409,6 +440,12 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 		metricsInstance = metrics.NewMetrics()
 	}
 
+	// ADR-057: Controller namespace for CRD creation
+	controllerNS, err := scope.GetControllerNamespace()
+	if err != nil {
+		return nil, fmt.Errorf("failed to determine controller namespace: %w", err)
+	}
+
 	// Initialize processing pipeline components
 	adapterRegistry := adapters.NewAdapterRegistry(logger)
 
@@ -450,7 +487,7 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 	statusUpdater := processing.NewStatusUpdater(ctrlClient, apiReader)
 	// DD-GATEWAY-011: Use apiReader for deduplication to eliminate race conditions (cache-bypassed reads)
 	// This ensures concurrent requests see each other's CRD creations immediately (GW-DEDUP-002 fix)
-	phaseChecker := processing.NewPhaseBasedDeduplicationChecker(apiReader)
+	phaseChecker := processing.NewPhaseBasedDeduplicationChecker(apiReader, cfg.Processing.Deduplication.CooldownPeriod)
 
 	// BR-GATEWAY-190: Initialize distributed lock manager for multi-replica safety
 	// Uses K8s Lease resources for distributed locking (no external dependencies)
@@ -513,23 +550,24 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 
 	// Create server first (crdCreator set below after observer wiring)
 	server := &Server{
-		config:          cfg,
-		adapterRegistry: adapterRegistry,
-		// DD-GATEWAY-011: crdUpdater field removed (replaced by statusUpdater)
-		statusUpdater:   statusUpdater,
-		phaseChecker:    phaseChecker,
-		lockManager:     lockManager,
-		k8sClient:       k8sClient,
-		ctrlClient:      ctrlClient,
-		auditStore:      auditStore,
-		scopeChecker:    scopeMgr, // BR-SCOPE-002: Label-based scope filtering
-		metricsInstance: metricsInstance,
-		logger:          logger,
+		config:              cfg,
+		adapterRegistry:     adapterRegistry,
+		statusUpdater:       statusUpdater,
+		phaseChecker:        phaseChecker,
+		lockManager:         lockManager,
+		k8sClient:           k8sClient,
+		ctrlClient:          ctrlClient,
+		apiReader:           apiReader, // ADR-057: Used for readiness K8s check (bypasses cache)
+		auditStore:          auditStore,
+		scopeChecker:        scopeMgr,     // BR-SCOPE-002: Label-based scope filtering
+		controllerNamespace: controllerNS, // Issue #195: Used by ShouldDeduplicate
+		metricsInstance:     metricsInstance,
+		logger:              logger,
 	}
 
 	// Create CRD creator with retry observer wired to server audit emission
 	// BR-GATEWAY-058: retryAuditObserver emits gateway.crd.failed per retry attempt
-	server.crdCreator = processing.NewCRDCreator(cbClient, logger, metricsInstance, &cfg.Processing.Retry, &retryAuditObserver{server: server})
+	server.crdCreator = processing.NewCRDCreator(cbClient, logger, metricsInstance, &cfg.Processing.Retry, &retryAuditObserver{server: server}, controllerNS)
 
 	// 6. Setup HTTP server with routes
 	router := server.setupRoutes()
@@ -1143,7 +1181,8 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 			time.Sleep(backoffDuration)
 
 			// Retry deduplication check (other pod may have created RR by now)
-			shouldDeduplicate, existingRR, err := s.phaseChecker.ShouldDeduplicate(ctx, signal.Namespace, signal.Fingerprint)
+			// Issue #195: Use controllerNamespace — RRs live in controller NS per ADR-057
+			shouldDeduplicate, existingRR, err := s.phaseChecker.ShouldDeduplicate(ctx, s.controllerNamespace, signal.Fingerprint)
 			if err != nil {
 				return nil, fmt.Errorf("deduplication check failed after lock contention: %w", err)
 			}
@@ -1167,7 +1206,8 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 
 	// 1. Deduplication check (DD-GATEWAY-011: K8s status-based, NOT Redis)
 	// BR-GATEWAY-185: Redis deprecation - use PhaseBasedDeduplicationChecker
-	shouldDeduplicate, existingRR, err := s.phaseChecker.ShouldDeduplicate(ctx, signal.Namespace, signal.Fingerprint)
+	// Issue #195: Use controllerNamespace — RRs live in controller NS per ADR-057
+	shouldDeduplicate, existingRR, err := s.phaseChecker.ShouldDeduplicate(ctx, s.controllerNamespace, signal.Fingerprint)
 	if err != nil {
 		logger.Error(err, "Deduplication check failed",
 			"fingerprint", signal.Fingerprint)
@@ -1294,8 +1334,14 @@ func (s *Server) readinessHandler(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	// Check Kubernetes API connectivity by listing namespaces
+	// ADR-057: Use apiReader (uncached) — ctrlClient's cache only watches RemediationRequest
+	// in controllerNS; List(NamespaceList) may fail when served from restricted cache.
+	reader := s.apiReader
+	if reader == nil {
+		reader = s.ctrlClient
+	}
 	namespaceList := &corev1.NamespaceList{}
-	if err := s.ctrlClient.List(ctx, namespaceList, client.Limit(1)); err != nil {
+	if err := reader.List(ctx, namespaceList, client.Limit(1)); err != nil {
 		s.logger.Info("Readiness check failed: Kubernetes API not reachable", "error", err)
 
 		w.Header().Set("Content-Type", "application/problem+json")

@@ -37,7 +37,7 @@ This notification establishes a mandatory requirement for consistent Conditions 
 | **SignalProcessing** | ✅ | ❌ | ❌ | 🔴 GAP | **SP Team: Implement** |
 | **RemediationRequest** | ✅ | ❌ | ❌ | 🔴 GAP | **RO Team: Implement** |
 | **RemediationApprovalRequest** | ✅ | ❌ | ❌ | 🔴 GAP | **RO Team: Implement** |
-| **KubernetesExecution** | ✅ | ❌ | ❌ | 🔴 GAP | **WE Team: Implement** |
+| **KubernetesExecution** (DEPRECATED - ADR-025) | ✅ | ❌ | ❌ | 🔴 GAP | **WE Team: Implement** |
 
 ---
 

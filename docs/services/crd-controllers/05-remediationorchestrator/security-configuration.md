@@ -86,7 +86,7 @@ rules:
 - **list**: Controller startup requires listing existing CRDs for recovery
 
 **❌ Explicitly Denied**:
-- NO direct Pod/Deployment/Job manipulation (WorkflowExecution/KubernetesExecution handle execution)
+- NO direct Pod/Deployment/Job manipulation (WorkflowExecution/KubernetesExecution (DEPRECATED - ADR-025) handle execution)
 - NO Secret access (downstream controllers manage secrets)
 - NO Node access (no infrastructure operations)
 - NO namespace creation (operates in existing namespaces)
@@ -124,9 +124,9 @@ subjects:
 5. **Owner References**: Automatic cascade deletion via owner references (no manual cleanup)
 
 **❌ Prohibited**:
-1. **No Pod Execution**: Controller does NOT create Pods/Jobs (delegated to WorkflowExecution/KubernetesExecution)
+1. **No Pod Execution**: Controller does NOT create Pods/Jobs (delegated to WorkflowExecution/KubernetesExecution (DEPRECATED - ADR-025))
 2. **No Secret Access**: Controller does NOT access Secrets (downstream controllers handle credentials)
-3. **No Node Operations**: No node cordoning/draining (delegated to KubernetesExecution)
+3. **No Node Operations**: No node cordoning/draining (delegated to KubernetesExecution (DEPRECATED - ADR-025))
 4. **No RBAC Elevation**: Controller CANNOT create ClusterRoles or escalate privileges
 
 ---

@@ -55,6 +55,27 @@ import (
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
+// createTargetPod creates a minimal Pod in the test namespace for SP enrichment.
+// Aligns with BR-SP-001 pattern: controller requires target resource for enrichment.
+// Without this, K8sEnricher enters degraded mode; creating the pod ensures consistent
+// reconciliation flow and matches real Gateway→SP workflow.
+func createTargetPod(ctx context.Context, c client.Client, namespace, podName string) {
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      podName,
+			Namespace: namespace,
+			Labels:    map[string]string{"app": "e2e-target"},
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{{
+				Name:  "main",
+				Image: "nginx:latest",
+			}},
+		},
+	}
+	Expect(c.Create(ctx, pod)).To(Succeed())
+}
+
 var _ = Describe("Severity Determination E2E Tests", Label("e2e", "severity", "workflow", "signalprocessing"), func() {
 	var (
 		ctx       context.Context
@@ -90,16 +111,19 @@ var _ = Describe("Severity Determination E2E Tests", Label("e2e", "severity", "w
 		// CUSTOMER VALUE:
 		// Critical alerts receive immediate AI investigation, warnings within 1 hour
 
-		// GIVEN: RemediationRequest with external severity "Sev1"
-		rr := createTestRemediationRequest(namespace, "test-workflow-severity")
+		// GIVEN: Target pod exists (aligns with BR-SP-001 - controller enriches real resources)
+		createTargetPod(ctx, k8sClient, namespace, "test-e2e-pod")
+
+		// GIVEN: RemediationRequest with external severity "Sev1" (ADR-057: RR in controller namespace)
+		rr := createTestRemediationRequest(controllerNamespace, namespace, "test-workflow-severity")
 		rr.Spec.Severity = "Sev1" // External severity from PagerDuty
 		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
-		// AND: SignalProcessing CRD created with external severity from RR
+		// AND: SignalProcessing CRD created with external severity from RR (ADR-057: SP in controller namespace)
 		sp := &signalprocessingv1alpha1.SignalProcessing{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "sp-workflow-severity",
-				Namespace: namespace,
+				Namespace: controllerNamespace,
 				OwnerReferences: []metav1.OwnerReference{
 					*metav1.NewControllerRef(rr, remediationv1alpha1.GroupVersion.WithKind("RemediationRequest")),
 				},
@@ -164,16 +188,20 @@ var _ = Describe("Severity Determination E2E Tests", Label("e2e", "severity", "w
 		//
 		// PREVENTS: Mid-workflow policy changes breaking consistency
 
-		// GIVEN: RemediationRequest with custom severity
-		rr := createTestRemediationRequest(namespace, "test-policy-change")
+		// GIVEN: Target pods exist (aligns with BR-SP-001; test-pod used by validation SP)
+		createTargetPod(ctx, k8sClient, namespace, "test-e2e-pod")
+		createTargetPod(ctx, k8sClient, namespace, "test-pod")
+
+		// GIVEN: RemediationRequest with custom severity (ADR-057: RR in controller namespace)
+		rr := createTestRemediationRequest(controllerNamespace, namespace, "test-policy-change")
 		rr.Spec.Severity = "CUSTOM_VALUE"
 		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
-		// AND: SignalProcessing CRD created with initial policy
+		// AND: SignalProcessing CRD created with initial policy (ADR-057: SP in controller namespace)
 		sp := &signalprocessingv1alpha1.SignalProcessing{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "sp-policy-change",
-				Namespace: namespace,
+				Namespace: controllerNamespace,
 				OwnerReferences: []metav1.OwnerReference{
 					*metav1.NewControllerRef(rr, remediationv1alpha1.GroupVersion.WithKind("RemediationRequest")),
 				},
@@ -238,14 +266,14 @@ determine_severity := "high" if {
 		validationSP := &signalprocessingv1alpha1.SignalProcessing{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      fmt.Sprintf("policy-hotreload-validation-%d", time.Now().UnixNano()),
-				Namespace: namespace,
+				Namespace: controllerNamespace,
 			},
 			Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 				RemediationRequestRef: signalprocessingv1alpha1.ObjectReference{
 					APIVersion: remediationv1alpha1.GroupVersion.String(),
 					Kind:       "RemediationRequest",
 					Name:       "test-policy-change", // Reference original RR
-					Namespace:  namespace,
+					Namespace:  controllerNamespace,
 					UID:        string(rr.UID),
 				},
 			Signal: signalprocessingv1alpha1.SignalData{
@@ -278,15 +306,15 @@ determine_severity := "high" if {
 			"Hot-reload validation: CUSTOM_VALUE should map to high (policy reloaded, DD-SEVERITY-001 v1.1)")
 	}, "30s", "2s").Should(Succeed(), "ConfigMap hot-reload should complete within 30s (kubelet sync-frequency=10s)")
 
-	// THEN: New SignalProcessing uses updated policy after hot-reload
-	rr2 := createTestRemediationRequest(namespace, "test-policy-change-new")
+	// THEN: New SignalProcessing uses updated policy after hot-reload (ADR-057: RR in controller namespace)
+	rr2 := createTestRemediationRequest(controllerNamespace, namespace, "test-policy-change-new")
 	rr2.Spec.Severity = "CUSTOM_VALUE"
 	Expect(k8sClient.Create(ctx, rr2)).To(Succeed())
 
 		sp2 := &signalprocessingv1alpha1.SignalProcessing{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "sp-policy-change-new",
-				Namespace: namespace,
+				Namespace: controllerNamespace,
 				OwnerReferences: []metav1.OwnerReference{
 					*metav1.NewControllerRef(rr2, remediationv1alpha1.GroupVersion.WithKind("RemediationRequest")),
 				},
@@ -339,16 +367,19 @@ determine_severity := "high" if {
 		//
 		// COMPLIANCE: SOC 2, ISO 27001 require end-to-end traceability
 
-		// GIVEN: RemediationRequest with external severity
-		rr := createTestRemediationRequest(namespace, "test-audit-flow")
+		// GIVEN: Target pod exists (aligns with BR-SP-001)
+		createTargetPod(ctx, k8sClient, namespace, "test-e2e-pod")
+
+		// GIVEN: RemediationRequest with external severity (ADR-057: RR in controller namespace)
+		rr := createTestRemediationRequest(controllerNamespace, namespace, "test-audit-flow")
 		rr.Spec.Severity = "P0" // External severity from Splunk
 		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
-		// AND: SignalProcessing CRD created with external severity
+		// AND: SignalProcessing CRD created with external severity (ADR-057: SP in controller namespace)
 		sp := &signalprocessingv1alpha1.SignalProcessing{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "sp-audit-flow",
-				Namespace: namespace,
+				Namespace: controllerNamespace,
 				OwnerReferences: []metav1.OwnerReference{
 					*metav1.NewControllerRef(rr, remediationv1alpha1.GroupVersion.WithKind("RemediationRequest")),
 				},
@@ -416,13 +447,13 @@ determine_severity := "high" if {
 // ========================================
 
 // createTestRemediationRequest creates a test RemediationRequest CRD.
+// ADR-057: RR lives in controller namespace; targetResourceNamespace is the workload namespace.
 // Uses unique naming per test for parallel execution safety.
-// Updated to match current RemediationRequestSpec schema (fields flattened, no nested Signal)
-func createTestRemediationRequest(namespace, name string) *remediationv1alpha1.RemediationRequest {
+func createTestRemediationRequest(rrNamespace, targetResourceNamespace, name string) *remediationv1alpha1.RemediationRequest {
 	return &remediationv1alpha1.RemediationRequest{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: namespace,
+			Namespace: rrNamespace,
 		},
 		Spec: remediationv1alpha1.RemediationRequestSpec{
 			SignalFingerprint: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", // SHA256 hash
@@ -436,7 +467,7 @@ func createTestRemediationRequest(namespace, name string) *remediationv1alpha1.R
 			TargetResource: remediationv1alpha1.ResourceIdentifier{
 				Kind:      "Pod",
 				Name:      "test-e2e-pod",
-				Namespace: namespace,
+				Namespace: targetResourceNamespace,
 			},
 		},
 	}

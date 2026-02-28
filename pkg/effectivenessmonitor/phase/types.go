@@ -21,7 +21,7 @@ limitations under the License.
 // Per Viceversa Pattern: API defines constants, this package re-exports + adds state machine.
 //
 // Business Requirements:
-// - BR-EM-005: Phase state transitions (Pending -> Assessing -> Completed/Failed)
+// - BR-EM-005: Phase state transitions (Pending -> Stabilizing -> Assessing -> Completed/Failed)
 package phase
 
 import (
@@ -41,6 +41,8 @@ type Phase = string
 const (
 	// Pending - EA created by RO, EM has not reconciled yet.
 	Pending = eav1.PhasePending
+	// Stabilizing - EM is waiting for stabilization window to elapse.
+	Stabilizing = eav1.PhaseStabilizing
 	// Assessing - EM is actively performing assessment checks.
 	Assessing = eav1.PhaseAssessing
 	// Completed - All assessment checks finished (or validity expired).
@@ -52,8 +54,9 @@ const (
 // ValidTransitions defines the state machine for EA phases.
 // Key: current phase, Value: list of valid target phases.
 var ValidTransitions = map[Phase][]Phase{
-	Pending:   {Assessing, Failed},
-	Assessing: {Completed, Failed},
+	Pending:     {Stabilizing, Assessing, Failed}, // Stabilizing when StabilizationWindow > 0; Assessing directly when 0
+	Stabilizing: {Assessing, Failed},
+	Assessing:   {Completed, Failed},
 	// Terminal states - no transitions allowed.
 	Completed: {},
 	Failed:    {},
@@ -86,7 +89,7 @@ func CanTransition(current, target Phase) bool {
 // Validate checks if a phase value is valid.
 func Validate(p Phase) error {
 	switch p {
-	case Pending, Assessing, Completed, Failed:
+	case Pending, Stabilizing, Assessing, Completed, Failed:
 		return nil
 	default:
 		return fmt.Errorf("invalid phase: %s", p)

@@ -11,7 +11,7 @@
 **Business Requirements**: [STEP_VALIDATION_BUSINESS_REQUIREMENTS.md](../../requirements/STEP_VALIDATION_BUSINESS_REQUIREMENTS.md)
 **Implementation Plans**:
 - [WorkflowExecution Implementation Plan](03-workflowexecution/implementation/IMPLEMENTATION_PLAN_V1.0.md)
-- [KubernetesExecutor Implementation Plan](04-kubernetesexecutor/implementation/IMPLEMENTATION_PLAN_V1.0.md)
+- [KubernetesExecutor Implementation Plan](04-kubernetesexecutor/implementation/IMPLEMENTATION_PLAN_V1.0.md) (DEPRECATED - ADR-025)
 
 ---
 
@@ -20,7 +20,7 @@
 1. [Executive Summary](#1-executive-summary)
 2. [Integration Architecture](#2-integration-architecture)
 3. [WorkflowExecution Integration Points](#3-workflowexecution-integration-points)
-4. [KubernetesExecutor Integration Points](#4-kubernetesexecutor-integration-points)
+4. [KubernetesExecutor Integration Points](#4-kubernetesexecutor-integration-points) (DEPRECATED - ADR-025)
 5. [Representative Example: scale_deployment](#5-representative-example-scale_deployment)
 6. [Timeline Impact Analysis](#6-timeline-impact-analysis)
 7. [Risk Mitigation Strategy](#7-risk-mitigation-strategy)
@@ -1130,13 +1130,13 @@ The KubernetesExecutor controller executes individual Kubernetes actions via nat
 - Action preconditions provide action-specific validation
 - Action postconditions verify execution outcomes
 
-**Key Advantage**: KubernetesExecutor already has Rego policy integration from Day 4, reducing implementation effort by ~30%.
+**Key Advantage**: KubernetesExecutor (DEPRECATED - ADR-025) already has Rego policy integration from Day 4, reducing implementation effort by ~30%.
 
 ### 4.2 Phase 1: CRD Schema Extensions (Days 13-14, 16 hours)
 
 #### 4.2.1 Schema Changes
 
-**File**: `api/kubernetesexecution/v1alpha1/kubernetesexecution_types.go`
+**File**: `api/kubernetesexecution/v1alpha1/kubernetesexecution_types.go` (DEPRECATED - ADR-025)
 
 **New Types** (consistent with WorkflowExecution):
 
@@ -1232,7 +1232,7 @@ type ValidationResults struct {
 
 #### 4.3.1 Leveraging Existing Day 4 Infrastructure
 
-**🔑 CRITICAL INTEGRATION POINT**: KubernetesExecutor Day 4 already implements a Rego-based safety policy engine. The validation framework **extends** this existing infrastructure rather than creating a parallel system.
+**🔑 CRITICAL INTEGRATION POINT**: KubernetesExecutor (DEPRECATED - ADR-025) Day 4 already implements a Rego-based safety policy engine. The validation framework **extends** this existing infrastructure rather than creating a parallel system.
 
 **Existing Day 4 Components**:
 - ✅ `pkg/kubernetesexecution/policy/engine.go` - PolicyEngine struct
@@ -1547,7 +1547,7 @@ func (r *KubernetesExecutionReconciler) reconcileExecuting(
 }
 ```
 
-### 4.5 Phase 2: scale_deployment Action Example (Days 21-25, 40 hours)
+### 4.5 Phase 2: scale_deployment Action Example (Days 21-25, 40 hours) (DEPRECATED - ADR-025)
 
 #### 4.5.1 Action-Level Precondition Policies
 
@@ -1676,7 +1676,7 @@ WORKFLOW STEP LEVEL (WorkflowExecution Controller):
    ⚠ current_replicas_match (warning)
 4. Create KubernetesExecution CRD
 
-ACTION LEVEL (KubernetesExecutor Controller):
+ACTION LEVEL (KubernetesExecutor (DEPRECATED - ADR-025) Controller):
 5. Parameter validation (existing)
 6. RBAC validation (existing)
 7. Safety policy validation (existing - Day 4)
@@ -1810,7 +1810,7 @@ spec:
 - Base controller: 12-13 days
 - Validation integration: +15-17 days
 
-### 6.2 KubernetesExecutor Extended Timeline
+### 6.2 KubernetesExecutor Extended Timeline (DEPRECATED - ADR-025)
 
 **Base Controller** (v1.0): 11-12 days (88-96 hours)
 
@@ -2411,7 +2411,7 @@ This integration guide provides a comprehensive roadmap for adding per-step prec
 **Next Steps**:
 1. ✅ Integration guide approved (this document)
 2. 🔲 Update WorkflowExecution Implementation Plan (Task 2)
-3. 🔲 Update KubernetesExecutor Implementation Plan (Task 3)
+3. 🔲 Update KubernetesExecutor (DEPRECATED - ADR-025) Implementation Plan (Task 3)
 4. 🔲 Begin Phase 0: Base controller implementation
 5. 🔲 Execute Phases 1-4 according to timeline
 6. 🔲 Monitor success metrics and adjust

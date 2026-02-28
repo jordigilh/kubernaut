@@ -3,6 +3,8 @@ global:
     registry: quay.io/kubernaut-ai
     tag: ""  # defaults to Chart.appVersion
     pullPolicy: IfNotPresent
+  nodeSelector: {}
+  tolerations: []
 
 nameOverride: ""
 fullnameOverride: ""
@@ -69,6 +71,13 @@ workflowexecution:
 
 # -- Notification controller
 notification:
+  # Per-receiver credentials projected into /etc/notification/credentials/
+  # Each entry creates a projected volume source from a K8s Secret.
+  # Issue #104: Named credential store (PV/PVC pattern)
+  credentials:
+    - name: slack-webhook
+      secretName: slack-webhook
+      secretKey: webhook-url
   resources:
     requests:
       cpu: 100m

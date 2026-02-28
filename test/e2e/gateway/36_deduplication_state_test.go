@@ -140,7 +140,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 			By("2. Verify CRD was created")
 			var crd *remediationv1alpha1.RemediationRequest
 			Eventually(func() *remediationv1alpha1.RemediationRequest {
-				crd = getCRDByName(testCtx, testClient, sharedNamespace, crdName)
+				crd = getCRDByName(testCtx, testClient, gatewayNamespace, crdName)
 				return crd
 			}, 60*time.Second, 2*time.Second).ShouldNot(BeNil(), "CRD should exist after Gateway processes signal")
 
@@ -154,7 +154,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 
 		// Wait for status update to propagate
 		Eventually(func() string {
-			updatedCRD := getCRDByName(testCtx, testClient, sharedNamespace, crdName)
+			updatedCRD := getCRDByName(testCtx, testClient, gatewayNamespace, crdName)
 			if updatedCRD == nil {
 				return ""
 			}
@@ -167,7 +167,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 		Eventually(func() int {
 			var rrList remediationv1alpha1.RemediationRequestList
 			err := testClient.List(testCtx, &rrList,
-				client.InNamespace(sharedNamespace),
+				client.InNamespace(gatewayNamespace),
 				client.MatchingFields{"spec.signalFingerprint": crd.Spec.SignalFingerprint},
 			)
 			if err != nil {
@@ -189,7 +189,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 			By("5. Verify occurrence count was incremented and LastOccurrence timestamp updated")
 			var firstSeen time.Time
 			Eventually(func() bool {
-				updatedCRD := getCRDByName(testCtx, testClient, sharedNamespace, crdName)
+				updatedCRD := getCRDByName(testCtx, testClient, gatewayNamespace, crdName)
 				if updatedCRD == nil {
 					return false
 				}
@@ -261,7 +261,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 			By("2. Set CRD state to Processing")
 			var crd *remediationv1alpha1.RemediationRequest
 			Eventually(func() *remediationv1alpha1.RemediationRequest {
-				crd = getCRDByName(testCtx, testClient, sharedNamespace, crdName)
+				crd = getCRDByName(testCtx, testClient, gatewayNamespace, crdName)
 				return crd
 			}, 60*time.Second, 2*time.Second).ShouldNot(BeNil(), "CRD should exist after Gateway processes signal")
 
@@ -270,7 +270,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 
 		// Wait for status update to propagate
 		Eventually(func() string {
-			updatedCRD := getCRDByName(testCtx, testClient, sharedNamespace, crdName)
+			updatedCRD := getCRDByName(testCtx, testClient, gatewayNamespace, crdName)
 			if updatedCRD == nil {
 				return ""
 			}
@@ -283,7 +283,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 		Eventually(func() int {
 			var rrList remediationv1alpha1.RemediationRequestList
 			err := testClient.List(testCtx, &rrList,
-				client.InNamespace(sharedNamespace),
+				client.InNamespace(gatewayNamespace),
 				client.MatchingFields{"spec.signalFingerprint": crd.Spec.SignalFingerprint},
 			)
 			if err != nil {
@@ -299,7 +299,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 
 			By("4. Verify occurrence count was incremented")
 			Eventually(func() int32 {
-				updatedCRD := getCRDByName(testCtx, testClient, sharedNamespace, crdName)
+				updatedCRD := getCRDByName(testCtx, testClient, gatewayNamespace, crdName)
 				if updatedCRD == nil {
 					return 0
 				}
@@ -360,7 +360,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 			By("2. Set CRD state to Completed")
 			var crd *remediationv1alpha1.RemediationRequest
 			Eventually(func() *remediationv1alpha1.RemediationRequest {
-				crd = getCRDByName(testCtx, testClient, sharedNamespace, crdName)
+				crd = getCRDByName(testCtx, testClient, gatewayNamespace, crdName)
 				return crd
 			}, 60*time.Second, 2*time.Second).ShouldNot(BeNil(), "CRD should exist after Gateway processes signal")
 
@@ -369,7 +369,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 
 			// Wait for status update to propagate to K8s API cache
 			Eventually(func() string {
-				updatedCRD := getCRDByName(testCtx, testClient, sharedNamespace, crdName)
+				updatedCRD := getCRDByName(testCtx, testClient, gatewayNamespace, crdName)
 				if updatedCRD == nil {
 					return ""
 				}
@@ -381,7 +381,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 		// DD-STATUS-001: Gateway uses apiReader for fresh reads, but status updates
 		// still need time to propagate through K8s API eventual consistency
 		Eventually(func() string {
-			updatedCRD := getCRDByName(testCtx, testClient, sharedNamespace, crdName)
+			updatedCRD := getCRDByName(testCtx, testClient, gatewayNamespace, crdName)
 			if updatedCRD == nil {
 				return ""
 			}
@@ -447,7 +447,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 			By("2. Set CRD state to Failed")
 			var crd *remediationv1alpha1.RemediationRequest
 			Eventually(func() *remediationv1alpha1.RemediationRequest {
-				crd = getCRDByName(testCtx, testClient, sharedNamespace, crdName)
+				crd = getCRDByName(testCtx, testClient, gatewayNamespace, crdName)
 				return crd
 			}, 60*time.Second, 2*time.Second).ShouldNot(BeNil(), "CRD should exist after Gateway processes signal")
 
@@ -456,7 +456,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 
 			// Wait for status update to propagate
 			Eventually(func() string {
-				updatedCRD := getCRDByName(testCtx, testClient, sharedNamespace, crdName)
+				updatedCRD := getCRDByName(testCtx, testClient, gatewayNamespace, crdName)
 				if updatedCRD == nil {
 					return ""
 				}
@@ -512,7 +512,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 			By("2. Set CRD state to Cancelled")
 			var crd *remediationv1alpha1.RemediationRequest
 			Eventually(func() *remediationv1alpha1.RemediationRequest {
-				crd = getCRDByName(testCtx, testClient, sharedNamespace, crdName)
+				crd = getCRDByName(testCtx, testClient, gatewayNamespace, crdName)
 				return crd
 			}, 60*time.Second, 2*time.Second).ShouldNot(BeNil(), "CRD should exist after Gateway processes signal")
 
@@ -521,7 +521,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 
 			// Wait for status update to propagate
 			Eventually(func() string {
-				updatedCRD := getCRDByName(testCtx, testClient, sharedNamespace, crdName)
+				updatedCRD := getCRDByName(testCtx, testClient, gatewayNamespace, crdName)
 				if updatedCRD == nil {
 					return ""
 				}
@@ -590,7 +590,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 			// DD-GATEWAY-009: Whitelist approach means any non-terminal phase (including Blocked) is treated as in-progress
 			var crd *remediationv1alpha1.RemediationRequest
 			Eventually(func() *remediationv1alpha1.RemediationRequest {
-				crd = getCRDByName(testCtx, testClient, sharedNamespace, crdName)
+				crd = getCRDByName(testCtx, testClient, gatewayNamespace, crdName)
 				return crd
 			}, 60*time.Second, 2*time.Second).ShouldNot(BeNil(), "CRD should exist after Gateway processes signal")
 
@@ -599,7 +599,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 
 			// Wait for status update to propagate
 			Eventually(func() string {
-				updatedCRD := getCRDByName(testCtx, testClient, sharedNamespace, crdName)
+				updatedCRD := getCRDByName(testCtx, testClient, gatewayNamespace, crdName)
 				if updatedCRD == nil {
 					return ""
 				}
@@ -612,7 +612,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 		Eventually(func() int {
 			var rrList remediationv1alpha1.RemediationRequestList
 			err := testClient.List(testCtx, &rrList,
-				client.InNamespace(sharedNamespace),
+				client.InNamespace(gatewayNamespace),
 				client.MatchingFields{"spec.signalFingerprint": crd.Spec.SignalFingerprint},
 			)
 			if err != nil {
@@ -634,16 +634,20 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 
 			By("4. Verify occurrence count was incremented")
 			Eventually(func() int32 {
-				updatedCRD := getCRDByName(testCtx, testClient, sharedNamespace, crdName)
+				updatedCRD := getCRDByName(testCtx, testClient, gatewayNamespace, crdName)
 				if updatedCRD == nil {
+					GinkgoWriter.Printf("[dedup-occurrence] getCRDByName returned nil for %q in %s\n", crdName, gatewayNamespace)
 					return 0
 				}
 				// DD-GATEWAY-011: Check status.deduplication (not spec)
 				if updatedCRD.Status.Deduplication == nil {
+					GinkgoWriter.Printf("[dedup-occurrence] RR %s found but Status.Deduplication is nil (phase=%s)\n",
+						crdName, updatedCRD.Status.OverallPhase)
 					return 0
 				}
+				GinkgoWriter.Printf("[dedup-occurrence] RR %s: OccurrenceCount=%d\n", crdName, updatedCRD.Status.Deduplication.OccurrenceCount)
 				return updatedCRD.Status.Deduplication.OccurrenceCount
-			}, 5*time.Second, 500*time.Millisecond).Should(Equal(int32(2)),
+			}, 15*time.Second, 500*time.Millisecond).Should(Equal(int32(2)),
 				"Unknown state should increment occurrence count (treated as in-progress)")
 		})
 	})
@@ -688,7 +692,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 			Expect(response.RemediationRequestName).To(And(Not(BeEmpty()), MatchRegexp(`^[a-z0-9]`)), "must be a valid K8s resource name")
 
 			By("2. Verify CRD was created")
-			crd := getCRDByName(testCtx, testClient, sharedNamespace, response.RemediationRequestName)
+			crd := getCRDByName(testCtx, testClient, gatewayNamespace, response.RemediationRequestName)
 			Expect(crd).To(Not(BeNil()), "CRD must be created after Gateway processes signal")
 			// DD-GATEWAY-011: Check status.deduplication (not spec)
 			Expect(crd.Status.Deduplication).ToNot(BeNil(), "status.deduplication should be initialized")

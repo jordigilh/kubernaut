@@ -91,17 +91,19 @@ var _ = Describe("ErrorClassifier", func() {
 			Expect(result.RetryPossible).To(BeFalse())
 		})
 
-		It("should classify nil error as ERR_INTERNAL_ORCHESTRATION (retryable)", func() {
+		It("should classify nil error as ERR_INTERNAL_ORCHESTRATION (non-retryable)", func() {
 			result := prodaudit.ClassifyError(nil)
 			Expect(result.Code).To(Equal("ERR_INTERNAL_ORCHESTRATION"))
-			Expect(result.RetryPossible).To(BeTrue())
+			Expect(result.RetryPossible).To(BeFalse(),
+				"DD-ERROR-001: ERR_INTERNAL_* retry is 'Varies'; conservative default is non-retryable")
 		})
 
-		It("should classify unknown errors as ERR_INTERNAL_ORCHESTRATION (retryable)", func() {
+		It("should classify unknown errors as ERR_INTERNAL_ORCHESTRATION (non-retryable)", func() {
 			err := fmt.Errorf("something weird happened")
 			result := prodaudit.ClassifyError(err)
 			Expect(result.Code).To(Equal("ERR_INTERNAL_ORCHESTRATION"))
-			Expect(result.RetryPossible).To(BeTrue())
+			Expect(result.RetryPossible).To(BeFalse(),
+				"DD-ERROR-001: unrecognized errors default to non-retryable; known retryable cases have explicit classifications")
 		})
 
 		It("should classify wrapped K8s errors correctly", func() {

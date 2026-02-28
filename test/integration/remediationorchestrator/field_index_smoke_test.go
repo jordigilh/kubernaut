@@ -17,6 +17,8 @@ limitations under the License.
 package remediationorchestrator
 
 import (
+	"fmt"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -42,10 +44,11 @@ var _ = Describe("Field Index Smoke Test", func() {
 	It("should successfully query by spec.signalFingerprint using field index", func() {
 		By("Creating a test RemediationRequest")
 		testFingerprint := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+		rrName := fmt.Sprintf("smoke-test-rr-%s", testNamespace[len(testNamespace)-8:])
 		rr := &remediationv1.RemediationRequest{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      "smoke-test-rr",
-				Namespace: testNamespace,
+				Name:      rrName,
+				Namespace: ROControllerNamespace,
 			},
 			Spec: remediationv1.RemediationRequestSpec{
 				SignalFingerprint: testFingerprint,
@@ -63,19 +66,15 @@ var _ = Describe("Field Index Smoke Test", func() {
 			},
 		}
 		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+		DeferCleanup(func() {
+			_ = k8sClient.Delete(ctx, rr)
+		})
 		GinkgoWriter.Printf("✅ Created RR: %s with fingerprint: %s\n", rr.Name, testFingerprint)
-
-		By("Verifying RR exists via direct query")
-		allRRs := &remediationv1.RemediationRequestList{}
-		err := k8sManager.GetAPIReader().List(ctx, allRRs, client.InNamespace(testNamespace))
-		Expect(err).ToNot(HaveOccurred())
-		GinkgoWriter.Printf("📊 Direct query found %d RRs in namespace\n", len(allRRs.Items))
-		Expect(len(allRRs.Items)).To(Equal(1), "Should find 1 RR via direct query")
 
 		By("Querying by field selector (spec.signalFingerprint) - server-side with CRD selectableFields")
 		indexedRRs := &remediationv1.RemediationRequestList{}
-		err = k8sManager.GetAPIReader().List(ctx, indexedRRs,
-			client.InNamespace(testNamespace),
+		err := k8sManager.GetAPIReader().List(ctx, indexedRRs,
+			client.InNamespace(ROControllerNamespace),
 			client.MatchingFields{"spec.signalFingerprint": testFingerprint},
 		)
 
@@ -92,15 +91,18 @@ var _ = Describe("Field Index Smoke Test", func() {
 			GinkgoWriter.Println("   Expected: 1 RR matching fingerprint")
 			GinkgoWriter.Println("   Actual: 0 RRs")
 
-			// Additional debugging
-			for _, rr := range allRRs.Items {
-				GinkgoWriter.Printf("   Found RR: %s, fingerprint=%s (len=%d)\n",
-					rr.Name, rr.Spec.SignalFingerprint, len(rr.Spec.SignalFingerprint))
+			// Additional debugging: list all RRs in namespace
+			var allRRs remediationv1.RemediationRequestList
+			if listErr := k8sManager.GetAPIReader().List(ctx, &allRRs, client.InNamespace(ROControllerNamespace)); listErr == nil {
+				for _, r := range allRRs.Items {
+					GinkgoWriter.Printf("   Found RR: %s, fingerprint=%s (len=%d)\n",
+						r.Name, r.Spec.SignalFingerprint, len(r.Spec.SignalFingerprint))
+				}
 			}
 		}
 
 		Expect(len(indexedRRs.Items)).To(Equal(1), "Field index should return 1 RR")
-		Expect(indexedRRs.Items[0].Name).To(Equal("smoke-test-rr"))
+		Expect(indexedRRs.Items[0].Name).To(Equal(rrName))
 		Expect(indexedRRs.Items[0].Spec.SignalFingerprint).To(Equal(testFingerprint))
 
 		GinkgoWriter.Println("✅ SMOKE TEST PASSED: Field index working correctly")

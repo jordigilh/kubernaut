@@ -72,7 +72,7 @@ This document establishes **universal** naming conventions for ALL YAML configur
    - RemediationProcessing (Remediation Processor)
    - AIAnalysis (AI Analysis Controller)
    - WorkflowExecution (Workflow Execution Controller)
-   - KubernetesExecution (Kubernetes Executor)
+   - ~~KubernetesExecution (Kubernetes Executor)~~ (DEPRECATED - ADR-025)
 
 2. **Service Configuration Files** (ADR-030):
    - Gateway config (`pkg/gateway/config/`)
@@ -612,7 +612,9 @@ type WorkflowStepStatus struct {
 
 ---
 
-### KubernetesExecution CRD
+### KubernetesExecution CRD (DEPRECATED - ADR-025)
+
+**⚠️ DEPRECATED**: CRD and service eliminated by ADR-025. Replaced by Tekton TaskRun.
 
 **Location**: Created by Workflow Execution Controller
 **Purpose**: Kubernetes action execution with safety validation
@@ -733,7 +735,7 @@ type WorkflowExecutionSpec struct {
     AIAnalysisRef         string `json:"aiAnalysisRef"`         // Sibling
 }
 
-type KubernetesExecutionSpec struct {
+type KubernetesExecutionSpec struct { // DEPRECATED - ADR-025
     WorkflowExecutionRef string `json:"workflowExecutionRef"` // Parent
 }
 ```

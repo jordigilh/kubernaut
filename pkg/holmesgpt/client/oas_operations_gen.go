@@ -12,7 +12,4 @@ const (
 	IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetOperation OperationName = "IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet"
 	IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetOperation       OperationName = "IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet"
 	ReadinessCheckReadyGetOperation                                              OperationName = "ReadinessCheckReadyGet"
-	RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostOperation                     OperationName = "RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePost"
-	RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetOperation OperationName = "RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGet"
-	RecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGetOperation       OperationName = "RecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGet"
 )

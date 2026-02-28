@@ -79,6 +79,12 @@ type ProcessingSettings struct {
 	Retry         RetrySettings         `yaml:"retry"` // BR-GATEWAY-111: K8s API retry configuration
 }
 
+// DefaultCooldownPeriod is the default post-completion cooldown duration.
+// Signals arriving within this window after a successful remediation are
+// deduplicated to prevent wasted LLM calls on stale data.
+// Aligned with DD-WE-001 (5-minute cooldown) and ADR-EM-001 (EM stabilization window).
+const DefaultCooldownPeriod = 5 * time.Minute
+
 // DeduplicationSettings contains deduplication configuration.
 //
 // DEPRECATED: TTL-based deduplication removed in DD-GATEWAY-011
@@ -94,6 +100,13 @@ type DeduplicationSettings struct {
 	// Migration: Remove this field from your configuration files.
 	// Status-based deduplication is automatic and requires no configuration.
 	TTL time.Duration `yaml:"ttl"` // DEPRECATED: No effect
+
+	// CooldownPeriod is the duration after a successful remediation during which
+	// new signals for the same fingerprint are deduplicated. This prevents
+	// creating RRs from stale alert re-fires and avoids wasted LLM calls.
+	// Default: 5 minutes (aligned with DD-WE-001 and ADR-EM-001).
+	// Set to 0 to disable post-completion cooldown.
+	CooldownPeriod time.Duration `yaml:"cooldownPeriod"`
 }
 
 // Note: EnvironmentSettings struct removed (2025-12-06)
@@ -239,6 +252,9 @@ func DefaultServerConfig() *ServerConfig {
 		},
 		DataStorage: sharedconfig.DefaultDataStorageConfig(),
 		Processing: ProcessingSettings{
+			Deduplication: DeduplicationSettings{
+				CooldownPeriod: DefaultCooldownPeriod,
+			},
 			Retry: DefaultRetrySettings(),
 		},
 	}

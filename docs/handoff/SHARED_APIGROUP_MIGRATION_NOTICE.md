@@ -43,7 +43,7 @@ kind: NotificationRequest
 apiVersion: remediationorchestrator.kubernaut.ai/v1alpha1
 kind: RemediationOrchestrator
 
-apiVersion: kubernetesexecution.kubernaut.io/v1alpha1  # Also needs .io → .ai
+apiVersion: kubernetesexecution.kubernaut.io/v1alpha1  # Also needs .io → .ai (DEPRECATED - ADR-025)
 kind: KubernetesExecution
 ```
 
@@ -192,7 +192,7 @@ kind: RemediationApprovalRequest
 
 ---
 
-### 📋 KubernetesExecution Team (Deferred Service)
+### 📋 KubernetesExecution (DEPRECATED - ADR-025) Team (Deferred Service)
 
 **CRDs to Migrate**: `KubernetesExecution`
 

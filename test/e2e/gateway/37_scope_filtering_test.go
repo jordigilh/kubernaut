@@ -172,10 +172,10 @@ var _ = Describe("Test 37: BR-SCOPE-002 Gateway Scope Filtering (E2E)", Ordered,
 		}, 30*time.Second, 1*time.Second).Should(Or(Equal(http.StatusCreated), Equal(http.StatusAccepted)),
 			"E2E-GW-002-001: Managed signal should return HTTP 201/202 (retries handle informer sync)")
 
-		By("3. Verify RemediationRequest CRD exists in managed namespace")
+		By("3. Verify RemediationRequest CRD exists in controller namespace (ADR-057)")
 		Eventually(func() int {
 			var rrList remediationv1alpha1.RemediationRequestList
-			err := k8sClient.List(ctx, &rrList, client.InNamespace(managedNS))
+			err := k8sClient.List(ctx, &rrList, client.InNamespace(gatewayNamespace))
 			if err != nil {
 				return 0
 			}
@@ -218,11 +218,18 @@ var _ = Describe("Test 37: BR-SCOPE-002 Gateway Scope Filtering (E2E)", Ordered,
 		Expect(respBody).To(HaveKeyWithValue("status", "rejected"),
 			"E2E-GW-002-002: Response status must be 'rejected'")
 
-		By("4. Verify no RemediationRequest was created in unmanaged namespace")
+		By("4. Verify no RemediationRequest was created for unmanaged resource (ADR-057: RRs in gatewayNamespace)")
 		var rrList remediationv1alpha1.RemediationRequestList
-		Expect(k8sClient.List(ctx, &rrList, client.InNamespace(unmanagedNS))).To(Succeed())
-		Expect(rrList.Items).To(BeEmpty(),
-			"E2E-GW-002-002: No RR should exist in unmanaged namespace")
+		Expect(k8sClient.List(ctx, &rrList, client.InNamespace(gatewayNamespace))).To(Succeed())
+		// Filter for RRs targeting unmanaged namespace - none should exist (rejection)
+		var rrForUnmanaged int
+		for i := range rrList.Items {
+			if rrList.Items[i].Spec.TargetResource.Namespace == unmanagedNS {
+				rrForUnmanaged++
+			}
+		}
+		Expect(rrForUnmanaged).To(Equal(0),
+			"E2E-GW-002-002: No RR should target unmanaged namespace")
 
 		testLogger.Info("Signal from unmanaged namespace correctly rejected",
 			"alertName", alertName, "namespace", unmanagedNS)

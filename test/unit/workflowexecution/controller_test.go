@@ -1969,7 +1969,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 		// ========================================
 		// Day 9: P2 Edge Case - Nil FailureDetails
-		// Business Value: AI recovery context quality
+		// Business Value: AI failure context quality
 		// Per Q4 decision: Return generic message, document in authoritative doc
 		// ========================================
 		It("should return generic message when FailureDetails is nil", func() {

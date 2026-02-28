@@ -73,7 +73,7 @@ var _ = Describe("Notification Creation Integration Tests (BR-ORCH-033/034)", fu
 			rr := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      rrName,
-					Namespace: testNamespace,
+					Namespace: ROControllerNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: "b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3",
@@ -101,12 +101,12 @@ var _ = Describe("Notification Creation Integration Tests (BR-ORCH-033/034)", fu
 			rar := &remediationv1.RemediationApprovalRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      rarName,
-					Namespace: testNamespace,
+					Namespace: ROControllerNamespace,
 				},
 				Spec: remediationv1.RemediationApprovalRequestSpec{
 					RemediationRequestRef: corev1.ObjectReference{
 						Name:       rrName,
-						Namespace:  testNamespace,
+						Namespace:  ROControllerNamespace,
 						Kind:       "RemediationRequest",
 						APIVersion: "kubernaut.ai/v1alpha1",
 					},
@@ -157,7 +157,7 @@ var _ = Describe("Notification Creation Integration Tests (BR-ORCH-033/034)", fu
 			nr := &notificationv1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "nr-approval-expiry-" + uuid.New().String()[:8],
-					Namespace: testNamespace,
+					Namespace: ROControllerNamespace,
 				},
 				Spec: notificationv1.NotificationRequestSpec{
 					RemediationRequestRef: &corev1.ObjectReference{
@@ -180,8 +180,7 @@ var _ = Describe("Notification Creation Integration Tests (BR-ORCH-033/034)", fu
 				return err == nil
 			}, timeout, interval).Should(BeTrue())
 
-			Expect(nr.Spec.RemediationRequestRef).ToNot(BeNil())
-			Expect(nr.Spec.RemediationRequestRef.Name).To(Equal(rrName))
+			Expect(nr.Spec.RemediationRequestRef).To(HaveField("Name", Equal(rrName)))
 			Expect(nr.Spec.Metadata).To(HaveKeyWithValue("remediationApprovalRequest", rarName))
 		})
 	})
@@ -193,7 +192,7 @@ var _ = Describe("Notification Creation Integration Tests (BR-ORCH-033/034)", fu
 			rr := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      rrName,
-					Namespace: testNamespace,
+					Namespace: ROControllerNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: "c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
@@ -227,12 +226,12 @@ var _ = Describe("Notification Creation Integration Tests (BR-ORCH-033/034)", fu
 			nr := &notificationv1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "nr-workflow-skip-" + uuid.New().String()[:8],
-					Namespace: testNamespace,
+					Namespace: ROControllerNamespace,
 				},
 				Spec: notificationv1.NotificationRequestSpec{
 					RemediationRequestRef: &corev1.ObjectReference{
 						Name:      rrName,
-						Namespace: testNamespace,
+						Namespace: ROControllerNamespace,
 						Kind:      "RemediationRequest",
 					},
 					Type:     notificationv1.NotificationTypeManualReview,
@@ -252,8 +251,7 @@ var _ = Describe("Notification Creation Integration Tests (BR-ORCH-033/034)", fu
 
 			Expect(nr.Spec.Type).To(Equal(notificationv1.NotificationTypeManualReview))
 			Expect(nr.Spec.Priority).To(Equal(notificationv1.NotificationPriorityHigh))
-			Expect(nr.Spec.RemediationRequestRef).ToNot(BeNil())
-			Expect(nr.Spec.RemediationRequestRef.Name).To(Equal(rrName))
+			Expect(nr.Spec.RemediationRequestRef).To(HaveField("Name", Equal(rrName)))
 		})
 	})
 
@@ -266,7 +264,7 @@ var _ = Describe("Notification Creation Integration Tests (BR-ORCH-033/034)", fu
 			rr := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      rrName,
-					Namespace: testNamespace,
+					Namespace: ROControllerNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: fingerprint,
@@ -289,7 +287,7 @@ var _ = Describe("Notification Creation Integration Tests (BR-ORCH-033/034)", fu
 			nr := &notificationv1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "nr-labels-test-" + uuid.New().String()[:8],
-					Namespace: testNamespace,
+					Namespace: ROControllerNamespace,
 				},
 				Spec: notificationv1.NotificationRequestSpec{
 					RemediationRequestRef: &corev1.ObjectReference{
@@ -311,8 +309,7 @@ var _ = Describe("Notification Creation Integration Tests (BR-ORCH-033/034)", fu
 			}, timeout, interval).Should(BeTrue())
 
 			// Issue #91: Verify spec fields used for correlation instead of labels
-			Expect(nr.Spec.RemediationRequestRef).ToNot(BeNil())
-			Expect(nr.Spec.RemediationRequestRef.Name).To(Equal(rrName))
+			Expect(nr.Spec.RemediationRequestRef).To(HaveField("Name", Equal(rrName)))
 			Expect(nr.Spec.Type).To(Equal(notificationv1.NotificationTypeEscalation))
 			Expect(nr.Spec.Severity).To(Equal("critical"))
 			Expect(nr.Labels).To(BeNil())
@@ -323,9 +320,9 @@ var _ = Describe("Notification Creation Integration Tests (BR-ORCH-033/034)", fu
 
 			// DEBUG: First list all RRs to see what's in the namespace
 			allRRs := &remediationv1.RemediationRequestList{}
-			err := k8sClient.List(ctx, allRRs, client.InNamespace(testNamespace))
+			err := k8sClient.List(ctx, allRRs, client.InNamespace(ROControllerNamespace))
 			Expect(err).ToNot(HaveOccurred())
-			GinkgoWriter.Printf("DEBUG: Found %d RRs in namespace %s\n", len(allRRs.Items), testNamespace)
+			GinkgoWriter.Printf("DEBUG: Found %d RRs in namespace %s\n", len(allRRs.Items), ROControllerNamespace)
 			for i, rr := range allRRs.Items {
 				GinkgoWriter.Printf("  RR %d: name=%s, fingerprint=%s (len=%d)\n", i, rr.Name, rr.Spec.SignalFingerprint, len(rr.Spec.SignalFingerprint))
 			}
@@ -335,7 +332,7 @@ var _ = Describe("Notification Creation Integration Tests (BR-ORCH-033/034)", fu
 			// CRD selectableFields is disabled for K8s 1.27.3 compatibility (requires 1.30+)
 			rrList := &remediationv1.RemediationRequestList{}
 			GinkgoWriter.Printf("DEBUG: Querying with field selector: spec.signalFingerprint=%s (len=%d)\n", fingerprint, len(fingerprint))
-			err = k8sClient.List(ctx, rrList, client.InNamespace(testNamespace), client.MatchingFields{
+			err = k8sClient.List(ctx, rrList, client.InNamespace(ROControllerNamespace), client.MatchingFields{
 				"spec.signalFingerprint": fingerprint, // Full 64-char SHA256 fingerprint
 			})
 			if err != nil {
@@ -348,7 +345,7 @@ var _ = Describe("Notification Creation Integration Tests (BR-ORCH-033/034)", fu
 
 			// Validate NotificationRequests are correlated to the RR via spec.remediationRequestRef
 			nrList := &notificationv1.NotificationRequestList{}
-			err = k8sManager.GetAPIReader().List(ctx, nrList, client.InNamespace(testNamespace))
+			err = k8sManager.GetAPIReader().List(ctx, nrList, client.InNamespace(ROControllerNamespace))
 			Expect(err).ToNot(HaveOccurred())
 			correlatedNRs := 0
 			for _, nr := range nrList.Items {

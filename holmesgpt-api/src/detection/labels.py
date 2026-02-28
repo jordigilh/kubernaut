@@ -87,18 +87,29 @@ class LabelDetector:
         """Detect GitOps management (ArgoCD or Flux).
 
         Precedence per DD-HAPI-018:
-        1. Pod annotation argocd.argoproj.io/instance -> argocd
-        2. Deployment label fluxcd.io/sync-gc-mark -> flux
-        3. Deployment label argocd.argoproj.io/instance -> argocd
-        4. Namespace labels/annotations for ArgoCD/Flux
+        1. Pod annotation argocd.argoproj.io/tracking-id (ArgoCD v3 default)
+        2. Pod annotation argocd.argoproj.io/instance (ArgoCD v2 custom label)
+        3. Deployment label fluxcd.io/sync-gc-mark -> flux
+        4. Deployment label argocd.argoproj.io/instance (ArgoCD v2 custom label)
+        5. Deployment annotation argocd.argoproj.io/tracking-id (ArgoCD v3)
+        6. Namespace labels for ArgoCD/Flux
+        7. Namespace annotations for ArgoCD/Flux
         """
         pod = k8s_context.get("pod_details") or {}
         deploy = k8s_context.get("deployment_details") or {}
         pod_annotations = pod.get("annotations") or {}
         deploy_labels = deploy.get("labels") or {}
+        deploy_annotations = deploy.get("annotations") or {}
         ns_labels = k8s_context.get("namespace_labels") or {}
         ns_annotations = k8s_context.get("namespace_annotations") or {}
 
+        # ArgoCD v3 annotation-based tracking (default in v3.x)
+        if "argocd.argoproj.io/tracking-id" in pod_annotations:
+            result["gitOpsManaged"] = True
+            result["gitOpsTool"] = "argocd"
+            return
+
+        # ArgoCD v2 custom instance label on pod annotations
         if "argocd.argoproj.io/instance" in pod_annotations:
             result["gitOpsManaged"] = True
             result["gitOpsTool"] = "argocd"
@@ -110,6 +121,12 @@ class LabelDetector:
             return
 
         if "argocd.argoproj.io/instance" in deploy_labels:
+            result["gitOpsManaged"] = True
+            result["gitOpsTool"] = "argocd"
+            return
+
+        # ArgoCD v3 tracking-id on deployment annotations
+        if "argocd.argoproj.io/tracking-id" in deploy_annotations:
             result["gitOpsManaged"] = True
             result["gitOpsTool"] = "argocd"
             return
@@ -126,6 +143,11 @@ class LabelDetector:
             return
 
         # Namespace annotations (lowest precedence)
+        if "argocd.argoproj.io/tracking-id" in ns_annotations:
+            result["gitOpsManaged"] = True
+            result["gitOpsTool"] = "argocd"
+            return
+
         if "argocd.argoproj.io/managed" in ns_annotations:
             result["gitOpsManaged"] = True
             result["gitOpsTool"] = "argocd"

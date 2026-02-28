@@ -9,7 +9,7 @@
 
 ## 📋 Executive Summary
 
-**Action Taken**: Restructured AIAnalysis audit type safety documentation to follow established cross-service Design Decision (DD) pattern observed in SignalProcessing and KubernetesExecution teams.
+**Action Taken**: Restructured AIAnalysis audit type safety documentation to follow established cross-service Design Decision (DD) pattern observed in SignalProcessing and KubernetesExecution (DEPRECATED - ADR-025) teams.
 
 **Pattern Applied**: Service-Specific DD Subdocument Structure
 

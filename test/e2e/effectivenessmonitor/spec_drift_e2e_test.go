@@ -74,7 +74,7 @@ var _ = Describe("Spec Drift Guard E2E Tests (DD-EM-002 v1.1)", Label("e2e"), fu
 		)
 
 		// Wait for the EA to complete naturally with "full" reason
-		ea := waitForEAPhase(testNS, name, eav1.PhaseCompleted)
+		ea := waitForEAPhase(name, eav1.PhaseCompleted)
 		realHash := ea.Status.Components.PostRemediationSpecHash
 		Expect(realHash).ToNot(BeEmpty(), "PostRemediationSpecHash should be computed")
 		GinkgoWriter.Printf("EA completed naturally: reason=%s, hash=%s\n",
@@ -90,7 +90,7 @@ var _ = Describe("Spec Drift Guard E2E Tests (DD-EM-002 v1.1)", Label("e2e"), fu
 		Eventually(func(g Gomega) {
 			fetchedEA := &eav1.EffectivenessAssessment{}
 			g.Expect(apiReader.Get(ctx, client.ObjectKey{
-				Namespace: testNS, Name: name,
+				Namespace: controllerNamespace, Name: name,
 			}, fetchedEA)).To(Succeed())
 
 			deadline := metav1.NewTime(time.Now().Add(30 * time.Minute))
@@ -122,7 +122,7 @@ var _ = Describe("Spec Drift Guard E2E Tests (DD-EM-002 v1.1)", Label("e2e"), fu
 		Eventually(func(g Gomega) {
 			fetched := &eav1.EffectivenessAssessment{}
 			g.Expect(apiReader.Get(ctx, client.ObjectKey{
-				Namespace: testNS, Name: name,
+				Namespace: controllerNamespace, Name: name,
 			}, fetched)).To(Succeed())
 			g.Expect(fetched.Status.Phase).To(Equal(eav1.PhaseCompleted))
 			g.Expect(fetched.Status.AssessmentReason).To(Equal(eav1.AssessmentReasonSpecDrift))
@@ -227,7 +227,7 @@ var _ = Describe("Spec Drift Guard E2E Tests (DD-EM-002 v1.1)", Label("e2e"), fu
 		)
 
 		By("2. Waiting for EA to complete normally")
-		ea := waitForEAPhase(testNS, name, eav1.PhaseCompleted)
+		ea := waitForEAPhase(name, eav1.PhaseCompleted)
 
 		// ====================================================================
 		// BUSINESS OUTCOME 1: No drift detected (negative test)

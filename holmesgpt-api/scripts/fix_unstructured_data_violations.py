@@ -24,7 +24,6 @@ def main():
     print("=" * 60)
     print()
     print("✅ Phase 1: incident/prompt_builder.py - COMPLETE")
-    print("✅ Phase 1: recovery/prompt_builder.py - COMPLETE")
     print("✅ Test fixes: test_incident_detected_labels.py - COMPLETE")
     print()
     print("📋 Remaining work:")

@@ -22,7 +22,7 @@
 | **SignalProcessing** | **SP Team** | 🔴 **SCHEMA ONLY** | **3-4 hours** |
 | **RemediationRequest** | **RO Team** | 🔴 **SCHEMA ONLY** | **3-4 hours** |
 | **RemediationApprovalRequest** | **RO Team** | 🔴 **SCHEMA ONLY** | **2-3 hours** |
-| **KubernetesExecution** | **WE Team** | 🔴 **SCHEMA ONLY** | **2-3 hours** |
+| **KubernetesExecution** (DEPRECATED - ADR-025) | **WE Team** | 🔴 **SCHEMA ONLY** | **2-3 hours** |
 
 **Summary**: **4 of 7 CRDs** need conditions infrastructure implemented
 

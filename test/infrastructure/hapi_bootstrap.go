@@ -14,8 +14,7 @@ import (
 // ============================================================================
 //
 // This file contains HolmesGPT-API specific infrastructure helpers for
-// integration tests. HAPI is used by AIAnalysis for incident and recovery
-// analysis via OpenAPI client.
+// integration tests. HAPI is used by AIAnalysis for incident analysis via OpenAPI client.
 //
 // Related:
 // - container_management.go: Generic container start/stop operations

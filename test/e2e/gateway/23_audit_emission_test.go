@@ -27,8 +27,10 @@ import (
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	gateway "github.com/jordigilh/kubernaut/pkg/gateway"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
@@ -349,8 +351,8 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			Expect(gatewayPayload.ResourceName.Value).To(ContainSubstring("audit-test-pod-"),
 				"resource_name should match test pod name")
 
-			// Field 19: remediation_request
-			Expect(gatewayPayload.RemediationRequest.Value).To(Equal(fmt.Sprintf("%s/%s", sharedNamespace, correlationID)),
+			// Field 19: remediation_request (ADR-057: RRs in gatewayNamespace)
+			Expect(gatewayPayload.RemediationRequest.Value).To(Equal(fmt.Sprintf("%s/%s", gatewayNamespace, correlationID)),
 				"remediation_request should be namespace/name format")
 
 			// Field 20: deduplication_status
@@ -425,19 +427,37 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			correlationID := resp1Data.RemediationRequestName
 
 			// Set RR to Pending (required for duplicate detection)
-			crd := getCRDByName(testCtx, testClient, sharedNamespace, correlationID)
-			Expect(crd).ToNot(BeNil())
+			crd := getCRDByName(testCtx, testClient, gatewayNamespace, correlationID)
+			Expect(crd).ToNot(BeNil(), "CRD must exist for status update")
+			Expect(crd.Name).To(Equal(correlationID))
 			crd.Status.OverallPhase = "Pending"
 			err = testClient.Status().Update(testCtx, crd)
 			Expect(err).ToNot(HaveOccurred())
 
 			Eventually(func() string {
-				c := getCRDByName(testCtx, testClient, sharedNamespace, correlationID)
+				c := getCRDByName(testCtx, testClient, gatewayNamespace, correlationID)
 				if c == nil {
 					return ""
 				}
 				return string(c.Status.OverallPhase)
 			}, 3*time.Second, 500*time.Millisecond).Should(Equal("Pending"))
+
+			// Verify Gateway can query this CRD by fingerprint (direct API server check)
+			// Query using the same field selector Gateway uses for deduplication
+			// This ensures the CRD is indexed and queryable before testing duplicate detection
+			// Pattern: 36_deduplication_state_test.go (prevents flaky 201 vs 202 in CI)
+			Eventually(func() int {
+				var rrList remediationv1alpha1.RemediationRequestList
+				err := testClient.List(testCtx, &rrList,
+					client.InNamespace(gatewayNamespace),
+					client.MatchingFields{"spec.signalFingerprint": crd.Spec.SignalFingerprint},
+				)
+				if err != nil {
+					return 0
+				}
+				return len(rrList.Items)
+			}, 10*time.Second, 500*time.Millisecond).Should(Equal(1),
+				"CRD should be queryable by fingerprint before testing deduplication")
 
 			By("2. Send duplicate alert (triggers deduplication)")
 			resp2 := sendWebhook(gatewayURL, "/api/v1/signals/prometheus", prometheusPayload)
@@ -555,8 +575,8 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			Expect(gatewayPayload.Fingerprint).To(Equal(event.ResourceID.Value),
 				"fingerprint in event_data should match resource_id")
 
-			// Field 16: remediation_request
-			Expect(gatewayPayload.RemediationRequest.Value).To(Equal(fmt.Sprintf("%s/%s", sharedNamespace, correlationID)),
+			// Field 16: remediation_request (ADR-057: RRs in gatewayNamespace)
+			Expect(gatewayPayload.RemediationRequest.Value).To(Equal(fmt.Sprintf("%s/%s", gatewayNamespace, correlationID)),
 				"remediation_request should be namespace/name format")
 
 			// Field 17: deduplication_status

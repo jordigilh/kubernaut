@@ -423,7 +423,7 @@ spec:
 
 ### 5. ~~KubernetesExecution CRD~~ → Tekton Pipelines (V1)
 
-**Status**: ⚠️ **DEPRECATED** - Replaced by Tekton Pipelines from V1
+**Status**: ⚠️ **DEPRECATED (ADR-025)** - Replaced by Tekton Pipelines from V1
 
 **Purpose**: Action execution now handled by **Tekton Pipelines** (industry-standard CNCF Graduated project)
 

@@ -72,20 +72,13 @@ var _ = Describe("BR-AUDIT-005 Gap #7: RemediationOrchestrator Error Audit Stand
 	Context("Gap #7 Scenario 1: Timeout Configuration Error", func() {
 		It("should emit standardized error_details on invalid timeout configuration", func() {
 			// Given: RemediationRequest CRD with invalid timeout configuration
-			testNamespace := createTestNamespace("error-audit")
-			defer func() {
-				// Async namespace cleanup
-				go func() {
-					deleteTestNamespace(testNamespace)
-				}()
-			}()
-
-			fingerprint := GenerateTestFingerprint(testNamespace, "timeout-error")
+			// ADR-057: RR must be in ROControllerNamespace; controller only watches this NS
+			fingerprint := GenerateTestFingerprint(ROControllerNamespace, "timeout-error")
 			now := metav1.Now()
 			rr := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "rr-timeout-error",
-					Namespace: testNamespace,
+					Namespace: ROControllerNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: fingerprint,

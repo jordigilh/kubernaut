@@ -166,47 +166,49 @@ var _ = Describe("Test 05: Multi-Namespace Isolation (Integration)", Ordered, La
 		}
 		testLogger.Info("  ✅ Sent 10 signals to namespace 2")
 
-		// Step 3: Verify CRDs in namespace 1
+		// Step 3: List CRDs from controller namespace (ADR-057)
 		testLogger.Info("")
-		testLogger.Info("Step 3: Verify CRDs in namespace 1")
+		testLogger.Info("Step 3: Verify CRDs in controller namespace")
 
-		crdListNS1 := &remediationv1alpha1.RemediationRequestList{}
-		err := k8sClient.List(ctx, crdListNS1, client.InNamespace(testNamespace1))
+		// ADR-057: All RRs in controller namespace; filter by Spec.TargetResource.Namespace
+		crdListAll := &remediationv1alpha1.RemediationRequestList{}
+		err := k8sClient.List(ctx, crdListAll, client.InNamespace(controllerNamespace))
 		Expect(err).ToNot(HaveOccurred())
-		crdCountNS1 := len(crdListNS1.Items)
+
+		var crdListNS1, crdListNS2 []remediationv1alpha1.RemediationRequest
+		for _, crd := range crdListAll.Items {
+			switch crd.Spec.TargetResource.Namespace {
+			case testNamespace1:
+				crdListNS1 = append(crdListNS1, crd)
+			case testNamespace2:
+				crdListNS2 = append(crdListNS2, crd)
+			}
+		}
+		crdCountNS1 := len(crdListNS1)
+		crdCountNS2 := len(crdListNS2)
 
 		Expect(crdCountNS1).To(BeNumerically(">=", 1),
 			"Namespace 1 should have at least 1 CRD")
 		testLogger.Info(fmt.Sprintf("  Namespace 1: %d CRDs", crdCountNS1))
 
-		// Step 4: Verify CRDs in namespace 2
-		testLogger.Info("")
-		testLogger.Info("Step 4: Verify CRDs in namespace 2")
-
-		crdListNS2 := &remediationv1alpha1.RemediationRequestList{}
-		err = k8sClient.List(ctx, crdListNS2, client.InNamespace(testNamespace2))
-		Expect(err).ToNot(HaveOccurred())
-		crdCountNS2 := len(crdListNS2.Items)
-
 		Expect(crdCountNS2).To(BeNumerically(">=", 1),
 			"Namespace 2 should have at least 1 CRD")
 		testLogger.Info(fmt.Sprintf("  Namespace 2: %d CRDs", crdCountNS2))
 
-		// Step 5: Verify isolation
+		// Step 5: Verify isolation (RRs in controller namespace, distinguished by TargetResource.Namespace)
 		testLogger.Info("")
 		testLogger.Info("Step 5: Verify namespace isolation")
 
-		// Verify CRDs in NS1 don't reference NS2 and vice versa
-		for _, crd := range crdListNS1.Items {
-			Expect(crd.Namespace).To(Equal(testNamespace1),
-				"CRD in NS1 should have NS1 namespace")
+		for _, crd := range crdListNS1 {
+			Expect(crd.Namespace).To(Equal(controllerNamespace),
+				"CRD object lives in controller namespace")
 			Expect(crd.Spec.TargetResource.Namespace).To(Equal(testNamespace1),
 				"CRD target resource in NS1 should reference NS1")
 		}
 
-		for _, crd := range crdListNS2.Items {
-			Expect(crd.Namespace).To(Equal(testNamespace2),
-				"CRD in NS2 should have NS2 namespace")
+		for _, crd := range crdListNS2 {
+			Expect(crd.Namespace).To(Equal(controllerNamespace),
+				"CRD object lives in controller namespace")
 			Expect(crd.Spec.TargetResource.Namespace).To(Equal(testNamespace2),
 				"CRD target resource in NS2 should reference NS2")
 		}

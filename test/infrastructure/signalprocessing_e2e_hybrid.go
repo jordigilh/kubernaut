@@ -762,7 +762,7 @@ data:
 }
 
 func waitForSignalProcessingController(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
-	timeout := 120 * time.Second
+	timeout := 5 * time.Minute
 	interval := 5 * time.Second
 	deadline := time.Now().Add(timeout)
 	attempt := 0
@@ -983,6 +983,8 @@ spec:
         args:
         - "--config=/etc/signalprocessing/config.yaml"
         env:
+        - name: KUBERNAUT_CONTROLLER_NAMESPACE
+          value: kubernaut-system
         - name: NAMESPACE
           valueFrom:
             fieldRef:

@@ -513,12 +513,65 @@ func buildAndLoadGatewayImage(clusterName string, writer io.Writer) error {
 	return nil
 }
 
-// gatewayManifest generates the full Gateway multi-document YAML manifest as an inline
-// template. This eliminates static YAML files that can drift from code expectations.
-//
-// Standardization: All kubernaut E2E services use inline YAML templates piped to
-// kubectl apply -f - (same pattern as AA, SP, RO, EM, WE, HAPI).
-func gatewayManifest(imageName string, enableCoverage bool) string {
+// gatewayRBACManifest returns ServiceAccount + ClusterRole + ClusterRoleBinding YAML.
+// Applied first to avoid Kubernetes API propagation race where SA may not be visible
+// when the pod is created.
+func gatewayRBACManifest() string {
+	return `---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gateway
+  namespace: kubernaut-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: gateway-role
+rules:
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["remediationrequests"]
+    verbs: ["create", "get", "list", "watch", "update", "patch"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["remediationrequests/status"]
+    verbs: ["update", "patch"]
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods", "nodes", "services", "secrets", "persistentvolumes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "create", "update", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: gateway-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: gateway-role
+subjects:
+  - kind: ServiceAccount
+    name: gateway
+    namespace: kubernaut-system
+`
+}
+
+// gatewayWorkloadManifest returns ConfigMap + Deployment + Service YAML.
+// Applied after RBAC with 2s propagation delay.
+func gatewayWorkloadManifest(imageName string, enableCoverage bool) string {
 	pullPolicy := GetImagePullPolicy()
 
 	coverageEnvYAML := ""
@@ -606,6 +659,8 @@ spec:
           args:
             - "--config=/etc/gateway/config.yaml"
           env:%s
+            - name: KUBERNAUT_CONTROLLER_NAMESPACE
+              value: kubernaut-system
             - name: POD_NAME
               valueFrom:
                 fieldRef:
@@ -625,6 +680,13 @@ spec:
             - name: config
               mountPath: /etc/gateway
               readOnly: true%s
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 30
           livenessProbe:
             httpGet:
               path: /health
@@ -675,59 +737,23 @@ spec:
       port: 9090
       targetPort: 9090
       nodePort: 30090
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: gateway
-  namespace: kubernaut-system
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: gateway-role
-rules:
-  - apiGroups: ["kubernaut.ai"]
-    resources: ["remediationrequests"]
-    verbs: ["create", "get", "list", "watch", "update", "patch"]
-  - apiGroups: ["kubernaut.ai"]
-    resources: ["remediationrequests/status"]
-    verbs: ["update", "patch"]
-  - apiGroups: [""]
-    resources: ["namespaces"]
-    verbs: ["get", "list", "watch"]
-  - apiGroups: [""]
-    resources: ["configmaps"]
-    verbs: ["get", "list", "watch"]
-  - apiGroups: [""]
-    resources: ["pods", "nodes", "services", "secrets", "persistentvolumes"]
-    verbs: ["get", "list", "watch"]
-  - apiGroups: ["apps"]
-    resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
-    verbs: ["get", "list", "watch"]
-  - apiGroups: ["batch"]
-    resources: ["jobs", "cronjobs"]
-    verbs: ["get", "list", "watch"]
-  - apiGroups: ["coordination.k8s.io"]
-    resources: ["leases"]
-    verbs: ["get", "create", "update", "delete"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: gateway-rolebinding
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: gateway-role
-subjects:
-  - kind: ServiceAccount
-    name: gateway
-    namespace: kubernaut-system
 `, coverageSecurityContextYAML, imageName, pullPolicy, coverageEnvYAML, coverageVolumeMountYAML, coverageVolumeYAML)
 }
 
+// gatewayManifest generates the full Gateway multi-document YAML manifest as an inline
+// template. This eliminates static YAML files that can drift from code expectations.
+// Delegates to gatewayRBACManifest + gatewayWorkloadManifest for external callers
+// (e.g., GatewayCoverageManifest) that need the combined manifest.
+//
+// Standardization: All kubernaut E2E services use inline YAML templates piped to
+// kubectl apply -f - (same pattern as AA, SP, RO, EM, WE, HAPI).
+func gatewayManifest(imageName string, enableCoverage bool) string {
+	return gatewayRBACManifest() + gatewayWorkloadManifest(imageName, enableCoverage)
+}
+
 // deployGatewayService deploys Gateway service using an inline YAML template.
+// Applies RBAC first, then workload after 2s propagation delay to avoid API race
+// where SA may not be visible when the pod is created.
 // Standardized: same pattern as AA, SP, RO, EM, WE, HAPI (no static YAML files).
 func deployGatewayService(ctx context.Context, namespace, kubeconfigPath, gatewayImageName string, writer io.Writer) error {
 	if gatewayImageName == "" {
@@ -736,14 +762,27 @@ func deployGatewayService(ctx context.Context, namespace, kubeconfigPath, gatewa
 
 	_, _ = fmt.Fprintf(writer, "   Using Gateway image: %s\n", gatewayImageName)
 
-	manifest := gatewayManifest(gatewayImageName, false)
-	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
-	cmd.Stdin = strings.NewReader(manifest)
-	cmd.Stdout = writer
-	cmd.Stderr = writer
+	// Apply RBAC first (SA + ClusterRole + ClusterRoleBinding)
+	rbacManifest := gatewayRBACManifest()
+	rbacCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	rbacCmd.Stdin = strings.NewReader(rbacManifest)
+	rbacCmd.Stdout = writer
+	rbacCmd.Stderr = writer
+	if err := rbacCmd.Run(); err != nil {
+		return fmt.Errorf("kubectl apply Gateway RBAC failed: %w", err)
+	}
 
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("kubectl apply Gateway manifest failed: %w", err)
+	_, _ = fmt.Fprintln(writer, "   Waiting 2s for RBAC API propagation...")
+	time.Sleep(2 * time.Second)
+
+	// Apply workload (ConfigMap + Deployment + Service)
+	workloadManifest := gatewayWorkloadManifest(gatewayImageName, false)
+	workloadCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	workloadCmd.Stdin = strings.NewReader(workloadManifest)
+	workloadCmd.Stdout = writer
+	workloadCmd.Stderr = writer
+	if err := workloadCmd.Run(); err != nil {
+		return fmt.Errorf("kubectl apply Gateway workload failed: %w", err)
 	}
 
 	_, _ = fmt.Fprintln(writer, "   Waiting for Gateway pod (may take up to 5 minutes for RBAC + initial startup)...")
@@ -859,17 +898,30 @@ func GatewayCoverageManifest(imageName string) string {
 }
 
 // DeployGatewayCoverageManifest deploys Gateway with coverage instrumentation.
+// Applies RBAC first, then workload after 2s propagation delay to avoid API race.
 // Uses the unified inline YAML template with coverage=true.
 func DeployGatewayCoverageManifest(kubeconfigPath string, gatewayImageName string, writer io.Writer) error {
-	manifest := gatewayManifest(gatewayImageName, true)
+	// Apply RBAC first (SA + ClusterRole + ClusterRoleBinding)
+	rbacManifest := gatewayRBACManifest()
+	rbacCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	rbacCmd.Stdin = strings.NewReader(rbacManifest)
+	rbacCmd.Stdout = writer
+	rbacCmd.Stderr = writer
+	if err := rbacCmd.Run(); err != nil {
+		return fmt.Errorf("failed to apply Gateway RBAC: %w", err)
+	}
 
-	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
-	cmd.Stdin = strings.NewReader(manifest)
-	cmd.Stdout = writer
-	cmd.Stderr = writer
+	_, _ = fmt.Fprintln(writer, "   Waiting 2s for RBAC API propagation...")
+	time.Sleep(2 * time.Second)
 
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to apply Gateway manifest: %w", err)
+	// Apply workload (ConfigMap + Deployment + Service)
+	workloadManifest := gatewayWorkloadManifest(gatewayImageName, true)
+	workloadCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	workloadCmd.Stdin = strings.NewReader(workloadManifest)
+	workloadCmd.Stdout = writer
+	workloadCmd.Stderr = writer
+	if err := workloadCmd.Run(); err != nil {
+		return fmt.Errorf("failed to apply Gateway workload: %w", err)
 	}
 
 	_, _ = fmt.Fprintln(writer, "⏳ Waiting for Gateway to be ready...")

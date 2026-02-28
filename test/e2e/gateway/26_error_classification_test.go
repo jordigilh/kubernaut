@@ -92,10 +92,10 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-111 to 
 			Expect(resp.StatusCode).To(Or(Equal(http.StatusCreated), Equal(http.StatusAccepted)),
 				"Gateway should return 201 (created) or 202 (deduplicated/accepted)")
 
-			// Validate CRD was created in the test namespace
+			// Validate CRD was created in controller namespace (ADR-057)
 			Eventually(func() bool {
 				rrList := &remediationv1alpha1.RemediationRequestList{}
-				listErr := testClient.List(testCtx, rrList, client.InNamespace(testNamespace))
+				listErr := testClient.List(testCtx, rrList, client.InNamespace(gatewayNamespace))
 				return listErr == nil && len(rrList.Items) > 0
 			}, 10*time.Second, 1*time.Second).Should(BeTrue(),
 				"RemediationRequest CRD should exist in test namespace after successful alert processing")

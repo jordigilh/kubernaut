@@ -164,25 +164,46 @@ class HolmesGPTAPIUser(HttpUser):
         self.client.get("/ready", name="/ready")
 
     @task(10)
-    def recovery_analysis(self):
+    def incident_analysis(self):
         """
-        Recovery analysis request (weight: 10)
+        Incident analysis request (weight: 10)
 
         Primary investigation endpoint - highest weight
         """
         alert = random.choice(self.SAMPLE_ALERTS)
+        # Convert to incident request format
+        incident_request = {
+            "incident_id": alert.get("incident_id", "test-incident-001"),
+            "remediation_id": f"rem-{alert.get('incident_id', 'test')}",
+            "signal_name": alert.get("alert_name", "HighCPUUsage"),
+            "severity": alert.get("severity", "warning"),
+            "signal_source": "prometheus",
+            "resource_namespace": alert.get("namespace", "production"),
+            "resource_kind": "Pod",
+            "resource_name": alert.get("resource_name", "api-server"),
+            "error_message": str(alert.get("investigation_results", {})),
+            "environment": "production",
+            "priority": "P2",
+            "risk_tolerance": "medium",
+            "business_category": "standard",
+            "cluster_name": "test-cluster",
+        }
 
         with self.client.post(
-            "/api/v1/recovery/analyze",
-            json=alert,
+            "/api/v1/incident/analyze",
+            json=incident_request,
             catch_response=True,
-            name="/api/v1/recovery/analyze"
+            name="/api/v1/incident/analyze"
         ) as response:
-            if response.status_code == 200:
+            if response.status_code == 202:
                 data = response.json()
-
-                # Validate response structure
-                if "incident_id" in data and "strategies" in data:
+                if "session_id" in data:
+                    response.success()
+                else:
+                    response.failure("Missing session_id in 202 response")
+            elif response.status_code == 200:
+                data = response.json()
+                if "incident_id" in data and "analysis" in data:
                     response.success()
                 else:
                     response.failure("Invalid response structure")

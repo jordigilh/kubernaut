@@ -192,7 +192,7 @@ DD-CRD-002 identifies **4 teams** that need to implement Conditions infrastructu
 | **SignalProcessing** | SignalProcessing | 🔴 Schema only | Jan 3, 2026 | 3-4h |
 | **RemediationOrchestrator** | RemediationRequest | 🔴 Schema only | Jan 3, 2026 | 3-4h |
 | **RemediationOrchestrator** | RemediationApprovalRequest | 🔴 Schema only | Jan 3, 2026 | 2-3h |
-| **WorkflowExecution** | KubernetesExecution | 🔴 Schema only | Jan 3, 2026 | 2-3h |
+| **WorkflowExecution** | KubernetesExecution (DEPRECATED - ADR-025) | 🔴 Schema only | Jan 3, 2026 | 2-3h |
 
 **AIAnalysis is NOT in this list** - already compliant.
 

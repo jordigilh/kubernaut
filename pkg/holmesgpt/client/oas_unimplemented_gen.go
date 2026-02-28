@@ -80,36 +80,3 @@ func (UnimplementedHandler) IncidentSessionStatusEndpointAPIV1IncidentSessionSes
 func (UnimplementedHandler) ReadinessCheckReadyGet(ctx context.Context) (r jx.Raw, _ error) {
 	return r, ht.ErrNotImplemented
 }
-
-// RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePost implements recovery_analyze_endpoint_api_v1_recovery_analyze_post operation.
-//
-// Submit recovery analysis request (async session-based pattern).
-// Business Requirement: BR-HAPI-001 (Recovery analysis endpoint)
-// Business Requirement: BR-AA-HAPI-064.9 (Recovery async submit)
-// Design Decision: DD-AUTH-006 (User attribution for LLM cost tracking)
-// Called by: AIAnalysis Controller via SubmitRecoveryInvestigation()
-// Returns HTTP 202 Accepted with {"session_id": "<uuid>"}.
-// The investigation runs as a background task. Poll via GET /recovery/session/{id}.
-//
-// POST /api/v1/recovery/analyze
-func (UnimplementedHandler) RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePost(ctx context.Context, req *RecoveryRequest) (r RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
-// RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGet implements recovery_session_result_endpoint_api_v1_recovery_session__session_id__result_get operation.
-//
-// Retrieve completed recovery result. BR-AA-HAPI-064.9.
-//
-// GET /api/v1/recovery/session/{session_id}/result
-func (UnimplementedHandler) RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGet(ctx context.Context, params RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetParams) (r RecoverySessionResultEndpointAPIV1RecoverySessionSessionIDResultGetRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
-// RecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGet implements recovery_session_status_endpoint_api_v1_recovery_session__session_id__get operation.
-//
-// Poll recovery session status. BR-AA-HAPI-064.9.
-//
-// GET /api/v1/recovery/session/{session_id}
-func (UnimplementedHandler) RecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGet(ctx context.Context, params RecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGetParams) (r RecoverySessionStatusEndpointAPIV1RecoverySessionSessionIDGetRes, _ error) {
-	return r, ht.ErrNotImplemented
-}

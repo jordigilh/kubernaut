@@ -11,6 +11,8 @@ spec:
     kind: EffectivenessAssessment
     listKind: EffectivenessAssessmentList
     plural: effectivenessassessments
+    shortNames:
+    - ea
     singular: effectivenessassessment
   scope: Namespaced
   versions:
@@ -108,16 +110,11 @@ spec:
                 - Failed
                 - TimedOut
                 type: string
-              signalName:
+              remediationTarget:
                 description: |-
-                  SignalName is the original alert/signal name from the parent RemediationRequest.
-                  Set by the RO at EA creation time from rr.Spec.SignalName.
-                  Used by the audit manager to populate the signal_name field in assessment.completed
-                  events (OBS-1: distinct from CorrelationID which is the RR name).
-                type: string
-              targetResource:
-                description: TargetResource identifies the Kubernetes resource that
-                  was remediated.
+                  RemediationTarget is the resource the workflow modified.
+                  Source: AA.Status.RootCauseAnalysis.AffectedResource (from HAPI RCA resolution).
+                  Used by: spec hash computation, drift detection (DD-EM-003).
                 properties:
                   kind:
                     description: Kind is the Kubernetes resource kind (e.g., "Deployment",
@@ -127,18 +124,49 @@ spec:
                     description: Name is the resource name.
                     type: string
                   namespace:
-                    description: Namespace is the resource namespace.
+                    description: |-
+                      Namespace is the resource namespace.
+                      Empty for cluster-scoped resources (e.g., Node, PersistentVolume).
                     type: string
                 required:
                 - kind
                 - name
-                - namespace
+                type: object
+              signalName:
+                description: |-
+                  SignalName is the original alert/signal name from the parent RemediationRequest.
+                  Set by the RO at EA creation time from rr.Spec.SignalName.
+                  Used by the audit manager to populate the signal_name field in assessment.completed
+                  events (OBS-1: distinct from CorrelationID which is the RR name).
+                type: string
+              signalTarget:
+                description: |-
+                  SignalTarget is the resource that triggered the alert.
+                  Source: RR.Spec.TargetResource (from Gateway alert extraction).
+                  Used by: health assessment, alert resolution, metrics queries (DD-EM-003).
+                properties:
+                  kind:
+                    description: Kind is the Kubernetes resource kind (e.g., "Deployment",
+                      "StatefulSet").
+                    type: string
+                  name:
+                    description: Name is the resource name.
+                    type: string
+                  namespace:
+                    description: |-
+                      Namespace is the resource namespace.
+                      Empty for cluster-scoped resources (e.g., Node, PersistentVolume).
+                    type: string
+                required:
+                - kind
+                - name
                 type: object
             required:
             - config
             - correlationID
             - remediationRequestPhase
-            - targetResource
+            - remediationTarget
+            - signalTarget
             type: object
             x-kubernetes-validations:
             - message: spec is immutable after creation (ADR-001)
@@ -280,6 +308,7 @@ spec:
                 description: Phase is the current lifecycle phase of the assessment.
                 enum:
                 - Pending
+                - Stabilizing
                 - Assessing
                 - Completed
                 - Failed

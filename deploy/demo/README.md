@@ -146,7 +146,6 @@ Each scenario's `README.md` lists its specific prerequisites. All dependencies a
 | **stuck-rollout** | `KubeDeploymentRolloutStuck` | Non-existent image tag | `kubectl rollout undo` | `./deploy/demo/scenarios/stuck-rollout/run.sh` |
 | **slo-burn** | `ErrorBudgetBurn` | Blackbox probe error rate >1.44% | Proactive rollback | `./deploy/demo/scenarios/slo-burn/run.sh` |
 | **memory-escalation** | `ContainerMemoryHigh` | Memory usage exceeds threshold | Increase memory limits | `./deploy/demo/scenarios/memory-escalation/run.sh` |
-| **remediation-retry** | `KubePodCrashLooping` | Bad config persists after first fix | Restart deployment (retry cycle) | `./deploy/demo/scenarios/remediation-retry/run.sh` |
 
 ### Autoscaling and Resources
 

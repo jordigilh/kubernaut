@@ -18,7 +18,7 @@ limitations under the License.
 Session HTTP Endpoint Unit Tests (BR-AA-HAPI-064)
 
 Test Plan: docs/testing/BR-AA-HAPI-064/session_based_pull_test_plan_v1.0.md
-Section: 2.4, 2.5 -- HTTP Endpoints (Incident and Recovery)
+Section: 2.4 -- HTTP Endpoints (Incident)
 
 Tests: UT-HAPI-064-011 through UT-HAPI-064-019
 
@@ -61,28 +61,6 @@ def sample_incident_request():
 
 
 @pytest.fixture
-def sample_recovery_request():
-    """Valid RecoveryRequest body for session endpoint tests (all required fields)."""
-    return {
-        "incident_id": "test-recovery-endpoint-001",
-        "remediation_id": "rem-recovery-endpoint-001",
-        "is_recovery_attempt": True,
-        "recovery_attempt_number": 1,
-        "signal_name": "OOMKilled",
-        "severity": "high",
-        "resource_namespace": "default",
-        "resource_kind": "Pod",
-        "resource_name": "test-pod",
-        "environment": "production",
-        "priority": "P0",
-        "risk_tolerance": "medium",
-        "business_category": "standard",
-        "cluster_name": "test-cluster",
-        "error_message": "Container killed due to OOMKilled",
-    }
-
-
-@pytest.fixture
 def mock_analyze_incident():
     """
     Mock analyze_incident for unit tests.
@@ -107,40 +85,6 @@ def mock_analyze_incident():
 
     with patch(
         "src.extensions.incident.endpoint.analyze_incident",
-        new_callable=AsyncMock,
-    ) as mock:
-        mock.return_value = mock_response
-        yield mock
-
-
-@pytest.fixture
-def mock_analyze_recovery_for_session():
-    """
-    Mock analyze_recovery for session endpoint tests.
-    Returns a minimal valid RecoveryResponse dict so the background task completes successfully.
-    """
-    mock_response = {
-        "incident_id": "test-recovery-endpoint-001",
-        "remediation_id": "rem-recovery-endpoint-001",
-        "can_recover": True,
-        "strategies": [
-            {
-                "action_type": "increase_memory",
-                "confidence": 0.85,
-                "rationale": "Increase memory limit to prevent OOM",
-                "estimated_risk": "low",
-            }
-        ],
-        "primary_recommendation": "increase_memory",
-        "analysis_confidence": 0.85,
-        "needs_human_review": False,
-        "human_review_reason": None,
-        "warnings": [],
-        "alternative_workflows": [],
-    }
-
-    with patch(
-        "src.extensions.recovery.endpoint.analyze_recovery",
         new_callable=AsyncMock,
     ) as mock:
         mock.return_value = mock_response
@@ -264,100 +208,3 @@ class TestIncidentSessionEndpoints:
         )
 
 
-# ========================================
-# 2.5 HTTP Endpoints (Recovery -- Dedicated)
-# ========================================
-
-
-class TestRecoverySessionEndpoints:
-    """Tests for recovery session HTTP endpoints (UT-HAPI-064-016 to 019)."""
-
-    def test_recovery_analyze_returns_202_with_session_id(
-        self, client, sample_recovery_request, mock_analyze_recovery_for_session
-    ):
-        """
-        UT-HAPI-064-016: POST /api/v1/recovery/analyze returns 202 with session_id.
-
-        Business Outcome: Recovery investigations use the same async pattern as incident investigations.
-        BR: BR-AA-HAPI-064.9
-        """
-        response = client.post("/api/v1/recovery/analyze", json=sample_recovery_request)
-
-        assert response.status_code == 202, (
-            f"Expected 202 Accepted for async recovery session, got {response.status_code}"
-        )
-
-        data = response.json()
-        assert "session_id" in data
-
-        # session_id must be a valid UUID
-        parsed = uuid.UUID(data["session_id"])
-        assert str(parsed) == data["session_id"]
-
-    def test_recovery_session_status_returns_200(
-        self, client, sample_recovery_request, mock_analyze_recovery_for_session
-    ):
-        """
-        UT-HAPI-064-017: GET /api/v1/recovery/session/{id} returns status.
-
-        Business Outcome: AA can observe recovery investigation progress.
-        BR: BR-AA-HAPI-064.9
-        """
-        # Create a recovery session
-        create_resp = client.post("/api/v1/recovery/analyze", json=sample_recovery_request)
-        assert create_resp.status_code == 202
-        session_id = create_resp.json()["session_id"]
-
-        # Poll session status
-        response = client.get(f"/api/v1/recovery/session/{session_id}")
-
-        assert response.status_code == 200
-        data = response.json()
-        assert "status" in data
-        assert data["status"] in ("pending", "investigating", "completed", "failed")
-
-    def test_recovery_session_result_returns_response(
-        self, client, sample_recovery_request, mock_analyze_recovery_for_session
-    ):
-        """
-        UT-HAPI-064-018: GET /api/v1/recovery/session/{id}/result returns RecoveryResponse.
-
-        Business Outcome: AA retrieves the full recovery result after completion.
-        BR: BR-AA-HAPI-064.9
-        """
-        # Create recovery session -- background task runs (mocked) synchronously
-        create_resp = client.post("/api/v1/recovery/analyze", json=sample_recovery_request)
-        assert create_resp.status_code == 202
-        session_id = create_resp.json()["session_id"]
-
-        # Session should now be "completed"
-        response = client.get(f"/api/v1/recovery/session/{session_id}/result")
-
-        assert response.status_code == 200, (
-            f"Expected 200 for completed recovery result, got {response.status_code}"
-        )
-
-        data = response.json()
-        assert data["incident_id"] == "test-recovery-endpoint-001"
-        assert data["can_recover"] is True
-
-    def test_recovery_session_result_returns_409_when_not_completed(self, client):
-        """
-        UT-HAPI-064-019: GET /api/v1/recovery/session/{id}/result returns 409 when not completed.
-
-        Business Outcome: AA is told to keep polling if recovery result is not ready yet.
-        BR: BR-AA-HAPI-064.9
-
-        Note: Session created directly via SessionManager to keep in "pending" status.
-        """
-        from src.session.session_manager import get_session_manager
-
-        sm = get_session_manager()
-        session_id = sm.create_session("recovery", {"test": "data"})
-        # Session is "pending" -- no background task started
-
-        response = client.get(f"/api/v1/recovery/session/{session_id}/result")
-
-        assert response.status_code == 409, (
-            f"Expected 409 Conflict for pending recovery result, got {response.status_code}"
-        )

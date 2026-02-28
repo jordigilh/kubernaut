@@ -7,7 +7,7 @@ The Remediation Orchestrator (RemediationRequest Controller) is the **central co
 1. **RemediationProcessing** - Signal enrichment and classification
 2. **AIAnalysis** - HolmesGPT analysis and recommendation generation
 3. **WorkflowExecution** - Workflow orchestration and step management
-4. **KubernetesExecution** - Action execution via Jobs (indirectly via WorkflowExecution)
+4. **KubernetesExecution** (DEPRECATED - ADR-025) - Action execution via Jobs (indirectly via WorkflowExecution)
 
 **Key Characteristic**: This controller **creates** CRDs but **does not contain business logic**. All business logic resides in the downstream controllers.
 

@@ -45,20 +45,6 @@ with open('incident_analysis_test.go', 'w') as f:
 
 print("Fixed incident_analysis_test.go")
 
-# Fix recovery_analysis_test.go - missing comma
-with open('recovery_analysis_test.go', 'r') as f:
-    lines = f.readlines()
-
-# Find line 554 and add comma if missing
-for i in range(len(lines)):
-    if i == 553:  # Line 554 (0-indexed)
-        lines[i] = lines[i].rstrip() + ',\n' if not lines[i].rstrip().endswith(',') else lines[i]
-
-with open('recovery_analysis_test.go', 'w') as f:
-    f.writelines(lines)
-
-print("Fixed recovery_analysis_test.go")
-
 # Fix workflow_catalog_test.go - missing comma
 with open('workflow_catalog_test.go', 'r') as f:
     lines = f.readlines()

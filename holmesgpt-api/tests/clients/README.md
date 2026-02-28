@@ -88,7 +88,6 @@ Class | Method | HTTP request | Description
 *HealthApi* | [**health_check_health_get**](docs/HealthApi.md#health_check_health_get) | **GET** /health | Health Check
 *HealthApi* | [**readiness_check_ready_get**](docs/HealthApi.md#readiness_check_ready_get) | **GET** /ready | Readiness Check
 *IncidentAnalysisApi* | [**incident_analyze_endpoint_api_v1_incident_analyze_post**](docs/IncidentAnalysisApi.md#incident_analyze_endpoint_api_v1_incident_analyze_post) | **POST** /api/v1/incident/analyze | Incident Analyze Endpoint
-*RecoveryAnalysisApi* | [**recovery_analyze_endpoint_api_v1_recovery_analyze_post**](docs/RecoveryAnalysisApi.md#recovery_analyze_endpoint_api_v1_recovery_analyze_post) | **POST** /api/v1/recovery/analyze | Recovery Analyze Endpoint
 
 
 ## Documentation For Models
@@ -96,18 +95,11 @@ Class | Method | HTTP request | Description
  - [AlternativeWorkflow](docs/AlternativeWorkflow.md)
  - [DetectedLabels](docs/DetectedLabels.md)
  - [EnrichmentResults](docs/EnrichmentResults.md)
- - [ExecutionFailure](docs/ExecutionFailure.md)
  - [HTTPValidationError](docs/HTTPValidationError.md)
  - [HumanReviewReason](docs/HumanReviewReason.md)
  - [IncidentRequest](docs/IncidentRequest.md)
  - [IncidentResponse](docs/IncidentResponse.md)
  - [LocationInner](docs/LocationInner.md)
- - [OriginalRCA](docs/OriginalRCA.md)
- - [PreviousExecution](docs/PreviousExecution.md)
- - [RecoveryRequest](docs/RecoveryRequest.md)
- - [RecoveryResponse](docs/RecoveryResponse.md)
- - [RecoveryStrategy](docs/RecoveryStrategy.md)
- - [SelectedWorkflowSummary](docs/SelectedWorkflowSummary.md)
  - [ValidationAttempt](docs/ValidationAttempt.md)
  - [ValidationError](docs/ValidationError.md)
 

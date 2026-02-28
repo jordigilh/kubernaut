@@ -181,6 +181,41 @@ class K8sResourceClient:
             )
             return [], str(e)
 
+    def _list_pods_by_selector_sync(
+        self, namespace: str, match_labels: Dict[str, str]
+    ) -> Tuple[List[Any], Optional[str]]:
+        """Synchronous LIST of Pods in a namespace matching label selector.
+
+        DD-HAPI-018 v1.2: Used by _build_k8s_context to resolve pod context
+        when the RCA target is a PodDisruptionBudget.
+        Returns (items, error_string). error_string is None on success.
+        """
+        self._ensure_initialized()
+        try:
+            label_selector = ",".join(f"{k}={v}" for k, v in match_labels.items())
+            result = self._core_v1.list_namespaced_pod(
+                namespace=namespace, label_selector=label_selector
+            )
+            return result.items, None
+        except ApiException as e:
+            logger.warning("Pod list failed in %s (selector %s): %s", namespace, match_labels, e)
+            return [], str(e)
+        except Exception as e:
+            logger.error("Unexpected error listing Pods in %s: %s", namespace, e)
+            return [], str(e)
+
+    async def list_pods_by_selector(
+        self, namespace: str, match_labels: Dict[str, str]
+    ) -> Tuple[List[Any], Optional[str]]:
+        """Async LIST of Pods matching a label selector.
+
+        DD-HAPI-018 v1.2: Used by _build_k8s_context for PDB target context.
+        Returns (items, error_string). error_string is None on success.
+        """
+        return await asyncio.to_thread(
+            self._list_pods_by_selector_sync, namespace, match_labels
+        )
+
     async def list_network_policies(
         self, namespace: str
     ) -> Tuple[List[Any], Optional[str]]:

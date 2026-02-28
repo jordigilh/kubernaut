@@ -86,7 +86,7 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 				fetched := &remediationv1.RemediationRequest{}
 				if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      rr4.Name,
-					Namespace: ns,
+					Namespace: ROControllerNamespace,
 				}, fetched); err != nil {
 					return ""
 				}
@@ -100,7 +100,7 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 			fetchedRR := &remediationv1.RemediationRequest{}
 			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 				Name:      rr4.Name,
-				Namespace: ns,
+				Namespace: ROControllerNamespace,
 			}, fetchedRR)).To(Succeed())
 
 			if fetchedRR.Status.OverallPhase == "Blocked" {
@@ -132,7 +132,7 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 			// Manually set to Blocked phase (simulating what RO does)
 			Eventually(func() error {
 				rrGet := &remediationv1.RemediationRequest{}
-				if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ns}, rrGet); err != nil {
+				if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ROControllerNamespace}, rrGet); err != nil {
 					return err
 				}
 
@@ -147,10 +147,11 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 
 			// Verify the status was persisted correctly
 			rrFinal := &remediationv1.RemediationRequest{}
-			err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ns}, rrFinal)
+			err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ROControllerNamespace}, rrFinal)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(rrFinal.Status.OverallPhase).To(Equal(remediationv1.PhaseBlocked))
-			Expect(rrFinal.Status.BlockedUntil).ToNot(BeNil())
+			Expect(rrFinal.Status.BlockedUntil).ToNot(BeNil(),
+				"BR-SCOPE-010: Blocked RR must have a BlockedUntil timestamp for backoff")
 			Expect(rrFinal.Status.BlockReason).To(Equal("consecutive_failures_exceeded"))
 		})
 	})
@@ -176,7 +177,7 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 			// Set to Blocked WITHOUT BlockedUntil (manual block)
 			Eventually(func() error {
 				rrGet := &remediationv1.RemediationRequest{}
-				if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ns}, rrGet); err != nil {
+				if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ROControllerNamespace}, rrGet); err != nil {
 					return err
 				}
 
@@ -190,7 +191,7 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 
 			// Verify BlockedUntil is nil
 			rrFinal := &remediationv1.RemediationRequest{}
-			err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ns}, rrFinal)
+			err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ROControllerNamespace}, rrFinal)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(rrFinal.Status.OverallPhase).To(Equal(remediationv1.PhaseBlocked))
 			Expect(rrFinal.Status.BlockedUntil).To(BeNil(),
@@ -227,7 +228,7 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 			rr := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "unique-fp-rr",
-					Namespace: namespace,
+					Namespace: ROControllerNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalName:        "test-unique-fp",
@@ -253,7 +254,7 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 				updated := &remediationv1.RemediationRequest{}
 				if err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
 					Name:      rr.Name,
-					Namespace: rr.Namespace,
+					Namespace: ROControllerNamespace,
 				}, updated); err != nil {
 					return ""
 				}
@@ -262,13 +263,12 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 				"RR with unique fingerprint should not be blocked (no failure history)")
 
 			// Verify: SignalProcessing is created (RR processes normally)
-			Eventually(func() int {
-				spList := &signalprocessingv1.SignalProcessingList{}
-				if err := k8sManager.GetAPIReader().List(ctx, spList, client.InNamespace(namespace)); err != nil {
-					return 0
-				}
-				return len(spList.Items)
-			}, "10s", "500ms").Should(Equal(1),
+			// Filter by RR ref to avoid pollution from parallel tests (all SPs in ROControllerNamespace)
+			spName := "sp-" + rr.Name
+			Eventually(func() bool {
+				sp := &signalprocessingv1.SignalProcessing{}
+				return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: spName, Namespace: ROControllerNamespace}, sp) == nil
+			}, "10s", "500ms").Should(BeTrue(),
 				"RR with unique fingerprint must create SignalProcessing (blocking doesn't interfere)")
 		})
 
@@ -290,7 +290,8 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 		nsB := createTestNamespace("ro-fingerprint-b")
 		defer deleteTestNamespace(nsB)
 
-		sharedFP := "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+		// Unique fingerprint per test to avoid cross-test blocking (parallel tests share ROControllerNamespace)
+		sharedFP := "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4" + uuid.New().String()[:8]
 
 		// PHASE 1: Create 3 failed RRs in namespace A
 		// Each RR progresses naturally to Processing, then we set to Failed
@@ -303,13 +304,13 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 		By(fmt.Sprintf("Verifying all 3 RRs in namespace %s are in Failed status", namespace))
 		Eventually(func() int {
 			rrListA := &remediationv1.RemediationRequestList{}
-			if err := k8sManager.GetAPIReader().List(ctx, rrListA, client.InNamespace(namespace)); err != nil {
+			if err := k8sManager.GetAPIReader().List(ctx, rrListA, client.InNamespace(ROControllerNamespace)); err != nil {
 				GinkgoWriter.Printf("❌ Error listing RRs in namespace A: %v\n", err)
 				return -1
 			}
 			failedCountA := 0
 			for _, rr := range rrListA.Items {
-				if rr.Spec.SignalFingerprint == sharedFP && rr.Status.OverallPhase == "Failed" {
+				if rr.Spec.SignalFingerprint == sharedFP && rr.Spec.TargetResource.Namespace == namespace && rr.Status.OverallPhase == "Failed" {
 					failedCountA++
 				}
 			}
@@ -327,13 +328,13 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 		By(fmt.Sprintf("Verifying namespace %s has 1 failed RR (isolated from namespace A)", nsB))
 		Eventually(func() int {
 			rrListB := &remediationv1.RemediationRequestList{}
-			if err := k8sManager.GetAPIReader().List(ctx, rrListB, client.InNamespace(nsB)); err != nil {
+			if err := k8sManager.GetAPIReader().List(ctx, rrListB, client.InNamespace(ROControllerNamespace)); err != nil {
 				GinkgoWriter.Printf("❌ Error listing RRs in namespace B: %v\n", err)
 				return -1
 			}
 			failedCountB := 0
 			for _, rr := range rrListB.Items {
-				if rr.Spec.SignalFingerprint == sharedFP && rr.Status.OverallPhase == "Failed" {
+				if rr.Spec.SignalFingerprint == sharedFP && rr.Spec.TargetResource.Namespace == nsB && rr.Status.OverallPhase == "Failed" {
 					failedCountB++
 				}
 			}
@@ -351,7 +352,7 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 		Eventually(func() string {
 			fetched := &remediationv1.RemediationRequest{}
 			if err := k8sManager.GetAPIReader().Get(ctx,
-				types.NamespacedName{Name: newRR_A.Name, Namespace: namespace}, fetched); err != nil {
+				types.NamespacedName{Name: newRR_A.Name, Namespace: ROControllerNamespace}, fetched); err != nil {
 				return ""
 			}
 			return string(fetched.Status.OverallPhase)
@@ -367,7 +368,7 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 		Eventually(func() string {
 			fetched := &remediationv1.RemediationRequest{}
 			if err := k8sManager.GetAPIReader().Get(ctx,
-				types.NamespacedName{Name: newRR_B.Name, Namespace: nsB}, fetched); err != nil {
+				types.NamespacedName{Name: newRR_B.Name, Namespace: ROControllerNamespace}, fetched); err != nil {
 				return ""
 			}
 			return string(fetched.Status.OverallPhase)
@@ -389,13 +390,13 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 // ============================================================================
 
 // createRemediationRequestWithFingerprint creates an RR with a specific fingerprint.
-// Used for testing consecutive failure counting across RRs with same fingerprint.
-func createRemediationRequestWithFingerprint(namespace, name, fingerprint string) *remediationv1.RemediationRequest {
+// ADR-057: RR is created in ROControllerNamespace; targetNamespace is for Spec.TargetResource.
+func createRemediationRequestWithFingerprint(targetNamespace, name, fingerprint string) *remediationv1.RemediationRequest {
 	now := metav1.Now()
 	rr := &remediationv1.RemediationRequest{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: namespace,
+			Namespace: ROControllerNamespace,
 		},
 		Spec: remediationv1.RemediationRequestSpec{
 			SignalFingerprint: fingerprint,
@@ -406,7 +407,7 @@ func createRemediationRequestWithFingerprint(namespace, name, fingerprint string
 			TargetResource: remediationv1.ResourceIdentifier{
 				Kind:      "Deployment",
 				Name:      "test-app",
-				Namespace: namespace,
+				Namespace: targetNamespace,
 			},
 			FiringTime:   now,
 			ReceivedTime: now,
@@ -420,7 +421,7 @@ func createRemediationRequestWithFingerprint(namespace, name, fingerprint string
 	
 	Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 	GinkgoWriter.Printf("✅ Created RR with fingerprint: %s/%s (fingerprint: %s...)\n",
-		namespace, name, fingerprint[:16])
+		ROControllerNamespace, name, fingerprint[:16])
 	return rr
 }
 
@@ -447,19 +448,19 @@ func createFailedRemediationRequestWithFingerprint(namespace, name, fingerprint 
 	// Controller creates SignalProcessing CRD and updates RR status
 	Eventually(func() string {
 		fetched := &remediationv1.RemediationRequest{}
-		if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, fetched); err != nil {
+		if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: name, Namespace: ROControllerNamespace}, fetched); err != nil {
 			return ""
 		}
 		return string(fetched.Status.OverallPhase)
 	}, timeout, interval).Should(Equal("Processing"),
-		"Controller should naturally progress %s/%s to Processing", namespace, name)
+		"Controller should naturally progress %s/%s to Processing", ROControllerNamespace, name)
 
-	GinkgoWriter.Printf("✅ RR naturally progressed to Processing: %s/%s\n", namespace, name)
+	GinkgoWriter.Printf("✅ RR naturally progressed to Processing: %s/%s\n", ROControllerNamespace, name)
 
 	// Step 3: Now set to Failed (controller has finished initial work, minimal race)
 	Eventually(func() error {
 		fetched := &remediationv1.RemediationRequest{}
-		if err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, fetched); err != nil {
+		if err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: ROControllerNamespace}, fetched); err != nil {
 			return err
 		}
 
@@ -471,18 +472,18 @@ func createFailedRemediationRequestWithFingerprint(namespace, name, fingerprint 
 		fetched.Status.FailureReason = &failReason
 
 		return k8sClient.Status().Update(ctx, fetched)
-	}, timeout, interval).Should(Succeed(), "Should set Failed status for %s/%s", namespace, name)
+	}, timeout, interval).Should(Succeed(), "Should set Failed status for %s/%s", ROControllerNamespace, name)
 
 	// Step 4: Verify Failed status durably persisted
 	Eventually(func() string {
 		fetched := &remediationv1.RemediationRequest{}
-		if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, fetched); err != nil {
+		if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: name, Namespace: ROControllerNamespace}, fetched); err != nil {
 			return ""
 		}
 		return string(fetched.Status.OverallPhase)
-	}, timeout, interval).Should(Equal("Failed"), "Should confirm Failed phase persisted for %s/%s", namespace, name)
+	}, timeout, interval).Should(Equal("Failed"), "Should confirm Failed phase persisted for %s/%s", ROControllerNamespace, name)
 
-	GinkgoWriter.Printf("✅ Set to Failed (after natural progression): %s/%s\n", namespace, name)
+	GinkgoWriter.Printf("✅ Set to Failed (after natural progression): %s/%s\n", ROControllerNamespace, name)
 	return rr
 }
 

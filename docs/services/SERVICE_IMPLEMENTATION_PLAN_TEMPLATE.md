@@ -6666,7 +6666,7 @@ deploy-kind-[service]:
 - SignalProcessing (renamed from RemediationProcessor)
 - AIAnalysis
 - WorkflowExecution
-- KubernetesExecutor
+- KubernetesExecutor (DEPRECATED - ADR-025)
 - RemediationOrchestrator
 
 ---

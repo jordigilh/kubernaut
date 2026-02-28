@@ -99,7 +99,7 @@
 - Structured logging for retry attempts
 - Prometheus metrics integration
 
-**Category C: KubernetesExecution Creation Errors** (Retry with Status Update)
+**Category C: KubernetesExecution (DEPRECATED - ADR-025) Creation Errors** (Retry with Status Update)
 - 5 retry attempts with backoff
 - Permanent vs transient error differentiation
 - Status updates during retry process

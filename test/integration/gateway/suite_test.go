@@ -28,6 +28,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -71,6 +73,9 @@ import (
 // ========================================
 
 const (
+	// controllerNamespace is where all RemediationRequests are created (ADR-057)
+	controllerNamespace = "kubernaut-system"
+
 	// Port Configuration - Per DD-TEST-001: Port Allocation Strategy
 	gatewayPostgresPort     = 15437 // PostgreSQL port
 	gatewayRedisPort        = 16380 // Redis port
@@ -176,6 +181,9 @@ var _ = SynchronizedBeforeSuite(
 		logger.Info(fmt.Sprintf("Gateway Integration Suite - PHASE 2: Process %d Setup", processNum))
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
+		// ADR-057: Set controller namespace for CRD creation and cache restriction
+		os.Setenv("KUBERNAUT_CONTROLLER_NAMESPACE", "kubernaut-system")
+
 		// Create root context
 		ctx, cancel = context.WithCancel(context.Background())
 
@@ -240,6 +248,16 @@ var _ = SynchronizedBeforeSuite(
 		// Create K8s client
 		k8sClient, err = client.New(k8sConfig, client.Options{Scheme: scheme})
 		Expect(err).ToNot(HaveOccurred(), "Failed to create K8s client")
+
+		// Create kubernaut-system namespace for controller (ADR-057: RRs live in controller namespace)
+		// Pattern: same as remediationorchestrator, aianalysis, effectivenessmonitor integration suites
+		systemNs := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{Name: "kubernaut-system"},
+		}
+		err = k8sClient.Create(ctx, systemNs)
+		if err != nil && !apierrors.IsAlreadyExists(err) {
+			Expect(err).ToNot(HaveOccurred(), "Failed to create kubernaut-system namespace")
+		}
 
 		logger.Info(fmt.Sprintf("[Process %d] ✅ K8s client created", processNum))
 		logger.Info(fmt.Sprintf("[Process %d] ✅ Suite setup complete", processNum))

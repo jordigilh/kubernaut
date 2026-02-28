@@ -335,7 +335,7 @@ Gateway creates CRD → Remediation Orchestrator watches and orchestrates:
 │ 1. RemediationProcessing
 │ 2. AIAnalysis        │
 │ 3. WorkflowExecution │
-│ 4. KubernetesExecution
+│ 4. KubernetesExecution (DEPRECATED - ADR-025)
 └──────────────────────┘
 ```
 

@@ -40,6 +40,11 @@ import (
 const (
 	// PhasePending indicates the EA has been created by RO but EM has not yet reconciled it.
 	PhasePending = "Pending"
+	// PhaseStabilizing indicates EM is waiting for the stabilization window to elapse
+	// before beginning assessment checks. Derived timing fields (ValidityDeadline,
+	// PrometheusCheckAfter, AlertManagerCheckAfter) are pre-computed and persisted
+	// in this phase so operators can observe the assessment timeline immediately.
+	PhaseStabilizing = "Stabilizing"
 	// PhaseAssessing indicates EM is actively performing assessment checks.
 	PhaseAssessing = "Assessing"
 	// PhaseCompleted indicates all assessment checks have finished (or validity expired).
@@ -87,9 +92,17 @@ type EffectivenessAssessmentSpec struct {
 	// +kubebuilder:validation:Enum=Completed;Failed;TimedOut
 	RemediationRequestPhase string `json:"remediationRequestPhase"`
 
-	// TargetResource identifies the Kubernetes resource that was remediated.
+	// SignalTarget is the resource that triggered the alert.
+	// Source: RR.Spec.TargetResource (from Gateway alert extraction).
+	// Used by: health assessment, alert resolution, metrics queries (DD-EM-003).
 	// +kubebuilder:validation:Required
-	TargetResource TargetResource `json:"targetResource"`
+	SignalTarget TargetResource `json:"signalTarget"`
+
+	// RemediationTarget is the resource the workflow modified.
+	// Source: AA.Status.RootCauseAnalysis.AffectedResource (from HAPI RCA resolution).
+	// Used by: spec hash computation, drift detection (DD-EM-003).
+	// +kubebuilder:validation:Required
+	RemediationTarget TargetResource `json:"remediationTarget"`
 
 	// Config contains the assessment configuration parameters.
 	// +kubebuilder:validation:Required
@@ -127,8 +140,9 @@ type TargetResource struct {
 	// +kubebuilder:validation:Required
 	Name string `json:"name"`
 	// Namespace is the resource namespace.
-	// +kubebuilder:validation:Required
-	Namespace string `json:"namespace"`
+	// Empty for cluster-scoped resources (e.g., Node, PersistentVolume).
+	// +optional
+	Namespace string `json:"namespace,omitempty"`
 }
 
 // EAConfig contains assessment configuration set by RO at creation time.
@@ -149,7 +163,7 @@ type EAConfig struct {
 // EffectivenessAssessmentStatus defines the observed state of an EffectivenessAssessment.
 type EffectivenessAssessmentStatus struct {
 	// Phase is the current lifecycle phase of the assessment.
-	// +kubebuilder:validation:Enum=Pending;Assessing;Completed;Failed
+	// +kubebuilder:validation:Enum=Pending;Stabilizing;Assessing;Completed;Failed
 	Phase string `json:"phase,omitempty"`
 
 	// ValidityDeadline is the absolute time after which the assessment expires.
@@ -228,6 +242,7 @@ type EAComponents struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:resource:shortName=ea
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.assessmentReason`
 // +kubebuilder:printcolumn:name="CorrelationID",type=string,JSONPath=`.spec.correlationID`

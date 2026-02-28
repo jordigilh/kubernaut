@@ -49,6 +49,7 @@ import (
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -85,13 +86,16 @@ var _ = Describe("Test 34: DD-GATEWAY-011 Status-Based Tracking (Integration)", 
 			testLogger.Info("⚠️  Test FAILED - Preserving namespace for debugging",
 				"namespace", testNamespace)
 		} else {
-			// Cleanup CRDs in namespace
+			// Cleanup CRDs in controller namespace (ADR-057)
 			crdList := &remediationv1alpha1.RemediationRequestList{}
-			_ = k8sClient.List(ctx, crdList, client.InNamespace(testNamespace))
+			_ = k8sClient.List(ctx, crdList, client.InNamespace(controllerNamespace))
 			for i := range crdList.Items {
-				_ = k8sClient.Delete(ctx, &crdList.Items[i])
+				// Only delete RRs targeting our test namespace
+				if crdList.Items[i].Spec.TargetResource.Namespace == testNamespace {
+					_ = k8sClient.Delete(ctx, &crdList.Items[i])
+				}
 			}
-			// Cleanup namespace
+			// Cleanup workload namespace
 			helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 		}
 	})
@@ -129,7 +133,7 @@ var _ = Describe("Test 34: DD-GATEWAY-011 Status-Based Tracking (Integration)", 
 
 			testLogger.Info("Step 2: Verify CRD was created")
 			crd := &remediationv1alpha1.RemediationRequest{}
-			err = k8sClient.Get(ctx, client.ObjectKey{Namespace: testNamespace, Name: crdName}, crd)
+			err = k8sClient.Get(ctx, client.ObjectKey{Namespace: controllerNamespace, Name: crdName}, crd)
 			Expect(err).ToNot(HaveOccurred(), "CRD should exist")
 
 		testLogger.Info("Step 3: Set CRD state to Pending (RO has picked it up)")
@@ -140,7 +144,7 @@ var _ = Describe("Test 34: DD-GATEWAY-011 Status-Based Tracking (Integration)", 
 		// Wait for status update to propagate (K8s API eventual consistency)
 		Eventually(func() string {
 			var updated remediationv1alpha1.RemediationRequest
-			_ = k8sClient.Get(ctx, client.ObjectKey{Namespace: testNamespace, Name: crdName}, &updated)
+			_ = k8sClient.Get(ctx, client.ObjectKey{Namespace: controllerNamespace, Name: crdName}, &updated)
 			return string(updated.Status.OverallPhase)
 		}, 10*time.Second, 500*time.Millisecond).Should(Equal("Pending"),
 			"Status update should propagate before deduplication check")
@@ -153,16 +157,16 @@ var _ = Describe("Test 34: DD-GATEWAY-011 Status-Based Tracking (Integration)", 
 
 			testLogger.Info("Step 5: BUSINESS OUTCOME - RO can see duplicate count in RR status")
 			// Refresh CRD to see status updates
-			err = k8sClient.Get(ctx, client.ObjectKey{Namespace: testNamespace, Name: crdName}, crd)
+			err = k8sClient.Get(ctx, client.ObjectKey{Namespace: controllerNamespace, Name: crdName}, crd)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Business requirement: RO needs to see deduplication data in status
-			Expect(crd.Status.Deduplication).ToNot(BeNil(),
-				"Duplicate tracking should be visible to RO (BR-GATEWAY-181)")
+			Expect(crd.Status.Deduplication).ToNot(BeNil(), "Deduplication status must be populated")
 			Expect(crd.Status.Deduplication.OccurrenceCount).To(BeNumerically(">=", 1),
-				"RO needs occurrence count for prioritization")
+				"Duplicate tracking should be visible to RO (BR-GATEWAY-181)")
 			Expect(crd.Status.Deduplication.LastSeenAt).ToNot(BeNil(),
 				"RO needs timestamp for SLA tracking")
+			Expect(crd.Status.Deduplication.LastSeenAt.IsZero()).To(BeFalse())
 
 			testLogger.Info("✅ RO can read duplicate tracking from RR status",
 				"occurrences", crd.Status.Deduplication.OccurrenceCount,
@@ -197,7 +201,7 @@ var _ = Describe("Test 34: DD-GATEWAY-011 Status-Based Tracking (Integration)", 
 
 			testLogger.Info("Step 2: Set incident to Pending (being processed)")
 			crd := &remediationv1alpha1.RemediationRequest{}
-			err = k8sClient.Get(ctx, client.ObjectKey{Namespace: testNamespace, Name: crdName}, crd)
+			err = k8sClient.Get(ctx, client.ObjectKey{Namespace: controllerNamespace, Name: crdName}, crd)
 			Expect(err).ToNot(HaveOccurred())
 
 		crd.Status.OverallPhase = "Pending"
@@ -207,7 +211,7 @@ var _ = Describe("Test 34: DD-GATEWAY-011 Status-Based Tracking (Integration)", 
 		// Wait for status update to propagate
 		Eventually(func() string {
 			var updated remediationv1alpha1.RemediationRequest
-			_ = k8sClient.Get(ctx, client.ObjectKey{Namespace: testNamespace, Name: crdName}, &updated)
+			_ = k8sClient.Get(ctx, client.ObjectKey{Namespace: controllerNamespace, Name: crdName}, &updated)
 			return string(updated.Status.OverallPhase)
 		}, 10*time.Second, 500*time.Millisecond).Should(Equal("Pending"),
 			"Status update should propagate before deduplication check")
@@ -225,13 +229,12 @@ var _ = Describe("Test 34: DD-GATEWAY-011 Status-Based Tracking (Integration)", 
 			"Third duplicate should also return StatusDeduplicated")
 
 			testLogger.Info("Step 5: BUSINESS OUTCOME - Accurate occurrence count for SLA reporting")
-			err = k8sClient.Get(ctx, client.ObjectKey{Namespace: testNamespace, Name: crdName}, crd)
+			err = k8sClient.Get(ctx, client.ObjectKey{Namespace: controllerNamespace, Name: crdName}, crd)
 			Expect(err).ToNot(HaveOccurred())
 
-			Expect(crd.Status.Deduplication).ToNot(BeNil(),
-				"Duplicate tracking should be visible to RO")
+			Expect(crd.Status.Deduplication).ToNot(BeNil(), "Deduplication status must be populated")
 			Expect(crd.Status.Deduplication.OccurrenceCount).To(BeNumerically(">=", 2),
-				"SLA reporting requires accurate occurrence count (BR-GATEWAY-181)")
+				"Duplicate tracking should be visible to RO; SLA reporting requires accurate occurrence count (BR-GATEWAY-181)")
 
 			testLogger.Info("✅ SLA Report - Alert occurrence count",
 				"occurrences", crd.Status.Deduplication.OccurrenceCount)
@@ -271,7 +274,7 @@ var _ = Describe("Test 34: DD-GATEWAY-011 Status-Based Tracking (Integration)", 
 
 			testLogger.Info("Step 2: Set incident to Pending (remediation in progress)")
 			crd := &remediationv1alpha1.RemediationRequest{}
-			err = k8sClient.Get(ctx, client.ObjectKey{Namespace: testNamespace, Name: crdName}, crd)
+			err = k8sClient.Get(ctx, client.ObjectKey{Namespace: controllerNamespace, Name: crdName}, crd)
 			Expect(err).ToNot(HaveOccurred())
 
 		crd.Status.OverallPhase = "Pending"
@@ -281,7 +284,7 @@ var _ = Describe("Test 34: DD-GATEWAY-011 Status-Based Tracking (Integration)", 
 		// Wait for status update to propagate
 		Eventually(func() string {
 			var updated remediationv1alpha1.RemediationRequest
-			_ = k8sClient.Get(ctx, client.ObjectKey{Namespace: testNamespace, Name: crdName}, &updated)
+			_ = k8sClient.Get(ctx, client.ObjectKey{Namespace: controllerNamespace, Name: crdName}, &updated)
 			return string(updated.Status.OverallPhase)
 		}, 10*time.Second, 500*time.Millisecond).Should(Equal("Pending"),
 			"Status update should propagate before deduplication check")
@@ -296,10 +299,12 @@ var _ = Describe("Test 34: DD-GATEWAY-011 Status-Based Tracking (Integration)", 
 			}
 
 			testLogger.Info("Step 4: BUSINESS OUTCOME - RO sees high occurrence count (storm indicator)")
-			err = k8sClient.Get(ctx, client.ObjectKey{Namespace: testNamespace, Name: crdName}, crd)
+			err = k8sClient.Get(ctx, client.ObjectKey{Namespace: controllerNamespace, Name: crdName}, crd)
 			Expect(err).ToNot(HaveOccurred())
 
-			Expect(crd.Status.Deduplication).ToNot(BeNil())
+			Expect(crd.Status.Deduplication).ToNot(BeNil(), "Deduplication status must be populated")
+			Expect(crd.Status.Deduplication.OccurrenceCount).To(BeNumerically(">=", 5),
+				"Status.deduplication must track storm pattern")
 			occurrenceCount := crd.Status.Deduplication.OccurrenceCount
 			Expect(occurrenceCount).To(BeNumerically(">=", 5),
 				"High occurrence count indicates storm pattern (BR-GATEWAY-182)")
@@ -322,6 +327,7 @@ var _ = Describe("Test 34: DD-GATEWAY-011 Status-Based Tracking (Integration)", 
 				"Storm pattern: 5+ occurrences indicates persistent issue")
 			Expect(crd.Status.Deduplication.LastSeenAt).ToNot(BeNil(),
 				"LastSeenAt required for SLA tracking")
+			Expect(crd.Status.Deduplication.LastSeenAt.IsZero()).To(BeFalse())
 
 			testLogger.Info("✅ Test 34 PASSED: Status-based deduplication tracking validated",
 				"occurrences", occurrenceCount)

@@ -65,7 +65,7 @@ src/extensions/incident/
 Incident Analysis Endpoint
 
 Business Requirements: BR-HAPI-002 (Incident Analysis)
-Design Decision: DD-RECOVERY-003 (DetectedLabels for workflow filtering)
+Design Decision: DD-HAPI-001 (DetectedLabels for workflow filtering)
 
 This package was refactored from a single 1,593-line file into focused modules.
 Imports are re-exported for backward compatibility.

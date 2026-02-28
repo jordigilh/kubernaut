@@ -63,20 +63,13 @@ var _ = Describe("Gap #8: TimeoutConfig Audit Capture", func() {
 	Context("Scenario 1: Controller Initializes Default TimeoutConfig", func() {
 		It("should emit orchestrator.lifecycle.created with default timeout_config", func() {
 			// Given: RemediationRequest CRD without custom TimeoutConfig
-			testNamespace := createTestNamespace("gap8-defaults")
-			defer func() {
-				// Async namespace cleanup
-				go func() {
-					deleteTestNamespace(testNamespace)
-				}()
-			}()
-
-			fingerprint := GenerateTestFingerprint(testNamespace, "gap8-defaults")
+			// ADR-057: RR must be in ROControllerNamespace; controller only watches this NS
+			fingerprint := GenerateTestFingerprint(ROControllerNamespace, "gap8-defaults")
 			now := metav1.Now()
 			rr := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "rr-gap8-defaults",
-					Namespace: testNamespace,
+					Namespace: ROControllerNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: fingerprint,
@@ -138,13 +131,13 @@ correlationID := rr.Name
 			Expect(event.EventAction).To(Equal(roaudit.ActionCreated))
 			Expect(event.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeSuccess))
 			Expect(event.CorrelationID).To(Equal(correlationID))
-			Expect(event.Namespace.Value).To(Equal(testNamespace))
+			Expect(event.Namespace.Value).To(Equal(ROControllerNamespace))
 
 			// Validate TimeoutConfig payload (Gap #8 requirement)
 			// Per DD-AUDIT-004: Use strongly-typed access (not type assertion)
 			payload := event.EventData.RemediationOrchestratorAuditPayload
 			Expect(payload.RrName).To(Equal("rr-gap8-defaults"))
-			Expect(payload.Namespace).To(Equal(testNamespace))
+			Expect(payload.Namespace).To(Equal(ROControllerNamespace))
 
 			// Gap #8 Critical Validation: TimeoutConfig must be captured
 			Expect(payload.TimeoutConfig.IsSet()).To(BeTrue(),
@@ -160,7 +153,7 @@ correlationID := rr.Name
 			// Validate RR status was initialized with TimeoutConfig
 			Eventually(func() bool {
 				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
-					Namespace: testNamespace,
+					Namespace: ROControllerNamespace,
 					Name:      "rr-gap8-defaults",
 				}, rr)
 				if err != nil {
@@ -170,10 +163,10 @@ correlationID := rr.Name
 			}, 5*time.Second, 500*time.Millisecond).Should(BeTrue(),
 				"RR status.timeoutConfig should be initialized by controller")
 
-			Expect(rr.Status.TimeoutConfig.Global).ToNot(BeNil())
-			Expect(rr.Status.TimeoutConfig.Processing).ToNot(BeNil())
-			Expect(rr.Status.TimeoutConfig.Analyzing).ToNot(BeNil())
-			Expect(rr.Status.TimeoutConfig.Executing).ToNot(BeNil())
+			Expect(rr.Status.TimeoutConfig.Global).To(HaveField("Duration", BeNumerically(">", 0)), "Global timeout must be positive")
+			Expect(rr.Status.TimeoutConfig.Processing).To(HaveField("Duration", BeNumerically(">", 0)), "Processing timeout must be positive")
+			Expect(rr.Status.TimeoutConfig.Analyzing).To(HaveField("Duration", BeNumerically(">", 0)), "Analyzing timeout must be positive")
+			Expect(rr.Status.TimeoutConfig.Executing).To(HaveField("Duration", BeNumerically(">", 0)), "Executing timeout must be positive")
 		})
 	})
 
@@ -196,19 +189,13 @@ correlationID := rr.Name
 	Context("Scenario 3: Event Timing Validation", func() {
 		It("should emit lifecycle.created AFTER status.timeoutConfig initialization", func() {
 			// Given: New RemediationRequest
-			testNamespace := createTestNamespace("gap8-timing")
-			defer func() {
-				go func() {
-					deleteTestNamespace(testNamespace)
-				}()
-			}()
-
-			fingerprint := GenerateTestFingerprint(testNamespace, "gap8-timing")
+			// ADR-057: RR must be in ROControllerNamespace; controller only watches this NS
+			fingerprint := GenerateTestFingerprint(ROControllerNamespace, "gap8-timing")
 			now := metav1.Now()
 			rr := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "rr-gap8-timing",
-					Namespace: testNamespace,
+					Namespace: ROControllerNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: fingerprint,

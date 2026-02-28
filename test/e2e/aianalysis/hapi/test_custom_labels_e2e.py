@@ -10,8 +10,7 @@ NOTE: These tests are EXPECTED TO FAIL until Data Storage implements custom_labe
 
 Tests verify:
 1. Incident endpoint passes custom_labels to workflow search
-2. Recovery endpoint passes custom_labels to workflow search
-3. custom_labels structure is correctly serialized in API requests
+2. custom_labels structure is correctly serialized in API requests
 
 INTEGRATION TEST COMPLIANCE:
 Per TESTING_GUIDELINES.md:614 - Integration tests MUST use real services via podman-compose.
@@ -29,10 +28,7 @@ sys.path.insert(0, 'tests/clients')
 
 from holmesgpt_api_client import ApiClient, Configuration
 from holmesgpt_api_client.api.incident_analysis_api import IncidentAnalysisApi
-from holmesgpt_api_client.api.recovery_analysis_api import RecoveryAnalysisApi
 from holmesgpt_api_client.models.incident_request import IncidentRequest
-from holmesgpt_api_client.models.recovery_request import RecoveryRequest
-from holmesgpt_api_client.models.previous_execution import PreviousExecution
 from holmesgpt_api_client.exceptions import ApiException
 
 
@@ -165,148 +161,6 @@ class TestIncidentEndpointCustomLabels:
 
         # Assert: Request succeeded
         assert response.incident_id == "test-incident-003"
-
-
-class TestRecoveryEndpointCustomLabels:
-    """Integration tests for recovery endpoint with custom_labels (DD-HAPI-001)"""
-
-    def test_recovery_request_with_custom_labels_in_enrichment_results(self, hapi_service_url):
-        """DD-HAPI-001: Recovery request with customLabels should pass them to workflow search via OpenAPI client"""
-        # Arrange: Create OpenAPI client
-        config = Configuration(host=hapi_service_url)
-        client = ApiClient(configuration=config)
-        recovery_api = RecoveryAnalysisApi(client)
-
-        # Build typed request with custom labels
-        recovery_request = RecoveryRequest(
-            incident_id="test-incident-recovery-001",
-            remediation_id="req-2025-11-30-recovery001",
-            signal_type="OOMKilled",
-            severity="critical",
-            signal_source="prometheus",
-            resource_namespace="production",
-            resource_kind="Deployment",
-            resource_name="payment-service",
-            error_message="OOMKilled after memory increase workflow failed",
-            environment="production",
-            priority="P0",
-            risk_tolerance="low",
-            business_category="revenue-critical",
-            cluster_name="prod-cluster-1",
-            is_recovery_attempt=True,
-            recovery_attempt_number=1,
-            previous_execution=PreviousExecution(
-                workflow_execution_ref="we-test-001",
-                original_rca={
-                    "summary": "Container exceeded memory limits",
-                    "signal_type": "OOMKilled",
-                    "severity": "critical",
-                    "contributing_factors": ["memory leak", "high load"]
-                },
-                selected_workflow={
-                    "workflow_id": "oom-memory-increase-v1",
-                    "version": "v1.0.0",
-                    "execution_bundle": "quay.io/kubernaut/oom-remediation:v1.0.0",
-                    "parameters": {"memory_increment": "256Mi"},
-                    "rationale": "Increase memory limits to prevent OOM"
-                },
-                failure={
-                    "failed_step_index": 0,
-                    "failed_step_name": "validate-quota",
-                    "reason": "InsufficientMemory",
-                    "message": "Cannot increase memory beyond quota",
-                    "exit_code": 1,
-                    "failed_at": "2025-11-30T10:00:00Z",
-                    "execution_time": "30s"
-                }
-            ),
-            enrichment_results={
-                "kubernetesContext": {"namespace": "production"},
-                "detectedLabels": {
-                    "gitOpsManaged": True,
-                    "pdbProtected": True
-                },
-                "customLabels": {
-                    "constraint": ["cost-constrained"],
-                    "team": ["name=payments"],
-                    "compliance": ["pci-dss"]
-                },
-                "enrichmentQuality": 0.95
-            }
-        )
-
-        # Act: Call API via OpenAPI client
-        response = recovery_api.recovery_analyze_endpoint_api_v1_recovery_analyze_post(
-            recovery_request=recovery_request
-        )
-
-        # Assert: Request succeeded
-        assert response.incident_id == "test-incident-recovery-001"
-
-    def test_recovery_request_without_custom_labels(self, hapi_service_url):
-        """DD-HAPI-001: Recovery request without customLabels should still work via OpenAPI client"""
-        # Arrange: Create OpenAPI client
-        config = Configuration(host=hapi_service_url)
-        client = ApiClient(configuration=config)
-        recovery_api = RecoveryAnalysisApi(client)
-
-        # Build typed request without custom labels
-        recovery_request = RecoveryRequest(
-            incident_id="test-incident-recovery-002",
-            remediation_id="req-2025-11-30-recovery002",
-            signal_type="CrashLoopBackOff",
-            severity="high",
-            signal_source="prometheus",
-            resource_namespace="staging",
-            resource_kind="Deployment",
-            resource_name="api-service",
-            error_message="CrashLoopBackOff recovery attempt",
-            environment="staging",
-            priority="P1",
-            risk_tolerance="medium",
-            business_category="customer-facing",
-            cluster_name="staging-cluster-1",
-            is_recovery_attempt=True,
-            recovery_attempt_number=1,
-            previous_execution=PreviousExecution(
-                workflow_execution_ref="we-test-002",
-                original_rca={
-                    "summary": "Application crash",
-                    "signal_type": "CrashLoopBackOff",
-                    "severity": "high",
-                    "contributing_factors": ["configuration error"]
-                },
-                selected_workflow={
-                    "workflow_id": "crashloop-restart-v1",
-                    "version": "v1.0.0",
-                    "execution_bundle": "quay.io/kubernaut/crashloop-remediation:v1.0.0",
-                    "parameters": {},
-                    "rationale": "Restart the crashed container"
-                },
-                failure={
-                    "failed_step_index": 1,
-                    "failed_step_name": "restart-container",
-                    "reason": "Error",
-                    "message": "Container failed to start",
-                    "exit_code": 1,
-                    "failed_at": "2025-11-30T11:00:00Z",
-                    "execution_time": "45s"
-                }
-            ),
-            enrichment_results={
-                "kubernetesContext": {"namespace": "staging"},
-                "detectedLabels": {}
-                # No customLabels
-            }
-        )
-
-        # Act: Call API via OpenAPI client
-        response = recovery_api.recovery_analyze_endpoint_api_v1_recovery_analyze_post(
-            recovery_request=recovery_request
-        )
-
-        # Assert: Request succeeded
-        assert response.incident_id == "test-incident-recovery-002"
 
 
 class TestCustomLabelsContractValidation:

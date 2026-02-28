@@ -11,6 +11,8 @@ spec:
     kind: AIAnalysis
     listKind: AIAnalysisList
     plural: aianalyses
+    shortNames:
+    - aia
     singular: aianalysis
   scope: Namespaced
   versions:
@@ -22,7 +24,7 @@ spec:
       name: Confidence
       type: number
     - jsonPath: .status.approvalRequired
-      name: ApprovalRequired
+      name: Approval Required
       type: boolean
     - jsonPath: .status.conditions[?(@.type=="Ready")].reason
       name: Reason
@@ -265,12 +267,12 @@ spec:
                             description: Resource name
                             type: string
                           namespace:
-                            description: Resource namespace
+                            description: Resource namespace. Empty for cluster-scoped
+                              resources (e.g., Node, PersistentVolume).
                             type: string
                         required:
                         - kind
                         - name
-                        - namespace
                         type: object
                     required:
                     - businessPriority
@@ -285,132 +287,6 @@ spec:
                 - analysisTypes
                 - signalContext
                 type: object
-              isRecoveryAttempt:
-                description: |-
-                  ========================================
-                  RECOVERY FIELDS (DD-RECOVERY-002)
-                  Populated by RO when this is a recovery attempt
-                  ========================================
-                  True if this AIAnalysis is for a recovery attempt (not initial incident)
-                type: boolean
-              previousExecutions:
-                description: |-
-                  Previous execution history (only set when IsRecoveryAttempt=true)
-                  Contains details about ALL previous attempts - allows LLM to:
-                  1. Avoid repeating failed approaches
-                  2. Learn from multiple failures
-                  3. Consider re-trying earlier approaches after later failures
-                  Ordered chronologically: index 0 = first attempt, last index = most recent
-                items:
-                  description: |-
-                    PreviousExecution contains context from a failed workflow execution
-                    DD-RECOVERY-002: Used when IsRecoveryAttempt=true
-                  properties:
-                    failure:
-                      description: Structured failure information with Kubernetes
-                        reason codes
-                      properties:
-                        executionTime:
-                          description: How long the execution ran before failing (e.g.,
-                            "2m34s")
-                          type: string
-                        exitCode:
-                          description: Exit code if applicable
-                          format: int32
-                          type: integer
-                        failedAt:
-                          description: When the failure occurred
-                          format: date-time
-                          type: string
-                        failedStepIndex:
-                          description: Which step failed (0-indexed)
-                          type: integer
-                        failedStepName:
-                          description: Name of the failed step
-                          type: string
-                        message:
-                          description: Human-readable error message (for logging/debugging)
-                          type: string
-                        reason:
-                          description: |-
-                            Kubernetes reason code (e.g., OOMKilled, DeadlineExceeded)
-                            NOT natural language - structured enum-like value
-                          type: string
-                      required:
-                      - executionTime
-                      - failedAt
-                      - failedStepIndex
-                      - failedStepName
-                      - message
-                      - reason
-                      type: object
-                    originalRCA:
-                      description: Original RCA from initial AIAnalysis
-                      properties:
-                        contributingFactors:
-                          description: Contributing factors
-                          items:
-                            type: string
-                          type: array
-                        severity:
-                          description: Severity determined by original RCA
-                          type: string
-                        signalType:
-                          description: Signal type determined by original RCA
-                          type: string
-                        summary:
-                          description: Brief RCA summary
-                          type: string
-                      required:
-                      - severity
-                      - signalType
-                      - summary
-                      type: object
-                    selectedWorkflow:
-                      description: Selected workflow that was executed and failed
-                      properties:
-                        actionType:
-                          description: Action type from DD-WORKFLOW-016 taxonomy (e.g.,
-                            ScaleReplicas, RestartPod)
-                          type: string
-                        executionBundle:
-                          description: Execution bundle OCI reference (digest-pinned)
-                          type: string
-                        parameters:
-                          additionalProperties:
-                            type: string
-                          description: Parameters passed to workflow
-                          type: object
-                        rationale:
-                          description: Why this workflow was selected
-                          type: string
-                        version:
-                          description: Workflow version
-                          type: string
-                        workflowId:
-                          description: Workflow identifier
-                          type: string
-                      required:
-                      - executionBundle
-                      - rationale
-                      - version
-                      - workflowId
-                      type: object
-                    workflowExecutionRef:
-                      description: Reference to the failed WorkflowExecution CRD
-                      type: string
-                  required:
-                  - failure
-                  - originalRCA
-                  - selectedWorkflow
-                  - workflowExecutionRef
-                  type: object
-                type: array
-              recoveryAttemptNumber:
-                description: Recovery attempt number (1, 2, 3...) - only set when
-                  IsRecoveryAttempt=true
-                minimum: 1
-                type: integer
               remediationId:
                 description: Remediation ID for audit correlation (DD-WORKFLOW-002
                   v2.2)
@@ -920,33 +796,6 @@ spec:
                 description: Reason provides the umbrella failure category (e.g.,
                   "WorkflowResolutionFailed")
                 type: string
-              recoveryStatus:
-                description: |-
-                  ========================================
-                  RECOVERY STATUS (DD-RECOVERY-002)
-                  ========================================
-                  Recovery-specific status fields (only populated for recovery attempts)
-                properties:
-                  previousAttemptAssessment:
-                    description: Assessment of why previous attempt failed
-                    properties:
-                      failureReasonAnalysis:
-                        description: Analysis of why the failure occurred
-                        type: string
-                      failureUnderstood:
-                        description: Whether the failure was understood
-                        type: boolean
-                    required:
-                    - failureReasonAnalysis
-                    - failureUnderstood
-                    type: object
-                  stateChanged:
-                    description: Whether the signal type changed due to the failed
-                      workflow
-                    type: boolean
-                required:
-                - stateChanged
-                type: object
               rootCause:
                 description: |-
                   ========================================
@@ -972,12 +821,12 @@ spec:
                         description: Name is the resource name
                         type: string
                       namespace:
-                        description: Namespace is the resource namespace
+                        description: Namespace is the resource namespace. Empty for
+                          cluster-scoped resources (e.g., Node, PersistentVolume).
                         type: string
                     required:
                     - kind
                     - name
-                    - namespace
                     type: object
                   contributingFactors:
                     description: Contributing factors

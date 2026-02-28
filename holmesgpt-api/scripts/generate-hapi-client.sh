@@ -56,7 +56,6 @@ fi
 echo "🔧 Applying import path fixes to generated client..."
 
 # Fix absolute imports in holmesgpt_api_client/__init__.py
-# Change 'from holmesgpt_api_client.api.recovery_api import RecoveryApi' to 'from .api.recovery_api import RecoveryApi'
 find "${CLIENT_DIR}" -type f -name "__init__.py" -exec sed -i '' -E 's/from '"${PACKAGE_NAME}"'\.api\.(.*) import (.*) as (.*)/from \.api.\1 import \2 as \3/g' {} +
 find "${CLIENT_DIR}" -type f -name "__init__.py" -exec sed -i '' -E 's/from '"${PACKAGE_NAME}"'\.(.*) import (.*) as (.*)/from \.\1 import \2 as \3/g' {} +
 
@@ -85,14 +84,10 @@ sys.path.insert(0, 'tests/clients')
 try:
     from holmesgpt_api_client.api_client import ApiClient
     from holmesgpt_api_client.configuration import Configuration
-    from holmesgpt_api_client.api.recovery_analysis_api import RecoveryAnalysisApi
-    from holmesgpt_api_client.models.recovery_request import RecoveryRequest
-    from holmesgpt_api_client.models.recovery_response import RecoveryResponse
+    from holmesgpt_api_client.api.incident_analysis_api import IncidentAnalysisApi
     print('✅ HAPI OpenAPI client imported successfully!')
     print('   - ApiClient: OK')
-    print('   - RecoveryAnalysisApi: OK')
-    print('   - RecoveryRequest: OK')
-    print('   - RecoveryResponse: OK')
+    print('   - IncidentAnalysisApi: OK')
 except ImportError as e:
     print(f'❌ Import error: {e}')
     sys.exit(1)
@@ -111,9 +106,9 @@ echo "   3. Run: pytest tests/integration/ -v"
 echo ""
 echo "📖 Example usage:"
 echo "   from holmesgpt_api_client import ApiClient, Configuration"
-echo "   from holmesgpt_api_client.api.recovery_analysis_api import RecoveryAnalysisApi"
+echo "   from holmesgpt_api_client.api.incident_analysis_api import IncidentAnalysisApi"
 echo "   "
 echo "   config = Configuration(host='http://localhost:18120')"
 echo "   client = ApiClient(configuration=config)"
-echo "   recovery_api = RecoveryAnalysisApi(client)"
+echo "   incident_api = IncidentAnalysisApi(client)"
 

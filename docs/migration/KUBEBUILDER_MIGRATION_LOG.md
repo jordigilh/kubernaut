@@ -79,7 +79,7 @@ kubebuilder init \
 2. **RemediationProcessing** - Remediation processor enriches signals
 3. **AIAnalysis** - AI service analyzes and recommends
 4. **WorkflowExecution** - Workflow service orchestrates
-5. **KubernetesExecution** - Executor service performs actions
+5. **KubernetesExecution** (DEPRECATED - ADR-025) - Executor service performs actions
 6. **RemediationOrchestrator** - Orchestrator manages lifecycle
 
 ---

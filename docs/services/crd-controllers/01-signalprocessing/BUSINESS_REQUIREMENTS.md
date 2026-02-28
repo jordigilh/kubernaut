@@ -585,38 +585,20 @@ volumeMounts:
 
 **Priority**: P0 (Critical)
 **Category**: Label Detection
+**Status**: **RELOCATED to HAPI per ADR-056** — See BR-HAPI-253 through BR-HAPI-256
 
-**Description**: The SignalProcessing controller MUST auto-detect 8 cluster characteristics from K8s resources.
+> **ADR-056 Relocation Note**: DetectedLabels computation was moved from SP to HAPI post-RCA.
+> Detection MUST run against the **RCA target resource** (identified by the LLM), not the signal source,
+> because the signal and root cause may be different resources with different infrastructure characteristics.
+> SP still captures raw K8s metadata (annotations, labels) via K8sEnricher into `KubernetesContext`,
+> but this is used only for business classification and custom labels — not for DetectedLabels.
+>
+> **Authoritative specification**: DD-HAPI-018 v1.3
+> **Authoritative implementation**: `holmesgpt-api/src/detection/labels.py`
 
-**Acceptance Criteria**:
-- [ ] **gitOpsManaged**: Check ArgoCD/Flux annotations on Deployment
-- [ ] **gitOpsTool**: Return "argocd" or "flux" based on annotations
-- [ ] **pdbProtected**: List PDBs, check if selector matches Pod labels
-- [ ] **hpaEnabled**: List HPAs, check if scaleTargetRef matches Deployment
-- [ ] **stateful**: Check if owner chain includes StatefulSet
-- [ ] **helmManaged**: Check `app.kubernetes.io/managed-by: Helm` label
-- [ ] **networkIsolated**: List NetworkPolicies, check if podSelector matches
-- [ ] **serviceMesh**: Check for Istio/Linkerd sidecar or annotations
+**Original Description** *(retained for traceability)*: The SignalProcessing controller MUST auto-detect 8 cluster characteristics from K8s resources.
 
-**Detection Methods**:
-| Field | API Call | Cache TTL (V1.1) |
-|-------|----------|------------------|
-| gitOpsManaged | None (existing data) | N/A |
-| gitOpsTool | None (existing data) | N/A |
-| pdbProtected | List PDBs | 5 min *(deferred)* |
-| hpaEnabled | List HPAs | 1 min *(deferred)* |
-| stateful | None (owner chain) | N/A |
-| helmManaged | None (existing data) | N/A |
-| networkIsolated | List NetworkPolicies | 5 min *(deferred)* |
-| serviceMesh | None (existing data) | N/A |
-
-> **Note**: Cache TTL is deferred to V1.1. V1.0 performs fresh queries on each reconciliation.
-> This is acceptable for P0 release because:
-> - SignalProcessing reconciles per-signal (not batch)
-> - K8s API is local (controller runs in-cluster)
-> - Performance optimization is V1.1 scope
-
-**Test Coverage**: `label_detector_test.go` (Unit + Integration)
+**Test Coverage**: Relocated to `holmesgpt-api/tests/unit/test_label_detector.py`
 
 ---
 

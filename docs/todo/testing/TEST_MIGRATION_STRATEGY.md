@@ -130,7 +130,7 @@ Create: `test/unit/algorithmic/README.md`
 
 **Note**: Dependency resolution tests are architecture-agnostic - copy from existing
 
-#### **Task 2.4: KubernetesExecution Controller** (95 hours)
+#### **Task 2.4: KubernetesExecution (DEPRECATED - ADR-025) Controller** (95 hours)
 **Location**: `test/unit/kubernetesexecution/`
 
 **Subtasks**:

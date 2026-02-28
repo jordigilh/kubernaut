@@ -12,25 +12,28 @@ data:
     package aianalysis.approval
     import rego.v1
     default require_approval := false
-    require_approval if { input.environment == "production" }
-    require_approval if { input.is_recovery_attempt == true; input.recovery_attempt_number >= 3 }
-    require_approval if { input.environment == "production"; count(input.warnings) > 0 }
-    require_approval if { input.environment == "production"; count(input.failed_detections) > 0 }
-    risk_factors contains {"score": 100, "reason": msg} if {
-        input.is_recovery_attempt == true
-        input.recovery_attempt_number >= 3
-        msg := sprintf("Multiple recovery attempts (%d) - human approval required", [input.recovery_attempt_number])
+    is_high_confidence if { input.confidence >= 0.9 }
+    has_affected_resource if { input.affected_resource; input.affected_resource.kind != "" }
+    require_approval if { not has_affected_resource }
+    require_approval if { input.environment == "production"; not is_high_confidence }
+    require_approval if { input.environment == "production"; count(input.warnings) > 0; not is_high_confidence }
+    require_approval if { input.environment == "production"; count(input.failed_detections) > 0; not is_high_confidence }
+    risk_factors contains {"score": 90, "reason": "Missing affected resource - cannot determine remediation target"} if {
+        not has_affected_resource
     }
     risk_factors contains {"score": 70, "reason": "Data quality warnings in production environment"} if {
         input.environment == "production"
         count(input.warnings) > 0
+        not is_high_confidence
     }
     risk_factors contains {"score": 60, "reason": "Data quality issues detected in production environment"} if {
         input.environment == "production"
         count(input.failed_detections) > 0
+        not is_high_confidence
     }
     risk_factors contains {"score": 40, "reason": "Production environment requires manual approval"} if {
         input.environment == "production"
+        not is_high_confidence
     }
     all_scores contains f.score if { some f in risk_factors }
     max_risk_score := max(all_scores) if { count(all_scores) > 0 }
@@ -176,6 +179,7 @@ spec:
         prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: aianalysis-controller
+      {{- include "kubernaut.scheduling" (dict "component" .Values.aianalysis "global" .Values.global) | nindent 6 }}
       containers:
         - name: aianalysis
           image: {{ include "kubernaut.image" (dict "service" "aianalysis" "global" .Values.global "appVersion" .Chart.AppVersion) }}

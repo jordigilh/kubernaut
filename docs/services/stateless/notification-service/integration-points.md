@@ -118,14 +118,14 @@ func (r *WorkflowExecutionReconciler) HandleExecutionFailure(ctx context.Context
 
 ---
 
-### **4. Kubernetes Executor** (CRD Controller)
+### **4. Kubernetes Executor** (CRD Controller) (DEPRECATED - ADR-025)
 
 **Use Case**: Critical action execution failures or safety check violations
 **Related BRs**: BR-NOT-026, BR-NOT-033 (Comprehensive context, formatted for quick decision-making)
 
 **Integration Pattern**:
 ```go
-// internal/controller/kubernetesexecutor/notification.go
+// internal/controller/kubernetesexecutor/notification.go (DEPRECATED - ADR-025)
 func (r *KubernetesExecutorReconciler) NotifySafetyViolation(ctx context.Context, action *KubernetesAction) error {
     return r.notificationClient.SendEscalation(ctx, &EscalationRequest{
         Recipient: "platform-ops@company.com",
@@ -242,7 +242,7 @@ stringData:
 │            └─────┬─────┘                         │
 │                  │                               │
 │         ┌────────┴────────┐                     │
-│         │   Kubernetes    │                     │
+│         │   Kubernetes    │ (DEPRECATED - ADR-025)                     │
 │         │   Executor      │                     │
 │         └────────┬────────┘                     │
 └──────────────────┼──────────────────────────────┘
@@ -475,7 +475,7 @@ func NewMockSlackServer() *MockSlackServer {
 - [ ] Remediation Orchestrator calls notification service
 - [ ] AI Analysis Controller calls notification service
 - [ ] Workflow Execution calls notification service
-- [ ] Kubernetes Executor calls notification service
+- [ ] Kubernetes Executor (DEPRECATED - ADR-025) calls notification service
 - [ ] All clients use Bearer token authentication
 
 ### **Downstream Integration**

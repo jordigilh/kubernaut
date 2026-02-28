@@ -1,6 +1,9 @@
 #!/bin/sh
 set -e
 
+CLUSTER_NAME="${CLUSTER_NAME:-kubernaut-demo}"
+NODE_IMAGE="${NODE_IMAGE:-docker.io/kindest/node@sha256:7416a61b42b1662ca6ca89f02028ac133a309a2a30ba309614e8ec94d976dc5a}"
+
 echo "=== Phase 1: Validate ==="
 PENDING=$(kubectl get pods -n "$TARGET_NAMESPACE" -l "app=$TARGET_APP" \
   --field-selector=status.phase=Pending -o name 2>/dev/null | wc -l | tr -d ' ')
@@ -11,7 +14,7 @@ if [ "$PENDING" -eq 0 ]; then
 fi
 
 echo "=== Phase 2: Action ==="
-echo "Creating ScaleRequest for 1 additional node..."
+echo "Creating ScaleRequest for 1 additional node (image: ${NODE_IMAGE})..."
 kubectl apply -f - <<EOF
 apiVersion: v1
 kind: ConfigMap
@@ -24,7 +27,7 @@ data:
   requested_nodes: "1"
   status: "pending"
   cluster_name: "$CLUSTER_NAME"
-  node_image: "kindest/node:v1.34.3"
+  node_image: "$NODE_IMAGE"
 EOF
 
 echo "=== Phase 3: Verify ==="

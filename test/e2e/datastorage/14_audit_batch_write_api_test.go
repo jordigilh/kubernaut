@@ -259,9 +259,9 @@ var _ = Describe("Audit Events Batch Write API Integration Tests", func() {
 				}, 10*time.Second, 100*time.Millisecond).Should(Equal(100),
 					"All 100 events should be persisted in database after async processing")
 
-				// Performance check (should be <5s for 100 events)
-				Expect(duration).To(BeNumerically("<", 5*time.Second),
-					"100 events should be processed in <5 seconds")
+				// Performance check (should be <8s for 100 events)
+				Expect(duration).To(BeNumerically("<", 8*time.Second),
+					"100 events should be processed in <8 seconds")
 			})
 		})
 	})

@@ -3,7 +3,7 @@
 **Status**: ✅ Approved
 **Date**: 2025-11-26
 **Last Updated**: 2026-02-09
-**Version**: 2.8
+**Version**: 2.9
 **Author**: AI Assistant
 **Reviewers**: TBD
 **Related**: [03-testing-strategy.mdc](mdc:.cursor/rules/03-testing-strategy.mdc)
@@ -78,6 +78,7 @@ Integration and E2E tests require running multiple services (PostgreSQL, Redis, 
 | &nbsp;&nbsp;→ Mock LLM | — | ClusterIP | — | — | — | — | (Internal only - accessed by HAPI) |
 | &nbsp;&nbsp;→ Prometheus | 9190 | 30190 | — | — | — | — | (EM metric comparison - remote write receiver) |
 | &nbsp;&nbsp;→ AlertManager | 9193 | 30193 | — | — | — | — | (EM alert resolution queries) |
+| &nbsp;&nbsp;→ AuthWebhook | — | 30099 | — | — | — | — | (Webhook admission endpoint - `test/e2e/authwebhook/kind-config.yaml`) |
 
 **Note**:
 - Health ports (8184/30284) are only needed for services with separate health probe endpoints. Most services expose health on their API port.
@@ -290,12 +291,13 @@ Webhook (in Kind):
 
 Data Storage (Dependency):
   Host Port: 28099
+  NodePort: 30081
   Container Port: 8080
   Connection: http://127.0.0.1:28099
   Purpose: Audit API
 ```
 
-**Kind Config**: `test/infrastructure/kind-authwebhook-config.yaml`
+**Kind Config**: `test/e2e/authwebhook/kind-config.yaml`
 **Infrastructure**: Kind cluster with webhook deployed as admission controller
 **Pattern**: Ginkgo/Gomega with `SynchronizedBeforeSuite` for Kind cluster creation
 
@@ -908,6 +910,7 @@ ginkgo -p -procs=4 test/e2e/datastorage/
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 2.9 | 2026-02-26 | AI Assistant | **AUTHWEBHOOK E2E**: AuthWebhook NodePort changed from undocumented 30443 to 30099 per DD-TEST-001; Added AuthWebhook to Full Pipeline E2E table; AuthWebhook E2E Data Storage dependency uses standard NodePort 30081 (was 30099) to free 30099 for webhook |
 | 2.8 | 2026-02-09 | AI Assistant | **EFFECTIVENESS MONITOR**: Added EM to CRD Controllers NodePort table (30089/30189/8089); Added Redis 16383 for EM integration DS bootstrap (was N/A); Added Prometheus NodePort 30190 and AlertManager NodePort 30193 for Full Pipeline E2E; Updated EM detailed section to reflect CRD controller pattern (envtest + DS bootstrap + httptest mocks for Prom/AM); Updated Port Collision Matrix and NodePort Summary; Updated implementation checklist Phase 3 |
 | 2.7 | 2026-02-05 | AI Assistant | **FULL PIPELINE E2E**: Added Full Pipeline E2E port allocations for end-to-end remediation lifecycle test (Issue #39); Gateway ingress NodePort 30080 (event-exporter webhook), DataStorage NodePort 30081 (workflow catalog seeding), Mock LLM ClusterIP (internal only, accessed by HAPI); Kind config: `test/infrastructure/kind-fullpipeline-config.yaml`; All ports verified against Port Collision Matrix - no conflicts |
 | 2.6 | 2026-01-15 | AI Assistant | **IMMUDB REMOVAL**: Removed all Immudb port allocations (13322-13331 range) from integration tests; **USER MANDATE**: "Immudb is deprecated, we don't use this DB anymore by authoritative mandate"; **IMPACT**: Simpler infrastructure (one less container per service), faster startup, reduced port allocation requirements; **AFFECTED SERVICES**: Gateway (removed 13323), DataStorage (removed 13322), SignalProcessing (removed 13324), all other services; Port range 13322-13331 now available for future allocation; Updated Port Collision Matrix, service-specific sections, and example usage |

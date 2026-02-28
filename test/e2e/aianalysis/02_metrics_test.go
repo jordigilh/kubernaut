@@ -36,21 +36,21 @@ import (
 var skipMetricsSeeding bool
 
 // seedMetricsWithAnalysis creates a simple AIAnalysis and waits for completion
-// to ensure all metrics are populated before tests run
+// to ensure all metrics are populated before tests run.
+// ADR-057: AIAnalysis must be in kubernaut-system (controller watch scope).
 func seedMetricsWithAnalysis() {
 	ctx := context.Background()
-	namespace := createTestNamespace("metrics-seed")
 
 	// Create successful analysis to populate success metrics
 	analysis := &aianalysisv1alpha1.AIAnalysis{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "metrics-seed-success-" + randomSuffix(),
-			Namespace: namespace,
+			Namespace: controllerNamespace,
 		},
 		Spec: aianalysisv1alpha1.AIAnalysisSpec{
 			RemediationRequestRef: corev1.ObjectReference{
 				Name:      "metrics-seed-rem",
-				Namespace: namespace,
+				Namespace: controllerNamespace,
 			},
 			RemediationID: "metrics-seed-001",
 			AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
@@ -87,12 +87,12 @@ func seedMetricsWithAnalysis() {
 	failedAnalysis := &aianalysisv1alpha1.AIAnalysis{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "metrics-seed-failed-" + randomSuffix(),
-			Namespace: namespace,
+			Namespace: controllerNamespace,
 		},
 		Spec: aianalysisv1alpha1.AIAnalysisSpec{
 			RemediationRequestRef: corev1.ObjectReference{
 				Name:      "metrics-seed-rem-fail",
-				Namespace: namespace,
+				Namespace: controllerNamespace,
 			},
 			RemediationID: "metrics-seed-fail-001",
 			AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
@@ -237,29 +237,6 @@ var _ = Describe("Metrics Endpoint E2E", Label("e2e", "metrics"), func() {
 			// DD-005 V3.0: Use constant from production code
 			Expect(metricsText).To(ContainSubstring(aametrics.MetricNameApprovalDecisionsTotal),
 				"Missing approval decisions metric")
-		})
-
-		It("should include recovery status metrics", func() {
-			resp, err := httpClient.Get(metricsURL + "/metrics")
-			Expect(err).NotTo(HaveOccurred())
-			defer func() { _ = resp.Body.Close() }()
-
-			body, err := io.ReadAll(resp.Body)
-			Expect(err).NotTo(HaveOccurred())
-			metricsText := string(body)
-
-			// Recovery observability (BR-AI-082)
-			// Business value: Track recovery attempt outcomes
-			// DD-005 V3.0: Use constants from production code
-			expectedRecoveryMetrics := []string{
-				aametrics.MetricNameRecoveryStatusPopulatedTotal,
-				aametrics.MetricNameRecoveryStatusSkippedTotal,
-			}
-
-			for _, metric := range expectedRecoveryMetrics {
-				Expect(metricsText).To(ContainSubstring(metric),
-					"Missing recovery metric: %s", metric)
-			}
 		})
 
 		It("should include Go runtime metrics", func() {

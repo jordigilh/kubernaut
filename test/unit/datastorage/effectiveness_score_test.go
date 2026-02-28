@@ -52,8 +52,7 @@ var _ = Describe("Effectiveness Score Computation (DD-017 v2.1)", func() {
 			// DD-017: score = (1.0*0.40 + 1.0*0.35 + 0.8*0.25) / (0.40+0.35+0.25)
 			// = (0.40 + 0.35 + 0.20) / 1.00 = 0.95
 			score := server.ComputeWeightedScore(components)
-			Expect(score).ToNot(BeNil())
-			Expect(*score).To(BeNumerically("~", 0.95, 0.001))
+			Expect(score).To(HaveValue(BeNumerically("~", 0.95, 0.001)))
 		})
 
 		// UT-DS-EFF-002: Two components (health + alert), metrics missing
@@ -72,8 +71,7 @@ var _ = Describe("Effectiveness Score Computation (DD-017 v2.1)", func() {
 			// DD-017 redistribution: health=0.40/(0.40+0.35)=0.5333, alert=0.35/(0.40+0.35)=0.4667
 			// score = (1.0*0.5333 + 0.0*0.4667) = 0.5333
 			score := server.ComputeWeightedScore(components)
-			Expect(score).ToNot(BeNil())
-			Expect(*score).To(BeNumerically("~", 0.5333, 0.001))
+			Expect(score).To(HaveValue(BeNumerically("~", 0.5333, 0.001)))
 		})
 
 		// UT-DS-EFF-003: One component (health only)
@@ -89,8 +87,7 @@ var _ = Describe("Effectiveness Score Computation (DD-017 v2.1)", func() {
 
 			// With only health: score = 0.75 * (0.40/0.40) = 0.75
 			score := server.ComputeWeightedScore(components)
-			Expect(score).ToNot(BeNil())
-			Expect(*score).To(BeNumerically("~", 0.75, 0.001))
+			Expect(score).To(HaveValue(BeNumerically("~", 0.75, 0.001)))
 		})
 
 		// UT-DS-EFF-004: No components assessed -> nil score
@@ -119,8 +116,7 @@ var _ = Describe("Effectiveness Score Computation (DD-017 v2.1)", func() {
 			}
 
 			score := server.ComputeWeightedScore(components)
-			Expect(score).ToNot(BeNil())
-			Expect(*score).To(BeNumerically("~", 1.0, 0.001))
+			Expect(score).To(HaveValue(BeNumerically("~", 1.0, 0.001)))
 		})
 
 		// UT-DS-EFF-006: Zero score (all 0.0)
@@ -137,8 +133,7 @@ var _ = Describe("Effectiveness Score Computation (DD-017 v2.1)", func() {
 			}
 
 			score := server.ComputeWeightedScore(components)
-			Expect(score).ToNot(BeNil())
-			Expect(*score).To(BeNumerically("~", 0.0, 0.001))
+			Expect(score).To(HaveValue(BeNumerically("~", 0.0, 0.001)))
 		})
 
 		// UT-DS-EFF-007: Components assessed but score is nil (assessed=true, score=nil)
@@ -156,8 +151,7 @@ var _ = Describe("Effectiveness Score Computation (DD-017 v2.1)", func() {
 			// Only alert has a score, health assessed but nil score -> not included in weighted calc
 			// score = 1.0 * (0.35/0.35) = 1.0
 			score := server.ComputeWeightedScore(components)
-			Expect(score).ToNot(BeNil())
-			Expect(*score).To(BeNumerically("~", 1.0, 0.001))
+			Expect(score).To(HaveValue(BeNumerically("~", 1.0, 0.001)))
 		})
 	})
 
@@ -212,16 +206,14 @@ var _ = Describe("Effectiveness Score Computation (DD-017 v2.1)", func() {
 			resp := server.BuildEffectivenessResponse("rr-test-001", events)
 
 			Expect(resp.CorrelationID).To(Equal("rr-test-001"))
-			Expect(resp.Score).ToNot(BeNil())
-			Expect(*resp.Score).To(BeNumerically("~", 0.95, 0.001))
+			Expect(resp.Score).To(HaveValue(BeNumerically("~", 0.95, 0.001)))
 			Expect(resp.AssessmentStatus).To(Equal("full"))
 			Expect(resp.Components.HealthAssessed).To(BeTrue())
 			Expect(resp.Components.AlertAssessed).To(BeTrue())
 			Expect(resp.Components.MetricsAssessed).To(BeTrue())
 			Expect(resp.HashComparison.PostHash).To(Equal("sha256:aaa"))
 			Expect(resp.HashComparison.PreHash).To(Equal("sha256:bbb"))
-			Expect(resp.HashComparison.Match).ToNot(BeNil())
-			Expect(*resp.HashComparison.Match).To(BeFalse())
+			Expect(resp.HashComparison.Match).To(HaveValue(BeFalse()))
 		})
 
 		// UT-DS-EFF-009: Partial events -> in_progress status
@@ -271,8 +263,7 @@ var _ = Describe("Effectiveness Score Computation (DD-017 v2.1)", func() {
 
 			Expect(resp.HashComparison.PostHash).To(Equal("sha256:same"))
 			Expect(resp.HashComparison.PreHash).To(Equal("sha256:same"))
-			Expect(resp.HashComparison.Match).ToNot(BeNil())
-			Expect(*resp.HashComparison.Match).To(BeTrue())
+			Expect(resp.HashComparison.Match).To(HaveValue(BeTrue()))
 		})
 
 		// UT-DS-EFF-012: Nil EventData skipped
@@ -316,8 +307,7 @@ var _ = Describe("Effectiveness Score Computation (DD-017 v2.1)", func() {
 			resp := server.BuildEffectivenessResponse("rr-drift-001", events)
 
 			Expect(resp.AssessmentStatus).To(Equal("spec_drift"))
-			Expect(resp.Score).ToNot(BeNil(), "Score should not be nil for spec_drift")
-			Expect(*resp.Score).To(Equal(0.0),
+			Expect(resp.Score).To(HaveValue(Equal(0.0)),
 				"spec_drift should short-circuit to score 0.0 regardless of component scores")
 		})
 
@@ -356,9 +346,69 @@ var _ = Describe("Effectiveness Score Computation (DD-017 v2.1)", func() {
 			resp := server.BuildEffectivenessResponse("rr-drift-002", events)
 
 			Expect(resp.AssessmentStatus).To(Equal("spec_drift"))
-			Expect(resp.Score).ToNot(BeNil())
-			Expect(*resp.Score).To(Equal(0.0),
+			Expect(resp.Score).To(HaveValue(Equal(0.0)),
 				"spec_drift overrides all component scores to 0.0")
+		})
+
+		// UT-DS-211-004: spec_drift has priority regardless of event ordering (DD-EM-002 v1.1)
+		// When two assessment.completed events exist (e.g., one "full" and one "spec_drift"),
+		// spec_drift always takes precedence because it invalidates the assessment.
+		It("UT-DS-211-004: spec_drift takes priority when full comes first", func() {
+			events := []*server.EffectivenessEvent{
+				{
+					EventData: map[string]interface{}{
+						"event_type": "effectiveness.health.assessed",
+						"assessed":   true,
+						"score":      0.9,
+					},
+				},
+				{
+					EventData: map[string]interface{}{
+						"event_type": "effectiveness.assessment.completed",
+						"reason":     "full",
+					},
+				},
+				{
+					EventData: map[string]interface{}{
+						"event_type": "effectiveness.assessment.completed",
+						"reason":     "spec_drift",
+					},
+				},
+			}
+
+			resp := server.BuildEffectivenessResponse("rr-order-001", events)
+
+			Expect(resp.AssessmentStatus).To(Equal("spec_drift"),
+				"DD-EM-002 v1.1: spec_drift must take priority over full")
+			Expect(resp.Score).To(HaveValue(Equal(0.0)),
+				"spec_drift short-circuits to score 0.0")
+		})
+
+		// UT-DS-211-004b: spec_drift has priority even when it arrives before full
+		// Covers the edge case where event ordering puts spec_drift before full
+		// (e.g., same timestamp with non-deterministic UUID ordering).
+		It("UT-DS-211-004b: spec_drift takes priority even when full comes after", func() {
+			events := []*server.EffectivenessEvent{
+				{
+					EventData: map[string]interface{}{
+						"event_type": "effectiveness.assessment.completed",
+						"reason":     "spec_drift",
+					},
+				},
+				{
+					EventData: map[string]interface{}{
+						"event_type": "effectiveness.assessment.completed",
+						"reason":     "full",
+					},
+				},
+			}
+
+			resp := server.BuildEffectivenessResponse("rr-order-002", events)
+
+			Expect(resp.AssessmentStatus).To(Equal("spec_drift"),
+				"DD-EM-002 v1.1: spec_drift must not be overwritten by later full event")
+			Expect(resp.Score).To(HaveValue(Equal(0.0)),
+				"spec_drift short-circuits to score 0.0")
 		})
 
 		// UT-DS-EFF-015: Non-drift assessment still computes normally
@@ -382,8 +432,7 @@ var _ = Describe("Effectiveness Score Computation (DD-017 v2.1)", func() {
 			resp := server.BuildEffectivenessResponse("rr-normal-001", events)
 
 			Expect(resp.AssessmentStatus).To(Equal("full"))
-			Expect(resp.Score).ToNot(BeNil())
-			Expect(*resp.Score).To(BeNumerically(">", 0.0),
+			Expect(resp.Score).To(HaveValue(BeNumerically(">", 0.0)),
 				"non-drift assessment should compute a positive score from components")
 		})
 	})

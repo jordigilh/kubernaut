@@ -195,7 +195,7 @@ Kubernaut currently uses `setup-envtest` for:
 - ✅ RemediationRequest Controller
 - ✅ AIAnalysis Controller  
 - ✅ WorkflowExecution Controller
-- ✅ KubernetesExecution Controller
+- ✅ KubernetesExecution Controller (DEPRECATED - ADR-025)
 
 **See**: `Makefile` targets:
 ```makefile

@@ -3,7 +3,7 @@
 # Scenario #122: Node taint blocks scheduling -> remove taint
 #
 # Prerequisites:
-#   - Kind cluster with worker node (kubernaut.ai/workload-node=true)
+#   - Kind cluster with worker node (kubernaut.ai/managed=true)
 #   - Prometheus with kube-state-metrics
 #
 # Usage: ./deploy/demo/scenarios/pending-taint/run.sh
@@ -14,7 +14,7 @@ NAMESPACE="demo-taint"
 
 # shellcheck source=../../scripts/kind-helper.sh
 source "${SCRIPT_DIR}/../../scripts/kind-helper.sh"
-ensure_kind_cluster "${SCRIPT_DIR}/kind-config.yaml" "${1:-}"
+ensure_kind_cluster "${SCRIPT_DIR}/../kind-config-multinode.yaml" "${1:-}"
 
 # shellcheck source=../../scripts/monitoring-helper.sh
 source "${SCRIPT_DIR}/../../scripts/monitoring-helper.sh"

@@ -158,7 +158,7 @@ These documents define **data structures and contracts** that implement Tier 1 a
 | **[02_REMEDIATION_PROCESSING_CRD.md](design/CRD/02_REMEDIATION_PROCESSING_CRD.md)** | SignalProcessing CRD OpenAPI schema | References Tier 1: CRD_SCHEMAS.md |
 | **[03_AI_ANALYSIS_CRD.md](design/CRD/03_AI_ANALYSIS_CRD.md)** | AIAnalysis CRD OpenAPI schema | References Tier 1: CRD_SCHEMAS.md |
 | **[04_WORKFLOW_EXECUTION_CRD.md](design/CRD/04_WORKFLOW_EXECUTION_CRD.md)** | WorkflowExecution CRD OpenAPI schema | References Tier 1: CRD_SCHEMAS.md |
-| **[05_KUBERNETES_EXECUTION_CRD.md](design/CRD/05_KUBERNETES_EXECUTION_CRD.md)** | KubernetesExecution CRD OpenAPI schema | References Tier 1: CRD_SCHEMAS.md |
+| **[05_KUBERNETES_EXECUTION_CRD.md](design/CRD/05_KUBERNETES_EXECUTION_CRD.md)** | KubernetesExecution (DEPRECATED - ADR-025) CRD OpenAPI schema | References Tier 1: CRD_SCHEMAS.md |
 
 **Authority Relationship**:
 ```
@@ -179,7 +179,7 @@ Tier 3: CRD/*.md (OpenAPI v3 schemas, validation rules)
 
 **Why Tier 3B Is Authoritative**:
 - Defines safety constraints for Kubernetes actions
-- Referenced by WorkflowExecution and KubernetesExecution services
+- Referenced by WorkflowExecution and KubernetesExecution (DEPRECATED - ADR-025) services
 - Required for production safety validation
 
 ---

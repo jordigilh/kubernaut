@@ -83,7 +83,7 @@
 │     • Watches WorkflowExecution CRD status                    │
 │     • Detects "failed" status                                 │
 │     • Evaluates recovery viability:                           │
-│       - recoveryAttempts < 3? ✅                               │
+│       - [Deprecated - Issue #180: recoveryAttempts removed]   │
 │       - Same failure pattern? ❌                               │
 │       - Termination rate < 10%? ✅                             │
 │     • Creates NEW SignalProcessing CRD #2:               │

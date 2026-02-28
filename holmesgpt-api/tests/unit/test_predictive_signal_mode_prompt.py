@@ -32,7 +32,7 @@ import importlib
 # Mock the holmes SDK and prometrix packages to avoid pydantic v1 + Python 3.14
 # incompatibility.  create_incident_investigation_prompt only depends on
 # src.models.incident_models and src.extensions.incident.constants — it does NOT
-# depend on holmes.  But the import chain through src.extensions → recovery/incident
+# depend on holmes.  But the import chain through src.extensions → incident
 # → llm_integration → holmes triggers the crash.
 #
 # Strategy: Create proper module stubs with __path__, __spec__, and a permissive

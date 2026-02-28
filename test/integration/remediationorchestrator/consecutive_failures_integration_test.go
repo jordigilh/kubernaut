@@ -68,7 +68,7 @@ var _ = Describe("Consecutive Failures Integration Tests (BR-ORCH-042)", func() 
 				rr := &remediationv1.RemediationRequest{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "rr-consecutive-fail-" + string(rune('0'+i)),
-						Namespace: testNamespace,
+						Namespace: ROControllerNamespace,
 					},
 					Spec: remediationv1.RemediationRequestSpec{
 						SignalFingerprint: fingerprint,
@@ -97,7 +97,7 @@ var _ = Describe("Consecutive Failures Integration Tests (BR-ORCH-042)", func() 
 				spName := "sp-" + rr.Name
 				sp := &signalprocessingv1.SignalProcessing{}
 				Eventually(func() error {
-					return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: spName, Namespace: testNamespace}, sp)
+					return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: spName, Namespace: ROControllerNamespace}, sp)
 				}, timeout, interval).Should(Succeed())
 
 				sp.Status.Phase = signalprocessingv1.PhaseFailed
@@ -117,7 +117,7 @@ var _ = Describe("Consecutive Failures Integration Tests (BR-ORCH-042)", func() 
 			rr4 := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "rr-consecutive-fail-4",
-					Namespace: testNamespace,
+					Namespace: ROControllerNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: fingerprint,
@@ -151,7 +151,7 @@ var _ = Describe("Consecutive Failures Integration Tests (BR-ORCH-042)", func() 
 
 			// Validate BlockReason
 			Expect(rr4.Status.BlockReason).To(Equal("ConsecutiveFailures"))
-			Expect(rr4.Status.BlockMessage).ToNot(BeEmpty())
+			Expect(rr4.Status.BlockMessage).To(ContainSubstring("consecutive"), "BlockMessage should describe consecutive failure reason")
 		})
 	})
 
@@ -165,7 +165,7 @@ var _ = Describe("Consecutive Failures Integration Tests (BR-ORCH-042)", func() 
 				rr := &remediationv1.RemediationRequest{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "rr-reset-count-fail-" + string(rune('0'+i)),
-						Namespace: testNamespace,
+						Namespace: ROControllerNamespace,
 					},
 					Spec: remediationv1.RemediationRequestSpec{
 						SignalFingerprint: fingerprint,
@@ -193,7 +193,7 @@ var _ = Describe("Consecutive Failures Integration Tests (BR-ORCH-042)", func() 
 				spName := "sp-" + rr.Name
 				sp := &signalprocessingv1.SignalProcessing{}
 				Eventually(func() error {
-					return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: spName, Namespace: testNamespace}, sp)
+					return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: spName, Namespace: ROControllerNamespace}, sp)
 				}, timeout, interval).Should(Succeed())
 				sp.Status.Phase = signalprocessingv1.PhaseFailed
 				sp.Status.Error = "Failure for count reset test"
@@ -209,7 +209,7 @@ var _ = Describe("Consecutive Failures Integration Tests (BR-ORCH-042)", func() 
 			rr3 := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "rr-reset-count-success",
-					Namespace: testNamespace,
+					Namespace: ROControllerNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: fingerprint,
@@ -249,7 +249,7 @@ var _ = Describe("Consecutive Failures Integration Tests (BR-ORCH-042)", func() 
 				rr := &remediationv1.RemediationRequest{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "rr-blocked-prevent-" + string(rune('0'+i)),
-						Namespace: testNamespace,
+						Namespace: ROControllerNamespace,
 					},
 					Spec: remediationv1.RemediationRequestSpec{
 						SignalFingerprint: fingerprint,
@@ -276,7 +276,7 @@ var _ = Describe("Consecutive Failures Integration Tests (BR-ORCH-042)", func() 
 				spName := "sp-" + rr.Name
 				sp := &signalprocessingv1.SignalProcessing{}
 				Eventually(func() error {
-					return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: spName, Namespace: testNamespace}, sp)
+					return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: spName, Namespace: ROControllerNamespace}, sp)
 				}, timeout, interval).Should(Succeed())
 				sp.Status.Phase = signalprocessingv1.PhaseFailed
 				sp.Status.Error = "Failure for blocked prevent test"
@@ -292,7 +292,7 @@ var _ = Describe("Consecutive Failures Integration Tests (BR-ORCH-042)", func() 
 			rr4 := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "rr-blocked-prevent-4",
-					Namespace: testNamespace,
+					Namespace: ROControllerNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: fingerprint,
@@ -327,7 +327,7 @@ var _ = Describe("Consecutive Failures Integration Tests (BR-ORCH-042)", func() 
 			spName := "sp-rr-blocked-prevent-4"
 			sp := &signalprocessingv1.SignalProcessing{}
 			Consistently(func() bool {
-				err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: spName, Namespace: testNamespace}, sp)
+				err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: spName, Namespace: ROControllerNamespace}, sp)
 				return err != nil // Should remain NotFound
 			}, "2s", interval).Should(BeTrue(), "SignalProcessing should not be created when RR is Blocked")
 		})
@@ -343,7 +343,7 @@ var _ = Describe("Consecutive Failures Integration Tests (BR-ORCH-042)", func() 
 				rr := &remediationv1.RemediationRequest{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "rr-cooldown-expire-" + string(rune('0'+i)),
-						Namespace: testNamespace,
+						Namespace: ROControllerNamespace,
 					},
 					Spec: remediationv1.RemediationRequestSpec{
 						SignalFingerprint: fingerprint,
@@ -370,7 +370,7 @@ var _ = Describe("Consecutive Failures Integration Tests (BR-ORCH-042)", func() 
 				spName := "sp-" + rr.Name
 				sp := &signalprocessingv1.SignalProcessing{}
 				Eventually(func() error {
-					return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: spName, Namespace: testNamespace}, sp)
+					return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: spName, Namespace: ROControllerNamespace}, sp)
 				}, timeout, interval).Should(Succeed())
 				sp.Status.Phase = signalprocessingv1.PhaseFailed
 				sp.Status.Error = "Failure for cooldown test"
@@ -386,7 +386,7 @@ var _ = Describe("Consecutive Failures Integration Tests (BR-ORCH-042)", func() 
 			rr4 := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "rr-cooldown-expire-4",
-					Namespace: testNamespace,
+					Namespace: ROControllerNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: fingerprint,
@@ -416,9 +416,7 @@ var _ = Describe("Consecutive Failures Integration Tests (BR-ORCH-042)", func() 
 				return rr4.Status.OverallPhase
 			}, timeout, interval).Should(Equal(remediationv1.PhaseBlocked))
 
-			// Validate BlockedUntil is set and in the future
-			Expect(rr4.Status.BlockedUntil).ToNot(BeNil(), "BlockedUntil should be set")
-			Expect(rr4.Status.BlockedUntil.Time).To(BeTemporally(">", time.Now()), "BlockedUntil should be in the future")
+			Expect(rr4.Status.BlockedUntil).To(HaveField("Time", BeTemporally(">", time.Now())), "BlockedUntil should be in the future")
 
 			// Note: Full cooldown expiry test would require waiting 1 hour (default cooldown)
 			// Integration test validates BlockedUntil is set correctly
@@ -436,7 +434,7 @@ var _ = Describe("Consecutive Failures Integration Tests (BR-ORCH-042)", func() 
 				rr := &remediationv1.RemediationRequest{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "rr-blocked-until-" + string(rune('0'+i)),
-						Namespace: testNamespace,
+						Namespace: ROControllerNamespace,
 					},
 					Spec: remediationv1.RemediationRequestSpec{
 						SignalFingerprint: fingerprint,
@@ -463,7 +461,7 @@ var _ = Describe("Consecutive Failures Integration Tests (BR-ORCH-042)", func() 
 				spName := "sp-" + rr.Name
 				sp := &signalprocessingv1.SignalProcessing{}
 				Eventually(func() error {
-					return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: spName, Namespace: testNamespace}, sp)
+					return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: spName, Namespace: ROControllerNamespace}, sp)
 				}, timeout, interval).Should(Succeed())
 				sp.Status.Phase = signalprocessingv1.PhaseFailed
 				sp.Status.Error = "Failure for BlockedUntil test"
@@ -479,7 +477,7 @@ var _ = Describe("Consecutive Failures Integration Tests (BR-ORCH-042)", func() 
 			rr4 := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "rr-blocked-until-4",
-					Namespace: testNamespace,
+					Namespace: ROControllerNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: fingerprint,
@@ -515,15 +513,11 @@ var _ = Describe("Consecutive Failures Integration Tests (BR-ORCH-042)", func() 
 				return rr4.Status.BlockedUntil != nil
 			}, timeout, interval).Should(BeTrue())
 
-			// Validate BlockedUntil calculation
 			// Per BR-ORCH-042: Default cooldown is 1 hour (3600 seconds)
-			Expect(rr4.Status.BlockedUntil).ToNot(BeNil())
-
 			// BlockedUntil should be approximately 1 hour in the future (allow 5min tolerance for test execution)
 			expectedBlockedUntil := time.Now().Add(1 * time.Hour)
-			actualBlockedUntil := rr4.Status.BlockedUntil.Time
-
-			Expect(actualBlockedUntil).To(BeTemporally("~", expectedBlockedUntil, 5*time.Minute),
+			Expect(rr4.Status.BlockedUntil).To(HaveField("Time",
+				BeTemporally("~", expectedBlockedUntil, 5*time.Minute)),
 				"BlockedUntil should be approximately 1 hour from now (default cooldown)")
 		})
 	})

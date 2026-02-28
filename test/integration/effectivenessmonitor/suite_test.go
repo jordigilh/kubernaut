@@ -486,7 +486,12 @@ func createEffectivenessAssessment(namespace, name, correlationID string) *eav1.
 		Spec: eav1.EffectivenessAssessmentSpec{
 			CorrelationID:           correlationID,
 			RemediationRequestPhase: "Completed",
-			TargetResource: eav1.TargetResource{
+			SignalTarget: eav1.TargetResource{
+				Kind:      "Deployment",
+				Name:      "test-app",
+				Namespace: namespace,
+			},
+			RemediationTarget: eav1.TargetResource{
 				Kind:      "Deployment",
 				Name:      "test-app",
 				Namespace: namespace,
@@ -517,7 +522,12 @@ func createExpiredEffectivenessAssessment(namespace, name, correlationID string)
 		Spec: eav1.EffectivenessAssessmentSpec{
 			CorrelationID:           correlationID,
 			RemediationRequestPhase: "Completed",
-			TargetResource: eav1.TargetResource{
+			SignalTarget: eav1.TargetResource{
+				Kind:      "Deployment",
+				Name:      "test-app",
+				Namespace: namespace,
+			},
+			RemediationTarget: eav1.TargetResource{
 				Kind:      "Deployment",
 				Name:      "test-app",
 				Namespace: namespace,
@@ -528,10 +538,15 @@ func createExpiredEffectivenessAssessment(namespace, name, correlationID string)
 		},
 	}
 	Expect(k8sClient.Create(ctx, ea)).To(Succeed())
-	// Patch status with expired ValidityDeadline so reconciler treats it as expired
+
+	// Wait for reconciler to process and set Stabilizing phase, then override with expired deadline.
+	// Direct Status().Update() right after Create races with reconciler (409 Conflict).
 	expired := metav1.NewTime(time.Now().Add(-1 * time.Minute))
-	ea.Status.ValidityDeadline = &expired
-	Expect(k8sClient.Status().Update(ctx, ea)).To(Succeed())
+	Eventually(func(g Gomega) {
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(ea), ea)).To(Succeed())
+		ea.Status.ValidityDeadline = &expired
+		g.Expect(k8sClient.Status().Update(ctx, ea)).To(Succeed())
+	}, 30*time.Second, 250*time.Millisecond).Should(Succeed())
 	GinkgoWriter.Printf("✅ Created expired EffectivenessAssessment: %s/%s\n", namespace, name)
 	return ea
 }

@@ -399,16 +399,17 @@ type KubernetesProviderData struct {
 type ResourceIdentifier struct {
     Kind      string `json:"kind"`
     Name      string `json:"name"`
-    Namespace string `json:"namespace"`
+    // +optional — empty for cluster-scoped resources (e.g., Node, PersistentVolume)
+    Namespace string `json:"namespace,omitempty"`
 }
 ```
 
 **Fields**:
-- `namespace` (string, **required**): Kubernetes namespace where signal originated
+- `namespace` (string, **optional**): Kubernetes namespace where signal originated. Empty for cluster-scoped resources (e.g., Node, PersistentVolume)
 - `resource` (object, **required**): Target Kubernetes resource
   - `kind` (string, **required**): Resource kind (Pod, Deployment, StatefulSet, etc.)
   - `name` (string, **required**): Resource name
-  - `namespace` (string, **required**): Resource namespace (may differ from signal namespace)
+  - `namespace` (string, **optional**): Resource namespace. Empty for cluster-scoped resources (e.g., Node, PersistentVolume)
 - `alertmanagerURL` (string, optional): Link to Alertmanager alert view
 - `grafanaURL` (string, optional): Link to Grafana dashboard
 - `prometheusQuery` (string, optional): Prometheus query that triggered the alert
@@ -775,7 +776,7 @@ For schemas of CRDs created by Central Controller:
 - **RemediationProcessing**: See `01-signalprocessing/crd-schema.md`
 - **AIAnalysis**: See `02-aianalysis/crd-schema.md`
 - **WorkflowExecution**: See `03-workflowexecution/crd-schema.md`
-- **KubernetesExecution**: See `04-kubernetesexecutor/crd-schema.md`
+- **KubernetesExecution** (DEPRECATED - ADR-025): See `04-kubernetesexecutor/crd-schema.md`
 
 ---
 
@@ -808,7 +809,7 @@ For schemas of CRDs created by Central Controller:
 **Schema Version**: v1.0
 **K8s API Version**: `remediation.kubernaut.io/v1`
 **Confidence**: 100% (Gateway as source of truth)
-# CRD Schemas Extension - AIAnalysis, WorkflowExecution, KubernetesExecution
+# CRD Schemas Extension - AIAnalysis, WorkflowExecution, KubernetesExecution (DEPRECATED - ADR-025)
 
 **Purpose**: Temporary file containing schema extensions to be appended to `CRD_SCHEMAS.md`
 
@@ -1089,7 +1090,7 @@ type WorkflowResult struct {
 **Phase Transitions**:
 1. `planning` → Creating execution plan
 2. `validating` → Running safety checks and Rego policies
-3. `executing` → Executing workflow steps (creates KubernetesExecution CRDs)
+3. `executing` → Executing workflow steps (creates KubernetesExecution CRDs) (DEPRECATED - ADR-025: replaced by Tekton TaskRun)
 4. `monitoring` → Monitoring step results and health
 5. `completed` → Workflow finished successfully
 6. `failed` → Workflow failed (with rollback if configured)
@@ -1097,7 +1098,9 @@ type WorkflowResult struct {
 
 ---
 
-## 🎯 KubernetesExecution CRD
+## 🎯 KubernetesExecution CRD (DEPRECATED - ADR-025)
+
+**⚠️ DEPRECATED**: KubernetesExecution CRD and KubernetesExecutor service eliminated by ADR-025. Replaced by Tekton TaskRun. API types and CRD manifests have been deleted.
 
 ### Metadata
 
@@ -1548,7 +1551,7 @@ type DeliveryAttempt struct {
 - **Numeric**: StepNumber (≥1), MaxRetries (0-10), Confidence scores (0.0-1.0)
 - **Pattern**: Timeout (duration format)
 
-### KubernetesExecution
+### KubernetesExecution (DEPRECATED - ADR-025)
 - **Enum**: Action, PatchType, Phase
 - **Numeric**: StepNumber (≥1), Replicas (0-1000), GracePeriodSeconds (0-3600), MaxRetries (0-5)
 - **MaxLength**: Deployment/Pod/Node names (253), Namespace (63)

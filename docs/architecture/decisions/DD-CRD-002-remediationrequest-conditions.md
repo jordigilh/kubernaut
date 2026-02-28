@@ -28,7 +28,7 @@ This document specifies the Kubernetes Conditions for the **RemediationRequest**
 | `AIAnalysisComplete` | AI completed/failed | Phase handler |
 | `WorkflowExecutionReady` | WE CRD created successfully | Creator |
 | `WorkflowExecutionComplete` | WE completed/failed | Phase handler |
-| `RecoveryComplete` | Terminal phase reached | Reconciler |
+| `RecoveryComplete` | [Deprecated - Issue #180] Terminal phase reached | Reconciler |
 | `NotificationDelivered` | Notification delivery outcome | Reconciler |
 
 ---
@@ -82,17 +82,9 @@ This document specifies the Kubernetes Conditions for the **RemediationRequest**
 | `False` | `WorkflowFailed` | "Workflow failed: {error}" |
 | `False` | `WorkflowTimeout` | "Workflow timed out after {duration}" |
 
-### RecoveryComplete
+### RecoveryComplete [Deprecated - Issue #180]
 
-| Status | Reason | Message Pattern |
-|--------|--------|-----------------|
-| `True` | `RecoverySucceeded` | "Remediation completed successfully" |
-| `False` | `RecoveryFailed` | "Remediation failed: {error}" |
-| `False` | `MaxAttemptsReached` | "Maximum recovery attempts ({max}) reached" |
-| `False` | `BlockedByConsecutiveFailures` | "Blocked after {count} consecutive failures" |
-| `False` | `InProgress` | "Remediation in progress (phase: {phase})" |
-
-**Note**: RecoveryComplete is now set on timeout and blocked-terminal paths (previously a gap).
+**Note**: Recovery flow (DD-RECOVERY-002) removed. RecoveryComplete condition retained for backward compatibility.
 
 ### Ready
 

@@ -18,10 +18,9 @@
 Incident Analysis Package
 
 Business Requirements: BR-HAPI-002 (Incident Analysis)
-Design Decision: DD-RECOVERY-003 (DetectedLabels for workflow filtering)
+Design Decision: DD-HAPI-001 (DetectedLabels for workflow filtering)
 
 Provides AI-powered Root Cause Analysis (RCA) and workflow selection for initial incidents.
-Separate from recovery.py which handles failed remediation retry scenarios.
 
 This package was refactored from a single 1,593-line file into focused modules
 for improved maintainability. All imports are re-exported for backward compatibility.

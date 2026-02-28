@@ -39,6 +39,24 @@ Chart label value.
 {{- end }}
 
 {{/*
+Render nodeSelector and tolerations for a component pod spec.
+Component-level values override global defaults.
+Usage: {{ include "kubernaut.scheduling" (dict "component" .Values.gateway "global" .Values.global) | nindent 6 }}
+*/}}
+{{- define "kubernaut.scheduling" -}}
+{{- $nodeSelector := coalesce .component.nodeSelector .global.nodeSelector -}}
+{{- with $nodeSelector }}
+nodeSelector:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+{{- $tolerations := coalesce .component.tolerations .global.tolerations -}}
+{{- with $tolerations }}
+tolerations:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+{{- end }}
+
+{{/*
 Render the container image for a Kubernaut service.
 Usage: {{ include "kubernaut.image" (dict "service" "gateway" "global" .Values.global "appVersion" .Chart.AppVersion) }}
 */}}

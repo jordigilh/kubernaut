@@ -4,6 +4,5 @@ resources:
 - signalprocessing_v1alpha1_signalprocessing.yaml
 - aianalysis_v1alpha1_aianalysis.yaml
 - workflowexecution_v1alpha1_workflowexecution.yaml
-- kubernetesexecution_v1alpha1_kubernetesexecution.yaml
 - remediationorchestrator_v1alpha1_remediationorchestrator.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples

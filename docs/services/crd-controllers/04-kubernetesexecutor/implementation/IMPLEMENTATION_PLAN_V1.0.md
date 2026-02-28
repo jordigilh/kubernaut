@@ -1,5 +1,7 @@
 # Kubernetes Executor Controller - Implementation Plan v1.1
 
+> **DEPRECATED**: KubernetesExecution CRD and KubernetesExecutor service were eliminated by ADR-025 and replaced by Tekton TaskRun via WorkflowExecution. This documentation is retained for historical reference only. API types and CRD manifests have been removed from the codebase.
+
 **Version**: 1.1 - PRODUCTION-READY WITH VALIDATION FRAMEWORK (92% Confidence) ✅
 **Date**: 2025-10-16
 **Timeline**: 25-28 days (200-224 hours)

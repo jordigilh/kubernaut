@@ -147,7 +147,12 @@ var _ = Describe("K8s Event Observability (BR-EM-005, DD-EVENT-001)", func() {
 			Spec: eav1.EffectivenessAssessmentSpec{
 				CorrelationID:           "rr-ke-002",
 				RemediationRequestPhase: "Completed",
-				TargetResource: eav1.TargetResource{
+				SignalTarget: eav1.TargetResource{
+					Kind:      "Deployment",
+					Name:      "test-app",
+					Namespace: ns,
+				},
+				RemediationTarget: eav1.TargetResource{
 					Kind:      "Deployment",
 					Name:      "test-app",
 					Namespace: ns,
@@ -204,7 +209,12 @@ var _ = Describe("K8s Event Observability (BR-EM-005, DD-EVENT-001)", func() {
 			Spec: eav1.EffectivenessAssessmentSpec{
 				CorrelationID:           "rr-ke-003",
 				RemediationRequestPhase: "Completed",
-				TargetResource: eav1.TargetResource{
+				SignalTarget: eav1.TargetResource{
+					Kind:      "Deployment",
+					Name:      "test-app",
+					Namespace: ns,
+				},
+				RemediationTarget: eav1.TargetResource{
 					Kind:      "Deployment",
 					Name:      "test-app",
 					Namespace: ns,

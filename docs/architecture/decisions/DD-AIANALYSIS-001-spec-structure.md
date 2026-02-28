@@ -1,11 +1,14 @@
 # DD-AIANALYSIS-001: AIAnalysis CRD Spec Structure
 
-**Version**: 1.1
+**Version**: 1.3
 **Status**: Proposed
-**Date**: 2025-11-16
+**Date**: 2026-02-25
 **Authority**: Authoritative (when approved)
 
 ## Changelog
+
+### Version 1.3 (2026-02-25)
+- **Issue #192**: `TargetResource.Namespace` and `AffectedResource.Namespace` changed from required to `+optional` with `omitempty` to support cluster-scoped resources (Node, PersistentVolume) that have no namespace.
 
 ### Version 1.2 (2025-11-16)
 - **SCOPE CLARIFICATION**: Focused on data needed for LLM prompt (per ADR-039)
@@ -230,8 +233,9 @@ type ResourceIdentifier struct {
     // Resource name
     Name string `json:"name"`
 
-    // Resource namespace
-    Namespace string `json:"namespace"`
+    // Resource namespace. Empty for cluster-scoped resources (e.g., Node, PersistentVolume).
+    // +optional
+    Namespace string `json:"namespace,omitempty"`
 }
 
 // DeduplicationData provides correlation and deduplication information

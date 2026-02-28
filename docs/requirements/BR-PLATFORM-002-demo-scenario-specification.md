@@ -315,7 +315,7 @@ kubectl rollout status statefulset/alertmanager-kube-prometheus-stack-alertmanag
 | **Behavioral** | Tests platform behavior (dedup, escalation, retry) | Varies | Scenario-specific |
 
 Current classification (22 scenarios):
-- **Workflow**: crashloop, crashloop-helm, memory-leak, stuck-rollout, slo-burn, hpa-maxed, pdb-deadlock, autoscale, pending-taint, node-notready, statefulset-pvc-failure, network-policy-block, mesh-routing-failure, gitops-drift, cert-failure, cert-failure-gitops, memory-escalation, remediation-retry (18)
+- **Workflow**: crashloop, crashloop-helm, memory-leak, stuck-rollout, slo-burn, hpa-maxed, pdb-deadlock, autoscale, pending-taint, node-notready, statefulset-pvc-failure, network-policy-block, mesh-routing-failure, gitops-drift, cert-failure, cert-failure-gitops, memory-escalation (17)
 - **No-Action**: disk-pressure (1)
 - **Behavioral**: duplicate-alert-suppression, resource-quota-exhaustion, concurrent-cross-namespace (3)
 

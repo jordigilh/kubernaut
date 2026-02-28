@@ -50,7 +50,6 @@ sys.path.insert(0, str(script_dir))
 
 from src.main import app
 from src.models.incident_models import IncidentResponse
-from src.models.recovery_models import RecoveryResponse
 
 
 def validate_model_against_spec(model_class, schema_name, spec):
@@ -131,7 +130,6 @@ def validate_spec():
     # Validate critical models
     models_to_validate = [
         (IncidentResponse, "IncidentResponse"),
-        (RecoveryResponse, "RecoveryResponse"),
     ]
 
     all_valid = True

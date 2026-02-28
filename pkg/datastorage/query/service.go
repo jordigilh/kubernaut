@@ -91,6 +91,8 @@ func NewService(db DBQuerier, logger logr.Logger) *Service {
 
 // ListRemediationAudits queries remediation audits with filters and pagination
 // BR-STORAGE-005: List with filtering
+// CONVENTION (#213): All paginated remediation_audit queries must use id DESC as a
+// deterministic tiebreaker in ORDER BY to prevent row shifting between pages.
 func (s *Service) ListRemediationAudits(ctx context.Context, opts *ListOptions) ([]*models.RemediationAudit, error) {
 	// Track query duration for observability
 	// BR-STORAGE-019: Prometheus metrics
@@ -123,7 +125,8 @@ func (s *Service) ListRemediationAudits(ctx context.Context, opts *ListOptions) 
 	}
 
 	// Add ordering (always by start_time DESC for consistency)
-	query += " ORDER BY start_time DESC"
+	// #213: id DESC tiebreaker ensures deterministic pagination when timestamps collide
+	query += " ORDER BY start_time DESC, id DESC"
 
 	// Apply pagination
 	if opts.Limit > 0 {

@@ -214,7 +214,7 @@ func (r *Repository) GetVersionsByName(ctx context.Context, workflowName string)
 	query := `
 		SELECT * FROM remediation_workflow_catalog
 		WHERE workflow_name = $1
-		ORDER BY created_at DESC
+		ORDER BY created_at DESC, workflow_id ASC
 	`
 
 	var workflows []models.RemediationWorkflow
@@ -278,6 +278,7 @@ func (r *Repository) List(ctx context.Context, filters *models.WorkflowSearchFil
 
 	// Add pagination and ordering
 	builder.OrderBy("created_at", sqlbuilder.DESC).
+		OrderBy("workflow_id", sqlbuilder.ASC).
 		Limit(limit).
 		Offset(offset)
 

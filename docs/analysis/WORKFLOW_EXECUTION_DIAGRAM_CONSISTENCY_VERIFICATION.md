@@ -106,7 +106,7 @@ CTX-->>WF: Historical effectiveness data
 
 ---
 
-### **5. KubernetesExecution CRD Creation** ✅
+### **5. KubernetesExecution (DEPRECATED - ADR-025) CRD Creation** ✅
 
 **Diagram Shows**:
 ```

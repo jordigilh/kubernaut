@@ -289,7 +289,7 @@ def inject_detected_labels(
     so AIAnalysis can store them in PostRCAContext for Rego policy evaluation.
 
     Args:
-        result: Mutable response dict (IncidentResponse or RecoveryResponse format)
+        result: Mutable response dict (IncidentResponse format)
         session_state: Shared session state dict, or None
     """
     if session_state and "detected_labels" in session_state:

@@ -17,7 +17,7 @@ spec:
         app: web-cluster
     spec:
       nodeSelector:
-        kubernaut.ai/workload-node: "true"
+        kubernaut.ai/managed: "true"
       containers:
       - name: nginx
         image: nginx:1.27-alpine
@@ -25,10 +25,10 @@ spec:
         - containerPort: 80
         resources:
           requests:
-            memory: "512Mi"
+            memory: "2Gi"
             cpu: "250m"
           limits:
-            memory: "512Mi"
+            memory: "2Gi"
             cpu: "500m"
         livenessProbe:
           httpGet:

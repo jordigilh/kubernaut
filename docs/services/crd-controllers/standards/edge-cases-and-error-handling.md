@@ -848,7 +848,7 @@ func (r *Reconciler) handleExecuting(ctx context.Context, we *WorkflowExecution)
             stepTimeout = remaining
         }
 
-        // Create KubernetesExecution with adjusted timeout
+        // Create KubernetesExecution (DEPRECATED - ADR-025) with adjusted timeout
         if err := r.Orchestrator.CreateStepExecution(ctx, we, step, stepTimeout); err != nil {
             log.Error(err, "Failed to create step execution", "step", step.Name)
             continue
@@ -877,7 +877,7 @@ It("should handle step timeout vs workflow timeout correctly", func() {
 
 ### 3. Watch-Based Coordination Missed Events
 
-**Scenario**: Controller misses KubernetesExecution completion event
+**Scenario**: Controller misses KubernetesExecution (DEPRECATED - ADR-025) completion event
 
 **Causes**:
 - Controller restart during step execution
@@ -893,7 +893,7 @@ return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 
 **Handling Strategy**:
 1. **Periodic Reconciliation**: Requeue every 30s to check step status
-2. **Explicit Status Check**: Query KubernetesExecution directly if watch missed
+2. **Explicit Status Check**: Query KubernetesExecution (DEPRECATED - ADR-025) directly if watch missed
 3. **Event Replay**: Use informer cache to replay missed events
 4. **Idempotent Step Creation**: Safe to recreate if not found
 5. **Metrics**: Track reconciliation triggers (watch vs periodic)
@@ -925,12 +925,12 @@ func (r *Reconciler) handleExecuting(ctx context.Context, we *WorkflowExecution)
 }
 
 func (m *ExecutionMonitor) CheckStepCompletions(ctx context.Context, we *WorkflowExecution) (allCompleted bool, anyFailed bool) {
-    // Query all child KubernetesExecution CRDs directly
+    // Query all child KubernetesExecution (DEPRECATED - ADR-025) CRDs directly
     var keList KubernetesExecutionList
     if err := m.client.List(ctx, &keList, client.MatchingLabels{
         "workflow": we.Name,
     }); err != nil {
-        log.Error(err, "Failed to list KubernetesExecutions")
+        log.Error(err, "Failed to list KubernetesExecutions (DEPRECATED - ADR-025)")
         return false, false
     }
 
@@ -963,7 +963,7 @@ func (m *ExecutionMonitor) CheckStepCompletions(ctx context.Context, we *Workflo
 It("should detect step completion even after missed watch event", func() {
     // Create workflow
     // Create steps
-    // Manually update KubernetesExecution status (bypass watch)
+    // Manually update KubernetesExecution (DEPRECATED - ADR-025) status (bypass watch)
     // Wait for periodic reconciliation (30s)
     // Verify workflow detects completion
 })
@@ -1039,7 +1039,7 @@ func (r *Orchestrator) CreateStepExecution(ctx context.Context, we *WorkflowExec
                 "retryCount", retryCount+1,
                 "backoffDelay", backoffDelay)
 
-            // Delete failed KubernetesExecution and recreate
+            // Delete failed KubernetesExecution (DEPRECATED - ADR-025) and recreate
             if err := r.client.Delete(ctx, existingKE); err != nil {
                 return err
             }
@@ -1047,7 +1047,7 @@ func (r *Orchestrator) CreateStepExecution(ctx context.Context, we *WorkflowExec
             // Wait for backoff
             time.Sleep(backoffDelay)
 
-            // Create new KubernetesExecution with incremented retry count
+            // Create new KubernetesExecution (DEPRECATED - ADR-025) with incremented retry count
             newKE := r.buildKubernetesExecution(we, step)
             newKE.Status.RetryCount = retryCount + 1
             newKE.Status.RetryReasons = append(existingKE.Status.RetryReasons, existingKE.Status.LastError)
@@ -1059,7 +1059,7 @@ func (r *Orchestrator) CreateStepExecution(ctx context.Context, we *WorkflowExec
     }
 
     // Step doesn't exist, create it
-    ke := r.buildKubernetesExecution(we, step)
+    ke := r.buildKubernetesExecution(we, step) // DEPRECATED - ADR-025
     return r.client.Create(ctx, ke)
 }
 ```
@@ -1266,11 +1266,11 @@ Describe("Job Failure Categorization", func() {
 
 ### 2. Orphaned Job Cleanup
 
-**Scenario**: Kubernetes Jobs left behind after controller restart or KubernetesExecution deletion
+**Scenario**: Kubernetes Jobs left behind after controller restart or KubernetesExecution (DEPRECATED - ADR-025) deletion
 
 **Causes**:
 - Controller crash before Job cleanup
-- KubernetesExecution CRD deleted manually
+- KubernetesExecution (DEPRECATED - ADR-025) CRD deleted manually
 - TTLSecondsAfterFinished not working
 - Job stuck in Running state
 
@@ -1284,7 +1284,7 @@ orphanedJobs := r.findOrphanedJobs(ctx)
 ```
 
 **Handling Strategy**:
-1. **Owner References**: Jobs have owner reference to KubernetesExecution
+1. **Owner References**: Jobs have owner reference to KubernetesExecution (DEPRECATED - ADR-025)
 2. **TTL Controller**: Use TTLSecondsAfterFinished for automatic cleanup
 3. **Periodic Scan**: Every 5 minutes, scan for orphaned jobs
 4. **Cleanup Criteria**: Job older than 1 hour with no owner
@@ -1292,7 +1292,7 @@ orphanedJobs := r.findOrphanedJobs(ctx)
 
 **Implementation**:
 ```go
-func (m *JobManager) CreateJob(ctx context.Context, ke *KubernetesExecution, actionDef *ActionDefinition) (*batchv1.Job, error) {
+func (m *JobManager) CreateJob(ctx context.Context, ke *KubernetesExecution, actionDef *ActionDefinition) (*batchv1.Job, error) { // ke DEPRECATED - ADR-025
     job := &batchv1.Job{
         ObjectMeta: metav1.ObjectMeta{
             Name:      fmt.Sprintf("%s-job", ke.Name),
@@ -1307,7 +1307,7 @@ func (m *JobManager) CreateJob(ctx context.Context, ke *KubernetesExecution, act
                 *metav1.NewControllerRef(ke, schema.GroupVersionKind{
                     Group:   "kubernetesexecution.kubernaut.ai",
                     Version: "v1alpha1",
-                    Kind:    "KubernetesExecution",
+                    Kind:    "KubernetesExecution", // DEPRECATED - ADR-025
                 }),
             },
         },
@@ -1331,7 +1331,7 @@ func (r *Reconciler) cleanupOrphanedJobs(ctx context.Context) error {
     }
 
     for _, job := range jobList.Items {
-        // Check if owner KubernetesExecution exists
+        // Check if owner KubernetesExecution (DEPRECATED - ADR-025) exists
         if len(job.OwnerReferences) == 0 {
             // Orphaned job, check age
             age := time.Since(job.CreationTimestamp.Time)
@@ -1352,9 +1352,9 @@ func (r *Reconciler) cleanupOrphanedJobs(ctx context.Context) error {
 **Test Coverage**:
 ```go
 It("should cleanup orphaned jobs after 1 hour", func() {
-    // Create KubernetesExecution
+    // Create KubernetesExecution (DEPRECATED - ADR-025)
     // Create associated Job
-    // Delete KubernetesExecution (leaving Job orphaned)
+    // Delete KubernetesExecution (DEPRECATED - ADR-025) (leaving Job orphaned)
     // Wait for 1 hour (or mock time)
     // Trigger cleanup reconciliation
     // Verify Job is deleted
@@ -1466,7 +1466,7 @@ func (e *SafetyEngine) LoadPolicies(ctx context.Context) error {
     return nil
 }
 
-func (e *SafetyEngine) EvaluateAction(ctx context.Context, ke *KubernetesExecution, actionDef *ActionDefinition) (*PolicyResult, error) {
+func (e *SafetyEngine) EvaluateAction(ctx context.Context, ke *KubernetesExecution, actionDef *ActionDefinition) (*PolicyResult, error) { // ke DEPRECATED - ADR-025
     e.mu.RLock()
     policies := e.policies
     e.mu.RUnlock()

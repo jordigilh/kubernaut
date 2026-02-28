@@ -11,6 +11,8 @@ spec:
     kind: RemediationRequest
     listKind: RemediationRequestList
     plural: remediationrequests
+    shortNames:
+    - rr
     singular: remediationrequest
   scope: Namespaced
   versions:
@@ -435,7 +437,7 @@ spec:
                 type: integer
               currentProcessingRef:
                 description: CurrentProcessingRef references the current SignalProcessing
-                  CRD (may differ during recovery)
+                  CRD
                 properties:
                   apiVersion:
                     description: API version of the referent.
@@ -782,10 +784,6 @@ spec:
                   Reference: BR-ORCH-028
                 format: date-time
                 type: string
-              recoveryAttempts:
-                description: RecoveryAttempts tracks the number of recovery attempts
-                  for this remediation
-                type: integer
               remediationProcessingRef:
                 description: ObjectReference contains enough information to let you
                   inspect or modify the referred object.

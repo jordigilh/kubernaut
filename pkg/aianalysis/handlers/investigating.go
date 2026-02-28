@@ -67,7 +67,7 @@ type InvestigatingHandlerOption func(*InvestigatingHandler)
 
 // WithSessionMode enables the async session-based submit/poll/result flow (BR-AA-HAPI-064).
 // When enabled, the handler uses SubmitInvestigation/PollSession/GetSessionResult
-// instead of the legacy synchronous Investigate/InvestigateRecovery methods.
+// instead of the legacy synchronous Investigate method.
 func WithSessionMode() InvestigatingHandlerOption {
 	return func(h *InvestigatingHandler) {
 		h.useSessionMode = true
@@ -121,12 +121,10 @@ func NewInvestigatingHandler(hgClient HolmesGPTClientInterface, log logr.Logger,
 
 // Handle processes the Investigating phase
 // BR-AI-007: Call HolmesGPT-API and update status
-// BR-AI-083: Route to recovery endpoint when IsRecoveryAttempt=true
 // BR-AA-HAPI-064: Async session-based flow when useSessionMode=true
 func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
 	h.log.Info("Processing Investigating phase",
 		"name", analysis.Name,
-		"isRecoveryAttempt", analysis.Spec.IsRecoveryAttempt,
 		"sessionMode", h.useSessionMode,
 	)
 
@@ -145,100 +143,41 @@ func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv
 	// Track duration (per crd-schema.md: InvestigationTime)
 	startTime := time.Now()
 
-	// BR-AI-083: Route based on IsRecoveryAttempt
-	if analysis.Spec.IsRecoveryAttempt {
-		h.log.Info("Calling HolmesGPT-API recovery endpoint",
-			"attemptNumber", analysis.Spec.RecoveryAttemptNumber,
-		)
-		recoveryReq := h.builder.BuildRecoveryRequest(analysis) // P1.2: Use request builder
-		recoveryResp, err := h.hgClient.InvestigateRecovery(ctx, recoveryReq)
+	req := h.builder.BuildIncidentRequest(analysis) // P1.2: Use request builder
+	incidentResp, err := h.hgClient.Investigate(ctx, req)
 
-		investigationTime := time.Since(startTime).Milliseconds()
+	investigationTime := time.Since(startTime).Milliseconds()
 
-		// DD-AUDIT-003: Record HolmesGPT API call for audit trail
-		statusCode := 200
-		if err != nil {
-			statusCode = 500 // Error case
-		}
-		h.auditClient.RecordAIAgentCall(ctx, analysis, "/api/v1/recovery/investigate", statusCode, int(investigationTime))
-
-		if err != nil {
-			return h.handleError(ctx, analysis, err)
-		}
-
-		// AA-HAPI-001: Set ObservedGeneration immediately after successful HAPI call
-		// This prevents duplicate HAPI calls when controller reconciles before status persists
-		// DD-CONTROLLER-001 v3.0 Pattern C: Set before phase transition
-		analysis.Status.ObservedGeneration = analysis.Generation
-
-		// Set investigation time on successful response
-		analysis.Status.InvestigationTime = investigationTime
-
-		// BR-AI-082: Populate RecoveryStatus if recovery_analysis present
-		if recoveryResp != nil {
-			wasPopulated := h.processor.PopulateRecoveryStatusFromRecovery(analysis, recoveryResp) // P1.1: Use processor
-			if wasPopulated {
-				// Record recovery status population metric
-				if analysis.Status.RecoveryStatus != nil && analysis.Status.RecoveryStatus.PreviousAttemptAssessment != nil {
-					h.metrics.RecordRecoveryStatusPopulated(
-						analysis.Status.RecoveryStatus.PreviousAttemptAssessment.FailureUnderstood,
-						analysis.Status.RecoveryStatus.StateChanged,
-					)
-				}
-			} else {
-				// Record skipped metric when HAPI doesn't return recovery_analysis
-				h.metrics.RecordRecoveryStatusSkipped()
-			}
-		}
-
-		// Process recovery response - must check for nil (CRITICAL: prevents panic)
-		if recoveryResp == nil {
-			return h.handleError(ctx, analysis, fmt.Errorf("received nil recovery response from HolmesGPT-API"))
-		}
-		// P1.1: Delegate to processor, reset retry count after success
-		// DD-AUDIT-003: Phase transition audit recorded by controller AFTER AtomicStatusUpdate (phase_handlers.go)
-		result, err := h.processor.ProcessRecoveryResponse(ctx, analysis, recoveryResp)
-		if err == nil {
-			h.setRetryCount(analysis, 0)
-		}
-		return result, err
-	} else {
-		req := h.builder.BuildIncidentRequest(analysis) // P1.2: Use request builder
-		incidentResp, err := h.hgClient.Investigate(ctx, req)
-
-		investigationTime := time.Since(startTime).Milliseconds()
-
-		// DD-AUDIT-003: Record HolmesGPT API call for audit trail
-		statusCode := 200
-		if err != nil {
-			statusCode = 500 // Error case
-		}
-		h.auditClient.RecordAIAgentCall(ctx, analysis, "/api/v1/incident/analyze", statusCode, int(investigationTime))
-
-		if err != nil {
-			return h.handleError(ctx, analysis, err)
-		}
-
-		// AA-HAPI-001: Set ObservedGeneration immediately after successful HAPI call
-		// This prevents duplicate HAPI calls when controller reconciles before status persists
-		// DD-CONTROLLER-001 v3.0 Pattern C: Set before phase transition
-		analysis.Status.ObservedGeneration = analysis.Generation
-
-		// Set investigation time on successful response
-		analysis.Status.InvestigationTime = investigationTime
-
-		// Process incident response - must check for nil (CRITICAL: prevents panic)
-		if incidentResp == nil {
-			return h.handleError(ctx, analysis, fmt.Errorf("received nil incident response from HolmesGPT-API"))
-		}
-		// P1.1: Delegate to processor, reset retry count after success
-		// DD-AUDIT-003: Phase transition audit recorded by controller AFTER AtomicStatusUpdate (phase_handlers.go)
-		result, err := h.processor.ProcessIncidentResponse(ctx, analysis, incidentResp)
-		if err == nil {
-			h.setRetryCount(analysis, 0)
-		}
-		return result, err
+	// DD-AUDIT-003: Record HolmesGPT API call for audit trail
+	statusCode := 200
+	if err != nil {
+		statusCode = 500 // Error case
 	}
+	h.auditClient.RecordAIAgentCall(ctx, analysis, "/api/v1/incident/analyze", statusCode, int(investigationTime))
+
+	if err != nil {
+		return h.handleError(ctx, analysis, err)
+	}
+
+	// AA-HAPI-001: Set ObservedGeneration immediately after successful HAPI call
+	// This prevents duplicate HAPI calls when controller reconciles before status persists
+	// DD-CONTROLLER-001 v3.0 Pattern C: Set before phase transition
+	analysis.Status.ObservedGeneration = analysis.Generation
+
+	// Set investigation time on successful response
+	analysis.Status.InvestigationTime = investigationTime
+
+	// Process incident response - must check for nil (CRITICAL: prevents panic)
+	if incidentResp == nil {
+		return h.handleError(ctx, analysis, fmt.Errorf("received nil incident response from HolmesGPT-API"))
+	}
+	// P1.1: Delegate to processor, reset retry count after success
+	// DD-AUDIT-003: Phase transition audit recorded by controller AFTER AtomicStatusUpdate (phase_handlers.go)
+	result, err := h.processor.ProcessIncidentResponse(ctx, analysis, incidentResp)
+	if err == nil {
+		h.setRetryCount(analysis, 0)
+	}
+	return result, err
 }
 
 // buildRequest constructs the HolmesGPT-API request from AIAnalysis spec using generated types
@@ -246,8 +185,6 @@ func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv
 // Per crd-schema.md: Include enrichment data (owner chain, detected labels) for AI context
 // P1.2 Refactoring: Request building methods moved to request_builder.go
 // - BuildIncidentRequest (was buildRequest)
-// - BuildRecoveryRequest (was buildRecoveryRequest)
-// - buildPreviousExecution (private method in builder)
 // - getOrDefault (helper function in builder)
 // - strPtr (helper function in builder)
 
@@ -367,13 +304,8 @@ func (h *InvestigatingHandler) setRetryCount(analysis *aianalysisv1.AIAnalysis, 
 // have been replaced by generated-type versions:
 // - handleWorkflowResolutionFailureFromIncident (for IncidentResponse)
 // - handleProblemResolvedFromIncident (for IncidentResponse)
-// - handleRecoveryNotPossible (for RecoveryResponse)
 
 // P1.1 Refactoring: mapEnumToSubReason and mapWarningsToSubReason moved to response_processor.go
-
-// DD-HAPI-002 v1.4: Maps HAPI response to CRD status for audit/debugging
-// NOTE: Old convertValidationAttempts and populateRecoveryStatus methods deleted
-// - populateRecoveryStatus: Replaced by populateRecoveryStatusFromRecovery (for generated.RecoveryResponse)
 
 // mapErrorTypeToSubReason maps error classifier ErrorType to valid AIAnalysis CRD SubReason enum values
 // per config/crd/bases/kubernaut.ai_aianalyses.yaml line 134-144
@@ -412,31 +344,18 @@ func (h *InvestigatingHandler) handleSessionBased(ctx context.Context, analysis 
 
 // handleSessionSubmit submits a new investigation to HAPI and records the session ID.
 // BR-AA-HAPI-064.1: Submit returns session ID for subsequent polling
-// BR-AA-HAPI-064.9: Recovery submit routes to recovery endpoint
+// BR-AA-HAPI-064.9: Submit incident investigation to HAPI
 func (h *InvestigatingHandler) handleSessionSubmit(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
 	// Detect if this is a regeneration (session exists but ID was cleared after 404)
 	isRegeneration := analysis.Status.InvestigationSession != nil &&
 		analysis.Status.InvestigationSession.ID == "" &&
 		analysis.Status.InvestigationSession.Generation > 0
 
-	var sessionID string
-	var err error
-
-	// BR-AI-083: Route based on IsRecoveryAttempt
-	if analysis.Spec.IsRecoveryAttempt {
-		h.log.Info("Submitting recovery investigation to HAPI (session mode)",
-			"attemptNumber", analysis.Spec.RecoveryAttemptNumber,
-			"isRegeneration", isRegeneration,
-		)
-		req := h.builder.BuildRecoveryRequest(analysis)
-		sessionID, err = h.hgClient.SubmitRecoveryInvestigation(ctx, req)
-	} else {
-		h.log.Info("Submitting incident investigation to HAPI (session mode)",
-			"isRegeneration", isRegeneration,
-		)
-		req := h.builder.BuildIncidentRequest(analysis)
-		sessionID, err = h.hgClient.SubmitInvestigation(ctx, req)
-	}
+	h.log.Info("Submitting incident investigation to HAPI (session mode)",
+		"isRegeneration", isRegeneration,
+	)
+	req := h.builder.BuildIncidentRequest(analysis)
+	sessionID, err := h.hgClient.SubmitInvestigation(ctx, req)
 
 	if err != nil {
 		return h.handleError(ctx, analysis, err)
@@ -557,9 +476,6 @@ func (h *InvestigatingHandler) handleSessionPollCompleted(ctx context.Context, a
 		investigationTime = time.Since(session.CreatedAt.Time).Milliseconds()
 	}
 
-	if analysis.Spec.IsRecoveryAttempt {
-		return h.handleSessionRecoveryResult(ctx, analysis, investigationTime)
-	}
 	return h.handleSessionIncidentResult(ctx, analysis, investigationTime)
 }
 
@@ -585,49 +501,6 @@ func (h *InvestigatingHandler) handleSessionIncidentResult(ctx context.Context, 
 
 	// Delegate to ResponseProcessor (same as legacy flow)
 	result, err := h.processor.ProcessIncidentResponse(ctx, analysis, resp)
-	if err == nil {
-		h.setRetryCount(analysis, 0)
-	}
-	return result, err
-}
-
-// handleSessionRecoveryResult fetches and processes the recovery investigation result.
-func (h *InvestigatingHandler) handleSessionRecoveryResult(ctx context.Context, analysis *aianalysisv1.AIAnalysis, investigationTime int64) (ctrl.Result, error) {
-	session := analysis.Status.InvestigationSession
-
-	resp, err := h.hgClient.GetRecoverySessionResult(ctx, session.ID)
-	if err != nil {
-		return h.handleSessionGetResultError(ctx, analysis, err)
-	}
-
-	// Set investigation metadata
-	analysis.Status.InvestigationTime = investigationTime
-	analysis.Status.ObservedGeneration = analysis.Generation
-
-	// DD-AUDIT-003: Record result retrieval audit event
-	h.auditClient.RecordAIAgentResult(ctx, analysis, investigationTime)
-
-	// BR-AI-082: Populate RecoveryStatus from recovery_analysis
-	if resp != nil {
-		wasPopulated := h.processor.PopulateRecoveryStatusFromRecovery(analysis, resp)
-		if wasPopulated {
-			if analysis.Status.RecoveryStatus != nil && analysis.Status.RecoveryStatus.PreviousAttemptAssessment != nil {
-				h.metrics.RecordRecoveryStatusPopulated(
-					analysis.Status.RecoveryStatus.PreviousAttemptAssessment.FailureUnderstood,
-					analysis.Status.RecoveryStatus.StateChanged,
-				)
-			}
-		} else {
-			h.metrics.RecordRecoveryStatusSkipped()
-		}
-	}
-
-	if resp == nil {
-		return h.handleError(ctx, analysis, fmt.Errorf("received nil recovery response from HolmesGPT-API session %s", session.ID))
-	}
-
-	// Delegate to ResponseProcessor (same as legacy flow)
-	result, err := h.processor.ProcessRecoveryResponse(ctx, analysis, resp)
 	if err == nil {
 		h.setRetryCount(analysis, 0)
 	}

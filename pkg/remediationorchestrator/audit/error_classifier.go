@@ -53,7 +53,7 @@ type ErrorClassification struct {
 //  10. Default → ERR_INTERNAL_ORCHESTRATION
 func ClassifyError(err error) ErrorClassification {
 	if err == nil {
-		return ErrorClassification{Code: "ERR_INTERNAL_ORCHESTRATION", RetryPossible: true}
+		return ErrorClassification{Code: "ERR_INTERNAL_ORCHESTRATION", RetryPossible: false}
 	}
 
 	// 1. context.DeadlineExceeded (check before K8s timeout — more specific)
@@ -84,6 +84,8 @@ func ClassifyError(err error) ErrorClassification {
 		return ErrorClassification{Code: "ERR_K8S_SERVICE_UNAVAILABLE", RetryPossible: true}
 	}
 
-	// 10. Default
-	return ErrorClassification{Code: "ERR_INTERNAL_ORCHESTRATION", RetryPossible: true}
+	// 10. Default: conservative — unrecognized errors are not retryable until
+	// explicitly classified. DD-ERROR-001 marks ERR_INTERNAL_* as "Varies";
+	// known retryable cases (timeout, conflict, not found) are handled above.
+	return ErrorClassification{Code: "ERR_INTERNAL_ORCHESTRATION", RetryPossible: false}
 }

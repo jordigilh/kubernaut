@@ -98,14 +98,13 @@ var _ = Describe("BR-GATEWAY-185: ShouldDeduplicate with Field Selectors", func(
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		testNamespace = "processing-test"
+		testNamespace = controllerNamespace // ADR-057: RRs live in controller namespace
 
-		phaseChecker = processing.NewPhaseBasedDeduplicationChecker(k8sClient)
-		Expect(phaseChecker).ToNot(BeNil())
+		phaseChecker = processing.NewPhaseBasedDeduplicationChecker(k8sClient, 0)
 
-		// Clean up existing test RRs
+		// Clean up existing test RRs in controller namespace
 		rrList := &remediationv1alpha1.RemediationRequestList{}
-		err := k8sClient.List(ctx, rrList, client.InNamespace(testNamespace))
+		err := k8sClient.List(ctx, rrList, client.InNamespace(controllerNamespace))
 		Expect(err).ToNot(HaveOccurred())
 
 		for i := range rrList.Items {
@@ -115,7 +114,7 @@ var _ = Describe("BR-GATEWAY-185: ShouldDeduplicate with Field Selectors", func(
 		// Wait for deletions to propagate
 		Eventually(func() int {
 			list := &remediationv1alpha1.RemediationRequestList{}
-			_ = k8sClient.List(ctx, list, client.InNamespace(testNamespace))
+			_ = k8sClient.List(ctx, list, client.InNamespace(controllerNamespace))
 			return len(list.Items)
 		}, 10*time.Second, 500*time.Millisecond).Should(Equal(0))
 	})
@@ -136,7 +135,7 @@ var _ = Describe("BR-GATEWAY-185: ShouldDeduplicate with Field Selectors", func(
 		It("returns true with existing RR (update dedup status)", func() {
 			fingerprint := "abc123"
 
-			rr := createTestRR("test-rr-pending", testNamespace, fingerprint, "TestAlert", "critical", "Pending", "Pod", "test-pod")
+			rr := createTestRR("test-rr-pending", controllerNamespace, fingerprint, "TestAlert", "critical", "Pending", "Pod", "test-pod")
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			// Update status subresource
@@ -162,7 +161,7 @@ var _ = Describe("BR-GATEWAY-185: ShouldDeduplicate with Field Selectors", func(
 		It("returns true with existing RR (update dedup status)", func() {
 			fingerprint := "def456"
 
-			rr := createTestRR("test-rr-processing", testNamespace, fingerprint, "ActiveAlert", "warning", "Processing", "Deployment", "test-deploy")
+			rr := createTestRR("test-rr-processing", controllerNamespace, fingerprint, "ActiveAlert", "warning", "Processing", "Deployment", "test-deploy")
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			rr.Status.OverallPhase = "Processing"
@@ -184,7 +183,7 @@ var _ = Describe("BR-GATEWAY-185: ShouldDeduplicate with Field Selectors", func(
 		It("returns false (allow new RR for same problem)", func() {
 			fingerprint := "abc789"
 
-			rr := createTestRR("test-rr-completed", testNamespace, fingerprint, "RecurringAlert", "info", "Pending", "Pod", "recurring-pod")
+			rr := createTestRR("test-rr-completed", controllerNamespace, fingerprint, "RecurringAlert", "info", "Pending", "Pod", "recurring-pod")
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			// Update status to Completed (terminal phase)
@@ -194,7 +193,7 @@ var _ = Describe("BR-GATEWAY-185: ShouldDeduplicate with Field Selectors", func(
 			// Wait for status update to propagate to cache, then check deduplication
 			Eventually(func() bool {
 				var fetchedRR remediationv1alpha1.RemediationRequest
-				if err := k8sClient.Get(ctx, client.ObjectKey{Name: rr.Name, Namespace: testNamespace}, &fetchedRR); err != nil {
+				if err := k8sClient.Get(ctx, client.ObjectKey{Name: rr.Name, Namespace: controllerNamespace}, &fetchedRR); err != nil {
 					return false
 				}
 				return fetchedRR.Status.OverallPhase == remediationv1alpha1.PhaseCompleted
@@ -219,7 +218,7 @@ var _ = Describe("BR-GATEWAY-185: ShouldDeduplicate with Field Selectors", func(
 		It("returns false (allow retry)", func() {
 			fingerprint := "failed123"
 
-			rr := createTestRR("test-rr-failed", testNamespace, fingerprint, "FailedAlert", "critical", "Failed", "Pod", "failed-pod")
+			rr := createTestRR("test-rr-failed", controllerNamespace, fingerprint, "FailedAlert", "critical", "Failed", "Pod", "failed-pod")
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			rr.Status.OverallPhase = "Failed"
@@ -242,7 +241,7 @@ var _ = Describe("BR-GATEWAY-185: ShouldDeduplicate with Field Selectors", func(
 		It("returns true with existing RR (update dedup status during cooldown)", func() {
 			fingerprint := "blocked456"
 
-			rr := createTestRR("test-rr-blocked", testNamespace, fingerprint, "CooldownAlert", "warning", "Blocked", "Pod", "cooldown-pod")
+			rr := createTestRR("test-rr-blocked", controllerNamespace, fingerprint, "CooldownAlert", "warning", "Blocked", "Pod", "cooldown-pod")
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			rr.Status.OverallPhase = "Blocked"
@@ -266,17 +265,17 @@ var _ = Describe("BR-GATEWAY-185: ShouldDeduplicate with Field Selectors", func(
 			otherFingerprint1 := "bbbb"
 			otherFingerprint2 := "cccc"
 
-			rr1 := createTestRR("test-rr-other-1", testNamespace, otherFingerprint1, "OtherAlert1", "info", "Pending", "Pod", "other-pod-1")
+			rr1 := createTestRR("test-rr-other-1", controllerNamespace, otherFingerprint1, "OtherAlert1", "info", "Pending", "Pod", "other-pod-1")
 			Expect(k8sClient.Create(ctx, rr1)).To(Succeed())
 			rr1.Status.OverallPhase = "Pending"
 			Expect(k8sClient.Status().Update(ctx, rr1)).To(Succeed())
 
-			rr2 := createTestRR("test-rr-target", testNamespace, targetFingerprint, "TargetAlert", "critical", "Processing", "Pod", "target-pod")
+			rr2 := createTestRR("test-rr-target", controllerNamespace, targetFingerprint, "TargetAlert", "critical", "Processing", "Pod", "target-pod")
 			Expect(k8sClient.Create(ctx, rr2)).To(Succeed())
 			rr2.Status.OverallPhase = "Processing"
 			Expect(k8sClient.Status().Update(ctx, rr2)).To(Succeed())
 
-			rr3 := createTestRR("test-rr-other-2", testNamespace, otherFingerprint2, "OtherAlert2", "warning", "Pending", "Pod", "other-pod-2")
+			rr3 := createTestRR("test-rr-other-2", controllerNamespace, otherFingerprint2, "OtherAlert2", "warning", "Pending", "Pod", "other-pod-2")
 			Expect(k8sClient.Create(ctx, rr3)).To(Succeed())
 			rr3.Status.OverallPhase = "Pending"
 			Expect(k8sClient.Status().Update(ctx, rr3)).To(Succeed())
@@ -284,7 +283,7 @@ var _ = Describe("BR-GATEWAY-185: ShouldDeduplicate with Field Selectors", func(
 			// Wait for all RRs to be indexed
 			Eventually(func() int {
 				list := &remediationv1alpha1.RemediationRequestList{}
-				_ = k8sClient.List(ctx, list, client.InNamespace(testNamespace))
+				_ = k8sClient.List(ctx, list, client.InNamespace(controllerNamespace))
 				return len(list.Items)
 			}, 10*time.Second, 500*time.Millisecond).Should(Equal(3))
 
@@ -302,11 +301,78 @@ var _ = Describe("BR-GATEWAY-185: ShouldDeduplicate with Field Selectors", func(
 		})
 	})
 
+	// ========================================================================
+	// Post-Completion Cooldown Tests (Issue #202)
+	// Test Plan: docs/testing/COOLDOWN_GW_RO/TEST_PLAN.md
+	//
+	// BUSINESS VALUE:
+	// - Validates cooldown with real K8s field selectors (primary code path)
+	// - Proves CompletedAt timestamp comparison works against envtest API
+	// ========================================================================
+
+	Context("IT-GW-011-001: Completed RR within cooldown triggers dedup (#202)", func() {
+		It("should deduplicate when Completed RR has CompletedAt within cooldown window", func() {
+			// BUSINESS OUTCOME: Alert re-fires 2 minutes after a successful fix.
+			// The Gateway must not create a new RR -- it would waste an LLM call
+			// on stale signal data from before the remediation.
+			fingerprint := "cd011001"
+			cooldownChecker := processing.NewPhaseBasedDeduplicationChecker(k8sClient, 5*time.Minute)
+
+			rr := createTestRR("test-rr-cooldown-active", controllerNamespace, fingerprint,
+				"CooldownActiveAlert", "warning", "Pending", "Deployment", "api-frontend")
+			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+
+			completedAt := metav1.NewTime(time.Now().Add(-2 * time.Minute))
+			rr.Status.OverallPhase = remediationv1alpha1.PhaseCompleted
+			rr.Status.CompletedAt = &completedAt
+			Expect(k8sClient.Status().Update(ctx, rr)).To(Succeed())
+
+			Eventually(func() bool {
+				shouldDedup, existingRR, err := cooldownChecker.ShouldDeduplicate(ctx, testNamespace, rr.Spec.SignalFingerprint)
+				return err == nil && shouldDedup && existingRR != nil
+			}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
+				"Completed RR within 5-min cooldown must trigger dedup via real field selector")
+		})
+	})
+
+	Context("IT-GW-011-002: Completed RR outside cooldown allows new RR (#202)", func() {
+		It("should allow new RR when Completed RR has CompletedAt beyond cooldown window", func() {
+			// BUSINESS OUTCOME: Alert re-fires 6 minutes after a successful fix.
+			// Cooldown has expired, so this is likely a genuine recurrence.
+			// Gateway allows a new RR so the pipeline processes fresh signal data.
+			fingerprint := "cd011002"
+			cooldownChecker := processing.NewPhaseBasedDeduplicationChecker(k8sClient, 5*time.Minute)
+
+			rr := createTestRR("test-rr-cooldown-expired", controllerNamespace, fingerprint,
+				"CooldownExpiredAlert", "warning", "Pending", "Deployment", "api-frontend-2")
+			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+
+			completedAt := metav1.NewTime(time.Now().Add(-6 * time.Minute))
+			rr.Status.OverallPhase = remediationv1alpha1.PhaseCompleted
+			rr.Status.CompletedAt = &completedAt
+			Expect(k8sClient.Status().Update(ctx, rr)).To(Succeed())
+
+			Eventually(func() bool {
+				var fetchedRR remediationv1alpha1.RemediationRequest
+				if err := k8sClient.Get(ctx, client.ObjectKey{Name: rr.Name, Namespace: controllerNamespace}, &fetchedRR); err != nil {
+					return false
+				}
+				return fetchedRR.Status.OverallPhase == remediationv1alpha1.PhaseCompleted
+			}, 10*time.Second, 500*time.Millisecond).Should(BeTrue())
+
+			shouldDedup, existingRR, err := cooldownChecker.ShouldDeduplicate(ctx, testNamespace, rr.Spec.SignalFingerprint)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(shouldDedup).To(BeFalse(),
+				"Completed RR outside cooldown must allow new RR creation")
+			Expect(existingRR).To(BeNil())
+		})
+	})
+
 	Context("when RemediationRequest exists in Cancelled phase", func() {
 		It("returns false (allow retry after manual cancellation)", func() {
 			fingerprint := "cancelled789"
 
-			rr := createTestRR("test-rr-cancelled", testNamespace, fingerprint, "CancelledAlert", "info", "Cancelled", "Pod", "cancelled-pod")
+			rr := createTestRR("test-rr-cancelled", controllerNamespace, fingerprint, "CancelledAlert", "info", "Cancelled", "Pod", "cancelled-pod")
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			rr.Status.OverallPhase = "Cancelled"

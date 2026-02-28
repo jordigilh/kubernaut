@@ -217,7 +217,7 @@ type WorkflowExecutionReconciler struct {
     DataStorageClient *DataStorageClient  // For action record persistence
 }
 
-// Record action completion (replaces KubernetesExecution CRD tracking)
+// Record action completion (replaces KubernetesExecution CRD tracking - DEPRECATED ADR-025)
 func (r *WorkflowExecutionReconciler) recordActionCompletion(
     ctx context.Context,
     taskRun *tektonv1.TaskRun,

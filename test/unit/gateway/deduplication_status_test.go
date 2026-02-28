@@ -185,7 +185,8 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 				updatedRR := &remediationv1alpha1.RemediationRequest{}
 				Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), updatedRR)).To(Succeed())
 
-				Expect(updatedRR.Status.Deduplication.LastSeenAt).ToNot(BeNil())
+				Expect(updatedRR.Status.Deduplication.LastSeenAt).To(HaveValue(Not(BeZero())),
+					"LastSeenAt must be set after dedup update")
 				Expect(updatedRR.Status.Deduplication.LastSeenAt.Time).To(BeTemporally(">=", beforeUpdate),
 					"LastSeenAt should be updated to current time")
 				// Also verify it's more recent than initialTime (1 hour ago)
@@ -318,13 +319,12 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 				Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 				// BEHAVIOR: Check if should deduplicate
-				checker := processing.NewPhaseBasedDeduplicationChecker(k8sClient)
+				checker := processing.NewPhaseBasedDeduplicationChecker(k8sClient, 0)
 				isDuplicate, existingRR, err := checker.ShouldDeduplicate(ctx, "kubernaut-system", fp)
 
 				// CORRECTNESS: Should deduplicate (RR is in-progress)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(isDuplicate).To(BeTrue(), "Should detect duplicate for Pending RR")
-				Expect(existingRR).ToNot(BeNil())
 				Expect(existingRR.Name).To(Equal("pending-rr"))
 
 				// BUSINESS OUTCOME: Prevents duplicate RR creation for in-progress remediations
@@ -358,13 +358,12 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 				Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 				// BEHAVIOR: Check if should deduplicate
-				checker := processing.NewPhaseBasedDeduplicationChecker(k8sClient)
-				isDuplicate, existingRR, err := checker.ShouldDeduplicate(ctx, "kubernaut-system", fp)
+				checker := processing.NewPhaseBasedDeduplicationChecker(k8sClient, 0)
+				isDuplicate, _, err := checker.ShouldDeduplicate(ctx, "kubernaut-system", fp)
 
 				// CORRECTNESS: Should deduplicate (RR is in-progress)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(isDuplicate).To(BeTrue(), "Should detect duplicate for Processing RR")
-				Expect(existingRR).ToNot(BeNil())
 			})
 
 			It("should return false for terminal RR (Completed phase)", func() {
@@ -395,7 +394,7 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 				Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 				// BEHAVIOR: Check if should deduplicate
-				checker := processing.NewPhaseBasedDeduplicationChecker(k8sClient)
+				checker := processing.NewPhaseBasedDeduplicationChecker(k8sClient, 0)
 				isDuplicate, existingRR, err := checker.ShouldDeduplicate(ctx, "kubernaut-system", fp)
 
 				// CORRECTNESS: Should NOT deduplicate (RR is terminal)
@@ -434,7 +433,7 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 				Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 				// BEHAVIOR: Check if should deduplicate
-				checker := processing.NewPhaseBasedDeduplicationChecker(k8sClient)
+				checker := processing.NewPhaseBasedDeduplicationChecker(k8sClient, 0)
 				isDuplicate, existingRR, err := checker.ShouldDeduplicate(ctx, "kubernaut-system", fp)
 
 				// CORRECTNESS: Should NOT deduplicate (RR is terminal)
@@ -450,7 +449,7 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 				fp := testFingerprint("nonext")
 
 				// BEHAVIOR: Check if should deduplicate
-				checker := processing.NewPhaseBasedDeduplicationChecker(k8sClient)
+				checker := processing.NewPhaseBasedDeduplicationChecker(k8sClient, 0)
 				isDuplicate, existingRR, err := checker.ShouldDeduplicate(ctx, "kubernaut-system", fp)
 
 				// CORRECTNESS: Should NOT deduplicate (no existing RR)

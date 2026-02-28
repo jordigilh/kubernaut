@@ -212,7 +212,7 @@ func buildTargetResource(rr *RemediationRequest) string {
 
 ---
 
-### WE→RO-003: Recovery Flow After Execution Failure 🔴 HIGH
+### WE→RO-003: Recovery Flow After Execution Failure [Deprecated - Issue #180] 🔴 HIGH
 
 **Context**: Execution failures leave cluster state unknown.
 

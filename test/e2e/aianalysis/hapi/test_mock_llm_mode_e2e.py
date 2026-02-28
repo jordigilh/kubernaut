@@ -45,10 +45,7 @@ sys.path.insert(0, 'tests/clients')
 
 from holmesgpt_api_client import ApiClient, Configuration
 from holmesgpt_api_client.api.incident_analysis_api import IncidentAnalysisApi
-from holmesgpt_api_client.api.recovery_analysis_api import RecoveryAnalysisApi
 from holmesgpt_api_client.models.incident_request import IncidentRequest
-from holmesgpt_api_client.models.recovery_request import RecoveryRequest
-from holmesgpt_api_client.models.previous_execution import PreviousExecution
 from holmesgpt_api_client.exceptions import ApiException
 
 
@@ -84,58 +81,6 @@ def sample_incident_request():
             "kubernetesContext": {
                 "podPhase": "Failed",
                 "containerState": "Terminated",
-            },
-        },
-    }
-
-
-@pytest.fixture
-def sample_recovery_request():
-    """Complete RecoveryRequest payload as AIAnalysis would send"""
-    return {
-        "incident_id": "integration-test-incident-001",
-        "remediation_id": "req-2025-12-10-integration-recovery",
-        "is_recovery_attempt": True,
-        "recovery_attempt_number": 1,
-        "signal_type": "OOMKilled",
-        "severity": "critical",
-        "resource_namespace": "production",
-        "resource_kind": "Pod",
-        "resource_name": "api-server-abc123",
-        "environment": "production",
-        "priority": "P1",
-        "risk_tolerance": "medium",
-        "business_category": "critical",
-        "previous_execution": {
-            "workflow_execution_ref": "req-2025-12-10-we-1",
-            "original_rca": {
-                "summary": "Memory exhaustion causing OOMKilled",
-                "signal_type": "OOMKilled",
-                "severity": "critical",
-                "contributing_factors": ["memory_leak", "insufficient_limits"],
-            },
-            "selected_workflow": {
-                "workflow_id": "scale-horizontal-v1",
-                "version": "1.0.0",
-                "execution_bundle": "kubernaut/workflow-scale:v1.0.0",
-                "parameters": {"TARGET_REPLICAS": "5"},
-                "rationale": "Scale out to distribute load",
-            },
-            "failure": {
-                "failed_step_index": 2,
-                "failed_step_name": "scale_deployment",
-                "reason": "OOMKilled",
-                "message": "Container exceeded memory limit during scale",
-                "exit_code": 137,
-                "failed_at": "2025-12-10T10:30:00Z",
-                "execution_time": "2m34s",
-            },
-            "natural_language_summary": "Previous workflow failed at step 2 (scale_deployment) with OOMKilled",
-        },
-        "enrichment_results": {
-            "detectedLabels": {
-                "gitOpsManaged": True,
-                "gitOpsTool": "argocd",
             },
         },
     }
@@ -338,82 +283,6 @@ class TestMockModeIncidentIntegration:
         assert oom_workflow_id != crash_workflow_id
 
 
-class TestMockModeRecoveryIntegration:
-    """Integration tests for /recovery/analyze in mock mode via OpenAPI client"""
-
-    def test_recovery_endpoint_returns_200_in_mock_mode(
-        self, hapi_service_url, sample_recovery_request
-    ):
-        """BR-HAPI-212: Recovery endpoint should return 200 in mock mode via OpenAPI client"""
-        # Arrange: Create OpenAPI client
-        config = Configuration(host=hapi_service_url)
-        client = ApiClient(configuration=config)
-        recovery_api = RecoveryAnalysisApi(client)
-
-        # Build typed request
-        recovery_request = RecoveryRequest(**sample_recovery_request)
-        if "previous_execution" in sample_recovery_request and sample_recovery_request["previous_execution"]:
-            recovery_request.previous_execution = PreviousExecution(**sample_recovery_request["previous_execution"])
-
-        # Act: Call API via OpenAPI client (should not raise exception)
-        response = recovery_api.recovery_analyze_endpoint_api_v1_recovery_analyze_post(
-            recovery_request=recovery_request
-        )
-
-        # Assert: Request succeeded
-        assert response.incident_id == sample_recovery_request["incident_id"]
-
-    def test_recovery_response_has_aianalysis_required_fields(
-        self, hapi_service_url, sample_recovery_request
-    ):
-        """BR-HAPI-212: Recovery response must have fields AIAnalysis expects via OpenAPI client"""
-        # Arrange: Create OpenAPI client
-        config = Configuration(host=hapi_service_url)
-        client = ApiClient(configuration=config)
-        recovery_api = RecoveryAnalysisApi(client)
-
-        # Build typed request
-        recovery_request = RecoveryRequest(**sample_recovery_request)
-        if "previous_execution" in sample_recovery_request and sample_recovery_request["previous_execution"]:
-            recovery_request.previous_execution = PreviousExecution(**sample_recovery_request["previous_execution"])
-
-        # Act: Call API
-        response = recovery_api.recovery_analyze_endpoint_api_v1_recovery_analyze_post(
-            recovery_request=recovery_request
-        )
-
-        # Assert: Fields AIAnalysis needs for recovery WorkflowExecution
-        assert response.incident_id is not None
-        assert response.can_recover is not None
-        assert response.analysis_confidence is not None
-
-    def test_recovery_response_is_deterministic(
-        self, hapi_service_url, sample_recovery_request
-    ):
-        """BR-HAPI-212: Same request should produce same response via OpenAPI client"""
-        # Arrange: Create OpenAPI client
-        config = Configuration(host=hapi_service_url)
-        client = ApiClient(configuration=config)
-        recovery_api = RecoveryAnalysisApi(client)
-
-        # Build typed request
-        recovery_request = RecoveryRequest(**sample_recovery_request)
-        if "previous_execution" in sample_recovery_request and sample_recovery_request["previous_execution"]:
-            recovery_request.previous_execution = PreviousExecution(**sample_recovery_request["previous_execution"])
-
-        # Act: Make two identical requests
-        response1 = recovery_api.recovery_analyze_endpoint_api_v1_recovery_analyze_post(
-            recovery_request=recovery_request
-        )
-        response2 = recovery_api.recovery_analyze_endpoint_api_v1_recovery_analyze_post(
-            recovery_request=recovery_request
-        )
-
-        # Assert: Core fields should be identical
-        assert response1.incident_id == response2.incident_id
-        assert response1.can_recover == response2.can_recover
-
-
 class TestMockModeAIAnalysisScenarios:
     """Integration tests simulating AIAnalysis controller workflows via OpenAPI client"""
 
@@ -465,40 +334,6 @@ class TestMockModeAIAnalysisScenarios:
         # Check if human review is needed
         if response.needs_human_review:
             assert response.human_review_reason is not None or len(response.warnings) > 0
-
-    def test_aianalysis_recovery_flow_after_failure(
-        self, hapi_service_url, sample_recovery_request
-    ):
-        """
-        BR-HAPI-212: Simulate AIAnalysis recovery attempt via OpenAPI client
-
-        Flow:
-        1. WorkflowExecution failed
-        2. AIAnalysis calls /recovery/analyze with failure context
-        3. Gets recovery workflow recommendation
-        """
-        # Arrange: Create OpenAPI client
-        config = Configuration(host=hapi_service_url)
-        client = ApiClient(configuration=config)
-        recovery_api = RecoveryAnalysisApi(client)
-
-        # Build typed request
-        recovery_request = RecoveryRequest(**sample_recovery_request)
-        if "previous_execution" in sample_recovery_request and sample_recovery_request["previous_execution"]:
-            recovery_request.previous_execution = PreviousExecution(**sample_recovery_request["previous_execution"])
-
-        # Act: Call recovery endpoint (what AIAnalysis does after WE failure)
-        response = recovery_api.recovery_analyze_endpoint_api_v1_recovery_analyze_post(
-            recovery_request=recovery_request
-        )
-
-        # Assert: Verify AIAnalysis can determine if recovery is possible
-        assert response.can_recover is not None
-        assert isinstance(response.can_recover, bool)
-
-        # Verify confidence for decision making
-        assert response.analysis_confidence is not None
-        assert 0 <= response.analysis_confidence <= 1.0
 
     def test_aianalysis_handles_low_confidence_appropriately(
         self, hapi_service_url, sample_incident_request

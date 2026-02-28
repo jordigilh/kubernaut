@@ -52,6 +52,7 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -93,6 +94,10 @@ const (
 	// ROIntegrationDataStoragePort is the DataStorage API port for RO integration tests
 	// Per DD-TEST-001 v2.2: Each service gets a unique port to enable parallel test execution
 	ROIntegrationDataStoragePort = 18140
+
+	// ROControllerNamespace is where RO creates and watches all CRDs (ADR-057).
+	// Must match Cache.ByObject in suite setup - tests create RR in this namespace.
+	ROControllerNamespace = "kubernaut-system"
 )
 
 // Package-level variables for test environment
@@ -319,9 +324,40 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	GinkgoWriter.Println("✅ Namespaces created: kubernaut-system, default")
 
+	// ADR-057: Align integration test with production - RO watches only controller namespace.
+	// Without this, the test manager would watch all namespaces while production restricts to
+	// kubernaut-system. Creating RR/SP/AI/WE in testNamespace would pass locally but fail in CI
+	// when production-like behavior is expected (e.g. cache only has controller namespace).
+	_ = os.Setenv("KUBERNAUT_CONTROLLER_NAMESPACE", ROControllerNamespace)
+
 	By("Setting up the controller manager")
 	k8sManager, err = ctrl.NewManager(cfg, ctrl.Options{
 		Scheme: scheme.Scheme,
+		Cache: cache.Options{
+			ByObject: map[client.Object]cache.ByObject{
+				&remediationv1.RemediationRequest{}: {
+					Namespaces: map[string]cache.Config{ROControllerNamespace: {}},
+				},
+				&signalprocessingv1.SignalProcessing{}: {
+					Namespaces: map[string]cache.Config{ROControllerNamespace: {}},
+				},
+				&aianalysisv1.AIAnalysis{}: {
+					Namespaces: map[string]cache.Config{ROControllerNamespace: {}},
+				},
+				&workflowexecutionv1.WorkflowExecution{}: {
+					Namespaces: map[string]cache.Config{ROControllerNamespace: {}},
+				},
+				&notificationv1.NotificationRequest{}: {
+					Namespaces: map[string]cache.Config{ROControllerNamespace: {}},
+				},
+				&eav1.EffectivenessAssessment{}: {
+					Namespaces: map[string]cache.Config{ROControllerNamespace: {}},
+				},
+				&remediationv1.RemediationApprovalRequest{}: {
+					Namespaces: map[string]cache.Config{ROControllerNamespace: {}},
+				},
+			},
+		},
 		Metrics: metricsserver.Options{
 			BindAddress: ":0", // Dynamic port allocation (prevents conflicts with E2E tests)
 		},
@@ -594,12 +630,14 @@ func deleteTestNamespace(ns string) {
 }
 
 // createRemediationRequest creates a RemediationRequest for testing.
-func createRemediationRequest(namespace, name string) *remediationv1.RemediationRequest {
+// ADR-057: RR is created in ROControllerNamespace; targetNamespace is for Spec.TargetResource
+// (scope validation). Child CRDs (SP, AI, WE) are created by RO in rr.Namespace = ROControllerNamespace.
+func createRemediationRequest(targetNamespace, name string) *remediationv1.RemediationRequest {
 	now := metav1.Now()
 	rr := &remediationv1.RemediationRequest{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: namespace,
+			Namespace: ROControllerNamespace,
 		},
 		Spec: remediationv1.RemediationRequestSpec{
 			// Valid 64-char hex fingerprint (SHA256 format per CRD validation)
@@ -616,7 +654,7 @@ func createRemediationRequest(namespace, name string) *remediationv1.Remediation
 			TargetResource: remediationv1.ResourceIdentifier{
 				Kind:      "Deployment",
 				Name:      "test-app",
-				Namespace: namespace,
+				Namespace: targetNamespace,
 			},
 			FiringTime:   now,
 			ReceivedTime: now,
@@ -628,7 +666,7 @@ func createRemediationRequest(namespace, name string) *remediationv1.Remediation
 		},
 	}
 	Expect(k8sClient.Create(ctx, rr)).To(Succeed())
-	GinkgoWriter.Printf("✅ Created RemediationRequest: %s/%s\n", namespace, name)
+	GinkgoWriter.Printf("✅ Created RemediationRequest: %s/%s (target: %s)\n", ROControllerNamespace, name, targetNamespace)
 	return rr
 }
 

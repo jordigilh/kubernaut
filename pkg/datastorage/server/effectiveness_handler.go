@@ -186,7 +186,13 @@ func BuildEffectivenessResponse(correlationID string, events []*EffectivenessEve
 
 		case "effectiveness.assessment.completed":
 			if reason, ok := eventData["reason"].(string); ok {
-				resp.AssessmentStatus = reason
+				// DD-EM-002 v1.1: spec_drift is terminal and takes priority over
+				// all other reasons. When multiple completed events exist (e.g.,
+				// "full" followed by "spec_drift" after EA re-assessment), spec_drift
+				// must not be overwritten by an earlier reason that sorts later.
+				if resp.AssessmentStatus != "spec_drift" {
+					resp.AssessmentStatus = reason
+				}
 			}
 		}
 	}
@@ -283,12 +289,16 @@ func (s *Server) handleGetEffectivenessScore(w http.ResponseWriter, r *http.Requ
 
 // queryEffectivenessEvents queries audit events for a given correlation ID.
 // Returns events filtered by event_category='effectiveness'.
+//
+// Convention (#211): All audit_events ORDER BY clauses MUST include event_id
+// as a deterministic tiebreaker. Without it, same-timestamp events return in
+// non-deterministic order, causing flaky tests and wrong assessment status.
 func (s *Server) queryEffectivenessEvents(_ /* ctx */ interface{}, correlationID string) ([]*EffectivenessEvent, error) {
 	// Query audit events from the database
 	query := `SELECT event_data FROM audit_events
 		WHERE correlation_id = $1
 		AND event_category = 'effectiveness'
-		ORDER BY event_timestamp ASC`
+		ORDER BY event_timestamp ASC, event_id ASC`
 
 	rows, err := s.db.Query(query, correlationID)
 	if err != nil {

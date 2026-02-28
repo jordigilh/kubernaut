@@ -104,7 +104,7 @@ Network Resilience: High - state persists, auto-recovery
 - WorkflowExecutionReconciler controller
 - Reconciliation phases: planning → validating → executing → monitoring → completed
 - Multi-step dependency resolution in reconciliation
-- KubernetesExecution CRD creation per step
+- KubernetesExecution (DEPRECATED - ADR-025) CRD creation per step
 
 **Effort to Close Gap**: **1 week**
 **Priority**: **P0 - HIGH**
@@ -123,7 +123,7 @@ Network Resilience: High - state persists, auto-recovery
 - Rollback capabilities
 
 **Missing Components** ❌:
-- KubernetesExecution CRD schema definition
+- KubernetesExecution (DEPRECATED - ADR-025) CRD schema definition
 - KubernetesExecutionReconciler controller
 - Reconciliation phases: validating → executing → verifying → completed
 - HTTP wrapper around existing ActionExecutor

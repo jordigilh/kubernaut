@@ -1,4 +1,4 @@
-# KubernetesExecution Conditions Infrastructure - ROLLBACK COMPLETE
+# KubernetesExecution (DEPRECATED - ADR-025) Conditions Infrastructure - ROLLBACK COMPLETE
 
 **Date**: 2025-12-16
 **Status**: ✅ **ROLLBACK COMPLETE**

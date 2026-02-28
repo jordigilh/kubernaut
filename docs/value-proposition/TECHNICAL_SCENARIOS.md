@@ -100,7 +100,7 @@ investigation:
 
 #### Phase 2: Dual-Track Execution (Immediate + GitOps)
 
-**WorkflowExecution** → **KubernetesExecutor** + **GitOps PR Creation**
+**WorkflowExecution** → **KubernetesExecutor** (DEPRECATED - ADR-025) + **GitOps PR Creation**
 
 **Track 1: Immediate Remediation** (60 seconds)
 ```yaml

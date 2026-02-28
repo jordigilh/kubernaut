@@ -9,8 +9,24 @@ set -e
 echo "=== Phase 1: Validate ==="
 echo "Checking Certificate ${TARGET_CERTIFICATE} in ${TARGET_NAMESPACE}..."
 
-CERT_READY=$(kubectl get certificate "${TARGET_CERTIFICATE}" -n "${TARGET_NAMESPACE}" \
+ACTUAL_CERT="${TARGET_CERTIFICATE}"
+CERT_READY=$(kubectl get certificate "${ACTUAL_CERT}" -n "${TARGET_NAMESPACE}" \
   -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "Unknown")
+
+if [ "${CERT_READY}" = "Unknown" ]; then
+  echo "Certificate '${ACTUAL_CERT}' not found. Searching by secretName..."
+  ACTUAL_CERT=$(kubectl get certificates -n "${TARGET_NAMESPACE}" \
+    -o jsonpath="{range .items[?(@.spec.secretName==\"${TARGET_CERTIFICATE}\")]}{.metadata.name}{end}" 2>/dev/null || echo "")
+  if [ -n "${ACTUAL_CERT}" ]; then
+    echo "Resolved Certificate: ${ACTUAL_CERT} (from secretName=${TARGET_CERTIFICATE})"
+    CERT_READY=$(kubectl get certificate "${ACTUAL_CERT}" -n "${TARGET_NAMESPACE}" \
+      -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "Unknown")
+  else
+    echo "ERROR: No Certificate found with name or secretName '${TARGET_CERTIFICATE}' in ${TARGET_NAMESPACE}"
+    exit 1
+  fi
+fi
+
 echo "Certificate Ready status: ${CERT_READY}"
 
 if [ "${CERT_READY}" = "True" ]; then
@@ -18,7 +34,7 @@ if [ "${CERT_READY}" = "True" ]; then
   exit 0
 fi
 
-CERT_MESSAGE=$(kubectl get certificate "${TARGET_CERTIFICATE}" -n "${TARGET_NAMESPACE}" \
+CERT_MESSAGE=$(kubectl get certificate "${ACTUAL_CERT}" -n "${TARGET_NAMESPACE}" \
   -o jsonpath='{.status.conditions[?(@.type=="Ready")].message}' 2>/dev/null || echo "unknown")
 echo "Certificate message: ${CERT_MESSAGE}"
 
@@ -54,7 +70,7 @@ kubectl create secret tls "${CA_SECRET_NAME}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 echo "Triggering certificate re-issuance..."
-kubectl delete secret "$(kubectl get certificate "${TARGET_CERTIFICATE}" -n "${TARGET_NAMESPACE}" \
+kubectl delete secret "$(kubectl get certificate "${ACTUAL_CERT}" -n "${TARGET_NAMESPACE}" \
   -o jsonpath='{.spec.secretName}')" -n "${TARGET_NAMESPACE}" --ignore-not-found
 
 sleep 5
@@ -62,7 +78,7 @@ sleep 5
 echo "=== Phase 3: Verify ==="
 echo "Waiting for Certificate to become Ready (up to 60s)..."
 for i in $(seq 1 12); do
-  CERT_READY=$(kubectl get certificate "${TARGET_CERTIFICATE}" -n "${TARGET_NAMESPACE}" \
+  CERT_READY=$(kubectl get certificate "${ACTUAL_CERT}" -n "${TARGET_NAMESPACE}" \
     -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "Unknown")
   if [ "${CERT_READY}" = "True" ]; then
     break
@@ -76,7 +92,7 @@ ISSUER_READY=$(kubectl get clusterissuer "${ISSUER_NAME}" \
 echo "ClusterIssuer Ready status: ${ISSUER_READY}"
 
 if [ "${CERT_READY}" = "True" ]; then
-  echo "=== SUCCESS: CA Secret recreated, Certificate ${TARGET_CERTIFICATE} is now Ready ==="
+  echo "=== SUCCESS: CA Secret recreated, Certificate ${ACTUAL_CERT} is now Ready ==="
 else
   echo "ERROR: Certificate still not Ready after CA Secret recreation"
   exit 1

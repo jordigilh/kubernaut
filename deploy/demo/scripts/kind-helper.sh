@@ -4,6 +4,11 @@
 
 CLUSTER_NAME="${CLUSTER_NAME:-kubernaut-demo}"
 
+# Dedicated kubeconfig to avoid overwriting the default ~/.kube/config.
+# Other teams share this host, so we isolate demo credentials here.
+DEMO_KUBECONFIG="${DEMO_KUBECONFIG:-${HOME}/.kube/kubernaut-demo-config}"
+export KUBECONFIG="${DEMO_KUBECONFIG}"
+
 # Ensure the Kind cluster exists with the required topology.
 # Usage: ensure_kind_cluster <kind-config-path> [--create-cluster]
 #
@@ -11,6 +16,9 @@ CLUSTER_NAME="${CLUSTER_NAME:-kubernaut-demo}"
 #   - If --create-cluster is passed: recreates the cluster (deletes existing first)
 #   - If cluster exists: validates topology against the config
 #   - If cluster doesn't exist: auto-creates it
+#
+# The kubeconfig is always written to $DEMO_KUBECONFIG (~/.kube/kubernaut-demo-config)
+# instead of the default ~/.kube/config.
 ensure_kind_cluster() {
     local config_path="$1"
     local create_flag="${2:-}"
@@ -18,21 +26,31 @@ ensure_kind_cluster() {
     if [ "$create_flag" = "--create-cluster" ]; then
         echo "==> Recreating Kind cluster '${CLUSTER_NAME}' from ${config_path}..."
         kind delete cluster --name "${CLUSTER_NAME}" 2>/dev/null || true
-        kind create cluster --name "${CLUSTER_NAME}" --config "${config_path}"
-        echo "  Cluster created."
+        _create_cluster "${config_path}"
         return 0
     fi
 
     if kind get clusters 2>/dev/null | grep -q "^${CLUSTER_NAME}$"; then
         echo "==> Kind cluster '${CLUSTER_NAME}' exists. Validating topology..."
+        _export_kubeconfig
         validate_topology "${config_path}"
         return $?
     else
         echo "==> Kind cluster '${CLUSTER_NAME}' not found. Creating..."
-        kind create cluster --name "${CLUSTER_NAME}" --config "${config_path}"
-        echo "  Cluster created."
+        _create_cluster "${config_path}"
         return 0
     fi
+}
+
+_create_cluster() {
+    local config_path="$1"
+    kind create cluster --name "${CLUSTER_NAME}" --config "${config_path}"
+    _export_kubeconfig
+    echo "  Cluster created. Kubeconfig: ${DEMO_KUBECONFIG}"
+}
+
+_export_kubeconfig() {
+    kind export kubeconfig --name "${CLUSTER_NAME}" --kubeconfig "${DEMO_KUBECONFIG}"
 }
 
 # Validate that the running cluster has the expected node topology
@@ -46,16 +64,16 @@ validate_topology() {
 
     if $needs_worker; then
         local worker_count
-        worker_count=$(kubectl get nodes -l kubernaut.ai/workload-node=true --no-headers 2>/dev/null | wc -l | tr -d ' ')
+        worker_count=$(kubectl get nodes -l kubernaut.ai/managed=true --no-headers 2>/dev/null | wc -l | tr -d ' ')
         if [ "$worker_count" -eq 0 ]; then
-            echo "WARNING: Scenario requires a worker node with label kubernaut.ai/workload-node=true"
+            echo "WARNING: Scenario requires a worker node with label kubernaut.ai/managed=true"
             echo "  Found 0 matching nodes. The scenario may not work correctly."
             echo ""
             echo "  Recreate the cluster with:"
             echo "    kind create cluster --name ${CLUSTER_NAME} --config ${config_path}"
             return 1
         fi
-        echo "  Topology OK: ${worker_count} worker node(s) with kubernaut.ai/workload-node=true"
+        echo "  Topology OK: ${worker_count} worker node(s) with kubernaut.ai/managed=true"
     else
         echo "  Topology OK: single-node cluster sufficient"
     fi

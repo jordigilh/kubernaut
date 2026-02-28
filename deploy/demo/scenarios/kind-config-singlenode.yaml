@@ -1,6 +1,6 @@
 # Kind cluster config: single control-plane node
 # Used by scenarios that don't require a separate worker node:
-#   #120 crashloop, #121 disk-pressure, #123 hpa-maxed, #124 pdb-deadlock,
+#   #120 crashloop, #121 disk-pressure, #123 hpa-maxed,
 #   #125 gitops-drift, #128 slo-burn, #129 memory-leak, #130 stuck-rollout
 #
 # Usage:

@@ -14,8 +14,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 try:
     from pydantic import ValidationError
     from src.models.incident_models import IncidentRequest
-    from src.models.recovery_models import RecoveryRequest
-    
+
     print("✅ Imports successful")
 except ImportError as e:
     print(f"❌ Import failed: {e}")
@@ -85,37 +84,10 @@ def test_missing_remediation_id():
         return False
 
 
-def test_invalid_recovery_attempt_number():
-    """E2E-HAPI-018: Test recovery_attempt_number < 1"""
-    print("\n" + "="*80)
-    print("TEST 3: recovery_attempt_number = 0 (E2E-HAPI-018)")
-    print("="*80)
-    
-    try:
-        request = RecoveryRequest(
-            incident_id="test-recovery-001",
-            remediation_id="test-rem-001",
-            is_recovery_attempt=True,
-            recovery_attempt_number=0,  # Invalid: < 1
-            signal_type="OOMKilled",
-            severity="high"
-        )
-        print("❌ FAIL: RecoveryRequest accepted recovery_attempt_number=0")
-        print(f"   Created request: recovery_attempt_number={request.recovery_attempt_number}")
-        return False
-    except ValidationError as e:
-        print("✅ PASS: ValidationError raised as expected")
-        print(f"   Error: {e}")
-        return True
-    except Exception as e:
-        print(f"❌ FAIL: Unexpected error: {type(e).__name__}: {e}")
-        return False
-
-
 def test_valid_inputs():
     """Test that valid inputs pass"""
     print("\n" + "="*80)
-    print("TEST 4: Valid inputs should pass")
+    print("TEST 3: Valid inputs should pass")
     print("="*80)
     
     try:
@@ -131,17 +103,6 @@ def test_valid_inputs():
         )
         print("✅ PASS: IncidentRequest created successfully")
         print(f"   remediation_id='{incident_req.remediation_id}'")
-        
-        recovery_req = RecoveryRequest(
-            incident_id="test-recovery-001",
-            remediation_id="test-rem-001",
-            is_recovery_attempt=True,
-            recovery_attempt_number=1,
-            signal_type="OOMKilled",
-            severity="high"
-        )
-        print("✅ PASS: RecoveryRequest created successfully")
-        print(f"   recovery_attempt_number={recovery_req.recovery_attempt_number}")
         return True
     except Exception as e:
         print(f"❌ FAIL: Valid inputs raised error: {type(e).__name__}: {e}")
@@ -151,13 +112,12 @@ def test_valid_inputs():
 def main():
     print("="*80)
     print("PYDANTIC VALIDATOR UNIT TESTS")
-    print("Testing @field_validator decorators for E2E-HAPI-008, 018")
+    print("Testing @field_validator decorators for E2E-HAPI-008")
     print("="*80)
     
     results = []
     results.append(("Empty remediation_id", test_empty_remediation_id()))
     results.append(("Missing remediation_id", test_missing_remediation_id()))
-    results.append(("Invalid recovery_attempt_number", test_invalid_recovery_attempt_number()))
     results.append(("Valid inputs", test_valid_inputs()))
     
     print("\n" + "="*80)

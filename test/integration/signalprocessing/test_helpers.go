@@ -33,8 +33,6 @@ var ValidTestFingerprints = map[string]string{
 	"hr-reload-valid-02": GenerateTestFingerprint("hr-reload-valid-test-2"),
 	"hr-graceful-01":     GenerateTestFingerprint("hr-graceful-test-1"),
 	"hr-graceful-02":     GenerateTestFingerprint("hr-graceful-test-2"),
-	"hr-recovery-01":     GenerateTestFingerprint("hr-recovery-test-1"),
-	"hr-recovery-02":     GenerateTestFingerprint("hr-recovery-test-2"),
 
 	// Component integration tests
 	"enrich-pod":        GenerateTestFingerprint("enrich-pod-test"),

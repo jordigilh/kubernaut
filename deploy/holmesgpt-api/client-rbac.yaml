@@ -23,7 +23,7 @@ rules:
   resources: ["services"]
   resourceNames: ["holmesgpt-api-service"]
   verbs:
-    - "create"  # POST /api/v1/recovery, /api/v1/incident
+    - "create"  # POST /api/v1/incident
     - "get"     # GET /health, /ready, /metrics
     - "list"    # List operations (if any)
     - "update"  # PUT/PATCH operations (if any)
