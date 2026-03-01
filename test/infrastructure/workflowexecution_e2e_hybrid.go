@@ -433,6 +433,21 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	}
 	_, _ = fmt.Fprintf(writer, "✅ ServiceAccount token retrieved for authenticated workflow registration\n")
 
+	// DD-WE-006: Create dependency Secret in execution namespace BEFORE workflow registration.
+	// DS validates that declared dependencies exist at registration time; the Secret must
+	// be present for the dep-secret-job workflow to register successfully.
+	_, _ = fmt.Fprintf(writer, "🔑 Creating DD-WE-006 dependency Secret in %s...\n", ExecutionNamespace)
+	depSecretCmd := exec.Command("kubectl", "create", "secret", "generic", "e2e-dep-secret",
+		"--from-literal=token=e2e-test-value",
+		"--namespace", ExecutionNamespace,
+		"--kubeconfig", kubeconfigPath)
+	depSecretOut, depSecretErr := depSecretCmd.CombinedOutput()
+	if depSecretErr != nil && !strings.Contains(string(depSecretOut), "AlreadyExists") {
+		_, _ = fmt.Fprintf(writer, "⚠️  Failed to create DD-WE-006 dep Secret (non-fatal): %s\n", string(depSecretOut))
+	} else {
+		_, _ = fmt.Fprintf(writer, "   ✅ Secret e2e-dep-secret ready in %s\n", ExecutionNamespace)
+	}
+
 	dataStorageURL := "http://localhost:8092" // DD-TEST-001: WE → DataStorage dependency port
 	if _, err = BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL, saToken, writer); err != nil {
 		return fmt.Errorf("failed to build and register test workflows: %w", err)

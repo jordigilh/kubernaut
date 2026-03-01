@@ -1,0 +1,40 @@
+# DD-WE-006 Test Workflow: Job with Secret Dependency (BR-WORKFLOW-004)
+# Used by: WorkflowExecution E2E (dependency injection tests)
+# Authority: DD-WE-006, BR-WE-014
+metadata:
+  workflowId: test-dep-secret-job
+  version: "1.0.0"
+  description:
+    what: "Job workflow that declares a Secret dependency for DD-WE-006 E2E testing"
+    whenToUse: "For E2E validation of schema-declared dependency injection into Jobs"
+    whenNotToUse: "Not intended for production use"
+    preconditions: "Secret 'e2e-dep-secret' provisioned in execution namespace"
+
+actionType: RestartPod
+
+labels:
+  signalName: test
+  severity: [low]
+  environment: [test]
+  component: deployment
+  priority: P3
+
+execution:
+  engine: job
+  bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:0526671b6ec27b4ed04c288144e8e66f252442c9b4ff56e2793bb4c1f1c508f5
+
+dependencies:
+  secrets:
+    - name: e2e-dep-secret
+
+parameters:
+  - name: TARGET_RESOURCE
+    type: string
+    required: true
+    description: "Target resource being remediated"
+    default: "test/deployment/dep-test"
+  - name: MESSAGE
+    type: string
+    required: false
+    description: "Optional message for execution log"
+    default: "Hello from DD-WE-006 dependency injection test!"
