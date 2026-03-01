@@ -48,6 +48,8 @@ import (
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	workflowexecution "github.com/jordigilh/kubernaut/internal/controller/workflowexecution"
 	"github.com/jordigilh/kubernaut/pkg/audit"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	dsvalidation "github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 	weaudit "github.com/jordigilh/kubernaut/pkg/workflowexecution/audit"
 	weexecutor "github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
 	wemetrics "github.com/jordigilh/kubernaut/pkg/workflowexecution/metrics"
@@ -57,6 +59,17 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	// +kubebuilder:scaffold:imports
 )
+
+// configurableWorkflowQuerier is a test WorkflowQuerier whose return value
+// can be set per-test by assigning Deps (DD-WE-006 integration tests).
+// When Deps is nil, GetWorkflowDependencies returns nil (no dependencies).
+type configurableWorkflowQuerier struct {
+	Deps *models.WorkflowDependencies
+}
+
+func (q *configurableWorkflowQuerier) GetWorkflowDependencies(_ context.Context, _ string) (*models.WorkflowDependencies, error) {
+	return q.Deps, nil
+}
 
 // WorkflowExecution Integration Test Suite
 //
@@ -92,6 +105,10 @@ var (
 	
 	// DD-AUTH-014: Authenticated DataStorage clients (audit + OpenAPI with ServiceAccount tokens)
 	dsClients *integration.AuthenticatedDataStorageClients
+
+	// DD-WE-006: Configurable querier for dependency resolution integration tests.
+	// Set Deps per-test to control what dependencies the reconciler sees.
+	testWorkflowQuerier configurableWorkflowQuerier
 )
 
 // Test namespaces (unique per test run for parallel safety)
@@ -330,6 +347,10 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	executorRegistry.Register("tekton", weexecutor.NewTektonExecutor(k8sManager.GetClient(), "kubernaut-workflow-runner"))
 	executorRegistry.Register("job", weexecutor.NewJobExecutor(k8sManager.GetClient(), "kubernaut-workflow-runner"))
 
+	// DD-WE-006: Create dependency validator using the envtest K8s client.
+	// The WorkflowQuerier is set per-test via testWorkflowQuerier (see dependency_resolution_integration_test.go).
+	depValidator := dsvalidation.NewK8sDependencyValidator(k8sManager.GetClient())
+
 	reconciler = &workflowexecution.WorkflowExecutionReconciler{
 		Client:                 k8sManager.GetClient(),
 		APIReader:              k8sManager.GetAPIReader(), // DD-STATUS-001: Cache-bypassed reads for race condition prevention
@@ -343,6 +364,8 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		StatusManager:          statusManager,     // DD-PERF-001: Atomic status updates
 		AuditManager:           auditManager,      // P3: Audit Manager pattern
 		ExecutorRegistry:       executorRegistry,   // BR-WE-014: Strategy pattern dispatch
+		WorkflowQuerier:        &testWorkflowQuerier, // DD-WE-006: Configurable per-test (default: nil deps)
+		DependencyValidator:    depValidator,          // DD-WE-006: Real K8s validation via envtest
 	}
 	err = reconciler.SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
