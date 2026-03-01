@@ -14,9 +14,35 @@ kubectl create namespace "${ARGOCD_NAMESPACE}" --dry-run=client -o yaml | kubect
 kubectl apply -n "${ARGOCD_NAMESPACE}" --server-side --force-conflicts \
   -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/core-install.yaml
 
+echo "==> Ensuring server.secretkey exists (core-install does not set it)..."
+if ! kubectl get secret argocd-secret -n "${ARGOCD_NAMESPACE}" -o jsonpath='{.data.server\.secretkey}' 2>/dev/null | grep -q .; then
+  kubectl patch secret argocd-secret -n "${ARGOCD_NAMESPACE}" --type merge \
+    -p "{\"stringData\":{\"server.secretkey\":\"$(openssl rand -hex 32)\"}}"
+fi
+
 echo "==> Waiting for ArgoCD pods to be ready..."
-kubectl wait --for=condition=Ready pod -l app.kubernetes.io/part-of=argocd \
+kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=argocd-application-controller \
   -n "${ARGOCD_NAMESPACE}" --timeout=300s
+kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=argocd-repo-server \
+  -n "${ARGOCD_NAMESPACE}" --timeout=300s
+
+echo "==> Ensuring default AppProject exists (core-install omits it)..."
+kubectl apply -f - <<APPPROJ
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: default
+  namespace: ${ARGOCD_NAMESPACE}
+spec:
+  description: Default project
+  sourceRepos: ['*']
+  destinations:
+    - namespace: '*'
+      server: '*'
+  clusterResourceWhitelist:
+    - group: '*'
+      kind: '*'
+APPPROJ
 
 echo "==> Configuring ArgoCD to trust Gitea repository..."
 GITEA_REPO_URL="http://gitea-http.gitea:3000/kubernaut/demo-gitops-repo.git"
