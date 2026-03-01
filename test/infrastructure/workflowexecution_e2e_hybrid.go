@@ -433,6 +433,45 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	}
 	_, _ = fmt.Fprintf(writer, "✅ ServiceAccount token retrieved for authenticated workflow registration\n")
 
+	// DD-WE-006: Grant data-storage-sa permission to read secrets in the execution
+	// namespace so dependency validation (ValidateDependencies) can verify that
+	// declared secret dependencies exist at registration time.
+	_, _ = fmt.Fprintf(writer, "🔐 Granting data-storage-sa secret read access in %s (DD-WE-006)...\n", ExecutionNamespace)
+	depRBACYAML := fmt.Sprintf(`---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: data-storage-dep-validator
+  namespace: %[1]s
+rules:
+  - apiGroups: [""]
+    resources: ["secrets", "configmaps"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: data-storage-dep-validator
+  namespace: %[1]s
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: data-storage-dep-validator
+subjects:
+  - kind: ServiceAccount
+    name: data-storage-sa
+    namespace: %[2]s
+`, ExecutionNamespace, WorkflowExecutionNamespace)
+	depRBACCmd := exec.Command("kubectl", "apply", "--kubeconfig", kubeconfigPath,
+		"--server-side", "--field-manager=e2e-test", "-f", "-")
+	depRBACCmd.Stdin = strings.NewReader(depRBACYAML)
+	depRBACCmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", kubeconfigPath))
+	depRBACOut, depRBACErr := depRBACCmd.CombinedOutput()
+	if depRBACErr != nil {
+		return fmt.Errorf("failed to create DD-WE-006 dep validator RBAC: %s", string(depRBACOut))
+	}
+	_, _ = fmt.Fprintf(writer, "   ✅ data-storage-sa can read secrets/configmaps in %s\n", ExecutionNamespace)
+
 	// DD-WE-006: Create dependency Secret in execution namespace BEFORE workflow registration.
 	// DS validates that declared dependencies exist at registration time; the Secret must
 	// be present for the dep-secret-job workflow to register successfully.
