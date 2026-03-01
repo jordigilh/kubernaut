@@ -20,7 +20,7 @@ labels:
 
 execution:
   engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/crashloop-config-fix-job:v1.0.0-exec@sha256:c72912b0e5c5b2a4da1b11df150480aaeb3267ddd96119bcb913d91ce7440ea7
+  bundle: quay.io/kubernaut-cicd/test-workflows/crashloop-config-fix-job:v1.0.0-exec@sha256:a5b4ec5a097554e8c61769d11327f8902e65a6cba59824daf1182cce1317e773
 
 parameters:
   - name: NAMESPACE
