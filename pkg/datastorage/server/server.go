@@ -442,16 +442,17 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/incidents", s.handler.ListIncidents)
 		r.Get("/incidents/{id}", s.handler.GetIncident)
 
-		// BR-STORAGE-030: Aggregation endpoints (READ API)
-		r.Get("/incidents/aggregate/success-rate", s.handler.AggregateSuccessRate)
-		r.Get("/incidents/aggregate/by-namespace", s.handler.AggregateByNamespace)
-		r.Get("/incidents/aggregate/by-severity", s.handler.AggregateBySeverity)
-		r.Get("/incidents/aggregate/trend", s.handler.AggregateIncidentTrend)
-
-		// BR-STORAGE-031-01, BR-STORAGE-031-02, BR-STORAGE-031-05: ADR-033 Multi-dimensional Success Tracking (READ API)
-		r.Get("/success-rate/incident-type", s.handler.HandleGetSuccessRateByIncidentType)
-		r.Get("/success-rate/workflow", s.handler.HandleGetSuccessRateByWorkflow)
-		r.Get("/success-rate/multi-dimensional", s.handler.HandleGetSuccessRateMultiDimensional)
+		// DISABLED: ADR-033 success-rate and aggregation endpoints are out of V1.0 scope.
+		// V1.0 tracks remediation effectiveness per resource (via EM), not workflow success rate.
+		// Evaluate for next release: https://github.com/jordigilh/kubernaut/issues/238
+		//
+		// r.Get("/incidents/aggregate/success-rate", s.handler.AggregateSuccessRate)    // BR-STORAGE-030
+		// r.Get("/incidents/aggregate/by-namespace", s.handler.AggregateByNamespace)    // BR-STORAGE-032
+		// r.Get("/incidents/aggregate/by-severity", s.handler.AggregateBySeverity)      // BR-STORAGE-033
+		// r.Get("/incidents/aggregate/trend", s.handler.AggregateIncidentTrend)         // BR-STORAGE-034
+		// r.Get("/success-rate/incident-type", s.handler.HandleGetSuccessRateByIncidentType)        // BR-STORAGE-031-01
+		// r.Get("/success-rate/workflow", s.handler.HandleGetSuccessRateByWorkflow)                  // BR-STORAGE-031-02
+		// r.Get("/success-rate/multi-dimensional", s.handler.HandleGetSuccessRateMultiDimensional)   // BR-STORAGE-031-05
 
 		// BR-STORAGE-001 to BR-STORAGE-020: Audit write endpoints (WRITE API)
 		s.logger.V(1).Info("Registering POST /api/v1/audit/notifications handler")
