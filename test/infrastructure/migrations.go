@@ -208,12 +208,9 @@ var AllMigrations = []Migration{
 	{
 		Name:        "audit_partitions",
 		File:        "1000_create_audit_events_partitions.sql",
-		Description: "Monthly partitions for audit_events (Nov 2025 – Dec 2028)",
+		Description: "Monthly partitions for audit_events (Mar 2026 – Dec 2028)",
 		Tables: []string{
-			"audit_events_2025_11",
-			"audit_events_2025_12",
-			"audit_events_2026_01",
-			"audit_events_2026_02",
+			"audit_events_2026_03",
 		},
 	},
 }
@@ -227,12 +224,10 @@ var AuditMigrations = []string{
 
 // AuditTables lists all tables created by audit migrations
 // Partition names match SQL convention: audit_events_{YYYY}_{MM}
+// First partition: March 2026 (first Kubernaut release month)
 var AuditTables = []string{
 	"audit_events",
-	"audit_events_2025_11",
-	"audit_events_2025_12",
-	"audit_events_2026_01",
-	"audit_events_2026_02",
+	"audit_events_2026_03",
 }
 
 // WorkflowCatalogTables lists all tables created by workflow catalog migrations
@@ -245,7 +240,7 @@ var WorkflowCatalogTables = []string{
 //
 // Creates:
 //   - audit_events table (ADR-034)
-//   - audit_events_2025_11 through audit_events_2026_02 partitions
+//   - audit_events_2026_03 through audit_events_2028_12 partitions
 //   - All audit indexes (correlation, event_type, timestamp, etc.)
 func ApplyAuditMigrations(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "📋 Applying AUDIT migrations (audit_events + partitions)...\n")

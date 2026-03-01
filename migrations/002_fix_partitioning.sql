@@ -65,40 +65,8 @@ CREATE TABLE resource_action_traces (
     UNIQUE (action_id, action_timestamp)
 ) PARTITION BY RANGE (action_timestamp);
 
--- Create initial partitions for resource_action_traces
--- Extended range: July 2025 - December 2028 (Issue #234: prevent partition expiry)
-CREATE TABLE resource_action_traces_2025_07
-    PARTITION OF resource_action_traces
-    FOR VALUES FROM ('2025-07-01') TO ('2025-08-01');
-
-CREATE TABLE resource_action_traces_2025_08
-    PARTITION OF resource_action_traces
-    FOR VALUES FROM ('2025-08-01') TO ('2025-09-01');
-
-CREATE TABLE resource_action_traces_2025_09
-    PARTITION OF resource_action_traces
-    FOR VALUES FROM ('2025-09-01') TO ('2025-10-01');
-
-CREATE TABLE resource_action_traces_2025_10
-    PARTITION OF resource_action_traces
-    FOR VALUES FROM ('2025-10-01') TO ('2025-11-01');
-
-CREATE TABLE resource_action_traces_2025_11
-    PARTITION OF resource_action_traces
-    FOR VALUES FROM ('2025-11-01') TO ('2025-12-01');
-
-CREATE TABLE resource_action_traces_2025_12
-    PARTITION OF resource_action_traces
-    FOR VALUES FROM ('2025-12-01') TO ('2026-01-01');
-
-CREATE TABLE resource_action_traces_2026_01
-    PARTITION OF resource_action_traces
-    FOR VALUES FROM ('2026-01-01') TO ('2026-02-01');
-
-CREATE TABLE resource_action_traces_2026_02
-    PARTITION OF resource_action_traces
-    FOR VALUES FROM ('2026-02-01') TO ('2026-03-01');
-
+-- Create partitions for resource_action_traces
+-- Range: March 2026 - December 2028 (Issue #234: first release month through 3-year horizon)
 CREATE TABLE resource_action_traces_2026_03
     PARTITION OF resource_action_traces
     FOR VALUES FROM ('2026-03-01') TO ('2026-04-01');

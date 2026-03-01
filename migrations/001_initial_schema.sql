@@ -141,39 +141,8 @@ CREATE INDEX idx_rat_resource_state_gin ON resource_action_traces USING GIN (res
 CREATE INDEX idx_rat_pending_actions ON resource_action_traces (action_timestamp)
     WHERE execution_status IN ('pending', 'executing');
 
--- 4. Create initial partitions for resource_action_traces
--- Extended range: July 2025 - February 2026 (covers development period)
-CREATE TABLE resource_action_traces_2025_07
-    PARTITION OF resource_action_traces
-    FOR VALUES FROM ('2025-07-01') TO ('2025-08-01');
-
-CREATE TABLE resource_action_traces_2025_08
-    PARTITION OF resource_action_traces
-    FOR VALUES FROM ('2025-08-01') TO ('2025-09-01');
-
-CREATE TABLE resource_action_traces_2025_09
-    PARTITION OF resource_action_traces
-    FOR VALUES FROM ('2025-09-01') TO ('2025-10-01');
-
-CREATE TABLE resource_action_traces_2025_10
-    PARTITION OF resource_action_traces
-    FOR VALUES FROM ('2025-10-01') TO ('2025-11-01');
-
-CREATE TABLE resource_action_traces_2025_11
-    PARTITION OF resource_action_traces
-    FOR VALUES FROM ('2025-11-01') TO ('2025-12-01');
-
-CREATE TABLE resource_action_traces_2025_12
-    PARTITION OF resource_action_traces
-    FOR VALUES FROM ('2025-12-01') TO ('2026-01-01');
-
-CREATE TABLE resource_action_traces_2026_01
-    PARTITION OF resource_action_traces
-    FOR VALUES FROM ('2026-01-01') TO ('2026-02-01');
-
-CREATE TABLE resource_action_traces_2026_02
-    PARTITION OF resource_action_traces
-    FOR VALUES FROM ('2026-02-01') TO ('2026-03-01');
+-- 4. Partitions for resource_action_traces are created by migration 002
+-- (002 drops and recreates this table with partitions starting March 2026)
 
 -- 5. Oscillation Patterns Table
 CREATE TABLE oscillation_patterns (
