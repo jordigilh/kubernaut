@@ -269,15 +269,20 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 				"All concurrent requests should be deduplicated (HTTP 202 Accepted)")
 
 			// Final check: Still only one RemediationRequest
-			rrList := &remediationv1alpha1.RemediationRequestList{}
-			Expect(testClient.List(testCtx, rrList, client.InNamespace(gatewayNamespace))).To(Succeed())
-			count := 0
-			for _, rr := range rrList.Items {
-				if rr.Spec.SignalName == alertName {
-					count++
+			// Uses Eventually to handle transient API server delays after concurrent writes
+			Eventually(func() int {
+				rrList := &remediationv1alpha1.RemediationRequestList{}
+				if err := testClient.List(testCtx, rrList, client.InNamespace(gatewayNamespace)); err != nil {
+					return -1
 				}
-			}
-			Expect(count).To(Equal(1),
+				count := 0
+				for _, rr := range rrList.Items {
+					if rr.Spec.SignalName == alertName {
+						count++
+					}
+				}
+				return count
+			}, 10*time.Second, 500*time.Millisecond).Should(Equal(1),
 				"Only one RemediationRequest should exist despite concurrent requests")
 		})
 
