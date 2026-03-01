@@ -108,51 +108,47 @@ const (
 	dlqDrainTimeout = 10 * time.Second
 )
 
-// NewServer creates a new Data Storage HTTP server
+// ServerDeps groups the dependencies required to create a Data Storage HTTP server.
+// Replaces the previous long positional parameter list for clarity and extensibility.
+type ServerDeps struct {
+	DBConnStr     string            // PostgreSQL connection string
+	RedisAddr     string            // Redis address for DLQ (format: "localhost:6379")
+	RedisPassword string            // Redis password (from mounted secret)
+	Logger        logr.Logger       // Structured logger
+	AppConfig     *config.Config    // Full application configuration (includes database pool settings)
+	ServerConfig  *Config           // Server-specific configuration (port, timeouts)
+	DLQMaxLen     int64             // Maximum DLQ stream length for capacity monitoring (Gap 3.3)
+	Authenticator auth.Authenticator // Token validator (DD-AUTH-014)
+	Authorizer    auth.Authorizer   // Permission checker (DD-AUTH-014)
+	AuthNamespace string            // Namespace for SAR checks (DD-AUTH-014)
+	HandlerOpts   []HandlerOption   // Optional handler options (e.g. WithDependencyValidator for DD-WE-006)
+}
+
+// NewServer creates a new Data Storage HTTP server.
 // BR-STORAGE-021: REST API Gateway for database access
 // BR-STORAGE-001 to BR-STORAGE-020: Audit write API
 // SOC2 Gap #9: PostgreSQL with custom hash chains for tamper detection
 // DD-AUTH-014: Middleware-based authentication and authorization
-//
-// Parameters:
-// - dbConnStr: PostgreSQL connection string (format: "host=localhost port=5432 dbname=action_history user=slm_user password=xxx sslmode=disable")
-// - redisAddr: Redis address for DLQ (format: "localhost:6379")
-// - redisPassword: Redis password (from mounted secret)
-// - logger: Structured logger
-// - appCfg: Full application configuration (includes database pool settings)
-// - serverCfg: Server-specific configuration (port, timeouts)
-// - dlqMaxLen: Maximum DLQ stream length for capacity monitoring (Gap 3.3)
-// - authenticator: Token validator (DD-AUTH-014) - K8s implementation for production/E2E, mock for integration tests
-// - authorizer: Permission checker (DD-AUTH-014) - K8s implementation for production/E2E, mock for integration tests
-// - authNamespace: Namespace for SAR checks (DD-AUTH-014) - dynamically determined from pod's ServiceAccount
-func NewServer(
-	dbConnStr string,
-	redisAddr string,
-	redisPassword string,
-	logger logr.Logger,
-	appCfg *config.Config,
-	serverCfg *Config,
-	dlqMaxLen int64,
-	authenticator auth.Authenticator,
-	authorizer auth.Authorizer,
-	authNamespace string,
-) (*Server, error) {
+func NewServer(deps ServerDeps) (*Server, error) {
 	// DD-AUTH-014: Authenticator and authorizer are MANDATORY
-	// Service must not start without authentication configured
-	if authenticator == nil {
+	if deps.Authenticator == nil {
 		return nil, fmt.Errorf("authenticator is nil - DD-AUTH-014 requires authentication (K8s in production, mock in unit tests)")
 	}
-	if authorizer == nil {
+	if deps.Authorizer == nil {
 		return nil, fmt.Errorf("authorizer is nil - DD-AUTH-014 requires authorization (K8s in production, mock in unit tests)")
 	}
-	if authNamespace == "" {
+	if deps.AuthNamespace == "" {
 		return nil, fmt.Errorf("authNamespace is empty - DD-AUTH-014 requires namespace for SAR checks")
 	}
+
+	logger := deps.Logger
+	appCfg := deps.AppConfig
+	serverCfg := deps.ServerConfig
 
 	// Connect to PostgreSQL using pgx driver (DD-010)
 	// Bug fix #200: Uses OpenPostgresDB which configures QueryExecModeExec
 	// to prevent stale prepared statement caches after schema migrations
-	db, err := OpenPostgresDB(dbConnStr)
+	db, err := OpenPostgresDB(deps.DBConnStr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to PostgreSQL: %w", err)
 	}
@@ -194,8 +190,8 @@ func NewServer(
 
 	// Connect to Redis for DLQ (DD-009)
 	redisClient := redis.NewClient(&redis.Options{
-		Addr:     redisAddr,
-		Password: redisPassword, // ADR-030: Password from mounted secret
+		Addr:     deps.RedisAddr,
+		Password: deps.RedisPassword, // ADR-030: Password from mounted secret
 	})
 	if err := redisClient.Ping(context.Background()).Err(); err != nil {
 		_ = db.Close() // Clean up DB connection
@@ -203,13 +199,14 @@ func NewServer(
 	}
 
 	logger.Info("Redis connection established",
-		"addr", redisAddr,
+		"addr", deps.RedisAddr,
 	)
 
 	// Create audit write dependencies (BR-STORAGE-001 to BR-STORAGE-020)
 	logger.V(1).Info("Creating audit write dependencies...")
 	repo := repository.NewNotificationAuditRepository(db, logger)
 	// Gap 3.3: Use passed DLQ max length for capacity monitoring
+	dlqMaxLen := deps.DLQMaxLen
 	if dlqMaxLen <= 0 {
 		dlqMaxLen = 10000 // Default if not configured
 	}
@@ -298,7 +295,8 @@ func NewServer(
 	// V1.0: Embedding service removed (label-only search)
 	// BR-AUDIT-006: Pass sqlDB for reconstruction queries
 	// GAP-WF-1: WithWorkflowLifecycleRepository enables enable/disable/deprecate handlers
-	handler := NewHandler(dbAdapter,
+	// Build handler options: fixed options + caller-provided options (e.g. WithDependencyValidator)
+	opts := []HandlerOption{
 		WithLogger(logger),
 		WithActionTraceRepository(actionTraceRepo),
 		WithWorkflowRepository(workflowRepo),
@@ -307,7 +305,10 @@ func NewServer(
 		WithAuditStore(auditStore),
 		WithSQLDB(db),
 		WithSchemaExtractor(schemaExtractor),
-		WithRemediationHistoryQuerier(remHistoryQuerier))
+		WithRemediationHistoryQuerier(remHistoryQuerier),
+	}
+	opts = append(opts, deps.HandlerOpts...)
+	handler := NewHandler(dbAdapter, opts...)
 
 	// SOC2 Day 9.1: Load signing certificate for audit exports
 	// BR-AUDIT-007: Digital signatures for tamper-evident audit exports
@@ -340,9 +341,9 @@ func NewServer(
 		auditStore:             auditStore,
 		metrics:         metrics,
 		signer:          signer,
-		authenticator:   authenticator,   // DD-AUTH-014: Injected at runtime
-		authorizer:      authorizer,      // DD-AUTH-014: Injected at runtime
-		authNamespace:   authNamespace,   // DD-AUTH-014: Dynamic namespace for SAR checks
+		authenticator:   deps.Authenticator, // DD-AUTH-014: Injected at runtime
+		authorizer:      deps.Authorizer,    // DD-AUTH-014: Injected at runtime
+		authNamespace:   deps.AuthNamespace,  // DD-AUTH-014: Dynamic namespace for SAR checks
 	}
 
 	// DS-FLAKY-003 FIX: Assign handler immediately so Shutdown() can work

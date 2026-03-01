@@ -141,6 +141,25 @@ func (h *Handler) HandleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Step 5d: Validate schema-declared dependencies exist in execution namespace (DD-WE-006)
+	if h.dependencyValidator != nil && result.Schema.Dependencies != nil {
+		deps := schema.NewParser().ExtractDependencies(result.Schema)
+		if deps != nil {
+			if err := h.dependencyValidator.ValidateDependencies(r.Context(), h.executionNamespace, deps); err != nil {
+				h.logger.Error(err, "Dependency validation failed",
+					"schema_image", req.SchemaImage,
+					"execution_namespace", h.executionNamespace,
+				)
+				response.WriteRFC7807Error(w, http.StatusBadRequest, "dependency-validation-error",
+					"Dependency Validation Error",
+					fmt.Sprintf("Schema-declared dependency not satisfied: %v. Ensure all dependencies "+
+						"are provisioned in namespace %q before registering the workflow (DD-WE-006).", err, h.executionNamespace),
+					h.logger)
+				return
+			}
+		}
+	}
+
 	// Step 6: Create workflow in repository
 	if h.workflowRepo != nil {
 		if err := h.workflowRepo.Create(r.Context(), workflow); err != nil {

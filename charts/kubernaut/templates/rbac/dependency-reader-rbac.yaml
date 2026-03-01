@@ -1,0 +1,49 @@
+---
+# DD-WE-006: Schema-declared dependency validation RBAC
+# Role in kubernaut-workflows namespace allowing read access to Secrets and ConfigMaps.
+# Used by Data Storage (registration-time validation) and WorkflowExecution (execution-time validation).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: dependency-reader
+  namespace: kubernaut-workflows
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets", "configmaps"]
+    verbs: ["get"]
+---
+# DD-WE-006: DataStorage SA needs to validate dependencies at workflow registration time.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: datastorage-dependency-reader
+  namespace: kubernaut-workflows
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: dependency-reader
+subjects:
+  - kind: ServiceAccount
+    name: data-storage-sa
+    namespace: {{ .Release.Namespace }}
+---
+# DD-WE-006: WorkflowExecution controller SA needs to validate dependencies at execution time.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: workflowexecution-dependency-reader
+  namespace: kubernaut-workflows
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: dependency-reader
+subjects:
+  - kind: ServiceAccount
+    name: workflowexecution-controller
+    namespace: {{ .Release.Namespace }}

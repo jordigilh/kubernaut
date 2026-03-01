@@ -137,6 +137,13 @@ func (p *Parser) Validate(schema *models.WorkflowSchema) error {
 		}
 	}
 
+	// Validate dependencies (DD-WE-006)
+	if schema.Dependencies != nil {
+		if err := schema.Dependencies.ValidateDependencies(); err != nil {
+			return err
+		}
+	}
+
 	// Validate detectedLabels (ADR-043 v1.3)
 	if schema.DetectedLabels != nil {
 		if err := schema.DetectedLabels.ValidateDetectedLabels(); err != nil {
@@ -321,6 +328,15 @@ func (p *Parser) ExtractDetectedLabels(schema *models.WorkflowSchema) (*models.D
 	dl.ServiceMesh = src.ServiceMesh
 
 	return dl, nil
+}
+
+// ExtractDependencies returns the workflow's declared dependencies.
+// Returns nil if the schema has no dependencies section.
+func (p *Parser) ExtractDependencies(schema *models.WorkflowSchema) *models.WorkflowDependencies {
+	if schema == nil {
+		return nil
+	}
+	return schema.Dependencies
 }
 
 // ExtractExecutionEngine extracts the execution engine from a WorkflowSchema
