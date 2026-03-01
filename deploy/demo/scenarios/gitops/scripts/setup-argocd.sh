@@ -62,6 +62,22 @@ stringData:
   password: kubernaut123
 EOF
 
+echo "==> Provisioning Git credentials for workflow execution namespace (DD-WE-006)..."
+kubectl create namespace kubernaut-workflows 2>/dev/null || true
+kubectl apply -f - <<EOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: gitea-repo-creds
+  namespace: kubernaut-workflows
+  labels:
+    kubernaut.ai/dependency-type: git-credentials
+stringData:
+  username: kubernaut
+  password: kubernaut123
+EOF
+
 echo "==> ArgoCD setup complete"
 echo "    Namespace: ${ARGOCD_NAMESPACE}"
 echo "    Gitea repo registered: ${GITEA_REPO_URL}"
+echo "    Git credentials provisioned in kubernaut-workflows (DD-WE-006)"

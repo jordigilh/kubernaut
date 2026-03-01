@@ -4,10 +4,12 @@
 # Authority: DD-WORKFLOW-003 (Parameterized Remediation Actions)
 # Scenario: #125 -- GitOps drift remediation
 #
-# Pattern: Validate -> Action -> Verify (DD-WORKFLOW-003)
+# DD-WE-006: Git credentials are read from volume-mounted Secret (gitea-repo-creds),
+# NOT embedded in GIT_REPO_URL by the LLM. The Secret is provisioned by operators
+# in kubernaut-workflows and mounted at /run/kubernaut/secrets/gitea-repo-creds/.
 #
 # Parameters (env vars):
-#   GIT_REPO_URL          - URL of the Git repository
+#   GIT_REPO_URL          - URL of the Git repository (without credentials)
 #   GIT_BRANCH            - Branch to revert on (default: main)
 #   TARGET_NAMESPACE      - Namespace of the affected workload
 #   TARGET_RESOURCE_NAME  - Name of the affected resource
@@ -16,6 +18,14 @@ set -e
 
 GIT_BRANCH="${GIT_BRANCH:-main}"
 WORK_DIR="/tmp/gitops-revert"
+
+SECRET_DIR="/run/kubernaut/secrets/gitea-repo-creds"
+if [ ! -d "${SECRET_DIR}" ]; then
+  echo "ERROR: Secret mount not found at ${SECRET_DIR}. Ensure gitea-repo-creds Secret exists in kubernaut-workflows."
+  exit 1
+fi
+GIT_USERNAME=$(cat "${SECRET_DIR}/username")
+GIT_PASSWORD=$(cat "${SECRET_DIR}/password")
 
 echo "=== Phase 1: Validate ==="
 echo "Checking for crashing pods in namespace ${TARGET_NAMESPACE}..."
@@ -39,9 +49,10 @@ fi
 echo "Validated: workload in ${TARGET_NAMESPACE} has issues"
 
 echo "=== Phase 2: Action ==="
+AUTH_URL=$(echo "${GIT_REPO_URL}" | sed "s|://|://${GIT_USERNAME}:${GIT_PASSWORD}@|")
 echo "Cloning repository: ${GIT_REPO_URL}"
 rm -rf "${WORK_DIR}"
-git clone --branch "${GIT_BRANCH}" --depth 5 "${GIT_REPO_URL}" "${WORK_DIR}"
+git clone --branch "${GIT_BRANCH}" --depth 5 "${AUTH_URL}" "${WORK_DIR}"
 cd "${WORK_DIR}"
 
 LAST_COMMIT=$(git log --oneline -1)

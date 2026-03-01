@@ -1,11 +1,22 @@
 #!/bin/sh
+# Fix Certificate GitOps Remediation Script
+#
+# DD-WE-006: Git credentials are read from volume-mounted Secret (gitea-repo-creds),
+# NOT from LLM-provided parameters. The Secret is provisioned by operators in
+# kubernaut-workflows and mounted at /run/kubernaut/secrets/gitea-repo-creds/.
 set -e
 
 : "${TARGET_RESOURCE_NAME:?TARGET_RESOURCE_NAME is required}"
 : "${TARGET_NAMESPACE:?TARGET_NAMESPACE is required}"
 : "${GIT_REPO_URL:?GIT_REPO_URL is required}"
-: "${GIT_USERNAME:?GIT_USERNAME is required}"
-: "${GIT_PASSWORD:?GIT_PASSWORD is required}"
+
+SECRET_DIR="/run/kubernaut/secrets/gitea-repo-creds"
+if [ ! -d "${SECRET_DIR}" ]; then
+  echo "ERROR: Secret mount not found at ${SECRET_DIR}. Ensure gitea-repo-creds Secret exists in kubernaut-workflows."
+  exit 1
+fi
+GIT_USERNAME=$(cat "${SECRET_DIR}/username")
+GIT_PASSWORD=$(cat "${SECRET_DIR}/password")
 
 echo "=== Phase 1: Validate ==="
 echo "Checking Certificate ${TARGET_RESOURCE_NAME} in ${TARGET_NAMESPACE}..."
