@@ -18,10 +18,10 @@ package workflowexecution
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
-	"strings"
 	"testing"
 
 	"github.com/go-logr/logr"
@@ -184,11 +184,25 @@ var _ = SynchronizedBeforeSuite(
 
 		logger.Info("✅ WorkflowExecution E2E environment ready!")
 
-		// Return kubeconfig path and auth token for other processes
-		return []byte(fmt.Sprintf("%s|%s", kubeconfigPath, token))
+		// Serialize shared state for all Ginkgo parallel processes.
+		// RegisteredWorkflowUUIDs is populated by BuildAndRegisterTestWorkflows
+		// and must be available on every process for DD-WE-006 tests.
+		type sharedState struct {
+			Kubeconfig   string            `json:"kubeconfig"`
+			AuthToken    string            `json:"authToken"`
+			WorkflowUUIDs map[string]string `json:"workflowUUIDs"`
+		}
+		state := sharedState{
+			Kubeconfig:    kubeconfigPath,
+			AuthToken:     token,
+			WorkflowUUIDs: infrastructure.RegisteredWorkflowUUIDs,
+		}
+		stateBytes, err := json.Marshal(state)
+		Expect(err).ToNot(HaveOccurred(), "Failed to serialize shared state")
+		return stateBytes
 	},
 	// This runs on ALL processes - connects to the shared cluster
-	func(kubeconfigBytes []byte) {
+	func(stateBytes []byte) {
 		// Initialize context for this process
 		ctx, cancel = context.WithCancel(context.Background())
 
@@ -199,15 +213,24 @@ var _ = SynchronizedBeforeSuite(
 			ServiceName: "workflowexecution-e2e-test",
 		})
 
-		// Parse data: "kubeconfig|authToken"
-		parts := strings.Split(string(kubeconfigBytes), "|")
-		kubeconfigPath = parts[0]
-		if len(parts) > 1 {
-			e2eAuthToken = parts[1] // DD-AUTH-014: Store token for authenticated DataStorage access
+		// Deserialize shared state from Phase 1
+		type sharedState struct {
+			Kubeconfig   string            `json:"kubeconfig"`
+			AuthToken    string            `json:"authToken"`
+			WorkflowUUIDs map[string]string `json:"workflowUUIDs"`
+		}
+		var state sharedState
+		err := json.Unmarshal(stateBytes, &state)
+		Expect(err).ToNot(HaveOccurred(), "Failed to deserialize shared state")
+
+		kubeconfigPath = state.Kubeconfig
+		e2eAuthToken = state.AuthToken
+		for k, v := range state.WorkflowUUIDs {
+			infrastructure.RegisteredWorkflowUUIDs[k] = v
 		}
 
 		// Set KUBECONFIG environment variable
-		err := os.Setenv("KUBECONFIG", kubeconfigPath)
+		err = os.Setenv("KUBECONFIG", kubeconfigPath)
 		Expect(err).ToNot(HaveOccurred())
 
 		// Create Kubernetes client
