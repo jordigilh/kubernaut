@@ -195,25 +195,21 @@ var _ = Describe("Audit Events Query API", func() {
 			client, err := createOpenAPIClient(dataStorageURL)
 			Expect(err).ToNot(HaveOccurred())
 
-			for _, evt := range testEvents {
+			baseTime := time.Now().Add(-5 * time.Second).UTC()
+			for i, evt := range testEvents {
 				eventRequest := ogenclient.AuditEventRequest{
 					Version:        "1.0",
 					EventCategory:  evt.category,
 					EventType:      evt.eventType,
-					EventTimestamp: time.Now().Add(-5 * time.Second).UTC(),
+					EventTimestamp: baseTime.Add(time.Duration(i) * time.Second),
 					CorrelationID:  correlationID,
 					EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
 					EventAction:    "test",
 					EventData:      evt.eventData,
 				}
 
-				// Use ogen client to post event (handles optional fields properly)
 				_, err := postAuditEvent(ctx, client, eventRequest)
 				Expect(err).ToNot(HaveOccurred(), "Failed to create audit event: %s", evt.eventType)
-
-				// Add small delay to ensure chronological ordering
-				// Per TESTING_GUIDELINES.md: ACCEPTABLE - testing timing behavior (chronological order)
-				time.Sleep(10 * time.Millisecond)
 			}
 
 			// ACT: Query by correlation_id using typed OpenAPI client
