@@ -33,6 +33,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
 )
 
@@ -150,7 +151,7 @@ var _ = Describe("JobExecutor (BR-WE-014)", func() {
 				},
 			}
 
-			name, err := jobExec.Create(ctx, wfe, "kubernaut-workflows")
+			name, err := jobExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(name).To(HavePrefix("wfe-"))
 
@@ -208,7 +209,7 @@ var _ = Describe("JobExecutor (BR-WE-014)", func() {
 				},
 			}
 
-			name, err := jobExec.Create(ctx, wfe, "kubernaut-workflows")
+			name, err := jobExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
 			Expect(err).ToNot(HaveOccurred())
 
 			var job batchv1.Job
@@ -421,7 +422,7 @@ var _ = Describe("TektonExecutor (BR-WE-014)", func() {
 				"restart-deployment", "ghcr.io/kubernaut/workflows/restart:v1.0.0",
 				map[string]string{"NAMESPACE": "default"})
 
-			name, err := tektonExec.Create(ctx, wfe, "kubernaut-workflows")
+			name, err := tektonExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(name).To(HavePrefix("wfe-"))
 
@@ -463,7 +464,7 @@ var _ = Describe("TektonExecutor (BR-WE-014)", func() {
 			wfe := newTestWFE("test-wfe-default-sa", "default", "default/deployment/another-app",
 				"restart-deployment", "ghcr.io/kubernaut/workflows/restart:v1.0.0", nil)
 
-			name, err := tektonExec.Create(ctx, wfe, "kubernaut-workflows")
+			name, err := tektonExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
 			Expect(err).ToNot(HaveOccurred())
 
 			var pr tektonv1.PipelineRun
@@ -483,7 +484,7 @@ var _ = Describe("TektonExecutor (BR-WE-014)", func() {
 				"restart-deployment", "ghcr.io/kubernaut/workflows/restart:v1.0.0",
 				map[string]string{"NAMESPACE": "default", "REPLICAS": "3"})
 
-			name, err := tektonExec.Create(ctx, wfe, "kubernaut-workflows")
+			name, err := tektonExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
 			Expect(err).ToNot(HaveOccurred())
 
 			var pr tektonv1.PipelineRun
@@ -514,7 +515,7 @@ var _ = Describe("TektonExecutor (BR-WE-014)", func() {
 			wfe := newTestWFE("test-wfe-no-params", "default", "default/deployment/no-param-app",
 				"restart-deployment", "ghcr.io/kubernaut/workflows/restart:v1.0.0", nil)
 
-			name, err := tektonExec.Create(ctx, wfe, "kubernaut-workflows")
+			name, err := tektonExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
 			Expect(err).ToNot(HaveOccurred())
 
 			var pr tektonv1.PipelineRun
@@ -537,7 +538,7 @@ var _ = Describe("TektonExecutor (BR-WE-014)", func() {
 			wfe := newTestWFE("test-wfe-labels", "prod-ns", "prod-ns/deployment/api-server",
 				"scale-up", "ghcr.io/kubernaut/workflows/scale:v2.0.0", nil)
 
-			name, err := tektonExec.Create(ctx, wfe, "kubernaut-workflows")
+			name, err := tektonExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
 			Expect(err).ToNot(HaveOccurred())
 
 			var pr tektonv1.PipelineRun
@@ -565,11 +566,11 @@ var _ = Describe("TektonExecutor (BR-WE-014)", func() {
 				"restart-deployment", "ghcr.io/kubernaut/workflows/restart:v1.0.0", nil)
 
 			// First create should succeed
-			_, err := tektonExec.Create(ctx, wfe, "kubernaut-workflows")
+			_, err := tektonExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
 			Expect(err).ToNot(HaveOccurred())
 
 			// Second create with same WFE (same target resource → same name) should fail
-			_, err = tektonExec.Create(ctx, wfe, "kubernaut-workflows")
+			_, err = tektonExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
 			Expect(err).To(HaveOccurred())
 			// The error should be usable with apierrors.IsAlreadyExists
 			Expect(err.Error()).To(ContainSubstring("already exists"))
@@ -818,7 +819,7 @@ var _ = Describe("Utility Functions (BR-WE-014)", func() {
 			wfe := newTestWFE("test-wfe-convert", "default", "default/deployment/convert-app",
 				"restart-deployment", "ghcr.io/kubernaut/workflows/restart:v1.0.0", params)
 
-			name, err := tektonExec.Create(context.Background(), wfe, "kubernaut-workflows")
+			name, err := tektonExec.Create(context.Background(), wfe, "kubernaut-workflows", executor.CreateOptions{})
 			Expect(err).ToNot(HaveOccurred())
 
 			var pr tektonv1.PipelineRun
@@ -852,7 +853,7 @@ var _ = Describe("Utility Functions (BR-WE-014)", func() {
 				"restart-deployment", "ghcr.io/kubernaut/workflows/restart:v1.0.0",
 				map[string]string{})
 
-			name, err := tektonExec.Create(context.Background(), wfe, "kubernaut-workflows")
+			name, err := tektonExec.Create(context.Background(), wfe, "kubernaut-workflows", executor.CreateOptions{})
 			Expect(err).ToNot(HaveOccurred())
 
 			var pr tektonv1.PipelineRun
@@ -879,7 +880,7 @@ var _ = Describe("Utility Functions (BR-WE-014)", func() {
 			wfe := newTestWFE("test-wfe-label-sanitize", "default", "prod-ns/deployment/api-server",
 				"restart-deployment", "ghcr.io/kubernaut/workflows/restart:v1.0.0", nil)
 
-			name, err := tektonExec.Create(context.Background(), wfe, "kubernaut-workflows")
+			name, err := tektonExec.Create(context.Background(), wfe, "kubernaut-workflows", executor.CreateOptions{})
 			Expect(err).ToNot(HaveOccurred())
 
 			var pr tektonv1.PipelineRun
@@ -905,7 +906,7 @@ var _ = Describe("Utility Functions (BR-WE-014)", func() {
 			wfe := newTestWFE("test-wfe-label-truncate", "default", longTarget,
 				"restart-deployment", "ghcr.io/kubernaut/workflows/restart:v1.0.0", nil)
 
-			name, err := tektonExec.Create(context.Background(), wfe, "kubernaut-workflows")
+			name, err := tektonExec.Create(context.Background(), wfe, "kubernaut-workflows", executor.CreateOptions{})
 			Expect(err).ToNot(HaveOccurred())
 
 			var pr tektonv1.PipelineRun
@@ -918,6 +919,251 @@ var _ = Describe("Utility Functions (BR-WE-014)", func() {
 			// Label value should be truncated to <= 63 characters
 			Expect(len(pr.Labels["kubernaut.ai/target-resource"])).To(BeNumerically("<=", 63))
 		})
+	})
+})
+
+// ========================================
+// DD-WE-006: Schema-Declared Dependencies Tests
+// Job executor: volume mounts
+// Tekton executor: workspace bindings
+// ========================================
+
+var _ = Describe("Job Executor Dependencies (DD-WE-006)", func() {
+	var (
+		jobExec   *executor.JobExecutor
+		k8sClient client.Client
+		scheme    *runtime.Scheme
+		ctx       context.Context
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		scheme = runtime.NewScheme()
+		Expect(batchv1.AddToScheme(scheme)).To(Succeed())
+		Expect(corev1.AddToScheme(scheme)).To(Succeed())
+		Expect(workflowexecutionv1alpha1.AddToScheme(scheme)).To(Succeed())
+		k8sClient = fake.NewClientBuilder().WithScheme(scheme).Build()
+		jobExec = executor.NewJobExecutor(k8sClient, "test-sa")
+	})
+
+	It("UT-WE-006-020: should mount secrets as volumes on the Job", func() {
+		wfe := newTestWFE("test-wfe-deps", "default", "default/deployment/deps-app",
+			"fix-cert", "ghcr.io/kubernaut/workflows/fix-cert:v1.0.0", nil)
+
+		opts := executor.CreateOptions{
+			Dependencies: &models.WorkflowDependencies{
+				Secrets: []models.ResourceDependency{
+					{Name: "gitea-repo-creds"},
+				},
+			},
+		}
+
+		name, err := jobExec.Create(ctx, wfe, "kubernaut-workflows", opts)
+		Expect(err).ToNot(HaveOccurred())
+
+		var job batchv1.Job
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: name, Namespace: "kubernaut-workflows"}, &job)).To(Succeed())
+
+		Expect(job.Spec.Template.Spec.Volumes).To(ContainElement(
+			HaveField("Name", "secret-gitea-repo-creds"),
+		))
+
+		container := job.Spec.Template.Spec.Containers[0]
+		Expect(container.VolumeMounts).To(ContainElement(And(
+			HaveField("Name", "secret-gitea-repo-creds"),
+			HaveField("MountPath", "/run/kubernaut/secrets/gitea-repo-creds"),
+			HaveField("ReadOnly", true),
+		)))
+	})
+
+	It("UT-WE-006-021: should mount configMaps as volumes on the Job", func() {
+		wfe := newTestWFE("test-wfe-cm", "default", "default/deployment/cm-app",
+			"fix-cert", "ghcr.io/kubernaut/workflows/fix-cert:v1.0.0", nil)
+
+		opts := executor.CreateOptions{
+			Dependencies: &models.WorkflowDependencies{
+				ConfigMaps: []models.ResourceDependency{
+					{Name: "remediation-config"},
+				},
+			},
+		}
+
+		name, err := jobExec.Create(ctx, wfe, "kubernaut-workflows", opts)
+		Expect(err).ToNot(HaveOccurred())
+
+		var job batchv1.Job
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: name, Namespace: "kubernaut-workflows"}, &job)).To(Succeed())
+
+		Expect(job.Spec.Template.Spec.Volumes).To(ContainElement(
+			HaveField("Name", "configmap-remediation-config"),
+		))
+
+		container := job.Spec.Template.Spec.Containers[0]
+		Expect(container.VolumeMounts).To(ContainElement(And(
+			HaveField("Name", "configmap-remediation-config"),
+			HaveField("MountPath", "/run/kubernaut/configmaps/remediation-config"),
+			HaveField("ReadOnly", true),
+		)))
+	})
+
+	It("UT-WE-006-022: should mount both secrets and configMaps at correct paths", func() {
+		wfe := newTestWFE("test-wfe-both", "default", "default/deployment/both-app",
+			"fix-cert", "ghcr.io/kubernaut/workflows/fix-cert:v1.0.0", nil)
+
+		opts := executor.CreateOptions{
+			Dependencies: &models.WorkflowDependencies{
+				Secrets:    []models.ResourceDependency{{Name: "gitea-repo-creds"}},
+				ConfigMaps: []models.ResourceDependency{{Name: "remediation-config"}},
+			},
+		}
+
+		name, err := jobExec.Create(ctx, wfe, "kubernaut-workflows", opts)
+		Expect(err).ToNot(HaveOccurred())
+
+		var job batchv1.Job
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: name, Namespace: "kubernaut-workflows"}, &job)).To(Succeed())
+
+		Expect(job.Spec.Template.Spec.Volumes).To(HaveLen(2))
+		Expect(job.Spec.Template.Spec.Volumes).To(ContainElement(
+			HaveField("Name", "secret-gitea-repo-creds"),
+		))
+		Expect(job.Spec.Template.Spec.Volumes).To(ContainElement(
+			HaveField("Name", "configmap-remediation-config"),
+		))
+
+		container := job.Spec.Template.Spec.Containers[0]
+		Expect(container.VolumeMounts).To(HaveLen(2))
+		Expect(container.VolumeMounts).To(ContainElement(And(
+			HaveField("Name", "secret-gitea-repo-creds"),
+			HaveField("MountPath", "/run/kubernaut/secrets/gitea-repo-creds"),
+			HaveField("ReadOnly", true),
+		)))
+		Expect(container.VolumeMounts).To(ContainElement(And(
+			HaveField("Name", "configmap-remediation-config"),
+			HaveField("MountPath", "/run/kubernaut/configmaps/remediation-config"),
+			HaveField("ReadOnly", true),
+		)))
+	})
+
+	It("UT-WE-006-023: should create Job without volumes when no dependencies", func() {
+		wfe := newTestWFE("test-wfe-nodeps", "default", "default/deployment/nodeps-app",
+			"restart", "ghcr.io/kubernaut/workflows/restart:v1.0.0", nil)
+
+		name, err := jobExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
+		Expect(err).ToNot(HaveOccurred())
+
+		var job batchv1.Job
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: name, Namespace: "kubernaut-workflows"}, &job)).To(Succeed())
+
+		Expect(job.Spec.Template.Spec.Volumes).To(BeEmpty())
+		container := job.Spec.Template.Spec.Containers[0]
+		Expect(container.VolumeMounts).To(BeEmpty())
+	})
+})
+
+var _ = Describe("Tekton Executor Dependencies (DD-WE-006)", func() {
+	var (
+		tektonExec *executor.TektonExecutor
+		k8sClient  client.Client
+		scheme     *runtime.Scheme
+		ctx        context.Context
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		scheme = runtime.NewScheme()
+		Expect(tektonv1.AddToScheme(scheme)).To(Succeed())
+		Expect(corev1.AddToScheme(scheme)).To(Succeed())
+		Expect(workflowexecutionv1alpha1.AddToScheme(scheme)).To(Succeed())
+		k8sClient = fake.NewClientBuilder().WithScheme(scheme).Build()
+		tektonExec = executor.NewTektonExecutor(k8sClient, "test-sa")
+	})
+
+	It("UT-WE-006-024: should add secret workspace binding to PipelineRun", func() {
+		wfe := newTestWFE("test-wfe-tekton-secret", "default", "default/deployment/secret-app",
+			"fix-cert", "ghcr.io/kubernaut/workflows/fix-cert:v1.0.0", nil)
+
+		opts := executor.CreateOptions{
+			Dependencies: &models.WorkflowDependencies{
+				Secrets: []models.ResourceDependency{
+					{Name: "gitea-repo-creds"},
+				},
+			},
+		}
+
+		name, err := tektonExec.Create(ctx, wfe, "kubernaut-workflows", opts)
+		Expect(err).ToNot(HaveOccurred())
+
+		var pr tektonv1.PipelineRun
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: name, Namespace: "kubernaut-workflows"}, &pr)).To(Succeed())
+
+		Expect(pr.Spec.Workspaces).To(HaveLen(1))
+		Expect(pr.Spec.Workspaces[0].Name).To(Equal("secret-gitea-repo-creds"))
+		Expect(pr.Spec.Workspaces[0].Secret.SecretName).To(Equal("gitea-repo-creds"))
+	})
+
+	It("UT-WE-006-025: should add configMap workspace binding to PipelineRun", func() {
+		wfe := newTestWFE("test-wfe-tekton-cm", "default", "default/deployment/cm-app-tekton",
+			"fix-cert", "ghcr.io/kubernaut/workflows/fix-cert:v1.0.0", nil)
+
+		opts := executor.CreateOptions{
+			Dependencies: &models.WorkflowDependencies{
+				ConfigMaps: []models.ResourceDependency{
+					{Name: "remediation-config"},
+				},
+			},
+		}
+
+		name, err := tektonExec.Create(ctx, wfe, "kubernaut-workflows", opts)
+		Expect(err).ToNot(HaveOccurred())
+
+		var pr tektonv1.PipelineRun
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: name, Namespace: "kubernaut-workflows"}, &pr)).To(Succeed())
+
+		Expect(pr.Spec.Workspaces).To(HaveLen(1))
+		Expect(pr.Spec.Workspaces[0].Name).To(Equal("configmap-remediation-config"))
+		Expect(pr.Spec.Workspaces[0].ConfigMap.Name).To(Equal("remediation-config"))
+	})
+
+	It("UT-WE-006-026: should create PipelineRun without workspaces when no dependencies", func() {
+		wfe := newTestWFE("test-wfe-tekton-nodeps", "default", "default/deployment/nodeps-tekton",
+			"restart", "ghcr.io/kubernaut/workflows/restart:v1.0.0", nil)
+
+		name, err := tektonExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
+		Expect(err).ToNot(HaveOccurred())
+
+		var pr tektonv1.PipelineRun
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: name, Namespace: "kubernaut-workflows"}, &pr)).To(Succeed())
+
+		Expect(pr.Spec.Workspaces).To(BeEmpty())
+	})
+
+	It("UT-WE-006-027: should add both secret and configMap workspace bindings", func() {
+		wfe := newTestWFE("test-wfe-tekton-both", "default", "default/deployment/both-tekton",
+			"fix-cert", "ghcr.io/kubernaut/workflows/fix-cert:v1.0.0", nil)
+
+		opts := executor.CreateOptions{
+			Dependencies: &models.WorkflowDependencies{
+				Secrets:    []models.ResourceDependency{{Name: "gitea-repo-creds"}},
+				ConfigMaps: []models.ResourceDependency{{Name: "remediation-config"}},
+			},
+		}
+
+		name, err := tektonExec.Create(ctx, wfe, "kubernaut-workflows", opts)
+		Expect(err).ToNot(HaveOccurred())
+
+		var pr tektonv1.PipelineRun
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: name, Namespace: "kubernaut-workflows"}, &pr)).To(Succeed())
+
+		Expect(pr.Spec.Workspaces).To(HaveLen(2))
+		Expect(pr.Spec.Workspaces).To(ContainElement(And(
+			HaveField("Name", "secret-gitea-repo-creds"),
+			HaveField("Secret.SecretName", "gitea-repo-creds"),
+		)))
+		Expect(pr.Spec.Workspaces).To(ContainElement(And(
+			HaveField("Name", "configmap-remediation-config"),
+			HaveField("ConfigMap.Name", "remediation-config"),
+		)))
 	})
 })
 
