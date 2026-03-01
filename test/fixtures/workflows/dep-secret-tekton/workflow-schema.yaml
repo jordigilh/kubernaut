@@ -8,7 +8,7 @@ metadata:
     what: "Tekton workflow that declares a Secret dependency for DD-WE-006 E2E testing"
     whenToUse: "For E2E validation of schema-declared dependency injection into PipelineRuns"
     whenNotToUse: "Not intended for production use"
-    preconditions: "Secret 'e2e-dep-secret' provisioned in execution namespace"
+    preconditions: "Secret 'e2e-dep-secret-tekton' provisioned in execution namespace"
 
 actionType: RestartPod
 
@@ -25,7 +25,7 @@ execution:
 
 dependencies:
   secrets:
-    - name: e2e-dep-secret
+    - name: e2e-dep-secret-tekton
 
 parameters:
   - name: TARGET_RESOURCE

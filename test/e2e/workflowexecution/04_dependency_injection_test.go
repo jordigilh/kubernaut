@@ -52,7 +52,7 @@ import (
 // - Workflow "test-dep-secret-tekton" registered in DS (schema declares the secret)
 // ========================================
 
-var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", Serial, func() {
+var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 
 	Context("E2E-WE-006-001/002: Job dependency injection success and post-registration drift failure", func() {
 		It("should mount declared secret in Job, then fail with ConfigurationError when secret is deleted", func() {

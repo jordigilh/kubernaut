@@ -487,6 +487,20 @@ subjects:
 		_, _ = fmt.Fprintf(writer, "   ✅ Secret e2e-dep-secret ready in %s\n", ExecutionNamespace)
 	}
 
+	// DD-WE-006: Separate secret for the Tekton dependency injection test so that
+	// the drift test (E2E-WE-006-002) can delete e2e-dep-secret without racing
+	// against E2E-WE-006-004 running in a parallel Ginkgo process.
+	depSecretTektonCmd := exec.Command("kubectl", "create", "secret", "generic", "e2e-dep-secret-tekton",
+		"--from-literal=token=e2e-test-value-tekton",
+		"--namespace", ExecutionNamespace,
+		"--kubeconfig", kubeconfigPath)
+	depSecretTektonOut, depSecretTektonErr := depSecretTektonCmd.CombinedOutput()
+	if depSecretTektonErr != nil && !strings.Contains(string(depSecretTektonOut), "AlreadyExists") {
+		_, _ = fmt.Fprintf(writer, "⚠️  Failed to create DD-WE-006 Tekton dep Secret (non-fatal): %s\n", string(depSecretTektonOut))
+	} else {
+		_, _ = fmt.Fprintf(writer, "   ✅ Secret e2e-dep-secret-tekton ready in %s\n", ExecutionNamespace)
+	}
+
 	dataStorageURL := "http://localhost:8092" // DD-TEST-001: WE → DataStorage dependency port
 	if _, err = BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL, saToken, writer); err != nil {
 		return fmt.Errorf("failed to build and register test workflows: %w", err)
