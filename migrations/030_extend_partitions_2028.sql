@@ -7,6 +7,18 @@
 -- Uses CREATE TABLE IF NOT EXISTS for idempotency (safe to re-run).
 
 -- ============================================================================
+-- DEFAULT partitions: catch rows outside defined monthly ranges
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS resource_action_traces_default
+    PARTITION OF resource_action_traces
+    DEFAULT;
+
+CREATE TABLE IF NOT EXISTS audit_events_default
+    PARTITION OF audit_events
+    DEFAULT;
+
+-- ============================================================================
 -- resource_action_traces: March 2026 – December 2028
 -- Naming convention: resource_action_traces_{YYYY}_{MM}
 -- ============================================================================

@@ -65,6 +65,11 @@ CREATE TABLE resource_action_traces (
     UNIQUE (action_id, action_timestamp)
 ) PARTITION BY RANGE (action_timestamp);
 
+-- Default partition catches any row outside defined monthly ranges (e.g., backdated test data)
+CREATE TABLE resource_action_traces_default
+    PARTITION OF resource_action_traces
+    DEFAULT;
+
 -- Create partitions for resource_action_traces
 -- Range: March 2026 - December 2028 (Issue #234: first release month through 3-year horizon)
 CREATE TABLE resource_action_traces_2026_03
