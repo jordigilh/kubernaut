@@ -195,6 +195,10 @@ var _ = Describe("Schema-Declared Dependency Validation (DD-WE-006)", Label("int
 
 	Context("Registration-time K8s validation", func() {
 
+		BeforeEach(func() {
+			_, _ = db.ExecContext(ctx, "DELETE FROM remediation_workflow_catalog WHERE workflow_name = $1", "dep-test-workflow")
+		})
+
 		It("IT-DS-006-001: should accept workflow when all declared secrets exist with data", func() {
 			secret := &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{Name: "it-gitea-creds-001", Namespace: depTestNamespace},
