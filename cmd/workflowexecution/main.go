@@ -21,6 +21,7 @@ import (
 	"os"
 
 	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -101,6 +102,8 @@ func main() {
 		os.Exit(1)
 	}
 
+	execNS := cfg.Execution.Namespace
+
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,
 		Cache: cache.Options{
@@ -108,6 +111,16 @@ func main() {
 				&workflowexecutionv1alpha1.WorkflowExecution{}: {
 					Namespaces: map[string]cache.Config{
 						controllerNS: {},
+					},
+				},
+				&corev1.Secret{}: {
+					Namespaces: map[string]cache.Config{
+						execNS: {},
+					},
+				},
+				&corev1.ConfigMap{}: {
+					Namespaces: map[string]cache.Config{
+						execNS: {},
 					},
 				},
 			},
