@@ -29,7 +29,7 @@ import (
 )
 
 // postAuditEventBatch posts multiple audit events using the ogen client and returns the event IDs
-func postAuditEventBatch( //nolint:unused
+func postAuditEventBatch(
 	ctx context.Context,
 	client *dsgen.Client,
 	events []dsgen.AuditEventRequest,

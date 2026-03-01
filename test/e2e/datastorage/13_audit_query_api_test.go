@@ -524,57 +524,49 @@ var _ = Describe("Audit Events Query API", func() {
 			// BR-STORAGE-023: Pagination support
 			// DD-STORAGE-010: Offset-based pagination
 
-			// ARRANGE: Insert 75 events (reduced from 150 for reliable flush timing)
-			// FIX: DS pagination test failure - reduced events to fit in single batch + leftover
-			// - Batch size: 100 events (triggers immediate flush)
-			// - Leftover: 50 events (waits for 1s timer)
-			// - Total time: ~1-2s (1 batch flush + 1 timer tick)
-			// - Previous: 150 events required 2 batches (100 + 50) = more timing variance
-			// See: docs/handoff/DS_SERVICE_FAILURE_MODES_ANALYSIS_JAN_04_2026.md
-			testCorrelationID = generateTestID() // Unique per test for isolation
+			// ARRANGE: Insert 75 events via batch endpoint (DD-AUDIT-002)
+			// Uses CreateBatch which acquires the advisory lock once per correlation_id
+			// instead of 75 sequential single-event POSTs that serialize on the hash chain lock.
+			testCorrelationID = generateTestID()
 			correlationID := testCorrelationID
-			for i := 0; i < 75; i++ {
-				err := createTestAuditEvent(dataStorageURL, "gateway", "signal.received", correlationID)
-				Expect(err).ToNot(HaveOccurred())
+
+			events := make([]ogenclient.AuditEventRequest, 75)
+			for i := range events {
+				events[i] = ogenclient.AuditEventRequest{
+					Version:       "1.0",
+					EventCategory: ogenclient.AuditEventRequestEventCategoryGateway,
+					EventType:     "gateway.signal.received",
+					EventTimestamp: time.Now().Add(-5 * time.Second).UTC(),
+					CorrelationID: correlationID,
+					EventOutcome:  ogenclient.AuditEventRequestEventOutcomeSuccess,
+					EventAction:   "test",
+					EventData: ogenclient.AuditEventRequestEventData{
+						Type: ogenclient.AuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData,
+						GatewayAuditPayload: ogenclient.GatewayAuditPayload{
+							EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
+							SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
+							SignalName:  "TestAlert",
+							Namespace:   "default",
+							Fingerprint: "test-fingerprint",
+						},
+					},
+				}
 			}
 
-			// WAIT: Allow events to be persisted (async buffering + flush)
-			// FIX: Enhanced error visibility + longer timeout to handle audit buffer flush (1s interval)
-			// See: docs/handoff/E2E_FAILURES_DS_RO_TRIAGE_JAN_29_2026.md
-			// NOTE: Events are buffered by audit store (1s flush interval) + parallel contention
-			// Timeout increased to 60s with better error visibility
-			// - Parallel test execution (12 processes) - high contention
-			// - Database connection contention across processes
-			// - Audit store buffering (1s flush interval)
-			// - Schema isolation overhead in parallel mode
-			//
-			// Use typed OpenAPI client with all 3 filters for precision (DD-API-001)
+			resp, err := DSClient.CreateAuditEventsBatch(ctx, events)
+			Expect(err).ToNot(HaveOccurred(), "batch insert should succeed")
+			Expect(resp.EventIds).To(HaveLen(75), "batch should return 75 event IDs")
+
+			// Query page 1 — batch insert is synchronous, no Eventually needed
 			var queryResp *ogenclient.AuditEventsQueryResponse
-			Eventually(func() (int, error) {
-				resp, err := DSClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
-					CorrelationID: ogenclient.NewOptString(correlationID),
-					EventCategory: ogenclient.NewOptString("gateway"),
-					EventType:     ogenclient.NewOptString("gateway.signal.received"),
-					Limit:         ogenclient.NewOptInt(50),
-					Offset:        ogenclient.NewOptInt(0),
-				})
-				if err != nil {
-					return 0, fmt.Errorf("QueryAuditEvents failed: %w", err)
-				}
-
-				queryResp = resp
-				total := int(resp.Pagination.Value.Total.Value)
-
-				if total < 75 {
-					return total, fmt.Errorf("still waiting: %d/75 events", total)
-				}
-
-				return total, nil
-			}, 60*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 75),
-				"should have at least 75 events after write completes (60s = handles CI parallel contention)")
-
-			// ACT: Query page 1 (limit=50, offset=0) - now guaranteed to have all events
-			// Already fetched in Eventually block above
+			queryResp, err = DSClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+				CorrelationID: ogenclient.NewOptString(correlationID),
+				EventCategory: ogenclient.NewOptString("gateway"),
+				EventType:     ogenclient.NewOptString("gateway.signal.received"),
+				Limit:         ogenclient.NewOptInt(50),
+				Offset:        ogenclient.NewOptInt(0),
+			})
+			Expect(err).ToNot(HaveOccurred())
 
 			// ASSERT: Correct subset is returned
 			Expect(queryResp.Data).To(HaveLen(50), "should return 50 events (page 1)")
