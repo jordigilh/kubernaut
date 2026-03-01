@@ -74,9 +74,11 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
 	weconditions "github.com/jordigilh/kubernaut/pkg/workflowexecution"
 	weaudit "github.com/jordigilh/kubernaut/pkg/workflowexecution/audit"
+	weclient "github.com/jordigilh/kubernaut/pkg/workflowexecution/client"
 	weexecutor "github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
 	"github.com/jordigilh/kubernaut/pkg/workflowexecution/metrics"
 	wephase "github.com/jordigilh/kubernaut/pkg/workflowexecution/phase"
+	dsvalidation "github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 	"github.com/jordigilh/kubernaut/pkg/shared/k8serrors"
 	"github.com/jordigilh/kubernaut/pkg/workflowexecution/status"
 )
@@ -179,6 +181,49 @@ type WorkflowExecutionReconciler struct {
 	// Maps execution engine names ("tekton", "job") to Executor implementations.
 	// When nil, falls back to inline Tekton-only code path.
 	ExecutorRegistry *weexecutor.Registry
+
+	// DD-WE-006: WorkflowQuerier fetches workflow dependencies from DS on demand.
+	// Optional: nil disables dependency injection (workflows run without mounted deps).
+	WorkflowQuerier weclient.WorkflowQuerier
+
+	// DD-WE-006: DependencyValidator validates that declared dependencies exist
+	// with non-empty data in the execution namespace (defense in depth).
+	// Optional: nil disables execution-time validation.
+	DependencyValidator dsvalidation.DependencyValidator
+}
+
+// resolveDependencies fetches schema-declared dependencies from DS and validates
+// them against the execution namespace. Returns empty CreateOptions when no
+// querier is configured, or when the workflow has no dependencies.
+// Returns a hard error only when validation explicitly fails (missing Secret/ConfigMap).
+// DS fetch failures are treated as non-fatal (graceful degradation).
+func (r *WorkflowExecutionReconciler) resolveDependencies(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (weexecutor.CreateOptions, error) {
+	opts := weexecutor.CreateOptions{}
+	if r.WorkflowQuerier == nil {
+		return opts, nil
+	}
+
+	logger := log.FromContext(ctx)
+	deps, err := r.WorkflowQuerier.GetWorkflowDependencies(ctx, wfe.Spec.WorkflowRef.WorkflowID)
+	if err != nil {
+		logger.Error(err, "Failed to fetch workflow dependencies from DS (non-fatal, continuing without deps)",
+			"workflowID", wfe.Spec.WorkflowRef.WorkflowID)
+		return opts, nil
+	}
+	if deps == nil {
+		return opts, nil
+	}
+
+	if r.DependencyValidator != nil {
+		if valErr := r.DependencyValidator.ValidateDependencies(ctx, r.ExecutionNamespace, deps); valErr != nil {
+			logger.Error(valErr, "Workflow dependency validation failed",
+				"workflowID", wfe.Spec.WorkflowRef.WorkflowID)
+			return opts, valErr
+		}
+	}
+
+	opts.Dependencies = deps
+	return opts, nil
 }
 
 // ========================================
@@ -426,7 +471,14 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 		"namespace", r.ExecutionNamespace,
 	)
 
-	createdName, createErr := exec.Create(ctx, wfe, r.ExecutionNamespace)
+	// DD-WE-006: Fetch workflow dependencies from DS and validate before execution.
+	createOpts, depErr := r.resolveDependencies(ctx, wfe)
+	if depErr != nil {
+		markErr := r.MarkFailedWithReason(ctx, wfe, "ConfigurationError", depErr.Error())
+		return ctrl.Result{}, markErr
+	}
+
+	createdName, createErr := exec.Create(ctx, wfe, r.ExecutionNamespace, createOpts)
 	if createErr != nil {
 		if apierrors.IsAlreadyExists(createErr) {
 			// DD-WE-003 Layer 2: Execution-time collision handling

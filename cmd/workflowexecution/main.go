@@ -35,7 +35,9 @@ import (
 	scope "github.com/jordigilh/kubernaut/pkg/shared/scope"
 	"github.com/jordigilh/kubernaut/internal/controller/workflowexecution"
 	"github.com/jordigilh/kubernaut/pkg/audit"
+	dsvalidation "github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 	weaudit "github.com/jordigilh/kubernaut/pkg/workflowexecution/audit"
+	weclient "github.com/jordigilh/kubernaut/pkg/workflowexecution/client"
 	weconfig "github.com/jordigilh/kubernaut/pkg/workflowexecution/config"
 	weexecutor "github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
 	wemetrics "github.com/jordigilh/kubernaut/pkg/workflowexecution/metrics"
@@ -213,21 +215,36 @@ func main() {
 	executorRegistry.Register("job", weexecutor.NewJobExecutor(mgr.GetClient(), cfg.Execution.ServiceAccount))
 	setupLog.Info("Executor registry initialized", "engines", executorRegistry.Engines())
 
+	// DD-WE-006: Create WorkflowQuerier for fetching dependencies from DS
+	workflowQuerier, err := weclient.NewOgenWorkflowQuerierFromConfig(cfg.DataStorage.URL, cfg.DataStorage.Timeout)
+	if err != nil {
+		setupLog.Error(err, "Failed to create workflow querier (DD-WE-006) - continuing without dependency injection")
+		// Non-fatal: controller will run without dependency injection
+	} else {
+		setupLog.Info("Workflow querier initialized (DD-WE-006)", "dataStorageURL", cfg.DataStorage.URL)
+	}
+
+	// DD-WE-006: Create DependencyValidator for execution-time validation (defense in depth).
+	// Reuses the controller-runtime client from the manager.
+	depValidator := dsvalidation.NewK8sDependencyValidator(mgr.GetClient())
+
 	// Setup WorkflowExecution controller
 	if err = (&workflowexecution.WorkflowExecutionReconciler{
-		Client:             mgr.GetClient(),
-		APIReader:          mgr.GetAPIReader(), // DD-STATUS-001: Cache-bypassed reads for race condition prevention
-		Scheme:             mgr.GetScheme(),
-		Recorder:           mgr.GetEventRecorderFor("workflowexecution-controller"),
-		Metrics:            weMetrics,     // DD-METRICS-001: Injected metrics (P0 requirement)
-		StatusManager:      statusManager, // DD-PERF-001: Atomic status updates
-		ExecutionNamespace: cfg.Execution.Namespace,
-		CooldownPeriod:     cfg.Execution.CooldownPeriod,
-		ServiceAccountName: cfg.Execution.ServiceAccount,
-		AuditStore:         auditStore,   // DD-AUDIT-003: Audit store for BR-WE-005
-		PhaseManager:       phaseManager, // P0: Phase State Machine (validated transitions)
-		AuditManager:       auditManager,    // P3: Audit Manager (typed audit methods)
-		ExecutorRegistry:   executorRegistry, // BR-WE-014: Strategy pattern dispatch
+		Client:              mgr.GetClient(),
+		APIReader:           mgr.GetAPIReader(), // DD-STATUS-001: Cache-bypassed reads for race condition prevention
+		Scheme:              mgr.GetScheme(),
+		Recorder:            mgr.GetEventRecorderFor("workflowexecution-controller"),
+		Metrics:             weMetrics,     // DD-METRICS-001: Injected metrics (P0 requirement)
+		StatusManager:       statusManager, // DD-PERF-001: Atomic status updates
+		ExecutionNamespace:  cfg.Execution.Namespace,
+		CooldownPeriod:      cfg.Execution.CooldownPeriod,
+		ServiceAccountName:  cfg.Execution.ServiceAccount,
+		AuditStore:          auditStore,   // DD-AUDIT-003: Audit store for BR-WE-005
+		PhaseManager:        phaseManager, // P0: Phase State Machine (validated transitions)
+		AuditManager:        auditManager,    // P3: Audit Manager (typed audit methods)
+		ExecutorRegistry:    executorRegistry, // BR-WE-014: Strategy pattern dispatch
+		WorkflowQuerier:     workflowQuerier,  // DD-WE-006: DS workflow dependency fetcher
+		DependencyValidator: depValidator,     // DD-WE-006: Execution-time validation
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "WorkflowExecution")
 		os.Exit(1)
