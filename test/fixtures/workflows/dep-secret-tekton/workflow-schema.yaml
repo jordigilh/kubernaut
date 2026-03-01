@@ -21,7 +21,7 @@ labels:
 
 execution:
   engine: tekton
-  bundle: quay.io/kubernaut-cicd/tekton-bundles/hello-world:v1.0.0
+  bundle: quay.io/kubernaut-cicd/tekton-bundles/hello-world:v1.0.0@sha256:c4fc636f28d46f94c3f4a211f4dc07f60545891818ee45262e860b0825296ba0
 
 dependencies:
   secrets:

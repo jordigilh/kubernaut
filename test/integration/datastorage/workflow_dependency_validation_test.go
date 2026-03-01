@@ -61,15 +61,15 @@ const (
   description:
     what: Integration test workflow for dependency validation
     whenToUse: When testing DD-WE-006
-  labels:
-    severity: [critical]
-    environment: ["*"]
-    component: deployment
-    priority: "*"
 actionType: GitRevertCommit
+labels:
+  severity: [critical]
+  environment: ["*"]
+  component: deployment
+  priority: "*"
 execution:
   engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/dep-test:v1.0.0
+  bundle: quay.io/kubernaut-cicd/test-workflows/dep-test:v1.0.0@sha256:f313b9632f3a8d0ffd41150b12715a43a41c6c8e7871bb830fd82c09b5988cc4
 parameters:
   - name: TARGET_NAMESPACE
     type: string
