@@ -1845,8 +1845,9 @@ func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.R
 		}
 	}
 
-	// ADR-EM-001: Create EffectivenessAssessment CRD (non-fatal)
-	r.createEffectivenessAssessmentIfNeeded(ctx, rr)
+	// Issue #240: EA is NOT created on failure paths. EA should only be created
+	// when WFE completes successfully (transitionToCompleted), because failed/timed-out
+	// remediations may have partially applied or no changes, making EA unreliable.
 
 	logger.Info("Remediation failed", "failurePhase", failurePhase, "reason", failureReason)
 	return ctrl.Result{}, nil
@@ -2014,8 +2015,7 @@ The remediation was in %s phase when it timed out. Please investigate why the re
 			"totalNotifications", len(rr.Status.NotificationRequestRefs)+1)
 	}
 
-	// ADR-EM-001: Create EffectivenessAssessment CRD (non-fatal)
-	r.createEffectivenessAssessmentIfNeeded(ctx, rr)
+	// Issue #240: EA is NOT created on global timeout. See transitionToCompleted.
 
 	return ctrl.Result{}, nil
 }
@@ -2811,10 +2811,7 @@ func (r *Reconciler) handlePhaseTimeout(ctx context.Context, rr *remediationv1.R
 	// Create phase-specific timeout notification (non-blocking)
 	r.createPhaseTimeoutNotification(ctx, rr, phase, timeout)
 
-	// ADR-EM-001: Create EffectivenessAssessment CRD for all terminal phases (non-fatal).
-	// Phase timeout is a terminal transition (TimedOut), so EA must be created for
-	// audit completeness. The EM handles "no workflow" via the no_execution path.
-	r.createEffectivenessAssessmentIfNeeded(ctx, rr)
+	// Issue #240: EA is NOT created on phase timeout. See transitionToCompleted.
 
 	return nil
 }

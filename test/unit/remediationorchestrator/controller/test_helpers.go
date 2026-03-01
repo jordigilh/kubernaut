@@ -474,6 +474,20 @@ func newAIAnalysisFailed(name, namespace, rrName, message string) *aianalysisv1.
 	return ai
 }
 
+// newAIAnalysisWorkflowResolutionFailed creates a failed AIAnalysis with WorkflowResolutionFailed reason
+// Issue #240: Used to test that EA is NOT created when AIA fails to find matching workflows
+func newAIAnalysisWorkflowResolutionFailed(name, namespace, rrName string) *aianalysisv1.AIAnalysis {
+	ai := newAIAnalysis(name, namespace, rrName, aianalysisv1.PhaseFailed)
+	now := metav1.Now()
+	ai.Status.CompletedAt = &now
+	ai.Status.Reason = "WorkflowResolutionFailed"
+	ai.Status.SubReason = "NoMatchingWorkflows"
+	ai.Status.Message = "No workflows matched the search criteria"
+	ai.Status.NeedsHumanReview = true
+	ai.Status.HumanReviewReason = "no_matching_workflows"
+	return ai
+}
+
 // newWorkflowExecutionSucceeded creates a succeeded WorkflowExecution CRD
 func newWorkflowExecutionSucceeded(name, namespace, rrName string) *workflowexecutionv1.WorkflowExecution {
 	return newWorkflowExecutionCompleted(name, namespace, rrName)
