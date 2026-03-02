@@ -384,12 +384,22 @@ var _ = SynchronizedAfterSuite(func() {
 	//
 	// These resources are closed in Phase 2 after ALL processes truly complete.
 
-	// DD-WE-006: Stop envtest
+	// DD-WE-006: Stop envtest with timeout to prevent hanging during AfterSuite.
+	// envtest.Stop() can hang if kube-apiserver/etcd is already dead, which blocks
+	// the Ginkgo process from reporting back and causes "timed out waiting for all
+	// parallel procs" + coverage combine failures.
 	if dsTestEnv != nil {
-		if err := dsTestEnv.Stop(); err != nil {
-			GinkgoWriter.Printf("⚠️  [Process %d] Failed to stop envtest: %v\n", processNum, err)
-		} else {
-			GinkgoWriter.Printf("✅ [Process %d] envtest stopped\n", processNum)
+		stopDone := make(chan error, 1)
+		go func() { stopDone <- dsTestEnv.Stop() }()
+		select {
+		case err := <-stopDone:
+			if err != nil {
+				GinkgoWriter.Printf("⚠️  [Process %d] Failed to stop envtest: %v\n", processNum, err)
+			} else {
+				GinkgoWriter.Printf("✅ [Process %d] envtest stopped\n", processNum)
+			}
+		case <-time.After(5 * time.Second):
+			GinkgoWriter.Printf("⚠️  [Process %d] envtest.Stop() timed out after 5s, proceeding with cleanup\n", processNum)
 		}
 	}
 
@@ -863,7 +873,7 @@ func createDynamicPartitions(ctx context.Context, targetDB DBExecutor) {
 		startDate := time.Date(year, time.Month(monthNum), 1, 0, 0, 0, 0, time.UTC)
 		endDate := startDate.AddDate(0, 1, 0)
 
-		partitionName := fmt.Sprintf("resource_action_traces_y%dm%02d", year, monthNum)
+		partitionName := fmt.Sprintf("resource_action_traces_%d_%02d", year, monthNum)
 		startStr := startDate.Format("2006-01-02")
 		endStr := endDate.Format("2006-01-02")
 
