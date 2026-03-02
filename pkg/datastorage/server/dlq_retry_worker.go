@@ -131,7 +131,11 @@ func (w *DLQRetryWorker) Start() {
 }
 
 // Stop gracefully stops the retry worker (DD-007 integration).
+// Safe to call even if Start() was never called (e.g. tests that use Handler() only).
 func (w *DLQRetryWorker) Stop() {
+	if w.cancel == nil {
+		return // Start() was never called; nothing to stop
+	}
 	w.cancel()
 	<-w.doneCh
 	w.logger.Info("DLQ retry worker stopped")
