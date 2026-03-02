@@ -4,11 +4,13 @@
 # DD-WE-006: Git credentials are read from volume-mounted Secret (gitea-repo-creds),
 # NOT from LLM-provided parameters. The Secret is provisioned by operators in
 # kubernaut-workflows and mounted at /run/kubernaut/secrets/gitea-repo-creds/.
+#
+# GIT_REPO_URL and GIT_BRANCH are discovered from the ArgoCD Application that
+# targets TARGET_NAMESPACE, not provided by the LLM.
 set -e
 
 : "${TARGET_RESOURCE_NAME:?TARGET_RESOURCE_NAME is required}"
 : "${TARGET_NAMESPACE:?TARGET_NAMESPACE is required}"
-: "${GIT_REPO_URL:?GIT_REPO_URL is required}"
 
 SECRET_DIR="/run/kubernaut/secrets/gitea-repo-creds"
 if [ ! -d "${SECRET_DIR}" ]; then
@@ -17,6 +19,27 @@ if [ ! -d "${SECRET_DIR}" ]; then
 fi
 GIT_USERNAME=$(cat "${SECRET_DIR}/username")
 GIT_PASSWORD=$(cat "${SECRET_DIR}/password")
+
+echo "=== Phase 0: Discover ArgoCD Application ==="
+ARGO_APP_JSON=$(kubectl get applications.argoproj.io -n argocd -o json)
+
+GIT_REPO_URL=$(echo "${ARGO_APP_JSON}" | jq -r \
+  --arg ns "${TARGET_NAMESPACE}" \
+  '.items[] | select(.spec.destination.namespace == $ns) | .spec.source.repoURL' \
+  | head -1)
+
+GIT_BRANCH_RAW=$(echo "${ARGO_APP_JSON}" | jq -r \
+  --arg ns "${TARGET_NAMESPACE}" \
+  '.items[] | select(.spec.destination.namespace == $ns) | .spec.source.targetRevision' \
+  | head -1)
+GIT_BRANCH="${GIT_BRANCH_RAW}"
+[ "${GIT_BRANCH}" = "HEAD" ] || [ -z "${GIT_BRANCH}" ] && GIT_BRANCH="main"
+
+if [ -z "${GIT_REPO_URL}" ] || [ "${GIT_REPO_URL}" = "null" ]; then
+  echo "ERROR: No ArgoCD Application found targeting namespace ${TARGET_NAMESPACE}"
+  exit 1
+fi
+echo "Discovered from ArgoCD: repoURL=${GIT_REPO_URL} branch=${GIT_BRANCH}"
 
 echo "=== Phase 1: Validate ==="
 echo "Checking Certificate ${TARGET_RESOURCE_NAME} in ${TARGET_NAMESPACE}..."
@@ -44,8 +67,7 @@ cd repo
 git config user.email "kubernaut-remediation@kubernaut.ai"
 git config user.name "Kubernaut Remediation"
 
-BRANCH="${GIT_BRANCH:-main}"
-git checkout "${BRANCH}"
+git checkout "${GIT_BRANCH}"
 
 CURRENT_COMMIT=$(git rev-parse HEAD)
 echo "Current commit: ${CURRENT_COMMIT}"
@@ -53,8 +75,8 @@ echo "Current commit: ${CURRENT_COMMIT}"
 echo "Reverting HEAD commit..."
 git revert HEAD --no-edit
 
-echo "Pushing revert to ${BRANCH}..."
-git push origin "${BRANCH}"
+echo "Pushing revert to ${GIT_BRANCH}..."
+git push origin "${GIT_BRANCH}"
 
 NEW_COMMIT=$(git rev-parse HEAD)
 echo "Revert commit: ${NEW_COMMIT}"
