@@ -26,6 +26,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -77,6 +78,13 @@ parameters:
     description: Namespace of the affected resource
 `
 )
+
+// depTestBaseSchemaUnique returns the base schema with a unique workflowId for parallel-safe registration.
+// Use for specs that expect 201 Created (e.g. IT-DS-006-006) to avoid duplicate key across processes.
+func depTestBaseSchemaUnique() string {
+	uniqueID := fmt.Sprintf("dep-test-workflow-%d-%s", GinkgoParallelProcess(), uuid.New().String())
+	return strings.Replace(depTestBaseSchema, "workflowId: dep-test-workflow", "workflowId: "+uniqueID, 1)
+}
 
 func depTestSchemaWithSecrets(secretNames ...string) string {
 	if len(secretNames) == 0 {
@@ -319,7 +327,7 @@ var _ = Describe("Schema-Declared Dependency Validation (DD-WE-006)", Label("int
 		})
 
 		It("IT-DS-006-006: should accept workflow without dependencies section", func() {
-			testServer, srv := createDepTestServer(depTestBaseSchema)
+			testServer, srv := createDepTestServer(depTestBaseSchemaUnique())
 			defer testServer.Close()
 			defer func() { _ = srv.Shutdown(ctx) }()
 
