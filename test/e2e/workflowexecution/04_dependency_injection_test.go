@@ -47,9 +47,10 @@ import (
 // 4. Executor creates Job/PipelineRun with correct volume mounts/workspace bindings
 //
 // Prerequisites (created in infrastructure setup):
-// - Secret "e2e-dep-secret" in kubernaut-workflows namespace
-// - Workflow "test-dep-secret-job" registered in DS (schema declares the secret)
-// - Workflow "test-dep-secret-tekton" registered in DS (schema declares the secret)
+// - Secret "e2e-dep-secret" in kubernaut-workflows namespace (Job tests)
+// - Secret "e2e-dep-secret-tekton" in kubernaut-workflows namespace (Tekton tests)
+// - Workflow "test-dep-secret-job" registered in DS (declares e2e-dep-secret)
+// - Workflow "test-dep-secret-tekton" registered in DS (declares e2e-dep-secret-tekton)
 // ========================================
 
 var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
@@ -354,14 +355,14 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 
 			By("Verifying PipelineRun has a workspace binding for the declared secret")
 			Expect(pr.Spec.Workspaces).To(ContainElement(And(
-				HaveField("Name", "secret-e2e-dep-secret"),
+				HaveField("Name", "secret-e2e-dep-secret-tekton"),
 				HaveField("Secret", Not(BeNil())),
-			)), "PipelineRun should have workspace secret-e2e-dep-secret backed by Secret")
+			)), "PipelineRun should have workspace secret-e2e-dep-secret-tekton backed by Secret")
 
-			secretWs := findWorkspace(pr.Spec.Workspaces, "secret-e2e-dep-secret")
-			Expect(secretWs.Name).To(Equal("secret-e2e-dep-secret"), "workspace should exist")
-			Expect(secretWs.Secret.SecretName).To(Equal("e2e-dep-secret"),
-				"Workspace should reference Secret e2e-dep-secret")
+			secretWs := findWorkspace(pr.Spec.Workspaces, "secret-e2e-dep-secret-tekton")
+			Expect(secretWs.Name).To(Equal("secret-e2e-dep-secret-tekton"), "workspace should exist")
+			Expect(secretWs.Secret.SecretName).To(Equal("e2e-dep-secret-tekton"),
+				"Workspace should reference Secret e2e-dep-secret-tekton")
 
 			GinkgoWriter.Printf("E2E-WE-006-004: Tekton dependency injection validated\n")
 			GinkgoWriter.Printf("   Workflow UUID: %s\n", depSecretTektonUUID)
