@@ -174,16 +174,12 @@ func createAuditEventOpenAPI(ctx context.Context, client *dsgen.Client, event ds
 	resp, err := client.CreateAuditEvent(ctx, &event)
 	Expect(err).ToNot(HaveOccurred(), "Failed to create audit event via OpenAPI client")
 
-	// Ogen returns concrete types - extract event ID or handle errors
 	switch r := resp.(type) {
 	case *dsgen.AuditEventResponse:
-		// 201 Created - synchronous write with event_id
 		return r.EventID.String()
 	case *dsgen.AsyncAcceptanceResponse:
-		// 202 Accepted - async processing (DD-009: queued to DLQ)
-		// Async response doesn't return event_id (not yet persisted)
-		// Return correlation_id from request instead
-		return event.CorrelationID
+		Fail(fmt.Sprintf("DB write failed (DLQ fallback returned 202 Accepted): event not persisted synchronously, correlation_id=%s", event.CorrelationID))
+		return ""
 	case *dsgen.CreateAuditEventBadRequest:
 		Fail(fmt.Sprintf("API returned 400 Bad Request: %+v", r))
 		return ""
@@ -232,18 +228,15 @@ func postAuditEvent(
 		return "", fmt.Errorf("failed to create audit event: %w", err)
 	}
 
-	// Extract event ID from response (ogen unions require type checking)
 	switch r := resp.(type) {
 	case *dsgen.AuditEventResponse:
-		// 201 Created - synchronous write with event_id
 		return r.EventID.String(), nil
 	case *dsgen.AsyncAcceptanceResponse:
-		// 202 Accepted - async processing (DD-009: queued to DLQ)
-		// Async response doesn't return event_id (not yet persisted)
-		// Return correlation_id from request instead
-		return event.CorrelationID, nil
+		return "", fmt.Errorf("DB write failed (DLQ fallback returned 202 Accepted): event not persisted synchronously, correlation_id=%s", event.CorrelationID)
 	case *dsgen.CreateAuditEventBadRequest:
 		return "", fmt.Errorf("bad request: %s", r.Detail.Value)
+	case *dsgen.CreateAuditEventInternalServerError:
+		return "", fmt.Errorf("internal server error (500): %+v", r)
 	default:
 		return "", fmt.Errorf("unexpected response type: %T", resp)
 	}
