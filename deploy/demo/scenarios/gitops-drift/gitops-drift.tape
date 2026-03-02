@@ -14,6 +14,7 @@
 # Run: vhs deploy/demo/scenarios/gitops-drift/gitops-drift.tape
 
 Output deploy/demo/scenarios/gitops-drift/gitops-drift.gif
+Output deploy/demo/scenarios/gitops-drift/gitops-drift.mp4
 
 Require kubectl
 Require bash
@@ -87,20 +88,24 @@ Sleep 5s
 Type "# Injecting fault: pushing broken config via git..."
 Enter
 Sleep 2s
-Type "bash deploy/demo/scenarios/gitops-drift/run.sh inject"
-Enter
-Sleep 8s
 
 Hide
 Set TypingSpeed 1ms
-Type `sleep 30 && clear && echo FAULT"_"VISIBLE`
+Type `bash deploy/demo/scenarios/gitops-drift/run.sh inject 2>&1 && while kubectl get pods -n demo-gitops 2>/dev/null | grep -q Running && ! kubectl get pods -n demo-gitops 2>/dev/null | grep -qE 'CrashLoopBackOff|Error|ImagePullBackOff'; do sleep 5; done && sleep 10 && clear && echo FAULT"_"VISIBLE`
 Enter
-Wait+Screen@60s /FAULT_VISIBLE/
+Wait+Screen@600s /FAULT_VISIBLE/
 Type "clear"
 Enter
 Sleep 500ms
 Set TypingSpeed 50ms
 Show
+
+Type "# Git log -- bad commit is now at HEAD:"
+Enter
+Sleep 2s
+Type "bash deploy/demo/scripts/show-git-log.sh 3"
+Enter
+Sleep 5s
 
 Type "# Pods are crashing after ArgoCD synced the broken config"
 Enter
@@ -137,7 +142,7 @@ Sleep 3s
 
 Hide
 Set TypingSpeed 1ms
-Type `while ! kubectl get remediationrequests -n ${PLATFORM_NS} 2>/dev/null | grep -qE 'AwaitingApproval|Executing'; do sleep 10; done && clear && echo PIPELINE"_"READY`
+Type `while ! kubectl get remediationrequests -n ${PLATFORM_NS} 2>/dev/null | grep -qE 'Executing|Completed'; do sleep 10; done && clear && echo PIPELINE"_"READY`
 Enter
 Wait+Screen@600s /PIPELINE_READY/
 Type "clear"
@@ -153,7 +158,7 @@ Show
 Type "# The pipeline completed AI-driven analysis"
 Enter
 Sleep 2s
-Type "kubectl get rr,sp,aa -n ${PLATFORM_NS}"
+Type "kubectl get rr,sp,aia -n ${PLATFORM_NS}"
 Enter
 Sleep 6s
 
@@ -164,34 +169,38 @@ Type "bash deploy/demo/scripts/show-ai-analysis.sh demo-gitops"
 Enter
 Sleep 12s
 
-Type "# Approval required -- approving the RemediationApprovalRequest"
+Type "# Auto-approved -- git revert is non-destructive, no manual approval needed"
 Enter
-Sleep 2s
-Type "kubectl get rar -n ${PLATFORM_NS}"
-Enter
-Sleep 6s
-
-Type "bash deploy/demo/scripts/approve-rar.sh"
-Enter
-Sleep 4s
+Sleep 3s
 
 Type "# Watching the WorkflowExecution live (git revert + ArgoCD sync)..."
 Enter
 Sleep 2s
-Type "kubectl get wfe -n ${PLATFORM_NS} -w"
+Type "kubectl get wfe -n ${PLATFORM_NS}"
 Enter
-Wait+Screen@180s /Completed/
-Sleep 5s
-Ctrl+C
-Sleep 2s
+Sleep 4s
 
-# ═════════════════════════════════════════
-# ACT 3 -- The Result
-# ═════════════════════════════════════════
+Hide
+Set TypingSpeed 1ms
+Type `while ! kubectl get wfe -n ${PLATFORM_NS} -o jsonpath='{.items[0].status.phase}' 2>/dev/null | grep -q Completed; do sleep 10; done && clear && echo WFE"_"DONE`
+Enter
+Wait+Screen@300s /WFE_DONE/
+Type "clear"
+Enter
+Sleep 500ms
+Set TypingSpeed 50ms
+Show
 
 Type "# Workflow completed -- verifying recovery"
 Enter
 Sleep 2s
+Type "kubectl get wfe -n ${PLATFORM_NS}"
+Enter
+Sleep 4s
+
+# ═════════════════════════════════════════
+# ACT 3 -- The Result
+# ═════════════════════════════════════════
 
 Type "# ArgoCD application status:"
 Enter
@@ -204,7 +213,7 @@ Type "kubectl get pods -n demo-gitops"
 Enter
 Sleep 5s
 
-Type "kubectl get rr,sp,aa,wfe,ea -n ${PLATFORM_NS}"
+Type "kubectl get rr,sp,aia,wfe,ea -n ${PLATFORM_NS}"
 Enter
 Sleep 6s
 
@@ -225,6 +234,20 @@ Sleep 2s
 Type "bash deploy/demo/scripts/show-effectiveness.sh demo-gitops"
 Enter
 Sleep 10s
+
+Type "# Git log -- Kubernaut pushed the revert commit:"
+Enter
+Sleep 2s
+Type "bash deploy/demo/scripts/show-git-log.sh 3"
+Enter
+Sleep 5s
+
+Type "# Notification sent by Kubernaut:"
+Enter
+Sleep 2s
+Type "bash deploy/demo/scripts/show-notification.sh ${PLATFORM_NS}"
+Enter
+Sleep 12s
 
 Type "# GitOps drift remediated -- bad commit reverted, ArgoCD synced healthy state"
 Enter
