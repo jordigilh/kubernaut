@@ -448,14 +448,12 @@ func (s *Server) Handler() http.Handler {
 			"verb", "create",
 		)
 
-		// BR-STORAGE-021: Incident query endpoints (READ API)
-		r.Get("/incidents", s.handler.ListIncidents)
-		r.Get("/incidents/{id}", s.handler.GetIncident)
-
-		// DISABLED: ADR-033 success-rate and aggregation endpoints are out of V1.0 scope.
-		// V1.0 tracks remediation effectiveness per resource (via EM), not workflow success rate.
+		// DISABLED: Incident and ADR-033 success-rate endpoints are out of V1.0 scope.
+		// Not in OpenAPI spec. V1.0 tracks effectiveness per resource (via EM), not incidents.
 		// Evaluate for next release: https://github.com/jordigilh/kubernaut/issues/238
 		//
+		// r.Get("/incidents", s.handler.ListIncidents)                                                  // BR-STORAGE-021
+		// r.Get("/incidents/{id}", s.handler.GetIncident)                                               // BR-STORAGE-021
 		// r.Get("/incidents/aggregate/success-rate", s.handler.AggregateSuccessRate)    // BR-STORAGE-030
 		// r.Get("/incidents/aggregate/by-namespace", s.handler.AggregateByNamespace)    // BR-STORAGE-032
 		// r.Get("/incidents/aggregate/by-severity", s.handler.AggregateBySeverity)      // BR-STORAGE-033
