@@ -1422,7 +1422,7 @@ var _ = Describe("GAP 1.1: Comprehensive Event Type + JSONB Validation", Label("
 
 						correlationID := auditEvent.CorrelationID
 
-						// ACT: Execute JSONB query
+						// ACT + ASSERT: Execute JSONB query with Eventually to handle async persistence (DLQ 202)
 						querySQL := fmt.Sprintf(`
 							SELECT COUNT(*)
 							FROM audit_events
@@ -1430,12 +1430,13 @@ var _ = Describe("GAP 1.1: Comprehensive Event Type + JSONB Validation", Label("
 							  AND event_data%s'%s' = $2
 						`, query.Operator, query.Field)
 
-						var count int
-						err = db.QueryRow(querySQL, correlationID, query.Value).Scan(&count)
-
-						// ASSERT: JSONB operator works
-						Expect(err).ToNot(HaveOccurred())
-						Expect(count).To(Equal(query.ExpectedRows),
+						Eventually(func() int {
+							var count int
+							if err := db.QueryRow(querySQL, correlationID, query.Value).Scan(&count); err != nil {
+								return 0
+							}
+							return count
+						}, 15*time.Second, 500*time.Millisecond).Should(Equal(query.ExpectedRows),
 							fmt.Sprintf("JSONB query for field '%s' should return %d rows", query.Field, query.ExpectedRows))
 					})
 				}

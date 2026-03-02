@@ -129,6 +129,22 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 		Expect(err).ToNot(HaveOccurred(), "Failed to create warmup audit event")
 		logger.Info("   ✅ Warmup event created")
 
+		// Wait for event to be persisted (handles DLQ 202 async processing)
+		if testDB != nil {
+			Eventually(func() int {
+				var count int
+				if err := testDB.QueryRow(
+					`SELECT COUNT(*) FROM audit_events WHERE correlation_id = $1`,
+					warmupCorrelationID,
+				).Scan(&count); err != nil {
+					return 0
+				}
+				return count
+			}, 30*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 1),
+				"Warmup event should be persisted before attempting export")
+			logger.Info("   ✅ Warmup event persisted to database")
+		}
+
 		// Attempt export with retry to allow certificate generation to complete
 		// DD-AUTH-014: Increased from 60s to 90s (Option C: no parallel contention yet)
 		logger.Info("   ⏳ Waiting for certificate generation (up to 90s, no parallel load)...")
