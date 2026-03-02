@@ -914,6 +914,7 @@ spec:
       containers:
       - name: postgresql
         image: docker.io/library/postgres:16-alpine
+        args: ["-c", "max_connections=200"]
         ports:
         - name: postgresql
           containerPort: 5432
