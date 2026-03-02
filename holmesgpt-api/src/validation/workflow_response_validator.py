@@ -26,13 +26,14 @@ Business Requirements:
 - BR-HAPI-191: Parameter validation in chat session
 - BR-HAPI-196: Execution bundle consistency validation
 
-Design Decision: DD-HAPI-002 v1.2 - Workflow Response Validation Architecture
+Design Decision: DD-HAPI-002 v1.3 - Workflow Response Validation Architecture
 Design Decision: DD-WORKFLOW-017 - Workflow Lifecycle Field Renames
 
 Validation Steps:
 1. Workflow Existence: Verify workflow_id exists in catalog
 2. Execution Bundle Consistency: Verify execution_bundle matches catalog
 3. Parameter Schema: Verify parameters conform to schema (type, required, length, range, enum)
+3b. Undeclared Parameter Stripping: Remove keys not in schema (Issue #241)
 """
 
 import logging
@@ -44,6 +45,7 @@ logger = logging.getLogger(__name__)
 
 class _SecurityGateRejection(Exception):
     """Raised internally when DS security gate rejects a workflow (404 with context filters)."""
+
     def __init__(self, workflow_id: str, context_filters: Dict[str, str]):
         self.workflow_id = workflow_id
         self.context_filters = context_filters
@@ -61,6 +63,7 @@ class ValidationResult:
         validated_execution_bundle: Execution bundle from catalog (always use this)
         schema_hint: Formatted schema hint for LLM self-correction
     """
+
     is_valid: bool
     errors: List[str] = field(default_factory=list)
     validated_execution_bundle: Optional[str] = None
@@ -122,7 +125,7 @@ class WorkflowResponseValidator:
         self,
         workflow_id: str,
         execution_bundle: Optional[str],
-        parameters: Dict[str, Any]
+        parameters: Dict[str, Any],
     ) -> ValidationResult:
         """
         Comprehensive workflow response validation.
@@ -168,9 +171,7 @@ class WorkflowResponseValidator:
 
         # STEP 2: Execution Bundle Consistency (BR-HAPI-196, DD-WORKFLOW-017)
         bundle_errors = self._validate_execution_bundle(
-            execution_bundle,
-            workflow.execution_bundle,
-            workflow_id
+            execution_bundle, workflow.execution_bundle, workflow_id
         )
         errors.extend(bundle_errors)
 
@@ -183,13 +184,13 @@ class WorkflowResponseValidator:
                 is_valid=False,
                 errors=errors,
                 validated_execution_bundle=workflow.execution_bundle,
-                schema_hint=self._format_schema_hint(workflow)
+                schema_hint=self._format_schema_hint(workflow),
             )
 
         return ValidationResult(
             is_valid=True,
             errors=[],
-            validated_execution_bundle=workflow.execution_bundle
+            validated_execution_bundle=workflow.execution_bundle,
         )
 
     def _validate_workflow_exists(self, workflow_id: str):
@@ -227,7 +228,7 @@ class WorkflowResponseValidator:
             return workflow
         except Exception as e:
             # DD-HAPI-017: Check if this is a 404 from the DS security gate
-            if hasattr(e, 'status') and e.status == 404 and self._context_filters:
+            if hasattr(e, "status") and e.status == 404 and self._context_filters:
                 logger.info(
                     f"Workflow '{workflow_id}' rejected by security gate — "
                     f"does not match signal context. Filters: {self._context_filters}"
@@ -268,7 +269,9 @@ class WorkflowResponseValidator:
             response = self.ds_client.list_available_actions(**self._context_filters)
 
             # Extract action_type strings from response
-            action_types_data = response.get("action_types", []) if isinstance(response, dict) else []
+            action_types_data = (
+                response.get("action_types", []) if isinstance(response, dict) else []
+            )
             available_types = {
                 at.get("action_type", "") if isinstance(at, dict) else str(at)
                 for at in action_types_data
@@ -299,10 +302,7 @@ class WorkflowResponseValidator:
             return []
 
     def _validate_execution_bundle(
-        self,
-        llm_bundle: Optional[str],
-        catalog_bundle: str,
-        workflow_id: str
+        self, llm_bundle: Optional[str], catalog_bundle: str, workflow_id: str
     ) -> List[str]:
         """
         STEP 2: Validate execution bundle consistency.
@@ -326,11 +326,15 @@ class WorkflowResponseValidator:
         errors: List[str] = []
 
         if llm_bundle is None or llm_bundle == "":
-            logger.debug(f"Execution bundle not specified, using catalog: {catalog_bundle}")
+            logger.debug(
+                f"Execution bundle not specified, using catalog: {catalog_bundle}"
+            )
             return []
 
         if llm_bundle != catalog_bundle:
-            logger.info(f"Execution bundle mismatch: LLM={llm_bundle}, Catalog={catalog_bundle}")
+            logger.info(
+                f"Execution bundle mismatch: LLM={llm_bundle}, Catalog={catalog_bundle}"
+            )
             errors.append(
                 f"Execution bundle mismatch for workflow '{workflow_id}': "
                 f"you provided '{llm_bundle}' but catalog has '{catalog_bundle}'. "
@@ -339,25 +343,27 @@ class WorkflowResponseValidator:
 
         return errors
 
-    def _validate_parameters(
-        self,
-        params: Dict[str, Any],
-        workflow
-    ) -> List[str]:
+    def _validate_parameters(self, params: Dict[str, Any], workflow) -> List[str]:
         """
-        STEP 3: Validate parameters against workflow schema.
+        STEP 3 + 3b: Validate parameters and strip undeclared keys.
 
         Business Requirement: BR-HAPI-191 (Parameter Validation)
+        Design Decision: DD-HAPI-002 v1.3 (Undeclared Parameter Stripping)
 
-        Validates:
+        Step 3 validates declared parameters:
         - Required parameters present
         - Type correctness (string, int, bool, float)
         - String length constraints (min/max)
         - Numeric range constraints (min/max)
         - Enum value validation
 
+        Step 3b (v1.3, Issue #241) strips undeclared parameters in-place:
+        - Schema exists: remove keys not in declared parameter names
+        - No schema: remove all keys (nothing declared = nothing allowed)
+        - Stripping is silent (warning log, no validation error)
+
         Args:
-            params: Parameters from LLM response
+            params: Parameters from LLM response (mutated in-place)
             workflow: Workflow with parameter schema
 
         Returns:
@@ -369,6 +375,10 @@ class WorkflowResponseValidator:
         param_schema = self._get_parameter_schema(workflow)
         if not param_schema:
             logger.debug("No parameter schema found, skipping parameter validation")
+            undeclared = list(params.keys())
+            for key in undeclared:
+                logger.warning("Stripping undeclared parameter '%s' (no schema)", key)
+                del params[key]
             return []
 
         for param_def in param_schema:
@@ -430,6 +440,13 @@ class WorkflowResponseValidator:
                     f"Parameter '{name}': must be one of {enum_values}, got '{value}'"
                 )
 
+        # STEP 3b: Strip undeclared parameters (DD-HAPI-002 v1.3, Issue #241)
+        declared_names = {p.get("name") for p in param_schema if p.get("name")}
+        undeclared_keys = [k for k in params if k not in declared_names]
+        for key in undeclared_keys:
+            logger.warning("Stripping undeclared parameter '%s' from LLM response", key)
+            del params[key]
+
         return errors
 
     def _get_parameter_schema(self, workflow) -> List[Dict[str, Any]]:
@@ -454,10 +471,7 @@ class WorkflowResponseValidator:
         return []
 
     def _validate_type(
-        self,
-        value: Any,
-        expected_type: str,
-        param_name: str
+        self, value: Any, expected_type: str, param_name: str
     ) -> Optional[str]:
         """
         Validate parameter type.
@@ -474,7 +488,7 @@ class WorkflowResponseValidator:
             "string": str,
             "int": int,
             "float": (int, float),  # Accept int as float
-            "bool": bool
+            "bool": bool,
         }
 
         expected = type_map.get(expected_type)
@@ -484,9 +498,7 @@ class WorkflowResponseValidator:
 
         # Special case: int type should not accept bool (Python considers bool subclass of int)
         if expected_type == "int" and isinstance(value, bool):
-            return (
-                f"Parameter '{param_name}': expected int, got bool"
-            )
+            return f"Parameter '{param_name}': expected int, got bool"
 
         if not isinstance(value, expected):
             return (
@@ -539,5 +551,3 @@ class WorkflowResponseValidator:
             hints.append(hint)
 
         return "\n".join(hints)
-
-
