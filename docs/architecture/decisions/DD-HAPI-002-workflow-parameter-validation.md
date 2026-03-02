@@ -365,16 +365,19 @@ class WorkflowResponseValidator:
         schema: WorkflowSchema
     ) -> List[str]:
         """
-        STEP 3: Validate parameters against workflow schema.
+        STEP 3 + 3b: Validate parameters and strip undeclared keys.
 
-        Validates:
-        - Required parameters present
-        - Type correctness (string, int, bool, float)
-        - String length constraints (min/max)
-        - Numeric range constraints (min/max)
-        - Enum value validation
+        Step 3: Validates declared parameters (required, type, length, range, enum).
+        Step 3b (v1.3): Strips undeclared parameters in-place.
         """
         errors = []
+
+        if not schema or not schema.parameters:
+            # v1.3: No schema = strip ALL params (nothing declared = nothing allowed)
+            for key in list(params.keys()):
+                logger.warning(f"Stripping undeclared parameter '{key}' (no schema)")
+                del params[key]
+            return []
 
         for param_def in schema.parameters:
             value = params.get(param_def.name)
@@ -422,6 +425,12 @@ class WorkflowResponseValidator:
                 errors.append(
                     f"Parameter '{param_def.name}': must be one of {param_def.enum}, got '{value}'"
                 )
+
+        # STEP 3b: Strip undeclared parameters (DD-HAPI-002 v1.3, Issue #241)
+        declared_names = {p.name for p in schema.parameters}
+        for key in [k for k in params if k not in declared_names]:
+            logger.warning(f"Stripping undeclared parameter '{key}' from LLM response")
+            del params[key]
 
         return errors
 

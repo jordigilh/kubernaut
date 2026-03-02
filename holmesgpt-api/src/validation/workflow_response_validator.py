@@ -83,7 +83,7 @@ class WorkflowResponseValidator:
     - BR-HAPI-191: Parameter validation
     - BR-HAPI-196: Execution bundle consistency
 
-    Design Decision: DD-HAPI-002 v1.2
+    Design Decision: DD-HAPI-002 v1.3
     """
 
     def __init__(
@@ -134,6 +134,7 @@ class WorkflowResponseValidator:
         1. Workflow existence (BR-AI-023)
         2. Execution bundle consistency (BR-HAPI-196, DD-WORKFLOW-017)
         3. Parameter schema (BR-HAPI-191)
+        3b. Undeclared parameter stripping (DD-HAPI-002 v1.3, Issue #241)
 
         Args:
             workflow_id: Workflow ID from LLM response

@@ -4,7 +4,7 @@
 **Version**: 1.1
 **Created**: 2026-03-02
 **Author**: AI Assistant
-**Status**: Ready for Execution
+**Status**: Complete (TDD RED-GREEN-REFACTOR done)
 **Branch**: `feature/v1.0-bugfixes-demos`
 
 **Authority**:
@@ -81,12 +81,12 @@ No changes needed in `result_parser.py` or `ValidationResult` — the in-place m
 
 | BR ID | Description | Priority | Tier | Test ID | Status |
 |-------|-------------|----------|------|---------|--------|
-| BR-WORKFLOW-004 | Undeclared params stripped from LLM response | P0 | Unit | UT-HAPI-241-001 | Pending |
-| BR-WORKFLOW-004 | Declared params preserved after stripping | P0 | Unit | UT-HAPI-241-002 | Pending |
-| BR-WORKFLOW-004 | Mixed declared + undeclared params: only declared survive | P0 | Unit | UT-HAPI-241-003 | Pending |
-| BR-WORKFLOW-004 | No schema: ALL params stripped | P0 | Unit | UT-HAPI-241-004 | Pending |
-| BR-WORKFLOW-004 | Empty params dict: no error | P1 | Unit | UT-HAPI-241-005 | Pending |
-| DD-WE-006 | Credential-like params (GIT_PASSWORD) stripped | P0 | Unit | UT-HAPI-241-006 | Pending |
+| BR-WORKFLOW-004 | Undeclared params stripped from LLM response | P0 | Unit | UT-HAPI-241-001 | Pass |
+| BR-WORKFLOW-004 | Declared params preserved after stripping | P0 | Unit | UT-HAPI-241-002 | Pass |
+| BR-WORKFLOW-004 | Mixed declared + undeclared params: only declared survive | P0 | Unit | UT-HAPI-241-003 | Pass |
+| BR-WORKFLOW-004 | No schema: ALL params stripped | P0 | Unit | UT-HAPI-241-004 | Pass |
+| BR-WORKFLOW-004 | Empty params dict: no error | P1 | Unit | UT-HAPI-241-005 | Pass |
+| DD-WE-006 | Credential-like params (GIT_PASSWORD) stripped | P0 | Unit | UT-HAPI-241-006 | Pass |
 
 ### Status Legend
 
@@ -115,12 +115,12 @@ Format: `{TIER}-HAPI-241-{SEQUENCE}`
 
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
-| `UT-HAPI-241-001` | LLM-hallucinated parameters (not in schema) are removed from the params dict | Pending |
-| `UT-HAPI-241-002` | Schema-declared parameters are preserved exactly as provided by the LLM | Pending |
-| `UT-HAPI-241-003` | When LLM sends mix of declared + undeclared, only declared params remain in the dict | Pending |
-| `UT-HAPI-241-004` | Workflow with no parameter schema: ALL params stripped (nothing declared = nothing allowed) | Pending |
-| `UT-HAPI-241-005` | Empty params dict produces no errors and dict remains empty | Pending |
-| `UT-HAPI-241-006` | Credential-like hallucinated params (GIT_PASSWORD, ADMIN_TOKEN) are stripped | Pending |
+| `UT-HAPI-241-001` | LLM-hallucinated parameters (not in schema) are removed from the params dict | Pass |
+| `UT-HAPI-241-002` | Schema-declared parameters are preserved exactly as provided by the LLM | Pass |
+| `UT-HAPI-241-003` | When LLM sends mix of declared + undeclared, only declared params remain in the dict | Pass |
+| `UT-HAPI-241-004` | Workflow with no parameter schema: ALL params stripped (nothing declared = nothing allowed) | Pass |
+| `UT-HAPI-241-005` | Empty params dict produces no errors and dict remains empty | Pass |
+| `UT-HAPI-241-006` | Credential-like hallucinated params (GIT_PASSWORD, ADMIN_TOKEN) are stripped | Pass |
 
 ### Tier Skip Rationale
 
@@ -250,5 +250,6 @@ cd holmesgpt-api && python -m pytest tests/unit/test_workflow_response_validatio
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 1.0 | 2026-03-02 | Initial test plan |
+| 1.2 | 2026-03-02 | All 6 tests passing — updated statuses from Pending to Pass, status to Complete |
 | 1.1 | 2026-03-02 | Revised: in-place mutation (no ValidationResult/result_parser changes), no-schema strips all, removed UT-007/008, added Go-side follow-up decision |
+| 1.0 | 2026-03-02 | Initial test plan |
