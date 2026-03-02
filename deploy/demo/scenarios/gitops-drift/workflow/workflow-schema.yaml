@@ -25,7 +25,7 @@ detectedLabels:
 
 execution:
   engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/git-revert-job@sha256:3177c568c6a055d118ae1f6d0782f301405de9646eff205892299de2ce5b6555
+  bundle: quay.io/kubernaut-cicd/test-workflows/git-revert-job@sha256:fc5f64958cc7ab7365c0f237a10c968e62003a5b591faf75d7e627fab3a57b29
 
 # DD-WE-006: Infrastructure dependencies provisioned by operators in kubernaut-workflows.
 # Credentials are mounted as files, NOT embedded in GIT_REPO_URL by the LLM.
@@ -34,15 +34,6 @@ dependencies:
     - name: gitea-repo-creds
 
 parameters:
-  - name: GIT_REPO_URL
-    type: string
-    required: true
-    description: "URL of the Git repository to revert (e.g., http://gitea-http.gitea:3000/kubernaut/demo-gitops-repo.git)"
-  - name: GIT_BRANCH
-    type: string
-    required: false
-    description: "Branch to revert on"
-    default: "main"
   - name: TARGET_NAMESPACE
     type: string
     required: true

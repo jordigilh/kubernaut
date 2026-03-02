@@ -8,15 +8,18 @@
 # NOT embedded in GIT_REPO_URL by the LLM. The Secret is provisioned by operators
 # in kubernaut-workflows and mounted at /run/kubernaut/secrets/gitea-repo-creds/.
 #
+# GIT_REPO_URL and GIT_BRANCH are discovered from the ArgoCD Application that
+# targets TARGET_NAMESPACE, not provided by the LLM.
+#
 # Parameters (env vars):
-#   GIT_REPO_URL          - URL of the Git repository (without credentials)
-#   GIT_BRANCH            - Branch to revert on (default: main)
 #   TARGET_NAMESPACE      - Namespace of the affected workload
 #   TARGET_RESOURCE_NAME  - Name of the affected resource
 #
 set -e
 
-GIT_BRANCH="${GIT_BRANCH:-main}"
+: "${TARGET_NAMESPACE:?TARGET_NAMESPACE is required}"
+: "${TARGET_RESOURCE_NAME:?TARGET_RESOURCE_NAME is required}"
+
 WORK_DIR="/tmp/gitops-revert"
 
 SECRET_DIR="/run/kubernaut/secrets/gitea-repo-creds"
@@ -26,6 +29,27 @@ if [ ! -d "${SECRET_DIR}" ]; then
 fi
 GIT_USERNAME=$(cat "${SECRET_DIR}/username")
 GIT_PASSWORD=$(cat "${SECRET_DIR}/password")
+
+echo "=== Phase 0: Discover ArgoCD Application ==="
+ARGO_APP_JSON=$(kubectl get applications.argoproj.io -n argocd -o json)
+
+GIT_REPO_URL=$(echo "${ARGO_APP_JSON}" | jq -r \
+  --arg ns "${TARGET_NAMESPACE}" \
+  '.items[] | select(.spec.destination.namespace == $ns) | .spec.source.repoURL' \
+  | head -1)
+
+GIT_BRANCH_RAW=$(echo "${ARGO_APP_JSON}" | jq -r \
+  --arg ns "${TARGET_NAMESPACE}" \
+  '.items[] | select(.spec.destination.namespace == $ns) | .spec.source.targetRevision' \
+  | head -1)
+GIT_BRANCH="${GIT_BRANCH_RAW}"
+[ "${GIT_BRANCH}" = "HEAD" ] || [ -z "${GIT_BRANCH}" ] && GIT_BRANCH="main"
+
+if [ -z "${GIT_REPO_URL}" ] || [ "${GIT_REPO_URL}" = "null" ]; then
+  echo "ERROR: No ArgoCD Application found targeting namespace ${TARGET_NAMESPACE}"
+  exit 1
+fi
+echo "Discovered from ArgoCD: repoURL=${GIT_REPO_URL} branch=${GIT_BRANCH}"
 
 echo "=== Phase 1: Validate ==="
 echo "Checking for crashing pods in namespace ${TARGET_NAMESPACE}..."
@@ -65,31 +89,44 @@ git revert --no-edit HEAD
 
 echo "Pushing revert..."
 git push origin "${GIT_BRANCH}"
-echo "Revert pushed successfully"
+
+NEW_COMMIT=$(git rev-parse HEAD)
+echo "Revert commit: ${NEW_COMMIT}"
 
 echo "=== Phase 3: Verify ==="
-echo "Waiting for ArgoCD to sync (up to 120s)..."
-TIMEOUT=120
+VERIFY_TIMEOUT="${VERIFY_TIMEOUT:-180}"
+POLL_INTERVAL=5
 ELAPSED=0
-while [ "${ELAPSED}" -lt "${TIMEOUT}" ]; do
-  READY=$(kubectl get pods -n "${TARGET_NAMESPACE}" -l app="${TARGET_RESOURCE_NAME}" \
-    --field-selector=status.phase=Running \
-    -o jsonpath='{range .items[*]}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' 2>/dev/null \
-    | grep -c "True" || echo "0")
 
-  if [ "${READY}" -gt 0 ]; then
-    echo "Pods are healthy after revert (${READY} ready)"
+ARGO_APP_NAME=$(echo "${ARGO_APP_JSON}" | jq -r \
+  --arg ns "${TARGET_NAMESPACE}" \
+  '.items[] | select(.spec.destination.namespace == $ns) | .metadata.name' \
+  | head -1)
+
+echo "Waiting for ArgoCD app '${ARGO_APP_NAME}' to sync revision ${NEW_COMMIT} (timeout=${VERIFY_TIMEOUT}s)..."
+while [ "${ELAPSED}" -lt "${VERIFY_TIMEOUT}" ]; do
+  SYNC_REV=$(kubectl get app "${ARGO_APP_NAME}" -n argocd \
+    -o jsonpath='{.status.sync.revision}' 2>/dev/null || echo "")
+
+  if [ "${SYNC_REV}" = "${NEW_COMMIT}" ]; then
+    echo "  [${ELAPSED}s] ArgoCD synced revision ${NEW_COMMIT}"
     break
   fi
 
-  sleep 5
-  ELAPSED=$((ELAPSED + 5))
-  echo "  Waiting... (${ELAPSED}s)"
+  echo "  [${ELAPSED}s] ArgoCD sync revision=${SYNC_REV:-pending}, waiting..."
+  sleep "${POLL_INTERVAL}"
+  ELAPSED=$((ELAPSED + POLL_INTERVAL))
 done
 
-if [ "${ELAPSED}" -ge "${TIMEOUT}" ]; then
-  echo "WARNING: Pods not yet healthy after ${TIMEOUT}s, ArgoCD sync may still be in progress"
+if [ "${ELAPSED}" -ge "${VERIFY_TIMEOUT}" ]; then
+  echo "ERROR: ArgoCD did not sync revert commit after ${VERIFY_TIMEOUT}s"
   exit 1
 fi
 
-echo "=== SUCCESS: GitOps revert completed, workload restored ==="
+echo "Waiting for deployment rollout to complete..."
+if kubectl rollout status "deployment/${TARGET_RESOURCE_NAME}" -n "${TARGET_NAMESPACE}" --timeout=120s 2>&1; then
+  echo "=== SUCCESS: Git commit reverted (${NEW_COMMIT}), deployment rolled out ==="
+else
+  echo "ERROR: Deployment rollout did not complete after revert"
+  exit 1
+fi
