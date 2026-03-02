@@ -1116,8 +1116,8 @@ data:
       name: action_history
       user: slm_user
       sslMode: disable
-      maxOpenConns: 50
-      maxIdleConns: 10
+      maxOpenConns: 100
+      maxIdleConns: 20
       connMaxLifetime: 1h
       connMaxIdleTime: 10m
       secretsFile: "/etc/datastorage/secrets/db-secrets.yaml"
@@ -1838,8 +1838,8 @@ database:
   name: %s
   user: %s
   sslMode: disable
-  maxOpenConns: 50
-  maxIdleConns: 10
+  maxOpenConns: 100
+  maxIdleConns: 20
   connMaxLifetime: 1h
   connMaxIdleTime: 10m
   secretsFile: "/etc/datastorage/secrets/db-secrets.yaml"
