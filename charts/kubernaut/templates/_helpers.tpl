@@ -78,11 +78,13 @@ postgresql-secret
 
 {{/*
 Return the Secret name for DataStorage DB credentials.
-Uses existingSecret if set, otherwise the chart-managed "datastorage-db-secret".
+DataStorage uses a db-secrets.yaml key (different format from PostgreSQL's
+POSTGRES_USER/PASSWORD/DB keys), so it supports its own existingSecret field.
+Precedence: datastorage.dbExistingSecret > chart-managed "datastorage-db-secret".
 */}}
 {{- define "kubernaut.datastorage.dbSecretName" -}}
-{{- if .Values.postgresql.auth.existingSecret -}}
-{{- .Values.postgresql.auth.existingSecret -}}
+{{- if .Values.datastorage.dbExistingSecret -}}
+{{- .Values.datastorage.dbExistingSecret -}}
 {{- else -}}
 datastorage-db-secret
 {{- end -}}

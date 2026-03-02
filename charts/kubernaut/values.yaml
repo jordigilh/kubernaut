@@ -26,6 +26,7 @@ gateway:
 # -- DataStorage service (audit trail, workflow catalog)
 datastorage:
   replicas: 1
+  dbExistingSecret: ""  # name of pre-created Secret with db-secrets.yaml key; when set, overrides chart-managed datastorage-db-secret
   resources:
     requests:
       memory: 256Mi

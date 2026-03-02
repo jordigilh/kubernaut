@@ -119,6 +119,33 @@ _ensure_pre_install_secrets() {
             --from-literal=webhook-url="${webhook_url}" \
             --dry-run=client -o yaml | kubectl apply -f - 2>&1 | sed 's/^/    /'
     fi
+
+    # DB and Redis credential Secrets for demo (#204)
+    # Pre-create so the chart can reference them via existingSecret.
+    local pg_password="${KUBERNAUT_PG_PASSWORD:-demo-password}"
+    local pg_user="${KUBERNAUT_PG_USER:-slm_user}"
+    local pg_db="${KUBERNAUT_PG_DB:-action_history}"
+
+    echo "  Creating PostgreSQL credential Secrets..."
+    kubectl create secret generic kubernaut-pg-credentials \
+        -n "${PLATFORM_NS}" \
+        --from-literal=POSTGRES_USER="${pg_user}" \
+        --from-literal=POSTGRES_PASSWORD="${pg_password}" \
+        --from-literal=POSTGRES_DB="${pg_db}" \
+        --dry-run=client -o yaml | kubectl apply -f - 2>&1 | sed 's/^/    /'
+
+    kubectl create secret generic kubernaut-ds-db-credentials \
+        -n "${PLATFORM_NS}" \
+        --from-literal="db-secrets.yaml=username: ${pg_user}
+password: ${pg_password}" \
+        --dry-run=client -o yaml | kubectl apply -f - 2>&1 | sed 's/^/    /'
+
+    local redis_password="${KUBERNAUT_REDIS_PASSWORD:-}"
+    echo "  Creating Redis credential Secret..."
+    kubectl create secret generic kubernaut-redis-credentials \
+        -n "${PLATFORM_NS}" \
+        --from-literal="redis-secrets.yaml=password: \"${redis_password}\"" \
+        --dry-run=client -o yaml | kubectl apply -f - 2>&1 | sed 's/^/    /'
 }
 
 _check_llm_credentials() {
