@@ -38,7 +38,7 @@
 | `ea_creation_e2e_test.go` | testNS | testNS | No |
 | `completion_notification_e2e_test.go` | testNS | testNS | No |
 | `needs_human_review_e2e_test.go` | testNS | testNS | No |
-| `predictive_signal_mode_e2e_test.go` | testNS | testNS | No |
+| `proactive_signal_mode_e2e_test.go` | testNS | testNS | No |
 | `scope_blocking_e2e_test.go` | unmanagedNS / managedNS | managedNS / ns | No |
 
 **Tests that PASS** (create RR in controllerNamespace):
@@ -132,7 +132,7 @@ And all List/Get namespaces → `controllerNamespace`.
 
 **Lines**: 76, 87, 109, 138, 164, 191, 213, 224, 246, 275, 304, 318, 333.
 
-#### 2.4 `predictive_signal_mode_e2e_test.go`
+#### 2.4 `proactive_signal_mode_e2e_test.go`
 
 ```diff
 - Namespace: testNS,
@@ -299,7 +299,7 @@ After applying fixes:
 | `test/e2e/remediationorchestrator/ea_creation_e2e_test.go` | RR namespace → controllerNamespace; all List/Get namespaces |
 | `test/e2e/remediationorchestrator/completion_notification_e2e_test.go` | Same |
 | `test/e2e/remediationorchestrator/needs_human_review_e2e_test.go` | Same |
-| `test/e2e/remediationorchestrator/predictive_signal_mode_e2e_test.go` | Same |
+| `test/e2e/remediationorchestrator/proactive_signal_mode_e2e_test.go` | Same |
 | `test/e2e/remediationorchestrator/scope_blocking_e2e_test.go` | RR namespace → controllerNamespace; lookup namespace → controllerNamespace |
 | `test/shared/helpers/crd_lifecycle.go` | Add reader param to Simulate*; use for Get in RetryOnConflict |
 | `test/e2e/remediationorchestrator/approval_e2e_test.go` | Pass apiReader to SimulateAICompletedWithWorkflowWithReader |

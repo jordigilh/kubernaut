@@ -337,7 +337,7 @@ For each remediation record in the chain, DS compares `currentSpecHash` against 
 | Current Hash Matches | Meaning | Prompt Implication |
 |---------------------|---------|-------------------|
 | `postRemediationSpecHash` | Config unchanged since our remediation | History is directly relevant — our changes are still active |
-| `preRemediationSpecHash` | Configuration regression — resource reverted to the state that caused the original signal | Predictive signal — the same config caused the same problem before, and the remediation applied at that time had a known effectiveness |
+| `preRemediationSpecHash` | Configuration regression — resource reverted to the state that caused the original signal | Proactive signal — the same config caused the same problem before, and the remediation applied at that time had a known effectiveness |
 | Neither | Config was changed to something we haven't seen | Tier 1: other records in the chain may still match. Tier 2: if no match in either tier, fresh investigation |
 
 The `preRemediationSpecHash` match is the most powerful signal. It tells the LLM: "We've seen this exact configuration before. Here's what happened. The remediation applied was [X] with effectiveness [Y]. Don't repeat what didn't work."

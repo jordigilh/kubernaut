@@ -166,6 +166,7 @@ receivers:
   - name: slack-ops-inconclusive
     slackConfigs:
       - channel: '#kubernaut-ops-triage'
+        credentialRef: slack-webhook
 
   # ===================================================================
   # CRITICAL: PagerDuty for 24/7 on-call alerting
@@ -181,6 +182,7 @@ receivers:
   - name: slack-ops-high
     slackConfigs:
       - channel: '#kubernaut-ops'
+        credentialRef: slack-webhook
 
   # ===================================================================
   # LOW: Console only for bulk notifications
@@ -195,6 +197,7 @@ receivers:
   - name: slack-dev-low
     slackConfigs:
       - channel: '#kubernaut-dev'
+        credentialRef: slack-webhook
 
   # ===================================================================
   # DEFAULT: Slack fallback
@@ -202,3 +205,4 @@ receivers:
   - name: slack-default
     slackConfigs:
       - channel: '#kubernaut-alerts'
+        credentialRef: slack-webhook

@@ -43,7 +43,7 @@ spec:
             - name: PGPASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: postgresql-secret
+                  name: {{ include "kubernaut.postgresql.secretName" . }}
                   key: POSTGRES_PASSWORD
             - name: PGDATABASE
               value: {{ .Values.postgresql.auth.database }}

@@ -93,8 +93,8 @@ type DLQRetryWorker struct {
 	maxBatchSize     int64
 	maxRetriesPerMsg int
 
-	// Lifecycle
-	stopCh chan struct{}
+	// Lifecycle: cancel func interrupts blocking Redis reads on Stop()
+	cancel context.CancelFunc
 	doneCh chan struct{}
 }
 
@@ -114,14 +114,15 @@ func NewDLQRetryWorker(
 		pollInterval:     config.PollInterval,
 		maxBatchSize:     config.MaxBatchSize,
 		maxRetriesPerMsg: config.MaxRetries,
-		stopCh:           make(chan struct{}),
 		doneCh:           make(chan struct{}),
 	}
 }
 
 // Start begins the retry loop in a background goroutine.
 func (w *DLQRetryWorker) Start() {
-	go w.retryLoop()
+	ctx, cancel := context.WithCancel(context.Background())
+	w.cancel = cancel
+	go w.retryLoop(ctx)
 	w.logger.Info("DLQ retry worker started (DD-009 V1.0)",
 		"poll_interval", w.pollInterval,
 		"max_batch_size", w.maxBatchSize,
@@ -130,13 +131,17 @@ func (w *DLQRetryWorker) Start() {
 }
 
 // Stop gracefully stops the retry worker (DD-007 integration).
+// Safe to call even if Start() was never called (e.g. tests that use Handler() only).
 func (w *DLQRetryWorker) Stop() {
-	close(w.stopCh)
+	if w.cancel == nil {
+		return // Start() was never called; nothing to stop
+	}
+	w.cancel()
 	<-w.doneCh
 	w.logger.Info("DLQ retry worker stopped")
 }
 
-func (w *DLQRetryWorker) retryLoop() {
+func (w *DLQRetryWorker) retryLoop(ctx context.Context) {
 	defer close(w.doneCh)
 
 	ticker := time.NewTicker(w.pollInterval)
@@ -145,23 +150,20 @@ func (w *DLQRetryWorker) retryLoop() {
 	for {
 		select {
 		case <-ticker.C:
-			w.processRetryBatch()
-		case <-w.stopCh:
-			// Process any remaining messages before shutdown
-			w.processRetryBatch()
+			w.processRetryBatch(ctx)
+		case <-ctx.Done():
 			return
 		}
 	}
 }
 
-func (w *DLQRetryWorker) processRetryBatch() {
-	ctx := context.Background()
+func (w *DLQRetryWorker) processRetryBatch(ctx context.Context) {
 
 	// Process both audit types
 	auditTypes := []string{"events", "notifications"}
 
 	for _, auditType := range auditTypes {
-		messages, err := w.dlqClient.ReadMessages(ctx, auditType, w.consumerGroup, w.consumerName, 0)
+		messages, err := w.dlqClient.ReadMessages(ctx, auditType, w.consumerGroup, w.consumerName, -1)
 		if err != nil {
 			w.logger.Error(err, "Failed to read from DLQ", "audit_type", auditType)
 			continue

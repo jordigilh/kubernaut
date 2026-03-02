@@ -433,6 +433,74 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	}
 	_, _ = fmt.Fprintf(writer, "✅ ServiceAccount token retrieved for authenticated workflow registration\n")
 
+	// DD-WE-006: Grant data-storage-sa permission to read secrets in the execution
+	// namespace so dependency validation (ValidateDependencies) can verify that
+	// declared secret dependencies exist at registration time.
+	_, _ = fmt.Fprintf(writer, "🔐 Granting data-storage-sa secret read access in %s (DD-WE-006)...\n", ExecutionNamespace)
+	depRBACYAML := fmt.Sprintf(`---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: data-storage-dep-validator
+  namespace: %[1]s
+rules:
+  - apiGroups: [""]
+    resources: ["secrets", "configmaps"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: data-storage-dep-validator
+  namespace: %[1]s
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: data-storage-dep-validator
+subjects:
+  - kind: ServiceAccount
+    name: data-storage-sa
+    namespace: %[2]s
+`, ExecutionNamespace, WorkflowExecutionNamespace)
+	depRBACCmd := exec.Command("kubectl", "apply", "--kubeconfig", kubeconfigPath,
+		"--server-side", "--field-manager=e2e-test", "-f", "-")
+	depRBACCmd.Stdin = strings.NewReader(depRBACYAML)
+	depRBACCmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", kubeconfigPath))
+	depRBACOut, depRBACErr := depRBACCmd.CombinedOutput()
+	if depRBACErr != nil {
+		return fmt.Errorf("failed to create DD-WE-006 dep validator RBAC: %s", string(depRBACOut))
+	}
+	_, _ = fmt.Fprintf(writer, "   ✅ data-storage-sa can read secrets/configmaps in %s\n", ExecutionNamespace)
+
+	// DD-WE-006: Create dependency Secret in execution namespace BEFORE workflow registration.
+	// DS validates that declared dependencies exist at registration time; the Secret must
+	// be present for the dep-secret-job workflow to register successfully.
+	_, _ = fmt.Fprintf(writer, "🔑 Creating DD-WE-006 dependency Secret in %s...\n", ExecutionNamespace)
+	depSecretCmd := exec.Command("kubectl", "create", "secret", "generic", "e2e-dep-secret",
+		"--from-literal=token=e2e-test-value",
+		"--namespace", ExecutionNamespace,
+		"--kubeconfig", kubeconfigPath)
+	depSecretOut, depSecretErr := depSecretCmd.CombinedOutput()
+	if depSecretErr != nil && !strings.Contains(string(depSecretOut), "AlreadyExists") {
+		_, _ = fmt.Fprintf(writer, "⚠️  Failed to create DD-WE-006 dep Secret (non-fatal): %s\n", string(depSecretOut))
+	} else {
+		_, _ = fmt.Fprintf(writer, "   ✅ Secret e2e-dep-secret ready in %s\n", ExecutionNamespace)
+	}
+
+	// DD-WE-006: Separate secret for the Tekton dependency injection test so that
+	// the drift test (E2E-WE-006-002) can delete e2e-dep-secret without racing
+	// against E2E-WE-006-004 running in a parallel Ginkgo process.
+	depSecretTektonCmd := exec.Command("kubectl", "create", "secret", "generic", "e2e-dep-secret-tekton",
+		"--from-literal=token=e2e-test-value-tekton",
+		"--namespace", ExecutionNamespace,
+		"--kubeconfig", kubeconfigPath)
+	depSecretTektonOut, depSecretTektonErr := depSecretTektonCmd.CombinedOutput()
+	if depSecretTektonErr != nil && !strings.Contains(string(depSecretTektonOut), "AlreadyExists") {
+		_, _ = fmt.Fprintf(writer, "⚠️  Failed to create DD-WE-006 Tekton dep Secret (non-fatal): %s\n", string(depSecretTektonOut))
+	} else {
+		_, _ = fmt.Fprintf(writer, "   ✅ Secret e2e-dep-secret-tekton ready in %s\n", ExecutionNamespace)
+	}
+
 	dataStorageURL := "http://localhost:8092" // DD-TEST-001: WE → DataStorage dependency port
 	if _, err = BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL, saToken, writer); err != nil {
 		return fmt.Errorf("failed to build and register test workflows: %w", err)
@@ -1002,6 +1070,30 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: workflowexecution-controller
+subjects:
+- kind: ServiceAccount
+  name: workflowexecution-controller
+  namespace: %[1]s
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: workflowexecution-dep-reader
+  namespace: %[2]s
+rules:
+- apiGroups: [""]
+  resources: ["secrets", "configmaps"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: workflowexecution-dep-reader
+  namespace: %[2]s
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: workflowexecution-dep-reader
 subjects:
 - kind: ServiceAccount
   name: workflowexecution-controller

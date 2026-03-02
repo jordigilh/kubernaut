@@ -263,6 +263,19 @@ func CreateWorkflowExecutionClusterParallel(clusterName, kubeconfigPath string, 
 	}
 	_, _ = fmt.Fprintf(output, "✅ ServiceAccount token retrieved for authenticated workflow registration\n")
 
+	// DD-WE-006: Create dependency Secret in execution namespace BEFORE workflow registration.
+	_, _ = fmt.Fprintf(output, "🔑 Creating DD-WE-006 dependency Secret in %s...\n", ExecutionNamespace)
+	depSecretCmd := exec.Command("kubectl", "create", "secret", "generic", "e2e-dep-secret",
+		"--from-literal=token=e2e-test-value",
+		"--namespace", ExecutionNamespace,
+		"--kubeconfig", kubeconfigPath)
+	depSecretOut, depSecretErr := depSecretCmd.CombinedOutput()
+	if depSecretErr != nil && !strings.Contains(string(depSecretOut), "AlreadyExists") {
+		_, _ = fmt.Fprintf(output, "⚠️  Failed to create DD-WE-006 dep Secret (non-fatal): %s\n", string(depSecretOut))
+	} else {
+		_, _ = fmt.Fprintf(output, "   ✅ Secret e2e-dep-secret ready in %s\n", ExecutionNamespace)
+	}
+
 	dataStorageURL := "http://localhost:8092" // DD-TEST-001: WE → DataStorage dependency port
 	if _, err = BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL, saToken, output); err != nil {
 		return fmt.Errorf("failed to build and register test workflows: %w", err)
@@ -380,17 +393,24 @@ data:
 		return fmt.Errorf("failed to create ConfigMap: %w", err)
 	}
 
-	// Deploy Secret with credentials in YAML format (ADR-030 Section 6)
+	// Deploy Secrets with credentials in YAML format (ADR-030 Section 6)
 	secretManifest := `
 apiVersion: v1
 kind: Secret
 metadata:
-  name: datastorage-secrets
+  name: datastorage-db-secret
   namespace: kubernaut-system
 stringData:
   db-credentials.yaml: |
     username: slm_user
     password: test_password
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: redis-secret
+  namespace: kubernaut-system
+stringData:
   redis-credentials.yaml: |
     password: ""
 `
@@ -399,7 +419,7 @@ stringData:
 	cmd.Stdout = output
 	cmd.Stderr = output
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to create Secret: %w", err)
+		return fmt.Errorf("failed to create Secrets: %w", err)
 	}
 
 	// Deploy Data Storage with proper volumes and CONFIG_PATH
@@ -456,8 +476,18 @@ spec:
         configMap:
           name: datastorage-config
       - name: secrets
-        secret:
-          secretName: datastorage-secrets
+        projected:
+          sources:
+          - secret:
+              name: datastorage-db-secret
+              items:
+              - key: db-credentials.yaml
+                path: db-credentials.yaml
+          - secret:
+              name: redis-secret
+              items:
+              - key: redis-credentials.yaml
+                path: redis-credentials.yaml
 ---
 apiVersion: v1
 kind: Service

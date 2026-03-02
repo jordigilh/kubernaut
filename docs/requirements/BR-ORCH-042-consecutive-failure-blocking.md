@@ -302,6 +302,41 @@ func (g *Gateway) findActiveRR(ctx context.Context, fingerprint string) *remedia
 
 ---
 
+### BR-ORCH-042.5: Ineffective Remediation Chain Detection (Issue #214)
+
+**MUST**: RO SHALL detect consecutive remediations that complete successfully but are ineffective (resource keeps reverting or health does not improve).
+
+**Detection Algorithm** (three layers, applied in `CheckPostAnalysisConditions` after all other checks):
+
+1. **Layer 1+2 (Hash chain + spec_drift)**: Walk DataStorage `Tier1.Chain` entries backwards. An entry is ineffective if:
+   - Its `PreRemediationSpecHash` matches the current RR's `preRemediationSpecHash` (hash chain continuity -- resource reverted to same bad state), OR
+   - Its `HashMatch == "preRemediation"` (regression/spec_drift detected by EffectivenessMonitor)
+   - Block when consecutive ineffective entries >= `IneffectiveChainThreshold` (default: 3)
+
+2. **Layer 3 (Safety net)**: Count total DS entries within `IneffectiveTimeWindow` (default: 4h). Block when count >= `RecurrenceCountThreshold` (default: 5), even without conclusive hash data.
+
+**Error handling**: DataStorage query failures fail-open (log and return nil).
+
+**Escalation**: On detection, RR transitions to `PhaseBlocked` with `BlockReasonIneffectiveChain`, `Outcome = "ManualReviewRequired"`, `RequiresManualReview = true`. `RequeueAfter` = `IneffectiveTimeWindow`.
+
+**Pre-remediation hash**: `CapturePreRemediationHash` is called BEFORE routing. If `hashErr != nil`, the RR transitions to `Failed` (terminal). If `preHash == ""` with no error, hash-based checks are skipped but the RR proceeds.
+
+**Acceptance Criteria**:
+
+| ID | Criterion | Test |
+|----|-----------|------|
+| AC-042-5-1 | Hash chain match across N entries triggers IneffectiveChain block | UT-RO-214-001 |
+| AC-042-5-2 | Spec drift (HashMatch == preRemediation) triggers IneffectiveChain block | UT-RO-214-002 |
+| AC-042-5-3 | Chain broken by effective entry returns nil | UT-RO-214-003 |
+| AC-042-5-4 | Missing hash data breaks chain | UT-RO-214-004 |
+| AC-042-5-5 | Below threshold returns nil | UT-RO-214-005 |
+| AC-042-5-6 | Safety net triggers on recurrence count | UT-RO-214-006 |
+| AC-042-5-7 | Stale entries outside window ignored | UT-RO-214-007 |
+| AC-042-5-8 | DS query failures fail-open | DS fail-open test |
+| AC-042-5-9 | CapturePreRemediationHash hashErr terminal | UT-RO-214-010 |
+
+---
+
 ## Supersedes
 
 - **BR-GATEWAY-184**: Consecutive Failure Blocking (moved from Gateway to RO)
@@ -313,6 +348,7 @@ func (g *Gateway) findActiveRR(ctx context.Context, fingerprint string) *remedia
 | Tier | Tests | Coverage |
 |------|-------|----------|
 | Unit | 8 | `consecutive_failure_test.go` |
+| Unit | 10 | `ineffective_chain_test.go` (Issue #214) |
 | Integration | 4 | `blocking_integration_test.go` |
 | E2E | 2 | `blocking_e2e_test.go` |
 
@@ -324,4 +360,5 @@ func (g *Gateway) findActiveRR(ctx context.Context, fingerprint string) *remedia
 |---------|------|---------|
 | 1.0 | 2025-12-10 | Initial version - moved from Gateway (BR-GATEWAY-184) to RO |
 | 1.1 | 2025-12-10 | Updated to use field selector on `spec.signalFingerprint` (not labels) per BR-GATEWAY-185 v1.1. Added AC-042-1-4, AC-042-1-5. |
+| 1.2 | 2026-02-28 | Added BR-ORCH-042.5: Ineffective Remediation Chain Detection (Issue #214). Three-layer detection using DataStorage audit traces. |
 

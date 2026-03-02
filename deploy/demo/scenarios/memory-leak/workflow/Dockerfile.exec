@@ -1,6 +1,6 @@
 # Graceful Restart - Runnable Job Container (BR-WE-014)
 # Authority: ADR-043, DD-WORKFLOW-017, DD-WORKFLOW-003
-# Scenario: #129 -- Predictive memory exhaustion -> graceful restart
+# Scenario: #129 -- Proactive memory exhaustion -> graceful restart
 #
 # Execution image: WorkflowExecution Job executor runs this as a K8s Job container
 #

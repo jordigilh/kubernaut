@@ -5310,7 +5310,7 @@ func (s SignalProcessingAuditPayloadSignalMode) Validate() error {
 	switch s {
 	case "reactive":
 		return nil
-	case "predictive":
+	case "proactive":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)

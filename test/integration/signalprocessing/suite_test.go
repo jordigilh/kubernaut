@@ -536,11 +536,11 @@ determine_severity := "critical" if {
 	err = severityClassifier.StartHotReload(ctx)
 	Expect(err).NotTo(HaveOccurred())
 
-	// Create predictive signal mappings file for BR-SP-106, ADR-054
-	signalModeConfigFile, err := os.CreateTemp("", "predictive-signal-mappings-*.yaml")
+	// Create proactive signal mappings file for BR-SP-106, ADR-054
+	signalModeConfigFile, err := os.CreateTemp("", "proactive-signal-mappings-*.yaml")
 	Expect(err).NotTo(HaveOccurred())
-	_, err = signalModeConfigFile.WriteString(`# BR-SP-106: Predictive Signal Mode Classification (integration test config)
-predictive_signal_mappings:
+	_, err = signalModeConfigFile.WriteString(`# BR-SP-106: Proactive Signal Mode Classification (integration test config)
+proactive_signal_mappings:
   PredictedOOMKill: OOMKilled
   PredictedCPUThrottling: CPUThrottling
   PredictedDiskPressure: DiskPressure
@@ -623,7 +623,7 @@ default labels := {}
 		RegoEngine:         regoEngine,         // BR-SP-102, BR-SP-104: CustomLabels extraction
 		K8sEnricher:        k8sEnricher,        // BR-SP-001: K8s context enrichment (interface)
 		OwnerChainBuilder:    ownerChainBuilder,    // BR-SP-100: Owner chain analysis
-		SignalModeClassifier: signalModeClassifier, // BR-SP-106: Predictive signal mode classification (ADR-054)
+		SignalModeClassifier: signalModeClassifier, // BR-SP-106: Proactive signal mode classification (ADR-054)
 	}).SetupWithManager(k8sManager)
 	Expect(err).NotTo(HaveOccurred())
 

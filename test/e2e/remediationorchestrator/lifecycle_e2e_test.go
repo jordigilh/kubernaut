@@ -23,6 +23,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8sretry "k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -180,11 +181,16 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 			Expect(rar.Spec.RequiredBy.Time).To(BeTemporally(">", time.Now()))
 
 			By("Simulating operator approval")
-			rar.Status.Decision = remediationv1.ApprovalDecisionApproved
-			rar.Status.DecidedBy = "operator@example.com"
-			rar.Status.DecidedAt = &metav1.Time{Time: time.Now()}
-			rar.Status.DecisionMessage = "Approved for execution"
-			Expect(k8sClient.Status().Update(ctx, rar)).To(Succeed())
+			Expect(k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(rar), rar); err != nil {
+					return err
+				}
+				rar.Status.Decision = remediationv1.ApprovalDecisionApproved
+				rar.Status.DecidedBy = "operator@example.com"
+				rar.Status.DecidedAt = &metav1.Time{Time: time.Now()}
+				rar.Status.DecisionMessage = "Approved for execution"
+				return k8sClient.Status().Update(ctx, rar)
+			})).To(Succeed())
 
 			By("Verifying approval status was updated")
 			Eventually(func() string {
@@ -245,11 +251,16 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 			rar := helpers.WaitForRARCreation(ctx, k8sClient, controllerNamespace, rr.Name, timeout, interval)
 
 			By("Simulating operator rejection")
-			rar.Status.Decision = remediationv1.ApprovalDecisionRejected
-			rar.Status.DecidedBy = "admin@example.com"
-			rar.Status.DecidedAt = &metav1.Time{Time: time.Now()}
-			rar.Status.DecisionMessage = "Too risky, manual investigation required"
-			Expect(k8sClient.Status().Update(ctx, rar)).To(Succeed())
+			Expect(k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(rar), rar); err != nil {
+					return err
+				}
+				rar.Status.Decision = remediationv1.ApprovalDecisionRejected
+				rar.Status.DecidedBy = "admin@example.com"
+				rar.Status.DecidedAt = &metav1.Time{Time: time.Now()}
+				rar.Status.DecisionMessage = "Too risky, manual investigation required"
+				return k8sClient.Status().Update(ctx, rar)
+			})).To(Succeed())
 
 			By("Verifying rejection status")
 			Eventually(func() string {

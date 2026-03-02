@@ -9,7 +9,7 @@
 
 | Version | Date | Changes |
 |---------|------|---------|
-| **v2.4** | 2026-02-05 | **BR-AI-084 Predictive Signal Mode**: Added test scenarios for RO SignalMode copy (UT-RO-106-001/002), AA request builder (UT-AA-084-001/002), HAPI prompt builder (UT-HAPI-084-001/002/003), and integration tests (IT-RO-084-001, IT-HAPI-084-001) |
+| **v2.4** | 2026-02-05 | **BR-AI-084 Proactive Signal Mode**: Added test scenarios for RO SignalMode copy (UT-RO-106-001/002), AA request builder (UT-AA-084-001/002), HAPI prompt builder (UT-HAPI-084-001/002/003), and integration tests (IT-RO-084-001, IT-HAPI-084-001) |
 | **v2.3** | 2025-12-09 | **TESTING_GUIDELINES Compliance Fixes**: Fixed integration coverage target (20% → >50%); Removed BR- prefixes from unit test examples; Updated E2E path to `test/e2e/aianalysis/`; Added integration test file table; Updated HolmesGPT focus to MockHolmesGPTClient per HAPI team |
 | **v2.2** | 2025-12-06 | **Day 6 Implementation Alignment**: Updated unit test coverage (70% → 87.6% achieved); Added edge case test patterns for ERROR_HANDLING_PHILOSOPHY.md; Updated test file list; Added confidence level classification tests |
 | v2.1 | 2025-12-04 | **TESTING_GUIDELINES Alignment**: Added Quality Gates, Success Metrics; Removed V1.1 deferred code (BR-AI-040, BR-AI-050); Fixed BR range references |
@@ -886,9 +886,9 @@ It("should handle malformed retry count annotation (treats as 0)", func() {
 
 ---
 
-## BR-AI-084: Predictive Signal Mode Prompt Strategy
+## BR-AI-084: Proactive Signal Mode Prompt Strategy
 
-**References**: [BR-AI-084](../../../requirements/BR-AI-084-predictive-signal-mode-prompt-strategy.md), [ADR-054](../../../architecture/decisions/ADR-054-predictive-signal-mode-classification.md)
+**References**: [BR-AI-084](../../../requirements/BR-AI-084-proactive-signal-mode-prompt-strategy.md), [ADR-054](../../../architecture/decisions/ADR-054-proactive-signal-mode-classification.md)
 
 ### RO Unit Tests
 
@@ -906,7 +906,7 @@ It("should handle malformed retry count annotation (treats as 0)", func() {
 | Test ID | Scenario | Status |
 |---------|----------|--------|
 | UT-AA-084-001 | BuildIncidentRequest passes signalMode = reactive | ✅ Passed |
-| UT-AA-084-002 | BuildIncidentRequest passes signalMode = predictive | ✅ Passed |
+| UT-AA-084-002 | BuildIncidentRequest passes signalMode = proactive | ✅ Passed |
 
 ### HAPI Unit Tests (Python)
 
@@ -915,7 +915,7 @@ It("should handle malformed retry count annotation (treats as 0)", func() {
 | Test ID | Scenario | Status |
 |---------|----------|--------|
 | UT-HAPI-084-001 | Prompt contains reactive RCA directive when signal_mode = reactive | ✅ Passed |
-| UT-HAPI-084-002 | Prompt contains predictive prevention directive when signal_mode = predictive | ✅ Passed |
+| UT-HAPI-084-002 | Prompt contains proactive prevention directive when signal_mode = proactive | ✅ Passed |
 | UT-HAPI-084-003 | Default to reactive when signal_mode is absent | ✅ Passed |
 
 ### Integration Tests
@@ -923,19 +923,19 @@ It("should handle malformed retry count annotation (treats as 0)", func() {
 | Test ID | Scenario | Status |
 |---------|----------|--------|
 | IT-RO-084-001 | RO copies SignalMode from SP to AA spec (full CRD lifecycle) | ✅ Passed |
-| IT-HAPI-084-001 | Mock LLM detects predictive mode and returns prevention-focused response | ✅ Passed |
+| IT-HAPI-084-001 | Mock LLM detects proactive mode and returns prevention-focused response | ✅ Passed |
 
 ### E2E Tests
 
 | Test ID | Scenario | Test File | Status |
 |---------|----------|-----------|--------|
-| E2E-SP-106-001 | SP classifies PredictedOOMKill as predictive + normalizes to OOMKilled | `test/e2e/signalprocessing/50_predictive_signal_mode_test.go` | ✅ Passed |
-| E2E-SP-106-002 | SP defaults standard OOMKilled to reactive mode | `test/e2e/signalprocessing/50_predictive_signal_mode_test.go` | ✅ Passed |
-| E2E-RO-106-001 | RO propagates signalMode=predictive from SP status to AA spec | `test/e2e/remediationorchestrator/predictive_signal_mode_e2e_test.go` | ✅ Passed |
-| E2E-AA-084-001 | AA processes predictive signal mode through to Mock LLM | `test/e2e/aianalysis/07_predictive_signal_mode_test.go` | ✅ Passed |
-| E2E-AA-084-002 | AA processes reactive signal mode (standard flow) | `test/e2e/aianalysis/07_predictive_signal_mode_test.go` | ✅ Passed |
-| E2E-HAPI-055 | HAPI returns predictive-aware analysis for signal_mode=predictive | `test/e2e/holmesgpt-api/predictive_signal_mode_test.go` | ✅ Passed |
-| E2E-HAPI-056 | HAPI returns standard RCA for signal_mode=reactive | `test/e2e/holmesgpt-api/predictive_signal_mode_test.go` | ✅ Passed |
-| E2E-HAPI-057 | HAPI defaults to reactive when signal_mode is absent | `test/e2e/holmesgpt-api/predictive_signal_mode_test.go` | ✅ Passed |
+| E2E-SP-106-001 | SP classifies PredictedOOMKill as proactive + normalizes to OOMKilled | `test/e2e/signalprocessing/50_proactive_signal_mode_test.go` | ✅ Passed |
+| E2E-SP-106-002 | SP defaults standard OOMKilled to reactive mode | `test/e2e/signalprocessing/50_proactive_signal_mode_test.go` | ✅ Passed |
+| E2E-RO-106-001 | RO propagates signalMode=proactive from SP status to AA spec | `test/e2e/remediationorchestrator/proactive_signal_mode_e2e_test.go` | ✅ Passed |
+| E2E-AA-084-001 | AA processes proactive signal mode through to Mock LLM | `test/e2e/aianalysis/07_proactive_signal_mode_test.go` | ✅ Passed |
+| E2E-AA-084-002 | AA processes reactive signal mode (standard flow) | `test/e2e/aianalysis/07_proactive_signal_mode_test.go` | ✅ Passed |
+| E2E-HAPI-055 | HAPI returns proactive-aware analysis for signal_mode=proactive | `test/e2e/holmesgpt-api/proactive_signal_mode_test.go` | ✅ Passed |
+| E2E-HAPI-056 | HAPI returns standard RCA for signal_mode=reactive | `test/e2e/holmesgpt-api/proactive_signal_mode_test.go` | ✅ Passed |
+| E2E-HAPI-057 | HAPI defaults to reactive when signal_mode is absent | `test/e2e/holmesgpt-api/proactive_signal_mode_test.go` | ✅ Passed |
 
 ---

@@ -1,3 +1,6 @@
+# Job 1: Generate TLS certificates (pre-install/pre-upgrade).
+# Runs BEFORE chart resources so the authwebhook pod can mount the TLS secret.
+# Stores the CA cert in a ConfigMap for the post-install caBundle patch job.
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -31,7 +34,13 @@ spec:
               SERVICE="authwebhook"
 
               if kubectl get secret authwebhook-tls -n "$NAMESPACE" >/dev/null 2>&1; then
-                echo "authwebhook-tls secret already exists, skipping generation."
+                echo "authwebhook-tls secret already exists, skipping cert generation."
+                if kubectl get configmap authwebhook-ca -n "$NAMESPACE" >/dev/null 2>&1; then
+                  echo "authwebhook-ca ConfigMap exists. Nothing to do."
+                  exit 0
+                fi
+                echo "WARNING: authwebhook-ca ConfigMap missing (legacy install)."
+                echo "  Delete the authwebhook-tls secret and re-run helm upgrade to regenerate."
                 exit 0
               fi
 
@@ -57,28 +66,80 @@ spec:
                 -extfile "$TMPDIR/san.cnf" \
                 2>/dev/null
 
+              echo "  Storing TLS secret..."
               kubectl create secret tls authwebhook-tls \
                 --cert="$TMPDIR/tls.crt" \
                 --key="$TMPDIR/tls.key" \
                 -n "$NAMESPACE" \
                 --dry-run=client -o yaml | kubectl apply -f -
 
-              CA_BUNDLE=$(base64 < "$TMPDIR/ca.crt" | tr -d '\n')
-
-              echo "  Patching MutatingWebhookConfiguration..."
-              kubectl patch mutatingwebhookconfiguration authwebhook-mutating --type='json' \
-                -p "[
-                  {\"op\":\"replace\",\"path\":\"/webhooks/0/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"},
-                  {\"op\":\"replace\",\"path\":\"/webhooks/1/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"},
-                  {\"op\":\"replace\",\"path\":\"/webhooks/2/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"}
-                ]"
-
-              echo "  Patching ValidatingWebhookConfiguration..."
-              kubectl patch validatingwebhookconfiguration authwebhook-validating --type='json' \
-                -p "[{\"op\":\"replace\",\"path\":\"/webhooks/0/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"}]"
+              echo "  Storing CA cert in ConfigMap for post-install caBundle patching..."
+              kubectl create configmap authwebhook-ca \
+                --from-file=ca.crt="$TMPDIR/ca.crt" \
+                -n "$NAMESPACE" \
+                --dry-run=client -o yaml | kubectl apply -f -
 
               rm -rf "$TMPDIR"
-              echo "==> AuthWebhook TLS setup complete"
+              echo "==> TLS certificates generated and CA stored"
+---
+# Job 2: Patch webhook configurations with caBundle (post-install/post-upgrade).
+# Runs AFTER chart resources so the webhook configurations exist when we patch them.
+# Reads the CA cert from the ConfigMap created by the pre-install cert gen job.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "kubernaut.fullname" . }}-tls-cabundle-patch
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: tls-cabundle-patch
+    spec:
+      serviceAccountName: {{ include "kubernaut.fullname" . }}-hook-sa
+      restartPolicy: Never
+      {{- include "kubernaut.scheduling" (dict "component" .Values.hooks "global" .Values.global) | nindent 6 }}
+      containers:
+        - name: tls-cabundle-patch
+          image: {{ .Values.hooks.tlsCerts.image }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              NAMESPACE="{{ .Release.Namespace }}"
+
+              echo "==> Patching webhook configurations with CA bundle..."
+
+              CA_CRT=$(kubectl get configmap authwebhook-ca -n "$NAMESPACE" -o jsonpath='{.data.ca\.crt}')
+              if [ -z "$CA_CRT" ]; then
+                echo "ERROR: authwebhook-ca ConfigMap not found or empty."
+                echo "  Delete authwebhook-tls secret and re-run helm upgrade to regenerate."
+                exit 1
+              fi
+
+              CA_BUNDLE=$(printf '%s' "$CA_CRT" | base64 | tr -d '\n')
+
+              echo "  Patching MutatingWebhookConfiguration (authwebhook-mutating)..."
+              kubectl patch mutatingwebhookconfiguration authwebhook-mutating --type='json' \
+                -p "[
+                  {\"op\":\"add\",\"path\":\"/webhooks/0/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"},
+                  {\"op\":\"add\",\"path\":\"/webhooks/1/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"},
+                  {\"op\":\"add\",\"path\":\"/webhooks/2/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"}
+                ]"
+
+              echo "  Patching ValidatingWebhookConfiguration (authwebhook-validating)..."
+              kubectl patch validatingwebhookconfiguration authwebhook-validating --type='json' \
+                -p "[{\"op\":\"add\",\"path\":\"/webhooks/0/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"}]"
+
+              echo "==> Webhook CA bundle patching complete"
 ---
 # Shared RBAC for all Helm hooks (pre-install TLS cert + post-install migration).
 # Uses both pre- and post- phases so the SA exists across all hook jobs.
@@ -107,7 +168,7 @@ metadata:
     "helm.sh/hook-delete-policy": before-hook-creation
 rules:
   - apiGroups: [""]
-    resources: ["secrets"]
+    resources: ["secrets", "configmaps"]
     verbs: ["get", "create", "update", "patch"]
   - apiGroups: ["admissionregistration.k8s.io"]
     resources: ["mutatingwebhookconfigurations", "validatingwebhookconfigurations"]

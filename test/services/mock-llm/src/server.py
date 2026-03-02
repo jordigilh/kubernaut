@@ -233,7 +233,7 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         parameters={"NAMESPACE": "production", "POD_NAME": "ambiguous-pod"}
     ),
     # ========================================
-    # BR-AI-084 / ADR-054: Predictive Signal Mode Scenarios
+    # BR-AI-084 / ADR-054: Proactive Signal Mode Scenarios
     # ========================================
     "oomkilled_predictive": MockScenario(
         name="oomkilled_predictive",
@@ -671,19 +671,19 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
         if "testsignal" in content or "test signal" in content:
             return MOCK_SCENARIOS.get("test_signal", DEFAULT_SCENARIO)
 
-        # BR-AI-084 / ADR-054: Detect predictive signal mode
-        # Predictive mode is indicated by "predictive" keyword in the prompt content,
+        # BR-AI-084 / ADR-054: Detect proactive signal mode
+        # Proactive mode is indicated by "proactive" keyword in the prompt content,
         # specifically from the signal_mode field passed through the investigation prompt.
-        is_predictive = ("predictive mode" in content or "predictive signal" in content or
-                         "predicted" in content and "not yet occurred" in content)
+        is_proactive = ("proactive mode" in content or "proactive signal" in content or
+                        "predicted" in content and "not yet occurred" in content)
 
-        # Check for predictive-specific scenarios first
-        if is_predictive:
-            # Check for "no action" predictive scenario
+        # Check for proactive-specific scenarios first (oomkilled_predictive scenario name unchanged)
+        if is_proactive:
+            # Check for "no action" proactive scenario
             if "predictive_no_action" in content or "mock_predictive_no_action" in content:
                 logger.info("✅ SCENARIO DETECTED: PREDICTIVE_NO_ACTION")
                 return MOCK_SCENARIOS.get("predictive_no_action", DEFAULT_SCENARIO)
-            # Default predictive scenario with OOMKilled
+            # Default proactive scenario with OOMKilled
             if "oomkilled" in content:
                 logger.info("✅ SCENARIO DETECTED: OOMKILLED_PREDICTIVE")
                 return MOCK_SCENARIOS.get("oomkilled_predictive", DEFAULT_SCENARIO)

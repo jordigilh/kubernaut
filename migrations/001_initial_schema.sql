@@ -141,39 +141,8 @@ CREATE INDEX idx_rat_resource_state_gin ON resource_action_traces USING GIN (res
 CREATE INDEX idx_rat_pending_actions ON resource_action_traces (action_timestamp)
     WHERE execution_status IN ('pending', 'executing');
 
--- 4. Create initial partitions for resource_action_traces
--- Extended range: July 2025 - February 2026 (covers development period)
-CREATE TABLE resource_action_traces_y2025m07
-    PARTITION OF resource_action_traces
-    FOR VALUES FROM ('2025-07-01') TO ('2025-08-01');
-
-CREATE TABLE resource_action_traces_y2025m08
-    PARTITION OF resource_action_traces
-    FOR VALUES FROM ('2025-08-01') TO ('2025-09-01');
-
-CREATE TABLE resource_action_traces_y2025m09
-    PARTITION OF resource_action_traces
-    FOR VALUES FROM ('2025-09-01') TO ('2025-10-01');
-
-CREATE TABLE resource_action_traces_y2025m10
-    PARTITION OF resource_action_traces
-    FOR VALUES FROM ('2025-10-01') TO ('2025-11-01');
-
-CREATE TABLE resource_action_traces_y2025m11
-    PARTITION OF resource_action_traces
-    FOR VALUES FROM ('2025-11-01') TO ('2025-12-01');
-
-CREATE TABLE resource_action_traces_y2025m12
-    PARTITION OF resource_action_traces
-    FOR VALUES FROM ('2025-12-01') TO ('2026-01-01');
-
-CREATE TABLE resource_action_traces_y2026m01
-    PARTITION OF resource_action_traces
-    FOR VALUES FROM ('2026-01-01') TO ('2026-02-01');
-
-CREATE TABLE resource_action_traces_y2026m02
-    PARTITION OF resource_action_traces
-    FOR VALUES FROM ('2026-02-01') TO ('2026-03-01');
+-- 4. Partitions for resource_action_traces are created by migration 002
+-- (002 drops and recreates this table with partitions starting March 2026)
 
 -- 5. Oscillation Patterns Table
 CREATE TABLE oscillation_patterns (
@@ -385,8 +354,8 @@ BEGIN
     -- Create partition for next month
     start_date := date_trunc('month', CURRENT_DATE + interval '1 month');
     end_date := start_date + interval '1 month';
-    table_name := 'resource_action_traces_y' ||
-                  to_char(start_date, 'YYYY') || 'm' ||
+    table_name := 'resource_action_traces_' ||
+                  to_char(start_date, 'YYYY') || '_' ||
                   to_char(start_date, 'MM');
 
     EXECUTE format('CREATE TABLE IF NOT EXISTS %I

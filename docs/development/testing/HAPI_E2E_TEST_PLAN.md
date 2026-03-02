@@ -4,12 +4,12 @@
 **Created**: 2026-02-02  
 **Updated**: 2026-02-05  
 **Status**: Active  
-**Purpose**: Document all E2E test scenarios for HAPI (48 Python migration + 3 predictive signal mode)  
+**Purpose**: Document all E2E test scenarios for HAPI (48 Python migration + 3 proactive signal mode)  
 
 **Authority**:
 - DD-TEST-006: Test Plan Policy
 - BR-HAPI-002, BR-HAPI-197, BR-HAPI-250, BR-AUDIT-005, BR-AI-075/080/081, BR-STORAGE-013
-- BR-AI-084: Predictive Signal Mode Prompt Strategy, ADR-054: Predictive Signal Mode Classification
+- BR-AI-084: Proactive Signal Mode Prompt Strategy, ADR-054: Proactive Signal Mode Classification
 
 ---
 
@@ -2162,39 +2162,39 @@ Migration complete when:
 
 ---
 
-### Category G: Predictive Signal Mode (3 scenarios)
+### Category G: Proactive Signal Mode (3 scenarios)
 
-**Business Requirements**: BR-AI-084 (Predictive Signal Mode Prompt Strategy)
-**Architecture**: ADR-054 (Predictive Signal Mode Classification)
-**Go Target**: `test/e2e/holmesgpt-api/predictive_signal_mode_test.go`
+**Business Requirements**: BR-AI-084 (Proactive Signal Mode Prompt Strategy)
+**Architecture**: ADR-054 (Proactive Signal Mode Classification)
+**Go Target**: `test/e2e/holmesgpt-api/proactive_signal_mode_test.go`
 
-#### E2E-HAPI-055: Predictive OOMKill Returns Predictive-Aware Analysis
+#### E2E-HAPI-055: Proactive OOMKill Returns Proactive-Aware Analysis
 
 **Business Requirement**: BR-AI-084
 
-**Business Outcome**: When signal_mode=predictive, HAPI adapts its 5-phase investigation prompt to perform preemptive analysis instead of reactive RCA. The Mock LLM detects predictive keywords in the prompt and returns the `oomkilled_predictive` scenario with prevention-focused root cause.
+**Business Outcome**: When signal_mode=proactive, HAPI adapts its 5-phase investigation prompt to perform preemptive analysis instead of reactive RCA. The Mock LLM detects proactive keywords in the prompt and returns the `oomkilled_proactive` scenario with prevention-focused root cause.
 
 **Preconditions**:
 - HAPI service with Mock LLM
 - ServiceAccount authentication configured
-- Mock LLM scenario: `oomkilled_predictive`
+- Mock LLM scenario: `oomkilled_proactive`
 
 **Test Steps**:
 1. Create IncidentRequest with `signal_type="OOMKilled"` (normalized by SP from PredictedOOMKill)
-2. Set `signal_mode="predictive"`
+2. Set `signal_mode="proactive"`
 3. Call POST `/api/v1/incident/analyze`
 4. Parse IncidentResponse
 
 **Expected Results (Business Outcomes)**:
-- **BEHAVIOR**: Predictive-aware analysis returned
-  - Analysis text contains predictive language ("Predict", "Preemptive", "trend")
+- **BEHAVIOR**: Proactive-aware analysis returned
+  - Analysis text contains proactive language ("Predict", "Preemptive", "trend")
   - Workflow selected (oomkill-increase-memory-v1)
-- **CORRECTNESS**: Confidence matches predictive scenario
+- **CORRECTNESS**: Confidence matches proactive scenario
   - `confidence = 0.88 +/- 0.05`
   - `selected_workflow` is set and not null
-- **BUSINESS IMPACT**: AIAnalysis controller can adapt phase handling for predictive signals
+- **BUSINESS IMPACT**: AIAnalysis controller can adapt phase handling for proactive signals
 
-**Mock LLM Scenario**: `oomkilled_predictive` (server.py:226)
+**Mock LLM Scenario**: `oomkilled_proactive` (server.py:226)
 
 **Status**: ✅ Passed
 
@@ -2239,7 +2239,7 @@ Migration complete when:
 **Preconditions**:
 - HAPI service with Mock LLM
 - ServiceAccount authentication configured
-- Mock LLM scenario: `oomkilled` (standard, no predictive keywords in prompt)
+- Mock LLM scenario: `oomkilled` (standard, no proactive keywords in prompt)
 
 **Test Steps**:
 1. Create IncidentRequest with `signal_type="OOMKilled"`
@@ -2286,7 +2286,7 @@ Migration complete when:
 
 **Authority**: BR-HAPI-026 to 030, BR-HAPI-RECOVERY-001 to 006, BR-PERF-020, BR-ORCH-018
 
-**Recommendation**: Focus on the 57 Mock LLM scenarios (free, including 3 predictive signal mode). Performance test is optional for SLA validation.
+**Recommendation**: Focus on the 57 Mock LLM scenarios (free, including 3 proactive signal mode). Performance test is optional for SLA validation.
 
 ---
 

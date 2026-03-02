@@ -70,6 +70,11 @@ type PolicyInput struct {
 
 	// FailedDetections (DD-WORKFLOW-001 v2.1)
 	FailedDetections []string `json:"failed_detections,omitempty"`
+
+	// #225: Operator-configurable confidence threshold for auto-approval.
+	// When nil, the Rego policy uses its built-in default (0.8).
+	// Stepping stone toward BR-HAPI-198 (V1.1 rule-based thresholds).
+	ConfidenceThreshold *float64 `json:"confidence_threshold,omitempty"`
 }
 
 // TargetResourceInput contains target resource identification
@@ -190,6 +195,12 @@ func (e *Evaluator) Evaluate(ctx context.Context, input *PolicyInput) (*PolicyRe
 		"affected_resource": input.AffectedResource,
 		// FailedDetections
 		"failed_detections": input.FailedDetections,
+	}
+
+	// #225: Only include confidence_threshold when explicitly configured.
+	// Omitting it lets the Rego policy's default (0.8) apply.
+	if input.ConfidenceThreshold != nil {
+		inputMap["confidence_threshold"] = *input.ConfidenceThreshold
 	}
 
 	// Evaluate policy

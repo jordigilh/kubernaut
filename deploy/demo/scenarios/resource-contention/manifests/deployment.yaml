@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: contention-app
+  namespace: demo-resource-contention
+  labels:
+    app: contention-app
+    kubernaut.ai/managed: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: contention-app
+  template:
+    metadata:
+      labels:
+        app: contention-app
+    spec:
+      containers:
+      - name: worker
+        image: polinux/stress
+        command: ["stress"]
+        args: ["--vm", "1", "--vm-bytes", "128M", "--vm-hang", "0"]
+        resources:
+          requests:
+            memory: "32Mi"
+          limits:
+            memory: "64Mi"

@@ -120,6 +120,10 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 			}()
 
 			analysis.Spec.AnalysisRequest.SignalContext.Environment = "production"
+			// Use a signal that returns confidence < 0.8 (Rego default threshold).
+			// Unrecognized signals hit the mock LLM default scenario (confidence 0.75),
+			// ensuring the production catch-all rule fires: is_production + not is_high_confidence.
+			analysis.Spec.AnalysisRequest.SignalContext.SignalName = "MOCK_APPROVAL_TEST"
 
 			By("Creating production AIAnalysis")
 			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())

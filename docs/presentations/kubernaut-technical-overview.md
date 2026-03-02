@@ -79,7 +79,7 @@ Notification ──> NotificationRequest CRD
 - K8s enrichment: namespace, pod, deployment, owner chain, node, PDB, HPA
 - 5 Rego classifiers: Environment, Priority, Severity, Business, CustomLabels
 - Detected labels: GitOps, Helm, PDB-protected, HPA-managed, service mesh, network isolation
-- Signal mode: predictive vs reactive
+- Signal mode: proactive vs reactive
 
 **Rego Policy -- Priority Classification** (`deploy/signalprocessing/policies/priority.rego`):
 

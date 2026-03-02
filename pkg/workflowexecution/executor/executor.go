@@ -27,7 +27,15 @@ import (
 	"fmt"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
+
+// CreateOptions carries optional configuration for execution resource creation.
+// Using a struct allows adding new fields without breaking the interface.
+// DD-WE-006: Dependencies are passed here, queried from DS by the reconciler.
+type CreateOptions struct {
+	Dependencies *models.WorkflowDependencies
+}
 
 // Executor defines the interface for workflow execution backends.
 // Both TektonExecutor and JobExecutor implement this interface.
@@ -42,7 +50,10 @@ type Executor interface {
 	//
 	// The execution resource name MUST be deterministic based on targetResource
 	// to provide atomic resource locking (DD-WE-003).
-	Create(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string) (string, error)
+	//
+	// DD-WE-006: opts.Dependencies carries schema-declared infrastructure dependencies
+	// to be mounted as volumes (Job) or workspace bindings (Tekton).
+	Create(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string, opts CreateOptions) (string, error)
 
 	// GetStatus retrieves the current status of the execution resource.
 	// Returns an ExecutionResult that maps the backend-specific status to WFE phases.

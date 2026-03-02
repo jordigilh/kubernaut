@@ -26,38 +26,38 @@ import (
 )
 
 // SignalModeResult contains the classification outcome for a signal name.
-// BR-SP-106: Predictive Signal Mode Classification
-// ADR-054: Predictive Signal Mode Classification and Prompt Strategy
+// BR-SP-106: Proactive Signal Mode Classification
+// ADR-054: Proactive Signal Mode Classification and Prompt Strategy
 type SignalModeResult struct {
-	// SignalMode is "reactive" (default) or "predictive"
+	// SignalMode is "reactive" (default) or "proactive"
 	SignalMode string
 	// SignalName is the base signal name for workflow catalog matching.
-	// For predictive signals, this is the mapped base name (e.g., "OOMKilled").
+	// For proactive signals, this is the mapped base name (e.g., "OOMKilled").
 	// For reactive signals, this is the original name unchanged.
 	SignalName string
 	// SourceSignalName is preserved for audit trail (SOC2 CC7.4).
-	// Only populated for predictive signals; empty for reactive.
+	// Only populated for proactive signals; empty for reactive.
 	SourceSignalName string
 }
 
-// signalModeConfig is the YAML structure for predictive signal mappings.
+// signalModeConfig is the YAML structure for proactive signal mappings.
 type signalModeConfig struct {
-	PredictiveSignalMappings map[string]string `yaml:"predictive_signal_mappings"`
+	ProactiveSignalMappings map[string]string `yaml:"proactive_signal_mappings"`
 }
 
-// SignalModeClassifier classifies signals as reactive or predictive
+// SignalModeClassifier classifies signals as reactive or proactive
 // using a YAML-based lookup table.
 //
 // Design Decision: YAML config (not Rego) because signal mode classification
 // is a simple key-value lookup, unlike severity/environment/priority which
 // evaluate complex multi-input policies via Rego.
 //
-// BR-SP-106: Predictive Signal Mode Classification
-// ADR-054: Predictive Signal Mode Classification and Prompt Strategy
+// BR-SP-106: Proactive Signal Mode Classification
+// ADR-054: Proactive Signal Mode Classification and Prompt Strategy
 type SignalModeClassifier struct {
 	logger   logr.Logger
 	mu       sync.RWMutex
-	mappings map[string]string // predictive signal name -> base signal name
+	mappings map[string]string // proactive signal name -> base signal name
 }
 
 // NewSignalModeClassifier creates a new signal mode classifier.
@@ -70,7 +70,7 @@ func NewSignalModeClassifier(logger logr.Logger) *SignalModeClassifier {
 	}
 }
 
-// LoadConfig loads predictive signal mappings from a YAML config file.
+// LoadConfig loads proactive signal mappings from a YAML config file.
 // This method is safe for concurrent use and supports hot-reload
 // (BR-SP-072 pattern): call it again to update mappings at runtime.
 func (c *SignalModeClassifier) LoadConfig(configPath string) error {
@@ -85,8 +85,8 @@ func (c *SignalModeClassifier) LoadConfig(configPath string) error {
 	}
 
 	// Build new mappings (nil map from empty YAML is fine — make a clean map)
-	newMappings := make(map[string]string, len(cfg.PredictiveSignalMappings))
-	for k, v := range cfg.PredictiveSignalMappings {
+	newMappings := make(map[string]string, len(cfg.ProactiveSignalMappings))
+	for k, v := range cfg.ProactiveSignalMappings {
 		newMappings[k] = v
 	}
 
@@ -103,7 +103,7 @@ func (c *SignalModeClassifier) LoadConfig(configPath string) error {
 
 // Classify determines the signal mode and normalized name for a given signal name.
 //
-// - If the signal name is in the predictive mappings, it returns mode "predictive"
+// - If the signal name is in the proactive mappings, it returns mode "proactive"
 //   with the normalized (base) name and preserves the original for audit.
 // - Otherwise, it returns mode "reactive" with the name unchanged.
 //
@@ -115,7 +115,7 @@ func (c *SignalModeClassifier) Classify(signalName string) SignalModeResult {
 
 	if found {
 		return SignalModeResult{
-			SignalMode:       "predictive",
+			SignalMode:       "proactive",
 			SignalName:       baseName,
 			SourceSignalName: signalName,
 		}

@@ -8,9 +8,9 @@ nodes:
     containerPath: /coverdata
     readOnly: false
   extraPortMappings:
-  # HolmesGPT API (HAPI) - Per DD-TEST-001 v2.5
-  - containerPort: 30120
-    hostPort: 30120
+  # HolmesGPT API (HAPI) - Per DD-TEST-001 v2.9
+  - containerPort: 30088
+    hostPort: 8088
     protocol: TCP
   # Data Storage - Per DD-TEST-001 v2.5
   - containerPort: 30089

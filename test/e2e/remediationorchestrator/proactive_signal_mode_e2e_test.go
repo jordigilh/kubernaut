@@ -33,19 +33,19 @@ import (
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
-// E2E-RO-106-001: Predictive Signal Mode Propagation
+// E2E-RO-106-001: Proactive Signal Mode Propagation
 //
 // Business Requirement: BR-SP-106, BR-AI-084
-// Architecture: ADR-054 (Predictive Signal Mode Classification)
+// Architecture: ADR-054 (Proactive Signal Mode Classification)
 //
 // Tests that RO correctly copies signal mode fields from SP.Status to AA.Spec:
-// - SignalMode: "predictive" or "reactive"
+// - SignalMode: "proactive" or "reactive"
 // - SignalType: normalized type (e.g., "OOMKilled" from "PredictedOOMKill")
 //
 // Pattern: Manual SP status update (no SP controller deployed in RO E2E cluster)
 // Same pattern as needs_human_review_e2e_test.go and lifecycle_e2e_test.go.
 
-var _ = Describe("E2E-RO-106-001: Predictive Signal Mode Propagation", Label("e2e", "signalmode", "remediationorchestrator"), func() {
+var _ = Describe("E2E-RO-106-001: Proactive Signal Mode Propagation", Label("e2e", "signalmode", "remediationorchestrator"), func() {
 	var (
 		testNS string
 	)
@@ -58,9 +58,9 @@ var _ = Describe("E2E-RO-106-001: Predictive Signal Mode Propagation", Label("e2
 		deleteTestNamespace(testNS)
 	})
 
-	It("should propagate signalMode=predictive from SP.Status to AA.Spec", func() {
-		By("1. Creating RemediationRequest with predictive signal")
-		rrName := "rr-predictive-" + uuid.New().String()[:13]
+	It("should propagate signalMode=proactive from SP.Status to AA.Spec", func() {
+		By("1. Creating RemediationRequest with proactive signal")
+		rrName := "rr-proactive-" + uuid.New().String()[:13]
 		now := metav1.Now()
 		rr := &remediationv1.RemediationRequest{
 			ObjectMeta: metav1.ObjectMeta{
@@ -109,11 +109,11 @@ var _ = Describe("E2E-RO-106-001: Predictive Signal Mode Propagation", Label("e2
 			return false
 		}, timeout, interval).Should(BeTrue(), "SignalProcessing should be created by RO")
 
-		By("3. Manually updating SP status with predictive signal mode (simulating SP controller)")
+		By("3. Manually updating SP status with proactive signal mode (simulating SP controller)")
 		sp.Status.Phase = signalprocessingv1.PhaseCompleted
 		sp.Status.Severity = "critical"
-		// BR-SP-106: Predictive signal mode fields
-		sp.Status.SignalMode = "predictive"
+		// BR-SP-106: Proactive signal mode fields
+		sp.Status.SignalMode = "proactive"
 		sp.Status.SignalName = "OOMKilled"                   // Normalized from PredictedOOMKill
 		sp.Status.SourceSignalName = "PredictedOOMKill"    // Preserved for SOC2 audit trail
 		sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
@@ -144,15 +144,15 @@ var _ = Describe("E2E-RO-106-001: Predictive Signal Mode Propagation", Label("e2
 			return false
 		}, timeout, interval).Should(BeTrue(), "AIAnalysis should be created by RO")
 
-		By("5. Verifying AIAnalysis has predictive signal mode from SP.Status")
-		Expect(analysis.Spec.AnalysisRequest.SignalContext.SignalMode).To(Equal("predictive"),
-			"BR-SP-106/ADR-054: AIAnalysis MUST propagate signalMode=predictive from SP.Status")
+		By("5. Verifying AIAnalysis has proactive signal mode from SP.Status")
+		Expect(analysis.Spec.AnalysisRequest.SignalContext.SignalMode).To(Equal("proactive"),
+			"BR-SP-106/ADR-054: AIAnalysis MUST propagate signalMode=proactive from SP.Status")
 
 		By("6. Verifying AIAnalysis has NORMALIZED signal type")
 		Expect(analysis.Spec.AnalysisRequest.SignalContext.SignalName).To(Equal("OOMKilled"),
 			"BR-SP-106/ADR-054: AIAnalysis MUST use normalized SignalType from SP.Status (not PredictedOOMKill)")
 
-		GinkgoWriter.Println("E2E-RO-106-001: Predictive signal mode propagation validated in Kind cluster")
+		GinkgoWriter.Println("E2E-RO-106-001: Proactive signal mode propagation validated in Kind cluster")
 	})
 
 	It("should propagate signalMode=reactive from SP.Status to AA.Spec for standard signals", func() {

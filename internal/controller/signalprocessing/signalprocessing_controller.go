@@ -99,7 +99,7 @@ type SignalProcessingReconciler struct {
 	PriorityAssigner       PriorityAssigner               // BR-SP-070: Priority assignment (interface for testability)
 	BusinessClassifier     *classifier.BusinessClassifier // BR-SP-002, BR-SP-080, BR-SP-081
 	SeverityClassifier     *classifier.SeverityClassifier // BR-SP-105: Severity determination (DD-SEVERITY-001)
-	SignalModeClassifier   *classifier.SignalModeClassifier // BR-SP-106: Predictive signal mode classification (ADR-054)
+	SignalModeClassifier   *classifier.SignalModeClassifier // BR-SP-106: Proactive signal mode classification (ADR-054)
 
 	// Day 7 Owner Chain Builder (per IMPLEMENTATION_PLAN_V1.31.md)
 	// This is OPTIONAL - controller falls back to inline implementation if nil
@@ -610,7 +610,7 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 	}
 
 	// 4. Signal Mode Classification (BR-SP-106, ADR-054) - OPTIONAL (defaults to reactive)
-	// Determines if the signal is predictive or reactive, and normalizes the signal name
+	// Determines if the signal is proactive or reactive, and normalizes the signal name
 	// for downstream workflow catalog matching.
 	var signalModeResult classifier.SignalModeResult
 	if r.SignalModeClassifier != nil {
@@ -642,8 +642,8 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 	}
 
 	// Add signal mode to classification message
-	if signalModeResult.SignalMode == "predictive" {
-		classificationMessage += fmt.Sprintf(", signalMode=predictive (normalized: %s → %s)",
+	if signalModeResult.SignalMode == "proactive" {
+		classificationMessage += fmt.Sprintf(", signalMode=proactive (normalized: %s → %s)",
 			signalModeResult.SourceSignalName, signalModeResult.SignalName)
 	}
 
@@ -666,7 +666,7 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 			sp.Status.PolicyHash = r.SeverityClassifier.GetPolicyHash()
 		}
 		// BR-SP-106: Set signal mode and normalized signal name (ADR-054)
-		// SignalType is set for ALL signals (not just predictive) — it is the
+		// SignalType is set for ALL signals (not just proactive) — it is the
 		// authoritative signal name for all downstream consumers (RO, AA, HAPI).
 		sp.Status.SignalMode = signalModeResult.SignalMode
 		sp.Status.SignalName = signalModeResult.SignalName

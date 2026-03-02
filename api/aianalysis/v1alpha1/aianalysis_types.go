@@ -113,15 +113,15 @@ type SignalContextInput struct {
 	Severity string `json:"severity"`
 
 	// Signal name (e.g., OOMKilled, CrashLoopBackOff)
-	// Normalized by SignalProcessing: predictive names mapped to base names (BR-SP-106)
+	// Normalized by SignalProcessing: proactive names mapped to base names (BR-SP-106)
 	// +kubebuilder:validation:Required
 	SignalName string `json:"signalName"`
 
-	// SignalMode indicates whether this is a reactive or predictive signal.
-	// BR-AI-084: Predictive Signal Mode Prompt Strategy
+	// SignalMode indicates whether this is a reactive or proactive signal.
+	// BR-AI-084: Proactive Signal Mode Prompt Strategy
 	// Copied from SignalProcessing status by RemediationOrchestrator.
 	// Used by HAPI to switch investigation prompt (RCA vs. predict & prevent).
-	// +kubebuilder:validation:Enum=reactive;predictive
+	// +kubebuilder:validation:Enum=reactive;proactive
 	// +optional
 	SignalMode string `json:"signalMode,omitempty"`
 

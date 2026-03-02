@@ -914,6 +914,7 @@ spec:
       containers:
       - name: postgresql
         image: docker.io/library/postgres:16-alpine
+        args: ["-c", "max_connections=200"]
         ports:
         - name: postgresql
           containerPort: 5432
@@ -1116,8 +1117,8 @@ data:
       name: action_history
       user: slm_user
       sslMode: disable
-      maxOpenConns: 50
-      maxIdleConns: 10
+      maxOpenConns: 100
+      maxIdleConns: 20
       connMaxLifetime: 1h
       connMaxIdleTime: 10m
       secretsFile: "/etc/datastorage/secrets/db-secrets.yaml"
@@ -1138,11 +1139,17 @@ data:
 apiVersion: v1
 kind: Secret
 metadata:
-  name: datastorage-secret
+  name: datastorage-db-secret
 stringData:
   db-secrets.yaml: |
     username: slm_user
     password: test_password
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: redis-secret
+stringData:
   redis-secrets.yaml: |
     password: ""
 ---
@@ -1281,8 +1288,18 @@ spec:
         configMap:
           name: datastorage-config
       - name: secrets
-        secret:
-          secretName: datastorage-secret%[8]s
+        projected:
+          sources:
+          - secret:
+              name: datastorage-db-secret
+              items:
+              - key: db-secrets.yaml
+                path: db-secrets.yaml
+          - secret:
+              name: redis-secret
+              items:
+              - key: redis-secrets.yaml
+                path: redis-secrets.yaml%[8]s
 `, namespace, nodePort, coverageSecurityContextYAML, dataStorageImage, pullPolicy,
 		coverageEnvYAML, coverageVolumeMountYAML, coverageVolumeYAML)
 
@@ -1822,8 +1839,8 @@ database:
   name: %s
   user: %s
   sslMode: disable
-  maxOpenConns: 50
-  maxIdleConns: 10
+  maxOpenConns: 100
+  maxIdleConns: 20
   connMaxLifetime: 1h
   connMaxIdleTime: 10m
   secretsFile: "/etc/datastorage/secrets/db-secrets.yaml"

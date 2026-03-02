@@ -18,17 +18,17 @@ limitations under the License.
 //
 // # Business Requirements
 //
-// BR-SP-106: Predictive Signal Mode Classification
+// BR-SP-106: Proactive Signal Mode Classification
 //
 // # Design Decisions
 //
-// ADR-054: Predictive Signal Mode Classification and Prompt Strategy
+// ADR-054: Proactive Signal Mode Classification and Prompt Strategy
 //
 // # Test Infrastructure
 //
 // Uses KIND cluster with full kubernaut deployment.
-// SignalProcessing controller is deployed with predictive-signal-mappings ConfigMap
-// mounted at /etc/signalprocessing/predictive-signal-mappings.yaml.
+// SignalProcessing controller is deployed with proactive-signal-mappings ConfigMap
+// mounted at /etc/signalprocessing/proactive-signal-mappings.yaml.
 package signalprocessing
 
 import (
@@ -47,7 +47,7 @@ import (
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
-var _ = Describe("E2E-SP-106-001: Predictive Signal Mode Classification", Label("e2e", "signalmode", "signalprocessing"), func() {
+var _ = Describe("E2E-SP-106-001: Proactive Signal Mode Classification", Label("e2e", "signalmode", "signalprocessing"), func() {
 	var (
 		ctx       context.Context
 		namespace string
@@ -65,12 +65,12 @@ var _ = Describe("E2E-SP-106-001: Predictive Signal Mode Classification", Label(
 		})
 	})
 
-	Context("Predictive Signal Classification (Real Controller)", func() {
-		// E2E-SP-163-003: Predictive Signal Mode - SignalModeClassifier via predictive_signal_mappings
-		It("E2E-SP-163-003: should classify PredictedOOMKill as predictive and normalize to OOMKilled", func() {
+	Context("Proactive Signal Classification (Real Controller)", func() {
+		// E2E-SP-163-003: Proactive Signal Mode - SignalModeClassifier via proactive_signal_mappings
+		It("E2E-SP-163-003: should classify PredictedOOMKill as proactive and normalize to OOMKilled", func() {
 			// BUSINESS CONTEXT:
 			// BR-SP-106: Real SP controller running in Kind cluster classifies a
-			// PredictedOOMKill signal as predictive, normalizes it to OOMKilled,
+			// PredictedOOMKill signal as proactive, normalizes it to OOMKilled,
 			// and preserves the original type for SOC2 audit trail.
 			//
 			// This validates the full pipeline: ConfigMap → SignalModeClassifier → Status
@@ -79,14 +79,14 @@ var _ = Describe("E2E-SP-106-001: Predictive Signal Mode Classification", Label(
 			createTargetPod(ctx, k8sClient, namespace, "api-server-e2e")
 
 			By("2. Create parent RemediationRequest (ADR-057: RR in controller namespace)")
-			rr := createPredictiveTestRR(controllerNamespace, namespace, "rr-predictive-oomkill")
+			rr := createProactiveTestRR(controllerNamespace, namespace, "rr-proactive-oomkill")
 			rr.Spec.SignalType = "PredictedOOMKill"
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			By("3. Create SignalProcessing with PredictedOOMKill type (ADR-057: SP in controller namespace)")
 			sp := &signalprocessingv1alpha1.SignalProcessing{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "sp-predictive-oomkill",
+					Name:      "sp-proactive-oomkill",
 					Namespace: controllerNamespace,
 					OwnerReferences: []metav1.OwnerReference{
 						*metav1.NewControllerRef(rr, remediationv1alpha1.GroupVersion.WithKind("RemediationRequest")),
@@ -125,30 +125,30 @@ var _ = Describe("E2E-SP-106-001: Predictive Signal Mode Classification", Label(
 
 				// Verify completion
 				g.Expect(updated.Status.Phase).To(Equal(signalprocessingv1alpha1.PhaseCompleted),
-					"SP should complete successfully with predictive signal")
+					"SP should complete successfully with proactive signal")
 
 				// BR-SP-106: Verify signal mode classification
-				g.Expect(updated.Status.SignalMode).To(Equal("predictive"),
-					"PredictedOOMKill should be classified as predictive")
+				g.Expect(updated.Status.SignalMode).To(Equal("proactive"),
+					"PredictedOOMKill should be classified as proactive")
 				g.Expect(updated.Status.SignalName).To(Equal("OOMKilled"),
 					"PredictedOOMKill should be normalized to OOMKilled for workflow catalog")
 				g.Expect(updated.Status.SourceSignalName).To(Equal("PredictedOOMKill"),
 					"Original signal type must be preserved for SOC2 CC7.4 audit trail")
 			}, "60s", "2s").Should(Succeed())
 
-			GinkgoWriter.Println("E2E-SP-106-001: Predictive signal mode classification validated in Kind cluster")
+			GinkgoWriter.Println("E2E-SP-106-001: Proactive signal mode classification validated in Kind cluster")
 		})
 
 		It("should classify reactive signals with default mode", func() {
 			// BUSINESS CONTEXT:
-			// BR-SP-106: Standard signals not in predictive mappings default to reactive.
+			// BR-SP-106: Standard signals not in proactive mappings default to reactive.
 			// This validates backwards compatibility in the real Kind cluster.
 
 			By("1. Create target pod (aligns with BR-SP-001)")
 			createTargetPod(ctx, k8sClient, namespace, "worker-e2e")
 
 			By("2. Create parent RemediationRequest (ADR-057: RR in controller namespace)")
-			rr := createPredictiveTestRR(controllerNamespace, namespace, "rr-reactive-oomkilled")
+			rr := createProactiveTestRR(controllerNamespace, namespace, "rr-reactive-oomkilled")
 			rr.Spec.SignalType = "OOMKilled"
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
@@ -206,9 +206,9 @@ var _ = Describe("E2E-SP-106-001: Predictive Signal Mode Classification", Label(
 	})
 })
 
-// createPredictiveTestRR creates a RemediationRequest for predictive signal mode E2E tests.
+// createProactiveTestRR creates a RemediationRequest for proactive signal mode E2E tests.
 // ADR-057: RR lives in controller namespace; targetResourceNamespace is the workload namespace.
-func createPredictiveTestRR(rrNamespace, targetResourceNamespace, name string) *remediationv1alpha1.RemediationRequest {
+func createProactiveTestRR(rrNamespace, targetResourceNamespace, name string) *remediationv1alpha1.RemediationRequest {
 	return &remediationv1alpha1.RemediationRequest{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -216,10 +216,10 @@ func createPredictiveTestRR(rrNamespace, targetResourceNamespace, name string) *
 		},
 		Spec: remediationv1alpha1.RemediationRequestSpec{
 			SignalFingerprint: func() string {
-				h := sha256.Sum256([]byte("e2e-predictive-" + name))
+				h := sha256.Sum256([]byte("e2e-proactive-" + name))
 				return hex.EncodeToString(h[:]) // Always exactly 64 hex chars
 			}(),
-			SignalName:        "E2EPredictiveAlert",
+			SignalName:        "E2EProactiveAlert",
 			Severity:          "critical",
 			SignalType:        "alert",
 			SignalSource:      "test-e2e-source",

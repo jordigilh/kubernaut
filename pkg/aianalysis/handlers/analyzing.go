@@ -42,10 +42,11 @@ import (
 // Per reconciliation-phases.md v2.0: Analyzing transitions directly to Completed.
 // The Recommending phase was removed in v1.8 as workflow data is captured in Investigating.
 type AnalyzingHandler struct {
-	log         logr.Logger
-	evaluator   RegoEvaluatorInterface
-	metrics     *metrics.Metrics              // DD-METRICS-001: Injected metrics
-	auditClient AnalyzingAuditClientInterface // DD-AUDIT-003: Injected audit client
+	log                 logr.Logger
+	evaluator           RegoEvaluatorInterface
+	metrics             *metrics.Metrics              // DD-METRICS-001: Injected metrics
+	auditClient         AnalyzingAuditClientInterface // DD-AUDIT-003: Injected audit client
+	confidenceThreshold *float64                      // #225: Operator-configurable confidence threshold
 }
 
 // NewAnalyzingHandler creates a new AnalyzingHandler.
@@ -59,6 +60,14 @@ func NewAnalyzingHandler(evaluator RegoEvaluatorInterface, log logr.Logger, m *m
 		auditClient: auditClient,
 		log:         log.WithName("analyzing-handler"),
 	}
+}
+
+// WithConfidenceThreshold sets the operator-configurable confidence threshold (#225).
+// When set, this value is passed as input.confidence_threshold to the Rego policy,
+// overriding the policy's built-in default. Stepping stone toward BR-HAPI-198.
+func (h *AnalyzingHandler) WithConfidenceThreshold(threshold *float64) *AnalyzingHandler {
+	h.confidenceThreshold = threshold
+	return h
 }
 
 // Name returns the handler name.
@@ -381,6 +390,9 @@ func (h *AnalyzingHandler) buildPolicyInput(analysis *aianalysisv1.AIAnalysis) *
 	} else {
 		input.CustomLabels = make(map[string][]string)
 	}
+
+	// #225: Pass operator-configurable threshold to Rego policy
+	input.ConfidenceThreshold = h.confidenceThreshold
 
 	// Populate BusinessClassification from EnrichmentResults (BR-SP-002, BR-SP-080, BR-SP-081)
 	if bc := analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.BusinessClassification; bc != nil {

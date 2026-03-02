@@ -95,7 +95,7 @@ func (b *RequestBuilder) BuildIncidentRequest(analysis *aianalysisv1.AIAnalysis)
 	req.EnrichmentResults.SetTo(b.buildEnrichmentResults(enrichment))
 
 	// BR-AI-084: Pass signal mode to HAPI for prompt strategy switching (ADR-054)
-	// "reactive" triggers RCA investigation; "predictive" triggers predict & prevent strategy
+	// "reactive" triggers RCA investigation; "proactive" triggers proactive prevention strategy
 	if spec.SignalMode != "" {
 		req.SignalMode.SetTo(client.SignalMode(spec.SignalMode))
 	}

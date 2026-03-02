@@ -386,20 +386,35 @@ define _build_workflow_manifest
 endef
 
 .PHONY: build-test-workflows
-build-test-workflows: ## Build all test workflow OCI images (multi-arch: amd64 + arm64)
-	@echo "📦 Building test workflow OCI images (multi-arch)..."
+build-test-workflows: ## Build test workflow OCI images (two-pass: exec→digest-sync→schema)
+	@echo "📦 Building test workflow OCI images (two-pass build)..."
 	@echo "  Registry:  $(WORKFLOW_REGISTRY)"
 	@echo "  Version:   $(WORKFLOW_VERSION)"
 	@echo "  Platforms: $(WORKFLOW_PLATFORMS)"
 	@echo ""
-	@# Phase 0: Build placeholder execution image referenced by all Tekton workflow schemas.
-	@# All Tekton workflow-schema.yaml files point their execution.bundle at this image
-	@# so the DataStorage bundle-existence check (crane.Head) passes during registration.
+	@# ══════════════════════════════════════════════════════════════════
+	@# PASS 1: Build and push exec images, capture digests, sync schemas
+	@#
+	@# Schema YAML files reference exec bundles by sha256 digest.
+	@# Rebuilding exec images changes their manifest list digest, so we
+	@# push first, capture the remote digest via skopeo, and auto-update
+	@# all schema files before building schema images in Pass 2.
+	@# ══════════════════════════════════════════════════════════════════
+	@echo "══ Pass 1: Exec images (build → push → digest-sync) ══"
+	@echo ""
+	@# --- placeholder-execution (referenced by 20+ schema files) ---
 	@echo "  Building placeholder-execution -> $(WORKFLOW_REGISTRY)/placeholder-execution:$(WORKFLOW_VERSION)"
 	$(call _build_workflow_manifest,$(WORKFLOW_REGISTRY)/placeholder-execution:$(WORKFLOW_VERSION),$(WORKFLOW_PLACEHOLDER_DIR)/Dockerfile,$(WORKFLOW_PLACEHOLDER_DIR)/)
-	@# Phase 1: Build execution images for workflows with per-directory Dockerfiles.
-	@# These contain runnable content (scripts, kubectl, etc.) but NOT workflow-schema.yaml.
-	@# Tagged as :VERSION-exec so they can be referenced by digest in the schema.
+	@echo "  Pushing placeholder-execution..."
+	@$(CONTAINER_TOOL) manifest push --all "$(WORKFLOW_REGISTRY)/placeholder-execution:$(WORKFLOW_VERSION)" "docker://$(WORKFLOW_REGISTRY)/placeholder-execution:$(WORKFLOW_VERSION)"
+	@DIGEST=$$(skopeo inspect --raw "docker://$(WORKFLOW_REGISTRY)/placeholder-execution:$(WORKFLOW_VERSION)" | sha256sum | awk '{print $$1}'); \
+	echo "  ✅ placeholder-execution digest: sha256:$$DIGEST"; \
+	echo "  Syncing placeholder-execution digest into schema files..."; \
+	for f in $$(grep -rl --include='*.yaml' --include='*.go' 'placeholder-execution:$(WORKFLOW_VERSION)@sha256:' test/); do \
+		sed -i.bak "s|placeholder-execution:$(WORKFLOW_VERSION)@sha256:[a-f0-9]\{64\}|placeholder-execution:$(WORKFLOW_VERSION)@sha256:$$DIGEST|g" "$$f" && rm -f "$$f.bak"; \
+		echo "    ✏️  $$f"; \
+	done
+	@# --- Per-directory exec images (workflows with custom Dockerfiles) ---
 	@for dir in $(WORKFLOW_FIXTURES_DIR)/*/; do \
 		name=$$(basename "$$dir"); \
 		if [ "$$name" = "README.md" ] || [ ! -f "$$dir/workflow-schema.yaml" ]; then continue; fi; \
@@ -410,10 +425,20 @@ build-test-workflows: ## Build all test workflow OCI images (multi-arch: amd64 +
 			$(CONTAINER_TOOL) rmi "$$ref" 2>/dev/null || true; \
 			$(CONTAINER_TOOL) manifest rm "$$ref" 2>/dev/null || true; \
 			$(CONTAINER_TOOL) build --platform $(WORKFLOW_PLATFORMS) --manifest "$$ref" -f "$$dir/Dockerfile" "$$dir" || exit 1; \
+			echo "  Pushing $$name (exec)..."; \
+			$(CONTAINER_TOOL) manifest push --all "$$ref" "docker://$$ref" || exit 1; \
+			DIGEST=$$(skopeo inspect --raw "docker://$$ref" | sha256sum | awk '{print $$1}'); \
+			echo "  ✅ $$name exec digest: sha256:$$DIGEST"; \
+			sed -i.bak "s|$$name:$(WORKFLOW_VERSION)-exec@sha256:[a-f0-9]\{64\}|$$name:$(WORKFLOW_VERSION)-exec@sha256:$$DIGEST|g" "$$dir/workflow-schema.yaml" && rm -f "$$dir/workflow-schema.yaml.bak"; \
+			echo "    ✏️  $$dir/workflow-schema.yaml"; \
 		fi; \
 	done
-	@# Phase 2: Build schema-only images for ALL workflows using shared FROM scratch Dockerfile.
-	@# DataStorage pulls these to extract /workflow-schema.yaml for catalog registration.
+	@echo ""
+	@# ══════════════════════════════════════════════════════════════════
+	@# PASS 2: Build schema images (exec digests now synced in YAMLs)
+	@# ══════════════════════════════════════════════════════════════════
+	@echo "══ Pass 2: Schema images (build with synced digests) ══"
+	@echo ""
 	@for dir in $(WORKFLOW_FIXTURES_DIR)/*/; do \
 		name=$$(basename "$$dir"); \
 		if [ "$$name" = "README.md" ] || [ ! -f "$$dir/workflow-schema.yaml" ]; then continue; fi; \
@@ -431,31 +456,16 @@ build-test-workflows: ## Build all test workflow OCI images (multi-arch: amd64 +
 	$(call _build_workflow_manifest,$(WORKFLOW_REGISTRY)/oom-recovery:v2.0.0,$(WORKFLOW_FIXTURES_DIR)/Dockerfile,$(WORKFLOW_FIXTURES_DIR)/oom-recovery-v2.0/)
 	@echo ""
 	@echo "✅ All test workflow images built ($(WORKFLOW_PLATFORMS))"
+	@echo "   Exec images pushed in Pass 1. Run 'make push-test-workflows' for schema images."
 
 .PHONY: push-test-workflows
-push-test-workflows: ## Push test workflow multi-arch manifests to registry
-	@echo "📦 Pushing test workflow OCI images (multi-arch)..."
+push-test-workflows: ## Push test workflow schema images to registry (exec images pushed during build)
+	@echo "📦 Pushing test workflow schema images (multi-arch)..."
 	@echo "  Registry:  $(WORKFLOW_REGISTRY)"
 	@echo "  Version:   $(WORKFLOW_VERSION)"
 	@echo "  Platforms: $(WORKFLOW_PLATFORMS)"
 	@echo ""
-	@# Push placeholder execution image (referenced by all Tekton workflow schemas)
-	@echo "  Pushing placeholder-execution -> $(WORKFLOW_REGISTRY)/placeholder-execution:$(WORKFLOW_VERSION)"
-	@$(CONTAINER_TOOL) manifest push --all "$(WORKFLOW_REGISTRY)/placeholder-execution:$(WORKFLOW_VERSION)" "docker://$(WORKFLOW_REGISTRY)/placeholder-execution:$(WORKFLOW_VERSION)"
-	@echo "  ✅ Pushed $(WORKFLOW_REGISTRY)/placeholder-execution:$(WORKFLOW_VERSION)"
-	@# Push execution images first (workflows with per-directory Dockerfiles)
-	@for dir in $(WORKFLOW_FIXTURES_DIR)/*/; do \
-		name=$$(basename "$$dir"); \
-		if [ "$$name" = "README.md" ] || [ ! -f "$$dir/workflow-schema.yaml" ]; then continue; fi; \
-		case "$$name" in *-v[0-9]*) continue ;; esac; \
-		if [ -f "$$dir/Dockerfile" ]; then \
-			ref="$(WORKFLOW_REGISTRY)/$$name:$(WORKFLOW_VERSION)-exec"; \
-			echo "  Pushing $$name (exec) -> $$ref"; \
-			$(CONTAINER_TOOL) manifest push --all "$$ref" "docker://$$ref" || exit 1; \
-			echo "  ✅ Pushed $$ref"; \
-		fi; \
-	done
-	@# Push schema images for all workflows
+	@# Push schema images (exec images already pushed during build-test-workflows Pass 1)
 	@for dir in $(WORKFLOW_FIXTURES_DIR)/*/; do \
 		name=$$(basename "$$dir"); \
 		if [ "$$name" = "README.md" ] || [ ! -f "$$dir/workflow-schema.yaml" ]; then continue; fi; \
@@ -471,7 +481,7 @@ push-test-workflows: ## Push test workflow multi-arch manifests to registry
 	@echo "  Pushing oom-recovery:v2.0.0 (version variant)"
 	@$(CONTAINER_TOOL) manifest push --all "$(WORKFLOW_REGISTRY)/oom-recovery:v2.0.0" "docker://$(WORKFLOW_REGISTRY)/oom-recovery:v2.0.0"
 	@echo ""
-	@echo "✅ All test workflow images pushed to $(WORKFLOW_REGISTRY) ($(WORKFLOW_PLATFORMS))"
+	@echo "✅ All test workflow schema images pushed to $(WORKFLOW_REGISTRY) ($(WORKFLOW_PLATFORMS))"
 
 ##@ Tekton Bundle Image Targets
 

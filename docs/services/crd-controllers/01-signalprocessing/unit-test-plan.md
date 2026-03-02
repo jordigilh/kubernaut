@@ -12,7 +12,7 @@
 ## 📋 Changelog
 
 ### Version 1.6.0 (2026-02-05)
-- **PLANNED**: BR-SP-106 Predictive Signal Mode Classification tests
+- **PLANNED**: BR-SP-106 Proactive Signal Mode Classification tests
 - **TESTS PLANNED**: 9 unit tests (UT-SP-106-001 through UT-SP-106-009), 1 integration test (IT-SP-106-001)
 - **NEW FILE**: `test/unit/signalprocessing/signalmode_classifier_test.go`
 - **NEW PACKAGE**: `pkg/signalprocessing/classifier/signalmode.go`
@@ -515,16 +515,16 @@ var _ = Describe("Config & Helpers", func() {
 
 ---
 
-## BR-SP-106: Predictive Signal Mode Classification
+## BR-SP-106: Proactive Signal Mode Classification
 
 **Test File**: `test/unit/signalprocessing/signalmode_classifier_test.go` (new)
 
 | Test ID | Scenario | Status |
 |---------|----------|--------|
-| UT-SP-106-001 | Classify PredictedOOMKill as predictive + normalize to OOMKilled | ✅ Passed |
+| UT-SP-106-001 | Classify PredictedOOMKill as proactive + normalize to OOMKilled | ✅ Passed |
 | UT-SP-106-002 | Classify OOMKilled as reactive (unchanged) | ✅ Passed |
 | UT-SP-106-003 | Classify unmapped type as reactive (default) | ✅ Passed |
-| UT-SP-106-004 | Preserve OriginalSignalType for predictive signals | ✅ Passed |
+| UT-SP-106-004 | Preserve OriginalSignalType for proactive signals | ✅ Passed |
 | UT-SP-106-005 | Empty/nil signal type handling | ✅ Passed |
 | UT-SP-106-006 | Config loading from YAML file | ✅ Passed |
 | UT-SP-106-007 | Hot-reload config change | ✅ Passed |
@@ -542,7 +542,7 @@ var _ = Describe("Config & Helpers", func() {
 | UT-SP-106-008 | RecordClassificationDecision includes signal_mode in payload | ✅ Passed |
 | UT-SP-106-009 | RecordSignalProcessed includes signal_mode + original_signal_type in payload | ✅ Passed |
 
-**References**: [BR-SP-106](../../../requirements/BR-SP-106-predictive-signal-mode-classification.md), [ADR-054](../../../architecture/decisions/ADR-054-predictive-signal-mode-classification.md)
+**References**: [BR-SP-106](../../../requirements/BR-SP-106-proactive-signal-mode-classification.md), [ADR-054](../../../architecture/decisions/ADR-054-proactive-signal-mode-classification.md)
 
 ---
 

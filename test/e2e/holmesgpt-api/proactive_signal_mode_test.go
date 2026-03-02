@@ -27,40 +27,40 @@ import (
 // sessionClient.Investigate() (async submit/poll/result wrapper) because HAPI
 // endpoints are now async-only (202 Accepted).
 
-// Predictive Signal Mode E2E Tests
+// Proactive Signal Mode E2E Tests
 // Test Plan: docs/development/testing/HAPI_E2E_TEST_PLAN.md (Category G)
 // Scenarios: E2E-HAPI-055 through E2E-HAPI-057 (3 total)
-// Business Requirements: BR-AI-084 (Predictive Signal Mode Prompt Strategy)
-// Architecture: ADR-054 (Predictive Signal Mode Classification)
+// Business Requirements: BR-AI-084 (Proactive Signal Mode Prompt Strategy)
+// Architecture: ADR-054 (Proactive Signal Mode Classification)
 //
-// Purpose: Validate HAPI correctly adapts the investigation prompt for predictive
-// signal mode and returns appropriate predictive-aware analysis results.
+// Purpose: Validate HAPI correctly adapts the investigation prompt for proactive
+// signal mode and returns appropriate proactive-aware analysis results.
 //
 // Mock LLM Scenarios:
-//   - oomkilled_predictive: Triggered by predictive keywords + "oomkilled" in prompt
-//   - Standard oomkilled: Triggered by "oomkilled" without predictive keywords
+//   - oomkilled_predictive: Triggered by proactive keywords + "oomkilled" in prompt
+//   - Standard oomkilled: Triggered by "oomkilled" without proactive keywords
 
-var _ = Describe("E2E-HAPI-084: Predictive Signal Mode Investigation", Label("e2e", "hapi", "signalmode"), func() {
+var _ = Describe("E2E-HAPI-084: Proactive Signal Mode Investigation", Label("e2e", "hapi", "signalmode"), func() {
 
-	Context("BR-AI-084: Predictive signal mode prompt adaptation", func() {
+	Context("BR-AI-084: Proactive signal mode prompt adaptation", func() {
 
-		It("E2E-HAPI-055: Predictive OOMKill returns predictive-aware analysis", func() {
+		It("E2E-HAPI-055: Proactive OOMKill returns proactive-aware analysis", func() {
 			// ========================================
 			// TEST PLAN MAPPING
 			// ========================================
 			// Scenario ID: E2E-HAPI-055
-			// Business Outcome: When signal_mode=predictive, HAPI adapts its 5-phase investigation
-			//   prompt to perform preemptive analysis. Mock LLM detects predictive keywords and
+			// Business Outcome: When signal_mode=proactive, HAPI adapts its 5-phase investigation
+			//   prompt to perform preemptive analysis. Mock LLM detects proactive keywords and
 			//   returns the oomkilled_predictive scenario with prevention-focused root cause.
 			// Mock LLM Scenario: oomkilled_predictive (server.py:226)
 			// BR: BR-AI-084, ADR-054
 
 			// ========================================
-			// ARRANGE: Create request with signal_mode=predictive
+			// ARRANGE: Create request with signal_mode=proactive
 			// ========================================
 			req := &hapiclient.IncidentRequest{
-				IncidentID:        "test-predictive-055",
-				RemediationID:     "test-rem-predictive-055",
+				IncidentID:        "test-proactive-055",
+				RemediationID:     "test-rem-proactive-055",
 				SignalName:        "OOMKilled", // Normalized by SP from PredictedOOMKill (ADR-054)
 				Severity:          "critical",
 				SignalSource:      "prometheus",
@@ -74,9 +74,9 @@ var _ = Describe("E2E-HAPI-084: Predictive Signal Mode Investigation", Label("e2
 				BusinessCategory:  "standard",
 				ClusterName:       "e2e-test",
 			}
-			// BR-AI-084: Set signal_mode to predictive
+			// BR-AI-084: Set signal_mode to proactive
 			req.SignalMode = hapiclient.NewOptNilSignalMode(
-				hapiclient.SignalModePredictive,
+				hapiclient.SignalModeProactive,
 			)
 
 			// ========================================
@@ -90,7 +90,7 @@ var _ = Describe("E2E-HAPI-084: Predictive Signal Mode Investigation", Label("e2
 			// ========================================
 			// BEHAVIOR: Analysis should complete successfully
 			Expect(len(incidentResp.Analysis) > 0).To(BeTrue(),
-				"Predictive analysis should produce non-empty analysis text")
+				"Proactive analysis should produce non-empty analysis text")
 
 			// CORRECTNESS: Mock LLM oomkilled_predictive scenario returns confidence = 0.88
 			Expect(incidentResp.Confidence).To(BeNumerically("~", 0.88, 0.05),
@@ -98,9 +98,9 @@ var _ = Describe("E2E-HAPI-084: Predictive Signal Mode Investigation", Label("e2
 
 			// CORRECTNESS: Workflow should be selected (oomkill-increase-memory-v1)
 			Expect(incidentResp.SelectedWorkflow.Set).To(BeTrue(),
-				"selected_workflow must be set for predictive OOMKill scenario")
+				"selected_workflow must be set for proactive OOMKill scenario")
 			Expect(incidentResp.SelectedWorkflow.Null).To(BeFalse(),
-				"selected_workflow must not be null for predictive OOMKill scenario")
+				"selected_workflow must not be null for proactive OOMKill scenario")
 
 			// CORRECTNESS: Analysis should reference prediction/prevention language
 			// The Mock LLM oomkilled_predictive root_cause contains:
@@ -115,12 +115,12 @@ var _ = Describe("E2E-HAPI-084: Predictive Signal Mode Investigation", Label("e2
 					ContainSubstring("preemptive"),
 					ContainSubstring("trend"),
 				),
-				"Analysis should reference predictive/preemptive language (not standard RCA)")
+				"Analysis should reference proactive/preemptive language (not standard RCA)")
 
-			// BUSINESS IMPACT: AIAnalysis controller adapts phase handling for predictive signals
+			// BUSINESS IMPACT: AIAnalysis controller adapts phase handling for proactive signals
 			// - Uses same workflow catalog as reactive (SP normalizes signal type)
-			// - Prompt includes predictive investigation strategy
-			// - Audit trail records signal_mode=predictive
+			// - Prompt includes proactive investigation strategy
+			// - Audit trail records signal_mode=proactive
 		})
 	})
 
@@ -132,7 +132,7 @@ var _ = Describe("E2E-HAPI-084: Predictive Signal Mode Investigation", Label("e2
 			// ========================================
 			// Scenario ID: E2E-HAPI-056
 			// Business Outcome: Existing reactive requests continue working unchanged.
-			//   signal_mode=reactive produces standard RCA results without predictive language.
+			//   signal_mode=reactive produces standard RCA results without proactive language.
 			// Mock LLM Scenario: oomkilled (standard reactive scenario)
 			// BR: BR-AI-084 (backwards compatibility)
 
@@ -191,7 +191,7 @@ var _ = Describe("E2E-HAPI-084: Predictive Signal Mode Investigation", Label("e2
 			// Scenario ID: E2E-HAPI-057
 			// Business Outcome: Requests without signal_mode should default to reactive behavior.
 			//   Ensures backwards compatibility with pre-ADR-054 clients.
-			// Mock LLM Scenario: oomkilled (standard reactive scenario - no predictive keywords in prompt)
+			// Mock LLM Scenario: oomkilled (standard reactive scenario - no proactive keywords in prompt)
 			// BR: BR-AI-084 (default behavior)
 
 			// ========================================

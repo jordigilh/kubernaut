@@ -676,7 +676,7 @@ var _ = Describe("InvestigatingHandler", func() {
 			})
 		})
 
-		// BR-HAPI-200: Preserve RCA even when no workflow needed
+		// BR-HAPI-200 + #208: RCA with contributing factors → human review (not resolved)
 		Context("when problem resolved with RCA available", func() {
 			BeforeEach(func() {
 				mockClient.WithProblemResolvedAndRCA(
@@ -688,17 +688,48 @@ var _ = Describe("InvestigatingHandler", func() {
 				)
 			})
 
-			// BR-HAPI-200: RCA preserved for audit/learning
-			It("should preserve RCA for audit/learning even when no workflow executed", func() {
+			// #208: RCA with contributing factors indicates a real analyzed problem.
+			// Even if transient, the operator should be notified rather than silently closed.
+			It("should escalate to human review and preserve RCA", func() {
 				analysis := createTestAnalysis()
 
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseCompleted))
+				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed),
+					"#208: RCA with contributing factors should not be treated as resolved")
+				Expect(analysis.Status.NeedsHumanReview).To(BeTrue())
 				Expect(analysis.Status.RootCauseAnalysis).NotTo(BeNil(), "RCA should be preserved")
 				Expect(analysis.Status.RootCauseAnalysis.Summary).To(ContainSubstring("memory spike"))
 				Expect(analysis.Status.RootCauseAnalysis.ContributingFactors).To(HaveLen(2))
+			})
+		})
+
+		// #208: Real problem identified but no workflow → should escalate to human review
+		Context("when LLM identifies real problem with RCA but no workflow (#208)", func() {
+			BeforeEach(func() {
+				mockClient.WithProblemResolvedAndRCA(
+					0.85,
+					[]string{},
+					"Orphaned PVCs from completed batch jobs that were not properly cleaned up",
+					"Orphaned PVCs consuming disk space",
+					"low",
+				)
+			})
+
+			It("should escalate to human review instead of NoActionRequired", func() {
+				analysis := createTestAnalysis()
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				// #208: Real problem with contributing factors should NOT be treated as "resolved"
+				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed),
+					"Real problem with RCA should fail (not complete as NoActionRequired)")
+				Expect(analysis.Status.NeedsHumanReview).To(BeTrue(),
+					"Real problem without workflow should escalate to human review")
+				Expect(analysis.Status.RootCauseAnalysis).NotTo(BeNil(),
+					"RCA should be preserved for operator context")
 			})
 		})
 

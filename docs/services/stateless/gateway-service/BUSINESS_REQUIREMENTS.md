@@ -64,11 +64,12 @@ This document provides a comprehensive list of all business requirements for the
 
 **Priority**: P0 (Critical)
 **Test Coverage**: ✅ Unit
-**Implementation**: `pkg/gateway/types/fingerprint.go` (`CalculateFingerprint`, `CalculateOwnerFingerprint`), `pkg/gateway/adapters/prometheus_adapter.go` (OwnerResolver injection), `pkg/gateway/adapters/kubernetes_event_adapter.go` (owner chain resolution)
-**Tests**: `test/unit/gateway/deduplication_test.go`, `test/unit/gateway/kubernetes_event_dedup_test.go`, `test/unit/gateway/prometheus_dedup_test.go`
+**Implementation**: `pkg/gateway/types/fingerprint.go` (`ResolveFingerprint`, `CalculateOwnerFingerprint`), `pkg/gateway/types/owner_resolver.go` (`types.OwnerResolver` interface, Issue #228), `pkg/gateway/adapters/prometheus_adapter.go` (OwnerResolver injection), `pkg/gateway/adapters/kubernetes_event_adapter.go` (owner chain resolution)
+**Tests**: `test/unit/gateway/deduplication_test.go`, `test/unit/gateway/kubernetes_event_dedup_test.go`, `test/unit/gateway/prometheus_dedup_test.go`, `test/unit/gateway/fingerprint_resolve_test.go`
 **Change History**: 
 - Updated 2026-02-09 — Prometheus adapter: alertname excluded from fingerprint; OwnerResolver added for Pod→Deployment resolution (Issue #63). Same pattern as K8s event adapter.
 - Updated 2026-02-09 — K8s events now use owner-chain-based fingerprinting (previously used `SHA256(reason:namespace:kind:name)` which caused duplicate RemediationRequests for events from the same Deployment with different reasons or pod names).
+- Updated 2026-02-24 — Issue #227: K8s Event adapter excludes reason from fingerprint even without OwnerResolver. Issue #228: `OwnerResolver` moved to shared `types` package; `CalculateFingerprint` (identifier-based) removed; all adapters now use shared `types.ResolveFingerprint`.
 
 ### **BR-GATEWAY-005: Signal Metadata Extraction**
 **Description**: Gateway must extract severity, namespace, and resource metadata from external signals **without transformation or interpretation**

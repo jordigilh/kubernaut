@@ -588,8 +588,8 @@ func loadFullPipelineImages(builtImages map[string]string, clusterName string, w
 // deployFullPipelineSPController deploys the SignalProcessing controller with
 // Rego policy ConfigMap for the full pipeline E2E.
 func deployFullPipelineSPController(ctx context.Context, namespace, kubeconfigPath, imageName string, writer io.Writer) error {
-	// Install all SP-specific Rego policy ConfigMaps and predictive signal mappings
-	// (5 policies + 1 predictive mapping ConfigMap required by SP controller)
+	// Install all SP-specific Rego policy ConfigMaps and proactive signal mappings
+	// (5 policies + 1 proactive mapping ConfigMap required by SP controller)
 	if err := deploySignalProcessingPolicies(kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy SP policies: %w", err)
 	}

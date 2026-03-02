@@ -227,7 +227,8 @@ def parse_and_validate_investigation_result(
                 "parsed_count": len(alternative_workflows)
             })
 
-            # DD-HAPI-002 v1.2, DD-WORKFLOW-017: Workflow Response Validation
+            # DD-HAPI-002 v1.3, DD-WORKFLOW-017: Workflow Response Validation
+            # Step 3b (v1.3): undeclared params stripped in-place from parameters dict
             if selected_workflow and data_storage_client:
                 validator = WorkflowResponseValidator(data_storage_client)
                 validation_result = validator.validate(
@@ -569,7 +570,8 @@ def parse_investigation_result(
                 "parsed_count": len(alternative_workflows)
             })
 
-            # DD-HAPI-002 v1.2, DD-WORKFLOW-017: Workflow Response Validation
+            # DD-HAPI-002 v1.3, DD-WORKFLOW-017: Workflow Response Validation
+            # Step 3b (v1.3): undeclared params stripped in-place from parameters dict
             if selected_workflow and data_storage_client:
                 from src.validation.workflow_response_validator import WorkflowResponseValidator
                 validator = WorkflowResponseValidator(data_storage_client)

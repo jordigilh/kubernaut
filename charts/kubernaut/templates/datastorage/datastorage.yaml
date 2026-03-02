@@ -20,8 +20,8 @@ data:
       name: action_history
       user: slm_user
       sslMode: disable
-      maxOpenConns: 50
-      maxIdleConns: 10
+      maxOpenConns: 100
+      maxIdleConns: 20
       connMaxLifetime: 1h
       connMaxIdleTime: 10m
       secretsFile: "/etc/datastorage/secrets/db-secrets.yaml"
@@ -113,8 +113,18 @@ spec:
           configMap:
             name: datastorage-config
         - name: secrets
-          secret:
-            secretName: datastorage-secret
+          projected:
+            sources:
+              - secret:
+                  name: {{ include "kubernaut.datastorage.dbSecretName" . }}
+                  items:
+                    - key: db-secrets.yaml
+                      path: db-secrets.yaml
+              - secret:
+                  name: {{ include "kubernaut.redis.secretName" . }}
+                  items:
+                    - key: redis-secrets.yaml
+                      path: redis-secrets.yaml
 ---
 apiVersion: v1
 kind: Service

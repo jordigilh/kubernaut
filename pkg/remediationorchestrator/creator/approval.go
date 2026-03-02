@@ -189,11 +189,11 @@ func (c *ApprovalCreator) buildApprovalRequest(
 		}
 	}
 
-	// Build recommended actions
+	// Build recommended actions using the actual Rego policy reason (Issue #206)
 	recommendedActions := []remediationv1.ApprovalRecommendedAction{
 		{
 			Action:    "Review the recommended workflow and approve if appropriate",
-			Rationale: fmt.Sprintf("Confidence score (%.0f%%) is below auto-approval threshold (80%%)", confidence*100),
+			Rationale: ai.Status.ApprovalReason,
 		},
 	}
 
@@ -232,7 +232,7 @@ func (c *ApprovalCreator) buildApprovalRequest(
 			RecommendedWorkflow:  recommendedWorkflow,
 			InvestigationSummary: investigationSummary,
 			RecommendedActions:   recommendedActions,
-			WhyApprovalRequired:  fmt.Sprintf("Confidence %.0f%% is below 80%% threshold. %s", confidence*100, ai.Status.ApprovalReason),
+			WhyApprovalRequired:  ai.Status.ApprovalReason,
 			RequiredBy:           requiredBy,
 		},
 	}

@@ -65,7 +65,7 @@ patches:
       value: NodePort
     - op: add
       path: /spec/ports/0/nodePort
-      value: 30120
+      value: 30088
   target:
     kind: Service
     name: holmesgpt-api

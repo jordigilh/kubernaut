@@ -366,7 +366,7 @@ class TestAuditPipelineE2E:
         HAPI service is configured with MOCK_LLM_MODE=true in E2E environment
         DD-AUTH-014: Uses ServiceAccount token for authentication
         """
-        hapi_url = os.environ.get("HAPI_BASE_URL", "http://localhost:30120")
+        hapi_url = os.environ.get("HAPI_BASE_URL", "http://localhost:8088")
 
         request_data = {
             "incident_id": unique_incident_id,
@@ -434,7 +434,7 @@ class TestAuditPipelineE2E:
 
         NOTE: Calls REAL HAPI HTTP API with MOCK_LLM_MODE=true
         """
-        hapi_url = os.environ.get("HAPI_BASE_URL", "http://localhost:30120")
+        hapi_url = os.environ.get("HAPI_BASE_URL", "http://localhost:8088")
 
         request_data = {
             "incident_id": unique_incident_id,
@@ -496,7 +496,7 @@ class TestAuditPipelineE2E:
 
         NOTE: Calls REAL HAPI HTTP API with MOCK_LLM_MODE=true
         """
-        hapi_url = os.environ.get("HAPI_BASE_URL", "http://localhost:30120")
+        hapi_url = os.environ.get("HAPI_BASE_URL", "http://localhost:8088")
 
         request_data = {
             "incident_id": unique_incident_id,
@@ -583,7 +583,7 @@ class TestAuditPipelineE2E:
 
         NOTE: Calls REAL HAPI HTTP API with MOCK_LLM_MODE=true
         """
-        hapi_url = os.environ.get("HAPI_BASE_URL", "http://localhost:30120")
+        hapi_url = os.environ.get("HAPI_BASE_URL", "http://localhost:8088")
 
         request_data = {
             "incident_id": unique_incident_id,

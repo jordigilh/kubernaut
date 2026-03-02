@@ -149,9 +149,11 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 	})
 
 	// ========================================
-	// IT-RO-EA-002: Failed RR creates EA
+	// IT-RO-EA-002: Failed RR does NOT create EA (#240)
+	// Issue #240: EA should only be created when WFE completes successfully.
+	// SP failure means no remediation was attempted.
 	// ========================================
-	It("IT-RO-EA-002: should create EA when RR reaches Failed phase", func() {
+	It("IT-RO-EA-002: should NOT create EA when RR reaches Failed phase via SP failure (#240)", func() {
 		ns := createTestNamespace("ro-ea-002")
 		defer deleteTestNamespace(ns)
 
@@ -183,21 +185,20 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 			return rr.Status.OverallPhase
 		}, timeout, interval).Should(Equal(remediationv1.PhaseFailed))
 
-		By("Verifying EA was created with Failed phase in spec")
+		By("Verifying EA was NOT created (Issue #240)")
 		eaName := fmt.Sprintf("ea-%s", rr.Name)
 		ea := &eav1.EffectivenessAssessment{}
-		Eventually(func() error {
+		Consistently(func() error {
 			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: eaName, Namespace: ROControllerNamespace}, ea)
-		}, 30*time.Second, interval).Should(Succeed(), "EA should be created after RR failure")
-
-		Expect(ea.Spec.RemediationRequestPhase).To(Equal("Failed"))
-		Expect(ea.Spec.CorrelationID).To(Equal(rr.Name))
+		}, 5*time.Second, interval).ShouldNot(Succeed(), "Issue #240: EA should NOT be created when SP fails")
 	})
 
 	// ========================================
-	// IT-RO-EA-003: TimedOut RR creates EA
+	// IT-RO-EA-003: TimedOut RR does NOT create EA (#240)
+	// Issue #240: EA should only be created when WFE completes successfully.
+	// Timed-out RRs have no guarantee that remediation was applied.
 	// ========================================
-	It("IT-RO-EA-003: should create EA when RR reaches TimedOut phase", func() {
+	It("IT-RO-EA-003: should NOT create EA when RR reaches TimedOut phase (#240)", func() {
 		ns := createTestNamespace("ro-ea-003")
 		defer deleteTestNamespace(ns)
 
@@ -210,19 +211,11 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 			return rr.Status.OverallPhase
 		}, timeout, interval).Should(Equal(remediationv1.PhaseProcessing))
 
-		By("Manually setting RR to TimedOut via status update (simulating global timeout)")
-		// To trigger handleGlobalTimeout, we need to set the StartTime far in the past
-		// and use a very short Global timeout. Instead, we manually set the status
-		// since the real global timeout check is in the reconciler.
-		// The most reliable approach: set RR status to TimedOut manually
-		// and verify EA creation from the handleGlobalTimeout path.
-		// NOTE: This tests that the controller creates EA on timeout.
-		// For Phase 1 (manual control), we force the timeout by backdating StartTime.
+		By("Backdating StartTime to trigger global timeout")
 		Eventually(func() error {
 			if err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
 				return err
 			}
-			// Backdate start time to ensure global timeout (1h default) is exceeded
 			pastTime := metav1.NewTime(time.Now().Add(-2 * time.Hour))
 			rr.Status.StartTime = &pastTime
 			return k8sClient.Status().Update(ctx, rr)
@@ -234,15 +227,12 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 			return rr.Status.OverallPhase
 		}, timeout, interval).Should(Equal(remediationv1.PhaseTimedOut))
 
-		By("Verifying EA was created with TimedOut phase in spec")
+		By("Verifying EA was NOT created (Issue #240)")
 		eaName := fmt.Sprintf("ea-%s", rr.Name)
 		ea := &eav1.EffectivenessAssessment{}
-		Eventually(func() error {
+		Consistently(func() error {
 			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: eaName, Namespace: ROControllerNamespace}, ea)
-		}, 30*time.Second, interval).Should(Succeed(), "EA should be created after RR timeout")
-
-		Expect(ea.Spec.RemediationRequestPhase).To(Equal("TimedOut"))
-		Expect(ea.Spec.CorrelationID).To(Equal(rr.Name))
+		}, 5*time.Second, interval).ShouldNot(Succeed(), "Issue #240: EA should NOT be created on global timeout")
 	})
 
 	// ========================================
@@ -341,6 +331,170 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 		By("Verifying owner reference is set correctly for cascade deletion (BR-ORCH-031)")
 		Expect(ownerRef.BlockOwnerDeletion).To(HaveValue(BeFalse()),
 			"ADR-EM-001 Section 8: blockOwnerDeletion must be false to prevent RR deletion blocking on EA finalizers")
+	})
+})
+
+// ============================================================================
+// EA CREATION GUARD INTEGRATION TESTS (Issue #240)
+// Business Requirement: EA should only be created when WFE completes successfully.
+// These tests drive the reconciler through envtest to validate the guard at
+// different pipeline failure points.
+// ============================================================================
+var _ = Describe("EA Creation Guard (Issue #240)", func() {
+
+	// ========================================
+	// IT-RO-EA-005: No EA when AIA fails with WorkflowResolutionFailed
+	// Issue #240: AIA failure means no workflow was ever selected or executed.
+	// ========================================
+	It("IT-RO-EA-005: should NOT create EA when AIA fails with WorkflowResolutionFailed (#240)", func() {
+		ns := createTestNamespace("ro-ea-005")
+		defer deleteTestNamespace(ns)
+
+		By("Creating a RemediationRequest")
+		rr := createRemediationRequest(ns, "rr-ea-005")
+
+		By("Driving RR to Processing phase")
+		Eventually(func() remediationv1.RemediationPhase {
+			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
+			return rr.Status.OverallPhase
+		}, timeout, interval).Should(Equal(remediationv1.PhaseProcessing))
+
+		By("Completing SignalProcessing")
+		spName := fmt.Sprintf("sp-%s", rr.Name)
+		sp := &signalprocessingv1.SignalProcessing{}
+		Eventually(func() error {
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, sp)
+		}, timeout, interval).Should(Succeed())
+		Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
+
+		By("Waiting for Analyzing phase")
+		Eventually(func() remediationv1.RemediationPhase {
+			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
+			return rr.Status.OverallPhase
+		}, timeout, interval).Should(Equal(remediationv1.PhaseAnalyzing))
+
+		By("Failing AIAnalysis with WorkflowResolutionFailed (no matching workflows)")
+		aiName := fmt.Sprintf("ai-%s", rr.Name)
+		ai := &aianalysisv1.AIAnalysis{}
+		Eventually(func() error {
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ROControllerNamespace}, ai)
+		}, timeout, interval).Should(Succeed())
+		ai.Status.Phase = aianalysisv1.PhaseFailed
+		ai.Status.Reason = "WorkflowResolutionFailed"
+		ai.Status.SubReason = "NoMatchingWorkflows"
+		ai.Status.Message = "No workflows matched the search criteria"
+		ai.Status.NeedsHumanReview = true
+		ai.Status.HumanReviewReason = "no_matching_workflows"
+		aiNow := metav1.Now()
+		ai.Status.CompletedAt = &aiNow
+		Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
+
+		By("Waiting for Failed phase")
+		Eventually(func() remediationv1.RemediationPhase {
+			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
+			return rr.Status.OverallPhase
+		}, timeout, interval).Should(Equal(remediationv1.PhaseFailed))
+
+		By("Verifying EA was NOT created (Issue #240: no WFE ever ran)")
+		eaName := fmt.Sprintf("ea-%s", rr.Name)
+		ea := &eav1.EffectivenessAssessment{}
+		Consistently(func() error {
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: eaName, Namespace: ROControllerNamespace}, ea)
+		}, 5*time.Second, interval).ShouldNot(Succeed(), "Issue #240: EA should NOT be created when AIA fails")
+
+		By("Verifying RR has RequiresManualReview set")
+		Expect(rr.Status.RequiresManualReview).To(BeTrue(),
+			"RR should require manual review when AIA fails with WorkflowResolutionFailed")
+	})
+
+	// ========================================
+	// IT-RO-EA-006: No EA when WFE fails
+	// Issue #240: Failed WFE may have partially applied changes, making EA unreliable.
+	// ========================================
+	It("IT-RO-EA-006: should NOT create EA when WFE fails (#240)", func() {
+		ns := createTestNamespace("ro-ea-006")
+		defer deleteTestNamespace(ns)
+
+		By("Creating a RemediationRequest")
+		rr := createRemediationRequest(ns, "rr-ea-006")
+
+		By("Driving RR to Processing phase")
+		Eventually(func() remediationv1.RemediationPhase {
+			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
+			return rr.Status.OverallPhase
+		}, timeout, interval).Should(Equal(remediationv1.PhaseProcessing))
+
+		By("Completing SignalProcessing")
+		spName := fmt.Sprintf("sp-%s", rr.Name)
+		spObj := &signalprocessingv1.SignalProcessing{}
+		Eventually(func() error {
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, spObj)
+		}, timeout, interval).Should(Succeed())
+		Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
+
+		By("Waiting for Analyzing phase")
+		Eventually(func() remediationv1.RemediationPhase {
+			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
+			return rr.Status.OverallPhase
+		}, timeout, interval).Should(Equal(remediationv1.PhaseAnalyzing))
+
+		By("Completing AIAnalysis (high confidence, no approval needed)")
+		aiName := fmt.Sprintf("ai-%s", rr.Name)
+		ai := &aianalysisv1.AIAnalysis{}
+		Eventually(func() error {
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ROControllerNamespace}, ai)
+		}, timeout, interval).Should(Succeed())
+		ai.Status.Phase = aianalysisv1.PhaseCompleted
+		ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+			WorkflowID:      "wf-restart-pods",
+			Version:         "v1.0.0",
+			ExecutionBundle: "test-image:latest",
+			Confidence:      0.95,
+		}
+		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+			Summary:    "OOM kill detected",
+			Severity:   "critical",
+			SignalType: "alert",
+			AffectedResource: &aianalysisv1.AffectedResource{
+				Kind:      "Deployment",
+				Name:      "test-app",
+				Namespace: ns,
+			},
+		}
+		aiNow := metav1.Now()
+		ai.Status.CompletedAt = &aiNow
+		Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
+
+		By("Waiting for Executing phase")
+		Eventually(func() remediationv1.RemediationPhase {
+			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
+			return rr.Status.OverallPhase
+		}, timeout, interval).Should(Equal(remediationv1.PhaseExecuting))
+
+		By("Failing WorkflowExecution")
+		weName := fmt.Sprintf("we-%s", rr.Name)
+		we := &workflowexecutionv1.WorkflowExecution{}
+		Eventually(func() error {
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: weName, Namespace: ROControllerNamespace}, we)
+		}, timeout, interval).Should(Succeed())
+		we.Status.Phase = workflowexecutionv1.PhaseFailed
+		weNow := metav1.Now()
+		we.Status.CompletionTime = &weNow
+		we.Status.FailureReason = "Workflow script exited with code 1"
+		Expect(k8sClient.Status().Update(ctx, we)).To(Succeed())
+
+		By("Waiting for Failed phase")
+		Eventually(func() remediationv1.RemediationPhase {
+			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
+			return rr.Status.OverallPhase
+		}, timeout, interval).Should(Equal(remediationv1.PhaseFailed))
+
+		By("Verifying EA was NOT created (Issue #240: WFE failed)")
+		eaName := fmt.Sprintf("ea-%s", rr.Name)
+		ea := &eav1.EffectivenessAssessment{}
+		Consistently(func() error {
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: eaName, Namespace: ROControllerNamespace}, ea)
+		}, 5*time.Second, interval).ShouldNot(Succeed(), "Issue #240: EA should NOT be created when WFE fails")
 	})
 })
 
@@ -524,9 +678,11 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 	})
 
 	// ========================================
-	// IT-RO-188-003c: Fallback when no AIAnalysis exists (SP failure path)
+	// IT-RO-188-003c: SP failure does NOT create EA (#240)
+	// Issue #240: When SP fails, no remediation was attempted, so EA is not warranted.
+	// Previously tested dual-target fallback on failure path; now tests EA absence.
 	// ========================================
-	It("IT-RO-188-003c: should fall back to RR target when no AIAnalysis exists (SP failure)", func() {
+	It("IT-RO-188-003c: should NOT create EA when SP fails (#240)", func() {
 		ns := createTestNamespace("ro-dt-003c")
 		defer deleteTestNamespace(ns)
 
@@ -557,34 +713,20 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 			return rr.Status.OverallPhase
 		}, timeout, interval).Should(Equal(remediationv1.PhaseFailed))
 
-		By("Verifying EA targets both fall back to RR target (nil dualTarget path)")
+		By("Verifying EA was NOT created (Issue #240)")
 		eaName := fmt.Sprintf("ea-%s", rr.Name)
 		ea := &eav1.EffectivenessAssessment{}
-		Eventually(func() error {
+		Consistently(func() error {
 			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: eaName, Namespace: ROControllerNamespace}, ea)
-		}, 30*time.Second, interval).Should(Succeed(), "EA should be created even on SP failure")
-
-		// DD-EM-003 nil fallback: When no AIAnalysis exists, dualTarget is nil,
-		// and CreateEffectivenessAssessment falls back to RR.Spec.TargetResource for both.
-		Expect(ea.Spec.SignalTarget.Kind).To(Equal("Deployment"))
-		Expect(ea.Spec.SignalTarget.Name).To(Equal("test-app"))
-		Expect(ea.Spec.SignalTarget.Namespace).To(Equal(ns))
-
-		Expect(ea.Spec.RemediationTarget.Kind).To(Equal("Deployment"),
-			"DD-EM-003: RemediationTarget should fall back to RR target when no AA exists")
-		Expect(ea.Spec.RemediationTarget.Name).To(Equal("test-app"),
-			"DD-EM-003: RemediationTarget should fall back to RR target when no AA exists")
-		Expect(ea.Spec.RemediationTarget.Namespace).To(Equal(ns))
-
-		Expect(ea.Spec.RemediationRequestPhase).To(Equal("Failed"))
+		}, 5*time.Second, interval).ShouldNot(Succeed(), "Issue #240: EA should NOT be created on SP failure")
 	})
 
 	// ========================================
-	// IT-RO-192-001: Cluster-scoped Node target with empty namespace
-	// Issue #192: EA creation fails when TargetResource.Namespace is empty
-	// because the CRD schema marks it as Required. Envtest enforces this.
+	// IT-RO-192-001: Cluster-scoped Node SP failure does NOT create EA (#240)
+	// Issue #240: EA should only be created when WFE completes successfully.
+	// SP failure for cluster-scoped Node means no remediation was attempted.
 	// ========================================
-	It("IT-RO-192-001: should create EA with empty namespace for cluster-scoped Node target", func() {
+	It("IT-RO-192-001: should NOT create EA when SP fails for cluster-scoped Node target (#240)", func() {
 		ns := createTestNamespace("ro-192-001")
 		defer deleteTestNamespace(ns)
 
@@ -603,7 +745,6 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 		}()
 
 		By("Creating a RemediationRequest targeting a cluster-scoped Node (empty namespace)")
-		// ADR-057: RR must be in ROControllerNamespace; controller only watches this NS
 		now := metav1.Now()
 		rr := &remediationv1.RemediationRequest{
 			ObjectMeta: metav1.ObjectMeta{
@@ -640,7 +781,7 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 			return rr.Status.OverallPhase
 		}, timeout, interval).Should(Equal(remediationv1.PhaseProcessing))
 
-		By("Failing SignalProcessing to trigger EA creation on Failed path")
+		By("Failing SignalProcessing")
 		spName := fmt.Sprintf("sp-%s", rr.Name)
 		sp := &signalprocessingv1.SignalProcessing{}
 		Eventually(func() error {
@@ -658,28 +799,11 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 			return rr.Status.OverallPhase
 		}, timeout, interval).Should(Equal(remediationv1.PhaseFailed))
 
-		By("Verifying EA was created with empty namespace on both targets")
+		By("Verifying EA was NOT created (Issue #240)")
 		eaName := fmt.Sprintf("ea-%s", rr.Name)
 		ea := &eav1.EffectivenessAssessment{}
-		Eventually(func() error {
+		Consistently(func() error {
 			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: eaName, Namespace: ROControllerNamespace}, ea)
-		}, 30*time.Second, interval).Should(Succeed(),
-			"Issue #192: EA should be created even when TargetResource has empty namespace (cluster-scoped Node)")
-
-		Expect(ea.Spec.SignalTarget.Kind).To(Equal("Node"),
-			"Issue #192: SignalTarget.Kind must be Node")
-		Expect(ea.Spec.SignalTarget.Name).To(Equal("worker-1"),
-			"Issue #192: SignalTarget.Name must be worker-1")
-		Expect(ea.Spec.SignalTarget.Namespace).To(BeEmpty(),
-			"Issue #192: SignalTarget.Namespace must be empty for cluster-scoped resources")
-
-		Expect(ea.Spec.RemediationTarget.Kind).To(Equal("Node"),
-			"Issue #192: RemediationTarget.Kind must be Node (fallback to RR)")
-		Expect(ea.Spec.RemediationTarget.Name).To(Equal("worker-1"),
-			"Issue #192: RemediationTarget.Name must be worker-1 (fallback to RR)")
-		Expect(ea.Spec.RemediationTarget.Namespace).To(BeEmpty(),
-			"Issue #192: RemediationTarget.Namespace must be empty for cluster-scoped resources")
-
-		Expect(ea.Spec.RemediationRequestPhase).To(Equal("Failed"))
+		}, 5*time.Second, interval).ShouldNot(Succeed(), "Issue #240: EA should NOT be created on SP failure for cluster-scoped Node")
 	})
 })

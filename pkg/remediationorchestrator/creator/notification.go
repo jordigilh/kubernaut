@@ -207,19 +207,22 @@ func (c *NotificationCreator) mapPriority(priority string) notificationv1.Notifi
 
 // buildApprovalBody builds the approval notification body.
 func (c *NotificationCreator) buildApprovalBody(rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) string {
-	// Safely get root cause
 	rootCause := ai.Status.RootCause
 	if ai.Status.RootCauseAnalysis != nil && ai.Status.RootCauseAnalysis.Summary != "" {
 		rootCause = ai.Status.RootCauseAnalysis.Summary
 	}
 
-	// Safely get approval reason
 	approvalReason := ai.Status.ApprovalReason
 	if ai.Status.ApprovalContext != nil && ai.Status.ApprovalContext.Reason != "" {
 		approvalReason = ai.Status.ApprovalContext.Reason
 	}
 
-	return fmt.Sprintf(`Remediation requires approval:
+	workflowLabel := ai.Status.SelectedWorkflow.WorkflowID
+	if ai.Status.SelectedWorkflow.ActionType != "" {
+		workflowLabel = fmt.Sprintf("%s (%s)", ai.Status.SelectedWorkflow.ActionType, ai.Status.SelectedWorkflow.WorkflowID)
+	}
+
+	body := fmt.Sprintf(`Remediation requires approval:
 
 **Signal**: %s
 **Severity**: %s
@@ -234,17 +237,22 @@ func (c *NotificationCreator) buildApprovalBody(rr *remediationv1.RemediationReq
 
 **Proposed Workflow**: %s
 
-**Approval Reason**: %s
-
-Please review and approve/reject the remediation.`,
+**Approval Reason**: %s`,
 		rr.Spec.SignalName,
 		rr.Spec.Severity,
 		formatTargetResource(rr.Spec.TargetResource),
 		rootCause,
 		ai.Status.SelectedWorkflow.Confidence*100,
-		ai.Status.SelectedWorkflow.WorkflowID,
+		workflowLabel,
 		approvalReason,
 	)
+
+	if ai.Status.SelectedWorkflow.Rationale != "" {
+		body += fmt.Sprintf("\n\n**Selection Rationale**:\n%s", ai.Status.SelectedWorkflow.Rationale)
+	}
+
+	body += "\n\nPlease review and approve/reject the remediation."
+	return body
 }
 
 // CreateCompletionNotification creates a NotificationRequest for successful remediation completion (BR-ORCH-045).
@@ -283,9 +291,13 @@ func (c *NotificationCreator) CreateCompletionNotification(
 
 	workflowID := ""
 	executionEngine := ""
+	actionType := ""
+	rationale := ""
 	if ai.Status.SelectedWorkflow != nil {
 		workflowID = ai.Status.SelectedWorkflow.WorkflowID
 		executionEngine = ai.Status.SelectedWorkflow.ExecutionEngine
+		actionType = ai.Status.SelectedWorkflow.ActionType
+		rationale = ai.Status.SelectedWorkflow.Rationale
 	}
 
 	// Build NotificationRequest for completion
@@ -308,7 +320,7 @@ func (c *NotificationCreator) CreateCompletionNotification(
 			Priority: notificationv1.NotificationPriorityLow,
 			Severity: rr.Spec.Severity,
 			Subject:  fmt.Sprintf("Remediation Completed: %s", rr.Spec.SignalName),
-			Body:     c.buildCompletionBody(rr, ai, rootCause, workflowID, executionEngine),
+			Body:     c.buildCompletionBody(rr, ai, rootCause, workflowID, executionEngine, actionType, rationale),
 			Channels: []notificationv1.Channel{notificationv1.ChannelSlack, notificationv1.ChannelFile},
 			Metadata: map[string]string{
 				"remediationRequest": rr.Name,
@@ -356,9 +368,14 @@ func (c *NotificationCreator) CreateCompletionNotification(
 func (c *NotificationCreator) buildCompletionBody(
 	rr *remediationv1.RemediationRequest,
 	ai *aianalysisv1.AIAnalysis,
-	rootCause, workflowID, executionEngine string,
+	rootCause, workflowID, executionEngine, actionType, rationale string,
 ) string {
-	return fmt.Sprintf(`Remediation Completed Successfully
+	workflowLabel := workflowID
+	if actionType != "" {
+		workflowLabel = fmt.Sprintf("%s (%s)", actionType, workflowID)
+	}
+
+	body := fmt.Sprintf(`Remediation Completed Successfully
 
 **Signal**: %s
 **Severity**: %s
@@ -371,17 +388,22 @@ func (c *NotificationCreator) buildCompletionBody(
 
 **Workflow Executed**: %s
 **Execution Engine**: %s
-**Outcome**: %s
-
-This incident was automatically detected and remediated by Kubernaut.`,
+**Outcome**: %s`,
 		rr.Spec.SignalName,
 		rr.Spec.Severity,
 		formatTargetResource(rr.Spec.TargetResource),
 		rootCause,
-		workflowID,
+		workflowLabel,
 		executionEngine,
 		rr.Status.Outcome,
 	)
+
+	if rationale != "" {
+		body += fmt.Sprintf("\n\n**Selection Rationale**:\n%s", rationale)
+	}
+
+	body += "\n\nThis incident was automatically detected and remediated by Kubernaut."
+	return body
 }
 
 // CreateBulkDuplicateNotification creates a NotificationRequest for bulk duplicates (BR-ORCH-034).

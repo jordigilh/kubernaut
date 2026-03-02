@@ -65,39 +65,148 @@ CREATE TABLE resource_action_traces (
     UNIQUE (action_id, action_timestamp)
 ) PARTITION BY RANGE (action_timestamp);
 
--- Create initial partitions for resource_action_traces
--- Extended range: July 2025 - February 2026 (covers development period)
-CREATE TABLE resource_action_traces_y2025m07
+-- Default partition catches any row outside defined monthly ranges (e.g., backdated test data)
+CREATE TABLE resource_action_traces_default
     PARTITION OF resource_action_traces
-    FOR VALUES FROM ('2025-07-01') TO ('2025-08-01');
+    DEFAULT;
 
-CREATE TABLE resource_action_traces_y2025m08
+-- Create partitions for resource_action_traces
+-- Range: March 2026 - December 2028 (Issue #234: first release month through 3-year horizon)
+CREATE TABLE resource_action_traces_2026_03
     PARTITION OF resource_action_traces
-    FOR VALUES FROM ('2025-08-01') TO ('2025-09-01');
+    FOR VALUES FROM ('2026-03-01') TO ('2026-04-01');
 
-CREATE TABLE resource_action_traces_y2025m09
+CREATE TABLE resource_action_traces_2026_04
     PARTITION OF resource_action_traces
-    FOR VALUES FROM ('2025-09-01') TO ('2025-10-01');
+    FOR VALUES FROM ('2026-04-01') TO ('2026-05-01');
 
-CREATE TABLE resource_action_traces_y2025m10
+CREATE TABLE resource_action_traces_2026_05
     PARTITION OF resource_action_traces
-    FOR VALUES FROM ('2025-10-01') TO ('2025-11-01');
+    FOR VALUES FROM ('2026-05-01') TO ('2026-06-01');
 
-CREATE TABLE resource_action_traces_y2025m11
+CREATE TABLE resource_action_traces_2026_06
     PARTITION OF resource_action_traces
-    FOR VALUES FROM ('2025-11-01') TO ('2025-12-01');
+    FOR VALUES FROM ('2026-06-01') TO ('2026-07-01');
 
-CREATE TABLE resource_action_traces_y2025m12
+CREATE TABLE resource_action_traces_2026_07
     PARTITION OF resource_action_traces
-    FOR VALUES FROM ('2025-12-01') TO ('2026-01-01');
+    FOR VALUES FROM ('2026-07-01') TO ('2026-08-01');
 
-CREATE TABLE resource_action_traces_y2026m01
+CREATE TABLE resource_action_traces_2026_08
     PARTITION OF resource_action_traces
-    FOR VALUES FROM ('2026-01-01') TO ('2026-02-01');
+    FOR VALUES FROM ('2026-08-01') TO ('2026-09-01');
 
-CREATE TABLE resource_action_traces_y2026m02
+CREATE TABLE resource_action_traces_2026_09
     PARTITION OF resource_action_traces
-    FOR VALUES FROM ('2026-02-01') TO ('2026-03-01');
+    FOR VALUES FROM ('2026-09-01') TO ('2026-10-01');
+
+CREATE TABLE resource_action_traces_2026_10
+    PARTITION OF resource_action_traces
+    FOR VALUES FROM ('2026-10-01') TO ('2026-11-01');
+
+CREATE TABLE resource_action_traces_2026_11
+    PARTITION OF resource_action_traces
+    FOR VALUES FROM ('2026-11-01') TO ('2026-12-01');
+
+CREATE TABLE resource_action_traces_2026_12
+    PARTITION OF resource_action_traces
+    FOR VALUES FROM ('2026-12-01') TO ('2027-01-01');
+
+CREATE TABLE resource_action_traces_2027_01
+    PARTITION OF resource_action_traces
+    FOR VALUES FROM ('2027-01-01') TO ('2027-02-01');
+
+CREATE TABLE resource_action_traces_2027_02
+    PARTITION OF resource_action_traces
+    FOR VALUES FROM ('2027-02-01') TO ('2027-03-01');
+
+CREATE TABLE resource_action_traces_2027_03
+    PARTITION OF resource_action_traces
+    FOR VALUES FROM ('2027-03-01') TO ('2027-04-01');
+
+CREATE TABLE resource_action_traces_2027_04
+    PARTITION OF resource_action_traces
+    FOR VALUES FROM ('2027-04-01') TO ('2027-05-01');
+
+CREATE TABLE resource_action_traces_2027_05
+    PARTITION OF resource_action_traces
+    FOR VALUES FROM ('2027-05-01') TO ('2027-06-01');
+
+CREATE TABLE resource_action_traces_2027_06
+    PARTITION OF resource_action_traces
+    FOR VALUES FROM ('2027-06-01') TO ('2027-07-01');
+
+CREATE TABLE resource_action_traces_2027_07
+    PARTITION OF resource_action_traces
+    FOR VALUES FROM ('2027-07-01') TO ('2027-08-01');
+
+CREATE TABLE resource_action_traces_2027_08
+    PARTITION OF resource_action_traces
+    FOR VALUES FROM ('2027-08-01') TO ('2027-09-01');
+
+CREATE TABLE resource_action_traces_2027_09
+    PARTITION OF resource_action_traces
+    FOR VALUES FROM ('2027-09-01') TO ('2027-10-01');
+
+CREATE TABLE resource_action_traces_2027_10
+    PARTITION OF resource_action_traces
+    FOR VALUES FROM ('2027-10-01') TO ('2027-11-01');
+
+CREATE TABLE resource_action_traces_2027_11
+    PARTITION OF resource_action_traces
+    FOR VALUES FROM ('2027-11-01') TO ('2027-12-01');
+
+CREATE TABLE resource_action_traces_2027_12
+    PARTITION OF resource_action_traces
+    FOR VALUES FROM ('2027-12-01') TO ('2028-01-01');
+
+CREATE TABLE resource_action_traces_2028_01
+    PARTITION OF resource_action_traces
+    FOR VALUES FROM ('2028-01-01') TO ('2028-02-01');
+
+CREATE TABLE resource_action_traces_2028_02
+    PARTITION OF resource_action_traces
+    FOR VALUES FROM ('2028-02-01') TO ('2028-03-01');
+
+CREATE TABLE resource_action_traces_2028_03
+    PARTITION OF resource_action_traces
+    FOR VALUES FROM ('2028-03-01') TO ('2028-04-01');
+
+CREATE TABLE resource_action_traces_2028_04
+    PARTITION OF resource_action_traces
+    FOR VALUES FROM ('2028-04-01') TO ('2028-05-01');
+
+CREATE TABLE resource_action_traces_2028_05
+    PARTITION OF resource_action_traces
+    FOR VALUES FROM ('2028-05-01') TO ('2028-06-01');
+
+CREATE TABLE resource_action_traces_2028_06
+    PARTITION OF resource_action_traces
+    FOR VALUES FROM ('2028-06-01') TO ('2028-07-01');
+
+CREATE TABLE resource_action_traces_2028_07
+    PARTITION OF resource_action_traces
+    FOR VALUES FROM ('2028-07-01') TO ('2028-08-01');
+
+CREATE TABLE resource_action_traces_2028_08
+    PARTITION OF resource_action_traces
+    FOR VALUES FROM ('2028-08-01') TO ('2028-09-01');
+
+CREATE TABLE resource_action_traces_2028_09
+    PARTITION OF resource_action_traces
+    FOR VALUES FROM ('2028-09-01') TO ('2028-10-01');
+
+CREATE TABLE resource_action_traces_2028_10
+    PARTITION OF resource_action_traces
+    FOR VALUES FROM ('2028-10-01') TO ('2028-11-01');
+
+CREATE TABLE resource_action_traces_2028_11
+    PARTITION OF resource_action_traces
+    FOR VALUES FROM ('2028-11-01') TO ('2028-12-01');
+
+CREATE TABLE resource_action_traces_2028_12
+    PARTITION OF resource_action_traces
+    FOR VALUES FROM ('2028-12-01') TO ('2029-01-01');
 
 -- Create indexes on the partitioned table (will be inherited by partitions)
 CREATE INDEX idx_rat_action_history ON resource_action_traces (action_history_id, action_timestamp);

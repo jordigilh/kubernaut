@@ -12,6 +12,7 @@
 **Related**:
 - [DD-WORKFLOW-016](../architecture/decisions/DD-WORKFLOW-016-action-type-workflow-indexing.md) -- Action type taxonomy and structured descriptions
 - [DD-WORKFLOW-017](../architecture/decisions/DD-WORKFLOW-017-workflow-lifecycle-component-interactions.md) -- OCI-based workflow registration (pullspec-only)
+- [DD-WE-006](../architecture/decisions/DD-WE-006-schema-declared-dependencies.md) -- Schema-declared infrastructure dependencies (Secrets, ConfigMaps)
 - [ADR-043](../architecture/decisions/ADR-043-workflow-schema-definition-standard.md) -- Original schema standard (superseded by this BR for format)
 
 ---
@@ -74,6 +75,12 @@ execution:
   engine: tekton
   bundle: quay.io/kubernaut/oomkill-restart:v1.0.0
 
+dependencies:
+  secrets:
+    - name: app-credentials
+  configMaps:
+    - name: remediation-thresholds
+
 parameters:
   - name: NAMESPACE
     type: string
@@ -112,6 +119,7 @@ rollbackParameters:
 | `customLabels` | map[string]string | No | Operator-defined key-value labels for additional filtering |
 | `detectedLabels` | object | No | Author-declared infrastructure requirements (DD-WORKFLOW-001 v2.0). Matched against incident DetectedLabels from HAPI during workflow discovery. |
 | `execution` | object | No | Execution engine configuration |
+| `dependencies` | object | No | Infrastructure dependencies (Secrets, ConfigMaps) required by the workflow. Validated at registration and execution time. See DD-WE-006. |
 | `parameters` | array | Yes | Workflow input parameters (at least one required) |
 | `rollbackParameters` | array | No | Parameters needed for rollback |
 
@@ -153,6 +161,61 @@ These fields are used by the three-step discovery protocol (DD-HAPI-017) to filt
 |-------|------|----------|--------------|-------------|
 | `engine` | string | No | `tekton`, `ansible`, `lambda`, `shell` | Execution engine type. Defaults to `tekton`. |
 | `bundle` | string | No | OCI image reference | Execution bundle or container image |
+
+### `dependencies` Fields (Infrastructure Dependencies)
+
+Declares Kubernetes Secrets and ConfigMaps that must exist in the execution namespace (`kubernaut-workflows`) for the workflow to function. These are infrastructure resources provisioned by operators at deployment time -- they are NOT provided by the LLM.
+
+**Authority**: [DD-WE-006](../architecture/decisions/DD-WE-006-schema-declared-dependencies.md)
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `secrets` | array of objects | No | Kubernetes Secrets required by the workflow |
+| `configMaps` | array of objects | No | Kubernetes ConfigMaps required by the workflow |
+
+Each entry in `secrets` or `configMaps` is an object with:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | Yes | Resource name in the execution namespace (`kubernaut-workflows`) |
+
+**Validation Rules**:
+- Each entry must have a non-empty `name`
+- Names must be unique within each category (`secrets`, `configMaps`)
+- At registration time, Data Storage validates each resource exists in `kubernaut-workflows` with non-empty `.data`
+- At execution time, the WFE controller re-validates existence and non-empty data (defense in depth)
+
+**Mount Paths** (Job executor):
+- Secrets: `/run/kubernaut/secrets/<secret-name>/<key>`
+- ConfigMaps: `/run/kubernaut/configmaps/<configmap-name>/<key>`
+
+**Workspace Names** (Tekton executor):
+- Secrets: workspace `secret-<name>` (e.g., `secret-gitea-repo-creds`)
+- ConfigMaps: workspace `configmap-<name>` (e.g., `configmap-remediation-config`)
+- The Pipeline inside the OCI bundle must declare matching workspace names
+
+**Operational Ordering**: Infrastructure (Secrets/ConfigMaps) must be provisioned in `kubernaut-workflows` BEFORE workflow registration. Registration will fail if dependencies are missing or empty.
+
+**Examples**:
+
+```yaml
+# Workflow requiring git credentials
+dependencies:
+  secrets:
+    - name: gitea-repo-creds
+
+# Workflow requiring credentials and config
+dependencies:
+  secrets:
+    - name: gitea-repo-creds
+  configMaps:
+    - name: remediation-thresholds
+
+# Workflow with no dependencies (section omitted or empty)
+# dependencies: (absent)
+```
+
+---
 
 ### `detectedLabels` Fields (Infrastructure Requirements)
 
@@ -229,7 +292,8 @@ When a workflow is registered via `POST /api/v1/workflows` (OCI pullspec-only), 
 2. Extracts `/workflow-schema.yaml` from the image layers
 3. Parses and validates the YAML against this specification
 4. Validates `actionType` against `action_type_taxonomy` (FK constraint)
-5. Extracts and stores all fields in `remediation_workflow_catalog`
+5. Validates `dependencies`: each declared Secret/ConfigMap must exist in `kubernaut-workflows` with non-empty `.data` (DD-WE-006)
+6. Extracts and stores all fields in `remediation_workflow_catalog`
 
 ### Required Field Validation
 
@@ -282,3 +346,5 @@ The following fields from the previous schema format (ADR-043) are removed:
 5. Labels are stored in the `labels` JSONB column with camelCase keys
 6. Parameters are extracted and stored for LLM consumption
 7. The schema format is documented and used consistently across all test fixtures
+8. `dependencies` section is parsed, validated (unique names, existence in `kubernaut-workflows`, non-empty data), stored, and returned via workflow API
+9. Workflows without `dependencies` continue to work unchanged (backward compatible)

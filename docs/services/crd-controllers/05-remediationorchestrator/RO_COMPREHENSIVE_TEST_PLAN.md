@@ -178,8 +178,8 @@ This matrix tracks which scenarios are tested at which layers for defense-in-dep
 | HF-1.4 | Concurrent status updates | ✅ Implemented | ❌ Unit only | ❌ N/A | REFACTOR-RO-008 | ⚠️ |
 | HF-1.5 | Phase transitions with aggregation | ✅ Implemented | ❌ Unit only | ❌ N/A | REFACTOR-RO-008 | ⚠️ |
 | HF-1.6 | Deduplication status handling | ✅ Implemented | ❌ Unit only | ❌ N/A | BR-ORCH-038 | ⚠️ |
-| **PREDICTIVE SIGNAL MODE (BR-SP-106, BR-AI-084, ADR-054)** |||||||
-| PSM-1.1 | RO copies SignalMode=predictive from SP status to AA spec | ✅ Implemented | ✅ IT-RO-084-001 | ✅ E2E-RO-106-001 | BR-SP-106/BR-AI-084 | 🔥 |
+| **PROACTIVE SIGNAL MODE (BR-SP-106, BR-AI-084, ADR-054)** |||||||
+| PSM-1.1 | RO copies SignalMode=proactive from SP status to AA spec | ✅ Implemented | ✅ IT-RO-084-001 | ✅ E2E-RO-106-001 | BR-SP-106/BR-AI-084 | 🔥 |
 | PSM-1.2 | RO copies SignalMode=reactive from SP status to AA spec | ✅ Implemented | ✅ IT-RO-084-001 | ✅ E2E-RO-106-001 | BR-SP-106/BR-AI-084 | 🔥 |
 
 **Legend**:
@@ -701,11 +701,11 @@ Entry("7.5: Routing Blocked Audit Event", ReconcileScenario{
 - **Coverage Triage**: [docs/handoff/RO_UNIT_TEST_COVERAGE_TRIAGE_DEC_22_2025.md](../../../handoff/RO_UNIT_TEST_COVERAGE_TRIAGE_DEC_22_2025.md)
 - **Current Controller**: [internal/controller/remediationorchestrator/reconciler.go](../../../../internal/controller/remediationorchestrator/reconciler.go)
 - **Current Controller Tests**: [test/unit/remediationorchestrator/controller/reconcile_phases_test.go](../../../../test/unit/remediationorchestrator/controller/reconcile_phases_test.go)
-- **BR-SP-106**: [Predictive Signal Mode Classification](../../../requirements/BR-SP-106-predictive-signal-mode-classification.md)
-- **BR-AI-084**: [Predictive Signal Mode Prompt Strategy](../../../requirements/BR-AI-084-predictive-signal-mode-prompt-strategy.md)
-- **ADR-054**: [Predictive Signal Mode Classification](../../../architecture/decisions/ADR-054-predictive-signal-mode-classification.md)
-- **RO Predictive Integration Test**: [test/integration/remediationorchestrator/severity_normalization_integration_test.go](../../../../test/integration/remediationorchestrator/severity_normalization_integration_test.go)
-- **RO Predictive E2E Test**: [test/e2e/remediationorchestrator/predictive_signal_mode_e2e_test.go](../../../../test/e2e/remediationorchestrator/predictive_signal_mode_e2e_test.go)
+- **BR-SP-106**: [Proactive Signal Mode Classification](../../../requirements/BR-SP-106-proactive-signal-mode-classification.md)
+- **BR-AI-084**: [Proactive Signal Mode Prompt Strategy](../../../requirements/BR-AI-084-proactive-signal-mode-prompt-strategy.md)
+- **ADR-054**: [Proactive Signal Mode Classification](../../../architecture/decisions/ADR-054-proactive-signal-mode-classification.md)
+- **RO Proactive Integration Test**: [test/integration/remediationorchestrator/severity_normalization_integration_test.go](../../../../test/integration/remediationorchestrator/severity_normalization_integration_test.go)
+- **RO Proactive E2E Test**: [test/e2e/remediationorchestrator/proactive_signal_mode_e2e_test.go](../../../../test/e2e/remediationorchestrator/proactive_signal_mode_e2e_test.go)
 
 ---
 

@@ -1,0 +1,40 @@
+# DD-WE-006 Test Workflow: Tekton with Secret Dependency (BR-WORKFLOW-004)
+# Used by: WorkflowExecution E2E (Tekton dependency injection tests)
+# Authority: DD-WE-006, BR-WE-014
+metadata:
+  workflowId: test-dep-secret-tekton
+  version: "1.0.0"
+  description:
+    what: "Tekton workflow that declares a Secret dependency for DD-WE-006 E2E testing"
+    whenToUse: "For E2E validation of schema-declared dependency injection into PipelineRuns"
+    whenNotToUse: "Not intended for production use"
+    preconditions: "Secret 'e2e-dep-secret-tekton' provisioned in execution namespace"
+
+actionType: RestartPod
+
+labels:
+  signalName: test
+  severity: [low]
+  environment: [test]
+  component: deployment
+  priority: P3
+
+execution:
+  engine: tekton
+  bundle: quay.io/kubernaut-cicd/tekton-bundles/hello-world:v1.0.0@sha256:c4fc636f28d46f94c3f4a211f4dc07f60545891818ee45262e860b0825296ba0
+
+dependencies:
+  secrets:
+    - name: e2e-dep-secret-tekton
+
+parameters:
+  - name: TARGET_RESOURCE
+    type: string
+    required: true
+    description: "Target resource being remediated"
+    default: "test/deployment/dep-test"
+  - name: MESSAGE
+    type: string
+    required: false
+    description: "Optional message for execution log"
+    default: "Hello from DD-WE-006 Tekton dependency injection test!"

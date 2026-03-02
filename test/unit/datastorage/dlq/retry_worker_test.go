@@ -21,9 +21,11 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/alicebob/miniredis/v2"
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/redis/go-redis/v9"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
@@ -84,8 +86,8 @@ var _ = Describe("DLQ Retry Worker (DD-009 V1.0)", func() {
 			// DD-009: 6 retries per specification
 			Expect(config.MaxRetries).To(Equal(6))
 
-			// Consumer group name should be set
-			Expect(config.ConsumerGroup).ToNot(BeEmpty())
+			// Consumer group name should match DD-009 default
+			Expect(config.ConsumerGroup).To(Equal("data-storage-retry-workers"))
 		})
 
 		// BEHAVIOR: Custom configuration overrides defaults
@@ -222,16 +224,49 @@ var _ = Describe("DLQ Retry Worker (DD-009 V1.0)", func() {
 	})
 
 	// ========================================
-	// Lifecycle Tests
+	// Lifecycle Tests (DD-007 + DD-009 Integration)
+	// Issue #248: DLQ retry worker must start/stop as goroutine in Server
 	// ========================================
 
 	Describe("Lifecycle (DD-007 Integration)", func() {
-		// BEHAVIOR: Worker should start and stop cleanly
+		// BEHAVIOR: Worker should start and stop cleanly with real goroutine
+		It("should start a background goroutine and stop cleanly without hanging", func() {
+			// ARRANGE: Create real DLQ client with miniredis
+			mr, err := miniredis.Run()
+			Expect(err).ToNot(HaveOccurred())
+			defer mr.Close()
+
+			redisClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+			dlqClient, err := dlq.NewClient(redisClient, logger, 10000)
+			Expect(err).ToNot(HaveOccurred())
+
+			workerConfig := server.DLQRetryWorkerConfig{
+				PollInterval:  100 * time.Millisecond, // Fast poll for test
+				MaxBatchSize:  10,
+				MaxRetries:    6,
+				ConsumerGroup: "test-workers",
+				ConsumerName:  "test-worker-1",
+			}
+
+			worker := server.NewDLQRetryWorker(dlqClient, nil, workerConfig, logger)
+
+			// ACT: Start the worker (launches goroutine)
+			worker.Start()
+
+			// ASSERT: Stop completes within reasonable time (no hang)
+			stopDone := make(chan struct{})
+			go func() {
+				worker.Stop()
+				close(stopDone)
+			}()
+
+			Eventually(stopDone, 5*time.Second).Should(BeClosed(),
+				"DLQ retry worker Stop() must complete within 5 seconds (no hang)")
+		})
+
 		It("should support graceful start and stop", func() {
-			// Test that the configuration is valid for lifecycle management
 			config := server.DefaultDLQRetryWorkerConfig()
 
-			// Verify stop channel pattern is supported
 			Expect(config.PollInterval).To(BeNumerically(">", 0),
 				"Poll interval must be positive for ticker-based loop")
 		})

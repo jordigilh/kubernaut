@@ -34,6 +34,13 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/redis/go-redis/v9"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
@@ -82,6 +89,13 @@ var (
 	logger      logr.Logger
 	ctx         context.Context
 	cancel      context.CancelFunc
+
+	// DD-WE-006: K8s client for dependency validation (GW pattern: one shared envtest, all processes use it).
+	k8sClient client.Client
+
+	// Shared envtest (process 1 only), stopped in AfterSuite Phase 2. Mimics Gateway integration.
+	sharedDSEnvTest   *envtest.Environment
+	sharedDSEnvConfig *rest.Config
 )
 
 // This enables parallel test execution by ensuring each test has unique data
@@ -278,11 +292,37 @@ var _ = SynchronizedBeforeSuite(
 		// Each parallel process will create its own schema and copy the table structure
 		_ = tempDB.Close()
 
-		// 6. Return infrastructure status
-		// Integration tests no longer use HTTP - they use direct repository calls
-		// Return a simple "ready" signal to Phase 2
+		// 6. Start shared envtest (GW pattern: one instance, all processes use it via kubeconfig).
+		// Avoids four per-process envtest.Stop() calls in Phase 1 that cause CI hang/exit 2.
+		GinkgoWriter.Println("🔧 [Process 1] Starting shared envtest for DD-WE-006 dependency validation...")
+		_ = os.Setenv("KUBEBUILDER_CONTROLPLANE_START_TIMEOUT", "60s")
+		sharedDSEnvTest = &envtest.Environment{
+			ErrorIfCRDPathMissing: false,
+			ControlPlane: envtest.ControlPlane{
+				APIServer: &envtest.APIServer{
+					SecureServing: envtest.SecureServing{
+						ListenAddr: envtest.ListenAddr{Address: "127.0.0.1"},
+					},
+				},
+			},
+		}
+		var envErr error
+		sharedDSEnvConfig, envErr = sharedDSEnvTest.Start()
+		Expect(envErr).ToNot(HaveOccurred(), "shared envtest should start successfully")
+		Expect(sharedDSEnvConfig.Host).ToNot(BeEmpty(), "shared envtest should provide a valid API server host")
+
+		// Create namespace and write kubeconfig so Phase 2 (all processes) can connect.
+		Expect(corev1.AddToScheme(scheme.Scheme)).To(Succeed())
+		sharedK8sClient, err := client.New(sharedDSEnvConfig, client.Options{Scheme: scheme.Scheme})
+		Expect(err).ToNot(HaveOccurred())
+		depNs := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "kubernaut-workflows"}}
+		Expect(sharedK8sClient.Create(context.Background(), depNs)).To(Succeed())
+
+		kubeconfigPath, err := infrastructure.WriteEnvtestKubeconfigToFile(sharedDSEnvConfig, "datastorage-integration")
+		Expect(err).ToNot(HaveOccurred(), "writing shared envtest kubeconfig")
+		GinkgoWriter.Println("✅ [Process 1] Shared envtest ready (kubernaut-workflows namespace created)")
 		GinkgoWriter.Println("✅ Infrastructure ready for integration tests")
-		return []byte("ready")
+		return []byte(kubeconfigPath)
 	},
 	// All processes: Connect to shared infrastructure
 	func(data []byte) {
@@ -330,12 +370,27 @@ var _ = SynchronizedBeforeSuite(
 		dlqClient, err = dlq.NewClient(redisClient, logger, 10000)      // Gap 3.3: Pass max length for capacity monitoring
 		Expect(err).ToNot(HaveOccurred(), "DLQ client creation should succeed")
 
+		// DD-WE-006: K8s client from shared envtest (GW pattern). Process 1 uses sharedDSEnvConfig; others use kubeconfig from Phase 1.
+		GinkgoWriter.Printf("🔧 [Process %d] Connecting to shared envtest for K8s dependency validation...\n", processNum)
+		Expect(corev1.AddToScheme(scheme.Scheme)).To(Succeed())
+		if processNum == 1 {
+			k8sClient, err = client.New(sharedDSEnvConfig, client.Options{Scheme: scheme.Scheme})
+			Expect(err).ToNot(HaveOccurred(), "process 1: k8s client from shared envtest config")
+		} else {
+			cfg, err := clientcmd.BuildConfigFromFlags("", string(data))
+			Expect(err).ToNot(HaveOccurred(), "load kubeconfig from shared envtest")
+			k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
+			Expect(err).ToNot(HaveOccurred(), "k8s client from kubeconfig")
+		}
+		GinkgoWriter.Printf("✅ [Process %d] K8s client ready (shared envtest)\n", processNum)
+
 		GinkgoWriter.Printf("✅ [Process %d] Ready to run tests (shared public schema)\n", processNum)
 	},
 )
 
 var _ = SynchronizedAfterSuite(func() {
-	// Phase 1: Runs on ALL parallel processes (per-process cleanup)
+	// Phase 1: Runs on ALL parallel processes (per-process cleanup).
+	// No per-process envtest (GW pattern: single shared envtest stopped in Phase 2).
 	processNum := GinkgoParallelProcess()
 	GinkgoWriter.Printf("🧹 [Process %d] Per-process cleanup...\n", processNum)
 
@@ -355,6 +410,24 @@ var _ = SynchronizedAfterSuite(func() {
 	// Phase 2: Runs ONCE on parallel process #1 (shared infrastructure cleanup)
 	// This ensures PostgreSQL/Redis are only stopped AFTER all processes finish
 	GinkgoWriter.Println("🛑 [Process 1] Stopping shared infrastructure...")
+
+	// DD-WE-006: Stop shared envtest (GW pattern). Only one Stop() in Phase 2 avoids CI hang/exit 2.
+	if sharedDSEnvTest != nil {
+		stopDone := make(chan error, 1)
+		go func() { stopDone <- sharedDSEnvTest.Stop() }()
+		select {
+		case err := <-stopDone:
+			if err != nil {
+				GinkgoWriter.Printf("⚠️  Failed to stop shared envtest: %v\n", err)
+			} else {
+				GinkgoWriter.Println("✅ Shared envtest stopped")
+			}
+		case <-time.After(5 * time.Second):
+			GinkgoWriter.Println("⚠️  shared envtest.Stop() timed out after 5s, proceeding with cleanup")
+		}
+		sharedDSEnvTest = nil
+		sharedDSEnvConfig = nil
+	}
 
 	// Close per-process resources (safe now - all processes finished)
 	if db != nil {
@@ -816,7 +889,7 @@ func createDynamicPartitions(ctx context.Context, targetDB DBExecutor) {
 		startDate := time.Date(year, time.Month(monthNum), 1, 0, 0, 0, 0, time.UTC)
 		endDate := startDate.AddDate(0, 1, 0)
 
-		partitionName := fmt.Sprintf("resource_action_traces_y%dm%02d", year, monthNum)
+		partitionName := fmt.Sprintf("resource_action_traces_%d_%02d", year, monthNum)
 		startStr := startDate.Format("2006-01-02")
 		endStr := endDate.Format("2006-01-02")
 

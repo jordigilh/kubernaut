@@ -107,6 +107,37 @@ When HolmesGPT-API selects a workflow and suggests parameters, those parameters 
 4. ✅ Validation passes
 ```
 
+### **Use Case 4: LLM Hallucinated Credentials Stripped (v1.3, Issue #241)**
+
+**Scenario**: Workflow schema declares only `TARGET_NAMESPACE` and `TARGET_RESOURCE_NAME`, but the LLM also provides `GIT_PASSWORD` and `GIT_USERNAME`.
+
+```
+1. LLM selects workflow: fix-certificate-gitops-v1
+2. LLM suggests: {
+     "TARGET_NAMESPACE": "demo-cert-gitops",
+     "TARGET_RESOURCE_NAME": "demo-app-cert",
+     "GIT_PASSWORD": "kubernaut-token",    // Hallucinated - NOT in schema
+     "GIT_USERNAME": "kubernaut"            // Hallucinated - NOT in schema
+   }
+3. HAPI validates declared params (TARGET_NAMESPACE, TARGET_RESOURCE_NAME) ✅
+4. HAPI strips undeclared params: GIT_PASSWORD, GIT_USERNAME removed
+5. ⚠️ Warning logged: "Stripped 2 undeclared parameters: GIT_PASSWORD, GIT_USERNAME"
+6. ✅ Validation passes with params: {"TARGET_NAMESPACE": "demo-cert-gitops", "TARGET_RESOURCE_NAME": "demo-app-cert"}
+7. ✅ Credentials come from DD-WE-006 dependency mounts, not LLM params
+```
+
+### **Use Case 5: Workflow Without Parameter Schema (v1.3)**
+
+**Scenario**: Workflow has no `parameters` section in its schema.
+
+```
+1. LLM selects a workflow with no parameter schema
+2. LLM suggests: {"SOME_PARAM": "value"}
+3. HAPI finds no schema — nothing is declared
+4. HAPI strips ALL params (nothing declared = nothing allowed)
+5. ✅ Validation passes with params: {}
+```
+
 ---
 
 ## 🔧 **Technical Requirements**
@@ -221,6 +252,22 @@ Feature: Workflow Parameter Validation in Chat Session
     Given LLM fails validation 3 times
     When LLM attempts fourth validation
     Then response includes "needs_human_review": true
+
+  Scenario: Undeclared parameters stripped silently (v1.3, Issue #241)
+    Given workflow schema declares parameters ["TARGET_NAMESPACE"]
+    And LLM provides parameters {"TARGET_NAMESPACE": "prod", "GIT_PASSWORD": "secret"}
+    When HAPI validates the workflow response
+    Then "GIT_PASSWORD" is removed from the parameters dict
+    And parameters dict contains only {"TARGET_NAMESPACE": "prod"}
+    And validation returns status "valid"
+    And a warning is logged for stripped parameter "GIT_PASSWORD"
+
+  Scenario: No-schema workflow has all parameters stripped (v1.3)
+    Given workflow has no parameters schema
+    And LLM provides parameters {"ANY_PARAM": "value"}
+    When HAPI validates the workflow response
+    Then parameters dict is empty
+    And validation returns status "valid"
 ```
 
 ---
@@ -242,5 +289,6 @@ Feature: Workflow Parameter Validation in Chat Session
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.1 | 2026-03-02 | Added Use Cases 4-5 and acceptance criteria for undeclared parameter stripping (Issue #241, DD-HAPI-002 v1.3) |
 | 1.0 | 2025-12-01 | Initial requirement |
 

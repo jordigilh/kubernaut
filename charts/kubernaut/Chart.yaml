@@ -3,7 +3,7 @@ name: kubernaut
 description: Kubernaut - Autonomous Kubernetes Remediation Platform
 type: application
 version: 0.1.0
-appVersion: "demo-v1.1"
+appVersion: "demo-v1.2"
 home: https://github.com/jordigilh/kubernaut
 sources:
   - https://github.com/jordigilh/kubernaut

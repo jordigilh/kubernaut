@@ -238,30 +238,14 @@ COMMENT ON COLUMN audit_events.is_sensitive IS
 
 -- +goose StatementBegin
 -- ========================================
--- MONTHLY PARTITIONS (Current + 3 Future Months)
--- Design Decision: Create explicit partitions (Goose doesn't handle DO $$ blocks well)
--- Historical Data: Manual partition creation required for past data imports
+-- DEFAULT PARTITION
+-- Catches any row outside defined monthly ranges (e.g., backdated test data).
+-- Monthly partitions for Mar 2026–Dec 2028 are created by migrations 014/1000/030.
 -- ========================================
 
--- November 2025 partition
-CREATE TABLE IF NOT EXISTS audit_events_2025_11
+CREATE TABLE IF NOT EXISTS audit_events_default
     PARTITION OF audit_events
-    FOR VALUES FROM ('2025-11-01') TO ('2025-12-01');
-
--- December 2025 partition
-CREATE TABLE IF NOT EXISTS audit_events_2025_12
-    PARTITION OF audit_events
-    FOR VALUES FROM ('2025-12-01') TO ('2026-01-01');
-
--- January 2026 partition
-CREATE TABLE IF NOT EXISTS audit_events_2026_01
-    PARTITION OF audit_events
-    FOR VALUES FROM ('2026-01-01') TO ('2026-02-01');
-
--- February 2026 partition
-CREATE TABLE IF NOT EXISTS audit_events_2026_02
-    PARTITION OF audit_events
-    FOR VALUES FROM ('2026-02-01') TO ('2026-03-01');
+    DEFAULT;
 -- +goose StatementEnd
 
 -- +goose StatementBegin

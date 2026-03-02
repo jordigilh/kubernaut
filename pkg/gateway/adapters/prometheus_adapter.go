@@ -48,7 +48,7 @@ import (
 // - OwnerResolver resolves Pod→Deployment for consistent fingerprinting across pod restarts
 // - Fallback to resource-level fingerprint (without alertname) when resolution fails
 type PrometheusAdapter struct {
-	ownerResolver OwnerResolver
+	ownerResolver types.OwnerResolver
 	labelFilter   LabelFilter
 }
 
@@ -58,7 +58,7 @@ type PrometheusAdapter struct {
 //   - ownerResolver: If non-nil, resolves Pod→Deployment for owner-chain-based fingerprinting.
 //   - labelFilter: If non-nil, filters monitoring metadata labels (e.g., "service" pointing
 //     to kube-state-metrics) during target resource extraction. See Issue #191.
-func NewPrometheusAdapter(ownerResolver OwnerResolver, labelFilter LabelFilter) *PrometheusAdapter {
+func NewPrometheusAdapter(ownerResolver types.OwnerResolver, labelFilter LabelFilter) *PrometheusAdapter {
 	return &PrometheusAdapter{
 		ownerResolver: ownerResolver,
 		labelFilter:   labelFilter,
@@ -169,29 +169,9 @@ func (a *PrometheusAdapter) Parse(ctx context.Context, rawData []byte) (*types.N
 		Namespace: extractNamespace(alert.Labels),
 	}
 
-	// Generate fingerprint for deduplication (Issue #63: alertname excluded)
-	// LLM investigates resource state, not signal type — multiple alertnames for
-	// the same resource are redundant work.
-	// With OwnerResolver: SHA256(namespace:ownerKind:ownerName) e.g., SHA256(prod:Deployment:payment-api)
-	// Without OwnerResolver: SHA256(namespace:kind:name) e.g., SHA256(prod:Pod:payment-api-789)
-	var fingerprint string
-	if a.ownerResolver != nil {
-		ownerKind, ownerName, err := a.ownerResolver.ResolveTopLevelOwner(
-			ctx, resource.Namespace, resource.Kind, resource.Name)
-		if err == nil && ownerKind != "" && ownerName != "" {
-			fingerprint = types.CalculateOwnerFingerprint(types.ResourceIdentifier{
-				Namespace: resource.Namespace,
-				Kind:      ownerKind,
-				Name:      ownerName,
-			})
-		} else {
-			// Fallback: resource-level fingerprint (alertname excluded)
-			fingerprint = types.CalculateOwnerFingerprint(resource)
-		}
-	} else {
-		// No OwnerResolver: resource-level fingerprint (alertname excluded)
-		fingerprint = types.CalculateOwnerFingerprint(resource)
-	}
+	// Generate fingerprint for deduplication (Issue #63, #228)
+	// Delegates to shared types.ResolveFingerprint for cross-adapter consistency.
+	fingerprint := types.ResolveFingerprint(ctx, a.ownerResolver, resource)
 
 	// Merge alert-specific labels with common labels
 	// Common labels are shared across all alerts in the webhook group

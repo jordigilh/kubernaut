@@ -429,50 +429,51 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 				},
 			}
 
-			for _, tc := range testCases {
-				// Clean K8s namespace before each test case (ADR-057: RRs live in controller namespace)
-				_ = k8sClient.DeleteAllOf(testCtx, &remediationv1alpha1.RemediationRequest{},
-					client.InNamespace(gatewayNamespace))
+		for _, tc := range testCases {
+			payload := []byte(fmt.Sprintf(`{
+				"alerts": [{
+					"status": "firing",
+					"labels": {
+						"alertname": "TestAlert",
+						"severity": "%s",
+						"namespace": "%s",
+						"pod": "test-pod"
+					},
+					"startsAt": "2025-10-22T14:00:00Z"
+				}]
+			}`, tc.severity, tc.namespace))
 
-				payload := []byte(fmt.Sprintf(`{
-					"alerts": [{
-						"status": "firing",
-						"labels": {
-							"alertname": "TestAlert",
-							"severity": "%s",
-							"namespace": "%s",
-							"pod": "test-pod"
-						},
-						"startsAt": "2025-10-22T14:00:00Z"
-					}]
-				}`, tc.severity, tc.namespace))
+			// Retry handles scope informer cache propagation delay for managed namespace
+			webhookResp := sendWebhookExpectCreated(gatewayURL, "/api/v1/signals/prometheus", payload)
+			GinkgoWriter.Printf("[env-classification] %s: HTTP %d - %s\n",
+				tc.namespace, webhookResp.StatusCode, string(webhookResp.Body))
 
-				// Retry handles scope informer cache propagation delay for managed namespace
-				webhookResp := sendWebhookExpectCreated(gatewayURL, "/api/v1/signals/prometheus", payload)
-				GinkgoWriter.Printf("[env-classification] %s: HTTP %d - %s\n",
-					tc.namespace, webhookResp.StatusCode, string(webhookResp.Body))
+			// Parse Gateway response to get CRD name
+			var gwResp GatewayResponse
+			Expect(json.Unmarshal(webhookResp.Body, &gwResp)).To(Succeed())
+			Expect(gwResp.RemediationRequestName).NotTo(BeEmpty(), "Gateway should return CRD name")
 
-				// Parse Gateway response to get CRD name
-				var gwResp GatewayResponse
-				Expect(json.Unmarshal(webhookResp.Body, &gwResp)).To(Succeed())
-				Expect(gwResp.RemediationRequestName).NotTo(BeEmpty(), "Gateway should return CRD name")
+			// DD-E2E-DIRECT-API-001: Query CRD by exact name (RO E2E pattern)
+			// Direct Get() is 2x faster (30s vs 60s) and more reliable
+			// ADR-057: RRs created in controller namespace (kubernaut-system)
+			var crd remediationv1alpha1.RemediationRequest
+			Eventually(func() error {
+				return k8sClient.Get(testCtx, client.ObjectKey{
+					Namespace: gatewayNamespace,
+					Name:      gwResp.RemediationRequestName,
+				}, &crd)
+			}, 30*time.Second, 1*time.Second).Should(Succeed(),
+				"CRD should be queryable by name within 30s (matches RO E2E pattern)")
+			// Note: Environment/Priority assertions removed (2025-12-06)
+			// Classification moved to Signal Processing per DD-CATEGORIZATION-001
+			// Gateway only creates CRD, SP enriches with classification
+			Expect(crd.Namespace).To(Equal(gatewayNamespace), "ADR-057: RRs created in controller namespace")
 
-				// DD-E2E-DIRECT-API-001: Query CRD by exact name (RO E2E pattern)
-				// Direct Get() is 2x faster (30s vs 60s) and more reliable
-				// ADR-057: RRs created in controller namespace (kubernaut-system)
-				var crd remediationv1alpha1.RemediationRequest
-				Eventually(func() error {
-					return k8sClient.Get(testCtx, client.ObjectKey{
-						Namespace: gatewayNamespace,
-						Name:      gwResp.RemediationRequestName,
-					}, &crd)
-				}, 30*time.Second, 1*time.Second).Should(Succeed(),
-					"CRD should be queryable by name within 30s (matches RO E2E pattern)")
-				// Note: Environment/Priority assertions removed (2025-12-06)
-				// Classification moved to Signal Processing per DD-CATEGORIZATION-001
-				// Gateway only creates CRD, SP enriches with classification
-				Expect(crd.Namespace).To(Equal(gatewayNamespace), "ADR-057: RRs created in controller namespace")
-			}
+			// Targeted cleanup: delete only the RR created by this test case iteration.
+			// CRITICAL: Never use DeleteAllOf in shared namespace — it causes cross-process
+			// interference when tests run in parallel (flaked GW-DEDUP-002).
+			_ = k8sClient.Delete(testCtx, &crd)
+		}
 
 			// BUSINESS CAPABILITY VERIFIED:
 			// ✅ CRD creation in correct namespace works

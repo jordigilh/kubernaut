@@ -75,12 +75,12 @@ var (
 	kubeconfigPath string
 
 	// Shared service URLs (NodePort - no port-forwarding needed)
-	// Port allocations per DD-TEST-001 v2.5:
-	// - HAPI: 30120 (NodePort) → 8080 (container)
+	// Port allocations per DD-TEST-001 v2.9:
+	// - HAPI: 30088 (NodePort) → 8080 (container, Host Port 8088)
 	// - Data Storage: 30089 (NodePort) → 8080 (container, Host Port 8089)
 	// - PostgreSQL: 30439 (NodePort) → 5432 (container)
 	// - Redis: 30387 (NodePort) → 6379 (container)
-	hapiURL        string // http://localhost:30120
+	hapiURL        string // http://localhost:8088
 	dataStorageURL string // http://localhost:8089
 
 	// Shared namespace for all tests (services deployed ONCE)
@@ -118,7 +118,7 @@ var _ = SynchronizedBeforeSuite(
 		logger.Info("Creating Kind cluster with NodePort exposure...")
 		logger.Info("  • Kind cluster (2 nodes: control-plane + worker)")
 		logger.Info("  • NodePort exposure per DD-TEST-001 v1.8:")
-		logger.Info("    - HAPI: 30120 → 8080")
+		logger.Info("    - HAPI: 30088 → 8080 (Host Port 8088)")
 		logger.Info("    - Data Storage: 30089 → 8080 (Host Port 8089)")
 		logger.Info("    - PostgreSQL: 30439 → 5432")
 		logger.Info("    - Redis: 30387 → 6379")
@@ -149,7 +149,7 @@ var _ = SynchronizedBeforeSuite(
 		Expect(err).ToNot(HaveOccurred())
 
 		// Set service URLs (per DD-TEST-001 v2.5: DataStorage uses host port mapping)
-		hapiURL = "http://localhost:30120"
+		hapiURL = "http://localhost:8088"
 		dataStorageURL = "http://localhost:8089"
 
 		// CRITICAL: Wait for Kind port mapping to stabilize (per notification E2E pattern)
@@ -245,7 +245,7 @@ var _ = SynchronizedBeforeSuite(
 		logger = kubelog.NewLogger(kubelog.DevelopmentOptions())
 
 		// Initialize URLs for all processes (per DD-TEST-001 v2.5: DataStorage uses host port mapping)
-		hapiURL = "http://localhost:30120"
+		hapiURL = "http://localhost:8088"
 		dataStorageURL = "http://localhost:8089"
 
 		// Get project root

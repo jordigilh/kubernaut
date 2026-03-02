@@ -28,8 +28,8 @@ import (
 )
 
 // Unit Tests: Signal Mode Classifier (YAML-based)
-// BR-SP-106: Predictive Signal Mode Classification
-// ADR-054: Predictive Signal Mode Classification and Prompt Strategy
+// BR-SP-106: Proactive Signal Mode Classification
+// ADR-054: Proactive Signal Mode Classification and Prompt Strategy
 //
 // Design Decision: YAML config (not Rego) because signal mode classification
 // is a simple key-value lookup, unlike severity/environment/priority which
@@ -58,7 +58,7 @@ var _ = Describe("Signal Mode Classifier (YAML)", func() {
 
 	// Helper to create config file and load it
 	createAndLoadConfig := func(content string) {
-		configPath := filepath.Join(configDir, "predictive-signal-mappings.yaml")
+		configPath := filepath.Join(configDir, "proactive-signal-mappings.yaml")
 		err := os.WriteFile(configPath, []byte(content), 0644)
 		Expect(err).NotTo(HaveOccurred())
 
@@ -68,20 +68,20 @@ var _ = Describe("Signal Mode Classifier (YAML)", func() {
 	}
 
 	// Standard config used in most tests
-	standardConfig := `predictive_signal_mappings:
+	standardConfig := `proactive_signal_mappings:
   PredictedOOMKill: OOMKilled
   PredictedCPUThrottling: CPUThrottling
   PredictedDiskPressure: DiskPressure
   PredictedNodeNotReady: NodeNotReady
 `
 
-	// UT-SP-106-001: Classify PredictedOOMKill as predictive + normalize to OOMKilled
-	It("UT-SP-106-001: should classify PredictedOOMKill as predictive and normalize to OOMKilled", func() {
+	// UT-SP-106-001: Classify PredictedOOMKill as proactive + normalize to OOMKilled
+	It("UT-SP-106-001: should classify PredictedOOMKill as proactive and normalize to OOMKilled", func() {
 		createAndLoadConfig(standardConfig)
 
 		result := signalModeClassifier.Classify("PredictedOOMKill")
 
-		Expect(result.SignalMode).To(Equal("predictive"))
+		Expect(result.SignalMode).To(Equal("proactive"))
 		Expect(result.SignalName).To(Equal("OOMKilled"))
 		Expect(result.SourceSignalName).To(Equal("PredictedOOMKill"))
 	})
@@ -108,11 +108,11 @@ var _ = Describe("Signal Mode Classifier (YAML)", func() {
 		Expect(result.SourceSignalName).To(BeEmpty())
 	})
 
-	// UT-SP-106-004: Preserve SourceSignalName for predictive signals
-	It("UT-SP-106-004: should preserve SourceSignalName for all predictive mappings", func() {
+	// UT-SP-106-004: Preserve SourceSignalName for proactive signals
+	It("UT-SP-106-004: should preserve SourceSignalName for all proactive mappings", func() {
 		createAndLoadConfig(standardConfig)
 
-		// Test all mapped predictive types
+		// Test all mapped proactive types
 		entries := []struct {
 			input          string
 			expectedType   string
@@ -126,7 +126,7 @@ var _ = Describe("Signal Mode Classifier (YAML)", func() {
 
 		for _, e := range entries {
 			result := signalModeClassifier.Classify(e.input)
-			Expect(result.SignalMode).To(Equal("predictive"), "mode for %s", e.input)
+			Expect(result.SignalMode).To(Equal("proactive"), "mode for %s", e.input)
 			Expect(result.SignalName).To(Equal(e.expectedType), "normalized type for %s", e.input)
 			Expect(result.SourceSignalName).To(Equal(e.expectedOriginal), "original for %s", e.input)
 		}
@@ -146,7 +146,7 @@ var _ = Describe("Signal Mode Classifier (YAML)", func() {
 	// UT-SP-106-006: Config loading from YAML file
 	Describe("Config Loading", func() {
 		It("UT-SP-106-006: should load config from YAML file", func() {
-			configPath := filepath.Join(configDir, "predictive-signal-mappings.yaml")
+			configPath := filepath.Join(configDir, "proactive-signal-mappings.yaml")
 			err := os.WriteFile(configPath, []byte(standardConfig), 0644)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -156,7 +156,7 @@ var _ = Describe("Signal Mode Classifier (YAML)", func() {
 
 			// Verify loaded config works
 			result := c.Classify("PredictedOOMKill")
-			Expect(result.SignalMode).To(Equal("predictive"))
+			Expect(result.SignalMode).To(Equal("proactive"))
 			Expect(result.SignalName).To(Equal("OOMKilled"))
 		})
 
@@ -177,7 +177,7 @@ var _ = Describe("Signal Mode Classifier (YAML)", func() {
 		})
 
 		It("UT-SP-106-006d: should handle empty mappings gracefully", func() {
-			createAndLoadConfig("predictive_signal_mappings: {}\n")
+			createAndLoadConfig("proactive_signal_mappings: {}\n")
 
 			// All signals should default to reactive
 			result := signalModeClassifier.Classify("PredictedOOMKill")
@@ -196,14 +196,14 @@ var _ = Describe("Signal Mode Classifier (YAML)", func() {
 			Expect(result.SignalMode).To(Equal("reactive"), "before reload: unmapped type should be reactive")
 
 			// Update config with new mapping
-			updatedConfig := `predictive_signal_mappings:
+			updatedConfig := `proactive_signal_mappings:
   PredictedOOMKill: OOMKilled
   PredictedCPUThrottling: CPUThrottling
   PredictedDiskPressure: DiskPressure
   PredictedNodeNotReady: NodeNotReady
   PredictedMemoryLeak: MemoryLeak
 `
-			configPath := filepath.Join(configDir, "predictive-signal-mappings.yaml")
+			configPath := filepath.Join(configDir, "proactive-signal-mappings.yaml")
 			err := os.WriteFile(configPath, []byte(updatedConfig), 0644)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -212,7 +212,7 @@ var _ = Describe("Signal Mode Classifier (YAML)", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			result = signalModeClassifier.Classify("PredictedMemoryLeak")
-			Expect(result.SignalMode).To(Equal("predictive"), "after reload: new mapping should work")
+			Expect(result.SignalMode).To(Equal("proactive"), "after reload: new mapping should work")
 			Expect(result.SignalName).To(Equal("MemoryLeak"))
 			Expect(result.SourceSignalName).To(Equal("PredictedMemoryLeak"))
 		})

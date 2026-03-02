@@ -104,12 +104,12 @@ The **AIAnalysis Service** is a Kubernetes CRD controller that orchestrates Holm
 
 **Implementation**:
 - `status.selectedWorkflow.confidence`: Workflow selection confidence
-- `status.approvalRequired`: Set based on confidence threshold (80%)
+- `status.approvalRequired`: Set based on confidence threshold (default 80%, configurable via Rego policy — #225)
 - `metrics.RecordConfidenceScore()`: Track confidence distribution
 
 **Acceptance Criteria**:
 - ✅ Confidence score between 0.0 and 1.0
-- ✅ `approvalRequired = true` when confidence < 80%
+- ✅ `approvalRequired = true` when confidence < threshold (default 80%, configurable via `input.confidence_threshold` — #225)
 - ✅ Metrics track confidence distribution by signal type
 
 **Test Coverage**:
@@ -217,7 +217,7 @@ The **AIAnalysis Service** is a Kubernetes CRD controller that orchestrates Holm
 
 #### BR-AI-076: Approval Context for Low Confidence
 
-**Description**: AIAnalysis MUST populate comprehensive `approvalContext` when confidence is below 80% threshold, providing operators with sufficient information to make informed approval decisions.
+**Description**: AIAnalysis MUST populate comprehensive `approvalContext` when confidence is below the configured threshold (default 80%, configurable via Rego policy — #225), providing operators with sufficient information to make informed approval decisions.
 
 **Priority**: P0 (CRITICAL)
 
@@ -232,7 +232,7 @@ The **AIAnalysis Service** is a Kubernetes CRD controller that orchestrates Holm
 - `status.approvalContext.alternativesConsidered`: Other workflow options
 
 **Acceptance Criteria**:
-- ✅ `approvalRequired = true` when confidence < 80%
+- ✅ `approvalRequired = true` when confidence < threshold (default 80% — #225)
 - ✅ `approvalReason` explains why approval needed
 - ✅ `approvalContext` includes investigation summary
 - ✅ Evidence and alternatives provided for review
@@ -470,15 +470,15 @@ The **AIAnalysis Service** is a Kubernetes CRD controller that orchestrates Holm
 
 **Related DDs**: DD-RECOVERY-002 (Direct AIAnalysis Recovery Flow)
 
-#### BR-AI-084: Predictive Signal Mode Prompt Strategy
+#### BR-AI-084: Proactive Signal Mode Prompt Strategy
 
 **Priority**: P1 (High)
 **GitHub Issue**: [#55](https://github.com/jordigilh/kubernaut/issues/55)
-**Full Document**: [docs/requirements/BR-AI-084-predictive-signal-mode-prompt-strategy.md](../../../requirements/BR-AI-084-predictive-signal-mode-prompt-strategy.md)
+**Full Document**: [docs/requirements/BR-AI-084-proactive-signal-mode-prompt-strategy.md](../../../requirements/BR-AI-084-proactive-signal-mode-prompt-strategy.md)
 
-**Description**: AIAnalysis MUST pass `SignalMode` (from SP via RO) to HAPI and HAPI MUST adapt its prompt strategy based on whether the signal is `reactive` or `predictive`. Predictive signals require environment evaluation instead of RCA.
+**Description**: AIAnalysis MUST pass `SignalMode` (from SP via RO) to HAPI and HAPI MUST adapt its prompt strategy based on whether the signal is `reactive` or `proactive`. Proactive signals require environment evaluation instead of RCA.
 
-**Acceptance Criteria**: See [dedicated BR document](../../../requirements/BR-AI-084-predictive-signal-mode-prompt-strategy.md#acceptance-criteria).
+**Acceptance Criteria**: See [dedicated BR document](../../../requirements/BR-AI-084-proactive-signal-mode-prompt-strategy.md#acceptance-criteria).
 
 **Related**: BR-SP-106, DD-WORKFLOW-001
 
@@ -530,7 +530,7 @@ The **AIAnalysis Service** is a Kubernetes CRD controller that orchestrates Holm
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 2.1 | 2026-02-08 | **NEW BR-AI-084**: Predictive Signal Mode Prompt Strategy. HAPI adapts investigation prompt for predictive vs. reactive signals. [Issue #55](https://github.com/jordigilh/kubernaut/issues/55). |
+| 2.1 | 2026-02-08 | **NEW BR-AI-084**: Proactive Signal Mode Prompt Strategy. HAPI adapts investigation prompt for proactive vs. reactive signals. [Issue #55](https://github.com/jordigilh/kubernaut/issues/55). |
 | 2.0 | 2025-12-20 | **V1.0 COMPLETE**: Added comprehensive BR mapping for all implemented requirements (BR-AI-001 to BR-AI-083). Updated test coverage summary with actual results (178 unit + 53 integration tests passing). |
 | 1.0 | 2025-11-28 | Initial BR document with workflow selection contract requirements |
 

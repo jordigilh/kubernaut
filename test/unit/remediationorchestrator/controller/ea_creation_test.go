@@ -122,9 +122,11 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 	})
 
 	// ========================================
-	// UT-RO-EA-002: Reconcile with failed WE creates EA with Failed phase
+	// UT-RO-EA-002: Reconcile with failed WE does NOT create EA (#240)
+	// Issue #240: EA should only be created when WFE completes successfully.
+	// A failed WFE may have partially applied changes, making EA unreliable.
 	// ========================================
-	It("UT-RO-EA-002: should create EA when RR transitions to Failed via Reconcile", func() {
+	It("UT-RO-EA-002: should NOT create EA when RR transitions to Failed via WFE failure (#240)", func() {
 		rrName := "rr-ea-002"
 		namespace := "test-ns"
 		weName := "we-" + rrName
@@ -156,20 +158,21 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 		})
 		Expect(err).ToNot(HaveOccurred())
 
-		// Verify EA was created with Failed phase in spec
+		// Issue #240: EA must NOT be created when WFE fails
 		ea := &eav1.EffectivenessAssessment{}
 		err = k8sClient.Get(ctx, types.NamespacedName{
 			Name:      "ea-" + rrName,
 			Namespace: namespace,
 		}, ea)
-		Expect(err).ToNot(HaveOccurred(), "EA should have been created on failure")
-		Expect(ea.Spec.RemediationRequestPhase).To(Equal("Failed"))
+		Expect(err).To(HaveOccurred(), "Issue #240: EA should NOT be created when WFE fails")
 	})
 
 	// ========================================
-	// UT-RO-EA-003: Reconcile with expired global timeout creates EA
+	// UT-RO-EA-003: Reconcile with expired global timeout does NOT create EA (#240)
+	// Issue #240: EA should only be created when WFE completes successfully.
+	// Timed-out RRs have no guarantee that remediation was applied.
 	// ========================================
-	It("UT-RO-EA-003: should create EA when RR times out via Reconcile", func() {
+	It("UT-RO-EA-003: should NOT create EA when RR times out via global timeout (#240)", func() {
 		rrName := "rr-ea-003"
 		namespace := "test-ns"
 
@@ -198,14 +201,13 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 		})
 		Expect(err).ToNot(HaveOccurred())
 
-		// Verify EA was created with TimedOut phase in spec
+		// Issue #240: EA must NOT be created on global timeout
 		ea := &eav1.EffectivenessAssessment{}
 		err = k8sClient.Get(ctx, types.NamespacedName{
 			Name:      "ea-" + rrName,
 			Namespace: namespace,
 		}, ea)
-		Expect(err).ToNot(HaveOccurred(), "EA should have been created on timeout")
-		Expect(ea.Spec.RemediationRequestPhase).To(Equal("TimedOut"))
+		Expect(err).To(HaveOccurred(), "Issue #240: EA should NOT be created on global timeout")
 	})
 
 	// ========================================
@@ -591,15 +593,12 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 	})
 
 	// ========================================
-	// UT-RO-EA-011: Phase timeout creates EA (ADR-EM-001 gap fix)
-	// BR: ADR-EM-001 (EA for ALL terminal phases), BR-ORCH-028 (per-phase timeouts)
-	//
-	// Business outcome: Phase timeouts are terminal transitions (→ TimedOut).
-	// ADR-EM-001 mandates EA creation for all terminal phases so the EM can
-	// record the assessment outcome (no_execution if no WE existed).
-	// This test validates the gap fix in handlePhaseTimeout.
+	// UT-RO-EA-011: Phase timeout does NOT create EA (#240)
+	// Issue #240: EA should only be created when WFE completes successfully.
+	// Phase timeouts (Processing, Analyzing) occur before any remediation
+	// is applied, making EA results meaningless.
 	// ========================================
-	It("UT-RO-EA-011: should create EA when RR transitions to TimedOut via phase timeout", func() {
+	It("UT-RO-EA-011: should NOT create EA when RR transitions to TimedOut via phase timeout (#240)", func() {
 		rrName := "rr-ea-011"
 		namespace := "test-ns"
 
@@ -646,16 +645,162 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 		Expect(*fetchedRR.Status.TimeoutPhase).To(Equal("Processing"),
 			"TimeoutPhase should indicate which phase timed out")
 
-		// Verify EA was created (ADR-EM-001: EA for all terminal phases)
+		// Issue #240: EA must NOT be created on phase timeout
 		ea := &eav1.EffectivenessAssessment{}
 		err = k8sClient.Get(ctx, types.NamespacedName{
 			Name:      "ea-" + rrName,
 			Namespace: namespace,
 		}, ea)
-		Expect(err).ToNot(HaveOccurred(), "EA should have been created on phase timeout (ADR-EM-001)")
-		Expect(ea.Spec.RemediationRequestPhase).To(Equal("TimedOut"),
-			"EA should record TimedOut as the RR terminal phase")
+		Expect(err).To(HaveOccurred(), "Issue #240: EA should NOT be created on phase timeout")
+	})
+
+	// ========================================
+	// UT-RO-EA-012: No EA when AIA fails with WorkflowResolutionFailed (#240)
+	// Issue #240: When AIA fails to find matching workflows, no remediation
+	// was ever attempted, so EA would assess unchanged resources.
+	// ========================================
+	It("UT-RO-EA-012: should NOT create EA when AIA fails with WorkflowResolutionFailed (#240)", func() {
+		rrName := "rr-ea-012"
+		namespace := "test-ns"
+		aiName := "ai-" + rrName
+
+		// RR in Analyzing phase with AIAnalysisRef
+		rr := newRemediationRequestWithChildRefs(rrName, namespace, remediationv1.PhaseAnalyzing, "", aiName, "")
+
+		// Failed AIAnalysis with WorkflowResolutionFailed (no matching workflows)
+		ai := newAIAnalysisWorkflowResolutionFailed(aiName, namespace, rrName)
+
+		k8sClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(rr, ai).
+			WithStatusSubresource(rr).
+			Build()
+
+		roMetrics := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
+		recorder := record.NewFakeRecorder(20)
+		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, recorder, stabilizationWindow)
+		reconciler := controller.NewReconciler(
+			k8sClient, k8sClient, scheme,
+			nil, recorder, roMetrics,
+			controller.TimeoutConfig{},
+			&MockRoutingEngine{},
+			eaCreator,
+		)
+
+		_, err := reconciler.Reconcile(ctx, ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: rrName, Namespace: namespace},
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		// Verify RR transitioned to Failed
+		fetchedRR := &remediationv1.RemediationRequest{}
+		err = k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, fetchedRR)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(fetchedRR.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed),
+			"RR should have transitioned to Failed after AIA WorkflowResolutionFailed")
+
+		// Issue #240: EA must NOT be created when no remediation was attempted
+		ea := &eav1.EffectivenessAssessment{}
+		err = k8sClient.Get(ctx, types.NamespacedName{
+			Name:      "ea-" + rrName,
+			Namespace: namespace,
+		}, ea)
+		Expect(err).To(HaveOccurred(), "Issue #240: EA should NOT be created when AIA fails (no WFE)")
+	})
+
+	// ========================================
+	// UT-RO-EA-013: No EA when SP fails (#240)
+	// Issue #240: When SP fails, pipeline never reaches AIA or WFE stages,
+	// so there is nothing to assess for effectiveness.
+	// ========================================
+	It("UT-RO-EA-013: should NOT create EA when SP fails (#240)", func() {
+		rrName := "rr-ea-013"
+		namespace := "test-ns"
+		spName := "sp-" + rrName
+
+		// RR in Processing phase with SPRef
+		rr := newRemediationRequestWithChildRefs(rrName, namespace, remediationv1.PhaseProcessing, spName, "", "")
+
+		// Failed SignalProcessing
+		sp := newSignalProcessingFailed(spName, namespace, rrName, "Rego policy evaluation failed")
+
+		k8sClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(rr, sp).
+			WithStatusSubresource(rr).
+			Build()
+
+		roMetrics := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
+		recorder := record.NewFakeRecorder(20)
+		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, recorder, stabilizationWindow)
+		reconciler := controller.NewReconciler(
+			k8sClient, k8sClient, scheme,
+			nil, recorder, roMetrics,
+			controller.TimeoutConfig{},
+			&MockRoutingEngine{},
+			eaCreator,
+		)
+
+		_, err := reconciler.Reconcile(ctx, ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: rrName, Namespace: namespace},
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		// Issue #240: EA must NOT be created when SP fails (no remediation attempted)
+		ea := &eav1.EffectivenessAssessment{}
+		err = k8sClient.Get(ctx, types.NamespacedName{
+			Name:      "ea-" + rrName,
+			Namespace: namespace,
+		}, ea)
+		Expect(err).To(HaveOccurred(), "Issue #240: EA should NOT be created when SP fails (no WFE)")
+	})
+
+	// ========================================
+	// UT-RO-EA-014: EA IS created when WFE succeeds (positive regression guard) (#240)
+	// Issue #240: Ensures the guard change does not break the success path.
+	// This is the ONLY scenario where EA creation is warranted.
+	// ========================================
+	It("UT-RO-EA-014: should create EA when WFE succeeds (regression guard) (#240)", func() {
+		rrName := "rr-ea-014"
+		namespace := "test-ns"
+		weName := "we-" + rrName
+
+		// RR in Executing phase with successful WFE
+		rr := newRemediationRequestWithChildRefs(rrName, namespace, remediationv1.PhaseExecuting, "", "", weName)
+		we := newWorkflowExecutionCompleted(weName, namespace, rrName)
+
+		k8sClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(rr, we).
+			WithStatusSubresource(rr).
+			Build()
+
+		roMetrics := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
+		recorder := record.NewFakeRecorder(20)
+		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, recorder, stabilizationWindow)
+		reconciler := controller.NewReconciler(
+			k8sClient, k8sClient, scheme,
+			nil, recorder, roMetrics,
+			controller.TimeoutConfig{},
+			&MockRoutingEngine{},
+			eaCreator,
+		)
+
+		_, err := reconciler.Reconcile(ctx, ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: rrName, Namespace: namespace},
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		// Issue #240 regression guard: EA MUST be created on successful WFE
+		ea := &eav1.EffectivenessAssessment{}
+		err = k8sClient.Get(ctx, types.NamespacedName{
+			Name:      "ea-" + rrName,
+			Namespace: namespace,
+		}, ea)
+		Expect(err).ToNot(HaveOccurred(), "Issue #240 regression guard: EA MUST be created when WFE succeeds")
 		Expect(ea.Spec.CorrelationID).To(Equal(rrName))
+		Expect(ea.Spec.RemediationRequestPhase).To(Equal("Completed"))
+		Expect(ea.Spec.Config.StabilizationWindow.Duration).To(Equal(stabilizationWindow))
 	})
 })
 

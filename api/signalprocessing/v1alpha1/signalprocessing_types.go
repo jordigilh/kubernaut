@@ -216,18 +216,18 @@ type SignalProcessingStatus struct {
 	// +optional
 	PolicyHash string `json:"policyHash,omitempty"`
 
-	// SignalMode indicates whether this is a reactive or predictive signal.
-	// BR-SP-106: Predictive Signal Mode Classification
-	// ADR-054: Predictive Signal Mode Classification and Prompt Strategy
+	// SignalMode indicates whether this is a reactive or proactive signal.
+	// BR-SP-106: Proactive Signal Mode Classification
+	// ADR-054: Proactive Signal Mode Classification and Prompt Strategy
 	// Set during the Classifying phase alongside severity, environment, and priority.
 	// All signals MUST be classified — "reactive" is the default for unmapped types.
-	// +kubebuilder:validation:Enum=reactive;predictive
+	// +kubebuilder:validation:Enum=reactive;proactive
 	// +optional
 	SignalMode string `json:"signalMode,omitempty"`
 
-	// SignalName is the normalized signal name after predictive-to-base mapping.
+	// SignalName is the normalized signal name after proactive-to-base mapping.
 	// BR-SP-106: Signal Name Normalization
-	// For predictive signals (e.g., "PredictedOOMKill"), this is the base name (e.g., "OOMKilled").
+	// For proactive signals (e.g., "PredictedOOMKill"), this is the base name (e.g., "OOMKilled").
 	// For reactive signals, this matches Spec.Signal.Name unchanged.
 	// This is the AUTHORITATIVE signal name for all downstream consumers (RO, AA, HAPI).
 	// +optional
@@ -235,7 +235,7 @@ type SignalProcessingStatus struct {
 
 	// SourceSignalName preserves the pre-normalization signal name for audit trail.
 	// BR-SP-106: Audit trail preservation (SOC2 CC7.4)
-	// Only populated for predictive signals (e.g., "PredictedOOMKill").
+	// Only populated for proactive signals (e.g., "PredictedOOMKill").
 	// Empty for reactive signals.
 	// +optional
 	SourceSignalName string `json:"sourceSignalName,omitempty"`

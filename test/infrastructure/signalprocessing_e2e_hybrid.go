@@ -731,24 +731,24 @@ data:
       value := v
     }
 ---
-# 6. Predictive Signal Mode Mappings (BR-SP-106, ADR-054)
+# 6. Proactive Signal Mode Mappings (BR-SP-106, ADR-054)
 # YAML config (not Rego) — simple key-value lookup for signal mode classification
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: signalprocessing-predictive-signal-mappings
+  name: signalprocessing-proactive-signal-mappings
   namespace: kubernaut-system
 data:
-  predictive-signal-mappings.yaml: |
-    # BR-SP-106: Predictive Signal Mode Classification (E2E test config)
-    predictive_signal_mappings:
+  proactive-signal-mappings.yaml: |
+    # BR-SP-106: Proactive Signal Mode Classification (E2E test config)
+    proactive_signal_mappings:
       PredictedOOMKill: OOMKilled
       PredictedCPUThrottling: CPUThrottling
       PredictedDiskPressure: DiskPressure
       PredictedNodeNotReady: NodeNotReady
 `
 
-	// Single kubectl apply for all 6 ConfigMaps (includes severity policy for BR-SP-105, predictive mappings for BR-SP-106)
+	// Single kubectl apply for all 6 ConfigMaps (includes severity policy for BR-SP-105, proactive mappings for BR-SP-106)
 	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(combinedPolicies)
 	cmd.Stdout = writer
@@ -757,7 +757,7 @@ data:
 		return fmt.Errorf("failed to deploy Rego policies (batched): %w", err)
 	}
 
-	_, _ = fmt.Fprintln(writer, "  ✓ Policies deployed (batched: environment, priority, business, customlabels, severity, predictive-signal-mappings)")
+	_, _ = fmt.Fprintln(writer, "  ✓ Policies deployed (batched: environment, priority, business, customlabels, severity, proactive-signal-mappings)")
 	return nil
 }
 
@@ -1025,10 +1025,10 @@ spec:
         - name: policies
           mountPath: /etc/signalprocessing/policies
           readOnly: true
-        # BR-SP-106: Mount predictive signal mappings (separate from Rego policies)
-        - name: predictive-signal-mappings
-          mountPath: /etc/signalprocessing/predictive-signal-mappings.yaml
-          subPath: predictive-signal-mappings.yaml
+        # BR-SP-106: Mount proactive signal mappings (separate from Rego policies)
+        - name: proactive-signal-mappings
+          mountPath: /etc/signalprocessing/proactive-signal-mappings.yaml
+          subPath: proactive-signal-mappings.yaml
           readOnly: true
         # E2E Coverage: Mount coverage directory
         - name: coverdata
@@ -1052,10 +1052,10 @@ spec:
               name: signalprocessing-severity-policy
           - configMap:
               name: signalprocessing-customlabels-policy
-      # BR-SP-106: Predictive signal mode mappings (YAML, not Rego)
-      - name: predictive-signal-mappings
+      # BR-SP-106: Proactive signal mode mappings (YAML, not Rego)
+      - name: proactive-signal-mappings
         configMap:
-          name: signalprocessing-predictive-signal-mappings
+          name: signalprocessing-proactive-signal-mappings
       # E2E Coverage: hostPath volume for coverage data
       - name: coverdata
         hostPath:

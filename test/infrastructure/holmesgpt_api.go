@@ -39,8 +39,8 @@ import (
 // Deploys: PostgreSQL + Redis + Data Storage + HAPI to Kind cluster
 // Uses sequential builds to avoid OOM with Python pip install
 //
-// Port Allocations (per DD-TEST-001 v2.5):
-// - HAPI: NodePort 30120 → Container 8080
+// Port Allocations (per DD-TEST-001 v2.9):
+// - HAPI: NodePort 30088 → Container 8080 (Host Port 8088)
 // - Data Storage: NodePort 30089 → Container 8080 (Host Port 8089)
 // - PostgreSQL: NodePort 30439 → Container 5432
 // - Redis: NodePort 30387 → Container 6379
@@ -388,9 +388,8 @@ func createHAPIKindCluster(clusterName, kubeconfigPath string, writer io.Writer)
 }
 
 // deployDataStorageForHAPI deploys Data Storage service to Kind cluster
-// Uses HAPI-specific NodePort (30089) per DD-TEST-001 v2.5
 // deployHAPIOnly deploys HAPI service to Kind cluster
-// Per DD-TEST-001 v2.5: NodePort 30120
+// Per DD-TEST-001 v2.9: NodePort 30088
 func deployHAPIOnly(clusterName, kubeconfigPath, namespace, imageTag string, writer io.Writer) error {
 	// DD-TEST-007: Conditionally add Python coverage instrumentation
 	coverageEnv := ""
@@ -503,7 +502,7 @@ spec:
   ports:
   - port: 8080
     targetPort: 8080
-    nodePort: 30120
+    nodePort: 30088
   selector:
     app: holmesgpt-api
 `, settings.ConfigMapYAML,

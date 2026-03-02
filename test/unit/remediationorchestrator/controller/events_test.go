@@ -668,7 +668,7 @@ func (m *MockBlockingRoutingEngine) CheckPreAnalysisConditions(ctx context.Conte
 	return nil, nil
 }
 
-func (m *MockBlockingRoutingEngine) CheckPostAnalysisConditions(ctx context.Context, rr *remediationv1.RemediationRequest, workflowID string, targetResource string) (*routing.BlockingCondition, error) {
+func (m *MockBlockingRoutingEngine) CheckPostAnalysisConditions(ctx context.Context, rr *remediationv1.RemediationRequest, workflowID string, targetResource string, preRemediationSpecHash string) (*routing.BlockingCondition, error) {
 	if m.BlockCondition != nil {
 		return &routing.BlockingCondition{
 			Blocked:      true,

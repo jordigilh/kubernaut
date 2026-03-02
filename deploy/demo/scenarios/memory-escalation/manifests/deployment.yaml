@@ -18,24 +18,12 @@ spec:
     spec:
       containers:
       - name: ml-worker
-        image: busybox:1.36
-        command: ["sh", "-c"]
-        args:
-        - |
-          echo "Starting memory-intensive workload..."
-          # Allocate memory in 8Mi chunks until OOMKilled
-          i=0
-          while true; do
-            dd if=/dev/zero bs=8M count=1 2>/dev/null | cat >> /dev/null &
-            # Keep a reference to prevent GC
-            head -c 8388608 /dev/urandom > "/tmp/data_${i}" 2>/dev/null || true
-            i=$((i + 1))
-            echo "Allocated chunk ${i} (~$((i * 8))Mi total)"
-            sleep 2
-          done
+        image: polinux/stress
+        command: ["stress"]
+        args: ["--vm", "1", "--vm-bytes", "2G", "--vm-hang", "0"]
         resources:
           requests:
-            memory: "64Mi"
+            memory: "32Mi"
             cpu: "10m"
           limits:
             memory: "64Mi"

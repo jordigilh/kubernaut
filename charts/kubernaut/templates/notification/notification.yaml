@@ -8,6 +8,7 @@ metadata:
     app: notification-controller
     {{- include "kubernaut.labels" . | nindent 4 }}
 ---
+# ClusterRole: CRD access (cluster-wide watch on NotificationRequests)
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -28,9 +29,6 @@ rules:
   - apiGroups: [""]
     resources: ["events"]
     verbs: ["create", "patch"]
-  - apiGroups: [""]
-    resources: ["configmaps", "secrets"]
-    verbs: ["get", "list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -43,6 +41,37 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: notification-controller-role
+subjects:
+  - kind: ServiceAccount
+    name: notification-controller
+    namespace: {{ .Release.Namespace }}
+---
+# Role: namespace-local access to secrets and configmaps only (#207, #229)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: notification-controller-ns-role
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: notification-controller
+    {{- include "kubernaut.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps", "secrets"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: notification-controller-ns-rolebinding
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: notification-controller
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: notification-controller-ns-role
 subjects:
   - kind: ServiceAccount
     name: notification-controller
@@ -86,6 +115,42 @@ data:
         flushInterval: 1s
         maxRetries: 3
 ---
+# Routing ConfigMap: Alertmanager-compatible routing rules (BR-NOT-066, #207)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: notification-routing-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: notification-controller
+    {{- include "kubernaut.labels" . | nindent 4 }}
+data:
+  routing.yaml: |
+    route:
+      receiver: default-console
+      {{- if .Values.notification.slack.enabled }}
+      routes:
+        - match:
+            type: escalation
+          receiver: slack-alerts
+        - match:
+            type: approval_required
+          receiver: slack-alerts
+        - match:
+            type: failed
+          receiver: slack-alerts
+      {{- end }}
+    receivers:
+      - name: default-console
+        consoleConfigs:
+          - enabled: true
+      {{- if .Values.notification.slack.enabled }}
+      - name: slack-alerts
+        slackConfigs:
+          - channel: {{ .Values.notification.slack.channel | quote }}
+            credentialRef: slack-webhook
+      {{- end }}
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -120,6 +185,10 @@ spec:
           env:
             - name: CONFIG_PATH
               value: "/etc/notification/config.yaml"
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
           args:
             - "-config"
             - "$(CONFIG_PATH)"

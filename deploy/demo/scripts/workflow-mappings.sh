@@ -25,4 +25,5 @@ WORKFLOWS=(
     "mesh-routing-failure:fix-authz-policy-job"
     "statefulset-pvc-failure:fix-statefulset-pvc-job"
     "network-policy-block:fix-network-policy-job"
+    "resource-contention:increase-memory-limits-job"
 )

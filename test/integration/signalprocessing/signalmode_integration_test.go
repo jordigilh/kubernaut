@@ -18,12 +18,12 @@ limitations under the License.
 //
 // # Business Requirements
 //
-// BR-SP-106: Predictive Signal Mode Classification
+// BR-SP-106: Proactive Signal Mode Classification
 // BR-AUDIT-002: Comprehensive audit event emission
 //
 // # Design Decisions
 //
-// ADR-054: Predictive Signal Mode Classification and Prompt Strategy
+// ADR-054: Proactive Signal Mode Classification and Prompt Strategy
 // DD-TESTING-001: Audit Event Validation Standards
 //
 // # Test Infrastructure
@@ -81,26 +81,26 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 	})
 
 	// ========================================
-	// TEST SUITE 1: Predictive Signal Classification (CRD Status)
-	// Business Context: Predictive signals must be classified and normalized
+	// TEST SUITE 1: Proactive Signal Classification (CRD Status)
+	// Business Context: Proactive signals must be classified and normalized
 	// ========================================
 
-	Context("IT-SP-106-001: Predictive Signal Mode Classification", func() {
-		It("should classify PredictedOOMKill as predictive and normalize to OOMKilled", func() {
+	Context("IT-SP-106-001: Proactive Signal Mode Classification", func() {
+		It("should classify PredictedOOMKill as proactive and normalize to OOMKilled", func() {
 			// BUSINESS CONTEXT:
-			// BR-SP-106: Predictive signals from Prometheus predict_linear() use
-			// "Predicted" prefix. SP must classify these as predictive and normalize
+			// BR-SP-106: Proactive signals from Prometheus predict_linear() use
+			// "Predicted" prefix. SP must classify these as proactive and normalize
 			// the signal type for downstream workflow catalog matching.
 			//
 			// ADR-054: Separation of concerns — SP normalizes, HAPI adapts prompt.
 			//
 			// DATA FLOW: SP.Spec.Signal.Name="PredictedOOMKill"
-			//   → Status.SignalMode="predictive"
+			//   → Status.SignalMode="proactive"
 			//   → Status.SignalType="OOMKilled" (normalized for workflow catalog)
 			//   → Status.SourceSignalName="PredictedOOMKill" (SOC2 audit trail)
 
-			// GIVEN: SignalProcessing with predictive signal type
-			sp := createSignalModeTestCRD(namespace, "test-predictive-oomkill")
+			// GIVEN: SignalProcessing with proactive signal type
+			sp := createSignalModeTestCRD(namespace, "test-proactive-oomkill")
 			sp.Spec.Signal.Name = "PredictedOOMKill"
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 
@@ -112,9 +112,9 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 					Namespace: sp.Namespace,
 				}, &updated)).To(Succeed())
 
-				// THEN: Signal mode is predictive
-				g.Expect(updated.Status.SignalMode).To(Equal("predictive"),
-					"PredictedOOMKill should be classified as predictive signal mode")
+				// THEN: Signal mode is proactive
+				g.Expect(updated.Status.SignalMode).To(Equal("proactive"),
+					"PredictedOOMKill should be classified as proactive signal mode")
 
 				// THEN: Signal type is normalized for workflow catalog matching
 				g.Expect(updated.Status.SignalName).To(Equal("OOMKilled"),
@@ -124,20 +124,20 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 				g.Expect(updated.Status.SourceSignalName).To(Equal("PredictedOOMKill"),
 					"Original signal type must be preserved for SOC2 CC7.4 audit trail")
 
-				// THEN: SP reaches Completed phase (full pipeline works with predictive signals)
+				// THEN: SP reaches Completed phase (full pipeline works with proactive signals)
 				g.Expect(updated.Status.Phase).To(Equal(signalprocessingv1alpha1.PhaseCompleted),
-					"SP should complete successfully with predictive signal")
+					"SP should complete successfully with proactive signal")
 			}, "30s", "1s").Should(Succeed())
 
 			// BUSINESS OUTCOME VERIFIED:
 			// - RO reads Status.SignalType="OOMKilled" → correct workflow catalog match
-			// - RO reads Status.SignalMode="predictive" → passes to AA for prompt adaptation
+			// - RO reads Status.SignalMode="proactive" → passes to AA for prompt adaptation
 			// - SOC2 auditors see SourceSignalName="PredictedOOMKill" for traceability
 		})
 
 		It("should classify reactive signals with default mode and unchanged type", func() {
 			// BUSINESS CONTEXT:
-			// BR-SP-106: Signals not in the predictive mappings config default to
+			// BR-SP-106: Signals not in the proactive mappings config default to
 			// reactive mode. The signal type passes through unchanged.
 			//
 			// This is the backwards-compatible path — all existing signals work
@@ -158,7 +158,7 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 
 				// THEN: Signal mode defaults to reactive
 				g.Expect(updated.Status.SignalMode).To(Equal("reactive"),
-					"OOMKilled should be classified as reactive (not in predictive mappings)")
+					"OOMKilled should be classified as reactive (not in proactive mappings)")
 
 				// THEN: Signal type is unchanged (no normalization needed)
 				g.Expect(updated.Status.SignalName).To(Equal("OOMKilled"),
@@ -176,13 +176,13 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 			// BUSINESS OUTCOME: Existing reactive signals continue working unchanged
 		})
 
-		It("should classify PredictedCPUThrottling as predictive and normalize to CPUThrottling", func() {
+		It("should classify PredictedCPUThrottling as proactive and normalize to CPUThrottling", func() {
 			// BUSINESS CONTEXT:
-			// Validates that multiple predictive signal mappings work, not just OOMKill.
+			// Validates that multiple proactive signal mappings work, not just OOMKill.
 			// Config has: PredictedCPUThrottling → CPUThrottling
 
-			// GIVEN: SignalProcessing with a different predictive signal type
-			sp := createSignalModeTestCRD(namespace, "test-predictive-cpu")
+			// GIVEN: SignalProcessing with a different proactive signal type
+			sp := createSignalModeTestCRD(namespace, "test-proactive-cpu")
 			sp.Spec.Signal.Name = "PredictedCPUThrottling"
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 
@@ -194,9 +194,9 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 					Namespace: sp.Namespace,
 				}, &updated)).To(Succeed())
 
-				// THEN: Classified as predictive with correct normalization
-				g.Expect(updated.Status.SignalMode).To(Equal("predictive"),
-					"PredictedCPUThrottling should be classified as predictive")
+				// THEN: Classified as proactive with correct normalization
+				g.Expect(updated.Status.SignalMode).To(Equal("proactive"),
+					"PredictedCPUThrottling should be classified as proactive")
 				g.Expect(updated.Status.SignalName).To(Equal("CPUThrottling"),
 					"PredictedCPUThrottling should normalize to CPUThrottling")
 				g.Expect(updated.Status.SourceSignalName).To(Equal("PredictedCPUThrottling"),
@@ -207,7 +207,7 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 
 		It("should classify an unknown signal type as reactive", func() {
 			// BUSINESS CONTEXT:
-			// Unknown signal types that are not in the predictive mappings config
+			// Unknown signal types that are not in the proactive mappings config
 			// default to reactive. This is the safe default — new signal types
 			// work out-of-the-box without needing config updates.
 
@@ -242,16 +242,16 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 	// ========================================
 
 	Context("IT-SP-106-001: Signal Mode Audit Events (DD-TESTING-001)", func() {
-		It("should include signal_mode=predictive in classification.decision audit event", func() {
+		It("should include signal_mode=proactive in classification.decision audit event", func() {
 			// BUSINESS CONTEXT:
 			// SOC2 CC7.4 requires complete audit trail for signal classification decisions.
 			// Audit events must include signal_mode and source_signal_name for
-			// predictive signals to demonstrate proper signal normalization.
+			// proactive signals to demonstrate proper signal normalization.
 			//
-			// COMPLIANCE: Audit trail shows "PredictedOOMKill → predictive mode, normalized to OOMKilled"
+			// COMPLIANCE: Audit trail shows "PredictedOOMKill → proactive mode, normalized to OOMKilled"
 
-			// GIVEN: SignalProcessing with predictive signal type
-			sp := createSignalModeTestCRD(namespace, "test-audit-predictive")
+			// GIVEN: SignalProcessing with proactive signal type
+			sp := createSignalModeTestCRD(namespace, "test-audit-proactive")
 			sp.Spec.Signal.Name = "PredictedOOMKill"
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 
@@ -285,11 +285,11 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 
 				payload := event.EventData.SignalProcessingAuditPayload
 
-				// Validate signal_mode is set to predictive
+				// Validate signal_mode is set to proactive
 				g.Expect(payload.SignalMode.IsSet()).To(BeTrue(),
 					"Audit event must include signal_mode for SOC2 CC7.4 compliance")
-				g.Expect(string(payload.SignalMode.Value)).To(Equal("predictive"),
-					"Audit event signal_mode should be 'predictive' for PredictedOOMKill")
+				g.Expect(string(payload.SignalMode.Value)).To(Equal("proactive"),
+					"Audit event signal_mode should be 'proactive' for PredictedOOMKill")
 
 				// Validate source_signal_name is preserved
 				g.Expect(payload.SourceSignalName.IsSet()).To(BeTrue(),
@@ -299,13 +299,13 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 			}, 60*time.Second, 2*time.Second).Should(Succeed())
 
 			// BUSINESS OUTCOME VERIFIED:
-			// - SOC2 auditor can trace: "PredictedOOMKill → predictive mode"
+			// - SOC2 auditor can trace: "PredictedOOMKill → proactive mode"
 			// - Original signal type preserved for incident investigation
 		})
 
 		It("should include signal_mode=reactive in classification.decision audit event for reactive signals", func() {
 			// BUSINESS CONTEXT:
-			// All signals should have signal_mode in audit trail, not just predictive.
+			// All signals should have signal_mode in audit trail, not just proactive.
 			// Reactive signals should explicitly record "reactive" for completeness.
 
 			// GIVEN: SignalProcessing with reactive signal type
@@ -354,12 +354,12 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 			// BUSINESS OUTCOME: Complete audit trail for all signal modes
 		})
 
-		It("should include signal_mode in signal.processed audit event for predictive signals", func() {
+		It("should include signal_mode in signal.processed audit event for proactive signals", func() {
 			// BUSINESS CONTEXT:
 			// The final signal.processed event should also contain signal_mode
 			// for end-to-end audit trail completeness.
 
-			// GIVEN: SignalProcessing with predictive signal
+			// GIVEN: SignalProcessing with proactive signal
 			sp := createSignalModeTestCRD(namespace, "test-audit-processed")
 			sp.Spec.Signal.Name = "PredictedOOMKill"
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
@@ -394,8 +394,8 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 
 				g.Expect(payload.SignalMode.IsSet()).To(BeTrue(),
 					"signal.processed event should include signal_mode")
-				g.Expect(string(payload.SignalMode.Value)).To(Equal("predictive"),
-					"signal.processed event should have predictive signal_mode")
+				g.Expect(string(payload.SignalMode.Value)).To(Equal("proactive"),
+					"signal.processed event should have proactive signal_mode")
 
 				g.Expect(payload.SourceSignalName.IsSet()).To(BeTrue(),
 					"signal.processed event should include source_signal_name")
@@ -406,7 +406,7 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 					"signal.processed event should have success outcome")
 			}, 60*time.Second, 2*time.Second).Should(Succeed())
 
-			// BUSINESS OUTCOME: End-to-end audit trail for predictive signal processing
+			// BUSINESS OUTCOME: End-to-end audit trail for proactive signal processing
 		})
 	})
 
@@ -416,13 +416,13 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 	// ========================================
 
 	Context("IT-SP-106-001: Classification Condition Message", func() {
-		It("should include signalMode=predictive in ClassificationComplete condition message", func() {
+		It("should include signalMode=proactive in ClassificationComplete condition message", func() {
 			// BUSINESS CONTEXT:
 			// BR-SP-110: Kubernetes conditions should reflect all classification outcomes
 			// including signal mode for operator visibility via kubectl.
 
-			// GIVEN: SignalProcessing with predictive signal
-			sp := createSignalModeTestCRD(namespace, "test-condition-predictive")
+			// GIVEN: SignalProcessing with proactive signal
+			sp := createSignalModeTestCRD(namespace, "test-condition-proactive")
 			sp.Spec.Signal.Name = "PredictedOOMKill"
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 
@@ -445,8 +445,8 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 				}
 				g.Expect(classificationCondition).ToNot(BeNil(),
 					"ClassificationComplete condition should exist")
-				g.Expect(classificationCondition.Message).To(ContainSubstring("signalMode=predictive"),
-					"ClassificationComplete message should mention signalMode=predictive")
+				g.Expect(classificationCondition.Message).To(ContainSubstring("signalMode=proactive"),
+					"ClassificationComplete message should mention signalMode=proactive")
 				g.Expect(classificationCondition.Message).To(ContainSubstring("PredictedOOMKill"),
 					"ClassificationComplete message should mention original type")
 				g.Expect(classificationCondition.Message).To(ContainSubstring("OOMKilled"),
@@ -481,7 +481,7 @@ func createSignalModeTestCRD(namespace, name string) *signalprocessingv1alpha1.S
 			},
 			Signal: signalprocessingv1alpha1.SignalData{
 				Fingerprint:  "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", // Valid 64-char hex fingerprint
-				Name:         "TestPredictiveAlert",
+				Name:         "TestProactiveAlert",
 				Severity:     "critical",
 				Type:         "alert", // Overridden by each test case
 				Source:       "test-source",

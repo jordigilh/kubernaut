@@ -22,7 +22,7 @@
 
 ### In Scope
 
-- **SignalProcessing (SP)**: Validate status fields across reactive, predictive, degraded, and recovery scenarios
+- **SignalProcessing (SP)**: Validate status fields across reactive, proactive, degraded, and recovery scenarios
 - **AIAnalysis (AA)**: Validate RCA output, analysis timing, alternative workflows, and validation history
 - **WorkflowExecution (WE)**: Validate execution runtime status, comprehensive failure details, and block clearance
 - **NotificationRequest (NT)**: Validate delivery lifecycle timestamps, per-channel counters, and failure explanation
@@ -181,7 +181,7 @@ Format: `E2E-{SERVICE}-163-{SEQUENCE}`
 | StartTime, CompletionTime | Audit compliance requires processing timestamps |
 | Severity | Downstream consumers (RO, AA) use severity for routing |
 | PolicyHash | Tracks which Rego policy version produced the result |
-| SignalMode | Distinguishes reactive vs predictive signals |
+| SignalMode | Distinguishes reactive vs proactive signals |
 | SignalName, SourceSignalName | Signal classification for routing and analytics (Issue #166: was SignalType, OriginalSignalType) |
 | RecoveryContext | Consecutive failure escalation requires previous attempt data |
 | Conditions | Standard K8s conditions for controller health monitoring |
@@ -193,7 +193,7 @@ Format: `E2E-{SERVICE}-163-{SEQUENCE}`
 |----|----------------------------|-------|
 | E2E-SP-163-001 | SP populates processing timestamps (StartTime, CompletionTime) for audit trail compliance | Pending |
 | E2E-SP-163-002 | SP records Rego-determined severity and policy hash for downstream prioritization and versioning | Pending |
-| E2E-SP-163-003 | SP distinguishes predictive vs reactive signal modes for routing differentiation | Pending |
+| E2E-SP-163-003 | SP distinguishes proactive vs reactive signal modes for routing differentiation | Pending |
 | E2E-SP-163-004 | SP populates RecoveryContext (PreviousRemediationID, AttemptCount) for consecutive failure escalation | Pending |
 | E2E-SP-163-005 | SP records exact conditions (Ready, EnrichmentComplete, ClassificationComplete, CategorizationComplete, ProcessingComplete -- all True) for health monitoring | Pending |
 
@@ -211,7 +211,7 @@ Format: `E2E-{SERVICE}-163-{SEQUENCE}`
 - Recovery escalation with 3+ attempts (04_recovery_flow)
 - Data quality warnings (BR-AI-011)
 - Failed with NeedsHumanReview (BR-HAPI-197)
-- Predictive OOMKill (07_predictive_signal_mode)
+- Proactive OOMKill (07_proactive_signal_mode)
 - Session-based async flow (08_session_async_flow)
 - DetectedLabels and PDB detection (09_detected_labels)
 - Audit trail completeness (05_audit_trail, 06_error_audit_trail)
@@ -344,7 +344,7 @@ Format: `E2E-{SERVICE}-163-{SEQUENCE}`
 - EA creation (ea_creation_e2e)
 - Completion notification (completion_notification_e2e)
 - Needs human review (needs_human_review_e2e)
-- Predictive signal mode (predictive_signal_mode_e2e)
+- Proactive signal mode (proactive_signal_mode_e2e)
 - Scope blocking and duplicate blocking (scope_blocking_e2e, blocking_e2e)
 - Routing cooldown (routing_cooldown_e2e)
 - Notification cascade (notification_cascade_e2e)
@@ -457,12 +457,12 @@ Format: `E2E-{SERVICE}-163-{SEQUENCE}`
 **Type**: E2E
 **File**: `test/e2e/signalprocessing/business_requirements_test.go` (new context)
 
-**Given**: A predictive OOMKill signal is ingested (alert with `signal_mode: predictive` label)
+**Given**: A proactive OOMKill signal is ingested (alert with `signal_mode: proactive` label)
 **When**: SignalProcessing completes classification
-**Then**: `Status.SignalMode` == "predictive", `Status.SignalName` == the classified type for OOMKill, `Status.SourceSignalName` == the original alert type before reclassification (Issue #166)
+**Then**: `Status.SignalMode` == "proactive", `Status.SignalName` == the classified type for OOMKill, `Status.SourceSignalName` == the original alert type before reclassification (Issue #166)
 
 **Acceptance Criteria**:
-- SignalMode == "predictive" (exact match for predictive input signal)
+- SignalMode == "proactive" (exact match for proactive input signal)
 - SignalName == expected classified type (exact, determined by classification logic for OOMKill)
 - SourceSignalName == original alert type from the ingested signal (exact)
 
@@ -965,7 +965,7 @@ type SPValidationOption func(*spValidationConfig)
 type spValidationConfig struct {
     expectDegradedMode    bool
     expectRecoveryContext bool
-    expectPredictive      bool
+    expectProactive       bool
     expectSeverity        string
 }
 
@@ -977,8 +977,8 @@ func WithRecoveryContext() SPValidationOption {
     return func(c *spValidationConfig) { c.expectRecoveryContext = true }
 }
 
-func WithPredictiveSignalMode() SPValidationOption {
-    return func(c *spValidationConfig) { c.expectPredictive = true }
+func WithProactiveSignalMode() SPValidationOption {
+    return func(c *spValidationConfig) { c.expectProactive = true }
 }
 
 func ValidateSPStatus(sp *v1.SignalProcessing, opts ...SPValidationOption) []string {

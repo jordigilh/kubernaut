@@ -50,6 +50,7 @@ from typing import Dict, Any, List
 # PHASE 1: Data Storage Client - get_workflow_by_id() Tests
 # =============================================================================
 
+
 class TestDataStorageClientGetWorkflowByUUID:
     """
     Tests for Data Storage Client get_workflow_by_id() method.
@@ -82,7 +83,7 @@ class TestDataStorageClientGetWorkflowByUUID:
                             "required": True,
                             "description": "Target namespace",
                             "min_length": 1,
-                            "max_length": 63
+                            "max_length": 63,
                         },
                         {
                             "name": "delay_seconds",
@@ -91,19 +92,19 @@ class TestDataStorageClientGetWorkflowByUUID:
                             "description": "Delay before restart",
                             "minimum": 0,
                             "maximum": 300,
-                            "default": 30
+                            "default": 30,
                         },
                         {
                             "name": "strategy",
                             "type": "string",
                             "required": False,
                             "description": "Restart strategy",
-                            "enum": ["graceful", "force"]
-                        }
+                            "enum": ["graceful", "force"],
+                        },
                     ]
                 }
             },
-            "created_at": "2025-12-01T00:00:00Z"
+            "created_at": "2025-12-01T00:00:00Z",
         }
 
     # NOTE: Removed obsolete test_get_workflow_by_id_* tests
@@ -116,6 +117,7 @@ class TestDataStorageClientGetWorkflowByUUID:
 # =============================================================================
 # PHASE 2: WorkflowResponseValidator - Step 1: Workflow Existence
 # =============================================================================
+
 
 class TestWorkflowExistenceValidation:
     """
@@ -162,7 +164,7 @@ class TestWorkflowExistenceValidation:
         result = validator.validate(
             workflow_id="hallucinated-workflow-xyz",
             execution_bundle=None,
-            parameters={}
+            parameters={},
         )
 
         # Assert
@@ -171,7 +173,9 @@ class TestWorkflowExistenceValidation:
         assert "not found in catalog" in result.errors[0].lower()
         assert "hallucinated-workflow-xyz" in result.errors[0]
 
-    def test_validate_continues_when_workflow_exists(self, mock_ds_client, mock_workflow):
+    def test_validate_continues_when_workflow_exists(
+        self, mock_ds_client, mock_workflow
+    ):
         """
         BR-AI-023: Workflow found - continue to next validation step.
 
@@ -188,9 +192,7 @@ class TestWorkflowExistenceValidation:
 
         # Act
         result = validator.validate(
-            workflow_id="restart-pod-v1",
-            execution_bundle=None,
-            parameters={}
+            workflow_id="restart-pod-v1", execution_bundle=None, parameters={}
         )
 
         # Assert - no "not found" error (may have other errors)
@@ -201,6 +203,7 @@ class TestWorkflowExistenceValidation:
 # =============================================================================
 # PHASE 2: WorkflowResponseValidator - Step 2: Container Image Consistency
 # =============================================================================
+
 
 class TestContainerImageConsistencyValidation:
     """
@@ -224,7 +227,9 @@ class TestContainerImageConsistencyValidation:
         workflow.parameters = {"schema": {"parameters": []}}
         return workflow
 
-    def test_validate_accepts_matching_execution_bundle(self, mock_ds_client, mock_workflow):
+    def test_validate_accepts_matching_execution_bundle(
+        self, mock_ds_client, mock_workflow
+    ):
         """
         BR-HAPI-196: Execution bundle matches catalog.
 
@@ -243,14 +248,16 @@ class TestContainerImageConsistencyValidation:
         result = validator.validate(
             workflow_id="restart-pod-v1",
             execution_bundle="ghcr.io/kubernaut/restart-pod:v1.0.0",
-            parameters={}
+            parameters={},
         )
 
         # Assert
         mismatch_errors = [e for e in result.errors if "mismatch" in e.lower()]
         assert len(mismatch_errors) == 0
 
-    def test_validate_accepts_null_execution_bundle(self, mock_ds_client, mock_workflow):
+    def test_validate_accepts_null_execution_bundle(
+        self, mock_ds_client, mock_workflow
+    ):
         """
         BR-HAPI-196: Null bundle - use catalog value.
 
@@ -267,17 +274,19 @@ class TestContainerImageConsistencyValidation:
 
         # Act
         result = validator.validate(
-            workflow_id="restart-pod-v1",
-            execution_bundle=None,
-            parameters={}
+            workflow_id="restart-pod-v1", execution_bundle=None, parameters={}
         )
 
         # Assert
-        assert result.validated_execution_bundle == "ghcr.io/kubernaut/restart-pod:v1.0.0"
+        assert (
+            result.validated_execution_bundle == "ghcr.io/kubernaut/restart-pod:v1.0.0"
+        )
         mismatch_errors = [e for e in result.errors if "mismatch" in e.lower()]
         assert len(mismatch_errors) == 0
 
-    def test_validate_rejects_mismatched_execution_bundle(self, mock_ds_client, mock_workflow):
+    def test_validate_rejects_mismatched_execution_bundle(
+        self, mock_ds_client, mock_workflow
+    ):
         """
         BR-HAPI-196: Bundle mismatch - hallucination detected.
 
@@ -296,7 +305,7 @@ class TestContainerImageConsistencyValidation:
         result = validator.validate(
             workflow_id="restart-pod-v1",
             execution_bundle="ghcr.io/evil/malware:latest",
-            parameters={}
+            parameters={},
         )
 
         # Assert
@@ -311,6 +320,7 @@ class TestContainerImageConsistencyValidation:
 # =============================================================================
 # PHASE 2: WorkflowResponseValidator - Step 3: Parameter Schema Validation
 # =============================================================================
+
 
 class TestParameterSchemaValidation:
     """
@@ -331,11 +341,7 @@ class TestParameterSchemaValidation:
         workflow.workflow_id = "test-workflow"
         workflow.execution_bundle = "ghcr.io/kubernaut/test:v1.0.0"
         workflow.execution_bundle_digest = "sha256:abc123"
-        workflow.parameters = {
-            "schema": {
-                "parameters": param_defs
-            }
-        }
+        workflow.parameters = {"schema": {"parameters": param_defs}}
         return workflow
 
     # --- Required Parameter Tests ---
@@ -349,9 +355,9 @@ class TestParameterSchemaValidation:
         Then: Returns error mentioning missing required parameter
         """
         # Arrange
-        workflow = self.create_workflow_with_params([
-            {"name": "namespace", "type": "string", "required": True}
-        ])
+        workflow = self.create_workflow_with_params(
+            [{"name": "namespace", "type": "string", "required": True}]
+        )
         mock_ds_client.get_workflow_by_id.return_value = workflow
 
         from src.validation.workflow_response_validator import WorkflowResponseValidator
@@ -362,7 +368,7 @@ class TestParameterSchemaValidation:
         result = validator.validate(
             workflow_id="test-workflow",
             execution_bundle=None,
-            parameters={}  # Missing 'namespace'!
+            parameters={},  # Missing 'namespace'!
         )
 
         # Assert
@@ -380,9 +386,9 @@ class TestParameterSchemaValidation:
         Then: No error about missing parameter
         """
         # Arrange
-        workflow = self.create_workflow_with_params([
-            {"name": "delay", "type": "int", "required": False}
-        ])
+        workflow = self.create_workflow_with_params(
+            [{"name": "delay", "type": "int", "required": False}]
+        )
         mock_ds_client.get_workflow_by_id.return_value = workflow
 
         from src.validation.workflow_response_validator import WorkflowResponseValidator
@@ -393,11 +399,13 @@ class TestParameterSchemaValidation:
         result = validator.validate(
             workflow_id="test-workflow",
             execution_bundle=None,
-            parameters={}  # Optional 'delay' not provided - OK
+            parameters={},  # Optional 'delay' not provided - OK
         )
 
         # Assert
-        required_errors = [e for e in result.errors if "required" in e.lower() and "delay" in e.lower()]
+        required_errors = [
+            e for e in result.errors if "required" in e.lower() and "delay" in e.lower()
+        ]
         assert len(required_errors) == 0
 
     # --- Type Validation Tests ---
@@ -411,9 +419,9 @@ class TestParameterSchemaValidation:
         Then: Returns type error
         """
         # Arrange
-        workflow = self.create_workflow_with_params([
-            {"name": "namespace", "type": "string", "required": True}
-        ])
+        workflow = self.create_workflow_with_params(
+            [{"name": "namespace", "type": "string", "required": True}]
+        )
         mock_ds_client.get_workflow_by_id.return_value = workflow
 
         from src.validation.workflow_response_validator import WorkflowResponseValidator
@@ -424,7 +432,7 @@ class TestParameterSchemaValidation:
         result = validator.validate(
             workflow_id="test-workflow",
             execution_bundle=None,
-            parameters={"namespace": 12345}  # Wrong type!
+            parameters={"namespace": 12345},  # Wrong type!
         )
 
         # Assert
@@ -441,9 +449,9 @@ class TestParameterSchemaValidation:
         Then: Returns type error
         """
         # Arrange
-        workflow = self.create_workflow_with_params([
-            {"name": "replicas", "type": "int", "required": True}
-        ])
+        workflow = self.create_workflow_with_params(
+            [{"name": "replicas", "type": "int", "required": True}]
+        )
         mock_ds_client.get_workflow_by_id.return_value = workflow
 
         from src.validation.workflow_response_validator import WorkflowResponseValidator
@@ -454,7 +462,7 @@ class TestParameterSchemaValidation:
         result = validator.validate(
             workflow_id="test-workflow",
             execution_bundle=None,
-            parameters={"replicas": "five"}  # Wrong type!
+            parameters={"replicas": "five"},  # Wrong type!
         )
 
         # Assert
@@ -471,12 +479,14 @@ class TestParameterSchemaValidation:
         Then: No type errors
         """
         # Arrange
-        workflow = self.create_workflow_with_params([
-            {"name": "namespace", "type": "string", "required": True},
-            {"name": "replicas", "type": "int", "required": True},
-            {"name": "enabled", "type": "bool", "required": True},
-            {"name": "threshold", "type": "float", "required": True}
-        ])
+        workflow = self.create_workflow_with_params(
+            [
+                {"name": "namespace", "type": "string", "required": True},
+                {"name": "replicas", "type": "int", "required": True},
+                {"name": "enabled", "type": "bool", "required": True},
+                {"name": "threshold", "type": "float", "required": True},
+            ]
+        )
         mock_ds_client.get_workflow_by_id.return_value = workflow
 
         from src.validation.workflow_response_validator import WorkflowResponseValidator
@@ -491,12 +501,14 @@ class TestParameterSchemaValidation:
                 "namespace": "production",
                 "replicas": 3,
                 "enabled": True,
-                "threshold": 0.95
-            }
+                "threshold": 0.95,
+            },
         )
 
         # Assert - no type errors
-        type_errors = [e for e in result.errors if "expected" in e.lower() and "got" in e.lower()]
+        type_errors = [
+            e for e in result.errors if "expected" in e.lower() and "got" in e.lower()
+        ]
         assert len(type_errors) == 0
 
     # --- String Length Validation Tests ---
@@ -510,9 +522,9 @@ class TestParameterSchemaValidation:
         Then: Returns length error
         """
         # Arrange
-        workflow = self.create_workflow_with_params([
-            {"name": "namespace", "type": "string", "required": True, "min_length": 3}
-        ])
+        workflow = self.create_workflow_with_params(
+            [{"name": "namespace", "type": "string", "required": True, "min_length": 3}]
+        )
         mock_ds_client.get_workflow_by_id.return_value = workflow
 
         from src.validation.workflow_response_validator import WorkflowResponseValidator
@@ -523,12 +535,14 @@ class TestParameterSchemaValidation:
         result = validator.validate(
             workflow_id="test-workflow",
             execution_bundle=None,
-            parameters={"namespace": "a"}  # Too short!
+            parameters={"namespace": "a"},  # Too short!
         )
 
         # Assert
         assert result.is_valid is False
-        length_errors = [e for e in result.errors if "length" in e.lower() and ">=" in e]
+        length_errors = [
+            e for e in result.errors if "length" in e.lower() and ">=" in e
+        ]
         assert len(length_errors) >= 1
 
     def test_validate_rejects_string_too_long(self, mock_ds_client):
@@ -540,9 +554,16 @@ class TestParameterSchemaValidation:
         Then: Returns length error
         """
         # Arrange
-        workflow = self.create_workflow_with_params([
-            {"name": "namespace", "type": "string", "required": True, "max_length": 63}
-        ])
+        workflow = self.create_workflow_with_params(
+            [
+                {
+                    "name": "namespace",
+                    "type": "string",
+                    "required": True,
+                    "max_length": 63,
+                }
+            ]
+        )
         mock_ds_client.get_workflow_by_id.return_value = workflow
 
         from src.validation.workflow_response_validator import WorkflowResponseValidator
@@ -553,12 +574,14 @@ class TestParameterSchemaValidation:
         result = validator.validate(
             workflow_id="test-workflow",
             execution_bundle=None,
-            parameters={"namespace": "a" * 100}  # Too long!
+            parameters={"namespace": "a" * 100},  # Too long!
         )
 
         # Assert
         assert result.is_valid is False
-        length_errors = [e for e in result.errors if "length" in e.lower() and "<=" in e]
+        length_errors = [
+            e for e in result.errors if "length" in e.lower() and "<=" in e
+        ]
         assert len(length_errors) >= 1
 
     # --- Numeric Range Validation Tests ---
@@ -572,9 +595,9 @@ class TestParameterSchemaValidation:
         Then: Returns range error
         """
         # Arrange
-        workflow = self.create_workflow_with_params([
-            {"name": "replicas", "type": "int", "required": True, "minimum": 1}
-        ])
+        workflow = self.create_workflow_with_params(
+            [{"name": "replicas", "type": "int", "required": True, "minimum": 1}]
+        )
         mock_ds_client.get_workflow_by_id.return_value = workflow
 
         from src.validation.workflow_response_validator import WorkflowResponseValidator
@@ -585,7 +608,7 @@ class TestParameterSchemaValidation:
         result = validator.validate(
             workflow_id="test-workflow",
             execution_bundle=None,
-            parameters={"replicas": 0}  # Below minimum!
+            parameters={"replicas": 0},  # Below minimum!
         )
 
         # Assert
@@ -602,9 +625,9 @@ class TestParameterSchemaValidation:
         Then: Returns range error
         """
         # Arrange
-        workflow = self.create_workflow_with_params([
-            {"name": "replicas", "type": "int", "required": True, "maximum": 100}
-        ])
+        workflow = self.create_workflow_with_params(
+            [{"name": "replicas", "type": "int", "required": True, "maximum": 100}]
+        )
         mock_ds_client.get_workflow_by_id.return_value = workflow
 
         from src.validation.workflow_response_validator import WorkflowResponseValidator
@@ -615,7 +638,7 @@ class TestParameterSchemaValidation:
         result = validator.validate(
             workflow_id="test-workflow",
             execution_bundle=None,
-            parameters={"replicas": 1000}  # Above maximum!
+            parameters={"replicas": 1000},  # Above maximum!
         )
 
         # Assert
@@ -634,10 +657,16 @@ class TestParameterSchemaValidation:
         Then: Returns enum error
         """
         # Arrange
-        workflow = self.create_workflow_with_params([
-            {"name": "strategy", "type": "string", "required": True,
-             "enum": ["RollingUpdate", "Recreate"]}
-        ])
+        workflow = self.create_workflow_with_params(
+            [
+                {
+                    "name": "strategy",
+                    "type": "string",
+                    "required": True,
+                    "enum": ["RollingUpdate", "Recreate"],
+                }
+            ]
+        )
         mock_ds_client.get_workflow_by_id.return_value = workflow
 
         from src.validation.workflow_response_validator import WorkflowResponseValidator
@@ -648,7 +677,7 @@ class TestParameterSchemaValidation:
         result = validator.validate(
             workflow_id="test-workflow",
             execution_bundle=None,
-            parameters={"strategy": "Invalid"}  # Not in enum!
+            parameters={"strategy": "Invalid"},  # Not in enum!
         )
 
         # Assert
@@ -665,10 +694,16 @@ class TestParameterSchemaValidation:
         Then: No enum error
         """
         # Arrange
-        workflow = self.create_workflow_with_params([
-            {"name": "strategy", "type": "string", "required": True,
-             "enum": ["RollingUpdate", "Recreate"]}
-        ])
+        workflow = self.create_workflow_with_params(
+            [
+                {
+                    "name": "strategy",
+                    "type": "string",
+                    "required": True,
+                    "enum": ["RollingUpdate", "Recreate"],
+                }
+            ]
+        )
         mock_ds_client.get_workflow_by_id.return_value = workflow
 
         from src.validation.workflow_response_validator import WorkflowResponseValidator
@@ -679,17 +714,206 @@ class TestParameterSchemaValidation:
         result = validator.validate(
             workflow_id="test-workflow",
             execution_bundle=None,
-            parameters={"strategy": "RollingUpdate"}  # Valid enum value
+            parameters={"strategy": "RollingUpdate"},  # Valid enum value
         )
 
         # Assert
         enum_errors = [e for e in result.errors if "must be one of" in e.lower()]
         assert len(enum_errors) == 0
 
+    # --- Undeclared Parameter Stripping Tests (Issue #241, DD-HAPI-002 v1.3) ---
+
+    def test_undeclared_params_stripped_from_dict(self, mock_ds_client):
+        """
+        UT-HAPI-241-001: Undeclared params stripped; declared preserved.
+
+        Given: Schema declares ["TARGET_NAMESPACE", "TARGET_RESOURCE_NAME"]
+        When: LLM provides those plus GIT_PASSWORD and GIT_USERNAME
+        Then: After validation, params dict contains only the declared keys
+        """
+        workflow = self.create_workflow_with_params(
+            [
+                {"name": "TARGET_NAMESPACE", "type": "string", "required": True},
+                {"name": "TARGET_RESOURCE_NAME", "type": "string", "required": True},
+            ]
+        )
+        mock_ds_client.get_workflow_by_id.return_value = workflow
+
+        from src.validation.workflow_response_validator import WorkflowResponseValidator
+
+        validator = WorkflowResponseValidator(mock_ds_client)
+
+        params = {
+            "TARGET_NAMESPACE": "prod",
+            "TARGET_RESOURCE_NAME": "cert",
+            "GIT_PASSWORD": "secret123",
+            "GIT_USERNAME": "admin",
+        }
+        result = validator.validate(
+            workflow_id="test-workflow",
+            execution_bundle=None,
+            parameters=params,
+        )
+
+        assert result.is_valid is True
+        assert result.errors == []
+        assert params == {"TARGET_NAMESPACE": "prod", "TARGET_RESOURCE_NAME": "cert"}
+
+    def test_declared_params_preserved_unchanged(self, mock_ds_client):
+        """
+        UT-HAPI-241-002: All-declared params dict unchanged after validation.
+
+        Given: Schema declares ["namespace", "replicas"]
+        When: LLM provides exactly those (no extras)
+        Then: params dict is identical to input
+        """
+        workflow = self.create_workflow_with_params(
+            [
+                {"name": "namespace", "type": "string", "required": True},
+                {"name": "replicas", "type": "int", "required": True},
+            ]
+        )
+        mock_ds_client.get_workflow_by_id.return_value = workflow
+
+        from src.validation.workflow_response_validator import WorkflowResponseValidator
+
+        validator = WorkflowResponseValidator(mock_ds_client)
+
+        params = {"namespace": "default", "replicas": 3}
+        result = validator.validate(
+            workflow_id="test-workflow",
+            execution_bundle=None,
+            parameters=params,
+        )
+
+        assert result.is_valid is True
+        assert params == {"namespace": "default", "replicas": 3}
+
+    def test_mixed_declared_undeclared_only_declared_survive(self, mock_ds_client):
+        """
+        UT-HAPI-241-003: Mixed declared + undeclared: only declared survive.
+
+        Given: Schema declares ["namespace"] (required, string)
+        When: LLM sends namespace plus extra_param and another_extra
+        Then: Only namespace remains in params dict
+        """
+        workflow = self.create_workflow_with_params(
+            [
+                {"name": "namespace", "type": "string", "required": True},
+            ]
+        )
+        mock_ds_client.get_workflow_by_id.return_value = workflow
+
+        from src.validation.workflow_response_validator import WorkflowResponseValidator
+
+        validator = WorkflowResponseValidator(mock_ds_client)
+
+        params = {"namespace": "default", "extra_param": "val1", "another_extra": 42}
+        result = validator.validate(
+            workflow_id="test-workflow",
+            execution_bundle=None,
+            parameters=params,
+        )
+
+        assert result.is_valid is True
+        assert params == {"namespace": "default"}
+
+    def test_no_schema_strips_all_params(self, mock_ds_client):
+        """
+        UT-HAPI-241-004: No schema: ALL params stripped.
+
+        Given: Workflow has parameters=None (no schema)
+        When: LLM provides arbitrary params
+        Then: params dict is empty after validation
+        """
+        workflow = Mock()
+        workflow.workflow_id = "test-workflow"
+        workflow.execution_bundle = "ghcr.io/kubernaut/test:v1.0.0"
+        workflow.parameters = None
+        mock_ds_client.get_workflow_by_id.return_value = workflow
+
+        from src.validation.workflow_response_validator import WorkflowResponseValidator
+
+        validator = WorkflowResponseValidator(mock_ds_client)
+
+        params = {"any_param": "value", "another": "thing"}
+        result = validator.validate(
+            workflow_id="test-workflow",
+            execution_bundle=None,
+            parameters=params,
+        )
+
+        assert result.is_valid is True
+        assert params == {}
+
+    def test_empty_params_no_error(self, mock_ds_client):
+        """
+        UT-HAPI-241-005: Empty params dict produces no errors.
+
+        Given: Schema declares ["namespace"] (optional)
+        When: LLM provides empty params
+        Then: params dict stays empty, no exception
+        """
+        workflow = self.create_workflow_with_params(
+            [
+                {"name": "namespace", "type": "string", "required": False},
+            ]
+        )
+        mock_ds_client.get_workflow_by_id.return_value = workflow
+
+        from src.validation.workflow_response_validator import WorkflowResponseValidator
+
+        validator = WorkflowResponseValidator(mock_ds_client)
+
+        params = {}
+        result = validator.validate(
+            workflow_id="test-workflow",
+            execution_bundle=None,
+            parameters=params,
+        )
+
+        assert result.is_valid is True
+        assert params == {}
+
+    def test_credential_hallucination_stripped(self, mock_ds_client):
+        """
+        UT-HAPI-241-006: Credential-like hallucinated params stripped.
+
+        Given: Schema declares only ["TARGET_NAMESPACE"]
+        When: LLM provides TARGET_NAMESPACE plus GIT_PASSWORD, GIT_USERNAME, ADMIN_TOKEN
+        Then: Only TARGET_NAMESPACE survives
+        """
+        workflow = self.create_workflow_with_params(
+            [
+                {"name": "TARGET_NAMESPACE", "type": "string", "required": True},
+            ]
+        )
+        mock_ds_client.get_workflow_by_id.return_value = workflow
+
+        from src.validation.workflow_response_validator import WorkflowResponseValidator
+
+        validator = WorkflowResponseValidator(mock_ds_client)
+
+        params = {
+            "TARGET_NAMESPACE": "demo",
+            "GIT_PASSWORD": "kubernaut-token",
+            "GIT_USERNAME": "kubernaut",
+            "ADMIN_TOKEN": "abc",
+        }
+        result = validator.validate(
+            workflow_id="test-workflow",
+            execution_bundle=None,
+            parameters=params,
+        )
+
+        assert result.is_valid is True
+        assert params == {"TARGET_NAMESPACE": "demo"}
+
 
 # =============================================================================
 # PHASE 2: WorkflowResponseValidator - Complete Validation Flow
 # =============================================================================
+
 
 class TestCompleteValidationFlow:
     """
@@ -733,7 +957,7 @@ class TestCompleteValidationFlow:
         result = validator.validate(
             workflow_id="test-workflow",
             execution_bundle="ghcr.io/wrong/image:v1.0.0",  # WRONG
-            parameters={}  # Missing required 'namespace'
+            parameters={},  # Missing required 'namespace'
         )
 
         # Assert
@@ -760,7 +984,13 @@ class TestCompleteValidationFlow:
             "schema": {
                 "parameters": [
                     {"name": "namespace", "type": "string", "required": True},
-                    {"name": "delay", "type": "int", "required": False, "minimum": 0, "maximum": 300}
+                    {
+                        "name": "delay",
+                        "type": "int",
+                        "required": False,
+                        "minimum": 0,
+                        "maximum": 300,
+                    },
                 ]
             }
         }
@@ -774,7 +1004,7 @@ class TestCompleteValidationFlow:
         result = validator.validate(
             workflow_id="restart-pod-v1",
             execution_bundle=None,  # Use catalog value
-            parameters={"namespace": "production", "delay": 30}
+            parameters={"namespace": "production", "delay": 30},
         )
 
         # Assert
@@ -786,6 +1016,7 @@ class TestCompleteValidationFlow:
 # =============================================================================
 # PHASE 6: Action-Type Cross-Check Validation (DD-WORKFLOW-016, Gap 3)
 # =============================================================================
+
 
 class TestActionTypeCrossCheckValidation:
     """
@@ -843,9 +1074,9 @@ class TestActionTypeCrossCheckValidation:
         )
 
         assert result.is_valid is False
-        assert any("action_type" in e.lower() and "CordonNode" in e for e in result.errors), (
-            f"Expected action_type cross-check error, got: {result.errors}"
-        )
+        assert any(
+            "action_type" in e.lower() and "CordonNode" in e for e in result.errors
+        ), f"Expected action_type cross-check error, got: {result.errors}"
 
     def test_passes_workflow_with_valid_action_type(self, mock_ds_client):
         """
@@ -932,7 +1163,9 @@ class TestActionTypeCrossCheckValidation:
         workflow.execution_bundle = "ghcr.io/kubernaut/restart:v1.0.0"
         workflow.parameters = None
         mock_ds_client.get_workflow_by_id.return_value = workflow
-        mock_ds_client.list_available_actions.side_effect = Exception("Connection refused")
+        mock_ds_client.list_available_actions.side_effect = Exception(
+            "Connection refused"
+        )
 
         from src.validation.workflow_response_validator import WorkflowResponseValidator
 
@@ -952,4 +1185,3 @@ class TestActionTypeCrossCheckValidation:
 
         # Should be valid -- graceful degradation on DS error
         assert result.is_valid is True
-

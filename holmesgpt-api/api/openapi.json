@@ -1013,7 +1013,7 @@
                 "type": "null"
               }
             ],
-            "description": "Signal mode: 'reactive' or 'predictive'. Controls prompt strategy (ADR-054)."
+            "description": "Signal mode: 'reactive' or 'proactive'. Controls prompt strategy (ADR-054)."
           }
         },
         "type": "object",
@@ -1161,10 +1161,10 @@
         "type": "string",
         "enum": [
           "reactive",
-          "predictive"
+          "proactive"
         ],
         "title": "SignalMode",
-        "description": "Signal processing mode for investigation strategy selection.\n\nArchitecture Decision: ADR-054 (Predictive Signal Mode Classification)\nBusiness Requirement: BR-AI-084 (Predictive signal mode prompt strategy)\n\n- reactive: Incident has occurred, perform RCA (root cause analysis)\n- predictive: Incident is predicted, perform predict & prevent strategy"
+        "description": "Signal processing mode for investigation strategy selection.\n\nArchitecture Decision: ADR-054 (Proactive Signal Mode Classification)\nBusiness Requirement: BR-AI-084 (Proactive signal mode prompt strategy)\n\n- reactive: Incident has occurred, perform RCA (root cause analysis)\n- proactive: Incident is anticipated, perform proactive prevention strategy"
       },
       "ValidationAttempt": {
         "properties": {

@@ -360,6 +360,129 @@ var _ = Describe("ApprovalOrchestration", func() {
 		})
 	})
 
+	Describe("Issue #206: Approval reason propagation", func() {
+		var (
+			rr *remediationv1.RemediationRequest
+		)
+
+		BeforeEach(func() {
+			rr = &remediationv1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-rr-206",
+					Namespace: "default",
+					UID:       types.UID("uid-206"),
+				},
+				Spec: remediationv1.RemediationRequestSpec{
+					SignalName:        "TestAlert",
+					SignalFingerprint: "fp12345678901234567890123456789012345678901234567890123456789012",
+					Severity:          "critical",
+					SignalType:        "alert",
+					TargetType:        "kubernetes",
+					TargetResource: remediationv1.ResourceIdentifier{
+						Kind:      "Deployment",
+						Name:      "payment-api",
+						Namespace: "default",
+					},
+				},
+			}
+			Expect(fakeClient.Create(ctx, rr)).To(Succeed())
+		})
+
+		It("UT-RAR-206-001: WhyApprovalRequired should use actual Rego reason, not hardcoded 'below threshold'", func() {
+			ai := &aianalysisv1.AIAnalysis{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "ai-test-rr-206-001",
+					Namespace: "default",
+				},
+				Status: aianalysisv1.AIAnalysisStatus{
+					Phase: "Completed",
+					SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
+						WorkflowID:     "wf-restart-pods",
+						Version:        "v1.0.0",
+						Confidence:     0.85,
+						ExecutionBundle: "kubernaut/workflows:latest",
+						Rationale:      "Pod restart recommended",
+					},
+					ApprovalRequired: true,
+					ApprovalReason:   "Missing affected resource - cannot determine remediation target (BR-AI-085-005)",
+				},
+			}
+			Expect(fakeClient.Create(ctx, ai)).To(Succeed())
+
+			name, err := ac.Create(ctx, rr, ai)
+			Expect(err).ToNot(HaveOccurred())
+
+			rar := &remediationv1.RemediationApprovalRequest{}
+			Expect(fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: "default"}, rar)).To(Succeed())
+
+			Expect(rar.Spec.WhyApprovalRequired).To(ContainSubstring("Missing affected resource"))
+			Expect(rar.Spec.WhyApprovalRequired).ToNot(ContainSubstring("is below"))
+		})
+
+		It("UT-RAR-206-002: RecommendedActions rationale should use actual Rego reason", func() {
+			ai := &aianalysisv1.AIAnalysis{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "ai-test-rr-206-002",
+					Namespace: "default",
+				},
+				Status: aianalysisv1.AIAnalysisStatus{
+					Phase: "Completed",
+					SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
+						WorkflowID:     "wf-restart-pods",
+						Version:        "v1.0.0",
+						Confidence:     0.90,
+						ExecutionBundle: "kubernaut/workflows:latest",
+						Rationale:      "Pod restart recommended",
+					},
+					ApprovalRequired: true,
+					ApprovalReason:   "Production environment with sensitive resource kind - requires manual approval",
+				},
+			}
+			Expect(fakeClient.Create(ctx, ai)).To(Succeed())
+
+			name, err := ac.Create(ctx, rr, ai)
+			Expect(err).ToNot(HaveOccurred())
+
+			rar := &remediationv1.RemediationApprovalRequest{}
+			Expect(fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: "default"}, rar)).To(Succeed())
+
+			Expect(rar.Spec.RecommendedActions).To(HaveLen(1))
+			Expect(rar.Spec.RecommendedActions[0].Rationale).To(ContainSubstring("sensitive resource"))
+			Expect(rar.Spec.RecommendedActions[0].Rationale).ToNot(ContainSubstring("is below auto-approval threshold"))
+		})
+
+		It("UT-RAR-206-003: Reason field should match ApprovalReason from AIAnalysis", func() {
+			ai := &aianalysisv1.AIAnalysis{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "ai-test-rr-206-003",
+					Namespace: "default",
+				},
+				Status: aianalysisv1.AIAnalysisStatus{
+					Phase: "Completed",
+					SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
+						WorkflowID:     "wf-scale-hpa",
+						Version:        "v1.0.0",
+						Confidence:     0.65,
+						ExecutionBundle: "kubernaut/workflows:latest",
+						Rationale:      "HPA max replicas reached",
+					},
+					ApprovalRequired: true,
+					ApprovalReason:   "Production environment requires manual approval",
+				},
+			}
+			Expect(fakeClient.Create(ctx, ai)).To(Succeed())
+
+			name, err := ac.Create(ctx, rr, ai)
+			Expect(err).ToNot(HaveOccurred())
+
+			rar := &remediationv1.RemediationApprovalRequest{}
+			Expect(fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: "default"}, rar)).To(Succeed())
+
+			Expect(rar.Spec.Reason).To(Equal("Production environment requires manual approval"))
+			Expect(rar.Spec.WhyApprovalRequired).To(ContainSubstring("Production environment requires manual approval"))
+		})
+	})
+
 	Describe("Confidence Level Mapping", func() {
 		DescribeTable("should map confidence score to level",
 			func(confidence float64, expectedLevel string) {

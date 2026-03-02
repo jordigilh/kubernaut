@@ -29,49 +29,49 @@ import (
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
-// E2E-AA-084-001: Predictive Signal Mode Pass-Through to HAPI
+// E2E-AA-084-001: Proactive Signal Mode Pass-Through to HAPI
 //
-// Business Requirement: BR-AI-084 (Predictive Signal Mode Prompt Strategy)
-// Architecture: ADR-054 (Predictive Signal Mode Classification)
+// Business Requirement: BR-AI-084 (Proactive Signal Mode Prompt Strategy)
+// Architecture: ADR-054 (Proactive Signal Mode Classification)
 //
 // Tests that AA correctly passes signalMode from its CRD spec to HAPI
-// and that the Mock LLM returns a predictive-aware response.
+// and that the Mock LLM returns a proactive-aware response.
 //
-// Data Flow: AA.Spec.SignalContext.SignalMode="predictive" → HAPI → Mock LLM → AA.Status
+// Data Flow: AA.Spec.SignalContext.SignalMode="proactive" → HAPI → Mock LLM → AA.Status
 
-var _ = Describe("E2E-AA-084-001: Predictive Signal Mode Investigation", Label("e2e", "signalmode", "aianalysis"), func() {
+var _ = Describe("E2E-AA-084-001: Proactive Signal Mode Investigation", Label("e2e", "signalmode", "aianalysis"), func() {
 	const (
 		timeout  = 30 * time.Second
 		interval = 500 * time.Millisecond
 	)
 
-	Context("Predictive OOMKill investigation (BR-AI-084)", func() {
-		It("should complete analysis with predictive signal mode context", func() {
+	Context("Proactive OOMKill investigation (BR-AI-084)", func() {
+		It("should complete analysis with proactive signal mode context", func() {
 			// BUSINESS CONTEXT:
-			// AA receives signalMode=predictive from RO (copied from SP.Status).
+			// AA receives signalMode=proactive from RO (copied from SP.Status).
 			// AA passes this to HAPI, which adapts the prompt for preemptive analysis.
-			// Mock LLM detects predictive keywords and returns the oomkilled_predictive scenario.
+			// Mock LLM detects proactive keywords and returns the oomkilled_predictive scenario.
 			//
 			// This E2E test validates the full AA → HAPI → Mock LLM pipeline with
-			// predictive signal mode context flowing through all components.
+			// proactive signal mode context flowing through all components.
 
 			analysis := &aianalysisv1alpha1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "e2e-predictive-oomkill-" + randomSuffix(),
+					Name:      "e2e-proactive-oomkill-" + randomSuffix(),
 					Namespace: controllerNamespace,
 				},
 				Spec: aianalysisv1alpha1.AIAnalysisSpec{
 					RemediationRequestRef: corev1.ObjectReference{
-						Name:      "e2e-predictive-remediation",
+						Name:      "e2e-proactive-remediation",
 						Namespace: controllerNamespace,
 					},
-					RemediationID: "e2e-predictive-rem-001",
+					RemediationID: "e2e-proactive-rem-001",
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
-							Fingerprint:      "e2e-predictive-fingerprint-001",
+							Fingerprint:      "e2e-proactive-fingerprint-001",
 							Severity:         "critical",
 							SignalName:       "OOMKilled",    // Normalized by SP from PredictedOOMKill
-							SignalMode:       "predictive",   // BR-AI-084: Predictive signal mode
+							SignalMode:       "proactive",   // BR-AI-084: Proactive signal mode
 							Environment:      "production",
 							BusinessPriority: "P1",
 							TargetResource: aianalysisv1alpha1.TargetResource{
@@ -86,31 +86,31 @@ var _ = Describe("E2E-AA-084-001: Predictive Signal Mode Investigation", Label("
 				},
 			}
 
-			By("Creating AIAnalysis with signalMode=predictive")
+			By("Creating AIAnalysis with signalMode=proactive")
 			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 			defer func() {
 				_ = k8sClient.Delete(ctx, analysis)
 			}()
 
 			By("Waiting for AA to complete investigation (4-phase reconciliation)")
-			// The Mock LLM should detect the predictive keywords in the prompt
+			// The Mock LLM should detect the proactive keywords in the prompt
 			// and return the oomkilled_predictive scenario response.
 			Eventually(func() string {
 				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
 				return string(analysis.Status.Phase)
 			}, timeout, interval).Should(Equal("Completed"),
-				"AA should complete investigation with predictive signal mode")
+				"AA should complete investigation with proactive signal mode")
 
 			By("Verifying analysis completed successfully")
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
 
-			// The AA controller should have passed signalMode=predictive to HAPI,
+			// The AA controller should have passed signalMode=proactive to HAPI,
 			// which should have adapted the prompt for preemptive analysis.
-			// The Mock LLM returns a workflow for the predictive scenario.
+			// The Mock LLM returns a workflow for the proactive scenario.
 			Expect(analysis.Status.CompletedAt).ToNot(BeZero(),
 				"CompletedAt should be set after successful completion")
 
-			GinkgoWriter.Println("E2E-AA-084-001: Predictive signal mode investigation completed in Kind cluster")
+			GinkgoWriter.Println("E2E-AA-084-001: Proactive signal mode investigation completed in Kind cluster")
 		})
 	})
 

@@ -11,12 +11,10 @@ spec:
     rules:
     - alert: ContainerOOMKilling
       expr: |
-        increase(
-          kube_pod_container_status_last_terminated_reason{
-            namespace="demo-memory-escalation",
-            reason="OOMKilled"
-          }[5m]
-        ) > 0
+        kube_pod_container_status_last_terminated_reason{
+          namespace="demo-memory-escalation",
+          reason="OOMKilled"
+        } > 0
       for: 30s
       labels:
         severity: critical

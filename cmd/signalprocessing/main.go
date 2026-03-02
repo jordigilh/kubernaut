@@ -325,14 +325,14 @@ func main() {
 	// ========================================
 	// SIGNAL MODE CLASSIFIER (OPTIONAL)
 	// ========================================
-	// BR-SP-106: Predictive Signal Mode Classification
+	// BR-SP-106: Proactive Signal Mode Classification
 	// ADR-054: Uses YAML config (not Rego) -- simple key-value lookup
 	// If config file is missing, all signals default to reactive mode (backwards compatible)
 	signalModeClassifier := classifier.NewSignalModeClassifier(
 		ctrl.Log.WithName("classifier.signalmode"),
 	)
 
-	signalModeConfigPath := "/etc/signalprocessing/predictive-signal-mappings.yaml"
+	signalModeConfigPath := "/etc/signalprocessing/proactive-signal-mappings.yaml"
 	if envPath := os.Getenv("SIGNAL_MODE_CONFIG_PATH"); envPath != "" {
 		signalModeConfigPath = envPath
 	}
@@ -419,7 +419,7 @@ func main() {
 		PriorityAssigner:     priorityEngine,         // PriorityEngine implements PriorityAssigner interface
 		BusinessClassifier:   businessClassifier,
 		SeverityClassifier:   severityClassifier,     // BR-SP-105: Severity determination (DD-SEVERITY-001)
-		SignalModeClassifier: signalModeClassifier,   // BR-SP-106: Predictive signal mode (ADR-054)
+		SignalModeClassifier: signalModeClassifier,   // BR-SP-106: Proactive signal mode (ADR-054)
 		RegoEngine:           regoEngine,
 		OwnerChainBuilder:    ownerChainBuilder,
 		K8sEnricher:          k8sEnricher,

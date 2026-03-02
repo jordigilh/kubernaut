@@ -13,6 +13,7 @@
 # Run: vhs deploy/demo/scenarios/autoscale/autoscale.tape
 
 Output deploy/demo/scenarios/autoscale/autoscale.gif
+Output deploy/demo/scenarios/autoscale/autoscale.mp4
 
 Require kubectl
 Require bash
@@ -46,7 +47,7 @@ Type `bash deploy/demo/scenarios/autoscale/cleanup.sh 2>/dev/null; true`
 Enter
 Sleep 5s
 
-Type `kubectl apply -f deploy/demo/scenarios/autoscale/manifests/ >/dev/null 2>&1 && kubectl wait --for=condition=Available deployment/web-cluster -n demo-autoscale --timeout=120s >/dev/null 2>&1 && (nohup bash deploy/demo/scenarios/autoscale/provisioner.sh >/dev/null 2>&1 &) && clear && echo SETUP"_"COMPLETE`
+Type `kubectl apply -f deploy/demo/scenarios/autoscale/manifests/ >/dev/null 2>&1; sleep 3; kubectl apply -f deploy/demo/scenarios/autoscale/manifests/ >/dev/null 2>&1 && kubectl wait --for=condition=Available deployment/web-cluster -n demo-autoscale --timeout=120s >/dev/null 2>&1 && (nohup bash deploy/demo/scenarios/autoscale/provisioner.sh >/dev/null 2>&1 &) && clear && echo SETUP"_"COMPLETE`
 Enter
 Wait+Screen@300s /SETUP_COMPLETE/
 
@@ -101,7 +102,14 @@ Show
 Type "# Some pods are Pending -- not enough node capacity"
 Enter
 Sleep 2s
-Type "kubectl get pods -n demo-autoscale"
+Type "kubectl get pods -n demo-autoscale -o wide"
+Enter
+Sleep 5s
+
+Type "# Node resources are maxed out"
+Enter
+Sleep 2s
+Type "kubectl top nodes"
 Enter
 Sleep 5s
 
@@ -149,7 +157,7 @@ Show
 Type "# The pipeline completed AI-driven analysis"
 Enter
 Sleep 2s
-Type "kubectl get rr,sp,aa -n ${PLATFORM_NS}"
+Type "kubectl get rr,sp,aia -n ${PLATFORM_NS}"
 Enter
 Sleep 6s
 
@@ -174,12 +182,20 @@ Sleep 4s
 Type "# Watching the WorkflowExecution live..."
 Enter
 Sleep 2s
-Type "kubectl get wfe -n ${PLATFORM_NS} -w"
+Type "kubectl get wfe -n ${PLATFORM_NS}"
 Enter
-Wait+Screen@180s /Completed/
-Sleep 5s
-Ctrl+C
-Sleep 2s
+Sleep 4s
+
+Hide
+Set TypingSpeed 1ms
+Type `while ! kubectl get wfe -n ${PLATFORM_NS} -o jsonpath='{.items[0].status.phase}' 2>/dev/null | grep -q Completed; do sleep 10; done && clear && echo WFE"_"DONE`
+Enter
+Wait+Screen@300s /WFE_DONE/
+Type "clear"
+Enter
+Sleep 500ms
+Set TypingSpeed 50ms
+Show
 
 # ═════════════════════════════════════════
 # ACT 3 -- The Result
@@ -193,11 +209,29 @@ Type "kubectl get nodes"
 Enter
 Sleep 5s
 
-Type "kubectl get pods -n demo-autoscale"
+Type "kubectl get pods -n demo-autoscale -o wide"
 Enter
 Sleep 5s
 
-Type "kubectl get rr,sp,aa,wfe,ea -n ${PLATFORM_NS}"
+Hide
+Set TypingSpeed 1ms
+Type `while ! kubectl top node 2>/dev/null | grep -q worker; do sleep 5; done && sleep 10 && clear && echo METRICS"_"READY`
+Enter
+Wait+Screen@120s /METRICS_READY/
+Type "clear"
+Enter
+Sleep 500ms
+Set TypingSpeed 50ms
+Show
+
+Type "# Node resources after provisioning:"
+Enter
+Sleep 2s
+Type "kubectl top nodes"
+Enter
+Sleep 5s
+
+Type "kubectl get rr,sp,aia,wfe,ea -n ${PLATFORM_NS}"
 Enter
 Sleep 6s
 
@@ -218,6 +252,13 @@ Sleep 2s
 Type "bash deploy/demo/scripts/show-effectiveness.sh demo-autoscale"
 Enter
 Sleep 10s
+
+Type "# Notification sent by Kubernaut:"
+Enter
+Sleep 2s
+Type "bash deploy/demo/scripts/show-notification.sh ${PLATFORM_NS}"
+Enter
+Sleep 12s
 
 Type "# Capacity restored -- new node provisioned, all pods scheduled"
 Enter

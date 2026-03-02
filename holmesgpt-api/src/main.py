@@ -197,10 +197,14 @@ def load_config() -> AppConfig:
                 "buffer_size": 10000,           # BR-AUDIT-005, ADR-038
                 "batch_size": 50,               # Events per HTTP batch
             },
+            "prompt": {
+                "repeated_remediation_escalation_threshold": 2,  # Issue #224
+                "confidence_threshold_human_review": 0.7,        # BR-HAPI-198
+            },
         }
 
         # Merge YAML config with defaults (YAML takes precedence)
-        for key in ["llm", "logging", "data_storage", "audit"]:
+        for key in ["llm", "logging", "data_storage", "audit", "prompt"]:
             if key in config:
                 if key in defaults and isinstance(defaults[key], dict):
                     defaults[key].update(config[key])

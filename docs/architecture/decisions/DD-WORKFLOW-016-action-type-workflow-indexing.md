@@ -5,7 +5,7 @@
 **Decision Maker**: Kubernaut Architecture Team
 **Authority**: AUTHORITATIVE - This document governs workflow catalog matching strategy
 **Affects**: Data Storage Service, HolmesGPT API, Workflow Catalog, Signal Processing
-**Related**: DD-WORKFLOW-001 (Label Schema), DD-LLM-001 (MCP Search Taxonomy), DD-HAPI-016 (Remediation History Context), DD-017 (Effectiveness Monitor), ADR-054 (Predictive Signal Mode Classification)
+**Related**: DD-WORKFLOW-001 (Label Schema), DD-LLM-001 (MCP Search Taxonomy), DD-HAPI-016 (Remediation History Context), DD-017 (Effectiveness Monitor), ADR-054 (Proactive Signal Mode Classification)
 **Version**: 1.1
 
 ---
@@ -56,7 +56,7 @@ If workflows are cataloged under `CPUThrottling` but the signal arrives as `High
 
 ### Normalization Is Not the Answer
 
-The obvious solution -- normalizing source-specific signals to canonical types (extending ADR-054's predictive mapping pattern) -- was evaluated and rejected:
+The obvious solution -- normalizing source-specific signals to canonical types (extending ADR-054's proactive mapping pattern) -- was evaluated and rejected:
 
 1. **Mapping maintenance burden**: Every new signal from every source adapter requires a mapping entry. This grows linearly with source adapters and their alert rule sets.
 2. **Cross-source equivalence is imprecise**: Prometheus `HighCPULoad` and K8s `CPUThrottling` may have different thresholds, conditions, and semantics. Treating them as identical is often wrong.
@@ -944,7 +944,7 @@ Seeded with V1.0 taxonomy (10 action types). Authoritative source for action typ
 
 ### ADR-054 Signal Mode Classification
 
-ADR-054's predictive-to-base type mapping (`PredictedOOMKill` -> `OOMKilled`) continues to function for signal classification in SignalProcessing. It is independent of catalog matching and serves a different purpose (signal mode classification: predictive vs reactive).
+ADR-054's proactive-to-base type mapping (`PredictedOOMKill` -> `OOMKilled`) continues to function for signal classification in SignalProcessing. It is independent of catalog matching and serves a different purpose (signal mode classification: proactive vs reactive).
 
 ---
 
@@ -1046,7 +1046,7 @@ The initial V1.0 taxonomy covers common Kubernetes remediation patterns. As new 
 - **Builds On**: DD-LLM-001 (MCP Search Taxonomy)
 - **Integrates With**: DD-HAPI-016 (Remediation History Context)
 - **Integrates With**: DD-017 v2.0 (Effectiveness Monitor)
-- **Independent Of**: ADR-054 (Predictive Signal Mode Classification -- continues to function for SP signal mode)
+- **Independent Of**: ADR-054 (Proactive Signal Mode Classification -- continues to function for SP signal mode)
 - **Supersedes**: `signalName` as primary catalog matching key (DD-WORKFLOW-001 v2.5 matching rules)
 
 ---

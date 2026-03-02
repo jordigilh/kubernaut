@@ -60,7 +60,7 @@ class TestSignalProcessingAuditPayload(unittest.TestCase):
                 business_unit = '',
                 from_phase = '',
                 to_phase = '',
-                signal_mode = 'predictive',
+                signal_mode = 'proactive',
                 source_signal_name = 'PredictedOOMKill',
                 error = ''
             )

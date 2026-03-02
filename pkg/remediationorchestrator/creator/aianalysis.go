@@ -165,7 +165,7 @@ func (c *AIAnalysisCreator) buildSignalContext(
 	}
 
 	// BR-SP-106: SignalType from SP status (normalized by signal mode classifier)
-	// For predictive signals: SP normalizes e.g. "PredictedOOMKill" -> "OOMKilled"
+	// For proactive signals: SP normalizes e.g. "PredictedOOMKill" -> "OOMKilled"
 	// For reactive signals: SP copies Spec.Signal.Type unchanged
 	// Fallback to RR spec if SP status field is empty (backwards compatibility)
 	signalType := sp.Status.SignalName
@@ -177,7 +177,7 @@ func (c *AIAnalysisCreator) buildSignalContext(
 		Fingerprint:      rr.Spec.SignalFingerprint,
 		Severity:         sp.Status.Severity, // DD-SEVERITY-001: Use normalized severity from SignalProcessing Rego (not external rr.Spec.Severity)
 		SignalName:       signalType,          // BR-SP-106: Normalized by SP (not raw from RR)
-		SignalMode:       sp.Status.SignalMode, // BR-AI-084: Predictive signal mode for HAPI prompt switching
+		SignalMode:       sp.Status.SignalMode, // BR-AI-084: Proactive signal mode for HAPI prompt switching
 		Environment:      environment,
 		BusinessPriority: priority,
 		TargetResource: aianalysisv1.TargetResource{

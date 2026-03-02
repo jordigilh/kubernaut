@@ -61,6 +61,9 @@ if ! kubectl get namespace argocd &>/dev/null; then
   echo "  Installing ArgoCD..."
   bash "${SCRIPT_DIR}/../gitops/scripts/setup-argocd.sh"
 fi
+# Speed up ArgoCD polling for demo scenarios (default 180s -> 60s)
+kubectl patch configmap argocd-cm -n argocd --type merge \
+  -p '{"data":{"timeout.reconciliation":"60s"}}' 2>/dev/null || true
 
 # Step 4: Create Gitea repo with cert-manager manifests
 echo "==> Step 4: Pushing cert-manager manifests to Gitea..."
@@ -193,6 +196,7 @@ rm -rf "${WORK_DIR}"
 # Step 5: Deploy ArgoCD Application
 echo "==> Step 5: Creating ArgoCD Application..."
 kubectl create namespace "${NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f -
+kubectl apply -f "${SCRIPT_DIR}/manifests/servicemonitor.yaml"
 kubectl apply -f "${SCRIPT_DIR}/manifests/prometheus-rule.yaml"
 kubectl apply -f "${SCRIPT_DIR}/manifests/argocd-application.yaml"
 
@@ -253,11 +257,22 @@ cd /
 rm -rf "${WORK_DIR}"
 echo "  Bad commit pushed. ArgoCD will sync broken ClusterIssuer."
 
-# Delete existing cert to force re-issuance with broken issuer
-sleep 10
+# Wait for ArgoCD to sync the broken commit before deleting the TLS secret.
+# ArgoCD polls every ~3 min; wait until the ClusterIssuer references the broken secret.
+echo "  Waiting for ArgoCD to sync broken ClusterIssuer..."
+for i in $(seq 1 60); do
+  SECRET_REF=$(kubectl get clusterissuer demo-selfsigned-ca-gitops \
+    -o jsonpath='{.spec.ca.secretName}' 2>/dev/null || echo "")
+  if [ "$SECRET_REF" = "nonexistent-ca-secret" ]; then
+    echo "  ArgoCD synced broken ClusterIssuer (attempt $i)."
+    break
+  fi
+  sleep 5
+done
+
+# Now delete the TLS secret to force re-issuance against the broken issuer
 kubectl delete secret demo-app-tls -n "${NAMESPACE}" --ignore-not-found
-kubectl annotate certificate demo-app-cert -n "${NAMESPACE}" \
-  cert-manager.io/issuing-trigger="manual-$(date +%s)" --overwrite 2>/dev/null || true
+echo "  TLS secret deleted — cert-manager will fail to re-issue."
 
 echo ""
 }

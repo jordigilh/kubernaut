@@ -137,8 +137,8 @@ func toSignalProcessingAuditPayloadSignalMode(value string) api.SignalProcessing
 	switch value {
 	case "reactive":
 		return api.SignalProcessingAuditPayloadSignalModeReactive
-	case "predictive":
-		return api.SignalProcessingAuditPayloadSignalModePredictive
+	case "proactive":
+		return api.SignalProcessingAuditPayloadSignalModeProactive
 	default:
 		return api.SignalProcessingAuditPayloadSignalModeReactive // Default to reactive
 	}

@@ -26970,8 +26970,8 @@ func (s *SignalProcessingAuditPayloadSignalMode) Decode(d *jx.Decoder) error {
 	switch SignalProcessingAuditPayloadSignalMode(v) {
 	case SignalProcessingAuditPayloadSignalModeReactive:
 		*s = SignalProcessingAuditPayloadSignalModeReactive
-	case SignalProcessingAuditPayloadSignalModePredictive:
-		*s = SignalProcessingAuditPayloadSignalModePredictive
+	case SignalProcessingAuditPayloadSignalModeProactive:
+		*s = SignalProcessingAuditPayloadSignalModeProactive
 	default:
 		*s = SignalProcessingAuditPayloadSignalMode(v)
 	}

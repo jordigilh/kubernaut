@@ -19,6 +19,7 @@ package executor
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -26,6 +27,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+)
+
+const (
+	SecretMountBasePath    = "/run/kubernaut/secrets"
+	ConfigMapMountBasePath = "/run/kubernaut/configmaps"
 )
 
 // JobExecutor implements the Executor interface for Kubernetes Jobs.
@@ -57,9 +64,10 @@ func (j *JobExecutor) Engine() string {
 // Returns the name of the created Job.
 //
 // The Job runs the container image from the workflow catalog with parameters
-// injected as environment variables.
-func (j *JobExecutor) Create(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string) (string, error) {
-	job := j.buildJob(wfe, namespace)
+// injected as environment variables. DD-WE-006: opts.Dependencies are mounted
+// as volumes at /run/kubernaut/secrets/<name> and /run/kubernaut/configmaps/<name>.
+func (j *JobExecutor) Create(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string, opts CreateOptions) (string, error) {
+	job := j.buildJob(wfe, namespace, opts.Dependencies)
 
 	if err := j.Client.Create(ctx, job); err != nil {
 		return "", err // Preserve original error for IsAlreadyExists checks
@@ -149,16 +157,15 @@ func (j *JobExecutor) Cleanup(ctx context.Context, wfe *workflowexecutionv1alpha
 
 // buildJob creates a Kubernetes Job from the WFE spec.
 // Parameters are injected as environment variables.
-func (j *JobExecutor) buildJob(wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string) *batchv1.Job {
-	// Convert workflow parameters to env vars
+// DD-WE-006: deps are mounted as volumes when non-nil.
+func (j *JobExecutor) buildJob(wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string, deps *models.WorkflowDependencies) *batchv1.Job {
 	envVars := j.buildEnvVars(wfe)
+	volumes, mounts := buildDependencyVolumes(deps)
 
-	// Use the same deterministic naming as TektonExecutor for resource locking
 	jobName := ExecutionResourceName(wfe.Spec.TargetResource)
 
-	// Job configuration
-	var backoffLimit int32 = 0 // No retries - WFE handles retry logic via cooldown/backoff
-	var ttlSeconds int32 = 600 // 10 minutes TTL after completion for debugging
+	var backoffLimit int32 = 0
+	var ttlSeconds int32 = 600
 
 	return &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
@@ -188,17 +195,64 @@ func (j *JobExecutor) buildJob(wfe *workflowexecutionv1alpha1.WorkflowExecution,
 				Spec: corev1.PodSpec{
 					RestartPolicy:      corev1.RestartPolicyNever,
 					ServiceAccountName: j.ServiceAccountName,
+					Volumes:            volumes,
 					Containers: []corev1.Container{
 						{
-							Name:  "workflow",
-							Image: wfe.Spec.WorkflowRef.ExecutionBundle,
-							Env:   envVars,
+							Name:         "workflow",
+							Image:        wfe.Spec.WorkflowRef.ExecutionBundle,
+							Env:          envVars,
+							VolumeMounts: mounts,
 						},
 					},
 				},
 			},
 		},
 	}
+}
+
+// buildDependencyVolumes creates Volumes and VolumeMounts for schema-declared
+// dependencies (DD-WE-006). Returns empty slices when deps is nil.
+func buildDependencyVolumes(deps *models.WorkflowDependencies) ([]corev1.Volume, []corev1.VolumeMount) {
+	if deps == nil {
+		return nil, nil
+	}
+
+	var volumes []corev1.Volume
+	var mounts []corev1.VolumeMount
+
+	for _, s := range deps.Secrets {
+		volName := "secret-" + s.Name
+		volumes = append(volumes, corev1.Volume{
+			Name: volName,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{SecretName: s.Name},
+			},
+		})
+		mounts = append(mounts, corev1.VolumeMount{
+			Name:      volName,
+			MountPath: filepath.Join(SecretMountBasePath, s.Name),
+			ReadOnly:  true,
+		})
+	}
+
+	for _, cm := range deps.ConfigMaps {
+		volName := "configmap-" + cm.Name
+		volumes = append(volumes, corev1.Volume{
+			Name: volName,
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{Name: cm.Name},
+				},
+			},
+		})
+		mounts = append(mounts, corev1.VolumeMount{
+			Name:      volName,
+			MountPath: filepath.Join(ConfigMapMountBasePath, cm.Name),
+			ReadOnly:  true,
+		})
+	}
+
+	return volumes, mounts
 }
 
 // buildEnvVars converts workflow parameters to container environment variables.

@@ -6,8 +6,8 @@
 **Target Version**: **V1.0** (pending WE team estimation)
 **Status**: Proposed - Pending WE Team Review
 **Date**: February 5, 2026
-**Related ADRs**: ADR-043 (Execution Engine Schema), ADR-044 (Engine Portability)
-**Related BRs**: BR-WE-002 (PipelineRun Creation), BR-WE-003 (Status Monitoring), BR-WE-009 (Resource Locking)
+**Related ADRs**: ADR-043 (Execution Engine Schema), ADR-044 (Engine Portability), DD-WE-006 (Schema-Declared Dependencies)
+**Related BRs**: BR-WE-002 (PipelineRun Creation), BR-WE-003 (Status Monitoring), BR-WE-009 (Resource Locking), BR-WORKFLOW-004 (Schema Format)
 **GitHub Issue**: [#44](https://github.com/jordigilh/kubernaut/issues/44)
 
 ---
@@ -265,6 +265,29 @@ Cooldown periods MUST apply regardless of execution backend. Cooldown check occu
 }
 ```
 
+### Schema-Declared Dependencies (DD-WE-006)
+
+Workflows may declare infrastructure dependencies (Secrets, ConfigMaps) in their schema's `dependencies` section. At execution time, the WFE controller:
+
+1. Queries Data Storage for the workflow's dependencies using `workflowRef.workflowId`
+2. Validates each dependency exists in `kubernaut-workflows` with non-empty `.data`
+3. Mounts dependencies into the execution resource
+
+**Job backend**: Dependencies are mounted as volumes at well-known paths:
+- Secrets: `/run/kubernaut/secrets/<name>/<key>`
+- ConfigMaps: `/run/kubernaut/configmaps/<name>/<key>`
+
+**Tekton backend**: Dependencies are added as workspace bindings on the PipelineRun:
+- Secrets: workspace `secret-<name>`
+- ConfigMaps: workspace `configmap-<name>`
+- The Pipeline inside the OCI bundle must declare matching workspace names
+
+**No CRD propagation**: Dependencies are NOT stored in the WFE spec. Workflows are immutable once registered (DD-WORKFLOW-012), so the WFE queries them on demand from Data Storage.
+
+**RBAC**: The WFE controller needs a namespace-scoped Role in `kubernaut-workflows` granting `get` on `secrets` and `configmaps` for validation.
+
+**Validation failure**: If any dependency is missing or has empty `.data`, the WFE marks the execution as Failed with `FailureDetails.Reason: ConfigurationError` and does not create the execution resource.
+
 ### Block Clearing (BR-WE-013)
 
 Block clearing mechanism is execution-engine-agnostic. No changes needed.
@@ -341,6 +364,57 @@ Feature: Kubernetes Job Execution Backend
     Given a workflow in the catalog with execution_engine: "job"
     When RemediationOrchestrator creates a WorkflowExecution CRD
     Then spec.executionEngine is set to "job"
+
+  Scenario: Job backend mounts declared dependencies as volumes
+    Given a WorkflowExecution CRD with executionEngine: "job"
+    And the workflow catalog entry declares dependencies:
+      | type      | name              |
+      | secret    | gitea-repo-creds  |
+      | configMap | remediation-config|
+    And Secret "gitea-repo-creds" exists in kubernaut-workflows with non-empty data
+    And ConfigMap "remediation-config" exists in kubernaut-workflows with non-empty data
+    When the controller reconciles the WorkflowExecution
+    Then the controller queries Data Storage for workflow dependencies
+    And validates each dependency exists with non-empty data
+    And creates a Job with volume mounts:
+      | volume           | mountPath                                  |
+      | secret-gitea-repo-creds    | /run/kubernaut/secrets/gitea-repo-creds    |
+      | configmap-remediation-config | /run/kubernaut/configmaps/remediation-config |
+    And the workflow container can read files from the mounted paths
+
+  Scenario: Tekton backend mounts declared dependencies as workspaces
+    Given a WorkflowExecution CRD with executionEngine: "tekton"
+    And the workflow catalog entry declares dependencies:
+      | type   | name             |
+      | secret | gitea-repo-creds |
+    And Secret "gitea-repo-creds" exists in kubernaut-workflows with non-empty data
+    When the controller reconciles the WorkflowExecution
+    Then the PipelineRun includes workspace bindings:
+      | workspace name            | secret name      |
+      | secret-gitea-repo-creds   | gitea-repo-creds |
+
+  Scenario: Dependency validation fails -- missing Secret
+    Given a WorkflowExecution CRD with executionEngine: "job"
+    And the workflow catalog entry declares dependency: secret "missing-creds"
+    And Secret "missing-creds" does NOT exist in kubernaut-workflows
+    When the controller reconciles the WorkflowExecution
+    Then WFE is marked Failed with FailureDetails.Reason=ConfigurationError and message naming the missing resource
+    And no Job is created
+
+  Scenario: Dependency validation fails -- empty Secret
+    Given a WorkflowExecution CRD with executionEngine: "job"
+    And the workflow catalog entry declares dependency: secret "empty-secret"
+    And Secret "empty-secret" exists in kubernaut-workflows but has empty data
+    When the controller reconciles the WorkflowExecution
+    Then WFE is marked Failed with FailureDetails.Reason=ConfigurationError and message naming the empty resource
+    And no Job is created
+
+  Scenario: Workflow with no dependencies proceeds normally
+    Given a WorkflowExecution CRD with executionEngine: "job"
+    And the workflow catalog entry has no dependencies section
+    When the controller reconciles the WorkflowExecution
+    Then the Job is created without additional volumes
+    And existing behavior is unchanged
 
   Scenario: Full platform E2E -- OOMKill with Job backend
     Given a Kind cluster with all services (no Tekton controllers)

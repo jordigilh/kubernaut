@@ -91,14 +91,14 @@ class SignalMode(str, Enum):
     """
     Signal processing mode for investigation strategy selection.
 
-    Architecture Decision: ADR-054 (Predictive Signal Mode Classification)
-    Business Requirement: BR-AI-084 (Predictive signal mode prompt strategy)
+    Architecture Decision: ADR-054 (Proactive Signal Mode Classification)
+    Business Requirement: BR-AI-084 (Proactive signal mode prompt strategy)
 
     - reactive: Incident has occurred, perform RCA (root cause analysis)
-    - predictive: Incident is predicted, perform predict & prevent strategy
+    - proactive: Incident is anticipated, perform proactive prevention strategy
     """
     REACTIVE = "reactive"
-    PREDICTIVE = "predictive"
+    PROACTIVE = "proactive"
 
 
 # ========================================
@@ -282,14 +282,14 @@ class IncidentRequest(BaseModel):
     # Enrichment results with DetectedLabels (DD-HAPI-001)
     enrichment_results: Optional[EnrichmentResults] = Field(None, description="Enriched context from SignalProcessing")
 
-    # Signal mode: reactive (incident occurred) or predictive (incident predicted)
-    # BR-AI-084: Predictive Signal Mode Prompt Strategy
-    # ADR-054: Predictive Signal Mode Classification
+    # Signal mode: reactive (incident occurred) or proactive (incident anticipated)
+    # BR-AI-084: Proactive Signal Mode Prompt Strategy
+    # ADR-054: Proactive Signal Mode Classification
     # Used by prompt builder to switch investigation strategy:
     # - "reactive": RCA (root cause analysis) - the incident has occurred
-    # - "predictive": Predict & prevent - incident is predicted but not yet occurred
+    # - "proactive": Proactive prevention - incident is anticipated but not yet occurred
     # Defaults to None (treated as "reactive" by prompt builder for backwards compatibility)
-    signal_mode: Optional[SignalMode] = Field(None, description="Signal mode: 'reactive' or 'predictive'. Controls prompt strategy (ADR-054).")
+    signal_mode: Optional[SignalMode] = Field(None, description="Signal mode: 'reactive' or 'proactive'. Controls prompt strategy (ADR-054).")
 
     @field_validator('remediation_id')
     @classmethod

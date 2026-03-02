@@ -229,3 +229,63 @@ class TestFivePhaseWorkflowBehavior:
         assert "kubectl" in prompt.lower(), "Missing kubectl tool reference"
         assert "logs" in prompt.lower(), "Missing logs investigation"
         assert "Use available tools" in prompt or "investigation tools" in prompt.lower(),             "Missing instruction to use investigation tools"
+
+
+class TestActionTypeSelectionRules:
+    """UT-HAPI-219-003, UT-HAPI-217-001: Phase 4 must include Action Type Selection Rules.
+
+    Issue #219: LLM needs explicit GitOps heuristic in the prompt.
+    Issue #217: LLM needs deployment-revision correlation heuristic.
+    """
+
+    def _build_prompt(self, **overrides):
+        defaults = {
+            "signal_name": "CertManagerCertNotReady",
+            "severity": "critical",
+            "resource_namespace": "production",
+            "resource_kind": "deployment",
+            "resource_name": "web-app",
+            "signal_source": "prometheus",
+            "error_message": "Certificate not ready",
+        }
+        defaults.update(overrides)
+        return _create_investigation_prompt(defaults)
+
+    def test_ut_hapi_219_003_phase4_contains_gitops_heuristic(self):
+        """UT-HAPI-219-003: Phase 4 must contain GitOps action type selection guidance."""
+        prompt = self._build_prompt()
+        phase4_idx = prompt.find("Phase 4: Discover and Select Workflow")
+        phase5_idx = prompt.find("Phase 5:")
+        assert phase4_idx > 0, "Missing Phase 4"
+        assert phase5_idx > phase4_idx, "Missing Phase 5 after Phase 4"
+
+        phase4_text = prompt[phase4_idx:phase5_idx]
+
+        assert "gitOpsManaged" in phase4_text, \
+            "Phase 4 must contain GitOps selection heuristic referencing gitOpsManaged"
+        assert "git-based" in phase4_text.lower() or "gitrevert" in phase4_text.lower(), \
+            "Phase 4 must instruct LLM to prefer git-based actions when gitOpsManaged=true"
+
+    def test_ut_hapi_217_001_phase4_contains_rollback_heuristic(self):
+        """UT-HAPI-217-001: Phase 4 must contain deployment revision / ProactiveRollback guidance."""
+        prompt = self._build_prompt()
+        phase4_idx = prompt.find("Phase 4: Discover and Select Workflow")
+        phase5_idx = prompt.find("Phase 5:")
+        phase4_text = prompt[phase4_idx:phase5_idx]
+
+        assert "deployment" in phase4_text.lower() and "revision" in phase4_text.lower(), \
+            "Phase 4 must mention deployment revision correlation"
+        assert "rollback" in phase4_text.lower(), \
+            "Phase 4 must mention rollback as an option for deployment regression"
+
+    def test_ut_hapi_219_004_selection_rules_between_step1_and_step2(self):
+        """UT-HAPI-219-004: Selection rules must appear between Step 1 and Step 2 in Phase 4."""
+        prompt = self._build_prompt()
+        step1_idx = prompt.find("**Step 1**")
+        step2_idx = prompt.find("**Step 2**")
+        assert step1_idx > 0 and step2_idx > step1_idx, "Step 1 must appear before Step 2"
+
+        between_text = prompt[step1_idx:step2_idx]
+        assert "selection" in between_text.lower() or "heuristic" in between_text.lower() \
+            or "rule" in between_text.lower(), \
+            "Action type selection rules must appear between Step 1 and Step 2"

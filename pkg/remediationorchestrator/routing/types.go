@@ -31,7 +31,11 @@ limitations under the License.
 package routing
 
 import (
+	"context"
+	"fmt"
 	"time"
+
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 )
@@ -74,6 +78,31 @@ type BlockingCondition struct {
 	// Used only for DuplicateInProgress blocks.
 	// Optional: only set when Reason = "DuplicateInProgress".
 	DuplicateOf string
+}
+
+// TargetResource identifies a Kubernetes resource for routing decisions.
+// Issue #214: Replaces the raw `targetResource string` parameter with a typed struct
+// so that CheckIneffectiveRemediationChain can query DataStorage with structured fields.
+type TargetResource struct {
+	Kind      string
+	Name      string
+	Namespace string
+}
+
+// String returns the formatted target resource string used in logging and WFE matching.
+func (t TargetResource) String() string {
+	return fmt.Sprintf("%s/%s/%s", t.Namespace, t.Kind, t.Name)
+}
+
+// RemediationHistoryQuerier abstracts DataStorage queries for remediation history.
+// Issue #214: Injected into RoutingEngine to enable unit testing with mocks.
+type RemediationHistoryQuerier interface {
+	GetRemediationHistory(
+		ctx context.Context,
+		target TargetResource,
+		currentSpecHash string,
+		window time.Duration,
+	) ([]ogenclient.RemediationHistoryEntry, error)
 }
 
 // IsTerminalPhase checks if a RemediationRequest phase is terminal.

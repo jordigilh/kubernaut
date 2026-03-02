@@ -15,9 +15,9 @@ limitations under the License.
 """
 
 """
-Unit Tests: Predictive Signal Mode Prompt Builder
-BR-AI-084: Predictive Signal Mode Prompt Strategy
-ADR-054: Predictive Signal Mode Classification
+Unit Tests: Proactive Signal Mode Prompt Builder
+BR-AI-084: Proactive Signal Mode Prompt Strategy
+ADR-054: Proactive Signal Mode Classification
 
 Tests that create_incident_investigation_prompt() generates the correct
 investigation directives based on signal_mode.
@@ -104,7 +104,7 @@ def _make_request_data(signal_mode=None, signal_name="OOMKilled", severity="crit
     return data
 
 
-class TestPredictiveSignalModePrompt:
+class TestProactiveSignalModePrompt:
     """UT-HAPI-084: Prompt builder signal_mode tests."""
 
     def test_ut_hapi_084_001_reactive_mode_contains_rca_directive(self):
@@ -119,29 +119,29 @@ class TestPredictiveSignalModePrompt:
         # Phase 2: Should be about root cause analysis
         assert "Determine Root Cause (RCA)" in prompt
 
-        # Should NOT contain predictive-specific content
-        assert "PREDICTIVE MODE" not in prompt
-        assert "Predictive Signal Mode" not in prompt
+        # Should NOT contain proactive-specific content
+        assert "PROACTIVE MODE" not in prompt
+        assert "Proactive Signal Mode" not in prompt
 
-    def test_ut_hapi_084_002_predictive_mode_contains_prevention_directive(self):
-        """UT-HAPI-084-002: Prompt contains predictive prevention directive when signal_mode = predictive."""
-        request_data = _make_request_data(signal_mode="predictive")
+    def test_ut_hapi_084_002_proactive_mode_contains_prevention_directive(self):
+        """UT-HAPI-084-002: Prompt contains proactive prevention directive when signal_mode = proactive."""
+        request_data = _make_request_data(signal_mode="proactive")
         prompt = create_incident_investigation_prompt(request_data)
 
         # Incident summary should indicate prediction
         assert "predicted" in prompt.lower()
         assert "NOT yet occurred" in prompt
 
-        # Phase 1: Should mention predictive investigation
-        assert "PREDICTIVE MODE" in prompt
-        assert "Predicted Incident" in prompt
+        # Phase 1: Should mention proactive investigation
+        assert "PROACTIVE MODE" in prompt
+        assert "Anticipated Incident" in prompt
 
         # Phase 2: Should be about prevention, not RCA
         assert "Assess Prediction and Determine Prevention Strategy" in prompt
         assert "No action needed" in prompt
 
-        # Predictive context section should be present
-        assert "Predictive Signal Mode" in prompt
+        # Proactive context section should be present
+        assert "Proactive Signal Mode" in prompt
         assert "predict_linear()" in prompt
         assert "PREVENTIVE action" in prompt
 
@@ -156,27 +156,27 @@ class TestPredictiveSignalModePrompt:
         assert "Understand what actually happened and why" in prompt
         assert "Determine Root Cause (RCA)" in prompt
 
-        # Should NOT contain predictive content
-        assert "PREDICTIVE MODE" not in prompt
-        assert "Predictive Signal Mode" not in prompt
+        # Should NOT contain proactive content
+        assert "PROACTIVE MODE" not in prompt
+        assert "Proactive Signal Mode" not in prompt
 
-    def test_predictive_mode_preserves_signal_name(self):
-        """Signal type in prompt should be the normalized type (from SP), not the predictive original."""
+    def test_proactive_mode_preserves_signal_name(self):
+        """Signal type in prompt should be the normalized type (from SP), not the proactive original."""
         # SP normalizes PredictedOOMKill -> OOMKilled before passing to HAPI
         request_data = _make_request_data(
-            signal_mode="predictive",
+            signal_mode="proactive",
             signal_name="OOMKilled",  # Already normalized by SP
         )
         prompt = create_incident_investigation_prompt(request_data)
 
         # The prompt should use the normalized type
         assert "OOMKilled" in prompt
-        # The prompt should NOT reference the original predictive type
+        # The prompt should NOT reference the original proactive type
         # (SP normalized it before passing to HAPI)
 
-    def test_predictive_mode_phase5_summary_mentions_prevention(self):
-        """Phase 5 summary should mention prediction assessment for predictive mode."""
-        request_data = _make_request_data(signal_mode="predictive")
+    def test_proactive_mode_phase5_summary_mentions_prevention(self):
+        """Phase 5 summary should mention prediction assessment for proactive mode."""
+        request_data = _make_request_data(signal_mode="proactive")
         prompt = create_incident_investigation_prompt(request_data)
 
         assert "prediction assessment" in prompt.lower()

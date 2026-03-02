@@ -60,27 +60,26 @@ display_one() {
   local title="${subj:-$type}"
   [ -z "$title" ] && title="Notification"
 
-  printf '\n'
-  printf '╔══════════════════════════════════════════════════════╗\n'
-  printf '║  NOTIFICATION: %-36s ║\n' "${title:0:36}"
-  printf '╠══════════════════════════════════════════════════════╣\n'
-  printf '║  Subject:  %-42s ║\n' "${subj:0:42}"
-  printf '║  Priority: %-41s ║\n' "${prio:0:41}"
-  printf '║  Type:     %-41s ║\n' "${type:0:41}"
-  printf '║  Channel:  %-41s ║\n' "${channels:0:41}"
-  if [ -n "$meta" ]; then
-    printf '║  Metadata: %-41s ║\n' "${meta:0:41}"
-  fi
-  printf '╠══════════════════════════════════════════════════════╣\n'
-  printf '║  Body:                                               ║\n'
+  local label_w=41
+  local body_w=51
+  local border='══════════════════════════════════════════════════════'
 
-  # Wrap body lines to fit inside box (width 48 chars for content)
-  local line_len=48
-  echo "$body" | fold -s -w "$line_len" | while IFS= read -r line; do
-    printf '║  %-48s ║\n' "$line"
+  printf '\n'
+  printf '╔%s╗\n' "$border"
+  printf '║  NOTIFICATION                                        ║\n'
+  printf '╠%s╣\n' "$border"
+  printf '║  Subject:  %-*s ║\n' "$label_w" "${subj:0:$label_w}"
+  printf '║  Priority: %-*s ║\n' "$label_w" "${prio:0:$label_w}"
+  printf '║  Type:     %-*s ║\n' "$label_w" "${type:0:$label_w}"
+  printf '║  Channel:  %-*s ║\n' "$label_w" "${channels:0:$label_w}"
+  printf '╠%s╣\n' "$border"
+  printf '║  %-*s ║\n' "$body_w" "Body:"
+
+  echo "$body" | fold -s -w "$body_w" | while IFS= read -r line; do
+    printf '║  %-*s ║\n' "$body_w" "$line"
   done
 
-  printf '╚══════════════════════════════════════════════════════╝\n'
+  printf '╚%s╝\n' "$border"
   printf '\n'
 }
 

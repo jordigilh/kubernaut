@@ -23,26 +23,15 @@ detectedLabels:
 
 execution:
   engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/fix-certificate-gitops-job:demo-v1.2
+  bundle: quay.io/kubernaut-cicd/test-workflows/fix-certificate-gitops-job@sha256:9c97e791e8c58397f668456f54414e263852974f85f89c0a65a1eb454f0877e1
+
+# DD-WE-006: Infrastructure dependencies provisioned by operators in kubernaut-workflows.
+# Credentials are mounted as files, NOT provided by the LLM.
+dependencies:
+  secrets:
+    - name: gitea-repo-creds
 
 parameters:
-  - name: GIT_REPO_URL
-    type: string
-    required: true
-    description: "URL of the Git repository (without credentials, e.g., http://gitea-http.gitea:3000/kubernaut/demo-cert-gitops-repo.git)"
-  - name: GIT_USERNAME
-    type: string
-    required: true
-    description: "Git username for clone/push authentication"
-  - name: GIT_PASSWORD
-    type: string
-    required: true
-    description: "Git password or token for clone/push authentication"
-  - name: GIT_BRANCH
-    type: string
-    required: false
-    description: "Branch to revert on"
-    default: "main"
   - name: TARGET_NAMESPACE
     type: string
     required: true

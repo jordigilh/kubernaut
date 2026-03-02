@@ -131,5 +131,5 @@ kubectl get pods -n demo-slo
 ## Notes
 
 - **Readiness vs. Functionality**: The /healthz endpoint still returns 200 while /api/ returns 500. This is a realistic production failure mode where health checks pass but the service is broken for users.
-- **Predictive vs. Reactive**: Per ADR-054, the `signal_mode` classification happens at the SP layer (runtime), not in the workflow schema labels. The workflow schema uses the normalized base signal type.
+- **Proactive vs. Reactive**: Per ADR-054, the `signal_mode` classification happens at the SP layer (runtime), not in the workflow schema labels. The workflow schema uses the normalized base signal type.
 - **Shared Rollback**: The remediation action (`kubectl rollout undo`) is the same as #120 (CrashLoopBackOff). The difference is the trigger (SLO burn rate vs. pod crash) and the LLM's reasoning (business objective vs. health check).

@@ -229,27 +229,53 @@ And log "Confidence rules reloaded: N rules"
 
 ### V1.0 Compatibility
 
-- V1.0 uses hardcoded 70% threshold in AIAnalysis
-- V1.1 replaces hardcoded value with rule-based configuration
-- Default rule of 70% maintains backward compatibility
+- **V1.0 (original)**: Hardcoded threshold in Rego policy (80% for auto-approval, per BR-AI-003/BR-AI-076)
+- **V1.0 (#225)**: Threshold is now configurable via `input.confidence_threshold` passed from the AIAnalysis controller config (`rego.confidenceThreshold`). The Rego policy defines a built-in default (0.8) that applies when no override is configured. This is a stepping stone toward V1.1's rule-based system.
+- **V1.1 (planned)**: Full rule-based threshold configuration per environment/severity/resource
 
-### Migration Path
+### V1.0 Configurable Threshold (#225)
+
+Operators can now override the confidence threshold without editing the Rego policy:
 
 ```yaml
-# V1.0 equivalent (implicit)
-confidence_rules:
-  - name: default
-    match: {}
-    threshold: 0.70
+# AIAnalysis config.yaml — set a global threshold
+rego:
+  policyPath: "/etc/aianalysis/policies/approval.rego"
+  confidenceThreshold: 0.85  # Overrides the Rego policy's default (0.8)
+```
 
-# V1.1 operator customization (explicit)
+The Rego policy uses `input.confidence_threshold` with a default fallback:
+
+```rego
+# Built-in default (applies when input.confidence_threshold is not set)
+default confidence_threshold := 0.8
+
+# Override from controller config
+confidence_threshold := input.confidence_threshold if {
+    input.confidence_threshold
+}
+
+is_high_confidence if {
+    input.confidence >= confidence_threshold
+}
+```
+
+### V1.1 Migration Path
+
+```yaml
+# V1.0 equivalent (global threshold via config)
+rego:
+  policyPath: "/etc/aianalysis/policies/approval.rego"
+  confidenceThreshold: 0.80
+
+# V1.1 operator customization (rule-based — planned)
 confidence_rules:
   - name: critical-production
     match: {severity: critical, environment: production}
     threshold: 0.90
   - name: default
     match: {}
-    threshold: 0.70
+    threshold: 0.80
 ```
 
 ---
@@ -267,5 +293,6 @@ confidence_rules:
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2025-12-06 | Initial business requirement for V1.1 |
+| 1.1 | 2026-02-28 | Updated V1.0 compatibility: threshold now configurable via `input.confidence_threshold` (#225). Fixed 70% → 80% discrepancy (actual V1.0 default is 80% per BR-AI-003). |
 
 
