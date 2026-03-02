@@ -374,6 +374,8 @@ var _ = SynchronizedBeforeSuite(
 
 var _ = SynchronizedAfterSuite(func() {
 	// Phase 1: Runs on ALL parallel processes (per-process cleanup)
+	// Order matches Gateway integration (test/integration/gateway/suite_test.go): cancel first, then envtest.Stop().
+	// Cancelling first stops in-flight K8s client usage so envtest can shut down cleanly and avoid hang.
 	processNum := GinkgoParallelProcess()
 	GinkgoWriter.Printf("🧹 [Process %d] Per-process cleanup...\n", processNum)
 
@@ -383,6 +385,11 @@ var _ = SynchronizedAfterSuite(func() {
 	// "sql: database is closed" errors in those goroutines.
 	//
 	// These resources are closed in Phase 2 after ALL processes truly complete.
+
+	// Cancel context first (same as Gateway): stops any in-flight k8sClient operations so envtest.Stop() is less likely to hang.
+	if cancel != nil {
+		cancel()
+	}
 
 	// DD-WE-006: Stop envtest with timeout to prevent hanging during AfterSuite.
 	// envtest.Stop() can hang if kube-apiserver/etcd is already dead, which blocks
@@ -401,10 +408,6 @@ var _ = SynchronizedAfterSuite(func() {
 		case <-time.After(5 * time.Second):
 			GinkgoWriter.Printf("⚠️  [Process %d] envtest.Stop() timed out after 5s, proceeding with cleanup\n", processNum)
 		}
-	}
-
-	if cancel != nil {
-		cancel()
 	}
 
 	GinkgoWriter.Printf("✅ [Process %d] Per-process cleanup complete (db/redis still open)\n", processNum)
