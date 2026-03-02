@@ -59,10 +59,13 @@ import (
 //
 // Parallel Execution: ✅ ENABLED
 // - Each E2E process has isolated DataStorage service in unique namespace
-// - Connection pool (maxOpenConns=100) is per-service, not global
-// - No shared resources that would require Serial execution
+// - Connection pool (maxOpenConns=100) is per-service, shared across all parallel processes
+// - Serial required: burst saturates pool, interfering with parallel tests (see Describe comment)
 
-var _ = Describe("BR-DS-006: Connection Pool Efficiency - Handle Traffic Bursts Without Degradation", Label("e2e", "gap-3.1", "p0"), Ordered, func() {
+// Serial: burst test saturates the connection pool (80 of 100 connections), causing DLQ
+// fallback (202) interference with parallel Ginkgo processes. This test belongs in a
+// dedicated performance tier; kept here as Serial until migration.
+var _ = Describe("BR-DS-006: Connection Pool Efficiency - Handle Traffic Bursts Without Degradation", Label("e2e", "gap-3.1", "p0"), Serial, Ordered, func() {
 	// NOTE: Using suite-level AuthHTTPClient for connection pool stress testing
 	// DD-AUTH-014: Authenticated HTTP client required for all API calls
 
