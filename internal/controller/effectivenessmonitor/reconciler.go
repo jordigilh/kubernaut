@@ -608,7 +608,8 @@ func (r *Reconciler) assessHealth(ctx context.Context, ea *eav1.EffectivenessAss
 	logger := log.FromContext(ctx)
 
 	// Build target status from K8s API (DD-EM-003: health uses SignalTarget)
-	status := r.getTargetHealthStatus(ctx, ea.Spec.SignalTarget)
+	// Pass RemediationCreatedAt so restarts can be counted relative to remediation time (#246).
+	status := r.getTargetHealthStatus(ctx, ea.Spec.SignalTarget, ea.Spec.RemediationCreatedAt)
 
 	result := r.healthScorer.Score(ctx, status)
 	logger.Info("Health assessment complete",
@@ -903,7 +904,7 @@ func (r *Reconciler) executeMetricQuery(ctx context.Context, spec metricQuerySpe
 // Non-pod-owning resources (ConfigMap, Secret, Node, etc.) are checked for
 // existence only -- they have no pod health to assess.
 // DD-EM-003: Caller decides which target to pass (SignalTarget for health, etc.).
-func (r *Reconciler) getTargetHealthStatus(ctx context.Context, target eav1.TargetResource) health.TargetStatus {
+func (r *Reconciler) getTargetHealthStatus(ctx context.Context, target eav1.TargetResource, remediationStartedAt *metav1.Time) health.TargetStatus {
 	logger := log.FromContext(ctx)
 
 	targetKind := target.Kind
@@ -914,7 +915,6 @@ func (r *Reconciler) getTargetHealthStatus(ctx context.Context, target eav1.Targ
 
 	switch targetKind {
 	case "Deployment", "ReplicaSet", "StatefulSet", "DaemonSet":
-		// Workload resources: list pods by app label (standard convention)
 		podList = &corev1.PodList{}
 		err := r.List(ctx, podList,
 			client.InNamespace(targetNs),
@@ -927,7 +927,6 @@ func (r *Reconciler) getTargetHealthStatus(ctx context.Context, target eav1.Targ
 		}
 
 	case "Pod":
-		// Direct pod target: fetch the specific pod by name
 		pod := &corev1.Pod{}
 		err := r.Get(ctx, client.ObjectKey{Name: targetName, Namespace: targetNs}, pod)
 		if err != nil {
@@ -937,8 +936,6 @@ func (r *Reconciler) getTargetHealthStatus(ctx context.Context, target eav1.Targ
 		podList = &corev1.PodList{Items: []corev1.Pod{*pod}}
 
 	default:
-		// Non-pod-owning resources (ConfigMap, Secret, Node, etc.)
-		// Health scoring is not applicable — signal N/A to the scorer.
 		logger.V(1).Info("Target resource kind has no pod health to assess",
 			"kind", targetKind, "name", targetName)
 		return health.TargetStatus{
@@ -947,37 +944,62 @@ func (r *Reconciler) getTargetHealthStatus(ctx context.Context, target eav1.Targ
 		}
 	}
 
-	if len(podList.Items) == 0 {
+	activePods := FilterActivePods(podList.Items)
+	if len(activePods) == 0 {
 		return health.TargetStatus{TargetExists: false}
 	}
 
-	// Count ready pods, restarts, and detect CrashLoopBackOff/OOMKilled/Pending (DD-017 v2.5)
-	totalReplicas := int32(len(podList.Items))
+	return ComputePodHealthStats(activePods, remediationStartedAt)
+}
+
+// FilterActivePods returns only pods that are active workload members:
+// pods that are not terminating (DeletionTimestamp == nil) and not in a
+// terminal phase (Succeeded/Failed). Exported for unit testing (#246).
+func FilterActivePods(pods []corev1.Pod) []*corev1.Pod {
+	active := make([]*corev1.Pod, 0, len(pods))
+	for i := range pods {
+		pod := &pods[i]
+		if pod.DeletionTimestamp != nil {
+			continue
+		}
+		if pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed {
+			continue
+		}
+		active = append(active, pod)
+	}
+	return active
+}
+
+// ComputePodHealthStats aggregates health indicators from a set of active pods.
+// remediationStartedAt controls restart counting: pods created before that time
+// have their cumulative RestartCount excluded (they predate the remediation).
+// Exported for unit testing (#246).
+func ComputePodHealthStats(pods []*corev1.Pod, remediationStartedAt *metav1.Time) health.TargetStatus {
+	totalReplicas := int32(len(pods))
 	readyReplicas := int32(0)
 	totalRestarts := int32(0)
 	crashLoops := false
 	oomKilled := false
 	pendingCount := int32(0)
 
-	for i := range podList.Items {
-		pod := &podList.Items[i]
-
-		// Count pods still in Pending phase after stabilization (DD-017 v2.5)
+	for _, pod := range pods {
 		if pod.Status.Phase == corev1.PodPending {
 			pendingCount++
 		}
 
+		preRemediationPod := remediationStartedAt != nil && pod.CreationTimestamp.Before(remediationStartedAt)
+
 		for _, cs := range pod.Status.ContainerStatuses {
-			totalRestarts += cs.RestartCount
+			if !preRemediationPod {
+				totalRestarts += cs.RestartCount
+			}
 			if cs.Ready {
 				readyReplicas++
-				break // Count pod as ready if any container is ready
+				break
 			}
-			// Detect CrashLoopBackOff from waiting state (DD-017 v2.5)
 			if cs.State.Waiting != nil && cs.State.Waiting.Reason == "CrashLoopBackOff" {
 				crashLoops = true
 			}
-			// Detect OOMKilled from last termination state (DD-017 v2.5)
 			if cs.LastTerminationState.Terminated != nil && cs.LastTerminationState.Terminated.Reason == "OOMKilled" {
 				oomKilled = true
 			}
@@ -985,13 +1007,13 @@ func (r *Reconciler) getTargetHealthStatus(ctx context.Context, target eav1.Targ
 	}
 
 	return health.TargetStatus{
-		TotalReplicas:           totalReplicas,
-		ReadyReplicas:           readyReplicas,
+		TotalReplicas:            totalReplicas,
+		ReadyReplicas:            readyReplicas,
 		RestartsSinceRemediation: totalRestarts,
-		TargetExists:           true,
-		CrashLoops:             crashLoops,
-		OOMKilled:              oomKilled,
-		PendingCount:           pendingCount,
+		TargetExists:            true,
+		CrashLoops:              crashLoops,
+		OOMKilled:               oomKilled,
+		PendingCount:            pendingCount,
 	}
 }
 
