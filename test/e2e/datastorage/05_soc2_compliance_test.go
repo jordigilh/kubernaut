@@ -22,7 +22,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os/exec"
-	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -222,12 +221,12 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 			Expect(err).ToNot(HaveOccurred(), "Export API call should succeed")
 			exportData, ok := resp.(*dsgen.AuditExportResponse)
 			Expect(ok).To(BeTrue(), "Export should return AuditExportResponse")
-			Expect(exportData).ToNot(BeNil(), "Export response should not be nil")
+			Expect(exportData.ExportMetadata.TotalEvents).To(BeNumerically(">=", 1), "Export response must contain events")
 			logger.Info("✅ Export API returned successfully")
 
 			// Step 3: Verify response contains signature metadata
-			Expect(exportData.ExportMetadata.Signature).ToNot(BeEmpty(), "Export must contain digital signature")
-			Expect(exportData.ExportMetadata.SignatureAlgorithm).ToNot(BeNil(), "Export must specify signature algorithm")
+			Expect(len(exportData.ExportMetadata.Signature)).To(BeNumerically(">", 0), "Export must contain digital signature")
+			Expect(exportData.ExportMetadata.SignatureAlgorithm.Set).To(BeTrue(), "Export must specify signature algorithm")
 			Expect(exportData.ExportMetadata.SignatureAlgorithm.Value).To(Equal("SHA256withRSA"), "Signature algorithm must be SHA256withRSA")
 			logger.Info("✅ Export contains signature metadata",
 				"algorithm", exportData.ExportMetadata.SignatureAlgorithm.Value,
@@ -241,13 +240,13 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 
 			// Step 5: Verify certificate fingerprint exists
 			logger.Info("Step 5: Validating certificate fingerprint")
-			Expect(exportData.ExportMetadata.CertificateFingerprint).ToNot(BeNil(), "Export must contain certificate fingerprint")
-			Expect(exportData.ExportMetadata.CertificateFingerprint.Value).ToNot(BeEmpty(), "Certificate fingerprint must not be empty")
+			Expect(exportData.ExportMetadata.CertificateFingerprint.Set).To(BeTrue(), "Export must contain certificate fingerprint")
+			Expect(len(exportData.ExportMetadata.CertificateFingerprint.Value)).To(BeNumerically(">", 0), "Certificate fingerprint must have a value")
 			logger.Info("✅ Certificate fingerprint present",
 				"fingerprint", exportData.ExportMetadata.CertificateFingerprint.Value)
 
 			// Step 6: Verify export metadata
-			Expect(exportData.ExportMetadata.ExportedBy).ToNot(BeNil(), "Export must be attributed to a user")
+			Expect(exportData.ExportMetadata.ExportedBy.Set).To(BeTrue(), "Export must be attributed to a user")
 			Expect(exportData.ExportMetadata.TotalEvents).To(Equal(5), "Export should contain 5 events")
 			logger.Info("✅ Export metadata validated",
 				"exported_by", exportData.ExportMetadata.ExportedBy.Value,
@@ -282,10 +281,10 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 			// Verify metadata includes query filters
 			exportData, ok := resp.(*dsgen.AuditExportResponse)
 			Expect(ok).To(BeTrue())
-			Expect(exportData.ExportMetadata.QueryFilters).ToNot(BeNil(), "Export must include query filters")
-			Expect(exportData.ExportMetadata.QueryFilters.Value.CorrelationID).ToNot(BeNil())
+			Expect(exportData.ExportMetadata.QueryFilters.Set).To(BeTrue(), "Export must include query filters")
+			Expect(exportData.ExportMetadata.QueryFilters.Value.CorrelationID.Set).To(BeTrue(), "CorrelationID filter must be present")
 			Expect(exportData.ExportMetadata.QueryFilters.Value.CorrelationID.Value).To(Equal(testCorrelationID))
-			Expect(exportData.ExportMetadata.QueryFilters.Value.Limit).ToNot(BeNil())
+			Expect(exportData.ExportMetadata.QueryFilters.Value.Limit.Set).To(BeTrue(), "Limit filter must be present")
 			Expect(exportData.ExportMetadata.QueryFilters.Value.Limit.Value).To(Equal(10))
 			logger.Info("✅ Query filters captured in export metadata")
 
@@ -333,7 +332,7 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 			Expect(verification.TotalEventsVerified).To(Equal(5), "Should verify 5 events")
 			Expect(verification.ValidChainEvents).To(Equal(5), "All 5 events should have valid chains")
 			Expect(verification.BrokenChainEvents).To(Equal(0), "No broken chains expected")
-			Expect(verification.ChainIntegrityPercentage).ToNot(BeNil())
+			Expect(verification.ChainIntegrityPercentage.Set).To(BeTrue(), "ChainIntegrityPercentage must be present")
 			Expect(verification.ChainIntegrityPercentage.Value).To(Equal(float32(100.0)), "Chain integrity should be 100%")
 			logger.Info("✅ Hash chain verification passed",
 				"total", verification.TotalEventsVerified,
@@ -344,14 +343,13 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 			// Step 4: Verify each event has hash_chain_valid: true
 			logger.Info("Step 4: Validating individual event hash chain flags")
 			for i, event := range exportData.Events {
-				Expect(event.HashChainValid).ToNot(BeNil(), "Event %d must have hash_chain_valid field", i)
+				Expect(event.HashChainValid.Set).To(BeTrue(), "Event %d must have hash_chain_valid field", i)
 				Expect(event.HashChainValid.Value).To(BeTrue(), "Event %d hash chain should be valid", i)
 			}
 			logger.Info("✅ All individual events have valid hash chains")
 
 			// Step 5: Verify tampered_event_ids is empty
-			Expect(verification.TamperedEventIds).ToNot(BeNil())
-			Expect(verification.TamperedEventIds).To(BeEmpty(), "No tampered events expected")
+			Expect(verification.TamperedEventIds).To(HaveLen(0), "No tampered events expected")
 			logger.Info("✅ No tampered events detected")
 
 			logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -402,7 +400,7 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 			verification := exportData.HashChainVerification
 			Expect(verification.TotalEventsVerified).To(Equal(3))
 			Expect(verification.BrokenChainEvents).To(BeNumerically(">", 0), "Should detect broken chains")
-			Expect(verification.ChainIntegrityPercentage).ToNot(BeNil())
+			Expect(verification.ChainIntegrityPercentage.Set).To(BeTrue(), "ChainIntegrityPercentage must be present")
 			Expect(verification.ChainIntegrityPercentage.Value).To(BeNumerically("<", 100.0), "Chain integrity should be < 100%")
 			logger.Info("✅ Tampering detected",
 				"total", verification.TotalEventsVerified,
@@ -411,8 +409,7 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 				"integrity", verification.ChainIntegrityPercentage.Value)
 
 			// Step 5: Verify tampered_event_ids contains the corrupted event
-			Expect(verification.TamperedEventIds).ToNot(BeNil())
-			Expect(verification.TamperedEventIds).ToNot(BeEmpty(), "Should list tampered event IDs")
+			Expect(verification.TamperedEventIds).To(HaveLen(1), "Should list exactly 1 tampered event ID")
 			logger.Info("✅ Tampered event IDs captured", "tampered_ids", verification.TamperedEventIds)
 
 			// Step 6: Verify corrupted event has hash_chain_valid: false
@@ -420,7 +417,7 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 			var foundTamperedEvent bool
 			for i, event := range exportData.Events {
 				if event.EventID.Set && event.EventID.Value.String() == eventIDs[1] {
-					Expect(event.HashChainValid).ToNot(BeNil())
+					Expect(event.HashChainValid.Set).To(BeTrue(), "Tampered event must have hash_chain_valid field")
 					Expect(event.HashChainValid.Value).To(BeFalse(), "Tampered event should have hash_chain_valid=false")
 					foundTamperedEvent = true
 					logger.Info("✅ Tampered event has hash_chain_valid=false", "event_index", i)
@@ -475,7 +472,7 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 			Expect(ok).To(BeTrue())
 			Expect(exportData.Events).To(HaveLen(3))
 			for i, event := range exportData.Events {
-				Expect(event.LegalHold).ToNot(BeNil(), "Event %d must have legal_hold field", i)
+				Expect(event.LegalHold.Set).To(BeTrue(), "Event %d must have legal_hold field", i)
 				Expect(event.LegalHold.Value).To(BeTrue(), "Event %d should have legal_hold=true", i)
 			}
 			logger.Info("✅ All events have legal_hold=true")
@@ -484,9 +481,7 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 			logger.Info("Step 5: Listing active legal holds")
 			listResp, err := DSClient.ListLegalHolds(testCtx)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(listResp).ToNot(BeNil())
-			Expect(listResp.Holds).ToNot(BeNil(), "Holds list should not be nil")
-			Expect(listResp.Holds).ToNot(BeEmpty(), "Should have at least one active legal hold")
+			Expect(listResp).To(HaveField("Holds", Not(HaveLen(0))), "Should have at least one active legal hold")
 
 			// Find our test hold
 			var foundTestHold bool
@@ -555,7 +550,7 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 			exportData, ok := exportResp.(*dsgen.AuditExportResponse)
 			Expect(ok).To(BeTrue())
 			for i, event := range exportData.Events {
-				Expect(event.LegalHold).ToNot(BeNil())
+				Expect(event.LegalHold.Set).To(BeTrue(), "Event %d must have legal_hold field", i)
 				Expect(event.LegalHold.Value).To(BeFalse(), "Event %d should have legal_hold=false after release", i)
 			}
 			logger.Info("✅ All events have legal_hold=false after release")
@@ -620,8 +615,8 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 
 			// Step 4: Verify Digital Signature (CC8.1)
 			logger.Info("Step 4: Validating Digital Signature (CC8.1)")
-			Expect(exportData.ExportMetadata.Signature).ToNot(BeEmpty())
-			Expect(exportData.ExportMetadata.SignatureAlgorithm).ToNot(BeNil())
+			Expect(len(exportData.ExportMetadata.Signature)).To(BeNumerically(">", 0), "Signature must be present")
+			Expect(exportData.ExportMetadata.SignatureAlgorithm.Set).To(BeTrue(), "SignatureAlgorithm must be present")
 			Expect(exportData.ExportMetadata.SignatureAlgorithm.Value).To(Equal("SHA256withRSA"))
 			err = verifyBase64Signature(exportData.ExportMetadata.Signature)
 			Expect(err).ToNot(HaveOccurred())
@@ -664,15 +659,15 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 
 			// Step 7: Verify Certificate Fingerprint
 			logger.Info("Step 7: Validating Certificate Fingerprint")
-			Expect(exportData.ExportMetadata.CertificateFingerprint).ToNot(BeNil())
-			Expect(exportData.ExportMetadata.CertificateFingerprint.Value).ToNot(BeEmpty())
+			Expect(exportData.ExportMetadata.CertificateFingerprint.Set).To(BeTrue(), "CertificateFingerprint must be present")
+			Expect(len(exportData.ExportMetadata.CertificateFingerprint.Value)).To(BeNumerically(">", 0), "CertificateFingerprint must have a value")
 			logger.Info("✅ Certificate fingerprint present",
 				"fingerprint", exportData.ExportMetadata.CertificateFingerprint.Value)
 
 			// Step 8: Verify Export Metadata (User Attribution)
 			logger.Info("Step 8: Validating Export Metadata (User Attribution)")
-			Expect(exportData.ExportMetadata.ExportedBy).ToNot(BeNil())
-			Expect(exportData.ExportMetadata.ExportedBy.Value).ToNot(BeEmpty())
+			Expect(exportData.ExportMetadata.ExportedBy.Set).To(BeTrue(), "ExportedBy must be present")
+			Expect(len(exportData.ExportMetadata.ExportedBy.Value)).To(BeNumerically(">", 0), "ExportedBy must identify the exporter")
 			Expect(exportData.ExportMetadata.TotalEvents).To(Equal(10))
 			Expect(exportData.ExportMetadata.ExportFormat).To(Equal(dsgen.AuditExportResponseExportMetadataExportFormatJSON))
 			logger.Info("✅ Export metadata validated",
@@ -683,7 +678,7 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 			// Step 9: Verify Individual Event Hash Chain Flags
 			logger.Info("Step 9: Validating Individual Event Hash Chain Status")
 			for i, event := range exportData.Events {
-				Expect(event.HashChainValid).ToNot(BeNil())
+				Expect(event.HashChainValid.Set).To(BeTrue(), "Event %d must have hash_chain_valid field", i)
 				Expect(event.HashChainValid.Value).To(BeTrue(), "Event %d should have valid hash chain", i)
 			}
 			logger.Info("✅ All individual events have valid hash chains")
@@ -753,9 +748,9 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 			// Verify signature and fingerprint
 			exportData, ok := resp.(*dsgen.AuditExportResponse)
 			Expect(ok).To(BeTrue())
-			Expect(exportData.ExportMetadata.Signature).ToNot(BeEmpty())
-			Expect(exportData.ExportMetadata.CertificateFingerprint).ToNot(BeNil())
-			Expect(exportData.ExportMetadata.CertificateFingerprint.Value).ToNot(BeEmpty())
+			Expect(len(exportData.ExportMetadata.Signature)).To(BeNumerically(">", 0), "Signature must be present")
+			Expect(exportData.ExportMetadata.CertificateFingerprint.Set).To(BeTrue(), "CertificateFingerprint must be present")
+			Expect(len(exportData.ExportMetadata.CertificateFingerprint.Value)).To(BeNumerically(">", 0), "CertificateFingerprint must have a value")
 
 			currentFingerprint := exportData.ExportMetadata.CertificateFingerprint.Value
 			logger.Info("✅ Current certificate validated",
@@ -840,18 +835,18 @@ func verifyBase64Signature(signature string) error {
 
 // WaitForPodsReady waits for pods matching a label selector to be ready
 func WaitForPodsReady(kubeconfigPath, namespace, labelSelector string, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
+	Eventually(func() string {
 		cmd := exec.Command("kubectl", "get", "pods",
 			"--kubeconfig", kubeconfigPath,
 			"-n", namespace,
 			"-l", labelSelector,
 			"-o", "jsonpath={.items[*].status.conditions[?(@.type=='Ready')].status}")
 		output, err := cmd.CombinedOutput()
-		if err == nil && strings.Contains(string(output), "True") {
-			return nil
+		if err != nil {
+			return ""
 		}
-		time.Sleep(2 * time.Second)
-	}
-	return fmt.Errorf("pods with label %s did not become ready in namespace %s within %v", labelSelector, namespace, timeout)
+		return string(output)
+	}, timeout, 2*time.Second).Should(ContainSubstring("True"),
+		fmt.Sprintf("pods with label %s did not become ready in namespace %s within %v", labelSelector, namespace, timeout))
+	return nil
 }
