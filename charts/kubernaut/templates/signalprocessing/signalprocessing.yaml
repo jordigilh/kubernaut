@@ -216,8 +216,11 @@ rules:
     resources: ["signalprocessings/status", "signalprocessings/finalizers"]
     verbs: ["get", "update", "patch"]
   - apiGroups: [""]
-    resources: ["pods", "services", "namespaces", "nodes", "configmaps", "secrets", "events"]
-    verbs: ["get", "list", "watch", "create", "update", "patch"]
+    resources: ["pods", "services", "namespaces", "nodes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
   - apiGroups: ["apps"]
     resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
     verbs: ["get", "list", "watch"]
@@ -244,6 +247,37 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: signalprocessing-controller
+subjects:
+  - kind: ServiceAccount
+    name: signalprocessing-controller
+    namespace: {{ .Release.Namespace }}
+---
+# Role: namespace-scoped access to configmaps and secrets (#229)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: signalprocessing-ns-role
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: signalprocessing-controller
+    {{- include "kubernaut.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps", "secrets"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: signalprocessing-ns-rolebinding
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: signalprocessing-controller
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: signalprocessing-ns-role
 subjects:
   - kind: ServiceAccount
     name: signalprocessing-controller
