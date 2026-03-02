@@ -26,12 +26,16 @@ import (
 	"syscall"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/config"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
+	dsvalidation "github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 )
@@ -221,6 +225,24 @@ func main() {
 		"auth_namespace", authNamespace,
 	)
 
+	// DD-WE-006: Create controller-runtime client for dependency validation.
+	// Reuses the existing rest.Config (k8sConfig) that was already created for auth.
+	crScheme := runtime.NewScheme()
+	if err := corev1.AddToScheme(crScheme); err != nil {
+		logger.Error(err, "Failed to add core/v1 to scheme for dependency validator")
+		os.Exit(1)
+	}
+	crClient, err := client.New(k8sConfig, client.Options{Scheme: crScheme})
+	if err != nil {
+		logger.Error(err, "Failed to create controller-runtime client for dependency validation (DD-WE-006)")
+		os.Exit(1)
+	}
+	depValidator := dsvalidation.NewK8sDependencyValidator(crClient)
+	executionNamespace := "kubernaut-workflows"
+	logger.Info("Dependency validator initialized (DD-WE-006)",
+		"executionNamespace", executionNamespace,
+	)
+
 	// Create HTTP server with database connection + Redis for DLQ
 	serverCfg := &server.Config{
 		Port:         cfg.Server.Port,
@@ -244,8 +266,21 @@ func main() {
 
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		var err error
-		// DD-AUTH-014: Pass authenticator, authorizer, and auth namespace to server
-		srv, err = server.NewServer(dbConnStr, cfg.Redis.Addr, cfg.Redis.Password, logger, cfg, serverCfg, dlqMaxLen, authenticator, authorizer, authNamespace)
+		srv, err = server.NewServer(server.ServerDeps{
+			DBConnStr:     dbConnStr,
+			RedisAddr:     cfg.Redis.Addr,
+			RedisPassword: cfg.Redis.Password,
+			Logger:        logger,
+			AppConfig:     cfg,
+			ServerConfig:  serverCfg,
+			DLQMaxLen:     dlqMaxLen,
+			Authenticator: authenticator,
+			Authorizer:    authorizer,
+			AuthNamespace: authNamespace,
+			HandlerOpts: []server.HandlerOption{
+				server.WithDependencyValidator(depValidator, executionNamespace),
+			},
+		})
 		if err == nil {
 			logger.Info("Successfully connected to PostgreSQL and Redis",
 				"attempt", attempt)

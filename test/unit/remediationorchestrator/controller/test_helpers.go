@@ -22,8 +22,10 @@ import (
 
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -57,7 +59,7 @@ func (m *MockRoutingEngine) CheckPreAnalysisConditions(ctx context.Context, rr *
 	return nil, nil // Always return not blocked for unit tests
 }
 
-func (m *MockRoutingEngine) CheckPostAnalysisConditions(ctx context.Context, rr *remediationv1.RemediationRequest, workflowID string, targetResource string) (*routing.BlockingCondition, error) {
+func (m *MockRoutingEngine) CheckPostAnalysisConditions(ctx context.Context, rr *remediationv1.RemediationRequest, workflowID string, targetResource string, preRemediationSpecHash string) (*routing.BlockingCondition, error) {
 	return nil, nil // Always return not blocked for unit tests
 }
 
@@ -472,6 +474,20 @@ func newAIAnalysisFailed(name, namespace, rrName, message string) *aianalysisv1.
 	return ai
 }
 
+// newAIAnalysisWorkflowResolutionFailed creates a failed AIAnalysis with WorkflowResolutionFailed reason
+// Issue #240: Used to test that EA is NOT created when AIA fails to find matching workflows
+func newAIAnalysisWorkflowResolutionFailed(name, namespace, rrName string) *aianalysisv1.AIAnalysis {
+	ai := newAIAnalysis(name, namespace, rrName, aianalysisv1.PhaseFailed)
+	now := metav1.Now()
+	ai.Status.CompletedAt = &now
+	ai.Status.Reason = "WorkflowResolutionFailed"
+	ai.Status.SubReason = "NoMatchingWorkflows"
+	ai.Status.Message = "No workflows matched the search criteria"
+	ai.Status.NeedsHumanReview = true
+	ai.Status.HumanReviewReason = "no_matching_workflows"
+	return ai
+}
+
 // newWorkflowExecutionSucceeded creates a succeeded WorkflowExecution CRD
 func newWorkflowExecutionSucceeded(name, namespace, rrName string) *workflowexecutionv1.WorkflowExecution {
 	return newWorkflowExecutionCompleted(name, namespace, rrName)
@@ -647,4 +663,18 @@ func verifyChildrenExistence(ctx context.Context, c client.Client, rr *remediati
 			Expect(err).To(HaveOccurred(), "Expected WorkflowExecution to not exist")
 		}
 	}
+}
+
+// newTestRESTMapper creates a REST mapper that resolves Deployment to apps/v1.
+// Used by tests that exercise CapturePreRemediationHash (DD-EM-002, Issue #214).
+func newTestRESTMapper() *meta.DefaultRESTMapper {
+	mapper := meta.NewDefaultRESTMapper([]schema.GroupVersion{
+		{Group: "apps", Version: "v1"},
+		{Group: "", Version: "v1"},
+	})
+	mapper.Add(
+		schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "Deployment"},
+		meta.RESTScopeNamespace,
+	)
+	return mapper
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Cleanup for Predictive Memory Exhaustion Demo (#129)
+# Cleanup for Proactive Memory Exhaustion Demo (#129)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

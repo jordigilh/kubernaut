@@ -28,13 +28,19 @@ workflow selection and avoid repeating failed approaches.
 from typing import Any, Dict, List, Optional
 
 
-def build_remediation_history_section(context: Optional[Dict[str, Any]]) -> str:
+def build_remediation_history_section(
+    context: Optional[Dict[str, Any]],
+    escalation_threshold: Optional[int] = None,
+) -> str:
     """Build the remediation history section for LLM prompt enrichment.
 
     Args:
         context: The remediation history context from DS endpoint, or None.
                  Expected structure matches the JSON response from
                  GET /api/v1/remediation-history/context.
+        escalation_threshold: Number of completed-but-recurring remediations
+                 before warning the LLM to escalate. Defaults to
+                 REPEATED_REMEDIATION_ESCALATION_THRESHOLD from constants.
 
     Returns:
         Formatted prompt section string, or empty string if no history.
@@ -99,16 +105,33 @@ def build_remediation_history_section(context: Optional[Dict[str, Any]]) -> str:
             )
             sections.append("")
 
+    # Issue #224: Completed-but-recurring detection across all tiers
+    all_entries = tier1_chain + tier2_chain
+    if escalation_threshold is None:
+        from config.constants import REPEATED_REMEDIATION_ESCALATION_THRESHOLD
+        escalation_threshold = REPEATED_REMEDIATION_ESCALATION_THRESHOLD
+
+    recurring = _detect_completed_but_recurring(all_entries, threshold=escalation_threshold)
+    for workflow_type, count, signal_type in recurring:
+        sections.append(
+            f"**WARNING: REPEATED INEFFECTIVE REMEDIATION for '{workflow_type}'** -- "
+            f"Completed {count} times for signal '{signal_type}' but the issue continues "
+            "to recur. This suggests the workflow treats the symptom, not the root cause. "
+            "Recommend selecting `needs_human_review` or an alternative escalation workflow."
+        )
+        sections.append("")
+
     # Reasoning guidance
     sections.append("**Reasoning Guidance:**")
     sections.append(
         "Use the above remediation history to inform your workflow selection. "
         "Avoid repeating workflows that previously failed or had poor effectiveness. "
+        "If a workflow completed successfully multiple times but the same signal keeps "
+        "recurring, escalate to human review -- the workflow is not addressing the root cause. "
         "If regression is detected, consider alternative approaches."
     )
 
     # DD-EM-002 v1.1: Spec drift awareness guidance
-    all_entries = tier1_chain + tier2_chain
     has_spec_drift = any(
         e.get("assessmentReason") == "spec_drift" for e in all_entries
     )
@@ -328,6 +351,46 @@ def _detect_declining_effectiveness(chain: List[Dict[str, Any]]) -> List[str]:
                 declining.append(wf_type)
 
     return declining
+
+
+def _detect_completed_but_recurring(
+    chain: List[Dict[str, Any]],
+    threshold: int = 2,
+) -> List[tuple]:
+    """Detect workflows that completed successfully multiple times for the same signal.
+
+    Issue #224: When a workflow completes successfully but the same signal recurs,
+    the LLM should escalate to human review instead of selecting the same workflow.
+
+    Args:
+        chain: Combined tier1+tier2 remediation history entries.
+        threshold: Minimum number of completed entries to trigger detection.
+
+    Returns:
+        List of (workflow_type, count, signal_type) tuples for recurring patterns.
+    """
+    from collections import defaultdict
+
+    COMPLETED_OUTCOMES = {"completed", "success", "Completed", "Success"}
+
+    counts: Dict[tuple, int] = defaultdict(int)
+    for entry in chain:
+        if entry.get("assessmentReason") == "spec_drift":
+            continue
+        outcome = entry.get("outcome", "")
+        if outcome not in COMPLETED_OUTCOMES:
+            continue
+        wf_type = entry.get("workflowType", "")
+        signal = entry.get("signalType", "")
+        if wf_type and signal:
+            counts[(wf_type, signal)] += 1
+
+    result = []
+    for (wf_type, signal), count in counts.items():
+        if count >= threshold:
+            result.append((wf_type, count, signal))
+
+    return result
 
 
 def _detect_spec_drift_causal_chains(chain: List[Dict[str, Any]]) -> Dict[str, str]:

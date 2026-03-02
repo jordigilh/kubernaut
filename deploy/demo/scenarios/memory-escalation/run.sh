@@ -5,7 +5,9 @@
 # Demonstrates how the platform handles diminishing remediation effectiveness:
 # The ml-worker consumes unbounded memory (simulating a leak). Increasing limits
 # only delays the OOMKill. After consecutive failures (same workflow, same issue),
-# the RO escalates to human review via CheckConsecutiveFailures.
+# the RO escalates to human review via CheckConsecutiveFailures (for Failed RRs)
+# or CheckIneffectiveRemediationChain (Issue #214: for Completed-but-ineffective
+# RRs detected via DataStorage hash chain and spec_drift analysis).
 #
 # Prerequisites:
 #   - Kind cluster with Kubernaut platform deployed
@@ -56,8 +58,9 @@ echo ""
 echo "  Expected multi-cycle flow:"
 echo "    Cycle 1: OOMKill -> increase limits (64Mi -> 128Mi) -> OOMKill recurs"
 echo "    Cycle 2: OOMKill -> increase limits (128Mi -> 256Mi) -> OOMKill recurs"
-echo "    Cycle 3: RO blocks with CheckConsecutiveFailures (same workflow failed 2+ times)"
-echo "             -> Escalates to human review"
+echo "    Cycle 3: RO blocks via CheckConsecutiveFailures (Failed RRs) or"
+echo "             CheckIneffectiveRemediationChain (Completed-but-ineffective RRs)"
+echo "             -> Escalates to human review (ManualReviewRequired)"
 echo ""
 echo "  The increase-memory-limits workflow DOES work (pods run longer), but the"
 echo "  underlying memory leak means OOMKill always recurs. The platform recognizes"

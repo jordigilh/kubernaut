@@ -34,6 +34,11 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/redis/go-redis/v9"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
@@ -82,6 +87,11 @@ var (
 	logger      logr.Logger
 	ctx         context.Context
 	cancel      context.CancelFunc
+
+	// DD-WE-006: envtest K8s client for dependency validation integration tests.
+	// Each parallel process starts its own envtest instance (core API only, no CRDs).
+	dsTestEnv   *envtest.Environment
+	k8sClient   client.Client
 )
 
 // This enables parallel test execution by ensuring each test has unique data
@@ -330,6 +340,34 @@ var _ = SynchronizedBeforeSuite(
 		dlqClient, err = dlq.NewClient(redisClient, logger, 10000)      // Gap 3.3: Pass max length for capacity monitoring
 		Expect(err).ToNot(HaveOccurred(), "DLQ client creation should succeed")
 
+		// DD-WE-006: Start envtest for dependency validation tests (K8s Secrets/ConfigMaps).
+		// Per TESTING_GUIDELINES.md: Integration tests use envtest for K8s, not fake clients.
+		GinkgoWriter.Printf("🔧 [Process %d] Starting envtest for K8s dependency validation...\n", processNum)
+		_ = os.Setenv("KUBEBUILDER_CONTROLPLANE_START_TIMEOUT", "60s")
+		dsTestEnv = &envtest.Environment{
+			ErrorIfCRDPathMissing: false,
+			ControlPlane: envtest.ControlPlane{
+				APIServer: &envtest.APIServer{
+					SecureServing: envtest.SecureServing{
+						ListenAddr: envtest.ListenAddr{
+							Address: "127.0.0.1",
+						},
+					},
+				},
+			},
+		}
+		envCfg, envErr := dsTestEnv.Start()
+		Expect(envErr).ToNot(HaveOccurred(), "envtest should start successfully")
+		Expect(envCfg.Host).ToNot(BeEmpty(), "envtest should provide a valid API server host")
+
+		Expect(corev1.AddToScheme(scheme.Scheme)).To(Succeed())
+		k8sClient, envErr = client.New(envCfg, client.Options{Scheme: scheme.Scheme})
+		Expect(envErr).ToNot(HaveOccurred())
+
+		depNs := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "kubernaut-workflows"}}
+		Expect(k8sClient.Create(ctx, depNs)).To(Succeed())
+		GinkgoWriter.Printf("✅ [Process %d] envtest ready (kubernaut-workflows namespace created)\n", processNum)
+
 		GinkgoWriter.Printf("✅ [Process %d] Ready to run tests (shared public schema)\n", processNum)
 	},
 )
@@ -345,6 +383,15 @@ var _ = SynchronizedAfterSuite(func() {
 	// "sql: database is closed" errors in those goroutines.
 	//
 	// These resources are closed in Phase 2 after ALL processes truly complete.
+
+	// DD-WE-006: Stop envtest
+	if dsTestEnv != nil {
+		if err := dsTestEnv.Stop(); err != nil {
+			GinkgoWriter.Printf("⚠️  [Process %d] Failed to stop envtest: %v\n", processNum, err)
+		} else {
+			GinkgoWriter.Printf("✅ [Process %d] envtest stopped\n", processNum)
+		}
+	}
 
 	if cancel != nil {
 		cancel()

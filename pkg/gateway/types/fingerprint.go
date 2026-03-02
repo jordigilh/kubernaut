@@ -17,98 +17,61 @@ limitations under the License.
 package types
 
 import (
+	"context"
 	"crypto/sha256"
 	"fmt"
 )
 
-// ========================================
-// FINGERPRINT GENERATION - SHARED UTILITY
-// 📋 Refactoring: Extract Method pattern | TDD REFACTOR phase
-// Authority: 00-core-development-methodology.mdc
-// ========================================
+// ResolveFingerprint is the single entry point for fingerprint generation across
+// all gateway adapters. It encapsulates the owner resolution + fallback logic that
+// was previously duplicated in KubernetesEventAdapter and PrometheusAdapter.
 //
-// CalculateFingerprint generates a unique fingerprint for signal deduplication.
+// Issue #228: Shared function ensures cross-adapter deduplication consistency.
 //
-// **Business Requirement**: BR-GATEWAY-069 (Deduplication tracking)
+// Business Requirement: BR-GATEWAY-004 (Cross-adapter deduplication)
 //
-// **Fingerprint Algorithm**:
-//   - Format: SHA256(identifier:namespace:kind:name)
-//   - Deterministic: Same signal inputs → same fingerprint
-//   - Collision-resistant: SHA256 provides 256-bit uniqueness
-//
-// **Examples**:
-//   - Prometheus Alert: SHA256("HighMemoryUsage:prod:Pod:payment-api-789")
-//   - K8s Event:        SHA256("OOMKilled:prod:Pod:payment-api-789")
-//
-// **Shared Across Adapters**:
-//   - PrometheusAdapter: Uses alertName as identifier
-//   - KubernetesEventAdapter: Uses event.Reason as identifier
-//   - Future adapters: Consistent deduplication behavior guaranteed
-//
-// **Why Shared Utility?** (Refactoring Rationale)
-//   - ✅ Single source of truth: Algorithm changes affect ALL adapters consistently
-//   - ✅ Eliminates duplication: Was duplicated in 2 adapter files
-//   - ✅ Future-proof: New adapters automatically use correct algorithm
-//   - ✅ Testable: Core business logic tested independently
-//
-// **Parameters**:
-//   - identifier: Alert name (Prometheus) or Event reason (K8s) - business identifier
-//   - resource: Target resource for remediation (namespace, kind, name)
-//
-// **Returns**:
-//   - string: Hex-encoded SHA256 hash (64 characters)
-//
-// ========================================
-func CalculateFingerprint(identifier string, resource ResourceIdentifier) string {
-	// Build fingerprint input string
-	// Format: identifier:namespace:kind:name
-	// Example: "HighMemoryUsage:prod-payment-service:Pod:payment-api-789"
-	input := fmt.Sprintf("%s:%s:%s:%s",
-		identifier,
-		resource.Namespace,
-		resource.Kind,
-		resource.Name,
-	)
+// Algorithm:
+//  1. If resolver is nil -> CalculateOwnerFingerprint(resource)
+//  2. If resolver succeeds (non-empty ownerKind and ownerName) -> CalculateOwnerFingerprint(owner)
+//  3. If resolver fails or returns empty fields -> CalculateOwnerFingerprint(resource)
+func ResolveFingerprint(ctx context.Context, resolver OwnerResolver, resource ResourceIdentifier) string {
+	if resolver == nil {
+		return CalculateOwnerFingerprint(resource)
+	}
 
-	// Generate SHA256 hash
-	hash := sha256.Sum256([]byte(input))
+	ownerKind, ownerName, err := resolver.ResolveTopLevelOwner(
+		ctx, resource.Namespace, resource.Kind, resource.Name)
+	if err == nil && ownerKind != "" && ownerName != "" {
+		return CalculateOwnerFingerprint(ResourceIdentifier{
+			Namespace: resource.Namespace,
+			Kind:      ownerKind,
+			Name:      ownerName,
+		})
+	}
 
-	// Return hex-encoded hash (64 characters)
-	// Example: "bd773c9f25ac1e4d6f8a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e"
-	return fmt.Sprintf("%x", hash)
+	return CalculateOwnerFingerprint(resource)
 }
 
 // CalculateOwnerFingerprint generates a fingerprint based on the owner resource,
 // without including the signal reason/identifier.
 //
-// **Business Requirement**: Prevents duplicate remediation workflows for events that
-// originate from the same root cause (same Deployment/StatefulSet/DaemonSet).
+// Business Requirement: BR-GATEWAY-069 (Deduplication tracking)
 //
-// **Fingerprint Algorithm**:
-//   - Format: SHA256(namespace:ownerKind:ownerName)
-//   - Deterministic: Same owner → same fingerprint regardless of event reason
-//   - Used by KubernetesEventAdapter when OwnerResolver is configured
+// Fingerprint Algorithm:
+//   - Format: SHA256(namespace:kind:name)
+//   - Deterministic: Same owner -> same fingerprint regardless of event reason
+//   - Used internally by ResolveFingerprint and directly by tests
 //
-// **Examples**:
+// Examples:
 //   - Pod crash event: SHA256("prod:Deployment:payment-api")
-//   - OOM event from same deployment: SHA256("prod:Deployment:payment-api") ← same!
-//
-// **Parameters**:
-//   - resource: The owner resource (namespace, kind, name)
-//
-// **Returns**:
-//   - string: Hex-encoded SHA256 hash (64 characters)
+//   - OOM event from same deployment: SHA256("prod:Deployment:payment-api") -- same!
 func CalculateOwnerFingerprint(resource ResourceIdentifier) string {
-	// Build fingerprint input string WITHOUT reason/identifier
-	// Format: namespace:kind:name
-	// Example: "prod:Deployment:payment-api"
 	input := fmt.Sprintf("%s:%s:%s",
 		resource.Namespace,
 		resource.Kind,
 		resource.Name,
 	)
 
-	// Generate SHA256 hash
 	hash := sha256.Sum256([]byte(input))
 
 	return fmt.Sprintf("%x", hash)

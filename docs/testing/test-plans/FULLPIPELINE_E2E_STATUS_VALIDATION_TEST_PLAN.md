@@ -265,7 +265,7 @@ Expect(k8sClient.Status().Update(testCtx, rar)).To(Succeed())
 
 **Skipped (error/recovery path only)**: `Error`, `ConsecutiveFailures`, `LastFailureTime`, `RecoveryContext` (nil for first attempt)
 
-**Skipped (conditional)**: `OriginalSignalType` -- only populated for predictive signals (`SignalMode == "predictive"`); empty for reactive signals like OOMKill. All E2E tests use reactive signals.
+**Skipped (conditional)**: `OriginalSignalType` -- only populated for proactive signals (`SignalMode == "proactive"`); empty for reactive signals like OOMKill. All E2E tests use reactive signals.
 
 ---
 

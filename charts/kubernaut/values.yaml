@@ -39,9 +39,15 @@ datastorage:
 
 # -- AIAnalysis controller
 aianalysis:
+  rego:
+    confidenceThreshold: null  # nil = use Rego default (0.8 per BR-AI-076)
   resources:
-    requests: {}
-    limits: {}
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
 
 # -- SignalProcessing controller
 signalprocessing:
@@ -56,8 +62,12 @@ signalprocessing:
 # -- RemediationOrchestrator controller
 remediationorchestrator:
   resources:
-    requests: {}
-    limits: {}
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
 
 # -- WorkflowExecution controller
 workflowexecution:
@@ -71,6 +81,11 @@ workflowexecution:
 
 # -- Notification controller
 notification:
+  # -- Enable Slack delivery channel. When false (default), only console/log delivery is active.
+  # Requires a K8s Secret with the Slack webhook URL (see credentials below).
+  slack:
+    enabled: false
+    channel: "#kubernaut-alerts"
   # Per-receiver credentials projected into /etc/notification/credentials/
   # Each entry creates a projected volume source from a K8s Secret.
   # Issue #104: Named credential store (PV/PVC pattern)
@@ -100,8 +115,12 @@ effectivenessmonitor:
 holmesgptApi:
   replicas: 1
   resources:
-    requests: {}
-    limits: {}
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
   service:
     type: ClusterIP
     nodePort: null
@@ -137,11 +156,14 @@ eventExporter:
       cpu: 200m
 
 # -- PostgreSQL (DataStorage backend)
+# Credentials: provide EITHER existingSecret OR password (via --set).
+# existingSecret must contain keys: POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB
 postgresql:
   image: postgres:16-alpine
   auth:
+    existingSecret: ""  # name of pre-created K8s Secret; when set, chart skips Secret creation
     username: slm_user
-    password: demo-password
+    password: ""  # required when existingSecret is empty; use --set or values-demo.yaml
     database: action_history
   storage:
     size: 10Gi
@@ -155,8 +177,11 @@ postgresql:
       cpu: 500m
 
 # -- Redis (DataStorage DLQ)
+# Credentials: provide EITHER existingSecret OR password (via --set).
+# existingSecret must contain key: password
 redis:
   image: quay.io/jordigilh/redis:7-alpine
+  existingSecret: ""  # name of pre-created K8s Secret; when set, chart skips Secret creation
   password: ""
   storage:
     size: 512Mi

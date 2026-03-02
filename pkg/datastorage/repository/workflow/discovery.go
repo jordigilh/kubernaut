@@ -122,6 +122,7 @@ func (r *Repository) ListActions(ctx context.Context, filters *models.WorkflowDi
 
 // ListWorkflowsByActionType returns active workflows matching the specified action type
 // and signal context filters (Step 2 of discovery protocol).
+// #220: Results are scored and ordered by final_score DESC per DD-WORKFLOW-016.
 // Returns workflow list, total count for pagination, and error.
 func (r *Repository) ListWorkflowsByActionType(ctx context.Context, actionType string, filters *models.WorkflowDiscoveryFilters, offset, limit int) ([]models.RemediationWorkflow, int, error) {
 	// Build context filter WHERE clause
@@ -152,22 +153,56 @@ func (r *Repository) ListWorkflowsByActionType(ctx context.Context, actionType s
 		return nil, 0, fmt.Errorf("failed to count workflows by action type: %w", err)
 	}
 
-	// Main query with pagination
+	// #220: Build scoring SQL using shared functions from scoring.go
+	var dl *models.DetectedLabels
+	var customLabels map[string][]string
+	if filters != nil {
+		dl = filters.DetectedLabels
+		customLabels = filters.CustomLabels
+	}
+
+	detectedBoostSQL := buildDetectedLabelsBoostSQL(dl)
+	customBoostSQL := buildCustomLabelsBoostSQL(customLabels)
+	penaltySQL := buildDetectedLabelsPenaltySQL(dl)
+
+	// #220: Wrap in scoring subquery with final_score computation per DD-WORKFLOW-016
 	mainQuery := fmt.Sprintf(`
-		SELECT * FROM remediation_workflow_catalog
-		WHERE %s
-		ORDER BY actual_success_rate DESC NULLS LAST, created_at DESC, workflow_id ASC
+		SELECT * FROM (
+			SELECT *,
+				%s AS detected_label_boost,
+				%s AS custom_label_boost,
+				%s AS label_penalty,
+				(5.0 + (%s) + (%s) - (%s)) / 10.0 AS final_score
+			FROM remediation_workflow_catalog
+			WHERE %s
+		) scored
+		ORDER BY final_score DESC, workflow_id ASC
 		OFFSET $%d LIMIT $%d
-	`, whereClause, len(args)+1, len(args)+2)
+	`, detectedBoostSQL, customBoostSQL, penaltySQL,
+		detectedBoostSQL, customBoostSQL, penaltySQL,
+		whereClause, len(args)+1, len(args)+2)
 
 	args = append(args, offset, limit)
 
-	var workflows []models.RemediationWorkflow
-	err = r.db.SelectContext(ctx, &workflows, mainQuery, args...)
+	type workflowWithScore struct {
+		models.RemediationWorkflow
+		DetectedLabelBoost float64 `db:"detected_label_boost"`
+		CustomLabelBoost   float64 `db:"custom_label_boost"`
+		LabelPenalty       float64 `db:"label_penalty"`
+		FinalScore         float64 `db:"final_score"`
+	}
+
+	var scoredResults []workflowWithScore
+	err = r.db.SelectContext(ctx, &scoredResults, mainQuery, args...)
 	if err != nil {
 		r.logger.Error(err, "failed to list workflows by action type",
 			"action_type", actionType)
 		return nil, 0, fmt.Errorf("failed to list workflows by action type: %w", err)
+	}
+
+	workflows := make([]models.RemediationWorkflow, len(scoredResults))
+	for i, sr := range scoredResults {
+		workflows[i] = sr.RemediationWorkflow
 	}
 
 	return workflows, totalCount, nil
@@ -238,8 +273,9 @@ func buildContextFilterSQL(filters *models.WorkflowDiscoveryFilters) (string, []
 
 	// Mandatory label filters (JSONB queries on labels column)
 	// Severity is always JSONB array (e.g. ["critical","high"]), use ? operator
+	// #215 Gap 1: Added wildcard fallback -- workflows with severity=["*"] match any severity
 	if filters.Severity != "" {
-		conditions = append(conditions, fmt.Sprintf("labels->'severity' ? $%d", argIdx))
+		conditions = append(conditions, fmt.Sprintf("(labels->'severity' ? $%d OR labels->'severity' ? '*')", argIdx))
 		args = append(args, filters.Severity)
 		argIdx++
 	}

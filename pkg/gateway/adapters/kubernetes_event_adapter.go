@@ -44,38 +44,11 @@ import (
 // Design Decision: Event API vs Watch
 // - V1: HTTP POST endpoint /api/v1/signals/kubernetes-event (consistent with Prometheus adapter)
 // - V2: Consider watch-based ingestion if needed (more complex, real-time)
-// OwnerResolver resolves the top-level controller owner of a Kubernetes resource.
-//
-// This interface enables the KubernetesEventAdapter to resolve the owner chain
-// (e.g., Pod -> ReplicaSet -> Deployment) for fingerprinting purposes.
-// By fingerprinting at the owner level (e.g., Deployment), events from different
-// pods of the same Deployment are correctly deduplicated.
-//
-// Business Requirement: Prevents duplicate remediation workflows for events that
-// originate from the same root cause (same Deployment/StatefulSet/DaemonSet).
-type OwnerResolver interface {
-	// ResolveTopLevelOwner traverses the ownerReference chain to find the top-level
-	// controller (e.g., Deployment, StatefulSet, DaemonSet).
-	//
-	// Parameters:
-	// - ctx: Context for cancellation/timeout
-	// - namespace: Resource namespace
-	// - kind: Resource kind (e.g., "Pod")
-	// - name: Resource name (e.g., "payment-api-789abc")
-	//
-	// Returns:
-	// - ownerKind: Top-level owner kind (e.g., "Deployment")
-	// - ownerName: Top-level owner name (e.g., "payment-api")
-	// - err: Resolution error (RBAC, timeout, not found). Callers should fall back
-	//         to involvedObject on error.
-	ResolveTopLevelOwner(ctx context.Context, namespace, kind, name string) (ownerKind, ownerName string, err error)
-}
-
 type KubernetesEventAdapter struct {
 	name          string
 	version       string
 	description   string
-	ownerResolver OwnerResolver
+	ownerResolver types.OwnerResolver
 }
 
 // kubernetesEvent represents the minimal K8s Event structure we need to parse
@@ -114,9 +87,8 @@ type kubernetesEvent struct {
 // Parameters:
 // - ownerResolver: Optional. If non-nil, the adapter resolves the top-level owner
 //   (e.g., Deployment) for fingerprinting, enabling deduplication across pods from
-//   the same controller. If nil, fingerprinting falls back to the involvedObject
-//   directly (legacy behavior).
-func NewKubernetesEventAdapter(ownerResolver ...OwnerResolver) *KubernetesEventAdapter {
+//   the same controller. If nil, fingerprinting uses resource-level deduplication.
+func NewKubernetesEventAdapter(ownerResolver ...types.OwnerResolver) *KubernetesEventAdapter {
 	adapter := &KubernetesEventAdapter{
 		name:        "kubernetes-event",
 		version:     "1.0",
@@ -226,32 +198,9 @@ func (a *KubernetesEventAdapter) Parse(ctx context.Context, rawData []byte) (*ty
 		Namespace: event.InvolvedObject.Namespace,
 	}
 
-	// 6. Generate fingerprint for deduplication (BR-GATEWAY-004)
-	//
-	// Strategy depends on whether OwnerResolver is configured:
-	// - With OwnerResolver: SHA256(namespace:ownerKind:ownerName) — reason excluded
-	//   Resolves owner chain (Pod → ReplicaSet → Deployment) so events from
-	//   different pods/reasons of the same Deployment produce one fingerprint.
-	// - Without OwnerResolver (legacy): SHA256(reason:namespace:kind:name)
-	var fingerprint string
-	if a.ownerResolver != nil {
-		ownerKind, ownerName, err := a.ownerResolver.ResolveTopLevelOwner(
-			ctx, resource.Namespace, resource.Kind, resource.Name)
-		if err == nil && ownerKind != "" && ownerName != "" {
-			// Owner resolved: fingerprint at owner level
-			fingerprint = types.CalculateOwnerFingerprint(types.ResourceIdentifier{
-				Namespace: resource.Namespace,
-				Kind:      ownerKind,
-				Name:      ownerName,
-			})
-		} else {
-			// Fallback: involvedObject without reason (graceful degradation)
-			fingerprint = types.CalculateOwnerFingerprint(resource)
-		}
-	} else {
-		// Legacy behavior: includes reason in fingerprint
-		fingerprint = types.CalculateFingerprint(event.Reason, resource)
-	}
+	// 6. Generate fingerprint for deduplication (BR-GATEWAY-004, Issue #228)
+	// Delegates to shared types.ResolveFingerprint for cross-adapter consistency.
+	fingerprint := types.ResolveFingerprint(ctx, a.ownerResolver, resource)
 
 	// 7. Populate NormalizedSignal
 	signal := &types.NormalizedSignal{

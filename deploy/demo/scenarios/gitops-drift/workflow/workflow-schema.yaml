@@ -27,6 +27,12 @@ execution:
   engine: job
   bundle: quay.io/kubernaut-cicd/test-workflows/git-revert-job@sha256:3177c568c6a055d118ae1f6d0782f301405de9646eff205892299de2ce5b6555
 
+# DD-WE-006: Infrastructure dependencies provisioned by operators in kubernaut-workflows.
+# Credentials are mounted as files, NOT embedded in GIT_REPO_URL by the LLM.
+dependencies:
+  secrets:
+    - name: gitea-repo-creds
+
 parameters:
   - name: GIT_REPO_URL
     type: string

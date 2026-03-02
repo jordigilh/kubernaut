@@ -823,17 +823,17 @@ default result := {"severity": "unknown", "source": "fallback"}
 | Label Detection | 5 | P0: 3, P1: 2 | |
 | **Total** | **22** | **P0: 8, P1: 11, P2: 3** | **2 deprecated** |
 
-### BR-SP-106: Predictive Signal Mode Classification
+### BR-SP-106: Proactive Signal Mode Classification
 
 **Priority**: P1 (High)
 **Category**: Classification
 **Status**: 🆕 NEW (February 2026)
 **GitHub Issue**: [#55](https://github.com/jordigilh/kubernaut/issues/55)
-**Full Document**: [docs/requirements/BR-SP-106-predictive-signal-mode-classification.md](../../../requirements/BR-SP-106-predictive-signal-mode-classification.md)
+**Full Document**: [docs/requirements/BR-SP-106-proactive-signal-mode-classification.md](../../../requirements/BR-SP-106-proactive-signal-mode-classification.md)
 
-**Description**: SignalProcessing MUST classify incoming signals as `predictive` or `reactive` based on signal type, and normalize predictive signal types to their base type for workflow catalog matching. This enables Kubernaut to handle preemptive remediation for predicted incidents (e.g., Prometheus `predict_linear()` alerts) using the existing pipeline.
+**Description**: SignalProcessing MUST classify incoming signals as `proactive` or `reactive` based on signal type, and normalize proactive signal types to their base type for workflow catalog matching. This enables Kubernaut to handle preemptive remediation for predicted incidents (e.g., Prometheus `predict_linear()` alerts) using the existing pipeline.
 
-**Acceptance Criteria**: See [dedicated BR document](../../../requirements/BR-SP-106-predictive-signal-mode-classification.md#acceptance-criteria).
+**Acceptance Criteria**: See [dedicated BR document](../../../requirements/BR-SP-106-proactive-signal-mode-classification.md#acceptance-criteria).
 
 **Related**: BR-AI-084, DD-WORKFLOW-001 (label-based workflow matching)
 
@@ -872,7 +872,7 @@ default result := {"severity": "unknown", "source": "fallback"}
 | BR-SP-102 | Day 9: CustomLabels | `rego_engine_test.go` | ✅ Planned |
 | BR-SP-103 | Day 8: FailedDetections | `label_detector_test.go` | ✅ Planned |
 | BR-SP-104 | Day 9: Security Wrapper | `rego_security_wrapper_test.go` | ✅ Planned |
-| **BR-SP-106** | **Predictive Signal Mode** | **`signal_mode_classifier_test.go`** | **⏳ NEW** |
+| **BR-SP-106** | **Proactive Signal Mode** | **`signal_mode_classifier_test.go`** | **⏳ NEW** |
 
 ---
 
@@ -880,7 +880,7 @@ default result := {"severity": "unknown", "source": "fallback"}
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 1.4 | 2026-02-08 | **NEW BR-SP-106**: Predictive Signal Mode Classification. Enables preemptive remediation via Prometheus `predict_linear()` alerts. Signal type normalization + `SignalMode` status field. [Issue #55](https://github.com/jordigilh/kubernaut/issues/55). |
+| 1.4 | 2026-02-08 | **NEW BR-SP-106**: Proactive Signal Mode Classification. Enables preemptive remediation via Prometheus `predict_linear()` alerts. Signal type normalization + `SignalMode` status field. [Issue #55](https://github.com/jordigilh/kubernaut/issues/55). |
 | 1.3 | 2026-01-09 | **NEW BR-SP-105**: Severity Determination via Rego Policy. Enables customer extensibility (Sev1-4, P0-P4 schemes). Operator-configurable severity mappings. Fallback to "unknown" (not "warning"). Observability for unmapped severities. |
 | 1.2 | 2025-12-06 | BR-SP-071: Changed to severity-only fallback (not environment × severity matrix) |
 | 1.1 | 2025-12-06 | BR-SP-072: Updated to fsnotify-based hot-reload per DD-INFRA-001, added FileWatcher reference |

@@ -892,7 +892,7 @@ type IncidentRequest struct {
 	SignalLabels OptNilIncidentRequestSignalLabels `json:"signal_labels"`
 	// Enriched context from SignalProcessing.
 	EnrichmentResults OptNilEnrichmentResults `json:"enrichment_results"`
-	// Signal mode: 'reactive' or 'predictive'. Controls prompt strategy (ADR-054).
+	// Signal mode: 'reactive' or 'proactive'. Controls prompt strategy (ADR-054).
 	SignalMode OptNilSignalMode `json:"signal_mode"`
 }
 
@@ -2373,23 +2373,23 @@ func (s *Severity) UnmarshalText(data []byte) error {
 }
 
 // Signal processing mode for investigation strategy selection.
-// Architecture Decision: ADR-054 (Predictive Signal Mode Classification)
-// Business Requirement: BR-AI-084 (Predictive signal mode prompt strategy)
+// Architecture Decision: ADR-054 (Proactive Signal Mode Classification)
+// Business Requirement: BR-AI-084 (Proactive signal mode prompt strategy)
 // - reactive: Incident has occurred, perform RCA (root cause analysis)
-// - predictive: Incident is predicted, perform predict & prevent strategy.
+// - proactive: Incident is anticipated, perform proactive prevention strategy.
 // Ref: #/components/schemas/SignalMode
 type SignalMode string
 
 const (
-	SignalModeReactive   SignalMode = "reactive"
-	SignalModePredictive SignalMode = "predictive"
+	SignalModeReactive  SignalMode = "reactive"
+	SignalModeProactive SignalMode = "proactive"
 )
 
 // AllValues returns all SignalMode values.
 func (SignalMode) AllValues() []SignalMode {
 	return []SignalMode{
 		SignalModeReactive,
-		SignalModePredictive,
+		SignalModeProactive,
 	}
 }
 
@@ -2398,7 +2398,7 @@ func (s SignalMode) MarshalText() ([]byte, error) {
 	switch s {
 	case SignalModeReactive:
 		return []byte(s), nil
-	case SignalModePredictive:
+	case SignalModeProactive:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -2411,8 +2411,8 @@ func (s *SignalMode) UnmarshalText(data []byte) error {
 	case SignalModeReactive:
 		*s = SignalModeReactive
 		return nil
-	case SignalModePredictive:
-		*s = SignalModePredictive
+	case SignalModeProactive:
+		*s = SignalModeProactive
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)

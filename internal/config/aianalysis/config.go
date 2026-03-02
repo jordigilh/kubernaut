@@ -67,6 +67,13 @@ type HolmesGPTConfig struct {
 type RegoConfig struct {
 	// PolicyPath is the file path to the Rego approval policy.
 	PolicyPath string `yaml:"policyPath"`
+
+	// ConfidenceThreshold is the operator-configurable auto-approval confidence threshold (#225).
+	// When set, passed as input.confidence_threshold to the Rego policy, overriding the
+	// policy's built-in default (0.8). Must be in range (0.0, 1.0].
+	// nil means "use the Rego policy's built-in default".
+	// Stepping stone toward BR-HAPI-198 (V1.1 rule-based thresholds).
+	ConfidenceThreshold *float64 `yaml:"confidenceThreshold,omitempty"`
 }
 
 // DefaultConfig returns safe defaults for the AIAnalysis controller.
@@ -154,6 +161,12 @@ func (c *Config) Validate() error {
 	// Validate Rego config
 	if c.Rego.PolicyPath == "" {
 		return fmt.Errorf("rego.policyPath is required")
+	}
+	if c.Rego.ConfidenceThreshold != nil {
+		t := *c.Rego.ConfidenceThreshold
+		if t <= 0 || t > 1.0 {
+			return fmt.Errorf("rego.confidenceThreshold must be in range (0.0, 1.0], got %v", t)
+		}
 	}
 
 	return nil

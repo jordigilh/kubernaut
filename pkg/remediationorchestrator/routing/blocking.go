@@ -20,10 +20,12 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/shared/backoff"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -37,7 +39,7 @@ import (
 // from post-AA checks (all checks including resource-level with AI-resolved target).
 type Engine interface {
 	CheckPreAnalysisConditions(ctx context.Context, rr *remediationv1.RemediationRequest) (*BlockingCondition, error)
-	CheckPostAnalysisConditions(ctx context.Context, rr *remediationv1.RemediationRequest, workflowID string, targetResource string) (*BlockingCondition, error)
+	CheckPostAnalysisConditions(ctx context.Context, rr *remediationv1.RemediationRequest, workflowID string, targetResource string, preRemediationSpecHash string) (*BlockingCondition, error)
 	CheckUnmanagedResource(ctx context.Context, rr *remediationv1.RemediationRequest) *BlockingCondition
 	Config() Config
 	CalculateExponentialBackoff(consecutiveFailures int32) time.Duration
@@ -53,6 +55,7 @@ type RoutingEngine struct {
 	namespace    string
 	config       Config
 	scopeChecker scope.ScopeChecker // BR-SCOPE-010: Mandatory scope validation (DI, same as RetryObserver)
+	dsClient     RemediationHistoryQuerier // Issue #214: DataStorage client for ineffective chain detection
 }
 
 // Config holds configuration for routing decisions.
@@ -103,22 +106,52 @@ type Config struct {
 	// ScopeBackoffMax is the maximum backoff period for unmanaged resource blocking.
 	// Default: 300 seconds (5 minutes, per ADR-053 Decision #4)
 	ScopeBackoffMax int64 // seconds
+
+	// ========================================
+	// INEFFECTIVE REMEDIATION CHAIN (Issue #214)
+	// ========================================
+
+	// IneffectiveChainThreshold is the number of consecutive ineffective remediations
+	// (hash chain match or spec_drift) required to trigger escalation.
+	// Default: 3
+	IneffectiveChainThreshold int
+
+	// RecurrenceCountThreshold is the total number of remediation entries within
+	// the time window required to trigger the safety-net escalation (Layer 3).
+	// Default: 5
+	RecurrenceCountThreshold int
+
+	// IneffectiveTimeWindow is the lookback window for both hash chain and safety net.
+	// Default: 4h
+	IneffectiveTimeWindow time.Duration
 }
 
 // NewRoutingEngine creates a new RoutingEngine with the given client and config.
 // DD-STATUS-001: Accepts apiReader for cache-bypassed routing queries.
 // BR-SCOPE-010: scopeChecker is mandatory (panics on nil, same pattern as RetryObserver).
-func NewRoutingEngine(client client.Client, apiReader client.Reader, namespace string, config Config, scopeChecker scope.ScopeChecker) *RoutingEngine {
+// Issue #214: Optional dsClient for ineffective chain detection (nil = skip chain check).
+func NewRoutingEngine(client client.Client, apiReader client.Reader, namespace string, config Config, scopeChecker scope.ScopeChecker, dsClient ...RemediationHistoryQuerier) *RoutingEngine {
 	if scopeChecker == nil {
 		panic("scopeChecker must not be nil — use mocks.AlwaysManagedScopeChecker{} in tests")
 	}
-	return &RoutingEngine{
+	engine := &RoutingEngine{
 		client:       client,
 		apiReader:    apiReader,
 		namespace:    namespace,
 		config:       config,
 		scopeChecker: scopeChecker,
 	}
+	if len(dsClient) > 0 && dsClient[0] != nil {
+		engine.dsClient = dsClient[0]
+	}
+	return engine
+}
+
+// SetDSClient sets the DataStorage history querier on the routing engine.
+// Called after construction when the DS client is wired separately from the
+// routing engine (e.g., from main.go via reconciler.SetDSClient).
+func (r *RoutingEngine) SetDSClient(dsClient RemediationHistoryQuerier) {
+	r.dsClient = dsClient
 }
 
 // Config returns the routing engine's configuration.
@@ -178,6 +211,7 @@ func (r *RoutingEngine) CheckPreAnalysisConditions(
 // Parameters:
 //   - workflowID: from AIAnalysis.Status.SelectedWorkflow.WorkflowID
 //   - targetResource: AI-resolved target formatted as "namespace/kind/name" or "kind/name"
+//   - preRemediationSpecHash: hash of the target resource spec before remediation (Issue #214)
 //
 // Checks (in priority order):
 // 1. UnmanagedResource (BR-SCOPE-010, ADR-053)
@@ -186,6 +220,7 @@ func (r *RoutingEngine) CheckPreAnalysisConditions(
 // 4. ResourceBusy (DD-RO-002) - uses targetResource param
 // 5. RecentlyRemediated (DD-RO-002 Check 4) - uses targetResource param
 // 6. ExponentialBackoff (DD-WE-004)
+// 7. IneffectiveRemediationChain (Issue #214) - LAST, fail-open
 //
 // Reference: DD-RO-002-ADDENDUM, DD-WE-001 (Resource Locking Safety)
 func (r *RoutingEngine) CheckPostAnalysisConditions(
@@ -193,6 +228,7 @@ func (r *RoutingEngine) CheckPostAnalysisConditions(
 	rr *remediationv1.RemediationRequest,
 	workflowID string,
 	targetResource string,
+	preRemediationSpecHash string,
 ) (*BlockingCondition, error) {
 	if blocked := r.CheckUnmanagedResource(ctx, rr); blocked != nil {
 		return blocked, nil
@@ -230,7 +266,28 @@ func (r *RoutingEngine) CheckPostAnalysisConditions(
 		return blocked, nil
 	}
 
+	// Issue #214: Ineffective remediation chain detection (LAST -- fail-open)
+	if preRemediationSpecHash != "" {
+		target := parseTargetResource(targetResource)
+		if chainBlocked := r.CheckIneffectiveRemediationChain(ctx, rr, target, preRemediationSpecHash); chainBlocked != nil {
+			return chainBlocked, nil
+		}
+	}
+
 	return nil, nil
+}
+
+// parseTargetResource parses a "namespace/kind/name" or "kind/name" string into TargetResource.
+func parseTargetResource(s string) TargetResource {
+	parts := strings.Split(s, "/")
+	switch len(parts) {
+	case 3:
+		return TargetResource{Namespace: parts[0], Kind: parts[1], Name: parts[2]}
+	case 2:
+		return TargetResource{Kind: parts[0], Name: parts[1]}
+	default:
+		return TargetResource{Name: s}
+	}
 }
 
 // CheckConsecutiveFailures checks if the RR is blocked due to consecutive failures.
@@ -349,6 +406,10 @@ func (r *RoutingEngine) CheckConsecutiveFailures(
 // CheckDuplicateInProgress checks if this RR is a duplicate of an active RR.
 // Finds active (non-terminal) RRs with the same SignalFingerprint.
 //
+// #209: Uses creationTimestamp as a deterministic tiebreaker — the oldest RR
+// is always the "original" and is never blocked as a duplicate. This prevents
+// circular deadlocks where both RRs block each other.
+//
 // BlockReason: "DuplicateInProgress"
 // RequeueAfter: 30 seconds (to check if original completes)
 //
@@ -366,6 +427,19 @@ func (r *RoutingEngine) CheckDuplicateInProgress(
 
 	if originalRR == nil {
 		return nil, nil // Not a duplicate
+	}
+
+	// #209: Deterministic tiebreaker — the oldest RR is always the original.
+	// If the found RR was created AFTER us, we are the original and must not be blocked.
+	// This prevents circular deadlocks (A blocks B, B blocks A).
+	if !rr.CreationTimestamp.IsZero() && !originalRR.CreationTimestamp.IsZero() {
+		if originalRR.CreationTimestamp.Time.After(rr.CreationTimestamp.Time) {
+			return nil, nil // We are older → we are the original
+		}
+		// Same timestamp: use name as secondary tiebreaker (lexicographic)
+		if originalRR.CreationTimestamp.Time.Equal(rr.CreationTimestamp.Time) && originalRR.Name > rr.Name {
+			return nil, nil // Same time, we sort first → we are the original
+		}
 	}
 
 	// This is a duplicate - block it
@@ -849,4 +923,111 @@ func (r *RoutingEngine) FindRecentCompletedWFE(
 	}
 
 	return mostRecentCompleted, nil
+}
+
+// CheckIneffectiveRemediationChain detects consecutive ineffective remediations
+// using DataStorage audit traces (Issue #214).
+//
+// Three-layer detection:
+//   - Layer 1+2: Walk Tier1.Chain backwards checking hash chain matches and spec_drift
+//   - Layer 3: Safety net -- count total entries within time window
+//
+// Fail-open: DS query errors are logged and nil is returned.
+// Returns: BlockingCondition with BlockReasonIneffectiveChain, or nil.
+func (r *RoutingEngine) CheckIneffectiveRemediationChain(
+	ctx context.Context,
+	rr *remediationv1.RemediationRequest,
+	target TargetResource,
+	preRemediationSpecHash string,
+) *BlockingCondition {
+	logger := log.FromContext(ctx).WithValues(
+		"remediationRequest", rr.Name,
+		"target", target.String(),
+	)
+
+	if r.dsClient == nil {
+		return nil
+	}
+
+	entries, err := r.dsClient.GetRemediationHistory(ctx, target, preRemediationSpecHash, r.config.IneffectiveTimeWindow)
+	if err != nil {
+		logger.Error(err, "DataStorage query failed for ineffective chain detection (fail-open)")
+		return nil
+	}
+
+	if len(entries) == 0 {
+		return nil
+	}
+
+	// Layer 1+2: Hash chain match + spec_drift detection
+	chainCount := r.countIneffectiveChain(entries, preRemediationSpecHash)
+	if chainCount >= r.config.IneffectiveChainThreshold {
+		logger.Info("Ineffective remediation chain detected (Layer 1+2)",
+			"chainCount", chainCount,
+			"threshold", r.config.IneffectiveChainThreshold)
+		return r.buildIneffectiveBlockCondition(chainCount, "hash chain match")
+	}
+
+	// Layer 3: Safety net -- count total entries within time window
+	windowCutoff := time.Now().Add(-r.config.IneffectiveTimeWindow)
+	recentCount := 0
+	for i := range entries {
+		if entries[i].CompletedAt.After(windowCutoff) {
+			recentCount++
+		}
+	}
+
+	if recentCount >= r.config.RecurrenceCountThreshold {
+		logger.Info("Ineffective remediation chain detected (Layer 3 safety net)",
+			"recentCount", recentCount,
+			"threshold", r.config.RecurrenceCountThreshold)
+		return r.buildIneffectiveBlockCondition(recentCount, "recurrence count safety net")
+	}
+
+	return nil
+}
+
+// countIneffectiveChain walks entries backwards counting consecutive ineffective remediations.
+// An entry is considered ineffective if:
+// - Its preRemediationSpecHash matches the current preHash (hash chain continuity), OR
+// - Its HashMatch is "preRemediation" (regression/spec_drift detected by EM)
+func (r *RoutingEngine) countIneffectiveChain(entries []ogenclient.RemediationHistoryEntry, currentPreHash string) int {
+	consecutiveIneffective := 0
+
+	for i := len(entries) - 1; i >= 0; i-- {
+		entry := entries[i]
+
+		if isIneffectiveEntry(entry, currentPreHash) {
+			consecutiveIneffective++
+		} else {
+			break
+		}
+	}
+
+	return consecutiveIneffective
+}
+
+func isIneffectiveEntry(entry ogenclient.RemediationHistoryEntry, compareHash string) bool {
+	// Check regression/spec_drift via HashMatch (Layer 2)
+	if entry.HashMatch.IsSet() && entry.HashMatch.Value == ogenclient.RemediationHistoryEntryHashMatchPreRemediation {
+		return true
+	}
+
+	// Check hash chain continuity (Layer 1): pre-hash of entry matches current pre-hash
+	if entry.PreRemediationSpecHash.IsSet() && entry.PreRemediationSpecHash.Value == compareHash {
+		return true
+	}
+
+	return false
+}
+
+func (r *RoutingEngine) buildIneffectiveBlockCondition(count int, detection string) *BlockingCondition {
+	return &BlockingCondition{
+		Blocked: true,
+		Reason:  string(remediationv1.BlockReasonIneffectiveChain),
+		Message: fmt.Sprintf(
+			"%d consecutive ineffective remediations detected (%s). Escalating to manual review.",
+			count, detection),
+		RequeueAfter: r.config.IneffectiveTimeWindow,
+	}
 }

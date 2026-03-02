@@ -24,12 +24,14 @@ import (
 	"strings"
 
 	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"knative.dev/pkg/apis"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
 
 // DefaultServiceAccountName is the default SA for PipelineRuns
@@ -63,8 +65,9 @@ func (t *TektonExecutor) Engine() string {
 //
 // DD-WE-002: PipelineRuns created in dedicated execution namespace
 // DD-WE-003: Deterministic name for atomic locking
-func (t *TektonExecutor) Create(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string) (string, error) {
-	pr := t.buildPipelineRun(wfe, namespace)
+// DD-WE-006: opts.Dependencies are added as workspace bindings.
+func (t *TektonExecutor) Create(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string, opts CreateOptions) (string, error) {
+	pr := t.buildPipelineRun(wfe, namespace, opts.Dependencies)
 
 	if err := t.Client.Create(ctx, pr); err != nil {
 		return "", err // Preserve original error for IsAlreadyExists checks
@@ -148,15 +151,16 @@ func (t *TektonExecutor) Cleanup(ctx context.Context, wfe *workflowexecutionv1al
 }
 
 // buildPipelineRun creates a PipelineRun with bundle resolver.
-// Extracted from WorkflowExecutionReconciler.BuildPipelineRun.
-func (t *TektonExecutor) buildPipelineRun(wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string) *tektonv1.PipelineRun {
+// DD-WE-006: deps are added as workspace bindings when non-nil.
+func (t *TektonExecutor) buildPipelineRun(wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string, deps *models.WorkflowDependencies) *tektonv1.PipelineRun {
 	params := convertParameters(wfe.Spec.Parameters)
 
-	// Add TARGET_RESOURCE parameter (required by all pipelines)
 	params = append(params, tektonv1.Param{
 		Name:  "TARGET_RESOURCE",
 		Value: tektonv1.ParamValue{Type: tektonv1.ParamTypeString, StringVal: wfe.Spec.TargetResource},
 	})
+
+	workspaces := buildDependencyWorkspaces(deps)
 
 	return &tektonv1.PipelineRun{
 		ObjectMeta: metav1.ObjectMeta{
@@ -183,12 +187,41 @@ func (t *TektonExecutor) buildPipelineRun(wfe *workflowexecutionv1alpha1.Workflo
 					},
 				},
 			},
-			Params: params,
+			Params:     params,
+			Workspaces: workspaces,
 			TaskRunTemplate: tektonv1.PipelineTaskRunTemplate{
 				ServiceAccountName: t.ServiceAccountName,
 			},
 		},
 	}
+}
+
+// buildDependencyWorkspaces creates Tekton workspace bindings for schema-declared
+// dependencies (DD-WE-006). Workspace names are prefixed to avoid collisions.
+func buildDependencyWorkspaces(deps *models.WorkflowDependencies) []tektonv1.WorkspaceBinding {
+	if deps == nil {
+		return nil
+	}
+
+	var workspaces []tektonv1.WorkspaceBinding
+
+	for _, s := range deps.Secrets {
+		workspaces = append(workspaces, tektonv1.WorkspaceBinding{
+			Name:   "secret-" + s.Name,
+			Secret: &corev1.SecretVolumeSource{SecretName: s.Name},
+		})
+	}
+
+	for _, cm := range deps.ConfigMaps {
+		workspaces = append(workspaces, tektonv1.WorkspaceBinding{
+			Name: "configmap-" + cm.Name,
+			ConfigMap: &corev1.ConfigMapVolumeSource{
+				LocalObjectReference: corev1.LocalObjectReference{Name: cm.Name},
+			},
+		})
+	}
+
+	return workspaces
 }
 
 // buildStatusSummary creates a lightweight status summary from a PipelineRun.

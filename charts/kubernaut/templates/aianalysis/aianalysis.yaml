@@ -9,36 +9,7 @@ metadata:
     {{- include "kubernaut.labels" . | nindent 4 }}
 data:
   approval.rego: |
-    package aianalysis.approval
-    import rego.v1
-    default require_approval := false
-    is_high_confidence if { input.confidence >= 0.9 }
-    has_affected_resource if { input.affected_resource; input.affected_resource.kind != "" }
-    require_approval if { not has_affected_resource }
-    require_approval if { input.environment == "production"; not is_high_confidence }
-    require_approval if { input.environment == "production"; count(input.warnings) > 0; not is_high_confidence }
-    require_approval if { input.environment == "production"; count(input.failed_detections) > 0; not is_high_confidence }
-    risk_factors contains {"score": 90, "reason": "Missing affected resource - cannot determine remediation target"} if {
-        not has_affected_resource
-    }
-    risk_factors contains {"score": 70, "reason": "Data quality warnings in production environment"} if {
-        input.environment == "production"
-        count(input.warnings) > 0
-        not is_high_confidence
-    }
-    risk_factors contains {"score": 60, "reason": "Data quality issues detected in production environment"} if {
-        input.environment == "production"
-        count(input.failed_detections) > 0
-        not is_high_confidence
-    }
-    risk_factors contains {"score": 40, "reason": "Production environment requires manual approval"} if {
-        input.environment == "production"
-        not is_high_confidence
-    }
-    all_scores contains f.score if { some f in risk_factors }
-    max_risk_score := max(all_scores) if { count(all_scores) > 0 }
-    reason := f.reason if { some f in risk_factors; f.score == max_risk_score }
-    default reason := "Auto-approved"
+{{ .Files.Get "files/rego/aianalysis/approval.rego" | indent 4 }}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -69,6 +40,9 @@ data:
         maxRetries: 3
     rego:
       policyPath: "/etc/aianalysis/policies/approval.rego"
+      {{- if .Values.aianalysis.rego.confidenceThreshold }}
+      confidenceThreshold: {{ .Values.aianalysis.rego.confidenceThreshold }}
+      {{- end }}
 ---
 apiVersion: v1
 kind: ServiceAccount

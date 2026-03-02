@@ -3603,12 +3603,12 @@ components:
         # Signal Mode Fields (BR-SP-106, ADR-054)
         signal_mode:
           type: string
-          enum: [reactive, predictive]
-          description: Whether this signal is reactive (incident occurred) or predictive (incident predicted). BR-SP-106 Predictive Signal Mode Classification.
-          example: "predictive"
+          enum: [reactive, proactive]
+          description: Whether this signal is reactive (incident occurred) or proactive (incident anticipated). BR-SP-106 Proactive Signal Mode Classification.
+          example: "proactive"
         source_signal_name:
           type: string
-          description: Original signal name before normalization. Only populated for predictive signals (e.g., PredictedOOMKill). SOC2 CC7.4 audit trail preservation.
+          description: Original signal name before normalization. Only populated for proactive signals (e.g., PredictedOOMKill). SOC2 CC7.4 audit trail preservation.
           example: "PredictedOOMKill"
 
         # Error Fields (conditional)

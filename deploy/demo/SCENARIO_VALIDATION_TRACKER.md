@@ -33,7 +33,7 @@
 | # | Scenario | Issue | Status | Notes |
 |---|----------|-------|--------|-------|
 | P5 | memory-leak | #150 | PASS | Validated E2E on 2026-02-25. predict_linear fired at ~5min, LLM identified linear memory growth with 0.90 confidence, selected GracefulRestart. Rolling restart reset memory from ~30Mi to baseline. validate.sh 8/8 pass. |
-| P6 | slo-burn | #151 | BLOCKED | Validated infra E2E on 2026-02-26: blackbox-exporter installed, Probe CRD label fixed (release: kube-prometheus-stack), image rebuilt+pushed (v1.0.0), environment wildcard added. ErrorBudgetBurn alert fires correctly (100% error rate). Blocked by #217: LLM selects RestartDeployment instead of ProactiveRollback (classifies as config issue, not deployment regression). |
+| P6 | slo-burn | #151 | PASS | Re-validated E2E on 2026-02-28 after HAPI prompt fix (0bf7c916b). LLM 0.90 confidence, ProactiveRollback. Correctly correlated ConfigMap swap (rev 2) with 100% error rate, rolled back to rev 3. Auto-approved. EA: alert=1, health=1. validate.sh 9/9 pass. Previously blocked by #217 (now fixed). |
 | P7 | hpa-maxed | #153 | PASS | Validated E2E on 2026-02-25. AIAnalysis 0.85 confidence, PatchHPA workflow executed (maxReplicas 3→5). Manual approval required due to #206 (confidence threshold inverted). Slack notifications failed due to #207 (routing not configured). EA completed. |
 | P8 | pdb-deadlock | #154 | BLOCKED | LLM consistently selects `RemoveTaint` instead of `RelaxPDB`. Blocked by HAPI bugs: #196 (prompt engineering), #197 (DataStorage discovery SQL ignores detectedLabels), #198 (HAPI `_build_k8s_context` doesn't populate pod_details). Workflow image built (private on Quay). PrometheusRule label fix needed. |
 | P9 | autoscale | #152 | PASS | Validated E2E on 2026-02-27. Fixed: provisioner.sh (Kind-specific container config — named volumes for /var, tmpfs for /run+/tmp, security-opt unmask=all, /lib/modules mount, entrypoint /sbin/init, kubeadm join --ignore-preflight-errors=SystemVerification, node registration wait loop), workflow-schema.yaml (signalName FailedScheduling→KubePodSchedulingFailed, environment wildcard, updated bundle tag demo-v1.2), deployment.yaml (memory 512Mi→2Gi to exhaust node), prometheus-rule.yaml (for 2m→1m). LLM 0.85 confidence, ProvisionNode. New Kind worker node joined cluster, pods rescheduled successfully. |
@@ -53,8 +53,8 @@
 | # | Scenario | Issue | Status | Notes |
 |---|----------|-------|--------|-------|
 | P15 | network-policy-block | #156 | PASS | Validated E2E on 2026-02-26. Built+pushed workflow image (v1.0.0). Fixed: signalName (DeploymentUnavailable→KubePodCrashLooping), added environment wildcard. RBAC patched for networkpolicies delete. LLM 0.85 confidence, FixNetworkPolicy. Manual approval (bug #207). WFE auto-detected+removed deny-all-ingress policy via label selector. EA completed (health=0.75, alert still clearing). |
-| P16 | mesh-routing-failure | #157 | PENDING | Needs Linkerd. Workflow image not yet built. PrometheusRule label fix needed. |
-| P17 | cert-failure-gitops | #160 | BLOCKED | Validated infra E2E on 2026-02-27: workflow image built+loaded, workflow registered in catalog, PrometheusRule label+PromQL fixed (exported_namespace), CA Secret+Gitea repo+ArgoCD Application deployed, Certificate Ready then broken via bad git commit. LabelDetector correctly detected gitOpsManaged=true, gitOpsTool=argocd. Blocked by #219: LLM selects FixCertificate (direct kubectl) instead of GitRevertCommit (git revert) despite gitOpsManaged=true. Same class as #217. |
+| P16 | mesh-routing-failure | #157 | PASS | Validated E2E on 2026-02-27. Fixed: PromQL to use inbound_http_authz_deny_total (Linkerd deny counter), added PodMonitor for proxy scraping, signalName=LinkerdHighErrorRate, environment wildcard, bundle digest. Hardened remediate.sh (required TARGET_POLICY, no blind deletion). validate.sh present. |
+| P17 | cert-failure-gitops | #160 | PARTIAL | Re-validated E2E on 2026-02-28. #219 FIXED: LLM correctly selects GitRevertCommit (0.85 confidence, auto-approved) with correct rationale ("ClusterIssuer referencing non-existent secret"). WFE job successfully computed git revert. REMAINING: WFE failed on `git push` — Gitea auth failed because LLM guessed `GIT_PASSWORD=kubernaut-token` instead of actual credential. Need credential injection from mounted Secret (not LLM parameter). |
 
 ### Tier 5 — Newer Scenarios
 
@@ -64,6 +64,7 @@
 | P19 | concurrent-cross-namespace | #172 | N/A | Two teams, same issue, different risk tolerance. No workflow schema yet. |
 | P20 | duplicate-alert-suppression | #170 | BLOCKED | Circular duplicate blocking deadlock (#209): both RRs with same fingerprint block each other. AA completed successfully (GracefulRestart) but RO retroactively blocked the original RR. Reuses crashloop workflow. |
 | P21 | resource-quota-exhaustion | #171 | PASS | PromQL fixed: uses ReplicaSet spec vs status metrics instead of pod Pending (pods never created under quota rejection). Alert fires correctly. AA identifies no matching workflow, escalates to ManualReviewRequired. Fixed KSM label leak with `max by(replicaset, namespace)`. |
+| P22 | resource-contention | #231 | BLOCKED | Fixtures validated: alert name aligned to ContainerOOMKilling, workflow mapping added, standard files (README, cleanup, validate) created. Blocked by #214 (CheckConsecutiveFailures ignores completed-but-ineffective remediations). |
 
 ---
 
@@ -130,5 +131,5 @@
 | **B** | Multi-node | node-notready, pending-taint | None | 2/2 (node-notready PASS, pending-taint PASS) |
 | **C** | Multi-node | hpa-maxed, autoscale | metrics-server | 2/2 (hpa-maxed PASS, autoscale PASS) |
 | **D** | Single node | cert-failure, cert-failure-gitops | cert-manager | 1/2 (cert-failure PASS, cert-failure-gitops BLOCKED #219) |
-| **E** | Single node | mesh-routing-failure | Linkerd | 0/1 |
-| **F** | Single node | slo-burn | blackbox-exporter | 0/1 |
+| **E** | Single node | mesh-routing-failure | Linkerd | 1/1 (mesh-routing-failure PASS) |
+| **F** | Single node | slo-burn | blackbox-exporter | 1/1 (slo-burn PASS) |

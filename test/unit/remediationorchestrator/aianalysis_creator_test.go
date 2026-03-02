@@ -390,12 +390,12 @@ var _ = Describe("AIAnalysisCreator", func() {
 			)
 		})
 
-		// BR-SP-106 / BR-AI-084: Predictive Signal Mode
+		// BR-SP-106 / BR-AI-084: Proactive Signal Mode
 		Context("BR-SP-106: Signal mode propagation from SP to AA", func() {
 			It("UT-RO-106-001: should copy SignalMode from SP status to AA spec", func() {
-				// Arrange: SP has predictive signal mode
+				// Arrange: SP has proactive signal mode
 				completedSP := helpers.NewCompletedSignalProcessing("sp-test-remediation", "default")
-				completedSP.Status.SignalMode = "predictive"
+				completedSP.Status.SignalMode = "proactive"
 				completedSP.Status.SignalName = "OOMKilled"             // normalized
 				completedSP.Status.SourceSignalName = "PredictedOOMKill" // preserved for audit
 
@@ -417,13 +417,13 @@ var _ = Describe("AIAnalysisCreator", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				// SignalMode should be copied from SP status
-				Expect(createdAI.Spec.AnalysisRequest.SignalContext.SignalMode).To(Equal("predictive"))
+				Expect(createdAI.Spec.AnalysisRequest.SignalContext.SignalMode).To(Equal("proactive"))
 			})
 
 			It("UT-RO-106-002: should read SignalType from SP status (not RR spec)", func() {
 				// Arrange: SP has normalized signal type
 				completedSP := helpers.NewCompletedSignalProcessing("sp-test-remediation", "default")
-				completedSP.Status.SignalMode = "predictive"
+				completedSP.Status.SignalMode = "proactive"
 				completedSP.Status.SignalName = "OOMKilled"             // Normalized by SP
 				completedSP.Status.SourceSignalName = "PredictedOOMKill"
 

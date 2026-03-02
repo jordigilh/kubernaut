@@ -216,6 +216,12 @@ func (e *ApprovalPolicyEngine) Evaluate(ctx context.Context, input ApprovalInput
 
 ### Rego Policy Example
 
+> **Note (#225)**: The confidence threshold is now configurable via `input.confidence_threshold`.
+> The Rego policy defines a built-in default (e.g., 0.8) that operators can override
+> by setting `rego.confidenceThreshold` in the AIAnalysis controller config. Rego policies
+> should use the `confidence_threshold` variable instead of hardcoding threshold values.
+> See the production policy (`config/rego/aianalysis/approval.rego`) for the canonical pattern.
+
 ```rego
 # ConfigMap: ai-approval-policies
 # Namespace: kubernaut-system
@@ -228,11 +234,18 @@ import rego.v1
 # Default decision: require manual review
 default decision := "manual_review_required"
 
+# #225: Configurable confidence threshold — operators override via input.confidence_threshold
+default confidence_threshold := 0.8
+
+confidence_threshold := input.confidence_threshold if {
+    input.confidence_threshold
+}
+
 # ============================================================
 # AUTO-APPROVED: High confidence in non-production
 # ============================================================
 decision := "approved" if {
-    input.recommendation.confidence >= 0.90
+    input.recommendation.confidence >= confidence_threshold
     input.business_context.environment != "production"
     input.workflow_metadata.safety_level == "safe"
 }
@@ -258,7 +271,7 @@ decision := "approved" if {
 # ============================================================
 decision := "manual_review_required" if {
     input.recommendation.confidence >= 0.70
-    input.recommendation.confidence < 0.90
+    input.recommendation.confidence < 0.8
     input.business_context.environment == "production"
 }
 

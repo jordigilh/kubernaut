@@ -489,9 +489,16 @@ data:
 
     default decision = "MANUAL_APPROVAL_REQUIRED"
 
+    # #225: Configurable confidence threshold — operators override via input.confidence_threshold
+    default confidence_threshold = 0.8
+
+    confidence_threshold = input.confidence_threshold {
+        input.confidence_threshold
+    }
+
     # Auto-approve high confidence in non-production
     decision = "AUTO_APPROVE" {
-        input.confidence >= 0.8
+        input.confidence >= confidence_threshold
         input.environment != "production"
         input.target_in_owner_chain == true
     }

@@ -193,11 +193,13 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 			// This avoids the race where multiple goroutines all try to create the RR
 			// simultaneously before the K8s Lease lock serializes them.
 
+			// #230: Unique alert name per invocation prevents cross-retry/cross-process RR pollution
+			alertName := fmt.Sprintf("TestConcurrentDedup-p%d-%d", GinkgoParallelProcess(), time.Now().UnixNano())
 			fingerprint := fmt.Sprintf("concurrent-test-p%d-%d", GinkgoParallelProcess(), time.Now().UnixNano())
 
 			makePayload := func() []byte {
 				return createPrometheusWebhookPayload(PrometheusAlertPayload{
-					AlertName: "TestConcurrentDedup",
+					AlertName: alertName,
 					Namespace: testNamespace,
 					Severity:  "warning",
 					Labels: map[string]string{
@@ -235,7 +237,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 				}
 				count := 0
 				for _, rr := range rrList.Items {
-					if rr.Spec.SignalName == "TestConcurrentDedup" {
+					if rr.Spec.SignalName == alertName {
 						count++
 					}
 				}
@@ -267,15 +269,20 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 				"All concurrent requests should be deduplicated (HTTP 202 Accepted)")
 
 			// Final check: Still only one RemediationRequest
-			rrList := &remediationv1alpha1.RemediationRequestList{}
-			Expect(testClient.List(testCtx, rrList, client.InNamespace(gatewayNamespace))).To(Succeed())
-			count := 0
-			for _, rr := range rrList.Items {
-				if rr.Spec.SignalName == "TestConcurrentDedup" {
-					count++
+			// Uses Eventually to handle transient API server delays after concurrent writes
+			Eventually(func() int {
+				rrList := &remediationv1alpha1.RemediationRequestList{}
+				if err := testClient.List(testCtx, rrList, client.InNamespace(gatewayNamespace)); err != nil {
+					return -1
 				}
-			}
-			Expect(count).To(Equal(1),
+				count := 0
+				for _, rr := range rrList.Items {
+					if rr.Spec.SignalName == alertName {
+						count++
+					}
+				}
+				return count
+			}, 10*time.Second, 500*time.Millisecond).Should(Equal(1),
 				"Only one RemediationRequest should exist despite concurrent requests")
 		})
 
@@ -284,10 +291,11 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 			// When: Multiple deduplicated alerts arrive concurrently
 			// Then: Hit count increments correctly (no lost updates)
 
-			// Create initial RemediationRequest
+			// #230: Unique alert name per invocation prevents cross-retry/cross-process RR pollution
+			alertName := fmt.Sprintf("TestAtomicHitCount-p%d-%d", GinkgoParallelProcess(), time.Now().UnixNano())
 			fingerprint := fmt.Sprintf("atomic-test-%d", time.Now().Unix())
 			payload := createPrometheusWebhookPayload(PrometheusAlertPayload{
-				AlertName: "TestAtomicHitCount",
+				AlertName: alertName,
 				Namespace: testNamespace,
 				Severity:  "info",
 				Labels: map[string]string{
@@ -319,10 +327,9 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 				if err != nil {
 					return 0
 				}
-				// Filter by alertname in memory
 				count := 0
 				for _, rr := range rrList.Items {
-					if rr.Spec.SignalName == "TestAtomicHitCount" {
+					if rr.Spec.SignalName == alertName {
 						count++
 					}
 				}
@@ -362,7 +369,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 				_ = testClient.List(testCtx, &rrList, client.InNamespace(gatewayNamespace))
 
 				for _, rr := range rrList.Items {
-					if rr.Spec.SignalName == "TestAtomicHitCount" && rr.Status.Deduplication != nil {
+					if rr.Spec.SignalName == alertName && rr.Status.Deduplication != nil {
 						return rr.Status.Deduplication.OccurrenceCount
 					}
 				}

@@ -67,6 +67,11 @@ type WorkflowSchema struct {
 	// Execution contains execution engine configuration (optional)
 	Execution *WorkflowExecution `yaml:"execution,omitempty" json:"execution,omitempty"`
 
+	// Dependencies declares infrastructure resources (Secrets, ConfigMaps) required
+	// by the workflow, provisioned by operators in the execution namespace.
+	// DD-WE-006: Validated at registration (DS) and execution (WFE) time.
+	Dependencies *WorkflowDependencies `yaml:"dependencies,omitempty" json:"dependencies,omitempty"`
+
 	// Parameters defines the workflow input parameters (at least one required)
 	// These are returned to the LLM for parameter population
 	Parameters []WorkflowParameter `yaml:"parameters" json:"parameters" validate:"required,min=1,dive"`
@@ -152,6 +157,64 @@ type WorkflowSchemaLabels struct {
 	// Values: "P0", "P1", "P2", "P3", "*" (wildcard for all)
 	// Note: ExtractLabels normalizes to uppercase per OpenAPI enum [P0, P1, P2, P3, "*"]
 	Priority string `yaml:"priority" json:"priority" validate:"required"`
+}
+
+// WorkflowDependencies declares infrastructure resources (Secrets, ConfigMaps)
+// that must exist in the execution namespace for the workflow to function.
+// DD-WE-006: These are operator-provisioned resources, NOT LLM-provided parameters.
+type WorkflowDependencies struct {
+	Secrets    []ResourceDependency `yaml:"secrets,omitempty" json:"secrets,omitempty"`
+	ConfigMaps []ResourceDependency `yaml:"configMaps,omitempty" json:"configMaps,omitempty"`
+}
+
+// ResourceDependency identifies a Kubernetes resource (Secret or ConfigMap)
+// by name in the execution namespace (kubernaut-workflows).
+type ResourceDependency struct {
+	Name string `yaml:"name" json:"name" validate:"required"`
+}
+
+// ValidateDependencies checks the dependencies section for structural correctness:
+// non-empty names and unique names within each category.
+func (d *WorkflowDependencies) ValidateDependencies() error {
+	if d == nil {
+		return nil
+	}
+
+	seen := make(map[string]bool)
+	for i, s := range d.Secrets {
+		if s.Name == "" {
+			return NewSchemaValidationError(
+				fmt.Sprintf("dependencies.secrets[%d].name", i),
+				"name is required for each secret dependency",
+			)
+		}
+		if seen[s.Name] {
+			return NewSchemaValidationError(
+				"dependencies.secrets",
+				fmt.Sprintf("duplicate secret name %q", s.Name),
+			)
+		}
+		seen[s.Name] = true
+	}
+
+	seen = make(map[string]bool)
+	for i, cm := range d.ConfigMaps {
+		if cm.Name == "" {
+			return NewSchemaValidationError(
+				fmt.Sprintf("dependencies.configMaps[%d].name", i),
+				"name is required for each configMap dependency",
+			)
+		}
+		if seen[cm.Name] {
+			return NewSchemaValidationError(
+				"dependencies.configMaps",
+				fmt.Sprintf("duplicate configMap name %q", cm.Name),
+			)
+		}
+		seen[cm.Name] = true
+	}
+
+	return nil
 }
 
 // WorkflowExecution contains execution engine configuration

@@ -15,7 +15,7 @@ llm:
 
 # HAPI service (for E2E tests calling HAPI)
 hapi:
-  url: "http://localhost:30120"  # E2E test (Kind NodePort per DD-TEST-001)
+  url: "http://localhost:8088"  # E2E test (Kind NodePort per DD-TEST-001)
 
 # Data Storage service (critical business dependency)
 data_storage:

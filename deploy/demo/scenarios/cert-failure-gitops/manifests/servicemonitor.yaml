@@ -1,0 +1,18 @@
+# ServiceMonitor for cert-manager metrics scraping (BR-SP-001)
+# Required for CertManagerCertNotReady alert to fire — Prometheus must scrape
+# certmanager_certificate_ready_status from the cert-manager controller.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: cert-manager
+  namespace: cert-manager
+  labels:
+    release: kube-prometheus-stack
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: controller
+      app.kubernetes.io/instance: cert-manager
+  endpoints:
+  - port: tcp-prometheus-servicemonitor
+    interval: 15s

@@ -37,6 +37,7 @@ from extensions.remediation_history_prompt import (
     build_remediation_history_section,
     effectiveness_level,
     _detect_spec_drift_causal_chains,
+    _detect_completed_but_recurring,
 )
 
 
@@ -859,3 +860,216 @@ class TestDetectSpecDriftCausalChains:
         ]
         result = _detect_spec_drift_causal_chains(chain)
         assert result == {}
+
+
+class TestDetectCompletedButRecurring:
+    """UT-RH-PROMPT-029 through UT-RH-PROMPT-035: Completed-but-recurring detection (Issue #224).
+
+    When the same workflow completes successfully multiple times for the same signal
+    but the issue keeps recurring, the LLM should escalate to human review instead
+    of selecting the same workflow again.
+    """
+
+    def test_ut_rh_prompt_029_detects_recurring_pattern(self):
+        """UT-RH-PROMPT-029: Two completed entries with same workflow+signal triggers detection."""
+        chain = [
+            {
+                "remediationUID": "rr-rec-1",
+                "workflowType": "IncreaseMemoryLimits",
+                "signalType": "OOMKilled",
+                "outcome": "completed",
+            },
+            {
+                "remediationUID": "rr-rec-2",
+                "workflowType": "IncreaseMemoryLimits",
+                "signalType": "OOMKilled",
+                "outcome": "completed",
+            },
+        ]
+        result = _detect_completed_but_recurring(chain, threshold=2)
+        assert len(result) == 1
+        wf, count, signal = result[0]
+        assert wf == "IncreaseMemoryLimits"
+        assert count == 2
+        assert signal == "OOMKilled"
+
+    def test_ut_rh_prompt_030_below_threshold_no_detection(self):
+        """UT-RH-PROMPT-030: Single completed entry does not trigger detection (below threshold=2)."""
+        chain = [
+            {
+                "remediationUID": "rr-single",
+                "workflowType": "IncreaseMemoryLimits",
+                "signalType": "OOMKilled",
+                "outcome": "completed",
+            },
+        ]
+        result = _detect_completed_but_recurring(chain, threshold=2)
+        assert len(result) == 0
+
+    def test_ut_rh_prompt_031_different_workflows_no_detection(self):
+        """UT-RH-PROMPT-031: Different workflows for same signal do not trigger detection."""
+        chain = [
+            {
+                "remediationUID": "rr-diff-1",
+                "workflowType": "IncreaseMemoryLimits",
+                "signalType": "OOMKilled",
+                "outcome": "completed",
+            },
+            {
+                "remediationUID": "rr-diff-2",
+                "workflowType": "RestartDeployment",
+                "signalType": "OOMKilled",
+                "outcome": "completed",
+            },
+        ]
+        result = _detect_completed_but_recurring(chain, threshold=2)
+        assert len(result) == 0
+
+    def test_ut_rh_prompt_032_failed_entries_excluded(self):
+        """UT-RH-PROMPT-032: Failed entries are excluded from the count."""
+        chain = [
+            {
+                "remediationUID": "rr-fail-1",
+                "workflowType": "IncreaseMemoryLimits",
+                "signalType": "OOMKilled",
+                "outcome": "completed",
+            },
+            {
+                "remediationUID": "rr-fail-2",
+                "workflowType": "IncreaseMemoryLimits",
+                "signalType": "OOMKilled",
+                "outcome": "failed",
+            },
+        ]
+        result = _detect_completed_but_recurring(chain, threshold=2)
+        assert len(result) == 0
+
+    def test_ut_rh_prompt_033_spec_drift_excluded(self):
+        """UT-RH-PROMPT-033: spec_drift entries are excluded from the count."""
+        chain = [
+            {
+                "remediationUID": "rr-sd-1",
+                "workflowType": "IncreaseMemoryLimits",
+                "signalType": "OOMKilled",
+                "outcome": "completed",
+            },
+            {
+                "remediationUID": "rr-sd-2",
+                "workflowType": "IncreaseMemoryLimits",
+                "signalType": "OOMKilled",
+                "outcome": "completed",
+                "assessmentReason": "spec_drift",
+            },
+        ]
+        result = _detect_completed_but_recurring(chain, threshold=2)
+        assert len(result) == 0
+
+    def test_ut_rh_prompt_034_custom_threshold(self):
+        """UT-RH-PROMPT-034: Custom threshold=3 requires 3 completions to trigger."""
+        chain = [
+            {
+                "remediationUID": f"rr-thr-{i}",
+                "workflowType": "IncreaseMemoryLimits",
+                "signalType": "OOMKilled",
+                "outcome": "completed",
+            }
+            for i in range(3)
+        ]
+        result_at_2 = _detect_completed_but_recurring(chain, threshold=2)
+        assert len(result_at_2) == 1
+
+        result_at_3 = _detect_completed_but_recurring(chain, threshold=3)
+        assert len(result_at_3) == 1
+
+        result_at_4 = _detect_completed_but_recurring(chain, threshold=4)
+        assert len(result_at_4) == 0
+
+
+class TestCompletedButRecurringWarningInPrompt:
+    """UT-RH-PROMPT-035 through UT-RH-PROMPT-037: Warning integration in prompt output."""
+
+    def test_ut_rh_prompt_035_warning_in_output(self):
+        """UT-RH-PROMPT-035: build_remediation_history_section includes REPEATED INEFFECTIVE warning."""
+        context = {
+            "targetResource": "production/Deployment/memory-eater",
+            "currentSpecHash": "sha256:abc",
+            "regressionDetected": False,
+            "tier1": {
+                "window": "24h0m0s",
+                "chain": [
+                    {
+                        "remediationUID": "rr-warn-1",
+                        "completedAt": "2026-02-12T06:00:00Z",
+                        "workflowType": "IncreaseMemoryLimits",
+                        "signalType": "OOMKilled",
+                        "outcome": "completed",
+                        "effectivenessScore": 0.8,
+                    },
+                    {
+                        "remediationUID": "rr-warn-2",
+                        "completedAt": "2026-02-12T12:00:00Z",
+                        "workflowType": "IncreaseMemoryLimits",
+                        "signalType": "OOMKilled",
+                        "outcome": "completed",
+                        "effectivenessScore": 0.75,
+                    },
+                ],
+            },
+            "tier2": {"window": "2160h0m0s", "chain": []},
+        }
+        result = build_remediation_history_section(context, escalation_threshold=2)
+
+        assert "REPEATED INEFFECTIVE" in result.upper()
+        assert "IncreaseMemoryLimits" in result
+        assert "OOMKilled" in result
+        assert "human" in result.lower() or "escalat" in result.lower()
+
+    def test_ut_rh_prompt_036_no_warning_below_threshold(self):
+        """UT-RH-PROMPT-036: Single completion does not trigger warning."""
+        context = {
+            "targetResource": "production/Deployment/memory-eater",
+            "currentSpecHash": "sha256:abc",
+            "regressionDetected": False,
+            "tier1": {
+                "window": "24h0m0s",
+                "chain": [
+                    {
+                        "remediationUID": "rr-nw-1",
+                        "completedAt": "2026-02-12T06:00:00Z",
+                        "workflowType": "IncreaseMemoryLimits",
+                        "signalType": "OOMKilled",
+                        "outcome": "completed",
+                        "effectivenessScore": 0.8,
+                    },
+                ],
+            },
+            "tier2": {"window": "2160h0m0s", "chain": []},
+        }
+        result = build_remediation_history_section(context, escalation_threshold=2)
+
+        assert "REPEATED INEFFECTIVE" not in result.upper()
+
+    def test_ut_rh_prompt_037_reasoning_guidance_includes_recurring(self):
+        """UT-RH-PROMPT-037: Reasoning guidance mentions recurring escalation even without trigger."""
+        context = {
+            "targetResource": "default/Deployment/nginx",
+            "currentSpecHash": "sha256:abc",
+            "regressionDetected": False,
+            "tier1": {
+                "window": "24h0m0s",
+                "chain": [
+                    {
+                        "remediationUID": "rr-rg",
+                        "completedAt": "2026-02-12T06:00:00Z",
+                        "workflowType": "restart",
+                        "outcome": "success",
+                        "effectivenessScore": 0.8,
+                    },
+                ],
+            },
+            "tier2": {"window": "2160h0m0s", "chain": []},
+        }
+        result = build_remediation_history_section(context)
+
+        assert "Reasoning Guidance" in result
+        assert "recurring" in result.lower() or "recur" in result.lower()

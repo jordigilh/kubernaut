@@ -28,9 +28,11 @@ of the service's AI analysis and validation logic.
 # CONFIDENCE THRESHOLDS (BR-HAPI-197, BR-HAPI-200)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-# Minimum confidence score for workflow selection without human review
+# Minimum confidence score for workflow selection without human review.
 # Business Requirement: BR-HAPI-197 (needs_human_review field)
-# Values below this threshold trigger needs_human_review=True
+# Values below this threshold trigger needs_human_review=True.
+# Configurable via config.yaml: prompt.confidence_threshold_human_review
+# This constant serves as the fallback default when not configured.
 CONFIDENCE_THRESHOLD_HUMAN_REVIEW = 0.7  # 70%
 
 # Default confidence for mock responses
@@ -85,6 +87,17 @@ AUDIT_FLUSH_INTERVAL_SECONDS = 5.0
 # Design Decision: DD-HAPI-002 v1.2 (Workflow Response Validation)
 # Referenced in incident/constants.py but defined here for consistency
 MAX_VALIDATION_ATTEMPTS = 3
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# PROMPT CONFIGURATION (Issue #224, BR-HAPI-016)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# Number of completed remediations for the same workflow+signal before
+# the prompt warns the LLM to escalate to human review.
+# Issue #224: LLM should escalate when remediation history shows repeated
+# ineffective completions. Decision: #214 Option C (LLM-driven escalation).
+# Configurable via config.yaml: prompt.repeated_remediation_escalation_threshold
+REPEATED_REMEDIATION_ESCALATION_THRESHOLD = 2
 
 
 

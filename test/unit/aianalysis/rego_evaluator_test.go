@@ -28,6 +28,9 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/rego"
 )
 
+// ptr returns a pointer to the given float64 value (#225 test helper)
+func ptr(v float64) *float64 { return &v }
+
 // BR-AI-011: Rego policy evaluation tests
 var _ = Describe("RegoEvaluator", func() {
 	var (
@@ -68,7 +71,7 @@ var _ = Describe("RegoEvaluator", func() {
 				Expect(err).NotTo(HaveOccurred(), "Policy should load successfully")
 			})
 
-			// BR-AI-013: Business outcome - production with clean state should auto-approve
+			// BR-AI-013, #206: Production with clean state and confidence >= 0.8 → auto-approve
 			It("should auto-approve production environment with clean state and high confidence", func() {
 				input := &rego.PolicyInput{
 					Environment: "production",
@@ -87,9 +90,8 @@ var _ = Describe("RegoEvaluator", func() {
 				result, err := evaluator.Evaluate(ctx, input)
 
 				Expect(err).NotTo(HaveOccurred())
-				// Business outcome: Production ALWAYS requires approval per BR-AI-013
-				Expect(result.ApprovalRequired).To(BeTrue(), "Production environment always requires approval per BR-AI-013")
-				Expect(result.Reason).To(ContainSubstring("Production environment"), "Should provide production approval reason")
+				// #206: 85% >= 80% threshold → auto-approve
+				Expect(result.ApprovalRequired).To(BeFalse(), "85%% confidence >= 80%% threshold should auto-approve (#206)")
 				Expect(result.Degraded).To(BeFalse(), "Should not be in degraded mode")
 			})
 
@@ -143,8 +145,8 @@ var _ = Describe("RegoEvaluator", func() {
 				"production", &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "production"}, 0.9, nil, nil, false),
 			)
 
-		// Confidence-based auto-approval for production environments
-		// When confidence >= 0.9 and no critical safety conditions, production should auto-approve
+		// #206: Confidence-based auto-approval for production environments
+		// When confidence >= 0.8 and no critical safety conditions, production should auto-approve
 		DescribeTable("confidence-based auto-approval in production",
 			func(confidence float64, affectedResource *rego.AffectedResourceInput, failedDetections []string, warnings []string, expectedApproval bool, expectedReasonSubstring string) {
 				input := &rego.PolicyInput{
@@ -165,13 +167,17 @@ var _ = Describe("RegoEvaluator", func() {
 					Expect(result.Reason).To(ContainSubstring(expectedReasonSubstring))
 				}
 			},
-			// High confidence (>= 0.9) + clean state → auto-approve
+			// #206: High confidence (>= 0.8) + clean state → auto-approve
 			Entry("UT-AIA-CONF-001: high confidence + clean state → auto-approve",
 				0.95, &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "production"},
 				[]string{}, []string{},
 				false, "Auto-approved"),
-			Entry("UT-AIA-CONF-002: confidence exactly 0.9 + clean state → auto-approve",
-				0.9, &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "production"},
+			Entry("UT-AIA-CONF-002: confidence exactly 0.8 + clean state → auto-approve (#206)",
+				0.8, &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "production"},
+				[]string{}, []string{},
+				false, "Auto-approved"),
+			Entry("UT-AIA-CONF-002b: confidence 0.85 + clean state → auto-approve (#206)",
+				0.85, &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "production"},
 				[]string{}, []string{},
 				false, "Auto-approved"),
 			// High confidence + failed detections → auto-approve (minor data quality issues)
@@ -184,13 +190,13 @@ var _ = Describe("RegoEvaluator", func() {
 				0.92, &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "production"},
 				[]string{}, []string{"High memory pressure"},
 				false, "Auto-approved"),
-			// Low confidence (< 0.9) → still require approval
-			Entry("UT-AIA-CONF-005: low confidence + clean state → require approval",
-				0.85, &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "production"},
+			// #206: Low confidence (< 0.8) → still require approval
+			Entry("UT-AIA-CONF-005: confidence 0.79 (just below threshold) → require approval (#206)",
+				0.79, &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "production"},
 				[]string{}, []string{},
 				true, "Production environment"),
-			Entry("UT-AIA-CONF-006: confidence 0.89 (just below threshold) → require approval",
-				0.89, &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "production"},
+			Entry("UT-AIA-CONF-006: low confidence 0.6 → require approval",
+				0.6, &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "production"},
 				[]string{}, []string{},
 				true, "Production environment"),
 			// Safety: missing affected resource → ALWAYS require approval regardless of confidence
@@ -234,8 +240,52 @@ var _ = Describe("RegoEvaluator", func() {
 					"P0", "staging", false),
 			)
 
-			// BR-AI-013: Signal context in policy input
-			Context("handles signal context fields", func() {
+		// #225: Configurable confidence threshold via input.confidence_threshold
+		// The Rego policy should read confidence_threshold from input when provided,
+		// falling back to its built-in default (0.8) when not provided.
+		DescribeTable("configurable confidence threshold (#225)",
+			func(confidence float64, threshold *float64, expectedApproval bool, desc string) {
+				input := &rego.PolicyInput{
+					Environment: "production",
+					AffectedResource: &rego.AffectedResourceInput{
+						Kind: "Deployment", Name: "api", Namespace: "production",
+					},
+					Confidence:          confidence,
+					ConfidenceThreshold: threshold,
+					FailedDetections:    []string{},
+					Warnings:            []string{},
+				}
+
+				result, err := evaluator.Evaluate(ctx, input)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result.ApprovalRequired).To(Equal(expectedApproval), desc)
+			},
+			Entry("UT-AIA-THR-001: threshold 0.9, confidence 0.85 → require approval",
+				0.85, ptr(0.9), true,
+				"0.85 < 0.9 threshold → low confidence → require approval"),
+			Entry("UT-AIA-THR-002: threshold 0.7, confidence 0.85 → auto-approve",
+				0.85, ptr(0.7), false,
+				"0.85 >= 0.7 threshold → high confidence → auto-approve"),
+			Entry("UT-AIA-THR-003: threshold 0.8 (explicit), confidence 0.8 → auto-approve",
+				0.8, ptr(0.8), false,
+				"0.8 >= 0.8 explicit threshold → auto-approve (same as default)"),
+			Entry("UT-AIA-THR-004: no threshold (nil), confidence 0.85 → auto-approve (Rego default 0.8)",
+				0.85, (*float64)(nil), false,
+				"nil threshold → Rego default 0.8 → 0.85 >= 0.8 → auto-approve"),
+			Entry("UT-AIA-THR-005: no threshold (nil), confidence 0.79 → require approval (Rego default 0.8)",
+				0.79, (*float64)(nil), true,
+				"nil threshold → Rego default 0.8 → 0.79 < 0.8 → require approval"),
+			Entry("UT-AIA-THR-006: threshold 0.95, confidence 0.92 → require approval",
+				0.92, ptr(0.95), true,
+				"0.92 < 0.95 threshold → stricter policy → require approval"),
+			Entry("UT-AIA-THR-007: threshold 0.5, confidence 0.6 → auto-approve",
+				0.6, ptr(0.5), false,
+				"0.6 >= 0.5 threshold → permissive policy → auto-approve"),
+		)
+
+		// BR-AI-013: Signal context in policy input
+		Context("handles signal context fields", func() {
 				It("should pass all signal context fields to policy", func() {
 					input := &rego.PolicyInput{
 						SignalType:       "OOMKilled",

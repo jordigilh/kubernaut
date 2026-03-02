@@ -3881,8 +3881,8 @@ func (s *SignalMode) Decode(d *jx.Decoder) error {
 	switch SignalMode(v) {
 	case SignalModeReactive:
 		*s = SignalModeReactive
-	case SignalModePredictive:
-		*s = SignalModePredictive
+	case SignalModeProactive:
+		*s = SignalModeProactive
 	default:
 		*s = SignalMode(v)
 	}

@@ -96,13 +96,13 @@ var _ = Describe("Workflow Catalog Deterministic Ordering (#213)", func() {
 	})
 
 	Describe("ListWorkflowsByActionType", func() {
-		It("UT-DS-213-002: ORDER BY must include workflow_id ASC tiebreaker", func() {
+		It("UT-DS-220-001: ORDER BY must use final_score DESC, workflow_id ASC per DD-WORKFLOW-016", func() {
 			// Count query
 			sqlMock.ExpectQuery(`SELECT COUNT`).
 				WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
 
-			// Main query must include workflow_id ASC
-			sqlMock.ExpectQuery(`ORDER BY actual_success_rate DESC NULLS LAST, created_at DESC, workflow_id ASC`).
+			// #220: Main query must compute final_score and order by it
+			sqlMock.ExpectQuery(`ORDER BY final_score DESC, workflow_id ASC`).
 				WillReturnRows(sqlmock.NewRows([]string{
 					"workflow_id", "workflow_name", "version", "name", "description",
 					"content", "content_hash", "action_type", "status",
@@ -113,9 +113,42 @@ var _ = Describe("Workflow Catalog Deterministic Ordering (#213)", func() {
 					"expected_success_rate", "actual_success_rate",
 					"total_executions", "successful_executions",
 					"created_at", "updated_at",
+					"detected_label_boost", "custom_label_boost", "label_penalty", "final_score",
 				}))
 
 			_, _, err := repo.ListWorkflowsByActionType(ctx, "ScaleUp", nil, 0, 10)
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("UT-DS-220-002: query must include final_score computation with scoring subquery", func() {
+			// Count query
+			sqlMock.ExpectQuery(`SELECT COUNT`).
+				WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+
+			// #220: Query must include final_score computation
+			sqlMock.ExpectQuery(`final_score`).
+				WillReturnRows(sqlmock.NewRows([]string{
+					"workflow_id", "workflow_name", "version", "name", "description",
+					"content", "content_hash", "action_type", "status",
+					"labels", "detected_labels", "custom_labels",
+					"execution_engine", "execution_bundle",
+					"owner", "maintainer",
+					"is_latest_version",
+					"expected_success_rate", "actual_success_rate",
+					"total_executions", "successful_executions",
+					"created_at", "updated_at",
+					"detected_label_boost", "custom_label_boost", "label_penalty", "final_score",
+				}))
+
+			filters := &models.WorkflowDiscoveryFilters{
+				Severity:  "critical",
+				Component: "Deployment",
+				DetectedLabels: &models.DetectedLabels{
+					GitOpsManaged: true,
+					GitOpsTool:    "argocd",
+				},
+			}
+			_, _, err := repo.ListWorkflowsByActionType(ctx, "ScaleUp", filters, 0, 10)
 			Expect(err).ToNot(HaveOccurred())
 		})
 	})

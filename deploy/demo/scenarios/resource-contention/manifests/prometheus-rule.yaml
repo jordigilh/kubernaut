@@ -1,0 +1,26 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: contention-app-alerts
+  namespace: demo-resource-contention
+  labels:
+    release: prometheus
+spec:
+  groups:
+  - name: contention-app
+    rules:
+    - alert: ContainerOOMKilling
+      expr: |
+        kube_pod_container_status_last_terminated_reason{
+          reason="OOMKilled",
+          namespace="demo-resource-contention"
+        } > 0
+      for: 30s
+      labels:
+        severity: critical
+        namespace: demo-resource-contention
+        pod: '{{ $labels.pod }}'
+        container: '{{ $labels.container }}'
+      annotations:
+        summary: "Container OOMKilled in resource-contention demo"
+        description: "Container {{ $labels.container }} in pod {{ $labels.pod }} was OOMKilled"

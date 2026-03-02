@@ -46,11 +46,11 @@ import (
 // DS handles connection pool exhaustion gracefully (no HTTP 503 rejections)
 //
 // MISSING SCENARIO:
-// - Config: maxOpenConns=50 (YAML key uses camelCase, not snake_case)
-// - E2E Config Adjustment: Increased from 25 to 50 for 12 parallel test processes
-// - Burst: 100 concurrent writes (2x pool size)
-// - Expected: First 50 acquire immediately, remaining 50 queue (not rejected)
-// - All 100 complete within timeout (30s)
+// - Config: maxOpenConns=100 (YAML key uses camelCase, not snake_case)
+// - E2E Config Adjustment: Increased from 50 to 100 (12 parallel procs local, 4 in CI)
+// - Burst: 120 concurrent writes (1.2x pool size)
+// - Expected: First 100 acquire immediately, remaining 20 queue (not rejected)
+// - All 120 complete within timeout (30s)
 // - Metric: datastorage_db_connection_wait_time_seconds tracks queueing
 //
 // TDD RED PHASE: Tests define contract, implementation will follow
@@ -58,7 +58,7 @@ import (
 //
 // Parallel Execution: ✅ ENABLED
 // - Each E2E process has isolated DataStorage service in unique namespace
-// - Connection pool (maxOpenConns=50) is per-service, not global
+// - Connection pool (maxOpenConns=100) is per-service, not global
 // - No shared resources that would require Serial execution
 
 var _ = Describe("BR-DS-006: Connection Pool Efficiency - Handle Traffic Bursts Without Degradation", Label("e2e", "gap-3.1", "p0"), Ordered, func() {
@@ -66,19 +66,16 @@ var _ = Describe("BR-DS-006: Connection Pool Efficiency - Handle Traffic Bursts 
 	// DD-AUTH-014: Authenticated HTTP client required for all API calls
 
 	Describe("Burst Traffic Handling", func() {
-		Context("when 100 concurrent writes exceed maxOpenConns (50)", func() {
+		Context("when 120 concurrent writes exceed maxOpenConns (100)", func() {
 			It("should queue requests gracefully without rejecting (HTTP 503)", func() {
 				GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 				GinkgoWriter.Println("GAP 3.1: Testing connection pool exhaustion under burst load")
 				GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-				// ARRANGE: Config maxOpenConns=50 (from E2E config - adjusted for parallel execution)
-				// BUG FIX: Config keys were using snake_case (max_open_conns) which was silently ignored
-				// Discovered: 2026-01-18 - All config files corrected to use camelCase
-				// E2E Adjustment: Increased from 25 to 50 (12 parallel processes need higher pool)
-				// E2E Constraint: Reduced from 100 to 60 (1.2x pool) for Kind/Podman 12-parallel environment
-				concurrentRequests := 60
-				maxOpenConns := 50
+				// ARRANGE: Config maxOpenConns=100 (12 parallel procs local, 4 in CI)
+				// Pool increased from 50→100 to prevent cross-process interference during burst tests
+				concurrentRequests := 120
+				maxOpenConns := 100
 
 				var wg sync.WaitGroup
 				results := make([]struct {
@@ -93,7 +90,7 @@ var _ = Describe("BR-DS-006: Connection Pool Efficiency - Handle Traffic Bursts 
 				GinkgoWriter.Printf("🚀 Starting %d concurrent audit writes (pool size: %d)...\n",
 					concurrentRequests, maxOpenConns)
 
-				// ACT: Fire 50 concurrent POST requests
+				// ACT: Fire concurrent POST requests (1.2x pool size)
 				for i := 0; i < concurrentRequests; i++ {
 					wg.Add(1)
 					go func(index int) {
@@ -204,11 +201,11 @@ var _ = Describe("BR-DS-006: Connection Pool Efficiency - Handle Traffic Bursts 
 
 				// ASSERT: Reasonable throughput (all complete within 30s)
 				Expect(totalDuration).To(BeNumerically("<", 30*time.Second),
-					"All 50 requests should complete within 30s timeout")
+					"All requests should complete within 30s timeout")
 
 				// BUSINESS OUTCOME: Graceful degradation
-				// - First 25 connections: Acquire immediately from pool
-				// - Next 25 connections: Queue and wait for available connection
+				// - First 100 connections: Acquire immediately from pool
+				// - Next 20 connections: Queue and wait for available connection
 				// - Result: ALL requests succeed, NONE rejected
 				// - Better to queue (slower) than reject (data loss)
 
@@ -230,8 +227,8 @@ var _ = Describe("BR-DS-006: Connection Pool Efficiency - Handle Traffic Bursts 
 	})
 
 	Describe("Connection Pool Recovery", func() {
-		// PENDING: E2E environment constraint (Kind on Podman with 12 parallel processes)
-		// Even with reduced concurrency (60 vs 100) and 90s timeout, recovery time exceeds <1s threshold
+		// PENDING: E2E environment constraint (Kind on Podman with 4 parallel processes)
+		// Even with 120 concurrent requests and 90s timeout, recovery time exceeds <1s threshold
 		// This test should be re-enabled in performance/stress testing environments with dedicated resources
 		// Related: GAP 3.1 - Connection Pool Efficiency
 		PIt("should recover gracefully after burst subsides", func() {

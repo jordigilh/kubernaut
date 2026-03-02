@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -29,6 +30,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
@@ -717,4 +719,102 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			expectedResult: ctrl.Result{},                // No requeue
 		}),
 	)
+})
+
+// ========================================
+// UT-RO-214-010: CapturePreRemediationHash Terminal Failure
+// Issue #214: When CapturePreRemediationHash returns hashErr != nil,
+// the RR must transition to Failed (cannot safely remediate without
+// knowing the target resource state).
+// ========================================
+var _ = Describe("UT-RO-214-010: CapturePreRemediationHash hashErr terminal (Issue #214)", func() {
+	var (
+		ctx    context.Context
+		scheme *runtime.Scheme
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		scheme = runtime.NewScheme()
+		_ = remediationv1.AddToScheme(scheme)
+		_ = signalprocessingv1.AddToScheme(scheme)
+		_ = aianalysisv1.AddToScheme(scheme)
+		_ = workflowexecutionv1.AddToScheme(scheme)
+		_ = notificationv1.AddToScheme(scheme)
+		_ = corev1.AddToScheme(scheme)
+		_ = eav1.AddToScheme(scheme)
+	})
+
+	It("should transition RR to Failed when apiReader returns error for target resource", func() {
+		initialObjects := []client.Object{
+			newRemediationRequestWithChildRefs("test-rr", "default", remediationv1.PhaseAnalyzing, "test-rr-sp", "test-rr-ai", ""),
+			newSignalProcessingCompleted("test-rr-sp", "default", "test-rr"),
+			newAIAnalysisCompleted("test-rr-ai", "default", "test-rr", 0.9, "restart-pod-v1"),
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(initialObjects...).
+			WithStatusSubresource(
+				&remediationv1.RemediationRequest{},
+				&remediationv1.RemediationApprovalRequest{},
+				&signalprocessingv1.SignalProcessing{},
+				&aianalysisv1.AIAnalysis{},
+				&workflowexecutionv1.WorkflowExecution{},
+			).
+			Build()
+
+		// apiReader with interceptor: returns error for unstructured Deployment Gets
+		// (simulates RBAC failure or API server error during pre-remediation hash capture)
+		apiReader := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(initialObjects...).
+			WithStatusSubresource(
+				&remediationv1.RemediationRequest{},
+			).
+			WithInterceptorFuncs(interceptor.Funcs{
+				Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+					if key.Name == "test-deployment" && key.Namespace == "default" {
+						return fmt.Errorf("simulated API server error: RBAC denied")
+					}
+					return c.Get(ctx, key, obj, opts...)
+				},
+			}).
+			Build()
+
+		mockRouting := &MockRoutingEngine{}
+		recorder := record.NewFakeRecorder(20)
+		reconciler := prodcontroller.NewReconciler(
+			fakeClient,
+			apiReader,
+			scheme,
+			nil,
+			recorder,
+			rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			prodcontroller.TimeoutConfig{
+				Global:     1 * time.Hour,
+				Processing: 5 * time.Minute,
+				Analyzing:  10 * time.Minute,
+				Executing:  30 * time.Minute,
+			},
+			mockRouting,
+		)
+		// UT-RO-214-010: REST mapper needed for CapturePreRemediationHash to resolve "Deployment" -> apps/v1
+		reconciler.SetRESTMapper(newTestRESTMapper())
+
+		result, err := reconciler.Reconcile(ctx, ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: "default"},
+		})
+
+		Expect(err).ToNot(HaveOccurred(), "Reconciler should not return error (terminal failure is handled internally)")
+		Expect(result).To(Equal(ctrl.Result{}), "No requeue after terminal failure")
+
+		var finalRR remediationv1.RemediationRequest
+		Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "test-rr", Namespace: "default"}, &finalRR)).To(Succeed())
+		Expect(finalRR.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed),
+			"RR should transition to Failed when pre-remediation hash capture fails")
+		Expect(finalRR.Status.FailureReason).ToNot(BeNil(), "FailureReason should be set")
+		Expect(*finalRR.Status.FailureReason).To(ContainSubstring("Cannot determine target resource state"),
+			"FailureReason should indicate hash capture failure")
+	})
 })

@@ -1076,7 +1076,18 @@ func createTestServerWithAccess() (*httptest.Server, *server.Server) {
 	// SOC2 Gap #9: PostgreSQL with custom hash chains for tamper detection
 	// DD-AUTH-014: Pass mock authenticator/authorizer for test environment
 	// authNamespace is "datastorage-test" for SAR checks (mock authorizer allows all)
-	srv, err := server.NewServer(dbConnStr, redisAddr, redisPassword, logger, appCfg, serverCfg, 1000, mockAuthenticator, mockAuthorizer, "datastorage-test")
+	srv, err := server.NewServer(server.ServerDeps{
+		DBConnStr:     dbConnStr,
+		RedisAddr:     redisAddr,
+		RedisPassword: redisPassword,
+		Logger:        logger,
+		AppConfig:     appCfg,
+		ServerConfig:  serverCfg,
+		DLQMaxLen:     1000,
+		Authenticator: mockAuthenticator,
+		Authorizer:    mockAuthorizer,
+		AuthNamespace: "datastorage-test",
+	})
 	Expect(err).ToNot(HaveOccurred(), "Server creation should succeed")
 
 	// Wrap in httptest.Server for HTTP testing

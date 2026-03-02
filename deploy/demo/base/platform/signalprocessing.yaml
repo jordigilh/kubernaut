@@ -132,15 +132,15 @@ data:
       value := v
     }
 ---
-# 6. Predictive Signal Mode Mappings (BR-SP-106, ADR-054)
+# 6. Proactive Signal Mode Mappings (BR-SP-106, ADR-054)
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: signalprocessing-predictive-signal-mappings
+  name: signalprocessing-proactive-signal-mappings
   namespace: kubernaut-system
 data:
-  predictive-signal-mappings.yaml: |
-    predictive_signal_mappings:
+  proactive-signal-mappings.yaml: |
+    proactive_signal_mappings:
       PredictedOOMKill: OOMKilled
       PredictedCPUThrottling: CPUThrottling
       PredictedDiskPressure: DiskPressure
@@ -292,9 +292,9 @@ spec:
             - name: policies
               mountPath: /etc/signalprocessing/policies
               readOnly: true
-            - name: predictive-signal-mappings
-              mountPath: /etc/signalprocessing/predictive-signal-mappings.yaml
-              subPath: predictive-signal-mappings.yaml
+            - name: proactive-signal-mappings
+              mountPath: /etc/signalprocessing/proactive-signal-mappings.yaml
+              subPath: proactive-signal-mappings.yaml
               readOnly: true
       volumes:
         - name: config
@@ -313,9 +313,9 @@ spec:
                   name: signalprocessing-severity-policy
               - configMap:
                   name: signalprocessing-customlabels-policy
-        - name: predictive-signal-mappings
+        - name: proactive-signal-mappings
           configMap:
-            name: signalprocessing-predictive-signal-mappings
+            name: signalprocessing-proactive-signal-mappings
 ---
 apiVersion: v1
 kind: Service
