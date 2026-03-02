@@ -8,7 +8,7 @@ SCENARIO_NS="${1:?Usage: show-effectiveness.sh <scenario-namespace>}"
 PLATFORM_NS="${PLATFORM_NS:-kubernaut-system}"
 
 EA_NAME=$(kubectl get effectivenessassessments -n "$PLATFORM_NS" -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.signalTarget.namespace}{"\n"}{end}' 2>/dev/null \
-  | grep "$SCENARIO_NS" | tail -1 | cut -f1)
+  | grep "$SCENARIO_NS" | tail -1 | cut -f1 || true)
 
 if [ -z "$EA_NAME" ]; then
   EA_NAME=$(kubectl get effectivenessassessments -n "$PLATFORM_NS" -o jsonpath='{.items[-1].metadata.name}' 2>/dev/null)
@@ -37,8 +37,10 @@ printf '  ────────────────\n'
 
 if [ -n "$ALERT_SCORE" ]; then
   printf '  Alert Resolution:  %s' "$ALERT_SCORE"
-  if [ "$ALERT_SCORE" = "1" ]; then
+  if awk "BEGIN{exit !($ALERT_SCORE >= 1.0)}" 2>/dev/null; then
     printf '    -- alert is no longer firing\n'
+  elif awk "BEGIN{exit !($ALERT_SCORE >= 0.5)}" 2>/dev/null; then
+    printf '    -- alert partially resolved\n'
   else
     printf '    -- alert is still active\n'
   fi
@@ -48,10 +50,20 @@ fi
 
 if [ -n "$HEALTH_SCORE" ]; then
   printf '  Health Check:      %s' "$HEALTH_SCORE"
-  if [ "$HEALTH_SCORE" = "1" ]; then
-    printf '    -- all pods Running, desired replicas available\n'
+  if awk "BEGIN{exit !($HEALTH_SCORE >= 1.0)}" 2>/dev/null; then
+    printf '    -- all pods Running, no restarts\n'
+  elif awk "BEGIN{exit !($HEALTH_SCORE >= 0.75)}" 2>/dev/null; then
+    printf '    -- all pods Running (restarts from prior crash cleared)\n'
+  elif awk "BEGIN{exit !($HEALTH_SCORE >= 0.5)}" 2>/dev/null; then
+    printf '    -- partial readiness (some pods recovering)\n'
   else
-    printf '    -- some pods not yet healthy\n'
+    READY_PODS=$(kubectl get pods -n "$SCENARIO_NS" --no-headers 2>/dev/null | grep -c "Running" || echo "0")
+    TOTAL_PODS=$(kubectl get pods -n "$SCENARIO_NS" --no-headers 2>/dev/null | wc -l | tr -d ' ')
+    if [ "$READY_PODS" = "$TOTAL_PODS" ] && [ "$READY_PODS" != "0" ]; then
+      printf '    -- pods Running (score reflects prior crash restarts)\n'
+    else
+      printf '    -- pods not yet healthy\n'
+    fi
   fi
 else
   printf '  Health Check:      pending\n'
@@ -59,12 +71,10 @@ fi
 
 if [ -n "$METRICS_SCORE" ]; then
   printf '  Metrics:           %s' "$METRICS_SCORE"
-  if [ "$METRICS_SCORE" = "0" ]; then
-    printf '    -- no measurable improvement in available metrics\n'
-    printf '                              (workload has no app-level Prometheus\n'
-    printf '                               instrumentation; only cAdvisor data)\n'
+  if awk "BEGIN{exit !($METRICS_SCORE >= 0.5)}" 2>/dev/null; then
+    printf '    -- improvement detected across Prometheus queries\n'
   else
-    printf '    -- average improvement across Prometheus queries\n'
+    printf '    -- N/A (no application-level Prometheus metrics)\n'
   fi
 else
   printf '  Metrics:           pending\n'
