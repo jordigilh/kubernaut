@@ -157,8 +157,13 @@ eventExporter:
       cpu: 200m
 
 # -- PostgreSQL (DataStorage backend)
-# Credentials: provide EITHER existingSecret OR password (via --set).
-# existingSecret must contain keys: POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB
+# Credential flow (#204):
+#   Option A (prod): Pre-create a Secret and set postgresql.auth.existingSecret.
+#     Secret must have keys: POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB.
+#     Also set datastorage.dbExistingSecret to a Secret with key db-secrets.yaml
+#     containing "username: <user>\npassword: <pass>".
+#   Option B (dev):  Set postgresql.auth.password via --set or values-demo.yaml.
+#     Chart auto-creates postgresql-secret and datastorage-db-secret.
 postgresql:
   image: postgres:16-alpine
   auth:
@@ -178,8 +183,11 @@ postgresql:
       cpu: 500m
 
 # -- Redis (DataStorage DLQ)
-# Credentials: provide EITHER existingSecret OR password (via --set).
-# existingSecret must contain key: password
+# Credential flow (#204):
+#   Option A (prod): Pre-create a Secret and set redis.existingSecret.
+#     Secret must have key redis-secrets.yaml containing "password: <pass>".
+#   Option B (dev):  Set redis.password via --set. Chart auto-creates redis-secret.
+#     Empty password ("") is allowed for development.
 redis:
   image: quay.io/jordigilh/redis:7-alpine
   existingSecret: ""  # name of pre-created K8s Secret; when set, chart skips Secret creation
