@@ -1,10 +1,34 @@
 # DD-HAPI-002: Workflow Response Validation Architecture
 
 **Date**: December 1, 2025
-**Status**: ✅ APPROVED (Updated v1.2)
+**Status**: ✅ APPROVED (Updated v1.3)
 **Deciders**: Architecture Team, Workflow Engine Team, HolmesGPT-API Team
-**Version**: 1.2
-**Related**: DD-WORKFLOW-002, DD-HAPI-001, BR-HAPI-191, BR-AI-023
+**Version**: 1.3
+**Related**: DD-WORKFLOW-002, DD-HAPI-001, BR-HAPI-191, BR-AI-023, DD-WE-006, GitHub Issue #241
+
+---
+
+## ⚠️ v1.3 UPDATE (March 2, 2026)
+
+**Change**: Added **Step 3b: Undeclared Parameter Stripping** as a mandatory post-validation filter.
+
+**Problem** (GitHub Issue #241): The LLM returns parameters not declared in the workflow schema (e.g., `GIT_PASSWORD`, `GIT_USERNAME`). These hallucinated parameters flow unfiltered through AIAnalysis, RO, and into the WFE where `buildEnvVars` injects them as container environment variables. This is a security risk — the LLM must not provide credentials or arbitrary env vars.
+
+**New Validation Step**:
+
+| Validation Type | Description | V1.0 |
+|-----------------|-------------|------|
+| **Undeclared Parameter Stripping** | Remove any parameter keys not declared in the workflow schema | ✅ NEW |
+
+**Behavior**:
+- After Step 3 (Parameter Schema Validation), all keys in the `params` dict that are **not** declared in the workflow's `parameters` schema are deleted in-place
+- If the workflow has **no parameter schema**, all params are stripped (nothing declared = nothing allowed)
+- Stripping does **not** cause a validation failure — it is silent filtering with a warning log for each stripped key
+- The caller's `selected_workflow["parameters"]` dict is mutated directly (Python dict reference semantics), so no changes are needed to `ValidationResult` or `result_parser.py`
+
+**Security Rationale**: The LLM must never provide credentials. Credentials are handled exclusively via DD-WE-006 dependency mounts (Secrets, ConfigMaps). Stripping undeclared params is defense-in-depth against LLM hallucination of sensitive values.
+
+**Follow-up**: WE controller defense-in-depth filtering (separate issue) — the WE controller already has the schema from OCI extraction and can filter `wfe.Spec.Parameters` before `buildEnvVars`/`convertParameters` as a second layer of protection.
 
 ---
 
@@ -102,6 +126,7 @@ When the LLM returns a workflow recommendation in JSON format:
 1. **Workflow Existence**: Call `GET /api/v1/workflows/{workflow_id}` on Data Storage
 2. **Container Image Consistency**: Compare `container_image` with catalog value
 3. **Parameter Schema Validation**: Validate parameters against workflow schema
+3b. **Undeclared Parameter Stripping**: Remove any parameter keys not declared in the schema (in-place, silent with warning log)
 
 If ANY validation fails → return errors to LLM → LLM self-corrects → retry (max 3 attempts)
 
@@ -111,7 +136,7 @@ If ANY validation fails → return errors to LLM → LLM self-corrects → retry
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                 WORKFLOW RESPONSE VALIDATION FLOW (v1.2)                    │
+│                 WORKFLOW RESPONSE VALIDATION FLOW (v1.3)                    │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  ┌───────────────────────────────────────────────────────────────────────┐  │
@@ -162,6 +187,18 @@ If ANY validation fails → return errors to LLM → LLM self-corrects → retry
 │  │     │  │                                                     │   │  │  │
 │  │     │  │  ├─ All valid ✅                                    │   │  │  │
 │  │     │  │  └─ Errors → "Fix parameters: [errors]" ❌          │   │  │  │
+│  │     │  └─────────────────────────────────────────────────────┘   │  │  │
+│  │     │          │                                                  │  │  │
+│  │     │          ▼                                                  │  │  │
+│  │     │  ┌─────────────────────────────────────────────────────┐   │  │  │
+│  │     │  │  STEP 3b: Undeclared Parameter Stripping (v1.3)     │   │  │  │
+│  │     │  │  ───────────────────────────────────────────        │   │  │  │
+│  │     │  │  Strip keys NOT in schema (in-place mutation):      │   │  │  │
+│  │     │  │  ├─ Schema exists: keep only declared param keys    │   │  │  │
+│  │     │  │  ├─ No schema: strip ALL keys                       │   │  │  │
+│  │     │  │  └─ Log warning for each stripped key               │   │  │  │
+│  │     │  │                                                     │   │  │  │
+│  │     │  │  (Silent — does NOT cause validation failure)        │   │  │  │
 │  │     │  └─────────────────────────────────────────────────────┘   │  │  │
 │  │     │          │                                                  │  │  │
 │  │     │          ▼                                                  │  │  │
@@ -581,6 +618,7 @@ See: `docs/requirements/BR-HAPI-191-workflow-parameter-validation.md`
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.3 | 2026-03-02 | **SECURITY**: Added Step 3b — undeclared parameter stripping (GitHub Issue #241). LLM-hallucinated params (e.g., GIT_PASSWORD) are silently removed before reaching execution. No-schema workflows have all params stripped. |
 | 1.2 | 2025-12-05 | **EXPANDED**: Added workflow existence and container image validation. Changed from tool-based to automatic validation. Added comprehensive implementation design. |
 | 1.1 | 2025-12-01 | **SIMPLIFIED**: Removed WE validation layer. HAPI is now sole validator. BR-WE-001 cancelled. |
 | 1.0 | 2025-12-01 | Initial decision - HolmesGPT-API primary, WE defense-in-depth |

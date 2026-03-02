@@ -81,26 +81,25 @@ git push origin "${GIT_BRANCH}"
 NEW_COMMIT=$(git rev-parse HEAD)
 echo "Revert commit: ${NEW_COMMIT}"
 
-echo "Waiting for ArgoCD to sync (30s)..."
-sleep 30
-
 echo "=== Phase 3: Verify ==="
-CERT_READY=$(kubectl get certificate "${TARGET_RESOURCE_NAME}" -n "${TARGET_NAMESPACE}" \
-  -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "Unknown")
-echo "Certificate Ready status: ${CERT_READY}"
+VERIFY_TIMEOUT="${VERIFY_TIMEOUT:-180}"
+POLL_INTERVAL=10
+ELAPSED=0
 
-if [ "${CERT_READY}" = "True" ]; then
-  echo "=== SUCCESS: Git commit reverted (${CURRENT_COMMIT} -> ${NEW_COMMIT}), Certificate is Ready ==="
-else
-  echo "WARNING: Certificate still not Ready after git revert. ArgoCD may need more time to sync."
-  echo "Waiting additional 30s..."
-  sleep 30
+echo "Polling Certificate status (timeout=${VERIFY_TIMEOUT}s, interval=${POLL_INTERVAL}s)..."
+while [ "${ELAPSED}" -lt "${VERIFY_TIMEOUT}" ]; do
   CERT_READY=$(kubectl get certificate "${TARGET_RESOURCE_NAME}" -n "${TARGET_NAMESPACE}" \
     -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "Unknown")
+
   if [ "${CERT_READY}" = "True" ]; then
-    echo "=== SUCCESS: Certificate became Ready after extended wait ==="
-  else
-    echo "ERROR: Certificate still not Ready after revert + 60s wait"
-    exit 1
+    echo "=== SUCCESS: Git commit reverted (${CURRENT_COMMIT} -> ${NEW_COMMIT}), Certificate is Ready (after ${ELAPSED}s) ==="
+    exit 0
   fi
-fi
+
+  echo "  [${ELAPSED}s] Certificate Ready=${CERT_READY}, waiting..."
+  sleep "${POLL_INTERVAL}"
+  ELAPSED=$((ELAPSED + POLL_INTERVAL))
+done
+
+echo "ERROR: Certificate still not Ready after revert + ${VERIFY_TIMEOUT}s"
+exit 1

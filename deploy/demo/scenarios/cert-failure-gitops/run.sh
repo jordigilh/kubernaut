@@ -61,6 +61,9 @@ if ! kubectl get namespace argocd &>/dev/null; then
   echo "  Installing ArgoCD..."
   bash "${SCRIPT_DIR}/../gitops/scripts/setup-argocd.sh"
 fi
+# Speed up ArgoCD polling for demo scenarios (default 180s -> 60s)
+kubectl patch configmap argocd-cm -n argocd --type merge \
+  -p '{"data":{"timeout.reconciliation":"60s"}}' 2>/dev/null || true
 
 # Step 4: Create Gitea repo with cert-manager manifests
 echo "==> Step 4: Pushing cert-manager manifests to Gitea..."
