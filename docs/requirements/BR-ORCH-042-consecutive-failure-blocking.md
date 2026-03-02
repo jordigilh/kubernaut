@@ -337,6 +337,30 @@ func (g *Gateway) findActiveRR(ctx context.Context, fingerprint string) *remedia
 
 ---
 
+### BR-ORCH-042.6: Completed-but-Ineffective Remediation Handling (Option C Decision)
+
+**Decision**: Completed-but-ineffective remediations (resource keeps reverting, health does not improve) are handled via **Option C: LLM-driven escalation**.
+
+**Background**: `CheckConsecutiveFailures` only counts RRs with OverallPhase `Failed` or `Blocked`. An RR that completes successfully but is ineffective (e.g., the underlying issue recurs immediately) does not increment the consecutive failure counter. This is by design — the orchestrator should not penalize successful execution.
+
+**Option C — LLM-Driven Escalation**:
+Instead of modifying the consecutive failure counter, the system uses DataStorage audit traces to detect ineffective remediation chains. When the same pre-remediation state recurs, the LLM (via HAPI) receives the full remediation history context and can:
+1. Choose a different remediation strategy
+2. Escalate to manual review if no alternative exists
+3. Provide root cause analysis enriched with historical failure context
+
+**Implementation status**:
+- ✅ `CheckIneffectiveRemediationChain` in `blocking.go` (Issue #214, BR-ORCH-042.5)
+- ✅ DataStorage `get_resource_context` API provides remediation history to the LLM
+- 🔲 Prompt engineering for HAPI to leverage history context (separate HAPI issue)
+
+**Why not Option A/B?**
+- **Option A** (count completed-but-ineffective as failures): Punishes correct execution; undermines trust in success signals.
+- **Option B** (separate ineffective counter): Adds complexity without leveraging AI insight; a static counter cannot make nuanced decisions.
+- **Option C** (LLM-driven): Leverages the full context — the LLM can distinguish between "same fix, different root cause" vs "same root cause, fix not working" and choose accordingly.
+
+---
+
 ## Supersedes
 
 - **BR-GATEWAY-184**: Consecutive Failure Blocking (moved from Gateway to RO)
@@ -361,4 +385,5 @@ func (g *Gateway) findActiveRR(ctx context.Context, fingerprint string) *remedia
 | 1.0 | 2025-12-10 | Initial version - moved from Gateway (BR-GATEWAY-184) to RO |
 | 1.1 | 2025-12-10 | Updated to use field selector on `spec.signalFingerprint` (not labels) per BR-GATEWAY-185 v1.1. Added AC-042-1-4, AC-042-1-5. |
 | 1.2 | 2026-02-28 | Added BR-ORCH-042.5: Ineffective Remediation Chain Detection (Issue #214). Three-layer detection using DataStorage audit traces. |
+| 1.3 | 2026-03-02 | Added BR-ORCH-042.6: Documented Option C decision for completed-but-ineffective handling. Prompt engineering deferred to HAPI team. |
 

@@ -300,6 +300,12 @@ func parseTargetResource(s string) TargetResource {
 //
 // IMPLEMENTATION NOTE: Queries history of RRs with same SignalFingerprint to count
 // consecutive failures. The incoming RR's ConsecutiveFailureCount is always 0 for new RRs.
+//
+// DESIGN LIMITATION (BR-ORCH-042.6, Issue #214): This function only counts RRs with
+// OverallPhase Failed/Blocked. Completed-but-ineffective remediations (resource reverts
+// to pre-remediation state) are NOT counted here. Instead, they are detected by
+// CheckIneffectiveRemediationChain via DataStorage audit traces (Option C: LLM-driven
+// escalation). See BR-ORCH-042.6 for the decision rationale.
 func (r *RoutingEngine) CheckConsecutiveFailures(
 	ctx context.Context,
 	rr *remediationv1.RemediationRequest,
