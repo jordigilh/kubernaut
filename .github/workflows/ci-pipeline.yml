@@ -562,7 +562,18 @@ jobs:
           go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
           echo "KUBEBUILDER_ASSETS=$($(go env GOPATH)/bin/setup-envtest use -p path)" >> $GITHUB_ENV
       - name: Run ${{ matrix.service }} integration tests
-        run: make test-integration-${{ matrix.service }}
+        run: |
+          make test-integration-${{ matrix.service }} 2>&1 | tee integration-${{ matrix.service }}.log
+          exit ${PIPESTATUS[0]}
+      
+      - name: Upload integration test log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-log-${{ matrix.service }}-${{ github.run_id }}
+          path: integration-${{ matrix.service }}.log
+          retention-days: 14
+          if-no-files-found: ignore
       
       - name: Calculate and save integration coverage
         if: always()
