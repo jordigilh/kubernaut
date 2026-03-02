@@ -84,6 +84,10 @@ type Server struct {
 	// BR-AUDIT-007: Signed exports for tamper detection
 	signer *cert.Signer
 
+	// DD-009 V1.0: DLQ retry worker (background goroutine for async persistence)
+	// Processes 202 Accepted events from Redis DLQ back to PostgreSQL
+	dlqRetryWorker *DLQRetryWorker
+
 	// DD-AUTH-014: Authentication and authorization via dependency injection
 	// Authenticator validates tokens (TokenReview)
 	// Authorizer checks permissions (SubjectAccessReview)
@@ -322,6 +326,11 @@ func NewServer(deps ServerDeps) (*Server, error) {
 		"algorithm", signer.GetAlgorithm(),
 		"fingerprint", signer.GetCertificateFingerprint())
 
+	// DD-009 V1.0: Create DLQ retry worker (goroutine inside server)
+	dlqWorkerConfig := DefaultDLQRetryWorkerConfig()
+	dlqWorkerConfig.ConsumerName = fmt.Sprintf("worker-%d", os.Getpid())
+	dlqRetryWorker := NewDLQRetryWorker(dlqClient, auditEventsRepo, dlqWorkerConfig, logger)
+
 	// DS-FLAKY-003 FIX: Create server with handler assigned to httpServer
 	// This allows graceful shutdown to work in both Start() and httptest scenarios
 	// Previously, handler was only assigned in Start(), causing Shutdown() to hang in tests
@@ -341,6 +350,7 @@ func NewServer(deps ServerDeps) (*Server, error) {
 		auditStore:             auditStore,
 		metrics:         metrics,
 		signer:          signer,
+		dlqRetryWorker: dlqRetryWorker,       // DD-009 V1.0: DLQ retry worker
 		authenticator:   deps.Authenticator, // DD-AUTH-014: Injected at runtime
 		authorizer:      deps.Authorizer,    // DD-AUTH-014: Injected at runtime
 		authNamespace:   deps.AuthNamespace,  // DD-AUTH-014: Dynamic namespace for SAR checks
@@ -534,6 +544,9 @@ func (s *Server) Start() error {
 		"addr", s.httpServer.Addr,
 	)
 
+	// DD-009 V1.0: Start DLQ retry worker before accepting HTTP traffic
+	s.dlqRetryWorker.Start()
+
 	return s.httpServer.ListenAndServe()
 }
 
@@ -555,6 +568,9 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	if err := s.shutdownStep3DrainConnections(ctx); err != nil {
 		return err
 	}
+
+	// STEP 3.5: Stop DLQ retry worker before draining (DD-009 V1.0)
+	s.dlqRetryWorker.Stop()
 
 	// STEP 4: Drain DLQ messages (DD-008)
 	s.shutdownStep4DrainDLQ(ctx)
