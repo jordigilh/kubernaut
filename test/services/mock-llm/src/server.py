@@ -80,6 +80,7 @@ class MockScenario:
     rca_resource_name: str = "test-pod"
     rca_resource_api_version: str = "v1"  # BR-HAPI-212: API version for GVK resolution
     include_affected_resource: bool = True  # BR-HAPI-212: Whether to include affectedResource in RCA
+    rca_override_prompt_resource: bool = False  # DD-EM-004: Use scenario kind/name instead of prompt-extracted
     parameters: Dict[str, str] = field(default_factory=dict)
     execution_engine: str = "tekton"  # BR-WE-014: Execution backend ("tekton" or "job")
 
@@ -284,6 +285,7 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         rca_resource_namespace="default",
         rca_resource_name="demo-app-cert",
         rca_resource_api_version="cert-manager.io/v1",
+        rca_override_prompt_resource=True,  # Gateway sees Pod from alert, but RCA is about the Certificate
         parameters={"NAMESPACE": "default", "DEPLOYMENT_NAME": "memory-eater", "MEMORY_INCREASE_PERCENT": "50"},
         execution_engine="job",
     ),
@@ -707,30 +709,30 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
                 logger.info("✅ SCENARIO DETECTED: OOMKILLED_PREDICTIVE")
                 return MOCK_SCENARIOS.get("oomkilled_predictive", DEFAULT_SCENARIO)
 
-        # Check for signal types FIRST (most specific first to avoid false matches)
-        # DD-TEST-010: Match exact signal types, not generic substrings
-        # FIX: Move signal type checks BEFORE Category F scenarios to avoid incorrect matches
-        # "crashloop" is more specific than "oom", check it first
-        if "crashloop" in content:
-            matched_scenario = MOCK_SCENARIOS.get("crashloop", DEFAULT_SCENARIO)
-            logger.info(f"✅ PHASE 2: Matched 'crashloop' → scenario={matched_scenario.name}, workflow_id={matched_scenario.workflow_id}")
-            return matched_scenario
-        elif "oomkilled" in content:
-            matched_scenario = MOCK_SCENARIOS.get("oomkilled", DEFAULT_SCENARIO)
-            logger.info(f"✅ PHASE 2: Matched 'oomkilled' → scenario={matched_scenario.name}, workflow_id={matched_scenario.workflow_id}")
-            return matched_scenario
-        elif "memoryexceedslimit" in content or "memory exceeds limit" in content or "memoryexceeds" in content:
-            # AlertManager E2E test: MemoryExceedsLimit Prometheus alert → same oomkilled workflow
-            matched_scenario = MOCK_SCENARIOS.get("oomkilled", DEFAULT_SCENARIO)
-            logger.info(f"✅ PHASE 2: Matched 'memoryexceedslimit' → scenario={matched_scenario.name}, workflow_id={matched_scenario.workflow_id}")
-            return matched_scenario
-        elif "certmanagercertnotready" in content or "cert_not_ready" in content:
+        # Signal type matching: check UNIQUE signal names before generic ones.
+        # In multi-turn discovery, tool results from list_available_actions / list_workflows
+        # include catalog entries like "CrashLoopBackOff - Configuration Fix", so "crashloop"
+        # and "oomkilled" appear in content for EVERY request. Check signal names that won't
+        # collide with catalog text first, then fall through to the generic ones.
+        if "certmanagercertnotready" in content or "cert_not_ready" in content:
             matched_scenario = MOCK_SCENARIOS.get("cert_not_ready", DEFAULT_SCENARIO)
             logger.info(f"✅ PHASE 2: Matched 'certmanagercertnotready' → scenario={matched_scenario.name}, workflow_id={matched_scenario.workflow_id}")
             return matched_scenario
         elif "nodenotready" in content or "node not ready" in content:
             matched_scenario = MOCK_SCENARIOS.get("node_not_ready", DEFAULT_SCENARIO)
             logger.info(f"✅ PHASE 2: Matched 'nodenotready' → scenario={matched_scenario.name}, workflow_id={matched_scenario.workflow_id}")
+            return matched_scenario
+        elif "memoryexceedslimit" in content or "memory exceeds limit" in content or "memoryexceeds" in content:
+            matched_scenario = MOCK_SCENARIOS.get("oomkilled", DEFAULT_SCENARIO)
+            logger.info(f"✅ PHASE 2: Matched 'memoryexceedslimit' → scenario={matched_scenario.name}, workflow_id={matched_scenario.workflow_id}")
+            return matched_scenario
+        elif "crashloop" in content:
+            matched_scenario = MOCK_SCENARIOS.get("crashloop", DEFAULT_SCENARIO)
+            logger.info(f"✅ PHASE 2: Matched 'crashloop' → scenario={matched_scenario.name}, workflow_id={matched_scenario.workflow_id}")
+            return matched_scenario
+        elif "oomkilled" in content:
+            matched_scenario = MOCK_SCENARIOS.get("oomkilled", DEFAULT_SCENARIO)
+            logger.info(f"✅ PHASE 2: Matched 'oomkilled' → scenario={matched_scenario.name}, workflow_id={matched_scenario.workflow_id}")
             return matched_scenario
 
         # PHASE 2: Fallback to current_scenario or DEFAULT_SCENARIO
@@ -1041,6 +1043,14 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
             actual_kind, actual_name, actual_ns = self._extract_resource_from_messages(
                 messages, scenario
             )
+            # DD-EM-004: When rca_override_prompt_resource is set, the LLM identifies
+            # a different root-cause resource than what the alert/prompt contains
+            # (e.g., Gateway sees Pod from alert labels, but RCA is about a Certificate CRD).
+            if scenario.rca_override_prompt_resource:
+                actual_kind = scenario.rca_resource_kind
+                actual_name = scenario.rca_resource_name
+                if not actual_ns:
+                    actual_ns = scenario.rca_resource_namespace
             affected_resource = {
                 "kind": actual_kind,
                 "name": actual_name,
