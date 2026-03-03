@@ -1,3 +1,4 @@
+schemaVersion: "1.0"
 # CrashLoop Config Fix Workflow Schema - Job Backend (BR-WORKFLOW-004)
 # Used by: FullPipeline E2E (execution.engine: job)
 metadata:

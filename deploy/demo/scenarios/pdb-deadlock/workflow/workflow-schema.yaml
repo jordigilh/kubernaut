@@ -1,3 +1,4 @@
+schemaVersion: "1.0"
 # Relax PDB Workflow Schema - Job Backend (BR-WORKFLOW-004)
 # Scenario: #124 -- PDB deadlock -> temporarily relax PDB
 metadata:

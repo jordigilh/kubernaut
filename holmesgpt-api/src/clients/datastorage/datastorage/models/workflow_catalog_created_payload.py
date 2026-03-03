@@ -33,13 +33,14 @@ class WorkflowCatalogCreatedPayload(BaseModel):
     workflow_id: StrictStr = Field(description="Unique workflow identifier (UUID)")
     workflow_name: StrictStr = Field(description="Human-readable workflow name")
     version: StrictStr = Field(description="Workflow version")
+    schema_version: Optional[StrictStr] = Field(default=None, description="Schema format version (e.g., 1.0, 1.1). #255")
     status: StrictStr = Field(description="Workflow status")
     is_latest_version: StrictBool = Field(description="Whether this is the latest version")
     execution_engine: StrictStr = Field(description="Workflow execution engine")
     name: StrictStr = Field(description="Display name")
     description: Optional[StrictStr] = Field(default=None, description="Workflow description")
     labels: Optional[Dict[str, Any]] = Field(default=None, description="Workflow labels")
-    __properties: ClassVar[List[str]] = ["workflow_id", "workflow_name", "version", "status", "is_latest_version", "execution_engine", "name", "description", "labels"]
+    __properties: ClassVar[List[str]] = ["workflow_id", "workflow_name", "version", "schema_version", "status", "is_latest_version", "execution_engine", "name", "description", "labels"]
 
     @field_validator('status')
     def status_validate_enum(cls, value):
@@ -100,6 +101,7 @@ class WorkflowCatalogCreatedPayload(BaseModel):
             "workflow_id": obj.get("workflow_id"),
             "workflow_name": obj.get("workflow_name"),
             "version": obj.get("version"),
+            "schema_version": obj.get("schema_version"),
             "status": obj.get("status"),
             "is_latest_version": obj.get("is_latest_version"),
             "execution_engine": obj.get("execution_engine"),

@@ -42,6 +42,12 @@ import (
 // per BR-WORKFLOW-004. This is the authoritative schema format for all
 // Kubernaut remediation workflows.
 type WorkflowSchema struct {
+	// SchemaVersion identifies the structural generation of this schema file.
+	// Allows the parser to distinguish between schema formats (e.g., "1.0" vs "1.1"
+	// which adds the rbac stanza per DD-WE-005).
+	// BR-WORKFLOW-004 v1.1: Required top-level field. Must be first in YAML.
+	SchemaVersion string `yaml:"schemaVersion" json:"schemaVersion" validate:"required"`
+
 	// Metadata contains workflow identification and description
 	Metadata WorkflowSchemaMetadata `yaml:"metadata" json:"metadata" validate:"required"`
 

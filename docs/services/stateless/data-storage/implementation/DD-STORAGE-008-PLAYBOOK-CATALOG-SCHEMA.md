@@ -5,20 +5,26 @@
 **Decision Maker**: Kubernaut Data Storage Team
 **Authority**: DD-NAMING-001 (Remediation Workflow Terminology), ADR-033 (Workflow Catalog), DD-CONTEXT-005 (Minimal LLM Response Schema)
 **Affects**: Data Storage Service V1.0 MVP, HolmesGPT API integration
-**Version**: 2.0 (updated with workflow terminology per DD-NAMING-001)
+**Version**: 2.1
 **Supersedes**: Version 1.x (workflow terminology)
 
 ---
 
 ## 📋 **Changelog**
 
+### Version 2.1 (2026-03-02)
+- **IMPLEMENTED**: `schema_version` column added to `remediation_workflow_catalog` (migration 031, #255)
+  - `VARCHAR(10) NOT NULL DEFAULT '1.0'`
+  - Populated from `schemaVersion` field in `workflow-schema.yaml` during OCI registration
+  - Enables schema format versioning for DD-WE-005 (RBAC in v1.1)
+
 ### Version 2.0 (2025-11-22)
 - **ADDED**: V1.0 scope includes workflow CRUD endpoints (3 hours)
   - POST /api/v1/workflows (create, no validation)
   - PUT /api/v1/workflows/{id} (update, no validation)
   - DELETE /api/v1/workflows/{id} (delete)
-- **ADDED**: V1.0 scope includes label schema versioning (1 hour)
-  - `schema_version` field in workflow model
+- **IMPLEMENTED**: Label schema versioning (1 hour)
+  - `schema_version` field in workflow model (migration 031, #255)
   - Additive-only evolution strategy documented
 - **ADDED**: V1.0 scope includes hybrid weighted label scoring (4-6 hours)
   - Per DD-WORKFLOW-004
@@ -1007,7 +1013,7 @@ ORDER BY actual_success_rate DESC, total_executions DESC;
 | **Version Listing API** | ✅ `GET /versions` | ✅ Same |
 | **Embedding Generation** | ✅ Real-time (no cache) | ✅ Cached (24h TTL) |
 | **Workflow CRUD** | ✅ REST API (`POST/PUT/DELETE`) | ✅ Same + validation |
-| **Label Schema Versioning** | ✅ `schema_version` field | ✅ Same |
+| **Label Schema Versioning** | ✅ `schema_version` field (implemented) | ✅ Same |
 | **Hybrid Weighted Scoring** | ✅ Implemented (DD-WORKFLOW-004) | ✅ Same |
 | **Version Validation** | ❌ No validation | ✅ Automated (semver) |
 | **Lifecycle Management** | ❌ Not available | ✅ REST API (`PATCH /disable`, `/enable`) |
@@ -1029,7 +1035,7 @@ ORDER BY actual_success_rate DESC, total_executions DESC;
 7. ✅ **NEW**: `POST /api/v1/workflows` creates workflows (no validation)
 8. ✅ **NEW**: `PUT /api/v1/workflows/{id}` updates workflows (no validation)
 9. ✅ **NEW**: `DELETE /api/v1/workflows/{id}` deletes workflows
-10. ✅ **NEW**: `schema_version` field in workflow model (default: "v1.0")
+10. ✅ **IMPLEMENTED**: `schema_version` field in workflow model (default: "1.0", migration 031, #255)
 11. ✅ **NEW**: Hybrid weighted label scoring implemented (per DD-WORKFLOW-004)
 
 **Nice to Have** (Non-Blocking):
@@ -1056,8 +1062,8 @@ ORDER BY actual_success_rate DESC, total_executions DESC;
 
 ---
 
-**Document Version**: 2.0 (updated with V1.0 enhancements: CRUD + Label Versioning + Hybrid Scoring)
-**Last Updated**: November 22, 2025
+**Document Version**: 2.1 (schema_version column implemented, migration 031, #255)
+**Last Updated**: March 2, 2026
 **Status**: ✅ **APPROVED** (98% confidence with clear V1.0/V1.1 separation)
 **Next Review**: After V1.0 MVP implementation
 

@@ -1,3 +1,4 @@
+schemaVersion: "1.0"
 # Detected Labels Test Workflow Schema (BR-WORKFLOW-004, ADR-043 v1.3)
 # Used by: DataStorage E2E -- detected_labels_search_e2e_test.go
 # Purpose: Validates full OCI registration -> search with detectedLabels scoring

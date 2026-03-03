@@ -40,6 +40,7 @@ class TestRemediationWorkflow(unittest.TestCase):
                 workflow_name = '',
                 action_type = 'ScaleReplicas',
                 version = '',
+                schema_version = '1.0',
                 name = '',
                 description = datastorage.models.structured_description.StructuredDescription(
                     what = '', 
@@ -99,6 +100,7 @@ class TestRemediationWorkflow(unittest.TestCase):
                 workflow_name = '',
                 action_type = 'ScaleReplicas',
                 version = '',
+                schema_version = '1.0',
                 name = '',
                 description = datastorage.models.structured_description.StructuredDescription(
                     what = '', 

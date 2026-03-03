@@ -1,3 +1,4 @@
+schemaVersion: "1.0"
 # Rollback Deployment Workflow Schema - Job Backend (BR-WORKFLOW-004)
 # Scenario: #130 -- Stuck rollout -> rollback to previous revision
 metadata:

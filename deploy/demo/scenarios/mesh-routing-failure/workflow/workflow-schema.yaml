@@ -1,3 +1,4 @@
+schemaVersion: "1.0"
 # Fix AuthorizationPolicy Workflow Schema - Job Backend (BR-WORKFLOW-004)
 # Scenario: #136 -- Linkerd AuthorizationPolicy blocks traffic -> remove/fix policy
 metadata:

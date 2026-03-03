@@ -1,3 +1,4 @@
+schemaVersion: "1.0"
 # ImagePull Fix Credentials Workflow Schema (BR-WORKFLOW-004)
 # Used by: HolmesGPT-API E2E
 metadata:

@@ -1,3 +1,4 @@
+schemaVersion: "1.0"
 # Cordon + Drain Workflow Schema - Job Backend (BR-WORKFLOW-004)
 # Scenario: #127 -- Node NotReady -> cordon and drain
 metadata:

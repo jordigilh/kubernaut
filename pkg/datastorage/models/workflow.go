@@ -52,6 +52,9 @@ type RemediationWorkflow struct {
 	WorkflowName string `json:"workflowName" db:"workflow_name" validate:"required,max=255"`
 	// Version is semantic version (e.g., "v1.0.0")
 	Version string `json:"version" db:"version" validate:"required,max=50"`
+	// SchemaVersion is the workflow-schema.yaml format version (e.g., "1.0", "1.1")
+	// BR-WORKFLOW-004 v1.1, #255: Distinguishes schema generations for feature gating.
+	SchemaVersion string `json:"schemaVersion" db:"schema_version" validate:"required,max=10"`
 
 	// ========================================
 	// METADATA

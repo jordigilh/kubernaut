@@ -9,6 +9,7 @@ Name | Type | Description | Notes
 **workflow_id** | **str** | Unique workflow identifier (UUID) | 
 **workflow_name** | **str** | Human-readable workflow name | 
 **version** | **str** | Workflow version | 
+**schema_version** | **str** | Schema format version (e.g., 1.0, 1.1). #255 | [optional] 
 **status** | **str** | Workflow status | 
 **is_latest_version** | **bool** | Whether this is the latest version | 
 **execution_engine** | **str** | Workflow execution engine | 

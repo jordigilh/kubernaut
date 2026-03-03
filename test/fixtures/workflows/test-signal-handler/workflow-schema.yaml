@@ -1,3 +1,4 @@
+schemaVersion: "1.0"
 # Test Signal Handler Workflow Schema (BR-WORKFLOW-004)
 # Used by: AIAnalysis E2E
 metadata:

@@ -1,3 +1,4 @@
+schemaVersion: "1.0"
 # Cleanup PVC Workflow Schema - Job Backend (BR-WORKFLOW-004)
 # Scenario: #121 -- Orphaned PVCs consuming disk -> cleanup
 metadata:

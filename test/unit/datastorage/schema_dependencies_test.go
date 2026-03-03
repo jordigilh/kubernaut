@@ -40,7 +40,8 @@ import (
 // ========================================
 
 // validSchemaWithDependencies is a workflow schema that declares dependencies
-const validSchemaWithDependencies = `metadata:
+const validSchemaWithDependencies = `schemaVersion: "1.0"
+metadata:
   workflowId: fix-certificate-gitops-v1
   version: "1.0.0"
   description:

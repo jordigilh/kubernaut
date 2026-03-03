@@ -1,3 +1,4 @@
+schemaVersion: "1.0"
 # DD-WE-006 Test Workflow: Tekton with Secret Dependency (BR-WORKFLOW-004)
 # Used by: WorkflowExecution E2E (Tekton dependency injection tests)
 # Authority: DD-WE-006, BR-WE-014

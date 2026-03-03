@@ -10,6 +10,7 @@ Name | Type | Description | Notes
 **title** | **str** | Human-readable workflow name | 
 **description** | **str** | Workflow description | 
 **signal_name** | **str** | Signal name this workflow handles | [optional] 
+**schema_version** | **str** | Schema format version (e.g., 1.0, 1.1). #255 | [optional] 
 **schema_image** | **str** | OCI image used to extract the workflow schema | [optional] 
 **schema_digest** | **str** | OCI schema image digest | [optional] 
 **execution_bundle** | **str** | OCI execution bundle reference (digest-pinned) | [optional] 

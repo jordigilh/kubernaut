@@ -112,6 +112,7 @@ Name | Type | Description | Notes
 **results** | [**ResultsMetadata**](ResultsMetadata.md) |  | 
 **search_metadata** | [**SearchExecutionMetadata**](SearchExecutionMetadata.md) |  | 
 **version** | **str** | Workflow version | 
+**schema_version** | **str** | Schema format version (e.g., 1.0, 1.1). #255 | [optional] 
 **status** | **str** | Workflow status | 
 **is_latest_version** | **bool** | Whether this is the latest version | 
 **execution_engine** | **str** | Workflow execution engine | 

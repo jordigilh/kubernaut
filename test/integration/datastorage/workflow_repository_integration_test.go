@@ -123,6 +123,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				testWorkflow := &models.RemediationWorkflow{
 					WorkflowName:    workflowName,
 					Version:         "v1.0.0",
+					SchemaVersion:   "1.0",
 					Name:            "Test Workflow",
 					Description:     models.StructuredDescription{What: "Integration test workflow", WhenToUse: "Testing"},
 					Content:         content,
@@ -226,6 +227,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				testWorkflow := &models.RemediationWorkflow{
 					WorkflowName:    workflowName,
 					Version:         "v1.0.0",
+					SchemaVersion:   "1.0",
 					Name:            "Original Workflow",
 					Description:     models.StructuredDescription{What: "First workflow", WhenToUse: "Testing"},
 					Content:         content,
@@ -246,6 +248,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				duplicateWorkflow := &models.RemediationWorkflow{
 					WorkflowName:    workflowName, // Same name
 					Version:         "v1.0.0",     // Same version
+					SchemaVersion:   "1.0",
 					Name:            "Duplicate Workflow",
 					Description:     models.StructuredDescription{What: "Duplicate workflow", WhenToUse: "Testing"},
 					Content:         content,
@@ -292,6 +295,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 			testWorkflow := &models.RemediationWorkflow{
 				WorkflowName:    workflowName,
 				Version:         "v1.0.0",
+				SchemaVersion:   "1.0",
 				Name:            "Test Workflow Get",
 				Description:     models.StructuredDescription{What: "Test workflow for Get method", WhenToUse: "Testing"},
 				Content:         content,
@@ -316,7 +320,6 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 
 				// ASSERT: Get succeeds
 				Expect(err).ToNot(HaveOccurred())
-				Expect(retrievedWorkflow).ToNot(BeNil())
 
 				// ASSERT: All fields populated correctly
 				Expect(retrievedWorkflow.WorkflowName).To(Equal(workflowName))
@@ -384,6 +387,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				testWorkflow := &models.RemediationWorkflow{
 					WorkflowName:    wf.name,
 					Version:         wf.version,
+					SchemaVersion:   "1.0",
 					Name:            wf.name,
 					Description:     models.StructuredDescription{What: "Test workflow", WhenToUse: "Testing"},
 					Content:         content,
@@ -422,10 +426,10 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 
 				// ASSERT: All fields populated for each workflow
 				for _, wf := range workflows {
-					Expect(wf.WorkflowName).ToNot(BeEmpty())
-					Expect(wf.Version).ToNot(BeEmpty())
-					Expect(wf.Name).ToNot(BeEmpty())
-					Expect(wf.Labels).ToNot(BeNil())
+					Expect(wf.WorkflowName).To(HavePrefix("wf-repo-"))
+					Expect(wf.Version).To(Equal("v1.0.0"))
+					Expect(wf.Name).To(HavePrefix("wf-repo-"))
+					Expect(wf.Labels.SignalName).To(Equal("test"))
 					Expect(wf.CreatedAt).ToNot(BeZero())
 					Expect(wf.UpdatedAt).ToNot(BeZero())
 				}
@@ -523,6 +527,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 			testWorkflow := &models.RemediationWorkflow{
 				WorkflowName:    workflowName,
 				Version:         "v1.0.0",
+				SchemaVersion:   "1.0",
 				Name:            "Workflow to Update",
 				Description:     models.StructuredDescription{What: "Test workflow for status update", WhenToUse: "Testing"},
 				Content:         content,

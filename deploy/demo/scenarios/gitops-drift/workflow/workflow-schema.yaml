@@ -1,3 +1,4 @@
+schemaVersion: "1.0"
 # GitOps Revert Workflow Schema - Job Backend (BR-WORKFLOW-004)
 # Scenario: #125 -- GitOps drift remediation (ArgoCD + Gitea)
 metadata:

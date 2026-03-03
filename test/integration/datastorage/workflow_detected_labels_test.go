@@ -72,6 +72,7 @@ var _ = Describe("Workflow DetectedLabels Integration (ADR-043 v1.3)", func() {
 			WorkflowName: fmt.Sprintf("wf-dl-%s-%s", testID, name),
 			ActionType:   "RestartPod",
 			Version:      "v1.0",
+			SchemaVersion: "1.0",
 			Name:         name,
 			Description:  models.StructuredDescription{What: "Test workflow", WhenToUse: "Testing"},
 			Content:      content,

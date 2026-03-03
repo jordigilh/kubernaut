@@ -1,3 +1,4 @@
+schemaVersion: "1.0"
 # Hello World Test Workflow Schema (BR-WORKFLOW-004)
 # Used by: WorkflowExecution E2E
 metadata:

@@ -1,3 +1,4 @@
+schemaVersion: "1.0"
 # All 8 DetectedLabels Fields Test (BR-WORKFLOW-004, ADR-043 v1.3)
 # Used by: DataStorage E2E -- E2E-DS-043-005
 # Purpose: Validates all 8 detectedLabels fields survive full OCI -> DB -> HTTP round-trip

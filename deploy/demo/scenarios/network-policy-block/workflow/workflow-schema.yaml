@@ -1,3 +1,4 @@
+schemaVersion: "1.0"
 # Fix NetworkPolicy Workflow Schema - Job Backend (BR-WORKFLOW-004)
 # Scenario: #138 -- Deny-all NetworkPolicy blocks traffic -> remove offending policy
 metadata:

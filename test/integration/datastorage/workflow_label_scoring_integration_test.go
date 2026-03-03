@@ -100,6 +100,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 				WorkflowName: fmt.Sprintf("wf-scoring-%s-gitops", testID),
 				ActionType:   "ScaleReplicas", // Required: fk_workflow_action_type (migration 025)
 				Version:      "v1.0",
+				SchemaVersion: "1.0",
 				Name:         "GitOps Workflow",
 				Description:  models.StructuredDescription{What: "Workflow managed by GitOps", WhenToUse: "Testing"},
 					Content:      content,
@@ -124,6 +125,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 				WorkflowName: fmt.Sprintf("wf-scoring-%s-manual", testID),
 				ActionType:   "ScaleReplicas",
 				Version:      "v1.0",
+				SchemaVersion: "1.0",
 				Name:         "Manual Workflow",
 				Description:  models.StructuredDescription{What: "Workflow without GitOps", WhenToUse: "Testing"},
 					Content:      content,
@@ -233,6 +235,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 				WorkflowName: fmt.Sprintf("wf-scoring-%s-pdb", testID),
 				ActionType:   "ScaleReplicas",
 				Version:      "v1.0",
+				SchemaVersion: "1.0",
 				Name:         "PDB-Protected Workflow",
 				Description:  models.StructuredDescription{What: "Workflow with PodDisruptionBudget protection", WhenToUse: "Testing"},
 					Labels: models.MandatoryLabels{
@@ -259,6 +262,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 				WorkflowName: fmt.Sprintf("wf-scoring-%s-nopdb", testID),
 				ActionType:   "ScaleReplicas",
 				Version:      "v1.0",
+				SchemaVersion: "1.0",
 				Name:         "No PDB Workflow",
 				Description:  models.StructuredDescription{What: "Workflow without PDB protection", WhenToUse: "Testing"},
 					Labels: models.MandatoryLabels{
@@ -362,6 +366,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 				WorkflowName: fmt.Sprintf("wf-scoring-%s-manual-penalty", testID),
 				ActionType:   "ScaleReplicas",
 				Version:      "v1.0",
+				SchemaVersion: "1.0",
 				Name:         "Manual Workflow (GitOps Required)",
 				Description:  models.StructuredDescription{What: "Manual workflow when GitOps is required", WhenToUse: "Testing"},
 					Labels: models.MandatoryLabels{
@@ -459,6 +464,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 				WorkflowName: fmt.Sprintf("wf-scoring-%s-custom2", testID),
 				ActionType:   "ScaleReplicas",
 				Version:      "v1.0",
+				SchemaVersion: "1.0",
 				Name:         "Workflow with 2 Custom Labels",
 				Description:  models.StructuredDescription{What: "Testing custom label scoring", WhenToUse: "Testing"},
 					Content:      content,
@@ -483,6 +489,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 				WorkflowName: fmt.Sprintf("wf-scoring-%s-custom1", testID),
 				ActionType:   "ScaleReplicas",
 				Version:      "v1.0",
+				SchemaVersion: "1.0",
 				Name:         "Workflow with 1 Custom Label",
 				Description:  models.StructuredDescription{What: "Testing custom label scoring", WhenToUse: "Testing"},
 					Content:      content,
@@ -585,6 +592,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 				WorkflowName: fmt.Sprintf("wf-scoring-%s-istio", testID),
 				ActionType:   "ScaleReplicas",
 				Version:      "v1.0",
+				SchemaVersion: "1.0",
 				Name:         "Istio Service Mesh Workflow",
 				Description:  models.StructuredDescription{What: "Workflow for Istio service mesh", WhenToUse: "Testing"},
 					Labels: models.MandatoryLabels{
@@ -611,6 +619,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 				WorkflowName: fmt.Sprintf("wf-scoring-%s-nomesh", testID),
 				ActionType:   "ScaleReplicas",
 				Version:      "v1.0",
+				SchemaVersion: "1.0",
 				Name:         "No Service Mesh Workflow",
 				Description:  models.StructuredDescription{What: "Workflow without service mesh", WhenToUse: "Testing"},
 					Labels: models.MandatoryLabels{
@@ -708,6 +717,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 				WorkflowName: fmt.Sprintf("wf-scoring-%s-istio-exact", testID),
 				ActionType:   "ScaleReplicas",
 				Version:      "v1.0",
+				SchemaVersion: "1.0",
 				Name:         "Istio Service Mesh Workflow",
 				Description:  models.StructuredDescription{What: "Workflow for Istio service mesh", WhenToUse: "Testing"},
 					Labels: models.MandatoryLabels{

@@ -16316,6 +16316,9 @@ type RemediationWorkflow struct {
 	ActionType string `json:"actionType"`
 	// Semantic version (e.g., v1.0.0).
 	Version string `json:"version"`
+	// Schema format version (e.g., 1.0, 1.1). Determines which structural fields are valid.
+	// BR-WORKFLOW-004 v1.1, #255.
+	SchemaVersion string `json:"schemaVersion"`
 	// Human-readable workflow title.
 	Name        string                `json:"name"`
 	Description StructuredDescription `json:"description"`
@@ -16398,6 +16401,11 @@ func (s *RemediationWorkflow) GetActionType() string {
 // GetVersion returns the value of Version.
 func (s *RemediationWorkflow) GetVersion() string {
 	return s.Version
+}
+
+// GetSchemaVersion returns the value of SchemaVersion.
+func (s *RemediationWorkflow) GetSchemaVersion() string {
+	return s.SchemaVersion
 }
 
 // GetName returns the value of Name.
@@ -16593,6 +16601,11 @@ func (s *RemediationWorkflow) SetActionType(val string) {
 // SetVersion sets the value of Version.
 func (s *RemediationWorkflow) SetVersion(val string) {
 	s.Version = val
+}
+
+// SetSchemaVersion sets the value of SchemaVersion.
+func (s *RemediationWorkflow) SetSchemaVersion(val string) {
+	s.SchemaVersion = val
 }
 
 // SetName sets the value of Name.
@@ -18059,6 +18072,8 @@ type WorkflowCatalogCreatedPayload struct {
 	WorkflowName string `json:"workflow_name"`
 	// Workflow version.
 	Version string `json:"version"`
+	// Schema format version (e.g., 1.0, 1.1). #255.
+	SchemaVersion OptString `json:"schema_version"`
 	// Workflow status.
 	Status WorkflowCatalogCreatedPayloadStatus `json:"status"`
 	// Whether this is the latest version.
@@ -18086,6 +18101,11 @@ func (s *WorkflowCatalogCreatedPayload) GetWorkflowName() string {
 // GetVersion returns the value of Version.
 func (s *WorkflowCatalogCreatedPayload) GetVersion() string {
 	return s.Version
+}
+
+// GetSchemaVersion returns the value of SchemaVersion.
+func (s *WorkflowCatalogCreatedPayload) GetSchemaVersion() OptString {
+	return s.SchemaVersion
 }
 
 // GetStatus returns the value of Status.
@@ -18131,6 +18151,11 @@ func (s *WorkflowCatalogCreatedPayload) SetWorkflowName(val string) {
 // SetVersion sets the value of Version.
 func (s *WorkflowCatalogCreatedPayload) SetVersion(val string) {
 	s.Version = val
+}
+
+// SetSchemaVersion sets the value of SchemaVersion.
+func (s *WorkflowCatalogCreatedPayload) SetSchemaVersion(val OptString) {
+	s.SchemaVersion = val
 }
 
 // SetStatus sets the value of Status.
@@ -18438,6 +18463,8 @@ type WorkflowDiscoveryEntry struct {
 	Description StructuredDescription `json:"description"`
 	// Semantic version.
 	Version string `json:"version"`
+	// Schema format version (e.g., 1.0, 1.1). #255.
+	SchemaVersion OptString `json:"schemaVersion"`
 	// OCI image used to extract the workflow schema.
 	SchemaImage string `json:"schemaImage"`
 	// OCI execution bundle reference (digest-pinned).
@@ -18469,6 +18496,11 @@ func (s *WorkflowDiscoveryEntry) GetDescription() StructuredDescription {
 // GetVersion returns the value of Version.
 func (s *WorkflowDiscoveryEntry) GetVersion() string {
 	return s.Version
+}
+
+// GetSchemaVersion returns the value of SchemaVersion.
+func (s *WorkflowDiscoveryEntry) GetSchemaVersion() OptString {
+	return s.SchemaVersion
 }
 
 // GetSchemaImage returns the value of SchemaImage.
@@ -18509,6 +18541,11 @@ func (s *WorkflowDiscoveryEntry) SetDescription(val StructuredDescription) {
 // SetVersion sets the value of Version.
 func (s *WorkflowDiscoveryEntry) SetVersion(val string) {
 	s.Version = val
+}
+
+// SetSchemaVersion sets the value of SchemaVersion.
+func (s *WorkflowDiscoveryEntry) SetSchemaVersion(val OptString) {
+	s.SchemaVersion = val
 }
 
 // SetSchemaImage sets the value of SchemaImage.

@@ -5,7 +5,8 @@
 **Priority**: P0
 **Target Version**: V1.0
 **Status**: Active
-**Date**: February 12, 2026
+**Date**: March 2, 2026
+**Version**: 1.1
 
 **Authority**: This is the authoritative specification for the `workflow-schema.yaml` file format. All implementations, tests, and documentation must conform to this BR.
 
@@ -14,6 +15,19 @@
 - [DD-WORKFLOW-017](../architecture/decisions/DD-WORKFLOW-017-workflow-lifecycle-component-interactions.md) -- OCI-based workflow registration (pullspec-only)
 - [DD-WE-006](../architecture/decisions/DD-WE-006-schema-declared-dependencies.md) -- Schema-declared infrastructure dependencies (Secrets, ConfigMaps)
 - [ADR-043](../architecture/decisions/ADR-043-workflow-schema-definition-standard.md) -- Original schema standard (superseded by this BR for format)
+
+---
+
+## Changelog
+
+### Version 1.1 (2026-03-02)
+- **ADDED**: `schemaVersion` top-level required field (#255)
+  - Distinguishes schema format generations (e.g., "1.0" vs "1.1" which adds `rbac` per DD-WE-005)
+  - Validated by parser: required, must be in allowed set
+  - Stored in `remediation_workflow_catalog.schema_version` (migration 031)
+
+### Version 1.0 (2026-02-12)
+- Initial specification
 
 ---
 
@@ -34,6 +48,7 @@ Kubernaut remediation workflows are packaged as OCI container images. Each image
 2. **camelCase field names** -- Consistent with kubernaut configuration conventions.
 3. **Single source of truth** -- All workflow metadata is extracted from this file during OCI-based registration. The operator does not provide metadata separately.
 4. **Structured descriptions** -- Descriptions use a structured format (`what`, `whenToUse`, `whenNotToUse`, `preconditions`) that is useful for both operators and the LLM.
+5. **Versioned schema format** -- The `schemaVersion` field identifies the structural generation of the schema. This allows the platform to gate features (e.g., RBAC in v1.1) on schema version.
 
 ---
 
@@ -42,6 +57,7 @@ Kubernaut remediation workflows are packaged as OCI container images. Each image
 ### Complete Example
 
 ```yaml
+schemaVersion: "1.0"
 metadata:
   workflowId: oomkill-restart-pod
   version: "1.0.0"
@@ -113,6 +129,7 @@ rollbackParameters:
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
+| `schemaVersion` | string | Yes | Schema format version. Determines which structural fields are valid. Valid values: `"1.0"`. |
 | `metadata` | object | Yes | Workflow identification and description |
 | `actionType` | string | Yes | Action type from the taxonomy (PascalCase, e.g., `RestartPod`, `ScaleReplicas`). Must match a valid entry in `action_type_taxonomy`. |
 | `labels` | object | Yes | Mandatory matching/filtering criteria for workflow discovery |
@@ -297,6 +314,7 @@ When a workflow is registered via `POST /api/v1/workflows` (OCI pullspec-only), 
 
 ### Required Field Validation
 
+- `schemaVersion` must be present and must be a supported value (currently `"1.0"`)
 - All fields marked "Required: Yes" must be present and non-empty
 - `metadata.description.what` and `metadata.description.whenToUse` are always required
 - `metadata.description.whenNotToUse` and `metadata.description.preconditions` are optional

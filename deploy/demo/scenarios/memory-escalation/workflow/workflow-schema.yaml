@@ -1,3 +1,4 @@
+schemaVersion: "1.0"
 # Increase Memory Limits Workflow Schema - Job Backend (BR-WORKFLOW-004)
 # Scenario: Memory escalation -- increase limits to prevent OOMKill
 metadata:

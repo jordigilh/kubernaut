@@ -132,6 +132,7 @@ var _ = Describe("Workflow Lifecycle Handlers (GAP-WF-1)", func() {
 				WorkflowID:   testWorkflowID,
 				WorkflowName: "test-workflow",
 				Version:      "v1.0.0",
+				SchemaVersion: "1.0",
 				Status:       "disabled",
 			}
 			mock := &mockWorkflowLifecycleRepo{
@@ -217,6 +218,7 @@ var _ = Describe("Workflow Lifecycle Handlers (GAP-WF-1)", func() {
 				WorkflowID:   testWorkflowID,
 				WorkflowName: "test-workflow",
 				Version:      "v1.0.0",
+				SchemaVersion: "1.0",
 				Status:       "active",
 			}
 			mock := &mockWorkflowLifecycleRepo{

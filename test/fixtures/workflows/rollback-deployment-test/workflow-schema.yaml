@@ -1,3 +1,4 @@
+schemaVersion: "1.0"
 # Rollback Deployment Test Workflow Schema (BR-WORKFLOW-004)
 # Used by: DataStorage E2E — 04_workflow_discovery_test.go (DD-HAPI-017)
 metadata:

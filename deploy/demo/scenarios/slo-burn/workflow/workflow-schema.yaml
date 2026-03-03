@@ -1,3 +1,4 @@
+schemaVersion: "1.0"
 # Proactive Rollback Workflow Schema - Job Backend (BR-WORKFLOW-004)
 # Scenario: #128 -- SLO error budget burn -> proactive rollback
 metadata:

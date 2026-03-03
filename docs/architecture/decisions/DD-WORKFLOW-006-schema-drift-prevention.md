@@ -1,7 +1,8 @@
 # DD-WORKFLOW-006: Schema Drift Prevention - REVISED
 
 **Date**: 2025-11-15
-**Status**: Analysis - Addressing Runtime Drift Issue
+**Status**: Analysis - schemaVersion Field Implemented (#255)
+**Version**: 1.1
 **Related**: DD-WORKFLOW-005, DD-WORKFLOW-012 (Workflow Immutability)
 
 ---
@@ -649,3 +650,12 @@ Catalog schema == Container schema → No drift possible ✅
 **Recommended**: Automated Extraction + Validation Gate
 **Confidence**: 97% → 99%
 **Drift Prevention**: 100% (impossible by design)
+
+---
+
+## Changelog
+
+| Date | Version | Changes |
+|------|---------|---------|
+| 2026-03-02 | 1.1 | `schemaVersion` field implemented in workflow-schema.yaml (#255). Parser validates required field with allowed set. |
+| 2025-11-15 | 1.0 | Initial analysis — schema drift prevention with automated extraction |

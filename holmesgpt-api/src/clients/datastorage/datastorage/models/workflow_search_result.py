@@ -36,6 +36,7 @@ class WorkflowSearchResult(BaseModel):
     title: StrictStr = Field(description="Human-readable workflow name")
     description: StrictStr = Field(description="Workflow description")
     signal_name: Optional[StrictStr] = Field(default=None, description="Signal name this workflow handles", alias="signalName")
+    schema_version: Optional[StrictStr] = Field(default=None, description="Schema format version (e.g., 1.0, 1.1). #255", alias="schemaVersion")
     schema_image: Optional[StrictStr] = Field(default=None, description="OCI image used to extract the workflow schema", alias="schemaImage")
     schema_digest: Optional[StrictStr] = Field(default=None, description="OCI schema image digest", alias="schemaDigest")
     execution_bundle: Optional[StrictStr] = Field(default=None, description="OCI execution bundle reference (digest-pinned)", alias="executionBundle")
@@ -48,7 +49,7 @@ class WorkflowSearchResult(BaseModel):
     custom_labels: Optional[Dict[str, List[StrictStr]]] = Field(default=None, description="Customer-defined labels (DD-WORKFLOW-001 v1.5) - subdomain-based format", alias="customLabels")
     detected_labels: Optional[DetectedLabels] = Field(default=None, alias="detectedLabels")
     parameters: Optional[Dict[str, Any]] = Field(default=None, description="Workflow parameter schema (JSONB) - describes expected parameters")
-    __properties: ClassVar[List[str]] = ["workflowId", "title", "description", "signalName", "schemaImage", "schemaDigest", "executionBundle", "executionBundleDigest", "confidence", "labelBoost", "labelPenalty", "finalScore", "rank", "customLabels", "detectedLabels", "parameters"]
+    __properties: ClassVar[List[str]] = ["workflowId", "title", "description", "signalName", "schemaVersion", "schemaImage", "schemaDigest", "executionBundle", "executionBundleDigest", "confidence", "labelBoost", "labelPenalty", "finalScore", "rank", "customLabels", "detectedLabels", "parameters"]
 
     model_config = {
         "populate_by_name": True,
@@ -106,6 +107,7 @@ class WorkflowSearchResult(BaseModel):
             "title": obj.get("title"),
             "description": obj.get("description"),
             "signalName": obj.get("signalName"),
+            "schemaVersion": obj.get("schemaVersion"),
             "schemaImage": obj.get("schemaImage"),
             "schemaDigest": obj.get("schemaDigest"),
             "executionBundle": obj.get("executionBundle"),

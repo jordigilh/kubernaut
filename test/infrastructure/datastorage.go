@@ -2155,7 +2155,7 @@ func WaitForCertManagerReady(kubeconfigPath string, writer io.Writer) error {
 		"--kubeconfig", kubeconfigPath,
 		"--namespace", "cert-manager",
 		"--for=condition=available",
-		"--timeout=120s",
+		"--timeout=300s",
 		"deployment/cert-manager",
 		"deployment/cert-manager-cainjector",
 		"deployment/cert-manager-webhook")

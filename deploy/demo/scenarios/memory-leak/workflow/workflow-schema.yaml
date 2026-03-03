@@ -1,3 +1,4 @@
+schemaVersion: "1.0"
 # Graceful Restart Workflow Schema - Job Backend (BR-WORKFLOW-004)
 # Scenario: #129 -- Proactive memory exhaustion -> graceful restart
 metadata:

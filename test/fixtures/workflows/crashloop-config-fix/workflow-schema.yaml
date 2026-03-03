@@ -1,3 +1,4 @@
+schemaVersion: "1.0"
 # CrashLoop Config Fix Workflow Schema (BR-WORKFLOW-004)
 # Used by: AIAnalysis E2E, HolmesGPT-API E2E
 metadata:

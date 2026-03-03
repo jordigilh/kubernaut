@@ -1,3 +1,4 @@
+schemaVersion: "1.0"
 # Node Provisioning Workflow Schema - Job Backend (BR-WORKFLOW-004)
 # Scenario: #126 -- Cluster autoscaling (Kind + Podman)
 metadata:

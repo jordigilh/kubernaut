@@ -1,3 +1,4 @@
+schemaVersion: "1.0"
 # Memory Optimize Workflow Schema (BR-WORKFLOW-004)
 # Used by: AIAnalysis E2E, HolmesGPT-API E2E
 metadata:

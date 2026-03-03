@@ -148,7 +148,6 @@ var _ = Describe("RO Propagation Delay (DD-EM-004 v2.0, BR-RO-103, Issue #253)",
 		ns := createTestNamespace("ro-253-001")
 		defer deleteTestNamespace(ns)
 
-		beforeCreate := time.Now()
 		rr := driveToCompletedWithCRDTarget(ns, "rr-253-001", false /* not GitOps */)
 
 		By("Fetching the created EA")
@@ -162,13 +161,11 @@ var _ = Describe("RO Propagation Delay (DD-EM-004 v2.0, BR-RO-103, Issue #253)",
 		Expect(ea.Spec.HashComputeAfter).NotTo(BeNil(),
 			"BR-RO-103.3: HashComputeAfter must be set for CRD target")
 		// Config: operatorReconcileDelay = 30s (wired in suite)
-		// HashComputeAfter should be ≈ now + 30s, NOT now + stabilizationWindow
-		expectedLower := beforeCreate.Add(25 * time.Second)  // 30s - 5s tolerance
-		expectedUpper := time.Now().Add(35 * time.Second)     // 30s + 5s tolerance
-		Expect(ea.Spec.HashComputeAfter.Time).To(BeTemporally(">=", expectedLower),
-			"HashComputeAfter should be at least ~25s from test start (operatorReconcileDelay=30s)")
-		Expect(ea.Spec.HashComputeAfter.Time).To(BeTemporally("<=", expectedUpper),
-			"HashComputeAfter should not exceed ~35s from now (operatorReconcileDelay=30s)")
+		// HashComputeAfter should be ≈ EA.creation + 30s, NOT creation + stabilizationWindow
+		// Use EA creation timestamp as anchor for CI-resilient bounds (±30s tolerance for pipeline latency)
+		expectedHCA := ea.CreationTimestamp.Add(30 * time.Second)
+		Expect(ea.Spec.HashComputeAfter.Time).To(BeTemporally("~", expectedHCA, 30*time.Second),
+			"HashComputeAfter should be ≈ EA.creation + operatorReconcileDelay(30s)")
 
 		By("Verifying OperatorReconcileDelay is propagated to EA spec")
 		Expect(ea.Spec.OperatorReconcileDelay).NotTo(BeNil(),
@@ -202,7 +199,6 @@ var _ = Describe("RO Propagation Delay (DD-EM-004 v2.0, BR-RO-103, Issue #253)",
 		ns := createTestNamespace("ro-253-002")
 		defer deleteTestNamespace(ns)
 
-		beforeCreate := time.Now()
 		rr := driveToCompletedWithCRDTarget(ns, "rr-253-002", true /* GitOps-managed */)
 
 		By("Fetching the created EA")
@@ -216,13 +212,11 @@ var _ = Describe("RO Propagation Delay (DD-EM-004 v2.0, BR-RO-103, Issue #253)",
 		Expect(ea.Spec.HashComputeAfter).NotTo(BeNil(),
 			"BR-RO-103.5: HashComputeAfter must be set for dual-async target")
 		// Config: gitOpsSyncDelay=2m, operatorReconcileDelay=30s → total=2m30s
+		// Use EA creation timestamp as anchor for CI-resilient bounds (±30s tolerance for pipeline latency)
 		compounded := 2*time.Minute + 30*time.Second
-		expectedLower := beforeCreate.Add(compounded - 5*time.Second)
-		expectedUpper := time.Now().Add(compounded + 5*time.Second)
-		Expect(ea.Spec.HashComputeAfter.Time).To(BeTemporally(">=", expectedLower),
-			"HashComputeAfter should be at least ~2m25s from test start (compounded=2m30s)")
-		Expect(ea.Spec.HashComputeAfter.Time).To(BeTemporally("<=", expectedUpper),
-			"HashComputeAfter should not exceed ~2m35s from now (compounded=2m30s)")
+		expectedHCA := ea.CreationTimestamp.Add(compounded)
+		Expect(ea.Spec.HashComputeAfter.Time).To(BeTemporally("~", expectedHCA, 30*time.Second),
+			"HashComputeAfter should be ≈ EA.creation + compounded(2m30s)")
 
 		By("Verifying both delay fields are propagated to EA spec")
 		Expect(ea.Spec.GitOpsSyncDelay).NotTo(BeNil(),

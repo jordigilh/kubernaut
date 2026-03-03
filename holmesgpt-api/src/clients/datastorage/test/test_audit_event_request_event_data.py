@@ -208,6 +208,7 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                 search_metadata = datastorage.models.search_execution_metadata.SearchExecutionMetadata(
                     duration_ms = 150, ),
                 version = '1.0.0',
+                schema_version = '1.0',
                 status = 'active',
                 is_latest_version = True,
                 execution_engine = 'argo',

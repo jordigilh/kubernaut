@@ -46,7 +46,8 @@ import (
 // ========================================
 
 // validWorkflowSchemaYAML is a minimal valid workflow-schema.yaml per BR-WORKFLOW-004
-const validWorkflowSchemaYAML = `metadata:
+const validWorkflowSchemaYAML = `schemaVersion: "1.0"
+metadata:
   workflowId: oomkill-scale-down
   version: "1.0.0"
   description:
@@ -135,7 +136,8 @@ var _ = Describe("OCI Schema Extractor (DD-WORKFLOW-017)", func() {
 			Expect(parsedSchema.Labels.Environment).To(Equal([]string{"production"}))
 
 			// Multi-value array format
-			arrayYAML := `metadata:
+			arrayYAML := `schemaVersion: "1.0"
+metadata:
   workflowId: multi-env-test
   version: "1.0.0"
   description:
@@ -176,7 +178,8 @@ parameters:
 
 		It("UT-DS-017-019: should accept schema without signalName (DD-WORKFLOW-016)", func() {
 			// DD-WORKFLOW-016: signalName is optional metadata, not required for registration
-			noSignalNameYAML := `metadata:
+			noSignalNameYAML := `schemaVersion: "1.0"
+metadata:
   workflowId: no-signal-name
   version: "1.0.0"
   description:
@@ -226,7 +229,8 @@ execution:
 		})
 
 		It("UT-DS-212-001: ExtractLabels must NOT include custom labels (#212)", func() {
-			schemaWithCustom := `metadata:
+			schemaWithCustom := `schemaVersion: "1.0"
+metadata:
   workflowId: test-custom
   version: "1.0.0"
   description:
@@ -266,7 +270,8 @@ parameters:
 		})
 
 		It("UT-DS-212-002: ExtractCustomLabels must return custom labels as map[string][]string (#212)", func() {
-			schemaWithCustom := `metadata:
+			schemaWithCustom := `schemaVersion: "1.0"
+metadata:
   workflowId: test-custom
   version: "1.0.0"
   description:
@@ -510,7 +515,8 @@ parameters:
 			),
 
 			Entry("UT-DS-017-007: schema missing required fields (actionType, labels)",
-				oci.NewMockImagePuller(`metadata:
+				oci.NewMockImagePuller(`schemaVersion: "1.0"
+metadata:
   workflowId: incomplete
   version: "1.0.0"
   description:

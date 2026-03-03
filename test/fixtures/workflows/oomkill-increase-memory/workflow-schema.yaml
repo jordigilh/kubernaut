@@ -1,3 +1,4 @@
+schemaVersion: "1.0"
 # OOMKill Increase Memory Workflow Schema (BR-WORKFLOW-004)
 # Used by: AIAnalysis E2E, HolmesGPT-API E2E
 metadata:

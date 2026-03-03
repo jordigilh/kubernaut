@@ -58,9 +58,9 @@ var _ = Describe("Propagation Timing Integration (#253, BR-EM-010.3, BR-EM-010.4
 				SignalTarget: eav1.TargetResource{
 					Kind: "Deployment", Name: "test-app", Namespace: ns,
 				},
-				RemediationTarget: eav1.TargetResource{
-					Kind: "Certificate", Name: "demo-cert", Namespace: ns,
-				},
+			RemediationTarget: eav1.TargetResource{
+				Kind: "Deployment", Name: "demo-app", Namespace: ns,
+			},
 				Config: eav1.EAConfig{
 					StabilizationWindow: metav1.Duration{Duration: 1 * time.Second},
 				},
@@ -140,9 +140,9 @@ var _ = Describe("Propagation Timing Integration (#253, BR-EM-010.3, BR-EM-010.4
 				SignalTarget: eav1.TargetResource{
 					Kind: "Deployment", Name: "test-app", Namespace: ns,
 				},
-				RemediationTarget: eav1.TargetResource{
-					Kind: "Certificate", Name: "demo-cert", Namespace: ns,
-				},
+			RemediationTarget: eav1.TargetResource{
+				Kind: "Deployment", Name: "demo-app", Namespace: ns,
+			},
 				Config: eav1.EAConfig{
 					StabilizationWindow: metav1.Duration{Duration: stabilizationDuration},
 				},
@@ -207,9 +207,9 @@ var _ = Describe("Propagation Timing Integration (#253, BR-EM-010.3, BR-EM-010.4
 				SignalTarget: eav1.TargetResource{
 					Kind: "Deployment", Name: "test-app", Namespace: ns,
 				},
-				RemediationTarget: eav1.TargetResource{
-					Kind: "Certificate", Name: "demo-cert", Namespace: ns,
-				},
+			RemediationTarget: eav1.TargetResource{
+				Kind: "Deployment", Name: "demo-app", Namespace: ns,
+			},
 				Config: eav1.EAConfig{
 					StabilizationWindow: metav1.Duration{Duration: 1 * time.Second},
 				},
@@ -309,9 +309,9 @@ var _ = Describe("Propagation Timing Integration (#253, BR-EM-010.3, BR-EM-010.4
 				SignalTarget: eav1.TargetResource{
 					Kind: "Deployment", Name: "test-app", Namespace: ns,
 				},
-				RemediationTarget: eav1.TargetResource{
-					Kind: "Certificate", Name: "demo-cert", Namespace: ns,
-				},
+			RemediationTarget: eav1.TargetResource{
+				Kind: "Deployment", Name: "demo-app", Namespace: ns,
+			},
 				Config: eav1.EAConfig{
 					StabilizationWindow: metav1.Duration{Duration: stabilizationDuration},
 				},

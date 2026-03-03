@@ -1,3 +1,4 @@
+schemaVersion: "1.0"
 # Fix StatefulSet PVC Workflow Schema - Job Backend (BR-WORKFLOW-004)
 # Scenario: #137 -- StatefulSet PVC deleted -> pod stuck Pending -> recreate PVC
 metadata:

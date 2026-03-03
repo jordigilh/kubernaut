@@ -55,7 +55,8 @@ func (m *mockActionTypeValidator) ActionTypeExists(ctx context.Context, actionTy
 // ========================================
 
 // validOCIRegistrationSchemaYAML is a BR-WORKFLOW-004 compliant workflow-schema.yaml for handler tests
-const validOCIRegistrationSchemaYAML = `metadata:
+const validOCIRegistrationSchemaYAML = `schemaVersion: "1.0"
+metadata:
   workflowId: scale-memory
   version: "v1.0.0"
   description:
@@ -253,7 +254,8 @@ var _ = Describe("OCI-Based Workflow Registration Handler (DD-WORKFLOW-017)", fu
 
 	Describe("UT-WF-017-008: Invalid action_type rejected with 400 (BR-WORKFLOW-016-001)", func() {
 		// Schema with an action_type not in the taxonomy
-		const invalidActionTypeSchemaYAML = `metadata:
+		const invalidActionTypeSchemaYAML = `schemaVersion: "1.0"
+metadata:
   workflowId: invalid-action
   version: "v1.0.0"
   description:

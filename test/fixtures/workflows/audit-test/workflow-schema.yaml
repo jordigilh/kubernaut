@@ -1,3 +1,4 @@
+schemaVersion: "1.0"
 # Audit Test Workflow Schema (BR-WORKFLOW-004)
 # Used by: DataStorage E2E — 06_workflow_discovery_audit_test.go (DD-WORKFLOW-014 v3.0)
 metadata:

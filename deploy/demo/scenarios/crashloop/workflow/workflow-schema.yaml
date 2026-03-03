@@ -1,3 +1,4 @@
+schemaVersion: "1.0"
 # Rollback Deployment Workflow Schema - Job Backend (BR-WORKFLOW-004)
 # Scenario: #120 -- CrashLoopBackOff -> rollback to working config
 metadata:

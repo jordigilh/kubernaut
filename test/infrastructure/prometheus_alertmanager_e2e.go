@@ -281,16 +281,11 @@ data:
     global:
       resolve_timeout: 1m
     route:
-      receiver: 'null'
+      receiver: gateway-webhook
       group_wait: 5s
       group_interval: 5s
       repeat_interval: 1h
-      routes:
-      - match:
-          alertname: MemoryExceedsLimit
-        receiver: gateway-webhook
     receivers:
-    - name: 'null'
     - name: gateway-webhook
       webhook_configs:
       - url: 'http://gateway-service.%[1]s.svc.cluster.local:8080/api/v1/signals/prometheus'

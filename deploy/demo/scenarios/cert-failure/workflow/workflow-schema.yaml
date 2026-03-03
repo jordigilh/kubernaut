@@ -1,3 +1,4 @@
+schemaVersion: "1.0"
 # Fix Certificate Workflow Schema - Job Backend (BR-WORKFLOW-004)
 # Scenario: #133 -- cert-manager Certificate NotReady -> recreate CA Secret
 metadata:

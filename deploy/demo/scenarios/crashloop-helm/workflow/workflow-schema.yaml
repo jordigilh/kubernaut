@@ -1,3 +1,4 @@
+schemaVersion: "1.0"
 # Helm Rollback Workflow Schema - Job Backend (BR-WORKFLOW-004)
 # Scenario: #135 -- Helm-managed CrashLoopBackOff -> helm rollback
 metadata:

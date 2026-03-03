@@ -1,3 +1,4 @@
+schemaVersion: "1.0"
 # SAR Test Workflow Schema (BR-WORKFLOW-004)
 # Used by: DataStorage E2E — 23_sar_access_control_test.go (DD-AUTH-012)
 metadata:

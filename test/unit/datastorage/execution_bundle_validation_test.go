@@ -40,7 +40,8 @@ import (
 
 // baseSchemaPrefix provides a valid schema where only the execution section varies.
 // All fields satisfy BR-WORKFLOW-004 non-execution requirements.
-const baseSchemaPrefix = `metadata:
+const baseSchemaPrefix = `schemaVersion: "1.0"
+metadata:
   workflowId: exec-bundle-test
   version: "v1.0.0"
   description:

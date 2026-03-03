@@ -1,3 +1,4 @@
+schemaVersion: "1.0"
 # Duplicate Test Workflow Schema (BR-WORKFLOW-004)
 # Used by: DataStorage E2E — 18_workflow_duplicate_api_test.go (DS-BUG-001)
 # This workflow is created twice to test 409 Conflict duplicate detection

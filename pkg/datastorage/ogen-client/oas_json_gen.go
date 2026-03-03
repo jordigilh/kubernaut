@@ -3050,6 +3050,12 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				e.Str(s.Version)
 			}
 			{
+				if s.SchemaVersion.Set {
+					e.FieldStart("schema_version")
+					s.SchemaVersion.Encode(e)
+				}
+			}
+			{
 				e.FieldStart("status")
 				s.Status.Encode(e)
 			}
@@ -5519,6 +5525,12 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 			{
 				e.FieldStart("version")
 				e.Str(s.Version)
+			}
+			{
+				if s.SchemaVersion.Set {
+					e.FieldStart("schema_version")
+					s.SchemaVersion.Encode(e)
+				}
 			}
 			{
 				e.FieldStart("status")
@@ -24938,6 +24950,10 @@ func (s *RemediationWorkflow) encodeFields(e *jx.Encoder) {
 		e.Str(s.Version)
 	}
 	{
+		e.FieldStart("schemaVersion")
+		e.Str(s.SchemaVersion)
+	}
+	{
 		e.FieldStart("name")
 		e.Str(s.Name)
 	}
@@ -25135,46 +25151,47 @@ func (s *RemediationWorkflow) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfRemediationWorkflow = [39]string{
+var jsonFieldsNameOfRemediationWorkflow = [40]string{
 	0:  "workflowId",
 	1:  "workflowName",
 	2:  "actionType",
 	3:  "version",
-	4:  "name",
-	5:  "description",
-	6:  "owner",
-	7:  "maintainer",
-	8:  "content",
-	9:  "contentHash",
-	10: "parameters",
-	11: "executionEngine",
-	12: "schemaImage",
-	13: "schemaDigest",
-	14: "executionBundle",
-	15: "executionBundleDigest",
-	16: "labels",
-	17: "customLabels",
-	18: "detectedLabels",
-	19: "status",
-	20: "disabledAt",
-	21: "disabledBy",
-	22: "disabledReason",
-	23: "isLatestVersion",
-	24: "previousVersion",
-	25: "deprecationNotice",
-	26: "versionNotes",
-	27: "changeSummary",
-	28: "approvedBy",
-	29: "approvedAt",
-	30: "expectedSuccessRate",
-	31: "expectedDurationSeconds",
-	32: "actualSuccessRate",
-	33: "totalExecutions",
-	34: "successfulExecutions",
-	35: "createdAt",
-	36: "updatedAt",
-	37: "createdBy",
-	38: "updatedBy",
+	4:  "schemaVersion",
+	5:  "name",
+	6:  "description",
+	7:  "owner",
+	8:  "maintainer",
+	9:  "content",
+	10: "contentHash",
+	11: "parameters",
+	12: "executionEngine",
+	13: "schemaImage",
+	14: "schemaDigest",
+	15: "executionBundle",
+	16: "executionBundleDigest",
+	17: "labels",
+	18: "customLabels",
+	19: "detectedLabels",
+	20: "status",
+	21: "disabledAt",
+	22: "disabledBy",
+	23: "disabledReason",
+	24: "isLatestVersion",
+	25: "previousVersion",
+	26: "deprecationNotice",
+	27: "versionNotes",
+	28: "changeSummary",
+	29: "approvedBy",
+	30: "approvedAt",
+	31: "expectedSuccessRate",
+	32: "expectedDurationSeconds",
+	33: "actualSuccessRate",
+	34: "totalExecutions",
+	35: "successfulExecutions",
+	36: "createdAt",
+	37: "updatedAt",
+	38: "createdBy",
+	39: "updatedBy",
 }
 
 // Decode decodes RemediationWorkflow from json.
@@ -25232,8 +25249,20 @@ func (s *RemediationWorkflow) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"version\"")
 			}
-		case "name":
+		case "schemaVersion":
 			requiredBitSet[0] |= 1 << 4
+			if err := func() error {
+				v, err := d.Str()
+				s.SchemaVersion = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"schemaVersion\"")
+			}
+		case "name":
+			requiredBitSet[0] |= 1 << 5
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -25245,7 +25274,7 @@ func (s *RemediationWorkflow) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"name\"")
 			}
 		case "description":
-			requiredBitSet[0] |= 1 << 5
+			requiredBitSet[0] |= 1 << 6
 			if err := func() error {
 				if err := s.Description.Decode(d); err != nil {
 					return err
@@ -25275,7 +25304,7 @@ func (s *RemediationWorkflow) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"maintainer\"")
 			}
 		case "content":
-			requiredBitSet[1] |= 1 << 0
+			requiredBitSet[1] |= 1 << 1
 			if err := func() error {
 				v, err := d.Str()
 				s.Content = string(v)
@@ -25287,7 +25316,7 @@ func (s *RemediationWorkflow) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"content\"")
 			}
 		case "contentHash":
-			requiredBitSet[1] |= 1 << 1
+			requiredBitSet[1] |= 1 << 2
 			if err := func() error {
 				v, err := d.Str()
 				s.ContentHash = string(v)
@@ -25309,7 +25338,7 @@ func (s *RemediationWorkflow) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"parameters\"")
 			}
 		case "executionEngine":
-			requiredBitSet[1] |= 1 << 3
+			requiredBitSet[1] |= 1 << 4
 			if err := func() error {
 				v, err := d.Str()
 				s.ExecutionEngine = string(v)
@@ -25361,7 +25390,7 @@ func (s *RemediationWorkflow) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"executionBundleDigest\"")
 			}
 		case "labels":
-			requiredBitSet[2] |= 1 << 0
+			requiredBitSet[2] |= 1 << 1
 			if err := func() error {
 				if err := s.Labels.Decode(d); err != nil {
 					return err
@@ -25391,7 +25420,7 @@ func (s *RemediationWorkflow) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"detectedLabels\"")
 			}
 		case "status":
-			requiredBitSet[2] |= 1 << 3
+			requiredBitSet[2] |= 1 << 4
 			if err := func() error {
 				if err := s.Status.Decode(d); err != nil {
 					return err
@@ -25600,9 +25629,9 @@ func (s *RemediationWorkflow) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [5]uint8{
-		0b00111110,
-		0b00001011,
-		0b00001001,
+		0b01111110,
+		0b00010110,
+		0b00010010,
 		0b00000000,
 		0b00000000,
 	} {
@@ -27637,6 +27666,12 @@ func (s *WorkflowCatalogCreatedPayload) encodeFields(e *jx.Encoder) {
 		e.Str(s.Version)
 	}
 	{
+		if s.SchemaVersion.Set {
+			e.FieldStart("schema_version")
+			s.SchemaVersion.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("status")
 		s.Status.Encode(e)
 	}
@@ -27666,16 +27701,17 @@ func (s *WorkflowCatalogCreatedPayload) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfWorkflowCatalogCreatedPayload = [9]string{
+var jsonFieldsNameOfWorkflowCatalogCreatedPayload = [10]string{
 	0: "workflow_id",
 	1: "workflow_name",
 	2: "version",
-	3: "status",
-	4: "is_latest_version",
-	5: "execution_engine",
-	6: "name",
-	7: "description",
-	8: "labels",
+	3: "schema_version",
+	4: "status",
+	5: "is_latest_version",
+	6: "execution_engine",
+	7: "name",
+	8: "description",
+	9: "labels",
 }
 
 // Decode decodes WorkflowCatalogCreatedPayload from json.
@@ -27723,8 +27759,18 @@ func (s *WorkflowCatalogCreatedPayload) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"version\"")
 			}
+		case "schema_version":
+			if err := func() error {
+				s.SchemaVersion.Reset()
+				if err := s.SchemaVersion.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"schema_version\"")
+			}
 		case "status":
-			requiredBitSet[0] |= 1 << 3
+			requiredBitSet[0] |= 1 << 4
 			if err := func() error {
 				if err := s.Status.Decode(d); err != nil {
 					return err
@@ -27734,7 +27780,7 @@ func (s *WorkflowCatalogCreatedPayload) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"status\"")
 			}
 		case "is_latest_version":
-			requiredBitSet[0] |= 1 << 4
+			requiredBitSet[0] |= 1 << 5
 			if err := func() error {
 				v, err := d.Bool()
 				s.IsLatestVersion = bool(v)
@@ -27746,7 +27792,7 @@ func (s *WorkflowCatalogCreatedPayload) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"is_latest_version\"")
 			}
 		case "execution_engine":
-			requiredBitSet[0] |= 1 << 5
+			requiredBitSet[0] |= 1 << 6
 			if err := func() error {
 				v, err := d.Str()
 				s.ExecutionEngine = string(v)
@@ -27758,7 +27804,7 @@ func (s *WorkflowCatalogCreatedPayload) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"execution_engine\"")
 			}
 		case "name":
-			requiredBitSet[0] |= 1 << 6
+			requiredBitSet[0] |= 1 << 7
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -27799,7 +27845,7 @@ func (s *WorkflowCatalogCreatedPayload) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
-		0b01111111,
+		0b11110111,
 		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
@@ -28401,6 +28447,12 @@ func (s *WorkflowDiscoveryEntry) encodeFields(e *jx.Encoder) {
 		e.Str(s.Version)
 	}
 	{
+		if s.SchemaVersion.Set {
+			e.FieldStart("schemaVersion")
+			s.SchemaVersion.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("schemaImage")
 		e.Str(s.SchemaImage)
 	}
@@ -28418,15 +28470,16 @@ func (s *WorkflowDiscoveryEntry) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfWorkflowDiscoveryEntry = [8]string{
+var jsonFieldsNameOfWorkflowDiscoveryEntry = [9]string{
 	0: "workflowId",
 	1: "workflowName",
 	2: "name",
 	3: "description",
 	4: "version",
-	5: "schemaImage",
-	6: "executionBundle",
-	7: "executionEngine",
+	5: "schemaVersion",
+	6: "schemaImage",
+	7: "executionBundle",
+	8: "executionEngine",
 }
 
 // Decode decodes WorkflowDiscoveryEntry from json.
@@ -28434,7 +28487,7 @@ func (s *WorkflowDiscoveryEntry) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode WorkflowDiscoveryEntry to nil")
 	}
-	var requiredBitSet [1]uint8
+	var requiredBitSet [2]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -28496,8 +28549,18 @@ func (s *WorkflowDiscoveryEntry) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"version\"")
 			}
+		case "schemaVersion":
+			if err := func() error {
+				s.SchemaVersion.Reset()
+				if err := s.SchemaVersion.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"schemaVersion\"")
+			}
 		case "schemaImage":
-			requiredBitSet[0] |= 1 << 5
+			requiredBitSet[0] |= 1 << 6
 			if err := func() error {
 				v, err := d.Str()
 				s.SchemaImage = string(v)
@@ -28537,8 +28600,9 @@ func (s *WorkflowDiscoveryEntry) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [1]uint8{
-		0b00111111,
+	for i, mask := range [2]uint8{
+		0b01011111,
+		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

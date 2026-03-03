@@ -1,3 +1,4 @@
+schemaVersion: "1.0"
 # Patch HPA Workflow Schema - Job Backend (BR-WORKFLOW-004)
 # Scenario: #123 -- HPA at maxReplicas -> temporarily raise ceiling
 metadata:

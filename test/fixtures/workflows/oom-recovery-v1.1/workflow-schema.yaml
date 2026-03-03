@@ -1,3 +1,4 @@
+schemaVersion: "1.0"
 # OOM Recovery Workflow Schema v1.1.0 (BR-WORKFLOW-004)
 # Used by: DataStorage E2E — 07_workflow_version_management_test.go (DD-WORKFLOW-002)
 metadata:
