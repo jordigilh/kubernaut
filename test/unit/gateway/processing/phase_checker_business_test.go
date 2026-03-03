@@ -547,3 +547,167 @@ var _ = Describe("BR-GATEWAY-011: Post-completion cooldown prevents stale remedi
 		})
 	})
 })
+
+// ============================================================================
+// BUSINESS OUTCOME TESTS: Exponential Backoff Cooldown (Issue #242, DD-WE-004)
+// ============================================================================
+//
+// BR-ORCH-042: RO sets NextAllowedExecution on Failed/TimedOut RRs.
+// Gateway MUST honour this field to prevent premature retry attempts.
+//
+// BUSINESS VALUE:
+// - Failed remediations get progressively longer backoff (1m, 2m, 4m, 8m, 10m cap)
+// - Gateway suppresses new RRs while backoff is active
+// - Prevents wasted LLM calls on signals that keep failing
+// ============================================================================
+
+var _ = Describe("Issue #242: Gateway must enforce exponential backoff cooldown on Failed/TimedOut RRs", func() {
+	var (
+		ctx       context.Context
+		k8sClient client.Client
+		scheme    *runtime.Scheme
+		checker   *processing.PhaseBasedDeduplicationChecker
+	)
+
+	const (
+		namespace   = "kubernaut-system"
+		fingerprint = "c3d4e5f6a7b8901234567890abcdef1234567890abcdef1234567890abcdef12"
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		scheme = runtime.NewScheme()
+		Expect(remediationv1alpha1.AddToScheme(scheme)).To(Succeed())
+
+		k8sClient = fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithStatusSubresource(&remediationv1alpha1.RemediationRequest{}).
+			WithIndex(&remediationv1alpha1.RemediationRequest{}, "spec.signalFingerprint", func(o client.Object) []string {
+				rr := o.(*remediationv1alpha1.RemediationRequest)
+				return []string{rr.Spec.SignalFingerprint}
+			}).
+			Build()
+
+		checker = processing.NewPhaseBasedDeduplicationChecker(k8sClient, 5*time.Minute)
+	})
+
+	Context("UT-GW-242-001: Failed RR with NextAllowedExecution in the future", func() {
+		It("should deduplicate to enforce backoff and prevent premature retry", func() {
+			// BUSINESS OUTCOME: RR-1 failed at T, RO set NextAllowedExecution=T+4m.
+			// Alert re-fires at T+2m. Gateway must suppress the new RR because the
+			// backoff window hasn't expired yet — creating a new RR would just fail again.
+			nextAllowed := metav1.NewTime(time.Now().Add(2 * time.Minute))
+			rr := &remediationv1alpha1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "rr-failed-backoff-active",
+					Namespace: namespace,
+				},
+				Spec: remediationv1alpha1.RemediationRequestSpec{
+					SignalFingerprint: fingerprint,
+				},
+				Status: remediationv1alpha1.RemediationRequestStatus{
+					OverallPhase:         remediationv1alpha1.PhaseFailed,
+					NextAllowedExecution: &nextAllowed,
+				},
+			}
+			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+
+			shouldDedup, existingRR, err := checker.ShouldDeduplicate(ctx, namespace, fingerprint)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(shouldDedup).To(BeTrue(),
+				"Failed RR with NextAllowedExecution in the future must suppress new RR creation")
+			Expect(existingRR).NotTo(BeNil())
+			Expect(existingRR.Name).To(Equal("rr-failed-backoff-active"))
+		})
+	})
+
+	Context("UT-GW-242-002: Failed RR with NextAllowedExecution in the past", func() {
+		It("should allow new RR creation after backoff expires", func() {
+			// BUSINESS OUTCOME: RR-1 failed at T, RO set NextAllowedExecution=T+2m.
+			// Alert re-fires at T+5m. Backoff has expired — Gateway should allow a fresh
+			// remediation attempt with current signal data.
+			nextAllowed := metav1.NewTime(time.Now().Add(-3 * time.Minute))
+			rr := &remediationv1alpha1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "rr-failed-backoff-expired",
+					Namespace: namespace,
+				},
+				Spec: remediationv1alpha1.RemediationRequestSpec{
+					SignalFingerprint: fingerprint,
+				},
+				Status: remediationv1alpha1.RemediationRequestStatus{
+					OverallPhase:         remediationv1alpha1.PhaseFailed,
+					NextAllowedExecution: &nextAllowed,
+				},
+			}
+			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+
+			shouldDedup, existingRR, err := checker.ShouldDeduplicate(ctx, namespace, fingerprint)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(shouldDedup).To(BeFalse(),
+				"Failed RR with expired backoff must allow new RR creation")
+			Expect(existingRR).To(BeNil())
+		})
+	})
+
+	Context("UT-GW-242-003: Failed RR with nil NextAllowedExecution (backwards compat)", func() {
+		It("should allow new RR creation when no backoff was set", func() {
+			// BUSINESS OUTCOME: Older RRs or RRs that failed without backoff (e.g. manual
+			// cancellation path) have nil NextAllowedExecution. These must not block new
+			// RR creation — preserving backwards compatibility with existing terminal phase logic.
+			rr := &remediationv1alpha1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "rr-failed-no-backoff",
+					Namespace: namespace,
+				},
+				Spec: remediationv1alpha1.RemediationRequestSpec{
+					SignalFingerprint: fingerprint,
+				},
+				Status: remediationv1alpha1.RemediationRequestStatus{
+					OverallPhase:         remediationv1alpha1.PhaseFailed,
+					NextAllowedExecution: nil,
+				},
+			}
+			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+
+			shouldDedup, existingRR, err := checker.ShouldDeduplicate(ctx, namespace, fingerprint)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(shouldDedup).To(BeFalse(),
+				"Failed RR without NextAllowedExecution must allow new RR (backwards compat)")
+			Expect(existingRR).To(BeNil())
+		})
+	})
+
+	Context("UT-GW-242-004: TimedOut RR with active backoff", func() {
+		It("should deduplicate TimedOut RRs the same as Failed when backoff is active", func() {
+			// BUSINESS OUTCOME: TimedOut is a terminal phase like Failed. If RO sets
+			// NextAllowedExecution on a TimedOut RR, Gateway must respect it identically.
+			nextAllowed := metav1.NewTime(time.Now().Add(5 * time.Minute))
+			rr := &remediationv1alpha1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "rr-timedout-backoff-active",
+					Namespace: namespace,
+				},
+				Spec: remediationv1alpha1.RemediationRequestSpec{
+					SignalFingerprint: fingerprint,
+				},
+				Status: remediationv1alpha1.RemediationRequestStatus{
+					OverallPhase:         remediationv1alpha1.PhaseTimedOut,
+					NextAllowedExecution: &nextAllowed,
+				},
+			}
+			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+
+			shouldDedup, existingRR, err := checker.ShouldDeduplicate(ctx, namespace, fingerprint)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(shouldDedup).To(BeTrue(),
+				"TimedOut RR with active backoff must suppress new RR creation")
+			Expect(existingRR).NotTo(BeNil())
+			Expect(existingRR.Name).To(Equal("rr-timedout-backoff-active"))
+		})
+	})
+})

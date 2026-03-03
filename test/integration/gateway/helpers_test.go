@@ -268,7 +268,7 @@ func StartTestGatewayWithOptions(ctx context.Context, k8sClient *K8sTestClient, 
 			// Classification now owned by Signal Processing per DD-CATEGORIZATION-001
 			Retry: config.DefaultRetrySettings(), // BR-GATEWAY-111: K8s API retry configuration
 			Deduplication: config.DeduplicationSettings{
-				TTL: 10 * time.Second, // Integration test TTL (production default: 5 minutes)
+				CooldownPeriod: 10 * time.Second,
 			},
 		},
 	}

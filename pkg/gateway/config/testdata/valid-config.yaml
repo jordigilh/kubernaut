@@ -22,7 +22,8 @@ datastorage:
 
 processing:
   deduplication:
-    ttl: "5m"
+    # DD-GATEWAY-011: TTL removed; deduplication window = CRD lifecycle
+    cooldownPeriod: "5m"
 
   # Note: environment and priority configuration removed (2025-12-06)
   # Classification now owned by Signal Processing per DD-CATEGORIZATION-001

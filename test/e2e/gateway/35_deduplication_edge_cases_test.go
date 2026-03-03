@@ -24,6 +24,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -193,9 +194,10 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 			// This avoids the race where multiple goroutines all try to create the RR
 			// simultaneously before the K8s Lease lock serializes them.
 
-			// #230: Unique alert name per invocation prevents cross-retry/cross-process RR pollution
-			alertName := fmt.Sprintf("TestConcurrentDedup-p%d-%d", GinkgoParallelProcess(), time.Now().UnixNano())
-			fingerprint := fmt.Sprintf("concurrent-test-p%d-%d", GinkgoParallelProcess(), time.Now().UnixNano())
+			// #230: UUID per invocation prevents cross-retry/cross-process RR pollution
+			runID := uuid.New().String()[:8]
+			alertName := fmt.Sprintf("TestConcurrentDedup-%s", runID)
+			fingerprint := fmt.Sprintf("concurrent-test-%s", runID)
 
 			makePayload := func() []byte {
 				return createPrometheusWebhookPayload(PrometheusAlertPayload{
@@ -291,9 +293,10 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 			// When: Multiple deduplicated alerts arrive concurrently
 			// Then: Hit count increments correctly (no lost updates)
 
-			// #230: Unique alert name per invocation prevents cross-retry/cross-process RR pollution
-			alertName := fmt.Sprintf("TestAtomicHitCount-p%d-%d", GinkgoParallelProcess(), time.Now().UnixNano())
-			fingerprint := fmt.Sprintf("atomic-test-%d", time.Now().Unix())
+			// #230: UUID per invocation prevents cross-retry/cross-process RR pollution
+			runID := uuid.New().String()[:8]
+			alertName := fmt.Sprintf("TestAtomicHitCount-%s", runID)
+			fingerprint := fmt.Sprintf("atomic-test-%s", runID)
 			payload := createPrometheusWebhookPayload(PrometheusAlertPayload{
 				AlertName: alertName,
 				Namespace: testNamespace,

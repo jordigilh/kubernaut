@@ -133,7 +133,9 @@ func (c *PhaseBasedDeduplicationChecker) ShouldDeduplicate(ctx context.Context, 
 
 	// Check each RR: non-terminal phases always deduplicate, Completed RRs within
 	// cooldown also deduplicate to prevent stale signals reaching the LLM pipeline.
+	// Failed/TimedOut RRs with active exponential backoff also deduplicate (#242, DD-WE-004).
 	var mostRecentCooldownRR *remediationv1alpha1.RemediationRequest
+	var mostRecentBackoffRR *remediationv1alpha1.RemediationRequest
 
 	for i := range rrList.Items {
 		rr := &rrList.Items[i]
@@ -152,10 +154,24 @@ func (c *PhaseBasedDeduplicationChecker) ShouldDeduplicate(ctx context.Context, 
 				mostRecentCooldownRR = rr
 			}
 		}
+
+		// Exponential backoff cooldown (#242, DD-WE-004): Failed/TimedOut RRs with
+		// NextAllowedExecution in the future suppress new RR creation.
+		if rr.Status.NextAllowedExecution != nil &&
+			time.Now().Before(rr.Status.NextAllowedExecution.Time) {
+			if mostRecentBackoffRR == nil ||
+				rr.Status.NextAllowedExecution.Time.After(mostRecentBackoffRR.Status.NextAllowedExecution.Time) {
+				mostRecentBackoffRR = rr
+			}
+		}
 	}
 
 	if mostRecentCooldownRR != nil {
 		return true, mostRecentCooldownRR, nil
+	}
+
+	if mostRecentBackoffRR != nil {
+		return true, mostRecentBackoffRR, nil
 	}
 
 	return false, nil, nil
