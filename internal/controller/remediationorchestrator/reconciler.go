@@ -2066,7 +2066,10 @@ func (r *Reconciler) createEffectivenessAssessmentIfNeeded(ctx context.Context, 
 	isAsync := isGitOpsManaged
 	if !isAsync {
 		gvk, err := resolveGVKForKind(r.restMapper, remediationKind)
-		if err == nil && !creator.IsBuiltInGroup(gvk.Group) {
+		if err != nil {
+			logger.V(1).Info("Cannot resolve GVK for kind, treating as sync target for hash timing",
+				"kind", remediationKind, "error", err)
+		} else if !creator.IsBuiltInGroup(gvk.Group) {
 			isAsync = true
 		}
 	}
