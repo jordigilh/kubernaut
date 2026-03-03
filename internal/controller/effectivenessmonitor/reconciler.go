@@ -987,7 +987,7 @@ func ComputePodHealthStats(pods []*corev1.Pod, remediationStartedAt *metav1.Time
 			pendingCount++
 		}
 
-		preRemediationPod := remediationStartedAt != nil && pod.CreationTimestamp.Before(remediationStartedAt)
+		preRemediationPod := remediationStartedAt != nil && !pod.CreationTimestamp.Time.After(remediationStartedAt.Time)
 
 		for _, cs := range pod.Status.ContainerStatuses {
 			if !preRemediationPod {

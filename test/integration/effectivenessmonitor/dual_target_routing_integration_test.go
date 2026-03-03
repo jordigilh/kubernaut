@@ -80,10 +80,10 @@ func createDivergentTargetEA(namespace, name, correlationID, signalNs, remediati
 
 var _ = Describe("Dual-Target Routing (Issue #188, DD-EM-003)", func() {
 
-	// Reset mock AM request log before each test to avoid cross-test pollution
-	// (e.g., IT-EM-188-006 must not see requests from other tests like rr-dt-010)
+	// Reset mock request logs before each test to avoid cross-test pollution
 	BeforeEach(func() {
 		mockAM.ResetRequestLog()
+		mockProm.ResetRequestLog()
 	})
 
 	// ========================================================================
@@ -95,9 +95,6 @@ var _ = Describe("Dual-Target Routing (Issue #188, DD-EM-003)", func() {
 
 		signalNs := ns + "-signal"
 		remediationNs := ns + "-remediation"
-
-		By("Resetting Prometheus request log before test")
-		mockProm.ResetRequestLog()
 
 		By("Creating EA with divergent signal/remediation namespaces")
 		ea := createDivergentTargetEA(ns, "ea-rt-007", "rr-rt-007", signalNs, remediationNs)
@@ -118,18 +115,24 @@ var _ = Describe("Dual-Target Routing (Issue #188, DD-EM-003)", func() {
 			if req.Path != "/api/v1/query_range" {
 				continue
 			}
-			queryRangeRequests++
 			queryValues := req.Query["query"]
 			Expect(queryValues).NotTo(BeEmpty(), "query_range request should have a 'query' parameter")
 			query := queryValues[0]
 
+			// Filter: only inspect queries relevant to this test's namespaces.
+			// Other concurrently-reconciling EAs may also send queries to the shared mock.
+			if !strings.Contains(query, signalNs) && !strings.Contains(query, remediationNs) {
+				continue
+			}
+
+			queryRangeRequests++
 			Expect(query).To(ContainSubstring(signalNs),
 				"DD-EM-003: PromQL query should use SignalTarget namespace %q, got: %s", signalNs, query)
 			Expect(query).NotTo(ContainSubstring(remediationNs),
 				"DD-EM-003: PromQL query must NOT use RemediationTarget namespace %q, got: %s", remediationNs, query)
 		}
 		Expect(queryRangeRequests).To(BeNumerically(">", 0),
-			"Prometheus should have received at least one query_range request")
+			"Prometheus should have received at least one query_range request for this test's namespace")
 	})
 
 	// ========================================================================
