@@ -29,6 +29,18 @@ data:
         maxRetries: 3
     effectivenessAssessment:
       stabilizationWindow: "5m"
+    routing:
+      consecutiveFailureThreshold: 3
+      consecutiveFailureCooldown: "1h"
+      recentlyRemediatedCooldown: "5m"
+      exponentialBackoffBase: "1m"
+      exponentialBackoffMax: "10m"
+      exponentialBackoffMaxExponent: 4
+      scopeBackoffBase: "5s"
+      scopeBackoffMax: "5m"
+      ineffectiveChainThreshold: 3
+      recurrenceCountThreshold: 5
+      ineffectiveTimeWindow: "4h"
 ---
 apiVersion: v1
 kind: ServiceAccount

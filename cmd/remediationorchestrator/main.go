@@ -19,6 +19,7 @@ package main
 import (
 	"flag"
 	"os"
+	"time"
 
 	"github.com/go-logr/zapr"
 	zaplog "go.uber.org/zap"
@@ -237,6 +238,41 @@ func main() {
 	setupLog.Info("EffectivenessAssessment creator initialized (ADR-EM-001)",
 		"stabilizationWindow", cfg.EA.StabilizationWindow)
 
+	// ========================================
+	// ROUTING ENGINE INITIALIZATION (DD-RO-002, ADR-030)
+	// ADR-030: Routing thresholds from YAML config (not hardcoded)
+	// ========================================
+	routingCfg := routing.Config{
+		ConsecutiveFailureThreshold:  cfg.Routing.ConsecutiveFailureThreshold,
+		ConsecutiveFailureCooldown:   int64(cfg.Routing.ConsecutiveFailureCooldown / time.Second),
+		RecentlyRemediatedCooldown:   int64(cfg.Routing.RecentlyRemediatedCooldown / time.Second),
+		ExponentialBackoffBase:       int64(cfg.Routing.ExponentialBackoffBase / time.Second),
+		ExponentialBackoffMax:        int64(cfg.Routing.ExponentialBackoffMax / time.Second),
+		ExponentialBackoffMaxExponent: cfg.Routing.ExponentialBackoffMaxExponent,
+		ScopeBackoffBase:            int64(cfg.Routing.ScopeBackoffBase / time.Second),
+		ScopeBackoffMax:             int64(cfg.Routing.ScopeBackoffMax / time.Second),
+		IneffectiveChainThreshold:   cfg.Routing.IneffectiveChainThreshold,
+		RecurrenceCountThreshold:    cfg.Routing.RecurrenceCountThreshold,
+		IneffectiveTimeWindow:       cfg.Routing.IneffectiveTimeWindow,
+	}
+	scopeMgr := scope.NewManager(mgr.GetClient())
+	routingEngine := routing.NewRoutingEngine(mgr.GetClient(), mgr.GetAPIReader(), "", routingCfg, scopeMgr)
+
+	// Issue #214: Wire DataStorage history querier for ineffective chain detection.
+	dsHistoryAdapter, err := routing.NewDSHistoryAdapterFromConfig(cfg.DataStorage.URL, cfg.DataStorage.Timeout)
+	if err != nil {
+		setupLog.Error(err, "Failed to create DataStorage history adapter (Issue #214)",
+			"url", cfg.DataStorage.URL)
+		os.Exit(1)
+	}
+	routingEngine.SetDSClient(dsHistoryAdapter)
+
+	setupLog.Info("Routing engine initialized (DD-RO-002, ADR-030)",
+		"consecutiveFailureThreshold", cfg.Routing.ConsecutiveFailureThreshold,
+		"ineffectiveChainThreshold", cfg.Routing.IneffectiveChainThreshold,
+		"ineffectiveTimeWindow", cfg.Routing.IneffectiveTimeWindow,
+	)
+
 	// Setup RemediationOrchestrator controller with audit store and comprehensive timeout config
 	// ADR-030: Timeouts from YAML config (not CLI flags)
 	roReconciler := controller.NewReconciler(
@@ -253,22 +289,11 @@ func main() {
 			Executing:        cfg.Timeouts.Executing,
 			AwaitingApproval: cfg.Timeouts.AwaitingApproval,
 		},
-		nil,       // Use default routing engine (production)
-		eaCreator, // ADR-EM-001: EA creation on terminal phases
+		routingEngine, // DD-RO-002: Routing engine built from YAML config
+		eaCreator,     // ADR-EM-001: EA creation on terminal phases
 	)
 	// DD-EM-002: Set REST mapper for pre-remediation hash Kind resolution
 	roReconciler.SetRESTMapper(mgr.GetRESTMapper())
-
-	// Issue #214: Wire DataStorage history querier for ineffective chain detection.
-	// Uses the same URL/timeout as the audit client but a separate ogen client instance.
-	dsHistoryAdapter, err := routing.NewDSHistoryAdapterFromConfig(cfg.DataStorage.URL, cfg.DataStorage.Timeout)
-	if err != nil {
-		setupLog.Error(err, "Failed to create DataStorage history adapter (Issue #214)",
-			"url", cfg.DataStorage.URL)
-		os.Exit(1)
-	}
-	roReconciler.SetDSClient(dsHistoryAdapter)
-	setupLog.Info("DataStorage history querier wired for ineffective chain detection (Issue #214)")
 	if err = roReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "RemediationOrchestrator")
 		os.Exit(1)

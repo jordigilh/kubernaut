@@ -54,17 +54,9 @@ import (
 
 // ========================================
 // BLOCKING CONFIGURATION CONSTANTS
-// BR-ORCH-042.1, BR-ORCH-042.3, BR-GATEWAY-185 v1.1
+// BR-GATEWAY-185 v1.1
 // Validated by: test/unit/remediationorchestrator/blocking_test.go
 // ========================================
-
-// DefaultBlockThreshold is the number of consecutive failures before blocking.
-// Reference: BR-ORCH-042.1
-const DefaultBlockThreshold = 3
-
-// DefaultCooldownDuration is how long to block before allowing retry.
-// Reference: BR-ORCH-042.3
-const DefaultCooldownDuration = 1 * time.Hour
 
 // FingerprintFieldIndex is the field index key for spec.signalFingerprint.
 // Used for O(1) lookups. Set up in SetupWithManager().

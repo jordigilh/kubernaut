@@ -4,7 +4,7 @@
 **Title**: Consecutive Failure Blocking with Automatic Cooldown
 **Category**: ORCH (Remediation Orchestrator)
 **Priority**: 🔴 P0 (V1.0)
-**Version**: 1.1
+**Version**: 1.4
 **Date**: December 10, 2025
 **Status**: 🚧 IN PROGRESS
 **Related**: DD-GATEWAY-011, BR-GATEWAY-184 (superseded), BR-GATEWAY-185 (field selectors)
@@ -247,13 +247,23 @@ var (
 
 ## Configuration
 
+Routing thresholds are configured in the RO ConfigMap under the `routing:` key
+(ADR-030). All fields fall back to `DefaultConfig()` defaults when omitted.
+
 ```yaml
-# Configurable via environment or ConfigMap
-consecutiveFailureBlocking:
-  enabled: true
-  threshold: 3                    # Block after N consecutive failures
-  cooldownDuration: 1h            # How long to block before auto-retry
-  notifyOnBlock: true             # Create NotificationRequest when blocking
+# remediationorchestrator.yaml ConfigMap (ADR-030)
+routing:
+  consecutiveFailureThreshold: 3        # Block after N consecutive failures (BR-ORCH-042)
+  consecutiveFailureCooldown: "1h"      # How long to block before auto-retry
+  recentlyRemediatedCooldown: "5m"      # Min interval between same-target remediations
+  exponentialBackoffBase: "1m"          # Base cooldown for exponential backoff (DD-WE-004)
+  exponentialBackoffMax: "10m"          # Max cooldown for exponential backoff
+  exponentialBackoffMaxExponent: 4      # 2^4 = 16x multiplier cap
+  scopeBackoffBase: "5s"               # Initial backoff for unmanaged resources (ADR-053)
+  scopeBackoffMax: "5m"                # Max backoff for unmanaged resources
+  ineffectiveChainThreshold: 3          # Consecutive ineffective remediations before block (Issue #214)
+  recurrenceCountThreshold: 5           # Safety net: total entries in time window
+  ineffectiveTimeWindow: "4h"           # Lookback window for ineffective chain detection
 ```
 
 ---
@@ -352,7 +362,7 @@ Instead of modifying the consecutive failure counter, the system uses DataStorag
 **Implementation status**:
 - ✅ `CheckIneffectiveRemediationChain` in `blocking.go` (Issue #214, BR-ORCH-042.5)
 - ✅ DataStorage `get_resource_context` API provides remediation history to the LLM
-- 🔲 Prompt engineering for HAPI to leverage history context (separate HAPI issue)
+- ✅ HAPI prompt engineering leverages history context (`remediation_history_prompt.py`, BR-HAPI-016, DD-HAPI-016 v1.1)
 
 **Why not Option A/B?**
 - **Option A** (count completed-but-ineffective as failures): Punishes correct execution; undermines trust in success signals.
@@ -386,4 +396,5 @@ Instead of modifying the consecutive failure counter, the system uses DataStorag
 | 1.1 | 2025-12-10 | Updated to use field selector on `spec.signalFingerprint` (not labels) per BR-GATEWAY-185 v1.1. Added AC-042-1-4, AC-042-1-5. |
 | 1.2 | 2026-02-28 | Added BR-ORCH-042.5: Ineffective Remediation Chain Detection (Issue #214). Three-layer detection using DataStorage audit traces. |
 | 1.3 | 2026-03-02 | Added BR-ORCH-042.6: Documented Option C decision for completed-but-ineffective handling. Prompt engineering deferred to HAPI team. |
+| 1.4 | 2026-03-03 | Externalized routing config to YAML ConfigMap (ADR-030). Marked HAPI prompt engineering as implemented. Fixed latent zero-value bug for Issue #214 fields. |
 

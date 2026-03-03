@@ -92,8 +92,6 @@ type Reconciler struct {
 	auditManager *roaudit.Manager
 	// Timeout configuration (BR-ORCH-027/028, Future-proof implementation)
 	timeouts TimeoutConfig
-	// Consecutive failure blocking (BR-ORCH-042)
-	consecutiveBlock *ConsecutiveFailureBlocker
 	// Notification lifecycle tracking (BR-ORCH-029/030)
 	notificationHandler *NotificationHandler
 	// Routing engine for centralized routing (DD-RO-002, V1.0)
@@ -190,8 +188,7 @@ func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, 
 			ScopeBackoffBase: 5,   // 5 seconds initial
 			ScopeBackoffMax:  300, // 5 minutes max
 		}
-		// TODO: Get namespace from controller-runtime manager or environment variable
-		// For now, using empty string which means all namespaces
+		// ADR-057: All CRDs live in the controller namespace; empty string is correct.
 		routingNamespace := ""
 		// BR-SCOPE-010: Create scope manager using cached client for metadata-only informers (ADR-053)
 		scopeMgr := scope.NewManager(c)
@@ -218,7 +215,6 @@ func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, 
 		timeouts:            timeouts,
 		auditStore:          auditStore,
 		auditManager:        roaudit.NewManager(roaudit.ServiceName),
-		consecutiveBlock:    NewConsecutiveFailureBlocker(c, 3, 1*time.Hour, true),
 		notificationHandler: NewNotificationHandler(c, m),
 		routingEngine:       routingEngine, // Use provided or default routing engine
 		Metrics:             m,
@@ -1765,10 +1761,10 @@ func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.R
 		consecutiveFailures := r.countConsecutiveFailures(ctx, rr.Spec.SignalFingerprint)
 
 		// +1 for this failure (not yet in status)
-		if consecutiveFailures+1 >= DefaultBlockThreshold {
+		if consecutiveFailures+1 >= r.getConsecutiveFailureThreshold() {
 			logger.Info("Consecutive failure threshold reached, future RRs will be blocked",
 				"consecutiveFailures", consecutiveFailures+1,
-				"threshold", DefaultBlockThreshold,
+				"threshold", r.getConsecutiveFailureThreshold(),
 				"fingerprint", rr.Spec.SignalFingerprint,
 			)
 			// Do NOT transition this RR to Blocked - it failed and should go to Failed.
@@ -2902,16 +2898,6 @@ The %s phase did not complete within the expected timeframe. Please investigate 
 		"timeout", timeout)
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-// BR-ORCH-042: Consecutive Failure Blocking Integration
-// ════════════════════════════════════════════════════════════════════════════
-
-// SetConsecutiveFailureBlocker sets the consecutive failure blocker for testing.
-// Production code should create blocker in NewReconciler or via controller config.
-func (r *Reconciler) SetConsecutiveFailureBlocker(blocker *ConsecutiveFailureBlocker) {
-	r.consecutiveBlock = blocker
-}
-
 // HandleBlockedPhase handles RemediationRequests in Blocked phase.
 // Checks if cooldown has expired and transitions to Failed if so.
 //
@@ -3041,12 +3027,9 @@ func IsTerminalPhase(phase remediationv1.RemediationPhase) bool {
 	return false
 }
 
-// getConsecutiveFailureThreshold returns the configured threshold or default (3).
+// getConsecutiveFailureThreshold returns the configured threshold from the routing engine.
 func (r *Reconciler) getConsecutiveFailureThreshold() int {
-	if r.consecutiveBlock != nil {
-		return r.consecutiveBlock.threshold
-	}
-	return 3 // default
+	return r.routingEngine.Config().ConsecutiveFailureThreshold
 }
 
 // validateTimeoutConfig validates the timeout configuration in RemediationRequest.Status.TimeoutConfig.
