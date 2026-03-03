@@ -35,8 +35,10 @@ var _ = Describe("EffectivenessAssessment CRD Types (ADR-EM-001)", func() {
 	// ========================================
 	Describe("Phase Constants", func() {
 
-		It("should define all four phases", func() {
+		It("should define all six phases", func() {
 			Expect(eav1.PhasePending).To(Equal("Pending"))
+			Expect(eav1.PhaseWaitingForPropagation).To(Equal("WaitingForPropagation"))
+			Expect(eav1.PhaseStabilizing).To(Equal("Stabilizing"))
 			Expect(eav1.PhaseAssessing).To(Equal("Assessing"))
 			Expect(eav1.PhaseCompleted).To(Equal("Completed"))
 			Expect(eav1.PhaseFailed).To(Equal("Failed"))
