@@ -89,8 +89,8 @@ var _ = Describe("RO Propagation Delay (DD-EM-004 v2.0, BR-RO-103, Issue #253)",
 			Severity:   "critical",
 			SignalType: "alert",
 			AffectedResource: &aianalysisv1.AffectedResource{
-				Kind:      "Certificate", // CRD kind (cert-manager.io) → resolved via well-known switch
-				Name:      "test-cert-target",
+				Kind:      "EffectivenessAssessment", // CRD kind (kubernaut.ai) → resolved via KindsFor in envtest
+				Name:      "test-ea-target",
 				Namespace: ns,
 			},
 		}
