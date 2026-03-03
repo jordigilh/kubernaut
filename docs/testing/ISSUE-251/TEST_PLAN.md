@@ -85,11 +85,16 @@ UT-RO-251-008 through UT-RO-251-013 cover the RO reconciler's async detection lo
 
 | Test ID | Scenario | Setup | Validation | BR | Status |
 |---------|----------|-------|-----------|-----|--------|
-| E2E-EM-251-001 | cert-manager operator: full pipeline async hash | Deploy cert-manager; trigger CertManagerCertNotReady alert; full pipeline through RCA, WFE, EA | RO sets `hashComputeAfter` for `cert-manager.io` CRD; EM defers hash; post-hash captures CR spec change after cert-manager reconciles; health confirms Certificate Ready; effectiveness score reflects both hash change and health | BR-EM-010, BR-RO-103 | **Deferred** — implement alongside demo scenarios (#144, #101) |
+| E2E-FP-251-001 | cert-manager CRD: full pipeline async hash deferral | Install cert-manager in BeforeAll (self-contained); inject CertManagerCertNotReady alert; Mock LLM returns `rca_resource_kind: Certificate` | RO resolves `Certificate` via REST mapper → `cert-manager.io/v1` (non-built-in) → sets `HashComputeAfter`; EM defers hash computation; audit `assessment.scheduled` includes `hash_compute_after`; EA reaches terminal phase | BR-EM-010, BR-RO-103 | **Implemented** |
 
-**File**: `test/e2e/effectivenessmonitor/async_hash_e2e_test.go` (to be created)
+**File**: `test/e2e/fullpipeline/02_async_hash_deferral_test.go`
 
-**Note**: E2E-EM-251-001 extends the validation from demo scenario #133 (cert-manager Certificate failure) with explicit hash timing assertions. Deferred because it depends on cert-manager deployment in the Kind cluster, which is part of demo infrastructure work.
+**Design decisions**:
+- Runs in the Full Pipeline (FP) E2E suite — same Kind cluster as `01_full_remediation_lifecycle_test.go`
+- cert-manager installed in `BeforeAll` (self-contained, ~2 min impact only on this test)
+- Reuses `oomkill-increase-memory-v1` workflow for pipeline flow (the async detection depends only on `AffectedResource.Kind`, not the actual workflow)
+- Mock LLM `cert_not_ready` scenario returns `rca_resource_kind: "Certificate"` with `rca_resource_api_version: "cert-manager.io/v1"`
+- Test fixtures are isolated: own namespace, own cleanup, no impact on other FP tests
 
 ---
 
@@ -102,8 +107,8 @@ UT-RO-251-008 through UT-RO-251-013 cover the RO reconciler's async detection lo
 | UT — EM hash gating | 5 | `test/unit/effectivenessmonitor/hash_deferral_test.go` | Implemented |
 | IT — EM hash deferral | 3 | `test/integration/effectivenessmonitor/hash_deferral_integration_test.go` | Implemented |
 | IT — RO async detection | 2 | `test/integration/remediationorchestrator/ea_async_detection_integration_test.go` | Implemented |
-| E2E — cert-manager | 1 | `test/e2e/effectivenessmonitor/async_hash_e2e_test.go` | Deferred |
-| **Total implemented** | **17** (30 sub-cases) | | |
+| E2E — cert-manager async | 1 | `test/e2e/fullpipeline/02_async_hash_deferral_test.go` | Implemented |
+| **Total implemented** | **18** (31 sub-cases) | | |
 
 ---
 

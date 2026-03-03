@@ -268,6 +268,25 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         rca_resource_name="api-server-def456",
         parameters={}
     ),
+    # ========================================
+    # DD-EM-004 / BR-EM-010: Async Hash Deferral — CRD Target Scenario
+    # ========================================
+    "cert_not_ready": MockScenario(
+        name="cert_not_ready",
+        workflow_name="oomkill-increase-memory-v1",  # Reuses oomkill workflow for pipeline flow
+        signal_name="CertManagerCertNotReady",
+        severity="critical",
+        workflow_id="21053597-2865-572b-89bf-de49b5b685da",  # Placeholder - overwritten by config
+        workflow_title="Fix Certificate - Recreate CA Secret",
+        confidence=0.92,
+        root_cause="cert-manager Certificate stuck in NotReady state due to missing or corrupted CA Secret backing the ClusterIssuer",
+        rca_resource_kind="Certificate",  # CRD kind: triggers async detection in RO
+        rca_resource_namespace="default",
+        rca_resource_name="demo-app-cert",
+        rca_resource_api_version="cert-manager.io/v1",
+        parameters={"NAMESPACE": "default", "DEPLOYMENT_NAME": "memory-eater", "MEMORY_INCREASE_PERCENT": "50"},
+        execution_engine="job",
+    ),
 }
 
 # Default scenario if none matches
@@ -704,6 +723,10 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
             # AlertManager E2E test: MemoryExceedsLimit Prometheus alert → same oomkilled workflow
             matched_scenario = MOCK_SCENARIOS.get("oomkilled", DEFAULT_SCENARIO)
             logger.info(f"✅ PHASE 2: Matched 'memoryexceedslimit' → scenario={matched_scenario.name}, workflow_id={matched_scenario.workflow_id}")
+            return matched_scenario
+        elif "certmanagercertnotready" in content or "cert_not_ready" in content:
+            matched_scenario = MOCK_SCENARIOS.get("cert_not_ready", DEFAULT_SCENARIO)
+            logger.info(f"✅ PHASE 2: Matched 'certmanagercertnotready' → scenario={matched_scenario.name}, workflow_id={matched_scenario.workflow_id}")
             return matched_scenario
         elif "nodenotready" in content or "node not ready" in content:
             matched_scenario = MOCK_SCENARIOS.get("node_not_ready", DEFAULT_SCENARIO)
