@@ -56,6 +56,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/health"
 	emmetrics "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/metrics"
 	"github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/phase"
+	emtiming "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/timing"
 	emtypes "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/types"
 	"github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/validity"
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
@@ -250,21 +251,19 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		// BR-EM-009: Pre-compute and persist ValidityDeadline during stabilization so
 		// operators can observe the deadline immediately. Transition to Stabilizing phase.
 		if ea.Status.ValidityDeadline == nil && (currentPhase == eav1.PhasePending || currentPhase == "") {
-			stabilizationWindow := ea.Spec.Config.StabilizationWindow.Duration
-			effectiveValidity := r.Config.ValidityWindow
-			if stabilizationWindow >= effectiveValidity {
-				effectiveValidity = stabilizationWindow + r.Config.ValidityWindow
+			dt := emtiming.ComputeDerivedTiming(ea.CreationTimestamp, ea.Spec.Config.StabilizationWindow.Duration, r.Config.ValidityWindow)
+			if dt.Extended {
 				logger.Info("Runtime guard: extended ValidityDeadline (StabilizationWindow >= ValidityWindow)",
 					"originalValidity", r.Config.ValidityWindow,
-					"effectiveValidity", effectiveValidity,
-					"stabilizationWindow", stabilizationWindow,
+					"effectiveValidity", dt.EffectiveValidity,
+					"stabilizationWindow", ea.Spec.Config.StabilizationWindow.Duration,
 				)
 				r.Recorder.Eventf(ea, corev1.EventTypeWarning, "ValidityWindowExtended",
 					"StabilizationWindow (%v) >= ValidityWindow (%v); extended deadline to %v",
-					stabilizationWindow, r.Config.ValidityWindow, effectiveValidity)
+					ea.Spec.Config.StabilizationWindow.Duration, r.Config.ValidityWindow, dt.EffectiveValidity)
 			}
-			deadline := metav1.NewTime(ea.CreationTimestamp.Add(effectiveValidity))
-			checkAfter := metav1.NewTime(ea.CreationTimestamp.Add(stabilizationWindow))
+			deadline := dt.ValidityDeadline
+			checkAfter := dt.CheckAfter
 
 			ea.Status.Phase = eav1.PhaseStabilizing
 			ea.Status.ValidityDeadline = &deadline
@@ -273,8 +272,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 
 			logger.Info("Transitioned to Stabilizing, persisted derived timing (BR-EM-009)",
 				"creationTimestamp", ea.CreationTimestamp,
-				"effectiveValidity", effectiveValidity,
-				"stabilizationWindow", stabilizationWindow,
+				"effectiveValidity", dt.EffectiveValidity,
+				"stabilizationWindow", ea.Spec.Config.StabilizationWindow.Duration,
 				"validityDeadline", deadline,
 			)
 			r.Metrics.RecordPhaseTransition(currentPhase, eav1.PhaseStabilizing)
@@ -308,30 +307,20 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 
 		// Compute all derived timing fields on first reconciliation.
 		// These are persisted in status to avoid recomputation and for operator observability.
-		//
-		// ValidityDeadline = EA.creationTimestamp + effectiveValidity (BR-EM-009.1)
-		// PrometheusCheckAfter = EA.creationTimestamp + StabilizationWindow (BR-EM-009.2)
-		// AlertManagerCheckAfter = EA.creationTimestamp + StabilizationWindow (BR-EM-009.3)
-		//
-		// Runtime guard (Issue #188): EA.StabilizationWindow comes from RO config and
-		// may exceed EM's ValidityWindow. When StabilizationWindow >= ValidityWindow,
-		// extend the effective validity to StabilizationWindow + ValidityWindow so the
-		// EM always has the full validity window after stabilization completes.
-		stabilizationWindow := ea.Spec.Config.StabilizationWindow.Duration
-		effectiveValidity := r.Config.ValidityWindow
-		if stabilizationWindow >= effectiveValidity {
-			effectiveValidity = stabilizationWindow + r.Config.ValidityWindow
+		// See timing.ComputeDerivedTiming for the formula and runtime guard (Issue #188).
+		dt := emtiming.ComputeDerivedTiming(ea.CreationTimestamp, ea.Spec.Config.StabilizationWindow.Duration, r.Config.ValidityWindow)
+		if dt.Extended {
 			logger.Info("Runtime guard: extended ValidityDeadline (StabilizationWindow >= ValidityWindow)",
 				"originalValidity", r.Config.ValidityWindow,
-				"effectiveValidity", effectiveValidity,
-				"stabilizationWindow", stabilizationWindow,
+				"effectiveValidity", dt.EffectiveValidity,
+				"stabilizationWindow", ea.Spec.Config.StabilizationWindow.Duration,
 			)
 			r.Recorder.Eventf(ea, corev1.EventTypeWarning, "ValidityWindowExtended",
 				"StabilizationWindow (%v) >= ValidityWindow (%v); extended deadline to %v",
-				stabilizationWindow, r.Config.ValidityWindow, effectiveValidity)
+				ea.Spec.Config.StabilizationWindow.Duration, r.Config.ValidityWindow, dt.EffectiveValidity)
 		}
-		deadline := metav1.NewTime(ea.CreationTimestamp.Add(effectiveValidity))
-		checkAfter := metav1.NewTime(ea.CreationTimestamp.Add(stabilizationWindow))
+		deadline := dt.ValidityDeadline
+		checkAfter := dt.CheckAfter
 
 		ea.Status.Phase = eav1.PhaseAssessing
 		ea.Status.ValidityDeadline = &deadline
@@ -341,8 +330,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		logger.Info("Computed derived timing (BR-EM-009)",
 			"creationTimestamp", ea.CreationTimestamp,
 			"configuredValidityWindow", r.Config.ValidityWindow,
-			"effectiveValidity", effectiveValidity,
-			"stabilizationWindow", stabilizationWindow,
+			"effectiveValidity", dt.EffectiveValidity,
+			"stabilizationWindow", ea.Spec.Config.StabilizationWindow.Duration,
 			"validityDeadline", deadline,
 			"prometheusCheckAfter", checkAfter,
 			"alertManagerCheckAfter", checkAfter,
