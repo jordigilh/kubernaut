@@ -814,10 +814,10 @@ func deployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
 	// If workflowUUIDs nil/empty (HAPI E2E): Use empty scenarios
 	var scenariosYAML string
 	if len(workflowUUIDs) > 0 {
-		// Build YAML map with workflow UUIDs (AIAnalysis E2E)
+		// Build YAML map with workflow UUIDs (AIAnalysis E2E), deterministic order
 		scenariosYAML = "scenarios:\n"
-		for key, uuid := range workflowUUIDs {
-			scenariosYAML += fmt.Sprintf("      %s: %s\n", key, uuid)
+		for _, key := range SortedWorkflowUUIDKeys(workflowUUIDs) {
+			scenariosYAML += fmt.Sprintf("      %s: %s\n", key, workflowUUIDs[key])
 		}
 	} else {
 		// Empty scenarios (HAPI E2E - no workflows seeded)
@@ -1006,10 +1006,10 @@ spec:
 func UpdateMockLLMConfigMap(ctx context.Context, namespace, kubeconfigPath string, workflowUUIDs map[string]string, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "   🔄 Updating Mock LLM ConfigMap with %d workflow UUIDs...\n", len(workflowUUIDs))
 
-	// Build the scenarios YAML with actual workflow UUIDs
+	// Build the scenarios YAML with actual workflow UUIDs (deterministic order)
 	scenariosYAML := "scenarios:\n"
-	for key, uuid := range workflowUUIDs {
-		scenariosYAML += fmt.Sprintf("      %s: %s\n", key, uuid)
+	for _, key := range SortedWorkflowUUIDKeys(workflowUUIDs) {
+		scenariosYAML += fmt.Sprintf("      %s: %s\n", key, workflowUUIDs[key])
 	}
 	// Add overrides section: ensure oomkilled scenario uses job execution engine
 	// This is redundant with the hardcoded default in server.py but ensures

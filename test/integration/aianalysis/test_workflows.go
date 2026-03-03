@@ -225,11 +225,11 @@ func SeedTestWorkflowsInDataStorage(client *ogenclient.Client, output io.Writer)
 func WriteMockLLMConfigFile(configPath string, workflowUUIDs map[string]string, output io.Writer) error {
 	_, _ = fmt.Fprintf(output, "\n📝 Writing Mock LLM configuration file: %s\n", configPath)
 
-	// Build YAML content
+	// Build YAML content with deterministic key order
 	var yamlContent strings.Builder
 	yamlContent.WriteString("scenarios:\n")
-	for key, uuid := range workflowUUIDs {
-		yamlContent.WriteString(fmt.Sprintf("  %s: %s\n", key, uuid))
+	for _, key := range infrastructure.SortedWorkflowUUIDKeys(workflowUUIDs) {
+		yamlContent.WriteString(fmt.Sprintf("  %s: %s\n", key, workflowUUIDs[key]))
 	}
 
 	// Write to file
