@@ -13,6 +13,7 @@
 # Run: vhs deploy/demo/scenarios/node-notready/node-notready.tape
 
 Output deploy/demo/scenarios/node-notready/node-notready.gif
+Output deploy/demo/scenarios/node-notready/node-notready.mp4
 
 Require kubectl
 Require bash
@@ -20,10 +21,10 @@ Require python3
 Require podman
 
 Set Shell "bash"
-Set FontSize 14
-Set Width 1200
-Set Height 600
-Set Padding 20
+Set FontSize 28
+Set Width 2400
+Set Height 1200
+Set Padding 40
 Set TypingSpeed 50ms
 Set Theme "Catppuccin Mocha"
 

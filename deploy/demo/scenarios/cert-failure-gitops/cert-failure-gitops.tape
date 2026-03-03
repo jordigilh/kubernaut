@@ -15,16 +15,17 @@
 # Run: vhs deploy/demo/scenarios/cert-failure-gitops/cert-failure-gitops.tape
 
 Output deploy/demo/scenarios/cert-failure-gitops/cert-failure-gitops.gif
+Output deploy/demo/scenarios/cert-failure-gitops/cert-failure-gitops.mp4
 
 Require kubectl
 Require bash
 Require python3
 
 Set Shell "bash"
-Set FontSize 14
-Set Width 1200
-Set Height 600
-Set Padding 20
+Set FontSize 28
+Set Width 2400
+Set Height 1200
+Set Padding 40
 Set TypingSpeed 50ms
 Set Theme "Catppuccin Mocha"
 

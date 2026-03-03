@@ -23,16 +23,17 @@
 # visual artifact where the echo command text and its output both appear.
 
 Output deploy/demo/scenarios/crashloop/crashloop.gif
+Output deploy/demo/scenarios/crashloop/crashloop.mp4
 
 Require kubectl
 Require bash
 Require python3
 
 Set Shell "bash"
-Set FontSize 14
-Set Width 1200
-Set Height 600
-Set Padding 20
+Set FontSize 28
+Set Width 2400
+Set Height 1200
+Set Padding 40
 Set TypingSpeed 50ms
 Set Theme "Catppuccin Mocha"
 

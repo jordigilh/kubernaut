@@ -14,16 +14,17 @@
 # Run: vhs deploy/demo/scenarios/mesh-routing-failure/mesh-routing-failure.tape
 
 Output deploy/demo/scenarios/mesh-routing-failure/mesh-routing-failure.gif
+Output deploy/demo/scenarios/mesh-routing-failure/mesh-routing-failure.mp4
 
 Require kubectl
 Require bash
 Require python3
 
 Set Shell "bash"
-Set FontSize 14
-Set Width 1200
-Set Height 600
-Set Padding 20
+Set FontSize 28
+Set Width 2400
+Set Height 1200
+Set Padding 40
 Set TypingSpeed 50ms
 Set Theme "Catppuccin Mocha"
 
