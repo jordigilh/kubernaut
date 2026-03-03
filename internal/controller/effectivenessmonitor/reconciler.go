@@ -207,24 +207,63 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	}
 
 	// Step 3: Check validity window
-	// ValidityDeadline is computed on first reconciliation (Pending -> Assessing).
-	// If not yet set (first reconcile of a Pending EA), we skip expiration checks
-	// and proceed to the phase transition which will compute and persist the deadline.
+	// Issue #253: For async targets, the stabilization anchor is HashComputeAfter (not creation).
+	// This ensures the validity checker gates Stabilizing→Assessing correctly.
+	stabilizationAnchor := ea.CreationTimestamp
+	isAsync := ea.Spec.HashComputeAfter != nil && !ea.Spec.HashComputeAfter.IsZero()
+	if isAsync {
+		stabilizationAnchor = *ea.Spec.HashComputeAfter
+	}
+
 	var windowState validity.WindowState
 	if ea.Status.ValidityDeadline != nil {
 		windowState = r.validityChecker.Check(
-			ea.CreationTimestamp,
+			stabilizationAnchor,
 			ea.Spec.Config.StabilizationWindow.Duration,
 			*ea.Status.ValidityDeadline,
 		)
 	} else {
-		// No deadline computed yet - check stabilization only
-		stabilizationEnd := ea.CreationTimestamp.Add(ea.Spec.Config.StabilizationWindow.Duration)
+		stabilizationEnd := stabilizationAnchor.Add(ea.Spec.Config.StabilizationWindow.Duration)
 		if time.Now().Before(stabilizationEnd) {
 			windowState = validity.WindowStabilizing
 		} else {
 			windowState = validity.WindowActive
 		}
+	}
+
+	// Step 3b: WaitingForPropagation phase (Issue #253, BR-EM-010.3)
+	// For async targets with HashComputeAfter still in the future, enter/stay in
+	// WaitingForPropagation phase. Persist derived timing on first entry so operators
+	// can observe the timeline. Requeue until HashComputeAfter elapses.
+	if isAsync && time.Now().Before(ea.Spec.HashComputeAfter.Time) {
+		if currentPhase == eav1.PhasePending || currentPhase == "" {
+			dt := emtiming.ComputeDerivedTiming(ea.CreationTimestamp, ea.Spec.Config.StabilizationWindow.Duration, r.Config.ValidityWindow, ea.Spec.HashComputeAfter)
+			deadline := dt.ValidityDeadline
+			checkAfter := dt.CheckAfter
+
+			ea.Status.Phase = eav1.PhaseWaitingForPropagation
+			ea.Status.ValidityDeadline = &deadline
+			ea.Status.PrometheusCheckAfter = &checkAfter
+			ea.Status.AlertManagerCheckAfter = &checkAfter
+
+			logger.Info("Async target: entered WaitingForPropagation (BR-EM-010.3)",
+				"hashComputeAfter", ea.Spec.HashComputeAfter.Time,
+				"validityDeadline", deadline,
+				"checkAfter", checkAfter,
+			)
+			r.Metrics.RecordPhaseTransition(currentPhase, eav1.PhaseWaitingForPropagation)
+
+			if err := r.Status().Update(ctx, ea); err != nil {
+				logger.Error(err, "Failed to persist WaitingForPropagation phase")
+				r.Metrics.RecordReconcile("error", time.Since(startTime).Seconds())
+				return ctrl.Result{RequeueAfter: r.Config.RequeueGenericError}, err
+			}
+		}
+
+		remaining := time.Until(ea.Spec.HashComputeAfter.Time)
+		logger.Info("Waiting for async propagation to complete", "remaining", remaining)
+		r.Metrics.RecordReconcile("requeue", time.Since(startTime).Seconds())
+		return ctrl.Result{RequeueAfter: remaining}, nil
 	}
 
 	// Step 4: If expired -> complete with partial data (ADR-EM-001: validity window enforcement)
@@ -244,14 +283,29 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	// deadline and integration tests can assert it within a reasonable timeout.
 	if windowState == validity.WindowStabilizing {
 		remaining := r.validityChecker.TimeUntilStabilized(
-			ea.CreationTimestamp,
+			stabilizationAnchor,
 			ea.Spec.Config.StabilizationWindow.Duration,
 		)
+
+		// Issue #253: WaitingForPropagation → Stabilizing transition.
+		// When HCA has elapsed and we're in WaitingForPropagation, transition to Stabilizing.
+		// ValidityDeadline was already persisted in step 3b, so only update the phase.
+		if currentPhase == eav1.PhaseWaitingForPropagation {
+			ea.Status.Phase = eav1.PhaseStabilizing
+			logger.Info("Async target: WaitingForPropagation → Stabilizing (HCA elapsed)",
+				"remaining", remaining)
+			r.Metrics.RecordPhaseTransition(eav1.PhaseWaitingForPropagation, eav1.PhaseStabilizing)
+			if err := r.Status().Update(ctx, ea); err != nil {
+				logger.Error(err, "Failed to persist WaitingForPropagation → Stabilizing transition")
+				r.Metrics.RecordReconcile("error", time.Since(startTime).Seconds())
+				return ctrl.Result{RequeueAfter: r.Config.RequeueGenericError}, err
+			}
+		}
 
 		// BR-EM-009: Pre-compute and persist ValidityDeadline during stabilization so
 		// operators can observe the deadline immediately. Transition to Stabilizing phase.
 		if ea.Status.ValidityDeadline == nil && (currentPhase == eav1.PhasePending || currentPhase == "") {
-			dt := emtiming.ComputeDerivedTiming(ea.CreationTimestamp, ea.Spec.Config.StabilizationWindow.Duration, r.Config.ValidityWindow)
+			dt := emtiming.ComputeDerivedTiming(ea.CreationTimestamp, ea.Spec.Config.StabilizationWindow.Duration, r.Config.ValidityWindow, ea.Spec.HashComputeAfter)
 			if dt.Extended {
 				logger.Info("Runtime guard: extended ValidityDeadline (StabilizationWindow >= ValidityWindow)",
 					"originalValidity", r.Config.ValidityWindow,
@@ -298,7 +352,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	// that would change the resourceVersion and cause optimistic concurrency conflicts
 	// when component checks later attempt their own status update.
 	pendingTransition := false
-	if currentPhase == eav1.PhasePending || currentPhase == eav1.PhaseStabilizing || currentPhase == "" {
+	if currentPhase == eav1.PhasePending || currentPhase == eav1.PhaseWaitingForPropagation || currentPhase == eav1.PhaseStabilizing || currentPhase == "" {
 		if !phase.CanTransition(currentPhase, eav1.PhaseAssessing) {
 			logger.Error(nil, "Invalid phase transition", "from", currentPhase, "to", eav1.PhaseAssessing)
 			r.Metrics.RecordReconcile("error", time.Since(startTime).Seconds())
@@ -308,7 +362,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		// Compute all derived timing fields on first reconciliation.
 		// These are persisted in status to avoid recomputation and for operator observability.
 		// See timing.ComputeDerivedTiming for the formula and runtime guard (Issue #188).
-		dt := emtiming.ComputeDerivedTiming(ea.CreationTimestamp, ea.Spec.Config.StabilizationWindow.Duration, r.Config.ValidityWindow)
+		dt := emtiming.ComputeDerivedTiming(ea.CreationTimestamp, ea.Spec.Config.StabilizationWindow.Duration, r.Config.ValidityWindow, ea.Spec.HashComputeAfter)
 		if dt.Extended {
 			logger.Info("Runtime guard: extended ValidityDeadline (StabilizationWindow >= ValidityWindow)",
 				"originalValidity", r.Config.ValidityWindow,

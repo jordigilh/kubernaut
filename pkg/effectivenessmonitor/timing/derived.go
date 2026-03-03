@@ -55,15 +55,37 @@ type DerivedTiming struct {
 
 // ComputeDerivedTiming calculates the derived timing fields for an EA.
 //
-// The runtime guard (Issue #188) ensures that when StabilizationWindow >= ValidityWindow,
-// the effective validity is extended to StabilizationWindow + ValidityWindow so the EM
-// always has the full validity window after stabilization completes.
+// For sync targets (hashComputeAfter nil or zero):
+//
+//	The runtime guard (Issue #188) ensures that when StabilizationWindow >= ValidityWindow,
+//	the effective validity is extended to StabilizationWindow + ValidityWindow.
+//	CheckAfter = creationTimestamp + StabilizationWindow
+//	ValidityDeadline = creationTimestamp + effectiveValidity
+//
+// For async targets (hashComputeAfter non-nil, non-zero — Issue #253, DD-EM-004 v2.0):
+//
+//	The stabilization anchor shifts to HashComputeAfter (propagation complete).
+//	effectiveValidity is always StabilizationWindow + ValidityWindow because the full
+//	assessment window must be available after propagation + stabilization.
+//	CheckAfter = HashComputeAfter + StabilizationWindow
+//	ValidityDeadline = HashComputeAfter + effectiveValidity
 //
 // Parameters:
 //   - creationTimestamp: EA.metadata.creationTimestamp
 //   - stabilizationWindow: EA.Spec.Config.StabilizationWindow.Duration
 //   - validityWindow: ReconcilerConfig.ValidityWindow (EM-level config)
-func ComputeDerivedTiming(creationTimestamp metav1.Time, stabilizationWindow, validityWindow time.Duration) DerivedTiming {
+//   - hashComputeAfter: EA.Spec.HashComputeAfter (nil for sync targets)
+func ComputeDerivedTiming(creationTimestamp metav1.Time, stabilizationWindow, validityWindow time.Duration, hashComputeAfter *metav1.Time) DerivedTiming {
+	if hashComputeAfter != nil && !hashComputeAfter.IsZero() {
+		effectiveValidity := stabilizationWindow + validityWindow
+		return DerivedTiming{
+			CheckAfter:        metav1.NewTime(hashComputeAfter.Add(stabilizationWindow)),
+			ValidityDeadline:  metav1.NewTime(hashComputeAfter.Add(effectiveValidity)),
+			EffectiveValidity: effectiveValidity,
+			Extended:          true,
+		}
+	}
+
 	effectiveValidity := validityWindow
 	extended := false
 	if stabilizationWindow >= effectiveValidity {
