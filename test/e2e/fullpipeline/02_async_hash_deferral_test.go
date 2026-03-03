@@ -19,7 +19,6 @@ package fullpipeline
 import (
 	"context"
 	"fmt"
-	"os"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -35,7 +34,6 @@ import (
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
-	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
@@ -61,7 +59,7 @@ import (
 //  6. EA reaches terminal phase after propagation + stabilization window
 //
 // Self-contained: cert-manager is installed in BeforeAll and only affects this test.
-var _ = Describe("Async Hash Deferral for CRD Targets [DD-EM-004 v2.0, BR-EM-010, #253]", Ordered, func() {
+var _ = Describe("Async Hash Deferral for CRD Targets [DD-EM-004 v2.0, BR-EM-010, #253]", Serial, Ordered, func() {
 
 	var (
 		testNamespace string
@@ -81,43 +79,16 @@ var _ = Describe("Async Hash Deferral for CRD Targets [DD-EM-004 v2.0, BR-EM-010
 		GinkgoWriter.Println("  ✅ cert-manager installed — Certificate CRD registered in REST mapper")
 	})
 
+	AfterAll(func() {
+		By("Uninstalling cert-manager to prevent cluster resource contamination")
+		_ = infrastructure.UninstallCertManager(kubeconfigPath, GinkgoWriter)
+	})
+
 	BeforeEach(func() {
 		testCtx, testCancel = context.WithTimeout(ctx, 10*time.Minute)
 
-		By("Step 0: Seeding test workflows in DataStorage")
-		workflows := []infrastructure.TestWorkflow{
-			{
-				WorkflowID:      "oomkill-increase-memory-v1",
-				Name:            "OOMKill Recovery - Increase Memory Limits",
-				Description:     "Increases container memory limits to prevent OOMKill recurrence",
-				ActionType:      "IncreaseMemoryLimits",
-				SignalName:      "OOMKilled",
-				Severity:        "critical",
-				Component:       "deployment",
-				Environment:     "production",
-				Priority:        "*",
-				SchemaImage:     "quay.io/kubernaut-cicd/test-workflows/oomkill-increase-memory-job:v1.0.0",
-				ExecutionEngine: "job",
-				SchemaParameters: []models.WorkflowParameter{
-					{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target namespace"},
-					{Name: "DEPLOYMENT_NAME", Type: "string", Required: true, Description: "Deployment to patch"},
-					{Name: "MEMORY_INCREASE_PERCENT", Type: "string", Required: false, Description: "Memory increase percentage", Default: "50"},
-				},
-			},
-		}
-		workflowUUIDs, err := infrastructure.SeedWorkflowsInDataStorage(
-			dataStorageClient, workflows, "async-hash-deferral-e2e", GinkgoWriter,
-		)
-		Expect(err).ToNot(HaveOccurred(), "Failed to seed workflows")
+		// Workflows are seeded once in SynchronizedBeforeSuite; workflowUUIDs is suite-level.
 		Expect(workflowUUIDs).To(HaveKey("oomkill-increase-memory-v1:production"))
-
-		if os.Getenv("SKIP_MOCK_LLM") == "" {
-			By("Step 0b: Updating Mock LLM with seeded workflow UUIDs")
-			err = infrastructure.UpdateMockLLMConfigMap(
-				testCtx, namespace, kubeconfigPath, workflowUUIDs, GinkgoWriter,
-			)
-			Expect(err).ToNot(HaveOccurred(), "Failed to update Mock LLM ConfigMap")
-		}
 	})
 
 	AfterEach(func() {

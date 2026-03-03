@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -40,7 +39,6 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
-	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	crdvalidators "github.com/jordigilh/kubernaut/test/shared/validators"
@@ -68,116 +66,9 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 	BeforeEach(func() {
 		testCtx, testCancel = context.WithTimeout(ctx, 10*time.Minute)
 
-		By("Step 0: Seeding test workflows in DataStorage")
-		// Seed a workflow that uses the Job execution engine
-		// WorkflowID MUST match Mock LLM's scenario workflow_name for UUID sync.
-		// The event-exporter forwards a "BackOff" Warning event (CrashLoopBackOff),
-		// not the OOMKilled terminated state, so Mock LLM matches the "crashloop"
-		// scenario (workflow_name="crashloop-config-fix-v1").
-		// We also seed the oomkilled workflow for completeness.
-		// Workflow metadata (Severity, Environment) reflects fixture values for documentation.
-		// crashloop-config-fix-job: severity [high], environment [production, staging, test]
-		// oomkill-increase-memory-job: severity [critical], environment [production, staging, test]
-		// Actual schema comes from OCI image via pullspec-only registration; metadata here
-		// is used for workflowUUIDs key lookups (workflowId:environment).
-	workflows := []infrastructure.TestWorkflow{
-		{
-			WorkflowID:      "crashloop-config-fix-v1",
-			Name:            "CrashLoopBackOff - Configuration Fix",
-			Description:     "CrashLoop remediation workflow for full pipeline E2E",
-			SignalName:      "CrashLoopBackOff",
-			Severity:        "high",
-			Component:       "deployment",
-			Environment:     "production",
-			Priority:        "*",
-			SchemaImage:  "quay.io/kubernaut-cicd/test-workflows/crashloop-config-fix-job:v1.0.0",
-			ExecutionEngine: "job",
-			// DD-WORKFLOW-017: SchemaParameters mirror OCI image's /workflow-schema.yaml for documentation.
-			// Actual schema comes from OCI image via pullspec-only registration.
-			SchemaParameters: []models.WorkflowParameter{
-				{
-					Name:        "NAMESPACE",
-					Type:        "string",
-					Required:    true,
-					Description: "Target namespace",
-				},
-				{
-					Name:        "DEPLOYMENT_NAME",
-					Type:        "string",
-					Required:    true,
-					Description: "Name of the deployment to restart",
-				},
-				{
-					Name:        "GRACE_PERIOD_SECONDS",
-					Type:        "integer",
-					Required:    false,
-					Description: "Graceful shutdown period in seconds",
-				},
-			},
-		},
-		{
-			WorkflowID:      "oomkill-increase-memory-v1",
-			Name:            "OOMKill Recovery - Increase Memory Limits",
-			Description:     "OOMKill remediation workflow for full pipeline E2E",
-			SignalName:      "OOMKilled",
-			Severity:        "critical",
-			Component:       "deployment",
-			Environment:     "production",
-			Priority:        "*",
-			SchemaImage:  "quay.io/kubernaut-cicd/test-workflows/oomkill-increase-memory-job:v1.0.0",
-			ExecutionEngine: "job",
-			// DD-WORKFLOW-017: SchemaParameters mirror OCI image's /workflow-schema.yaml for documentation.
-			// Actual schema comes from OCI image via pullspec-only registration.
-			SchemaParameters: []models.WorkflowParameter{
-				{
-					Name:        "TARGET_RESOURCE_KIND",
-					Type:        "string",
-					Required:    true,
-					Description: "Kubernetes resource kind (Deployment, StatefulSet, DaemonSet)",
-				},
-				{
-					Name:        "TARGET_RESOURCE_NAME",
-					Type:        "string",
-					Required:    true,
-					Description: "Name of the resource to patch",
-				},
-				{
-					Name:        "TARGET_NAMESPACE",
-					Type:        "string",
-					Required:    true,
-					Description: "Namespace of the resource",
-				},
-				{
-					Name:        "MEMORY_LIMIT_NEW",
-					Type:        "string",
-					Required:    true,
-					Description: "New memory limit to apply (e.g., 128Mi, 256Mi, 1Gi)",
-				},
-			},
-		},
-		}
-		workflowUUIDs, err := infrastructure.SeedWorkflowsInDataStorage(
-			dataStorageClient, workflows, "fullpipeline-e2e", GinkgoWriter,
-		)
-		Expect(err).ToNot(HaveOccurred(), "Failed to seed workflows in DataStorage")
+		// Workflows are seeded once in SynchronizedBeforeSuite; workflowUUIDs is suite-level.
 		Expect(workflowUUIDs).To(HaveKey("crashloop-config-fix-v1:production"))
 		Expect(workflowUUIDs).To(HaveKey("oomkill-increase-memory-v1:production"))
-		GinkgoWriter.Printf("  ✅ Workflow seeded: crashloop-config-fix-v1 → %s\n", workflowUUIDs["crashloop-config-fix-v1:production"])
-		GinkgoWriter.Printf("  ✅ Workflow seeded: oomkill-increase-memory-v1 → %s\n", workflowUUIDs["oomkill-increase-memory-v1:production"])
-
-		// Update Mock LLM ConfigMap with actual workflow UUIDs from DataStorage,
-		// then restart Mock LLM to pick up the new config. This ensures the Mock
-		// LLM returns correct workflow_id values that match DataStorage records.
-		// When SKIP_MOCK_LLM is set, HAPI uses a real LLM — no Mock LLM to update.
-		if os.Getenv("SKIP_MOCK_LLM") == "" {
-			By("Step 0b: Updating Mock LLM with seeded workflow UUIDs")
-			err = infrastructure.UpdateMockLLMConfigMap(
-				testCtx, "kubernaut-system", kubeconfigPath, workflowUUIDs, GinkgoWriter,
-			)
-			Expect(err).ToNot(HaveOccurred(), "Failed to update Mock LLM ConfigMap")
-		} else {
-			GinkgoWriter.Println("  ⏭️  Mock LLM update skipped (SKIP_MOCK_LLM is set)")
-		}
 	})
 
 	AfterEach(func() {
