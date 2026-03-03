@@ -4961,6 +4961,12 @@ type EffectivenessAssessmentAuditPayload struct {
 	// Computed earliest time for AlertManager check (only for assessment.scheduled events).
 	// EA.creationTimestamp + stabilizationWindow.
 	AlertmanagerCheckAfter OptDateTime `json:"alertmanager_check_after"`
+	// Earliest time for hash computation (only for assessment.scheduled events).
+	// Set by the RO for async-managed targets (GitOps, operator CRDs) where spec
+	// changes propagate after the WorkflowExecution completes. Nil/absent means
+	// hash is computed immediately (sync targets, backward compatible).
+	// Reference: DD-EM-004, BR-EM-010, BR-RO-103.
+	HashComputeAfter OptDateTime `json:"hash_compute_after"`
 	// Validity window duration from EM config (only for assessment.scheduled events).
 	// Included for operational observability.
 	ValidityWindow OptString `json:"validity_window"`
@@ -5073,6 +5079,11 @@ func (s *EffectivenessAssessmentAuditPayload) GetPrometheusCheckAfter() OptDateT
 // GetAlertmanagerCheckAfter returns the value of AlertmanagerCheckAfter.
 func (s *EffectivenessAssessmentAuditPayload) GetAlertmanagerCheckAfter() OptDateTime {
 	return s.AlertmanagerCheckAfter
+}
+
+// GetHashComputeAfter returns the value of HashComputeAfter.
+func (s *EffectivenessAssessmentAuditPayload) GetHashComputeAfter() OptDateTime {
+	return s.HashComputeAfter
 }
 
 // GetValidityWindow returns the value of ValidityWindow.
@@ -5193,6 +5204,11 @@ func (s *EffectivenessAssessmentAuditPayload) SetPrometheusCheckAfter(val OptDat
 // SetAlertmanagerCheckAfter sets the value of AlertmanagerCheckAfter.
 func (s *EffectivenessAssessmentAuditPayload) SetAlertmanagerCheckAfter(val OptDateTime) {
 	s.AlertmanagerCheckAfter = val
+}
+
+// SetHashComputeAfter sets the value of HashComputeAfter.
+func (s *EffectivenessAssessmentAuditPayload) SetHashComputeAfter(val OptDateTime) {
+	s.HashComputeAfter = val
 }
 
 // SetValidityWindow sets the value of ValidityWindow.

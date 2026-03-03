@@ -3704,6 +3704,12 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 			{
+				if s.HashComputeAfter.Set {
+					e.FieldStart("hash_compute_after")
+					s.HashComputeAfter.Encode(e, json.EncodeDateTime)
+				}
+			}
+			{
 				if s.ValidityWindow.Set {
 					e.FieldStart("validity_window")
 					s.ValidityWindow.Encode(e)
@@ -6148,6 +6154,12 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				if s.AlertmanagerCheckAfter.Set {
 					e.FieldStart("alertmanager_check_after")
 					s.AlertmanagerCheckAfter.Encode(e, json.EncodeDateTime)
+				}
+			}
+			{
+				if s.HashComputeAfter.Set {
+					e.FieldStart("hash_compute_after")
+					s.HashComputeAfter.Encode(e, json.EncodeDateTime)
 				}
 			}
 			{
@@ -9545,6 +9557,12 @@ func (s *EffectivenessAssessmentAuditPayload) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.HashComputeAfter.Set {
+			e.FieldStart("hash_compute_after")
+			s.HashComputeAfter.Encode(e, json.EncodeDateTime)
+		}
+	}
+	{
 		if s.ValidityWindow.Set {
 			e.FieldStart("validity_window")
 			s.ValidityWindow.Encode(e)
@@ -9594,7 +9612,7 @@ func (s *EffectivenessAssessmentAuditPayload) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfEffectivenessAssessmentAuditPayload = [24]string{
+var jsonFieldsNameOfEffectivenessAssessmentAuditPayload = [25]string{
 	0:  "event_type",
 	1:  "correlation_id",
 	2:  "namespace",
@@ -9611,14 +9629,15 @@ var jsonFieldsNameOfEffectivenessAssessmentAuditPayload = [24]string{
 	13: "validity_deadline",
 	14: "prometheus_check_after",
 	15: "alertmanager_check_after",
-	16: "validity_window",
-	17: "stabilization_window",
-	18: "pre_remediation_spec_hash",
-	19: "post_remediation_spec_hash",
-	20: "hash_match",
-	21: "health_checks",
-	22: "metric_deltas",
-	23: "alert_resolution",
+	16: "hash_compute_after",
+	17: "validity_window",
+	18: "stabilization_window",
+	19: "pre_remediation_spec_hash",
+	20: "post_remediation_spec_hash",
+	21: "hash_match",
+	22: "health_checks",
+	23: "metric_deltas",
+	24: "alert_resolution",
 }
 
 // Decode decodes EffectivenessAssessmentAuditPayload from json.
@@ -9626,7 +9645,7 @@ func (s *EffectivenessAssessmentAuditPayload) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode EffectivenessAssessmentAuditPayload to nil")
 	}
-	var requiredBitSet [3]uint8
+	var requiredBitSet [4]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -9803,6 +9822,16 @@ func (s *EffectivenessAssessmentAuditPayload) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"alertmanager_check_after\"")
 			}
+		case "hash_compute_after":
+			if err := func() error {
+				s.HashComputeAfter.Reset()
+				if err := s.HashComputeAfter.Decode(d, json.DecodeDateTime); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"hash_compute_after\"")
+			}
 		case "validity_window":
 			if err := func() error {
 				s.ValidityWindow.Reset()
@@ -9892,8 +9921,9 @@ func (s *EffectivenessAssessmentAuditPayload) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [3]uint8{
+	for i, mask := range [4]uint8{
 		0b00010111,
+		0b00000000,
 		0b00000000,
 		0b00000000,
 	} {

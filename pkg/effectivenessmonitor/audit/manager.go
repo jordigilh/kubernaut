@@ -507,6 +507,9 @@ func (m *Manager) RecordAssessmentScheduled(ctx context.Context, ea *eav1.Effect
 	if ea.Status.AlertManagerCheckAfter != nil {
 		payload.AlertmanagerCheckAfter = ogenclient.NewOptDateTime(ea.Status.AlertManagerCheckAfter.Time)
 	}
+	if ea.Spec.HashComputeAfter != nil && !ea.Spec.HashComputeAfter.IsZero() {
+		payload.HashComputeAfter = ogenclient.NewOptDateTime(ea.Spec.HashComputeAfter.Time)
+	}
 	payload.ValidityWindow = ogenclient.NewOptString(validityWindow.String())
 	payload.StabilizationWindow = ogenclient.NewOptString(ea.Spec.Config.StabilizationWindow.Duration.String())
 
