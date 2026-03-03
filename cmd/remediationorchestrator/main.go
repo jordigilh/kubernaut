@@ -294,6 +294,8 @@ func main() {
 	)
 	// DD-EM-002: Set REST mapper for pre-remediation hash Kind resolution
 	roReconciler.SetRESTMapper(mgr.GetRESTMapper())
+	// DD-EM-004 v2.0, Issue #253: Wire config-driven async propagation delays
+	roReconciler.SetAsyncPropagation(cfg.AsyncPropagation)
 	if err = roReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "RemediationOrchestrator")
 		os.Exit(1)

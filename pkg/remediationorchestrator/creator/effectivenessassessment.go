@@ -100,12 +100,17 @@ type DualTarget struct {
 // The hashComputeAfter parameter is optional. When non-nil, the EM will defer hash computation
 // until this timestamp (DD-EM-004, BR-EM-010). Set for GitOps and operator-managed CRD targets.
 //
+// The gitOpsSyncDelay and operatorReconcileDelay parameters are optional. When non-nil, they are
+// propagated to the EA spec for the EM audit trail (DD-EM-004 v2.0, BR-RO-103.4, Issue #253).
+//
 // Returns the EA name if created (or already exists), or an error.
 func (c *EffectivenessAssessmentCreator) CreateEffectivenessAssessment(
 	ctx context.Context,
 	rr *remediationv1.RemediationRequest,
 	dualTarget *DualTarget,
 	hashComputeAfter *metav1.Time,
+	gitOpsSyncDelay *metav1.Duration,
+	operatorReconcileDelay *metav1.Duration,
 ) (string, error) {
 	logger := log.FromContext(ctx).WithValues(
 		"remediationRequest", rr.Name,
@@ -158,6 +163,8 @@ func (c *EffectivenessAssessmentCreator) CreateEffectivenessAssessment(
 			SignalName:             rr.Spec.SignalName,             // OBS-1: Propagate actual alert name for audit
 			PreRemediationSpecHash: rr.Status.PreRemediationSpecHash, // DD-EM-002: Propagate from RR status
 			HashComputeAfter:       hashComputeAfter,              // DD-EM-004: Defer hash for async targets
+			GitOpsSyncDelay:        gitOpsSyncDelay,               // DD-EM-004 v2.0: Propagate for EM audit
+			OperatorReconcileDelay: operatorReconcileDelay,        // DD-EM-004 v2.0: Propagate for EM audit
 		},
 	}
 

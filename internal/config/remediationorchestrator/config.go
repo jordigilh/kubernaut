@@ -52,6 +52,11 @@ type Config struct {
 	// Controls blocking thresholds, cooldowns, and backoff for the routing engine.
 	// Falls back to DefaultConfig() defaults when omitted from YAML.
 	Routing RoutingConfig `yaml:"routing"`
+
+	// AsyncPropagation configures delays for async-managed targets (GitOps, operator CRDs).
+	// The RO uses these values to compute HashComputeAfter when creating EA CRDs.
+	// DD-EM-004 v2.0, BR-RO-103.3, BR-RO-103.4, Issue #253
+	AsyncPropagation AsyncPropagationConfig `yaml:"asyncPropagation"`
 }
 
 // TimeoutsConfig holds timeout configuration for remediation workflow phases.
@@ -145,6 +150,38 @@ type RoutingConfig struct {
 	IneffectiveTimeWindow time.Duration `yaml:"ineffectiveTimeWindow"`
 }
 
+// AsyncPropagationConfig configures delays for async-managed remediation targets.
+// These delays account for the time between a remediation completing and the
+// actual spec change appearing on the target resource.
+// DD-EM-004 v2.0, BR-RO-103.3, BR-RO-103.4, Issue #253
+// Per CRD_FIELD_NAMING_CONVENTION.md: YAML fields use camelCase.
+type AsyncPropagationConfig struct {
+	// GitOpsSyncDelay is the expected time for a GitOps tool (ArgoCD/Flux)
+	// to sync a change to the cluster. Default: 3m. Range: [0, 30m].
+	// Zero disables this stage (for environments with instant sync).
+	GitOpsSyncDelay time.Duration `yaml:"gitOpsSyncDelay"`
+
+	// OperatorReconcileDelay is the expected time for a Kubernetes operator
+	// to reconcile after its CR is updated. Default: 1m. Range: [0, 30m].
+	// Zero disables this stage.
+	OperatorReconcileDelay time.Duration `yaml:"operatorReconcileDelay"`
+}
+
+// ComputePropagationDelay returns the total propagation delay for a given target
+// based on detection results. The delays compound additively when both flags are true.
+// Returns 0 for sync targets (neither GitOps nor CRD).
+// DD-EM-004 v2.0, BR-RO-103.5
+func (a *AsyncPropagationConfig) ComputePropagationDelay(isGitOps, isCRD bool) time.Duration {
+	var total time.Duration
+	if isGitOps {
+		total += a.GitOpsSyncDelay
+	}
+	if isCRD {
+		total += a.OperatorReconcileDelay
+	}
+	return total
+}
+
 // DefaultConfig returns safe defaults for the RemediationOrchestrator.
 func DefaultConfig() *Config {
 	return &Config{
@@ -164,6 +201,10 @@ func DefaultConfig() *Config {
 		},
 		EA: EACreationConfig{
 			StabilizationWindow: 5 * time.Minute,
+		},
+		AsyncPropagation: AsyncPropagationConfig{
+			GitOpsSyncDelay:        3 * time.Minute,
+			OperatorReconcileDelay: 1 * time.Minute,
 		},
 		Routing: RoutingConfig{
 			ConsecutiveFailureThreshold:  3,
@@ -249,6 +290,14 @@ func (c *Config) Validate() error {
 	}
 	if c.EA.StabilizationWindow > 1*time.Hour {
 		return fmt.Errorf("effectivenessAssessment.stabilizationWindow must not exceed 1h, got %v", c.EA.StabilizationWindow)
+	}
+
+	// Validate async propagation config (DD-EM-004 v2.0, BR-RO-103.4, Issue #253)
+	if c.AsyncPropagation.GitOpsSyncDelay < 0 {
+		return fmt.Errorf("asyncPropagation.gitOpsSyncDelay must be >= 0, got %v", c.AsyncPropagation.GitOpsSyncDelay)
+	}
+	if c.AsyncPropagation.OperatorReconcileDelay < 0 {
+		return fmt.Errorf("asyncPropagation.operatorReconcileDelay must be >= 0, got %v", c.AsyncPropagation.OperatorReconcileDelay)
 	}
 
 	// Validate routing config (DD-RO-002, BR-ORCH-042, DD-WE-004, Issue #214)

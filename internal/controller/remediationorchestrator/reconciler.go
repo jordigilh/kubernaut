@@ -60,6 +60,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/remediationapprovalrequest"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/aggregator"
 	roaudit "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/audit"
+	roconfig "github.com/jordigilh/kubernaut/internal/config/remediationorchestrator"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/config"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/handler"
@@ -109,6 +110,11 @@ type Reconciler struct {
 	restMapper meta.RESTMapper
 	// DD-EM-002: Uncached API reader for pre-remediation hash capture
 	apiReader client.Reader
+
+	// DD-EM-004 v2.0, Issue #253: Config-driven async propagation delays.
+	// Used by createEffectivenessAssessmentIfNeeded to compute HashComputeAfter
+	// from gitOpsSyncDelay/operatorReconcileDelay instead of stabilization window.
+	asyncPropagation roconfig.AsyncPropagationConfig
 
 	// ========================================
 	// STATUS MANAGER (DD-PERF-001)
@@ -2054,36 +2060,43 @@ func (r *Reconciler) createEffectivenessAssessmentIfNeeded(ctx context.Context, 
 		}
 	}
 
-	// DD-EM-004, BR-RO-103: Detect async-managed targets.
-	// If the remediation target is a CRD (operator-managed) or GitOps-managed,
-	// defer hash computation so the EM captures the spec after async propagation.
+	// DD-EM-004 v2.0, BR-RO-103, Issue #253: Detect async-managed targets.
+	// Track isGitOps and isCRD separately for config-driven propagation delay compounding.
 	var hashComputeAfter *metav1.Time
+	var gitOpsSyncDelay, operatorReconcileDelay *metav1.Duration
 	remediationKind := rr.Spec.TargetResource.Kind
 	if dualTarget != nil {
 		remediationKind = dualTarget.Remediation.Kind
 	}
 
-	isAsync := isGitOpsManaged
-	if !isAsync {
-		gvk, err := resolveGVKForKind(r.restMapper, remediationKind)
-		if err != nil {
-			logger.V(1).Info("Cannot resolve GVK for kind, treating as sync target for hash timing",
-				"kind", remediationKind, "error", err)
-		} else if !creator.IsBuiltInGroup(gvk.Group) {
-			isAsync = true
-		}
+	isCRD := false
+	gvk, err := resolveGVKForKind(r.restMapper, remediationKind)
+	if err != nil {
+		logger.V(1).Info("Cannot resolve GVK for kind, treating as sync target for hash timing",
+			"kind", remediationKind, "error", err)
+	} else if !creator.IsBuiltInGroup(gvk.Group) {
+		isCRD = true
 	}
 
-	if isAsync {
-		t := metav1.NewTime(time.Now().Add(r.eaCreator.StabilizationWindow()))
+	propagationDelay := r.asyncPropagation.ComputePropagationDelay(isGitOpsManaged, isCRD)
+	if propagationDelay > 0 {
+		t := metav1.NewTime(time.Now().Add(propagationDelay))
 		hashComputeAfter = &t
+		if isGitOpsManaged && r.asyncPropagation.GitOpsSyncDelay > 0 {
+			gitOpsSyncDelay = &metav1.Duration{Duration: r.asyncPropagation.GitOpsSyncDelay}
+		}
+		if isCRD && r.asyncPropagation.OperatorReconcileDelay > 0 {
+			operatorReconcileDelay = &metav1.Duration{Duration: r.asyncPropagation.OperatorReconcileDelay}
+		}
 		logger.Info("Async-managed target detected, deferring hash computation",
 			"kind", remediationKind,
 			"gitOps", isGitOpsManaged,
+			"isCRD", isCRD,
+			"propagationDelay", propagationDelay,
 			"hashComputeAfter", t.Time)
 	}
 
-	name, err := r.eaCreator.CreateEffectivenessAssessment(ctx, rr, dualTarget, hashComputeAfter)
+	name, err := r.eaCreator.CreateEffectivenessAssessment(ctx, rr, dualTarget, hashComputeAfter, gitOpsSyncDelay, operatorReconcileDelay)
 	if err != nil {
 		logger.Error(err, "Failed to create EffectivenessAssessment (non-fatal per ADR-EM-001)")
 		return
@@ -3105,6 +3118,12 @@ func (r *Reconciler) validateTimeoutConfig(rr *remediationv1.RemediationRequest)
 // DD-EM-002: Called from cmd/remediationorchestrator/main.go after manager setup.
 func (r *Reconciler) SetRESTMapper(mapper meta.RESTMapper) {
 	r.restMapper = mapper
+}
+
+// SetAsyncPropagation configures propagation delays for async-managed targets.
+// DD-EM-004 v2.0, Issue #253: Called from cmd/remediationorchestrator/main.go.
+func (r *Reconciler) SetAsyncPropagation(cfg roconfig.AsyncPropagationConfig) {
+	r.asyncPropagation = cfg
 }
 
 // resolveDualTargets resolves both signal and remediation targets for the EA (DD-EM-003).
