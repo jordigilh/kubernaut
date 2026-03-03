@@ -241,7 +241,7 @@ No authorization required
 
 Export audit events with digital signature
 
-Exports audit events matching the specified filters with cryptographic signatures for tamper detection and compliance verification.  **Business Requirement**: BR-AUDIT-007 (Audit Export) **SOC2 Requirements**: CC8.1 (Audit Export), AU-9 (Audit Protection)  **Behavior**: - Success: Returns 200 OK with signed export (JSON or CSV) - Validation Error: Returns 400 Bad Request (invalid date range, etc.) - Unauthorized: Returns 401 if X-Auth-Request-User header missing - Too Many Records: Returns 413 Payload Too Large (>10,000 events, use pagination)  **Authorization**: Requires X-Auth-Request-User header (oauth-proxy authenticated)  **Export Formats**: - JSON: Complete event data with hash chain verification - CSV: Flattened tabular format for spreadsheet analysis  **Hash Chain Verification**: - Each export includes hash chain integrity status - Tampered events flagged with `hash_chain_valid: false` - Chain verification performed at export time  **Digital Signature**: - Export signed with service x509 certificate - Signature included in `export_metadata.signature` field - Detached signature available via `include_detached_signature=true`  **Pagination**: - Use `offset` and `limit` for large result sets - Maximum limit: 10,000 events per export - Signature covers ALL pages (use same query for verification)  **Metrics Emitted**: - `datastorage_export_successes_total{format=\"json|csv\"}` - `datastorage_export_failures_total{reason=\"unauthorized|validation|...\"}` 
+Exports audit events matching the specified filters with cryptographic signatures for tamper detection and compliance verification.  **Business Requirement**: BR-AUDIT-007 (Audit Export) **SOC2 Requirements**: CC8.1 (Audit Export), AU-9 (Audit Protection)  **Behavior**: - Success: Returns 200 OK with signed export (JSON) - Validation Error: Returns 400 Bad Request (invalid date range, etc.) - Unauthorized: Returns 401 if X-Auth-Request-User header missing - Too Many Records: Returns 413 Payload Too Large (>10,000 events, use pagination)  **Authorization**: Requires X-Auth-Request-User header (oauth-proxy authenticated)  **Export Formats**: - JSON: Complete event data with hash chain verification  **Hash Chain Verification**: - Each export includes hash chain integrity status - Tampered events flagged with `hash_chain_valid: false` - Chain verification performed at export time  **Digital Signature**: - Export signed with service x509 certificate - Signature included in `export_metadata.signature` field - Detached signature available via `include_detached_signature=true`  **Pagination**: - Use `offset` and `limit` for large result sets - Maximum limit: 10,000 events per export - Signature covers ALL pages (use same query for verification)  **Metrics Emitted**: - `datastorage_export_successes_total{format=\"json\"}` - `datastorage_export_failures_total{reason=\"unauthorized|validation|...\"}` 
 
 ### Example
 
@@ -269,7 +269,7 @@ with datastorage.ApiClient(configuration) as api_client:
     end_time = '2026-01-07T23:59:59Z' # datetime | End of time range (ISO 8601) (optional)
     correlation_id = 'remediation-123' # str | Filter by correlation ID (optional)
     event_category = 'remediation_approval' # str | Filter by event category (optional)
-    format = 'json' # str | Export format (json or csv) (optional) (default to 'json')
+    format = 'json' # str | Export format (json) (optional) (default to 'json')
     include_detached_signature = False # bool | Include detached signature file in response (optional) (default to False)
     offset = 0 # int | Pagination offset (optional) (default to 0)
     limit = 1000 # int | Maximum records per export (optional) (default to 1000)
@@ -295,7 +295,7 @@ Name | Type | Description  | Notes
  **end_time** | **datetime**| End of time range (ISO 8601) | [optional] 
  **correlation_id** | **str**| Filter by correlation ID | [optional] 
  **event_category** | **str**| Filter by event category | [optional] 
- **format** | **str**| Export format (json or csv) | [optional] [default to &#39;json&#39;]
+ **format** | **str**| Export format (json) | [optional] [default to &#39;json&#39;]
  **include_detached_signature** | **bool**| Include detached signature file in response | [optional] [default to False]
  **offset** | **int**| Pagination offset | [optional] [default to 0]
  **limit** | **int**| Maximum records per export | [optional] [default to 1000]

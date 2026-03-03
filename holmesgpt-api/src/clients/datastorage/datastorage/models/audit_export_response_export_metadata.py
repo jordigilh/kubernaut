@@ -44,8 +44,8 @@ class AuditExportResponseExportMetadata(BaseModel):
     @field_validator('export_format')
     def export_format_validate_enum(cls, value):
         """Validates the enum"""
-        if value not in ('json', 'csv'):
-            raise ValueError("must be one of enum values ('json', 'csv')")
+        if value not in ('json'):
+            raise ValueError("must be one of enum values ('json')")
         return value
 
     model_config = {

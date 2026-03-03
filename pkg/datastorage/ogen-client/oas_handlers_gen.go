@@ -1098,14 +1098,13 @@ func (s *Server) handleEnableWorkflowRequest(args [1]string, argsEscaped bool, w
 // **Business Requirement**: BR-AUDIT-007 (Audit Export)
 // **SOC2 Requirements**: CC8.1 (Audit Export), AU-9 (Audit Protection)
 // **Behavior**:
-// - Success: Returns 200 OK with signed export (JSON or CSV)
+// - Success: Returns 200 OK with signed export (JSON)
 // - Validation Error: Returns 400 Bad Request (invalid date range, etc.)
 // - Unauthorized: Returns 401 if X-Auth-Request-User header missing
 // - Too Many Records: Returns 413 Payload Too Large (>10,000 events, use pagination)
 // **Authorization**: Requires X-Auth-Request-User header (oauth-proxy authenticated)
 // **Export Formats**:
 // - JSON: Complete event data with hash chain verification
-// - CSV: Flattened tabular format for spreadsheet analysis
 // **Hash Chain Verification**:
 // - Each export includes hash chain integrity status
 // - Tampered events flagged with `hash_chain_valid: false`
@@ -1119,7 +1118,7 @@ func (s *Server) handleEnableWorkflowRequest(args [1]string, argsEscaped bool, w
 // - Maximum limit: 10,000 events per export
 // - Signature covers ALL pages (use same query for verification)
 // **Metrics Emitted**:
-// - `datastorage_export_successes_total{format="json|csv"}`
+// - `datastorage_export_successes_total{format="json"}`
 // - `datastorage_export_failures_total{reason="unauthorized|validation|..."}`.
 //
 // GET /api/v1/audit/export

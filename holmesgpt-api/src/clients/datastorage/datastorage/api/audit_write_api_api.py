@@ -909,7 +909,7 @@ class AuditWriteAPIApi:
         end_time: Annotated[Optional[datetime], Field(description="End of time range (ISO 8601)")] = None,
         correlation_id: Annotated[Optional[StrictStr], Field(description="Filter by correlation ID")] = None,
         event_category: Annotated[Optional[StrictStr], Field(description="Filter by event category")] = None,
-        format: Annotated[Optional[StrictStr], Field(description="Export format (json or csv)")] = None,
+        format: Annotated[Optional[StrictStr], Field(description="Export format (json)")] = None,
         include_detached_signature: Annotated[Optional[StrictBool], Field(description="Include detached signature file in response")] = None,
         offset: Annotated[Optional[Annotated[int, Field(strict=True, ge=0)]], Field(description="Pagination offset")] = None,
         limit: Annotated[Optional[Annotated[int, Field(le=10000, strict=True, ge=1)]], Field(description="Maximum records per export")] = None,
@@ -929,7 +929,7 @@ class AuditWriteAPIApi:
     ) -> AuditExportResponse:
         """Export audit events with digital signature
 
-        Exports audit events matching the specified filters with cryptographic signatures for tamper detection and compliance verification.  **Business Requirement**: BR-AUDIT-007 (Audit Export) **SOC2 Requirements**: CC8.1 (Audit Export), AU-9 (Audit Protection)  **Behavior**: - Success: Returns 200 OK with signed export (JSON or CSV) - Validation Error: Returns 400 Bad Request (invalid date range, etc.) - Unauthorized: Returns 401 if X-Auth-Request-User header missing - Too Many Records: Returns 413 Payload Too Large (>10,000 events, use pagination)  **Authorization**: Requires X-Auth-Request-User header (oauth-proxy authenticated)  **Export Formats**: - JSON: Complete event data with hash chain verification - CSV: Flattened tabular format for spreadsheet analysis  **Hash Chain Verification**: - Each export includes hash chain integrity status - Tampered events flagged with `hash_chain_valid: false` - Chain verification performed at export time  **Digital Signature**: - Export signed with service x509 certificate - Signature included in `export_metadata.signature` field - Detached signature available via `include_detached_signature=true`  **Pagination**: - Use `offset` and `limit` for large result sets - Maximum limit: 10,000 events per export - Signature covers ALL pages (use same query for verification)  **Metrics Emitted**: - `datastorage_export_successes_total{format=\"json|csv\"}` - `datastorage_export_failures_total{reason=\"unauthorized|validation|...\"}` 
+        Exports audit events matching the specified filters with cryptographic signatures for tamper detection and compliance verification.  **Business Requirement**: BR-AUDIT-007 (Audit Export) **SOC2 Requirements**: CC8.1 (Audit Export), AU-9 (Audit Protection)  **Behavior**: - Success: Returns 200 OK with signed export (JSON) - Validation Error: Returns 400 Bad Request (invalid date range, etc.) - Unauthorized: Returns 401 if X-Auth-Request-User header missing - Too Many Records: Returns 413 Payload Too Large (>10,000 events, use pagination)  **Authorization**: Requires X-Auth-Request-User header (oauth-proxy authenticated)  **Export Formats**: - JSON: Complete event data with hash chain verification  **Hash Chain Verification**: - Each export includes hash chain integrity status - Tampered events flagged with `hash_chain_valid: false` - Chain verification performed at export time  **Digital Signature**: - Export signed with service x509 certificate - Signature included in `export_metadata.signature` field - Detached signature available via `include_detached_signature=true`  **Pagination**: - Use `offset` and `limit` for large result sets - Maximum limit: 10,000 events per export - Signature covers ALL pages (use same query for verification)  **Metrics Emitted**: - `datastorage_export_successes_total{format=\"json\"}` - `datastorage_export_failures_total{reason=\"unauthorized|validation|...\"}` 
 
         :param start_time: Start of time range (ISO 8601)
         :type start_time: datetime
@@ -939,7 +939,7 @@ class AuditWriteAPIApi:
         :type correlation_id: str
         :param event_category: Filter by event category
         :type event_category: str
-        :param format: Export format (json or csv)
+        :param format: Export format (json)
         :type format: str
         :param include_detached_signature: Include detached signature file in response
         :type include_detached_signature: bool
@@ -1011,7 +1011,7 @@ class AuditWriteAPIApi:
         end_time: Annotated[Optional[datetime], Field(description="End of time range (ISO 8601)")] = None,
         correlation_id: Annotated[Optional[StrictStr], Field(description="Filter by correlation ID")] = None,
         event_category: Annotated[Optional[StrictStr], Field(description="Filter by event category")] = None,
-        format: Annotated[Optional[StrictStr], Field(description="Export format (json or csv)")] = None,
+        format: Annotated[Optional[StrictStr], Field(description="Export format (json)")] = None,
         include_detached_signature: Annotated[Optional[StrictBool], Field(description="Include detached signature file in response")] = None,
         offset: Annotated[Optional[Annotated[int, Field(strict=True, ge=0)]], Field(description="Pagination offset")] = None,
         limit: Annotated[Optional[Annotated[int, Field(le=10000, strict=True, ge=1)]], Field(description="Maximum records per export")] = None,
@@ -1031,7 +1031,7 @@ class AuditWriteAPIApi:
     ) -> ApiResponse[AuditExportResponse]:
         """Export audit events with digital signature
 
-        Exports audit events matching the specified filters with cryptographic signatures for tamper detection and compliance verification.  **Business Requirement**: BR-AUDIT-007 (Audit Export) **SOC2 Requirements**: CC8.1 (Audit Export), AU-9 (Audit Protection)  **Behavior**: - Success: Returns 200 OK with signed export (JSON or CSV) - Validation Error: Returns 400 Bad Request (invalid date range, etc.) - Unauthorized: Returns 401 if X-Auth-Request-User header missing - Too Many Records: Returns 413 Payload Too Large (>10,000 events, use pagination)  **Authorization**: Requires X-Auth-Request-User header (oauth-proxy authenticated)  **Export Formats**: - JSON: Complete event data with hash chain verification - CSV: Flattened tabular format for spreadsheet analysis  **Hash Chain Verification**: - Each export includes hash chain integrity status - Tampered events flagged with `hash_chain_valid: false` - Chain verification performed at export time  **Digital Signature**: - Export signed with service x509 certificate - Signature included in `export_metadata.signature` field - Detached signature available via `include_detached_signature=true`  **Pagination**: - Use `offset` and `limit` for large result sets - Maximum limit: 10,000 events per export - Signature covers ALL pages (use same query for verification)  **Metrics Emitted**: - `datastorage_export_successes_total{format=\"json|csv\"}` - `datastorage_export_failures_total{reason=\"unauthorized|validation|...\"}` 
+        Exports audit events matching the specified filters with cryptographic signatures for tamper detection and compliance verification.  **Business Requirement**: BR-AUDIT-007 (Audit Export) **SOC2 Requirements**: CC8.1 (Audit Export), AU-9 (Audit Protection)  **Behavior**: - Success: Returns 200 OK with signed export (JSON) - Validation Error: Returns 400 Bad Request (invalid date range, etc.) - Unauthorized: Returns 401 if X-Auth-Request-User header missing - Too Many Records: Returns 413 Payload Too Large (>10,000 events, use pagination)  **Authorization**: Requires X-Auth-Request-User header (oauth-proxy authenticated)  **Export Formats**: - JSON: Complete event data with hash chain verification  **Hash Chain Verification**: - Each export includes hash chain integrity status - Tampered events flagged with `hash_chain_valid: false` - Chain verification performed at export time  **Digital Signature**: - Export signed with service x509 certificate - Signature included in `export_metadata.signature` field - Detached signature available via `include_detached_signature=true`  **Pagination**: - Use `offset` and `limit` for large result sets - Maximum limit: 10,000 events per export - Signature covers ALL pages (use same query for verification)  **Metrics Emitted**: - `datastorage_export_successes_total{format=\"json\"}` - `datastorage_export_failures_total{reason=\"unauthorized|validation|...\"}` 
 
         :param start_time: Start of time range (ISO 8601)
         :type start_time: datetime
@@ -1041,7 +1041,7 @@ class AuditWriteAPIApi:
         :type correlation_id: str
         :param event_category: Filter by event category
         :type event_category: str
-        :param format: Export format (json or csv)
+        :param format: Export format (json)
         :type format: str
         :param include_detached_signature: Include detached signature file in response
         :type include_detached_signature: bool
@@ -1113,7 +1113,7 @@ class AuditWriteAPIApi:
         end_time: Annotated[Optional[datetime], Field(description="End of time range (ISO 8601)")] = None,
         correlation_id: Annotated[Optional[StrictStr], Field(description="Filter by correlation ID")] = None,
         event_category: Annotated[Optional[StrictStr], Field(description="Filter by event category")] = None,
-        format: Annotated[Optional[StrictStr], Field(description="Export format (json or csv)")] = None,
+        format: Annotated[Optional[StrictStr], Field(description="Export format (json)")] = None,
         include_detached_signature: Annotated[Optional[StrictBool], Field(description="Include detached signature file in response")] = None,
         offset: Annotated[Optional[Annotated[int, Field(strict=True, ge=0)]], Field(description="Pagination offset")] = None,
         limit: Annotated[Optional[Annotated[int, Field(le=10000, strict=True, ge=1)]], Field(description="Maximum records per export")] = None,
@@ -1133,7 +1133,7 @@ class AuditWriteAPIApi:
     ) -> RESTResponseType:
         """Export audit events with digital signature
 
-        Exports audit events matching the specified filters with cryptographic signatures for tamper detection and compliance verification.  **Business Requirement**: BR-AUDIT-007 (Audit Export) **SOC2 Requirements**: CC8.1 (Audit Export), AU-9 (Audit Protection)  **Behavior**: - Success: Returns 200 OK with signed export (JSON or CSV) - Validation Error: Returns 400 Bad Request (invalid date range, etc.) - Unauthorized: Returns 401 if X-Auth-Request-User header missing - Too Many Records: Returns 413 Payload Too Large (>10,000 events, use pagination)  **Authorization**: Requires X-Auth-Request-User header (oauth-proxy authenticated)  **Export Formats**: - JSON: Complete event data with hash chain verification - CSV: Flattened tabular format for spreadsheet analysis  **Hash Chain Verification**: - Each export includes hash chain integrity status - Tampered events flagged with `hash_chain_valid: false` - Chain verification performed at export time  **Digital Signature**: - Export signed with service x509 certificate - Signature included in `export_metadata.signature` field - Detached signature available via `include_detached_signature=true`  **Pagination**: - Use `offset` and `limit` for large result sets - Maximum limit: 10,000 events per export - Signature covers ALL pages (use same query for verification)  **Metrics Emitted**: - `datastorage_export_successes_total{format=\"json|csv\"}` - `datastorage_export_failures_total{reason=\"unauthorized|validation|...\"}` 
+        Exports audit events matching the specified filters with cryptographic signatures for tamper detection and compliance verification.  **Business Requirement**: BR-AUDIT-007 (Audit Export) **SOC2 Requirements**: CC8.1 (Audit Export), AU-9 (Audit Protection)  **Behavior**: - Success: Returns 200 OK with signed export (JSON) - Validation Error: Returns 400 Bad Request (invalid date range, etc.) - Unauthorized: Returns 401 if X-Auth-Request-User header missing - Too Many Records: Returns 413 Payload Too Large (>10,000 events, use pagination)  **Authorization**: Requires X-Auth-Request-User header (oauth-proxy authenticated)  **Export Formats**: - JSON: Complete event data with hash chain verification  **Hash Chain Verification**: - Each export includes hash chain integrity status - Tampered events flagged with `hash_chain_valid: false` - Chain verification performed at export time  **Digital Signature**: - Export signed with service x509 certificate - Signature included in `export_metadata.signature` field - Detached signature available via `include_detached_signature=true`  **Pagination**: - Use `offset` and `limit` for large result sets - Maximum limit: 10,000 events per export - Signature covers ALL pages (use same query for verification)  **Metrics Emitted**: - `datastorage_export_successes_total{format=\"json\"}` - `datastorage_export_failures_total{reason=\"unauthorized|validation|...\"}` 
 
         :param start_time: Start of time range (ISO 8601)
         :type start_time: datetime
@@ -1143,7 +1143,7 @@ class AuditWriteAPIApi:
         :type correlation_id: str
         :param event_category: Filter by event category
         :type event_category: str
-        :param format: Export format (json or csv)
+        :param format: Export format (json)
         :type format: str
         :param include_detached_signature: Include detached signature file in response
         :type include_detached_signature: bool

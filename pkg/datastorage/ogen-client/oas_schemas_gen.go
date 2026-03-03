@@ -4254,14 +4254,12 @@ type AuditExportResponseExportMetadataExportFormat string
 
 const (
 	AuditExportResponseExportMetadataExportFormatJSON AuditExportResponseExportMetadataExportFormat = "json"
-	AuditExportResponseExportMetadataExportFormatCsv  AuditExportResponseExportMetadataExportFormat = "csv"
 )
 
 // AllValues returns all AuditExportResponseExportMetadataExportFormat values.
 func (AuditExportResponseExportMetadataExportFormat) AllValues() []AuditExportResponseExportMetadataExportFormat {
 	return []AuditExportResponseExportMetadataExportFormat{
 		AuditExportResponseExportMetadataExportFormatJSON,
-		AuditExportResponseExportMetadataExportFormatCsv,
 	}
 }
 
@@ -4269,8 +4267,6 @@ func (AuditExportResponseExportMetadataExportFormat) AllValues() []AuditExportRe
 func (s AuditExportResponseExportMetadataExportFormat) MarshalText() ([]byte, error) {
 	switch s {
 	case AuditExportResponseExportMetadataExportFormatJSON:
-		return []byte(s), nil
-	case AuditExportResponseExportMetadataExportFormatCsv:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -4282,9 +4278,6 @@ func (s *AuditExportResponseExportMetadataExportFormat) UnmarshalText(data []byt
 	switch AuditExportResponseExportMetadataExportFormat(data) {
 	case AuditExportResponseExportMetadataExportFormatJSON:
 		*s = AuditExportResponseExportMetadataExportFormatJSON
-		return nil
-	case AuditExportResponseExportMetadataExportFormatCsv:
-		*s = AuditExportResponseExportMetadataExportFormatCsv
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -6108,14 +6101,12 @@ type ExportAuditEventsFormat string
 
 const (
 	ExportAuditEventsFormatJSON ExportAuditEventsFormat = "json"
-	ExportAuditEventsFormatCsv  ExportAuditEventsFormat = "csv"
 )
 
 // AllValues returns all ExportAuditEventsFormat values.
 func (ExportAuditEventsFormat) AllValues() []ExportAuditEventsFormat {
 	return []ExportAuditEventsFormat{
 		ExportAuditEventsFormatJSON,
-		ExportAuditEventsFormatCsv,
 	}
 }
 
@@ -6123,8 +6114,6 @@ func (ExportAuditEventsFormat) AllValues() []ExportAuditEventsFormat {
 func (s ExportAuditEventsFormat) MarshalText() ([]byte, error) {
 	switch s {
 	case ExportAuditEventsFormatJSON:
-		return []byte(s), nil
-	case ExportAuditEventsFormatCsv:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -6136,9 +6125,6 @@ func (s *ExportAuditEventsFormat) UnmarshalText(data []byte) error {
 	switch ExportAuditEventsFormat(data) {
 	case ExportAuditEventsFormatJSON:
 		*s = ExportAuditEventsFormatJSON
-		return nil
-	case ExportAuditEventsFormatCsv:
-		*s = ExportAuditEventsFormatCsv
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)

@@ -49,7 +49,6 @@ import (
 //
 // Export Formats:
 // - JSON: Complete event data with hash chain verification
-// - CSV: Flattened tabular format (not yet implemented)
 //
 // ========================================
 
@@ -137,17 +136,10 @@ func (s *Server) HandleExportAuditEvents(w http.ResponseWriter, r *http.Request)
 		if err := json.NewEncoder(w).Encode(response); err != nil {
 			s.logger.Error(err, "Failed to encode export response")
 		}
-	case "csv":
-		// CSV export not yet implemented
-		writeRFC7807Error(w, http.StatusNotImplemented,
-			"Format Not Supported",
-			"CSV export format is not yet implemented. Use format=json.",
-			r.URL.Path)
-		return
 	default:
 		writeRFC7807Error(w, http.StatusBadRequest,
 			"Invalid Format",
-			fmt.Sprintf("Unknown format: %s. Supported formats: json, csv.", format),
+			fmt.Sprintf("Unknown format: %s. Supported formats: json.", format),
 			r.URL.Path)
 		return
 	}

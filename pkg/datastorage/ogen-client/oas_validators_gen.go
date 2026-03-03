@@ -965,8 +965,6 @@ func (s AuditExportResponseExportMetadataExportFormat) Validate() error {
 	switch s {
 	case "json":
 		return nil
-	case "csv":
-		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}
@@ -1742,8 +1740,6 @@ func (s ErrorDetailsComponent) Validate() error {
 func (s ExportAuditEventsFormat) Validate() error {
 	switch s {
 	case "json":
-		return nil
-	case "csv":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)

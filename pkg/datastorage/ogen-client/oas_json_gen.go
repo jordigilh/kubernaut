@@ -7645,8 +7645,6 @@ func (s *AuditExportResponseExportMetadataExportFormat) Decode(d *jx.Decoder) er
 	switch AuditExportResponseExportMetadataExportFormat(v) {
 	case AuditExportResponseExportMetadataExportFormatJSON:
 		*s = AuditExportResponseExportMetadataExportFormatJSON
-	case AuditExportResponseExportMetadataExportFormatCsv:
-		*s = AuditExportResponseExportMetadataExportFormatCsv
 	default:
 		*s = AuditExportResponseExportMetadataExportFormat(v)
 	}

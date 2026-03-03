@@ -1176,7 +1176,7 @@ paths:
         **SOC2 Requirements**: CC8.1 (Audit Export), AU-9 (Audit Protection)
 
         **Behavior**:
-        - Success: Returns 200 OK with signed export (JSON or CSV)
+        - Success: Returns 200 OK with signed export (JSON)
         - Validation Error: Returns 400 Bad Request (invalid date range, etc.)
         - Unauthorized: Returns 401 if X-Auth-Request-User header missing
         - Too Many Records: Returns 413 Payload Too Large (>10,000 events, use pagination)
@@ -1185,7 +1185,6 @@ paths:
 
         **Export Formats**:
         - JSON: Complete event data with hash chain verification
-        - CSV: Flattened tabular format for spreadsheet analysis
 
         **Hash Chain Verification**:
         - Each export includes hash chain integrity status
@@ -1203,7 +1202,7 @@ paths:
         - Signature covers ALL pages (use same query for verification)
 
         **Metrics Emitted**:
-        - `datastorage_export_successes_total{format="json|csv"}`
+        - `datastorage_export_successes_total{format="json"}`
         - `datastorage_export_failures_total{reason="unauthorized|validation|..."}`
       operationId: exportAuditEvents
       parameters:
@@ -1242,9 +1241,9 @@ paths:
           required: false
           schema:
             type: string
-            enum: [json, csv]
+            enum: [json]
             default: json
-          description: Export format (json or csv)
+          description: Export format (json)
         - name: include_detached_signature
           in: query
           required: false
@@ -3105,7 +3104,7 @@ components:
               example: "2026-01-07T20:30:00Z"
             export_format:
               type: string
-              enum: [json, csv]
+              enum: [json]
               description: Format of exported data
             query_filters:
               type: object
