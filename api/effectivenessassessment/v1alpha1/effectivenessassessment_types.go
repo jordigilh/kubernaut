@@ -129,6 +129,14 @@ type EffectivenessAssessmentSpec struct {
 	// Reference: ADR-EM-001, DD-EM-002
 	// +optional
 	PreRemediationSpecHash string `json:"preRemediationSpecHash,omitempty"`
+
+	// HashComputeAfter indicates when the EM should compute the post-remediation
+	// spec hash. Set by the RO for async-managed targets (GitOps, operator CRDs)
+	// where spec changes propagate after the WorkflowExecution completes.
+	// Nil or zero means compute immediately (sync workflows, backward compatible).
+	// Reference: DD-EM-004 (Async Hash Deferral), BR-EM-010, BR-RO-103
+	// +optional
+	HashComputeAfter *metav1.Time `json:"hashComputeAfter,omitempty"`
 }
 
 // TargetResource identifies a Kubernetes resource by kind, name, and namespace.

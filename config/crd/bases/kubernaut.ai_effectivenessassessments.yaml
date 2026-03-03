@@ -82,6 +82,15 @@ spec:
                   Used as the correlation ID for audit events (DD-AUDIT-CORRELATION-002).
                 minLength: 1
                 type: string
+              hashComputeAfter:
+                description: |-
+                  HashComputeAfter indicates when the EM should compute the post-remediation
+                  spec hash. Set by the RO for async-managed targets (GitOps, operator CRDs)
+                  where spec changes propagate after the WorkflowExecution completes.
+                  Nil or zero means compute immediately (sync workflows, backward compatible).
+                  Reference: DD-EM-004 (Async Hash Deferral), BR-EM-010, BR-RO-103
+                format: date-time
+                type: string
               preRemediationSpecHash:
                 description: |-
                   PreRemediationSpecHash is the canonical spec hash of the target resource BEFORE
