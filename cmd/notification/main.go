@@ -24,6 +24,7 @@ import (
 
 	"github.com/go-logr/zapr"
 	zaplog "go.uber.org/zap"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -175,12 +176,17 @@ func main() {
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
 	// ADR-030: Use configuration values for controller manager
-	// ADR-057: ConfigMaps NOT restricted (workload resources for hot-reload)
+	// ConfigMaps scoped to namespace for routing config hot-reload (#259)
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,
 		Cache: cache.Options{
 			ByObject: map[client.Object]cache.ByObject{
 				&notificationv1alpha1.NotificationRequest{}: {
+					Namespaces: map[string]cache.Config{
+						controllerNS: {},
+					},
+				},
+				&corev1.ConfigMap{}: {
 					Namespaces: map[string]cache.Config{
 						controllerNS: {},
 					},
