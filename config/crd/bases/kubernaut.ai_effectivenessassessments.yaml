@@ -82,6 +82,13 @@ spec:
                   Used as the correlation ID for audit events (DD-AUDIT-CORRELATION-002).
                 minLength: 1
                 type: string
+              gitOpsSyncDelay:
+                description: |-
+                  GitOpsSyncDelay is the configured delay for GitOps tool sync (ArgoCD/Flux),
+                  set by the RO at EA creation time. The EM reads this for the audit trail
+                  (BR-EM-010.5). Nil when the target is not GitOps-managed.
+                  Reference: DD-EM-004 v2.0, BR-RO-103.4, Issue #253
+                type: string
               hashComputeAfter:
                 description: |-
                   HashComputeAfter indicates when the EM should compute the post-remediation
@@ -90,6 +97,13 @@ spec:
                   Nil or zero means compute immediately (sync workflows, backward compatible).
                   Reference: DD-EM-004 (Async Hash Deferral), BR-EM-010, BR-RO-103
                 format: date-time
+                type: string
+              operatorReconcileDelay:
+                description: |-
+                  OperatorReconcileDelay is the configured delay for operator reconciliation,
+                  set by the RO at EA creation time. The EM reads this for the audit trail
+                  (BR-EM-010.5). Nil when the target is not a CRD.
+                  Reference: DD-EM-004 v2.0, BR-RO-103.4, Issue #253
                 type: string
               preRemediationSpecHash:
                 description: |-
@@ -317,6 +331,7 @@ spec:
                 description: Phase is the current lifecycle phase of the assessment.
                 enum:
                 - Pending
+                - WaitingForPropagation
                 - Stabilizing
                 - Assessing
                 - Completed

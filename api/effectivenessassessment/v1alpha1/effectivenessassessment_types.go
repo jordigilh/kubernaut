@@ -51,6 +51,11 @@ const (
 	PhaseCompleted = "Completed"
 	// PhaseFailed indicates the assessment could not be performed (e.g., target not found).
 	PhaseFailed = "Failed"
+	// PhaseWaitingForPropagation indicates the EM is waiting for an async change
+	// (GitOps sync, operator reconciliation) to propagate before computing the hash.
+	// Only entered when EA.Spec.HashComputeAfter is non-nil and in the future.
+	// Reference: DD-EM-004 v2.0, BR-EM-010.3, Issue #253
+	PhaseWaitingForPropagation = "WaitingForPropagation"
 )
 
 // AssessmentReason constants describe why an assessment completed with a particular outcome.
@@ -137,6 +142,20 @@ type EffectivenessAssessmentSpec struct {
 	// Reference: DD-EM-004 (Async Hash Deferral), BR-EM-010, BR-RO-103
 	// +optional
 	HashComputeAfter *metav1.Time `json:"hashComputeAfter,omitempty"`
+
+	// GitOpsSyncDelay is the configured delay for GitOps tool sync (ArgoCD/Flux),
+	// set by the RO at EA creation time. The EM reads this for the audit trail
+	// (BR-EM-010.5). Nil when the target is not GitOps-managed.
+	// Reference: DD-EM-004 v2.0, BR-RO-103.4, Issue #253
+	// +optional
+	GitOpsSyncDelay *metav1.Duration `json:"gitOpsSyncDelay,omitempty"`
+
+	// OperatorReconcileDelay is the configured delay for operator reconciliation,
+	// set by the RO at EA creation time. The EM reads this for the audit trail
+	// (BR-EM-010.5). Nil when the target is not a CRD.
+	// Reference: DD-EM-004 v2.0, BR-RO-103.4, Issue #253
+	// +optional
+	OperatorReconcileDelay *metav1.Duration `json:"operatorReconcileDelay,omitempty"`
 }
 
 // TargetResource identifies a Kubernetes resource by kind, name, and namespace.
@@ -171,7 +190,7 @@ type EAConfig struct {
 // EffectivenessAssessmentStatus defines the observed state of an EffectivenessAssessment.
 type EffectivenessAssessmentStatus struct {
 	// Phase is the current lifecycle phase of the assessment.
-	// +kubebuilder:validation:Enum=Pending;Stabilizing;Assessing;Completed;Failed
+	// +kubebuilder:validation:Enum=Pending;WaitingForPropagation;Stabilizing;Assessing;Completed;Failed
 	Phase string `json:"phase,omitempty"`
 
 	// ValidityDeadline is the absolute time after which the assessment expires.
