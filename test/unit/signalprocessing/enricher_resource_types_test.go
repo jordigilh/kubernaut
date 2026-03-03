@@ -121,7 +121,7 @@ var _ = Describe("K8sEnricher Resource Types", func() {
 				}
 
 				k8sClient = createFakeClient(ns, ds)
-				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second)
+				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second, 5*time.Minute)
 
 				signal := &signalprocessingv1alpha1.SignalData{
 					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -149,7 +149,7 @@ var _ = Describe("K8sEnricher Resource Types", func() {
 				}
 
 				k8sClient = createFakeClient(ns)
-				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second)
+				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second, 5*time.Minute)
 
 				signal := &signalprocessingv1alpha1.SignalData{
 					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -245,7 +245,7 @@ var _ = Describe("K8sEnricher Resource Types", func() {
 				}
 
 				k8sClient = createFakeClient(ns, rs, deploy)
-				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second)
+				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second, 5*time.Minute)
 
 				signal := &signalprocessingv1alpha1.SignalData{
 					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -272,7 +272,7 @@ var _ = Describe("K8sEnricher Resource Types", func() {
 				}
 
 				k8sClient = createFakeClient(ns)
-				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second)
+				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second, 5*time.Minute)
 
 				signal := &signalprocessingv1alpha1.SignalData{
 					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -338,7 +338,7 @@ var _ = Describe("K8sEnricher Resource Types", func() {
 				}
 
 				k8sClient = createFakeClient(ns, rs)
-				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second)
+				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second, 5*time.Minute)
 
 				signal := &signalprocessingv1alpha1.SignalData{
 					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -409,7 +409,7 @@ var _ = Describe("K8sEnricher Resource Types", func() {
 				}
 
 				k8sClient = createFakeClient(ns, ds)
-				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second)
+				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second, 5*time.Minute)
 
 				signal := &signalprocessingv1alpha1.SignalData{
 					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -477,7 +477,7 @@ var _ = Describe("K8sEnricher Resource Types", func() {
 				}
 
 				k8sClient = createFakeClient(ns, rs)
-				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second)
+				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second, 5*time.Minute)
 
 				signal := &signalprocessingv1alpha1.SignalData{
 					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{

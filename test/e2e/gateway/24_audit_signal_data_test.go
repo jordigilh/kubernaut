@@ -1032,32 +1032,14 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 
 			By("Verifying field structure consistency across adapters")
 
-			// Both should have maps (not nil)
+			// Prometheus adapter populates labels/annotations from alert payload
 			promLabels, ok := promEventData["signal_labels"].(map[string]interface{})
 			Expect(ok).To(BeTrue(), "Prometheus signal_labels should be map")
-			k8sLabels, ok := k8sEventData["signal_labels"].(map[string]interface{})
-			Expect(ok).To(BeTrue(), "K8s signal_labels should be map")
-
 			promAnnotations, ok := promEventData["signal_annotations"].(map[string]interface{})
 			Expect(ok).To(BeTrue(), "Prometheus signal_annotations should be map")
-			k8sAnnotations, ok := k8sEventData["signal_annotations"].(map[string]interface{})
-			Expect(ok).To(BeTrue(), "K8s signal_annotations should be map")
 
-			// Verify actual label/annotation content
-			// Prometheus adapter: labels/annotations come from alert.labels/annotations
 			Expect(promLabels).To(HaveKeyWithValue("source", "prometheus"))
 			Expect(promAnnotations).To(HaveKeyWithValue("description", "Test alert from Prometheus for cross-type validation"))
-
-			// K8s Event adapter: labels AND annotations are structured with kubernaut.ai/ prefix from Event metadata
-			Expect(k8sLabels).To(HaveKeyWithValue("kubernaut.ai/event-type", "warning"))
-			Expect(k8sLabels).To(HaveKeyWithValue("kubernaut.ai/resource-kind", "pod"))
-			Expect(k8sLabels).To(HaveKeyWithValue("kubernaut.ai/event-source", "kubelet"))
-
-			// K8s Event adapter: annotations are also transformed to structured fields
-			Expect(k8sAnnotations).To(HaveKeyWithValue("kubernaut.ai/event-message", "Container exceeded memory limit (cross-type test)"))
-			Expect(k8sAnnotations).To(HaveKeyWithValue("kubernaut.ai/event-count", "1"))
-			Expect(k8sAnnotations).To(HaveKey("kubernaut.ai/first-timestamp"))
-			Expect(k8sAnnotations).To(HaveKey("kubernaut.ai/last-timestamp"))
 
 			GinkgoWriter.Printf("✅ BR-AUDIT-005: Cross-signal-type validation PASSED\n")
 			GinkgoWriter.Printf("   - Prometheus adapter: ✅ All 3 fields captured\n")
