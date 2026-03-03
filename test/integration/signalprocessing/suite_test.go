@@ -596,8 +596,9 @@ default labels := {}
 	k8sEnricher := enricher.NewK8sEnricher(
 		k8sManager.GetClient(),
 		logger,
-		sharedMetrics, // Pass shared metrics to enricher
-		5*time.Second, // Timeout for K8s API calls
+		sharedMetrics,     // Pass shared metrics to enricher
+		5*time.Second,     // Timeout for K8s API calls
+		5*time.Minute,     // Cache TTL for namespace lookups
 	)
 
 	// Initialize StatusManager (DD-PERF-001: Atomic Status Updates)

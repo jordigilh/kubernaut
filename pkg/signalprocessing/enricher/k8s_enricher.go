@@ -72,17 +72,18 @@ type K8sEnricher struct {
 // Per IMPLEMENTATION_PLAN_V1.21.md Day 3 specification.
 //
 // Panics if metrics is nil (metrics are mandatory for observability).
-func NewK8sEnricher(c client.Client, logger logr.Logger, m *metrics.Metrics, timeout time.Duration) *K8sEnricher {
+// cacheTTL controls how long namespace lookups are cached (ADR-030: from YAML config).
+func NewK8sEnricher(c client.Client, logger logr.Logger, m *metrics.Metrics, timeout, cacheTTL time.Duration) *K8sEnricher {
 	if m == nil {
 		panic("metrics cannot be nil: metrics are mandatory for observability")
 	}
 	return &K8sEnricher{
 		client:            c,
 		logger:            logger.WithName("k8s-enricher"),
-		cache:             cache.NewTTLCache(5 * time.Minute),
+		cache:             cache.NewTTLCache(cacheTTL),
 		metrics:           m,
 		ownerChainBuilder: ownerchain.NewBuilder(c, logger), // BR-SP-100: Full owner chain traversal
-		timeout: timeout,
+		timeout:           timeout,
 	}
 }
 

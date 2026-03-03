@@ -62,7 +62,8 @@ type NotificationRequestReconciler struct {
 
 	// BR-NOT-104: Per-receiver credential resolution for Slack delivery
 	CredentialResolver    *credentials.Resolver
-	registeredSlackKeys []string
+	registeredSlackKeys   []string
+	SlackTimeout         time.Duration // NT-1: HTTP timeout for Slack webhook (wired from config)
 
 	// ========================================
 	// DELIVERY ORCHESTRATOR (Pattern 3 - P0)

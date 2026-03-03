@@ -61,7 +61,9 @@ import (
 // This service is E2E testing infrastructure only and should NOT be used in production.
 // Files are written with timestamps to prevent overwrites in concurrent scenarios.
 type FileDeliveryService struct {
-	outputDir string // Directory where JSON files will be written
+	outputDir string        // Directory where JSON files will be written
+	format    string        // Output format: "json" or "yaml" (NT-1: wired from config)
+	timeout   time.Duration // Max duration for write operation (NT-1: wired from config)
 }
 
 // Ensure FileDeliveryService implements Service interface at compile-time
@@ -71,16 +73,23 @@ var _ Service = (*FileDeliveryService)(nil)
 //
 // Parameters:
 //   - outputDir: Directory where notification JSON files will be written
+//   - format: Output format ("json" or "yaml"). Defaults to "json" if empty.
+//   - timeout: Max duration for write operation. If zero, no timeout is applied.
 //
 // The output directory will be created if it doesn't exist.
-// Files are named: notification-{name}-{timestamp}.json
+// Files are named: notification-{name}-{timestamp}.{format}
 //
 // Example:
 //
-//	service := NewFileDeliveryService("/tmp/kubernaut-e2e-notifications")
-func NewFileDeliveryService(outputDir string) *FileDeliveryService {
+//	service := NewFileDeliveryService("/tmp/kubernaut-e2e-notifications", "json", 5*time.Second)
+func NewFileDeliveryService(outputDir, format string, timeout time.Duration) *FileDeliveryService {
+	if format == "" {
+		format = "json"
+	}
 	return &FileDeliveryService{
 		outputDir: outputDir,
+		format:    format,
+		timeout:   timeout,
 	}
 }
 
@@ -110,10 +119,16 @@ func NewFileDeliveryService(outputDir string) *FileDeliveryService {
 func (s *FileDeliveryService) Deliver(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
 	log := ctrl.LoggerFrom(ctx)
 
-	// Use service-level configuration (constructor outputDir)
-	// Per design decision: Channel-specific config should NOT be in CRD
+	// NT-1: Use service-level configuration (format, timeout wired from config)
 	outputDir := s.outputDir
-	format := "json" // Default format (hardcoded for E2E simplicity)
+	format := s.format
+
+	// NT-1: Apply timeout from config if set
+	if s.timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, s.timeout)
+		defer cancel()
+	}
 
 	// Ensure output directory exists
 	if err := os.MkdirAll(outputDir, 0755); err != nil {

@@ -165,8 +165,13 @@ func main() {
 	}
 
 	// Create buffered audit store using shared library (DD-AUDIT-002)
-	// Use recommended config for workflowexecution service
-	auditConfig := audit.RecommendedConfig("workflowexecution")
+	// ADR-030: Audit buffer config from YAML (not RecommendedConfig)
+	auditConfig := audit.Config{
+		BufferSize:    cfg.DataStorage.Buffer.BufferSize,
+		BatchSize:     cfg.DataStorage.Buffer.BatchSize,
+		FlushInterval: cfg.DataStorage.Buffer.FlushInterval,
+		MaxRetries:    cfg.DataStorage.Buffer.MaxRetries,
+	}
 	auditStore, err := audit.NewBufferedStore(
 		dsClient,
 		auditConfig,

@@ -111,7 +111,7 @@ receivers:
 					Expect(err).NotTo(HaveOccurred())
 					Expect(webhookURL).To(Equal(mockServer.URL))
 
-					svc := delivery.NewSlackDeliveryService(webhookURL)
+					svc := delivery.NewSlackDeliveryService(webhookURL, 0)
 					Expect(svc).NotTo(BeNil())
 
 					channelKey := fmt.Sprintf("slack:%s", recv.Name)
@@ -179,7 +179,7 @@ receivers:
 					Expect(err).NotTo(HaveOccurred())
 
 					channelKey := fmt.Sprintf("slack:%s", recv.Name)
-					svc := delivery.NewSlackDeliveryService(url)
+					svc := delivery.NewSlackDeliveryService(url, 0)
 					orch.RegisterChannel(channelKey, svc)
 				}
 			}

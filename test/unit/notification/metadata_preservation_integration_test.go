@@ -50,7 +50,7 @@ var _ = Describe("Metadata Preservation Integration Test (Controller → Orchest
 			GinkgoParallelProcess()))
 		Expect(os.MkdirAll(tempDir, 0755)).To(Succeed())
 
-		fileService = delivery.NewFileDeliveryService(tempDir)
+		fileService = delivery.NewFileDeliveryService(tempDir, "json", 0)
 		sanitizer = sanitization.NewSanitizer()
 	})
 

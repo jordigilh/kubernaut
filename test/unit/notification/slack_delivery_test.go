@@ -66,7 +66,7 @@ var _ = Describe("BR-NOT-053: Slack Delivery Service", func() {
 			}))
 			defer server.Close()
 
-			service = delivery.NewSlackDeliveryService(server.URL)
+			service = delivery.NewSlackDeliveryService(server.URL, 0)
 
 			notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
@@ -176,7 +176,7 @@ var _ = Describe("BR-NOT-053: Slack Delivery Service", func() {
 
 	Context("when webhook URL is invalid", func() {
 		It("should return retryable error for network failures", func() {
-			service = delivery.NewSlackDeliveryService("http://invalid-url-that-does-not-exist:9999")
+			service = delivery.NewSlackDeliveryService("http://invalid-url-that-does-not-exist:9999", 0)
 
 			notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
@@ -205,7 +205,7 @@ var _ = Describe("BR-NOT-053: Slack Delivery Service", func() {
 			}))
 			defer server.Close()
 
-			service = delivery.NewSlackDeliveryService(server.URL)
+			service = delivery.NewSlackDeliveryService(server.URL, 0)
 
 			// Create cancellable context
 			ctx, cancel := context.WithCancel(context.Background())
@@ -241,7 +241,7 @@ var _ = Describe("BR-NOT-053: Slack Delivery Service", func() {
 				}))
 				defer server.Close()
 
-				service = delivery.NewSlackDeliveryService(server.URL)
+				service = delivery.NewSlackDeliveryService(server.URL, 0)
 
 				// Create context with very short timeout (triggers before server responds)
 				ctxWithTimeout, cancel := context.WithTimeout(ctx, 10*time.Millisecond)
@@ -289,7 +289,7 @@ var _ = Describe("BR-NOT-053: Slack Delivery Service", func() {
 				}))
 				defer server.Close()
 
-				service = delivery.NewSlackDeliveryService(server.URL)
+				service = delivery.NewSlackDeliveryService(server.URL, 0)
 
 				// Create context with very short timeout (triggers before server responds)
 				ctxWithTimeout, cancel := context.WithTimeout(ctx, 10*time.Millisecond)
@@ -348,7 +348,7 @@ var _ = Describe("BR-NOT-053: Slack Delivery Service", func() {
 				}))
 				defer server.Close()
 
-				service = delivery.NewSlackDeliveryService(server.URL)
+				service = delivery.NewSlackDeliveryService(server.URL, 0)
 
 				notification := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
@@ -386,7 +386,7 @@ var _ = Describe("BR-NOT-053: Slack Delivery Service", func() {
 				}))
 				defer server.Close()
 
-				service = delivery.NewSlackDeliveryService(server.URL)
+				service = delivery.NewSlackDeliveryService(server.URL, 0)
 
 				notification := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
@@ -432,7 +432,7 @@ var _ = Describe("BR-NOT-053: Slack Delivery Service", func() {
 				}))
 				defer server.Close()
 
-				service = delivery.NewSlackDeliveryService(server.URL)
+				service = delivery.NewSlackDeliveryService(server.URL, 0)
 
 				notification := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
@@ -474,7 +474,7 @@ var _ = Describe("BR-NOT-053: Slack Delivery Service", func() {
 
 				// Use invalid domain that will fail DNS lookup
 				invalidWebhookURL := "https://this-domain-absolutely-does-not-exist-12345.invalid/webhook"
-				service = delivery.NewSlackDeliveryService(invalidWebhookURL)
+				service = delivery.NewSlackDeliveryService(invalidWebhookURL, 0)
 
 				notification := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
@@ -511,7 +511,7 @@ var _ = Describe("BR-NOT-053: Slack Delivery Service", func() {
 
 				// Use domain with invalid TLD
 				invalidWebhookURL := "https://slack-webhook-invalid-tld.nonexistent/webhook"
-				service = delivery.NewSlackDeliveryService(invalidWebhookURL)
+				service = delivery.NewSlackDeliveryService(invalidWebhookURL, 0)
 
 				notification := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
@@ -564,7 +564,7 @@ var _ = Describe("BR-NOT-053: Slack Delivery Service", func() {
 			Expect(orch.HasChannel("slack")).To(BeFalse(),
 				"'slack' channel should not be registered before explicit registration")
 
-			slackService := delivery.NewSlackDeliveryService(server.URL)
+			slackService := delivery.NewSlackDeliveryService(server.URL, 0)
 			orch.RegisterChannel("slack", slackService)
 
 			Expect(orch.HasChannel("slack")).To(BeTrue(),

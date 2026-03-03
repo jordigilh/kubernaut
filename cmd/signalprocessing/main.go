@@ -380,14 +380,17 @@ func main() {
 	setupLog.Info("signalprocessing metrics configured")
 
 	// BR-SP-001: K8s context enricher with caching, timeout, metrics, degraded mode
-	// ADR-030: Enrichment timeout from YAML config (not hardcoded)
+	// ADR-030: Enrichment timeout and cache TTL from YAML config (not hardcoded)
 	k8sEnricher := enricher.NewK8sEnricher(
 		mgr.GetClient(),
 		ctrl.Log.WithName("enricher"),
 		spMetrics,
 		cfg.Enrichment.Timeout,
+		cfg.Enrichment.CacheTTL,
 	)
-	setupLog.Info("k8s enricher configured", "enrichmentTimeout", cfg.Enrichment.Timeout)
+	setupLog.Info("k8s enricher configured",
+		"enrichmentTimeout", cfg.Enrichment.Timeout,
+		"cacheTTL", cfg.Enrichment.CacheTTL)
 
 	// ========================================
 	// DD-PERF-001: Atomic Status Updates

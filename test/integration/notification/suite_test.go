@@ -439,7 +439,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	// DD-NOT-007: Register non-credential channels for integration tests
 	// BR-NOT-104: Slack registered as generic "slack" for existing tests that don't use credential_ref
-	slackService := delivery.NewSlackDeliveryService(slackWebhookURL)
+	slackService := delivery.NewSlackDeliveryService(slackWebhookURL, 0)
 	deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelConsole), consoleService)
 	deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelSlack), slackService)
 	// Note: fileService and logService NOT registered (E2E only)

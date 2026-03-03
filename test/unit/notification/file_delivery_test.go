@@ -53,7 +53,7 @@ var _ = Describe("FileDeliveryService Unit Tests", func() {
 			GinkgoParallelProcess()))
 		Expect(os.MkdirAll(tempDir, 0755)).To(Succeed())
 
-		fileService = delivery.NewFileDeliveryService(tempDir)
+		fileService = delivery.NewFileDeliveryService(tempDir, "json", 0)
 	})
 
 	AfterEach(func() {
@@ -162,7 +162,7 @@ var _ = Describe("FileDeliveryService Unit Tests", func() {
 		It("should create output directory if it doesn't exist", func() {
 			// BUSINESS SCENARIO: First run in E2E environment
 			newDir := filepath.Join(tempDir, "nested", "directory")
-			service := delivery.NewFileDeliveryService(newDir)
+			service := delivery.NewFileDeliveryService(newDir, "json", 0)
 
 			notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
@@ -201,7 +201,7 @@ var _ = Describe("FileDeliveryService Unit Tests", func() {
 				_ = os.Chmod(readOnlyDir, 0755) // Ignore error in cleanup
 			}()
 
-			service := delivery.NewFileDeliveryService(filepath.Join(readOnlyDir, "subdir"))
+			service := delivery.NewFileDeliveryService(filepath.Join(readOnlyDir, "subdir"), "json", 0)
 
 			notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
@@ -379,7 +379,7 @@ var _ = Describe("FileDeliveryService Unit Tests", func() {
 			// Attempt to create a subdirectory in read-only parent
 			invalidDir := filepath.Join(readOnlyDir, "cannot-create-this")
 
-			service := delivery.NewFileDeliveryService(invalidDir)
+			service := delivery.NewFileDeliveryService(invalidDir, "json", 0)
 
 			notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
@@ -414,7 +414,7 @@ var _ = Describe("FileDeliveryService Unit Tests", func() {
 			tempDir := GinkgoT().TempDir()
 			writableDir := filepath.Join(tempDir, "writable")
 
-			service := delivery.NewFileDeliveryService(writableDir)
+			service := delivery.NewFileDeliveryService(writableDir, "json", 0)
 
 			notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
@@ -451,7 +451,7 @@ var _ = Describe("FileDeliveryService Unit Tests", func() {
 			// Make directory read-only (no write permission)
 			Expect(os.Chmod(readOnlyFileDir, 0555)).To(Succeed())
 
-			service := delivery.NewFileDeliveryService(readOnlyFileDir)
+			service := delivery.NewFileDeliveryService(readOnlyFileDir, "json", 0)
 
 			notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
