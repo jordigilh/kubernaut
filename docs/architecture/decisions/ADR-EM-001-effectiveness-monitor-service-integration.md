@@ -23,6 +23,7 @@
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 2.4 | 2026-03-03 | Architecture Team | **WaitingForPropagation phase (Issue #253, BR-EM-010.3)**: Added `WaitingForPropagation` phase for async-managed targets (GitOps, operator CRDs). Async targets follow: Pending → WaitingForPropagation → Stabilizing → Assessing → Completed/Failed. Sync targets unchanged. New EA spec fields: `gitOpsSyncDelay`, `operatorReconcileDelay` for audit trail (BR-EM-010.5). Kubebuilder enum updated. |
 | 2.3 | 2026-02-24 | Architecture Team | **Stabilizing phase**: Added `Stabilizing` phase between `Pending` and `Assessing`. EA transitions to `Stabilizing` during stabilization window; derived timing fields (BR-EM-009) are pre-computed and persisted in this phase. Phase state machine updated: Pending → Stabilizing → Assessing → Completed/Failed. Pending → Assessing remains valid when StabilizationWindow == 0. |
 | 2.2 | 2026-02-24 | Architecture Team | **Dual-target EA (Issue #188, DD-EM-003)**: Renamed `resolveEffectivenessTarget` to `resolveDualTargets` returning `*creator.DualTarget{Signal, Remediation}`. Sequence diagram and EA CRD example updated to reflect the new function name and dual-target fields (`signalTarget`, `remediationTarget`). Removed single `targetResource` field from EA spec. |
 | 2.1 | 2026-02-15 | Architecture Team | **Two-phase hash model**: Phase 1 (hash component check): capture current spec as `PostRemediationSpecHash`, compare `pre != post` (workflow changed spec?), set `CurrentSpecHash = PostRemediationSpecHash` as baseline. Phase 2 (drift guard, subsequent reconciles): re-capture current hash, compare `post != current` (spec drift?), abort if drifted. Fixes single-pass completion bug where `CurrentSpecHash` was never set. |
@@ -423,7 +424,7 @@ flowchart TD
     Start["EM Triggered by EA CRD
     (created by RO)"] --> CheckPhase{EA.status.phase?}
     CheckPhase -->|Completed| AlreadyDone[No-op: assessment already finalized]
-    CheckPhase -->|Pending/Stabilizing/Assessing| ComputeTiming["Compute Derived Timing
+    CheckPhase -->|Pending/WaitingForPropagation/Stabilizing/Assessing| ComputeTiming["Compute Derived Timing
     validityDeadline, prometheusCheckAfter,
     alertManagerCheckAfter in status"]
     ComputeTiming --> CheckValidity{"Validity window expired?
@@ -726,7 +727,7 @@ All component events share these common fields:
 
 #### 9.2.0 `effectiveness.assessment.scheduled` (timeline event)
 
-Emitted on first reconciliation when the EM transitions the EA from Pending to Stabilizing (when StabilizationWindow > 0) or from Pending to Assessing (when StabilizationWindow == 0). Captures all derived timing values computed from the EA spec and EM config. This is the only event that records the assessment timeline, providing full observability of when each check was scheduled.
+Emitted on first reconciliation when the EM transitions the EA from Pending to WaitingForPropagation (async targets with HashComputeAfter), Pending to Stabilizing (sync targets with StabilizationWindow > 0), or Pending to Assessing (when StabilizationWindow == 0). Captures all derived timing values computed from the EA spec and EM config. This is the only event that records the assessment timeline, providing full observability of when each check was scheduled.
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -873,7 +874,7 @@ spec:
   config:
     stabilizationWindow: 5m
 status:
-  phase: Assessing   # Pending → Stabilizing → Assessing → Completed/Failed (or Pending → Assessing when StabilizationWindow == 0)
+  phase: Assessing   # Sync: Pending → Stabilizing → Assessing → Completed/Failed. Async: Pending → WaitingForPropagation → Stabilizing → Assessing → Completed/Failed. (Pending → Assessing when StabilizationWindow == 0)
   validityDeadline: "2026-02-09T15:30:00Z"          # Computed by EM: creationTimestamp + validityWindow
   prometheusCheckAfter: "2026-02-09T15:05:00Z"       # Computed by EM: creationTimestamp + stabilizationWindow
   alertManagerCheckAfter: "2026-02-09T15:05:00Z"     # Computed by EM: creationTimestamp + stabilizationWindow
@@ -1144,7 +1145,7 @@ Before EM implementation can begin, these changes to existing services are requi
 Before approving this ADR for TDD implementation:
 
 - [ ] All sequence diagrams accurately reflect the current service interactions
-- [ ] The EA CRD lifecycle (Pending → Stabilizing → Assessing → Completed/Failed, or Pending → Assessing when StabilizationWindow == 0) is complete
+- [ ] The EA CRD lifecycle is complete: Sync (Pending → Stabilizing → Assessing → Completed/Failed), Async (Pending → WaitingForPropagation → Stabilizing → Assessing → Completed/Failed), Skip-stabilization (Pending → Assessing when StabilizationWindow == 0)
 - [ ] The RO-creates-EA pattern is consistent with AA/WFE/NR patterns
 - [ ] The audit event data models contain all fields needed by DD-HAPI-016
 - [ ] The scoring formula and weight redistribution logic is correct (V1.0: 3 scored components, no side-effects)

@@ -107,7 +107,7 @@ See [Issue #251 Test Plan](../../testing/ISSUE-251/TEST_PLAN.md) — EM hash def
 
 See [Issue #253 Test Plan](../../testing/ISSUE-253/TEST_PLAN.md) — Timing model correction:
 - UT/IT for `WaitingForPropagation` phase, adjusted `checkAfter`, validity extension
-- E2E-FP-251-001 updated with corrected timing assertions
+- E2E-FP-253-001 updated with corrected timing assertions
 
 ## References
 

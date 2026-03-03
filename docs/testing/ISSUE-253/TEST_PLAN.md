@@ -1,7 +1,7 @@
 # Test Plan: Issue #253 — Correct EA Timing Model: Separate Propagation Delay from Stabilization Window
 
 **Feature**: Decouple async propagation delay from stabilization window in the EA lifecycle
-**Version**: 1.0
+**Version**: 1.4
 **Created**: 2026-03-03
 **Author**: Architecture Team
 **Status**: Draft
@@ -26,10 +26,12 @@
 
 - **RO config** (`internal/config/remediationorchestrator/config.go`): New `AsyncPropagationConfig` struct with `gitOpsSyncDelay` and `operatorReconcileDelay`; validation; defaults
 - **RO propagation delay computation** (`internal/controller/remediationorchestrator/reconciler.go`): Compounding logic; `HashComputeAfter = now + propagationDelay` (not `StabilizationWindow`)
-- **EA CRD phase** (`api/effectivenessassessment/v1alpha1/`): `WaitingForPropagation` phase constant; phase transition rules
-- **EM timing computation** (`internal/controller/effectivenessmonitor/reconciler.go`): `checkAfter = HashComputeAfter + StabilizationWindow`; validity deadline extension; `WaitingForPropagation → Stabilizing` transition
+- **EA CRD phase** (`api/effectivenessassessment/v1alpha1/`): `WaitingForPropagation` phase constant; phase transition rules; kubebuilder enum update → `make generate` + `make manifests`
+- **EM timing computation** (`internal/controller/effectivenessmonitor/reconciler.go`): `checkAfter = HashComputeAfter + StabilizationWindow`; validity deadline extension; `WaitingForPropagation → Stabilizing` transition; validity checker calls use `HashComputeAfter` as stabilization anchor for async targets
+- **EM validity checker** (`pkg/effectivenessmonitor/validity/validity.go`): Reconciler passes `HashComputeAfter` (when set) instead of `CreationTimestamp` to `Check()` and `TimeUntilStabilized()`, preventing premature `Stabilizing → Assessing` transition
 - **EM phase logic** (`pkg/effectivenessmonitor/phase/`): Updated valid transitions including `WaitingForPropagation`
-- **Audit trail** (`pkg/effectivenessmonitor/audit/manager.go`): Propagation delay fields in `assessment.scheduled` event
+- **EA CRD spec fields** (`api/effectivenessassessment/v1alpha1/`): Optional `gitOpsSyncDelay` and `operatorReconcileDelay` duration fields set by RO, consumed by EM audit manager (BR-EM-010.5)
+- **Audit trail** (`pkg/effectivenessmonitor/audit/manager.go`): Propagation delay fields (`gitops_sync_delay`, `operator_reconcile_delay`, `total_propagation_delay`) in `assessment.scheduled` event
 - **E2E validation** (`test/e2e/fullpipeline/02_async_hash_deferral_test.go`): Corrected timing assertions
 
 ### Out of Scope
@@ -47,6 +49,18 @@
 | Additive compounding | GitOps sync and operator reconciliation are sequential stages (ArgoCD syncs manifest, then operator reconciles) |
 | `WaitingForPropagation` as distinct phase | Operators can distinguish "waiting for change to arrive" from "waiting for system to settle" |
 | EM anchors timing to `HashComputeAfter` | Clean separation: RO decides when change arrives, EM uses that as stabilization anchor |
+| EM validity checker uses `HashComputeAfter` as stabilization anchor | Prevents premature `Stabilizing → Assessing` transition; EA stays in `Stabilizing` until `HashComputeAfter + StabilizationWindow` |
+| Individual delay durations in EA spec | RO sets `gitOpsSyncDelay` and `operatorReconcileDelay` in EA spec; EM reads them for audit (BR-EM-010.5). Alternative (compute from timestamp diff) loses breakdown. |
+
+### Impact on #251 Tests
+
+The following existing #251 tests will require in-place updates to reflect #253's corrected timing model:
+
+| #251 Test | Required Update |
+|-----------|----------------|
+| UT tests referencing `HashComputeAfter = creation + StabilizationWindow` | Update to use `creation + propagationDelay` |
+| IT tests asserting timing based on `StabilizationWindow` as anchor | Re-anchor to `HashComputeAfter + StabilizationWindow` |
+| E2E `02_async_hash_deferral_test.go` timing assertions | Update expected values for corrected formula |
 
 ---
 
@@ -80,12 +94,13 @@ Tests validate **business outcomes** — correct timing, correct phases, correct
 | `api/effectivenessassessment/v1alpha1/effectivenessassessment_types.go` | `PhaseWaitingForPropagation` constant | ~5 |
 | `pkg/effectivenessmonitor/phase/types.go` | `ValidTransitions` map, `CanTransition()`, `IsTerminal()` | ~15 |
 | `pkg/remediationorchestrator/creator/effectivenessassessment.go` | Propagation delay compounding helper | ~20 |
+| `pkg/effectivenessmonitor/timing/derived.go` | `ComputeDerivedTiming()` — anchor selection, validity formula (sync vs async) | ~15 |
 
 ### Integration-Testable Code (I/O, wiring, cross-component)
 
 | File | Functions/Methods | Lines (approx) |
 |------|-------------------|-----------------|
-| `internal/controller/effectivenessmonitor/reconciler.go` | `Reconcile()` — timing anchor, phase transitions, validity extension | ~40 |
+| `internal/controller/effectivenessmonitor/reconciler.go` | `Reconcile()` — timing anchor, phase transitions, validity extension, validity checker anchor adjustment | ~50 |
 | `internal/controller/remediationorchestrator/reconciler.go` | `emitEffectivenessAssessment()` — config-driven propagation delay | ~25 |
 | `pkg/effectivenessmonitor/audit/manager.go` | `RecordAssessmentScheduled()` — propagation delay fields | ~10 |
 
@@ -95,21 +110,23 @@ Tests validate **business outcomes** — correct timing, correct phases, correct
 
 | BR ID | Description | Priority | Tier | Test ID | Status |
 |-------|-------------|----------|------|---------|--------|
-| BR-RO-103.4 | Config loads with correct defaults (`gitOpsSyncDelay=3m`, `operatorReconcileDelay=1m`) | P0 | Unit | UT-RO-253-001 | Pending |
-| BR-RO-103.4 | Config rejects negative delay; accepts zero delay | P0 | Unit | UT-RO-253-002, UT-RO-253-003 | Pending |
-| BR-RO-103.4 | Config loads explicit custom values correctly | P0 | Unit | UT-RO-253-008 | Pending |
-| BR-RO-103.5 | Compounding: GitOps-only, operator-only, both, neither | P0 | Unit | UT-RO-253-004, UT-RO-253-005, UT-RO-253-006, UT-RO-253-007 | Pending |
-| BR-RO-103.3 | Config-driven propagation delay in EA spec (envtest) | P0 | Integration | IT-RO-253-001 | Pending |
-| BR-RO-103.5 | Compounding for dual-async target (envtest) | P1 | Integration | IT-RO-253-002 | Pending |
-| BR-EM-010.3 | `WaitingForPropagation` phase entered and exited correctly | P0 | Unit | UT-EM-253-001, UT-EM-253-002 | Pending |
-| BR-EM-010.4 | `checkAfter = HashComputeAfter + StabilizationWindow` | P0 | Unit | UT-EM-253-003 | Pending |
-| BR-EM-010.4 | Validity deadline extended for async targets | P0 | Unit | UT-EM-253-004 | Pending |
-| BR-EM-010.4 | Sync target: `PrometheusCheckAfter = creation + StabilizationWindow` | P0 | Unit | UT-EM-253-005 | Pending |
-| BR-EM-010.3 | `WaitingForPropagation → Stabilizing` transition (envtest) | P0 | Integration | IT-EM-253-001 | Pending |
-| BR-EM-010.4 | Health checks deferred until `HashComputeAfter + StabilizationWindow` (envtest) | P0 | Integration | IT-EM-253-002 | Pending |
-| BR-EM-010.5 | Audit `assessment.scheduled` includes propagation delay fields | P1 | Integration | IT-EM-253-003 | Pending |
-| BR-EM-010.4 | Async target `ValidityDeadline` extended correctly (envtest) | P0 | Integration | IT-EM-253-004 | Pending |
-| BR-EM-010.3, BR-EM-010.4 | Full pipeline: corrected timing, phase transitions, audit | P0 | E2E | E2E-FP-253-001 | Pending |
+| BR-RO-103.4 | Config loads with correct defaults (`gitOpsSyncDelay=3m`, `operatorReconcileDelay=1m`) | P0 | Unit | UT-RO-253-001 | Pass |
+| BR-RO-103.4 | Config rejects negative delay; accepts zero delay | P0 | Unit | UT-RO-253-002, UT-RO-253-003 | Pass |
+| BR-RO-103.4 | Config loads explicit custom values correctly | P0 | Unit | UT-RO-253-008 | Pass |
+| BR-RO-103.5 | Compounding: GitOps-only, operator-only, both, neither | P0 | Unit | UT-RO-253-004, UT-RO-253-005, UT-RO-253-006, UT-RO-253-007 | Pass |
+| BR-RO-103.3 | Config-driven propagation delay in EA spec (envtest) | P0 | Integration | IT-RO-253-001 | Written |
+| BR-RO-103.5 | Compounding for dual-async target (envtest) | P1 | Integration | IT-RO-253-002 | Written |
+| BR-EM-010.3 | `WaitingForPropagation` phase entered and exited correctly | P0 | Unit | UT-EM-253-001, UT-EM-253-002 | Pass |
+| BR-EM-010.4 | `checkAfter = HashComputeAfter + StabilizationWindow` | P0 | Unit | UT-EM-253-003 | Pass |
+| BR-EM-010.4 | Validity deadline extended for async targets (guard not triggered) | P0 | Unit | UT-EM-253-004 | Pass |
+| BR-EM-010.4 | Sync target: `PrometheusCheckAfter = creation + StabilizationWindow` | P0 | Unit | UT-EM-253-005 | Pass |
+| BR-EM-010.4 | Async target + runtime guard + propagation delay interaction | P1 | Unit | UT-EM-253-006 | Pass |
+| BR-EM-010.4 | Validity checker uses `HashComputeAfter` as stabilization anchor; EA stays `Stabilizing` until `HashComputeAfter + StabilizationWindow` | P0 | Unit | UT-EM-253-007 | Pass |
+| BR-EM-010.3 | `WaitingForPropagation → Stabilizing` transition (envtest) | P0 | Integration | IT-EM-253-001 | Pass |
+| BR-EM-010.4 | Health checks deferred until `HashComputeAfter + StabilizationWindow` (envtest) | P0 | Integration | IT-EM-253-002 | Pass |
+| BR-EM-010.5 | Audit `assessment.scheduled` includes propagation delay fields | P1 | Integration | IT-EM-253-003 | Written |
+| BR-EM-010.4 | Async target `ValidityDeadline` extended correctly (envtest) | P0 | Integration | IT-EM-253-004 | Pass |
+| BR-EM-010.3, BR-EM-010.4 | Full pipeline: corrected timing, phase transitions, audit | P0 | E2E | E2E-FP-253-001 | Written |
 
 ### Status Legend
 
@@ -140,10 +157,10 @@ Format: `{TIER}-{SERVICE}-253-{SEQUENCE}`
 
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
-| `UT-RO-253-001` | Config loads with defaults: `gitOpsSyncDelay=3m`, `operatorReconcileDelay=1m` when not specified | Pending |
-| `UT-RO-253-002` | Config rejects negative `gitOpsSyncDelay` | Pending |
-| `UT-RO-253-003` | Config accepts zero delay (disables that stage) | Pending |
-| `UT-RO-253-008` | Config loads explicit custom values (`gitOpsSyncDelay=2m`, `operatorReconcileDelay=45s`) correctly | Pending |
+| `UT-RO-253-001` | Config loads with defaults: `gitOpsSyncDelay=3m`, `operatorReconcileDelay=1m` when not specified | Pass |
+| `UT-RO-253-002` | Config rejects negative delays (`gitOpsSyncDelay` and `operatorReconcileDelay`, table-driven) | Pass |
+| `UT-RO-253-003` | Config accepts zero delay (disables that stage) | Pass |
+| `UT-RO-253-008` | Config loads explicit custom values (`gitOpsSyncDelay=2m`, `operatorReconcileDelay=45s`) correctly | Pass |
 
 **File**: `test/unit/remediationorchestrator/async_propagation_config_test.go`
 
@@ -151,10 +168,10 @@ Format: `{TIER}-{SERVICE}-253-{SEQUENCE}`
 
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
-| `UT-RO-253-004` | GitOps-only target → `propagationDelay = gitOpsSyncDelay` | Pending |
-| `UT-RO-253-005` | Operator-only target → `propagationDelay = operatorReconcileDelay` | Pending |
-| `UT-RO-253-006` | GitOps + operator target → `propagationDelay = gitOpsSyncDelay + operatorReconcileDelay` | Pending |
-| `UT-RO-253-007` | Sync target (neither signal) → `propagationDelay = 0`, `HashComputeAfter = nil` | Pending |
+| `UT-RO-253-004` | GitOps-only target → `propagationDelay = gitOpsSyncDelay` | Pass |
+| `UT-RO-253-005` | Operator-only target → `propagationDelay = operatorReconcileDelay` | Pass |
+| `UT-RO-253-006` | GitOps + operator target → `propagationDelay = gitOpsSyncDelay + operatorReconcileDelay` | Pass |
+| `UT-RO-253-007` | Sync target (neither signal) → `propagationDelay = 0`, `HashComputeAfter = nil` | Pass |
 
 **File**: `test/unit/remediationorchestrator/propagation_delay_test.go`
 
@@ -162,8 +179,8 @@ Format: `{TIER}-{SERVICE}-253-{SEQUENCE}`
 
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
-| `UT-EM-253-001` | `WaitingForPropagation` is a valid phase; `Pending → WaitingForPropagation` allowed | Pending |
-| `UT-EM-253-002` | `WaitingForPropagation → Stabilizing` allowed; `WaitingForPropagation → Assessing` forbidden | Pending |
+| `UT-EM-253-001` | `WaitingForPropagation` is a valid phase: `Validate()` accepts it, `IsTerminal()` returns false, `Pending → WaitingForPropagation` allowed | Pass |
+| `UT-EM-253-002` | `WaitingForPropagation → Stabilizing` allowed; `WaitingForPropagation → Assessing` forbidden; `WaitingForPropagation → Failed` allowed | Pass |
 
 **File**: `test/unit/effectivenessmonitor/propagation_phase_test.go`
 
@@ -171,9 +188,11 @@ Format: `{TIER}-{SERVICE}-253-{SEQUENCE}`
 
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
-| `UT-EM-253-003` | Async target: `PrometheusCheckAfter = HashComputeAfter + StabilizationWindow` | Pending |
-| `UT-EM-253-004` | Async target: `ValidityDeadline = creation + propagationDelay + StabilizationWindow + ValidityWindow` | Pending |
-| `UT-EM-253-005` | Sync target (nil `HashComputeAfter`): `PrometheusCheckAfter = creation + StabilizationWindow` | Pending |
+| `UT-EM-253-003` | Async target: `PrometheusCheckAfter = HashComputeAfter + StabilizationWindow` | Pass |
+| `UT-EM-253-004` | Async target: `ValidityDeadline = creation + propagationDelay + StabilizationWindow + ValidityWindow` (guard not triggered) | Pass |
+| `UT-EM-253-005` | Sync target (nil `HashComputeAfter`): `PrometheusCheckAfter = creation + StabilizationWindow`, `ValidityDeadline = creation + ValidityWindow` (contrast with UT-EM-253-004) | Pass |
+| `UT-EM-253-006` | Async target + runtime guard: `StabilizationWindow >= ValidityWindow` extends deadline correctly with propagation delay | Pass |
+| `UT-EM-253-007` | Validity checker returns `WindowStabilizing` until `HashComputeAfter + StabilizationWindow` (not `creation + StabilizationWindow`) for async targets | Pass |
 
 **File**: `test/unit/effectivenessmonitor/timing_computation_test.go`
 
@@ -185,10 +204,10 @@ Format: `{TIER}-{SERVICE}-253-{SEQUENCE}`
 
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
-| `IT-EM-253-001` | Async EA enters `WaitingForPropagation`; after `HashComputeAfter` elapses, transitions to `Stabilizing` with hash computed | Pending |
-| `IT-EM-253-002` | Async EA health checks (`PrometheusCheckAfter`) are `HashComputeAfter + StabilizationWindow`, not `creation + StabilizationWindow` | Pending |
-| `IT-EM-253-003` | Audit `assessment.scheduled` event includes `gitops_sync_delay`, `operator_reconcile_delay`, `total_propagation_delay` for async target | Pending |
-| `IT-EM-253-004` | Async target `ValidityDeadline` extended to `creation + propagationDelay + StabilizationWindow + ValidityWindow` | Pending |
+| `IT-EM-253-001` | Async EA enters `WaitingForPropagation`; after `HashComputeAfter` elapses, transitions to `Stabilizing` with hash computed | Pass |
+| `IT-EM-253-002` | Async EA health checks are `HashComputeAfter + StabilizationWindow`; phase stays `Stabilizing` until then (no premature `Assessing`) | Pass |
+| `IT-EM-253-003` | Audit `assessment.scheduled` event includes `gitops_sync_delay`, `operator_reconcile_delay`, `total_propagation_delay` for async target | Written |
+| `IT-EM-253-004` | Async target `ValidityDeadline` extended to `creation + propagationDelay + StabilizationWindow + ValidityWindow` | Pass |
 
 **File**: `test/integration/effectivenessmonitor/propagation_timing_integration_test.go`
 
@@ -196,8 +215,8 @@ Format: `{TIER}-{SERVICE}-253-{SEQUENCE}`
 
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
-| `IT-RO-253-001` | RO config with `gitOpsSyncDelay=2m`, `operatorReconcileDelay=30s`: CRD target EA gets `HashComputeAfter = now + 30s` (operator-only) | Pending |
-| `IT-RO-253-002` | GitOps + CRD target: EA gets `HashComputeAfter = now + 2m30s` (compounded) | Pending |
+| `IT-RO-253-001` | RO config with `gitOpsSyncDelay=2m`, `operatorReconcileDelay=30s`: CRD target EA gets `HashComputeAfter = now + 30s` (operator-only) | Written |
+| `IT-RO-253-002` | GitOps + CRD target: EA gets `HashComputeAfter = now + 2m30s` (compounded) | Written |
 
 **File**: `test/integration/remediationorchestrator/propagation_delay_integration_test.go`
 
@@ -205,7 +224,7 @@ Format: `{TIER}-{SERVICE}-253-{SEQUENCE}`
 
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
-| `E2E-FP-253-001` | Full pipeline with cert-manager CRD: corrected timing (propagation delay from config, not stabilization window); `WaitingForPropagation` phase observed; health checks after `HashComputeAfter + StabilizationWindow`; audit includes propagation delay fields | Pending |
+| `E2E-FP-253-001` | Full pipeline with cert-manager CRD: corrected timing (propagation delay from config, not stabilization window); `WaitingForPropagation` phase observed; health checks after `HashComputeAfter + StabilizationWindow`; audit includes propagation delay fields | Written |
 
 **File**: `test/e2e/fullpipeline/02_async_hash_deferral_test.go` (update existing E2E-FP-251-001 with corrected assertions)
 
@@ -233,22 +252,29 @@ All tiers (UT, IT, E2E) are covered. No skips.
 - Default values match BR-RO-103.4 specification
 - Configs without the new section load successfully
 
-### UT-RO-253-002: Config rejects negative delay
+### UT-RO-253-002: Config rejects negative delays (table-driven)
 
 **BR**: BR-RO-103.4
 **Type**: Unit
 **File**: `test/unit/remediationorchestrator/async_propagation_config_test.go`
 
-**Given**: An RO config YAML with `asyncPropagation.gitOpsSyncDelay: -1m`
+**Given**: RO config YAML with a negative duration for each propagation delay field (table-driven)
 **When**: Config is loaded and validated
-**Then**: `Validate()` returns an error mentioning "gitOpsSyncDelay"
+**Then**: `Validate()` returns an error mentioning the offending field name
+
+**Table entries**:
+| Field | Value | Expected error contains |
+|-------|-------|------------------------|
+| `gitOpsSyncDelay` | `-1m` | `"gitOpsSyncDelay"` |
+| `operatorReconcileDelay` | `-30s` | `"operatorReconcileDelay"` |
 
 **Acceptance Criteria**:
-- Negative durations rejected at config load time
+- Both fields reject negative durations independently
+- Error message identifies which field is invalid
 
-### UT-RO-253-003: Config accepts zero delay
+### UT-RO-253-003: Config accepts zero delay; zero disables stage in compounding
 
-**BR**: BR-RO-103.4
+**BR**: BR-RO-103.4, BR-RO-103.5
 **Type**: Unit
 **File**: `test/unit/remediationorchestrator/async_propagation_config_test.go`
 
@@ -256,8 +282,13 @@ All tiers (UT, IT, E2E) are covered. No skips.
 **When**: Config is loaded and validated
 **Then**: `Validate()` succeeds; `GitOpsSyncDelay` is `0`
 
+**Given**: Config `gitOpsSyncDelay=0s`, `operatorReconcileDelay=1m`; target is both GitOps AND CRD
+**When**: `ComputePropagationDelay(isGitOps=true, isCRD=true)` is called
+**Then**: Returns `1m` (0 + 1m; zero disables that stage even when detection is true)
+
 **Acceptance Criteria**:
 - Zero disables the respective stage (operators in environments with instant sync can set 0)
+- Compounding with zero delay degrades gracefully: `0 + operatorReconcileDelay = operatorReconcileDelay`
 
 ### UT-RO-253-008: Config loads explicit custom values
 
@@ -320,8 +351,11 @@ All tiers (UT, IT, E2E) are covered. No skips.
 **File**: `test/unit/effectivenessmonitor/propagation_phase_test.go`
 
 **Given**: Phase transition rules loaded
-**When**: Checking `CanTransition(PhasePending, PhaseWaitingForPropagation)`
-**Then**: Returns `true`
+**When**: Validating `WaitingForPropagation` as a phase
+**Then**:
+- `Validate(PhaseWaitingForPropagation)` returns nil (accepted as valid phase)
+- `IsTerminal(PhaseWaitingForPropagation)` returns false (not a terminal state)
+- `CanTransition(PhasePending, PhaseWaitingForPropagation)` returns true
 
 ### UT-EM-253-002: WaitingForPropagation transition rules
 
@@ -343,28 +377,79 @@ All tiers (UT, IT, E2E) are covered. No skips.
 **When**: EM computes derived timing
 **Then**: `PrometheusCheckAfter = T+4m + 5m = T+9m`; `AlertManagerCheckAfter = T+9m`
 
-### UT-EM-253-004: Async target validity extension
+### UT-EM-253-004: Async target validity extension (guard not triggered)
 
 **BR**: BR-EM-010.4
 **Type**: Unit
 **File**: `test/unit/effectivenessmonitor/timing_computation_test.go`
 
-**Given**: EA created at `T+0`, `HashComputeAfter = T+4m`, `StabilizationWindow = 5m`, `ValidityWindow = 10m`
+**Given**: EA created at `T+0`, `HashComputeAfter = T+4m`, `StabilizationWindow = 5m`, `ValidityWindow = 10m` (guard NOT triggered: 5m < 10m)
 **When**: EM computes validity deadline
-**Then**: `ValidityDeadline >= T+0 + 4m + 5m + 10m = T+19m` (accounts for propagation + stabilization + validity)
-
-### UT-EM-253-005: Sync target timing
-
-**BR**: BR-EM-010.4
-**Type**: Unit
-**File**: `test/unit/effectivenessmonitor/timing_computation_test.go`
-
-**Given**: EA with `HashComputeAfter = nil`, `StabilizationWindow = 5m`
-**When**: EM computes derived timing
-**Then**: `PrometheusCheckAfter = EA.creation + 5m`
+**Then**: `ValidityDeadline = T+0 + 4m + 5m + 10m = T+19m`
 
 **Acceptance Criteria**:
+- Values chosen so runtime guard does not trigger (`StabilizationWindow < ValidityWindow`)
+- Validity accounts for propagation delay + stabilization + validity
+
+### UT-EM-253-005: Sync target timing (formula contrast with UT-EM-253-004)
+
+**BR**: BR-EM-010.4
+**Type**: Unit
+**File**: `test/unit/effectivenessmonitor/timing_computation_test.go`
+
+**Given**: EA created at `T+0`, `HashComputeAfter = nil`, `StabilizationWindow = 5m`, `ValidityWindow = 10m` (same stab/validity as UT-EM-253-004)
+**When**: EM computes derived timing
+**Then**:
+- `PrometheusCheckAfter = T+0 + 5m = T+5m` (anchor = creation, not shifted)
+- `ValidityDeadline = T+0 + 10m = T+10m` (no propagation delay, no guard extension)
+
+**Acceptance Criteria**:
+- Same `stab=5m`, `validity=10m` inputs as UT-EM-253-004 → different results demonstrate formula asymmetry
+- Sync: `ValidityDeadline = creation + validity = T+10m` (assessment window = 5m)
+- Async (UT-EM-253-004): `ValidityDeadline = creation + prop + stab + validity = T+19m` (assessment window = 10m)
 - Sync targets (nil `HashComputeAfter`) anchor timing to EA creation, not to a zero timestamp
+- Both nil and zero-value `HashComputeAfter` (`&metav1.Time{}`) are treated as sync (existing code pattern: `!ea.Spec.HashComputeAfter.IsZero()`)
+
+### UT-EM-253-006: Async target + runtime guard interaction
+
+**BR**: BR-EM-010.4
+**Type**: Unit
+**File**: `test/unit/effectivenessmonitor/timing_computation_test.go`
+
+**Given**: EA created at `T+0`, `HashComputeAfter = T+4m`, `StabilizationWindow = 15m`, `ValidityWindow = 10m` (guard triggered: 15m >= 10m)
+**When**: EM computes derived timing
+**Then**:
+- `PrometheusCheckAfter = T+4m + 15m = T+19m`
+- `EffectiveValidity = 15m + 10m = 25m` (guard extends)
+- `ValidityDeadline = T+4m + 25m = T+29m` (anchored to `HashComputeAfter`)
+
+**Acceptance Criteria**:
+- Runtime guard (`StabilizationWindow >= ValidityWindow`) correctly extends effective validity
+- Propagation delay (encoded in `HashComputeAfter`) compounds with the extended validity
+- This is the "worst case" timing scenario combining both guard and propagation
+
+### UT-EM-253-007: Validity checker stabilization anchor for async targets
+
+**BR**: BR-EM-010.4
+**Type**: Unit
+**File**: `test/unit/effectivenessmonitor/timing_computation_test.go`
+
+**Given**: EA created at `T+0`, `HashComputeAfter = T+4m`, `StabilizationWindow = 5m`, `ValidityDeadline = T+19m`
+**When**: Validity checker `Check(anchor, stabilizationWindow, validityDeadline)` is called at various times with `anchor = HashComputeAfter` (T+4m)
+**Then** (table-driven):
+
+| Time | `Check(T+4m, 5m, T+19m)` | Rationale |
+|------|--------------------------|-----------|
+| T+3m | `WindowStabilizing` | Before `HashComputeAfter`; stabilization hasn't even started |
+| T+5m | `WindowStabilizing` | After `HashComputeAfter` but before `T+4m + 5m = T+9m` |
+| T+8m | `WindowStabilizing` | Still before `T+9m` |
+| T+9m | `WindowActive` | Exactly at `T+4m + 5m`; stabilization complete |
+| T+10m | `WindowActive` | Within validity window |
+
+**Acceptance Criteria**:
+- When the reconciler passes `HashComputeAfter` as the anchor (instead of `CreationTimestamp`), the validity checker correctly gates the `Stabilizing → Assessing` transition until `HashComputeAfter + StabilizationWindow`
+- Without this fix, the checker would return `WindowActive` at T+5m (using `creation + 5m`), causing premature phase transition
+- Contrast: same inputs with `anchor = CreationTimestamp (T+0)` would return `WindowActive` at T+5m — this is the bug being prevented
 
 ### IT-EM-253-001: WaitingForPropagation → Stabilizing (envtest)
 
@@ -381,19 +466,24 @@ All tiers (UT, IT, E2E) are covered. No skips.
 - `Eventually` verifies phase transitions to `Stabilizing` and hash is computed
 - K8s event emitted for `WaitingForPropagation` phase entry
 
-### IT-EM-253-002: Health checks anchored to HashComputeAfter (envtest)
+### IT-EM-253-002: Health checks anchored to HashComputeAfter; phase stays Stabilizing (envtest)
 
 **BR**: BR-EM-010.4
 **Type**: Integration
 **File**: `test/integration/effectivenessmonitor/propagation_timing_integration_test.go`
 
 **Given**: EA created with `HashComputeAfter = now + 8s`, `StabilizationWindow = 5s`
-**When**: EM reconciler computes derived timing
-**Then**: `PrometheusCheckAfter ≈ HashComputeAfter + 5s` (not `creation + 5s`)
+**When**: EM reconciler processes the EA through WaitingForPropagation → Stabilizing
+**Then**:
+- `PrometheusCheckAfter ≈ HashComputeAfter + 5s = now + 13s` (not `creation + 5s`)
+- `AlertManagerCheckAfter` matches `PrometheusCheckAfter`
+- **Phase remains `Stabilizing` until `PrometheusCheckAfter` elapses** (not prematurely `Assessing`)
 
 **Acceptance Criteria**:
 - `PrometheusCheckAfter` is approximately `now + 8s + 5s = now + 13s`
 - `AlertManagerCheckAfter` matches `PrometheusCheckAfter`
+- `Consistently` verifies phase is `Stabilizing` (not `Assessing`) for ~5s after `WaitingForPropagation → Stabilizing` transition (~now+8s to ~now+13s)
+- `Eventually` verifies phase transitions to `Assessing` after `PrometheusCheckAfter`
 - Tolerance: ±2s for reconciler scheduling
 
 ### IT-EM-253-003: Audit includes propagation delay fields (envtest)
@@ -402,13 +492,18 @@ All tiers (UT, IT, E2E) are covered. No skips.
 **Type**: Integration
 **File**: `test/integration/effectivenessmonitor/propagation_timing_integration_test.go`
 
-**Given**: EA created with `HashComputeAfter` set by RO with known propagation delay
+**Given**: EA created with `HashComputeAfter` set, `EA.Spec.GitOpsSyncDelay = 3m`, `EA.Spec.OperatorReconcileDelay = 1m` (set by RO)
 **When**: EM emits `assessment.scheduled` audit event
-**Then**: Audit payload includes `total_propagation_delay` duration string
+**Then**: Audit payload includes:
+- `gitops_sync_delay = "3m0s"` (from EA spec)
+- `operator_reconcile_delay = "1m0s"` (from EA spec)
+- `total_propagation_delay = "4m0s"` (sum)
 
 **Acceptance Criteria**:
-- `total_propagation_delay` is a parseable duration string
-- Field is absent/null for sync targets
+- Individual delay fields read from EA spec (set by RO at creation)
+- `total_propagation_delay` equals sum of individual delays
+- All three fields are parseable duration strings
+- Fields are absent/null for sync targets (EA spec fields nil)
 
 ### IT-EM-253-004: Async target validity deadline (envtest)
 
@@ -433,7 +528,10 @@ All tiers (UT, IT, E2E) are covered. No skips.
 
 **Given**: RO config with `gitOpsSyncDelay=2m`, `operatorReconcileDelay=30s`; CRD target (e.g., `Certificate`)
 **When**: RO creates EA after successful remediation
-**Then**: `EA.Spec.HashComputeAfter ≈ now + 30s` (operator delay only, not stabilization window)
+**Then**:
+- `EA.Spec.HashComputeAfter ≈ now + 30s` (operator delay only, not stabilization window)
+- `EA.Spec.OperatorReconcileDelay = 30s` (propagated from RO config for EM audit)
+- `EA.Spec.GitOpsSyncDelay` is nil (not a GitOps target)
 
 ### IT-RO-253-002: Config-driven compounded delay (envtest)
 
@@ -443,7 +541,10 @@ All tiers (UT, IT, E2E) are covered. No skips.
 
 **Given**: RO config with `gitOpsSyncDelay=2m`, `operatorReconcileDelay=30s`; target is both GitOps-managed AND CRD
 **When**: RO creates EA
-**Then**: `EA.Spec.HashComputeAfter ≈ now + 2m30s`
+**Then**:
+- `EA.Spec.HashComputeAfter ≈ now + 2m30s`
+- `EA.Spec.GitOpsSyncDelay = 2m` (propagated from RO config for EM audit)
+- `EA.Spec.OperatorReconcileDelay = 30s` (propagated from RO config for EM audit)
 
 ### E2E-FP-253-001: Full pipeline with corrected timing (cert-manager)
 
@@ -520,3 +621,6 @@ make test-e2e-fullpipeline
 |---------|------|---------|
 | 1.0 | 2026-03-03 | Initial test plan: 12 UT + 5 IT + 1 E2E |
 | 1.1 | 2026-03-03 | Coverage review: added UT-RO-253-008 (config custom values), IT-EM-253-004 (validity deadline); removed backward compat framing. Total: 13 UT + 6 IT + 1 E2E = 20 scenarios |
+| 1.2 | 2026-03-03 | Triage fixes: UT-EM-253-001 expanded (Validate + IsTerminal); UT-EM-253-002 adds Failed transition; UT-RO-253-002 table-driven for both fields; UT-EM-253-004 clarifies guard-not-triggered values; added UT-EM-253-006 (runtime guard + propagation edge case). Total: 14 UT + 6 IT + 1 E2E = 21 scenarios |
+| 1.3 | 2026-03-03 | Critical triage: added UT-EM-253-007 (validity checker stabilization anchor for async — prevents premature Stabilizing→Assessing); strengthened IT-EM-253-002 (phase stays Stabilizing until PrometheusCheckAfter); added EA spec fields for individual delays (gitOpsSyncDelay, operatorReconcileDelay) enabling BR-EM-010.5 audit; updated IT-EM-253-003 with individual delay assertions; updated UT-EM-253-005 with explicit ValidityDeadline and formula contrast. Total: 15 UT + 6 IT + 1 E2E = 22 scenarios |
+| 1.4 | 2026-03-03 | Final LOW fixes: IT-RO-253-001/002 assert EA spec delay fields; UT-EM-253-005 covers zero-value HashComputeAfter; UT-RO-253-003 covers zero-delay compounding edge case. Total: 15 UT + 6 IT + 1 E2E = 22 scenarios |
