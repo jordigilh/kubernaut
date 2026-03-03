@@ -3710,6 +3710,24 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 			{
+				if s.GitopsSyncDelay.Set {
+					e.FieldStart("gitops_sync_delay")
+					s.GitopsSyncDelay.Encode(e)
+				}
+			}
+			{
+				if s.OperatorReconcileDelay.Set {
+					e.FieldStart("operator_reconcile_delay")
+					s.OperatorReconcileDelay.Encode(e)
+				}
+			}
+			{
+				if s.TotalPropagationDelay.Set {
+					e.FieldStart("total_propagation_delay")
+					s.TotalPropagationDelay.Encode(e)
+				}
+			}
+			{
 				if s.ValidityWindow.Set {
 					e.FieldStart("validity_window")
 					s.ValidityWindow.Encode(e)
@@ -6160,6 +6178,24 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				if s.HashComputeAfter.Set {
 					e.FieldStart("hash_compute_after")
 					s.HashComputeAfter.Encode(e, json.EncodeDateTime)
+				}
+			}
+			{
+				if s.GitopsSyncDelay.Set {
+					e.FieldStart("gitops_sync_delay")
+					s.GitopsSyncDelay.Encode(e)
+				}
+			}
+			{
+				if s.OperatorReconcileDelay.Set {
+					e.FieldStart("operator_reconcile_delay")
+					s.OperatorReconcileDelay.Encode(e)
+				}
+			}
+			{
+				if s.TotalPropagationDelay.Set {
+					e.FieldStart("total_propagation_delay")
+					s.TotalPropagationDelay.Encode(e)
 				}
 			}
 			{
@@ -9563,6 +9599,24 @@ func (s *EffectivenessAssessmentAuditPayload) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.GitopsSyncDelay.Set {
+			e.FieldStart("gitops_sync_delay")
+			s.GitopsSyncDelay.Encode(e)
+		}
+	}
+	{
+		if s.OperatorReconcileDelay.Set {
+			e.FieldStart("operator_reconcile_delay")
+			s.OperatorReconcileDelay.Encode(e)
+		}
+	}
+	{
+		if s.TotalPropagationDelay.Set {
+			e.FieldStart("total_propagation_delay")
+			s.TotalPropagationDelay.Encode(e)
+		}
+	}
+	{
 		if s.ValidityWindow.Set {
 			e.FieldStart("validity_window")
 			s.ValidityWindow.Encode(e)
@@ -9612,7 +9666,7 @@ func (s *EffectivenessAssessmentAuditPayload) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfEffectivenessAssessmentAuditPayload = [25]string{
+var jsonFieldsNameOfEffectivenessAssessmentAuditPayload = [28]string{
 	0:  "event_type",
 	1:  "correlation_id",
 	2:  "namespace",
@@ -9630,14 +9684,17 @@ var jsonFieldsNameOfEffectivenessAssessmentAuditPayload = [25]string{
 	14: "prometheus_check_after",
 	15: "alertmanager_check_after",
 	16: "hash_compute_after",
-	17: "validity_window",
-	18: "stabilization_window",
-	19: "pre_remediation_spec_hash",
-	20: "post_remediation_spec_hash",
-	21: "hash_match",
-	22: "health_checks",
-	23: "metric_deltas",
-	24: "alert_resolution",
+	17: "gitops_sync_delay",
+	18: "operator_reconcile_delay",
+	19: "total_propagation_delay",
+	20: "validity_window",
+	21: "stabilization_window",
+	22: "pre_remediation_spec_hash",
+	23: "post_remediation_spec_hash",
+	24: "hash_match",
+	25: "health_checks",
+	26: "metric_deltas",
+	27: "alert_resolution",
 }
 
 // Decode decodes EffectivenessAssessmentAuditPayload from json.
@@ -9831,6 +9888,36 @@ func (s *EffectivenessAssessmentAuditPayload) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"hash_compute_after\"")
+			}
+		case "gitops_sync_delay":
+			if err := func() error {
+				s.GitopsSyncDelay.Reset()
+				if err := s.GitopsSyncDelay.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"gitops_sync_delay\"")
+			}
+		case "operator_reconcile_delay":
+			if err := func() error {
+				s.OperatorReconcileDelay.Reset()
+				if err := s.OperatorReconcileDelay.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"operator_reconcile_delay\"")
+			}
+		case "total_propagation_delay":
+			if err := func() error {
+				s.TotalPropagationDelay.Reset()
+				if err := s.TotalPropagationDelay.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"total_propagation_delay\"")
 			}
 		case "validity_window":
 			if err := func() error {

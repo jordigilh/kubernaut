@@ -510,6 +510,19 @@ func (m *Manager) RecordAssessmentScheduled(ctx context.Context, ea *eav1.Effect
 	if ea.Spec.HashComputeAfter != nil && !ea.Spec.HashComputeAfter.IsZero() {
 		payload.HashComputeAfter = ogenclient.NewOptDateTime(ea.Spec.HashComputeAfter.Time)
 	}
+	// DD-EM-004 v2.0, Issue #253: Propagation delay fields for audit trail
+	var totalPropagation time.Duration
+	if ea.Spec.GitOpsSyncDelay != nil {
+		payload.GitopsSyncDelay = ogenclient.NewOptString(ea.Spec.GitOpsSyncDelay.Duration.String())
+		totalPropagation += ea.Spec.GitOpsSyncDelay.Duration
+	}
+	if ea.Spec.OperatorReconcileDelay != nil {
+		payload.OperatorReconcileDelay = ogenclient.NewOptString(ea.Spec.OperatorReconcileDelay.Duration.String())
+		totalPropagation += ea.Spec.OperatorReconcileDelay.Duration
+	}
+	if totalPropagation > 0 {
+		payload.TotalPropagationDelay = ogenclient.NewOptString(totalPropagation.String())
+	}
 	payload.ValidityWindow = ogenclient.NewOptString(validityWindow.String())
 	payload.StabilizationWindow = ogenclient.NewOptString(ea.Spec.Config.StabilizationWindow.Duration.String())
 

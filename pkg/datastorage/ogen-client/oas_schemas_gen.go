@@ -4964,9 +4964,22 @@ type EffectivenessAssessmentAuditPayload struct {
 	// Earliest time for hash computation (only for assessment.scheduled events).
 	// Set by the RO for async-managed targets (GitOps, operator CRDs) where spec
 	// changes propagate after the WorkflowExecution completes. Nil/absent means
-	// hash is computed immediately (sync targets, backward compatible).
+	// hash is computed immediately (sync targets).
 	// Reference: DD-EM-004, BR-EM-010, BR-RO-103.
 	HashComputeAfter OptDateTime `json:"hash_compute_after"`
+	// Configured GitOps sync delay from RO config, propagated via EA spec.
+	// Present only for GitOps-managed async targets. Format: Go duration string.
+	// Reference: DD-EM-004 v2.0, BR-RO-103.4, Issue #253.
+	GitopsSyncDelay OptString `json:"gitops_sync_delay"`
+	// Configured operator reconcile delay from RO config, propagated via EA spec.
+	// Present only for operator-managed CRD targets. Format: Go duration string.
+	// Reference: DD-EM-004 v2.0, BR-RO-103.4, Issue #253.
+	OperatorReconcileDelay OptString `json:"operator_reconcile_delay"`
+	// Total propagation delay (sum of gitops_sync_delay + operator_reconcile_delay).
+	// Computed by the EM from the EA spec fields for audit observability.
+	// Present only for async targets. Format: Go duration string.
+	// Reference: DD-EM-004 v2.0, BR-RO-103.5, Issue #253.
+	TotalPropagationDelay OptString `json:"total_propagation_delay"`
 	// Validity window duration from EM config (only for assessment.scheduled events).
 	// Included for operational observability.
 	ValidityWindow OptString `json:"validity_window"`
@@ -5084,6 +5097,21 @@ func (s *EffectivenessAssessmentAuditPayload) GetAlertmanagerCheckAfter() OptDat
 // GetHashComputeAfter returns the value of HashComputeAfter.
 func (s *EffectivenessAssessmentAuditPayload) GetHashComputeAfter() OptDateTime {
 	return s.HashComputeAfter
+}
+
+// GetGitopsSyncDelay returns the value of GitopsSyncDelay.
+func (s *EffectivenessAssessmentAuditPayload) GetGitopsSyncDelay() OptString {
+	return s.GitopsSyncDelay
+}
+
+// GetOperatorReconcileDelay returns the value of OperatorReconcileDelay.
+func (s *EffectivenessAssessmentAuditPayload) GetOperatorReconcileDelay() OptString {
+	return s.OperatorReconcileDelay
+}
+
+// GetTotalPropagationDelay returns the value of TotalPropagationDelay.
+func (s *EffectivenessAssessmentAuditPayload) GetTotalPropagationDelay() OptString {
+	return s.TotalPropagationDelay
 }
 
 // GetValidityWindow returns the value of ValidityWindow.
@@ -5209,6 +5237,21 @@ func (s *EffectivenessAssessmentAuditPayload) SetAlertmanagerCheckAfter(val OptD
 // SetHashComputeAfter sets the value of HashComputeAfter.
 func (s *EffectivenessAssessmentAuditPayload) SetHashComputeAfter(val OptDateTime) {
 	s.HashComputeAfter = val
+}
+
+// SetGitopsSyncDelay sets the value of GitopsSyncDelay.
+func (s *EffectivenessAssessmentAuditPayload) SetGitopsSyncDelay(val OptString) {
+	s.GitopsSyncDelay = val
+}
+
+// SetOperatorReconcileDelay sets the value of OperatorReconcileDelay.
+func (s *EffectivenessAssessmentAuditPayload) SetOperatorReconcileDelay(val OptString) {
+	s.OperatorReconcileDelay = val
+}
+
+// SetTotalPropagationDelay sets the value of TotalPropagationDelay.
+func (s *EffectivenessAssessmentAuditPayload) SetTotalPropagationDelay(val OptString) {
+	s.TotalPropagationDelay = val
 }
 
 // SetValidityWindow sets the value of ValidityWindow.
