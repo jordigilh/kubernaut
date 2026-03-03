@@ -222,6 +222,7 @@ func (r *Repository) SearchByLabels(ctx context.Context, request *models.Workflo
 			Title:           result.Name, // DD-WORKFLOW-002 v3.0: "name" renamed to "title"
 			Description:     result.Description,
 			SignalName:      signalName,
+			SchemaVersion:   result.SchemaVersion, // BR-WORKFLOW-004 v1.1, #255
 			SchemaImage:     schemaImage,
 			ExecutionBundle: executionBundle,
 

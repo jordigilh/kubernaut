@@ -145,40 +145,42 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 
 				// ASSERT: Verify workflow persisted with correct composite PK
 				// Use Eventually to handle transaction commit delays (DS-FLAKY-006 fix)
-				var (
-					dbWorkflowName, dbVersion, dbName, dbDescription, dbContent, dbContentHash, dbStatus, dbExecutionEngine string
-					dbLabels                                                                                                []byte // JSONB
-					dbIsLatestVersion                                                                                       bool
-					dbCreatedAt, dbUpdatedAt                                                                                time.Time
-				)
+			var (
+				dbWorkflowName, dbVersion, dbSchemaVersion, dbName, dbDescription, dbContent, dbContentHash, dbStatus, dbExecutionEngine string
+				dbLabels                                                                                                                 []byte // JSONB
+				dbIsLatestVersion                                                                                                        bool
+				dbCreatedAt, dbUpdatedAt                                                                                                 time.Time
+			)
 
-				Eventually(func() error {
-					row := db.QueryRowContext(ctx, `
-						SELECT workflow_name, version, name, description, content, content_hash,
-						       labels, status, execution_engine, is_latest_version, created_at, updated_at
-						FROM remediation_workflow_catalog
-						WHERE workflow_name = $1 AND version = $2
-					`, workflowName, "v1.0.0")
+			Eventually(func() error {
+				row := db.QueryRowContext(ctx, `
+					SELECT workflow_name, version, schema_version, name, description, content, content_hash,
+					       labels, status, execution_engine, is_latest_version, created_at, updated_at
+					FROM remediation_workflow_catalog
+					WHERE workflow_name = $1 AND version = $2
+				`, workflowName, "v1.0.0")
 
-					return row.Scan(
-						&dbWorkflowName,
-						&dbVersion,
-						&dbName,
-						&dbDescription,
-						&dbContent,
-						&dbContentHash,
-						&dbLabels,
-						&dbStatus,
-						&dbExecutionEngine,
-						&dbIsLatestVersion,
-					&dbCreatedAt,
-					&dbUpdatedAt,
-				)
-			}, 10*time.Second, 200*time.Millisecond).Should(Succeed(), "Should retrieve workflow from database within 10 seconds (CI-safe)")
+				return row.Scan(
+					&dbWorkflowName,
+					&dbVersion,
+					&dbSchemaVersion,
+					&dbName,
+					&dbDescription,
+					&dbContent,
+					&dbContentHash,
+					&dbLabels,
+					&dbStatus,
+					&dbExecutionEngine,
+					&dbIsLatestVersion,
+				&dbCreatedAt,
+				&dbUpdatedAt,
+			)
+		}, 10*time.Second, 200*time.Millisecond).Should(Succeed(), "Should retrieve workflow from database within 10 seconds (CI-safe)")
 
-				// CRITICAL ASSERTIONS: Verify composite PK and all fields
-				Expect(dbWorkflowName).To(Equal(workflowName), "workflow_name should match")
-				Expect(dbVersion).To(Equal("v1.0.0"), "version should match")
+			// CRITICAL ASSERTIONS: Verify composite PK and all fields
+			Expect(dbWorkflowName).To(Equal(workflowName), "workflow_name should match")
+			Expect(dbVersion).To(Equal("v1.0.0"), "version should match")
+			Expect(dbSchemaVersion).To(Equal("1.0"), "schema_version should be persisted (#255)")
 				Expect(dbName).To(Equal("Test Workflow"))
 				// Description is now StructuredDescription JSONB (BR-WORKFLOW-004, migration 026)
 			var parsedDesc models.StructuredDescription

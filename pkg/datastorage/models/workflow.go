@@ -354,6 +354,10 @@ type WorkflowSearchResult struct {
 	// SignalName is the signal name this workflow handles (DD-WORKFLOW-002 v3.0: singular, not array)
 	SignalName string `json:"signalName"`
 
+	// SchemaVersion is the workflow-schema.yaml format version (e.g., "1.0", "1.1")
+	// BR-WORKFLOW-004 v1.1, #255
+	SchemaVersion string `json:"schemaVersion,omitempty"`
+
 	// SchemaImage is the OCI image reference used for registration
 	SchemaImage string `json:"schemaImage,omitempty"`
 

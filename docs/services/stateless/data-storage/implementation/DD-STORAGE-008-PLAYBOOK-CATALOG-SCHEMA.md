@@ -103,6 +103,7 @@ CREATE TABLE remediation_workflow_catalog (
     -- Identity (Composite Primary Key)
     workflow_id VARCHAR(255) NOT NULL,
     version VARCHAR(50) NOT NULL,           -- MUST be semantic version (e.g., v1.0.0, v1.2.3)
+    schema_version VARCHAR(10) NOT NULL DEFAULT '1.0', -- Schema format version (#255, migration 031)
 
     -- Metadata
     name VARCHAR(255) NOT NULL,
@@ -380,8 +381,9 @@ import (
 // RemediationWorkflow represents a remediation workflow in the catalog
 type RemediationWorkflow struct {
     // Identity
-    WorkflowID string `json:"workflow_id" db:"workflow_id"`
-    Version    string `json:"version" db:"version"`
+    WorkflowID    string `json:"workflow_id" db:"workflow_id"`
+    Version       string `json:"version" db:"version"`
+    SchemaVersion string `json:"schemaVersion" db:"schema_version"` // #255, migration 031
 
     // Metadata
     Name        string  `json:"name" db:"name"`

@@ -42,7 +42,8 @@ type HAPIWorkflowFixture struct {
 
 // ToYAMLContent generates workflow YAML content per BR-WORKFLOW-004 format
 func (wf *HAPIWorkflowFixture) ToYAMLContent() string {
-	return fmt.Sprintf(`metadata:
+	return fmt.Sprintf(`schemaVersion: "1.0"
+metadata:
   workflowId: %s
   version: "%s"
   description:
