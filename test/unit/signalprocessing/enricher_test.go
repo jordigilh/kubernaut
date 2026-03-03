@@ -191,7 +191,6 @@ var _ = Describe("K8sEnricher", func() {
 				result, err := k8sEnricher.Enrich(ctx, signal)
 
 				Expect(err).ToNot(HaveOccurred())
-				Expect(result).ToNot(BeNil())
 				Expect(result.OwnerChain).To(HaveLen(2))
 
 				// Controller owner (ReplicaSet) should be first
@@ -256,7 +255,6 @@ var _ = Describe("K8sEnricher", func() {
 				result, err := k8sEnricher.Enrich(ctx, signal)
 
 				Expect(err).ToNot(HaveOccurred())
-				Expect(result).ToNot(BeNil())
 				Expect(result.OwnerChain).To(HaveLen(1))
 				Expect(result.OwnerChain[0].Kind).To(Equal("ReplicaSet"))
 				Expect(result.OwnerChain[0].Name).To(Equal("test-rs"))
@@ -297,11 +295,7 @@ var _ = Describe("K8sEnricher", func() {
 				result, err := k8sEnricher.Enrich(ctx, signal)
 
 				Expect(err).ToNot(HaveOccurred())
-				Expect(result).ToNot(BeNil())
-				// OwnerChain should be nil or empty for standalone Pod
-				if result.OwnerChain != nil {
-					Expect(result.OwnerChain).To(BeEmpty())
-				}
+				Expect(result.OwnerChain).To(BeEmpty(), "standalone Pod should have no owner chain")
 			})
 
 			It("should inherit namespace from Pod for all owner chain entries (DD-WORKFLOW-001 v1.8)", func() {
@@ -355,7 +349,6 @@ var _ = Describe("K8sEnricher", func() {
 				result, err := k8sEnricher.Enrich(ctx, signal)
 
 				Expect(err).ToNot(HaveOccurred())
-				Expect(result).ToNot(BeNil())
 				Expect(result.OwnerChain).To(HaveLen(1))
 				// Namespace should be inherited from Pod (DD-WORKFLOW-001 v1.8)
 				Expect(result.OwnerChain[0].Namespace).To(Equal(testNamespace))

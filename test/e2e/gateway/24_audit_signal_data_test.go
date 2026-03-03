@@ -599,7 +599,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			// Extract correlation_id from response body
 			correlationID, err := extractCorrelationID(resp)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(correlationID).ToNot(BeEmpty())
+			Expect(correlationID).To(MatchRegexp(`^[0-9a-f-]{36}$`), "correlation ID should be a UUID")
 			defer func() { _ = resp.Body.Close() }()
 
 			// Query Data Storage for audit event
@@ -747,7 +747,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			var err error
 			correlationID1, err = extractCorrelationID(resp1)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(correlationID1).ToNot(BeEmpty())
+			Expect(correlationID1).To(MatchRegexp(`^[0-9a-f-]{36}$`), "correlation ID should be a UUID")
 			_ = resp1.Body.Close()
 
 			// ✅ MANDATORY: Use Eventually() to wait for first audit event (NO time.Sleep())
@@ -778,7 +778,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			Expect(resp2.StatusCode).To(Equal(http.StatusAccepted), "Duplicate alert should return 202 (deduplicated)")
 			correlationID2, err := extractCorrelationID(resp2)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(correlationID2).ToNot(BeEmpty())
+			Expect(correlationID2).To(MatchRegexp(`^[0-9a-f-]{36}$`), "correlation ID should be a UUID")
 			_ = resp2.Body.Close()
 
 			By("Verifying gateway.signal.deduplicated event captures all 3 RR reconstruction fields")
@@ -908,7 +908,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			}, "30s", "1s").Should(Equal(http.StatusCreated), "Prometheus alert should create new RR")
 			correlationIDProm, err := extractCorrelationID(respProm)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(correlationIDProm).ToNot(BeEmpty())
+			Expect(correlationIDProm).To(MatchRegexp(`^[0-9a-f-]{36}$`), "Prometheus correlation ID should be a UUID")
 			_ = respProm.Body.Close()
 
 			By("Sending Kubernetes Event")
@@ -956,7 +956,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			}, "30s", "1s").Should(Equal(http.StatusCreated), "K8s Event should create new RR")
 			correlationIDK8s, err := extractCorrelationID(respK8s)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(correlationIDK8s).ToNot(BeEmpty())
+			Expect(correlationIDK8s).To(MatchRegexp(`^[0-9a-f-]{36}$`), "K8s correlation ID should be a UUID")
 			_ = respK8s.Body.Close()
 
 			By("Verifying Prometheus alert audit event has all 3 RR reconstruction fields")

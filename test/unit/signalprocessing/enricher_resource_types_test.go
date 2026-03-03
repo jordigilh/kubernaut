@@ -133,8 +133,6 @@ var _ = Describe("K8sEnricher Resource Types", func() {
 
 				result, err := k8sEnricher.Enrich(ctx, signal)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(result).ToNot(BeNil())
-				Expect(result.Workload).ToNot(BeNil())
 				Expect(result.Workload.Kind).To(Equal("DaemonSet"))
 				Expect(result.Workload.Name).To(Equal("fluentd"))
 				Expect(result.Workload.Labels["app"]).To(Equal("fluentd"))
@@ -161,7 +159,6 @@ var _ = Describe("K8sEnricher Resource Types", func() {
 
 				result, err := k8sEnricher.Enrich(ctx, signal)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(result).ToNot(BeNil())
 				Expect(result.DegradedMode).To(BeTrue())
 			})
 		})
@@ -257,8 +254,6 @@ var _ = Describe("K8sEnricher Resource Types", func() {
 
 				result, err := k8sEnricher.Enrich(ctx, signal)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(result).ToNot(BeNil())
-				Expect(result.Workload).ToNot(BeNil())
 				Expect(result.Workload.Kind).To(Equal("ReplicaSet"))
 				Expect(result.Workload.Name).To(Equal("nginx-abc123"))
 				Expect(result.Workload.Labels["app"]).To(Equal("nginx"))
@@ -284,7 +279,6 @@ var _ = Describe("K8sEnricher Resource Types", func() {
 
 				result, err := k8sEnricher.Enrich(ctx, signal)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(result).ToNot(BeNil())
 				Expect(result.DegradedMode).To(BeTrue())
 			})
 		})
@@ -350,8 +344,6 @@ var _ = Describe("K8sEnricher Resource Types", func() {
 
 				result, err := k8sEnricher.Enrich(ctx, signal)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(result).ToNot(BeNil())
-				Expect(result.Workload).ToNot(BeNil())
 				Expect(result.Workload.Kind).To(Equal("ReplicaSet"))
 				// Verify the labels include pod-template-hash (indicates it's managed by Deployment)
 				Expect(result.Workload.Labels["pod-template-hash"]).To(Equal("abc123"))
@@ -421,7 +413,6 @@ var _ = Describe("K8sEnricher Resource Types", func() {
 
 				result, err := k8sEnricher.Enrich(ctx, signal)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(result.Workload).ToNot(BeNil())
 				Expect(result.Workload.Kind).To(Equal("DaemonSet"))
 				Expect(result.Workload.Name).To(Equal("node-exporter"))
 				Expect(result.Workload.Labels["app.kubernetes.io/name"]).To(Equal("node-exporter"))
@@ -489,7 +480,6 @@ var _ = Describe("K8sEnricher Resource Types", func() {
 
 				result, err := k8sEnricher.Enrich(ctx, signal)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(result.Workload).ToNot(BeNil())
 				Expect(result.Workload.Kind).To(Equal("ReplicaSet"))
 				Expect(result.Workload.Name).To(Equal("api-server-v2-abc123"))
 				Expect(result.Workload.Labels["app"]).To(Equal("api-server"))

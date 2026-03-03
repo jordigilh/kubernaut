@@ -42,14 +42,13 @@ var _ = Describe("BR-GATEWAY-100: Gateway Configuration Validation", func() {
 			cfg, err := config.LoadFromFile("testdata/valid-config.yaml")
 
 			Expect(err).ToNot(HaveOccurred(), "Valid config must load successfully for Gateway to start")
-			Expect(cfg).ToNot(BeNil())
 
 			// Validate critical business settings are present
 			// These enable Gateway to fulfill its business purpose:
 			// - Accept webhook requests (Server.ListenAddr)
 			// - Deduplicate alerts (Processing.Deduplication.CooldownPeriod, DD-GATEWAY-011)
 			// - Persist audit events (DataStorage.URL)
-			Expect(cfg.Server.ListenAddr).ToNot(BeEmpty(), "Listen address required to accept webhook requests")
+			Expect(cfg.Server.ListenAddr).To(Equal(":8080"), "Listen address required to accept webhook requests")
 			Expect(cfg.Processing.Deduplication.CooldownPeriod).To(BeNumerically(">=", 0), "CooldownPeriod for post-completion deduplication")
 			Expect(cfg.DataStorage.URL).ToNot(BeEmpty(), "Data Storage URL required for audit persistence")
 		})
@@ -60,7 +59,7 @@ var _ = Describe("BR-GATEWAY-100: Gateway Configuration Validation", func() {
 		cfg, err := config.LoadFromFile("testdata/valid-config.yaml")
 		Expect(err).ToNot(HaveOccurred())
 		cfg.LoadFromEnv()
-		Expect(cfg).ToNot(BeNil())
+		Expect(cfg.Server.ListenAddr).To(Equal(":8080"), "LoadFromEnv should preserve config values")
 	})
 	})
 
