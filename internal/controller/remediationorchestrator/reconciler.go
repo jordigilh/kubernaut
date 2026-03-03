@@ -3238,13 +3238,18 @@ func resolveGVKForKind(mapper meta.RESTMapper, kind string) (schema.GroupVersion
 		return schema.GroupVersionKind{Group: "autoscaling", Version: "v2", Kind: "HorizontalPodAutoscaler"}, nil
 	case "PodDisruptionBudget":
 		return schema.GroupVersionKind{Group: "policy", Version: "v1", Kind: "PodDisruptionBudget"}, nil
+	case "Certificate":
+		return schema.GroupVersionKind{Group: "cert-manager.io", Version: "v1", Kind: "Certificate"}, nil
 	}
 
-	// Fall back to REST mapper for custom resources
+	// Fall back to REST mapper for custom resources.
+	// Use KindsFor with the pluralized resource name to search ALL registered
+	// API groups (RESTMapping with empty group only checks the default group).
 	if mapper != nil {
-		gvk, err := mapper.RESTMapping(schema.GroupKind{Kind: kind})
-		if err == nil {
-			return gvk.GroupVersionKind, nil
+		pluralGVR, _ := meta.UnsafeGuessKindToResource(schema.GroupVersionKind{Kind: kind})
+		gvks, err := mapper.KindsFor(schema.GroupVersionResource{Resource: pluralGVR.Resource})
+		if err == nil && len(gvks) > 0 {
+			return gvks[0], nil
 		}
 	}
 
