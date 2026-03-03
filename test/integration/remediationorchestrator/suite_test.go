@@ -69,6 +69,7 @@ import (
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 
 	// Import RO controller
+	roconfig "github.com/jordigilh/kubernaut/internal/config/remediationorchestrator"
 	controller "github.com/jordigilh/kubernaut/internal/controller/remediationorchestrator"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 
@@ -443,6 +444,11 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	)
 	// DD-EM-002: Set REST mapper for pre-remediation hash Kind resolution
 	reconciler.SetRESTMapper(k8sManager.GetRESTMapper())
+	// DD-EM-004 v2.0, Issue #253: Config-driven async propagation delays for IT
+	reconciler.SetAsyncPropagation(roconfig.AsyncPropagationConfig{
+		GitOpsSyncDelay:        2 * time.Minute,
+		OperatorReconcileDelay: 30 * time.Second,
+	})
 
 	// Issue #214: Wire DSHistoryAdapter for CheckIneffectiveRemediationChain
 	// Uses the authenticated OpenAPI client (same token as audit) for DS history queries

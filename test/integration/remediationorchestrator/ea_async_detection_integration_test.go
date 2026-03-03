@@ -157,10 +157,22 @@ var _ = Describe("EA Async Target Detection (DD-EM-004, BR-RO-103)", func() {
 		By("Verifying HashComputeAfter is set for GitOps target")
 		Expect(ea.Spec.HashComputeAfter).NotTo(BeNil(),
 			"BR-RO-103.2: HashComputeAfter must be set when GitOps management is detected")
+		// Issue #253: HashComputeAfter now uses gitOpsSyncDelay (2m in IT config),
+		// NOT stabilization window. Deployment is a built-in kind → no operator delay.
 		Expect(ea.Spec.HashComputeAfter.Time).To(BeTemporally(">", time.Now().Add(-5*time.Minute)),
-			"HashComputeAfter must be a reasonable future timestamp (within stabilization window)")
-		Expect(ea.Spec.HashComputeAfter.Time).To(BeTemporally("<=", time.Now().Add(20*time.Minute)),
-			"HashComputeAfter must not exceed a reasonable stabilization window bound")
+			"HashComputeAfter must be a reasonable future timestamp")
+		Expect(ea.Spec.HashComputeAfter.Time).To(BeTemporally("<=", time.Now().Add(3*time.Minute)),
+			"HashComputeAfter must not exceed gitOpsSyncDelay=2m + tolerance")
+
+		By("Verifying GitOpsSyncDelay is propagated (Issue #253)")
+		Expect(ea.Spec.GitOpsSyncDelay).NotTo(BeNil(),
+			"BR-RO-103.4: GitOpsSyncDelay must be set for GitOps target")
+		Expect(ea.Spec.GitOpsSyncDelay.Duration).To(Equal(2*time.Minute),
+			"GitOpsSyncDelay should match config value")
+
+		By("Verifying OperatorReconcileDelay is nil (Deployment is built-in, not CRD)")
+		Expect(ea.Spec.OperatorReconcileDelay).To(BeNil(),
+			"OperatorReconcileDelay must be nil for built-in kind")
 
 		By("Verifying all other EA spec fields are still correct")
 		Expect(ea.Spec.CorrelationID).To(Equal(rr.Name))
@@ -169,8 +181,8 @@ var _ = Describe("EA Async Target Detection (DD-EM-004, BR-RO-103)", func() {
 		Expect(ea.Spec.RemediationTarget.Name).To(Equal("test-app"))
 		Expect(ea.Spec.Config.StabilizationWindow.Duration).To(BeNumerically(">", 0))
 
-		GinkgoWriter.Printf("EA created with HashComputeAfter=%s (GitOps: argocd)\n",
-			ea.Spec.HashComputeAfter.Time.Format(time.RFC3339))
+		GinkgoWriter.Printf("EA created with HashComputeAfter=%s, GitOpsSyncDelay=%s (GitOps: argocd)\n",
+			ea.Spec.HashComputeAfter.Time.Format(time.RFC3339), ea.Spec.GitOpsSyncDelay.Duration)
 	})
 
 	// ========================================
@@ -198,7 +210,13 @@ var _ = Describe("EA Async Target Detection (DD-EM-004, BR-RO-103)", func() {
 
 		By("Verifying HashComputeAfter is nil for sync target")
 		Expect(ea.Spec.HashComputeAfter).To(BeNil(),
-			"BR-RO-103.3: HashComputeAfter must be nil for sync built-in targets (backward compat)")
+			"BR-RO-103.3: HashComputeAfter must be nil for sync built-in targets")
+
+		By("Verifying delay fields are nil for sync target (Issue #253)")
+		Expect(ea.Spec.GitOpsSyncDelay).To(BeNil(),
+			"GitOpsSyncDelay must be nil for non-GitOps target")
+		Expect(ea.Spec.OperatorReconcileDelay).To(BeNil(),
+			"OperatorReconcileDelay must be nil for built-in kind target")
 
 		By("Verifying EA spec is otherwise correct")
 		Expect(ea.Spec.CorrelationID).To(Equal(rr.Name))
