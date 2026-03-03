@@ -24,7 +24,7 @@ detectedLabels:
 
 execution:
   engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/relax-pdb-job@sha256:0f11f8b0d1afa7bb3d5667f9ceb3874700846fb3aba34ce7661917e5fe06a379
+  bundle: quay.io/kubernaut-cicd/test-workflows/relax-pdb-job@sha256:4e9e13aaa0ebc42417493f629f3c53ce68129880b42150ca9d6ac3e32d54fe6d
 
 parameters:
   - name: TARGET_NAMESPACE

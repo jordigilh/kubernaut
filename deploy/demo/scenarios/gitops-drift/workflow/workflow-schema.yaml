@@ -26,7 +26,7 @@ detectedLabels:
 
 execution:
   engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/git-revert-job@sha256:fc5f64958cc7ab7365c0f237a10c968e62003a5b591faf75d7e627fab3a57b29
+  bundle: quay.io/kubernaut-cicd/test-workflows/git-revert-job@sha256:53e2a7e36b391569d3ab4cfed090bd526e836027ec35121876da3baf8edcaac5
 
 # DD-WE-006: Infrastructure dependencies provisioned by operators in kubernaut-workflows.
 # Credentials are mounted as files, NOT embedded in GIT_REPO_URL by the LLM.
