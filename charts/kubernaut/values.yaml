@@ -69,6 +69,15 @@ remediationorchestrator:
     limits:
       cpu: 500m
       memory: 256Mi
+  config:
+    effectivenessAssessment:
+      # Time for system stabilization after remediation before assessment
+      stabilizationWindow: "5m"
+    asyncPropagation:
+      # Expected time for GitOps tool (ArgoCD/Flux) to sync changes to cluster
+      gitOpsSyncDelay: "3m"
+      # Expected time for operator to reconcile after CR update
+      operatorReconcileDelay: "1m"
 
 # -- WorkflowExecution controller
 workflowexecution:

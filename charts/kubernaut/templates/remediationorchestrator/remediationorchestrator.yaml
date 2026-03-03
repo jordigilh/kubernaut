@@ -28,7 +28,10 @@ data:
         flushInterval: "1s"
         maxRetries: 3
     effectivenessAssessment:
-      stabilizationWindow: "5m"
+      stabilizationWindow: {{ .Values.remediationorchestrator.config.effectivenessAssessment.stabilizationWindow | default "5m" | quote }}
+    asyncPropagation:
+      gitOpsSyncDelay: {{ .Values.remediationorchestrator.config.asyncPropagation.gitOpsSyncDelay | default "3m" | quote }}
+      operatorReconcileDelay: {{ .Values.remediationorchestrator.config.asyncPropagation.operatorReconcileDelay | default "1m" | quote }}
     routing:
       consecutiveFailureThreshold: 3
       consecutiveFailureCooldown: "1h"
