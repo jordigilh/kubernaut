@@ -7,6 +7,7 @@
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2026-03-02 | Architecture Team | Initial DD: async hash deferral via RO-driven `hashComputeAfter` timestamp, CRD API group heuristic, GitOps label detection |
+| 2.0 | 2026-03-03 | Architecture Team | #253: Corrected timing model — separate propagation delay from stabilization window; `WaitingForPropagation` phase; RO config `gitOpsSyncDelay` / `operatorReconcileDelay`; compounding logic; EM `checkAfter` anchored to `HashComputeAfter` |
 
 ---
 
@@ -131,6 +132,134 @@ if !ea.Status.Components.HashComputed {
 
 ---
 
+## V2.0: Corrected Timing Model (#253)
+
+### Problem with V1.0
+
+V1.0 used `HashComputeAfter = now + stabilizationWindow`, conflating the propagation delay with the stabilization window. This means:
+
+```
+V1.0 (broken):
+|───── stabilizationWindow ─────|
+^                                ^
+RR completes               hash computed + health checked (simultaneously)
+                           zero effective stabilization after change arrives
+```
+
+The EM computes the hash and runs health/alert checks at the same time, leaving no stabilization after the change propagates.
+
+### Corrected Model
+
+Propagation delay and stabilization are independent sequential stages:
+
+```
+V2.0 (correct):
+|── propagation delay ──|──── stabilization window ────|
+^                        ^                              ^
+RR completes       hash computed                  health/metrics
+(workflow done)    (change arrived)                assessed
+                   stabilization starts
+```
+
+### Phase Diagram
+
+```
+Sync target (nil HashComputeAfter):
+  Pending → Stabilizing → Assessing → Completed/Failed
+
+Async target (non-nil HashComputeAfter):
+  Pending → WaitingForPropagation → Stabilizing → Assessing → Completed/Failed
+                     │                     │
+                     │ hash deferred       │ hash computed,
+                     │ (requeue)           │ stabilization starts
+                     └─────────────────────┘
+```
+
+### RO: Propagation Delay Configuration
+
+The RO exposes two configurable durations for the async propagation stages:
+
+```yaml
+asyncPropagation:
+  gitOpsSyncDelay: 3m          # ArgoCD/Flux sync interval
+  operatorReconcileDelay: 1m   # Operator reconciliation time
+```
+
+### RO: Compounding Logic
+
+The total propagation delay is the sum of applicable stages:
+
+```go
+var propagationDelay time.Duration
+if isGitOpsManaged {
+    propagationDelay += config.AsyncPropagation.GitOpsSyncDelay
+}
+if !creator.IsBuiltInGroup(gvk.Group) {
+    propagationDelay += config.AsyncPropagation.OperatorReconcileDelay
+}
+
+if propagationDelay > 0 {
+    t := metav1.NewTime(time.Now().Add(propagationDelay))
+    ea.Spec.HashComputeAfter = &t
+}
+```
+
+| Target Type | GitOps | CRD | propagationDelay |
+|-------------|--------|-----|-----------------|
+| `Deployment` (direct patch) | No | No | 0 (nil) |
+| `Deployment` (ArgoCD-managed) | Yes | No | `gitOpsSyncDelay` (3m) |
+| `Certificate` (cert-manager) | No | Yes | `operatorReconcileDelay` (1m) |
+| `Certificate` (ArgoCD + cert-manager) | Yes | Yes | `gitOpsSyncDelay + operatorReconcileDelay` (4m) |
+
+### EM: Adjusted Timing Computation
+
+When `HashComputeAfter` is set, the EM anchors health/alert check timing to `HashComputeAfter` instead of `EA.creationTimestamp`:
+
+```go
+stabilizationWindow := ea.Spec.Config.StabilizationWindow.Duration
+
+if ea.Spec.HashComputeAfter != nil && !ea.Spec.HashComputeAfter.IsZero() {
+    // Async target: stabilization starts after propagation completes
+    checkAfter = metav1.NewTime(ea.Spec.HashComputeAfter.Time.Add(stabilizationWindow))
+} else {
+    // Sync target: stabilization starts at EA creation (existing behavior)
+    checkAfter = metav1.NewTime(ea.CreationTimestamp.Add(stabilizationWindow))
+}
+
+ea.Status.PrometheusCheckAfter = &checkAfter
+ea.Status.AlertManagerCheckAfter = &checkAfter
+```
+
+### EM: Validity Deadline Extension
+
+For async targets, the validity deadline must account for the full timeline:
+
+```go
+totalDelay := propagationDelay + stabilizationWindow + r.Config.ValidityWindow
+deadline := metav1.NewTime(ea.CreationTimestamp.Add(totalDelay))
+ea.Status.ValidityDeadline = &deadline
+```
+
+### Complete Timing Example
+
+For a GitOps + operator target (e.g., ArgoCD syncs a cert-manager Certificate):
+
+```
+gitOpsSyncDelay:        3m
+operatorReconcileDelay: 1m
+stabilizationWindow:    5m
+validityWindow:         10m
+
+Timeline:
+T+0m:  RR completes, EA created (Pending)
+T+0m:  EM enters WaitingForPropagation phase
+T+4m:  HashComputeAfter reached → hash computed → Stabilizing phase
+T+9m:  PrometheusCheckAfter reached → health/alert/metrics assessed → Assessing phase
+T+19m: ValidityDeadline → EA expires if not yet completed
+```
+
+---
+
 ## Considered Alternatives
 
 | Approach | Why Discarded |
@@ -163,8 +292,9 @@ if !ea.Status.Components.HashComputed {
 
 ### Risks
 
-- **Stabilization window too short for slow operators**: If the operator takes longer than the stabilization window to reconcile, the hash is still captured at the wrong time
-  - **Mitigation**: The stabilization window is configurable. For known slow operators, increase the window via EM config.
+- **Propagation delay underestimated**: If the actual sync/reconciliation time exceeds the configured `gitOpsSyncDelay` or `operatorReconcileDelay`, the hash is captured before the change arrives
+  - **Mitigation (V2.0)**: Both delays are independently configurable. Operators can tune per environment. Conservative defaults (3m + 1m) cover the majority of ArgoCD/Flux and operator deployments.
+  - **Mitigation (future)**: Dynamic determination from ArgoCD `Application.spec.syncPolicy` or Flux `Kustomization.spec.interval` (see #253, future consideration)
 - **CRD without operator false positive**: A CRD target with no active operator gets a delayed hash
   - **Mitigation**: The hash is still computed and correct — just delayed. No impact on effectiveness accuracy.
 
@@ -180,5 +310,6 @@ if !ea.Status.Components.HashComputed {
 - **BR-EM-009**: Derived timing computation pattern
 - **BR-EM-010**: EM hash deferral requirement
 - **BR-RO-103**: RO async target detection requirement
-- **#251**: Implementation issue
+- **#251**: Async hash deferral (foundation: detection + field + deferral mechanism)
+- **#253**: Timing model correction (propagation delay vs stabilization)
 - **#132**: GitOps causality (related future work)
