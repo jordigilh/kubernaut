@@ -67,6 +67,12 @@ func NewEffectivenessAssessmentCreator(c client.Client, s *runtime.Scheme, m *me
 	}
 }
 
+// StabilizationWindow returns the configured stabilization window duration.
+// Used by the RO reconciler to compute hashComputeAfter for async targets (DD-EM-004).
+func (c *EffectivenessAssessmentCreator) StabilizationWindow() time.Duration {
+	return c.stabilizationWindow
+}
+
 // DualTarget carries both the signal-sourced and remediation-sourced targets for
 // effectiveness assessment (DD-EM-003).
 //
@@ -86,15 +92,20 @@ type DualTarget struct {
 //   - Config.StabilizationWindow: from RO's EACreationConfig
 //   - RemediationRequestPhase: RR.Status.OverallPhase at creation time (immutable spec field)
 //   - OwnerReference: RR (for cascade deletion, BR-ORCH-031)
+//   - HashComputeAfter: from hashComputeAfter (DD-EM-004, async targets)
 //
 // The dualTarget parameter is optional. When non-nil, it provides both signal and remediation
 // targets (DD-EM-003). When nil, falls back to RR.Spec.TargetResource for both.
+//
+// The hashComputeAfter parameter is optional. When non-nil, the EM will defer hash computation
+// until this timestamp (DD-EM-004, BR-EM-010). Set for GitOps and operator-managed CRD targets.
 //
 // Returns the EA name if created (or already exists), or an error.
 func (c *EffectivenessAssessmentCreator) CreateEffectivenessAssessment(
 	ctx context.Context,
 	rr *remediationv1.RemediationRequest,
 	dualTarget *DualTarget,
+	hashComputeAfter *metav1.Time,
 ) (string, error) {
 	logger := log.FromContext(ctx).WithValues(
 		"remediationRequest", rr.Name,
@@ -146,6 +157,7 @@ func (c *EffectivenessAssessmentCreator) CreateEffectivenessAssessment(
 			RemediationCreatedAt:   rrCreatedAt,
 			SignalName:             rr.Spec.SignalName,             // OBS-1: Propagate actual alert name for audit
 			PreRemediationSpecHash: rr.Status.PreRemediationSpecHash, // DD-EM-002: Propagate from RR status
+			HashComputeAfter:       hashComputeAfter,              // DD-EM-004: Defer hash for async targets
 		},
 	}
 

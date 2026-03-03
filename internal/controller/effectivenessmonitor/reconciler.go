@@ -432,6 +432,16 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	// hash and compare against PostRemediationSpecHash. If different, spec
 	// drift detected — abort observability collection.
 	if !ea.Status.Components.HashComputed {
+		// DD-EM-004: Defer hash for async-managed targets (GitOps, operator CRDs).
+		// The RO sets HashComputeAfter when the RemediationTarget is managed by an
+		// external controller whose reconciliation happens after the WE completes.
+		deferral := hash.CheckHashDeferral(ea)
+		if deferral.ShouldDefer {
+			logger.V(1).Info("Hash computation deferred for async-managed target",
+				"hashComputeAfter", ea.Spec.HashComputeAfter.Time,
+				"remaining", deferral.RequeueAfter)
+			return ctrl.Result{RequeueAfter: deferral.RequeueAfter}, nil
+		}
 		result := r.assessHash(ctx, ea)
 		ea.Status.Components.HashComputed = result.Component.Assessed
 		ea.Status.Components.PostRemediationSpecHash = result.Hash

@@ -2034,6 +2034,7 @@ func (r *Reconciler) createEffectivenessAssessmentIfNeeded(ctx context.Context, 
 	// Signal target: from RR (always available).
 	// Remediation target: from AIAnalysis AffectedResource (when available), else RR fallback.
 	var dualTarget *creator.DualTarget
+	var isGitOpsManaged bool
 	if rr.Status.AIAnalysisRef != nil {
 		ai := &aianalysisv1.AIAnalysis{}
 		if err := r.client.Get(ctx, client.ObjectKey{
@@ -2044,10 +2045,42 @@ func (r *Reconciler) createEffectivenessAssessmentIfNeeded(ctx context.Context, 
 				"error", err)
 		} else {
 			dualTarget = resolveDualTargets(rr, ai)
+			// DD-EM-004, BR-RO-103.2: Read GitOps detection from RCA pipeline.
+			if ai.Status.PostRCAContext != nil &&
+				ai.Status.PostRCAContext.DetectedLabels != nil &&
+				ai.Status.PostRCAContext.DetectedLabels.GitOpsManaged {
+				isGitOpsManaged = true
+			}
 		}
 	}
 
-	name, err := r.eaCreator.CreateEffectivenessAssessment(ctx, rr, dualTarget)
+	// DD-EM-004, BR-RO-103: Detect async-managed targets.
+	// If the remediation target is a CRD (operator-managed) or GitOps-managed,
+	// defer hash computation so the EM captures the spec after async propagation.
+	var hashComputeAfter *metav1.Time
+	remediationKind := rr.Spec.TargetResource.Kind
+	if dualTarget != nil {
+		remediationKind = dualTarget.Remediation.Kind
+	}
+
+	isAsync := isGitOpsManaged
+	if !isAsync {
+		gvk, err := resolveGVKForKind(r.restMapper, remediationKind)
+		if err == nil && !creator.IsBuiltInGroup(gvk.Group) {
+			isAsync = true
+		}
+	}
+
+	if isAsync {
+		t := metav1.NewTime(time.Now().Add(r.eaCreator.StabilizationWindow()))
+		hashComputeAfter = &t
+		logger.Info("Async-managed target detected, deferring hash computation",
+			"kind", remediationKind,
+			"gitOps", isGitOpsManaged,
+			"hashComputeAfter", t.Time)
+	}
+
+	name, err := r.eaCreator.CreateEffectivenessAssessment(ctx, rr, dualTarget, hashComputeAfter)
 	if err != nil {
 		logger.Error(err, "Failed to create EffectivenessAssessment (non-fatal per ADR-EM-001)")
 		return
