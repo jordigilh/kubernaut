@@ -20,6 +20,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
 )
 
@@ -107,16 +108,16 @@ var _ = Describe("AIAnalysis Metrics", func() {
 	Describe("PolicyMetrics.RecordPolicyEvaluation", func() {
 		It("should enable operators to audit policy decision rates for compliance", func() {
 			By("Recording policy evaluation outcomes")
-			m.RegoEvaluationsTotal.WithLabelValues("approved", "false").Inc()
+			m.RegoEvaluationsTotal.WithLabelValues(aianalysis.OutcomeAutoApproved, "false").Inc()
 			m.RegoEvaluationsTotal.WithLabelValues("denied", "false").Inc()
-			m.RegoEvaluationsTotal.WithLabelValues("approved", "true").Inc()
+			m.RegoEvaluationsTotal.WithLabelValues(aianalysis.OutcomeAutoApproved, "true").Inc()
 
 			By("Verifying operators can track approval vs denial ratios")
 			Expect(m.RegoEvaluationsTotal).NotTo(BeNil(),
 				"Policy decision metrics enable compliance audits and approval rate analysis")
 
 			By("Verifying degraded mode evaluations are tracked separately")
-			desc := m.RegoEvaluationsTotal.WithLabelValues("approved", "true").Desc()
+			desc := m.RegoEvaluationsTotal.WithLabelValues(aianalysis.OutcomeAutoApproved, "true").Desc()
 			// DD-005 V3.0: Use constant from production code to prevent typos
 			Expect(desc.String()).To(ContainSubstring(metrics.MetricNameRegoEvaluationsTotal),
 				"Degraded mode tracking alerts operators to policy evaluation issues")
@@ -126,11 +127,11 @@ var _ = Describe("AIAnalysis Metrics", func() {
 			By("Simulating policy evaluations with degraded mode flag")
 			// Normal evaluations
 			for i := 0; i < 95; i++ {
-				m.RegoEvaluationsTotal.WithLabelValues("approved", "false").Inc()
+				m.RegoEvaluationsTotal.WithLabelValues(aianalysis.OutcomeAutoApproved, "false").Inc()
 			}
 			// Degraded evaluations (policy file issues, syntax errors)
 			for i := 0; i < 5; i++ {
-				m.RegoEvaluationsTotal.WithLabelValues("approved", "true").Inc()
+				m.RegoEvaluationsTotal.WithLabelValues(aianalysis.OutcomeAutoApproved, "true").Inc()
 			}
 
 			By("Verifying >5% degraded rate alerts operators to policy problems")
@@ -148,7 +149,7 @@ var _ = Describe("AIAnalysis Metrics", func() {
 		It("should enable operators to measure automation rate for efficiency reporting", func() {
 			By("Recording automatic approvals for staging environment")
 			for i := 0; i < 80; i++ {
-				m.ApprovalDecisionsTotal.WithLabelValues("auto_approved", "staging").Inc()
+				m.ApprovalDecisionsTotal.WithLabelValues(aianalysis.OutcomeAutoApproved, "staging").Inc()
 			}
 
 			By("Recording manual review requirements for production")
@@ -161,7 +162,7 @@ var _ = Describe("AIAnalysis Metrics", func() {
 				"Automation rate (80% auto-approved) demonstrates business value of AI analysis")
 
 			By("Verifying metric enables environment-specific analysis")
-			desc := m.ApprovalDecisionsTotal.WithLabelValues("approved", "production").Desc()
+			desc := m.ApprovalDecisionsTotal.WithLabelValues(aianalysis.OutcomeAutoApproved, "production").Desc()
 			// DD-005 V3.0: Use constant from production code to prevent typos
 			Expect(desc.String()).To(ContainSubstring(metrics.MetricNameApprovalDecisionsTotal),
 				"Environment-specific rates show policy effectiveness (prod vs staging)")

@@ -281,7 +281,7 @@ var _ = Describe("AnalyzingHandler", func() {
 				Expect(analysis.Status.ApprovalContext.PolicyEvaluation).NotTo(BeNil(), "Policy evaluation should be visible to operator")
 				// Business outcome: Operator sees clear decision status
 				Expect(analysis.Status.ApprovalContext.PolicyEvaluation.Decision).To(
-					BeElementOf("manual_review_required", "auto_approved", "degraded_mode"),
+					BeElementOf("manual_review_required", aianalysis.OutcomeAutoApproved, "degraded_mode"),
 					"Decision should be one of the valid business outcomes",
 				)
 			})
