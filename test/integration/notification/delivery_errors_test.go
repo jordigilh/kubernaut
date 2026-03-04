@@ -85,7 +85,7 @@ var _ = Describe("Category 4: Delivery Service Error Handling", Label("integrati
 						MaxBackoffSeconds:     60,
 					},
 					Metadata: map[string]string{
-						"test-channel-set": "console-slack",
+						"test-channel-set": "slack-only",
 					},
 				},
 			}
@@ -150,7 +150,7 @@ var _ = Describe("Category 4: Delivery Service Error Handling", Label("integrati
 						{Slack: "#test"},
 					},
 					Metadata: map[string]string{
-						"test-channel-set": "console-slack",
+						"test-channel-set": "slack-only",
 					},
 				},
 			}
@@ -207,7 +207,7 @@ var _ = Describe("Category 4: Delivery Service Error Handling", Label("integrati
 						{Slack: "#nonexistent"},
 					},
 					Metadata: map[string]string{
-						"test-channel-set": "console-slack",
+						"test-channel-set": "slack-only",
 					},
 				},
 			}
@@ -264,7 +264,7 @@ var _ = Describe("Category 4: Delivery Service Error Handling", Label("integrati
 						{Slack: "#deprecated"},
 					},
 					Metadata: map[string]string{
-						"test-channel-set": "console-slack",
+						"test-channel-set": "slack-only",
 					},
 				},
 			}
@@ -338,7 +338,7 @@ var _ = Describe("Category 4: Delivery Service Error Handling", Label("integrati
 						MaxBackoffSeconds:     60,
 					},
 					Metadata: map[string]string{
-						"test-channel-set": "console-slack",
+						"test-channel-set": "slack-only",
 					},
 				},
 			}
