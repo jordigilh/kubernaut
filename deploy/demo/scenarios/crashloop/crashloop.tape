@@ -198,7 +198,7 @@ Enter
 Sleep 300ms
 Set TypingSpeed 50ms
 Show
-Sleep 2s
+Sleep 5s
 
 # Hidden wait: poll until alert appears in AlertManager
 Hide

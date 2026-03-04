@@ -93,7 +93,7 @@ Type `bash deploy/demo/scenarios/duplicate-alert-suppression/cleanup.sh 2>/dev/n
 Enter
 Sleep 5s
 
-Type `kubectl apply -f deploy/demo/scenarios/duplicate-alert-suppression/manifests/ >/dev/null 2>&1 && kubectl wait --for=condition=Available deployment/api-gateway -n demo-alert-storm --timeout=120s >/dev/null 2>&1 && clear && echo SETUP"_"COMPLETE`
+Type `kubectl apply -f deploy/demo/scenarios/duplicate-alert-suppression/manifests/namespace.yaml >/dev/null 2>&1 && kubectl apply -f deploy/demo/scenarios/duplicate-alert-suppression/manifests/ >/dev/null 2>&1 && kubectl wait --for=condition=Available deployment/api-gateway -n demo-alert-storm --timeout=120s >/dev/null 2>&1 && clear && echo SETUP"_"COMPLETE`
 Enter
 Wait+Screen@300s /SETUP_COMPLETE/
 
@@ -193,7 +193,7 @@ Enter
 Sleep 300ms
 Set TypingSpeed 50ms
 Show
-Sleep 2s
+Sleep 5s
 
 # Hidden wait: poll until at least 1 alert appears for demo-alert-storm
 Hide
@@ -240,7 +240,7 @@ Wait+Screen@600s /RR_EXISTS/
 # ACT 2 -- The Remediation (AUTO-APPROVE PATH)
 # ═════════════════════════════════════════
 
-Type "act_clear"
+Type "clear"
 Enter
 Sleep 300ms
 Type "announce 'Act 2: The Remediation'"
@@ -343,7 +343,7 @@ Sleep 2s
 
 Hide
 Set TypingSpeed 1ms
-Type "act_clear"
+Type "clear"
 Enter
 Sleep 300ms
 Type "announce 'Act 3: The Result'"

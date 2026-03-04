@@ -217,7 +217,7 @@ Wait+Screen@600s /RR_EXISTS/
 # ACT 2 -- The Remediation (AUTO-APPROVE PATH)
 # ═════════════════════════════════════════
 
-Type "act_clear"
+Type "clear"
 Enter
 Sleep 300ms
 Type "announce 'Act 2: The Remediation'"

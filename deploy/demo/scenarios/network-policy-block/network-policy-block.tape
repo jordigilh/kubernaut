@@ -93,7 +93,7 @@ Type `bash deploy/demo/scenarios/network-policy-block/cleanup.sh 2>/dev/null; tr
 Enter
 Sleep 5s
 
-Type `kubectl apply -f deploy/demo/scenarios/network-policy-block/manifests/ >/dev/null 2>&1 && kubectl wait --for=condition=Available deployment/web-frontend deployment/traffic-gen -n demo-netpol --timeout=120s >/dev/null 2>&1 && clear && echo SETUP"_"COMPLETE`
+Type `kubectl apply -f deploy/demo/scenarios/network-policy-block/manifests/namespace.yaml >/dev/null 2>&1 && kubectl apply -f deploy/demo/scenarios/network-policy-block/manifests/ >/dev/null 2>&1 && kubectl wait --for=condition=Available deployment/web-frontend deployment/traffic-gen -n demo-netpol --timeout=120s >/dev/null 2>&1 && clear && echo SETUP"_"COMPLETE`
 Enter
 Wait+Screen@300s /SETUP_COMPLETE/
 
@@ -197,7 +197,7 @@ Enter
 Sleep 300ms
 Set TypingSpeed 50ms
 Show
-Sleep 2s
+Sleep 5s
 
 # Hidden wait: poll until alert appears in AlertManager
 Hide
@@ -244,7 +244,7 @@ Wait+Screen@600s /RR_EXISTS/
 # ACT 2 -- The Remediation (AUTO-APPROVE PATH)
 # ═════════════════════════════════════════
 
-Type "act_clear"
+Type "clear"
 Enter
 Sleep 300ms
 Type "announce 'Act 2: The Remediation'"
@@ -347,7 +347,7 @@ Sleep 2s
 
 Hide
 Set TypingSpeed 1ms
-Type "act_clear"
+Type "clear"
 Enter
 Sleep 300ms
 Type "announce 'Act 3: The Result'"

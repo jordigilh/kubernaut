@@ -93,7 +93,7 @@ Type `bash deploy/demo/scenarios/stuck-rollout/cleanup.sh 2>/dev/null; true`
 Enter
 Sleep 5s
 
-Type `kubectl apply -f deploy/demo/scenarios/stuck-rollout/manifests/ >/dev/null 2>&1 && kubectl wait --for=condition=Available deployment/checkout-api -n demo-rollout --timeout=120s >/dev/null 2>&1 && clear && echo SETUP"_"COMPLETE`
+Type `kubectl apply -f deploy/demo/scenarios/stuck-rollout/manifests/namespace.yaml >/dev/null 2>&1 && kubectl apply -f deploy/demo/scenarios/stuck-rollout/manifests/ >/dev/null 2>&1 && kubectl wait --for=condition=Available deployment/checkout-api -n demo-rollout --timeout=120s >/dev/null 2>&1 && clear && echo SETUP"_"COMPLETE`
 Enter
 Wait+Screen@300s /SETUP_COMPLETE/
 
@@ -193,7 +193,7 @@ Enter
 Sleep 300ms
 Set TypingSpeed 50ms
 Show
-Sleep 2s
+Sleep 5s
 
 # Hidden wait: poll until alert appears in AlertManager
 Hide

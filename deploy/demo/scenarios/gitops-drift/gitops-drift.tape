@@ -212,7 +212,7 @@ Enter
 Sleep 300ms
 Set TypingSpeed 50ms
 Show
-Sleep 2s
+Sleep 5s
 
 # Hidden wait: poll until alert appears in AlertManager
 Hide
@@ -259,7 +259,7 @@ Wait+Screen@600s /RR_EXISTS/
 # ACT 2 -- The Remediation (AUTO-APPROVE PATH)
 # ═════════════════════════════════════════
 
-Type "act_clear"
+Type "clear"
 Enter
 Sleep 300ms
 Type "announce 'Act 2: The Remediation'"

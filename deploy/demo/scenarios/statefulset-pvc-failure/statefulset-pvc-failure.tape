@@ -93,7 +93,7 @@ Type `bash deploy/demo/scenarios/statefulset-pvc-failure/cleanup.sh 2>/dev/null;
 Enter
 Sleep 5s
 
-Type `kubectl apply -f deploy/demo/scenarios/statefulset-pvc-failure/manifests/ >/dev/null 2>&1 && kubectl rollout status statefulset/kv-store -n demo-statefulset --timeout=120s >/dev/null 2>&1 && clear && echo SETUP"_"COMPLETE`
+Type `kubectl apply -f deploy/demo/scenarios/statefulset-pvc-failure/manifests/namespace.yaml >/dev/null 2>&1 && kubectl apply -f deploy/demo/scenarios/statefulset-pvc-failure/manifests/ >/dev/null 2>&1 && kubectl rollout status statefulset/kv-store -n demo-statefulset --timeout=120s >/dev/null 2>&1 && clear && echo SETUP"_"COMPLETE`
 Enter
 Wait+Screen@300s /SETUP_COMPLETE/
 
@@ -205,7 +205,7 @@ Enter
 Sleep 300ms
 Set TypingSpeed 50ms
 Show
-Sleep 2s
+Sleep 5s
 
 # Hidden wait: poll until alert appears in AlertManager
 Hide

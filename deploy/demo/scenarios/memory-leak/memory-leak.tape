@@ -68,7 +68,7 @@ Type `act_clear() { clear; [ -n "$_act" ] && printf '\e[1;33m━━ %s ━━\e[
 Enter
 Sleep 200ms
 
-Type `title_card() { printf '\e[1A\e[2K\n\e[1;33m━━ Memory Leak Remediation ━━\e[0m\n\n\e[38;5;245mA leaker sidecar steadily consumes memory in a staging environment.\nKubernaut detects the predicted exhaustion, diagnoses the leak with AI,\nrestarts the pod to reset memory, and verifies the fix.\e[0m\n\n\e[1;33mAct 1\e[0m  \e[38;5;245mThe Problem     — memory leak grows, exhaustion predicted, alert fires\e[0m\n\e[1;33mAct 2\e[0m  \e[38;5;245mThe Remediation — AI root cause analysis, auto-approved, pod restart runs\e[0m\n\e[1;33mAct 3\e[0m  \e[38;5;245mThe Result      — pod restarted, memory reset, EA confirms fix\e[0m\n'; }`
+Type `title_card() { printf '\e[1A\e[2K\n\e[1;33m━━ Memory Leak Remediation ━━\e[0m\n\n\e[38;5;245mA leaker sidecar steadily consumes memory in a staging environment.\nPrometheus predicts memory exhaustion using linear extrapolation.\nKubernaut ingests the proactive alert, diagnoses the leak with AI,\nrestarts the pod to reset memory, and verifies the fix.\e[0m\n\n\e[1;33mAct 1\e[0m  \e[38;5;245mThe Problem     — memory leak grows, Prometheus predicts exhaustion, alert fires\e[0m\n\e[1;33mAct 2\e[0m  \e[38;5;245mThe Remediation — AI root cause analysis, auto-approved, pod restart runs\e[0m\n\e[1;33mAct 3\e[0m  \e[38;5;245mThe Result      — pod restarted, memory reset, EA confirms fix\e[0m\n'; }`
 Enter
 Sleep 200ms
 
@@ -80,7 +80,12 @@ Type `bash deploy/demo/scenarios/memory-leak/cleanup.sh 2>/dev/null; true`
 Enter
 Sleep 5s
 
-Type `kubectl apply -f deploy/demo/scenarios/memory-leak/manifests/ >/dev/null 2>&1 && kubectl wait --for=condition=Available deployment/leaky-app -n demo-memory-leak --timeout=120s >/dev/null 2>&1 && clear && echo SETUP"_"COMPLETE`
+# Shorten stabilization window for demo speed
+Type `kubectl get configmap remediationorchestrator-config -n ${PLATFORM_NS} -o yaml | sed 's/stabilizationWindow: "5m"/stabilizationWindow: "1m"/' | kubectl apply -f - >/dev/null 2>&1 && kubectl rollout restart deployment/remediationorchestrator-controller -n ${PLATFORM_NS} >/dev/null 2>&1 && kubectl rollout status deployment/remediationorchestrator-controller -n ${PLATFORM_NS} --timeout=60s >/dev/null 2>&1`
+Enter
+Sleep 30s
+
+Type `kubectl apply -f deploy/demo/scenarios/memory-leak/manifests/namespace.yaml >/dev/null 2>&1 && kubectl apply -f deploy/demo/scenarios/memory-leak/manifests/ >/dev/null 2>&1 && kubectl wait --for=condition=Available deployment/leaky-app -n demo-memory-leak --timeout=120s >/dev/null 2>&1 && clear && echo SETUP"_"COMPLETE`
 Enter
 Wait+Screen@300s /SETUP_COMPLETE/
 
@@ -114,7 +119,10 @@ Sleep 300ms
 Type "narrate 'A leaker sidecar steadily consumes memory in a staging environment.'"
 Enter
 Sleep 300ms
-Type "narrate 'Memory exhaustion is predicted, and the alert fires.'"
+Type "narrate 'Prometheus predicts memory exhaustion using linear extrapolation (proactive alert).'"
+Enter
+Sleep 300ms
+Type "narrate 'Kubernaut ingests the alert and remediates automatically.'"
 Enter
 Sleep 300ms
 Set TypingSpeed 50ms
@@ -148,12 +156,12 @@ Sleep 2s
 
 Hide
 Set TypingSpeed 1ms
-Type "narrate 'Waiting for the ContainerMemoryExhaustionPredicted alert to fire...'"
+Type "narrate 'Waiting for Prometheus predictive alert ContainerMemoryExhaustionPredicted to fire...'"
 Enter
 Sleep 300ms
 Set TypingSpeed 50ms
 Show
-Sleep 2s
+Sleep 5s
 
 Hide
 Set TypingSpeed 1ms
@@ -198,7 +206,7 @@ Wait+Screen@600s /RR_EXISTS/
 # ACT 2 -- The Remediation (AUTO-APPROVE PATH)
 # ═════════════════════════════════════════
 
-Type "act_clear"
+Type "clear"
 Enter
 Sleep 300ms
 Type "announce 'Act 2: The Remediation'"

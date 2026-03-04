@@ -98,7 +98,7 @@ Type `kubectl get configmap remediationorchestrator-config -n ${PLATFORM_NS} -o 
 Enter
 Sleep 30s
 
-Type `kubectl apply -f deploy/demo/scenarios/slo-burn/manifests/ >/dev/null 2>&1 && kubectl wait --for=condition=Available deployment/api-gateway deployment/traffic-gen deployment/blackbox-exporter -n demo-slo --timeout=120s >/dev/null 2>&1 && sleep 20 && clear && echo SETUP"_"COMPLETE`
+Type `kubectl apply -f deploy/demo/scenarios/slo-burn/manifests/namespace.yaml >/dev/null 2>&1 && kubectl apply -f deploy/demo/scenarios/slo-burn/manifests/ >/dev/null 2>&1 && kubectl wait --for=condition=Available deployment/api-gateway deployment/traffic-gen deployment/blackbox-exporter -n demo-slo --timeout=120s >/dev/null 2>&1 && sleep 20 && clear && echo SETUP"_"COMPLETE`
 Enter
 Wait+Screen@300s /SETUP_COMPLETE/
 
@@ -173,7 +173,7 @@ Enter
 Sleep 300ms
 Set TypingSpeed 50ms
 Show
-Sleep 2s
+Sleep 5s
 
 # Hidden wait: poll until alert appears in AlertManager
 Hide

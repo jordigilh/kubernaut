@@ -81,7 +81,7 @@ Type `bash deploy/demo/scenarios/cert-failure/cleanup.sh 2>/dev/null; true`
 Enter
 Sleep 5s
 
-Type `kubectl apply -f deploy/demo/scenarios/cert-failure/manifests/ >/dev/null 2>&1 && kubectl wait --for=condition=Available deployment/demo-app -n demo-cert-failure --timeout=120s >/dev/null 2>&1 && clear && echo SETUP"_"COMPLETE`
+Type `kubectl apply -f deploy/demo/scenarios/cert-failure/manifests/namespace.yaml >/dev/null 2>&1 && kubectl apply -f deploy/demo/scenarios/cert-failure/manifests/ >/dev/null 2>&1 && kubectl wait --for=condition=Available deployment/demo-app -n demo-cert-failure --timeout=120s >/dev/null 2>&1 && clear && echo SETUP"_"COMPLETE`
 Enter
 Wait+Screen@300s /SETUP_COMPLETE/
 
@@ -155,7 +155,7 @@ Enter
 Sleep 300ms
 Set TypingSpeed 50ms
 Show
-Sleep 2s
+Sleep 5s
 
 Hide
 Set TypingSpeed 1ms
@@ -204,7 +204,7 @@ Wait+Screen@600s /RR_EXISTS/
 # ACT 2 -- The Remediation (AUTO-APPROVE PATH)
 # ═════════════════════════════════════════
 
-Type "act_clear"
+Type "clear"
 Enter
 Sleep 300ms
 Type "announce 'Act 2: The Remediation'"
