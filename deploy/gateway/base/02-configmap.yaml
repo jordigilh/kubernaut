@@ -42,7 +42,7 @@ data:
     # Business logic configuration
     processing:
       deduplication:
-        ttl: 5m
+        cooldownPeriod: 5m
 
       storm:
         # Storm Detection (existing)
