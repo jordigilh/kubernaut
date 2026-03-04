@@ -93,8 +93,10 @@ var (
 	// Tests can RegisterChannel() and UnregisterChannel() to inject mocks
 	deliveryOrchestrator *delivery.Orchestrator
 
-	// Original console service for restoration after mock tests
+	// Original delivery services for restoration after mock tests
 	originalConsoleService *delivery.ConsoleDeliveryService
+	originalFileService    *delivery.FileDeliveryService
+	originalLogService     *delivery.LogDeliveryService
 
 	// BR-NOT-104: Credential resolver for per-receiver Slack delivery in integration tests
 	credResolver *credentials.Resolver
@@ -447,6 +449,8 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	DeferCleanup(func() { _ = os.RemoveAll(fileDir) })
 	fileService := delivery.NewFileDeliveryService(fileDir, "json", 0)
 	logService := delivery.NewLogDeliveryService("json")
+	originalFileService = fileService
+	originalLogService = logService
 
 	deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelConsole), consoleService)
 	deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelSlack), slackService)
@@ -471,6 +475,15 @@ route:
     - receiver: console-slack
       match:
         test-channel-set: console-slack
+    - receiver: console-file-log
+      match:
+        test-channel-set: console-file-log
+    - receiver: console-file
+      match:
+        test-channel-set: console-file
+    - receiver: file-only
+      match:
+        test-channel-set: file-only
     - receiver: all-channels
       match:
         test-channel-set: all-channels
@@ -486,6 +499,21 @@ receivers:
       - enabled: true
     slackConfigs:
       - channel: "#test-alerts"
+  - name: console-file-log
+    consoleConfigs:
+      - enabled: true
+    fileConfigs:
+      - enabled: true
+    logConfigs:
+      - enabled: true
+  - name: console-file
+    consoleConfigs:
+      - enabled: true
+    fileConfigs:
+      - enabled: true
+  - name: file-only
+    fileConfigs:
+      - enabled: true
   - name: all-channels
     consoleConfigs:
       - enabled: true

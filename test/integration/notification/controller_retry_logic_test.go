@@ -94,7 +94,7 @@ var _ = Describe("Controller Retry Logic (BR-NOT-054)", func() {
 			DeferCleanup(func() {
 				// Restore original services
 				deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelConsole), originalConsoleService)
-				deliveryOrchestrator.UnregisterChannel(string(notificationv1alpha1.ChannelFile))
+				deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelFile), originalFileService)
 			})
 
 			// ========================================
@@ -124,7 +124,7 @@ var _ = Describe("Controller Retry Logic (BR-NOT-054)", func() {
 						MaxBackoffSeconds:     60, // Minimum allowed by CRD validation
 					},
 					Metadata: map[string]string{
-						"test-channel-set": "all-channels",
+						"test-channel-set": "console-file",
 					},
 				},
 			}
@@ -285,8 +285,8 @@ var _ = Describe("Controller Retry Logic (BR-NOT-054)", func() {
 			// Register mock service
 			deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelFile), mockFileService)
 			DeferCleanup(func() {
-				// Restore original state (file service not registered in suite)
-				deliveryOrchestrator.UnregisterChannel(string(notificationv1alpha1.ChannelFile))
+				// Restore original file service
+				deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelFile), originalFileService)
 			})
 
 			// ========================================
@@ -313,7 +313,7 @@ var _ = Describe("Controller Retry Logic (BR-NOT-054)", func() {
 						MaxBackoffSeconds:     60, // Minimum allowed by CRD validation
 					},
 					Metadata: map[string]string{
-						"test-channel-set": "all-channels",
+						"test-channel-set": "file-only",
 					},
 				},
 			}

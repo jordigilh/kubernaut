@@ -256,7 +256,7 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 						{Slack: "#test"},
 					},
 					Metadata: map[string]string{
-						"test-channel-set": "console-slack",
+						"test-channel-set": "console-default",
 					},
 				},
 			}
@@ -405,7 +405,7 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 						MaxBackoffSeconds:     60,
 					},
 					Metadata: map[string]string{
-						"test-channel-set": "console-slack",
+						"test-channel-set": "slack-only",
 					},
 				},
 			}
@@ -493,7 +493,7 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 						MaxBackoffSeconds:     60,
 					},
 					Metadata: map[string]string{
-						"test-channel-set": "console-slack",
+						"test-channel-set": "slack-only",
 					},
 				},
 			}

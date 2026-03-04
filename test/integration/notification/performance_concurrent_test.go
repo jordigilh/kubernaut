@@ -220,7 +220,7 @@ var _ = Describe("P0: Concurrent Deliveries + Circuit Breaker", Label("p0", "con
 								{Slack: slackWebhookURL},
 							},
 							Metadata: map[string]string{
-								"test-channel-set": "console-slack",
+								"test-channel-set": "console-default",
 							},
 						},
 					}

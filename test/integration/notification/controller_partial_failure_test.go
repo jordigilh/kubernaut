@@ -90,10 +90,10 @@ var _ = Describe("Controller Partial Failure Handling (BR-NOT-053)", func() {
 			deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelLog), mockLogService)
 			deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelFile), mockFileService)
 			DeferCleanup(func() {
-				// Restore original services (console/slack exist, file/log don't in suite)
+				// Restore suite-registered services
 				deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelConsole), originalConsoleService)
-				deliveryOrchestrator.UnregisterChannel(string(notificationv1alpha1.ChannelLog))  // Not in suite
-				deliveryOrchestrator.UnregisterChannel(string(notificationv1alpha1.ChannelFile)) // Not in suite
+				deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelLog), originalLogService)
+				deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelFile), originalFileService)
 			})
 
 			// ========================================
@@ -121,7 +121,7 @@ var _ = Describe("Controller Partial Failure Handling (BR-NOT-053)", func() {
 						MaxBackoffSeconds:     60, // Minimum allowed by CRD validation
 					},
 					Metadata: map[string]string{
-						"test-channel-set": "all-channels",
+						"test-channel-set": "console-file-log",
 					},
 				},
 			}
@@ -251,10 +251,10 @@ var _ = Describe("Controller Partial Failure Handling (BR-NOT-053)", func() {
 			deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelLog), mockLogService)
 			deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelFile), mockFileService)
 			DeferCleanup(func() {
-				// Restore original services
+				// Restore suite-registered services
 				deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelConsole), originalConsoleService)
-				deliveryOrchestrator.UnregisterChannel(string(notificationv1alpha1.ChannelLog))
-				deliveryOrchestrator.UnregisterChannel(string(notificationv1alpha1.ChannelFile))
+				deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelLog), originalLogService)
+				deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelFile), originalFileService)
 			})
 
 			// ========================================
@@ -281,7 +281,7 @@ var _ = Describe("Controller Partial Failure Handling (BR-NOT-053)", func() {
 						MaxBackoffSeconds:     60, // Minimum allowed by CRD validation
 					},
 					Metadata: map[string]string{
-						"test-channel-set": "all-channels",
+						"test-channel-set": "console-file-log",
 					},
 				},
 			}
@@ -359,10 +359,10 @@ var _ = Describe("Controller Partial Failure Handling (BR-NOT-053)", func() {
 			deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelLog), mockLogService)
 			deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelFile), mockFileService)
 			DeferCleanup(func() {
-				// Restore original services
+				// Restore suite-registered services
 				deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelConsole), originalConsoleService)
-				deliveryOrchestrator.UnregisterChannel(string(notificationv1alpha1.ChannelLog))
-				deliveryOrchestrator.UnregisterChannel(string(notificationv1alpha1.ChannelFile))
+				deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelLog), originalLogService)
+				deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelFile), originalFileService)
 			})
 
 			// ========================================
@@ -389,7 +389,7 @@ var _ = Describe("Controller Partial Failure Handling (BR-NOT-053)", func() {
 						MaxBackoffSeconds:     60, // Minimum allowed by CRD validation
 					},
 					Metadata: map[string]string{
-						"test-channel-set": "all-channels",
+						"test-channel-set": "console-file-log",
 					},
 				},
 			}

@@ -92,7 +92,7 @@ var _ = Describe("BR-NOT-080/081/082: Graceful Shutdown", func() {
 						{Slack: "#test"},
 					},
 					Metadata: map[string]string{
-						"test-channel-set": "console-slack",
+						"test-channel-set": "console-default",
 					},
 				},
 			}
