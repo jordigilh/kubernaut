@@ -234,12 +234,12 @@ Set TypingSpeed 50ms
 Show
 Sleep 3s
 
-# Hidden wait: poll until RR reaches AwaitingApproval (pipeline completed analysis)
+# Hidden wait: poll until ANY RR exists
 Hide
 Set TypingSpeed 1ms
-Type `while ! kubectl get remediationrequests -n ${PLATFORM_NS} 2>/dev/null | grep -q AwaitingApproval; do sleep 10; done && clear && echo PIPELINE"_"READY`
+Type `while ! kubectl get remediationrequests -n ${PLATFORM_NS} --no-headers 2>/dev/null | grep -q .; do sleep 5; done && clear && echo RR"_"EXISTS`
 Enter
-Wait+Screen@600s /PIPELINE_READY/
+Wait+Screen@600s /RR_EXISTS/
 
 # ═════════════════════════════════════════
 # ACT 2 -- The Remediation
@@ -251,22 +251,65 @@ Sleep 300ms
 Type "announce 'Act 2: The Remediation'"
 Enter
 Sleep 300ms
-Type "narrate 'The AI analyzed the crash, identified the bad config, and selected a rollback.'"
-Enter
-Sleep 300ms
-Type "narrate 'Approval is required because this is a production namespace.'"
+Type "narrate 'The AI is analyzing the root cause and selecting a remediation workflow...'"
 Enter
 Sleep 300ms
 Set TypingSpeed 50ms
 Show
-Sleep 4s
+Sleep 2s
 
+# Snapshot 1: RR in Analyzing (early AGE)
+Type "kubectl get remediationrequests -n ${PLATFORM_NS}"
+Enter
+Sleep 5s
+
+# Hidden time skip — let the LLM work for ~20s without the viewer waiting
+Hide
+Set TypingSpeed 1ms
+Type `sleep 20 && clear && echo SKIP"_"DONE`
+Enter
+Wait+Screen@30s /SKIP_DONE/
+Type "act_clear"
+Enter
+Sleep 300ms
+Type "narrate 'The AI is analyzing the root cause and selecting a remediation workflow...'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 2s
+
+# Snapshot 2: RR still Analyzing (later AGE — shows time has passed)
+Type "kubectl get remediationrequests -n ${PLATFORM_NS}"
+Enter
+Sleep 5s
+
+# Hidden wait: skip remaining LLM time to AwaitingApproval
+Hide
+Set TypingSpeed 1ms
+Type `while ! kubectl get remediationrequests -n ${PLATFORM_NS} 2>/dev/null | grep -q AwaitingApproval; do sleep 10; done && clear && echo PIPELINE"_"READY`
+Enter
+Wait+Screen@600s /PIPELINE_READY/
+Type "act_clear"
+Enter
+Sleep 300ms
+Type "narrate 'Analysis complete. Approval is required because this is a production namespace.'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 2s
+
+# Snapshot 3: RR now in AwaitingApproval
 Type "kubectl get remediationrequests -n ${PLATFORM_NS}"
 Enter
 Sleep 6s
 
 Hide
 Set TypingSpeed 1ms
+Type "act_clear"
+Enter
+Sleep 300ms
 Type "narrate 'Root cause analysis and recommended workflow'"
 Enter
 Sleep 300ms
@@ -287,10 +330,6 @@ Set TypingSpeed 50ms
 Show
 Sleep 2s
 
-Type "kubectl get rar -n ${PLATFORM_NS}"
-Enter
-Sleep 6s
-
 Type "bash deploy/demo/scripts/show-approval-reason.sh demo-crashloop"
 Enter
 Sleep 12s
@@ -308,13 +347,14 @@ Type "bash deploy/demo/scripts/approve-rar.sh"
 Enter
 Sleep 4s
 
-# Clear screen before watch so "Completed" is easy to match
+# Second watch: captures execution transitions live
+# (AwaitingApproval → Executing → Verifying → Completed)
 Hide
 Set TypingSpeed 1ms
 Type "act_clear"
 Enter
 Sleep 500ms
-Type "narrate 'Watching RemediationRequest phase transitions live...'"
+Type "narrate 'Watching the execution phase transitions...'"
 Enter
 Sleep 300ms
 Set TypingSpeed 50ms
