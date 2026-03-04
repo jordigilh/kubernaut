@@ -82,7 +82,7 @@ Once the async design is validated, the 10-minute hardcoded timeout workaround i
 
 - [ ] HAPI exposes async session endpoints (submit, poll, result) for incident analysis (recovery deprecated for v1.0)
 - [ ] AA controller stores InvestigationSession in CRD status
-- [ ] AA controller polls with requeue backoff (not blocking)
+- [ ] AA controller polls with constant requeue interval (not blocking)
 - [ ] Stale session detection and regeneration works (Generation counter increments)
 - [ ] Generation cap at 5 triggers Failed + escalation
 - [ ] InvestigationSessionReady Condition reflects session lifecycle

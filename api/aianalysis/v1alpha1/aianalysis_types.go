@@ -438,8 +438,8 @@ type InvestigationSession struct {
 	// CreatedAt timestamp when the current session was created
 	// +optional
 	CreatedAt *metav1.Time `json:"createdAt,omitempty"`
-	// PollCount tracks the number of poll attempts for backoff calculation
-	// BR-AA-HAPI-064.8: Exponential backoff (10s, 20s, 30s cap)
+	// PollCount tracks the number of poll attempts for observability
+	// BR-AA-HAPI-064.8: Constant 15s poll interval (configurable 1s–5m)
 	// +kubebuilder:validation:Minimum=0
 	// +optional
 	PollCount int32 `json:"pollCount,omitempty"`
