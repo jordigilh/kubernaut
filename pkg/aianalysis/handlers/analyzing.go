@@ -175,9 +175,9 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 	}
 
 	// Record Rego evaluation metric
-	outcome := "auto_approved"
+	outcome := aianalysis.OutcomeAutoApproved
 	if result.ApprovalRequired {
-		outcome = "requires_approval"
+		outcome = aianalysis.OutcomeRequiresApproval
 	}
 	h.metrics.RecordRegoEvaluation(outcome, result.Degraded)
 
@@ -213,13 +213,13 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 		// Record approval decision metric and audit event ONLY if not already recorded
 		if !alreadyRecorded {
 			environment := getEnvironment(analysis)
-			h.metrics.RecordApprovalDecision("requires_approval", environment)
+			h.metrics.RecordApprovalDecision(aianalysis.OutcomeRequiresApproval, environment)
 
 			// DD-AUDIT-003: Record approval decision audit event (idempotent - only once)
-			h.auditClient.RecordApprovalDecision(ctx, analysis, "requires_approval", result.Reason)
-			h.log.V(1).Info("Approval decision recorded", "decision", "requires_approval")
+			h.auditClient.RecordApprovalDecision(ctx, analysis, aianalysis.OutcomeRequiresApproval, result.Reason)
+			h.log.V(1).Info("Approval decision recorded", "decision", aianalysis.OutcomeRequiresApproval)
 		} else {
-			h.log.V(1).Info("Approval decision already recorded, skipping duplicate", "decision", "requires_approval")
+			h.log.V(1).Info("Approval decision already recorded, skipping duplicate", "decision", aianalysis.OutcomeRequiresApproval)
 		}
 	} else {
 		// Set ApprovalRequired=False condition (auto-approved)
@@ -228,13 +228,13 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 		// Record approval decision metric and audit event ONLY if not already recorded
 		if !alreadyRecorded {
 			environment := getEnvironment(analysis)
-			h.metrics.RecordApprovalDecision("auto_approved", environment)
+			h.metrics.RecordApprovalDecision(aianalysis.OutcomeAutoApproved, environment)
 
 			// DD-AUDIT-003: Record approval decision audit event (idempotent - only once)
-			h.auditClient.RecordApprovalDecision(ctx, analysis, "auto_approved", "Policy evaluation does not require manual approval")
-			h.log.V(1).Info("Approval decision recorded", "decision", "auto_approved")
+			h.auditClient.RecordApprovalDecision(ctx, analysis, aianalysis.OutcomeAutoApproved, "Policy evaluation does not require manual approval")
+			h.log.V(1).Info("Approval decision recorded", "decision", aianalysis.OutcomeAutoApproved)
 		} else {
-			h.log.V(1).Info("Approval decision already recorded, skipping duplicate", "decision", "auto_approved")
+			h.log.V(1).Info("Approval decision already recorded, skipping duplicate", "decision", aianalysis.OutcomeAutoApproved)
 		}
 	}
 

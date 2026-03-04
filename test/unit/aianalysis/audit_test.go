@@ -35,6 +35,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/audit"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
@@ -297,5 +298,102 @@ var _ = Describe("AuditClient RecordError", func() {
 			payload3, _ := mockStore.StoredEvents[2].EventData.GetAIAnalysisErrorPayload()
 			Expect(payload3.Phase).To(Equal("Analyzing"))
 		})
+	})
+})
+
+// ========================================
+// Unit Tests: RecordRegoEvaluation Outcome Mapping (Issue #262)
+// ========================================
+// BR-AI-050: Audit trail correctness - outcome strings must map to correct OpenAPI EventOutcome enum.
+// This test captures the bug where "approved" fell through to OutcomePending because it was
+// missing from the switch statement's OutcomeSuccess cases.
+var _ = Describe("AuditClient RecordRegoEvaluation outcome mapping", func() {
+	var (
+		mockStore   *mockAuditStore
+		auditClient *audit.AuditClient
+		analysis    *aianalysisv1.AIAnalysis
+		ctx         context.Context
+	)
+
+	BeforeEach(func() {
+		mockStore = newMockAuditStore()
+		auditClient = audit.NewAuditClient(mockStore, logr.Discard())
+		ctx = context.Background()
+
+		analysis = &aianalysisv1.AIAnalysis{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-analysis-rego",
+				Namespace: "default",
+			},
+			Spec: aianalysisv1.AIAnalysisSpec{
+				RemediationRequestRef: corev1.ObjectReference{
+					Name:      "test-rr",
+					Namespace: "default",
+				},
+			},
+		}
+	})
+
+	type outcomeCase struct {
+		outcome         string
+		expectedOutcome ogenclient.AuditEventRequestEventOutcome
+		description     string
+	}
+
+	DescribeTable("should map outcome string to correct EventOutcome enum",
+		func(tc outcomeCase) {
+			auditClient.RecordRegoEvaluation(ctx, analysis, tc.outcome, false, 50, "test reason")
+
+			Expect(mockStore.StoredEvents).To(HaveLen(1), "Should store exactly one audit event")
+			event := mockStore.StoredEvents[0]
+			Expect(event.EventOutcome).To(Equal(tc.expectedOutcome),
+				"Outcome %q should map to %v", tc.outcome, tc.expectedOutcome)
+
+			payload, ok := event.EventData.GetAIAnalysisRegoEvaluationPayload()
+			Expect(ok).To(BeTrue(), "EventData should be AIAnalysisRegoEvaluationPayload")
+			Expect(payload.Outcome).To(Equal(tc.outcome), "Payload outcome should match input")
+		},
+		Entry("auto_approved → Success", outcomeCase{
+			outcome:         aianalysis.OutcomeAutoApproved,
+			expectedOutcome: ogenclient.AuditEventRequestEventOutcomeSuccess,
+			description:     "auto-approved Rego decisions are successful",
+		}),
+		Entry("requires_approval → Success", outcomeCase{
+			outcome:         aianalysis.OutcomeRequiresApproval,
+			expectedOutcome: ogenclient.AuditEventRequestEventOutcomeSuccess,
+			description:     "requires-approval is a valid policy decision, hence success",
+		}),
+		Entry("allow → Success", outcomeCase{
+			outcome:         aianalysis.OutcomeAllow,
+			expectedOutcome: ogenclient.AuditEventRequestEventOutcomeSuccess,
+		}),
+		Entry("success → Success", outcomeCase{
+			outcome:         aianalysis.OutcomeSuccess,
+			expectedOutcome: ogenclient.AuditEventRequestEventOutcomeSuccess,
+		}),
+		Entry("deny → Failure", outcomeCase{
+			outcome:         aianalysis.OutcomeDeny,
+			expectedOutcome: ogenclient.AuditEventRequestEventOutcomeFailure,
+		}),
+		Entry("failure → Failure", outcomeCase{
+			outcome:         aianalysis.OutcomeFailure,
+			expectedOutcome: ogenclient.AuditEventRequestEventOutcomeFailure,
+		}),
+		Entry("unknown string → Pending", outcomeCase{
+			outcome:         "something_unexpected",
+			expectedOutcome: ogenclient.AuditEventRequestEventOutcomePending,
+			description:     "unknown outcomes fall through to pending",
+		}),
+	)
+
+	It("should preserve degraded flag in payload", func() {
+		auditClient.RecordRegoEvaluation(ctx, analysis, aianalysis.OutcomeAutoApproved, true, 100, "degraded mode")
+
+		Expect(mockStore.StoredEvents).To(HaveLen(1))
+		payload, ok := mockStore.StoredEvents[0].EventData.GetAIAnalysisRegoEvaluationPayload()
+		Expect(ok).To(BeTrue())
+		Expect(payload.Degraded).To(BeTrue(), "Degraded flag should be preserved")
+		Expect(payload.DurationMs).To(Equal(int32(100)), "Duration should be preserved")
+		Expect(payload.Reason).To(Equal("degraded mode"), "Reason should be preserved")
 	})
 })
