@@ -33,7 +33,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-logr/logr"
+
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -2937,114 +2937,6 @@ The %s phase did not complete within the expected timeframe. Please investigate 
 		"notificationName", notificationName,
 		"phase", phase,
 		"timeout", timeout)
-}
-
-// HandleBlockedPhase handles RemediationRequests in Blocked phase.
-// Checks if cooldown has expired and transitions to Failed if so.
-//
-// AC-042-3-2: RO transitions to Failed when cooldown expires
-// AC-042-3-3: RO requeues at exact expiry time
-func (r *Reconciler) HandleBlockedPhase(ctx context.Context, rr *remediationv1.RemediationRequest) (ctrl.Result, error) {
-	logger := ctrl.LoggerFrom(ctx).WithName("handle-blocked-phase")
-
-	// Check if this is a manual block (no BlockedUntil set)
-	if rr.Status.BlockedUntil == nil {
-		// Manual block - no auto-expiry
-		logger.Info("RemediationRequest manually blocked - no auto-expiry",
-			"name", rr.Name,
-			"blockReason", rr.Status.BlockReason)
-		return ctrl.Result{}, nil
-	}
-
-	// Check if cooldown has expired
-	now := time.Now()
-	if now.After(rr.Status.BlockedUntil.Time) {
-		// BR-SCOPE-010: UnmanagedResource blocks re-validate scope instead of failing
-		if rr.Status.BlockReason == string(remediationv1.BlockReasonUnmanagedResource) {
-			return r.handleUnmanagedResourceExpiry(ctx, rr, logger)
-		}
-
-		// Cooldown expired - transition to Failed
-		logger.Info("Blocked cooldown expired - transitioning to Failed",
-			"name", rr.Name,
-			"blockedUntil", rr.Status.BlockedUntil.Time,
-			"blockReason", rr.Status.BlockReason)
-
-		// ========================================
-		// DD-PERF-001: ATOMIC STATUS UPDATE
-		// Consolidate: OverallPhase + Outcome + Message → 1 API call
-		// ========================================
-		if err := r.StatusManager.AtomicStatusUpdate(ctx, rr, func() error {
-			rr.Status.OverallPhase = remediationv1.PhaseFailed
-			rr.Status.Outcome = "Blocked"
-			rr.Status.Message = fmt.Sprintf("Cooldown expired after %d consecutive failures",
-				r.getConsecutiveFailureThreshold())
-			return nil
-		}); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to update status after cooldown expiry: %w", err)
-		}
-
-		return ctrl.Result{}, nil
-	}
-
-	// Cooldown still active - requeue at expiry time
-	requeueAfter := time.Until(rr.Status.BlockedUntil.Time)
-	logger.Info("RemediationRequest blocked - requeuing at cooldown expiry",
-		"name", rr.Name,
-		"blockedUntil", rr.Status.BlockedUntil.Time,
-		"requeueAfter", requeueAfter)
-
-	return ctrl.Result{RequeueAfter: requeueAfter}, nil
-}
-
-// handleUnmanagedResourceExpiry re-validates scope when an UnmanagedResource block expires.
-// If still unmanaged: re-block with increased backoff.
-// If now managed: transition back to Pending for re-processing.
-//
-// Reference: BR-SCOPE-010, ADR-053 (Resource Scope Management)
-func (r *Reconciler) handleUnmanagedResourceExpiry(ctx context.Context, rr *remediationv1.RemediationRequest, logger logr.Logger) (ctrl.Result, error) {
-	logger.Info("UnmanagedResource block expired - re-validating scope",
-		"name", rr.Name)
-
-	// Re-validate scope using the routing engine
-	blocked := r.routingEngine.CheckUnmanagedResource(ctx, rr)
-
-	if blocked != nil {
-		// Still unmanaged — re-block with increased backoff
-		logger.Info("Resource still unmanaged - re-blocking with increased backoff",
-			"name", rr.Name,
-			"newBackoff", blocked.RequeueAfter)
-
-		blockedUntilMeta := metav1.NewTime(*blocked.BlockedUntil)
-		if err := r.StatusManager.AtomicStatusUpdate(ctx, rr, func() error {
-			rr.Status.BlockReason = blocked.Reason
-			rr.Status.Message = blocked.Message
-			rr.Status.BlockedUntil = &blockedUntilMeta
-			rr.Status.ConsecutiveFailureCount++ // increment to increase next backoff
-			return nil
-		}); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to update status for scope re-block: %w", err)
-		}
-
-		return ctrl.Result{RequeueAfter: blocked.RequeueAfter}, nil
-	}
-
-	// Now managed — transition back to Pending for re-processing
-	logger.Info("Resource is now managed - unblocking and transitioning to Pending",
-		"name", rr.Name)
-
-	if err := r.StatusManager.AtomicStatusUpdate(ctx, rr, func() error {
-		rr.Status.OverallPhase = remediationv1.PhasePending
-		rr.Status.BlockReason = ""
-		rr.Status.BlockedUntil = nil
-		rr.Status.Message = "Resource is now managed by Kubernaut - re-processing"
-		return nil
-	}); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to update status after scope unblock: %w", err)
-	}
-
-	// Requeue immediately for re-processing
-	return ctrl.Result{Requeue: true}, nil
 }
 
 // IsTerminalPhase checks if a phase is terminal (no further processing).
