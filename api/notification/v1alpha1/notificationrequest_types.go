@@ -192,12 +192,10 @@ type NotificationRequestSpec struct {
 	// +kubebuilder:validation:MinLength=1
 	Body string `json:"body"`
 
-	// Delivery channels to use.
-	// Optional: If not specified, Notification Service routing rules (BR-NOT-065)
-	// will determine channels based on CRD spec fields (type, severity, environment, namespace).
-	// If specified, these channels are used in addition to routing rule matches.
-	// +optional
-	Channels []Channel `json:"channels,omitempty"`
+	// DEPRECATED (#260): This field is hidden from the CRD API surface.
+	// Routing rules (BR-NOT-065) are the authoritative channel resolution mechanism.
+	// Tech debt: Remove this field and all references post-v1.0.
+	Channels []Channel `json:"-"`
 
 	// Severity from the originating signal (used for routing)
 	// Issue #91: promoted from mutable label to immutable spec field

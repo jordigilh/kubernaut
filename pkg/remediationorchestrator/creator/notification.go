@@ -106,10 +106,8 @@ func (c *NotificationCreator) CreateApprovalNotification(
 		return "", fmt.Errorf("failed to check existing NotificationRequest: %w", err)
 	}
 
-	// Determine channels based on context
-	channels := c.determineApprovalChannels(rr, ai)
-
 	// Build NotificationRequest for approval
+	// #260: Channels resolved by NT routing rules (BR-NOT-065), not set by RO
 	// API Contract: Uses Subject/Body (not Title/Message), Metadata (not Context)
 	nr := &notificationv1.NotificationRequest{
 		ObjectMeta: metav1.ObjectMeta{
@@ -125,13 +123,11 @@ func (c *NotificationCreator) CreateApprovalNotification(
 				Namespace:  rr.Namespace,
 				UID:        rr.UID,
 			},
-			Type: notificationv1.NotificationTypeApproval,
-			// Priority now from AIAnalysis.Spec.SignalContext.BusinessPriority (set by SP, not RR.Spec)
+			Type:     notificationv1.NotificationTypeApproval,
 			Priority: c.mapPriority(ai.Spec.AnalysisRequest.SignalContext.BusinessPriority),
 			Severity: rr.Spec.Severity,
 			Subject:  fmt.Sprintf("Approval Required: %s", rr.Spec.SignalName),
 			Body:     c.buildApprovalBody(rr, ai),
-			Channels: channels,
 			Metadata: map[string]string{
 				"remediationRequest": rr.Name,
 				"aiAnalysis":         ai.Name,
@@ -164,7 +160,6 @@ func (c *NotificationCreator) CreateApprovalNotification(
 
 	logger.Info("Created approval NotificationRequest",
 		"name", name,
-		"channels", channels,
 		"approvalReason", ai.Status.ApprovalReason,
 	)
 
@@ -175,21 +170,6 @@ func (c *NotificationCreator) CreateApprovalNotification(
 	return name, nil
 }
 
-// determineApprovalChannels determines notification channels based on context.
-// Returns typed Channel slice per API contract.
-func (c *NotificationCreator) determineApprovalChannels(
-	rr *remediationv1.RemediationRequest,
-	ai *aianalysisv1.AIAnalysis,
-) []notificationv1.Channel {
-	channels := []notificationv1.Channel{notificationv1.ChannelSlack} // Default
-
-	// High-risk actions or production environment get additional channels
-	if ai.Status.ApprovalReason == "high_risk_action" {
-		channels = append(channels, notificationv1.ChannelEmail)
-	}
-
-	return channels
-}
 
 // mapPriority maps remediation priority string to NotificationPriority enum.
 func (c *NotificationCreator) mapPriority(priority string) notificationv1.NotificationPriority {
@@ -301,6 +281,7 @@ func (c *NotificationCreator) CreateCompletionNotification(
 	}
 
 	// Build NotificationRequest for completion
+	// #260: Channels resolved by NT routing rules (BR-NOT-065), not set by RO
 	// API Contract: Uses Subject/Body (not Title/Message), Metadata (not Context)
 	nr := &notificationv1.NotificationRequest{
 		ObjectMeta: metav1.ObjectMeta{
@@ -321,7 +302,6 @@ func (c *NotificationCreator) CreateCompletionNotification(
 			Severity: rr.Spec.Severity,
 			Subject:  fmt.Sprintf("Remediation Completed: %s", rr.Spec.SignalName),
 			Body:     c.buildCompletionBody(rr, ai, rootCause, workflowID, executionEngine, actionType, rationale),
-			Channels: []notificationv1.Channel{notificationv1.ChannelSlack, notificationv1.ChannelFile},
 			Metadata: map[string]string{
 				"remediationRequest": rr.Name,
 				"aiAnalysis":         ai.Name,
@@ -454,7 +434,6 @@ func (c *NotificationCreator) CreateBulkDuplicateNotification(
 			Severity: "low",
 			Subject:  fmt.Sprintf("Remediation Completed with %d Duplicates", rr.Status.DuplicateCount),
 			Body:     c.buildBulkDuplicateBody(rr),
-			Channels: []notificationv1.Channel{notificationv1.ChannelSlack}, // Lower priority channel
 			Metadata: map[string]string{
 				"remediationRequest": rr.Name,
 				"duplicateCount":     fmt.Sprintf("%d", rr.Status.DuplicateCount),
@@ -587,13 +566,11 @@ func (c *NotificationCreator) CreateManualReviewNotification(
 	// Determine priority based on source and reason (per BR-ORCH-036 priority mapping)
 	priority := c.mapManualReviewPriority(reviewCtx)
 
-	// Determine channels based on priority
-	channels := c.determineManualReviewChannels(priority)
-
 	// Build metadata with context-specific fields
 	metadata := c.buildManualReviewMetadata(rr, reviewCtx)
 
 	// Build NotificationRequest for manual review
+	// #260: Channels resolved by NT routing rules (BR-NOT-065), not set by RO
 	nr := &notificationv1.NotificationRequest{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -614,7 +591,6 @@ func (c *NotificationCreator) CreateManualReviewNotification(
 			ReviewSource: string(reviewCtx.Source),
 			Subject:  fmt.Sprintf("⚠️ Manual Review Required: %s", rr.Spec.SignalName),
 			Body:     c.buildManualReviewBody(rr, reviewCtx),
-			Channels: channels,
 			Metadata: metadata,
 		},
 	}
@@ -641,7 +617,6 @@ func (c *NotificationCreator) CreateManualReviewNotification(
 	logger.Info("Created manual review NotificationRequest",
 		"name", name,
 		"priority", priority,
-		"channels", channels,
 	)
 
 	// BR-ORCH-029, BR-ORCH-036: Track manual review notification creation (DD-METRICS-001)
@@ -688,20 +663,6 @@ func (c *NotificationCreator) mapManualReviewPriority(ctx *ManualReviewContext) 
 	}
 }
 
-// determineManualReviewChannels determines channels based on priority.
-func (c *NotificationCreator) determineManualReviewChannels(priority notificationv1.NotificationPriority) []notificationv1.Channel {
-	switch priority {
-	case notificationv1.NotificationPriorityCritical:
-		// Critical: Slack + Email for immediate attention
-		return []notificationv1.Channel{notificationv1.ChannelSlack, notificationv1.ChannelEmail}
-	case notificationv1.NotificationPriorityHigh:
-		// High: Slack + Email
-		return []notificationv1.Channel{notificationv1.ChannelSlack, notificationv1.ChannelEmail}
-	default:
-		// Medium/Low: Slack only
-		return []notificationv1.Channel{notificationv1.ChannelSlack}
-	}
-}
 
 // buildManualReviewMetadata builds the metadata map for manual review notifications.
 // Includes source-specific fields for context.

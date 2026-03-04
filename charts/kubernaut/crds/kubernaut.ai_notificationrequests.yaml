@@ -100,24 +100,6 @@ spec:
                 description: Notification body content
                 minLength: 1
                 type: string
-              channels:
-                description: |-
-                  Delivery channels to use.
-                  Optional: If not specified, Notification Service routing rules (BR-NOT-065)
-                  will determine channels based on CRD spec fields (type, severity, environment, namespace).
-                  If specified, these channels are used in addition to routing rule matches.
-                items:
-                  enum:
-                  - email
-                  - slack
-                  - teams
-                  - sms
-                  - webhook
-                  - console
-                  - file
-                  - log
-                  type: string
-                type: array
               metadata:
                 additionalProperties:
                   type: string

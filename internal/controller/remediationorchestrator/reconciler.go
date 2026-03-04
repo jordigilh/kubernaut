@@ -1946,10 +1946,6 @@ The remediation was in %s phase when it timed out. Please investigate why the re
 				rr.Status.TimeoutTime.Format(time.RFC3339),
 				timeoutPhase,
 			),
-			Channels: []notificationv1.Channel{
-				notificationv1.ChannelSlack,
-				notificationv1.ChannelEmail,
-			},
 			Metadata: map[string]string{
 				"remediationRequest": rr.Name,
 				"timeoutPhase":       timeoutPhase,
@@ -2913,10 +2909,6 @@ The %s phase did not complete within the expected timeframe. Please investigate 
 				safeFormatTime(rr.Status.TimeoutTime),
 				phase,
 			),
-			Channels: []notificationv1.Channel{
-				notificationv1.ChannelSlack,
-				notificationv1.ChannelEmail,
-			},
 			Metadata: map[string]string{
 				"remediationRequest": rr.Name,
 				"timeoutPhase":       string(phase),

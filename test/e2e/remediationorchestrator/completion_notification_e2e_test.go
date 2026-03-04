@@ -269,9 +269,8 @@ var _ = Describe("E2E-RO-045-001: Completion Notification", Label("e2e", "notifi
 		Expect(notification.Spec.Metadata).To(HaveKeyWithValue("workflowId", "restart-pod-v1"))
 		Expect(notification.Spec.Metadata).To(HaveKey("rootCause"))
 
-		By("13. Validating NotificationRequest channels include file (for E2E verification)")
-		Expect(notification.Spec.Channels).To(ContainElement(notificationv1.ChannelSlack))
-		Expect(notification.Spec.Channels).To(ContainElement(notificationv1.ChannelFile))
+		By("13. Validating NotificationRequest channels are empty (#260: routing resolves channels)")
+		Expect(notification.Spec.Channels).To(BeEmpty(), "#260: RO no longer sets channels, NT routing rules are authoritative")
 
 		By("14. Validating owner reference for cascade deletion (BR-ORCH-031)")
 		Expect(notification.OwnerReferences).To(HaveLen(1))

@@ -288,31 +288,8 @@ var _ = Describe("NotificationCreator", func() {
 			Entry("unknown → Low", "unknown", notificationv1.NotificationPriorityLow),
 		)
 
-		// Test #12-14: Channel determination via DescribeTable
-		DescribeTable("BR-ORCH-001: Channel determination",
-			func(approvalReason string, expectedChannels []notificationv1.Channel) {
-				client := fakeClient.Build()
-				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
-
-				rr := helpers.NewRemediationRequest("test-rr", "default")
-				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.ApprovalReason = approvalReason
-
-				name, err := nc.CreateApprovalNotification(ctx, rr, ai)
-				Expect(err).ToNot(HaveOccurred())
-
-				nr := &notificationv1.NotificationRequest{}
-				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(nr.Spec.Channels).To(ConsistOf(expectedChannels))
-			},
-			Entry("default → Slack only",
-				"low_confidence",
-				[]notificationv1.Channel{notificationv1.ChannelSlack}),
-			Entry("high_risk_action → Slack + Email",
-				"high_risk_action",
-				[]notificationv1.Channel{notificationv1.ChannelSlack, notificationv1.ChannelEmail}),
-		)
+		// #260: Channel determination removed from RO — NT routing rules (BR-NOT-065) are authoritative.
+		// Channels are no longer set in spec by the RO; routing resolves them at delivery time.
 	})
 
 	Describe("CreateBulkDuplicateNotification", func() {
@@ -469,7 +446,6 @@ var _ = Describe("NotificationCreator", func() {
 				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
 				Expect(err).ToNot(HaveOccurred())
 
-				Expect(nr.Spec.RemediationRequestRef).ToNot(BeNil())
 				Expect(nr.Spec.RemediationRequestRef.Name).To(Equal("test-rr"))
 				Expect(nr.Spec.Type).To(Equal(notificationv1.NotificationTypeApproval))
 				Expect(nr.Spec.Severity).To(Equal("high"))
@@ -493,7 +469,6 @@ var _ = Describe("NotificationCreator", func() {
 				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
 				Expect(err).ToNot(HaveOccurred())
 
-				Expect(nr.Spec.RemediationRequestRef).ToNot(BeNil())
 				Expect(nr.Spec.RemediationRequestRef.Name).To(Equal("test-rr"))
 				Expect(nr.Spec.Type).To(Equal(notificationv1.NotificationTypeSimple))
 				Expect(nr.Spec.Severity).To(Equal("low"))
@@ -807,7 +782,6 @@ var _ = Describe("NotificationCreator", func() {
 				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
 				Expect(err).ToNot(HaveOccurred())
 
-				Expect(nr.Spec.RemediationRequestRef).ToNot(BeNil())
 				Expect(nr.Spec.RemediationRequestRef.Name).To(Equal("test-rr"))
 				Expect(nr.Spec.Type).To(Equal(notificationv1.NotificationTypeManualReview))
 				Expect(nr.Spec.Severity).To(Equal("critical"))
@@ -957,7 +931,10 @@ var _ = Describe("NotificationCreator", func() {
 
 		Context("BR-ORCH-036: Channel Determination", func() {
 			// Test #36: Critical priority → Slack + Email
-			It("should use Slack + Email for Critical priority", func() {
+			// #260: Channel determination removed from RO — NT routing rules (BR-NOT-065) are authoritative.
+			// Manual review channels are no longer set in spec by the RO.
+
+			It("should create notification with Critical priority for WE failures", func() {
 				client := fakeClient.Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
@@ -975,14 +952,11 @@ var _ = Describe("NotificationCreator", func() {
 				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
 				Expect(err).ToNot(HaveOccurred())
 
-				Expect(nr.Spec.Channels).To(ConsistOf(
-					notificationv1.ChannelSlack,
-					notificationv1.ChannelEmail,
-				))
+				Expect(nr.Spec.Priority).To(Equal(notificationv1.NotificationPriorityCritical))
+				Expect(nr.Spec.Channels).To(BeEmpty(), "#260: RO no longer sets channels")
 			})
 
-			// Test #37: High/Medium priority → Slack only
-			It("should use Slack only for High/Medium priority", func() {
+			It("should create notification with Medium priority for AI LowConfidence", func() {
 				client := fakeClient.Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
@@ -1001,7 +975,8 @@ var _ = Describe("NotificationCreator", func() {
 				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
 				Expect(err).ToNot(HaveOccurred())
 
-				Expect(nr.Spec.Channels).To(ConsistOf(notificationv1.ChannelSlack))
+				Expect(nr.Spec.Priority).To(Equal(notificationv1.NotificationPriorityMedium))
+				Expect(nr.Spec.Channels).To(BeEmpty(), "#260: RO no longer sets channels")
 			})
 		})
 	})
@@ -1150,8 +1125,8 @@ var _ = Describe("NotificationCreator", func() {
 			})
 		})
 
-		Context("BR-ORCH-045 AC-045-5: Channels include file and slack", func() {
-			It("should include file and slack channels for completion notification", func() {
+		Context("BR-ORCH-045 AC-045-5: Channels resolved by routing (#260)", func() {
+			It("should not set channels in spec (routing resolves them)", func() {
 				client := fakeClient.Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
@@ -1165,10 +1140,7 @@ var _ = Describe("NotificationCreator", func() {
 				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
 				Expect(err).ToNot(HaveOccurred())
 
-				Expect(nr.Spec.Channels).To(ConsistOf(
-					notificationv1.ChannelSlack,
-					notificationv1.ChannelFile,
-				))
+				Expect(nr.Spec.Channels).To(BeEmpty(), "#260: RO no longer sets channels")
 			})
 		})
 
@@ -1260,10 +1232,9 @@ var _ = Describe("NotificationCreator", func() {
 				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
 				Expect(err).ToNot(HaveOccurred())
 
-				Expect(nr.Spec.RemediationRequestRef).ToNot(BeNil())
 				Expect(nr.Spec.RemediationRequestRef.Name).To(Equal("test-rr"))
 				Expect(nr.Spec.Type).To(Equal(notificationv1.NotificationTypeCompletion))
-				Expect(nr.Spec.Severity).ToNot(BeEmpty())
+				Expect(nr.Spec.Severity).To(Equal("warning"))
 				Expect(nr.Labels).To(BeNil())
 			})
 		})
