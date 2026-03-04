@@ -109,8 +109,7 @@ func (s *LogDeliveryService) Deliver(ctx context.Context, notification *notifica
 		"subject":  notification.Spec.Subject,
 		"body":     notification.Spec.Body,
 
-		// Delivery configuration
-		"channels": notification.Spec.Channels,
+		// Delivery configuration resolved from routing rules (#261)
 	}
 
 	// Add metadata if present

@@ -93,37 +93,20 @@ func ResolveChannelsForNotification(config *Config, notification *notificationv1
 	return receiver.GetChannels()
 }
 
-// ShouldUseRoutingRules determines if routing rules should be used
-// for the given notification.
-//
-// BR-NOT-065: If spec.channels is NOT specified, use routing rules.
-// If spec.channels IS specified, use those channels directly.
+// ShouldUseRoutingRules always returns true since Spec.Channels was removed (#261).
+// Kept for backward compatibility with any callers; will be removed post-v1.0.
 func ShouldUseRoutingRules(notification *notificationv1alpha1.NotificationRequest) bool {
-	if notification == nil {
-		return true
-	}
-	return len(notification.Spec.Channels) == 0
+	return true
 }
 
-// GetEffectiveChannels returns the channels to use for delivery.
-//
-// BR-NOT-065: Channel resolution priority:
-//  1. If spec.channels is specified, use those channels
-//  2. Otherwise, resolve channels from routing rules using spec fields
+// GetEffectiveChannels resolves channels from routing rules.
+// Since Spec.Channels was removed (#261), routing is always used.
 func GetEffectiveChannels(config *Config, notification *notificationv1alpha1.NotificationRequest) []notificationv1alpha1.Channel {
 	if notification == nil {
 		return []notificationv1alpha1.Channel{notificationv1alpha1.ChannelConsole}
 	}
 
-	// If channels explicitly specified, use them
-	if len(notification.Spec.Channels) > 0 {
-		return notification.Spec.Channels
-	}
-
-	// Resolve from routing rules
 	channelStrings := ResolveChannelsForNotification(config, notification)
-
-	// Convert string channels to typed channels
 	return convertToTypedChannels(channelStrings)
 }
 
