@@ -24,7 +24,7 @@ detectedLabels:
 
 execution:
   engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/fix-authz-policy-job@sha256:f82ad9b9bde7869037d200fc01ae00ae54f9709cf073b1548e015458eaca75ba
+  bundle: quay.io/kubernaut-cicd/test-workflows/fix-authz-policy-job@sha256:e2f72645f71aac3209a0b22f5ef4f3c1912e9efbdbea4adf8b3b24a163e4529c
 
 parameters:
   - name: TARGET_NAMESPACE

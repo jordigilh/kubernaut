@@ -24,7 +24,7 @@ detectedLabels:
 
 execution:
   engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/fix-network-policy-job@sha256:4e0030f3fdd601045710eda3cef0fa2adbf15d77f7dca6f59aedbe492647eccb
+  bundle: quay.io/kubernaut-cicd/test-workflows/fix-network-policy-job@sha256:d2eeab74a2e2c6840147932ffdb22f287081f82fbe15e832e02380b62aef993a
 
 parameters:
   - name: TARGET_NAMESPACE
