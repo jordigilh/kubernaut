@@ -71,11 +71,12 @@ func GetAIAnalysisTestWorkflows() []TestWorkflow {
 			Severity:    "critical",
 			Component:   "deployment",
 			Priority:    "P0",
-			// Mock LLM "oomkilled" scenario returns: NAMESPACE, DEPLOYMENT_NAME, MEMORY_INCREASE_PERCENT
+			// Must match workflow-schema.yaml and Mock LLM "oomkilled" scenario parameters
 			SchemaParameters: []models.WorkflowParameter{
-				{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target namespace containing the affected deployment"},
-				{Name: "DEPLOYMENT_NAME", Type: "string", Required: true, Description: "Name of the deployment to update memory limits"},
-				{Name: "MEMORY_INCREASE_PERCENT", Type: "integer", Required: false, Description: "Percentage to increase memory limits by"},
+				{Name: "TARGET_RESOURCE_KIND", Type: "string", Required: true, Description: "Kubernetes resource kind (Deployment, StatefulSet, DaemonSet)"},
+				{Name: "TARGET_RESOURCE_NAME", Type: "string", Required: true, Description: "Name of the resource to patch"},
+				{Name: "TARGET_NAMESPACE", Type: "string", Required: true, Description: "Namespace of the resource"},
+				{Name: "MEMORY_LIMIT_NEW", Type: "string", Required: true, Description: "New memory limit to apply (e.g., 128Mi, 256Mi, 1Gi)"},
 			},
 		},
 		{

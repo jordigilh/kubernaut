@@ -104,8 +104,8 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         rca_resource_name="api-server",
         # BR-HAPI-191: Parameter names MUST match workflow-schema.yaml definitions
         # (validated by HAPI WorkflowResponseValidator against DataStorage parameter schema)
-        # Schema: NAMESPACE (required), DEPLOYMENT_NAME (required), MEMORY_INCREASE_PERCENT (optional)
-        parameters={"NAMESPACE": "default", "DEPLOYMENT_NAME": "memory-eater", "MEMORY_INCREASE_PERCENT": "50"},
+        # Schema: TARGET_RESOURCE_KIND, TARGET_RESOURCE_NAME, TARGET_NAMESPACE, MEMORY_LIMIT_NEW (all required)
+        parameters={"TARGET_RESOURCE_KIND": "Deployment", "TARGET_RESOURCE_NAME": "api-server", "TARGET_NAMESPACE": "production", "MEMORY_LIMIT_NEW": "512Mi"},
         # BR-WE-014: Full pipeline uses Job execution engine (not Tekton)
         execution_engine="job",
     ),
@@ -251,8 +251,8 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         rca_resource_namespace="production",
         rca_resource_name="api-server",
         # BR-HAPI-191: Parameter names MUST match workflow-schema.yaml definitions
-        # Schema: NAMESPACE (required), DEPLOYMENT_NAME (required), MEMORY_INCREASE_PERCENT (optional)
-        parameters={"NAMESPACE": "production", "DEPLOYMENT_NAME": "api-server", "MEMORY_INCREASE_PERCENT": "50"},
+        # Schema: TARGET_RESOURCE_KIND, TARGET_RESOURCE_NAME, TARGET_NAMESPACE, MEMORY_LIMIT_NEW (all required)
+        parameters={"TARGET_RESOURCE_KIND": "Deployment", "TARGET_RESOURCE_NAME": "api-server", "TARGET_NAMESPACE": "production", "MEMORY_LIMIT_NEW": "512Mi"},
         # BR-WE-014: Full pipeline uses Job execution engine (not Tekton)
         execution_engine="job",
     ),
@@ -287,7 +287,7 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         rca_resource_name="demo-app-cert",
         rca_resource_api_version="cert-manager.io/v1",
         rca_override_prompt_resource=True,  # Gateway sees Pod from alert, but RCA is about the Certificate
-        parameters={"NAMESPACE": "default", "DEPLOYMENT_NAME": "memory-eater", "MEMORY_INCREASE_PERCENT": "50"},
+        parameters={"TARGET_RESOURCE_KIND": "Certificate", "TARGET_RESOURCE_NAME": "demo-app-cert", "TARGET_NAMESPACE": "default", "MEMORY_LIMIT_NEW": "512Mi"},
         execution_engine="job",
     ),
 }
