@@ -1,9 +1,10 @@
 # VHS tape: CrashLoopBackOff Remediation Demo (#120)
 #
-# Three-act recording:
+# Recording structure:
+#   Title Card:                    scenario overview + 3-act roadmap (20s hold)
 #   Act 1 -- "The Problem":       healthy workload, fault injection, CrashLoopBackOff, alert fires
-#   Act 2 -- "The Remediation":   RCA, rego policy, RAR approval, live WFE execution
-#   Act 3 -- "The Result":        recovery verification, EA assessment with score explanations
+#   Act 2 -- "The Remediation":   RCA, rego policy, RAR approval, live RR phase transitions
+#   Act 3 -- "The Result":        recovery verification, notifications, EA assessment
 #
 # Pre-requisites:
 #   - Kind cluster with Kubernaut platform deployed
@@ -19,8 +20,16 @@
 #   2. `clear` before the echo so the terminal screen contains ONLY the sentinel
 #      output -- prevents stale matches from previous screen content.
 #
-# Visible annotations use bash comments (# ...) instead of echo to avoid the
-# visual artifact where the echo command text and its output both appear.
+# Visual hierarchy (color-driven, no symbols):
+#   1. Bold yellow ━━ act headers      (announce)  — hidden typing, only output shown
+#   2. Dim gray narration              (narrate)   — hidden typing, only output shown
+#   3. Cyan ❯ prompt                   (typed commands visible)
+#   4. Default foreground              (command output)
+#
+# Persistent act titles:
+#   announce() sets _act; act_clear() does clear + reprints the current act title.
+#   Every hidden-wait block uses act_clear before Show so the viewer always knows
+#   which act they are in.
 
 Output deploy/demo/scenarios/crashloop/crashloop.gif
 Output deploy/demo/scenarios/crashloop/crashloop.mp4
@@ -44,9 +53,37 @@ Set Theme "Catppuccin Mocha"
 Hide
 Set TypingSpeed 1ms
 
-Type `export PS1='$ '`
+# Colored prompt: bright cyan ❯
+Type `export PS1='\[\e[1;36m\]❯ \[\e[0m\]'`
 Enter
 Sleep 500ms
+
+Type `export KUBECONFIG=~/.kube/kubernaut-demo-config`
+Enter
+Sleep 500ms
+
+# Self-erasing helpers: \e[1A moves up, \e[2K erases the typed command line
+Type `narrate() { printf '\e[1A\e[2K\e[38;5;245m%s\e[0m\n' "$*"; }`
+Enter
+Sleep 200ms
+
+# announce sets _act so act_clear can re-render it after screen clears
+Type `_act=""`
+Enter
+Sleep 100ms
+
+Type `announce() { _act="$*"; printf '\e[1A\e[2K\n\e[1;33m━━ %s ━━\e[0m\n\n' "$*"; }`
+Enter
+Sleep 200ms
+
+Type `act_clear() { clear; [ -n "$_act" ] && printf '\e[1;33m━━ %s ━━\e[0m\n\n' "$_act"; }`
+Enter
+Sleep 200ms
+
+# title_card: scenario-specific intro rendered as a single self-erasing call
+Type `title_card() { printf '\e[1A\e[2K\n\e[1;33m━━ CrashLoopBackOff Remediation ━━\e[0m\n\n\e[38;5;245mA production nginx deployment receives a bad config update.\nKubernaut detects the crash, diagnoses the root cause with AI,\nexecutes a rollback workflow, and verifies the fix.\e[0m\n\n\e[1;33mAct 1\e[0m  \e[38;5;245mThe Problem     — bad config crashes pods, Prometheus alert fires\e[0m\n\e[1;33mAct 2\e[0m  \e[38;5;245mThe Remediation — AI root cause analysis, approval gate, workflow runs\e[0m\n\e[1;33mAct 3\e[0m  \e[38;5;245mThe Result      — pods recover, effectiveness assessment confirms fix\e[0m\n'; }`
+Enter
+Sleep 200ms
 
 Type `export PLATFORM_NS=kubernaut-system`
 Enter
@@ -56,6 +93,7 @@ Type `bash deploy/demo/scenarios/crashloop/cleanup.sh 2>/dev/null; true`
 Enter
 Sleep 5s
 
+# Shorten stabilization window for demo speed
 Type `kubectl get configmap remediationorchestrator-config -n ${PLATFORM_NS} -o yaml | sed 's/stabilizationWindow: "5m"/stabilizationWindow: "1m"/' | kubectl apply -f - >/dev/null 2>&1 && kubectl rollout restart deployment/remediationorchestrator-controller -n ${PLATFORM_NS} >/dev/null 2>&1 && kubectl rollout status deployment/remediationorchestrator-controller -n ${PLATFORM_NS} --timeout=60s >/dev/null 2>&1`
 Enter
 Sleep 30s
@@ -67,32 +105,63 @@ Wait+Screen@300s /SETUP_COMPLETE/
 Type "clear"
 Enter
 Sleep 500ms
-Set TypingSpeed 50ms
 
+# ─────────────────────────────────────────
+# Title Card
+# ─────────────────────────────────────────
+# Single function call — self-erases its command line, outputs styled title card.
+
+Type "title_card"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
 Show
+Sleep 20s
 
 # ═════════════════════════════════════════
 # ACT 1 -- The Problem
 # ═════════════════════════════════════════
 
-Type "# Kubernaut Demo: CrashLoopBackOff Remediation"
+Hide
+Set TypingSpeed 1ms
+Type "clear"
 Enter
-Sleep 3s
+Sleep 300ms
+Type "announce 'Act 1: The Problem'"
+Enter
+Sleep 300ms
+Type "narrate 'A production nginx deployment receives a bad config update.'"
+Enter
+Sleep 300ms
+Type "narrate 'Pods crash, Prometheus detects the restart spike, and the alert fires.'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 4s
 
-Type "# Demo timings: alert window shortened to 3m, EA stabilization to 1m"
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'Healthy workload running in namespace demo-crashloop'"
 Enter
-Sleep 3s
-
-Type "# Healthy workload running in a production-labeled namespace"
-Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
 Sleep 2s
+
 Type "kubectl get pods -n demo-crashloop"
 Enter
 Sleep 5s
 
-Type "# Injecting invalid nginx config to trigger CrashLoopBackOff..."
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'Injecting invalid nginx config to trigger CrashLoopBackOff...'"
 Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
 Sleep 2s
+
 Type "bash deploy/demo/scenarios/crashloop/inject-bad-config.sh"
 Enter
 Sleep 4s
@@ -103,21 +172,32 @@ Set TypingSpeed 1ms
 Type `sleep 20 && clear && echo CRASH"_"VISIBLE`
 Enter
 Wait+Screen@60s /CRASH_VISIBLE/
-Type "clear"
+Type "act_clear"
 Enter
 Sleep 500ms
 Set TypingSpeed 50ms
 Show
 
-Type "# Pods are now in CrashLoopBackOff"
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'Pods are now in CrashLoopBackOff'"
 Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
 Sleep 2s
+
 Type "kubectl get pods -n demo-crashloop"
 Enter
 Sleep 5s
 
-Type "# Waiting for the KubePodCrashLooping alert to fire in AlertManager..."
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'Waiting for the KubePodCrashLooping alert to fire...'"
 Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
 Sleep 2s
 
 # Hidden wait: poll until alert appears in AlertManager
@@ -126,21 +206,32 @@ Set TypingSpeed 1ms
 Type `while [ "$(kubectl exec -n monitoring alertmanager-kube-prometheus-stack-alertmanager-0 -- amtool alert query alertname=KubePodCrashLooping --alertmanager.url=http://localhost:9093 --output=json 2>/dev/null | python3 -c 'import sys,json; print(len(json.load(sys.stdin)))' 2>/dev/null)" = "0" ]; do sleep 10; done && clear && echo ALERT"_"FIRED`
 Enter
 Wait+Screen@600s /ALERT_FIRED/
-Type "clear"
+Type "act_clear"
 Enter
 Sleep 500ms
 Set TypingSpeed 50ms
 Show
 
-Type "# Alert is now firing -- querying AlertManager"
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'Alert is now firing'"
 Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
 Sleep 2s
+
 Type "bash deploy/demo/scripts/show-alert.sh KubePodCrashLooping"
 Enter
 Sleep 8s
 
-Type "# Kubernaut Gateway received this alert and created a RemediationRequest"
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'Kubernaut Gateway received this alert and created a RemediationRequest'"
 Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
 Sleep 3s
 
 # Hidden wait: poll until RR reaches AwaitingApproval (pipeline completed analysis)
@@ -149,65 +240,90 @@ Set TypingSpeed 1ms
 Type `while ! kubectl get remediationrequests -n ${PLATFORM_NS} 2>/dev/null | grep -q AwaitingApproval; do sleep 10; done && clear && echo PIPELINE"_"READY`
 Enter
 Wait+Screen@600s /PIPELINE_READY/
-Type "clear"
-Enter
-Sleep 500ms
-Set TypingSpeed 50ms
-Show
 
 # ═════════════════════════════════════════
 # ACT 2 -- The Remediation
 # ═════════════════════════════════════════
 
-Type "# The pipeline completed AI-driven analysis"
+Type "clear"
 Enter
-Sleep 3s
+Sleep 300ms
+Type "announce 'Act 2: The Remediation'"
+Enter
+Sleep 300ms
+Type "narrate 'The AI analyzed the crash, identified the bad config, and selected a rollback.'"
+Enter
+Sleep 300ms
+Type "narrate 'Approval is required because this is a production namespace.'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 4s
 
-Type "kubectl get remediationrequests,signalprocessings,aianalyses -n ${PLATFORM_NS}"
+Type "kubectl get remediationrequests -n ${PLATFORM_NS}"
 Enter
 Sleep 6s
 
-Type "# Root cause analysis and recommended workflow:"
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'Root cause analysis and recommended workflow'"
 Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
 Sleep 2s
+
 Type "bash deploy/demo/scripts/show-ai-analysis.sh demo-crashloop"
 Enter
-Sleep 12s
+Sleep 24s
 
-Type "# Approval required -- rego policy matched because environment=production"
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'Checking why approval is required...'"
 Enter
-Sleep 3s
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 2s
+
 Type "kubectl get rar -n ${PLATFORM_NS}"
 Enter
 Sleep 6s
 
-Type "# Why is approval required? Let's check the rego policy"
-Enter
-Sleep 2s
 Type "bash deploy/demo/scripts/show-approval-reason.sh demo-crashloop"
 Enter
 Sleep 12s
 
-Type "# Approving the RemediationApprovalRequest..."
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'Approving the remediation...'"
 Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
 Sleep 2s
+
 Type "bash deploy/demo/scripts/approve-rar.sh"
 Enter
 Sleep 4s
 
-Type "# RAR status after approval:"
+# Clear screen before watch so "Completed" is easy to match
+Hide
+Set TypingSpeed 1ms
+Type "act_clear"
 Enter
+Sleep 500ms
+Type "narrate 'Watching RemediationRequest phase transitions live...'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
 Sleep 2s
-Type "kubectl get rar -n ${PLATFORM_NS}"
-Enter
-Sleep 6s
 
-Type "# The Remediation Orchestrator will create a WorkflowExecution -- watching live"
+Type "kubectl get remediationrequests -n ${PLATFORM_NS} -w"
 Enter
-Sleep 2s
-Type "kubectl get wfe -n ${PLATFORM_NS} -w"
-Enter
-Wait+Screen@120s /Completed/
+Wait+Screen@300s /Completed/
 Sleep 5s
 Ctrl+C
 Sleep 2s
@@ -216,9 +332,23 @@ Sleep 2s
 # ACT 3 -- The Result
 # ═════════════════════════════════════════
 
-Type "# Workflow completed -- verifying recovery"
+Hide
+Set TypingSpeed 1ms
+Type "clear"
 Enter
-Sleep 2s
+Sleep 300ms
+Type "announce 'Act 3: The Result'"
+Enter
+Sleep 300ms
+Type "narrate 'The rollback completed. Verifying pods are healthy and the alert cleared.'"
+Enter
+Sleep 300ms
+Type "narrate 'Notifications were sent, and EffectivenessAssessment confirms the fix.'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 4s
 
 Type "kubectl get pods -n demo-crashloop"
 Enter
@@ -228,8 +358,26 @@ Type "kubectl get remediationrequests -n ${PLATFORM_NS}"
 Enter
 Sleep 5s
 
-Type "# Waiting for the EffectivenessAssessment to complete (stabilization window: 1m)..."
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'Notification delivered to Slack and console'"
 Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 2s
+
+Type "bash deploy/demo/scripts/show-notification.sh ${PLATFORM_NS}"
+Enter
+Sleep 12s
+
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'Waiting for EffectivenessAssessment to complete (stabilization: 1m)...'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
 Sleep 2s
 
 # Hidden wait: poll until EA reaches Completed or Failed
@@ -238,19 +386,30 @@ Set TypingSpeed 1ms
 Type `while true; do PHASE=$(kubectl get effectivenessassessments -n ${PLATFORM_NS} -o jsonpath='{.items[0].status.phase}' 2>/dev/null); [ "$PHASE" = "Completed" ] || [ "$PHASE" = "Failed" ] && break; sleep 10; done && clear && echo EA"_"DONE`
 Enter
 Wait+Screen@600s /EA_DONE/
-Type "clear"
+Type "act_clear"
 Enter
 Sleep 500ms
 Set TypingSpeed 50ms
 Show
 
-Type "# EffectivenessAssessment result:"
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'EffectivenessAssessment result'"
 Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
 Sleep 2s
+
 Type "bash deploy/demo/scripts/show-effectiveness.sh demo-crashloop"
 Enter
 Sleep 10s
 
-Type "# Remediation verified -- workload restored, alert cleared"
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'Remediation verified — workload restored, alert cleared'"
 Enter
-Sleep 4s
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 5s

@@ -8,7 +8,7 @@ set -euo pipefail
 SCENARIO_NS="${1:?Usage: show-approval-reason.sh <scenario-namespace>}"
 PLATFORM_NS="${PLATFORM_NS:-kubernaut-system}"
 
-AA_NAME=$(kubectl get aianalyses -n "$PLATFORM_NS" -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.remediationRequestRef.namespace}{"\n"}{end}' 2>/dev/null \
+AA_NAME=$(kubectl get aianalyses -n "$PLATFORM_NS" -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.analysisRequest.signalContext.targetResource.namespace}{"\n"}{end}' 2>/dev/null \
   | grep "$SCENARIO_NS" | tail -1 | cut -f1)
 
 if [ -z "$AA_NAME" ]; then
@@ -31,13 +31,16 @@ printf '  Approval Required:  %s\n' "${APPROVAL:-false}"
 printf '  Policy Reason:      %s\n' "${REASON:-N/A}"
 printf '  Namespace Label:    kubernaut.ai/environment=%s\n' "${ENVIRONMENT:-N/A}"
 printf '\n'
-printf '  Rego Policy (aianalysis-policies ConfigMap):\n'
-printf '  ────────────────────────────────────────────\n'
+printf '  Rego Policy Rule (aianalysis-policies ConfigMap):\n'
+printf '  ─────────────────────────────────────────────────\n'
 if [ -n "$REGO_POLICY" ]; then
-  echo "$REGO_POLICY" | head -8 | while IFS= read -r line; do
-    printf '    %s\n' "$line"
-  done
-  printf '    ...\n'
+  echo "$REGO_POLICY" \
+    | sed -n '/^# .*APPROVAL RULES/,/^# .*SCORED RISK/p' \
+    | grep -v '^# ===' \
+    | grep -v '^# .*SCORED RISK' \
+    | while IFS= read -r line; do
+        printf '    %s\n' "$line"
+      done
 else
   printf '    (policy not found)\n'
 fi

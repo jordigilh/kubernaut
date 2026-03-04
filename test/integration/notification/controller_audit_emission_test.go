@@ -472,17 +472,17 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 					RemediationRequestRef: &corev1.ObjectReference{
 						Name: testID, // RR name is universal correlation ID
 					},
-					// Add retry policy with shorter backoff for test completion
-					// Default 30s initial backoff would cause test timeout
-					RetryPolicy: &notificationv1alpha1.RetryPolicy{
-						MaxAttempts:           3,
-						InitialBackoffSeconds: 1,
-						BackoffMultiplier:     2,
-						MaxBackoffSeconds:     60,
-					},
-					Metadata: map[string]string{
-						"test-channel-set": "console-slack",
-					},
+				// Add retry policy with shorter backoff for test completion
+				// Default 30s initial backoff would cause test timeout
+				RetryPolicy: &notificationv1alpha1.RetryPolicy{
+					MaxAttempts:           3,
+					InitialBackoffSeconds: 1,
+					BackoffMultiplier:     2,
+					MaxBackoffSeconds:     60,
+				},
+				Metadata: map[string]string{
+					"test-channel-set": "slack-only",
+				},
 				},
 			}
 

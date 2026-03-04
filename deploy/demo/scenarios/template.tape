@@ -19,11 +19,20 @@
 #   2. `clear` before the echo so the terminal screen contains ONLY the sentinel
 #      output -- prevents stale matches from previous screen content.
 #
-# Visual hierarchy (most prominent → least):
-#   1. Bold yellow ━━ act headers      (announce)
-#   2. Cyan ❯ prompt                   (typed commands)
-#   3. Default foreground              (command output / boxed show-* output)
-#   4. Dim gray # narration            (narrate)
+# Visual hierarchy (color-driven, no symbols):
+#   1. Bold yellow ━━ act headers      (announce)  — hidden typing, only output shown
+#   2. Dim gray narration              (narrate)   — hidden typing, only output shown
+#   3. Cyan ❯ prompt                   (typed commands visible)
+#   4. Default foreground              (command output)
+#
+# Pattern for narrate/announce: Hide → fast-type → Enter → Show.
+# The ANSI self-erase codes in the helpers clean the prompt line, but VHS
+# captures frames during typing, so we must hide the typing itself.
+#
+# Persistent act titles:
+#   announce() sets _act; act_clear() does clear + reprints the current act title.
+#   Use act_clear instead of clear in hidden-wait blocks before Show so the
+#   viewer always knows which act they are in.
 
 Output deploy/demo/scenarios/<SCENARIO_DIR>/<SCENARIO_DIR>.gif
 Output deploy/demo/scenarios/<SCENARIO_DIR>/<SCENARIO_DIR>.mp4
@@ -54,13 +63,26 @@ Type `export PS1='\[\e[1;36m\]❯ \[\e[0m\]'`
 Enter
 Sleep 500ms
 
-# Narration helper: dim gray for contextual annotations
-Type `narrate() { printf '\e[38;5;245m# %s\e[0m\n' "$*"; }`
+Type `export KUBECONFIG=~/.kube/kubernaut-demo-config`
+Enter
+Sleep 500ms
+
+# Self-erasing helpers: \e[1A moves up, \e[2K erases the typed command line
+# narrate: dim gray text (no # prefix — color alone distinguishes from output)
+Type `narrate() { printf '\e[1A\e[2K\e[38;5;245m%s\e[0m\n' "$*"; }`
 Enter
 Sleep 200ms
 
-# Act header helper: bold yellow with separator lines
-Type `announce() { printf '\e[1;33m━━ %s ━━\e[0m\n' "$*"; }`
+# announce: bold yellow act title with separator; also stores title for act_clear
+Type `_act=""`
+Enter
+Sleep 100ms
+Type `announce() { _act="$*"; printf '\e[1A\e[2K\n\e[1;33m━━ %s ━━\e[0m\n\n' "$*"; }`
+Enter
+Sleep 200ms
+
+# act_clear: clears screen and re-renders the current act title at top
+Type `act_clear() { clear; [ -n "$_act" ] && printf '\e[1;33m━━ %s ━━\e[0m\n\n' "$_act"; }`
 Enter
 Sleep 200ms
 
@@ -99,24 +121,38 @@ Show
 # Show the healthy state, inject the fault, and wait for the alert.
 # CUSTOMIZE: title, fault injection, and alert name.
 
+Hide
+Set TypingSpeed 1ms
 Type "announce 'Act 1: The Problem — <SCENARIO_TITLE>'"
 Enter
-Sleep 3s
-
+Sleep 300ms
 Type "narrate '<ONE_LINE_SCENARIO_DESCRIPTION>'"
 Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
 Sleep 3s
 
+Hide
+Set TypingSpeed 1ms
 Type "narrate 'Healthy workload running in namespace <NAMESPACE>'"
 Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
 Sleep 2s
 Type "kubectl get pods -n <NAMESPACE>"
 Enter
 Sleep 5s
 
 # CUSTOMIZE: fault injection step
+Hide
+Set TypingSpeed 1ms
 Type "narrate 'Injecting fault: <FAULT_DESCRIPTION>...'"
 Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
 Sleep 2s
 Type "bash deploy/demo/scenarios/<SCENARIO_DIR>/<INJECT_SCRIPT>"
 Enter
@@ -136,15 +172,25 @@ Sleep 4s
 # Set TypingSpeed 50ms
 # Show
 #
+# Hide
+# Set TypingSpeed 1ms
 # Type "narrate '<FAULT_VISIBLE_COMMENT>'"
 # Enter
+# Sleep 300ms
+# Set TypingSpeed 50ms
+# Show
 # Sleep 2s
 # Type "kubectl get pods -n <NAMESPACE>"
 # Enter
 # Sleep 5s
 
+Hide
+Set TypingSpeed 1ms
 Type "narrate 'Waiting for the <ALERT_NAME> alert to fire...'"
 Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
 Sleep 2s
 
 # Hidden wait: poll AlertManager until the alert fires
@@ -159,15 +205,25 @@ Sleep 500ms
 Set TypingSpeed 50ms
 Show
 
+Hide
+Set TypingSpeed 1ms
 Type "narrate 'Alert is now firing'"
 Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
 Sleep 2s
 Type "bash deploy/demo/scripts/show-alert.sh <ALERT_NAME>"
 Enter
 Sleep 8s
 
+Hide
+Set TypingSpeed 1ms
 Type "narrate 'Kubernaut Gateway received this alert and created a RemediationRequest'"
 Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
 Sleep 3s
 
 # ═════════════════════════════════════════
@@ -196,12 +252,16 @@ Sleep 3s
 # Enter
 # Sleep 4s
 
+Hide
+Set TypingSpeed 1ms
 Type "announce 'Act 2: The Remediation'"
 Enter
-Sleep 2s
-
+Sleep 300ms
 Type "narrate 'Watching the RemediationRequest lifecycle...'"
 Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
 Sleep 2s
 
 # Watch the RR transition through phases (Analyzing → Executing → Completed)
@@ -228,12 +288,16 @@ Show
 # Show the final RR outcome and verify the cluster state.
 # CUSTOMIZE the verification steps for your scenario.
 
+Hide
+Set TypingSpeed 1ms
 Type "announce 'Act 3: The Result'"
 Enter
-Sleep 2s
-
+Sleep 300ms
 Type "narrate 'RemediationRequest outcome:'"
 Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
 Sleep 2s
 Type `kubectl get rr -n ${PLATFORM_NS}`
 Enter
@@ -264,6 +328,11 @@ Sleep 6s
 # Sleep 10s
 
 # CUSTOMIZE: final annotation summarizing the outcome
+Hide
+Set TypingSpeed 1ms
 Type "narrate '<OUTCOME_SUMMARY>'"
 Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
 Sleep 5s

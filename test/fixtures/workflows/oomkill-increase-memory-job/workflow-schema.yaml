@@ -21,7 +21,7 @@ labels:
 
 execution:
   engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/oomkill-increase-memory-job:v1.0.0-exec@sha256:9fb61d27ba7a9596e310ecbec8efbcacdb3ea9c029248e878953b403e68c4efd
+  bundle: quay.io/kubernaut-cicd/test-workflows/oomkill-increase-memory-job:v1.0.0-exec@sha256:a367fceff1afe6f47f5a1d2ba85d8dab937af27c8107c9e1b0cedf324cd905dc
 
 parameters:
   - name: TARGET_RESOURCE_KIND

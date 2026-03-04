@@ -80,12 +80,15 @@ var _ = Describe("Multi-Channel Fanout E2E (BR-NOT-053)", func() {
 						"test-priority": "P0",
 					},
 				},
-				Spec: notificationv1alpha1.NotificationRequestSpec{
-					Type:     notificationv1alpha1.NotificationTypeSimple,
-					Subject:  "E2E Test: Multi-Channel Fanout",
-					Body:     "Testing delivery to console, file, and log channels simultaneously",
-					Priority: notificationv1alpha1.NotificationPriorityHigh,
+			Spec: notificationv1alpha1.NotificationRequestSpec{
+				Type:     notificationv1alpha1.NotificationTypeSimple,
+				Subject:  "E2E Test: Multi-Channel Fanout",
+				Body:     "Testing delivery to console, file, and log channels simultaneously",
+				Priority: notificationv1alpha1.NotificationPriorityHigh,
+				Metadata: map[string]string{
+					"test-channel-set": "console-file-log",
 				},
+			},
 			}
 
 			// Cleanup notification for FlakeAttempts retries
@@ -187,17 +190,18 @@ var _ = Describe("Multi-Channel Fanout E2E (BR-NOT-053)", func() {
 						"test-priority": "P1",
 					},
 				},
-				Spec: notificationv1alpha1.NotificationRequestSpec{
-					Type:     notificationv1alpha1.NotificationTypeStatusUpdate,
-					Subject:  "E2E Test: Log Channel Structured Output",
-					Body:     "Testing structured JSON log delivery",
-					Priority: notificationv1alpha1.NotificationPriorityLow,
-					Metadata: map[string]string{
-						"test-key":   "test-value",
-						"cluster":    "e2e-cluster",
-						"namespace":  "default",
-						"alert-name": "TestAlert",
-					},
+			Spec: notificationv1alpha1.NotificationRequestSpec{
+				Type:     notificationv1alpha1.NotificationTypeStatusUpdate,
+				Subject:  "E2E Test: Log Channel Structured Output",
+				Body:     "Testing structured JSON log delivery",
+				Priority: notificationv1alpha1.NotificationPriorityLow,
+				Metadata: map[string]string{
+					"test-channel-set": "log-only",
+					"test-key":         "test-value",
+					"cluster":          "e2e-cluster",
+					"namespace":        "default",
+					"alert-name":       "TestAlert",
+				},
 				},
 			}
 

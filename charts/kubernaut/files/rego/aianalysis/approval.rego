@@ -1,12 +1,15 @@
-# AI Analysis Approval Policy — Scored Risk Factors + Confidence-Based Auto-Approval
-# DD-WORKFLOW-001 v2.2: Approval determination based on environment, data quality, and confidence
+# AI Analysis Approval Policy — Environment-Driven Approval Gates
+# DD-WORKFLOW-001 v2.3: Production namespaces always require approval; non-production auto-approves.
 # Business Requirements: BR-AI-011 (policy evaluation), BR-AI-013 (approval scenarios), BR-AI-014 (graceful degradation)
 # Issue #98: Refactored from exclusion chains to scored risk factors
 # Issue #197: Confidence-based auto-approval for high-confidence production analyses.
 # Issue #206: Threshold corrected from 0.9 to 0.8 to match documented 80% auto-approval.
 # Issue #225: Threshold now configurable via input.confidence_threshold (default 0.8).
-# Auto-approves unless critical safety conditions are present (missing
-# affected_resource, sensitive resources).
+#
+# Approval behavior:
+#   - production (kubernaut.ai/environment=production): ALWAYS requires approval
+#   - staging/development/qa/test: auto-approved unless critical safety conditions
+#     (missing affected_resource)
 
 package aianalysis.approval
 
@@ -97,44 +100,19 @@ is_high_confidence if {
 # APPROVAL RULES
 # ========================================
 # Critical safety rules: ALWAYS require approval regardless of confidence.
-# Production environment rules: Only require approval when confidence < confidence_threshold.
+# Production: ALWAYS require approval (controlled via namespace label).
+# Non-production: confidence-gated rules for risk factors.
 
 # BR-AI-085-005: Default-deny when affected_resource is missing (ADR-055)
 require_approval if {
     not has_affected_resource
 }
 
-# ADR-055: Production + sensitive resource kind ALWAYS requires approval
+# Production environments ALWAYS require approval, regardless of confidence.
+# Operators control this by setting the namespace label
+# kubernaut.ai/environment=production vs staging/development.
 require_approval if {
     is_production
-    is_sensitive_resource
-}
-
-# Production + failed detections + low confidence
-require_approval if {
-    is_production
-    has_failed_detections
-    not is_high_confidence
-}
-
-# Production + warnings + low confidence
-require_approval if {
-    is_production
-    has_warnings
-    not is_high_confidence
-}
-
-# Production + stateful workload + low confidence
-require_approval if {
-    is_production
-    is_stateful
-    not is_high_confidence
-}
-
-# Production catch-all: only for low confidence
-require_approval if {
-    is_production
-    not is_high_confidence
 }
 
 # ========================================
@@ -150,27 +128,8 @@ risk_factors contains {"score": 80, "reason": "Production environment with sensi
     is_sensitive_resource
 }
 
-risk_factors contains {"score": 70, "reason": "Production environment with failed detections - requires manual approval"} if {
+risk_factors contains {"score": 70, "reason": "Production environment - requires manual approval"} if {
     is_production
-    has_failed_detections
-    not is_high_confidence
-}
-
-risk_factors contains {"score": 60, "reason": "Production environment with warnings - requires manual approval"} if {
-    is_production
-    has_warnings
-    not is_high_confidence
-}
-
-risk_factors contains {"score": 50, "reason": "Production environment with Stateful workload - requires manual approval"} if {
-    is_production
-    is_stateful
-    not is_high_confidence
-}
-
-risk_factors contains {"score": 40, "reason": "Production environment requires manual approval"} if {
-    is_production
-    not is_high_confidence
 }
 
 # ========================================
