@@ -1,7 +1,7 @@
 # BR-AA-HAPI-064: Session-Based Pull Design for AA-HAPI Communication
 
 **Status**: APPROVED
-**Version**: 1.0
+**Version**: 1.1
 **Created**: 2026-02-09
 **Category**: AI
 **Priority**: P1 - High
@@ -66,10 +66,12 @@ The AA controller MUST maintain an `InvestigationSessionReady` Condition on the 
 - False/SessionRegenerationExceeded when cap is exceeded
 
 ### BR-AA-HAPI-064.8: Polling with Controller-Runtime Requeue
-The AA controller MUST use controller-runtime `RequeueAfter` for polling, not blocking waits. Recommended backoff: 10s, 20s, 30s (capped at 30s).
+The AA controller MUST use controller-runtime `RequeueAfter` for polling, not blocking waits. A constant poll interval of 15s is used (configurable via `--session-poll-interval` flag or `WithSessionPollInterval` option). The original recommended backoff (10s, 20s, 30s) was replaced with a constant interval for simplicity and predictable load patterns.
 
 ### BR-AA-HAPI-064.9: Recovery Flow Support
-The same async pattern MUST apply to recovery investigations (`/api/v1/recovery/analyze`).
+~~The same async pattern MUST apply to recovery investigations (`/api/v1/recovery/analyze`).~~
+
+**DEPRECATED for v1.0**: Recovery investigations are deprecated. Instead, when a remediation is ineffective, the alert re-fires through the Gateway and the existing AI analysis results (from the prior Effectiveness Assessment) are included in the HAPI prompt context. The RO routing engine has logic to prevent this from becoming an endless cycle. Recovery flow may be revisited in future versions.
 
 ### BR-AA-HAPI-064.10: Timeout Removal
 Once the async design is validated, the 10-minute hardcoded timeout workaround in `cmd/aianalysis/main.go` MUST be removed. All HTTP calls become short-lived (~30s timeout).
@@ -78,7 +80,7 @@ Once the async design is validated, the 10-minute hardcoded timeout workaround i
 
 ## Acceptance Criteria
 
-- [ ] HAPI exposes async session endpoints (submit, poll, result) for both incident and recovery
+- [ ] HAPI exposes async session endpoints (submit, poll, result) for incident analysis (recovery deprecated for v1.0)
 - [ ] AA controller stores InvestigationSession in CRD status
 - [ ] AA controller polls with requeue backoff (not blocking)
 - [ ] Stale session detection and regeneration works (Generation counter increments)
@@ -102,6 +104,10 @@ Once the async design is validated, the 10-minute hardcoded timeout workaround i
 ---
 
 ## Changelog
+
+### v1.1 (2026-03-04)
+- BR-AA-HAPI-064.8: Updated to reflect constant 15s poll interval design decision (replaces 10s/20s/30s backoff)
+- BR-AA-HAPI-064.9: Marked recovery flow as deprecated for v1.0 (alert re-fire through Gateway replaces dedicated recovery endpoint)
 
 ### v1.0 (2026-02-09)
 - Initial version based on GitHub issue #64 analysis
