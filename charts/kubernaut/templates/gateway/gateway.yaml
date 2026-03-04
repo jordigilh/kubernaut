@@ -25,7 +25,7 @@ data:
         maxRetries: 3
     processing:
       deduplication:
-        ttl: 5m
+        cooldownPeriod: 5m
       retry:
         maxAttempts: 3
         initialBackoff: 100ms
