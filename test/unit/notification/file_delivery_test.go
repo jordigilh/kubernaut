@@ -109,7 +109,7 @@ var _ = Describe("FileDeliveryService Unit Tests", func() {
 			Expect(savedNotification.Spec.Subject).To(Equal("Test Subject"))
 			Expect(savedNotification.Spec.Body).To(Equal("Test Body"))
 			Expect(savedNotification.Spec.Priority).To(Equal(notificationv1alpha1.NotificationPriorityCritical))
-			Expect(savedNotification.Spec.Channels).To(HaveLen(1))
+			Expect(savedNotification.Spec.Channels).To(BeEmpty(), "#260: Channels excluded from JSON (json:\"-\")")
 			Expect(savedNotification.Spec.Recipients).To(HaveLen(1))
 		})
 
