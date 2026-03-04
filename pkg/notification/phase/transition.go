@@ -105,22 +105,38 @@ type TransitionDecision struct {
 // independent of K8s persistence, metrics, or audit concerns.
 //
 // Parameters:
-//   - notification: The notification being processed (read-only, not modified)
+//   - notification: The notification being processed (read-only, for status access)
+//   - channels: The resolved delivery channels (from routing rules)
 //   - result: The delivery loop results
 //   - channelStates: Map of channel name to pre-computed ChannelState
 //   - maxAttempts: Maximum retry attempts from the retry policy
 //
 // The caller is responsible for:
+//   - Resolving channels from routing rules
 //   - Building channelStates from its helper methods (channelAlreadySucceeded, etc.)
 //   - Executing the K8s persistence based on the returned decision
 //   - Calculating backoff duration using MaxFailedAttemptCount
 func DetermineTransition(
 	notification *notificationv1.NotificationRequest,
+	channels []notificationv1.Channel,
 	result *DeliveryResult,
 	channelStates map[string]ChannelState,
 	maxAttempts int,
 ) *TransitionDecision {
-	totalChannels := len(notification.Spec.Channels)
+	totalChannels := len(channels)
+
+	// #263: Guard against zero channels. This can happen when the caller
+	// fails to propagate routing-resolved channels (e.g., variable shadowing).
+	// Treating 0==0 as "all succeeded" silently drops notifications.
+	if totalChannels == 0 {
+		return &TransitionDecision{
+			NextPhase:          Failed,
+			Reason:             "NoChannelsResolved",
+			Message:            "No delivery channels resolved — cannot deliver notification",
+			IsTerminal:         true,
+			IsPermanentFailure: true,
+		}
+	}
 
 	// Count successful deliveries from BOTH status and current delivery loop attempts.
 	// Status.SuccessfulDeliveries reflects persisted state; result.DeliveryAttempts
@@ -144,7 +160,7 @@ func DetermineTransition(
 
 	// Check if all channels have exhausted their retries (or succeeded/permanent-errored)
 	allChannelsExhausted := true
-	for _, channel := range notification.Spec.Channels {
+	for _, channel := range channels {
 		state := channelStates[string(channel)]
 		if !state.AlreadySucceeded && !state.HasPermanentError && state.AttemptCount < maxAttempts {
 			allChannelsExhausted = false
@@ -166,7 +182,7 @@ func DetermineTransition(
 
 		// Determine failure reason: permanent errors vs retry exhaustion
 		allPermanentErrors := true
-		for _, channel := range notification.Spec.Channels {
+		for _, channel := range channels {
 			state := channelStates[string(channel)]
 			if !state.HasPermanentError {
 				allPermanentErrors = false
@@ -193,7 +209,7 @@ func DetermineTransition(
 	if result.FailureCount > 0 {
 		// Calculate max attempt count for failed channels (for backoff calculation)
 		maxFailedAttempts := 0
-		for _, channel := range notification.Spec.Channels {
+		for _, channel := range channels {
 			state := channelStates[string(channel)]
 			if !state.AlreadySucceeded && state.AttemptCount > maxFailedAttempts {
 				maxFailedAttempts = state.AttemptCount

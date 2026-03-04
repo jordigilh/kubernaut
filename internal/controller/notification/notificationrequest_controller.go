@@ -340,7 +340,8 @@ func (r *NotificationRequestReconciler) Reconcile(ctx context.Context, req ctrl.
 	// BR-NOT-069: Set RoutingResolved condition for visibility
 	channels := notification.Spec.Channels
 	if len(channels) == 0 {
-		channels, routingReason, routingMessage := r.resolveChannelsFromRoutingWithDetails(ctx, notification)
+		var routingReason, routingMessage string
+		channels, routingReason, routingMessage = r.resolveChannelsFromRoutingWithDetails(ctx, notification)
 		log.Info("Resolved channels from routing rules",
 			"notification", notification.Name,
 			"channels", channels)
@@ -921,6 +922,7 @@ type deliveryLoopResult struct {
 	deliveryResults  map[string]error
 	failureCount     int
 	deliveryAttempts []notificationv1alpha1.DeliveryAttempt // Collected attempts for batch update
+	channels         []notificationv1alpha1.Channel         // #263: Resolved channels used for delivery
 }
 
 // handleDeliveryLoop processes delivery attempts for all channels.
@@ -938,7 +940,8 @@ func (r *NotificationRequestReconciler) handleDeliveryLoop(
 	// BR-NOT-069: Set RoutingResolved condition for visibility
 	channels := notification.Spec.Channels
 	if len(channels) == 0 {
-		channels, routingReason, routingMessage := r.resolveChannelsFromRoutingWithDetails(ctx, notification)
+		var routingReason, routingMessage string
+		channels, routingReason, routingMessage = r.resolveChannelsFromRoutingWithDetails(ctx, notification)
 		log.Info("Resolved channels from routing rules",
 			"notification", notification.Name,
 			"channels", channels)
@@ -984,6 +987,7 @@ func (r *NotificationRequestReconciler) handleDeliveryLoop(
 		deliveryResults:  orchestratorResult.DeliveryResults,
 		failureCount:     orchestratorResult.FailureCount,
 		deliveryAttempts: orchestratorResult.DeliveryAttempts, // Pass through for batch recording
+		channels:         channels,                            // #263: Propagate resolved channels for phase transition
 	}, nil
 }
 
@@ -1084,10 +1088,11 @@ func (r *NotificationRequestReconciler) determinePhaseTransition(
 	// Build channel states from controller helper methods, then delegate
 	// the pure business logic to the extracted DetermineTransition function.
 
-	// Build channel states map from controller helper methods
+	// #263: Build channel states from the resolved channels used for delivery,
+	// not from Spec.Channels (always empty after #260 json:"-").
 	policy := r.getRetryPolicy(notification)
-	channelStates := make(map[string]notificationphase.ChannelState, len(notification.Spec.Channels))
-	for _, channel := range notification.Spec.Channels {
+	channelStates := make(map[string]notificationphase.ChannelState, len(result.channels))
+	for _, channel := range result.channels {
 		ch := string(channel)
 		channelStates[ch] = notificationphase.ChannelState{
 			AlreadySucceeded:  r.channelAlreadySucceeded(notification, ch),
@@ -1099,6 +1104,7 @@ func (r *NotificationRequestReconciler) determinePhaseTransition(
 	// Determine phase transition using extracted business logic
 	decision := notificationphase.DetermineTransition(
 		notification,
+		result.channels,
 		&notificationphase.DeliveryResult{
 			ChannelResults:   result.deliveryResults,
 			FailureCount:     result.failureCount,

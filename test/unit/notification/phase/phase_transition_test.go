@@ -121,7 +121,7 @@ var _ = Describe("Phase Transition Logic - DetermineTransition", func() {
 
 			// ===== ACT =====
 			decision := notificationphase.DetermineTransition(
-				notification, deliveryResult, channelStates, 5,
+				notification, notification.Spec.Channels, deliveryResult, channelStates, 5,
 			)
 
 			// ===== ASSERT =====
@@ -215,7 +215,7 @@ var _ = Describe("Phase Transition Logic - DetermineTransition", func() {
 
 			// ===== ACT =====
 			decision := notificationphase.DetermineTransition(
-				notification, deliveryResult, channelStates, 5,
+				notification, notification.Spec.Channels, deliveryResult, channelStates, 5,
 			)
 
 			// ===== ASSERT =====
@@ -288,7 +288,7 @@ var _ = Describe("Phase Transition Logic - DetermineTransition", func() {
 
 			// ===== ACT =====
 			decision := notificationphase.DetermineTransition(
-				notification, deliveryResult, channelStates, 5,
+				notification, notification.Spec.Channels, deliveryResult, channelStates, 5,
 			)
 
 			// ===== ASSERT =====
@@ -353,7 +353,7 @@ var _ = Describe("Phase Transition Logic - DetermineTransition", func() {
 
 			// ===== ACT =====
 			decision := notificationphase.DetermineTransition(
-				notification, deliveryResult, channelStates, 5,
+				notification, notification.Spec.Channels, deliveryResult, channelStates, 5,
 			)
 
 			// ===== ASSERT =====
@@ -420,7 +420,7 @@ var _ = Describe("Phase Transition Logic - DetermineTransition", func() {
 
 			// ===== ACT =====
 			decision := notificationphase.DetermineTransition(
-				notification, deliveryResult, channelStates, 5,
+				notification, notification.Spec.Channels, deliveryResult, channelStates, 5,
 			)
 
 			// ===== ASSERT =====
@@ -484,7 +484,7 @@ var _ = Describe("Phase Transition Logic - DetermineTransition", func() {
 
 			// ===== ACT =====
 			decision := notificationphase.DetermineTransition(
-				notification, deliveryResult, channelStates, 5,
+				notification, notification.Spec.Channels, deliveryResult, channelStates, 5,
 			)
 
 			// ===== ASSERT =====
