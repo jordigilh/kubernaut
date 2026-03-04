@@ -116,6 +116,11 @@ data:
       - name: default-console
         consoleConfigs:
           - enabled: true
+        {{- if .Values.notification.slack.enabled }}
+        slackConfigs:
+          - channel: {{ .Values.notification.slack.channel | quote }}
+            credentialRef: slack-webhook
+        {{- end }}
       {{- if .Values.notification.slack.enabled }}
       - name: slack-alerts
         slackConfigs:
