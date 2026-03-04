@@ -267,9 +267,10 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 	})
 
 	// E2E-NT-163-004: Routing Fallback Conditions
-	// When spec.channels is empty, routing rules are used. With default config (no routing ConfigMap),
-	// the controller falls back to console and sets RoutingResolved with Reason=RoutingFallback.
-	It("should set RoutingResolved with RoutingFallback when spec.channels is empty", func() {
+	// When spec.channels is empty, routing rules are used. With routing ConfigMap deployed,
+	// the default-console route matches and the controller sets RoutingResolved with
+	// Reason=RoutingRuleMatched.
+	It("should set RoutingResolved with RoutingRuleMatched when spec.channels is empty", func() {
 		Expect(dataStorageNodePort).ToNot(Equal(0), "REQUIRED: Data Storage not available")
 
 		// Override notification: empty spec.channels to trigger routing rules (BR-NOT-065)
@@ -319,7 +320,7 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 		}, 30*time.Second, 1*time.Second).Should(Equal(notificationv1alpha1.NotificationPhaseSent),
 			"Controller should deliver via console fallback and reach Sent")
 
-		By("Validating RoutingResolved condition with RoutingFallback reason")
+		By("Validating RoutingResolved condition with RoutingRuleMatched reason")
 		nr := &notificationv1alpha1.NotificationRequest{}
 		err = apiReader.Get(testCtx, types.NamespacedName{
 			Name:      notificationName,
@@ -335,7 +336,7 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 			And(
 				HaveField("Type", kubernautnotif.ConditionTypeRoutingResolved),
 				HaveField("Status", metav1.ConditionTrue),
-				HaveField("Reason", kubernautnotif.ReasonRoutingFallback),
+				HaveField("Reason", kubernautnotif.ReasonRoutingRuleMatched),
 			),
 		))
 	})

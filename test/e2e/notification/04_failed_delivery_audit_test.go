@@ -208,8 +208,8 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 		}, nr)
 		Expect(err).ToNot(HaveOccurred(), "Should be able to get NR for field validation")
 		Expect(nr.Status.Phase).To(Equal(notificationv1alpha1.NotificationPhaseFailed))
-		Expect(nr.Status.Reason).To(Equal("AllDeliveriesFailed"),
-			"Reason should be AllDeliveriesFailed when all channels have permanent errors")
+		Expect(nr.Status.Reason).To(Equal("MaxRetriesExhausted"),
+			"Reason should be MaxRetriesExhausted when retryable errors (503) exhaust MaxAttempts")
 		Expect(nr.Status.Message).To(Equal("All delivery attempts failed or exhausted retries"))
 
 		// ===== STEP 3: Verify failed audit event persisted to PostgreSQL =====

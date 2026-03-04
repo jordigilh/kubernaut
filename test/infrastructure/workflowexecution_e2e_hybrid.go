@@ -801,6 +801,12 @@ func DeployWorkflowExecutionController(ctx context.Context, namespace, kubeconfi
 		return fmt.Errorf("failed to deploy controller: %w", err)
 	}
 
+	// Create quay.io pull secret in execution namespace so Job pods can pull
+	// the placeholder-execution image used by workflow schemas.
+	if err := createQuayPullSecret(kubeconfigPath, ExecutionNamespace, output); err != nil {
+		_, _ = fmt.Fprintf(output, "⚠️  Warning: Could not create quay.io pull secret in %s: %v\n", ExecutionNamespace, err)
+	}
+
 	_, _ = fmt.Fprintf(output, "✅ WorkflowExecution Controller deployed\n")
 	return nil
 }

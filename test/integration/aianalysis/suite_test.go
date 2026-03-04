@@ -651,8 +651,8 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	Expect(err).ToNot(HaveOccurred(), "failed to create real HAPI client")
 
 	By(fmt.Sprintf("[Process %d] Setting up per-process Rego evaluator", processNum))
-	// Per user requirement: "real rego evaluator for all 3 tiers"
-	policyPath := filepath.Join("..", "..", "..", "config", "rego", "aianalysis", "approval.rego")
+	// Test-owned policy fixture decoupled from production config.
+	policyPath := filepath.Join("testdata", "policies", "approval.rego")
 	realRegoEvaluator = rego.NewEvaluator(rego.Config{
 		PolicyPath: policyPath,
 	}, ctrl.Log.WithName("rego"))

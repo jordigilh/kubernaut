@@ -86,10 +86,11 @@ var _ = Describe("Priority-Based Routing E2E (BR-NOT-052)", func() {
 					Body:     "CRITICAL: Testing priority-based routing with file audit trail",
 					Priority: notificationv1alpha1.NotificationPriorityCritical,
 					Metadata: map[string]string{
-						"severity":    "critical",
-						"alert-name":  "CriticalSystemFailure",
-						"cluster":     "production",
-						"environment": "prod",
+						"test-channel-set": "console-file",
+						"severity":         "critical",
+						"alert-name":       "CriticalSystemFailure",
+						"cluster":          "production",
+						"environment":      "prod",
 					},
 				},
 			}
@@ -215,6 +216,9 @@ var _ = Describe("Priority-Based Routing E2E (BR-NOT-052)", func() {
 						Subject:  "E2E Test: Priority Ordering - " + string(p.priority),
 						Body:     "Testing priority-based delivery ordering",
 						Priority: p.priority,
+						Metadata: map[string]string{
+							"test-channel-set": "console-file",
+						},
 					},
 				}
 
@@ -317,9 +321,10 @@ var _ = Describe("Priority-Based Routing E2E (BR-NOT-052)", func() {
 					Body:     "Testing high priority delivery to console, file, and log channels",
 					Priority: notificationv1alpha1.NotificationPriorityHigh,
 					Metadata: map[string]string{
-						"severity":   "high",
-						"alert-name": "HighPriorityAlert",
-						"cluster":    "staging",
+						"test-channel-set": "console-file-log",
+						"severity":         "high",
+						"alert-name":       "HighPriorityAlert",
+						"cluster":          "staging",
 					},
 				},
 			}

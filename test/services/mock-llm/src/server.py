@@ -730,7 +730,7 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
                 matched_scenario = MOCK_SCENARIOS.get("node_not_ready", DEFAULT_SCENARIO)
             elif "memoryexceedslimit" in actual_signal or "memoryexceeds" in actual_signal:
                 matched_scenario = MOCK_SCENARIOS.get("oomkilled", DEFAULT_SCENARIO)
-            elif "crashloop" in actual_signal:
+            elif "crashloop" in actual_signal or "backoff" in actual_signal:
                 matched_scenario = MOCK_SCENARIOS.get("crashloop", DEFAULT_SCENARIO)
             elif "oomkilled" in actual_signal or "oomkill" in actual_signal:
                 matched_scenario = MOCK_SCENARIOS.get("oomkilled", DEFAULT_SCENARIO)
