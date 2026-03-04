@@ -14,6 +14,12 @@ while kubectl get ns demo-memory-leak &>/dev/null; do
   sleep 2
 done
 
+echo "==> Silencing stale alerts in AlertManager..."
+kubectl exec -n monitoring alertmanager-kube-prometheus-stack-alertmanager-0 -- \
+  amtool silence add alertname=ContainerMemoryExhaustionPredicted namespace=demo-memory-leak \
+  --alertmanager.url=http://localhost:9093 --duration=2m \
+  --comment="Demo cleanup: silence stale alerts after namespace deletion" 2>/dev/null || true
+
 PLATFORM_NS="${PLATFORM_NS:-kubernaut-system}"
 echo "==> Cleaning up stale platform resources..."
 kubectl delete remediationrequests --all -n "$PLATFORM_NS" --ignore-not-found 2>/dev/null || true
