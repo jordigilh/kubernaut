@@ -71,8 +71,8 @@ import (
 )
 
 const (
-	timeout  = 10 * time.Minute // Longer timeout for full pipeline E2E (real LLM needs more time)
-	interval = 1 * time.Second
+	timeout  = 10 * time.Minute        // Longer timeout for full pipeline E2E (real LLM needs more time)
+	interval = 500 * time.Millisecond // Tighter polling for faster state-transition detection
 
 	clusterName = "fullpipeline-e2e"
 	namespace   = "kubernaut-system"

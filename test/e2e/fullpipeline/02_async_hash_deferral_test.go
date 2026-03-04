@@ -267,12 +267,12 @@ var _ = Describe("Async Hash Deferral for CRD Targets [DD-EM-004 v2.0, BR-EM-010
 		Eventually(func() bool {
 			jobList := &batchv1.JobList{}
 			if err := apiReader.List(ctx, jobList,
-				client.InNamespace("kubernaut-workflows")); err != nil {
+				client.InNamespace("kubernaut-workflows"),
+				client.MatchingLabels{"kubernaut.ai/workflow-execution": weName}); err != nil {
 				return false
 			}
 			for _, job := range jobList.Items {
-				if job.CreationTimestamp.After(remediationRequest.CreationTimestamp.Time.Add(-10*time.Second)) &&
-					job.Status.Succeeded > 0 {
+				if job.Status.Succeeded > 0 {
 					GinkgoWriter.Printf("  ✅ Job completed: %s\n", job.Name)
 					return true
 				}
@@ -388,7 +388,7 @@ var _ = Describe("Async Hash Deferral for CRD Targets [DD-EM-004 v2.0, BR-EM-010
 				return ""
 			}
 			return fetched.Status.Phase
-		}, 5*time.Minute, 5*time.Second).Should(
+		}, 5*time.Minute, 2*time.Second).Should(
 			BeElementOf(eav1.PhaseCompleted, eav1.PhaseFailed),
 			"EA should reach terminal phase after propagation delay + stabilization window")
 
