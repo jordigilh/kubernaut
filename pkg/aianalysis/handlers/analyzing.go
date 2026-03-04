@@ -175,7 +175,7 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 	}
 
 	// Record Rego evaluation metric
-	outcome := "approved"
+	outcome := "auto_approved"
 	if result.ApprovalRequired {
 		outcome = "requires_approval"
 	}

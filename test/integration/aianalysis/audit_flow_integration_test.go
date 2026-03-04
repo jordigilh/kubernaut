@@ -812,9 +812,9 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 				EventOutcome:  validators.EventOutcomePtr(ogenclient.AuditEventEventOutcomeSuccess),
 				CorrelationID: correlationID,
 				EventDataFields: map[string]interface{}{
-					"outcome":  "requires_approval", // Verify specific value
-					"degraded": nil,                 // Validate key exists
-					"reason":   nil,                 // Validate key exists
+					"outcome":  "auto_approved", // OOMKilled (0.95) >= Rego threshold (0.8) → auto-approved
+					"degraded": nil,             // Validate key exists
+					"reason":   nil,             // Validate key exists
 				},
 			})
 		})

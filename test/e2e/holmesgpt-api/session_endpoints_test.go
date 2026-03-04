@@ -179,8 +179,8 @@ var _ = Describe("E2E-HAPI-064: Session-Based Endpoints", Label("e2e", "hapi", "
 			// ========================================
 			Expect(result.NeedsHumanReview.Value).To(BeFalse(),
 				"needs_human_review must be false for confident OOMKilled recommendation")
-			Expect(result.Confidence).To(BeNumerically("~", 0.88, 0.05),
-				"Mock LLM 'oomkilled' scenario returns confidence = 0.88 ± 0.05")
+			Expect(result.Confidence).To(BeNumerically("~", 0.95, 0.05),
+				"Mock LLM 'oomkilled' scenario returns confidence = 0.95 ± 0.05")
 
 			// BUSINESS IMPACT: Memory-related workflows auto-selected and executed
 		})
