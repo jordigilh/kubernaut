@@ -145,10 +145,27 @@ var _ = Describe("Async Hash Deferral for CRD Targets [DD-EM-004 v2.0, BR-EM-010
 		}, 2*time.Minute, 2*time.Second).Should(BeTrue(), "memory-eater should be running")
 
 		// ================================================================
+		// Step 2.5: Resolve stale alerts from prior tests
+		// ================================================================
+		// The Gateway only processes Alerts[0] from each AlertManager batch.
+		// Prior tests leave MemoryExceedsLimit alerts active; if those are
+		// batched with our CertManagerCertNotReady alert the cert alert is
+		// silently dropped. Resolve all active alerts first so the cert
+		// alert fires alone in the next group flush.
+		By("Step 2.5: Resolving active alerts from prior tests to prevent batching")
+		alertManagerURL := fmt.Sprintf("http://localhost:%d", infrastructure.AlertManagerHostPort)
+		resolveErr := infrastructure.ResolveActiveAlerts(alertManagerURL)
+		Expect(resolveErr).ToNot(HaveOccurred(), "Failed to resolve active alerts")
+
+		Eventually(func() bool {
+			return infrastructure.HasActiveAlerts(alertManagerURL)
+		}, 30*time.Second, 2*time.Second).Should(BeFalse(),
+			"AlertManager should have zero active alerts before injecting cert alert")
+
+		// ================================================================
 		// Step 3: Inject CertManagerCertNotReady alert
 		// ================================================================
 		By("Step 3: Injecting CertManagerCertNotReady alert into AlertManager")
-		alertManagerURL := fmt.Sprintf("http://localhost:%d", infrastructure.AlertManagerHostPort)
 		injectErr := infrastructure.InjectAlerts(alertManagerURL, []infrastructure.TestAlert{
 			{
 				Name: "CertManagerCertNotReady",

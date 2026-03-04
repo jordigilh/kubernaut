@@ -549,6 +549,74 @@ func InjectAlerts(amURL string, alerts []TestAlert) error {
 	return nil
 }
 
+// ResolveActiveAlerts queries AlertManager for all currently active alerts and
+// re-injects them with endsAt=now so they transition to "resolved". This prevents
+// stale alerts from being batched with newly injected alerts (the Gateway only
+// processes Alerts[0] in each AlertManager webhook batch).
+func ResolveActiveAlerts(amURL string) error {
+	resp, err := http.Get(amURL + "/api/v2/alerts?active=true&silenced=false&inhibited=false")
+	if err != nil {
+		return fmt.Errorf("failed to query active alerts: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("AlertManager returned status %d for GET /api/v2/alerts", resp.StatusCode)
+	}
+
+	var alerts []struct {
+		Labels map[string]string `json:"labels"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&alerts); err != nil {
+		return fmt.Errorf("failed to decode active alerts: %w", err)
+	}
+	if len(alerts) == 0 {
+		return nil
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	type resolvedAlert struct {
+		Labels map[string]string `json:"labels"`
+		EndsAt string            `json:"endsAt"`
+	}
+	var resolved []resolvedAlert
+	for _, a := range alerts {
+		resolved = append(resolved, resolvedAlert{Labels: a.Labels, EndsAt: now})
+	}
+
+	body, err := json.Marshal(resolved)
+	if err != nil {
+		return fmt.Errorf("failed to marshal resolved alerts: %w", err)
+	}
+
+	postResp, err := http.Post(amURL+"/api/v2/alerts", "application/json", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("failed to POST resolved alerts: %w", err)
+	}
+	defer func() { _ = postResp.Body.Close() }()
+
+	if postResp.StatusCode != http.StatusOK {
+		return fmt.Errorf("AlertManager returned status %d resolving alerts", postResp.StatusCode)
+	}
+	return nil
+}
+
+// HasActiveAlerts returns true if AlertManager has any active (non-silenced,
+// non-inhibited) alerts. Useful for polling until stale alerts are fully resolved.
+func HasActiveAlerts(amURL string) bool {
+	resp, err := http.Get(amURL + "/api/v2/alerts?active=true&silenced=false&inhibited=false")
+	if err != nil {
+		return true
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	var alerts []json.RawMessage
+	if err := json.NewDecoder(resp.Body).Decode(&alerts); err != nil {
+		return true
+	}
+	return len(alerts) > 0
+}
+
 // InjectMetrics injects metric samples into Prometheus via the OTLP HTTP JSON endpoint.
 //
 // Prometheus must be started with --web.enable-otlp-receiver to accept OTLP metrics.
