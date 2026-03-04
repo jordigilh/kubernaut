@@ -187,6 +187,9 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	if err := loadFullPipelineImages(builtImages, clusterName, writer); err != nil {
 		return builtImages, fmt.Errorf("PHASE 3 failed: %w", err)
 	}
+	if err := preloadWorkflowExecutionImage(clusterName, writer); err != nil {
+		_, _ = fmt.Fprintf(writer, "⚠️  Warning: Could not pre-load placeholder-execution image: %v\n", err)
+	}
 	_, _ = fmt.Fprintf(writer, "✅ PHASE 3 complete: images loaded (%s)\n",
 		time.Since(phase3Start).Round(time.Second))
 
@@ -578,6 +581,42 @@ func loadFullPipelineImages(builtImages map[string]string, clusterName string, w
 	if len(loadErrors) > 0 {
 		return fmt.Errorf("image loads failed: %v", loadErrors)
 	}
+	return nil
+}
+
+// preloadWorkflowExecutionImage pulls and loads the placeholder-execution
+// image into Kind so that Job pods created by the WE controller don't need
+// to pull from quay.io at runtime. With backoffLimit=0, a single slow or
+// failed pull causes permanent Job failure.
+func preloadWorkflowExecutionImage(clusterName string, writer io.Writer) error {
+	const image = "quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0"
+	_, _ = fmt.Fprintf(writer, "  📦 Pre-loading workflow execution image: %s\n", image)
+
+	pullCmd := exec.Command("podman", "pull", "--quiet", image)
+	pullCmd.Stdout = writer
+	pullCmd.Stderr = writer
+	if err := pullCmd.Run(); err != nil {
+		return fmt.Errorf("podman pull failed: %w", err)
+	}
+
+	tarPath := "/tmp/placeholder-execution.tar"
+	saveCmd := exec.Command("podman", "save", "-o", tarPath, image)
+	saveCmd.Stdout = writer
+	saveCmd.Stderr = writer
+	if err := saveCmd.Run(); err != nil {
+		return fmt.Errorf("podman save failed: %w", err)
+	}
+	defer func() { _ = os.Remove(tarPath) }()
+
+	loadCmd := exec.Command("kind", "load", "image-archive", tarPath, "--name", clusterName)
+	loadCmd.Env = append(os.Environ(), "KIND_EXPERIMENTAL_PROVIDER=podman")
+	loadCmd.Stdout = writer
+	loadCmd.Stderr = writer
+	if err := loadCmd.Run(); err != nil {
+		return fmt.Errorf("kind load failed: %w", err)
+	}
+
+	_, _ = fmt.Fprintf(writer, "  ✅ Placeholder-execution image pre-loaded into Kind\n")
 	return nil
 }
 
