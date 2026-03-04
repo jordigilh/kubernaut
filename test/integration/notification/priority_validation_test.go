@@ -87,11 +87,7 @@ var _ = Describe("BR-NOT-057: Priority-Based Processing", Label("integration", "
 						Body:     fmt.Sprintf("Testing %s priority acceptance", priorityName),
 						Recipients: []notificationv1alpha1.Recipient{
 							{Email: "test@example.com"},
-						},
-						Channels: []notificationv1alpha1.Channel{
-							notificationv1alpha1.ChannelConsole,
-						},
-					},
+						},},
 				}
 
 				// Create CRD
@@ -161,11 +157,7 @@ var _ = Describe("BR-NOT-057: Priority-Based Processing", Label("integration", "
 					Body:     "Testing priority field requirement",
 					Recipients: []notificationv1alpha1.Recipient{
 						{Email: "test@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
-				},
+					},},
 			}
 
 			err := k8sClient.Create(ctx, notif)
@@ -212,11 +204,7 @@ var _ = Describe("BR-NOT-057: Priority-Based Processing", Label("integration", "
 					Body:     "Testing priority preservation across lifecycle",
 					Recipients: []notificationv1alpha1.Recipient{
 						{Email: "test@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
-				},
+					},},
 			}
 
 			// Create
@@ -272,11 +260,7 @@ var _ = Describe("BR-NOT-057: Priority-Based Processing", Label("integration", "
 					Body:     "Critical: Payment API unresponsive for 5+ minutes. Immediate action required.",
 					Recipients: []notificationv1alpha1.Recipient{
 						{Email: "oncall@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
-					Metadata: map[string]string{
+					},Metadata: map[string]string{
 						"environment": "production",
 					},
 				},
@@ -325,11 +309,7 @@ var _ = Describe("BR-NOT-057: Priority-Based Processing", Label("integration", "
 					Body:     "Info: Scheduled maintenance completed successfully. No action required.",
 					Recipients: []notificationv1alpha1.Recipient{
 						{Email: "team@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
-				},
+					},},
 			}
 
 			err := k8sClient.Create(ctx, notif)
@@ -386,11 +366,7 @@ var _ = Describe("BR-NOT-057: Priority-Based Processing", Label("integration", "
 						Body:     "Testing mixed priority processing",
 						Recipients: []notificationv1alpha1.Recipient{
 							{Email: "test@example.com"},
-						},
-						Channels: []notificationv1alpha1.Channel{
-							notificationv1alpha1.ChannelConsole,
-						},
-					},
+						},},
 				}
 
 				err := k8sClient.Create(ctx, notif)

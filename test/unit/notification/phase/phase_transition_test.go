@@ -61,10 +61,6 @@ var _ = Describe("Phase Transition Logic - DetermineTransition", func() {
 					Subject:  "Unit Test: Phase Transition Bug",
 					Body:     "Testing Retrying vs PartiallySent transition",
 					Priority: notificationv1.NotificationPriorityMedium,
-					Channels: []notificationv1.Channel{
-						notificationv1.ChannelConsole, // Succeeds
-						notificationv1.ChannelFile,    // Fails, but has retries
-					},
 					RetryPolicy: &notificationv1.RetryPolicy{
 						MaxAttempts:           5,
 						InitialBackoffSeconds: 5,
@@ -120,8 +116,12 @@ var _ = Describe("Phase Transition Logic - DetermineTransition", func() {
 			}
 
 			// ===== ACT =====
+			channels := make([]notificationv1.Channel, 0, len(channelStates))
+			for ch := range channelStates {
+				channels = append(channels, notificationv1.Channel(ch))
+			}
 			decision := notificationphase.DetermineTransition(
-				notification, notification.Spec.Channels, deliveryResult, channelStates, 5,
+				notification, channels, deliveryResult, channelStates, 5,
 			)
 
 			// ===== ASSERT =====
@@ -156,10 +156,6 @@ var _ = Describe("Phase Transition Logic - DetermineTransition", func() {
 					Subject:  "Unit Test: Exhausted Retries",
 					Body:     "Testing PartiallySent when retries exhausted",
 					Priority: notificationv1.NotificationPriorityMedium,
-					Channels: []notificationv1.Channel{
-						notificationv1.ChannelConsole, // Succeeded earlier
-						notificationv1.ChannelFile,    // Failed all 5 attempts
-					},
 					RetryPolicy: &notificationv1.RetryPolicy{
 						MaxAttempts:           5,
 						InitialBackoffSeconds: 5,
@@ -214,8 +210,12 @@ var _ = Describe("Phase Transition Logic - DetermineTransition", func() {
 			}
 
 			// ===== ACT =====
+			channels := make([]notificationv1.Channel, 0, len(channelStates))
+			for ch := range channelStates {
+				channels = append(channels, notificationv1.Channel(ch))
+			}
 			decision := notificationphase.DetermineTransition(
-				notification, notification.Spec.Channels, deliveryResult, channelStates, 5,
+				notification, channels, deliveryResult, channelStates, 5,
 			)
 
 			// ===== ASSERT =====
@@ -243,10 +243,6 @@ var _ = Describe("Phase Transition Logic - DetermineTransition", func() {
 					Namespace: "default",
 				},
 				Spec: notificationv1.NotificationRequestSpec{
-					Channels: []notificationv1.Channel{
-						notificationv1.ChannelConsole,
-						notificationv1.ChannelFile,
-					},
 					RetryPolicy: &notificationv1.RetryPolicy{
 						MaxAttempts:           5,
 						InitialBackoffSeconds: 5,
@@ -287,8 +283,12 @@ var _ = Describe("Phase Transition Logic - DetermineTransition", func() {
 			}
 
 			// ===== ACT =====
+			channels := make([]notificationv1.Channel, 0, len(channelStates))
+			for ch := range channelStates {
+				channels = append(channels, notificationv1.Channel(ch))
+			}
 			decision := notificationphase.DetermineTransition(
-				notification, notification.Spec.Channels, deliveryResult, channelStates, 5,
+				notification, channels, deliveryResult, channelStates, 5,
 			)
 
 			// ===== ASSERT =====
@@ -313,12 +313,7 @@ var _ = Describe("Phase Transition Logic - DetermineTransition", func() {
 					Name:      "test-all-succeeded",
 					Namespace: "default",
 				},
-				Spec: notificationv1.NotificationRequestSpec{
-					Channels: []notificationv1.Channel{
-						notificationv1.ChannelConsole,
-						notificationv1.ChannelFile,
-					},
-				},
+				Spec: notificationv1.NotificationRequestSpec{},
 				Status: notificationv1.NotificationRequestStatus{
 					Phase:                notificationv1.NotificationPhaseSending,
 					SuccessfulDeliveries: 0,
@@ -352,8 +347,12 @@ var _ = Describe("Phase Transition Logic - DetermineTransition", func() {
 			}
 
 			// ===== ACT =====
+			channels := make([]notificationv1.Channel, 0, len(channelStates))
+			for ch := range channelStates {
+				channels = append(channels, notificationv1.Channel(ch))
+			}
 			decision := notificationphase.DetermineTransition(
-				notification, notification.Spec.Channels, deliveryResult, channelStates, 5,
+				notification, channels, deliveryResult, channelStates, 5,
 			)
 
 			// ===== ASSERT =====
@@ -375,10 +374,6 @@ var _ = Describe("Phase Transition Logic - DetermineTransition", func() {
 					Namespace: "default",
 				},
 				Spec: notificationv1.NotificationRequestSpec{
-					Channels: []notificationv1.Channel{
-						notificationv1.ChannelConsole,
-						notificationv1.ChannelFile,
-					},
 					RetryPolicy: &notificationv1.RetryPolicy{
 						MaxAttempts:           5,
 						InitialBackoffSeconds: 5,
@@ -419,8 +414,12 @@ var _ = Describe("Phase Transition Logic - DetermineTransition", func() {
 			}
 
 			// ===== ACT =====
+			channels := make([]notificationv1.Channel, 0, len(channelStates))
+			for ch := range channelStates {
+				channels = append(channels, notificationv1.Channel(ch))
+			}
 			decision := notificationphase.DetermineTransition(
-				notification, notification.Spec.Channels, deliveryResult, channelStates, 5,
+				notification, channels, deliveryResult, channelStates, 5,
 			)
 
 			// ===== ASSERT =====
@@ -442,10 +441,6 @@ var _ = Describe("Phase Transition Logic - DetermineTransition", func() {
 					Namespace: "default",
 				},
 				Spec: notificationv1.NotificationRequestSpec{
-					Channels: []notificationv1.Channel{
-						notificationv1.ChannelConsole,
-						notificationv1.ChannelFile,
-					},
 					RetryPolicy: &notificationv1.RetryPolicy{
 						MaxAttempts: 5,
 					},
@@ -483,8 +478,12 @@ var _ = Describe("Phase Transition Logic - DetermineTransition", func() {
 			}
 
 			// ===== ACT =====
+			channels := make([]notificationv1.Channel, 0, len(channelStates))
+			for ch := range channelStates {
+				channels = append(channels, notificationv1.Channel(ch))
+			}
 			decision := notificationphase.DetermineTransition(
-				notification, notification.Spec.Channels, deliveryResult, channelStates, 5,
+				notification, channels, deliveryResult, channelStates, 5,
 			)
 
 			// ===== ASSERT =====

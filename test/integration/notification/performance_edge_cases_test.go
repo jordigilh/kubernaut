@@ -76,11 +76,7 @@ var _ = Describe("Category 8: Performance Edge Cases", Label("integration", "per
 					Body:     smallBody,
 					Recipients: []notificationv1alpha1.Recipient{
 						{Email: "test@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
-				},
+					},},
 			}
 
 			startTime := time.Now()
@@ -132,11 +128,7 @@ var _ = Describe("Category 8: Performance Edge Cases", Label("integration", "per
 					Body:     largeBody,
 					Recipients: []notificationv1alpha1.Recipient{
 						{Email: "test@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
-				},
+					},},
 			}
 
 			startTime := time.Now()
@@ -205,11 +197,7 @@ var _ = Describe("Category 8: Performance Edge Cases", Label("integration", "per
 						Body:     largeBody,
 						Recipients: []notificationv1alpha1.Recipient{
 							{Email: "test@example.com"},
-						},
-						Channels: []notificationv1alpha1.Channel{
-							notificationv1alpha1.ChannelConsole,
-						},
-					},
+						},},
 				}
 
 				err := k8sClient.Create(ctx, notif)
@@ -280,11 +268,7 @@ var _ = Describe("Category 8: Performance Edge Cases", Label("integration", "per
 					Body:     "Testing fast Slack webhook response",
 					Recipients: []notificationv1alpha1.Recipient{
 						{Slack: "#test"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelSlack,
-					},
-				},
+					},},
 			}
 
 			startTime := time.Now()
@@ -369,11 +353,7 @@ var _ = Describe("Category 8: Performance Edge Cases", Label("integration", "per
 						Body:     body,
 						Recipients: []notificationv1alpha1.Recipient{
 							{Email: "test@example.com"},
-						},
-						Channels: []notificationv1alpha1.Channel{
-							notificationv1alpha1.ChannelConsole,
-						},
-					},
+						},},
 				}
 
 				err := k8sClient.Create(ctx, notif)
@@ -450,11 +430,7 @@ var _ = Describe("Category 8: Performance Edge Cases", Label("integration", "per
 						Body:     "Testing burst followed by idle period",
 						Recipients: []notificationv1alpha1.Recipient{
 							{Email: "test@example.com"},
-						},
-						Channels: []notificationv1alpha1.Channel{
-							notificationv1alpha1.ChannelConsole,
-						},
-					},
+						},},
 				}
 
 				err := k8sClient.Create(ctx, notif)

@@ -75,12 +75,9 @@ var _ = Describe("Metrics E2E Validation", Label("metrics"), func() {
 					Namespace: controllerNamespace,
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
-					Type:    notificationv1alpha1.NotificationTypeSimple,
-					Subject: "Metrics Test: Requests Total",
-					Body:    "Testing notification_requests_total metric",
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
+					Type:     notificationv1alpha1.NotificationTypeSimple,
+					Subject:  "Metrics Test: Requests Total",
+					Body:     "Testing notification_requests_total metric",
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Recipients: []notificationv1alpha1.Recipient{
 						{Slack: "#metrics-test"},
@@ -141,12 +138,9 @@ var _ = Describe("Metrics E2E Validation", Label("metrics"), func() {
 					Namespace: controllerNamespace,
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
-					Type:    notificationv1alpha1.NotificationTypeSimple,
-					Subject: "Metrics Test: Delivery Attempts",
-					Body:    "Testing notification_delivery_attempts_total metric",
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
+					Type:     notificationv1alpha1.NotificationTypeSimple,
+					Subject:  "Metrics Test: Delivery Attempts",
+					Body:     "Testing notification_delivery_attempts_total metric",
 					Priority: notificationv1alpha1.NotificationPriorityCritical,
 					Recipients: []notificationv1alpha1.Recipient{
 						{Slack: "#metrics-test"},
@@ -207,12 +201,9 @@ var _ = Describe("Metrics E2E Validation", Label("metrics"), func() {
 					Namespace: controllerNamespace,
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
-					Type:    notificationv1alpha1.NotificationTypeSimple,
-					Subject: "Metrics Test: Delivery Duration",
-					Body:    "Testing kubernaut_notification_delivery_duration_seconds metric",
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
+					Type:     notificationv1alpha1.NotificationTypeSimple,
+					Subject:  "Metrics Test: Delivery Duration",
+					Body:     "Testing kubernaut_notification_delivery_duration_seconds metric",
 					Priority: notificationv1alpha1.NotificationPriorityLow,
 					Recipients: []notificationv1alpha1.Recipient{
 						{Slack: "#metrics-test"},
@@ -276,12 +267,9 @@ var _ = Describe("Metrics E2E Validation", Label("metrics"), func() {
 					Namespace: controllerNamespace,
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
-					Type:    notificationv1alpha1.NotificationTypeSimple,
-					Subject: "Metrics Test: All Metrics Validation",
-					Body:    "Testing key metrics are exposed",
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
+					Type:     notificationv1alpha1.NotificationTypeSimple,
+					Subject:  "Metrics Test: All Metrics Validation",
+					Body:     "Testing key metrics are exposed",
 					Priority: notificationv1alpha1.NotificationPriorityCritical,
 					Recipients: []notificationv1alpha1.Recipient{
 						{Slack: "#metrics-test"},

@@ -80,7 +80,6 @@ var _ = Describe("Slack Delivery TLS Certificate Validation (Integration)", Labe
 				Priority: notificationv1alpha1.NotificationPriorityCritical,
 				Subject:  "TLS Certificate Test",
 				Body:     "Testing TLS certificate validation behavior",
-				Channels: []notificationv1alpha1.Channel{notificationv1alpha1.ChannelSlack},
 				Recipients: []notificationv1alpha1.Recipient{
 					{Slack: "#tls-test"},
 				},

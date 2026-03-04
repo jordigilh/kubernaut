@@ -63,10 +63,6 @@ var _ = Describe("BR-NOT-051: Status Tracking", func() {
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Subject: "Test",
 					Body:    "Test message",
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-						notificationv1alpha1.ChannelSlack,
-					},
 				},
 			}
 
@@ -212,7 +208,6 @@ var _ = Describe("BR-NOT-051: Status Tracking", func() {
 				Namespace: "kubernaut-notifications",
 			}, updated)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(updated.Status.CompletionTime).ToNot(BeNil())
 			Expect(updated.Status.CompletionTime.Time).To(BeTemporally("~", time.Now(), 5*time.Second))
 		})
 	})

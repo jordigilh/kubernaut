@@ -129,11 +129,6 @@ func (in *NotificationRequestSpec) DeepCopyInto(out *NotificationRequestSpec) {
 		*out = make([]Recipient, len(*in))
 		copy(*out, *in)
 	}
-	if in.Channels != nil {
-		in, out := &in.Channels, &out.Channels
-		*out = make([]Channel, len(*in))
-		copy(*out, *in)
-	}
 	if in.Metadata != nil {
 		in, out := &in.Metadata, &out.Metadata
 		*out = make(map[string]string, len(*in))

@@ -953,7 +953,6 @@ var _ = Describe("NotificationCreator", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				Expect(nr.Spec.Priority).To(Equal(notificationv1.NotificationPriorityCritical))
-				Expect(nr.Spec.Channels).To(BeEmpty(), "#260: RO no longer sets channels")
 			})
 
 			It("should create notification with Medium priority for AI LowConfidence", func() {
@@ -976,7 +975,6 @@ var _ = Describe("NotificationCreator", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				Expect(nr.Spec.Priority).To(Equal(notificationv1.NotificationPriorityMedium))
-				Expect(nr.Spec.Channels).To(BeEmpty(), "#260: RO no longer sets channels")
 			})
 		})
 	})
@@ -1139,8 +1137,6 @@ var _ = Describe("NotificationCreator", func() {
 				nr := &notificationv1.NotificationRequest{}
 				err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
 				Expect(err).ToNot(HaveOccurred())
-
-				Expect(nr.Spec.Channels).To(BeEmpty(), "#260: RO no longer sets channels")
 			})
 		})
 

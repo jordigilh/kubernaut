@@ -84,6 +84,12 @@ type Receiver struct {
 
 	// ConsoleConfigs is the list of console (stdout) configurations
 	ConsoleConfigs []ConsoleConfig `yaml:"consoleConfigs,omitempty" json:"consoleConfigs,omitempty"`
+
+	// FileConfigs is the list of file delivery configurations (#261)
+	FileConfigs []FileConfig `yaml:"fileConfigs,omitempty" json:"fileConfigs,omitempty"`
+
+	// LogConfigs is the list of structured log delivery configurations (#261)
+	LogConfigs []LogConfig `yaml:"logConfigs,omitempty" json:"logConfigs,omitempty"`
 }
 
 // SlackConfig represents Slack webhook configuration.
@@ -159,6 +165,19 @@ type BasicAuth struct {
 // Used as fallback when no other receivers are configured.
 type ConsoleConfig struct {
 	// Enabled specifies whether console output is enabled
+	Enabled bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+}
+
+// FileConfig represents file-based delivery configuration (#261).
+type FileConfig struct {
+	// Path is the output file path (optional; delivery service determines default)
+	Path string `yaml:"path,omitempty" json:"path,omitempty"`
+
+	Enabled bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+}
+
+// LogConfig represents structured-log delivery configuration (#261).
+type LogConfig struct {
 	Enabled bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
 }
 
@@ -324,6 +343,12 @@ func (r *Receiver) GetChannels() []string {
 	if len(r.ConsoleConfigs) > 0 {
 		channels = append(channels, "console")
 	}
+	if len(r.FileConfigs) > 0 {
+		channels = append(channels, "file")
+	}
+	if len(r.LogConfigs) > 0 {
+		channels = append(channels, "log")
+	}
 
 	return channels
 }
@@ -357,6 +382,12 @@ func (r *Receiver) QualifiedChannels() []string {
 	}
 	if len(r.ConsoleConfigs) > 0 {
 		channels = append(channels, "console")
+	}
+	if len(r.FileConfigs) > 0 {
+		channels = append(channels, "file")
+	}
+	if len(r.LogConfigs) > 0 {
+		channels = append(channels, "log")
 	}
 
 	return channels

@@ -91,8 +91,8 @@ var _ = Describe("BR-NOT-080/081/082: Graceful Shutdown", func() {
 					Recipients: []notificationv1alpha1.Recipient{
 						{Slack: "#test"},
 					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole, // Fast delivery
+					Metadata: map[string]string{
+						"test-channel-set": "console-slack",
 					},
 				},
 			}
@@ -171,11 +171,7 @@ var _ = Describe("BR-NOT-080/081/082: Graceful Shutdown", func() {
 					Body:     "Testing work acceptance during shutdown",
 					Recipients: []notificationv1alpha1.Recipient{
 						{Slack: "#test"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
-				},
+					},},
 			}
 
 			err := k8sClient.Create(ctx, notif)
@@ -232,11 +228,7 @@ var _ = Describe("BR-NOT-080/081/082: Graceful Shutdown", func() {
 					Body:     "Testing audit buffer flush during shutdown",
 					Recipients: []notificationv1alpha1.Recipient{
 						{Slack: "#test"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
-				},
+					},},
 			}
 
 			err := k8sClient.Create(ctx, notif)
@@ -299,11 +291,7 @@ var _ = Describe("BR-NOT-080/081/082: Graceful Shutdown", func() {
 					Body:     "Testing shutdown timeout handling",
 					Recipients: []notificationv1alpha1.Recipient{
 						{Slack: "#test"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
-				},
+					},},
 			}
 
 			startTime := time.Now()

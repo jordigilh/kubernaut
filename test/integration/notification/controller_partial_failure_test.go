@@ -113,17 +113,15 @@ var _ = Describe("Controller Partial Failure Handling (BR-NOT-053)", func() {
 					Subject:  "Integration Test: Partial Failure Handling",
 					Body:     "Testing PartiallySent phase when file fails but console/log succeed",
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole, // Will succeed
-						notificationv1alpha1.ChannelLog,     // Will succeed
-						notificationv1alpha1.ChannelFile,    // Will fail
-					},
 					// Disable retries for this test (we want to test partial failure, not retry logic)
 					RetryPolicy: &notificationv1alpha1.RetryPolicy{
 						MaxAttempts:           1, // No retries
 						InitialBackoffSeconds: 1,
 						BackoffMultiplier:     1,
 						MaxBackoffSeconds:     60, // Minimum allowed by CRD validation
+					},
+					Metadata: map[string]string{
+						"test-channel-set": "all-channels",
 					},
 				},
 			}
@@ -276,16 +274,14 @@ var _ = Describe("Controller Partial Failure Handling (BR-NOT-053)", func() {
 					Subject:  "Integration Test: Console Failure",
 					Body:     "Testing PartiallySent when console fails but file/log succeed",
 					Priority: notificationv1alpha1.NotificationPriorityLow,
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole, // Will fail
-						notificationv1alpha1.ChannelLog,     // Will succeed
-						notificationv1alpha1.ChannelFile,    // Will succeed
-					},
 					RetryPolicy: &notificationv1alpha1.RetryPolicy{
 						MaxAttempts:           1, // No retries
 						InitialBackoffSeconds: 1,
 						BackoffMultiplier:     1,
 						MaxBackoffSeconds:     60, // Minimum allowed by CRD validation
+					},
+					Metadata: map[string]string{
+						"test-channel-set": "all-channels",
 					},
 				},
 			}
@@ -386,16 +382,14 @@ var _ = Describe("Controller Partial Failure Handling (BR-NOT-053)", func() {
 					Subject:  "Integration Test: All Channels Fail",
 					Body:     "Testing Failed phase when all channels fail",
 					Priority: notificationv1alpha1.NotificationPriorityCritical,
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-						notificationv1alpha1.ChannelLog,
-						notificationv1alpha1.ChannelFile,
-					},
 					RetryPolicy: &notificationv1alpha1.RetryPolicy{
 						MaxAttempts:           1, // No retries
 						InitialBackoffSeconds: 1,
 						BackoffMultiplier:     1,
 						MaxBackoffSeconds:     60, // Minimum allowed by CRD validation
+					},
+					Metadata: map[string]string{
+						"test-channel-set": "all-channels",
 					},
 				},
 			}

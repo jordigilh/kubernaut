@@ -87,11 +87,11 @@ var _ = Describe("CRD Lifecycle: Rapid Create-Delete-Create", func() {
 						Subject:  fmt.Sprintf("Rapid Lifecycle Cycle %d", cycle+1),
 						Body:     fmt.Sprintf("Testing rapid create-delete-create (cycle %d)", cycle+1),
 						Priority: notificationv1alpha1.NotificationPriorityMedium,
-						Channels: []notificationv1alpha1.Channel{
-							notificationv1alpha1.ChannelConsole,
-						},
 						Recipients: []notificationv1alpha1.Recipient{
 							{Slack: "#rapid-test"},
+						},
+						Metadata: map[string]string{
+							"test-channel-set": "console-slack",
 						},
 					},
 				}
@@ -170,11 +170,11 @@ var _ = Describe("CRD Lifecycle: Rapid Create-Delete-Create", func() {
 						Subject:  fmt.Sprintf("Rapid Same-Name Test (Cycle %d)", cycle+1),
 						Body:     fmt.Sprintf("Testing rapid create-delete-create with same name (cycle %d)", cycle+1),
 						Priority: notificationv1alpha1.NotificationPriorityHigh,
-						Channels: []notificationv1alpha1.Channel{
-							notificationv1alpha1.ChannelConsole,
-						},
 						Recipients: []notificationv1alpha1.Recipient{
 							{Slack: "#rapid-same-name"},
+						},
+						Metadata: map[string]string{
+							"test-channel-set": "console-slack",
 						},
 					},
 				}
@@ -253,11 +253,11 @@ var _ = Describe("CRD Lifecycle: Rapid Create-Delete-Create", func() {
 						Subject:  fmt.Sprintf("Extreme Rapid Test %d", i),
 						Body:     "Stress testing rapid create-delete",
 						Priority: notificationv1alpha1.NotificationPriorityLow,
-						Channels: []notificationv1alpha1.Channel{
-							notificationv1alpha1.ChannelConsole,
-						},
 						Recipients: []notificationv1alpha1.Recipient{
 							{Slack: "#stress-test"},
+						},
+						Metadata: map[string]string{
+							"test-channel-set": "console-slack",
 						},
 					},
 				}
@@ -332,9 +332,6 @@ var _ = Describe("CRD Lifecycle: Rapid Create-Delete-Create", func() {
 							Subject:  fmt.Sprintf("Concurrent Rapid Test %d", id),
 							Body:     "Testing concurrent rapid create-delete",
 							Priority: notificationv1alpha1.NotificationPriorityMedium,
-							Channels: []notificationv1alpha1.Channel{
-								notificationv1alpha1.ChannelConsole,
-							},
 							Recipients: []notificationv1alpha1.Recipient{
 								{Slack: "#concurrent-rapid"},
 							},

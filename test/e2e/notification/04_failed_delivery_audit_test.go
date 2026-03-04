@@ -132,9 +132,6 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 				Priority: notificationv1alpha1.NotificationPriorityCritical,
 				Subject:  "E2E Failed Delivery Audit Test",
 				Body:     "Testing failed delivery audit event persistence",
-				Channels: []notificationv1alpha1.Channel{
-					notificationv1alpha1.ChannelEmail, // Email service NOT configured → will fail
-				},
 				Recipients: []notificationv1alpha1.Recipient{
 					{Email: "test@example.com"},
 				},
@@ -379,10 +376,6 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 				Priority: notificationv1alpha1.NotificationPriorityCritical,
 				Subject:  "E2E Partial Failure Audit Test",
 				Body:     "Testing audit events for partial delivery failures",
-				Channels: []notificationv1alpha1.Channel{
-					notificationv1alpha1.ChannelConsole, // SUCCEEDS
-					notificationv1alpha1.ChannelEmail,   // FAILS
-				},
 				Recipients: []notificationv1alpha1.Recipient{
 					{Email: "test@example.com"},
 				},

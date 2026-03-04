@@ -73,9 +73,6 @@ var _ = Describe("BR-AUTH-001: NotificationRequest Cancellation Attribution", fu
 					Recipients: []notificationv1.Recipient{
 						{Email: "oncall@example.com"},
 					},
-					Channels: []notificationv1.Channel{
-						notificationv1.ChannelEmail,
-					},
 				},
 			}
 

@@ -131,6 +131,10 @@ func convertToTypedChannels(channelStrings []string) []notificationv1alpha1.Chan
 			channels = append(channels, notificationv1alpha1.ChannelSMS)
 		case "console":
 			channels = append(channels, notificationv1alpha1.ChannelConsole)
+		case "file":
+			channels = append(channels, notificationv1alpha1.ChannelFile)
+		case "log":
+			channels = append(channels, notificationv1alpha1.ChannelLog)
 		}
 	}
 

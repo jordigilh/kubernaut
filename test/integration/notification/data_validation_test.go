@@ -75,9 +75,6 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 					Recipients: []notificationv1alpha1.Recipient{
 						{Email: "test@example.com"},
 					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
 				},
 			}
 
@@ -136,9 +133,6 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 					Recipients: []notificationv1alpha1.Recipient{
 						{Email: "test@example.com"},
 					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
 				},
 			}
 
@@ -192,9 +186,6 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 					Body:     largeBody,
 					Recipients: []notificationv1alpha1.Recipient{
 						{Email: "test@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
 					},
 				},
 			}
@@ -272,9 +263,6 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 			}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
 				"Controller should start processing notification")
 
-			// Verify routing was applied (empty channels -> routing rules)
-			Expect(len(notif.Spec.Channels)).To(Equal(0), "Original spec had empty channels")
-
 			// Cleanup
 			_ = k8sClient.Delete(ctx, notif)
 
@@ -302,13 +290,12 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 					Recipients: []notificationv1alpha1.Recipient{
 						{Email: "test@example.com"},
 					},
-					Channels: []notificationv1alpha1.Channel{}, // Empty - routing rules apply
 				},
 			}
 
 			err := k8sClient.Create(ctx, notif)
 
-			// BEHAVIOR: Empty channels accepted (BR-NOT-065)
+			// BEHAVIOR: Channels omitted - routing rules apply (BR-NOT-065)
 			Expect(err).NotTo(HaveOccurred(), "Empty channels should be accepted (BR-NOT-065 routing rules)")
 
 			// Verify CRD exists and controller started processing
@@ -353,9 +340,6 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 					Recipients: []notificationv1alpha1.Recipient{
 						{Email: "test@example.com"},
 					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
 				},
 			}
 
@@ -391,9 +375,6 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 					Body:     "Should fail validation",
 					Recipients: []notificationv1alpha1.Recipient{
 						{Email: "test@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
 					},
 				},
 			}
@@ -433,9 +414,6 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 					Body:     "Status: ✅ Success | 日本語テスト | مرحبا", // Emoji + Japanese + Arabic
 					Recipients: []notificationv1alpha1.Recipient{
 						{Email: "test@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
 					},
 				},
 			}
@@ -492,23 +470,18 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Type:     notificationv1alpha1.NotificationTypeSimple,
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
-					Subject:  "Duplicate Channels Test",
-					Body:     "Testing channel deduplication and idempotency",
+					Subject:  "Routing-based delivery test",
+					Body:     "Testing routing-based delivery with Recipients",
 					Recipients: []notificationv1alpha1.Recipient{
 						{Email: "test@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-						notificationv1alpha1.ChannelConsole, // Duplicate
-						notificationv1alpha1.ChannelConsole, // Duplicate
 					},
 				},
 			}
 
 			err := k8sClient.Create(ctx, notif)
-			Expect(err).NotTo(HaveOccurred(), "Duplicate channels should be accepted by CRD")
+			Expect(err).NotTo(HaveOccurred(), "Notification with Recipients should be accepted")
 
-			// BEHAVIOR: Controller processes notification with duplicate detection
+			// BEHAVIOR: Controller processes notification via routing
 			Eventually(func() notificationv1alpha1.NotificationPhase {
 				freshNotif := &notificationv1alpha1.NotificationRequest{}
 				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
@@ -522,22 +495,20 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 			}, 30*time.Second, 1*time.Second).Should(Or(
 				Equal(notificationv1alpha1.NotificationPhaseSent),
 				Equal(notificationv1alpha1.NotificationPhasePartiallySent),
-			), "Notification processed with duplicate detection")
+			), "Notification processed via routing")
 
-			// CORRECTNESS: Idempotency ensures no duplicate deliveries
+			// CORRECTNESS: Delivery succeeds via routing
 			freshNotif := &notificationv1alpha1.NotificationRequest{}
 			err = k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, freshNotif)
 			Expect(err).NotTo(HaveOccurred())
 
-			// First Console delivery succeeds, duplicates are detected (idempotency)
 			Expect(freshNotif.Status.SuccessfulDeliveries).To(Equal(1),
-				"Console delivery succeeds exactly once (idempotency protection)")
+				"Delivery succeeds via routing")
 
-			// Total attempts may be 3 (one per channel entry), but only 1 succeeds
 			Expect(freshNotif.Status.TotalAttempts).To(BeNumerically(">=", 1),
 				"At least one delivery attempt made")
 
-			GinkgoWriter.Printf("✅ Duplicate channels handled: 3 entries → 1 successful delivery (idempotency working)\n")
+			GinkgoWriter.Printf("✅ Routing-based delivery: 1 successful delivery\n")
 			GinkgoWriter.Printf("   Phase: %s | Successful: %d | Total Attempts: %d\n",
 				freshNotif.Status.Phase,
 				freshNotif.Status.SuccessfulDeliveries,
@@ -566,9 +537,6 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 					Body:     "SQL: '; DROP TABLE users; -- & Command: `rm -rf /`",
 					Recipients: []notificationv1alpha1.Recipient{
 						{Email: "test@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
 					},
 				},
 			}
@@ -629,9 +597,6 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 					Recipients: []notificationv1alpha1.Recipient{
 						{Email: "security@example.com"},
 					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
 				},
 			}
 
@@ -680,9 +645,6 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 					Recipients: []notificationv1alpha1.Recipient{
 						{Email: "devops@example.com"},
 					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
 				},
 			}
 
@@ -729,9 +691,6 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 					Body:     "Pod app-server-1 crashed: authentication failed with password: leaked123 at 2025-11-29T14:30:00Z",
 					Recipients: []notificationv1alpha1.Recipient{
 						{Email: "oncall@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
 					},
 				},
 			}
@@ -790,9 +749,6 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 					Body:     "Webhook URL exposed: https://api.example.com/notify?apiKey=sk-secret123&token=abc789",
 					Recipients: []notificationv1alpha1.Recipient{
 						{Email: "security@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
 					},
 				},
 			}

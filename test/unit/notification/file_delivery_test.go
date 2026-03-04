@@ -76,9 +76,6 @@ var _ = Describe("FileDeliveryService Unit Tests", func() {
 					Subject:  "Test Subject",
 					Body:     "Test Body",
 					Priority: notificationv1alpha1.NotificationPriorityCritical,
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelSlack,
-					},
 					Recipients: []notificationv1alpha1.Recipient{
 						{Slack: "#test"},
 					},
@@ -109,7 +106,6 @@ var _ = Describe("FileDeliveryService Unit Tests", func() {
 			Expect(savedNotification.Spec.Subject).To(Equal("Test Subject"))
 			Expect(savedNotification.Spec.Body).To(Equal("Test Body"))
 			Expect(savedNotification.Spec.Priority).To(Equal(notificationv1alpha1.NotificationPriorityCritical))
-			Expect(savedNotification.Spec.Channels).To(BeEmpty(), "#260: Channels excluded from JSON (json:\"-\")")
 			Expect(savedNotification.Spec.Recipients).To(HaveLen(1))
 		})
 
@@ -389,9 +385,6 @@ var _ = Describe("FileDeliveryService Unit Tests", func() {
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Subject: "Test Directory Permission Error",
 					Body:    "Testing NT-BUG-006: Directory creation errors should be retryable",
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelFile,
-					},
 				},
 			}
 
@@ -424,9 +417,6 @@ var _ = Describe("FileDeliveryService Unit Tests", func() {
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Subject: "Test Successful Delivery",
 					Body:    "Testing that delivery succeeds with writable directory",
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelFile,
-					},
 				},
 			}
 
@@ -461,9 +451,6 @@ var _ = Describe("FileDeliveryService Unit Tests", func() {
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Subject: "Test File Write Error",
 					Body:    "Testing NT-BUG-006: File write errors should be retryable",
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelFile,
-					},
 				},
 			}
 

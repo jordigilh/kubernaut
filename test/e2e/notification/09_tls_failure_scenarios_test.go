@@ -78,9 +78,6 @@ var _ = Describe("TLS/HTTPS Failure Scenarios", func() {
 					Subject:  "TLS Connection Refused Test",
 					Body:     "Testing graceful handling of connection refused errors",
 					Priority: notificationv1alpha1.NotificationPriorityHigh,
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole, // Always succeeds
-					},
 					Recipients: []notificationv1alpha1.Recipient{
 						{Slack: "#tls-test"}, // Keep for CRD validation
 					},
@@ -125,9 +122,6 @@ var _ = Describe("TLS/HTTPS Failure Scenarios", func() {
 					Subject:  "TLS Timeout Test",
 					Body:     "Testing graceful handling of timeout errors",
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole, // Always succeeds quickly
-					},
 					Recipients: []notificationv1alpha1.Recipient{
 						{Slack: "#timeout-test"}, // Keep for CRD validation
 					},
@@ -170,9 +164,6 @@ var _ = Describe("TLS/HTTPS Failure Scenarios", func() {
 					Subject:  "TLS Handshake Test",
 					Body:     "Testing graceful handling of TLS handshake failures",
 					Priority: notificationv1alpha1.NotificationPriorityCritical,
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole, // Always succeeds
-					},
 					Recipients: []notificationv1alpha1.Recipient{
 						{Slack: "#tls-handshake-test"}, // Keep for CRD validation
 					},
@@ -214,10 +205,6 @@ var _ = Describe("TLS/HTTPS Failure Scenarios", func() {
 					Subject:  "TLS Multi-Channel Test",
 					Body:     "Testing TLS handling in multi-channel delivery",
 					Priority: notificationv1alpha1.NotificationPriorityHigh,
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole, // Always succeeds
-						notificationv1alpha1.ChannelFile,    // Always succeeds
-					},
 					Recipients: []notificationv1alpha1.Recipient{
 						{Slack: "#multi-tls-test"}, // Keep for CRD validation
 					},
@@ -276,9 +263,6 @@ var _ = Describe("TLS/HTTPS Failure Scenarios", func() {
 					Subject:  "TLS Retry Test",
 					Body:     "Testing retry behavior on TLS failures",
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelSlack,
-					},
 					Recipients: []notificationv1alpha1.Recipient{
 						{Slack: "#tls-retry-test"},
 					},
@@ -329,9 +313,6 @@ var _ = Describe("TLS/HTTPS Failure Scenarios", func() {
 					Subject:  "TLS Invalid Certificate Test",
 					Body:     "Testing handling of permanent TLS errors",
 					Priority: notificationv1alpha1.NotificationPriorityHigh,
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelSlack,
-					},
 					Recipients: []notificationv1alpha1.Recipient{
 						{Slack: "#invalid-cert-test"},
 					},

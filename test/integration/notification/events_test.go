@@ -107,9 +107,8 @@ var _ = Describe("Notification K8s Event Observability (DD-EVENT-001, BR-NT-095)
 						{Slack: "#test"},
 						{Email: "test@example.com"},
 					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelSlack,
-						notificationv1alpha1.ChannelConsole,
+					Metadata: map[string]string{
+						"test-channel-set": "console-slack",
 					},
 				},
 			}
@@ -170,15 +169,14 @@ var _ = Describe("Notification K8s Event Observability (DD-EVENT-001, BR-NT-095)
 						{Slack: "#test"},
 						{Email: "test@example.com"},
 					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelSlack,
-						notificationv1alpha1.ChannelConsole,
-					},
 					RetryPolicy: &notificationv1alpha1.RetryPolicy{
 						MaxAttempts:           3,
 						InitialBackoffSeconds: 1,
 						BackoffMultiplier:     2,
 						MaxBackoffSeconds:     60,
+					},
+					Metadata: map[string]string{
+						"test-channel-set": "console-slack",
 					},
 				},
 			}
@@ -240,14 +238,14 @@ var _ = Describe("Notification K8s Event Observability (DD-EVENT-001, BR-NT-095)
 					Recipients: []notificationv1alpha1.Recipient{
 						{Slack: "#test"},
 					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelSlack,
-					},
 					RetryPolicy: &notificationv1alpha1.RetryPolicy{
 						MaxAttempts:           3,
 						InitialBackoffSeconds: 1,
 						BackoffMultiplier:     2,
 						MaxBackoffSeconds:     60,
+					},
+					Metadata: map[string]string{
+						"test-channel-set": "slack-only",
 					},
 				},
 			}

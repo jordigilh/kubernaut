@@ -85,11 +85,6 @@ var _ = Describe("Multi-Channel Fanout E2E (BR-NOT-053)", func() {
 					Subject:  "E2E Test: Multi-Channel Fanout",
 					Body:     "Testing delivery to console, file, and log channels simultaneously",
 					Priority: notificationv1alpha1.NotificationPriorityHigh,
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole, // Console delivery
-						notificationv1alpha1.ChannelFile,    // File delivery (audit trail)
-						notificationv1alpha1.ChannelLog,     // Structured log delivery
-					},
 				},
 			}
 
@@ -197,9 +192,6 @@ var _ = Describe("Multi-Channel Fanout E2E (BR-NOT-053)", func() {
 					Subject:  "E2E Test: Log Channel Structured Output",
 					Body:     "Testing structured JSON log delivery",
 					Priority: notificationv1alpha1.NotificationPriorityLow,
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelLog, // Log delivery only
-					},
 					Metadata: map[string]string{
 						"test-key":   "test-value",
 						"cluster":    "e2e-cluster",

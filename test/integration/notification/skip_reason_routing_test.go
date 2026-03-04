@@ -90,11 +90,7 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 					Body:     "Workflow execution failed - cluster state unknown. Manual intervention required.",
 					Recipients: []notificationv1alpha1.Recipient{
 						{Email: "oncall@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
-					Metadata: map[string]string{
+					},Metadata: map[string]string{
 						routing.AttrSkipReason:  routing.SkipReasonPreviousExecutionFailed,
 						routing.AttrEnvironment: routing.EnvironmentProduction,
 					},
@@ -156,11 +152,7 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 						Priority: notificationv1alpha1.NotificationPriorityMedium,
 						Severity: severity,
 						Subject:  fmt.Sprintf("Skip Reason Test: %s [%s]", skipReason, uniqueSuffix),
-						Body:     fmt.Sprintf("Testing skip reason: %s", skipReason),
-						Channels: []notificationv1alpha1.Channel{
-							notificationv1alpha1.ChannelConsole,
-						},
-						Metadata: map[string]string{
+						Body:     fmt.Sprintf("Testing skip reason: %s", skipReason),Metadata: map[string]string{
 							routing.AttrSkipReason: skipReason,
 						},
 					},
@@ -248,11 +240,7 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 						Name: "rr-test-12345",
 					},
 					Subject: fmt.Sprintf("Combined Labels Test [%s]", uniqueSuffix),
-					Body:    "Testing combined spec field routing in production environment",
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
-					Metadata: map[string]string{
+					Body:    "Testing combined spec field routing in production environment",Metadata: map[string]string{
 						routing.AttrSkipReason:  routing.SkipReasonPreviousExecutionFailed,
 						routing.AttrEnvironment: routing.EnvironmentProduction,
 					},
@@ -279,7 +267,6 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 			// Issue #91: Routing data is in spec fields + metadata, not labels
 			Expect(processed.Spec.Severity).To(Equal(routing.SeverityCritical))
 			Expect(processed.Spec.Type).To(Equal(notificationv1alpha1.NotificationTypeEscalation))
-			Expect(processed.Spec.RemediationRequestRef).ToNot(BeNil())
 			Expect(processed.Spec.RemediationRequestRef.Name).To(Equal("rr-test-12345"))
 			Expect(processed.Spec.Metadata[routing.AttrSkipReason]).To(Equal(routing.SkipReasonPreviousExecutionFailed))
 			Expect(processed.Spec.Metadata[routing.AttrEnvironment]).To(Equal(routing.EnvironmentProduction))
@@ -308,11 +295,7 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Severity: routing.SeverityMedium,
 					Subject:  fmt.Sprintf("No Skip-Reason Test [%s]", uniqueSuffix),
-					Body:     "Testing fallback routing without skip-reason",
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
-					Metadata: map[string]string{
+					Body:     "Testing fallback routing without skip-reason",Metadata: map[string]string{
 						routing.AttrEnvironment: routing.EnvironmentStaging,
 					},
 				},
@@ -370,11 +353,7 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 						Name: "rr-domain-test",
 					},
 					Subject: fmt.Sprintf("Spec Routing Test [%s]", uniqueSuffix),
-					Body:    "Testing spec-field-based routing consistency",
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
-					Metadata: map[string]string{
+					Body:    "Testing spec-field-based routing consistency",Metadata: map[string]string{
 						routing.AttrSkipReason:  routing.SkipReasonExhaustedRetries,
 						routing.AttrEnvironment: routing.EnvironmentProduction,
 						routing.AttrNamespace:   "production",

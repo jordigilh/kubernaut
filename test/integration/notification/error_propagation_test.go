@@ -76,8 +76,8 @@ var _ = Describe("Category 9: Error Propagation", Label("integration", "error-pr
 					Recipients: []notificationv1alpha1.Recipient{
 						{Slack: "#test"},
 					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelSlack,
+					Metadata: map[string]string{
+						"test-channel-set": "console-slack",
 					},
 				},
 			}
@@ -143,9 +143,6 @@ var _ = Describe("Category 9: Error Propagation", Label("integration", "error-pr
 					Recipients: []notificationv1alpha1.Recipient{
 						{Email: "test@example.com"},
 					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
 				},
 			}
 
@@ -201,9 +198,6 @@ var _ = Describe("Category 9: Error Propagation", Label("integration", "error-pr
 					Recipients: []notificationv1alpha1.Recipient{
 						{Email: "test@example.com"},
 					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
 				},
 			}
 
@@ -252,9 +246,6 @@ var _ = Describe("Category 9: Error Propagation", Label("integration", "error-pr
 					Body:     "Testing deadline handling",
 					Recipients: []notificationv1alpha1.Recipient{
 						{Email: "test@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
 					},
 				},
 			}
@@ -313,9 +304,6 @@ var _ = Describe("Category 9: Error Propagation", Label("integration", "error-pr
 						Body:     "Testing panic recovery and system resilience",
 						Recipients: []notificationv1alpha1.Recipient{
 							{Email: "test@example.com"},
-						},
-						Channels: []notificationv1alpha1.Channel{
-							notificationv1alpha1.ChannelConsole,
 						},
 					},
 				}
@@ -392,9 +380,6 @@ var _ = Describe("Category 9: Error Propagation", Label("integration", "error-pr
 					Recipients: []notificationv1alpha1.Recipient{
 						{Email: "test@example.com"},
 					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
 				},
 			}
 
@@ -447,9 +432,6 @@ var _ = Describe("Category 9: Error Propagation", Label("integration", "error-pr
 					Recipients: []notificationv1alpha1.Recipient{
 						{Email: "test@example.com"},
 					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
 				},
 			}
 
@@ -497,9 +479,6 @@ var _ = Describe("Category 9: Error Propagation", Label("integration", "error-pr
 					Body:     "Testing error unwrapping and chain handling",
 					Recipients: []notificationv1alpha1.Recipient{
 						{Email: "test@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
 					},
 				},
 			}
@@ -558,9 +537,6 @@ var _ = Describe("Category 9: Error Propagation", Label("integration", "error-pr
 						Body:     "Testing concurrent error handling",
 						Recipients: []notificationv1alpha1.Recipient{
 							{Email: "test@example.com"},
-						},
-						Channels: []notificationv1alpha1.Channel{
-							notificationv1alpha1.ChannelConsole,
 						},
 					},
 				}

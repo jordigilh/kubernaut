@@ -125,7 +125,6 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 				Priority: notificationv1alpha1.NotificationPriorityCritical,
 				Subject:  "E2E Lifecycle Test",
 				Body:     "Testing full notification lifecycle with audit trail",
-				Channels: []notificationv1alpha1.Channel{notificationv1alpha1.ChannelConsole}, // Use Console to avoid Slack delivery failures
 				Recipients: []notificationv1alpha1.Recipient{
 					{Slack: "#e2e-tests"}, // Keep for CRD validation, but Console channel doesn't use it
 				},
@@ -293,7 +292,6 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 				Priority: notificationv1alpha1.NotificationPriorityCritical,
 				Subject:  "E2E Routing Fallback Test",
 				Body:     "Testing RoutingFallback condition when spec.channels is empty",
-				Channels: nil, // Empty: triggers routing rules → default config → console fallback
 				Recipients: []notificationv1alpha1.Recipient{
 					{Slack: "#e2e-tests"},
 				},

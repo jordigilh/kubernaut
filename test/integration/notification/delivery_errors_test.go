@@ -78,14 +78,14 @@ var _ = Describe("Category 4: Delivery Service Error Handling", Label("integrati
 					Recipients: []notificationv1alpha1.Recipient{
 						{Slack: "#test"},
 					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelSlack,
-					},
 					RetryPolicy: &notificationv1alpha1.RetryPolicy{
 						MaxAttempts:           3,
 						InitialBackoffSeconds: 1,
 						BackoffMultiplier:     2,
 						MaxBackoffSeconds:     60,
+					},
+					Metadata: map[string]string{
+						"test-channel-set": "console-slack",
 					},
 				},
 			}
@@ -149,8 +149,8 @@ var _ = Describe("Category 4: Delivery Service Error Handling", Label("integrati
 					Recipients: []notificationv1alpha1.Recipient{
 						{Slack: "#test"},
 					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelSlack,
+					Metadata: map[string]string{
+						"test-channel-set": "console-slack",
 					},
 				},
 			}
@@ -206,8 +206,8 @@ var _ = Describe("Category 4: Delivery Service Error Handling", Label("integrati
 					Recipients: []notificationv1alpha1.Recipient{
 						{Slack: "#nonexistent"},
 					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelSlack,
+					Metadata: map[string]string{
+						"test-channel-set": "console-slack",
 					},
 				},
 			}
@@ -263,8 +263,8 @@ var _ = Describe("Category 4: Delivery Service Error Handling", Label("integrati
 					Recipients: []notificationv1alpha1.Recipient{
 						{Slack: "#deprecated"},
 					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelSlack,
+					Metadata: map[string]string{
+						"test-channel-set": "console-slack",
 					},
 				},
 			}
@@ -331,14 +331,14 @@ var _ = Describe("Category 4: Delivery Service Error Handling", Label("integrati
 					Recipients: []notificationv1alpha1.Recipient{
 						{Slack: "#test"},
 					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelSlack,
-					},
 					RetryPolicy: &notificationv1alpha1.RetryPolicy{
 						MaxAttempts:           3,
 						InitialBackoffSeconds: 1,
 						BackoffMultiplier:     2,
 						MaxBackoffSeconds:     60,
+					},
+					Metadata: map[string]string{
+						"test-channel-set": "console-slack",
 					},
 				},
 			}
@@ -423,9 +423,9 @@ var _ = Describe("Category 4: Delivery Service Error Handling", Label("integrati
 
 	// Network-Level Errors Context - DELETED per "NO SKIPPED TESTS" rule
 	//
-	// All tests in this context were Skip() placeholders for future infrastructure.
+	// All tests in this context were skipped placeholders for future infrastructure.
 	// Per project rule, placeholders are not allowed. If/when infrastructure is added,
-	// implement these tests properly without Skip().
+	// implement these tests properly when ready.
 	//
 	// Deferred (implement when infrastructure available):
 	// - Slack timeout (context deadline exceeded) - requires custom HTTP client

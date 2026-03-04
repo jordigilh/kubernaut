@@ -87,11 +87,7 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 						Body:     "Testing memory stability under load",
 						Recipients: []notificationv1alpha1.Recipient{
 							{Email: "test@example.com"},
-						},
-						Channels: []notificationv1alpha1.Channel{
-							notificationv1alpha1.ChannelConsole,
-						},
-					},
+						},},
 				}
 
 				err := k8sClient.Create(ctx, notif)
@@ -178,11 +174,7 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 						Body:     "Testing goroutine cleanup",
 						Recipients: []notificationv1alpha1.Recipient{
 							{Email: "test@example.com"},
-						},
-						Channels: []notificationv1alpha1.Channel{
-							notificationv1alpha1.ChannelConsole,
-						},
-					},
+						},},
 				}
 
 				err := k8sClient.Create(ctx, notif)
@@ -277,8 +269,8 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 						Recipients: []notificationv1alpha1.Recipient{
 							{Slack: "#test"},
 						},
-						Channels: []notificationv1alpha1.Channel{
-							notificationv1alpha1.ChannelSlack,
+						Metadata: map[string]string{
+							"test-channel-set": "console-slack",
 						},
 					},
 				}
@@ -367,11 +359,7 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 							Body:     "Testing graceful degradation under resource pressure",
 							Recipients: []notificationv1alpha1.Recipient{
 								{Email: "test@example.com"},
-							},
-							Channels: []notificationv1alpha1.Channel{
-								notificationv1alpha1.ChannelConsole,
-							},
-						},
+							},},
 					}
 
 					err := k8sClient.Create(ctx, notif)
@@ -462,11 +450,7 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 						Body:     "Testing resource cleanup",
 						Recipients: []notificationv1alpha1.Recipient{
 							{Email: "test@example.com"},
-						},
-						Channels: []notificationv1alpha1.Channel{
-							notificationv1alpha1.ChannelConsole,
-						},
-					},
+						},},
 				}
 
 				err := k8sClient.Create(ctx, notif)
@@ -603,11 +587,7 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 						Body:     "Testing resource recovery after burst",
 						Recipients: []notificationv1alpha1.Recipient{
 							{Email: "test@example.com"},
-						},
-						Channels: []notificationv1alpha1.Channel{
-							notificationv1alpha1.ChannelConsole,
-						},
-					},
+						},},
 				}
 
 				err := k8sClient.Create(ctx, notif)

@@ -89,8 +89,8 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 					Recipients: []notificationv1alpha1.Recipient{
 						{Slack: "#test"},
 					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole, // Console for fast delivery
+					Metadata: map[string]string{
+						"test-channel-set": "console-slack",
 					},
 				},
 			}
@@ -167,8 +167,8 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 					Recipients: []notificationv1alpha1.Recipient{
 						{Slack: "#test"},
 					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
+					Metadata: map[string]string{
+						"test-channel-set": "console-slack",
 					},
 				},
 			}
@@ -255,8 +255,8 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 					Recipients: []notificationv1alpha1.Recipient{
 						{Slack: "#test"},
 					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
+					Metadata: map[string]string{
+						"test-channel-set": "console-slack",
 					},
 				},
 			}
@@ -321,8 +321,8 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 					Recipients: []notificationv1alpha1.Recipient{
 						{Slack: "#test"},
 					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
+					Metadata: map[string]string{
+						"test-channel-set": "console-slack",
 					},
 				},
 			}
@@ -398,14 +398,14 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 					Recipients: []notificationv1alpha1.Recipient{
 						{Slack: "#test"},
 					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelSlack,
-					},
 					RetryPolicy: &notificationv1alpha1.RetryPolicy{
 						MaxAttempts:           5,
 						InitialBackoffSeconds: 1,
 						BackoffMultiplier:     2,
 						MaxBackoffSeconds:     60,
+					},
+					Metadata: map[string]string{
+						"test-channel-set": "console-slack",
 					},
 				},
 			}
@@ -486,14 +486,14 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 					Recipients: []notificationv1alpha1.Recipient{
 						{Slack: "#test"},
 					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelSlack,
-					},
 					RetryPolicy: &notificationv1alpha1.RetryPolicy{
 						MaxAttempts:           7, // Large array test (1+2+4+8+16+32 = 63s < 90s timeout)
 						InitialBackoffSeconds: 1,
 						BackoffMultiplier:     2,
 						MaxBackoffSeconds:     60,
+					},
+					Metadata: map[string]string{
+						"test-channel-set": "console-slack",
 					},
 				},
 			}

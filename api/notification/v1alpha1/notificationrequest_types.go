@@ -192,11 +192,6 @@ type NotificationRequestSpec struct {
 	// +kubebuilder:validation:MinLength=1
 	Body string `json:"body"`
 
-	// DEPRECATED (#260): This field is hidden from the CRD API surface.
-	// Routing rules (BR-NOT-065) are the authoritative channel resolution mechanism.
-	// Tech debt: Remove this field and all references post-v1.0.
-	Channels []Channel `json:"-"`
-
 	// Severity from the originating signal (used for routing)
 	// Issue #91: promoted from mutable label to immutable spec field
 	// +optional

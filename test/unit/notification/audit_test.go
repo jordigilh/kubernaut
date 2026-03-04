@@ -190,7 +190,6 @@ var _ = Describe("Audit Helpers", func() {
 			// ===== BEHAVIOR TESTING =====
 			event, err := helpers.CreateMessageAcknowledgedEvent(notification)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(event).ToNot(BeNil())
 
 			// ===== CORRECTNESS TESTING =====
 			Expect(event.EventType).To(Equal("notification.message.acknowledged"),
@@ -230,7 +229,6 @@ var _ = Describe("Audit Helpers", func() {
 			// ===== BEHAVIOR TESTING =====
 			event, err := helpers.CreateMessageEscalatedEvent(notification)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(event).ToNot(BeNil())
 
 			// ===== CORRECTNESS TESTING =====
 			Expect(event.EventType).To(Equal("notification.message.escalated"),
@@ -277,7 +275,6 @@ var _ = Describe("Audit Helpers", func() {
 				if shouldSucceed {
 					// SUCCESS PATH
 					Expect(err).ToNot(HaveOccurred())
-					Expect(event).ToNot(BeNil())
 
 					// CORRECTNESS: Validate ADR-034 format
 					Expect(event.EventType).To(Equal(eventType),
@@ -714,10 +711,6 @@ func createTestNotification() *notificationv1alpha1.NotificationRequest {
 			Priority: notificationv1alpha1.NotificationPriorityCritical,
 			Subject:  "Test Alert: Database Connection Failed",
 			Body:     "Critical alert detected in production database cluster",
-			Channels: []notificationv1alpha1.Channel{
-				notificationv1alpha1.ChannelSlack,
-				notificationv1alpha1.ChannelEmail,
-			},
 			Recipients: []notificationv1alpha1.Recipient{
 				{Slack: "#alerts"},
 			},

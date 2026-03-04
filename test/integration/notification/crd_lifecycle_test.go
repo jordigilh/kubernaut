@@ -76,9 +76,6 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 					Recipients: []notificationv1alpha1.Recipient{
 						{Email: "test@example.com"},
 					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
 				},
 			}
 
@@ -101,7 +98,6 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 			Expect(created.Spec.Subject).To(Equal("Test Minimal Notification"))
 			Expect(created.Spec.Body).To(Equal("Minimal body content"))
 			Expect(created.Spec.Recipients).To(HaveLen(1))
-			Expect(created.Spec.Channels).To(HaveLen(1))
 
 			// Cleanup
 			err = deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
@@ -133,10 +129,6 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 					Recipients: []notificationv1alpha1.Recipient{
 						{Email: "test1@example.com"},
 						{Email: "test2@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-						notificationv1alpha1.ChannelSlack,
 					},
 					Metadata: map[string]string{
 						"remediationRequestName": "rr-123",
@@ -238,9 +230,6 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 					Body:     "Testing status initialization",
 					Recipients: []notificationv1alpha1.Recipient{
 						{Email: "test@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
 					},
 				},
 			}
@@ -367,9 +356,6 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 					Recipients: []notificationv1alpha1.Recipient{
 						{Email: "test@example.com"},
 					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
 				},
 			}
 
@@ -412,9 +398,6 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 					Recipients: []notificationv1alpha1.Recipient{
 						{Email: "test@example.com"},
 					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
 				},
 			}
 
@@ -454,9 +437,6 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 					Body:     "Testing immediate reconciliation",
 					Recipients: []notificationv1alpha1.Recipient{
 						{Email: "test@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
 					},
 				},
 			}
@@ -520,9 +500,6 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 					Body:     "Testing status update recovery",
 					Recipients: []notificationv1alpha1.Recipient{
 						{Email: "test@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
 					},
 				},
 			}
@@ -602,8 +579,8 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 					Recipients: []notificationv1alpha1.Recipient{
 						{Slack: "#test"},
 					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelSlack,
+					Metadata: map[string]string{
+						"test-channel-set": "console-slack",
 					},
 				},
 			}
@@ -667,9 +644,6 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 					Body:     "Original body content",
 					Recipients: []notificationv1alpha1.Recipient{
 						{Email: "test@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
 					},
 				},
 			}
@@ -760,9 +734,6 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 					Body:     "Testing immediate deletion",
 					Recipients: []notificationv1alpha1.Recipient{
 						{Email: "test@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
 					},
 				},
 			}

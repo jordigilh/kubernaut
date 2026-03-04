@@ -55,6 +55,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/notification/credentials"
 	"github.com/jordigilh/kubernaut/pkg/notification/delivery"
 	notificationmetrics "github.com/jordigilh/kubernaut/pkg/notification/metrics"
+	"github.com/jordigilh/kubernaut/pkg/notification/routing"
 	notificationstatus "github.com/jordigilh/kubernaut/pkg/notification/status"
 	"github.com/jordigilh/kubernaut/pkg/shared/circuitbreaker"
 	"github.com/jordigilh/kubernaut/pkg/shared/sanitization"
@@ -437,15 +438,65 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		ctrl.Log.WithName("delivery-orchestrator"),
 	)
 
-	// DD-NOT-007: Register non-credential channels for integration tests
+	// DD-NOT-007: Register ALL channels for integration tests
 	// BR-NOT-104: Slack registered as generic "slack" for existing tests that don't use credential_ref
+	// #261: File + Log now registered to support routing-based channel resolution
 	slackService := delivery.NewSlackDeliveryService(slackWebhookURL, 0)
+	fileDir, err := os.MkdirTemp("", "it-file-delivery-*")
+	Expect(err).NotTo(HaveOccurred())
+	DeferCleanup(func() { _ = os.RemoveAll(fileDir) })
+	fileService := delivery.NewFileDeliveryService(fileDir, "json", 0)
+	logService := delivery.NewLogDeliveryService("json")
+
 	deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelConsole), consoleService)
 	deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelSlack), slackService)
-	// Note: fileService and logService NOT registered (E2E only)
+	deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelFile), fileService)
+	deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelLog), logService)
 
 	GinkgoWriter.Println("  ✅ Delivery Orchestrator initialized (DD-NOT-007 Registration Pattern)")
-	GinkgoWriter.Println("  ✅ DeliveryOrchestrator exposed for test mock injection")
+	GinkgoWriter.Println("  ✅ All 4 channels registered: console, slack, file, log (#261)")
+
+	// #261: Routing is the sole authority for channel resolution after spec.channels removal.
+	// Tests select their channel set by setting spec.Metadata["test-channel-set"] to one of:
+	//   "slack-only", "console-slack", "all-channels"
+	// Notifications without this metadata key default to console-only.
+	testRouter := routing.NewRouter(ctrl.Log.WithName("test-routing"))
+	Expect(testRouter.LoadConfig([]byte(`
+route:
+  receiver: console-default
+  routes:
+    - receiver: slack-only
+      match:
+        test-channel-set: slack-only
+    - receiver: console-slack
+      match:
+        test-channel-set: console-slack
+    - receiver: all-channels
+      match:
+        test-channel-set: all-channels
+receivers:
+  - name: console-default
+    consoleConfigs:
+      - enabled: true
+  - name: slack-only
+    slackConfigs:
+      - channel: "#test-alerts"
+  - name: console-slack
+    consoleConfigs:
+      - enabled: true
+    slackConfigs:
+      - channel: "#test-alerts"
+  - name: all-channels
+    consoleConfigs:
+      - enabled: true
+    slackConfigs:
+      - channel: "#test-alerts"
+    fileConfigs:
+      - enabled: true
+    logConfigs:
+      - enabled: true
+`))).To(Succeed())
+	GinkgoWriter.Println("  ✅ Routing configured with test-channel-set routing rules (#261)")
 
 	// Create circuit breaker for integration tests
 	// Per BR-NOT-055: Circuit breaker provides per-channel isolation
@@ -486,6 +537,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		Recorder:             k8sManager.GetEventRecorderFor("notification-controller"), // Pattern 1: EventRecorder
 		StatusManager:        statusManager,                                             // Pattern 2: Status Manager
 		DeliveryOrchestrator: deliveryOrchestrator,                                      // Pattern 3: Delivery Orchestrator
+		Router:               testRouter,                                                // #261: Routing config with all 4 channels
 	}).SetupWithManager(k8sManager, controller.Options{
 		MaxConcurrentReconciles: 5, // DD-AUTH-014: 5 workers for extreme load tests
 	})

@@ -131,7 +131,6 @@ var _ = Describe("Notification Controller K8s Events [DD-EVENT-001]", func() {
 					Subject:  "Test",
 					Body:     "Test body",
 					Priority: "critical",
-					Channels: []notificationv1alpha1.Channel{notificationv1alpha1.ChannelConsole},
 				},
 				Status: notificationv1alpha1.NotificationRequestStatus{
 					Phase: "", // Uninitialized
@@ -203,7 +202,6 @@ var _ = Describe("Notification Controller K8s Events [DD-EVENT-001]", func() {
 					Subject:  "Test",
 					Body:     "Test body",
 					Priority: "critical",
-					Channels: []notificationv1alpha1.Channel{notificationv1alpha1.ChannelConsole},
 				},
 				Status: notificationv1alpha1.NotificationRequestStatus{
 					Phase:                notificationv1alpha1.NotificationPhasePending,

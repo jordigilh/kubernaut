@@ -31,7 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	aianalysisv1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
-	"github.com/jordigilh/kubernaut/pkg/aianalysis"
+	aaconstants "github.com/jordigilh/kubernaut/pkg/aianalysis"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
@@ -283,11 +283,11 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 			// 3. Verify approval decision metrics were emitted
 			Eventually(func() float64 {
 				// Look for any approval decision metric
-				total := getCounterValue(reconciler.Metrics.ApprovalDecisionsTotal, aianalysis.OutcomeRequiresApproval, "production")
+				total := getCounterValue(reconciler.Metrics.ApprovalDecisionsTotal, aaconstants.OutcomeRequiresApproval, "production")
 				if total > 0 {
 					return total
 				}
-				return getCounterValue(reconciler.Metrics.ApprovalDecisionsTotal, aianalysis.OutcomeAutoApproved, "production")
+				return getCounterValue(reconciler.Metrics.ApprovalDecisionsTotal, aaconstants.OutcomeAutoApproved, "production")
 			}, 60*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
 				"Approval decision metric should be emitted during policy evaluation")
 		})
@@ -402,7 +402,7 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 			Eventually(func() float64 {
 				// Look for any Rego evaluation outcome (auto_approved or rejected)
 				// Metric uses labels: "outcome" and "degraded"
-				total := getCounterValue(reconciler.Metrics.RegoEvaluationsTotal, aianalysis.OutcomeAutoApproved, "false")
+				total := getCounterValue(reconciler.Metrics.RegoEvaluationsTotal, aaconstants.OutcomeAutoApproved, "false")
 				if total > 0 {
 					return total
 				}
