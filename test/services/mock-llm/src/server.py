@@ -48,6 +48,7 @@ Architecture:
 
 import json
 import os
+import re
 import threading
 import time
 import uuid
@@ -692,53 +693,57 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
         if "testsignal" in content or "test signal" in content:
             return MOCK_SCENARIOS.get("test_signal", DEFAULT_SCENARIO)
 
-        # BR-AI-084 / ADR-054: Detect proactive signal mode
-        # Proactive mode is indicated by "proactive" keyword in the prompt content,
-        # specifically from the signal_mode field passed through the investigation prompt.
-        is_proactive = ("proactive mode" in content or "proactive signal" in content or
-                        "predicted" in content and "not yet occurred" in content)
+        # ────────────────────────────────────────────────────────────────────
+        # PRIMARY DETECTION: Extract the actual signal name from the HAPI
+        # prompt's structured "- Signal Name: <value>" field.
+        #
+        # The full message content is unreliable for keyword-based detection
+        # because it includes:
+        #   1. "Canonical Signal Types" reference in the system prompt listing
+        #      ALL signal names (NodeNotReady, CrashLoopBackOff, OOMKilled, etc.)
+        #   2. Workflow catalog entries from discovery tool results
+        #      ("Node Not Ready - Drain and Reboot", "CrashLoopBackOff - Configuration Fix")
+        #
+        # The HAPI prompt builder always sets "- Signal Name: <actual_signal>"
+        # in the Technical Details section, making it the only reliable source
+        # for determining which scenario THIS specific incident requires.
+        # ────────────────────────────────────────────────────────────────────
+        signal_match = re.search(r'signal name:\s*(\S+)', content)
+        if signal_match:
+            actual_signal = signal_match.group(1).strip().lower()
+            logger.info(f"📋 PRIMARY: Extracted signal_name='{actual_signal}' from prompt")
 
-        # Check for proactive-specific scenarios first (oomkilled_predictive scenario name unchanged)
-        if is_proactive:
-            # Check for "no action" proactive scenario
-            if "predictive_no_action" in content or "mock_predictive_no_action" in content:
-                logger.info("✅ SCENARIO DETECTED: PREDICTIVE_NO_ACTION")
-                return MOCK_SCENARIOS.get("predictive_no_action", DEFAULT_SCENARIO)
-            # Default proactive scenario with OOMKilled
-            if "oomkilled" in content:
-                logger.info("✅ SCENARIO DETECTED: OOMKILLED_PREDICTIVE")
-                return MOCK_SCENARIOS.get("oomkilled_predictive", DEFAULT_SCENARIO)
+            # BR-AI-084 / ADR-054: Detect proactive signal mode
+            is_proactive = ("proactive mode" in content or "proactive signal" in content or
+                            "predicted" in content and "not yet occurred" in content)
+            if is_proactive:
+                if "predictive_no_action" in content or "mock_predictive_no_action" in content:
+                    logger.info("✅ SCENARIO DETECTED: PREDICTIVE_NO_ACTION")
+                    return MOCK_SCENARIOS.get("predictive_no_action", DEFAULT_SCENARIO)
+                if "oomkilled" in actual_signal or "oomkill" in actual_signal:
+                    logger.info(f"✅ PRIMARY: Proactive signal '{actual_signal}' → oomkilled_predictive")
+                    return MOCK_SCENARIOS.get("oomkilled_predictive", DEFAULT_SCENARIO)
 
-        # Signal type matching: check UNIQUE signal names before generic ones.
-        # In multi-turn discovery, tool results from list_available_actions / list_workflows
-        # include catalog entries like "CrashLoopBackOff - Configuration Fix", so "crashloop"
-        # and "oomkilled" appear in content for EVERY request. Check signal names that won't
-        # collide with catalog text first, then fall through to the generic ones.
-        if "certmanagercertnotready" in content or "cert_not_ready" in content:
-            matched_scenario = MOCK_SCENARIOS.get("cert_not_ready", DEFAULT_SCENARIO)
-            logger.info(f"✅ PHASE 2: Matched 'certmanagercertnotready' → scenario={matched_scenario.name}, workflow_id={matched_scenario.workflow_id}")
-            return matched_scenario
-        elif "nodenotready" in content or "node not ready" in content:
-            matched_scenario = MOCK_SCENARIOS.get("node_not_ready", DEFAULT_SCENARIO)
-            logger.info(f"✅ PHASE 2: Matched 'nodenotready' → scenario={matched_scenario.name}, workflow_id={matched_scenario.workflow_id}")
-            return matched_scenario
-        elif "memoryexceedslimit" in content or "memory exceeds limit" in content or "memoryexceeds" in content:
-            matched_scenario = MOCK_SCENARIOS.get("oomkilled", DEFAULT_SCENARIO)
-            logger.info(f"✅ PHASE 2: Matched 'memoryexceedslimit' → scenario={matched_scenario.name}, workflow_id={matched_scenario.workflow_id}")
-            return matched_scenario
-        elif "crashloop" in content:
-            matched_scenario = MOCK_SCENARIOS.get("crashloop", DEFAULT_SCENARIO)
-            logger.info(f"✅ PHASE 2: Matched 'crashloop' → scenario={matched_scenario.name}, workflow_id={matched_scenario.workflow_id}")
-            return matched_scenario
-        elif "oomkilled" in content:
-            matched_scenario = MOCK_SCENARIOS.get("oomkilled", DEFAULT_SCENARIO)
-            logger.info(f"✅ PHASE 2: Matched 'oomkilled' → scenario={matched_scenario.name}, workflow_id={matched_scenario.workflow_id}")
+            if "certmanagercertnotready" in actual_signal or "cert_not_ready" in actual_signal:
+                matched_scenario = MOCK_SCENARIOS.get("cert_not_ready", DEFAULT_SCENARIO)
+            elif "nodenotready" in actual_signal:
+                matched_scenario = MOCK_SCENARIOS.get("node_not_ready", DEFAULT_SCENARIO)
+            elif "memoryexceedslimit" in actual_signal or "memoryexceeds" in actual_signal:
+                matched_scenario = MOCK_SCENARIOS.get("oomkilled", DEFAULT_SCENARIO)
+            elif "crashloop" in actual_signal:
+                matched_scenario = MOCK_SCENARIOS.get("crashloop", DEFAULT_SCENARIO)
+            elif "oomkilled" in actual_signal or "oomkill" in actual_signal:
+                matched_scenario = MOCK_SCENARIOS.get("oomkilled", DEFAULT_SCENARIO)
+            else:
+                logger.info(f"⚠️ Signal '{actual_signal}' not recognized, using default scenario")
+                return MockLLMRequestHandler.current_scenario or DEFAULT_SCENARIO
+
+            logger.info(f"✅ PRIMARY: signal '{actual_signal}' → scenario={matched_scenario.name}, workflow_id={matched_scenario.workflow_id}")
             return matched_scenario
 
-        # PHASE 2: Fallback to current_scenario or DEFAULT_SCENARIO
-        fallback_scenario = MockLLMRequestHandler.current_scenario
-        logger.warning(f"⚠️  PHASE 2: NO MATCH - Falling back to current_scenario={fallback_scenario.name}, workflow_id={fallback_scenario.workflow_id}")
-        logger.warning(f"⚠️  PHASE 2: Content preview for debugging: {content[:500]}")
+        fallback_scenario = MockLLMRequestHandler.current_scenario or DEFAULT_SCENARIO
+        logger.warning(f"⚠️ No 'Signal Name:' found in prompt, using fallback={fallback_scenario.name}")
+        logger.warning(f"⚠️ Content preview: {content[:500]}")
         return fallback_scenario
 
     def _has_tool_result(self, messages: List[Dict[str, Any]]) -> bool:
