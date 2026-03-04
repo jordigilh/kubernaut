@@ -1,9 +1,10 @@
 # VHS tape: CrashLoop Helm Rollback Remediation (#P11)
 #
-# Three-act recording:
-#   Act 1 -- "The Problem":       bad config injected into Helm release, pods crash
-#   Act 2 -- "The Remediation":   RCA identifies Helm regression, HelmRollback workflow
-#   Act 3 -- "The Result":        Helm rolled back, pods healthy
+# Recording structure:
+#   Title Card:                    scenario overview + 3-act roadmap (20s hold)
+#   Act 1 -- "The Problem":       bad Helm config crashes pods, alert fires
+#   Act 2 -- "The Remediation":   RCA, rego policy, RAR approval, live RR phase transitions
+#   Act 3 -- "The Result":        recovery verification, notifications, EA assessment
 #
 # Pre-requisites:
 #   - Kind cluster with Kubernaut platform deployed
@@ -11,6 +12,24 @@
 #   - VHS installed (brew install charmbracelet/tap/vhs)
 #
 # Run: vhs deploy/demo/scenarios/crashloop-helm/crashloop-helm.tape
+#
+# NOTE: Each sentinel uses TWO defenses:
+#   1. String concatenation (e.g. echo SETUP"_"COMPLETE) so the TYPED command text
+#      does NOT contain the literal sentinel -- prevents Wait+Screen from matching
+#      the command line itself before the command runs.
+#   2. `clear` before the echo so the terminal screen contains ONLY the sentinel
+#      output -- prevents stale matches from previous screen content.
+#
+# Visual hierarchy (color-driven, no symbols):
+#   1. Bold yellow ━━ act headers      (announce)  — hidden typing, only output shown
+#   2. Dim gray narration              (narrate)   — hidden typing, only output shown
+#   3. Cyan ❯ prompt                   (typed commands visible)
+#   4. Default foreground              (command output)
+#
+# Persistent act titles:
+#   announce() sets _act; act_clear() does clear + reprints the current act title.
+#   Every hidden-wait block uses act_clear before Show so the viewer always knows
+#   which act they are in.
 
 Output deploy/demo/scenarios/crashloop-helm/crashloop-helm.gif
 Output deploy/demo/scenarios/crashloop-helm/crashloop-helm.mp4
@@ -35,9 +54,37 @@ Set Theme "Catppuccin Mocha"
 Hide
 Set TypingSpeed 1ms
 
-Type `export PS1='$ '`
+# Colored prompt: bright cyan ❯
+Type `export PS1='\[\e[1;36m\]❯ \[\e[0m\]'`
 Enter
 Sleep 500ms
+
+Type `export KUBECONFIG=~/.kube/kubernaut-demo-config`
+Enter
+Sleep 500ms
+
+# Self-erasing helpers: \e[1A moves up, \e[2K erases the typed command line
+Type `narrate() { printf '\e[1A\e[2K\e[38;5;245m%s\e[0m\n' "$*"; }`
+Enter
+Sleep 200ms
+
+# announce sets _act so act_clear can re-render it after screen clears
+Type `_act=""`
+Enter
+Sleep 100ms
+
+Type `announce() { _act="$*"; printf '\e[1A\e[2K\n\e[1;33m━━ %s ━━\e[0m\n\n' "$*"; }`
+Enter
+Sleep 200ms
+
+Type `act_clear() { clear; [ -n "$_act" ] && printf '\e[1;33m━━ %s ━━\e[0m\n\n' "$_act"; }`
+Enter
+Sleep 200ms
+
+# title_card: scenario-specific intro rendered as a single self-erasing call
+Type `title_card() { printf '\e[1A\e[2K\n\e[1;33m━━ CrashLoop Helm Rollback Remediation ━━\e[0m\n\n\e[38;5;245mA Helm-managed deployment receives a bad config update.\nKubernaut detects the crash, diagnoses the root cause with AI,\nexecutes a Helm rollback workflow, and verifies the fix.\e[0m\n\n\e[1;33mAct 1\e[0m  \e[38;5;245mThe Problem     — bad Helm config crashes pods, alert fires\e[0m\n\e[1;33mAct 2\e[0m  \e[38;5;245mThe Remediation — AI root cause analysis, approval gate, Helm rollback runs\e[0m\n\e[1;33mAct 3\e[0m  \e[38;5;245mThe Result      — Helm release rolled back, pods healthy, EA confirms fix\e[0m\n'; }`
+Enter
+Sleep 200ms
 
 Type `export PLATFORM_NS=kubernaut-system`
 Enter
@@ -54,126 +101,265 @@ Wait+Screen@300s /SETUP_COMPLETE/
 Type "clear"
 Enter
 Sleep 500ms
-Set TypingSpeed 50ms
 
+# ─────────────────────────────────────────
+# Title Card
+# ─────────────────────────────────────────
+# Single function call — self-erases its command line, outputs styled title card.
+
+Type "title_card"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
 Show
+Sleep 20s
 
 # ═════════════════════════════════════════
 # ACT 1 -- The Problem
 # ═════════════════════════════════════════
 
-Type "# Kubernaut Demo: CrashLoop Helm Rollback"
+Hide
+Set TypingSpeed 1ms
+Type "clear"
 Enter
-Sleep 3s
+Sleep 300ms
+Type "announce 'Act 1: The Problem'"
+Enter
+Sleep 300ms
+Type "narrate 'A Helm-managed deployment receives a bad config update.'"
+Enter
+Sleep 300ms
+Type "narrate 'Pods crash, Prometheus detects the restart spike, and the alert fires.'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 4s
 
-Type "# A bad config upgrade causes Helm-managed pods to crash"
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'Helm-managed workload running in namespace demo-crashloop-helm'"
 Enter
-Sleep 3s
-
-Type "# Helm-managed workload running in namespace demo-crashloop-helm"
-Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
 Sleep 2s
+
 Type "kubectl get pods -n demo-crashloop-helm"
 Enter
 Sleep 5s
 
-Type "# Injecting fault: pushing bad config via Helm upgrade..."
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'Injecting bad config via Helm upgrade...'"
 Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
 Sleep 2s
+
 Type "bash deploy/demo/scenarios/crashloop-helm/inject-bad-config.sh"
 Enter
 Sleep 4s
 
+# Hidden wait for crash to become visible
 Hide
 Set TypingSpeed 1ms
 Type `sleep 20 && clear && echo CRASH"_"VISIBLE`
 Enter
 Wait+Screen@60s /CRASH_VISIBLE/
-Type "clear"
+Type "act_clear"
 Enter
 Sleep 500ms
 Set TypingSpeed 50ms
 Show
 
-Type "# Pods are now in CrashLoopBackOff"
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'Pods are now in CrashLoopBackOff'"
 Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
 Sleep 2s
+
 Type "kubectl get pods -n demo-crashloop-helm"
 Enter
 Sleep 5s
 
-Type "# Waiting for the KubePodCrashLooping alert to fire..."
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'Waiting for the KubePodCrashLooping alert to fire...'"
 Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
 Sleep 2s
 
+# Hidden wait: poll until alert appears in AlertManager
 Hide
 Set TypingSpeed 1ms
 Type `while [ "$(kubectl exec -n monitoring alertmanager-kube-prometheus-stack-alertmanager-0 -- amtool alert query alertname=KubePodCrashLooping --alertmanager.url=http://localhost:9093 --output=json 2>/dev/null | python3 -c 'import sys,json; print(len(json.load(sys.stdin)))' 2>/dev/null)" = "0" ]; do sleep 10; done && clear && echo ALERT"_"FIRED`
 Enter
 Wait+Screen@600s /ALERT_FIRED/
-Type "clear"
+Type "act_clear"
 Enter
 Sleep 500ms
 Set TypingSpeed 50ms
 Show
 
-Type "# Alert is now firing"
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'Alert is now firing'"
 Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
 Sleep 2s
+
 Type "bash deploy/demo/scripts/show-alert.sh KubePodCrashLooping"
 Enter
 Sleep 8s
 
-Type "# Kubernaut Gateway received this alert and created a RemediationRequest"
-Enter
-Sleep 3s
-
 Hide
 Set TypingSpeed 1ms
-Type `while ! kubectl get remediationrequests -n ${PLATFORM_NS} 2>/dev/null | grep -qE 'AwaitingApproval|Executing'; do sleep 10; done && clear && echo PIPELINE"_"READY`
+Type "narrate 'Kubernaut Gateway received this alert and created a RemediationRequest'"
 Enter
-Wait+Screen@600s /PIPELINE_READY/
-Type "clear"
-Enter
-Sleep 500ms
+Sleep 300ms
 Set TypingSpeed 50ms
 Show
+Sleep 3s
+
+# Hidden wait: poll until ANY RR exists
+Hide
+Set TypingSpeed 1ms
+Type `while ! kubectl get remediationrequests -n ${PLATFORM_NS} --no-headers 2>/dev/null | grep -q .; do sleep 5; done && clear && echo RR"_"EXISTS`
+Enter
+Wait+Screen@600s /RR_EXISTS/
 
 # ═════════════════════════════════════════
 # ACT 2 -- The Remediation
 # ═════════════════════════════════════════
 
-Type "# The pipeline completed AI-driven analysis"
+Type "clear"
 Enter
+Sleep 300ms
+Type "announce 'Act 2: The Remediation'"
+Enter
+Sleep 300ms
+Type "narrate 'The AI is analyzing the root cause and selecting a remediation workflow...'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
 Sleep 2s
-Type "kubectl get rr,sp,aa -n ${PLATFORM_NS}"
+
+# Snapshot 1: RR in Analyzing (early AGE)
+Type "kubectl get remediationrequests -n ${PLATFORM_NS}"
+Enter
+Sleep 5s
+
+# Hidden time skip — let the LLM work for ~20s without the viewer waiting
+Hide
+Set TypingSpeed 1ms
+Type `sleep 20 && clear && echo SKIP"_"DONE`
+Enter
+Wait+Screen@30s /SKIP_DONE/
+Type "act_clear"
+Enter
+Sleep 300ms
+Type "narrate 'The AI is analyzing the root cause and selecting a remediation workflow...'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 2s
+
+# Snapshot 2: RR still Analyzing (later AGE — shows time has passed)
+Type "kubectl get remediationrequests -n ${PLATFORM_NS}"
+Enter
+Sleep 5s
+
+# Hidden wait: skip remaining LLM time to AwaitingApproval
+Hide
+Set TypingSpeed 1ms
+Type `while ! kubectl get remediationrequests -n ${PLATFORM_NS} 2>/dev/null | grep -q AwaitingApproval; do sleep 10; done && clear && echo PIPELINE"_"READY`
+Enter
+Wait+Screen@600s /PIPELINE_READY/
+Type "act_clear"
+Enter
+Sleep 300ms
+Type "narrate 'Analysis complete. Approval is required because this is a production namespace.'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 2s
+
+# Snapshot 3: RR now in AwaitingApproval
+Type "kubectl get remediationrequests -n ${PLATFORM_NS}"
 Enter
 Sleep 6s
 
-Type "# Root cause analysis and recommended workflow:"
+Hide
+Set TypingSpeed 1ms
+Type "act_clear"
 Enter
+Sleep 300ms
+Type "narrate 'Root cause analysis and recommended workflow'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
 Sleep 2s
+
 Type "bash deploy/demo/scripts/show-ai-analysis.sh demo-crashloop-helm"
+Enter
+Sleep 24s
+
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'Checking why approval is required...'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 2s
+
+Type "bash deploy/demo/scripts/show-approval-reason.sh demo-crashloop-helm"
 Enter
 Sleep 12s
 
-Type "# Approval required -- approving the RemediationApprovalRequest"
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'Approving the remediation...'"
 Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
 Sleep 2s
-Type "kubectl get rar -n ${PLATFORM_NS}"
-Enter
-Sleep 6s
 
 Type "bash deploy/demo/scripts/approve-rar.sh"
 Enter
 Sleep 4s
 
-Type "# Watching the WorkflowExecution live (Helm rollback)..."
+# Second watch: captures execution transitions live
+# (AwaitingApproval → Executing → Verifying → Completed)
+Hide
+Set TypingSpeed 1ms
+Type "act_clear"
 Enter
+Sleep 500ms
+Type "narrate 'Watching the execution phase transitions...'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
 Sleep 2s
-Type "kubectl get wfe -n ${PLATFORM_NS} -w"
+
+Type "kubectl get remediationrequests -n ${PLATFORM_NS} -w"
 Enter
-Wait+Screen@120s /Completed/
+Wait+Screen@300s /Completed/
 Sleep 5s
 Ctrl+C
 Sleep 2s
@@ -182,43 +368,88 @@ Sleep 2s
 # ACT 3 -- The Result
 # ═════════════════════════════════════════
 
-Type "# Workflow completed -- verifying recovery"
+Hide
+Set TypingSpeed 1ms
+Type "clear"
 Enter
-Sleep 2s
+Sleep 300ms
+Type "announce 'Act 3: The Result'"
+Enter
+Sleep 300ms
+Type "narrate 'The Helm rollback completed. Verifying pods are healthy and the alert cleared.'"
+Enter
+Sleep 300ms
+Type "narrate 'Notifications were sent, and EffectivenessAssessment confirms the fix.'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 4s
 
 Type "kubectl get pods -n demo-crashloop-helm"
 Enter
 Sleep 5s
 
-Type "# Helm release history (should show rollback):"
-Enter
-Sleep 2s
 Type "helm history demo-crashloop-helm -n demo-crashloop-helm"
 Enter
 Sleep 5s
 
-Type "kubectl get rr,sp,aa,wfe,ea -n ${PLATFORM_NS}"
+Type "kubectl get remediationrequests -n ${PLATFORM_NS}"
 Enter
-Sleep 6s
+Sleep 5s
 
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'Notification delivered to Slack and console'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 2s
+
+Type "bash deploy/demo/scripts/show-notification.sh ${PLATFORM_NS}"
+Enter
+Sleep 12s
+
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'Waiting for EffectivenessAssessment to complete (stabilization: 1m)...'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 2s
+
+# Hidden wait: poll until EA reaches Completed or Failed
 Hide
 Set TypingSpeed 1ms
 Type `while true; do PHASE=$(kubectl get effectivenessassessments -n ${PLATFORM_NS} -o jsonpath='{.items[0].status.phase}' 2>/dev/null); [ "$PHASE" = "Completed" ] || [ "$PHASE" = "Failed" ] && break; sleep 10; done && clear && echo EA"_"DONE`
 Enter
 Wait+Screen@600s /EA_DONE/
-Type "clear"
+Type "act_clear"
 Enter
 Sleep 500ms
 Set TypingSpeed 50ms
 Show
 
-Type "# EffectivenessAssessment result:"
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'EffectivenessAssessment result'"
 Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
 Sleep 2s
+
 Type "bash deploy/demo/scripts/show-effectiveness.sh demo-crashloop-helm"
 Enter
 Sleep 10s
 
-Type "# Helm rollback completed -- pods restored to previous healthy revision"
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'Remediation verified — Helm release rolled back, pods healthy, alert cleared'"
 Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
 Sleep 5s
