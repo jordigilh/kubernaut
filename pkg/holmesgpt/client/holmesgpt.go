@@ -42,11 +42,9 @@ limitations under the License.
 package client
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"time"
 
@@ -70,22 +68,15 @@ type Config struct {
 // HolmesGPTClient wraps the auto-generated OpenAPI client with a business-friendly API.
 //
 // Design Decision: DD-HAPI-003 - Mandatory OpenAPI Client Usage
-// This wrapper delegates to the generated client (oas_client_gen.go) for type safety
-// and contract compliance with HAPI's OpenAPI specification.
-//
-// BR-AA-HAPI-064: Session methods use raw HTTP calls via httpClient/baseURL because
-// the session endpoints are not yet in the OpenAPI spec. Once the spec is updated
-// and regenerated, these should be migrated to the generated client.
+// All methods delegate to the generated client (oas_client_gen.go) for type safety,
+// OTel tracing, and contract compliance with HAPI's OpenAPI specification.
 type HolmesGPTClient struct {
-	client     *Client      // Generated OpenAPI client from oas_client_gen.go
-	httpClient *http.Client // Raw HTTP client for session endpoints (BR-AA-HAPI-064)
-	baseURL    string       // Base URL for session endpoint construction
+	client *Client // Generated OpenAPI client from oas_client_gen.go
 }
 
 // newClientWithHTTP is the shared constructor that builds a HolmesGPTClient
 // from an already-configured *http.Client. Both public constructors delegate here.
 func newClientWithHTTP(cfg Config, httpClient *http.Client) (*HolmesGPTClient, error) {
-	// DD-HAPI-003: Generated client provides type-safe request/response handling
 	generatedClient, err := NewClient(
 		cfg.BaseURL,
 		WithClient(httpClient),
@@ -95,9 +86,7 @@ func newClientWithHTTP(cfg Config, httpClient *http.Client) (*HolmesGPTClient, e
 	}
 
 	return &HolmesGPTClient{
-		client:     generatedClient,
-		httpClient: httpClient,
-		baseURL:    cfg.BaseURL,
+		client: generatedClient,
 	}, nil
 }
 
@@ -240,115 +229,79 @@ type SessionStatus struct {
 
 // ========================================
 // ASYNC SESSION METHODS (BR-AA-HAPI-064)
-// Raw HTTP calls to session endpoints not yet in the OpenAPI spec.
+// DD-HAPI-003: All session methods now use the generated OpenAPI client.
 // ========================================
-
-// submitSessionRequest is a shared helper that POSTs a JSON body to the given path
-// and extracts the session_id from the 202 response.
-func (c *HolmesGPTClient) submitSessionRequest(ctx context.Context, path string, body interface{}) (string, error) {
-	jsonBody, err := json.Marshal(body)
-	if err != nil {
-		return "", &APIError{StatusCode: 0, Message: fmt.Sprintf("failed to marshal request: %v", err)}
-	}
-
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, bytes.NewReader(jsonBody))
-	if err != nil {
-		return "", &APIError{StatusCode: 0, Message: fmt.Sprintf("failed to create request: %v", err)}
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return "", &APIError{StatusCode: 0, Message: fmt.Sprintf("HTTP request failed: %v", err)}
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusAccepted {
-		return "", c.readErrorResponse(resp)
-	}
-
-	var result struct {
-		SessionID string `json:"session_id"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", &APIError{StatusCode: resp.StatusCode, Message: fmt.Sprintf("failed to decode session response: %v", err)}
-	}
-
-	return result.SessionID, nil
-}
-
-// sessionGET is a shared helper that performs a GET to the given path and returns
-// the raw response body bytes. Non-2xx responses are converted to APIError.
-func (c *HolmesGPTClient) sessionGET(ctx context.Context, path string) ([]byte, error) {
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
-	if err != nil {
-		return nil, &APIError{StatusCode: 0, Message: fmt.Sprintf("failed to create request: %v", err)}
-	}
-
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, &APIError{StatusCode: 0, Message: fmt.Sprintf("HTTP request failed: %v", err)}
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, &APIError{StatusCode: resp.StatusCode, Message: fmt.Sprintf("failed to read response: %v", err)}
-	}
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, &APIError{StatusCode: resp.StatusCode, Message: string(body)}
-	}
-
-	return body, nil
-}
-
-// readErrorResponse reads an HTTP error response and returns an APIError.
-func (c *HolmesGPTClient) readErrorResponse(resp *http.Response) *APIError {
-	body, _ := io.ReadAll(resp.Body)
-	return &APIError{
-		StatusCode: resp.StatusCode,
-		Message:    string(body),
-	}
-}
 
 // SubmitInvestigation submits an incident investigation request and returns a session ID.
 // BR-AA-HAPI-064.1: POST /api/v1/incident/analyze returns 202 with session_id
+// DD-HAPI-003: Delegates to generated client for OTel tracing and type-safe dispatch.
 func (c *HolmesGPTClient) SubmitInvestigation(ctx context.Context, req *IncidentRequest) (string, error) {
-	return c.submitSessionRequest(ctx, "/api/v1/incident/analyze", req)
+	res, err := c.client.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx, req)
+	if err != nil {
+		return "", &APIError{StatusCode: 0, Message: fmt.Sprintf("submit investigation failed: %v", err)}
+	}
+
+	accepted, ok := res.(*IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostAcceptedApplicationJSON)
+	if !ok {
+		return "", &APIError{StatusCode: 0, Message: fmt.Sprintf("unexpected response type (expected 202 Accepted): %T", res)}
+	}
+
+	var parsed struct {
+		SessionID string `json:"session_id"`
+	}
+	if err := json.Unmarshal([]byte(*accepted), &parsed); err != nil {
+		return "", &APIError{StatusCode: http.StatusAccepted, Message: fmt.Sprintf("failed to decode session response: %v", err)}
+	}
+	return parsed.SessionID, nil
 }
 
 // PollSession polls the status of an investigation session.
 // BR-AA-HAPI-064.2: GET /api/v1/incident/session/{id}
-// Note: Uses incident session endpoint with HAPI's global SessionManager.
+// Returns *APIError{StatusCode: 404} when session not found (BR-AA-HAPI-064.5 regeneration trigger).
 func (c *HolmesGPTClient) PollSession(ctx context.Context, sessionID string) (*SessionStatus, error) {
-	body, err := c.sessionGET(ctx, "/api/v1/incident/session/"+sessionID)
+	res, err := c.client.IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet(ctx,
+		IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetParams{SessionID: sessionID})
 	if err != nil {
-		return nil, err
+		return nil, &APIError{StatusCode: 0, Message: fmt.Sprintf("poll session failed: %v", err)}
 	}
 
-	var status SessionStatus
-	if err := json.Unmarshal(body, &status); err != nil {
-		return nil, &APIError{StatusCode: 0, Message: fmt.Sprintf("failed to decode session status: %v", err)}
+	switch v := res.(type) {
+	case *IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetOKApplicationJSON:
+		var status SessionStatus
+		if err := json.Unmarshal([]byte(*v), &status); err != nil {
+			return nil, &APIError{StatusCode: 0, Message: fmt.Sprintf("failed to decode session status: %v", err)}
+		}
+		return &status, nil
+	case *IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetNotFound:
+		return nil, &APIError{StatusCode: http.StatusNotFound, Message: fmt.Sprintf("session %s not found", sessionID)}
+	case *HTTPValidationError:
+		return nil, &APIError{StatusCode: http.StatusUnprocessableEntity, Message: "validation error"}
+	default:
+		return nil, &APIError{StatusCode: 0, Message: fmt.Sprintf("unexpected response type: %T", res)}
 	}
-
-	return &status, nil
 }
 
 // GetSessionResult retrieves the result of a completed incident investigation session.
 // BR-AA-HAPI-064.3: GET /api/v1/incident/session/{id}/result
 func (c *HolmesGPTClient) GetSessionResult(ctx context.Context, sessionID string) (*IncidentResponse, error) {
-	body, err := c.sessionGET(ctx, "/api/v1/incident/session/"+sessionID+"/result")
+	res, err := c.client.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet(ctx,
+		IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetParams{SessionID: sessionID})
 	if err != nil {
-		return nil, err
+		return nil, &APIError{StatusCode: 0, Message: fmt.Sprintf("get session result failed: %v", err)}
 	}
 
-	var resp IncidentResponse
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, &APIError{StatusCode: 0, Message: fmt.Sprintf("failed to decode incident result: %v", err)}
+	switch v := res.(type) {
+	case *IncidentResponse:
+		return v, nil
+	case *IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetNotFound:
+		return nil, &APIError{StatusCode: http.StatusNotFound, Message: fmt.Sprintf("session %s not found", sessionID)}
+	case *IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetConflict:
+		return nil, &APIError{StatusCode: http.StatusConflict, Message: fmt.Sprintf("session %s not yet completed", sessionID)}
+	case *HTTPValidationError:
+		return nil, &APIError{StatusCode: http.StatusUnprocessableEntity, Message: "validation error"}
+	default:
+		return nil, &APIError{StatusCode: 0, Message: fmt.Sprintf("unexpected response type: %T", res)}
 	}
-
-	return &resp, nil
 }
 
 // ========================================
