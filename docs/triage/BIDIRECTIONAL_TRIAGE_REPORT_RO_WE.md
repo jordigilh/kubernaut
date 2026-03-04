@@ -13,7 +13,7 @@
 | # | Category | Severity | File | Detail | Evidence |
 |---|----------|----------|------|--------|----------|
 | RO-C2D-1 | INCONSISTENCY | HIGH | `pkg/remediationorchestrator/routing/types.go` | BlockingCondition comment lists 5 BlockReasons but omits `UnmanagedResource` and `IneffectiveChain`. Code has 7 BlockReasons. | Lines 54-56: "Valid values: ConsecutiveFailures, DuplicateInProgress, ResourceBusy, RecentlyRemediated, ExponentialBackoff" |
-| RO-C2D-2 | INCONSISTENCY | HIGH | `internal/controller/remediationorchestrator/blocking.go` vs `reconciler.go` | `HandleBlockedPhase` in reconciler.go (lines 2942-2998) contains BR-SCOPE-010 UnmanagedResource re-validation logic but is **never called**. The active `handleBlockedPhase` in blocking.go treats ALL time-based blocks the same (transition to Failed). UnmanagedResource blocks should re-validate scope per BR-SCOPE-010. | blocking.go:152 (used at reconciler.go:637); reconciler.go:2962-2965 (dead code) |
+| RO-C2D-2 | ~~INCONSISTENCY~~ **RESOLVED** | ~~HIGH~~ | `internal/controller/remediationorchestrator/blocking.go` vs `reconciler.go` | **Fixed in #266**: Dead code removed from reconciler.go. Active `handleBlockedPhase` in blocking.go now calls `handleUnmanagedResourceExpiry` for UnmanagedResource blocks, which re-validates scope per BR-SCOPE-010. Integration tests IT-RO-010-005/006 validate re-block and unblock paths with audit events. | Commit 6ed9bd59f |
 | RO-C2D-3 | INCONSISTENCY | MEDIUM | `pkg/remediationorchestrator/phase/types.go` | ValidTransitions map: `Blocked` → `{Failed}` only. Code also transitions Blocked → Analyzing (ResourceBusy clear) and Blocked → Pending (DuplicateInProgress clear) via `clearEventBasedBlock`. | phase/types.go:96; blocking.go:249, 289 |
 | RO-C2D-4 | GAP-IN-DOCS | MEDIUM | `remediation-routing.md` | Blocked phase lifecycle: docs say "Time-based blocks... transition to **Failed** (terminal). Future RRs for the same signal can then proceed." For **RecentlyRemediated** and **ExponentialBackoff**, the design intent is that the *current* RR should **resume** (retry) after cooldown, not transition to Failed. Code treats all time-based blocks the same (→ Failed). Docs vs code alignment unclear. | remediation-routing.md:76-78; blocking.go:169-185 |
 | RO-C2D-5 | GAP-IN-DOCS | LOW | `remediation-routing.md` | Blocked phase lifecycle for event-based blocks: docs say "Cleared" but don't specify resume phase. Code: ResourceBusy → Analyzing, DuplicateInProgress → Pending. | remediation-routing.md:79-82; blocking.go:249, 289 |
@@ -23,7 +23,7 @@
 | # | Category | Severity | File | Detail | Evidence |
 |---|----------|----------|------|--------|----------|
 | RO-D2C-1 | INCONSISTENCY | MEDIUM | `remediation-routing.md`, `crds.md` | Docs list "Rejected" as a terminal phase. Code has no `Rejected` phase; approval rejection transitions RR to **Failed** with rejection reason. | remediation-routing.md:49; phase/types.go (no Rejected); reconciler.go:1271-1306 |
-| RO-D2C-2 | GAP-IN-CODE | HIGH | BR-SCOPE-010, ADR-053 | UnmanagedResource block expiry should re-validate scope (resume to Pending if now managed, re-block with backoff if still unmanaged). Correct logic exists in `HandleBlockedPhase` (reconciler.go) but is dead code. Active `handleBlockedPhase` (blocking.go) transitions to Failed. | reconciler.go:2962-2965, 3000-3040; blocking.go:169-185 |
+| RO-D2C-2 | ~~GAP-IN-CODE~~ **RESOLVED** | ~~HIGH~~ | BR-SCOPE-010, ADR-053 | **Fixed in #266**: `handleUnmanagedResourceExpiry` wired into blocking.go. Re-validates scope on expiry: still unmanaged → re-block with incremented ConsecutiveFailureCount; now managed → transition to Pending with audit trail. Dead code removed from reconciler.go. | Commit 6ed9bd59f |
 | RO-D2C-3 | GAP-IN-DOCS | LOW | `crds.md` | RemediationRequest spec table shows `targetResource`, `signal`, `scope` with generic types. Actual API uses `ResourceIdentifier`, `SignalName`, `SignalFingerprint`, etc. Spec table is outdated. | crds.md:16-19; remediationrequest_types.go |
 
 ### BlockReasons and Check Order (Reference)
@@ -94,7 +94,7 @@
 | WE Docs→Code | 0 | 1 | 2 |
 
 **Priority fixes**:
-1. **RO-D2C-2 / RO-C2D-2**: Wire UnmanagedResource re-validation on block expiry (use HandleBlockedPhase logic or merge into blocking.go).
+1. ~~**RO-D2C-2 / RO-C2D-2**: Wire UnmanagedResource re-validation on block expiry~~ **RESOLVED** in #266 (commit 6ed9bd59f).
 2. **RO-C2D-1**: Update BlockingCondition comment to list all 7 BlockReasons.
 3. **RO-C2D-3**: Add Blocked→{Analyzing, Pending} to ValidTransitions or document as special resume transitions.
 4. **WE-C2D-1**: Document Tekton as default execution engine.

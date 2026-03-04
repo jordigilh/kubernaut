@@ -15,7 +15,7 @@
 |---|----------|----------|------|--------|----------|
 | GW-1 | INCONSISTENCY | **HIGH** | `kubernaut-docs/docs/user-guide/signals.md` | **Webhook paths**: Docs say `POST /api/v1/alerts` and `POST /api/v1/events`. Code uses `POST /api/v1/signals/prometheus` and `POST /api/v1/signals/kubernetes-event`. | `pkg/gateway/adapters/prometheus_adapter.go:75` → `GetRoute() = "/api/v1/signals/prometheus"`; `pkg/gateway/adapters/kubernetes_event_adapter.go:114` → `GetRoute() = "/api/v1/signals/kubernetes-event"`. |
 | GW-2 | INCONSISTENCY | **HIGH** | `kubernaut-docs/docs/user-guide/signals.md` | **AlertManager URL**: Docs show `http://gateway.kubernaut-system.svc:8080/api/v1/alerts`. Code uses `/api/v1/signals/prometheus`. Service name: `gateway-service` (not `gateway`). | `charts/kubernaut/templates/gateway/gateway.yaml:166` → Service `gateway-service`; `deploy/demo/helm/kube-prometheus-stack-values.yaml:57` → correct URL. |
-| GW-3 | INCONSISTENCY | **HIGH** | `charts/kubernaut/templates/gateway/gateway.yaml` | **Config key**: Helm ConfigMap uses `processing.deduplication.ttl: 5m`. Code expects `cooldownPeriod` (not `ttl`). With wrong key, `CooldownPeriod` stays 0 → post-completion cooldown disabled → duplicate RRs possible. | `pkg/gateway/config/config.go:98` → `CooldownPeriod time.Duration `yaml:"cooldownPeriod"``; Helm line 28: `ttl: 5m`. |
+| GW-3 | ~~INCONSISTENCY~~ **RESOLVED** | ~~**HIGH**~~ | `charts/kubernaut/templates/gateway/gateway.yaml` | **Fixed in #267**: Helm ConfigMap and all deploy configs now use `processing.deduplication.cooldownPeriod: 5m`, matching Go struct. Also fixed in `deploy/demo/base/platform/gateway.yaml`, `deploy/gateway/base/02-configmap.yaml`, `deploy/gateway/02-configmap.yaml`, and `test/unit/gateway/config/testdata/valid-config.yaml`. | Commits 6cb95ef9f, follow-up |
 | GW-4 | GAP-IN-DOCS | MEDIUM | `kubernaut-docs/docs/user-guide/signals.md` | **Readiness probe**: Docs say "Redis + K8s connectivity". Gateway is Redis-free (DD-GATEWAY-012). | `pkg/gateway/server.go:956-961` → `readinessHandler` comments say "Redis check REMOVED - Gateway is now Redis-free". |
 | GW-5 | GAP-IN-DOCS | MEDIUM | `kubernaut-docs/docs/api-reference/crds.md` | **RemediationRequest spec**: `signalFingerprint` not in doc table. CRD has it as top-level spec field. | `api/remediation/v1alpha1/remediationrequest_types.go:249` → `SignalFingerprint string`; CRD schema `config/crd/bases/kubernaut.ai_remediationrequests.yaml:166`. |
 | GW-6 | INCONSISTENCY | LOW | `docs/services/stateless/gateway-service/implementation.md` | **Example URL**: Docs show `http://gateway-service.kubernaut-system:8080/api/v1/alerts/prometheus`. Code uses `/api/v1/signals/prometheus`. | Line 1348. |
@@ -110,7 +110,7 @@
 | Code Key | Helm/Config Value | Status |
 |----------|-------------------|--------|
 | `processing.deduplication.cooldownPeriod` | `cooldownPeriod: "5m"` | Correct |
-| `processing.deduplication.ttl` | `ttl: 5m` (Helm) | **Wrong** — use `cooldownPeriod` |
+| ~~`processing.deduplication.ttl`~~ | ~~`ttl: 5m` (Helm)~~ | **RESOLVED** — all configs now use `cooldownPeriod` |
 
 ---
 
