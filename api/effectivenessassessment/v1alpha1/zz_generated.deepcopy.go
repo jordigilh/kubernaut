@@ -59,8 +59,8 @@ func (in *EAComponents) DeepCopy() *EAComponents {
 func (in *EAConfig) DeepCopyInto(out *EAConfig) {
 	*out = *in
 	out.StabilizationWindow = in.StabilizationWindow
-	if in.HashCheckDelay != nil {
-		in, out := &in.HashCheckDelay, &out.HashCheckDelay
+	if in.HashComputeDelay != nil {
+		in, out := &in.HashComputeDelay, &out.HashComputeDelay
 		*out = new(v1.Duration)
 		**out = **in
 	}

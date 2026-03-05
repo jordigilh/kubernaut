@@ -78,12 +78,12 @@ spec:
                       Nil means no additional delay (AlertManagerCheckAfter = PrometheusCheckAfter).
                       Reference: ADR-EM-001, BR-EM-009, Issue #277
                     type: string
-                  hashCheckDelay:
+                  hashComputeDelay:
                     description: |-
-                      HashCheckDelay is the duration to defer post-remediation spec hash computation
+                      HashComputeDelay is the duration to defer post-remediation spec hash computation
                       after EA creation. Set by the RO for async-managed targets (GitOps, operator
                       CRDs) where spec changes propagate after the WorkflowExecution completes.
-                      The EM computes the deferral deadline as: creation + HashCheckDelay.
+                      The EM computes the deferral deadline as: creation + HashComputeDelay.
                       Nil means compute immediately (sync workflows, backward compatible).
                       Reference: DD-EM-004, BR-EM-010, BR-RO-103, Issue #277
                     type: string

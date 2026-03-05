@@ -53,8 +53,8 @@ const (
 	PhaseFailed = "Failed"
 	// PhaseWaitingForPropagation indicates the EM is waiting for an async change
 	// (GitOps sync, operator reconciliation) to propagate before computing the hash.
-	// Only entered when EA.Spec.Config.HashCheckDelay is non-nil and the computed
-	// deferral deadline (creation + HashCheckDelay) is in the future.
+	// Only entered when EA.Spec.Config.HashComputeDelay is non-nil and the computed
+	// deferral deadline (creation + HashComputeDelay) is in the future.
 	// Reference: DD-EM-004 v2.0, BR-EM-010.3, Issue #253, Issue #277
 	PhaseWaitingForPropagation = "WaitingForPropagation"
 )
@@ -153,7 +153,7 @@ type TargetResource struct {
 
 // EAConfig contains assessment configuration set by the RO at creation time.
 // StabilizationWindow controls how long the EM waits after remediation before
-// starting assessment checks. HashCheckDelay and AlertCheckDelay are optional
+// starting assessment checks. HashComputeDelay and AlertCheckDelay are optional
 // Duration-based delays that the RO computes based on target type and signal mode.
 // All other assessment parameters (PrometheusEnabled, AlertManagerEnabled,
 // ValidityWindow) are EM-internal configuration read from effectivenessmonitor.Config.
@@ -166,14 +166,14 @@ type EAConfig struct {
 	// +kubebuilder:validation:Required
 	StabilizationWindow metav1.Duration `json:"stabilizationWindow"`
 
-	// HashCheckDelay is the duration to defer post-remediation spec hash computation
+	// HashComputeDelay is the duration to defer post-remediation spec hash computation
 	// after EA creation. Set by the RO for async-managed targets (GitOps, operator
 	// CRDs) where spec changes propagate after the WorkflowExecution completes.
-	// The EM computes the deferral deadline as: creation + HashCheckDelay.
+	// The EM computes the deferral deadline as: creation + HashComputeDelay.
 	// Nil means compute immediately (sync workflows, backward compatible).
 	// Reference: DD-EM-004, BR-EM-010, BR-RO-103, Issue #277
 	// +optional
-	HashCheckDelay *metav1.Duration `json:"hashCheckDelay,omitempty"`
+	HashComputeDelay *metav1.Duration `json:"hashComputeDelay,omitempty"`
 
 	// AlertCheckDelay is an additional duration to defer alert resolution checks
 	// beyond the StabilizationWindow. Set by the RO for proactive (predictive) alerts
