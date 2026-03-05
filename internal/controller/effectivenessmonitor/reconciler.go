@@ -207,12 +207,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	}
 
 	// Step 3: Check validity window
-	// Issue #253: For async targets, the stabilization anchor is HashComputeAfter (not creation).
-	// This ensures the validity checker gates Stabilizing→Assessing correctly.
+	// Issue #253, #277: For async targets, the stabilization anchor is
+	// creation + HashCheckDelay (not creation alone).
 	stabilizationAnchor := ea.CreationTimestamp
-	isAsync := ea.Spec.HashComputeAfter != nil && !ea.Spec.HashComputeAfter.IsZero()
+	isAsync := ea.Spec.Config.HashCheckDelay != nil && ea.Spec.Config.HashCheckDelay.Duration > 0
 	if isAsync {
-		stabilizationAnchor = *ea.Spec.HashComputeAfter
+		stabilizationAnchor = metav1.NewTime(ea.CreationTimestamp.Time.Add(ea.Spec.Config.HashCheckDelay.Duration))
 	}
 
 	var windowState validity.WindowState
@@ -231,25 +231,27 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		}
 	}
 
-	// Step 3b: WaitingForPropagation phase (Issue #253, BR-EM-010.3)
-	// For async targets with HashComputeAfter still in the future, enter/stay in
-	// WaitingForPropagation phase. Persist derived timing on first entry so operators
-	// can observe the timeline. Requeue until HashComputeAfter elapses.
-	if isAsync && time.Now().Before(ea.Spec.HashComputeAfter.Time) {
+	// Step 3b: WaitingForPropagation phase (Issue #253, #277, BR-EM-010.3)
+	// For async targets where the hash deferral deadline is still in the future,
+	// enter/stay in WaitingForPropagation. Requeue until deadline elapses.
+	hashDeadline := stabilizationAnchor // for async, this is creation + HashCheckDelay
+	if isAsync && time.Now().Before(hashDeadline.Time) {
 		if currentPhase == eav1.PhasePending || currentPhase == "" {
-			dt := emtiming.ComputeDerivedTiming(ea.CreationTimestamp, ea.Spec.Config.StabilizationWindow.Duration, r.Config.ValidityWindow, ea.Spec.HashComputeAfter)
+			dt := emtiming.ComputeDerivedTiming(ea.CreationTimestamp, ea.Spec.Config.StabilizationWindow.Duration, r.Config.ValidityWindow, ea.Spec.Config.HashCheckDelay, ea.Spec.Config.AlertCheckDelay)
 			deadline := dt.ValidityDeadline
 			checkAfter := dt.CheckAfter
+			alertCheckAfter := dt.AlertCheckAfter
 
 			ea.Status.Phase = eav1.PhaseWaitingForPropagation
 			ea.Status.ValidityDeadline = &deadline
 			ea.Status.PrometheusCheckAfter = &checkAfter
-			ea.Status.AlertManagerCheckAfter = &checkAfter
+			ea.Status.AlertManagerCheckAfter = &alertCheckAfter
 
 			logger.Info("Async target: entered WaitingForPropagation (BR-EM-010.3)",
-				"hashComputeAfter", ea.Spec.HashComputeAfter.Time,
+				"hashCheckDelay", ea.Spec.Config.HashCheckDelay.Duration,
 				"validityDeadline", deadline,
 				"checkAfter", checkAfter,
+				"alertCheckAfter", alertCheckAfter,
 			)
 			r.Metrics.RecordPhaseTransition(currentPhase, eav1.PhaseWaitingForPropagation)
 
@@ -260,7 +262,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			}
 		}
 
-		remaining := time.Until(ea.Spec.HashComputeAfter.Time)
+		remaining := time.Until(hashDeadline.Time)
 		logger.Info("Waiting for async propagation to complete", "remaining", remaining)
 		r.Metrics.RecordReconcile("requeue", time.Since(startTime).Seconds())
 		return ctrl.Result{RequeueAfter: remaining}, nil
@@ -305,7 +307,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		// BR-EM-009: Pre-compute and persist ValidityDeadline during stabilization so
 		// operators can observe the deadline immediately. Transition to Stabilizing phase.
 		if ea.Status.ValidityDeadline == nil && (currentPhase == eav1.PhasePending || currentPhase == "") {
-			dt := emtiming.ComputeDerivedTiming(ea.CreationTimestamp, ea.Spec.Config.StabilizationWindow.Duration, r.Config.ValidityWindow, ea.Spec.HashComputeAfter)
+			dt := emtiming.ComputeDerivedTiming(ea.CreationTimestamp, ea.Spec.Config.StabilizationWindow.Duration, r.Config.ValidityWindow, ea.Spec.Config.HashCheckDelay, ea.Spec.Config.AlertCheckDelay)
 			if dt.Extended {
 				logger.Info("Runtime guard: extended ValidityDeadline (StabilizationWindow >= ValidityWindow)",
 					"originalValidity", r.Config.ValidityWindow,
@@ -318,11 +320,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			}
 			deadline := dt.ValidityDeadline
 			checkAfter := dt.CheckAfter
+			alertCheckAfter := dt.AlertCheckAfter
 
 			ea.Status.Phase = eav1.PhaseStabilizing
 			ea.Status.ValidityDeadline = &deadline
 			ea.Status.PrometheusCheckAfter = &checkAfter
-			ea.Status.AlertManagerCheckAfter = &checkAfter
+			ea.Status.AlertManagerCheckAfter = &alertCheckAfter
 
 			logger.Info("Transitioned to Stabilizing, persisted derived timing (BR-EM-009)",
 				"creationTimestamp", ea.CreationTimestamp,
@@ -362,7 +365,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		// Compute all derived timing fields on first reconciliation.
 		// These are persisted in status to avoid recomputation and for operator observability.
 		// See timing.ComputeDerivedTiming for the formula and runtime guard (Issue #188).
-		dt := emtiming.ComputeDerivedTiming(ea.CreationTimestamp, ea.Spec.Config.StabilizationWindow.Duration, r.Config.ValidityWindow, ea.Spec.HashComputeAfter)
+		dt := emtiming.ComputeDerivedTiming(ea.CreationTimestamp, ea.Spec.Config.StabilizationWindow.Duration, r.Config.ValidityWindow, ea.Spec.Config.HashCheckDelay, ea.Spec.Config.AlertCheckDelay)
 		if dt.Extended {
 			logger.Info("Runtime guard: extended ValidityDeadline (StabilizationWindow >= ValidityWindow)",
 				"originalValidity", r.Config.ValidityWindow,
@@ -375,11 +378,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		}
 		deadline := dt.ValidityDeadline
 		checkAfter := dt.CheckAfter
+		alertCheckAfter := dt.AlertCheckAfter
 
 		ea.Status.Phase = eav1.PhaseAssessing
 		ea.Status.ValidityDeadline = &deadline
 		ea.Status.PrometheusCheckAfter = &checkAfter
-		ea.Status.AlertManagerCheckAfter = &checkAfter
+		ea.Status.AlertManagerCheckAfter = &alertCheckAfter
 
 		logger.Info("Computed derived timing (BR-EM-009)",
 			"creationTimestamp", ea.CreationTimestamp,
@@ -475,13 +479,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	// hash and compare against PostRemediationSpecHash. If different, spec
 	// drift detected — abort observability collection.
 	if !ea.Status.Components.HashComputed {
-		// DD-EM-004: Defer hash for async-managed targets (GitOps, operator CRDs).
-		// The RO sets HashComputeAfter when the RemediationTarget is managed by an
+		// DD-EM-004, #277: Defer hash for async-managed targets (GitOps, operator CRDs).
+		// The RO sets HashCheckDelay when the RemediationTarget is managed by an
 		// external controller whose reconciliation happens after the WE completes.
 		deferral := hash.CheckHashDeferral(ea)
 		if deferral.ShouldDefer {
 			logger.V(1).Info("Hash computation deferred for async-managed target",
-				"hashComputeAfter", ea.Spec.HashComputeAfter.Time,
+				"hashCheckDelay", ea.Spec.Config.HashCheckDelay.Duration,
 				"remaining", deferral.RequeueAfter)
 			return ctrl.Result{RequeueAfter: deferral.RequeueAfter}, nil
 		}
@@ -533,14 +537,23 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		}
 	}
 
-	// Alert check (BR-EM-002) - skip if disabled or client unavailable
+	// Alert check (BR-EM-002) - skip if disabled or client unavailable.
+	// #277: Defer alert check when AlertCheckDelay is set (proactive signals).
+	// Health and metrics proceed independently; only alert resolution is gated.
 	if !ea.Status.Components.AlertAssessed {
 		if r.Config.AlertManagerEnabled && r.AlertManagerClient != nil {
-			alertResult := r.assessAlert(ctx, ea)
-			ea.Status.Components.AlertAssessed = alertResult.Component.Assessed
-			ea.Status.Components.AlertScore = alertResult.Component.Score
-			r.Metrics.RecordComponentAssessment("alert", resultStatus(alertResult.Component), time.Since(startTime).Seconds(), alertResult.Component.Score)
-			r.emitAlertEvent(ctx, ea, alertResult)
+			alertDeferral := alert.CheckAlertDeferral(ea)
+			if alertDeferral.ShouldDefer {
+				logger.V(1).Info("Alert check deferred (proactive signal, #277)",
+					"alertManagerCheckAfter", ea.Status.AlertManagerCheckAfter,
+					"remaining", alertDeferral.RequeueAfter)
+			} else {
+				alertResult := r.assessAlert(ctx, ea)
+				ea.Status.Components.AlertAssessed = alertResult.Component.Assessed
+				ea.Status.Components.AlertScore = alertResult.Component.Score
+				r.Metrics.RecordComponentAssessment("alert", resultStatus(alertResult.Component), time.Since(startTime).Seconds(), alertResult.Component.Score)
+				r.emitAlertEvent(ctx, ea, alertResult)
+			}
 		} else {
 			ea.Status.Components.AlertAssessed = true
 			r.Metrics.RecordComponentAssessment("alert", "skipped", time.Since(startTime).Seconds(), nil)

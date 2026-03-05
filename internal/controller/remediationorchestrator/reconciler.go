@@ -112,7 +112,7 @@ type Reconciler struct {
 	apiReader client.Reader
 
 	// DD-EM-004 v2.0, Issue #253: Config-driven async propagation delays.
-	// Used by createEffectivenessAssessmentIfNeeded to compute HashComputeAfter
+	// Used by createEffectivenessAssessmentIfNeeded to compute HashCheckDelay
 	// from gitOpsSyncDelay/operatorReconcileDelay instead of stabilization window.
 	asyncPropagation roconfig.AsyncPropagationConfig
 
@@ -2049,14 +2049,16 @@ func (r *Reconciler) createEffectivenessAssessmentIfNeeded(ctx context.Context, 
 	// Remediation target: from AIAnalysis AffectedResource (when available), else RR fallback.
 	var dualTarget *creator.DualTarget
 	var isGitOpsManaged bool
+	var ai *aianalysisv1.AIAnalysis
 	if rr.Status.AIAnalysisRef != nil {
-		ai := &aianalysisv1.AIAnalysis{}
+		ai = &aianalysisv1.AIAnalysis{}
 		if err := r.client.Get(ctx, client.ObjectKey{
 			Name:      rr.Status.AIAnalysisRef.Name,
 			Namespace: rr.Status.AIAnalysisRef.Namespace,
 		}, ai); err != nil {
 			logger.V(1).Info("Could not fetch AIAnalysis for target resolution (non-fatal), using RR target",
 				"error", err)
+			ai = nil
 		} else {
 			dualTarget = resolveDualTargets(rr, ai)
 			// DD-EM-004, BR-RO-103.2: Read GitOps detection from RCA pipeline.
@@ -2068,10 +2070,9 @@ func (r *Reconciler) createEffectivenessAssessmentIfNeeded(ctx context.Context, 
 		}
 	}
 
-	// DD-EM-004 v2.0, BR-RO-103, Issue #253: Detect async-managed targets.
-	// Track isGitOps and isCRD separately for config-driven propagation delay compounding.
-	var hashComputeAfter *metav1.Time
-	var gitOpsSyncDelay, operatorReconcileDelay *metav1.Duration
+	// DD-EM-004 v2.0, BR-RO-103, Issue #253, #277: Detect async-managed targets.
+	// Compute Duration-based hashCheckDelay for the EA Config.
+	var hashCheckDelay *metav1.Duration
 	remediationKind := rr.Spec.TargetResource.Kind
 	if dualTarget != nil {
 		remediationKind = dualTarget.Remediation.Kind
@@ -2088,23 +2089,27 @@ func (r *Reconciler) createEffectivenessAssessmentIfNeeded(ctx context.Context, 
 
 	propagationDelay := r.asyncPropagation.ComputePropagationDelay(isGitOpsManaged, isCRD)
 	if propagationDelay > 0 {
-		t := metav1.NewTime(time.Now().Add(propagationDelay))
-		hashComputeAfter = &t
-		if isGitOpsManaged && r.asyncPropagation.GitOpsSyncDelay > 0 {
-			gitOpsSyncDelay = &metav1.Duration{Duration: r.asyncPropagation.GitOpsSyncDelay}
-		}
-		if isCRD && r.asyncPropagation.OperatorReconcileDelay > 0 {
-			operatorReconcileDelay = &metav1.Duration{Duration: r.asyncPropagation.OperatorReconcileDelay}
-		}
-		logger.Info("Async-managed target detected, deferring hash computation",
+		hashCheckDelay = &metav1.Duration{Duration: propagationDelay}
+		logger.Info("Async-managed target detected, setting hash check delay",
 			"kind", remediationKind,
 			"gitOps", isGitOpsManaged,
 			"isCRD", isCRD,
-			"propagationDelay", propagationDelay,
-			"hashComputeAfter", t.Time)
+			"hashCheckDelay", propagationDelay)
 	}
 
-	name, err := r.eaCreator.CreateEffectivenessAssessment(ctx, rr, dualTarget, hashComputeAfter, gitOpsSyncDelay, operatorReconcileDelay)
+	// #277: Detect proactive signals via AIAnalysis.Spec.AnalysisRequest.SignalMode.
+	// Proactive alerts (e.g. predict_linear) need extra time to resolve.
+	var alertCheckDelay *metav1.Duration
+	if ai != nil && ai.Spec.AnalysisRequest.SignalContext.SignalMode == "proactive" {
+		if r.asyncPropagation.ProactiveAlertDelay > 0 {
+			alertCheckDelay = &metav1.Duration{Duration: r.asyncPropagation.ProactiveAlertDelay}
+			logger.Info("Proactive signal detected, setting alert check delay",
+				"signalMode", ai.Spec.AnalysisRequest.SignalContext.SignalMode,
+				"alertCheckDelay", r.asyncPropagation.ProactiveAlertDelay)
+		}
+	}
+
+	name, err := r.eaCreator.CreateEffectivenessAssessment(ctx, rr, dualTarget, hashCheckDelay, alertCheckDelay)
 	if err != nil {
 		logger.Error(err, "Failed to create EffectivenessAssessment (non-fatal per ADR-EM-001)")
 		return

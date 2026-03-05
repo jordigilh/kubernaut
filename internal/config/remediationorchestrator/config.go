@@ -153,7 +153,7 @@ type RoutingConfig struct {
 // AsyncPropagationConfig configures delays for async-managed remediation targets.
 // These delays account for the time between a remediation completing and the
 // actual spec change appearing on the target resource.
-// DD-EM-004 v2.0, BR-RO-103.3, BR-RO-103.4, Issue #253
+// DD-EM-004 v2.0, BR-RO-103.3, BR-RO-103.4, Issue #253, Issue #277
 // Per CRD_FIELD_NAMING_CONVENTION.md: YAML fields use camelCase.
 type AsyncPropagationConfig struct {
 	// GitOpsSyncDelay is the expected time for a GitOps tool (ArgoCD/Flux)
@@ -165,6 +165,14 @@ type AsyncPropagationConfig struct {
 	// to reconcile after its CR is updated. Default: 1m. Range: [0, 30m].
 	// Zero disables this stage.
 	OperatorReconcileDelay time.Duration `yaml:"operatorReconcileDelay"`
+
+	// ProactiveAlertDelay is the additional delay for alert resolution checks
+	// on proactive (predictive) signals. Default: 5m.
+	// Applied by the RO when ai.Spec.AnalysisRequest.SignalMode == "proactive",
+	// causing the EM to defer AlertManager checks by this duration beyond
+	// the StabilizationWindow.
+	// Reference: Issue #277, BR-EM-009
+	ProactiveAlertDelay time.Duration `yaml:"proactiveAlertDelay"`
 }
 
 // ComputePropagationDelay returns the total propagation delay for a given target
@@ -205,6 +213,7 @@ func DefaultConfig() *Config {
 		AsyncPropagation: AsyncPropagationConfig{
 			GitOpsSyncDelay:        3 * time.Minute,
 			OperatorReconcileDelay: 1 * time.Minute,
+			ProactiveAlertDelay:    5 * time.Minute,
 		},
 		Routing: RoutingConfig{
 			ConsecutiveFailureThreshold:  3,
@@ -298,6 +307,9 @@ func (c *Config) Validate() error {
 	}
 	if c.AsyncPropagation.OperatorReconcileDelay < 0 {
 		return fmt.Errorf("asyncPropagation.operatorReconcileDelay must be >= 0, got %v", c.AsyncPropagation.OperatorReconcileDelay)
+	}
+	if c.AsyncPropagation.ProactiveAlertDelay < 0 {
+		return fmt.Errorf("asyncPropagation.proactiveAlertDelay must be >= 0, got %v", c.AsyncPropagation.ProactiveAlertDelay)
 	}
 
 	// Validate routing config (DD-RO-002, BR-ORCH-042, DD-WE-004, Issue #214)

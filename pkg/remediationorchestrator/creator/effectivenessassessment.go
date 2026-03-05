@@ -90,27 +90,27 @@ type DualTarget struct {
 //   - SignalTarget: from dualTarget.Signal (signal-sourced resource)
 //   - RemediationTarget: from dualTarget.Remediation (AI-identified resource)
 //   - Config.StabilizationWindow: from RO's EACreationConfig
+//   - Config.HashCheckDelay: Duration-based hash deferral (DD-EM-004, #277)
+//   - Config.AlertCheckDelay: Duration-based alert deferral for proactive signals (#277)
 //   - RemediationRequestPhase: RR.Status.OverallPhase at creation time (immutable spec field)
 //   - OwnerReference: RR (for cascade deletion, BR-ORCH-031)
-//   - HashComputeAfter: from hashComputeAfter (DD-EM-004, async targets)
 //
 // The dualTarget parameter is optional. When non-nil, it provides both signal and remediation
 // targets (DD-EM-003). When nil, falls back to RR.Spec.TargetResource for both.
 //
-// The hashComputeAfter parameter is optional. When non-nil, the EM will defer hash computation
-// until this timestamp (DD-EM-004, BR-EM-010). Set for GitOps and operator-managed CRD targets.
+// The hashCheckDelay parameter is optional. When non-nil, the EM will defer hash computation
+// by this duration after creation (DD-EM-004, BR-EM-010, #277).
 //
-// The gitOpsSyncDelay and operatorReconcileDelay parameters are optional. When non-nil, they are
-// propagated to the EA spec for the EM audit trail (DD-EM-004 v2.0, BR-RO-103.4, Issue #253).
+// The alertCheckDelay parameter is optional. When non-nil, the EM will defer alert resolution
+// checks by this duration beyond StabilizationWindow (#277, BR-EM-009).
 //
 // Returns the EA name if created (or already exists), or an error.
 func (c *EffectivenessAssessmentCreator) CreateEffectivenessAssessment(
 	ctx context.Context,
 	rr *remediationv1.RemediationRequest,
 	dualTarget *DualTarget,
-	hashComputeAfter *metav1.Time,
-	gitOpsSyncDelay *metav1.Duration,
-	operatorReconcileDelay *metav1.Duration,
+	hashCheckDelay *metav1.Duration,
+	alertCheckDelay *metav1.Duration,
 ) (string, error) {
 	logger := log.FromContext(ctx).WithValues(
 		"remediationRequest", rr.Name,
@@ -158,13 +158,12 @@ func (c *EffectivenessAssessmentCreator) CreateEffectivenessAssessment(
 			RemediationTarget:       remediationTarget,
 			Config: eav1.EAConfig{
 				StabilizationWindow: metav1.Duration{Duration: c.stabilizationWindow},
+				HashCheckDelay:      hashCheckDelay,
+				AlertCheckDelay:     alertCheckDelay,
 			},
 			RemediationCreatedAt:   rrCreatedAt,
-			SignalName:             rr.Spec.SignalName,             // OBS-1: Propagate actual alert name for audit
-			PreRemediationSpecHash: rr.Status.PreRemediationSpecHash, // DD-EM-002: Propagate from RR status
-			HashComputeAfter:       hashComputeAfter,              // DD-EM-004: Defer hash for async targets
-			GitOpsSyncDelay:        gitOpsSyncDelay,               // DD-EM-004 v2.0: Propagate for EM audit
-			OperatorReconcileDelay: operatorReconcileDelay,        // DD-EM-004 v2.0: Propagate for EM audit
+			SignalName:             rr.Spec.SignalName,
+			PreRemediationSpecHash: rr.Status.PreRemediationSpecHash,
 		},
 	}
 
