@@ -53,8 +53,9 @@ const (
 	PhaseFailed = "Failed"
 	// PhaseWaitingForPropagation indicates the EM is waiting for an async change
 	// (GitOps sync, operator reconciliation) to propagate before computing the hash.
-	// Only entered when EA.Spec.HashComputeAfter is non-nil and in the future.
-	// Reference: DD-EM-004 v2.0, BR-EM-010.3, Issue #253
+	// Only entered when EA.Spec.Config.HashCheckDelay is non-nil and the computed
+	// deferral deadline (creation + HashCheckDelay) is in the future.
+	// Reference: DD-EM-004 v2.0, BR-EM-010.3, Issue #253, Issue #277
 	PhaseWaitingForPropagation = "WaitingForPropagation"
 )
 
@@ -134,28 +135,6 @@ type EffectivenessAssessmentSpec struct {
 	// Reference: ADR-EM-001, DD-EM-002
 	// +optional
 	PreRemediationSpecHash string `json:"preRemediationSpecHash,omitempty"`
-
-	// HashComputeAfter indicates when the EM should compute the post-remediation
-	// spec hash. Set by the RO for async-managed targets (GitOps, operator CRDs)
-	// where spec changes propagate after the WorkflowExecution completes.
-	// Nil or zero means compute immediately (sync workflows, backward compatible).
-	// Reference: DD-EM-004 (Async Hash Deferral), BR-EM-010, BR-RO-103
-	// +optional
-	HashComputeAfter *metav1.Time `json:"hashComputeAfter,omitempty"`
-
-	// GitOpsSyncDelay is the configured delay for GitOps tool sync (ArgoCD/Flux),
-	// set by the RO at EA creation time. The EM reads this for the audit trail
-	// (BR-EM-010.5). Nil when the target is not GitOps-managed.
-	// Reference: DD-EM-004 v2.0, BR-RO-103.4, Issue #253
-	// +optional
-	GitOpsSyncDelay *metav1.Duration `json:"gitOpsSyncDelay,omitempty"`
-
-	// OperatorReconcileDelay is the configured delay for operator reconciliation,
-	// set by the RO at EA creation time. The EM reads this for the audit trail
-	// (BR-EM-010.5). Nil when the target is not a CRD.
-	// Reference: DD-EM-004 v2.0, BR-RO-103.4, Issue #253
-	// +optional
-	OperatorReconcileDelay *metav1.Duration `json:"operatorReconcileDelay,omitempty"`
 }
 
 // TargetResource identifies a Kubernetes resource by kind, name, and namespace.
@@ -172,9 +151,10 @@ type TargetResource struct {
 	Namespace string `json:"namespace,omitempty"`
 }
 
-// EAConfig contains assessment configuration set by RO at creation time.
-// Only StabilizationWindow is set by the RO — it controls how long the EM
-// waits after remediation before starting assessment checks.
+// EAConfig contains assessment configuration set by the RO at creation time.
+// StabilizationWindow controls how long the EM waits after remediation before
+// starting assessment checks. HashCheckDelay and AlertCheckDelay are optional
+// Duration-based delays that the RO computes based on target type and signal mode.
 // All other assessment parameters (PrometheusEnabled, AlertManagerEnabled,
 // ValidityWindow) are EM-internal configuration read from effectivenessmonitor.Config.
 // The EM emits individual component audit events to DataStorage; the overall
@@ -185,6 +165,26 @@ type EAConfig struct {
 	// until the system stabilizes post-remediation.
 	// +kubebuilder:validation:Required
 	StabilizationWindow metav1.Duration `json:"stabilizationWindow"`
+
+	// HashCheckDelay is the duration to defer post-remediation spec hash computation
+	// after EA creation. Set by the RO for async-managed targets (GitOps, operator
+	// CRDs) where spec changes propagate after the WorkflowExecution completes.
+	// The EM computes the deferral deadline as: creation + HashCheckDelay.
+	// Nil means compute immediately (sync workflows, backward compatible).
+	// Reference: DD-EM-004, BR-EM-010, BR-RO-103, Issue #277
+	// +optional
+	HashCheckDelay *metav1.Duration `json:"hashCheckDelay,omitempty"`
+
+	// AlertCheckDelay is an additional duration to defer alert resolution checks
+	// beyond the StabilizationWindow. Set by the RO for proactive (predictive) alerts
+	// where the underlying Prometheus alert (e.g. predict_linear) requires extra time
+	// to resolve after remediation.
+	// The EM computes AlertManagerCheckAfter as:
+	//   creation + StabilizationWindow + AlertCheckDelay
+	// Nil means no additional delay (AlertManagerCheckAfter = PrometheusCheckAfter).
+	// Reference: ADR-EM-001, BR-EM-009, Issue #277
+	// +optional
+	AlertCheckDelay *metav1.Duration `json:"alertCheckDelay,omitempty"`
 }
 
 // EffectivenessAssessmentStatus defines the observed state of an EffectivenessAssessment.
@@ -213,9 +213,11 @@ type EffectivenessAssessmentStatus struct {
 
 	// AlertManagerCheckAfter is the earliest time to check AlertManager for alert resolution.
 	// Computed by the EM controller on first reconciliation as:
-	//   EA.creationTimestamp + StabilizationWindow (from EA spec).
+	//   EA.creationTimestamp + StabilizationWindow + AlertCheckDelay (if set).
+	// When AlertCheckDelay is nil, equals PrometheusCheckAfter.
 	// Stored in status to avoid recomputation on every reconcile and for
 	// operator observability of the assessment timeline.
+	// Reference: ADR-EM-001, Issue #277
 	// +optional
 	AlertManagerCheckAfter *metav1.Time `json:"alertManagerCheckAfter,omitempty"`
 

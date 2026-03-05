@@ -507,21 +507,17 @@ func (m *Manager) RecordAssessmentScheduled(ctx context.Context, ea *eav1.Effect
 	if ea.Status.AlertManagerCheckAfter != nil {
 		payload.AlertmanagerCheckAfter = ogenclient.NewOptDateTime(ea.Status.AlertManagerCheckAfter.Time)
 	}
-	if ea.Spec.HashComputeAfter != nil && !ea.Spec.HashComputeAfter.IsZero() {
-		payload.HashComputeAfter = ogenclient.NewOptDateTime(ea.Spec.HashComputeAfter.Time)
+	// #277: HashCheckDelay (Duration) replaces HashComputeAfter (Time).
+	// Compute the absolute deadline for the audit payload.
+	if ea.Spec.Config.HashCheckDelay != nil && ea.Spec.Config.HashCheckDelay.Duration > 0 {
+		hashDeadline := ea.CreationTimestamp.Time.Add(ea.Spec.Config.HashCheckDelay.Duration)
+		payload.HashComputeAfter = ogenclient.NewOptDateTime(hashDeadline)
 	}
-	// DD-EM-004 v2.0, Issue #253: Propagation delay fields for audit trail
-	var totalPropagation time.Duration
-	if ea.Spec.GitOpsSyncDelay != nil {
-		payload.GitopsSyncDelay = ogenclient.NewOptString(ea.Spec.GitOpsSyncDelay.Duration.String())
-		totalPropagation += ea.Spec.GitOpsSyncDelay.Duration
-	}
-	if ea.Spec.OperatorReconcileDelay != nil {
-		payload.OperatorReconcileDelay = ogenclient.NewOptString(ea.Spec.OperatorReconcileDelay.Duration.String())
-		totalPropagation += ea.Spec.OperatorReconcileDelay.Duration
-	}
-	if totalPropagation > 0 {
-		payload.TotalPropagationDelay = ogenclient.NewOptString(totalPropagation.String())
+	// #277: Propagation delay fields (GitOpsSyncDelay, OperatorReconcileDelay) are
+	// no longer in the EA spec — the RO emits these in its own audit event.
+	// AlertCheckDelay is audited from EAConfig if set.
+	if ea.Spec.Config.AlertCheckDelay != nil && ea.Spec.Config.AlertCheckDelay.Duration > 0 {
+		payload.TotalPropagationDelay = ogenclient.NewOptString(ea.Spec.Config.AlertCheckDelay.Duration.String())
 	}
 	payload.ValidityWindow = ogenclient.NewOptString(validityWindow.String())
 	payload.StabilizationWindow = ogenclient.NewOptString(ea.Spec.Config.StabilizationWindow.Duration.String())

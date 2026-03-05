@@ -21,8 +21,9 @@ limitations under the License.
 // of timing logic independently from K8s API interactions.
 //
 // Business Requirements:
-// - BR-EM-009: Derived timing computation (ValidityDeadline, CheckAfter)
-// - BR-EM-010.4: Stabilization anchored to HashComputeAfter (#253)
+// - BR-EM-009: Derived timing computation (ValidityDeadline, CheckAfter, AlertCheckAfter)
+// - BR-EM-010.4: Stabilization anchored to HashCheckDelay for async targets (#253)
+// - Issue #277: AlertCheckDelay additive semantics, Duration-based HashCheckDelay
 package timing
 
 import (
@@ -35,65 +36,92 @@ import (
 // These are persisted in EA.Status on first reconciliation so operators can
 // observe the assessment timeline immediately.
 type DerivedTiming struct {
-	// CheckAfter is when Prometheus/AlertManager checks should begin.
-	// For sync targets: EA.creationTimestamp + StabilizationWindow.
-	// For async targets (#253): HashComputeAfter + StabilizationWindow.
+	// CheckAfter is when Prometheus metrics checks should begin.
+	// For sync targets: creationTimestamp + StabilizationWindow.
+	// For async targets (#253): creationTimestamp + HashCheckDelay + StabilizationWindow.
 	CheckAfter metav1.Time
 
+	// AlertCheckAfter is when AlertManager alert resolution checks should begin.
+	// Equals CheckAfter when AlertCheckDelay is nil.
+	// When AlertCheckDelay is set: CheckAfter + AlertCheckDelay (additive, #277).
+	AlertCheckAfter metav1.Time
+
 	// ValidityDeadline is when the assessment expires.
-	// Includes the runtime guard: if StabilizationWindow >= ValidityWindow,
-	// the effective validity is extended to StabilizationWindow + ValidityWindow.
+	// The runtime guard ensures the deadline extends to cover all checks:
+	// if the latest check offset (stab + alertCheckDelay) >= ValidityWindow,
+	// the effective validity is extended accordingly.
 	ValidityDeadline metav1.Time
 
 	// EffectiveValidity is the computed validity duration (may be extended).
 	EffectiveValidity time.Duration
 
-	// Extended is true when the runtime guard extended the validity window
-	// because StabilizationWindow >= ValidityWindow.
+	// Extended is true when the runtime guard extended the validity window.
 	Extended bool
 }
 
 // ComputeDerivedTiming calculates the derived timing fields for an EA.
 //
-// For sync targets (hashComputeAfter nil or zero):
+// For sync targets (hashCheckDelay nil or zero):
 //
-//	The runtime guard (Issue #188) ensures that when StabilizationWindow >= ValidityWindow,
-//	the effective validity is extended to StabilizationWindow + ValidityWindow.
 //	CheckAfter = creationTimestamp + StabilizationWindow
+//	AlertCheckAfter = CheckAfter + AlertCheckDelay (or == CheckAfter if nil)
 //	ValidityDeadline = creationTimestamp + effectiveValidity
+//	Runtime guard extends validity when totalCheckOffset >= ValidityWindow.
 //
-// For async targets (hashComputeAfter non-nil, non-zero — Issue #253, DD-EM-004 v2.0):
+// For async targets (hashCheckDelay non-nil, non-zero — Issue #253, #277):
 //
-//	The stabilization anchor shifts to HashComputeAfter (propagation complete).
-//	effectiveValidity is always StabilizationWindow + ValidityWindow because the full
-//	assessment window must be available after propagation + stabilization.
-//	CheckAfter = HashComputeAfter + StabilizationWindow
-//	ValidityDeadline = HashComputeAfter + effectiveValidity
+//	anchor = creationTimestamp + HashCheckDelay
+//	CheckAfter = anchor + StabilizationWindow
+//	AlertCheckAfter = CheckAfter + AlertCheckDelay (or == CheckAfter if nil)
+//	effectiveValidity = stab + alertCheckDelay + validity (always extended from anchor)
+//	ValidityDeadline = anchor + effectiveValidity
 //
 // Parameters:
 //   - creationTimestamp: EA.metadata.creationTimestamp
 //   - stabilizationWindow: EA.Spec.Config.StabilizationWindow.Duration
 //   - validityWindow: ReconcilerConfig.ValidityWindow (EM-level config)
-//   - hashComputeAfter: EA.Spec.HashComputeAfter (nil for sync targets)
-func ComputeDerivedTiming(creationTimestamp metav1.Time, stabilizationWindow, validityWindow time.Duration, hashComputeAfter *metav1.Time) DerivedTiming {
-	if hashComputeAfter != nil && !hashComputeAfter.IsZero() {
-		effectiveValidity := stabilizationWindow + validityWindow
+//   - hashCheckDelay: EA.Spec.Config.HashCheckDelay (nil for sync targets)
+//   - alertCheckDelay: EA.Spec.Config.AlertCheckDelay (nil when not proactive)
+func ComputeDerivedTiming(creationTimestamp metav1.Time, stabilizationWindow, validityWindow time.Duration, hashCheckDelay, alertCheckDelay *metav1.Duration) DerivedTiming {
+	alertDelay := time.Duration(0)
+	if alertCheckDelay != nil {
+		alertDelay = alertCheckDelay.Duration
+	}
+
+	if hashCheckDelay != nil && hashCheckDelay.Duration > 0 {
+		anchor := creationTimestamp.Time.Add(hashCheckDelay.Duration)
+		effectiveValidity := stabilizationWindow + alertDelay + validityWindow
+		checkAfter := metav1.NewTime(anchor.Add(stabilizationWindow))
+		alertCheckAfterTime := checkAfter
+		if alertDelay > 0 {
+			alertCheckAfterTime = metav1.NewTime(checkAfter.Time.Add(alertDelay))
+		}
 		return DerivedTiming{
-			CheckAfter:        metav1.NewTime(hashComputeAfter.Add(stabilizationWindow)),
-			ValidityDeadline:  metav1.NewTime(hashComputeAfter.Add(effectiveValidity)),
+			CheckAfter:        checkAfter,
+			AlertCheckAfter:   alertCheckAfterTime,
+			ValidityDeadline:  metav1.NewTime(anchor.Add(effectiveValidity)),
 			EffectiveValidity: effectiveValidity,
 			Extended:          true,
 		}
 	}
 
+	totalCheckOffset := stabilizationWindow + alertDelay
 	effectiveValidity := validityWindow
 	extended := false
-	if stabilizationWindow >= effectiveValidity {
-		effectiveValidity = stabilizationWindow + validityWindow
+	if totalCheckOffset >= effectiveValidity {
+		effectiveValidity = totalCheckOffset + validityWindow
 		extended = true
 	}
+
+	checkAfter := metav1.NewTime(creationTimestamp.Time.Add(stabilizationWindow))
+	alertCheckAfterTime := checkAfter
+	if alertDelay > 0 {
+		alertCheckAfterTime = metav1.NewTime(checkAfter.Time.Add(alertDelay))
+	}
+
 	return DerivedTiming{
-		CheckAfter:        metav1.NewTime(creationTimestamp.Time.Add(stabilizationWindow)),
+		CheckAfter:        checkAfter,
+		AlertCheckAfter:   alertCheckAfterTime,
 		ValidityDeadline:  metav1.NewTime(creationTimestamp.Time.Add(effectiveValidity)),
 		EffectiveValidity: effectiveValidity,
 		Extended:          extended,

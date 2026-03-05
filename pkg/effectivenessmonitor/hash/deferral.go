@@ -31,21 +31,22 @@ type DeferralResult struct {
 }
 
 // CheckHashDeferral evaluates whether hash computation should be deferred for
-// an EffectivenessAssessment based on the HashComputeAfter timestamp.
+// an EffectivenessAssessment based on the HashCheckDelay duration in EAConfig.
 //
-// Business behavior (BR-EM-010.1, DD-EM-004):
-//   - When HashComputeAfter is nil: compute hash immediately (backward compatible)
-//   - When HashComputeAfter is in the past: compute hash immediately
-//   - When HashComputeAfter is in the future: defer and requeue after the remaining duration
+// Business behavior (BR-EM-010.1, DD-EM-004, Issue #277):
+//   - When HashCheckDelay is nil or zero: compute hash immediately (backward compatible)
+//   - When creation + HashCheckDelay is in the past: compute hash immediately
+//   - When creation + HashCheckDelay is in the future: defer and requeue after remaining duration
 //
-// The RO sets HashComputeAfter for async-managed targets (GitOps, operator CRDs)
+// The RO sets HashCheckDelay for async-managed targets (GitOps, operator CRDs)
 // so the EM captures the post-remediation spec after the external controller reconciles.
 func CheckHashDeferral(ea *eav1.EffectivenessAssessment) DeferralResult {
-	if ea.Spec.HashComputeAfter == nil || ea.Spec.HashComputeAfter.IsZero() {
+	if ea.Spec.Config.HashCheckDelay == nil || ea.Spec.Config.HashCheckDelay.Duration <= 0 {
 		return DeferralResult{ShouldDefer: false}
 	}
 
-	remaining := time.Until(ea.Spec.HashComputeAfter.Time)
+	deadline := ea.CreationTimestamp.Time.Add(ea.Spec.Config.HashCheckDelay.Duration)
+	remaining := time.Until(deadline)
 	if remaining <= 0 {
 		return DeferralResult{ShouldDefer: false}
 	}

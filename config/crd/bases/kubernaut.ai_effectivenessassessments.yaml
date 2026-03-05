@@ -67,6 +67,26 @@ spec:
               config:
                 description: Config contains the assessment configuration parameters.
                 properties:
+                  alertCheckDelay:
+                    description: |-
+                      AlertCheckDelay is an additional duration to defer alert resolution checks
+                      beyond the StabilizationWindow. Set by the RO for proactive (predictive) alerts
+                      where the underlying Prometheus alert (e.g. predict_linear) requires extra time
+                      to resolve after remediation.
+                      The EM computes AlertManagerCheckAfter as:
+                        creation + StabilizationWindow + AlertCheckDelay
+                      Nil means no additional delay (AlertManagerCheckAfter = PrometheusCheckAfter).
+                      Reference: ADR-EM-001, BR-EM-009, Issue #277
+                    type: string
+                  hashCheckDelay:
+                    description: |-
+                      HashCheckDelay is the duration to defer post-remediation spec hash computation
+                      after EA creation. Set by the RO for async-managed targets (GitOps, operator
+                      CRDs) where spec changes propagate after the WorkflowExecution completes.
+                      The EM computes the deferral deadline as: creation + HashCheckDelay.
+                      Nil means compute immediately (sync workflows, backward compatible).
+                      Reference: DD-EM-004, BR-EM-010, BR-RO-103, Issue #277
+                    type: string
                   stabilizationWindow:
                     description: |-
                       StabilizationWindow is the duration to wait after remediation before assessment.
@@ -81,29 +101,6 @@ spec:
                   CorrelationID is the name of the parent RemediationRequest.
                   Used as the correlation ID for audit events (DD-AUDIT-CORRELATION-002).
                 minLength: 1
-                type: string
-              gitOpsSyncDelay:
-                description: |-
-                  GitOpsSyncDelay is the configured delay for GitOps tool sync (ArgoCD/Flux),
-                  set by the RO at EA creation time. The EM reads this for the audit trail
-                  (BR-EM-010.5). Nil when the target is not GitOps-managed.
-                  Reference: DD-EM-004 v2.0, BR-RO-103.4, Issue #253
-                type: string
-              hashComputeAfter:
-                description: |-
-                  HashComputeAfter indicates when the EM should compute the post-remediation
-                  spec hash. Set by the RO for async-managed targets (GitOps, operator CRDs)
-                  where spec changes propagate after the WorkflowExecution completes.
-                  Nil or zero means compute immediately (sync workflows, backward compatible).
-                  Reference: DD-EM-004 (Async Hash Deferral), BR-EM-010, BR-RO-103
-                format: date-time
-                type: string
-              operatorReconcileDelay:
-                description: |-
-                  OperatorReconcileDelay is the configured delay for operator reconciliation,
-                  set by the RO at EA creation time. The EM reads this for the audit trail
-                  (BR-EM-010.5). Nil when the target is not a CRD.
-                  Reference: DD-EM-004 v2.0, BR-RO-103.4, Issue #253
                 type: string
               preRemediationSpecHash:
                 description: |-
@@ -202,9 +199,11 @@ spec:
                 description: |-
                   AlertManagerCheckAfter is the earliest time to check AlertManager for alert resolution.
                   Computed by the EM controller on first reconciliation as:
-                    EA.creationTimestamp + StabilizationWindow (from EA spec).
+                    EA.creationTimestamp + StabilizationWindow + AlertCheckDelay (if set).
+                  When AlertCheckDelay is nil, equals PrometheusCheckAfter.
                   Stored in status to avoid recomputation on every reconcile and for
                   operator observability of the assessment timeline.
+                  Reference: ADR-EM-001, Issue #277
                 format: date-time
                 type: string
               assessmentReason:

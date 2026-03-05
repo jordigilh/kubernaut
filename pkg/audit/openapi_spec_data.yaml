@@ -2538,6 +2538,9 @@ components:
         version:
           type: string
           description: "Semantic version"
+        schemaVersion:
+          type: string
+          description: "Schema format version (e.g., 1.0, 1.1). #255"
         schemaImage:
           type: string
           description: "OCI image used to extract the workflow schema"
@@ -2793,6 +2796,9 @@ components:
         description:
           type: string
           description: "Workflow description"
+        schemaVersion:
+          type: string
+          description: "Schema format version (e.g., 1.0, 1.1). #255"
         schemaImage:
           type: string
           description: "OCI image used to extract the workflow schema"
@@ -2862,6 +2868,7 @@ components:
       required:
         - workflowName
         - version
+        - schemaVersion
         - name
         - description
         - content
@@ -2887,6 +2894,11 @@ components:
           type: string
           maxLength: 50
           description: "Semantic version (e.g., v1.0.0)"
+        schemaVersion:
+          type: string
+          maxLength: 10
+          description: "Schema format version (e.g., 1.0, 1.1). Determines which structural fields are valid. BR-WORKFLOW-004 v1.1, #255."
+          example: "1.0"
         name:
           type: string
           maxLength: 255
@@ -4335,6 +4347,10 @@ components:
           type: string
           description: Workflow version
           example: "1.0.0"
+        schema_version:
+          type: string
+          description: "Schema format version (e.g., 1.0, 1.1). #255"
+          example: "1.0"
         status:
           type: string
           enum: [active, disabled, archived]
