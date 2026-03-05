@@ -309,8 +309,10 @@ sequenceDiagram
         Ctrl->>DS: POST audit: effectiveness.health.assessed (raw health data + score)
     end
 
-    Note over Ctrl,K8s: Step 4 — Post-remediation spec hash (immediate)
-    alt EA.status.components.hashComputed == false
+    Note over Ctrl,K8s: Step 4 — Post-remediation spec hash (deferred when HashComputeDelay set)
+    alt HashComputeDelay set AND deferral deadline in future
+        Ctrl-->>Ctrl: RequeueAfter(remaining time until creation + HashComputeDelay)
+    else EA.status.components.hashComputed == false
         Ctrl->>K8s: GET target resource .spec (uncached)
         K8s-->>Ctrl: Current .spec
         Ctrl->>Ctrl: SHA-256 hash of .spec
@@ -318,7 +320,7 @@ sequenceDiagram
         Ctrl->>DS: POST audit: effectiveness.hash.computed (pre/post hashes, match boolean)
     end
 
-    Note over Ctrl,AM: Step 5 — Alert resolution (immediate, if enabled)
+    Note over Ctrl,AM: Step 5 — Alert resolution (deferred when AlertCheckDelay set)
     alt alertmanager.enabled AND EA.status.components.alertAssessed == false
         Ctrl->>AM: GET /api/v2/alerts?filter=alertname={signal.signalName}
         AM-->>Ctrl: Active alerts (or empty if resolved)
@@ -729,7 +731,7 @@ All component events share these common fields:
 
 #### 9.2.0 `effectiveness.assessment.scheduled` (timeline event)
 
-Emitted on first reconciliation when the EM transitions the EA from Pending to WaitingForPropagation (async targets with HashComputeAfter), Pending to Stabilizing (sync targets with StabilizationWindow > 0), or Pending to Assessing (when StabilizationWindow == 0). Captures all derived timing values computed from the EA spec and EM config. This is the only event that records the assessment timeline, providing full observability of when each check was scheduled.
+Emitted on first reconciliation when the EM transitions the EA from Pending to WaitingForPropagation (async targets with `HashComputeDelay`), Pending to Stabilizing (sync targets with StabilizationWindow > 0), or Pending to Assessing (when StabilizationWindow == 0). Captures all derived timing values computed from the EA spec and EM config. This is the only event that records the assessment timeline, providing full observability of when each check was scheduled.
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -737,9 +739,10 @@ Emitted on first reconciliation when the EM transitions the EA from Pending to W
 | `correlation_id` | string | `RR.Name` (from `ea.spec.correlationID`) |
 | `service` | string | `"effectivenessmonitor"` |
 | `ea_name` | string | EA CRD name |
-| `validity_deadline` | string (RFC3339) | Computed: `EA.creationTimestamp + validityWindow` |
-| `prometheus_check_after` | string (RFC3339) | Computed: `EA.creationTimestamp + stabilizationWindow` |
-| `alertmanager_check_after` | string (RFC3339) | Computed: `EA.creationTimestamp + stabilizationWindow` |
+| `validity_deadline` | string (RFC3339) | Computed: `EA.creationTimestamp + effectiveValidity` (may be extended by runtime guard) |
+| `prometheus_check_after` | string (RFC3339) | Sync: `EA.creationTimestamp + StabilizationWindow`. Async: `EA.creationTimestamp + HashComputeDelay + StabilizationWindow` |
+| `alertmanager_check_after` | string (RFC3339) | Same as `prometheus_check_after`, plus `AlertCheckDelay` when set (proactive signals, #277) |
+| `hash_compute_after` | string (RFC3339) | Async only: `EA.creationTimestamp + HashComputeDelay`. Nil for sync targets |
 | `validity_window` | string | Duration from EM config (e.g., "30m0s") |
 | `stabilization_window` | string | Duration from EA spec (e.g., "5m0s") |
 
@@ -875,11 +878,13 @@ spec:
   # SignalTarget always from RR. RemediationTarget prefers AI AffectedResource, falls back to RR target.
   config:
     stabilizationWindow: 5m
+    # hashComputeDelay: 4m          # Optional: set by RO for async targets (GitOps/CRD). EM defers hash until creation + 4m.
+    # alertCheckDelay: 5m           # Optional: set by RO for proactive signals. EM defers alert check by 5m beyond PrometheusCheckAfter.
 status:
   phase: Assessing   # Sync: Pending → Stabilizing → Assessing → Completed/Failed. Async: Pending → WaitingForPropagation → Stabilizing → Assessing → Completed/Failed. (Pending → Assessing when StabilizationWindow == 0)
-  validityDeadline: "2026-02-09T15:30:00Z"          # Computed by EM: creationTimestamp + validityWindow
-  prometheusCheckAfter: "2026-02-09T15:05:00Z"       # Computed by EM: creationTimestamp + stabilizationWindow
-  alertManagerCheckAfter: "2026-02-09T15:05:00Z"     # Computed by EM: creationTimestamp + stabilizationWindow
+  validityDeadline: "2026-02-09T15:30:00Z"          # Computed by EM: creationTimestamp + effectiveValidity (may be extended by runtime guard)
+  prometheusCheckAfter: "2026-02-09T15:05:00Z"       # Sync: creation + StabilizationWindow. Async: creation + HashComputeDelay + StabilizationWindow
+  alertManagerCheckAfter: "2026-02-09T15:05:00Z"     # Same as prometheusCheckAfter, plus AlertCheckDelay when set (#277)
   components:
     healthAssessed: false
     healthScore: null
@@ -899,6 +904,7 @@ status:
 | Phase | Meaning |
 |-------|---------|
 | `Pending` | EA created by RO, EM has not yet reconciled it |
+| `WaitingForPropagation` | Async targets only: EM is waiting for `HashComputeDelay` to elapse before computing the hash. Entered when `config.hashComputeDelay` is set and the deferral deadline is in the future (#253, #277) |
 | `Stabilizing` | During stabilization window; derived timing fields pre-computed and persisted; EM waits for stabilization to elapse before transitioning to Assessing (StabilizationWindow > 0 only) |
 | `Assessing` | EM is actively processing (component checks in progress) |
 | `Completed` | Assessment finished — score computed, audit event emitted |
@@ -963,13 +969,19 @@ assessment:
   maxConcurrentAssessments: 10           # controller-runtime MaxConcurrentReconciles
 ```
 
-> **Note**: `prometheus.enabled` and `alertmanager.enabled` are EM operational config — the EM decides which assessment components to run based on its own config, not per-EA. The RO only sets `stabilizationWindow` in the EA spec when creating the EA. The `stabilizationWindow` used for each EA comes from the EA spec (set by RO); the EM's `validityWindow` is used to compute `validityDeadline` in EA status.
+> **Note**: `prometheus.enabled` and `alertmanager.enabled` are EM operational config — the EM decides which assessment components to run based on its own config, not per-EA. The RO sets `stabilizationWindow` (and optionally `hashComputeDelay`, `alertCheckDelay`) in the EA spec config at creation time. The EM's `validityWindow` is used to compute `validityDeadline` in EA status.
 
-The `validityWindow` is used by the EM to compute `validityDeadline` in the EA status on first reconciliation:
+The EM computes derived timing in EA status on first reconciliation:
 ```
-EA.status.validityDeadline = EA.creationTimestamp + validityWindow  (computed by EM)
-EA.status.prometheusCheckAfter = EA.creationTimestamp + stabilizationWindow  (computed by EM)
-EA.status.alertManagerCheckAfter = EA.creationTimestamp + stabilizationWindow  (computed by EM)
+# Sync targets (hashComputeDelay nil):
+EA.status.prometheusCheckAfter   = EA.creationTimestamp + stabilizationWindow
+EA.status.alertManagerCheckAfter = prometheusCheckAfter (+ alertCheckDelay if set)
+EA.status.validityDeadline       = EA.creationTimestamp + effectiveValidity
+
+# Async targets (hashComputeDelay set):
+EA.status.prometheusCheckAfter   = EA.creationTimestamp + hashComputeDelay + stabilizationWindow
+EA.status.alertManagerCheckAfter = prometheusCheckAfter (+ alertCheckDelay if set)
+EA.status.validityDeadline       = EA.creationTimestamp + effectiveValidity (extended by runtime guard if needed)
 ```
 
 If `now > validityDeadline`, the EM marks the EA as `expired` without collecting data — the system state may no longer reflect this remediation (the cooldown has long expired, new remediations may have run, workloads have drifted).
