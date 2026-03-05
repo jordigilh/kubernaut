@@ -245,7 +245,7 @@ var _ = Describe("BR-ORCH-001: RemediationRequest Remediation Orchestrator", fun
                 nrList := testutil.ListNotificationRequests(fakeK8sClient, "kubernaut-system")
                 Expect(nrList).To(HaveLen(1))
                 Expect(nrList[0].Spec.NotificationType).To(Equal("approval_required"))
-                Expect(nrList[0].Spec.Channels).To(ContainElements(expectedChannels))
+                // Note: spec.channels was removed (#261). Channels are resolved by routing rules.
             },
             Entry("high_risk_action requires approval via all channels",
                 "high_risk_action", "high", []string{"slack", "email", "pagerduty"}),

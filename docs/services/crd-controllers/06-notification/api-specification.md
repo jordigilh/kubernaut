@@ -587,7 +587,7 @@ Status:
 
 ## 🏷️ Routing Spec Fields (BR-NOT-065, Issue #91)
 
-The Notification Service supports **spec-field-based routing** for notifications. When `NotificationRequest.spec.channels` is NOT specified, the service uses spec fields and `spec.metadata` to determine which channels to route to.
+The Notification Service supports **spec-field-based routing** for notifications. Routing rules are the **sole authority** for channel resolution (#261). The service uses spec fields and `spec.metadata` to determine which channels to route to.
 
 **Issue #91**: `kubernaut.ai/*` metadata labels were migrated to immutable CRD spec fields. Routing config keys are simplified (e.g., `severity` not `kubernaut.ai/severity`). Field selectors (`+kubebuilder:selectablefield`) replace label-based filtering.
 
@@ -738,9 +738,8 @@ const (
 
 ### **Routing Resolution Priority**
 
-1. If `spec.channels` is specified → Use those channels directly
-2. If `spec.channels` is empty → Resolve from routing rules based on spec fields and spec.metadata
-3. If no routing rules match → Use default receiver (console)
+1. Resolve channels from routing rules based on spec fields and spec.metadata (#261: routing is sole authority)
+2. If no routing rules match → Use default receiver (console)
 
 ### **Field Selectors**
 

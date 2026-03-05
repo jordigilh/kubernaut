@@ -70,8 +70,8 @@ grep -r "kubernaut\.io/" docs/ --include="*.md"
 
 This means:
 - `NotificationRequest.Spec.Recipients` is now **OPTIONAL**
-- `NotificationRequest.Spec.Channels` is now **OPTIONAL**
-- Notification Service routing rules determine recipients/channels based on labels
+- `NotificationRequest.Spec.Channels` was **REMOVED** (Issue #261) — routing rules are the sole authority for channel resolution
+- Notification Service routing rules determine recipients/channels based on spec fields
 
 ### CRD Schema Update
 
@@ -229,9 +229,9 @@ Please acknowledge this notice by adding your team's response below:
   - **Features Implemented**:
     - `ParseConfig()` - Alertmanager-compatible YAML parsing
     - `FindReceiver(labels)` - First-match ordered routing
-    - `ResolveChannelsForNotification()` - Label-based channel resolution
-    - `GetEffectiveChannels()` - Explicit spec.channels OR routing rules
+    - `ResolveChannelsForNotification()` - Spec-field-based channel resolution (sole authority after #261)
     - `DefaultConfig()` - Console fallback when no routing configured
+    - ~~`GetEffectiveChannels()`~~ — Removed in #261 (routing is always used)
   - **Test Results**: 177 unit tests passing (168 original + 37 new routing tests)
 
 ---
