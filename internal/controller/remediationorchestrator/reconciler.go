@@ -112,7 +112,7 @@ type Reconciler struct {
 	apiReader client.Reader
 
 	// DD-EM-004 v2.0, Issue #253: Config-driven async propagation delays.
-	// Used by createEffectivenessAssessmentIfNeeded to compute HashCheckDelay
+	// Used by createEffectivenessAssessmentIfNeeded to compute HashComputeDelay
 	// from gitOpsSyncDelay/operatorReconcileDelay instead of stabilization window.
 	asyncPropagation roconfig.AsyncPropagationConfig
 
@@ -2071,8 +2071,8 @@ func (r *Reconciler) createEffectivenessAssessmentIfNeeded(ctx context.Context, 
 	}
 
 	// DD-EM-004 v2.0, BR-RO-103, Issue #253, #277: Detect async-managed targets.
-	// Compute Duration-based hashCheckDelay for the EA Config.
-	var hashCheckDelay *metav1.Duration
+	// Compute Duration-based hashComputeDelay for the EA Config.
+	var hashComputeDelay *metav1.Duration
 	remediationKind := rr.Spec.TargetResource.Kind
 	if dualTarget != nil {
 		remediationKind = dualTarget.Remediation.Kind
@@ -2089,15 +2089,15 @@ func (r *Reconciler) createEffectivenessAssessmentIfNeeded(ctx context.Context, 
 
 	propagationDelay := r.asyncPropagation.ComputePropagationDelay(isGitOpsManaged, isCRD)
 	if propagationDelay > 0 {
-		hashCheckDelay = &metav1.Duration{Duration: propagationDelay}
+		hashComputeDelay = &metav1.Duration{Duration: propagationDelay}
 		logger.Info("Async-managed target detected, setting hash check delay",
 			"kind", remediationKind,
 			"gitOps", isGitOpsManaged,
 			"isCRD", isCRD,
-			"hashCheckDelay", propagationDelay)
+			"hashComputeDelay", propagationDelay)
 	}
 
-	// #277: Detect proactive signals via AIAnalysis.Spec.AnalysisRequest.SignalMode.
+	// #277: Detect proactive signals via AIAnalysis.Spec.AnalysisRequest.SignalContext.SignalMode.
 	// Proactive alerts (e.g. predict_linear) need extra time to resolve.
 	var alertCheckDelay *metav1.Duration
 	if ai != nil && ai.Spec.AnalysisRequest.SignalContext.SignalMode == "proactive" {
@@ -2109,12 +2109,15 @@ func (r *Reconciler) createEffectivenessAssessmentIfNeeded(ctx context.Context, 
 		}
 	}
 
-	name, err := r.eaCreator.CreateEffectivenessAssessment(ctx, rr, dualTarget, hashCheckDelay, alertCheckDelay)
+	name, err := r.eaCreator.CreateEffectivenessAssessment(ctx, rr, dualTarget, hashComputeDelay, alertCheckDelay)
 	if err != nil {
 		logger.Error(err, "Failed to create EffectivenessAssessment (non-fatal per ADR-EM-001)")
 		return
 	}
 	logger.Info("EffectivenessAssessment created", "eaName", name, "rrPhase", rr.Status.OverallPhase)
+
+	// #277: Emit orchestrator.ea.created audit event with propagation delay breakdown.
+	r.emitEACreatedAudit(ctx, rr, name, hashComputeDelay, alertCheckDelay, isGitOpsManaged, isCRD)
 
 	// ADR-EM-001, Batch 3: Persist EA ref on RR status for trackEffectivenessStatus.
 	// Uses helpers.UpdateRemediationRequestStatus for atomic persistence (same pattern
@@ -2242,6 +2245,45 @@ func (r *Reconciler) emitWorkflowCreatedAudit(ctx context.Context, rr *remediati
 
 	if err := r.auditStore.StoreAudit(ctx, event); err != nil {
 		logger.Error(err, "Failed to store workflow_created audit event")
+	}
+}
+
+// emitEACreatedAudit emits the orchestrator.ea.created audit event with propagation
+// delay breakdown. Issue #277: The RO is the source of truth for these delays.
+// Non-blocking — failures are logged but don't affect business logic.
+func (r *Reconciler) emitEACreatedAudit(ctx context.Context, rr *remediationv1.RemediationRequest, eaName string, hashComputeDelay, alertCheckDelay *metav1.Duration, isGitOpsManaged, isCRD bool) {
+	logger := log.FromContext(ctx)
+
+	if r.auditStore == nil {
+		return
+	}
+
+	data := roaudit.EACreatedData{
+		EAName:          eaName,
+		IsGitOpsManaged: isGitOpsManaged,
+		IsCRD:           isCRD,
+	}
+	if hashComputeDelay != nil {
+		data.HashComputeDelay = hashComputeDelay.Duration
+	}
+	if alertCheckDelay != nil {
+		data.AlertCheckDelay = alertCheckDelay.Duration
+	}
+	if isGitOpsManaged {
+		data.GitOpsSyncDelay = r.asyncPropagation.GitOpsSyncDelay
+	}
+	if isCRD {
+		data.OperatorReconcileDelay = r.asyncPropagation.OperatorReconcileDelay
+	}
+
+	event, err := r.auditManager.BuildEACreatedEvent(rr.Name, rr.Namespace, rr.Name, data)
+	if err != nil {
+		logger.Error(err, "Failed to build EA created audit event")
+		return
+	}
+
+	if err := r.auditStore.StoreAudit(ctx, event); err != nil {
+		logger.Error(err, "Failed to store EA created audit event")
 	}
 }
 

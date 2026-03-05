@@ -22,8 +22,8 @@ limitations under the License.
 //
 // Business Requirements:
 // - BR-EM-009: Derived timing computation (ValidityDeadline, CheckAfter, AlertCheckAfter)
-// - BR-EM-010.4: Stabilization anchored to HashCheckDelay for async targets (#253)
-// - Issue #277: AlertCheckDelay additive semantics, Duration-based HashCheckDelay
+// - BR-EM-010.4: Stabilization anchored to HashComputeDelay for async targets (#253)
+// - Issue #277: AlertCheckDelay additive semantics, Duration-based HashComputeDelay
 package timing
 
 import (
@@ -38,7 +38,7 @@ import (
 type DerivedTiming struct {
 	// CheckAfter is when Prometheus metrics checks should begin.
 	// For sync targets: creationTimestamp + StabilizationWindow.
-	// For async targets (#253): creationTimestamp + HashCheckDelay + StabilizationWindow.
+	// For async targets (#253): creationTimestamp + HashComputeDelay + StabilizationWindow.
 	CheckAfter metav1.Time
 
 	// AlertCheckAfter is when AlertManager alert resolution checks should begin.
@@ -61,16 +61,16 @@ type DerivedTiming struct {
 
 // ComputeDerivedTiming calculates the derived timing fields for an EA.
 //
-// For sync targets (hashCheckDelay nil or zero):
+// For sync targets (hashComputeDelay nil or zero):
 //
 //	CheckAfter = creationTimestamp + StabilizationWindow
 //	AlertCheckAfter = CheckAfter + AlertCheckDelay (or == CheckAfter if nil)
 //	ValidityDeadline = creationTimestamp + effectiveValidity
 //	Runtime guard extends validity when totalCheckOffset >= ValidityWindow.
 //
-// For async targets (hashCheckDelay non-nil, non-zero — Issue #253, #277):
+// For async targets (hashComputeDelay non-nil, non-zero — Issue #253, #277):
 //
-//	anchor = creationTimestamp + HashCheckDelay
+//	anchor = creationTimestamp + HashComputeDelay
 //	CheckAfter = anchor + StabilizationWindow
 //	AlertCheckAfter = CheckAfter + AlertCheckDelay (or == CheckAfter if nil)
 //	effectiveValidity = stab + alertCheckDelay + validity (always extended from anchor)
@@ -80,16 +80,16 @@ type DerivedTiming struct {
 //   - creationTimestamp: EA.metadata.creationTimestamp
 //   - stabilizationWindow: EA.Spec.Config.StabilizationWindow.Duration
 //   - validityWindow: ReconcilerConfig.ValidityWindow (EM-level config)
-//   - hashCheckDelay: EA.Spec.Config.HashCheckDelay (nil for sync targets)
+//   - hashComputeDelay: EA.Spec.Config.HashComputeDelay (nil for sync targets)
 //   - alertCheckDelay: EA.Spec.Config.AlertCheckDelay (nil when not proactive)
-func ComputeDerivedTiming(creationTimestamp metav1.Time, stabilizationWindow, validityWindow time.Duration, hashCheckDelay, alertCheckDelay *metav1.Duration) DerivedTiming {
+func ComputeDerivedTiming(creationTimestamp metav1.Time, stabilizationWindow, validityWindow time.Duration, hashComputeDelay, alertCheckDelay *metav1.Duration) DerivedTiming {
 	alertDelay := time.Duration(0)
 	if alertCheckDelay != nil {
 		alertDelay = alertCheckDelay.Duration
 	}
 
-	if hashCheckDelay != nil && hashCheckDelay.Duration > 0 {
-		anchor := creationTimestamp.Time.Add(hashCheckDelay.Duration)
+	if hashComputeDelay != nil && hashComputeDelay.Duration > 0 {
+		anchor := creationTimestamp.Time.Add(hashComputeDelay.Duration)
 		effectiveValidity := stabilizationWindow + alertDelay + validityWindow
 		checkAfter := metav1.NewTime(anchor.Add(stabilizationWindow))
 		alertCheckAfterTime := checkAfter

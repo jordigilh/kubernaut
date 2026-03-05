@@ -54,7 +54,7 @@ type Config struct {
 	Routing RoutingConfig `yaml:"routing"`
 
 	// AsyncPropagation configures delays for async-managed targets (GitOps, operator CRDs).
-	// The RO uses these values to compute HashCheckDelay when creating EA CRDs (#277).
+	// The RO uses these values to compute HashComputeDelay when creating EA CRDs (#277).
 	// DD-EM-004 v2.0, BR-RO-103.3, BR-RO-103.4, Issue #253
 	AsyncPropagation AsyncPropagationConfig `yaml:"asyncPropagation"`
 }

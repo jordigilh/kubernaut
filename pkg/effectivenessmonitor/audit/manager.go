@@ -507,17 +507,14 @@ func (m *Manager) RecordAssessmentScheduled(ctx context.Context, ea *eav1.Effect
 	if ea.Status.AlertManagerCheckAfter != nil {
 		payload.AlertmanagerCheckAfter = ogenclient.NewOptDateTime(ea.Status.AlertManagerCheckAfter.Time)
 	}
-	// #277: HashCheckDelay (Duration) replaces HashComputeAfter (Time).
-	// Compute the absolute deadline for the audit payload.
-	if ea.Spec.Config.HashCheckDelay != nil && ea.Spec.Config.HashCheckDelay.Duration > 0 {
-		hashDeadline := ea.CreationTimestamp.Time.Add(ea.Spec.Config.HashCheckDelay.Duration)
+	// #277: Duration-based delays replace old timestamp/propagation fields.
+	if ea.Spec.Config.HashComputeDelay != nil && ea.Spec.Config.HashComputeDelay.Duration > 0 {
+		hashDeadline := ea.CreationTimestamp.Time.Add(ea.Spec.Config.HashComputeDelay.Duration)
 		payload.HashComputeAfter = ogenclient.NewOptDateTime(hashDeadline)
+		payload.HashComputeDelay = ogenclient.NewOptString(ea.Spec.Config.HashComputeDelay.Duration.String())
 	}
-	// #277: Propagation delay fields (GitOpsSyncDelay, OperatorReconcileDelay) are
-	// no longer in the EA spec — the RO emits these in its own audit event.
-	// AlertCheckDelay is audited from EAConfig if set.
 	if ea.Spec.Config.AlertCheckDelay != nil && ea.Spec.Config.AlertCheckDelay.Duration > 0 {
-		payload.TotalPropagationDelay = ogenclient.NewOptString(ea.Spec.Config.AlertCheckDelay.Duration.String())
+		payload.AlertCheckDelay = ogenclient.NewOptString(ea.Spec.Config.AlertCheckDelay.Duration.String())
 	}
 	payload.ValidityWindow = ogenclient.NewOptString(validityWindow.String())
 	payload.StabilizationWindow = ogenclient.NewOptString(ea.Spec.Config.StabilizationWindow.Duration.String())
