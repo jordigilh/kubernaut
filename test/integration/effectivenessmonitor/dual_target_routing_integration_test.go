@@ -37,7 +37,7 @@ import (
 // These tests verify that the EM reconciler routes each assessment component
 // to the correct target when SignalTarget and RemediationTarget diverge:
 //   - Hash + drift guard: RemediationTarget (the modified resource)
-//   - Health: SignalTarget (the alerting resource)
+//   - Health: RemediationTarget (the resource that survives restarts, #275)
 //   - Metrics (PromQL): SignalTarget.Namespace
 //   - Alert: SignalTarget.Namespace (AlertContext)
 //
@@ -136,9 +136,9 @@ var _ = Describe("Dual-Target Routing (Issue #188, DD-EM-003)", func() {
 	})
 
 	// ========================================================================
-	// IT-EM-188-005: getTargetHealthStatus uses SignalTarget (Deployment kind)
+	// IT-EM-188-005: getTargetHealthStatus uses RemediationTarget (#275)
 	// ========================================================================
-	It("IT-EM-188-005: should use SignalTarget for health assessment (Deployment, not HPA)", func() {
+	It("IT-EM-188-005: should use RemediationTarget for health assessment (HPA, not Deployment)", func() {
 		ns := createTestNamespace("em-rt-005")
 		defer deleteTestNamespace(ns)
 
@@ -157,14 +157,14 @@ var _ = Describe("Dual-Target Routing (Issue #188, DD-EM-003)", func() {
 			g.Expect(fetchedEA.Status.Phase).To(Equal(eav1.PhaseCompleted))
 		}, timeout, interval).Should(Succeed())
 
-		// DD-EM-003: Health uses SignalTarget.
-		// SignalTarget.Kind = Deployment → workload health path → Score = &0.0 (no pods)
-		// If RemediationTarget (HPA) was used → default path → HealthNotApplicable → Score = nil
+		// #275: Health uses RemediationTarget (survives rolling restarts).
+		// RemediationTarget.Kind = HPA → non-workload kind → HealthNotApplicable → Score = nil
+		// If SignalTarget (Deployment) was used → workload health path → Score = &0.0 (no pods)
 		Expect(fetchedEA.Status.Components.HealthAssessed).To(BeTrue())
-		Expect(fetchedEA.Status.Components.HealthScore).NotTo(BeNil(),
-			"DD-EM-003: HealthScore should not be nil. Deployment target (SignalTarget) produces "+
-				"Score=0.0 (no pods found). HPA target (RemediationTarget) would produce Score=nil "+
-				"(HealthNotApplicable). A non-nil score proves SignalTarget was used.")
+		Expect(fetchedEA.Status.Components.HealthScore).To(BeNil(),
+			"#275: HealthScore should be nil. HPA target (RemediationTarget) produces "+
+				"HealthNotApplicable (Score=nil). A nil score proves RemediationTarget was used, "+
+				"not SignalTarget (Deployment) which would produce Score=0.0.")
 	})
 
 	// ========================================================================

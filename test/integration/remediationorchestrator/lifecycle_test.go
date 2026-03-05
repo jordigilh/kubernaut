@@ -334,10 +334,14 @@ var _ = Describe("AIAnalysis ManualReview Flow", Label("integration", "manual-re
 			Expect(nr.Spec.Metadata).To(HaveKeyWithValue("reason", "APIError"))
 			Expect(nr.Spec.Metadata).To(HaveKeyWithValue("subReason", "MaxRetriesExceeded"))
 
-			By("Verifying RR status updated to Failed with ManualReviewRequired")
+			By("Waiting for RR status to transition to Failed with ManualReviewRequired")
 			rr := &remediationv1.RemediationRequest{}
-			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rrName, Namespace: ROControllerNamespace}, rr)).To(Succeed())
-			Expect(rr.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed))
+			Eventually(func() string {
+				if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rrName, Namespace: ROControllerNamespace}, rr); err != nil {
+					return ""
+				}
+				return string(rr.Status.OverallPhase)
+			}, timeout, interval).Should(Equal(string(remediationv1.PhaseFailed)))
 			Expect(rr.Status.Outcome).To(Equal("ManualReviewRequired"))
 			Expect(rr.Status.RequiresManualReview).To(BeTrue())
 
