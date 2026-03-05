@@ -57,7 +57,6 @@ metadata:
     preconditions: Pod is managed by a Deployment or StatefulSet
 actionType: RestartPod
 labels:
-  signalName: OOMKilled
   severity: [critical]
   environment: [production]
   component: pod
@@ -104,7 +103,6 @@ var _ = Describe("OCI Schema Extractor (DD-WORKFLOW-017)", func() {
 
 			var labels map[string]interface{}
 			Expect(json.Unmarshal(labelsJSON, &labels)).To(Succeed())
-			Expect(labels).To(HaveKeyWithValue("signalName", "OOMKilled"))
 			Expect(labels["severity"]).To(Equal([]interface{}{"critical"}))
 			Expect(labels["environment"]).To(Equal([]interface{}{"production"}))
 			Expect(labels).To(HaveKeyWithValue("component", "pod"))
@@ -145,7 +143,6 @@ metadata:
     whenToUse: Test
 actionType: RestartPod
 labels:
-  signalName: OOMKilled
   severity: [critical]
   environment: [staging, production]
   component: pod
@@ -237,7 +234,6 @@ metadata:
     whenToUse: Test
 actionType: RestartPod
 labels:
-  signalName: OOMKilled
   severity: [critical]
   environment: [production]
   component: pod
@@ -278,7 +274,6 @@ metadata:
     whenToUse: Test
 actionType: RestartPod
 labels:
-  signalName: OOMKilled
   severity: [critical]
   environment: [production]
   component: pod
@@ -522,7 +517,6 @@ metadata:
     what: Incomplete workflow
     whenToUse: Testing validation
 labels:
-  signalName: OOMKilled
   severity: [critical]
   environment: [production]
   component: pod
