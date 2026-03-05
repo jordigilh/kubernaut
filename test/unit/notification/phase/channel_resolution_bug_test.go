@@ -30,10 +30,9 @@ import (
 var _ = Describe("#263: Channel Resolution Variable Shadowing Bug", func() {
 
 	// ========================================
-	// Bug: When spec.channels is empty (json:"-" after #260), the controller
-	// resolves channels from routing rules. Due to Go variable shadowing (:=
-	// inside an if block), the resolved channels never reach the delivery
-	// orchestrator or phase transition logic. DetermineTransition receives
+	// Bug: Routing resolves channels from rules (#260/#261). Due to Go variable
+	// shadowing (:= inside an if block), the resolved channels never reach the
+	// delivery orchestrator or phase transition logic. DetermineTransition receives
 	// 0 channels, and 0 == 0 makes it return Sent/AllDeliveriesSucceeded.
 	// ========================================
 
@@ -113,7 +112,7 @@ var _ = Describe("#263: Channel Resolution Variable Shadowing Bug", func() {
 	})
 
 	Context("UT-NT-263-002: Routing-resolved channels must reach delivery and phase transition", func() {
-		It("should correctly count channels resolved from routing (not spec.channels)", func() {
+		It("should correctly count channels resolved from routing", func() {
 			channels := []notificationv1.Channel{
 				notificationv1.Channel("slack:default-console"),
 				notificationv1.Channel("console"),

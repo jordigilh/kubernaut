@@ -918,7 +918,7 @@ func (r *NotificationRequestReconciler) handleDeliveryLoop(
 	// Get retry policy to check max attempts
 	policy := r.getRetryPolicy(notification)
 
-	// BR-NOT-065: Resolve channels from routing rules (always, since #260 removed spec.channels)
+	// BR-NOT-065: Resolve channels from routing rules (#261: routing is sole authority)
 	// BR-NOT-069: Set RoutingResolved condition for visibility
 	channels, routingReason, routingMessage := r.resolveChannelsFromRoutingWithDetails(ctx, notification)
 	log.Info("Resolved channels from routing rules",

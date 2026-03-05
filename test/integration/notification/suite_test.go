@@ -460,7 +460,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	GinkgoWriter.Println("  ✅ Delivery Orchestrator initialized (DD-NOT-007 Registration Pattern)")
 	GinkgoWriter.Println("  ✅ All 4 channels registered: console, slack, file, log (#261)")
 
-	// #261: Routing is the sole authority for channel resolution after spec.channels removal.
+	// #261: Routing is the sole authority for channel resolution.
 	// Tests select their channel set by setting spec.Metadata["test-channel-set"] to one of:
 	//   "slack-only", "console-slack", "all-channels"
 	// Notifications without this metadata key default to console-only.

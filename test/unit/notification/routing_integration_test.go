@@ -72,7 +72,7 @@ receivers:
 			Expect(err).ToNot(HaveOccurred())
 		})
 
-		Context("when NotificationRequest has no spec.channels", func() {
+		Context("when routing resolves channels from spec fields", func() {
 
 			It("should resolve channels from spec fields for critical approval notification", func() {
 				notification := &notificationv1alpha1.NotificationRequest{
@@ -170,7 +170,7 @@ receivers:
 			})
 		})
 
-		Context("when NotificationRequest has no spec.channels (routing resolves from config #260)", func() {
+		Context("when routing resolves channels from config (#260)", func() {
 
 			It("should resolve channels from routing config for approval_required type", func() {
 				notification := &notificationv1alpha1.NotificationRequest{

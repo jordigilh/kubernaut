@@ -269,8 +269,8 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 			GinkgoWriter.Printf("✅ Optional fields accepted - CRD created and processing started (BR-NOT-065)\n")
 		})
 
-		It("should accept notification with empty channels array (BR-NOT-065)", func() {
-			// BEHAVIOR: Empty channels triggers spec-field-based routing rules (BR-NOT-065)
+		It("should accept notification when channels omitted (routing rules apply, BR-NOT-065)", func() {
+			// BEHAVIOR: Routing rules are the sole authority for channel resolution (BR-NOT-065, #261)
 			// CORRECTNESS: CRD is created successfully and controller applies routing rules
 
 			notifName := fmt.Sprintf("empty-channels-%s", uniqueSuffix)
