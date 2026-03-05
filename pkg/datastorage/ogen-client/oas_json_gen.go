@@ -14693,12 +14693,6 @@ func (s *MandatoryLabels) Encode(e *jx.Encoder) {
 // encodeFields encodes fields.
 func (s *MandatoryLabels) encodeFields(e *jx.Encoder) {
 	{
-		if s.SignalName.Set {
-			e.FieldStart("signalName")
-			s.SignalName.Encode(e)
-		}
-	}
-	{
 		e.FieldStart("severity")
 		e.ArrStart()
 		for _, elem := range s.Severity {
@@ -14724,12 +14718,11 @@ func (s *MandatoryLabels) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfMandatoryLabels = [5]string{
-	0: "signalName",
-	1: "severity",
-	2: "component",
-	3: "environment",
-	4: "priority",
+var jsonFieldsNameOfMandatoryLabels = [4]string{
+	0: "severity",
+	1: "component",
+	2: "environment",
+	3: "priority",
 }
 
 // Decode decodes MandatoryLabels from json.
@@ -14741,18 +14734,8 @@ func (s *MandatoryLabels) Decode(d *jx.Decoder) error {
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
-		case "signalName":
-			if err := func() error {
-				s.SignalName.Reset()
-				if err := s.SignalName.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"signalName\"")
-			}
 		case "severity":
-			requiredBitSet[0] |= 1 << 1
+			requiredBitSet[0] |= 1 << 0
 			if err := func() error {
 				s.Severity = make([]MandatoryLabelsSeverityItem, 0)
 				if err := d.Arr(func(d *jx.Decoder) error {
@@ -14770,7 +14753,7 @@ func (s *MandatoryLabels) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"severity\"")
 			}
 		case "component":
-			requiredBitSet[0] |= 1 << 2
+			requiredBitSet[0] |= 1 << 1
 			if err := func() error {
 				v, err := d.Str()
 				s.Component = string(v)
@@ -14782,7 +14765,7 @@ func (s *MandatoryLabels) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"component\"")
 			}
 		case "environment":
-			requiredBitSet[0] |= 1 << 3
+			requiredBitSet[0] |= 1 << 2
 			if err := func() error {
 				s.Environment = make([]MandatoryLabelsEnvironmentItem, 0)
 				if err := d.Arr(func(d *jx.Decoder) error {
@@ -14800,7 +14783,7 @@ func (s *MandatoryLabels) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"environment\"")
 			}
 		case "priority":
-			requiredBitSet[0] |= 1 << 4
+			requiredBitSet[0] |= 1 << 3
 			if err := func() error {
 				if err := s.Priority.Decode(d); err != nil {
 					return err
@@ -14819,7 +14802,7 @@ func (s *MandatoryLabels) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00011110,
+		0b00001111,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -30180,10 +30163,6 @@ func (s *WorkflowSearchFilters) Encode(e *jx.Encoder) {
 // encodeFields encodes fields.
 func (s *WorkflowSearchFilters) encodeFields(e *jx.Encoder) {
 	{
-		e.FieldStart("signalName")
-		e.Str(s.SignalName)
-	}
-	{
 		e.FieldStart("severity")
 		s.Severity.Encode(e)
 	}
@@ -30223,15 +30202,14 @@ func (s *WorkflowSearchFilters) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfWorkflowSearchFilters = [8]string{
-	0: "signalName",
-	1: "severity",
-	2: "component",
-	3: "environment",
-	4: "priority",
-	5: "customLabels",
-	6: "detectedLabels",
-	7: "status",
+var jsonFieldsNameOfWorkflowSearchFilters = [7]string{
+	0: "severity",
+	1: "component",
+	2: "environment",
+	3: "priority",
+	4: "customLabels",
+	5: "detectedLabels",
+	6: "status",
 }
 
 // Decode decodes WorkflowSearchFilters from json.
@@ -30243,20 +30221,8 @@ func (s *WorkflowSearchFilters) Decode(d *jx.Decoder) error {
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
-		case "signalName":
-			requiredBitSet[0] |= 1 << 0
-			if err := func() error {
-				v, err := d.Str()
-				s.SignalName = string(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"signalName\"")
-			}
 		case "severity":
-			requiredBitSet[0] |= 1 << 1
+			requiredBitSet[0] |= 1 << 0
 			if err := func() error {
 				if err := s.Severity.Decode(d); err != nil {
 					return err
@@ -30266,7 +30232,7 @@ func (s *WorkflowSearchFilters) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"severity\"")
 			}
 		case "component":
-			requiredBitSet[0] |= 1 << 2
+			requiredBitSet[0] |= 1 << 1
 			if err := func() error {
 				v, err := d.Str()
 				s.Component = string(v)
@@ -30278,7 +30244,7 @@ func (s *WorkflowSearchFilters) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"component\"")
 			}
 		case "environment":
-			requiredBitSet[0] |= 1 << 3
+			requiredBitSet[0] |= 1 << 2
 			if err := func() error {
 				v, err := d.Str()
 				s.Environment = string(v)
@@ -30290,7 +30256,7 @@ func (s *WorkflowSearchFilters) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"environment\"")
 			}
 		case "priority":
-			requiredBitSet[0] |= 1 << 4
+			requiredBitSet[0] |= 1 << 3
 			if err := func() error {
 				if err := s.Priority.Decode(d); err != nil {
 					return err
@@ -30346,7 +30312,7 @@ func (s *WorkflowSearchFilters) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00011111,
+		0b00001111,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

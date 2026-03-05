@@ -2642,16 +2642,11 @@ components:
     WorkflowSearchFilters:
       type: object
       required:
-        - signalName
         - severity
         - component
         - environment
         - priority
       properties:
-        signalName:
-          type: string
-          description: "Signal name (mandatory: OOMKilled, CrashLoopBackOff, etc.)"
-          example: "OOMKilled"
         severity:
           type: string
           description: "Severity level (mandatory: critical, high, medium, low)"
@@ -2683,17 +2678,13 @@ components:
 
     MandatoryLabels:
       type: object
-      description: "4 mandatory + 1 optional workflow labels (DD-WORKFLOW-016: signalName now optional)"
+      description: "4 mandatory workflow labels (Issue #274: signalName removed per DD-WORKFLOW-016)"
       required:
         - severity
         - component
         - environment
         - priority
       properties:
-        signalName:
-          type: string
-          description: "Signal name this workflow handles (optional metadata per DD-WORKFLOW-016)"
-          example: "OOMKilled"
         severity:
           type: array
           items:
@@ -2805,9 +2796,6 @@ components:
         description:
           type: string
           description: "Workflow description"
-        signalName:
-          type: string
-          description: "Signal name this workflow handles"
         schemaVersion:
           type: string
           description: "Schema format version (e.g., 1.0, 1.1). #255"

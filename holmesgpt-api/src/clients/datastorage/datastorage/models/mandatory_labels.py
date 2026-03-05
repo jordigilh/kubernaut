@@ -18,7 +18,7 @@ import re  # noqa: F401
 import json
 
 
-from typing import Any, ClassVar, Dict, List, Optional
+from typing import Any, ClassVar, Dict, List
 from pydantic import BaseModel, StrictStr, field_validator
 from pydantic import Field
 from typing_extensions import Annotated
@@ -29,14 +29,13 @@ except ImportError:
 
 class MandatoryLabels(BaseModel):
     """
-    4 mandatory + 1 optional workflow labels (DD-WORKFLOW-016: signalName now optional)
+    4 mandatory workflow labels (Issue #274: signalName removed per DD-WORKFLOW-016)
     """ # noqa: E501
-    signal_name: Optional[StrictStr] = Field(default=None, description="Signal name this workflow handles (optional metadata per DD-WORKFLOW-016)", alias="signalName")
     severity: Annotated[List[StrictStr], Field(min_length=1)] = Field(description="Severity level(s) this workflow is designed for. Always an array. To match any severity, list all levels.")
     component: StrictStr = Field(description="Kubernetes resource type this workflow targets (e.g., pod, deployment, node)")
     environment: Annotated[List[StrictStr], Field(min_length=1)] = Field(description="Target environments (workflow can declare multiple, '*' matches all)")
     priority: StrictStr = Field(description="Business priority level (P0, P1, P2, P3, * for any)")
-    __properties: ClassVar[List[str]] = ["signalName", "severity", "component", "environment", "priority"]
+    __properties: ClassVar[List[str]] = ["severity", "component", "environment", "priority"]
 
     @field_validator('severity')
     def severity_validate_enum(cls, value):
@@ -110,7 +109,6 @@ class MandatoryLabels(BaseModel):
             return cls.model_validate(obj)
 
         _obj = cls.model_validate({
-            "signalName": obj.get("signalName"),
             "severity": obj.get("severity"),
             "component": obj.get("component"),
             "environment": obj.get("environment"),

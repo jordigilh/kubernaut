@@ -8076,11 +8076,9 @@ func (s *ListWorkflowsStatus) UnmarshalText(data []byte) error {
 // LivenessCheckOK is response for LivenessCheck operation.
 type LivenessCheckOK struct{}
 
-// 4 mandatory + 1 optional workflow labels (DD-WORKFLOW-016: signalName now optional).
+// 4 mandatory workflow labels (Issue #274: signalName removed per DD-WORKFLOW-016).
 // Ref: #/components/schemas/MandatoryLabels
 type MandatoryLabels struct {
-	// Signal name this workflow handles (optional metadata per DD-WORKFLOW-016).
-	SignalName OptString `json:"signalName"`
 	// Severity level(s) this workflow is designed for. Always an array. To match any severity, list all
 	// levels.
 	Severity []MandatoryLabelsSeverityItem `json:"severity"`
@@ -8090,11 +8088,6 @@ type MandatoryLabels struct {
 	Environment []MandatoryLabelsEnvironmentItem `json:"environment"`
 	// Business priority level (P0, P1, P2, P3, * for any).
 	Priority MandatoryLabelsPriority `json:"priority"`
-}
-
-// GetSignalName returns the value of SignalName.
-func (s *MandatoryLabels) GetSignalName() OptString {
-	return s.SignalName
 }
 
 // GetSeverity returns the value of Severity.
@@ -8115,11 +8108,6 @@ func (s *MandatoryLabels) GetEnvironment() []MandatoryLabelsEnvironmentItem {
 // GetPriority returns the value of Priority.
 func (s *MandatoryLabels) GetPriority() MandatoryLabelsPriority {
 	return s.Priority
-}
-
-// SetSignalName sets the value of SignalName.
-func (s *MandatoryLabels) SetSignalName(val OptString) {
-	s.SignalName = val
 }
 
 // SetSeverity sets the value of Severity.
@@ -19438,8 +19426,6 @@ func (s *WorkflowResultAuditLabels) init() WorkflowResultAuditLabels {
 
 // Ref: #/components/schemas/WorkflowSearchFilters
 type WorkflowSearchFilters struct {
-	// Signal name (mandatory: OOMKilled, CrashLoopBackOff, etc.).
-	SignalName string `json:"signalName"`
 	// Severity level (mandatory: critical, high, medium, low).
 	Severity WorkflowSearchFiltersSeverity `json:"severity"`
 	// Component type (mandatory: pod, node, deployment, etc.).
@@ -19452,11 +19438,6 @@ type WorkflowSearchFilters struct {
 	DetectedLabels OptDetectedLabels             `json:"detectedLabels"`
 	// Workflow lifecycle status filter.
 	Status []WorkflowSearchFiltersStatusItem `json:"status"`
-}
-
-// GetSignalName returns the value of SignalName.
-func (s *WorkflowSearchFilters) GetSignalName() string {
-	return s.SignalName
 }
 
 // GetSeverity returns the value of Severity.
@@ -19492,11 +19473,6 @@ func (s *WorkflowSearchFilters) GetDetectedLabels() OptDetectedLabels {
 // GetStatus returns the value of Status.
 func (s *WorkflowSearchFilters) GetStatus() []WorkflowSearchFiltersStatusItem {
 	return s.Status
-}
-
-// SetSignalName sets the value of SignalName.
-func (s *WorkflowSearchFilters) SetSignalName(val string) {
-	s.SignalName = val
 }
 
 // SetSeverity sets the value of Severity.
