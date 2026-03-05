@@ -392,7 +392,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			"stabilizationWindow", ea.Spec.Config.StabilizationWindow.Duration,
 			"validityDeadline", deadline,
 			"prometheusCheckAfter", checkAfter,
-			"alertManagerCheckAfter", checkAfter,
+			"alertManagerCheckAfter", alertCheckAfter,
 		)
 
 		pendingTransition = true

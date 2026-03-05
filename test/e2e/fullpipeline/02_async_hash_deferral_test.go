@@ -40,11 +40,10 @@ import (
 
 // E2E-FP-253-001: Async Hash Deferral for CRD Targets (corrected timing model)
 //
-// Validates DD-EM-004 v2.0 / BR-EM-010 / Issue #253: When the remediation target is
-// an operator-managed CRD (cert-manager Certificate), the RO uses config-driven
-// propagation delays (not stabilization window) for HashComputeAfter, propagates
-// individual delay fields to the EA spec, and the EM uses the corrected timing model
-// with WaitingForPropagation phase.
+// Validates DD-EM-004 v2.0 / BR-EM-010 / Issue #253, #277: When the remediation
+// target is an operator-managed CRD (cert-manager Certificate), the RO computes
+// a config-driven propagation delay and sets Config.HashCheckDelay (Duration) in
+// the EA spec. The EM uses the corrected timing model with WaitingForPropagation.
 //
 // Pipeline:
 //
@@ -52,11 +51,10 @@ import (
 //
 // Key validations:
 //  1. RO detects Certificate (cert-manager.io/v1) as non-built-in CRD via REST mapper
-//  2. EA.Spec.HashComputeAfter uses config-driven propagation delay (not stabilization window)
-//  3. EA.Spec.OperatorReconcileDelay is set (propagated from RO config)
-//  4. EA enters WaitingForPropagation phase before Stabilizing
-//  5. Audit trail contains propagation delay fields in assessment.scheduled event
-//  6. EA reaches terminal phase after propagation + stabilization window
+//  2. EA.Spec.Config.HashCheckDelay set as Duration-based delay (#277)
+//  3. EA enters WaitingForPropagation phase before Stabilizing
+//  4. Audit trail contains hash_compute_after in assessment.scheduled event
+//  5. EA reaches terminal phase after propagation + stabilization window
 //
 // Self-contained: cert-manager is installed in BeforeAll and only affects this test.
 var _ = Describe("Async Hash Deferral for CRD Targets [DD-EM-004 v2.0, BR-EM-010, #253]", Serial, Ordered, func() {
