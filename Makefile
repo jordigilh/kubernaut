@@ -959,11 +959,12 @@ IMAGE_DOCKERFILES_signalprocessing := docker/signalprocessing-controller.Dockerf
 IMAGE_DOCKERFILES_workflowexecution := docker/workflowexecution-controller.Dockerfile
 IMAGE_DOCKERFILES_effectivenessmonitor := docker/effectivenessmonitor-controller.Dockerfile
 
-# _image_build_one builds a single service image (native arch, arch-suffixed tag).
+# _image_build_one builds a single service image for a specific platform.
+# --platform ensures TARGETARCH is set correctly for cross-compilation (e.g., arm64 on amd64 host).
 # Usage: $(call _image_build_one,<service>,<dockerfile>)
 define _image_build_one
 	@echo "  Building $(1) [$(IMAGE_ARCH)]..."
-	@$(CONTAINER_TOOL) build -t $(IMAGE_REGISTRY)/$(1):$(IMAGE_TAG)-$(IMAGE_ARCH) -f $(2) .
+	@$(CONTAINER_TOOL) build --platform linux/$(IMAGE_ARCH) -t $(IMAGE_REGISTRY)/$(1):$(IMAGE_TAG)-$(IMAGE_ARCH) -f $(2) .
 
 endef
 
@@ -985,7 +986,9 @@ image-build: ## Build images for all services (native arch, arch-suffixed tag)
 	@echo ""
 	$(foreach svc,$(IMAGE_SERVICES),$(call _image_build_one,$(svc),$(IMAGE_DOCKERFILES_$(svc))))
 	@echo "  Building holmesgpt-api [$(IMAGE_ARCH)]..."
-	@$(CONTAINER_TOOL) build -t $(IMAGE_REGISTRY)/holmesgpt-api:$(IMAGE_TAG)-$(IMAGE_ARCH) -f holmesgpt-api/Dockerfile .
+	@$(CONTAINER_TOOL) build --platform linux/$(IMAGE_ARCH) -t $(IMAGE_REGISTRY)/holmesgpt-api:$(IMAGE_TAG)-$(IMAGE_ARCH) -f holmesgpt-api/Dockerfile .
+	@echo "  Building must-gather [$(IMAGE_ARCH)]..."
+	@$(CONTAINER_TOOL) build --platform linux/$(IMAGE_ARCH) -t $(IMAGE_REGISTRY)/must-gather:$(IMAGE_TAG)-$(IMAGE_ARCH) -f cmd/must-gather/Dockerfile cmd/must-gather/
 	@echo ""
 	@echo "✅ All images built ($(IMAGE_REGISTRY):$(IMAGE_TAG)-$(IMAGE_ARCH))."
 	@echo "   Push with: make image-push IMAGE_TAG=$(IMAGE_TAG)"
@@ -998,6 +1001,8 @@ image-push: ## Push arch-suffixed images to registry
 	$(foreach svc,$(IMAGE_SERVICES),$(call _image_push_one,$(svc)))
 	@echo "  Pushing $(IMAGE_REGISTRY)/holmesgpt-api:$(IMAGE_TAG)-$(IMAGE_ARCH)..."
 	@$(CONTAINER_TOOL) push $(IMAGE_REGISTRY)/holmesgpt-api:$(IMAGE_TAG)-$(IMAGE_ARCH)
+	@echo "  Pushing $(IMAGE_REGISTRY)/must-gather:$(IMAGE_TAG)-$(IMAGE_ARCH)..."
+	@$(CONTAINER_TOOL) push $(IMAGE_REGISTRY)/must-gather:$(IMAGE_TAG)-$(IMAGE_ARCH)
 	@echo ""
 	@echo "✅ All images pushed to $(IMAGE_REGISTRY) with tag $(IMAGE_TAG)-$(IMAGE_ARCH)."
 
@@ -1008,7 +1013,7 @@ image-manifest: ## Create and push multi-arch manifests (run after both arches a
 	@echo "   Tag:      $(IMAGE_TAG)"
 	@echo "   Arches:   amd64, arm64"
 	@echo ""
-	@for svc in $(IMAGE_SERVICES) holmesgpt-api; do \
+	@for svc in $(IMAGE_SERVICES) holmesgpt-api must-gather; do \
 	    echo "  Manifest: $$svc"; \
 	    $(CONTAINER_TOOL) manifest rm $(IMAGE_REGISTRY)/$$svc:$(IMAGE_TAG) 2>/dev/null || true; \
 	    $(CONTAINER_TOOL) manifest create $(IMAGE_REGISTRY)/$$svc:$(IMAGE_TAG) \
@@ -1022,15 +1027,18 @@ image-manifest: ## Create and push multi-arch manifests (run after both arches a
 
 # Per-service image targets (e.g., make image-build-aianalysis IMAGE_TAG=demo-v1.0)
 .PHONY: image-build-%
-image-build-%: ## Build a single service image (native arch)
+image-build-%: ## Build a single service image (specified arch via IMAGE_ARCH)
 	@if [ "$*" = "holmesgpt-api" ]; then \
 	    echo "  Building holmesgpt-api [$(IMAGE_ARCH)]..."; \
-	    $(CONTAINER_TOOL) build -t $(IMAGE_REGISTRY)/holmesgpt-api:$(IMAGE_TAG)-$(IMAGE_ARCH) -f holmesgpt-api/Dockerfile .; \
+	    $(CONTAINER_TOOL) build --platform linux/$(IMAGE_ARCH) -t $(IMAGE_REGISTRY)/holmesgpt-api:$(IMAGE_TAG)-$(IMAGE_ARCH) -f holmesgpt-api/Dockerfile .; \
+	elif [ "$*" = "must-gather" ]; then \
+	    echo "  Building must-gather [$(IMAGE_ARCH)]..."; \
+	    $(CONTAINER_TOOL) build --platform linux/$(IMAGE_ARCH) -t $(IMAGE_REGISTRY)/must-gather:$(IMAGE_TAG)-$(IMAGE_ARCH) -f cmd/must-gather/Dockerfile cmd/must-gather/; \
 	elif [ -n "$(IMAGE_DOCKERFILES_$*)" ]; then \
 	    echo "  Building $* [$(IMAGE_ARCH)]..."; \
-	    $(CONTAINER_TOOL) build -t $(IMAGE_REGISTRY)/$*:$(IMAGE_TAG)-$(IMAGE_ARCH) -f $(IMAGE_DOCKERFILES_$*) .; \
+	    $(CONTAINER_TOOL) build --platform linux/$(IMAGE_ARCH) -t $(IMAGE_REGISTRY)/$*:$(IMAGE_TAG)-$(IMAGE_ARCH) -f $(IMAGE_DOCKERFILES_$*) .; \
 	else \
-	    echo "ERROR: Unknown service '$*'. Available: $(IMAGE_SERVICES) holmesgpt-api"; exit 1; \
+	    echo "ERROR: Unknown service '$*'. Available: $(IMAGE_SERVICES) holmesgpt-api must-gather"; exit 1; \
 	fi
 
 .PHONY: image-push-%
