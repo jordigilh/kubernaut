@@ -23,6 +23,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -53,6 +54,45 @@ var kindToGroup = map[string]string{
 	"DaemonSet":        "apps",
 	"Job":              "batch",
 	"CronJob":          "batch",
+}
+
+// KindToGroup returns a copy of the authoritative kind-to-API-group mapping
+// used for owner chain resolution. This is the single source of truth for which
+// Kubernetes resource kinds the Gateway must be able to look up.
+//
+// Exported so the cache configuration and tests can reference it without
+// duplicating the list.
+func KindToGroup() map[string]string {
+	result := make(map[string]string, len(kindToGroup))
+	for k, v := range kindToGroup {
+		result[k] = v
+	}
+	return result
+}
+
+// OwnerChainCacheObjects returns cache.ByObject entries for every kind in
+// kindToGroup using PartialObjectMetadata. These entries configure the
+// controller-runtime cache to run metadata-only informers for all resource
+// kinds needed by K8sOwnerResolver and ScopeManager.
+//
+// Business Requirements:
+//   - BR-GATEWAY-004: Signal Fingerprinting (owner-chain-based deduplication)
+//   - ADR-053: Resource Scope Management (metadata-only informer cache)
+//
+// Fix for #270: Without these entries the cache only watches RemediationRequest,
+// causing OwnerResolver lookups to fail and fingerprints to fall back to pod-level.
+func OwnerChainCacheObjects() map[client.Object]cache.ByObject {
+	entries := make(map[client.Object]cache.ByObject, len(kindToGroup))
+	for kind, group := range kindToGroup {
+		obj := &metav1.PartialObjectMetadata{}
+		obj.SetGroupVersionKind(schema.GroupVersionKind{
+			Group:   group,
+			Version: "v1",
+			Kind:    kind,
+		})
+		entries[obj] = cache.ByObject{}
+	}
+	return entries
 }
 
 // K8sOwnerResolver resolves the top-level controller owner of a Kubernetes
