@@ -73,9 +73,7 @@ var _ = Describe("Category 12: Observability & Status", Label("integration", "ob
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Status Observability Test",
 					Body:     "Testing status field population for observability",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},},
+				},
 			}
 
 			err := k8sClient.Create(ctx, notif)
@@ -139,9 +137,7 @@ var _ = Describe("Category 12: Observability & Status", Label("integration", "ob
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Retry Observability Test",
 					Body:     "Testing retry attempt tracking in status",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#test"},
-					},RetryPolicy: &notificationv1alpha1.RetryPolicy{
+					RetryPolicy: &notificationv1alpha1.RetryPolicy{
 						MaxAttempts: 3, // Allow retries for observability
 					},
 					Metadata: map[string]string{
@@ -209,9 +205,7 @@ var _ = Describe("Category 12: Observability & Status", Label("integration", "ob
 					Priority: notificationv1alpha1.NotificationPriorityHigh,
 					Subject:  "Latency Observability Test",
 					Body:     "Testing delivery latency tracking",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},},
+				},
 			}
 
 			err := k8sClient.Create(ctx, notif)
@@ -289,10 +283,6 @@ var _ = Describe("Category 12: Observability & Status", Label("integration", "ob
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Multi-Channel Observability Test",
 					Body:     "Testing per-channel observability",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-						{Slack: "#test"},
-					},
 					Metadata: map[string]string{
 						"test-channel-set": "console-slack",
 					},
@@ -359,9 +349,7 @@ var _ = Describe("Category 12: Observability & Status", Label("integration", "ob
 					Priority: notificationv1alpha1.NotificationPriorityLow,
 					Subject:  "State Transition Observability",
 					Body:     "Testing lifecycle state observability",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},},
+				},
 			}
 
 			err := k8sClient.Create(ctx, notif)

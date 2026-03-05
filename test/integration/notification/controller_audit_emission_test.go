@@ -188,9 +188,6 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 					Priority: notificationv1alpha1.NotificationPriorityCritical,
 					Subject:  "Audit Emission Test - Slack Success",
 					Body:     "Testing controller emits audit on successful Slack delivery",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#test-channel"},
-					},
 					// DD-AUDIT-CORRELATION-002: Use RemediationRequestRef.Name as correlation_id
 					RemediationRequestRef: &corev1.ObjectReference{
 						Name: testID, // RR name is universal correlation ID
@@ -327,9 +324,6 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 					Priority: notificationv1alpha1.NotificationPriorityCritical,
 					Subject:  "Multi-Channel Audit Test",
 					Body:     "Testing audit events for multiple channels",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#test-channel"},
-					},
 					// DD-AUDIT-CORRELATION-002: Use RemediationRequestRef.Name as correlation_id
 					RemediationRequestRef: &corev1.ObjectReference{
 						Name: testID, // RR name is universal correlation ID
@@ -465,9 +459,6 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 					Priority: notificationv1alpha1.NotificationPriorityCritical,
 					Subject:  "Audit Emission Test - Slack Failure",
 					Body:     "Testing controller emits audit on failed Slack delivery",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#test-failure"},
-					},
 					// DD-AUDIT-CORRELATION-002: Use RemediationRequestRef.Name as correlation_id
 					RemediationRequestRef: &corev1.ObjectReference{
 						Name: testID, // RR name is universal correlation ID

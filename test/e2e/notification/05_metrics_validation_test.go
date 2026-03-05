@@ -79,9 +79,6 @@ var _ = Describe("Metrics E2E Validation", Label("metrics"), func() {
 					Subject:  "Metrics Test: Requests Total",
 					Body:     "Testing notification_requests_total metric",
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
-					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#metrics-test"},
-					},
 				},
 			}
 			err := k8sClient.Create(ctx, notification)
@@ -142,9 +139,6 @@ var _ = Describe("Metrics E2E Validation", Label("metrics"), func() {
 					Subject:  "Metrics Test: Delivery Attempts",
 					Body:     "Testing notification_delivery_attempts_total metric",
 					Priority: notificationv1alpha1.NotificationPriorityCritical,
-					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#metrics-test"},
-					},
 				},
 			}
 			Expect(k8sClient.Create(ctx, notification)).To(Succeed())
@@ -205,9 +199,6 @@ var _ = Describe("Metrics E2E Validation", Label("metrics"), func() {
 					Subject:  "Metrics Test: Delivery Duration",
 					Body:     "Testing kubernaut_notification_delivery_duration_seconds metric",
 					Priority: notificationv1alpha1.NotificationPriorityLow,
-					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#metrics-test"},
-					},
 				},
 			}
 			Expect(k8sClient.Create(ctx, notification)).To(Succeed())
@@ -271,9 +262,6 @@ var _ = Describe("Metrics E2E Validation", Label("metrics"), func() {
 					Subject:  "Metrics Test: All Metrics Validation",
 					Body:     "Testing key metrics are exposed",
 					Priority: notificationv1alpha1.NotificationPriorityCritical,
-					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#metrics-test"},
-					},
 				},
 			}
 			err := k8sClient.Create(ctx, notification)

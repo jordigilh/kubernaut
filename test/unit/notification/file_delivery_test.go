@@ -76,9 +76,6 @@ var _ = Describe("FileDeliveryService Unit Tests", func() {
 					Subject:  "Test Subject",
 					Body:     "Test Body",
 					Priority: notificationv1alpha1.NotificationPriorityCritical,
-					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#test"},
-					},
 				},
 			}
 
@@ -106,7 +103,6 @@ var _ = Describe("FileDeliveryService Unit Tests", func() {
 			Expect(savedNotification.Spec.Subject).To(Equal("Test Subject"))
 			Expect(savedNotification.Spec.Body).To(Equal("Test Body"))
 			Expect(savedNotification.Spec.Priority).To(Equal(notificationv1alpha1.NotificationPriorityCritical))
-			Expect(savedNotification.Spec.Recipients).To(HaveLen(1))
 		})
 
 		It("should create unique files for concurrent deliveries (thread safety)", func() {
@@ -255,40 +251,6 @@ var _ = Describe("FileDeliveryService Unit Tests", func() {
 
 			// CORRECTNESS: Priority preserved (BR-NOT-056)
 			Expect(saved.Spec.Priority).To(Equal(notificationv1alpha1.NotificationPriorityCritical))
-		})
-
-		It("should preserve recipients in delivered message", func() {
-			// BUSINESS SCENARIO: Multi-channel notification routing
-			notification := &notificationv1alpha1.NotificationRequest{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-recipients",
-					Namespace: "default",
-				},
-				Spec: notificationv1alpha1.NotificationRequestSpec{
-					Subject: "Recipients Test",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#channel1"},
-						{Slack: "#channel2"},
-						{Slack: "#channel3"},
-					},
-				},
-			}
-
-			// BEHAVIOR: Deliver multi-recipient notification
-			err := fileService.Deliver(ctx, notification)
-			Expect(err).ToNot(HaveOccurred())
-
-			// Read file
-			files, _ := filepath.Glob(filepath.Join(tempDir, "notification-test-recipients-*.json"))
-			data, _ := os.ReadFile(files[0])
-			var saved notificationv1alpha1.NotificationRequest
-			Expect(json.Unmarshal(data, &saved)).To(Succeed())
-
-			// CORRECTNESS: All recipients preserved
-			Expect(saved.Spec.Recipients).To(HaveLen(3))
-			Expect(saved.Spec.Recipients[0].Slack).To(Equal("#channel1"))
-			Expect(saved.Spec.Recipients[1].Slack).To(Equal("#channel2"))
-			Expect(saved.Spec.Recipients[2].Slack).To(Equal("#channel3"))
 		})
 
 		It("should preserve metadata fields in delivered message (BR-NOT-064)", func() {

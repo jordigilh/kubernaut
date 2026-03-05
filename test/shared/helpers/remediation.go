@@ -434,13 +434,7 @@ func NewNotificationRequest(name, namespace string, opts ...NotificationRequestO
 		Spec: notificationv1.NotificationRequestSpec{
 			Type:     notifType,
 			Priority: priority,
-			Recipients: []notificationv1.Recipient{
-				{
-					Email: "oncall@example.com",
-					Slack: "#alerts",
-				},
-			},
-			Subject: "Test Notification",
+			Subject:  "Test Notification",
 			Body:    "This is a test notification body.",
 			Metadata: map[string]string{
 				"remediationRequestName": "test-rr",

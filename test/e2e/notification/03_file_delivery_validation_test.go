@@ -76,9 +76,6 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 				Subject:  "E2E Test: Complete Message Validation",
 				Body:     "This is a comprehensive test message with multiple fields to validate complete delivery.",
 				Priority: notificationv1alpha1.NotificationPriorityCritical,
-				Recipients: []notificationv1alpha1.Recipient{
-					{Slack: "#e2e-test"},
-				},
 				Metadata: map[string]string{
 					"test-channel-set": "console-file",
 				},
@@ -124,8 +121,6 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 			Expect(savedNotification.Spec.Subject).To(Equal("E2E Test: Complete Message Validation"))
 			Expect(savedNotification.Spec.Body).To(Equal("This is a comprehensive test message with multiple fields to validate complete delivery."))
 			Expect(savedNotification.Spec.Priority).To(Equal(notificationv1alpha1.NotificationPriorityCritical))
-			Expect(savedNotification.Spec.Recipients).To(HaveLen(1))
-			Expect(savedNotification.Spec.Recipients[0].Slack).To(Equal("#e2e-test"))
 
 			By("Verifying status fields are present")
 			// Note: File content is captured during delivery, so Status.SuccessfulDeliveries may be 0
@@ -171,9 +166,6 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 - email: user@example.com
 `,
 				Priority: notificationv1alpha1.NotificationPriorityCritical,
-				Recipients: []notificationv1alpha1.Recipient{
-					{Slack: "#security-alerts"},
-				},
 				Metadata: map[string]string{
 					"test-channel-set": "console-file",
 				},
@@ -257,9 +249,6 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 				Subject:  "Critical Alert: System Outage",
 				Body:     "Priority validation test for critical alerts",
 				Priority: notificationv1alpha1.NotificationPriorityCritical,
-				Recipients: []notificationv1alpha1.Recipient{
-					{Slack: "#ops-critical"},
-				},
 				Metadata: map[string]string{
 					"test-channel-set": "console-file",
 				},
@@ -360,9 +349,6 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 					Subject:  "Concurrent Test: " + name,
 					Body:     "Testing concurrent notification delivery",
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
-					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#e2e-concurrent"},
-					},
 					Metadata: map[string]string{
 						"test-channel-set": "console-file",
 					},
@@ -439,9 +425,6 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 				Subject:  "Error Handling Test",
 				Body:     "Testing FileService error handling does not block delivery",
 				Priority: notificationv1alpha1.NotificationPriorityCritical,
-				Recipients: []notificationv1alpha1.Recipient{
-					{Slack: "#e2e-error-test"},
-				},
 				Metadata: map[string]string{
 					"test-channel-set": "console-file",
 				},

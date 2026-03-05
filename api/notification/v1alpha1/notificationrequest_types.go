@@ -80,31 +80,6 @@ const (
 	NotificationPhaseFailed        NotificationPhase = "Failed"
 )
 
-// Recipient represents a notification recipient
-type Recipient struct {
-	// Email address (for email channel)
-	// +optional
-	Email string `json:"email,omitempty"`
-
-	// Slack channel or user (for Slack channel)
-	// Format: #channel-name or @username
-	// +optional
-	Slack string `json:"slack,omitempty"`
-
-	// Teams channel or user (for Teams channel)
-	// +optional
-	Teams string `json:"teams,omitempty"`
-
-	// Phone number (for SMS channel)
-	// Format: E.164 (+1234567890)
-	// +optional
-	Phone string `json:"phone,omitempty"`
-
-	// Webhook URL (for webhook channel)
-	// +optional
-	WebhookURL string `json:"webhookURL,omitempty"`
-}
-
 // RetryPolicy defines retry behavior for notification delivery
 type RetryPolicy struct {
 	// Maximum number of delivery attempts
@@ -173,13 +148,6 @@ type NotificationRequestSpec struct {
 	// +kubebuilder:validation:Required
 	// +kubebuilder:default=medium
 	Priority NotificationPriority `json:"priority"`
-
-	// List of recipients for this notification.
-	// Optional: If not specified, Notification Service routing rules (BR-NOT-065)
-	// will determine recipients based on CRD spec fields (type, severity, environment, namespace).
-	// If specified, these recipients are used in addition to routing rule matches.
-	// +optional
-	Recipients []Recipient `json:"recipients,omitempty"`
 
 	// Subject line for notification
 	// +kubebuilder:validation:Required

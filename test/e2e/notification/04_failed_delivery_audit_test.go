@@ -132,9 +132,6 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 				Priority: notificationv1alpha1.NotificationPriorityCritical,
 				Subject:  "E2E Failed Delivery Audit Test",
 				Body:     "Testing failed delivery audit event persistence",
-				Recipients: []notificationv1alpha1.Recipient{
-					{Slack: "#test-failure"},
-				},
 				RetryPolicy: &notificationv1alpha1.RetryPolicy{
 					MaxAttempts:           1,
 					InitialBackoffSeconds: 1,
@@ -385,9 +382,6 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 				Priority: notificationv1alpha1.NotificationPriorityCritical,
 				Subject:  "E2E Partial Failure Audit Test",
 				Body:     "Testing audit events for partial delivery failures",
-				Recipients: []notificationv1alpha1.Recipient{
-					{Slack: "#test-failure"},
-				},
 				RetryPolicy: &notificationv1alpha1.RetryPolicy{
 					MaxAttempts:           1,
 					InitialBackoffSeconds: 1,

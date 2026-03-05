@@ -711,9 +711,6 @@ func createTestNotification() *notificationv1alpha1.NotificationRequest {
 			Priority: notificationv1alpha1.NotificationPriorityCritical,
 			Subject:  "Test Alert: Database Connection Failed",
 			Body:     "Critical alert detected in production database cluster",
-			Recipients: []notificationv1alpha1.Recipient{
-				{Slack: "#alerts"},
-			},
 			Metadata: map[string]string{
 				"remediationRequestName": "remediation-123",
 				"cluster":                "production-cluster",

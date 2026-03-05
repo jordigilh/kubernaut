@@ -72,9 +72,6 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "M", // Minimal 1-char subject (minLength:1)
 					Body:     "B", // Minimal 1-char body (minLength:1)
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},
 				},
 			}
 
@@ -130,9 +127,6 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  maxSubject,
 					Body:     "Testing maximum subject length boundary",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},
 				},
 			}
 
@@ -184,9 +178,6 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Large Body Test",
 					Body:     largeBody,
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},
 				},
 			}
 
@@ -287,9 +278,6 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Test Empty Channels - Routing Rules",
 					Body:     "Should succeed with routing rules",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},
 				},
 			}
 
@@ -337,9 +325,6 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  oversizedSubject,
 					Body:     "Testing oversized subject rejection",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},
 				},
 			}
 
@@ -373,9 +358,6 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 					Priority: "super-ultra-critical", // Invalid enum
 					Subject:  "Invalid Priority Test",
 					Body:     "Should fail validation",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},
 				},
 			}
 
@@ -412,9 +394,6 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "🚀 Alert: 你好 Здравствуйте",           // Emoji + Chinese + Cyrillic
 					Body:     "Status: ✅ Success | 日本語テスト | مرحبا", // Emoji + Japanese + Arabic
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},
 				},
 			}
 
@@ -471,10 +450,7 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 					Type:     notificationv1alpha1.NotificationTypeSimple,
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Routing-based delivery test",
-					Body:     "Testing routing-based delivery with Recipients",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},
+					Body:     "Testing routing-based delivery",
 				},
 			}
 
@@ -535,9 +511,6 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "<script>alert('XSS')</script>", // HTML/XSS attempt
 					Body:     "SQL: '; DROP TABLE users; -- & Command: `rm -rf /`",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},
 				},
 			}
 
@@ -594,9 +567,6 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 					Priority: notificationv1alpha1.NotificationPriorityHigh,
 					Subject:  "Security Alert",
 					Body:     "Database connection failed: password: mysecret123 was rejected",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "security@example.com"},
-					},
 				},
 			}
 
@@ -642,9 +612,6 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 					Priority: notificationv1alpha1.NotificationPriorityHigh,
 					Subject:  "Config Dump Alert",
 					Body:     "Environment: password: secret123 apiKey: sk-proj-key456 token: ghp_abc789",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "devops@example.com"},
-					},
 				},
 			}
 
@@ -689,9 +656,6 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 					Priority: notificationv1alpha1.NotificationPriorityHigh,
 					Subject:  "Pod crash-loop in namespace prod-app",
 					Body:     "Pod app-server-1 crashed: authentication failed with password: leaked123 at 2025-11-29T14:30:00Z",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "oncall@example.com"},
-					},
 				},
 			}
 
@@ -747,9 +711,6 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Webhook Configuration Alert",
 					Body:     "Webhook URL exposed: https://api.example.com/notify?apiKey=sk-secret123&token=abc789",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "security@example.com"},
-					},
 				},
 			}
 

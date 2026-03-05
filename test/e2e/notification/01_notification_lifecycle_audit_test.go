@@ -125,9 +125,6 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 				Priority: notificationv1alpha1.NotificationPriorityCritical,
 				Subject:  "E2E Lifecycle Test",
 				Body:     "Testing full notification lifecycle with audit trail",
-				Recipients: []notificationv1alpha1.Recipient{
-					{Slack: "#e2e-tests"}, // Keep for CRD validation, but Console channel doesn't use it
-				},
 				Metadata: map[string]string{
 					"remediationRequestName": correlationID,
 					"cluster":                "test-cluster",
@@ -293,9 +290,6 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 				Priority: notificationv1alpha1.NotificationPriorityCritical,
 				Subject:  "E2E Routing Fallback Test",
 				Body:     "Testing RoutingFallback condition with routing rules",
-				Recipients: []notificationv1alpha1.Recipient{
-					{Slack: "#e2e-tests"},
-				},
 				Metadata: map[string]string{
 					"remediationRequestName": correlationID,
 					"cluster":                "test-cluster",

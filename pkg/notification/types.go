@@ -49,9 +49,6 @@ type (
 	// Channel defines delivery channels
 	Channel = notificationv1alpha1.Channel
 
-	// Recipient represents a notification recipient
-	Recipient = notificationv1alpha1.Recipient
-
 	// RetryPolicy defines retry behavior
 	RetryPolicy = notificationv1alpha1.RetryPolicy
 

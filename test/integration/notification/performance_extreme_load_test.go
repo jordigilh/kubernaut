@@ -104,9 +104,6 @@ var _ = Describe("Performance: Extreme Load (100 Concurrent Deliveries)", func()
 							Subject:  fmt.Sprintf("Extreme Load Test Console %d", id),
 							Body:     fmt.Sprintf("Testing 100 concurrent deliveries to Console (notification %d)", id),
 							Priority: notificationv1alpha1.NotificationPriorityHigh,
-							Recipients: []notificationv1alpha1.Recipient{
-								{Slack: "#extreme-load"},
-							},
 							Metadata: map[string]string{
 								"test-channel-set": "console-slack",
 							},
@@ -226,9 +223,6 @@ var _ = Describe("Performance: Extreme Load (100 Concurrent Deliveries)", func()
 							Subject:  fmt.Sprintf("Extreme Load Test Slack %d", id),
 							Body:     fmt.Sprintf("Testing 100 concurrent deliveries to Slack (notification %d)", id),
 							Priority: notificationv1alpha1.NotificationPriorityCritical,
-							Recipients: []notificationv1alpha1.Recipient{
-								{Slack: fmt.Sprintf("#load-test-%d", id%10)}, // Distribute across 10 channels
-							},
 							Metadata: map[string]string{
 								"test-channel-set": "console-slack",
 							},
@@ -346,9 +340,6 @@ var _ = Describe("Performance: Extreme Load (100 Concurrent Deliveries)", func()
 							Subject:  fmt.Sprintf("Extreme Load Test Mixed %d", id),
 							Body:     fmt.Sprintf("Testing 100 concurrent mixed-channel deliveries (notification %d)", id),
 							Priority: notificationv1alpha1.NotificationPriorityCritical,
-							Recipients: []notificationv1alpha1.Recipient{
-								{Slack: "#extreme-mixed"},
-							},
 							Metadata: map[string]string{
 								"test-channel-set": "console-slack",
 							},

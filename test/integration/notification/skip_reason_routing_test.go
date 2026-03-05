@@ -88,9 +88,7 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 					Severity: routing.SeverityCritical,
 					Subject:  fmt.Sprintf("Test Skip-Reason: PreviousExecutionFailed [%s]", uniqueSuffix),
 					Body:     "Workflow execution failed - cluster state unknown. Manual intervention required.",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "oncall@example.com"},
-					},Metadata: map[string]string{
+					Metadata: map[string]string{
 						routing.AttrSkipReason:  routing.SkipReasonPreviousExecutionFailed,
 						routing.AttrEnvironment: routing.EnvironmentProduction,
 					},

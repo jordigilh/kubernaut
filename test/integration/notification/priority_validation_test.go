@@ -85,9 +85,7 @@ var _ = Describe("BR-NOT-057: Priority-Based Processing", Label("integration", "
 						Priority: priority,
 						Subject:  fmt.Sprintf("Priority Test - %s", priorityName),
 						Body:     fmt.Sprintf("Testing %s priority acceptance", priorityName),
-						Recipients: []notificationv1alpha1.Recipient{
-							{Email: "test@example.com"},
-						},},
+					},
 				}
 
 				// Create CRD
@@ -155,9 +153,7 @@ var _ = Describe("BR-NOT-057: Priority-Based Processing", Label("integration", "
 					Priority: notificationv1alpha1.NotificationPriorityMedium, // Explicitly set to avoid zero value
 					Subject:  "Priority Required Test",
 					Body:     "Testing priority field requirement",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},},
+				},
 			}
 
 			err := k8sClient.Create(ctx, notif)
@@ -202,9 +198,7 @@ var _ = Describe("BR-NOT-057: Priority-Based Processing", Label("integration", "
 					Priority: originalPriority,
 					Subject:  "Priority Preservation Test",
 					Body:     "Testing priority preservation across lifecycle",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},},
+				},
 			}
 
 			// Create
@@ -258,9 +252,7 @@ var _ = Describe("BR-NOT-057: Priority-Based Processing", Label("integration", "
 					Severity: "critical",
 					Subject:  "🚨 Production Outage - Payment API Down",
 					Body:     "Critical: Payment API unresponsive for 5+ minutes. Immediate action required.",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "oncall@example.com"},
-					},Metadata: map[string]string{
+					Metadata: map[string]string{
 						"environment": "production",
 					},
 				},
@@ -307,9 +299,7 @@ var _ = Describe("BR-NOT-057: Priority-Based Processing", Label("integration", "
 					Severity: "low",
 					Subject:  "ℹ️ Routine Maintenance Completed",
 					Body:     "Info: Scheduled maintenance completed successfully. No action required.",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "team@example.com"},
-					},},
+				},
 			}
 
 			err := k8sClient.Create(ctx, notif)
@@ -364,9 +354,7 @@ var _ = Describe("BR-NOT-057: Priority-Based Processing", Label("integration", "
 						Priority: priorities[i],
 						Subject:  fmt.Sprintf("Priority Mix Test - %s", priorities[i]),
 						Body:     "Testing mixed priority processing",
-						Recipients: []notificationv1alpha1.Recipient{
-							{Email: "test@example.com"},
-						},},
+					},
 				}
 
 				err := k8sClient.Create(ctx, notif)

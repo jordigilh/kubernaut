@@ -126,9 +126,6 @@ var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", 
 					Priority: notificationv1alpha1.NotificationPriority([]string{"low", "medium", "high"}[i-1]),
 					Subject:  "E2E Correlation Test - Notification " + string(rune('0'+i)),
 					Body:     "Testing audit correlation across multiple notifications",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#e2e-tests"}, // Keep for CRD validation, but Console channel doesn't use it
-					},
 					Metadata: map[string]string{
 						"remediationRequestName": correlationID,
 						"cluster":                "test-cluster",

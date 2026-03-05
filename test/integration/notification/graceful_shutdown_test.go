@@ -88,9 +88,6 @@ var _ = Describe("BR-NOT-080/081/082: Graceful Shutdown", func() {
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  fmt.Sprintf("In-Flight Shutdown Test %s", uniqueSuffix),
 					Body:     "Testing in-flight delivery completion during shutdown",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#test"},
-					},
 					Metadata: map[string]string{
 						"test-channel-set": "console-default",
 					},
@@ -169,9 +166,7 @@ var _ = Describe("BR-NOT-080/081/082: Graceful Shutdown", func() {
 					Priority: notificationv1alpha1.NotificationPriorityLow,
 					Subject:  fmt.Sprintf("Post-Shutdown Test %s", uniqueSuffix),
 					Body:     "Testing work acceptance during shutdown",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#test"},
-					},},
+				},
 			}
 
 			err := k8sClient.Create(ctx, notif)
@@ -226,9 +221,7 @@ var _ = Describe("BR-NOT-080/081/082: Graceful Shutdown", func() {
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  fmt.Sprintf("Audit Flush Test %s", uniqueSuffix),
 					Body:     "Testing audit buffer flush during shutdown",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#test"},
-					},},
+				},
 			}
 
 			err := k8sClient.Create(ctx, notif)
@@ -289,9 +282,7 @@ var _ = Describe("BR-NOT-080/081/082: Graceful Shutdown", func() {
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  fmt.Sprintf("Timeout Test %s", uniqueSuffix),
 					Body:     "Testing shutdown timeout handling",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#test"},
-					},},
+				},
 			}
 
 			startTime := time.Now()

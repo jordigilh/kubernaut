@@ -73,9 +73,6 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Test Minimal Notification",
 					Body:     "Minimal body content",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},
 				},
 			}
 
@@ -97,7 +94,6 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 			Expect(created.Spec.Priority).To(Equal(notificationv1alpha1.NotificationPriorityMedium))
 			Expect(created.Spec.Subject).To(Equal("Test Minimal Notification"))
 			Expect(created.Spec.Body).To(Equal("Minimal body content"))
-			Expect(created.Spec.Recipients).To(HaveLen(1))
 
 			// Cleanup
 			err = deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
@@ -126,10 +122,6 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 					Priority: notificationv1alpha1.NotificationPriorityCritical,
 					Subject:  "Test Full Notification",
 					Body:     "Full body content with all optional fields",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test1@example.com"},
-						{Email: "test2@example.com"},
-					},
 					Metadata: map[string]string{
 						"remediationRequestName": "rr-123",
 						"cluster":                "prod-us-east-1",
@@ -228,9 +220,6 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Status Init Test",
 					Body:     "Testing status initialization",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},
 				},
 			}
 
@@ -353,9 +342,6 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Name Validation Test",
 					Body:     "Testing name validation",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},
 				},
 			}
 
@@ -395,9 +381,6 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Long Name Test",
 					Body:     "Testing maximum name length",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},
 				},
 			}
 
@@ -435,9 +418,6 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Reconciliation Test",
 					Body:     "Testing immediate reconciliation",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},
 				},
 			}
 
@@ -498,9 +478,6 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 					Priority: notificationv1alpha1.NotificationPriorityHigh,
 					Subject:  "Status Update Test",
 					Body:     "Testing status update recovery",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},
 				},
 			}
 
@@ -576,9 +553,6 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Deletion Test",
 					Body:     "Testing deletion during delivery",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#test"},
-					},
 					Metadata: map[string]string{
 						"test-channel-set": "console-slack",
 					},
@@ -642,9 +616,6 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Original Subject",
 					Body:     "Original body content",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},
 				},
 			}
 
@@ -732,9 +703,6 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 					Priority: notificationv1alpha1.NotificationPriorityLow,
 					Subject:  "Quick Delete Test",
 					Body:     "Testing immediate deletion",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},
 				},
 			}
 

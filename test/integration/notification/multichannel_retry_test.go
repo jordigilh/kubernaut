@@ -76,9 +76,7 @@ var _ = Describe("Category 2 & 3: Multi-Channel Delivery and Retry/Circuit Break
 					Priority: notificationv1alpha1.NotificationPriorityLow,
 					Subject:  "Console Delivery Test",
 					Body:     "Testing console delivery",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},},
+				},
 			}
 
 			// Create CRD
@@ -145,10 +143,7 @@ var _ = Describe("Category 2 & 3: Multi-Channel Delivery and Retry/Circuit Break
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Partial Failure Test",
 					Body:     "Testing partial channel failure",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#test"},
-						{Email: "test@example.com"},
-					},// NT-BUG-005 Fix: Use fast retry policy so test completes within 20s
+					// NT-BUG-005 Fix: Use fast retry policy so test completes within 20s
 					// Default policy has 30s initial backoff, which exceeds test timeout
 					// 3 attempts with 1s initial + 2x multiplier = 1s + 2s = 3s total (well within 20s)
 					RetryPolicy: &notificationv1alpha1.RetryPolicy{
@@ -239,9 +234,7 @@ var _ = Describe("Category 2 & 3: Multi-Channel Delivery and Retry/Circuit Break
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "All Channels Fail Test",
 					Body:     "Testing all channels failing",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#test"},
-					},// NT-BUG-005 Fix: Use fast retry policy so test completes within 20s
+					// NT-BUG-005 Fix: Use fast retry policy so test completes within 20s
 					// Default policy has 30s initial backoff, which exceeds test timeout
 					// 3 attempts with 1s initial + 2x multiplier = 1s + 2s = 3s total (well within 20s)
 					RetryPolicy: &notificationv1alpha1.RetryPolicy{

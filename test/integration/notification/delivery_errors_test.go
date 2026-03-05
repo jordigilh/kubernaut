@@ -75,9 +75,6 @@ var _ = Describe("Category 4: Delivery Service Error Handling", Label("integrati
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "HTTP 400 Test",
 					Body:     "Testing permanent error",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#test"},
-					},
 					RetryPolicy: &notificationv1alpha1.RetryPolicy{
 						MaxAttempts:           3,
 						InitialBackoffSeconds: 1,
@@ -146,9 +143,6 @@ var _ = Describe("Category 4: Delivery Service Error Handling", Label("integrati
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "HTTP 403 Test",
 					Body:     "Testing forbidden error",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#test"},
-					},
 					Metadata: map[string]string{
 						"test-channel-set": "slack-only",
 					},
@@ -203,9 +197,6 @@ var _ = Describe("Category 4: Delivery Service Error Handling", Label("integrati
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "HTTP 404 Test",
 					Body:     "Testing not found error",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#nonexistent"},
-					},
 					Metadata: map[string]string{
 						"test-channel-set": "slack-only",
 					},
@@ -260,9 +251,6 @@ var _ = Describe("Category 4: Delivery Service Error Handling", Label("integrati
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "HTTP 410 Test",
 					Body:     "Testing gone error",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#deprecated"},
-					},
 					Metadata: map[string]string{
 						"test-channel-set": "slack-only",
 					},
@@ -328,9 +316,6 @@ var _ = Describe("Category 4: Delivery Service Error Handling", Label("integrati
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "HTTP 502 Test",
 					Body:     "Testing bad gateway error",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#test"},
-					},
 					RetryPolicy: &notificationv1alpha1.RetryPolicy{
 						MaxAttempts:           3,
 						InitialBackoffSeconds: 1,
