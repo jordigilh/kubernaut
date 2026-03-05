@@ -83,10 +83,12 @@ PLATFORM_NS="${PLATFORM_NS:-kubernaut-system}"
 
 _find_rr_name() {
     local target_ns="$1"
-    # Find the most recent RR whose spec.targetResource references the target namespace
+    # Find the most recent RR whose spec.targetResource references the target namespace.
+    # The { grep ... || true; } wrapper prevents pipefail from aborting the script when
+    # no RR exists yet (grep exits 1 on no match).
     kubectl get remediationrequests -n "$PLATFORM_NS" \
         -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.signalLabels.namespace}{"\n"}{end}' 2>/dev/null \
-        | grep "$target_ns" | tail -1 | cut -f1
+        | { grep "$target_ns" || true; } | tail -1 | cut -f1
 }
 
 get_rr_phase() {
