@@ -97,11 +97,12 @@ class TestRCAIncompleteIntegrationPattern:
     """Tests for how rca_incomplete scenario integrates with test suite."""
 
     def test_rca_incomplete_scenario_count(self):
-        """Verify we have the expected number of scenarios (11 total including rca_incomplete)."""
+        """Verify we have the expected number of scenarios (12 total including rca_incomplete)."""
         expected_scenarios = {
             "oomkilled",
             "crashloop",
             "node_not_ready",
+            "cert_not_ready",
             "test_signal",
             "no_workflow_found",
             "low_confidence",

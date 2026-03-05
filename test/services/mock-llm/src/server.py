@@ -851,6 +851,30 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
             scenario.rca_resource_namespace,
         )
 
+    @staticmethod
+    def _extract_root_owner_from_tool_results(
+        messages: List[Dict[str, Any]],
+    ) -> Optional[Dict[str, str]]:
+        """
+        Parse get_resource_context tool results for the root_owner field.
+
+        ADR-056: A real LLM uses the root_owner returned by get_resource_context
+        (e.g., Pod→Deployment) as the affectedResource. The mock must do the same
+        so the RCA contains the correct owner rather than the raw signaling Pod.
+        """
+        for msg in messages:
+            if msg.get("role") != "tool":
+                continue
+            content = msg.get("content", "")
+            try:
+                data = json.loads(content) if isinstance(content, str) else content
+            except (json.JSONDecodeError, TypeError):
+                continue
+            root_owner = data.get("root_owner")
+            if root_owner and isinstance(root_owner, dict) and root_owner.get("kind"):
+                return root_owner
+        return None
+
     def _discovery_tool_call_response(
         self,
         scenario: MockScenario,
@@ -1047,6 +1071,19 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
             actual_kind, actual_name, actual_ns = self._extract_resource_from_messages(
                 messages, scenario
             )
+            # ADR-056: Prefer root_owner from get_resource_context tool result.
+            # A real LLM uses root_owner (Pod→Deployment) as affectedResource;
+            # without this the mock returns the raw Pod from the prompt.
+            root_owner = self._extract_root_owner_from_tool_results(messages)
+            if root_owner:
+                actual_kind = root_owner.get("kind", actual_kind)
+                actual_name = root_owner.get("name", actual_name)
+                if root_owner.get("namespace"):
+                    actual_ns = root_owner["namespace"]
+                logger.info(
+                    f"📍 ADR-056: Using root_owner from get_resource_context: "
+                    f"{actual_kind}/{actual_name} in {actual_ns}"
+                )
             # DD-EM-004: When rca_override_prompt_resource is set, the LLM identifies
             # a different root-cause resource than what the alert/prompt contains
             # (e.g., Gateway sees Pod from alert labels, but RCA is about a Certificate CRD).
