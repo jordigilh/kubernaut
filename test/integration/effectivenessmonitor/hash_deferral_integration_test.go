@@ -35,19 +35,18 @@ var _ = Describe("Hash Compute Deferral Integration (DD-EM-004, BR-EM-010)", fun
 	// BR: BR-EM-010.1, BR-RO-103
 	//
 	// Business outcome: When the RO detects an async-managed target (GitOps or
-	// operator CRD) and sets HashComputeAfter in the future, the EM must NOT
-	// compute the hash immediately. Once the deferral window elapses, the EM
-	// computes the hash and completes the assessment normally. This ensures the
-	// hash captures the spec AFTER the external controller reconciles.
+	// operator CRD) and sets HashCheckDelay in Config, the EM must NOT compute
+	// the hash immediately. Once the deferral window (creation + HashCheckDelay)
+	// elapses, the EM computes the hash and completes the assessment normally.
+	// This ensures the hash captures the spec AFTER the external controller reconciles.
 	// ========================================
-	It("IT-EM-251-001: should defer hash computation until HashComputeAfter elapses, then complete", func() {
+	It("IT-EM-251-001: should defer hash computation until HashCheckDelay elapses, then complete", func() {
 		ns := createTestNamespace("em-251-001")
 		defer deleteTestNamespace(ns)
 
 		deferralDuration := 8 * time.Second
-		hashComputeAfter := metav1.NewTime(time.Now().Add(deferralDuration))
 
-		By("Creating EA with HashComputeAfter 8s in the future (simulates async CRD target)")
+		By("Creating EA with HashCheckDelay 8s (simulates async CRD target)")
 		ea := &eav1.EffectivenessAssessment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "ea-251-001",
@@ -64,13 +63,13 @@ var _ = Describe("Hash Compute Deferral Integration (DD-EM-004, BR-EM-010)", fun
 				},
 				Config: eav1.EAConfig{
 					StabilizationWindow: metav1.Duration{Duration: 1 * time.Second},
+					HashCheckDelay:      &metav1.Duration{Duration: deferralDuration},
 				},
-				HashComputeAfter: &hashComputeAfter,
 			},
 		}
 		Expect(k8sClient.Create(ctx, ea)).To(Succeed())
-		GinkgoWriter.Printf("Created EA with HashComputeAfter=%s (deferral=%s)\n",
-			hashComputeAfter.Time.Format(time.RFC3339), deferralDuration)
+		GinkgoWriter.Printf("Created EA with Config.HashCheckDelay=%s (deferral=%s)\n",
+			ea.Spec.Config.HashCheckDelay.Duration, deferralDuration)
 
 		By("Verifying hash is NOT computed during the deferral window")
 		fetchedEA := &eav1.EffectivenessAssessment{}
@@ -123,15 +122,15 @@ var _ = Describe("Hash Compute Deferral Integration (DD-EM-004, BR-EM-010)", fun
 	// IT-EM-251-002: Sync target — hash computed immediately (backward compat)
 	// BR: BR-EM-010.1
 	//
-	// Business outcome: When HashComputeAfter is nil (sync target, e.g., Deployment
+	// Business outcome: When Config.HashCheckDelay is nil (sync target, e.g., Deployment
 	// patched directly by kubectl), the EM computes the hash on the first reconcile
 	// without any deferral. This is the existing behavior for all pre-#251 EAs.
 	// ========================================
-	It("IT-EM-251-002: should compute hash immediately when HashComputeAfter is nil (sync target)", func() {
+	It("IT-EM-251-002: should compute hash immediately when HashCheckDelay is nil (sync target)", func() {
 		ns := createTestNamespace("em-251-002")
 		defer deleteTestNamespace(ns)
 
-		By("Creating EA without HashComputeAfter (sync target, backward compatible)")
+		By("Creating EA without HashCheckDelay (sync target, backward compatible)")
 		ea := createEffectivenessAssessment(ns, "ea-251-002", "rr-251-002")
 
 		By("Verifying the EA completes with hash computed (no deferral)")
@@ -143,8 +142,8 @@ var _ = Describe("Hash Compute Deferral Integration (DD-EM-004, BR-EM-010)", fun
 			g.Expect(fetchedEA.Status.Phase).To(Equal(eav1.PhaseCompleted))
 		}, timeout, interval).Should(Succeed())
 
-		Expect(fetchedEA.Spec.HashComputeAfter).To(BeNil(),
-			"BR-EM-010.1: sync target EA must have nil HashComputeAfter")
+		Expect(fetchedEA.Spec.Config.HashCheckDelay).To(BeNil(),
+			"BR-EM-010.1: sync target EA must have nil HashCheckDelay")
 		Expect(fetchedEA.Status.Components.HashComputed).To(BeTrue(),
 			"BR-EM-010.1: hash must be computed immediately for sync targets")
 		Expect(fetchedEA.Status.Components.PostRemediationSpecHash).To(HavePrefix("sha256:"),
@@ -159,19 +158,17 @@ var _ = Describe("Hash Compute Deferral Integration (DD-EM-004, BR-EM-010)", fun
 	// IT-EM-251-003: Elapsed deferral — hash computed immediately
 	// BR: BR-EM-010.1
 	//
-	// Business outcome: When HashComputeAfter is set but already in the past
-	// (the deferral window elapsed before the first reconcile, e.g., due to
-	// controller restart or delayed scheduling), the EM computes the hash
-	// immediately rather than requeueing. This prevents indefinite deferral
-	// and ensures assessments always complete.
+	// Business outcome: When HashCheckDelay is set but creation + HashCheckDelay
+	// is already in the past (e.g., 1ns duration—effectively zero—or controller
+	// restart after deferral elapsed), the EM computes the hash immediately rather
+	// than requeueing. This prevents indefinite deferral and ensures assessments
+	// always complete.
 	// ========================================
-	It("IT-EM-251-003: should compute hash immediately when HashComputeAfter is already in the past", func() {
+	It("IT-EM-251-003: should compute hash immediately when HashCheckDelay is effectively elapsed", func() {
 		ns := createTestNamespace("em-251-003")
 		defer deleteTestNamespace(ns)
 
-		pastTime := metav1.NewTime(time.Now().Add(-5 * time.Minute))
-
-		By("Creating EA with HashComputeAfter 5 minutes in the past (elapsed deferral)")
+		By("Creating EA with HashCheckDelay 1ns (elapsed deferral—creation + 1ns < now)")
 		ea := &eav1.EffectivenessAssessment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "ea-251-003",
@@ -188,13 +185,13 @@ var _ = Describe("Hash Compute Deferral Integration (DD-EM-004, BR-EM-010)", fun
 				},
 				Config: eav1.EAConfig{
 					StabilizationWindow: metav1.Duration{Duration: 1 * time.Second},
+					HashCheckDelay:      &metav1.Duration{Duration: 1 * time.Nanosecond},
 				},
-				HashComputeAfter: &pastTime,
 			},
 		}
 		Expect(k8sClient.Create(ctx, ea)).To(Succeed())
 
-		By("Verifying the EA completes with hash computed (past deferral treated as immediate)")
+		By("Verifying the EA completes with hash computed (elapsed deferral treated as immediate)")
 		fetchedEA := &eav1.EffectivenessAssessment{}
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, types.NamespacedName{

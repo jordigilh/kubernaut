@@ -38,7 +38,7 @@ import (
 // ============================================================================
 // EA ASYNC DETECTION INTEGRATION TESTS (DD-EM-004, BR-RO-103)
 // Business Requirement: RO detects async-managed targets (GitOps, operator CRDs)
-// and populates HashComputeAfter in the EA spec so the EM defers hash computation.
+// and populates Config.HashCheckDelay in the EA spec so the EM defers hash computation.
 // ============================================================================
 var _ = Describe("EA Async Target Detection (DD-EM-004, BR-RO-103)", func() {
 
@@ -124,15 +124,15 @@ var _ = Describe("EA Async Target Detection (DD-EM-004, BR-RO-103)", func() {
 	}
 
 	// ========================================
-	// IT-RO-251-001: GitOps-managed target → HashComputeAfter set
+	// IT-RO-251-001: GitOps-managed target → Config.HashCheckDelay set
 	// BR: BR-RO-103.2, BR-RO-103.3
 	//
 	// Business outcome: When the HAPI/RCA pipeline detects GitOps management
 	// (DetectedLabels.GitOpsManaged=true in AIAnalysis), the RO sets
-	// HashComputeAfter in the EA spec so the EM defers hash computation
+	// Config.HashCheckDelay in the EA spec so the EM defers hash computation
 	// until after the GitOps controller (ArgoCD/FluxCD) reconciles the target.
 	// ========================================
-	It("IT-RO-251-001: should set HashComputeAfter in EA when AIAnalysis indicates GitOps target", func() {
+	It("IT-RO-251-001: should set Config.HashCheckDelay in EA when AIAnalysis indicates GitOps target", func() {
 		ns := createTestNamespace("ro-251-001")
 		defer deleteTestNamespace(ns)
 
@@ -154,25 +154,13 @@ var _ = Describe("EA Async Target Detection (DD-EM-004, BR-RO-103)", func() {
 			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: eaName, Namespace: ROControllerNamespace}, ea)
 		}, 30*time.Second, interval).Should(Succeed(), "EA should be created after RR completion")
 
-		By("Verifying HashComputeAfter is set for GitOps target")
-		Expect(ea.Spec.HashComputeAfter).NotTo(BeNil(),
-			"BR-RO-103.2: HashComputeAfter must be set when GitOps management is detected")
-		// Issue #253: HashComputeAfter now uses gitOpsSyncDelay (2m in IT config),
-		// NOT stabilization window. Deployment is a built-in kind → no operator delay.
-		Expect(ea.Spec.HashComputeAfter.Time).To(BeTemporally(">", time.Now().Add(-5*time.Minute)),
-			"HashComputeAfter must be a reasonable future timestamp")
-		Expect(ea.Spec.HashComputeAfter.Time).To(BeTemporally("<=", time.Now().Add(3*time.Minute)),
-			"HashComputeAfter must not exceed gitOpsSyncDelay=2m + tolerance")
-
-		By("Verifying GitOpsSyncDelay is propagated (Issue #253)")
-		Expect(ea.Spec.GitOpsSyncDelay).NotTo(BeNil(),
-			"BR-RO-103.4: GitOpsSyncDelay must be set for GitOps target")
-		Expect(ea.Spec.GitOpsSyncDelay.Duration).To(Equal(2*time.Minute),
-			"GitOpsSyncDelay should match config value")
-
-		By("Verifying OperatorReconcileDelay is nil (Deployment is built-in, not CRD)")
-		Expect(ea.Spec.OperatorReconcileDelay).To(BeNil(),
-			"OperatorReconcileDelay must be nil for built-in kind")
+		By("Verifying Config.HashCheckDelay is set for GitOps target")
+		Expect(ea.Spec.Config.HashCheckDelay).NotTo(BeNil(),
+			"BR-RO-103.2: HashCheckDelay must be set when GitOps management is detected")
+		// Issue #277: HashCheckDelay is a relative duration. For GitOps target with
+		// built-in Deployment, RO uses gitOpsSyncDelay (2m in IT config), no operator delay.
+		Expect(ea.Spec.Config.HashCheckDelay.Duration).To(Equal(2*time.Minute),
+			"HashCheckDelay should match gitOpsSyncDelay config value")
 
 		By("Verifying all other EA spec fields are still correct")
 		Expect(ea.Spec.CorrelationID).To(Equal(rr.Name))
@@ -181,19 +169,19 @@ var _ = Describe("EA Async Target Detection (DD-EM-004, BR-RO-103)", func() {
 		Expect(ea.Spec.RemediationTarget.Name).To(Equal("test-app"))
 		Expect(ea.Spec.Config.StabilizationWindow.Duration).To(BeNumerically(">", 0))
 
-		GinkgoWriter.Printf("EA created with HashComputeAfter=%s, GitOpsSyncDelay=%s (GitOps: argocd)\n",
-			ea.Spec.HashComputeAfter.Time.Format(time.RFC3339), ea.Spec.GitOpsSyncDelay.Duration)
+		GinkgoWriter.Printf("EA created with Config.HashCheckDelay=%s (GitOps: argocd)\n",
+			ea.Spec.Config.HashCheckDelay.Duration)
 	})
 
 	// ========================================
-	// IT-RO-251-002: Sync target (built-in Deployment) → HashComputeAfter nil
+	// IT-RO-251-002: Sync target (built-in Deployment) → Config.HashCheckDelay nil
 	// BR: BR-RO-103.3
 	//
 	// Business outcome: For sync targets (built-in K8s resources without GitOps
-	// management), the RO must NOT set HashComputeAfter. This ensures backward
+	// management), the RO must NOT set Config.HashCheckDelay. This ensures backward
 	// compatibility: the EM computes the hash immediately on first reconcile.
 	// ========================================
-	It("IT-RO-251-002: should NOT set HashComputeAfter for sync built-in target without GitOps", func() {
+	It("IT-RO-251-002: should NOT set Config.HashCheckDelay for sync built-in target without GitOps", func() {
 		ns := createTestNamespace("ro-251-002")
 		defer deleteTestNamespace(ns)
 
@@ -208,15 +196,9 @@ var _ = Describe("EA Async Target Detection (DD-EM-004, BR-RO-103)", func() {
 			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: eaName, Namespace: ROControllerNamespace}, ea)
 		}, 30*time.Second, interval).Should(Succeed(), "EA should be created after RR completion")
 
-		By("Verifying HashComputeAfter is nil for sync target")
-		Expect(ea.Spec.HashComputeAfter).To(BeNil(),
-			"BR-RO-103.3: HashComputeAfter must be nil for sync built-in targets")
-
-		By("Verifying delay fields are nil for sync target (Issue #253)")
-		Expect(ea.Spec.GitOpsSyncDelay).To(BeNil(),
-			"GitOpsSyncDelay must be nil for non-GitOps target")
-		Expect(ea.Spec.OperatorReconcileDelay).To(BeNil(),
-			"OperatorReconcileDelay must be nil for built-in kind target")
+		By("Verifying Config.HashCheckDelay is nil for sync target")
+		Expect(ea.Spec.Config.HashCheckDelay).To(BeNil(),
+			"BR-RO-103.3: HashCheckDelay must be nil for sync built-in targets")
 
 		By("Verifying EA spec is otherwise correct")
 		Expect(ea.Spec.CorrelationID).To(Equal(rr.Name))

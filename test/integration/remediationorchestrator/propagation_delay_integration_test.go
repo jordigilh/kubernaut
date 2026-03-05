@@ -36,10 +36,10 @@ import (
 )
 
 // ============================================================================
-// RO PROPAGATION DELAY INTEGRATION TESTS (DD-EM-004 v2.0, BR-RO-103, Issue #253)
+// RO PROPAGATION DELAY INTEGRATION TESTS (DD-EM-004 v2.0, BR-RO-103, Issue #253, #277)
 // Business Requirement: RO uses config-driven propagation delays (not stabilization
-// window) when computing HashComputeAfter, and propagates individual delay fields
-// to the EA spec for EM audit trail.
+// window) when computing HashCheckDelay, and sets Config.HashCheckDelay in the EA
+// spec so the EM defers hash computation until creation + HashCheckDelay.
 // ============================================================================
 var _ = Describe("RO Propagation Delay (DD-EM-004 v2.0, BR-RO-103, Issue #253)", func() {
 
@@ -139,10 +139,9 @@ var _ = Describe("RO Propagation Delay (DD-EM-004 v2.0, BR-RO-103, Issue #253)",
 	// BR: BR-RO-103.3, BR-RO-103.4
 	//
 	// Business outcome: When the remediation target is a CRD (operator-managed,
-	// non-built-in API group) but NOT GitOps-managed, the RO must:
-	// 1. Compute HashComputeAfter using operatorReconcileDelay (not stabilization window)
-	// 2. Propagate OperatorReconcileDelay to the EA spec for EM audit
-	// 3. Leave GitOpsSyncDelay nil (not a GitOps target)
+	// non-built-in API group) but NOT GitOps-managed, the RO must set Config.HashCheckDelay
+	// using operatorReconcileDelay (not stabilization window) so the EM defers hash
+	// computation until creation + HashCheckDelay.
 	// ========================================
 	It("IT-RO-253-001: should use config-driven operator delay for CRD target (not stabilization window)", func() {
 		ns := createTestNamespace("ro-253-001")
@@ -157,33 +156,20 @@ var _ = Describe("RO Propagation Delay (DD-EM-004 v2.0, BR-RO-103, Issue #253)",
 			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: eaName, Namespace: ROControllerNamespace}, ea)
 		}, 30*time.Second, interval).Should(Succeed(), "EA should be created after RR completion")
 
-		By("Verifying HashComputeAfter uses operator delay (not stabilization window)")
-		Expect(ea.Spec.HashComputeAfter).NotTo(BeNil(),
-			"BR-RO-103.3: HashComputeAfter must be set for CRD target")
-		// Config: operatorReconcileDelay = 30s (wired in suite)
-		// HashComputeAfter should be ≈ EA.creation + 30s, NOT creation + stabilizationWindow
-		// Use EA creation timestamp as anchor for CI-resilient bounds (±30s tolerance for pipeline latency)
-		expectedHCA := ea.CreationTimestamp.Add(30 * time.Second)
-		Expect(ea.Spec.HashComputeAfter.Time).To(BeTemporally("~", expectedHCA, 30*time.Second),
-			"HashComputeAfter should be ≈ EA.creation + operatorReconcileDelay(30s)")
-
-		By("Verifying OperatorReconcileDelay is propagated to EA spec")
-		Expect(ea.Spec.OperatorReconcileDelay).NotTo(BeNil(),
-			"BR-RO-103.4: OperatorReconcileDelay must be set for CRD target")
-		Expect(ea.Spec.OperatorReconcileDelay.Duration).To(Equal(30*time.Second),
-			"OperatorReconcileDelay should match config value")
-
-		By("Verifying GitOpsSyncDelay is nil (not a GitOps target)")
-		Expect(ea.Spec.GitOpsSyncDelay).To(BeNil(),
-			"GitOpsSyncDelay must be nil for non-GitOps target")
+		By("Verifying HashCheckDelay uses operator delay (not stabilization window)")
+		Expect(ea.Spec.Config.HashCheckDelay).NotTo(BeNil(),
+			"BR-RO-103.3: HashCheckDelay must be set for CRD target")
+		// Config: operatorReconcileDelay = 30s (wired in suite), no gitOps delay since not GitOps-managed
+		Expect(ea.Spec.Config.HashCheckDelay.Duration).To(Equal(30*time.Second),
+			"HashCheckDelay should match operatorReconcileDelay config value (30s)")
 
 		By("Verifying other EA spec fields are correct")
 		Expect(ea.Spec.CorrelationID).To(Equal(rr.Name))
 		Expect(ea.Spec.RemediationRequestPhase).To(Equal("Completed"))
 		Expect(ea.Spec.RemediationTarget.Kind).To(Equal("EffectivenessAssessment"))
 
-		GinkgoWriter.Printf("IT-RO-253-001: EA created with HashComputeAfter=%s, OperatorReconcileDelay=%s\n",
-			ea.Spec.HashComputeAfter.Time.Format(time.RFC3339), ea.Spec.OperatorReconcileDelay.Duration)
+		GinkgoWriter.Printf("IT-RO-253-001: EA created with HashCheckDelay=%s\n",
+			ea.Spec.Config.HashCheckDelay.Duration)
 	})
 
 	// ========================================
@@ -191,9 +177,8 @@ var _ = Describe("RO Propagation Delay (DD-EM-004 v2.0, BR-RO-103, Issue #253)",
 	// BR: BR-RO-103.5
 	//
 	// Business outcome: When the remediation target is BOTH GitOps-managed AND a CRD
-	// (operator-managed), the RO must compound both delays:
-	// 1. HashComputeAfter = now + gitOpsSyncDelay + operatorReconcileDelay
-	// 2. Both GitOpsSyncDelay and OperatorReconcileDelay propagated to EA spec
+	// (operator-managed), the RO must compound both delays into Config.HashCheckDelay:
+	// HashCheckDelay = gitOpsSyncDelay + operatorReconcileDelay
 	// ========================================
 	It("IT-RO-253-002: should compound gitOpsSyncDelay + operatorReconcileDelay for dual-async target", func() {
 		ns := createTestNamespace("ro-253-002")
@@ -208,35 +193,19 @@ var _ = Describe("RO Propagation Delay (DD-EM-004 v2.0, BR-RO-103, Issue #253)",
 			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: eaName, Namespace: ROControllerNamespace}, ea)
 		}, 30*time.Second, interval).Should(Succeed(), "EA should be created after RR completion")
 
-		By("Verifying HashComputeAfter uses compounded delay (gitOps + operator)")
-		Expect(ea.Spec.HashComputeAfter).NotTo(BeNil(),
-			"BR-RO-103.5: HashComputeAfter must be set for dual-async target")
+		By("Verifying HashCheckDelay uses compounded delay (gitOps + operator)")
+		Expect(ea.Spec.Config.HashCheckDelay).NotTo(BeNil(),
+			"BR-RO-103.5: HashCheckDelay must be set for dual-async target")
 		// Config: gitOpsSyncDelay=2m, operatorReconcileDelay=30s → total=2m30s
-		// Use EA creation timestamp as anchor for CI-resilient bounds (±30s tolerance for pipeline latency)
-		compounded := 2*time.Minute + 30*time.Second
-		expectedHCA := ea.CreationTimestamp.Add(compounded)
-		Expect(ea.Spec.HashComputeAfter.Time).To(BeTemporally("~", expectedHCA, 30*time.Second),
-			"HashComputeAfter should be ≈ EA.creation + compounded(2m30s)")
-
-		By("Verifying both delay fields are propagated to EA spec")
-		Expect(ea.Spec.GitOpsSyncDelay).NotTo(BeNil(),
-			"BR-RO-103.4: GitOpsSyncDelay must be set for GitOps target")
-		Expect(ea.Spec.GitOpsSyncDelay.Duration).To(Equal(2*time.Minute),
-			"GitOpsSyncDelay should match config value")
-
-		Expect(ea.Spec.OperatorReconcileDelay).NotTo(BeNil(),
-			"BR-RO-103.4: OperatorReconcileDelay must be set for CRD target")
-		Expect(ea.Spec.OperatorReconcileDelay.Duration).To(Equal(30*time.Second),
-			"OperatorReconcileDelay should match config value")
+		Expect(ea.Spec.Config.HashCheckDelay.Duration).To(Equal(2*time.Minute+30*time.Second),
+			"HashCheckDelay should be compounded gitOpsSyncDelay(2m) + operatorReconcileDelay(30s)")
 
 		By("Verifying other EA spec fields are correct")
 		Expect(ea.Spec.CorrelationID).To(Equal(rr.Name))
 		Expect(ea.Spec.RemediationRequestPhase).To(Equal("Completed"))
 		Expect(ea.Spec.RemediationTarget.Kind).To(Equal("EffectivenessAssessment"))
 
-		GinkgoWriter.Printf("IT-RO-253-002: EA created with HashComputeAfter=%s, GitOpsSyncDelay=%s, OperatorReconcileDelay=%s\n",
-			ea.Spec.HashComputeAfter.Time.Format(time.RFC3339),
-			ea.Spec.GitOpsSyncDelay.Duration,
-			ea.Spec.OperatorReconcileDelay.Duration)
+		GinkgoWriter.Printf("IT-RO-253-002: EA created with HashCheckDelay=%s\n",
+			ea.Spec.Config.HashCheckDelay.Duration)
 	})
 })
