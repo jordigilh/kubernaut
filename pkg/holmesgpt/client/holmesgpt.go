@@ -241,18 +241,32 @@ func (c *HolmesGPTClient) SubmitInvestigation(ctx context.Context, req *Incident
 		return "", &APIError{StatusCode: 0, Message: fmt.Sprintf("submit investigation failed: %v", err)}
 	}
 
-	accepted, ok := res.(*IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostAcceptedApplicationJSON)
-	if !ok {
+	switch v := res.(type) {
+	case *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostAcceptedApplicationJSON:
+		var parsed struct {
+			SessionID string `json:"session_id"`
+		}
+		if err := json.Unmarshal([]byte(*v), &parsed); err != nil {
+			return "", &APIError{StatusCode: http.StatusAccepted, Message: fmt.Sprintf("failed to decode session response: %v", err)}
+		}
+		return parsed.SessionID, nil
+	case *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONBadRequest:
+		return "", &APIError{StatusCode: http.StatusBadRequest, Message: fmt.Sprintf("bad request: %s", HTTPError(*v).Detail)}
+	case *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequestApplicationProblemJSON:
+		return "", &APIError{StatusCode: http.StatusBadRequest, Message: v.Detail}
+	case *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONUnprocessableEntity:
+		return "", &APIError{StatusCode: http.StatusUnprocessableEntity, Message: fmt.Sprintf("validation error: %s", HTTPError(*v).Detail)}
+	case *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntityApplicationProblemJSON:
+		return "", &APIError{StatusCode: http.StatusUnprocessableEntity, Message: v.Detail}
+	case *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONUnauthorized:
+		return "", &APIError{StatusCode: http.StatusUnauthorized, Message: "unauthorized"}
+	case *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONForbidden:
+		return "", &APIError{StatusCode: http.StatusForbidden, Message: "forbidden"}
+	case *IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONInternalServerError:
+		return "", &APIError{StatusCode: http.StatusInternalServerError, Message: fmt.Sprintf("server error: %s", HTTPError(*v).Detail)}
+	default:
 		return "", &APIError{StatusCode: 0, Message: fmt.Sprintf("unexpected response type (expected 202 Accepted): %T", res)}
 	}
-
-	var parsed struct {
-		SessionID string `json:"session_id"`
-	}
-	if err := json.Unmarshal([]byte(*accepted), &parsed); err != nil {
-		return "", &APIError{StatusCode: http.StatusAccepted, Message: fmt.Sprintf("failed to decode session response: %v", err)}
-	}
-	return parsed.SessionID, nil
 }
 
 // PollSession polls the status of an investigation session.

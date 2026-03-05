@@ -492,14 +492,15 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 			})
 
 			Expect(err).To(HaveOccurred())
-			// HAPI returns 400 for validation errors (Pydantic validation)
+			// HAPI returns 400 or 422 for validation errors (FastAPI/Pydantic)
 			apiErr, ok := err.(*client.APIError)
 			if ok {
-				Expect(apiErr.StatusCode).To(Equal(400), "Should return 400 for validation error")
+				Expect(apiErr.StatusCode).To(Or(Equal(400), Equal(422)),
+					"Should return 400 or 422 for validation error")
 			} else {
-				// If not APIError, should still contain validation-related text
 				Expect(err.Error()).To(Or(
 					ContainSubstring("400"),
+					ContainSubstring("422"),
 					ContainSubstring("validation"),
 					ContainSubstring("required"),
 				))
