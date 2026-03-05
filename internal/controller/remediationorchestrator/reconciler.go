@@ -1626,10 +1626,15 @@ func (r *Reconciler) transitionPhase(ctx context.Context, rr *remediationv1.Reme
 // transitionToCompleted transitions the RR to Completed phase.
 func (r *Reconciler) transitionToCompleted(ctx context.Context, rr *remediationv1.RemediationRequest, outcome string) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
-	// IDEMPOTENCY: Check if already in Completed phase before attempting transition
-	// This prevents duplicate transitions and audit emissions when multiple reconciles happen simultaneously
+	// RO-AUDIT-IDEMPOTENCY: Refetch via apiReader (cache-bypassed) before the phase
+	// check. Pattern: mirrors transitionToFailed and RAR audit deduplication.
+	if err := r.apiReader.Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
+		logger.Error(err, "Failed to refetch RemediationRequest via apiReader for idempotency check")
+		return ctrl.Result{}, err
+	}
+
 	if rr.Status.OverallPhase == phase.Completed {
-		logger.V(1).Info("Already in Completed phase, skipping transition")
+		logger.V(1).Info("Already in Completed phase (confirmed via apiReader), skipping transition")
 		return ctrl.Result{}, nil
 	}
 
@@ -1778,11 +1783,18 @@ func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.R
 		}
 	}
 
-	// Normal terminal Failed transition
-	// IDEMPOTENCY: Check if already in Failed phase before attempting transition
-	// This prevents duplicate transitions and audit emissions when multiple reconciles happen simultaneously
+	// RO-AUDIT-IDEMPOTENCY: Refetch via apiReader (cache-bypassed) before the phase
+	// check. The informer cache is eventually consistent — a second reconcile may
+	// start with stale cache showing non-Failed phase after the first reconcile has
+	// already transitioned, causing duplicate orchestrator.lifecycle.completed events.
+	// Pattern: mirrors RAR audit deduplication (remediation_approval_request.go).
+	if err := r.apiReader.Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
+		logger.Error(err, "Failed to refetch RemediationRequest via apiReader for idempotency check")
+		return ctrl.Result{}, err
+	}
+
 	if rr.Status.OverallPhase == phase.Failed {
-		logger.V(1).Info("Already in Failed phase, skipping transition")
+		logger.V(1).Info("Already in Failed phase (confirmed via apiReader), skipping transition")
 		return ctrl.Result{}, nil
 	}
 
