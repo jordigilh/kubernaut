@@ -284,7 +284,6 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 
 			// V1.0: Use structured MandatoryLabels
 			labels := models.MandatoryLabels{
-				SignalName:  "test",
 				Severity:    []string{"low"},
 				Component:   "test",
 				Priority:    "P3",

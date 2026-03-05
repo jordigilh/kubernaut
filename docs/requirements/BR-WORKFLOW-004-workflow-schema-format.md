@@ -1,4 +1,4 @@
-# BR-WORKFLOW-004: Workflow Schema Format Specification
+ing ite# BR-WORKFLOW-004: Workflow Schema Format Specification
 
 **Business Requirement ID**: BR-WORKFLOW-004
 **Category**: Workflow Catalog Service
@@ -19,6 +19,13 @@
 ---
 
 ## Changelog
+
+### Version 1.2 (2026-03-04)
+- **REMOVED**: `labels.signalType` / `labels.signalName` (#274)
+  - Signal names are adapter-specific (Prometheus vs K8s Event) and inconsistent across sources
+  - LLM selects workflows by `actionType` + structured descriptions, not signal name
+  - Aligns code with DD-WORKFLOW-016 decision (signalName not used for matching)
+  - Removed from: `MandatoryLabels` struct, search filter, parser, all fixtures
 
 ### Version 1.1 (2026-03-02)
 - **ADDED**: `schemaVersion` top-level required field (#255)
@@ -73,7 +80,6 @@ metadata:
 actionType: RestartPod
 
 labels:
-  signalType: OOMKilled
   severity: [critical]
   environment: [production]
   component: pod
@@ -166,7 +172,6 @@ These fields are used by the three-step discovery protocol (DD-HAPI-017) to filt
 
 | Field | Type | Required | Valid Values | Description |
 |-------|------|----------|--------------|-------------|
-| `signalType` | string | No | Any (e.g., `OOMKilled`, `CrashLoopBackOff`, `NodeNotReady`) | The signal type this workflow handles |
 | `severity` | string[] | Yes | `[critical, high, medium, low]` | Severity level(s) this workflow is designed for. Always an array. To match any severity, list all levels. |
 | `component` | string | Yes | Any (e.g., `pod`, `deployment`, `node`, `service`) | Kubernetes resource type this workflow remediates |
 | `environment` | string[] | Yes | Any (e.g., `[production, staging]`, `[*]` for all) | Target environment(s). Always an array. Use `*` to match any environment. |
@@ -340,6 +345,7 @@ The following fields from the previous schema format (ADR-043) are removed:
 | `kind` | No Kubernetes association. |
 | `labels.riskTolerance` | Never stored in the database, never queried, never used in discovery. Dead code. If needed in the future, use `customLabels`. |
 | `labels.businessCategory` | Moved to `customLabels` (operator-defined, not a mandatory matching criterion). |
+| `labels.signalType` / `labels.signalName` | Removed (#274). Signal names are adapter-specific and inconsistent. LLM selects by `actionType` + structured descriptions. See DD-WORKFLOW-016. |
 
 ---
 

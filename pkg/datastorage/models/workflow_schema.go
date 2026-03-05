@@ -137,13 +137,8 @@ type WorkflowMaintainer struct {
 // workflows for a given incident context. Stored in the labels JSONB column.
 //
 // BR-WORKFLOW-004: severity, environment, component, priority are required.
-// DD-WORKFLOW-016: signalName is optional metadata (not used for matching -- LLM uses actionType).
+// Issue #274: signalName removed — LLM selects by actionType + structured descriptions.
 type WorkflowSchemaLabels struct {
-	// SignalName is the signal type this workflow handles (OPTIONAL per DD-WORKFLOW-016)
-	// Was required prior to DD-WORKFLOW-016; now optional metadata for workflow authors.
-	// Examples: "OOMKilled", "CrashLoopBackOff", "NodeNotReady"
-	SignalName string `yaml:"signalName,omitempty" json:"signalName,omitempty" validate:"omitempty"`
-
 	// Severity is the severity level(s) this workflow is designed for (REQUIRED)
 	// Values: "critical", "high", "medium", "low"
 	// DD-WORKFLOW-001 v2.7: Always an array in workflow-schema.yaml.
@@ -441,10 +436,9 @@ func (d *DetectedLabelsSchema) ValidateDetectedLabels() error {
 // ========================================
 
 // ValidateMandatoryLabels checks if all mandatory labels are present
-// BR-WORKFLOW-004 + DD-WORKFLOW-016: severity, environment, component, priority are required.
-// signalType is optional metadata (DD-WORKFLOW-016).
+// BR-WORKFLOW-004: severity, environment, component, priority are required.
+// Issue #274: signalName removed from schema — not validated or stored.
 func (l *WorkflowSchemaLabels) ValidateMandatoryLabels() error {
-	// Note: signalType intentionally NOT validated -- optional per DD-WORKFLOW-016
 	if len(l.Severity) == 0 {
 		return NewSchemaValidationError("labels.severity", "severity is required (at least one value)")
 	}
