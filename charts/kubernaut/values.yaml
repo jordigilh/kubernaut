@@ -78,6 +78,8 @@ remediationorchestrator:
       gitOpsSyncDelay: "3m"
       # Expected time for operator to reconcile after CR update
       operatorReconcileDelay: "1m"
+      # Extra delay for proactive alert resolution (e.g. predict_linear needs fresh data)
+      proactiveAlertDelay: "5m"
 
 # -- WorkflowExecution controller
 workflowexecution:

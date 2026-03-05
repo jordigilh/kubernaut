@@ -448,6 +448,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	reconciler.SetAsyncPropagation(roconfig.AsyncPropagationConfig{
 		GitOpsSyncDelay:        2 * time.Minute,
 		OperatorReconcileDelay: 30 * time.Second,
+		ProactiveAlertDelay:    5 * time.Minute,
 	})
 
 	// Issue #214: Wire DSHistoryAdapter for CheckIneffectiveRemediationChain

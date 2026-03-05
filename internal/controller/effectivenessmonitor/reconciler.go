@@ -547,18 +547,20 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 				logger.V(1).Info("Alert check deferred (proactive signal, #277)",
 					"alertManagerCheckAfter", ea.Status.AlertManagerCheckAfter,
 					"remaining", alertDeferral.RequeueAfter)
+				r.Metrics.RecordComponentAssessment("alert", "deferred", time.Since(startTime).Seconds(), nil)
 			} else {
 				alertResult := r.assessAlert(ctx, ea)
 				ea.Status.Components.AlertAssessed = alertResult.Component.Assessed
 				ea.Status.Components.AlertScore = alertResult.Component.Score
 				r.Metrics.RecordComponentAssessment("alert", resultStatus(alertResult.Component), time.Since(startTime).Seconds(), alertResult.Component.Score)
 				r.emitAlertEvent(ctx, ea, alertResult)
+				componentsChanged = true
 			}
 		} else {
 			ea.Status.Components.AlertAssessed = true
 			r.Metrics.RecordComponentAssessment("alert", "skipped", time.Since(startTime).Seconds(), nil)
+			componentsChanged = true
 		}
-		componentsChanged = true
 	}
 
 	// Metrics check (BR-EM-003) - skip if disabled or client unavailable
