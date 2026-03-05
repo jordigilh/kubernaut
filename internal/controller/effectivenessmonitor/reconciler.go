@@ -660,9 +660,11 @@ type healthAssessResult struct {
 func (r *Reconciler) assessHealth(ctx context.Context, ea *eav1.EffectivenessAssessment) healthAssessResult {
 	logger := log.FromContext(ctx)
 
-	// Build target status from K8s API (DD-EM-003: health uses SignalTarget)
+	// Build target status from K8s API (DD-EM-003: health uses RemediationTarget).
+	// The remediation target (e.g. Deployment) survives rolling restarts, whereas the
+	// signal target (e.g. the original Pod) may be deleted and replaced (#275).
 	// Pass RemediationCreatedAt so restarts can be counted relative to remediation time (#246).
-	status := r.getTargetHealthStatus(ctx, ea.Spec.SignalTarget, ea.Spec.RemediationCreatedAt)
+	status := r.getTargetHealthStatus(ctx, ea.Spec.RemediationTarget, ea.Spec.RemediationCreatedAt)
 
 	result := r.healthScorer.Score(ctx, status)
 	logger.Info("Health assessment complete",
@@ -956,7 +958,7 @@ func (r *Reconciler) executeMetricQuery(ctx context.Context, spec metricQuerySpe
 // ReplicaSet, StatefulSet, DaemonSet) and direct pod lookup for Pod targets.
 // Non-pod-owning resources (ConfigMap, Secret, Node, etc.) are checked for
 // existence only -- they have no pod health to assess.
-// DD-EM-003: Caller decides which target to pass (SignalTarget for health, etc.).
+// DD-EM-003: Health uses RemediationTarget (#275), hash uses RemediationTarget.
 func (r *Reconciler) getTargetHealthStatus(ctx context.Context, target eav1.TargetResource, remediationStartedAt *metav1.Time) health.TargetStatus {
 	logger := log.FromContext(ctx)
 
