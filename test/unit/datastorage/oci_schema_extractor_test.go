@@ -202,9 +202,8 @@ execution:
 `
 			parsedSchema, err := parser.ParseAndValidate(noSignalNameYAML)
 			Expect(err).ToNot(HaveOccurred(), "schema without signalName should be accepted")
-			Expect(parsedSchema.Labels.SignalName).To(BeEmpty())
 
-			// Labels JSONB should NOT contain signalName key when empty
+			// Labels JSONB should NOT contain signalName key when empty (Issue #274: signalName removed)
 			labelsJSON, err := parser.ExtractLabels(parsedSchema)
 			Expect(err).ToNot(HaveOccurred())
 			var labels map[string]interface{}

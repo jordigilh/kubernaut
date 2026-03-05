@@ -111,9 +111,8 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				content := `{"steps":[{"action":"scale","replicas":3}]}`
 				contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
 
-				// V1.0: Use structured MandatoryLabels
+				// V1.0: Use structured MandatoryLabels (Issue #274: signalName removed)
 				labels := models.MandatoryLabels{
-					SignalName:  "alert",
 					Severity:    []string{"critical"},
 					Component:   "kube-apiserver",
 					Priority:    "P0",
@@ -200,7 +199,6 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 			var persistedLabels map[string]interface{}
 			err = json.Unmarshal(dbLabels, &persistedLabels)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(persistedLabels).To(HaveKeyWithValue("signalName", "alert"))
 			// DD-WORKFLOW-001 v2.7: severity is now []string, stored as JSONB array
 			Expect(persistedLabels["severity"]).To(Equal([]interface{}{"critical"}))
 			// Verify environment is an array
@@ -217,9 +215,8 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				content := `{"steps":[]}`
 				contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
 
-				// V1.0: Use structured MandatoryLabels
+				// V1.0: Use structured MandatoryLabels (Issue #274: signalName removed)
 				labels := models.MandatoryLabels{
-					SignalName:  "test",
 					Severity:    []string{"low"},
 					Component:   "test",
 					Priority:    "P3",
@@ -335,8 +332,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				Expect(retrievedWorkflow.CreatedAt).ToNot(BeZero())
 				Expect(retrievedWorkflow.UpdatedAt).ToNot(BeZero())
 
-			// CRITICAL: Verify structured labels deserialized correctly
-			Expect(retrievedWorkflow.Labels.SignalName).To(Equal("test"))
+			// CRITICAL: Verify structured labels deserialized correctly (Issue #274: signalName removed)
 			Expect(retrievedWorkflow.Labels.Severity).To(Equal([]string{"low"}))
 			Expect(retrievedWorkflow.Labels.Component).To(Equal("test"))
 			Expect(retrievedWorkflow.Labels.Priority).To(Equal("P3"))
@@ -377,9 +373,8 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				content := `{"steps":[]}`
 				contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
 
-				// V1.0: Use structured MandatoryLabels
+				// V1.0: Use structured MandatoryLabels (Issue #274: signalName removed)
 				labels := models.MandatoryLabels{
-					SignalName:  "test",
 					Severity:    []string{"low"},
 					Component:   "test",
 					Priority:    "P3",
@@ -426,12 +421,11 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				Expect(workflows).To(HaveLen(3))
 				Expect(total).To(Equal(3))
 
-				// ASSERT: All fields populated for each workflow
+				// ASSERT: All fields populated for each workflow (Issue #274: signalName removed)
 				for _, wf := range workflows {
 					Expect(wf.WorkflowName).To(HavePrefix("wf-repo-"))
 					Expect(wf.Version).To(Equal("v1.0.0"))
 					Expect(wf.Name).To(HavePrefix("wf-repo-"))
-					Expect(wf.Labels.SignalName).To(Equal("test"))
 					Expect(wf.CreatedAt).ToNot(BeZero())
 					Expect(wf.UpdatedAt).ToNot(BeZero())
 				}
@@ -517,9 +511,8 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 			content := `{"steps":[]}`
 			contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
 
-			// V1.0: Use structured MandatoryLabels
+			// V1.0: Use structured MandatoryLabels (Issue #274: signalName removed)
 			labels := models.MandatoryLabels{
-				SignalName:  "test",
 				Severity:    []string{"low"},
 				Component:   "test",
 				Priority:    "P3",

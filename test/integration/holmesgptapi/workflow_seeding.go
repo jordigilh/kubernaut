@@ -44,7 +44,6 @@ func SeedTestWorkflowsInDataStorage(client *ogenclient.Client, output io.Writer)
 			Name:           wf.DisplayName,
 			Description:    wf.Description,
 			ActionType:     wf.ActionType, // DD-WORKFLOW-016: FK to action_type_taxonomy
-			SignalName:     wf.SignalName,
 			Severity:       wf.Severity,
 			Component:      wf.Component,
 			Environment:    wf.Environment,
