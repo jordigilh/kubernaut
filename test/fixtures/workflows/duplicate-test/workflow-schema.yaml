@@ -14,7 +14,6 @@ metadata:
 actionType: RestartPod
 
 labels:
-  signalName: CrashLoopBackOff
   severity: [high]
   environment: [test]
   component: deployment

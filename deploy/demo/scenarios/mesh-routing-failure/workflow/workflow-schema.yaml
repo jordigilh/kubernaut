@@ -13,7 +13,6 @@ metadata:
 actionType: FixAuthorizationPolicy
 
 labels:
-  signalName: LinkerdHighErrorRate
   severity: [critical, high]
   environment: ["*"]
   component: "*"

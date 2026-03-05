@@ -13,7 +13,6 @@ metadata:
 actionType: RelaxPDB
 
 labels:
-  signalName: KubePodDisruptionBudgetAtLimit
   severity: [low, high, critical]
   environment: [production, staging]
   component: "*"

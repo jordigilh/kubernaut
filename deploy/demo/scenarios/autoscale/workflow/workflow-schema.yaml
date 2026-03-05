@@ -13,7 +13,6 @@ metadata:
 actionType: ProvisionNode
 
 labels:
-  signalName: KubePodSchedulingFailed
   severity: [critical, high]
   environment: [production, staging, "*"]
   component: "*"

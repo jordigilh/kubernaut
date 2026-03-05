@@ -13,7 +13,6 @@ metadata:
 actionType: RestartDeployment
 
 labels:
-  signalName: CrashLoopBackOff
   severity: [high, medium]
   environment: [production, staging, test]
   component: "*"
@@ -21,7 +20,7 @@ labels:
 
 execution:
   engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/crashloop-config-fix-job:v1.0.0-exec@sha256:906c0aeda9a58e397291479a10e09670a8072c0fd644d58a4828cb55df5318f4
+  bundle: quay.io/kubernaut-cicd/test-workflows/crashloop-config-fix-job:v1.0.0-exec@sha256:ee23c557818f5d4f87338507e8bda1a2d5fad6deb616f698200d18e6ffe20755
 
 parameters:
   - name: NAMESPACE

@@ -13,7 +13,6 @@ metadata:
 actionType: GracefulRestart
 
 labels:
-  signalName: KubeDeploymentRolloutStuck
   severity: [critical, low]
   environment: [production, staging, "*"]
   component: "*"

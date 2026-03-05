@@ -13,7 +13,6 @@ metadata:
 actionType: RollbackDeployment
 
 labels:
-  signalName: ImagePullBackOff
   severity: [high]
   environment: [production, staging]
   component: deployment

@@ -13,7 +13,6 @@ metadata:
 actionType: GitRevertCommit
 
 labels:
-  signalName: CertManagerCertNotReady
   severity: [critical, high]
   environment: ["*"]
   component: "*"

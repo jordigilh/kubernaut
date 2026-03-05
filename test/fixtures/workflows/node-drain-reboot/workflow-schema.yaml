@@ -13,7 +13,6 @@ metadata:
 actionType: DrainNode
 
 labels:
-  signalName: NodeNotReady
   severity: [critical]
   environment: [production, staging, test]
   component: node
