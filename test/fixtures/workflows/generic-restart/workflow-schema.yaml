@@ -20,7 +20,7 @@ labels:
 
 execution:
   engine: tekton
-  bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:a24c3c28c27b27b42158ad0e661203406954f3ecb853b054eb3a990cdefbec2e
+  bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:8d727758cf289589e025fc9b89e254d73cb77b4c6384b850007b9ef1e8412200
 
 parameters:
   - name: NAMESPACE
