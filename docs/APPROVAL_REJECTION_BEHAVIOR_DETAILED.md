@@ -1,7 +1,12 @@
 # AIApprovalRequest Rejection - Detailed Behavior
 
+> **Updated**: The "Rejected" phase described in this document has been removed from the phase state machine.
+> Approval rejection now transitions the RemediationRequest to **Failed** with a rejection reason.
+> The overall behavior (STOP remediation, escalate, require manual intervention) remains the same;
+> only the phase name changed from "Rejected" to "Failed".
+
 **Date**: October 20, 2025
-**Status**: ✅ DEFINITIVE ANSWER
+**Status**: ✅ DEFINITIVE ANSWER (phase name updated: Rejected → Failed)
 **Source**: Implementation Plans + CRD Types
 
 ---

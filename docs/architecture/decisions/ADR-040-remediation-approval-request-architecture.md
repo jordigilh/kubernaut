@@ -1,5 +1,9 @@
 # ADR-040: RemediationApprovalRequest CRD Architecture
 
+> **Superseded (partial)**: References to a "Rejected" RR/AIAnalysis phase in this document are superseded.
+> Approval rejection now transitions the RemediationRequest to **Failed** with a rejection reason.
+> See `pkg/remediationorchestrator/phase/types.go` for the authoritative phase state machine.
+
 ## Status
 **✅ Approved** (2025-11-13)
 **Last Reviewed**: 2025-11-13

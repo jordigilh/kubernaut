@@ -1,5 +1,9 @@
 # BR-ORCH-025/026: Workflow Data Pass-Through and Approval Orchestration
 
+> **Superseded (partial)**: References to a "Rejected" RR phase in this document are superseded.
+> Approval rejection now transitions the RemediationRequest to **Failed** with a rejection reason, not to a separate "Rejected" phase.
+> See `pkg/remediationorchestrator/phase/types.go` for the authoritative phase state machine.
+
 **Service**: RemediationOrchestrator Controller
 **Category**: Workflow Data Pass-Through
 **Priority**: P0 (CRITICAL)

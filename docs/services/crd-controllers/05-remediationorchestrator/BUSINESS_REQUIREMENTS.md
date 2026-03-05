@@ -120,7 +120,7 @@ The **RemediationOrchestrator** is the central coordinator for the Kubernaut rem
 - When true: Create NotificationRequest (per ADR-017/ADR-018)
 - Wait for RemediationApprovalRequest.status.decision
 - On Approved: Create WorkflowExecution
-- On Rejected/Expired: Mark RemediationRequest as Rejected
+- On Rejected/Expired: Mark RemediationRequest as Failed (with rejection reason)
 
 **Acceptance Criteria**:
 - ✅ RemediationApprovalRequest created when approvalRequired = true
