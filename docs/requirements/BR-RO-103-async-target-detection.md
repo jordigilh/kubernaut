@@ -2,9 +2,10 @@
 
 **Status**: Draft
 **Date**: 2026-03-02
+**Updated**: 2026-03-05 (Issue #277: proactive signal detection, AlertCheckDelay)
 **Category**: ORCHESTRATION
 **Priority**: High
-**Related**: BR-EM-010, DD-EM-004, ADR-056, #132, #251, #253
+**Related**: BR-EM-010, DD-EM-004, ADR-056, #132, #251, #253, #277
 
 ---
 
@@ -118,11 +119,29 @@ See [Issue #253 Test Plan](../../testing/ISSUE-253/TEST_PLAN.md) — Propagation
 - IT: config-driven propagation delay in EA spec
 - E2E-FP-251-001: cert-manager CRD with corrected timing
 
+### BR-RO-103.6: Proactive Signal Detection and AlertCheckDelay (#277)
+
+**The RO MUST detect proactive (predictive) signals** by reading `AIAnalysis.Spec.AnalysisRequest.SignalContext.SignalMode`. When `SignalMode == "proactive"`:
+
+- The RO sets `EA.Spec.Config.AlertCheckDelay` from `AsyncPropagationConfig.ProactiveAlertDelay` (default: 5m)
+- This causes the EM to defer alert resolution checks by `AlertCheckDelay` beyond `StabilizationWindow`
+- Prometheus metric checks (`PrometheusCheckAfter`) are NOT affected
+
+**Rationale**: Proactive alerts (e.g., `predict_linear`) may take several minutes to resolve after remediation because they predict future conditions from historical data windows. Without this delay, the EM checks alert resolution too early and incorrectly reports the alert as still active.
+
+**Acceptance Criteria:**
+- RO reads `ai.Spec.AnalysisRequest.SignalContext.SignalMode` from the AIAnalysis CRD
+- When `SignalMode == "proactive"` and `ProactiveAlertDelay > 0`, RO sets `AlertCheckDelay` on the EA
+- `ProactiveAlertDelay` is configurable in `asyncPropagation` config section (default: 5m)
+- When `SignalMode != "proactive"` or AIAnalysis unavailable, `AlertCheckDelay` is nil
+
 ## References
 
 - [DD-EM-004](../../architecture/decisions/DD-EM-004-async-hash-deferral.md) — Async hash deferral design
 - [ADR-056](../../architecture/decisions/ADR-056-post-rca-label-computation.md) — Post-RCA label computation
 - [BR-EM-010](BR-EM-010-async-hash-deferral.md) — EM hash deferral requirement
+- [BR-EM-009](BR-EM-009-derived-timing-computation.md) — Derived timing computation (AlertManagerCheckAfter)
 - [#132](https://github.com/jordigilh/kubernaut/issues/132) — GitOps causality
 - [#251](https://github.com/jordigilh/kubernaut/issues/251) — Async hash deferral (foundation)
 - [#253](https://github.com/jordigilh/kubernaut/issues/253) — Timing model correction
+- [#277](https://github.com/jordigilh/kubernaut/issues/277) — Alert stabilization delay

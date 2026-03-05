@@ -4126,33 +4126,36 @@ components:
           format: date-time
           description: |
             Earliest time for hash computation (only for assessment.scheduled events).
-            Set by the RO for async-managed targets (GitOps, operator CRDs) where spec
-            changes propagate after the WorkflowExecution completes. Nil/absent means
-            hash is computed immediately (sync targets).
-            Reference: DD-EM-004, BR-EM-010, BR-RO-103
+            Computed as EA.creationTimestamp + EA.Spec.Config.HashCheckDelay for
+            async-managed targets (GitOps, operator CRDs). Nil/absent means hash is
+            computed immediately (sync targets).
+            Reference: DD-EM-004, BR-EM-010, BR-RO-103, Issue #277
           example: "2026-02-12T15:10:00Z"
         gitops_sync_delay:
           type: string
           description: |
-            Configured GitOps sync delay from RO config, propagated via EA spec.
-            Present only for GitOps-managed async targets. Format: Go duration string.
+            DEPRECATED (#277): GitOps sync delay is now part of the RO audit event.
+            Previously propagated via EA spec; now removed from EA spec.
+            Retained for backward compatibility in existing audit records.
             Reference: DD-EM-004 v2.0, BR-RO-103.4, Issue #253
           example: "3m0s"
         operator_reconcile_delay:
           type: string
           description: |
-            Configured operator reconcile delay from RO config, propagated via EA spec.
-            Present only for operator-managed CRD targets. Format: Go duration string.
+            DEPRECATED (#277): Operator reconcile delay is now part of the RO audit event.
+            Previously propagated via EA spec; now removed from EA spec.
+            Retained for backward compatibility in existing audit records.
             Reference: DD-EM-004 v2.0, BR-RO-103.4, Issue #253
           example: "1m0s"
         total_propagation_delay:
           type: string
           description: |
-            Total propagation delay (sum of gitops_sync_delay + operator_reconcile_delay).
-            Computed by the EM from the EA spec fields for audit observability.
-            Present only for async targets. Format: Go duration string.
-            Reference: DD-EM-004 v2.0, BR-RO-103.5, Issue #253
-          example: "4m0s"
+            Alert check delay duration for proactive signals (#277).
+            Set when EA.Spec.Config.AlertCheckDelay is present (proactive/predictive alerts).
+            Format: Go duration string (e.g., "5m0s").
+            Replaces the former total propagation delay semantic.
+            Reference: BR-EM-009, Issue #277
+          example: "5m0s"
         validity_window:
           type: string
           description: |

@@ -2,9 +2,10 @@
 
 **Status**: Draft
 **Date**: 2026-02-12
+**Updated**: 2026-03-05 (Issue #277: AlertCheckDelay additive semantics)
 **Category**: EFFECTIVENESS
 **Priority**: High
-**Related**: ADR-EM-001 v1.3, DD-017 v2.3, BR-EM-006, BR-EM-007
+**Related**: ADR-EM-001 v1.3, DD-017 v2.3, BR-EM-006, BR-EM-007, Issue #277
 
 ---
 
@@ -12,7 +13,7 @@
 
 The Effectiveness Monitor (EM) must compute and persist all timing-derived assessment fields on first reconciliation. This prevents redundant recomputation on every reconcile loop, provides operator observability into the assessment timeline, and enforces the invariant that `StabilizationWindow < ValidityDeadline`.
 
-**EA Spec Simplification**: The EA CRD `spec.config` (EAConfig) contains only `StabilizationWindow` (set by the RO). `ScoringThreshold`, `PrometheusEnabled`, and `AlertManagerEnabled` are EM operational config only — they are not in the EA spec.
+**EA Spec Configuration**: The EA CRD `spec.config` (EAConfig) contains `StabilizationWindow` (always set by the RO), plus optional `HashCheckDelay` (for async targets, #253/#277) and `AlertCheckDelay` (for proactive alerts, #277). `ScoringThreshold`, `PrometheusEnabled`, and `AlertManagerEnabled` are EM operational config only — they are not in the EA spec.
 
 Previously, `ValidityDeadline` was set by the RO in the EA spec. This created a risk where the RO could misconfigure the deadline such that `StabilizationWindow > ValidityDeadline`, causing the EA to expire before assessment could begin.
 
@@ -54,12 +55,20 @@ Where `StabilizationWindow` comes from `EA.Spec.Config.StabilizationWindow`. The
 **The EM controller MUST compute `AlertManagerCheckAfter` on first reconciliation** (Pending → Stabilizing transition when StabilizationWindow > 0, or Pending → Assessing when StabilizationWindow == 0) as:
 
 ```
-AlertManagerCheckAfter = EA.creationTimestamp + StabilizationWindow
+AlertManagerCheckAfter = EA.creationTimestamp + StabilizationWindow + AlertCheckDelay (if set)
 ```
+
+When `EA.Spec.Config.AlertCheckDelay` is nil, `AlertManagerCheckAfter` equals `PrometheusCheckAfter` (no additional delay). When set (e.g., for proactive/predictive alerts), the delay is **additive** on top of `StabilizationWindow`. `PrometheusCheckAfter` is NOT affected by `AlertCheckDelay`.
+
+**Issue #277**: The RO sets `AlertCheckDelay` when `AIAnalysis.Spec.AnalysisRequest.SignalContext.SignalMode == "proactive"`, giving predictive alerts (e.g., `predict_linear`) extra time to resolve after remediation.
 
 **Acceptance Criteria:**
 - AlertManagerCheckAfter is stored in `EA.Status.AlertManagerCheckAfter`
-- The reconciler uses this value to determine when AlertManager checks can begin
+- AlertManagerCheckAfter equals PrometheusCheckAfter when AlertCheckDelay is nil
+- AlertManagerCheckAfter = PrometheusCheckAfter + AlertCheckDelay when AlertCheckDelay is set
+- PrometheusCheckAfter is NOT impacted by AlertCheckDelay
+- The EM defers alert resolution checks until AlertManagerCheckAfter
+- Health and metrics assessments are NOT blocked by AlertCheckDelay
 - Value is computed exactly once
 
 ### BR-EM-009.4: Assessment Scheduled Audit Event

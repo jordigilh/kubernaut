@@ -8,6 +8,7 @@
 |---------|------|--------|---------|
 | 1.0 | 2026-03-02 | Architecture Team | Initial DD: async hash deferral via RO-driven `hashComputeAfter` timestamp, CRD API group heuristic, GitOps label detection |
 | 2.0 | 2026-03-03 | Architecture Team | #253: Corrected timing model — separate propagation delay from stabilization window; `WaitingForPropagation` phase; RO config `gitOpsSyncDelay` / `operatorReconcileDelay`; compounding logic; EM `checkAfter` anchored to `HashComputeAfter` |
+| 3.0 | 2026-03-05 | Architecture Team | #277: Migrated `HashComputeAfter` (absolute Time) to `HashCheckDelay` (relative Duration in EAConfig). Added `AlertCheckDelay` for proactive signal alert resolution deferral. Removed `GitOpsSyncDelay`/`OperatorReconcileDelay` from EA spec (RO audit handles these). Added `AlertCheckAfter` to `DerivedTiming`. RO detects proactive signals via `AIAnalysis.Spec.AnalysisRequest.SignalContext.SignalMode`. |
 
 ---
 
