@@ -218,6 +218,7 @@ redis:
 hooks:
   migrations:
     image: postgres:16-alpine
+    gooseVersion: v3.24.1  # DD-012: goose CLI version for migration state tracking
   seedWorkflows:
     image: curlimages/curl:latest
   tlsCerts:

@@ -52,25 +52,27 @@ spec:
             - -c
             - |
               set -e
-              echo "==> Applying SQL migrations"
-              MIGRATIONS_DIR="/migrations"
-              FAILED=0
-              APPLIED=0
-              for migration in $(ls "$MIGRATIONS_DIR"/*.sql 2>/dev/null | sort); do
-                filename=$(basename "$migration")
-                echo -n "  Applying: ${filename}..."
-                if sed -n '1,/^-- +goose Down/p' "$migration" | grep -v '^-- +goose Down' | \
-                  psql -q 2>&1; then
-                  echo " OK"
-                  APPLIED=$((APPLIED + 1))
-                else
-                  echo " FAILED"
-                  FAILED=$((FAILED + 1))
-                fi
-              done
-              echo "  Applied: ${APPLIED}, Failed: ${FAILED}"
 
-              echo "  Granting privileges..."
+              GOOSE_VERSION="{{ .Values.hooks.migrations.gooseVersion }}"
+              GOOSE_BIN="/usr/local/bin/goose"
+              ARCH=$(uname -m)
+              case "$ARCH" in
+                x86_64)  GOOSE_ARCH="x86_64" ;;
+                aarch64) GOOSE_ARCH="arm64" ;;
+                *)       echo "ERROR: Unsupported architecture: $ARCH"; exit 1 ;;
+              esac
+
+              echo "==> Installing goose ${GOOSE_VERSION} (${GOOSE_ARCH})..."
+              wget -qO "$GOOSE_BIN" \
+                "https://github.com/pressly/goose/releases/download/${GOOSE_VERSION}/goose_linux_${GOOSE_ARCH}"
+              chmod +x "$GOOSE_BIN"
+
+              GOOSE_DBSTRING="host=$PGHOST user=$PGUSER password=$PGPASSWORD dbname=$PGDATABASE sslmode=disable"
+
+              echo "==> Applying SQL migrations with goose (DD-012)"
+              goose -dir /migrations postgres "$GOOSE_DBSTRING" up
+
+              echo "==> Granting privileges..."
               psql -q <<'EOSQL'
               GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO {{ .Values.postgresql.auth.username }};
               GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO {{ .Values.postgresql.auth.username }};
