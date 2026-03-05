@@ -58,6 +58,7 @@ jobs:
           VERSION=${TAG#v}
           echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "build_date=$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
           echo "Release: $TAG (version: $VERSION)"
 
       - name: Set up Go
@@ -93,6 +94,9 @@ jobs:
           IMAGE_TAG: ${{ steps.version.outputs.version }}
           IMAGE_ARCH: amd64
           CONTAINER_TOOL: podman
+          APP_VERSION: ${{ steps.version.outputs.version }}
+          GIT_COMMIT: ${{ github.sha }}
+          BUILD_DATE: ${{ steps.version.outputs.build_date }}
         run: |
           echo "Building all services for amd64..."
           make image-build
@@ -104,6 +108,9 @@ jobs:
           IMAGE_TAG: ${{ steps.version.outputs.version }}
           IMAGE_ARCH: arm64
           CONTAINER_TOOL: podman
+          APP_VERSION: ${{ steps.version.outputs.version }}
+          GIT_COMMIT: ${{ github.sha }}
+          BUILD_DATE: ${{ steps.version.outputs.build_date }}
         run: |
           echo "Building all services for arm64 (via QEMU)..."
           make image-build

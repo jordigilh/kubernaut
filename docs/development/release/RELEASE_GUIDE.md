@@ -125,6 +125,43 @@ Created with auto-generated release notes (commit history since previous tag).
 - **must-gather**: `ubi9/ubi` base with kubectl and jq.
 - **arm64 on amd64 runner**: QEMU user-space emulation (`qemu-user-static`). Go cross-compiles natively; QEMU handles the container base layer and any non-Go build steps.
 
+## Version Injection
+
+Every released image carries build-time version metadata, both embedded in Go binaries and exposed as OCI image labels.
+
+### Go services
+
+All 9 Go services import `internal/version` which exposes three variables (`Version`, `GitCommit`, `BuildDate`) set at build time via `-ldflags`:
+
+```
+-X github.com/jordigilh/kubernaut/internal/version.Version=<version>
+-X github.com/jordigilh/kubernaut/internal/version.GitCommit=<sha>
+-X github.com/jordigilh/kubernaut/internal/version.BuildDate=<timestamp>
+```
+
+Each service logs these values at startup.
+
+### OCI labels
+
+All 11 Dockerfiles include standard OCI labels:
+
+| Label | Value |
+|-------|-------|
+| `org.opencontainers.image.version` | Release version (e.g. `1.0.0`) |
+| `org.opencontainers.image.revision` | Git commit SHA |
+| `org.opencontainers.image.created` | Build timestamp (RFC 3339) |
+| `org.opencontainers.image.source` | Repository URL |
+| `org.opencontainers.image.title` | Service name |
+
+### How it flows
+
+1. The release workflow extracts version from the git tag and captures `build_date` and `github.sha`.
+2. These are passed as `APP_VERSION`, `GIT_COMMIT`, `BUILD_DATE` environment variables to `make image-build`.
+3. The Makefile forwards them as `--build-arg` to each `podman build` invocation.
+4. Inside each Dockerfile, `ARG` declarations receive the values, which are used in `ldflags` (Go) and `LABEL` directives (all).
+
+For local builds, the Makefile defaults to `dev` / short git SHA / current timestamp.
+
 ## Troubleshooting
 
 ### Workflow fails at "Login to Quay.io"
@@ -157,5 +194,6 @@ Ensure the robot account can create repositories in Quay.io (Creator team role).
 
 - Issue [#80](https://github.com/jordigilh/kubernaut/issues/80) — Release: Helm chart creation, multi-arch images, and public publishing
 - Issue [#257](https://github.com/jordigilh/kubernaut/issues/257) — release(ci): Multi-arch image build + Helm OCI publish workflow
+- Issue [#273](https://github.com/jordigilh/kubernaut/issues/273) — Standardize version injection and OCI labels across all services
 - `.github/workflows/release.yml` — Release workflow source
 - `Makefile` — `image-build`, `image-push`, `image-manifest` targets
