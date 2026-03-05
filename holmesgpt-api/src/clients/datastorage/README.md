@@ -219,7 +219,6 @@ Class | Method | HTTP request | Description
  - [MandatoryLabels](docs/MandatoryLabels.md)
  - [NotificationAudit](docs/NotificationAudit.md)
  - [NotificationAuditPayload](docs/NotificationAuditPayload.md)
- - [NotificationAuditPayloadRecipientsInner](docs/NotificationAuditPayloadRecipientsInner.md)
  - [NotificationAuditResponse](docs/NotificationAuditResponse.md)
  - [NotificationMessageAcknowledgedPayload](docs/NotificationMessageAcknowledgedPayload.md)
  - [NotificationMessageEscalatedPayload](docs/NotificationMessageEscalatedPayload.md)

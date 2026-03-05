@@ -67,7 +67,6 @@ datastorage/models/llm_tool_call_payload.py
 datastorage/models/mandatory_labels.py
 datastorage/models/notification_audit.py
 datastorage/models/notification_audit_payload.py
-datastorage/models/notification_audit_payload_recipients_inner.py
 datastorage/models/notification_audit_response.py
 datastorage/models/notification_message_acknowledged_payload.py
 datastorage/models/notification_message_escalated_payload.py
@@ -173,7 +172,6 @@ docs/MandatoryLabels.md
 docs/MetricsApi.md
 docs/NotificationAudit.md
 docs/NotificationAuditPayload.md
-docs/NotificationAuditPayloadRecipientsInner.md
 docs/NotificationAuditResponse.md
 docs/NotificationMessageAcknowledgedPayload.md
 docs/NotificationMessageEscalatedPayload.md
@@ -287,7 +285,6 @@ test/test_mandatory_labels.py
 test/test_metrics_api.py
 test/test_notification_audit.py
 test/test_notification_audit_payload.py
-test/test_notification_audit_payload_recipients_inner.py
 test/test_notification_audit_response.py
 test/test_notification_message_acknowledged_payload.py
 test/test_notification_message_escalated_payload.py

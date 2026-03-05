@@ -137,13 +137,8 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                 type = '',
                 notification_type = 'escalation',
                 final_status = 'Pending',
-                recipients = [
-                    datastorage.models.notification_audit_payload_recipients_inner.NotificationAuditPayload_recipients_inner(
-                        email = 'user@example.com', 
-                        slack = '#alerts', 
-                        teams = 'team@company.com', 
-                        phone = '+1234567890', 
-                        webhook_url = 'https://example.com/webhook', )
+                delivery_channels = [
+                    ''
                     ],
                 cancelled_by = '',
                 user_uid = '',
