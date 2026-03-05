@@ -8521,9 +8521,9 @@ type NotificationAuditPayload struct {
 	// Final status of the notification (matches api/notification/v1alpha1/notificationrequest_types.
 	// go:60-65).
 	FinalStatus OptNotificationAuditPayloadFinalStatus `json:"final_status"`
-	// Array of notification recipients from CRD (BR-NOTIFICATION-001, matches
-	// api/notification/v1alpha1/notificationrequest_types.go:80-102).
-	Recipients []NotificationAuditPayloadRecipientsItem `json:"recipients"`
+	// Channels the notification was delivered to, extracted from status.deliveryAttempts (e.g. "slack",
+	// "console", "file").
+	DeliveryChannels []string `json:"delivery_channels"`
 	// Username who cancelled the notification.
 	CancelledBy OptString `json:"cancelled_by"`
 	// UID of the user who performed the action.
@@ -8569,9 +8569,9 @@ func (s *NotificationAuditPayload) GetFinalStatus() OptNotificationAuditPayloadF
 	return s.FinalStatus
 }
 
-// GetRecipients returns the value of Recipients.
-func (s *NotificationAuditPayload) GetRecipients() []NotificationAuditPayloadRecipientsItem {
-	return s.Recipients
+// GetDeliveryChannels returns the value of DeliveryChannels.
+func (s *NotificationAuditPayload) GetDeliveryChannels() []string {
+	return s.DeliveryChannels
 }
 
 // GetCancelledBy returns the value of CancelledBy.
@@ -8629,9 +8629,9 @@ func (s *NotificationAuditPayload) SetFinalStatus(val OptNotificationAuditPayloa
 	s.FinalStatus = val
 }
 
-// SetRecipients sets the value of Recipients.
-func (s *NotificationAuditPayload) SetRecipients(val []NotificationAuditPayloadRecipientsItem) {
-	s.Recipients = val
+// SetDeliveryChannels sets the value of DeliveryChannels.
+func (s *NotificationAuditPayload) SetDeliveryChannels(val []string) {
+	s.DeliveryChannels = val
 }
 
 // SetCancelledBy sets the value of CancelledBy.
@@ -8919,70 +8919,6 @@ func (s *NotificationAuditPayloadPriority) UnmarshalText(data []byte) error {
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
-}
-
-// Notification recipient (matches CRD Recipient struct).
-type NotificationAuditPayloadRecipientsItem struct {
-	// Email address (for email channel).
-	Email OptString `json:"email"`
-	// Slack channel or user (#channel-name or @username).
-	Slack OptString `json:"slack"`
-	// Teams channel or user.
-	Teams OptString `json:"teams"`
-	// Phone number in E.164 format.
-	Phone OptString `json:"phone"`
-	// Webhook URL for webhook channel.
-	WebhookURL OptString `json:"webhookURL"`
-}
-
-// GetEmail returns the value of Email.
-func (s *NotificationAuditPayloadRecipientsItem) GetEmail() OptString {
-	return s.Email
-}
-
-// GetSlack returns the value of Slack.
-func (s *NotificationAuditPayloadRecipientsItem) GetSlack() OptString {
-	return s.Slack
-}
-
-// GetTeams returns the value of Teams.
-func (s *NotificationAuditPayloadRecipientsItem) GetTeams() OptString {
-	return s.Teams
-}
-
-// GetPhone returns the value of Phone.
-func (s *NotificationAuditPayloadRecipientsItem) GetPhone() OptString {
-	return s.Phone
-}
-
-// GetWebhookURL returns the value of WebhookURL.
-func (s *NotificationAuditPayloadRecipientsItem) GetWebhookURL() OptString {
-	return s.WebhookURL
-}
-
-// SetEmail sets the value of Email.
-func (s *NotificationAuditPayloadRecipientsItem) SetEmail(val OptString) {
-	s.Email = val
-}
-
-// SetSlack sets the value of Slack.
-func (s *NotificationAuditPayloadRecipientsItem) SetSlack(val OptString) {
-	s.Slack = val
-}
-
-// SetTeams sets the value of Teams.
-func (s *NotificationAuditPayloadRecipientsItem) SetTeams(val OptString) {
-	s.Teams = val
-}
-
-// SetPhone sets the value of Phone.
-func (s *NotificationAuditPayloadRecipientsItem) SetPhone(val OptString) {
-	s.Phone = val
-}
-
-// SetWebhookURL sets the value of WebhookURL.
-func (s *NotificationAuditPayloadRecipientsItem) SetWebhookURL(val OptString) {
-	s.WebhookURL = val
 }
 
 // Notification type (matches api/notification/v1alpha1/notificationrequest_types.go:31-40).

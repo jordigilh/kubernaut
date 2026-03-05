@@ -19,6 +19,7 @@ package authwebhook
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
@@ -124,30 +125,12 @@ func (v *NotificationRequestValidator) ValidateDelete(ctx context.Context, obj r
 	payload.NotificationType.SetTo(toNotificationAuditPayloadNotificationType(string(nr.Spec.Type)))
 	payload.Priority.SetTo(toNotificationAuditPayloadPriority(string(nr.Spec.Priority)))
 	payload.FinalStatus.SetTo(toNotificationAuditPayloadFinalStatus(string(nr.Status.Phase)))
-	// Recipients field (per DD-AUDIT-004: Structured types for all CRD data)
-	// Convert CRD Recipient array to ogen-generated structured type
-	if len(nr.Spec.Recipients) > 0 {
-		recipients := make([]api.NotificationAuditPayloadRecipientsItem, len(nr.Spec.Recipients))
-		for i, r := range nr.Spec.Recipients {
-			item := api.NotificationAuditPayloadRecipientsItem{}
-			if r.Email != "" {
-				item.Email.SetTo(r.Email)
-			}
-			if r.Slack != "" {
-				item.Slack.SetTo(r.Slack)
-			}
-			if r.Teams != "" {
-				item.Teams.SetTo(r.Teams)
-			}
-			if r.Phone != "" {
-				item.Phone.SetTo(r.Phone)
-			}
-			if r.WebhookURL != "" {
-				item.WebhookURL.SetTo(r.WebhookURL)
-			}
-			recipients[i] = item
-		}
-		payload.Recipients = recipients
+	// Delivery channels from status.deliveryAttempts (fixes #276: spec.recipients was always null)
+	channels := ExtractDeliveryChannels(nr.Status.DeliveryAttempts)
+	if channels != nil {
+		payload.DeliveryChannels = channels
+	} else {
+		payload.DeliveryChannels = []string{}
 	}
 
 	// Note: Attribution fields (WHO, WHAT, WHERE, HOW) are in structured columns:
@@ -166,5 +149,25 @@ func (v *NotificationRequestValidator) ValidateDelete(ctx context.Context, obj r
 
 	// Allow DELETE to proceed (return nil error)
 	return nil, nil
+}
+
+// ExtractDeliveryChannels returns a sorted, deduplicated list of channel names
+// from the given delivery attempts. Returns nil if attempts is nil or empty.
+func ExtractDeliveryChannels(attempts []notificationv1.DeliveryAttempt) []string {
+	if len(attempts) == 0 {
+		return nil
+	}
+	seen := make(map[string]bool)
+	for _, da := range attempts {
+		if da.Channel != "" {
+			seen[da.Channel] = true
+		}
+	}
+	channels := make([]string, 0, len(seen))
+	for ch := range seen {
+		channels = append(channels, ch)
+	}
+	sort.Strings(channels)
+	return channels
 }
 

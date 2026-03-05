@@ -3789,33 +3789,11 @@ components:
           type: string
           enum: [Pending, Sending, Sent, Failed, Cancelled]
           description: Final status of the notification (matches api/notification/v1alpha1/notificationrequest_types.go:60-65)
-        recipients:
+        delivery_channels:
           type: array
           items:
-            type: object
-            properties:
-              email:
-                type: string
-                description: Email address (for email channel)
-                example: "user@example.com"
-              slack:
-                type: string
-                description: Slack channel or user (#channel-name or @username)
-                example: "#alerts"
-              teams:
-                type: string
-                description: Teams channel or user
-                example: "team@company.com"
-              phone:
-                type: string
-                description: Phone number in E.164 format
-                example: "+1234567890"
-              webhookURL:
-                type: string
-                description: Webhook URL for webhook channel
-                example: "https://example.com/webhook"
-            description: Notification recipient (matches CRD Recipient struct)
-          description: Array of notification recipients from CRD (BR-NOTIFICATION-001, matches api/notification/v1alpha1/notificationrequest_types.go:80-102)
+            type: string
+          description: Channels the notification was delivered to, extracted from status.deliveryAttempts (e.g. "slack", "console", "file")
         cancelled_by:
           type: string
           description: Username who cancelled the notification
@@ -4126,36 +4104,33 @@ components:
           format: date-time
           description: |
             Earliest time for hash computation (only for assessment.scheduled events).
-            Computed as EA.creationTimestamp + EA.Spec.Config.HashCheckDelay for
-            async-managed targets (GitOps, operator CRDs). Nil/absent means hash is
-            computed immediately (sync targets).
-            Reference: DD-EM-004, BR-EM-010, BR-RO-103, Issue #277
+            Set by the RO for async-managed targets (GitOps, operator CRDs) where spec
+            changes propagate after the WorkflowExecution completes. Nil/absent means
+            hash is computed immediately (sync targets).
+            Reference: DD-EM-004, BR-EM-010, BR-RO-103
           example: "2026-02-12T15:10:00Z"
         gitops_sync_delay:
           type: string
           description: |
-            DEPRECATED (#277): GitOps sync delay is now part of the RO audit event.
-            Previously propagated via EA spec; now removed from EA spec.
-            Retained for backward compatibility in existing audit records.
+            Configured GitOps sync delay from RO config, propagated via EA spec.
+            Present only for GitOps-managed async targets. Format: Go duration string.
             Reference: DD-EM-004 v2.0, BR-RO-103.4, Issue #253
           example: "3m0s"
         operator_reconcile_delay:
           type: string
           description: |
-            DEPRECATED (#277): Operator reconcile delay is now part of the RO audit event.
-            Previously propagated via EA spec; now removed from EA spec.
-            Retained for backward compatibility in existing audit records.
+            Configured operator reconcile delay from RO config, propagated via EA spec.
+            Present only for operator-managed CRD targets. Format: Go duration string.
             Reference: DD-EM-004 v2.0, BR-RO-103.4, Issue #253
           example: "1m0s"
         total_propagation_delay:
           type: string
           description: |
-            Alert check delay duration for proactive signals (#277).
-            Set when EA.Spec.Config.AlertCheckDelay is present (proactive/predictive alerts).
-            Format: Go duration string (e.g., "5m0s").
-            Replaces the former total propagation delay semantic.
-            Reference: BR-EM-009, Issue #277
-          example: "5m0s"
+            Total propagation delay (sum of gitops_sync_delay + operator_reconcile_delay).
+            Computed by the EM from the EA spec fields for audit observability.
+            Present only for async targets. Format: Go duration string.
+            Reference: DD-EM-004 v2.0, BR-RO-103.5, Issue #253
+          example: "4m0s"
         validity_window:
           type: string
           description: |

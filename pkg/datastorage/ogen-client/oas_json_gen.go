@@ -2828,11 +2828,11 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 			{
-				if s.Recipients != nil {
-					e.FieldStart("recipients")
+				if s.DeliveryChannels != nil {
+					e.FieldStart("delivery_channels")
 					e.ArrStart()
-					for _, elem := range s.Recipients {
-						elem.Encode(e)
+					for _, elem := range s.DeliveryChannels {
+						e.Str(elem)
 					}
 					e.ArrEnd()
 				}
@@ -5305,11 +5305,11 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 			{
-				if s.Recipients != nil {
-					e.FieldStart("recipients")
+				if s.DeliveryChannels != nil {
+					e.FieldStart("delivery_channels")
 					e.ArrStart()
-					for _, elem := range s.Recipients {
-						elem.Encode(e)
+					for _, elem := range s.DeliveryChannels {
+						e.Str(elem)
 					}
 					e.ArrEnd()
 				}
@@ -15324,11 +15324,11 @@ func (s *NotificationAuditPayload) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.Recipients != nil {
-			e.FieldStart("recipients")
+		if s.DeliveryChannels != nil {
+			e.FieldStart("delivery_channels")
 			e.ArrStart()
-			for _, elem := range s.Recipients {
-				elem.Encode(e)
+			for _, elem := range s.DeliveryChannels {
+				e.Str(elem)
 			}
 			e.ArrEnd()
 		}
@@ -15371,7 +15371,7 @@ var jsonFieldsNameOfNotificationAuditPayload = [12]string{
 	4:  "notification_type",
 	5:  "priority",
 	6:  "final_status",
-	7:  "recipients",
+	7:  "delivery_channels",
 	8:  "cancelled_by",
 	9:  "user_uid",
 	10: "user_groups",
@@ -15457,22 +15457,24 @@ func (s *NotificationAuditPayload) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"final_status\"")
 			}
-		case "recipients":
+		case "delivery_channels":
 			if err := func() error {
-				s.Recipients = make([]NotificationAuditPayloadRecipientsItem, 0)
+				s.DeliveryChannels = make([]string, 0)
 				if err := d.Arr(func(d *jx.Decoder) error {
-					var elem NotificationAuditPayloadRecipientsItem
-					if err := elem.Decode(d); err != nil {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
 						return err
 					}
-					s.Recipients = append(s.Recipients, elem)
+					s.DeliveryChannels = append(s.DeliveryChannels, elem)
 					return nil
 				}); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"recipients\"")
+				return errors.Wrap(err, "decode field \"delivery_channels\"")
 			}
 		case "cancelled_by":
 			if err := func() error {
@@ -15792,137 +15794,6 @@ func (s NotificationAuditPayloadPriority) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *NotificationAuditPayloadPriority) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
-// Encode implements json.Marshaler.
-func (s *NotificationAuditPayloadRecipientsItem) Encode(e *jx.Encoder) {
-	e.ObjStart()
-	s.encodeFields(e)
-	e.ObjEnd()
-}
-
-// encodeFields encodes fields.
-func (s *NotificationAuditPayloadRecipientsItem) encodeFields(e *jx.Encoder) {
-	{
-		if s.Email.Set {
-			e.FieldStart("email")
-			s.Email.Encode(e)
-		}
-	}
-	{
-		if s.Slack.Set {
-			e.FieldStart("slack")
-			s.Slack.Encode(e)
-		}
-	}
-	{
-		if s.Teams.Set {
-			e.FieldStart("teams")
-			s.Teams.Encode(e)
-		}
-	}
-	{
-		if s.Phone.Set {
-			e.FieldStart("phone")
-			s.Phone.Encode(e)
-		}
-	}
-	{
-		if s.WebhookURL.Set {
-			e.FieldStart("webhookURL")
-			s.WebhookURL.Encode(e)
-		}
-	}
-}
-
-var jsonFieldsNameOfNotificationAuditPayloadRecipientsItem = [5]string{
-	0: "email",
-	1: "slack",
-	2: "teams",
-	3: "phone",
-	4: "webhookURL",
-}
-
-// Decode decodes NotificationAuditPayloadRecipientsItem from json.
-func (s *NotificationAuditPayloadRecipientsItem) Decode(d *jx.Decoder) error {
-	if s == nil {
-		return errors.New("invalid: unable to decode NotificationAuditPayloadRecipientsItem to nil")
-	}
-
-	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
-		switch string(k) {
-		case "email":
-			if err := func() error {
-				s.Email.Reset()
-				if err := s.Email.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"email\"")
-			}
-		case "slack":
-			if err := func() error {
-				s.Slack.Reset()
-				if err := s.Slack.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"slack\"")
-			}
-		case "teams":
-			if err := func() error {
-				s.Teams.Reset()
-				if err := s.Teams.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"teams\"")
-			}
-		case "phone":
-			if err := func() error {
-				s.Phone.Reset()
-				if err := s.Phone.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"phone\"")
-			}
-		case "webhookURL":
-			if err := func() error {
-				s.WebhookURL.Reset()
-				if err := s.WebhookURL.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"webhookURL\"")
-			}
-		default:
-			return d.Skip()
-		}
-		return nil
-	}); err != nil {
-		return errors.Wrap(err, "decode NotificationAuditPayloadRecipientsItem")
-	}
-
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s *NotificationAuditPayloadRecipientsItem) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *NotificationAuditPayloadRecipientsItem) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
