@@ -52,6 +52,12 @@ var _ = Describe("AsyncPropagation Config (#253, BR-RO-103.4)", Label("config", 
 				"OperatorReconcileDelay default should be 1m per BR-RO-103.4")
 		})
 
+		It("UT-RO-277-001: should provide default ProactiveAlertDelay", func() {
+			cfg := config.DefaultConfig()
+			Expect(cfg.AsyncPropagation.ProactiveAlertDelay).To(Equal(5*time.Minute),
+				"ProactiveAlertDelay default should be 5m per #277")
+		})
+
 		It("should validate successfully with defaults", func() {
 			cfg := config.DefaultConfig()
 			Expect(cfg.Validate()).To(Succeed())
@@ -78,6 +84,10 @@ var _ = Describe("AsyncPropagation Config (#253, BR-RO-103.4)", Label("config", 
 			Entry("operatorReconcileDelay = -30s",
 				"operatorReconcileDelay",
 				func(c *config.Config) { c.AsyncPropagation.OperatorReconcileDelay = -30 * time.Second },
+			),
+			Entry("proactiveAlertDelay = -2m",
+				"proactiveAlertDelay",
+				func(c *config.Config) { c.AsyncPropagation.ProactiveAlertDelay = -2 * time.Minute },
 			),
 		)
 	})
@@ -138,6 +148,7 @@ routing:
 asyncPropagation:
   gitOpsSyncDelay: 2m
   operatorReconcileDelay: 45s
+  proactiveAlertDelay: 7m
 `
 			cfgPath := filepath.Join(tmpDir, "config.yaml")
 			Expect(os.WriteFile(cfgPath, []byte(yamlContent), 0644)).To(Succeed())
@@ -148,6 +159,8 @@ asyncPropagation:
 				"custom gitOpsSyncDelay should be 2m")
 			Expect(cfg.AsyncPropagation.OperatorReconcileDelay).To(Equal(45*time.Second),
 				"custom operatorReconcileDelay should be 45s")
+			Expect(cfg.AsyncPropagation.ProactiveAlertDelay).To(Equal(7*time.Minute),
+				"custom proactiveAlertDelay should be 7m (#277)")
 		})
 	})
 })

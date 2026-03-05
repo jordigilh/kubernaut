@@ -28,15 +28,29 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/hash"
 )
 
-var _ = Describe("CheckHashDeferral (DD-EM-004, BR-EM-010.1)", func() {
+// ========================================
+// Hash Deferral Tests (DD-EM-004, BR-EM-010.1, Issue #277)
+// ========================================
+//
+// Issue #277: HashComputeAfter (absolute *Time) migrated to
+// HashCheckDelay (relative *Duration in EAConfig).
+// Deferral deadline = ea.CreationTimestamp + HashCheckDelay.
+
+var _ = Describe("CheckHashDeferral (DD-EM-004, BR-EM-010.1, #277)", func() {
 
 	Describe("Async-managed target: hash deferred until external controller reconciles", func() {
 
-		It("UT-EM-251-001: should defer hash computation when HashComputeAfter is in the future", func() {
-			futureTime := metav1.NewTime(time.Now().Add(5 * time.Minute))
+		It("UT-EM-251-001: should defer hash computation when deferral deadline is in the future", func() {
+			now := time.Now()
 			ea := &eav1.EffectivenessAssessment{
+				ObjectMeta: metav1.ObjectMeta{
+					CreationTimestamp: metav1.NewTime(now),
+				},
 				Spec: eav1.EffectivenessAssessmentSpec{
-					HashComputeAfter: &futureTime,
+					Config: eav1.EAConfig{
+						StabilizationWindow: metav1.Duration{Duration: 1 * time.Minute},
+						HashCheckDelay:      &metav1.Duration{Duration: 5 * time.Minute},
+					},
 				},
 			}
 
@@ -48,7 +62,7 @@ var _ = Describe("CheckHashDeferral (DD-EM-004, BR-EM-010.1)", func() {
 
 			By("providing a requeue duration matching the remaining time")
 			Expect(result.RequeueAfter).To(BeNumerically(">", 4*time.Minute),
-				"BR-EM-010.1: requeue must be approximately time.Until(HashComputeAfter)")
+				"BR-EM-010.1: requeue must be approximately time.Until(creation + HashCheckDelay)")
 			Expect(result.RequeueAfter).To(BeNumerically("<=", 5*time.Minute),
 				"BR-EM-010.1: requeue must not exceed the original deferral window")
 		})
@@ -56,47 +70,64 @@ var _ = Describe("CheckHashDeferral (DD-EM-004, BR-EM-010.1)", func() {
 
 	Describe("Sync target: hash computed immediately (backward compatible)", func() {
 
-		It("UT-EM-251-002: should compute immediately when HashComputeAfter is in the past", func() {
-			pastTime := metav1.NewTime(time.Now().Add(-1 * time.Minute))
+		It("UT-EM-251-002: should compute immediately when deferral deadline is in the past", func() {
 			ea := &eav1.EffectivenessAssessment{
+				ObjectMeta: metav1.ObjectMeta{
+					CreationTimestamp: metav1.NewTime(time.Now().Add(-10 * time.Minute)),
+				},
 				Spec: eav1.EffectivenessAssessmentSpec{
-					HashComputeAfter: &pastTime,
+					Config: eav1.EAConfig{
+						StabilizationWindow: metav1.Duration{Duration: 1 * time.Minute},
+						HashCheckDelay:      &metav1.Duration{Duration: 5 * time.Minute},
+					},
 				},
 			}
 
 			result := hash.CheckHashDeferral(ea)
 
 			Expect(result.ShouldDefer).To(BeFalse(),
-				"BR-EM-010.1: past timestamp means deferral window has elapsed")
+				"BR-EM-010.1: deferral deadline in the past means window has elapsed")
 			Expect(result.RequeueAfter).To(BeZero(),
 				"BR-EM-010.1: no requeue needed when deferral window passed")
 		})
 
-		It("UT-EM-251-003: should compute immediately when HashComputeAfter is nil (backward compat)", func() {
+		It("UT-EM-251-003: should compute immediately when HashCheckDelay is nil (backward compat)", func() {
 			ea := &eav1.EffectivenessAssessment{
-				Spec: eav1.EffectivenessAssessmentSpec{},
-			}
-
-			result := hash.CheckHashDeferral(ea)
-
-			Expect(result.ShouldDefer).To(BeFalse(),
-				"BR-EM-010.1: nil HashComputeAfter preserves existing behavior for sync targets")
-			Expect(result.RequeueAfter).To(BeZero(),
-				"BR-EM-010.1: no requeue for sync targets")
-		})
-
-		It("UT-EM-251-004: should compute immediately when HashComputeAfter is zero time", func() {
-			zeroTime := metav1.NewTime(time.Time{})
-			ea := &eav1.EffectivenessAssessment{
+				ObjectMeta: metav1.ObjectMeta{
+					CreationTimestamp: metav1.NewTime(time.Now()),
+				},
 				Spec: eav1.EffectivenessAssessmentSpec{
-					HashComputeAfter: &zeroTime,
+					Config: eav1.EAConfig{
+						StabilizationWindow: metav1.Duration{Duration: 1 * time.Minute},
+					},
 				},
 			}
 
 			result := hash.CheckHashDeferral(ea)
 
 			Expect(result.ShouldDefer).To(BeFalse(),
-				"BR-EM-010.1: zero time treated as nil for backward compatibility")
+				"BR-EM-010.1: nil HashCheckDelay preserves existing behavior for sync targets")
+			Expect(result.RequeueAfter).To(BeZero(),
+				"BR-EM-010.1: no requeue for sync targets")
+		})
+
+		It("UT-EM-251-004: should compute immediately when HashCheckDelay is zero duration", func() {
+			ea := &eav1.EffectivenessAssessment{
+				ObjectMeta: metav1.ObjectMeta{
+					CreationTimestamp: metav1.NewTime(time.Now()),
+				},
+				Spec: eav1.EffectivenessAssessmentSpec{
+					Config: eav1.EAConfig{
+						StabilizationWindow: metav1.Duration{Duration: 1 * time.Minute},
+						HashCheckDelay:      &metav1.Duration{Duration: 0},
+					},
+				},
+			}
+
+			result := hash.CheckHashDeferral(ea)
+
+			Expect(result.ShouldDefer).To(BeFalse(),
+				"BR-EM-010.1: zero duration treated as no deferral for backward compatibility")
 			Expect(result.RequeueAfter).To(BeZero())
 		})
 	})
@@ -104,10 +135,16 @@ var _ = Describe("CheckHashDeferral (DD-EM-004, BR-EM-010.1)", func() {
 	Describe("Requeue accuracy for different deferral windows", func() {
 
 		It("UT-EM-251-005: short deferral (30s) should produce proportional requeue", func() {
-			shortFuture := metav1.NewTime(time.Now().Add(30 * time.Second))
+			now := time.Now()
 			ea := &eav1.EffectivenessAssessment{
+				ObjectMeta: metav1.ObjectMeta{
+					CreationTimestamp: metav1.NewTime(now),
+				},
 				Spec: eav1.EffectivenessAssessmentSpec{
-					HashComputeAfter: &shortFuture,
+					Config: eav1.EAConfig{
+						StabilizationWindow: metav1.Duration{Duration: 1 * time.Minute},
+						HashCheckDelay:      &metav1.Duration{Duration: 30 * time.Second},
+					},
 				},
 			}
 

@@ -29,18 +29,20 @@ import (
 )
 
 // ========================================
-// Issue #253: EM Timing Computation Tests
+// EM Timing Computation Tests
 // ========================================
 //
 // Business Requirements:
-// - BR-EM-010.4: Stabilization anchored to HashComputeAfter for async targets
+// - BR-EM-009:   Derived timing computation (ValidityDeadline, CheckAfter, AlertCheckAfter)
+// - BR-EM-010.4: Stabilization anchored to HashCheckDelay for async targets
 //
 // Design Document:
 // - DD-EM-004 v2.0: Timing formulas (sync vs async)
+//
+// Issue #277: AlertCheckDelay additive semantics, Duration-based HashCheckDelay
 
-var _ = Describe("EM Timing Computation (#253, BR-EM-010.4)", func() {
+var _ = Describe("EM Timing Computation (#253, #277, BR-EM-009, BR-EM-010.4)", func() {
 
-	// Fixed reference time for deterministic tests
 	var baseTime time.Time
 
 	BeforeEach(func() {
@@ -48,40 +50,40 @@ var _ = Describe("EM Timing Computation (#253, BR-EM-010.4)", func() {
 	})
 
 	// ========================================
-	// UT-EM-253-003: Async target timing anchor
+	// UT-EM-253-003: Async target timing anchor (Duration-based)
 	// ========================================
 	Describe("UT-EM-253-003: Async target timing anchor", Label("UT-EM-253-003"), func() {
 
-		It("should anchor CheckAfter to HashComputeAfter, not CreationTimestamp", func() {
-			creation := metav1.NewTime(baseTime)                               // T+0
-			hashComputeAfter := metav1.NewTime(baseTime.Add(4 * time.Minute)) // T+4m
+		It("should anchor CheckAfter to creation+HashCheckDelay, not CreationTimestamp alone", func() {
+			creation := metav1.NewTime(baseTime)
+			hashCheckDelay := &metav1.Duration{Duration: 4 * time.Minute}
 			stabilizationWindow := 5 * time.Minute
 			validityWindow := 10 * time.Minute
 
-			dt := emtiming.ComputeDerivedTiming(creation, stabilizationWindow, validityWindow, &hashComputeAfter)
+			dt := emtiming.ComputeDerivedTiming(creation, stabilizationWindow, validityWindow, hashCheckDelay, nil)
 
 			expectedCheckAfter := baseTime.Add(4*time.Minute + 5*time.Minute) // T+9m
 			Expect(dt.CheckAfter.Time).To(BeTemporally("~", expectedCheckAfter, time.Second),
-				"async: CheckAfter = HashComputeAfter + StabilizationWindow = T+4m + 5m = T+9m")
+				"async: CheckAfter = creation + HashCheckDelay + StabilizationWindow = T+0 + 4m + 5m = T+9m")
 		})
 	})
 
 	// ========================================
-	// UT-EM-253-004: Async target validity extension (guard NOT triggered)
+	// UT-EM-253-004: Async target validity extension
 	// ========================================
 	Describe("UT-EM-253-004: Async validity (guard not triggered)", Label("UT-EM-253-004"), func() {
 
-		It("should set ValidityDeadline = HashComputeAfter + stab + validity", func() {
-			creation := metav1.NewTime(baseTime)                               // T+0
-			hashComputeAfter := metav1.NewTime(baseTime.Add(4 * time.Minute)) // T+4m
+		It("should set ValidityDeadline = creation + hashCheckDelay + stab + validity", func() {
+			creation := metav1.NewTime(baseTime)
+			hashCheckDelay := &metav1.Duration{Duration: 4 * time.Minute}
 			stabilizationWindow := 5 * time.Minute
-			validityWindow := 10 * time.Minute // guard NOT triggered: 5m < 10m
+			validityWindow := 10 * time.Minute
 
-			dt := emtiming.ComputeDerivedTiming(creation, stabilizationWindow, validityWindow, &hashComputeAfter)
+			dt := emtiming.ComputeDerivedTiming(creation, stabilizationWindow, validityWindow, hashCheckDelay, nil)
 
 			expectedDeadline := baseTime.Add(4*time.Minute + 5*time.Minute + 10*time.Minute) // T+19m
 			Expect(dt.ValidityDeadline.Time).To(BeTemporally("~", expectedDeadline, time.Second),
-				"async: ValidityDeadline = HashComputeAfter + stab + validity = T+4m + 5m + 10m = T+19m")
+				"async: ValidityDeadline = creation + hashCheckDelay + stab + validity = T+19m")
 
 			expectedEffective := 5*time.Minute + 10*time.Minute // 15m
 			Expect(dt.EffectiveValidity).To(Equal(expectedEffective),
@@ -90,24 +92,24 @@ var _ = Describe("EM Timing Computation (#253, BR-EM-010.4)", func() {
 	})
 
 	// ========================================
-	// UT-EM-253-005: Sync target timing (formula contrast with UT-EM-253-004)
+	// UT-EM-253-005: Sync target timing (nil HashCheckDelay)
 	// ========================================
 	Describe("UT-EM-253-005: Sync timing (formula contrast)", Label("UT-EM-253-005"), func() {
 
-		It("should anchor to creation and use unextended validity (nil HashComputeAfter)", func() {
-			creation := metav1.NewTime(baseTime) // T+0
+		It("should anchor to creation and use unextended validity (nil HashCheckDelay)", func() {
+			creation := metav1.NewTime(baseTime)
 			stabilizationWindow := 5 * time.Minute
-			validityWindow := 10 * time.Minute // same inputs as UT-EM-253-004
+			validityWindow := 10 * time.Minute
 
-			dt := emtiming.ComputeDerivedTiming(creation, stabilizationWindow, validityWindow, nil)
+			dt := emtiming.ComputeDerivedTiming(creation, stabilizationWindow, validityWindow, nil, nil)
 
 			expectedCheckAfter := baseTime.Add(5 * time.Minute) // T+5m
 			Expect(dt.CheckAfter.Time).To(BeTemporally("~", expectedCheckAfter, time.Second),
-				"sync: CheckAfter = creation + stab = T+0 + 5m = T+5m")
+				"sync: CheckAfter = creation + stab = T+5m")
 
 			expectedDeadline := baseTime.Add(10 * time.Minute) // T+10m
 			Expect(dt.ValidityDeadline.Time).To(BeTemporally("~", expectedDeadline, time.Second),
-				"sync: ValidityDeadline = creation + validity = T+0 + 10m = T+10m (no extension)")
+				"sync: ValidityDeadline = creation + validity = T+10m (no extension)")
 
 			Expect(dt.EffectiveValidity).To(Equal(validityWindow),
 				"sync: effectiveValidity = validityWindow = 10m (guard not triggered: 5m < 10m)")
@@ -115,17 +117,17 @@ var _ = Describe("EM Timing Computation (#253, BR-EM-010.4)", func() {
 				"sync: guard not triggered")
 		})
 
-		It("should treat zero-value HashComputeAfter as sync (same as nil)", func() {
+		It("should treat zero-duration HashCheckDelay as sync (same as nil)", func() {
 			creation := metav1.NewTime(baseTime)
-			zeroHCA := &metav1.Time{} // zero-value, not nil
+			zeroDelay := &metav1.Duration{Duration: 0}
 			stabilizationWindow := 5 * time.Minute
 			validityWindow := 10 * time.Minute
 
-			dt := emtiming.ComputeDerivedTiming(creation, stabilizationWindow, validityWindow, zeroHCA)
+			dt := emtiming.ComputeDerivedTiming(creation, stabilizationWindow, validityWindow, zeroDelay, nil)
 
 			expectedCheckAfter := baseTime.Add(5 * time.Minute)
 			Expect(dt.CheckAfter.Time).To(BeTemporally("~", expectedCheckAfter, time.Second),
-				"zero HashComputeAfter treated as sync: CheckAfter = creation + stab")
+				"zero HashCheckDelay treated as sync: CheckAfter = creation + stab")
 		})
 	})
 
@@ -135,16 +137,16 @@ var _ = Describe("EM Timing Computation (#253, BR-EM-010.4)", func() {
 	Describe("UT-EM-253-006: Async + runtime guard interaction", Label("UT-EM-253-006"), func() {
 
 		It("should compound propagation with guard extension", func() {
-			creation := metav1.NewTime(baseTime)                               // T+0
-			hashComputeAfter := metav1.NewTime(baseTime.Add(4 * time.Minute)) // T+4m
-			stabilizationWindow := 15 * time.Minute                            // guard triggered: 15m >= 10m
+			creation := metav1.NewTime(baseTime)
+			hashCheckDelay := &metav1.Duration{Duration: 4 * time.Minute}
+			stabilizationWindow := 15 * time.Minute // guard triggered: 15m >= 10m
 			validityWindow := 10 * time.Minute
 
-			dt := emtiming.ComputeDerivedTiming(creation, stabilizationWindow, validityWindow, &hashComputeAfter)
+			dt := emtiming.ComputeDerivedTiming(creation, stabilizationWindow, validityWindow, hashCheckDelay, nil)
 
 			expectedCheckAfter := baseTime.Add(4*time.Minute + 15*time.Minute) // T+19m
 			Expect(dt.CheckAfter.Time).To(BeTemporally("~", expectedCheckAfter, time.Second),
-				"async+guard: CheckAfter = HashComputeAfter + stab = T+4m + 15m = T+19m")
+				"async+guard: CheckAfter = creation + hashCheckDelay + stab = T+19m")
 
 			expectedEffective := 15*time.Minute + 10*time.Minute // 25m
 			Expect(dt.EffectiveValidity).To(Equal(expectedEffective),
@@ -152,7 +154,130 @@ var _ = Describe("EM Timing Computation (#253, BR-EM-010.4)", func() {
 
 			expectedDeadline := baseTime.Add(4*time.Minute + 25*time.Minute) // T+29m
 			Expect(dt.ValidityDeadline.Time).To(BeTemporally("~", expectedDeadline, time.Second),
-				"async+guard: ValidityDeadline = HashComputeAfter + effectiveValidity = T+4m + 25m = T+29m")
+				"async+guard: ValidityDeadline = creation + hashCheckDelay + effectiveValidity = T+29m")
+		})
+	})
+
+	// ========================================
+	// UT-EM-277-001: AlertCheckDelay — nil means no additional delay
+	// ========================================
+	Describe("UT-EM-277-001: AlertCheckDelay nil (no additional delay)", Label("UT-EM-277-001"), func() {
+
+		It("should set AlertCheckAfter == CheckAfter when AlertCheckDelay is nil", func() {
+			creation := metav1.NewTime(baseTime)
+			stabilizationWindow := 5 * time.Minute
+			validityWindow := 10 * time.Minute
+
+			dt := emtiming.ComputeDerivedTiming(creation, stabilizationWindow, validityWindow, nil, nil)
+
+			Expect(dt.AlertCheckAfter.Time).To(BeTemporally("~", dt.CheckAfter.Time, time.Second),
+				"nil AlertCheckDelay: AlertCheckAfter == CheckAfter")
+		})
+	})
+
+	// ========================================
+	// UT-EM-277-002: AlertCheckDelay additive on StabilizationWindow
+	// ========================================
+	Describe("UT-EM-277-002: AlertCheckDelay additive semantics", Label("UT-EM-277-002"), func() {
+
+		It("should compute AlertCheckAfter = creation + stab + alertCheckDelay", func() {
+			creation := metav1.NewTime(baseTime)
+			stabilizationWindow := 1 * time.Minute
+			validityWindow := 10 * time.Minute
+			alertCheckDelay := &metav1.Duration{Duration: 4 * time.Minute}
+
+			dt := emtiming.ComputeDerivedTiming(creation, stabilizationWindow, validityWindow, nil, alertCheckDelay)
+
+			expectedCheckAfter := baseTime.Add(1 * time.Minute) // T+1m (Prometheus)
+			Expect(dt.CheckAfter.Time).To(BeTemporally("~", expectedCheckAfter, time.Second),
+				"Prometheus CheckAfter NOT affected by AlertCheckDelay")
+
+			expectedAlertCheckAfter := baseTime.Add(1*time.Minute + 4*time.Minute) // T+5m
+			Expect(dt.AlertCheckAfter.Time).To(BeTemporally("~", expectedAlertCheckAfter, time.Second),
+				"AlertCheckAfter = creation + stab + alertCheckDelay = T+1m + 4m = T+5m")
+		})
+	})
+
+	// ========================================
+	// UT-EM-277-003: AlertCheckDelay triggers validity guard extension
+	// ========================================
+	Describe("UT-EM-277-003: AlertCheckDelay triggers validity extension", Label("UT-EM-277-003"), func() {
+
+		It("should extend validity when stab + alertCheckDelay >= validityWindow", func() {
+			creation := metav1.NewTime(baseTime)
+			stabilizationWindow := 3 * time.Minute
+			validityWindow := 5 * time.Minute
+			alertCheckDelay := &metav1.Duration{Duration: 4 * time.Minute}
+			// stab(3m) + alert(4m) = 7m >= validity(5m) → guard triggers
+
+			dt := emtiming.ComputeDerivedTiming(creation, stabilizationWindow, validityWindow, nil, alertCheckDelay)
+
+			expectedEffective := 3*time.Minute + 4*time.Minute + 5*time.Minute // 12m
+			Expect(dt.EffectiveValidity).To(Equal(expectedEffective),
+				"guard triggered: effectiveValidity = stab + alertCheckDelay + validity = 12m")
+
+			expectedDeadline := baseTime.Add(expectedEffective) // T+12m
+			Expect(dt.ValidityDeadline.Time).To(BeTemporally("~", expectedDeadline, time.Second),
+				"ValidityDeadline = creation + effectiveValidity = T+12m")
+
+			Expect(dt.Extended).To(BeTrue(),
+				"guard triggered by stab + alertCheckDelay >= validity")
+		})
+
+		It("should NOT extend validity when stab + alertCheckDelay < validityWindow", func() {
+			creation := metav1.NewTime(baseTime)
+			stabilizationWindow := 1 * time.Minute
+			validityWindow := 10 * time.Minute
+			alertCheckDelay := &metav1.Duration{Duration: 4 * time.Minute}
+			// stab(1m) + alert(4m) = 5m < validity(10m) → guard NOT triggered
+
+			dt := emtiming.ComputeDerivedTiming(creation, stabilizationWindow, validityWindow, nil, alertCheckDelay)
+
+			Expect(dt.EffectiveValidity).To(Equal(validityWindow),
+				"guard NOT triggered: effectiveValidity = validityWindow = 10m")
+
+			expectedDeadline := baseTime.Add(10 * time.Minute) // T+10m
+			Expect(dt.ValidityDeadline.Time).To(BeTemporally("~", expectedDeadline, time.Second),
+				"ValidityDeadline = creation + validity = T+10m (no extension)")
+
+			Expect(dt.Extended).To(BeFalse(),
+				"guard NOT triggered: stab + alertCheckDelay < validity")
+		})
+	})
+
+	// ========================================
+	// UT-EM-277-004: Async + AlertCheckDelay combined
+	// ========================================
+	Describe("UT-EM-277-004: Async + AlertCheckDelay combined", Label("UT-EM-277-004"), func() {
+
+		It("should add AlertCheckDelay on top of async timing", func() {
+			creation := metav1.NewTime(baseTime)
+			hashCheckDelay := &metav1.Duration{Duration: 4 * time.Minute}
+			stabilizationWindow := 5 * time.Minute
+			validityWindow := 10 * time.Minute
+			alertCheckDelay := &metav1.Duration{Duration: 3 * time.Minute}
+
+			dt := emtiming.ComputeDerivedTiming(creation, stabilizationWindow, validityWindow, hashCheckDelay, alertCheckDelay)
+
+			// Prometheus: creation + hashCheckDelay + stab = T+4m + 5m = T+9m
+			expectedCheckAfter := baseTime.Add(4*time.Minute + 5*time.Minute)
+			Expect(dt.CheckAfter.Time).To(BeTemporally("~", expectedCheckAfter, time.Second),
+				"async: CheckAfter = creation + hashCheckDelay + stab = T+9m")
+
+			// Alert: creation + hashCheckDelay + stab + alertCheckDelay = T+4m + 5m + 3m = T+12m
+			expectedAlertCheckAfter := baseTime.Add(4*time.Minute + 5*time.Minute + 3*time.Minute)
+			Expect(dt.AlertCheckAfter.Time).To(BeTemporally("~", expectedAlertCheckAfter, time.Second),
+				"async: AlertCheckAfter = creation + hashCheckDelay + stab + alertCheckDelay = T+12m")
+
+			// Validity: creation + hashCheckDelay + stab + alertCheckDelay + validity
+			//         = T+0 + 4m + 5m + 3m + 10m = T+22m
+			expectedEffective := 5*time.Minute + 3*time.Minute + 10*time.Minute // 18m from anchor
+			Expect(dt.EffectiveValidity).To(Equal(expectedEffective),
+				"async+alert: effectiveValidity = stab + alertCheckDelay + validity = 18m")
+
+			expectedDeadline := baseTime.Add(4*time.Minute + expectedEffective) // T+22m
+			Expect(dt.ValidityDeadline.Time).To(BeTemporally("~", expectedDeadline, time.Second),
+				"async+alert: ValidityDeadline = creation + hashCheckDelay + effectiveValidity = T+22m")
 		})
 	})
 
@@ -161,44 +286,39 @@ var _ = Describe("EM Timing Computation (#253, BR-EM-010.4)", func() {
 	// ========================================
 	Describe("UT-EM-253-007: Validity checker stabilization anchor", Label("UT-EM-253-007"), func() {
 
-		// This test validates that when the reconciler passes HashComputeAfter
-		// as the anchor (instead of CreationTimestamp), the validity checker
-		// correctly gates Stabilizing → Assessing transitions.
-
-		DescribeTable("check window state with HashComputeAfter anchor",
+		DescribeTable("check window state with HashCheckDelay anchor",
 			func(elapsed time.Duration, expectedState validity.WindowState, reason string) {
-				hashComputeAfter := metav1.NewTime(baseTime.Add(4 * time.Minute)) // T+4m
+				// hashCheckDelay = 4m means hashDeadline = creation + 4m = T+4m
+				hashDeadline := metav1.NewTime(baseTime.Add(4 * time.Minute))
 				stabilizationWindow := 5 * time.Minute
 				validityDeadline := metav1.NewTime(baseTime.Add(19 * time.Minute)) // T+19m
 
-				// Create a testable checker that uses a fixed "now"
 				checkTime := baseTime.Add(elapsed)
-				state := checkWindowStateAt(checkTime, hashComputeAfter, stabilizationWindow, validityDeadline)
+				state := checkWindowStateAt(checkTime, hashDeadline, stabilizationWindow, validityDeadline)
 				Expect(state).To(Equal(expectedState), reason)
 			},
-			Entry("T+3m: before HashComputeAfter → Stabilizing",
+			Entry("T+3m: before hash deadline → Stabilizing",
 				3*time.Minute, validity.WindowStabilizing,
-				"Before HashComputeAfter; stabilization hasn't even started"),
-			Entry("T+5m: after HCA but before HCA+stab → Stabilizing",
+				"Before hash deadline; stabilization hasn't even started"),
+			Entry("T+5m: after hash deadline but before deadline+stab → Stabilizing",
 				5*time.Minute, validity.WindowStabilizing,
-				"After HashComputeAfter(T+4m) but before T+4m+5m=T+9m"),
-			Entry("T+8m: still before HCA+stab → Stabilizing",
+				"After hash deadline(T+4m) but before T+4m+5m=T+9m"),
+			Entry("T+8m: still before deadline+stab → Stabilizing",
 				8*time.Minute, validity.WindowStabilizing,
 				"Still before T+9m"),
-			Entry("T+9m: exactly at HCA+stab → Active",
+			Entry("T+9m: exactly at deadline+stab → Active",
 				9*time.Minute, validity.WindowActive,
-				"Exactly at HashComputeAfter+stab=T+9m; stabilization complete"),
+				"Exactly at hashDeadline+stab=T+9m; stabilization complete"),
 			Entry("T+10m: within validity window → Active",
 				10*time.Minute, validity.WindowActive,
 				"Within validity window after stabilization"),
 		)
 
 		It("contrast: same inputs with creation anchor would give premature Active at T+5m", func() {
-			creation := metav1.NewTime(baseTime) // T+0
+			creation := metav1.NewTime(baseTime)
 			stabilizationWindow := 5 * time.Minute
 			validityDeadline := metav1.NewTime(baseTime.Add(19 * time.Minute))
 
-			// Bug scenario: using creation as anchor instead of HashComputeAfter
 			checkTime := baseTime.Add(5 * time.Minute) // T+5m
 			state := checkWindowStateAt(checkTime, creation, stabilizationWindow, validityDeadline)
 			Expect(state).To(Equal(validity.WindowActive),

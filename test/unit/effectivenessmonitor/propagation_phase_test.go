@@ -95,13 +95,13 @@ var _ = Describe("WaitingForPropagation Phase (#253, BR-EM-010.3)", func() {
 	})
 
 	// ========================================
-	// EA Spec: New propagation delay fields (BR-EM-010.5)
+	// EA Config: HashCheckDelay and AlertCheckDelay fields (#277)
 	// ========================================
-	Describe("EA Spec: propagation delay fields (BR-EM-010.5)", func() {
+	Describe("EAConfig: HashCheckDelay and AlertCheckDelay (#277)", func() {
 
-		It("should accept GitOpsSyncDelay and OperatorReconcileDelay in spec", func() {
-			gitOpsDelay := metav1.Duration{Duration: 3 * time.Minute}
-			operatorDelay := metav1.Duration{Duration: 1 * time.Minute}
+		It("should accept HashCheckDelay and AlertCheckDelay in config", func() {
+			hashDelay := metav1.Duration{Duration: 3 * time.Minute}
+			alertDelay := metav1.Duration{Duration: 4 * time.Minute}
 
 			ea := &eav1.EffectivenessAssessment{
 				Spec: eav1.EffectivenessAssessmentSpec{
@@ -109,17 +109,19 @@ var _ = Describe("WaitingForPropagation Phase (#253, BR-EM-010.3)", func() {
 					RemediationRequestPhase: "Completed",
 					SignalTarget:            eav1.TargetResource{Kind: "Deployment", Name: "app", Namespace: "default"},
 					RemediationTarget:       eav1.TargetResource{Kind: "Certificate", Name: "cert", Namespace: "default"},
-					Config:                  eav1.EAConfig{StabilizationWindow: metav1.Duration{Duration: 5 * time.Minute}},
-					GitOpsSyncDelay:         &gitOpsDelay,
-					OperatorReconcileDelay:  &operatorDelay,
+					Config: eav1.EAConfig{
+						StabilizationWindow: metav1.Duration{Duration: 5 * time.Minute},
+						HashCheckDelay:      &hashDelay,
+						AlertCheckDelay:     &alertDelay,
+					},
 				},
 			}
 
-			Expect(ea.Spec.GitOpsSyncDelay.Duration).To(Equal(3 * time.Minute))
-			Expect(ea.Spec.OperatorReconcileDelay.Duration).To(Equal(1 * time.Minute))
+			Expect(ea.Spec.Config.HashCheckDelay.Duration).To(Equal(3 * time.Minute))
+			Expect(ea.Spec.Config.AlertCheckDelay.Duration).To(Equal(4 * time.Minute))
 		})
 
-		It("should allow nil delay fields for sync targets", func() {
+		It("should allow nil delay fields for sync reactive targets", func() {
 			ea := &eav1.EffectivenessAssessment{
 				Spec: eav1.EffectivenessAssessmentSpec{
 					CorrelationID:           "rr-sync",
@@ -130,13 +132,13 @@ var _ = Describe("WaitingForPropagation Phase (#253, BR-EM-010.3)", func() {
 				},
 			}
 
-			Expect(ea.Spec.GitOpsSyncDelay).To(BeNil())
-			Expect(ea.Spec.OperatorReconcileDelay).To(BeNil())
+			Expect(ea.Spec.Config.HashCheckDelay).To(BeNil())
+			Expect(ea.Spec.Config.AlertCheckDelay).To(BeNil())
 		})
 
-		It("should deep copy propagation delay fields", func() {
-			gitOpsDelay := metav1.Duration{Duration: 3 * time.Minute}
-			operatorDelay := metav1.Duration{Duration: 1 * time.Minute}
+		It("should deep copy delay fields", func() {
+			hashDelay := metav1.Duration{Duration: 3 * time.Minute}
+			alertDelay := metav1.Duration{Duration: 4 * time.Minute}
 
 			ea := &eav1.EffectivenessAssessment{
 				Spec: eav1.EffectivenessAssessmentSpec{
@@ -144,19 +146,20 @@ var _ = Describe("WaitingForPropagation Phase (#253, BR-EM-010.3)", func() {
 					RemediationRequestPhase: "Completed",
 					SignalTarget:            eav1.TargetResource{Kind: "Deployment", Name: "app", Namespace: "default"},
 					RemediationTarget:       eav1.TargetResource{Kind: "Certificate", Name: "cert", Namespace: "default"},
-					Config:                  eav1.EAConfig{StabilizationWindow: metav1.Duration{Duration: 5 * time.Minute}},
-					GitOpsSyncDelay:         &gitOpsDelay,
-					OperatorReconcileDelay:  &operatorDelay,
+					Config: eav1.EAConfig{
+						StabilizationWindow: metav1.Duration{Duration: 5 * time.Minute},
+						HashCheckDelay:      &hashDelay,
+						AlertCheckDelay:     &alertDelay,
+					},
 				},
 			}
 
-			copy := ea.DeepCopy()
-			Expect(copy.Spec.GitOpsSyncDelay.Duration).To(Equal(3 * time.Minute))
-			Expect(copy.Spec.OperatorReconcileDelay.Duration).To(Equal(1 * time.Minute))
+			cpEA := ea.DeepCopy()
+			Expect(cpEA.Spec.Config.HashCheckDelay.Duration).To(Equal(3 * time.Minute))
+			Expect(cpEA.Spec.Config.AlertCheckDelay.Duration).To(Equal(4 * time.Minute))
 
-			// Verify independence
-			ea.Spec.GitOpsSyncDelay.Duration = 10 * time.Minute
-			Expect(copy.Spec.GitOpsSyncDelay.Duration).To(Equal(3 * time.Minute))
+			ea.Spec.Config.HashCheckDelay.Duration = 10 * time.Minute
+			Expect(cpEA.Spec.Config.HashCheckDelay.Duration).To(Equal(3 * time.Minute))
 		})
 	})
 })
