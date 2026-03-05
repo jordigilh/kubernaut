@@ -870,6 +870,8 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
                 data = json.loads(content) if isinstance(content, str) else content
             except (json.JSONDecodeError, TypeError):
                 continue
+            if not isinstance(data, dict):
+                continue
             root_owner = data.get("root_owner")
             if root_owner and isinstance(root_owner, dict) and root_owner.get("kind"):
                 return root_owner
