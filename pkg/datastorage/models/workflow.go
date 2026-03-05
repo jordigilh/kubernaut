@@ -212,14 +212,10 @@ type WorkflowSearchRequest struct {
 // DD-WORKFLOW-001 v1.6: All API fields use camelCase
 type WorkflowSearchFilters struct {
 	// ========================================
-	// MANDATORY LABELS (Strict Filtering) - 5 per DD-WORKFLOW-001 v1.4
+	// MANDATORY LABELS (Strict Filtering) - 4 per DD-WORKFLOW-001 v1.4
 	// ========================================
 	// Authority: DD-WORKFLOW-001 v1.6 (Mandatory Workflow Label Schema)
-
-	// SignalName filters by single alert/signal type (MANDATORY)
-	// Example: "OOMKilled", "MemoryLeak", "DatabaseConnectionLeak"
-	// DD-WORKFLOW-001 v1.6: camelCase JSON tag
-	SignalName string `json:"signalType" validate:"required"`
+	// Issue #274: SignalName removed — LLM selects by actionType.
 
 	// Severity filters by severity level (MANDATORY)
 	// Values: "critical", "high", "medium", "low"
@@ -350,9 +346,6 @@ type WorkflowSearchResult struct {
 
 	// Description is the structured workflow description (BR-WORKFLOW-004)
 	Description StructuredDescription `json:"description"`
-
-	// SignalName is the signal name this workflow handles (DD-WORKFLOW-002 v3.0: singular, not array)
-	SignalName string `json:"signalName"`
 
 	// SchemaVersion is the workflow-schema.yaml format version (e.g., "1.0", "1.1")
 	// BR-WORKFLOW-004 v1.1, #255

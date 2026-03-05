@@ -256,11 +256,6 @@ func (p *Parser) ExtractLabels(schema *models.WorkflowSchema) (json.RawMessage, 
 		"severity": []string(schema.Labels.Severity),
 	}
 
-	// DD-WORKFLOW-016: signalName is optional metadata -- only include when non-empty
-	if schema.Labels.SignalName != "" {
-		labels["signalName"] = schema.Labels.SignalName
-	}
-
 	// Add required labels
 	if len(schema.Labels.Environment) > 0 {
 		labels["environment"] = schema.Labels.Environment

@@ -32,7 +32,6 @@ import (
 // The actual implementation has been split into focused modules:
 //   - workflow/repository.go - struct and constructor
 //   - workflow/crud.go - CRUD operations
-//   - workflow/search.go - search operations
 //
 // This compatibility layer will be removed in V1.2
 // ========================================
