@@ -862,30 +862,59 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
         (e.g., Pod→Deployment) as the affectedResource. The mock must do the same
         so the RCA contains the correct owner rather than the raw signaling Pod.
         """
-        for msg in messages:
-            if msg.get("role") != "tool":
-                continue
+        tool_msgs = [m for m in messages if m.get("role") == "tool"]
+        logger.info(
+            f"🔎 root_owner scan: {len(tool_msgs)} tool message(s) in conversation"
+        )
+        for i, msg in enumerate(tool_msgs):
             content = msg.get("content", "")
+            tool_name = msg.get("name", "?")
             if not isinstance(content, str):
+                logger.info(
+                    f"🔎 tool[{i}] {tool_name}: content is {type(content).__name__}, skipping"
+                )
                 continue
+            logger.info(
+                f"🔎 tool[{i}] {tool_name}: content[:{min(200, len(content))}] = "
+                f"{content[:200]!r}"
+            )
             data = None
             try:
                 data = json.loads(content)
-            except (json.JSONDecodeError, TypeError):
-                # HolmesGPT prefixes tool results with
-                # "Params used for the tool call: {...}. The tool call output
-                # follows on the next line.\n" — strip prefix and retry.
+                logger.info(
+                    f"🔎 tool[{i}] {tool_name}: json.loads OK, type={type(data).__name__}, "
+                    f"keys={list(data.keys()) if isinstance(data, dict) else 'N/A'}"
+                )
+            except (json.JSONDecodeError, TypeError) as exc:
+                logger.info(
+                    f"🔎 tool[{i}] {tool_name}: json.loads failed ({exc}), "
+                    f"trying \\n{{ fallback"
+                )
                 idx = content.find("\n{")
                 if idx >= 0:
                     try:
                         data = json.loads(content[idx + 1 :])
+                        logger.info(
+                            f"🔎 tool[{i}] {tool_name}: fallback OK, "
+                            f"keys={list(data.keys()) if isinstance(data, dict) else 'N/A'}"
+                        )
                     except (json.JSONDecodeError, TypeError):
-                        pass
+                        logger.info(
+                            f"🔎 tool[{i}] {tool_name}: fallback also failed"
+                        )
+                else:
+                    logger.info(
+                        f"🔎 tool[{i}] {tool_name}: no \\n{{ found in content"
+                    )
             if not isinstance(data, dict):
                 continue
             root_owner = data.get("root_owner")
             if root_owner and isinstance(root_owner, dict) and root_owner.get("kind"):
+                logger.info(
+                    f"🔎 tool[{i}] {tool_name}: found root_owner={root_owner}"
+                )
                 return root_owner
+        logger.info("🔎 root_owner scan: no root_owner found in any tool result")
         return None
 
     def _discovery_tool_call_response(
