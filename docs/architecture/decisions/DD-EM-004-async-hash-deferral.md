@@ -35,9 +35,9 @@ An incorrect `pre == post` hash comparison means:
 
 ## Decision
 
-### RO-driven `hashComputeAfter` timestamp
+### RO-driven `HashCheckDelay` duration
 
-The RO detects whether the `RemediationTarget` is async-managed and sets `EA.Spec.HashComputeAfter` at EA creation time. The EM defers hash computation until that timestamp. The EM has zero awareness of GitOps or operator semantics.
+The RO detects whether the `RemediationTarget` is async-managed and sets `EA.Spec.Config.HashCheckDelay` at EA creation time. The RO computes the total propagation delay from its config (`gitOpsSyncDelay`, `operatorReconcileDelay`) and sets it as a single `HashCheckDelay` Duration. The EM defers hash computation until `creation + HashCheckDelay`. The EM has zero awareness of GitOps or operator semantics.
 
 ### Async detection signals
 
@@ -77,23 +77,23 @@ The RO reads `AA.Status.PostRCAContext.DetectedLabels.GitOpsManaged` from the AI
 ### RO decision flow
 
 ```go
-isAsync := false
+var propagationDelay time.Duration
 
-// Signal 1: CRD group heuristic
-gvk, err := resolveGVKForKind(mapper, remediationTarget.Kind)
-if err == nil && !isBuiltInGroup(gvk.Group) {
-    isAsync = true
-}
-
-// Signal 2: GitOps labels
+// Signal 1: GitOps labels (syncs manifest to cluster first)
 if ai != nil && ai.Status.PostRCAContext != nil &&
    ai.Status.PostRCAContext.DetectedLabels != nil &&
    ai.Status.PostRCAContext.DetectedLabels.GitOpsManaged {
-    isAsync = true
+    propagationDelay += config.AsyncPropagation.GitOpsSyncDelay
 }
 
-if isAsync {
-    ea.Spec.HashComputeAfter = &metav1.Time{Time: time.Now().Add(stabilizationWindow)}
+// Signal 2: CRD group heuristic (operator reconciles after GitOps sync)
+gvk, err := resolveGVKForKind(mapper, remediationTarget.Kind)
+if err == nil && !isBuiltInGroup(gvk.Group) {
+    propagationDelay += config.AsyncPropagation.OperatorReconcileDelay
+}
+
+if propagationDelay > 0 {
+    ea.Spec.Config.HashCheckDelay = &metav1.Duration{Duration: propagationDelay}
 }
 ```
 
@@ -102,14 +102,28 @@ if isAsync {
 ```go
 type EffectivenessAssessmentSpec struct {
     // ... existing fields ...
+    Config *EAConfig `json:"config,omitempty"`
+}
 
-    // HashComputeAfter indicates when the EM should compute the post-remediation
-    // spec hash. Set by the RO for async-managed targets (GitOps, operator CRDs)
-    // where spec changes propagate after the WE completes.
-    // Nil or zero means compute immediately (sync workflows, backward compatible).
+type EAConfig struct {
+    // ... existing fields (StabilizationWindow, etc.) ...
+
+    // HashCheckDelay is the duration after EA creation when the EM should compute
+    // the post-remediation spec hash. Set by the RO for async-managed targets
+    // (GitOps, operator CRDs) where spec changes propagate after the WE completes.
+    // The RO computes the total propagation delay from gitOpsSyncDelay and
+    // operatorReconcileDelay and sets it here. Nil or zero means compute immediately
+    // (sync workflows, backward compatible).
     // Reference: DD-EM-004 (Async Hash Deferral), BR-EM-010, BR-RO-103
     // +optional
-    HashComputeAfter *metav1.Time `json:"hashComputeAfter,omitempty"`
+    HashCheckDelay *metav1.Duration `json:"hashCheckDelay,omitempty"`
+
+    // AlertCheckDelay is an additive duration on top of StabilizationWindow for
+    // proactive (predictive) alert resolution checks. Set by the RO when
+    // SignalMode is "proactive". Prometheus metric checks are NOT affected.
+    // Reference: DD-EM-004, BR-RO-103.6, #277
+    // +optional
+    AlertCheckDelay *metav1.Duration `json:"alertCheckDelay,omitempty"`
 }
 ```
 
@@ -120,11 +134,14 @@ In Step 7 (component checks), before the existing hash block:
 ```go
 if !ea.Status.Components.HashComputed {
     // DD-EM-004: Defer hash for async-managed targets
-    if ea.Spec.HashComputeAfter != nil && time.Now().Before(ea.Spec.HashComputeAfter.Time) {
-        logger.V(1).Info("Hash computation deferred for async-managed target",
-            "hashComputeAfter", ea.Spec.HashComputeAfter.Time,
-            "remaining", time.Until(ea.Spec.HashComputeAfter.Time))
-        return ctrl.Result{RequeueAfter: time.Until(ea.Spec.HashComputeAfter.Time)}, nil
+    if ea.Spec.Config != nil && ea.Spec.Config.HashCheckDelay != nil && ea.Spec.Config.HashCheckDelay.Duration > 0 {
+        deadline := ea.CreationTimestamp.Add(ea.Spec.Config.HashCheckDelay.Duration)
+        if time.Now().Before(deadline) {
+            logger.V(1).Info("Hash computation deferred for async-managed target",
+                "hashCheckDelay", ea.Spec.Config.HashCheckDelay.Duration,
+                "remaining", time.Until(deadline))
+            return ctrl.Result{RequeueAfter: time.Until(deadline)}, nil
+        }
     }
     result := r.assessHash(ctx, ea)
     // ... existing logic ...
@@ -165,10 +182,10 @@ RR completes       hash computed                  health/metrics
 ### Phase Diagram
 
 ```
-Sync target (nil HashComputeAfter):
+Sync target (nil HashCheckDelay):
   Pending → Stabilizing → Assessing → Completed/Failed
 
-Async target (non-nil HashComputeAfter):
+Async target (non-nil HashCheckDelay):
   Pending → WaitingForPropagation → Stabilizing → Assessing → Completed/Failed
                      │                     │
                      │ hash deferred       │ hash computed,
@@ -188,7 +205,7 @@ asyncPropagation:
 
 ### RO: Compounding Logic
 
-The total propagation delay is the sum of applicable stages:
+The RO computes the total propagation delay as the sum of applicable stages and sets it as a single `HashCheckDelay` Duration on the EA. The individual `gitOpsSyncDelay` and `operatorReconcileDelay` remain in RO config only; they are not propagated to the EA spec.
 
 ```go
 var propagationDelay time.Duration
@@ -200,8 +217,7 @@ if !creator.IsBuiltInGroup(gvk.Group) {
 }
 
 if propagationDelay > 0 {
-    t := metav1.NewTime(time.Now().Add(propagationDelay))
-    ea.Spec.HashComputeAfter = &t
+    ea.Spec.Config.HashCheckDelay = &metav1.Duration{Duration: propagationDelay}
 }
 ```
 
@@ -214,14 +230,15 @@ if propagationDelay > 0 {
 
 ### EM: Adjusted Timing Computation
 
-When `HashComputeAfter` is set, the EM anchors health/alert check timing to `HashComputeAfter` instead of `EA.creationTimestamp`:
+When `HashCheckDelay` is set, the EM computes the hash deadline as `creation + HashCheckDelay`. Health/alert check timing is anchored to that deadline (when hash is computed) instead of `EA.creationTimestamp`:
 
 ```go
 stabilizationWindow := ea.Spec.Config.StabilizationWindow.Duration
 
-if ea.Spec.HashComputeAfter != nil && !ea.Spec.HashComputeAfter.IsZero() {
-    // Async target: stabilization starts after propagation completes
-    checkAfter = metav1.NewTime(ea.Spec.HashComputeAfter.Time.Add(stabilizationWindow))
+if ea.Spec.Config != nil && ea.Spec.Config.HashCheckDelay != nil && ea.Spec.Config.HashCheckDelay.Duration > 0 {
+    // Async target: stabilization starts after propagation completes (creation + HashCheckDelay)
+    hashDeadline := ea.CreationTimestamp.Add(ea.Spec.Config.HashCheckDelay.Duration)
+    checkAfter = metav1.NewTime(hashDeadline.Add(stabilizationWindow))
 } else {
     // Sync target: stabilization starts at EA creation (existing behavior)
     checkAfter = metav1.NewTime(ea.CreationTimestamp.Add(stabilizationWindow))
@@ -229,6 +246,7 @@ if ea.Spec.HashComputeAfter != nil && !ea.Spec.HashComputeAfter.IsZero() {
 
 ea.Status.PrometheusCheckAfter = &checkAfter
 ea.Status.AlertManagerCheckAfter = &checkAfter
+// When AlertCheckDelay is set (proactive signals): AlertManagerCheckAfter += AlertCheckDelay
 ```
 
 ### EM: Validity Deadline Extension
@@ -236,7 +254,12 @@ ea.Status.AlertManagerCheckAfter = &checkAfter
 For async targets, the validity deadline must account for the full timeline:
 
 ```go
-totalDelay := propagationDelay + stabilizationWindow + r.Config.ValidityWindow
+var totalDelay time.Duration
+if ea.Spec.Config != nil && ea.Spec.Config.HashCheckDelay != nil {
+    totalDelay = ea.Spec.Config.HashCheckDelay.Duration + stabilizationWindow + r.Config.ValidityWindow
+} else {
+    totalDelay = stabilizationWindow + r.Config.ValidityWindow
+}
 deadline := metav1.NewTime(ea.CreationTimestamp.Add(totalDelay))
 ea.Status.ValidityDeadline = &deadline
 ```
@@ -246,15 +269,19 @@ ea.Status.ValidityDeadline = &deadline
 For a GitOps + operator target (e.g., ArgoCD syncs a cert-manager Certificate):
 
 ```
-gitOpsSyncDelay:        3m
-operatorReconcileDelay: 1m
-stabilizationWindow:    5m
-validityWindow:         10m
+RO config:
+  gitOpsSyncDelay:        3m
+  operatorReconcileDelay: 1m
+
+EA Config (set by RO):
+  HashCheckDelay: 4m       # RO computes total: 3m + 1m
+  StabilizationWindow:    5m
+  validityWindow:         10m
 
 Timeline:
 T+0m:  RR completes, EA created (Pending)
 T+0m:  EM enters WaitingForPropagation phase
-T+4m:  HashComputeAfter reached → hash computed → Stabilizing phase
+T+4m:  creation + HashCheckDelay reached → hash computed → Stabilizing phase
 T+9m:  PrometheusCheckAfter reached → health/alert/metrics assessed → Assessing phase
 T+19m: ValidityDeadline → EA expires if not yet completed
 ```
@@ -270,8 +297,8 @@ T+19m: ValidityDeadline → EA expires if not yet completed
 | Always defer to stabilization end | Delays sync cases unnecessarily; sync "genuine no-op" takes 5 min to confirm |
 | LLM detects operator management | Non-deterministic; LLM has world knowledge but not cluster truth; prompt pollution |
 | `managedFields` / finalizer checks | More complex than needed; the API group heuristic is simpler and covers the same cases with zero API calls |
-| Detected labels in EA spec | EA shouldn't carry label detection data; the RO makes the timing decision and encodes it as a timestamp |
-| `hashComputeAfter` in EA status | This is a desired-state input from the RO, not derived state. Belongs in spec per K8s convention. |
+| Detected labels in EA spec | EA shouldn't carry label detection data; the RO makes the timing decision and encodes it as a Duration |
+| `hashCheckDelay` in EA status | This is a desired-state input from the RO, not derived state. Belongs in spec per K8s convention. |
 
 ---
 
@@ -279,21 +306,21 @@ T+19m: ValidityDeadline → EA expires if not yet completed
 
 ### Positive
 
-- Clean separation: RO decides timing, EM follows timestamp
+- Clean separation: RO decides timing, EM follows `HashCheckDelay` (creation + Duration)
 - Zero extra API calls: both signals come from data already in hand
-- Backward compatible: existing EAs without `hashComputeAfter` work identically
+- Backward compatible: existing EAs without `HashCheckDelay` work identically
 - Safe false positives: delayed hash for non-operator CRDs is still correct
-- Extensible: future async patterns use the same timestamp mechanism
+- Extensible: future async patterns use the same duration mechanism
 - Consistent with existing timing patterns (PrometheusCheckAfter, AlertManagerCheckAfter)
 
 ### Negative
 
-- Adds one optional field to the EA CRD spec (minor schema growth)
+- Adds optional fields to the EA CRD spec (HashCheckDelay, AlertCheckDelay in Config; minor schema growth)
 - Built-in group allowlist requires maintenance if Kubernetes adds new core API groups (rare, ~1 per year)
 
 ### Risks
 
-- **Propagation delay underestimated**: If the actual sync/reconciliation time exceeds the configured `gitOpsSyncDelay` or `operatorReconcileDelay`, the hash is captured before the change arrives
+- **Propagation delay underestimated**: If the actual sync/reconciliation time exceeds the RO's computed `HashCheckDelay` (from `gitOpsSyncDelay` and `operatorReconcileDelay`), the hash is captured before the change arrives
   - **Mitigation (V2.0)**: Both delays are independently configurable. Operators can tune per environment. Conservative defaults (3m + 1m) cover the majority of ArgoCD/Flux and operator deployments.
   - **Mitigation (future)**: Dynamic determination from ArgoCD `Application.spec.syncPolicy` or Flux `Kustomization.spec.interval` (see #253, future consideration)
 - **CRD without operator false positive**: A CRD target with no active operator gets a delayed hash
@@ -313,4 +340,5 @@ T+19m: ValidityDeadline → EA expires if not yet completed
 - **BR-RO-103**: RO async target detection requirement
 - **#251**: Async hash deferral (foundation: detection + field + deferral mechanism)
 - **#253**: Timing model correction (propagation delay vs stabilization)
+- **#277**: HashCheckDelay migration, AlertCheckDelay for proactive signals
 - **#132**: GitOps causality (related future work)

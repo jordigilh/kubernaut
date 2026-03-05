@@ -2,9 +2,10 @@
 
 **Status**: Draft
 **Date**: 2026-03-02
+**Updated**: 2026-03-05 (Issue #277: HashCheckDelay migration, AlertCheckDelay)
 **Category**: EFFECTIVENESS
 **Priority**: High
-**Related**: BR-EM-004, DD-EM-002, DD-EM-004, ADR-EM-001, #251, #253
+**Related**: BR-EM-004, DD-EM-002, DD-EM-004, ADR-EM-001, #251, #253, #277
 
 ---
 
@@ -30,25 +31,25 @@ The hash computation marks the **beginning** of the stabilization window, not it
 
 ## Requirements
 
-### BR-EM-010.1: HashComputeAfter Gating
+### BR-EM-010.1: HashCheckDelay Gating
 
-**The EM controller MUST defer hash computation when `EA.Spec.HashComputeAfter` is set and in the future.**
+**The EM controller MUST defer hash computation when `EA.Spec.Config.HashCheckDelay` is set and the deferral deadline has not elapsed.**
 
-The EM reconciler MUST NOT call `assessHash` until `time.Now() >= EA.Spec.HashComputeAfter`. If the timestamp is in the future, the reconciler requeues with `RequeueAfter: time.Until(HashComputeAfter)`.
+The EM computes the deferral deadline as `EA.creationTimestamp + HashCheckDelay.Duration`. The reconciler MUST NOT call `assessHash` until `time.Now() >= deadline`. If the deadline is in the future, the reconciler requeues with `RequeueAfter: time.Until(deadline)`.
 
 **Acceptance Criteria:**
-- When `HashComputeAfter` is set and in the future, hash computation is skipped and the reconciler requeues
-- When `HashComputeAfter` is nil or zero, hash computation proceeds immediately (current behavior, backward compatible)
-- When `HashComputeAfter` is in the past, hash computation proceeds immediately
-- The requeue duration is `time.Until(HashComputeAfter)`, not a fixed interval
+- When `HashCheckDelay` is set and `creation + HashCheckDelay` is in the future, hash computation is skipped and the reconciler requeues
+- When `HashCheckDelay` is nil or zero, hash computation proceeds immediately (current behavior, backward compatible)
+- When `creation + HashCheckDelay` is in the past, hash computation proceeds immediately
+- The requeue duration is `time.Until(creation + HashCheckDelay)`, not a fixed interval
 
 ### BR-EM-010.2: EA CRD Spec Field
 
-**The EA CRD spec MUST include an optional `hashComputeAfter` field** of type `*metav1.Time`.
+**The EA CRD spec MUST include an optional `hashCheckDelay` field** in `EA.Spec.Config` of type `*metav1.Duration`.
 
 **Acceptance Criteria:**
-- Field: `hashComputeAfter *metav1.Time` in `EffectivenessAssessmentSpec`
-- JSON tag: `json:"hashComputeAfter,omitempty"`
+- Field: `hashCheckDelay *metav1.Duration` in `EAConfig` (nested under `EffectivenessAssessmentSpec.Config`)
+- JSON tag: `json:"hashCheckDelay,omitempty"`
 - kubebuilder marker: `+optional`
 - DeepCopy generated via `make generate`
 - CRD manifest updated via `make manifests`
@@ -60,40 +61,40 @@ The EM reconciler MUST NOT call `assessHash` until `time.Now() >= EA.Spec.HashCo
 
 **Phase flow:**
 - `Pending → WaitingForPropagation → Stabilizing → Assessing → Completed/Failed`
-- Sync targets (nil `HashComputeAfter`) skip `WaitingForPropagation` entirely
+- Sync targets (nil `HashCheckDelay`) skip `WaitingForPropagation` entirely
 
 **Acceptance Criteria:**
 - EA phase enum includes `WaitingForPropagation`
-- EM enters `WaitingForPropagation` when `HashComputeAfter` is non-nil and in the future
-- EM transitions to `Stabilizing` after hash is computed (i.e., after `HashComputeAfter` elapses and `assessHash` runs)
+- EM enters `WaitingForPropagation` when `HashCheckDelay` is non-nil and `creation + HashCheckDelay` is in the future
+- EM transitions to `Stabilizing` after hash is computed (i.e., after `creation + HashCheckDelay` elapses and `assessHash` runs)
 - Operators can distinguish "waiting for GitOps/operator sync" from "waiting for system to stabilize" via `kubectl get ea`
 - Phase transition emits K8s event for observability
 
 ### BR-EM-010.4: Stabilization Anchored to Hash Computation (#253)
 
-**When `HashComputeAfter` is set, the stabilization window MUST begin at `HashComputeAfter`, not at EA creation time.**
+**When `HashCheckDelay` is set, the stabilization window MUST begin at `creation + HashCheckDelay` (when hash is computed), not at EA creation time.**
 
 The health/alert/metrics checks must not begin until the system has had the full stabilization window to settle after the change has actually propagated.
 
 **Acceptance Criteria:**
-- When `HashComputeAfter` is set: `PrometheusCheckAfter = HashComputeAfter + StabilizationWindow`
-- When `HashComputeAfter` is set: `AlertManagerCheckAfter = HashComputeAfter + StabilizationWindow`
-- When `HashComputeAfter` is nil: existing behavior preserved (`checkAfter = EA.creation + StabilizationWindow`)
-- Validity deadline extended: `ValidityDeadline = EA.creation + PropagationDelay + StabilizationWindow + ValidityWindow`
+- When `HashCheckDelay` is set: `PrometheusCheckAfter = (creation + HashCheckDelay) + StabilizationWindow`
+- When `HashCheckDelay` is set: `AlertManagerCheckAfter = (creation + HashCheckDelay) + StabilizationWindow`; when `AlertCheckDelay` is also set (proactive signals), add `AlertCheckDelay` for alert resolution checks only
+- When `HashCheckDelay` is nil: existing behavior preserved (`checkAfter = EA.creation + StabilizationWindow`)
+- Validity deadline extended: `ValidityDeadline = EA.creation + HashCheckDelay + StabilizationWindow + ValidityWindow`
 
 ### BR-EM-010.5: Audit Trail for Propagation Timing (#253)
 
-**The `assessment.scheduled` audit event MUST include propagation delay details** when `HashComputeAfter` is set.
+**The `assessment.scheduled` audit event MUST include propagation delay details** when `HashCheckDelay` is set.
 
 **Acceptance Criteria:**
-- Audit payload includes: `gitops_sync_delay` (duration string), `operator_reconcile_delay` (duration string), `total_propagation_delay` (duration string)
+- Audit payload includes: `hash_check_delay` (duration string) — the RO computes the total propagation delay from its config (`gitOpsSyncDelay`, `operatorReconcileDelay`) and sets it as `HashCheckDelay`; the individual delays remain in RO config and are not propagated to the EA spec
 - Fields are omitted/null for sync targets (backward compatible)
 - Operators can reconstruct the timing model from the audit trail
 
 ## Design Rationale
 
-1. **Clean separation of concerns**: The EM does not need to know why hash computation is deferred. It follows a timestamp set by the RO.
-2. **Backward compatible**: Existing EAs without `hashComputeAfter` behave identically to today.
+1. **Clean separation of concerns**: The EM does not need to know why hash computation is deferred. It follows `HashCheckDelay` (creation + Duration) set by the RO.
+2. **Backward compatible**: Existing EAs without `HashCheckDelay` behave identically to today.
 3. **Consistent with existing patterns**: `PrometheusCheckAfter` and `AlertManagerCheckAfter` follow the same timing-gate pattern (BR-EM-009).
 4. **Propagation ≠ Stabilization** (#253): The hash marks the moment the change has arrived. Stabilization measures the time for the system to settle after arrival. Conflating them produces zero effective stabilization.
 5. **Operator observability** (#253): The `WaitingForPropagation` phase gives operators clear visibility into what the EA is waiting for.
@@ -117,3 +118,4 @@ See [Issue #253 Test Plan](../../testing/ISSUE-253/TEST_PLAN.md) — Timing mode
 - [BR-EM-009](BR-EM-009-derived-timing-computation.md) — Derived timing computation pattern
 - [#251](https://github.com/jordigilh/kubernaut/issues/251) — Async hash deferral (foundation)
 - [#253](https://github.com/jordigilh/kubernaut/issues/253) — Timing model correction
+- [#277](https://github.com/jordigilh/kubernaut/issues/277) — HashCheckDelay migration, AlertCheckDelay
