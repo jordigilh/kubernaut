@@ -339,33 +339,21 @@ var _ = Describe("Async Hash Deferral for CRD Targets [DD-EM-004 v2.0, BR-EM-010
 		Expect(ea.Spec.CorrelationID).To(Equal(remediationRequest.Name),
 			"EA correlationID should match RR name")
 
-		// CORE ASSERTION: HashComputeAfter must be set for CRD target
-		Expect(ea.Spec.HashComputeAfter).ToNot(BeNil(),
-			"EA.Spec.HashComputeAfter MUST be set when remediation target is a CRD (Certificate)")
-		Expect(ea.Spec.HashComputeAfter.Time).To(BeTemporally(">", ea.CreationTimestamp.Time),
-			"HashComputeAfter should be in the future relative to EA creation")
-
-		// Issue #253: OperatorReconcileDelay must be propagated for CRD targets
-		Expect(ea.Spec.OperatorReconcileDelay).ToNot(BeNil(),
-			"#253: OperatorReconcileDelay must be set for cert-manager CRD target")
-		Expect(ea.Spec.OperatorReconcileDelay.Duration).To(BeNumerically(">", 0),
-			"OperatorReconcileDelay must be a positive duration from RO config")
+		// CORE ASSERTION: Config.HashCheckDelay must be set for CRD target (#277)
+		Expect(ea.Spec.Config.HashCheckDelay).ToNot(BeNil(),
+			"EA.Spec.Config.HashCheckDelay MUST be set when remediation target is a CRD (Certificate)")
+		Expect(ea.Spec.Config.HashCheckDelay.Duration).To(BeNumerically(">", 0),
+			"HashCheckDelay should be a positive duration")
 
 		// Verify remediation target is Certificate (from AIAnalysis.AffectedResource)
 		Expect(ea.Spec.RemediationTarget.Kind).To(Equal("Certificate"),
 			"EA remediation target should be Certificate (from AIAnalysis RCA)")
 
-		deferralDuration := ea.Spec.HashComputeAfter.Time.Sub(ea.CreationTimestamp.Time).Round(time.Second)
 		GinkgoWriter.Println("  ┌─────────────────────────────────────────────────────────")
-		GinkgoWriter.Println("  │ ASYNC HASH DEFERRAL VALIDATION (#253 corrected timing)")
+		GinkgoWriter.Println("  │ ASYNC HASH DEFERRAL VALIDATION (#277 Duration-based model)")
 		GinkgoWriter.Println("  ├─────────────────────────────────────────────────────────")
 		GinkgoWriter.Printf("  │ EA Created:             %s\n", ea.CreationTimestamp.Format("15:04:05"))
-		GinkgoWriter.Printf("  │ HashComputeAfter:       %s\n", ea.Spec.HashComputeAfter.Format("15:04:05"))
-		GinkgoWriter.Printf("  │ Deferral Duration:      %s\n", deferralDuration)
-		GinkgoWriter.Printf("  │ OperatorReconcileDelay: %s\n", ea.Spec.OperatorReconcileDelay.Duration)
-		if ea.Spec.GitOpsSyncDelay != nil {
-			GinkgoWriter.Printf("  │ GitOpsSyncDelay:        %s\n", ea.Spec.GitOpsSyncDelay.Duration)
-		}
+		GinkgoWriter.Printf("  │ HashCheckDelay:         %s\n", ea.Spec.Config.HashCheckDelay.Duration)
 		GinkgoWriter.Printf("  │ Remediation Target:     %s/%s\n",
 			ea.Spec.RemediationTarget.Kind, ea.Spec.RemediationTarget.Name)
 		GinkgoWriter.Println("  └─────────────────────────────────────────────────────────")
@@ -423,7 +411,7 @@ var _ = Describe("Async Hash Deferral for CRD Targets [DD-EM-004 v2.0, BR-EM-010
 		}, 60*time.Second, 2*time.Second).Should(BeTrue(),
 			"effectiveness.assessment.scheduled audit event should exist")
 
-		// Verify the audit payload includes hash_compute_after and propagation delay fields
+		// Verify the audit payload includes hash_compute_after (EM computes from HashCheckDelay for backward compat)
 		eaPayload, ok := scheduledEvent.EventData.GetEffectivenessAssessmentAuditPayload()
 		Expect(ok).To(BeTrue(),
 			"assessment.scheduled event should have EffectivenessAssessmentAuditPayload")
@@ -431,17 +419,6 @@ var _ = Describe("Async Hash Deferral for CRD Targets [DD-EM-004 v2.0, BR-EM-010
 			"assessment.scheduled audit payload must have hash_compute_after set for CRD target")
 		GinkgoWriter.Printf("  ✅ Audit trail: hash_compute_after = %s\n",
 			eaPayload.HashComputeAfter.Value.Format(time.RFC3339))
-
-		// Issue #253: Verify propagation delay fields in audit
-		Expect(eaPayload.OperatorReconcileDelay.Set).To(BeTrue(),
-			"#253: operator_reconcile_delay must be in assessment.scheduled audit for CRD target")
-		GinkgoWriter.Printf("  ✅ Audit trail: operator_reconcile_delay = %s\n",
-			eaPayload.OperatorReconcileDelay.Value)
-
-		Expect(eaPayload.TotalPropagationDelay.Set).To(BeTrue(),
-			"#253: total_propagation_delay must be in assessment.scheduled audit for async target")
-		GinkgoWriter.Printf("  ✅ Audit trail: total_propagation_delay = %s\n",
-			eaPayload.TotalPropagationDelay.Value)
 
 		// Verify core audit events are present
 		var allAuditEvents []ogenclient.AuditEvent
@@ -477,8 +454,8 @@ var _ = Describe("Async Hash Deferral for CRD Targets [DD-EM-004 v2.0, BR-EM-010
 		GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		GinkgoWriter.Println("  CertManagerCertNotReady → full pipeline → config-driven propagation ✅")
 		GinkgoWriter.Println("  Remediation target: Certificate (cert-manager.io CRD) ✅")
-		GinkgoWriter.Println("  EA.Spec.OperatorReconcileDelay propagated from RO config ✅")
+		GinkgoWriter.Println("  EA.Spec.Config.HashCheckDelay set by RO for async CRD target ✅")
 		GinkgoWriter.Println("  EM deferred hash computation, EA reached terminal phase ✅")
-		GinkgoWriter.Println("  Audit trail: propagation delay fields in assessment.scheduled ✅")
+		GinkgoWriter.Println("  Audit trail: hash_compute_after in assessment.scheduled ✅")
 	})
 })
