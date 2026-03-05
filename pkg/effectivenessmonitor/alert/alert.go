@@ -43,6 +43,11 @@ type AlertContext struct {
 	AlertLabels map[string]string
 	// Namespace is the namespace of the target resource.
 	Namespace string
+	// ActivePodNames is the list of currently running pod names for the signal
+	// target workload. When non-nil, alerts whose "pod" label does not match
+	// any active pod are filtered out (stale alert correlation, #269).
+	// Nil means no pod-level filtering is applied.
+	ActivePodNames []string
 }
 
 // Scorer evaluates whether the original alert has resolved after remediation.
@@ -88,9 +93,11 @@ func (s *scorer) Score(ctx context.Context, amClient client.AlertManagerClient, 
 
 	result.Assessed = true
 
-	// Check if any active alerts match
+	// #269: Filter out stale alerts for pods that no longer exist after rolling restart.
+	relevant := filterByActivePods(alerts, alertCtx.ActivePodNames)
+
 	activeCount := 0
-	for _, a := range alerts {
+	for _, a := range relevant {
 		if a.State == "active" {
 			activeCount++
 		}
@@ -99,24 +106,59 @@ func (s *scorer) Score(ctx context.Context, amClient client.AlertManagerClient, 
 	if activeCount > 0 {
 		score := 0.0
 		result.Score = &score
-		result.Details = fmt.Sprintf("alert %q still active (%d active alerts)", alertCtx.AlertName, activeCount)
+		result.Details = fmt.Sprintf("alert %q still active (%d active alerts, %d filtered)",
+			alertCtx.AlertName, activeCount, len(alerts)-len(relevant))
 	} else {
 		score := 1.0
 		result.Score = &score
-		result.Details = fmt.Sprintf("alert %q resolved", alertCtx.AlertName)
+		if filtered := len(alerts) - len(relevant); filtered > 0 {
+			result.Details = fmt.Sprintf("alert %q resolved (%d stale alerts filtered)", alertCtx.AlertName, filtered)
+		} else {
+			result.Details = fmt.Sprintf("alert %q resolved", alertCtx.AlertName)
+		}
 	}
 
 	return result
 }
 
 // buildMatchers constructs AlertManager filter matchers from an AlertContext.
+// #269: namespace is included when non-empty to scope queries to the signal target's namespace.
 func buildMatchers(alertCtx AlertContext) []string {
-	matchers := make([]string, 0, len(alertCtx.AlertLabels)+1)
+	matchers := make([]string, 0, len(alertCtx.AlertLabels)+2)
 	if alertCtx.AlertName != "" {
 		matchers = append(matchers, fmt.Sprintf("alertname=%q", alertCtx.AlertName))
+	}
+	if alertCtx.Namespace != "" {
+		matchers = append(matchers, fmt.Sprintf("namespace=%q", alertCtx.Namespace))
 	}
 	for k, v := range alertCtx.AlertLabels {
 		matchers = append(matchers, fmt.Sprintf("%s=%q", k, v))
 	}
 	return matchers
+}
+
+// filterByActivePods removes alerts for pods that are no longer running (#269).
+// When activePodNames is nil, all alerts are returned (no filtering).
+// Alerts without a "pod" label are always kept (cannot be correlated).
+func filterByActivePods(alerts []client.Alert, activePodNames []string) []client.Alert {
+	if activePodNames == nil {
+		return alerts
+	}
+	activeSet := make(map[string]struct{}, len(activePodNames))
+	for _, name := range activePodNames {
+		activeSet[name] = struct{}{}
+	}
+
+	result := make([]client.Alert, 0, len(alerts))
+	for _, a := range alerts {
+		podName, hasPodLabel := a.Labels["pod"]
+		if !hasPodLabel {
+			result = append(result, a)
+			continue
+		}
+		if _, isActive := activeSet[podName]; isActive {
+			result = append(result, a)
+		}
+	}
+	return result
 }

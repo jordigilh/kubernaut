@@ -766,6 +766,14 @@ func (r *Reconciler) assessAlert(ctx context.Context, ea *eav1.EffectivenessAsse
 		Namespace: ea.Spec.SignalTarget.Namespace,
 	}
 
+	// #269: Resolve active pod names from SignalTarget so the scorer can filter
+	// out stale alerts for pods deleted during rolling restarts.
+	if podNames := r.listActivePodNames(ctx, ea.Spec.SignalTarget); podNames != nil {
+		alertCtx.ActivePodNames = podNames
+		logger.V(1).Info("Alert pod correlation enabled",
+			"signalTarget", ea.Spec.SignalTarget.Name, "activePods", len(podNames))
+	}
+
 	result := r.alertScorer.Score(ctx, r.AlertManagerClient, alertCtx)
 	logger.Info("Alert assessment complete",
 		"score", result.Score,
@@ -1057,6 +1065,38 @@ func FilterActivePods(pods []corev1.Pod) []*corev1.Pod {
 		active = append(active, pod)
 	}
 	return active
+}
+
+// listActivePodNames returns the names of currently running pods for a workload
+// target (Deployment, ReplicaSet, StatefulSet, DaemonSet). Returns nil for non-
+// workload kinds or when the listing fails (#269: stale alert pod correlation).
+func (r *Reconciler) listActivePodNames(ctx context.Context, target eav1.TargetResource) []string {
+	switch target.Kind {
+	case "Deployment", "ReplicaSet", "StatefulSet", "DaemonSet":
+	default:
+		return nil
+	}
+
+	podList := &corev1.PodList{}
+	if err := r.List(ctx, podList,
+		client.InNamespace(target.Namespace),
+		client.MatchingLabels{"app": target.Name},
+	); err != nil {
+		log.FromContext(ctx).V(1).Info("Failed to list pods for alert correlation, skipping filter",
+			"kind", target.Kind, "name", target.Name, "error", err)
+		return nil
+	}
+
+	active := FilterActivePods(podList.Items)
+	if len(active) == 0 {
+		return nil
+	}
+
+	names := make([]string, 0, len(active))
+	for _, pod := range active {
+		names = append(names, pod.Name)
+	}
+	return names
 }
 
 // ComputePodHealthStats aggregates health indicators from a set of active pods.

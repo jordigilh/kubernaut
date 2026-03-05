@@ -30,11 +30,13 @@ import (
 
 // mockAlertManagerClient implements emclient.AlertManagerClient for unit tests.
 type mockAlertManagerClient struct {
-	alerts []emclient.Alert
-	err    error
+	alerts        []emclient.Alert
+	err           error
+	capturedFilts emclient.AlertFilters
 }
 
-func (m *mockAlertManagerClient) GetAlerts(_ context.Context, _ emclient.AlertFilters) ([]emclient.Alert, error) {
+func (m *mockAlertManagerClient) GetAlerts(_ context.Context, filters emclient.AlertFilters) ([]emclient.Alert, error) {
+	m.capturedFilts = filters
 	return m.alerts, m.err
 }
 
@@ -68,8 +70,8 @@ var _ = Describe("Alert Resolution Scorer (BR-EM-002)", func() {
 
 			result := scorer.Score(context.Background(), amClient, alertCtx)
 			Expect(result.Assessed).To(BeTrue())
-			Expect(result.Score).ToNot(BeNil())
-			Expect(*result.Score).To(Equal(1.0))
+			Expect(result.Score).To(HaveValue(Equal(1.0)),
+				"BR-EM-002: no active alerts should produce score 1.0 (resolved)")
 			Expect(result.Component).To(Equal(types.ComponentAlert))
 		})
 
@@ -92,8 +94,8 @@ var _ = Describe("Alert Resolution Scorer (BR-EM-002)", func() {
 
 			result := scorer.Score(context.Background(), amClient, alertCtx)
 			Expect(result.Assessed).To(BeTrue())
-			Expect(result.Score).ToNot(BeNil())
-			Expect(*result.Score).To(Equal(0.0))
+			Expect(result.Score).To(HaveValue(Equal(0.0)),
+				"BR-EM-002: active alert should produce score 0.0")
 		})
 
 		// UT-EM-AR-003: AlertManager unavailable -> nil score
@@ -145,6 +147,152 @@ var _ = Describe("Alert Resolution Scorer (BR-EM-002)", func() {
 			result := scorer.Score(context.Background(), amClient, alertCtx)
 			// With empty alert name, the scorer should report an error or handle gracefully
 			Expect(result.Component).To(Equal(types.ComponentAlert))
+		})
+	})
+
+	// ========================================================================
+	// Issue #269: Namespace scoping and stale pod filtering
+	// ========================================================================
+	Describe("Namespace scoping (#269)", func() {
+
+		It("UT-EM-269-001: buildMatchers should include namespace when non-empty", func() {
+			amClient := &mockAlertManagerClient{
+				alerts: []emclient.Alert{},
+			}
+			alertCtx := alert.AlertContext{
+				AlertName: "ContainerMemoryExhaustionPredicted",
+				Namespace: "demo",
+			}
+
+			scorer.Score(context.Background(), amClient, alertCtx)
+
+			Expect(amClient.capturedFilts.Matchers).To(ContainElement(
+				`namespace="demo"`,
+			), "AlertManager query must include namespace matcher for namespace-scoped targets")
+		})
+
+		It("UT-EM-269-002: buildMatchers should omit namespace when empty (cluster-scoped)", func() {
+			amClient := &mockAlertManagerClient{
+				alerts: []emclient.Alert{},
+			}
+			alertCtx := alert.AlertContext{
+				AlertName: "NodeDiskPressure",
+				Namespace: "",
+			}
+
+			scorer.Score(context.Background(), amClient, alertCtx)
+
+			for _, m := range amClient.capturedFilts.Matchers {
+				Expect(m).NotTo(HavePrefix("namespace="),
+					"cluster-scoped targets must not have namespace matcher")
+			}
+		})
+	})
+
+	Describe("Stale pod filtering (#269)", func() {
+
+		It("UT-EM-269-003: should filter stale alert for deleted pod and return 1.0", func() {
+			amClient := &mockAlertManagerClient{
+				alerts: []emclient.Alert{
+					{
+						Labels: map[string]string{
+							"alertname": "ContainerMemoryExhaustionPredicted",
+							"namespace": "demo",
+							"pod":       "leaky-app-old-hash-abc",
+						},
+						State: "active",
+					},
+				},
+			}
+			alertCtx := alert.AlertContext{
+				AlertName:      "ContainerMemoryExhaustionPredicted",
+				Namespace:      "demo",
+				ActivePodNames: []string{"leaky-app-new-hash-xyz"},
+			}
+
+			result := scorer.Score(context.Background(), amClient, alertCtx)
+			Expect(result.Assessed).To(BeTrue())
+			Expect(result.Score).NotTo(BeNil())
+			Expect(*result.Score).To(Equal(1.0),
+				"#269: alert for deleted pod leaky-app-old-hash-abc must be filtered out; "+
+					"only leaky-app-new-hash-xyz is active")
+		})
+
+		It("UT-EM-269-004: should keep alert for active pod and return 0.0", func() {
+			amClient := &mockAlertManagerClient{
+				alerts: []emclient.Alert{
+					{
+						Labels: map[string]string{
+							"alertname": "ContainerMemoryExhaustionPredicted",
+							"namespace": "demo",
+							"pod":       "leaky-app-new-hash-xyz",
+						},
+						State: "active",
+					},
+				},
+			}
+			alertCtx := alert.AlertContext{
+				AlertName:      "ContainerMemoryExhaustionPredicted",
+				Namespace:      "demo",
+				ActivePodNames: []string{"leaky-app-new-hash-xyz"},
+			}
+
+			result := scorer.Score(context.Background(), amClient, alertCtx)
+			Expect(result.Assessed).To(BeTrue())
+			Expect(result.Score).NotTo(BeNil())
+			Expect(*result.Score).To(Equal(0.0),
+				"#269: alert for active pod must not be filtered out")
+		})
+
+		It("UT-EM-269-005: should keep alert without pod label and return 0.0", func() {
+			amClient := &mockAlertManagerClient{
+				alerts: []emclient.Alert{
+					{
+						Labels: map[string]string{
+							"alertname": "NamespaceHighMemory",
+							"namespace": "demo",
+						},
+						State: "active",
+					},
+				},
+			}
+			alertCtx := alert.AlertContext{
+				AlertName:      "NamespaceHighMemory",
+				Namespace:      "demo",
+				ActivePodNames: []string{"app-pod-1", "app-pod-2"},
+			}
+
+			result := scorer.Score(context.Background(), amClient, alertCtx)
+			Expect(result.Assessed).To(BeTrue())
+			Expect(result.Score).NotTo(BeNil())
+			Expect(*result.Score).To(Equal(0.0),
+				"#269: alerts without a pod label cannot be correlated and must be kept")
+		})
+
+		It("UT-EM-269-006: should skip filtering when ActivePodNames is nil", func() {
+			amClient := &mockAlertManagerClient{
+				alerts: []emclient.Alert{
+					{
+						Labels: map[string]string{
+							"alertname": "ContainerMemoryExhaustionPredicted",
+							"namespace": "demo",
+							"pod":       "leaky-app-old-hash-abc",
+						},
+						State: "active",
+					},
+				},
+			}
+			alertCtx := alert.AlertContext{
+				AlertName:      "ContainerMemoryExhaustionPredicted",
+				Namespace:      "demo",
+				ActivePodNames: nil,
+			}
+
+			result := scorer.Score(context.Background(), amClient, alertCtx)
+			Expect(result.Assessed).To(BeTrue())
+			Expect(result.Score).NotTo(BeNil())
+			Expect(*result.Score).To(Equal(0.0),
+				"#269: nil ActivePodNames means no filtering; stale alert should still count")
 		})
 	})
 })
