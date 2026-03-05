@@ -46,14 +46,14 @@ RUN if [ "${GOFLAGS}" = "-cover" ]; then \
 	echo "Building with coverage instrumentation (no symbol stripping)..."; \
 	CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} GOFLAGS="${GOFLAGS}" go build \
 	-mod=mod \
-	-ldflags="-X main.version=${APP_VERSION} -X main.gitCommit=${GIT_COMMIT} -X main.buildDate=${BUILD_DATE}" \
+	-ldflags="-X github.com/jordigilh/kubernaut/internal/version.Version=${APP_VERSION} -X github.com/jordigilh/kubernaut/internal/version.GitCommit=${GIT_COMMIT} -X github.com/jordigilh/kubernaut/internal/version.BuildDate=${BUILD_DATE}" \
 	-o gateway \
 	./cmd/gateway; \
 	else \
 	echo "Building production binary (with symbol stripping)..."; \
 	CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
 	-mod=mod \
-	-ldflags="-w -s -extldflags '-static' -X main.version=${APP_VERSION} -X main.gitCommit=${GIT_COMMIT} -X main.buildDate=${BUILD_DATE}" \
+	-ldflags="-w -s -extldflags '-static' -X github.com/jordigilh/kubernaut/internal/version.Version=${APP_VERSION} -X github.com/jordigilh/kubernaut/internal/version.GitCommit=${GIT_COMMIT} -X github.com/jordigilh/kubernaut/internal/version.BuildDate=${BUILD_DATE}" \
 	-a -installsuffix cgo \
 	-o gateway \
 	./cmd/gateway; \
@@ -93,6 +93,13 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
 
 # Set entrypoint
 ENTRYPOINT ["/usr/local/bin/gateway"]
+
+# OCI standard labels
+LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \
+	org.opencontainers.image.version="${APP_VERSION}" \
+	org.opencontainers.image.revision="${GIT_COMMIT}" \
+	org.opencontainers.image.created="${BUILD_DATE}" \
+	org.opencontainers.image.title="kubernaut-gateway"
 
 # Red Hat UBI9 compatible metadata labels
 LABEL name="kubernaut-gateway" \

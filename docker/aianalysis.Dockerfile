@@ -28,9 +28,9 @@ COPY --chown=1001:0 go.mod go.sum ./
 COPY --chown=1001:0 . .
 
 # Build the binary
-ARG VERSION=dev
+ARG APP_VERSION=dev
 ARG GIT_COMMIT=unknown
-ARG BUILD_TIME=unknown
+ARG BUILD_DATE=unknown
 ARG TARGETARCH
 ARG GOOS=linux
 # Use TARGETARCH if set (multi-arch build), otherwise auto-detect from runtime
@@ -44,13 +44,13 @@ RUN if [ "${GOFLAGS}" = "-cover" ]; then \
     echo "Building with coverage instrumentation (no symbol stripping)..."; \
     CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} GOFLAGS="${GOFLAGS}" go build \
     -mod=mod \
-    -ldflags="-X main.Version=${VERSION} -X main.GitCommit=${GIT_COMMIT} -X main.BuildTime=${BUILD_TIME}" \
+    -ldflags="-X github.com/jordigilh/kubernaut/internal/version.Version=${APP_VERSION} -X github.com/jordigilh/kubernaut/internal/version.GitCommit=${GIT_COMMIT} -X github.com/jordigilh/kubernaut/internal/version.BuildDate=${BUILD_DATE}" \
     -o aianalysis-controller ./cmd/aianalysis; \
     else \
     echo "Building production binary (with symbol stripping)..."; \
     CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go build \
     -mod=mod \
-    -ldflags="-s -w -X main.Version=${VERSION} -X main.GitCommit=${GIT_COMMIT} -X main.BuildTime=${BUILD_TIME}" \
+    -ldflags="-s -w -X github.com/jordigilh/kubernaut/internal/version.Version=${APP_VERSION} -X github.com/jordigilh/kubernaut/internal/version.GitCommit=${GIT_COMMIT} -X github.com/jordigilh/kubernaut/internal/version.BuildDate=${BUILD_DATE}" \
     -a -installsuffix cgo \
     -o aianalysis-controller ./cmd/aianalysis; \
     fi
@@ -84,6 +84,13 @@ EXPOSE 9090 8081
 
 # Entrypoint
 ENTRYPOINT ["/usr/local/bin/aianalysis-controller"]
+
+# OCI standard labels
+LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \
+    org.opencontainers.image.version="${APP_VERSION}" \
+    org.opencontainers.image.revision="${GIT_COMMIT}" \
+    org.opencontainers.image.created="${BUILD_DATE}" \
+    org.opencontainers.image.title="kubernaut-aianalysis"
 
 # Red Hat UBI9 compatible metadata labels
 LABEL name="kubernaut-aianalysis" \

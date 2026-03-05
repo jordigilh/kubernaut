@@ -101,6 +101,16 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
 ENTRYPOINT ["./entrypoint.sh"]
 CMD []
 
+# OCI standard labels
+ARG APP_VERSION=dev
+ARG GIT_COMMIT=unknown
+ARG BUILD_DATE=unknown
+LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \
+	org.opencontainers.image.version="${APP_VERSION}" \
+	org.opencontainers.image.revision="${GIT_COMMIT}" \
+	org.opencontainers.image.created="${BUILD_DATE}" \
+	org.opencontainers.image.title="kubernaut-holmesgpt-api"
+
 # Red Hat UBI9 compatible metadata labels
 LABEL name="kubernaut-holmesgpt-api" \
 	vendor="Kubernaut" \
