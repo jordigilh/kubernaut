@@ -33,8 +33,8 @@ import (
 // ========================================
 //
 // Issue #277: HashComputeAfter (absolute *Time) migrated to
-// HashCheckDelay (relative *Duration in EAConfig).
-// Deferral deadline = ea.CreationTimestamp + HashCheckDelay.
+// HashComputeDelay (relative *Duration in EAConfig).
+// Deferral deadline = ea.CreationTimestamp + HashComputeDelay.
 
 var _ = Describe("CheckHashDeferral (DD-EM-004, BR-EM-010.1, #277)", func() {
 
@@ -49,7 +49,7 @@ var _ = Describe("CheckHashDeferral (DD-EM-004, BR-EM-010.1, #277)", func() {
 				Spec: eav1.EffectivenessAssessmentSpec{
 					Config: eav1.EAConfig{
 						StabilizationWindow: metav1.Duration{Duration: 1 * time.Minute},
-						HashCheckDelay:      &metav1.Duration{Duration: 5 * time.Minute},
+						HashComputeDelay:      &metav1.Duration{Duration: 5 * time.Minute},
 					},
 				},
 			}
@@ -62,7 +62,7 @@ var _ = Describe("CheckHashDeferral (DD-EM-004, BR-EM-010.1, #277)", func() {
 
 			By("providing a requeue duration matching the remaining time")
 			Expect(result.RequeueAfter).To(BeNumerically(">", 4*time.Minute),
-				"BR-EM-010.1: requeue must be approximately time.Until(creation + HashCheckDelay)")
+				"BR-EM-010.1: requeue must be approximately time.Until(creation + HashComputeDelay)")
 			Expect(result.RequeueAfter).To(BeNumerically("<=", 5*time.Minute),
 				"BR-EM-010.1: requeue must not exceed the original deferral window")
 		})
@@ -78,7 +78,7 @@ var _ = Describe("CheckHashDeferral (DD-EM-004, BR-EM-010.1, #277)", func() {
 				Spec: eav1.EffectivenessAssessmentSpec{
 					Config: eav1.EAConfig{
 						StabilizationWindow: metav1.Duration{Duration: 1 * time.Minute},
-						HashCheckDelay:      &metav1.Duration{Duration: 5 * time.Minute},
+						HashComputeDelay:      &metav1.Duration{Duration: 5 * time.Minute},
 					},
 				},
 			}
@@ -91,7 +91,7 @@ var _ = Describe("CheckHashDeferral (DD-EM-004, BR-EM-010.1, #277)", func() {
 				"BR-EM-010.1: no requeue needed when deferral window passed")
 		})
 
-		It("UT-EM-251-003: should compute immediately when HashCheckDelay is nil (backward compat)", func() {
+		It("UT-EM-251-003: should compute immediately when HashComputeDelay is nil (backward compat)", func() {
 			ea := &eav1.EffectivenessAssessment{
 				ObjectMeta: metav1.ObjectMeta{
 					CreationTimestamp: metav1.NewTime(time.Now()),
@@ -106,12 +106,12 @@ var _ = Describe("CheckHashDeferral (DD-EM-004, BR-EM-010.1, #277)", func() {
 			result := hash.CheckHashDeferral(ea)
 
 			Expect(result.ShouldDefer).To(BeFalse(),
-				"BR-EM-010.1: nil HashCheckDelay preserves existing behavior for sync targets")
+				"BR-EM-010.1: nil HashComputeDelay preserves existing behavior for sync targets")
 			Expect(result.RequeueAfter).To(BeZero(),
 				"BR-EM-010.1: no requeue for sync targets")
 		})
 
-		It("UT-EM-251-004: should compute immediately when HashCheckDelay is zero duration", func() {
+		It("UT-EM-251-004: should compute immediately when HashComputeDelay is zero duration", func() {
 			ea := &eav1.EffectivenessAssessment{
 				ObjectMeta: metav1.ObjectMeta{
 					CreationTimestamp: metav1.NewTime(time.Now()),
@@ -119,7 +119,7 @@ var _ = Describe("CheckHashDeferral (DD-EM-004, BR-EM-010.1, #277)", func() {
 				Spec: eav1.EffectivenessAssessmentSpec{
 					Config: eav1.EAConfig{
 						StabilizationWindow: metav1.Duration{Duration: 1 * time.Minute},
-						HashCheckDelay:      &metav1.Duration{Duration: 0},
+						HashComputeDelay:      &metav1.Duration{Duration: 0},
 					},
 				},
 			}
@@ -143,7 +143,7 @@ var _ = Describe("CheckHashDeferral (DD-EM-004, BR-EM-010.1, #277)", func() {
 				Spec: eav1.EffectivenessAssessmentSpec{
 					Config: eav1.EAConfig{
 						StabilizationWindow: metav1.Duration{Duration: 1 * time.Minute},
-						HashCheckDelay:      &metav1.Duration{Duration: 30 * time.Second},
+						HashComputeDelay:      &metav1.Duration{Duration: 30 * time.Second},
 					},
 				},
 			}

@@ -95,11 +95,11 @@ var _ = Describe("WaitingForPropagation Phase (#253, BR-EM-010.3)", func() {
 	})
 
 	// ========================================
-	// EA Config: HashCheckDelay and AlertCheckDelay fields (#277)
+	// EA Config: HashComputeDelay and AlertCheckDelay fields (#277)
 	// ========================================
-	Describe("EAConfig: HashCheckDelay and AlertCheckDelay (#277)", func() {
+	Describe("EAConfig: HashComputeDelay and AlertCheckDelay (#277)", func() {
 
-		It("should accept HashCheckDelay and AlertCheckDelay in config", func() {
+		It("should accept HashComputeDelay and AlertCheckDelay in config", func() {
 			hashDelay := metav1.Duration{Duration: 3 * time.Minute}
 			alertDelay := metav1.Duration{Duration: 4 * time.Minute}
 
@@ -111,13 +111,13 @@ var _ = Describe("WaitingForPropagation Phase (#253, BR-EM-010.3)", func() {
 					RemediationTarget:       eav1.TargetResource{Kind: "Certificate", Name: "cert", Namespace: "default"},
 					Config: eav1.EAConfig{
 						StabilizationWindow: metav1.Duration{Duration: 5 * time.Minute},
-						HashCheckDelay:      &hashDelay,
+						HashComputeDelay:      &hashDelay,
 						AlertCheckDelay:     &alertDelay,
 					},
 				},
 			}
 
-			Expect(ea.Spec.Config.HashCheckDelay.Duration).To(Equal(3 * time.Minute))
+			Expect(ea.Spec.Config.HashComputeDelay.Duration).To(Equal(3 * time.Minute))
 			Expect(ea.Spec.Config.AlertCheckDelay.Duration).To(Equal(4 * time.Minute))
 		})
 
@@ -132,7 +132,7 @@ var _ = Describe("WaitingForPropagation Phase (#253, BR-EM-010.3)", func() {
 				},
 			}
 
-			Expect(ea.Spec.Config.HashCheckDelay).To(BeNil())
+			Expect(ea.Spec.Config.HashComputeDelay).To(BeNil())
 			Expect(ea.Spec.Config.AlertCheckDelay).To(BeNil())
 		})
 
@@ -148,18 +148,18 @@ var _ = Describe("WaitingForPropagation Phase (#253, BR-EM-010.3)", func() {
 					RemediationTarget:       eav1.TargetResource{Kind: "Certificate", Name: "cert", Namespace: "default"},
 					Config: eav1.EAConfig{
 						StabilizationWindow: metav1.Duration{Duration: 5 * time.Minute},
-						HashCheckDelay:      &hashDelay,
+						HashComputeDelay:      &hashDelay,
 						AlertCheckDelay:     &alertDelay,
 					},
 				},
 			}
 
 			cpEA := ea.DeepCopy()
-			Expect(cpEA.Spec.Config.HashCheckDelay.Duration).To(Equal(3 * time.Minute))
+			Expect(cpEA.Spec.Config.HashComputeDelay.Duration).To(Equal(3 * time.Minute))
 			Expect(cpEA.Spec.Config.AlertCheckDelay.Duration).To(Equal(4 * time.Minute))
 
-			ea.Spec.Config.HashCheckDelay.Duration = 10 * time.Minute
-			Expect(cpEA.Spec.Config.HashCheckDelay.Duration).To(Equal(3 * time.Minute))
+			ea.Spec.Config.HashComputeDelay.Duration = 10 * time.Minute
+			Expect(cpEA.Spec.Config.HashComputeDelay.Duration).To(Equal(3 * time.Minute))
 		})
 	})
 })
