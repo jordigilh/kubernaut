@@ -3497,7 +3497,7 @@ components:
         hash_compute_delay:
           type: string
           description: |
-            Duration-based hash check delay set on the EA config by the RO.
+            Duration-based hash compute delay set on the EA config by the RO.
             Computed from GitOps sync + operator reconcile delays for async targets.
             Format: Go duration string. Only present for orchestrator.ea.created events.
             Reference: DD-EM-004, BR-RO-103, Issue #277
@@ -4163,7 +4163,7 @@ components:
         hash_compute_delay:
           type: string
           description: |
-            Duration-based hash check delay from EA spec config (Issue #277).
+            Duration-based hash compute delay from EA spec config (Issue #277).
             The EM computes hash_compute_after = EA.creationTimestamp + hash_compute_delay.
             Present only for async-managed targets. Format: Go duration string.
             Reference: DD-EM-004, BR-EM-010, BR-RO-103, Issue #277

@@ -9,12 +9,18 @@
 
 ---
 
+> **#277 Update**: Issue #277 migrated the EA CRD from an absolute `Spec.HashComputeAfter`
+> (`*metav1.Time`) to a relative `Spec.Config.HashComputeDelay` (`*metav1.Duration`).
+> The EM computes the deferral deadline as `creation + HashComputeDelay`.
+> Where this test plan says "deferral deadline" it refers to the deadline the EM derives
+> from `Config.HashComputeDelay`. See [DD-EM-004 v3.0](../../architecture/decisions/DD-EM-004-async-hash-deferral.md).
+
 ## Overview
 
 This test plan covers the deferred hash computation feature for async-managed targets (GitOps and operator-managed CRDs). Tests span two services:
 
-- **RO**: Async target detection (`isBuiltInGroup`, GitOps labels) and `hashComputeAfter` population in EA spec
-- **EM**: Hash computation gating on `hashComputeAfter` timestamp
+- **RO**: Async target detection (`isBuiltInGroup`, GitOps labels) and `Config.HashComputeDelay` population in EA spec
+- **EM**: Hash computation gating on `Config.HashComputeDelay` duration
 
 ---
 
@@ -34,9 +40,9 @@ This test plan covers the deferred hash computation feature for async-managed ta
 
 **File**: `test/unit/remediationorchestrator/builtin_group_test.go`
 
-### RO — EA creation with `hashComputeAfter`
+### RO — EA creation with `hashComputeDelay`
 
-UT-RO-251-008 through UT-RO-251-013 cover the RO reconciler's async detection logic (GitOps label reading, GVK resolution, hashComputeAfter computation). These scenarios are I/O-dependent (K8s API calls, REST mapper) and are covered at the IT level (IT-RO-251-001, IT-RO-251-002) which provides stronger validation with a real envtest reconciler. The pure-logic components (`IsBuiltInGroup`, `CheckHashDeferral`) have full UT coverage above.
+UT-RO-251-008 through UT-RO-251-013 cover the RO reconciler's async detection logic (GitOps label reading, GVK resolution, HashComputeDelay computation). These scenarios are I/O-dependent (K8s API calls, REST mapper) and are covered at the IT level (IT-RO-251-001, IT-RO-251-002) which provides stronger validation with a real envtest reconciler. The pure-logic components (`IsBuiltInGroup`, `CheckHashDeferral`) have full UT coverage above.
 
 | Test ID | Scenario | Coverage |
 |---------|----------|----------|
@@ -46,11 +52,11 @@ UT-RO-251-008 through UT-RO-251-013 cover the RO reconciler's async detection lo
 
 | Test ID | Scenario | Input | Expected | BR |
 |---------|----------|-------|----------|-----|
-| UT-EM-251-001 | hashComputeAfter in future: defer | `HashComputeAfter` = now + 5m | Requeue with `RequeueAfter = ~5m`, hash NOT computed | BR-EM-010.1 |
-| UT-EM-251-002 | hashComputeAfter in past: proceed | `HashComputeAfter` = now - 1m | Hash computed immediately | BR-EM-010.1 |
-| UT-EM-251-003 | hashComputeAfter nil: proceed (backward compat) | `HashComputeAfter` = nil | Hash computed immediately | BR-EM-010.1 |
-| UT-EM-251-004 | hashComputeAfter zero: proceed (backward compat) | `HashComputeAfter` = zero time | Hash computed immediately | BR-EM-010.1 |
-| UT-EM-251-005 | Short deferral: proportional requeue | `HashComputeAfter` = now + 30s | `ShouldDefer=true`, `RequeueAfter ~30s` (proportional) | BR-EM-010.1 |
+| UT-EM-251-001 | HashComputeDelay in future: defer | `HashComputeDelay` = 5m (deadline in future) | Requeue with `RequeueAfter = ~5m`, hash NOT computed | BR-EM-010.1 |
+| UT-EM-251-002 | HashComputeDelay elapsed: proceed | `HashComputeDelay` = 1m (deadline in past) | Hash computed immediately | BR-EM-010.1 |
+| UT-EM-251-003 | HashComputeDelay nil: proceed (backward compat) | `HashComputeDelay` = nil | Hash computed immediately | BR-EM-010.1 |
+| UT-EM-251-004 | HashComputeDelay zero: proceed (backward compat) | `HashComputeDelay` = 0 | Hash computed immediately | BR-EM-010.1 |
+| UT-EM-251-005 | Short deferral: proportional requeue | `HashComputeDelay` = 30s (deadline in future) | `ShouldDefer=true`, `RequeueAfter ~30s` (proportional) | BR-EM-010.1 |
 
 **Note**: The `HashComputed=true` guard (preventing re-deferral after hash is computed) is enforced by the EM reconciler's `!ea.Status.Components.HashComputed` condition (line 434), not by `CheckHashDeferral`. This is validated at the IT level (IT-EM-251-001).
 
@@ -64,9 +70,9 @@ UT-RO-251-008 through UT-RO-251-013 cover the RO reconciler's async detection lo
 
 | Test ID | Scenario | Setup | Validation | BR |
 |---------|----------|-------|-----------|-----|
-| IT-EM-251-001 | Async target: EM defers then computes | Create EA with `HashComputeAfter` 8s in the future | `Consistently` verifies hash NOT computed during window; `Eventually` verifies hash computed + full assessment after window elapses | BR-EM-010.1 |
-| IT-EM-251-002 | Sync target: EM computes immediately (backward compat) | Create EA without `HashComputeAfter` (nil) | EA completes with hash computed on first reconcile; `HashComputeAfter` remains nil | BR-EM-010.1 |
-| IT-EM-251-003 | Elapsed deferral: EM computes immediately | Create EA with `HashComputeAfter` 5 minutes in the past | EA completes with hash computed immediately (past deferral treated as no-op) | BR-EM-010.1 |
+| IT-EM-251-001 | Async target: EM defers then computes | Create EA with `Config.HashComputeDelay = 8s` (deferral deadline in future) | `Consistently` verifies hash NOT computed during window; `Eventually` verifies hash computed + full assessment after window elapses | BR-EM-010.1 |
+| IT-EM-251-002 | Sync target: EM computes immediately (backward compat) | Create EA without `HashComputeDelay` (nil) | EA completes with hash computed on first reconcile; `HashComputeDelay` remains nil | BR-EM-010.1 |
+| IT-EM-251-003 | Elapsed deferral: EM computes immediately | Create EA with `Config.HashComputeDelay` such that deadline is 5 minutes in the past | EA completes with hash computed immediately (past deferral treated as no-op) | BR-EM-010.1 |
 
 **File**: `test/integration/effectivenessmonitor/hash_deferral_integration_test.go`
 
@@ -74,8 +80,8 @@ UT-RO-251-008 through UT-RO-251-013 cover the RO reconciler's async detection lo
 
 | Test ID | Scenario | Setup | Validation | BR |
 |---------|----------|-------|-----------|-----|
-| IT-RO-251-001 | GitOps target: HashComputeAfter set in EA | Full pipeline (RR→SP→AA→WE) with `DetectedLabels.GitOpsManaged=true` in AIAnalysis status | EA created with non-nil `HashComputeAfter`; reasonable timestamp within stabilization window | BR-RO-103.2, BR-RO-103.3 |
-| IT-RO-251-002 | Sync target: HashComputeAfter nil (backward compat) | Full pipeline (RR→SP→AA→WE) without GitOps labels, built-in Deployment target | EA created with nil `HashComputeAfter` | BR-RO-103.3 |
+| IT-RO-251-001 | GitOps target: HashComputeDelay set in EA | Full pipeline (RR→SP→AA→WE) with `DetectedLabels.GitOpsManaged=true` in AIAnalysis status | EA created with non-nil `Config.HashComputeDelay`; reasonable duration from RO config | BR-RO-103.2, BR-RO-103.3 |
+| IT-RO-251-002 | Sync target: HashComputeDelay nil (backward compat) | Full pipeline (RR→SP→AA→WE) without GitOps labels, built-in Deployment target | EA created with nil `Config.HashComputeDelay` | BR-RO-103.3 |
 
 **File**: `test/integration/remediationorchestrator/ea_async_detection_integration_test.go`
 
@@ -85,7 +91,7 @@ UT-RO-251-008 through UT-RO-251-013 cover the RO reconciler's async detection lo
 
 | Test ID | Scenario | Setup | Validation | BR | Status |
 |---------|----------|-------|-----------|-----|--------|
-| E2E-FP-251-001 | cert-manager CRD: full pipeline async hash deferral | Install cert-manager in BeforeAll (self-contained); inject CertManagerCertNotReady alert; Mock LLM returns `rca_resource_kind: Certificate` | RO resolves `Certificate` via REST mapper → `cert-manager.io/v1` (non-built-in) → sets `HashComputeAfter`; EM defers hash computation; audit `assessment.scheduled` includes `hash_compute_after`; EA reaches terminal phase | BR-EM-010, BR-RO-103 | **Implemented** |
+| E2E-FP-251-001 | cert-manager CRD: full pipeline async hash deferral | Install cert-manager in BeforeAll (self-contained); inject CertManagerCertNotReady alert; Mock LLM returns `rca_resource_kind: Certificate` | RO resolves `Certificate` via REST mapper → `cert-manager.io/v1` (non-built-in) → sets `Config.HashComputeDelay`; EM defers hash computation; audit `assessment.scheduled` includes `hash_compute_after` (derived timestamp); EA reaches terminal phase | BR-EM-010, BR-RO-103 | **Implemented** |
 
 **File**: `test/e2e/fullpipeline/02_async_hash_deferral_test.go`
 
@@ -116,7 +122,7 @@ UT-RO-251-008 through UT-RO-251-013 cover the RO reconciler's async detection lo
 
 | Dependency | Status | Impact |
 |-----------|--------|--------|
-| EA CRD spec change (`hashComputeAfter`) | Required | `make generate manifests` + Helm chart sync |
+| EA CRD config field (`Config.HashComputeDelay`) | Required | `make generate manifests` + Helm chart sync |
 | `resolveGVKForKind` accessible from EA creator | Required | Extract to shared utility or pass resolved group |
 | AA.Status.PostRCAContext.DetectedLabels available | Existing | RO reads from already-fetched AA object |
 | cert-manager deployed in E2E cluster | Required for E2E | Kind cluster with cert-manager installed |
