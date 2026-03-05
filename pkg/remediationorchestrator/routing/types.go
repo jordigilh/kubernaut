@@ -53,7 +53,8 @@ type BlockingCondition struct {
 
 	// Reason is the BlockReason enum value explaining why blocked.
 	// Valid values: "ConsecutiveFailures", "DuplicateInProgress",
-	//               "ResourceBusy", "RecentlyRemediated", "ExponentialBackoff"
+	//               "ResourceBusy", "RecentlyRemediated", "ExponentialBackoff",
+	//               "UnmanagedResource", "IneffectiveChain"
 	Reason string
 
 	// Message is a human-readable explanation of the blocking condition

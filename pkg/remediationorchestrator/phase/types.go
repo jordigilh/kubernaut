@@ -92,8 +92,9 @@ var ValidTransitions = map[Phase][]Phase{
 	Analyzing:        {AwaitingApproval, Executing, Completed, Failed, TimedOut}, // Completed for WorkflowNotNeeded (BR-ORCH-037)
 	AwaitingApproval: {Executing, Failed, TimedOut},
 	Executing:        {Completed, Failed, TimedOut, Skipped},
-	// Blocked is NON-terminal: allows transition to Failed after cooldown (BR-ORCH-042)
-	Blocked: {Failed},
+	// Blocked is NON-terminal: transitions to Failed (terminal) or back to Analyzing/Pending
+	// via clearEventBasedBlock (e.g., UnmanagedResource re-scope). (BR-ORCH-042)
+	Blocked: {Failed, Analyzing, Pending},
 	// Terminal states - no transitions allowed
 	Completed: {},
 	Failed:    {Blocked}, // Failed can transition to Blocked when consecutive failure threshold reached (BR-ORCH-042)
