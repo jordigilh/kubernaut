@@ -102,10 +102,10 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         rca_resource_kind="Deployment",
         rca_resource_namespace="production",
         rca_resource_name="api-server",
-        # BR-HAPI-191: Parameter names MUST match workflow-schema.yaml definitions
-        # (validated by HAPI WorkflowResponseValidator against DataStorage parameter schema)
-        # Schema: TARGET_RESOURCE_KIND, TARGET_RESOURCE_NAME, TARGET_NAMESPACE, MEMORY_LIMIT_NEW (all required)
-        parameters={"TARGET_RESOURCE_KIND": "Deployment", "TARGET_RESOURCE_NAME": "api-server", "TARGET_NAMESPACE": "production", "MEMORY_LIMIT_NEW": "512Mi"},
+        # BR-HAPI-191: Parameter names MUST match workflow-schema.yaml definitions.
+        # TARGET_RESOURCE is always injected by the WE controller from the RR's
+        # actual target, so we only supply the remediation-specific param here.
+        parameters={"MEMORY_LIMIT_NEW": "512Mi"},
         # BR-WE-014: Full pipeline uses Job execution engine (not Tekton)
         execution_engine="job",
     ),
@@ -250,9 +250,8 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         rca_resource_kind="Deployment",
         rca_resource_namespace="production",
         rca_resource_name="api-server",
-        # BR-HAPI-191: Parameter names MUST match workflow-schema.yaml definitions
-        # Schema: TARGET_RESOURCE_KIND, TARGET_RESOURCE_NAME, TARGET_NAMESPACE, MEMORY_LIMIT_NEW (all required)
-        parameters={"TARGET_RESOURCE_KIND": "Deployment", "TARGET_RESOURCE_NAME": "api-server", "TARGET_NAMESPACE": "production", "MEMORY_LIMIT_NEW": "512Mi"},
+        # BR-HAPI-191: TARGET_RESOURCE injected by WE controller; only supply remediation params.
+        parameters={"MEMORY_LIMIT_NEW": "512Mi"},
         # BR-WE-014: Full pipeline uses Job execution engine (not Tekton)
         execution_engine="job",
     ),
@@ -287,7 +286,7 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         rca_resource_name="demo-app-cert",
         rca_resource_api_version="cert-manager.io/v1",
         rca_override_prompt_resource=True,  # Gateway sees Pod from alert, but RCA is about the Certificate
-        parameters={"TARGET_RESOURCE_KIND": "Certificate", "TARGET_RESOURCE_NAME": "demo-app-cert", "TARGET_NAMESPACE": "default", "MEMORY_LIMIT_NEW": "512Mi"},
+        parameters={"MEMORY_LIMIT_NEW": "512Mi"},
         execution_engine="job",
     ),
 }
