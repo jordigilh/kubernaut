@@ -1133,3 +1133,147 @@ func pollUntilReady(ctx context.Context, timeout, interval time.Duration, condFn
 		}
 	}
 }
+
+// SetupCertManagerScenario creates the cert-manager resources needed for the
+// cert_not_ready E2E scenario (DD-EM-004, BR-EM-010, #253).
+//
+// Creates: self-signed CA Secret → ClusterIssuer → Certificate (Ready).
+// Then deletes the CA Secret to make the Certificate go NotReady, replicating
+// the demo cert-failure scenario for the fix-certificate-v1 workflow.
+func SetupCertManagerScenario(kubeconfigPath, namespace string, writer io.Writer) error {
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "📦 Setting up cert-manager scenario (fix-certificate-v1)")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	tmpDir, err := os.MkdirTemp("", "cert-e2e-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temp dir: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	keyPath := filepath.Join(tmpDir, "ca.key")
+	crtPath := filepath.Join(tmpDir, "ca.crt")
+
+	_, _ = fmt.Fprintln(writer, "  🔑 Generating self-signed CA key pair...")
+	genCmd := exec.Command("openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
+		"-keyout", keyPath, "-out", crtPath,
+		"-days", "365", "-subj", "/CN=Demo CA/O=Kubernaut")
+	genCmd.Stderr = writer
+	if err := genCmd.Run(); err != nil {
+		return fmt.Errorf("failed to generate CA key pair: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "  📋 Creating CA Secret demo-ca-key-pair in cert-manager namespace...")
+	secretCmd := exec.Command("kubectl", "create", "secret", "tls", "demo-ca-key-pair",
+		"--cert", crtPath, "--key", keyPath,
+		"-n", "cert-manager",
+		"--kubeconfig", kubeconfigPath,
+		"--dry-run=client", "-o", "yaml")
+	secretYAML, err := secretCmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to generate CA Secret YAML: %w", err)
+	}
+	applyCmd := exec.Command("kubectl", "apply", "-f", "-", "--kubeconfig", kubeconfigPath)
+	applyCmd.Stdin = strings.NewReader(string(secretYAML))
+	applyCmd.Stdout = writer
+	applyCmd.Stderr = writer
+	if err := applyCmd.Run(); err != nil {
+		return fmt.Errorf("failed to apply CA Secret: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "  📋 Creating ClusterIssuer demo-selfsigned-ca...")
+	issuerYAML := `apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: demo-selfsigned-ca
+spec:
+  ca:
+    secretName: demo-ca-key-pair`
+	issuerCmd := exec.Command("kubectl", "apply", "-f", "-", "--kubeconfig", kubeconfigPath)
+	issuerCmd.Stdin = strings.NewReader(issuerYAML)
+	issuerCmd.Stdout = writer
+	issuerCmd.Stderr = writer
+	if err := issuerCmd.Run(); err != nil {
+		return fmt.Errorf("failed to create ClusterIssuer: %w", err)
+	}
+
+	_, _ = fmt.Fprintf(writer, "  📋 Creating Certificate demo-app-cert in %s...\n", namespace)
+	certYAML := fmt.Sprintf(`apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: demo-app-cert
+  namespace: %s
+spec:
+  secretName: demo-app-tls
+  issuerRef:
+    name: demo-selfsigned-ca
+    kind: ClusterIssuer
+  dnsNames:
+    - demo-app.%s.svc.cluster.local
+    - demo-app
+  duration: 2160h
+  renewBefore: 360h`, namespace, namespace)
+	certCmd := exec.Command("kubectl", "apply", "-f", "-", "--kubeconfig", kubeconfigPath)
+	certCmd.Stdin = strings.NewReader(certYAML)
+	certCmd.Stdout = writer
+	certCmd.Stderr = writer
+	if err := certCmd.Run(); err != nil {
+		return fmt.Errorf("failed to create Certificate: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for Certificate to become Ready...")
+	waitCmd := exec.Command("kubectl", "wait",
+		"--kubeconfig", kubeconfigPath,
+		"-n", namespace,
+		"--for=condition=Ready",
+		"--timeout=120s",
+		"certificate/demo-app-cert")
+	waitCmd.Stdout = writer
+	waitCmd.Stderr = writer
+	if err := waitCmd.Run(); err != nil {
+		return fmt.Errorf("certificate demo-app-cert did not become Ready: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "  🔥 Deleting CA Secret to trigger NotReady state...")
+	delCmd := exec.Command("kubectl", "delete", "secret", "demo-ca-key-pair",
+		"-n", "cert-manager",
+		"--kubeconfig", kubeconfigPath,
+		"--ignore-not-found")
+	delCmd.Stdout = writer
+	delCmd.Stderr = writer
+	if err := delCmd.Run(); err != nil {
+		return fmt.Errorf("failed to delete CA Secret: %w", err)
+	}
+
+	// Delete the issued TLS secret to force re-issuance attempt (which will fail)
+	_, _ = fmt.Fprintln(writer, "  🔄 Deleting issued TLS secret to trigger re-issuance attempt...")
+	delTLSCmd := exec.Command("kubectl", "delete", "secret", "demo-app-tls",
+		"-n", namespace,
+		"--kubeconfig", kubeconfigPath,
+		"--ignore-not-found")
+	delTLSCmd.Stdout = writer
+	delTLSCmd.Stderr = writer
+	if err := delTLSCmd.Run(); err != nil {
+		return fmt.Errorf("failed to delete TLS secret: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "  ✅ cert-manager scenario ready: Certificate demo-app-cert is NotReady")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	return nil
+}
+
+// CleanupCertManagerScenario removes cert-manager resources created by SetupCertManagerScenario.
+func CleanupCertManagerScenario(kubeconfigPath, namespace string, writer io.Writer) {
+	_, _ = fmt.Fprintln(writer, "  🧹 Cleaning up cert-manager scenario resources...")
+	for _, args := range [][]string{
+		{"delete", "certificate", "demo-app-cert", "-n", namespace, "--ignore-not-found"},
+		{"delete", "secret", "demo-app-tls", "-n", namespace, "--ignore-not-found"},
+		{"delete", "clusterissuer", "demo-selfsigned-ca", "--ignore-not-found"},
+		{"delete", "secret", "demo-ca-key-pair", "-n", "cert-manager", "--ignore-not-found"},
+	} {
+		cmd := exec.Command("kubectl", append(args, "--kubeconfig", kubeconfigPath)...)
+		cmd.Stdout = writer
+		cmd.Stderr = writer
+		_ = cmd.Run()
+	}
+}

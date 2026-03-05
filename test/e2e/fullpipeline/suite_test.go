@@ -185,6 +185,24 @@ var _ = SynchronizedBeforeSuite(
 					{Name: "MEMORY_LIMIT_NEW", Type: "string", Required: true, Description: "New memory limit to apply (e.g., 128Mi, 256Mi, 1Gi)"},
 				},
 			},
+			{
+				WorkflowID:  "fix-certificate-v1",
+				Name:        "Fix Certificate - Recreate CA Secret",
+				Description: "Recreates CA Secret to restore cert-manager Certificate issuance",
+				Severity:    "critical",
+				Component:   "*",
+				Environment: "production",
+				Priority:    "*",
+				SchemaImage: "quay.io/kubernaut-cicd/test-workflows/fix-certificate-job:v1.0.0",
+				ExecutionEngine: "job",
+				SchemaParameters: []models.WorkflowParameter{
+					{Name: "TARGET_NAMESPACE", Type: "string", Required: true, Description: "Namespace of the affected Certificate"},
+					{Name: "TARGET_CERTIFICATE", Type: "string", Required: true, Description: "Name of the Certificate to fix"},
+					{Name: "ISSUER_NAME", Type: "string", Required: true, Description: "Name of the ClusterIssuer backing the certificate"},
+					{Name: "CA_SECRET_NAME", Type: "string", Required: true, Description: "Name of the CA Secret to recreate"},
+					{Name: "CA_SECRET_NAMESPACE", Type: "string", Required: false, Description: "Namespace of the CA Secret"},
+				},
+			},
 		}
 		seededUUIDs, seedErr := infrastructure.SeedWorkflowsInDataStorage(
 			dsClient, allWorkflows, "fullpipeline-e2e", GinkgoWriter,
@@ -192,6 +210,7 @@ var _ = SynchronizedBeforeSuite(
 		Expect(seedErr).ToNot(HaveOccurred(), "Failed to seed workflows in DataStorage")
 		Expect(seededUUIDs).To(HaveKey("crashloop-config-fix-v1:production"))
 		Expect(seededUUIDs).To(HaveKey("oomkill-increase-memory-v1:production"))
+		Expect(seededUUIDs).To(HaveKey("fix-certificate-v1:production"))
 
 		if os.Getenv("SKIP_MOCK_LLM") == "" {
 			By("Updating Mock LLM ConfigMap with all workflow UUIDs (once)")

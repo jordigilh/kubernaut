@@ -86,11 +86,14 @@ var _ = Describe("Async Hash Deferral for CRD Targets [DD-EM-004 v2.0, BR-EM-010
 		testCtx, testCancel = context.WithTimeout(ctx, 10*time.Minute)
 
 		// Workflows are seeded once in SynchronizedBeforeSuite; workflowUUIDs is suite-level.
-		Expect(workflowUUIDs).To(HaveKey("oomkill-increase-memory-v1:production"))
+		Expect(workflowUUIDs).To(HaveKey("fix-certificate-v1:production"))
 	})
 
 	AfterEach(func() {
 		if testNamespace != "" {
+			By("Cleaning up cert-manager scenario resources")
+			infrastructure.CleanupCertManagerScenario(kubeconfigPath, testNamespace, GinkgoWriter)
+
 			By("Cleaning up test namespace")
 			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNamespace}}
 			_ = k8sClient.Delete(ctx, ns)
@@ -143,14 +146,23 @@ var _ = Describe("Async Hash Deferral for CRD Targets [DD-EM-004 v2.0, BR-EM-010
 		}, 2*time.Minute, 2*time.Second).Should(BeTrue(), "memory-eater should be running")
 
 		// ================================================================
-		// Step 2.5: Resolve stale alerts from prior tests
+		// Step 2.5: Set up cert-manager scenario (fix-certificate-v1)
+		// ================================================================
+		// Creates ClusterIssuer + Certificate (Ready), then deletes the CA Secret
+		// to make the Certificate go NotReady — replicating the demo cert-failure scenario.
+		By("Step 2.5: Setting up cert-manager scenario (ClusterIssuer + Certificate + broken CA)")
+		certSetupErr := infrastructure.SetupCertManagerScenario(kubeconfigPath, testNamespace, GinkgoWriter)
+		Expect(certSetupErr).ToNot(HaveOccurred(), "Failed to set up cert-manager scenario")
+
+		// ================================================================
+		// Step 2.6: Resolve stale alerts from prior tests
 		// ================================================================
 		// The Gateway only processes Alerts[0] from each AlertManager batch.
 		// Prior tests leave MemoryExceedsLimit alerts active; if those are
 		// batched with our CertManagerCertNotReady alert the cert alert is
 		// silently dropped. Resolve all active alerts first so the cert
 		// alert fires alone in the next group flush.
-		By("Step 2.5: Resolving active alerts from prior tests to prevent batching")
+		By("Step 2.6: Resolving active alerts from prior tests to prevent batching")
 		alertManagerURL := fmt.Sprintf("http://localhost:%d", infrastructure.AlertManagerHostPort)
 		resolveErr := infrastructure.ResolveActiveAlerts(alertManagerURL)
 		Expect(resolveErr).ToNot(HaveOccurred(), "Failed to resolve active alerts")

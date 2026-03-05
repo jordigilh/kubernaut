@@ -274,7 +274,7 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
     # ========================================
     "cert_not_ready": MockScenario(
         name="cert_not_ready",
-        workflow_name="oomkill-increase-memory-v1",  # Reuses oomkill workflow for pipeline flow
+        workflow_name="fix-certificate-v1",
         signal_name="CertManagerCertNotReady",
         severity="critical",
         workflow_id="21053597-2865-572b-89bf-de49b5b685da",  # Placeholder - overwritten by config
@@ -286,7 +286,12 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         rca_resource_name="demo-app-cert",
         rca_resource_api_version="cert-manager.io/v1",
         rca_override_prompt_resource=True,  # Gateway sees Pod from alert, but RCA is about the Certificate
-        parameters={"MEMORY_LIMIT_NEW": "512Mi"},
+        parameters={
+            "TARGET_NAMESPACE": "default",  # Overwritten at runtime by WFE from TARGET_RESOURCE
+            "TARGET_CERTIFICATE": "demo-app-cert",
+            "ISSUER_NAME": "demo-selfsigned-ca",
+            "CA_SECRET_NAME": "demo-ca-key-pair",
+        },
         execution_engine="job",
     ),
 }
@@ -1011,6 +1016,7 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
             "image-pull-backoff-fix-credentials": "RollbackDeployment",
             "generic-restart-v1": "RestartPod",
             "test-signal-handler-v1": "RestartPod",
+            "fix-certificate-v1": "FixCertificate",
         }
         action_type = action_type_map.get(scenario.workflow_name, "ScaleReplicas")
         return action_type
