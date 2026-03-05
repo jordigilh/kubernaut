@@ -23,7 +23,8 @@
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
-| 2.4 | 2026-03-03 | Architecture Team | **WaitingForPropagation phase (Issue #253, BR-EM-010.3)**: Added `WaitingForPropagation` phase for async-managed targets (GitOps, operator CRDs). Async targets follow: Pending → WaitingForPropagation → Stabilizing → Assessing → Completed/Failed. Sync targets unchanged. New EA spec fields: `gitOpsSyncDelay`, `operatorReconcileDelay` for audit trail (BR-EM-010.5). Kubebuilder enum updated. |
+| 2.5 | 2026-03-05 | Architecture Team | **EA timing consolidation (Issue #277)**: Migrated `HashComputeAfter` (absolute `*Time`) to `HashComputeDelay` (relative `*Duration` in `EAConfig`). Added `AlertCheckDelay` for proactive signal alert resolution deferral. Removed `gitOpsSyncDelay`/`operatorReconcileDelay` from EA spec — propagation breakdown now emitted in RO `orchestrator.ea.created` audit event. Derived timing updated: `AlertManagerCheckAfter = PrometheusCheckAfter + AlertCheckDelay` when set. Async timing anchor: `creation + HashComputeDelay`. |
+| 2.4 | 2026-03-03 | Architecture Team | **WaitingForPropagation phase (Issue #253, BR-EM-010.3)**: Added `WaitingForPropagation` phase for async-managed targets (GitOps, operator CRDs). Async targets follow: Pending → WaitingForPropagation → Stabilizing → Assessing → Completed/Failed. Sync targets unchanged. ~~New EA spec fields: `gitOpsSyncDelay`, `operatorReconcileDelay` for audit trail~~ (removed in v2.5; see #277). Kubebuilder enum updated. |
 | 2.3 | 2026-02-24 | Architecture Team | **Stabilizing phase**: Added `Stabilizing` phase between `Pending` and `Assessing`. EA transitions to `Stabilizing` during stabilization window; derived timing fields (BR-EM-009) are pre-computed and persisted in this phase. Phase state machine updated: Pending → Stabilizing → Assessing → Completed/Failed. Pending → Assessing remains valid when StabilizationWindow == 0. |
 | 2.2 | 2026-02-24 | Architecture Team | **Dual-target EA (Issue #188, DD-EM-003)**: Renamed `resolveEffectivenessTarget` to `resolveDualTargets` returning `*creator.DualTarget{Signal, Remediation}`. Sequence diagram and EA CRD example updated to reflect the new function name and dual-target fields (`signalTarget`, `remediationTarget`). Removed single `targetResource` field from EA spec. |
 | 2.1 | 2026-02-15 | Architecture Team | **Two-phase hash model**: Phase 1 (hash component check): capture current spec as `PostRemediationSpecHash`, compare `pre != post` (workflow changed spec?), set `CurrentSpecHash = PostRemediationSpecHash` as baseline. Phase 2 (drift guard, subsequent reconciles): re-capture current hash, compare `post != current` (spec drift?), abort if drifted. Fixes single-pass completion bug where `CurrentSpecHash` was never set. |
@@ -265,9 +266,10 @@ sequenceDiagram
     Ctrl->>EA: Read EA spec (correlationID, targetResource, config)
 
     Note over Ctrl: First Reconciliation: Compute Derived Timing
-    Ctrl->>Ctrl: Compute ValidityDeadline = EA.creationTimestamp + config.ValidityWindow
-    Ctrl->>Ctrl: Compute PrometheusCheckAfter = EA.creationTimestamp + StabilizationWindow
-    Ctrl->>Ctrl: Compute AlertManagerCheckAfter = EA.creationTimestamp + StabilizationWindow
+    Ctrl->>Ctrl: Compute anchor = EA.creationTimestamp (sync) or creation + HashComputeDelay (async)
+    Ctrl->>Ctrl: Compute PrometheusCheckAfter = anchor + StabilizationWindow
+    Ctrl->>Ctrl: Compute AlertManagerCheckAfter = PrometheusCheckAfter (+ AlertCheckDelay if proactive)
+    Ctrl->>Ctrl: Compute ValidityDeadline = EA.creationTimestamp + effectiveValidity
     Ctrl->>EA: Update status: validityDeadline, prometheusCheckAfter, alertManagerCheckAfter
     Ctrl->>DS: POST audit: effectiveness.assessment.scheduled (timeline computed)
 

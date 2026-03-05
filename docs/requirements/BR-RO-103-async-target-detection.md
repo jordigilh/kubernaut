@@ -2,7 +2,7 @@
 
 **Status**: Draft
 **Date**: 2026-03-02
-**Updated**: 2026-03-05 (Issue #277: HashCheckDelay migration, proactive signal detection, AlertCheckDelay)
+**Updated**: 2026-03-05 (Issue #277: HashComputeDelay migration, proactive signal detection, AlertCheckDelay)
 **Category**: ORCHESTRATION
 **Priority**: High
 **Related**: BR-EM-010, DD-EM-004, ADR-056, #132, #251, #253, #277
@@ -17,12 +17,12 @@ The RO is the correct decision point: it has access to the workflow context, det
 
 ### Propagation Delay Model (#253)
 
-The propagation delay is the sum of independent async stages, each with its own configurable duration in the RO config. The RO computes the total propagation delay and sets it as a single `HashCheckDelay` Duration on the EA. The individual `gitOpsSyncDelay` and `operatorReconcileDelay` remain in RO config only; they are not propagated to the EA spec.
+The propagation delay is the sum of independent async stages, each with its own configurable duration in the RO config. The RO computes the total propagation delay and sets it as a single `HashComputeDelay` Duration on the EA. The individual `gitOpsSyncDelay` and `operatorReconcileDelay` remain in RO config only; they are not propagated to the EA spec.
 
 ```
 propagationDelay = gitOpsSyncDelay (if GitOps-managed)
                  + operatorReconcileDelay (if CRD target)
-HashCheckDelay = propagationDelay  # EA.Spec.Config.HashCheckDelay
+HashComputeDelay = propagationDelay  # EA.Spec.Config.HashComputeDelay
 ```
 
 For a target that is both GitOps-managed AND an operator CRD (e.g., ArgoCD syncs a cert-manager Certificate), both delays compound.
@@ -52,15 +52,15 @@ The RO already fetches the AIAnalysis object when creating the EA. It MUST addit
 - When AIAnalysis is nil or DetectedLabels are nil, the target is not considered GitOps-managed (graceful degradation)
 - No additional API calls required (AA already fetched)
 
-### BR-RO-103.3: HashCheckDelay Population (updated #253, #277)
+### BR-RO-103.3: HashComputeDelay Population (updated #253, #277)
 
-**The RO MUST set `EA.Spec.Config.HashCheckDelay` to the computed propagation delay (Duration), NOT the stabilization window.**
+**The RO MUST set `EA.Spec.Config.HashComputeDelay` to the computed propagation delay (Duration), NOT the stabilization window.**
 
 **Acceptance Criteria:**
-- `HashCheckDelay = propagationDelay` (as `*metav1.Duration`)
+- `HashComputeDelay = propagationDelay` (as `*metav1.Duration`)
 - `propagationDelay = gitOpsSyncDelay (if GitOps) + operatorReconcileDelay (if CRD)` — computed from RO config
-- When neither detected: `HashCheckDelay` is nil (EM computes hash immediately at creation)
-- The EM computes the deferral deadline as `creation + HashCheckDelay`
+- When neither detected: `HashComputeDelay` is nil (EM computes hash immediately at creation)
+- The EM computes the deferral deadline as `creation + HashComputeDelay`
 - The propagation delay is independent of `StabilizationWindow`
 
 ### BR-RO-103.4: Propagation Delay Configuration (#253)
@@ -85,21 +85,21 @@ asyncPropagation:
 
 **The RO MUST compound propagation delays for targets that are both GitOps-managed AND operator-managed.**
 
-When a target triggers both async signals (e.g., ArgoCD syncs a cert-manager Certificate), the delays represent sequential stages and must be summed. The RO sets the total as `HashCheckDelay` on the EA; the individual delays remain in RO config and are not propagated to the EA spec.
+When a target triggers both async signals (e.g., ArgoCD syncs a cert-manager Certificate), the delays represent sequential stages and must be summed. The RO sets the total as `HashComputeDelay` on the EA; the individual delays remain in RO config and are not propagated to the EA spec.
 
 ```
 |── gitOpsSyncDelay ──|── operatorReconcileDelay ──|
         ~3 min                   ~1 min
                                                     ^
                                               hash computed
-                                              (total: 4 min → HashCheckDelay)
+                                              (total: 4 min → HashComputeDelay)
 ```
 
 **Acceptance Criteria:**
-- GitOps-only target: `propagationDelay = gitOpsSyncDelay`, `HashCheckDelay = propagationDelay`
-- Operator-only target: `propagationDelay = operatorReconcileDelay`, `HashCheckDelay = propagationDelay`
-- GitOps + operator target: `propagationDelay = gitOpsSyncDelay + operatorReconcileDelay`, `HashCheckDelay = propagationDelay`
-- Sync target (neither signal): `propagationDelay = 0`, `HashCheckDelay = nil`
+- GitOps-only target: `propagationDelay = gitOpsSyncDelay`, `HashComputeDelay = propagationDelay`
+- Operator-only target: `propagationDelay = operatorReconcileDelay`, `HashComputeDelay = propagationDelay`
+- GitOps + operator target: `propagationDelay = gitOpsSyncDelay + operatorReconcileDelay`, `HashComputeDelay = propagationDelay`
+- Sync target (neither signal): `propagationDelay = 0`, `HashComputeDelay = nil`
 
 ### BR-RO-103.6: Proactive Signal Detection and AlertCheckDelay (#277)
 

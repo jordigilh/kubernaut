@@ -13,7 +13,7 @@
 
 The Effectiveness Monitor (EM) must compute and persist all timing-derived assessment fields on first reconciliation. This prevents redundant recomputation on every reconcile loop, provides operator observability into the assessment timeline, and enforces the invariant that `StabilizationWindow < ValidityDeadline`.
 
-**EA Spec Configuration**: The EA CRD `spec.config` (EAConfig) contains `StabilizationWindow` (always set by the RO), plus optional `HashCheckDelay` (for async targets, #253/#277) and `AlertCheckDelay` (for proactive alerts, #277). `ScoringThreshold`, `PrometheusEnabled`, and `AlertManagerEnabled` are EM operational config only — they are not in the EA spec.
+**EA Spec Configuration**: The EA CRD `spec.config` (EAConfig) contains `StabilizationWindow` (always set by the RO), plus optional `HashComputeDelay` (for async targets, #253/#277) and `AlertCheckDelay` (for proactive alerts, #277). `ScoringThreshold`, `PrometheusEnabled`, and `AlertManagerEnabled` are EM operational config only — they are not in the EA spec.
 
 Previously, `ValidityDeadline` was set by the RO in the EA spec. This created a risk where the RO could misconfigure the deadline such that `StabilizationWindow > ValidityDeadline`, causing the EA to expire before assessment could begin.
 
