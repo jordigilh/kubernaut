@@ -866,10 +866,21 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
             if msg.get("role") != "tool":
                 continue
             content = msg.get("content", "")
-            try:
-                data = json.loads(content) if isinstance(content, str) else content
-            except (json.JSONDecodeError, TypeError):
+            if not isinstance(content, str):
                 continue
+            data = None
+            try:
+                data = json.loads(content)
+            except (json.JSONDecodeError, TypeError):
+                # HolmesGPT prefixes tool results with
+                # "Params used for the tool call: {...}. The tool call output
+                # follows on the next line.\n" — strip prefix and retry.
+                idx = content.find("\n{")
+                if idx >= 0:
+                    try:
+                        data = json.loads(content[idx + 1 :])
+                    except (json.JSONDecodeError, TypeError):
+                        pass
             if not isinstance(data, dict):
                 continue
             root_owner = data.get("root_owner")

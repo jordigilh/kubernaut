@@ -247,7 +247,9 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 			g.Expect(jobList.Items).NotTo(BeEmpty(), "No Jobs found for WorkflowExecution %s", weName)
 
 			job := jobList.Items[0]
-			g.Expect(job.Status.Failed).To(BeZero(),
+			// Global Expect() — fails the test immediately instead of letting
+			// Eventually retry for the full 600s timeout.
+			Expect(job.Status.Failed).To(BeZero(),
 				fmt.Sprintf("Job %s has %d failed pod(s) — check pod logs for details", job.Name, job.Status.Failed))
 			g.Expect(job.Status.Succeeded).To(BeNumerically(">", 0),
 				fmt.Sprintf("Job %s has not succeeded yet (active=%d)", job.Name, job.Status.Active))
@@ -1043,7 +1045,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 			g.Expect(jobList.Items).NotTo(BeEmpty(), "No Jobs found for WorkflowExecution %s", weName)
 
 			job := jobList.Items[0]
-			g.Expect(job.Status.Failed).To(BeZero(),
+			Expect(job.Status.Failed).To(BeZero(),
 				fmt.Sprintf("Job %s has %d failed pod(s) — check pod logs for details", job.Name, job.Status.Failed))
 			g.Expect(job.Status.Succeeded).To(BeNumerically(">", 0),
 				fmt.Sprintf("Job %s has not succeeded yet (active=%d)", job.Name, job.Status.Active))

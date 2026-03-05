@@ -262,21 +262,19 @@ var _ = Describe("Async Hash Deferral for CRD Targets [DD-EM-004 v2.0, BR-EM-010
 		}, timeout, interval).Should(Equal("job"), "WorkflowExecution should use job engine")
 
 		By("Step 6b: Waiting for K8s Job to complete")
-		Eventually(func() bool {
+		Eventually(func(g Gomega) {
 			jobList := &batchv1.JobList{}
-			if err := apiReader.List(ctx, jobList,
+			g.Expect(apiReader.List(ctx, jobList,
 				client.InNamespace("kubernaut-workflows"),
-				client.MatchingLabels{"kubernaut.ai/workflow-execution": weName}); err != nil {
-				return false
-			}
-			for _, job := range jobList.Items {
-				if job.Status.Succeeded > 0 {
-					GinkgoWriter.Printf("  ✅ Job completed: %s\n", job.Name)
-					return true
-				}
-			}
-			return false
-		}, timeout, interval).Should(BeTrue(), "K8s Job should complete")
+				client.MatchingLabels{"kubernaut.ai/workflow-execution": weName})).To(Succeed())
+			g.Expect(jobList.Items).NotTo(BeEmpty(), "No Jobs found for WorkflowExecution %s", weName)
+
+			job := jobList.Items[0]
+			Expect(job.Status.Failed).To(BeZero(),
+				fmt.Sprintf("Job %s has %d failed pod(s) — check pod logs for details", job.Name, job.Status.Failed))
+			g.Expect(job.Status.Succeeded).To(BeNumerically(">", 0),
+				fmt.Sprintf("Job %s has not succeeded yet (active=%d)", job.Name, job.Status.Active))
+		}, timeout, interval).Should(Succeed(), "K8s Job should complete successfully")
 
 		By("Step 6c: Waiting for WorkflowExecution to complete")
 		Eventually(func() string {
