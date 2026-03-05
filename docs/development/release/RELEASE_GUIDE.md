@@ -2,31 +2,6 @@
 
 How to cut a new release of Kubernaut.
 
-## Prerequisites
-
-These are one-time setup steps. Skip if already completed.
-
-### Quay.io Robot Account
-
-1. Create a robot account in the `quay.io/kubernaut-ai/` organization (e.g. `kubernaut-ai+github_actions_release`).
-2. Add the robot to a team with **Creator** role so it can push to existing repositories and auto-create new ones.
-
-### GitHub Actions Secrets
-
-Add two repository secrets under **Settings → Secrets and variables → Actions → Repository secrets**:
-
-| Secret | Value |
-|--------|-------|
-| `QUAY_ROBOT_USERNAME` | Full robot username (e.g. `kubernaut-ai+github_actions_release`) |
-| `QUAY_ROBOT_TOKEN` | Robot account token from Quay.io |
-
-Or via CLI:
-
-```bash
-gh secret set QUAY_ROBOT_USERNAME --repo jordigilh/kubernaut
-gh secret set QUAY_ROBOT_TOKEN --repo jordigilh/kubernaut
-```
-
 ## Releasing a New Version
 
 ### 1. Ensure main is ready
