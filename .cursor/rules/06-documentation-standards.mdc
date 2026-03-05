@@ -92,8 +92,8 @@ Store architectural decisions in [docs/adr/](mdc:docs/adr/) following this forma
 
 ## Testing Documentation
 ### Test Strategy Documentation
-**Location**: [docs/test/MASTER_TESTING_STRATEGY.md](mdc:docs/test/MASTER_TESTING_STRATEGY.md)
-- Document the three-tier testing approach (87% confidence)
+**Location**: [docs/testing/README.md](mdc:docs/testing/README.md)
+- Document the three-tier testing approach (80% per-tier coverage target)
 - Include test execution instructions and CI/CD integration
 - Maintain test coverage reports and confidence metrics
 
