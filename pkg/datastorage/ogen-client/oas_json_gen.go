@@ -2230,7 +2230,7 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
-	case AuditEventEventDataOrchestratorApprovalApprovedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRejectedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRequestedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCompletedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCreatedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleFailedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleStartedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleTransitionedAuditEventEventData, AuditEventEventDataOrchestratorRemediationManualReviewAuditEventEventData, AuditEventEventDataOrchestratorRoutingBlockedAuditEventEventData, AuditEventEventDataRemediationWorkflowCreatedAuditEventEventData:
+	case AuditEventEventDataOrchestratorApprovalApprovedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRejectedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRequestedAuditEventEventData, AuditEventEventDataOrchestratorEaCreatedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCompletedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCreatedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleFailedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleStartedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleTransitionedAuditEventEventData, AuditEventEventDataOrchestratorRemediationManualReviewAuditEventEventData, AuditEventEventDataOrchestratorRoutingBlockedAuditEventEventData, AuditEventEventDataRemediationWorkflowCreatedAuditEventEventData:
 		switch s.Type {
 		case AuditEventEventDataOrchestratorApprovalApprovedAuditEventEventData:
 			e.FieldStart("event_type")
@@ -2241,6 +2241,9 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 		case AuditEventEventDataOrchestratorApprovalRequestedAuditEventEventData:
 			e.FieldStart("event_type")
 			e.Str("orchestrator.approval.requested")
+		case AuditEventEventDataOrchestratorEaCreatedAuditEventEventData:
+			e.FieldStart("event_type")
+			e.Str("orchestrator.ea.created")
 		case AuditEventEventDataOrchestratorLifecycleCompletedAuditEventEventData:
 			e.FieldStart("event_type")
 			e.Str("orchestrator.lifecycle.completed")
@@ -2424,6 +2427,48 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				if s.WorkflowType.Set {
 					e.FieldStart("workflow_type")
 					s.WorkflowType.Encode(e)
+				}
+			}
+			{
+				if s.EaName.Set {
+					e.FieldStart("ea_name")
+					s.EaName.Encode(e)
+				}
+			}
+			{
+				if s.HashComputeDelay.Set {
+					e.FieldStart("hash_compute_delay")
+					s.HashComputeDelay.Encode(e)
+				}
+			}
+			{
+				if s.AlertCheckDelay.Set {
+					e.FieldStart("alert_check_delay")
+					s.AlertCheckDelay.Encode(e)
+				}
+			}
+			{
+				if s.GitopsSyncDelay.Set {
+					e.FieldStart("gitops_sync_delay")
+					s.GitopsSyncDelay.Encode(e)
+				}
+			}
+			{
+				if s.OperatorReconcileDelay.Set {
+					e.FieldStart("operator_reconcile_delay")
+					s.OperatorReconcileDelay.Encode(e)
+				}
+			}
+			{
+				if s.IsGitopsManaged.Set {
+					e.FieldStart("is_gitops_managed")
+					s.IsGitopsManaged.Encode(e)
+				}
+			}
+			{
+				if s.IsCrd.Set {
+					e.FieldStart("is_crd")
+					s.IsCrd.Encode(e)
 				}
 			}
 		}
@@ -3716,6 +3761,18 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 			{
+				if s.HashComputeDelay.Set {
+					e.FieldStart("hash_compute_delay")
+					s.HashComputeDelay.Encode(e)
+				}
+			}
+			{
+				if s.AlertCheckDelay.Set {
+					e.FieldStart("alert_check_delay")
+					s.AlertCheckDelay.Encode(e)
+				}
+			}
+			{
 				if s.GitopsSyncDelay.Set {
 					e.FieldStart("gitops_sync_delay")
 					s.GitopsSyncDelay.Encode(e)
@@ -3828,6 +3885,9 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 					found = true
 				case "orchestrator.approval.requested":
 					s.Type = AuditEventEventDataOrchestratorApprovalRequestedAuditEventEventData
+					found = true
+				case "orchestrator.ea.created":
+					s.Type = AuditEventEventDataOrchestratorEaCreatedAuditEventEventData
 					found = true
 				case "orchestrator.lifecycle.completed":
 					s.Type = AuditEventEventDataOrchestratorLifecycleCompletedAuditEventEventData
@@ -4015,7 +4075,7 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 		if err := s.GatewayAuditPayload.Decode(d); err != nil {
 			return err
 		}
-	case AuditEventEventDataOrchestratorApprovalApprovedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRejectedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRequestedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCompletedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCreatedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleFailedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleStartedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleTransitionedAuditEventEventData, AuditEventEventDataOrchestratorRemediationManualReviewAuditEventEventData, AuditEventEventDataOrchestratorRoutingBlockedAuditEventEventData, AuditEventEventDataRemediationWorkflowCreatedAuditEventEventData:
+	case AuditEventEventDataOrchestratorApprovalApprovedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRejectedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRequestedAuditEventEventData, AuditEventEventDataOrchestratorEaCreatedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCompletedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCreatedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleFailedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleStartedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleTransitionedAuditEventEventData, AuditEventEventDataOrchestratorRemediationManualReviewAuditEventEventData, AuditEventEventDataOrchestratorRoutingBlockedAuditEventEventData, AuditEventEventDataRemediationWorkflowCreatedAuditEventEventData:
 		if err := s.RemediationOrchestratorAuditPayload.Decode(d); err != nil {
 			return err
 		}
@@ -4707,7 +4767,7 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
-	case AuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRequestedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCreatedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleFailedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleStartedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleTransitionedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorRemediationManualReviewAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorRoutingBlockedAuditEventRequestEventData, AuditEventRequestEventDataRemediationWorkflowCreatedAuditEventRequestEventData:
+	case AuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRequestedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorEaCreatedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCreatedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleFailedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleStartedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleTransitionedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorRemediationManualReviewAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorRoutingBlockedAuditEventRequestEventData, AuditEventRequestEventDataRemediationWorkflowCreatedAuditEventRequestEventData:
 		switch s.Type {
 		case AuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData:
 			e.FieldStart("event_type")
@@ -4718,6 +4778,9 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 		case AuditEventRequestEventDataOrchestratorApprovalRequestedAuditEventRequestEventData:
 			e.FieldStart("event_type")
 			e.Str("orchestrator.approval.requested")
+		case AuditEventRequestEventDataOrchestratorEaCreatedAuditEventRequestEventData:
+			e.FieldStart("event_type")
+			e.Str("orchestrator.ea.created")
 		case AuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData:
 			e.FieldStart("event_type")
 			e.Str("orchestrator.lifecycle.completed")
@@ -4901,6 +4964,48 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				if s.WorkflowType.Set {
 					e.FieldStart("workflow_type")
 					s.WorkflowType.Encode(e)
+				}
+			}
+			{
+				if s.EaName.Set {
+					e.FieldStart("ea_name")
+					s.EaName.Encode(e)
+				}
+			}
+			{
+				if s.HashComputeDelay.Set {
+					e.FieldStart("hash_compute_delay")
+					s.HashComputeDelay.Encode(e)
+				}
+			}
+			{
+				if s.AlertCheckDelay.Set {
+					e.FieldStart("alert_check_delay")
+					s.AlertCheckDelay.Encode(e)
+				}
+			}
+			{
+				if s.GitopsSyncDelay.Set {
+					e.FieldStart("gitops_sync_delay")
+					s.GitopsSyncDelay.Encode(e)
+				}
+			}
+			{
+				if s.OperatorReconcileDelay.Set {
+					e.FieldStart("operator_reconcile_delay")
+					s.OperatorReconcileDelay.Encode(e)
+				}
+			}
+			{
+				if s.IsGitopsManaged.Set {
+					e.FieldStart("is_gitops_managed")
+					s.IsGitopsManaged.Encode(e)
+				}
+			}
+			{
+				if s.IsCrd.Set {
+					e.FieldStart("is_crd")
+					s.IsCrd.Encode(e)
 				}
 			}
 		}
@@ -6193,6 +6298,18 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 			{
+				if s.HashComputeDelay.Set {
+					e.FieldStart("hash_compute_delay")
+					s.HashComputeDelay.Encode(e)
+				}
+			}
+			{
+				if s.AlertCheckDelay.Set {
+					e.FieldStart("alert_check_delay")
+					s.AlertCheckDelay.Encode(e)
+				}
+			}
+			{
 				if s.GitopsSyncDelay.Set {
 					e.FieldStart("gitops_sync_delay")
 					s.GitopsSyncDelay.Encode(e)
@@ -6305,6 +6422,9 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 					found = true
 				case "orchestrator.approval.requested":
 					s.Type = AuditEventRequestEventDataOrchestratorApprovalRequestedAuditEventRequestEventData
+					found = true
+				case "orchestrator.ea.created":
+					s.Type = AuditEventRequestEventDataOrchestratorEaCreatedAuditEventRequestEventData
 					found = true
 				case "orchestrator.lifecycle.completed":
 					s.Type = AuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData
@@ -6492,7 +6612,7 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 		if err := s.GatewayAuditPayload.Decode(d); err != nil {
 			return err
 		}
-	case AuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRequestedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCreatedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleFailedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleStartedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleTransitionedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorRemediationManualReviewAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorRoutingBlockedAuditEventRequestEventData, AuditEventRequestEventDataRemediationWorkflowCreatedAuditEventRequestEventData:
+	case AuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRequestedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorEaCreatedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCreatedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleFailedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleStartedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleTransitionedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorRemediationManualReviewAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorRoutingBlockedAuditEventRequestEventData, AuditEventRequestEventDataRemediationWorkflowCreatedAuditEventRequestEventData:
 		if err := s.RemediationOrchestratorAuditPayload.Decode(d); err != nil {
 			return err
 		}
@@ -9611,6 +9731,18 @@ func (s *EffectivenessAssessmentAuditPayload) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.HashComputeDelay.Set {
+			e.FieldStart("hash_compute_delay")
+			s.HashComputeDelay.Encode(e)
+		}
+	}
+	{
+		if s.AlertCheckDelay.Set {
+			e.FieldStart("alert_check_delay")
+			s.AlertCheckDelay.Encode(e)
+		}
+	}
+	{
 		if s.GitopsSyncDelay.Set {
 			e.FieldStart("gitops_sync_delay")
 			s.GitopsSyncDelay.Encode(e)
@@ -9678,7 +9810,7 @@ func (s *EffectivenessAssessmentAuditPayload) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfEffectivenessAssessmentAuditPayload = [28]string{
+var jsonFieldsNameOfEffectivenessAssessmentAuditPayload = [30]string{
 	0:  "event_type",
 	1:  "correlation_id",
 	2:  "namespace",
@@ -9696,17 +9828,19 @@ var jsonFieldsNameOfEffectivenessAssessmentAuditPayload = [28]string{
 	14: "prometheus_check_after",
 	15: "alertmanager_check_after",
 	16: "hash_compute_after",
-	17: "gitops_sync_delay",
-	18: "operator_reconcile_delay",
-	19: "total_propagation_delay",
-	20: "validity_window",
-	21: "stabilization_window",
-	22: "pre_remediation_spec_hash",
-	23: "post_remediation_spec_hash",
-	24: "hash_match",
-	25: "health_checks",
-	26: "metric_deltas",
-	27: "alert_resolution",
+	17: "hash_compute_delay",
+	18: "alert_check_delay",
+	19: "gitops_sync_delay",
+	20: "operator_reconcile_delay",
+	21: "total_propagation_delay",
+	22: "validity_window",
+	23: "stabilization_window",
+	24: "pre_remediation_spec_hash",
+	25: "post_remediation_spec_hash",
+	26: "hash_match",
+	27: "health_checks",
+	28: "metric_deltas",
+	29: "alert_resolution",
 }
 
 // Decode decodes EffectivenessAssessmentAuditPayload from json.
@@ -9900,6 +10034,26 @@ func (s *EffectivenessAssessmentAuditPayload) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"hash_compute_after\"")
+			}
+		case "hash_compute_delay":
+			if err := func() error {
+				s.HashComputeDelay.Reset()
+				if err := s.HashComputeDelay.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"hash_compute_delay\"")
+			}
+		case "alert_check_delay":
+			if err := func() error {
+				s.AlertCheckDelay.Reset()
+				if err := s.AlertCheckDelay.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"alert_check_delay\"")
 			}
 		case "gitops_sync_delay":
 			if err := func() error {
@@ -23925,9 +24079,51 @@ func (s *RemediationOrchestratorAuditPayload) encodeFields(e *jx.Encoder) {
 			s.WorkflowType.Encode(e)
 		}
 	}
+	{
+		if s.EaName.Set {
+			e.FieldStart("ea_name")
+			s.EaName.Encode(e)
+		}
+	}
+	{
+		if s.HashComputeDelay.Set {
+			e.FieldStart("hash_compute_delay")
+			s.HashComputeDelay.Encode(e)
+		}
+	}
+	{
+		if s.AlertCheckDelay.Set {
+			e.FieldStart("alert_check_delay")
+			s.AlertCheckDelay.Encode(e)
+		}
+	}
+	{
+		if s.GitopsSyncDelay.Set {
+			e.FieldStart("gitops_sync_delay")
+			s.GitopsSyncDelay.Encode(e)
+		}
+	}
+	{
+		if s.OperatorReconcileDelay.Set {
+			e.FieldStart("operator_reconcile_delay")
+			s.OperatorReconcileDelay.Encode(e)
+		}
+	}
+	{
+		if s.IsGitopsManaged.Set {
+			e.FieldStart("is_gitops_managed")
+			s.IsGitopsManaged.Encode(e)
+		}
+	}
+	{
+		if s.IsCrd.Set {
+			e.FieldStart("is_crd")
+			s.IsCrd.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfRemediationOrchestratorAuditPayload = [28]string{
+var jsonFieldsNameOfRemediationOrchestratorAuditPayload = [35]string{
 	0:  "event_type",
 	1:  "rr_name",
 	2:  "namespace",
@@ -23956,6 +24152,13 @@ var jsonFieldsNameOfRemediationOrchestratorAuditPayload = [28]string{
 	25: "target_resource",
 	26: "workflow_version",
 	27: "workflow_type",
+	28: "ea_name",
+	29: "hash_compute_delay",
+	30: "alert_check_delay",
+	31: "gitops_sync_delay",
+	32: "operator_reconcile_delay",
+	33: "is_gitops_managed",
+	34: "is_crd",
 }
 
 // Decode decodes RemediationOrchestratorAuditPayload from json.
@@ -23963,7 +24166,7 @@ func (s *RemediationOrchestratorAuditPayload) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode RemediationOrchestratorAuditPayload to nil")
 	}
-	var requiredBitSet [4]uint8
+	var requiredBitSet [5]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -24251,6 +24454,76 @@ func (s *RemediationOrchestratorAuditPayload) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"workflow_type\"")
 			}
+		case "ea_name":
+			if err := func() error {
+				s.EaName.Reset()
+				if err := s.EaName.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"ea_name\"")
+			}
+		case "hash_compute_delay":
+			if err := func() error {
+				s.HashComputeDelay.Reset()
+				if err := s.HashComputeDelay.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"hash_compute_delay\"")
+			}
+		case "alert_check_delay":
+			if err := func() error {
+				s.AlertCheckDelay.Reset()
+				if err := s.AlertCheckDelay.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"alert_check_delay\"")
+			}
+		case "gitops_sync_delay":
+			if err := func() error {
+				s.GitopsSyncDelay.Reset()
+				if err := s.GitopsSyncDelay.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"gitops_sync_delay\"")
+			}
+		case "operator_reconcile_delay":
+			if err := func() error {
+				s.OperatorReconcileDelay.Reset()
+				if err := s.OperatorReconcileDelay.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"operator_reconcile_delay\"")
+			}
+		case "is_gitops_managed":
+			if err := func() error {
+				s.IsGitopsManaged.Reset()
+				if err := s.IsGitopsManaged.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"is_gitops_managed\"")
+			}
+		case "is_crd":
+			if err := func() error {
+				s.IsCrd.Reset()
+				if err := s.IsCrd.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"is_crd\"")
+			}
 		default:
 			return d.Skip()
 		}
@@ -24260,8 +24533,9 @@ func (s *RemediationOrchestratorAuditPayload) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [4]uint8{
+	for i, mask := range [5]uint8{
 		0b00000111,
+		0b00000000,
 		0b00000000,
 		0b00000000,
 		0b00000000,
@@ -24390,6 +24664,8 @@ func (s *RemediationOrchestratorAuditPayloadEventType) Decode(d *jx.Decoder) err
 		*s = RemediationOrchestratorAuditPayloadEventTypeOrchestratorRoutingBlocked
 	case RemediationOrchestratorAuditPayloadEventTypeRemediationWorkflowCreated:
 		*s = RemediationOrchestratorAuditPayloadEventTypeRemediationWorkflowCreated
+	case RemediationOrchestratorAuditPayloadEventTypeOrchestratorEaCreated:
+		*s = RemediationOrchestratorAuditPayloadEventTypeOrchestratorEaCreated
 	default:
 		*s = RemediationOrchestratorAuditPayloadEventType(v)
 	}

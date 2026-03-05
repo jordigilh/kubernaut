@@ -50,9 +50,11 @@ class EffectivenessAssessmentAuditPayload(BaseModel):
     prometheus_check_after: Optional[datetime] = Field(default=None, description="Computed earliest time for Prometheus check (only for assessment.scheduled events). EA.creationTimestamp + stabilizationWindow. ")
     alertmanager_check_after: Optional[datetime] = Field(default=None, description="Computed earliest time for AlertManager check (only for assessment.scheduled events). EA.creationTimestamp + stabilizationWindow. ")
     hash_compute_after: Optional[datetime] = Field(default=None, description="Earliest time for hash computation (only for assessment.scheduled events). Set by the RO for async-managed targets (GitOps, operator CRDs) where spec changes propagate after the WorkflowExecution completes. Nil/absent means hash is computed immediately (sync targets). Reference: DD-EM-004, BR-EM-010, BR-RO-103 ")
-    gitops_sync_delay: Optional[StrictStr] = Field(default=None, description="Configured GitOps sync delay from RO config, propagated via EA spec. Present only for GitOps-managed async targets. Format: Go duration string. Reference: DD-EM-004 v2.0, BR-RO-103.4, Issue #253 ")
-    operator_reconcile_delay: Optional[StrictStr] = Field(default=None, description="Configured operator reconcile delay from RO config, propagated via EA spec. Present only for operator-managed CRD targets. Format: Go duration string. Reference: DD-EM-004 v2.0, BR-RO-103.4, Issue #253 ")
-    total_propagation_delay: Optional[StrictStr] = Field(default=None, description="Total propagation delay (sum of gitops_sync_delay + operator_reconcile_delay). Computed by the EM from the EA spec fields for audit observability. Present only for async targets. Format: Go duration string. Reference: DD-EM-004 v2.0, BR-RO-103.5, Issue #253 ")
+    hash_compute_delay: Optional[StrictStr] = Field(default=None, description="Duration-based hash compute delay from EA spec config (Issue #277). The EM computes hash_compute_after = EA.creationTimestamp + hash_compute_delay. Present only for async-managed targets. Format: Go duration string. Reference: DD-EM-004, BR-EM-010, BR-RO-103, Issue #277 ")
+    alert_check_delay: Optional[StrictStr] = Field(default=None, description="Duration-based alert check delay from EA spec config (Issue #277). Set by the RO for proactive signals where the triggering alert needs extra time to resolve after remediation. Format: Go duration string. Reference: BR-EM-009, BR-RO-103, Issue #277 ")
+    gitops_sync_delay: Optional[StrictStr] = Field(default=None, description="DEPRECATED (Issue #277): Use orchestrator.ea.created event instead. Was: GitOps sync delay propagated via EA spec. Now emitted by the RO in the orchestrator.ea.created audit event. ")
+    operator_reconcile_delay: Optional[StrictStr] = Field(default=None, description="DEPRECATED (Issue #277): Use orchestrator.ea.created event instead. Was: Operator reconcile delay propagated via EA spec. Now emitted by the RO in the orchestrator.ea.created audit event. ")
+    total_propagation_delay: Optional[StrictStr] = Field(default=None, description="DEPRECATED (Issue #277): Use hash_compute_delay and alert_check_delay instead. Was: Sum of gitops_sync_delay + operator_reconcile_delay. ")
     validity_window: Optional[StrictStr] = Field(default=None, description="Validity window duration from EM config (only for assessment.scheduled events). Included for operational observability. ")
     stabilization_window: Optional[StrictStr] = Field(default=None, description="Stabilization window duration from EA spec (only for assessment.scheduled events). Included for operational observability. ")
     pre_remediation_spec_hash: Optional[StrictStr] = Field(default=None, description="Canonical SHA-256 hash of the target resource's .spec BEFORE remediation. Retrieved from DataStorage audit trail (remediation.workflow_created event). Format: \"sha256:<hex>\". Only present for effectiveness.hash.computed events. ")
@@ -61,7 +63,7 @@ class EffectivenessAssessmentAuditPayload(BaseModel):
     health_checks: Optional[EffectivenessAssessmentAuditPayloadHealthChecks] = None
     metric_deltas: Optional[EffectivenessAssessmentAuditPayloadMetricDeltas] = None
     alert_resolution: Optional[EffectivenessAssessmentAuditPayloadAlertResolution] = None
-    __properties: ClassVar[List[str]] = ["event_type", "correlation_id", "namespace", "ea_name", "component", "assessed", "score", "details", "reason", "signal_name", "components_assessed", "completed_at", "assessment_duration_seconds", "validity_deadline", "prometheus_check_after", "alertmanager_check_after", "hash_compute_after", "gitops_sync_delay", "operator_reconcile_delay", "total_propagation_delay", "validity_window", "stabilization_window", "pre_remediation_spec_hash", "post_remediation_spec_hash", "hash_match", "health_checks", "metric_deltas", "alert_resolution"]
+    __properties: ClassVar[List[str]] = ["event_type", "correlation_id", "namespace", "ea_name", "component", "assessed", "score", "details", "reason", "signal_name", "components_assessed", "completed_at", "assessment_duration_seconds", "validity_deadline", "prometheus_check_after", "alertmanager_check_after", "hash_compute_after", "hash_compute_delay", "alert_check_delay", "gitops_sync_delay", "operator_reconcile_delay", "total_propagation_delay", "validity_window", "stabilization_window", "pre_remediation_spec_hash", "post_remediation_spec_hash", "hash_match", "health_checks", "metric_deltas", "alert_resolution"]
 
     @field_validator('event_type')
     def event_type_validate_enum(cls, value):
@@ -162,6 +164,8 @@ class EffectivenessAssessmentAuditPayload(BaseModel):
             "prometheus_check_after": obj.get("prometheus_check_after"),
             "alertmanager_check_after": obj.get("alertmanager_check_after"),
             "hash_compute_after": obj.get("hash_compute_after"),
+            "hash_compute_delay": obj.get("hash_compute_delay"),
+            "alert_check_delay": obj.get("alert_check_delay"),
             "gitops_sync_delay": obj.get("gitops_sync_delay"),
             "operator_reconcile_delay": obj.get("operator_reconcile_delay"),
             "total_propagation_delay": obj.get("total_propagation_delay"),

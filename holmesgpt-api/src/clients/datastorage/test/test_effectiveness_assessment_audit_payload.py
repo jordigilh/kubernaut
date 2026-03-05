@@ -53,6 +53,8 @@ class TestEffectivenessAssessmentAuditPayload(unittest.TestCase):
                 prometheus_check_after = '2026-02-12T15:05Z',
                 alertmanager_check_after = '2026-02-12T15:05Z',
                 hash_compute_after = '2026-02-12T15:10Z',
+                hash_compute_delay = '4m0s',
+                alert_check_delay = '5m0s',
                 gitops_sync_delay = '3m0s',
                 operator_reconcile_delay = '1m0s',
                 total_propagation_delay = '4m0s',

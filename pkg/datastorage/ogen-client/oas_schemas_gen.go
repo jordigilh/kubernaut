@@ -1122,6 +1122,7 @@ const (
 	AuditEventEventDataOrchestratorApprovalApprovedAuditEventEventData           AuditEventEventDataType = "orchestrator.approval.approved"
 	AuditEventEventDataOrchestratorApprovalRejectedAuditEventEventData           AuditEventEventDataType = "orchestrator.approval.rejected"
 	AuditEventEventDataOrchestratorApprovalRequestedAuditEventEventData          AuditEventEventDataType = "orchestrator.approval.requested"
+	AuditEventEventDataOrchestratorEaCreatedAuditEventEventData                  AuditEventEventDataType = "orchestrator.ea.created"
 	AuditEventEventDataOrchestratorLifecycleCompletedAuditEventEventData         AuditEventEventDataType = "orchestrator.lifecycle.completed"
 	AuditEventEventDataOrchestratorLifecycleCreatedAuditEventEventData           AuditEventEventDataType = "orchestrator.lifecycle.created"
 	AuditEventEventDataOrchestratorLifecycleFailedAuditEventEventData            AuditEventEventDataType = "orchestrator.lifecycle.failed"
@@ -1193,7 +1194,7 @@ func (s AuditEventEventData) IsGatewayAuditPayload() bool {
 // IsRemediationOrchestratorAuditPayload reports whether AuditEventEventData is RemediationOrchestratorAuditPayload.
 func (s AuditEventEventData) IsRemediationOrchestratorAuditPayload() bool {
 	switch s.Type {
-	case AuditEventEventDataOrchestratorApprovalApprovedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRejectedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRequestedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCompletedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCreatedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleFailedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleStartedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleTransitionedAuditEventEventData, AuditEventEventDataOrchestratorRemediationManualReviewAuditEventEventData, AuditEventEventDataOrchestratorRoutingBlockedAuditEventEventData, AuditEventEventDataRemediationWorkflowCreatedAuditEventEventData:
+	case AuditEventEventDataOrchestratorApprovalApprovedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRejectedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRequestedAuditEventEventData, AuditEventEventDataOrchestratorEaCreatedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCompletedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCreatedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleFailedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleStartedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleTransitionedAuditEventEventData, AuditEventEventDataOrchestratorRemediationManualReviewAuditEventEventData, AuditEventEventDataOrchestratorRoutingBlockedAuditEventEventData, AuditEventEventDataRemediationWorkflowCreatedAuditEventEventData:
 		return true
 	default:
 		return false
@@ -1447,6 +1448,13 @@ func NewAuditEventEventDataOrchestratorApprovalRejectedAuditEventEventData(v Rem
 func NewAuditEventEventDataOrchestratorApprovalRequestedAuditEventEventData(v RemediationOrchestratorAuditPayload) AuditEventEventData {
 	var s AuditEventEventData
 	s.SetRemediationOrchestratorAuditPayload(AuditEventEventDataOrchestratorApprovalRequestedAuditEventEventData, v)
+	return s
+}
+
+// NewAuditEventEventDataOrchestratorEaCreatedAuditEventEventData returns new AuditEventEventData from RemediationOrchestratorAuditPayload.
+func NewAuditEventEventDataOrchestratorEaCreatedAuditEventEventData(v RemediationOrchestratorAuditPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetRemediationOrchestratorAuditPayload(AuditEventEventDataOrchestratorEaCreatedAuditEventEventData, v)
 	return s
 }
 
@@ -2658,6 +2666,7 @@ const (
 	AuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData           AuditEventRequestEventDataType = "orchestrator.approval.approved"
 	AuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData           AuditEventRequestEventDataType = "orchestrator.approval.rejected"
 	AuditEventRequestEventDataOrchestratorApprovalRequestedAuditEventRequestEventData          AuditEventRequestEventDataType = "orchestrator.approval.requested"
+	AuditEventRequestEventDataOrchestratorEaCreatedAuditEventRequestEventData                  AuditEventRequestEventDataType = "orchestrator.ea.created"
 	AuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData         AuditEventRequestEventDataType = "orchestrator.lifecycle.completed"
 	AuditEventRequestEventDataOrchestratorLifecycleCreatedAuditEventRequestEventData           AuditEventRequestEventDataType = "orchestrator.lifecycle.created"
 	AuditEventRequestEventDataOrchestratorLifecycleFailedAuditEventRequestEventData            AuditEventRequestEventDataType = "orchestrator.lifecycle.failed"
@@ -2729,7 +2738,7 @@ func (s AuditEventRequestEventData) IsGatewayAuditPayload() bool {
 // IsRemediationOrchestratorAuditPayload reports whether AuditEventRequestEventData is RemediationOrchestratorAuditPayload.
 func (s AuditEventRequestEventData) IsRemediationOrchestratorAuditPayload() bool {
 	switch s.Type {
-	case AuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRequestedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCreatedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleFailedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleStartedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleTransitionedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorRemediationManualReviewAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorRoutingBlockedAuditEventRequestEventData, AuditEventRequestEventDataRemediationWorkflowCreatedAuditEventRequestEventData:
+	case AuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRequestedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorEaCreatedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCreatedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleFailedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleStartedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleTransitionedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorRemediationManualReviewAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorRoutingBlockedAuditEventRequestEventData, AuditEventRequestEventDataRemediationWorkflowCreatedAuditEventRequestEventData:
 		return true
 	default:
 		return false
@@ -2983,6 +2992,13 @@ func NewAuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestE
 func NewAuditEventRequestEventDataOrchestratorApprovalRequestedAuditEventRequestEventData(v RemediationOrchestratorAuditPayload) AuditEventRequestEventData {
 	var s AuditEventRequestEventData
 	s.SetRemediationOrchestratorAuditPayload(AuditEventRequestEventDataOrchestratorApprovalRequestedAuditEventRequestEventData, v)
+	return s
+}
+
+// NewAuditEventRequestEventDataOrchestratorEaCreatedAuditEventRequestEventData returns new AuditEventRequestEventData from RemediationOrchestratorAuditPayload.
+func NewAuditEventRequestEventDataOrchestratorEaCreatedAuditEventRequestEventData(v RemediationOrchestratorAuditPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetRemediationOrchestratorAuditPayload(AuditEventRequestEventDataOrchestratorEaCreatedAuditEventRequestEventData, v)
 	return s
 }
 
@@ -4967,18 +4983,32 @@ type EffectivenessAssessmentAuditPayload struct {
 	// hash is computed immediately (sync targets).
 	// Reference: DD-EM-004, BR-EM-010, BR-RO-103.
 	HashComputeAfter OptDateTime `json:"hash_compute_after"`
-	// Configured GitOps sync delay from RO config, propagated via EA spec.
-	// Present only for GitOps-managed async targets. Format: Go duration string.
-	// Reference: DD-EM-004 v2.0, BR-RO-103.4, Issue #253.
+	// Duration-based hash compute delay from EA spec config (Issue #277).
+	// The EM computes hash_compute_after = EA.creationTimestamp + hash_compute_delay.
+	// Present only for async-managed targets. Format: Go duration string.
+	// Reference: DD-EM-004, BR-EM-010, BR-RO-103, Issue #277.
+	HashComputeDelay OptString `json:"hash_compute_delay"`
+	// Duration-based alert check delay from EA spec config (Issue #277).
+	// Set by the RO for proactive signals where the triggering alert needs
+	// extra time to resolve after remediation. Format: Go duration string.
+	// Reference: BR-EM-009, BR-RO-103, Issue #277.
+	AlertCheckDelay OptString `json:"alert_check_delay"`
+	// DEPRECATED (Issue #277): Use orchestrator.ea.created event instead.
+	// Was: GitOps sync delay propagated via EA spec. Now emitted by the RO
+	// in the orchestrator.ea.created audit event.
+	//
+	// Deprecated: schema marks this property as deprecated.
 	GitopsSyncDelay OptString `json:"gitops_sync_delay"`
-	// Configured operator reconcile delay from RO config, propagated via EA spec.
-	// Present only for operator-managed CRD targets. Format: Go duration string.
-	// Reference: DD-EM-004 v2.0, BR-RO-103.4, Issue #253.
+	// DEPRECATED (Issue #277): Use orchestrator.ea.created event instead.
+	// Was: Operator reconcile delay propagated via EA spec. Now emitted by
+	// the RO in the orchestrator.ea.created audit event.
+	//
+	// Deprecated: schema marks this property as deprecated.
 	OperatorReconcileDelay OptString `json:"operator_reconcile_delay"`
-	// Total propagation delay (sum of gitops_sync_delay + operator_reconcile_delay).
-	// Computed by the EM from the EA spec fields for audit observability.
-	// Present only for async targets. Format: Go duration string.
-	// Reference: DD-EM-004 v2.0, BR-RO-103.5, Issue #253.
+	// DEPRECATED (Issue #277): Use hash_compute_delay and alert_check_delay instead.
+	// Was: Sum of gitops_sync_delay + operator_reconcile_delay.
+	//
+	// Deprecated: schema marks this property as deprecated.
 	TotalPropagationDelay OptString `json:"total_propagation_delay"`
 	// Validity window duration from EM config (only for assessment.scheduled events).
 	// Included for operational observability.
@@ -5097,6 +5127,16 @@ func (s *EffectivenessAssessmentAuditPayload) GetAlertmanagerCheckAfter() OptDat
 // GetHashComputeAfter returns the value of HashComputeAfter.
 func (s *EffectivenessAssessmentAuditPayload) GetHashComputeAfter() OptDateTime {
 	return s.HashComputeAfter
+}
+
+// GetHashComputeDelay returns the value of HashComputeDelay.
+func (s *EffectivenessAssessmentAuditPayload) GetHashComputeDelay() OptString {
+	return s.HashComputeDelay
+}
+
+// GetAlertCheckDelay returns the value of AlertCheckDelay.
+func (s *EffectivenessAssessmentAuditPayload) GetAlertCheckDelay() OptString {
+	return s.AlertCheckDelay
 }
 
 // GetGitopsSyncDelay returns the value of GitopsSyncDelay.
@@ -5237,6 +5277,16 @@ func (s *EffectivenessAssessmentAuditPayload) SetAlertmanagerCheckAfter(val OptD
 // SetHashComputeAfter sets the value of HashComputeAfter.
 func (s *EffectivenessAssessmentAuditPayload) SetHashComputeAfter(val OptDateTime) {
 	s.HashComputeAfter = val
+}
+
+// SetHashComputeDelay sets the value of HashComputeDelay.
+func (s *EffectivenessAssessmentAuditPayload) SetHashComputeDelay(val OptString) {
+	s.HashComputeDelay = val
+}
+
+// SetAlertCheckDelay sets the value of AlertCheckDelay.
+func (s *EffectivenessAssessmentAuditPayload) SetAlertCheckDelay(val OptString) {
+	s.AlertCheckDelay = val
 }
 
 // SetGitopsSyncDelay sets the value of GitopsSyncDelay.
@@ -15502,6 +15552,33 @@ type RemediationOrchestratorAuditPayload struct {
 	// Propagated from AIAnalysis.SelectedWorkflow.ActionType via HAPI three-step discovery.
 	// Used by DS remediation history to populate workflowType on entries and summaries.
 	WorkflowType OptString `json:"workflow_type"`
+	// Name of the EffectivenessAssessment CRD created by the RO.
+	// Only present for orchestrator.ea.created events.
+	EaName OptString `json:"ea_name"`
+	// Duration-based hash compute delay set on the EA config by the RO.
+	// Computed from GitOps sync + operator reconcile delays for async targets.
+	// Format: Go duration string. Only present for orchestrator.ea.created events.
+	// Reference: DD-EM-004, BR-RO-103, Issue #277.
+	HashComputeDelay OptString `json:"hash_compute_delay"`
+	// Duration-based alert check delay set on the EA config by the RO.
+	// Set for proactive signals where the triggering alert needs extra time
+	// to resolve. Format: Go duration string.
+	// Reference: BR-EM-009, BR-RO-103, Issue #277.
+	AlertCheckDelay OptString `json:"alert_check_delay"`
+	// GitOps sync delay from RO async propagation config.
+	// Only present for orchestrator.ea.created events when target is GitOps-managed.
+	// Format: Go duration string. Reference: DD-EM-004 v2.0, BR-RO-103.4.
+	GitopsSyncDelay OptString `json:"gitops_sync_delay"`
+	// Operator reconcile delay from RO async propagation config.
+	// Only present for orchestrator.ea.created events when target is CRD-managed.
+	// Format: Go duration string. Reference: DD-EM-004 v2.0, BR-RO-103.4.
+	OperatorReconcileDelay OptString `json:"operator_reconcile_delay"`
+	// Whether the remediation target was detected as GitOps-managed.
+	// Only present for orchestrator.ea.created events.
+	IsGitopsManaged OptBool `json:"is_gitops_managed"`
+	// Whether the remediation target is a CRD (non-built-in group).
+	// Only present for orchestrator.ea.created events.
+	IsCrd OptBool `json:"is_crd"`
 }
 
 // GetEventType returns the value of EventType.
@@ -15644,6 +15721,41 @@ func (s *RemediationOrchestratorAuditPayload) GetWorkflowType() OptString {
 	return s.WorkflowType
 }
 
+// GetEaName returns the value of EaName.
+func (s *RemediationOrchestratorAuditPayload) GetEaName() OptString {
+	return s.EaName
+}
+
+// GetHashComputeDelay returns the value of HashComputeDelay.
+func (s *RemediationOrchestratorAuditPayload) GetHashComputeDelay() OptString {
+	return s.HashComputeDelay
+}
+
+// GetAlertCheckDelay returns the value of AlertCheckDelay.
+func (s *RemediationOrchestratorAuditPayload) GetAlertCheckDelay() OptString {
+	return s.AlertCheckDelay
+}
+
+// GetGitopsSyncDelay returns the value of GitopsSyncDelay.
+func (s *RemediationOrchestratorAuditPayload) GetGitopsSyncDelay() OptString {
+	return s.GitopsSyncDelay
+}
+
+// GetOperatorReconcileDelay returns the value of OperatorReconcileDelay.
+func (s *RemediationOrchestratorAuditPayload) GetOperatorReconcileDelay() OptString {
+	return s.OperatorReconcileDelay
+}
+
+// GetIsGitopsManaged returns the value of IsGitopsManaged.
+func (s *RemediationOrchestratorAuditPayload) GetIsGitopsManaged() OptBool {
+	return s.IsGitopsManaged
+}
+
+// GetIsCrd returns the value of IsCrd.
+func (s *RemediationOrchestratorAuditPayload) GetIsCrd() OptBool {
+	return s.IsCrd
+}
+
 // SetEventType sets the value of EventType.
 func (s *RemediationOrchestratorAuditPayload) SetEventType(val RemediationOrchestratorAuditPayloadEventType) {
 	s.EventType = val
@@ -15784,6 +15896,41 @@ func (s *RemediationOrchestratorAuditPayload) SetWorkflowType(val OptString) {
 	s.WorkflowType = val
 }
 
+// SetEaName sets the value of EaName.
+func (s *RemediationOrchestratorAuditPayload) SetEaName(val OptString) {
+	s.EaName = val
+}
+
+// SetHashComputeDelay sets the value of HashComputeDelay.
+func (s *RemediationOrchestratorAuditPayload) SetHashComputeDelay(val OptString) {
+	s.HashComputeDelay = val
+}
+
+// SetAlertCheckDelay sets the value of AlertCheckDelay.
+func (s *RemediationOrchestratorAuditPayload) SetAlertCheckDelay(val OptString) {
+	s.AlertCheckDelay = val
+}
+
+// SetGitopsSyncDelay sets the value of GitopsSyncDelay.
+func (s *RemediationOrchestratorAuditPayload) SetGitopsSyncDelay(val OptString) {
+	s.GitopsSyncDelay = val
+}
+
+// SetOperatorReconcileDelay sets the value of OperatorReconcileDelay.
+func (s *RemediationOrchestratorAuditPayload) SetOperatorReconcileDelay(val OptString) {
+	s.OperatorReconcileDelay = val
+}
+
+// SetIsGitopsManaged sets the value of IsGitopsManaged.
+func (s *RemediationOrchestratorAuditPayload) SetIsGitopsManaged(val OptBool) {
+	s.IsGitopsManaged = val
+}
+
+// SetIsCrd sets the value of IsCrd.
+func (s *RemediationOrchestratorAuditPayload) SetIsCrd(val OptBool) {
+	s.IsCrd = val
+}
+
 // Approval decision.
 type RemediationOrchestratorAuditPayloadDecision string
 
@@ -15848,6 +15995,7 @@ const (
 	RemediationOrchestratorAuditPayloadEventTypeOrchestratorRemediationManualReview RemediationOrchestratorAuditPayloadEventType = "orchestrator.remediation.manual_review"
 	RemediationOrchestratorAuditPayloadEventTypeOrchestratorRoutingBlocked          RemediationOrchestratorAuditPayloadEventType = "orchestrator.routing.blocked"
 	RemediationOrchestratorAuditPayloadEventTypeRemediationWorkflowCreated          RemediationOrchestratorAuditPayloadEventType = "remediation.workflow_created"
+	RemediationOrchestratorAuditPayloadEventTypeOrchestratorEaCreated               RemediationOrchestratorAuditPayloadEventType = "orchestrator.ea.created"
 )
 
 // AllValues returns all RemediationOrchestratorAuditPayloadEventType values.
@@ -15864,6 +16012,7 @@ func (RemediationOrchestratorAuditPayloadEventType) AllValues() []RemediationOrc
 		RemediationOrchestratorAuditPayloadEventTypeOrchestratorRemediationManualReview,
 		RemediationOrchestratorAuditPayloadEventTypeOrchestratorRoutingBlocked,
 		RemediationOrchestratorAuditPayloadEventTypeRemediationWorkflowCreated,
+		RemediationOrchestratorAuditPayloadEventTypeOrchestratorEaCreated,
 	}
 }
 
@@ -15891,6 +16040,8 @@ func (s RemediationOrchestratorAuditPayloadEventType) MarshalText() ([]byte, err
 	case RemediationOrchestratorAuditPayloadEventTypeOrchestratorRoutingBlocked:
 		return []byte(s), nil
 	case RemediationOrchestratorAuditPayloadEventTypeRemediationWorkflowCreated:
+		return []byte(s), nil
+	case RemediationOrchestratorAuditPayloadEventTypeOrchestratorEaCreated:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -15932,6 +16083,9 @@ func (s *RemediationOrchestratorAuditPayloadEventType) UnmarshalText(data []byte
 		return nil
 	case RemediationOrchestratorAuditPayloadEventTypeRemediationWorkflowCreated:
 		*s = RemediationOrchestratorAuditPayloadEventTypeRemediationWorkflowCreated
+		return nil
+	case RemediationOrchestratorAuditPayloadEventTypeOrchestratorEaCreated:
+		*s = RemediationOrchestratorAuditPayloadEventTypeOrchestratorEaCreated
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)

@@ -46,6 +46,13 @@ Name | Type | Description | Notes
 **target_resource** | **str** | Target resource being remediated | 
 **workflow_version** | **str** | Workflow version | 
 **workflow_type** | **str** | Action type from DD-WORKFLOW-016 taxonomy (e.g., ScaleReplicas, RestartPod). Propagated from AIAnalysis.SelectedWorkflow.ActionType via HAPI three-step discovery. Used by DS remediation history to populate workflowType on entries and summaries.  | [optional] 
+**ea_name** | **str** | Name of the EffectivenessAssessment CRD | [optional] 
+**hash_compute_delay** | **str** | Duration-based hash compute delay from EA spec config (Issue #277). The EM computes hash_compute_after &#x3D; EA.creationTimestamp + hash_compute_delay. Present only for async-managed targets. Format: Go duration string. Reference: DD-EM-004, BR-EM-010, BR-RO-103, Issue #277  | [optional] 
+**alert_check_delay** | **str** | Duration-based alert check delay from EA spec config (Issue #277). Set by the RO for proactive signals where the triggering alert needs extra time to resolve after remediation. Format: Go duration string. Reference: BR-EM-009, BR-RO-103, Issue #277  | [optional] 
+**gitops_sync_delay** | **str** | DEPRECATED (Issue #277): Use orchestrator.ea.created event instead. Was: GitOps sync delay propagated via EA spec. Now emitted by the RO in the orchestrator.ea.created audit event.  | [optional] 
+**operator_reconcile_delay** | **str** | DEPRECATED (Issue #277): Use orchestrator.ea.created event instead. Was: Operator reconcile delay propagated via EA spec. Now emitted by the RO in the orchestrator.ea.created audit event.  | [optional] 
+**is_gitops_managed** | **bool** | Whether the remediation target was detected as GitOps-managed. Only present for orchestrator.ea.created events.  | [optional] 
+**is_crd** | **bool** | Whether the remediation target is a CRD (non-built-in group). Only present for orchestrator.ea.created events.  | [optional] 
 **phase** | **str** | Phase in which error occurred | 
 **signal** | **str** | Name of the signal being processed | 
 **external_severity** | **str** | Original severity from external monitoring system (e.g., Sev1, P0, critical) | [optional] 
@@ -163,7 +170,6 @@ Name | Type | Description | Notes
 **old_timeout_config** | [**TimeoutConfig**](TimeoutConfig.md) |  | [optional] 
 **new_timeout_config** | [**TimeoutConfig**](TimeoutConfig.md) |  | [optional] 
 **correlation_id** | **str** | Correlation ID (EA spec.correlationID, matches parent RR name) | 
-**ea_name** | **str** | Name of the EffectivenessAssessment CRD | [optional] 
 **component** | **str** | Assessment component that produced this event | 
 **assessed** | **bool** | Whether the component was successfully assessed | [optional] 
 **score** | **float** | Component score (0.0-1.0), null if not assessed | [optional] 
@@ -174,9 +180,7 @@ Name | Type | Description | Notes
 **prometheus_check_after** | **datetime** | Computed earliest time for Prometheus check (only for assessment.scheduled events). EA.creationTimestamp + stabilizationWindow.  | [optional] 
 **alertmanager_check_after** | **datetime** | Computed earliest time for AlertManager check (only for assessment.scheduled events). EA.creationTimestamp + stabilizationWindow.  | [optional] 
 **hash_compute_after** | **datetime** | Earliest time for hash computation (only for assessment.scheduled events). Set by the RO for async-managed targets (GitOps, operator CRDs) where spec changes propagate after the WorkflowExecution completes. Nil/absent means hash is computed immediately (sync targets). Reference: DD-EM-004, BR-EM-010, BR-RO-103  | [optional] 
-**gitops_sync_delay** | **str** | Configured GitOps sync delay from RO config, propagated via EA spec. Present only for GitOps-managed async targets. Format: Go duration string. Reference: DD-EM-004 v2.0, BR-RO-103.4, Issue #253  | [optional] 
-**operator_reconcile_delay** | **str** | Configured operator reconcile delay from RO config, propagated via EA spec. Present only for operator-managed CRD targets. Format: Go duration string. Reference: DD-EM-004 v2.0, BR-RO-103.4, Issue #253  | [optional] 
-**total_propagation_delay** | **str** | Total propagation delay (sum of gitops_sync_delay + operator_reconcile_delay). Computed by the EM from the EA spec fields for audit observability. Present only for async targets. Format: Go duration string. Reference: DD-EM-004 v2.0, BR-RO-103.5, Issue #253  | [optional] 
+**total_propagation_delay** | **str** | DEPRECATED (Issue #277): Use hash_compute_delay and alert_check_delay instead. Was: Sum of gitops_sync_delay + operator_reconcile_delay.  | [optional] 
 **validity_window** | **str** | Validity window duration from EM config (only for assessment.scheduled events). Included for operational observability.  | [optional] 
 **stabilization_window** | **str** | Stabilization window duration from EA spec (only for assessment.scheduled events). Included for operational observability.  | [optional] 
 **post_remediation_spec_hash** | **str** | Canonical SHA-256 hash of the target resource&#39;s .spec AFTER remediation. Computed by EM during assessment using DD-EM-002 canonical hash algorithm. Format: \&quot;sha256:&lt;hex&gt;\&quot;. Only present for effectiveness.hash.computed events.  | [optional] 

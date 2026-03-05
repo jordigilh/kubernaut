@@ -2336,6 +2336,7 @@ components:
               'orchestrator.remediation.manual_review': '#/components/schemas/RemediationOrchestratorAuditPayload'
               'orchestrator.routing.blocked': '#/components/schemas/RemediationOrchestratorAuditPayload'
               'remediation.workflow_created': '#/components/schemas/RemediationOrchestratorAuditPayload'
+              'orchestrator.ea.created': '#/components/schemas/RemediationOrchestratorAuditPayload'
               'webhook.notification.cancelled': '#/components/schemas/NotificationAuditPayload'
               'webhook.notification.acknowledged': '#/components/schemas/NotificationAuditPayload'
               'workflowexecution.block.cleared': '#/components/schemas/WorkflowExecutionWebhookAuditPayload'
@@ -3371,7 +3372,7 @@ components:
       properties:
         event_type:
           type: string
-          enum: ['orchestrator.lifecycle.started', 'orchestrator.lifecycle.created', 'orchestrator.lifecycle.completed', 'orchestrator.lifecycle.failed', 'orchestrator.lifecycle.transitioned', 'orchestrator.approval.requested', 'orchestrator.approval.approved', 'orchestrator.approval.rejected', 'orchestrator.remediation.manual_review', 'orchestrator.routing.blocked', 'remediation.workflow_created']
+          enum: ['orchestrator.lifecycle.started', 'orchestrator.lifecycle.created', 'orchestrator.lifecycle.completed', 'orchestrator.lifecycle.failed', 'orchestrator.lifecycle.transitioned', 'orchestrator.approval.requested', 'orchestrator.approval.approved', 'orchestrator.approval.rejected', 'orchestrator.remediation.manual_review', 'orchestrator.routing.blocked', 'remediation.workflow_created', 'orchestrator.ea.created']
           description: Event type for discriminator (matches parent event_type)
         # Core Orchestration Fields
         rr_name:
@@ -3485,6 +3486,56 @@ components:
             Propagated from AIAnalysis.SelectedWorkflow.ActionType via HAPI three-step discovery.
             Used by DS remediation history to populate workflowType on entries and summaries.
           example: "ScaleReplicas"
+
+        # EA creation fields (orchestrator.ea.created, Issue #277)
+        ea_name:
+          type: string
+          description: |
+            Name of the EffectivenessAssessment CRD created by the RO.
+            Only present for orchestrator.ea.created events.
+          example: "ea-restart-payment-api-abc123"
+        hash_compute_delay:
+          type: string
+          description: |
+            Duration-based hash compute delay set on the EA config by the RO.
+            Computed from GitOps sync + operator reconcile delays for async targets.
+            Format: Go duration string. Only present for orchestrator.ea.created events.
+            Reference: DD-EM-004, BR-RO-103, Issue #277
+          example: "4m0s"
+        alert_check_delay:
+          type: string
+          description: |
+            Duration-based alert check delay set on the EA config by the RO.
+            Set for proactive signals where the triggering alert needs extra time
+            to resolve. Format: Go duration string.
+            Reference: BR-EM-009, BR-RO-103, Issue #277
+          example: "5m0s"
+        gitops_sync_delay:
+          type: string
+          description: |
+            GitOps sync delay from RO async propagation config.
+            Only present for orchestrator.ea.created events when target is GitOps-managed.
+            Format: Go duration string. Reference: DD-EM-004 v2.0, BR-RO-103.4
+          example: "3m0s"
+        operator_reconcile_delay:
+          type: string
+          description: |
+            Operator reconcile delay from RO async propagation config.
+            Only present for orchestrator.ea.created events when target is CRD-managed.
+            Format: Go duration string. Reference: DD-EM-004 v2.0, BR-RO-103.4
+          example: "1m0s"
+        is_gitops_managed:
+          type: boolean
+          description: |
+            Whether the remediation target was detected as GitOps-managed.
+            Only present for orchestrator.ea.created events.
+          example: true
+        is_crd:
+          type: boolean
+          description: |
+            Whether the remediation target is a CRD (non-built-in group).
+            Only present for orchestrator.ea.created events.
+          example: false
 
     # ========================================
     # SignalProcessing Audit Payload
@@ -4109,27 +4160,44 @@ components:
             hash is computed immediately (sync targets).
             Reference: DD-EM-004, BR-EM-010, BR-RO-103
           example: "2026-02-12T15:10:00Z"
-        gitops_sync_delay:
+        hash_compute_delay:
           type: string
           description: |
-            Configured GitOps sync delay from RO config, propagated via EA spec.
-            Present only for GitOps-managed async targets. Format: Go duration string.
-            Reference: DD-EM-004 v2.0, BR-RO-103.4, Issue #253
+            Duration-based hash compute delay from EA spec config (Issue #277).
+            The EM computes hash_compute_after = EA.creationTimestamp + hash_compute_delay.
+            Present only for async-managed targets. Format: Go duration string.
+            Reference: DD-EM-004, BR-EM-010, BR-RO-103, Issue #277
+          example: "4m0s"
+        alert_check_delay:
+          type: string
+          description: |
+            Duration-based alert check delay from EA spec config (Issue #277).
+            Set by the RO for proactive signals where the triggering alert needs
+            extra time to resolve after remediation. Format: Go duration string.
+            Reference: BR-EM-009, BR-RO-103, Issue #277
+          example: "5m0s"
+        gitops_sync_delay:
+          type: string
+          deprecated: true
+          description: |
+            DEPRECATED (Issue #277): Use orchestrator.ea.created event instead.
+            Was: GitOps sync delay propagated via EA spec. Now emitted by the RO
+            in the orchestrator.ea.created audit event.
           example: "3m0s"
         operator_reconcile_delay:
           type: string
+          deprecated: true
           description: |
-            Configured operator reconcile delay from RO config, propagated via EA spec.
-            Present only for operator-managed CRD targets. Format: Go duration string.
-            Reference: DD-EM-004 v2.0, BR-RO-103.4, Issue #253
+            DEPRECATED (Issue #277): Use orchestrator.ea.created event instead.
+            Was: Operator reconcile delay propagated via EA spec. Now emitted by
+            the RO in the orchestrator.ea.created audit event.
           example: "1m0s"
         total_propagation_delay:
           type: string
+          deprecated: true
           description: |
-            Total propagation delay (sum of gitops_sync_delay + operator_reconcile_delay).
-            Computed by the EM from the EA spec fields for audit observability.
-            Present only for async targets. Format: Go duration string.
-            Reference: DD-EM-004 v2.0, BR-RO-103.5, Issue #253
+            DEPRECATED (Issue #277): Use hash_compute_delay and alert_check_delay instead.
+            Was: Sum of gitops_sync_delay + operator_reconcile_delay.
           example: "4m0s"
         validity_window:
           type: string
