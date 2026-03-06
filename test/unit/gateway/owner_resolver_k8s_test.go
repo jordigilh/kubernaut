@@ -19,6 +19,7 @@ package gateway
 import (
 	"context"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -60,7 +61,7 @@ var _ = Describe("K8sOwnerResolver - Owner chain resolution with real K8s object
 			WithScheme(scheme).
 			WithObjects(objs...).
 			Build()
-		resolver = adapters.NewK8sOwnerResolver(fakeClient)
+		resolver = adapters.NewK8sOwnerResolver(fakeClient, logr.Discard())
 	}
 
 	Describe("Pod -> ReplicaSet -> Deployment (BR-GATEWAY-004)", func() {
@@ -245,6 +246,109 @@ var _ = Describe("K8sOwnerResolver - Owner chain resolution with real K8s object
 		})
 	})
 
+	Describe("Trust-but-verify: stale cache without ownerReferences (#284)", func() {
+		It("should resolve via direct API when cache returns Pod without ownerReferences", func() {
+			deploy := &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "leaky-app", Namespace: namespace,
+					UID: k8stypes.UID("deploy-uid"),
+				},
+			}
+			rs := &appsv1.ReplicaSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "leaky-app-544b75986", Namespace: namespace,
+					UID: k8stypes.UID("rs-uid"),
+					OwnerReferences: []metav1.OwnerReference{{
+						APIVersion: "apps/v1", Kind: "Deployment", Name: "leaky-app",
+						UID: k8stypes.UID("deploy-uid"), Controller: boolPtr(true),
+					}},
+				},
+			}
+
+			// Cache has Pod WITHOUT ownerReferences (stale metadata)
+			stalePod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "leaky-app-544b75986-hndrn", Namespace: namespace,
+				},
+			}
+			cacheClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(stalePod).
+				Build()
+
+			// Direct API has Pod WITH ownerReferences (fresh metadata)
+			freshPod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "leaky-app-544b75986-hndrn", Namespace: namespace,
+					OwnerReferences: []metav1.OwnerReference{{
+						APIVersion: "apps/v1", Kind: "ReplicaSet", Name: "leaky-app-544b75986",
+						UID: k8stypes.UID("rs-uid"), Controller: boolPtr(true),
+					}},
+				},
+			}
+			apiClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(deploy, rs, freshPod).
+				Build()
+
+			resolver = adapters.NewK8sOwnerResolver(cacheClient, logr.Discard(),
+				adapters.WithFallbackReader(apiClient))
+
+			ownerKind, ownerName, err := resolver.ResolveTopLevelOwner(ctx, namespace, "Pod", "leaky-app-544b75986-hndrn")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(ownerKind).To(Equal("Deployment"))
+			Expect(ownerName).To(Equal("leaky-app"))
+		})
+
+		It("should accept standalone Pod when both cache and direct API have no ownerReferences", func() {
+			standalonePod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "debug-pod", Namespace: namespace,
+				},
+			}
+			cacheClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(standalonePod).
+				Build()
+			apiClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(standalonePod.DeepCopy()).
+				Build()
+
+			resolver = adapters.NewK8sOwnerResolver(cacheClient, logr.Discard(),
+				adapters.WithFallbackReader(apiClient))
+
+			ownerKind, ownerName, err := resolver.ResolveTopLevelOwner(ctx, namespace, "Pod", "debug-pod")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(ownerKind).To(Equal("Pod"))
+			Expect(ownerName).To(Equal("debug-pod"))
+		})
+
+		It("should return error when cache has Pod but direct API cannot find it (deleted)", func() {
+			// Cache has stale entry for a deleted pod
+			stalePod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "deleted-pod", Namespace: namespace,
+				},
+			}
+			cacheClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(stalePod).
+				Build()
+			// Direct API has no such pod (it's been garbage-collected)
+			apiClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				Build()
+
+			resolver = adapters.NewK8sOwnerResolver(cacheClient, logr.Discard(),
+				adapters.WithFallbackReader(apiClient))
+
+			_, _, err := resolver.ResolveTopLevelOwner(ctx, namespace, "Pod", "deleted-pod")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("not found via direct API"))
+		})
+	})
+
 	Describe("Two pods from same Deployment produce same fingerprint (#270 bug scenario)", func() {
 		It("should produce identical deployment-level fingerprints", func() {
 			deploy := &appsv1.Deployment{
@@ -287,8 +391,10 @@ var _ = Describe("K8sOwnerResolver - Owner chain resolution with real K8s object
 			resourceA := types.ResourceIdentifier{Namespace: namespace, Kind: "Pod", Name: podA.Name}
 			resourceB := types.ResourceIdentifier{Namespace: namespace, Kind: "Pod", Name: podB.Name}
 
-			fpA := types.ResolveFingerprint(ctx, resolver, resourceA)
-			fpB := types.ResolveFingerprint(ctx, resolver, resourceB)
+			fpA, err := types.ResolveFingerprint(ctx, resolver, resourceA, logr.Discard())
+			Expect(err).ToNot(HaveOccurred())
+			fpB, err := types.ResolveFingerprint(ctx, resolver, resourceB, logr.Discard())
+			Expect(err).ToNot(HaveOccurred())
 
 			Expect(fpA).To(Equal(fpB),
 				"Two pods from the same Deployment must produce identical fingerprints")

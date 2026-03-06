@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/jordigilh/kubernaut/pkg/gateway/middleware"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
 )
@@ -48,6 +49,7 @@ type KubernetesEventAdapter struct {
 	version       string
 	description   string
 	ownerResolver types.OwnerResolver
+	logger        logr.Logger
 }
 
 // kubernetesEvent represents the minimal K8s Event structure we need to parse
@@ -92,11 +94,18 @@ func NewKubernetesEventAdapter(ownerResolver ...types.OwnerResolver) *Kubernetes
 		name:        "kubernetes-event",
 		version:     "1.0",
 		description: "Handles Kubernetes Event API signals (Warning/Error types)",
+		logger:      logr.Discard(),
 	}
 	if len(ownerResolver) > 0 && ownerResolver[0] != nil {
 		adapter.ownerResolver = ownerResolver[0]
 	}
 	return adapter
+}
+
+// SetLogger replaces the default no-op logger with a real one.
+// Called from cmd/gateway/main.go after construction.
+func (a *KubernetesEventAdapter) SetLogger(l logr.Logger) {
+	a.logger = l.WithName("kubernetes-event-adapter")
 }
 
 // Name returns the adapter identifier
@@ -199,7 +208,11 @@ func (a *KubernetesEventAdapter) Parse(ctx context.Context, rawData []byte) (*ty
 
 	// 6. Generate fingerprint for deduplication (BR-GATEWAY-004, Issue #228)
 	// Delegates to shared types.ResolveFingerprint for cross-adapter consistency.
-	fingerprint := types.ResolveFingerprint(ctx, a.ownerResolver, resource)
+	// Returns error when owner resolution fails (e.g., stale alert for deleted pod).
+	fingerprint, err := types.ResolveFingerprint(ctx, a.ownerResolver, resource, a.logger)
+	if err != nil {
+		return nil, fmt.Errorf("dropping signal: %w", err)
+	}
 
 	// 7. Populate NormalizedSignal
 	signal := &types.NormalizedSignal{

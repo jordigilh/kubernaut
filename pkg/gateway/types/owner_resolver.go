@@ -42,7 +42,10 @@ type OwnerResolver interface {
 	// Returns:
 	// - ownerKind: Top-level owner kind (e.g., "Deployment")
 	// - ownerName: Top-level owner name (e.g., "payment-api")
-	// - err: Resolution error (RBAC, timeout, not found). Callers should fall back
-	//   to resource-level fingerprinting on error.
+	// - err: Resolution error (RBAC, timeout, not found, deleted). Callers must
+	//   drop the signal on error to prevent pod-level fingerprints from breaking
+	//   deduplication. The K8sOwnerResolver implementation uses trust-but-verify
+	//   (#284): when the cache returns no ownerReferences, it re-checks with the
+	//   direct API before accepting the result.
 	ResolveTopLevelOwner(ctx context.Context, namespace, kind, name string) (ownerKind string, ownerName string, err error)
 }

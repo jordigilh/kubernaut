@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -28,6 +29,7 @@ import (
 
 var _ = Describe("ResolveFingerprint - Shared fingerprint resolution (Issue #228)", func() {
 	var ctx context.Context
+	testLogger := logr.Discard()
 
 	BeforeEach(func() {
 		ctx = context.Background()
@@ -41,7 +43,8 @@ var _ = Describe("ResolveFingerprint - Shared fingerprint resolution (Issue #228
 
 	Describe("Nil resolver", func() {
 		It("should return CalculateOwnerFingerprint(resource) when resolver is nil", func() {
-			fingerprint := types.ResolveFingerprint(ctx, nil, resource)
+			fingerprint, err := types.ResolveFingerprint(ctx, nil, resource, testLogger)
+			Expect(err).ToNot(HaveOccurred())
 
 			expected := types.CalculateOwnerFingerprint(resource)
 			Expect(fingerprint).To(Equal(expected),
@@ -57,7 +60,8 @@ var _ = Describe("ResolveFingerprint - Shared fingerprint resolution (Issue #228
 				},
 			}
 
-			fingerprint := types.ResolveFingerprint(ctx, resolver, resource)
+			fingerprint, err := types.ResolveFingerprint(ctx, resolver, resource, testLogger)
+			Expect(err).ToNot(HaveOccurred())
 
 			expected := types.CalculateOwnerFingerprint(types.ResourceIdentifier{
 				Namespace: "prod",
@@ -70,34 +74,34 @@ var _ = Describe("ResolveFingerprint - Shared fingerprint resolution (Issue #228
 	})
 
 	Describe("Failed owner resolution", func() {
-		It("should fall back to resource-level fingerprint when resolver returns error", func() {
+		It("should return error when resolver fails (signal must be dropped)", func() {
 			resolver := &mockOwnerResolver{
 				resolveFunc: func(ctx context.Context, namespace, kind, name string) (string, string, error) {
 					return "", "", fmt.Errorf("RBAC: forbidden")
 				},
 			}
 
-			fingerprint := types.ResolveFingerprint(ctx, resolver, resource)
-
-			expected := types.CalculateOwnerFingerprint(resource)
-			Expect(fingerprint).To(Equal(expected),
-				"Failed resolution should fall back to resource-level fingerprint (reason excluded)")
+			fingerprint, err := types.ResolveFingerprint(ctx, resolver, resource, testLogger)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("owner resolution failed"))
+			Expect(fingerprint).To(BeEmpty(),
+				"Failed resolution must return empty fingerprint so signal is dropped")
 		})
 	})
 
 	Describe("Partial owner resolution (empty fields)", func() {
-		It("should fall back when resolver returns empty ownerKind", func() {
+		It("should return error when resolver returns empty ownerKind", func() {
 			resolver := &mockOwnerResolver{
 				resolveFunc: func(ctx context.Context, namespace, kind, name string) (string, string, error) {
 					return "", "payment-api", nil
 				},
 			}
 
-			fingerprint := types.ResolveFingerprint(ctx, resolver, resource)
-
-			expected := types.CalculateOwnerFingerprint(resource)
-			Expect(fingerprint).To(Equal(expected),
-				"Empty ownerKind should trigger fallback to resource-level fingerprint")
+			fingerprint, err := types.ResolveFingerprint(ctx, resolver, resource, testLogger)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("owner resolution returned empty"))
+			Expect(fingerprint).To(BeEmpty(),
+				"Empty ownerKind must return empty fingerprint so signal is dropped")
 		})
 	})
 
@@ -109,13 +113,16 @@ var _ = Describe("ResolveFingerprint - Shared fingerprint resolution (Issue #228
 				},
 			}
 
-			fp1 := types.ResolveFingerprint(ctx, resolver, resource)
-			fp2 := types.ResolveFingerprint(ctx, resolver, resource)
+			fp1, err := types.ResolveFingerprint(ctx, resolver, resource, testLogger)
+			Expect(err).ToNot(HaveOccurred())
+			fp2, err := types.ResolveFingerprint(ctx, resolver, resource, testLogger)
+			Expect(err).ToNot(HaveOccurred())
 
 			Expect(fp1).To(Equal(fp2),
 				"Same resource + resolver should always produce the same fingerprint (deterministic)")
 
-			fpNilResolver := types.ResolveFingerprint(ctx, nil, resource)
+			fpNilResolver, err := types.ResolveFingerprint(ctx, nil, resource, testLogger)
+			Expect(err).ToNot(HaveOccurred())
 			Expect(fp1).ToNot(Equal(fpNilResolver),
 				"Owner-resolved fingerprint should differ from resource-level fingerprint "+
 					"(Deployment:payment-api vs Pod:payment-api-789)")

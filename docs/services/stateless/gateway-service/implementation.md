@@ -154,10 +154,15 @@ func (a *PrometheusAdapter) Parse(ctx context.Context, rawData []byte) (*gateway
         Namespace: alert.Labels["namespace"],
     }
 
-    // Generate fingerprint for deduplication (Issue #63, #228)
+    // Generate fingerprint for deduplication (Issue #63, #228, #282, #284)
     // Delegates to shared types.ResolveFingerprint for cross-adapter consistency.
     // alertname is EXCLUDED — LLM investigates resource state, not signal type.
-    fingerprint := types.ResolveFingerprint(ctx, a.ownerResolver, resource)
+    // Returns error when owner resolution fails (stale alert for deleted pod) — signal is dropped.
+    // #284: OwnerResolver uses trust-but-verify with direct API for stale cache metadata.
+    fingerprint, err := types.ResolveFingerprint(ctx, a.ownerResolver, resource, a.logger)
+    if err != nil {
+        return nil, fmt.Errorf("dropping signal: %w", err)
+    }
 
     internalAlert := &gateway.NormalizedSignal{
         Fingerprint:  fingerprint,
@@ -241,8 +246,8 @@ func getSeverity(labels map[string]string) string {
 }
 
 // Note: generateFingerprint() removed - fingerprinting now delegates to types.ResolveFingerprint()
-// from pkg/gateway/types/fingerprint.go (Issue #228), which provides cross-adapter consistency
-// and excludes alertname from the fingerprint.
+// from pkg/gateway/types/fingerprint.go (Issues #228, #282), which provides cross-adapter consistency,
+// excludes alertname from the fingerprint, and drops signals when owner resolution fails.
 ```
 
 **Unit Test** (`test/unit/gateway/prometheus_adapter_test.go`):
@@ -347,9 +352,11 @@ import (
 
 // KubernetesEventAdapter handles Kubernetes Event API format
 //
-// Updated 2026-02-24: Uses shared types.OwnerResolver (Issue #228) and
+// Updated 2026-03-06: Uses shared types.OwnerResolver (Issue #228) and
 // types.ResolveFingerprint for cross-adapter consistency. Reason excluded
-// from fingerprint even without OwnerResolver (Issue #227).
+// from fingerprint even without OwnerResolver (Issue #227). Owner resolution
+// failure drops the signal instead of falling back (Issue #282).
+// #284: OwnerResolver uses trust-but-verify with direct API for stale cache metadata.
 type KubernetesEventAdapter struct {
     ownerResolver types.OwnerResolver // Optional: resolves top-level owner for fingerprinting
 }
@@ -367,12 +374,13 @@ func NewKubernetesEventAdapter(ownerResolver ...types.OwnerResolver) *Kubernetes
 
 // Parse converts Kubernetes Event to NormalizedSignal
 //
-// Fingerprint strategy (updated 2026-02-24, Issues #227 + #228):
+// Fingerprint strategy (updated 2026-03-06, Issues #227, #228, #282):
 // Delegates to shared types.ResolveFingerprint for cross-adapter consistency.
 // - If OwnerResolver is configured: resolves owner chain (Pod → RS → Deployment)
 //   and fingerprints as SHA256(namespace:ownerKind:ownerName), excluding event reason.
-// - If OwnerResolver is nil or resolution fails: falls back to
-//   SHA256(namespace:involvedObjectKind:involvedObjectName), still excluding reason.
+// - If OwnerResolver resolution fails: signal is DROPPED (returns error).
+//   No fallback to resource-level fingerprinting (Issue #282).
+// - If OwnerResolver is nil: uses SHA256(namespace:kind:name), excluding reason.
 // Reason is NEVER included in the fingerprint (Issue #227).
 func (a *KubernetesEventAdapter) Parse(ctx context.Context, rawData []byte) (*gateway.NormalizedSignal, error) {
     var event corev1.Event
@@ -392,8 +400,11 @@ func (a *KubernetesEventAdapter) Parse(ctx context.Context, rawData []byte) (*ga
         Namespace: event.InvolvedObject.Namespace,
     }
 
-    // Generate fingerprint (Issue #228: shared function for cross-adapter consistency)
-    fingerprint := types.ResolveFingerprint(ctx, a.ownerResolver, resource)
+    // Generate fingerprint (Issues #228, #282, #284: shared function, drops signal on failure, trust-but-verify)
+    fingerprint, err := types.ResolveFingerprint(ctx, a.ownerResolver, resource, a.logger)
+    if err != nil {
+        return nil, fmt.Errorf("dropping signal: %w", err)
+    }
 
     severity := mapEventReasonToSeverity(event.Reason)
 

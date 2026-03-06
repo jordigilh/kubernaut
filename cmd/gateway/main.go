@@ -29,6 +29,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
 	"github.com/jordigilh/kubernaut/pkg/gateway/config"
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
+	ctrl "sigs.k8s.io/controller-runtime"
 )
 
 func main() {
@@ -44,6 +45,8 @@ func main() {
 		ServiceName: "gateway",
 	})
 	defer kubelog.Sync(logger)
+
+	ctrl.SetLogger(logger)
 
 	logger.Info("Starting Gateway Service",
 		"version", version.Version,
@@ -93,6 +96,7 @@ func main() {
 	// cache, zero additional API calls. Shared across all adapters.
 	ownerResolver := adapters.NewK8sOwnerResolver(
 		srv.GetCachedClient(),
+		logger.WithName("owner-resolver"),
 		adapters.WithFallbackReader(srv.GetAPIReader()),
 	)
 
@@ -100,7 +104,7 @@ func main() {
 	// Issue #63: alertname excluded from fingerprint; OwnerResolver resolves Pod→Deployment
 	// Issue #191 / BR-GATEWAY-184: Filter monitoring metadata labels during target extraction
 	labelFilter := adapters.NewMonitoringMetadataFilter(logger)
-	prometheusAdapter := adapters.NewPrometheusAdapter(ownerResolver, labelFilter)
+	prometheusAdapter := adapters.NewPrometheusAdapter(ownerResolver, labelFilter, logger)
 	if err := srv.RegisterAdapter(prometheusAdapter); err != nil {
 		logger.Error(err, "Failed to register Prometheus adapter")
 		os.Exit(1)
@@ -108,6 +112,7 @@ func main() {
 
 	// Kubernetes Event webhook adapter
 	k8sEventAdapter := adapters.NewKubernetesEventAdapter(ownerResolver)
+	k8sEventAdapter.SetLogger(logger)
 	if err := srv.RegisterAdapter(k8sEventAdapter); err != nil {
 		logger.Error(err, "Failed to register K8s Event adapter")
 		os.Exit(1)

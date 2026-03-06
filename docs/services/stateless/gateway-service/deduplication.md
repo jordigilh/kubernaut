@@ -1,10 +1,11 @@
 # Gateway Service - Deduplication & Storm Detection
 
-**Version**: v1.4
-**Last Updated**: February 24, 2026
+**Version**: v1.6
+**Last Updated**: March 6, 2026
 **Status**: ✅ Design Complete
 
 **Changelog**:
+- **v1.6** (2026-03-06): Issues #282, #284: Rewrote owner resolution section as **three-tier strategy**. Tier 1: informer cache. Tier 2 (#282): direct API fallback on cache miss. Tier 3 (#284): trust-but-verify when cache returns stale metadata. Signals are only dropped when the resource is truly deleted; standalone resources are accepted with resource-level fingerprints. Previous v1.5 language incorrectly implied unconditional signal dropping.
 - **v1.4** (2026-02-28): Issue #228: Shared `types.ResolveFingerprint()` function extracted. Both adapters now delegate fingerprint generation to a single shared function, eliminating duplicated logic. `OwnerResolver` interface moved from adapters to `types` package.
 - **v1.3** (2026-02-28): Issue #227: K8s Event adapter now excludes reason from fingerprint even without OwnerResolver (consistency with Prometheus adapter). Default behavior changed to reason-excluded fingerprinting (superseded by v1.4 shared `ResolveFingerprint` delegation).
 - **v1.2** (2026-02-09): Prometheus adapter: alertname excluded from fingerprint; OwnerResolver added for Pod→Deployment resolution (Issue #63). Fingerprint now uses `SHA256(namespace:ownerKind:ownerName)` with OwnerResolver (same pattern as K8s event adapter). This ensures multiple alertnames (KubePodCrashLooping, KubePodNotReady, KubeContainerOOMKilled) for the same resource produce a single fingerprint. Rationale: LLM investigates resource state, not signal type.
@@ -141,9 +142,13 @@ Pod "payment-api-789abc" → ReplicaSet "payment-api-xyz" → Deployment "paymen
 
 ```go
 // Both adapters delegate to the shared ResolveFingerprint function (Issue #228).
+// Returns (fingerprint, error). Error means signal must be dropped.
 // Internally produces SHA256(namespace:ownerKind:ownerName) with OwnerResolver,
 // or SHA256(namespace:kind:name) without. alertname is NEVER included.
-fingerprint := types.ResolveFingerprint(ctx, a.ownerResolver, resource)
+fingerprint, err := types.ResolveFingerprint(ctx, a.ownerResolver, resource, a.logger)
+if err != nil {
+    return nil, fmt.Errorf("dropping signal: %w", err)
+}
 ```
 
 **Examples** (all produce the same fingerprint):
@@ -154,7 +159,22 @@ Alert: KubeContainerOOMKilled on Pod "payment-api-def456" → Owner: Deployment 
 All → SHA256("prod:Deployment:payment-api") → same fingerprint → deduplicated
 ```
 
-**Fallback**: If OwnerResolver is not configured or resolution fails (RBAC error, timeout), the adapter falls back to fingerprinting with the resource directly (without alertname): `SHA256(namespace:kind:name)`.
+**Owner resolution — three-tier strategy** (Issues #282, #284): The `K8sOwnerResolver` uses a layered approach to reliably resolve the top-level owner:
+
+| Tier | Trigger | Action | Reference |
+|------|---------|--------|-----------|
+| **1** | Normal lookup | Informer cache read (fast, zero API calls) | — |
+| **2** | Cache miss (resource not in cache) | Retry with direct API reader (uncached) | #282 |
+| **3** | Cache hit but no ownerReferences AND no owner found yet | Re-verify with direct API (trust-but-verify) | #284 |
+
+**Tier 3 outcomes**:
+1. **Direct API returns ownerReferences** → cache was stale (race condition during rollout restart); continue chain with fresh data
+2. **Direct API confirms no ownerReferences** → genuine standalone resource (e.g., debug Pod); accept resource-level fingerprint
+3. **Direct API cannot find the resource** → resource is deleted; return error → signal dropped
+
+**When signals are dropped**: Only when the resource is truly not resolvable — deleted from the API server, RBAC error, or timeout. Standalone resources without ownerReferences are **not** dropped; they are accepted with a resource-level fingerprint.
+
+**No OwnerResolver configured** (nil): The resource-level fingerprint `SHA256(namespace:kind:name)` is used directly — no owner chain to resolve, so no failure path.
 
 #### Kubernetes Events (Owner-Based Fingerprint)
 
@@ -177,9 +197,12 @@ Pod "payment-api-789abc" → ReplicaSet "payment-api-xyz" → Deployment "paymen
 
 ```go
 // Both adapters use the same shared function (Issue #228).
+// Returns (fingerprint, error). Error means signal must be dropped.
 // Reason is EXCLUDED from the fingerprint.
-fingerprint := types.ResolveFingerprint(ctx, a.ownerResolver, resource)
-// Internally: SHA256(namespace:ownerKind:ownerName) or SHA256(namespace:kind:name)
+fingerprint, err := types.ResolveFingerprint(ctx, a.ownerResolver, resource, a.logger)
+if err != nil {
+    return nil, fmt.Errorf("dropping signal: %w", err)
+}
 ```
 
 **Examples** (all produce the same fingerprint):
@@ -190,11 +213,9 @@ Event: BackOff     on Pod "payment-api-def456" → Owner: Deployment "payment-ap
 All → SHA256("prod:Deployment:payment-api") → same fingerprint → deduplicated
 ```
 
-**Fallback**: If owner resolution fails (RBAC error, timeout) or no OwnerResolver is
-configured, the adapter falls back to fingerprinting with the involvedObject directly
-(reason excluded, Issue #227): `SHA256(namespace:involvedObjectKind:involvedObjectName)`.
-This matches the Prometheus adapter's behavior, ensuring cross-adapter deduplication
-consistency.
+**Owner resolution**: Same three-tier strategy as Prometheus adapter (Issues #282, #284). Signals are only dropped when the resource is truly not resolvable (deleted, RBAC error, timeout). Standalone resources confirmed by the direct API are accepted with resource-level fingerprints. This ensures cross-adapter consistency.
+
+**No OwnerResolver configured** (nil): The resource-level fingerprint `SHA256(namespace:kind:name)` is used directly (reason excluded, Issue #227).
 
 ### Why SHA256 (Not MD5)
 

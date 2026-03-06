@@ -20,10 +20,12 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+
+	"github.com/go-logr/logr"
 )
 
 // ResolveFingerprint is the single entry point for fingerprint generation across
-// all gateway adapters. It encapsulates the owner resolution + fallback logic that
+// all gateway adapters. It encapsulates the owner resolution logic that
 // was previously duplicated in KubernetesEventAdapter and PrometheusAdapter.
 //
 // Issue #228: Shared function ensures cross-adapter deduplication consistency.
@@ -31,25 +33,43 @@ import (
 // Business Requirement: BR-GATEWAY-004 (Cross-adapter deduplication)
 //
 // Algorithm:
-//  1. If resolver is nil -> CalculateOwnerFingerprint(resource)
-//  2. If resolver succeeds (non-empty ownerKind and ownerName) -> CalculateOwnerFingerprint(owner)
-//  3. If resolver fails or returns empty fields -> CalculateOwnerFingerprint(resource)
-func ResolveFingerprint(ctx context.Context, resolver OwnerResolver, resource ResourceIdentifier) string {
+//  1. If resolver is nil -> CalculateOwnerFingerprint(resource), nil
+//  2. If resolver succeeds (non-empty ownerKind and ownerName) -> CalculateOwnerFingerprint(owner), nil
+//  3. If resolver fails -> "", error (caller must drop the signal)
+//  4. If resolver returns empty fields -> "", error
+//
+// Returning an error when owner resolution fails (e.g., pod deleted after
+// rollout restart) prevents creating RRs with unreliable pod-level fingerprints
+// that would break deduplication. The stale alert will resolve naturally when
+// Prometheus stops seeing the deleted pod's metrics.
+func ResolveFingerprint(ctx context.Context, resolver OwnerResolver, resource ResourceIdentifier, logger logr.Logger) (string, error) {
 	if resolver == nil {
-		return CalculateOwnerFingerprint(resource)
+		return CalculateOwnerFingerprint(resource), nil
 	}
 
 	ownerKind, ownerName, err := resolver.ResolveTopLevelOwner(
 		ctx, resource.Namespace, resource.Kind, resource.Name)
-	if err == nil && ownerKind != "" && ownerName != "" {
-		return CalculateOwnerFingerprint(ResourceIdentifier{
-			Namespace: resource.Namespace,
-			Kind:      ownerKind,
-			Name:      ownerName,
-		})
+	if err != nil {
+		logger.Error(err, "Owner resolution failed, dropping signal",
+			"resource", resource.String())
+		return "", fmt.Errorf("owner resolution failed for %s: %w", resource.String(), err)
 	}
 
-	return CalculateOwnerFingerprint(resource)
+	if ownerKind == "" || ownerName == "" {
+		logger.Info("Owner resolution returned empty, dropping signal",
+			"resource", resource.String())
+		return "", fmt.Errorf("owner resolution returned empty for %s", resource.String())
+	}
+
+	owner := ResourceIdentifier{
+		Namespace: resource.Namespace,
+		Kind:      ownerKind,
+		Name:      ownerName,
+	}
+	fp := CalculateOwnerFingerprint(owner)
+	logger.V(1).Info("Owner resolution succeeded",
+		"resource", resource.String(), "owner", owner.String(), "fingerprint", fp[:12])
+	return fp, nil
 }
 
 // CalculateOwnerFingerprint generates a fingerprint based on the owner resource,
