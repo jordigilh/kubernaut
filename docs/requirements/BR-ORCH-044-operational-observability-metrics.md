@@ -114,7 +114,7 @@ defer func() {
 - `Pending → Processing` - SignalProcessing CRD created
 - `Processing → Analyzing` - AIAnalysis CRD created
 - `Analyzing → Executing` - WorkflowExecution CRD created
-- `Executing → Completed` - Workflow succeeded
+- `Executing → Verifying` - Workflow succeeded, entering verification
 - `Analyzing → AwaitingApproval` - Manual approval required
 - `AwaitingApproval → Executing` - Approval granted
 

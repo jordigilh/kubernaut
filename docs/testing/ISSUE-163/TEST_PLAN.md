@@ -585,7 +585,7 @@ Format: `E2E-{SERVICE}-163-{SEQUENCE}`
 **Type**: E2E
 **File**: `test/e2e/remediationorchestrator/lifecycle_e2e_test.go` (extend existing)
 
-**Given**: A RemediationRequest progresses through Processing -> Analyzing -> Executing -> Completed
+**Given**: A RemediationRequest progresses through Processing -> Analyzing -> Executing -> Verifying -> Completed
 **When**: RR reaches OverallPhase=Completed
 **Then**: Phase timestamps are populated: `ProcessingStartTime`, `AnalyzingStartTime`, `ExecutingStartTime` all non-nil, in temporal order
 

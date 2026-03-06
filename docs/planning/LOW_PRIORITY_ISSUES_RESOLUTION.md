@@ -281,7 +281,7 @@ func (s *AIAnalysisService) AnalyzeAlert(w http.ResponseWriter, r *http.Request)
 
 type RemediationRequestStatus struct {
     // Overall phase
-    Phase string `json:"phase"` // "Pending", "Processing", "Analyzing", "Executing", "Failed", "Completed"
+    Phase string `json:"phase"` // "Pending", "Processing", "Analyzing", "Executing", "Verifying", "Failed", "Completed"
 
     // Phase-specific status
     RemediationProcessingPhase RemediationProcessingPhaseStatus `json:"remediationProcessingPhase,omitempty"`

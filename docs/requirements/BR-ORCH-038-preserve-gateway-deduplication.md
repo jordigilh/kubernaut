@@ -108,7 +108,7 @@ Scenario: Concurrent updates preserve both data sets
 Scenario: Full lifecycle preserves deduplication history
   Given signal arrives and Gateway creates RR
   And 3 duplicate signals arrive during processing
-  When RO completes full lifecycle (Processing → Analyzing → Executing → Completed)
+  When RO completes full lifecycle (Processing → Analyzing → Executing → Verifying → Completed)
   Then final RR.Status.Deduplication.OccurrenceCount should be 4
   And RR.Status.Deduplication.FirstOccurrence should be original timestamp
   And RR.Status.Deduplication.LastOccurrence should be last duplicate timestamp

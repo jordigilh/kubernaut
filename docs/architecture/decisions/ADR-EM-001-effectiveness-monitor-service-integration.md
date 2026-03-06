@@ -135,7 +135,7 @@ The EM has six external integration points:
 | AlertManager | Read | HTTP REST | Alert resolution check |
 | EffectivenessAssessment CRD | Write (event) | K8s Event API | Normal event on completion (EffectivenessAssessed) |
 
-> **v1.1 Note**: DD-EFFECTIVENESS-003 (Watch RemediationRequest, not WorkflowExecution) is superseded. The EM no longer watches RR CRDs. Instead, the **RO creates an EffectivenessAssessment CRD** when the RR reaches a terminal phase, following the same lifecycle pattern as AIAnalysis, WorkflowExecution, and NotificationRequest. The EM watches EA CRDs.
+> **v1.1 Note**: DD-EFFECTIVENESS-003 (Watch RemediationRequest, not WorkflowExecution) is superseded. The EM no longer watches RR CRDs. Instead, the **RO creates an EffectivenessAssessment CRD** when the RR enters Verifying (WFE success path) or when the RR reaches a terminal phase (Failed, TimedOut), following the same lifecycle pattern as AIAnalysis, WorkflowExecution, and NotificationRequest. The EM watches EA CRDs.
 
 ---
 
@@ -194,8 +194,8 @@ sequenceDiagram
     WFE->>WFE: Monitor execution
     WFE->>DS: audit: workflowexecution.workflow.completed
 
-    Note over RO,EM: Phase 6 — Completion, Notification, and Assessment Trigger
-    RO->>DS: audit: orchestrator.lifecycle.completed
+    Note over RO,EM: Phase 6 — Verifying Start, Notification, and Assessment Trigger
+    RO->>DS: audit: orchestrator.lifecycle.verifying_started
     RO->>RO: Set RR Condition: EffectivenessAssessed=False
     RO->>NOT: Create NotificationRequest CRD (parallel)
     RO->>EA: Create EffectivenessAssessment CRD (parallel, ownerRef → RR)
@@ -238,8 +238,10 @@ sequenceDiagram
     Note over DS: DS computes weighted score on demand from component events
     EM->>K8s: Event(Normal, EffectivenessAssessed) on EA
 
-    Note over RO: Phase 8 — RO detects EA completion
+    Note over RO: Phase 8 — RO detects EA completion, transitions RR Verifying → Completed
     RO-->>EA: Watch detects EA phase=Completed
+    RO->>DS: audit: orchestrator.lifecycle.verification_completed
+    RO->>RO: Transition RR Verifying → Completed
     RO->>RO: Update RR Condition: EffectivenessAssessed=True
 ```
 
@@ -668,7 +670,7 @@ gantt
 ### Critical Invariant
 
 ```
-T+0:      WorkflowExecution completes → RO transitions RR to Completed
+T+0:      WorkflowExecution completes → RO transitions RR to Verifying (creates EA CRD)
 T+0:      RO creates EA CRD + NotificationRequest CRD (parallel). EM computes derived timing on first reconcile
 T+0:      RO sets RR Condition: EffectivenessAssessed=False
 T+0:      EM first reconcile: computes validityDeadline, prometheusCheckAfter, alertManagerCheckAfter in status
@@ -682,7 +684,7 @@ T+5m-30m: EM waits for Prometheus metrics (requeues on scrapeInterval)
            → effectiveness.metrics.assessed emitted when data arrives
            → DS recomputes score with all four components on next query
 T+≤30m:   EM finalizes → effectiveness.assessment.completed (lifecycle marker)
-           EA phase=Completed
+           EA phase=Completed → RO transitions RR Verifying → Completed
 T+30m:    Validity window expires — if EM hasn't started, EA marked as expired
 ```
 
@@ -865,7 +867,7 @@ metadata:
       blockOwnerDeletion: false  # RR deletion GC's EA — audit events in DS survive
 spec:
   correlationID: "{rr.name}"
-  remediationRequestPhase: "{rr.status.overallPhase}"  # Completed|Failed|TimedOut — immutable spec field
+  remediationRequestPhase: "{rr.status.overallPhase}"  # Verifying|Completed|Failed|TimedOut — immutable spec field
   signalTarget:           # DD-EM-003: from RR.Spec.TargetResource (the alerting resource)
     kind: Deployment
     name: my-app
@@ -1145,7 +1147,7 @@ Before EM implementation can begin, these changes to existing services are requi
 | Prerequisite | Service | Description | Issue |
 |-------------|---------|-------------|-------|
 | `EffectivenessAssessment` CRD definition | Platform | Define CRD schema (`effectiveness.kubernaut.io/v1alpha1`), install in cluster. | [#82](https://github.com/jordigilh/kubernaut/issues/82) |
-| RO creates EA CRD on terminal phase | RO | Create EA CRD with ownerRef to RR when RR reaches Completed/Failed/TimedOut. Set RR Condition `EffectivenessAssessed=False`. Watch EA CRDs and update RR Condition when EA completes. | [#82](https://github.com/jordigilh/kubernaut/issues/82) |
+| RO creates EA CRD on terminal phase | RO | Create EA CRD with ownerRef to RR when RR enters Verifying (happy path) or when RR reaches Completed/Failed/TimedOut. Set RR Condition `EffectivenessAssessed=False`. Watch EA CRDs and update RR Condition when EA completes. | [#82](https://github.com/jordigilh/kubernaut/issues/82) |
 | `remediation.workflow_created` audit event | RO | Emit new event with `pre_remediation_spec_hash` before creating WFE CRD. RO must query API server directly (uncached) for target resource spec. | [#82](https://github.com/jordigilh/kubernaut/issues/82) |
 | Add `parameters` to WFE audit | WFE | Include `map[string]string` parameters in `workflowexecution.workflow.started` payload. | [#82](https://github.com/jordigilh/kubernaut/issues/82) |
 | DS OpenAPI schema updates | DS | Add `remediation.workflow_created` and EM component event types (`effectiveness.health.assessed`, `effectiveness.alert.assessed`, `effectiveness.metrics.assessed`, `effectiveness.hash.computed`, `effectiveness.assessment.completed`) to discriminated union. Add `parameters` field to `WorkflowExecutionAuditPayload`. | [#82](https://github.com/jordigilh/kubernaut/issues/82) |

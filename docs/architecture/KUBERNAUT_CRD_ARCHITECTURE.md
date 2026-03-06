@@ -390,7 +390,7 @@ spec:
     occurrenceCount: integer
 
 status:
-  phase: string                      # Pending, Processing, Analyzing, Executing, Completed, Failed
+  phase: string                      # Pending, Processing, Analyzing, Executing, Verifying, Completed, Failed
   message: string
   reason: string
   startedAt: timestamp
@@ -1841,7 +1841,7 @@ controller_runtime_reconcile_errors_total{controller="remediationorchestrator"}
 controller_runtime_reconcile_time_seconds{controller="remediationorchestrator"}
 
 # CRD Status Metrics
-kubernaut_remediationrequest_phase_total{phase="Pending|Processing|Analyzing|Executing|Completed|Failed"}
+kubernaut_remediationrequest_phase_total{phase="Pending|Processing|Analyzing|Executing|Verifying|Completed|Failed"}
 kubernaut_remediationrequest_duration_seconds{phase="Processing|Analyzing|Executing"}
 
 # Remediation Execution Metrics

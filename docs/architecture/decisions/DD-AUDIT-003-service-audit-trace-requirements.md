@@ -2,10 +2,19 @@
 
 **Status**: ✅ **APPROVED** (Production Standard)
 **Date**: November 8, 2025
-**Last Reviewed**: January 6, 2026
-**Version**: 1.5
+**Last Reviewed**: March 2, 2026
+**Version**: 1.6
 **Confidence**: 95%
 **Authority Level**: SYSTEM-WIDE - Defines audit requirements for all 11 services
+
+**Recent Changes** (v1.6 - March 2, 2026):
+- **Remediation Orchestrator**: Added 3 Verifying phase audit events per Issue #280:
+  - `orchestrator.lifecycle.verifying_started` — RR entered Verifying phase (EA assessment in progress)
+  - `orchestrator.lifecycle.verification_completed` — EA reached terminal; Verifying → Completed
+  - `orchestrator.lifecycle.verification_timed_out` — Verification deadline or safety-net expired
+- **Phase Transition**: Updated `orchestrator.phase.transitioned` description to include Verifying phase
+- **Expected Volume**: +300 events/day (verification tracking for successful remediations)
+- **Authority**: Issue #280 (Verifying Phase for Duplicate RR Prevention)
 
 **Recent Changes** (v1.5 - January 6, 2026):
 - **ALL ERROR EVENTS**: Enhanced with standardized `error_details` field per BR-AUDIT-005 Gap #7
@@ -462,7 +471,10 @@ Kubernaut consists of 11 microservices with different responsibilities. Not all 
 | Event Type | Description | Priority | Outcome |
 |------------|-------------|----------|---------|
 | `orchestrator.lifecycle.started` | Remediation lifecycle started | P1 | success |
-| `orchestrator.phase.transitioned` | Phase transition (Pending → Processing → Analyzing → Executing) | P1 | success |
+| `orchestrator.phase.transitioned` | Phase transition (Pending → Processing → Analyzing → Executing → Verifying) | P1 | success |
+| `orchestrator.lifecycle.verifying_started` | RR entered Verifying phase; EA assessment in progress (#280) | P1 | pending |
+| `orchestrator.lifecycle.verification_completed` | EA reached terminal phase; RR transitioned Verifying → Completed (#280) | P1 | success |
+| `orchestrator.lifecycle.verification_timed_out` | Verification deadline or safety-net expired; RR → Completed with VerificationTimedOut (#280) | P1 | failure |
 | `orchestrator.lifecycle.completed` | Remediation lifecycle completed (success or failure) | P1 | success/failure |
 | `orchestrator.routing.blocked` | Routing blocked (cooldown, duplicate, resource busy, consecutive failures) | **P1** | **pending** |
 | `orchestrator.approval.requested` | Human approval requested for high-risk remediation | P1 | pending |
@@ -478,7 +490,7 @@ Kubernaut consists of 11 microservices with different responsibilities. Not all 
 
 **Recommendation**: ✅ Generate audit traces for coordination visibility, but P1 priority (not P0).
 
-**Expected Volume**: 1,200 events/day, 36 MB/month (updated for routing events)
+**Expected Volume**: 1,500 events/day, 45 MB/month (updated for Verifying phase events, #280)
 
 ---
 

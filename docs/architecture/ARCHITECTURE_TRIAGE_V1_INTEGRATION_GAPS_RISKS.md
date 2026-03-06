@@ -298,7 +298,7 @@ graph TD
 **Responsibilities**:
 1. **Create 4 child CRDs**: RemediationProcessor, AIAnalysis, WorkflowExecution, NotificationRequest
 2. **Watch 5 CRD types**: Own + 4 children
-3. **Manage lifecycle**: Pending → Processing → Analyzing → Executing → Recovering → Completed/Failed
+3. **Manage lifecycle**: Pending → Processing → Analyzing → Executing → Verifying → Recovering → Completed/Failed
 4. **Handle approval notifications**: BR-ORCH-001 (create NotificationRequest when `aiAnalysis.phase="approving"`)
 5. **Coordinate workflow lifecycle**: [Deprecated - Issue #180] Recovery flow removed
 
