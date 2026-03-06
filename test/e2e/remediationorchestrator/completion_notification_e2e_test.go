@@ -20,6 +20,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
@@ -30,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
@@ -210,23 +212,41 @@ var _ = Describe("E2E-RO-045-001: Completion Notification", Label("e2e", "notifi
 			return k8sClient.Status().Update(ctx, we)
 		})).To(Succeed())
 
-		By("8. Waiting for RemediationRequest to transition to Completed")
+		By("8. Waiting for RemediationRequest to transition to Verifying (#280)")
 		updatedRR := &remediationv1.RemediationRequest{}
 		Eventually(func() remediationv1.RemediationPhase {
 			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), updatedRR); err != nil {
 				GinkgoWriter.Printf("  ⏳ RR Get error: %v\n", err)
 				return ""
 			}
-			if updatedRR.Status.OverallPhase != remediationv1.PhaseCompleted {
+			if updatedRR.Status.OverallPhase != remediationv1.PhaseVerifying {
 				GinkgoWriter.Printf("  ⏳ RR %s phase=%s blockReason=%s failurePhase=%v failureReason=%v\n",
 					updatedRR.Name, updatedRR.Status.OverallPhase,
 					updatedRR.Status.BlockReason,
 					updatedRR.Status.FailurePhase, updatedRR.Status.FailureReason)
 			}
 			return updatedRR.Status.OverallPhase
-		}, timeout, interval).Should(Equal(remediationv1.PhaseCompleted),
-			fmt.Sprintf("RemediationRequest should transition to Completed after WE completes (actual phase: %s, blockReason: %s, failurePhase: %v)",
+		}, timeout, interval).Should(Equal(remediationv1.PhaseVerifying),
+			fmt.Sprintf("#280: RemediationRequest should transition to Verifying after WE completes (actual phase: %s, blockReason: %s, failurePhase: %v)",
 				updatedRR.Status.OverallPhase, updatedRR.Status.BlockReason, updatedRR.Status.FailurePhase))
+
+		By("8a. Driving EA to completion for Verifying → Completed (#280)")
+		eaDriveName := fmt.Sprintf("ea-%s", rr.Name)
+		eaDrive := &eav1.EffectivenessAssessment{}
+		Eventually(func() error {
+			return k8sClient.Get(ctx, client.ObjectKey{Name: eaDriveName, Namespace: testNS}, eaDrive)
+		}, timeout, interval).Should(Succeed(), "EA should be created during Verifying phase")
+		eaDrive.Status.Phase = eav1.PhaseCompleted
+		eaDeadline := metav1.NewTime(time.Now().Add(10 * time.Minute))
+		eaDrive.Status.ValidityDeadline = &eaDeadline
+		Expect(k8sClient.Status().Update(ctx, eaDrive)).To(Succeed())
+
+		By("8b. Waiting for RemediationRequest to transition to Completed")
+		Eventually(func() remediationv1.RemediationPhase {
+			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), updatedRR)
+			return updatedRR.Status.OverallPhase
+		}, timeout, interval).Should(Equal(remediationv1.PhaseCompleted),
+			"RemediationRequest should transition to Completed after EA completes")
 
 		By("9. Waiting for RO to create completion NotificationRequest (BR-ORCH-045)")
 		var notification *notificationv1.NotificationRequest

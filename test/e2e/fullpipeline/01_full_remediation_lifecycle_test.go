@@ -344,11 +344,13 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 			"gateway.signal.received",   // pkg/gateway/server.go: emitSignalReceivedAudit
 			"gateway.crd.created",       // pkg/gateway/server.go: emitCRDCreatedAudit
 			// Remediation Orchestrator: lifecycle boundaries
-			"orchestrator.lifecycle.created",   // pkg/remediationorchestrator/audit: emitRemediationCreatedAudit
-			"orchestrator.lifecycle.started",   // pkg/remediationorchestrator/audit: emitLifecycleStartedAudit
-			"orchestrator.lifecycle.completed", // pkg/remediationorchestrator/audit: emitCompletionAudit
+			"orchestrator.lifecycle.created",                // pkg/remediationorchestrator/audit: emitRemediationCreatedAudit
+			"orchestrator.lifecycle.started",                // pkg/remediationorchestrator/audit: emitLifecycleStartedAudit
+			"orchestrator.lifecycle.verifying_started",      // #280: emitVerifyingStartedAudit (Executing → Verifying)
+			"orchestrator.lifecycle.verification_completed", // #280: emitVerificationCompletedAudit (EA terminal → Completed)
+			"orchestrator.lifecycle.completed",              // pkg/remediationorchestrator/audit: emitCompletionAudit
 			// Effectiveness Monitor: assessment lifecycle + component events
-			// The RO creates an EA CRD on RR completion (ADR-EM-001). The EM waits
+			// The RO creates an EA CRD when RR enters Verifying (#280, ADR-EM-001). The EM waits
 			// for the stabilization window (30s default), then runs all 4 component
 			// checks in a single reconcile, emitting one audit event per component.
 			// Each event is guarded by its component flag (emitted exactly once per EA).
@@ -642,8 +644,8 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 			"EA remediationTarget.namespace should be set (RO must populate)")
 		Expect(ea.Spec.Config.StabilizationWindow.Duration).To(BeNumerically(">", 0),
 			"EA stabilizationWindow should be positive (set by RO config)")
-		Expect(ea.Spec.RemediationRequestPhase).To(Equal("Completed"),
-			"EA remediationRequestPhase should be Completed")
+	Expect(ea.Spec.RemediationRequestPhase).To(Equal("Verifying"),
+		"#280: EA is created when RR enters Verifying, not Completed")
 		Expect(ea.Spec.RemediationCreatedAt).ToNot(BeNil(),
 			"EA remediationCreatedAt should be set (RO copies from RR.CreationTimestamp)")
 		Expect(ea.Spec.SignalName).ToNot(BeEmpty(),

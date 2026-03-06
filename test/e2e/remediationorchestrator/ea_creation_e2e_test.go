@@ -192,13 +192,31 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 		we.Status.Phase = workflowexecutionv1.PhaseCompleted
 		Expect(k8sClient.Status().Update(ctx, we)).To(Succeed())
 
-		By("8. Waiting for RemediationRequest to transition to Completed")
+		By("8. Waiting for RemediationRequest to transition to Verifying (#280)")
 		updatedRR := &remediationv1.RemediationRequest{}
 		Eventually(func() remediationv1.RemediationPhase {
 			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), updatedRR)
 			return updatedRR.Status.OverallPhase
+		}, timeout, interval).Should(Equal(remediationv1.PhaseVerifying),
+			"#280: RemediationRequest should transition to Verifying after WE completes")
+
+		By("8a. Driving EA to completion for Verifying → Completed (#280)")
+		eaDriveName := fmt.Sprintf("ea-%s", rr.Name)
+		eaDrive := &eav1.EffectivenessAssessment{}
+		Eventually(func() error {
+			return k8sClient.Get(ctx, client.ObjectKey{Name: eaDriveName, Namespace: testNS}, eaDrive)
+		}, timeout, interval).Should(Succeed(), "EA should be created during Verifying phase")
+		eaDrive.Status.Phase = eav1.PhaseCompleted
+		eaDeadline := metav1.NewTime(time.Now().Add(10 * time.Minute))
+		eaDrive.Status.ValidityDeadline = &eaDeadline
+		Expect(k8sClient.Status().Update(ctx, eaDrive)).To(Succeed())
+
+		By("8b. Waiting for RemediationRequest to transition to Completed")
+		Eventually(func() remediationv1.RemediationPhase {
+			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), updatedRR)
+			return updatedRR.Status.OverallPhase
 		}, timeout, interval).Should(Equal(remediationv1.PhaseCompleted),
-			"RemediationRequest should transition to Completed after WE completes")
+			"RemediationRequest should transition to Completed after EA completes")
 
 		// Re-fetch RR for latest status (RO may update multiple times)
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), updatedRR)).To(Succeed())
@@ -275,7 +293,8 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 			"Stabilization window should be set from RO config")
 
 		By("11. Validating EA spec fields")
-		Expect(ea.Spec.RemediationRequestPhase).To(Equal("Completed"))
+		Expect(ea.Spec.RemediationRequestPhase).To(Equal("Verifying"),
+			"#280: EA is created when RR enters Verifying, not Completed")
 
 		By("12. Validating owner reference for cascade deletion (BR-ORCH-031)")
 		Expect(ea.OwnerReferences).To(HaveLen(1))

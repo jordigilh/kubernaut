@@ -444,6 +444,8 @@ var _ = Describe("Async Hash Deferral for CRD Targets [DD-EM-004 v2.0, BR-EM-010
 		coreEvents := []string{
 			"gateway.signal.received",
 			"gateway.crd.created",
+			"orchestrator.lifecycle.verifying_started",      // #280
+			"orchestrator.lifecycle.verification_completed", // #280
 			"orchestrator.lifecycle.completed",
 			"effectiveness.assessment.scheduled",
 			"effectiveness.assessment.completed",

@@ -479,6 +479,8 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 			"orchestrator.lifecycle.created",
 			"orchestrator.lifecycle.started",
 			"orchestrator.lifecycle.transitioned",
+			"orchestrator.lifecycle.verifying_started",      // #280
+			"orchestrator.lifecycle.verification_completed", // #280
 			"orchestrator.lifecycle.completed",
 			"signalprocessing.signal.processed",
 			"aianalysis.analysis.completed",
