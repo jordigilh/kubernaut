@@ -3223,6 +3223,15 @@ The %s phase did not complete within the expected timeframe. Please investigate 
 		"notificationName", notificationName,
 		"phase", phase,
 		"timeout", timeout)
+
+	// BR-ORCH-035 AC-4: Track timeout notification ref (non-blocking)
+	ref := r.buildNotificationRef(ctx, notificationName, rr.Namespace)
+	if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+		rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
+		return nil
+	}); refErr != nil {
+		logger.Error(refErr, "Failed to persist timeout NT ref (non-critical)", "notification", notificationName)
+	}
 }
 
 // IsTerminalPhase checks if a phase is terminal (no further processing).
