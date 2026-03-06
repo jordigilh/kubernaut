@@ -24,6 +24,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -94,9 +95,9 @@ var _ = Describe("Async Hash Deferral for CRD Targets [DD-EM-004 v2.0, BR-EM-010
 			By("Cleaning up cert-manager scenario resources")
 			infrastructure.CleanupCertManagerScenario(kubeconfigPath, testNamespace, GinkgoWriter)
 
-			By("Cleaning up test namespace")
-			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNamespace}}
-			_ = k8sClient.Delete(ctx, ns)
+			By("Cleaning up memory-eater deployment")
+			dep := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "memory-eater", Namespace: testNamespace}}
+			_ = k8sClient.Delete(ctx, dep)
 		}
 		testCancel()
 	})
@@ -106,18 +107,16 @@ var _ = Describe("Async Hash Deferral for CRD Targets [DD-EM-004 v2.0, BR-EM-010
 		// ================================================================
 		// Step 1: Create managed test namespace
 		// ================================================================
-		By("Step 1: Creating managed test namespace for cert-async test")
-		testNamespace = fmt.Sprintf("fp-cert-%d", time.Now().Unix())
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: testNamespace,
-				Labels: map[string]string{
-					"kubernaut.ai/managed": "true",
-				},
-			},
+		By("Step 1: Using default namespace for cert-async test (matches Mock LLM TARGET_NAMESPACE)")
+		testNamespace = "default"
+		ns := &corev1.Namespace{}
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: testNamespace}, ns)).To(Succeed())
+		if ns.Labels == nil {
+			ns.Labels = map[string]string{}
 		}
-		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
-		GinkgoWriter.Printf("  ✅ Namespace created: %s\n", testNamespace)
+		ns.Labels["kubernaut.ai/managed"] = "true"
+		Expect(k8sClient.Update(ctx, ns)).To(Succeed())
+		GinkgoWriter.Printf("  ✅ Using namespace: %s (labelled as managed)\n", testNamespace)
 
 		// ================================================================
 		// Step 2: Deploy memory-eater for pipeline flow
