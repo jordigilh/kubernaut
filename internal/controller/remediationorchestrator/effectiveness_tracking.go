@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -29,6 +30,7 @@ import (
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/helpers"
+	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/phase"
 )
 
 // ========================================
@@ -50,7 +52,8 @@ const ConditionEffectivenessAssessed = "EffectivenessAssessed"
 //   - ADR-EM-001: RO must track EA lifecycle
 //   - GAP-RO-2: Set EffectivenessAssessed condition on RR
 //
-// CRITICAL: This method NEVER changes overallPhase - only the EffectivenessAssessed condition.
+// #280: When the RR is in Verifying phase and EA reaches terminal, this method also
+// transitions the RR from Verifying to Completed with Outcome="Remediated" and sets CompletedAt.
 func (r *Reconciler) trackEffectivenessStatus(ctx context.Context, rr *remediationv1.RemediationRequest) error {
 	if rr == nil {
 		return fmt.Errorf("RemediationRequest cannot be nil")
@@ -107,10 +110,6 @@ func (r *Reconciler) trackEffectivenessStatus(ctx context.Context, rr *remediati
 	// Only set condition for terminal EA phases
 	switch ea.Status.Phase {
 	case eav1.PhaseCompleted:
-		// ADR-EM-001 lines 888-906: Distinguish expired from normal completion.
-		// Both are Status=True (assessment finished), but the Reason differs:
-		//   - expired: Reason=AssessmentExpired (validity window exceeded)
-		//   - all others: Reason=AssessmentCompleted
 		reason := "AssessmentCompleted"
 		if ea.Status.AssessmentReason == eav1.AssessmentReasonExpired {
 			reason = "AssessmentExpired"
@@ -130,6 +129,8 @@ func (r *Reconciler) trackEffectivenessStatus(ctx context.Context, rr *remediati
 				Message:            fmt.Sprintf("Effectiveness assessment completed (reason: %s)", ea.Status.AssessmentReason),
 				LastTransitionTime: metav1.Now(),
 			})
+			// #280: If RR is in Verifying, complete it now that EA finished
+			r.completeVerificationIfNeeded(rr, logger)
 			return nil
 		})
 
@@ -147,6 +148,8 @@ func (r *Reconciler) trackEffectivenessStatus(ctx context.Context, rr *remediati
 				Message:            fmt.Sprintf("Effectiveness assessment failed (reason: %s)", ea.Status.AssessmentReason),
 				LastTransitionTime: metav1.Now(),
 			})
+			// #280: If RR is in Verifying, complete it now that EA finished (even on failure)
+			r.completeVerificationIfNeeded(rr, logger)
 			return nil
 		})
 
@@ -159,4 +162,32 @@ func (r *Reconciler) trackEffectivenessStatus(ctx context.Context, rr *remediati
 	}
 
 	return nil
+}
+
+// completeVerificationIfNeeded transitions the RR from Verifying to Completed (#280).
+// Called inside a status update closure when EA reaches a terminal phase.
+// The remediation itself succeeded (RR was in Executing, WFE completed), so Outcome is "Remediated"
+// regardless of whether the EA assessment passed or failed.
+func (r *Reconciler) completeVerificationIfNeeded(rr *remediationv1.RemediationRequest, logger interface{ Info(string, ...interface{}) }) {
+	if rr.Status.OverallPhase != phase.Verifying {
+		return
+	}
+
+	now := metav1.Now()
+	rr.Status.OverallPhase = phase.Completed
+	rr.Status.Outcome = "Remediated"
+	rr.Status.CompletedAt = &now
+	rr.Status.ObservedGeneration = rr.Generation
+
+	startTime := rr.CreationTimestamp.Time
+	durationMs := time.Since(startTime).Milliseconds()
+	_ = durationMs
+
+	if r.Metrics != nil {
+		r.Metrics.PhaseTransitionsTotal.WithLabelValues(string(phase.Verifying), string(phase.Completed), rr.Namespace).Inc()
+	}
+
+	logger.Info("Verification complete, RR transitioned to Completed",
+		"outcome", "Remediated",
+		"remediationRequest", rr.Name)
 }

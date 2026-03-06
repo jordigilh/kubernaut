@@ -19,6 +19,7 @@ data:
       processing: "5m"
       analyzing: "10m"
       executing: "30m"
+      verifying: "30m"
     datastorage:
       url: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
       timeout: "10s"

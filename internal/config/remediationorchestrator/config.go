@@ -84,6 +84,12 @@ type TimeoutsConfig struct {
 	// ADR-040: Maximum duration before an unanswered approval request expires.
 	// Default: 15m.
 	AwaitingApproval time.Duration `yaml:"awaitingApproval"`
+
+	// Verifying is the safety-net timeout for the Verifying phase (#280).
+	// Maximum time an RR can stay in Verifying before the safety-net fires,
+	// protecting against EA never populating ValidityDeadline.
+	// Default: 30m.
+	Verifying time.Duration `yaml:"verifying"`
 }
 
 // EACreationConfig controls EffectivenessAssessment CRD creation by the RO.
@@ -206,6 +212,7 @@ func DefaultConfig() *Config {
 			Analyzing:        10 * time.Minute,
 			Executing:        30 * time.Minute,
 			AwaitingApproval: 15 * time.Minute,
+			Verifying:        30 * time.Minute,
 		},
 		EA: EACreationConfig{
 			StabilizationWindow: 5 * time.Minute,
@@ -287,6 +294,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Timeouts.AwaitingApproval <= 0 {
 		return fmt.Errorf("timeouts.awaitingApproval must be positive, got %v", c.Timeouts.AwaitingApproval)
+	}
+	if c.Timeouts.Verifying <= 0 {
+		return fmt.Errorf("timeouts.verifying must be positive, got %v", c.Timeouts.Verifying)
 	}
 	phaseSum := c.Timeouts.Processing + c.Timeouts.Analyzing + c.Timeouts.AwaitingApproval + c.Timeouts.Executing
 	if c.Timeouts.Global < phaseSum {

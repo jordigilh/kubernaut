@@ -295,6 +295,7 @@ func main() {
 			Analyzing:        cfg.Timeouts.Analyzing,
 			Executing:        cfg.Timeouts.Executing,
 			AwaitingApproval: cfg.Timeouts.AwaitingApproval,
+			Verifying:        cfg.Timeouts.Verifying,
 		},
 		routingEngine, // DD-RO-002: Routing engine built from YAML config
 		eaCreator,     // ADR-EM-001: EA creation on terminal phases

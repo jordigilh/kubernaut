@@ -144,6 +144,7 @@ type TimeoutConfig struct {
 	Analyzing        time.Duration // Default: 10 minutes
 	Executing        time.Duration // Default: 30 minutes
 	AwaitingApproval time.Duration // Default: 15 minutes (ADR-040)
+	Verifying        time.Duration // Default: 30 minutes (#280: safety-net for Verifying phase)
 }
 
 // NewReconciler creates a new Reconciler with all dependencies.
@@ -174,6 +175,9 @@ func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, 
 	}
 	if timeouts.AwaitingApproval == 0 {
 		timeouts.AwaitingApproval = 15 * time.Minute
+	}
+	if timeouts.Verifying == 0 {
+		timeouts.Verifying = 30 * time.Minute
 	}
 
 	nc := creator.NewNotificationCreator(c, s, m)
@@ -245,8 +249,8 @@ func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, 
 	// AIAnalysisHandler: delegates failure transitions
 	r.aiAnalysisHandler = handler.NewAIAnalysisHandler(c, s, nc, m, r.transitionToFailed)
 
-	// WorkflowExecutionHandler: delegates completion and failure transitions
-	r.weHandler = handler.NewWorkflowExecutionHandler(c, s, m, r.transitionToFailed, r.transitionToCompleted)
+	// WorkflowExecutionHandler: delegates verifying and failure transitions
+	r.weHandler = handler.NewWorkflowExecutionHandler(c, s, m, r.transitionToFailed, r.transitionToVerifying)
 
 	return r
 }
@@ -632,6 +636,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return r.handleAwaitingApprovalPhase(ctx, rr)
 	case phase.Executing:
 		return r.handleExecutingPhase(ctx, rr, aggregatedStatus)
+	case phase.Verifying:
+		return r.handleVerifyingPhase(ctx, rr)
 	case phase.Blocked:
 		// BR-ORCH-042: Handle blocked phase (cooldown expiry check)
 		return r.handleBlockedPhase(ctx, rr)
@@ -1623,8 +1629,13 @@ func (r *Reconciler) transitionPhase(ctx context.Context, rr *remediationv1.Reme
 	return ctrl.Result{RequeueAfter: requeueAfter}, nil
 }
 
-// transitionToCompleted transitions the RR to Completed phase.
-func (r *Reconciler) transitionToCompleted(ctx context.Context, rr *remediationv1.RemediationRequest, outcome string) (ctrl.Result, error) {
+// transitionToVerifying transitions the RR to Verifying phase (#280).
+// After WFE completes successfully, the RR enters Verifying (non-terminal) while the
+// EffectivenessAssessment runs. The Gateway deduplicates signals during this window.
+// RO transitions to Completed when EA reaches a terminal state (handleVerifyingPhase)
+// or when VerificationDeadline expires.
+// Completion notifications are sent immediately (remediation itself succeeded).
+func (r *Reconciler) transitionToVerifying(ctx context.Context, rr *remediationv1.RemediationRequest, outcome string) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
 	// RO-AUDIT-IDEMPOTENCY: Refetch via apiReader (cache-bypassed) before the phase
 	// check. Pattern: mirrors transitionToFailed and RAR audit deduplication.
@@ -1633,86 +1644,65 @@ func (r *Reconciler) transitionToCompleted(ctx context.Context, rr *remediationv
 		return ctrl.Result{}, err
 	}
 
-	if rr.Status.OverallPhase == phase.Completed {
-		logger.V(1).Info("Already in Completed phase (confirmed via apiReader), skipping transition")
+	// #280: Idempotency — skip if already in Verifying or Completed
+	if rr.Status.OverallPhase == phase.Verifying || rr.Status.OverallPhase == phase.Completed {
+		logger.V(1).Info("Already in Verifying/Completed phase (confirmed via apiReader), skipping transition",
+			"phase", rr.Status.OverallPhase)
 		return ctrl.Result{}, nil
 	}
 
-	// Capture old phase for metrics and audit
 	oldPhaseBeforeTransition := rr.Status.OverallPhase
-	startTime := rr.CreationTimestamp.Time
 
-	// REFACTOR-RO-001: Using retry helper
+	// #280: Transition to Verifying (not Completed). CompletedAt and Outcome are set later
+	// when EA finishes or VerificationDeadline expires.
 	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
-		rr.Status.OverallPhase = phase.Completed
-		rr.Status.Outcome = outcome
-		rr.Status.ObservedGeneration = rr.Generation // DD-CONTROLLER-001: Track final generation
-		now := metav1.Now()
-		rr.Status.CompletedAt = &now
+		rr.Status.OverallPhase = phase.Verifying
+		rr.Status.ObservedGeneration = rr.Generation
 
-		// BR-ORCH-043: Set Ready condition (terminal success)
-		remediationrequest.SetReady(rr, true, remediationrequest.ReasonReady, "Remediation completed", r.Metrics)
+		// BR-ORCH-043: Set Ready condition (remediation succeeded, verification pending)
+		remediationrequest.SetReady(rr, true, remediationrequest.ReasonReady, "Remediation completed, verifying effectiveness", r.Metrics)
 
 		// DD-WE-004 V1.0: Reset exponential backoff on success
 		if rr.Status.NextAllowedExecution != nil {
-			logger.Info("Clearing exponential backoff after successful completion",
+			logger.Info("Clearing exponential backoff after successful remediation",
 				"previousNextAllowed", rr.Status.NextAllowedExecution.Format(time.RFC3339),
 				"previousConsecutiveFailures", rr.Status.ConsecutiveFailureCount)
 			rr.Status.NextAllowedExecution = nil
 		}
-
-		// Reset consecutive failure count (fresh start after success)
 		rr.Status.ConsecutiveFailureCount = 0
 
 		return nil
 	})
 	if err != nil {
-		logger.Error(err, "Failed to transition to Completed")
-		return ctrl.Result{}, fmt.Errorf("failed to transition to Completed: %w", err)
+		logger.Error(err, "Failed to transition to Verifying")
+		return ctrl.Result{}, fmt.Errorf("failed to transition to Verifying: %w", err)
 	}
 
-	// Labels order: from_phase, to_phase, namespace (per prometheus.go definition)
 	if r.Metrics != nil {
-		r.Metrics.PhaseTransitionsTotal.WithLabelValues(string(oldPhaseBeforeTransition), string(phase.Completed), rr.Namespace).Inc()
+		r.Metrics.PhaseTransitionsTotal.WithLabelValues(string(oldPhaseBeforeTransition), string(phase.Verifying), rr.Namespace).Inc()
 	}
 
-	// Emit audit event (DD-AUDIT-003)
-	// IDEMPOTENCY: Only emit if phase actually changed (prevents duplicate events on reconcile retries)
-	// Race condition protection: oldPhaseBeforeTransition captured before status update ensures
-	// only the reconcile that successfully transitioned will emit the audit event
-	if oldPhaseBeforeTransition != phase.Completed {
-		durationMs := time.Since(startTime).Milliseconds()
-		r.emitCompletionAudit(ctx, rr, outcome, durationMs)
-
-		// DD-EVENT-001: Emit K8s event for successful completion (BR-ORCH-095)
+	// Emit audit and K8s event for Verifying transition
+	if oldPhaseBeforeTransition != phase.Verifying {
+		r.emitVerifyingStartedAudit(ctx, rr)
 		if r.Recorder != nil {
 			r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonRemediationCompleted,
-				fmt.Sprintf("Remediation completed successfully: %s", outcome))
+				"Remediation succeeded, entering verification phase (#280)")
 		}
 	}
 
-	// ========================================
-	// BR-ORCH-045: COMPLETION NOTIFICATION
-	// Notify operators of successful remediation
-	// ========================================
-	if oldPhaseBeforeTransition != phase.Completed {
-		// Fetch AIAnalysis for RCA and workflow context
+	// BR-ORCH-045: Completion notification — sent immediately since remediation succeeded
+	if oldPhaseBeforeTransition != phase.Verifying && oldPhaseBeforeTransition != phase.Completed {
 		aiName := fmt.Sprintf("ai-%s", rr.Name)
 		ai := &aianalysisv1.AIAnalysis{}
 		if err := r.client.Get(ctx, client.ObjectKey{Name: aiName, Namespace: rr.Namespace}, ai); err != nil {
-			// Non-fatal: Log and continue - completion succeeded even if notification fails
 			logger.Error(err, "Failed to fetch AIAnalysis for completion notification", "aiAnalysis", aiName)
 		} else {
 			notifName, notifErr := r.notificationCreator.CreateCompletionNotification(ctx, rr, ai)
 			if notifErr != nil {
-				// Non-fatal: Log and continue - completion succeeded even if notification fails
 				logger.Error(notifErr, "Failed to create completion notification")
 			} else {
 				logger.Info("Created completion notification", "notification", notifName)
-				// Issue #88, BR-ORCH-035 AC-2: Persist completion NT ref to NotificationRequestRefs
-				// Uses helpers.UpdateRemediationRequestStatus to ensure persistence (Batch 3 fix:
-				// previous in-memory-only append was never written to the API server because the
-				// phase status update at line ~1444 had already completed).
 				if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
 					rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, corev1.ObjectReference{
 						Kind:       "NotificationRequest",
@@ -1724,7 +1714,6 @@ func (r *Reconciler) transitionToCompleted(ctx context.Context, rr *remediationv
 				}); refErr != nil {
 					logger.Error(refErr, "Failed to persist completion NT ref (non-critical)", "notification", notifName)
 				}
-				// DD-EVENT-001: Emit K8s event for notification creation (BR-ORCH-095)
 				if r.Recorder != nil {
 					r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonNotificationCreated,
 						fmt.Sprintf("Completion notification created: %s", notifName))
@@ -1732,11 +1721,9 @@ func (r *Reconciler) transitionToCompleted(ctx context.Context, rr *remediationv
 			}
 		}
 
-		// BR-ORCH-034: Create bulk duplicate notification if duplicates exist
 		if rr.Status.DuplicateCount > 0 {
 			bulkName, bulkErr := r.notificationCreator.CreateBulkDuplicateNotification(ctx, rr)
 			if bulkErr != nil {
-				// Non-fatal: Log and continue
 				logger.Error(bulkErr, "Failed to create bulk duplicate notification")
 			} else {
 				logger.Info("Created bulk duplicate notification", "notification", bulkName)
@@ -1744,12 +1731,119 @@ func (r *Reconciler) transitionToCompleted(ctx context.Context, rr *remediationv
 		}
 	}
 
-	// ADR-EM-001: Create EffectivenessAssessment CRD (non-fatal)
+	// #280: Create EA — if this fails, handleVerifyingPhase will retry on next reconcile
 	r.createEffectivenessAssessmentIfNeeded(ctx, rr)
 
-	logger.Info("Remediation completed successfully", "outcome", outcome)
+	logger.Info("Remediation succeeded, entered Verifying phase", "outcome", outcome)
 	return ctrl.Result{}, nil
 }
+
+// handleVerifyingPhase manages the Verifying phase lifecycle (#280).
+// Responsibilities:
+//   - Retry EA creation if EffectivenessAssessmentRef is nil (transient failure during transition)
+//   - Populate VerificationDeadline from EA.Status.ValidityDeadline + buffer
+//   - Timeout check when VerificationDeadline expires (Change 4)
+//   - EA terminal status triggers Completed transition (Change 3, via trackEffectivenessStatus)
+func (r *Reconciler) handleVerifyingPhase(ctx context.Context, rr *remediationv1.RemediationRequest) (ctrl.Result, error) {
+	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
+
+	// Step 1: If EA was not created during transition (transient failure), retry now
+	if rr.Status.EffectivenessAssessmentRef == nil {
+		logger.Info("EffectivenessAssessmentRef is nil in Verifying phase, retrying EA creation")
+		r.createEffectivenessAssessmentIfNeeded(ctx, rr)
+
+		if rr.Status.EffectivenessAssessmentRef == nil {
+			logger.Info("EA creation still pending, requeueing")
+			return ctrl.Result{RequeueAfter: config.RequeueResourceBusy}, nil
+		}
+	}
+
+	// Step 2: Populate VerificationDeadline from EA.Status.ValidityDeadline
+	if rr.Status.VerificationDeadline == nil {
+		eaName := rr.Status.EffectivenessAssessmentRef.Name
+		ea := &eav1.EffectivenessAssessment{}
+		if err := r.client.Get(ctx, client.ObjectKey{Name: eaName, Namespace: rr.Namespace}, ea); err != nil {
+			logger.Error(err, "Failed to fetch EA for VerificationDeadline computation", "ea", eaName)
+			return ctrl.Result{RequeueAfter: config.RequeueResourceBusy}, nil
+		}
+
+		if ea.Status.ValidityDeadline != nil {
+			deadline := metav1.NewTime(ea.Status.ValidityDeadline.Add(VerificationDeadlineBuffer))
+			if err := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+				rr.Status.VerificationDeadline = &deadline
+				return nil
+			}); err != nil {
+				logger.Error(err, "Failed to persist VerificationDeadline")
+				return ctrl.Result{}, err
+			}
+			logger.Info("VerificationDeadline set", "deadline", deadline.Format(time.RFC3339))
+		} else if time.Since(rr.CreationTimestamp.Time) > r.timeouts.Verifying {
+			logger.Info("Safety-net timeout: VerificationDeadline never set, RR exceeded verifying timeout",
+				"age", time.Since(rr.CreationTimestamp.Time).String(),
+				"verifyingTimeout", r.timeouts.Verifying.String())
+			if err := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+				now := metav1.Now()
+				rr.Status.OverallPhase = phase.Completed
+				rr.Status.Outcome = "VerificationTimedOut"
+				rr.Status.CompletedAt = &now
+				rr.Status.ObservedGeneration = rr.Generation
+				return nil
+			}); err != nil {
+				logger.Error(err, "Failed to transition to Completed on safety-net timeout")
+				return ctrl.Result{}, err
+			}
+			if r.Metrics != nil {
+				r.Metrics.PhaseTransitionsTotal.WithLabelValues(string(phase.Verifying), string(phase.Completed), rr.Namespace).Inc()
+			}
+			r.emitVerificationTimedOutAudit(ctx, rr)
+			return ctrl.Result{}, nil
+		} else {
+			logger.V(1).Info("EA.Status.ValidityDeadline not yet set, requeueing")
+			return ctrl.Result{RequeueAfter: config.RequeueResourceBusy}, nil
+		}
+	}
+
+	// Step 3: Timeout check — if VerificationDeadline has passed, time out (#280 Change 4)
+	if rr.Status.VerificationDeadline != nil && time.Now().After(rr.Status.VerificationDeadline.Time) {
+		logger.Info("VerificationDeadline expired, timing out verification",
+			"deadline", rr.Status.VerificationDeadline.Time.Format(time.RFC3339))
+		if err := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+			now := metav1.Now()
+			rr.Status.OverallPhase = phase.Completed
+			rr.Status.Outcome = "VerificationTimedOut"
+			rr.Status.CompletedAt = &now
+			rr.Status.ObservedGeneration = rr.Generation
+			return nil
+		}); err != nil {
+			logger.Error(err, "Failed to transition to Completed on verification timeout")
+			return ctrl.Result{}, err
+		}
+		if r.Metrics != nil {
+			r.Metrics.PhaseTransitionsTotal.WithLabelValues(string(phase.Verifying), string(phase.Completed), rr.Namespace).Inc()
+		}
+		r.emitVerificationTimedOutAudit(ctx, rr)
+		return ctrl.Result{}, nil
+	}
+
+	// Step 4: Track EA terminal status -> transition Verifying -> Completed (#280 Change 3)
+	if err := r.trackEffectivenessStatus(ctx, rr); err != nil {
+		logger.Error(err, "Failed to track EA status during Verifying phase")
+	}
+
+	// If trackEffectivenessStatus transitioned to Completed, emit audit and return
+	if rr.Status.OverallPhase == phase.Completed {
+		r.emitVerificationCompletedAudit(ctx, rr)
+		return ctrl.Result{}, nil
+	}
+
+	// Step 4: Timeout check added in Change 4
+
+	return ctrl.Result{RequeueAfter: config.RequeueResourceBusy}, nil
+}
+
+// VerificationDeadlineBuffer is the grace period added to EA.Status.ValidityDeadline
+// when computing VerificationDeadline. Allows for clock skew and final status propagation.
+const VerificationDeadlineBuffer = 30 * time.Second
 
 // transitionToFailed transitions the RR to Failed phase.
 // BR-ORCH-042: Before transitioning to terminal Failed, checks if this failure
@@ -1860,7 +1954,7 @@ func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.R
 	}
 
 	// Issue #240: EA is NOT created on failure paths. EA should only be created
-	// when WFE completes successfully (transitionToCompleted), because failed/timed-out
+	// when WFE completes successfully (transitionToVerifying), because failed/timed-out
 	// remediations may have partially applied or no changes, making EA unreliable.
 
 	logger.Info("Remediation failed", "failurePhase", failurePhase, "reason", failureReason)
@@ -2025,7 +2119,7 @@ The remediation was in %s phase when it timed out. Please investigate why the re
 			"totalNotifications", len(rr.Status.NotificationRequestRefs)+1)
 	}
 
-	// Issue #240: EA is NOT created on global timeout. See transitionToCompleted.
+	// Issue #240: EA is NOT created on global timeout. See transitionToVerifying.
 
 	return ctrl.Result{}, nil
 }
@@ -2323,6 +2417,73 @@ func (r *Reconciler) emitLifecycleStartedAudit(ctx context.Context, rr *remediat
 
 	if err := r.auditStore.StoreAudit(ctx, event); err != nil {
 		logger.Error(err, "Failed to store lifecycle started audit event")
+	}
+}
+
+// emitVerifyingStartedAudit emits an audit event when RR enters the Verifying phase (#280).
+// Non-blocking — failures are logged but don't affect business logic.
+func (r *Reconciler) emitVerifyingStartedAudit(ctx context.Context, rr *remediationv1.RemediationRequest) {
+	logger := log.FromContext(ctx)
+	if r.auditStore == nil {
+		return
+	}
+
+	event, err := r.auditManager.BuildLifecycleVerifyingStartedEvent(rr.Name, rr.Namespace, rr.Name)
+	if err != nil {
+		logger.Error(err, "Failed to build verifying_started audit event")
+		return
+	}
+
+	if err := r.auditStore.StoreAudit(ctx, event); err != nil {
+		logger.Error(err, "Failed to store verifying_started audit event")
+	}
+}
+
+// emitVerificationCompletedAudit emits an audit event when Verifying -> Completed (#280).
+func (r *Reconciler) emitVerificationCompletedAudit(ctx context.Context, rr *remediationv1.RemediationRequest) {
+	logger := log.FromContext(ctx)
+	if r.auditStore == nil {
+		return
+	}
+
+	eaName := ""
+	if rr.Status.EffectivenessAssessmentRef != nil {
+		eaName = rr.Status.EffectivenessAssessmentRef.Name
+	}
+	durationMs := time.Since(rr.CreationTimestamp.Time).Milliseconds()
+	event, err := r.auditManager.BuildLifecycleVerificationCompletedEvent(
+		rr.Name, rr.Namespace, rr.Name, eaName, rr.Status.Outcome, durationMs)
+	if err != nil {
+		logger.Error(err, "Failed to build verification_completed audit event")
+		return
+	}
+
+	if err := r.auditStore.StoreAudit(ctx, event); err != nil {
+		logger.Error(err, "Failed to store verification_completed audit event")
+	}
+}
+
+// emitVerificationTimedOutAudit emits an audit event when Verifying times out (#280).
+func (r *Reconciler) emitVerificationTimedOutAudit(ctx context.Context, rr *remediationv1.RemediationRequest) {
+	logger := log.FromContext(ctx)
+	if r.auditStore == nil {
+		return
+	}
+
+	eaName := ""
+	if rr.Status.EffectivenessAssessmentRef != nil {
+		eaName = rr.Status.EffectivenessAssessmentRef.Name
+	}
+	durationMs := time.Since(rr.CreationTimestamp.Time).Milliseconds()
+	event, err := r.auditManager.BuildLifecycleVerificationTimedOutEvent(
+		rr.Name, rr.Namespace, rr.Name, eaName, durationMs)
+	if err != nil {
+		logger.Error(err, "Failed to build verification_timed_out audit event")
+		return
+	}
+
+	if err := r.auditStore.StoreAudit(ctx, event); err != nil {
+		logger.Error(err, "Failed to store verification_timed_out audit event")
 	}
 }
 
@@ -2911,7 +3072,7 @@ func (r *Reconciler) handlePhaseTimeout(ctx context.Context, rr *remediationv1.R
 	// Create phase-specific timeout notification (non-blocking)
 	r.createPhaseTimeoutNotification(ctx, rr, phase, timeout)
 
-	// Issue #240: EA is NOT created on phase timeout. See transitionToCompleted.
+	// Issue #240: EA is NOT created on phase timeout. See transitionToVerifying.
 
 	return nil
 }
@@ -3000,6 +3161,7 @@ The %s phase did not complete within the expected timeframe. Please investigate 
 
 // IsTerminalPhase checks if a phase is terminal (no further processing).
 // BR-ORCH-042.2: Blocked is NON-terminal (active)
+// #280: Verifying is NON-terminal (EA assessment in progress)
 //
 // AC-042-2-1: IsTerminal(Blocked) returns false
 func IsTerminalPhase(phase remediationv1.RemediationPhase) bool {
