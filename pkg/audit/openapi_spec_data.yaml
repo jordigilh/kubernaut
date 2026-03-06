@@ -2316,6 +2316,9 @@ components:
               'orchestrator.lifecycle.created': '#/components/schemas/RemediationOrchestratorAuditPayload'
               'orchestrator.lifecycle.completed': '#/components/schemas/RemediationOrchestratorAuditPayload'
               'orchestrator.lifecycle.failed': '#/components/schemas/RemediationOrchestratorAuditPayload'
+              'orchestrator.lifecycle.verifying_started': '#/components/schemas/RemediationOrchestratorAuditPayload'
+              'orchestrator.lifecycle.verification_completed': '#/components/schemas/RemediationOrchestratorAuditPayload'
+              'orchestrator.lifecycle.verification_timed_out': '#/components/schemas/RemediationOrchestratorAuditPayload'
               'orchestrator.lifecycle.transitioned': '#/components/schemas/RemediationOrchestratorAuditPayload'
               'orchestrator.approval.requested': '#/components/schemas/RemediationOrchestratorAuditPayload'
               'orchestrator.approval.approved': '#/components/schemas/RemediationOrchestratorAuditPayload'
@@ -3372,7 +3375,7 @@ components:
       properties:
         event_type:
           type: string
-          enum: ['orchestrator.lifecycle.started', 'orchestrator.lifecycle.created', 'orchestrator.lifecycle.completed', 'orchestrator.lifecycle.failed', 'orchestrator.lifecycle.transitioned', 'orchestrator.approval.requested', 'orchestrator.approval.approved', 'orchestrator.approval.rejected', 'orchestrator.remediation.manual_review', 'orchestrator.routing.blocked', 'remediation.workflow_created', 'orchestrator.ea.created']
+          enum: ['orchestrator.lifecycle.started', 'orchestrator.lifecycle.created', 'orchestrator.lifecycle.completed', 'orchestrator.lifecycle.failed', 'orchestrator.lifecycle.verifying_started', 'orchestrator.lifecycle.verification_completed', 'orchestrator.lifecycle.verification_timed_out', 'orchestrator.lifecycle.transitioned', 'orchestrator.approval.requested', 'orchestrator.approval.approved', 'orchestrator.approval.rejected', 'orchestrator.remediation.manual_review', 'orchestrator.routing.blocked', 'remediation.workflow_created', 'orchestrator.ea.created']
           description: Event type for discriminator (matches parent event_type)
         # Core Orchestration Fields
         rr_name:

@@ -382,6 +382,10 @@ func (in *RemediationRequestStatus) DeepCopyInto(out *RemediationRequestStatus) 
 		in, out := &in.ExecutingStartTime, &out.ExecutingStartTime
 		*out = (*in).DeepCopy()
 	}
+	if in.VerificationDeadline != nil {
+		in, out := &in.VerificationDeadline, &out.VerificationDeadline
+		*out = (*in).DeepCopy()
+	}
 	if in.SignalProcessingRef != nil {
 		in, out := &in.SignalProcessingRef, &out.SignalProcessingRef
 		*out = new(corev1.ObjectReference)
