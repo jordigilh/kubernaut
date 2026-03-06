@@ -193,7 +193,7 @@ var _ = SynchronizedBeforeSuite(
 				Component:   "*",
 				Environment: "production",
 				Priority:    "*",
-				SchemaImage: "quay.io/kubernaut-cicd/test-workflows/fix-certificate-job:v1.0.0",
+				SchemaImage: "quay.io/kubernaut-cicd/test-workflows/fix-certificate-job-schema:v1.0.0",
 				ExecutionEngine: "job",
 				SchemaParameters: []models.WorkflowParameter{
 					{Name: "TARGET_NAMESPACE", Type: "string", Required: true, Description: "Namespace of the affected Certificate"},
