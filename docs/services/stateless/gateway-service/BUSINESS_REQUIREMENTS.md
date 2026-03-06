@@ -332,6 +332,7 @@ This document provides a comprehensive list of all business requirements for the
 **Description**: Gateway must authenticate API requests using Kubernetes TokenReviewer
 **Priority**: P0 (Critical)
 **Status**: 🔴 **NOT IMPLEMENTED — SECURITY GAP**. `pkg/gateway/middleware/auth.go` does not exist. No TokenReview logic in the codebase. Superseded by BR-GATEWAY-182 (ServiceAccount Authentication via TokenReview), which is also pending.
+**Tracking**: [GitHub #291](https://github.com/jordigilh/kubernaut/issues/291)
 **Test Coverage**: ❌ Missing
 **Implementation**: None — `pkg/gateway/middleware/auth.go` does not exist
 **Tests**: None
@@ -340,32 +341,32 @@ This document provides a comprehensive list of all business requirements for the
 **Description**: Gateway must validate ServiceAccount has required RBAC permissions
 **Priority**: P0 (Critical)
 **Status**: 🔴 **NOT IMPLEMENTED — SECURITY GAP**. No SubjectAccessReview logic in the codebase. Superseded by BR-GATEWAY-183 (SubjectAccessReview Authorization), which is also pending. Gateway currently relies on Network Policies only (DD-GATEWAY-006, now considered insufficient for defense-in-depth).
+**Tracking**: [GitHub #291](https://github.com/jordigilh/kubernaut/issues/291)
 **Test Coverage**: ❌ Missing
 **Implementation**: None — `pkg/gateway/middleware/auth.go` does not exist
 **Tests**: None
 
-### **BR-GATEWAY-038: Rate Limiting** ✅ DELEGATED TO PROXY
-**Description**: Gateway must enforce rate limits (1000 req/min per client)
+### **BR-GATEWAY-038: Rate Limiting** ✅ IMPLEMENTED (Chi Throttle)
+**Description**: Gateway must enforce rate limits to prevent overload
 **Priority**: P1 (High)
-**Test Coverage**: ✅ Delegated to Ingress/Route Proxy (no Gateway tests needed)
-**Implementation**: ❌ REMOVED - `pkg/gateway/middleware/ratelimit.go` deleted (ADR-048)
-**Tests**: ❌ REMOVED - `test/unit/gateway/middleware/ratelimit_test.go` deleted
+**Test Coverage**: ✅ Chi Throttle middleware active in production; E2E tests validate overload protection
+**Implementation**: `chimiddleware.Throttle(MaxConcurrentRequests)` in `pkg/gateway/server.go` `setupRoutes()`. Default: 100 concurrent requests. Config: `server.maxConcurrentRequests` in YAML.
+**Tests**: `test/e2e/gateway/03_k8s_api_rate_limit_test.go`
 **Related BRs**: Covered via VULN-GATEWAY-003
-**Architectural Decision**: [ADR-048 - Rate Limiting Proxy Delegation](../../../architecture/decisions/ADR-048-rate-limiting-proxy-delegation.md)
+**Architectural Decision**: [ADR-048-ADDENDUM-001 - Chi Throttle Middleware](../../../architecture/decisions/ADR-048-ADDENDUM-001-chi-throttle-middleware.md) (supersedes proxy-only approach in ADR-048)
 
-> **✅ IMPLEMENTATION COMPLETE (2025-12-07)**
+> **✅ IMPLEMENTATION COMPLETE (2026-01-29)**
 >
-> Rate limiting is now delegated to the infrastructure layer:
-> - **Kubernetes**: Nginx Ingress annotations (`nginx.ingress.kubernetes.io/limit-rps`)
-> - **OpenShift**: HAProxy Router annotations (`haproxy.router.openshift.io/rate-limit-*`)
+> Rate limiting is implemented at the application layer using chi's built-in Throttle middleware:
+> - **Application layer**: `chimiddleware.Throttle(100)` — per-pod concurrency limiting, zero custom code, zero dependencies
+> - **Infrastructure layer** (complementary): Nginx/HAProxy annotations for cluster-wide enforcement
 >
-> **Files Deleted**:
-> - `pkg/gateway/middleware/ratelimit.go`
-> - `test/unit/gateway/middleware/ratelimit_test.go`
-> - `test/e2e/gateway/15_rate_limiting_under_load_test.go`
+> **History**:
+> - 2025-12-07: Redis-based rate limiter removed (ADR-048). Files deleted: `ratelimit.go`, `ratelimit_test.go`, `15_rate_limiting_under_load_test.go`
+> - 2026-01-29: Chi Throttle added (ADR-048-ADDENDUM-001). Discovered chi's built-in middleware provides equivalent protection with zero custom code.
 >
-> **Rationale**: Global cluster-wide enforcement, zero Redis dependency, crash-proof.
-> See [ADR-048](../../../architecture/decisions/ADR-048-rate-limiting-proxy-delegation.md) for details.
+> **Rationale**: Defense-in-depth — chi Throttle protects per-pod (direct access, E2E tests, internal traffic), proxy protects cluster-wide.
+> See [ADR-048-ADDENDUM-001](../../../architecture/decisions/ADR-048-ADDENDUM-001-chi-throttle-middleware.md) for details.
 
 ### **BR-GATEWAY-039: Security Headers**
 **Description**: Gateway must add security headers (X-Content-Type-Options, X-Frame-Options, etc.)
