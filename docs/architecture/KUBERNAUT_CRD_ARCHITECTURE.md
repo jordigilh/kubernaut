@@ -390,7 +390,7 @@ spec:
     occurrenceCount: integer
 
 status:
-  phase: string                      # Pending, Processing, Analyzing, Executing, Completed, Failed
+  phase: string                      # Pending, Processing, Analyzing, Executing, Verifying, Completed, Failed
   message: string
   reason: string
   startedAt: timestamp
@@ -476,7 +476,7 @@ spec:
     recoveryContext: object          # If recovery attempt
 
 status:
-  phase: string                      # Pending, Investigating, Analyzing, Approving, Ready, Failed, Rejected
+  phase: string                      # Pending, Investigating, Analyzing, Completed, Failed
   rootCause: string
   confidence: float                  # 0.0-1.0
   recommendedAction: string
@@ -491,7 +491,7 @@ status:
     evidenceCollected: []string
     recommendedActions: []object
     alternativesConsidered: []object
-  approvalStatus: string             # Approved, Rejected, Pending
+  approvalStatus: string             # Approved, Pending
   approvedBy: string
   approvalTime: timestamp
 ```
@@ -1394,8 +1394,8 @@ func (r *RemediationOrchestratorReconciler) Reconcile(ctx context.Context, req c
 6. Notification controller delivers approval request to operators
 7. Operator approves or rejects (via kubectl, dashboard, or notification button)
 8. AIApprovalRequest CRD updated with decision
-9. AIAnalysis controller watches AIApprovalRequest → updates status to "Ready" or "Rejected"
-10. RemediationOrchestrator watches AIAnalysis status → creates RemediationExecution CRD (if approved) or NotificationRequest CRD (if rejected)
+9. AIAnalysis controller watches AIApprovalRequest → updates status to "Completed" (if approved) or "Failed" (if rejected)
+10. RemediationOrchestrator watches AIAnalysis status → creates WorkflowExecution CRD (if approved) or marks RemediationRequest as Failed (if rejected)
 
 **Latency**: Human-dependent (minutes to hours)
 
@@ -1841,7 +1841,7 @@ controller_runtime_reconcile_errors_total{controller="remediationorchestrator"}
 controller_runtime_reconcile_time_seconds{controller="remediationorchestrator"}
 
 # CRD Status Metrics
-kubernaut_remediationrequest_phase_total{phase="Pending|Processing|Analyzing|Executing|Completed|Failed"}
+kubernaut_remediationrequest_phase_total{phase="Pending|Processing|Analyzing|Executing|Verifying|Completed|Failed"}
 kubernaut_remediationrequest_duration_seconds{phase="Processing|Analyzing|Executing"}
 
 # Remediation Execution Metrics

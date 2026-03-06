@@ -184,8 +184,12 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 3: Loading images into Kind cluster...")
 	phase3Start := time.Now()
 
-	if err := loadFullPipelineImages(builtImages, clusterName, writer); err != nil {
-		return builtImages, fmt.Errorf("PHASE 3 failed: %w", err)
+	if os.Getenv("IMAGE_REGISTRY") != "" {
+		_, _ = fmt.Fprintln(writer, "  ⏭️  Skipping local image loading (CI/CD: IMAGE_REGISTRY is set, Kind pulls from registry)")
+	} else {
+		if err := loadFullPipelineImages(builtImages, clusterName, writer); err != nil {
+			return builtImages, fmt.Errorf("PHASE 3 failed: %w", err)
+		}
 	}
 	_, _ = fmt.Fprintf(writer, "✅ PHASE 3 complete: images loaded (%s)\n",
 		time.Since(phase3Start).Round(time.Second))
@@ -205,15 +209,17 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		"kubernaut.ai_notificationrequests.yaml",
 		"kubernaut.ai_effectivenessassessments.yaml", // ADR-EM-001: EA CRD for EM
 	}
+	crdArgs := []string{"--kubeconfig", kubeconfigPath, "apply"}
 	for _, crdFile := range crdFiles {
 		crdPath := filepath.Join(projectRoot, "config/crd/bases", crdFile)
 		_, _ = fmt.Fprintf(writer, "  ├── %s\n", crdFile)
-		cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", crdPath)
-		cmd.Stdout = writer
-		cmd.Stderr = writer
-		if err := cmd.Run(); err != nil {
-			return builtImages, fmt.Errorf("failed to install CRD %s: %w", crdFile, err)
-		}
+		crdArgs = append(crdArgs, "-f", crdPath)
+	}
+	cmd := exec.Command("kubectl", crdArgs...)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	if err := cmd.Run(); err != nil {
+		return builtImages, fmt.Errorf("failed to install CRDs: %w", err)
 	}
 	_, _ = fmt.Fprintf(writer, "✅ PHASE 4 complete: %d CRDs installed (%s)\n",
 		len(crdFiles), time.Since(phase4Start).Round(time.Second))
@@ -284,28 +290,35 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	}
 	_, _ = fmt.Fprintln(writer, "  ✅ Migrations applied")
 
-	// 6c: DataStorage RBAC + deployment (needs PostgreSQL + Redis)
-	if err := deployDataStorageServiceRBAC(ctx, namespace, kubeconfigPath, writer); err != nil {
-		return builtImages, fmt.Errorf("DataStorage RBAC failed: %w", err)
+	// 6c–6e: DataStorage, AuthWebhook, and Mock-Slack in parallel
+	// AuthWebhook and Mock-Slack have no dependency on DataStorage; all three
+	// only need PostgreSQL+Redis (already ready from 6a) and namespace (Phase 5).
+	phase6cResults := make(chan deployResult, 3)
+	go func() {
+		if err := deployDataStorageServiceRBAC(ctx, namespace, kubeconfigPath, writer); err != nil {
+			phase6cResults <- deployResult{"DataStorage", fmt.Errorf("RBAC: %w", err)}
+			return
+		}
+		dsImage := builtImages["datastorage"]
+		phase6cResults <- deployResult{"DataStorage",
+			deployDataStorageServiceInNamespaceWithNodePort(ctx, namespace, kubeconfigPath, dsImage, 30081, writer)}
+	}()
+	go func() {
+		awImage := builtImages["authwebhook"]
+		phase6cResults <- deployResult{"AuthWebhook",
+			DeployAuthWebhookManifestsOnly(ctx, clusterName, namespace, kubeconfigPath, awImage, writer)}
+	}()
+	go func() {
+		phase6cResults <- deployResult{"Mock-Slack",
+			deployMockSlack(ctx, namespace, kubeconfigPath, writer)}
+	}()
+	for i := 0; i < 3; i++ {
+		r := <-phase6cResults
+		if r.err != nil {
+			return builtImages, fmt.Errorf("%s deployment failed: %w", r.name, r.err)
+		}
+		_, _ = fmt.Fprintf(writer, "  ✅ %s deployed\n", r.name)
 	}
-	dsImage := builtImages["datastorage"]
-	if err := deployDataStorageServiceInNamespaceWithNodePort(ctx, namespace, kubeconfigPath, dsImage, 30081, writer); err != nil {
-		return builtImages, fmt.Errorf("DataStorage deployment failed: %w", err)
-	}
-	_, _ = fmt.Fprintln(writer, "  ✅ DataStorage deployed (NodePort 30081)")
-
-	// 6d: AuthWebhook (SOC2 CC8.1)
-	awImage := builtImages["authwebhook"]
-	if err := DeployAuthWebhookManifestsOnly(ctx, clusterName, namespace, kubeconfigPath, awImage, writer); err != nil {
-		return builtImages, fmt.Errorf("AuthWebhook deployment failed: %w", err)
-	}
-	_, _ = fmt.Fprintln(writer, "  ✅ AuthWebhook deployed")
-
-	// 6e: Mock-Slack (accepts Slack webhook POSTs so notifications reach terminal phase)
-	if err := deployMockSlack(ctx, namespace, kubeconfigPath, writer); err != nil {
-		return builtImages, fmt.Errorf("mock-slack deployment failed: %w", err)
-	}
-	_, _ = fmt.Fprintln(writer, "  ✅ Mock-Slack deployed (http://mock-slack:8080)")
 
 	_, _ = fmt.Fprintf(writer, "✅ PHASE 6 complete (%s)\n", time.Since(phase6Start).Round(time.Second))
 
@@ -1031,7 +1044,7 @@ func waitForFullPipelineServicesReady(ctx context.Context, namespace, kubeconfig
 		deplName := deplName // capture
 		go func() {
 			_, _ = fmt.Fprintf(writer, "  ⏳ Waiting for %s...\n", deplName)
-			pollErr := pollUntilReady(ctx, 3*time.Minute, 5*time.Second, func() bool {
+			pollErr := pollUntilReady(ctx, 3*time.Minute, 2*time.Second, func() bool {
 				depl, getErr := clientset.AppsV1().Deployments(namespace).Get(ctx, deplName, metav1.GetOptions{})
 				if getErr != nil {
 					return false
@@ -1052,7 +1065,7 @@ func waitForFullPipelineServicesReady(ctx context.Context, namespace, kubeconfig
 		ctrl := ctrl // capture
 		go func() {
 			_, _ = fmt.Fprintf(writer, "  ⏳ Waiting for %s controller...\n", ctrl.name)
-			pollErr := pollUntilReady(ctx, 3*time.Minute, 5*time.Second, func() bool {
+			pollErr := pollUntilReady(ctx, 3*time.Minute, 2*time.Second, func() bool {
 				pods, listErr := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
 					LabelSelector: ctrl.selector,
 				})
@@ -1118,5 +1131,149 @@ func pollUntilReady(ctx context.Context, timeout, interval time.Duration, condFn
 				return nil
 			}
 		}
+	}
+}
+
+// SetupCertManagerScenario creates the cert-manager resources needed for the
+// cert_not_ready E2E scenario (DD-EM-004, BR-EM-010, #253).
+//
+// Creates: self-signed CA Secret → ClusterIssuer → Certificate (Ready).
+// Then deletes the CA Secret to make the Certificate go NotReady, replicating
+// the demo cert-failure scenario for the fix-certificate-v1 workflow.
+func SetupCertManagerScenario(kubeconfigPath, namespace string, writer io.Writer) error {
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "📦 Setting up cert-manager scenario (fix-certificate-v1)")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	tmpDir, err := os.MkdirTemp("", "cert-e2e-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temp dir: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	keyPath := filepath.Join(tmpDir, "ca.key")
+	crtPath := filepath.Join(tmpDir, "ca.crt")
+
+	_, _ = fmt.Fprintln(writer, "  🔑 Generating self-signed CA key pair...")
+	genCmd := exec.Command("openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
+		"-keyout", keyPath, "-out", crtPath,
+		"-days", "365", "-subj", "/CN=Demo CA/O=Kubernaut")
+	genCmd.Stderr = writer
+	if err := genCmd.Run(); err != nil {
+		return fmt.Errorf("failed to generate CA key pair: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "  📋 Creating CA Secret demo-ca-key-pair in cert-manager namespace...")
+	secretCmd := exec.Command("kubectl", "create", "secret", "tls", "demo-ca-key-pair",
+		"--cert", crtPath, "--key", keyPath,
+		"-n", "cert-manager",
+		"--kubeconfig", kubeconfigPath,
+		"--dry-run=client", "-o", "yaml")
+	secretYAML, err := secretCmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to generate CA Secret YAML: %w", err)
+	}
+	applyCmd := exec.Command("kubectl", "apply", "-f", "-", "--kubeconfig", kubeconfigPath)
+	applyCmd.Stdin = strings.NewReader(string(secretYAML))
+	applyCmd.Stdout = writer
+	applyCmd.Stderr = writer
+	if err := applyCmd.Run(); err != nil {
+		return fmt.Errorf("failed to apply CA Secret: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "  📋 Creating ClusterIssuer demo-selfsigned-ca...")
+	issuerYAML := `apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: demo-selfsigned-ca
+spec:
+  ca:
+    secretName: demo-ca-key-pair`
+	issuerCmd := exec.Command("kubectl", "apply", "-f", "-", "--kubeconfig", kubeconfigPath)
+	issuerCmd.Stdin = strings.NewReader(issuerYAML)
+	issuerCmd.Stdout = writer
+	issuerCmd.Stderr = writer
+	if err := issuerCmd.Run(); err != nil {
+		return fmt.Errorf("failed to create ClusterIssuer: %w", err)
+	}
+
+	_, _ = fmt.Fprintf(writer, "  📋 Creating Certificate demo-app-cert in %s...\n", namespace)
+	certYAML := fmt.Sprintf(`apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: demo-app-cert
+  namespace: %s
+spec:
+  secretName: demo-app-tls
+  issuerRef:
+    name: demo-selfsigned-ca
+    kind: ClusterIssuer
+  dnsNames:
+    - demo-app.%s.svc.cluster.local
+    - demo-app
+  duration: 2160h
+  renewBefore: 360h`, namespace, namespace)
+	certCmd := exec.Command("kubectl", "apply", "-f", "-", "--kubeconfig", kubeconfigPath)
+	certCmd.Stdin = strings.NewReader(certYAML)
+	certCmd.Stdout = writer
+	certCmd.Stderr = writer
+	if err := certCmd.Run(); err != nil {
+		return fmt.Errorf("failed to create Certificate: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for Certificate to become Ready...")
+	waitCmd := exec.Command("kubectl", "wait",
+		"--kubeconfig", kubeconfigPath,
+		"-n", namespace,
+		"--for=condition=Ready",
+		"--timeout=120s",
+		"certificate/demo-app-cert")
+	waitCmd.Stdout = writer
+	waitCmd.Stderr = writer
+	if err := waitCmd.Run(); err != nil {
+		return fmt.Errorf("certificate demo-app-cert did not become Ready: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "  🔥 Deleting CA Secret to trigger NotReady state...")
+	delCmd := exec.Command("kubectl", "delete", "secret", "demo-ca-key-pair",
+		"-n", "cert-manager",
+		"--kubeconfig", kubeconfigPath,
+		"--ignore-not-found")
+	delCmd.Stdout = writer
+	delCmd.Stderr = writer
+	if err := delCmd.Run(); err != nil {
+		return fmt.Errorf("failed to delete CA Secret: %w", err)
+	}
+
+	// Delete the issued TLS secret to force re-issuance attempt (which will fail)
+	_, _ = fmt.Fprintln(writer, "  🔄 Deleting issued TLS secret to trigger re-issuance attempt...")
+	delTLSCmd := exec.Command("kubectl", "delete", "secret", "demo-app-tls",
+		"-n", namespace,
+		"--kubeconfig", kubeconfigPath,
+		"--ignore-not-found")
+	delTLSCmd.Stdout = writer
+	delTLSCmd.Stderr = writer
+	if err := delTLSCmd.Run(); err != nil {
+		return fmt.Errorf("failed to delete TLS secret: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "  ✅ cert-manager scenario ready: Certificate demo-app-cert is NotReady")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	return nil
+}
+
+// CleanupCertManagerScenario removes cert-manager resources created by SetupCertManagerScenario.
+func CleanupCertManagerScenario(kubeconfigPath, namespace string, writer io.Writer) {
+	_, _ = fmt.Fprintln(writer, "  🧹 Cleaning up cert-manager scenario resources...")
+	for _, args := range [][]string{
+		{"delete", "certificate", "demo-app-cert", "-n", namespace, "--ignore-not-found"},
+		{"delete", "secret", "demo-app-tls", "-n", namespace, "--ignore-not-found"},
+		{"delete", "clusterissuer", "demo-selfsigned-ca", "--ignore-not-found"},
+		{"delete", "secret", "demo-ca-key-pair", "-n", "cert-manager", "--ignore-not-found"},
+	} {
+		cmd := exec.Command("kubectl", append(args, "--kubeconfig", kubeconfigPath)...)
+		cmd.Stdout = writer
+		cmd.Stderr = writer
+		_ = cmd.Run()
 	}
 }

@@ -61,40 +61,6 @@ var _ = Describe("Workflow Catalog Deterministic Ordering (#213)", func() {
 		_ = mockDB.Close()
 	})
 
-	Describe("SearchByLabels", func() {
-		It("UT-DS-213-001: ORDER BY must use workflow_id ASC tiebreaker per DD-WORKFLOW-016", func() {
-			// The scored_workflows subquery must order by final_score DESC, workflow_id ASC
-			sqlMock.ExpectQuery(`ORDER BY final_score DESC, workflow_id ASC`).
-				WillReturnRows(sqlmock.NewRows([]string{
-					"workflow_id", "workflow_name", "version", "name", "description",
-					"content", "content_hash", "action_type", "status",
-					"labels", "detected_labels", "custom_labels",
-					"execution_engine", "execution_bundle",
-					"owner", "maintainer",
-					"is_latest_version",
-					"expected_success_rate", "actual_success_rate",
-					"total_executions", "successful_executions",
-					"created_at", "updated_at",
-					"detected_label_boost", "custom_label_boost", "label_penalty", "final_score",
-				}))
-
-			request := &models.WorkflowSearchRequest{
-				Filters: &models.WorkflowSearchFilters{
-					SignalName:  "HighCPU",
-					Severity:    "critical",
-					Component:   "api-server",
-					Environment: "production",
-					Priority:    "P1",
-				},
-				MinScore: 0.5,
-				TopK:     10,
-			}
-
-			_, err := repo.SearchByLabels(ctx, request)
-			Expect(err).ToNot(HaveOccurred())
-		})
-	})
-
 	Describe("ListWorkflowsByActionType", func() {
 		It("UT-DS-220-001: ORDER BY must use final_score DESC, workflow_id ASC per DD-WORKFLOW-016", func() {
 			// Count query
@@ -104,7 +70,7 @@ var _ = Describe("Workflow Catalog Deterministic Ordering (#213)", func() {
 			// #220: Main query must compute final_score and order by it
 			sqlMock.ExpectQuery(`ORDER BY final_score DESC, workflow_id ASC`).
 				WillReturnRows(sqlmock.NewRows([]string{
-					"workflow_id", "workflow_name", "version", "name", "description",
+					"workflow_id", "workflow_name", "version", "schema_version", "name", "description",
 					"content", "content_hash", "action_type", "status",
 					"labels", "detected_labels", "custom_labels",
 					"execution_engine", "execution_bundle",
@@ -128,7 +94,7 @@ var _ = Describe("Workflow Catalog Deterministic Ordering (#213)", func() {
 			// #220: Query must include final_score computation
 			sqlMock.ExpectQuery(`final_score`).
 				WillReturnRows(sqlmock.NewRows([]string{
-					"workflow_id", "workflow_name", "version", "name", "description",
+					"workflow_id", "workflow_name", "version", "schema_version", "name", "description",
 					"content", "content_hash", "action_type", "status",
 					"labels", "detected_labels", "custom_labels",
 					"execution_engine", "execution_bundle",
@@ -157,7 +123,7 @@ var _ = Describe("Workflow Catalog Deterministic Ordering (#213)", func() {
 		It("UT-DS-213-003: ORDER BY must include workflow_id ASC tiebreaker", func() {
 			sqlMock.ExpectQuery(`ORDER BY created_at DESC, workflow_id ASC`).
 				WillReturnRows(sqlmock.NewRows([]string{
-					"workflow_id", "workflow_name", "version", "name", "description",
+					"workflow_id", "workflow_name", "version", "schema_version", "name", "description",
 					"content", "content_hash", "action_type", "status",
 					"labels", "detected_labels", "custom_labels",
 					"execution_engine", "execution_bundle",
@@ -182,7 +148,7 @@ var _ = Describe("Workflow Catalog Deterministic Ordering (#213)", func() {
 			// Main query must include workflow_id ASC
 			sqlMock.ExpectQuery(`ORDER BY created_at DESC, workflow_id ASC`).
 				WillReturnRows(sqlmock.NewRows([]string{
-					"workflow_id", "workflow_name", "version", "name", "description",
+					"workflow_id", "workflow_name", "version", "schema_version", "name", "description",
 					"content", "content_hash", "action_type", "status",
 					"labels", "detected_labels", "custom_labels",
 					"execution_engine", "execution_bundle",

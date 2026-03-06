@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/jordigilh/kubernaut/pkg/gateway/middleware"
@@ -209,8 +208,8 @@ func (a *KubernetesEventAdapter) Parse(ctx context.Context, rawData []byte) (*ty
 		Severity:     severity,
 		Namespace:    event.InvolvedObject.Namespace,
 		Resource:     resource,
-		Labels:       a.extractLabels(event),
-		Annotations:  a.extractAnnotations(event),
+		Labels:       nil,
+		Annotations:  nil,
 		FiringTime:   event.FirstTimestamp,
 		ReceivedTime: time.Now(),
 		SourceType:   a.GetSourceType(),
@@ -261,73 +260,3 @@ func (a *KubernetesEventAdapter) GetMetadata() AdapterMetadata {
 	}
 }
 
-// generateFingerprint creates a unique identifier for deduplication
-//
-// Fingerprint format: SHA256(reason:namespace:kind:name)
-//
-// Examples:
-// - "OOMKilled:production:Pod:payment-api" → SHA256 hash
-// - "DiskPressure::Node:worker-1" → SHA256 hash (empty namespace for cluster-scoped)
-//
-// Design Decision: Why include reason in fingerprint?
-// - Same resource can have multiple failure types simultaneously
-// - Example: Pod can be OOMKilled AND BackOff at same time
-// - Different reasons = different remediation strategies
-
-// extractLabels extracts labels from Kubernetes Event for CRD propagation
-//
-// Labels enable:
-// - Controller filtering (label selectors)
-// - Team/ownership tracking
-// - Environment classification
-func (a *KubernetesEventAdapter) extractLabels(event kubernetesEvent) map[string]string {
-	labels := make(map[string]string)
-
-	// Add source component as label
-	if event.Source.Component != "" {
-		labels["kubernaut.ai/event-source"] = event.Source.Component
-	}
-
-	// Add event type as label
-	labels["kubernaut.ai/event-type"] = strings.ToLower(event.Type)
-
-	// Add resource kind as label (for filtering)
-	labels["kubernaut.ai/resource-kind"] = strings.ToLower(event.InvolvedObject.Kind)
-
-	return labels
-}
-
-// extractAnnotations extracts annotations from Kubernetes Event
-//
-// Annotations provide additional context:
-// - Human-readable message
-// - Event count (how many times fired)
-// - Source host (which node)
-func (a *KubernetesEventAdapter) extractAnnotations(event kubernetesEvent) map[string]string {
-	annotations := make(map[string]string)
-
-	// Add event message
-	if event.Message != "" {
-		annotations["kubernaut.ai/event-message"] = event.Message
-	}
-
-	// Add event count
-	if event.Count > 0 {
-		annotations["kubernaut.ai/event-count"] = fmt.Sprintf("%d", event.Count)
-	}
-
-	// Add source host
-	if event.Source.Host != "" {
-		annotations["kubernaut.ai/source-host"] = event.Source.Host
-	}
-
-	// Add timestamps
-	if !event.FirstTimestamp.IsZero() {
-		annotations["kubernaut.ai/first-timestamp"] = event.FirstTimestamp.Format(time.RFC3339)
-	}
-	if !event.LastTimestamp.IsZero() {
-		annotations["kubernaut.ai/last-timestamp"] = event.LastTimestamp.Format(time.RFC3339)
-	}
-
-	return annotations
-}

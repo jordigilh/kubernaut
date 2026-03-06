@@ -24,19 +24,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jordigilh/kubernaut/internal/version"
 	"github.com/jordigilh/kubernaut/pkg/gateway"
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
 	"github.com/jordigilh/kubernaut/pkg/gateway/config"
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
-)
-
-var (
-	// version is the semantic version, set at build time
-	version = "v0.1.0"
-	// gitCommit is the git commit hash, set at build time via -ldflags
-	gitCommit = "unknown"
-	// buildDate is the build timestamp, set at build time via -ldflags
-	buildDate = "unknown"
 )
 
 func main() {
@@ -53,11 +45,10 @@ func main() {
 	})
 	defer kubelog.Sync(logger)
 
-	// DD-GATEWAY-012: Redis REMOVED - Gateway is now Redis-free, K8s-native service
-	logger.Info("Starting Gateway Service (Redis-free)",
-		"version", version,
-		"git_commit", gitCommit,
-		"build_date", buildDate,
+	logger.Info("Starting Gateway Service",
+		"version", version.Version,
+		"gitCommit", version.GitCommit,
+		"buildDate", version.BuildDate,
 		"config_path", configPath)
 
 	// ADR-030: Load configuration from YAML file

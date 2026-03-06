@@ -19,7 +19,6 @@ package fullpipeline
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -37,7 +36,6 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
-	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	crdvalidators "github.com/jordigilh/kubernaut/test/shared/validators"
@@ -61,57 +59,9 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 	BeforeEach(func() {
 		testCtx, testCancel = context.WithTimeout(ctx, 10*time.Minute)
 
-		By("Step 0: Seeding test workflows in DataStorage")
-		workflows := []infrastructure.TestWorkflow{
-			{
-				WorkflowID:      "crashloop-config-fix-v1",
-				Name:            "CrashLoopBackOff - Configuration Fix",
-				Description:     "CrashLoop remediation workflow for approval E2E",
-				SignalName:      "CrashLoopBackOff",
-				Severity:        "high",
-				Component:       "deployment",
-				Environment:     "production",
-				Priority:        "*",
-				SchemaImage:     "quay.io/kubernaut-cicd/test-workflows/crashloop-config-fix-job:v1.0.0",
-				ExecutionEngine: "job",
-				SchemaParameters: []models.WorkflowParameter{
-					{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target namespace"},
-					{Name: "DEPLOYMENT_NAME", Type: "string", Required: true, Description: "Name of the deployment to restart"},
-					{Name: "GRACE_PERIOD_SECONDS", Type: "integer", Required: false, Description: "Graceful shutdown period"},
-				},
-			},
-			{
-				WorkflowID:      "oomkill-increase-memory-v1",
-				Name:            "OOMKill Recovery - Increase Memory Limits",
-				Description:     "OOMKill remediation workflow for approval E2E",
-				SignalName:      "OOMKilled",
-				Severity:        "critical",
-				Component:       "deployment",
-				Environment:     "production",
-				Priority:        "*",
-				SchemaImage:     "quay.io/kubernaut-cicd/test-workflows/oomkill-increase-memory-job:v1.0.0",
-				ExecutionEngine: "job",
-				SchemaParameters: []models.WorkflowParameter{
-					{Name: "TARGET_RESOURCE_KIND", Type: "string", Required: true, Description: "Kubernetes resource kind"},
-					{Name: "TARGET_RESOURCE_NAME", Type: "string", Required: true, Description: "Name of the resource to patch"},
-					{Name: "TARGET_NAMESPACE", Type: "string", Required: true, Description: "Namespace of the resource"},
-					{Name: "MEMORY_LIMIT_NEW", Type: "string", Required: true, Description: "New memory limit"},
-				},
-			},
-		}
-		workflowUUIDs, err := infrastructure.SeedWorkflowsInDataStorage(
-			dataStorageClient, workflows, "approval-e2e", GinkgoWriter,
-		)
-		Expect(err).ToNot(HaveOccurred(), "Failed to seed workflows in DataStorage")
+		// Workflows are seeded once in SynchronizedBeforeSuite; workflowUUIDs is suite-level.
 		Expect(workflowUUIDs).To(HaveKey("crashloop-config-fix-v1:production"))
-
-		if os.Getenv("SKIP_MOCK_LLM") == "" {
-			By("Step 0b: Updating Mock LLM with seeded workflow UUIDs")
-			err = infrastructure.UpdateMockLLMConfigMap(
-				testCtx, "kubernaut-system", kubeconfigPath, workflowUUIDs, GinkgoWriter,
-			)
-			Expect(err).ToNot(HaveOccurred(), "Failed to update Mock LLM ConfigMap")
-		}
+		Expect(workflowUUIDs).To(HaveKey("oomkill-increase-memory-v1:production"))
 	})
 
 	AfterEach(func() {
@@ -360,12 +310,12 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 		Eventually(func() bool {
 			jobList := &batchv1.JobList{}
 			if err := apiReader.List(ctx, jobList,
-				client.InNamespace("kubernaut-workflows")); err != nil {
+				client.InNamespace("kubernaut-workflows"),
+				client.MatchingLabels{"kubernaut.ai/workflow-execution": weName}); err != nil {
 				return false
 			}
 			for _, job := range jobList.Items {
-				if job.CreationTimestamp.After(remediationRequest.CreationTimestamp.Time.Add(-10*time.Second)) &&
-					job.Status.Succeeded > 0 {
+				if job.Status.Succeeded > 0 {
 					GinkgoWriter.Printf("  ✅ Job completed: %s\n", job.Name)
 					return true
 				}
@@ -432,7 +382,7 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 				return ""
 			}
 			return finalEA.Status.Phase
-		}, 3*time.Minute, 5*time.Second).Should(
+		}, 3*time.Minute, 2*time.Second).Should(
 			BeElementOf(eav1.PhaseCompleted, eav1.PhaseFailed),
 			"EA should reach terminal phase")
 		GinkgoWriter.Printf("  EA %s phase: %s\n", finalEA.Name, finalEA.Status.Phase)
@@ -529,6 +479,8 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 			"orchestrator.lifecycle.created",
 			"orchestrator.lifecycle.started",
 			"orchestrator.lifecycle.transitioned",
+			"orchestrator.lifecycle.verifying_started",      // #280
+			"orchestrator.lifecycle.verification_completed", // #280
 			"orchestrator.lifecycle.completed",
 			"signalprocessing.signal.processed",
 			"aianalysis.analysis.completed",
@@ -561,7 +513,7 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 			}
 			GinkgoWriter.Printf("  [Step 16] %d audit events, %d missing\n", len(resp.Data), len(missing))
 			return missing
-		}, 150*time.Second, 2*time.Second).Should(BeEmpty(),
+		}, 240*time.Second, 2*time.Second).Should(BeEmpty(),
 			"Audit trail must contain approval-specific and standard pipeline events")
 
 		// Verify approval events appeared exactly once

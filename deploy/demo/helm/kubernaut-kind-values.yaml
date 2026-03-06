@@ -6,6 +6,8 @@
 # worker nodes remain available for demo fault-injection scenarios
 # (e.g. podman pause) without disrupting the platform.
 global:
+  image:
+    tag: demo-v1.3-arm64
   nodeSelector:
     node-role.kubernetes.io/control-plane: ""
   tolerations:
@@ -19,9 +21,22 @@ gateway:
     nodePort: 30080
 
 datastorage:
+  dbExistingSecret: kubernaut-ds-db-credentials
   service:
     type: NodePort
     nodePort: 30081
+
+postgresql:
+  auth:
+    existingSecret: kubernaut-pg-credentials
+
+redis:
+  existingSecret: kubernaut-redis-credentials
+
+notification:
+  slack:
+    enabled: true
+    channel: "#kubernaut-alerts"
 
 holmesgptApi:
   service:

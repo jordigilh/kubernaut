@@ -39,6 +39,7 @@ class TestWorkflowCatalogCreatedPayload(unittest.TestCase):
                 workflow_id = '550e8400-e29b-41d4-a716-446655440000',
                 workflow_name = 'restart-oomkilled-pod',
                 version = '1.0.0',
+                schema_version = '1.0',
                 status = 'active',
                 is_latest_version = True,
                 execution_engine = 'argo',

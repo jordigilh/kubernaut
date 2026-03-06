@@ -9,6 +9,7 @@ Name | Type | Description | Notes
 **workflow_name** | **str** | Workflow name (identifier for versions) | 
 **action_type** | **str** | Action type from taxonomy (DD-WORKFLOW-016). FK to action_type_taxonomy. | 
 **version** | **str** | Semantic version (e.g., v1.0.0) | 
+**schema_version** | **str** | Schema format version (e.g., 1.0, 1.1). Determines which structural fields are valid. BR-WORKFLOW-004 v1.1, #255. | 
 **name** | **str** | Human-readable workflow title | 
 **description** | [**StructuredDescription**](StructuredDescription.md) |  | 
 **owner** | **str** | Workflow owner | [optional] 

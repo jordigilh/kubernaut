@@ -56,6 +56,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/health"
 	emmetrics "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/metrics"
 	"github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/phase"
+	emtiming "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/timing"
 	emtypes "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/types"
 	"github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/validity"
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
@@ -206,24 +207,65 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	}
 
 	// Step 3: Check validity window
-	// ValidityDeadline is computed on first reconciliation (Pending -> Assessing).
-	// If not yet set (first reconcile of a Pending EA), we skip expiration checks
-	// and proceed to the phase transition which will compute and persist the deadline.
+	// Issue #253, #277: For async targets, the stabilization anchor is
+	// creation + HashComputeDelay (not creation alone).
+	stabilizationAnchor := ea.CreationTimestamp
+	isAsync := ea.Spec.Config.HashComputeDelay != nil && ea.Spec.Config.HashComputeDelay.Duration > 0
+	if isAsync {
+		stabilizationAnchor = metav1.NewTime(ea.CreationTimestamp.Time.Add(ea.Spec.Config.HashComputeDelay.Duration))
+	}
+
 	var windowState validity.WindowState
 	if ea.Status.ValidityDeadline != nil {
 		windowState = r.validityChecker.Check(
-			ea.CreationTimestamp,
+			stabilizationAnchor,
 			ea.Spec.Config.StabilizationWindow.Duration,
 			*ea.Status.ValidityDeadline,
 		)
 	} else {
-		// No deadline computed yet - check stabilization only
-		stabilizationEnd := ea.CreationTimestamp.Add(ea.Spec.Config.StabilizationWindow.Duration)
+		stabilizationEnd := stabilizationAnchor.Add(ea.Spec.Config.StabilizationWindow.Duration)
 		if time.Now().Before(stabilizationEnd) {
 			windowState = validity.WindowStabilizing
 		} else {
 			windowState = validity.WindowActive
 		}
+	}
+
+	// Step 3b: WaitingForPropagation phase (Issue #253, #277, BR-EM-010.3)
+	// For async targets where the hash deferral deadline is still in the future,
+	// enter/stay in WaitingForPropagation. Requeue until deadline elapses.
+	hashDeadline := stabilizationAnchor // for async, this is creation + HashComputeDelay
+	if isAsync && time.Now().Before(hashDeadline.Time) {
+		if currentPhase == eav1.PhasePending || currentPhase == "" {
+			dt := emtiming.ComputeDerivedTiming(ea.CreationTimestamp, ea.Spec.Config.StabilizationWindow.Duration, r.Config.ValidityWindow, ea.Spec.Config.HashComputeDelay, ea.Spec.Config.AlertCheckDelay)
+			deadline := dt.ValidityDeadline
+			checkAfter := dt.CheckAfter
+			alertCheckAfter := dt.AlertCheckAfter
+
+			ea.Status.Phase = eav1.PhaseWaitingForPropagation
+			ea.Status.ValidityDeadline = &deadline
+			ea.Status.PrometheusCheckAfter = &checkAfter
+			ea.Status.AlertManagerCheckAfter = &alertCheckAfter
+
+			logger.Info("Async target: entered WaitingForPropagation (BR-EM-010.3)",
+				"hashComputeDelay", ea.Spec.Config.HashComputeDelay.Duration,
+				"validityDeadline", deadline,
+				"checkAfter", checkAfter,
+				"alertCheckAfter", alertCheckAfter,
+			)
+			r.Metrics.RecordPhaseTransition(currentPhase, eav1.PhaseWaitingForPropagation)
+
+			if err := r.Status().Update(ctx, ea); err != nil {
+				logger.Error(err, "Failed to persist WaitingForPropagation phase")
+				r.Metrics.RecordReconcile("error", time.Since(startTime).Seconds())
+				return ctrl.Result{RequeueAfter: r.Config.RequeueGenericError}, err
+			}
+		}
+
+		remaining := time.Until(hashDeadline.Time)
+		logger.Info("Waiting for async propagation to complete", "remaining", remaining)
+		r.Metrics.RecordReconcile("requeue", time.Since(startTime).Seconds())
+		return ctrl.Result{RequeueAfter: remaining}, nil
 	}
 
 	// Step 4: If expired -> complete with partial data (ADR-EM-001: validity window enforcement)
@@ -243,38 +285,52 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	// deadline and integration tests can assert it within a reasonable timeout.
 	if windowState == validity.WindowStabilizing {
 		remaining := r.validityChecker.TimeUntilStabilized(
-			ea.CreationTimestamp,
+			stabilizationAnchor,
 			ea.Spec.Config.StabilizationWindow.Duration,
 		)
+
+		// Issue #253: WaitingForPropagation → Stabilizing transition.
+		// When HCA has elapsed and we're in WaitingForPropagation, transition to Stabilizing.
+		// ValidityDeadline was already persisted in step 3b, so only update the phase.
+		if currentPhase == eav1.PhaseWaitingForPropagation {
+			ea.Status.Phase = eav1.PhaseStabilizing
+			logger.Info("Async target: WaitingForPropagation → Stabilizing (HCA elapsed)",
+				"remaining", remaining)
+			r.Metrics.RecordPhaseTransition(eav1.PhaseWaitingForPropagation, eav1.PhaseStabilizing)
+			if err := r.Status().Update(ctx, ea); err != nil {
+				logger.Error(err, "Failed to persist WaitingForPropagation → Stabilizing transition")
+				r.Metrics.RecordReconcile("error", time.Since(startTime).Seconds())
+				return ctrl.Result{RequeueAfter: r.Config.RequeueGenericError}, err
+			}
+		}
 
 		// BR-EM-009: Pre-compute and persist ValidityDeadline during stabilization so
 		// operators can observe the deadline immediately. Transition to Stabilizing phase.
 		if ea.Status.ValidityDeadline == nil && (currentPhase == eav1.PhasePending || currentPhase == "") {
-			stabilizationWindow := ea.Spec.Config.StabilizationWindow.Duration
-			effectiveValidity := r.Config.ValidityWindow
-			if stabilizationWindow >= effectiveValidity {
-				effectiveValidity = stabilizationWindow + r.Config.ValidityWindow
+			dt := emtiming.ComputeDerivedTiming(ea.CreationTimestamp, ea.Spec.Config.StabilizationWindow.Duration, r.Config.ValidityWindow, ea.Spec.Config.HashComputeDelay, ea.Spec.Config.AlertCheckDelay)
+			if dt.Extended {
 				logger.Info("Runtime guard: extended ValidityDeadline (StabilizationWindow >= ValidityWindow)",
 					"originalValidity", r.Config.ValidityWindow,
-					"effectiveValidity", effectiveValidity,
-					"stabilizationWindow", stabilizationWindow,
+					"effectiveValidity", dt.EffectiveValidity,
+					"stabilizationWindow", ea.Spec.Config.StabilizationWindow.Duration,
 				)
 				r.Recorder.Eventf(ea, corev1.EventTypeWarning, "ValidityWindowExtended",
 					"StabilizationWindow (%v) >= ValidityWindow (%v); extended deadline to %v",
-					stabilizationWindow, r.Config.ValidityWindow, effectiveValidity)
+					ea.Spec.Config.StabilizationWindow.Duration, r.Config.ValidityWindow, dt.EffectiveValidity)
 			}
-			deadline := metav1.NewTime(ea.CreationTimestamp.Add(effectiveValidity))
-			checkAfter := metav1.NewTime(ea.CreationTimestamp.Add(stabilizationWindow))
+			deadline := dt.ValidityDeadline
+			checkAfter := dt.CheckAfter
+			alertCheckAfter := dt.AlertCheckAfter
 
 			ea.Status.Phase = eav1.PhaseStabilizing
 			ea.Status.ValidityDeadline = &deadline
 			ea.Status.PrometheusCheckAfter = &checkAfter
-			ea.Status.AlertManagerCheckAfter = &checkAfter
+			ea.Status.AlertManagerCheckAfter = &alertCheckAfter
 
 			logger.Info("Transitioned to Stabilizing, persisted derived timing (BR-EM-009)",
 				"creationTimestamp", ea.CreationTimestamp,
-				"effectiveValidity", effectiveValidity,
-				"stabilizationWindow", stabilizationWindow,
+				"effectiveValidity", dt.EffectiveValidity,
+				"stabilizationWindow", ea.Spec.Config.StabilizationWindow.Duration,
 				"validityDeadline", deadline,
 			)
 			r.Metrics.RecordPhaseTransition(currentPhase, eav1.PhaseStabilizing)
@@ -299,7 +355,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	// that would change the resourceVersion and cause optimistic concurrency conflicts
 	// when component checks later attempt their own status update.
 	pendingTransition := false
-	if currentPhase == eav1.PhasePending || currentPhase == eav1.PhaseStabilizing || currentPhase == "" {
+	if currentPhase == eav1.PhasePending || currentPhase == eav1.PhaseWaitingForPropagation || currentPhase == eav1.PhaseStabilizing || currentPhase == "" {
 		if !phase.CanTransition(currentPhase, eav1.PhaseAssessing) {
 			logger.Error(nil, "Invalid phase transition", "from", currentPhase, "to", eav1.PhaseAssessing)
 			r.Metrics.RecordReconcile("error", time.Since(startTime).Seconds())
@@ -308,44 +364,35 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 
 		// Compute all derived timing fields on first reconciliation.
 		// These are persisted in status to avoid recomputation and for operator observability.
-		//
-		// ValidityDeadline = EA.creationTimestamp + effectiveValidity (BR-EM-009.1)
-		// PrometheusCheckAfter = EA.creationTimestamp + StabilizationWindow (BR-EM-009.2)
-		// AlertManagerCheckAfter = EA.creationTimestamp + StabilizationWindow (BR-EM-009.3)
-		//
-		// Runtime guard (Issue #188): EA.StabilizationWindow comes from RO config and
-		// may exceed EM's ValidityWindow. When StabilizationWindow >= ValidityWindow,
-		// extend the effective validity to StabilizationWindow + ValidityWindow so the
-		// EM always has the full validity window after stabilization completes.
-		stabilizationWindow := ea.Spec.Config.StabilizationWindow.Duration
-		effectiveValidity := r.Config.ValidityWindow
-		if stabilizationWindow >= effectiveValidity {
-			effectiveValidity = stabilizationWindow + r.Config.ValidityWindow
+		// See timing.ComputeDerivedTiming for the formula and runtime guard (Issue #188).
+		dt := emtiming.ComputeDerivedTiming(ea.CreationTimestamp, ea.Spec.Config.StabilizationWindow.Duration, r.Config.ValidityWindow, ea.Spec.Config.HashComputeDelay, ea.Spec.Config.AlertCheckDelay)
+		if dt.Extended {
 			logger.Info("Runtime guard: extended ValidityDeadline (StabilizationWindow >= ValidityWindow)",
 				"originalValidity", r.Config.ValidityWindow,
-				"effectiveValidity", effectiveValidity,
-				"stabilizationWindow", stabilizationWindow,
+				"effectiveValidity", dt.EffectiveValidity,
+				"stabilizationWindow", ea.Spec.Config.StabilizationWindow.Duration,
 			)
 			r.Recorder.Eventf(ea, corev1.EventTypeWarning, "ValidityWindowExtended",
 				"StabilizationWindow (%v) >= ValidityWindow (%v); extended deadline to %v",
-				stabilizationWindow, r.Config.ValidityWindow, effectiveValidity)
+				ea.Spec.Config.StabilizationWindow.Duration, r.Config.ValidityWindow, dt.EffectiveValidity)
 		}
-		deadline := metav1.NewTime(ea.CreationTimestamp.Add(effectiveValidity))
-		checkAfter := metav1.NewTime(ea.CreationTimestamp.Add(stabilizationWindow))
+		deadline := dt.ValidityDeadline
+		checkAfter := dt.CheckAfter
+		alertCheckAfter := dt.AlertCheckAfter
 
 		ea.Status.Phase = eav1.PhaseAssessing
 		ea.Status.ValidityDeadline = &deadline
 		ea.Status.PrometheusCheckAfter = &checkAfter
-		ea.Status.AlertManagerCheckAfter = &checkAfter
+		ea.Status.AlertManagerCheckAfter = &alertCheckAfter
 
 		logger.Info("Computed derived timing (BR-EM-009)",
 			"creationTimestamp", ea.CreationTimestamp,
 			"configuredValidityWindow", r.Config.ValidityWindow,
-			"effectiveValidity", effectiveValidity,
-			"stabilizationWindow", stabilizationWindow,
+			"effectiveValidity", dt.EffectiveValidity,
+			"stabilizationWindow", ea.Spec.Config.StabilizationWindow.Duration,
 			"validityDeadline", deadline,
 			"prometheusCheckAfter", checkAfter,
-			"alertManagerCheckAfter", checkAfter,
+			"alertManagerCheckAfter", alertCheckAfter,
 		)
 
 		pendingTransition = true
@@ -416,6 +463,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 
 	// Step 7: Run component checks (skip already-completed)
 	componentsChanged := false
+	var alertDeferred alert.AlertDeferralResult
 
 	// Hash check — Two-Phase Model (BR-EM-004, DD-EM-002 v2.1)
 	//
@@ -432,6 +480,16 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	// hash and compare against PostRemediationSpecHash. If different, spec
 	// drift detected — abort observability collection.
 	if !ea.Status.Components.HashComputed {
+		// DD-EM-004, #277: Defer hash for async-managed targets (GitOps, operator CRDs).
+		// The RO sets HashComputeDelay when the RemediationTarget is managed by an
+		// external controller whose reconciliation happens after the WE completes.
+		deferral := hash.CheckHashDeferral(ea)
+		if deferral.ShouldDefer {
+			logger.V(1).Info("Hash computation deferred for async-managed target",
+				"hashComputeDelay", ea.Spec.Config.HashComputeDelay.Duration,
+				"remaining", deferral.RequeueAfter)
+			return ctrl.Result{RequeueAfter: deferral.RequeueAfter}, nil
+		}
 		result := r.assessHash(ctx, ea)
 		ea.Status.Components.HashComputed = result.Component.Assessed
 		ea.Status.Components.PostRemediationSpecHash = result.Hash
@@ -480,19 +538,30 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		}
 	}
 
-	// Alert check (BR-EM-002) - skip if disabled or client unavailable
+	// Alert check (BR-EM-002) - skip if disabled or client unavailable.
+	// #277: Defer alert check when AlertCheckDelay is set (proactive signals).
+	// Health and metrics proceed independently; only alert resolution is gated.
 	if !ea.Status.Components.AlertAssessed {
 		if r.Config.AlertManagerEnabled && r.AlertManagerClient != nil {
-			alertResult := r.assessAlert(ctx, ea)
-			ea.Status.Components.AlertAssessed = alertResult.Component.Assessed
-			ea.Status.Components.AlertScore = alertResult.Component.Score
-			r.Metrics.RecordComponentAssessment("alert", resultStatus(alertResult.Component), time.Since(startTime).Seconds(), alertResult.Component.Score)
-			r.emitAlertEvent(ctx, ea, alertResult)
+			alertDeferred = alert.CheckAlertDeferral(ea)
+			if alertDeferred.ShouldDefer {
+				logger.V(1).Info("Alert check deferred (proactive signal, #277)",
+					"alertManagerCheckAfter", ea.Status.AlertManagerCheckAfter,
+					"remaining", alertDeferred.RequeueAfter)
+				r.Metrics.RecordComponentAssessment("alert", "deferred", time.Since(startTime).Seconds(), nil)
+			} else {
+				alertResult := r.assessAlert(ctx, ea)
+				ea.Status.Components.AlertAssessed = alertResult.Component.Assessed
+				ea.Status.Components.AlertScore = alertResult.Component.Score
+				r.Metrics.RecordComponentAssessment("alert", resultStatus(alertResult.Component), time.Since(startTime).Seconds(), alertResult.Component.Score)
+				r.emitAlertEvent(ctx, ea, alertResult)
+				componentsChanged = true
+			}
 		} else {
 			ea.Status.Components.AlertAssessed = true
 			r.Metrics.RecordComponentAssessment("alert", "skipped", time.Since(startTime).Seconds(), nil)
+			componentsChanged = true
 		}
-		componentsChanged = true
 	}
 
 	// Metrics check (BR-EM-003) - skip if disabled or client unavailable
@@ -514,6 +583,24 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			r.Metrics.RecordComponentAssessment("metrics", "skipped", time.Since(startTime).Seconds(), nil)
 		}
 		componentsChanged = true
+	}
+
+	// Step 7b: Precise requeue when only alert is deferred (#277).
+	// If health, hash, and metrics are done but alert is deferred for a proactive signal,
+	// sleep until AlertManagerCheckAfter instead of polling every 15s.
+	if alertDeferred.ShouldDefer &&
+		ea.Status.Components.HealthAssessed && ea.Status.Components.HashComputed &&
+		(ea.Status.Components.MetricsAssessed || !r.Config.PrometheusEnabled) {
+		if componentsChanged || pendingTransition {
+			if err := r.Status().Update(ctx, ea); err != nil {
+				logger.Error(err, "Failed to persist status before alert deferral requeue")
+				return ctrl.Result{RequeueAfter: r.Config.RequeueGenericError}, err
+			}
+		}
+		logger.Info("All components except alert done; precise requeue for alert deferral (#277)",
+			"requeueAfter", alertDeferred.RequeueAfter)
+		r.Metrics.RecordReconcile("requeue", time.Since(startTime).Seconds())
+		return ctrl.Result{RequeueAfter: alertDeferred.RequeueAfter}, nil
 	}
 
 	// Step 8: Check if all components are done and prepare completion fields in-memory.
@@ -607,8 +694,11 @@ type healthAssessResult struct {
 func (r *Reconciler) assessHealth(ctx context.Context, ea *eav1.EffectivenessAssessment) healthAssessResult {
 	logger := log.FromContext(ctx)
 
-	// Build target status from K8s API (DD-EM-003: health uses SignalTarget)
-	status := r.getTargetHealthStatus(ctx, ea.Spec.SignalTarget)
+	// Build target status from K8s API (DD-EM-003: health uses RemediationTarget).
+	// The remediation target (e.g. Deployment) survives rolling restarts, whereas the
+	// signal target (e.g. the original Pod) may be deleted and replaced (#275).
+	// Pass RemediationCreatedAt so restarts can be counted relative to remediation time (#246).
+	status := r.getTargetHealthStatus(ctx, ea.Spec.RemediationTarget, ea.Spec.RemediationCreatedAt)
 
 	result := r.healthScorer.Score(ctx, status)
 	logger.Info("Health assessment complete",
@@ -674,6 +764,14 @@ func (r *Reconciler) assessAlert(ctx context.Context, ea *eav1.EffectivenessAsse
 	alertCtx := alert.AlertContext{
 		AlertName: alertName,
 		Namespace: ea.Spec.SignalTarget.Namespace,
+	}
+
+	// #269: Resolve active pod names from SignalTarget so the scorer can filter
+	// out stale alerts for pods deleted during rolling restarts.
+	if podNames := r.listActivePodNames(ctx, ea.Spec.SignalTarget); podNames != nil {
+		alertCtx.ActivePodNames = podNames
+		logger.V(1).Info("Alert pod correlation enabled",
+			"signalTarget", ea.Spec.SignalTarget.Name, "activePods", len(podNames))
 	}
 
 	result := r.alertScorer.Score(ctx, r.AlertManagerClient, alertCtx)
@@ -902,8 +1000,8 @@ func (r *Reconciler) executeMetricQuery(ctx context.Context, spec metricQuerySpe
 // ReplicaSet, StatefulSet, DaemonSet) and direct pod lookup for Pod targets.
 // Non-pod-owning resources (ConfigMap, Secret, Node, etc.) are checked for
 // existence only -- they have no pod health to assess.
-// DD-EM-003: Caller decides which target to pass (SignalTarget for health, etc.).
-func (r *Reconciler) getTargetHealthStatus(ctx context.Context, target eav1.TargetResource) health.TargetStatus {
+// DD-EM-003: Health uses RemediationTarget (#275), hash uses RemediationTarget.
+func (r *Reconciler) getTargetHealthStatus(ctx context.Context, target eav1.TargetResource, remediationStartedAt *metav1.Time) health.TargetStatus {
 	logger := log.FromContext(ctx)
 
 	targetKind := target.Kind
@@ -914,7 +1012,6 @@ func (r *Reconciler) getTargetHealthStatus(ctx context.Context, target eav1.Targ
 
 	switch targetKind {
 	case "Deployment", "ReplicaSet", "StatefulSet", "DaemonSet":
-		// Workload resources: list pods by app label (standard convention)
 		podList = &corev1.PodList{}
 		err := r.List(ctx, podList,
 			client.InNamespace(targetNs),
@@ -927,7 +1024,6 @@ func (r *Reconciler) getTargetHealthStatus(ctx context.Context, target eav1.Targ
 		}
 
 	case "Pod":
-		// Direct pod target: fetch the specific pod by name
 		pod := &corev1.Pod{}
 		err := r.Get(ctx, client.ObjectKey{Name: targetName, Namespace: targetNs}, pod)
 		if err != nil {
@@ -937,8 +1033,6 @@ func (r *Reconciler) getTargetHealthStatus(ctx context.Context, target eav1.Targ
 		podList = &corev1.PodList{Items: []corev1.Pod{*pod}}
 
 	default:
-		// Non-pod-owning resources (ConfigMap, Secret, Node, etc.)
-		// Health scoring is not applicable — signal N/A to the scorer.
 		logger.V(1).Info("Target resource kind has no pod health to assess",
 			"kind", targetKind, "name", targetName)
 		return health.TargetStatus{
@@ -947,37 +1041,94 @@ func (r *Reconciler) getTargetHealthStatus(ctx context.Context, target eav1.Targ
 		}
 	}
 
-	if len(podList.Items) == 0 {
+	activePods := FilterActivePods(podList.Items)
+	if len(activePods) == 0 {
 		return health.TargetStatus{TargetExists: false}
 	}
 
-	// Count ready pods, restarts, and detect CrashLoopBackOff/OOMKilled/Pending (DD-017 v2.5)
-	totalReplicas := int32(len(podList.Items))
+	return ComputePodHealthStats(activePods, remediationStartedAt)
+}
+
+// FilterActivePods returns only pods that are active workload members:
+// pods that are not terminating (DeletionTimestamp == nil) and not in a
+// terminal phase (Succeeded/Failed). Exported for unit testing (#246).
+func FilterActivePods(pods []corev1.Pod) []*corev1.Pod {
+	active := make([]*corev1.Pod, 0, len(pods))
+	for i := range pods {
+		pod := &pods[i]
+		if pod.DeletionTimestamp != nil {
+			continue
+		}
+		if pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed {
+			continue
+		}
+		active = append(active, pod)
+	}
+	return active
+}
+
+// listActivePodNames returns the names of currently running pods for a workload
+// target (Deployment, ReplicaSet, StatefulSet, DaemonSet). Returns nil for non-
+// workload kinds or when the listing fails (#269: stale alert pod correlation).
+func (r *Reconciler) listActivePodNames(ctx context.Context, target eav1.TargetResource) []string {
+	switch target.Kind {
+	case "Deployment", "ReplicaSet", "StatefulSet", "DaemonSet":
+	default:
+		return nil
+	}
+
+	podList := &corev1.PodList{}
+	if err := r.List(ctx, podList,
+		client.InNamespace(target.Namespace),
+		client.MatchingLabels{"app": target.Name},
+	); err != nil {
+		log.FromContext(ctx).V(1).Info("Failed to list pods for alert correlation, skipping filter",
+			"kind", target.Kind, "name", target.Name, "error", err)
+		return nil
+	}
+
+	active := FilterActivePods(podList.Items)
+	if len(active) == 0 {
+		return nil
+	}
+
+	names := make([]string, 0, len(active))
+	for _, pod := range active {
+		names = append(names, pod.Name)
+	}
+	return names
+}
+
+// ComputePodHealthStats aggregates health indicators from a set of active pods.
+// remediationStartedAt controls restart counting: pods created before that time
+// have their cumulative RestartCount excluded (they predate the remediation).
+// Exported for unit testing (#246).
+func ComputePodHealthStats(pods []*corev1.Pod, remediationStartedAt *metav1.Time) health.TargetStatus {
+	totalReplicas := int32(len(pods))
 	readyReplicas := int32(0)
 	totalRestarts := int32(0)
 	crashLoops := false
 	oomKilled := false
 	pendingCount := int32(0)
 
-	for i := range podList.Items {
-		pod := &podList.Items[i]
-
-		// Count pods still in Pending phase after stabilization (DD-017 v2.5)
+	for _, pod := range pods {
 		if pod.Status.Phase == corev1.PodPending {
 			pendingCount++
 		}
 
+		preRemediationPod := remediationStartedAt != nil && !pod.CreationTimestamp.Time.After(remediationStartedAt.Time)
+
 		for _, cs := range pod.Status.ContainerStatuses {
-			totalRestarts += cs.RestartCount
+			if !preRemediationPod {
+				totalRestarts += cs.RestartCount
+			}
 			if cs.Ready {
 				readyReplicas++
-				break // Count pod as ready if any container is ready
+				break
 			}
-			// Detect CrashLoopBackOff from waiting state (DD-017 v2.5)
 			if cs.State.Waiting != nil && cs.State.Waiting.Reason == "CrashLoopBackOff" {
 				crashLoops = true
 			}
-			// Detect OOMKilled from last termination state (DD-017 v2.5)
 			if cs.LastTerminationState.Terminated != nil && cs.LastTerminationState.Terminated.Reason == "OOMKilled" {
 				oomKilled = true
 			}
@@ -985,13 +1136,13 @@ func (r *Reconciler) getTargetHealthStatus(ctx context.Context, target eav1.Targ
 	}
 
 	return health.TargetStatus{
-		TotalReplicas:           totalReplicas,
-		ReadyReplicas:           readyReplicas,
+		TotalReplicas:            totalReplicas,
+		ReadyReplicas:            readyReplicas,
 		RestartsSinceRemediation: totalRestarts,
-		TargetExists:           true,
-		CrashLoops:             crashLoops,
-		OOMKilled:              oomKilled,
-		PendingCount:           pendingCount,
+		TargetExists:            true,
+		CrashLoops:              crashLoops,
+		OOMKilled:               oomKilled,
+		PendingCount:            pendingCount,
 	}
 }
 

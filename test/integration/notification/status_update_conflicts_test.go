@@ -86,11 +86,8 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  fmt.Sprintf("Optimistic Lock Test %s", uniqueSuffix),
 					Body:     "Testing resourceVersion conflict handling",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#test"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole, // Console for fast delivery
+					Metadata: map[string]string{
+						"test-channel-set": "console-slack",
 					},
 				},
 			}
@@ -164,11 +161,8 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  fmt.Sprintf("Timestamp Test %s", uniqueSuffix),
 					Body:     "Testing timestamp ordering consistency",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#test"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
+					Metadata: map[string]string{
+						"test-channel-set": "console-slack",
 					},
 				},
 			}
@@ -252,11 +246,8 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  fmt.Sprintf("Status Retry Test %s", uniqueSuffix),
 					Body:     "Testing status update retry on failure",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#test"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
+					Metadata: map[string]string{
+						"test-channel-set": "console-default",
 					},
 				},
 			}
@@ -318,11 +309,8 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  fmt.Sprintf("Delete Race Test %s", uniqueSuffix),
 					Body:     "Testing status update during deletion",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#test"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
+					Metadata: map[string]string{
+						"test-channel-set": "console-slack",
 					},
 				},
 			}
@@ -395,17 +383,14 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  fmt.Sprintf("Special Chars Test %s", uniqueSuffix),
 					Body:     "Testing error message encoding: \"quotes\" \n newlines \t tabs",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#test"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelSlack,
-					},
 					RetryPolicy: &notificationv1alpha1.RetryPolicy{
 						MaxAttempts:           5,
 						InitialBackoffSeconds: 1,
 						BackoffMultiplier:     2,
 						MaxBackoffSeconds:     60,
+					},
+					Metadata: map[string]string{
+						"test-channel-set": "slack-only",
 					},
 				},
 			}
@@ -483,17 +468,14 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  fmt.Sprintf("Large Status Test %s", uniqueSuffix),
 					Body:     "Testing status with many delivery attempts",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#test"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelSlack,
-					},
 					RetryPolicy: &notificationv1alpha1.RetryPolicy{
 						MaxAttempts:           7, // Large array test (1+2+4+8+16+32 = 63s < 90s timeout)
 						InitialBackoffSeconds: 1,
 						BackoffMultiplier:     2,
 						MaxBackoffSeconds:     60,
+					},
+					Metadata: map[string]string{
+						"test-channel-set": "slack-only",
 					},
 				},
 			}

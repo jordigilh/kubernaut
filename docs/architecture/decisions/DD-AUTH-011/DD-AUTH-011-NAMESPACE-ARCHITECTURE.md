@@ -1,7 +1,7 @@
 # DD-AUTH-011: Namespace Architecture for DataStorage RBAC
 
 **Date**: January 26, 2026
-**Status**: ✅ **CORRECTED** - Notification namespace fixed
+**Status**: ✅ **UPDATED** - Single namespace (#229), RBAC isolation via namespace-scoped Roles
 **Authority**: DD-AUTH-011 (Granular RBAC implementation)
 
 ---
@@ -10,44 +10,42 @@
 
 ### **Production Services**
 
+All services run in `kubernaut-system` (#229 — single namespace with RBAC isolation).
+Secrets/configmaps access is namespace-scoped via Roles, not cluster-wide via ClusterRoles.
+
 | Service | Namespace | ServiceAccount Name | Notes |
 |---------|-----------|---------------------|-------|
-| **Gateway** | `kubernaut-system` | `gateway-sa` | Main API gateway |
+| **Gateway** | `kubernaut-system` | `gateway` | Main API gateway |
 | **AIAnalysis** | `kubernaut-system` | `aianalysis-sa` | AI analysis controller |
 | **WorkflowExecution** | `kubernaut-system` | `workflowexecution-sa` | Workflow execution controller |
-| **RemediationOrchestrator** | `kubernaut-system` | `remediationorchestrator-sa` | Orchestration controller |
-| **Notification** | `kubernaut-notifications` | `notification-controller` | ⚠️ **Different namespace** |
+| **RemediationOrchestrator** | `kubernaut-system` | `remediationorchestrator-controller` | Orchestration controller |
+| **Notification** | `kubernaut-system` | `notification-controller` | RBAC-isolated via namespace-scoped Role (#229) |
 | **AuthWebhook** | `kubernaut-system` | `authwebhook-sa` | Auth webhook handler |
-| **SignalProcessing** | `kubernaut-system` | `signalprocessing-sa` | Signal processing |
+| **SignalProcessing** | `kubernaut-system` | `signalprocessing-controller` | Signal processing |
 | **HolmesGPT API** | `kubernaut-system` | `holmesgpt-api-sa` | HolmesGPT API service |
 | **DataStorage** | `kubernaut-system` | `data-storage-sa` | DataStorage service (self-audit) |
 
 ---
 
-## 🚨 **CRITICAL CORRECTION**
+## 🔄 **HISTORICAL CORRECTION** (Superseded by #229)
 
 ### **Notification Service Namespace**
 
-**Incorrect Assumption** (Initial DD-AUTH-011):
-```yaml
-# ❌ WRONG
-subjects:
-  - kind: ServiceAccount
-    name: notification-sa
-    namespace: kubernaut-system
-```
+**Previous state** (DD-INFRA-001 Alternative 3): Notification ran in `kubernaut-notifications`.
 
-**Correct Configuration**:
+**Current state** (#229): All services consolidated into `kubernaut-system`.
+Notification uses a namespace-scoped Role for secrets/configmaps access.
+
 ```yaml
-# ✅ CORRECT
+# ✅ CURRENT (after #229)
 subjects:
   - kind: ServiceAccount
     name: notification-controller
-    namespace: kubernaut-notifications
+    namespace: kubernaut-system
 ```
 
 **Evidence**:
-- `deploy/notification/00-namespace.yaml`: Creates `kubernaut-notifications` namespace
+- `charts/kubernaut/templates/notification/notification.yaml`: Uses `kubernaut.nsRoleForSecrets` helper
 - `deploy/notification/01-rbac.yaml`: ServiceAccount named `notification-controller` in `kubernaut-notifications`
 - `deploy/notification/02-deployment.yaml`: Deploys controller to `kubernaut-notifications`
 

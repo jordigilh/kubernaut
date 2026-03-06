@@ -42,6 +42,12 @@ import (
 // per BR-WORKFLOW-004. This is the authoritative schema format for all
 // Kubernaut remediation workflows.
 type WorkflowSchema struct {
+	// SchemaVersion identifies the structural generation of this schema file.
+	// Allows the parser to distinguish between schema formats (e.g., "1.0" vs "1.1"
+	// which adds the rbac stanza per DD-WE-005).
+	// BR-WORKFLOW-004 v1.1: Required top-level field. Must be first in YAML.
+	SchemaVersion string `yaml:"schemaVersion" json:"schemaVersion" validate:"required"`
+
 	// Metadata contains workflow identification and description
 	Metadata WorkflowSchemaMetadata `yaml:"metadata" json:"metadata" validate:"required"`
 
@@ -131,13 +137,8 @@ type WorkflowMaintainer struct {
 // workflows for a given incident context. Stored in the labels JSONB column.
 //
 // BR-WORKFLOW-004: severity, environment, component, priority are required.
-// DD-WORKFLOW-016: signalName is optional metadata (not used for matching -- LLM uses actionType).
+// Issue #274: signalName removed — LLM selects by actionType + structured descriptions.
 type WorkflowSchemaLabels struct {
-	// SignalName is the signal type this workflow handles (OPTIONAL per DD-WORKFLOW-016)
-	// Was required prior to DD-WORKFLOW-016; now optional metadata for workflow authors.
-	// Examples: "OOMKilled", "CrashLoopBackOff", "NodeNotReady"
-	SignalName string `yaml:"signalName,omitempty" json:"signalName,omitempty" validate:"omitempty"`
-
 	// Severity is the severity level(s) this workflow is designed for (REQUIRED)
 	// Values: "critical", "high", "medium", "low"
 	// DD-WORKFLOW-001 v2.7: Always an array in workflow-schema.yaml.
@@ -435,10 +436,9 @@ func (d *DetectedLabelsSchema) ValidateDetectedLabels() error {
 // ========================================
 
 // ValidateMandatoryLabels checks if all mandatory labels are present
-// BR-WORKFLOW-004 + DD-WORKFLOW-016: severity, environment, component, priority are required.
-// signalType is optional metadata (DD-WORKFLOW-016).
+// BR-WORKFLOW-004: severity, environment, component, priority are required.
+// Issue #274: signalName removed from schema — not validated or stored.
 func (l *WorkflowSchemaLabels) ValidateMandatoryLabels() error {
-	// Note: signalType intentionally NOT validated -- optional per DD-WORKFLOW-016
 	if len(l.Severity) == 0 {
 		return NewSchemaValidationError("labels.severity", "severity is required (at least one value)")
 	}

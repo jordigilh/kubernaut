@@ -44,6 +44,8 @@ var _ = Describe("Phase State Machine (BR-EM-005)", func() {
 			// Non-terminal states
 			Entry("UT-EM-PH-003: Pending is NOT terminal",
 				phase.Pending, false, "Pending indicates EA created but not reconciled"),
+			Entry("UT-EM-PH-003a: WaitingForPropagation is NOT terminal",
+				phase.WaitingForPropagation, false, "WaitingForPropagation indicates async change propagating"),
 			Entry("UT-EM-PH-003b: Stabilizing is NOT terminal",
 				phase.Stabilizing, false, "Stabilizing indicates stabilization window active"),
 			Entry("UT-EM-PH-004: Assessing is NOT terminal",
@@ -120,6 +122,7 @@ var _ = Describe("Phase State Machine (BR-EM-005)", func() {
 				Expect(phase.Validate(p)).To(Succeed())
 			},
 			Entry("Pending", phase.Pending),
+			Entry("WaitingForPropagation", phase.WaitingForPropagation),
 			Entry("Stabilizing", phase.Stabilizing),
 			Entry("Assessing", phase.Assessing),
 			Entry("Completed", phase.Completed),

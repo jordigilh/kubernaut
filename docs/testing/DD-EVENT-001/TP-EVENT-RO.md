@@ -46,7 +46,7 @@
 | `ConsecutiveFailureBlocked` | Warning | P2 | Target blocked due to consecutive failures | Planned |
 | `PhaseTransition` | Normal | P3 | Intermediate phase changes | Planned |
 
-**RO phase lifecycle**: Pending → Processing → Analyzing → [AwaitingApproval] → Executing → Completed
+**RO phase lifecycle**: Pending → Processing → Analyzing → [AwaitingApproval] → Executing → Verifying → Completed
 
 **Terminal phases**: Completed, Failed, TimedOut, Skipped, Cancelled
 
@@ -300,7 +300,7 @@
 1. Create RemediationRequest CRD
 2. Wait for Phase=Completed
 3. List corev1.Events by involvedObject.name (RR)
-**Expected Result**: Events contain (in order): RemediationCreated, PhaseTransition (Pending→Processing), PhaseTransition (Processing→Analyzing), PhaseTransition (Analyzing→Executing), RemediationCompleted
+**Expected Result**: Events contain (in order): RemediationCreated, PhaseTransition (Pending→Processing), PhaseTransition (Processing→Analyzing), PhaseTransition (Analyzing→Executing), PhaseTransition (Executing→Verifying), PhaseTransition (Verifying→Completed), RemediationCompleted
 
 #### IT-RO-095-02: Approval flow event trail
 

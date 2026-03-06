@@ -46,7 +46,8 @@ import (
 // ========================================
 
 // validWorkflowSchemaYAML is a minimal valid workflow-schema.yaml per BR-WORKFLOW-004
-const validWorkflowSchemaYAML = `metadata:
+const validWorkflowSchemaYAML = `schemaVersion: "1.0"
+metadata:
   workflowId: oomkill-scale-down
   version: "1.0.0"
   description:
@@ -56,7 +57,6 @@ const validWorkflowSchemaYAML = `metadata:
     preconditions: Pod is managed by a Deployment or StatefulSet
 actionType: RestartPod
 labels:
-  signalName: OOMKilled
   severity: [critical]
   environment: [production]
   component: pod
@@ -103,7 +103,6 @@ var _ = Describe("OCI Schema Extractor (DD-WORKFLOW-017)", func() {
 
 			var labels map[string]interface{}
 			Expect(json.Unmarshal(labelsJSON, &labels)).To(Succeed())
-			Expect(labels).To(HaveKeyWithValue("signalName", "OOMKilled"))
 			Expect(labels["severity"]).To(Equal([]interface{}{"critical"}))
 			Expect(labels["environment"]).To(Equal([]interface{}{"production"}))
 			Expect(labels).To(HaveKeyWithValue("component", "pod"))
@@ -135,7 +134,8 @@ var _ = Describe("OCI Schema Extractor (DD-WORKFLOW-017)", func() {
 			Expect(parsedSchema.Labels.Environment).To(Equal([]string{"production"}))
 
 			// Multi-value array format
-			arrayYAML := `metadata:
+			arrayYAML := `schemaVersion: "1.0"
+metadata:
   workflowId: multi-env-test
   version: "1.0.0"
   description:
@@ -143,7 +143,6 @@ var _ = Describe("OCI Schema Extractor (DD-WORKFLOW-017)", func() {
     whenToUse: Test
 actionType: RestartPod
 labels:
-  signalName: OOMKilled
   severity: [critical]
   environment: [staging, production]
   component: pod
@@ -176,7 +175,8 @@ parameters:
 
 		It("UT-DS-017-019: should accept schema without signalName (DD-WORKFLOW-016)", func() {
 			// DD-WORKFLOW-016: signalName is optional metadata, not required for registration
-			noSignalNameYAML := `metadata:
+			noSignalNameYAML := `schemaVersion: "1.0"
+metadata:
   workflowId: no-signal-name
   version: "1.0.0"
   description:
@@ -199,9 +199,8 @@ execution:
 `
 			parsedSchema, err := parser.ParseAndValidate(noSignalNameYAML)
 			Expect(err).ToNot(HaveOccurred(), "schema without signalName should be accepted")
-			Expect(parsedSchema.Labels.SignalName).To(BeEmpty())
 
-			// Labels JSONB should NOT contain signalName key when empty
+			// Labels JSONB should NOT contain signalName key when empty (Issue #274: signalName removed)
 			labelsJSON, err := parser.ExtractLabels(parsedSchema)
 			Expect(err).ToNot(HaveOccurred())
 			var labels map[string]interface{}
@@ -226,7 +225,8 @@ execution:
 		})
 
 		It("UT-DS-212-001: ExtractLabels must NOT include custom labels (#212)", func() {
-			schemaWithCustom := `metadata:
+			schemaWithCustom := `schemaVersion: "1.0"
+metadata:
   workflowId: test-custom
   version: "1.0.0"
   description:
@@ -234,7 +234,6 @@ execution:
     whenToUse: Test
 actionType: RestartPod
 labels:
-  signalName: OOMKilled
   severity: [critical]
   environment: [production]
   component: pod
@@ -266,7 +265,8 @@ parameters:
 		})
 
 		It("UT-DS-212-002: ExtractCustomLabels must return custom labels as map[string][]string (#212)", func() {
-			schemaWithCustom := `metadata:
+			schemaWithCustom := `schemaVersion: "1.0"
+metadata:
   workflowId: test-custom
   version: "1.0.0"
   description:
@@ -274,7 +274,6 @@ parameters:
     whenToUse: Test
 actionType: RestartPod
 labels:
-  signalName: OOMKilled
   severity: [critical]
   environment: [production]
   component: pod
@@ -510,14 +509,14 @@ parameters:
 			),
 
 			Entry("UT-DS-017-007: schema missing required fields (actionType, labels)",
-				oci.NewMockImagePuller(`metadata:
+				oci.NewMockImagePuller(`schemaVersion: "1.0"
+metadata:
   workflowId: incomplete
   version: "1.0.0"
   description:
     what: Incomplete workflow
     whenToUse: Testing validation
 labels:
-  signalName: OOMKilled
   severity: [critical]
   environment: [production]
   component: pod

@@ -73,12 +73,6 @@ var _ = Describe("Category 12: Observability & Status", Label("integration", "ob
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Status Observability Test",
 					Body:     "Testing status field population for observability",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
 				},
 			}
 
@@ -143,14 +137,11 @@ var _ = Describe("Category 12: Observability & Status", Label("integration", "ob
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Retry Observability Test",
 					Body:     "Testing retry attempt tracking in status",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#test"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelSlack,
-					},
 					RetryPolicy: &notificationv1alpha1.RetryPolicy{
 						MaxAttempts: 3, // Allow retries for observability
+					},
+					Metadata: map[string]string{
+						"test-channel-set": "console-slack",
 					},
 				},
 			}
@@ -214,12 +205,6 @@ var _ = Describe("Category 12: Observability & Status", Label("integration", "ob
 					Priority: notificationv1alpha1.NotificationPriorityHigh,
 					Subject:  "Latency Observability Test",
 					Body:     "Testing delivery latency tracking",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
 				},
 			}
 
@@ -298,13 +283,8 @@ var _ = Describe("Category 12: Observability & Status", Label("integration", "ob
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Multi-Channel Observability Test",
 					Body:     "Testing per-channel observability",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-						{Slack: "#test"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-						notificationv1alpha1.ChannelSlack,
+					Metadata: map[string]string{
+						"test-channel-set": "console-slack",
 					},
 				},
 			}
@@ -341,7 +321,6 @@ var _ = Describe("Category 12: Observability & Status", Label("integration", "ob
 			GinkgoWriter.Printf("   Phase: %s\n", freshNotif.Status.Phase)
 			GinkgoWriter.Printf("   Successful: %d\n", freshNotif.Status.SuccessfulDeliveries)
 			GinkgoWriter.Printf("   Failed: %d\n", freshNotif.Status.FailedDeliveries)
-			GinkgoWriter.Printf("   Total Channels: %d\n", len(freshNotif.Spec.Channels))
 
 			err = deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
 			Expect(err).NotTo(HaveOccurred())
@@ -370,12 +349,6 @@ var _ = Describe("Category 12: Observability & Status", Label("integration", "ob
 					Priority: notificationv1alpha1.NotificationPriorityLow,
 					Subject:  "State Transition Observability",
 					Body:     "Testing lifecycle state observability",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
 				},
 			}
 

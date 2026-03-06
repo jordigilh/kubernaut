@@ -93,7 +93,7 @@
 
 The Remediation Orchestrator **already audits** the complete RR lifecycle:
 - ✅ `orchestrator.lifecycle.started` - RR starts
-- ✅ `orchestrator.phase.transitioned` - Phase changes (Pending → Analyzing → Executing → Completed)
+- ✅ `orchestrator.phase.transitioned` - Phase changes (Pending → Analyzing → Executing → Verifying → Completed)
 - ✅ `orchestrator.lifecycle.completed` - RR completes (success/failure with ErrorDetails)
 - ✅ `orchestrator.routing.blocked` - Routing decisions
 - ✅ `orchestrator.approval.*` - Approval flow events

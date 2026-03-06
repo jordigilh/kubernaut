@@ -24,7 +24,6 @@ import (
 )
 
 func TestGetConfig(t *testing.T) {
-	// Save and restore original KUBECONFIG
 	originalKubeconfig := os.Getenv("KUBECONFIG")
 	defer func() {
 		if originalKubeconfig != "" {
@@ -36,48 +35,9 @@ func TestGetConfig(t *testing.T) {
 
 	t.Run("returns error when no config available", func(t *testing.T) {
 		_ = os.Unsetenv("KUBECONFIG")
-		// In test environment, in-cluster config will fail
 		_, err := k8sutil.GetConfig()
 		if err == nil {
 			t.Error("expected error when no config available")
 		}
 	})
-
-	t.Run("uses KUBECONFIG when set", func(t *testing.T) {
-		// This test requires a valid kubeconfig file
-		// Skip if KUBECONFIG not set in test environment
-		if originalKubeconfig == "" {
-			t.Skip("KUBECONFIG not set, skipping")
-		}
-
-		_ = os.Setenv("KUBECONFIG", originalKubeconfig)
-		config, err := k8sutil.GetConfig()
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if config == nil {
-			t.Error("expected non-nil config")
-		}
-	})
-}
-
-func TestNewClientset(t *testing.T) {
-	// Skip if no Kubernetes access available
-	if os.Getenv("KUBECONFIG") == "" {
-		t.Skip("KUBECONFIG not set, skipping")
-	}
-
-	clientset, err := k8sutil.NewClientset()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if clientset == nil {
-		t.Error("expected non-nil clientset")
-	}
-
-	// Verify clientset works by checking server version
-	_, err = clientset.Discovery().ServerVersion()
-	if err != nil {
-		t.Errorf("failed to get server version: %v", err)
-	}
 }

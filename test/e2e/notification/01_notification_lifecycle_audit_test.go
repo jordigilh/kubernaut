@@ -125,10 +125,6 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 				Priority: notificationv1alpha1.NotificationPriorityCritical,
 				Subject:  "E2E Lifecycle Test",
 				Body:     "Testing full notification lifecycle with audit trail",
-				Channels: []notificationv1alpha1.Channel{notificationv1alpha1.ChannelConsole}, // Use Console to avoid Slack delivery failures
-				Recipients: []notificationv1alpha1.Recipient{
-					{Slack: "#e2e-tests"}, // Keep for CRD validation, but Console channel doesn't use it
-				},
 				Metadata: map[string]string{
 					"remediationRequestName": correlationID,
 					"cluster":                "test-cluster",
@@ -268,12 +264,13 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 	})
 
 	// E2E-NT-163-004: Routing Fallback Conditions
-	// When spec.channels is empty, routing rules are used. With default config (no routing ConfigMap),
-	// the controller falls back to console and sets RoutingResolved with Reason=RoutingFallback.
-	It("should set RoutingResolved with RoutingFallback when spec.channels is empty", func() {
+	// Routing rules are the sole authority for channel resolution (#261). With routing
+	// ConfigMap deployed, the default-console route matches and the controller sets
+	// RoutingResolved with Reason=RoutingRuleMatched.
+	It("should set RoutingResolved with RoutingRuleMatched when routing rules apply", func() {
 		Expect(dataStorageNodePort).ToNot(Equal(0), "REQUIRED: Data Storage not available")
 
-		// Override notification: empty spec.channels to trigger routing rules (BR-NOT-065)
+		// Override notification: routing rules resolve channels (BR-NOT-065)
 		testID := time.Now().Format("20060102-150405")
 		notificationName = "e2e-routing-fallback-" + testID
 		correlationID = "e2e-routing-fallback-" + testID
@@ -292,11 +289,7 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 				Type:     notificationv1alpha1.NotificationTypeSimple,
 				Priority: notificationv1alpha1.NotificationPriorityCritical,
 				Subject:  "E2E Routing Fallback Test",
-				Body:     "Testing RoutingFallback condition when spec.channels is empty",
-				Channels: nil, // Empty: triggers routing rules → default config → console fallback
-				Recipients: []notificationv1alpha1.Recipient{
-					{Slack: "#e2e-tests"},
-				},
+				Body:     "Testing RoutingFallback condition with routing rules",
 				Metadata: map[string]string{
 					"remediationRequestName": correlationID,
 					"cluster":                "test-cluster",
@@ -304,7 +297,7 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 			},
 		}
 
-		By("Creating NotificationRequest with empty spec.channels")
+		By("Creating NotificationRequest (routing rules resolve channels)")
 		err := k8sClient.Create(testCtx, notification)
 		Expect(err).ToNot(HaveOccurred())
 
@@ -321,7 +314,7 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 		}, 30*time.Second, 1*time.Second).Should(Equal(notificationv1alpha1.NotificationPhaseSent),
 			"Controller should deliver via console fallback and reach Sent")
 
-		By("Validating RoutingResolved condition with RoutingFallback reason")
+		By("Validating RoutingResolved condition with RoutingRuleMatched reason")
 		nr := &notificationv1alpha1.NotificationRequest{}
 		err = apiReader.Get(testCtx, types.NamespacedName{
 			Name:      notificationName,
@@ -337,7 +330,7 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 			And(
 				HaveField("Type", kubernautnotif.ConditionTypeRoutingResolved),
 				HaveField("Status", metav1.ConditionTrue),
-				HaveField("Reason", kubernautnotif.ReasonRoutingFallback),
+				HaveField("Reason", kubernautnotif.ReasonRoutingRuleMatched),
 			),
 		))
 	})

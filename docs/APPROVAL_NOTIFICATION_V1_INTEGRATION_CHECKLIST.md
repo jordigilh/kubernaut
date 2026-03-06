@@ -70,7 +70,7 @@
   - `approvalStatus`, `approvedBy`, `rejectedBy`, `approvalTime`
   - `rejectionReason`, `approvalMethod`, `approvalJustification`, `approvalDuration`
 
-- [x] **Phase enum updated**: Added "Approving" and "Rejected" phases
+- [x] **Phase enum updated**: Added "Approving" phase ("Rejected" phase removed — rejection now transitions to "Failed")
 
 **File**: `api/aianalysis/v1alpha1/aianalysis_types.go`
 **Status**: ✅ **CODE UPDATED** (2025-10-17)

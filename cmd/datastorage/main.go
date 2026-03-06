@@ -33,6 +33,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/jordigilh/kubernaut/internal/version"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/config"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
 	dsvalidation "github.com/jordigilh/kubernaut/pkg/datastorage/validation"
@@ -65,6 +66,12 @@ func main() {
 		ServiceName: "datastorage",
 	})
 	defer kubelog.Sync(logger)
+
+	logger.Info("Starting DataStorage Service",
+		"version", version.Version,
+		"gitCommit", version.GitCommit,
+		"buildDate", version.BuildDate,
+	)
 
 	// ADR-030: Load configuration from YAML file (ConfigMap)
 	// CONFIG_PATH environment variable is MANDATORY

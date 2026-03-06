@@ -801,6 +801,12 @@ func DeployWorkflowExecutionController(ctx context.Context, namespace, kubeconfi
 		return fmt.Errorf("failed to deploy controller: %w", err)
 	}
 
+	// Create quay.io pull secret in execution namespace so Job pods can pull
+	// the placeholder-execution image used by workflow schemas.
+	if err := createQuayPullSecret(kubeconfigPath, ExecutionNamespace, output); err != nil {
+		_, _ = fmt.Fprintf(output, "⚠️  Warning: Could not create quay.io pull secret in %s: %v\n", ExecutionNamespace, err)
+	}
+
 	_, _ = fmt.Fprintf(output, "✅ WorkflowExecution Controller deployed\n")
 	return nil
 }
@@ -1029,6 +1035,61 @@ metadata:
 apiVersion: v1
 kind: ServiceAccount
 metadata:
+  name: kubernaut-workflow-runner
+  namespace: %[2]s
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kubernaut-workflow-runner
+rules:
+- apiGroups: ["apps"]
+  resources: ["deployments", "statefulsets", "daemonsets"]
+  verbs: ["get", "list", "patch"]
+- apiGroups: ["apps"]
+  resources: ["replicasets"]
+  verbs: ["get", "list"]
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "delete"]
+- apiGroups: [""]
+  resources: ["pods/eviction"]
+  verbs: ["create"]
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list"]
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["get", "list", "patch", "update"]
+- apiGroups: ["policy"]
+  resources: ["poddisruptionbudgets"]
+  verbs: ["get", "list", "patch"]
+- apiGroups: ["autoscaling"]
+  resources: ["horizontalpodautoscalers"]
+  verbs: ["get", "list", "patch"]
+- apiGroups: ["argoproj.io"]
+  resources: ["applications"]
+  verbs: ["get", "list"]
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "list", "create", "delete", "patch"]
+- apiGroups: ["cert-manager.io"]
+  resources: ["certificates"]
+  verbs: ["get", "list"]
+- apiGroups: ["cert-manager.io"]
+  resources: ["clusterissuers"]
+  verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubernaut-workflow-runner
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kubernaut-workflow-runner
+subjects:
+- kind: ServiceAccount
   name: kubernaut-workflow-runner
   namespace: %[2]s
 ---

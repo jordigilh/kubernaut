@@ -56,8 +56,8 @@ var _ = Describe("BR-AUTH-001: NotificationRequest Cancellation Attribution", fu
 		namespace = "default"
 	})
 
-	Context("INT-NR-01: when operator cancels notification via DELETE", func() {
-		It("should capture operator identity in audit trail via webhook", func() {
+	Context("IT-AW-276-001: when operator cancels notification with delivery attempts via DELETE", func() {
+		It("should capture actual delivery channels in audit trail", func() {
 			By("Creating NotificationRequest CRD (business operation)")
 			nrName := "test-nr-cancel-" + randomSuffix()
 			nr := &notificationv1.NotificationRequest{
@@ -70,41 +70,50 @@ var _ = Describe("BR-AUTH-001: NotificationRequest Cancellation Attribution", fu
 					Priority: notificationv1.NotificationPriorityHigh,
 					Subject:  "Test escalation notification",
 					Body:     "This is a test notification that will be cancelled",
-					Recipients: []notificationv1.Recipient{
-						{Email: "oncall@example.com"},
-					},
-					Channels: []notificationv1.Channel{
-						notificationv1.ChannelEmail,
-					},
 				},
 			}
 
 			createAndWaitForCRD(ctx, k8sClient, nr)
 
+			By("Simulating delivery attempts on the NR status (slack + console channels)")
+			nr.Status.Phase = notificationv1.NotificationPhaseSending
+			nr.Status.DeliveryAttempts = []notificationv1.DeliveryAttempt{
+				{Channel: "slack", Attempt: 1, Status: "success", Timestamp: metav1.Now()},
+				{Channel: "console", Attempt: 1, Status: "success", Timestamp: metav1.Now()},
+			}
+			nr.Status.TotalAttempts = 2
+			nr.Status.SuccessfulDeliveries = 2
+			Expect(k8sClient.Status().Update(ctx, nr)).To(Succeed(),
+				"Status update with delivery attempts should succeed")
+
+			By("Waiting for status update to be reflected")
+			Eventually(func() int {
+				var updated notificationv1.NotificationRequest
+				if err := k8sClient.Get(ctx, client.ObjectKey{Name: nrName, Namespace: namespace}, &updated); err != nil {
+					return 0
+				}
+				return len(updated.Status.DeliveryAttempts)
+			}, 5*time.Second, 100*time.Millisecond).Should(Equal(2),
+				"DeliveryAttempts should be persisted before DELETE")
+
+			By("Re-fetching CRD so DELETE webhook sees updated status")
+			Expect(k8sClient.Get(ctx, client.ObjectKey{Name: nrName, Namespace: namespace}, nr)).To(Succeed())
+
 			By("Operator deletes NotificationRequest to cancel (business operation)")
-			// Per DD-NOT-005: Spec is immutable, cancellation is via DELETE
-			// Webhook intercepts DELETE and writes audit event to Data Storage
-			// Note: K8s API prevents object mutation during DELETE, so attribution is via audit
 			Expect(k8sClient.Delete(ctx, nr)).To(Succeed(),
 				"Webhook should allow DELETE and record audit event")
 
 			By("Flushing audit store to ensure events are persisted")
-			// Explicitly flush buffered audit events before querying
 			flushCtx, flushCancel := context.WithTimeout(ctx, 5*time.Second)
 			defer flushCancel()
 			err := auditStore.Flush(flushCtx)
 			Expect(err).ToNot(HaveOccurred(), "Audit store flush should succeed")
-			GinkgoWriter.Println("✅ Audit store flushed successfully")
 
 			By("Waiting for audit event to be persisted to Data Storage (DD-TESTING-001)")
-			// Webhook uses nr.Name as correlation ID
-			// Per DD-TESTING-001: Use Eventually() for async polling, NOT time.Sleep()
 			deleteEventType := string(ogenclient.NotificationAuditPayloadEventTypeWebhookNotificationCancelled)
 			events := waitForAuditEvents(dsClient, nrName, deleteEventType, 1)
 
 			By("Validating exact event count (DD-TESTING-001 Pattern 4)")
-			// Per DD-TESTING-001: Use Equal(N) for deterministic validation
-			// FORBIDDEN: BeNumerically(">=") hides duplicate events
 			eventCounts := countEventsByType(events)
 			Expect(eventCounts[deleteEventType]).To(Equal(1),
 				"Should have exactly 1 DELETE audit event (not more, not less)")
@@ -114,40 +123,32 @@ var _ = Describe("BR-AUTH-001: NotificationRequest Cancellation Attribution", fu
 			validateEventMetadata(event, "webhook")
 
 			By("Validating structured columns (per DD-WEBHOOK-003 + ADR-034 v1.4)")
-			// Per DD-WEBHOOK-003: Attribution fields in structured columns, NOT event_data
 			Expect(event.ActorID.IsSet()).To(BeTrue(), "ActorID should be set")
 			Expect(event.ActorID.Value).To(Equal("admin"),
 				"actor_id column should contain authenticated operator")
 			Expect(event.ResourceID.IsSet()).To(BeTrue(), "ResourceID should be set")
 			Expect(event.ResourceID.Value).ToNot(BeEmpty(),
-				"resource_id column should contain CRD UID (per audit.SetResource)")
+				"resource_id column should contain CRD UID")
 			Expect(event.Namespace.IsSet()).To(BeTrue(), "Namespace should be set")
 			Expect(event.Namespace.Value).To(Equal(namespace),
 				"namespace column should contain CRD namespace")
 			Expect(event.EventAction).To(Equal("deleted"),
 				"event_action column should be 'deleted' for DELETE operation")
 
-			By("Validating event_data business context (DD-WEBHOOK-003 lines 335-340)")
-			// Per DD-WEBHOOK-003: event_data contains business context ONLY
+			By("Validating event_data contains delivery_channels (IT-AW-276-001)")
 			validateEventData(event, map[string]interface{}{
-				"notification_name": nrName,       // Business field (per DD-WEBHOOK-003)
-				"notification_type": "escalation", // Business field
-				"priority":          "high",       // Business field
-				"final_status":      nil,          // Business field (may be empty if not set)
-				"recipients":        nil,          // Business field (verify existence)
+				"notification_name":  nrName,
+				"notification_type":  "escalation",
+				"priority":           "high",
+				"final_status":       "Sending",
+				"delivery_channels":  []interface{}{"console", "slack"},
 			})
 
 			GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-			GinkgoWriter.Printf("✅ INT-NR-01 PASSED: DELETE Attribution via Structured Columns\n")
+			GinkgoWriter.Printf("✅ IT-AW-276-001 PASSED: Audit captures actual delivery channels\n")
 			GinkgoWriter.Printf("   • Cancelled by: %s (actor_id column)\n", event.ActorID.Value)
-			GinkgoWriter.Printf("   • Resource: %s (resource_id column)\n", event.ResourceID.Value)
-			GinkgoWriter.Printf("   • Namespace: %s (namespace column)\n", event.Namespace.Value)
-			GinkgoWriter.Printf("   • Action: %s (event_action column)\n", event.EventAction)
-			GinkgoWriter.Printf("   • Event type: %s\n", event.EventType)
-			GinkgoWriter.Printf("   • Event category: %s\n", event.EventCategory)
-			GinkgoWriter.Printf("   • DD-WEBHOOK-003: ✅ Structured columns for attribution\n")
+			GinkgoWriter.Printf("   • delivery_channels: [console, slack]\n")
 			GinkgoWriter.Printf("   • DD-WEBHOOK-003: ✅ Business context in event_data\n")
-			GinkgoWriter.Printf("   • K8s Limitation: Attribution via audit (cannot mutate during DELETE)\n")
 			GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 		})
 	})
@@ -166,9 +167,6 @@ var _ = Describe("BR-AUTH-001: NotificationRequest Cancellation Attribution", fu
 					Priority: notificationv1.NotificationPriorityMedium,
 					Subject:  "Test notification - normal completion",
 					Body:     "This notification will complete normally",
-					Recipients: []notificationv1.Recipient{
-						{Email: "ops@example.com"},
-					},
 				},
 			}
 
@@ -208,8 +206,8 @@ var _ = Describe("BR-AUTH-001: NotificationRequest Cancellation Attribution", fu
 		})
 	})
 
-	Context("INT-NR-03: when NotificationRequest is deleted during processing", func() {
-		It("should capture attribution even if CRD is mid-processing", func() {
+	Context("IT-AW-276-002: when NotificationRequest is deleted with no delivery attempts", func() {
+		It("should capture empty delivery_channels in audit trail", func() {
 			By("Creating NotificationRequest CRD")
 			nrName := "test-nr-mid-processing-" + randomSuffix()
 			nr := &notificationv1.NotificationRequest{
@@ -222,9 +220,6 @@ var _ = Describe("BR-AUTH-001: NotificationRequest Cancellation Attribution", fu
 					Priority: notificationv1.NotificationPriorityLow,
 					Subject:  "Test notification - cancelled mid-processing",
 					Body:     "This notification will be cancelled while processing",
-					Recipients: []notificationv1.Recipient{
-						{Slack: "#dev-alerts"},
-					},
 				},
 			}
 
@@ -297,25 +292,19 @@ var _ = Describe("BR-AUTH-001: NotificationRequest Cancellation Attribution", fu
 			Expect(event.EventAction).To(Equal("deleted"),
 				"event_action column should be 'deleted' for DELETE operation")
 
-			By("Validating event_data business context (DD-WEBHOOK-003 lines 335-340)")
-			// Per DD-WEBHOOK-003: event_data contains business context ONLY
+			By("Validating event_data contains empty delivery_channels (IT-AW-276-002)")
 			validateEventData(event, map[string]interface{}{
-				"notification_name": nrName,          // Business field (per DD-WEBHOOK-003)
-				"notification_type": "status-update", // Business field (matches test's NotificationTypeStatusUpdate)
-				"priority":          "low",           // Business field (matches test's NotificationPriorityLow)
-				"final_status":      "Sending",       // Business field (captured mid-processing)
-				"recipients":        nil,             // Business field (verify existence)
+				"notification_name":  nrName,
+				"notification_type":  "status-update",
+				"priority":           "low",
+				"final_status":       "Sending",
+				"delivery_channels":  []interface{}{},
 			})
 
 			GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-			GinkgoWriter.Printf("✅ INT-NR-03 PASSED: Mid-Processing Cancellation via Structured Columns\n")
+			GinkgoWriter.Printf("✅ IT-AW-276-002 PASSED: Empty delivery_channels for cancelled NR\n")
 			GinkgoWriter.Printf("   • Cancelled by: %s (actor_id column)\n", event.ActorID.Value)
-			GinkgoWriter.Printf("   • Resource: %s (resource_id column)\n", event.ResourceID.Value)
-			GinkgoWriter.Printf("   • Namespace: %s (namespace column)\n", event.Namespace.Value)
-			GinkgoWriter.Printf("   • Action: %s (event_action column)\n", event.EventAction)
-			GinkgoWriter.Printf("   • Event type: %s\n", event.EventType)
-			GinkgoWriter.Printf("   • Audit captured during 'Sending' phase (mid-processing)\n")
-			GinkgoWriter.Printf("   • DD-WEBHOOK-003: ✅ Structured columns for attribution\n")
+			GinkgoWriter.Printf("   • delivery_channels: [] (empty, no delivery occurred)\n")
 			GinkgoWriter.Printf("   • DD-WEBHOOK-003: ✅ Business context in event_data\n")
 			GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 		})

@@ -117,7 +117,7 @@ kubectl describe remediationrequest <name> | grep -A5 "AIAnalysis"
    - **Status**: `False` if WE fails or times out
    - **Reason Success**: `WorkflowSucceeded`
    - **Reason Failure**: `WorkflowFailed`, `WorkflowTimeout`
-   - **When**: Executing → Completed/Failed phase transition
+   - **When**: Executing → Verifying/Failed phase transition
 
 **Integration Point**: `pkg/remediationorchestrator/creator/workflowexecution.go`
 
@@ -403,7 +403,7 @@ Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge"
 3. **AIAnalysis Creation** (Analyzing phase)
 4. **AIAnalysis Completion** (Analyzing → AwaitingApproval/Executing)
 5. **WorkflowExecution Creation** (Executing phase)
-6. **WorkflowExecution Completion** (Executing → Completed/Failed)
+6. **WorkflowExecution Completion** (Executing → Verifying/Failed)
 7. **Terminal Phase Transitions** (RecoveryComplete) [Deprecated - Issue #180]
 
 **Pattern**:

@@ -182,7 +182,7 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 			Expect(event.EventAction).To(Equal("transitioned"))
 		})
 
-		It("AE-7.3: Should emit completion event on successful workflow", func() {
+		It("AE-7.3: Should emit verifying_started event on successful workflow (#280)", func() {
 			// Create RR in Executing phase with completed WE
 			rr := newRemediationRequestWithChildRefs("test-rr", "default", remediationv1.PhaseExecuting, "sp-test-rr", "ai-test-rr", "we-test-rr")
 			Expect(fakeClient.Create(ctx, rr)).To(Succeed())
@@ -198,19 +198,19 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 
 			mockAuditStore.Reset()
 
-			// Reconcile to transition to Completed
+			// Reconcile to transition to Verifying (#280)
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: "default"},
 			})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result).To(Equal(ctrl.Result{}))
 
-			// Verify completion audit event
+			// Verify verifying_started audit event (#280: RR transitions to Verifying first)
 			Expect(mockAuditStore.Events).To(HaveLen(1))
 			event := mockAuditStore.GetLastEvent()
-			Expect(event.EventType).To(Equal(roaudit.EventTypeLifecycleCompleted))
-			Expect(event.EventAction).To(Equal("completed"))
-			Expect(string(event.EventOutcome)).To(Equal("success"))
+			Expect(event.EventType).To(Equal(roaudit.EventTypeLifecycleVerifyingStarted))
+			Expect(event.EventAction).To(Equal("verifying_started"))
+			Expect(string(event.EventOutcome)).To(Equal("pending"))
 		})
 
 		It("AE-7.4: Should emit failure event on workflow failure", func() {

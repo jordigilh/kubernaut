@@ -100,8 +100,7 @@ var _ = Describe("BR-STORAGE-020: FailedDetections Support", func() {
 			It("should include FailedDetections in search filters", func() {
 				// ARRANGE: Create search filters with failed detections
 				filters := &models.WorkflowSearchFilters{
-					SignalName: "OOMKilled",
-					Severity:   "critical",
+					Severity: "critical",
 					DetectedLabels: models.DetectedLabels{
 						GitOpsTool:       "argocd",
 						PDBProtected:     true,

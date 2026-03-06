@@ -33,7 +33,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-logr/logr"
+
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -60,6 +60,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/remediationapprovalrequest"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/aggregator"
 	roaudit "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/audit"
+	roconfig "github.com/jordigilh/kubernaut/internal/config/remediationorchestrator"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/config"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/handler"
@@ -92,8 +93,6 @@ type Reconciler struct {
 	auditManager *roaudit.Manager
 	// Timeout configuration (BR-ORCH-027/028, Future-proof implementation)
 	timeouts TimeoutConfig
-	// Consecutive failure blocking (BR-ORCH-042)
-	consecutiveBlock *ConsecutiveFailureBlocker
 	// Notification lifecycle tracking (BR-ORCH-029/030)
 	notificationHandler *NotificationHandler
 	// Routing engine for centralized routing (DD-RO-002, V1.0)
@@ -111,6 +110,11 @@ type Reconciler struct {
 	restMapper meta.RESTMapper
 	// DD-EM-002: Uncached API reader for pre-remediation hash capture
 	apiReader client.Reader
+
+	// DD-EM-004 v2.0, Issue #253: Config-driven async propagation delays.
+	// Used by createEffectivenessAssessmentIfNeeded to compute HashComputeDelay
+	// from gitOpsSyncDelay/operatorReconcileDelay instead of stabilization window.
+	asyncPropagation roconfig.AsyncPropagationConfig
 
 	// ========================================
 	// STATUS MANAGER (DD-PERF-001)
@@ -140,6 +144,7 @@ type TimeoutConfig struct {
 	Analyzing        time.Duration // Default: 10 minutes
 	Executing        time.Duration // Default: 30 minutes
 	AwaitingApproval time.Duration // Default: 15 minutes (ADR-040)
+	Verifying        time.Duration // Default: 30 minutes (#280: safety-net for Verifying phase)
 }
 
 // NewReconciler creates a new Reconciler with all dependencies.
@@ -171,6 +176,9 @@ func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, 
 	if timeouts.AwaitingApproval == 0 {
 		timeouts.AwaitingApproval = 15 * time.Minute
 	}
+	if timeouts.Verifying == 0 {
+		timeouts.Verifying = 30 * time.Minute
+	}
 
 	nc := creator.NewNotificationCreator(c, s, m)
 
@@ -190,8 +198,7 @@ func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, 
 			ScopeBackoffBase: 5,   // 5 seconds initial
 			ScopeBackoffMax:  300, // 5 minutes max
 		}
-		// TODO: Get namespace from controller-runtime manager or environment variable
-		// For now, using empty string which means all namespaces
+		// ADR-057: All CRDs live in the controller namespace; empty string is correct.
 		routingNamespace := ""
 		// BR-SCOPE-010: Create scope manager using cached client for metadata-only informers (ADR-053)
 		scopeMgr := scope.NewManager(c)
@@ -218,7 +225,6 @@ func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, 
 		timeouts:            timeouts,
 		auditStore:          auditStore,
 		auditManager:        roaudit.NewManager(roaudit.ServiceName),
-		consecutiveBlock:    NewConsecutiveFailureBlocker(c, 3, 1*time.Hour, true),
 		notificationHandler: NewNotificationHandler(c, m),
 		routingEngine:       routingEngine, // Use provided or default routing engine
 		Metrics:             m,
@@ -243,8 +249,8 @@ func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, 
 	// AIAnalysisHandler: delegates failure transitions
 	r.aiAnalysisHandler = handler.NewAIAnalysisHandler(c, s, nc, m, r.transitionToFailed)
 
-	// WorkflowExecutionHandler: delegates completion and failure transitions
-	r.weHandler = handler.NewWorkflowExecutionHandler(c, s, m, r.transitionToFailed, r.transitionToCompleted)
+	// WorkflowExecutionHandler: delegates verifying and failure transitions
+	r.weHandler = handler.NewWorkflowExecutionHandler(c, s, m, r.transitionToFailed, r.transitionToVerifying)
 
 	return r
 }
@@ -630,6 +636,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return r.handleAwaitingApprovalPhase(ctx, rr)
 	case phase.Executing:
 		return r.handleExecutingPhase(ctx, rr, aggregatedStatus)
+	case phase.Verifying:
+		return r.handleVerifyingPhase(ctx, rr)
 	case phase.Blocked:
 		// BR-ORCH-042: Handle blocked phase (cooldown expiry check)
 		return r.handleBlockedPhase(ctx, rr)
@@ -1621,128 +1629,200 @@ func (r *Reconciler) transitionPhase(ctx context.Context, rr *remediationv1.Reme
 	return ctrl.Result{RequeueAfter: requeueAfter}, nil
 }
 
-// transitionToCompleted transitions the RR to Completed phase.
-func (r *Reconciler) transitionToCompleted(ctx context.Context, rr *remediationv1.RemediationRequest, outcome string) (ctrl.Result, error) {
+// transitionToVerifying transitions the RR to Verifying phase (#280).
+// After WFE completes successfully, the RR enters Verifying (non-terminal) while the
+// EffectivenessAssessment runs. The Gateway deduplicates signals during this window.
+// RO transitions to Completed when EA reaches a terminal state (handleVerifyingPhase)
+// or when VerificationDeadline expires.
+// #281: Notification creation is delegated to ensureNotificationsCreated (idempotent).
+// If creation fails here, handleVerifyingPhase retries on subsequent reconciles.
+func (r *Reconciler) transitionToVerifying(ctx context.Context, rr *remediationv1.RemediationRequest, outcome string) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
-	// IDEMPOTENCY: Check if already in Completed phase before attempting transition
-	// This prevents duplicate transitions and audit emissions when multiple reconciles happen simultaneously
-	if rr.Status.OverallPhase == phase.Completed {
-		logger.V(1).Info("Already in Completed phase, skipping transition")
+	// RO-AUDIT-IDEMPOTENCY: Refetch via apiReader (cache-bypassed) before the phase
+	// check. Pattern: mirrors transitionToFailed and RAR audit deduplication.
+	if err := r.apiReader.Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
+		logger.Error(err, "Failed to refetch RemediationRequest via apiReader for idempotency check")
+		return ctrl.Result{}, err
+	}
+
+	// #280: Idempotency — skip if already in Verifying or Completed
+	if rr.Status.OverallPhase == phase.Verifying || rr.Status.OverallPhase == phase.Completed {
+		logger.V(1).Info("Already in Verifying/Completed phase (confirmed via apiReader), skipping transition",
+			"phase", rr.Status.OverallPhase)
 		return ctrl.Result{}, nil
 	}
 
-	// Capture old phase for metrics and audit
 	oldPhaseBeforeTransition := rr.Status.OverallPhase
-	startTime := rr.CreationTimestamp.Time
 
-	// REFACTOR-RO-001: Using retry helper
+	// #280: Transition to Verifying (not Completed). CompletedAt and Outcome are set later
+	// when EA finishes or VerificationDeadline expires.
 	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
-		rr.Status.OverallPhase = phase.Completed
-		rr.Status.Outcome = outcome
-		rr.Status.ObservedGeneration = rr.Generation // DD-CONTROLLER-001: Track final generation
-		now := metav1.Now()
-		rr.Status.CompletedAt = &now
+		rr.Status.OverallPhase = phase.Verifying
+		rr.Status.ObservedGeneration = rr.Generation
 
-		// BR-ORCH-043: Set Ready condition (terminal success)
-		remediationrequest.SetReady(rr, true, remediationrequest.ReasonReady, "Remediation completed", r.Metrics)
+		// BR-ORCH-043: Set Ready condition (remediation succeeded, verification pending)
+		remediationrequest.SetReady(rr, true, remediationrequest.ReasonReady, "Remediation completed, verifying effectiveness", r.Metrics)
 
 		// DD-WE-004 V1.0: Reset exponential backoff on success
 		if rr.Status.NextAllowedExecution != nil {
-			logger.Info("Clearing exponential backoff after successful completion",
+			logger.Info("Clearing exponential backoff after successful remediation",
 				"previousNextAllowed", rr.Status.NextAllowedExecution.Format(time.RFC3339),
 				"previousConsecutiveFailures", rr.Status.ConsecutiveFailureCount)
 			rr.Status.NextAllowedExecution = nil
 		}
-
-		// Reset consecutive failure count (fresh start after success)
 		rr.Status.ConsecutiveFailureCount = 0
 
 		return nil
 	})
 	if err != nil {
-		logger.Error(err, "Failed to transition to Completed")
-		return ctrl.Result{}, fmt.Errorf("failed to transition to Completed: %w", err)
+		logger.Error(err, "Failed to transition to Verifying")
+		return ctrl.Result{}, fmt.Errorf("failed to transition to Verifying: %w", err)
 	}
 
-	// Labels order: from_phase, to_phase, namespace (per prometheus.go definition)
 	if r.Metrics != nil {
-		r.Metrics.PhaseTransitionsTotal.WithLabelValues(string(oldPhaseBeforeTransition), string(phase.Completed), rr.Namespace).Inc()
+		r.Metrics.PhaseTransitionsTotal.WithLabelValues(string(oldPhaseBeforeTransition), string(phase.Verifying), rr.Namespace).Inc()
 	}
 
-	// Emit audit event (DD-AUDIT-003)
-	// IDEMPOTENCY: Only emit if phase actually changed (prevents duplicate events on reconcile retries)
-	// Race condition protection: oldPhaseBeforeTransition captured before status update ensures
-	// only the reconcile that successfully transitioned will emit the audit event
-	if oldPhaseBeforeTransition != phase.Completed {
-		durationMs := time.Since(startTime).Milliseconds()
-		r.emitCompletionAudit(ctx, rr, outcome, durationMs)
-
-		// DD-EVENT-001: Emit K8s event for successful completion (BR-ORCH-095)
+	// Emit audit and K8s event for Verifying transition
+	if oldPhaseBeforeTransition != phase.Verifying {
+		r.emitVerifyingStartedAudit(ctx, rr)
 		if r.Recorder != nil {
 			r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonRemediationCompleted,
-				fmt.Sprintf("Remediation completed successfully: %s", outcome))
+				"Remediation succeeded, entering verification phase (#280)")
 		}
 	}
 
-	// ========================================
-	// BR-ORCH-045: COMPLETION NOTIFICATION
-	// Notify operators of successful remediation
-	// ========================================
-	if oldPhaseBeforeTransition != phase.Completed {
-		// Fetch AIAnalysis for RCA and workflow context
-		aiName := fmt.Sprintf("ai-%s", rr.Name)
-		ai := &aianalysisv1.AIAnalysis{}
-		if err := r.client.Get(ctx, client.ObjectKey{Name: aiName, Namespace: rr.Namespace}, ai); err != nil {
-			// Non-fatal: Log and continue - completion succeeded even if notification fails
-			logger.Error(err, "Failed to fetch AIAnalysis for completion notification", "aiAnalysis", aiName)
-		} else {
-			notifName, notifErr := r.notificationCreator.CreateCompletionNotification(ctx, rr, ai)
-			if notifErr != nil {
-				// Non-fatal: Log and continue - completion succeeded even if notification fails
-				logger.Error(notifErr, "Failed to create completion notification")
-			} else {
-				logger.Info("Created completion notification", "notification", notifName)
-				// Issue #88, BR-ORCH-035 AC-2: Persist completion NT ref to NotificationRequestRefs
-				// Uses helpers.UpdateRemediationRequestStatus to ensure persistence (Batch 3 fix:
-				// previous in-memory-only append was never written to the API server because the
-				// phase status update at line ~1444 had already completed).
-				if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
-					rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, corev1.ObjectReference{
-						Kind:       "NotificationRequest",
-						Name:       notifName,
-						Namespace:  rr.Namespace,
-						APIVersion: "notification.kubernaut.ai/v1alpha1",
-					})
-					return nil
-				}); refErr != nil {
-					logger.Error(refErr, "Failed to persist completion NT ref (non-critical)", "notification", notifName)
-				}
-				// DD-EVENT-001: Emit K8s event for notification creation (BR-ORCH-095)
-				if r.Recorder != nil {
-					r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonNotificationCreated,
-						fmt.Sprintf("Completion notification created: %s", notifName))
-				}
-			}
-		}
+	// BR-ORCH-045 + BR-ORCH-034: Completion and bulk duplicate notifications.
+	// #281: Non-blocking first attempt; handleVerifyingPhase retries on subsequent reconciles.
+	r.ensureNotificationsCreated(ctx, rr)
 
-		// BR-ORCH-034: Create bulk duplicate notification if duplicates exist
-		if rr.Status.DuplicateCount > 0 {
-			bulkName, bulkErr := r.notificationCreator.CreateBulkDuplicateNotification(ctx, rr)
-			if bulkErr != nil {
-				// Non-fatal: Log and continue
-				logger.Error(bulkErr, "Failed to create bulk duplicate notification")
-			} else {
-				logger.Info("Created bulk duplicate notification", "notification", bulkName)
-			}
-		}
-	}
-
-	// ADR-EM-001: Create EffectivenessAssessment CRD (non-fatal)
+	// #280: Create EA — if this fails, handleVerifyingPhase will retry on next reconcile
 	r.createEffectivenessAssessmentIfNeeded(ctx, rr)
 
-	logger.Info("Remediation completed successfully", "outcome", outcome)
+	logger.Info("Remediation succeeded, entered Verifying phase", "outcome", outcome)
 	return ctrl.Result{}, nil
 }
+
+// handleVerifyingPhase manages the Verifying phase lifecycle (#280).
+// Responsibilities:
+//   - Step 0 (#281): Retry notification creation if refs are missing (non-blocking)
+//   - Step 1: Retry EA creation if EffectivenessAssessmentRef is nil (transient failure)
+//   - Step 2: Populate VerificationDeadline from EA.Status.ValidityDeadline + buffer
+//   - Step 3: Timeout check when VerificationDeadline expires (Change 4)
+//   - Step 4: EA terminal status triggers Completed transition (Change 3)
+func (r *Reconciler) handleVerifyingPhase(ctx context.Context, rr *remediationv1.RemediationRequest) (ctrl.Result, error) {
+	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
+
+	// Step 0 (#281): Retry notification creation if refs are missing.
+	// Non-blocking: notifications are informational, don't gate EA/verification.
+	r.ensureNotificationsCreated(ctx, rr)
+
+	// Step 1: If EA was not created during transition (transient failure), retry now
+	if rr.Status.EffectivenessAssessmentRef == nil {
+		logger.Info("EffectivenessAssessmentRef is nil in Verifying phase, retrying EA creation")
+		r.createEffectivenessAssessmentIfNeeded(ctx, rr)
+
+		if rr.Status.EffectivenessAssessmentRef == nil {
+			logger.Info("EA creation still pending, requeueing")
+			return ctrl.Result{RequeueAfter: config.RequeueResourceBusy}, nil
+		}
+	}
+
+	// Step 2: Populate VerificationDeadline from EA.Status.ValidityDeadline
+	if rr.Status.VerificationDeadline == nil {
+		eaName := rr.Status.EffectivenessAssessmentRef.Name
+		ea := &eav1.EffectivenessAssessment{}
+		if err := r.client.Get(ctx, client.ObjectKey{Name: eaName, Namespace: rr.Namespace}, ea); err != nil {
+			logger.Error(err, "Failed to fetch EA for VerificationDeadline computation", "ea", eaName)
+			return ctrl.Result{RequeueAfter: config.RequeueResourceBusy}, nil
+		}
+
+		if ea.Status.ValidityDeadline != nil {
+			deadline := metav1.NewTime(ea.Status.ValidityDeadline.Add(VerificationDeadlineBuffer))
+			if err := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+				rr.Status.VerificationDeadline = &deadline
+				return nil
+			}); err != nil {
+				logger.Error(err, "Failed to persist VerificationDeadline")
+				return ctrl.Result{}, err
+			}
+			logger.Info("VerificationDeadline set", "deadline", deadline.Format(time.RFC3339))
+		} else if time.Since(rr.CreationTimestamp.Time) > r.timeouts.Verifying {
+			logger.Info("Safety-net timeout: VerificationDeadline never set, RR exceeded verifying timeout",
+				"age", time.Since(rr.CreationTimestamp.Time).String(),
+				"verifyingTimeout", r.timeouts.Verifying.String())
+			if err := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+				now := metav1.Now()
+				rr.Status.OverallPhase = phase.Completed
+				rr.Status.Outcome = "VerificationTimedOut"
+				rr.Status.CompletedAt = &now
+				rr.Status.ObservedGeneration = rr.Generation
+				return nil
+			}); err != nil {
+				logger.Error(err, "Failed to transition to Completed on safety-net timeout")
+				return ctrl.Result{}, err
+			}
+			if r.Metrics != nil {
+				r.Metrics.PhaseTransitionsTotal.WithLabelValues(string(phase.Verifying), string(phase.Completed), rr.Namespace).Inc()
+			}
+		r.emitVerificationTimedOutAudit(ctx, rr)
+		if rr.Status.StartTime != nil {
+			r.emitCompletionAudit(ctx, rr, "success", time.Since(rr.Status.StartTime.Time).Milliseconds())
+		}
+		return ctrl.Result{}, nil
+	} else {
+		logger.V(1).Info("EA.Status.ValidityDeadline not yet set, requeueing")
+			return ctrl.Result{RequeueAfter: config.RequeueResourceBusy}, nil
+		}
+	}
+
+	// Step 3: Timeout check — if VerificationDeadline has passed, time out (#280 Change 4)
+	if rr.Status.VerificationDeadline != nil && time.Now().After(rr.Status.VerificationDeadline.Time) {
+		logger.Info("VerificationDeadline expired, timing out verification",
+			"deadline", rr.Status.VerificationDeadline.Time.Format(time.RFC3339))
+		if err := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+			now := metav1.Now()
+			rr.Status.OverallPhase = phase.Completed
+			rr.Status.Outcome = "VerificationTimedOut"
+			rr.Status.CompletedAt = &now
+			rr.Status.ObservedGeneration = rr.Generation
+			return nil
+		}); err != nil {
+			logger.Error(err, "Failed to transition to Completed on verification timeout")
+			return ctrl.Result{}, err
+		}
+		if r.Metrics != nil {
+			r.Metrics.PhaseTransitionsTotal.WithLabelValues(string(phase.Verifying), string(phase.Completed), rr.Namespace).Inc()
+		}
+		r.emitVerificationTimedOutAudit(ctx, rr)
+		if rr.Status.StartTime != nil {
+			r.emitCompletionAudit(ctx, rr, "success", time.Since(rr.Status.StartTime.Time).Milliseconds())
+		}
+		return ctrl.Result{}, nil
+	}
+
+	// Step 4: Track EA terminal status -> transition Verifying -> Completed (#280 Change 3)
+	if err := r.trackEffectivenessStatus(ctx, rr); err != nil {
+		logger.Error(err, "Failed to track EA status during Verifying phase")
+	}
+
+	// If trackEffectivenessStatus transitioned to Completed, emit audit and return
+	if rr.Status.OverallPhase == phase.Completed {
+		r.emitVerificationCompletedAudit(ctx, rr)
+		if rr.Status.StartTime != nil {
+			r.emitCompletionAudit(ctx, rr, "success", time.Since(rr.Status.StartTime.Time).Milliseconds())
+		}
+		return ctrl.Result{}, nil
+	}
+
+	// Step 4: Timeout check added in Change 4
+
+	return ctrl.Result{RequeueAfter: config.RequeueResourceBusy}, nil
+}
+
+// VerificationDeadlineBuffer is the grace period added to EA.Status.ValidityDeadline
+// when computing VerificationDeadline. Allows for clock skew and final status propagation.
+const VerificationDeadlineBuffer = 30 * time.Second
 
 // transitionToFailed transitions the RR to Failed phase.
 // BR-ORCH-042: Before transitioning to terminal Failed, checks if this failure
@@ -1765,10 +1845,10 @@ func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.R
 		consecutiveFailures := r.countConsecutiveFailures(ctx, rr.Spec.SignalFingerprint)
 
 		// +1 for this failure (not yet in status)
-		if consecutiveFailures+1 >= DefaultBlockThreshold {
+		if consecutiveFailures+1 >= r.getConsecutiveFailureThreshold() {
 			logger.Info("Consecutive failure threshold reached, future RRs will be blocked",
 				"consecutiveFailures", consecutiveFailures+1,
-				"threshold", DefaultBlockThreshold,
+				"threshold", r.getConsecutiveFailureThreshold(),
 				"fingerprint", rr.Spec.SignalFingerprint,
 			)
 			// Do NOT transition this RR to Blocked - it failed and should go to Failed.
@@ -1776,11 +1856,18 @@ func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.R
 		}
 	}
 
-	// Normal terminal Failed transition
-	// IDEMPOTENCY: Check if already in Failed phase before attempting transition
-	// This prevents duplicate transitions and audit emissions when multiple reconciles happen simultaneously
+	// RO-AUDIT-IDEMPOTENCY: Refetch via apiReader (cache-bypassed) before the phase
+	// check. The informer cache is eventually consistent — a second reconcile may
+	// start with stale cache showing non-Failed phase after the first reconcile has
+	// already transitioned, causing duplicate orchestrator.lifecycle.completed events.
+	// Pattern: mirrors RAR audit deduplication (remediation_approval_request.go).
+	if err := r.apiReader.Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
+		logger.Error(err, "Failed to refetch RemediationRequest via apiReader for idempotency check")
+		return ctrl.Result{}, err
+	}
+
 	if rr.Status.OverallPhase == phase.Failed {
-		logger.V(1).Info("Already in Failed phase, skipping transition")
+		logger.V(1).Info("Already in Failed phase (confirmed via apiReader), skipping transition")
 		return ctrl.Result{}, nil
 	}
 
@@ -1846,7 +1933,7 @@ func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.R
 	}
 
 	// Issue #240: EA is NOT created on failure paths. EA should only be created
-	// when WFE completes successfully (transitionToCompleted), because failed/timed-out
+	// when WFE completes successfully (transitionToVerifying), because failed/timed-out
 	// remediations may have partially applied or no changes, making EA unreliable.
 
 	logger.Info("Remediation failed", "failurePhase", failurePhase, "reason", failureReason)
@@ -1944,10 +2031,6 @@ The remediation was in %s phase when it timed out. Please investigate why the re
 				rr.Status.TimeoutTime.Format(time.RFC3339),
 				timeoutPhase,
 			),
-			Channels: []notificationv1.Channel{
-				notificationv1.ChannelSlack,
-				notificationv1.ChannelEmail,
-			},
 			Metadata: map[string]string{
 				"remediationRequest": rr.Name,
 				"timeoutPhase":       timeoutPhase,
@@ -2015,7 +2098,7 @@ The remediation was in %s phase when it timed out. Please investigate why the re
 			"totalNotifications", len(rr.Status.NotificationRequestRefs)+1)
 	}
 
-	// Issue #240: EA is NOT created on global timeout. See transitionToCompleted.
+	// Issue #240: EA is NOT created on global timeout. See transitionToVerifying.
 
 	return ctrl.Result{}, nil
 }
@@ -2038,25 +2121,76 @@ func (r *Reconciler) createEffectivenessAssessmentIfNeeded(ctx context.Context, 
 	// Signal target: from RR (always available).
 	// Remediation target: from AIAnalysis AffectedResource (when available), else RR fallback.
 	var dualTarget *creator.DualTarget
+	var isGitOpsManaged bool
+	var ai *aianalysisv1.AIAnalysis
 	if rr.Status.AIAnalysisRef != nil {
-		ai := &aianalysisv1.AIAnalysis{}
+		ai = &aianalysisv1.AIAnalysis{}
 		if err := r.client.Get(ctx, client.ObjectKey{
 			Name:      rr.Status.AIAnalysisRef.Name,
 			Namespace: rr.Status.AIAnalysisRef.Namespace,
 		}, ai); err != nil {
 			logger.V(1).Info("Could not fetch AIAnalysis for target resolution (non-fatal), using RR target",
 				"error", err)
+			ai = nil
 		} else {
 			dualTarget = resolveDualTargets(rr, ai)
+			// DD-EM-004, BR-RO-103.2: Read GitOps detection from RCA pipeline.
+			if ai.Status.PostRCAContext != nil &&
+				ai.Status.PostRCAContext.DetectedLabels != nil &&
+				ai.Status.PostRCAContext.DetectedLabels.GitOpsManaged {
+				isGitOpsManaged = true
+			}
 		}
 	}
 
-	name, err := r.eaCreator.CreateEffectivenessAssessment(ctx, rr, dualTarget)
+	// DD-EM-004 v2.0, BR-RO-103, Issue #253, #277: Detect async-managed targets.
+	// Compute Duration-based hashComputeDelay for the EA Config.
+	var hashComputeDelay *metav1.Duration
+	remediationKind := rr.Spec.TargetResource.Kind
+	if dualTarget != nil {
+		remediationKind = dualTarget.Remediation.Kind
+	}
+
+	isCRD := false
+	gvk, err := resolveGVKForKind(r.restMapper, remediationKind)
+	if err != nil {
+		logger.V(1).Info("Cannot resolve GVK for kind, treating as sync target for hash timing",
+			"kind", remediationKind, "error", err)
+	} else if !creator.IsBuiltInGroup(gvk.Group) {
+		isCRD = true
+	}
+
+	propagationDelay := r.asyncPropagation.ComputePropagationDelay(isGitOpsManaged, isCRD)
+	if propagationDelay > 0 {
+		hashComputeDelay = &metav1.Duration{Duration: propagationDelay}
+		logger.Info("Async-managed target detected, setting hash check delay",
+			"kind", remediationKind,
+			"gitOps", isGitOpsManaged,
+			"isCRD", isCRD,
+			"hashComputeDelay", propagationDelay)
+	}
+
+	// #277: Detect proactive signals via AIAnalysis.Spec.AnalysisRequest.SignalContext.SignalMode.
+	// Proactive alerts (e.g. predict_linear) need extra time to resolve.
+	var alertCheckDelay *metav1.Duration
+	if ai != nil && ai.Spec.AnalysisRequest.SignalContext.SignalMode == "proactive" {
+		if r.asyncPropagation.ProactiveAlertDelay > 0 {
+			alertCheckDelay = &metav1.Duration{Duration: r.asyncPropagation.ProactiveAlertDelay}
+			logger.Info("Proactive signal detected, setting alert check delay",
+				"signalMode", ai.Spec.AnalysisRequest.SignalContext.SignalMode,
+				"alertCheckDelay", r.asyncPropagation.ProactiveAlertDelay)
+		}
+	}
+
+	name, err := r.eaCreator.CreateEffectivenessAssessment(ctx, rr, dualTarget, hashComputeDelay, alertCheckDelay)
 	if err != nil {
 		logger.Error(err, "Failed to create EffectivenessAssessment (non-fatal per ADR-EM-001)")
 		return
 	}
 	logger.Info("EffectivenessAssessment created", "eaName", name, "rrPhase", rr.Status.OverallPhase)
+
+	// #277: Emit orchestrator.ea.created audit event with propagation delay breakdown.
+	r.emitEACreatedAudit(ctx, rr, name, hashComputeDelay, alertCheckDelay, isGitOpsManaged, isCRD)
 
 	// ADR-EM-001, Batch 3: Persist EA ref on RR status for trackEffectivenessStatus.
 	// Uses helpers.UpdateRemediationRequestStatus for atomic persistence (same pattern
@@ -2187,6 +2321,45 @@ func (r *Reconciler) emitWorkflowCreatedAudit(ctx context.Context, rr *remediati
 	}
 }
 
+// emitEACreatedAudit emits the orchestrator.ea.created audit event with propagation
+// delay breakdown. Issue #277: The RO is the source of truth for these delays.
+// Non-blocking — failures are logged but don't affect business logic.
+func (r *Reconciler) emitEACreatedAudit(ctx context.Context, rr *remediationv1.RemediationRequest, eaName string, hashComputeDelay, alertCheckDelay *metav1.Duration, isGitOpsManaged, isCRD bool) {
+	logger := log.FromContext(ctx)
+
+	if r.auditStore == nil {
+		return
+	}
+
+	data := roaudit.EACreatedData{
+		EAName:          eaName,
+		IsGitOpsManaged: isGitOpsManaged,
+		IsCRD:           isCRD,
+	}
+	if hashComputeDelay != nil {
+		data.HashComputeDelay = hashComputeDelay.Duration
+	}
+	if alertCheckDelay != nil {
+		data.AlertCheckDelay = alertCheckDelay.Duration
+	}
+	if isGitOpsManaged {
+		data.GitOpsSyncDelay = r.asyncPropagation.GitOpsSyncDelay
+	}
+	if isCRD {
+		data.OperatorReconcileDelay = r.asyncPropagation.OperatorReconcileDelay
+	}
+
+	event, err := r.auditManager.BuildEACreatedEvent(rr.Name, rr.Namespace, rr.Name, data)
+	if err != nil {
+		logger.Error(err, "Failed to build EA created audit event")
+		return
+	}
+
+	if err := r.auditStore.StoreAudit(ctx, event); err != nil {
+		logger.Error(err, "Failed to store EA created audit event")
+	}
+}
+
 // emitLifecycleStartedAudit emits an audit event for remediation lifecycle started.
 // Per ADR-032 §1: Audit is MANDATORY for RemediationOrchestrator (P0 service).
 // This function assumes auditStore is non-nil, enforced by cmd/remediationorchestrator/main.go:128.
@@ -2223,6 +2396,73 @@ func (r *Reconciler) emitLifecycleStartedAudit(ctx context.Context, rr *remediat
 
 	if err := r.auditStore.StoreAudit(ctx, event); err != nil {
 		logger.Error(err, "Failed to store lifecycle started audit event")
+	}
+}
+
+// emitVerifyingStartedAudit emits an audit event when RR enters the Verifying phase (#280).
+// Non-blocking — failures are logged but don't affect business logic.
+func (r *Reconciler) emitVerifyingStartedAudit(ctx context.Context, rr *remediationv1.RemediationRequest) {
+	logger := log.FromContext(ctx)
+	if r.auditStore == nil {
+		return
+	}
+
+	event, err := r.auditManager.BuildLifecycleVerifyingStartedEvent(rr.Name, rr.Namespace, rr.Name)
+	if err != nil {
+		logger.Error(err, "Failed to build verifying_started audit event")
+		return
+	}
+
+	if err := r.auditStore.StoreAudit(ctx, event); err != nil {
+		logger.Error(err, "Failed to store verifying_started audit event")
+	}
+}
+
+// emitVerificationCompletedAudit emits an audit event when Verifying -> Completed (#280).
+func (r *Reconciler) emitVerificationCompletedAudit(ctx context.Context, rr *remediationv1.RemediationRequest) {
+	logger := log.FromContext(ctx)
+	if r.auditStore == nil {
+		return
+	}
+
+	eaName := ""
+	if rr.Status.EffectivenessAssessmentRef != nil {
+		eaName = rr.Status.EffectivenessAssessmentRef.Name
+	}
+	durationMs := time.Since(rr.CreationTimestamp.Time).Milliseconds()
+	event, err := r.auditManager.BuildLifecycleVerificationCompletedEvent(
+		rr.Name, rr.Namespace, rr.Name, eaName, rr.Status.Outcome, durationMs)
+	if err != nil {
+		logger.Error(err, "Failed to build verification_completed audit event")
+		return
+	}
+
+	if err := r.auditStore.StoreAudit(ctx, event); err != nil {
+		logger.Error(err, "Failed to store verification_completed audit event")
+	}
+}
+
+// emitVerificationTimedOutAudit emits an audit event when Verifying times out (#280).
+func (r *Reconciler) emitVerificationTimedOutAudit(ctx context.Context, rr *remediationv1.RemediationRequest) {
+	logger := log.FromContext(ctx)
+	if r.auditStore == nil {
+		return
+	}
+
+	eaName := ""
+	if rr.Status.EffectivenessAssessmentRef != nil {
+		eaName = rr.Status.EffectivenessAssessmentRef.Name
+	}
+	durationMs := time.Since(rr.CreationTimestamp.Time).Milliseconds()
+	event, err := r.auditManager.BuildLifecycleVerificationTimedOutEvent(
+		rr.Name, rr.Namespace, rr.Name, eaName, durationMs)
+	if err != nil {
+		logger.Error(err, "Failed to build verification_timed_out audit event")
+		return
+	}
+
+	if err := r.auditStore.StoreAudit(ctx, event); err != nil {
+		logger.Error(err, "Failed to store verification_timed_out audit event")
 	}
 }
 
@@ -2811,9 +3051,96 @@ func (r *Reconciler) handlePhaseTimeout(ctx context.Context, rr *remediationv1.R
 	// Create phase-specific timeout notification (non-blocking)
 	r.createPhaseTimeoutNotification(ctx, rr, phase, timeout)
 
-	// Issue #240: EA is NOT created on phase timeout. See transitionToCompleted.
+	// Issue #240: EA is NOT created on phase timeout. See transitionToVerifying.
 
 	return nil
+}
+
+// hasNotificationRef returns true if a NotificationRequest with the given name
+// is already tracked in rr.Status.NotificationRequestRefs.
+func hasNotificationRef(rr *remediationv1.RemediationRequest, name string) bool {
+	for i := range rr.Status.NotificationRequestRefs {
+		if rr.Status.NotificationRequestRefs[i].Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// ensureNotificationsCreated creates completion and bulk-duplicate notifications
+// if they are not yet tracked in NotificationRequestRefs.
+// Idempotent: deterministic names + ref check prevent duplicates across reconciles.
+// Non-blocking: errors are logged but never propagated.
+// Called from transitionToVerifying (first attempt) and handleVerifyingPhase (retry).
+// Reference: BR-ORCH-045 (completion), BR-ORCH-034 (bulk duplicate), #281 (retry).
+func (r *Reconciler) ensureNotificationsCreated(ctx context.Context, rr *remediationv1.RemediationRequest) {
+	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
+
+	completionName := fmt.Sprintf("nr-completion-%s", rr.Name)
+	bulkName := fmt.Sprintf("nr-bulk-%s", rr.Name)
+
+	if !hasNotificationRef(rr, completionName) {
+		aiName := fmt.Sprintf("ai-%s", rr.Name)
+		ai := &aianalysisv1.AIAnalysis{}
+		if err := r.client.Get(ctx, client.ObjectKey{Name: aiName, Namespace: rr.Namespace}, ai); err != nil {
+			logger.Error(err, "Failed to fetch AIAnalysis for completion notification, will retry", "aiAnalysis", aiName)
+		} else {
+			notifName, notifErr := r.notificationCreator.CreateCompletionNotification(ctx, rr, ai)
+			if notifErr != nil {
+				logger.Error(notifErr, "Failed to create completion notification, will retry")
+			} else {
+				logger.Info("Created completion notification", "notification", notifName)
+				ref := r.buildNotificationRef(ctx, notifName, rr.Namespace)
+				if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+					rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
+					return nil
+				}); refErr != nil {
+					logger.Error(refErr, "Failed to persist completion NT ref (non-critical)", "notification", notifName)
+				}
+				if r.Recorder != nil {
+					r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonNotificationCreated,
+						fmt.Sprintf("Completion notification created: %s", notifName))
+				}
+			}
+		}
+	}
+
+	if rr.Status.DuplicateCount > 0 && !hasNotificationRef(rr, bulkName) {
+		name, bulkErr := r.notificationCreator.CreateBulkDuplicateNotification(ctx, rr)
+		if bulkErr != nil {
+			logger.Error(bulkErr, "Failed to create bulk duplicate notification, will retry")
+		} else {
+			logger.Info("Created bulk duplicate notification", "notification", name)
+			ref := r.buildNotificationRef(ctx, name, rr.Namespace)
+			if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+				rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
+				return nil
+			}); refErr != nil {
+				logger.Error(refErr, "Failed to persist bulk NT ref (non-critical)", "notification", name)
+			}
+			if r.Recorder != nil {
+				r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonNotificationCreated,
+					fmt.Sprintf("Bulk duplicate notification created: %s", name))
+			}
+		}
+	}
+}
+
+// buildNotificationRef fetches the NotificationRequest by name to obtain its UID
+// and returns a fully populated ObjectReference (BR-ORCH-035 AC-6).
+// If the fetch fails, UID is omitted (best-effort; Name+Namespace still sufficient for lookup).
+func (r *Reconciler) buildNotificationRef(ctx context.Context, name, namespace string) corev1.ObjectReference {
+	ref := corev1.ObjectReference{
+		Kind:       "NotificationRequest",
+		Name:       name,
+		Namespace:  namespace,
+		APIVersion: "notification.kubernaut.ai/v1alpha1",
+	}
+	nr := &notificationv1.NotificationRequest{}
+	if err := r.client.Get(ctx, client.ObjectKey{Name: name, Namespace: namespace}, nr); err == nil {
+		ref.UID = nr.UID
+	}
+	return ref
 }
 
 // createPhaseTimeoutNotification creates a notification for phase timeout.
@@ -2868,10 +3195,6 @@ The %s phase did not complete within the expected timeframe. Please investigate 
 				safeFormatTime(rr.Status.TimeoutTime),
 				phase,
 			),
-			Channels: []notificationv1.Channel{
-				notificationv1.ChannelSlack,
-				notificationv1.ChannelEmail,
-			},
 			Metadata: map[string]string{
 				"remediationRequest": rr.Name,
 				"timeoutPhase":       string(phase),
@@ -2900,128 +3223,20 @@ The %s phase did not complete within the expected timeframe. Please investigate 
 		"notificationName", notificationName,
 		"phase", phase,
 		"timeout", timeout)
-}
 
-// ════════════════════════════════════════════════════════════════════════════
-// BR-ORCH-042: Consecutive Failure Blocking Integration
-// ════════════════════════════════════════════════════════════════════════════
-
-// SetConsecutiveFailureBlocker sets the consecutive failure blocker for testing.
-// Production code should create blocker in NewReconciler or via controller config.
-func (r *Reconciler) SetConsecutiveFailureBlocker(blocker *ConsecutiveFailureBlocker) {
-	r.consecutiveBlock = blocker
-}
-
-// HandleBlockedPhase handles RemediationRequests in Blocked phase.
-// Checks if cooldown has expired and transitions to Failed if so.
-//
-// AC-042-3-2: RO transitions to Failed when cooldown expires
-// AC-042-3-3: RO requeues at exact expiry time
-func (r *Reconciler) HandleBlockedPhase(ctx context.Context, rr *remediationv1.RemediationRequest) (ctrl.Result, error) {
-	logger := ctrl.LoggerFrom(ctx).WithName("handle-blocked-phase")
-
-	// Check if this is a manual block (no BlockedUntil set)
-	if rr.Status.BlockedUntil == nil {
-		// Manual block - no auto-expiry
-		logger.Info("RemediationRequest manually blocked - no auto-expiry",
-			"name", rr.Name,
-			"blockReason", rr.Status.BlockReason)
-		return ctrl.Result{}, nil
-	}
-
-	// Check if cooldown has expired
-	now := time.Now()
-	if now.After(rr.Status.BlockedUntil.Time) {
-		// BR-SCOPE-010: UnmanagedResource blocks re-validate scope instead of failing
-		if rr.Status.BlockReason == string(remediationv1.BlockReasonUnmanagedResource) {
-			return r.handleUnmanagedResourceExpiry(ctx, rr, logger)
-		}
-
-		// Cooldown expired - transition to Failed
-		logger.Info("Blocked cooldown expired - transitioning to Failed",
-			"name", rr.Name,
-			"blockedUntil", rr.Status.BlockedUntil.Time,
-			"blockReason", rr.Status.BlockReason)
-
-		// ========================================
-		// DD-PERF-001: ATOMIC STATUS UPDATE
-		// Consolidate: OverallPhase + Outcome + Message → 1 API call
-		// ========================================
-		if err := r.StatusManager.AtomicStatusUpdate(ctx, rr, func() error {
-			rr.Status.OverallPhase = remediationv1.PhaseFailed
-			rr.Status.Outcome = "Blocked"
-			rr.Status.Message = fmt.Sprintf("Cooldown expired after %d consecutive failures",
-				r.getConsecutiveFailureThreshold())
-			return nil
-		}); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to update status after cooldown expiry: %w", err)
-		}
-
-		return ctrl.Result{}, nil
-	}
-
-	// Cooldown still active - requeue at expiry time
-	requeueAfter := time.Until(rr.Status.BlockedUntil.Time)
-	logger.Info("RemediationRequest blocked - requeuing at cooldown expiry",
-		"name", rr.Name,
-		"blockedUntil", rr.Status.BlockedUntil.Time,
-		"requeueAfter", requeueAfter)
-
-	return ctrl.Result{RequeueAfter: requeueAfter}, nil
-}
-
-// handleUnmanagedResourceExpiry re-validates scope when an UnmanagedResource block expires.
-// If still unmanaged: re-block with increased backoff.
-// If now managed: transition back to Pending for re-processing.
-//
-// Reference: BR-SCOPE-010, ADR-053 (Resource Scope Management)
-func (r *Reconciler) handleUnmanagedResourceExpiry(ctx context.Context, rr *remediationv1.RemediationRequest, logger logr.Logger) (ctrl.Result, error) {
-	logger.Info("UnmanagedResource block expired - re-validating scope",
-		"name", rr.Name)
-
-	// Re-validate scope using the routing engine
-	blocked := r.routingEngine.CheckUnmanagedResource(ctx, rr)
-
-	if blocked != nil {
-		// Still unmanaged — re-block with increased backoff
-		logger.Info("Resource still unmanaged - re-blocking with increased backoff",
-			"name", rr.Name,
-			"newBackoff", blocked.RequeueAfter)
-
-		blockedUntilMeta := metav1.NewTime(*blocked.BlockedUntil)
-		if err := r.StatusManager.AtomicStatusUpdate(ctx, rr, func() error {
-			rr.Status.BlockReason = blocked.Reason
-			rr.Status.Message = blocked.Message
-			rr.Status.BlockedUntil = &blockedUntilMeta
-			rr.Status.ConsecutiveFailureCount++ // increment to increase next backoff
-			return nil
-		}); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to update status for scope re-block: %w", err)
-		}
-
-		return ctrl.Result{RequeueAfter: blocked.RequeueAfter}, nil
-	}
-
-	// Now managed — transition back to Pending for re-processing
-	logger.Info("Resource is now managed - unblocking and transitioning to Pending",
-		"name", rr.Name)
-
-	if err := r.StatusManager.AtomicStatusUpdate(ctx, rr, func() error {
-		rr.Status.OverallPhase = remediationv1.PhasePending
-		rr.Status.BlockReason = ""
-		rr.Status.BlockedUntil = nil
-		rr.Status.Message = "Resource is now managed by Kubernaut - re-processing"
+	// BR-ORCH-035 AC-4: Track timeout notification ref (non-blocking)
+	ref := r.buildNotificationRef(ctx, notificationName, rr.Namespace)
+	if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+		rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
 		return nil
-	}); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to update status after scope unblock: %w", err)
+	}); refErr != nil {
+		logger.Error(refErr, "Failed to persist timeout NT ref (non-critical)", "notification", notificationName)
 	}
-
-	// Requeue immediately for re-processing
-	return ctrl.Result{Requeue: true}, nil
 }
 
 // IsTerminalPhase checks if a phase is terminal (no further processing).
 // BR-ORCH-042.2: Blocked is NON-terminal (active)
+// #280: Verifying is NON-terminal (EA assessment in progress)
 //
 // AC-042-2-1: IsTerminal(Blocked) returns false
 func IsTerminalPhase(phase remediationv1.RemediationPhase) bool {
@@ -3041,12 +3256,9 @@ func IsTerminalPhase(phase remediationv1.RemediationPhase) bool {
 	return false
 }
 
-// getConsecutiveFailureThreshold returns the configured threshold or default (3).
+// getConsecutiveFailureThreshold returns the configured threshold from the routing engine.
 func (r *Reconciler) getConsecutiveFailureThreshold() int {
-	if r.consecutiveBlock != nil {
-		return r.consecutiveBlock.threshold
-	}
-	return 3 // default
+	return r.routingEngine.Config().ConsecutiveFailureThreshold
 }
 
 // validateTimeoutConfig validates the timeout configuration in RemediationRequest.Status.TimeoutConfig.
@@ -3086,6 +3298,12 @@ func (r *Reconciler) validateTimeoutConfig(rr *remediationv1.RemediationRequest)
 // DD-EM-002: Called from cmd/remediationorchestrator/main.go after manager setup.
 func (r *Reconciler) SetRESTMapper(mapper meta.RESTMapper) {
 	r.restMapper = mapper
+}
+
+// SetAsyncPropagation configures propagation delays for async-managed targets.
+// DD-EM-004 v2.0, Issue #253: Called from cmd/remediationorchestrator/main.go.
+func (r *Reconciler) SetAsyncPropagation(cfg roconfig.AsyncPropagationConfig) {
+	r.asyncPropagation = cfg
 }
 
 // resolveDualTargets resolves both signal and remediation targets for the EA (DD-EM-003).
@@ -3200,13 +3418,18 @@ func resolveGVKForKind(mapper meta.RESTMapper, kind string) (schema.GroupVersion
 		return schema.GroupVersionKind{Group: "autoscaling", Version: "v2", Kind: "HorizontalPodAutoscaler"}, nil
 	case "PodDisruptionBudget":
 		return schema.GroupVersionKind{Group: "policy", Version: "v1", Kind: "PodDisruptionBudget"}, nil
+	case "Certificate":
+		return schema.GroupVersionKind{Group: "cert-manager.io", Version: "v1", Kind: "Certificate"}, nil
 	}
 
-	// Fall back to REST mapper for custom resources
+	// Fall back to REST mapper for custom resources.
+	// Use KindsFor with the pluralized resource name to search ALL registered
+	// API groups (RESTMapping with empty group only checks the default group).
 	if mapper != nil {
-		gvk, err := mapper.RESTMapping(schema.GroupKind{Kind: kind})
-		if err == nil {
-			return gvk.GroupVersionKind, nil
+		pluralGVR, _ := meta.UnsafeGuessKindToResource(schema.GroupVersionKind{Kind: kind})
+		gvks, err := mapper.KindsFor(schema.GroupVersionResource{Resource: pluralGVR.Resource})
+		if err == nil && len(gvks) > 0 {
+			return gvks[0], nil
 		}
 	}
 

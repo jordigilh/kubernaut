@@ -432,12 +432,12 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 		}),
 
 		// ========================================
-		// Category 4: Executing → Completed/Failed (5 scenarios)
+		// Category 4: Executing → Verifying/Failed (5 scenarios)
 		// ========================================
 
-		Entry("4.1: Executing→Completed - WE Succeeded (BR-ORCH-025.4)", ReconcileScenario{
-			name:        "executing_to_completed_we_succeeded",
-			description: "When WorkflowExecution succeeds, should transition to Completed",
+		Entry("4.1: Executing→Verifying - WE Succeeded (BR-ORCH-025.4)", ReconcileScenario{
+			name:        "executing_to_verifying_we_succeeded",
+			description: "When WorkflowExecution succeeds, should transition to Verifying (#280)",
 			businessReq: "BR-ORCH-025.4",
 			initialObjects: []client.Object{
 				newRemediationRequestWithChildRefs("test-rr", "default", remediationv1.PhaseExecuting, "test-rr-sp", "test-rr-ai", "test-rr-we"),
@@ -446,8 +446,8 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 				newWorkflowExecutionSucceeded("test-rr-we", "default", "test-rr"),
 			},
 			rrName:         types.NamespacedName{Name: "test-rr", Namespace: "default"},
-			expectedPhase:  remediationv1.PhaseCompleted,
-			expectedResult: ctrl.Result{}, // Terminal phase, no requeue
+			expectedPhase:  remediationv1.PhaseVerifying,
+			expectedResult: ctrl.Result{}, // Verifying phase, no requeue
 		}),
 
 		Entry("4.2: Executing→Failed - WE Failed", ReconcileScenario{
@@ -485,7 +485,7 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			},
 		}),
 
-		Entry("4.4: Executing→Completed - Status Aggregation", ReconcileScenario{
+		Entry("4.4: Executing→Verifying - Status Aggregation", ReconcileScenario{
 			name:        "executing_status_aggregation_all_children",
 			description: "Should aggregate all children statuses correctly",
 			businessReq: "BR-ORCH-026 (complete status aggregation)",
@@ -496,7 +496,7 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 				newWorkflowExecutionSucceeded("test-rr-we", "default", "test-rr"),
 			},
 			rrName:        types.NamespacedName{Name: "test-rr", Namespace: "default"},
-			expectedPhase: remediationv1.PhaseCompleted,
+			expectedPhase: remediationv1.PhaseVerifying,
 			additionalAsserts: func(rr *remediationv1.RemediationRequest) {
 				Expect(rr.Status.SignalProcessingRef).To(HaveField("Name", Equal("test-rr-sp")))
 				Expect(rr.Status.AIAnalysisRef).To(HaveField("Name", Equal("test-rr-ai")))

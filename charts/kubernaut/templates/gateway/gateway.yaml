@@ -25,7 +25,7 @@ data:
         maxRetries: 3
     processing:
       deduplication:
-        ttl: 5m
+        cooldownPeriod: 5m
       retry:
         maxAttempts: 3
         initialBackoff: 100ms
@@ -57,10 +57,7 @@ rules:
     resources: ["namespaces"]
     verbs: ["get", "list", "watch"]
   - apiGroups: [""]
-    resources: ["configmaps"]
-    verbs: ["get", "list", "watch"]
-  - apiGroups: [""]
-    resources: ["nodes", "pods", "services", "secrets", "persistentvolumes"]
+    resources: ["nodes", "pods", "services", "persistentvolumes"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["apps"]
     resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
@@ -86,6 +83,9 @@ subjects:
   - kind: ServiceAccount
     name: gateway
     namespace: {{ .Release.Namespace }}
+---
+# Role: namespace-scoped access to configmaps and secrets (#229)
+{{ include "kubernaut.nsRoleForSecrets" (dict "name" "gateway" "serviceAccount" "gateway" "Release" .Release "labels" (include "kubernaut.labels" .)) }}
 ---
 apiVersion: apps/v1
 kind: Deployment

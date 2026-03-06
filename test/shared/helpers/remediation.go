@@ -401,7 +401,6 @@ func NewCompletedWorkflowExecution(name, namespace string) *workflowexecutionv1.
 type NotificationRequestOpts struct {
 	Type     notificationv1.NotificationType
 	Priority notificationv1.NotificationPriority
-	Channels []notificationv1.Channel
 	Phase    notificationv1.NotificationPhase
 }
 
@@ -410,7 +409,6 @@ func NewNotificationRequest(name, namespace string, opts ...NotificationRequestO
 	// Default values
 	notifType := notificationv1.NotificationTypeEscalation
 	priority := notificationv1.NotificationPriorityHigh
-	channels := []notificationv1.Channel{notificationv1.ChannelSlack, notificationv1.ChannelEmail}
 
 	// Apply options
 	if len(opts) > 0 {
@@ -420,9 +418,6 @@ func NewNotificationRequest(name, namespace string, opts ...NotificationRequestO
 		}
 		if opt.Priority != "" {
 			priority = opt.Priority
-		}
-		if len(opt.Channels) > 0 {
-			channels = opt.Channels
 		}
 	}
 
@@ -439,14 +434,7 @@ func NewNotificationRequest(name, namespace string, opts ...NotificationRequestO
 		Spec: notificationv1.NotificationRequestSpec{
 			Type:     notifType,
 			Priority: priority,
-			Channels: channels,
-			Recipients: []notificationv1.Recipient{
-				{
-					Email: "oncall@example.com",
-					Slack: "#alerts",
-				},
-			},
-			Subject: "Test Notification",
+			Subject:  "Test Notification",
 			Body:    "This is a test notification body.",
 			Metadata: map[string]string{
 				"remediationRequestName": "test-rr",
@@ -468,10 +456,6 @@ func NewApprovalNotificationRequest(name, namespace, remediationRequestName stri
 	nr := NewNotificationRequest(name, namespace, NotificationRequestOpts{
 		Type:     notificationv1.NotificationTypeEscalation,
 		Priority: notificationv1.NotificationPriorityHigh,
-		Channels: []notificationv1.Channel{
-			notificationv1.ChannelSlack,
-			notificationv1.ChannelEmail,
-		},
 	})
 	nr.Spec.Subject = fmt.Sprintf("Approval Required: %s", remediationRequestName)
 	nr.Spec.Body = "A remediation workflow requires human approval before execution."

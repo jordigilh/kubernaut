@@ -53,18 +53,16 @@ import (
 
 // PhaseBasedDeduplicationChecker checks for existing in-progress RRs by fingerprint
 type PhaseBasedDeduplicationChecker struct {
-	client         client.Reader // Changed to Reader (can be apiReader or ctrlClient)
-	cooldownPeriod time.Duration
+	client client.Reader // Changed to Reader (can be apiReader or ctrlClient)
 }
 
 // NewPhaseBasedDeduplicationChecker creates a new phase-based checker.
 // DD-GATEWAY-011: Accepts client.Reader to allow apiReader (cache-bypassed) for race-free deduplication.
-// cooldownPeriod controls how long after a successful remediation new signals are suppressed.
-// Set to 0 to disable post-completion cooldown.
+// #280: cooldownPeriod removed — Verifying phase replaces post-completion cooldown.
+// The cooldownPeriod parameter is retained for backward compatibility but ignored.
 func NewPhaseBasedDeduplicationChecker(k8sClient client.Reader, cooldownPeriod time.Duration) *PhaseBasedDeduplicationChecker {
 	return &PhaseBasedDeduplicationChecker{
-		client:         k8sClient,
-		cooldownPeriod: cooldownPeriod,
+		client: k8sClient,
 	}
 }
 
@@ -131,9 +129,10 @@ func (c *PhaseBasedDeduplicationChecker) ShouldDeduplicate(ctx context.Context, 
 		return false, nil, fmt.Errorf("deduplication check failed: %w", err)
 	}
 
-	// Check each RR: non-terminal phases always deduplicate, Completed RRs within
-	// cooldown also deduplicate to prevent stale signals reaching the LLM pipeline.
-	var mostRecentCooldownRR *remediationv1alpha1.RemediationRequest
+	// Check each RR: non-terminal phases (including Verifying) always deduplicate.
+	// #280: Post-completion cooldown removed — Verifying phase covers the dedup gap.
+	// Failed/TimedOut RRs with active exponential backoff also deduplicate (#242, DD-WE-004).
+	var mostRecentBackoffRR *remediationv1alpha1.RemediationRequest
 
 	for i := range rrList.Items {
 		rr := &rrList.Items[i]
@@ -142,20 +141,19 @@ func (c *PhaseBasedDeduplicationChecker) ShouldDeduplicate(ctx context.Context, 
 			return true, rr, nil
 		}
 
-		// Post-completion cooldown: only Completed (not Failed/TimedOut/Skipped/Cancelled)
-		if c.cooldownPeriod > 0 &&
-			rr.Status.OverallPhase == remediationv1alpha1.PhaseCompleted &&
-			rr.Status.CompletedAt != nil &&
-			time.Since(rr.Status.CompletedAt.Time) < c.cooldownPeriod {
-			if mostRecentCooldownRR == nil ||
-				rr.Status.CompletedAt.Time.After(mostRecentCooldownRR.Status.CompletedAt.Time) {
-				mostRecentCooldownRR = rr
+		// Exponential backoff cooldown (#242, DD-WE-004): Failed/TimedOut RRs with
+		// NextAllowedExecution in the future suppress new RR creation.
+		if rr.Status.NextAllowedExecution != nil &&
+			time.Now().Before(rr.Status.NextAllowedExecution.Time) {
+			if mostRecentBackoffRR == nil ||
+				rr.Status.NextAllowedExecution.Time.After(mostRecentBackoffRR.Status.NextAllowedExecution.Time) {
+				mostRecentBackoffRR = rr
 			}
 		}
 	}
 
-	if mostRecentCooldownRR != nil {
-		return true, mostRecentCooldownRR, nil
+	if mostRecentBackoffRR != nil {
+		return true, mostRecentBackoffRR, nil
 	}
 
 	return false, nil, nil
@@ -175,16 +173,17 @@ func (c *PhaseBasedDeduplicationChecker) ShouldDeduplicate(ctx context.Context, 
 // - Cancelled: Remediation was manually cancelled (per DD-GATEWAY-009, allows retry)
 //
 // NON-TERMINAL (deduplicate → update status):
-// - Pending, Processing, Analyzing, AwaitingApproval, Executing
+// - Pending, Processing, Analyzing, AwaitingApproval, Executing, Verifying
 // - Blocked: RO holds for cooldown, Gateway updates dedup status (prevents RR flood)
+// - Verifying: EA assessment in progress (#280), Gateway deduplicates
 //
 // WHITELIST approach (safer than blacklist):
 // - Only explicitly terminal phases allow new RR
-// - ALL other phases (including Blocked and unknown future phases) are non-terminal
+// - ALL other phases (including Blocked, Verifying, and unknown future phases) are non-terminal
 //
 // Phase values per api/remediation/v1alpha1/remediationrequest_types.go:
 // - Terminal: Completed, Failed, TimedOut, Skipped, Cancelled
-// - Non-Terminal: Pending, Processing, Analyzing, AwaitingApproval, Executing, Blocked
+// - Non-Terminal: Pending, Processing, Analyzing, AwaitingApproval, Executing, Verifying, Blocked
 //
 // 🏛️ Compliance: BR-COMMON-001 (Phase Format), Viceversa Pattern (Cross-Service Consumption)
 // See: docs/handoff/TEAM_NOTIFICATION_GATEWAY_PHASE_COMPLIANCE.md

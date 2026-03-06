@@ -27,6 +27,9 @@ COPY --chown=1001:0 . .
 
 # GOFLAGS: Optional build flags (e.g., -cover for E2E coverage profiling per E2E_COVERAGE_COLLECTION.md)
 ARG GOFLAGS=""
+ARG APP_VERSION=dev
+ARG GIT_COMMIT=unknown
+ARG BUILD_DATE=unknown
 
 # Build the notification controller binary
 # -mod=mod: Automatically download dependencies during build (per DD-BUILD-001)
@@ -37,12 +40,13 @@ RUN if [ "${GOFLAGS}" = "-cover" ]; then \
 	echo "Building with coverage instrumentation (no symbol stripping)..."; \
 	CGO_ENABLED=0 GOOS=linux GOFLAGS="${GOFLAGS}" go build \
 	-mod=mod \
+	-ldflags="-X github.com/jordigilh/kubernaut/internal/version.Version=${APP_VERSION} -X github.com/jordigilh/kubernaut/internal/version.GitCommit=${GIT_COMMIT} -X github.com/jordigilh/kubernaut/internal/version.BuildDate=${BUILD_DATE}" \
 	-o manager \
 	./cmd/notification/main.go; \
     else \
 	CGO_ENABLED=0 GOOS=linux go build \
 	-mod=mod \
-	-ldflags='-w -s -extldflags "-static"' \
+	-ldflags="-w -s -extldflags '-static' -X github.com/jordigilh/kubernaut/internal/version.Version=${APP_VERSION} -X github.com/jordigilh/kubernaut/internal/version.GitCommit=${GIT_COMMIT} -X github.com/jordigilh/kubernaut/internal/version.BuildDate=${BUILD_DATE}" \
 	-a -installsuffix cgo \
 	-o manager \
 	./cmd/notification/main.go; \
@@ -81,6 +85,13 @@ ENTRYPOINT ["/usr/local/bin/manager"]
 # Default: no arguments (configuration via environment variables or Kubernetes ConfigMaps)
 # Do NOT copy config files into the image - use ConfigMaps for runtime configuration
 CMD []
+
+# OCI standard labels
+LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \
+	org.opencontainers.image.version="${APP_VERSION}" \
+	org.opencontainers.image.revision="${GIT_COMMIT}" \
+	org.opencontainers.image.created="${BUILD_DATE}" \
+	org.opencontainers.image.title="kubernaut-notification"
 
 # Red Hat UBI9 compatible metadata labels (REQUIRED per ADR-027)
 LABEL name="kubernaut-notification-controller" \

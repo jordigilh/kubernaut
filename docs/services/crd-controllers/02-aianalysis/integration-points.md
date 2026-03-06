@@ -154,7 +154,7 @@ spec:
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
 | `http://holmesgpt-api:8080/api/v1/incident/analyze` | POST | Initial incident investigation |
-| `http://holmesgpt-api:8080/api/v1/recovery/analyze` | POST | Recovery attempt analysis |
+| ~~`http://holmesgpt-api:8080/api/v1/recovery/analyze`~~ | ~~POST~~ | ~~Recovery attempt analysis~~ **DEPRECATED v1.0**: Alert re-fires through Gateway with prior EA context replace dedicated recovery. See BR-AA-HAPI-064.9. |
 | `http://holmesgpt-api:8080/health` | GET | Health check for circuit breaker |
 
 ### Investigation Request (V1.0)
@@ -462,9 +462,11 @@ spec:
 
 ### HolmesGPT-API Recovery Analysis
 
-**Endpoint**: `POST /api/v1/recovery/analyze`
+> **DEPRECATED for v1.0** (BR-AA-HAPI-064.9): Recovery investigations are deprecated. When a remediation is ineffective, the alert re-fires through the Gateway and existing AI analysis results (from the prior Effectiveness Assessment) are included in the HAPI prompt context. The RO routing engine prevents endless cycles.
 
-HolmesGPT-API:
+~~**Endpoint**: `POST /api/v1/recovery/analyze`~~
+
+HolmesGPT-API (deprecated flow):
 1. Analyzes previous failure patterns
 2. Avoids recommending same workflow if non-transient failure
 3. May escalate to `notify_only` if options exhausted

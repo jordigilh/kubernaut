@@ -22,6 +22,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -240,8 +241,7 @@ func validateEventData(event ogenclient.AuditEvent, expectedFields map[string]in
 
 		if expectedValue != nil {
 			actualValue := eventData[field]
-			// DEBUG: Print actual value for troubleshooting
-			if actualValue != expectedValue {
+			if !reflect.DeepEqual(actualValue, expectedValue) {
 				GinkgoWriter.Printf("⚠️  Field mismatch: %s\n", field)
 				GinkgoWriter.Printf("   Expected: %v (type: %T)\n", expectedValue, expectedValue)
 				GinkgoWriter.Printf("   Actual:   %v (type: %T)\n", actualValue, actualValue)

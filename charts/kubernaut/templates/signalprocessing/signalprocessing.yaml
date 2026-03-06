@@ -216,8 +216,11 @@ rules:
     resources: ["signalprocessings/status", "signalprocessings/finalizers"]
     verbs: ["get", "update", "patch"]
   - apiGroups: [""]
-    resources: ["pods", "services", "namespaces", "nodes", "configmaps", "secrets", "events"]
-    verbs: ["get", "list", "watch", "create", "update", "patch"]
+    resources: ["pods", "services", "namespaces", "nodes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
   - apiGroups: ["apps"]
     resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
     verbs: ["get", "list", "watch"]
@@ -248,6 +251,9 @@ subjects:
   - kind: ServiceAccount
     name: signalprocessing-controller
     namespace: {{ .Release.Namespace }}
+---
+# Role: namespace-scoped access to configmaps and secrets (#229)
+{{ include "kubernaut.nsRoleForSecrets" (dict "name" "signalprocessing" "serviceAccount" "signalprocessing-controller" "Release" .Release "labels" (include "kubernaut.labels" .)) }}
 ---
 apiVersion: apps/v1
 kind: Deployment

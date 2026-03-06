@@ -19,6 +19,7 @@ data:
       processing: "5m"
       analyzing: "10m"
       executing: "30m"
+      verifying: "30m"
     datastorage:
       url: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
       timeout: "10s"
@@ -28,7 +29,23 @@ data:
         flushInterval: "1s"
         maxRetries: 3
     effectivenessAssessment:
-      stabilizationWindow: "5m"
+      stabilizationWindow: {{ .Values.remediationorchestrator.config.effectivenessAssessment.stabilizationWindow | default "5m" | quote }}
+    asyncPropagation:
+      gitOpsSyncDelay: {{ .Values.remediationorchestrator.config.asyncPropagation.gitOpsSyncDelay | default "3m" | quote }}
+      operatorReconcileDelay: {{ .Values.remediationorchestrator.config.asyncPropagation.operatorReconcileDelay | default "1m" | quote }}
+      proactiveAlertDelay: {{ .Values.remediationorchestrator.config.asyncPropagation.proactiveAlertDelay | default "5m" | quote }}
+    routing:
+      consecutiveFailureThreshold: 3
+      consecutiveFailureCooldown: "1h"
+      recentlyRemediatedCooldown: "5m"
+      exponentialBackoffBase: "1m"
+      exponentialBackoffMax: "10m"
+      exponentialBackoffMaxExponent: 4
+      scopeBackoffBase: "5s"
+      scopeBackoffMax: "5m"
+      ineffectiveChainThreshold: 3
+      recurrenceCountThreshold: 5
+      ineffectiveTimeWindow: "4h"
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -86,7 +103,7 @@ rules:
     resources: ["events"]
     verbs: ["create", "patch"]
   - apiGroups: [""]
-    resources: ["pods", "nodes", "services", "configmaps", "secrets", "namespaces", "persistentvolumes"]
+    resources: ["pods", "nodes", "services", "namespaces", "persistentvolumes"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["apps"]
     resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
@@ -109,6 +126,9 @@ subjects:
   - kind: ServiceAccount
     name: remediationorchestrator-controller
     namespace: {{ .Release.Namespace }}
+---
+# Role: namespace-scoped access to configmaps and secrets (#229)
+{{ include "kubernaut.nsRoleForSecrets" (dict "name" "remediationorchestrator" "serviceAccount" "remediationorchestrator-controller" "Release" .Release "labels" (include "kubernaut.labels" .)) }}
 ---
 apiVersion: apps/v1
 kind: Deployment

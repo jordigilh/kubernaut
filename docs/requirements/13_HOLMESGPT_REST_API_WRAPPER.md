@@ -94,12 +94,15 @@ graph TB
 - **BR-HAPI-INVESTIGATION-005**: MUST NOT execute infrastructure changes - investigation and analysis only
 
 #### 2.1.5 Recovery Analysis & Recommendations (v1)
-- **BR-HAPI-RECOVERY-001**: MUST provide `/api/v1/recovery/analyze` POST endpoint for recovery strategy analysis
-- **BR-HAPI-RECOVERY-002**: MUST generate detailed recovery recommendations based on investigation results
-- **BR-HAPI-RECOVERY-003**: MUST provide step-by-step recovery instructions with safety validations
-- **BR-HAPI-RECOVERY-004**: MUST support multiple recovery strategies (immediate, gradual, rollback)
-- **BR-HAPI-RECOVERY-005**: MUST include risk assessment for each recommended recovery action
-- **BR-HAPI-RECOVERY-006**: MUST provide recovery time estimates and resource impact analysis
+
+> **DEPRECATED for v1.0** (BR-AA-HAPI-064.9): Recovery investigations are deprecated. When a remediation is ineffective, the alert re-fires through the Gateway and existing AI analysis results (from the prior Effectiveness Assessment) are included in the HAPI prompt context. The RO routing engine prevents endless cycles. Recovery flow may be revisited in future versions.
+
+- ~~**BR-HAPI-RECOVERY-001**: MUST provide `/api/v1/recovery/analyze` POST endpoint for recovery strategy analysis~~
+- ~~**BR-HAPI-RECOVERY-002**: MUST generate detailed recovery recommendations based on investigation results~~
+- ~~**BR-HAPI-RECOVERY-003**: MUST provide step-by-step recovery instructions with safety validations~~
+- ~~**BR-HAPI-RECOVERY-004**: MUST support multiple recovery strategies (immediate, gradual, rollback)~~
+- ~~**BR-HAPI-RECOVERY-005**: MUST include risk assessment for each recommended recovery action~~
+- ~~**BR-HAPI-RECOVERY-006**: MUST provide recovery time estimates and resource impact analysis~~
 
 #### 2.1.6 Action Safety Analysis (v1)
 - **BR-HAPI-SAFETY-001**: MUST provide `/api/v1/safety/analyze` POST endpoint for action safety assessment

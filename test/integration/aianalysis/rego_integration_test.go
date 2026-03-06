@@ -37,9 +37,10 @@ var _ = Describe("Rego Policy Integration", Label("integration", "rego"), func()
 	)
 
 	BeforeEach(func() {
-		// Use production policies from config/rego/aianalysis/
-		// This validates the actual policies that will be deployed
-		policyPath := filepath.Join("..", "..", "..", "config", "rego", "aianalysis", "approval.rego")
+		// Test-owned policy fixture decoupled from production config.
+		// This validates the Rego evaluator's behavior (scoring, aggregation,
+		// confidence gating) without coupling to operational policy changes.
+		policyPath := filepath.Join("testdata", "policies", "approval.rego")
 		evaluator = rego.NewEvaluator(rego.Config{
 			PolicyPath: policyPath,
 		}, logr.Discard())
@@ -92,11 +93,10 @@ var _ = Describe("Rego Policy Integration", Label("integration", "rego"), func()
 		})
 
 		It("should require approval for production with failed detections", func() {
-			// Confidence < 0.8 (default threshold) so auto-approval does not apply (#225)
 			result, err := evaluator.Evaluate(evalCtx, &rego.PolicyInput{
 				Environment:      "production",
 				AffectedResource: &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "production"},
-				FailedDetections: []string{"gitOpsManaged"}, // Detection failed
+				FailedDetections: []string{"gitOpsManaged"},
 				Warnings:         []string{},
 				Confidence:       0.79,
 			})
@@ -165,7 +165,6 @@ var _ = Describe("Rego Policy Integration", Label("integration", "rego"), func()
 
 	Context("Warning Handling - BR-AI-011", func() {
 		It("should require approval for production with warnings", func() {
-			// Confidence < 0.8 (default threshold) so auto-approval does not apply (#225)
 			result, err := evaluator.Evaluate(evalCtx, &rego.PolicyInput{
 				Environment:      "production",
 				AffectedResource: &rego.AffectedResourceInput{Kind: "Deployment", Name: "api", Namespace: "production"},
@@ -182,11 +181,8 @@ var _ = Describe("Rego Policy Integration", Label("integration", "rego"), func()
 
 	Context("Stateful Workload Protection - BR-AI-011", func() {
 		It("should require approval for stateful workloads in production", func() {
-			// Use Kind "Deployment" (not "StatefulSet") to isolate the is_stateful rule (score 50)
-			// from the is_sensitive_resource rule (score 80). StatefulSet triggers BOTH rules,
-			// and the higher-scoring sensitive_resource reason wins, masking the stateful reason.
-			// A Deployment with detected_labels.stateful=true exercises the stateful path exclusively.
-			// Confidence < 0.8 (default threshold) so auto-approval does not apply (#225).
+			// Kind "Deployment" (not "StatefulSet") isolates the is_stateful rule (score 50)
+			// from the is_sensitive_resource rule (score 80), which would mask the reason.
 			result, err := evaluator.Evaluate(evalCtx, &rego.PolicyInput{
 				Environment:      "production",
 				AffectedResource: &rego.AffectedResourceInput{Kind: "Deployment", Name: "db", Namespace: "production"},

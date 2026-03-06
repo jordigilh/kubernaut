@@ -41,7 +41,8 @@ func (m *mockWorkflowCatalogClient) GetWorkflowByID(_ context.Context, _ ogencli
 // buildTestSchema builds a minimal valid workflow schema YAML with an optional
 // dependencies section appended. Eliminates YAML boilerplate across tests.
 func buildTestSchema(dependenciesYAML string) string {
-	base := `apiVersion: kubernaut.ai/v1alpha1
+	base := `schemaVersion: "1.0"
+apiVersion: kubernaut.ai/v1alpha1
 kind: WorkflowSchema
 metadata:
   workflowId: test-workflow

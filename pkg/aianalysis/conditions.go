@@ -45,6 +45,17 @@ const (
 	ConditionInvestigationSessionReady = "InvestigationSessionReady"
 )
 
+// Rego evaluation outcome constants (Issue #262: use constants, not hardcoded strings)
+// These values flow through handlers → metrics → audit and must stay consistent.
+const (
+	OutcomeAutoApproved     = "auto_approved"
+	OutcomeRequiresApproval = "requires_approval"
+	OutcomeAllow            = "allow"
+	OutcomeSuccess          = "success"
+	OutcomeDeny             = "deny"
+	OutcomeFailure          = "failure"
+)
+
 // Condition reasons
 const (
 	// ReasonReady - AIAnalysis is ready

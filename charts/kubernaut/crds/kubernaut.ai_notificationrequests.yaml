@@ -100,24 +100,6 @@ spec:
                 description: Notification body content
                 minLength: 1
                 type: string
-              channels:
-                description: |-
-                  Delivery channels to use.
-                  Optional: If not specified, Notification Service routing rules (BR-NOT-065)
-                  will determine channels based on CRD spec fields (type, severity, environment, namespace).
-                  If specified, these channels are used in addition to routing rule matches.
-                items:
-                  enum:
-                  - email
-                  - slack
-                  - teams
-                  - sms
-                  - webhook
-                  - console
-                  - file
-                  - log
-                  type: string
-                type: array
               metadata:
                 additionalProperties:
                   type: string
@@ -139,36 +121,6 @@ spec:
                 - medium
                 - low
                 type: string
-              recipients:
-                description: |-
-                  List of recipients for this notification.
-                  Optional: If not specified, Notification Service routing rules (BR-NOT-065)
-                  will determine recipients based on CRD spec fields (type, severity, environment, namespace).
-                  If specified, these recipients are used in addition to routing rule matches.
-                items:
-                  description: Recipient represents a notification recipient
-                  properties:
-                    email:
-                      description: Email address (for email channel)
-                      type: string
-                    phone:
-                      description: |-
-                        Phone number (for SMS channel)
-                        Format: E.164 (+1234567890)
-                      type: string
-                    slack:
-                      description: |-
-                        Slack channel or user (for Slack channel)
-                        Format: #channel-name or @username
-                      type: string
-                    teams:
-                      description: Teams channel or user (for Teams channel)
-                      type: string
-                    webhookURL:
-                      description: Webhook URL (for webhook channel)
-                      type: string
-                  type: object
-                type: array
               remediationRequestRef:
                 description: |-
                   Reference to parent RemediationRequest (if applicable)

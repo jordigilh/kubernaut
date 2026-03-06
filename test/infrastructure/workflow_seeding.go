@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
@@ -52,7 +54,6 @@ type TestWorkflow struct {
 	Name            string
 	Description     string
 	ActionType      string // DD-WORKFLOW-016: FK to action_type_taxonomy (e.g., "ScaleReplicas", "RestartPod")
-	SignalName      string // Must match test scenarios (e.g., "OOMKilled"); maps to HAPI signal_name
 	Severity        string // Metadata only: "critical", "high", "medium", "low" (actual value from OCI image)
 	Component       string // Metadata only: "deployment", "pod", "node", etc. (actual value from OCI image)
 	Environment     string // Metadata only + map key: "staging", "production", "test" (actual value from OCI image)
@@ -174,6 +175,28 @@ func RegisterWorkflowInDataStorage(client *ogenclient.Client, wf TestWorkflow, o
 	default:
 		return "", fmt.Errorf("unexpected response type from ListWorkflows: %T", listResp)
 	}
+}
+
+// SortedWorkflowUUIDKeys returns the keys of a workflowUUIDs map sorted so that
+// ":production" entries come after all other environments for the same workflow name.
+// This is critical because the Mock LLM's load_scenarios_from_file does last-write-wins
+// when the same workflow_name matches multiple config entries. Without deterministic
+// ordering, Go's randomized map iteration can cause the Mock LLM to load a staging or
+// test UUID instead of the production UUID that tests assert against.
+func SortedWorkflowUUIDKeys(workflowUUIDs map[string]string) []string {
+	keys := make([]string, 0, len(workflowUUIDs))
+	for k := range workflowUUIDs {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		iProd := strings.HasSuffix(keys[i], ":production")
+		jProd := strings.HasSuffix(keys[j], ":production")
+		if iProd != jProd {
+			return !iProd
+		}
+		return keys[i] < keys[j]
+	})
+	return keys
 }
 
 // Note: buildWorkflowSchemaContent removed — DD-WORKFLOW-017 pullspec-only registration

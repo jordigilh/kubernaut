@@ -53,7 +53,7 @@ TEST_TIMEOUT_E2E ?= 30m
 # DataStorage coverage packages (hand-written only, excludes generated)
 # DATASTORAGE_COVERPKG: Comma-separated list of packages for coverage instrumentation.
 # IMPORTANT: No spaces after commas — Go's --coverpkg treats spaces as part of the package name.
-DATASTORAGE_COVERPKG = github.com/jordigilh/kubernaut/pkg/datastorage/adapter/...,github.com/jordigilh/kubernaut/pkg/datastorage/audit/...,github.com/jordigilh/kubernaut/pkg/datastorage/config/...,github.com/jordigilh/kubernaut/pkg/datastorage/dlq/...,github.com/jordigilh/kubernaut/pkg/datastorage/metrics/...,github.com/jordigilh/kubernaut/pkg/datastorage/models/...,github.com/jordigilh/kubernaut/pkg/datastorage/query/...,github.com/jordigilh/kubernaut/pkg/datastorage/reconstruction/...,github.com/jordigilh/kubernaut/pkg/datastorage/repository/...,github.com/jordigilh/kubernaut/pkg/datastorage/repository/sql/...,github.com/jordigilh/kubernaut/pkg/datastorage/repository/sqlutil/...,github.com/jordigilh/kubernaut/pkg/datastorage/repository/workflow/...,github.com/jordigilh/kubernaut/pkg/datastorage/schema/...,github.com/jordigilh/kubernaut/pkg/datastorage/scoring/...,github.com/jordigilh/kubernaut/pkg/datastorage/server/...,github.com/jordigilh/kubernaut/pkg/datastorage/server/helpers/...,github.com/jordigilh/kubernaut/pkg/datastorage/server/middleware/...,github.com/jordigilh/kubernaut/pkg/datastorage/server/response/...,github.com/jordigilh/kubernaut/pkg/datastorage/validation/...
+DATASTORAGE_COVERPKG = github.com/jordigilh/kubernaut/pkg/datastorage/adapter/...,github.com/jordigilh/kubernaut/pkg/datastorage/audit/...,github.com/jordigilh/kubernaut/pkg/datastorage/config/...,github.com/jordigilh/kubernaut/pkg/datastorage/dlq/...,github.com/jordigilh/kubernaut/pkg/datastorage/metrics/...,github.com/jordigilh/kubernaut/pkg/datastorage/models/...,github.com/jordigilh/kubernaut/pkg/datastorage/query/...,github.com/jordigilh/kubernaut/pkg/datastorage/reconstruction/...,github.com/jordigilh/kubernaut/pkg/datastorage/repository/...,github.com/jordigilh/kubernaut/pkg/datastorage/repository/sql/...,github.com/jordigilh/kubernaut/pkg/datastorage/repository/sqlutil/...,github.com/jordigilh/kubernaut/pkg/datastorage/repository/workflow/...,github.com/jordigilh/kubernaut/pkg/datastorage/schema/...,github.com/jordigilh/kubernaut/pkg/datastorage/server/...,github.com/jordigilh/kubernaut/pkg/datastorage/server/helpers/...,github.com/jordigilh/kubernaut/pkg/datastorage/server/middleware/...,github.com/jordigilh/kubernaut/pkg/datastorage/server/response/...,github.com/jordigilh/kubernaut/pkg/datastorage/validation/...
 
 # Unit-testable package patterns (pure logic: config, validators, builders, formatters, metrics, classifiers)
 # Integration-testable patterns (I/O-dependent: handlers, servers, DB adapters, K8s clients, workers)
@@ -947,6 +947,14 @@ IMAGE_TAG ?= latest
 # Auto-detect native architecture (maps uname output to Go-style names)
 IMAGE_ARCH ?= $(shell uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/')
 
+# Version metadata for container image labels and Go ldflags
+APP_VERSION ?= dev
+GIT_COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+BUILD_DATE  ?= $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
+
+# Go linker flags for version injection via internal/version package
+LDFLAGS ?= -ldflags "-X github.com/jordigilh/kubernaut/internal/version.Version=$(APP_VERSION) -X github.com/jordigilh/kubernaut/internal/version.GitCommit=$(GIT_COMMIT) -X github.com/jordigilh/kubernaut/internal/version.BuildDate=$(BUILD_DATE)"
+
 # All Go services with their Dockerfile mappings
 IMAGE_SERVICES := datastorage gateway aianalysis authwebhook notification remediationorchestrator signalprocessing workflowexecution effectivenessmonitor
 IMAGE_DOCKERFILES_datastorage := docker/data-storage.Dockerfile
@@ -959,11 +967,16 @@ IMAGE_DOCKERFILES_signalprocessing := docker/signalprocessing-controller.Dockerf
 IMAGE_DOCKERFILES_workflowexecution := docker/workflowexecution-controller.Dockerfile
 IMAGE_DOCKERFILES_effectivenessmonitor := docker/effectivenessmonitor-controller.Dockerfile
 
-# _image_build_one builds a single service image (native arch, arch-suffixed tag).
+# _image_build_one builds a single service image for a specific platform.
+# --platform ensures TARGETARCH is set correctly for cross-compilation (e.g., arm64 on amd64 host).
 # Usage: $(call _image_build_one,<service>,<dockerfile>)
 define _image_build_one
 	@echo "  Building $(1) [$(IMAGE_ARCH)]..."
-	@$(CONTAINER_TOOL) build -t $(IMAGE_REGISTRY)/$(1):$(IMAGE_TAG)-$(IMAGE_ARCH) -f $(2) .
+	@$(CONTAINER_TOOL) build --platform linux/$(IMAGE_ARCH) \
+		--build-arg APP_VERSION=$(APP_VERSION) \
+		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
+		--build-arg BUILD_DATE=$(BUILD_DATE) \
+		-t $(IMAGE_REGISTRY)/$(1):$(IMAGE_TAG)-$(IMAGE_ARCH) -f $(2) .
 
 endef
 
@@ -985,7 +998,17 @@ image-build: ## Build images for all services (native arch, arch-suffixed tag)
 	@echo ""
 	$(foreach svc,$(IMAGE_SERVICES),$(call _image_build_one,$(svc),$(IMAGE_DOCKERFILES_$(svc))))
 	@echo "  Building holmesgpt-api [$(IMAGE_ARCH)]..."
-	@$(CONTAINER_TOOL) build -t $(IMAGE_REGISTRY)/holmesgpt-api:$(IMAGE_TAG)-$(IMAGE_ARCH) -f holmesgpt-api/Dockerfile .
+	@$(CONTAINER_TOOL) build --platform linux/$(IMAGE_ARCH) \
+		--build-arg APP_VERSION=$(APP_VERSION) \
+		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
+		--build-arg BUILD_DATE=$(BUILD_DATE) \
+		-t $(IMAGE_REGISTRY)/holmesgpt-api:$(IMAGE_TAG)-$(IMAGE_ARCH) -f holmesgpt-api/Dockerfile .
+	@echo "  Building must-gather [$(IMAGE_ARCH)]..."
+	@$(CONTAINER_TOOL) build --platform linux/$(IMAGE_ARCH) \
+		--build-arg APP_VERSION=$(APP_VERSION) \
+		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
+		--build-arg BUILD_DATE=$(BUILD_DATE) \
+		-t $(IMAGE_REGISTRY)/must-gather:$(IMAGE_TAG)-$(IMAGE_ARCH) -f cmd/must-gather/Dockerfile cmd/must-gather/
 	@echo ""
 	@echo "✅ All images built ($(IMAGE_REGISTRY):$(IMAGE_TAG)-$(IMAGE_ARCH))."
 	@echo "   Push with: make image-push IMAGE_TAG=$(IMAGE_TAG)"
@@ -998,6 +1021,8 @@ image-push: ## Push arch-suffixed images to registry
 	$(foreach svc,$(IMAGE_SERVICES),$(call _image_push_one,$(svc)))
 	@echo "  Pushing $(IMAGE_REGISTRY)/holmesgpt-api:$(IMAGE_TAG)-$(IMAGE_ARCH)..."
 	@$(CONTAINER_TOOL) push $(IMAGE_REGISTRY)/holmesgpt-api:$(IMAGE_TAG)-$(IMAGE_ARCH)
+	@echo "  Pushing $(IMAGE_REGISTRY)/must-gather:$(IMAGE_TAG)-$(IMAGE_ARCH)..."
+	@$(CONTAINER_TOOL) push $(IMAGE_REGISTRY)/must-gather:$(IMAGE_TAG)-$(IMAGE_ARCH)
 	@echo ""
 	@echo "✅ All images pushed to $(IMAGE_REGISTRY) with tag $(IMAGE_TAG)-$(IMAGE_ARCH)."
 
@@ -1008,7 +1033,7 @@ image-manifest: ## Create and push multi-arch manifests (run after both arches a
 	@echo "   Tag:      $(IMAGE_TAG)"
 	@echo "   Arches:   amd64, arm64"
 	@echo ""
-	@for svc in $(IMAGE_SERVICES) holmesgpt-api; do \
+	@for svc in $(IMAGE_SERVICES) holmesgpt-api must-gather; do \
 	    echo "  Manifest: $$svc"; \
 	    $(CONTAINER_TOOL) manifest rm $(IMAGE_REGISTRY)/$$svc:$(IMAGE_TAG) 2>/dev/null || true; \
 	    $(CONTAINER_TOOL) manifest create $(IMAGE_REGISTRY)/$$svc:$(IMAGE_TAG) \
@@ -1022,15 +1047,30 @@ image-manifest: ## Create and push multi-arch manifests (run after both arches a
 
 # Per-service image targets (e.g., make image-build-aianalysis IMAGE_TAG=demo-v1.0)
 .PHONY: image-build-%
-image-build-%: ## Build a single service image (native arch)
+image-build-%: ## Build a single service image (specified arch via IMAGE_ARCH)
 	@if [ "$*" = "holmesgpt-api" ]; then \
 	    echo "  Building holmesgpt-api [$(IMAGE_ARCH)]..."; \
-	    $(CONTAINER_TOOL) build -t $(IMAGE_REGISTRY)/holmesgpt-api:$(IMAGE_TAG)-$(IMAGE_ARCH) -f holmesgpt-api/Dockerfile .; \
+	    $(CONTAINER_TOOL) build --platform linux/$(IMAGE_ARCH) \
+	        --build-arg APP_VERSION=$(APP_VERSION) \
+	        --build-arg GIT_COMMIT=$(GIT_COMMIT) \
+	        --build-arg BUILD_DATE=$(BUILD_DATE) \
+	        -t $(IMAGE_REGISTRY)/holmesgpt-api:$(IMAGE_TAG)-$(IMAGE_ARCH) -f holmesgpt-api/Dockerfile .; \
+	elif [ "$*" = "must-gather" ]; then \
+	    echo "  Building must-gather [$(IMAGE_ARCH)]..."; \
+	    $(CONTAINER_TOOL) build --platform linux/$(IMAGE_ARCH) \
+	        --build-arg APP_VERSION=$(APP_VERSION) \
+	        --build-arg GIT_COMMIT=$(GIT_COMMIT) \
+	        --build-arg BUILD_DATE=$(BUILD_DATE) \
+	        -t $(IMAGE_REGISTRY)/must-gather:$(IMAGE_TAG)-$(IMAGE_ARCH) -f cmd/must-gather/Dockerfile cmd/must-gather/; \
 	elif [ -n "$(IMAGE_DOCKERFILES_$*)" ]; then \
 	    echo "  Building $* [$(IMAGE_ARCH)]..."; \
-	    $(CONTAINER_TOOL) build -t $(IMAGE_REGISTRY)/$*:$(IMAGE_TAG)-$(IMAGE_ARCH) -f $(IMAGE_DOCKERFILES_$*) .; \
+	    $(CONTAINER_TOOL) build --platform linux/$(IMAGE_ARCH) \
+	        --build-arg APP_VERSION=$(APP_VERSION) \
+	        --build-arg GIT_COMMIT=$(GIT_COMMIT) \
+	        --build-arg BUILD_DATE=$(BUILD_DATE) \
+	        -t $(IMAGE_REGISTRY)/$*:$(IMAGE_TAG)-$(IMAGE_ARCH) -f $(IMAGE_DOCKERFILES_$*) .; \
 	else \
-	    echo "ERROR: Unknown service '$*'. Available: $(IMAGE_SERVICES) holmesgpt-api"; exit 1; \
+	    echo "ERROR: Unknown service '$*'. Available: $(IMAGE_SERVICES) holmesgpt-api must-gather"; exit 1; \
 	fi
 
 .PHONY: image-push-%

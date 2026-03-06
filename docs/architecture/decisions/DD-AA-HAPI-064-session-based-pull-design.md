@@ -59,13 +59,13 @@ New/modified endpoints:
 | `/api/v1/incident/session/{session_id}` | GET | - | `{status: "pending"\|"investigating"\|"completed"\|"failed", progress?: string}` | Poll |
 | `/api/v1/incident/session/{session_id}/result` | GET | - | IncidentResponse | Get result (only when status=completed) |
 
-Same pattern for recovery:
+~~Same pattern for recovery~~ **DEPRECATED for v1.0** (BR-AA-HAPI-064.9): Recovery investigations are deprecated. Alert re-fires through the Gateway with prior EA context replace dedicated recovery endpoints.
 
 | Endpoint | Method | Request | Response | Description |
 |----------|--------|---------|----------|-------------|
-| `/api/v1/recovery/analyze` | POST | RecoveryRequest | `202 {session_id: "uuid"}` | Submit recovery |
-| `/api/v1/recovery/session/{session_id}` | GET | - | `{status, progress?}` | Poll recovery |
-| `/api/v1/recovery/session/{session_id}/result` | GET | - | RecoveryResponse | Get recovery result |
+| ~~`/api/v1/recovery/analyze`~~ | ~~POST~~ | ~~RecoveryRequest~~ | ~~`202 {session_id: "uuid"}`~~ | ~~Submit recovery~~ |
+| ~~`/api/v1/recovery/session/{session_id}`~~ | ~~GET~~ | - | ~~`{status, progress?}`~~ | ~~Poll recovery~~ |
+| ~~`/api/v1/recovery/session/{session_id}/result`~~ | ~~GET~~ | - | ~~RecoveryResponse~~ | ~~Get recovery result~~ |
 
 Error responses:
 

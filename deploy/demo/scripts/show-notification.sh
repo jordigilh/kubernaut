@@ -30,7 +30,7 @@ fi
 
 # Display one NotificationRequest (reads JSON from stdin or uses name for kubectl)
 display_one() {
-  local subj body prio type channels meta name
+  local subj body prio type phase meta name
   local use_jq=false
   if command -v jq &>/dev/null; then
     use_jq=true
@@ -43,7 +43,7 @@ display_one() {
     body=$(echo "$json" | jq -r '.spec.body // ""')
     prio=$(echo "$json" | jq -r '.spec.priority // ""')
     type=$(echo "$json" | jq -r '.spec.type // ""')
-    channels=$(echo "$json" | jq -r '(.spec.channels // []) | join(", ")')
+    phase=$(echo "$json" | jq -r '.status.phase // "Pending"')
     meta=$(echo "$json" | jq -r '(.spec.metadata // {}) | to_entries | map("\(.key)=\(.value)") | join(", ")')
   else
     name="$1"
@@ -52,7 +52,7 @@ display_one() {
     body=$(kubectl get notificationrequest "$name" -n "$NAMESPACE" -o jsonpath='{.spec.body}' 2>/dev/null || true)
     prio=$(kubectl get notificationrequest "$name" -n "$NAMESPACE" -o jsonpath='{.spec.priority}' 2>/dev/null || true)
     type=$(kubectl get notificationrequest "$name" -n "$NAMESPACE" -o jsonpath='{.spec.type}' 2>/dev/null || true)
-    channels=$(kubectl get notificationrequest "$name" -n "$NAMESPACE" -o jsonpath='{.spec.channels[*]}' 2>/dev/null | tr ' ' ',' || true)
+    phase=$(kubectl get notificationrequest "$name" -n "$NAMESPACE" -o jsonpath='{.status.phase}' 2>/dev/null || true)
     meta=$(kubectl get notificationrequest "$name" -n "$NAMESPACE" -o jsonpath='{.spec.metadata}' 2>/dev/null | sed 's/map\[//;s/\]//' || true)
   fi
 
@@ -71,7 +71,7 @@ display_one() {
   printf '║  Subject:  %-*s ║\n' "$label_w" "${subj:0:$label_w}"
   printf '║  Priority: %-*s ║\n' "$label_w" "${prio:0:$label_w}"
   printf '║  Type:     %-*s ║\n' "$label_w" "${type:0:$label_w}"
-  printf '║  Channel:  %-*s ║\n' "$label_w" "${channels:0:$label_w}"
+  printf '║  Phase:    %-*s ║\n' "$label_w" "${phase:0:$label_w}"
   printf '╠%s╣\n' "$border"
   printf '║  %-*s ║\n' "$body_w" "Body:"
 

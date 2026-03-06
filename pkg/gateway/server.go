@@ -41,6 +41,8 @@ import (
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/shared/audit"    // BR-AUDIT-005 Gap #7: Standardized error details
 	"github.com/jordigilh/kubernaut/pkg/shared/backoff"              // ADR-052 Addendum 001: Exponential backoff with jitter
 
+	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	coordinationv1 "k8s.io/api/coordination/v1" // BR-GATEWAY-190: Lease resources for distributed locking
 	corev1 "k8s.io/api/core/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
@@ -327,6 +329,8 @@ func NewServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger, metricsI
 	scheme := k8sruntime.NewScheme()
 	_ = remediationv1alpha1.AddToScheme(scheme)
 	_ = corev1.AddToScheme(scheme)         // Add core types (Namespace, Pod, etc.)
+	_ = appsv1.AddToScheme(scheme)         // #270: Apps types (Deployment, ReplicaSet, StatefulSet, DaemonSet)
+	_ = batchv1.AddToScheme(scheme)        // #270: Batch types (Job, CronJob)
 	_ = coordinationv1.AddToScheme(scheme) // BR-GATEWAY-190: Add Lease type for distributed locking
 
 	// ADR-057: Discover controller namespace for CRD watch restriction
@@ -340,16 +344,19 @@ func NewServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger, metricsI
 	// Use spec.signalFingerprint (immutable, 64-char SHA256) instead of truncated labels
 	// ========================================
 
+	// #270: Build ByObject map with metadata-only informers for owner chain resolution
+	// OwnerResolver and ScopeManager need cached lookups for Pods, ReplicaSets, Deployments, etc.
+	byObject := adapters.OwnerChainCacheObjects()
+	byObject[&remediationv1alpha1.RemediationRequest{}] = cache.ByObject{
+		Namespaces: map[string]cache.Config{
+			controllerNS: {},
+		},
+	}
+
 	// Create cache for efficient queries (ADR-057: restrict RR to controller namespace)
 	k8sCache, err := cache.New(kubeConfig, cache.Options{
-		Scheme: scheme,
-		ByObject: map[client.Object]cache.ByObject{
-			&remediationv1alpha1.RemediationRequest{}: {
-				Namespaces: map[string]cache.Config{
-					controllerNS: {},
-				},
-			},
-		},
+		Scheme:   scheme,
+		ByObject: byObject,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Kubernetes cache: %w", err)

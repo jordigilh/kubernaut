@@ -1346,7 +1346,7 @@ var _ = Describe("RemediationOrchestrator Approval Notification", func() {
 
         Expect(notification.Spec.Subject).To(ContainSubstring("Approval Required"))
         Expect(notification.Spec.Priority).To(Equal(notificationv1alpha1.NotificationPriorityHigh))
-        Expect(notification.Spec.Channels).To(ContainElement(notificationv1alpha1.ChannelSlack))
+        // Note: spec.channels was removed (#261). Channels are resolved by routing rules.
 
         // Verify idempotency
         Expect(k8sClient.Get(ctx, remediation.GetObjectMeta(), remediation)).To(Succeed())

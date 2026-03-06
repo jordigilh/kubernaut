@@ -37,7 +37,7 @@ import (
 // These tests verify that the EM reconciler routes each assessment component
 // to the correct target when SignalTarget and RemediationTarget diverge:
 //   - Hash + drift guard: RemediationTarget (the modified resource)
-//   - Health: SignalTarget (the alerting resource)
+//   - Health: RemediationTarget (the resource that survives restarts, #275)
 //   - Metrics (PromQL): SignalTarget.Namespace
 //   - Alert: SignalTarget.Namespace (AlertContext)
 //
@@ -80,10 +80,10 @@ func createDivergentTargetEA(namespace, name, correlationID, signalNs, remediati
 
 var _ = Describe("Dual-Target Routing (Issue #188, DD-EM-003)", func() {
 
-	// Reset mock AM request log before each test to avoid cross-test pollution
-	// (e.g., IT-EM-188-006 must not see requests from other tests like rr-dt-010)
+	// Reset mock request logs before each test to avoid cross-test pollution
 	BeforeEach(func() {
 		mockAM.ResetRequestLog()
+		mockProm.ResetRequestLog()
 	})
 
 	// ========================================================================
@@ -95,9 +95,6 @@ var _ = Describe("Dual-Target Routing (Issue #188, DD-EM-003)", func() {
 
 		signalNs := ns + "-signal"
 		remediationNs := ns + "-remediation"
-
-		By("Resetting Prometheus request log before test")
-		mockProm.ResetRequestLog()
 
 		By("Creating EA with divergent signal/remediation namespaces")
 		ea := createDivergentTargetEA(ns, "ea-rt-007", "rr-rt-007", signalNs, remediationNs)
@@ -118,24 +115,30 @@ var _ = Describe("Dual-Target Routing (Issue #188, DD-EM-003)", func() {
 			if req.Path != "/api/v1/query_range" {
 				continue
 			}
-			queryRangeRequests++
 			queryValues := req.Query["query"]
 			Expect(queryValues).NotTo(BeEmpty(), "query_range request should have a 'query' parameter")
 			query := queryValues[0]
 
+			// Filter: only inspect queries relevant to this test's namespaces.
+			// Other concurrently-reconciling EAs may also send queries to the shared mock.
+			if !strings.Contains(query, signalNs) && !strings.Contains(query, remediationNs) {
+				continue
+			}
+
+			queryRangeRequests++
 			Expect(query).To(ContainSubstring(signalNs),
 				"DD-EM-003: PromQL query should use SignalTarget namespace %q, got: %s", signalNs, query)
 			Expect(query).NotTo(ContainSubstring(remediationNs),
 				"DD-EM-003: PromQL query must NOT use RemediationTarget namespace %q, got: %s", remediationNs, query)
 		}
 		Expect(queryRangeRequests).To(BeNumerically(">", 0),
-			"Prometheus should have received at least one query_range request")
+			"Prometheus should have received at least one query_range request for this test's namespace")
 	})
 
 	// ========================================================================
-	// IT-EM-188-005: getTargetHealthStatus uses SignalTarget (Deployment kind)
+	// IT-EM-188-005: getTargetHealthStatus uses RemediationTarget (#275)
 	// ========================================================================
-	It("IT-EM-188-005: should use SignalTarget for health assessment (Deployment, not HPA)", func() {
+	It("IT-EM-188-005: should use RemediationTarget for health assessment (HPA, not Deployment)", func() {
 		ns := createTestNamespace("em-rt-005")
 		defer deleteTestNamespace(ns)
 
@@ -154,14 +157,14 @@ var _ = Describe("Dual-Target Routing (Issue #188, DD-EM-003)", func() {
 			g.Expect(fetchedEA.Status.Phase).To(Equal(eav1.PhaseCompleted))
 		}, timeout, interval).Should(Succeed())
 
-		// DD-EM-003: Health uses SignalTarget.
-		// SignalTarget.Kind = Deployment → workload health path → Score = &0.0 (no pods)
-		// If RemediationTarget (HPA) was used → default path → HealthNotApplicable → Score = nil
+		// #275: Health uses RemediationTarget (survives rolling restarts).
+		// RemediationTarget.Kind = HPA → non-workload kind → HealthNotApplicable → Score = nil
+		// If SignalTarget (Deployment) was used → workload health path → Score = &0.0 (no pods)
 		Expect(fetchedEA.Status.Components.HealthAssessed).To(BeTrue())
-		Expect(fetchedEA.Status.Components.HealthScore).NotTo(BeNil(),
-			"DD-EM-003: HealthScore should not be nil. Deployment target (SignalTarget) produces "+
-				"Score=0.0 (no pods found). HPA target (RemediationTarget) would produce Score=nil "+
-				"(HealthNotApplicable). A non-nil score proves SignalTarget was used.")
+		Expect(fetchedEA.Status.Components.HealthScore).To(BeNil(),
+			"#275: HealthScore should be nil. HPA target (RemediationTarget) produces "+
+				"HealthNotApplicable (Score=nil). A nil score proves RemediationTarget was used, "+
+				"not SignalTarget (Deployment) which would produce Score=0.0.")
 	})
 
 	// ========================================================================

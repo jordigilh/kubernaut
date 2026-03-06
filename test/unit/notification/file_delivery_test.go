@@ -53,7 +53,7 @@ var _ = Describe("FileDeliveryService Unit Tests", func() {
 			GinkgoParallelProcess()))
 		Expect(os.MkdirAll(tempDir, 0755)).To(Succeed())
 
-		fileService = delivery.NewFileDeliveryService(tempDir)
+		fileService = delivery.NewFileDeliveryService(tempDir, "json", 0)
 	})
 
 	AfterEach(func() {
@@ -76,12 +76,6 @@ var _ = Describe("FileDeliveryService Unit Tests", func() {
 					Subject:  "Test Subject",
 					Body:     "Test Body",
 					Priority: notificationv1alpha1.NotificationPriorityCritical,
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelSlack,
-					},
-					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#test"},
-					},
 				},
 			}
 
@@ -109,8 +103,6 @@ var _ = Describe("FileDeliveryService Unit Tests", func() {
 			Expect(savedNotification.Spec.Subject).To(Equal("Test Subject"))
 			Expect(savedNotification.Spec.Body).To(Equal("Test Body"))
 			Expect(savedNotification.Spec.Priority).To(Equal(notificationv1alpha1.NotificationPriorityCritical))
-			Expect(savedNotification.Spec.Channels).To(HaveLen(1))
-			Expect(savedNotification.Spec.Recipients).To(HaveLen(1))
 		})
 
 		It("should create unique files for concurrent deliveries (thread safety)", func() {
@@ -162,7 +154,7 @@ var _ = Describe("FileDeliveryService Unit Tests", func() {
 		It("should create output directory if it doesn't exist", func() {
 			// BUSINESS SCENARIO: First run in E2E environment
 			newDir := filepath.Join(tempDir, "nested", "directory")
-			service := delivery.NewFileDeliveryService(newDir)
+			service := delivery.NewFileDeliveryService(newDir, "json", 0)
 
 			notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
@@ -201,7 +193,7 @@ var _ = Describe("FileDeliveryService Unit Tests", func() {
 				_ = os.Chmod(readOnlyDir, 0755) // Ignore error in cleanup
 			}()
 
-			service := delivery.NewFileDeliveryService(filepath.Join(readOnlyDir, "subdir"))
+			service := delivery.NewFileDeliveryService(filepath.Join(readOnlyDir, "subdir"), "json", 0)
 
 			notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
@@ -259,40 +251,6 @@ var _ = Describe("FileDeliveryService Unit Tests", func() {
 
 			// CORRECTNESS: Priority preserved (BR-NOT-056)
 			Expect(saved.Spec.Priority).To(Equal(notificationv1alpha1.NotificationPriorityCritical))
-		})
-
-		It("should preserve recipients in delivered message", func() {
-			// BUSINESS SCENARIO: Multi-channel notification routing
-			notification := &notificationv1alpha1.NotificationRequest{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-recipients",
-					Namespace: "default",
-				},
-				Spec: notificationv1alpha1.NotificationRequestSpec{
-					Subject: "Recipients Test",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#channel1"},
-						{Slack: "#channel2"},
-						{Slack: "#channel3"},
-					},
-				},
-			}
-
-			// BEHAVIOR: Deliver multi-recipient notification
-			err := fileService.Deliver(ctx, notification)
-			Expect(err).ToNot(HaveOccurred())
-
-			// Read file
-			files, _ := filepath.Glob(filepath.Join(tempDir, "notification-test-recipients-*.json"))
-			data, _ := os.ReadFile(files[0])
-			var saved notificationv1alpha1.NotificationRequest
-			Expect(json.Unmarshal(data, &saved)).To(Succeed())
-
-			// CORRECTNESS: All recipients preserved
-			Expect(saved.Spec.Recipients).To(HaveLen(3))
-			Expect(saved.Spec.Recipients[0].Slack).To(Equal("#channel1"))
-			Expect(saved.Spec.Recipients[1].Slack).To(Equal("#channel2"))
-			Expect(saved.Spec.Recipients[2].Slack).To(Equal("#channel3"))
 		})
 
 		It("should preserve metadata fields in delivered message (BR-NOT-064)", func() {
@@ -379,7 +337,7 @@ var _ = Describe("FileDeliveryService Unit Tests", func() {
 			// Attempt to create a subdirectory in read-only parent
 			invalidDir := filepath.Join(readOnlyDir, "cannot-create-this")
 
-			service := delivery.NewFileDeliveryService(invalidDir)
+			service := delivery.NewFileDeliveryService(invalidDir, "json", 0)
 
 			notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
@@ -389,9 +347,6 @@ var _ = Describe("FileDeliveryService Unit Tests", func() {
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Subject: "Test Directory Permission Error",
 					Body:    "Testing NT-BUG-006: Directory creation errors should be retryable",
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelFile,
-					},
 				},
 			}
 
@@ -414,7 +369,7 @@ var _ = Describe("FileDeliveryService Unit Tests", func() {
 			tempDir := GinkgoT().TempDir()
 			writableDir := filepath.Join(tempDir, "writable")
 
-			service := delivery.NewFileDeliveryService(writableDir)
+			service := delivery.NewFileDeliveryService(writableDir, "json", 0)
 
 			notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
@@ -424,9 +379,6 @@ var _ = Describe("FileDeliveryService Unit Tests", func() {
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Subject: "Test Successful Delivery",
 					Body:    "Testing that delivery succeeds with writable directory",
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelFile,
-					},
 				},
 			}
 
@@ -451,7 +403,7 @@ var _ = Describe("FileDeliveryService Unit Tests", func() {
 			// Make directory read-only (no write permission)
 			Expect(os.Chmod(readOnlyFileDir, 0555)).To(Succeed())
 
-			service := delivery.NewFileDeliveryService(readOnlyFileDir)
+			service := delivery.NewFileDeliveryService(readOnlyFileDir, "json", 0)
 
 			notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
@@ -461,9 +413,6 @@ var _ = Describe("FileDeliveryService Unit Tests", func() {
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Subject: "Test File Write Error",
 					Body:    "Testing NT-BUG-006: File write errors should be retryable",
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelFile,
-					},
 				},
 			}
 

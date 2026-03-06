@@ -39,6 +39,7 @@ package fullpipeline
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -63,14 +64,15 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
 const (
-	timeout  = 10 * time.Minute // Longer timeout for full pipeline E2E (real LLM needs more time)
-	interval = 1 * time.Second
+	timeout  = 10 * time.Minute        // Longer timeout for full pipeline E2E (real LLM needs more time)
+	interval = 500 * time.Millisecond // Tighter polling for faster state-transition detection
 
 	clusterName = "fullpipeline-e2e"
 	namespace   = "kubernaut-system"
@@ -90,6 +92,10 @@ var (
 
 	// DD-AUTH-014: ServiceAccount token for DataStorage authentication
 	e2eAuthToken string
+
+	// Workflow UUIDs seeded once in SynchronizedBeforeSuite, shared by all tests.
+	// Map of "workflowID:environment" → UUID. Tests must NOT modify this or the Mock LLM ConfigMap.
+	workflowUUIDs map[string]string
 
 	// Track test failures for cluster cleanup decision
 	anyTestFailed bool
@@ -134,17 +140,102 @@ var _ = SynchronizedBeforeSuite(
 		err = os.Setenv("KUBECONFIG", tempKubeconfigPath)
 		Expect(err).ToNot(HaveOccurred())
 
+		// Seed ALL workflows needed by ALL FP tests once, then update Mock LLM ConfigMap.
+		// Individual tests must NOT seed workflows or modify the ConfigMap.
+		By("Seeding all FP test workflows in DataStorage (once)")
+		dsURL := "http://localhost:30081"
+		dsHTTPClient := &http.Client{
+			Timeout:   20 * time.Second,
+			Transport: testauth.NewServiceAccountTransport(token),
+		}
+		dsClient, dsErr := ogenclient.NewClient(dsURL, ogenclient.WithClient(dsHTTPClient))
+		Expect(dsErr).ToNot(HaveOccurred(), "Failed to create DataStorage client for workflow seeding")
+
+		allWorkflows := []infrastructure.TestWorkflow{
+			{
+				WorkflowID:      "crashloop-config-fix-v1",
+				Name:            "CrashLoopBackOff - Configuration Fix",
+				Description:     "CrashLoop remediation workflow for full pipeline E2E",
+				Severity:        "high",
+				Component:       "deployment",
+				Environment:     "production",
+				Priority:        "*",
+				SchemaImage:     "quay.io/kubernaut-cicd/test-workflows/crashloop-config-fix-job:v1.0.0",
+				ExecutionEngine: "job",
+				SchemaParameters: []models.WorkflowParameter{
+					{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target namespace"},
+					{Name: "DEPLOYMENT_NAME", Type: "string", Required: true, Description: "Name of the deployment to restart"},
+					{Name: "GRACE_PERIOD_SECONDS", Type: "integer", Required: false, Description: "Graceful shutdown period in seconds"},
+				},
+			},
+			{
+				WorkflowID:      "oomkill-increase-memory-v1",
+				Name:            "OOMKill Recovery - Increase Memory Limits",
+				Description:     "OOMKill remediation workflow for full pipeline E2E",
+				Severity:        "critical",
+				Component:       "deployment",
+				Environment:     "production",
+				Priority:        "*",
+				SchemaImage:     "quay.io/kubernaut-cicd/test-workflows/oomkill-increase-memory-job:v1.0.0",
+				ExecutionEngine: "job",
+				SchemaParameters: []models.WorkflowParameter{
+					{Name: "TARGET_RESOURCE_KIND", Type: "string", Required: true, Description: "Kubernetes resource kind (Deployment, StatefulSet, DaemonSet)"},
+					{Name: "TARGET_RESOURCE_NAME", Type: "string", Required: true, Description: "Name of the resource to patch"},
+					{Name: "TARGET_NAMESPACE", Type: "string", Required: true, Description: "Namespace of the resource"},
+					{Name: "MEMORY_LIMIT_NEW", Type: "string", Required: true, Description: "New memory limit to apply (e.g., 128Mi, 256Mi, 1Gi)"},
+				},
+			},
+			{
+				WorkflowID:  "fix-certificate-v1",
+				Name:        "Fix Certificate - Recreate CA Secret",
+				Description: "Recreates CA Secret to restore cert-manager Certificate issuance",
+				Severity:    "critical",
+				Component:   "*",
+				Environment: "production",
+				Priority:    "*",
+				SchemaImage: "quay.io/kubernaut-cicd/test-workflows/fix-certificate-job-schema:v1.0.0",
+				ExecutionEngine: "job",
+				SchemaParameters: []models.WorkflowParameter{
+					{Name: "TARGET_NAMESPACE", Type: "string", Required: true, Description: "Namespace of the affected Certificate"},
+					{Name: "TARGET_CERTIFICATE", Type: "string", Required: true, Description: "Name of the Certificate to fix"},
+					{Name: "ISSUER_NAME", Type: "string", Required: true, Description: "Name of the ClusterIssuer backing the certificate"},
+					{Name: "CA_SECRET_NAME", Type: "string", Required: true, Description: "Name of the CA Secret to recreate"},
+					{Name: "CA_SECRET_NAMESPACE", Type: "string", Required: false, Description: "Namespace of the CA Secret"},
+				},
+			},
+		}
+		seededUUIDs, seedErr := infrastructure.SeedWorkflowsInDataStorage(
+			dsClient, allWorkflows, "fullpipeline-e2e", GinkgoWriter,
+		)
+		Expect(seedErr).ToNot(HaveOccurred(), "Failed to seed workflows in DataStorage")
+		Expect(seededUUIDs).To(HaveKey("crashloop-config-fix-v1:production"))
+		Expect(seededUUIDs).To(HaveKey("oomkill-increase-memory-v1:production"))
+		Expect(seededUUIDs).To(HaveKey("fix-certificate-v1:production"))
+
+		if os.Getenv("SKIP_MOCK_LLM") == "" {
+			By("Updating Mock LLM ConfigMap with all workflow UUIDs (once)")
+			Expect(infrastructure.UpdateMockLLMConfigMap(
+				ctx, namespace, tempKubeconfigPath, seededUUIDs, GinkgoWriter,
+			)).To(Succeed(), "Failed to update Mock LLM ConfigMap")
+		}
+
 		GinkgoWriter.Println("✅ Full Pipeline E2E infrastructure ready (Process 1)")
 
-		// Return kubeconfig path and auth token to all processes
-		return []byte(fmt.Sprintf("%s|%s", tempKubeconfigPath, token))
+		// Encode kubeconfig + token + workflow UUIDs for all processes
+		uuidsJSON, jsonErr := json.Marshal(seededUUIDs)
+		Expect(jsonErr).ToNot(HaveOccurred())
+		return []byte(fmt.Sprintf("%s|%s|%s", tempKubeconfigPath, token, string(uuidsJSON)))
 	},
 	// ALL processes: connect to the cluster
 	func(data []byte) {
-		parts := strings.Split(string(data), "|")
+		parts := strings.SplitN(string(data), "|", 3)
 		kubeconfigPath = parts[0]
 		if len(parts) > 1 {
 			e2eAuthToken = parts[1]
+		}
+		if len(parts) > 2 {
+			Expect(json.Unmarshal([]byte(parts[2]), &workflowUUIDs)).To(Succeed(),
+				"Failed to decode workflow UUIDs from Process 1")
 		}
 
 		ctx, cancel = context.WithCancel(context.TODO())

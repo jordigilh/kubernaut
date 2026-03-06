@@ -1,0 +1,224 @@
+name: Release
+
+# Triggered by version tag push (e.g., v1.0.0)
+# Builds multi-arch images (amd64 + arm64) for all 11 services,
+# publishes Helm chart to OCI registry, and creates a GitHub Release.
+#
+# Prerequisites:
+#   - Quay.io robot account with Creator role in kubernaut-ai org
+#   - GitHub Actions secrets: QUAY_ROBOT_USERNAME, QUAY_ROBOT_TOKEN
+#
+# Authority: Issue #257 (sub-issue of #80)
+# Business Requirement: BR-PLATFORM-RELEASE-001
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+env:
+  IMAGE_REGISTRY: quay.io/kubernaut-ai
+
+jobs:
+  # ========================================
+  # STAGE 1: BUILD & PUSH MULTI-ARCH IMAGES
+  # Builds all 11 services for amd64 and arm64, pushes arch-tagged images,
+  # then creates and pushes multi-arch manifest lists.
+  #
+  # Services (11):
+  #   Go (9): gateway, signalprocessing, aianalysis, authwebhook,
+  #           remediationorchestrator, workflowexecution, notification,
+  #           datastorage, effectivenessmonitor
+  #   Python (1): holmesgpt-api
+  #   Bash (1): must-gather
+  #
+  # Strategy:
+  #   - Go services: CGO_ENABLED=0 cross-compile via GOARCH (native speed)
+  #     inside ubi9/go-toolset pulled for target platform (QEMU for arm64)
+  #   - Python/Bash: Full QEMU emulation for arm64 (slower, acceptable for releases)
+  #   - Makefile targets handle service-to-Dockerfile mapping and registry config
+  # ========================================
+
+  build-images:
+    name: Build & Push Images
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          VERSION=${TAG#v}
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "build_date=$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
+          echo "Release: $TAG (version: $VERSION)"
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Generate code
+        run: |
+          export PATH="${{ github.workspace }}/bin:$PATH"
+          make generate
+
+      - name: Install QEMU for arm64 emulation
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-user-static
+          # Verify binfmt_misc registration for aarch64
+          if [ -f /proc/sys/fs/binfmt_misc/qemu-aarch64 ]; then
+            echo "QEMU aarch64 registered successfully"
+          else
+            echo "::warning::QEMU aarch64 not registered in binfmt_misc"
+          fi
+
+      - name: Login to Quay.io
+        run: |
+          podman login -u "${{ secrets.QUAY_ROBOT_USERNAME }}" \
+                       -p "${{ secrets.QUAY_ROBOT_TOKEN }}" \
+                       quay.io
+
+      - name: Build and push amd64 images
+        env:
+          IMAGE_TAG: ${{ steps.version.outputs.version }}
+          IMAGE_ARCH: amd64
+          CONTAINER_TOOL: podman
+          APP_VERSION: ${{ steps.version.outputs.version }}
+          GIT_COMMIT: ${{ github.sha }}
+          BUILD_DATE: ${{ steps.version.outputs.build_date }}
+        run: |
+          echo "Building all services for amd64..."
+          make image-build
+          echo "Pushing amd64 images..."
+          make image-push
+
+      - name: Build and push arm64 images
+        env:
+          IMAGE_TAG: ${{ steps.version.outputs.version }}
+          IMAGE_ARCH: arm64
+          CONTAINER_TOOL: podman
+          APP_VERSION: ${{ steps.version.outputs.version }}
+          GIT_COMMIT: ${{ github.sha }}
+          BUILD_DATE: ${{ steps.version.outputs.build_date }}
+        run: |
+          echo "Building all services for arm64 (via QEMU)..."
+          make image-build
+          echo "Pushing arm64 images..."
+          make image-push
+
+      - name: Create and push multi-arch manifests
+        env:
+          IMAGE_TAG: ${{ steps.version.outputs.version }}
+          CONTAINER_TOOL: podman
+        run: |
+          echo "Creating multi-arch manifests (amd64 + arm64)..."
+          make image-manifest
+
+      - name: Tag images as latest
+        env:
+          IMAGE_TAG: ${{ steps.version.outputs.version }}
+          CONTAINER_TOOL: podman
+        run: |
+          for svc in datastorage gateway aianalysis authwebhook notification \
+                     remediationorchestrator signalprocessing workflowexecution \
+                     effectivenessmonitor holmesgpt-api must-gather; do
+            echo "  Tagging $svc:latest..."
+            podman manifest rm ${IMAGE_REGISTRY}/$svc:latest 2>/dev/null || true
+            podman manifest create ${IMAGE_REGISTRY}/$svc:latest \
+              ${IMAGE_REGISTRY}/$svc:${IMAGE_TAG}-amd64 \
+              ${IMAGE_REGISTRY}/$svc:${IMAGE_TAG}-arm64
+            podman manifest push ${IMAGE_REGISTRY}/$svc:latest \
+              docker://${IMAGE_REGISTRY}/$svc:latest
+          done
+          echo "All images tagged as latest"
+
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+
+  # ========================================
+  # STAGE 2: HELM CHART PUBLISH
+  # Packages the Helm chart with the release version and pushes
+  # to the OCI registry at oci://quay.io/kubernaut-ai/charts
+  #
+  # Users install with:
+  #   helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut --version <version>
+  # ========================================
+
+  helm-publish:
+    name: Publish Helm Chart
+    needs: build-images
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Update Chart.yaml with release version
+        env:
+          VERSION: ${{ needs.build-images.outputs.version }}
+        run: |
+          sed -i "s/^version:.*/version: ${VERSION}/" charts/kubernaut/Chart.yaml
+          sed -i "s/^appVersion:.*/appVersion: \"${VERSION}\"/" charts/kubernaut/Chart.yaml
+
+          echo "Updated Chart.yaml:"
+          head -6 charts/kubernaut/Chart.yaml
+
+      - name: Login to Quay.io OCI registry
+        run: |
+          echo "${{ secrets.QUAY_ROBOT_TOKEN }}" | helm registry login quay.io \
+            -u "${{ secrets.QUAY_ROBOT_USERNAME }}" --password-stdin
+
+      - name: Package and push Helm chart
+        env:
+          VERSION: ${{ needs.build-images.outputs.version }}
+        run: |
+          helm package charts/kubernaut/
+          helm push kubernaut-${VERSION}.tgz oci://quay.io/kubernaut-ai/charts
+          echo "Helm chart published: oci://quay.io/kubernaut-ai/charts/kubernaut:${VERSION}"
+
+  # ========================================
+  # STAGE 3: GITHUB RELEASE
+  # Creates a GitHub Release with auto-generated release notes.
+  # Attaches the Helm chart package as a release asset.
+  # ========================================
+
+  release:
+    name: Create GitHub Release
+    needs: [build-images, helm-publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.build-images.outputs.tag }}
+          VERSION: ${{ needs.build-images.outputs.version }}
+        run: |
+          gh release create "${TAG}" \
+            --title "Kubernaut ${TAG}" \
+            --generate-notes \
+            --notes-start-tag "$(git tag --sort=-creatordate | grep '^v' | sed -n '2p')" || \
+          gh release create "${TAG}" \
+            --title "Kubernaut ${TAG}" \
+            --generate-notes
+
+          echo ""
+          echo "Release created: https://github.com/${{ github.repository }}/releases/tag/${TAG}"
+          echo ""
+          echo "Install with:"
+          echo "  helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut --version ${VERSION}"

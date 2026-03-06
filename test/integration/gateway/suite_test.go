@@ -27,6 +27,7 @@ import (
 	_ "github.com/lib/pq" // PostgreSQL driver
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -243,6 +244,7 @@ var _ = SynchronizedBeforeSuite(
 		// Create scheme with RemediationRequest CRD
 		scheme := k8sruntime.NewScheme()
 		Expect(corev1.AddToScheme(scheme)).To(Succeed())
+		Expect(appsv1.AddToScheme(scheme)).To(Succeed()) // #270: Apps types for owner chain resolution tests
 		Expect(remediationv1alpha1.AddToScheme(scheme)).To(Succeed())
 
 		// Create K8s client

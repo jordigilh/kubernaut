@@ -225,6 +225,13 @@ func DeployNotificationController(ctx context.Context, namespace, kubeconfigPath
 		_, _ = fmt.Fprintf(writer, "   ℹ️  default namespace already exists\n")
 	}
 
+	// Deploy mock-slack before controller so DNS resolves when controller starts processing
+	_, _ = fmt.Fprintf(writer, "📨 Deploying mock-slack (webhook sink with success/fail endpoints)...\n")
+	if err := deployNotificationMockSlack(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("mock-slack deployment failed: %w", err)
+	}
+	_, _ = fmt.Fprintf(writer, "   ✅ mock-slack deployed (http://mock-slack:8080)\n")
+
 	_, _ = fmt.Fprintf(writer, "🚀 Deploying Notification resources via inline YAML template...\n")
 	slackURL := resolveSlackWebhookURL(writer)
 	enableCoverage := os.Getenv("E2E_COVERAGE") == "true"
@@ -430,6 +437,89 @@ func installNotificationCRD(kubeconfigPath string, writer io.Writer) error {
 	return nil
 }
 
+// deployNotificationMockSlack deploys a minimal HTTP service that accepts webhook POSTs.
+// Two endpoints enable per-receiver success/failure scenarios:
+//   - /webhook      → 200 OK (for success test paths)
+//   - /webhook/fail → 503    (for failure test paths, classified as RetryableError)
+//
+// Enhanced variant of fullpipeline's deployMockSlack with dual-endpoint support.
+func deployNotificationMockSlack(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+	manifest := fmt.Sprintf(`---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mock-slack-config
+  namespace: %[1]s
+data:
+  default.conf: |
+    server {
+      listen 8080;
+      location /webhook {
+        return 200 'ok';
+        add_header Content-Type text/plain;
+      }
+      location /webhook/fail {
+        return 503 'simulated failure';
+        add_header Content-Type text/plain;
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mock-slack
+  namespace: %[1]s
+  labels:
+    app: mock-slack
+    component: test-infrastructure
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mock-slack
+  template:
+    metadata:
+      labels:
+        app: mock-slack
+        component: test-infrastructure
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:alpine
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+        volumeMounts:
+        - name: config
+          mountPath: /etc/nginx/conf.d
+      volumes:
+      - name: config
+        configMap:
+          name: mock-slack-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mock-slack
+  namespace: %[1]s
+  labels:
+    app: mock-slack
+    component: test-infrastructure
+spec:
+  selector:
+    app: mock-slack
+  ports:
+  - port: 8080
+    targetPort: 8080
+`, namespace)
+
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd.Stdin = strings.NewReader(manifest)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	return cmd.Run()
+}
+
 // resolveSlackWebhookURL resolves the Slack webhook URL from environment or config file.
 func resolveSlackWebhookURL(writer io.Writer) string {
 	slackURL := os.Getenv("SLACK_WEBHOOK_URL")
@@ -561,6 +651,90 @@ data:
         maxRetries: 3
 ---
 apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: notification-routing-config
+data:
+  routing.yaml: |
+    route:
+      receiver: default-console
+      routes:
+        - receiver: console-file-log
+          match:
+            test-channel-set: console-file-log
+        - receiver: console-file
+          match:
+            test-channel-set: console-file
+        - receiver: file-only
+          match:
+            test-channel-set: file-only
+        - receiver: log-only
+          match:
+            test-channel-set: log-only
+        - receiver: slack-success
+          match:
+            test-channel-set: slack-success
+        - receiver: slack-failure
+          match:
+            test-channel-set: slack-failure
+        - receiver: console-slack-success
+          match:
+            test-channel-set: console-slack-success
+        - receiver: console-slack-failure
+          match:
+            test-channel-set: console-slack-failure
+    receivers:
+      - name: default-console
+        consoleConfigs:
+          - enabled: true
+      - name: console-file-log
+        consoleConfigs:
+          - enabled: true
+        fileConfigs:
+          - enabled: true
+        logConfigs:
+          - enabled: true
+      - name: console-file
+        consoleConfigs:
+          - enabled: true
+        fileConfigs:
+          - enabled: true
+      - name: file-only
+        fileConfigs:
+          - enabled: true
+      - name: log-only
+        logConfigs:
+          - enabled: true
+      - name: slack-success
+        slackConfigs:
+          - channel: "#test-success"
+            credentialRef: slack-success
+      - name: slack-failure
+        slackConfigs:
+          - channel: "#test-failure"
+            credentialRef: slack-failure
+      - name: console-slack-success
+        consoleConfigs:
+          - enabled: true
+        slackConfigs:
+          - channel: "#test-success"
+            credentialRef: slack-success
+      - name: console-slack-failure
+        consoleConfigs:
+          - enabled: true
+        slackConfigs:
+          - channel: "#test-failure"
+            credentialRef: slack-failure
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: slack-credentials
+stringData:
+  slack-success: "http://mock-slack:8080/webhook"
+  slack-failure: "http://mock-slack:8080/webhook/fail"
+---
+apiVersion: v1
 kind: Service
 metadata:
   name: notification-metrics
@@ -613,6 +787,10 @@ spec:
           value: "/etc/notification/config.yaml"
         - name: KUBERNAUT_CONTROLLER_NAMESPACE
           value: "%s"
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
         - name: SLACK_WEBHOOK_URL
           value: "%s"%s
         args:
@@ -650,12 +828,18 @@ spec:
         - name: config
           mountPath: /etc/notification
           readOnly: true
+        - name: slack-credentials
+          mountPath: /etc/notification/credentials
+          readOnly: true
         - name: notification-output
           mountPath: /tmp/notifications%s
       volumes:
       - name: config
         configMap:
           name: notification-controller-config
+      - name: slack-credentials
+        secret:
+          secretName: slack-credentials
       - name: notification-output
         emptyDir: {}%s
       terminationGracePeriodSeconds: 10%s

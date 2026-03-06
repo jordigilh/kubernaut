@@ -1,3 +1,4 @@
+schemaVersion: "1.0"
 # CrashLoop Config Fix Workflow Schema - Job Backend (BR-WORKFLOW-004)
 # Used by: FullPipeline E2E (execution.engine: job)
 metadata:
@@ -12,7 +13,6 @@ metadata:
 actionType: RestartDeployment
 
 labels:
-  signalName: CrashLoopBackOff
   severity: [high, medium]
   environment: [production, staging, test]
   component: "*"
@@ -20,7 +20,7 @@ labels:
 
 execution:
   engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/crashloop-config-fix-job:v1.0.0-exec@sha256:a5b4ec5a097554e8c61769d11327f8902e65a6cba59824daf1182cce1317e773
+  bundle: quay.io/kubernaut-cicd/test-workflows/crashloop-config-fix-job:v1.0.0-exec@sha256:ee23c557818f5d4f87338507e8bda1a2d5fad6deb616f698200d18e6ffe20755
 
 parameters:
   - name: NAMESPACE

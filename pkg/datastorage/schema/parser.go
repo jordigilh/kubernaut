@@ -85,8 +85,23 @@ func (p *Parser) ParseAndValidate(content string) (*models.WorkflowSchema, error
 	return schema, nil
 }
 
+// validSchemaVersions defines the set of accepted schemaVersion values.
+// BR-WORKFLOW-004 v1.1: schemaVersion is required and must be in this set.
+var validSchemaVersions = map[string]bool{
+	"1.0": true,
+}
+
 // Validate validates a WorkflowSchema against BR-WORKFLOW-004 requirements
 func (p *Parser) Validate(schema *models.WorkflowSchema) error {
+	// Validate SchemaVersion (BR-WORKFLOW-004 v1.1, #255)
+	if schema.SchemaVersion == "" {
+		return models.NewSchemaValidationError("schemaVersion", "schemaVersion is required")
+	}
+	if !validSchemaVersions[schema.SchemaVersion] {
+		return models.NewSchemaValidationError("schemaVersion",
+			fmt.Sprintf("unsupported schemaVersion %q; valid values: [1.0]", schema.SchemaVersion))
+	}
+
 	// Validate Metadata
 	if schema.Metadata.WorkflowID == "" {
 		return models.NewSchemaValidationError("metadata.workflowId", "workflowId is required")
@@ -239,11 +254,6 @@ func (p *Parser) ExtractLabels(schema *models.WorkflowSchema) (json.RawMessage, 
 	// DD-WORKFLOW-016: signalType is optional, environment/severity are []string for JSONB array storage
 	labels := map[string]interface{}{
 		"severity": []string(schema.Labels.Severity),
-	}
-
-	// DD-WORKFLOW-016: signalName is optional metadata -- only include when non-empty
-	if schema.Labels.SignalName != "" {
-		labels["signalName"] = schema.Labels.SignalName
 	}
 
 	// Add required labels

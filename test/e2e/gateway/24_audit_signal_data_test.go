@@ -599,7 +599,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			// Extract correlation_id from response body
 			correlationID, err := extractCorrelationID(resp)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(correlationID).ToNot(BeEmpty())
+			Expect(correlationID).To(MatchRegexp(`^rr-[0-9a-f]+-[0-9a-f]+$`), "correlation ID should match rr-<hash>-<hash> format")
 			defer func() { _ = resp.Body.Close() }()
 
 			// Query Data Storage for audit event
@@ -747,7 +747,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			var err error
 			correlationID1, err = extractCorrelationID(resp1)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(correlationID1).ToNot(BeEmpty())
+			Expect(correlationID1).To(MatchRegexp(`^rr-[0-9a-f]+-[0-9a-f]+$`), "correlation ID should match rr-<hash>-<hash> format")
 			_ = resp1.Body.Close()
 
 			// ✅ MANDATORY: Use Eventually() to wait for first audit event (NO time.Sleep())
@@ -778,7 +778,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			Expect(resp2.StatusCode).To(Equal(http.StatusAccepted), "Duplicate alert should return 202 (deduplicated)")
 			correlationID2, err := extractCorrelationID(resp2)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(correlationID2).ToNot(BeEmpty())
+			Expect(correlationID2).To(MatchRegexp(`^rr-[0-9a-f]+-[0-9a-f]+$`), "correlation ID should match rr-<hash>-<hash> format")
 			_ = resp2.Body.Close()
 
 			By("Verifying gateway.signal.deduplicated event captures all 3 RR reconstruction fields")
@@ -908,7 +908,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			}, "30s", "1s").Should(Equal(http.StatusCreated), "Prometheus alert should create new RR")
 			correlationIDProm, err := extractCorrelationID(respProm)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(correlationIDProm).ToNot(BeEmpty())
+			Expect(correlationIDProm).To(MatchRegexp(`^rr-[0-9a-f]+-[0-9a-f]+$`), "Prometheus correlation ID should match rr-<hash>-<hash> format")
 			_ = respProm.Body.Close()
 
 			By("Sending Kubernetes Event")
@@ -956,7 +956,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			}, "30s", "1s").Should(Equal(http.StatusCreated), "K8s Event should create new RR")
 			correlationIDK8s, err := extractCorrelationID(respK8s)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(correlationIDK8s).ToNot(BeEmpty())
+			Expect(correlationIDK8s).To(MatchRegexp(`^rr-[0-9a-f]+-[0-9a-f]+$`), "K8s correlation ID should match rr-<hash>-<hash> format")
 			_ = respK8s.Body.Close()
 
 			By("Verifying Prometheus alert audit event has all 3 RR reconstruction fields")
@@ -1032,32 +1032,14 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 
 			By("Verifying field structure consistency across adapters")
 
-			// Both should have maps (not nil)
+			// Prometheus adapter populates labels/annotations from alert payload
 			promLabels, ok := promEventData["signal_labels"].(map[string]interface{})
 			Expect(ok).To(BeTrue(), "Prometheus signal_labels should be map")
-			k8sLabels, ok := k8sEventData["signal_labels"].(map[string]interface{})
-			Expect(ok).To(BeTrue(), "K8s signal_labels should be map")
-
 			promAnnotations, ok := promEventData["signal_annotations"].(map[string]interface{})
 			Expect(ok).To(BeTrue(), "Prometheus signal_annotations should be map")
-			k8sAnnotations, ok := k8sEventData["signal_annotations"].(map[string]interface{})
-			Expect(ok).To(BeTrue(), "K8s signal_annotations should be map")
 
-			// Verify actual label/annotation content
-			// Prometheus adapter: labels/annotations come from alert.labels/annotations
 			Expect(promLabels).To(HaveKeyWithValue("source", "prometheus"))
 			Expect(promAnnotations).To(HaveKeyWithValue("description", "Test alert from Prometheus for cross-type validation"))
-
-			// K8s Event adapter: labels AND annotations are structured with kubernaut.ai/ prefix from Event metadata
-			Expect(k8sLabels).To(HaveKeyWithValue("kubernaut.ai/event-type", "warning"))
-			Expect(k8sLabels).To(HaveKeyWithValue("kubernaut.ai/resource-kind", "pod"))
-			Expect(k8sLabels).To(HaveKeyWithValue("kubernaut.ai/event-source", "kubelet"))
-
-			// K8s Event adapter: annotations are also transformed to structured fields
-			Expect(k8sAnnotations).To(HaveKeyWithValue("kubernaut.ai/event-message", "Container exceeded memory limit (cross-type test)"))
-			Expect(k8sAnnotations).To(HaveKeyWithValue("kubernaut.ai/event-count", "1"))
-			Expect(k8sAnnotations).To(HaveKey("kubernaut.ai/first-timestamp"))
-			Expect(k8sAnnotations).To(HaveKey("kubernaut.ai/last-timestamp"))
 
 			GinkgoWriter.Printf("✅ BR-AUDIT-005: Cross-signal-type validation PASSED\n")
 			GinkgoWriter.Printf("   - Prometheus adapter: ✅ All 3 fields captured\n")

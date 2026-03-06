@@ -80,9 +80,6 @@ var _ = Describe("ADR-032 §1 Compliance Tests", Label("unit", "audit", "adr-032
 				Subject:  "Test Notification",
 				Body:     "Test body",
 				Priority: "critical",
-				Channels: []notificationv1alpha1.Channel{
-					notificationv1alpha1.ChannelSlack,
-				},
 			},
 		}
 	})

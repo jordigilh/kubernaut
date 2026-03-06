@@ -27,6 +27,7 @@ import (
 	"github.com/go-logr/logr"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/shared/audit" // BR-AUDIT-005 Gap #7: Standardized error details
@@ -299,8 +300,8 @@ func (c *AuditClient) RecordAIAgentCall(ctx context.Context, analysis *aianalysi
 // Uses OpenAPI-generated types (DD-AUDIT-004 V2.0).
 func (c *AuditClient) RecordApprovalDecision(ctx context.Context, analysis *aianalysisv1.AIAnalysis, decision string, reason string) {
 	// Derive boolean flags from decision string
-	approvalRequired := decision == "requires_approval"
-	autoApproved := decision == "auto_approved"
+	approvalRequired := decision == aianalysis.OutcomeRequiresApproval
+	autoApproved := decision == aianalysis.OutcomeAutoApproved
 
 	// Build structured payload using OpenAPI-generated type
 	payload := &ogenclient.AIAnalysisApprovalDecisionPayload{
@@ -354,9 +355,9 @@ func (c *AuditClient) RecordRegoEvaluation(ctx context.Context, analysis *aianal
 	// Map outcome to OpenAPI enum
 	var apiOutcome ogenclient.AuditEventRequestEventOutcome
 	switch outcome {
-	case "allow", "success", "requires_approval", "auto_approved": // Rego policy decision outcomes
+	case aianalysis.OutcomeAllow, aianalysis.OutcomeSuccess, aianalysis.OutcomeRequiresApproval, aianalysis.OutcomeAutoApproved:
 		apiOutcome = audit.OutcomeSuccess
-	case "deny", "failure":
+	case aianalysis.OutcomeDeny, aianalysis.OutcomeFailure:
 		apiOutcome = audit.OutcomeFailure
 	default:
 		apiOutcome = audit.OutcomePending

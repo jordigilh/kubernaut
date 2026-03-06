@@ -83,12 +83,6 @@ var _ = Describe("BR-NOT-056: CRD Lifecycle and Phase State Machine", Label("int
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Phase Transition Test - Sent",
 					Body:     "Testing Pending → Sending → Sent transition",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
 				},
 			}
 
@@ -142,17 +136,14 @@ var _ = Describe("BR-NOT-056: CRD Lifecycle and Phase State Machine", Label("int
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Phase Transition Test - Failed",
 					Body:     "Testing Pending → Sending → Failed transition",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelSlack, // Will fail with 401
-					},
 					RetryPolicy: &notificationv1alpha1.RetryPolicy{
 						MaxAttempts:           1, // Only 1 attempt for faster test
 						InitialBackoffSeconds: 1,
 						BackoffMultiplier:     2,
 						MaxBackoffSeconds:     60, // CRD validation requires ≥60
+					},
+					Metadata: map[string]string{
+						"test-channel-set": "slack-only",
 					},
 				},
 			}
@@ -208,18 +199,14 @@ var _ = Describe("BR-NOT-056: CRD Lifecycle and Phase State Machine", Label("int
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Phase Transition Test - PartiallySent",
 					Body:     "Testing Pending → Sending → PartiallySent transition",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole, // Will succeed
-						notificationv1alpha1.ChannelSlack,   // Will fail with 401
-					},
 					RetryPolicy: &notificationv1alpha1.RetryPolicy{
 						MaxAttempts:           1, // Only 1 attempt for faster test
 						InitialBackoffSeconds: 1,
 						BackoffMultiplier:     2,
 						MaxBackoffSeconds:     60, // CRD validation requires ≥60
+					},
+					Metadata: map[string]string{
+						"test-channel-set": "console-slack",
 					},
 				},
 			}
@@ -275,11 +262,8 @@ var _ = Describe("BR-NOT-056: CRD Lifecycle and Phase State Machine", Label("int
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Phase Transition Test - Intermediate",
 					Body:     "Testing Pending/Sending intermediate phases",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelSlack,
+					Metadata: map[string]string{
+						"test-channel-set": "console-slack",
 					},
 				},
 			}
@@ -353,12 +337,6 @@ var _ = Describe("BR-NOT-056: CRD Lifecycle and Phase State Machine", Label("int
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Terminal Phase Immutability Test",
 					Body:     "Testing that Sent phase remains terminal",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
 				},
 			}
 
@@ -426,17 +404,14 @@ var _ = Describe("BR-NOT-056: CRD Lifecycle and Phase State Machine", Label("int
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Terminal Phase Immutability Test - Failed",
 					Body:     "Testing that Failed phase remains terminal",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelSlack,
-					},
 					RetryPolicy: &notificationv1alpha1.RetryPolicy{
 						MaxAttempts:           1,
 						InitialBackoffSeconds: 1,
 						BackoffMultiplier:     2,
 						MaxBackoffSeconds:     60, // CRD validation requires ≥60
+					},
+					Metadata: map[string]string{
+						"test-channel-set": "slack-only",
 					},
 				},
 			}
@@ -498,12 +473,6 @@ var _ = Describe("BR-NOT-056: CRD Lifecycle and Phase State Machine", Label("int
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Phase Audit Trail Test",
 					Body:     "Testing phase transition audit trail",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
 				},
 			}
 

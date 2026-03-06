@@ -271,8 +271,8 @@ var _ = Describe("E2E-HAPI Incident Analysis", Label("e2e", "hapi", "incident"),
 				"needs_human_review must be false for confident recommendation")
 			Expect(incidentResp.SelectedWorkflow.Set).To(BeTrue(),
 				"selected_workflow must be present")
-			Expect(incidentResp.Confidence).To(BeNumerically("~", 0.88, 0.05),
-				"Workflow catalog semantic search returns confidence = 0.88 ± 0.05 for OOMKilled workflows")
+			Expect(incidentResp.Confidence).To(BeNumerically("~", 0.95, 0.05),
+				"Mock LLM 'oomkilled' scenario returns confidence = 0.95 ± 0.05")
 
 			// CORRECTNESS: Workflow matches signal type
 			// Note: selectedWorkflow is map[string]jx.Raw - detailed field validation skipped in E2E

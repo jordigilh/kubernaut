@@ -64,6 +64,7 @@ import (
 
 	// Import EM controller and client
 	controller "github.com/jordigilh/kubernaut/internal/controller/effectivenessmonitor"
+	emaudit "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/audit"
 	emclient "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/client"
 	emmetrics "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/metrics"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
@@ -350,6 +351,8 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	GinkgoWriter.Printf("✅ Prometheus HTTP client → %s\n", mockProm.URL())
 	GinkgoWriter.Printf("✅ AlertManager HTTP client → %s\n", mockAM.URL())
 
+	auditManager := emaudit.NewManager(auditStore, ctrl.Log.WithName("audit"))
+
 	reconciler := controller.NewReconciler(
 		k8sManager.GetClient(),
 		k8sManager.GetScheme(),
@@ -357,7 +360,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		controllerMetrics,
 		promClient,
 		amClient,
-		nil, // AuditManager: nil for integration tests (audit tested in E2E)
+		auditManager,
 		nil, // DSQuerier: nil for integration tests (DS querier tested separately)
 		func() controller.ReconcilerConfig {
 			c := controller.DefaultReconcilerConfig()

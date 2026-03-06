@@ -261,6 +261,9 @@ test/integration/aianalysis/mock-llm-config.yaml
 # Must-gather diagnostic archives (downloaded during CI triage)
 must-gather-*.tar.gz
 
+# Goose binary (auto-downloaded by apply-migrations.sh, #278)
+.goose-bin/
+
 # Cursor Swarm Extension (development)
 .cursor-swarm-dev/
 *.vsix

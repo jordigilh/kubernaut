@@ -1,6 +1,7 @@
 # VHS tape: <SCENARIO_TITLE> (#<SCENARIO_NUMBER>)
 #
-# Three-act recording:
+# Recording structure:
+#   Title Card:                    scenario overview + 3-act roadmap (20s hold)
 #   Act 1 -- "The Problem":       <ACT1_SUMMARY>
 #   Act 2 -- "The Remediation":   <ACT2_SUMMARY>
 #   Act 3 -- "The Result":        <ACT3_SUMMARY>
@@ -19,20 +20,39 @@
 #   2. `clear` before the echo so the terminal screen contains ONLY the sentinel
 #      output -- prevents stale matches from previous screen content.
 #
-# Visible annotations use bash comments (# ...) instead of echo to avoid the
-# visual artifact where the echo command text and its output both appear.
+# Visual hierarchy (color-driven, no symbols):
+#   1. Bold yellow ━━ act headers      (announce)  — hidden typing, only output shown
+#   2. Dim gray narration              (narrate)   — hidden typing, only output shown
+#   3. Cyan ❯ prompt                   (typed commands visible)
+#   4. Default foreground              (command output)
+#
+# Pattern for narrate/announce: Hide → fast-type → Enter → Show.
+# The ANSI self-erase codes in the helpers clean the prompt line, but VHS
+# captures frames during typing, so we must hide the typing itself.
+#
+# Persistent act titles:
+#   announce() sets _act; act_clear() does clear + reprints the current act title.
+#   Use act_clear instead of clear in hidden-wait blocks before Show so the
+#   viewer always knows which act they are in.
+#
+# Approval vs Auto-Approve:
+#   Scenarios in production namespaces wait for AwaitingApproval, show the
+#   approval reason, and approve the RAR before watching execution.
+#   Auto-approved scenarios wait for Executing, show AI analysis (Approval
+#   Required: false), then watch execution directly.
 
 Output deploy/demo/scenarios/<SCENARIO_DIR>/<SCENARIO_DIR>.gif
+Output deploy/demo/scenarios/<SCENARIO_DIR>/<SCENARIO_DIR>.mp4
 
 Require kubectl
 Require bash
 Require python3
 
 Set Shell "bash"
-Set FontSize 14
-Set Width 1200
-Set Height 600
-Set Padding 20
+Set FontSize 28
+Set Width 2400
+Set Height 1200
+Set Padding 40
 Set TypingSpeed 50ms
 Set Theme "Catppuccin Mocha"
 
@@ -45,9 +65,34 @@ Set Theme "Catppuccin Mocha"
 Hide
 Set TypingSpeed 1ms
 
-Type `export PS1='$ '`
+Type `export PS1='\[\e[1;36m\]❯ \[\e[0m\]'`
 Enter
 Sleep 500ms
+
+Type `export KUBECONFIG=~/.kube/kubernaut-demo-config`
+Enter
+Sleep 500ms
+
+Type `narrate() { printf '\e[1A\e[2K\e[38;5;245m%s\e[0m\n' "$*"; }`
+Enter
+Sleep 200ms
+
+Type `_act=""`
+Enter
+Sleep 100ms
+Type `announce() { _act="$*"; printf '\e[1A\e[2K\n\e[1;33m━━ %s ━━\e[0m\n\n' "$*"; }`
+Enter
+Sleep 200ms
+
+Type `act_clear() { clear; [ -n "$_act" ] && printf '\e[1;33m━━ %s ━━\e[0m\n\n' "$_act"; }`
+Enter
+Sleep 200ms
+
+# title_card: scenario-specific intro rendered as a single self-erasing call
+# CUSTOMIZE: replace title, description, and act summaries
+Type `title_card() { printf '\e[1A\e[2K\n\e[1;33m━━ <SCENARIO_TITLE> ━━\e[0m\n\n\e[38;5;245m<SCENARIO_DESCRIPTION_LINE_1>\n<SCENARIO_DESCRIPTION_LINE_2>\e[0m\n\n\e[1;33mAct 1\e[0m  \e[38;5;245mThe Problem     — <ACT1_SHORT>\e[0m\n\e[1;33mAct 2\e[0m  \e[38;5;245mThe Remediation — <ACT2_SHORT>\e[0m\n\e[1;33mAct 3\e[0m  \e[38;5;245mThe Result      — <ACT3_SHORT>\e[0m\n'; }`
+Enter
+Sleep 200ms
 
 Type `export PLATFORM_NS=kubernaut-system`
 Enter
@@ -67,16 +112,24 @@ Sleep 5s
 
 # Deploy manifests and wait for readiness
 # CUSTOMIZE: list all manifest files and the deployment/resource to wait on
-Type `kubectl apply -f deploy/demo/scenarios/<SCENARIO_DIR>/manifests/ >/dev/null 2>&1 && kubectl wait --for=condition=Available deployment/<DEPLOYMENT_NAME> -n <NAMESPACE> --timeout=120s >/dev/null 2>&1 && clear && echo SETUP"_"COMPLETE`
+Type `kubectl apply -f deploy/demo/scenarios/<SCENARIO_DIR>/manifests/namespace.yaml >/dev/null 2>&1 && kubectl apply -f deploy/demo/scenarios/<SCENARIO_DIR>/manifests/ >/dev/null 2>&1 && kubectl wait --for=condition=Available deployment/<DEPLOYMENT_NAME> -n <NAMESPACE> --timeout=120s >/dev/null 2>&1 && clear && echo SETUP"_"COMPLETE`
 Enter
 Wait+Screen@300s /SETUP_COMPLETE/
 
 Type "clear"
 Enter
 Sleep 500ms
-Set TypingSpeed 50ms
 
+# ─────────────────────────────────────────
+# Title Card
+# ─────────────────────────────────────────
+
+Type "title_card"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
 Show
+Sleep 20s
 
 # ═════════════════════════════════════════
 # ACT 1 -- The Problem
@@ -84,25 +137,44 @@ Show
 # Show the healthy state, inject the fault, and wait for the alert.
 # CUSTOMIZE: title, fault injection, and alert name.
 
-Type "# Kubernaut Demo: <SCENARIO_TITLE>"
+Hide
+Set TypingSpeed 1ms
+Type "clear"
 Enter
-Sleep 3s
+Sleep 300ms
+Type "announce 'Act 1: The Problem'"
+Enter
+Sleep 300ms
+Type "narrate '<ONE_LINE_SCENARIO_DESCRIPTION>'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 4s
 
-Type "# <ONE_LINE_SCENARIO_DESCRIPTION>"
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'Healthy workload running in namespace <NAMESPACE>'"
 Enter
-Sleep 3s
-
-Type "# Healthy workload running in namespace <NAMESPACE>"
-Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
 Sleep 2s
+
 Type "kubectl get pods -n <NAMESPACE>"
 Enter
 Sleep 5s
 
 # CUSTOMIZE: fault injection step
-Type "# Injecting fault: <FAULT_DESCRIPTION>..."
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'Injecting fault: <FAULT_DESCRIPTION>...'"
 Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
 Sleep 2s
+
 Type "bash deploy/demo/scenarios/<SCENARIO_DIR>/<INJECT_SCRIPT>"
 Enter
 Sleep 4s
@@ -115,22 +187,32 @@ Sleep 4s
 # Type `sleep 20 && clear && echo FAULT"_"VISIBLE`
 # Enter
 # Wait+Screen@60s /FAULT_VISIBLE/
-# Type "clear"
+# Type "act_clear"
 # Enter
 # Sleep 500ms
 # Set TypingSpeed 50ms
 # Show
 #
-# Type "# <FAULT_VISIBLE_COMMENT>"
+# Hide
+# Set TypingSpeed 1ms
+# Type "narrate '<FAULT_VISIBLE_COMMENT>'"
 # Enter
+# Sleep 300ms
+# Set TypingSpeed 50ms
+# Show
 # Sleep 2s
 # Type "kubectl get pods -n <NAMESPACE>"
 # Enter
 # Sleep 5s
 
-Type "# Waiting for the <ALERT_NAME> alert to fire..."
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'Waiting for the <ALERT_NAME> alert to fire...'"
 Enter
-Sleep 2s
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 5s
 
 # Hidden wait: poll AlertManager until the alert fires
 Hide
@@ -138,148 +220,298 @@ Set TypingSpeed 1ms
 Type `while [ "$(kubectl exec -n monitoring alertmanager-kube-prometheus-stack-alertmanager-0 -- amtool alert query alertname=<ALERT_NAME> --alertmanager.url=http://localhost:9093 --output=json 2>/dev/null | python3 -c 'import sys,json; print(len(json.load(sys.stdin)))' 2>/dev/null)" = "0" ]; do sleep 10; done && clear && echo ALERT"_"FIRED`
 Enter
 Wait+Screen@600s /ALERT_FIRED/
-Type "clear"
+Type "act_clear"
 Enter
 Sleep 500ms
 Set TypingSpeed 50ms
 Show
 
-Type "# Alert is now firing"
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'Alert is now firing'"
 Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
 Sleep 2s
+
 Type "bash deploy/demo/scripts/show-alert.sh <ALERT_NAME>"
 Enter
 Sleep 8s
 
-Type "# Kubernaut Gateway received this alert and created a RemediationRequest"
-Enter
-Sleep 3s
-
-# Hidden wait: poll until the pipeline reaches a viewable state
-# CUSTOMIZE: change the grep pattern to match the expected RR phase at the
-# transition between Act 1 and Act 2. Common patterns:
-#   Analyzing        -- still in analysis (show SP + AA in progress)
-#   AwaitingApproval -- analysis done, approval needed (show RAR)
-#   Executing        -- auto-approved, WFE in progress
-#   Completed        -- fast-path scenarios (NoActionRequired)
 Hide
 Set TypingSpeed 1ms
-Type `while ! kubectl get remediationrequests -n ${PLATFORM_NS} 2>/dev/null | grep -qE '<ACT2_RR_PHASE_PATTERN>'; do sleep 10; done && clear && echo PIPELINE"_"READY`
+Type "narrate 'Kubernaut Gateway received this alert and created a RemediationRequest'"
 Enter
-Wait+Screen@600s /PIPELINE_READY/
-Type "clear"
-Enter
-Sleep 500ms
+Sleep 300ms
 Set TypingSpeed 50ms
 Show
+Sleep 3s
+
+# Hidden wait: poll until ANY RR exists
+Hide
+Set TypingSpeed 1ms
+Type `while ! kubectl get remediationrequests -n ${PLATFORM_NS} --no-headers 2>/dev/null | grep -q .; do sleep 5; done && clear && echo RR"_"EXISTS`
+Enter
+Wait+Screen@600s /RR_EXISTS/
 
 # ═════════════════════════════════════════
 # ACT 2 -- The Remediation
 # ═════════════════════════════════════════
-# Show the pipeline state: SP enrichment, AI analysis, approval (if any),
-# and workflow execution. CUSTOMIZE this entire act for your scenario.
-#
-# Common building blocks (copy/uncomment as needed):
-#
-# --- Show pipeline CRDs ---
-# Type "kubectl get rr,sp,aa -n ${PLATFORM_NS}"
-# Enter
-# Sleep 6s
-#
-# --- Show AI analysis details ---
-# Type "bash deploy/demo/scripts/show-ai-analysis.sh <NAMESPACE>"
-# Enter
-# Sleep 12s
-#
-# --- Show approval reason ---
-# Type "bash deploy/demo/scripts/show-approval-reason.sh <NAMESPACE>"
-# Enter
-# Sleep 8s
-#
-# --- Show and approve RAR (approval scenarios) ---
-# Type "kubectl get rar -n ${PLATFORM_NS}"
-# Enter
-# Sleep 6s
-# Type "bash deploy/demo/scripts/approve-rar.sh"
-# Enter
-# Sleep 4s
-#
-# --- Watch WFE live (execution scenarios) ---
-# Type "kubectl get wfe -n ${PLATFORM_NS} -w"
-# Enter
-# Wait+Screen@120s /Completed/
-# Sleep 5s
-# Ctrl+C
-# Sleep 2s
 
-Type "# The pipeline is processing"
+Type "clear"
 Enter
+Sleep 300ms
+Type "announce 'Act 2: The Remediation'"
+Enter
+Sleep 300ms
+Type "narrate 'The AI is analyzing the root cause and selecting a remediation workflow...'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
 Sleep 2s
-Type "kubectl get rr,sp,aa -n ${PLATFORM_NS}"
+
+# Snapshot 1: RR in Analyzing (early AGE)
+Type "kubectl get remediationrequests -n ${PLATFORM_NS}"
+Enter
+Sleep 5s
+
+# Hidden time skip — let the LLM work for ~20s without the viewer waiting
+Hide
+Set TypingSpeed 1ms
+Type `sleep 20 && clear && echo SKIP"_"DONE`
+Enter
+Wait+Screen@30s /SKIP_DONE/
+Type "act_clear"
+Enter
+Sleep 300ms
+Type "narrate 'The AI is analyzing the root cause and selecting a remediation workflow...'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 2s
+
+# Snapshot 2: RR still Analyzing (later AGE — shows time has passed)
+Type "kubectl get remediationrequests -n ${PLATFORM_NS}"
+Enter
+Sleep 5s
+
+# ┌─────────────────────────────────────────────────────────┐
+# │ APPROVAL PATH (production namespaces)                   │
+# │ Use this block when the scenario requires RAR approval. │
+# │ Delete the AUTO-APPROVE block below.                    │
+# └─────────────────────────────────────────────────────────┘
+
+# Hidden wait: skip remaining LLM time to AwaitingApproval
+Hide
+Set TypingSpeed 1ms
+Type `while ! kubectl get remediationrequests -n ${PLATFORM_NS} 2>/dev/null | grep -q AwaitingApproval; do sleep 10; done && clear && echo PIPELINE"_"READY`
+Enter
+Wait+Screen@600s /PIPELINE_READY/
+Type "act_clear"
+Enter
+Sleep 300ms
+Type "narrate 'Analysis complete. Approval is required because this is a production namespace.'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 2s
+
+# Snapshot 3: RR now in AwaitingApproval
+Type "kubectl get remediationrequests -n ${PLATFORM_NS}"
 Enter
 Sleep 6s
 
-# CUSTOMIZE: add scenario-specific Act 2 content here
-
-# Hidden wait: poll until the RR reaches a terminal state
 Hide
 Set TypingSpeed 1ms
-Type `while true; do PHASE=$(kubectl get remediationrequests -n ${PLATFORM_NS} -o jsonpath='{.items[0].status.overallPhase}' 2>/dev/null); [ "$PHASE" = "Completed" ] || [ "$PHASE" = "Failed" ] && break; sleep 10; done && clear && echo RR"_"DONE`
+Type "act_clear"
 Enter
-Wait+Screen@600s /RR_DONE/
+Sleep 300ms
+Type "narrate 'Root cause analysis and recommended workflow'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 2s
+
+Type "bash deploy/demo/scripts/show-ai-analysis.sh <NAMESPACE>"
+Enter
+Sleep 24s
+
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'Checking why approval is required...'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 2s
+
+Type "bash deploy/demo/scripts/show-approval-reason.sh <NAMESPACE>"
+Enter
+Sleep 12s
+
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'Approving the remediation...'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 2s
+
+Type "bash deploy/demo/scripts/approve-rar.sh"
+Enter
+Sleep 4s
+
+# ┌─────────────────────────────────────────────────────────────┐
+# │ AUTO-APPROVE PATH (non-production namespaces)               │
+# │ Use this block when the scenario auto-approves.             │
+# │ Delete the APPROVAL PATH block above.                       │
+# └─────────────────────────────────────────────────────────────┘
+#
+# # Hidden wait: skip remaining LLM time to Executing
+# Hide
+# Set TypingSpeed 1ms
+# Type `while ! kubectl get remediationrequests -n ${PLATFORM_NS} 2>/dev/null | grep -qE 'Executing|Verifying|Completed'; do sleep 10; done && clear && echo PIPELINE"_"READY`
+# Enter
+# Wait+Screen@600s /PIPELINE_READY/
+# Type "act_clear"
+# Enter
+# Sleep 300ms
+# Type "narrate 'Analysis complete. Auto-approved — no manual approval required.'"
+# Enter
+# Sleep 300ms
+# Set TypingSpeed 50ms
+# Show
+# Sleep 2s
+#
+# # Snapshot 3: RR now Executing (auto-approved)
+# Type "kubectl get remediationrequests -n ${PLATFORM_NS}"
+# Enter
+# Sleep 6s
+#
+# Hide
+# Set TypingSpeed 1ms
+# Type "act_clear"
+# Enter
+# Sleep 300ms
+# Type "narrate 'Root cause analysis and recommended workflow'"
+# Enter
+# Sleep 300ms
+# Set TypingSpeed 50ms
+# Show
+# Sleep 2s
+#
+# Type "bash deploy/demo/scripts/show-ai-analysis.sh <NAMESPACE>"
+# Enter
+# Sleep 24s
+
+# Live RR watch: captures execution transitions
+Hide
+Set TypingSpeed 1ms
+Type "act_clear"
+Enter
+Sleep 500ms
+Type "narrate 'Watching the execution phase transitions...'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 2s
+
+Type "kubectl get remediationrequests -n ${PLATFORM_NS} -w"
+Enter
+Wait+Screen@300s /Completed/
+Sleep 5s
+Ctrl+C
+Sleep 2s
+
+# ═════════════════════════════════════════
+# ACT 3 -- The Result
+# ═════════════════════════════════════════
+# Show the final RR outcome and verify the cluster state.
+# CUSTOMIZE the verification steps for your scenario.
+
+Hide
+Set TypingSpeed 1ms
 Type "clear"
+Enter
+Sleep 300ms
+Type "announce 'Act 3: The Result'"
+Enter
+Sleep 300ms
+Type "narrate '<RECOVERY_DESCRIPTION>'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 4s
+
+# CUSTOMIZE: verification steps (e.g. kubectl get pods, kubectl get certificate)
+Type "kubectl get pods -n <NAMESPACE>"
+Enter
+Sleep 5s
+
+Type "kubectl get remediationrequests -n ${PLATFORM_NS}"
+Enter
+Sleep 5s
+
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'Notification delivered to Slack and console'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 2s
+
+Type "bash deploy/demo/scripts/show-notification.sh ${PLATFORM_NS}"
+Enter
+Sleep 12s
+
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'Waiting for EffectivenessAssessment to complete...'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 2s
+
+# Hidden wait: poll until EA reaches Completed or Failed
+Hide
+Set TypingSpeed 1ms
+Type `while true; do PHASE=$(kubectl get effectivenessassessments -n ${PLATFORM_NS} -o jsonpath='{.items[0].status.phase}' 2>/dev/null); [ "$PHASE" = "Completed" ] || [ "$PHASE" = "Failed" ] && break; sleep 10; done && clear && echo EA"_"DONE`
+Enter
+Wait+Screen@600s /EA_DONE/
+Type "act_clear"
 Enter
 Sleep 500ms
 Set TypingSpeed 50ms
 Show
 
-# ═════════════════════════════════════════
-# ACT 3 -- The Result
-# ═════════════════════════════════════════
-# Show the final pipeline state and verify the outcome.
-# CUSTOMIZE the verification steps for your scenario.
-
-Type "# Pipeline completed -- verifying outcome"
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'EffectivenessAssessment result'"
 Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
 Sleep 2s
 
-Type "kubectl get rr,sp,aa,wfe,ea -n ${PLATFORM_NS}"
+Type "bash deploy/demo/scripts/show-effectiveness.sh <NAMESPACE>"
 Enter
-Sleep 6s
+Sleep 10s
 
-Type "# RemediationRequest result:"
+Hide
+Set TypingSpeed 1ms
+Type "narrate '<OUTCOME_SUMMARY>'"
 Enter
-Sleep 2s
-Type `kubectl get rr -n ${PLATFORM_NS} -o jsonpath='Phase: {.items[0].status.overallPhase}  Outcome: {.items[0].status.outcome}' && echo`
-Enter
-Sleep 6s
-
-# [OPTIONAL] Show EffectivenessAssessment (scenarios with WFE)
-# Uncomment if the scenario includes workflow execution + EA:
-#
-# Type "# Waiting for the EffectivenessAssessment to complete..."
-# Enter
-# Sleep 2s
-#
-# Hide
-# Set TypingSpeed 1ms
-# Type `while true; do PHASE=$(kubectl get effectivenessassessments -n ${PLATFORM_NS} -o jsonpath='{.items[0].status.phase}' 2>/dev/null); [ "$PHASE" = "Completed" ] || [ "$PHASE" = "Failed" ] && break; sleep 10; done && clear && echo EA"_"DONE`
-# Enter
-# Wait+Screen@600s /EA_DONE/
-# Type "clear"
-# Enter
-# Sleep 500ms
-# Set TypingSpeed 50ms
-# Show
-#
-# Type "# EffectivenessAssessment result:"
-# Enter
-# Sleep 2s
-# Type "bash deploy/demo/scripts/show-effectiveness.sh <NAMESPACE>"
-# Enter
-# Sleep 10s
-
-# CUSTOMIZE: final annotation summarizing the outcome
-Type "# <OUTCOME_SUMMARY>"
-Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
 Sleep 5s

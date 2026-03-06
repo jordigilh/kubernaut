@@ -46,6 +46,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	aiaudit "github.com/jordigilh/kubernaut/pkg/aianalysis/audit"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/test/shared/validators"
@@ -713,7 +714,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 
 			// Validate field values
 			decision := eventData["decision"].(string)
-			Expect([]string{"requires_approval", "auto_approved"}).To(ContainElement(decision),
+			Expect([]string{aianalysis.OutcomeRequiresApproval, aianalysis.OutcomeAutoApproved}).To(ContainElement(decision),
 				"Decision should be either 'requires_approval' or 'auto_approved'")
 		})
 
@@ -812,9 +813,9 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 				EventOutcome:  validators.EventOutcomePtr(ogenclient.AuditEventEventOutcomeSuccess),
 				CorrelationID: correlationID,
 				EventDataFields: map[string]interface{}{
-					"outcome":  "requires_approval", // Verify specific value
-					"degraded": nil,                 // Validate key exists
-					"reason":   nil,                 // Validate key exists
+					"outcome":  aianalysis.OutcomeAutoApproved, // OOMKilled (0.95) >= Rego threshold (0.8) → auto-approved
+					"degraded": nil,             // Validate key exists
+					"reason":   nil,             // Validate key exists
 				},
 			})
 		})

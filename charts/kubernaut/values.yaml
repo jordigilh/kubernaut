@@ -26,6 +26,7 @@ gateway:
 # -- DataStorage service (audit trail, workflow catalog)
 datastorage:
   replicas: 1
+  dbExistingSecret: ""  # name of pre-created Secret with db-secrets.yaml key; when set, overrides chart-managed datastorage-db-secret
   resources:
     requests:
       memory: 256Mi
@@ -68,6 +69,17 @@ remediationorchestrator:
     limits:
       cpu: 500m
       memory: 256Mi
+  config:
+    effectivenessAssessment:
+      # Time for system stabilization after remediation before assessment
+      stabilizationWindow: "5m"
+    asyncPropagation:
+      # Expected time for GitOps tool (ArgoCD/Flux) to sync changes to cluster
+      gitOpsSyncDelay: "3m"
+      # Expected time for operator to reconcile after CR update
+      operatorReconcileDelay: "1m"
+      # Extra delay for proactive alert resolution (e.g. predict_linear needs fresh data)
+      proactiveAlertDelay: "5m"
 
 # -- WorkflowExecution controller
 workflowexecution:
@@ -156,8 +168,13 @@ eventExporter:
       cpu: 200m
 
 # -- PostgreSQL (DataStorage backend)
-# Credentials: provide EITHER existingSecret OR password (via --set).
-# existingSecret must contain keys: POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB
+# Credential flow (#204):
+#   Option A (prod): Pre-create a Secret and set postgresql.auth.existingSecret.
+#     Secret must have keys: POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB.
+#     Also set datastorage.dbExistingSecret to a Secret with key db-secrets.yaml
+#     containing "username: <user>\npassword: <pass>".
+#   Option B (dev):  Set postgresql.auth.password via --set or values-demo.yaml.
+#     Chart auto-creates postgresql-secret and datastorage-db-secret.
 postgresql:
   image: postgres:16-alpine
   auth:
@@ -177,8 +194,11 @@ postgresql:
       cpu: 500m
 
 # -- Redis (DataStorage DLQ)
-# Credentials: provide EITHER existingSecret OR password (via --set).
-# existingSecret must contain key: password
+# Credential flow (#204):
+#   Option A (prod): Pre-create a Secret and set redis.existingSecret.
+#     Secret must have key redis-secrets.yaml containing "password: <pass>".
+#   Option B (dev):  Set redis.password via --set. Chart auto-creates redis-secret.
+#     Empty password ("") is allowed for development.
 redis:
   image: quay.io/jordigilh/redis:7-alpine
   existingSecret: ""  # name of pre-created K8s Secret; when set, chart skips Secret creation
@@ -198,6 +218,7 @@ redis:
 hooks:
   migrations:
     image: postgres:16-alpine
+    gooseVersion: v3.24.1  # DD-012: goose CLI version for migration state tracking
   seedWorkflows:
     image: curlimages/curl:latest
   tlsCerts:

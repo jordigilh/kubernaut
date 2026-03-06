@@ -35,6 +35,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
+	"github.com/jordigilh/kubernaut/internal/version"
 	scope "github.com/jordigilh/kubernaut/pkg/shared/scope"
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	config "github.com/jordigilh/kubernaut/internal/config/effectivenessmonitor"
@@ -73,6 +74,12 @@ func main() {
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
+	setupLog.Info("Starting EffectivenessMonitor Controller",
+		"version", version.Version,
+		"gitCommit", version.GitCommit,
+		"buildDate", version.BuildDate,
+	)
 
 	// ========================================
 	// CONFIGURATION LOADING (ADR-030)

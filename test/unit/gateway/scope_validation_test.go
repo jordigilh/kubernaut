@@ -90,7 +90,7 @@ func newTestGatewayServer(k8sClient client.Client, metricsInstance *metrics.Metr
 		},
 		Processing: config.ProcessingSettings{
 			Deduplication: config.DeduplicationSettings{
-				TTL: 300 * time.Second,
+				CooldownPeriod: 300 * time.Second,
 			},
 			CRD: config.CRDSettings{},
 			Retry: config.RetrySettings{

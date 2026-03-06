@@ -98,7 +98,10 @@ type WorkflowExecutionSpec struct {
     TargetResource string `json:"targetResource"`
 
     // Parameters from LLM selection (per DD-WORKFLOW-003)
-    // Keys are UPPER_SNAKE_CASE for Tekton PipelineRun params
+    // Keys are UPPER_SNAKE_CASE for Tekton PipelineRun params.
+    // Note: TARGET_RESOURCE is always injected as a built-in parameter
+    // by the executor (both Tekton and Job engines) from Spec.TargetResource;
+    // it does NOT need to be included in this map.
     Parameters map[string]string `json:"parameters"`
 
     // Confidence score from LLM (for audit trail)

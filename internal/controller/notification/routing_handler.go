@@ -300,7 +300,7 @@ func (r *NotificationRequestReconciler) rebuildSlackDeliveryServices(ctx context
 			if len(receiver.SlackConfigs) > 1 {
 				channelKey = fmt.Sprintf("slack:%s:%d", receiver.Name, i)
 			}
-			slackService := delivery.NewSlackDeliveryService(webhookURL)
+			slackService := delivery.NewSlackDeliveryService(webhookURL, r.SlackTimeout)
 
 			if r.CircuitBreaker != nil {
 				cbSlack := delivery.NewCircuitBreakerSlackService(slackService, r.CircuitBreaker)

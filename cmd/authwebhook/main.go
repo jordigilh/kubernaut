@@ -9,6 +9,7 @@ import (
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	"github.com/jordigilh/kubernaut/internal/version"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/authwebhook"
 	awconfig "github.com/jordigilh/kubernaut/pkg/authwebhook/config"
@@ -40,6 +41,12 @@ func main() {
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
+
+	setupLog.Info("Starting AuthWebhook",
+		"version", version.Version,
+		"gitCommit", version.GitCommit,
+		"buildDate", version.BuildDate,
+	)
 
 	// Load configuration: YAML file if provided, defaults otherwise
 	var cfg *awconfig.Config

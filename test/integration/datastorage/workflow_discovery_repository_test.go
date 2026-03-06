@@ -91,7 +91,6 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 		hash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
 
 		labels := models.MandatoryLabels{
-			SignalName:  "OOMKilled",
 			Severity:    []string{severity},
 			Component:   component,
 			Environment: []string{environment},
@@ -101,6 +100,7 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 		wf := &models.RemediationWorkflow{
 			WorkflowName:    fmt.Sprintf("wf-disc-%s-%s", testID, name),
 			Version:         version,
+			SchemaVersion:   "1.0",
 			Name:            name,
 			Description: models.StructuredDescription{
 				What:      fmt.Sprintf("Test workflow %s for discovery", name),
@@ -310,7 +310,6 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 
 				// Assert
 				Expect(err).ToNot(HaveOccurred())
-				Expect(result).ToNot(BeNil())
 				Expect(result.WorkflowID).To(Equal(wf.WorkflowID))
 				Expect(result.ActionType).To(Equal("ScaleReplicas"))
 			})

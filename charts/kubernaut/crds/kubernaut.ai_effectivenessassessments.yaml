@@ -67,6 +67,26 @@ spec:
               config:
                 description: Config contains the assessment configuration parameters.
                 properties:
+                  alertCheckDelay:
+                    description: |-
+                      AlertCheckDelay is an additional duration to defer alert resolution checks
+                      beyond the StabilizationWindow. Set by the RO for proactive (predictive) alerts
+                      where the underlying Prometheus alert (e.g. predict_linear) requires extra time
+                      to resolve after remediation.
+                      The EM computes AlertManagerCheckAfter as:
+                        creation + StabilizationWindow + AlertCheckDelay
+                      Nil means no additional delay (AlertManagerCheckAfter = PrometheusCheckAfter).
+                      Reference: ADR-EM-001, BR-EM-009, Issue #277
+                    type: string
+                  hashComputeDelay:
+                    description: |-
+                      HashComputeDelay is the duration to defer post-remediation spec hash computation
+                      after EA creation. Set by the RO for async-managed targets (GitOps, operator
+                      CRDs) where spec changes propagate after the WorkflowExecution completes.
+                      The EM computes the deferral deadline as: creation + HashComputeDelay.
+                      Nil means compute immediately (sync workflows, backward compatible).
+                      Reference: DD-EM-004, BR-EM-010, BR-RO-103, Issue #277
+                    type: string
                   stabilizationWindow:
                     description: |-
                       StabilizationWindow is the duration to wait after remediation before assessment.
@@ -102,10 +122,12 @@ spec:
                 description: |-
                   RemediationRequestPhase is the RemediationRequest's OverallPhase at the time
                   the EA was created. Captured as an immutable spec field so the EM can branch
-                  assessment logic based on the RR outcome (Completed, Failed, TimedOut).
+                  assessment logic based on the RR outcome (Verifying, Completed, Failed, TimedOut).
+                  Verifying: happy path — WFE succeeded, EA created while RR awaits assessment (#280).
                   Previously stored as the mutable label kubernaut.ai/rr-phase; moved to spec
                   for immutability and security.
                 enum:
+                - Verifying
                 - Completed
                 - Failed
                 - TimedOut
@@ -179,9 +201,11 @@ spec:
                 description: |-
                   AlertManagerCheckAfter is the earliest time to check AlertManager for alert resolution.
                   Computed by the EM controller on first reconciliation as:
-                    EA.creationTimestamp + StabilizationWindow (from EA spec).
+                    EA.creationTimestamp + StabilizationWindow + AlertCheckDelay (if set).
+                  When AlertCheckDelay is nil, equals PrometheusCheckAfter.
                   Stored in status to avoid recomputation on every reconcile and for
                   operator observability of the assessment timeline.
+                  Reference: ADR-EM-001, Issue #277
                 format: date-time
                 type: string
               assessmentReason:
@@ -308,6 +332,7 @@ spec:
                 description: Phase is the current lifecycle phase of the assessment.
                 enum:
                 - Pending
+                - WaitingForPropagation
                 - Stabilizing
                 - Assessing
                 - Completed

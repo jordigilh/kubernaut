@@ -1,3 +1,4 @@
+schemaVersion: "1.0"
 # OOM Recovery Workflow Schema v1.1.0 (BR-WORKFLOW-004)
 # Used by: DataStorage E2E — 07_workflow_version_management_test.go (DD-WORKFLOW-002)
 metadata:
@@ -12,7 +13,6 @@ metadata:
 actionType: IncreaseMemoryLimits
 
 labels:
-  signalName: OOMKilled
   severity: [critical]
   environment: [production, staging, test]
   component: deployment
@@ -20,7 +20,7 @@ labels:
 
 execution:
   engine: tekton
-  bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:f313b9632f3a8d0ffd41150b12715a43a41c6c8e7871bb830fd82c09b5988cc4
+  bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:8d727758cf289589e025fc9b89e254d73cb77b4c6384b850007b9ef1e8412200
 
 parameters:
   - name: NAMESPACE

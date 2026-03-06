@@ -50,7 +50,7 @@ var _ = Describe("Metadata Preservation Integration Test (Controller → Orchest
 			GinkgoParallelProcess()))
 		Expect(os.MkdirAll(tempDir, 0755)).To(Succeed())
 
-		fileService = delivery.NewFileDeliveryService(tempDir)
+		fileService = delivery.NewFileDeliveryService(tempDir, "json", 0)
 		sanitizer = sanitization.NewSanitizer()
 	})
 
@@ -77,10 +77,6 @@ var _ = Describe("Metadata Preservation Integration Test (Controller → Orchest
 					Subject:  "E2E Test: Critical Priority Notification",
 					Body:     "CRITICAL: Testing priority-based routing with file audit trail",
 					Priority: notificationv1alpha1.NotificationPriorityCritical,
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-						notificationv1alpha1.ChannelFile,
-					},
 					Metadata: map[string]string{
 						"severity":               "critical",
 						"alert-name":             "CriticalSystemFailure",

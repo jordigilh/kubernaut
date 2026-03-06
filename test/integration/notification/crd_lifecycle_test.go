@@ -73,12 +73,6 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Test Minimal Notification",
 					Body:     "Minimal body content",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
 				},
 			}
 
@@ -100,8 +94,6 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 			Expect(created.Spec.Priority).To(Equal(notificationv1alpha1.NotificationPriorityMedium))
 			Expect(created.Spec.Subject).To(Equal("Test Minimal Notification"))
 			Expect(created.Spec.Body).To(Equal("Minimal body content"))
-			Expect(created.Spec.Recipients).To(HaveLen(1))
-			Expect(created.Spec.Channels).To(HaveLen(1))
 
 			// Cleanup
 			err = deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
@@ -130,14 +122,6 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 					Priority: notificationv1alpha1.NotificationPriorityCritical,
 					Subject:  "Test Full Notification",
 					Body:     "Full body content with all optional fields",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test1@example.com"},
-						{Email: "test2@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-						notificationv1alpha1.ChannelSlack,
-					},
 					Metadata: map[string]string{
 						"remediationRequestName": "rr-123",
 						"cluster":                "prod-us-east-1",
@@ -236,12 +220,6 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Status Init Test",
 					Body:     "Testing status initialization",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
 				},
 			}
 
@@ -305,8 +283,8 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 		It("should accept NotificationRequest with optional fields omitted (BR-NOT-065)", func() {
 			notifName := fmt.Sprintf("optional-fields-%s", uniqueSuffix)
 
-			// Recipients and Channels are optional per CRD schema
-			// BR-NOT-065: Empty channels triggers spec-field-based routing rules
+			// Recipients are optional per CRD schema
+			// BR-NOT-065: Routing rules resolve channels (#261)
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       notifName,
@@ -320,7 +298,7 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 					Subject:  "Optional Fields Test",
 					Body:     "Testing with optional fields omitted",
 					// Recipients omitted (optional per CRD schema)
-					// Channels omitted (optional - routing rules apply per BR-NOT-065)
+					// Channels resolved by routing rules (BR-NOT-065, #261)
 				},
 			}
 
@@ -364,12 +342,6 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Name Validation Test",
 					Body:     "Testing name validation",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
 				},
 			}
 
@@ -409,12 +381,6 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Long Name Test",
 					Body:     "Testing maximum name length",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
 				},
 			}
 
@@ -452,12 +418,6 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Reconciliation Test",
 					Body:     "Testing immediate reconciliation",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
 				},
 			}
 
@@ -518,12 +478,6 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 					Priority: notificationv1alpha1.NotificationPriorityHigh,
 					Subject:  "Status Update Test",
 					Body:     "Testing status update recovery",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
 				},
 			}
 
@@ -599,11 +553,8 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Deletion Test",
 					Body:     "Testing deletion during delivery",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#test"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelSlack,
+					Metadata: map[string]string{
+						"test-channel-set": "console-slack",
 					},
 				},
 			}
@@ -665,12 +616,6 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Original Subject",
 					Body:     "Original body content",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
 				},
 			}
 
@@ -758,12 +703,6 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 					Priority: notificationv1alpha1.NotificationPriorityLow,
 					Subject:  "Quick Delete Test",
 					Body:     "Testing immediate deletion",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
 				},
 			}
 

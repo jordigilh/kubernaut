@@ -1,7 +1,6 @@
 package config
 
 import (
-	"os"
 	"testing"
 	"time"
 
@@ -43,35 +42,24 @@ var _ = Describe("BR-GATEWAY-100: Gateway Configuration Validation", func() {
 			cfg, err := config.LoadFromFile("testdata/valid-config.yaml")
 
 			Expect(err).ToNot(HaveOccurred(), "Valid config must load successfully for Gateway to start")
-			Expect(cfg).ToNot(BeNil())
 
 			// Validate critical business settings are present
 			// These enable Gateway to fulfill its business purpose:
 			// - Accept webhook requests (Server.ListenAddr)
-			// - Deduplicate alerts (Processing.Deduplication.TTL)
+			// - Deduplicate alerts (Processing.Deduplication.CooldownPeriod, DD-GATEWAY-011)
 			// - Persist audit events (DataStorage.URL)
-			Expect(cfg.Server.ListenAddr).ToNot(BeEmpty(), "Listen address required to accept webhook requests")
-			Expect(cfg.Processing.Deduplication.TTL).To(BeNumerically(">", 0), "TTL required for alert deduplication")
+			Expect(cfg.Server.ListenAddr).To(Equal(":8080"), "Listen address required to accept webhook requests")
+			Expect(cfg.Processing.Deduplication.CooldownPeriod).To(BeNumerically(">=", 0), "CooldownPeriod for post-completion deduplication")
 			Expect(cfg.DataStorage.URL).ToNot(BeEmpty(), "Data Storage URL required for audit persistence")
 		})
 
-	It("should support environment variable overrides for deployment flexibility", func() {
-		// BUSINESS OUTCOME: Operators can override config via env vars without rebuilding images
-		// NOTE: Per ADR-030, DataStorage URL comes from YAML only (not env vars).
-		// Environment overrides are only for deprecated processing settings.
+	It("should support LoadFromEnv (no-op after GATEWAY_DEDUP_TTL removal)", func() {
+		// BUSINESS OUTCOME: LoadFromEnv exists for future env overrides; currently a no-op.
+		// DD-GATEWAY-011: GATEWAY_DEDUP_TTL removed; deduplication window = CRD lifecycle.
 		cfg, err := config.LoadFromFile("testdata/valid-config.yaml")
 		Expect(err).ToNot(HaveOccurred())
-
-		// Override deprecated TTL setting via environment variable
-		_ = os.Setenv("GATEWAY_DEDUP_TTL", "10m")
-		defer func() {
-			_ = os.Unsetenv("GATEWAY_DEDUP_TTL")
-		}()
-
 		cfg.LoadFromEnv()
-
-		// Verify environment override works for deprecated TTL
-		Expect(cfg.Processing.Deduplication.TTL).To(Equal(10*time.Minute), "Env override enables TTL tuning per environment")
+		Expect(cfg.Server.ListenAddr).To(Equal(":8080"), "LoadFromEnv should preserve config values")
 	})
 	})
 
@@ -84,11 +72,9 @@ var _ = Describe("BR-GATEWAY-100: Gateway Configuration Validation", func() {
 					ListenAddr: "", // Missing required field
 				},
 				Processing: config.ProcessingSettings{
-					CRD: config.CRDSettings{},
-					Deduplication: config.DeduplicationSettings{
-						TTL: 5 * time.Minute,
-					},
-					Retry: config.DefaultRetrySettings(),
+					CRD:           config.CRDSettings{},
+					Deduplication: config.DeduplicationSettings{CooldownPeriod: 5 * time.Minute},
+					Retry:         config.DefaultRetrySettings(),
 				},
 			}
 
@@ -99,7 +85,7 @@ var _ = Describe("BR-GATEWAY-100: Gateway Configuration Validation", func() {
 
 		It("should reject configuration with invalid business-critical values", func() {
 			// BUSINESS OUTCOME: Gateway rejects configs that would cause business logic failures
-			// This prevents: Alert duplication (invalid TTL), retry storms (invalid retry config)
+			// This prevents: Retry storms (invalid retry config)
 			cfg := &config.ServerConfig{
 				Server: config.ServerSettings{
 					ListenAddr:   ":8080",
@@ -107,11 +93,10 @@ var _ = Describe("BR-GATEWAY-100: Gateway Configuration Validation", func() {
 					WriteTimeout: 30 * time.Second,
 					IdleTimeout:  120 * time.Second,
 				},
+				DataStorage: sharedconfig.DefaultDataStorageConfig(),
 				Processing: config.ProcessingSettings{
-					CRD: config.CRDSettings{},
-					Deduplication: config.DeduplicationSettings{
-						TTL: 5 * time.Second, // Invalid: Below minimum threshold (10s)
-					},
+					CRD:           config.CRDSettings{},
+					Deduplication: config.DeduplicationSettings{CooldownPeriod: 5 * time.Minute},
 					Retry: config.RetrySettings{
 						MaxAttempts:    0, // Invalid: Must be >= 1
 						InitialBackoff: 100 * time.Millisecond,
@@ -122,8 +107,7 @@ var _ = Describe("BR-GATEWAY-100: Gateway Configuration Validation", func() {
 
 		err := cfg.Validate()
 		Expect(err).To(HaveOccurred(), "Invalid business-critical values must fail validation")
-		// Error should identify at least one invalid field (TTL or retry settings)
-		Expect(err.Error()).To(MatchRegexp("ttl|retry|attempts"), "Error message must identify business-critical validation failure")
+		Expect(err.Error()).To(MatchRegexp("retry|attempts"), "Error message must identify business-critical validation failure")
 	})
 
 	// GW-UNIT-CFG-006/007: BR-GATEWAY-082 Configuration Management
@@ -139,20 +123,19 @@ var _ = Describe("BR-GATEWAY-100: Gateway Configuration Validation", func() {
 					ListenAddr: ":8080",
 				},
 				Processing: config.ProcessingSettings{
-					Deduplication: config.DeduplicationSettings{
-						TTL: 300 * time.Second,
-					},
+					Deduplication: config.DeduplicationSettings{CooldownPeriod: 300 * time.Second},
 				},
 				DataStorage: sharedconfig.DefaultDataStorageConfig(),
 			}
 
-			previousTTL := validCfg.Processing.Deduplication.TTL
+			previousCooldown := validCfg.Processing.Deduplication.CooldownPeriod
 
 			// Attempt to create invalid config (would fail validation)
 			invalidCfg := &config.ServerConfig{
 				Processing: config.ProcessingSettings{
-					Deduplication: config.DeduplicationSettings{
-						TTL: 5 * time.Second, // Invalid: Below minimum
+					Deduplication: config.DeduplicationSettings{CooldownPeriod: 5 * time.Minute},
+					Retry: config.RetrySettings{
+						MaxAttempts: 0, // Invalid: Must be >= 1
 					},
 				},
 			}
@@ -161,8 +144,8 @@ var _ = Describe("BR-GATEWAY-100: Gateway Configuration Validation", func() {
 
 			// BUSINESS RULE: After invalid config, service should keep previous config
 			// Simulate rollback: keep validCfg unchanged
-			currentTTL := validCfg.Processing.Deduplication.TTL
-			Expect(currentTTL).To(Equal(previousTTL),
+			currentCooldown := validCfg.Processing.Deduplication.CooldownPeriod
+			Expect(currentCooldown).To(Equal(previousCooldown),
 				"BR-GATEWAY-082: Invalid config should not modify running configuration")
 
 			// BUSINESS RULE: Service should still be operational with previous config
@@ -181,12 +164,10 @@ var _ = Describe("BR-GATEWAY-100: Gateway Configuration Validation", func() {
 					ListenAddr: ":8080",
 				},
 				Processing: config.ProcessingSettings{
-					Deduplication: config.DeduplicationSettings{
-						TTL: 300 * time.Second,
-					},
+					Deduplication: config.DeduplicationSettings{CooldownPeriod: 300 * time.Second},
 				},
 			}
-			initialTTL := cfg1.Processing.Deduplication.TTL
+			initialCooldown := cfg1.Processing.Deduplication.CooldownPeriod
 
 			// Simulate config reload with new values
 			cfg2 := &config.ServerConfig{
@@ -194,17 +175,15 @@ var _ = Describe("BR-GATEWAY-100: Gateway Configuration Validation", func() {
 					ListenAddr: ":8080",
 				},
 				Processing: config.ProcessingSettings{
-					Deduplication: config.DeduplicationSettings{
-						TTL: 600 * time.Second, // Changed
-					},
+					Deduplication: config.DeduplicationSettings{CooldownPeriod: 600 * time.Second},
 				},
 			}
-			newTTL := cfg2.Processing.Deduplication.TTL
+			newCooldown := cfg2.Processing.Deduplication.CooldownPeriod
 
 			// BUSINESS RULE: Config should reflect new values after reload
-			Expect(newTTL).To(Equal(600 * time.Second),
+			Expect(newCooldown).To(Equal(600 * time.Second),
 				"BR-GATEWAY-082: Hot reload should apply new configuration")
-			Expect(newTTL).ToNot(Equal(initialTTL),
+			Expect(newCooldown).ToNot(Equal(initialCooldown),
 				"New config should differ from initial config")
 
 			// BUSINESS RULE: Service remains operational during reload

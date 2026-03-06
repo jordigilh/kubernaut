@@ -63,7 +63,7 @@ This test plan provides a **comprehensive defense-in-depth testing strategy** fo
 ✅ 3.4: Analyzing - AI in progress (stays in Analyzing)
 ✅ 3.5: Analyzing→Failed - AI fails with error message
 ✅ 3.6: Analyzing→Failed - AI not found (missing CRD)
-✅ 4.1: Executing→Completed - WE succeeds
+✅ 4.1: Executing→Verifying→Completed - WE succeeds
 ✅ 4.2: Executing→Failed - WE fails with error message
 ✅ 4.3: Executing - WE in progress (stays in Executing)
 ✅ 4.4: Executing→Failed - WE not found (missing CRD)
@@ -120,7 +120,7 @@ This matrix tracks which scenarios are tested at which layers for defense-in-dep
 | PT-3.4 | Analyzing wait (AI in progress) | ✅ Implemented | ✅ Existing | ⚠️ E2E Phase 2 | BR-ORCH-025 | ⚠️ |
 | PT-3.5 | Analyzing→Failed (AI error) | ✅ Implemented | ✅ Existing | ⚠️ E2E Phase 2 | BR-ORCH-025 | 🔥 |
 | PT-3.6 | Analyzing→Failed (AI missing) | ✅ Implemented | ✅ Existing | ⚠️ E2E Phase 2 | BR-ORCH-025 | 🔥 |
-| PT-4.1 | Executing→Completed (WE success) | ✅ Implemented | ✅ Existing | ⚠️ E2E Phase 2 | BR-ORCH-025 | 🔥 |
+| PT-4.1 | Executing→Verifying→Completed (WE success) | ✅ Implemented | ✅ Existing | ⚠️ E2E Phase 2 | BR-ORCH-025 | 🔥 |
 | PT-4.2 | Executing→Failed (WE error) | ✅ Implemented | ✅ Existing | ⚠️ E2E Phase 2 | BR-ORCH-025 | 🔥 |
 | PT-4.3 | Executing wait (WE in progress) | ✅ Implemented | ✅ Existing | ⚠️ E2E Phase 2 | BR-ORCH-025 | ⚠️ |
 | PT-4.4 | Executing→Failed (WE missing) | ✅ Implemented | ✅ Existing | ⚠️ E2E Phase 2 | BR-ORCH-025 | 🔥 |

@@ -115,7 +115,6 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 					Priority: notificationv1alpha1.NotificationPriorityCritical,
 					Subject:  "Audit Emission Test - Console Success",
 					Body:     "Testing controller emits audit on successful console delivery",
-					Channels: []notificationv1alpha1.Channel{notificationv1alpha1.ChannelConsole},
 					// No Metadata - let correlation ID fallback to notification.UID
 				},
 			}
@@ -189,13 +188,12 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 					Priority: notificationv1alpha1.NotificationPriorityCritical,
 					Subject:  "Audit Emission Test - Slack Success",
 					Body:     "Testing controller emits audit on successful Slack delivery",
-					Channels: []notificationv1alpha1.Channel{notificationv1alpha1.ChannelSlack},
-					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#test-channel"},
-					},
 					// DD-AUDIT-CORRELATION-002: Use RemediationRequestRef.Name as correlation_id
 					RemediationRequestRef: &corev1.ObjectReference{
 						Name: testID, // RR name is universal correlation ID
+					},
+					Metadata: map[string]string{
+						"test-channel-set": "console-slack",
 					},
 				},
 			}
@@ -265,7 +263,6 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 					Priority: notificationv1alpha1.NotificationPriorityCritical,
 					Subject:  "Correlation ID Test",
 					Body:     "Testing correlation_id propagation to audit events",
-					Channels: []notificationv1alpha1.Channel{notificationv1alpha1.ChannelConsole},
 					// DD-AUDIT-CORRELATION-002: Use RemediationRequestRef.Name as correlation_id
 					RemediationRequestRef: &corev1.ObjectReference{
 						Name: remediationID, // RR name is universal correlation ID
@@ -297,7 +294,6 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 			}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
 				"Audit event correlation_id should match remediationID for workflow tracing (DD-AUDIT-003)")
 
-			Expect(corrEvent).ToNot(BeNil())
 			Expect(corrEvent.CorrelationID).To(Equal(remediationID), "Correlation ID must propagate to audit events")
 
 			// Cleanup
@@ -328,16 +324,12 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 					Priority: notificationv1alpha1.NotificationPriorityCritical,
 					Subject:  "Multi-Channel Audit Test",
 					Body:     "Testing audit events for multiple channels",
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-						notificationv1alpha1.ChannelSlack,
-					},
-					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#test-channel"},
-					},
 					// DD-AUDIT-CORRELATION-002: Use RemediationRequestRef.Name as correlation_id
 					RemediationRequestRef: &corev1.ObjectReference{
 						Name: testID, // RR name is universal correlation ID
+					},
+					Metadata: map[string]string{
+						"test-channel-set": "console-slack",
 					},
 				},
 			}
@@ -390,7 +382,6 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 					Priority: notificationv1alpha1.NotificationPriorityCritical,
 					Subject:  "ADR-034 Compliance Test",
 					Body:     "Testing ADR-034 field compliance",
-					Channels: []notificationv1alpha1.Channel{notificationv1alpha1.ChannelConsole},
 					// DD-AUDIT-CORRELATION-002: Use RemediationRequestRef.Name as correlation_id
 					RemediationRequestRef: &corev1.ObjectReference{
 						Name: testID, // RR name is universal correlation ID
@@ -468,22 +459,21 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 					Priority: notificationv1alpha1.NotificationPriorityCritical,
 					Subject:  "Audit Emission Test - Slack Failure",
 					Body:     "Testing controller emits audit on failed Slack delivery",
-					Channels: []notificationv1alpha1.Channel{notificationv1alpha1.ChannelSlack},
-					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#test-failure"},
-					},
 					// DD-AUDIT-CORRELATION-002: Use RemediationRequestRef.Name as correlation_id
 					RemediationRequestRef: &corev1.ObjectReference{
 						Name: testID, // RR name is universal correlation ID
 					},
-					// Add retry policy with shorter backoff for test completion
-					// Default 30s initial backoff would cause test timeout
-					RetryPolicy: &notificationv1alpha1.RetryPolicy{
-						MaxAttempts:           3,
-						InitialBackoffSeconds: 1,
-						BackoffMultiplier:     2,
-						MaxBackoffSeconds:     60,
-					},
+				// Add retry policy with shorter backoff for test completion
+				// Default 30s initial backoff would cause test timeout
+				RetryPolicy: &notificationv1alpha1.RetryPolicy{
+					MaxAttempts:           3,
+					InitialBackoffSeconds: 1,
+					BackoffMultiplier:     2,
+					MaxBackoffSeconds:     60,
+				},
+				Metadata: map[string]string{
+					"test-channel-set": "slack-only",
+				},
 				},
 			}
 

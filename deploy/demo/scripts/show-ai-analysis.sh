@@ -7,8 +7,17 @@ set -euo pipefail
 SCENARIO_NS="${1:?Usage: show-ai-analysis.sh <scenario-namespace>}"
 PLATFORM_NS="${PLATFORM_NS:-kubernaut-system}"
 
-AA_NAME=$(kubectl get aianalyses -n "$PLATFORM_NS" -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.analysisRequest.signalContext.targetResource.namespace}{"\n"}{end}' 2>/dev/null \
-  | grep "$SCENARIO_NS" | tail -1 | cut -f1 || true)
+# Find the most recent Completed AIAnalysis for this scenario namespace
+AA_NAME=$(kubectl get aianalyses -n "$PLATFORM_NS" \
+  -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.analysisRequest.signalContext.targetResource.namespace}{"\t"}{.status.phase}{"\n"}{end}' 2>/dev/null \
+  | grep "$SCENARIO_NS" | grep "Completed" | tail -1 | cut -f1 || true)
+
+# Fallback: any AIAnalysis for this scenario (regardless of phase)
+if [ -z "$AA_NAME" ]; then
+  AA_NAME=$(kubectl get aianalyses -n "$PLATFORM_NS" \
+    -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.analysisRequest.signalContext.targetResource.namespace}{"\n"}{end}' 2>/dev/null \
+    | grep "$SCENARIO_NS" | tail -1 | cut -f1 || true)
+fi
 
 if [ -z "$AA_NAME" ]; then
   AA_NAME=$(kubectl get aianalyses -n "$PLATFORM_NS" -o jsonpath='{.items[-1].metadata.name}' 2>/dev/null)

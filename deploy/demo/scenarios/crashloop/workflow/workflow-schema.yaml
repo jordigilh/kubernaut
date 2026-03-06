@@ -1,3 +1,4 @@
+schemaVersion: "1.0"
 # Rollback Deployment Workflow Schema - Job Backend (BR-WORKFLOW-004)
 # Scenario: #120 -- CrashLoopBackOff -> rollback to working config
 metadata:
@@ -12,7 +13,6 @@ metadata:
 actionType: RollbackDeployment
 
 labels:
-  signalName: KubePodCrashLooping
   severity: [critical, low]
   environment: [production, staging, "*"]
   component: "*"
@@ -20,7 +20,7 @@ labels:
 
 execution:
   engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/crashloop-rollback-job@sha256:f9e86a5f8dcfded3884b1a736366f026e4e17c9d117c30b8f5fe83eeba07a410
+  bundle: quay.io/kubernaut-cicd/test-workflows/crashloop-rollback-job@sha256:64338763a1f7fd3a771122a6491c2fc67b11524e434f2ab298c0641e4a9d81bd
 
 parameters:
   - name: TARGET_NAMESPACE

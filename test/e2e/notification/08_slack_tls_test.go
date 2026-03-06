@@ -80,10 +80,6 @@ var _ = Describe("Slack Delivery TLS Certificate Validation (Integration)", Labe
 				Priority: notificationv1alpha1.NotificationPriorityCritical,
 				Subject:  "TLS Certificate Test",
 				Body:     "Testing TLS certificate validation behavior",
-				Channels: []notificationv1alpha1.Channel{notificationv1alpha1.ChannelSlack},
-				Recipients: []notificationv1alpha1.Recipient{
-					{Slack: "#tls-test"},
-				},
 			},
 		}
 	})
@@ -116,7 +112,7 @@ var _ = Describe("Slack Delivery TLS Certificate Validation (Integration)", Labe
 			defer server.Close()
 
 			// Create Slack delivery service with self-signed TLS endpoint
-			service := delivery.NewSlackDeliveryService(server.URL)
+			service := delivery.NewSlackDeliveryService(server.URL, 0)
 
 			// Attempt delivery - should fail with TLS error
 			err = service.Deliver(ctx, notification)
@@ -163,7 +159,7 @@ var _ = Describe("Slack Delivery TLS Certificate Validation (Integration)", Labe
 			defer server.Close()
 
 			// Create Slack delivery service with expired TLS endpoint
-			service := delivery.NewSlackDeliveryService(server.URL)
+			service := delivery.NewSlackDeliveryService(server.URL, 0)
 
 			// Attempt delivery - should fail with TLS error
 			err = service.Deliver(ctx, notification)
@@ -211,7 +207,7 @@ var _ = Describe("Slack Delivery TLS Certificate Validation (Integration)", Labe
 			defer server.Close()
 
 			// Create Slack delivery service with mismatched hostname TLS endpoint
-			service := delivery.NewSlackDeliveryService(server.URL)
+			service := delivery.NewSlackDeliveryService(server.URL, 0)
 
 			// Attempt delivery - should fail with TLS error
 			err = service.Deliver(ctx, notification)
@@ -251,7 +247,7 @@ var _ = Describe("Slack Delivery TLS Certificate Validation (Integration)", Labe
 			// Create Slack delivery service with client that trusts httptest certificate
 			// Note: In production, we use system trust store. For testing with httptest,
 			// we configure the client to trust the test server's certificate.
-			service := delivery.NewSlackDeliveryService(server.URL)
+			service := delivery.NewSlackDeliveryService(server.URL, 0)
 
 			// Configure the service's HTTP client to trust the test server's certificate
 			// This simulates a legitimate HTTPS connection in production
@@ -302,7 +298,7 @@ var _ = Describe("Slack Delivery TLS Certificate Validation (Integration)", Labe
 			defer server.Close()
 
 			// Create Slack delivery service
-			service := delivery.NewSlackDeliveryService(server.URL)
+			service := delivery.NewSlackDeliveryService(server.URL, 0)
 
 			// Attempt delivery - should fail with TLS error
 			err = service.Deliver(ctx, notification)

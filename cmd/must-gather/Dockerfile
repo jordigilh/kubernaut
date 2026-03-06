@@ -5,6 +5,17 @@
 
 FROM registry.access.redhat.com/ubi9/ubi:latest
 
+ARG APP_VERSION=dev
+ARG GIT_COMMIT=unknown
+ARG BUILD_DATE=unknown
+
+# OCI standard labels
+LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \
+      org.opencontainers.image.version="${APP_VERSION}" \
+      org.opencontainers.image.revision="${GIT_COMMIT}" \
+      org.opencontainers.image.created="${BUILD_DATE}" \
+      org.opencontainers.image.title="kubernaut-must-gather"
+
 LABEL maintainer="Kubernaut Platform Team" \
       description="Kubernaut must-gather diagnostic collection tool" \
       io.k8s.description="Collects diagnostic data from Kubernaut platform for support and troubleshooting" \

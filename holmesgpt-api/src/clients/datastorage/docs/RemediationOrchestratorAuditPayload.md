@@ -34,6 +34,13 @@ Name | Type | Description | Notes
 **target_resource** | **str** | Target resource identifier in format \&quot;namespace/Kind/name\&quot; or \&quot;Kind/name\&quot; for cluster-scoped. Used by remediation.workflow_created to capture what resource is being remediated.  | [optional] 
 **workflow_version** | **str** | Version of the selected workflow | [optional] 
 **workflow_type** | **str** | Action type from DD-WORKFLOW-016 taxonomy (e.g., ScaleReplicas, RestartPod). Propagated from AIAnalysis.SelectedWorkflow.ActionType via HAPI three-step discovery. Used by DS remediation history to populate workflowType on entries and summaries.  | [optional] 
+**ea_name** | **str** | Name of the EffectivenessAssessment CRD created by the RO. Only present for orchestrator.ea.created events.  | [optional] 
+**hash_compute_delay** | **str** | Duration-based hash compute delay set on the EA config by the RO. Computed from GitOps sync + operator reconcile delays for async targets. Format: Go duration string. Only present for orchestrator.ea.created events. Reference: DD-EM-004, BR-RO-103, Issue #277  | [optional] 
+**alert_check_delay** | **str** | Duration-based alert check delay set on the EA config by the RO. Set for proactive signals where the triggering alert needs extra time to resolve. Format: Go duration string. Reference: BR-EM-009, BR-RO-103, Issue #277  | [optional] 
+**gitops_sync_delay** | **str** | GitOps sync delay from RO async propagation config. Only present for orchestrator.ea.created events when target is GitOps-managed. Format: Go duration string. Reference: DD-EM-004 v2.0, BR-RO-103.4  | [optional] 
+**operator_reconcile_delay** | **str** | Operator reconcile delay from RO async propagation config. Only present for orchestrator.ea.created events when target is CRD-managed. Format: Go duration string. Reference: DD-EM-004 v2.0, BR-RO-103.4  | [optional] 
+**is_gitops_managed** | **bool** | Whether the remediation target was detected as GitOps-managed. Only present for orchestrator.ea.created events.  | [optional] 
+**is_crd** | **bool** | Whether the remediation target is a CRD (non-built-in group). Only present for orchestrator.ea.created events.  | [optional] 
 
 ## Example
 

@@ -31,14 +31,10 @@ import (
 // ========================================
 
 // MandatoryLabels represents the workflow labels stored in the catalog JSONB column.
-// 4 required fields (severity, component, environment, priority) + 1 optional (signalName).
-// Authority: DD-WORKFLOW-001 v1.4, DD-WORKFLOW-016 (signalName made optional)
+// 4 required fields: severity, component, environment, priority.
+// Authority: DD-WORKFLOW-001 v1.4, DD-WORKFLOW-016
+// Issue #274: signalName removed — LLM selects by actionType, not signalName.
 type MandatoryLabels struct {
-	// SignalName is the semantic signal name this workflow handles (OPTIONAL per DD-WORKFLOW-016)
-	// Not used for workflow matching -- LLM selects by actionType, not signalName.
-	// Examples: "OOMKilled", "CrashLoopBackOff", "NodeNotReady"
-	SignalName string `json:"signalName,omitempty" validate:"omitempty"`
-
 	// Severity is the severity level(s) this workflow is designed for (REQUIRED)
 	// Values: "critical", "high", "medium", "low"
 	// Source: Alert/Event (auto-populated by Signal Processing)
@@ -275,9 +271,9 @@ func (d StructuredDescription) String() string {
 // NewMandatoryLabels creates a new MandatoryLabels instance
 // DD-WORKFLOW-001 v2.5: environment is []string (workflow declares target environments)
 // DD-WORKFLOW-001 v2.7: severity is []string (always array, no wildcard)
-func NewMandatoryLabels(signalName string, severity []string, component string, environment []string, priority string) *MandatoryLabels {
+// Issue #274: signalName parameter removed — LLM selects by actionType.
+func NewMandatoryLabels(severity []string, component string, environment []string, priority string) *MandatoryLabels {
 	return &MandatoryLabels{
-		SignalName:  signalName,
 		Severity:    severity,
 		Component:   component,
 		Environment: environment,

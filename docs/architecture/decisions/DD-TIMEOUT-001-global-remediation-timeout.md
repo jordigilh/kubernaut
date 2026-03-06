@@ -1,5 +1,9 @@
 # DD-TIMEOUT-001: Global Remediation Timeout Strategy
 
+> **Superseded (partial)**: The "Rejected" terminal phase referenced in this document is superseded.
+> Approval rejection now transitions the RemediationRequest to **Failed** (not "Rejected").
+> See `pkg/remediationorchestrator/phase/types.go` for the authoritative phase state machine.
+
 **Status**: ✅ Approved
 **Version**: 1.0
 **Date**: 2025-11-28

@@ -48,6 +48,7 @@ class TestWorkflowDiscoveryResponse(unittest.TestCase):
                             when_not_to_use = '', 
                             preconditions = '', ), 
                         version = '', 
+                        schema_version = '', 
                         schema_image = '', 
                         execution_bundle = '', 
                         execution_engine = 'tekton', )
@@ -72,6 +73,7 @@ class TestWorkflowDiscoveryResponse(unittest.TestCase):
                             when_not_to_use = '', 
                             preconditions = '', ), 
                         version = '', 
+                        schema_version = '', 
                         schema_image = '', 
                         execution_bundle = '', 
                         execution_engine = 'tekton', )

@@ -2155,7 +2155,7 @@ func WaitForCertManagerReady(kubeconfigPath string, writer io.Writer) error {
 		"--kubeconfig", kubeconfigPath,
 		"--namespace", "cert-manager",
 		"--for=condition=available",
-		"--timeout=120s",
+		"--timeout=300s",
 		"deployment/cert-manager",
 		"deployment/cert-manager-cainjector",
 		"deployment/cert-manager-webhook")
@@ -2167,6 +2167,30 @@ func WaitForCertManagerReady(kubeconfigPath string, writer io.Writer) error {
 	}
 
 	_, _ = fmt.Fprintln(writer, "✅ cert-manager is ready")
+	return nil
+}
+
+// UninstallCertManager removes cert-manager from the cluster to prevent resource
+// contamination between test runs. Called from AfterAll in the cert-manager E2E test.
+func UninstallCertManager(kubeconfigPath string, writer io.Writer) error {
+	_, _ = fmt.Fprintln(writer, "🧹 Uninstalling cert-manager...")
+
+	certManagerURL := "https://github.com/cert-manager/cert-manager/releases/download/v1.13.3/cert-manager.yaml"
+
+	cmd := exec.Command("kubectl", "delete",
+		"--kubeconfig", kubeconfigPath,
+		"-f", certManagerURL,
+		"--ignore-not-found",
+		"--timeout=60s")
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+
+	if err := cmd.Run(); err != nil {
+		_, _ = fmt.Fprintf(writer, "⚠️ cert-manager uninstall returned error (non-fatal): %v\n", err)
+		return nil
+	}
+
+	_, _ = fmt.Fprintln(writer, "✅ cert-manager uninstalled")
 	return nil
 }
 

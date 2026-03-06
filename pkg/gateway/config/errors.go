@@ -23,7 +23,7 @@ import "fmt"
 //
 // This structured error type helps operators quickly identify and fix configuration issues
 // by providing:
-// - Field: The exact configuration field path (e.g., "processing.deduplication.ttl")
+// - Field: The exact configuration field path (e.g., "processing.deduplication.cooldownPeriod")
 // - Value: The invalid value provided
 // - Reason: Why the value is invalid
 // - Suggestion: Recommended value or fix
@@ -33,7 +33,7 @@ import "fmt"
 // Example:
 //
 //	&ConfigError{
-//	    Field:         "processing.deduplication.ttl",
+//	    Field:         "processing.deduplication.cooldownPeriod",
 //	    Value:         "5s",
 //	    Reason:        "below minimum threshold (< 10s)",
 //	    Suggestion:    "Use 5m for production, minimum 10s",

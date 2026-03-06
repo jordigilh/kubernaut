@@ -42,6 +42,7 @@ import (
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	scope "github.com/jordigilh/kubernaut/pkg/shared/scope"
 	config "github.com/jordigilh/kubernaut/internal/config/aianalysis"
+	"github.com/jordigilh/kubernaut/internal/version"
 	"github.com/jordigilh/kubernaut/internal/controller/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/audit"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
@@ -55,11 +56,6 @@ import (
 var (
 	scheme   = runtime.NewScheme()
 	setupLog = ctrl.Log.WithName("setup")
-
-	// Build information (set by ldflags) per DD-014
-	Version   = "dev"
-	GitCommit = "unknown"
-	BuildTime = "unknown"
 )
 
 func init() {
@@ -81,11 +77,10 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
-	// DD-014: Log version information at startup
 	setupLog.Info("Starting AI Analysis Controller",
-		"version", Version,
-		"gitCommit", GitCommit,
-		"buildTime", BuildTime,
+		"version", version.Version,
+		"gitCommit", version.GitCommit,
+		"buildDate", version.BuildDate,
 	)
 
 	// ========================================

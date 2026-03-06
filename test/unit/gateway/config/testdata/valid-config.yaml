@@ -23,7 +23,7 @@ datastorage:
 
 processing:
   deduplication:
-    ttl: 5m
+    cooldownPeriod: 5m
   storm:
     rateThreshold: 10
     patternThreshold: 5

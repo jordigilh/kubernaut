@@ -1,3 +1,4 @@
+schemaVersion: "1.0"
 # Remove Taint Workflow Schema - Job Backend (BR-WORKFLOW-004)
 # Scenario: #122 -- Pods pending due to node taint -> remove taint
 metadata:
@@ -12,7 +13,6 @@ metadata:
 actionType: RemoveTaint
 
 labels:
-  signalName: KubePodNotScheduled
   severity: [low, medium, high, critical]
   environment: [production, staging, "*"]
   component: "*"
@@ -20,7 +20,7 @@ labels:
 
 execution:
   engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/remove-taint-job@sha256:403d636cd86e2c8c8ed064f23581b019b1b6206258eeae030088856f5bbf9ad2
+  bundle: quay.io/kubernaut-cicd/test-workflows/remove-taint-job@sha256:4055ea8f483abec1cb7d7567fc529c65f4250e74ff9ae9d92e2b6ff485b580e2
 
 parameters:
   - name: TARGET_NODE

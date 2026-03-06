@@ -62,7 +62,8 @@ type NotificationRequestReconciler struct {
 
 	// BR-NOT-104: Per-receiver credential resolution for Slack delivery
 	CredentialResolver    *credentials.Resolver
-	registeredSlackKeys []string
+	registeredSlackKeys   []string
+	SlackTimeout         time.Duration // NT-1: HTTP timeout for Slack webhook (wired from config)
 
 	// ========================================
 	// DELIVERY ORCHESTRATOR (Pattern 3 - P0)
@@ -333,23 +334,6 @@ func (r *NotificationRequestReconciler) Reconcile(ctx context.Context, req ctrl.
 		log.Info("NotificationRequest just completed, skipping duplicate delivery after re-read",
 			"phase", notification.Status.Phase)
 		return ctrl.Result{}, nil
-	}
-
-	// BR-NOT-065: Resolve channels from routing rules if spec.channels is empty
-	// BR-NOT-069: Set RoutingResolved condition for visibility
-	channels := notification.Spec.Channels
-	if len(channels) == 0 {
-		channels, routingReason, routingMessage := r.resolveChannelsFromRoutingWithDetails(ctx, notification)
-		log.Info("Resolved channels from routing rules",
-			"notification", notification.Name,
-			"channels", channels)
-
-		kubernautnotif.SetRoutingResolved(
-			notification,
-			metav1.ConditionTrue,
-			routingReason,
-			routingMessage,
-		)
 	}
 
 	// Phase 4: Process delivery loop
@@ -920,6 +904,7 @@ type deliveryLoopResult struct {
 	deliveryResults  map[string]error
 	failureCount     int
 	deliveryAttempts []notificationv1alpha1.DeliveryAttempt // Collected attempts for batch update
+	channels         []notificationv1alpha1.Channel         // #263: Resolved channels used for delivery
 }
 
 // handleDeliveryLoop processes delivery attempts for all channels.
@@ -933,22 +918,19 @@ func (r *NotificationRequestReconciler) handleDeliveryLoop(
 	// Get retry policy to check max attempts
 	policy := r.getRetryPolicy(notification)
 
-	// BR-NOT-065: Resolve channels from routing rules if spec.channels is empty
+	// BR-NOT-065: Resolve channels from routing rules (#261: routing is sole authority)
 	// BR-NOT-069: Set RoutingResolved condition for visibility
-	channels := notification.Spec.Channels
-	if len(channels) == 0 {
-		channels, routingReason, routingMessage := r.resolveChannelsFromRoutingWithDetails(ctx, notification)
-		log.Info("Resolved channels from routing rules",
-			"notification", notification.Name,
-			"channels", channels)
+	channels, routingReason, routingMessage := r.resolveChannelsFromRoutingWithDetails(ctx, notification)
+	log.Info("Resolved channels from routing rules",
+		"notification", notification.Name,
+		"channels", channels)
 
-		kubernautnotif.SetRoutingResolved(
-			notification,
-			metav1.ConditionTrue,
-			routingReason,
-			routingMessage,
-		)
-	}
+	kubernautnotif.SetRoutingResolved(
+		notification,
+		metav1.ConditionTrue,
+		routingReason,
+		routingMessage,
+	)
 
 	// ========================================
 	// DELEGATE TO ORCHESTRATOR (Pattern 3 - P0)
@@ -983,6 +965,7 @@ func (r *NotificationRequestReconciler) handleDeliveryLoop(
 		deliveryResults:  orchestratorResult.DeliveryResults,
 		failureCount:     orchestratorResult.FailureCount,
 		deliveryAttempts: orchestratorResult.DeliveryAttempts, // Pass through for batch recording
+		channels:         channels,                            // #263: Propagate resolved channels for phase transition
 	}, nil
 }
 
@@ -1083,10 +1066,10 @@ func (r *NotificationRequestReconciler) determinePhaseTransition(
 	// Build channel states from controller helper methods, then delegate
 	// the pure business logic to the extracted DetermineTransition function.
 
-	// Build channel states map from controller helper methods
+	// #263/#261: Build channel states from routing-resolved channels returned by delivery loop.
 	policy := r.getRetryPolicy(notification)
-	channelStates := make(map[string]notificationphase.ChannelState, len(notification.Spec.Channels))
-	for _, channel := range notification.Spec.Channels {
+	channelStates := make(map[string]notificationphase.ChannelState, len(result.channels))
+	for _, channel := range result.channels {
 		ch := string(channel)
 		channelStates[ch] = notificationphase.ChannelState{
 			AlreadySucceeded:  r.channelAlreadySucceeded(notification, ch),
@@ -1098,6 +1081,7 @@ func (r *NotificationRequestReconciler) determinePhaseTransition(
 	// Determine phase transition using extracted business logic
 	decision := notificationphase.DetermineTransition(
 		notification,
+		result.channels,
 		&notificationphase.DeliveryResult{
 			ChannelResults:   result.deliveryResults,
 			FailureCount:     result.failureCount,
@@ -1125,24 +1109,24 @@ func (r *NotificationRequestReconciler) determinePhaseTransition(
 
 	case decision.NextPhase == notificationphase.PartiallySent:
 		log.Info("Partial delivery success with exhausted retries, transitioning to PartiallySent")
-		return r.transitionToPartiallySent(ctx, notification, result.deliveryAttempts, preservedConditions)
+		return r.transitionToPartiallySent(ctx, notification, result.deliveryAttempts, preservedConditions, result.channels)
 
 	case decision.NextPhase == notificationphase.Failed && decision.IsPermanentFailure:
 		log.Info("All retries exhausted → transitioning to Failed (permanent)",
 			"reason", decision.Reason)
-		return r.transitionToFailed(ctx, notification, true, decision.Reason, result.deliveryAttempts, preservedConditions)
+		return r.transitionToFailed(ctx, notification, true, decision.Reason, result.deliveryAttempts, preservedConditions, result.channels)
 
 	case decision.NextPhase == notificationphase.Retrying:
 		backoff := r.calculateBackoffWithPolicy(notification, decision.MaxFailedAttemptCount)
 		log.Info("⏰ PARTIAL SUCCESS WITH FAILURES → TRANSITIONING TO RETRYING",
 			"backoff", backoff,
 			"maxAttemptCount", decision.MaxFailedAttemptCount)
-		return r.transitionToRetrying(ctx, notification, backoff, result.deliveryAttempts, preservedConditions)
+		return r.transitionToRetrying(ctx, notification, backoff, result.deliveryAttempts, preservedConditions, result.channels)
 
 	case decision.PhaseUnchanged && decision.ShouldRequeue && result.failureCount > 0:
 		log.Info("All channels failed, retries remaining — temporary failure with backoff",
 			"reason", decision.Reason)
-		return r.transitionToFailed(ctx, notification, false, decision.Reason, result.deliveryAttempts, preservedConditions)
+		return r.transitionToFailed(ctx, notification, false, decision.Reason, result.deliveryAttempts, preservedConditions, result.channels)
 
 	default:
 		log.Info("Partial delivery success, continuing",
@@ -1217,6 +1201,7 @@ func (r *NotificationRequestReconciler) transitionToRetrying(
 	backoff time.Duration,
 	attempts []notificationv1alpha1.DeliveryAttempt,
 	preservedConditions []metav1.Condition,
+	resolvedChannels []notificationv1alpha1.Channel,
 ) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
 
@@ -1235,7 +1220,7 @@ func (r *NotificationRequestReconciler) transitionToRetrying(
 		"PartialFailureRetrying",
 		fmt.Sprintf("Delivered to %d/%d channel(s), retrying failed channels with backoff %v",
 			notification.Status.SuccessfulDeliveries,
-			len(notification.Spec.Channels),
+			len(resolvedChannels),
 			backoff),
 		attempts,
 		preservedConditions,
@@ -1274,6 +1259,7 @@ func (r *NotificationRequestReconciler) transitionToPartiallySent(
 	notification *notificationv1alpha1.NotificationRequest,
 	attempts []notificationv1alpha1.DeliveryAttempt,
 	preservedConditions []metav1.Condition,
+	resolvedChannels []notificationv1alpha1.Channel,
 ) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
 
@@ -1297,7 +1283,7 @@ func (r *NotificationRequestReconciler) transitionToPartiallySent(
 		"PartialDeliverySuccess",
 		fmt.Sprintf("Delivered to %d/%d channel(s), others failed",
 			totalSuccessful,
-			len(notification.Spec.Channels)),
+			len(resolvedChannels)),
 		attempts,
 		append(preservedConditions, metav1.Condition{
 			Type:               kubernautnotif.ConditionReady,
@@ -1320,7 +1306,7 @@ func (r *NotificationRequestReconciler) transitionToPartiallySent(
 
 	// DD-EVENT-001 v1.1: Emit NotificationPartiallySent when some channels succeed but others fail
 	r.Recorder.Event(notification, corev1.EventTypeNormal, events.EventReasonNotificationPartiallySent,
-		fmt.Sprintf("Delivered to %d/%d channel(s), others failed", totalSuccessful, len(notification.Spec.Channels)))
+		fmt.Sprintf("Delivered to %d/%d channel(s), others failed", totalSuccessful, len(resolvedChannels)))
 
 	log.Info("NotificationRequest partially completed (atomic update)",
 		"name", notification.Name,
@@ -1340,6 +1326,7 @@ func (r *NotificationRequestReconciler) transitionToFailed(
 	reason string,
 	attempts []notificationv1alpha1.DeliveryAttempt,
 	preservedConditions []metav1.Condition,
+	resolvedChannels []notificationv1alpha1.Channel,
 ) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
 
@@ -1410,7 +1397,7 @@ func (r *NotificationRequestReconciler) transitionToFailed(
 
 	// Calculate backoff for retry
 	maxAttemptCount := 0
-	for _, channel := range notification.Spec.Channels {
+	for _, channel := range resolvedChannels {
 		attemptCount := r.getChannelAttemptCount(notification, string(channel))
 		if attemptCount > maxAttemptCount {
 			maxAttemptCount = attemptCount

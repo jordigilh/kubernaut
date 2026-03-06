@@ -38,6 +38,7 @@ class RemediationWorkflow(BaseModel):
     workflow_name: Annotated[str, Field(strict=True, max_length=255)] = Field(description="Workflow name (identifier for versions)", alias="workflowName")
     action_type: StrictStr = Field(description="Action type from taxonomy (DD-WORKFLOW-016). FK to action_type_taxonomy.", alias="actionType")
     version: Annotated[str, Field(strict=True, max_length=50)] = Field(description="Semantic version (e.g., v1.0.0)")
+    schema_version: Annotated[str, Field(strict=True, max_length=10)] = Field(description="Schema format version (e.g., 1.0, 1.1). Determines which structural fields are valid. BR-WORKFLOW-004 v1.1, #255.", alias="schemaVersion")
     name: Annotated[str, Field(strict=True, max_length=255)] = Field(description="Human-readable workflow title")
     description: StructuredDescription
     owner: Optional[Annotated[str, Field(strict=True, max_length=255)]] = Field(default=None, description="Workflow owner")
@@ -73,7 +74,7 @@ class RemediationWorkflow(BaseModel):
     updated_at: Optional[datetime] = Field(default=None, alias="updatedAt")
     created_by: Optional[Annotated[str, Field(strict=True, max_length=255)]] = Field(default=None, alias="createdBy")
     updated_by: Optional[Annotated[str, Field(strict=True, max_length=255)]] = Field(default=None, alias="updatedBy")
-    __properties: ClassVar[List[str]] = ["workflowId", "workflowName", "actionType", "version", "name", "description", "owner", "maintainer", "content", "contentHash", "parameters", "executionEngine", "schemaImage", "schemaDigest", "executionBundle", "executionBundleDigest", "labels", "customLabels", "detectedLabels", "status", "disabledAt", "disabledBy", "disabledReason", "isLatestVersion", "previousVersion", "deprecationNotice", "versionNotes", "changeSummary", "approvedBy", "approvedAt", "expectedSuccessRate", "expectedDurationSeconds", "actualSuccessRate", "totalExecutions", "successfulExecutions", "createdAt", "updatedAt", "createdBy", "updatedBy"]
+    __properties: ClassVar[List[str]] = ["workflowId", "workflowName", "actionType", "version", "schemaVersion", "name", "description", "owner", "maintainer", "content", "contentHash", "parameters", "executionEngine", "schemaImage", "schemaDigest", "executionBundle", "executionBundleDigest", "labels", "customLabels", "detectedLabels", "status", "disabledAt", "disabledBy", "disabledReason", "isLatestVersion", "previousVersion", "deprecationNotice", "versionNotes", "changeSummary", "approvedBy", "approvedAt", "expectedSuccessRate", "expectedDurationSeconds", "actualSuccessRate", "totalExecutions", "successfulExecutions", "createdAt", "updatedAt", "createdBy", "updatedBy"]
 
     @field_validator('status')
     def status_validate_enum(cls, value):
@@ -144,6 +145,7 @@ class RemediationWorkflow(BaseModel):
             "workflowName": obj.get("workflowName"),
             "actionType": obj.get("actionType"),
             "version": obj.get("version"),
+            "schemaVersion": obj.get("schemaVersion"),
             "name": obj.get("name"),
             "description": StructuredDescription.from_dict(obj.get("description")) if obj.get("description") is not None else None,
             "owner": obj.get("owner"),

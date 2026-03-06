@@ -29,6 +29,8 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
+
+	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 )
 
 // ========================================
@@ -80,9 +82,9 @@ const (
 	LabelResultSuccess = "success"
 	LabelResultError   = "error"
 
-	// Label values for outcome dimension (Rego)
-	LabelOutcomeApproved          = "approved"
-	LabelOutcomeRequiresApproval  = "requires_approval"
+	// Label values for outcome dimension (Rego) - Issue #262: use shared constants
+	LabelOutcomeAutoApproved     = aianalysis.OutcomeAutoApproved
+	LabelOutcomeRequiresApproval = aianalysis.OutcomeRequiresApproval
 
 	// Label values for degraded dimension
 	LabelDegradedTrue  = "true"
@@ -288,15 +290,15 @@ func NewMetrics() *Metrics {
 
 		// Initialize RegoEvaluationsTotal with known label combinations
 		// Required for E2E metric existence tests (BR-AI-030)
-		registeredMetrics.RegoEvaluationsTotal.WithLabelValues("auto_approved", "false").Add(0)
-		registeredMetrics.RegoEvaluationsTotal.WithLabelValues("requires_approval", "false").Add(0)
+		registeredMetrics.RegoEvaluationsTotal.WithLabelValues(LabelOutcomeAutoApproved, LabelDegradedFalse).Add(0)
+		registeredMetrics.RegoEvaluationsTotal.WithLabelValues(LabelOutcomeRequiresApproval, LabelDegradedFalse).Add(0)
 		registeredMetrics.RegoEvaluationsTotal.WithLabelValues("error", "true").Add(0)
 
 		// Initialize ApprovalDecisionsTotal with known label combinations
 		// Required for E2E metric existence tests (BR-AI-059)
-		registeredMetrics.ApprovalDecisionsTotal.WithLabelValues("requires_approval", "production").Add(0)
-		registeredMetrics.ApprovalDecisionsTotal.WithLabelValues("auto_approved", "staging").Add(0)
-		registeredMetrics.ApprovalDecisionsTotal.WithLabelValues("auto_approved", "development").Add(0)
+		registeredMetrics.ApprovalDecisionsTotal.WithLabelValues(LabelOutcomeRequiresApproval, "production").Add(0)
+		registeredMetrics.ApprovalDecisionsTotal.WithLabelValues(LabelOutcomeAutoApproved, "staging").Add(0)
+		registeredMetrics.ApprovalDecisionsTotal.WithLabelValues(LabelOutcomeAutoApproved, "development").Add(0)
 
 		// Initialize ConfidenceScoreDistribution with common signal types
 		// Required for E2E metric existence tests (BR-AI-OBSERVABILITY-004)

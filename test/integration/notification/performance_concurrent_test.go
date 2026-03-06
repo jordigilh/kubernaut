@@ -82,11 +82,8 @@ var _ = Describe("P0: Concurrent Deliveries + Circuit Breaker", Label("p0", "con
 							Priority: notificationv1alpha1.NotificationPriorityMedium,
 							Subject:  fmt.Sprintf("Concurrent Test %d - %s", idx, uniqueSuffix),
 							Body:     fmt.Sprintf("Testing concurrent delivery %d", idx),
-							Channels: []notificationv1alpha1.Channel{
-								notificationv1alpha1.ChannelSlack,
-							},
-							Recipients: []notificationv1alpha1.Recipient{
-								{Slack: slackWebhookURL},
+							Metadata: map[string]string{
+								"test-channel-set": "console-slack",
 							},
 						},
 					}
@@ -155,11 +152,8 @@ var _ = Describe("P0: Concurrent Deliveries + Circuit Breaker", Label("p0", "con
 						Priority: notificationv1alpha1.NotificationPriorityLow,
 						Subject:  fmt.Sprintf("Rapid Test %d - %s", i, uniqueSuffix),
 						Body:     "Testing rapid creation",
-						Channels: []notificationv1alpha1.Channel{
-							notificationv1alpha1.ChannelSlack,
-						},
-						Recipients: []notificationv1alpha1.Recipient{
-							{Slack: slackWebhookURL},
+						Metadata: map[string]string{
+							"test-channel-set": "console-slack",
 						},
 					},
 				}
@@ -216,11 +210,8 @@ var _ = Describe("P0: Concurrent Deliveries + Circuit Breaker", Label("p0", "con
 							Priority: notificationv1alpha1.NotificationPriorityHigh,
 							Subject:  fmt.Sprintf("Status Test %d - %s", idx, uniqueSuffix),
 							Body:     "Testing concurrent status updates",
-							Channels: []notificationv1alpha1.Channel{
-								notificationv1alpha1.ChannelSlack,
-							},
-							Recipients: []notificationv1alpha1.Recipient{
-								{Slack: slackWebhookURL},
+							Metadata: map[string]string{
+								"test-channel-set": "console-default",
 							},
 						},
 					}
@@ -364,13 +355,13 @@ var _ = Describe("P0: Concurrent Deliveries + Circuit Breaker", Label("p0", "con
 
 		// Test "should fail delivery when circuit breaker is open" - DELETED per "NO SKIPPED TESTS" rule
 		//
-		// This test was a Skip() placeholder for controller-level circuit breaker integration
+		// This test was a skipped placeholder for controller-level circuit breaker integration
 		// that requires architectural changes (injectable CircuitBreaker interface).
 		//
 		// Current coverage:
 		// - Circuit breaker logic: ✅ UNIT TESTED (above tests)
 		// - Circuit breaker behavior: ✅ E2E TESTED (test/e2e/notification/)
 		//
-		// Per project rule: No Skip() placeholders allowed. Implement properly when architecture supports it.
+		// Per project rule: No skipped placeholders allowed. Implement properly when architecture supports it.
 	})
 })

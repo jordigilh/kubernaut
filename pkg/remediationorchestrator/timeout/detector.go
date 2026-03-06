@@ -43,15 +43,17 @@ func NewDetector(config remediationorchestrator.OrchestratorConfig) *Detector {
 	return &Detector{config: config}
 }
 
-// Terminal phases that should skip timeout checks
-var terminalPhases = map[string]bool{
+// Phases that skip standard timeout checks (terminal phases + phases with their own timeout mechanism).
+// Terminal phases have no further processing; Blocked has its own cooldown; Verifying has VerificationDeadline.
+var skipTimeoutPhases = map[string]bool{
 	"Completed": true,
 	"Failed":    true,
-	"Timeout":   true,
+	"TimedOut":  true,
 	"Skipped":   true,
 	// Blocked is NON-terminal but has its own cooldown mechanism (BR-ORCH-042)
-	// Skip standard timeout checks; cooldown expiry is checked separately
 	"Blocked": true,
+	// Verifying is NON-terminal but has its own deadline via VerificationDeadline (#280)
+	"Verifying": true,
 }
 
 // CheckTimeout checks if global or phase timeout has been exceeded.
@@ -60,8 +62,8 @@ var terminalPhases = map[string]bool{
 func (d *Detector) CheckTimeout(rr *remediationv1.RemediationRequest) TimeoutResult {
 	currentPhase := rr.Status.OverallPhase
 
-	// Skip if terminal state
-	if d.IsTerminalPhase(string(currentPhase)) {
+	// Skip if phase has its own timeout mechanism or is terminal
+	if d.SkipTimeoutCheck(string(currentPhase)) {
 		return TimeoutResult{TimedOut: false}
 	}
 
@@ -173,7 +175,8 @@ func (d *Detector) GetPhaseTimeout(rr *remediationv1.RemediationRequest, phase s
 	}
 }
 
-// IsTerminalPhase checks if the phase is terminal (no timeout check needed).
-func (d *Detector) IsTerminalPhase(phase string) bool {
-	return terminalPhases[phase]
+// SkipTimeoutCheck returns true if the phase should skip standard timeout detection.
+// This includes terminal phases and phases with their own timeout mechanism (Blocked, Verifying).
+func (d *Detector) SkipTimeoutCheck(phase string) bool {
+	return skipTimeoutPhases[phase]
 }

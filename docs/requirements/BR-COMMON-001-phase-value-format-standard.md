@@ -50,6 +50,7 @@ For service-specific phases, use **PascalCase**:
 - ✅ `"AwaitingApproval"`
 - ✅ `"ManualReview"`
 - ✅ `"TimedOut"`
+- ✅ `"WaitingForPropagation"` (EffectivenessAssessment, Issue #253)
 - ❌ `"awaiting-approval"`, `"manual_review"`, `"timedout"`
 
 ---
@@ -334,6 +335,7 @@ When reviewing CRD changes:
 
 | Version | Date | Change | Author |
 |---------|------|--------|--------|
+| 1.1 | 2026-03-03 | Added `WaitingForPropagation` EA phase (Issue #253, BR-EM-010.3) | EM Team |
 | 1.0 | 2025-12-11 | Initial BR created after SP bug discovery | SP Team |
 
 ---

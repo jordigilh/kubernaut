@@ -53,7 +53,8 @@ type BlockingCondition struct {
 
 	// Reason is the BlockReason enum value explaining why blocked.
 	// Valid values: "ConsecutiveFailures", "DuplicateInProgress",
-	//               "ResourceBusy", "RecentlyRemediated", "ExponentialBackoff"
+	//               "ResourceBusy", "RecentlyRemediated", "ExponentialBackoff",
+	//               "UnmanagedResource", "IneffectiveChain"
 	Reason string
 
 	// Message is a human-readable explanation of the blocking condition
@@ -110,7 +111,7 @@ type RemediationHistoryQuerier interface {
 // transition to any other phase.
 //
 // Terminal phases: Completed, Failed, TimedOut, Skipped, Cancelled
-// Non-terminal phases: Pending, Processing, Analyzing, AwaitingApproval, Executing, Blocked
+// Non-terminal phases: Pending, Processing, Analyzing, AwaitingApproval, Executing, Verifying, Blocked
 //
 // Reference: DD-RO-002-ADDENDUM (Blocked Phase Semantics)
 func IsTerminalPhase(phase remediationv1.RemediationPhase) bool {

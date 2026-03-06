@@ -1,3 +1,4 @@
+schemaVersion: "1.0"
 # Graceful Restart Workflow Schema - Job Backend (BR-WORKFLOW-004)
 # Scenario: #129 -- Proactive memory exhaustion -> graceful restart
 metadata:
@@ -12,7 +13,6 @@ metadata:
 actionType: GracefulRestart
 
 labels:
-  signalName: PredictiveMemoryExhaust
   severity: [low, medium, high, critical]
   environment: [production, staging]
   component: "*"
@@ -20,7 +20,7 @@ labels:
 
 execution:
   engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/graceful-restart-job@sha256:22d721e9b1f2cb7b47a7b16447c8e75fa7ffd480bdb07f51498e05f5603b0473
+  bundle: quay.io/kubernaut-cicd/test-workflows/graceful-restart-job@sha256:ff29339e9d9bb4a590a5392de0b8a7c6326932af207230b8cefc77a70b2b67e7
 
 parameters:
   - name: TARGET_NAMESPACE

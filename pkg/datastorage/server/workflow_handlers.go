@@ -323,6 +323,7 @@ func (h *Handler) buildWorkflowFromSchema(
 	workflow := &models.RemediationWorkflow{
 		WorkflowName:    parsedSchema.Metadata.WorkflowID,
 		Version:         parsedSchema.Metadata.Version,
+		SchemaVersion:   parsedSchema.SchemaVersion,
 		Name:            parsedSchema.Metadata.WorkflowID, // Use workflowId as display name
 		Description:     desc,
 		Content:         result.RawContent,

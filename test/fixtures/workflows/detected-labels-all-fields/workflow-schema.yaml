@@ -1,3 +1,4 @@
+schemaVersion: "1.0"
 # All 8 DetectedLabels Fields Test (BR-WORKFLOW-004, ADR-043 v1.3)
 # Used by: DataStorage E2E -- E2E-DS-043-005
 # Purpose: Validates all 8 detectedLabels fields survive full OCI -> DB -> HTTP round-trip
@@ -13,7 +14,6 @@ metadata:
 actionType: RestartPod
 
 labels:
-  signalName: CrashLoopBackOff
   severity: [critical]
   environment: [production]
   component: pod
@@ -31,7 +31,7 @@ detectedLabels:
 
 execution:
   engine: tekton
-  bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:f313b9632f3a8d0ffd41150b12715a43a41c6c8e7871bb830fd82c09b5988cc4
+  bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:8d727758cf289589e025fc9b89e254d73cb77b4c6384b850007b9ef1e8412200
 
 parameters:
   - name: NAMESPACE

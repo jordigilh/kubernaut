@@ -51,7 +51,28 @@ var _ = Describe("Config.Validate", func() {
 		Expect(err).NotTo(HaveOccurred())
 	})
 
-	// Test 2: Error handling for zero enrichment timeout
+	// Test 2: Error handling for zero enrichment cache TTL
+	Context("when enrichment cache TTL is invalid", func() {
+		It("should return error for zero cache TTL", func() {
+			cfg := &config.Config{
+				Enrichment: config.EnrichmentConfig{
+					CacheTTL: 0, // Invalid
+					Timeout:  2 * time.Second,
+				},
+				Classifier: config.ClassifierConfig{
+					RegoConfigMapName: "signalprocessing-rego-policies",
+					RegoConfigMapKey:  "policy.rego",
+					HotReloadInterval: 30 * time.Second,
+				},
+				DataStorage: sharedconfig.DefaultDataStorageConfig(),
+			}
+			err := cfg.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("cacheTtl"))
+		})
+	})
+
+	// Test 3: Error handling for zero enrichment timeout
 	Context("when enrichment timeout is invalid", func() {
 		It("should return error for zero timeout", func() {
 			cfg := &config.Config{
@@ -72,7 +93,7 @@ var _ = Describe("Config.Validate", func() {
 		})
 	})
 
-	// Test 3: Error handling for empty Rego ConfigMap name
+	// Test 4: Error handling for empty Rego ConfigMap name
 	Context("when Rego ConfigMap name is missing", func() {
 		It("should return error for empty ConfigMap name", func() {
 			cfg := &config.Config{
@@ -93,7 +114,7 @@ var _ = Describe("Config.Validate", func() {
 		})
 	})
 
-	// Test 4: Error handling for zero hot-reload interval
+	// Test 5: Error handling for zero hot-reload interval
 	Context("when hot-reload interval is invalid", func() {
 		It("should return error for zero hot-reload interval", func() {
 			cfg := &config.Config{
@@ -114,7 +135,7 @@ var _ = Describe("Config.Validate", func() {
 		})
 	})
 
-	// Test 5: Error handling for empty DataStorage URL
+	// Test 6: Error handling for empty DataStorage URL
 	Context("when DataStorage URL is empty", func() {
 		It("should return error for empty DataStorage URL", func() {
 			cfg := &config.Config{
@@ -139,7 +160,7 @@ var _ = Describe("Config.Validate", func() {
 		})
 	})
 
-	// Test 6: Error handling for zero buffer size
+	// Test 7: Error handling for zero buffer size
 	Context("when DataStorage buffer size is invalid", func() {
 		It("should return error for zero buffer size", func() {
 			cfg := &config.Config{

@@ -1,3 +1,4 @@
+schemaVersion: "1.0"
 # Fix Certificate (GitOps) Workflow Schema - Job Backend (BR-WORKFLOW-004)
 # Scenario: #134 -- GitOps-managed Certificate failure -> git revert
 metadata:
@@ -12,7 +13,6 @@ metadata:
 actionType: GitRevertCommit
 
 labels:
-  signalName: CertManagerCertNotReady
   severity: [critical, high]
   environment: ["*"]
   component: "*"

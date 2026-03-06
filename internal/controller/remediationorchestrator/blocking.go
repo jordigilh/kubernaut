@@ -54,17 +54,9 @@ import (
 
 // ========================================
 // BLOCKING CONFIGURATION CONSTANTS
-// BR-ORCH-042.1, BR-ORCH-042.3, BR-GATEWAY-185 v1.1
+// BR-GATEWAY-185 v1.1
 // Validated by: test/unit/remediationorchestrator/blocking_test.go
 // ========================================
-
-// DefaultBlockThreshold is the number of consecutive failures before blocking.
-// Reference: BR-ORCH-042.1
-const DefaultBlockThreshold = 3
-
-// DefaultCooldownDuration is how long to block before allowing retry.
-// Reference: BR-ORCH-042.3
-const DefaultCooldownDuration = 1 * time.Hour
 
 // FingerprintFieldIndex is the field index key for spec.signalFingerprint.
 // Used for O(1) lookups. Set up in SetupWithManager().
@@ -176,6 +168,12 @@ func (r *Reconciler) handleBlockedPhase(ctx context.Context, rr *remediationv1.R
 
 	// Check if cooldown has expired
 	if time.Now().After(rr.Status.BlockedUntil.Time) {
+		// BR-SCOPE-010: UnmanagedResource blocks re-validate scope instead of failing.
+		// Bug #266: Previously all timed blocks went to Failed on expiry.
+		if remediationv1.BlockReason(rr.Status.BlockReason) == remediationv1.BlockReasonUnmanagedResource {
+			return r.handleUnmanagedResourceExpiry(ctx, rr)
+		}
+
 		logger.Info("Blocked cooldown expired, transitioning to terminal Failed")
 
 		// BR-ORCH-042: Record cooldown expiry metrics (TDD validated)
@@ -242,6 +240,63 @@ func (r *Reconciler) transitionToFailedTerminal(ctx context.Context, rr *remedia
 		"reason", failureReason,
 	)
 	return ctrl.Result{}, nil
+}
+
+// handleUnmanagedResourceExpiry re-validates scope when an UnmanagedResource block expires.
+// If still unmanaged: re-block via handleBlocked (emits routing.blocked audit, updates status)
+//   with incremented ConsecutiveFailureCount for backoff progression.
+// If now managed: clear block fields, transition to Pending, emit phase transition audit.
+//
+// Reference: BR-SCOPE-010, ADR-053 (Resource Scope Management), Bug #266
+func (r *Reconciler) handleUnmanagedResourceExpiry(ctx context.Context, rr *remediationv1.RemediationRequest) (ctrl.Result, error) {
+	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
+	logger.Info("UnmanagedResource block expired — re-validating scope")
+
+	blocked := r.routingEngine.CheckUnmanagedResource(ctx, rr)
+
+	if blocked != nil {
+		// Still unmanaged — increment failure count (persisted in status update) then re-block.
+		// ConsecutiveFailureCount drives backoff progression in CheckUnmanagedResource.
+		logger.Info("Resource still unmanaged — re-blocking with increased backoff",
+			"newBackoff", blocked.RequeueAfter)
+
+		// Persist the failure count increment first, then re-block via handleBlocked.
+		// handleBlocked's UpdateRemediationRequestStatus refetches the RR, so we must
+		// persist the increment in a separate update to avoid it being lost.
+		err := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+			rr.Status.ConsecutiveFailureCount++
+			return nil
+		})
+		if err != nil {
+			logger.Error(err, "Failed to increment ConsecutiveFailureCount for re-block")
+			return ctrl.Result{}, fmt.Errorf("failed to increment failure count for scope re-block: %w", err)
+		}
+
+		return r.handleBlocked(ctx, rr, blocked, string(remediationv1.PhaseBlocked), "")
+	}
+
+	// Now managed — transition to Pending for re-processing
+	logger.Info("Resource is now managed — unblocking and transitioning to Pending")
+
+	oldPhase := string(rr.Status.OverallPhase)
+	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+		rr.Status.OverallPhase = phase.Pending
+		rr.Status.BlockReason = ""
+		rr.Status.BlockMessage = ""
+		rr.Status.BlockedUntil = nil
+		return nil
+	})
+	if err != nil {
+		logger.Error(err, "Failed to transition from Blocked to Pending after scope unblock")
+		return ctrl.Result{}, fmt.Errorf("failed to unblock after scope re-validation: %w", err)
+	}
+
+	r.Metrics.CurrentBlockedGauge.WithLabelValues(rr.Namespace).Dec()
+
+	// ADR-032 §1: Audit the phase transition (Blocked → Pending)
+	r.emitPhaseTransitionAudit(ctx, rr, oldPhase, string(phase.Pending))
+
+	return ctrl.Result{Requeue: true}, nil
 }
 
 // recheckResourceBusyBlock handles Blocked RRs with BlockReason=ResourceBusy.

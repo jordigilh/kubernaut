@@ -1,3 +1,4 @@
+schemaVersion: "1.0"
 # Rollback Deployment Workflow Schema - Job Backend (BR-WORKFLOW-004)
 # Scenario: #130 -- Stuck rollout -> rollback to previous revision
 metadata:
@@ -12,7 +13,6 @@ metadata:
 actionType: GracefulRestart
 
 labels:
-  signalName: KubeDeploymentRolloutStuck
   severity: [critical, low]
   environment: [production, staging, "*"]
   component: "*"
@@ -20,7 +20,7 @@ labels:
 
 execution:
   engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/rollback-deployment-job@sha256:f1e3615cf8cc6b5ac2cd0a5f5f8138537d481b5af0beb788e6b36710e09e50c8
+  bundle: quay.io/kubernaut-cicd/test-workflows/rollback-deployment-job@sha256:64192969331bcfc1d5980865115e2791c272927bbabc3b247687680b3532ede9
 
 parameters:
   - name: TARGET_NAMESPACE

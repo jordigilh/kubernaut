@@ -19,7 +19,6 @@ package datastorage
 import (
 	"crypto/sha256"
 	"fmt"
-	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -72,12 +71,12 @@ var _ = Describe("Workflow DetectedLabels Integration (ADR-043 v1.3)", func() {
 			WorkflowName: fmt.Sprintf("wf-dl-%s-%s", testID, name),
 			ActionType:   "RestartPod",
 			Version:      "v1.0",
+			SchemaVersion: "1.0",
 			Name:         name,
 			Description:  models.StructuredDescription{What: "Test workflow", WhenToUse: "Testing"},
 			Content:      content,
 			ContentHash:  contentHash,
 			Labels: models.MandatoryLabels{
-				SignalName:  "CrashLoopBackOff",
 				Severity:    []string{"critical"},
 				Component:   "pod",
 				Environment: []string{"production"},
@@ -153,49 +152,6 @@ var _ = Describe("Workflow DetectedLabels Integration (ADR-043 v1.3)", func() {
 		})
 	})
 
-	Describe("Workflow Discovery by DetectedLabels", func() {
-		It("IT-DS-043-005: search filters correctly by detectedLabels", func() {
-			hpaWorkflow := baseWorkflow("with-hpa", models.DetectedLabels{HPAEnabled: true})
-			plainWorkflow := baseWorkflow("no-hpa", models.DetectedLabels{})
-
-			err := workflowRepo.Create(ctx, hpaWorkflow)
-			Expect(err).ToNot(HaveOccurred())
-			err = workflowRepo.Create(ctx, plainWorkflow)
-			Expect(err).ToNot(HaveOccurred())
-
-			searchRequest := &models.WorkflowSearchRequest{
-				Filters: &models.WorkflowSearchFilters{
-					SignalName:  "CrashLoopBackOff",
-					Severity:    "critical",
-					Component:   "pod",
-					Environment: "production",
-					Priority:    "P0",
-					DetectedLabels: models.DetectedLabels{
-						HPAEnabled: true,
-					},
-				},
-				TopK: 10,
-			}
-
-			var response *models.WorkflowSearchResponse
-			Eventually(func() bool {
-				var searchErr error
-				response, searchErr = workflowRepo.SearchByLabels(ctx, searchRequest)
-				return searchErr == nil && len(response.Workflows) > 0
-			}, 5*time.Second, 500*time.Millisecond).Should(BeTrue(),
-				"search should return results")
-
-			var hpaFound bool
-			for _, r := range response.Workflows {
-				if r.Title == hpaWorkflow.Name {
-					hpaFound = true
-				}
-			}
-			Expect(hpaFound).To(BeTrue(),
-				"workflow with matching detectedLabels should appear in search results")
-		})
-	})
-
 	Describe("Full Schema Round-Trip", func() {
 		It("IT-DS-043-006: all fields preserved alongside detectedLabels", func() {
 			dl := models.DetectedLabels{
@@ -203,7 +159,6 @@ var _ = Describe("Workflow DetectedLabels Integration (ADR-043 v1.3)", func() {
 				GitOpsTool:   "flux",
 			}
 			wf := baseWorkflow("full-roundtrip", dl)
-			wf.Labels.SignalName = "NodeNotReady"
 			wf.Labels.Severity = []string{"critical", "high"}
 			wf.CustomLabels = models.CustomLabels{
 				"team": []string{"platform"},
@@ -215,7 +170,6 @@ var _ = Describe("Workflow DetectedLabels Integration (ADR-043 v1.3)", func() {
 			retrieved, err := workflowRepo.GetLatestVersion(ctx, wf.WorkflowName)
 			Expect(err).ToNot(HaveOccurred())
 
-			Expect(retrieved.Labels.SignalName).To(Equal("NodeNotReady"))
 			Expect(retrieved.Labels.Severity).To(ConsistOf("critical", "high"))
 			Expect(retrieved.CustomLabels).To(HaveKey("team"))
 			Expect(retrieved.DetectedLabels.PDBProtected).To(BeTrue())

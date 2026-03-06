@@ -1,3 +1,4 @@
+schemaVersion: "1.0"
 # Test Hello World Job Workflow Schema (BR-WORKFLOW-004)
 # Authority: ADR-043
 # E2E Testing: Validates WorkflowExecution controller's Kubernetes Job integration
@@ -13,7 +14,6 @@ metadata:
 actionType: RestartPod
 
 labels:
-  signalName: test
   severity: [low]
   environment: [test]
   component: deployment

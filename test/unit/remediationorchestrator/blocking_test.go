@@ -48,27 +48,11 @@ var _ = Describe("Consecutive Failure Blocking (BR-ORCH-042)", func() {
 
 	// ========================================
 	// Constants Validation
-	// BR-ORCH-042.1, BR-ORCH-042.3
+	// BR-GATEWAY-185 v1.1
 	// ========================================
 	Describe("Blocking Constants", func() {
 
-		Context("default configuration values", func() {
-
-			It("should have threshold of 3 consecutive failures (BR-ORCH-042.1)", func() {
-				// Given: The default blocking configuration
-				// When: We check the threshold
-				// Then: It should be 3 consecutive failures
-				Expect(controller.DefaultBlockThreshold).To(Equal(3),
-					"BR-ORCH-042.1 requires blocking after 3 consecutive failures")
-			})
-
-			It("should have cooldown duration of 1 hour (BR-ORCH-042.3)", func() {
-				// Given: The default blocking configuration
-				// When: We check the cooldown duration
-				// Then: It should be 1 hour
-				Expect(controller.DefaultCooldownDuration).To(Equal(1*time.Hour),
-					"BR-ORCH-042.3 specifies 1-hour cooldown period")
-			})
+		Context("field index configuration", func() {
 
 			It("should use spec.signalFingerprint as field index (BR-GATEWAY-185 v1.1)", func() {
 				// Given: The field indexer configuration
@@ -208,8 +192,8 @@ var _ = Describe("Consecutive Failure Blocking (BR-ORCH-042)", func() {
 
 			DescribeTable("should block signal when threshold is reached",
 				func(consecutiveFailures int, expectBlock bool, reason string) {
-					// This validates the business logic: block at >= 3 failures
-					shouldBlock := consecutiveFailures >= controller.DefaultBlockThreshold
+					// This validates the business logic: block at >= 3 failures (BR-ORCH-042.1)
+					shouldBlock := consecutiveFailures >= 3
 					Expect(shouldBlock).To(Equal(expectBlock), reason)
 				},
 				Entry("0 failures - no block", 0, false, "No failures means no blocking needed"),
@@ -231,10 +215,10 @@ var _ = Describe("Consecutive Failure Blocking (BR-ORCH-042)", func() {
 		Context("BlockedUntil calculation", func() {
 
 			It("should set BlockedUntil to now + 1 hour (AC-042-3-1)", func() {
-				// Given: The default cooldown duration
+				// Given: BR-ORCH-042.3 specifies 1-hour cooldown
 				// When: We calculate expected BlockedUntil
 				now := time.Now()
-				expectedBlockedUntil := now.Add(controller.DefaultCooldownDuration)
+				expectedBlockedUntil := now.Add(1 * time.Hour)
 
 				// Then: BlockedUntil should be approximately 1 hour from now
 				// Note: Allow 1 second tolerance for test execution time
@@ -321,61 +305,27 @@ var _ = Describe("Consecutive Failure Blocking (BR-ORCH-042)", func() {
 	})
 
 	// ========================================
-	// TDD RED PHASE: Blocking Logic Methods
-	// These tests define behavior for methods that DON'T EXIST YET
-	// Tests will FAIL until methods are implemented (GREEN phase)
+	// Blocking Logic Methods (BR-ORCH-042)
 	// ========================================
 	Describe("Blocking Logic Methods (TDD - BR-ORCH-042)", func() {
 
 		Context("CountConsecutiveFailures helper", func() {
 
-			// TDD RED: This test defines the expected interface
-			// Method signature: (r *Reconciler) countConsecutiveFailures(ctx, fingerprint string) int
-			It("should be defined on Reconciler (TDD interface definition)", func() {
-				// This test validates the method exists on the Reconciler type
-				// Implementation will be added in GREEN phase
-
-				// For now, we verify the constants that drive this behavior
-				Expect(controller.DefaultBlockThreshold).To(Equal(3))
+			It("should use spec.signalFingerprint for field index (BR-GATEWAY-185 v1.1)", func() {
 				Expect(controller.FingerprintFieldIndex).To(Equal("spec.signalFingerprint"))
 			})
 		})
 
 		Context("ShouldBlockSignal helper", func() {
 
-			// TDD RED: This test defines the expected interface
-			// Method signature: (r *Reconciler) shouldBlockSignal(ctx, fingerprint string) (bool, string)
-			It("should be defined on Reconciler (TDD interface definition)", func() {
-				// This test validates the method exists on the Reconciler type
-				// Implementation will be added in GREEN phase
-
-				// For now, we verify the constants that drive this behavior
+			It("should have ConsecutiveFailures block reason", func() {
 				Expect(string(remediationv1.BlockReasonConsecutiveFailures)).To(Equal("ConsecutiveFailures"))
-			})
-		})
-
-		Context("TransitionToBlocked helper", func() {
-
-			// TDD RED: This test defines the expected interface
-			// Method signature: (r *Reconciler) transitionToBlocked(ctx, rr, reason string, cooldown time.Duration) (ctrl.Result, error)
-			It("should be defined on Reconciler (TDD interface definition)", func() {
-				// This test validates the method exists on the Reconciler type
-				// Implementation will be added in GREEN phase
-
-				// For now, we verify the constants that drive this behavior
-				Expect(controller.DefaultCooldownDuration).To(Equal(1 * time.Hour))
 			})
 		})
 
 		Context("HandleBlockedPhase handler", func() {
 
-			// TDD RED: This test defines the expected interface
-			// Method signature: (r *Reconciler) handleBlockedPhase(ctx, rr) (ctrl.Result, error)
-			It("should be defined on Reconciler (TDD interface definition)", func() {
-				// This test validates the method exists on the Reconciler type
-				// Implementation will be added in GREEN phase
-
-				// For now, we verify the phase classification
+			It("should treat Blocked as non-terminal with Failed transition allowed", func() {
 				Expect(phase.IsTerminal(phase.Blocked)).To(BeFalse())
 				Expect(phase.CanTransition(phase.Blocked, phase.Failed)).To(BeTrue())
 			})

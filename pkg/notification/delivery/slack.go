@@ -23,12 +23,19 @@ type SlackDeliveryService struct {
 	httpClient *http.Client
 }
 
-// NewSlackDeliveryService creates a new Slack delivery service
-func NewSlackDeliveryService(webhookURL string) *SlackDeliveryService {
+// NewSlackDeliveryService creates a new Slack delivery service.
+//
+// Parameters:
+//   - webhookURL: Slack webhook URL for delivery
+//   - timeout: HTTP client timeout. If zero, defaults to 10s (NT-1: wired from config)
+func NewSlackDeliveryService(webhookURL string, timeout time.Duration) *SlackDeliveryService {
+	if timeout <= 0 {
+		timeout = 10 * time.Second
+	}
 	return &SlackDeliveryService{
 		webhookURL: webhookURL,
 		httpClient: &http.Client{
-			Timeout: 10 * time.Second,
+			Timeout: timeout,
 		},
 	}
 }

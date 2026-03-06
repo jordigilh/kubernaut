@@ -29,6 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/helpers"
@@ -55,6 +56,23 @@ func NewAIAnalysisHandler(c client.Client, s *runtime.Scheme, nc *creator.Notifi
 		Metrics:             m,
 		transitionToFailed:  ttf,
 	}
+}
+
+// buildNotificationRef fetches the NotificationRequest by name to obtain its UID
+// and returns a fully populated ObjectReference (BR-ORCH-035 AC-6).
+// If the fetch fails, UID is omitted (best-effort; Name+Namespace still sufficient for lookup).
+func (h *AIAnalysisHandler) buildNotificationRef(ctx context.Context, name, namespace string) corev1.ObjectReference {
+	ref := corev1.ObjectReference{
+		Kind:       "NotificationRequest",
+		Name:       name,
+		Namespace:  namespace,
+		APIVersion: "notification.kubernaut.ai/v1alpha1",
+	}
+	nr := &notificationv1.NotificationRequest{}
+	if err := h.client.Get(ctx, client.ObjectKey{Name: name, Namespace: namespace}, nr); err == nil {
+		ref.UID = nr.UID
+	}
+	return ref
 }
 
 // HandleAIAnalysisStatus processes AIAnalysis status changes and updates the parent RemediationRequest.
@@ -188,14 +206,10 @@ func (h *AIAnalysisHandler) handleApprovalRequired(
 
 	// Update RR status with notification reference (DD-GATEWAY-011, BR-ORCH-038)
 	// REFACTOR-RO-001: Using retry helper
+	ref := h.buildNotificationRef(ctx, notifName, rr.Namespace)
 	err = helpers.UpdateRemediationRequestStatus(ctx, h.client, h.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
 		// Track notification reference (BR-ORCH-035)
-		rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs,
-			corev1.ObjectReference{
-				Kind:      "NotificationRequest",
-				Name:      notifName,
-				Namespace: rr.Namespace,
-			})
+		rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
 		rr.Status.ApprovalNotificationSent = true
 		return nil
 	})
@@ -336,18 +350,14 @@ func (h *AIAnalysisHandler) createManualReviewAndUpdateStatus(
 	// Update RR status with handler-specific fields (DD-GATEWAY-011, BR-ORCH-038)
 	// Note: Phase transition and audit emission handled by transitionToFailed() callback below
 	// REFACTOR-RO-001: Using retry helper
+	ref := h.buildNotificationRef(ctx, notifName, rr.Namespace)
 	err = helpers.UpdateRemediationRequestStatus(ctx, h.client, h.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
 		// Handler-specific status fields
 		rr.Status.Outcome = "ManualReviewRequired"
 		rr.Status.RequiresManualReview = true
 
 		// Track notification reference (BR-ORCH-035)
-		rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs,
-			corev1.ObjectReference{
-				Kind:      "NotificationRequest",
-				Name:      notifName,
-				Namespace: rr.Namespace,
-			})
+		rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
 		return nil
 	})
 	if err != nil {

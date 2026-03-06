@@ -1,3 +1,4 @@
+schemaVersion: "1.0"
 # Proactive Rollback Workflow Schema - Job Backend (BR-WORKFLOW-004)
 # Scenario: #128 -- SLO error budget burn -> proactive rollback
 metadata:
@@ -12,7 +13,6 @@ metadata:
 actionType: ProactiveRollback
 
 labels:
-  signalName: ErrorBudgetBurn
   severity: [critical, high]
   environment: [production, staging, "*"]
   component: "*"
@@ -20,7 +20,7 @@ labels:
 
 execution:
   engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/proactive-rollback-job@sha256:47bb5fc766807f56e281fb6a74bfa40c51856bd75d8ade9aa074f75a0dca247f
+  bundle: quay.io/kubernaut-cicd/test-workflows/proactive-rollback-job@sha256:c66dd03873c12501e8c6944e6e545b9b1e4f479997e5365c8e5b4e62777a3598
 
 parameters:
   - name: TARGET_NAMESPACE

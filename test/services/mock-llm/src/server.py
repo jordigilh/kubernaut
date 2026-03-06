@@ -48,6 +48,7 @@ Architecture:
 
 import json
 import os
+import re
 import threading
 import time
 import uuid
@@ -80,6 +81,7 @@ class MockScenario:
     rca_resource_name: str = "test-pod"
     rca_resource_api_version: str = "v1"  # BR-HAPI-212: API version for GVK resolution
     include_affected_resource: bool = True  # BR-HAPI-212: Whether to include affectedResource in RCA
+    rca_override_prompt_resource: bool = False  # DD-EM-004: Use scenario kind/name instead of prompt-extracted
     parameters: Dict[str, str] = field(default_factory=dict)
     execution_engine: str = "tekton"  # BR-WE-014: Execution backend ("tekton" or "job")
 
@@ -100,10 +102,10 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         rca_resource_kind="Deployment",
         rca_resource_namespace="production",
         rca_resource_name="api-server",
-        # BR-HAPI-191: Parameter names MUST match workflow-schema.yaml definitions
-        # (validated by HAPI WorkflowResponseValidator against DataStorage parameter schema)
-        # Schema: NAMESPACE (required), DEPLOYMENT_NAME (required), MEMORY_INCREASE_PERCENT (optional)
-        parameters={"NAMESPACE": "default", "DEPLOYMENT_NAME": "memory-eater", "MEMORY_INCREASE_PERCENT": "50"},
+        # BR-HAPI-191: Parameter names MUST match workflow-schema.yaml definitions.
+        # TARGET_RESOURCE is always injected by the WE controller from the RR's
+        # actual target, so we only supply the remediation-specific param here.
+        parameters={"MEMORY_LIMIT_NEW": "512Mi"},
         # BR-WE-014: Full pipeline uses Job execution engine (not Tekton)
         execution_engine="job",
     ),
@@ -248,9 +250,8 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         rca_resource_kind="Deployment",
         rca_resource_namespace="production",
         rca_resource_name="api-server",
-        # BR-HAPI-191: Parameter names MUST match workflow-schema.yaml definitions
-        # Schema: NAMESPACE (required), DEPLOYMENT_NAME (required), MEMORY_INCREASE_PERCENT (optional)
-        parameters={"NAMESPACE": "production", "DEPLOYMENT_NAME": "api-server", "MEMORY_INCREASE_PERCENT": "50"},
+        # BR-HAPI-191: TARGET_RESOURCE injected by WE controller; only supply remediation params.
+        parameters={"MEMORY_LIMIT_NEW": "512Mi"},
         # BR-WE-014: Full pipeline uses Job execution engine (not Tekton)
         execution_engine="job",
     ),
@@ -267,6 +268,31 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         rca_resource_namespace="production",
         rca_resource_name="api-server-def456",
         parameters={}
+    ),
+    # ========================================
+    # DD-EM-004 / BR-EM-010: Async Hash Deferral — CRD Target Scenario
+    # ========================================
+    "cert_not_ready": MockScenario(
+        name="cert_not_ready",
+        workflow_name="fix-certificate-v1",
+        signal_name="CertManagerCertNotReady",
+        severity="critical",
+        workflow_id="21053597-2865-572b-89bf-de49b5b685da",  # Placeholder - overwritten by config
+        workflow_title="Fix Certificate - Recreate CA Secret",
+        confidence=0.92,
+        root_cause="cert-manager Certificate stuck in NotReady state due to missing or corrupted CA Secret backing the ClusterIssuer",
+        rca_resource_kind="Certificate",  # CRD kind: triggers async detection in RO
+        rca_resource_namespace="default",
+        rca_resource_name="demo-app-cert",
+        rca_resource_api_version="cert-manager.io/v1",
+        rca_override_prompt_resource=True,  # Gateway sees Pod from alert, but RCA is about the Certificate
+        parameters={
+            "TARGET_NAMESPACE": "default",  # Overwritten at runtime by WFE from TARGET_RESOURCE
+            "TARGET_CERTIFICATE": "demo-app-cert",
+            "ISSUER_NAME": "demo-selfsigned-ca",
+            "CA_SECRET_NAME": "demo-ca-key-pair",
+        },
+        execution_engine="job",
     ),
 }
 
@@ -671,49 +697,57 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
         if "testsignal" in content or "test signal" in content:
             return MOCK_SCENARIOS.get("test_signal", DEFAULT_SCENARIO)
 
-        # BR-AI-084 / ADR-054: Detect proactive signal mode
-        # Proactive mode is indicated by "proactive" keyword in the prompt content,
-        # specifically from the signal_mode field passed through the investigation prompt.
-        is_proactive = ("proactive mode" in content or "proactive signal" in content or
-                        "predicted" in content and "not yet occurred" in content)
+        # ────────────────────────────────────────────────────────────────────
+        # PRIMARY DETECTION: Extract the actual signal name from the HAPI
+        # prompt's structured "- Signal Name: <value>" field.
+        #
+        # The full message content is unreliable for keyword-based detection
+        # because it includes:
+        #   1. "Canonical Signal Types" reference in the system prompt listing
+        #      ALL signal names (NodeNotReady, CrashLoopBackOff, OOMKilled, etc.)
+        #   2. Workflow catalog entries from discovery tool results
+        #      ("Node Not Ready - Drain and Reboot", "CrashLoopBackOff - Configuration Fix")
+        #
+        # The HAPI prompt builder always sets "- Signal Name: <actual_signal>"
+        # in the Technical Details section, making it the only reliable source
+        # for determining which scenario THIS specific incident requires.
+        # ────────────────────────────────────────────────────────────────────
+        signal_match = re.search(r'signal name:\s*(\S+)', content)
+        if signal_match:
+            actual_signal = signal_match.group(1).strip().lower()
+            logger.info(f"📋 PRIMARY: Extracted signal_name='{actual_signal}' from prompt")
 
-        # Check for proactive-specific scenarios first (oomkilled_predictive scenario name unchanged)
-        if is_proactive:
-            # Check for "no action" proactive scenario
-            if "predictive_no_action" in content or "mock_predictive_no_action" in content:
-                logger.info("✅ SCENARIO DETECTED: PREDICTIVE_NO_ACTION")
-                return MOCK_SCENARIOS.get("predictive_no_action", DEFAULT_SCENARIO)
-            # Default proactive scenario with OOMKilled
-            if "oomkilled" in content:
-                logger.info("✅ SCENARIO DETECTED: OOMKILLED_PREDICTIVE")
-                return MOCK_SCENARIOS.get("oomkilled_predictive", DEFAULT_SCENARIO)
+            # BR-AI-084 / ADR-054: Detect proactive signal mode
+            is_proactive = ("proactive mode" in content or "proactive signal" in content or
+                            "predicted" in content and "not yet occurred" in content)
+            if is_proactive:
+                if "predictive_no_action" in content or "mock_predictive_no_action" in content:
+                    logger.info("✅ SCENARIO DETECTED: PREDICTIVE_NO_ACTION")
+                    return MOCK_SCENARIOS.get("predictive_no_action", DEFAULT_SCENARIO)
+                if "oomkilled" in actual_signal or "oomkill" in actual_signal:
+                    logger.info(f"✅ PRIMARY: Proactive signal '{actual_signal}' → oomkilled_predictive")
+                    return MOCK_SCENARIOS.get("oomkilled_predictive", DEFAULT_SCENARIO)
 
-        # Check for signal types FIRST (most specific first to avoid false matches)
-        # DD-TEST-010: Match exact signal types, not generic substrings
-        # FIX: Move signal type checks BEFORE Category F scenarios to avoid incorrect matches
-        # "crashloop" is more specific than "oom", check it first
-        if "crashloop" in content:
-            matched_scenario = MOCK_SCENARIOS.get("crashloop", DEFAULT_SCENARIO)
-            logger.info(f"✅ PHASE 2: Matched 'crashloop' → scenario={matched_scenario.name}, workflow_id={matched_scenario.workflow_id}")
-            return matched_scenario
-        elif "oomkilled" in content:
-            matched_scenario = MOCK_SCENARIOS.get("oomkilled", DEFAULT_SCENARIO)
-            logger.info(f"✅ PHASE 2: Matched 'oomkilled' → scenario={matched_scenario.name}, workflow_id={matched_scenario.workflow_id}")
-            return matched_scenario
-        elif "memoryexceedslimit" in content or "memory exceeds limit" in content or "memoryexceeds" in content:
-            # AlertManager E2E test: MemoryExceedsLimit Prometheus alert → same oomkilled workflow
-            matched_scenario = MOCK_SCENARIOS.get("oomkilled", DEFAULT_SCENARIO)
-            logger.info(f"✅ PHASE 2: Matched 'memoryexceedslimit' → scenario={matched_scenario.name}, workflow_id={matched_scenario.workflow_id}")
-            return matched_scenario
-        elif "nodenotready" in content or "node not ready" in content:
-            matched_scenario = MOCK_SCENARIOS.get("node_not_ready", DEFAULT_SCENARIO)
-            logger.info(f"✅ PHASE 2: Matched 'nodenotready' → scenario={matched_scenario.name}, workflow_id={matched_scenario.workflow_id}")
+            if "certmanagercertnotready" in actual_signal or "cert_not_ready" in actual_signal:
+                matched_scenario = MOCK_SCENARIOS.get("cert_not_ready", DEFAULT_SCENARIO)
+            elif "nodenotready" in actual_signal:
+                matched_scenario = MOCK_SCENARIOS.get("node_not_ready", DEFAULT_SCENARIO)
+            elif "memoryexceedslimit" in actual_signal or "memoryexceeds" in actual_signal:
+                matched_scenario = MOCK_SCENARIOS.get("oomkilled", DEFAULT_SCENARIO)
+            elif "crashloop" in actual_signal or "backoff" in actual_signal:
+                matched_scenario = MOCK_SCENARIOS.get("crashloop", DEFAULT_SCENARIO)
+            elif "oomkilled" in actual_signal or "oomkill" in actual_signal:
+                matched_scenario = MOCK_SCENARIOS.get("oomkilled", DEFAULT_SCENARIO)
+            else:
+                logger.info(f"⚠️ Signal '{actual_signal}' not recognized, using default scenario")
+                return MockLLMRequestHandler.current_scenario or DEFAULT_SCENARIO
+
+            logger.info(f"✅ PRIMARY: signal '{actual_signal}' → scenario={matched_scenario.name}, workflow_id={matched_scenario.workflow_id}")
             return matched_scenario
 
-        # PHASE 2: Fallback to current_scenario or DEFAULT_SCENARIO
-        fallback_scenario = MockLLMRequestHandler.current_scenario
-        logger.warning(f"⚠️  PHASE 2: NO MATCH - Falling back to current_scenario={fallback_scenario.name}, workflow_id={fallback_scenario.workflow_id}")
-        logger.warning(f"⚠️  PHASE 2: Content preview for debugging: {content[:500]}")
+        fallback_scenario = MockLLMRequestHandler.current_scenario or DEFAULT_SCENARIO
+        logger.warning(f"⚠️ No 'Signal Name:' found in prompt, using fallback={fallback_scenario.name}")
+        logger.warning(f"⚠️ Content preview: {content[:500]}")
         return fallback_scenario
 
     def _has_tool_result(self, messages: List[Dict[str, Any]]) -> bool:
@@ -821,6 +855,50 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
             scenario.rca_resource_name,
             scenario.rca_resource_namespace,
         )
+
+    @staticmethod
+    def _extract_root_owner_from_tool_results(
+        messages: List[Dict[str, Any]],
+    ) -> Optional[Dict[str, str]]:
+        """
+        Parse get_resource_context tool results for the root_owner field.
+
+        ADR-056: A real LLM uses the root_owner returned by get_resource_context
+        (e.g., Pod→Deployment) as the affectedResource. The mock must do the same
+        so the RCA contains the correct owner rather than the raw signaling Pod.
+        """
+        for msg in messages:
+            if msg.get("role") != "tool":
+                continue
+            content = msg.get("content", "")
+            # OpenAI content-parts format: [{"type":"text","text":"..."}]
+            if isinstance(content, list):
+                content = " ".join(
+                    part.get("text", "")
+                    for part in content
+                    if isinstance(part, dict) and part.get("type") == "text"
+                )
+            if not isinstance(content, str) or not content:
+                continue
+            data = None
+            try:
+                data = json.loads(content)
+            except (json.JSONDecodeError, TypeError):
+                # HolmesGPT prefixes tool results with
+                # "Params used for the tool call: {...}. The tool call output
+                # follows on the next line.\n" — strip prefix and retry.
+                idx = content.find("\n{")
+                if idx >= 0:
+                    try:
+                        data = json.loads(content[idx + 1 :])
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+            if not isinstance(data, dict):
+                continue
+            root_owner = data.get("root_owner")
+            if root_owner and isinstance(root_owner, dict) and root_owner.get("kind"):
+                return root_owner
+        return None
 
     def _discovery_tool_call_response(
         self,
@@ -938,6 +1016,7 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
             "image-pull-backoff-fix-credentials": "RollbackDeployment",
             "generic-restart-v1": "RestartPod",
             "test-signal-handler-v1": "RestartPod",
+            "fix-certificate-v1": "FixCertificate",
         }
         action_type = action_type_map.get(scenario.workflow_name, "ScaleReplicas")
         return action_type
@@ -1018,6 +1097,27 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
             actual_kind, actual_name, actual_ns = self._extract_resource_from_messages(
                 messages, scenario
             )
+            # ADR-056: Prefer root_owner from get_resource_context tool result.
+            # A real LLM uses root_owner (Pod→Deployment) as affectedResource;
+            # without this the mock returns the raw Pod from the prompt.
+            root_owner = self._extract_root_owner_from_tool_results(messages)
+            if root_owner:
+                actual_kind = root_owner.get("kind", actual_kind)
+                actual_name = root_owner.get("name", actual_name)
+                if root_owner.get("namespace"):
+                    actual_ns = root_owner["namespace"]
+                logger.info(
+                    f"📍 ADR-056: Using root_owner from get_resource_context: "
+                    f"{actual_kind}/{actual_name} in {actual_ns}"
+                )
+            # DD-EM-004: When rca_override_prompt_resource is set, the LLM identifies
+            # a different root-cause resource than what the alert/prompt contains
+            # (e.g., Gateway sees Pod from alert labels, but RCA is about a Certificate CRD).
+            if scenario.rca_override_prompt_resource:
+                actual_kind = scenario.rca_resource_kind
+                actual_name = scenario.rca_resource_name
+                if not actual_ns:
+                    actual_ns = scenario.rca_resource_namespace
             affected_resource = {
                 "kind": actual_kind,
                 "name": actual_name,

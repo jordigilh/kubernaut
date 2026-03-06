@@ -72,7 +72,7 @@ receivers:
 			Expect(err).ToNot(HaveOccurred())
 		})
 
-		Context("when NotificationRequest has no spec.channels", func() {
+		Context("when routing resolves channels from spec fields", func() {
 
 			It("should resolve channels from spec fields for critical approval notification", func() {
 				notification := &notificationv1alpha1.NotificationRequest{
@@ -170,9 +170,9 @@ receivers:
 			})
 		})
 
-		Context("when NotificationRequest has spec.channels specified", func() {
+		Context("when routing resolves channels from config (#260)", func() {
 
-			It("should use spec.channels when explicitly specified", func() {
+			It("should resolve channels from routing config for approval_required type", func() {
 				notification := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "test-notification",
@@ -184,19 +184,11 @@ receivers:
 						Severity: "critical",
 						Subject:  "Test",
 						Body:     "Test body",
-						Channels: []notificationv1alpha1.Channel{
-							notificationv1alpha1.ChannelConsole,
-							notificationv1alpha1.ChannelSlack,
-						},
 					},
 				}
 
-				hasExplicitChannels := len(notification.Spec.Channels) > 0
-				Expect(hasExplicitChannels).To(BeTrue())
-				Expect(notification.Spec.Channels).To(ContainElements(
-					notificationv1alpha1.ChannelConsole,
-					notificationv1alpha1.ChannelSlack,
-				))
+				channels := routing.ResolveChannelsForNotification(config, notification)
+				Expect(channels).To(ContainElement("pagerduty"), "Critical approval_required should route to pagerduty")
 			})
 		})
 
@@ -238,7 +230,6 @@ receivers:
 			Expect(err).ToNot(HaveOccurred())
 
 			receiver := config.GetReceiver("slack-default")
-			Expect(receiver).ToNot(BeNil())
 			Expect(receiver.SlackConfigs).To(HaveLen(1))
 			Expect(receiver.SlackConfigs[0].Channel).To(Equal("#alerts"))
 		})

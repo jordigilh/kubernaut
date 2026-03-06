@@ -24,6 +24,7 @@ import (
 
 	"github.com/go-logr/zapr"
 	zaplog "go.uber.org/zap"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -35,6 +36,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
+	"github.com/jordigilh/kubernaut/internal/version"
 	scope "github.com/jordigilh/kubernaut/pkg/shared/scope"
 	"github.com/jordigilh/kubernaut/internal/controller/notification"
 	"github.com/jordigilh/kubernaut/pkg/audit"
@@ -140,6 +142,12 @@ func main() {
 	})
 	defer kubelog.Sync(logger)
 
+	logger.Info("Starting Notification Controller",
+		"version", version.Version,
+		"gitCommit", version.GitCommit,
+		"buildDate", version.BuildDate,
+	)
+
 	logger.Info("Loading configuration from YAML file (ADR-030)",
 		"config_path", configPath)
 
@@ -175,12 +183,17 @@ func main() {
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
 	// ADR-030: Use configuration values for controller manager
-	// ADR-057: ConfigMaps NOT restricted (workload resources for hot-reload)
+	// ConfigMaps scoped to namespace for routing config hot-reload (#259)
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,
 		Cache: cache.Options{
 			ByObject: map[client.Object]cache.ByObject{
 				&notificationv1alpha1.NotificationRequest{}: {
+					Namespaces: map[string]cache.Config{
+						controllerNS: {},
+					},
+				},
+				&corev1.ConfigMap{}: {
 					Namespaces: map[string]cache.Config{
 						controllerNS: {},
 					},
@@ -233,7 +246,7 @@ func main() {
 				"directory", cfg.Delivery.File.OutputDir)
 			os.Exit(1)
 		}
-		fileService = delivery.NewFileDeliveryService(cfg.Delivery.File.OutputDir)
+		fileService = delivery.NewFileDeliveryService(cfg.Delivery.File.OutputDir, cfg.Delivery.File.Format, cfg.Delivery.File.Timeout)
 		logger.Info("File delivery service initialized",
 			"output_dir", cfg.Delivery.File.OutputDir,
 			"format", cfg.Delivery.File.Format,
@@ -247,7 +260,7 @@ func main() {
 	// ========================================
 	var logService *delivery.LogDeliveryService
 	if cfg.Delivery.Log.Enabled {
-		logService = delivery.NewLogDeliveryService()
+		logService = delivery.NewLogDeliveryService(cfg.Delivery.Log.Format)
 		logger.Info("Log delivery service initialized",
 			"enabled", cfg.Delivery.Log.Enabled,
 			"format", cfg.Delivery.Log.Format)
@@ -391,7 +404,7 @@ func main() {
 	// Per-receiver Slack (BR-NOT-104) still takes precedence when routing config is loaded.
 	startupChannels := []string{"console", "file", "log"}
 	if slackURL := os.Getenv("SLACK_WEBHOOK_URL"); slackURL != "" {
-		slackService := delivery.NewSlackDeliveryService(slackURL)
+		slackService := delivery.NewSlackDeliveryService(slackURL, cfg.Delivery.Slack.Timeout)
 		deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelSlack), slackService)
 		startupChannels = append(startupChannels, "slack")
 		logger.Info("Registered legacy Slack channel from SLACK_WEBHOOK_URL env var")
@@ -410,6 +423,7 @@ func main() {
 		FileService:          fileService,          // DD-NOT-006: File delivery
 		DeliveryOrchestrator: deliveryOrchestrator, // Pattern 3: Delivery Orchestrator (P0)
 		CredentialResolver:   credResolver,         // BR-NOT-104: Per-receiver credential resolution
+		SlackTimeout:         cfg.Delivery.Slack.Timeout,                        // NT-1: Wired for per-receiver Slack creation
 		Sanitizer:            sanitizer,
 		CircuitBreaker:       circuitBreakerManager,                              // BR-NOT-055: Circuit breaker with gobreaker
 		Metrics:              metricsRecorder,                                    // DD-METRICS-001: Injected metrics

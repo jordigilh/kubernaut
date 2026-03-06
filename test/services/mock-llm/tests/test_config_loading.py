@@ -35,6 +35,7 @@ class TestFileBasedConfigLoading:
             'node-drain-reboot-v1:production': 'test-uuid-789',
             'test-signal-handler-v1:test': 'test-uuid-abc',
             'generic-restart-v1:production': 'test-uuid-def',
+            'fix-certificate-v1:production': 'test-uuid-cert',
         }
 
     def test_load_scenarios_from_valid_yaml_file(self):
@@ -84,6 +85,7 @@ class TestFileBasedConfigLoading:
                     'node-drain-reboot-v1:production': 'prod-uuid-aaa',
                     'test-signal-handler-v1:test': 'test-uuid-bbb',
                     'generic-restart-v1:production': 'prod-uuid-ccc',
+                    'fix-certificate-v1:production': 'prod-uuid-cert',
                 }
             }
             yaml.dump(config, f)
@@ -203,6 +205,7 @@ class TestFileBasedConfigLoading:
                     'node-drain-reboot-v1:production': 'valid-uuid-789',
                     'test-signal-handler-v1:test': 'valid-uuid-abc',
                     'generic-restart-v1:production': 'valid-uuid-def',
+                    'fix-certificate-v1:production': 'valid-uuid-cert',
                 }
             }
             yaml.dump(config, f)
@@ -266,6 +269,7 @@ class TestFileBasedConfigLoading:
                     'crashloop-config-fix-v1:production': '5e8f2a1b-3c7d-4e0f-9a6b-1d2c3e4f5a6b',
                     'node-drain-reboot-v1:production': '6f9a3b2c-4d8e-5f1a-0b7c-2e3f4a5b6c7d',
                     'generic-restart-v1:production': '8b1c5d4e-6f0a-7b3c-2d9e-4f5a6b7c8d9e',
+                    'fix-certificate-v1:production': '9c2d6e5f-7a1b-8c4d-3e0f-5a6b7c8d9e0f',
                     # Test workflows
                     'test-signal-handler-v1:test': 'test-uuid-e2e-789',
                 }
@@ -312,6 +316,7 @@ class TestConfigFileIntegration:
                         'node-drain-reboot-v1:production': 'configmap-uuid-789',
                         'test-signal-handler-v1:test': 'configmap-uuid-abc',
                         'generic-restart-v1:production': 'configmap-uuid-def',
+                        'fix-certificate-v1:production': 'configmap-uuid-cert',
                     }
                 }
                 yaml.dump(config, f)
@@ -342,6 +347,7 @@ class TestConfigFileIntegration:
                     'node-drain-reboot-v1:production': 'integration-uuid-aaa',
                     'test-signal-handler-v1:test': 'integration-uuid-bbb',
                     'generic-restart-v1:production': 'integration-uuid-ccc',
+                    'fix-certificate-v1:production': 'integration-uuid-cert',
                 }
             }
             yaml.dump(config, f)

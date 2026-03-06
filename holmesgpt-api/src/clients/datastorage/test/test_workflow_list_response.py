@@ -42,6 +42,7 @@ class TestWorkflowListResponse(unittest.TestCase):
                         workflow_name = '', 
                         action_type = 'ScaleReplicas', 
                         version = '', 
+                        schema_version = '1.0', 
                         name = '', 
                         description = datastorage.models.structured_description.StructuredDescription(
                             what = '', 
@@ -59,7 +60,6 @@ class TestWorkflowListResponse(unittest.TestCase):
                         execution_bundle = 'ghcr.io/kubernaut/workflows/oomkill@sha256:abc123...', 
                         execution_bundle_digest = 'sha256:abc123...', 
                         labels = datastorage.models.mandatory_labels.MandatoryLabels(
-                            signal_name = 'OOMKilled', 
                             severity = ["critical"], 
                             component = 'pod', 
                             environment = ["staging","production"], 

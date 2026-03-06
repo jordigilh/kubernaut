@@ -45,6 +45,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
@@ -360,10 +361,31 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 			we.Status.Phase = workflowexecutionv1.PhaseCompleted
 			Expect(k8sClient.Status().Update(ctx, we)).To(Succeed())
 
+			// Wait for Verifying phase (#280)
+			Eventually(func() remediationv1.RemediationPhase {
+				_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
+					Name:      rr.Name,
+					Namespace: ROControllerNamespace,
+				}, rr)
+				return rr.Status.OverallPhase
+			}, timeout, interval).Should(Equal(remediationv1.PhaseVerifying),
+				"#280: RR should transition to Verifying phase after WE completion")
+
+			// Drive EA to completion for Verifying → Completed (#280)
+			eaName := fmt.Sprintf("ea-%s", rr.Name)
+			ea := &eav1.EffectivenessAssessment{}
+			Eventually(func() error {
+				return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: eaName, Namespace: ROControllerNamespace}, ea)
+			}, timeout, interval).Should(Succeed())
+			ea.Status.Phase = eav1.PhaseCompleted
+			eaDeadline := metav1.NewTime(time.Now().Add(10 * time.Minute))
+			ea.Status.ValidityDeadline = &eaDeadline
+			Expect(k8sClient.Status().Update(ctx, ea)).To(Succeed())
+
 			// Wait for RR to complete successfully
 			Eventually(func() remediationv1.RemediationPhase {
 				_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
-					Name:      rr.Name, // Fixed: was incorrectly using spName
+					Name:      rr.Name,
 					Namespace: ROControllerNamespace,
 				}, rr)
 				return rr.Status.OverallPhase
@@ -374,9 +396,40 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 			err := auditStore.Flush(ctx)
 			Expect(err).ToNot(HaveOccurred())
 
+			correlationID := rr.Name
+
+			// #280: Query for verifying_started audit event (emitted when Executing → Verifying)
+			var verifyingEvents []ogenclient.AuditEvent
+			Eventually(func() bool {
+				verifyingEvents, err = queryAuditEvents(correlationID, roaudit.EventTypeLifecycleVerifyingStarted)
+				if err != nil {
+					return false
+				}
+				return len(verifyingEvents) > 0
+			}, 30*time.Second, 2*time.Second).Should(BeTrue(),
+				"#280: verifying_started audit event should be persisted after WE completion")
+			Expect(verifyingEvents).To(HaveLen(1), "#280: Should have exactly 1 verifying_started event")
+			Expect(verifyingEvents[0].EventType).To(Equal(roaudit.EventTypeLifecycleVerifyingStarted))
+			Expect(verifyingEvents[0].EventAction).To(Equal("verifying_started"))
+			Expect(string(verifyingEvents[0].EventOutcome)).To(Equal("pending"))
+
+			// #280: Query for verification_completed audit event (emitted when EA terminal → Verifying → Completed)
+			var verificationCompletedEvents []ogenclient.AuditEvent
+			Eventually(func() bool {
+				_ = auditStore.Flush(ctx)
+				verificationCompletedEvents, err = queryAuditEvents(correlationID, roaudit.EventTypeLifecycleVerificationCompleted)
+				if err != nil {
+					return false
+				}
+				return len(verificationCompletedEvents) > 0
+			}, 30*time.Second, 2*time.Second).Should(BeTrue(),
+				"#280: verification_completed audit event should be persisted after EA reaches terminal")
+			Expect(verificationCompletedEvents).To(HaveLen(1), "#280: Should have exactly 1 verification_completed event")
+			Expect(verificationCompletedEvents[0].EventType).To(Equal(roaudit.EventTypeLifecycleVerificationCompleted))
+			Expect(string(verificationCompletedEvents[0].EventOutcome)).To(Equal("success"))
+
 			// Query DataStorage for lifecycle completion audit event
 			// Wait for async flush to complete
-			correlationID := rr.Name
 			var events []ogenclient.AuditEvent
 
 			Eventually(func() bool {

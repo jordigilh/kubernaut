@@ -57,6 +57,11 @@ const (
 	EventTypeApprovalRejected      = "orchestrator.approval.rejected"
 	EventTypeManualReview          = "orchestrator.remediation.manual_review"
 	EventTypeRoutingBlocked        = "orchestrator.routing.blocked"
+
+	// #280: Verifying phase audit events
+	EventTypeLifecycleVerifyingStarted      = "orchestrator.lifecycle.verifying_started"
+	EventTypeLifecycleVerificationCompleted = "orchestrator.lifecycle.verification_completed"
+	EventTypeLifecycleVerificationTimedOut  = "orchestrator.lifecycle.verification_timed_out"
 )
 
 // Event category constant (from OpenAPI spec)
@@ -199,6 +204,99 @@ func (m *Manager) BuildLifecycleStartedEvent(
 		Namespace: namespace,
 	}
 	event.EventData = api.NewAuditEventRequestEventDataOrchestratorLifecycleStartedAuditEventRequestEventData(payload)
+
+	return event, nil
+}
+
+// BuildLifecycleVerifyingStartedEvent builds an audit event for the Verifying phase start (#280).
+// Emitted when RR transitions from Executing to Verifying after successful WFE completion.
+func (m *Manager) BuildLifecycleVerifyingStartedEvent(
+	correlationID string,
+	namespace string,
+	rrName string,
+) (*api.AuditEventRequest, error) {
+	event := audit.NewAuditEventRequest()
+	event.Version = "1.0"
+	audit.SetEventType(event, EventTypeLifecycleVerifyingStarted)
+	audit.SetEventCategory(event, CategoryOrchestration)
+	audit.SetEventAction(event, "verifying_started")
+	audit.SetEventOutcome(event, audit.OutcomePending)
+	audit.SetActor(event, "service", m.serviceName)
+	audit.SetResource(event, "RemediationRequest", rrName)
+	audit.SetCorrelationID(event, correlationID)
+	audit.SetNamespace(event, namespace)
+
+	payload := api.RemediationOrchestratorAuditPayload{
+		EventType: api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleVerifyingStarted,
+		RrName:    rrName,
+		Namespace: namespace,
+	}
+	event.EventData = api.NewAuditEventRequestEventDataOrchestratorLifecycleVerifyingStartedAuditEventRequestEventData(payload)
+
+	return event, nil
+}
+
+// BuildLifecycleVerificationCompletedEvent builds an audit event for Verifying -> Completed (#280).
+// Emitted when EA reaches terminal phase and RR transitions from Verifying to Completed.
+func (m *Manager) BuildLifecycleVerificationCompletedEvent(
+	correlationID string,
+	namespace string,
+	rrName string,
+	eaName string,
+	outcome string,
+	durationMs int64,
+) (*api.AuditEventRequest, error) {
+	event := audit.NewAuditEventRequest()
+	event.Version = "1.0"
+	audit.SetEventType(event, EventTypeLifecycleVerificationCompleted)
+	audit.SetEventCategory(event, CategoryOrchestration)
+	audit.SetEventAction(event, ActionCompleted)
+	audit.SetEventOutcome(event, audit.OutcomeSuccess)
+	audit.SetActor(event, "service", m.serviceName)
+	audit.SetResource(event, "RemediationRequest", rrName)
+	audit.SetCorrelationID(event, correlationID)
+	audit.SetNamespace(event, namespace)
+
+	payload := api.RemediationOrchestratorAuditPayload{
+		EventType:  api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleVerificationCompleted,
+		RrName:     rrName,
+		Namespace:  namespace,
+		EaName:     api.NewOptString(eaName),
+		DurationMs: api.NewOptInt64(durationMs),
+	}
+	event.EventData = api.NewAuditEventRequestEventDataOrchestratorLifecycleVerificationCompletedAuditEventRequestEventData(payload)
+
+	return event, nil
+}
+
+// BuildLifecycleVerificationTimedOutEvent builds an audit event for Verifying timeout (#280).
+// Emitted when VerificationDeadline expires and RR transitions to Completed with VerificationTimedOut.
+func (m *Manager) BuildLifecycleVerificationTimedOutEvent(
+	correlationID string,
+	namespace string,
+	rrName string,
+	eaName string,
+	durationMs int64,
+) (*api.AuditEventRequest, error) {
+	event := audit.NewAuditEventRequest()
+	event.Version = "1.0"
+	audit.SetEventType(event, EventTypeLifecycleVerificationTimedOut)
+	audit.SetEventCategory(event, CategoryOrchestration)
+	audit.SetEventAction(event, ActionExpired)
+	audit.SetEventOutcome(event, audit.OutcomeFailure)
+	audit.SetActor(event, "service", m.serviceName)
+	audit.SetResource(event, "RemediationRequest", rrName)
+	audit.SetCorrelationID(event, correlationID)
+	audit.SetNamespace(event, namespace)
+
+	payload := api.RemediationOrchestratorAuditPayload{
+		EventType:  api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleVerificationTimedOut,
+		RrName:     rrName,
+		Namespace:  namespace,
+		EaName:     api.NewOptString(eaName),
+		DurationMs: api.NewOptInt64(durationMs),
+	}
+	event.EventData = api.NewAuditEventRequestEventDataOrchestratorLifecycleVerificationTimedOutAuditEventRequestEventData(payload)
 
 	return event, nil
 }
@@ -569,6 +667,13 @@ func (m *Manager) BuildRoutingBlockedEvent(
 // Per DD-EM-002: RO emits this event before creating the WorkflowExecution CRD.
 const EventTypeRemediationWorkflowCreated = "remediation.workflow_created"
 
+// EventTypeEACreated is the event type for EA creation with propagation delay breakdown.
+// Per Issue #277: The RO owns the propagation delay data and emits it in this event.
+const EventTypeEACreated = "orchestrator.ea.created"
+
+// ActionEACreated is the event action for EA creation events.
+const ActionEACreated = "ea_created"
+
 // ActionWorkflowCreated is the event action for workflow creation events.
 const ActionWorkflowCreated = "workflow_created"
 
@@ -621,6 +726,65 @@ func (m *Manager) BuildRemediationWorkflowCreatedEvent(
 	}
 
 	event.EventData = api.NewAuditEventRequestEventDataRemediationWorkflowCreatedAuditEventRequestEventData(payload)
+
+	return event, nil
+}
+
+// EACreatedData holds the propagation delay breakdown for the orchestrator.ea.created audit event.
+// Issue #277: The RO is the source of truth for propagation delays; EM no longer carries them.
+type EACreatedData struct {
+	EAName               string
+	HashComputeDelay       time.Duration
+	AlertCheckDelay      time.Duration
+	GitOpsSyncDelay      time.Duration
+	OperatorReconcileDelay time.Duration
+	IsGitOpsManaged      bool
+	IsCRD                bool
+}
+
+// BuildEACreatedEvent builds the orchestrator.ea.created audit event with propagation delay
+// breakdown. Emitted by the RO after successfully creating an EffectivenessAssessment.
+// Issue #277: Shifts propagation delay audit responsibility from EM to RO.
+func (m *Manager) BuildEACreatedEvent(
+	correlationID string,
+	namespace string,
+	rrName string,
+	data EACreatedData,
+) (*api.AuditEventRequest, error) {
+	event := audit.NewAuditEventRequest()
+	event.Version = "1.0"
+	audit.SetEventType(event, EventTypeEACreated)
+	audit.SetEventCategory(event, CategoryOrchestration)
+	audit.SetEventAction(event, ActionEACreated)
+	audit.SetEventOutcome(event, audit.OutcomeSuccess)
+	audit.SetActor(event, "service", m.serviceName)
+	audit.SetResource(event, "EffectivenessAssessment", data.EAName)
+	audit.SetCorrelationID(event, correlationID)
+	audit.SetNamespace(event, namespace)
+
+	payload := api.RemediationOrchestratorAuditPayload{
+		EventType: api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorEaCreated,
+		RrName:    rrName,
+		Namespace: namespace,
+		EaName:    api.OptString{Value: data.EAName, Set: true},
+	}
+
+	if data.HashComputeDelay > 0 {
+		payload.HashComputeDelay = api.OptString{Value: data.HashComputeDelay.String(), Set: true}
+	}
+	if data.AlertCheckDelay > 0 {
+		payload.AlertCheckDelay = api.OptString{Value: data.AlertCheckDelay.String(), Set: true}
+	}
+	if data.GitOpsSyncDelay > 0 {
+		payload.GitopsSyncDelay = api.OptString{Value: data.GitOpsSyncDelay.String(), Set: true}
+	}
+	if data.OperatorReconcileDelay > 0 {
+		payload.OperatorReconcileDelay = api.OptString{Value: data.OperatorReconcileDelay.String(), Set: true}
+	}
+	payload.IsGitopsManaged = api.OptBool{Value: data.IsGitOpsManaged, Set: true}
+	payload.IsCrd = api.OptBool{Value: data.IsCRD, Set: true}
+
+	event.EventData = api.NewAuditEventRequestEventDataOrchestratorEaCreatedAuditEventRequestEventData(payload)
 
 	return event, nil
 }

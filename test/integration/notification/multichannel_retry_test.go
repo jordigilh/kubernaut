@@ -76,12 +76,6 @@ var _ = Describe("Category 2 & 3: Multi-Channel Delivery and Retry/Circuit Break
 					Priority: notificationv1alpha1.NotificationPriorityLow,
 					Subject:  "Console Delivery Test",
 					Body:     "Testing console delivery",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
 				},
 			}
 
@@ -149,14 +143,6 @@ var _ = Describe("Category 2 & 3: Multi-Channel Delivery and Retry/Circuit Break
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Partial Failure Test",
 					Body:     "Testing partial channel failure",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#test"},
-						{Email: "test@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelSlack,
-						notificationv1alpha1.ChannelConsole,
-					},
 					// NT-BUG-005 Fix: Use fast retry policy so test completes within 20s
 					// Default policy has 30s initial backoff, which exceeds test timeout
 					// 3 attempts with 1s initial + 2x multiplier = 1s + 2s = 3s total (well within 20s)
@@ -165,6 +151,9 @@ var _ = Describe("Category 2 & 3: Multi-Channel Delivery and Retry/Circuit Break
 						InitialBackoffSeconds: 1, // Fast retries for testing
 						BackoffMultiplier:     2,
 						MaxBackoffSeconds:     60, // CRD minimum validation
+					},
+					Metadata: map[string]string{
+						"test-channel-set": "console-slack",
 					},
 				},
 			}
@@ -245,12 +234,6 @@ var _ = Describe("Category 2 & 3: Multi-Channel Delivery and Retry/Circuit Break
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "All Channels Fail Test",
 					Body:     "Testing all channels failing",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#test"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelSlack,
-					},
 					// NT-BUG-005 Fix: Use fast retry policy so test completes within 20s
 					// Default policy has 30s initial backoff, which exceeds test timeout
 					// 3 attempts with 1s initial + 2x multiplier = 1s + 2s = 3s total (well within 20s)
@@ -259,6 +242,9 @@ var _ = Describe("Category 2 & 3: Multi-Channel Delivery and Retry/Circuit Break
 						InitialBackoffSeconds: 1, // Fast retries for testing
 						BackoffMultiplier:     2,
 						MaxBackoffSeconds:     60, // CRD minimum validation
+					},
+					Metadata: map[string]string{
+						"test-channel-set": "slack-only",
 					},
 				},
 			}

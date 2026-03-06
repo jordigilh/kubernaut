@@ -17,8 +17,6 @@ limitations under the License.
 package audit
 
 import (
-	"fmt"
-
 	pkgaudit "github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
@@ -163,11 +161,6 @@ func buildDiscoveryPayload(eventType ogenclient.WorkflowDiscoveryAuditPayloadEve
 			Component:   filters.Component,
 			Environment: filters.Environment,
 			Priority:    ogenclient.WorkflowSearchFiltersPriority(filters.Priority),
-		}
-		if actionType != "" {
-			wsf.SignalName = fmt.Sprintf("discovery:action_type=%s", actionType)
-		} else {
-			wsf.SignalName = "discovery"
 		}
 		searchFilters.SetTo(wsf)
 	}

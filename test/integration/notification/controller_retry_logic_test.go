@@ -94,7 +94,7 @@ var _ = Describe("Controller Retry Logic (BR-NOT-054)", func() {
 			DeferCleanup(func() {
 				// Restore original services
 				deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelConsole), originalConsoleService)
-				deliveryOrchestrator.UnregisterChannel(string(notificationv1alpha1.ChannelFile))
+				deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelFile), originalFileService)
 			})
 
 			// ========================================
@@ -114,10 +114,6 @@ var _ = Describe("Controller Retry Logic (BR-NOT-054)", func() {
 					Subject:  "Integration Test: Retry with Exponential Backoff",
 					Body:     "Testing automatic retry logic with mock file delivery",
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole, // Should succeed
-						notificationv1alpha1.ChannelFile,    // Will fail
-					},
 					// Integration Test Optimization: Use shorter backoff for faster tests
 					// Production default: 30s initial, 480s max
 					// Integration override: 1s initial, 10s max (~20s total for 5 attempts)
@@ -126,6 +122,9 @@ var _ = Describe("Controller Retry Logic (BR-NOT-054)", func() {
 						InitialBackoffSeconds: 1,  // 1s instead of 30s for fast tests
 						BackoffMultiplier:     2,  // Same as production (exponential 2x)
 						MaxBackoffSeconds:     60, // Minimum allowed by CRD validation
+					},
+					Metadata: map[string]string{
+						"test-channel-set": "console-file",
 					},
 				},
 			}
@@ -286,8 +285,8 @@ var _ = Describe("Controller Retry Logic (BR-NOT-054)", func() {
 			// Register mock service
 			deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelFile), mockFileService)
 			DeferCleanup(func() {
-				// Restore original state (file service not registered in suite)
-				deliveryOrchestrator.UnregisterChannel(string(notificationv1alpha1.ChannelFile))
+				// Restore original file service
+				deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelFile), originalFileService)
 			})
 
 			// ========================================
@@ -307,14 +306,14 @@ var _ = Describe("Controller Retry Logic (BR-NOT-054)", func() {
 					Subject:  "Integration Test: Retry Until Success",
 					Body:     "Testing that retries stop after first success",
 					Priority: notificationv1alpha1.NotificationPriorityHigh,
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelFile,
-					},
 					RetryPolicy: &notificationv1alpha1.RetryPolicy{
 						MaxAttempts:           5,
 						InitialBackoffSeconds: 1,
 						BackoffMultiplier:     2,
 						MaxBackoffSeconds:     60, // Minimum allowed by CRD validation
+					},
+					Metadata: map[string]string{
+						"test-channel-set": "file-only",
 					},
 				},
 			}

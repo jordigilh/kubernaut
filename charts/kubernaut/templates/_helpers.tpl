@@ -78,11 +78,13 @@ postgresql-secret
 
 {{/*
 Return the Secret name for DataStorage DB credentials.
-Uses existingSecret if set, otherwise the chart-managed "datastorage-db-secret".
+DataStorage uses a db-secrets.yaml key (different format from PostgreSQL's
+POSTGRES_USER/PASSWORD/DB keys), so it supports its own existingSecret field.
+Precedence: datastorage.dbExistingSecret > chart-managed "datastorage-db-secret".
 */}}
 {{- define "kubernaut.datastorage.dbSecretName" -}}
-{{- if .Values.postgresql.auth.existingSecret -}}
-{{- .Values.postgresql.auth.existingSecret -}}
+{{- if .Values.datastorage.dbExistingSecret -}}
+{{- .Values.datastorage.dbExistingSecret -}}
 {{- else -}}
 datastorage-db-secret
 {{- end -}}
@@ -98,4 +100,41 @@ Uses existingSecret if set, otherwise the chart-managed "redis-secret".
 {{- else -}}
 redis-secret
 {{- end -}}
+{{- end }}
+
+{{/*
+Render a namespace-scoped Role + RoleBinding for configmaps/secrets read access (#229).
+Keeps sensitive resources out of ClusterRoles while providing necessary namespace-local access.
+Usage: {{ include "kubernaut.nsRoleForSecrets" (dict "name" "gateway" "serviceAccount" "gateway" "Release" .Release "labels" (include "kubernaut.labels" .)) }}
+*/}}
+{{- define "kubernaut.nsRoleForSecrets" -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .name }}-ns-role
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: {{ .serviceAccount }}
+    {{- .labels | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps", "secrets"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .name }}-ns-rolebinding
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: {{ .serviceAccount }}
+    {{- .labels | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ .name }}-ns-role
+subjects:
+  - kind: ServiceAccount
+    name: {{ .serviceAccount }}
+    namespace: {{ .Release.Namespace }}
 {{- end }}

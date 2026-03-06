@@ -13,7 +13,7 @@ Name | Type | Description | Notes
 **notification_type** | **str** | Alias for type (matches CRD NotificationType enum) | [optional] 
 **priority** | **str** | Notification priority (matches api/notification/v1alpha1/notificationrequest_types.go:47-50) | [optional] 
 **final_status** | **str** | Final status of the notification (matches api/notification/v1alpha1/notificationrequest_types.go:60-65) | [optional] 
-**recipients** | [**List[NotificationAuditPayloadRecipientsInner]**](NotificationAuditPayloadRecipientsInner.md) | Array of notification recipients from CRD (BR-NOTIFICATION-001, matches api/notification/v1alpha1/notificationrequest_types.go:80-102) | [optional] 
+**delivery_channels** | **List[str]** | Channels the notification was delivered to, extracted from status.deliveryAttempts (e.g. \&quot;slack\&quot;, \&quot;console\&quot;, \&quot;file\&quot;) | [optional] 
 **cancelled_by** | **str** | Username who cancelled the notification | [optional] 
 **user_uid** | **str** | UID of the user who performed the action | [optional] 
 **user_groups** | **List[str]** | Groups of the user who performed the action | [optional] 

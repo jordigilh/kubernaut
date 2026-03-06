@@ -89,11 +89,12 @@ class TestProblemResolvedIntegrationPattern:
     """Tests for how problem_resolved scenario integrates with test suite."""
 
     def test_problem_resolved_scenario_count(self):
-        """Verify we have the expected number of scenarios (11 total including problem_resolved and rca_incomplete)."""
+        """Verify we have the expected number of scenarios (12 total)."""
         expected_scenarios = {
             "oomkilled",
             "crashloop",
             "node_not_ready",
+            "cert_not_ready",
             "test_signal",
             "no_workflow_found",
             "low_confidence",

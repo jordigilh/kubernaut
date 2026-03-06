@@ -87,20 +87,9 @@ const DefaultCooldownPeriod = 5 * time.Minute
 
 // DeduplicationSettings contains deduplication configuration.
 //
-// DEPRECATED: TTL-based deduplication removed in DD-GATEWAY-011
-// Gateway now uses status-based deduplication via RemediationRequest CRD phase.
-// The TTL field is preserved for backwards compatibility only - it is NOT used.
+// DD-GATEWAY-011: Gateway uses status-based deduplication via RemediationRequest CRD phase.
+// TTL-based deduplication was removed; deduplication window = CRD lifecycle.
 type DeduplicationSettings struct {
-	// TTL for deduplication fingerprints
-	//
-	// DEPRECATED: No longer used (DD-GATEWAY-011)
-	// Gateway uses RemediationRequest CRD phase for deduplication, not time-based expiration.
-	// This field is parsed for backwards compatibility but has NO EFFECT on Gateway behavior.
-	//
-	// Migration: Remove this field from your configuration files.
-	// Status-based deduplication is automatic and requires no configuration.
-	TTL time.Duration `yaml:"ttl"` // DEPRECATED: No effect
-
 	// CooldownPeriod is the duration after a successful remediation during which
 	// new signals for the same fingerprint are deduplicated. This prevents
 	// creating RRs from stale alert re-fires and avoids wasted LLM calls.
@@ -297,13 +286,7 @@ func LoadFromFile(path string) (*ServerConfig, error) {
 func (c *ServerConfig) LoadFromEnv() {
 	// ADR-030: DataStorage URL now comes from YAML ConfigMap only (not env vars).
 	// GATEWAY_DATA_STORAGE_URL env override removed -- use datastorage.url in YAML.
-
-	// Processing settings (DEPRECATED: TTL has no effect per DD-GATEWAY-011)
-	if dedupTTLStr := os.Getenv("GATEWAY_DEDUP_TTL"); dedupTTLStr != "" {
-		if dedupTTL, err := time.ParseDuration(dedupTTLStr); err == nil {
-			c.Processing.Deduplication.TTL = dedupTTL
-		}
-	}
+	// GATEWAY_DEDUP_TTL removed (DD-GATEWAY-011: TTL-based deduplication deprecated).
 }
 
 // Validate checks if the configuration is valid.
@@ -380,44 +363,6 @@ func (c *ServerConfig) Validate() error {
 		)
 		err.Impact = "May increase connection establishment overhead"
 		err.Documentation = "docs/services/stateless/gateway-service/configuration.md#server"
-		return err
-	}
-
-	// Deduplication TTL validation
-	// DEPRECATED: TTL-based deduplication removed in DD-GATEWAY-011
-	// Gateway now uses status-based deduplication via RemediationRequest CRD phase.
-	// Validation kept for backwards compatibility only - field has NO EFFECT.
-	if c.Processing.Deduplication.TTL < 0 {
-		err := NewConfigError(
-			"processing.deduplication.ttl",
-			c.Processing.Deduplication.TTL.String(),
-			"must be >= 0",
-			"DEPRECATED: This field no longer affects Gateway behavior (DD-GATEWAY-011). Remove from config.",
-		)
-		err.Impact = "Negative TTL is invalid (but field is deprecated and unused)"
-		err.Documentation = "docs/services/stateless/gateway-service/configuration.md#deduplication"
-		return err
-	}
-	if c.Processing.Deduplication.TTL > 0 && c.Processing.Deduplication.TTL < 10*time.Second {
-		err := NewConfigError(
-			"processing.deduplication.ttl",
-			c.Processing.Deduplication.TTL.String(),
-			"below minimum threshold (< 10s)",
-			"DEPRECATED: This field no longer affects Gateway behavior (DD-GATEWAY-011). Remove from config.",
-		)
-		err.Impact = "Invalid range (but field is deprecated and unused)"
-		err.Documentation = "docs/services/stateless/gateway-service/configuration.md#deduplication"
-		return err
-	}
-	if c.Processing.Deduplication.TTL > 24*time.Hour {
-		err := NewConfigError(
-			"processing.deduplication.ttl",
-			c.Processing.Deduplication.TTL.String(),
-			"exceeds recommended maximum (24h)",
-			"DEPRECATED: This field no longer affects Gateway behavior (DD-GATEWAY-011). Remove from config.",
-		)
-		err.Impact = "Exceeds maximum (but field is deprecated and unused)"
-		err.Documentation = "docs/services/stateless/gateway-service/configuration.md#deduplication"
 		return err
 	}
 

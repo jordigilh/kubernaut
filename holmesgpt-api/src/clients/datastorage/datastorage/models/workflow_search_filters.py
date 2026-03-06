@@ -31,7 +31,6 @@ class WorkflowSearchFilters(BaseModel):
     """
     WorkflowSearchFilters
     """ # noqa: E501
-    signal_name: StrictStr = Field(description="Signal name (mandatory: OOMKilled, CrashLoopBackOff, etc.)", alias="signalName")
     severity: StrictStr = Field(description="Severity level (mandatory: critical, high, medium, low)")
     component: StrictStr = Field(description="Component type (mandatory: pod, node, deployment, etc.)")
     environment: StrictStr = Field(description="Environment filter (mandatory, single value from Signal Processing)")
@@ -39,7 +38,7 @@ class WorkflowSearchFilters(BaseModel):
     custom_labels: Optional[Dict[str, List[StrictStr]]] = Field(default=None, description="Customer-defined labels (DD-WORKFLOW-001 v1.5) - subdomain-based format", alias="customLabels")
     detected_labels: Optional[DetectedLabels] = Field(default=None, alias="detectedLabels")
     status: Optional[List[StrictStr]] = Field(default=None, description="Workflow lifecycle status filter")
-    __properties: ClassVar[List[str]] = ["signalName", "severity", "component", "environment", "priority", "customLabels", "detectedLabels", "status"]
+    __properties: ClassVar[List[str]] = ["severity", "component", "environment", "priority", "customLabels", "detectedLabels", "status"]
 
     @field_validator('severity')
     def severity_validate_enum(cls, value):
@@ -118,7 +117,6 @@ class WorkflowSearchFilters(BaseModel):
             return cls.model_validate(obj)
 
         _obj = cls.model_validate({
-            "signalName": obj.get("signalName"),
             "severity": obj.get("severity"),
             "component": obj.get("component"),
             "environment": obj.get("environment"),

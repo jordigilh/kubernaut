@@ -67,6 +67,12 @@ func NewEffectivenessAssessmentCreator(c client.Client, s *runtime.Scheme, m *me
 	}
 }
 
+// StabilizationWindow returns the configured stabilization window duration.
+// Used by the RO reconciler to compute hashComputeAfter for async targets (DD-EM-004).
+func (c *EffectivenessAssessmentCreator) StabilizationWindow() time.Duration {
+	return c.stabilizationWindow
+}
+
 // DualTarget carries both the signal-sourced and remediation-sourced targets for
 // effectiveness assessment (DD-EM-003).
 //
@@ -84,17 +90,27 @@ type DualTarget struct {
 //   - SignalTarget: from dualTarget.Signal (signal-sourced resource)
 //   - RemediationTarget: from dualTarget.Remediation (AI-identified resource)
 //   - Config.StabilizationWindow: from RO's EACreationConfig
+//   - Config.HashComputeDelay: Duration-based hash deferral (DD-EM-004, #277)
+//   - Config.AlertCheckDelay: Duration-based alert deferral for proactive signals (#277)
 //   - RemediationRequestPhase: RR.Status.OverallPhase at creation time (immutable spec field)
 //   - OwnerReference: RR (for cascade deletion, BR-ORCH-031)
 //
 // The dualTarget parameter is optional. When non-nil, it provides both signal and remediation
 // targets (DD-EM-003). When nil, falls back to RR.Spec.TargetResource for both.
 //
+// The hashComputeDelay parameter is optional. When non-nil, the EM will defer hash computation
+// by this duration after creation (DD-EM-004, BR-EM-010, #277).
+//
+// The alertCheckDelay parameter is optional. When non-nil, the EM will defer alert resolution
+// checks by this duration beyond StabilizationWindow (#277, BR-EM-009).
+//
 // Returns the EA name if created (or already exists), or an error.
 func (c *EffectivenessAssessmentCreator) CreateEffectivenessAssessment(
 	ctx context.Context,
 	rr *remediationv1.RemediationRequest,
 	dualTarget *DualTarget,
+	hashComputeDelay *metav1.Duration,
+	alertCheckDelay *metav1.Duration,
 ) (string, error) {
 	logger := log.FromContext(ctx).WithValues(
 		"remediationRequest", rr.Name,
@@ -142,10 +158,12 @@ func (c *EffectivenessAssessmentCreator) CreateEffectivenessAssessment(
 			RemediationTarget:       remediationTarget,
 			Config: eav1.EAConfig{
 				StabilizationWindow: metav1.Duration{Duration: c.stabilizationWindow},
+				HashComputeDelay:      hashComputeDelay,
+				AlertCheckDelay:     alertCheckDelay,
 			},
 			RemediationCreatedAt:   rrCreatedAt,
-			SignalName:             rr.Spec.SignalName,             // OBS-1: Propagate actual alert name for audit
-			PreRemediationSpecHash: rr.Status.PreRemediationSpecHash, // DD-EM-002: Propagate from RR status
+			SignalName:             rr.Spec.SignalName,
+			PreRemediationSpecHash: rr.Status.PreRemediationSpecHash,
 		},
 	}
 

@@ -33,6 +33,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	"github.com/jordigilh/kubernaut/internal/version"
 	scope "github.com/jordigilh/kubernaut/pkg/shared/scope"
 	"github.com/jordigilh/kubernaut/internal/controller/workflowexecution"
 	"github.com/jordigilh/kubernaut/pkg/audit"
@@ -72,6 +73,12 @@ func main() {
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
+	setupLog.Info("Starting WorkflowExecution Controller",
+		"version", version.Version,
+		"gitCommit", version.GitCommit,
+		"buildDate", version.BuildDate,
+	)
 
 	// Load configuration (file if provided, otherwise defaults)
 	var cfg *weconfig.Config
@@ -165,8 +172,13 @@ func main() {
 	}
 
 	// Create buffered audit store using shared library (DD-AUDIT-002)
-	// Use recommended config for workflowexecution service
-	auditConfig := audit.RecommendedConfig("workflowexecution")
+	// ADR-030: Audit buffer config from YAML (not RecommendedConfig)
+	auditConfig := audit.Config{
+		BufferSize:    cfg.DataStorage.Buffer.BufferSize,
+		BatchSize:     cfg.DataStorage.Buffer.BatchSize,
+		FlushInterval: cfg.DataStorage.Buffer.FlushInterval,
+		MaxRetries:    cfg.DataStorage.Buffer.MaxRetries,
+	}
 	auditStore, err := audit.NewBufferedStore(
 		dsClient,
 		auditConfig,

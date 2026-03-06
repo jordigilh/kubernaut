@@ -85,12 +85,6 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 						Priority: notificationv1alpha1.NotificationPriorityLow,
 						Subject:  fmt.Sprintf("Memory Test Notification %d", i),
 						Body:     "Testing memory stability under load",
-						Recipients: []notificationv1alpha1.Recipient{
-							{Email: "test@example.com"},
-						},
-						Channels: []notificationv1alpha1.Channel{
-							notificationv1alpha1.ChannelConsole,
-						},
 					},
 				}
 
@@ -176,12 +170,6 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 						Priority: notificationv1alpha1.NotificationPriorityMedium,
 						Subject:  fmt.Sprintf("Goroutine Test %d", i),
 						Body:     "Testing goroutine cleanup",
-						Recipients: []notificationv1alpha1.Recipient{
-							{Email: "test@example.com"},
-						},
-						Channels: []notificationv1alpha1.Channel{
-							notificationv1alpha1.ChannelConsole,
-						},
 					},
 				}
 
@@ -274,11 +262,8 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 						Priority: notificationv1alpha1.NotificationPriorityMedium,
 						Subject:  fmt.Sprintf("%s: Connection Test %d", testID, i),
 						Body:     "Testing HTTP connection reuse",
-						Recipients: []notificationv1alpha1.Recipient{
-							{Slack: "#test"},
-						},
-						Channels: []notificationv1alpha1.Channel{
-							notificationv1alpha1.ChannelSlack,
+						Metadata: map[string]string{
+							"test-channel-set": "console-slack",
 						},
 					},
 				}
@@ -365,12 +350,6 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 							Priority: notificationv1alpha1.NotificationPriorityMedium,
 							Subject:  fmt.Sprintf("Pressure Test %d", idx),
 							Body:     "Testing graceful degradation under resource pressure",
-							Recipients: []notificationv1alpha1.Recipient{
-								{Email: "test@example.com"},
-							},
-							Channels: []notificationv1alpha1.Channel{
-								notificationv1alpha1.ChannelConsole,
-							},
 						},
 					}
 
@@ -460,12 +439,6 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 						Priority: notificationv1alpha1.NotificationPriorityLow,
 						Subject:  fmt.Sprintf("Cleanup Test %d", i),
 						Body:     "Testing resource cleanup",
-						Recipients: []notificationv1alpha1.Recipient{
-							{Email: "test@example.com"},
-						},
-						Channels: []notificationv1alpha1.Channel{
-							notificationv1alpha1.ChannelConsole,
-						},
 					},
 				}
 
@@ -601,12 +574,6 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 						Priority: notificationv1alpha1.NotificationPriorityMedium,
 						Subject:  fmt.Sprintf("Burst Test %d", i),
 						Body:     "Testing resource recovery after burst",
-						Recipients: []notificationv1alpha1.Recipient{
-							{Email: "test@example.com"},
-						},
-						Channels: []notificationv1alpha1.Channel{
-							notificationv1alpha1.ChannelConsole,
-						},
 					},
 				}
 

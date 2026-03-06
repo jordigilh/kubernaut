@@ -287,16 +287,13 @@ var _ = Describe("Approval Context Integration", Label("integration", "approval"
 				expectedApproval   bool
 				description        string
 			}{
-			{
-				scenario:   "high_confidence_production",
-				signalType: "OOMKilled",
-				// Mock LLM keyword collision: HAPI includes workflow catalog in prompt,
-				// "crashloop-config-fix-v1" matches "crashloop" check before "oomkilled".
-				// Returns crashloop scenario confidence (0.88) instead of oomkilled (0.95).
-				expectedConfidence: 0.88,
-				expectedApproval:   true, // 0.88 < 0.9 (test threshold) → requires approval
-				description:        "Production with mock confidence 0.88 requires approval (below test threshold 0.9)",
-			},
+		{
+			scenario:           "high_confidence_production",
+			signalType:         "OOMKilled",
+			expectedConfidence: 0.95,
+			expectedApproval:   false, // 0.95 >= 0.8 (Rego threshold) → auto-approved
+			description:        "Production with high confidence 0.95 auto-approved (above Rego threshold 0.8)",
+		},
 				{
 					scenario:           "low_confidence_require_approval",
 					signalType:         "MOCK_LOW_CONFIDENCE", // Mock: 0.35

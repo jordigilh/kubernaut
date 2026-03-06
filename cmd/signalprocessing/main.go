@@ -50,6 +50,7 @@ import (
 	// Kubernaut API imports
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+	"github.com/jordigilh/kubernaut/internal/version"
 	scope "github.com/jordigilh/kubernaut/pkg/shared/scope"
 	"github.com/jordigilh/kubernaut/internal/controller/signalprocessing"
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/audit"
@@ -66,12 +67,6 @@ import (
 var (
 	scheme   = runtime.NewScheme()
 	setupLog = ctrl.Log.WithName("setup")
-
-	// Version information (DD-014: Binary Version Logging)
-	// Set via -ldflags at build time
-	version   = "dev"
-	gitCommit = "unknown"
-	buildDate = "unknown"
 )
 
 func init() {
@@ -96,11 +91,10 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
-	// DD-014: Log version information on startup
-	setupLog.Info("starting signalprocessing controller",
-		"version", version,
-		"gitCommit", gitCommit,
-		"buildDate", buildDate,
+	setupLog.Info("Starting SignalProcessing Controller",
+		"version", version.Version,
+		"gitCommit", version.GitCommit,
+		"buildDate", version.BuildDate,
 	)
 
 	// ========================================
@@ -380,14 +374,17 @@ func main() {
 	setupLog.Info("signalprocessing metrics configured")
 
 	// BR-SP-001: K8s context enricher with caching, timeout, metrics, degraded mode
-	// ADR-030: Enrichment timeout from YAML config (not hardcoded)
+	// ADR-030: Enrichment timeout and cache TTL from YAML config (not hardcoded)
 	k8sEnricher := enricher.NewK8sEnricher(
 		mgr.GetClient(),
 		ctrl.Log.WithName("enricher"),
 		spMetrics,
 		cfg.Enrichment.Timeout,
+		cfg.Enrichment.CacheTTL,
 	)
-	setupLog.Info("k8s enricher configured", "enrichmentTimeout", cfg.Enrichment.Timeout)
+	setupLog.Info("k8s enricher configured",
+		"enrichmentTimeout", cfg.Enrichment.Timeout,
+		"cacheTTL", cfg.Enrichment.CacheTTL)
 
 	// ========================================
 	// DD-PERF-001: Atomic Status Updates

@@ -56,7 +56,8 @@ const (
 	depTestNamespace = "kubernaut-workflows"
 
 	// Base schema without dependencies for backward compat tests
-	depTestBaseSchema = `metadata:
+	depTestBaseSchema = `schemaVersion: "1.0"
+metadata:
   workflowId: dep-test-workflow
   version: "1.0.0"
   description:

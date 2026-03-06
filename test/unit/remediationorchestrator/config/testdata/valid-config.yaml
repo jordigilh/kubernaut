@@ -11,6 +11,7 @@ timeouts:
   processing: 5m
   analyzing: 10m
   executing: 30m
+  verifying: 30m
 
 datastorage:
   url: "http://data-storage-service:8080"

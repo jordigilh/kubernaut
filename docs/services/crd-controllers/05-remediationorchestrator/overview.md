@@ -209,8 +209,9 @@ stateDiagram-v2
     Processing --> Analyzing: RemediationProcessing Ready
     Analyzing --> Executing: AIAnalysis Ready (Approved)
     Analyzing --> Failed: AIAnalysis Rejected
-    Executing --> Completed: WorkflowExecution Completed
+    Executing --> Verifying: WorkflowExecution Completed
     Executing --> Failed: WorkflowExecution Failed
+    Verifying --> Completed: EA Assessment Complete
     Completed --> [*]: Remediation successful
     Failed --> [*]: Manual intervention required
 

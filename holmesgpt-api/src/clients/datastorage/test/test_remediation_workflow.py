@@ -40,6 +40,7 @@ class TestRemediationWorkflow(unittest.TestCase):
                 workflow_name = '',
                 action_type = 'ScaleReplicas',
                 version = '',
+                schema_version = '1.0',
                 name = '',
                 description = datastorage.models.structured_description.StructuredDescription(
                     what = '', 
@@ -57,7 +58,6 @@ class TestRemediationWorkflow(unittest.TestCase):
                 execution_bundle = 'ghcr.io/kubernaut/workflows/oomkill@sha256:abc123...',
                 execution_bundle_digest = 'sha256:abc123...',
                 labels = datastorage.models.mandatory_labels.MandatoryLabels(
-                    signal_name = 'OOMKilled', 
                     severity = ["critical"], 
                     component = 'pod', 
                     environment = ["staging","production"], 
@@ -99,6 +99,7 @@ class TestRemediationWorkflow(unittest.TestCase):
                 workflow_name = '',
                 action_type = 'ScaleReplicas',
                 version = '',
+                schema_version = '1.0',
                 name = '',
                 description = datastorage.models.structured_description.StructuredDescription(
                     what = '', 
@@ -109,7 +110,6 @@ class TestRemediationWorkflow(unittest.TestCase):
                 content_hash = '0123456789101112131415161718192021222324252627282930313233343536373839404142434445464748495051525354555657585960616263',
                 execution_engine = '',
                 labels = datastorage.models.mandatory_labels.MandatoryLabels(
-                    signal_name = 'OOMKilled', 
                     severity = ["critical"], 
                     component = 'pod', 
                     environment = ["staging","production"], 

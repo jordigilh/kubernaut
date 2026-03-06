@@ -50,8 +50,8 @@ Per [TESTING_GUIDELINES.md](../../development/business-requirements/TESTING_GUID
 
 This test plan covers:
 
-- AA controller submit/poll/result handler logic (incident + recovery)
-- HAPI session manager lifecycle and async endpoints (incident + recovery)
+- AA controller submit/poll/result handler logic (incident only; recovery deprecated for v1.0 per BR-AA-HAPI-064.9)
+- HAPI session manager lifecycle and async endpoints (incident only; recovery deprecated for v1.0)
 - `InvestigationSession` CRD tracking, `InvestigationSessionReady` Condition, K8s Events
 - Session regeneration (404 detection, Generation counter, cap at 5)
 - Audit trace validation with **exact** counts at integration tier
@@ -361,7 +361,9 @@ request lifecycle, so the submit → get-result pattern works without polling or
 
 ### 2.5 HTTP Endpoints (Recovery -- Dedicated)
 
-- **UT-HAPI-064-016**: `POST /api/v1/recovery/analyze` returns 202 with session_id
+> **DEPRECATED for v1.0** (BR-AA-HAPI-064.9): Recovery endpoints are deprecated. These test scenarios are deferred until recovery is revisited.
+
+- **UT-HAPI-064-016**: ~~`POST /api/v1/recovery/analyze` returns 202 with session_id~~
   - BR: BR-AA-HAPI-064.9
   - Business Outcome: Recovery investigations use the same async pattern as incident investigations
   - Given: Valid RecoveryRequest body
@@ -452,7 +454,9 @@ request lifecycle, so the submit → get-result pattern works without polling or
 
 ### 3.2 Recovery Flow + Audit Trace Validation (Dedicated)
 
-- **IT-AA-064-007**: Recovery submit/poll/result happy path
+> **DEPRECATED for v1.0** (BR-AA-HAPI-064.9): Recovery investigations are deprecated. These integration test scenarios are deferred.
+
+- **IT-AA-064-007**: ~~Recovery submit/poll/result happy path~~
   - BR: BR-AA-HAPI-064.9
   - Business Outcome: Recovery investigations complete successfully using the async pattern
   - Given: AIAnalysis CRD with `IsRecoveryAttempt=true`
@@ -530,7 +534,9 @@ CRD Events team completed issues #71-#73. These integration tests validate sessi
 
 ### 4.2 Recovery Session Flow (Dedicated)
 
-- **IT-HAPI-064-005**: Recovery submit + poll + result
+> **DEPRECATED for v1.0** (BR-AA-HAPI-064.9): Recovery session endpoints are deprecated. These integration test scenarios are deferred.
+
+- **IT-HAPI-064-005**: ~~Recovery submit + poll + result~~
   - BR: BR-AA-HAPI-064.9
   - Business Outcome: Recovery investigations work end-to-end through the async session pattern
   - Given: RecoveryRequest submitted
@@ -612,7 +618,9 @@ CRD Events team completed issues #71-#73. These integration tests validate sessi
 
 #### Recovery Session Endpoints (3 scenarios)
 
-- **E2E-HAPI-064-007**: Recovery submit/poll/result happy path
+> **DEPRECATED for v1.0** (BR-AA-HAPI-064.9): Recovery session E2E scenarios are deprecated and deferred.
+
+- **E2E-HAPI-064-007**: ~~Recovery submit/poll/result happy path~~
   - BR: BR-AA-HAPI-064.9
   - Business Outcome: Recovery session endpoints work identically to incident endpoints
   - Endpoints: POST /recovery/analyze (202), GET /incident/session/{id}, GET /recovery/session/{id}/result
@@ -631,12 +639,12 @@ CRD Events team completed issues #71-#73. These integration tests validate sessi
 
 #### Complete Lifecycle (1 scenario)
 
-- **E2E-HAPI-064-010**: Full incident then recovery via session endpoints
+- **E2E-HAPI-064-010**: ~~Full incident then recovery via session endpoints~~ **DEPRECATED for v1.0** (BR-AA-HAPI-064.9)
   - BR: BR-AA-HAPI-064.1, .9
-  - Business Outcome: End-to-end incident → recovery lifecycle using session endpoints
-  - Flow: Submit incident → poll → result → simulate failure → submit recovery → poll → result
-  - Assertions: both sessions complete, session IDs distinct, recovery selects workflow
-  - **Status**: Implemented
+  - ~~Business Outcome: End-to-end incident → recovery lifecycle using session endpoints~~
+  - ~~Flow: Submit incident → poll → result → simulate failure → submit recovery → poll → result~~
+  - ~~Assertions: both sessions complete, session IDs distinct, recovery selects workflow~~
+  - **Status**: Deferred (recovery deprecated)
 
 #### Session Error Handling (2 scenarios)
 

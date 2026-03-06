@@ -55,23 +55,30 @@ The original namespace strategy (`docs/architecture/NAMESPACE_STRATEGY.md`) used
 
 ---
 
-#### Alternative 3: Consolidated with Notification Isolation (APPROVED)
+#### Alternative 3: Consolidated with Notification Isolation (SUPERSEDED by Alternative 4)
 **Approach**: Use two namespaces with clear rationale
 - `kubernaut-system`: ALL services and controllers
 - `kubernaut-notifications`: ONLY notification services
 
+**Status**: Superseded by Alternative 4 (#229 — single namespace with RBAC isolation)
+
+**Confidence**: 95% → Superseded
+
+---
+
+#### Alternative 4: Single Namespace with RBAC Isolation (APPROVED — #229)
+**Approach**: ALL services in `kubernaut-system`, with namespace-scoped Roles for
+secrets/configmaps access. Notification isolation achieved via RBAC, not namespace separation.
+
 **Pros**:
-- ✅ Simple default: everything goes to `kubernaut-system`
-- ✅ Clear exception: notifications isolated for security
-- ✅ Easy service discovery within main namespace
-- ✅ Notification isolation enables:
-  - Stricter egress NetworkPolicies
-  - Separate RBAC for sensitive escalation logic
-  - Independent scaling and monitoring
-- ✅ Future-proof for notification service expansion
+- ✅ Maximum simplicity: single namespace for all services
+- ✅ No cross-namespace DNS complexity
+- ✅ RBAC isolation via namespace-scoped Roles (secrets/configmaps not in ClusterRoles)
+- ✅ Simpler NetworkPolicy management
+- ✅ All service discovery is namespace-local
 
 **Cons**:
-- ⚠️ Two namespaces (minimal complexity vs Alternative 1)
+- ⚠️ Less blast-radius isolation than separate namespace (mitigated by RBAC)
 
 **Confidence**: 95% (approved)
 
@@ -79,15 +86,15 @@ The original namespace strategy (`docs/architecture/NAMESPACE_STRATEGY.md`) used
 
 ### Decision
 
-**APPROVED: Alternative 3** - Consolidated Namespace Strategy with Notification Isolation
+**APPROVED: Alternative 4** - Single Namespace with RBAC Isolation (#229)
 
 **Rationale**:
-1. **Simplicity First**: Default to `kubernaut-system` for all services
-2. **Security Isolation**: Notifications handle sensitive escalation → deserve isolation
-3. **Operational Clarity**: Easy to remember "everything in system, except notifications"
-4. **Future-Proof**: Allows notification service expansion without namespace sprawl
+1. **Simplicity First**: All services in `kubernaut-system`
+2. **RBAC Isolation**: Namespace-scoped Roles replace namespace-based isolation for secrets/configmaps (#229)
+3. **Operational Clarity**: Single namespace eliminates cross-namespace communication complexity
+4. **Security**: ClusterRoles no longer grant cluster-wide secrets/configmaps access
 
-**Key Insight**: The right number of namespaces is "as few as possible, as many as necessary". Two namespaces with clear rationale is superior to arbitrary splitting by service type.
+**Key Insight**: RBAC-based isolation (namespace-scoped Roles) is more precise than namespace-based isolation, and eliminates the operational overhead of cross-namespace service discovery and NetworkPolicies.
 
 ### Implementation
 
@@ -114,7 +121,7 @@ metadata:
     app.kubernetes.io/part-of: kubernaut
 ```
 
-**Service Allocation**:
+**Service Allocation** (Updated #229 — single namespace):
 
 | Service/Controller | Namespace | Rationale |
 |---|---|---|
@@ -123,7 +130,7 @@ metadata:
 | **Data Storage** | `kubernaut-system` | Audit trail persistence |
 | **HolmesGPT API** | `kubernaut-system` | AI analysis service |
 | **Dynamic Toolset** | `kubernaut-system` | Tool configuration service |
-| **Notification** | `kubernaut-notifications` | ⚠️ **ISOLATED** - Handles sensitive escalations |
+| **Notification** | `kubernaut-system` | RBAC-isolated via namespace-scoped Role (#229) |
 | **RemediationOrchestrator** | `kubernaut-system` | CRD controller |
 | **RemediationProcessor** | `kubernaut-system` | CRD controller |
 | **AIAnalysis** | `kubernaut-system` | CRD controller |

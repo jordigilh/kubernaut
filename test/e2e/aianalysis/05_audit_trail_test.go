@@ -11,6 +11,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	aianalysisv1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	aianalysisaudit "github.com/jordigilh/kubernaut/pkg/aianalysis/audit"
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
@@ -466,8 +467,8 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 
 			// Verify outcome is valid
 			outcome := payload.Outcome
-			Expect([]string{"approved", "requires_approval"}).To(ContainElement(outcome),
-				"Outcome should be 'approved' or 'requires_approval'")
+			Expect([]string{aianalysis.OutcomeAutoApproved, aianalysis.OutcomeRequiresApproval}).To(ContainElement(outcome),
+				"Outcome should be 'auto_approved' or 'requires_approval'")
 
 			// Verify degraded flag is boolean
 			degraded := payload.Degraded

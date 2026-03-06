@@ -1176,7 +1176,7 @@ paths:
         **SOC2 Requirements**: CC8.1 (Audit Export), AU-9 (Audit Protection)
 
         **Behavior**:
-        - Success: Returns 200 OK with signed export (JSON or CSV)
+        - Success: Returns 200 OK with signed export (JSON)
         - Validation Error: Returns 400 Bad Request (invalid date range, etc.)
         - Unauthorized: Returns 401 if X-Auth-Request-User header missing
         - Too Many Records: Returns 413 Payload Too Large (>10,000 events, use pagination)
@@ -1185,7 +1185,6 @@ paths:
 
         **Export Formats**:
         - JSON: Complete event data with hash chain verification
-        - CSV: Flattened tabular format for spreadsheet analysis
 
         **Hash Chain Verification**:
         - Each export includes hash chain integrity status
@@ -1203,7 +1202,7 @@ paths:
         - Signature covers ALL pages (use same query for verification)
 
         **Metrics Emitted**:
-        - `datastorage_export_successes_total{format="json|csv"}`
+        - `datastorage_export_successes_total{format="json"}`
         - `datastorage_export_failures_total{reason="unauthorized|validation|..."}`
       operationId: exportAuditEvents
       parameters:
@@ -1242,9 +1241,9 @@ paths:
           required: false
           schema:
             type: string
-            enum: [json, csv]
+            enum: [json]
             default: json
-          description: Export format (json or csv)
+          description: Export format (json)
         - name: include_detached_signature
           in: query
           required: false
@@ -2317,6 +2316,9 @@ components:
               'orchestrator.lifecycle.created': '#/components/schemas/RemediationOrchestratorAuditPayload'
               'orchestrator.lifecycle.completed': '#/components/schemas/RemediationOrchestratorAuditPayload'
               'orchestrator.lifecycle.failed': '#/components/schemas/RemediationOrchestratorAuditPayload'
+              'orchestrator.lifecycle.verifying_started': '#/components/schemas/RemediationOrchestratorAuditPayload'
+              'orchestrator.lifecycle.verification_completed': '#/components/schemas/RemediationOrchestratorAuditPayload'
+              'orchestrator.lifecycle.verification_timed_out': '#/components/schemas/RemediationOrchestratorAuditPayload'
               'orchestrator.lifecycle.transitioned': '#/components/schemas/RemediationOrchestratorAuditPayload'
               'orchestrator.approval.requested': '#/components/schemas/RemediationOrchestratorAuditPayload'
               'orchestrator.approval.approved': '#/components/schemas/RemediationOrchestratorAuditPayload'
@@ -2337,6 +2339,7 @@ components:
               'orchestrator.remediation.manual_review': '#/components/schemas/RemediationOrchestratorAuditPayload'
               'orchestrator.routing.blocked': '#/components/schemas/RemediationOrchestratorAuditPayload'
               'remediation.workflow_created': '#/components/schemas/RemediationOrchestratorAuditPayload'
+              'orchestrator.ea.created': '#/components/schemas/RemediationOrchestratorAuditPayload'
               'webhook.notification.cancelled': '#/components/schemas/NotificationAuditPayload'
               'webhook.notification.acknowledged': '#/components/schemas/NotificationAuditPayload'
               'workflowexecution.block.cleared': '#/components/schemas/WorkflowExecutionWebhookAuditPayload'
@@ -2539,6 +2542,9 @@ components:
         version:
           type: string
           description: "Semantic version"
+        schemaVersion:
+          type: string
+          description: "Schema format version (e.g., 1.0, 1.1). #255"
         schemaImage:
           type: string
           description: "OCI image used to extract the workflow schema"
@@ -2640,16 +2646,11 @@ components:
     WorkflowSearchFilters:
       type: object
       required:
-        - signalName
         - severity
         - component
         - environment
         - priority
       properties:
-        signalName:
-          type: string
-          description: "Signal name (mandatory: OOMKilled, CrashLoopBackOff, etc.)"
-          example: "OOMKilled"
         severity:
           type: string
           description: "Severity level (mandatory: critical, high, medium, low)"
@@ -2681,17 +2682,13 @@ components:
 
     MandatoryLabels:
       type: object
-      description: "4 mandatory + 1 optional workflow labels (DD-WORKFLOW-016: signalName now optional)"
+      description: "4 mandatory workflow labels (Issue #274: signalName removed per DD-WORKFLOW-016)"
       required:
         - severity
         - component
         - environment
         - priority
       properties:
-        signalName:
-          type: string
-          description: "Signal name this workflow handles (optional metadata per DD-WORKFLOW-016)"
-          example: "OOMKilled"
         severity:
           type: array
           items:
@@ -2803,9 +2800,9 @@ components:
         description:
           type: string
           description: "Workflow description"
-        signalName:
+        schemaVersion:
           type: string
-          description: "Signal name this workflow handles"
+          description: "Schema format version (e.g., 1.0, 1.1). #255"
         schemaImage:
           type: string
           description: "OCI image used to extract the workflow schema"
@@ -2875,6 +2872,7 @@ components:
       required:
         - workflowName
         - version
+        - schemaVersion
         - name
         - description
         - content
@@ -2900,6 +2898,11 @@ components:
           type: string
           maxLength: 50
           description: "Semantic version (e.g., v1.0.0)"
+        schemaVersion:
+          type: string
+          maxLength: 10
+          description: "Schema format version (e.g., 1.0, 1.1). Determines which structural fields are valid. BR-WORKFLOW-004 v1.1, #255."
+          example: "1.0"
         name:
           type: string
           maxLength: 255
@@ -3105,7 +3108,7 @@ components:
               example: "2026-01-07T20:30:00Z"
             export_format:
               type: string
-              enum: [json, csv]
+              enum: [json]
               description: Format of exported data
             query_filters:
               type: object
@@ -3372,7 +3375,7 @@ components:
       properties:
         event_type:
           type: string
-          enum: ['orchestrator.lifecycle.started', 'orchestrator.lifecycle.created', 'orchestrator.lifecycle.completed', 'orchestrator.lifecycle.failed', 'orchestrator.lifecycle.transitioned', 'orchestrator.approval.requested', 'orchestrator.approval.approved', 'orchestrator.approval.rejected', 'orchestrator.remediation.manual_review', 'orchestrator.routing.blocked', 'remediation.workflow_created']
+          enum: ['orchestrator.lifecycle.started', 'orchestrator.lifecycle.created', 'orchestrator.lifecycle.completed', 'orchestrator.lifecycle.failed', 'orchestrator.lifecycle.verifying_started', 'orchestrator.lifecycle.verification_completed', 'orchestrator.lifecycle.verification_timed_out', 'orchestrator.lifecycle.transitioned', 'orchestrator.approval.requested', 'orchestrator.approval.approved', 'orchestrator.approval.rejected', 'orchestrator.remediation.manual_review', 'orchestrator.routing.blocked', 'remediation.workflow_created', 'orchestrator.ea.created']
           description: Event type for discriminator (matches parent event_type)
         # Core Orchestration Fields
         rr_name:
@@ -3486,6 +3489,56 @@ components:
             Propagated from AIAnalysis.SelectedWorkflow.ActionType via HAPI three-step discovery.
             Used by DS remediation history to populate workflowType on entries and summaries.
           example: "ScaleReplicas"
+
+        # EA creation fields (orchestrator.ea.created, Issue #277)
+        ea_name:
+          type: string
+          description: |
+            Name of the EffectivenessAssessment CRD created by the RO.
+            Only present for orchestrator.ea.created events.
+          example: "ea-restart-payment-api-abc123"
+        hash_compute_delay:
+          type: string
+          description: |
+            Duration-based hash compute delay set on the EA config by the RO.
+            Computed from GitOps sync + operator reconcile delays for async targets.
+            Format: Go duration string. Only present for orchestrator.ea.created events.
+            Reference: DD-EM-004, BR-RO-103, Issue #277
+          example: "4m0s"
+        alert_check_delay:
+          type: string
+          description: |
+            Duration-based alert check delay set on the EA config by the RO.
+            Set for proactive signals where the triggering alert needs extra time
+            to resolve. Format: Go duration string.
+            Reference: BR-EM-009, BR-RO-103, Issue #277
+          example: "5m0s"
+        gitops_sync_delay:
+          type: string
+          description: |
+            GitOps sync delay from RO async propagation config.
+            Only present for orchestrator.ea.created events when target is GitOps-managed.
+            Format: Go duration string. Reference: DD-EM-004 v2.0, BR-RO-103.4
+          example: "3m0s"
+        operator_reconcile_delay:
+          type: string
+          description: |
+            Operator reconcile delay from RO async propagation config.
+            Only present for orchestrator.ea.created events when target is CRD-managed.
+            Format: Go duration string. Reference: DD-EM-004 v2.0, BR-RO-103.4
+          example: "1m0s"
+        is_gitops_managed:
+          type: boolean
+          description: |
+            Whether the remediation target was detected as GitOps-managed.
+            Only present for orchestrator.ea.created events.
+          example: true
+        is_crd:
+          type: boolean
+          description: |
+            Whether the remediation target is a CRD (non-built-in group).
+            Only present for orchestrator.ea.created events.
+          example: false
 
     # ========================================
     # SignalProcessing Audit Payload
@@ -3790,33 +3843,11 @@ components:
           type: string
           enum: [Pending, Sending, Sent, Failed, Cancelled]
           description: Final status of the notification (matches api/notification/v1alpha1/notificationrequest_types.go:60-65)
-        recipients:
+        delivery_channels:
           type: array
           items:
-            type: object
-            properties:
-              email:
-                type: string
-                description: Email address (for email channel)
-                example: "user@example.com"
-              slack:
-                type: string
-                description: Slack channel or user (#channel-name or @username)
-                example: "#alerts"
-              teams:
-                type: string
-                description: Teams channel or user
-                example: "team@company.com"
-              phone:
-                type: string
-                description: Phone number in E.164 format
-                example: "+1234567890"
-              webhookURL:
-                type: string
-                description: Webhook URL for webhook channel
-                example: "https://example.com/webhook"
-            description: Notification recipient (matches CRD Recipient struct)
-          description: Array of notification recipients from CRD (BR-NOTIFICATION-001, matches api/notification/v1alpha1/notificationrequest_types.go:80-102)
+            type: string
+          description: Channels the notification was delivered to, extracted from status.deliveryAttempts (e.g. "slack", "console", "file")
         cancelled_by:
           type: string
           description: Username who cancelled the notification
@@ -4122,6 +4153,55 @@ components:
             Computed earliest time for AlertManager check (only for assessment.scheduled events).
             EA.creationTimestamp + stabilizationWindow.
           example: "2026-02-12T15:05:00Z"
+        hash_compute_after:
+          type: string
+          format: date-time
+          description: |
+            Earliest time for hash computation (only for assessment.scheduled events).
+            Set by the RO for async-managed targets (GitOps, operator CRDs) where spec
+            changes propagate after the WorkflowExecution completes. Nil/absent means
+            hash is computed immediately (sync targets).
+            Reference: DD-EM-004, BR-EM-010, BR-RO-103
+          example: "2026-02-12T15:10:00Z"
+        hash_compute_delay:
+          type: string
+          description: |
+            Duration-based hash compute delay from EA spec config (Issue #277).
+            The EM computes hash_compute_after = EA.creationTimestamp + hash_compute_delay.
+            Present only for async-managed targets. Format: Go duration string.
+            Reference: DD-EM-004, BR-EM-010, BR-RO-103, Issue #277
+          example: "4m0s"
+        alert_check_delay:
+          type: string
+          description: |
+            Duration-based alert check delay from EA spec config (Issue #277).
+            Set by the RO for proactive signals where the triggering alert needs
+            extra time to resolve after remediation. Format: Go duration string.
+            Reference: BR-EM-009, BR-RO-103, Issue #277
+          example: "5m0s"
+        gitops_sync_delay:
+          type: string
+          deprecated: true
+          description: |
+            DEPRECATED (Issue #277): Use orchestrator.ea.created event instead.
+            Was: GitOps sync delay propagated via EA spec. Now emitted by the RO
+            in the orchestrator.ea.created audit event.
+          example: "3m0s"
+        operator_reconcile_delay:
+          type: string
+          deprecated: true
+          description: |
+            DEPRECATED (Issue #277): Use orchestrator.ea.created event instead.
+            Was: Operator reconcile delay propagated via EA spec. Now emitted by
+            the RO in the orchestrator.ea.created audit event.
+          example: "1m0s"
+        total_propagation_delay:
+          type: string
+          deprecated: true
+          description: |
+            DEPRECATED (Issue #277): Use hash_compute_delay and alert_check_delay instead.
+            Was: Sum of gitops_sync_delay + operator_reconcile_delay.
+          example: "4m0s"
         validity_window:
           type: string
           description: |
@@ -4316,6 +4396,10 @@ components:
           type: string
           description: Workflow version
           example: "1.0.0"
+        schema_version:
+          type: string
+          description: "Schema format version (e.g., 1.0, 1.1). #255"
+          example: "1.0"
         status:
           type: string
           enum: [active, disabled, archived]

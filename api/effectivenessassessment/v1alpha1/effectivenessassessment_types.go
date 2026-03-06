@@ -51,6 +51,12 @@ const (
 	PhaseCompleted = "Completed"
 	// PhaseFailed indicates the assessment could not be performed (e.g., target not found).
 	PhaseFailed = "Failed"
+	// PhaseWaitingForPropagation indicates the EM is waiting for an async change
+	// (GitOps sync, operator reconciliation) to propagate before computing the hash.
+	// Only entered when EA.Spec.Config.HashComputeDelay is non-nil and the computed
+	// deferral deadline (creation + HashComputeDelay) is in the future.
+	// Reference: DD-EM-004 v2.0, BR-EM-010.3, Issue #253, Issue #277
+	PhaseWaitingForPropagation = "WaitingForPropagation"
 )
 
 // AssessmentReason constants describe why an assessment completed with a particular outcome.
@@ -85,11 +91,12 @@ type EffectivenessAssessmentSpec struct {
 
 	// RemediationRequestPhase is the RemediationRequest's OverallPhase at the time
 	// the EA was created. Captured as an immutable spec field so the EM can branch
-	// assessment logic based on the RR outcome (Completed, Failed, TimedOut).
+	// assessment logic based on the RR outcome (Verifying, Completed, Failed, TimedOut).
+	// Verifying: happy path — WFE succeeded, EA created while RR awaits assessment (#280).
 	// Previously stored as the mutable label kubernaut.ai/rr-phase; moved to spec
 	// for immutability and security.
 	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:Enum=Completed;Failed;TimedOut
+	// +kubebuilder:validation:Enum=Verifying;Completed;Failed;TimedOut
 	RemediationRequestPhase string `json:"remediationRequestPhase"`
 
 	// SignalTarget is the resource that triggered the alert.
@@ -145,9 +152,10 @@ type TargetResource struct {
 	Namespace string `json:"namespace,omitempty"`
 }
 
-// EAConfig contains assessment configuration set by RO at creation time.
-// Only StabilizationWindow is set by the RO — it controls how long the EM
-// waits after remediation before starting assessment checks.
+// EAConfig contains assessment configuration set by the RO at creation time.
+// StabilizationWindow controls how long the EM waits after remediation before
+// starting assessment checks. HashComputeDelay and AlertCheckDelay are optional
+// Duration-based delays that the RO computes based on target type and signal mode.
 // All other assessment parameters (PrometheusEnabled, AlertManagerEnabled,
 // ValidityWindow) are EM-internal configuration read from effectivenessmonitor.Config.
 // The EM emits individual component audit events to DataStorage; the overall
@@ -158,12 +166,32 @@ type EAConfig struct {
 	// until the system stabilizes post-remediation.
 	// +kubebuilder:validation:Required
 	StabilizationWindow metav1.Duration `json:"stabilizationWindow"`
+
+	// HashComputeDelay is the duration to defer post-remediation spec hash computation
+	// after EA creation. Set by the RO for async-managed targets (GitOps, operator
+	// CRDs) where spec changes propagate after the WorkflowExecution completes.
+	// The EM computes the deferral deadline as: creation + HashComputeDelay.
+	// Nil means compute immediately (sync workflows, backward compatible).
+	// Reference: DD-EM-004, BR-EM-010, BR-RO-103, Issue #277
+	// +optional
+	HashComputeDelay *metav1.Duration `json:"hashComputeDelay,omitempty"`
+
+	// AlertCheckDelay is an additional duration to defer alert resolution checks
+	// beyond the StabilizationWindow. Set by the RO for proactive (predictive) alerts
+	// where the underlying Prometheus alert (e.g. predict_linear) requires extra time
+	// to resolve after remediation.
+	// The EM computes AlertManagerCheckAfter as:
+	//   creation + StabilizationWindow + AlertCheckDelay
+	// Nil means no additional delay (AlertManagerCheckAfter = PrometheusCheckAfter).
+	// Reference: ADR-EM-001, BR-EM-009, Issue #277
+	// +optional
+	AlertCheckDelay *metav1.Duration `json:"alertCheckDelay,omitempty"`
 }
 
 // EffectivenessAssessmentStatus defines the observed state of an EffectivenessAssessment.
 type EffectivenessAssessmentStatus struct {
 	// Phase is the current lifecycle phase of the assessment.
-	// +kubebuilder:validation:Enum=Pending;Stabilizing;Assessing;Completed;Failed
+	// +kubebuilder:validation:Enum=Pending;WaitingForPropagation;Stabilizing;Assessing;Completed;Failed
 	Phase string `json:"phase,omitempty"`
 
 	// ValidityDeadline is the absolute time after which the assessment expires.
@@ -186,9 +214,11 @@ type EffectivenessAssessmentStatus struct {
 
 	// AlertManagerCheckAfter is the earliest time to check AlertManager for alert resolution.
 	// Computed by the EM controller on first reconciliation as:
-	//   EA.creationTimestamp + StabilizationWindow (from EA spec).
+	//   EA.creationTimestamp + StabilizationWindow + AlertCheckDelay (if set).
+	// When AlertCheckDelay is nil, equals PrometheusCheckAfter.
 	// Stored in status to avoid recomputation on every reconcile and for
 	// operator observability of the assessment timeline.
+	// Reference: ADR-EM-001, Issue #277
 	// +optional
 	AlertManagerCheckAfter *metav1.Time `json:"alertManagerCheckAfter,omitempty"`
 

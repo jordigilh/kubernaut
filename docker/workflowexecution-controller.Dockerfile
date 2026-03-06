@@ -7,6 +7,9 @@ FROM registry.access.redhat.com/ubi9/go-toolset:1.25 AS builder
 ARG GOFLAGS=""
 ARG GOOS=linux
 ARG GOARCH=amd64
+ARG APP_VERSION=dev
+ARG GIT_COMMIT=unknown
+ARG BUILD_DATE=unknown
 
 # Switch to root for package installation
 USER root
@@ -38,13 +41,14 @@ RUN if [ "${GOFLAGS}" = "-cover" ]; then \
 	echo "   Simple build (no -a, -installsuffix, -extldflags)"; \
 	CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} GOFLAGS=${GOFLAGS} go build \
 	-mod=mod \
+	-ldflags="-X github.com/jordigilh/kubernaut/internal/version.Version=${APP_VERSION} -X github.com/jordigilh/kubernaut/internal/version.GitCommit=${GIT_COMMIT} -X github.com/jordigilh/kubernaut/internal/version.BuildDate=${BUILD_DATE}" \
 	-o workflowexecution \
 	./cmd/workflowexecution; \
 	else \
 	echo "🚀 Production build with optimizations..."; \
 	CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go build \
 	-mod=mod \
-	-ldflags='-w -s -extldflags "-static"' \
+	-ldflags="-w -s -extldflags '-static' -X github.com/jordigilh/kubernaut/internal/version.Version=${APP_VERSION} -X github.com/jordigilh/kubernaut/internal/version.GitCommit=${GIT_COMMIT} -X github.com/jordigilh/kubernaut/internal/version.BuildDate=${BUILD_DATE}" \
 	-a -installsuffix cgo \
 	-o workflowexecution \
 	./cmd/workflowexecution; \
@@ -79,6 +83,13 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
 
 # Set entrypoint
 ENTRYPOINT ["/usr/local/bin/workflowexecution"]
+
+# OCI standard labels
+LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \
+	org.opencontainers.image.version="${APP_VERSION}" \
+	org.opencontainers.image.revision="${GIT_COMMIT}" \
+	org.opencontainers.image.created="${BUILD_DATE}" \
+	org.opencontainers.image.title="kubernaut-workflowexecution"
 
 # Red Hat UBI9 compatible metadata labels
 LABEL name="kubernaut-workflowexecution" \

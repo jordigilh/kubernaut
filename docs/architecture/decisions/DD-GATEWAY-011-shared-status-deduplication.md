@@ -114,6 +114,7 @@ This design decision establishes a **shared status ownership pattern** for the `
 | Analyzing | No | Update deduplication |
 | Approving | No | Update deduplication |
 | Executing | No | Update deduplication |
+| Verifying | No | Update deduplication |
 | Recovering | No | Update deduplication |
 | **Blocked** | **No** | Update deduplication (prevents new RR creation) |
 | Completed | Yes | Create new RR |

@@ -3,7 +3,7 @@ kind: Namespace
 metadata:
   name: demo-netpol
   labels:
-    kubernaut.ai/environment: production
+    kubernaut.ai/environment: staging
     kubernaut.ai/business-unit: engineering
     kubernaut.ai/service-owner: backend-team
     kubernaut.ai/criticality: high

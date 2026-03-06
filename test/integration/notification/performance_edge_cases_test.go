@@ -74,12 +74,6 @@ var _ = Describe("Category 8: Performance Edge Cases", Label("integration", "per
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Small Payload Performance Test",
 					Body:     smallBody,
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
 				},
 			}
 
@@ -130,12 +124,6 @@ var _ = Describe("Category 8: Performance Edge Cases", Label("integration", "per
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Large Payload Performance Test",
 					Body:     largeBody,
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
 				},
 			}
 
@@ -203,12 +191,6 @@ var _ = Describe("Category 8: Performance Edge Cases", Label("integration", "per
 						Priority: notificationv1alpha1.NotificationPriorityMedium,
 						Subject:  fmt.Sprintf("Batch Load Test %d", i),
 						Body:     largeBody,
-						Recipients: []notificationv1alpha1.Recipient{
-							{Email: "test@example.com"},
-						},
-						Channels: []notificationv1alpha1.Channel{
-							notificationv1alpha1.ChannelConsole,
-						},
 					},
 				}
 
@@ -278,12 +260,6 @@ var _ = Describe("Category 8: Performance Edge Cases", Label("integration", "per
 					Priority: notificationv1alpha1.NotificationPriorityHigh,
 					Subject:  "Fast Response Test",
 					Body:     "Testing fast Slack webhook response",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#test"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelSlack,
-					},
 				},
 			}
 
@@ -367,12 +343,6 @@ var _ = Describe("Category 8: Performance Edge Cases", Label("integration", "per
 						Priority: priority,
 						Subject:  fmt.Sprintf("Mixed Workload Test %d", i),
 						Body:     body,
-						Recipients: []notificationv1alpha1.Recipient{
-							{Email: "test@example.com"},
-						},
-						Channels: []notificationv1alpha1.Channel{
-							notificationv1alpha1.ChannelConsole,
-						},
 					},
 				}
 
@@ -448,12 +418,6 @@ var _ = Describe("Category 8: Performance Edge Cases", Label("integration", "per
 						Priority: notificationv1alpha1.NotificationPriorityMedium,
 						Subject:  fmt.Sprintf("Burst Test %d", i),
 						Body:     "Testing burst followed by idle period",
-						Recipients: []notificationv1alpha1.Recipient{
-							{Email: "test@example.com"},
-						},
-						Channels: []notificationv1alpha1.Channel{
-							notificationv1alpha1.ChannelConsole,
-						},
 					},
 				}
 

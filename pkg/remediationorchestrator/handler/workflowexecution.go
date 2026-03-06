@@ -48,7 +48,7 @@ type WorkflowExecutionHandler struct {
 	scheme                *runtime.Scheme
 	metrics               *metrics.Metrics
 	transitionToFailed    func(context.Context, *remediationv1.RemediationRequest, string, error) (ctrl.Result, error)
-	transitionToCompleted func(context.Context, *remediationv1.RemediationRequest, string) (ctrl.Result, error)
+	transitionToVerifying func(context.Context, *remediationv1.RemediationRequest, string) (ctrl.Result, error)
 }
 
 // NewWorkflowExecutionHandler creates a new WorkflowExecutionHandler.
@@ -58,23 +58,23 @@ type WorkflowExecutionHandler struct {
 // - s: Scheme for runtime type information
 // - m: Metrics for observability (DD-METRICS-001)
 // - ttf: Callback to reconciler's transitionToFailed() for audit emission
-// - ttc: Callback to reconciler's transitionToCompleted() for audit emission
+// - ttv: Callback to reconciler's transitionToVerifying() for audit emission
 //
-// The transition callbacks allow the handler to trigger terminal state transitions
+// The transition callbacks allow the handler to trigger state transitions
 // while preserving the reconciler's responsibility for audit event emission (DD-AUDIT-003).
 func NewWorkflowExecutionHandler(
 	c client.Client,
 	s *runtime.Scheme,
 	m *metrics.Metrics,
 	ttf func(context.Context, *remediationv1.RemediationRequest, string, error) (ctrl.Result, error),
-	ttc func(context.Context, *remediationv1.RemediationRequest, string) (ctrl.Result, error),
+	ttv func(context.Context, *remediationv1.RemediationRequest, string) (ctrl.Result, error),
 ) *WorkflowExecutionHandler {
 	return &WorkflowExecutionHandler{
 		client:                c,
 		scheme:                s,
 		metrics:               m,
 		transitionToFailed:    ttf,
-		transitionToCompleted: ttc,
+		transitionToVerifying: ttv,
 	}
 }
 
@@ -82,7 +82,7 @@ func NewWorkflowExecutionHandler(
 //
 // Flow:
 // 1. Check WorkflowExecution phase
-// 2. If Completed → set WorkflowExecutionComplete condition + transition RR to Completed
+// 2. If Completed → set WorkflowExecutionComplete condition + transition RR to Verifying (#280)
 // 3. If Failed → set WorkflowExecutionComplete condition (false) + transition RR to Failed
 // 4. If empty phase → handle as missing/deleted WE (error case)
 // 5. If Pending/Running → requeue and wait
@@ -108,14 +108,14 @@ func (h *WorkflowExecutionHandler) HandleStatus(
 
 	switch we.Status.Phase {
 	case workflowexecutionv1.PhaseCompleted:
-		logger.Info("WorkflowExecution completed, transitioning to Completed")
+		logger.Info("WorkflowExecution completed, transitioning to Verifying")
 
 		// Note: WorkflowExecutionComplete condition is set by the reconciler
-		// via DD-PERF-001 atomic status update before calling transitionToCompleted.
+		// via DD-PERF-001 atomic status update before calling transitionToVerifying.
 		// This handler focuses on phase transition logic only.
 
-		// Delegate to reconciler's transitionToCompleted() for audit emission (DD-AUDIT-003)
-		return h.transitionToCompleted(ctx, rr, "Remediated") // CRD enum: Remediated, NoActionRequired, ManualReviewRequired
+		// Delegate to reconciler's transitionToVerifying() for audit emission (DD-AUDIT-003)
+		return h.transitionToVerifying(ctx, rr, "Remediated") // CRD enum: Remediated, NoActionRequired, ManualReviewRequired
 
 	case workflowexecutionv1.PhaseFailed:
 		logger.Info("WorkflowExecution failed, transitioning to Failed")

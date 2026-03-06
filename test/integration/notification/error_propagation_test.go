@@ -73,11 +73,8 @@ var _ = Describe("Category 9: Error Propagation", Label("integration", "error-pr
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Error Propagation Test",
 					Body:     "Testing error visibility in status",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#test"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelSlack,
+					Metadata: map[string]string{
+						"test-channel-set": "console-slack",
 					},
 				},
 			}
@@ -140,12 +137,6 @@ var _ = Describe("Category 9: Error Propagation", Label("integration", "error-pr
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Large Error Message Test",
 					Body:     largeBody,
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
 				},
 			}
 
@@ -198,12 +189,6 @@ var _ = Describe("Category 9: Error Propagation", Label("integration", "error-pr
 					Priority: notificationv1alpha1.NotificationPriorityLow,
 					Subject:  "Context Cancellation Test",
 					Body:     "Testing graceful context cancellation",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
 				},
 			}
 
@@ -250,12 +235,6 @@ var _ = Describe("Category 9: Error Propagation", Label("integration", "error-pr
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Context Deadline Test",
 					Body:     "Testing deadline handling",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
 				},
 			}
 
@@ -311,12 +290,6 @@ var _ = Describe("Category 9: Error Propagation", Label("integration", "error-pr
 						Priority: notificationv1alpha1.NotificationPriorityMedium,
 						Subject:  fmt.Sprintf("Panic Recovery Test %d", i),
 						Body:     "Testing panic recovery and system resilience",
-						Recipients: []notificationv1alpha1.Recipient{
-							{Email: "test@example.com"},
-						},
-						Channels: []notificationv1alpha1.Channel{
-							notificationv1alpha1.ChannelConsole,
-						},
 					},
 				}
 
@@ -389,12 +362,6 @@ var _ = Describe("Category 9: Error Propagation", Label("integration", "error-pr
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Nil Error Handling Test",
 					Body:     "Testing defensive nil error handling",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
 				},
 			}
 
@@ -444,12 +411,6 @@ var _ = Describe("Category 9: Error Propagation", Label("integration", "error-pr
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Error Serialization Test",
 					Body:     "Testing error serialization fallback",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
 				},
 			}
 
@@ -495,12 +456,6 @@ var _ = Describe("Category 9: Error Propagation", Label("integration", "error-pr
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Nested Error Test",
 					Body:     "Testing error unwrapping and chain handling",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Email: "test@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-					},
 				},
 			}
 
@@ -556,12 +511,6 @@ var _ = Describe("Category 9: Error Propagation", Label("integration", "error-pr
 						Priority: notificationv1alpha1.NotificationPriorityMedium,
 						Subject:  fmt.Sprintf("Concurrent Error Test %d", i),
 						Body:     "Testing concurrent error handling",
-						Recipients: []notificationv1alpha1.Recipient{
-							{Email: "test@example.com"},
-						},
-						Channels: []notificationv1alpha1.Channel{
-							notificationv1alpha1.ChannelConsole,
-						},
 					},
 				}
 

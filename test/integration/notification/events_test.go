@@ -103,13 +103,8 @@ var _ = Describe("Notification K8s Event Observability (DD-EVENT-001, BR-NT-095)
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "IT-NT-095-01: All Channels Succeed",
 					Body:     "Event trail validation - all succeed",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#test"},
-						{Email: "test@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelSlack,
-						notificationv1alpha1.ChannelConsole,
+					Metadata: map[string]string{
+						"test-channel-set": "console-slack",
 					},
 				},
 			}
@@ -166,19 +161,14 @@ var _ = Describe("Notification K8s Event Observability (DD-EVENT-001, BR-NT-095)
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "IT-NT-095-02: Partial Success + Retry Exhaustion",
 					Body:     "Event trail validation - partial with retries",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#test"},
-						{Email: "test@example.com"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelSlack,
-						notificationv1alpha1.ChannelConsole,
-					},
 					RetryPolicy: &notificationv1alpha1.RetryPolicy{
 						MaxAttempts:           3,
 						InitialBackoffSeconds: 1,
 						BackoffMultiplier:     2,
 						MaxBackoffSeconds:     60,
+					},
+					Metadata: map[string]string{
+						"test-channel-set": "console-slack",
 					},
 				},
 			}
@@ -237,17 +227,14 @@ var _ = Describe("Notification K8s Event Observability (DD-EVENT-001, BR-NT-095)
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "IT-NT-095-03: All Channels Fail",
 					Body:     "Event trail validation - all fail permanently",
-					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#test"},
-					},
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelSlack,
-					},
 					RetryPolicy: &notificationv1alpha1.RetryPolicy{
 						MaxAttempts:           3,
 						InitialBackoffSeconds: 1,
 						BackoffMultiplier:     2,
 						MaxBackoffSeconds:     60,
+					},
+					Metadata: map[string]string{
+						"test-channel-set": "slack-only",
 					},
 				},
 			}

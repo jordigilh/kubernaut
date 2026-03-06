@@ -56,9 +56,9 @@ import (
 // - HTTPClient sends to Data Storage → PostgreSQL persists
 //
 // Test Scenario:
-// 1. Create NotificationRequest CRD with Email channel (not configured in E2E)
-// 2. Controller processes and attempts delivery
-// 3. Delivery fails (email service not configured)
+// 1. Create NotificationRequest CRD routed to Slack failure endpoint (mock-slack /webhook/fail → 503)
+// 2. Controller processes and attempts delivery via per-receiver Slack (BR-NOT-104)
+// 3. Delivery fails (mock-slack returns 503, MaxAttempts=1 exhausts retries)
 // 4. Controller calls auditMessageFailed()
 // 5. Verify audit event persisted to PostgreSQL via Data Storage API
 // 6. Verify event follows ADR-034 format with error details
@@ -110,8 +110,9 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 		Expect(err).ToNot(HaveOccurred(), "Failed to create authenticated DataStorage OpenAPI client")
 
 		// Create NotificationRequest that will FAIL delivery
-		// Strategy: Use Email channel which is NOT configured in E2E environment
-		// This will cause controller to fail delivery and emit audit event
+		// Strategy: Route to slack-failure receiver (BR-NOT-104 per-receiver credentials).
+		// The slack-failure credential resolves to http://mock-slack:8080/webhook/fail → 503.
+		// HTTP 503 is a RetryableError; MaxAttempts=1 ensures exactly 1 failed attempt.
 		notification = &notificationv1alpha1.NotificationRequest{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      notificationName,
@@ -121,7 +122,6 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 				},
 			},
 			Spec: notificationv1alpha1.NotificationRequestSpec{
-				// FIX: Set RemediationRequestRef to enable correlation_id matching in audit queries
 				RemediationRequestRef: &corev1.ObjectReference{
 					APIVersion: "kubernaut.ai/v1alpha1",
 					Kind:       "RemediationRequest",
@@ -132,13 +132,14 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 				Priority: notificationv1alpha1.NotificationPriorityCritical,
 				Subject:  "E2E Failed Delivery Audit Test",
 				Body:     "Testing failed delivery audit event persistence",
-				Channels: []notificationv1alpha1.Channel{
-					notificationv1alpha1.ChannelEmail, // Email service NOT configured → will fail
-				},
-				Recipients: []notificationv1alpha1.Recipient{
-					{Email: "test@example.com"},
+				RetryPolicy: &notificationv1alpha1.RetryPolicy{
+					MaxAttempts:           1,
+					InitialBackoffSeconds: 1,
+					BackoffMultiplier:     2,
+					MaxBackoffSeconds:     60,
 				},
 				Metadata: map[string]string{
+					"test-channel-set":       "slack-failure",
 					"remediationRequestName": correlationID,
 					"test-scenario":          "failed-delivery-audit",
 				},
@@ -164,7 +165,7 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 				"  Audit infrastructure should be deployed in SynchronizedBeforeSuite")
 
 		// ===== STEP 1: Create NotificationRequest CRD =====
-		By("Creating NotificationRequest CRD with Email channel (will fail)")
+		By("Creating NotificationRequest CRD with Slack failure channel (mock-slack /webhook/fail → 503)")
 		err := k8sClient.Create(testCtx, notification)
 		Expect(err).ToNot(HaveOccurred(), "NotificationRequest CRD creation should succeed")
 
@@ -180,8 +181,8 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 		// ===== STEP 2: Wait for controller to process and fail delivery =====
 		By("Waiting for controller to process notification and fail delivery")
 
-		// Controller will attempt Email delivery, which will fail (service not configured)
-		// Expected phases: Pending → Sending → Failed (all channels have permanent errors)
+		// Controller will attempt Slack delivery via per-receiver credential (slack-failure → /webhook/fail → 503)
+		// Expected phases: Pending → Sending → Failed (MaxAttempts=1 exhausted)
 		By("Waiting for controller to process notification and reach Failed phase")
 		Eventually(func() notificationv1alpha1.NotificationPhase {
 			var n notificationv1alpha1.NotificationRequest
@@ -204,8 +205,8 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 		}, nr)
 		Expect(err).ToNot(HaveOccurred(), "Should be able to get NR for field validation")
 		Expect(nr.Status.Phase).To(Equal(notificationv1alpha1.NotificationPhaseFailed))
-		Expect(nr.Status.Reason).To(Equal("AllDeliveriesFailed"),
-			"Reason should be AllDeliveriesFailed when all channels have permanent errors")
+		Expect(nr.Status.Reason).To(Equal("MaxRetriesExhausted"),
+			"Reason should be MaxRetriesExhausted when retryable errors (503) exhaust MaxAttempts")
 		Expect(nr.Status.Message).To(Equal("All delivery attempts failed or exhausted retries"))
 
 		// ===== STEP 3: Verify failed audit event persisted to PostgreSQL =====
@@ -274,7 +275,7 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 		Expect(eventData).To(HaveKey("notification_id"),
 			"Event data should contain notification_id")
 		Expect(eventData).To(HaveKey("channel"),
-			"Event data should contain channel (email)")
+			"Event data should contain channel")
 		Expect(eventData).To(HaveKey("error"),
 			"Event data should contain error details for failed delivery")
 
@@ -291,9 +292,9 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 		Expect(eventData["notification_id"]).To(Equal(notificationName),
 			"FIELD MATCH: event_data.notification_id should match resource_id")
 
-		// Verify channel in event_data is correct
-		Expect(eventData["channel"]).To(Equal("email"),
-			"FIELD MATCH: event_data.channel should be 'email'")
+		// Verify channel in event_data is correct (qualified per-receiver name, BR-NOT-104)
+		Expect(eventData["channel"]).To(Equal("slack:slack-failure"),
+			"FIELD MATCH: event_data.channel should be 'slack:slack-failure' (per-receiver qualified)")
 
 		// Verify subject and body are preserved in event_data
 		Expect(eventData).To(HaveKey("subject"),
@@ -346,7 +347,10 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 	// ========================================
 	// Additional Test: Multi-Channel Partial Failure
 	// ========================================
-	// This test validates audit events when SOME channels succeed and SOME fail
+	// This test validates audit events when SOME channels succeed and SOME fail.
+	// Strategy: Route to console-slack-failure receiver (BR-NOT-104).
+	//   Console → always succeeds
+	//   Slack   → per-receiver credential points to mock-slack /webhook/fail → 503
 	It("should emit separate audit events for each channel (success + failure)", func() {
 		Expect(dataStorageNodePort).ToNot(Equal(0),
 			"REQUIRED: Data Storage not available")
@@ -356,9 +360,9 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 		notificationName = "e2e-partial-failure-" + testID
 		correlationID = "e2e-partial-" + testID
 
-		// Create notification with TWO channels:
+		// Create notification with TWO channels via console-slack-failure receiver:
 		// - Console (will SUCCEED - always available in E2E)
-		// - Email (will FAIL - not configured)
+		// - Slack   (will FAIL   - mock-slack /webhook/fail returns 503)
 		notification = &notificationv1alpha1.NotificationRequest{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      notificationName,
@@ -368,7 +372,6 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 				},
 			},
 			Spec: notificationv1alpha1.NotificationRequestSpec{
-				// FIX: Set RemediationRequestRef to enable correlation_id matching in audit queries
 				RemediationRequestRef: &corev1.ObjectReference{
 					APIVersion: "kubernaut.ai/v1alpha1",
 					Kind:       "RemediationRequest",
@@ -379,54 +382,51 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 				Priority: notificationv1alpha1.NotificationPriorityCritical,
 				Subject:  "E2E Partial Failure Audit Test",
 				Body:     "Testing audit events for partial delivery failures",
-				Channels: []notificationv1alpha1.Channel{
-					notificationv1alpha1.ChannelConsole, // SUCCEEDS
-					notificationv1alpha1.ChannelEmail,   // FAILS
-				},
-				Recipients: []notificationv1alpha1.Recipient{
-					{Email: "test@example.com"},
+				RetryPolicy: &notificationv1alpha1.RetryPolicy{
+					MaxAttempts:           1,
+					InitialBackoffSeconds: 1,
+					BackoffMultiplier:     2,
+					MaxBackoffSeconds:     60,
 				},
 				Metadata: map[string]string{
+					"test-channel-set":       "console-slack-failure",
 					"remediationRequestName": correlationID,
 					"test-scenario":          "partial-failure",
 				},
 			},
 		}
 
-		By("Creating NotificationRequest with Console + Email channels")
+		By("Creating NotificationRequest with Console + Slack (failure) channels")
 		err := k8sClient.Create(testCtx, notification)
 		Expect(err).ToNot(HaveOccurred())
 
-	By("Waiting for controller to process both channels")
-	Eventually(func() int {
-		var n notificationv1alpha1.NotificationRequest
-		if err := apiReader.Get(testCtx, types.NamespacedName{
-			Name:      notificationName,
-			Namespace: controllerNamespace,
-		}, &n); err != nil {
-			return 0
-		}
-		// Wait for both channels to be attempted
-		return len(n.Status.DeliveryAttempts)
-	}, 30*time.Second, 1*time.Second).Should(BeNumerically(">=", 2),
-		"Controller should attempt delivery for both channels")
+		By("Waiting for controller to process both channels")
+		Eventually(func() int {
+			var n notificationv1alpha1.NotificationRequest
+			if err := apiReader.Get(testCtx, types.NamespacedName{
+				Name:      notificationName,
+				Namespace: controllerNamespace,
+			}, &n); err != nil {
+				return 0
+			}
+			return len(n.Status.DeliveryAttempts)
+		}, 30*time.Second, 1*time.Second).Should(BeNumerically(">=", 2),
+			"Controller should attempt delivery for both channels")
 
 		By("Verifying BOTH success and failure audit events are persisted")
 
-		// Should have 1 sent event (console) + 1 failed event (email)
 		Eventually(func() bool {
 			sentCount := queryAuditEventCount(dsClient, correlationID, string(ogenclient.NotificationMessageSentPayloadAuditEventEventData))
 			failedCount := queryAuditEventCount(dsClient, correlationID, string(ogenclient.NotificationMessageFailedPayloadAuditEventEventData))
 			GinkgoWriter.Printf("DEBUG: Partial failure - sent=%d, failed=%d\n", sentCount, failedCount)
 			return sentCount >= 1 && failedCount >= 1
 		}, 30*time.Second, 2*time.Second).Should(BeTrue(),
-			"Should have both success (console) and failure (email) audit events")
+			"Should have both success (console) and failure (slack) audit events")
 
 		By("Verifying each event has correct channel in event_data")
 		allEvents := queryAuditEvents(dsClient, correlationID)
 		Expect(allEvents).To(HaveLen(2), "Should have exactly 2 events (1 success, 1 failure)")
 
-		// Validate channel-specific event_data and field matching
 		var sentEvent, failedEvent *ogenclient.AuditEvent
 		for i := range allEvents {
 			if allEvents[i].EventType == string(ogenclient.NotificationMessageSentPayloadAuditEventEventData) {
@@ -439,7 +439,7 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 		Expect(sentEvent).ToNot(BeNil(), "Should have sent event")
 		Expect(failedEvent).ToNot(BeNil(), "Should have failed event")
 
-		// FIELD MATCHING VALIDATION: Success event
+		// FIELD MATCHING VALIDATION: Success event (console)
 		By("Validating success event fields match audit helper output")
 		var sentEventData map[string]interface{}
 		sentEventDataBytes, err := json.Marshal(sentEvent.EventData)
@@ -461,7 +461,7 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 		Expect(sentEvent.ResourceID.Value).To(Equal(notificationName),
 			"FIELD MATCH: Success event resource_id should match notification name")
 
-		// FIELD MATCHING VALIDATION: Failed event
+		// FIELD MATCHING VALIDATION: Failed event (slack via per-receiver credential)
 		By("Validating failed event fields match audit helper output")
 		var failedEventData map[string]interface{}
 		failedEventDataBytes, err := json.Marshal(failedEvent.EventData)
@@ -469,8 +469,8 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 		err = json.Unmarshal(failedEventDataBytes, &failedEventData)
 		Expect(err).ToNot(HaveOccurred())
 
-		Expect(failedEventData["channel"]).To(Equal("email"),
-			"FIELD MATCH: Failed event channel should be email")
+		Expect(failedEventData["channel"]).To(Equal("slack:console-slack-failure"),
+			"FIELD MATCH: Failed event channel should be 'slack:console-slack-failure' (per-receiver qualified)")
 		Expect(failedEventData["notification_id"]).To(Equal(notificationName),
 			"FIELD MATCH: Failed event notification_id should match resource_id")
 		Expect(failedEventData["subject"]).To(Equal("E2E Partial Failure Audit Test"),
@@ -487,6 +487,6 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 
 		GinkgoWriter.Printf("✅ Partial failure audit validation complete:\n")
 		GinkgoWriter.Printf("   Console channel: SUCCESS (audit: notification.message.sent)\n")
-		GinkgoWriter.Printf("   Email channel: FAILURE (audit: notification.message.failed)\n")
+		GinkgoWriter.Printf("   Slack channel:   FAILURE (audit: notification.message.failed)\n")
 	})
 })

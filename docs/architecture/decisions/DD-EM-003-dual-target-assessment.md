@@ -80,9 +80,9 @@ type TargetResource struct {
 | Component | Target Field | Rationale |
 |-----------|-------------|-----------|
 | Spec hash (DD-EM-002) | `remediationTarget` | Hash the resource that was actually modified to detect drift |
-| Health (BR-EM-001) | `signalTarget` | Check if the workload that triggered the alert is healthy |
-| Alert resolution (BR-EM-003) | `signalTarget.Namespace` + signal name | AlertContext uses signal name for matching and `signalTarget.Namespace` for scoping |
-| Metrics (BR-EM-002) | `signalTarget.Namespace` | PromQL queries scoped to the signal target's namespace |
+| Health (BR-EM-001) | `remediationTarget` (#275) | Check if the remediated workload is healthy (survives rolling restarts) |
+| Alert resolution (BR-EM-002) | `signalTarget.Namespace` + signal name; `signalTarget` pods for stale-alert filtering (#269) | AlertContext uses signal name + namespace for AM query scoping; active pods from signalTarget filter stale alerts for deleted pods |
+| Metrics (BR-EM-003) | `signalTarget.Namespace` | PromQL queries scoped to the signal target's namespace |
 
 ### EM Reconciler Changes
 
@@ -93,9 +93,9 @@ func (r *Reconciler) assessHash(ctx context.Context, ea *eav1.EffectivenessAsses
     // ...
 }
 
-// assessHealth uses signalTarget (the resource the alert is about)
+// assessHealth uses remediationTarget (#275: survives rolling restarts)
 func (r *Reconciler) assessHealth(ctx context.Context, ea *eav1.EffectivenessAssessment) health.Result {
-    status := r.getTargetHealthStatus(ctx, ea.Spec.SignalTarget)
+    status := r.getTargetHealthStatus(ctx, ea.Spec.RemediationTarget)
     // ...
 }
 ```
@@ -215,3 +215,4 @@ No backward compatibility is needed. This is pre-release v1.0 with no production
 | 2026-02-24 | 1.1 | Issue #188: Fix remediation target source to `rootCauseAnalysis.affectedResource` (not `selectedWorkflow.targetResource`). Remove deprecated `targetResource` field (pre-release v1.0, no backward compat needed). Update RO to use `resolveDualTargets()` with `DualTarget` struct. |
 | 2026-02-24 | 1.2 | Issue #188: Clarified alert resolution routing -- uses `signalTarget.Namespace` + signal name (not just signal name). Metrics routing clarified as `signalTarget.Namespace`. Updated data flow diagram. |
 | 2026-02-25 | 1.3 | Issue #192: `TargetResource.Namespace` changed from `+kubebuilder:validation:Required` to `+optional` with `omitempty` to support cluster-scoped resources (Node, PersistentVolume). CRD manifests regenerated. Tests: UT-RO-192-001 + IT-RO-192-001. |
+| 2026-03-05 | 1.4 | Issue #275: Health assessment changed from `signalTarget` to `remediationTarget` (survives rolling restarts). Issue #269: Alert resolution now includes `namespace` in AlertManager query matchers and filters stale alerts for deleted pods by correlating alert `pod` labels against active pods from `signalTarget`. Tests: UT-EM-269-001..006 + IT-EM-269-001..002. |

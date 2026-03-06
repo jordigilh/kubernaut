@@ -80,7 +80,7 @@ func (r *Repository) Create(ctx context.Context, workflow *models.RemediationWor
 	// added execution_bundle and execution_bundle_digest columns
 	insertQuery := `
 		INSERT INTO remediation_workflow_catalog (
-			workflow_name, version, name, description, owner, maintainer,
+			workflow_name, version, schema_version, name, description, owner, maintainer,
 			content, content_hash, parameters, execution_engine, schema_image, schema_digest,
 			execution_bundle, execution_bundle_digest,
 			labels, custom_labels, detected_labels, status,
@@ -88,20 +88,20 @@ func (r *Repository) Create(ctx context.Context, workflow *models.RemediationWor
 			approved_by, approved_at, expected_success_rate, expected_duration_seconds,
 			created_by, action_type
 		) VALUES (
-			$1, $2, $3, $4, $5, $6,
-			$7, $8, $9, $10, $11, $12,
-			$13, $14,
-			$15, $16, $17, $18,
-			$19, $20, $21, $22,
-			$23, $24, $25, $26,
-			$27, $28
+			$1, $2, $3, $4, $5, $6, $7,
+			$8, $9, $10, $11, $12, $13,
+			$14, $15,
+			$16, $17, $18, $19,
+			$20, $21, $22, $23,
+			$24, $25, $26, $27,
+			$28, $29
 		)
 		RETURNING workflow_id
 	`
 
 	var generatedID string
 	err = tx.QueryRowContext(ctx, insertQuery,
-		workflow.WorkflowName, workflow.Version, workflow.Name, workflow.Description, workflow.Owner, workflow.Maintainer,
+		workflow.WorkflowName, workflow.Version, workflow.SchemaVersion, workflow.Name, workflow.Description, workflow.Owner, workflow.Maintainer,
 		workflow.Content, workflow.ContentHash, workflow.Parameters, workflow.ExecutionEngine, workflow.SchemaImage, workflow.SchemaDigest,
 		workflow.ExecutionBundle, workflow.ExecutionBundleDigest,
 		workflow.Labels, workflow.CustomLabels, workflow.DetectedLabels, workflow.Status,
@@ -245,9 +245,6 @@ func (r *Repository) List(ctx context.Context, filters *models.WorkflowSearchFil
 		}
 
 		// Label filters (JSONB queries)
-		if filters.SignalName != "" {
-			builder.Where("labels->>'signalName' = ?", filters.SignalName)
-		}
 		if filters.Severity != "" {
 			// Severity is JSONB array (e.g. ["critical","high"]), use ? operator
 			builder.WhereRaw(fmt.Sprintf("labels->'severity' ? $%d", builder.CurrentArgIndex()), filters.Severity)

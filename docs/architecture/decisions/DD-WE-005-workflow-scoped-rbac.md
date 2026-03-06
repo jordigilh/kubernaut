@@ -1,6 +1,6 @@
 # DD-WE-005: Workflow-Scoped RBAC via Schema-Declared Permissions
 
-**Version**: 1.0
+**Version**: 1.1
 **Date**: 2026-02-23
 **Status**: ✅ APPROVED
 **Author**: WorkflowExecution Team
@@ -129,6 +129,7 @@ Per-execution SA (wfe-<hash>)
 Add an `rbac` field to the workflow schema:
 
 ```yaml
+schemaVersion: "1.1"
 metadata:
   workflowId: patch-hpa-v1
   version: "1.0.0"
@@ -362,3 +363,4 @@ meaningful blast radius reduction while remaining safe.
 | Date | Version | Changes |
 |------|---------|---------|
 | 2026-02-23 | 1.0 | Initial decision - schema-declared RBAC replacing shared SA |
+| 2026-03-02 | 1.1 | Added `schemaVersion: "1.1"` to RBAC schema examples (#255) |

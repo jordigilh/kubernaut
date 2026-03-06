@@ -17,11 +17,38 @@ limitations under the License.
 package workflow
 
 import (
+	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
+
+// sanitizeEnumValue validates that value is one of the allowedValues.
+// Returns the value if valid, empty string otherwise.
+func sanitizeEnumValue(value string, allowedValues []string) string {
+	for _, allowed := range allowedValues {
+		if value == allowed {
+			return value
+		}
+	}
+	return ""
+}
+
+// sanitizeJSONBKey removes characters that could cause SQL injection from JSONB keys.
+func sanitizeJSONBKey(key string) string {
+	return regexp.MustCompile(`[^a-zA-Z0-9_\-]`).ReplaceAllString(key, "")
+}
+
+// sanitizeJSONBValue produces a safe SQL expression for a JSONB string comparison.
+// It JSON-encodes the value and SQL-escapes the result for embedding in a
+// single-quoted SQL literal. Returns a string safe to embed as '...'::jsonb.
+func sanitizeJSONBValue(value string) string {
+	jsonBytes, _ := json.Marshal(value)
+	jsonStr := string(jsonBytes)
+	return strings.ReplaceAll(jsonStr, "'", "''")
+}
 
 // ========================================
 // SHARED SCORING SQL BUILDERS

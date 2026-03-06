@@ -89,6 +89,13 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                 target_resource = 'payment/deployment/payment-api',
                 workflow_version = 'v1.2.0',
                 workflow_type = 'ScaleReplicas',
+                ea_name = 'ea-restart-payment-api-abc123',
+                hash_compute_delay = '4m0s',
+                alert_check_delay = '5m0s',
+                gitops_sync_delay = '3m0s',
+                operator_reconcile_delay = '1m0s',
+                is_gitops_managed = True,
+                is_crd = False,
                 phase = 'Investigating',
                 signal = 'high-memory-payment-api-abc123',
                 external_severity = 'Sev2',
@@ -137,13 +144,8 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                 type = '',
                 notification_type = 'escalation',
                 final_status = 'Pending',
-                recipients = [
-                    datastorage.models.notification_audit_payload_recipients_inner.NotificationAuditPayload_recipients_inner(
-                        email = 'user@example.com', 
-                        slack = '#alerts', 
-                        teams = 'team@company.com', 
-                        phone = '+1234567890', 
-                        webhook_url = 'https://example.com/webhook', )
+                delivery_channels = [
+                    ''
                     ],
                 cancelled_by = '',
                 user_uid = '',
@@ -171,7 +173,6 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                     top_k = 5, 
                     min_score = 0.7, 
                     filters = datastorage.models.workflow_search_filters.WorkflowSearchFilters(
-                        signal_name = 'OOMKilled', 
                         severity = 'critical', 
                         component = 'pod', 
                         environment = 'production', 
@@ -208,6 +209,7 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                 search_metadata = datastorage.models.search_execution_metadata.SearchExecutionMetadata(
                     duration_ms = 150, ),
                 version = '1.0.0',
+                schema_version = '1.0',
                 status = 'active',
                 is_latest_version = True,
                 execution_engine = 'argo',
@@ -305,7 +307,6 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                     analyzing = '5m', 
                     executing = '15m', ),
                 correlation_id = 'restart-payment-api-2026-02-12-abc123',
-                ea_name = 'ea-restart-payment-api-abc123',
                 component = 'health',
                 assessed = True,
                 score = 0.85,
@@ -315,6 +316,8 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                 validity_deadline = '2026-02-12T15:30Z',
                 prometheus_check_after = '2026-02-12T15:05Z',
                 alertmanager_check_after = '2026-02-12T15:05Z',
+                hash_compute_after = '2026-02-12T15:10Z',
+                total_propagation_delay = '4m0s',
                 validity_window = '30m0s',
                 stabilization_window = '5m0s',
                 post_remediation_spec_hash = 'sha256:e5f6a7b8...',
@@ -389,7 +392,6 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                     top_k = 5, 
                     min_score = 0.7, 
                     filters = datastorage.models.workflow_search_filters.WorkflowSearchFilters(
-                        signal_name = 'OOMKilled', 
                         severity = 'critical', 
                         component = 'pod', 
                         environment = 'production', 

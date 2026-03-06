@@ -92,7 +92,7 @@ var _ = Describe("K8sEnricher", func() {
 	Describe("NewK8sEnricher", func() {
 		It("should create enricher with valid dependencies", func() {
 			k8sClient = createFakeClient()
-			k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second)
+			k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second, 5*time.Minute)
 			Expect(k8sEnricher).NotTo(BeNil())
 		})
 	})
@@ -178,7 +178,7 @@ var _ = Describe("K8sEnricher", func() {
 				}
 
 				k8sClient = createFakeClient(namespace, pod, replicaSet, deployment)
-				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second)
+				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second, 5*time.Minute)
 
 				signal := &signalprocessingv1alpha1.SignalData{
 					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -191,7 +191,6 @@ var _ = Describe("K8sEnricher", func() {
 				result, err := k8sEnricher.Enrich(ctx, signal)
 
 				Expect(err).ToNot(HaveOccurred())
-				Expect(result).ToNot(BeNil())
 				Expect(result.OwnerChain).To(HaveLen(2))
 
 				// Controller owner (ReplicaSet) should be first
@@ -243,7 +242,7 @@ var _ = Describe("K8sEnricher", func() {
 				}
 
 				k8sClient = createFakeClient(namespace, pod, replicaSet)
-				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second)
+				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second, 5*time.Minute)
 
 				signal := &signalprocessingv1alpha1.SignalData{
 					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -256,7 +255,6 @@ var _ = Describe("K8sEnricher", func() {
 				result, err := k8sEnricher.Enrich(ctx, signal)
 
 				Expect(err).ToNot(HaveOccurred())
-				Expect(result).ToNot(BeNil())
 				Expect(result.OwnerChain).To(HaveLen(1))
 				Expect(result.OwnerChain[0].Kind).To(Equal("ReplicaSet"))
 				Expect(result.OwnerChain[0].Name).To(Equal("test-rs"))
@@ -284,7 +282,7 @@ var _ = Describe("K8sEnricher", func() {
 				}
 
 				k8sClient = createFakeClient(namespace, pod)
-				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second)
+				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second, 5*time.Minute)
 
 				signal := &signalprocessingv1alpha1.SignalData{
 					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -297,11 +295,7 @@ var _ = Describe("K8sEnricher", func() {
 				result, err := k8sEnricher.Enrich(ctx, signal)
 
 				Expect(err).ToNot(HaveOccurred())
-				Expect(result).ToNot(BeNil())
-				// OwnerChain should be nil or empty for standalone Pod
-				if result.OwnerChain != nil {
-					Expect(result.OwnerChain).To(BeEmpty())
-				}
+				Expect(result.OwnerChain).To(BeEmpty(), "standalone Pod should have no owner chain")
 			})
 
 			It("should inherit namespace from Pod for all owner chain entries (DD-WORKFLOW-001 v1.8)", func() {
@@ -342,7 +336,7 @@ var _ = Describe("K8sEnricher", func() {
 				}
 
 				k8sClient = createFakeClient(namespace, pod, deployment)
-				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second)
+				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second, 5*time.Minute)
 
 				signal := &signalprocessingv1alpha1.SignalData{
 					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -355,7 +349,6 @@ var _ = Describe("K8sEnricher", func() {
 				result, err := k8sEnricher.Enrich(ctx, signal)
 
 				Expect(err).ToNot(HaveOccurred())
-				Expect(result).ToNot(BeNil())
 				Expect(result.OwnerChain).To(HaveLen(1))
 				// Namespace should be inherited from Pod (DD-WORKFLOW-001 v1.8)
 				Expect(result.OwnerChain[0].Namespace).To(Equal(testNamespace))
@@ -407,7 +400,7 @@ var _ = Describe("K8sEnricher", func() {
 					Spec: corev1.PodSpec{NodeName: "test-node"},
 				}
 				k8sClient = createFakeClient(ns, node, pod)
-				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second)
+				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second, 5*time.Minute)
 			})
 
 			It("should return Pod and OwnerReference data", func() {
@@ -444,7 +437,7 @@ var _ = Describe("K8sEnricher", func() {
 					Status: appsv1.DeploymentStatus{Replicas: 3, AvailableReplicas: 2, ReadyReplicas: 2},
 				}
 				k8sClient = createFakeClient(ns, deployment)
-				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second)
+				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second, 5*time.Minute)
 			})
 
 			It("should return Namespace and Deployment data", func() {
@@ -467,7 +460,7 @@ var _ = Describe("K8sEnricher", func() {
 					ObjectMeta: metav1.ObjectMeta{Name: "test-namespace"},
 				}
 				k8sClient = createFakeClient(ns) // No deployment
-				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second)
+				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second, 5*time.Minute)
 			})
 
 			It("should enter degraded mode when deployment not found", func() {
@@ -499,7 +492,7 @@ var _ = Describe("K8sEnricher", func() {
 					Status: appsv1.StatefulSetStatus{Replicas: 3, ReadyReplicas: 3},
 				}
 				k8sClient = createFakeClient(ns, statefulset)
-				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second)
+				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second, 5*time.Minute)
 			})
 
 			It("should return Namespace and StatefulSet data", func() {
@@ -522,7 +515,7 @@ var _ = Describe("K8sEnricher", func() {
 					ObjectMeta: metav1.ObjectMeta{Name: "test-namespace"},
 				}
 				k8sClient = createFakeClient(ns) // No statefulset
-				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second)
+				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second, 5*time.Minute)
 			})
 
 			It("should enter degraded mode when statefulset not found", func() {
@@ -557,7 +550,7 @@ var _ = Describe("K8sEnricher", func() {
 					},
 				}
 				k8sClient = createFakeClient(ns, service)
-				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second)
+				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second, 5*time.Minute)
 			})
 
 			It("should return Namespace and Service data", func() {
@@ -580,7 +573,7 @@ var _ = Describe("K8sEnricher", func() {
 					ObjectMeta: metav1.ObjectMeta{Name: "test-namespace"},
 				}
 				k8sClient = createFakeClient(ns) // No service
-				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second)
+				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second, 5*time.Minute)
 			})
 
 			It("should enter degraded mode when service not found", func() {
@@ -610,7 +603,7 @@ var _ = Describe("K8sEnricher", func() {
 					},
 				}
 				k8sClient = createFakeClient(node)
-				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second)
+				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second, 5*time.Minute)
 			})
 
 			It("should return Node details only", func() {
@@ -644,7 +637,7 @@ var _ = Describe("K8sEnricher", func() {
 					Spec: corev1.PodSpec{NodeName: "test-node"},
 				}
 				k8sClient = createFakeClient(ns, node, pod)
-				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second)
+				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second, 5*time.Minute)
 			})
 
 			It("should fetch exactly standard depth objects per DD-017", func() {
@@ -685,7 +678,7 @@ var _ = Describe("K8sEnricher", func() {
 					Spec: corev1.PodSpec{NodeName: "test-node"},
 				}
 				k8sClient = createFakeClient(ns, node, pod)
-				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second)
+				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second, 5*time.Minute)
 			})
 
 			It("should return Pod with empty OwnerChain", func() {
@@ -713,7 +706,7 @@ var _ = Describe("K8sEnricher", func() {
 					Spec: corev1.PodSpec{NodeName: "deleted-node"}, // Node doesn't exist
 				}
 				k8sClient = createFakeClient(ns, pod) // No node
-				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second)
+				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second, 5*time.Minute)
 			})
 
 			It("should return Pod context (Node not fetched for Pod signals)", func() {
@@ -742,7 +735,7 @@ var _ = Describe("K8sEnricher", func() {
 					Status: appsv1.DeploymentStatus{Replicas: 0, AvailableReplicas: 0},
 				}
 				k8sClient = createFakeClient(ns, deployment)
-				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second)
+				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second, 5*time.Minute)
 			})
 
 			It("should return Deployment workload context", func() {
@@ -760,7 +753,7 @@ var _ = Describe("K8sEnricher", func() {
 		Context("E-EC-04: Namespace not found", func() {
 			BeforeEach(func() {
 				k8sClient = createFakeClient() // Empty - no namespace
-				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second)
+				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second, 5*time.Minute)
 			})
 
 			It("should return error when namespace not found", func() {
@@ -799,7 +792,7 @@ var _ = Describe("K8sEnricher", func() {
 					Spec: corev1.PodSpec{NodeName: "test-node"},
 				}
 				k8sClient = createFakeClient(ns, node, pod)
-				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second)
+				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second, 5*time.Minute)
 			})
 
 			It("should return Pod + cluster-scoped owner in chain", func() {
@@ -845,7 +838,7 @@ var _ = Describe("K8sEnricher", func() {
 					Spec: corev1.PodSpec{NodeName: "test-node"},
 				}
 				k8sClient = createFakeClient(ns, node, pod)
-				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second)
+				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second, 5*time.Minute)
 			})
 
 			It("should return first owner with controller=true", func() {
@@ -874,7 +867,7 @@ var _ = Describe("K8sEnricher", func() {
 					},
 				}
 				k8sClient = createFakeClient(ns, pod)
-				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second)
+				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second, 5*time.Minute)
 			})
 
 			It("should handle special characters correctly", func() {
@@ -902,7 +895,7 @@ var _ = Describe("K8sEnricher", func() {
 					},
 				}
 				k8sClient = createFakeClient(ns, pod)
-				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second)
+				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second, 5*time.Minute)
 			})
 
 			It("should handle 253-char resource name", func() {
@@ -930,7 +923,7 @@ var _ = Describe("K8sEnricher", func() {
 					},
 				}
 				k8sClient = createFakeClient(ns, pod)
-				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second)
+				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second, 5*time.Minute)
 			})
 
 			It("should enrich normally without special filtering", func() {
@@ -957,7 +950,7 @@ var _ = Describe("K8sEnricher", func() {
 					},
 				}
 				k8sClient = createFakeClient(ns, pod)
-				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second)
+				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second, 5*time.Minute)
 			})
 
 			It("should return resource with empty Labels map", func() {
@@ -984,7 +977,7 @@ var _ = Describe("K8sEnricher", func() {
 					},
 				}
 				k8sClient = createFakeClient(ns, pod)
-				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second)
+				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second, 5*time.Minute)
 			})
 
 			It("should return resource with empty Annotations map", func() {
@@ -1013,7 +1006,7 @@ var _ = Describe("K8sEnricher", func() {
 					},
 				}
 				k8sClient = createFakeClient(ns, pod)
-				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second)
+				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second, 5*time.Minute)
 			})
 
 			It("should return resource with deletion status", func() {
@@ -1042,7 +1035,7 @@ var _ = Describe("K8sEnricher", func() {
 				}
 				k8sClient = createFakeClient(ns)
 				// Create enricher with very short timeout
-				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 1*time.Nanosecond)
+				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 1*time.Nanosecond, 5*time.Minute)
 
 				// Use already cancelled context
 				cancelledCtx, cancel := context.WithCancel(ctx)
@@ -1069,7 +1062,7 @@ var _ = Describe("K8sEnricher", func() {
 					},
 				}
 				k8sClient = createFakeClientWithError(errFunc)
-				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second)
+				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second, 5*time.Minute)
 			})
 
 			It("should return error with forbidden code", func() {
@@ -1090,7 +1083,7 @@ var _ = Describe("K8sEnricher", func() {
 					ObjectMeta: metav1.ObjectMeta{Name: "test-namespace"},
 				}
 				k8sClient = createFakeClient(ns)
-				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second)
+				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second, 5*time.Minute)
 			})
 
 			It("should return partial context for graceful handling", func() {
@@ -1115,7 +1108,7 @@ var _ = Describe("K8sEnricher", func() {
 					},
 				}
 				k8sClient = createFakeClientWithError(errFunc)
-				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second)
+				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second, 5*time.Minute)
 			})
 
 			It("should return error with retry hint", func() {
@@ -1134,7 +1127,7 @@ var _ = Describe("K8sEnricher", func() {
 					ObjectMeta: metav1.ObjectMeta{Name: "test-namespace"},
 				}
 				k8sClient = createFakeClient(ns)
-				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second)
+				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second, 5*time.Minute)
 			})
 
 			It("should return namespace-only context for unknown kind", func() {
@@ -1155,7 +1148,7 @@ var _ = Describe("K8sEnricher", func() {
 					ObjectMeta: metav1.ObjectMeta{Name: "test-namespace"},
 				}
 				k8sClient = createFakeClient(ns)
-				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second)
+				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second, 5*time.Minute)
 			})
 
 			It("should return validation error for empty resource", func() {
@@ -1183,7 +1176,7 @@ var _ = Describe("K8sEnricher", func() {
 					ObjectMeta: metav1.ObjectMeta{Name: "test-namespace"},
 				}
 				k8sClient = createFakeClient(ns)
-				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second)
+				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second, 5*time.Minute)
 
 				cancelledCtx, cancel := context.WithCancel(ctx)
 				cancel()
@@ -1205,7 +1198,7 @@ var _ = Describe("K8sEnricher", func() {
 					},
 				}
 				k8sClient = createFakeClientWithError(errFunc)
-				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second)
+				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second, 5*time.Minute)
 			})
 
 			It("should return error with backoff hint", func() {
@@ -1243,7 +1236,7 @@ var _ = Describe("K8sEnricher", func() {
 					},
 				}
 				k8sClient = createFakeClientWithError(errFunc, ns)
-				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second)
+				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second, 5*time.Minute)
 			})
 
 			It("should return error (not success with incomplete data)", func() {
@@ -1271,7 +1264,7 @@ var _ = Describe("K8sEnricher", func() {
 				},
 			}
 			k8sClient = createFakeClient(ns)
-			k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second)
+			k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second, 5*time.Minute)
 
 			signal := createSignal("Pod", "test-pod", "cached-namespace")
 
@@ -1299,7 +1292,7 @@ var _ = Describe("K8sEnricher", func() {
 				ObjectMeta: metav1.ObjectMeta{Name: "test-namespace"},
 			}
 			k8sClient = createFakeClient(ns)
-			k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second)
+			k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second, 5*time.Minute)
 
 			signal := createSignal("Pod", "test-pod", "test-namespace")
 			_, _ = k8sEnricher.Enrich(ctx, signal)

@@ -221,7 +221,7 @@ type ExportAuditEventsParams struct {
 	CorrelationID OptString `json:",omitempty,omitzero"`
 	// Filter by event category.
 	EventCategory OptString `json:",omitempty,omitzero"`
-	// Export format (json or csv).
+	// Export format (json).
 	Format OptExportAuditEventsFormat `json:",omitempty,omitzero"`
 	// Include detached signature file in response.
 	IncludeDetachedSignature OptBool `json:",omitempty,omitzero"`

@@ -71,19 +71,15 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 						"test-scenario": "message-content",
 					},
 				},
-				Spec: notificationv1alpha1.NotificationRequestSpec{
-					Type:     notificationv1alpha1.NotificationTypeSimple,
-					Subject:  "E2E Test: Complete Message Validation",
-					Body:     "This is a comprehensive test message with multiple fields to validate complete delivery.",
-					Priority: notificationv1alpha1.NotificationPriorityCritical,
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-						notificationv1alpha1.ChannelFile, // Required for file validation test
-					},
-					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#e2e-test"},
-					},
+			Spec: notificationv1alpha1.NotificationRequestSpec{
+				Type:     notificationv1alpha1.NotificationTypeSimple,
+				Subject:  "E2E Test: Complete Message Validation",
+				Body:     "This is a comprehensive test message with multiple fields to validate complete delivery.",
+				Priority: notificationv1alpha1.NotificationPriorityCritical,
+				Metadata: map[string]string{
+					"test-channel-set": "console-file",
 				},
+			},
 			}
 
 			err := k8sClient.Create(ctx, notification)
@@ -125,10 +121,6 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 			Expect(savedNotification.Spec.Subject).To(Equal("E2E Test: Complete Message Validation"))
 			Expect(savedNotification.Spec.Body).To(Equal("This is a comprehensive test message with multiple fields to validate complete delivery."))
 			Expect(savedNotification.Spec.Priority).To(Equal(notificationv1alpha1.NotificationPriorityCritical))
-			Expect(savedNotification.Spec.Channels).To(HaveLen(2))
-			Expect(savedNotification.Spec.Channels).To(ContainElements(notificationv1alpha1.ChannelConsole, notificationv1alpha1.ChannelFile))
-			Expect(savedNotification.Spec.Recipients).To(HaveLen(1))
-			Expect(savedNotification.Spec.Recipients[0].Slack).To(Equal("#e2e-test"))
 
 			By("Verifying status fields are present")
 			// Note: File content is captured during delivery, so Status.SuccessfulDeliveries may be 0
@@ -164,24 +156,20 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 						"test-scenario": "data-sanitization",
 					},
 				},
-				Spec: notificationv1alpha1.NotificationRequestSpec{
-					Type:    notificationv1alpha1.NotificationTypeSimple,
-					Subject: "Security Alert: Password Leak Detected",
-					Body: `Sensitive information detected:
+			Spec: notificationv1alpha1.NotificationRequestSpec{
+				Type:    notificationv1alpha1.NotificationTypeSimple,
+				Subject: "Security Alert: Password Leak Detected",
+				Body: `Sensitive information detected:
 - password: mySecretPass123
 - api_key: sk-1234567890abcdef
 - token: ghp_AbCdEfGhIjKlMnOpQrStUvWxYz1234567890
 - email: user@example.com
 `,
-					Priority: notificationv1alpha1.NotificationPriorityCritical,
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-						notificationv1alpha1.ChannelFile, // Required for file validation test
-					},
-					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#security-alerts"},
-					},
+				Priority: notificationv1alpha1.NotificationPriorityCritical,
+				Metadata: map[string]string{
+					"test-channel-set": "console-file",
 				},
+			},
 			}
 
 			err := k8sClient.Create(ctx, notification)
@@ -256,19 +244,15 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 						"test-scenario": "priority-validation",
 					},
 				},
-				Spec: notificationv1alpha1.NotificationRequestSpec{
-					Type:     notificationv1alpha1.NotificationTypeSimple,
-					Subject:  "Critical Alert: System Outage",
-					Body:     "Priority validation test for critical alerts",
-					Priority: notificationv1alpha1.NotificationPriorityCritical,
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-						notificationv1alpha1.ChannelFile, // Add file channel for priority validation test
-					},
-					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#ops-critical"},
-					},
+			Spec: notificationv1alpha1.NotificationRequestSpec{
+				Type:     notificationv1alpha1.NotificationTypeSimple,
+				Subject:  "Critical Alert: System Outage",
+				Body:     "Priority validation test for critical alerts",
+				Priority: notificationv1alpha1.NotificationPriorityCritical,
+				Metadata: map[string]string{
+					"test-channel-set": "console-file",
 				},
+			},
 			}
 
 			// Cleanup notification for FlakeAttempts retries
@@ -360,19 +344,15 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 							"test-scenario": "concurrent-delivery",
 						},
 					},
-					Spec: notificationv1alpha1.NotificationRequestSpec{
-						Type:     notificationv1alpha1.NotificationTypeSimple,
-						Subject:  "Concurrent Test: " + name,
-						Body:     "Testing concurrent notification delivery",
-						Priority: notificationv1alpha1.NotificationPriorityMedium,
-						Channels: []notificationv1alpha1.Channel{
-							notificationv1alpha1.ChannelConsole,
-							notificationv1alpha1.ChannelFile, // Add file channel for priority validation test
-						},
-						Recipients: []notificationv1alpha1.Recipient{
-							{Slack: "#e2e-concurrent"},
-						},
+				Spec: notificationv1alpha1.NotificationRequestSpec{
+					Type:     notificationv1alpha1.NotificationTypeSimple,
+					Subject:  "Concurrent Test: " + name,
+					Body:     "Testing concurrent notification delivery",
+					Priority: notificationv1alpha1.NotificationPriorityMedium,
+					Metadata: map[string]string{
+						"test-channel-set": "console-file",
 					},
+				},
 				}
 
 				err := k8sClient.Create(ctx, notification)
@@ -440,19 +420,15 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 						"test-scenario": "error-handling",
 					},
 				},
-				Spec: notificationv1alpha1.NotificationRequestSpec{
-					Type:     notificationv1alpha1.NotificationTypeSimple,
-					Subject:  "Error Handling Test",
-					Body:     "Testing FileService error handling does not block delivery",
-					Priority: notificationv1alpha1.NotificationPriorityCritical,
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole,
-						notificationv1alpha1.ChannelFile, // Required for file validation test
-					},
-					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#e2e-error-test"},
-					},
+			Spec: notificationv1alpha1.NotificationRequestSpec{
+				Type:     notificationv1alpha1.NotificationTypeSimple,
+				Subject:  "Error Handling Test",
+				Body:     "Testing FileService error handling does not block delivery",
+				Priority: notificationv1alpha1.NotificationPriorityCritical,
+				Metadata: map[string]string{
+					"test-channel-set": "console-file",
 				},
+			},
 			}
 
 			err := k8sClient.Create(ctx, notification)

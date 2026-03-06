@@ -23,6 +23,8 @@
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 2.5 | 2026-03-05 | Architecture Team | **EA timing consolidation (Issue #277)**: Migrated `HashComputeAfter` (absolute `*Time`) to `HashComputeDelay` (relative `*Duration` in `EAConfig`). Added `AlertCheckDelay` for proactive signal alert resolution deferral. Removed `gitOpsSyncDelay`/`operatorReconcileDelay` from EA spec — propagation breakdown now emitted in RO `orchestrator.ea.created` audit event. Derived timing updated: `AlertManagerCheckAfter = PrometheusCheckAfter + AlertCheckDelay` when set. Async timing anchor: `creation + HashComputeDelay`. |
+| 2.4 | 2026-03-03 | Architecture Team | **WaitingForPropagation phase (Issue #253, BR-EM-010.3)**: Added `WaitingForPropagation` phase for async-managed targets (GitOps, operator CRDs). Async targets follow: Pending → WaitingForPropagation → Stabilizing → Assessing → Completed/Failed. Sync targets unchanged. ~~New EA spec fields: `gitOpsSyncDelay`, `operatorReconcileDelay` for audit trail~~ (removed in v2.5; see #277). Kubebuilder enum updated. |
 | 2.3 | 2026-02-24 | Architecture Team | **Stabilizing phase**: Added `Stabilizing` phase between `Pending` and `Assessing`. EA transitions to `Stabilizing` during stabilization window; derived timing fields (BR-EM-009) are pre-computed and persisted in this phase. Phase state machine updated: Pending → Stabilizing → Assessing → Completed/Failed. Pending → Assessing remains valid when StabilizationWindow == 0. |
 | 2.2 | 2026-02-24 | Architecture Team | **Dual-target EA (Issue #188, DD-EM-003)**: Renamed `resolveEffectivenessTarget` to `resolveDualTargets` returning `*creator.DualTarget{Signal, Remediation}`. Sequence diagram and EA CRD example updated to reflect the new function name and dual-target fields (`signalTarget`, `remediationTarget`). Removed single `targetResource` field from EA spec. |
 | 2.1 | 2026-02-15 | Architecture Team | **Two-phase hash model**: Phase 1 (hash component check): capture current spec as `PostRemediationSpecHash`, compare `pre != post` (workflow changed spec?), set `CurrentSpecHash = PostRemediationSpecHash` as baseline. Phase 2 (drift guard, subsequent reconciles): re-capture current hash, compare `post != current` (spec drift?), abort if drifted. Fixes single-pass completion bug where `CurrentSpecHash` was never set. |
@@ -133,7 +135,7 @@ The EM has six external integration points:
 | AlertManager | Read | HTTP REST | Alert resolution check |
 | EffectivenessAssessment CRD | Write (event) | K8s Event API | Normal event on completion (EffectivenessAssessed) |
 
-> **v1.1 Note**: DD-EFFECTIVENESS-003 (Watch RemediationRequest, not WorkflowExecution) is superseded. The EM no longer watches RR CRDs. Instead, the **RO creates an EffectivenessAssessment CRD** when the RR reaches a terminal phase, following the same lifecycle pattern as AIAnalysis, WorkflowExecution, and NotificationRequest. The EM watches EA CRDs.
+> **v1.1 Note**: DD-EFFECTIVENESS-003 (Watch RemediationRequest, not WorkflowExecution) is superseded. The EM no longer watches RR CRDs. Instead, the **RO creates an EffectivenessAssessment CRD** when the RR enters Verifying (WFE success path) or when the RR reaches a terminal phase (Failed, TimedOut), following the same lifecycle pattern as AIAnalysis, WorkflowExecution, and NotificationRequest. The EM watches EA CRDs.
 
 ---
 
@@ -192,8 +194,8 @@ sequenceDiagram
     WFE->>WFE: Monitor execution
     WFE->>DS: audit: workflowexecution.workflow.completed
 
-    Note over RO,EM: Phase 6 — Completion, Notification, and Assessment Trigger
-    RO->>DS: audit: orchestrator.lifecycle.completed
+    Note over RO,EM: Phase 6 — Verifying Start, Notification, and Assessment Trigger
+    RO->>DS: audit: orchestrator.lifecycle.verifying_started
     RO->>RO: Set RR Condition: EffectivenessAssessed=False
     RO->>NOT: Create NotificationRequest CRD (parallel)
     RO->>EA: Create EffectivenessAssessment CRD (parallel, ownerRef → RR)
@@ -236,8 +238,10 @@ sequenceDiagram
     Note over DS: DS computes weighted score on demand from component events
     EM->>K8s: Event(Normal, EffectivenessAssessed) on EA
 
-    Note over RO: Phase 8 — RO detects EA completion
+    Note over RO: Phase 8 — RO detects EA completion, transitions RR Verifying → Completed
     RO-->>EA: Watch detects EA phase=Completed
+    RO->>DS: audit: orchestrator.lifecycle.verification_completed
+    RO->>RO: Transition RR Verifying → Completed
     RO->>RO: Update RR Condition: EffectivenessAssessed=True
 ```
 
@@ -264,9 +268,10 @@ sequenceDiagram
     Ctrl->>EA: Read EA spec (correlationID, targetResource, config)
 
     Note over Ctrl: First Reconciliation: Compute Derived Timing
-    Ctrl->>Ctrl: Compute ValidityDeadline = EA.creationTimestamp + config.ValidityWindow
-    Ctrl->>Ctrl: Compute PrometheusCheckAfter = EA.creationTimestamp + StabilizationWindow
-    Ctrl->>Ctrl: Compute AlertManagerCheckAfter = EA.creationTimestamp + StabilizationWindow
+    Ctrl->>Ctrl: Compute anchor = EA.creationTimestamp (sync) or creation + HashComputeDelay (async)
+    Ctrl->>Ctrl: Compute PrometheusCheckAfter = anchor + StabilizationWindow
+    Ctrl->>Ctrl: Compute AlertManagerCheckAfter = PrometheusCheckAfter (+ AlertCheckDelay if proactive)
+    Ctrl->>Ctrl: Compute ValidityDeadline = EA.creationTimestamp + effectiveValidity
     Ctrl->>EA: Update status: validityDeadline, prometheusCheckAfter, alertManagerCheckAfter
     Ctrl->>DS: POST audit: effectiveness.assessment.scheduled (timeline computed)
 
@@ -306,8 +311,10 @@ sequenceDiagram
         Ctrl->>DS: POST audit: effectiveness.health.assessed (raw health data + score)
     end
 
-    Note over Ctrl,K8s: Step 4 — Post-remediation spec hash (immediate)
-    alt EA.status.components.hashComputed == false
+    Note over Ctrl,K8s: Step 4 — Post-remediation spec hash (deferred when HashComputeDelay set)
+    alt HashComputeDelay set AND deferral deadline in future
+        Ctrl-->>Ctrl: RequeueAfter(remaining time until creation + HashComputeDelay)
+    else EA.status.components.hashComputed == false
         Ctrl->>K8s: GET target resource .spec (uncached)
         K8s-->>Ctrl: Current .spec
         Ctrl->>Ctrl: SHA-256 hash of .spec
@@ -315,7 +322,7 @@ sequenceDiagram
         Ctrl->>DS: POST audit: effectiveness.hash.computed (pre/post hashes, match boolean)
     end
 
-    Note over Ctrl,AM: Step 5 — Alert resolution (immediate, if enabled)
+    Note over Ctrl,AM: Step 5 — Alert resolution (deferred when AlertCheckDelay set)
     alt alertmanager.enabled AND EA.status.components.alertAssessed == false
         Ctrl->>AM: GET /api/v2/alerts?filter=alertname={signal.signalName}
         AM-->>Ctrl: Active alerts (or empty if resolved)
@@ -423,7 +430,7 @@ flowchart TD
     Start["EM Triggered by EA CRD
     (created by RO)"] --> CheckPhase{EA.status.phase?}
     CheckPhase -->|Completed| AlreadyDone[No-op: assessment already finalized]
-    CheckPhase -->|Pending/Stabilizing/Assessing| ComputeTiming["Compute Derived Timing
+    CheckPhase -->|Pending/WaitingForPropagation/Stabilizing/Assessing| ComputeTiming["Compute Derived Timing
     validityDeadline, prometheusCheckAfter,
     alertManagerCheckAfter in status"]
     ComputeTiming --> CheckValidity{"Validity window expired?
@@ -663,7 +670,7 @@ gantt
 ### Critical Invariant
 
 ```
-T+0:      WorkflowExecution completes → RO transitions RR to Completed
+T+0:      WorkflowExecution completes → RO transitions RR to Verifying (creates EA CRD)
 T+0:      RO creates EA CRD + NotificationRequest CRD (parallel). EM computes derived timing on first reconcile
 T+0:      RO sets RR Condition: EffectivenessAssessed=False
 T+0:      EM first reconcile: computes validityDeadline, prometheusCheckAfter, alertManagerCheckAfter in status
@@ -677,7 +684,7 @@ T+5m-30m: EM waits for Prometheus metrics (requeues on scrapeInterval)
            → effectiveness.metrics.assessed emitted when data arrives
            → DS recomputes score with all four components on next query
 T+≤30m:   EM finalizes → effectiveness.assessment.completed (lifecycle marker)
-           EA phase=Completed
+           EA phase=Completed → RO transitions RR Verifying → Completed
 T+30m:    Validity window expires — if EM hasn't started, EA marked as expired
 ```
 
@@ -726,7 +733,7 @@ All component events share these common fields:
 
 #### 9.2.0 `effectiveness.assessment.scheduled` (timeline event)
 
-Emitted on first reconciliation when the EM transitions the EA from Pending to Stabilizing (when StabilizationWindow > 0) or from Pending to Assessing (when StabilizationWindow == 0). Captures all derived timing values computed from the EA spec and EM config. This is the only event that records the assessment timeline, providing full observability of when each check was scheduled.
+Emitted on first reconciliation when the EM transitions the EA from Pending to WaitingForPropagation (async targets with `HashComputeDelay`), Pending to Stabilizing (sync targets with StabilizationWindow > 0), or Pending to Assessing (when StabilizationWindow == 0). Captures all derived timing values computed from the EA spec and EM config. This is the only event that records the assessment timeline, providing full observability of when each check was scheduled.
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -734,9 +741,10 @@ Emitted on first reconciliation when the EM transitions the EA from Pending to S
 | `correlation_id` | string | `RR.Name` (from `ea.spec.correlationID`) |
 | `service` | string | `"effectivenessmonitor"` |
 | `ea_name` | string | EA CRD name |
-| `validity_deadline` | string (RFC3339) | Computed: `EA.creationTimestamp + validityWindow` |
-| `prometheus_check_after` | string (RFC3339) | Computed: `EA.creationTimestamp + stabilizationWindow` |
-| `alertmanager_check_after` | string (RFC3339) | Computed: `EA.creationTimestamp + stabilizationWindow` |
+| `validity_deadline` | string (RFC3339) | Computed: `EA.creationTimestamp + effectiveValidity` (may be extended by runtime guard) |
+| `prometheus_check_after` | string (RFC3339) | Sync: `EA.creationTimestamp + StabilizationWindow`. Async: `EA.creationTimestamp + HashComputeDelay + StabilizationWindow` |
+| `alertmanager_check_after` | string (RFC3339) | Same as `prometheus_check_after`, plus `AlertCheckDelay` when set (proactive signals, #277) |
+| `hash_compute_after` | string (RFC3339) | Async only: `EA.creationTimestamp + HashComputeDelay`. Nil for sync targets |
 | `validity_window` | string | Duration from EM config (e.g., "30m0s") |
 | `stabilization_window` | string | Duration from EA spec (e.g., "5m0s") |
 
@@ -859,7 +867,7 @@ metadata:
       blockOwnerDeletion: false  # RR deletion GC's EA — audit events in DS survive
 spec:
   correlationID: "{rr.name}"
-  remediationRequestPhase: "{rr.status.overallPhase}"  # Completed|Failed|TimedOut — immutable spec field
+  remediationRequestPhase: "{rr.status.overallPhase}"  # Verifying|Completed|Failed|TimedOut — immutable spec field
   signalTarget:           # DD-EM-003: from RR.Spec.TargetResource (the alerting resource)
     kind: Deployment
     name: my-app
@@ -872,11 +880,13 @@ spec:
   # SignalTarget always from RR. RemediationTarget prefers AI AffectedResource, falls back to RR target.
   config:
     stabilizationWindow: 5m
+    # hashComputeDelay: 4m          # Optional: set by RO for async targets (GitOps/CRD). EM defers hash until creation + 4m.
+    # alertCheckDelay: 5m           # Optional: set by RO for proactive signals. EM defers alert check by 5m beyond PrometheusCheckAfter.
 status:
-  phase: Assessing   # Pending → Stabilizing → Assessing → Completed/Failed (or Pending → Assessing when StabilizationWindow == 0)
-  validityDeadline: "2026-02-09T15:30:00Z"          # Computed by EM: creationTimestamp + validityWindow
-  prometheusCheckAfter: "2026-02-09T15:05:00Z"       # Computed by EM: creationTimestamp + stabilizationWindow
-  alertManagerCheckAfter: "2026-02-09T15:05:00Z"     # Computed by EM: creationTimestamp + stabilizationWindow
+  phase: Assessing   # Sync: Pending → Stabilizing → Assessing → Completed/Failed. Async: Pending → WaitingForPropagation → Stabilizing → Assessing → Completed/Failed. (Pending → Assessing when StabilizationWindow == 0)
+  validityDeadline: "2026-02-09T15:30:00Z"          # Computed by EM: creationTimestamp + effectiveValidity (may be extended by runtime guard)
+  prometheusCheckAfter: "2026-02-09T15:05:00Z"       # Sync: creation + StabilizationWindow. Async: creation + HashComputeDelay + StabilizationWindow
+  alertManagerCheckAfter: "2026-02-09T15:05:00Z"     # Same as prometheusCheckAfter, plus AlertCheckDelay when set (#277)
   components:
     healthAssessed: false
     healthScore: null
@@ -896,6 +906,7 @@ status:
 | Phase | Meaning |
 |-------|---------|
 | `Pending` | EA created by RO, EM has not yet reconciled it |
+| `WaitingForPropagation` | Async targets only: EM is waiting for `HashComputeDelay` to elapse before computing the hash. Entered when `config.hashComputeDelay` is set and the deferral deadline is in the future (#253, #277) |
 | `Stabilizing` | During stabilization window; derived timing fields pre-computed and persisted; EM waits for stabilization to elapse before transitioning to Assessing (StabilizationWindow > 0 only) |
 | `Assessing` | EM is actively processing (component checks in progress) |
 | `Completed` | Assessment finished — score computed, audit event emitted |
@@ -960,13 +971,19 @@ assessment:
   maxConcurrentAssessments: 10           # controller-runtime MaxConcurrentReconciles
 ```
 
-> **Note**: `prometheus.enabled` and `alertmanager.enabled` are EM operational config — the EM decides which assessment components to run based on its own config, not per-EA. The RO only sets `stabilizationWindow` in the EA spec when creating the EA. The `stabilizationWindow` used for each EA comes from the EA spec (set by RO); the EM's `validityWindow` is used to compute `validityDeadline` in EA status.
+> **Note**: `prometheus.enabled` and `alertmanager.enabled` are EM operational config — the EM decides which assessment components to run based on its own config, not per-EA. The RO sets `stabilizationWindow` (and optionally `hashComputeDelay`, `alertCheckDelay`) in the EA spec config at creation time. The EM's `validityWindow` is used to compute `validityDeadline` in EA status.
 
-The `validityWindow` is used by the EM to compute `validityDeadline` in the EA status on first reconciliation:
+The EM computes derived timing in EA status on first reconciliation:
 ```
-EA.status.validityDeadline = EA.creationTimestamp + validityWindow  (computed by EM)
-EA.status.prometheusCheckAfter = EA.creationTimestamp + stabilizationWindow  (computed by EM)
-EA.status.alertManagerCheckAfter = EA.creationTimestamp + stabilizationWindow  (computed by EM)
+# Sync targets (hashComputeDelay nil):
+EA.status.prometheusCheckAfter   = EA.creationTimestamp + stabilizationWindow
+EA.status.alertManagerCheckAfter = prometheusCheckAfter (+ alertCheckDelay if set)
+EA.status.validityDeadline       = EA.creationTimestamp + effectiveValidity
+
+# Async targets (hashComputeDelay set):
+EA.status.prometheusCheckAfter   = EA.creationTimestamp + hashComputeDelay + stabilizationWindow
+EA.status.alertManagerCheckAfter = prometheusCheckAfter (+ alertCheckDelay if set)
+EA.status.validityDeadline       = EA.creationTimestamp + effectiveValidity (extended by runtime guard if needed)
 ```
 
 If `now > validityDeadline`, the EM marks the EA as `expired` without collecting data — the system state may no longer reflect this remediation (the cooldown has long expired, new remediations may have run, workloads have drifted).
@@ -1130,7 +1147,7 @@ Before EM implementation can begin, these changes to existing services are requi
 | Prerequisite | Service | Description | Issue |
 |-------------|---------|-------------|-------|
 | `EffectivenessAssessment` CRD definition | Platform | Define CRD schema (`effectiveness.kubernaut.io/v1alpha1`), install in cluster. | [#82](https://github.com/jordigilh/kubernaut/issues/82) |
-| RO creates EA CRD on terminal phase | RO | Create EA CRD with ownerRef to RR when RR reaches Completed/Failed/TimedOut. Set RR Condition `EffectivenessAssessed=False`. Watch EA CRDs and update RR Condition when EA completes. | [#82](https://github.com/jordigilh/kubernaut/issues/82) |
+| RO creates EA CRD on terminal phase | RO | Create EA CRD with ownerRef to RR when RR enters Verifying (happy path) or when RR reaches Completed/Failed/TimedOut. Set RR Condition `EffectivenessAssessed=False`. Watch EA CRDs and update RR Condition when EA completes. | [#82](https://github.com/jordigilh/kubernaut/issues/82) |
 | `remediation.workflow_created` audit event | RO | Emit new event with `pre_remediation_spec_hash` before creating WFE CRD. RO must query API server directly (uncached) for target resource spec. | [#82](https://github.com/jordigilh/kubernaut/issues/82) |
 | Add `parameters` to WFE audit | WFE | Include `map[string]string` parameters in `workflowexecution.workflow.started` payload. | [#82](https://github.com/jordigilh/kubernaut/issues/82) |
 | DS OpenAPI schema updates | DS | Add `remediation.workflow_created` and EM component event types (`effectiveness.health.assessed`, `effectiveness.alert.assessed`, `effectiveness.metrics.assessed`, `effectiveness.hash.computed`, `effectiveness.assessment.completed`) to discriminated union. Add `parameters` field to `WorkflowExecutionAuditPayload`. | [#82](https://github.com/jordigilh/kubernaut/issues/82) |
@@ -1144,7 +1161,7 @@ Before EM implementation can begin, these changes to existing services are requi
 Before approving this ADR for TDD implementation:
 
 - [ ] All sequence diagrams accurately reflect the current service interactions
-- [ ] The EA CRD lifecycle (Pending → Stabilizing → Assessing → Completed/Failed, or Pending → Assessing when StabilizationWindow == 0) is complete
+- [ ] The EA CRD lifecycle is complete: Sync (Pending → Stabilizing → Assessing → Completed/Failed), Async (Pending → WaitingForPropagation → Stabilizing → Assessing → Completed/Failed), Skip-stabilization (Pending → Assessing when StabilizationWindow == 0)
 - [ ] The RO-creates-EA pattern is consistent with AA/WFE/NR patterns
 - [ ] The audit event data models contain all fields needed by DD-HAPI-016
 - [ ] The scoring formula and weight redistribution logic is correct (V1.0: 3 scored components, no side-effects)
