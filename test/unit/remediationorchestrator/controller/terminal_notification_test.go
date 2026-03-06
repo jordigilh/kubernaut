@@ -190,7 +190,7 @@ var _ = Describe("Issue #88: Terminal-phase notification tracking", func() {
 		})
 	})
 
-	// UT-RO-088-003: transitionToCompleted should append completion NT ref
+	// UT-RO-088-003: transitionToVerifying should append completion NT ref
 	// Note: This tests the ref population, not the full transition flow.
 	// The full transition requires mocks for audit, EA creator, etc.
 	// We test the ref population by verifying the reconciler's behavior

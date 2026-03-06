@@ -65,7 +65,7 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 	// ========================================
 	// UT-RO-EA-001: Reconcile with completed WE creates EA with correct spec
 	// ========================================
-	It("UT-RO-EA-001: should create EA when RR transitions to Completed via Reconcile", func() {
+	It("UT-RO-EA-001: should create EA when RR transitions to Verifying via Reconcile (#280)", func() {
 		rrName := "rr-ea-001"
 		namespace := "test-ns"
 		weName := "we-" + rrName
@@ -108,7 +108,7 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 
 		// Verify EA spec
 		Expect(ea.Spec.CorrelationID).To(Equal(rrName))
-		Expect(ea.Spec.RemediationRequestPhase).To(Equal("Completed"))
+		Expect(ea.Spec.RemediationRequestPhase).To(Equal("Verifying"))
 		Expect(ea.Spec.RemediationTarget.Kind).To(Equal("Deployment"))
 		Expect(ea.Spec.RemediationTarget.Name).To(Equal("test-app"))
 		Expect(ea.Spec.RemediationTarget.Namespace).To(Equal(namespace))
@@ -229,7 +229,7 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 			},
 			Spec: eav1.EffectivenessAssessmentSpec{
 				CorrelationID:           rrName,
-				RemediationRequestPhase: "Completed",
+				RemediationRequestPhase: "Verifying",
 				SignalTarget: eav1.TargetResource{
 					Kind: "Deployment", Name: "test-app", Namespace: namespace,
 				},
@@ -309,11 +309,11 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 		})
 		Expect(err).ToNot(HaveOccurred(), "Phase transition must succeed even if EA creation fails")
 
-		// Verify RR transitioned to Completed
+		// Verify RR transitioned to Verifying (#280)
 		fetchedRR := &remediationv1.RemediationRequest{}
 		err = k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, fetchedRR)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(fetchedRR.Status.OverallPhase).To(Equal(remediationv1.PhaseCompleted))
+		Expect(fetchedRR.Status.OverallPhase).To(Equal(remediationv1.PhaseVerifying))
 	})
 
 	// ========================================
@@ -476,8 +476,8 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 			"EA must target the same resource the RR remediated")
 		Expect(ea.Spec.RemediationTarget.Namespace).To(Equal(rr.Spec.TargetResource.Namespace),
 			"EA must target the same resource the RR remediated")
-		Expect(ea.Spec.RemediationRequestPhase).To(Equal("Completed"),
-			"EA must record the RR terminal phase for assessment branching")
+		Expect(ea.Spec.RemediationRequestPhase).To(Equal("Verifying"),
+			"EA must record the RR phase at creation (#280: Verifying when EA is created)")
 		Expect(ea.Spec.Config.StabilizationWindow.Duration).To(Equal(stabilizationWindow),
 			"EA must carry the stabilization window so EM waits before measuring")
 	})
@@ -543,8 +543,8 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 			"EA must still identify the remediated resource")
 		Expect(ea.Spec.Config.StabilizationWindow.Duration).To(Equal(stabilizationWindow),
 			"EA must carry the stabilization window even without pre-hash")
-		Expect(ea.Spec.RemediationRequestPhase).To(Equal("Completed"),
-			"EA must record the terminal phase for assessment branching")
+		Expect(ea.Spec.RemediationRequestPhase).To(Equal("Verifying"),
+			"EA must record the RR phase at creation (#280: Verifying when EA is created)")
 	})
 
 	It("UT-RO-EA-008: should set EffectivenessAssessed=False/AssessmentInProgress on EA creation", func() {
@@ -799,7 +799,7 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 		}, ea)
 		Expect(err).ToNot(HaveOccurred(), "Issue #240 regression guard: EA MUST be created when WFE succeeds")
 		Expect(ea.Spec.CorrelationID).To(Equal(rrName))
-		Expect(ea.Spec.RemediationRequestPhase).To(Equal("Completed"))
+		Expect(ea.Spec.RemediationRequestPhase).To(Equal("Verifying"))
 		Expect(ea.Spec.Config.StabilizationWindow.Duration).To(Equal(stabilizationWindow))
 	})
 })

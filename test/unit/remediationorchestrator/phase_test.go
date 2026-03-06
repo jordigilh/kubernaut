@@ -63,6 +63,9 @@ var _ = Describe("Phase Types (BR-ORCH-025, BR-ORCH-026)", func() {
 				phase.AwaitingApproval, false, "AwaitingApproval indicates human approval required"),
 			Entry("Executing is NOT terminal (WorkflowExecution active)",
 				phase.Executing, false, "Executing indicates WorkflowExecution CRD in progress"),
+			// #280: Verifying is non-terminal — EA assessment in progress, Gateway deduplicates
+			Entry("Verifying is NOT terminal (#280 - EA assessment gates completion)",
+				phase.Verifying, false, "Verifying holds RR while EA runs, Gateway deduplicates"),
 			// BR-ORCH-042.2: Blocked is non-terminal to prevent Gateway from creating new RRs
 			Entry("Blocked is NOT terminal (BR-ORCH-042.2 - AC-042-2-1)",
 				phase.Blocked, false, "Blocked holds RR during cooldown, Gateway sees as active"),
@@ -97,8 +100,11 @@ var _ = Describe("Phase Types (BR-ORCH-025, BR-ORCH-026)", func() {
 					phase.Analyzing, phase.Executing, "Skip approval for low-risk operations"),
 				Entry("AwaitingApproval → Executing (approval granted)",
 					phase.AwaitingApproval, phase.Executing, "Proceed after human approval"),
-				Entry("Executing → Completed (successful workflow)",
-					phase.Executing, phase.Completed, "Workflow completed successfully"),
+			Entry("Executing → Verifying (#280 - EA assessment pending)",
+				phase.Executing, phase.Verifying, "Transition to Verifying while EA runs"),
+			// #280: Executing → Completed removed; must go through Verifying
+			Entry("Verifying → Completed (#280 - EA assessment done or timed out)",
+				phase.Verifying, phase.Completed, "Transition to Completed after verification"),
 			)
 		})
 
@@ -146,9 +152,13 @@ var _ = Describe("Phase Types (BR-ORCH-025, BR-ORCH-026)", func() {
 					result := phase.CanTransition(from, to)
 					Expect(result).To(BeFalse(), reason)
 				},
-				// Skipping phases
-				Entry("Pending → Completed (skip all phases)",
-					phase.Pending, phase.Completed, "Cannot skip intermediate phases"),
+			// #280: Executing → Completed is no longer valid; must go through Verifying
+			Entry("Executing → Completed (#280 - must go through Verifying)",
+				phase.Executing, phase.Completed, "Must go through Verifying phase after WFE completion"),
+
+			// Skipping phases
+			Entry("Pending → Completed (skip all phases)",
+				phase.Pending, phase.Completed, "Cannot skip intermediate phases"),
 				Entry("Pending → Analyzing (skip Processing)",
 					phase.Pending, phase.Analyzing, "Must go through Processing first"),
 
@@ -194,16 +204,38 @@ var _ = Describe("Phase Types (BR-ORCH-025, BR-ORCH-026)", func() {
 			Entry("Analyzing is valid", phase.Analyzing, false, "Valid active phase"),
 			Entry("AwaitingApproval is valid", phase.AwaitingApproval, false, "Valid active phase"),
 			Entry("Executing is valid", phase.Executing, false, "Valid active phase"),
+			Entry("Verifying is valid (#280)", phase.Verifying, false, "Valid non-terminal verification phase"),
 			Entry("Blocked is valid (BR-ORCH-042.2)", phase.Blocked, false, "Valid non-terminal blocking phase"),
 			Entry("Completed is valid", phase.Completed, false, "Valid terminal phase"),
 			Entry("Failed is valid", phase.Failed, false, "Valid terminal phase"),
 			Entry("TimedOut is valid", phase.TimedOut, false, "Valid terminal phase"),
 			Entry("Skipped is valid", phase.Skipped, false, "Valid terminal phase"),
+			Entry("Cancelled is valid", phase.Cancelled, false, "Valid terminal phase"),
 
 			// Invalid phases
 			Entry("InvalidPhase should be rejected", phase.Phase("InvalidPhase"), true, "Unknown phase value"),
 			Entry("Empty string should be rejected", phase.Phase(""), true, "Empty phase value"),
 		)
+	})
+
+	// ========================================
+	// Verifying Phase (#280) - CRD constant and VerificationDeadline field
+	// ========================================
+	Describe("Verifying Phase (#280)", func() {
+		It("should expose PhaseVerifying constant with value 'Verifying'", func() {
+			Expect(string(remediationv1.PhaseVerifying)).To(Equal("Verifying"))
+		})
+
+		It("should re-export Verifying in phase package", func() {
+			Expect(phase.Verifying).To(Equal(remediationv1.PhaseVerifying))
+		})
+
+		It("should have VerificationDeadline field on RemediationRequestStatus", func() {
+			rr := &remediationv1.RemediationRequest{}
+			// Compile-time check: VerificationDeadline must exist on Status
+			Expect(rr.Status.VerificationDeadline).To(BeNil(),
+				"VerificationDeadline should default to nil")
+		})
 	})
 
 	// ========================================

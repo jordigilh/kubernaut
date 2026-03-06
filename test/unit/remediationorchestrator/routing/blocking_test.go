@@ -1243,6 +1243,7 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 				remediationv1.PhaseAnalyzing,
 				remediationv1.PhaseAwaitingApproval,
 				remediationv1.PhaseExecuting,
+				remediationv1.PhaseVerifying, // #280: Verifying is non-terminal
 				remediationv1.PhaseBlocked,
 			}
 

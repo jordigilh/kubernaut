@@ -65,6 +65,7 @@ var _ = Describe("RemediationOrchestrator Config - Unit Tests", Label("config", 
 			Expect(cfg.Timeouts.Processing).To(Equal(5 * time.Minute))
 			Expect(cfg.Timeouts.Analyzing).To(Equal(10 * time.Minute))
 			Expect(cfg.Timeouts.Executing).To(Equal(30 * time.Minute))
+			Expect(cfg.Timeouts.Verifying).To(Equal(30 * time.Minute))
 			Expect(cfg.EA.StabilizationWindow).To(Equal(5 * time.Minute))
 			Expect(cfg.DataStorage.URL).To(Equal("http://data-storage-service:8080"))
 		})
@@ -138,6 +139,18 @@ var _ = Describe("RemediationOrchestrator Config - Unit Tests", Label("config", 
 			cfg := config.DefaultConfig()
 			cfg.Timeouts.Processing = 0
 			Expect(cfg.Validate()).To(MatchError(ContainSubstring("timeouts.processing")))
+		})
+
+		It("#280: should reject zero verifying timeout", func() {
+			cfg := config.DefaultConfig()
+			cfg.Timeouts.Verifying = 0
+			Expect(cfg.Validate()).To(MatchError(ContainSubstring("timeouts.verifying")))
+		})
+
+		It("#280: should reject negative verifying timeout", func() {
+			cfg := config.DefaultConfig()
+			cfg.Timeouts.Verifying = -1 * time.Minute
+			Expect(cfg.Validate()).To(MatchError(ContainSubstring("timeouts.verifying")))
 		})
 
 		It("BR-ORCH-028: should reject global timeout smaller than sum of phase timeouts", func() {

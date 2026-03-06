@@ -89,6 +89,12 @@ var _ = Describe("Audit Manager", func() {
 				eventDataType = ogenclient.AuditEventEventDataOrchestratorRoutingBlockedAuditEventEventData
 			case ogenclient.AuditEventRequestEventDataRemediationWorkflowCreatedAuditEventRequestEventData:
 				eventDataType = ogenclient.AuditEventEventDataRemediationWorkflowCreatedAuditEventEventData
+			case ogenclient.AuditEventRequestEventDataOrchestratorLifecycleVerifyingStartedAuditEventRequestEventData:
+				eventDataType = ogenclient.AuditEventEventDataOrchestratorLifecycleVerifyingStartedAuditEventEventData
+			case ogenclient.AuditEventRequestEventDataOrchestratorLifecycleVerificationCompletedAuditEventRequestEventData:
+				eventDataType = ogenclient.AuditEventEventDataOrchestratorLifecycleVerificationCompletedAuditEventEventData
+			case ogenclient.AuditEventRequestEventDataOrchestratorLifecycleVerificationTimedOutAuditEventRequestEventData:
+				eventDataType = ogenclient.AuditEventEventDataOrchestratorLifecycleVerificationTimedOutAuditEventEventData
 			default:
 				// Unknown or not-yet-implemented event type - skip EventData conversion
 				return event
@@ -171,6 +177,46 @@ var _ = Describe("Audit Manager", func() {
 	})
 
 	// ========================================
+	// Verifying Phase Audit Event Tests (#280)
+	// F-3 SOC2 Fix: outer event_type must match EventData discriminator
+	// ========================================
+	Describe("BuildLifecycleVerifyingStartedEvent (#280)", func() {
+		It("should build event with correct type and F-3 discriminator consistency", func() {
+			event, err := manager.BuildLifecycleVerifyingStartedEvent(
+				"corr-verify-001", "default", "rr-verify-001",
+			)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(event.EventType).To(Equal(prodaudit.EventTypeLifecycleVerifyingStarted))
+			Expect(event.EventType).To(Equal(string(event.EventData.Type)),
+				"F-3 SOC2: outer event_type must match EventData discriminator")
+		})
+	})
+
+	Describe("BuildLifecycleVerificationCompletedEvent (#280)", func() {
+		It("should build event with correct type and F-3 discriminator consistency", func() {
+			event, err := manager.BuildLifecycleVerificationCompletedEvent(
+				"corr-verify-002", "default", "rr-verify-002", "ea-verify-002", "Verified", 5000,
+			)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(event.EventType).To(Equal(prodaudit.EventTypeLifecycleVerificationCompleted))
+			Expect(event.EventType).To(Equal(string(event.EventData.Type)),
+				"F-3 SOC2: outer event_type must match EventData discriminator")
+		})
+	})
+
+	Describe("BuildLifecycleVerificationTimedOutEvent (#280)", func() {
+		It("should build event with correct type and F-3 discriminator consistency", func() {
+			event, err := manager.BuildLifecycleVerificationTimedOutEvent(
+				"corr-verify-003", "default", "rr-verify-003", "ea-verify-003", 30000,
+			)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(event.EventType).To(Equal(prodaudit.EventTypeLifecycleVerificationTimedOut))
+			Expect(event.EventType).To(Equal(string(event.EventData.Type)),
+				"F-3 SOC2: outer event_type must match EventData discriminator")
+		})
+	})
+
+	// ========================================
 	// BuildPhaseTransitionEvent Tests
 	// Per DD-AUDIT-003: orchestrator.phase.transitioned (P1)
 	// Per V1.0 Maturity: Using validators.ValidateAuditEvent for consistent validation
@@ -211,8 +257,9 @@ var _ = Describe("Audit Manager", func() {
 				{"Analyzing", "AwaitingApproval"},
 				{"Analyzing", "Executing"},
 				{"AwaitingApproval", "Executing"},
-				{"Executing", "Completed"},
-			}
+			{"Executing", "Verifying"},
+			{"Verifying", "Completed"},
+		}
 
 			for _, t := range transitions {
 				event, err := manager.BuildPhaseTransitionEvent(
