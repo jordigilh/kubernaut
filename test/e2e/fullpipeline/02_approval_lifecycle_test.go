@@ -513,7 +513,7 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 			}
 			GinkgoWriter.Printf("  [Step 16] %d audit events, %d missing\n", len(resp.Data), len(missing))
 			return missing
-		}, 150*time.Second, 2*time.Second).Should(BeEmpty(),
+		}, 240*time.Second, 2*time.Second).Should(BeEmpty(),
 			"Audit trail must contain approval-specific and standard pipeline events")
 
 		// Verify approval events appeared exactly once

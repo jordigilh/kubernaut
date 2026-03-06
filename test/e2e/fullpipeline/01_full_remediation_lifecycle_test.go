@@ -431,7 +431,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 			GinkgoWriter.Printf("  [Step 11] Found %d audit events (%d unique types), %d required types still missing\n",
 				len(allAuditEvents), len(eventTypeCounts), len(missing))
 			return missing
-		}, 150*time.Second, 2*time.Second).Should(BeEmpty(),
+		}, 240*time.Second, 2*time.Second).Should(BeEmpty(),
 			"All required audit event types must be present in the trail")
 
 		// Log all events for debugging
@@ -1176,7 +1176,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 			GinkgoWriter.Printf("  [AM Step 11] Found %d audit events (%d unique types), %d required types still missing\n",
 				len(allAuditEvents), len(eventTypeCounts), len(missing))
 			return missing
-		}, 150*time.Second, 2*time.Second).Should(BeEmpty(),
+		}, 240*time.Second, 2*time.Second).Should(BeEmpty(),
 			"All required audit event types must be present in the trail")
 
 		// Verify exactly-once events

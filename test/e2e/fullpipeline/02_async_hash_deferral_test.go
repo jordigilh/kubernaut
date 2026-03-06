@@ -428,19 +428,8 @@ var _ = Describe("Async Hash Deferral for CRD Targets [DD-EM-004 v2.0, BR-EM-010
 			eaPayload.HashComputeAfter.Value.Format(time.RFC3339))
 
 		// Verify core audit events are present
-		var allAuditEvents []ogenclient.AuditEvent
-		resp, auditErr := dataStorageClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
-			CorrelationID: ogenclient.NewOptString(correlationID),
-			Limit:         ogenclient.NewOptInt(200),
-		})
-		Expect(auditErr).ToNot(HaveOccurred())
-		allAuditEvents = resp.Data
-
-		eventTypeCounts := map[string]int{}
-		for _, event := range allAuditEvents {
-			eventTypeCounts[event.EventType]++
-		}
-
+		// #280: lifecycle.completed now arrives after the Verifying phase, so use Eventually
+		// to poll until all core events (including late-arriving ones) are present.
 		coreEvents := []string{
 			"gateway.signal.received",
 			"gateway.crd.created",
@@ -450,13 +439,30 @@ var _ = Describe("Async Hash Deferral for CRD Targets [DD-EM-004 v2.0, BR-EM-010
 			"effectiveness.assessment.scheduled",
 			"effectiveness.assessment.completed",
 		}
-		for _, eventType := range coreEvents {
-			Expect(eventTypeCounts).To(HaveKey(eventType),
-				"Audit trail must contain: %s", eventType)
-		}
+		Eventually(func() []string {
+			resp, err := dataStorageClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
+				CorrelationID: ogenclient.NewOptString(correlationID),
+				Limit:         ogenclient.NewOptInt(200),
+			})
+			if err != nil {
+				return coreEvents
+			}
+			eventTypeCounts := map[string]int{}
+			for _, event := range resp.Data {
+				eventTypeCounts[event.EventType]++
+			}
+			var missing []string
+			for _, eventType := range coreEvents {
+				if eventTypeCounts[eventType] == 0 {
+					missing = append(missing, eventType)
+				}
+			}
+			GinkgoWriter.Printf("  [Audit] %d events, %d core missing\n", len(resp.Data), len(missing))
+			return missing
+		}, 240*time.Second, 2*time.Second).Should(BeEmpty(),
+			"Audit trail must contain all core events")
 
-		GinkgoWriter.Printf("  ✅ Audit trail: %d events, %d unique types\n",
-			len(allAuditEvents), len(eventTypeCounts))
+		GinkgoWriter.Printf("  ✅ Audit trail: all %d core events present\n", len(coreEvents))
 
 		GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		GinkgoWriter.Println("✅ ASYNC HASH DEFERRAL E2E TEST COMPLETE [E2E-FP-253-001]")

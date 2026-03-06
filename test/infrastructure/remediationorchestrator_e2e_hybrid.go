@@ -335,7 +335,7 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 	}()
 	go func() {
 		roImage := builtImages["RemediationOrchestrator (coverage)"]
-		err := DeployROCoverageManifest(kubeconfigPath, roImage, writer)
+		err := DeployROCoverageManifest(kubeconfigPath, roImage, writer, "5s")
 		deployResults <- deployResult{"RemediationOrchestrator", err}
 	}()
 
@@ -558,7 +558,13 @@ subjects:
 
 // roWorkloadManifest returns ConfigMap + Deployment + Service YAML.
 // Applied after RBAC with 2s propagation delay.
-func roWorkloadManifest(imageName string) string {
+// verifyingTimeout optionally sets the Verifying phase safety-net timeout in the ConfigMap.
+// When omitted, the RO binary defaults to 30m (#280). Pass "5s" for test tiers without EM.
+func roWorkloadManifest(imageName string, verifyingTimeout ...string) string {
+	verifyingLine := ""
+	if len(verifyingTimeout) > 0 && verifyingTimeout[0] != "" {
+		verifyingLine = fmt.Sprintf("\n      verifying: \"%s\"", verifyingTimeout[0])
+	}
 	return fmt.Sprintf(`
 apiVersion: v1
 kind: ConfigMap
@@ -580,7 +586,7 @@ data:
       processing: "5m"
       analyzing: "10m"
       executing: "30m"
-      awaitingApproval: "3s"
+      awaitingApproval: "3s"%s
     datastorage:
       url: "http://data-storage-service:8080"
       timeout: "10s"
@@ -673,7 +679,7 @@ spec:
     name: metrics
   selector:
     app: remediationorchestrator-controller
-`, imageName, GetImagePullPolicy())
+`, verifyingLine, imageName, GetImagePullPolicy())
 }
 
 // DeployROCoverageManifest deploys the RemediationOrchestrator controller with coverage enabled
@@ -681,7 +687,8 @@ spec:
 // Per ADR-030: Mounts audit config file for E2E audit testing
 // Per consolidated API migration: Accepts dynamic image name as parameter
 // Applies RBAC first, then workload after 2s propagation delay to avoid API race.
-func DeployROCoverageManifest(kubeconfigPath, imageName string, writer io.Writer) error {
+// verifyingTimeout optionally sets the Verifying phase safety-net (#280). Pass "5s" for tiers without EM.
+func DeployROCoverageManifest(kubeconfigPath, imageName string, writer io.Writer, verifyingTimeout ...string) error {
 	// Apply RBAC first (SA + ClusterRole + ClusterRoleBinding)
 	rbacManifest := roRBACManifest()
 	rbacCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
@@ -696,7 +703,7 @@ func DeployROCoverageManifest(kubeconfigPath, imageName string, writer io.Writer
 	time.Sleep(2 * time.Second)
 
 	// Apply workload (ConfigMap + Deployment + Service)
-	workloadManifest := roWorkloadManifest(imageName)
+	workloadManifest := roWorkloadManifest(imageName, verifyingTimeout...)
 	workloadCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	workloadCmd.Stdin = bytes.NewReader([]byte(workloadManifest))
 	workloadCmd.Stdout = writer
