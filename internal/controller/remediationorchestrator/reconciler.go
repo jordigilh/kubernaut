@@ -3090,13 +3090,9 @@ func (r *Reconciler) ensureNotificationsCreated(ctx context.Context, rr *remedia
 				logger.Error(notifErr, "Failed to create completion notification, will retry")
 			} else {
 				logger.Info("Created completion notification", "notification", notifName)
+				ref := r.buildNotificationRef(ctx, notifName, rr.Namespace)
 				if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
-					rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, corev1.ObjectReference{
-						Kind:       "NotificationRequest",
-						Name:       notifName,
-						Namespace:  rr.Namespace,
-						APIVersion: "notification.kubernaut.ai/v1alpha1",
-					})
+					rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
 					return nil
 				}); refErr != nil {
 					logger.Error(refErr, "Failed to persist completion NT ref (non-critical)", "notification", notifName)
@@ -3115,13 +3111,9 @@ func (r *Reconciler) ensureNotificationsCreated(ctx context.Context, rr *remedia
 			logger.Error(bulkErr, "Failed to create bulk duplicate notification, will retry")
 		} else {
 			logger.Info("Created bulk duplicate notification", "notification", name)
+			ref := r.buildNotificationRef(ctx, name, rr.Namespace)
 			if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
-				rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, corev1.ObjectReference{
-					Kind:       "NotificationRequest",
-					Name:       name,
-					Namespace:  rr.Namespace,
-					APIVersion: "notification.kubernaut.ai/v1alpha1",
-				})
+				rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
 				return nil
 			}); refErr != nil {
 				logger.Error(refErr, "Failed to persist bulk NT ref (non-critical)", "notification", name)
@@ -3132,6 +3124,23 @@ func (r *Reconciler) ensureNotificationsCreated(ctx context.Context, rr *remedia
 			}
 		}
 	}
+}
+
+// buildNotificationRef fetches the NotificationRequest by name to obtain its UID
+// and returns a fully populated ObjectReference (BR-ORCH-035 AC-6).
+// If the fetch fails, UID is omitted (best-effort; Name+Namespace still sufficient for lookup).
+func (r *Reconciler) buildNotificationRef(ctx context.Context, name, namespace string) corev1.ObjectReference {
+	ref := corev1.ObjectReference{
+		Kind:       "NotificationRequest",
+		Name:       name,
+		Namespace:  namespace,
+		APIVersion: "notification.kubernaut.ai/v1alpha1",
+	}
+	nr := &notificationv1.NotificationRequest{}
+	if err := r.client.Get(ctx, client.ObjectKey{Name: name, Namespace: namespace}, nr); err == nil {
+		ref.UID = nr.UID
+	}
+	return ref
 }
 
 // createPhaseTimeoutNotification creates a notification for phase timeout.
