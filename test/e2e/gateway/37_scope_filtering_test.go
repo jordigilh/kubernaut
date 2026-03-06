@@ -163,6 +163,7 @@ var _ = Describe("Test 37: BR-SCOPE-002 Gateway Scope Filtering (E2E)", Ordered,
 			}
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+			setE2EAuthHeader(req)
 			resp, err := httpClient.Do(req)
 			if err != nil {
 				return 0
@@ -202,6 +203,7 @@ var _ = Describe("Test 37: BR-SCOPE-002 Gateway Scope Filtering (E2E)", Ordered,
 		Expect(err).ToNot(HaveOccurred())
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+		setE2EAuthHeader(req)
 
 		resp, err := httpClient.Do(req)
 		Expect(err).ToNot(HaveOccurred())
@@ -253,6 +255,7 @@ var _ = Describe("Test 37: BR-SCOPE-002 Gateway Scope Filtering (E2E)", Ordered,
 			}
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+			setE2EAuthHeader(req)
 			resp, err := httpClient.Do(req)
 			if err != nil {
 				return 0
@@ -285,6 +288,7 @@ var _ = Describe("Test 37: BR-SCOPE-002 Gateway Scope Filtering (E2E)", Ordered,
 		Expect(err).ToNot(HaveOccurred())
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+		setE2EAuthHeader(req)
 
 		resp, err := httpClient.Do(req)
 		Expect(err).ToNot(HaveOccurred())
@@ -324,6 +328,7 @@ var _ = Describe("Test 37: BR-SCOPE-002 Gateway Scope Filtering (E2E)", Ordered,
 		Expect(err).ToNot(HaveOccurred())
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+		setE2EAuthHeader(req)
 
 		resp, err := httpClient.Do(req)
 		Expect(err).ToNot(HaveOccurred())
@@ -368,6 +373,7 @@ var _ = Describe("Test 37: BR-SCOPE-002 Gateway Scope Filtering (E2E)", Ordered,
 		Expect(err).ToNot(HaveOccurred())
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+		setE2EAuthHeader(req)
 
 		resp, err := httpClient.Do(req)
 		Expect(err).ToNot(HaveOccurred())

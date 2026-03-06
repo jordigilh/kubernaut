@@ -117,6 +117,7 @@ var _ = Describe("Test 16: Structured Logging Verification (BR-GATEWAY-024, BR-G
 				}
 				req24.Header.Set("Content-Type", "application/json")
 				req24.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+				setE2EAuthHeader(req24)
 				return httpClient.Do(req24)
 			}()
 			if err != nil {

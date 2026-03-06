@@ -91,6 +91,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 					bytes.NewBuffer(payload))
 				req.Header.Set("Content-Type", "application/json")
 				req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+				setE2EAuthHeader(req)
 				resp, err := http.DefaultClient.Do(req)
 				if err != nil {
 					return 0
@@ -132,6 +133,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 				bytes.NewBuffer(payload))
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+			setE2EAuthHeader(req)
 
 			resp, err := http.DefaultClient.Do(req)
 			_ = err
@@ -166,6 +168,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 				bytes.NewBuffer(payload))
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+			setE2EAuthHeader(req)
 
 			resp, err := http.DefaultClient.Do(req)
 			_ = err
@@ -216,6 +219,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 					bytes.NewBuffer(payload))
 				req.Header.Set("Content-Type", "application/json")
 				req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+				setE2EAuthHeader(req)
 				resp, _ := http.DefaultClient.Do(req)
 				return resp
 			}
@@ -312,6 +316,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 					bytes.NewBuffer(payload))
 				req.Header.Set("Content-Type", "application/json")
 				req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+				setE2EAuthHeader(req)
 				resp, err := http.DefaultClient.Do(req)
 				if err != nil || resp == nil {
 					return 0
@@ -353,6 +358,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 						bytes.NewBuffer(payload))
 					req.Header.Set("Content-Type", "application/json")
 					req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+					setE2EAuthHeader(req)
 
 					resp, _ := http.DefaultClient.Do(req)
 					if resp != nil {
@@ -408,6 +414,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 				bytes.NewBuffer(payload))
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+			setE2EAuthHeader(req)
 
 			resp, err := http.DefaultClient.Do(req)
 			_ = err

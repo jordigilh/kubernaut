@@ -149,6 +149,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 				req, _ := http.NewRequest("POST", url, bytes.NewReader(payload))
 				req.Header.Set("Content-Type", "application/json")
 				req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+				setE2EAuthHeader(req)
 				resp, err := http.DefaultClient.Do(req)
 				if err != nil {
 					GinkgoWriter.Printf("  Gateway POST error: %v\n", err)
@@ -233,6 +234,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 				req, _ := http.NewRequest("POST", url, bytes.NewReader(payload))
 				req.Header.Set("Content-Type", "application/json")
 				req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+				setE2EAuthHeader(req)
 				var err error
 				resp, err = http.DefaultClient.Do(req)
 				if err != nil {

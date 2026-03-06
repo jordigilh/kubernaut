@@ -205,6 +205,23 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute),
 		gatewayURL = "http://127.0.0.1:8080" // Kind extraPortMapping hostPort (maps to NodePort 30080) - Use 127.0.0.1 for CI/CD IPv4 compatibility
 		gatewayNamespace = "kubernaut-system"
 
+		// BR-GATEWAY-036/037: Create suite-level authorized SA for all E2E webhook requests.
+		// All E2E tests that POST to /api/v1/signals/* need a valid Bearer token
+		// because the production Gateway enforces auth on all signal endpoints.
+		logger.Info("Creating suite-level authorized ServiceAccount for E2E webhook auth")
+		saCtx := context.Background()
+		err = infrastructure.CreateE2EServiceAccountWithGatewayAccess(
+			saCtx, gatewayNamespace, kubeconfigPath, "e2e-gateway-suite-sa", GinkgoWriter,
+		)
+		Expect(err).ToNot(HaveOccurred(), "Failed to create E2E gateway auth ServiceAccount")
+
+		e2eAuthToken, err = infrastructure.GetServiceAccountToken(
+			saCtx, gatewayNamespace, "e2e-gateway-suite-sa", kubeconfigPath,
+		)
+		Expect(err).ToNot(HaveOccurred(), "Failed to get E2E gateway auth token")
+		Expect(e2eAuthToken).ToNot(BeEmpty(), "E2E gateway auth token must not be empty")
+		logger.Info("Suite-level E2E auth token created", "sa", "e2e-gateway-suite-sa")
+
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		logger.Info("Setup Complete - Process ready to run tests")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -213,6 +230,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute),
 		logger.Info(fmt.Sprintf("  • Gateway URL: %s", gatewayURL))
 		logger.Info(fmt.Sprintf("  • Gateway Namespace: %s", gatewayNamespace))
 		logger.Info("  • K8s Client: Suite-level (1 per process)")
+		logger.Info("  • Auth Token: Suite-level (e2e-gateway-suite-sa)")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	},
 )

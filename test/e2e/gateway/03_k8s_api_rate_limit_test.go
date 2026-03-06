@@ -167,6 +167,7 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 				}
 				req4.Header.Set("Content-Type", "application/json")
 				req4.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+				setE2EAuthHeader(req4)
 				return httpClient.Do(req4)
 			}()
 			if err != nil {

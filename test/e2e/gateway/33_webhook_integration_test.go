@@ -368,6 +368,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 				req, err := http.NewRequest("POST", url, bytes.NewReader(payload))
 				Expect(err).ToNot(HaveOccurred())
 				req.Header.Set("Content-Type", "application/json")
+				setE2EAuthHeader(req)
 				resp, err = http.DefaultClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())
 				return resp.StatusCode
@@ -501,6 +502,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 				req, err := http.NewRequest("POST", url, bytes.NewReader(payload))
 				Expect(err).ToNot(HaveOccurred())
 				req.Header.Set("Content-Type", "application/json")
+				setE2EAuthHeader(req)
 				resp, err = http.DefaultClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())
 				if resp != nil && resp.Body != nil {

@@ -132,6 +132,7 @@ var _ = Describe("Test 08: Kubernetes Event Ingestion (BR-GATEWAY-002)", Ordered
 					}
 					req.Header.Set("Content-Type", "application/json")
 					req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+					setE2EAuthHeader(req)
 					resp, err = httpClient.Do(req)
 					return err
 				}, 10*time.Second, 1*time.Second).Should(Succeed())

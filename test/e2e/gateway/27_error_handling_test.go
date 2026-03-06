@@ -88,6 +88,7 @@ AfterEach(func() {
 			bytes.NewBufferString(malformedJSON))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+		setE2EAuthHeader(req)
 
 		resp, err := http.DefaultClient.Do(req)
 		_ = err
@@ -143,6 +144,7 @@ AfterEach(func() {
 			bytes.NewBufferString(largePayload))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+		setE2EAuthHeader(req)
 
 		resp, err := http.DefaultClient.Do(req)
 		_ = err
@@ -185,6 +187,7 @@ AfterEach(func() {
 			bytes.NewBufferString(invalidAlert))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+		setE2EAuthHeader(req)
 
 		resp, err := http.DefaultClient.Do(req)
 		_ = err

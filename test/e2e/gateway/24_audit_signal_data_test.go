@@ -85,6 +85,7 @@ func postToGateway(url, payload string) (*http.Response, error) {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+	setE2EAuthHeader(req)
 	return http.DefaultClient.Do(req)
 }
 

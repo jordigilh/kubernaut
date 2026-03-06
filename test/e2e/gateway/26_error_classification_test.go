@@ -84,6 +84,7 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-111 to 
 			Expect(err).ToNot(HaveOccurred())
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+			setE2EAuthHeader(req)
 
 			resp, err := http.DefaultClient.Do(req)
 			Expect(err).ToNot(HaveOccurred(), "HTTP request to gateway should not fail")
@@ -125,6 +126,7 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-111 to 
 				bytes.NewBuffer(payload))
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+			setE2EAuthHeader(req)
 
 			startTime := time.Now()
 			resp, err := http.DefaultClient.Do(req)
@@ -161,6 +163,7 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-111 to 
 				bytes.NewBuffer(payload))
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+			setE2EAuthHeader(req)
 
 			resp, err := http.DefaultClient.Do(req)
 			Expect(err).ToNot(HaveOccurred())
@@ -194,6 +197,7 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-111 to 
 				bytes.NewBuffer(invalidPayload))
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+			setE2EAuthHeader(req)
 
 			startTime := time.Now()
 			resp, err := http.DefaultClient.Do(req)
@@ -225,6 +229,7 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-111 to 
 				bytes.NewBuffer(invalidPayload))
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+			setE2EAuthHeader(req)
 
 			startTime := time.Now()
 			resp, err := http.DefaultClient.Do(req)
@@ -254,6 +259,7 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-111 to 
 				bytes.NewBuffer(invalidPayload))
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+			setE2EAuthHeader(req)
 
 			resp, err := http.DefaultClient.Do(req)
 			Expect(err).ToNot(HaveOccurred())
@@ -295,6 +301,7 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-111 to 
 				bytes.NewBuffer(payload))
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+			setE2EAuthHeader(req)
 
 			resp, err := http.DefaultClient.Do(req)
 			Expect(err).ToNot(HaveOccurred())
@@ -335,6 +342,7 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-111 to 
 				bytes.NewBuffer(payload))
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+			setE2EAuthHeader(req)
 
 			startTime := time.Now()
 			resp, err := http.DefaultClient.Do(req)
@@ -374,6 +382,7 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-111 to 
 				bytes.NewBuffer(payload))
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+			setE2EAuthHeader(req)
 
 			resp, err := http.DefaultClient.Do(req)
 			Expect(err).ToNot(HaveOccurred())

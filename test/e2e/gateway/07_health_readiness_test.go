@@ -175,6 +175,7 @@ var _ = Describe("Test 07: Health & Readiness Endpoints (BR-GATEWAY-018)", Order
 				}
 				req10.Header.Set("Content-Type", "application/json")
 				req10.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+				setE2EAuthHeader(req10)
 				return httpClient.Do(req10)
 			}()
 			if err == nil {

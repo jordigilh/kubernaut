@@ -121,6 +121,7 @@ var _ = Describe("BR-HTTP-015: Gateway CORS Integration", Label("integration", "
 			req.Header.Set("Origin", "https://dashboard.kubernaut.io")
 			req.Header.Set("Access-Control-Request-Method", "POST")
 			req.Header.Set("Access-Control-Request-Headers", "Content-Type")
+			setE2EAuthHeader(req)
 
 			resp, err := client.Do(req)
 			Expect(err).ToNot(HaveOccurred())
@@ -169,6 +170,7 @@ var _ = Describe("BR-HTTP-015: Gateway CORS Integration", Label("integration", "
 			req.Header.Set("Origin", "https://dashboard.kubernaut.io")
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+			setE2EAuthHeader(req)
 
 			resp, err := client.Do(req)
 			Expect(err).ToNot(HaveOccurred())

@@ -173,6 +173,7 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 				}
 				req23.Header.Set("Content-Type", "application/json")
 				req23.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+				setE2EAuthHeader(req23)
 				return httpClient.Do(req23)
 			}()
 			Expect(err).ToNot(HaveOccurred())
