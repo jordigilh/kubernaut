@@ -57,6 +57,11 @@ const (
 	EventTypeApprovalRejected      = "orchestrator.approval.rejected"
 	EventTypeManualReview          = "orchestrator.remediation.manual_review"
 	EventTypeRoutingBlocked        = "orchestrator.routing.blocked"
+
+	// #280: Verifying phase audit events
+	EventTypeLifecycleVerifyingStarted      = "orchestrator.lifecycle.verifying_started"
+	EventTypeLifecycleVerificationCompleted = "orchestrator.lifecycle.verification_completed"
+	EventTypeLifecycleVerificationTimedOut  = "orchestrator.lifecycle.verification_timed_out"
 )
 
 // Event category constant (from OpenAPI spec)
@@ -199,6 +204,99 @@ func (m *Manager) BuildLifecycleStartedEvent(
 		Namespace: namespace,
 	}
 	event.EventData = api.NewAuditEventRequestEventDataOrchestratorLifecycleStartedAuditEventRequestEventData(payload)
+
+	return event, nil
+}
+
+// BuildLifecycleVerifyingStartedEvent builds an audit event for the Verifying phase start (#280).
+// Emitted when RR transitions from Executing to Verifying after successful WFE completion.
+func (m *Manager) BuildLifecycleVerifyingStartedEvent(
+	correlationID string,
+	namespace string,
+	rrName string,
+) (*api.AuditEventRequest, error) {
+	event := audit.NewAuditEventRequest()
+	event.Version = "1.0"
+	audit.SetEventType(event, EventTypeLifecycleVerifyingStarted)
+	audit.SetEventCategory(event, CategoryOrchestration)
+	audit.SetEventAction(event, "verifying_started")
+	audit.SetEventOutcome(event, audit.OutcomePending)
+	audit.SetActor(event, "service", m.serviceName)
+	audit.SetResource(event, "RemediationRequest", rrName)
+	audit.SetCorrelationID(event, correlationID)
+	audit.SetNamespace(event, namespace)
+
+	payload := api.RemediationOrchestratorAuditPayload{
+		EventType: api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleVerifyingStarted,
+		RrName:    rrName,
+		Namespace: namespace,
+	}
+	event.EventData = api.NewAuditEventRequestEventDataOrchestratorLifecycleVerifyingStartedAuditEventRequestEventData(payload)
+
+	return event, nil
+}
+
+// BuildLifecycleVerificationCompletedEvent builds an audit event for Verifying -> Completed (#280).
+// Emitted when EA reaches terminal phase and RR transitions from Verifying to Completed.
+func (m *Manager) BuildLifecycleVerificationCompletedEvent(
+	correlationID string,
+	namespace string,
+	rrName string,
+	eaName string,
+	outcome string,
+	durationMs int64,
+) (*api.AuditEventRequest, error) {
+	event := audit.NewAuditEventRequest()
+	event.Version = "1.0"
+	audit.SetEventType(event, EventTypeLifecycleVerificationCompleted)
+	audit.SetEventCategory(event, CategoryOrchestration)
+	audit.SetEventAction(event, ActionCompleted)
+	audit.SetEventOutcome(event, audit.OutcomeSuccess)
+	audit.SetActor(event, "service", m.serviceName)
+	audit.SetResource(event, "RemediationRequest", rrName)
+	audit.SetCorrelationID(event, correlationID)
+	audit.SetNamespace(event, namespace)
+
+	payload := api.RemediationOrchestratorAuditPayload{
+		EventType:  api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleVerificationCompleted,
+		RrName:     rrName,
+		Namespace:  namespace,
+		EaName:     api.NewOptString(eaName),
+		DurationMs: api.NewOptInt64(durationMs),
+	}
+	event.EventData = api.NewAuditEventRequestEventDataOrchestratorLifecycleVerificationCompletedAuditEventRequestEventData(payload)
+
+	return event, nil
+}
+
+// BuildLifecycleVerificationTimedOutEvent builds an audit event for Verifying timeout (#280).
+// Emitted when VerificationDeadline expires and RR transitions to Completed with VerificationTimedOut.
+func (m *Manager) BuildLifecycleVerificationTimedOutEvent(
+	correlationID string,
+	namespace string,
+	rrName string,
+	eaName string,
+	durationMs int64,
+) (*api.AuditEventRequest, error) {
+	event := audit.NewAuditEventRequest()
+	event.Version = "1.0"
+	audit.SetEventType(event, EventTypeLifecycleVerificationTimedOut)
+	audit.SetEventCategory(event, CategoryOrchestration)
+	audit.SetEventAction(event, ActionExpired)
+	audit.SetEventOutcome(event, audit.OutcomeFailure)
+	audit.SetActor(event, "service", m.serviceName)
+	audit.SetResource(event, "RemediationRequest", rrName)
+	audit.SetCorrelationID(event, correlationID)
+	audit.SetNamespace(event, namespace)
+
+	payload := api.RemediationOrchestratorAuditPayload{
+		EventType:  api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleVerificationTimedOut,
+		RrName:     rrName,
+		Namespace:  namespace,
+		EaName:     api.NewOptString(eaName),
+		DurationMs: api.NewOptInt64(durationMs),
+	}
+	event.EventData = api.NewAuditEventRequestEventDataOrchestratorLifecycleVerificationTimedOutAuditEventRequestEventData(payload)
 
 	return event, nil
 }
