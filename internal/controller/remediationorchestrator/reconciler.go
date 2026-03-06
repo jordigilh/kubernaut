@@ -1634,7 +1634,8 @@ func (r *Reconciler) transitionPhase(ctx context.Context, rr *remediationv1.Reme
 // EffectivenessAssessment runs. The Gateway deduplicates signals during this window.
 // RO transitions to Completed when EA reaches a terminal state (handleVerifyingPhase)
 // or when VerificationDeadline expires.
-// Completion notifications are sent immediately (remediation itself succeeded).
+// #281: Notification creation is delegated to ensureNotificationsCreated (idempotent).
+// If creation fails here, handleVerifyingPhase retries on subsequent reconciles.
 func (r *Reconciler) transitionToVerifying(ctx context.Context, rr *remediationv1.RemediationRequest, outcome string) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
 	// RO-AUDIT-IDEMPOTENCY: Refetch via apiReader (cache-bypassed) before the phase
@@ -1691,45 +1692,9 @@ func (r *Reconciler) transitionToVerifying(ctx context.Context, rr *remediationv
 		}
 	}
 
-	// BR-ORCH-045: Completion notification — sent immediately since remediation succeeded
-	if oldPhaseBeforeTransition != phase.Verifying && oldPhaseBeforeTransition != phase.Completed {
-		aiName := fmt.Sprintf("ai-%s", rr.Name)
-		ai := &aianalysisv1.AIAnalysis{}
-		if err := r.client.Get(ctx, client.ObjectKey{Name: aiName, Namespace: rr.Namespace}, ai); err != nil {
-			logger.Error(err, "Failed to fetch AIAnalysis for completion notification", "aiAnalysis", aiName)
-		} else {
-			notifName, notifErr := r.notificationCreator.CreateCompletionNotification(ctx, rr, ai)
-			if notifErr != nil {
-				logger.Error(notifErr, "Failed to create completion notification")
-			} else {
-				logger.Info("Created completion notification", "notification", notifName)
-				if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
-					rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, corev1.ObjectReference{
-						Kind:       "NotificationRequest",
-						Name:       notifName,
-						Namespace:  rr.Namespace,
-						APIVersion: "notification.kubernaut.ai/v1alpha1",
-					})
-					return nil
-				}); refErr != nil {
-					logger.Error(refErr, "Failed to persist completion NT ref (non-critical)", "notification", notifName)
-				}
-				if r.Recorder != nil {
-					r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonNotificationCreated,
-						fmt.Sprintf("Completion notification created: %s", notifName))
-				}
-			}
-		}
-
-		if rr.Status.DuplicateCount > 0 {
-			bulkName, bulkErr := r.notificationCreator.CreateBulkDuplicateNotification(ctx, rr)
-			if bulkErr != nil {
-				logger.Error(bulkErr, "Failed to create bulk duplicate notification")
-			} else {
-				logger.Info("Created bulk duplicate notification", "notification", bulkName)
-			}
-		}
-	}
+	// BR-ORCH-045 + BR-ORCH-034: Completion and bulk duplicate notifications.
+	// #281: Non-blocking first attempt; handleVerifyingPhase retries on subsequent reconciles.
+	r.ensureNotificationsCreated(ctx, rr)
 
 	// #280: Create EA — if this fails, handleVerifyingPhase will retry on next reconcile
 	r.createEffectivenessAssessmentIfNeeded(ctx, rr)
@@ -1740,12 +1705,17 @@ func (r *Reconciler) transitionToVerifying(ctx context.Context, rr *remediationv
 
 // handleVerifyingPhase manages the Verifying phase lifecycle (#280).
 // Responsibilities:
-//   - Retry EA creation if EffectivenessAssessmentRef is nil (transient failure during transition)
-//   - Populate VerificationDeadline from EA.Status.ValidityDeadline + buffer
-//   - Timeout check when VerificationDeadline expires (Change 4)
-//   - EA terminal status triggers Completed transition (Change 3, via trackEffectivenessStatus)
+//   - Step 0 (#281): Retry notification creation if refs are missing (non-blocking)
+//   - Step 1: Retry EA creation if EffectivenessAssessmentRef is nil (transient failure)
+//   - Step 2: Populate VerificationDeadline from EA.Status.ValidityDeadline + buffer
+//   - Step 3: Timeout check when VerificationDeadline expires (Change 4)
+//   - Step 4: EA terminal status triggers Completed transition (Change 3)
 func (r *Reconciler) handleVerifyingPhase(ctx context.Context, rr *remediationv1.RemediationRequest) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
+
+	// Step 0 (#281): Retry notification creation if refs are missing.
+	// Non-blocking: notifications are informational, don't gate EA/verification.
+	r.ensureNotificationsCreated(ctx, rr)
 
 	// Step 1: If EA was not created during transition (transient failure), retry now
 	if rr.Status.EffectivenessAssessmentRef == nil {
@@ -1795,10 +1765,13 @@ func (r *Reconciler) handleVerifyingPhase(ctx context.Context, rr *remediationv1
 			if r.Metrics != nil {
 				r.Metrics.PhaseTransitionsTotal.WithLabelValues(string(phase.Verifying), string(phase.Completed), rr.Namespace).Inc()
 			}
-			r.emitVerificationTimedOutAudit(ctx, rr)
-			return ctrl.Result{}, nil
-		} else {
-			logger.V(1).Info("EA.Status.ValidityDeadline not yet set, requeueing")
+		r.emitVerificationTimedOutAudit(ctx, rr)
+		if rr.Status.StartTime != nil {
+			r.emitCompletionAudit(ctx, rr, "success", time.Since(rr.Status.StartTime.Time).Milliseconds())
+		}
+		return ctrl.Result{}, nil
+	} else {
+		logger.V(1).Info("EA.Status.ValidityDeadline not yet set, requeueing")
 			return ctrl.Result{RequeueAfter: config.RequeueResourceBusy}, nil
 		}
 	}
@@ -1822,6 +1795,9 @@ func (r *Reconciler) handleVerifyingPhase(ctx context.Context, rr *remediationv1
 			r.Metrics.PhaseTransitionsTotal.WithLabelValues(string(phase.Verifying), string(phase.Completed), rr.Namespace).Inc()
 		}
 		r.emitVerificationTimedOutAudit(ctx, rr)
+		if rr.Status.StartTime != nil {
+			r.emitCompletionAudit(ctx, rr, "success", time.Since(rr.Status.StartTime.Time).Milliseconds())
+		}
 		return ctrl.Result{}, nil
 	}
 
@@ -1833,6 +1809,9 @@ func (r *Reconciler) handleVerifyingPhase(ctx context.Context, rr *remediationv1
 	// If trackEffectivenessStatus transitioned to Completed, emit audit and return
 	if rr.Status.OverallPhase == phase.Completed {
 		r.emitVerificationCompletedAudit(ctx, rr)
+		if rr.Status.StartTime != nil {
+			r.emitCompletionAudit(ctx, rr, "success", time.Since(rr.Status.StartTime.Time).Milliseconds())
+		}
 		return ctrl.Result{}, nil
 	}
 
@@ -3075,6 +3054,84 @@ func (r *Reconciler) handlePhaseTimeout(ctx context.Context, rr *remediationv1.R
 	// Issue #240: EA is NOT created on phase timeout. See transitionToVerifying.
 
 	return nil
+}
+
+// hasNotificationRef returns true if a NotificationRequest with the given name
+// is already tracked in rr.Status.NotificationRequestRefs.
+func hasNotificationRef(rr *remediationv1.RemediationRequest, name string) bool {
+	for i := range rr.Status.NotificationRequestRefs {
+		if rr.Status.NotificationRequestRefs[i].Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// ensureNotificationsCreated creates completion and bulk-duplicate notifications
+// if they are not yet tracked in NotificationRequestRefs.
+// Idempotent: deterministic names + ref check prevent duplicates across reconciles.
+// Non-blocking: errors are logged but never propagated.
+// Called from transitionToVerifying (first attempt) and handleVerifyingPhase (retry).
+// Reference: BR-ORCH-045 (completion), BR-ORCH-034 (bulk duplicate), #281 (retry).
+func (r *Reconciler) ensureNotificationsCreated(ctx context.Context, rr *remediationv1.RemediationRequest) {
+	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
+
+	completionName := fmt.Sprintf("nr-completion-%s", rr.Name)
+	bulkName := fmt.Sprintf("nr-bulk-%s", rr.Name)
+
+	if !hasNotificationRef(rr, completionName) {
+		aiName := fmt.Sprintf("ai-%s", rr.Name)
+		ai := &aianalysisv1.AIAnalysis{}
+		if err := r.client.Get(ctx, client.ObjectKey{Name: aiName, Namespace: rr.Namespace}, ai); err != nil {
+			logger.Error(err, "Failed to fetch AIAnalysis for completion notification, will retry", "aiAnalysis", aiName)
+		} else {
+			notifName, notifErr := r.notificationCreator.CreateCompletionNotification(ctx, rr, ai)
+			if notifErr != nil {
+				logger.Error(notifErr, "Failed to create completion notification, will retry")
+			} else {
+				logger.Info("Created completion notification", "notification", notifName)
+				if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+					rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, corev1.ObjectReference{
+						Kind:       "NotificationRequest",
+						Name:       notifName,
+						Namespace:  rr.Namespace,
+						APIVersion: "notification.kubernaut.ai/v1alpha1",
+					})
+					return nil
+				}); refErr != nil {
+					logger.Error(refErr, "Failed to persist completion NT ref (non-critical)", "notification", notifName)
+				}
+				if r.Recorder != nil {
+					r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonNotificationCreated,
+						fmt.Sprintf("Completion notification created: %s", notifName))
+				}
+			}
+		}
+	}
+
+	if rr.Status.DuplicateCount > 0 && !hasNotificationRef(rr, bulkName) {
+		name, bulkErr := r.notificationCreator.CreateBulkDuplicateNotification(ctx, rr)
+		if bulkErr != nil {
+			logger.Error(bulkErr, "Failed to create bulk duplicate notification, will retry")
+		} else {
+			logger.Info("Created bulk duplicate notification", "notification", name)
+			if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+				rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, corev1.ObjectReference{
+					Kind:       "NotificationRequest",
+					Name:       name,
+					Namespace:  rr.Namespace,
+					APIVersion: "notification.kubernaut.ai/v1alpha1",
+				})
+				return nil
+			}); refErr != nil {
+				logger.Error(refErr, "Failed to persist bulk NT ref (non-critical)", "notification", name)
+			}
+			if r.Recorder != nil {
+				r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonNotificationCreated,
+					fmt.Sprintf("Bulk duplicate notification created: %s", name))
+			}
+		}
+	}
 }
 
 // createPhaseTimeoutNotification creates a notification for phase timeout.
