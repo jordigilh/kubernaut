@@ -103,6 +103,10 @@ func OwnerChainCacheObjects() map[client.Object]cache.ByObject {
 // PartialObjectMetadata, controller-runtime uses metadata-only informers — so
 // owner chain resolution is a pure cache lookup with zero API server calls.
 //
+// #282: An optional fallbackReader (uncached apiReader) is used when the
+// informer cache misses a resource (e.g., newly created pods after rollout restart).
+// Without this, the resolver falls back to pod-level fingerprinting, defeating dedup.
+//
 // Business Requirements:
 //   - BR-GATEWAY-004: Signal Fingerprinting (owner-chain-based deduplication for K8s events)
 //
@@ -110,13 +114,32 @@ func OwnerChainCacheObjects() map[client.Object]cache.ByObject {
 //   - ADR-053: Resource Scope Management (shared metadata-only informer cache)
 //   - Same pattern as pkg/signalprocessing/ownerchain/builder.go (SP uses full client)
 type K8sOwnerResolver struct {
-	client client.Reader
+	client         client.Reader
+	fallbackReader client.Reader
 }
 
 // NewK8sOwnerResolver creates a new owner resolver backed by the metadata-only
 // informer cache. Pass the same ctrlClient used by scope.NewManager().
-func NewK8sOwnerResolver(c client.Reader) *K8sOwnerResolver {
-	return &K8sOwnerResolver{client: c}
+// An optional fallback reader (uncached apiReader) can be provided via
+// WithFallbackReader to handle cache misses for newly created resources (#282).
+func NewK8sOwnerResolver(c client.Reader, opts ...OwnerResolverOption) *K8sOwnerResolver {
+	r := &K8sOwnerResolver{client: c}
+	for _, opt := range opts {
+		opt(r)
+	}
+	return r
+}
+
+// OwnerResolverOption configures optional behavior on K8sOwnerResolver.
+type OwnerResolverOption func(*K8sOwnerResolver)
+
+// WithFallbackReader sets an uncached client.Reader used when the primary
+// (informer-backed) reader cannot find a resource. This eliminates pod-level
+// fingerprint fallback caused by cache sync lag after rollout restarts (#282).
+func WithFallbackReader(reader client.Reader) OwnerResolverOption {
+	return func(r *K8sOwnerResolver) {
+		r.fallbackReader = reader
+	}
 }
 
 // ResolveTopLevelOwner traverses ownerReferences to find the top-level controller.
@@ -167,13 +190,21 @@ func (r *K8sOwnerResolver) ResolveTopLevelOwner(ctx context.Context, namespace, 
 		getErr := r.client.Get(lookupCtx, key, obj)
 		cancel()
 
+		// #282: On cache miss, retry with the uncached fallback reader (direct API).
+		if getErr != nil && r.fallbackReader != nil {
+			logger.V(1).Info("Cache miss, retrying with direct API reader",
+				"kind", currentKind, "name", currentName, "error", getErr, "level", i)
+			fallbackCtx, fallbackCancel := context.WithTimeout(ctx, ownerLookupTimeout)
+			getErr = r.fallbackReader.Get(fallbackCtx, key, obj)
+			fallbackCancel()
+		}
+
 		if getErr != nil {
 			logger.V(1).Info("Failed to fetch resource metadata",
 				"kind", currentKind, "name", currentName, "error", getErr, "level", i)
 			if !foundOwner {
 				return "", "", fmt.Errorf("failed to resolve owner for %s/%s: %w", currentKind, currentName, getErr)
 			}
-			// Already found at least one owner, return it
 			break
 		}
 

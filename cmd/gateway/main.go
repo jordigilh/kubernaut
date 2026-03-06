@@ -91,7 +91,10 @@ func main() {
 	// BR-GATEWAY-004: Owner chain resolution for signal deduplication (Issue #63).
 	// Uses the same ctrlClient as scope management (ADR-053) — metadata-only informer
 	// cache, zero additional API calls. Shared across all adapters.
-	ownerResolver := adapters.NewK8sOwnerResolver(srv.GetCachedClient())
+	ownerResolver := adapters.NewK8sOwnerResolver(
+		srv.GetCachedClient(),
+		adapters.WithFallbackReader(srv.GetAPIReader()),
+	)
 
 	// Prometheus AlertManager webhook adapter
 	// Issue #63: alertname excluded from fingerprint; OwnerResolver resolves Pod→Deployment

@@ -763,6 +763,13 @@ func (s *Server) GetCachedClient() client.Client {
 	return s.ctrlClient
 }
 
+// GetAPIReader returns the uncached client for direct API server reads.
+// Used by K8sOwnerResolver as a fallback when the informer cache misses
+// newly created resources (e.g., pods after a rollout restart). (#282)
+func (s *Server) GetAPIReader() client.Reader {
+	return s.apiReader
+}
+
 // RegisterAdapter registers a RoutableAdapter using chi router
 //
 // This method:
