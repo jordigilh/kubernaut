@@ -166,30 +166,25 @@ Type "kubectl scale deployment/web-cluster --replicas=8 -n demo-autoscale"
 Enter
 Sleep 4s
 
-# Hidden wait for Pending pods to become visible
+# Live pod watch — transition to failure state (Pending)
 Hide
 Set TypingSpeed 1ms
-Type `sleep 15 && clear && echo FAULT"_"VISIBLE`
-Enter
-Wait+Screen@30s /FAULT_VISIBLE/
 Type "act_clear"
 Enter
 Sleep 500ms
-Set TypingSpeed 50ms
-Show
-
-Hide
-Set TypingSpeed 1ms
-Type "narrate 'Some pods are Pending — not enough node capacity'"
+Type "narrate 'Watching pods transition to failure state...'"
 Enter
 Sleep 300ms
 Set TypingSpeed 50ms
 Show
 Sleep 2s
 
-Type "kubectl get pods -n demo-autoscale -o wide"
+Type "kubectl get pods -n demo-autoscale -o wide -w"
 Enter
+Wait+Screen@120s /Pending/
 Sleep 5s
+Ctrl+C
+Sleep 2s
 
 Hide
 Set TypingSpeed 1ms
@@ -240,7 +235,16 @@ Sleep 8s
 
 Hide
 Set TypingSpeed 1ms
-Type "narrate 'Kubernaut Gateway received this alert and created a RemediationRequest'"
+Type "narrate 'The Gateway deduplicates matching signals and creates a single RemediationRequest'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 4s
+
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'The Gateway ingested the alert and created one RemediationRequest for the owner resource'"
 Enter
 Sleep 300ms
 Set TypingSpeed 50ms
@@ -360,43 +364,24 @@ Type "bash deploy/demo/scripts/approve-rar.sh"
 Enter
 Sleep 4s
 
-# Snapshot BEFORE provisioning — Pending pods, limited nodes
+# Live pod transition during remediation
 Hide
 Set TypingSpeed 1ms
 Type "act_clear"
 Enter
 Sleep 500ms
-Type "narrate 'Current state (pods stuck Pending — not enough node capacity)'"
+Type "narrate 'Watching pods — the workflow will provision a new node'"
 Enter
 Sleep 300ms
 Set TypingSpeed 50ms
 Show
 Sleep 2s
 
-Type "kubectl get pods -n demo-autoscale -o wide"
+Type "kubectl get pods -n demo-autoscale -o wide -w"
 Enter
-Sleep 6s
-
-# Wait for RR to enter Verifying — workflow is done, new node provisioned, EA pending
-Hide
-Set TypingSpeed 1ms
-Type `while ! kubectl get remediationrequests -n ${PLATFORM_NS} 2>/dev/null | grep -qE 'Verifying|Completed'; do sleep 5; done && clear && echo WF"_"DONE`
-Enter
-Wait+Screen@300s /WF_DONE/
-Type "act_clear"
-Enter
-Sleep 500ms
-Type "narrate 'Node provisioned — all pods now scheduled and running'"
-Enter
-Sleep 300ms
-Set TypingSpeed 50ms
-Show
+Sleep 60s
+Ctrl+C
 Sleep 2s
-
-# Snapshot AFTER provisioning — all pods Running, spread across nodes
-Type "kubectl get pods -n demo-autoscale -o wide"
-Enter
-Sleep 6s
 
 Hide
 Set TypingSpeed 1ms

@@ -199,7 +199,16 @@ Sleep 5s
 
 Hide
 Set TypingSpeed 1ms
-Type "narrate 'Kubernaut Gateway received this alert and created a RemediationRequest'"
+Type "narrate 'The Gateway deduplicates matching signals and creates a single RemediationRequest'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 4s
+
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'The Gateway ingested the alert and created one RemediationRequest for the owner resource'"
 Enter
 Sleep 300ms
 Set TypingSpeed 50ms
@@ -262,21 +271,24 @@ Set TypingSpeed 1ms
 Type `while ! kubectl get remediationrequests -n ${PLATFORM_NS} 2>/dev/null | grep -qE 'Executing|Verifying|Completed'; do sleep 10; done && clear && echo PIPELINE"_"READY`
 Enter
 Wait+Screen@600s /PIPELINE_READY/
-Type "act_clear"
+Type "narrate 'Analysis complete. Auto-approved — executing remediation now.'"
 Enter
 Sleep 300ms
-Type "narrate 'Analysis complete. Auto-approved — no manual approval required.'"
+Type "narrate 'Watching certificate status as the git revert executes...'"
 Enter
 Sleep 300ms
 Set TypingSpeed 50ms
 Show
 Sleep 2s
 
-# Snapshot 3: RR now in Executing (auto-approved)
-Type "kubectl get remediationrequests -n ${PLATFORM_NS}"
+# Certificate watch — shows transition during git revert + ArgoCD sync
+Type "kubectl get certificates -n demo-cert-gitops -w"
 Enter
-Sleep 6s
+Sleep 30s
+Ctrl+C
+Sleep 2s
 
+# AI analysis — explain WHAT the AI recommended (after seeing the visual result)
 Hide
 Set TypingSpeed 1ms
 Type "act_clear"
@@ -293,14 +305,46 @@ Type "bash deploy/demo/scripts/show-ai-analysis.sh demo-cert-gitops"
 Enter
 Sleep 24s
 
-# Second watch: captures execution transitions live
-# (Executing → Verifying → Completed)
+# Remediation status
 Hide
 Set TypingSpeed 1ms
 Type "act_clear"
 Enter
+Sleep 300ms
+Type "narrate 'Remediation status'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 2s
+
+Type "kubectl get remediationrequests -n ${PLATFORM_NS}"
+Enter
+Sleep 5s
+
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'Workflow execution summary'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 2s
+
+Type "kubectl get workflowexecutions -n ${PLATFORM_NS}"
+Enter
+Sleep 6s
+
+# Wait for RR completion
+Hide
+Set TypingSpeed 1ms
+Type `while ! kubectl get remediationrequests -n ${PLATFORM_NS} 2>/dev/null | grep -qE 'Verifying|Completed'; do sleep 5; done && clear && echo WF"_"DONE`
+Enter
+Wait+Screen@300s /WF_DONE/
+Type "act_clear"
+Enter
 Sleep 500ms
-Type "narrate 'Watching the execution phase transitions...'"
+Type "narrate 'Remediation verified, waiting for completion...'"
 Enter
 Sleep 300ms
 Set TypingSpeed 50ms

@@ -201,7 +201,16 @@ Sleep 8s
 
 Hide
 Set TypingSpeed 1ms
-Type "narrate 'Kubernaut Gateway received this alert and created a RemediationRequest'"
+Type "narrate 'The Gateway deduplicates matching signals and creates a single RemediationRequest'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 4s
+
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'The Gateway ingested the alert and created one RemediationRequest for the owner resource'"
 Enter
 Sleep 300ms
 Set TypingSpeed 50ms
@@ -321,14 +330,41 @@ Type "bash deploy/demo/scripts/approve-rar.sh"
 Enter
 Sleep 4s
 
-# Second watch: captures execution transitions live
-# (AwaitingApproval → Executing → Verifying → Completed)
+# Live pod transition during remediation
 Hide
 Set TypingSpeed 1ms
 Type "act_clear"
 Enter
 Sleep 500ms
-Type "narrate 'Watching the execution phase transitions...'"
+Type "narrate 'Watching pods — the workflow will relax the PDB to unblock disruptions'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 2s
+
+Type "kubectl get pods -n demo-pdb -o wide -w"
+Enter
+Sleep 60s
+Ctrl+C
+Sleep 2s
+
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'Workflow execution summary'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 2s
+
+Type "kubectl get workflowexecutions -n ${PLATFORM_NS}"
+Enter
+Sleep 6s
+
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'Remediation verified, waiting for completion...'"
 Enter
 Sleep 300ms
 Set TypingSpeed 50ms

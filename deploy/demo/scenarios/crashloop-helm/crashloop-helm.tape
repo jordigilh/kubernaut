@@ -162,30 +162,24 @@ Type "bash deploy/demo/scenarios/crashloop-helm/inject-bad-config.sh"
 Enter
 Sleep 4s
 
-# Hidden wait for crash to become visible
 Hide
 Set TypingSpeed 1ms
-Type `sleep 20 && clear && echo CRASH"_"VISIBLE`
-Enter
-Wait+Screen@60s /CRASH_VISIBLE/
 Type "act_clear"
 Enter
 Sleep 500ms
-Set TypingSpeed 50ms
-Show
-
-Hide
-Set TypingSpeed 1ms
-Type "narrate 'Pods are now in CrashLoopBackOff'"
+Type "narrate 'Watching pods transition to failure state...'"
 Enter
 Sleep 300ms
 Set TypingSpeed 50ms
 Show
 Sleep 2s
 
-Type "kubectl get pods -n demo-crashloop-helm"
+Type "kubectl get pods -n demo-crashloop-helm -o wide -w"
 Enter
+Wait+Screen@120s /CrashLoopBackOff/
 Sleep 5s
+Ctrl+C
+Sleep 2s
 
 Hide
 Set TypingSpeed 1ms
@@ -223,7 +217,16 @@ Sleep 8s
 
 Hide
 Set TypingSpeed 1ms
-Type "narrate 'Kubernaut Gateway received this alert and created a RemediationRequest'"
+Type "narrate 'The Gateway deduplicates matching signals and creates a single RemediationRequest'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 4s
+
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'The Gateway ingested the alert and created one RemediationRequest for the owner resource'"
 Enter
 Sleep 300ms
 Set TypingSpeed 50ms
@@ -343,14 +346,48 @@ Type "bash deploy/demo/scripts/approve-rar.sh"
 Enter
 Sleep 4s
 
-# Second watch: captures execution transitions live
-# (AwaitingApproval → Executing → Verifying → Completed)
+# Live pod transition during Helm rollback
 Hide
 Set TypingSpeed 1ms
 Type "act_clear"
 Enter
 Sleep 500ms
-Type "narrate 'Watching the execution phase transitions...'"
+Type "narrate 'Watching pods — the workflow will perform a Helm rollback'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 2s
+
+Type "kubectl get pods -n demo-crashloop-helm -o wide -w"
+Enter
+Sleep 30s
+Ctrl+C
+Sleep 2s
+
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'Workflow execution summary'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 2s
+
+Type "kubectl get workflowexecutions -n ${PLATFORM_NS}"
+Enter
+Sleep 6s
+
+# Wait for RR completion
+Hide
+Set TypingSpeed 1ms
+Type `while ! kubectl get remediationrequests -n ${PLATFORM_NS} 2>/dev/null | grep -qE 'Verifying|Completed'; do sleep 5; done && clear && echo WF"_"DONE`
+Enter
+Wait+Screen@300s /WF_DONE/
+Type "act_clear"
+Enter
+Sleep 500ms
+Type "narrate 'Remediation verified, waiting for completion...'"
 Enter
 Sleep 300ms
 Set TypingSpeed 50ms

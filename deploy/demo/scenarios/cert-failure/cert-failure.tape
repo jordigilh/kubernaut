@@ -181,13 +181,24 @@ Type "bash deploy/demo/scripts/show-alert.sh CertManagerCertNotReady"
 Enter
 Sleep 8s
 
-Type "kubectl get certificate -n demo-cert-failure"
+Type "kubectl get certificates -n demo-cert-failure -w"
 Enter
-Sleep 5s
+Sleep 10s
+Ctrl+C
+Sleep 2s
 
 Hide
 Set TypingSpeed 1ms
-Type "narrate 'Kubernaut Gateway received this alert and created a RemediationRequest'"
+Type "narrate 'The Gateway deduplicates matching signals and creates a single RemediationRequest'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 4s
+
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'The Gateway ingested the alert and created one RemediationRequest for the owner resource'"
 Enter
 Sleep 300ms
 Set TypingSpeed 50ms

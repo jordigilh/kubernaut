@@ -135,14 +135,21 @@ Sleep 5s
 
 Hide
 Set TypingSpeed 1ms
-Type "narrate 'The ml-worker container has a built-in memory leak that exceeds its 64Mi limit'"
+Type "act_clear"
 Enter
-Sleep 300ms
-Type "narrate 'No manual injection needed — OOMKill will happen naturally'"
+Sleep 500ms
+Type "narrate 'Watching pods transition to failure state...'"
 Enter
 Sleep 300ms
 Set TypingSpeed 50ms
 Show
+Sleep 2s
+
+Type "kubectl get pods -n demo-memory-escalation -o wide -w"
+Enter
+Wait+Screen@120s /OOMKilled/
+Sleep 5s
+Ctrl+C
 Sleep 2s
 
 Hide
@@ -181,7 +188,16 @@ Sleep 8s
 
 Hide
 Set TypingSpeed 1ms
-Type "narrate 'Kubernaut Gateway received this alert and created a RemediationRequest'"
+Type "narrate 'The Gateway deduplicates matching signals and creates a single RemediationRequest'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 4s
+
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'The Gateway ingested the alert and created one RemediationRequest for the owner resource'"
 Enter
 Sleep 300ms
 Set TypingSpeed 50ms
@@ -225,6 +241,30 @@ Sleep 6s
 
 Hide
 Set TypingSpeed 1ms
+Type "narrate 'Analysis complete. Approving Cycle 1 — executing remediation now.'"
+Enter
+Sleep 300ms
+Type "narrate 'Watching pods as the remediation executes...'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 2s
+
+Type "bash deploy/demo/scripts/approve-rar.sh"
+Enter
+Sleep 4s
+
+# Pod transition — shown FIRST so the viewer sees the live change
+Type "kubectl get pods -n demo-memory-escalation -o wide -w"
+Enter
+Sleep 45s
+Ctrl+C
+Sleep 2s
+
+# AI analysis — explain WHAT the AI recommended (after seeing the visual result)
+Hide
+Set TypingSpeed 1ms
 Type "act_clear"
 Enter
 Sleep 300ms
@@ -237,22 +277,39 @@ Sleep 2s
 
 Type "bash deploy/demo/scripts/show-ai-analysis.sh demo-memory-escalation"
 Enter
-Sleep 12s
+Sleep 24s
 
+# Remediation status
 Hide
 Set TypingSpeed 1ms
-Type "narrate 'Approving Cycle 1...'"
+Type "act_clear"
+Enter
+Sleep 300ms
+Type "narrate 'Remediation status'"
 Enter
 Sleep 300ms
 Set TypingSpeed 50ms
 Show
 Sleep 2s
 
-Type "bash deploy/demo/scripts/approve-rar.sh"
+Type "kubectl get remediationrequests -n ${PLATFORM_NS}"
 Enter
-Sleep 4s
+Sleep 5s
 
-# Hidden wait: poll until first cycle completes (Completed or Failed)
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'Workflow execution summary'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 2s
+
+Type "kubectl get workflowexecutions -n ${PLATFORM_NS}"
+Enter
+Sleep 6s
+
+# Wait for RR to reach Verifying/Completed (Cycle 1)
 Hide
 Set TypingSpeed 1ms
 Type `while true; do PHASE=$(kubectl get remediationrequests -n ${PLATFORM_NS} -o jsonpath='{.items[0].status.overallPhase}' 2>/dev/null); [ "$PHASE" = "Completed" ] || [ "$PHASE" = "Failed" ] && break; sleep 10; done && clear && echo CYCLE1"_"DONE`
@@ -261,8 +318,19 @@ Wait+Screen@600s /CYCLE1_DONE/
 Type "act_clear"
 Enter
 Sleep 500ms
+Type "narrate 'Cycle 1 verified, waiting for completion...'"
+Enter
+Sleep 300ms
 Set TypingSpeed 50ms
 Show
+Sleep 2s
+
+Type "kubectl get remediationrequests -n ${PLATFORM_NS} -w"
+Enter
+Wait+Screen@300s /Completed/
+Sleep 5s
+Ctrl+C
+Sleep 2s
 
 Hide
 Set TypingSpeed 1ms

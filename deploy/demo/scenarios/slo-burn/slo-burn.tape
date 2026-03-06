@@ -89,18 +89,17 @@ Type `export PLATFORM_NS=kubernaut-system`
 Enter
 Sleep 500ms
 
-Type `bash deploy/demo/scenarios/slo-burn/cleanup.sh 2>/dev/null; true`
+Type `bash deploy/demo/scenarios/slo-burn/cleanup.sh 2>/dev/null; true && clear && echo CLEAN"_"DONE`
 Enter
-Sleep 5s
+Wait+Screen@120s /CLEAN_DONE/
 
-# Shorten stabilization window for demo speed
-Type `kubectl get configmap remediationorchestrator-config -n ${PLATFORM_NS} -o yaml | sed 's/stabilizationWindow: "5m"/stabilizationWindow: "1m"/' | kubectl apply -f - >/dev/null 2>&1 && kubectl rollout restart deployment/remediationorchestrator-controller -n ${PLATFORM_NS} >/dev/null 2>&1 && kubectl rollout status deployment/remediationorchestrator-controller -n ${PLATFORM_NS} --timeout=60s >/dev/null 2>&1`
+Type `kubectl get configmap remediationorchestrator-config -n ${PLATFORM_NS} -o yaml | sed 's/stabilizationWindow: "5m"/stabilizationWindow: "1m"/' | kubectl apply -f - >/dev/null 2>&1 && kubectl rollout restart deploy/remediationorchestrator-controller -n ${PLATFORM_NS} >/dev/null 2>&1 && kubectl rollout status deploy/remediationorchestrator-controller -n ${PLATFORM_NS} --timeout=120s >/dev/null 2>&1 && clear && echo CONFIG"_"DONE`
 Enter
-Sleep 30s
+Wait+Screen@180s /CONFIG_DONE/
 
 Type `kubectl apply -f deploy/demo/scenarios/slo-burn/manifests/namespace.yaml >/dev/null 2>&1 && kubectl apply -f deploy/demo/scenarios/slo-burn/manifests/ >/dev/null 2>&1 && kubectl wait --for=condition=Available deployment/api-gateway deployment/traffic-gen deployment/blackbox-exporter -n demo-slo --timeout=120s >/dev/null 2>&1 && sleep 20 && clear && echo SETUP"_"COMPLETE`
 Enter
-Wait+Screen@300s /SETUP_COMPLETE/
+Wait+Screen@600s /SETUP_COMPLETE/
 
 Type "clear"
 Enter
@@ -202,7 +201,16 @@ Sleep 8s
 
 Hide
 Set TypingSpeed 1ms
-Type "narrate 'Kubernaut Gateway received this alert and created a RemediationRequest'"
+Type "narrate 'The Gateway deduplicates matching signals and creates a single RemediationRequest'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 4s
+
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'The Gateway ingested the alert and created one RemediationRequest for the owner resource'"
 Enter
 Sleep 300ms
 Set TypingSpeed 50ms
@@ -322,14 +330,48 @@ Type "bash deploy/demo/scripts/approve-rar.sh"
 Enter
 Sleep 4s
 
-# Second watch: captures execution transitions live
-# (AwaitingApproval → Executing → Verifying → Completed)
+# Live pod transition during remediation
 Hide
 Set TypingSpeed 1ms
 Type "act_clear"
 Enter
 Sleep 500ms
-Type "narrate 'Watching the execution phase transitions...'"
+Type "narrate 'Watching pods — the workflow will rollback to the previous good config'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 2s
+
+Type "kubectl get pods -n demo-slo -o wide -w"
+Enter
+Sleep 30s
+Ctrl+C
+Sleep 2s
+
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'Workflow execution summary'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 2s
+
+Type "kubectl get workflowexecutions -n ${PLATFORM_NS}"
+Enter
+Sleep 6s
+
+# Wait for RR completion
+Hide
+Set TypingSpeed 1ms
+Type `while ! kubectl get remediationrequests -n ${PLATFORM_NS} 2>/dev/null | grep -qE 'Verifying|Completed'; do sleep 5; done && clear && echo WF"_"DONE`
+Enter
+Wait+Screen@300s /WF_DONE/
+Type "act_clear"
+Enter
+Sleep 500ms
+Type "narrate 'Remediation verified, waiting for completion...'"
 Enter
 Sleep 300ms
 Set TypingSpeed 50ms
