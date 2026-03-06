@@ -59,12 +59,10 @@ type ServerSettings struct {
 // MiddlewareSettings contains middleware configuration.
 // Single Responsibility: Request processing middleware
 //
-// Note: RateLimitSettings removed (2025-12-07)
-// Rate limiting now delegated to Ingress/Route proxy per ADR-048.
-// See: docs/architecture/decisions/ADR-048-rate-limiting-proxy-delegation.md
+// Note: Redis-based RateLimitSettings removed (2025-12-07, ADR-048).
+// Concurrency limiting is now handled by chi Throttle via ServerSettings.MaxConcurrentRequests (ADR-048-ADDENDUM-001).
 type MiddlewareSettings struct {
-	// Empty - rate limiting delegated to proxy (ADR-048)
-	// Future middleware config can be added here
+	// Future middleware config can be added here (e.g., auth namespace)
 }
 
 // ProcessingSettings contains business logic configuration.
@@ -372,8 +370,8 @@ func (c *ServerConfig) Validate() error {
 	}
 
 	// Middleware validation
-	// Rate limiting removed (ADR-048) - delegated to proxy
-	// No validation needed for middleware
+	// Concurrency limiting via chi Throttle (ADR-048-ADDENDUM-001) is configured
+	// in ServerSettings.MaxConcurrentRequests, validated above
 
 	// Retry validation (GAP-8: Enhanced Configuration Validation)
 	if err := c.Processing.Retry.Validate(); err != nil {

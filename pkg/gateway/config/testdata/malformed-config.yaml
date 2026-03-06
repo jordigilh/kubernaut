@@ -9,6 +9,6 @@ server:
 
 # Invalid indentation
 middleware:
-  # Rate limiting removed (ADR-048)
+  # Concurrency limiting via chi Throttle in server.maxConcurrentRequests (ADR-048-ADDENDUM-001)
 
 

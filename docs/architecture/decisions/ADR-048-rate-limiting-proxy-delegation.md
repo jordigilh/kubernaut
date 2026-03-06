@@ -1,10 +1,12 @@
 # ADR-048: Rate Limiting Delegation to Ingress/Route Proxy
 
 ## Status
-**✅ APPROVED** (2025-12-07)
-**Last Reviewed**: 2025-12-07
+**✅ APPROVED** (2025-12-07) — **PARTIALLY SUPERSEDED** by [ADR-048-ADDENDUM-001](ADR-048-ADDENDUM-001-chi-throttle-middleware.md) (2026-01-29)
+**Last Reviewed**: 2026-03-02
 **Confidence**: 95%
-**Next Action**: Remove rate limiting code from Gateway service
+**Next Action**: None — Redis rate limiter removed (complete). Chi Throttle added as defense-in-depth (ADR-048-ADDENDUM-001).
+
+> **Note (2026-03-02)**: This ADR correctly removed the Redis-based rate limiter. However, it framed proxy as the *sole* rate limiting layer. ADR-048-ADDENDUM-001 subsequently added chi's built-in `Throttle` middleware as an application-layer defense-in-depth. The proxy layer is now complementary, not primary. See the addendum for details.
 
 ---
 
