@@ -38,6 +38,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/audit"                       // DD-AUDIT-003: Audit integration
 	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client" // Ogen generated audit types
+	"github.com/jordigilh/kubernaut/pkg/shared/auth"                 // BR-GATEWAY-036/037: Shared auth middleware
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/shared/audit"    // BR-AUDIT-005 Gap #7: Standardized error details
 	"github.com/jordigilh/kubernaut/pkg/shared/backoff"              // ADR-052 Addendum 001: Exponential backoff with jitter
 
@@ -46,6 +47,7 @@ import (
 	coordinationv1 "k8s.io/api/coordination/v1" // BR-GATEWAY-190: Lease resources for distributed locking
 	corev1 "k8s.io/api/core/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes" // BR-GATEWAY-036/037: K8s clientset for TokenReview/SAR
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -166,6 +168,10 @@ type Server struct {
 	k8sCache    cache.Cache        // Kubernetes cache with field index (nil for test clients)
 	cacheCancel context.CancelFunc // Cancel function to stop cache on shutdown
 
+	// BR-GATEWAY-036/037: Auth middleware (nil = auth disabled for backward-compat test migration)
+	// Production: always non-nil (K8sAuthenticator + K8sAuthorizer)
+	authMiddleware *auth.Middleware
+
 	// Graceful shutdown flag
 	// When true, readiness probe returns 503 (not ready)
 	// This ensures Kubernetes removes pod from Service endpoints BEFORE
@@ -220,13 +226,27 @@ func NewServer(cfg *config.ServerConfig, logger logr.Logger) (*Server, error) {
 // This ensures the Gateway uses the same K8s client as the test, avoiding cache synchronization issues
 // DD-GATEWAY-012: Redis REMOVED - Gateway is now Redis-free, K8s-native service
 // DD-STATUS-001: For tests, ctrlClient serves as both client and apiReader (direct API access)
-func NewServerWithK8sClient(cfg *config.ServerConfig, logger logr.Logger, metricsInstance *metrics.Metrics, ctrlClient client.Client) (*Server, error) {
+func NewServerWithK8sClient(cfg *config.ServerConfig, logger logr.Logger, metricsInstance *metrics.Metrics, ctrlClient client.Client, authenticator auth.Authenticator, authorizer auth.Authorizer) (*Server, error) {
 	// Use provided Kubernetes client (shared with test)
 	k8sClient := k8s.NewClient(ctrlClient)
 
 	// DD-STATUS-001: Use ctrlClient as apiReader for cache-bypassed reads
 	// In test environments, this provides direct K8s API access
-	return createServerWithClients(cfg, logger, metricsInstance, ctrlClient, ctrlClient, k8sClient)
+	return createServerWithClients(cfg, logger, metricsInstance, ctrlClient, ctrlClient, k8sClient, authenticator, authorizer)
+}
+
+// newAuthMiddleware creates the auth middleware if both authenticator and authorizer are provided.
+// Returns nil when either dependency is nil (backward compat for tests not yet wired with auth).
+func newAuthMiddleware(authenticator auth.Authenticator, authorizer auth.Authorizer, namespace string, logger logr.Logger) *auth.Middleware {
+	if authenticator == nil || authorizer == nil {
+		return nil
+	}
+	return auth.NewMiddleware(authenticator, authorizer, auth.MiddlewareConfig{
+		Namespace:    namespace,
+		Resource:     "services",
+		ResourceName: "gateway-service",
+		Verb:         "create",
+	}, logger)
 }
 
 // NewServerForTesting creates a Gateway server with injected dependencies for testing.
@@ -234,7 +254,7 @@ func NewServerWithK8sClient(cfg *config.ServerConfig, logger logr.Logger, metric
 //
 // USAGE: Unit tests only - allows testing audit failure scenarios
 // PRODUCTION: Use NewServer() or NewServerWithK8sClient() instead
-func NewServerForTesting(cfg *config.ServerConfig, logger logr.Logger, metricsInstance *metrics.Metrics, ctrlClient client.Client, auditStore audit.AuditStore, scopeChecker ScopeChecker) (*Server, error) {
+func NewServerForTesting(cfg *config.ServerConfig, logger logr.Logger, metricsInstance *metrics.Metrics, ctrlClient client.Client, auditStore audit.AuditStore, scopeChecker ScopeChecker, authenticator auth.Authenticator, authorizer auth.Authorizer) (*Server, error) {
 	// Use provided Kubernetes client
 	k8sClient := k8s.NewClient(ctrlClient)
 
@@ -287,6 +307,7 @@ func NewServerForTesting(cfg *config.ServerConfig, logger logr.Logger, metricsIn
 		auditStore:          auditStore, // Injected for testing
 		scopeChecker:        scopeChecker, // BR-SCOPE-002: nil = no scope filtering
 		controllerNamespace: controllerNS, // Issue #195: Used by ShouldDeduplicate
+		authMiddleware:      newAuthMiddleware(authenticator, authorizer, controllerNS, logger),
 		metricsInstance:     metricsInstance,
 		logger:              logger,
 	}
@@ -418,10 +439,19 @@ func NewServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger, metricsI
 	// k8s client wrapper (for CRD operations)
 	k8sClient := k8s.NewClient(ctrlClient)
 
+	// BR-GATEWAY-036/037: Create K8s clientset for TokenReview/SAR auth
+	k8sClientset, err := kubernetes.NewForConfig(kubeConfig)
+	if err != nil {
+		cancel()
+		return nil, fmt.Errorf("failed to create Kubernetes clientset for auth: %w", err)
+	}
+	authenticator := auth.NewK8sAuthenticator(k8sClientset)
+	authorizer := auth.NewK8sAuthorizer(k8sClientset)
+
 	// DD-STATUS-001: Pass separate cached client and uncached apiReader
 	// ctrlClient: Cached reads/writes for normal operations
 	// apiReader: Uncached reads for fresh data (status refetch after CRD creation)
-	server, err := createServerWithClients(cfg, logger, metricsInstance, ctrlClient, apiReader, k8sClient)
+	server, err := createServerWithClients(cfg, logger, metricsInstance, ctrlClient, apiReader, k8sClient, authenticator, authorizer)
 	if err != nil {
 		cancel()
 		return nil, err
@@ -440,7 +470,7 @@ func NewServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger, metricsI
 // DD-AUDIT-003: Audit store initialization for P0 service compliance
 // DD-STATUS-001: apiReader parameter added for cache-bypassed status refetch (adopted from RO)
 // BR-GATEWAY-190: apiReader is client.Client (not just client.Reader) for distributed locking Create/Update/Delete operations
-func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metricsInstance *metrics.Metrics, ctrlClient client.Client, apiReader client.Client, k8sClient *k8s.Client) (*Server, error) {
+func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metricsInstance *metrics.Metrics, ctrlClient client.Client, apiReader client.Client, k8sClient *k8s.Client, authenticator auth.Authenticator, authorizer auth.Authorizer) (*Server, error) {
 	// Metrics are mandatory for observability
 	// If nil, create a new metrics instance with default registry (production mode)
 	if metricsInstance == nil {
@@ -555,6 +585,14 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 	// prevent duplicate CRDs and lock races), scope checking tolerates informer sync delay.
 	scopeMgr := scope.NewManager(ctrlClient)
 
+	authMW := newAuthMiddleware(authenticator, authorizer, controllerNS, logger)
+	if authMW != nil {
+		logger.Info("BR-GATEWAY-036/037: Auth middleware enabled",
+			"namespace", controllerNS,
+			"resource", "services/gateway-service",
+			"verb", "create")
+	}
+
 	// Create server first (crdCreator set below after observer wiring)
 	server := &Server{
 		config:              cfg,
@@ -568,6 +606,7 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 		auditStore:          auditStore,
 		scopeChecker:        scopeMgr,     // BR-SCOPE-002: Label-based scope filtering
 		controllerNamespace: controllerNS, // Issue #195: Used by ShouldDeduplicate
+		authMiddleware:      authMW,
 		metricsInstance:     metricsInstance,
 		logger:              logger,
 	}
@@ -806,6 +845,12 @@ func (s *Server) RegisterAdapter(adapter adapters.RoutableAdapter) error {
 	// - Header-based (e.g., Prometheus): middleware.TimestampValidator (X-Timestamp header)
 	// - Body-based (e.g., K8s Events): middleware.EventFreshnessValidator (event timestamp)
 	finalHandler := adapter.ReplayValidator(5 * time.Minute)(wrappedHandler)
+
+	// BR-GATEWAY-036/037: Apply auth middleware (outermost layer)
+	// Auth is checked before any content-type validation or replay prevention
+	if s.authMiddleware != nil {
+		finalHandler = s.authMiddleware.Handler(finalHandler)
+	}
 
 	// Register route using chi with full path
 	// Chi automatically enforces POST method (returns 405 for other methods)

@@ -19,6 +19,11 @@ gateway:
   service:
     type: NodePort
     nodePort: 30080
+  auth:
+    signalSources:
+      - name: alertmanager
+        serviceAccount: alertmanager-kube-prometheus-stack-alertmanager
+        namespace: monitoring
 
 datastorage:
   dbExistingSecret: kubernaut-ds-db-credentials
