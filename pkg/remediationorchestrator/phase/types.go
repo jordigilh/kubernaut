@@ -52,6 +52,9 @@ const (
 	// Executing - WorkflowExecution CRD created, awaiting completion
 	Executing = remediationv1.PhaseExecuting
 
+	// Verifying - Remediation succeeded, EffectivenessAssessment running (#280)
+	Verifying = remediationv1.PhaseVerifying
+
 	// Blocked - Remediation blocked due to consecutive failures (NON-terminal)
 	// Reference: BR-ORCH-042, DD-GATEWAY-011 v1.3
 	Blocked = remediationv1.PhaseBlocked
@@ -91,7 +94,8 @@ var ValidTransitions = map[Phase][]Phase{
 	Processing:       {Analyzing, Failed, TimedOut},
 	Analyzing:        {AwaitingApproval, Executing, Completed, Failed, TimedOut}, // Completed for WorkflowNotNeeded (BR-ORCH-037)
 	AwaitingApproval: {Executing, Failed, TimedOut},
-	Executing:        {Completed, Failed, TimedOut, Skipped},
+	Executing:        {Verifying, Failed, TimedOut, Skipped}, // #280: Executing -> Completed removed; must go through Verifying
+	Verifying:        {Completed},                                      // #280: EA terminal or timeout -> Completed
 	// Blocked is NON-terminal: transitions to Failed (terminal) or back to Analyzing/Pending
 	// via clearEventBasedBlock (e.g., UnmanagedResource re-scope). (BR-ORCH-042)
 	Blocked: {Failed, Analyzing, Pending},
@@ -119,7 +123,7 @@ func CanTransition(current, target Phase) bool {
 // Validate checks if a phase value is valid.
 func Validate(p Phase) error {
 	switch p {
-	case Pending, Processing, Analyzing, AwaitingApproval, Executing, Completed, Failed, TimedOut, Skipped, Blocked:
+	case Pending, Processing, Analyzing, AwaitingApproval, Executing, Verifying, Completed, Failed, TimedOut, Skipped, Blocked, Cancelled:
 		return nil
 	default:
 		return fmt.Errorf("invalid phase: %s", p)

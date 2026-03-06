@@ -742,11 +742,13 @@ spec:
                   - "Remediated": Workflow executed successfully
                   - "NoActionRequired": AIAnalysis determined no action needed (problem self-resolved)
                   - "ManualReviewRequired": Requires operator intervention
+                  - "VerificationTimedOut": EA assessment did not complete within deadline (#280)
                   Reference: BR-ORCH-037, BR-HAPI-200
                 enum:
                 - Remediated
                 - NoActionRequired
                 - ManualReviewRequired
+                - VerificationTimedOut
                 type: string
               overallPhase:
                 description: "Phase tracking for orchestration.\nUses typed RemediationPhase
@@ -759,6 +761,7 @@ spec:
                 - Analyzing
                 - AwaitingApproval
                 - Executing
+                - Verifying
                 - Blocked
                 - Completed
                 - Failed
@@ -982,6 +985,14 @@ spec:
                 description: |-
                   TimeoutTime records when the timeout occurred
                   Only set when OverallPhase = "timeout"
+                format: date-time
+                type: string
+              verificationDeadline:
+                description: |-
+                  VerificationDeadline is the deadline for the Verifying phase.
+                  Computed by RO as EA.Status.ValidityDeadline + 30s buffer.
+                  If exceeded, RR transitions to Completed with Outcome "VerificationTimedOut".
+                  Reference: #280 (Verifying phase timeout)
                 format: date-time
                 type: string
               workflowExecutionRef:

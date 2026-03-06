@@ -91,11 +91,12 @@ type EffectivenessAssessmentSpec struct {
 
 	// RemediationRequestPhase is the RemediationRequest's OverallPhase at the time
 	// the EA was created. Captured as an immutable spec field so the EM can branch
-	// assessment logic based on the RR outcome (Completed, Failed, TimedOut).
+	// assessment logic based on the RR outcome (Verifying, Completed, Failed, TimedOut).
+	// Verifying: happy path — WFE succeeded, EA created while RR awaits assessment (#280).
 	// Previously stored as the mutable label kubernaut.ai/rr-phase; moved to spec
 	// for immutability and security.
 	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:Enum=Completed;Failed;TimedOut
+	// +kubebuilder:validation:Enum=Verifying;Completed;Failed;TimedOut
 	RemediationRequestPhase string `json:"remediationRequestPhase"`
 
 	// SignalTarget is the resource that triggered the alert.

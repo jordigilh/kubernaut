@@ -85,7 +85,7 @@ import (
 // Reference: docs/requirements/BR-COMMON-001-phase-value-format-standard.md
 // Reference: docs/handoff/RO_VICEVERSA_PATTERN_IMPLEMENTATION.md
 //
-// +kubebuilder:validation:Enum=Pending;Processing;Analyzing;AwaitingApproval;Executing;Blocked;Completed;Failed;TimedOut;Skipped;Cancelled
+// +kubebuilder:validation:Enum=Pending;Processing;Analyzing;AwaitingApproval;Executing;Verifying;Blocked;Completed;Failed;TimedOut;Skipped;Cancelled
 type RemediationPhase string
 
 const (
@@ -104,6 +104,12 @@ const (
 
 	// PhaseExecuting indicates WorkflowExecution is running remediation.
 	PhaseExecuting RemediationPhase = "Executing"
+
+	// PhaseVerifying indicates remediation succeeded and EffectivenessAssessment is running.
+	// Non-terminal: Gateway deduplicates signals while EA assesses remediation effectiveness.
+	// RO transitions to Completed when EA reaches a terminal state or VerificationDeadline expires.
+	// Reference: #280 (duplicate RR prevention for proactive alerts)
+	PhaseVerifying RemediationPhase = "Verifying"
 
 	// PhaseBlocked indicates remediation cannot proceed due to external blocking condition.
 	// This is a NON-terminal phase (Gateway deduplicates, prevents RR flood).
@@ -459,6 +465,13 @@ type RemediationRequestStatus struct {
 	// +optional
 	ExecutingStartTime *metav1.Time `json:"executingStartTime,omitempty"`
 
+	// VerificationDeadline is the deadline for the Verifying phase.
+	// Computed by RO as EA.Status.ValidityDeadline + 30s buffer.
+	// If exceeded, RR transitions to Completed with Outcome "VerificationTimedOut".
+	// Reference: #280 (Verifying phase timeout)
+	// +optional
+	VerificationDeadline *metav1.Time `json:"verificationDeadline,omitempty"`
+
 	// References to downstream CRDs
 	SignalProcessingRef      *corev1.ObjectReference `json:"signalProcessingRef,omitempty"`
 	RemediationProcessingRef *corev1.ObjectReference `json:"remediationProcessingRef,omitempty"`
@@ -631,9 +644,10 @@ type RemediationRequestStatus struct {
 	// - "Remediated": Workflow executed successfully
 	// - "NoActionRequired": AIAnalysis determined no action needed (problem self-resolved)
 	// - "ManualReviewRequired": Requires operator intervention
+	// - "VerificationTimedOut": EA assessment did not complete within deadline (#280)
 	// Reference: BR-ORCH-037, BR-HAPI-200
 	// +optional
-	// +kubebuilder:validation:Enum=Remediated;NoActionRequired;ManualReviewRequired
+	// +kubebuilder:validation:Enum=Remediated;NoActionRequired;ManualReviewRequired;VerificationTimedOut
 	Outcome string `json:"outcome,omitempty"`
 
 	// TimeoutPhase indicates which phase timed out
