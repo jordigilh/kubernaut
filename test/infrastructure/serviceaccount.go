@@ -145,6 +145,98 @@ func CreateE2EServiceAccountWithDataStorageAccess(ctx context.Context, namespace
 	return nil
 }
 
+// CreateE2EServiceAccountWithGatewayAccess creates a ServiceAccount for E2E tests
+// with RBAC permissions to access the Gateway service via middleware-based SAR validation.
+//
+// Authority: BR-GATEWAY-036 (TokenReview), BR-GATEWAY-037 (SAR)
+//
+// This function:
+//  1. Creates ServiceAccount in specified namespace
+//  2. Creates ClusterRole for gateway-service/create (if not exists)
+//  3. Creates ClusterRoleBinding granting create verb on services/gateway-service
+//  4. Returns immediately (tokens retrieved via TokenRequest API)
+func CreateE2EServiceAccountWithGatewayAccess(ctx context.Context, namespace, kubeconfigPath, saName string, writer io.Writer) error {
+	_, _ = fmt.Fprintf(writer, "Creating E2E ServiceAccount with Gateway Access\n")
+	_, _ = fmt.Fprintf(writer, "  Namespace: %s, ServiceAccount: %s\n", namespace, saName)
+
+	clientset, err := getKubernetesClient(kubeconfigPath)
+	if err != nil {
+		return fmt.Errorf("failed to create Kubernetes client: %w", err)
+	}
+
+	sa := &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      saName,
+			Namespace: namespace,
+			Labels: map[string]string{
+				"app":       "gateway-e2e",
+				"component": "test",
+				"rbac":      "br-gateway-036",
+			},
+		},
+	}
+
+	_, err = clientset.CoreV1().ServiceAccounts(namespace).Create(ctx, sa, metav1.CreateOptions{})
+	if err != nil && !apierrors.IsAlreadyExists(err) {
+		return fmt.Errorf("failed to create ServiceAccount: %w", err)
+	}
+
+	clusterRole := &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "gateway-service-client",
+			Labels: map[string]string{
+				"app":       "gateway",
+				"component": "rbac",
+				"test":      "e2e",
+			},
+		},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups:     []string{""},
+				Resources:     []string{"services"},
+				ResourceNames: []string{"gateway-service"},
+				Verbs:         []string{"create"},
+			},
+		},
+	}
+
+	_, err = clientset.RbacV1().ClusterRoles().Create(ctx, clusterRole, metav1.CreateOptions{})
+	if err != nil && !apierrors.IsAlreadyExists(err) {
+		return fmt.Errorf("failed to create ClusterRole: %w", err)
+	}
+
+	crb := &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: fmt.Sprintf("%s-gateway-client", saName),
+			Labels: map[string]string{
+				"app":       "gateway-e2e",
+				"component": "rbac",
+				"test":      "e2e",
+			},
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     "gateway-service-client",
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      saName,
+				Namespace: namespace,
+			},
+		},
+	}
+
+	_, err = clientset.RbacV1().ClusterRoleBindings().Create(ctx, crb, metav1.CreateOptions{})
+	if err != nil && !apierrors.IsAlreadyExists(err) {
+		return fmt.Errorf("failed to create ClusterRoleBinding: %w", err)
+	}
+
+	_, _ = fmt.Fprintf(writer, "  ServiceAccount ready with Gateway access (services/gateway-service/create)\n")
+	return nil
+}
+
 // GetServiceAccountToken retrieves the Bearer token for a ServiceAccount.
 //
 // Authority: DD-AUTH-010 (Real token retrieval for E2E)
