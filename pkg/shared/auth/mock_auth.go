@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"errors"
 	"fmt"
 )
 
@@ -57,10 +56,9 @@ func (a *MockAuthenticator) ValidateToken(ctx context.Context, token string) (st
 		return "", a.ErrorToReturn
 	}
 
-	// Check if token is in the valid users map
 	user, ok := a.ValidUsers[token]
 	if !ok {
-		return "", errors.New("invalid token")
+		return "", fmt.Errorf("%w: token not in valid users map", ErrTokenInvalid)
 	}
 
 	return user, nil

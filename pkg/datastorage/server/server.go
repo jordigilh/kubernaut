@@ -429,10 +429,10 @@ func (s *Server) Handler() http.Handler {
 		// Applied to all /api/v1 routes (excludes /health, /metrics)
 		// Authority: DD-AUTH-011 (SAR with verb:"create" for all audit write operations)
 		// Note: authenticator/authorizer guaranteed non-nil by NewServer validation
-		authMiddleware := dsmiddleware.NewAuthMiddleware(
+		authMiddleware := auth.NewMiddleware(
 			s.authenticator,
 			s.authorizer,
-			dsmiddleware.AuthConfig{
+			auth.MiddlewareConfig{
 				Namespace:    s.authNamespace,
 				Resource:     "services",
 				ResourceName: "data-storage-service",

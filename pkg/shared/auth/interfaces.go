@@ -12,7 +12,15 @@
 // Security: No runtime disable flags - auth is always enforced via interface implementations.
 package auth
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+// ErrTokenInvalid indicates the token was presented but rejected by the authenticator
+// (e.g., expired, malformed, or not recognized). This is distinct from API call failures.
+// Middleware uses this to return 401 instead of 500.
+var ErrTokenInvalid = errors.New("token not authenticated")
 
 // Authenticator validates tokens and returns user identity.
 //
