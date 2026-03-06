@@ -45,6 +45,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
@@ -211,7 +212,7 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 	// - 50-90s delay never reproduced
 	// - Investigation: docs/handoff/RO_AUDIT_TIMER_INTERMITTENCY_ANALYSIS_DEC_27_2025.md
 	// - Test enabled with 90s timeout (conservative, timer works at ~1s)
-	Context("AE-INT-3: Completion Audit (Executing→Completed)", func() {
+	Context("AE-INT-3: Completion Audit (Executing→Verifying→Completed)", func() {
 		It("should emit 'lifecycle_completed' audit event when RR completes successfully", func() {
 			// Create RemediationRequest with unique fingerprint (prevents test pollution)
 			fingerprint := GenerateTestFingerprint(testNamespace, "ae-int-3-lifecycle-completed")
@@ -287,11 +288,62 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 			we.Status.Phase = workflowexecutionv1.PhaseCompleted
 			Expect(k8sClient.Status().Update(ctx, we)).To(Succeed())
 
+		// Wait for Verifying phase (#280)
+		Eventually(func() remediationv1.RemediationPhase {
+			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
+			return rr.Status.OverallPhase
+		}, timeout, interval).Should(Equal(remediationv1.PhaseVerifying))
+
+		// Drive EA to completion for Verifying → Completed (#280)
+		eaName := fmt.Sprintf("ea-%s", rr.Name)
+		ea := &eav1.EffectivenessAssessment{}
+		Eventually(func() error {
+			return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: eaName, Namespace: ROControllerNamespace}, ea)
+		}, timeout, interval).Should(Succeed())
+		ea.Status.Phase = eav1.PhaseCompleted
+		eaDeadline := metav1.NewTime(time.Now().Add(10 * time.Minute))
+		ea.Status.ValidityDeadline = &eaDeadline
+		Expect(k8sClient.Status().Update(ctx, ea)).To(Succeed())
+
 		// Wait for Completed
 		Eventually(func() remediationv1.RemediationPhase {
 			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
 			return rr.Status.OverallPhase
 		}, timeout, interval).Should(Equal(remediationv1.PhaseCompleted))
+
+		// #280: Query for verifying_started audit event (emitted when Executing → Verifying)
+		Eventually(func() bool {
+			flushCtx, flushCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			_ = auditStore.Flush(flushCtx)
+			flushCancel()
+			params := ogenclient.QueryAuditEventsParams{
+				CorrelationID: ogenclient.NewOptString(correlationID),
+				EventCategory: ogenclient.NewOptString(audit.EventCategoryOrchestration),
+				EventType:     ogenclient.NewOptString(audit.EventTypeLifecycleVerifyingStarted),
+			}
+			resp, queryErr := dsClient.QueryAuditEvents(ctx, params)
+			if queryErr != nil || resp.Data == nil {
+				return false
+			}
+			return len(resp.Data) >= 1
+		}, "10s", "500ms").Should(BeTrue(), "#280: verifying_started event should be emitted after WE completion")
+
+		// #280: Query for verification_completed audit event (EA terminal → Verifying → Completed)
+		Eventually(func() bool {
+			flushCtx, flushCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			_ = auditStore.Flush(flushCtx)
+			flushCancel()
+			params := ogenclient.QueryAuditEventsParams{
+				CorrelationID: ogenclient.NewOptString(correlationID),
+				EventCategory: ogenclient.NewOptString(audit.EventCategoryOrchestration),
+				EventType:     ogenclient.NewOptString(audit.EventTypeLifecycleVerificationCompleted),
+			}
+			resp, queryErr := dsClient.QueryAuditEvents(ctx, params)
+			if queryErr != nil || resp.Data == nil {
+				return false
+			}
+			return len(resp.Data) >= 1
+		}, "10s", "500ms").Should(BeTrue(), "#280: verification_completed event should be emitted after EA reaches terminal")
 
 		// Query for lifecycle_completed event using Eventually with flush-per-attempt
 		Eventually(func() bool {

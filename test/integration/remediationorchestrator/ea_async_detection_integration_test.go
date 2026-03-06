@@ -114,6 +114,22 @@ var _ = Describe("EA Async Target Detection (DD-EM-004, BR-RO-103)", func() {
 		we.Status.CompletionTime = &completionTime
 		Expect(k8sClient.Status().Update(ctx, we)).To(Succeed())
 
+		By("Waiting for Verifying phase (#280)")
+		Eventually(func() remediationv1.RemediationPhase {
+			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
+			return rr.Status.OverallPhase
+		}, timeout, interval).Should(Equal(remediationv1.PhaseVerifying))
+
+		By("Driving EA to completion for Verifying → Completed (#280)")
+		eaName := fmt.Sprintf("ea-%s", rr.Name)
+		ea := &eav1.EffectivenessAssessment{}
+		Eventually(func() error {
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: eaName, Namespace: ROControllerNamespace}, ea)
+		}, timeout, interval).Should(Succeed())
+		ea.Status.Phase = eav1.PhaseCompleted
+		ea.Status.ValidityDeadline = &metav1.Time{Time: time.Now().Add(10 * time.Minute)}
+		Expect(k8sClient.Status().Update(ctx, ea)).To(Succeed())
+
 		By("Waiting for Completed phase")
 		Eventually(func() remediationv1.RemediationPhase {
 			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
@@ -164,7 +180,8 @@ var _ = Describe("EA Async Target Detection (DD-EM-004, BR-RO-103)", func() {
 
 		By("Verifying all other EA spec fields are still correct")
 		Expect(ea.Spec.CorrelationID).To(Equal(rr.Name))
-		Expect(ea.Spec.RemediationRequestPhase).To(Equal("Completed"))
+		Expect(ea.Spec.RemediationRequestPhase).To(Equal("Verifying"),
+			"#280: EA is created when RR enters Verifying, not Completed")
 		Expect(ea.Spec.RemediationTarget.Kind).To(Equal("Deployment"))
 		Expect(ea.Spec.RemediationTarget.Name).To(Equal("test-app"))
 		Expect(ea.Spec.Config.StabilizationWindow.Duration).To(BeNumerically(">", 0))
@@ -268,6 +285,22 @@ var _ = Describe("EA Async Target Detection (DD-EM-004, BR-RO-103)", func() {
 		we.Status.CompletionTime = &completionTime
 		Expect(k8sClient.Status().Update(ctx, we)).To(Succeed())
 
+		By("Waiting for Verifying phase (#280)")
+		Eventually(func() remediationv1.RemediationPhase {
+			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
+			return rr.Status.OverallPhase
+		}, timeout, interval).Should(Equal(remediationv1.PhaseVerifying))
+
+		By("Driving EA to completion for Verifying → Completed (#280)")
+		eaDriveName := fmt.Sprintf("ea-%s", rr.Name)
+		eaDrive := &eav1.EffectivenessAssessment{}
+		Eventually(func() error {
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: eaDriveName, Namespace: ROControllerNamespace}, eaDrive)
+		}, timeout, interval).Should(Succeed())
+		eaDrive.Status.Phase = eav1.PhaseCompleted
+		eaDrive.Status.ValidityDeadline = &metav1.Time{Time: time.Now().Add(10 * time.Minute)}
+		Expect(k8sClient.Status().Update(ctx, eaDrive)).To(Succeed())
+
 		By("Waiting for Completed phase")
 		Eventually(func() remediationv1.RemediationPhase {
 			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
@@ -324,7 +357,8 @@ var _ = Describe("EA Async Target Detection (DD-EM-004, BR-RO-103)", func() {
 
 		By("Verifying EA spec is otherwise correct")
 		Expect(ea.Spec.CorrelationID).To(Equal(rr.Name))
-		Expect(ea.Spec.RemediationRequestPhase).To(Equal("Completed"))
+		Expect(ea.Spec.RemediationRequestPhase).To(Equal("Verifying"),
+			"#280: EA is created when RR enters Verifying, not Completed")
 		Expect(ea.Spec.RemediationTarget.Kind).To(Equal("Deployment"))
 	})
 })

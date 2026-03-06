@@ -32,6 +32,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -43,6 +44,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
@@ -158,6 +160,23 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 			we.Status.CompletionTime = &completionTime
 			Expect(k8sClient.Status().Update(ctx, we)).To(Succeed())
 
+			By("Waiting for Verifying phase (#280)")
+			Eventually(func() remediationv1.RemediationPhase {
+				_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
+				return rr.Status.OverallPhase
+			}, timeout, interval).Should(Equal(remediationv1.PhaseVerifying))
+
+			By("Driving EA to completion for Verifying → Completed (#280)")
+			eaName := fmt.Sprintf("ea-%s", rrName)
+			ea := &eav1.EffectivenessAssessment{}
+			Eventually(func() error {
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: eaName, Namespace: ROControllerNamespace}, ea)
+			}, timeout, interval).Should(Succeed())
+			ea.Status.Phase = eav1.PhaseCompleted
+			deadline := metav1.NewTime(time.Now().Add(10 * time.Minute))
+			ea.Status.ValidityDeadline = &deadline
+			Expect(k8sClient.Status().Update(ctx, ea)).To(Succeed())
+
 			By("Waiting for Completed phase")
 			Eventually(func() remediationv1.RemediationPhase {
 				_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
@@ -261,6 +280,23 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 			completionTime := metav1.Now()
 			we.Status.CompletionTime = &completionTime
 			Expect(k8sClient.Status().Update(ctx, we)).To(Succeed())
+
+			By("Waiting for Verifying phase (#280)")
+			Eventually(func() remediationv1.RemediationPhase {
+				_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
+				return rr.Status.OverallPhase
+			}, timeout, interval).Should(Equal(remediationv1.PhaseVerifying))
+
+			By("Driving EA to completion for Verifying → Completed (#280)")
+			eaApprovalName := fmt.Sprintf("ea-%s", rrName)
+			eaApproval := &eav1.EffectivenessAssessment{}
+			Eventually(func() error {
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: eaApprovalName, Namespace: ROControllerNamespace}, eaApproval)
+			}, timeout, interval).Should(Succeed())
+			eaApproval.Status.Phase = eav1.PhaseCompleted
+			approvalDeadline := metav1.NewTime(time.Now().Add(10 * time.Minute))
+			eaApproval.Status.ValidityDeadline = &approvalDeadline
+			Expect(k8sClient.Status().Update(ctx, eaApproval)).To(Succeed())
 
 			By("Waiting for Completed phase")
 			Eventually(func() remediationv1.RemediationPhase {

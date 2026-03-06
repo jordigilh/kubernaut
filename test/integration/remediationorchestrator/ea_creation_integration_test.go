@@ -49,7 +49,7 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 	// ========================================
 	// IT-RO-EA-001: Completed RR creates EA with correct spec
 	// ========================================
-	It("IT-RO-EA-001: should create EA when RR reaches Completed phase", func() {
+	It("IT-RO-EA-001: should create EA when RR reaches Verifying phase", func() {
 		ns := createTestNamespace("ro-ea-001")
 		defer deleteTestNamespace(ns)
 
@@ -121,11 +121,11 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 		we.Status.CompletionTime = &completionTime
 		Expect(k8sClient.Status().Update(ctx, we)).To(Succeed())
 
-		By("Waiting for Completed phase")
+		By("Waiting for Verifying phase (#280: EA is created during this transition)")
 		Eventually(func() remediationv1.RemediationPhase {
 			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
 			return rr.Status.OverallPhase
-		}, timeout, interval).Should(Equal(remediationv1.PhaseCompleted))
+		}, timeout, interval).Should(Equal(remediationv1.PhaseVerifying))
 
 		By("Verifying EA was created with correct spec")
 		eaName := fmt.Sprintf("ea-%s", rr.Name)
@@ -136,7 +136,8 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 
 		// Verify EA spec fields
 		Expect(ea.Spec.CorrelationID).To(Equal(rr.Name))
-		Expect(ea.Spec.RemediationRequestPhase).To(Equal("Completed"))
+		Expect(ea.Spec.RemediationRequestPhase).To(Equal("Verifying"),
+			"#280: EA is created when RR enters Verifying, not Completed")
 		Expect(ea.Spec.RemediationTarget.Kind).To(Equal("Deployment"))
 		Expect(ea.Spec.RemediationTarget.Name).To(Equal("test-app"))
 		Expect(ea.Spec.RemediationTarget.Namespace).To(Equal(ns))
@@ -306,7 +307,8 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 		Eventually(func() remediationv1.RemediationPhase {
 			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
 			return rr.Status.OverallPhase
-		}, timeout, interval).Should(Equal(remediationv1.PhaseCompleted))
+		}, timeout, interval).Should(Equal(remediationv1.PhaseVerifying),
+			"#280: EA is created when RR enters Verifying")
 
 		By("Verifying EA owner reference")
 		eaName := fmt.Sprintf("ea-%s", rr.Name)
@@ -579,11 +581,11 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 		we.Status.CompletionTime = &completionTime
 		Expect(k8sClient.Status().Update(ctx, we)).To(Succeed())
 
-		By("Waiting for Completed phase")
+		By("Waiting for Verifying phase (#280: EA is created during this transition)")
 		Eventually(func() remediationv1.RemediationPhase {
 			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
 			return rr.Status.OverallPhase
-		}, timeout, interval).Should(Equal(remediationv1.PhaseCompleted))
+		}, timeout, interval).Should(Equal(remediationv1.PhaseVerifying))
 
 		By("Verifying EA was created with divergent targets")
 		eaName := fmt.Sprintf("ea-%s", rr.Name)

@@ -125,6 +125,22 @@ var _ = Describe("RO Propagation Delay (DD-EM-004 v2.0, BR-RO-103, Issue #253)",
 		we.Status.CompletionTime = &completionTime
 		Expect(k8sClient.Status().Update(ctx, we)).To(Succeed())
 
+		By("Waiting for Verifying phase (#280)")
+		Eventually(func() remediationv1.RemediationPhase {
+			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
+			return rr.Status.OverallPhase
+		}, timeout, interval).Should(Equal(remediationv1.PhaseVerifying))
+
+		By("Driving EA to completion for Verifying → Completed (#280)")
+		eaName := fmt.Sprintf("ea-%s", rr.Name)
+		ea := &eav1.EffectivenessAssessment{}
+		Eventually(func() error {
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: eaName, Namespace: ROControllerNamespace}, ea)
+		}, timeout, interval).Should(Succeed())
+		ea.Status.Phase = eav1.PhaseCompleted
+		ea.Status.ValidityDeadline = &metav1.Time{Time: time.Now().Add(10 * time.Minute)}
+		Expect(k8sClient.Status().Update(ctx, ea)).To(Succeed())
+
 		By("Waiting for Completed phase")
 		Eventually(func() remediationv1.RemediationPhase {
 			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
@@ -165,7 +181,8 @@ var _ = Describe("RO Propagation Delay (DD-EM-004 v2.0, BR-RO-103, Issue #253)",
 
 		By("Verifying other EA spec fields are correct")
 		Expect(ea.Spec.CorrelationID).To(Equal(rr.Name))
-		Expect(ea.Spec.RemediationRequestPhase).To(Equal("Completed"))
+		Expect(ea.Spec.RemediationRequestPhase).To(Equal("Verifying"),
+			"#280: EA is created when RR enters Verifying, not Completed")
 		Expect(ea.Spec.RemediationTarget.Kind).To(Equal("EffectivenessAssessment"))
 
 		GinkgoWriter.Printf("IT-RO-253-001: EA created with HashComputeDelay=%s\n",
@@ -202,7 +219,8 @@ var _ = Describe("RO Propagation Delay (DD-EM-004 v2.0, BR-RO-103, Issue #253)",
 
 		By("Verifying other EA spec fields are correct")
 		Expect(ea.Spec.CorrelationID).To(Equal(rr.Name))
-		Expect(ea.Spec.RemediationRequestPhase).To(Equal("Completed"))
+		Expect(ea.Spec.RemediationRequestPhase).To(Equal("Verifying"),
+			"#280: EA is created when RR enters Verifying, not Completed")
 		Expect(ea.Spec.RemediationTarget.Kind).To(Equal("EffectivenessAssessment"))
 
 		GinkgoWriter.Printf("IT-RO-253-002: EA created with HashComputeDelay=%s\n",
