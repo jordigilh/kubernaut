@@ -347,20 +347,67 @@ Type "bash deploy/demo/scripts/approve-rar.sh"
 Enter
 Sleep 4s
 
-# Second watch: captures execution transitions live
-# (AwaitingApproval → Executing → Verifying → Completed)
+# Snapshot pods BEFORE rollback — CrashLoopBackOff visible
 Hide
 Set TypingSpeed 1ms
 Type "act_clear"
 Enter
 Sleep 500ms
-Type "narrate 'Watching the execution phase transitions...'"
+Type "narrate 'Current pods (CrashLoopBackOff — the bad config is crashing them)'"
 Enter
 Sleep 300ms
 Set TypingSpeed 50ms
 Show
 Sleep 2s
 
+Type "kubectl get pods -n demo-crashloop"
+Enter
+Sleep 6s
+
+# Wait for RR to enter Verifying — workflow is done, pods are recovered, EA pending
+Hide
+Set TypingSpeed 1ms
+Type `while ! kubectl get remediationrequests -n ${PLATFORM_NS} 2>/dev/null | grep -qE 'Verifying|Completed'; do sleep 5; done && clear && echo WF"_"DONE`
+Enter
+Wait+Screen@300s /WF_DONE/
+Type "act_clear"
+Enter
+Sleep 500ms
+Type "narrate 'Rollback completed — pods recovered with the previous good config'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 2s
+
+# Snapshot pods AFTER rollback — Running, fresh AGE, no more CrashLoopBackOff
+Type "kubectl get pods -n demo-crashloop"
+Enter
+Sleep 6s
+
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'Workflow execution summary'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 2s
+
+Type "kubectl get workflowexecutions -n ${PLATFORM_NS}"
+Enter
+Sleep 6s
+
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'Remediation verified, waiting for completion...'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 2s
+
+# Show RR completing (Verifying → Completed)
 Type "kubectl get remediationrequests -n ${PLATFORM_NS} -w"
 Enter
 Wait+Screen@300s /Completed/

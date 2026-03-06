@@ -360,19 +360,67 @@ Type "bash deploy/demo/scripts/approve-rar.sh"
 Enter
 Sleep 4s
 
-# Live watch: captures execution transitions (AwaitingApproval → Executing → Verifying → Completed)
+# Snapshot BEFORE provisioning — Pending pods, limited nodes
 Hide
 Set TypingSpeed 1ms
 Type "act_clear"
 Enter
 Sleep 500ms
-Type "narrate 'Watching the execution phase transitions...'"
+Type "narrate 'Current state (pods stuck Pending — not enough node capacity)'"
 Enter
 Sleep 300ms
 Set TypingSpeed 50ms
 Show
 Sleep 2s
 
+Type "kubectl get pods -n demo-autoscale -o wide"
+Enter
+Sleep 6s
+
+# Wait for RR to enter Verifying — workflow is done, new node provisioned, EA pending
+Hide
+Set TypingSpeed 1ms
+Type `while ! kubectl get remediationrequests -n ${PLATFORM_NS} 2>/dev/null | grep -qE 'Verifying|Completed'; do sleep 5; done && clear && echo WF"_"DONE`
+Enter
+Wait+Screen@300s /WF_DONE/
+Type "act_clear"
+Enter
+Sleep 500ms
+Type "narrate 'Node provisioned — all pods now scheduled and running'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 2s
+
+# Snapshot AFTER provisioning — all pods Running, spread across nodes
+Type "kubectl get pods -n demo-autoscale -o wide"
+Enter
+Sleep 6s
+
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'Workflow execution summary'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 2s
+
+Type "kubectl get workflowexecutions -n ${PLATFORM_NS}"
+Enter
+Sleep 6s
+
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'Remediation verified, waiting for completion...'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 2s
+
+# Show RR completing (Verifying → Completed)
 Type "kubectl get remediationrequests -n ${PLATFORM_NS} -w"
 Enter
 Wait+Screen@300s /Completed/

@@ -7,7 +7,7 @@
 # (e.g. podman pause) without disrupting the platform.
 global:
   image:
-    tag: demo-v1.3-arm64
+    tag: demo-v1.5
   nodeSelector:
     node-role.kubernetes.io/control-plane: ""
   tolerations:

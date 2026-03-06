@@ -254,7 +254,7 @@ Wait+Screen@600s /PIPELINE_READY/
 Type "act_clear"
 Enter
 Sleep 300ms
-Type "narrate 'Analysis complete. Auto-approved — no manual approval required.'"
+Type "narrate 'Analysis complete. Auto-approved — executing remediation now.'"
 Enter
 Sleep 300ms
 Set TypingSpeed 50ms
@@ -265,6 +265,30 @@ Sleep 2s
 Type "kubectl get remediationrequests -n ${PLATFORM_NS}"
 Enter
 Sleep 6s
+
+# Live transition: watch pods during remediation (start BEFORE workflow finishes)
+Hide
+Set TypingSpeed 1ms
+Type "act_clear"
+Enter
+Sleep 500ms
+Type "narrate 'Watching pods during remediation — the workflow will restart them'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 2s
+
+Type "kubectl get pods -n demo-memory-leak -o wide -w"
+Enter
+
+# Wait for Terminating to appear — rollout restart is happening
+Wait+Screen@300s /Terminating/
+Sleep 10s
+
+# Exit watch — viewer saw the full transition
+Ctrl+C
+Sleep 2s
 
 Hide
 Set TypingSpeed 1ms
@@ -282,19 +306,36 @@ Type "bash deploy/demo/scripts/show-ai-analysis.sh demo-memory-leak"
 Enter
 Sleep 24s
 
-# Live watch: captures execution transitions (Executing → Verifying → Completed)
 Hide
 Set TypingSpeed 1ms
-Type "act_clear"
-Enter
-Sleep 500ms
-Type "narrate 'Watching the execution phase transitions...'"
+Type "narrate 'Workflow execution summary'"
 Enter
 Sleep 300ms
 Set TypingSpeed 50ms
 Show
 Sleep 2s
 
+Type "kubectl get workflowexecutions -n ${PLATFORM_NS}"
+Enter
+Sleep 6s
+
+# Wait for RR to reach Verifying/Completed (may already be there)
+Hide
+Set TypingSpeed 1ms
+Type `while ! kubectl get remediationrequests -n ${PLATFORM_NS} 2>/dev/null | grep -qE 'Verifying|Completed'; do sleep 5; done && clear && echo WF"_"DONE`
+Enter
+Wait+Screen@300s /WF_DONE/
+Type "act_clear"
+Enter
+Sleep 500ms
+Type "narrate 'Remediation verified, waiting for completion...'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 2s
+
+# Show RR completing (Verifying → Completed)
 Type "kubectl get remediationrequests -n ${PLATFORM_NS} -w"
 Enter
 Wait+Screen@300s /Completed/
