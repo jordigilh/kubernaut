@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os/exec"
+	"strings"
 	"time"
 )
 
@@ -259,16 +260,26 @@ spec:
 // DeployAlertManager deploys a real AlertManager instance into the Kind cluster.
 //
 // Configuration:
-//   - Minimal routing config (all alerts go to a null receiver)
+//   - Minimal routing config (all alerts go to gateway-webhook receiver)
 //   - Single replica for testing
+//   - BR-GATEWAY-036/037: When gatewayToken is non-empty, adds Bearer auth to webhook requests
 //
 // Parameters:
 //   - ctx: Context for cancellation
 //   - namespace: Target namespace (e.g., "kubernaut-system")
 //   - kubeconfigPath: Path to kubeconfig for kubectl commands
+//   - gatewayToken: Bearer token for Gateway signal endpoints (BR-GATEWAY-036/037). If empty, no auth is added.
 //   - writer: Output writer for progress logging
-func DeployAlertManager(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+func DeployAlertManager(ctx context.Context, namespace, kubeconfigPath, gatewayToken string, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "  🔔 Deploying AlertManager in namespace %s...\n", namespace)
+
+	// BR-GATEWAY-036/037: http_config with bearer_token for authenticated Gateway webhooks
+	webhookAuthYaml := ""
+	if gatewayToken != "" {
+		webhookAuthYaml = `
+        http_config:
+          bearer_token: '` + strings.ReplaceAll(gatewayToken, "'", "''") + `'`
+	}
 
 	manifest := fmt.Sprintf(`---
 apiVersion: v1
@@ -289,7 +300,7 @@ data:
     - name: gateway-webhook
       webhook_configs:
       - url: 'http://gateway-service.%[1]s.svc.cluster.local:8080/api/v1/signals/prometheus'
-        send_resolved: false
+        send_resolved: false`+webhookAuthYaml+`
 ---
 apiVersion: apps/v1
 kind: Deployment
