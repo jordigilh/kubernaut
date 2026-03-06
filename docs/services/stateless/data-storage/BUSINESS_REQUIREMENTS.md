@@ -228,11 +228,11 @@ The Data Storage Service is the **exclusive database access layer** for Kubernau
 
 ### **Category 3: Observability (BR-STORAGE-009, BR-STORAGE-010, BR-STORAGE-018, BR-STORAGE-019)**
 
-#### **BR-STORAGE-009: Cache Hit/Miss Tracking**
-- **Priority**: P1
-- **Status**: ⏸️ **DEFERRED TO V1.1** (v1.1 - Corrected Scope)
-- **Description**: Track Redis cache hit and miss rates for playbook embedding cache performance monitoring
-- **Business Value**: Enable cache optimization and identify cache inefficiencies for playbook queries
+#### **BR-STORAGE-009: Cache Hit/Miss Tracking** ⚠️ DEPRECATED (2026-03)
+- **Priority**: ~~P1~~ N/A
+- **Status**: ⚠️ **DEPRECATED** — Playbook embedding cache is no longer relevant. The current workflow catalog implementation uses OCI-based registration with SQL-backed search (not playbooks or embeddings). This BR was written before the current DataStorage architecture was finalized.
+- **Original Description**: ~~Track Redis cache hit and miss rates for playbook embedding cache performance monitoring~~
+- **Original Business Value**: ~~Enable cache optimization and identify cache inefficiencies for playbook queries~~
 - **Scope Change (v1.1)**:
   - ❌ **OLD**: Cache audit embeddings (INCORRECT - low hit rate, no business value)
   - ✅ **NEW**: Cache playbook embeddings (CORRECT - high hit rate, playbooks queried repeatedly)
@@ -889,7 +889,7 @@ The Data Storage Service is the **exclusive database access layer** for Kubernau
 
 #### **BR-STORAGE-035: Cursor-Based Pagination**
 - **Priority**: P1
-- **Status**: 📋 Planned (V1.1)
+- **Status**: 📋 Planned (V1.1) — Tracked in [GitHub #288](https://github.com/jordigilh/kubernaut/issues/288)
 - **Description**: Support cursor-based pagination for audit event queries to handle real-time data with high write volumes. Cursor format: `base64(event_timestamp + event_id)` for uniqueness.
 - **Business Value**:
   - **Consistency**: No missed/duplicate records during pagination
@@ -911,7 +911,7 @@ The Data Storage Service is the **exclusive database access layer** for Kubernau
 
 #### **BR-STORAGE-036: Parent Event Lookup Index**
 - **Priority**: P1
-- **Status**: 📋 Planned (V1.1)
+- **Status**: 📋 Planned (V1.1) — Tracked in [GitHub #289](https://github.com/jordigilh/kubernaut/issues/289)
 - **Description**: Create database index on `(parent_event_id, parent_event_date)` to optimize child event lookups and event chain traversal.
 - **Business Value**:
   - **Performance**: Faster queries for "find all children of parent X"
@@ -932,7 +932,7 @@ The Data Storage Service is the **exclusive database access layer** for Kubernau
 
 #### **BR-STORAGE-037: Historical Parent-Child Backfill**
 - **Priority**: P2
-- **Status**: 📋 Planned (V1.1)
+- **Status**: 📋 Planned (V1.1) — Tracked in [GitHub #290](https://github.com/jordigilh/kubernaut/issues/290)
 - **Description**: Backfill `parent_event_date` for existing audit events to enable historical event chain queries. Run during maintenance window.
 - **Business Value**:
   - **Completeness**: Enable historical event chain queries

@@ -305,12 +305,13 @@ result := {"environment": "staging", "source": "namespace-pattern"} if {
 - [ ] Log when fallback is used
 - [ ] Never fail - always return a valid priority
 
-**Fallback Matrix** (Severity-Based Only):
+**Fallback Matrix** (Severity-Based Only, DD-SEVERITY-001 v1.1):
 | Severity | Priority | Rationale |
 |----------|----------|-----------|
 | critical | P1 | Conservative - high but not highest without context |
-| warning | P2 | Standard priority for warnings |
-| info | P3 | Lowest priority for informational |
+| high | P1 | Same as critical in fallback (no Rego context) |
+| medium | P2 | Standard priority for medium severity |
+| low | P3 | Lowest priority for low severity |
 | unknown | P2 | Default when severity is also unknown |
 
 **Rationale**: When Rego policy fails, we don't have reliable environment classification. Using severity-only fallback is more predictable and avoids compounding uncertainty from potentially incorrect environment detection.
@@ -697,7 +698,7 @@ volumeMounts:
 **Acceptance Criteria**:
 - [ ] Rego policy file: `severity.rego` (operator-provided ConfigMap)
 - [ ] Policy input: `input.signal.severity` (external value from Gateway, e.g., "Sev1", "P0", "HIGH")
-- [ ] Policy output: `result.severity` (normalized to `critical`, `warning`, or `info`)
+- [ ] Policy output: `result.severity` (normalized to `critical`, `high`, `medium`, `low`, or `unknown` per DD-SEVERITY-001 v1.1)
 - [ ] Status field: `Status.SeverityClassification` (struct similar to `EnvironmentClassification`)
 - [ ] Fallback: If Rego evaluation fails or severity unmapped → `"unknown"` (NOT `"warning"`)
 - [ ] Audit trail: Log severity determination (external → normalized, source: rego/fallback)
@@ -707,30 +708,34 @@ volumeMounts:
 **SeverityClassification Status Field**:
 ```go
 type SeverityClassification struct {
-    Severity      string      `json:"severity"`              // Normalized: critical, warning, info, or unknown
+    Severity      string      `json:"severity"`              // Normalized: critical, high, medium, low, or unknown (DD-SEVERITY-001 v1.1)
     Source        string      `json:"source"`                // rego-policy, fallback
     ClassifiedAt  metav1.Time `json:"classifiedAt"`
     ExternalValue string      `json:"externalValue"`         // Original value from Gateway (e.g., "Sev1")
 }
 ```
 
-**Default Rego Policy** (backward compatibility):
+**Default Rego Policy** (DD-SEVERITY-001 v1.1 values):
 ```rego
 package signalprocessing.severity
 
 import rego.v1
 
-# 1:1 mapping for standard severity values
+# 1:1 mapping for standard severity values (DD-SEVERITY-001 v1.1)
 result := {"severity": "critical", "source": "rego-policy"} if {
     lower(input.signal.severity) == "critical"
 }
 
-result := {"severity": "warning", "source": "rego-policy"} if {
-    lower(input.signal.severity) == "warning"
+result := {"severity": "high", "source": "rego-policy"} if {
+    lower(input.signal.severity) == "high"
 }
 
-result := {"severity": "info", "source": "rego-policy"} if {
-    lower(input.signal.severity) == "info"
+result := {"severity": "medium", "source": "rego-policy"} if {
+    lower(input.signal.severity) in ["medium", "warning"]
+}
+
+result := {"severity": "low", "source": "rego-policy"} if {
+    lower(input.signal.severity) in ["low", "info"]
 }
 
 # Fallback: unmapped severity → unknown

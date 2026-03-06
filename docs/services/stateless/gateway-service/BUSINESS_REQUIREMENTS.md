@@ -1,7 +1,7 @@
 # Gateway Service - Business Requirements
 
-**Version**: v1.8
-**Last Updated**: 2026-02-23
+**Version**: v1.10
+**Last Updated**: 2026-03-06
 **Status**: ✅ APPROVED
 **Owner**: Gateway Team
 **Total BRs**: 78 identified BRs (BR-GATEWAY-001 through BR-GATEWAY-184)
@@ -9,6 +9,7 @@
 > **📋 Changelog**
 > | Version | Date | Changes | Reference |
 > |---------|------|---------|-----------|
+> | v1.10 | 2026-03-06 | **UPDATED BR-GATEWAY-004**: Three-tier owner resolution strategy. Tier 2 (#282): direct API fallback on cache miss. Tier 3 (#284): trust-but-verify when cache returns stale metadata without ownerReferences. Signals are only dropped when the resource is truly deleted; standalone resources (e.g., debug Pods) are accepted with resource-level fingerprints. | [Issue #282](https://github.com/jordigilh/kubernaut/issues/282), [Issue #284](https://github.com/jordigilh/kubernaut/issues/284) |
 > | v1.8 | 2026-02-23 | **NEW BR-GATEWAY-184**: Target Resource Extraction Priority. Gateway MUST check specific Kubernetes resource labels (HPA, PDB, PVC, Deployment, StatefulSet, etc.) before `pod` when extracting target resource from Prometheus alerts. Fixes kube-state-metrics misidentification. | [Issue #178](https://github.com/jordigilh/kubernaut/issues/178), [BR-GATEWAY-184](../../../../requirements/BR-GATEWAY-184-target-resource-extraction-priority.md) |
 > | v1.7 | 2026-01-29 | **NEW BR-GATEWAY-182, BR-GATEWAY-183**: ServiceAccount Authentication and SAR Authorization. Gateway MUST authenticate webhook requests using Kubernetes TokenReview and authorize using SubjectAccessReview for defense-in-depth security and SOC2 compliance. Supersedes DD-GATEWAY-006 (network-only security). | [DD-AUTH-014 V2.0](../../../architecture/decisions/DD-AUTH-014-middleware-based-sar-authentication.md) |
 > | v1.6 | 2026-01-09 | **NEW BR-GATEWAY-181**: Signal Pass-Through Architecture. Gateway MUST preserve external severity/environment/priority values WITHOUT transformation. Removes hardcoded severity mappings. Enables customer extensibility (Sev1-4, P0-P4 schemes). | [DD-SEVERITY-001](../../../architecture/decisions/DD-SEVERITY-001-severity-determination-refactoring.md), [TRIAGE-SEVERITY-EXTENSIBILITY](../../../architecture/decisions/TRIAGE-SEVERITY-EXTENSIBILITY.md) |
@@ -60,7 +61,8 @@ This document provides a comprehensive list of all business requirements for the
 ### **BR-GATEWAY-004: Signal Fingerprinting**
 **Description**: Gateway must generate deterministic fingerprints for signal deduplication. Fingerprint strategy is **adapter-specific**:
 - **Prometheus alerts**: `SHA256(namespace:ownerKind:ownerName)` with OwnerResolver (Pod→Deployment resolution), or `SHA256(namespace:kind:name)` without OwnerResolver. **alertname is EXCLUDED** from the fingerprint. This ensures that multiple alertnames (KubePodCrashLooping, KubePodNotReady, KubeContainerOOMKilled) for the same resource produce a single fingerprint and a single RemediationRequest. The LLM investigates resource state, not signal type. The RCA outcome is independent of which alert triggered it.
-- **Kubernetes events**: `SHA256(namespace:ownerKind:ownerName)` — resolves the top-level controller owner (e.g., Pod → ReplicaSet → Deployment) via K8s API owner references and excludes the event `reason` from the fingerprint. This ensures that multiple events (BackOff, OOMKilling, Failed) from the same crashing Deployment produce a single fingerprint and a single RemediationRequest. Falls back to `SHA256(namespace:kind:name)` (involvedObject) if owner resolution fails (RBAC error, timeout, etc.).
+- **Kubernetes events**: `SHA256(namespace:ownerKind:ownerName)` — resolves the top-level controller owner (e.g., Pod → ReplicaSet → Deployment) via K8s API owner references and excludes the event `reason` from the fingerprint. This ensures that multiple events (BackOff, OOMKilling, Failed) from the same crashing Deployment produce a single fingerprint and a single RemediationRequest.
+- **Owner resolution — three-tier strategy (#282, #284)**: The `K8sOwnerResolver` uses a layered approach to reliably resolve the top-level owner: **(Tier 1)** Informer cache lookup — fast, zero API calls. **(Tier 2, #282)** Direct API fallback on cache miss — if the resource is not in the informer cache, retry with the uncached API reader. **(Tier 3, #284)** Trust-but-verify on missing ownerReferences — if the cache returns a resource without controller ownerReferences and no owner has been found yet, re-verify with the direct API: (a) direct API returns ownerReferences → cache was stale, continue chain with fresh data; (b) direct API confirms no ownerReferences → genuine standalone resource, accept resource-level fingerprint; (c) direct API cannot find the resource → resource is deleted, return error (signal dropped). Signals are **only dropped when the resource is truly not resolvable** (deleted from the API, RBAC error, timeout). Standalone resources without ownerReferences (e.g., debug Pods not managed by a controller) are accepted with a resource-level fingerprint. Without OwnerResolver configured (nil), the resource-level fingerprint `SHA256(namespace:kind:name)` is used directly (no owner chain to resolve).
 
 **Priority**: P0 (Critical)
 **Test Coverage**: ✅ Unit
@@ -70,6 +72,8 @@ This document provides a comprehensive list of all business requirements for the
 - Updated 2026-02-09 — Prometheus adapter: alertname excluded from fingerprint; OwnerResolver added for Pod→Deployment resolution (Issue #63). Same pattern as K8s event adapter.
 - Updated 2026-02-09 — K8s events now use owner-chain-based fingerprinting (previously used `SHA256(reason:namespace:kind:name)` which caused duplicate RemediationRequests for events from the same Deployment with different reasons or pod names).
 - Updated 2026-02-24 — Issue #227: K8s Event adapter excludes reason from fingerprint even without OwnerResolver. Issue #228: `OwnerResolver` moved to shared `types` package; `CalculateFingerprint` (identifier-based) removed; all adapters now use shared `types.ResolveFingerprint`.
+- Updated 2026-03-06 — Issue #282: Direct API fallback on cache miss (Tier 2). `ResolveFingerprint` returns `(string, error)`. When the resource is truly not found (deleted), the signal is dropped. Prevents stale alerts for deleted pods from creating RRs with pod-level fingerprints.
+- Updated 2026-03-06 — Issue #284: Trust-but-verify for stale informer cache metadata (Tier 3). When the cache returns a resource without ownerReferences, the resolver re-verifies with the direct API. Standalone resources confirmed by the direct API are accepted (not dropped). Only signals for truly deleted resources are dropped.
 
 ### **BR-GATEWAY-005: Signal Metadata Extraction**
 **Description**: Gateway must extract severity, namespace, and resource metadata from external signals **without transformation or interpretation**
@@ -129,19 +133,21 @@ This document provides a comprehensive list of all business requirements for the
 **Removal Reference**: [DD-GATEWAY-015](../../../architecture/decisions/DD-GATEWAY-015-storm-detection-removal.md)
 **Original Description**: Gateway must recover storm state from Redis after restart
 
-### **BR-GATEWAY-011: Deduplication**
-**Description**: Gateway must deduplicate identical signals within TTL window
+### **BR-GATEWAY-011: Deduplication** ⚠️ UPDATED (2026-03)
+**Description**: Gateway must deduplicate identical signals using **phase-based CRD deduplication**. When an incoming signal produces a fingerprint that matches an active (non-terminal) RemediationRequest, the signal is deduplicated and the occurrence count is incremented on the existing RR. There is no TTL; the deduplication window is the RR lifecycle itself.
 **Priority**: P0 (Critical)
 **Test Coverage**: ✅ Unit + Integration
-**Implementation**: `pkg/gateway/processing/deduplication.go`
+**Implementation**: `pkg/gateway/processing/deduplication.go` (`PhaseBasedDeduplicationChecker`)
 **Tests**: `test/unit/gateway/deduplication_test.go`, `test/integration/gateway/deduplication_test.go`
+**Authority**: [DD-GATEWAY-011](../../../architecture/decisions/DD-GATEWAY-011-status-deduplication-refactoring.md)
 
-### **BR-GATEWAY-012: Deduplication TTL**
-**Description**: Gateway must expire deduplicated signals after configurable TTL (default: 5 minutes)
-**Priority**: P1 (High)
-**Test Coverage**: ✅ Unit
-**Implementation**: `pkg/gateway/processing/deduplication.go`
-**Tests**: `test/unit/gateway/deduplication_test.go`
+> **Update (2026-03)**: Original BR described TTL-based deduplication. Implementation uses phase-based CRD deduplication per DD-GATEWAY-011. No TTL; dedup window = RR lifecycle. `CooldownPeriod` is a post-completion cooldown, not a dedup TTL.
+
+### **BR-GATEWAY-012: Deduplication TTL** ⚠️ DEPRECATED (2026-03)
+**Status**: ⚠️ **DEPRECATED** — TTL-based deduplication was replaced by phase-based CRD deduplication per DD-GATEWAY-011.
+**Original Description**: ~~Gateway must expire deduplicated signals after configurable TTL (default: 5 minutes)~~
+**Replacement**: Phase-based deduplication (BR-GATEWAY-011). Deduplication window is the RR lifecycle. Post-completion `CooldownPeriod` prevents re-triggering for recently completed remediations.
+**Authority**: [DD-GATEWAY-011](../../../architecture/decisions/DD-GATEWAY-011-status-deduplication-refactoring.md)
 
 ### **BR-GATEWAY-013: Deduplication Count Tracking**
 **Description**: Gateway must track count of deduplicated signals for observability
@@ -288,9 +294,11 @@ This document provides a comprehensive list of all business requirements for the
 - ✅ Can query all occurrences via field selector on `spec.signalFingerprint`
 
 **Technical Details**:
-- CRD name format: `rr-<fingerprint-prefix-12-chars>-<unix-timestamp>`
-- Example: `rr-bd773c9f25ac-1731868032`
+- CRD name format: `rr-<fingerprint-prefix>-<uuid-suffix>` (per DD-AUDIT-CORRELATION-002)
+- Example: `rr-bd773c9f25-a1b2c3d4`
 - Fingerprint stored in `spec.signalFingerprint` for querying
+
+> **Update (2026-03)**: Original BR described timestamp-based naming (`rr-<prefix-12>-<unix-timestamp>`). Implementation uses UUID-based naming per DD-AUDIT-CORRELATION-002 for guaranteed uniqueness.
 
 ---
 
@@ -320,18 +328,20 @@ This document provides a comprehensive list of all business requirements for the
 
 ## 🔐 **Security & Authentication** (BR-GATEWAY-036 to BR-GATEWAY-054)
 
-### **BR-GATEWAY-036: Kubernetes TokenReviewer Authentication**
+### **BR-GATEWAY-036: Kubernetes TokenReviewer Authentication** 🔴 SECURITY GAP
 **Description**: Gateway must authenticate API requests using Kubernetes TokenReviewer
 **Priority**: P0 (Critical)
+**Status**: 🔴 **NOT IMPLEMENTED — SECURITY GAP**. `pkg/gateway/middleware/auth.go` does not exist. No TokenReview logic in the codebase. Superseded by BR-GATEWAY-182 (ServiceAccount Authentication via TokenReview), which is also pending.
 **Test Coverage**: ❌ Missing
-**Implementation**: `pkg/gateway/middleware/auth.go`
+**Implementation**: None — `pkg/gateway/middleware/auth.go` does not exist
 **Tests**: None
 
-### **BR-GATEWAY-037: ServiceAccount RBAC Validation**
+### **BR-GATEWAY-037: ServiceAccount RBAC Validation** 🔴 SECURITY GAP
 **Description**: Gateway must validate ServiceAccount has required RBAC permissions
 **Priority**: P0 (Critical)
+**Status**: 🔴 **NOT IMPLEMENTED — SECURITY GAP**. No SubjectAccessReview logic in the codebase. Superseded by BR-GATEWAY-183 (SubjectAccessReview Authorization), which is also pending. Gateway currently relies on Network Policies only (DD-GATEWAY-006, now considered insufficient for defense-in-depth).
 **Test Coverage**: ❌ Missing
-**Implementation**: `pkg/gateway/middleware/auth.go`
+**Implementation**: None — `pkg/gateway/middleware/auth.go` does not exist
 **Tests**: None
 
 ### **BR-GATEWAY-038: Rate Limiting** ✅ DELEGATED TO PROXY
@@ -366,18 +376,20 @@ This document provides a comprehensive list of all business requirements for the
 **Related BRs**: Covered via BR-GATEWAY-073 (19 refs), BR-GATEWAY-074 (1 ref)
 **Note**: Tests reference sub-BRs for granular coverage tracking
 
-### **BR-GATEWAY-040: TLS Support**
+### **BR-GATEWAY-040: TLS Support** ⏳ DEFERRED (Post-V1.0)
 **Description**: Gateway must support TLS for HTTPS endpoints
 **Priority**: P1 (High)
+**Status**: ⏳ **DEFERRED** — Pending review post-V1.0. TLS termination is currently handled at the ingress/route layer.
 **Test Coverage**: ❌ Missing
-**Implementation**: `pkg/gateway/server.go`
+**Implementation**: None
 **Tests**: None
 
-### **BR-GATEWAY-041: Mutual TLS (mTLS)**
+### **BR-GATEWAY-041: Mutual TLS (mTLS)** ⏳ DEFERRED (Post-V1.0)
 **Description**: Gateway must support mutual TLS for client authentication
 **Priority**: P2 (Medium)
+**Status**: ⏳ **DEFERRED** — Pending review post-V1.0. mTLS can be handled by service mesh (Istio/Envoy).
 **Test Coverage**: ❌ Missing
-**Implementation**: `pkg/gateway/server.go`
+**Implementation**: None
 **Tests**: None
 
 ### **BR-GATEWAY-042: Log Sanitization**
@@ -391,8 +403,10 @@ This document provides a comprehensive list of all business requirements for the
 **Description**: Gateway must validate all input payloads against schema
 **Priority**: P0 (Critical)
 **Test Coverage**: ❌ Missing
-**Implementation**: `pkg/gateway/adapters/*/validation.go`
+**Implementation**: `pkg/gateway/adapters/prometheus_adapter.go` (`Validate()`), `pkg/gateway/adapters/kubernetes_event_adapter.go` (`Validate()`)
 **Tests**: `test/unit/gateway/adapters/validation_test.go`
+
+> **Update (2026-03)**: Validation is implemented as `Validate()` methods on each adapter (part of the `SignalAdapter` interface), not in separate `validation.go` files.
 
 ### **BR-GATEWAY-044: SQL Injection Prevention**
 **Description**: Gateway must prevent SQL injection attacks (N/A - no SQL)
@@ -411,8 +425,9 @@ This document provides a comprehensive list of all business requirements for the
 ### **BR-GATEWAY-050: Network Policy Enforcement**
 **Description**: Gateway must enforce Kubernetes Network Policies for ingress/egress
 **Priority**: P1 (High)
+**Status**: ⏳ Tracked — [GitHub #285](https://github.com/jordigilh/kubernaut/issues/285)
 **Test Coverage**: ❌ Missing
-**Implementation**: Kubernetes manifests
+**Implementation**: Kubernetes manifests (not yet added)
 **Tests**: None
 
 ### **BR-GATEWAY-051: Pod Security Standards**
@@ -422,12 +437,11 @@ This document provides a comprehensive list of all business requirements for the
 **Implementation**: Kubernetes manifests
 **Tests**: `test/integration/gateway/webhook_security_test.go`
 
-### **BR-GATEWAY-052: Secret Management**
-**Description**: Gateway must load secrets from Kubernetes Secrets (not environment variables)
-**Priority**: P0 (Critical)
-**Test Coverage**: ❌ Missing
-**Implementation**: `pkg/gateway/config/config.go`
-**Tests**: None
+### **BR-GATEWAY-052: Secret Management** ⚠️ DEPRECATED (2026-03)
+**Status**: ⚠️ **DEPRECATED** — Gateway does not require secrets. Redis was removed (DD-GATEWAY-012), and DataStorage uses plain HTTP. The only config is loaded from a mounted ConfigMap.
+**Original Description**: ~~Gateway must load secrets from Kubernetes Secrets (not environment variables)~~
+**Rationale**: RBAC for Secrets exists in the Helm chart for future use, but the Gateway currently has no credentials to manage. If secret management becomes needed (e.g., TLS certificates, external API keys), this BR can be reinstated.
+**Authority**: [DD-GATEWAY-012](../../../architecture/decisions/DD-GATEWAY-012-redis-removal.md)
 
 ### **BR-GATEWAY-053: RBAC Permissions**
 **Description**: Gateway must have minimal RBAC permissions (create RemediationRequest CRDs only)
@@ -504,12 +518,10 @@ This document provides a comprehensive list of all business requirements for the
 **Implementation**: `pkg/gateway/server.go`
 **Tests**: `test/integration/gateway/http_server_test.go`
 
-### **BR-GATEWAY-073: Redis Health Check**
-**Description**: Gateway must check Redis connectivity in readiness probe
-**Priority**: P0 (Critical)
-**Test Coverage**: ✅ Integration
-**Implementation**: `pkg/gateway/server.go`
-**Tests**: `test/integration/gateway/redis_connection_test.go`
+### **BR-GATEWAY-073: Redis Health Check** ❌ REMOVED (2026-03)
+**Status**: ❌ **REMOVED** — Redis was removed from the Gateway per DD-GATEWAY-012. Readiness probe now checks only Kubernetes API connectivity (BR-GATEWAY-074).
+**Original Description**: ~~Gateway must check Redis connectivity in readiness probe~~
+**Authority**: [DD-GATEWAY-012](../../../architecture/decisions/DD-GATEWAY-012-redis-removal.md)
 
 ### **BR-GATEWAY-074: Kubernetes API Health Check**
 **Description**: Gateway must check Kubernetes API connectivity in readiness probe
@@ -560,19 +572,15 @@ This document provides a comprehensive list of all business requirements for the
 
 ## 🔄 **Reliability & Resilience** (BR-GATEWAY-090 to BR-GATEWAY-115)
 
-### **BR-GATEWAY-090: Redis Connection Pooling**
-**Description**: Gateway must use connection pooling for Redis connections
-**Priority**: P0 (Critical)
-**Test Coverage**: ❌ Missing
-**Implementation**: `pkg/gateway/config/config.go`
-**Tests**: None
+### **BR-GATEWAY-090: Redis Connection Pooling** ❌ REMOVED (2026-03)
+**Status**: ❌ **REMOVED** — Redis was removed from the Gateway per DD-GATEWAY-012.
+**Original Description**: ~~Gateway must use connection pooling for Redis connections~~
+**Authority**: [DD-GATEWAY-012](../../../architecture/decisions/DD-GATEWAY-012-redis-removal.md)
 
-### **BR-GATEWAY-091: Redis HA Support**
-**Description**: Gateway must support Redis Sentinel for high availability
-**Priority**: P1 (High)
-**Test Coverage**: ❌ Missing
-**Implementation**: `pkg/gateway/config/config.go`
-**Tests**: None
+### **BR-GATEWAY-091: Redis HA Support** ❌ REMOVED (2026-03)
+**Status**: ❌ **REMOVED** — Redis was removed from the Gateway per DD-GATEWAY-012.
+**Original Description**: ~~Gateway must support Redis Sentinel for high availability~~
+**Authority**: [DD-GATEWAY-012](../../../architecture/decisions/DD-GATEWAY-012-redis-removal.md)
 
 ### **BR-GATEWAY-092: Graceful Shutdown**
 **Description**: Gateway must implement graceful shutdown (drain requests, close connections)
@@ -624,12 +632,10 @@ This document provides a comprehensive list of all business requirements for the
 **Implementation**: `pkg/gateway/config/config.go`
 **Tests**: `test/integration/gateway/timeout_handling_test.go`
 
-### **BR-GATEWAY-103: Retry Logic - Redis**
-**Description**: Gateway must retry transient Redis errors with exponential backoff
-**Priority**: P1 (High)
-**Test Coverage**: ❌ Missing
-**Implementation**: None
-**Tests**: None
+### **BR-GATEWAY-103: Retry Logic - Redis** ❌ REMOVED (2026-03)
+**Status**: ❌ **REMOVED** — Redis was removed from the Gateway per DD-GATEWAY-012. K8s API retry logic is covered by BR-GATEWAY-111 through BR-GATEWAY-114.
+**Original Description**: ~~Gateway must retry transient Redis errors with exponential backoff~~
+**Authority**: [DD-GATEWAY-012](../../../architecture/decisions/DD-GATEWAY-012-redis-removal.md)
 
 ### **BR-GATEWAY-104: Retry Logic - Kubernetes API**
 **Description**: Gateway must retry transient Kubernetes API errors with exponential backoff
@@ -649,6 +655,7 @@ This document provides a comprehensive list of all business requirements for the
 ### **BR-GATEWAY-106: Resource Limits**
 **Description**: Gateway must enforce resource limits (CPU, memory, connections)
 **Priority**: P1 (High)
+**Status**: ⏳ Tracked — [GitHub #286](https://github.com/jordigilh/kubernaut/issues/286)
 **Test Coverage**: ❌ Missing
 **Implementation**: Kubernetes manifests
 **Tests**: None
@@ -656,6 +663,7 @@ This document provides a comprehensive list of all business requirements for the
 ### **BR-GATEWAY-107: Memory Management**
 **Description**: Gateway must prevent memory leaks and OOM errors
 **Priority**: P0 (Critical)
+**Status**: ⏳ Tracked — [GitHub #286](https://github.com/jordigilh/kubernaut/issues/286)
 **Test Coverage**: ❌ Missing
 **Implementation**: All code
 **Tests**: None
@@ -663,6 +671,7 @@ This document provides a comprehensive list of all business requirements for the
 ### **BR-GATEWAY-108: Goroutine Management**
 **Description**: Gateway must prevent goroutine leaks
 **Priority**: P0 (Critical)
+**Status**: ⏳ Tracked — [GitHub #286](https://github.com/jordigilh/kubernaut/issues/286)
 **Test Coverage**: ❌ Missing
 **Implementation**: All code
 **Tests**: None
@@ -710,10 +719,11 @@ This document provides a comprehensive list of all business requirements for the
 **Implementation**: `pkg/gateway/metrics/metrics.go`
 **Tests**: `test/unit/gateway/processing/crd_creator_retry_test.go`, `test/integration/gateway/k8s_api_failure_test.go`
 
-### **BR-GATEWAY-115: K8s API Async Retry Queue**
-**Description**: Gateway must support async retry queue for K8s API errors (Phase 2)
+### **BR-GATEWAY-115: K8s API Async Retry Queue** ⏳ DEFERRED (V1.1+)
+**Description**: Gateway must support async retry queue for K8s API errors
 **Priority**: P2 (Medium)
-**Test Coverage**: ⏳ Planned (Day 15)
+**Status**: ⏳ **DEFERRED to V1.1+** — Tracked in [GitHub #287](https://github.com/jordigilh/kubernaut/issues/287). Synchronous retries (BR-GATEWAY-111 through BR-GATEWAY-114) cover V1.0 needs.
+**Test Coverage**: ⏳ Planned
 **Implementation**: None (planned)
 **Tests**: None (planned)
 
@@ -721,9 +731,10 @@ This document provides a comprehensive list of all business requirements for the
 
 ## 🔮 **Future Enhancements** (BR-GATEWAY-180+)
 
-### **BR-GATEWAY-180: OpenTelemetry Integration**
+### **BR-GATEWAY-180: OpenTelemetry Integration** ⏳ DEFERRED (Post-V1.0)
 **Description**: Gateway must support full OpenTelemetry integration (traces, metrics, logs)
 **Priority**: P3 (Low)
+**Status**: ⏳ **DEFERRED** — Tracked in [GitHub #95](https://github.com/jordigilh/kubernaut/issues/95) ("Enhancement: Implement OpenTelemetry as a Gateway signal adapter")
 **Test Coverage**: ❌ Missing
 **Implementation**: None
 **Tests**: None
