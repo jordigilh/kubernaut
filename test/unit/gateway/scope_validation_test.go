@@ -102,7 +102,7 @@ func newTestGatewayServer(k8sClient client.Client, metricsInstance *metrics.Metr
 	}
 
 	logger := logr.Discard()
-	return gatewaypkg.NewServerForTesting(cfg, logger, metricsInstance, k8sClient, nil, scopeChecker)
+	return gatewaypkg.NewServerForTesting(cfg, logger, metricsInstance, k8sClient, nil, scopeChecker, nil, nil)
 }
 
 // newTestK8sClient creates a fake K8s client with the required scheme and field index.

@@ -29,9 +29,11 @@ import (
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
@@ -40,6 +42,8 @@ import (
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	"github.com/jordigilh/kubernaut/pkg/shared/auth"
+	inthelpers "github.com/jordigilh/kubernaut/test/integration/gateway/helpers"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	"github.com/jordigilh/kubernaut/test/shared/integration"
 )
@@ -98,6 +102,11 @@ var (
 	dsClient                  audit.DataStorageClient // Per-process DataStorage audit client (authenticated)
 	sharedOgenClient          *ogenclient.Client      // Per-process OpenAPI client (authenticated) - used for audit queries
 	sharedAuditStore          audit.AuditStore        // Shared audit store (background flusher runs continuously)
+
+	// BR-GATEWAY-036/037: Suite-level auth for all integration test servers
+	suiteAuthenticator auth.Authenticator
+	suiteAuthorizer    auth.Authorizer
+	suiteAuthToken     string // Authorized SA token for webhook requests
 )
 
 func TestGatewayIntegration(t *testing.T) {
@@ -262,6 +271,40 @@ var _ = SynchronizedBeforeSuite(
 		}
 
 		logger.Info(fmt.Sprintf("[Process %d] ✅ K8s client created", processNum))
+
+		// BR-GATEWAY-036/037: Wire real K8s auth for all integration test servers
+		logger.Info(fmt.Sprintf("[Process %d] Setting up K8s auth for gateway servers", processNum))
+		k8sClientset, err := kubernetes.NewForConfig(k8sConfig)
+		Expect(err).ToNot(HaveOccurred(), "Failed to create K8s clientset for auth")
+
+		suiteAuthenticator = auth.NewK8sAuthenticator(k8sClientset)
+		suiteAuthorizer = auth.NewK8sAuthorizer(k8sClientset)
+
+		// Create gateway-signal-source ClusterRole (SAR target for auth checks)
+		gwCR := &rbacv1.ClusterRole{
+			ObjectMeta: metav1.ObjectMeta{Name: "gateway-signal-source"},
+			Rules: []rbacv1.PolicyRule{{
+				APIGroups:     []string{""},
+				Resources:     []string{"services"},
+				ResourceNames: []string{"gateway-service"},
+				Verbs:         []string{"create"},
+			}},
+		}
+		err = k8sClient.Create(ctx, gwCR)
+		if err != nil && !apierrors.IsAlreadyExists(err) {
+			Expect(err).ToNot(HaveOccurred(), "Failed to create gateway-signal-source ClusterRole")
+		}
+
+		// Create authorized SA + binding
+		saHelper := inthelpers.NewServiceAccountHelper(k8sClientset, k8sClient, "kubernaut-system")
+		err = saHelper.CreateServiceAccountWithRBAC(ctx, "int-gateway-suite-sa", "gateway-signal-source")
+		Expect(err).ToNot(HaveOccurred(), "Failed to create authorized SA for gateway auth")
+
+		suiteAuthToken, err = saHelper.GetServiceAccountToken(ctx, "int-gateway-suite-sa")
+		Expect(err).ToNot(HaveOccurred(), "Failed to get suite auth token")
+		Expect(suiteAuthToken).ToNot(BeEmpty(), "Suite auth token must not be empty")
+
+		logger.Info(fmt.Sprintf("[Process %d] ✅ K8s auth wired (authenticator, authorizer, token)", processNum))
 		logger.Info(fmt.Sprintf("[Process %d] ✅ Suite setup complete", processNum))
 	},
 )

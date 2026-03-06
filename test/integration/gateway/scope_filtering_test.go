@@ -148,7 +148,7 @@ var _ = Describe("BR-SCOPE-002: Gateway Scope Filtering (Integration)", Ordered,
 		testRegistry := prometheus.NewRegistry()
 		metricsInstance = metrics.NewMetricsWithRegistry(testRegistry)
 		var err error
-		gwServer, err = gateway.NewServerForTesting(gwConfig, testLogger, metricsInstance, k8sClient, sharedAuditStore, scopeMgr)
+		gwServer, err = gateway.NewServerForTesting(gwConfig, testLogger, metricsInstance, k8sClient, sharedAuditStore, scopeMgr, nil, nil)
 		Expect(err).ToNot(HaveOccurred())
 		testLogger.Info("Gateway server with scope validation initialized")
 	})
