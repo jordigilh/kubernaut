@@ -234,7 +234,7 @@ var _ = Describe("E2E-RO-045-001: Completion Notification", Label("e2e", "notifi
 		eaDriveName := fmt.Sprintf("ea-%s", rr.Name)
 		eaDrive := &eav1.EffectivenessAssessment{}
 		Eventually(func() error {
-			return k8sClient.Get(ctx, client.ObjectKey{Name: eaDriveName, Namespace: testNS}, eaDrive)
+			return k8sClient.Get(ctx, client.ObjectKey{Name: eaDriveName, Namespace: controllerNamespace}, eaDrive)
 		}, timeout, interval).Should(Succeed(), "EA should be created during Verifying phase")
 		eaDrive.Status.Phase = eav1.PhaseCompleted
 		eaDeadline := metav1.NewTime(time.Now().Add(10 * time.Minute))
