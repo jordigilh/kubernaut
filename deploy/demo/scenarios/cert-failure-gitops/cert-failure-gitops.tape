@@ -64,7 +64,7 @@ Type `export KUBECONFIG=~/.kube/kubernaut-demo-config`
 Enter
 Sleep 500ms
 
-# Self-erasing helpers: \e[1A moves up, \e[2K erases the typed command line
+# Self-erasing helpers: \e[3A\e[J moves up 3 lines and clears to end of screen
 Type `narrate() { printf '\e[3A\e[J\e[38;5;245m%s\e[0m\n' "$*"; }`
 Enter
 Sleep 200ms
@@ -103,6 +103,10 @@ Wait+Screen@300s /SETUP_COMPLETE/
 Type "clear"
 Enter
 Sleep 500ms
+
+Type `kubectl annotate application demo-cert-gitops -n argocd argocd-image-updater.argoproj.io/check-interval=30s --overwrite 2>/dev/null; kubectl patch application demo-cert-gitops -n argocd --type=merge -p '{"spec":{"syncPolicy":{"automated":{"selfHeal":true},"retry":{"limit":3}}}}' 2>/dev/null; true`
+Enter
+Sleep 5s
 
 # ─────────────────────────────────────────
 # Title Card
@@ -281,10 +285,22 @@ Set TypingSpeed 50ms
 Show
 Sleep 2s
 
+Hide
+Set TypingSpeed 1ms
+Type `sleep 25 && clear && echo SYNC"_"WAIT`
+Enter
+Wait+Screen@30s /SYNC_WAIT/
+Type "act_clear"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 2s
+
 # Certificate watch — shows transition during git revert + ArgoCD sync
 Type "kubectl get certificates -n demo-cert-gitops -w"
 Enter
-Sleep 30s
+Sleep 15s
 Ctrl+C
 Sleep 2s
 
@@ -335,12 +351,9 @@ Type "kubectl get workflowexecutions -n ${PLATFORM_NS}"
 Enter
 Sleep 6s
 
-# Wait for RR completion
+# Remediation verified — show RR watch
 Hide
 Set TypingSpeed 1ms
-Type `while ! kubectl get remediationrequests -n ${PLATFORM_NS} 2>/dev/null | grep -qE 'Verifying|Completed'; do sleep 5; done && clear && echo WF"_"DONE`
-Enter
-Wait+Screen@300s /WF_DONE/
 Type "act_clear"
 Enter
 Sleep 500ms
@@ -388,10 +401,6 @@ Type "kubectl get app demo-cert-gitops -n argocd -o jsonpath='{.status.sync.stat
 Enter
 Sleep 5s
 
-Type "kubectl get remediationrequests -n ${PLATFORM_NS}"
-Enter
-Sleep 5s
-
 Hide
 Set TypingSpeed 1ms
 Type "narrate 'Notification delivered to Slack and console'"
@@ -404,27 +413,6 @@ Sleep 2s
 Type "bash deploy/demo/scripts/show-notification.sh ${PLATFORM_NS}"
 Enter
 Sleep 12s
-
-Hide
-Set TypingSpeed 1ms
-Type "narrate 'Waiting for EffectivenessAssessment to complete...'"
-Enter
-Sleep 300ms
-Set TypingSpeed 50ms
-Show
-Sleep 2s
-
-# Hidden wait: poll until EA reaches Completed or Failed
-Hide
-Set TypingSpeed 1ms
-Type `while true; do PHASE=$(kubectl get effectivenessassessments -n ${PLATFORM_NS} -o jsonpath='{.items[0].status.phase}' 2>/dev/null); [ "$PHASE" = "Completed" ] || [ "$PHASE" = "Failed" ] && break; sleep 10; done && clear && echo EA"_"DONE`
-Enter
-Wait+Screen@600s /EA_DONE/
-Type "act_clear"
-Enter
-Sleep 500ms
-Set TypingSpeed 50ms
-Show
 
 Hide
 Set TypingSpeed 1ms
