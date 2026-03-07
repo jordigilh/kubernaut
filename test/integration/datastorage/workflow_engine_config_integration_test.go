@@ -64,8 +64,7 @@ var _ = Describe("EngineConfig Workflow Catalog Integration (BR-WE-016)", func()
 			Expect(err).ToNot(HaveOccurred())
 			rawEngineConfig := json.RawMessage(engineConfigJSON)
 
-			labels := models.WorkflowLabels{
-				SignalType:  "OOMKilled",
+			labels := models.MandatoryLabels{
 				Severity:    []string{"critical"},
 				Component:   "pod",
 				Environment: []string{"production"},
@@ -117,8 +116,7 @@ var _ = Describe("EngineConfig Workflow Catalog Integration (BR-WE-016)", func()
 			content := "test-tekton-content"
 			contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
 
-			labels := models.WorkflowLabels{
-				SignalType:  "CrashLoopBackOff",
+			labels := models.MandatoryLabels{
 				Severity:    []string{"high"},
 				Component:   "pod",
 				Environment: []string{"production"},
@@ -180,7 +178,7 @@ var _ = Describe("EngineConfig Workflow Catalog Integration (BR-WE-016)", func()
 				Description:     models.StructuredDescription{What: "List test", WhenToUse: "IT-WE-016-002"},
 				Content:         content,
 				ContentHash:     contentHash,
-				Labels:          models.WorkflowLabels{SignalType: "OOMKilled", Severity: []string{"critical"}, Component: "pod", Environment: []string{"production"}, Priority: "P0"},
+				Labels:          models.MandatoryLabels{Severity: []string{"critical"}, Component: "pod", Environment: []string{"production"}, Priority: "P0"},
 				CustomLabels:    models.CustomLabels{},
 				DetectedLabels:  models.DetectedLabels{},
 				Status:          "active",
@@ -250,7 +248,7 @@ var _ = Describe("EngineConfig Workflow Catalog Integration (BR-WE-016)", func()
 				Description:     models.StructuredDescription{What: "Float params test", WhenToUse: "IT-WF-005-001"},
 				Content:         content,
 				ContentHash:     contentHash,
-				Labels:          models.WorkflowLabels{SignalType: "HighCPU", Severity: []string{"high"}, Component: "pod", Environment: []string{"production"}, Priority: "P1"},
+				Labels:          models.MandatoryLabels{Severity: []string{"high"}, Component: "pod", Environment: []string{"production"}, Priority: "P1"},
 				CustomLabels:    models.CustomLabels{},
 				DetectedLabels:  models.DetectedLabels{},
 				Status:          "active",
