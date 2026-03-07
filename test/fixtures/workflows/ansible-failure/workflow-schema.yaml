@@ -1,0 +1,44 @@
+schemaVersion: "1.0"
+# Ansible Failure Test Workflow Schema (BR-WE-015, BR-WE-016)
+# Used by: WorkflowExecution E2E — ansible engine failure path
+metadata:
+  workflowId: test-ansible-failure
+  version: "1.0.0"
+  description:
+    what: "Ansible playbook that intentionally fails for testing failure handling"
+    whenToUse: "For E2E validation of ansible engine workflow execution (failure path)"
+    whenNotToUse: "Not intended for production use"
+    preconditions: "AWX instance deployed and configured with kubernaut-test-playbooks project"
+
+actionType: RestartPod
+
+labels:
+  severity: [low]
+  environment: [test]
+  component: deployment
+  priority: P3
+
+execution:
+  engine: ansible
+  bundle: https://github.com/jordigilh/kubernaut-test-playbooks.git
+  bundleDigest: b7e6a135be2019f995cb4875dbc0116dfda39d21
+  engineConfig:
+    playbookPath: "playbooks/test-failure.yml"
+    jobTemplateName: "kubernaut-test-failure"
+
+parameters:
+  - name: target_kind
+    type: string
+    required: true
+    description: "Kubernetes resource kind (e.g., Pod, Deployment)"
+    default: "Pod"
+  - name: target_name
+    type: string
+    required: true
+    description: "Name of the target resource"
+    default: "test-pod"
+  - name: target_namespace
+    type: string
+    required: false
+    description: "Namespace of the target resource"
+    default: "default"

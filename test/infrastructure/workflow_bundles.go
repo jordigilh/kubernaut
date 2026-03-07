@@ -156,6 +156,43 @@ func BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL, 
 	}
 	RegisteredWorkflowUUIDs["test-dep-secret-tekton"] = wfUUID
 
+	// BR-WE-015: Register ansible engine workflows (engine: ansible, engineConfig in schema).
+	// The OCI schema image contains workflow-schema.yaml with engine: ansible and
+	// engineConfig (playbook_path, project_url, project_revision). Registration is
+	// independent of AWX — DataStorage only stores the workflow metadata.
+	ansibleSuccessRef := fmt.Sprintf("%s/ansible-success:%s", TestWorkflowBundleRegistry, TestWorkflowBundleVersion)
+	ansibleFailureRef := fmt.Sprintf("%s/ansible-failure:%s", TestWorkflowBundleRegistry, TestWorkflowBundleVersion)
+	bundles["test-ansible-success"] = ansibleSuccessRef
+	bundles["test-ansible-failure"] = ansibleFailureRef
+
+	wfUUID, err = registerTestBundleWorkflow(
+		dataStorageURL,
+		saToken,
+		"test-ansible-success",
+		"v1.0.0",
+		ansibleSuccessRef,
+		"Ansible engine success workflow for BR-WE-015 E2E testing",
+		output,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to register ansible-success workflow: %w", err)
+	}
+	RegisteredWorkflowUUIDs["test-ansible-success"] = wfUUID
+
+	wfUUID, err = registerTestBundleWorkflow(
+		dataStorageURL,
+		saToken,
+		"test-ansible-failure",
+		"v1.0.0",
+		ansibleFailureRef,
+		"Ansible engine failure workflow for BR-WE-015 E2E testing",
+		output,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to register ansible-failure workflow: %w", err)
+	}
+	RegisteredWorkflowUUIDs["test-ansible-failure"] = wfUUID
+
 	_, _ = fmt.Fprintf(output, "✅ Test workflows ready\n")
 	return bundles, nil
 }

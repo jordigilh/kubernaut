@@ -16,6 +16,10 @@ nodes:
   - containerPort: 30081  # Data Storage HTTP NodePort
     hostPort: 8092        # DD-TEST-001: WE → DataStorage dependency (avoids conflicts with RO:8089, DS:8081)
     protocol: TCP
+  # BR-WE-015: AWX API NodePort for ansible engine E2E tests
+  - containerPort: 30095  # AWX API NodePort
+    hostPort: 30095       # Port on host machine (localhost:30095)
+    protocol: TCP
   # DD-TEST-007: Mount coverage directory for E2E coverage collection
   # Controller pods run on control-plane node, so coverage must be accessible here
   extraMounts:
