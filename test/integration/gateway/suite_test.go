@@ -261,6 +261,10 @@ var _ = SynchronizedBeforeSuite(
 		k8sClient, err = client.New(k8sConfig, client.Options{Scheme: scheme})
 		Expect(err).ToNot(HaveOccurred(), "Failed to create K8s client")
 
+		// Propagate envtest REST config to helpers_test.go so createTestK8sClient
+		// uses envtest instead of falling back to kubeconfig file lookup.
+		SetSuiteK8sConfig(k8sConfig)
+
 		// Create kubernaut-system namespace for controller (ADR-057: RRs live in controller namespace)
 		// Pattern: same as remediationorchestrator, aianalysis, effectivenessmonitor integration suites
 		systemNs := &corev1.Namespace{
