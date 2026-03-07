@@ -134,6 +134,15 @@ func SetupSecurityTokens() *SecurityTestTokens {
 	}
 	GinkgoWriter.Printf("  ✓ Created authorized ServiceAccount: %s (took %v)\n", authorizedSA, time.Since(step5Start))
 
+	// BR-GATEWAY-037: Also bind to gateway-signal-source so the SA passes SAR checks
+	// (gateway middleware verifies create verb on services/gateway-service)
+	err = saHelper.CreateServiceAccountWithRBAC(ctx, authorizedSA, "gateway-signal-source")
+	if err != nil && !apierrors.IsAlreadyExists(err) {
+		GinkgoWriter.Printf("  ❌ Failed to bind SA to gateway-signal-source: %v\n", err)
+		Expect(err).ToNot(HaveOccurred(), "Should bind authorized SA to gateway-signal-source")
+	}
+	GinkgoWriter.Printf("  ✓ Bound %s to gateway-signal-source ClusterRole\n", authorizedSA)
+
 	// Extract token for authorized SA
 	step6Start := time.Now()
 	GinkgoWriter.Println("  📋 Step 6: Extracting authorized token...")

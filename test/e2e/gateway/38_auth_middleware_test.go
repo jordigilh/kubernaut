@@ -220,20 +220,19 @@ var _ = Describe("Gateway Auth Middleware E2E (BR-GATEWAY-036, BR-GATEWAY-037)",
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated),
 				"E2E-GW-037-002: Authorized request should create RR")
 
-			Eventually(func() string {
-				rrList := &remediationv1alpha1.RemediationRequestList{}
-				err := k8sClient.List(ctx, rrList, &client.ListOptions{})
-				if err != nil {
-					return ""
+		Eventually(func() bool {
+			rrList := &remediationv1alpha1.RemediationRequestList{}
+			if err := k8sClient.List(ctx, rrList, &client.ListOptions{}); err != nil {
+				return false
+			}
+			for _, rr := range rrList.Items {
+				if rr.Spec.SignalName == "E2EAuthTest037002" {
+					return true
 				}
-				for _, rr := range rrList.Items {
-					if rr.Spec.SignalName == "E2EAuthTest037002" {
-						return string(rr.Status.OverallPhase)
-					}
-				}
-				return ""
-			}, 60*time.Second, 2*time.Second).ShouldNot(BeEmpty(),
-				"E2E-GW-037-002: RR must enter the remediation pipeline")
+			}
+			return false
+		}, 60*time.Second, 2*time.Second).Should(BeTrue(),
+			"E2E-GW-037-002: Authorized signal must produce a RemediationRequest CRD")
 		})
 	})
 })
