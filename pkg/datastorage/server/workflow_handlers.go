@@ -344,6 +344,9 @@ func (h *Handler) buildWorkflowFromSchema(
 		}
 	}
 
+	// BR-WE-016: Extract engine-specific configuration
+	workflow.EngineConfig = schemaParser.ExtractEngineConfig(parsedSchema)
+
 	// Set labels from extracted JSONB
 	if err := json.Unmarshal(labelsJSON, &workflow.Labels); err != nil {
 		return nil, fmt.Errorf("unmarshal labels: %w", err)

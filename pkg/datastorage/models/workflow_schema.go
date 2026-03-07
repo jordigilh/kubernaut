@@ -17,7 +17,9 @@ limitations under the License.
 package models
 
 import (
+	"encoding/json"
 	"fmt"
+	"strconv"
 
 	"gopkg.in/yaml.v3"
 )
@@ -221,12 +223,55 @@ func (d *WorkflowDependencies) ValidateDependencies() error {
 // WorkflowExecution contains execution engine configuration
 type WorkflowExecution struct {
 	// Engine is the execution engine type
-	// Values: "tekton", "ansible", "lambda", "shell"
+	// Values: "tekton", "job", "ansible"
 	// Defaults to "tekton" if not specified.
-	Engine string `yaml:"engine,omitempty" json:"engine,omitempty" validate:"omitempty,oneof=tekton ansible lambda shell"`
+	Engine string `yaml:"engine,omitempty" json:"engine,omitempty" validate:"omitempty,oneof=tekton job ansible"`
 
 	// Bundle is the execution bundle or container image reference
 	Bundle string `yaml:"bundle,omitempty" json:"bundle,omitempty" validate:"omitempty"`
+
+	// BundleDigest is the digest of the execution bundle (OPTIONAL).
+	// For tekton/job: OCI image SHA. For ansible: Git commit SHA.
+	BundleDigest string `yaml:"bundleDigest,omitempty" json:"bundleDigest,omitempty" validate:"omitempty"`
+
+	// EngineConfig holds engine-specific configuration as parsed YAML/JSON.
+	// BR-WE-016: Discriminator pattern — the Engine field determines the shape.
+	// Stored as interface{} for YAML compatibility; converted to json.RawMessage by the parser.
+	EngineConfig interface{} `yaml:"engineConfig,omitempty" json:"engineConfig,omitempty"`
+}
+
+// AnsibleEngineConfig holds Ansible/AWX/AAP-specific execution configuration.
+// BR-WE-015, BR-WE-016: Deserialized from WorkflowExecution.EngineConfig
+// when Engine="ansible" via two-phase unmarshal (ParseEngineConfig).
+type AnsibleEngineConfig struct {
+	PlaybookPath    string `yaml:"playbookPath" json:"playbookPath"`
+	JobTemplateName string `yaml:"jobTemplateName,omitempty" json:"jobTemplateName,omitempty"`
+	InventoryName   string `yaml:"inventoryName,omitempty" json:"inventoryName,omitempty"`
+}
+
+// ParseEngineConfig deserializes raw engineConfig JSON based on the engine discriminator.
+// BR-WE-016: Two-phase unmarshal — read engine first, then unmarshal config.
+// Returns (nil, nil) when raw is empty, regardless of engine.
+// Returns error for unknown engines or invalid/incomplete ansible config.
+func ParseEngineConfig(engine string, raw json.RawMessage) (any, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	switch engine {
+	case "ansible":
+		var cfg AnsibleEngineConfig
+		if err := json.Unmarshal(raw, &cfg); err != nil {
+			return nil, fmt.Errorf("invalid ansible engineConfig: %w", err)
+		}
+		if cfg.PlaybookPath == "" {
+			return nil, fmt.Errorf("playbookPath is required in ansible engineConfig")
+		}
+		return &cfg, nil
+	case "tekton", "job":
+		return nil, nil
+	default:
+		return nil, fmt.Errorf("unknown engine %q: cannot parse engineConfig", engine)
+	}
 }
 
 // WorkflowParameter defines a workflow input parameter
@@ -237,8 +282,9 @@ type WorkflowParameter struct {
 	Name string `yaml:"name" json:"name" validate:"required"`
 
 	// Type is the parameter type (REQUIRED)
-	// Values: "string", "integer", "boolean", "array"
-	Type string `yaml:"type" json:"type" validate:"required,oneof=string integer boolean array"`
+	// Values: "string", "integer", "boolean", "array", "float"
+	// BR-WORKFLOW-005: "float" added for AWX survey compatibility.
+	Type string `yaml:"type" json:"type" validate:"required,oneof=string integer boolean array float"`
 
 	// Required indicates whether the parameter must be provided
 	Required bool `yaml:"required" json:"required"`
@@ -252,11 +298,13 @@ type WorkflowParameter struct {
 	// Pattern is a regex pattern for string validation (OPTIONAL)
 	Pattern string `yaml:"pattern,omitempty" json:"pattern,omitempty" validate:"omitempty"`
 
-	// Minimum is the minimum value for integer type (OPTIONAL)
-	Minimum *int `yaml:"minimum,omitempty" json:"minimum,omitempty" validate:"omitempty"`
+	// Minimum is the minimum value for integer/float types (OPTIONAL)
+	// BR-WORKFLOW-005: Changed from *int to *float64 for float support. Backward compatible.
+	Minimum *float64 `yaml:"minimum,omitempty" json:"minimum,omitempty" validate:"omitempty"`
 
-	// Maximum is the maximum value for integer type (OPTIONAL)
-	Maximum *int `yaml:"maximum,omitempty" json:"maximum,omitempty" validate:"omitempty"`
+	// Maximum is the maximum value for integer/float types (OPTIONAL)
+	// BR-WORKFLOW-005: Changed from *int to *float64 for float support. Backward compatible.
+	Maximum *float64 `yaml:"maximum,omitempty" json:"maximum,omitempty" validate:"omitempty"`
 
 	// Default is the default value if not provided (OPTIONAL)
 	Default interface{} `yaml:"default,omitempty" json:"default,omitempty" validate:"omitempty"`
@@ -470,6 +518,37 @@ func (d *WorkflowDescription) ValidateDescription() error {
 	}
 	if d.WhenToUse == "" {
 		return NewSchemaValidationError("metadata.description.whenToUse", "whenToUse is required")
+	}
+	return nil
+}
+
+// ValidateParameterValue checks a string parameter value against the schema's type and bounds.
+// Returns nil if the value is valid; error with descriptive message otherwise.
+func ValidateParameterValue(param WorkflowParameter, value string) error {
+	switch param.Type {
+	case "integer":
+		v, err := strconv.ParseFloat(value, 64)
+		if err != nil {
+			return fmt.Errorf("parameter %q: invalid integer value %q", param.Name, value)
+		}
+		return checkNumericBounds(param, v)
+	case "float":
+		v, err := strconv.ParseFloat(value, 64)
+		if err != nil {
+			return fmt.Errorf("parameter %q: invalid float value %q", param.Name, value)
+		}
+		return checkNumericBounds(param, v)
+	default:
+		return nil
+	}
+}
+
+func checkNumericBounds(param WorkflowParameter, value float64) error {
+	if param.Minimum != nil && value < *param.Minimum {
+		return fmt.Errorf("parameter %q: value %v is below minimum %v", param.Name, value, *param.Minimum)
+	}
+	if param.Maximum != nil && value > *param.Maximum {
+		return fmt.Errorf("parameter %q: value %v exceeds maximum %v", param.Name, value, *param.Maximum)
 	}
 	return nil
 }

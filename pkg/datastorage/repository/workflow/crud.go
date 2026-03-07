@@ -82,7 +82,7 @@ func (r *Repository) Create(ctx context.Context, workflow *models.RemediationWor
 		INSERT INTO remediation_workflow_catalog (
 			workflow_name, version, schema_version, name, description, owner, maintainer,
 			content, content_hash, parameters, execution_engine, schema_image, schema_digest,
-			execution_bundle, execution_bundle_digest,
+			execution_bundle, execution_bundle_digest, engine_config,
 			labels, custom_labels, detected_labels, status,
 			is_latest_version, previous_version, version_notes, change_summary,
 			approved_by, approved_at, expected_success_rate, expected_duration_seconds,
@@ -90,11 +90,11 @@ func (r *Repository) Create(ctx context.Context, workflow *models.RemediationWor
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7,
 			$8, $9, $10, $11, $12, $13,
-			$14, $15,
-			$16, $17, $18, $19,
-			$20, $21, $22, $23,
-			$24, $25, $26, $27,
-			$28, $29
+			$14, $15, $16,
+			$17, $18, $19, $20,
+			$21, $22, $23, $24,
+			$25, $26, $27, $28,
+			$29, $30
 		)
 		RETURNING workflow_id
 	`
@@ -103,7 +103,7 @@ func (r *Repository) Create(ctx context.Context, workflow *models.RemediationWor
 	err = tx.QueryRowContext(ctx, insertQuery,
 		workflow.WorkflowName, workflow.Version, workflow.SchemaVersion, workflow.Name, workflow.Description, workflow.Owner, workflow.Maintainer,
 		workflow.Content, workflow.ContentHash, workflow.Parameters, workflow.ExecutionEngine, workflow.SchemaImage, workflow.SchemaDigest,
-		workflow.ExecutionBundle, workflow.ExecutionBundleDigest,
+		workflow.ExecutionBundle, workflow.ExecutionBundleDigest, workflow.EngineConfig,
 		workflow.Labels, workflow.CustomLabels, workflow.DetectedLabels, workflow.Status,
 		workflow.IsLatestVersion, workflow.PreviousVersion, workflow.VersionNotes, workflow.ChangeSummary,
 		workflow.ApprovedBy, workflow.ApprovedAt, workflow.ExpectedSuccessRate, workflow.ExpectedDurationSeconds,
