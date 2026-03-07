@@ -18,15 +18,13 @@ package gateway
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/rest"
 
 	"github.com/jordigilh/kubernaut/test/integration/gateway/helpers"
 )
@@ -62,25 +60,13 @@ func SetupSecurityTokens() *SecurityTestTokens {
 
 	GinkgoWriter.Println("🔐 Setting up suite-level ServiceAccounts (one-time setup with 60s timeout)...")
 
-	// Create K8s clientset
+	// Create K8s clientset from envtest REST config (suite-level k8sConfig)
 	step1Start := time.Now()
-	GinkgoWriter.Println("  📋 Step 1: Creating K8s clientset...")
+	GinkgoWriter.Println("  📋 Step 1: Creating K8s clientset from envtest REST config...")
 
-	// Use isolated kubeconfig for Kind cluster to avoid impacting other tests
-	kubeconfigPath := os.Getenv("KUBECONFIG")
-	if kubeconfigPath == "" {
-		kubeconfigPath = filepath.Join(os.Getenv("HOME"), ".kube", "gateway-kubeconfig")
-	}
+	Expect(k8sConfig).ToNot(BeNil(), "envtest REST config must be available (set in suite BeforeSuite)")
 
-	config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
-	if err != nil {
-		GinkgoWriter.Printf("  ❌ Failed to build kubeconfig from %s: %v\n", kubeconfigPath, err)
-		Expect(err).ToNot(HaveOccurred(), "Failed to build kubeconfig")
-	}
-
-	// Set higher QPS and Burst for integration tests to prevent client-side throttling
-	// Default: QPS=5, Burst=10 (too low for concurrent tests)
-	// Integration tests: QPS=50, Burst=100 (allows 100 concurrent TokenReview calls)
+	config := rest.CopyConfig(k8sConfig)
 	config.QPS = 50
 	config.Burst = 100
 
