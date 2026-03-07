@@ -41,8 +41,8 @@ Require helm
 
 Set Shell "bash"
 Set FontSize 28
-Set Width 2400
-Set Height 1200
+Set Width 1600
+Set Height 800
 Set Padding 40
 Set TypingSpeed 50ms
 Set Theme "Catppuccin Mocha"
@@ -174,7 +174,7 @@ Set TypingSpeed 50ms
 Show
 Sleep 2s
 
-Type "kubectl get pods -n demo-crashloop-helm -o wide -w"
+Type "kubectl get pods -n demo-crashloop-helm -w"
 Enter
 Wait+Screen@120s /CrashLoopBackOff/
 Sleep 5s
@@ -359,7 +359,7 @@ Set TypingSpeed 50ms
 Show
 Sleep 2s
 
-Type "kubectl get pods -n demo-crashloop-helm -o wide -w"
+Type "kubectl get pods -n demo-crashloop-helm -w"
 Enter
 Sleep 30s
 Ctrl+C
