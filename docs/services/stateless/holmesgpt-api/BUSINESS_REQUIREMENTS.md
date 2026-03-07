@@ -688,11 +688,14 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 
 ---
 
-#### BR-HAPI-302: HTTP Request Metrics (DD-005 Standard)
+#### BR-HAPI-302: HTTP Request Metrics (DD-005 Standard) — **DEFERRED (GitHub #294)**
+
+> **Status**: Removed in V1.0 per GitHub #294 (internal-only metrics cleanup).
+> These metrics had no external consumer. May be reconsidered post-V1.0.
 
 **Description**: The HolmesGPT API Service MUST expose standard HTTP request metrics per DD-005 observability standards.
 
-**Priority**: P0 (CRITICAL) - Required by DD-005
+**Priority**: ~~P0 (CRITICAL) - Required by DD-005~~ Deferred
 
 **Rationale**:
 - **Compliance**: DD-005 mandates HTTP metrics for all stateless services
@@ -739,11 +742,14 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 
 ---
 
-#### BR-HAPI-303: Config Hot-Reload Metrics (Operational Visibility)
+#### BR-HAPI-303: Config Hot-Reload Metrics (Operational Visibility) — **DEFERRED (GitHub #294)**
+
+> **Status**: Removed in V1.0 per GitHub #294 (internal-only metrics cleanup).
+> Config hot-reload is logged but no longer emits Prometheus metrics. May be reconsidered post-V1.0.
 
 **Description**: The HolmesGPT API Service MUST expose metrics for ConfigMap hot-reload operations (BR-HAPI-199 compliance).
 
-**Priority**: P1 (HIGH) - Operational visibility
+**Priority**: ~~P1 (HIGH) - Operational visibility~~ Deferred
 
 **Rationale**: Operators need visibility into config reload events for troubleshooting and audit.
 
@@ -778,7 +784,7 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 - ✅ Metrics update on ConfigMap change events
 - ✅ Integration tests validate reload metrics
 
-**Implementation Status**: ✅ Implemented (BR-HAPI-199)
+**Implementation Status**: ❌ Removed in V1.0 (GitHub #294)
 
 **Related BRs**: BR-HAPI-199 (ConfigMap Hot-Reload)
 

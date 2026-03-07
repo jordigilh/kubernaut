@@ -121,23 +121,21 @@ jobs:
 During load testing, monitor these Prometheus metrics:
 
 ### Investigation Performance
-- `holmesgpt_investigations_total`: Total investigations
-- `holmesgpt_investigations_duration_seconds`: Duration histogram
-- `holmesgpt_active_requests`: Concurrent requests
+- `holmesgpt_api_investigations_total`: Total investigations by outcome
+- `holmesgpt_api_investigations_duration_seconds`: Duration histogram
 
 ### LLM Integration
-- `holmesgpt_llm_calls_total`: LLM API calls
-- `holmesgpt_llm_call_duration_seconds`: LLM call latency
-- `holmesgpt_llm_token_usage_total`: Token consumption
-
-### Error Rates
-- `holmesgpt_http_requests_total{status=~"5.."}`: Server errors
-- `holmesgpt_auth_failures_total`: Auth failures
+- `holmesgpt_api_llm_calls_total`: LLM API calls by provider/model/status
+- `holmesgpt_api_llm_call_duration_seconds`: LLM call latency
+- `holmesgpt_api_llm_token_usage_total`: Token consumption (for cost tracking)
 
 ### Resource Usage
 - CPU and memory usage (from Kubernetes metrics)
 - Network I/O
-- Database connection pool
+
+> **Note**: HTTP request metrics were removed in GitHub #294 (internal-only
+> metrics cleanup). Use investigation and LLM metrics for business-level
+> observability.
 
 ---
 
@@ -199,9 +197,9 @@ locust -f locustfile.py --host=http://localhost:8080 \
 
 **Check Prometheus metrics**:
 ```bash
-# Check error breakdown
+# Check investigation outcomes
 oc exec -n kubernaut-system deployment/holmesgpt-api -- \
-  curl -s http://localhost:8080/metrics | grep holmesgpt_http_requests_total
+  curl -s http://localhost:8080/metrics | grep holmesgpt_api_investigations_total
 ```
 
 **Check logs**:

@@ -52,7 +52,7 @@ logger = logging.getLogger(__name__)
 
 # Note: Auth metrics removed (no BR backing for internal-only service)
 # Auth metrics can be added in v2.0 if service becomes externally exposed
-# See: BR-HAPI-301 (LLM metrics), BR-HAPI-302 (HTTP metrics) for approved metrics
+# See: BR-HAPI-011 (Investigation metrics), BR-HAPI-301 (LLM metrics) for approved metrics
 
 
 class AuthenticationMiddleware(BaseHTTPMiddleware):

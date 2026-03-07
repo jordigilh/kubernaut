@@ -23,8 +23,6 @@ Pattern: Match Go Gateway/AIAnalysis pattern for consistency
 Business Requirements:
 - BR-HAPI-011: Investigation Metrics
 - BR-HAPI-301: LLM Observability Metrics
-- BR-HAPI-302: HTTP Request Metrics (DD-005 Standard)
-- BR-HAPI-303: Config Hot-Reload Metrics
 
 This module implements metrics following the Go service pattern:
 1. Metrics class with injectable registry (like Go's metrics.Metrics struct)
@@ -49,7 +47,7 @@ from .constants import (
     METRIC_NAME_LLM_CALL_DURATION,
     METRIC_NAME_LLM_TOKEN_USAGE,
     
-    # HTTP Metrics
+    # LLM token type labels
     LABEL_TOKEN_TYPE_PROMPT,
     LABEL_TOKEN_TYPE_COMPLETION,
 )
@@ -67,8 +65,6 @@ class HAMetrics:
     Business Requirements:
     - BR-HAPI-011: Investigation request metrics
     - BR-HAPI-301: LLM API call metrics
-    - BR-HAPI-302: HTTP request metrics (DD-005)
-    - BR-HAPI-303: Config hot-reload metrics
     
     Usage:
         # Production (default registry)
@@ -133,20 +129,8 @@ class HAMetrics:
             registry=self.registry
         )
         
-        # ========================================
-        # HTTP METRICS (BR-HAPI-302, DD-005)
-        # ========================================
-        
-        # Note: HTTP metrics remain in middleware (FastAPI best practice)
-        # These are exposed via middleware, not business logic
-        # See: src/middleware/metrics.py for HTTP metric definitions
-        
-        # ========================================
-        # CONFIG HOT-RELOAD METRICS (BR-HAPI-303)
-        # ========================================
-        
-        # Note: Config metrics are in config manager
-        # See: src/config/manager.py for config reload metric definitions
+        # Note: HTTP and config hot-reload metrics were removed in GitHub #294
+        # (internal-only metrics cleanup). Only investigation and LLM metrics remain.
     
     def record_investigation_start(self) -> float:
         """

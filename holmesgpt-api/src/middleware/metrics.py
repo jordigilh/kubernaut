@@ -31,13 +31,10 @@ Migration (Jan 31, 2026):
 - REMOVED: rfc7807_errors_total (GitHub #294 - internal-only)
 """
 
-import logging
 from typing import Callable
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
-
-logger = logging.getLogger(__name__)
 
 
 # ========================================
@@ -55,35 +52,6 @@ class PrometheusMetricsMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         """Pass through request without metric recording."""
         return await call_next(request)
-
-
-def update_config_metrics_from_manager(config_manager):
-    """
-    Update Prometheus metrics from ConfigManager state.
-
-    Called periodically or on demand to sync ConfigManager
-    metrics with Prometheus.
-
-    Business Requirement: BR-HAPI-199
-
-    Args:
-        config_manager: ConfigManager instance
-    """
-    if config_manager is None:
-        return
-
-    # Sync reload count
-    # Note: This sets absolute values, not increments
-    # In production, you'd track deltas
-    reload_count = config_manager.reload_count
-    error_count = config_manager.error_count
-
-    logger.debug({
-        "event": "config_metrics_synced",
-        "reload_count": reload_count,
-        "error_count": error_count,
-        "br": "BR-HAPI-199"
-    })
 
 
 # ========================================

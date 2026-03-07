@@ -26,8 +26,6 @@ integration tests.
 Business Requirements:
 - BR-HAPI-011: Investigation Metrics
 - BR-HAPI-301: LLM Observability Metrics
-- BR-HAPI-302: HTTP Request Metrics (DD-005 Standard)
-- BR-HAPI-303: Config Hot-Reload Metrics
 
 Why Constants Are MANDATORY:
 - **Typo Prevention**: Compiler catches typos at build time, not runtime

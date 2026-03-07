@@ -180,19 +180,15 @@ If we ran with real LLM (Vertex AI Claude 3.5 Sonnet):
 
 During the test, the following metrics were collected:
 
-### Request Metrics
-- `holmesgpt_http_requests_total`: 121 requests
-- `holmesgpt_http_request_duration_seconds`: Latency histogram
-- `holmesgpt_active_requests`: Peak concurrent requests
-
 ### Health Endpoint Metrics
 - 28 successful health checks
 - 9 successful readiness checks
 - 5 successful metrics scrapes
 
-### Error Metrics
-- `holmesgpt_http_requests_total{status="404"}`: 64 (all from incorrect paths)
-- No 5xx errors recorded (good infrastructure health)
+> **Note**: HTTP request metrics (`holmesgpt_http_requests_total`,
+> `holmesgpt_http_request_duration_seconds`, `holmesgpt_active_requests`) were
+> removed in GitHub #294 (internal-only metrics cleanup). Investigation and LLM
+> metrics remain available for business-level observability.
 
 ---
 

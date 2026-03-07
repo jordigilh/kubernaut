@@ -4,7 +4,7 @@ HAPI Metrics Module
 This module provides metrics instrumentation following the Go service pattern.
 
 Design Decision: DD-005 v3.0 Section 1.1 - Metric Name Constants (MANDATORY)
-Business Requirements: BR-HAPI-011, BR-HAPI-301, BR-HAPI-302, BR-HAPI-303
+Business Requirements: BR-HAPI-011, BR-HAPI-301
 
 Architecture:
 - HAMetrics class: Injectable metrics for business logic (like Go's metrics.Metrics)
