@@ -226,7 +226,6 @@ func (s *BufferedAuditStore) StoreAudit(ctx context.Context, event *ogenclient.A
 	case s.buffer <- event:
 		// ✅ Event buffered successfully
 		newCount := atomic.AddInt64(&s.bufferedCount, 1)
-		s.metrics.RecordBuffered()
 
 		// DEBUG: Event successfully added to buffer
 		s.logger.Info("✅ Event buffered successfully",
@@ -409,7 +408,6 @@ func (s *BufferedAuditStore) backgroundWriter() {
 			batch = append(batch, event)
 			bufferSize := len(s.buffer)
 			s.metrics.SetBufferSize(bufferSize)
-			s.metrics.SetBufferUtilization(bufferSize, s.config.BufferSize) // DD-AUDIT-004
 
 			// Write when batch is full
 			if len(batch) >= s.config.BatchSize {
@@ -484,7 +482,6 @@ func (s *BufferedAuditStore) backgroundWriter() {
 			}
 			bufferSize := len(s.buffer)
 			s.metrics.SetBufferSize(bufferSize)
-			s.metrics.SetBufferUtilization(bufferSize, s.config.BufferSize) // DD-AUDIT-004
 
 		case done := <-s.flushChan:
 			// Explicit flush requested (typically from tests or graceful shutdown prep)
@@ -552,11 +549,6 @@ func (s *BufferedAuditStore) backgroundWriter() {
 // - After MaxRetries: Drop batch and log
 func (s *BufferedAuditStore) writeBatchWithRetry(batch []*ogenclient.AuditEventRequest) {
 	start := time.Now()
-	defer func() {
-		duration := time.Since(start).Seconds()
-		s.metrics.ObserveWriteDuration(duration)
-	}()
-
 	for attempt := 1; attempt <= s.config.MaxRetries; attempt++ {
 		// Use store-scoped context with per-attempt timeout
 		// During shutdown, s.ctx is cancelled so retry loops abort promptly

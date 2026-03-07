@@ -24,11 +24,13 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 
@@ -153,6 +155,12 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 			if paramsRaw, ok := swMap["parameters"]; ok {
 				if paramsMapIface, ok := paramsRaw.(map[string]interface{}); ok {
 					sw.Parameters = convertMapToStringMap(paramsMapIface)
+				}
+			}
+			// BR-WE-016: Extract engine_config as raw JSON for pass-through
+			if ecRaw, ok := swMap["engine_config"]; ok && ecRaw != nil {
+				if ecBytes, err := json.Marshal(ecRaw); err == nil {
+					sw.EngineConfig = &apiextensionsv1.JSON{Raw: ecBytes}
 				}
 			}
 			analysis.Status.SelectedWorkflow = sw

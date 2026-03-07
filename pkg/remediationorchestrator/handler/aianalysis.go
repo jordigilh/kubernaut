@@ -151,7 +151,7 @@ func (h *AIAnalysisHandler) handleWorkflowNotNeeded(
 
 	// Update RR status (DD-GATEWAY-011, BR-ORCH-038)
 	// REFACTOR-RO-001: Using retry helper to preserve Gateway fields
-	err := helpers.UpdateRemediationRequestStatus(ctx, h.client, h.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+	err := helpers.UpdateRemediationRequestStatus(ctx, h.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		// Update only RO-owned fields
 		rr.Status.OverallPhase = remediationv1.PhaseCompleted
 		rr.Status.Outcome = "NoActionRequired"
@@ -207,7 +207,7 @@ func (h *AIAnalysisHandler) handleApprovalRequired(
 	// Update RR status with notification reference (DD-GATEWAY-011, BR-ORCH-038)
 	// REFACTOR-RO-001: Using retry helper
 	ref := h.buildNotificationRef(ctx, notifName, rr.Namespace)
-	err = helpers.UpdateRemediationRequestStatus(ctx, h.client, h.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+	err = helpers.UpdateRemediationRequestStatus(ctx, h.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		// Track notification reference (BR-ORCH-035)
 		rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
 		rr.Status.ApprovalNotificationSent = true
@@ -216,11 +216,6 @@ func (h *AIAnalysisHandler) handleApprovalRequired(
 	if err != nil {
 		logger.Error(err, "Failed to update RR status with approval notification ref")
 		return ctrl.Result{}, fmt.Errorf("failed to update RR status: %w", err)
-	}
-
-	// Record metric
-	if h.Metrics != nil {
-		h.Metrics.ApprovalNotificationsTotal.WithLabelValues(rr.Namespace).Inc()
 	}
 
 	logger.Info("Created approval notification", "notificationName", notifName)
@@ -351,7 +346,7 @@ func (h *AIAnalysisHandler) createManualReviewAndUpdateStatus(
 	// Note: Phase transition and audit emission handled by transitionToFailed() callback below
 	// REFACTOR-RO-001: Using retry helper
 	ref := h.buildNotificationRef(ctx, notifName, rr.Namespace)
-	err = helpers.UpdateRemediationRequestStatus(ctx, h.client, h.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+	err = helpers.UpdateRemediationRequestStatus(ctx, h.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		// Handler-specific status fields
 		rr.Status.Outcome = "ManualReviewRequired"
 		rr.Status.RequiresManualReview = true
@@ -363,16 +358,6 @@ func (h *AIAnalysisHandler) createManualReviewAndUpdateStatus(
 	if err != nil {
 		logger.Error(err, "Failed to update RR status for manual review")
 		return ctrl.Result{}, fmt.Errorf("failed to update RR status: %w", err)
-	}
-
-	// Record metric (BR-ORCH-036, BR-HAPI-197)
-	if h.Metrics != nil {
-		h.Metrics.ManualReviewNotificationsTotal.WithLabelValues(
-			string(creator.ManualReviewSourceAIAnalysis),
-			metricReason,
-			metricSubReason,
-			rr.Namespace,
-		).Inc()
 	}
 
 	logger.Info("Created manual review notification",

@@ -23,7 +23,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
-	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
 )
 
 // ========================================
@@ -48,16 +47,10 @@ import (
 func UpdateRemediationRequestStatus(
 	ctx context.Context,
 	c client.Client,
-	m *metrics.Metrics,
 	rr *remediationv1.RemediationRequest,
 	updateFn func(*remediationv1.RemediationRequest) error,
 ) error {
-	var attemptCount int
-	var hadConflict bool
-
-	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		attemptCount++
-
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		// Refetch to get latest resourceVersion (preserves Gateway fields)
 		if err := c.Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
 			return err
@@ -69,64 +62,7 @@ func UpdateRemediationRequestStatus(
 		}
 
 		// Update status with latest resourceVersion
-		err := c.Status().Update(ctx, rr)
-		if err != nil && client.IgnoreNotFound(err) != nil {
-			// Check if this is a conflict error
-			if isConflictError(err) {
-				hadConflict = true
-			}
-		}
-		return err
+		return c.Status().Update(ctx, rr)
 	})
 
-	// REFACTOR-RO-008: Record metrics (only if metrics are available)
-	if m != nil {
-		outcome := "success"
-		if err != nil {
-			if attemptCount >= 10 { // DefaultRetry max attempts
-				outcome = "exhausted"
-			} else {
-				outcome = "error"
-			}
-		}
-
-		// Record retry attempts
-		m.StatusUpdateRetriesTotal.WithLabelValues(rr.Namespace, outcome).Add(float64(attemptCount))
-
-		// Record conflicts if any occurred
-		if hadConflict {
-			m.StatusUpdateConflictsTotal.WithLabelValues(rr.Namespace).Inc()
-		}
-	}
-
-	return err
-}
-
-// isConflictError checks if an error is an optimistic concurrency conflict.
-func isConflictError(err error) bool {
-	// Check for "the object has been modified" or similar conflict messages
-	// This is a heuristic since controller-runtime doesn't expose a specific error type
-	if err == nil {
-		return false
-	}
-	errMsg := err.Error()
-	return containsAny(errMsg, []string{
-		"conflict",
-		"the object has been modified",
-		"please apply your changes to the latest version",
-	})
-}
-
-// containsAny checks if a string contains any of the given substrings.
-func containsAny(s string, substrings []string) bool {
-	for _, substr := range substrings {
-		if len(s) >= len(substr) {
-			for i := 0; i <= len(s)-len(substr); i++ {
-				if s[i:i+len(substr)] == substr {
-					return true
-				}
-			}
-		}
-	}
-	return false
 }

@@ -85,7 +85,7 @@ func (h *RecentlyRemediatedHandler) Handle(
 	// Temporary stub for Day 1 build compatibility
 	// V1.0: WE.Status.SkipDetails removed (DD-RO-002)
 	// This code path will not execute in V1.0 (WFE never created if should be skipped)
-	err := helpers.UpdateRemediationRequestStatus(ctx, h.ctx.Client, h.ctx.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+	err := helpers.UpdateRemediationRequestStatus(ctx, h.ctx.Client, rr, func(rr *remediationv1.RemediationRequest) error {
 		rr.Status.OverallPhase = remediationv1.PhaseSkipped
 		rr.Status.SkipReason = "RecentlyRemediated"
 		// V1.0: SkipDetails removed, skip information now in RR.Status

@@ -367,64 +367,6 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 			GinkgoWriter.Printf("✅ Deduplication metric for alert '%s': increased from %.0f to %.0f\n",
 				alertName, initialDedupValue, finalDedupValue)
 		})
-
-		// Test ID: GW-INT-MET-012
-		// Scenario: Deduplication Rate Gauge
-		// BR: BR-GATEWAY-066
-		// Section: 2.3.2
-		It("[GW-INT-MET-012] should update gateway_deduplication_rate gauge", func() {
-			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
-			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
-			metricsInstance := metrics.NewMetricsWithRegistry(metricsReg)
-			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, sharedAuditStore)
-			Expect(err).ToNot(HaveOccurred())
-
-			By("1. Get initial deduplication rate gauge value")
-			initialDedupRate := getGaugeValue(metricsReg, "gateway_deduplication_rate", map[string]string{})
-
-			By("2. Process multiple signals with mix of new and duplicate")
-			// Process first signal (new)
-			alert1 := createPrometheusAlert(testNamespace, "UniqueAlert1", "critical", "", "")
-			signal1, err := prometheusAdapter.Parse(ctx, alert1)
-			Expect(err).ToNot(HaveOccurred())
-			_, err = gwServer.ProcessSignal(ctx, signal1)
-			Expect(err).ToNot(HaveOccurred())
-
-			// Process duplicate signal
-			time.Sleep(300 * time.Millisecond)
-			alert2 := createPrometheusAlert(testNamespace, "UniqueAlert1", "critical", "", "")
-			signal2, err := prometheusAdapter.Parse(ctx, alert2)
-			Expect(err).ToNot(HaveOccurred())
-			_, err = gwServer.ProcessSignal(ctx, signal2)
-			Expect(err).ToNot(HaveOccurred())
-
-			// Process another new signal
-			alert3 := createPrometheusAlert(testNamespace, "UniqueAlert2", "warning", "", "")
-			signal3, err := prometheusAdapter.Parse(ctx, alert3)
-			Expect(err).ToNot(HaveOccurred())
-			_, err = gwServer.ProcessSignal(ctx, signal3)
-			Expect(err).ToNot(HaveOccurred())
-
-			By("3. Verify deduplication rate gauge was updated")
-			finalDedupRate := getGaugeValue(metricsReg, "gateway_deduplication_rate", map[string]string{})
-
-			// Gauge must be within valid range
-			Expect(finalDedupRate).To(BeNumerically(">=", 0),
-				"BR-GATEWAY-066: Deduplication rate must be non-negative")
-			Expect(finalDedupRate).To(BeNumerically("<=", 1),
-				"BR-GATEWAY-066: Deduplication rate must be <= 1 (100%)")
-
-			// Gauge must have changed (delta != 0) OR be within expected range
-			// We sent 3 signals with 1 dedup, so rate should be ~0.33 (33%)
-			if initialDedupRate == finalDedupRate {
-				// If no change, at least verify it's in the expected range
-				Expect(finalDedupRate).To(BeNumerically("~", 0.33, 0.1),
-					"BR-GATEWAY-066: Deduplication rate should be ~33% for 1 dedup out of 3 signals")
-			}
-
-			GinkgoWriter.Printf("✅ Deduplication rate gauge: %.2f→%.2f (Δ%.2f, %.0f%%)\n",
-				initialDedupRate, finalDedupRate, finalDedupRate-initialDedupRate, finalDedupRate*100)
-		})
 	})
 
 	// Test ID: GW-INT-MET-004
@@ -596,34 +538,6 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 				"BR-GATEWAY-069: CRD creation counter must increment by 2 for two CRDs")
 
 			GinkgoWriter.Printf("✅ CRDs created with status tracking: %.0f→%.0f\n", initialCreatedValue, finalCreatedValue)
-		})
-
-		// Test ID: GW-INT-MET-009
-		It("[GW-INT-MET-009] should track CRD creation duration in histogram", func() {
-			By("1. Create CRDs to generate duration samples")
-			prometheusAdapter := adapters.NewPrometheusAdapter(nil, nil)
-			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
-			metricsInstance := metrics.NewMetricsWithRegistry(metricsReg)
-			gwServer, err := createGatewayServerWithMetrics(gatewayConfig, logger, k8sClient, metricsInstance, sharedAuditStore)
-			Expect(err).ToNot(HaveOccurred())
-
-			// Create 3 CRDs
-			for i := 1; i <= 3; i++ {
-				alertName := fmt.Sprintf("DurationAlert%d", i)
-				alert := createPrometheusAlert(testNamespace, alertName, "critical", "", "")
-				signal, err := prometheusAdapter.Parse(ctx, alert)
-				Expect(err).ToNot(HaveOccurred())
-				_, err = gwServer.ProcessSignal(ctx, signal)
-				Expect(err).ToNot(HaveOccurred())
-			}
-
-			By("2. Verify field index query duration histogram exists")
-			// Gateway tracks field index query performance for deduplication
-			sampleCount := getHistogramSampleCount(metricsReg, "gateway_field_index_query_duration_seconds", map[string]string{})
-
-			// Gateway performs field index queries during deduplication checks
-			// Sample count should reflect these operations
-			GinkgoWriter.Printf("✅ Field index query duration samples: %d\n", sampleCount)
 		})
 
 		// Test ID: GW-INT-MET-010

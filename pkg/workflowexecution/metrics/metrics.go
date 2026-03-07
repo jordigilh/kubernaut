@@ -24,7 +24,6 @@ limitations under the License.
 //     → Outcomes: Completed, Failed
 //   - workflowexecution_reconciler_duration_seconds{outcome}: Histogram of execution durations
 //     → Buckets: 5s, 10s, 20s, 40s, 80s, 160s, 320s
-//   - workflowexecution_reconciler_execution_creations_total: Counter of execution resource creations
 //
 // Use Cases:
 // - SLO Monitoring: Track execution success rate
@@ -44,10 +43,9 @@ import (
 // ========================================
 // Day 7: Business-Value Metrics (BR-WE-008)
 // DD-METRICS-001: Dependency-Injected Metrics Pattern
-// 3 metrics per BR-WE-008:
+// 2 metrics per BR-WE-008:
 // - workflowexecution_reconciler_total{outcome}
 // - workflowexecution_reconciler_duration_seconds{outcome}
-// - workflowexecution_reconciler_execution_creations_total
 //
 // V1.0: Skip/backoff metrics removed - RO handles routing (DD-RO-002 Phase 3)
 // ========================================
@@ -60,9 +58,6 @@ const (
 
 	// MetricNameExecutionDuration is the name of the execution duration histogram metric
 	MetricNameExecutionDuration = "workflowexecution_reconciler_duration_seconds"
-
-	// MetricNameExecutionCreations is the name of the execution creation counter metric
-	MetricNameExecutionCreations = "workflowexecution_reconciler_execution_creations_total"
 
 	// Label values for outcome dimension
 	// LabelOutcomeCompleted indicates successful workflow completion
@@ -84,10 +79,6 @@ type Metrics struct {
 	// Labels: outcome (Completed, Failed)
 	// Business value: SLO P95 latency tracking
 	ExecutionDuration *prometheus.HistogramVec
-
-	// ExecutionCreations tracks execution resource creation attempts (PipelineRun or Job)
-	// Business value: Tracks execution initiation success
-	ExecutionCreations prometheus.Counter
 }
 
 // NewMetrics creates and registers WorkflowExecution metrics with controller-runtime registry.
@@ -121,12 +112,6 @@ func NewMetrics() *Metrics {
 			},
 			[]string{"outcome"},
 		),
-		ExecutionCreations: prometheus.NewCounter(
-			prometheus.CounterOpts{
-				Name: MetricNameExecutionCreations,
-				Help: "Total number of execution resource creations (DD-005: service_component_metric pattern)",
-			},
-		),
 	}
 
 	// Auto-register with controller-runtime's global registry
@@ -134,7 +119,6 @@ func NewMetrics() *Metrics {
 	ctrlmetrics.Registry.MustRegister(
 		m.ExecutionTotal,
 		m.ExecutionDuration,
-		m.ExecutionCreations,
 	)
 
 	return m
@@ -169,19 +153,12 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 			},
 			[]string{"outcome"},
 		),
-		ExecutionCreations: prometheus.NewCounter(
-			prometheus.CounterOpts{
-				Name: MetricNameExecutionCreations,
-				Help: "Total number of execution resource creations (DD-005: service_component_metric pattern)",
-			},
-		),
 	}
 
 	// Register with provided test registry
 	registry.MustRegister(
 		m.ExecutionTotal,
 		m.ExecutionDuration,
-		m.ExecutionCreations,
 	)
 
 	return m
@@ -193,7 +170,6 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 func (m *Metrics) Register(reg prometheus.Registerer) {
 	reg.MustRegister(m.ExecutionTotal)
 	reg.MustRegister(m.ExecutionDuration)
-	reg.MustRegister(m.ExecutionCreations)
 }
 
 // ========================================
@@ -213,12 +189,6 @@ func (m *Metrics) RecordWorkflowCompletion(durationSeconds float64) {
 func (m *Metrics) RecordWorkflowFailure(durationSeconds float64) {
 	m.ExecutionTotal.WithLabelValues(LabelOutcomeFailed).Inc()
 	m.ExecutionDuration.WithLabelValues(LabelOutcomeFailed).Observe(durationSeconds)
-}
-
-// RecordExecutionCreation records an execution resource creation (PipelineRun or Job).
-// Per DD-METRICS-001: Called as r.Metrics.RecordExecutionCreation()
-func (m *Metrics) RecordExecutionCreation() {
-	m.ExecutionCreations.Inc()
 }
 
 // V1.0: Skip metric functions removed - RO handles routing (DD-RO-002 Phase 3)

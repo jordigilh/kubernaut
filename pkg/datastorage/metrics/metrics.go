@@ -62,10 +62,6 @@ const (
 
 	// Validation metrics
 	MetricNameValidationFailures = "datastorage_validation_failures_total"
-
-	// Query operation metrics
-	MetricNameQueryDuration = "datastorage_query_duration_seconds"
-	MetricNameQueryTotal    = "datastorage_query_total"
 )
 
 // Write operation metrics
@@ -243,55 +239,15 @@ var (
 	)
 )
 
-// Query operation metrics
-// BR-STORAGE-007, BR-STORAGE-012, BR-STORAGE-013
-
-var (
-	// QueryDuration tracks the duration of query operations.
-	//
-	// Labels:
-	//   - operation: Operation type (list, get, filter)
-	//
-	// Example Prometheus query:
-	//   histogram_quantile(0.95, rate(datastorage_query_duration_seconds_bucket{operation="semantic_search"}[5m]))
-	QueryDuration = promauto.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name: MetricNameQueryDuration, // DD-005 V3.0: Pattern B (full name),
-			Help: "Duration of query operations in seconds",
-			// Buckets optimized for query operations (1ms to 1s)
-			Buckets: []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1},
-		},
-		[]string{"operation"},
-	)
-
-	// QueryTotal tracks the total number of query operations by operation type.
-	//
-	// Labels:
-	//   - operation: Operation type
-	//   - status: Operation status (success, failure)
-	//
-	// Example Prometheus query:
-	//   rate(datastorage_query_total{operation="list",status="success"}[5m])
-	QueryTotal = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: MetricNameQueryTotal, // DD-005 V3.0: Pattern B (full name),
-			Help: "Total number of query operations by type and status",
-		},
-		[]string{"operation", "status"},
-	)
-)
-
 // Metrics Summary:
 //
-// Total Metrics: 8
+// Total Metrics: 6
 // - WriteTotal (Counter with labels)
 // - WriteDuration (Histogram with labels)
 // - FallbackModeTotal (Counter)
 // - CacheHits (Counter)
 // - CacheMisses (Counter)
 // - ValidationFailures (Counter with labels)
-// - QueryDuration (Histogram with labels)
-// - QueryTotal (Counter with labels)
 //
 // Performance Target: < 5% overhead
 // BR Coverage: BR-STORAGE-001, 002, 007, 008, 009, 010, 011, 012, 013, 015, 019

@@ -130,7 +130,6 @@ var _ = Describe("RemediationOrchestrator Metrics E2E", Label("e2e", "metrics"),
 
 			// Core reconciliation metrics (BR-ORCH-044: Reconciliation Metrics)
 			coreMetrics := []string{
-				"kubernaut_remediationorchestrator_reconcile_total",
 				"kubernaut_remediationorchestrator_reconcile_duration_seconds",
 				"kubernaut_remediationorchestrator_phase_transitions_total",
 			}
@@ -157,30 +156,6 @@ var _ = Describe("RemediationOrchestrator Metrics E2E", Label("e2e", "metrics"),
 			// Verify it has the expected child_type label
 			Expect(metricsText).To(MatchRegexp(`kubernaut_remediationorchestrator_child_crd_creations_total\{.*child_type=.*\}`),
 				"Child CRD metric should have 'child_type' label")
-		})
-
-		It("should include notification metrics - BR-ORCH-029, BR-ORCH-030", func() {
-			resp, err := httpClient.Get(metricsURL + "/metrics")
-			Expect(err).NotTo(HaveOccurred())
-			defer func() { _ = resp.Body.Close() }()
-
-			body, err := io.ReadAll(resp.Body)
-			Expect(err).NotTo(HaveOccurred())
-			metricsText := string(body)
-
-			// Notification metrics (BR-ORCH-029: Manual Review, BR-ORCH-030: Approval)
-			notificationMetrics := []string{
-				"kubernaut_remediationorchestrator_manual_review_notifications_total",
-				"kubernaut_remediationorchestrator_approval_notifications_total",
-				"kubernaut_remediationorchestrator_notification_cancellations_total",
-				"kubernaut_remediationorchestrator_notification_status",
-				"kubernaut_remediationorchestrator_notification_delivery_duration_seconds",
-			}
-
-			for _, metric := range notificationMetrics {
-				Expect(metricsText).To(ContainSubstring(metric),
-					"Missing notification metric: %s", metric)
-			}
 		})
 
 		It("should include routing decision metrics - BR-ORCH-044", func() {
@@ -217,7 +192,6 @@ var _ = Describe("RemediationOrchestrator Metrics E2E", Label("e2e", "metrics"),
 			// Blocking metrics (BR-ORCH-042: Blocking Conditions)
 			blockingMetrics := []string{
 				"kubernaut_remediationorchestrator_blocked_total",
-				"kubernaut_remediationorchestrator_blocked_cooldown_expired_total",
 				"kubernaut_remediationorchestrator_current_blocked",
 			}
 
@@ -225,54 +199,6 @@ var _ = Describe("RemediationOrchestrator Metrics E2E", Label("e2e", "metrics"),
 				Expect(metricsText).To(ContainSubstring(metric),
 					"Missing blocking metric: %s", metric)
 			}
-		})
-
-		It("should include retry metrics - REFACTOR-RO-008", func() {
-			resp, err := httpClient.Get(metricsURL + "/metrics")
-			Expect(err).NotTo(HaveOccurred())
-			defer func() { _ = resp.Body.Close() }()
-
-			body, err := io.ReadAll(resp.Body)
-			Expect(err).NotTo(HaveOccurred())
-			metricsText := string(body)
-
-			// Retry metrics (REFACTOR-RO-008: Status Update Retry Pattern)
-			retryMetrics := []string{
-				"kubernaut_remediationorchestrator_status_update_retries_total",
-				"kubernaut_remediationorchestrator_status_update_conflicts_total",
-			}
-
-			for _, metric := range retryMetrics {
-				Expect(metricsText).To(ContainSubstring(metric),
-					"Missing retry metric: %s", metric)
-			}
-		})
-
-		It("should include condition metrics - BR-ORCH-043, DD-CRD-002", func() {
-			resp, err := httpClient.Get(metricsURL + "/metrics")
-			Expect(err).NotTo(HaveOccurred())
-			defer func() { _ = resp.Body.Close() }()
-
-			body, err := io.ReadAll(resp.Body)
-			Expect(err).NotTo(HaveOccurred())
-			metricsText := string(body)
-
-			// Condition metrics (BR-ORCH-043: Kubernetes Conditions, DD-CRD-002: Condition Transition Tracking)
-			conditionMetrics := []string{
-				"kubernaut_remediationorchestrator_condition_status",
-				"kubernaut_remediationorchestrator_condition_transitions_total",
-			}
-
-			for _, metric := range conditionMetrics {
-				Expect(metricsText).To(ContainSubstring(metric),
-					"Missing condition metric: %s", metric)
-			}
-
-			// Verify condition metrics have expected labels
-			Expect(metricsText).To(MatchRegexp(`kubernaut_remediationorchestrator_condition_status\{.*condition_type=.*status=.*\}`),
-				"Condition status metric should have 'condition_type' and 'status' labels")
-			Expect(metricsText).To(MatchRegexp(`kubernaut_remediationorchestrator_condition_transitions_total\{.*condition_type=.*from_status=.*to_status=.*\}`),
-				"Condition transition metric should have 'condition_type', 'from_status', and 'to_status' labels")
 		})
 
 		It("should include Go runtime metrics", func() {

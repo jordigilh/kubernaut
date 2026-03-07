@@ -132,41 +132,6 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics", func() {
 		})
 	})
 
-	Context("Query Operation Metrics", func() {
-		It("should track query duration by operation type", func() {
-			// BR-STORAGE-007, BR-STORAGE-012, BR-STORAGE-013: Query performance
-			operations := []string{
-				metrics.OperationList,
-				metrics.OperationGet,
-				metrics.OperationFilter,
-			}
-
-			for _, operation := range operations {
-				metrics.QueryDuration.WithLabelValues(operation).Observe(0.010) // 10ms
-			}
-		})
-
-		It("should track query total by operation and status", func() {
-			// BR-STORAGE-019: Query success/failure tracking
-			operations := []string{
-				metrics.OperationList,
-				metrics.OperationGet,
-				metrics.OperationFilter,
-			}
-			statuses := []string{metrics.StatusSuccess, metrics.StatusFailure}
-
-			for _, operation := range operations {
-				for _, status := range statuses {
-					initialValue := getCounterValue(metrics.QueryTotal.WithLabelValues(operation, status))
-					metrics.QueryTotal.WithLabelValues(operation, status).Inc()
-					newValue := getCounterValue(metrics.QueryTotal.WithLabelValues(operation, status))
-					Expect(newValue).To(Equal(initialValue+1),
-						"operation %s with status %s should be tracked", operation, status)
-				}
-			}
-		})
-	})
-
 	Context("Cardinality Protection", func() {
 		It("should have bounded label values for all metrics", func() {
 			// BR-STORAGE-019: Cardinality protection verification
@@ -181,19 +146,12 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics", func() {
 			// Validation failures: 4 fields × 3 reasons = 12 combinations
 			validationCardinality := 4 * 3
 
-			// Query operations: 3 operations × 2 statuses = 6 combinations
-			queryCardinality := 3 * 2
-
-			// Query duration: 3 operations
-			queryDurationCardinality := 3
-
 			// Other metrics (no labels or single counter): ~10
 			otherCardinality := 10
 
-			totalCardinality := writeCardinality + dualwriteCardinality + validationCardinality +
-				queryCardinality + queryDurationCardinality + otherCardinality
+			totalCardinality := writeCardinality + dualwriteCardinality + validationCardinality + otherCardinality
 
-			// Total: 8 + 6 + 12 + 6 + 3 + 10 = 45 (well under 100 target)
+			// Total: 8 + 6 + 12 + 10 = 36 (well under 100 target)
 			Expect(totalCardinality).To(BeNumerically("<", 100),
 				"Total cardinality should be under 100 to prevent Prometheus performance issues")
 
@@ -297,14 +255,6 @@ func BenchmarkMetricsCacheHitTracking(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		metrics.CacheHits.Inc()
-	}
-}
-
-func BenchmarkMetricsQueryDurationTracking(b *testing.B) {
-	// BR-STORAGE-007: Benchmark query duration tracking overhead
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		metrics.QueryDuration.WithLabelValues(metrics.OperationFilter).Observe(0.010)
 	}
 }
 

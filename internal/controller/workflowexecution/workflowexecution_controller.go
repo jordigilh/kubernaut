@@ -498,11 +498,6 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 		return ctrl.Result{}, markErr
 	}
 
-	// Record execution creation metric (BR-WE-008)
-	if r.Metrics != nil {
-		r.Metrics.RecordExecutionCreation()
-	}
-
 	// ========================================
 	// Gap #6: Record execution workflow started audit event (BR-AUDIT-005)
 	// ========================================

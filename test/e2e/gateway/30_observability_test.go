@@ -75,21 +75,6 @@ var _ = Describe("Observability E2E Tests", func() {
 			// BUSINESS SCENARIO: Operator queries Prometheus for Gateway metrics
 			// BUSINESS VALIDATION: Metrics endpoint is accessible and returns expected metrics
 
-			// Query metrics endpoint - should be accessible immediately
-			metrics, err := GetPrometheusMetrics(gatewayURL + "/metrics")
-			Expect(err).ToNot(HaveOccurred(), "Metrics endpoint should be accessible")
-
-			// Verify key Gateway metrics are present (7 specification-aligned metrics)
-			// Note: Gauge metrics appear immediately
-			expectedGaugeMetrics := []string{
-				"gateway_deduplication_rate", // Deduplication percentage (gauge) - always present
-			}
-
-			for _, metricName := range expectedGaugeMetrics {
-				_, exists := metrics[metricName]
-				Expect(exists).To(BeTrue(), fmt.Sprintf("Metric %s should be present for operators", metricName))
-			}
-
 			// Verify histogram metrics appear after requests
 			// The /metrics request itself should trigger HTTP duration metric
 			Eventually(func() bool {

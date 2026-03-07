@@ -88,7 +88,7 @@ var _ = Describe("UpdateRemediationRequestStatus", func() {
 	Context("REFACTOR-RO-001: Successful updates", func() {
 		It("should update status fields successfully", func() {
 			// Update phase and message
-			err := prodhelpers.UpdateRemediationRequestStatus(ctx, fakeClient, nil, rr, func(rr *remediationv1.RemediationRequest) error {
+			err := prodhelpers.UpdateRemediationRequestStatus(ctx, fakeClient, rr, func(rr *remediationv1.RemediationRequest) error {
 				rr.Status.OverallPhase = remediationv1.PhaseProcessing
 				rr.Status.Message = "Processing signal"
 				return nil
@@ -100,7 +100,7 @@ var _ = Describe("UpdateRemediationRequestStatus", func() {
 		})
 
 		It("should update multiple status fields in single call", func() {
-			err := prodhelpers.UpdateRemediationRequestStatus(ctx, fakeClient, nil, rr, func(rr *remediationv1.RemediationRequest) error {
+			err := prodhelpers.UpdateRemediationRequestStatus(ctx, fakeClient, rr, func(rr *remediationv1.RemediationRequest) error {
 				rr.Status.OverallPhase = remediationv1.PhaseSkipped
 				rr.Status.SkipReason = "ResourceBusy"
 				rr.Status.DuplicateOf = "parent-rr"
@@ -124,7 +124,7 @@ var _ = Describe("UpdateRemediationRequestStatus", func() {
 			Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(rr), rr)).To(Succeed())
 
 			// Update RO fields - helper should refetch and see "External update"
-			err := prodhelpers.UpdateRemediationRequestStatus(ctx, fakeClient, nil, rr, func(rr *remediationv1.RemediationRequest) error {
+			err := prodhelpers.UpdateRemediationRequestStatus(ctx, fakeClient, rr, func(rr *remediationv1.RemediationRequest) error {
 				// Verify refetch happened (should see external update)
 				Expect(rr.Status.Message).To(Equal("External update"))
 
@@ -143,7 +143,7 @@ var _ = Describe("UpdateRemediationRequestStatus", func() {
 
 	Context("REFACTOR-RO-001: Error handling", func() {
 		It("should return error when updateFn returns error", func() {
-			err := prodhelpers.UpdateRemediationRequestStatus(ctx, fakeClient, nil, rr, func(rr *remediationv1.RemediationRequest) error {
+			err := prodhelpers.UpdateRemediationRequestStatus(ctx, fakeClient, rr, func(rr *remediationv1.RemediationRequest) error {
 				return fmt.Errorf("simulated update error")
 			})
 
@@ -155,7 +155,7 @@ var _ = Describe("UpdateRemediationRequestStatus", func() {
 			// Delete the RR
 			Expect(fakeClient.Delete(ctx, rr)).To(Succeed())
 
-			err := prodhelpers.UpdateRemediationRequestStatus(ctx, fakeClient, nil, rr, func(rr *remediationv1.RemediationRequest) error {
+			err := prodhelpers.UpdateRemediationRequestStatus(ctx, fakeClient, rr, func(rr *remediationv1.RemediationRequest) error {
 				rr.Status.OverallPhase = remediationv1.PhaseCompleted
 				return nil
 			})
@@ -169,14 +169,14 @@ var _ = Describe("UpdateRemediationRequestStatus", func() {
 			// We expect caller to always provide valid updateFn
 			// This test documents expected behavior
 			Expect(func() {
-				_ = prodhelpers.UpdateRemediationRequestStatus(ctx, fakeClient, nil, rr, nil)
+				_ = prodhelpers.UpdateRemediationRequestStatus(ctx, fakeClient, rr, nil)
 			}).To(Panic())
 		})
 	})
 
 	Context("Issue #118 Gap 5: SelectedWorkflowRef population", func() {
 		It("UT-RR-SWR-001: should persist SelectedWorkflowRef when set in status update callback", func() {
-			err := prodhelpers.UpdateRemediationRequestStatus(ctx, fakeClient, nil, rr, func(rr *remediationv1.RemediationRequest) error {
+			err := prodhelpers.UpdateRemediationRequestStatus(ctx, fakeClient, rr, func(rr *remediationv1.RemediationRequest) error {
 				rr.Status.SelectedWorkflowRef = &remediationv1.WorkflowReference{
 					WorkflowID:      "wf-restart-pod",
 					Version:         "v1.0.0",
@@ -202,7 +202,7 @@ var _ = Describe("UpdateRemediationRequestStatus", func() {
 			Expect(fakeClient.Status().Update(ctx, externalRR)).To(Succeed())
 
 			// Now update with helper - should see external update
-			err := prodhelpers.UpdateRemediationRequestStatus(ctx, fakeClient, nil, rr, func(rr *remediationv1.RemediationRequest) error {
+			err := prodhelpers.UpdateRemediationRequestStatus(ctx, fakeClient, rr, func(rr *remediationv1.RemediationRequest) error {
 				// At this point, rr should have latest state including "External update"
 				Expect(rr.Status.Message).To(Equal("External update"))
 

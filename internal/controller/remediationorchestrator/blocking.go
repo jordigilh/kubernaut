@@ -176,9 +176,8 @@ func (r *Reconciler) handleBlockedPhase(ctx context.Context, rr *remediationv1.R
 
 		logger.Info("Blocked cooldown expired, transitioning to terminal Failed")
 
-		// BR-ORCH-042: Record cooldown expiry metrics (TDD validated)
+		// BR-ORCH-042: Record cooldown expiry (CurrentBlockedGauge decrement)
 		r.Metrics.CurrentBlockedGauge.WithLabelValues(rr.Namespace).Dec()
-		r.Metrics.BlockedCooldownExpiredTotal.Inc()
 
 		// Get block reason for the failure message
 		blockReason := "unknown"
@@ -213,7 +212,7 @@ func (r *Reconciler) transitionToFailedTerminal(ctx context.Context, rr *remedia
 	}
 
 	// REFACTOR-RO-001: Using retry helper
-	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		rr.Status.OverallPhase = phase.Failed
 		rr.Status.FailurePhase = &failurePhase
 		rr.Status.FailureReason = &failureReason
@@ -263,7 +262,7 @@ func (r *Reconciler) handleUnmanagedResourceExpiry(ctx context.Context, rr *reme
 		// Persist the failure count increment first, then re-block via handleBlocked.
 		// handleBlocked's UpdateRemediationRequestStatus refetches the RR, so we must
 		// persist the increment in a separate update to avoid it being lost.
-		err := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+		err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 			rr.Status.ConsecutiveFailureCount++
 			return nil
 		})
@@ -279,7 +278,7 @@ func (r *Reconciler) handleUnmanagedResourceExpiry(ctx context.Context, rr *reme
 	logger.Info("Resource is now managed — unblocking and transitioning to Pending")
 
 	oldPhase := string(rr.Status.OverallPhase)
-	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		rr.Status.OverallPhase = phase.Pending
 		rr.Status.BlockReason = ""
 		rr.Status.BlockMessage = ""
@@ -383,7 +382,7 @@ func (r *Reconciler) recheckDuplicateBlock(ctx context.Context, rr *remediationv
 func (r *Reconciler) clearEventBasedBlock(ctx context.Context, rr *remediationv1.RemediationRequest, resumePhase phase.Phase) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
 
-	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		rr.Status.OverallPhase = resumePhase
 		rr.Status.BlockReason = ""
 		rr.Status.BlockMessage = ""

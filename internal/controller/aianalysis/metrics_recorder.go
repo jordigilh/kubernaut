@@ -44,12 +44,6 @@ import (
 //   - BR-AI-050: Audit terminal states
 //   - DD-METRICS-001: Controller metrics wiring pattern
 func (r *AIAnalysisReconciler) recordPhaseMetrics(ctx context.Context, phase string, analysis *aianalysisv1.AIAnalysis, err error) {
-	result := "success"
-	if err != nil {
-		result = "error"
-	}
-	r.Metrics.RecordReconciliation(phase, result)
-
 	// Track failures with reason and sub-reason
 	if analysis.Status.Phase == PhaseFailed {
 		reason := analysis.Status.Reason

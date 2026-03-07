@@ -79,7 +79,7 @@ func (h *ExhaustedRetriesHandler) Handle(
 
 	// Update RR status with handler-specific fields (BR-ORCH-032, BR-ORCH-036)
 	// Note: Phase transition and audit emission handled by TransitionToFailedFunc callback below
-	err := helpers.UpdateRemediationRequestStatus(ctx, h.ctx.Client, h.ctx.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+	err := helpers.UpdateRemediationRequestStatus(ctx, h.ctx.Client, rr, func(rr *remediationv1.RemediationRequest) error {
 		rr.Status.SkipReason = "ExhaustedRetries"
 		rr.Status.RequiresManualReview = true
 		rr.Status.Message = failureReason

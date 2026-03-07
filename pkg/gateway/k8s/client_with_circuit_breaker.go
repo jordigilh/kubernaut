@@ -50,7 +50,6 @@ import (
 //
 // Metrics Integration:
 // - OnStateChange callback updates gateway_circuit_breaker_state metric
-// - Success/failure tracked in gateway_circuit_breaker_operations_total
 type ClientWithCircuitBreaker struct {
 	*Client                        // Embed base client for non-circuit-breaker methods
 	cb      *gobreaker.CircuitBreaker
@@ -120,15 +119,12 @@ func (c *ClientWithCircuitBreaker) CreateRemediationRequest(ctx context.Context,
 		err := c.Client.CreateRemediationRequest(ctx, rr)
 
 		// BR-GATEWAY-CIRCUIT-BREAKER-IDEMPOTENT-FIX v3.0:
-		// Treat "AlreadyExists" as idempotent success for BOTH metrics AND circuit breaker state.
+		// Treat "AlreadyExists" as idempotent success for circuit breaker state.
 		// This prevents circuit breaker from opening during parallel test execution.
 		if k8serrors.IsAlreadyExists(err) {
-			c.recordOperationResultWithIdempotency("create", err)  // Metrics: success
-			return nil, nil  // Circuit breaker: success (don't increment failure count)
+			return nil, nil // Circuit breaker: success (don't increment failure count)
 		}
 
-		// All other errors: record and return as-is
-		c.recordOperationResult("create", err)
 		return nil, err
 	})
 	return err
@@ -145,7 +141,6 @@ func (c *ClientWithCircuitBreaker) CreateRemediationRequest(ctx context.Context,
 func (c *ClientWithCircuitBreaker) UpdateRemediationRequest(ctx context.Context, rr *remediationv1alpha1.RemediationRequest) error {
 	_, err := c.cb.Execute(func() (interface{}, error) {
 		err := c.Client.UpdateRemediationRequest(ctx, rr)
-		c.recordOperationResult("update", err)
 		return nil, err
 	})
 	return err
@@ -164,7 +159,6 @@ func (c *ClientWithCircuitBreaker) UpdateRemediationRequest(ctx context.Context,
 func (c *ClientWithCircuitBreaker) GetRemediationRequest(ctx context.Context, namespace, name string) (*remediationv1alpha1.RemediationRequest, error) {
 	result, err := c.cb.Execute(func() (interface{}, error) {
 		rr, err := c.Client.GetRemediationRequest(ctx, namespace, name)
-		c.recordOperationResult("get", err)
 		return rr, err
 	})
 
@@ -185,44 +179,3 @@ func (c *ClientWithCircuitBreaker) State() gobreaker.State {
 	return c.cb.State()
 }
 
-// recordOperationResult updates Prometheus metrics for circuit breaker operations
-func (c *ClientWithCircuitBreaker) recordOperationResult(operation string, err error) {
-	if c.metrics == nil {
-		return
-	}
-
-	result := "success"
-	if err != nil {
-		result = "failure"
-	}
-
-	c.metrics.CircuitBreakerOperations.WithLabelValues("k8s-api", result).Inc()
-}
-
-// recordOperationResultWithIdempotency updates metrics treating IsAlreadyExists as success
-//
-// BR-GATEWAY-CIRCUIT-BREAKER-IDEMPOTENT-FIX:
-// This prevents circuit breaker from opening due to "AlreadyExists" errors during
-// parallel test execution or concurrent requests with the same fingerprint.
-//
-// Idempotent Operations:
-// - IsAlreadyExists(err) → Treated as SUCCESS for circuit breaker purposes
-// - Other errors → Treated as FAILURE (may trip circuit breaker)
-//
-// This method MUST be used for CRD Create operations to prevent false positives
-// in circuit breaker failure tracking.
-func (c *ClientWithCircuitBreaker) recordOperationResultWithIdempotency(operation string, err error) {
-	if c.metrics == nil {
-		return
-	}
-
-	result := "success"
-	if err != nil {
-		// Treat "AlreadyExists" as success (idempotent operation)
-		if !k8serrors.IsAlreadyExists(err) {
-			result = "failure"
-		}
-	}
-
-	c.metrics.CircuitBreakerOperations.WithLabelValues("k8s-api", result).Inc()
-}

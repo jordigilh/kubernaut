@@ -197,19 +197,14 @@ config := audit.Config{
 
 | Metric | Type | Description |
 |--------|------|-------------|
-| `audit_events_buffered_total{service}` | Counter | Total events buffered |
 | `audit_events_dropped_total{service}` | Counter | Total events dropped (buffer full) |
 | `audit_events_written_total{service}` | Counter | Total events written to storage |
 | `audit_batches_failed_total{service}` | Counter | Total batches failed after max retries |
 | `audit_buffer_size{service}` | Gauge | Current buffer size |
-| `audit_write_duration_seconds{service}` | Histogram | Write latency |
 
 ### **Key Queries**
 
 ```promql
-# Drop rate (should be <1%)
-rate(audit_events_dropped_total[5m]) / rate(audit_events_buffered_total[5m]) * 100
-
 # Failure rate (should be <5%)
 rate(audit_batches_failed_total[5m]) / rate(audit_events_written_total[5m]) * 100
 
@@ -218,23 +213,11 @@ audit_buffer_size / 10000 * 100
 
 # Write throughput
 rate(audit_events_written_total[5m])
-
-# Write latency (p50, p95, p99)
-histogram_quantile(0.50, rate(audit_write_duration_seconds_bucket[5m]))
-histogram_quantile(0.95, rate(audit_write_duration_seconds_bucket[5m]))
-histogram_quantile(0.99, rate(audit_write_duration_seconds_bucket[5m]))
 ```
 
 ### **Recommended Alerts**
 
 ```yaml
-# High drop rate
-- alert: AuditHighDropRate
-  expr: rate(audit_events_dropped_total[5m]) / rate(audit_events_buffered_total[5m]) > 0.01
-  for: 5m
-  annotations:
-    summary: "Audit drop rate >1% for {{ $labels.service }}"
-
 # High failure rate
 - alert: AuditHighFailureRate
   expr: rate(audit_batches_failed_total[5m]) / rate(audit_events_written_total[5m]) > 0.05

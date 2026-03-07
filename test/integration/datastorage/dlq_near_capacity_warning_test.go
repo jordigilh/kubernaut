@@ -118,8 +118,7 @@ var _ = Describe("GAP 3.3: DLQ Near-Capacity Early Warning", Serial, Label("gap-
 					"Capacity ratio should be below 80% warning threshold")
 
 				// TODO: When metrics implemented, verify:
-				// datastorage_dlq_depth_ratio{stream="events"} = 0.7
-				// datastorage_dlq_depth{stream="events"} = 700
+				// datastorage_dlq_capacity_ratio{stream="events"} = 0.7
 			})
 		})
 
@@ -158,14 +157,14 @@ var _ = Describe("GAP 3.3: DLQ Near-Capacity Early Warning", Serial, Label("gap-
 
 				// BUSINESS OUTCOME: Early warning allows proactive intervention
 				// - Log warning: "DLQ near capacity: 800/1000 (80%)"
-				// - Metric exposed: datastorage_dlq_depth_ratio = 0.8
+				// - Metric exposed: datastorage_dlq_capacity_ratio = 0.8
 				// - Alert fired via Prometheus alerting rule
 				// - DLQ consumer priority increased (faster drain attempt)
 
 				// TODO: When logging/metrics implemented, verify:
 				// 1. Warning log contains: "DLQ near capacity: 800/1000 (80%)"
-				// 2. Metric datastorage_dlq_depth_ratio{stream="events"} = 0.8
-				// 3. Metric datastorage_dlq_depth{stream="events"} = 800
+				// 2. Metric datastorage_dlq_capacity_ratio{stream="events"} = 0.8
+				// 3. Metric datastorage_dlq_capacity_ratio{stream="events"} warning threshold
 			})
 		})
 
@@ -204,14 +203,14 @@ var _ = Describe("GAP 3.3: DLQ Near-Capacity Early Warning", Serial, Label("gap-
 
 				// BUSINESS OUTCOME: Critical warning triggers immediate action
 				// - Log critical: "DLQ CRITICAL capacity: 900/1000 (90%)"
-				// - Metric exposed: datastorage_dlq_depth_ratio = 0.9
+				// - Metric exposed: datastorage_dlq_capacity_ratio = 0.9
 				// - Critical alert fired
 				// - DLQ consumer priority maximized
 				// - Consider blocking new writes or increasing capacity
 
 				// TODO: When logging/metrics implemented, verify:
 				// 1. Critical log contains: "DLQ CRITICAL capacity: 900/1000 (90%)"
-				// 2. Metric datastorage_dlq_depth_ratio{stream="events"} = 0.9
+				// 2. Metric datastorage_dlq_capacity_ratio{stream="events"} = 0.9
 				// 3. Metric datastorage_dlq_near_full{stream="events"} = 1
 			})
 		})
@@ -257,7 +256,7 @@ var _ = Describe("GAP 3.3: DLQ Near-Capacity Early Warning", Serial, Label("gap-
 
 				// TODO: When logging/metrics implemented, verify:
 				// 1. Emergency log: "DLQ OVERFLOW IMMINENT: 950/1000 (95%)"
-				// 2. Metric datastorage_dlq_depth_ratio{stream="events"} = 0.95
+				// 2. Metric datastorage_dlq_capacity_ratio{stream="events"} = 0.95
 			})
 		})
 	})

@@ -56,13 +56,11 @@ var _ = Describe("BR-SP-008: SignalProcessing Metrics", func() {
 			// Note: Vec metrics only appear in registry after first observation
 			m.IncrementProcessingTotal("enriching", "success")
 			m.ObserveProcessingDuration("enriching", 0.1)
-			m.EnrichmentTotal.WithLabelValues("success").Inc()
-			m.EnrichmentDuration.WithLabelValues("k8s_context").Observe(0.1)
 			m.RecordEnrichmentError("test_error")
 
 			metricFamilies, err := registry.Gather()
 			Expect(err).ToNot(HaveOccurred())
-			Expect(metricFamilies).ToNot(BeEmpty())
+			Expect(metricFamilies).To(HaveLen(3), "should have processing_total, processing_duration_seconds, and enrichment_errors_total")
 		})
 
 		It("should have correct metric namespace", func() {
@@ -82,8 +80,6 @@ var _ = Describe("BR-SP-008: SignalProcessing Metrics", func() {
 			// Note: Vec metrics only appear in registry after first observation
 			m.IncrementProcessingTotal("enriching", "success")
 			m.ObserveProcessingDuration("enriching", 0.1)
-			m.EnrichmentTotal.WithLabelValues("success").Inc()
-			m.EnrichmentDuration.WithLabelValues("k8s_context").Observe(0.1)
 			m.RecordEnrichmentError("test_error")
 
 			metricFamilies, err := registry.Gather()
@@ -98,8 +94,6 @@ var _ = Describe("BR-SP-008: SignalProcessing Metrics", func() {
 			// Core metrics must exist
 			Expect(metricNames).To(HaveKey("signalprocessing_processing_total"))
 			Expect(metricNames).To(HaveKey("signalprocessing_processing_duration_seconds"))
-			Expect(metricNames).To(HaveKey("signalprocessing_enrichment_total"))
-			Expect(metricNames).To(HaveKey("signalprocessing_enrichment_duration_seconds"))
 			Expect(metricNames).To(HaveKey("signalprocessing_enrichment_errors_total"))
 		})
 	})
@@ -125,7 +119,7 @@ var _ = Describe("BR-SP-008: SignalProcessing Metrics", func() {
 						found = true
 						Expect(mf.GetType()).To(Equal(dto.MetricType_COUNTER))
 						metrics := mf.GetMetric()
-						Expect(metrics).ToNot(BeEmpty())
+						Expect(metrics).To(HaveLen(1))
 						// Verify actual counter value is 2
 						Expect(metrics[0].GetCounter().GetValue()).To(Equal(float64(2)))
 					}
@@ -187,7 +181,7 @@ var _ = Describe("BR-SP-008: SignalProcessing Metrics", func() {
 						found = true
 						Expect(mf.GetType()).To(Equal(dto.MetricType_COUNTER))
 						metrics := mf.GetMetric()
-						Expect(metrics).ToNot(BeEmpty())
+						Expect(metrics).To(HaveLen(1))
 						// Verify actual counter value is 2
 						Expect(metrics[0].GetCounter().GetValue()).To(Equal(float64(2)))
 					}
@@ -213,28 +207,6 @@ var _ = Describe("BR-SP-008: SignalProcessing Metrics", func() {
 			})
 		})
 
-		Context("EnrichmentTotal counter", func() {
-			It("should increment enrichment total counter correctly", func() {
-				// BR-SP-008: Enrichment operation tracking
-				m.EnrichmentTotal.WithLabelValues("success").Inc()
-				m.EnrichmentTotal.WithLabelValues("success").Inc()
-
-				metricFamilies, err := registry.Gather()
-				Expect(err).ToNot(HaveOccurred())
-
-				var found bool
-				for _, mf := range metricFamilies {
-					if mf.GetName() == "signalprocessing_enrichment_total" {
-						found = true
-						Expect(mf.GetType()).To(Equal(dto.MetricType_COUNTER))
-						metrics := mf.GetMetric()
-						Expect(metrics).ToNot(BeEmpty())
-						Expect(metrics[0].GetCounter().GetValue()).To(Equal(float64(2)))
-					}
-				}
-				Expect(found).To(BeTrue(), "signalprocessing_enrichment_total metric should exist")
-			})
-		})
 	})
 
 	// ========================================
@@ -257,7 +229,7 @@ var _ = Describe("BR-SP-008: SignalProcessing Metrics", func() {
 						found = true
 						Expect(mf.GetType()).To(Equal(dto.MetricType_HISTOGRAM))
 						metrics := mf.GetMetric()
-						Expect(metrics).ToNot(BeEmpty())
+						Expect(metrics).To(HaveLen(1))
 						histogram := metrics[0].GetHistogram()
 						// Verify sample count is 2
 						Expect(histogram.GetSampleCount()).To(Equal(uint64(2)))
@@ -278,10 +250,9 @@ var _ = Describe("BR-SP-008: SignalProcessing Metrics", func() {
 				for _, mf := range metricFamilies {
 					if mf.GetName() == "signalprocessing_processing_duration_seconds" {
 						metrics := mf.GetMetric()
-						Expect(metrics).ToNot(BeEmpty())
+						Expect(metrics).To(HaveLen(1))
 						histogram := metrics[0].GetHistogram()
 						buckets := histogram.GetBucket()
-						Expect(buckets).ToNot(BeEmpty())
 						// Default prometheus buckets have multiple entries
 						Expect(len(buckets)).To(BeNumerically(">", 5))
 					}
@@ -306,30 +277,6 @@ var _ = Describe("BR-SP-008: SignalProcessing Metrics", func() {
 			})
 		})
 
-		Context("EnrichmentDuration histogram", func() {
-			It("should observe enrichment duration correctly", func() {
-				// BR-SP-001: Enrichment latency SLO <2 seconds P95
-				m.EnrichmentDuration.WithLabelValues("k8s_context").Observe(0.5)
-				m.EnrichmentDuration.WithLabelValues("k8s_context").Observe(0.8)
-
-				metricFamilies, err := registry.Gather()
-				Expect(err).ToNot(HaveOccurred())
-
-				var found bool
-				for _, mf := range metricFamilies {
-					if mf.GetName() == "signalprocessing_enrichment_duration_seconds" {
-						found = true
-						Expect(mf.GetType()).To(Equal(dto.MetricType_HISTOGRAM))
-						metrics := mf.GetMetric()
-						Expect(metrics).ToNot(BeEmpty())
-						histogram := metrics[0].GetHistogram()
-						Expect(histogram.GetSampleCount()).To(Equal(uint64(2)))
-						Expect(histogram.GetSampleSum()).To(BeNumerically("~", 1.3, 0.001))
-					}
-				}
-				Expect(found).To(BeTrue(), "signalprocessing_enrichment_duration_seconds metric should exist")
-			})
-		})
 	})
 
 	// ========================================
@@ -349,8 +296,8 @@ var _ = Describe("BR-SP-008: SignalProcessing Metrics", func() {
 
 			// Verify each metric family has proper structure
 			for _, mf := range metricFamilies {
-				Expect(mf.GetName()).ToNot(BeEmpty())
-				Expect(mf.GetHelp()).ToNot(BeEmpty())
+				Expect(mf.GetName()).To(HavePrefix("signalprocessing_"))
+				Expect(len(mf.GetHelp())).To(BeNumerically(">", 10), "metric help text should be descriptive")
 				Expect(mf.GetType()).ToNot(Equal(dto.MetricType_UNTYPED))
 			}
 		})
@@ -365,7 +312,7 @@ var _ = Describe("BR-SP-008: SignalProcessing Metrics", func() {
 			for _, mf := range metricFamilies {
 				if mf.GetName() == "signalprocessing_processing_total" {
 					metrics := mf.GetMetric()
-					Expect(metrics).ToNot(BeEmpty())
+					Expect(metrics).To(HaveLen(1))
 					labels := metrics[0].GetLabel()
 					Expect(labels).To(HaveLen(2)) // phase, result
 
@@ -389,8 +336,6 @@ var _ = Describe("NewMetricsWithRegistry", func() {
 		testRegistry := prometheus.NewRegistry()
 		m := metrics.NewMetricsWithRegistry(testRegistry)
 
-		Expect(m).ToNot(BeNil())
-
 		// Record some metrics
 		m.IncrementProcessingTotal("enriching", "success")
 		m.ObserveProcessingDuration("enriching", 0.5)
@@ -398,7 +343,7 @@ var _ = Describe("NewMetricsWithRegistry", func() {
 		// Verify metrics are in the custom registry
 		metricFamilies, err := testRegistry.Gather()
 		Expect(err).ToNot(HaveOccurred())
-		Expect(metricFamilies).ToNot(BeEmpty())
+		Expect(metricFamilies).To(HaveLen(2), "should have processing_total and processing_duration_seconds")
 
 		// Verify the metrics have correct names
 		metricNames := make(map[string]bool)

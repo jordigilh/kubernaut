@@ -416,7 +416,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			rr.Namespace,
 			string(rr.Status.OverallPhase),
 		).Observe(time.Since(startTime).Seconds())
-		r.Metrics.ReconcileTotal.WithLabelValues(rr.Namespace, string(rr.Status.OverallPhase)).Inc()
 	}()
 
 	// BR-AUDIT-005 Gap #7: Validate timeout configuration (fail fast on invalid config)
@@ -553,14 +552,14 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		if readyCondition == nil {
 			isSuccess := rr.Status.OverallPhase == remediationv1.PhaseCompleted || rr.Status.OverallPhase == remediationv1.PhaseSkipped
 			if isSuccess {
-				if updateErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+				if updateErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 					remediationrequest.SetReady(rr, true, remediationrequest.ReasonReady, "Terminal phase: "+string(rr.Status.OverallPhase), r.Metrics)
 					return nil
 				}); updateErr != nil {
 					logger.Error(updateErr, "Failed to set Ready safety net")
 				}
 			} else {
-				if updateErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+				if updateErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 					remediationrequest.SetReady(rr, false, remediationrequest.ReasonNotReady, "Terminal phase: "+string(rr.Status.OverallPhase), r.Metrics)
 					return nil
 				}); updateErr != nil {
@@ -717,7 +716,7 @@ func (r *Reconciler) handlePendingPhase(ctx context.Context, rr *remediationv1.R
 	// Set SignalProcessingRef in status for aggregator (BR-ORCH-029)
 	// REFACTOR-RO-001: Using retry helper
 	// DD-CRD-002-RR: Also persists SignalProcessingReady=True condition set by creator
-	err = helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+	err = helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		rr.Status.SignalProcessingRef = &corev1.ObjectReference{
 			APIVersion: signalprocessingv1.GroupVersion.String(),
 			Kind:       "SignalProcessing",
@@ -797,7 +796,7 @@ func (r *Reconciler) handleProcessingPhase(ctx context.Context, rr *remediationv
 		// Set AIAnalysisRef in status for aggregator (BR-ORCH-029)
 		// REFACTOR-RO-001: Using retry helper
 		// DD-CRD-002-RR: Also persists AIAnalysisReady=True condition set by creator
-		err = helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+		err = helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 			rr.Status.AIAnalysisRef = &corev1.ObjectReference{
 				APIVersion: aianalysisv1.GroupVersion.String(),
 				Kind:       "AIAnalysis",
@@ -1003,7 +1002,7 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 		if hashErr != nil {
 			// Issue #214: hashErr != nil is terminal -- cannot safely remediate without knowing target state
 			logger.Error(hashErr, "Failed to capture pre-remediation hash (terminal)")
-			if updateErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+			if updateErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 				rr.Status.OverallPhase = remediationv1.PhaseFailed
 				reason := fmt.Sprintf("Cannot determine target resource state: %v", hashErr)
 				rr.Status.FailureReason = &reason
@@ -1015,7 +1014,7 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 			return ctrl.Result{}, nil
 		}
 		if preHash != "" && rr.Status.PreRemediationSpecHash == "" {
-			if updateErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+			if updateErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 				rr.Status.PreRemediationSpecHash = preHash
 				return nil
 			}); updateErr != nil {
@@ -1074,7 +1073,7 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 		// Set WorkflowExecutionRef + SelectedWorkflowRef in status (BR-ORCH-029, Issue #118 Gap 5)
 		// REFACTOR-RO-001: Using retry helper
 		// DD-CRD-002-RR: Also persists WorkflowExecutionReady=True condition set by creator
-		err = helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+		err = helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 			rr.Status.WorkflowExecutionRef = &corev1.ObjectReference{
 				APIVersion: workflowexecutionv1.GroupVersion.String(),
 				Kind:       "WorkflowExecution",
@@ -1225,7 +1224,7 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 			logger.Error(hashErr, "Failed to capture pre-remediation hash after approval (non-fatal)")
 		}
 		if preHash != "" && rr.Status.PreRemediationSpecHash == "" {
-			if updateErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+			if updateErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 				rr.Status.PreRemediationSpecHash = preHash
 				return nil
 			}); updateErr != nil {
@@ -1249,7 +1248,7 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 
 		// Set WorkflowExecutionRef + SelectedWorkflowRef after approval (BR-ORCH-029, Issue #118 Gap 5)
 		// REFACTOR-RO-001: Using retry helper
-		err = helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+		err = helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 			rr.Status.WorkflowExecutionRef = &corev1.ObjectReference{
 				APIVersion: workflowexecutionv1.GroupVersion.String(),
 				Kind:       "WorkflowExecution",
@@ -1488,7 +1487,7 @@ func (r *Reconciler) handleBlocked(
 	}
 
 	// Update RR status to Blocked phase (REFACTOR-RO-001: using retry helper)
-	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		rr.Status.OverallPhase = remediationv1.PhaseBlocked
 		rr.Status.BlockReason = blocked.Reason
 		rr.Status.BlockMessage = blocked.Message
@@ -1574,7 +1573,7 @@ func (r *Reconciler) transitionPhase(ctx context.Context, rr *remediationv1.Reme
 		return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
 	}
 
-	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		// Update only RO-owned fields (preserves Gateway fields per DD-GATEWAY-011)
 		rr.Status.OverallPhase = newPhase
 		rr.Status.ObservedGeneration = rr.Generation // DD-CONTROLLER-001: Track processed generation
@@ -1656,7 +1655,7 @@ func (r *Reconciler) transitionToVerifying(ctx context.Context, rr *remediationv
 
 	// #280: Transition to Verifying (not Completed). CompletedAt and Outcome are set later
 	// when EA finishes or VerificationDeadline expires.
-	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		rr.Status.OverallPhase = phase.Verifying
 		rr.Status.ObservedGeneration = rr.Generation
 
@@ -1739,7 +1738,7 @@ func (r *Reconciler) handleVerifyingPhase(ctx context.Context, rr *remediationv1
 
 		if ea.Status.ValidityDeadline != nil {
 			deadline := metav1.NewTime(ea.Status.ValidityDeadline.Add(VerificationDeadlineBuffer))
-			if err := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+			if err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 				rr.Status.VerificationDeadline = &deadline
 				return nil
 			}); err != nil {
@@ -1751,7 +1750,7 @@ func (r *Reconciler) handleVerifyingPhase(ctx context.Context, rr *remediationv1
 			logger.Info("Safety-net timeout: VerificationDeadline never set, RR exceeded verifying timeout",
 				"age", time.Since(rr.CreationTimestamp.Time).String(),
 				"verifyingTimeout", r.timeouts.Verifying.String())
-			if err := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+			if err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 				now := metav1.Now()
 				rr.Status.OverallPhase = phase.Completed
 				rr.Status.Outcome = "VerificationTimedOut"
@@ -1780,7 +1779,7 @@ func (r *Reconciler) handleVerifyingPhase(ctx context.Context, rr *remediationv1
 	if rr.Status.VerificationDeadline != nil && time.Now().After(rr.Status.VerificationDeadline.Time) {
 		logger.Info("VerificationDeadline expired, timing out verification",
 			"deadline", rr.Status.VerificationDeadline.Time.Format(time.RFC3339))
-		if err := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+		if err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 			now := metav1.Now()
 			rr.Status.OverallPhase = phase.Completed
 			rr.Status.Outcome = "VerificationTimedOut"
@@ -1876,7 +1875,7 @@ func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.R
 	startTime := rr.CreationTimestamp.Time
 
 	// REFACTOR-RO-001: Using retry helper
-	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		rr.Status.OverallPhase = phase.Failed
 		rr.Status.ObservedGeneration = rr.Generation // DD-CONTROLLER-001: Track final generation
 		rr.Status.FailurePhase = &failurePhase
@@ -1953,7 +1952,7 @@ func (r *Reconciler) handleGlobalTimeout(ctx context.Context, rr *remediationv1.
 
 	// Update status to TimedOut (BR-ORCH-027)
 	// REFACTOR-RO-001: Using retry helper for optimistic concurrency
-	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		rr.Status.OverallPhase = remediationv1.PhaseTimedOut
 		now := metav1.Now()
 		rr.Status.TimeoutTime = &now
@@ -2075,7 +2074,7 @@ The remediation was in %s phase when it timed out. Please investigate why the re
 
 	// Track notification in status (Recommendation #2, BR-ORCH-035)
 	// REFACTOR-RO-001: Using retry helper
-	err = helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+	err = helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		// Add notification to tracking list (BR-ORCH-035)
 		notifRef := corev1.ObjectReference{
 			Kind:       "NotificationRequest",
@@ -2197,7 +2196,7 @@ func (r *Reconciler) createEffectivenessAssessmentIfNeeded(ctx context.Context, 
 	// as NT ref tracking in handleGlobalTimeout).
 	// GAP-2 (ADR-EM-001 Section 9.4.15): Also set initial EffectivenessAssessed=False /
 	// AssessmentInProgress so operators can distinguish "no EA yet" from "EA in progress."
-	if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+	if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		rr.Status.EffectivenessAssessmentRef = &corev1.ObjectReference{
 			Kind:       "EffectivenessAssessment",
 			Name:       name,
@@ -3011,7 +3010,7 @@ func (r *Reconciler) handlePhaseTimeout(ctx context.Context, rr *remediationv1.R
 
 	// Update status to TimedOut with phase-specific metadata
 	// REFACTOR-RO-001: Using retry helper
-	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		// Transition to TimedOut phase
 		rr.Status.OverallPhase = remediationv1.PhaseTimedOut
 		rr.Status.Message = fmt.Sprintf("Phase %s exceeded timeout of %s", phase, timeout)
@@ -3091,7 +3090,7 @@ func (r *Reconciler) ensureNotificationsCreated(ctx context.Context, rr *remedia
 			} else {
 				logger.Info("Created completion notification", "notification", notifName)
 				ref := r.buildNotificationRef(ctx, notifName, rr.Namespace)
-				if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+				if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 					rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
 					return nil
 				}); refErr != nil {
@@ -3112,7 +3111,7 @@ func (r *Reconciler) ensureNotificationsCreated(ctx context.Context, rr *remedia
 		} else {
 			logger.Info("Created bulk duplicate notification", "notification", name)
 			ref := r.buildNotificationRef(ctx, name, rr.Namespace)
-			if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+			if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 				rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
 				return nil
 			}); refErr != nil {
@@ -3226,7 +3225,7 @@ The %s phase did not complete within the expected timeframe. Please investigate 
 
 	// BR-ORCH-035 AC-4: Track timeout notification ref (non-blocking)
 	ref := r.buildNotificationRef(ctx, notificationName, rr.Namespace)
-	if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+	if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
 		return nil
 	}); refErr != nil {

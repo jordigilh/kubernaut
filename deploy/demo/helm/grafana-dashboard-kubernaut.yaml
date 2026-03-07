@@ -150,7 +150,7 @@ data:
         },
         {
           "id": 11,
-          "title": "Enrichment Duration",
+          "title": "Processing Duration (p95)",
           "type": "timeseries",
           "gridPos": { "h": 8, "w": 12, "x": 12, "y": 10 },
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
@@ -164,8 +164,8 @@ data:
           },
           "targets": [
             {
-              "expr": "histogram_quantile(0.95, sum(rate(signalprocessing_enrichment_duration_seconds_bucket[5m])) by (le, resource_kind))",
-              "legendFormat": "p95 {{resource_kind}}",
+              "expr": "histogram_quantile(0.95, sum(rate(signalprocessing_processing_duration_seconds_bucket[5m])) by (le, phase))",
+              "legendFormat": "p95 {{phase}}",
               "refId": "A"
             }
           ]
@@ -179,7 +179,7 @@ data:
         },
         {
           "id": 20,
-          "title": "AI Reconciliations",
+          "title": "AI Analysis Failures",
           "type": "timeseries",
           "gridPos": { "h": 8, "w": 8, "x": 0, "y": 19 },
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
@@ -193,8 +193,8 @@ data:
           },
           "targets": [
             {
-              "expr": "sum(rate(aianalysis_reconciler_reconciliations_total[5m])) by (result)",
-              "legendFormat": "{{result}}",
+              "expr": "sum(rate(aianalysis_failures_total[5m])) by (reason)",
+              "legendFormat": "{{reason}}",
               "refId": "A"
             }
           ]
@@ -454,7 +454,7 @@ data:
           },
           "targets": [
             {
-              "expr": "audit_buffer_utilization_ratio",
+              "expr": "audit_buffer_size / audit_buffer_capacity",
               "legendFormat": "{{service}}",
               "refId": "A"
             }

@@ -247,9 +247,8 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 			// Verify expected business metrics are present
 			// Using constants from pkg/workflowexecution/metrics to prevent typos (DRY principle)
 			expectedMetrics := []string{
-				wemetrics.MetricNameExecutionTotal,       // Execution count by outcome
-				wemetrics.MetricNameExecutionDuration,    // Execution duration histogram
-				wemetrics.MetricNameExecutionCreations, // PipelineRun creation counter
+				wemetrics.MetricNameExecutionTotal,    // Execution count by outcome
+				wemetrics.MetricNameExecutionDuration, // Execution duration histogram
 			}
 
 			for _, metric := range expectedMetrics {

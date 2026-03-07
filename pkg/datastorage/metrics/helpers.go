@@ -100,13 +100,6 @@ const (
 	ServiceEffectiveness     = "effectiveness"
 )
 
-// Query operations - bounded set for cardinality protection
-const (
-	OperationList   = "list"
-	OperationGet    = "get"
-	OperationFilter = "filter"
-)
-
 // SanitizeFailureReason ensures the failure reason is from a known bounded set.
 // This prevents accidental high-cardinality labels from error messages or user input.
 //
@@ -211,32 +204,6 @@ func SanitizeStatus(status string) string {
 	return StatusFailure
 }
 
-// SanitizeQueryOperation ensures the query operation is from a known bounded set.
-//
-// Usage:
-//
-//	metrics.QueryDuration.WithLabelValues(
-//	    metrics.SanitizeQueryOperation("list"),
-//	).Observe(duration.Seconds())
-//
-// Returns:
-//   - Original operation if it's in the known set
-//   - OperationFilter if not recognized (catch-all)
-func SanitizeQueryOperation(operation string) string {
-	knownOperations := map[string]bool{
-		OperationList:   true,
-		OperationGet:    true,
-		OperationFilter: true,
-	}
-
-	if knownOperations[operation] {
-		return operation
-	}
-
-	// Unknown operation - use catch-all to protect cardinality
-	return OperationFilter
-}
-
 // Cardinality Summary:
 //
 // Metric: datastorage_validation_failures_total{field, reason}
@@ -246,9 +213,5 @@ func SanitizeQueryOperation(operation string) string {
 // Metric: datastorage_write_total{table, status}
 //   - Maximum cardinality: 8 combinations (4 tables × 2 statuses)
 //   - Protected by: SanitizeTableName() + SanitizeStatus()
-//
-// Metric: datastorage_query_duration_seconds{operation}
-//   - Maximum cardinality: 3 values
-//   - Protected by: SanitizeQueryOperation()
 //
 // Total Maximum Cardinality: < 100 (SAFE for Prometheus)

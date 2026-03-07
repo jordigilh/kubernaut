@@ -497,7 +497,7 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 	// Implementation:
 	//   - ClientWithCircuitBreaker wraps k8sClient with fail-fast protection
 	//   - CRDCreator uses k8s.ClientInterface (supports both Client and ClientWithCircuitBreaker)
-	//   - Circuit breaker metrics: gateway_circuit_breaker_state, gateway_circuit_breaker_operations_total
+	//   - Circuit breaker metrics: gateway_circuit_breaker_state
 	//
 	// Behavior:
 	//   - Closed (0): Normal operation, all requests pass through
@@ -1292,12 +1292,6 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 		// Record metrics
 		s.metricsInstance.AlertsDeduplicatedTotal.WithLabelValues(signal.SignalName).Inc()
 
-		// BR-GATEWAY-069: Cache hit metric (deduplication detected)
-		s.metricsInstance.DeduplicationCacheHitsTotal.Inc()
-
-		// Note: DeduplicationRate gauge is calculated on-the-fly by custom collector
-		// when /metrics endpoint is scraped (see metrics.DeduplicationRateCollector)
-
 		logger.V(1).Info("Duplicate signal detected (K8s status-based)",
 			"fingerprint", signal.Fingerprint,
 			"existingRR", existingRR.Name,
@@ -1940,7 +1934,6 @@ func (s *Server) handleDuplicateSignal(ctx context.Context, signal *types.Normal
 
 	// Record metrics for monitoring dashboard
 	s.metricsInstance.AlertsDeduplicatedTotal.WithLabelValues(signal.SignalName).Inc()
-	s.metricsInstance.DeduplicationCacheHitsTotal.Inc()
 
 	// Emit audit event for compliance (DD-AUDIT-003)
 	s.emitSignalDeduplicatedAudit(ctx, signal, existingRR.Name, existingRR.Namespace, occurrenceCount)

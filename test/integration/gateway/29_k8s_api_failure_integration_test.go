@@ -423,35 +423,6 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 				return metric.Gauge.GetValue()
 			}, 2*time.Second, 100*time.Millisecond).Should(Equal(0.0), "Circuit breaker should start in CLOSED state (0)")
 
-			// Simulate successful operation
-			cbFailingK8sClient.failCreate = false
-			signal.Fingerprint = "cb-test-093c-success"
-			_, _ = cbCrdCreator.CreateRemediationRequest(ctx, signal)
-
-			// Verify success counter exists and increments
-			Eventually(func() float64 {
-				metricFamilies, err := cbTestRegistry.Gather()
-				if err != nil {
-					return -1
-				}
-				for _, mf := range metricFamilies {
-					if mf.GetName() == "gateway_circuit_breaker_operations_total" {
-						for _, m := range mf.GetMetric() {
-							resultLabel := ""
-							for _, label := range m.GetLabel() {
-								if label.GetName() == "result" {
-									resultLabel = label.GetValue()
-								}
-							}
-							if resultLabel == "success" {
-								return m.Counter.GetValue()
-							}
-						}
-					}
-				}
-				return -1
-			}, 2*time.Second, 100*time.Millisecond).Should(BeNumerically(">=", 1.0), "Success operations counter should increment (BR-GATEWAY-093-C)")
-
 			// Simulate K8s API failures to open circuit
 			cbFailingK8sClient.failCreate = true
 			for i := 0; i < 10; i++ {
@@ -468,36 +439,6 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 				}
 				return metric.Gauge.GetValue()
 			}, 3*time.Second, 100*time.Millisecond).Should(Equal(2.0), "Circuit breaker state metric should show OPEN (2)")
-
-			// Verify failure counter incremented
-			Eventually(func() float64 {
-				metricFamilies, err := cbTestRegistry.Gather()
-				if err != nil {
-					return -1
-				}
-				for _, mf := range metricFamilies {
-					if mf.GetName() == "gateway_circuit_breaker_operations_total" {
-						for _, m := range mf.GetMetric() {
-							resultLabel := ""
-							for _, label := range m.GetLabel() {
-								if label.GetName() == "result" {
-									resultLabel = label.GetValue()
-								}
-							}
-							if resultLabel == "failure" {
-								return m.Counter.GetValue()
-							}
-						}
-					}
-				}
-				return -1
-			}, 2*time.Second, 100*time.Millisecond).Should(BeNumerically(">=", 5.0), "Failure operations counter should increment (≥5 indicates circuit breaker triggered)")
-
-			// BUSINESS CAPABILITY VERIFIED:
-			// ✅ gateway_circuit_breaker_state metric exposed (0=closed, 1=half-open, 2=open)
-			// ✅ gateway_circuit_breaker_operations_total metric tracks success/failure ratio
-			// ✅ Metrics enable SRE response to K8s API degradation (BR-GATEWAY-093-C)
-			// ✅ Real-time observability for circuit breaker state transitions
 		})
 	})
 })

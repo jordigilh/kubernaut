@@ -43,12 +43,6 @@ import (
 // Metric name constants - DRY principle for tests and production
 // These constants ensure tests use correct metric names and prevent typos
 const (
-	// MetricNameReconcilerReconciliationsTotal is the name of the reconciliations counter metric
-	MetricNameReconcilerReconciliationsTotal = "aianalysis_reconciler_reconciliations_total"
-
-	// MetricNameReconcilerDurationSeconds is the name of the reconciliation duration histogram metric
-	MetricNameReconcilerDurationSeconds = "aianalysis_reconciler_duration_seconds"
-
 	// MetricNameRegoEvaluationsTotal is the name of the Rego policy evaluations counter metric
 	MetricNameRegoEvaluationsTotal = "aianalysis_rego_evaluations_total"
 
@@ -61,11 +55,6 @@ const (
 	// MetricNameFailuresTotal is the name of the failures counter metric
 	MetricNameFailuresTotal = "aianalysis_failures_total"
 
-	// MetricNameValidationAttemptsTotal is the name of the HAPI validation attempts counter metric
-	MetricNameValidationAttemptsTotal = "aianalysis_audit_validation_attempts_total"
-
-	// MetricNameDetectedLabelsFailuresTotal is the name of the label detection failures counter metric
-	MetricNameDetectedLabelsFailuresTotal = "aianalysis_quality_detected_labels_failures_total"
 )
 
 // Label value constants for common metric dimensions
@@ -117,20 +106,6 @@ var (
 // Per DD-METRICS-001: Dependency injection pattern for testability and clarity.
 type Metrics struct {
 	// ========================================
-	// RECONCILER METRICS (aianalysis_reconciler_*)
-	// BR-AI-OBSERVABILITY-001: Track reconciliation outcomes
-	// Business Value: HIGH - Throughput and SLA tracking
-	// ========================================
-
-	// ReconcilerReconciliationsTotal tracks total reconciliations
-	// Business: "How many analyses completed?" - Throughput SLA
-	ReconcilerReconciliationsTotal *prometheus.CounterVec
-
-	// ReconcilerDurationSeconds tracks reconciliation duration
-	// Business: "Did we meet <60s SLA target?" - Latency SLA
-	ReconcilerDurationSeconds *prometheus.HistogramVec
-
-	// ========================================
 	// REGO POLICY METRICS (aianalysis_rego_*)
 	// BR-AI-030: Track policy evaluation outcomes
 	// Business Value: HIGH - Policy decision tracking
@@ -170,25 +145,6 @@ type Metrics struct {
 	// Business: "What failure modes are occurring?"
 	FailuresTotal *prometheus.CounterVec
 
-	// ========================================
-	// AUDIT METRICS (aianalysis_audit_*)
-	// DD-HAPI-002 v1.4: LLM validation attempt audit trail
-	// Business Value: MEDIUM - Compliance/audit requirement
-	// ========================================
-
-	// ValidationAttemptsTotal tracks HAPI in-session LLM retry attempts
-	// Audit: "How many LLM self-correction attempts occurred?"
-	ValidationAttemptsTotal *prometheus.CounterVec
-
-	// ========================================
-	// DATA QUALITY METRICS (aianalysis_quality_*)
-	// DD-WORKFLOW-001: Track label detection failures
-	// Business Value: MEDIUM - Data quality tracking
-	// ========================================
-
-	// DetectedLabelsFailuresTotal tracks detection failures
-	// Quality: "Are there enrichment/detection issues?"
-	DetectedLabelsFailuresTotal *prometheus.CounterVec
 }
 
 // ========================================
@@ -205,21 +161,6 @@ func NewMetrics() *Metrics {
 	// sync.Once ensures metrics are registered only once even if NewMetrics() called multiple times
 	registrationOnce.Do(func() {
 		registeredMetrics = &Metrics{
-		ReconcilerReconciliationsTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameReconcilerReconciliationsTotal, // DD-005 V3.0: Use constant
-				Help: "Total number of AIAnalysis reconciliations",
-			},
-			[]string{"phase", "result"},
-		),
-		ReconcilerDurationSeconds: prometheus.NewHistogramVec(
-			prometheus.HistogramOpts{
-				Name:    MetricNameReconcilerDurationSeconds, // DD-005 V3.0: Use constant
-				Help:    "Duration of AIAnalysis reconciliation",
-				Buckets: []float64{0.1, 0.5, 1, 2, 5, 10, 30, 60},
-			},
-			[]string{"phase"},
-		),
 		RegoEvaluationsTotal: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: MetricNameRegoEvaluationsTotal, // DD-005 V3.0: Use constant
@@ -249,35 +190,15 @@ func NewMetrics() *Metrics {
 			},
 			[]string{"reason", "sub_reason"},
 		),
-		ValidationAttemptsTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameValidationAttemptsTotal, // DD-005 V3.0: Use constant
-				Help: "Total number of HAPI in-session validation attempts (max 3 per request)",
-			},
-			[]string{"workflow_id", "is_valid"},
-		),
-		DetectedLabelsFailuresTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameDetectedLabelsFailuresTotal, // DD-005 V3.0: Use constant
-				Help: "Total number of failed label detections",
-			},
-			[]string{"field_name"},
-		),
 		}
 
 		// Register with controller-runtime's global registry
 		// This makes metrics available at :8080/metrics endpoint
 		metrics.Registry.MustRegister(
-			// Business metrics (6)
-			registeredMetrics.ReconcilerReconciliationsTotal,
-			registeredMetrics.ReconcilerDurationSeconds,
 			registeredMetrics.RegoEvaluationsTotal,
 			registeredMetrics.ApprovalDecisionsTotal,
 			registeredMetrics.ConfidenceScoreDistribution,
 			registeredMetrics.FailuresTotal,
-			// Audit/Quality metrics (2)
-			registeredMetrics.ValidationAttemptsTotal,
-			registeredMetrics.DetectedLabelsFailuresTotal,
 		)
 
 		// Initialize FailuresTotal with known failure types so metric appears in /metrics
@@ -317,21 +238,6 @@ func NewMetrics() *Metrics {
 // Per DD-METRICS-001: Test isolation via custom registry.
 func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 	m := &Metrics{
-		ReconcilerReconciliationsTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameReconcilerReconciliationsTotal, // DD-005 V3.0: Use constant
-				Help: "Total number of AIAnalysis reconciliations",
-			},
-			[]string{"phase", "result"},
-		),
-		ReconcilerDurationSeconds: prometheus.NewHistogramVec(
-			prometheus.HistogramOpts{
-				Name:    MetricNameReconcilerDurationSeconds, // DD-005 V3.0: Use constant
-				Help:    "Duration of AIAnalysis reconciliation",
-				Buckets: []float64{0.1, 0.5, 1, 2, 5, 10, 30, 60},
-			},
-			[]string{"phase"},
-		),
 		RegoEvaluationsTotal: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: MetricNameRegoEvaluationsTotal, // DD-005 V3.0: Use constant
@@ -361,32 +267,14 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 			},
 			[]string{"reason", "sub_reason"},
 		),
-		ValidationAttemptsTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameValidationAttemptsTotal, // DD-005 V3.0: Use constant
-				Help: "Total number of HAPI in-session validation attempts (max 3 per request)",
-			},
-			[]string{"workflow_id", "is_valid"},
-		),
-		DetectedLabelsFailuresTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameDetectedLabelsFailuresTotal, // DD-005 V3.0: Use constant
-				Help: "Total number of failed label detections",
-			},
-			[]string{"field_name"},
-		),
 	}
 
 	// Register with provided registry (test registry)
 	registry.MustRegister(
-		m.ReconcilerReconciliationsTotal,
-		m.ReconcilerDurationSeconds,
 		m.RegoEvaluationsTotal,
 		m.ApprovalDecisionsTotal,
 		m.ConfidenceScoreDistribution,
 		m.FailuresTotal,
-		m.ValidationAttemptsTotal,
-		m.DetectedLabelsFailuresTotal,
 	)
 
 	// Initialize metrics for E2E tests
@@ -403,18 +291,6 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 // These are methods on *Metrics, not package-level functions
 // Per V1.0 Service Maturity Requirements - P0 Blocker
 // ========================================
-
-// RecordReconciliation records a reconciliation outcome
-// Business: Throughput tracking
-func (m *Metrics) RecordReconciliation(phase, result string) {
-	m.ReconcilerReconciliationsTotal.WithLabelValues(phase, result).Inc()
-}
-
-// RecordReconcileDuration records reconciliation duration
-// Business: SLA tracking (<60s target)
-func (m *Metrics) RecordReconcileDuration(phase string, durationSeconds float64) {
-	m.ReconcilerDurationSeconds.WithLabelValues(phase).Observe(durationSeconds)
-}
 
 // RecordRegoEvaluation records a Rego policy evaluation
 // Business: Policy decision tracking
@@ -444,18 +320,3 @@ func (m *Metrics) RecordFailure(reason, subReason string) {
 	m.FailuresTotal.WithLabelValues(reason, subReason).Inc()
 }
 
-// RecordValidationAttempt records a HAPI in-session validation attempt
-// Audit: LLM self-correction tracking (DD-HAPI-002 v1.4)
-func (m *Metrics) RecordValidationAttempt(workflowID string, isValid bool) {
-	isValidStr := "false"
-	if isValid {
-		isValidStr = "true"
-	}
-	m.ValidationAttemptsTotal.WithLabelValues(workflowID, isValidStr).Inc()
-}
-
-// RecordDetectedLabelsFailure records a label detection failure
-// Quality: Data quality tracking
-func (m *Metrics) RecordDetectedLabelsFailure(fieldName string) {
-	m.DetectedLabelsFailuresTotal.WithLabelValues(fieldName).Inc()
-}

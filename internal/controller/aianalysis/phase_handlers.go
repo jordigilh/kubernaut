@@ -49,12 +49,6 @@ func (r *AIAnalysisReconciler) reconcilePending(ctx context.Context, analysis *a
 	log := r.Log.WithValues("phase", "Pending", "name", analysis.Name)
 	log.Info("Processing Pending phase")
 
-	// BR-AI-017: Track phase timing
-	phaseStart := time.Now()
-	defer func() {
-		r.Metrics.RecordReconcileDuration(PhasePending, time.Since(phaseStart).Seconds())
-	}()
-
 	// Set StartedAt timestamp (per crd-schema.md)
 	now := metav1.Now()
 	analysis.Status.StartedAt = &now
@@ -98,12 +92,6 @@ func (r *AIAnalysisReconciler) reconcilePending(ctx context.Context, analysis *a
 func (r *AIAnalysisReconciler) reconcileInvestigating(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
 	log := r.Log.WithValues("phase", "Investigating", "name", analysis.Name)
 	log.Info("Processing Investigating phase")
-
-	// BR-AI-017: Track phase timing
-	phaseStart := time.Now()
-	defer func() {
-		r.Metrics.RecordReconcileDuration(PhaseInvestigating, time.Since(phaseStart).Seconds())
-	}()
 
 	// Use handler if wired in, otherwise stub for backward compatibility
 	if r.InvestigatingHandler != nil {
@@ -190,12 +178,6 @@ func (r *AIAnalysisReconciler) reconcileInvestigating(ctx context.Context, analy
 func (r *AIAnalysisReconciler) reconcileAnalyzing(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
 	log := r.Log.WithValues("phase", "Analyzing", "name", analysis.Name)
 	log.Info("Processing Analyzing phase")
-
-	// BR-AI-017: Track phase timing
-	phaseStart := time.Now()
-	defer func() {
-		r.Metrics.RecordReconcileDuration(PhaseAnalyzing, time.Since(phaseStart).Seconds())
-	}()
 
 	// Use handler if wired in, otherwise stub for backward compatibility
 	if r.AnalyzingHandler != nil {

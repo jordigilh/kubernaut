@@ -163,9 +163,6 @@ func (c *NotificationCreator) CreateApprovalNotification(
 		"approvalReason", ai.Status.ApprovalReason,
 	)
 
-	// BR-ORCH-029, BR-ORCH-030: Track approval notification creation (DD-METRICS-001)
-	c.metrics.ApprovalNotificationsTotal.WithLabelValues(rr.Namespace).Inc()
-
 	// BR-ORCH-035: Caller (reconciler) appends to rr.Status.NotificationRequestRefs
 	return name, nil
 }
@@ -336,9 +333,6 @@ func (c *NotificationCreator) CreateCompletionNotification(
 		"name", name,
 		"workflowId", workflowID,
 	)
-
-	// BR-ORCH-045 AC-045-6: Track completion notification creation (DD-METRICS-001)
-	c.metrics.CompletionNotificationsTotal.WithLabelValues(rr.Namespace).Inc()
 
 	// BR-ORCH-035: Caller (reconciler) appends to rr.Status.NotificationRequestRefs
 	return name, nil
@@ -618,19 +612,6 @@ func (c *NotificationCreator) CreateManualReviewNotification(
 		"name", name,
 		"priority", priority,
 	)
-
-	// BR-ORCH-029, BR-ORCH-036: Track manual review notification creation (DD-METRICS-001)
-	// Metric expects: []string{"source", "reason", "sub_reason", "namespace"}
-	subReason := reviewCtx.SubReason
-	if subReason == "" {
-		subReason = "none"
-	}
-	c.metrics.ManualReviewNotificationsTotal.WithLabelValues(
-		string(reviewCtx.Source),
-		reviewCtx.Reason,
-		subReason,
-		rr.Namespace,
-	).Inc()
 
 	// BR-ORCH-035: Caller (reconciler) appends to rr.Status.NotificationRequestRefs
 	return name, nil

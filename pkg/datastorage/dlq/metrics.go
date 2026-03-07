@@ -43,12 +43,6 @@ var (
 		Help: "DLQ capacity ratio (depth/maxlen) per stream type",
 	}, []string{"stream"})
 
-	// DLQ depth gauge (absolute count)
-	dlqDepth = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "datastorage_dlq_depth",
-		Help: "Current DLQ depth (number of messages) per stream type",
-	}, []string{"stream"})
-
 	// DLQ threshold alerts (0 or 1 for alert state)
 	dlqWarning = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "datastorage_dlq_warning",
@@ -64,10 +58,4 @@ var (
 		Name: "datastorage_dlq_overflow_imminent",
 		Help: "DLQ at 95% capacity (1 = overflow imminent)",
 	}, []string{"stream"})
-
-	// DLQ enqueue counter (total messages added to DLQ)
-	dlqEnqueueTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "datastorage_dlq_enqueue_total",
-		Help: "Total number of audit messages enqueued to DLQ",
-	}, []string{"stream", "type"})
 )

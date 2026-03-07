@@ -144,26 +144,6 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 				return string(updated.Status.Phase)
 			}, 60*time.Second, 500*time.Millisecond).Should(Equal("Completed"))
 
-			// 3. Verify metrics were emitted as side effect of reconciliation
-			// Note: Metrics are recorded with phase BEFORE transition, so after Completed:
-			// - Pending→Investigating: metric "Pending/success"
-			// - Investigating→Analyzing: metric "Investigating/success" ✅
-			// - Analyzing→Completed: metric "Analyzing/success" ✅
-			Eventually(func() float64 {
-				return getCounterValue(reconciler.Metrics.ReconcilerReconciliationsTotal, "Investigating", "success")
-			}, 60*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
-				"Reconciliation metric should be emitted during Investigating phase")
-
-			Eventually(func() float64 {
-				return getCounterValue(reconciler.Metrics.ReconcilerReconciliationsTotal, "Analyzing", "success")
-			}, 60*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
-				"Reconciliation metric should be emitted during Analyzing phase")
-
-			// Verify duration histogram was populated
-			Eventually(func() int {
-				return getHistogramCount(reconciler.Metrics.ReconcilerDurationSeconds, "Investigating")
-			}, 60*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
-				"Duration histogram should record Investigating phase duration")
 		})
 
 		// NOTE: Flaky in parallel execution - metrics registry state interference
