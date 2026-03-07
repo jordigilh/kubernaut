@@ -42,8 +42,8 @@ Require python3
 
 Set Shell "bash"
 Set FontSize 28
-Set Width 2400
-Set Height 1200
+Set Width 1600
+Set Height 800
 Set Padding 40
 Set TypingSpeed 50ms
 Set Theme "Catppuccin Mocha"
@@ -91,11 +91,11 @@ Type `export PLATFORM_NS=kubernaut-system`
 Enter
 Sleep 500ms
 
-Type `bash deploy/demo/scenarios/pending-taint/cleanup.sh 2>/dev/null; true`
+Type `bash deploy/demo/scenarios/pending-taint/cleanup.sh 2>/dev/null; true && clear && echo CLEAN"_"DONE`
 Enter
-Sleep 5s
+Wait+Screen@120s /CLEAN_DONE/
 
-Type `kubectl apply -f deploy/demo/scenarios/pending-taint/manifests/namespace.yaml >/dev/null 2>&1 && kubectl apply -f deploy/demo/scenarios/pending-taint/manifests/ >/dev/null 2>&1 && kubectl wait --for=condition=Available deployment/batch-processor -n demo-taint --timeout=120s >/dev/null 2>&1 && clear && echo SETUP"_"COMPLETE`
+Type `TNODE=$(kubectl get nodes -l kubernaut.ai/managed=true -o name | head -1) && kubectl label "$TNODE" kubernaut.ai/demo-taint-target=true --overwrite >/dev/null 2>&1 && kubectl apply -f deploy/demo/scenarios/pending-taint/manifests/namespace.yaml >/dev/null 2>&1 && kubectl apply -f deploy/demo/scenarios/pending-taint/manifests/ >/dev/null 2>&1 && kubectl wait --for=condition=Available deployment/batch-processor -n demo-taint --timeout=120s >/dev/null 2>&1 && clear && echo SETUP"_"COMPLETE`
 Enter
 Wait+Screen@300s /SETUP_COMPLETE/
 
@@ -165,6 +165,9 @@ Sleep 4s
 
 Hide
 Set TypingSpeed 1ms
+Type `kubectl delete pods --all -n demo-taint >/dev/null 2>&1`
+Enter
+Sleep 3s
 Type "act_clear"
 Enter
 Sleep 500ms

@@ -40,8 +40,8 @@ Require python3
 
 Set Shell "bash"
 Set FontSize 28
-Set Width 2400
-Set Height 1200
+Set Width 1600
+Set Height 800
 Set Padding 40
 Set TypingSpeed 50ms
 Set Theme "Catppuccin Mocha"
@@ -89,15 +89,7 @@ Type `export PLATFORM_NS=kubernaut-system`
 Enter
 Sleep 500ms
 
-Type `bash deploy/demo/scenarios/crashloop/cleanup.sh 2>/dev/null; true && clear && echo CLEAN"_"DONE`
-Enter
-Wait+Screen@120s /CLEAN_DONE/
-
-Type `kubectl get configmap remediationorchestrator-config -n ${PLATFORM_NS} -o yaml | sed 's/stabilizationWindow: "5m"/stabilizationWindow: "1m"/' | kubectl apply -f - >/dev/null 2>&1 && kubectl rollout restart deploy/remediationorchestrator-controller -n ${PLATFORM_NS} >/dev/null 2>&1 && kubectl rollout status deploy/remediationorchestrator-controller -n ${PLATFORM_NS} --timeout=120s >/dev/null 2>&1 && clear && echo CONFIG"_"DONE`
-Enter
-Wait+Screen@180s /CONFIG_DONE/
-
-Type `kubectl apply -f deploy/demo/scenarios/crashloop/manifests/ >/dev/null 2>&1 && kubectl wait --for=condition=Available deployment/worker -n demo-crashloop --timeout=180s >/dev/null 2>&1 && sleep 20 && clear && echo SETUP"_"COMPLETE`
+Type `bash deploy/demo/scenarios/crashloop/tape-setup.sh && clear && echo SETUP"_"COMPLETE`
 Enter
 Wait+Screen@600s /SETUP_COMPLETE/
 
@@ -177,7 +169,7 @@ Set TypingSpeed 50ms
 Show
 Sleep 2s
 
-Type "kubectl get pods -n demo-crashloop -o wide -w"
+Type "kubectl get pods -n demo-crashloop -w"
 Enter
 Wait+Screen@120s /CrashLoopBackOff/
 Sleep 5s
@@ -338,33 +330,19 @@ Sleep 12s
 
 Hide
 Set TypingSpeed 1ms
-Type "narrate 'Approving the remediation...'"
-Enter
-Sleep 300ms
-Set TypingSpeed 50ms
-Show
-Sleep 2s
-
-Type "bash deploy/demo/scripts/approve-rar.sh"
-Enter
-Sleep 4s
-
-# Live pod transition during remediation
-Hide
-Set TypingSpeed 1ms
 Type "act_clear"
 Enter
 Sleep 500ms
-Type "narrate 'Watching pods — the workflow will rollback to the previous good config'"
+Type "narrate 'Approving and watching pods — the workflow will rollback to the previous good config'"
 Enter
 Sleep 300ms
 Set TypingSpeed 50ms
 Show
 Sleep 2s
 
-Type "kubectl get pods -n demo-crashloop -o wide -w"
+Type "(sleep 3 && bash deploy/demo/scripts/approve-rar.sh >/dev/null 2>&1) & kubectl get pods -n demo-crashloop -w"
 Enter
-Sleep 30s
+Sleep 45s
 Ctrl+C
 Sleep 2s
 
@@ -383,6 +361,9 @@ Sleep 6s
 
 Hide
 Set TypingSpeed 1ms
+Type "act_clear"
+Enter
+Sleep 500ms
 Type "narrate 'Remediation verified, waiting for completion...'"
 Enter
 Sleep 300ms

@@ -41,8 +41,8 @@ Require podman
 
 Set Shell "bash"
 Set FontSize 28
-Set Width 2400
-Set Height 1200
+Set Width 1600
+Set Height 800
 Set Padding 40
 Set TypingSpeed 50ms
 Set Theme "Catppuccin Mocha"
@@ -90,15 +90,7 @@ Type `export PLATFORM_NS=kubernaut-system`
 Enter
 Sleep 500ms
 
-Type `bash deploy/demo/scenarios/node-notready/cleanup.sh 2>/dev/null; true && clear && echo CLEAN"_"DONE`
-Enter
-Wait+Screen@120s /CLEAN_DONE/
-
-Type `kubectl get configmap remediationorchestrator-config -n ${PLATFORM_NS} -o yaml | sed 's/stabilizationWindow: "5m"/stabilizationWindow: "1m"/' | kubectl apply -f - >/dev/null 2>&1 && kubectl rollout restart deploy/remediationorchestrator-controller -n ${PLATFORM_NS} >/dev/null 2>&1 && kubectl rollout status deploy/remediationorchestrator-controller -n ${PLATFORM_NS} --timeout=120s >/dev/null 2>&1 && clear && echo CONFIG"_"DONE`
-Enter
-Wait+Screen@180s /CONFIG_DONE/
-
-Type `kubectl apply -f deploy/demo/scenarios/node-notready/manifests/namespace.yaml >/dev/null 2>&1 && kubectl apply -f deploy/demo/scenarios/node-notready/manifests/ >/dev/null 2>&1 && kubectl wait --for=condition=Available deployment/web-service -n demo-node --timeout=180s >/dev/null 2>&1 && sleep 20 && clear && echo SETUP"_"COMPLETE`
+Type `bash deploy/demo/scenarios/node-notready/tape-setup.sh && clear && echo SETUP"_"COMPLETE`
 Enter
 Wait+Screen@600s /SETUP_COMPLETE/
 
