@@ -106,7 +106,7 @@ workflowexecution_reconciler_pipelinerun_creations_total
 // Stateless HTTP
 gateway_http_requests_total{method, path, status}
 gateway_http_request_duration_seconds{method, path}
-datastorage_audit_events_written_total{service}
+audit_events_dropped_total{service}
 ```
 
 ---

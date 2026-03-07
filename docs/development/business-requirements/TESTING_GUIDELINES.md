@@ -1824,7 +1824,7 @@ aianalysis_reconciler_analysis_duration_seconds{phase="Investigating"}
 // Stateless HTTP Examples
 gateway_http_requests_total{method="POST", path="/api/v1/signals", status="201"}
 gateway_http_request_duration_seconds{method="POST", path="/api/v1/signals"}
-datastorage_audit_events_written_total{service="signalprocessing"}
+audit_events_dropped_total{service="signalprocessing"}
 ```
 
 **Anti-Patterns to Avoid**:
