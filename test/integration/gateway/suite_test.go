@@ -254,6 +254,7 @@ var _ = SynchronizedBeforeSuite(
 		scheme := k8sruntime.NewScheme()
 		Expect(corev1.AddToScheme(scheme)).To(Succeed())
 		Expect(appsv1.AddToScheme(scheme)).To(Succeed()) // #270: Apps types for owner chain resolution tests
+		Expect(rbacv1.AddToScheme(scheme)).To(Succeed()) // #291: RBAC types for ClusterRole creation
 		Expect(remediationv1alpha1.AddToScheme(scheme)).To(Succeed())
 
 		// Create K8s client
