@@ -104,13 +104,15 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 			// Create unique payload for this test to avoid fingerprint collisions
 			// Add unique timestamp to ensure different fingerprint even within same second
 			uniqueID := uuid.New().String()
+			podName := "payment-api-pending-test-" + uniqueID
+			helpers.EnsureTestPod(ctx, k8sClient, sharedNamespace, podName)
 			prometheusPayload = createPrometheusWebhookPayload(PrometheusAlertPayload{
 				AlertName: "PodCrashLoop",
 				Namespace: sharedNamespace,
 				Severity:  "critical",
 				Resource: ResourceIdentifier{
 					Kind: "Pod",
-					Name: "payment-api-pending-test-" + uniqueID,
+					Name: podName,
 				},
 				Labels: map[string]string{
 					"app":       "payment-api-pending-test",
@@ -227,13 +229,15 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 		BeforeEach(func() {
 			// Create unique payload for this test to avoid fingerprint collisions
 			uniqueID := uuid.New().String()
+			podName := "payment-api-processing-test-" + uniqueID
+			helpers.EnsureTestPod(ctx, k8sClient, sharedNamespace, podName)
 			prometheusPayload = createPrometheusWebhookPayload(PrometheusAlertPayload{
 				AlertName: "PodCrashLoop",
 				Namespace: sharedNamespace,
 				Severity:  "critical",
 				Resource: ResourceIdentifier{
 					Kind: "Pod",
-					Name: "payment-api-processing-test-" + uniqueID,
+					Name: podName,
 				},
 				Labels: map[string]string{
 					"app":       "payment-api-processing-test",
@@ -320,13 +324,15 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 		BeforeEach(func() {
 			// Create unique payload for this test to avoid fingerprint collisions
 			uniqueID := uuid.New().String()
+			podName := "payment-api-completed-test-" + uniqueID
+			helpers.EnsureTestPod(ctx, k8sClient, sharedNamespace, podName)
 			prometheusPayload = createPrometheusWebhookPayload(PrometheusAlertPayload{
 				AlertName: "PodCrashLoop",
 				Namespace: sharedNamespace,
 				Severity:  "critical",
 				Resource: ResourceIdentifier{
 					Kind: "Pod",
-					Name: "payment-api-completed-test-" + uniqueID,
+					Name: podName,
 				},
 				Labels: map[string]string{
 					"app":       "payment-api-completed-test",
@@ -413,13 +419,15 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 		BeforeEach(func() {
 			// Create unique payload for this test to avoid fingerprint collisions
 			uniqueID := uuid.New().String()
+			podName := "payment-api-failed-test-" + uniqueID
+			helpers.EnsureTestPod(ctx, k8sClient, sharedNamespace, podName)
 			prometheusPayload = createPrometheusWebhookPayload(PrometheusAlertPayload{
 				AlertName: "PodCrashLoop",
 				Namespace: sharedNamespace,
 				Severity:  "critical",
 				Resource: ResourceIdentifier{
 					Kind: "Pod",
-					Name: "payment-api-failed-test-" + uniqueID,
+					Name: podName,
 				},
 				Labels: map[string]string{
 					"app":       "payment-api-failed-test",
@@ -478,13 +486,15 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 		BeforeEach(func() {
 			// Create unique payload for this test to avoid fingerprint collisions
 			uniqueID := uuid.New().String()
+			podName := "payment-api-cancelled-test-" + uniqueID
+			helpers.EnsureTestPod(ctx, k8sClient, sharedNamespace, podName)
 			prometheusPayload = createPrometheusWebhookPayload(PrometheusAlertPayload{
 				AlertName: "PodCrashLoop",
 				Namespace: sharedNamespace,
 				Severity:  "critical",
 				Resource: ResourceIdentifier{
 					Kind: "Pod",
-					Name: "payment-api-cancelled-test-" + uniqueID,
+					Name: podName,
 				},
 				Labels: map[string]string{
 					"app":       "payment-api-cancelled-test",
@@ -543,13 +553,15 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 		BeforeEach(func() {
 			// Create unique payload for this test to avoid fingerprint collisions
 			uniqueID := uuid.New().String()
+			podName := "payment-api-unknown-test-" + uniqueID
+			helpers.EnsureTestPod(ctx, k8sClient, sharedNamespace, podName)
 			prometheusPayload = createPrometheusWebhookPayload(PrometheusAlertPayload{
 				AlertName: "PodCrashLoop",
 				Namespace: sharedNamespace,
 				Severity:  "critical",
 				Resource: ResourceIdentifier{
 					Kind: "Pod",
-					Name: "payment-api-unknown-test-" + uniqueID,
+					Name: podName,
 				},
 				Labels: map[string]string{
 					"app":       "payment-api-unknown-test",
@@ -660,13 +672,15 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 		BeforeEach(func() {
 			// Create unique payload for this test to avoid fingerprint collisions
 			uniqueID := uuid.New().String()
+			podName := "payment-api-notexist-test-" + uniqueID
+			helpers.EnsureTestPod(ctx, k8sClient, sharedNamespace, podName)
 			prometheusPayload = createPrometheusWebhookPayload(PrometheusAlertPayload{
 				AlertName: "PodCrashLoop",
 				Namespace: sharedNamespace,
 				Severity:  "critical",
 				Resource: ResourceIdentifier{
 					Kind: "Pod",
-					Name: "payment-api-notexist-test-" + uniqueID,
+					Name: podName,
 				},
 				Labels: map[string]string{
 					"app":       "payment-api-notexist-test",

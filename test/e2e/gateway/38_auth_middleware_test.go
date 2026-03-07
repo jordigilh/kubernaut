@@ -35,6 +35,7 @@ import (
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -86,6 +87,9 @@ var _ = Describe("Gateway Auth Middleware E2E (BR-GATEWAY-036, BR-GATEWAY-037)",
 		)
 		Expect(err).ToNot(HaveOccurred(), "Should get unauthorized token")
 		Expect(unauthorizedToken).ToNot(BeEmpty(), "Unauthorized token must not be empty")
+
+		helpers.EnsureTestPods(ctx, k8sClient, "default",
+			"e2e-auth-pod-001", "e2e-auth-pod-002", "e2e-auth-pod-003", "e2e-auth-pod-004")
 	})
 
 	Context("BR-GATEWAY-036: TokenReview Authentication", func() {

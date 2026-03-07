@@ -123,6 +123,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 		// Create unique test namespace (Pattern: RO E2E)
 		// This prevents circuit breaker degradation from "namespace not found" errors
 		sharedNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "test-rr-audit")
+		helpers.EnsureTestPods(ctx, k8sClient, sharedNamespace, "payment-service-abc123", "payment-service-recurring", "api-server-pod-cross")
 
 		// DD-TEST-001: Get Data Storage URL from suite's shared infrastructure
 		dataStorageURL = os.Getenv("TEST_DATA_STORAGE_URL")

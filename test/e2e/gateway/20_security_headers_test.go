@@ -51,6 +51,7 @@ var _ = Describe("Test 20: Security Headers & Observability", Ordered, func() {
 
 	// Pre-create managed namespace (Pattern: RO E2E)
 	testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "security-headers")
+	helpers.EnsureTestPods(ctx, k8sClient, testNamespace, "test-pod", "test-pod-request-id", "test-pod-metrics")
 	testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 		testLogger.Info("✅ Using shared Gateway", "url", gatewayURL)
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")

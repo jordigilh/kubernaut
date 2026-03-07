@@ -72,6 +72,9 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 
 		// Pre-create managed namespace (Pattern: RO E2E)
 		testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "test-prod")
+		helpers.EnsureTestPods(ctx, k8sClient, testNamespace,
+			"payment-api-123", "api-gateway-7", "payment-processor-42",
+			"payment-service-abc123", "nginx-pod-abc123")
 
 		// E2E tests use deployed Gateway at gatewayURL (http://127.0.0.1:8080)
 		// No local test server needed

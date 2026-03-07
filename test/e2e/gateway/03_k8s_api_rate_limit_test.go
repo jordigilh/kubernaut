@@ -60,6 +60,9 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 		// Create unique test namespace (Pattern: RO E2E)
 		// This prevents circuit breaker degradation from "namespace not found" errors
 		testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "rate-limit")
+		for i := 0; i < 50; i++ {
+			helpers.EnsureTestPod(ctx, k8sClient, testNamespace, fmt.Sprintf("app-pod-%d", i))
+		}
 
 		testLogger.Info("Deploying test services...", "namespace", testNamespace)
 

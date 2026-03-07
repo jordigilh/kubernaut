@@ -52,6 +52,7 @@ var _ = Describe("Test 09: Signal Validation & Rejection (BR-GATEWAY-003)", Orde
 
 		// BR-SCOPE-002: Create managed namespace so the valid payload passes scope validation
 		testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "signal-valid")
+		helpers.EnsureTestPod(ctx, k8sClient, testNamespace, "validation-test-pod")
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		testLogger.Info("Test 09: Signal Validation & Rejection - Setup")

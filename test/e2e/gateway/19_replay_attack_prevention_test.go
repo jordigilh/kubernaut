@@ -48,6 +48,7 @@ var _ = Describe("Test 19: Replay Attack Prevention (BR-GATEWAY-074, BR-GATEWAY-
 		// Create unique test namespace (Pattern: RO E2E)
 		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
 		testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "replay")
+		helpers.EnsureTestPods(ctx, k8sClient, testNamespace, "test-pod", "test-pod-request-id")
 
 		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 		testLogger.Info("✅ Using shared Gateway", "url", gatewayURL)

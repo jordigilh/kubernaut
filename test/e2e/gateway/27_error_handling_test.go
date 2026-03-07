@@ -55,6 +55,7 @@ var _ = Describe("Error Handling & Edge Cases", func() {
 
 	// Pre-create managed namespace for E2E tests (Pattern: RO E2E)
 	testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "test-err")
+	helpers.EnsureTestPod(ctx, k8sClient, testNamespace, "test-pod")
 
 		// Clear Redis
 	})

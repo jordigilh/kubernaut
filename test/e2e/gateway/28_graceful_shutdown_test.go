@@ -49,6 +49,10 @@ var _ = Describe("BR-GATEWAY-019: Graceful Shutdown Foundation - E2E Tests", fun
 		// 2. Creates actual Namespace object in K8s (prevents "not found" errors)
 		// 3. WAITS for namespace to become Active (prevents race conditions)
 		testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "test-shutdown")
+		helpers.EnsureTestPods(ctx, k8sClient, testNamespace, "warmup-pod", "timeout-test-pod")
+		for i := 0; i < 50; i++ {
+			helpers.EnsureTestPod(ctx, k8sClient, testNamespace, fmt.Sprintf("load-pod-%d", i))
+		}
 
 		// DD-GATEWAY-012: Redis cleanup no longer needed (Gateway is Redis-free)
 	})
