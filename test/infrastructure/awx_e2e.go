@@ -369,7 +369,7 @@ func WaitForAWXReady(ctx context.Context, namespace, kubeconfigPath string, writ
 		return fmt.Errorf("failed to create clientset: %w", err)
 	}
 
-	deadline := time.Now().Add(5 * time.Minute)
+	deadline := time.Now().Add(10 * time.Minute)
 	for time.Now().Before(deadline) {
 		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
 			LabelSelector: "app=awx-web",
@@ -389,7 +389,7 @@ func WaitForAWXReady(ctx context.Context, namespace, kubeconfigPath string, writ
 		time.Sleep(10 * time.Second)
 	}
 
-	return fmt.Errorf("AWX web pod did not become ready within 5 minutes")
+	return fmt.Errorf("AWX web pod did not become ready within 10 minutes")
 }
 
 // awxAPIRequest makes an authenticated request to the AWX API.

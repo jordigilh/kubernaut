@@ -256,7 +256,7 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 		err  error
 	}
 
-	loadResults := make(chan loadResult, 3)
+	loadResults := make(chan loadResult, 4)
 
 	// Load WorkflowExecution controller image
 	go func() {
@@ -279,10 +279,27 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 		loadResults <- loadResult{name: "AuthWebhook", err: err}
 	}()
 
-	// Wait for all 4 loads to complete (TD-E2E-001: Now includes OAuth2-Proxy)
+	// BR-WE-015: Pre-load AWX and helper images into Kind to prevent
+	// slow quay.io/docker.io pulls that cause AWX readiness timeouts in CI.
+	go func() {
+		thirdPartyImages := []string{
+			AWXImage, // quay.io/ansible/awx:24.6.1
+			"docker.io/library/postgres:16-alpine",
+			"docker.io/library/busybox:1.36",
+		}
+		for _, img := range thirdPartyImages {
+			if preloadErr := PreloadExternalImage(img, clusterName, writer); preloadErr != nil {
+				loadResults <- loadResult{name: "AWX third-party images", err: fmt.Errorf("preload %s: %w", img, preloadErr)}
+				return
+			}
+		}
+		loadResults <- loadResult{name: "AWX third-party images", err: nil}
+	}()
+
+	// Wait for all loads to complete (service images + AWX third-party)
 	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for images to load...")
 	var loadErrors []error
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 4; i++ {
 		result := <-loadResults
 		if result.err != nil {
 			_, _ = fmt.Fprintf(writer, "  ❌ %s load failed: %v\n", result.name, result.err)
