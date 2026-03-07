@@ -404,6 +404,7 @@ spec:
                     - ConfigurationError
                     - ImagePullBackOff
                     - TaskFailed
+                    - UnsupportedEngine
                     - Unknown
                     type: string
                   wasExecutionFailure:

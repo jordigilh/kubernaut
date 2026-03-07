@@ -334,7 +334,7 @@ type FailureDetails struct {
 
 	// Reason is a Kubernetes-style reason code
 	// Used for deterministic failure classification by RO
-	// +kubebuilder:validation:Enum=OOMKilled;DeadlineExceeded;Forbidden;ResourceExhausted;ConfigurationError;ImagePullBackOff;TaskFailed;Unknown
+	// +kubebuilder:validation:Enum=OOMKilled;DeadlineExceeded;Forbidden;ResourceExhausted;ConfigurationError;ImagePullBackOff;TaskFailed;UnsupportedEngine;Unknown
 	Reason string `json:"reason"`
 
 	// Message is human-readable error message (for logging/UI/notifications)
@@ -473,6 +473,9 @@ const (
 	// FailureReasonTaskFailed indicates a Tekton task failed during execution
 	// This is an execution failure (wasExecutionFailure=true)
 	FailureReasonTaskFailed = "TaskFailed"
+
+	// FailureReasonUnsupportedEngine indicates the execution engine is not registered
+	FailureReasonUnsupportedEngine = "UnsupportedEngine"
 
 	// FailureReasonUnknown for unclassified failures
 	FailureReasonUnknown = "Unknown"
