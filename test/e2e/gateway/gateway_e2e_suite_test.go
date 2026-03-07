@@ -28,6 +28,7 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -192,6 +193,8 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute),
 		Expect(err).ToNot(HaveOccurred(), "Failed to add RemediationRequest CRD to scheme")
 		err = corev1.AddToScheme(scheme)
 		Expect(err).ToNot(HaveOccurred(), "Failed to add core/v1 to scheme")
+		err = appsv1.AddToScheme(scheme)
+		Expect(err).ToNot(HaveOccurred(), "Failed to add apps/v1 to scheme")
 
 		// Create K8s client once for this process (reused across all tests)
 		k8sClient, err = client.New(cfg, client.Options{Scheme: scheme})

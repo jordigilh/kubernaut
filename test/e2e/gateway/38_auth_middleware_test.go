@@ -28,6 +28,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -241,7 +242,7 @@ var _ = Describe("Gateway Auth Middleware E2E (BR-GATEWAY-036, BR-GATEWAY-037)",
 func buildAuthTestPayload(alertName, namespace, resourceKind, resourceName string) []byte {
 	kindLabel := "pod"
 	if resourceKind != "" {
-		kindLabel = resourceKind
+		kindLabel = strings.ToLower(resourceKind)
 	}
 
 	payload := map[string]interface{}{
