@@ -332,6 +332,43 @@ func LoadImageToKind(imageName, serviceName, clusterName string, writer io.Write
 	return nil
 }
 
+// PreloadExternalImage pulls a third-party image (e.g., postgres:16-alpine) and loads it into
+// Kind so the in-cluster pull resolves from the pre-loaded cache. This prevents Docker Hub
+// rate-limit or slow-pull failures during E2E setup in CI.
+func PreloadExternalImage(imageName, clusterName string, writer io.Writer) error {
+	_, _ = fmt.Fprintf(writer, "   📥 Pre-loading external image: %s\n", imageName)
+
+	pullCmd := exec.Command("podman", "pull", "--quiet", imageName)
+	pullCmd.Stdout = writer
+	pullCmd.Stderr = writer
+	if err := pullCmd.Run(); err != nil {
+		return fmt.Errorf("failed to pull %s: %w", imageName, err)
+	}
+
+	sanitized := strings.NewReplacer("/", "_", ":", "_").Replace(imageName)
+	tmpFile := fmt.Sprintf("/tmp/preload-%s.tar", sanitized)
+
+	saveCmd := exec.Command("podman", "save", "-o", tmpFile, imageName)
+	saveCmd.Stdout = writer
+	saveCmd.Stderr = writer
+	if err := saveCmd.Run(); err != nil {
+		return fmt.Errorf("failed to save %s: %w", imageName, err)
+	}
+
+	loadCmd := exec.Command("kind", "load", "image-archive", tmpFile, "--name", clusterName)
+	loadCmd.Env = append(os.Environ(), "KIND_EXPERIMENTAL_PROVIDER=podman")
+	loadCmd.Stdout = writer
+	loadCmd.Stderr = writer
+	if err := loadCmd.Run(); err != nil {
+		_ = os.Remove(tmpFile)
+		return fmt.Errorf("failed to load %s into Kind: %w", imageName, err)
+	}
+
+	_ = os.Remove(tmpFile)
+	_, _ = fmt.Fprintf(writer, "   ✅ Pre-loaded %s into Kind\n", imageName)
+	return nil
+}
+
 // BuildAndLoadImageToKind builds and loads an image to Kind in one step.
 // This is a convenience wrapper for the standard (non-hybrid) E2E pattern.
 //

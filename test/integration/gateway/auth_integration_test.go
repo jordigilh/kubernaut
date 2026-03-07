@@ -37,12 +37,14 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 var _ = Describe("Gateway Authentication & Authorization (BR-GATEWAY-036, BR-GATEWAY-037)", Ordered, func() {
 
 	var (
-		testServer *httptest.Server
+		testServer       *httptest.Server
+		authTestNamespace string
 	)
 
 	BeforeAll(func() {
@@ -52,8 +54,12 @@ var _ = Describe("Gateway Authentication & Authorization (BR-GATEWAY-036, BR-GAT
 		// Setup security tokens (creates ServiceAccounts + tokens for auth tests)
 		tokens := SetupSecurityTokens()
 
-		k8sClient, _ := createTestK8sClient(ctx)
+		testK8sClient, _ := createTestK8sClient(ctx)
 		dataStorageURL := fmt.Sprintf("http://127.0.0.1:%d", infrastructure.GatewayIntegrationDataStoragePort)
+
+		// ADR-053: Create a managed namespace so scope validation passes (BR-SCOPE-002).
+		// 'default' namespace is unmanaged and scope filtering rejects signals for it.
+		authTestNamespace = helpers.CreateTestNamespace(ctx, testK8sClient.Client, "gw-auth-int")
 
 		// BR-GATEWAY-036/037: Wire real K8s auth using the same clientset as security tokens
 		authenticator := auth.NewK8sAuthenticator(tokens.Clientset)
@@ -63,12 +69,13 @@ var _ = Describe("Gateway Authentication & Authorization (BR-GATEWAY-036, BR-GAT
 		opts.Authenticator = authenticator
 		opts.Authorizer = authorizer
 
-		gatewayServer, err := StartTestGatewayWithOptions(ctx, k8sClient, dataStorageURL, opts)
+		gatewayServer, err := StartTestGatewayWithOptions(ctx, testK8sClient, dataStorageURL, opts)
 		Expect(err).ToNot(HaveOccurred(), "Gateway server must start successfully")
 
 		testServer = httptest.NewServer(gatewayServer.Handler())
 		DeferCleanup(func() {
 			testServer.Close()
+			helpers.DeleteTestNamespace(ctx, testK8sClient.Client, authTestNamespace)
 		})
 	})
 
@@ -77,7 +84,7 @@ var _ = Describe("Gateway Authentication & Authorization (BR-GATEWAY-036, BR-GAT
 		It("IT-GW-036-001: Unauthenticated Prometheus webhook request is rejected with 401", func() {
 			payload := GeneratePrometheusAlert(PrometheusAlertOptions{
 				AlertName: "AuthTestAlert036001",
-				Namespace: "default",
+				Namespace: authTestNamespace,
 				Severity:  "warning",
 				Resource:  ResourceIdentifier{Kind: "Pod", Name: "auth-test-pod"},
 			})
@@ -102,7 +109,7 @@ var _ = Describe("Gateway Authentication & Authorization (BR-GATEWAY-036, BR-GAT
 
 			payload := GeneratePrometheusAlert(PrometheusAlertOptions{
 				AlertName: "AuthTestAlert036002",
-				Namespace: "default",
+				Namespace: authTestNamespace,
 				Severity:  "warning",
 				Resource:  ResourceIdentifier{Kind: "Pod", Name: "auth-test-pod-ok"},
 			})
@@ -140,7 +147,7 @@ var _ = Describe("Gateway Authentication & Authorization (BR-GATEWAY-036, BR-GAT
 
 			payload := GeneratePrometheusAlert(PrometheusAlertOptions{
 				AlertName: "AuthTestAlert037001",
-				Namespace: "default",
+				Namespace: authTestNamespace,
 				Severity:  "warning",
 				Resource:  ResourceIdentifier{Kind: "Pod", Name: "auth-test-pod-unauth"},
 			})

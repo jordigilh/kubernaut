@@ -209,6 +209,7 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 	_, _ = fmt.Fprintln(writer, "\n⚡ PHASE 3: Loading images + Deploying infrastructure...")
 	_, _ = fmt.Fprintln(writer, "  ├── Loading Gateway image to Kind")
 	_, _ = fmt.Fprintln(writer, "  ├── Loading DataStorage image to Kind")
+	_, _ = fmt.Fprintln(writer, "  ├── Pre-loading third-party images (postgres, redis)")
 	_, _ = fmt.Fprintln(writer, "  └── Deploying PostgreSQL + Redis")
 	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~30-60 seconds")
 
@@ -217,7 +218,7 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 		err  error
 	}
 
-	results := make(chan result, 3)
+	results := make(chan result, 4)
 
 	// Goroutine 1: Load Gateway image (FIXED: Now uses split API!)
 	// Authority: docs/handoff/GATEWAY_VALIDATION_RESULTS_JAN07.md (Option A)
@@ -238,7 +239,24 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 		results <- result{name: "DataStorage image", err: err}
 	}()
 
-	// Goroutine 3: Deploy PostgreSQL and Redis
+	// Goroutine 3: Pre-load third-party images into Kind to avoid Docker Hub
+	// rate-limit / slow-pull timeouts during pod startup in CI.
+	go func() {
+		thirdPartyImages := []string{
+			"docker.io/library/postgres:16-alpine",
+			"quay.io/jordigilh/redis:7-alpine",
+		}
+		for _, img := range thirdPartyImages {
+			if err := PreloadExternalImage(img, clusterName, writer); err != nil {
+				results <- result{name: "Third-party images", err: fmt.Errorf("preload %s: %w", img, err)}
+				return
+			}
+		}
+		results <- result{name: "Third-party images", err: nil}
+	}()
+
+	// Goroutine 4: Deploy PostgreSQL and Redis (kubectl apply; pods will start
+	// pulling images which are now cached thanks to goroutine 3)
 	go func() {
 		var err error
 		if pgErr := deployPostgreSQLInNamespace(ctx, namespace, kubeconfigPath, writer); pgErr != nil {
@@ -251,7 +269,7 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 
 	// Wait for all goroutines
 	var errors []string
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 4; i++ {
 		r := <-results
 		if r.err != nil {
 			errors = append(errors, fmt.Sprintf("%s: %v", r.name, r.err))
