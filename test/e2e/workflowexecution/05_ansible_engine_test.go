@@ -17,7 +17,6 @@ limitations under the License.
 package workflowexecution
 
 import (
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -322,9 +321,6 @@ func cancelAWXJob(jobID int) {
 
 	httpClient := &http.Client{
 		Timeout: 15 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec
-		},
 	}
 
 	req, err := http.NewRequest("POST", url, strings.NewReader(""))
