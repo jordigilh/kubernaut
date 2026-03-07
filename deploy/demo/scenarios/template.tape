@@ -354,18 +354,24 @@ Type "bash deploy/demo/scripts/show-approval-reason.sh <NAMESPACE>"
 Enter
 Sleep 12s
 
+# Hidden approval + live pod watch (approval fires 3s in, viewer sees only the transition)
+# CUSTOMIZE: narration text and Sleep duration:
+#   15s for fast rollbacks, 30s for drain/PDB/memory, 45s for node provisioning
 Hide
 Set TypingSpeed 1ms
-Type "narrate 'Approving the remediation...'"
+Type "act_clear"
+Enter
+Sleep 500ms
+Type "narrate 'Approving and watching pods — <WORKFLOW_DESCRIPTION>'"
 Enter
 Sleep 300ms
+Type "(sleep 3 && bash deploy/demo/scripts/approve-rar.sh >/dev/null 2>&1) & kubectl get pods -n <NAMESPACE> -w"
+Enter
 Set TypingSpeed 50ms
 Show
+Sleep 15s
+Ctrl+C
 Sleep 2s
-
-Type "bash deploy/demo/scripts/approve-rar.sh"
-Enter
-Sleep 4s
 
 # ┌─────────────────────────────────────────────────────────────┐
 # │ AUTO-APPROVE PATH (non-production namespaces)               │
@@ -382,18 +388,25 @@ Sleep 4s
 # Type "act_clear"
 # Enter
 # Sleep 300ms
-# Type "narrate 'Analysis complete. Auto-approved — no manual approval required.'"
+# Type "narrate 'Analysis complete. Auto-approved — executing remediation now.'"
+# Enter
+# Sleep 300ms
+# Type "narrate 'Watching pods as the remediation executes...'"
 # Enter
 # Sleep 300ms
 # Set TypingSpeed 50ms
 # Show
 # Sleep 2s
 #
-# # Snapshot 3: RR now Executing (auto-approved)
-# Type "kubectl get remediationrequests -n ${PLATFORM_NS}"
+# # Pod transition — shown FIRST so the viewer sees the live change
+# # CUSTOMIZE: Sleep duration: 15s (fast), 30s (medium), 45s (slow)
+# Type "kubectl get pods -n <NAMESPACE> -w"
 # Enter
-# Sleep 6s
+# Sleep 15s
+# Ctrl+C
+# Sleep 2s
 #
+# # AI analysis — explain WHAT the AI recommended (after seeing the visual result)
 # Hide
 # Set TypingSpeed 1ms
 # Type "act_clear"
@@ -410,13 +423,26 @@ Sleep 4s
 # Enter
 # Sleep 24s
 
-# Live RR watch: captures execution transitions
+Hide
+Set TypingSpeed 1ms
+Type "narrate 'Workflow execution summary'"
+Enter
+Sleep 300ms
+Set TypingSpeed 50ms
+Show
+Sleep 2s
+
+Type "kubectl get workflowexecutions -n ${PLATFORM_NS}"
+Enter
+Sleep 6s
+
+# RR completion watch (Verifying → Completed)
 Hide
 Set TypingSpeed 1ms
 Type "act_clear"
 Enter
 Sleep 500ms
-Type "narrate 'Watching the execution phase transitions...'"
+Type "narrate 'Remediation verified, waiting for completion...'"
 Enter
 Sleep 300ms
 Set TypingSpeed 50ms
@@ -456,10 +482,6 @@ Type "kubectl get pods -n <NAMESPACE>"
 Enter
 Sleep 5s
 
-Type "kubectl get remediationrequests -n ${PLATFORM_NS}"
-Enter
-Sleep 5s
-
 Hide
 Set TypingSpeed 1ms
 Type "narrate 'Notification delivered to Slack and console'"
@@ -472,27 +494,6 @@ Sleep 2s
 Type "bash deploy/demo/scripts/show-notification.sh ${PLATFORM_NS}"
 Enter
 Sleep 12s
-
-Hide
-Set TypingSpeed 1ms
-Type "narrate 'Waiting for EffectivenessAssessment to complete...'"
-Enter
-Sleep 300ms
-Set TypingSpeed 50ms
-Show
-Sleep 2s
-
-# Hidden wait: poll until EA reaches Completed or Failed
-Hide
-Set TypingSpeed 1ms
-Type `while true; do PHASE=$(kubectl get effectivenessassessments -n ${PLATFORM_NS} -o jsonpath='{.items[0].status.phase}' 2>/dev/null); [ "$PHASE" = "Completed" ] || [ "$PHASE" = "Failed" ] && break; sleep 10; done && clear && echo EA"_"DONE`
-Enter
-Wait+Screen@600s /EA_DONE/
-Type "act_clear"
-Enter
-Sleep 500ms
-Set TypingSpeed 50ms
-Show
 
 Hide
 Set TypingSpeed 1ms

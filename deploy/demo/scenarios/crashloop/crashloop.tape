@@ -341,7 +341,7 @@ Type "(sleep 3 && bash deploy/demo/scripts/approve-rar.sh >/dev/null 2>&1) & kub
 Enter
 Set TypingSpeed 50ms
 Show
-Sleep 45s
+Sleep 15s
 Ctrl+C
 Sleep 2s
 
