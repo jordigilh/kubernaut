@@ -2,8 +2,8 @@
 
 **Status**: ✅ Approved
 **Date**: 2025-11-26
-**Last Updated**: 2026-02-09
-**Version**: 2.9
+**Last Updated**: 2026-03-02
+**Version**: 3.0
 **Author**: AI Assistant
 **Reviewers**: TBD
 **Related**: [03-testing-strategy.mdc](mdc:.cursor/rules/03-testing-strategy.mdc)
@@ -68,6 +68,7 @@ Integration and E2E tests require running multiple services (PostgreSQL, Redis, 
 | **AIAnalysis** | 8084 | 30084 | 9184 | 30184 | 8184 | 30284 | `test/infrastructure/kind-aianalysis-config.yaml` |
 | **WorkflowExecution** | 8085 | 30085 | 9185 | 30185 | — | — | `test/infrastructure/kind-workflowexecution-config.yaml` |
 | **WE → Data Storage** | 8092 | 30081 | — | — | — | — | `test/infrastructure/kind-workflowexecution-config.yaml` (dependency) |
+| **WE → AWX** | 30095 | 30095 | — | — | — | — | `test/infrastructure/kind-workflowexecution-config.yaml` (BR-WE-015 ansible engine) |
 | **Notification** | 8086 | 30086 | 9186 | 30186 | — | — | `test/infrastructure/kind-notification-config.yaml` |
 | **Toolset** | 8087 | 30087 | 9187 | 30187 | — | — | `test/infrastructure/kind-toolset-config.yaml` |
 | **HolmesGPT API** | 8088 | 30088 | 9188 | 30188 | — | — | `holmesgpt-api/tests/infrastructure/kind-holmesgpt-config.yaml` |
@@ -87,7 +88,7 @@ Integration and E2E tests require running multiple services (PostgreSQL, Redis, 
 **Allocation Rules**:
 - **Integration Tests**: 15433-18139 range (Podman containers)
 - **E2E Tests (Podman)**: 25433-28139 range
-- **E2E Tests (Kind NodePort)**: 30080-30099 (API), 30180-30199 (Metrics)
+- **E2E Tests (Kind NodePort)**: 30080-30099 (API/Infrastructure), 30180-30199 (Metrics)
 - **Host Port Mapping**: 8080-8089 (for Kind extraPortMappings)
 - **Avoided Ports**: 15432 (external postgres-poc), 8080 (production Gateway)
 - **Buffer**: 10 ports per service per tier (supports parallel processes + dependencies)
@@ -696,6 +697,11 @@ extraPortMappings:
 - Metrics NodePort: `3018X` where X = service index
 - Host Port: `808X` / `918X` for service/metrics
 
+**AWX Dependencies** (BR-WE-015 ansible engine, shared in WE/FP Kind clusters):
+| Dependency | Host Port | NodePort | Purpose |
+|------------|-----------|----------|---------|
+| AWX API | 30095 | 30095 | AWX web API for ansible workflow execution E2E tests |
+
 **HolmesGPT API Dependencies** (in dedicated Kind cluster):
 | Dependency | Host Port | NodePort | Purpose |
 |------------|-----------|----------|---------|
@@ -856,7 +862,7 @@ var _ = SynchronizedBeforeSuite(
 | **Effectiveness Monitor (CRD)** | 25434 | N/A | N/A | Data Storage: 28092 |
 | **Workflow Engine** | N/A | N/A | 28110 | Data Storage: 28093 |
 | **RemediationOrchestrator** | N/A | N/A | N/A | Data Storage: 8089 |
-| **WorkflowExecution** | N/A | N/A | N/A | Data Storage: 8092 |
+| **WorkflowExecution** | N/A | N/A | N/A | Data Storage: 8092, AWX: 30095 |
 | **Auth Webhook** | 25442 | 26386 | N/A | Data Storage: 28099 |
 
 ✅ **No Conflicts** - All services can run E2E tests in parallel
@@ -910,6 +916,7 @@ ginkgo -p -procs=4 test/e2e/datastorage/
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 3.0 | 2026-03-02 | AI Assistant | **AWX (BR-WE-015)**: Added AWX NodePort 30095 for ansible engine E2E tests; AWX deployed in WE Kind cluster sharing existing PostgreSQL and Redis; Added AWX to WE dependencies, NodePort Summary, and Port Collision Matrix; AWX API accessed from host via `localhost:30095` for post-deployment configuration; OCI schema images `ansible-success` and `ansible-failure` added to `test/fixtures/workflows/`; FP E2E excluded (WE E2E covers ansible regression) |
 | 2.9 | 2026-02-26 | AI Assistant | **AUTHWEBHOOK E2E**: AuthWebhook NodePort changed from undocumented 30443 to 30099 per DD-TEST-001; Added AuthWebhook to Full Pipeline E2E table; AuthWebhook E2E Data Storage dependency uses standard NodePort 30081 (was 30099) to free 30099 for webhook |
 | 2.8 | 2026-02-09 | AI Assistant | **EFFECTIVENESS MONITOR**: Added EM to CRD Controllers NodePort table (30089/30189/8089); Added Redis 16383 for EM integration DS bootstrap (was N/A); Added Prometheus NodePort 30190 and AlertManager NodePort 30193 for Full Pipeline E2E; Updated EM detailed section to reflect CRD controller pattern (envtest + DS bootstrap + httptest mocks for Prom/AM); Updated Port Collision Matrix and NodePort Summary; Updated implementation checklist Phase 3 |
 | 2.7 | 2026-02-05 | AI Assistant | **FULL PIPELINE E2E**: Added Full Pipeline E2E port allocations for end-to-end remediation lifecycle test (Issue #39); Gateway ingress NodePort 30080 (event-exporter webhook), DataStorage NodePort 30081 (workflow catalog seeding), Mock LLM ClusterIP (internal only, accessed by HAPI); Kind config: `test/infrastructure/kind-fullpipeline-config.yaml`; All ports verified against Port Collision Matrix - no conflicts |
