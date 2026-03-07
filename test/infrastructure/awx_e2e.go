@@ -136,11 +136,7 @@ spec:
             END
             \$\$;
           "
-          PGPASSWORD=test_password psql -h postgresql -p 5432 -U slm_user -d action_history -c "
-            SELECT 'CREATE DATABASE %[2]s OWNER %[3]s'
-            WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '%[2]s')
-            \gexec
-          "
+          PGPASSWORD=test_password psql -h postgresql -p 5432 -U slm_user -d action_history -tc "SELECT 1 FROM pg_database WHERE datname = '%[2]s'" | grep -q 1 || PGPASSWORD=test_password psql -h postgresql -p 5432 -U slm_user -d action_history -c "CREATE DATABASE %[2]s OWNER %[3]s"
           PGPASSWORD=test_password psql -h postgresql -p 5432 -U slm_user -d action_history -c "
             GRANT ALL PRIVILEGES ON DATABASE %[2]s TO %[3]s;
           "
