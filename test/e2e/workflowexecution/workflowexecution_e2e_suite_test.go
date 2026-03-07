@@ -23,7 +23,6 @@ import (
 	"os"
 	"os/exec"
 	"testing"
-	"time"
 
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
@@ -87,9 +86,9 @@ var (
 )
 
 // SynchronizedBeforeSuite runs cluster setup ONCE on process 1, then each process connects
-var _ = SynchronizedBeforeSuite(NodeTimeout(15*time.Minute),
+var _ = SynchronizedBeforeSuite(
 	// This runs ONCE on process 1 only - sets up shared cluster
-	func(_ SpecContext) []byte {
+	func() []byte {
 		// Initialize context
 		ctx, cancel = context.WithCancel(context.Background())
 

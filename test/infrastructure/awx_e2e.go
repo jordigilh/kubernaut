@@ -27,7 +27,6 @@ import (
 	"strings"
 	"time"
 
-	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -355,7 +354,9 @@ spec:
 	return nil
 }
 
-// WaitForAWXReady waits until the AWX API responds to /api/v2/ping/.
+// WaitForAWXReady waits until the AWX web pod is running and ready.
+// Uses manual polling instead of Gomega Eventually because this function
+// is called from goroutines where Gomega panics crash the process.
 func WaitForAWXReady(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "⏳ Waiting for AWX to be ready...\n")
 
@@ -368,28 +369,27 @@ func WaitForAWXReady(ctx context.Context, namespace, kubeconfigPath string, writ
 		return fmt.Errorf("failed to create clientset: %w", err)
 	}
 
-	// Wait for awx-web pod to be ready
-	Eventually(func() bool {
+	deadline := time.Now().Add(5 * time.Minute)
+	for time.Now().Before(deadline) {
 		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
 			LabelSelector: "app=awx-web",
 		})
-		if err != nil || len(pods.Items) == 0 {
-			return false
-		}
-		for _, pod := range pods.Items {
-			if pod.Status.Phase == corev1.PodRunning {
-				for _, c := range pod.Status.Conditions {
-					if c.Type == corev1.PodReady && c.Status == corev1.ConditionTrue {
-						return true
+		if err == nil && len(pods.Items) > 0 {
+			for _, pod := range pods.Items {
+				if pod.Status.Phase == corev1.PodRunning {
+					for _, c := range pod.Status.Conditions {
+						if c.Type == corev1.PodReady && c.Status == corev1.ConditionTrue {
+							_, _ = fmt.Fprintf(writer, "✅ AWX is ready\n")
+							return nil
+						}
 					}
 				}
 			}
 		}
-		return false
-	}, 5*time.Minute, 10*time.Second).Should(BeTrue(), "AWX web pod should become ready")
+		time.Sleep(10 * time.Second)
+	}
 
-	_, _ = fmt.Fprintf(writer, "✅ AWX is ready\n")
-	return nil
+	return fmt.Errorf("AWX web pod did not become ready within 5 minutes")
 }
 
 // awxAPIRequest makes an authenticated request to the AWX API.
@@ -482,16 +482,25 @@ func ConfigureAWX(ctx context.Context, awxBaseURL string, writer io.Writer) (*AW
 	cfg.ProjectID = int(projectResult["id"].(float64))
 	_, _ = fmt.Fprintf(writer, "   ✅ Project ID: %d\n", cfg.ProjectID)
 
-	// 3. Wait for project sync to complete
+	// 3. Wait for project sync to complete (manual polling — called from goroutine)
 	_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for project sync...\n")
-	Eventually(func() string {
+	syncDeadline := time.Now().Add(3 * time.Minute)
+	projectSynced := false
+	for time.Now().Before(syncDeadline) {
 		result, _, _ := awxAPIRequest("GET", fmt.Sprintf("%s/api/v2/projects/%d/", awxBaseURL, cfg.ProjectID), nil, "")
-		if result == nil {
-			return ""
+		if result != nil {
+			if status, _ := result["status"].(string); status == "successful" {
+				projectSynced = true
+				break
+			} else if status == "failed" || status == "error" {
+				return nil, fmt.Errorf("project sync failed with status: %s", status)
+			}
 		}
-		status, _ := result["status"].(string)
-		return status
-	}, 3*time.Minute, 5*time.Second).Should(Equal("successful"), "Project sync should complete")
+		time.Sleep(5 * time.Second)
+	}
+	if !projectSynced {
+		return nil, fmt.Errorf("project sync did not complete within 3 minutes")
+	}
 	_, _ = fmt.Fprintf(writer, "   ✅ Project synced\n")
 
 	// 4. Create inventory
