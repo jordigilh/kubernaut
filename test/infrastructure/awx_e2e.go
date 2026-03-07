@@ -172,6 +172,8 @@ spec:
         image: %[6]s
         command: ["awx-manage", "migrate", "--noinput"]
         env:
+        - name: AWX_SETTINGS_FILE
+          value: "/etc/tower/conf.d/settings.py"
         - name: SECRET_KEY
           value: "%[7]s"
         - name: DATABASE_HOST
@@ -195,6 +197,8 @@ spec:
         - |
           echo "from django.contrib.auth.models import User; User.objects.filter(username='%[8]s').exists() or User.objects.create_superuser('%[8]s', 'admin@kubernaut.ai', '%[9]s')" | awx-manage shell
         env:
+        - name: AWX_SETTINGS_FILE
+          value: "/etc/tower/conf.d/settings.py"
         - name: SECRET_KEY
           value: "%[7]s"
         - name: DATABASE_HOST
@@ -218,6 +222,8 @@ spec:
         - containerPort: 8052
           name: http
         env:
+        - name: AWX_SETTINGS_FILE
+          value: "/etc/tower/conf.d/settings.py"
         - name: SECRET_KEY
           value: "%[7]s"
         - name: DATABASE_HOST
@@ -285,6 +291,8 @@ spec:
         image: %[6]s
         command: ["/usr/bin/launch_awx_task.sh"]
         env:
+        - name: AWX_SETTINGS_FILE
+          value: "/etc/tower/conf.d/settings.py"
         - name: SECRET_KEY
           value: "%[7]s"
         - name: DATABASE_HOST
