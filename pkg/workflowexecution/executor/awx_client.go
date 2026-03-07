@@ -73,7 +73,7 @@ func (c *AWXHTTPClient) LaunchJobTemplate(ctx context.Context, templateID int, e
 	if err != nil {
 		return 0, fmt.Errorf("AWX launch request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusCreated {
 		respBody, _ := io.ReadAll(resp.Body)
@@ -103,7 +103,7 @@ func (c *AWXHTTPClient) GetJobStatus(ctx context.Context, jobID int) (*AWXJobSta
 	if err != nil {
 		return nil, fmt.Errorf("AWX status request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
@@ -131,7 +131,7 @@ func (c *AWXHTTPClient) CancelJob(ctx context.Context, jobID int) error {
 	if err != nil {
 		return fmt.Errorf("AWX cancel request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
@@ -154,7 +154,7 @@ func (c *AWXHTTPClient) FindJobTemplateByName(ctx context.Context, name string) 
 	if err != nil {
 		return 0, fmt.Errorf("AWX template search request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)

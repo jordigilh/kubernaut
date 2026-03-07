@@ -83,7 +83,7 @@ data:
             'NAME': '%[2]s',
             'USER': '%[3]s',
             'PASSWORD': '%[4]s',
-            'HOST': 'postgres',
+            'HOST': 'postgresql',
             'PORT': '5432',
         }
     }
@@ -122,12 +122,12 @@ spec:
         command: ["sh", "-c"]
         args:
         - |
-          until pg_isready -h postgres -p 5432 -U slm_user; do
+          until pg_isready -h postgresql -p 5432 -U slm_user; do
             echo "Waiting for PostgreSQL..."
             sleep 2
           done
           echo "Creating AWX database and user..."
-          PGPASSWORD=test_password psql -h postgres -p 5432 -U slm_user -d action_history -c "
+          PGPASSWORD=test_password psql -h postgresql -p 5432 -U slm_user -d action_history -c "
             DO \$\$
             BEGIN
               IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '%[3]s') THEN
@@ -136,12 +136,12 @@ spec:
             END
             \$\$;
           "
-          PGPASSWORD=test_password psql -h postgres -p 5432 -U slm_user -d action_history -c "
+          PGPASSWORD=test_password psql -h postgresql -p 5432 -U slm_user -d action_history -c "
             SELECT 'CREATE DATABASE %[2]s OWNER %[3]s'
             WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '%[2]s')
             \gexec
           "
-          PGPASSWORD=test_password psql -h postgres -p 5432 -U slm_user -d action_history -c "
+          PGPASSWORD=test_password psql -h postgresql -p 5432 -U slm_user -d action_history -c "
             GRANT ALL PRIVILEGES ON DATABASE %[2]s TO %[3]s;
           "
           echo "AWX database ready."
@@ -169,7 +169,7 @@ spec:
         command: ["sh", "-c"]
         args:
         - |
-          until PGPASSWORD='%[4]s' psql -h postgres -p 5432 -U %[3]s -d %[2]s -c 'SELECT 1' 2>/dev/null; do
+          until PGPASSWORD='%[4]s' psql -h postgresql -p 5432 -U %[3]s -d %[2]s -c 'SELECT 1' 2>/dev/null; do
             echo "Waiting for AWX database..."
             sleep 3
           done
@@ -180,7 +180,7 @@ spec:
         - name: SECRET_KEY
           value: "%[7]s"
         - name: DATABASE_HOST
-          value: "postgres"
+          value: "postgresql"
         - name: DATABASE_PORT
           value: "5432"
         - name: DATABASE_NAME
@@ -203,7 +203,7 @@ spec:
         - name: SECRET_KEY
           value: "%[7]s"
         - name: DATABASE_HOST
-          value: "postgres"
+          value: "postgresql"
         - name: DATABASE_PORT
           value: "5432"
         - name: DATABASE_NAME
@@ -226,7 +226,7 @@ spec:
         - name: SECRET_KEY
           value: "%[7]s"
         - name: DATABASE_HOST
-          value: "postgres"
+          value: "postgresql"
         - name: DATABASE_PORT
           value: "5432"
         - name: DATABASE_NAME
@@ -293,7 +293,7 @@ spec:
         - name: SECRET_KEY
           value: "%[7]s"
         - name: DATABASE_HOST
-          value: "postgres"
+          value: "postgresql"
         - name: DATABASE_PORT
           value: "5432"
         - name: DATABASE_NAME
@@ -423,7 +423,7 @@ func awxAPIRequest(method, url string, body interface{}, token string) (map[stri
 	if err != nil {
 		return nil, 0, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
