@@ -91,9 +91,9 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 				"environment": "development", // Required for EnvironmentClassifier
 			}))
 
-		helpers.EnsureTestPods(ctx, k8sClient, prodNamespace, "payment-api-123", "test-pod")
-		helpers.EnsureTestPod(ctx, k8sClient, stagingNamespace, "database-replica-2")
-		helpers.EnsureTestPod(ctx, k8sClient, devNamespace, "api-gateway-7")
+		helpers.EnsureTestPods(ctx, k8sClient, prodNamespace, "payment-api-123", "test-pod", "api-gateway-7")
+		helpers.EnsureTestPods(ctx, k8sClient, stagingNamespace, "database-replica-2", "test-pod")
+		helpers.EnsureTestPods(ctx, k8sClient, devNamespace, "api-gateway-7", "test-pod")
 
 		logger.Info("Test setup complete",
 			zap.String("gateway_url", gatewayURL),

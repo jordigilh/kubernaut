@@ -223,13 +223,15 @@ var _ = Describe("Observability E2E Tests", func() {
 
 			// Send alert to create CRD (use unique name to avoid collisions)
 			uniqueID := time.Now().UnixNano()
+			deployName := fmt.Sprintf("app-%d", uniqueID)
+			helpers.EnsureTestDeployment(ctx, k8sClient, testNamespace, deployName)
 			payload := GeneratePrometheusAlert(PrometheusAlertPayload{
 				AlertName: fmt.Sprintf("CRDCreationTest-%d", uniqueID),
 				Namespace: testNamespace,
 				Severity:  "warning",
 				Resource: ResourceIdentifier{
 					Kind: "Deployment",
-					Name: fmt.Sprintf("app-%d", uniqueID),
+					Name: deployName,
 				},
 			})
 			// Retry handles scope informer cache propagation delay for newly created namespace
@@ -419,13 +421,15 @@ var _ = Describe("Observability E2E Tests", func() {
 
 			// Send requests to different endpoints (use unique name)
 			uniqueID := time.Now().UnixNano()
+			svcName := fmt.Sprintf("api-%d", uniqueID)
+			helpers.EnsureTestService(ctx, k8sClient, testNamespace, svcName)
 			payload := GeneratePrometheusAlert(PrometheusAlertPayload{
 				AlertName: fmt.Sprintf("EndpointTest-%d", uniqueID),
 				Namespace: testNamespace,
 				Severity:  "info",
 				Resource: ResourceIdentifier{
 					Kind: "Service",
-					Name: fmt.Sprintf("api-%d", uniqueID),
+					Name: svcName,
 				},
 			})
 			resp := sendWebhookExpectCreated(gatewayURL, "/api/v1/signals/prometheus", payload)
