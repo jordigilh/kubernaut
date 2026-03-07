@@ -2,6 +2,7 @@ package infrastructure
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,6 +12,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 // DSBootstrapConfig configures DataStorage infrastructure for integration tests
@@ -499,39 +502,25 @@ func startDSBootstrapPostgreSQL(infra *DSBootstrapInfra, writer io.Writer) error
 	return cmd.Run()
 }
 
-// runDSBootstrapMigrations applies database migrations
-// Migrations are always located at {project_root}/migrations (universal location)
+// runDSBootstrapMigrations applies database migrations using the goose Go library (DD-012).
+// Connects directly to PostgreSQL via the Podman-exposed port and runs goose.Up().
 func runDSBootstrapMigrations(infra *DSBootstrapInfra, projectRoot string, writer io.Writer) error {
 	migrationsDir := filepath.Join(projectRoot, defaultMigrationsPath)
 
-	// Apply migrations: extract only "Up" sections (stop at "-- +goose Down")
-	migrationScript := `
-		set -e
-		echo "Creating slm_user role (required by migrations)..."
-		psql -c "CREATE ROLE slm_user LOGIN PASSWORD 'slm_user';" || echo "Role slm_user already exists"
-		echo "Applying migrations (Up sections only)..."
-		find /migrations -maxdepth 1 -name "*.sql" -type f | sort | while read f; do
-			echo "Applying $f..."
-			sed -n "1,/^-- +goose Down/p" "$f" | grep -v "^-- +goose Down" | psql
-		done
-		echo "Migrations complete!"
-	`
+	connStr := fmt.Sprintf("host=localhost port=%d user=%s password=%s dbname=%s sslmode=disable",
+		infra.Config.PostgresPort, defaultPostgresUser, defaultPostgresPassword, defaultPostgresDB)
 
-	cmd := exec.Command("podman", "run", "--rm",
-		"--name", infra.MigrationsContainer,
-		"--network", infra.Network,
-		"-v", fmt.Sprintf("%s:/migrations:ro", migrationsDir),
-		"-e", fmt.Sprintf("PGHOST=%s", infra.PostgresContainer),
-		"-e", "PGPORT=5432",
-		"-e", fmt.Sprintf("PGUSER=%s", defaultPostgresUser),
-		"-e", fmt.Sprintf("PGPASSWORD=%s", defaultPostgresPassword),
-		"-e", fmt.Sprintf("PGDATABASE=%s", defaultPostgresDB),
-		"docker.io/library/postgres:16-alpine",
-		"bash", "-c", migrationScript,
-	)
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-	return cmd.Run()
+	db, err := sql.Open("pgx", connStr)
+	if err != nil {
+		return fmt.Errorf("failed to connect to PostgreSQL for migrations: %w", err)
+	}
+	defer func() { _ = db.Close() }()
+
+	if err := db.Ping(); err != nil {
+		return fmt.Errorf("failed to ping PostgreSQL: %w", err)
+	}
+
+	return RunGooseMigrations(context.Background(), db, migrationsDir, writer)
 }
 
 // startDSBootstrapRedis starts the Redis container

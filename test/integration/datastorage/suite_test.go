@@ -22,7 +22,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strings" // Used by cleanupContainers and migration processing
+	"strings"
 	"testing"
 	"time"
 
@@ -748,7 +748,7 @@ func connectRedis() {
 }
 
 // applyMigrationsWithPropagationTo applies migrations to a specific database connection
-// Used by SynchronizedBeforeSuite process 1 to setup schema once
+// using the goose Go library (DD-012). Used by SynchronizedBeforeSuite process 1.
 func applyMigrationsWithPropagationTo(targetDB *sql.DB) {
 	ctx := context.Background()
 
@@ -757,50 +757,21 @@ func applyMigrationsWithPropagationTo(targetDB *sql.DB) {
 	_, err := targetDB.ExecContext(ctx, "DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
 	Expect(err).ToNot(HaveOccurred())
 
-	// 2. Auto-discover ALL migrations from filesystem (no manual sync required!)
-	// This prevents test failures when DataStorage team adds new migrations
-	// Reference: docs/handoff/MIGRATION_SYNC_PREVENTION_STRATEGY.md
-	GinkgoWriter.Println("  📜 Auto-discovering migrations from filesystem...")
+	// 2. Apply all migrations with goose (DD-012)
+	GinkgoWriter.Println("  📜 Applying migrations with goose (DD-012)...")
 	migrationsDir := "../../../migrations"
-	migrations, err := infrastructure.DiscoverMigrations(migrationsDir)
-	Expect(err).ToNot(HaveOccurred(), "Migration discovery should succeed")
+	err = infrastructure.RunGooseMigrations(ctx, targetDB, migrationsDir, GinkgoWriter)
+	Expect(err).ToNot(HaveOccurred(), "goose migrations should succeed")
 
-	GinkgoWriter.Printf("  📋 Found %d migrations to apply (auto-discovered)\n", len(migrations))
-
-	// 3. Apply each migration in order
-	for _, migration := range migrations {
-		GinkgoWriter.Printf("  📜 Applying %s...\n", migration)
-		migrationPath := "../../../migrations/" + migration
-		content, err := os.ReadFile(migrationPath)
-		if err != nil {
-			GinkgoWriter.Printf("  ❌ Migration file not found: %v\n", err)
-			Fail(fmt.Sprintf("Migration file %s not found: %v", migration, err))
-		}
-
-		// Remove CONCURRENTLY keyword for test environment
-		// CONCURRENTLY cannot run inside a transaction block
-		migrationSQL := strings.ReplaceAll(string(content), "CONCURRENTLY ", "")
-
-		// Extract only the UP migration (ignore DOWN section)
-		// Goose migrations have "-- +goose Up" and "-- +goose Down" markers
-		if strings.Contains(migrationSQL, "-- +goose Down") {
-			// Split at the DOWN marker and only use the UP part
-			parts := strings.Split(migrationSQL, "-- +goose Down")
-			migrationSQL = parts[0]
-		}
-
-		_, err = targetDB.ExecContext(ctx, migrationSQL)
-		if err != nil {
-			GinkgoWriter.Printf("  ❌ Migration %s failed: %v\n", migration, err)
-			Fail(fmt.Sprintf("Migration %s failed: %v", migration, err))
-		}
-	}
-
-	GinkgoWriter.Println("  ✅ All migrations applied successfully")
+	// 3. Grant permissions
+	_, err = targetDB.ExecContext(ctx, `
+		GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO slm_user;
+		GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO slm_user;
+		GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO slm_user;
+	`)
+	Expect(err).ToNot(HaveOccurred(), "granting permissions should succeed")
 
 	// 4. Verify and create critical constraints in public schema
-	// Migration 019 should create uq_workflow_name_version, but verify it exists
-	// This prevents test failures when workflow repository tests use public schema
 	GinkgoWriter.Println("  🔍 Verifying critical constraints in public schema...")
 	verifyAndCreatePublicSchemaConstraints(ctx, targetDB)
 
@@ -808,12 +779,9 @@ func applyMigrationsWithPropagationTo(targetDB *sql.DB) {
 	GinkgoWriter.Println("  📅 Creating dynamic partitions for current month...")
 	createDynamicPartitions(ctx, targetDB)
 
-	// 5. Wait for schema propagation (Context API lesson)
-	// PostgreSQL needs time to propagate schema changes to new connections
-	// Per TESTING_GUIDELINES.md: Use Eventually() to verify schema propagation
+	// 6. Wait for schema propagation
 	GinkgoWriter.Println("  ⏳ Waiting for schema propagation...")
 	Eventually(func() error {
-		// Verify schema exists by attempting a simple query
 		_, err := targetDB.ExecContext(ctx, "SELECT 1")
 		return err
 	}, 5*time.Second, 100*time.Millisecond).Should(Succeed(), "Schema should propagate")

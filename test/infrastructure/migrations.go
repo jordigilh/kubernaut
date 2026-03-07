@@ -43,8 +43,10 @@ package infrastructure
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -52,30 +54,34 @@ import (
 	"strings"
 	"time"
 
+	_ "github.com/jackc/pgx/v5/stdlib"
 	. "github.com/onsi/gomega"
+	"github.com/pressly/goose/v3"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // MigrationConfig configures which migrations to apply
 type MigrationConfig struct {
-	Namespace       string
-	KubeconfigPath  string
-	PostgresService string   // Default: "postgresql"
-	PostgresUser    string   // Default: "slm_user"
-	PostgresDB      string   // Default: "action_history"
-	Tables          []string // Empty = all tables; specify to filter
+	Namespace        string
+	KubeconfigPath   string
+	PostgresService  string // Default: "postgresql"
+	PostgresUser     string // Default: "slm_user"
+	PostgresPassword string // Default: "test_password"
+	PostgresDB       string // Default: "action_history"
+	Tables           []string
 }
 
 // DefaultMigrationConfig returns sensible defaults for E2E tests
 func DefaultMigrationConfig(namespace, kubeconfigPath string) MigrationConfig {
 	return MigrationConfig{
-		Namespace:       namespace,
-		KubeconfigPath:  kubeconfigPath,
-		PostgresService: "postgresql",
-		PostgresUser:    "slm_user",
-		PostgresDB:      "action_history",
-		Tables:          nil, // All tables
+		Namespace:        namespace,
+		KubeconfigPath:   kubeconfigPath,
+		PostgresService:  "postgresql",
+		PostgresUser:     "slm_user",
+		PostgresPassword: "test_password",
+		PostgresDB:       "action_history",
+		Tables:           nil,
 	}
 }
 
@@ -235,108 +241,41 @@ var WorkflowCatalogTables = []string{
 	"remediation_workflow_catalog",
 }
 
-// ApplyAuditMigrations is a shortcut for audit-only migrations
-// This is what MOST teams need: WE, Gateway, Notification, RO, SP
-//
-// Creates:
-//   - audit_events table (ADR-034)
-//   - audit_events_2026_03 through audit_events_2028_12 partitions
-//   - All audit indexes (correlation, event_type, timestamp, etc.)
+// ApplyAuditMigrations applies all migrations via goose (DD-012).
+// With goose version tracking, all migrations are applied for consistency.
+// Non-audit tables are created empty and harmless.
 func ApplyAuditMigrations(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
-	_, _ = fmt.Fprintf(writer, "📋 Applying AUDIT migrations (audit_events + partitions)...\n")
-	_, _ = fmt.Fprintf(writer, "   This unblocks: WE, Gateway, AIAnalysis, Notification, RO, SP\n")
-
-	config := DefaultMigrationConfig(namespace, kubeconfigPath)
-
-	// Apply only audit-related migrations
-	return applySpecificMigrations(ctx, config, AuditMigrations, writer)
+	return ApplyAllMigrations(ctx, namespace, kubeconfigPath, writer)
 }
 
-// ApplyAllMigrations applies all available migrations
-// Use this for DS E2E tests that need the complete schema
+// ApplyAllMigrations applies all available migrations using the goose Go library (DD-012).
+// It connects to PostgreSQL via kubectl port-forward and runs goose.Up().
 func ApplyAllMigrations(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
-	// Auto-discover migrations from filesystem (prevents test failures when new migrations added)
-	// Reference: docs/handoff/TRIAGE_MIGRATIONS_GO_OBSOLETE_LISTS.md
 	workspaceRoot, err := findWorkspaceRoot()
 	if err != nil {
 		return fmt.Errorf("failed to find workspace root: %w", err)
 	}
-
 	migrationsDir := filepath.Join(workspaceRoot, "migrations")
-	allFiles, err := DiscoverMigrations(migrationsDir)
-	if err != nil {
-		return fmt.Errorf("failed to auto-discover migrations: %w", err)
-	}
-
-	_, _ = fmt.Fprintf(writer, "📋 Applying ALL migrations (%d total, auto-discovered)...\n", len(allFiles))
 
 	config := DefaultMigrationConfig(namespace, kubeconfigPath)
-	return applySpecificMigrations(ctx, config, allFiles, writer)
+
+	_, _ = fmt.Fprintf(writer, "📋 Applying ALL migrations with goose (DD-012)...\n")
+	return applyGooseMigrationsE2E(ctx, config, migrationsDir, writer)
 }
 
-// ApplyMigrationsWithConfig applies selected migrations based on config
-// If config.Tables is empty, applies all migrations
-// If config.Tables is specified, applies only migrations that create those tables
+// ApplyMigrationsWithConfig applies all migrations via goose (DD-012).
+// The config.Tables field is ignored; goose applies all migrations with version tracking.
 func ApplyMigrationsWithConfig(ctx context.Context, config MigrationConfig, writer io.Writer) error {
-	if len(config.Tables) == 0 {
-		return ApplyAllMigrations(ctx, config.Namespace, config.KubeconfigPath, writer)
-	}
-
-	_, _ = fmt.Fprintf(writer, "📋 Applying migrations for tables: %v\n", config.Tables)
-
-	// Find migrations that create the requested tables
-	var migrationFiles []string
-	for _, m := range AllMigrations {
-		for _, table := range config.Tables {
-			for _, mTable := range m.Tables {
-				if mTable == table || strings.HasPrefix(mTable, table) {
-					migrationFiles = append(migrationFiles, m.File)
-					break
-				}
-			}
-		}
-	}
-
-	// Also include audit migrations if audit_events is requested
-	for _, table := range config.Tables {
-		if table == "audit_events" || strings.HasPrefix(table, "audit_events") {
-			// Ensure we have both audit migrations
-			hasAuditBase := false
-			hasAuditPartitions := false
-			for _, f := range migrationFiles {
-				if f == "013_create_audit_events_table.sql" {
-					hasAuditBase = true
-				}
-				if f == "1000_create_audit_events_partitions.sql" {
-					hasAuditPartitions = true
-				}
-			}
-			if !hasAuditBase {
-				migrationFiles = append(migrationFiles, "013_create_audit_events_table.sql")
-			}
-			if !hasAuditPartitions {
-				migrationFiles = append(migrationFiles, "1000_create_audit_events_partitions.sql")
-			}
-			break
-		}
-	}
-
-	if len(migrationFiles) == 0 {
-		return fmt.Errorf("no migrations found for tables: %v", config.Tables)
-	}
-
-	return applySpecificMigrations(ctx, config, migrationFiles, writer)
+	return ApplyAllMigrations(ctx, config.Namespace, config.KubeconfigPath, writer)
 }
 
-// VerifyMigrations checks if required tables exist
-// Returns nil if all tables in config.Tables exist, error otherwise
-// If config.Tables is empty, verifies all critical tables
+// VerifyMigrations checks if required tables exist by querying the goose_db_version table
+// and verifying critical tables via a port-forwarded connection.
 func VerifyMigrations(ctx context.Context, config MigrationConfig, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "🔍 Verifying migrations...\n")
 
 	tables := config.Tables
 	if len(tables) == 0 {
-		// Default critical tables
 		tables = []string{
 			"audit_events",
 			"notification_audit",
@@ -344,35 +283,31 @@ func VerifyMigrations(ctx context.Context, config MigrationConfig, writer io.Wri
 		}
 	}
 
-	clientset, err := getKubernetesClient(config.KubeconfigPath)
+	podName, err := waitForPostgresPod(ctx, config, writer)
 	if err != nil {
-		return fmt.Errorf("failed to create kubernetes client: %w", err)
+		return err
 	}
 
-	// Get PostgreSQL pod name
-	pods, err := clientset.CoreV1().Pods(config.Namespace).List(ctx, metav1.ListOptions{
-		LabelSelector: "app=postgresql",
-	})
-	if err != nil || len(pods.Items) == 0 {
-		return fmt.Errorf("no PostgreSQL pod found in namespace %s", config.Namespace)
+	pf, err := startPortForward(ctx, config.KubeconfigPath, config.Namespace, podName, writer)
+	if err != nil {
+		return fmt.Errorf("failed to start port-forward: %w", err)
 	}
-	podName := pods.Items[0].Name
+	defer pf.Close()
 
-	// Verify each table exists
+	db, err := openPostgresConnection(pf.localPort, config)
+	if err != nil {
+		return fmt.Errorf("failed to connect to PostgreSQL: %w", err)
+	}
+	defer func() { _ = db.Close() }()
+
 	var missingTables []string
 	for _, table := range tables {
-		checkSQL := fmt.Sprintf("SELECT 1 FROM %s LIMIT 1;", table)
-		checkCmd := exec.Command("kubectl", "--kubeconfig", config.KubeconfigPath,
-			"exec", "-i", "-n", config.Namespace, podName, "--",
-			"psql", "-U", config.PostgresUser, "-d", config.PostgresDB, "-c", checkSQL)
-
-		output, err := checkCmd.CombinedOutput()
-		if err != nil {
-			outputStr := string(output)
-			if strings.Contains(outputStr, "does not exist") {
-				missingTables = append(missingTables, table)
-				_, _ = fmt.Fprintf(writer, "   ❌ Table %s: NOT FOUND\n", table)
-			}
+		var exists bool
+		err := db.QueryRowContext(ctx,
+			"SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = $1)", table).Scan(&exists)
+		if err != nil || !exists {
+			missingTables = append(missingTables, table)
+			_, _ = fmt.Fprintf(writer, "   ❌ Table %s: NOT FOUND\n", table)
 		} else {
 			_, _ = fmt.Fprintf(writer, "   ✅ Table %s: EXISTS\n", table)
 		}
@@ -386,14 +321,76 @@ func VerifyMigrations(ctx context.Context, config MigrationConfig, writer io.Wri
 	return nil
 }
 
-// applySpecificMigrations applies a specific list of migration files
-func applySpecificMigrations(ctx context.Context, config MigrationConfig, migrationFiles []string, writer io.Writer) error {
-	clientset, err := getKubernetesClient(config.KubeconfigPath)
+// applyGooseMigrationsE2E applies migrations to a PostgreSQL instance inside a Kind cluster
+// using kubectl port-forward and the goose Go library.
+func applyGooseMigrationsE2E(ctx context.Context, config MigrationConfig, migrationsDir string, writer io.Writer) error {
+	podName, err := waitForPostgresPod(ctx, config, writer)
 	if err != nil {
-		return fmt.Errorf("failed to create kubernetes client: %w", err)
+		return err
 	}
 
-	// Wait for PostgreSQL pod to be ready and get pod name
+	pf, err := startPortForward(ctx, config.KubeconfigPath, config.Namespace, podName, writer)
+	if err != nil {
+		return fmt.Errorf("failed to start port-forward: %w", err)
+	}
+	defer pf.Close()
+
+	db, err := openPostgresConnection(pf.localPort, config)
+	if err != nil {
+		return fmt.Errorf("failed to connect to PostgreSQL: %w", err)
+	}
+	defer func() { _ = db.Close() }()
+
+	if err := RunGooseMigrations(ctx, db, migrationsDir, writer); err != nil {
+		return err
+	}
+
+	grantSQL := `
+		GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO slm_user;
+		GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO slm_user;
+		GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO slm_user;
+	`
+	if _, err := db.ExecContext(ctx, grantSQL); err != nil {
+		_, _ = fmt.Fprintf(writer, "   ⚠️  Failed to grant permissions (may already exist): %v\n", err)
+	}
+
+	return nil
+}
+
+// RunGooseMigrations applies all pending migrations in migrationsDir using the goose Go library.
+// This is the core migration function shared by E2E, integration, and unit test infrastructure.
+// It requires a valid *sql.DB connection and an absolute path to the migrations directory.
+func RunGooseMigrations(ctx context.Context, db *sql.DB, migrationsDir string, writer io.Writer) error {
+	provider, err := goose.NewProvider(goose.DialectPostgres, db, os.DirFS(migrationsDir))
+	if err != nil {
+		return fmt.Errorf("failed to create goose provider: %w", err)
+	}
+
+	results, err := provider.Up(ctx)
+	if err != nil {
+		return fmt.Errorf("goose migration failed: %w", err)
+	}
+
+	for _, r := range results {
+		_, _ = fmt.Fprintf(writer, "   ✅ Applied %s (%s)\n", r.Source.Path, r.Duration)
+	}
+
+	if len(results) == 0 {
+		_, _ = fmt.Fprintf(writer, "   ✅ All migrations already applied (no pending)\n")
+	} else {
+		_, _ = fmt.Fprintf(writer, "   ✅ Goose migrations complete (%d applied)\n", len(results))
+	}
+
+	return nil
+}
+
+// waitForPostgresPod waits for the PostgreSQL pod to be ready and returns its name.
+func waitForPostgresPod(ctx context.Context, config MigrationConfig, writer io.Writer) (string, error) {
+	clientset, err := getKubernetesClient(config.KubeconfigPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to create kubernetes client: %w", err)
+	}
+
 	var podName string
 	Eventually(func() error {
 		pods, err := clientset.CoreV1().Pods(config.Namespace).List(ctx, metav1.ListOptions{
@@ -406,7 +403,6 @@ func applySpecificMigrations(ctx context.Context, config MigrationConfig, migrat
 			return fmt.Errorf("no PostgreSQL pods found")
 		}
 
-		// Check if pod is ready
 		pod := pods.Items[0]
 		for _, condition := range pod.Status.Conditions {
 			if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
@@ -418,72 +414,72 @@ func applySpecificMigrations(ctx context.Context, config MigrationConfig, migrat
 	}, 5*time.Minute, 5*time.Second).Should(Succeed(), "PostgreSQL pod should be ready for migrations")
 
 	_, _ = fmt.Fprintf(writer, "   📦 PostgreSQL pod ready: %s\n", podName)
+	return podName, nil
+}
 
-	// Read migration files from workspace
-	workspaceRoot, err := findWorkspaceRoot()
+// portForward manages a kubectl port-forward subprocess for database connectivity.
+type portForward struct {
+	cmd       *exec.Cmd
+	localPort int
+}
+
+// startPortForward creates a kubectl port-forward tunnel to a PostgreSQL pod.
+// It allocates a random available local port and waits until the tunnel is ready.
+func startPortForward(ctx context.Context, kubeconfigPath, namespace, podName string, writer io.Writer) (*portForward, error) {
+	listener, err := net.Listen("tcp", "localhost:0")
 	if err != nil {
-		return fmt.Errorf("failed to find workspace root: %w", err)
+		return nil, fmt.Errorf("failed to find available port: %w", err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	_ = listener.Close()
+
+	_, _ = fmt.Fprintf(writer, "   🔌 Starting port-forward to %s (localhost:%d → 5432)...\n", podName, port)
+
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"port-forward", "-n", namespace, podName,
+		fmt.Sprintf("%d:5432", port))
+
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("failed to start port-forward: %w", err)
 	}
 
-	// Apply each migration
-	for _, migration := range migrationFiles {
-		migrationPath := filepath.Join(workspaceRoot, "migrations", migration)
-		content, err := os.ReadFile(migrationPath)
-		if err != nil {
-			_, _ = fmt.Fprintf(writer, "   ⚠️  Skipping migration %s (not found)\n", migration)
-			continue
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		conn, dialErr := net.DialTimeout("tcp", fmt.Sprintf("localhost:%d", port), time.Second)
+		if dialErr == nil {
+			_ = conn.Close()
+			_, _ = fmt.Fprintf(writer, "   ✅ Port-forward ready (localhost:%d)\n", port)
+			return &portForward{cmd: cmd, localPort: port}, nil
 		}
-
-		// Remove CONCURRENTLY keyword for test environment
-		migrationSQL := strings.ReplaceAll(string(content), "CONCURRENTLY ", "")
-
-		// Extract only the UP migration (ignore DOWN section)
-		if strings.Contains(migrationSQL, "-- +goose Down") {
-			parts := strings.Split(migrationSQL, "-- +goose Down")
-			migrationSQL = parts[0]
-		}
-
-		// Apply migration via psql in the pod
-		cmd := exec.Command("kubectl", "--kubeconfig", config.KubeconfigPath,
-			"exec", "-i", "-n", config.Namespace, podName, "--",
-			"psql", "-U", config.PostgresUser, "-d", config.PostgresDB)
-		cmd.Stdin = strings.NewReader(migrationSQL)
-
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			outputStr := string(output)
-			// Check if error is due to already existing objects (idempotent)
-			if strings.Contains(outputStr, "already exists") ||
-				strings.Contains(outputStr, "duplicate key") ||
-				(strings.Contains(outputStr, "relation") && strings.Contains(outputStr, "already exists")) {
-				_, _ = fmt.Fprintf(writer, "   ✅ Migration %s already applied\n", migration)
-				continue
-			}
-			// Some migrations may have partial failures but still succeed overall
-			if !strings.Contains(outputStr, "ERROR:") {
-				_, _ = fmt.Fprintf(writer, "   ✅ Applied %s (with notices)\n", migration)
-				continue
-			}
-			_, _ = fmt.Fprintf(writer, "   ❌ Migration %s failed: %s\n", migration, outputStr)
-			return fmt.Errorf("migration %s failed: %w", migration, err)
-		}
-		_, _ = fmt.Fprintf(writer, "   ✅ Applied %s\n", migration)
+		time.Sleep(500 * time.Millisecond)
 	}
 
-	// Grant permissions
-	grantSQL := `
-		GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO slm_user;
-		GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO slm_user;
-		GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO slm_user;
-	`
-	grantCmd := exec.Command("kubectl", "--kubeconfig", config.KubeconfigPath,
-		"exec", "-i", "-n", config.Namespace, podName, "--",
-		"psql", "-U", config.PostgresUser, "-d", config.PostgresDB)
-	grantCmd.Stdin = strings.NewReader(grantSQL)
-	_ = grantCmd.Run() // Ignore errors - permissions may already be granted
+	_ = cmd.Process.Kill()
+	_ = cmd.Wait()
+	return nil, fmt.Errorf("port-forward to %s not ready after 30 seconds", podName)
+}
 
-	_, _ = fmt.Fprintf(writer, "   ✅ Migrations applied successfully\n")
-	return nil
+// Close terminates the port-forward subprocess.
+func (pf *portForward) Close() {
+	if pf.cmd != nil && pf.cmd.Process != nil {
+		_ = pf.cmd.Process.Kill()
+		_ = pf.cmd.Wait()
+	}
+}
+
+// openPostgresConnection opens a database/sql connection to PostgreSQL via a forwarded local port.
+func openPostgresConnection(localPort int, config MigrationConfig) (*sql.DB, error) {
+	connStr := fmt.Sprintf("host=localhost port=%d user=%s password=%s dbname=%s sslmode=disable",
+		localPort, config.PostgresUser, config.PostgresPassword, config.PostgresDB)
+	db, err := sql.Open("pgx", connStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open connection: %w", err)
+	}
+	if err := db.Ping(); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("failed to ping PostgreSQL: %w", err)
+	}
+	return db, nil
 }
 
 // DiscoverMigrations reads all migration files from a directory and returns them sorted by version
