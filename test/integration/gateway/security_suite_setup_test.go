@@ -22,6 +22,8 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	rbacv1 "k8s.io/api/rbac/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -45,9 +47,8 @@ var securityTokens *SecurityTestTokens
 // SetupSecurityTokens creates ServiceAccounts and extracts tokens ONCE for the entire test suite
 // This dramatically improves test performance: ~30 seconds once vs ~30 seconds per test
 //
-// **Kind-Only Integration Tests**: Assumes Kind cluster with pre-created ClusterRole
-// - ClusterRole 'gateway-test-remediation-creator' must exist (created by setup-kind-cluster.sh)
-// - Creates ServiceAccounts + ClusterRoleBindings
+// Creates ClusterRole 'gateway-test-remediation-creator' if it doesn't exist (matching testdata fixture),
+// then creates ServiceAccounts + ClusterRoleBindings and extracts tokens.
 // - Extracts tokens for authentication/authorization tests
 func SetupSecurityTokens() *SecurityTestTokens {
 	if securityTokens != nil {
@@ -100,16 +101,24 @@ func SetupSecurityTokens() *SecurityTestTokens {
 	authorizedSA := "test-gateway-authorized-suite"
 	unauthorizedSA := "test-gateway-unauthorized-suite"
 
-	// Verify ClusterRole exists (should be created by setup-kind-cluster.sh)
+	// Create ClusterRole if it doesn't exist (matches testdata/gateway-test-clusterrole.yaml).
+	// In Kind clusters, setup-kind-cluster.sh applies this; in envtest, we create it programmatically.
 	step4Start := time.Now()
-	GinkgoWriter.Println("  📋 Step 4: Verifying ClusterRole exists...")
-	_, err = clientset.RbacV1().ClusterRoles().Get(ctx, "gateway-test-remediation-creator", metav1.GetOptions{})
-	if err != nil {
-		GinkgoWriter.Printf("  ❌ ClusterRole 'gateway-test-remediation-creator' not found: %v\n", err)
-		GinkgoWriter.Println("  💡 Hint: Run ./test/integration/gateway/setup-kind-cluster.sh first")
-		Expect(err).ToNot(HaveOccurred(), "ClusterRole must exist (created by setup script)")
+	GinkgoWriter.Println("  📋 Step 4: Ensuring ClusterRole 'gateway-test-remediation-creator' exists...")
+	testCR := &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{Name: "gateway-test-remediation-creator"},
+		Rules: []rbacv1.PolicyRule{{
+			APIGroups: []string{"remediation.kubernaut.ai"},
+			Resources: []string{"remediationrequests"},
+			Verbs:     []string{"create", "get", "list", "watch", "update", "patch", "delete"},
+		}},
 	}
-	GinkgoWriter.Printf("  ✓ ClusterRole 'gateway-test-remediation-creator' exists (took %v)\n", time.Since(step4Start))
+	err = k8sClient.Create(ctx, testCR)
+	if err != nil && !apierrors.IsAlreadyExists(err) {
+		GinkgoWriter.Printf("  ❌ Failed to create ClusterRole 'gateway-test-remediation-creator': %v\n", err)
+		Expect(err).ToNot(HaveOccurred(), "Failed to create gateway-test-remediation-creator ClusterRole")
+	}
+	GinkgoWriter.Printf("  ✓ ClusterRole 'gateway-test-remediation-creator' ready (took %v)\n", time.Since(step4Start))
 
 	// Create authorized SA with RBAC
 	step5Start := time.Now()
