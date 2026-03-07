@@ -101,11 +101,6 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 	var req dsclient.AuditEventRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		s.logger.Info("Invalid JSON in request body", "error", err, "remote_addr", r.RemoteAddr)
-
-	// Record validation failure metric (BR-STORAGE-019)
-	// Metrics are guaranteed non-nil by constructor
-	s.metrics.ValidationFailures.WithLabelValues("body", "invalid_json").Inc()
-
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "invalid_request", "Invalid Request", err.Error(), s.logger)
 		return
 	}
@@ -115,11 +110,6 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 	s.logger.V(1).Info("Validating business rules...")
 	if err := helpers.ValidateAuditEventRequest(&req); err != nil {
 		s.logger.Info("Business validation failed", "error", err)
-
-	// Record validation failure metric (BR-STORAGE-019)
-	// Metrics are guaranteed non-nil by constructor
-	s.metrics.ValidationFailures.WithLabelValues("business_rules", "validation_failed").Inc()
-
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "validation-error", "Validation Error", err.Error(), s.logger)
 		return
 	}
@@ -142,11 +132,6 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 			&parentEventID).Scan(&parentDate)
 		if err != nil {
 			s.logger.Info("Parent event not found", "error", err, "parent_event_id", parentEventID.String())
-
-		// Record validation failure metric (BR-STORAGE-019)
-		// Metrics are guaranteed non-nil by constructor
-		s.metrics.ValidationFailures.WithLabelValues("parent_event_id", "parent_not_found").Inc()
-
 			response.WriteRFC7807Error(w, http.StatusBadRequest, "validation-error", "Validation Error", "parent event does not exist", s.logger)
 			return
 		}
@@ -218,10 +203,6 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 			"event_type", req.EventType,
 			"correlation_id", req.CorrelationID)
 
-	// Record DLQ fallback metric
-	// Metrics are guaranteed non-nil by constructor
-	s.metrics.AuditTracesTotal.WithLabelValues(string(req.EventCategory), "dlq_fallback").Inc()
-
 		// DLQ success - return 202 Accepted (async processing)
 		acceptedResp := AuditEventAcceptedResponse{
 			Status:  "accepted",
@@ -232,10 +213,6 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// 7. Record metrics (BR-STORAGE-019: Logging and metrics)
-	// Record successful audit write
-	// Metrics are guaranteed non-nil by constructor
-	s.metrics.AuditTracesTotal.WithLabelValues(string(req.EventCategory), "success").Inc()
-
 	// Record audit lag (time between event occurrence and write)
 	lag := time.Since(req.EventTimestamp).Seconds()
 	s.metrics.AuditLagSeconds.WithLabelValues(string(req.EventCategory)).Observe(lag)

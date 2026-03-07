@@ -382,20 +382,16 @@ func (s *Server) Handler() http.Handler {
 	}))
 
 	// BR-STORAGE-034: OpenAPI validation middleware
-	// BR-STORAGE-019: Prometheus metrics for validation failures
 	// DD-API-002: OpenAPI spec embedded in binary (zero-config deployment)
 	//
 	// Automatically validates all API requests against OpenAPI spec:
 	// - Validates required fields (including empty strings via minLength: 1)
 	// - Validates enum values, types, formats
 	// - Returns RFC 7807 errors for validation failures
-	// - Emits Prometheus metrics for observability
 	// Routes not in spec (/health, /metrics) pass through without validation
-	// Metrics are validated at constructor time (non-nil guaranteed)
-	validationMetrics := s.metrics.ValidationFailures
 	openapiValidator, err := dsmiddleware.NewOpenAPIValidator(
 		s.logger.WithName("openapi-validator"),
-		validationMetrics,
+		nil, // Validation metrics removed per GitHub issue #294
 	)
 	if err != nil {
 		s.logger.Error(err, "Failed to initialize OpenAPI validator - continuing without validation")
@@ -410,11 +406,9 @@ func (s *Server) Handler() http.Handler {
 	r.Get("/health/live", s.handleLiveness)
 
 	// BR-STORAGE-019: Prometheus metrics endpoint (GAP-10)
-	// Exposes audit-specific metrics:
-	// - datastorage_audit_traces_total{service,status}
+	// Exposes external-facing metrics (GitHub issue #294):
 	// - datastorage_audit_lag_seconds{service}
 	// - datastorage_write_duration_seconds{table}
-	// - datastorage_validation_failures_total{field,reason}
 	r.Handle("/metrics", promhttp.Handler())
 
 	// API v1 routes

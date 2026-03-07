@@ -198,33 +198,3 @@ llm:
         finally:
             os.unlink(config_path)
 
-
-class TestMetricsIntegration:
-    """Integration tests for hot-reload metrics."""
-
-    def test_metrics_record_reload(self):
-        """
-        BR-HAPI-199: Metrics should track reload events.
-        """
-        from src.middleware.metrics import record_config_reload
-
-        # Should not raise
-        record_config_reload(success=True)
-        record_config_reload(success=False)
-
-    def test_metrics_available_in_endpoint(self):
-        """
-        BR-HAPI-199: Hot-reload metrics should be exposed at /metrics.
-        """
-        from src.middleware.metrics import metrics_endpoint
-
-        response = metrics_endpoint()
-        content = response.body.decode('utf-8')
-
-        # Verify our metrics are in the output
-        # DD-005: All metrics use holmesgpt_api_ prefix
-        assert 'holmesgpt_api_config_reload_total' in content
-        assert 'holmesgpt_api_config_reload_errors_total' in content
-        assert 'holmesgpt_api_config_last_reload_timestamp' in content
-
-

@@ -159,9 +159,6 @@ func NewBufferedStore(client DataStorageClient, config Config, serviceName strin
 		ctxCancel: storeCancel,
 	}
 
-	// DD-AUDIT-004: Initialize buffer capacity metric for saturation monitoring
-	store.metrics.SetBufferCapacity(config.BufferSize)
-
 	// Start background worker
 	store.wg.Add(1)
 	go store.backgroundWriter()
@@ -406,8 +403,6 @@ func (s *BufferedAuditStore) backgroundWriter() {
 
 			// FIX: Moved inside case block - was incorrectly un-indented, causing events to be dropped
 			batch = append(batch, event)
-			bufferSize := len(s.buffer)
-			s.metrics.SetBufferSize(bufferSize)
 
 			// Write when batch is full
 			if len(batch) >= s.config.BatchSize {
@@ -480,8 +475,6 @@ func (s *BufferedAuditStore) backgroundWriter() {
 					"time_since_last_flush", timeSinceLastFlush)
 				lastFlushTime = time.Now()
 			}
-			bufferSize := len(s.buffer)
-			s.metrics.SetBufferSize(bufferSize)
 
 		case done := <-s.flushChan:
 			// Explicit flush requested (typically from tests or graceful shutdown prep)
@@ -568,7 +561,6 @@ func (s *BufferedAuditStore) writeBatchWithRetry(batch []*ogenclient.AuditEventR
 			if !IsRetryable(err) {
 				// Non-retryable error (4xx) - don't retry, log as invalid
 				atomic.AddInt64(&s.failedBatchCount, 1)
-				s.metrics.RecordBatchFailed()
 
 				s.logger.Error(nil, "Dropping audit batch due to non-retryable error (invalid data)",
 					"batch_size", len(batch),
@@ -590,7 +582,6 @@ func (s *BufferedAuditStore) writeBatchWithRetry(batch []*ogenclient.AuditEventR
 						"attempt", attempt,
 					)
 					atomic.AddInt64(&s.failedBatchCount, 1)
-					s.metrics.RecordBatchFailed()
 					return
 				}
 				continue
@@ -598,7 +589,6 @@ func (s *BufferedAuditStore) writeBatchWithRetry(batch []*ogenclient.AuditEventR
 
 		// Final failure after max retries
 		atomic.AddInt64(&s.failedBatchCount, 1)
-		s.metrics.RecordBatchFailed()
 
 		// DD-AUDIT-002 V3.0: Transport failures indicate infrastructure problem
 		// Server-side DLQ (in DataStorage) handles persistence failures
@@ -614,7 +604,6 @@ func (s *BufferedAuditStore) writeBatchWithRetry(batch []*ogenclient.AuditEventR
 
 		// Success
 		atomic.AddInt64(&s.writtenCount, int64(len(batch)))
-		s.metrics.RecordWritten(len(batch))
 
 		writeDuration := time.Since(start)
 		s.logger.V(1).Info("✅ Wrote audit batch",

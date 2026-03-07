@@ -67,33 +67,29 @@ func (c *Client) monitorDLQCapacity(ctx context.Context, stream, streamKey, _ st
 	// Calculate capacity ratio (0.0 to 1.0)
 	capacityRatio := float64(depth) / float64(c.maxLen)
 
-	// Export Prometheus metrics (Gap 3.3 REFACTOR enhancement)
-	dlqCapacityRatio.WithLabelValues(stream).Set(capacityRatio)
-
 	// Reset all alert gauges first, then set active ones
 	// This ensures only the highest active threshold is set
 	dlqWarning.WithLabelValues(stream).Set(0)
 	dlqCritical.WithLabelValues(stream).Set(0)
-	dlqOverflowImminent.WithLabelValues(stream).Set(0)
 
 	// Log warnings at increasing severity levels + set alert metrics
-	// Three-tier warning system based on capacity ratio
-	if capacityRatio >= 0.95 {
-		// IMMINENT OVERFLOW (95%+): Immediate action required
-		dlqOverflowImminent.WithLabelValues(stream).Set(1)
-		c.logger.Error(nil, "DLQ OVERFLOW IMMINENT - immediate action required",
-			"depth", depth,
-			"max", c.maxLen,
-			"ratio", fmt.Sprintf("%.2f%%", capacityRatio*100),
-			"stream", streamKey)
-	} else if capacityRatio >= 0.90 {
-		// CRITICAL (90%+): Urgent action needed
+	// Two-tier warning system based on capacity ratio (80% warning, 90% critical)
+	if capacityRatio >= 0.90 {
+		// CRITICAL (90%+): Urgent action needed (includes 95%+ overflow imminent)
 		dlqCritical.WithLabelValues(stream).Set(1)
-		c.logger.Error(nil, "DLQ CRITICAL capacity - urgent action needed",
-			"depth", depth,
-			"max", c.maxLen,
-			"ratio", fmt.Sprintf("%.2f%%", capacityRatio*100),
-			"stream", streamKey)
+		if capacityRatio >= 0.95 {
+			c.logger.Error(nil, "DLQ OVERFLOW IMMINENT - immediate action required",
+				"depth", depth,
+				"max", c.maxLen,
+				"ratio", fmt.Sprintf("%.2f%%", capacityRatio*100),
+				"stream", streamKey)
+		} else {
+			c.logger.Error(nil, "DLQ CRITICAL capacity - urgent action needed",
+				"depth", depth,
+				"max", c.maxLen,
+				"ratio", fmt.Sprintf("%.2f%%", capacityRatio*100),
+				"stream", streamKey)
+		}
 	} else if capacityRatio >= 0.80 {
 		// WARNING (80%+): Monitoring recommended
 		dlqWarning.WithLabelValues(stream).Set(1)

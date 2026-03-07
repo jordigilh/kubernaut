@@ -69,7 +69,6 @@ func (s *Server) HandlePlaceLegalHold(w http.ResponseWriter, r *http.Request) {
 	// 1. Parse request body
 	var req PlaceLegalHoldRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.metrics.LegalHoldFailures.WithLabelValues("invalid_request").Inc()
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "invalid-request", "Invalid Request",
 			fmt.Sprintf("Invalid request body: %v", err), s.logger)
 		return
@@ -77,14 +76,12 @@ func (s *Server) HandlePlaceLegalHold(w http.ResponseWriter, r *http.Request) {
 
 	// 2. Validate correlation_id
 	if req.CorrelationID == "" {
-		s.metrics.LegalHoldFailures.WithLabelValues("missing_correlation_id").Inc()
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "missing-correlation-id", "Missing Correlation ID",
 			"correlation_id is required", s.logger)
 		return
 	}
 
 	if req.Reason == "" {
-		s.metrics.LegalHoldFailures.WithLabelValues("missing_reason").Inc()
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "missing-reason", "Missing Reason",
 			"reason is required", s.logger)
 		return
@@ -95,7 +92,6 @@ func (s *Server) HandlePlaceLegalHold(w http.ResponseWriter, r *http.Request) {
 	// DD-AUTH-005: All services authenticate via oauth-proxy, which sets this header
 	placedBy := r.Header.Get("X-Auth-Request-User")
 	if placedBy == "" {
-		s.metrics.LegalHoldFailures.WithLabelValues("unauthorized").Inc()
 		response.WriteRFC7807Error(w, http.StatusUnauthorized, "unauthorized", "Unauthorized",
 			"X-Auth-Request-User header is required for legal hold operations (missing authentication)", s.logger)
 		return
@@ -108,14 +104,12 @@ func (s *Server) HandlePlaceLegalHold(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.logger.Error(err, "Failed to check correlation_id existence",
 			"correlation_id", req.CorrelationID)
-		s.metrics.LegalHoldFailures.WithLabelValues("db_error").Inc()
 		response.WriteRFC7807Error(w, http.StatusInternalServerError, "database-error", "Database Error",
 			"Failed to check correlation_id", s.logger)
 		return
 	}
 
 	if eventCount == 0 {
-		s.metrics.LegalHoldFailures.WithLabelValues("correlation_id_not_found").Inc()
 		response.WriteRFC7807Error(w, http.StatusNotFound, "not-found", "Not Found",
 			fmt.Sprintf("No events found for correlation_id: %s", req.CorrelationID), s.logger)
 		return
@@ -136,7 +130,6 @@ func (s *Server) HandlePlaceLegalHold(w http.ResponseWriter, r *http.Request) {
 		s.logger.Error(err, "Failed to place legal hold",
 			"correlation_id", req.CorrelationID,
 			"placed_by", placedBy)
-		s.metrics.LegalHoldFailures.WithLabelValues("update_failed").Inc()
 		response.WriteRFC7807Error(w, http.StatusInternalServerError, "database-error", "Database Error",
 			"Failed to place legal hold", s.logger)
 		return
@@ -153,8 +146,6 @@ func (s *Server) HandlePlaceLegalHold(w http.ResponseWriter, r *http.Request) {
 		"events_affected", rowsAffected,
 		"placed_by", placedBy,
 		"reason", req.Reason)
-
-	s.metrics.LegalHoldSuccesses.WithLabelValues("place").Inc()
 
 	// 7. Return response
 	response := PlaceLegalHoldResponse{
@@ -181,7 +172,6 @@ func (s *Server) HandleReleaseLegalHold(w http.ResponseWriter, r *http.Request) 
 	// 1. Extract correlation_id from URL path
 	correlationID := chi.URLParam(r, "correlation_id")
 	if correlationID == "" {
-		s.metrics.LegalHoldFailures.WithLabelValues("missing_correlation_id").Inc()
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "missing-correlation-id", "Missing Correlation ID",
 			"correlation_id is required in URL path", s.logger)
 		return
@@ -190,14 +180,12 @@ func (s *Server) HandleReleaseLegalHold(w http.ResponseWriter, r *http.Request) 
 	// 2. Parse request body (release_reason)
 	var req ReleaseLegalHoldRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.metrics.LegalHoldFailures.WithLabelValues("invalid_request").Inc()
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "invalid-request", "Invalid Request",
 			fmt.Sprintf("Invalid request body: %v", err), s.logger)
 		return
 	}
 
 	if req.ReleaseReason == "" {
-		s.metrics.LegalHoldFailures.WithLabelValues("missing_release_reason").Inc()
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "missing-release-reason", "Missing Release Reason",
 			"release_reason is required", s.logger)
 		return
@@ -208,7 +196,6 @@ func (s *Server) HandleReleaseLegalHold(w http.ResponseWriter, r *http.Request) 
 	// DD-AUTH-005: All services authenticate via oauth-proxy, which sets this header
 	releasedBy := r.Header.Get("X-Auth-Request-User")
 	if releasedBy == "" {
-		s.metrics.LegalHoldFailures.WithLabelValues("unauthorized").Inc()
 		response.WriteRFC7807Error(w, http.StatusUnauthorized, "unauthorized", "Unauthorized",
 			"X-Auth-Request-User header is required for legal hold operations (missing authentication)", s.logger)
 		return
@@ -220,14 +207,12 @@ func (s *Server) HandleReleaseLegalHold(w http.ResponseWriter, r *http.Request) 
 	err := s.db.QueryRowContext(ctx, checkQuery, correlationID).Scan(&holdCount)
 	if err != nil {
 		s.logger.Error(err, "Failed to check legal hold existence", "correlation_id", correlationID)
-		s.metrics.LegalHoldFailures.WithLabelValues("db_error").Inc()
 		response.WriteRFC7807Error(w, http.StatusInternalServerError, "database-error", "Database Error",
 			"Failed to check legal hold", s.logger)
 		return
 	}
 
 	if holdCount == 0 {
-		s.metrics.LegalHoldFailures.WithLabelValues("no_legal_hold").Inc()
 		response.WriteRFC7807Error(w, http.StatusNotFound, "not-found", "Not Found",
 			fmt.Sprintf("No legal hold found for correlation_id: %s", correlationID), s.logger)
 		return
@@ -246,7 +231,6 @@ func (s *Server) HandleReleaseLegalHold(w http.ResponseWriter, r *http.Request) 
 		s.logger.Error(err, "Failed to release legal hold",
 			"correlation_id", correlationID,
 			"released_by", releasedBy)
-		s.metrics.LegalHoldFailures.WithLabelValues("update_failed").Inc()
 		response.WriteRFC7807Error(w, http.StatusInternalServerError, "database-error", "Database Error",
 			"Failed to release legal hold", s.logger)
 		return
@@ -263,8 +247,6 @@ func (s *Server) HandleReleaseLegalHold(w http.ResponseWriter, r *http.Request) 
 		"events_released", rowsAffected,
 		"released_by", releasedBy,
 		"release_reason", req.ReleaseReason)
-
-	s.metrics.LegalHoldSuccesses.WithLabelValues("release").Inc()
 
 	// 7. Return response
 	response := ReleaseLegalHoldResponse{
@@ -304,7 +286,6 @@ func (s *Server) HandleListLegalHolds(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.db.QueryContext(ctx, query)
 	if err != nil {
 		s.logger.Error(err, "Failed to query legal holds")
-		s.metrics.LegalHoldFailures.WithLabelValues("query_failed").Inc()
 		response.WriteRFC7807Error(w, http.StatusInternalServerError, "database-error", "Database Error",
 			"Failed to query legal holds", s.logger)
 		return
@@ -333,7 +314,6 @@ func (s *Server) HandleListLegalHolds(w http.ResponseWriter, r *http.Request) {
 
 	if err := rows.Err(); err != nil {
 		s.logger.Error(err, "Error iterating legal hold rows")
-		s.metrics.LegalHoldFailures.WithLabelValues("query_failed").Inc()
 		response.WriteRFC7807Error(w, http.StatusInternalServerError, "database-error", "Database Error",
 			"Failed to read legal holds", s.logger)
 		return
@@ -344,8 +324,6 @@ func (s *Server) HandleListLegalHolds(w http.ResponseWriter, r *http.Request) {
 		Holds: holds,
 		Total: len(holds),
 	}
-
-	s.metrics.LegalHoldSuccesses.WithLabelValues("list").Inc()
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

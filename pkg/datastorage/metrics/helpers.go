@@ -103,10 +103,7 @@ const (
 // SanitizeFailureReason ensures the failure reason is from a known bounded set.
 // This prevents accidental high-cardinality labels from error messages or user input.
 //
-// Usage:
-//
-//	reason := metrics.SanitizeFailureReason("postgresql_failure")
-//	// Use sanitized reason in metric labels
+// Usage: For future metric implementations requiring bounded failure reasons.
 //
 // Returns:
 //   - Original reason if it's in the known set
@@ -129,12 +126,7 @@ func SanitizeFailureReason(reason string) string {
 
 // SanitizeValidationReason ensures the validation reason is from a known bounded set.
 //
-// Usage:
-//
-//	metrics.ValidationFailures.WithLabelValues(
-//	    "name",
-//	    metrics.SanitizeValidationReason("required"),
-//	).Inc()
+// Usage: For future metric implementations requiring bounded validation reasons.
 //
 // Returns:
 //   - Original reason if it's in the known set
@@ -159,12 +151,7 @@ func SanitizeValidationReason(reason string) string {
 
 // SanitizeTableName ensures the table name is from a known bounded set.
 //
-// Usage:
-//
-//	metrics.WriteTotal.WithLabelValues(
-//	    metrics.SanitizeTableName("remediation_audit"),
-//	    metrics.StatusSuccess,
-//	).Inc()
+// Usage: For future metric implementations requiring bounded table names.
 //
 // Returns:
 //   - Original table name if it's in the known set
@@ -187,12 +174,7 @@ func SanitizeTableName(table string) string {
 
 // SanitizeStatus ensures the status is either "success" or "failure".
 //
-// Usage:
-//
-//	metrics.WriteTotal.WithLabelValues(
-//	    metrics.TableRemediationAudit,
-//	    metrics.SanitizeStatus("success"),
-//	).Inc()
+// Usage: For future metric implementations requiring bounded status values.
 //
 // Returns:
 //   - StatusSuccess if status indicates success
@@ -206,12 +188,9 @@ func SanitizeStatus(status string) string {
 
 // Cardinality Summary:
 //
-// Metric: datastorage_validation_failures_total{field, reason}
-//   - Maximum cardinality: ~60 combinations (10 fields × 6 reasons)
-//   - Protected by: SanitizeValidationReason() + schema-defined field names
+// Remaining external-facing metrics (GitHub issue #294):
+// - datastorage_write_duration_seconds{table}: Bounded by table names
+// - datastorage_audit_lag_seconds{service}: Bounded by service names
 //
-// Metric: datastorage_write_total{table, status}
-//   - Maximum cardinality: 8 combinations (4 tables × 2 statuses)
-//   - Protected by: SanitizeTableName() + SanitizeStatus()
-//
-// Total Maximum Cardinality: < 100 (SAFE for Prometheus)
+// Helpers (SanitizeValidationReason, SanitizeTableName, SanitizeStatus) remain
+// for potential future metric implementations requiring bounded label values.

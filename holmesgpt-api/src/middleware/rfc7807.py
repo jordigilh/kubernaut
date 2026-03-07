@@ -36,7 +36,6 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from pydantic import ValidationError
 
 from src.errors import create_rfc7807_error
-from src.middleware.metrics import rfc7807_errors_total
 
 logger = logging.getLogger(__name__)
 
@@ -133,13 +132,6 @@ async def rfc7807_exception_handler(request: Request, exc: Exception) -> JSONRes
         instance=instance,
         request_id=request_id
     )
-
-    # REFACTOR phase: Record error metrics
-    # BR-HAPI-200: Track RFC 7807 error responses
-    rfc7807_errors_total.labels(
-        status_code=str(status_code),
-        error_type=error.type.split('/')[-1]  # Extract error type from URI
-    ).inc()
 
     # Return JSON response with RFC 7807 format
     response = JSONResponse(
