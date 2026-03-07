@@ -44,11 +44,16 @@ var _ = Describe("Gateway Auth Middleware E2E (BR-GATEWAY-036, BR-GATEWAY-037)",
 	var (
 		authorizedToken   string
 		unauthorizedToken string
+		authTestNamespace string
 	)
 
 	BeforeAll(func() {
 		Expect(gatewayURL).ToNot(BeEmpty(), "gatewayURL must be set by suite setup")
 		Expect(kubeconfigPath).ToNot(BeEmpty(), "kubeconfigPath must be set by suite setup")
+
+		// ADR-053: Use managed namespace instead of 'default' (which is unmanaged by default).
+		// Scope filtering rejects signals for resources in unmanaged namespaces (HTTP 200).
+		authTestNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "gw-auth")
 
 		By("Creating authorized ServiceAccount with RBAC for gateway-service/create")
 		err := infrastructure.CreateE2EServiceAccountWithGatewayAccess(
@@ -88,14 +93,14 @@ var _ = Describe("Gateway Auth Middleware E2E (BR-GATEWAY-036, BR-GATEWAY-037)",
 		Expect(err).ToNot(HaveOccurred(), "Should get unauthorized token")
 		Expect(unauthorizedToken).ToNot(BeEmpty(), "Unauthorized token must not be empty")
 
-		helpers.EnsureTestPods(ctx, k8sClient, "default",
+		helpers.EnsureTestPods(ctx, k8sClient, authTestNamespace,
 			"e2e-auth-pod-001", "e2e-auth-pod-002", "e2e-auth-pod-003", "e2e-auth-pod-004")
 	})
 
 	Context("BR-GATEWAY-036: TokenReview Authentication", func() {
 
 		It("E2E-GW-036-001: Gateway rejects unauthenticated Prometheus webhook request", func() {
-			payload := buildAuthTestPayload("E2EAuthTest036001", "default", "Pod", "e2e-auth-pod-001")
+			payload := buildAuthTestPayload("E2EAuthTest036001", authTestNamespace, "Pod", "e2e-auth-pod-001")
 
 			req, err := http.NewRequest("POST",
 				fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL),
@@ -119,7 +124,7 @@ var _ = Describe("Gateway Auth Middleware E2E (BR-GATEWAY-036, BR-GATEWAY-037)",
 		})
 
 		It("E2E-GW-036-002: Gateway accepts authenticated and authorized Prometheus webhook", func() {
-			payload := buildAuthTestPayload("E2EAuthTest036002", "default", "Pod", "e2e-auth-pod-002")
+			payload := buildAuthTestPayload("E2EAuthTest036002", authTestNamespace, "Pod", "e2e-auth-pod-002")
 
 			req, err := http.NewRequest("POST",
 				fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL),
@@ -167,12 +172,12 @@ var _ = Describe("Gateway Auth Middleware E2E (BR-GATEWAY-036, BR-GATEWAY-037)",
 	Context("BR-GATEWAY-037: SubjectAccessReview Authorization", func() {
 
 		It("E2E-GW-037-001: Gateway rejects authenticated but unauthorized K8s event webhook", func() {
-			payload := []byte(`{
-				"metadata": {"name": "e2e-auth-event-001", "namespace": "default"},
-				"involvedObject": {"kind": "Pod", "name": "e2e-auth-pod-003", "namespace": "default"},
+			payload := []byte(fmt.Sprintf(`{
+				"metadata": {"name": "e2e-auth-event-001", "namespace": "%s"},
+				"involvedObject": {"kind": "Pod", "name": "e2e-auth-pod-003", "namespace": "%s"},
 				"reason": "MemoryPressure",
 				"type": "Warning"
-			}`)
+			}`, authTestNamespace, authTestNamespace))
 
 			req, err := http.NewRequest("POST",
 				fmt.Sprintf("%s/api/v1/signals/kubernetes-event", gatewayURL),
@@ -196,7 +201,7 @@ var _ = Describe("Gateway Auth Middleware E2E (BR-GATEWAY-036, BR-GATEWAY-037)",
 		})
 
 		It("E2E-GW-037-002: Authorized ServiceAccount signal triggers full RR creation pipeline", func() {
-			payload := buildAuthTestPayload("E2EAuthTest037002", "default", "Pod", "e2e-auth-pod-004")
+			payload := buildAuthTestPayload("E2EAuthTest037002", authTestNamespace, "Pod", "e2e-auth-pod-004")
 
 			req, err := http.NewRequest("POST",
 				fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL),

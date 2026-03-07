@@ -109,6 +109,7 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 
 		// Create unique test namespace (Pattern: RO E2E)
 		testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "audit-trace")
+		helpers.EnsureTestPod(ctx, k8sClient, testNamespace, "audit-test-pod")
 		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 	})
 
@@ -152,6 +153,7 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 			AlertName: "AuditTestAlert",
 			Namespace: testNamespace,
 			Severity:  "critical",
+			PodName:   "audit-test-pod",
 			Annotations: map[string]string{
 				"summary":     "Test alert for audit trace validation",
 				"description": "This alert tests audit event emission",
@@ -163,6 +165,10 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 		// BR-SCOPE-002: Retry to handle scope checker informer cache propagation delay.
 		// New test namespaces may not be visible in the Gateway's informer cache immediately,
 		// resulting in HTTP 200 (scope rejection) until the cache syncs.
+		// Use http.DefaultClient (not httpClient) for Gateway requests.
+		// httpClient has ServiceAccountTransport for DataStorage auth, whose RoundTrip
+		// overwrites the Authorization header with the DS-only token. Gateway needs
+		// the suite-level token set by setE2EAuthHeader.
 		var resp *http.Response
 		Eventually(func() int {
 			var err error
@@ -174,7 +180,7 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 				req23.Header.Set("Content-Type", "application/json")
 				req23.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 				setE2EAuthHeader(req23)
-				return httpClient.Do(req23)
+				return http.DefaultClient.Do(req23)
 			}()
 			Expect(err).ToNot(HaveOccurred())
 			return resp.StatusCode
