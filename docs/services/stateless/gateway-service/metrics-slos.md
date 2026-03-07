@@ -78,71 +78,10 @@ var (
 )
 ```
 
-### Deduplication Metrics
-
-```go
-// BR-GATEWAY-069: Deduplication metrics
-var (
-    deduplicationCacheHitsTotal = promauto.NewCounter(
-        prometheus.CounterOpts{
-            Name: "gateway_deduplication_cache_hits_total",
-            Help: "Total deduplication cache hits",
-        },
-    )
-
-    deduplicationRate = promauto.NewGauge(
-        prometheus.GaugeOpts{
-            Name: "gateway_deduplication_rate",
-            Help: "Current deduplication rate (percentage)",
-        },
-    )
-)
-```
-
-### Conflict Resolution Metrics (Option A: Performance Observability)
-
-```go
-// Track optimistic concurrency control performance for status updates
-var (
-    conflictRetriesTotal = promauto.NewCounterVec(
-        prometheus.CounterOpts{
-            Name: "gateway_conflict_retries_total",
-            Help: "Total K8s optimistic concurrency retry attempts by operation and error type",
-        },
-        []string{"operation", "error_type"},
-    )
-
-    conflictResolutionLatency = promauto.NewHistogramVec(
-        prometheus.HistogramOpts{
-            Name:    "gateway_conflict_resolution_duration_seconds",
-            Help:    "Latency for K8s conflict resolution including retries (seconds)",
-            Buckets: prometheus.ExponentialBuckets(0.001, 2, 10), // 1ms to ~1s
-        },
-        []string{"operation"},
-    )
-)
-```
-
-### Field Index Performance Metrics (Option A: Performance Observability)
-
-```go
-// Track O(1) field index query performance for deduplication lookups
-var (
-    fieldIndexQueryDuration = promauto.NewHistogramVec(
-        prometheus.HistogramOpts{
-            Name:    "gateway_field_index_query_duration_seconds",
-            Help:    "Field index query duration for deduplication lookups (seconds)",
-            Buckets: prometheus.ExponentialBuckets(0.0001, 2, 10), // 0.1ms to ~100ms
-        },
-        []string{"index_name"},
-    )
-)
-```
-
 ### Circuit Breaker Metrics (Option B: K8s API Resilience)
 
 ```go
-// Track K8s API circuit breaker state and operation results
+// Track K8s API circuit breaker state
 var (
     circuitBreakerState = promauto.NewGaugeVec(
         prometheus.GaugeOpts{
@@ -150,14 +89,6 @@ var (
             Help: "Circuit breaker state (0=closed, 1=half-open, 2=open)",
         },
         []string{"name"},
-    )
-
-    circuitBreakerOperations = promauto.NewCounterVec(
-        prometheus.CounterOpts{
-            Name: "gateway_circuit_breaker_operations_total",
-            Help: "Total operations through circuit breaker by name and result",
-        },
-        []string{"name", "result"},
     )
 )
 ```
@@ -173,54 +104,30 @@ var (
 rate(gateway_signals_received_total[5m])
 ```
 
-**2. Deduplication Rate**
-```promql
-gateway_deduplication_rate
-```
-
-**3. High Occurrence Count Signals (Persistent Issues)**
+**2. High Occurrence Count Signals (Persistent Issues)**
 ```promql
 # Signals with high occurrence count (persistent issues)
 count(kube_customresource_remediation_request_status_deduplication_occurrence_count >= 5)
 ```
 
-**4. CRD Creation Success Rate**
+**3. CRD Creation Success Rate**
 ```promql
 rate(gateway_crds_created_total{status="success"}[5m]) /
 (rate(gateway_crds_created_total[5m]) +
  rate(gateway_crd_creation_errors_total[5m]))
 ```
 
-**5. API Latency (P50/P95/P99)**
+**4. API Latency (P50/P95/P99)**
 ```promql
 histogram_quantile(0.50, rate(gateway_http_request_duration_seconds_bucket[5m]))
 histogram_quantile(0.95, rate(gateway_http_request_duration_seconds_bucket[5m]))
 histogram_quantile(0.99, rate(gateway_http_request_duration_seconds_bucket[5m]))
 ```
 
-**6. Conflict Resolution Performance (Option A)**
-```promql
-# Conflict retry rate
-rate(gateway_conflict_retries_total[5m])
-
-# P95 conflict resolution latency
-histogram_quantile(0.95, rate(gateway_conflict_resolution_duration_seconds_bucket[5m]))
-```
-
-**7. Field Index Query Performance (Option A)**
-```promql
-# P95 field index query latency
-histogram_quantile(0.95, rate(gateway_field_index_query_duration_seconds_bucket[5m]))
-```
-
-**8. Circuit Breaker Status (Option B)**
+**5. Circuit Breaker Status (Option B)**
 ```promql
 # Circuit breaker state (0=closed, 1=half-open, 2=open)
 gateway_circuit_breaker_state{name="k8s-api"}
-
-# Circuit breaker operation success rate
-rate(gateway_circuit_breaker_operations_total{name="k8s-api",result="success"}[5m]) /
-rate(gateway_circuit_breaker_operations_total{name="k8s-api"}[5m])
 ```
 
 ---
@@ -283,27 +190,6 @@ groups:
       annotations:
         summary: "Gateway API p95 latency >100ms"
 
-    # Low deduplication rate
-    - alert: GatewayLowDeduplicationRate
-      expr: |
-        gateway_deduplication_rate < 0.5
-      for: 10m
-      labels:
-        severity: info
-      annotations:
-        summary: "Gateway deduplication rate <50%"
-
-    # High conflict retry rate (Option A)
-    - alert: GatewayHighConflictRetryRate
-      expr: |
-        rate(gateway_conflict_retries_total[5m]) > 1.0
-      for: 5m
-      labels:
-        severity: warning
-      annotations:
-        summary: "Gateway experiencing high K8s conflict retry rate >1/s"
-        description: "Indicates high concurrent load or K8s API contention"
-
     # Circuit breaker open (Option B)
     - alert: GatewayCircuitBreakerOpen
       expr: |
@@ -315,16 +201,6 @@ groups:
         summary: "Gateway K8s API circuit breaker is OPEN"
         description: "Gateway is failing fast due to K8s API failures"
 
-    # High field index query latency (Option A)
-    - alert: GatewayHighFieldIndexLatency
-      expr: |
-        histogram_quantile(0.95, rate(gateway_field_index_query_duration_seconds_bucket[5m])) > 0.010
-      for: 5m
-      labels:
-        severity: warning
-      annotations:
-        summary: "Gateway field index P95 latency >10ms"
-        description: "Field index performance degradation detected"
 ```
 
 ---
@@ -341,17 +217,9 @@ All metric names are defined as exported constants in `pkg/gateway/metrics/metri
 - `MetricNameCRDsCreatedTotal = "gateway_crds_created_total"`
 - `MetricNameCRDCreationErrorsTotal = "gateway_crd_creation_errors_total"`
 - `MetricNameHTTPRequestDuration = "gateway_http_request_duration_seconds"`
-- `MetricNameDeduplicationCacheHitsTotal = "gateway_deduplication_cache_hits_total"`
-- `MetricNameDeduplicationRate = "gateway_deduplication_rate"`
-
-### Performance Observability Metrics (Option A)
-- `MetricNameConflictRetriesTotal = "gateway_conflict_retries_total"`
-- `MetricNameConflictResolutionDuration = "gateway_conflict_resolution_duration_seconds"`
-- `MetricNameFieldIndexQueryDuration = "gateway_field_index_query_duration_seconds"`
 
 ### Resilience Metrics (Option B)
 - `MetricNameCircuitBreakerState = "gateway_circuit_breaker_state"`
-- `MetricNameCircuitBreakerOperationsTotal = "gateway_circuit_breaker_operations_total"`
 
 **Confidence**: 100%
 

@@ -239,12 +239,6 @@ gateway_circuit_breaker_state{name="k8s-api"}
 # 2 = Open (K8s API degraded)
 ```
 
-**2. Circuit Breaker Operations** (Counter):
-```prometheus
-gateway_circuit_breaker_operations_total{name="k8s-api",result="success|failure"}
-# Tracks success/failure ratio through circuit breaker
-```
-
 ### Alert Rules
 
 **Critical Alert: Circuit Breaker Open**
@@ -260,27 +254,10 @@ gateway_circuit_breaker_operations_total{name="k8s-api",result="success|failure"
     action: "Investigate K8s API health, scale control plane if needed"
 ```
 
-**Warning Alert: High Failure Rate**
-```yaml
-- alert: GatewayK8sAPIHighFailureRate
-  expr: |
-    rate(gateway_circuit_breaker_operations_total{name="k8s-api",result="failure"}[5m]) /
-    rate(gateway_circuit_breaker_operations_total{name="k8s-api"}[5m]) > 0.20
-  for: 5m
-  labels:
-    severity: warning
-  annotations:
-    summary: "Gateway K8s API failure rate > 20%"
-    description: "Circuit breaker may trip soon if failure rate continues"
-```
-
 ### Dashboard Panels
 
 **Gateway - K8s API Health Dashboard**:
 1. **Circuit Breaker State** (0/1/2 gauge)
-2. **K8s API Success Rate** (percentage)
-3. **K8s API Operation Latency** (p50/p95/p99)
-4. **Circuit Breaker Open Events** (count per hour)
 
 ---
 
@@ -311,8 +288,6 @@ gateway_circuit_breaker_operations_total{name="k8s-api",result="success|failure"
 3. **BR-GATEWAY-093-C: Observable metrics**
    - Trigger circuit breaker state transitions
    - Verify `gateway_circuit_breaker_state` gauge updates
-   - Verify `gateway_circuit_breaker_operations_total` counter increments
-   - Verify metrics match actual circuit breaker state
 
 ### E2E Tests
 - ✅ K8s API failure scenarios in Kind cluster

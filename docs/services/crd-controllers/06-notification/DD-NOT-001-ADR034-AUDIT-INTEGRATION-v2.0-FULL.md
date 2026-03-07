@@ -1658,16 +1658,6 @@ audit:
 
 ## Operational Procedures
 
-### Monitor Audit Write Success Rate
-**Target**: >99% success rate
-
-```bash
-# Query audit write success rate
-kubectl exec -it -n kubernaut prometheus-0 -- promtool query instant \
-  'sum(rate(audit_events_written_total{service="notification"}[5m])) /
-   sum(rate(audit_events_buffered_total{service="notification"}[5m]))'
-```
-
 ### Handle "Buffer Full" Alerts
 **Alert**: `audit_buffer_size{service="notification"} / 10000 > 0.8`
 

@@ -47,7 +47,7 @@ RemediationOrchestrator MUST create a NotificationRequest CRD with `type=complet
 
 ### BR-ORCH-045.4: Metrics
 
-**MUST**: Increment `CompletionNotificationsTotal` counter metric with labels `[namespace]` when a completion NotificationRequest is created.
+**MUST**: Track completion notification creation for observability. *(Note: `CompletionNotificationsTotal` metric was removed per GitHub issue #294.)*
 
 ---
 
@@ -60,7 +60,7 @@ RemediationOrchestrator MUST create a NotificationRequest CRD with `type=complet
 | AC-045-3 | Idempotent: duplicate reconciles do not create duplicate NotificationRequests | Unit |
 | AC-045-4 | NotificationRequest has OwnerReference to RemediationRequest | Unit |
 | AC-045-5 | Channels include file (for E2E verification) and slack | Unit |
-| AC-045-6 | Completion metric incremented on creation | Unit |
+| AC-045-6 | Completion notification creation tracked | Unit |
 | AC-045-7 | Notification controller processes completion NR and writes to file sink | E2E |
 
 ---

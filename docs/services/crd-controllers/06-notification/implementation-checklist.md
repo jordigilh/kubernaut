@@ -381,18 +381,14 @@ Rename notification metrics to follow DD-005 naming convention:
 | `notification_phase` | `notification_reconciler_phase` | Gauge |
 | `notification_retry_count` | `notification_delivery_retries` | Histogram |
 | `notification_slack_retry_count` | `notification_slack_retries_total` | Counter |
-| `notification_requests_total` | `notification_reconciler_requests_total` | Counter |
 | `notification_retry_count_total` | `notification_delivery_retries_total` | Counter |
 | `notification_circuit_breaker_state` | `notification_channel_circuit_breaker_state` | Gauge |
-| `notification_reconciliation_duration_seconds` | `notification_reconciler_duration_seconds` | Histogram |
-| `notification_reconciliation_errors_total` | `notification_reconciler_errors_total` | Counter |
 | `notification_active_total` | `notification_reconciler_active` | Gauge (no _total!) |
 
 **Already Compliant** (no changes needed):
 - `notification_delivery_duration_seconds` (Histogram)
 - `notification_delivery_attempts_total` (Counter)
 - `notification_slack_backoff_duration_seconds` (Histogram)
-- `notification_sanitization_redactions_total` (Counter)
 - `notification_channel_health_score` (Gauge)
 
 ---

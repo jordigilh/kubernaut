@@ -38,7 +38,7 @@ The **Notification Service** is a Kubernetes CRD controller that delivers multi-
 4. **Data Sanitization**: Redact 22 secret patterns (passwords, tokens, API keys) before delivery
 5. **Graceful Degradation**: Per-channel circuit breakers prevent cascade failures
 6. **Complete Audit Trail**: Record every delivery attempt in CRD status
-7. **Observability**: 10 Prometheus metrics for delivery success/failure rates
+7. **Observability**: 6 Prometheus metrics for delivery success/failure rates
 
 ---
 
@@ -185,29 +185,25 @@ The **Notification Service** is a Kubernetes CRD controller that delivers multi-
 
 #### BR-NOT-054: Comprehensive Observability
 
-**Description**: The Notification Service MUST expose 10 Prometheus metrics for delivery success/failure rates, retry attempts, circuit breaker state, and delivery latency, enabling real-time monitoring and alerting.
+**Description**: The Notification Service MUST expose 6 Prometheus metrics for delivery success/failure rates, retry attempts, circuit breaker state, and delivery latency, enabling real-time monitoring and alerting.
 
 **Priority**: P0 (CRITICAL)
 
 **Rationale**: Production monitoring requires real-time visibility into notification delivery health. Metrics enable SLA tracking, alerting on delivery failures, and capacity planning.
 
 **Implementation** (DD-005 v3.0 naming convention — `kubernaut_notification_*` prefix):
-- **10 Prometheus Metrics**:
+- **6 Prometheus Metrics** (operational/debugging metrics removed per v1.13):
   1. `kubernaut_notification_delivery_attempts_total` (counter) - Total delivery attempts by channel and status
   2. `kubernaut_notification_delivery_duration_seconds` (histogram) - Delivery latency by channel
   3. `kubernaut_notification_delivery_retries_total` (counter) - Retry attempts by channel
   4. `kubernaut_notification_channel_circuit_breaker_state` (gauge) - Circuit breaker state (0=closed, 1=open)
   5. `kubernaut_notification_reconciler_active` (gauge) - Active reconciler count
-  6. `kubernaut_notification_sanitization_redactions_total` (counter) - Secret patterns redacted
-  7. `kubernaut_notification_channel_health_score` (gauge) - Channel health score (0-1)
-  8. `kubernaut_notification_reconciler_requests_total` (counter) - Total reconciler requests
-  9. `kubernaut_notification_reconciler_duration_seconds` (histogram) - Reconciliation loop latency
-  10. `kubernaut_notification_reconciler_errors_total` (counter) - Reconciler errors
+  6. `kubernaut_notification_channel_health_score` (gauge) - Channel health score (0-1)
 
 > **Update (2026-03)**: Metric names updated to match DD-005 v3.0 `kubernaut_notification_*` prefix convention. Some metric names differ from original BR (e.g., `channel_health_score` instead of `delivery_success_rate`).
 
 **Acceptance Criteria**:
-- ✅ All 10 metrics exposed on `/metrics` endpoint (port 9090)
+- ✅ All 6 metrics exposed on `/metrics` endpoint (port 9090)
 - ✅ Metrics updated in real-time during delivery
 - ✅ Prometheus scraping validated in integration tests
 - ✅ Grafana dashboard templates provided

@@ -18,10 +18,9 @@ This document provides a comprehensive reference for Prometheus queries to monit
 2. [Dual-Write Coordination](#dual-write-coordination)
 3. [Embedding and Caching](#embedding-and-caching)
 4. [Validation](#validation)
-5. [Query Operations](#query-operations)
-6. [Error Rates and SLIs](#error-rates-and-slis)
-7. [Performance Analysis](#performance-analysis)
-8. [Cardinality Monitoring](#cardinality-monitoring)
+5. [Error Rates and SLIs](#error-rates-and-slis)
+6. [Performance Analysis](#performance-analysis)
+7. [Cardinality Monitoring](#cardinality-monitoring)
 
 ---
 
@@ -292,97 +291,7 @@ rate(datastorage_validation_failures_total{reason=~"xss_detected|sql_injection_d
 
 ---
 
-## Query Operations
-
-### Query Success Rate (by Operation)
-
-**Query**:
-```promql
-rate(datastorage_query_total{status="success"}[5m]) by (operation)
-```
-
-**Use Case**: Monitor query throughput
-**BR Coverage**: BR-STORAGE-007, BR-STORAGE-012, BR-STORAGE-013
-
-### Query Error Rate
-
-**Query**:
-```promql
-rate(datastorage_query_total{status="failure"}[5m]) by (operation)
-```
-
-**Use Case**: Detect query failures
-
-### Query Duration - p95 (by Operation)
-
-**Query**:
-```promql
-histogram_quantile(0.95, rate(datastorage_query_duration_seconds_bucket[5m])) by (operation)
-```
-
-**Use Case**: Monitor query performance
-**Targets**:
-- `list`: < 10ms
-- `get`: < 5ms
-- `semantic_search`: < 50ms
-- `filter`: < 20ms
-
-### Semantic Search Performance
-
-**Query**:
-```promql
-histogram_quantile(0.95, rate(datastorage_query_duration_seconds_bucket{operation="semantic_search"}[5m]))
-```
-
-**Use Case**: Monitor HNSW index performance
-**BR Coverage**: BR-STORAGE-012
-**Target**: < 50ms for p95
-
-### Slow Query Detection (p99)
-
-**Query**:
-```promql
-histogram_quantile(0.99, rate(datastorage_query_duration_seconds_bucket[5m])) by (operation) > 0.1
-```
-
-**Use Case**: Detect slow queries (> 100ms)
-**Alert Threshold**: Any operation with p99 > 100ms
-
-### Query Success Percentage
-
-**Query**:
-```promql
-100 * (
-  sum(rate(datastorage_query_total{status="success"}[5m]))
-  /
-  sum(rate(datastorage_query_total[5m]))
-)
-```
-
-**Use Case**: Calculate query SLI
-**Target**: > 99%
-
----
-
 ## Error Rates and SLIs
-
-### Overall Error Rate
-
-**Query**:
-```promql
-(
-  sum(rate(datastorage_write_total{status="failure"}[5m])) +
-  sum(rate(datastorage_query_total{status="failure"}[5m]))
-)
-/
-(
-  sum(rate(datastorage_write_total[5m])) +
-  sum(rate(datastorage_query_total[5m]))
-)
-```
-
-**Use Case**: Overall service health SLI
-**Target**: < 1% error rate
 
 ### Write SLI (99.9% target)
 
@@ -396,20 +305,6 @@ histogram_quantile(0.99, rate(datastorage_query_duration_seconds_bucket[5m])) by
 ```
 
 **Use Case**: 30-day write SLI
-**Target**: > 99.9%
-
-### Query SLI (99.9% target)
-
-**Query**:
-```promql
-100 * (
-  sum(rate(datastorage_query_total{status="success"}[30d]))
-  /
-  sum(rate(datastorage_query_total[30d]))
-)
-```
-
-**Use Case**: 30-day query SLI
 **Target**: > 99.9%
 
 ### Error Budget Remaining (Write)
@@ -439,15 +334,6 @@ sum(rate(datastorage_write_total[5m]))
 
 **Use Case**: Monitor overall write load
 
-### Query Throughput Over Time
-
-**Query**:
-```promql
-sum(rate(datastorage_query_total[5m]))
-```
-
-**Use Case**: Monitor overall query load
-
 ### Write Duration Distribution (Heatmap)
 
 **Query**:
@@ -457,29 +343,11 @@ rate(datastorage_write_duration_seconds_bucket[5m])
 
 **Use Case**: Visualize write latency distribution in Grafana heatmap
 
-### Query Duration Distribution (Heatmap)
-
-**Query**:
-```promql
-rate(datastorage_query_duration_seconds_bucket[5m])
-```
-
-**Use Case**: Visualize query latency distribution in Grafana heatmap
-
 ### Peak Write Load (Last 24h)
 
 **Query**:
 ```promql
 max_over_time(sum(rate(datastorage_write_total[5m]))[24h:])
-```
-
-**Use Case**: Capacity planning
-
-### Peak Query Load (Last 24h)
-
-**Query**:
-```promql
-max_over_time(sum(rate(datastorage_query_total[5m]))[24h:])
 ```
 
 **Use Case**: Capacity planning
@@ -545,19 +413,6 @@ count({__name__=~"datastorage_.*"})
   severity: critical
   annotations:
     summary: "PostgreSQL write failures detected"
-
-# High Query Error Rate
-- alert: DataStorageHighQueryErrorRate
-  expr: |
-    100 * (
-      sum(rate(datastorage_query_total{status="failure"}[5m]))
-      /
-      sum(rate(datastorage_query_total[5m]))
-    ) > 5
-  for: 5m
-  severity: critical
-  annotations:
-    summary: "Data Storage query error rate > 5%"
 ```
 
 ### Warning Alerts
@@ -583,15 +438,6 @@ count({__name__=~"datastorage_.*"})
   annotations:
     summary: "Embedding cache hit rate < 50%"
 
-# Slow Semantic Search
-- alert: DataStorageSlowSemanticSearch
-  expr: |
-    histogram_quantile(0.95, rate(datastorage_query_duration_seconds_bucket{operation="semantic_search"}[5m]))
-    > 0.1
-  for: 10m
-  severity: warning
-  annotations:
-    summary: "Semantic search p95 latency > 100ms"
 ```
 
 ---
@@ -644,12 +490,12 @@ sum(rate(datastorage_write_total[5m]))  # Loses label information
 
 ✅ **Correct**:
 ```promql
-rate(datastorage_query_total{operation="semantic_search"}[5m])
+rate(datastorage_write_total{table="remediation_audit"}[5m])
 ```
 
 ❌ **Less Efficient**:
 ```promql
-rate(datastorage_query_total[5m]) and operation="semantic_search"
+rate(datastorage_write_total[5m]) and table="remediation_audit"
 ```
 
 ---
@@ -714,10 +560,10 @@ topk(10, count by (__name__)({__name__=~"datastorage_.*"}))
 
 ## Summary
 
-- **Total Metrics**: 11 Prometheus metrics
+- **Total Metrics**: 9 Prometheus metrics
 - **Label Cardinality**: 47 unique combinations (safe)
 - **Query Performance**: < 1ms for most queries
-- **SLI Targets**: 99.9% success rate for writes and queries
+- **SLI Targets**: 99.9% success rate for writes
 - **Alert Thresholds**: 5% error rate (critical), 1% error rate (warning)
 
 **For Grafana Dashboard**: See [grafana-dashboard.json](./grafana-dashboard.json)

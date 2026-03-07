@@ -622,7 +622,7 @@ The service implements atomic dual-write to PostgreSQL and Vector DB:
 
 ## 📈 Observability
 
-### Prometheus Metrics (11 metrics)
+### Prometheus Metrics (10 metrics)
 
 **Write Operations**:
 - `datastorage_write_total{table, status}`
@@ -641,10 +641,6 @@ The service implements atomic dual-write to PostgreSQL and Vector DB:
 **Validation**:
 - `datastorage_validation_failures_total{field, reason}`
 
-**Query Operations**:
-- `datastorage_query_total{operation, status}`
-- `datastorage_query_duration_seconds{operation}`
-
 ### Grafana Dashboard
 
 Import the pre-built dashboard:
@@ -661,25 +657,20 @@ docs/services/stateless/data-storage/observability/grafana-dashboard.json
 ```
 
 **Dashboard includes**:
-- 13 panels covering all metrics
+- 9 panels covering all metrics
 - Write/query performance graphs
-- Error rate monitoring
+- Write error rate monitoring
 - Cache hit rate gauge
-- Semantic search latency
-
 ### Alerting
 
-**6 production alerts configured**:
+**4 production alerts configured**:
 
-**Critical** (3):
+**Critical** (2):
 1. `DataStorageHighWriteErrorRate` - Write errors > 5%
 2. `DataStoragePostgreSQLFailure` - PostgreSQL unavailable
-3. `DataStorageHighQueryErrorRate` - Query errors > 5%
-
 **Warning** (3):
 1. `DataStorageVectorDBDegraded` - Fallback mode active
 2. `DataStorageLowCacheHitRate` - Cache hit rate < 50%
-3. `DataStorageSlowSemanticSearch` - Search p95 > 100ms
 
 See [observability/ALERTING_RUNBOOK.md](./observability/ALERTING_RUNBOOK.md) for troubleshooting procedures.
 
@@ -984,7 +975,7 @@ curl http://localhost:9090/metrics | grep datastorage
 - **Type**: Stateless HTTP API (Write & Query)
 - **Status**: ⚠️ Test counts corrected (2025-12-15)
 - **Test Coverage**: 221 verified tests (38 E2E + 164 API E2E + 15 Integration + 4 Perf) + ~551 Unit (unverified)
-- **Observability**: 11 Prometheus metrics + Grafana dashboard
+- **Observability**: 10 Prometheus metrics + Grafana dashboard
 - **Performance**: < 0.01% metrics overhead
 - **Dependencies**: PostgreSQL 16+ with pgvector 0.5.1+
 - **Documentation**: 8,040+ lines across 12 core specification documents

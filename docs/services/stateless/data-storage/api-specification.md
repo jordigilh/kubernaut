@@ -1089,7 +1089,6 @@ GET /metrics
 
 **Key Metrics**:
 - `datastorage_audit_writes_total{type="remediation"}` - Total writes
-- `datastorage_audit_write_duration_seconds` - Write latency histogram
 - `datastorage_embedding_cache_hits_total` - Embedding cache hits
 - `datastorage_embedding_generation_duration_seconds` - Embedding latency
 - `datastorage_database_write_errors_total` - Write errors

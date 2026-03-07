@@ -66,8 +66,6 @@
 |---------|--------|--------|------------|
 | METRIC-01 | `signalprocessing_processing_total` | `phase`, `result` | Counter increment |
 | METRIC-02 | `signalprocessing_processing_duration_seconds` | `phase` | Histogram observation |
-| METRIC-03 | `signalprocessing_enrichment_total` | `result` | Counter increment |
-| METRIC-04 | `signalprocessing_enrichment_duration_seconds` | `resource_kind` | Histogram observation |
 | METRIC-05 | `signalprocessing_enrichment_errors_total` | `error_type` | Counter increment |
 | METRIC-06 | All metrics after reconciliation | all | Post-operation values |
 

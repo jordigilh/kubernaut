@@ -107,7 +107,7 @@ This document maps high-level business requirements to their detailed sub-requir
 ### BR-NOT-054: Comprehensive Observability
 **Category**: Observability & Monitoring
 **Priority**: P0 (CRITICAL)
-**Description**: 10 Prometheus metrics for delivery monitoring
+**Description**: 9 Prometheus metrics for delivery monitoring
 
 **Metrics Exposed**:
 1. `notification_delivery_total` (counter)
@@ -116,10 +116,9 @@ This document maps high-level business requirements to their detailed sub-requir
 4. `notification_circuit_breaker_state` (gauge)
 5. `notification_pending_total` (gauge)
 6. `notification_failed_permanent_total` (counter)
-7. `notification_sanitization_redactions_total` (counter)
-8. `notification_delivery_success_rate` (gauge)
-9. `notification_reconciliation_duration_seconds` (histogram)
-10. `notification_crd_phase_transitions_total` (counter)
+7. `notification_delivery_success_rate` (gauge)
+8. `notification_reconciliation_duration_seconds` (histogram)
+9. `notification_crd_phase_transitions_total` (counter)
 
 **Test Coverage**:
 - **Unit Tests**: Metrics recording logic

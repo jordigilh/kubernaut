@@ -269,7 +269,6 @@ Kubernaut is **NOT** a workflow execution engine. We:
 **Implementation**:
 - `workflowexecution_total{outcome}` - Counter for execution outcomes
 - `workflowexecution_duration_seconds{outcome}` - Histogram for execution duration
-- `workflowexecution_pipelinerun_creation_total` - Counter for PR creation
 - `workflowexecution_skip_total{reason}` - Counter for skipped executions (DD-WE-001 visibility)
 - Expose on `:9090/metrics`
 

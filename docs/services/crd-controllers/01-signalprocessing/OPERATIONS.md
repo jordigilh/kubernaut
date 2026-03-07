@@ -72,7 +72,6 @@ readinessProbe:
 |--------|------|-------------|
 | `signalprocessing_reconciliations_total` | Counter | Total reconciliation attempts |
 | `signalprocessing_reconciliation_duration_seconds` | Histogram | Time per reconciliation |
-| `signalprocessing_enrichment_duration_seconds` | Histogram | K8s context enrichment time |
 | `signalprocessing_classification_duration_seconds` | Histogram | Classification time |
 | `signalprocessing_errors_total` | Counter | Error count by type |
 

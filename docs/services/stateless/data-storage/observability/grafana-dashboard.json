@@ -263,111 +263,12 @@
 				"description": "BR-STORAGE-010, BR-STORAGE-011: Input validation failures"
 			},
 			{
-				"id": 8,
-				"title": "Query Operations Rate",
-				"type": "graph",
-				"gridPos": {
-					"x": 12,
-					"y": 16,
-					"w": 12,
-					"h": 8
-				},
-				"targets": [
-					{
-						"expr": "rate(datastorage_query_total{status=\"success\"}[5m])",
-						"legendFormat": "{{operation}} - Success",
-						"refId": "A"
-					},
-					{
-						"expr": "rate(datastorage_query_total{status=\"failure\"}[5m])",
-						"legendFormat": "{{operation}} - Failure",
-						"refId": "B"
-					}
-				],
-				"yaxes": [
-					{
-						"format": "ops",
-						"label": "Queries/sec"
-					},
-					{
-						"format": "short"
-					}
-				],
-				"description": "BR-STORAGE-007, BR-STORAGE-012, BR-STORAGE-013: Query operation rates"
-			},
-			{
-				"id": 9,
-				"title": "Query Duration by Operation (p95)",
-				"type": "graph",
-				"gridPos": {
-					"x": 0,
-					"y": 24,
-					"w": 12,
-					"h": 8
-				},
-				"targets": [
-					{
-						"expr": "histogram_quantile(0.95, rate(datastorage_query_duration_seconds_bucket[5m]))",
-						"legendFormat": "{{operation}} - p95",
-						"refId": "A"
-					}
-				],
-				"yaxes": [
-					{
-						"format": "s",
-						"label": "Duration"
-					},
-					{
-						"format": "short"
-					}
-				],
-				"description": "BR-STORAGE-019: Query latency by operation type"
-			},
-			{
-				"id": 10,
-				"title": "Semantic Search Performance",
-				"type": "graph",
-				"gridPos": {
-					"x": 12,
-					"y": 24,
-					"w": 12,
-					"h": 8
-				},
-				"targets": [
-					{
-						"expr": "histogram_quantile(0.50, rate(datastorage_query_duration_seconds_bucket{operation=\"semantic_search\"}[5m]))",
-						"legendFormat": "p50 (median)",
-						"refId": "A"
-					},
-					{
-						"expr": "histogram_quantile(0.95, rate(datastorage_query_duration_seconds_bucket{operation=\"semantic_search\"}[5m]))",
-						"legendFormat": "p95",
-						"refId": "B"
-					},
-					{
-						"expr": "histogram_quantile(0.99, rate(datastorage_query_duration_seconds_bucket{operation=\"semantic_search\"}[5m]))",
-						"legendFormat": "p99",
-						"refId": "C"
-					}
-				],
-				"yaxes": [
-					{
-						"format": "s",
-						"label": "Duration"
-					},
-					{
-						"format": "short"
-					}
-				],
-				"description": "BR-STORAGE-012: HNSW semantic search latency distribution"
-			},
-			{
 				"id": 11,
 				"title": "Error Rate Overview",
 				"type": "stat",
 				"gridPos": {
 					"x": 0,
-					"y": 32,
+					"y": 24,
 					"w": 8,
 					"h": 4
 				},
@@ -406,56 +307,12 @@
 				"description": "Overall write error rate (target: < 1%)"
 			},
 			{
-				"id": 12,
-				"title": "Query Error Rate",
-				"type": "stat",
-				"gridPos": {
-					"x": 8,
-					"y": 32,
-					"w": 8,
-					"h": 4
-				},
-				"targets": [
-					{
-						"expr": "sum(rate(datastorage_query_total{status=\"failure\"}[5m])) / sum(rate(datastorage_query_total[5m]))",
-						"refId": "A"
-					}
-				],
-				"options": {
-					"graphMode": "area",
-					"colorMode": "value"
-				},
-				"fieldConfig": {
-					"defaults": {
-						"unit": "percentunit",
-						"thresholds": {
-							"mode": "absolute",
-							"steps": [
-								{
-									"value": 0,
-									"color": "green"
-								},
-								{
-									"value": 0.01,
-									"color": "yellow"
-								},
-								{
-									"value": 0.05,
-									"color": "red"
-								}
-							]
-						}
-					}
-				},
-				"description": "Overall query error rate (target: < 1%)"
-			},
-			{
 				"id": 13,
 				"title": "Validation Failure Rate",
 				"type": "stat",
 				"gridPos": {
 					"x": 16,
-					"y": 32,
+					"y": 24,
 					"w": 8,
 					"h": 4
 				},

@@ -394,9 +394,6 @@ func (c *AuditClient) WriteNotificationAudit(ctx context.Context, audit *Notific
 // Audit write attempts
 kubernaut_notification_audit_writes_total{status="success|failure|dlq_fallback"}
 
-// Audit write duration
-kubernaut_notification_audit_write_duration_seconds{status="success|failure"}
-
 // DLQ fallback rate
 kubernaut_notification_audit_dlq_fallback_total{reason="network_error|server_error"}
 ```

@@ -870,7 +870,6 @@ go test ./test/e2e/notification/audit_e2e_test.go -v
 
 4. **Update `metrics-slos.md`** (audit adds new metrics via pkg/audit/)
    - Document new Prometheus metrics (inherited from pkg/audit/):
-     - `audit_events_buffered_total{service="notification"}`
      - `audit_events_dropped_total{service="notification"}`
      - `audit_events_written_total{service="notification"}`
      - `audit_buffer_size{service="notification"}`

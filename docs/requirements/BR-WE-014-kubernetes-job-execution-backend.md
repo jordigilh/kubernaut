@@ -464,19 +464,7 @@ Rename Tekton-specific status fields to generic names:
 **Note**: Requires deepcopy regeneration, CRD YAML regeneration, and OpenAPI schema update for `pipelinerun_name` audit field.
 **Tool**: `gopls rename` + `controller-gen` + `make generate`.
 
-### PR-3: Normalize Prometheus Metric Names
-
-Rename Tekton-specific metric to generic name:
-
-| Current (Tekton-specific) | New (Engine-agnostic) |
-|---------------------------|-----------------------|
-| `workflowexecution_reconciler_pipelinerun_creations_total` | `workflowexecution_reconciler_execution_creations_total` |
-| `MetricNamePipelineRunCreations` | `MetricNameExecutionCreations` |
-| `PipelineRunCreations` (struct field) | `ExecutionCreations` |
-| `RecordPipelineRunCreation()` | `RecordExecutionCreation()` |
-
-**Impact**: ~20 occurrences across ~12 files (metrics, controller, tests, docs).
-**Tool**: `gopls rename` for Go symbols; manual update for metric name string.
+### PR-3: ~~Normalize Prometheus Metric Names~~ (removed)
 
 ### PR-4: Add `execution_engine` to OpenAPI Audit Payload
 
@@ -581,7 +569,7 @@ Minimal implementation to pass each test tier, then refactor.
 | Tekton controllers | Tekton | Exists | Only needed when `executionEngine: "tekton"` |
 | WE controller RBAC | Kubernetes | Update needed | Add `batchv1/jobs` permissions |
 | OpenAPI `execution_engine` in audit payload | DataStorage | **New (PR-4)** | Add to `WorkflowExecutionAuditPayload` schema |
-| Condition/status/metric normalization | WE | **New (PR-1..3)** | Prerequisite refactoring for engine-agnostic code |
+| Condition/status/metric normalization | WE | **New (PR-1, PR-2)** | Prerequisite refactoring for engine-agnostic code (PR-3 removed - metric no longer exists) |
 
 ---
 
@@ -593,7 +581,7 @@ Minimal implementation to pass each test tier, then refactor.
 | BR-WE-003 | Status Monitoring | Generalized to monitor both Job and PipelineRun |
 | BR-WE-005 | Audit Events | Extended with `execution_engine` field (PR-4) |
 | BR-WE-006 | Kubernetes Conditions | Condition types normalized to engine-agnostic names (PR-1) |
-| BR-WE-008 | Prometheus Metrics | Extended with `execution_engine` label; metric renamed (PR-3) |
+| BR-WE-008 | Prometheus Metrics | Extended with `execution_engine` label |
 | BR-WE-009 | Resource Locking | Updated to check both PipelineRun and Job (G4) |
 | BR-WE-010 | Cooldown Period | Engine-agnostic; applies to both backends |
 | BR-WE-012 | Exponential Backoff | Engine-agnostic; applies to both backends |

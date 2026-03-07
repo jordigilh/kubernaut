@@ -37,16 +37,15 @@
 **Required Metrics**:
 1. `workflowexecution_total{outcome}` - Counter for execution outcomes
 2. `workflowexecution_duration_seconds{outcome}` - Histogram for execution duration
-3. `workflowexecution_pipelinerun_creation_total` - Counter for PR creation
-4. `workflowexecution_skip_total{reason}` - Counter for skipped executions (DD-WE-001)
+3. `workflowexecution_skip_total{reason}` - Counter for skipped executions (DD-WE-001)
 
 ### DD-WE-004: Exponential Backoff Cooldown
 
 **Source**: [DD-WE-004](../../../architecture/decisions/DD-WE-004-exponential-backoff-cooldown.md)
 
 **Additional Metrics**:
-5. `workflowexecution_backoff_skip_total{reason}` - Backoff skip visibility
-6. `workflowexecution_consecutive_failures{target_resource}` - Real-time failure state
+4. `workflowexecution_backoff_skip_total{reason}` - Backoff skip visibility
+5. `workflowexecution_consecutive_failures{target_resource}` - Real-time failure state
 
 ### DD-005: Observability Standards
 
@@ -107,10 +106,9 @@ import (
 
 // ========================================
 // BR-WE-008: Business-Value Metrics
-// 4 metrics per BR-WE-008:
+// 3 metrics per BR-WE-008:
 // - workflowexecution_total{outcome}
 // - workflowexecution_duration_seconds{outcome}
-// - workflowexecution_pipelinerun_creation_total
 // - workflowexecution_skip_total{reason}
 //
 // DD-WE-004 Extension (BR-WE-012):
@@ -141,15 +139,6 @@ var (
             Buckets: prometheus.ExponentialBuckets(5, 2, 7),
         },
         []string{"outcome"},
-    )
-
-    // PipelineRunCreationTotal tracks PipelineRun creation attempts
-    // Business value: Tracks execution initiation success
-    PipelineRunCreationTotal = prometheus.NewCounter(
-        prometheus.CounterOpts{
-            Name: "workflowexecution_pipelinerun_creation_total",
-            Help: "Total number of PipelineRun creations",
-        },
     )
 
     // WorkflowExecutionSkipTotal tracks skipped executions by reason
@@ -195,7 +184,6 @@ func init() {
     metrics.Registry.MustRegister(
         WorkflowExecutionTotal,
         WorkflowExecutionDuration,
-        PipelineRunCreationTotal,
         WorkflowExecutionSkipTotal,
         // DD-WE-004 Extension: Backoff metrics (BR-WE-012)
         BackoffSkipTotal,
@@ -214,7 +202,6 @@ func init() {
 |--------|--------|-----------------|--------|
 | `workflowexecution_total` | outcome(2) | 2 | ✅ |
 | `workflowexecution_duration_seconds` | outcome(2) | 2 | ✅ |
-| `workflowexecution_pipelinerun_creation_total` | (none) | 1 | ✅ |
 | `workflowexecution_skip_total` | reason(4) | 4 | ✅ |
 | `workflowexecution_backoff_skip_total` | reason(2) | 2 | ✅ |
 | `workflowexecution_consecutive_failures` | target_resource(~100) | ~100 | ✅ |
@@ -277,14 +264,6 @@ func init() {
       },
       {
         "id": 5,
-        "title": "PipelineRun Creations",
-        "type": "stat",
-        "targets": [
-          {"expr": "rate(workflowexecution_pipelinerun_creation_total[5m])"}
-        ]
-      },
-      {
-        "id": 6,
         "title": "Backoff Skip Rate (DD-WE-004)",
         "type": "graph",
         "targets": [
@@ -292,7 +271,7 @@ func init() {
         ]
       },
       {
-        "id": 7,
+        "id": 6,
         "title": "Consecutive Failures per Target (Top 10)",
         "type": "table",
         "targets": [
@@ -420,19 +399,16 @@ rate(workflowexecution_duration_seconds_count[5m])
 # 3. Workflow Duration P95
 histogram_quantile(0.95, rate(workflowexecution_duration_seconds_bucket[5m]))
 
-# 4. PipelineRun Creation Rate
-rate(workflowexecution_pipelinerun_creation_total[5m])
-
-# 5. Skip Rate by Reason (DD-WE-001)
+# 4. Skip Rate by Reason (DD-WE-001)
 sum by (reason) (rate(workflowexecution_skip_total[5m]))
 
-# 6. Backoff Skip Rate by Reason (DD-WE-004)
+# 5. Backoff Skip Rate by Reason (DD-WE-004)
 sum by (reason) (rate(workflowexecution_backoff_skip_total[5m]))
 
-# 7. Targets with Consecutive Failures (DD-WE-004)
+# 6. Targets with Consecutive Failures (DD-WE-004)
 topk(10, workflowexecution_consecutive_failures > 0)
 
-# 8. Total Workflows (Success + Failed + Skipped)
+# 7. Total Workflows (Success + Failed + Skipped)
 sum(rate(workflowexecution_total[5m])) + sum(rate(workflowexecution_skip_total[5m]))
 ```
 

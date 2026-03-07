@@ -613,7 +613,6 @@ This document provides a comprehensive list of all business requirements for the
 
 **Metrics Exposed**:
 - `gateway_circuit_breaker_state{name="k8s-api"}` - State gauge (0=closed, 1=half-open, 2=open)
-- `gateway_circuit_breaker_operations_total{name="k8s-api",result="success|failure"}` - Operations counter
 
 **Alert Rules**:
 - Alert when circuit breaker is open (K8s API degraded)

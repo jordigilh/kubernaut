@@ -1,5 +1,7 @@
 # DD-METRICS-RAR-AUDIT-001: RemediationApprovalRequest Audit Metrics
 
+> **Note**: The `audit_events_total` metric and `RecordAuditEventSuccess`/`RecordAuditEventFailure` helpers were removed per GitHub issue #294.
+
 **Date**: 2026-02-03  
 **Status**: ✅ Approved  
 **Version**: 1.0  
@@ -23,7 +25,7 @@ RemediationApprovalRequest (RAR) approval decisions are critical for SOC 2 compl
 
 ## Decision
 
-We will implement **two new business-value metrics** in the RemediationOrchestrator metrics package:
+We will implement **approval decision metrics** in the RemediationOrchestrator metrics package:
 
 ### 1. Approval Decision Metrics
 
@@ -60,43 +62,6 @@ rate(kubernaut_remediationorchestrator_approval_decisions_total{decision="Expire
 
 ---
 
-### 2. Audit Event Metrics
-
-**Metric Name**: `kubernaut_remediationorchestrator_audit_events_total`
-
-**Type**: Counter
-
-**Labels**:
-- `crd_type`: "RAR", "RR", "WFE", etc.
-- `event_type`: "approval_decision", "lifecycle_event", etc.
-- `status`: "success" or "failure"
-- `namespace`: Kubernetes namespace
-
-**Business Value**:
-- ✅ **SOC 2 CC7.2 Compliance**: Track audit trail completeness (100% success rate required)
-- ✅ **Immediate Alerting**: Audit failures = compliance gaps (trigger PagerDuty)
-- ✅ **Infrastructure Health**: Monitor DataStorage availability via audit success rate
-- ✅ **Compliance Dashboards**: Real-time audit trail integrity visualization
-
-**Example Queries**:
-
-```promql
-# Audit trail completeness rate (CRITICAL: must be 100%)
-sum(rate(kubernaut_remediationorchestrator_audit_events_total{status="success"}[5m]))
-/
-sum(rate(kubernaut_remediationorchestrator_audit_events_total[5m]))
-
-# ALERT: Audit failures detected (immediate PagerDuty)
-kubernaut_remediationorchestrator_audit_events_total{status="failure"} > 0
-
-# Audit event volume by CRD type (capacity planning)
-sum by (crd_type) (
-  rate(kubernaut_remediationorchestrator_audit_events_total{status="success"}[1h])
-)
-```
-
----
-
 ## Implementation Details
 
 ### Code Changes
@@ -111,12 +76,6 @@ sum by (crd_type) (
 ```go
 // Record approval decision (business outcome)
 func (m *Metrics) RecordApprovalDecision(decision, namespace string)
-
-// Record successful audit event emission (compliance tracking)
-func (m *Metrics) RecordAuditEventSuccess(crdType, eventType, namespace string)
-
-// Record failed audit event emission (CRITICAL - compliance gap alert)
-func (m *Metrics) RecordAuditEventFailure(crdType, eventType, namespace string)
 ```
 
 **Integration Points**:
@@ -124,19 +83,9 @@ func (m *Metrics) RecordAuditEventFailure(crdType, eventType, namespace string)
 ```go
 // In RAR reconciler (internal/controller/remediationorchestrator/remediation_approval_request.go)
 
-// 1. Record approval decision (line ~110)
+// Record approval decision (line ~110)
 if r.metrics != nil {
     r.metrics.RecordApprovalDecision(string(decision), rar.Namespace)
-}
-
-// 2. Record audit success (line ~145)
-if r.metrics != nil {
-    r.metrics.RecordAuditEventSuccess("RAR", "approval_decision", rar.Namespace)
-}
-
-// 3. Record audit failure (line ~135)
-if r.metrics != nil {
-    r.metrics.RecordAuditEventFailure("RAR", "approval_decision", rar.Namespace)
 }
 ```
 
@@ -147,9 +96,7 @@ if r.metrics != nil {
 ### Positive
 
 1. **SOC 2 Compliance** (100% confidence)
-   - ✅ Real-time audit trail completeness tracking (CC7.2)
    - ✅ Approval/rejection attribution for auditors (CC8.1)
-   - ✅ Immediate alerting on audit failures (compliance gaps)
 
 2. **Operational Insights** (95% confidence)
    - ✅ Approval rate trends (e.g., 90% approvals → policy working)
@@ -157,9 +104,7 @@ if r.metrics != nil {
    - ✅ Operator workload forecasting (approval volume trends)
 
 3. **Alerting & Monitoring** (100% confidence)
-   - ✅ **CRITICAL**: Audit failure alerts (PagerDuty integration)
    - ✅ Approval spike detection (potential security incidents)
-   - ✅ DataStorage health monitoring (via audit success rate)
 
 4. **Business Intelligence** (90% confidence)
    - ✅ Approval velocity (time from RAR creation to decision)
@@ -170,7 +115,6 @@ if r.metrics != nil {
 
 1. **Metrics Cardinality** (low concern)
    - Labels: `decision` (3 values) × `namespace` (~10-50) = 30-150 series
-   - Labels: `crd_type` (10) × `event_type` (20) × `status` (2) × `namespace` (50) = 20,000 series
    - **Mitigation**: Reasonable cardinality for Prometheus (< 100K recommended)
 
 2. **Performance Impact** (negligible)
@@ -181,24 +125,6 @@ if r.metrics != nil {
 ---
 
 ## Alerting Rules
-
-### Critical Alerts (PagerDuty)
-
-```yaml
-# ALERT: Audit trail integrity violation
-- alert: AuditTrailFailure
-  expr: |
-    increase(kubernaut_remediationorchestrator_audit_events_total{status="failure"}[5m]) > 0
-  for: 1m
-  severity: critical
-  annotations:
-    summary: "Audit event emission failed - SOC 2 CC7.2 compliance gap"
-    description: "{{ $value }} audit events failed in namespace {{ $labels.namespace }} (CRD: {{ $labels.crd_type }})"
-    runbook: "https://docs.kubernaut.ai/runbooks/audit-failure"
-  labels:
-    compliance: soc2
-    control: CC7.2
-```
 
 ### Warning Alerts (Slack)
 
@@ -235,21 +161,7 @@ sum by (decision) (
 
 ---
 
-### Panel 2: Audit Trail Completeness (Gauge)
-
-```promql
-100 * (
-  sum(rate(kubernaut_remediationorchestrator_audit_events_total{status="success"}[5m]))
-  /
-  sum(rate(kubernaut_remediationorchestrator_audit_events_total[5m]))
-)
-```
-
-**Business Value**: Real-time SOC 2 CC7.2 compliance status (must be 100%)
-
----
-
-### Panel 3: Approval Rate Trend (Time Series)
+### Panel 2: Approval Rate Trend (Time Series)
 
 ```promql
 sum(rate(kubernaut_remediationorchestrator_approval_decisions_total{decision="Approved"}[5m]))
@@ -258,18 +170,6 @@ sum(rate(kubernaut_remediationorchestrator_approval_decisions_total[5m]))
 ```
 
 **Business Value**: Monitor policy effectiveness over time
-
----
-
-### Panel 4: Audit Event Volume by CRD Type (Stacked Area)
-
-```promql
-sum by (crd_type) (
-  rate(kubernaut_remediationorchestrator_audit_events_total{status="success"}[5m])
-)
-```
-
-**Business Value**: Capacity planning for audit infrastructure
 
 ---
 
@@ -293,7 +193,6 @@ sum by (crd_type) (
 **Test Coverage**:
 - Metrics appear in /metrics endpoint
 - Metrics increment on approval decisions
-- Metrics increment on audit events
 
 ---
 
@@ -303,7 +202,6 @@ sum by (crd_type) (
 
 **Test Coverage**:
 - Metrics emitted during full RAR approval flow
-- Audit failure metrics on DataStorage unavailability
 
 ---
 

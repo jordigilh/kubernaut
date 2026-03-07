@@ -212,10 +212,9 @@
 6. `notification_reconciliation_duration_seconds`
 7. `notification_reconciliation_errors_total` (error_type label)
 8. `notification_active_notifications` (phase label)
-9. `notification_sanitization_redactions_total` (pattern_type label)
-10. `notification_channel_health_score` (channel label, 0-100 scale)
+9. `notification_channel_health_score` (channel label, 0-100 scale)
 
-**Status**: ✅ **95% Coverage** (unit + integration validation, all 10 metrics implemented)
+**Status**: ✅ **95% Coverage** (unit + integration validation, all 9 metrics implemented)
 
 ---
 

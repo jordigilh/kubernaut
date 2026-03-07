@@ -809,7 +809,6 @@ context_api:
 - [ ] **Define event types** (per service table above)
 
 - [ ] **Add Prometheus metrics**
-  - `audit_events_buffered_total`
   - `audit_events_dropped_total`
   - `audit_events_written_total`
 

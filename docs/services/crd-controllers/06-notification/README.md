@@ -377,7 +377,6 @@ The controller exposes 10 comprehensive Prometheus metrics on `:9186/metrics`:
 | `notification_reconciliation_duration_seconds` | Histogram | - | Reconciliation duration |
 | `notification_reconciliation_errors_total` | Counter | error_type | Reconciliation errors by type |
 | `notification_active_notifications` | Gauge | phase | Active notifications by phase |
-| `notification_sanitization_redactions_total` | Counter | pattern_type | Sanitization redactions by pattern |
 | `notification_channel_health_score` | Gauge | channel | Channel health score (0-100) |
 
 ### **Health Probes**

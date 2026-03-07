@@ -134,8 +134,6 @@ kubectl port-forward -n monitoring svc/prometheus-k8s 9090:9090
 - `datastorage_cache_misses_total`
 - `datastorage_embedding_generation_duration_seconds`
 - `datastorage_validation_failures_total`
-- `datastorage_query_total`
-- `datastorage_query_duration_seconds`
 
 ---
 
@@ -206,11 +204,7 @@ data:
    - Cache Hit Rate
    - Embedding Generation Duration
    - Validation Failures by Field
-   - Query Operations Rate
-   - Query Duration by Operation
-   - Semantic Search Performance
    - Error Rate Overview
-   - Query Error Rate
    - Validation Failure Rate
 
 ---
@@ -262,22 +256,6 @@ spec:
             description: "PostgreSQL is failing to write audit records"
             runbook_url: "https://docs.example.com/runbook/data-storage-postgresql-failure"
 
-        - alert: DataStorageHighQueryErrorRate
-          expr: |
-            100 * (
-              sum(rate(datastorage_query_total{status="failure"}[5m]))
-              /
-              sum(rate(datastorage_query_total[5m]))
-            ) > 5
-          for: 5m
-          labels:
-            severity: critical
-            service: data-storage
-          annotations:
-            summary: "Data Storage query error rate > 5%"
-            description: "Query error rate is {{ $value | humanizePercentage }} for the last 5 minutes"
-            runbook_url: "https://docs.example.com/runbook/data-storage-high-query-error-rate"
-
     - name: data-storage-warning
       interval: 30s
       rules:
@@ -306,19 +284,6 @@ spec:
             summary: "Embedding cache hit rate < 50%"
             description: "Cache hit rate is {{ $value | humanizePercentage }}, consider increasing cache size"
             runbook_url: "https://docs.example.com/runbook/data-storage-low-cache-hit-rate"
-
-        - alert: DataStorageSlowSemanticSearch
-          expr: |
-            histogram_quantile(0.95, rate(datastorage_query_duration_seconds_bucket{operation="semantic_search"}[5m]))
-            > 0.1
-          for: 10m
-          labels:
-            severity: warning
-            service: data-storage
-          annotations:
-            summary: "Semantic search p95 latency > 100ms"
-            description: "Semantic search is taking {{ $value | humanizeDuration }} at p95"
-            runbook_url: "https://docs.example.com/runbook/data-storage-slow-semantic-search"
 ```
 
 **Apply PrometheusRule**:
@@ -662,9 +627,9 @@ logger.Info("audit created",
 
 ## Summary
 
-- **Metrics Collected**: 11 Prometheus metrics with 47 unique label combinations
-- **Dashboards**: 1 Grafana dashboard with 13 panels
-- **Alerts**: 6 alerts (3 critical, 3 warning)
+- **Metrics Collected**: 9 Prometheus metrics with 47 unique label combinations
+- **Dashboards**: 1 Grafana dashboard with 11 panels
+- **Alerts**: 5 alerts (2 critical, 3 warning)
 - **Performance Impact**: < 1% overhead
 - **Cardinality**: Well within safe limits (< 100)
 

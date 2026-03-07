@@ -1,5 +1,7 @@
 # Remediation Orchestrator Metrics (DD-005 Compliant)
 
+> **Note**: Several metrics were removed per GitHub issue #294. This document reflects the current metric set.
+
 **Version**: 1.0
 **Date**: 2025-12-07
 **Status**: ✅ Implemented
@@ -24,24 +26,8 @@ kubernaut_remediationorchestrator_<metric_name>_{total|seconds|...}
 
 | Metric | Type | Labels | Description | BR Reference |
 |--------|------|--------|-------------|--------------|
-| `kubernaut_remediationorchestrator_reconcile_total` | Counter | namespace, phase | Total reconciliation attempts | Standard |
 | `kubernaut_remediationorchestrator_reconcile_duration_seconds` | Histogram | namespace, phase | Reconciliation duration | Standard |
 | `kubernaut_remediationorchestrator_phase_transitions_total` | Counter | from_phase, to_phase, namespace | Phase transitions | Standard |
-
-### Notification Metrics (BR-ORCH-001, BR-ORCH-036)
-
-| Metric | Type | Labels | Description | BR Reference |
-|--------|------|--------|-------------|--------------|
-| `kubernaut_remediationorchestrator_approval_notifications_total` | Counter | namespace | Approval notifications created | BR-ORCH-001 |
-| `kubernaut_remediationorchestrator_manual_review_notifications_total` | Counter | source, reason, sub_reason, namespace | Manual review notifications | BR-ORCH-036 |
-
-**Label Values for `manual_review_notifications_total`**:
-
-| Label | Values |
-|-------|--------|
-| `source` | `WorkflowExecution`, `AIAnalysis` |
-| `reason` | `ExhaustedRetries`, `PreviousExecutionFailed`, `ExecutionFailure`, `WorkflowResolutionFailed` |
-| `sub_reason` | `WorkflowNotFound`, `ImageMismatch`, `ParameterValidationFailed`, `NoMatchingWorkflows`, `LowConfidence`, `LLMParsingError`, `InvestigationInconclusive` |
 
 ### No-Action Metrics (BR-ORCH-037, BR-HAPI-200)
 
@@ -86,11 +72,6 @@ kubernaut_remediationorchestrator_<metric_name>_{total|seconds|...}
 ### Prometheus Queries
 
 ```promql
-# Manual review notifications by source
-sum by (source) (
-  rate(kubernaut_remediationorchestrator_manual_review_notifications_total[5m])
-)
-
 # No-action remediations (problem self-resolved)
 sum by (reason) (
   increase(kubernaut_remediationorchestrator_no_action_needed_total[1h])
@@ -111,9 +92,8 @@ sum by (phase) (
 
 **Suggested panels**:
 1. **Remediation Outcomes** - Pie chart: Remediated vs NoActionRequired vs ManualReviewRequired
-2. **Manual Review by Source** - Time series: WE vs AI failures
-3. **Reconciliation Latency** - Heatmap: p50, p90, p99
-4. **Timeout Rate** - Time series by phase
+2. **Reconciliation Latency** - Heatmap: p50, p90, p99
+3. **Timeout Rate** - Time series by phase
 
 ---
 
@@ -126,8 +106,8 @@ Metrics are registered in `init()` via controller-runtime's metrics registry:
 ```go
 func init() {
     metrics.Registry.MustRegister(
-        ReconcileTotal,
-        ManualReviewNotificationsTotal,
+        ReconcileDurationSeconds,
+        PhaseTransitionsTotal,
         // ...
     )
 }
@@ -138,11 +118,9 @@ func init() {
 ```go
 import "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
 
-// In handler code
-metrics.ManualReviewNotificationsTotal.WithLabelValues(
-    "AIAnalysis",
-    "WorkflowResolutionFailed",
-    "LowConfidence",
+// In handler code - example for NoActionNeededTotal
+metrics.NoActionNeededTotal.WithLabelValues(
+    "problem_resolved",
     rr.Namespace,
 ).Inc()
 ```

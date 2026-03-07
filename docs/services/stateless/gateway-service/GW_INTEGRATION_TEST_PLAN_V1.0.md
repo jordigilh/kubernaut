@@ -20,7 +20,7 @@ Restore Gateway integration test coverage from 30.1% to ≥50% (target: 55%) thr
 - **Phase 1 Tests**: 35/35 (100% complete) ✅
   - ✅ Audit Emission: 20/20 tests (100%) ✅ **All Passing**
   - ✅ Metrics Emission: 15/15 tests (100%) ✅ **All Passing**
-  - ✅ **Fixed**: GW-INT-AUD-004, 006, 007 (UTC timestamp), GW-INT-MET-012 (dedup rate)
+  - ✅ **Fixed**: GW-INT-AUD-004, 006, 007 (UTC timestamp)
 - **Phase 2 Tests**: 18/28 (64% complete) ✅ **COMPLETE**
   - ✅ Prometheus Adapters: 7/7 tests (100%)
   - ✅ K8s Event Adapters: 8/8 tests (100%)
@@ -66,7 +66,7 @@ Restore Gateway integration test coverage from 30.1% to ≥50% (target: 55%) thr
   - ✅ GW-INT-AUD-004, 006, 007: Fixed (UTC timestamp issue resolved)
   - ✅ GW-INT-AUD-018: Implemented (RetryObserver emits per-attempt audit events)
 - ✅ **Metrics Emission**: 15/15 tests (100%) - All passing ✅
-  - ✅ GW-INT-MET-012: Fixed (deduplication rate custom collector)
+  - GW-INT-MET-012: (removed - deduplication rate metric no longer exists)
 
 **Phase 2 Progress Details** (✅ **COMPLETE**):
 - ✅ **Prometheus Adapters**: 7/7 tests (100%)
@@ -121,7 +121,7 @@ Restore Gateway integration test coverage from 30.1% to ≥50% (target: 55%) thr
 | GW-INT-MET-009 | Creation Duration Histogram | Metrics | 070 | P0 | ✅ Pass | 2.2.4 |
 | GW-INT-MET-010 | CRD Metric Cleanup | Metrics | 069 | P1 | ✅ Pass | 2.2.5 |
 | GW-INT-MET-011 | Deduplicated Signals Counter | Metrics | 066 | P0 | ✅ Pass | 2.3.1 |
-| GW-INT-MET-012 | Dedup Rate Gauge | Metrics | 066 | P1 | ✅ Pass | 2.3.2 |
+| GW-INT-MET-012 | Dedup Rate Gauge | Metrics | 066 | P1 | removed | 2.3.2 |
 | GW-INT-MET-013 | Dedup By Reason Counter | Metrics | 066 | P1 | ✅ Pass | 2.3.3 |
 | GW-INT-MET-014 | Dedup Savings Counter | Metrics | 066 | P1 | ✅ Pass | 2.3.4 |
 | GW-INT-MET-015 | Metric Correlation With Audit | Metrics | 066 | P0 | ✅ Pass | 2.3.5 |
@@ -3150,7 +3150,7 @@ func NewAuditEventRequest() *ogenclient.AuditEventRequest {
 
 ### **GW-INT-MET-012: Deduplication Rate Gauge Implementation** (✅ RESOLVED)
 **Status**: ✅ **RESOLVED** - Custom collector pattern implemented (January 17, 2026)
-**Original Issue**: Test failed because `gateway_deduplication_rate` gauge was never updated
+**Original Issue**: Test failed because deduplication rate gauge was never updated
 **Root Cause**: Gauge was defined in metrics but no code updated its value
 
 **Implementation Decision** (based on user feedback):
@@ -3207,8 +3207,6 @@ func (c *DeduplicationRateCollector) Collect(ch chan<- prometheus.Metric) {
 - Keep business logic decoupled from metrics implementation
 
 **Authority**: Prometheus best practices, Gateway metrics API spec
-**Test Fixed**: GW-INT-MET-012 (Dedup Rate Gauge)
-**Business Impact**: Deduplication rate metrics now available for monitoring (BR-GATEWAY-066)
 
 ---
 
