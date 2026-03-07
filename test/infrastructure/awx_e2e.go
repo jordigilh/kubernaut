@@ -88,21 +88,6 @@ data:
         }
     }
     BROKER_URL = 'redis://redis:6379/1'
-    CHANNEL_LAYERS = {
-        'default': {
-            'BACKEND': 'channels_redis.core.RedisChannelLayer',
-            'CONFIG': {
-                'hosts': [('redis', 6379)],
-                'prefix': 'awx',
-            },
-        },
-    }
-    CACHES = {
-        'default': {
-            'BACKEND': 'django_redis.cache.RedisCache',
-            'LOCATION': 'redis://redis:6379/1',
-        },
-    }
     CLUSTER_HOST_ID = "awx-e2e"
     CSRF_TRUSTED_ORIGINS = ['http://localhost:%[5]d', 'http://awx-service.%[1]s:8052']
 ---
