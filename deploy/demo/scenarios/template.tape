@@ -73,14 +73,14 @@ Type `export KUBECONFIG=~/.kube/kubernaut-demo-config`
 Enter
 Sleep 500ms
 
-Type `narrate() { printf '\e[1A\e[2K\e[38;5;245m%s\e[0m\n' "$*"; }`
+Type `narrate() { printf '\e[3A\e[J\e[38;5;245m%s\e[0m\n' "$*"; }`
 Enter
 Sleep 200ms
 
 Type `_act=""`
 Enter
 Sleep 100ms
-Type `announce() { _act="$*"; printf '\e[1A\e[2K\n\e[1;33m━━ %s ━━\e[0m\n\n' "$*"; }`
+Type `announce() { _act="$*"; printf '\e[3A\e[J\n\e[1;33m━━ %s ━━\e[0m\n\n' "$*"; }`
 Enter
 Sleep 200ms
 
@@ -90,7 +90,7 @@ Sleep 200ms
 
 # title_card: scenario-specific intro rendered as a single self-erasing call
 # CUSTOMIZE: replace title, description, and act summaries
-Type `title_card() { printf '\e[1A\e[2K\n\e[1;33m━━ <SCENARIO_TITLE> ━━\e[0m\n\n\e[38;5;245m<SCENARIO_DESCRIPTION_LINE_1>\n<SCENARIO_DESCRIPTION_LINE_2>\e[0m\n\n\e[1;33mAct 1\e[0m  \e[38;5;245mThe Problem     — <ACT1_SHORT>\e[0m\n\e[1;33mAct 2\e[0m  \e[38;5;245mThe Remediation — <ACT2_SHORT>\e[0m\n\e[1;33mAct 3\e[0m  \e[38;5;245mThe Result      — <ACT3_SHORT>\e[0m\n'; }`
+Type `title_card() { printf '\e[3A\e[J\n\e[1;33m━━ <SCENARIO_TITLE> ━━\e[0m\n\n\e[38;5;245m<SCENARIO_DESCRIPTION_LINE_1>\n<SCENARIO_DESCRIPTION_LINE_2>\e[0m\n\n\e[1;33mAct 1\e[0m  \e[38;5;245mThe Problem     — <ACT1_SHORT>\e[0m\n\e[1;33mAct 2\e[0m  \e[38;5;245mThe Remediation — <ACT2_SHORT>\e[0m\n\e[1;33mAct 3\e[0m  \e[38;5;245mThe Result      — <ACT3_SHORT>\e[0m\n'; }`
 Enter
 Sleep 200ms
 

@@ -63,7 +63,7 @@ Enter
 Sleep 500ms
 
 # Self-erasing helpers: \e[1A moves up, \e[2K erases the typed command line
-Type `narrate() { printf '\e[1A\e[2K\e[38;5;245m%s\e[0m\n' "$*"; }`
+Type `narrate() { printf '\e[3A\e[J\e[38;5;245m%s\e[0m\n' "$*"; }`
 Enter
 Sleep 200ms
 
@@ -72,7 +72,7 @@ Type `_act=""`
 Enter
 Sleep 100ms
 
-Type `announce() { _act="$*"; printf '\e[1A\e[2K\n\e[1;33m━━ %s ━━\e[0m\n\n' "$*"; }`
+Type `announce() { _act="$*"; printf '\e[3A\e[J\n\e[1;33m━━ %s ━━\e[0m\n\n' "$*"; }`
 Enter
 Sleep 200ms
 
@@ -81,7 +81,7 @@ Enter
 Sleep 200ms
 
 # title_card: scenario-specific intro rendered as a single self-erasing call
-Type `title_card() { printf '\e[1A\e[2K\n\e[1;33m━━ PDB Deadlock Remediation ━━\e[0m\n\n\e[38;5;245mA PodDisruptionBudget blocks node drain, creating a deadlock.\nKubernaut detects the stalled disruption budget, diagnoses it with AI,\nrelaxes the PDB to unblock the drain, and verifies recovery.\e[0m\n\n\e[1;33mAct 1\e[0m  \e[38;5;245mThe Problem     — drain blocked by PDB, disruption budget at limit, alert fires\e[0m\n\e[1;33mAct 2\e[0m  \e[38;5;245mThe Remediation — AI root cause analysis, approval gate, PDB relaxation runs\e[0m\n\e[1;33mAct 3\e[0m  \e[38;5;245mThe Result      — PDB relaxed, drain proceeds, EA confirms fix\e[0m\n'; }`
+Type `title_card() { printf '\e[3A\e[J\n\e[1;33m━━ PDB Deadlock Remediation ━━\e[0m\n\n\e[38;5;245mA PodDisruptionBudget blocks node drain, creating a deadlock.\nKubernaut detects the stalled disruption budget, diagnoses it with AI,\nrelaxes the PDB to unblock the drain, and verifies recovery.\e[0m\n\n\e[1;33mAct 1\e[0m  \e[38;5;245mThe Problem     — drain blocked by PDB, disruption budget at limit, alert fires\e[0m\n\e[1;33mAct 2\e[0m  \e[38;5;245mThe Remediation — AI root cause analysis, approval gate, PDB relaxation runs\e[0m\n\e[1;33mAct 3\e[0m  \e[38;5;245mThe Result      — PDB relaxed, drain proceeds, EA confirms fix\e[0m\n'; }`
 Enter
 Sleep 200ms
 

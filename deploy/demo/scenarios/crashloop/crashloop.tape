@@ -4,7 +4,7 @@
 #   Title Card:                    scenario overview + 3-act roadmap (20s hold)
 #   Act 1 -- "The Problem":       healthy workload, fault injection, CrashLoopBackOff, alert fires
 #   Act 2 -- "The Remediation":   RCA, rego policy, RAR approval, live RR phase transitions
-#   Act 3 -- "The Result":        recovery verification, notifications, EA assessment
+#   Act 3 -- "The Result":        recovery verification, notifications, effectiveness result
 #
 # Pre-requisites:
 #   - Kind cluster with Kubernaut platform deployed
@@ -62,8 +62,9 @@ Type `export KUBECONFIG=~/.kube/kubernaut-demo-config`
 Enter
 Sleep 500ms
 
-# Self-erasing helpers: \e[1A moves up, \e[2K erases the typed command line
-Type `narrate() { printf '\e[1A\e[2K\e[38;5;245m%s\e[0m\n' "$*"; }`
+# Self-erasing helpers: \e[3A\e[J moves up 3 lines and clears to end of screen
+# (handles wrapped command lines at 1600px width)
+Type `narrate() { printf '\e[3A\e[J\e[38;5;245m%s\e[0m\n' "$*"; }`
 Enter
 Sleep 200ms
 
@@ -72,7 +73,7 @@ Type `_act=""`
 Enter
 Sleep 100ms
 
-Type `announce() { _act="$*"; printf '\e[1A\e[2K\n\e[1;33m━━ %s ━━\e[0m\n\n' "$*"; }`
+Type `announce() { _act="$*"; printf '\e[3A\e[J\n\e[1;33m━━ %s ━━\e[0m\n\n' "$*"; }`
 Enter
 Sleep 200ms
 
@@ -81,7 +82,7 @@ Enter
 Sleep 200ms
 
 # title_card: scenario-specific intro rendered as a single self-erasing call
-Type `title_card() { printf '\e[1A\e[2K\n\e[1;33m━━ CrashLoopBackOff Remediation ━━\e[0m\n\n\e[38;5;245mA production nginx deployment receives a bad config update.\nKubernaut detects the crash, diagnoses the root cause with AI,\nexecutes a rollback workflow, and verifies the fix.\e[0m\n\n\e[1;33mAct 1\e[0m  \e[38;5;245mThe Problem     — bad config crashes pods, Prometheus alert fires\e[0m\n\e[1;33mAct 2\e[0m  \e[38;5;245mThe Remediation — AI root cause analysis, approval gate, workflow runs\e[0m\n\e[1;33mAct 3\e[0m  \e[38;5;245mThe Result      — pods recover, effectiveness assessment confirms fix\e[0m\n'; }`
+Type `title_card() { printf '\e[3A\e[J\n\e[1;33m━━ CrashLoopBackOff Remediation ━━\e[0m\n\n\e[38;5;245mA production nginx deployment receives a bad config update.\nKubernaut detects the crash, diagnoses the root cause with AI,\nexecutes a rollback workflow, and verifies the fix.\e[0m\n\n\e[1;33mAct 1\e[0m  \e[38;5;245mThe Problem     — bad config crashes pods, Prometheus alert fires\e[0m\n\e[1;33mAct 2\e[0m  \e[38;5;245mThe Remediation — AI root cause analysis, approval gate, workflow runs\e[0m\n\e[1;33mAct 3\e[0m  \e[38;5;245mThe Result      — pods recover, effectiveness assessment confirms fix\e[0m\n'; }`
 Enter
 Sleep 200ms
 
@@ -336,12 +337,10 @@ Sleep 500ms
 Type "narrate 'Approving and watching pods — the workflow will rollback to the previous good config'"
 Enter
 Sleep 300ms
-Set TypingSpeed 50ms
-Show
-Sleep 2s
-
 Type "(sleep 3 && bash deploy/demo/scripts/approve-rar.sh >/dev/null 2>&1) & kubectl get pods -n demo-crashloop -w"
 Enter
+Set TypingSpeed 50ms
+Show
 Sleep 45s
 Ctrl+C
 Sleep 2s
@@ -405,10 +404,6 @@ Type "kubectl get pods -n demo-crashloop"
 Enter
 Sleep 5s
 
-Type "kubectl get remediationrequests -n ${PLATFORM_NS}"
-Enter
-Sleep 5s
-
 Hide
 Set TypingSpeed 1ms
 Type "narrate 'Notification delivered to Slack and console'"
@@ -421,27 +416,6 @@ Sleep 2s
 Type "bash deploy/demo/scripts/show-notification.sh ${PLATFORM_NS}"
 Enter
 Sleep 12s
-
-Hide
-Set TypingSpeed 1ms
-Type "narrate 'Waiting for EffectivenessAssessment to complete (stabilization: 1m)...'"
-Enter
-Sleep 300ms
-Set TypingSpeed 50ms
-Show
-Sleep 2s
-
-# Hidden wait: poll until EA reaches Completed or Failed
-Hide
-Set TypingSpeed 1ms
-Type `while true; do PHASE=$(kubectl get effectivenessassessments -n ${PLATFORM_NS} -o jsonpath='{.items[0].status.phase}' 2>/dev/null); [ "$PHASE" = "Completed" ] || [ "$PHASE" = "Failed" ] && break; sleep 10; done && clear && echo EA"_"DONE`
-Enter
-Wait+Screen@600s /EA_DONE/
-Type "act_clear"
-Enter
-Sleep 500ms
-Set TypingSpeed 50ms
-Show
 
 Hide
 Set TypingSpeed 1ms

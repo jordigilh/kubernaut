@@ -62,7 +62,7 @@ Enter
 Sleep 500ms
 
 # Self-erasing helpers: \e[1A moves up, \e[2K erases the typed command line
-Type `narrate() { printf '\e[1A\e[2K\e[38;5;245m%s\e[0m\n' "$*"; }`
+Type `narrate() { printf '\e[3A\e[J\e[38;5;245m%s\e[0m\n' "$*"; }`
 Enter
 Sleep 200ms
 
@@ -70,7 +70,7 @@ Type `_act=""`
 Enter
 Sleep 100ms
 
-Type `announce() { _act="$*"; printf '\e[1A\e[2K\n\e[1;33m━━ %s ━━\e[0m\n\n' "$*"; }`
+Type `announce() { _act="$*"; printf '\e[3A\e[J\n\e[1;33m━━ %s ━━\e[0m\n\n' "$*"; }`
 Enter
 Sleep 200ms
 
@@ -79,7 +79,7 @@ Enter
 Sleep 200ms
 
 # title_card: scenario-specific intro
-Type `title_card() { printf '\e[1A\e[2K\n\e[1;33m━━ Resource Quota Exhaustion — Escalation to Human ━━\e[0m\n\n\e[38;5;245mA deployment exhausts its resource quota with no room to scale.\nKubernaut detects the quota exhaustion, analyzes it with AI, determines\nautomated action is blocked by policy, and escalates to a human operator.\e[0m\n\n\e[1;33mAct 1\e[0m  \e[38;5;245mquota exhausted, pods cannot scale, alert fires\e[0m\n\e[1;33mAct 2\e[0m  \e[38;5;245mAI analysis, policy blocks automation, escalation\e[0m\n\e[1;33mAct 3\e[0m  \e[38;5;245mManualReviewRequired — operator notified\e[0m\n'; }`
+Type `title_card() { printf '\e[3A\e[J\n\e[1;33m━━ Resource Quota Exhaustion — Escalation to Human ━━\e[0m\n\n\e[38;5;245mA deployment exhausts its resource quota with no room to scale.\nKubernaut detects the quota exhaustion, analyzes it with AI, determines\nautomated action is blocked by policy, and escalates to a human operator.\e[0m\n\n\e[1;33mAct 1\e[0m  \e[38;5;245mquota exhausted, pods cannot scale, alert fires\e[0m\n\e[1;33mAct 2\e[0m  \e[38;5;245mAI analysis, policy blocks automation, escalation\e[0m\n\e[1;33mAct 3\e[0m  \e[38;5;245mManualReviewRequired — operator notified\e[0m\n'; }`
 Enter
 Sleep 200ms
 

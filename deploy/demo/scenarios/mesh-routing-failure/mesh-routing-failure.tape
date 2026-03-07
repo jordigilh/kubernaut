@@ -64,7 +64,7 @@ Enter
 Sleep 500ms
 
 # Self-erasing helpers: \e[1A moves up, \e[2K erases the typed command line
-Type `narrate() { printf '\e[1A\e[2K\e[38;5;245m%s\e[0m\n' "$*"; }`
+Type `narrate() { printf '\e[3A\e[J\e[38;5;245m%s\e[0m\n' "$*"; }`
 Enter
 Sleep 200ms
 
@@ -73,7 +73,7 @@ Type `_act=""`
 Enter
 Sleep 100ms
 
-Type `announce() { _act="$*"; printf '\e[1A\e[2K\n\e[1;33m━━ %s ━━\e[0m\n\n' "$*"; }`
+Type `announce() { _act="$*"; printf '\e[3A\e[J\n\e[1;33m━━ %s ━━\e[0m\n\n' "$*"; }`
 Enter
 Sleep 200ms
 
@@ -82,7 +82,7 @@ Enter
 Sleep 200ms
 
 # title_card: scenario-specific intro rendered as a single self-erasing call
-Type `title_card() { printf '\e[1A\e[2K\n\e[1;33m━━ Mesh Routing Failure Remediation ━━\e[0m\n\n\e[38;5;245mA deny AuthorizationPolicy blocks service mesh traffic in staging.\nKubernaut detects the routing failure, diagnoses the policy with AI,\nremoves the blocking rule, and verifies mesh traffic resumes.\e[0m\n\n\e[1;33mAct 1\e[0m  \e[38;5;245mdeny policy applied, mesh traffic blocked, alert fires\e[0m\n\e[1;33mAct 2\e[0m  \e[38;5;245mAI root cause analysis, auto-approved, policy removal runs\e[0m\n\e[1;33mAct 3\e[0m  \e[38;5;245mpolicy removed, mesh traffic resumes, EA confirms fix\e[0m\n'; }`
+Type `title_card() { printf '\e[3A\e[J\n\e[1;33m━━ Mesh Routing Failure Remediation ━━\e[0m\n\n\e[38;5;245mA deny AuthorizationPolicy blocks service mesh traffic in staging.\nKubernaut detects the routing failure, diagnoses the policy with AI,\nremoves the blocking rule, and verifies mesh traffic resumes.\e[0m\n\n\e[1;33mAct 1\e[0m  \e[38;5;245mdeny policy applied, mesh traffic blocked, alert fires\e[0m\n\e[1;33mAct 2\e[0m  \e[38;5;245mAI root cause analysis, auto-approved, policy removal runs\e[0m\n\e[1;33mAct 3\e[0m  \e[38;5;245mpolicy removed, mesh traffic resumes, EA confirms fix\e[0m\n'; }`
 Enter
 Sleep 200ms
 

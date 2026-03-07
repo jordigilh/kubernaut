@@ -53,7 +53,7 @@ Type `export KUBECONFIG=~/.kube/kubernaut-demo-config`
 Enter
 Sleep 500ms
 
-Type `narrate() { printf '\e[1A\e[2K\e[38;5;245m%s\e[0m\n' "$*"; }`
+Type `narrate() { printf '\e[3A\e[J\e[38;5;245m%s\e[0m\n' "$*"; }`
 Enter
 Sleep 200ms
 
@@ -61,7 +61,7 @@ Type `_act=""`
 Enter
 Sleep 100ms
 
-Type `announce() { _act="$*"; printf '\e[1A\e[2K\n\e[1;33m━━ %s ━━\e[0m\n\n' "$*"; }`
+Type `announce() { _act="$*"; printf '\e[3A\e[J\n\e[1;33m━━ %s ━━\e[0m\n\n' "$*"; }`
 Enter
 Sleep 200ms
 
@@ -69,7 +69,7 @@ Type `act_clear() { clear; [ -n "$_act" ] && printf '\e[1;33m━━ %s ━━\e[
 Enter
 Sleep 200ms
 
-Type `title_card() { printf '\e[1A\e[2K\n\e[1;33m━━ Memory Leak Remediation ━━\e[0m\n\n\e[38;5;245mA leaker sidecar steadily consumes memory in a staging environment.\nPrometheus predicts memory exhaustion using linear extrapolation.\nKubernaut ingests the proactive alert, diagnoses the leak with AI,\nrestarts the pod to reset memory, and verifies the fix.\e[0m\n\n\e[1;33mAct 1\e[0m  \e[38;5;245mThe Problem     — memory leak grows, Prometheus predicts exhaustion, alert fires\e[0m\n\e[1;33mAct 2\e[0m  \e[38;5;245mThe Remediation — AI root cause analysis, auto-approved, pod restart runs\e[0m\n\e[1;33mAct 3\e[0m  \e[38;5;245mThe Result      — pod restarted, memory reset, EA confirms fix\e[0m\n'; }`
+Type `title_card() { printf '\e[3A\e[J\n\e[1;33m━━ Memory Leak Remediation ━━\e[0m\n\n\e[38;5;245mA leaker sidecar steadily consumes memory in a staging environment.\nPrometheus predicts memory exhaustion using linear extrapolation.\nKubernaut ingests the proactive alert, diagnoses the leak with AI,\nrestarts the pod to reset memory, and verifies the fix.\e[0m\n\n\e[1;33mAct 1\e[0m  \e[38;5;245mThe Problem     — memory leak grows, Prometheus predicts exhaustion, alert fires\e[0m\n\e[1;33mAct 2\e[0m  \e[38;5;245mThe Remediation — AI root cause analysis, auto-approved, pod restart runs\e[0m\n\e[1;33mAct 3\e[0m  \e[38;5;245mThe Result      — pod restarted, memory reset, EA confirms fix\e[0m\n'; }`
 Enter
 Sleep 200ms
 

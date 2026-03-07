@@ -64,7 +64,7 @@ Enter
 Sleep 500ms
 
 # Self-erasing helpers: \e[1A moves up, \e[2K erases the typed command line
-Type `narrate() { printf '\e[1A\e[2K\e[38;5;245m%s\e[0m\n' "$*"; }`
+Type `narrate() { printf '\e[3A\e[J\e[38;5;245m%s\e[0m\n' "$*"; }`
 Enter
 Sleep 200ms
 
@@ -73,7 +73,7 @@ Type `_act=""`
 Enter
 Sleep 100ms
 
-Type `announce() { _act="$*"; printf '\e[1A\e[2K\n\e[1;33m━━ %s ━━\e[0m\n\n' "$*"; }`
+Type `announce() { _act="$*"; printf '\e[3A\e[J\n\e[1;33m━━ %s ━━\e[0m\n\n' "$*"; }`
 Enter
 Sleep 200ms
 
@@ -82,7 +82,7 @@ Enter
 Sleep 200ms
 
 # title_card: scenario-specific intro rendered as a single self-erasing call
-Type `title_card() { printf '\e[1A\e[2K\n\e[1;33m━━ Cluster Autoscale Remediation ━━\e[0m\n\n\e[38;5;245mA scale-up exceeds available node capacity, leaving pods Pending.\nKubernaut detects the scheduling failure, diagnoses the capacity gap\nwith AI, provisions a new node, and verifies all pods are scheduled.\e[0m\n\n\e[1;33mAct 1\e[0m  \e[38;5;245mThe Problem     — scale-up exceeds capacity, pods stuck Pending, alert fires\e[0m\n\e[1;33mAct 2\e[0m  \e[38;5;245mThe Remediation — AI root cause analysis, approval gate, node provisioning runs\e[0m\n\e[1;33mAct 3\e[0m  \e[38;5;245mThe Result      — new node provisioned, pods scheduled, EA confirms fix\e[0m\n'; }`
+Type `title_card() { printf '\e[3A\e[J\n\e[1;33m━━ Cluster Autoscale Remediation ━━\e[0m\n\n\e[38;5;245mA scale-up exceeds available node capacity, leaving pods Pending.\nKubernaut detects the scheduling failure, diagnoses the capacity gap\nwith AI, provisions a new node, and verifies all pods are scheduled.\e[0m\n\n\e[1;33mAct 1\e[0m  \e[38;5;245mThe Problem     — scale-up exceeds capacity, pods stuck Pending, alert fires\e[0m\n\e[1;33mAct 2\e[0m  \e[38;5;245mThe Remediation — AI root cause analysis, approval gate, node provisioning runs\e[0m\n\e[1;33mAct 3\e[0m  \e[38;5;245mThe Result      — new node provisioned, pods scheduled, EA confirms fix\e[0m\n'; }`
 Enter
 Sleep 200ms
 

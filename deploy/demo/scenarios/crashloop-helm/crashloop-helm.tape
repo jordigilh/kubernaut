@@ -64,7 +64,7 @@ Enter
 Sleep 500ms
 
 # Self-erasing helpers: \e[1A moves up, \e[2K erases the typed command line
-Type `narrate() { printf '\e[1A\e[2K\e[38;5;245m%s\e[0m\n' "$*"; }`
+Type `narrate() { printf '\e[3A\e[J\e[38;5;245m%s\e[0m\n' "$*"; }`
 Enter
 Sleep 200ms
 
@@ -73,7 +73,7 @@ Type `_act=""`
 Enter
 Sleep 100ms
 
-Type `announce() { _act="$*"; printf '\e[1A\e[2K\n\e[1;33m━━ %s ━━\e[0m\n\n' "$*"; }`
+Type `announce() { _act="$*"; printf '\e[3A\e[J\n\e[1;33m━━ %s ━━\e[0m\n\n' "$*"; }`
 Enter
 Sleep 200ms
 
@@ -82,7 +82,7 @@ Enter
 Sleep 200ms
 
 # title_card: scenario-specific intro rendered as a single self-erasing call
-Type `title_card() { printf '\e[1A\e[2K\n\e[1;33m━━ CrashLoop Helm Rollback Remediation ━━\e[0m\n\n\e[38;5;245mA Helm-managed deployment receives a bad config update.\nKubernaut detects the crash, diagnoses the root cause with AI,\nexecutes a Helm rollback workflow, and verifies the fix.\e[0m\n\n\e[1;33mAct 1\e[0m  \e[38;5;245mThe Problem     — bad Helm config crashes pods, alert fires\e[0m\n\e[1;33mAct 2\e[0m  \e[38;5;245mThe Remediation — AI root cause analysis, approval gate, Helm rollback runs\e[0m\n\e[1;33mAct 3\e[0m  \e[38;5;245mThe Result      — Helm release rolled back, pods healthy, EA confirms fix\e[0m\n'; }`
+Type `title_card() { printf '\e[3A\e[J\n\e[1;33m━━ CrashLoop Helm Rollback Remediation ━━\e[0m\n\n\e[38;5;245mA Helm-managed deployment receives a bad config update.\nKubernaut detects the crash, diagnoses the root cause with AI,\nexecutes a Helm rollback workflow, and verifies the fix.\e[0m\n\n\e[1;33mAct 1\e[0m  \e[38;5;245mThe Problem     — bad Helm config crashes pods, alert fires\e[0m\n\e[1;33mAct 2\e[0m  \e[38;5;245mThe Remediation — AI root cause analysis, approval gate, Helm rollback runs\e[0m\n\e[1;33mAct 3\e[0m  \e[38;5;245mThe Result      — Helm release rolled back, pods healthy, EA confirms fix\e[0m\n'; }`
 Enter
 Sleep 200ms
 
