@@ -4,7 +4,7 @@
 #   Title Card:                    scenario overview + 3-act roadmap (20s hold)
 #   Act 1 -- "The Problem":       healthy cluster, node failure, node goes NotReady, alert fires
 #   Act 2 -- "The Remediation":   RCA, approval gate, RAR approval, live RR phase transitions
-#   Act 3 -- "The Result":        node drained, workloads rescheduled, EA assessment
+#   Act 3 -- "The Result":        node drained, workloads rescheduled, effectiveness result
 #
 # Pre-requisites:
 #   - Kind cluster with Kubernaut platform deployed (multi-node)
@@ -63,7 +63,7 @@ Type `export KUBECONFIG=~/.kube/kubernaut-demo-config`
 Enter
 Sleep 500ms
 
-# Self-erasing helpers: \e[1A moves up, \e[2K erases the typed command line
+# Self-erasing helpers: \e[3A\e[J moves up 3 lines and clears to end of screen
 Type `narrate() { printf '\e[3A\e[J\e[38;5;245m%s\e[0m\n' "$*"; }`
 Enter
 Sleep 200ms
@@ -336,33 +336,17 @@ Sleep 12s
 
 Hide
 Set TypingSpeed 1ms
-Type "narrate 'Approving the remediation...'"
-Enter
-Sleep 300ms
-Set TypingSpeed 50ms
-Show
-Sleep 2s
-
-Type "bash deploy/demo/scripts/approve-rar.sh"
-Enter
-Sleep 4s
-
-# Live pod transition during remediation
-Hide
-Set TypingSpeed 1ms
 Type "act_clear"
 Enter
 Sleep 500ms
-Type "narrate 'Watching pods — the workflow will cordon, drain, and reschedule'"
+Type "narrate 'Approving and watching pods — the workflow will cordon, drain, and reschedule'"
 Enter
 Sleep 300ms
+Type "(sleep 3 && bash deploy/demo/scripts/approve-rar.sh >/dev/null 2>&1) & kubectl get pods -n demo-node -o wide -w"
+Enter
 Set TypingSpeed 50ms
 Show
-Sleep 2s
-
-Type "kubectl get pods -n demo-node -o wide -w"
-Enter
-Sleep 60s
+Sleep 30s
 Ctrl+C
 Sleep 2s
 
@@ -426,10 +410,6 @@ Type "kubectl get pods -n demo-node -o wide"
 Enter
 Sleep 5s
 
-Type "kubectl get remediationrequests -n ${PLATFORM_NS}"
-Enter
-Sleep 5s
-
 Hide
 Set TypingSpeed 1ms
 Type "narrate 'Notification delivered to Slack and console'"
@@ -445,19 +425,6 @@ Sleep 12s
 
 Hide
 Set TypingSpeed 1ms
-Type "narrate 'Waiting for EffectivenessAssessment to complete (stabilization: 1m)...'"
-Enter
-Sleep 300ms
-Set TypingSpeed 50ms
-Show
-Sleep 2s
-
-# Hidden wait: poll until EA reaches Completed or Failed
-Hide
-Set TypingSpeed 1ms
-Type `while true; do PHASE=$(kubectl get effectivenessassessments -n ${PLATFORM_NS} -o jsonpath='{.items[0].status.phase}' 2>/dev/null); [ "$PHASE" = "Completed" ] || [ "$PHASE" = "Failed" ] && break; sleep 10; done && clear && echo EA"_"DONE`
-Enter
-Wait+Screen@600s /EA_DONE/
 Type "act_clear"
 Enter
 Sleep 500ms

@@ -61,7 +61,7 @@ Type `export KUBECONFIG=~/.kube/kubernaut-demo-config`
 Enter
 Sleep 500ms
 
-# Self-erasing helpers: \e[1A moves up, \e[2K erases the typed command line
+# Self-erasing helpers: \e[3A\e[J moves up 3 lines and clears to end of screen
 Type `narrate() { printf '\e[3A\e[J\e[38;5;245m%s\e[0m\n' "$*"; }`
 Enter
 Sleep 200ms
@@ -241,24 +241,17 @@ Sleep 6s
 
 Hide
 Set TypingSpeed 1ms
-Type "narrate 'Analysis complete. Approving Cycle 1 — executing remediation now.'"
+Type "act_clear"
+Enter
+Sleep 500ms
+Type "narrate 'Approving and watching pods — Cycle 1 increases memory limits'"
 Enter
 Sleep 300ms
-Type "narrate 'Watching pods as the remediation executes...'"
+Type "(sleep 3 && bash deploy/demo/scripts/approve-rar.sh >/dev/null 2>&1) & kubectl get pods -n demo-memory-escalation -w"
 Enter
-Sleep 300ms
 Set TypingSpeed 50ms
 Show
-Sleep 2s
-
-Type "bash deploy/demo/scripts/approve-rar.sh"
-Enter
-Sleep 4s
-
-# Pod transition — shown FIRST so the viewer sees the live change
-Type "kubectl get pods -n demo-memory-escalation -w"
-Enter
-Sleep 45s
+Sleep 30s
 Ctrl+C
 Sleep 2s
 
