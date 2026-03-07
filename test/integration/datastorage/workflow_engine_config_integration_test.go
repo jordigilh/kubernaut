@@ -185,7 +185,7 @@ var _ = Describe("EngineConfig Workflow Catalog Integration (BR-WE-016)", func()
 				ExecutionEngine: models.ExecutionEngineAnsible,
 				EngineConfig:    &rawEngineConfig,
 				IsLatestVersion: true,
-				ActionType:      "ScaleDown",
+				ActionType:      "ScaleReplicas",
 			}
 
 			err = workflowRepo.Create(ctx, testWorkflow)
@@ -255,7 +255,7 @@ var _ = Describe("EngineConfig Workflow Catalog Integration (BR-WE-016)", func()
 				ExecutionEngine: models.ExecutionEngineTekton,
 				Parameters:      &rawParams,
 				IsLatestVersion: true,
-				ActionType:      "ScaleUp",
+				ActionType:      "IncreaseCPULimits",
 			}
 
 			err = workflowRepo.Create(ctx, testWorkflow)
