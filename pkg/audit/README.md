@@ -198,39 +198,27 @@ config := audit.Config{
 | Metric | Type | Description |
 |--------|------|-------------|
 | `audit_events_dropped_total{service}` | Counter | Total events dropped (buffer full) |
-| `audit_events_written_total{service}` | Counter | Total events written to storage |
-| `audit_batches_failed_total{service}` | Counter | Total batches failed after max retries |
-| `audit_buffer_size{service}` | Gauge | Current buffer size |
+
+> **Note**: Buffer utilization, batch failure, and write metrics were removed in GitHub #294
+> (internal-only metrics cleanup). The remaining metric monitors drops, which is the most
+> actionable signal for audit pipeline health.
 
 ### **Key Queries**
 
 ```promql
-# Failure rate (should be <5%)
-rate(audit_batches_failed_total[5m]) / rate(audit_events_written_total[5m]) * 100
-
-# Buffer utilization (should be <80%)
-audit_buffer_size / 10000 * 100
-
-# Write throughput
-rate(audit_events_written_total[5m])
+# Drop rate (should be 0 under normal operation)
+rate(audit_events_dropped_total[5m])
 ```
 
 ### **Recommended Alerts**
 
 ```yaml
-# High failure rate
-- alert: AuditHighFailureRate
-  expr: rate(audit_batches_failed_total[5m]) / rate(audit_events_written_total[5m]) > 0.05
+# Events being dropped
+- alert: AuditEventsDropped
+  expr: rate(audit_events_dropped_total[5m]) > 0
   for: 5m
   annotations:
-    summary: "Audit failure rate >5% for {{ $labels.service }}"
-
-# High buffer utilization
-- alert: AuditHighBufferUtilization
-  expr: audit_buffer_size / 10000 > 0.80
-  for: 5m
-  annotations:
-    summary: "Audit buffer >80% full for {{ $labels.service }}"
+    summary: "Audit events being dropped for {{ $labels.service }}"
 ```
 
 ---
@@ -436,10 +424,10 @@ Integration tests should verify:
 **A**: Events are dropped (graceful degradation). The service continues operating normally. Monitor `audit_events_dropped_total` metric to detect buffer overruns.
 
 ### **Q: What happens if audit writes fail?**
-**A**: The library retries with exponential backoff (default: 3 attempts). After max retries, the batch is dropped and logged. Business logic is never blocked.
+**A**: The library retries with exponential backoff (default: 3 attempts). After max retries, the batch is dropped and logged. Monitor `audit_events_dropped_total` to detect persistent failures. Business logic is never blocked.
 
 ### **Q: How do I tune buffer size for my service?**
-**A**: Use `audit.RecommendedConfig(serviceName)` for service-specific defaults. Monitor `audit_buffer_size` metric and increase if utilization >80%.
+**A**: Use `audit.RecommendedConfig(serviceName)` for service-specific defaults. Monitor `audit_events_dropped_total` -- if events are being dropped, consider increasing the buffer size.
 
 ### **Q: Can I use this library for non-audit events?**
 **A**: No. This library is specifically designed for audit events that must be written to the unified `audit_events` table. Use other mechanisms for application logs or metrics.

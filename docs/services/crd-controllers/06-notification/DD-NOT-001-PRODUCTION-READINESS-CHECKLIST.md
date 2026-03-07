@@ -198,17 +198,10 @@
 ### Monitoring
 
 - ✅ **Prometheus metrics defined**
-  - ✅ `audit_events_buffered{service="notification"}`
-  - ✅ `audit_events_written_total{service="notification"}`
   - ✅ `audit_events_dropped_total{service="notification"}`
-  - ✅ `audit_batch_write_duration_seconds`
-  - ✅ `audit_batch_failed_total{service="notification"}`
 
 - ✅ **Alerting thresholds defined**
-  - ✅ CRITICAL: audit_events_dropped_total > 100
-  - ✅ WARNING: audit_batch_failed_total > 10
-  - ✅ WARNING: audit_events_buffered > 8000 (80% capacity)
-  - ✅ CRITICAL: audit_batch_write_duration_seconds p99 > 1s
+  - ✅ WARNING: rate(audit_events_dropped_total[5m]) > 0
 
 ### Logging
 
@@ -362,10 +355,9 @@ Result: Build successful ✅
 **Conditions**: None (all criteria met)
 
 **Post-Deployment Validation**:
-1. Monitor `audit_events_written_total` metric
+1. Monitor `audit_events_dropped_total` metric (should be 0)
 2. Verify DLQ queue depth < 100 events
-3. Validate audit write latency < 5ms p99
-4. Check audit_events table in PostgreSQL
+3. Check audit_events table in PostgreSQL
 5. Run smoke test (create notification, verify audit event)
 
 ---

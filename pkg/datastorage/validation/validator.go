@@ -41,7 +41,6 @@ func NewValidator(logger logr.Logger) *Validator {
 
 // ValidateRemediationAudit validates a remediation audit record
 // BR-STORAGE-010: Comprehensive input validation
-// BR-STORAGE-019: Validation failure tracking with Prometheus metrics
 func (v *Validator) ValidateRemediationAudit(audit *models.RemediationAudit) error {
 	// Required field validation
 	if audit.Name == "" {
