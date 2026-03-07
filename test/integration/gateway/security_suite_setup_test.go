@@ -18,6 +18,7 @@ package gateway
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -134,9 +135,26 @@ func SetupSecurityTokens() *SecurityTestTokens {
 	}
 	GinkgoWriter.Printf("  ✓ Created authorized ServiceAccount: %s (took %v)\n", authorizedSA, time.Since(step5Start))
 
-	// BR-GATEWAY-037: Also bind to gateway-signal-source so the SA passes SAR checks
+	// BR-GATEWAY-037: Also bind to gateway-signal-source so the SA passes SAR checks.
 	// (gateway middleware verifies create verb on services/gateway-service)
-	err = saHelper.CreateServiceAccountWithRBAC(ctx, authorizedSA, "gateway-signal-source")
+	// Create binding directly since CreateServiceAccountWithRBAC uses a fixed binding
+	// name that would collide with the gateway-test-remediation-creator binding above.
+	sarBinding := &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: fmt.Sprintf("%s-gateway-signal-source", authorizedSA),
+		},
+		Subjects: []rbacv1.Subject{{
+			Kind:      "ServiceAccount",
+			Name:      authorizedSA,
+			Namespace: "kubernaut-system",
+		}},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     "gateway-signal-source",
+		},
+	}
+	err = k8sClient.Create(ctx, sarBinding)
 	if err != nil && !apierrors.IsAlreadyExists(err) {
 		GinkgoWriter.Printf("  ❌ Failed to bind SA to gateway-signal-source: %v\n", err)
 		Expect(err).ToNot(HaveOccurred(), "Should bind authorized SA to gateway-signal-source")
