@@ -62,7 +62,7 @@ Type `export KUBECONFIG=~/.kube/kubernaut-demo-config`
 Enter
 Sleep 500ms
 
-# Self-erasing helpers: \e[1A moves up, \e[2K erases the typed command line
+# Self-erasing helpers: \e[3A\e[J moves up 3 lines and clears to end of screen
 Type `narrate() { printf '\e[3A\e[J\e[38;5;245m%s\e[0m\n' "$*"; }`
 Enter
 Sleep 200ms
@@ -337,10 +337,6 @@ Sleep 300ms
 Set TypingSpeed 50ms
 Show
 Sleep 4s
-
-Type "kubectl get remediationrequests -n ${PLATFORM_NS}"
-Enter
-Sleep 5s
 
 Hide
 Set TypingSpeed 1ms

@@ -330,12 +330,8 @@ Type "kubectl get workflowexecutions -n ${PLATFORM_NS}"
 Enter
 Sleep 6s
 
-# Wait for RR to reach Verifying/Completed (may already be there)
 Hide
 Set TypingSpeed 1ms
-Type `while ! kubectl get remediationrequests -n ${PLATFORM_NS} 2>/dev/null | grep -qE 'Verifying|Completed'; do sleep 5; done && clear && echo WF"_"DONE`
-Enter
-Wait+Screen@300s /WF_DONE/
 Type "act_clear"
 Enter
 Sleep 500ms
@@ -380,10 +376,6 @@ Type "kubectl get pods -n demo-memory-leak"
 Enter
 Sleep 5s
 
-Type "kubectl get remediationrequests -n ${PLATFORM_NS}"
-Enter
-Sleep 5s
-
 Hide
 Set TypingSpeed 1ms
 Type "narrate 'Notification delivered to Slack and console'"
@@ -396,26 +388,6 @@ Sleep 2s
 Type "bash deploy/demo/scripts/show-notification.sh ${PLATFORM_NS}"
 Enter
 Sleep 12s
-
-Hide
-Set TypingSpeed 1ms
-Type "narrate 'Waiting for EffectivenessAssessment to complete...'"
-Enter
-Sleep 300ms
-Set TypingSpeed 50ms
-Show
-Sleep 2s
-
-Hide
-Set TypingSpeed 1ms
-Type `while true; do PHASE=$(kubectl get effectivenessassessments -n ${PLATFORM_NS} -o jsonpath='{.items[0].status.phase}' 2>/dev/null); [ "$PHASE" = "Completed" ] || [ "$PHASE" = "Failed" ] && break; sleep 10; done && clear && echo EA"_"DONE`
-Enter
-Wait+Screen@600s /EA_DONE/
-Type "act_clear"
-Enter
-Sleep 500ms
-Set TypingSpeed 50ms
-Show
 
 Hide
 Set TypingSpeed 1ms
