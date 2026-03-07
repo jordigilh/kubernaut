@@ -18,6 +18,7 @@ package v1alpha1
 
 import (
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
@@ -508,11 +509,16 @@ type SelectedWorkflow struct {
 	Rationale string `json:"rationale"`
 	// ExecutionEngine specifies the backend engine for workflow execution.
 	// Populated from HolmesGPT-API workflow recommendation.
-	// "tekton" creates a Tekton PipelineRun; "job" creates a Kubernetes Job.
 	// When empty, defaults to "tekton" for backwards compatibility.
-	// +kubebuilder:validation:Enum=tekton;job
+	// +kubebuilder:validation:Enum=tekton;job;ansible
 	// +optional
 	ExecutionEngine string `json:"executionEngine,omitempty"`
+
+	// EngineConfig holds engine-specific configuration (BR-WE-016).
+	// For ansible: {"playbookPath": "...", "jobTemplateName": "...", "inventoryName": "..."}.
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +optional
+	EngineConfig *apiextensionsv1.JSON `json:"engineConfig,omitempty"`
 }
 
 // AlternativeWorkflow contains alternative workflows considered but not selected.

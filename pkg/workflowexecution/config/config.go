@@ -45,8 +45,24 @@ const DefaultConfigPath = "/etc/workflowexecution/config.yaml"
 // Issue #99: BackoffConfig removed (DD-RO-002 Phase 3 -- RO handles all routing/backoff)
 type Config struct {
 	Execution   ExecutionConfig              `yaml:"execution" validate:"required"`
+	Ansible     *AnsibleConfig               `yaml:"ansible,omitempty"`
 	DataStorage sharedconfig.DataStorageConfig `yaml:"datastorage"`
 	Controller  ControllerConfig             `yaml:"controller" validate:"required"`
+}
+
+// AnsibleConfig holds AWX/AAP connectivity settings (BR-WE-015).
+// Optional: if nil, the ansible executor is not registered.
+type AnsibleConfig struct {
+	APIURL       string        `yaml:"apiURL" validate:"required,url"`
+	TokenSecretRef *SecretKeyRef `yaml:"tokenSecretRef,omitempty"`
+	Insecure     bool          `yaml:"insecure,omitempty"`
+}
+
+// SecretKeyRef references a key within a Kubernetes Secret.
+type SecretKeyRef struct {
+	Name      string `yaml:"name" validate:"required"`
+	Namespace string `yaml:"namespace,omitempty"`
+	Key       string `yaml:"key" validate:"required"`
 }
 
 // ExecutionConfig holds settings for Tekton PipelineRun execution.

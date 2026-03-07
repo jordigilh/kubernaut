@@ -18,6 +18,7 @@ package v1alpha1
 
 import (
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -171,8 +172,8 @@ type WorkflowExecutionSpec struct {
 	Rationale string `json:"rationale,omitempty"`
 
 	// ExecutionEngine specifies the backend engine for workflow execution.
-	// "tekton" creates a Tekton PipelineRun; "job" creates a Kubernetes Job.
-	// +kubebuilder:validation:Enum=tekton;job
+	// "tekton" creates a Tekton PipelineRun; "job" creates a Kubernetes Job; "ansible" runs an AWX job.
+	// +kubebuilder:validation:Enum=tekton;job;ansible
 	// +kubebuilder:default=tekton
 	ExecutionEngine string `json:"executionEngine"`
 
@@ -196,6 +197,13 @@ type WorkflowRef struct {
 	// ExecutionBundleDigest for audit trail and reproducibility
 	// +optional
 	ExecutionBundleDigest string `json:"executionBundleDigest,omitempty"`
+
+	// EngineConfig holds engine-specific configuration (BR-WE-016).
+	// For ansible: {"playbookPath": "...", "jobTemplateName": "...", "inventoryName": "..."}
+	// For tekton/job: nil.
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +optional
+	EngineConfig *apiextensionsv1.JSON `json:"engineConfig,omitempty"`
 }
 
 // ExecutionConfig contains minimal execution settings

@@ -93,10 +93,11 @@ spec:
                 default: tekton
                 description: |-
                   ExecutionEngine specifies the backend engine for workflow execution.
-                  "tekton" creates a Tekton PipelineRun; "job" creates a Kubernetes Job.
+                  "tekton" creates a Tekton PipelineRun; "job" creates a Kubernetes Job; "ansible" runs an AWX job.
                 enum:
                 - tekton
                 - job
+                - ansible
                 type: string
               parameters:
                 additionalProperties:
@@ -165,6 +166,12 @@ spec:
                   WorkflowRef contains the workflow catalog reference
                   Resolved from AIAnalysis.Status.SelectedWorkflow by RemediationOrchestrator
                 properties:
+                  engineConfig:
+                    description: |-
+                      EngineConfig holds engine-specific configuration (BR-WE-016).
+                      For ansible: {"playbookPath": "...", "jobTemplateName": "...", "inventoryName": "..."}
+                      For tekton/job: nil.
+                    x-kubernetes-preserve-unknown-fields: true
                   executionBundle:
                     description: |-
                       ExecutionBundle resolved from workflow catalog (Data Storage API)

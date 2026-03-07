@@ -17,12 +17,15 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"flag"
+	"fmt"
 	"os"
 
 	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -238,6 +241,25 @@ func main() {
 	executorRegistry := weexecutor.NewRegistry()
 	executorRegistry.Register("tekton", weexecutor.NewTektonExecutor(mgr.GetClient(), cfg.Execution.ServiceAccount))
 	executorRegistry.Register("job", weexecutor.NewJobExecutor(mgr.GetClient(), cfg.Execution.ServiceAccount))
+
+	// BR-WE-015: Conditionally register Ansible executor if configured
+	if cfg.Ansible != nil && cfg.Ansible.TokenSecretRef != nil {
+		ns := cfg.Ansible.TokenSecretRef.Namespace
+		if ns == "" {
+			ns = controllerNS
+		}
+		token, err := readSecretKey(mgr.GetClient(), ns, cfg.Ansible.TokenSecretRef.Name, cfg.Ansible.TokenSecretRef.Key)
+		if err != nil {
+			setupLog.Error(err, "Failed to read AWX token secret, ansible executor not available")
+		} else {
+			awxClient := weexecutor.NewAWXHTTPClient(cfg.Ansible.APIURL, token, cfg.Ansible.Insecure)
+			executorRegistry.Register("ansible", weexecutor.NewAnsibleExecutor(awxClient, ctrl.Log.WithName("ansible-executor")))
+			setupLog.Info("Ansible executor registered", "awxURL", cfg.Ansible.APIURL)
+		}
+	} else if cfg.Ansible != nil {
+		setupLog.Info("Ansible config present but tokenSecretRef not set, ansible executor will not be available")
+	}
+
 	setupLog.Info("Executor registry initialized", "engines", executorRegistry.Engines())
 
 	// DD-WE-006: Create WorkflowQuerier for fetching dependencies from DS
@@ -303,4 +325,16 @@ func main() {
 			setupLog.Info("Audit store closed successfully")
 		}
 	}
+}
+
+func readSecretKey(c client.Client, namespace, name, key string) (string, error) {
+	var secret corev1.Secret
+	if err := c.Get(context.Background(), types.NamespacedName{Namespace: namespace, Name: name}, &secret); err != nil {
+		return "", fmt.Errorf("get secret %s/%s: %w", namespace, name, err)
+	}
+	val, ok := secret.Data[key]
+	if !ok {
+		return "", fmt.Errorf("key %q not found in secret %s/%s", key, namespace, name)
+	}
+	return string(val), nil
 }
