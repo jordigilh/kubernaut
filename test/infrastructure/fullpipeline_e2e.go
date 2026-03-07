@@ -1170,7 +1170,7 @@ func SetupCertManagerScenario(kubeconfigPath, namespace string, writer io.Writer
 	if err != nil {
 		return fmt.Errorf("failed to create temp dir: %w", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	keyPath := filepath.Join(tmpDir, "ca.key")
 	crtPath := filepath.Join(tmpDir, "ca.crt")

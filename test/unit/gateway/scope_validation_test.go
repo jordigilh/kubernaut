@@ -80,7 +80,7 @@ func (m *mockScopeChecker) IsManaged(_ context.Context, namespace, kind, name st
 // newTestGatewayServer creates a Gateway server for unit tests with the given scope checker.
 // ADR-057: Sets KUBERNAUT_CONTROLLER_NAMESPACE for namespace discovery in test environment.
 func newTestGatewayServer(k8sClient client.Client, metricsInstance *metrics.Metrics, scopeChecker gatewaypkg.ScopeChecker) (*gatewaypkg.Server, error) {
-	os.Setenv("KUBERNAUT_CONTROLLER_NAMESPACE", "kubernaut-system")
+	Expect(os.Setenv("KUBERNAUT_CONTROLLER_NAMESPACE", "kubernaut-system")).To(Succeed())
 	cfg := &config.ServerConfig{
 		Server: config.ServerSettings{
 			ListenAddr:   "127.0.0.1:0",

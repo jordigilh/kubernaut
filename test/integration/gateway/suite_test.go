@@ -192,7 +192,7 @@ var _ = SynchronizedBeforeSuite(
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		// ADR-057: Set controller namespace for CRD creation and cache restriction
-		os.Setenv("KUBERNAUT_CONTROLLER_NAMESPACE", "kubernaut-system")
+		Expect(os.Setenv("KUBERNAUT_CONTROLLER_NAMESPACE", "kubernaut-system")).To(Succeed())
 
 		// Create root context
 		ctx, cancel = context.WithCancel(context.Background())
