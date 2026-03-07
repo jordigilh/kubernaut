@@ -213,7 +213,7 @@ var _ = Describe("AnsibleExecutor (BR-WE-015)", func() {
 				Expect(err).ToNot(HaveOccurred(), "AWX status %q should not error", tc.awxStatus)
 				Expect(result.Phase).To(Equal(tc.expectedPhase),
 					"AWX status %q should map to %q, got %q", tc.awxStatus, tc.expectedPhase, result.Phase)
-				Expect(result.Summary).To(HaveKey("awx_job_id"), "status result should include AWX job metadata")
+				Expect(result.Summary.Status).To(Equal(tc.expectedPhase), "summary status should match phase")
 			}
 		})
 
@@ -296,7 +296,7 @@ var _ = Describe("MapAWXStatusToResult (BR-WE-015)", func() {
 		result := executor.MapAWXStatusToResult(status)
 		Expect(result.Phase).To(Equal(workflowexecutionv1alpha1.PhaseFailed))
 		Expect(result.Message).To(ContainSubstring("connection refused"))
-		Expect(result.Summary).To(HaveKey("awx_job_id"), "failure result should include AWX job metadata")
+		Expect(result.Summary.Status).To(Equal(workflowexecutionv1alpha1.PhaseFailed), "summary should reflect failure phase")
 	})
 
 	It("should handle unknown AWX status gracefully", func() {
