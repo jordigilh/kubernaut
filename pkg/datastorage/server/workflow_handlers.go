@@ -129,7 +129,8 @@ func (h *Handler) HandleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 	// Step 5c: Validate execution bundle image exists in the registry.
 	// Early feedback on typos or missing images — better to fail at registration
 	// than to discover the image is unpullable at workflow execution time.
-	if workflow.ExecutionBundle != nil && *workflow.ExecutionBundle != "" {
+	// For ansible engine, bundle is a Git repo URL (not an OCI image), so skip OCI validation.
+	if workflow.ExecutionBundle != nil && *workflow.ExecutionBundle != "" && workflow.ExecutionEngine != models.ExecutionEngineAnsible {
 		if err := h.schemaExtractor.ValidateBundleExists(r.Context(), *workflow.ExecutionBundle); err != nil {
 			h.logger.Error(err, "Execution bundle image not found in registry",
 				"execution_bundle", *workflow.ExecutionBundle,
