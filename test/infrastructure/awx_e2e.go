@@ -75,6 +75,7 @@ metadata:
   namespace: %[1]s
 data:
   settings.py: |
+    SECRET_KEY = '%[7]s'
     DATABASES = {
         'default': {
             'ATOMIC_REQUESTS': True,
