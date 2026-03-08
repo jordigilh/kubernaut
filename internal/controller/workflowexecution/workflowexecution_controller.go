@@ -1310,6 +1310,19 @@ func (r *WorkflowExecutionReconciler) MarkFailed(ctx context.Context, wfe *workf
 	// Extract failure details (Day 7: includes TaskRun-specific fields, Day 6 Extension: WasExecutionFailure)
 	failureDetails := r.ExtractFailureDetails(ctx, pr, wfe.Status.StartTime)
 
+	// BR-WE-015: For non-Tekton executors (ansible, job), the PipelineRun is nil and
+	// ExtractFailureDetails defaults to "Unknown". Override with the executor's summary
+	// which carries the correct engine-specific reason and message.
+	if pr == nil && len(summary) > 0 && summary[0] != nil && failureDetails != nil {
+		if summary[0].Reason != "" {
+			failureDetails.Reason = mapExecutorReasonToCRDEnum(summary[0].Reason)
+		}
+		if summary[0].Message != "" {
+			failureDetails.Message = summary[0].Message
+		}
+		failureDetails.WasExecutionFailure = true
+	}
+
 	// Generate natural language summary
 	if failureDetails != nil {
 		failureDetails.NaturalLanguageSummary = r.GenerateNaturalLanguageSummary(wfe, failureDetails)
@@ -1589,4 +1602,19 @@ func (r *WorkflowExecutionReconciler) ValidateSpec(wfe *workflowexecutionv1alpha
 func (r *WorkflowExecutionReconciler) emitPhaseTransition(wfe *workflowexecutionv1alpha1.WorkflowExecution, from, to string) {
 	r.Recorder.Event(wfe, corev1.EventTypeNormal, events.EventReasonPhaseTransition,
 		fmt.Sprintf("Phase transition: %s → %s", from, to))
+}
+
+// mapExecutorReasonToCRDEnum maps engine-specific failure reasons (e.g., AWXJobFailed)
+// to the CRD-validated FailureReason enum values.
+func mapExecutorReasonToCRDEnum(reason string) string {
+	switch reason {
+	case "AWXJobFailed", "AWXJobError":
+		return workflowexecutionv1alpha1.FailureReasonTaskFailed
+	case "AWXJobCanceled":
+		return workflowexecutionv1alpha1.FailureReasonTaskFailed
+	case "JobFailed":
+		return workflowexecutionv1alpha1.FailureReasonTaskFailed
+	default:
+		return workflowexecutionv1alpha1.FailureReasonUnknown
+	}
 }

@@ -139,6 +139,10 @@ func (a *AnsibleExecutor) Cleanup(
 	}
 
 	if err := a.AWXClient.CancelJob(ctx, jobID); err != nil {
+		if strings.Contains(err.Error(), "405") {
+			a.Logger.Info("AWX job already completed, cancel not needed", "jobID", jobID)
+			return nil
+		}
 		a.Logger.Error(err, "Failed to cancel AWX job during cleanup", "jobID", jobID)
 		return fmt.Errorf("cancel AWX job %d: %w", jobID, err)
 	}

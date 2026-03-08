@@ -257,8 +257,8 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(failed.Status.FailureDetails).ToNot(BeNil(), "FailureDetails should be populated")
 			Expect(failed.Status.FailureDetails.Reason).To(
-				Or(Equal("AWXJobCanceled"), Equal("AWXJobFailed")),
-				"Failure reason should indicate AWX cancellation")
+				Equal("TaskFailed"),
+				"Failure reason should indicate AWX cancellation (mapped to CRD enum TaskFailed)")
 
 			GinkgoWriter.Printf("E2E-WE-015-004 passed: external AWX cancellation handled\n")
 			GinkgoWriter.Printf("   Failure reason: %s\n", failed.Status.FailureDetails.Reason)
