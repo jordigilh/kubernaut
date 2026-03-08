@@ -5,23 +5,27 @@
 **Decision Maker**: Kubernaut Architecture Team
 **Authority**: AUTHORITATIVE - This document governs workflow catalog matching strategy
 **Affects**: Data Storage Service, HolmesGPT API, Workflow Catalog, Signal Processing
-**Related**: DD-WORKFLOW-001 (Label Schema), DD-LLM-001 (MCP Search Taxonomy), DD-HAPI-016 (Remediation History Context), DD-017 (Effectiveness Monitor), ADR-054 (Proactive Signal Mode Classification)
-**Version**: 1.1
+**Related**: DD-WORKFLOW-001 (Label Schema), DD-LLM-001 (MCP Search Taxonomy), DD-HAPI-016 (Remediation History Context), DD-017 (Effectiveness Monitor), ADR-054 (Proactive Signal Mode Classification), BR-WORKFLOW-006 (RemediationWorkflow CRD), ADR-058 (Webhook-Driven Registration)
+**Version**: 1.2
 
 ---
 
 ## Changelog
 
+### Version 1.2 (2026-03-08)
+- **Issue #292**: Workflow schema now uses CRD envelope format (`apiVersion`/`kind`/`metadata`/`spec`). `actionType` remains at `spec.actionType`.
+- **Issue #299**: Workflow registration is now via `RemediationWorkflow` CRD applied with `kubectl apply`. The AuthWebhook forwards inline schema to the DS internal API for catalog indexing. OCI-based registration removed.
+- **BR-WORKFLOW-004 v1.2**: `signalName`/`signalType` removed from labels entirely. Discovery matching is exclusively by `action_type` as designed in this document. The v1.1 rename from `signal_type` to `signalName` is now moot.
+- References added: BR-WORKFLOW-006, ADR-058
+
 ### Version 1.1 (2026-02-13)
-- **BR-WORKFLOW-004**: JSONB labels keys unified to camelCase (`signal_type` -> `signalName`, Issue #166)
+- **BR-WORKFLOW-004**: JSONB labels keys unified to camelCase (`signal_type` -> `signalName`, Issue #166) -- **Note**: `signalName` subsequently removed in BR-WORKFLOW-004 v1.2
 - **BR-WORKFLOW-004**: `riskTolerance` deprecated (never stored in DB, removed from workflow-schema.yaml)
 - **BR-WORKFLOW-004**: `actionType` is now a top-level field in workflow-schema.yaml (not inside labels)
 - SQL queries updated: `labels->>'signal_type'` -> `labels->>'signalName'` (migration 026)
 - See `docs/requirements/BR-WORKFLOW-004-workflow-schema-format.md` for authoritative format specification
 
-## Changelog
-
-### Version 1.0 (2026-02-05) -- CURRENT
+### Version 1.0 (2026-02-05)
 
 **INITIAL**: Action-type workflow catalog indexing design
 
@@ -939,8 +943,8 @@ Seeded with V1.0 taxonomy (10 action types). Authoritative source for action typ
 ### Migration Strategy
 
 1. **V1.0 catalog is small/empty**: No significant migration burden. Existing workflows (if any) receive an `action_type` assignment as part of the migration.
-2. **Workflow registration API**: Requires `action_type` (must reference a valid taxonomy entry) + per-workflow `description` (free-form text describing the workflow's unique approach) going forward. `signalName` becomes optional.
-3. **Transition period**: During migration, `list_available_actions` falls back to `signalName` filtering if `action_type` is absent on a workflow entry. This fallback is removed once all workflows are migrated.
+2. **Workflow registration**: Via `RemediationWorkflow` CRD applied with `kubectl apply` (BR-WORKFLOW-006, ADR-058). Requires `action_type` (must reference a valid taxonomy entry) + per-workflow structured `description`. `signalName` has been removed from the schema.
+3. **Transition period**: Complete. All workflows use `action_type` as the primary matching key. `signalName` fallback has been removed.
 
 ### ADR-054 Signal Mode Classification
 
