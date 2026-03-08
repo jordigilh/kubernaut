@@ -664,13 +664,13 @@ func PatchWEControllerWithAnsibleConfig(ctx context.Context, namespace, kubeconf
 
 	currentConfig := cm.Data["workflowexecution.yaml"]
 	ansibleSection := fmt.Sprintf(`
-    ansible:
-      apiURL: "http://%s.%s:%d"
-      tokenSecretRef:
-        name: "%s"
-        namespace: "%s"
-        key: "token"
-      insecure: true`, AWXServiceName, namespace, AWXServicePort, AWXTokenSecretName, namespace)
+ansible:
+  apiURL: "http://%s.%s:%d"
+  tokenSecretRef:
+    name: "%s"
+    namespace: "%s"
+    key: "token"
+  insecure: true`, AWXServiceName, namespace, AWXServicePort, AWXTokenSecretName, namespace)
 
 	cm.Data["workflowexecution.yaml"] = currentConfig + ansibleSection
 
