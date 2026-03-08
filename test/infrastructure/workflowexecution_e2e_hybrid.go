@@ -283,7 +283,8 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	// slow quay.io/docker.io pulls that cause AWX readiness timeouts in CI.
 	go func() {
 		thirdPartyImages := []string{
-			AWXImage, // quay.io/ansible/awx:24.6.1
+			AWXImage,   // quay.io/ansible/awx:24.6.1
+			AWXEEImage, // quay.io/ansible/awx-ee:24.6.1
 			"docker.io/library/postgres:16-alpine",
 			"docker.io/library/busybox:1.36",
 		}

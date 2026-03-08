@@ -37,6 +37,7 @@ const (
 	// AWXImageVersion is the pinned AWX container image version.
 	AWXImageVersion = "24.6.1"
 	AWXImage        = "quay.io/ansible/awx:" + AWXImageVersion
+	AWXEEImage      = "quay.io/ansible/awx-ee:" + AWXImageVersion
 
 	// AWXDatabaseName is the database AWX uses in the shared PostgreSQL instance.
 	AWXDatabaseName = "awx"
@@ -289,6 +290,12 @@ spec:
         app: awx-task
     spec:
       initContainers:
+      - name: copy-receptor
+        image: %[10]s
+        command: ["cp", "/usr/bin/receptor", "/receptor-bin/receptor"]
+        volumeMounts:
+        - name: receptor-bin
+          mountPath: /receptor-bin
       - name: wait-web
         image: docker.io/library/busybox:1.36
         command: ["sh", "-c"]
@@ -304,7 +311,7 @@ spec:
         command: ["sh", "-c"]
         args:
         - |
-          receptor --config /etc/receptor/receptor.conf &
+          /receptor-bin/receptor --config /etc/receptor/receptor.conf &
           sleep 2
           awx-manage run_dispatcher &
           awx-manage run_callback_receiver &
@@ -331,6 +338,11 @@ spec:
         - name: receptor-conf
           mountPath: /etc/receptor/
           readOnly: true
+        - name: receptor-bin
+          mountPath: /receptor-bin
+          readOnly: true
+        - name: receptor-run
+          mountPath: /tmp
         resources:
           requests:
             cpu: 100m
@@ -345,6 +357,10 @@ spec:
       - name: receptor-conf
         configMap:
           name: awx-receptor-conf
+      - name: receptor-bin
+        emptyDir: {}
+      - name: receptor-run
+        emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
@@ -370,6 +386,7 @@ spec:
 		AWXSecretKey,    // [7]
 		AWXAdminUser,    // [8]
 		AWXAdminPass,    // [9]
+		AWXEEImage,      // [10]
 	)
 
 	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
