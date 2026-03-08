@@ -1,35 +1,39 @@
-schemaVersion: "1.0"
-# Intentional Failure Test Workflow Schema (BR-WORKFLOW-004)
-# Used by: WorkflowExecution E2E
+apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
 metadata:
-  workflowId: test-intentional-failure
-  version: "1.0.0"
-  description:
-    what: "Workflow that intentionally fails for testing error handling"
-    whenToUse: "For E2E validation of failure detection and error propagation"
-    whenNotToUse: "Not intended for production use"
-    preconditions: "Tekton Pipelines installed in the cluster"
-
-actionType: RestartPod
-
-labels:
-  severity: [low]
-  environment: [test]
-  component: deployment
-  priority: P3
-
-execution:
-  engine: tekton
-  bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:adfc09ea45a5b627550c6a73fe75d50efe1c80fa43359fcc4908c9c5b0639ac3
-
-parameters:
-  - name: TARGET_RESOURCE
-    type: string
-    required: true
-    description: "Target resource identifier"
-    default: "test/deployment/failing"
-  - name: FAILURE_MESSAGE
-    type: string
-    required: false
-    description: "Error message to produce"
-    default: "Intentional failure for testing"
+  name: test-intentional-failure
+spec:
+  # Intentional Failure Test Workflow Schema (BR-WORKFLOW-004)
+  # Used by: WorkflowExecution E2E
+  metadata:
+    workflowId: test-intentional-failure
+    version: "1.0.0"
+    description:
+      what: "Workflow that intentionally fails for testing error handling"
+      whenToUse: "For E2E validation of failure detection and error propagation"
+      whenNotToUse: "Not intended for production use"
+      preconditions: "Tekton Pipelines installed in the cluster"
+  
+  actionType: RestartPod
+  
+  labels:
+    severity: [low]
+    environment: [test]
+    component: deployment
+    priority: P3
+  
+  execution:
+    engine: tekton
+    bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:adfc09ea45a5b627550c6a73fe75d50efe1c80fa43359fcc4908c9c5b0639ac3
+  
+  parameters:
+    - name: TARGET_RESOURCE
+      type: string
+      required: true
+      description: "Target resource identifier"
+      default: "test/deployment/failing"
+    - name: FAILURE_MESSAGE
+      type: string
+      required: false
+      description: "Error message to produce"
+      default: "Intentional failure for testing"

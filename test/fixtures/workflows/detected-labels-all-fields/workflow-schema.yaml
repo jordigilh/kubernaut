@@ -1,44 +1,48 @@
-schemaVersion: "1.0"
-# All 8 DetectedLabels Fields Test (BR-WORKFLOW-004, ADR-043 v1.3)
-# Used by: DataStorage E2E -- E2E-DS-043-005
-# Purpose: Validates all 8 detectedLabels fields survive full OCI -> DB -> HTTP round-trip
+apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
 metadata:
-  workflowId: detected-labels-all-fields-v1
-  version: "1.0.0"
-  description:
-    what: "Test workflow with all 8 detectedLabels fields populated"
-    whenToUse: "For E2E testing that all detectedLabels fields survive the production pipeline"
-    whenNotToUse: "Not intended for production use"
-    preconditions: "DataStorage service running with action_type_taxonomy seeded"
-
-actionType: RestartPod
-
-labels:
-  severity: [critical]
-  environment: [production]
-  component: pod
-  priority: P0
-
-detectedLabels:
-  hpaEnabled: "true"
-  pdbProtected: "true"
-  stateful: "true"
-  helmManaged: "true"
-  networkIsolated: "true"
-  gitOpsManaged: "true"
-  gitOpsTool: "flux"
-  serviceMesh: "istio"
-
-execution:
-  engine: tekton
-  bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:adfc09ea45a5b627550c6a73fe75d50efe1c80fa43359fcc4908c9c5b0639ac3
-
-parameters:
-  - name: NAMESPACE
-    type: string
-    required: true
-    description: "Target namespace containing the affected pod"
-  - name: POD_NAME
-    type: string
-    required: true
-    description: "Name of the pod to restart"
+  name: detected-labels-all-fields-v1
+spec:
+  # All 8 DetectedLabels Fields Test (BR-WORKFLOW-004, ADR-043 v1.3)
+  # Used by: DataStorage E2E -- E2E-DS-043-005
+  # Purpose: Validates all 8 detectedLabels fields survive full OCI -> DB -> HTTP round-trip
+  metadata:
+    workflowId: detected-labels-all-fields-v1
+    version: "1.0.0"
+    description:
+      what: "Test workflow with all 8 detectedLabels fields populated"
+      whenToUse: "For E2E testing that all detectedLabels fields survive the production pipeline"
+      whenNotToUse: "Not intended for production use"
+      preconditions: "DataStorage service running with action_type_taxonomy seeded"
+  
+  actionType: RestartPod
+  
+  labels:
+    severity: [critical]
+    environment: [production]
+    component: pod
+    priority: P0
+  
+  detectedLabels:
+    hpaEnabled: "true"
+    pdbProtected: "true"
+    stateful: "true"
+    helmManaged: "true"
+    networkIsolated: "true"
+    gitOpsManaged: "true"
+    gitOpsTool: "flux"
+    serviceMesh: "istio"
+  
+  execution:
+    engine: tekton
+    bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:adfc09ea45a5b627550c6a73fe75d50efe1c80fa43359fcc4908c9c5b0639ac3
+  
+  parameters:
+    - name: NAMESPACE
+      type: string
+      required: true
+      description: "Target namespace containing the affected pod"
+    - name: POD_NAME
+      type: string
+      required: true
+      description: "Name of the pod to restart"

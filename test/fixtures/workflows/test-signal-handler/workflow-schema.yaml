@@ -1,33 +1,37 @@
-schemaVersion: "1.0"
-# Test Signal Handler Workflow Schema (BR-WORKFLOW-004)
-# Used by: AIAnalysis E2E
+apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
 metadata:
-  workflowId: test-signal-handler-v1
-  version: "1.0.0"
-  description:
-    what: "Deletes a pod in response to a test signal for validation purposes"
-    whenToUse: "When a test signal is received that requires pod deletion"
-    whenNotToUse: "In production environments"
-    preconditions: "Pod exists and is deletable"
-
-actionType: DeletePod
-
-labels:
-  severity: [low]
-  environment: [test]
-  component: pod
-  priority: P3
-
-execution:
-  engine: tekton
-  bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:adfc09ea45a5b627550c6a73fe75d50efe1c80fa43359fcc4908c9c5b0639ac3
-
-parameters:
-  - name: NAMESPACE
-    type: string
-    required: true
-    description: "Target namespace"
-  - name: POD_NAME
-    type: string
-    required: true
-    description: "Name of the pod to delete"
+  name: test-signal-handler-v1
+spec:
+  # Test Signal Handler Workflow Schema (BR-WORKFLOW-004)
+  # Used by: AIAnalysis E2E
+  metadata:
+    workflowId: test-signal-handler-v1
+    version: "1.0.0"
+    description:
+      what: "Deletes a pod in response to a test signal for validation purposes"
+      whenToUse: "When a test signal is received that requires pod deletion"
+      whenNotToUse: "In production environments"
+      preconditions: "Pod exists and is deletable"
+  
+  actionType: DeletePod
+  
+  labels:
+    severity: [low]
+    environment: [test]
+    component: pod
+    priority: P3
+  
+  execution:
+    engine: tekton
+    bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:adfc09ea45a5b627550c6a73fe75d50efe1c80fa43359fcc4908c9c5b0639ac3
+  
+  parameters:
+    - name: NAMESPACE
+      type: string
+      required: true
+      description: "Target namespace"
+    - name: POD_NAME
+      type: string
+      required: true
+      description: "Name of the pod to delete"
