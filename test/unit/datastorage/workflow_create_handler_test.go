@@ -26,8 +26,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/jordigilh/kubernaut/pkg/datastorage/oci"
-	"github.com/jordigilh/kubernaut/pkg/datastorage/schema"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
 )
 
@@ -44,105 +42,88 @@ func (m *mockActionTypeValidator) ActionTypeExists(ctx context.Context, actionTy
 }
 
 // ========================================
-// OCI-BASED WORKFLOW REGISTRATION HANDLER UNIT TESTS
+// INLINE WORKFLOW REGISTRATION HANDLER UNIT TESTS
 // ========================================
 // Authority: DD-WORKFLOW-017 (Workflow Lifecycle Component Interactions)
-// Business Requirement: BR-WORKFLOW-017-001 (OCI-based workflow registration)
+// Business Requirement: BR-WORKFLOW-006 (Inline CRD-based workflow registration)
+// ADR-058: Webhook-driven workflow registration
 //
-// Strategy: Unit tests for HandleCreateWorkflow with OCI pullspec-only input.
-// Tests use MockImagePuller/FailingMockImagePuller for OCI interactions.
+// Strategy: Unit tests for HandleCreateWorkflow with inline schema content.
+// Tests send content (raw YAML) directly to the handler.
 // Database interactions are validated at the integration test tier.
 // ========================================
 
-// validOCIRegistrationSchemaYAML is a BR-WORKFLOW-004 compliant workflow-schema.yaml for handler tests
-const validOCIRegistrationSchemaYAML = `schemaVersion: "1.0"
+const validInlineRegistrationSchemaYAML = `apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
 metadata:
-  workflowId: scale-memory
-  version: "v1.0.0"
-  description:
-    what: Increases memory limits for OOMKilled pods
-    whenToUse: When pods are OOMKilled due to insufficient memory
-    whenNotToUse: When OOM is caused by a memory leak
-    preconditions: Pod managed by a Deployment or StatefulSet
-actionType: IncreaseMemoryLimits
-labels:
-  signalType: OOMKilled
-  severity: [critical]
-  component: pod
-  environment: [production]
-  priority: P0
-parameters:
-  - name: MEMORY_INCREASE_PERCENT
-    type: integer
-    description: Percentage to increase memory limit
-    default: "25"
-    required: true
-execution:
-  engine: tekton
-  bundle: quay.io/kubernaut/workflows/scale-memory-bundle:v1.0.0@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
+  name: scale-memory
+spec:
+  metadata:
+    workflowId: scale-memory
+    version: "v1.0.0"
+    description:
+      what: Increases memory limits for OOMKilled pods
+      whenToUse: When pods are OOMKilled due to insufficient memory
+      whenNotToUse: When OOM is caused by a memory leak
+      preconditions: Pod managed by a Deployment or StatefulSet
+  actionType: IncreaseMemoryLimits
+  labels:
+    signalType: OOMKilled
+    severity: [critical]
+    component: pod
+    environment: [production]
+    priority: P0
+  parameters:
+    - name: MEMORY_INCREASE_PERCENT
+      type: integer
+      description: Percentage to increase memory limit
+      default: "25"
+      required: true
+  execution:
+    engine: tekton
+    bundle: quay.io/kubernaut/workflows/scale-memory-bundle:v1.0.0@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
 `
 
-// invalidOCIRegistrationSchemaYAML is missing required fields
-const invalidOCIRegistrationSchemaYAML = `metadata:
-  workflowId: broken
-  version: "v0.1.0"
+const invalidInlineRegistrationSchemaYAML = `apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
+metadata:
+  name: broken
+spec:
+  metadata:
+    workflowId: broken
+    version: "v0.1.0"
 `
 
-var _ = Describe("OCI-Based Workflow Registration Handler (DD-WORKFLOW-017)", func() {
+var _ = Describe("Inline Workflow Registration Handler (DD-WORKFLOW-017)", func() {
 
-	// Helper to create a handler with mock OCI extractor (no DB — handler tests only)
-	newHandlerWithMockExtractor := func(puller oci.ImagePuller) *server.Handler {
-		parser := schema.NewParser()
-		extractor := oci.NewSchemaExtractor(puller, parser)
-		return server.NewHandler(nil, // No DB for unit tests
-			server.WithSchemaExtractor(extractor),
-		)
-	}
-
-	// Helper to create a JSON request body
-	makeCreateRequest := func(containerImage string) *http.Request {
-		body := map[string]string{"schemaImage": containerImage}
+	makeInlineRequest := func(content string) *http.Request {
+		body := map[string]string{"content": content}
 		jsonBody, err := json.Marshal(body)
 		Expect(err).ToNot(HaveOccurred())
 		return httptest.NewRequest(http.MethodPost, "/api/v1/workflows", bytes.NewReader(jsonBody))
 	}
 
-	Describe("UT-WF-017-001: Valid OCI workflow registration", func() {
-		It("should accept a valid containerImage and return 201 with populated workflow", func() {
-			// Arrange: mock puller returns a valid workflow-schema.yaml
-			puller := oci.NewMockImagePuller(validOCIRegistrationSchemaYAML)
-			handler := newHandlerWithMockExtractor(puller)
-			req := makeCreateRequest("quay.io/kubernaut/workflows/scale-memory:v1.0.0")
+	Describe("UT-WF-017-001: Valid inline workflow registration", func() {
+		It("should accept valid inline schema content and not return 400", func() {
+			handler := server.NewHandler(nil)
+			req := makeInlineRequest(validInlineRegistrationSchemaYAML)
 			rr := httptest.NewRecorder()
 
-			// Act
 			handler.HandleCreateWorkflow(rr, req)
 
-			// Assert: the handler should extract and populate the workflow
-			// (Since no DB is wired, we expect the handler to fail at DB insertion,
-			// but it should NOT fail at OCI extraction or schema validation.
-			// The status should NOT be 400, 422, or 502.)
 			Expect(rr.Code).ToNot(Equal(http.StatusBadRequest),
-				"Should not reject valid OCI schema as bad request")
-			Expect(rr.Code).ToNot(Equal(http.StatusUnprocessableEntity),
-				"Should not report schema-not-found for valid image")
-			Expect(rr.Code).ToNot(Equal(http.StatusBadGateway),
-				"Should not report image-pull-failed for mock puller")
+				"Should not reject valid inline schema as bad request")
 		})
 	})
 
-	Describe("UT-WF-017-002: Empty containerImage rejected", func() {
-		It("should return 400 when containerImage is empty", func() {
-			// Arrange
-			puller := oci.NewMockImagePuller(validOCIRegistrationSchemaYAML)
-			handler := newHandlerWithMockExtractor(puller)
-			req := makeCreateRequest("")
+	Describe("UT-WF-017-002: Empty content rejected", func() {
+		It("should return 400 when content is empty", func() {
+			handler := server.NewHandler(nil)
+			req := makeInlineRequest("")
 			rr := httptest.NewRecorder()
 
-			// Act
 			handler.HandleCreateWorkflow(rr, req)
 
-			// Assert
 			Expect(rr.Code).To(Equal(http.StatusBadRequest))
 			var problem map[string]interface{}
 			Expect(json.Unmarshal(rr.Body.Bytes(), &problem)).To(Succeed())
@@ -151,56 +132,60 @@ var _ = Describe("OCI-Based Workflow Registration Handler (DD-WORKFLOW-017)", fu
 		})
 	})
 
-	Describe("UT-WF-017-003: Image pull failure returns 502", func() {
-		It("should return 502 when the OCI image cannot be pulled", func() {
-			// Arrange: mock puller always fails
-			puller := oci.NewFailingMockImagePuller("registry unreachable")
-			handler := newHandlerWithMockExtractor(puller)
-			req := makeCreateRequest("quay.io/nonexistent/image:v1.0.0")
+	Describe("UT-WF-017-003: Malformed YAML content returns 400", func() {
+		It("should return 400 when the content is not parseable YAML", func() {
+			handler := server.NewHandler(nil)
+			req := makeInlineRequest("not: valid: yaml: {{{")
 			rr := httptest.NewRecorder()
 
-			// Act
 			handler.HandleCreateWorkflow(rr, req)
 
-			// Assert
-			Expect(rr.Code).To(Equal(http.StatusBadGateway))
+			Expect(rr.Code).To(Equal(http.StatusBadRequest))
 			var problem map[string]interface{}
 			Expect(json.Unmarshal(rr.Body.Bytes(), &problem)).To(Succeed())
-			Expect(problem["type"]).To(Equal("https://kubernaut.ai/problems/image-pull-failed"))
+			Expect(problem["type"]).To(Equal("https://kubernaut.ai/problems/validation-error"))
 		})
 	})
 
-	Describe("UT-WF-017-004: Missing workflow-schema.yaml returns 422", func() {
-		It("should return 422 when /workflow-schema.yaml is not in the image", func() {
-			// Arrange: mock puller returns empty image (no files)
-			puller := oci.NewMockImagePuller("")
-			handler := newHandlerWithMockExtractor(puller)
-			req := makeCreateRequest("quay.io/kubernaut/empty-image:v1.0.0")
+	Describe("UT-WF-017-004: Content missing required spec fields returns 400", func() {
+		It("should return 400 when content lacks required workflow spec fields", func() {
+			handler := server.NewHandler(nil)
+			req := makeInlineRequest(invalidInlineRegistrationSchemaYAML)
 			rr := httptest.NewRecorder()
 
-			// Act
 			handler.HandleCreateWorkflow(rr, req)
 
-			// Assert
-			Expect(rr.Code).To(Equal(http.StatusUnprocessableEntity))
+			Expect(rr.Code).To(Equal(http.StatusBadRequest))
 			var problem map[string]interface{}
 			Expect(json.Unmarshal(rr.Body.Bytes(), &problem)).To(Succeed())
-			Expect(problem["type"]).To(Equal("https://kubernaut.ai/problems/schema-not-found"))
+			Expect(problem["type"]).To(Equal("https://kubernaut.ai/problems/validation-error"))
 		})
 	})
 
 	Describe("UT-WF-017-005: Invalid schema returns 400", func() {
 		It("should return 400 when the schema is invalid (missing required fields)", func() {
-			// Arrange: mock puller returns invalid schema YAML
-			puller := oci.NewMockImagePuller(invalidOCIRegistrationSchemaYAML)
-			handler := newHandlerWithMockExtractor(puller)
-			req := makeCreateRequest("quay.io/kubernaut/bad-schema:v1.0.0")
+			const minimalInvalidSchemaYAML = `apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
+metadata:
+  name: no-labels
+spec:
+  metadata:
+    workflowId: no-labels
+    version: "v1.0.0"
+    description:
+      what: Missing labels, parameters and actionType
+      whenToUse: Never
+  parameters:
+    - name: DUMMY
+      type: string
+      description: dummy
+`
+			handler := server.NewHandler(nil)
+			req := makeInlineRequest(minimalInvalidSchemaYAML)
 			rr := httptest.NewRecorder()
 
-			// Act
 			handler.HandleCreateWorkflow(rr, req)
 
-			// Assert
 			Expect(rr.Code).To(Equal(http.StatusBadRequest))
 			var problem map[string]interface{}
 			Expect(json.Unmarshal(rr.Body.Bytes(), &problem)).To(Succeed())
@@ -210,33 +195,25 @@ var _ = Describe("OCI-Based Workflow Registration Handler (DD-WORKFLOW-017)", fu
 
 	Describe("UT-WF-017-006: Request body must be JSON", func() {
 		It("should return 400 for invalid JSON body", func() {
-			// Arrange
-			puller := oci.NewMockImagePuller(validOCIRegistrationSchemaYAML)
-			handler := newHandlerWithMockExtractor(puller)
+			handler := server.NewHandler(nil)
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/workflows",
 				bytes.NewReader([]byte("not json")))
 			rr := httptest.NewRecorder()
 
-			// Act
 			handler.HandleCreateWorkflow(rr, req)
 
-			// Assert
 			Expect(rr.Code).To(Equal(http.StatusBadRequest))
 		})
 	})
 
 	Describe("UT-WF-017-007: RFC 7807 compliance", func() {
 		It("should return RFC 7807 Problem Details format for all errors", func() {
-			// Arrange: trigger a 502 error
-			puller := oci.NewFailingMockImagePuller("connection refused")
-			handler := newHandlerWithMockExtractor(puller)
-			req := makeCreateRequest("quay.io/unreachable/image:v1.0.0")
+			handler := server.NewHandler(nil)
+			req := makeInlineRequest("not a valid workflow schema")
 			rr := httptest.NewRecorder()
 
-			// Act
 			handler.HandleCreateWorkflow(rr, req)
 
-			// Assert: RFC 7807 fields present
 			Expect(rr.Header().Get("Content-Type")).To(ContainSubstring("application/problem+json"))
 			var problem map[string]interface{}
 			Expect(json.Unmarshal(rr.Body.Bytes(), &problem)).To(Succeed())
@@ -249,45 +226,42 @@ var _ = Describe("OCI-Based Workflow Registration Handler (DD-WORKFLOW-017)", fu
 
 	// ========================================
 	// GAP-4: Action-Type Taxonomy Validation (DD-WORKFLOW-016)
-	// Explicit validation before DB FK constraint for clean 400 errors
 	// ========================================
 
 	Describe("UT-WF-017-008: Invalid action_type rejected with 400 (BR-WORKFLOW-016-001)", func() {
-		// Schema with an action_type not in the taxonomy
-		const invalidActionTypeSchemaYAML = `schemaVersion: "1.0"
+		const invalidActionTypeSchemaYAML = `apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
 metadata:
-  workflowId: invalid-action
-  version: "v1.0.0"
-  description:
-    what: Tests invalid action type rejection
-    whenToUse: When testing taxonomy validation
-    whenNotToUse: N/A
-    preconditions: None
-actionType: NonExistentAction
-labels:
-  signalType: OOMKilled
-  severity: [critical]
-  component: pod
-  environment: [production]
-  priority: P0
-parameters:
-  - name: PARAM_A
-    type: string
-    description: A test parameter
-    required: true
-execution:
-  engine: tekton
-  bundle: quay.io/kubernaut/test:v1.0.0@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
+  name: invalid-action
+spec:
+  metadata:
+    workflowId: invalid-action
+    version: "v1.0.0"
+    description:
+      what: Tests invalid action type rejection
+      whenToUse: When testing taxonomy validation
+      whenNotToUse: N/A
+      preconditions: None
+  actionType: NonExistentAction
+  labels:
+    signalType: OOMKilled
+    severity: [critical]
+    component: pod
+    environment: [production]
+    priority: P0
+  parameters:
+    - name: PARAM_A
+      type: string
+      description: A test parameter
+      required: true
+  execution:
+    engine: tekton
+    bundle: quay.io/kubernaut/test:v1.0.0@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
 `
 
 		It("should return 400 when action_type is not in the taxonomy", func() {
-			// Arrange: valid schema but action_type not in taxonomy
-			puller := oci.NewMockImagePuller(invalidActionTypeSchemaYAML)
-			parser := schema.NewParser()
-			extractor := oci.NewSchemaExtractor(puller, parser)
 			validator := &mockActionTypeValidator{
 				existsFn: func(ctx context.Context, actionType string) (bool, error) {
-					// Only V1.0 taxonomy types are valid
 					validTypes := map[string]bool{
 						"ScaleReplicas": true, "RestartPod": true, "IncreaseCPULimits": true,
 						"IncreaseMemoryLimits": true, "RollbackDeployment": true, "DrainNode": true,
@@ -296,17 +270,12 @@ execution:
 					return validTypes[actionType], nil
 				},
 			}
-			handler := server.NewHandler(nil,
-				server.WithSchemaExtractor(extractor),
-				server.WithActionTypeValidator(validator),
-			)
-			req := makeCreateRequest("quay.io/kubernaut/invalid-action:v1.0.0")
+			handler := server.NewHandler(nil, server.WithActionTypeValidator(validator))
+			req := makeInlineRequest(invalidActionTypeSchemaYAML)
 			rr := httptest.NewRecorder()
 
-			// Act
 			handler.HandleCreateWorkflow(rr, req)
 
-			// Assert: 400 with RFC 7807 error about invalid action_type
 			Expect(rr.Code).To(Equal(http.StatusBadRequest))
 			var problem map[string]interface{}
 			Expect(json.Unmarshal(rr.Body.Bytes(), &problem)).To(Succeed())
@@ -318,10 +287,6 @@ execution:
 
 	Describe("UT-WF-017-009: Valid action_type accepted (BR-WORKFLOW-016-001)", func() {
 		It("should accept workflow with valid action_type from taxonomy", func() {
-			// Arrange: valid schema with valid action_type
-			puller := oci.NewMockImagePuller(validOCIRegistrationSchemaYAML)
-			parser := schema.NewParser()
-			extractor := oci.NewSchemaExtractor(puller, parser)
 			validator := &mockActionTypeValidator{
 				existsFn: func(ctx context.Context, actionType string) (bool, error) {
 					validTypes := map[string]bool{
@@ -332,17 +297,12 @@ execution:
 					return validTypes[actionType], nil
 				},
 			}
-			handler := server.NewHandler(nil,
-				server.WithSchemaExtractor(extractor),
-				server.WithActionTypeValidator(validator),
-			)
-			req := makeCreateRequest("quay.io/kubernaut/workflows/scale-memory:v1.0.0")
+			handler := server.NewHandler(nil, server.WithActionTypeValidator(validator))
+			req := makeInlineRequest(validInlineRegistrationSchemaYAML)
 			rr := httptest.NewRecorder()
 
-			// Act
 			handler.HandleCreateWorkflow(rr, req)
 
-			// Assert: NOT 400 (validation passed; may get 201 or other status from missing DB)
 			Expect(rr.Code).ToNot(Equal(http.StatusBadRequest),
 				"Should not reject valid action_type from taxonomy")
 		})
