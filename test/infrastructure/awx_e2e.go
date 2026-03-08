@@ -23,7 +23,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -34,10 +36,20 @@ import (
 )
 
 const (
+	// AWXOperatorVersion is the pinned AWX Operator release (bundles AWX 24.6.1).
+	AWXOperatorVersion = "2.19.1"
+	AWXOperatorImage   = "quay.io/ansible/awx-operator:" + AWXOperatorVersion
+
 	// AWXImageVersion is the pinned AWX container image version.
 	AWXImageVersion = "24.6.1"
 	AWXImage        = "quay.io/ansible/awx:" + AWXImageVersion
 	AWXEEImage      = "quay.io/ansible/awx-ee:" + AWXImageVersion
+
+	// AWXInstanceName is the AWX CR metadata.name; the operator derives service
+	// and deployment names from it (e.g. awx-e2e-service, awx-e2e-web, etc.).
+	AWXInstanceName = "awx-e2e"
+	AWXServiceName  = AWXInstanceName + "-service"
+	AWXServicePort  = 80
 
 	// AWXDatabaseName is the database AWX uses in the shared PostgreSQL instance.
 	AWXDatabaseName = "awx"
@@ -55,67 +67,101 @@ const (
 	AWXTokenSecretName = "awx-api-token"
 
 	// AWXTestPlaybooksRepo is the GitHub repo containing E2E test playbooks.
-	AWXTestPlaybooksRepo  = "https://github.com/jordigilh/kubernaut-test-playbooks.git"
+	AWXTestPlaybooksRepo   = "https://github.com/jordigilh/kubernaut-test-playbooks.git"
 	AWXTestPlaybooksCommit = "b7e6a135be2019f995cb4875dbc0116dfda39d21"
 
 	// AWXNodePort is the host-accessible port for AWX API in Kind.
 	AWXNodePort = 30095
 )
 
-// DeployAWXInNamespace deploys AWX (web + task) into the given namespace.
-// It shares the existing PostgreSQL (creates an "awx" database) and Redis (DB 1).
+// DeployAWXInNamespace deploys AWX via the official AWX Operator into the
+// given namespace. It shares the existing PostgreSQL (creates an "awx" database)
+// while the operator manages its own Redis sidecar.
 // Designed to run in parallel with other Phase 4 deployments.
 func DeployAWXInNamespace(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
-	_, _ = fmt.Fprintf(writer, "\n🤖 Deploying AWX %s into %s (shared PG + Redis)...\n", AWXImageVersion, namespace)
+	_, _ = fmt.Fprintf(writer, "\n--- Deploying AWX via Operator %s into %s (external PG)...\n", AWXOperatorVersion, namespace)
 
-	manifest := fmt.Sprintf(`---
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: awx-settings
-  namespace: %[1]s
-data:
-  settings.py: |
-    SECRET_KEY = '%[7]s'
-    ALLOWED_HOSTS = ['*']
-    DATABASES = {
-        'default': {
-            'ATOMIC_REQUESTS': True,
-            'ENGINE': 'django.db.backends.postgresql',
-            'NAME': '%[2]s',
-            'USER': '%[3]s',
-            'PASSWORD': '%[4]s',
-            'HOST': 'postgresql',
-            'PORT': '5432',
-        }
-    }
-    BROKER_URL = 'redis://redis:6379/1'
-    CHANNEL_LAYERS = {
-        'default': {
-            'BACKEND': 'channels_redis.core.RedisChannelLayer',
-            'CONFIG': {
-                'hosts': [('redis', 6379)],
-                'prefix': 'awx',
-            },
-        },
-    }
-    CLUSTER_HOST_ID = "awx-e2e"
-    CSRF_TRUSTED_ORIGINS = ['http://localhost:%[5]d', 'http://awx-service.%[1]s:8052']
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: awx-receptor-conf
-  namespace: %[1]s
-data:
-  receptor.conf: |
-    ---
-    - node:
-        id: awx-e2e
-    - control-service:
-        service: control
-        filename: /tmp/receptor.sock
----
+	// Step 1: Install AWX Operator CRDs + controller via kustomize.
+	if err := installAWXOperator(namespace, kubeconfigPath, writer); err != nil {
+		return err
+	}
+
+	// Step 2: Wait for operator controller to be ready.
+	_, _ = fmt.Fprintf(writer, "  Waiting for AWX Operator controller...\n")
+	waitCmd := exec.Command("kubectl", "rollout", "status",
+		"deployment/awx-operator-controller-manager",
+		"-n", namespace,
+		"--kubeconfig", kubeconfigPath,
+		"--timeout=180s",
+	)
+	waitCmd.Stdout = writer
+	waitCmd.Stderr = writer
+	if err := waitCmd.Run(); err != nil {
+		return fmt.Errorf("AWX Operator controller did not become ready: %w", err)
+	}
+	_, _ = fmt.Fprintf(writer, "  AWX Operator controller ready\n")
+
+	// Step 3: Apply DB init job (creates AWX database in shared PostgreSQL).
+	if err := applyAWXDBInit(namespace, kubeconfigPath, writer); err != nil {
+		return err
+	}
+
+	// Step 4: Create prerequisite secrets for the AWX CR.
+	if err := createAWXSecrets(namespace, kubeconfigPath, writer); err != nil {
+		return err
+	}
+
+	// Step 5: Apply AWX Custom Resource — the operator handles migrations,
+	// admin user, web, task, Receptor, EE, Redis, instance registration, etc.
+	if err := applyAWXCustomResource(namespace, kubeconfigPath, writer); err != nil {
+		return err
+	}
+
+	_, _ = fmt.Fprintf(writer, "AWX CR applied — operator will reconcile\n")
+	return nil
+}
+
+// installAWXOperator installs the AWX Operator CRDs and controller using the
+// official kustomize-based installation method.
+func installAWXOperator(namespace, kubeconfigPath string, writer io.Writer) error {
+	_, _ = fmt.Fprintf(writer, "  Installing AWX Operator %s...\n", AWXOperatorVersion)
+
+	tmpDir, err := os.MkdirTemp("", "awx-operator-kustomize-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temp dir for kustomize: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	kustomization := fmt.Sprintf(`apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - github.com/ansible/awx-operator/config/default?ref=%s
+images:
+  - name: quay.io/ansible/awx-operator
+    newTag: %s
+namespace: %s
+`, AWXOperatorVersion, AWXOperatorVersion, namespace)
+
+	if writeErr := os.WriteFile(filepath.Join(tmpDir, "kustomization.yaml"), []byte(kustomization), 0600); writeErr != nil {
+		return fmt.Errorf("failed to write kustomization.yaml: %w", writeErr)
+	}
+
+	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-k", tmpDir)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to install AWX Operator: %w", err)
+	}
+	_, _ = fmt.Fprintf(writer, "  AWX Operator CRDs + controller applied\n")
+	return nil
+}
+
+// applyAWXDBInit applies the DB init Job that creates the AWX database and
+// user in the shared PostgreSQL instance.
+func applyAWXDBInit(namespace, kubeconfigPath string, writer io.Writer) error {
+	_, _ = fmt.Fprintf(writer, "  Applying AWX DB init job...\n")
+
+	dbInitManifest := fmt.Sprintf(`---
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -140,273 +186,157 @@ spec:
           PGPASSWORD=test_password psql -h postgresql -p 5432 -U slm_user -d action_history -c "
             DO \$\$
             BEGIN
-              IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '%[3]s') THEN
-                CREATE ROLE %[3]s WITH LOGIN PASSWORD '%[4]s';
+              IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '%[2]s') THEN
+                CREATE ROLE %[2]s WITH LOGIN PASSWORD '%[3]s';
               END IF;
             END
             \$\$;
           "
-          PGPASSWORD=test_password psql -h postgresql -p 5432 -U slm_user -d action_history -tc "SELECT 1 FROM pg_database WHERE datname = '%[2]s'" | grep -q 1 || PGPASSWORD=test_password psql -h postgresql -p 5432 -U slm_user -d action_history -c "CREATE DATABASE %[2]s OWNER %[3]s"
+          PGPASSWORD=test_password psql -h postgresql -p 5432 -U slm_user -d action_history -tc "SELECT 1 FROM pg_database WHERE datname = '%[4]s'" | grep -q 1 || PGPASSWORD=test_password psql -h postgresql -p 5432 -U slm_user -d action_history -c "CREATE DATABASE %[4]s OWNER %[2]s"
           PGPASSWORD=test_password psql -h postgresql -p 5432 -U slm_user -d action_history -c "
-            GRANT ALL PRIVILEGES ON DATABASE %[2]s TO %[3]s;
+            GRANT ALL PRIVILEGES ON DATABASE %[4]s TO %[2]s;
           "
           echo "AWX database ready."
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: awx-web
-  namespace: %[1]s
-  labels:
-    app: awx-web
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: awx-web
-  template:
-    metadata:
-      labels:
-        app: awx-web
-    spec:
-      initContainers:
-      - name: wait-db
-        image: docker.io/library/postgres:16-alpine
-        command: ["sh", "-c"]
-        args:
-        - |
-          until PGPASSWORD='%[4]s' psql -h postgresql -p 5432 -U %[3]s -d %[2]s -c 'SELECT 1' 2>/dev/null; do
-            echo "Waiting for AWX database..."
-            sleep 3
-          done
-      - name: migrate
-        image: %[6]s
-        command: ["awx-manage", "migrate", "--noinput"]
-        env:
-        - name: AWX_SETTINGS_FILE
-          value: "/etc/tower/conf.d/settings.py"
-        - name: SECRET_KEY
-          value: "%[7]s"
-        - name: DATABASE_HOST
-          value: "postgresql"
-        - name: DATABASE_PORT
-          value: "5432"
-        - name: DATABASE_NAME
-          value: "%[2]s"
-        - name: DATABASE_USER
-          value: "%[3]s"
-        - name: DATABASE_PASSWORD
-          value: "%[4]s"
-        volumeMounts:
-        - name: settings
-          mountPath: /etc/tower/conf.d/
-          readOnly: true
-      - name: create-admin
-        image: %[6]s
-        command: ["sh", "-c"]
-        args:
-        - |
-          echo "from django.contrib.auth.models import User; User.objects.filter(username='%[8]s').exists() or User.objects.create_superuser('%[8]s', 'admin@kubernaut.ai', '%[9]s')" | awx-manage shell
-        env:
-        - name: AWX_SETTINGS_FILE
-          value: "/etc/tower/conf.d/settings.py"
-        - name: SECRET_KEY
-          value: "%[7]s"
-        - name: DATABASE_HOST
-          value: "postgresql"
-        - name: DATABASE_PORT
-          value: "5432"
-        - name: DATABASE_NAME
-          value: "%[2]s"
-        - name: DATABASE_USER
-          value: "%[3]s"
-        - name: DATABASE_PASSWORD
-          value: "%[4]s"
-        volumeMounts:
-        - name: settings
-          mountPath: /etc/tower/conf.d/
-          readOnly: true
-      containers:
-      - name: web
-        image: %[6]s
-        command: ["awx-manage"]
-        args: ["runserver", "0.0.0.0:8052", "--noreload"]
-        ports:
-        - containerPort: 8052
-          name: http
-        env:
-        - name: AWX_SETTINGS_FILE
-          value: "/etc/tower/conf.d/settings.py"
-        - name: SECRET_KEY
-          value: "%[7]s"
-        - name: DATABASE_HOST
-          value: "postgresql"
-        - name: DATABASE_PORT
-          value: "5432"
-        - name: DATABASE_NAME
-          value: "%[2]s"
-        - name: DATABASE_USER
-          value: "%[3]s"
-        - name: DATABASE_PASSWORD
-          value: "%[4]s"
-        volumeMounts:
-        - name: settings
-          mountPath: /etc/tower/conf.d/
-          readOnly: true
-        resources:
-          requests:
-            cpu: 100m
-            memory: 256Mi
-          limits:
-            cpu: "1"
-            memory: 512Mi
-        readinessProbe:
-          httpGet:
-            path: /api/v2/ping/
-            port: 8052
-          initialDelaySeconds: 30
-          periodSeconds: 10
-          timeoutSeconds: 5
-      volumes:
-      - name: settings
-        configMap:
-          name: awx-settings
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: awx-task
-  namespace: %[1]s
-  labels:
-    app: awx-task
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: awx-task
-  template:
-    metadata:
-      labels:
-        app: awx-task
-    spec:
-      initContainers:
-      - name: copy-receptor
-        image: %[10]s
-        command: ["cp", "/usr/bin/receptor", "/receptor-bin/receptor"]
-        volumeMounts:
-        - name: receptor-bin
-          mountPath: /receptor-bin
-      - name: wait-web
-        image: docker.io/library/busybox:1.36
-        command: ["sh", "-c"]
-        args:
-        - |
-          until wget -q -O /dev/null http://awx-service:8052/api/v2/ping/; do
-            echo "Waiting for AWX web..."
-            sleep 5
-          done
-      containers:
-      - name: task
-        image: %[6]s
-        command: ["sh", "-c"]
-        args:
-        - |
-          /receptor-bin/receptor --config /etc/receptor/receptor.conf &
-          sleep 2
-          awx-manage run_dispatcher &
-          awx-manage run_callback_receiver &
-          wait
-        env:
-        - name: AWX_SETTINGS_FILE
-          value: "/etc/tower/conf.d/settings.py"
-        - name: SECRET_KEY
-          value: "%[7]s"
-        - name: DATABASE_HOST
-          value: "postgresql"
-        - name: DATABASE_PORT
-          value: "5432"
-        - name: DATABASE_NAME
-          value: "%[2]s"
-        - name: DATABASE_USER
-          value: "%[3]s"
-        - name: DATABASE_PASSWORD
-          value: "%[4]s"
-        volumeMounts:
-        - name: settings
-          mountPath: /etc/tower/conf.d/
-          readOnly: true
-        - name: receptor-conf
-          mountPath: /etc/receptor/
-          readOnly: true
-        - name: receptor-bin
-          mountPath: /receptor-bin
-          readOnly: true
-        - name: receptor-run
-          mountPath: /tmp
-        resources:
-          requests:
-            cpu: 100m
-            memory: 128Mi
-          limits:
-            cpu: "1"
-            memory: 384Mi
-      volumes:
-      - name: settings
-        configMap:
-          name: awx-settings
-      - name: receptor-conf
-        configMap:
-          name: awx-receptor-conf
-      - name: receptor-bin
-        emptyDir: {}
-      - name: receptor-run
-        emptyDir: {}
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: awx-service
-  namespace: %[1]s
-spec:
-  type: NodePort
-  selector:
-    app: awx-web
-  ports:
-  - name: http
-    port: 8052
-    targetPort: 8052
-    nodePort: %[5]d
-`,
-		namespace,       // [1]
-		AWXDatabaseName, // [2]
-		AWXDatabaseUser, // [3]
-		AWXDatabasePass, // [4]
-		AWXNodePort,     // [5]
-		AWXImage,        // [6]
-		AWXSecretKey,    // [7]
-		AWXAdminUser,    // [8]
-		AWXAdminPass,    // [9]
-		AWXEEImage,      // [10]
-	)
+`, namespace, AWXDatabaseUser, AWXDatabasePass, AWXDatabaseName)
 
 	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
 		"apply", "--server-side", "--field-manager=e2e-test", "-f", "-")
-	cmd.Stdin = strings.NewReader(manifest)
+	cmd.Stdin = strings.NewReader(dbInitManifest)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to apply AWX manifests: %w", err)
+		return fmt.Errorf("failed to apply AWX DB init job: %w", err)
 	}
-
-	_, _ = fmt.Fprintf(writer, "✅ AWX manifests applied (web + task + db-init)\n")
 	return nil
 }
 
-// WaitForAWXReady waits until the AWX web pod is running and ready.
+// createAWXSecrets creates the K8s Secrets the AWX CR references:
+// external PostgreSQL connection, admin password, and Django secret key.
+func createAWXSecrets(namespace, kubeconfigPath string, writer io.Writer) error {
+	_, _ = fmt.Fprintf(writer, "  Creating AWX prerequisite secrets...\n")
+
+	secretsManifest := fmt.Sprintf(`---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: awx-postgres-configuration
+  namespace: %[1]s
+stringData:
+  host: postgresql
+  port: "5432"
+  database: "%[2]s"
+  username: "%[3]s"
+  password: "%[4]s"
+  sslmode: prefer
+  type: unmanaged
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: %[5]s-admin-password
+  namespace: %[1]s
+stringData:
+  password: "%[6]s"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: %[5]s-secret-key
+  namespace: %[1]s
+stringData:
+  secret_key: "%[7]s"
+`, namespace, AWXDatabaseName, AWXDatabaseUser, AWXDatabasePass,
+		AWXInstanceName, AWXAdminPass, AWXSecretKey)
+
+	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+		"apply", "--server-side", "--field-manager=e2e-test", "-f", "-")
+	cmd.Stdin = strings.NewReader(secretsManifest)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to create AWX prerequisite secrets: %w", err)
+	}
+	_, _ = fmt.Fprintf(writer, "  AWX secrets created (PG config, admin password, secret key)\n")
+	return nil
+}
+
+// applyAWXCustomResource creates the AWX CR that the operator reconciles into
+// a fully functional AWX deployment (web, task, Receptor, EE, Redis, RBAC, etc.).
+func applyAWXCustomResource(namespace, kubeconfigPath string, writer io.Writer) error {
+	_, _ = fmt.Fprintf(writer, "  Applying AWX Custom Resource (%s)...\n", AWXInstanceName)
+
+	awxCR := fmt.Sprintf(`---
+apiVersion: awx.ansible.com/v1beta1
+kind: AWX
+metadata:
+  name: %[1]s
+  namespace: %[2]s
+spec:
+  service_type: nodeport
+  nodeport_port: %[3]d
+  admin_user: %[4]s
+  admin_password_secret: %[1]s-admin-password
+  secret_key_secret: %[1]s-secret-key
+  postgres_configuration_secret: awx-postgres-configuration
+  image: quay.io/ansible/awx
+  image_version: "%[5]s"
+  ee_images:
+    - name: "AWX EE (latest)"
+      image: "quay.io/ansible/awx-ee:%[5]s"
+  web_resource_requirements:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  task_resource_requirements:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  ee_resource_requirements:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  redis_resource_requirements:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 128Mi
+  init_container_resource_requirements:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+`, AWXInstanceName, namespace, AWXNodePort, AWXAdminUser, AWXImageVersion)
+
+	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+		"apply", "--server-side", "--field-manager=e2e-test", "-f", "-")
+	cmd.Stdin = strings.NewReader(awxCR)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to apply AWX Custom Resource: %w", err)
+	}
+	return nil
+}
+
+// WaitForAWXReady waits until the operator-managed AWX pod is running and
+// all containers are ready (web, task, EE, redis, rsyslog).
 // Uses manual polling instead of Gomega Eventually because this function
 // is called from goroutines where Gomega panics crash the process.
 func WaitForAWXReady(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
-	_, _ = fmt.Fprintf(writer, "⏳ Waiting for AWX to be ready...\n")
+	_, _ = fmt.Fprintf(writer, "Waiting for AWX (operator-managed) to be ready...\n")
 
 	config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
 	if err != nil {
@@ -417,17 +347,17 @@ func WaitForAWXReady(ctx context.Context, namespace, kubeconfigPath string, writ
 		return fmt.Errorf("failed to create clientset: %w", err)
 	}
 
-	deadline := time.Now().Add(10 * time.Minute)
+	deadline := time.Now().Add(12 * time.Minute)
 	for time.Now().Before(deadline) {
-		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
-			LabelSelector: "app=awx-web",
+		pods, listErr := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+			LabelSelector: "app.kubernetes.io/managed-by=awx-operator,app.kubernetes.io/name=" + AWXInstanceName,
 		})
-		if err == nil && len(pods.Items) > 0 {
+		if listErr == nil && len(pods.Items) > 0 {
 			for _, pod := range pods.Items {
 				if pod.Status.Phase == corev1.PodRunning {
 					for _, c := range pod.Status.Conditions {
 						if c.Type == corev1.PodReady && c.Status == corev1.ConditionTrue {
-							_, _ = fmt.Fprintf(writer, "✅ AWX is ready\n")
+							_, _ = fmt.Fprintf(writer, "AWX is ready (all containers running)\n")
 							return nil
 						}
 					}
@@ -437,7 +367,7 @@ func WaitForAWXReady(ctx context.Context, namespace, kubeconfigPath string, writ
 		time.Sleep(10 * time.Second)
 	}
 
-	return fmt.Errorf("AWX web pod did not become ready within 10 minutes")
+	return fmt.Errorf("AWX pod did not become ready within 12 minutes")
 }
 
 // awxAPIRequest makes an authenticated request to the AWX API.
@@ -694,12 +624,12 @@ func PatchWEControllerWithAnsibleConfig(ctx context.Context, namespace, kubeconf
 	currentConfig := cm.Data["workflowexecution.yaml"]
 	ansibleSection := fmt.Sprintf(`
     ansible:
-      apiURL: "http://awx-service.%s:8052"
+      apiURL: "http://%s.%s:%d"
       tokenSecretRef:
         name: "%s"
         namespace: "%s"
         key: "token"
-      insecure: true`, namespace, AWXTokenSecretName, namespace)
+      insecure: true`, AWXServiceName, namespace, AWXServicePort, AWXTokenSecretName, namespace)
 
 	cm.Data["workflowexecution.yaml"] = currentConfig + ansibleSection
 

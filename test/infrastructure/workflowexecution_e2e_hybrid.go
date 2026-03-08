@@ -279,14 +279,16 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 		loadResults <- loadResult{name: "AuthWebhook", err: err}
 	}()
 
-	// BR-WE-015: Pre-load AWX and helper images into Kind to prevent
+	// BR-WE-015: Pre-load AWX Operator and AWX images into Kind to prevent
 	// slow quay.io/docker.io pulls that cause AWX readiness timeouts in CI.
 	go func() {
 		thirdPartyImages := []string{
-			AWXImage,   // quay.io/ansible/awx:24.6.1
-			AWXEEImage, // quay.io/ansible/awx-ee:24.6.1
+			AWXOperatorImage, // quay.io/ansible/awx-operator:2.19.1
+			AWXImage,         // quay.io/ansible/awx:24.6.1
+			AWXEEImage,       // quay.io/ansible/awx-ee:24.6.1
 			"docker.io/library/postgres:16-alpine",
-			"docker.io/library/busybox:1.36",
+			"docker.io/redis:7",
+			"quay.io/centos/centos:stream9",
 		}
 		for _, img := range thirdPartyImages {
 			if preloadErr := PreloadExternalImage(img, clusterName, writer); preloadErr != nil {
@@ -390,8 +392,8 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 		deployResults <- deployResult{"WorkflowExecution", err}
 	}()
 	go func() {
-		// BR-WE-015: Deploy AWX (shared PG + Redis) in parallel with other services.
-		// AWX pods will restart until PG is ready — K8s handles the dependency.
+		// BR-WE-015: Deploy AWX via Operator (external PG, operator-managed Redis).
+		// Installs operator CRDs + controller, then creates AWX CR.
 		err := DeployAWXInNamespace(ctx, WorkflowExecutionNamespace, kubeconfigPath, writer)
 		deployResults <- deployResult{"AWX", err}
 	}()
@@ -589,7 +591,7 @@ subjects:
 	_, _ = fmt.Fprintln(writer, "  🚀 Strategy: Hybrid parallel (build parallel → cluster → load)")
 	_, _ = fmt.Fprintln(writer, "  📊 Coverage: Enabled (GOCOVERDIR=/coverdata)")
 	_, _ = fmt.Fprintln(writer, "  🎯 DataStorage URL: http://localhost:8092")
-	_, _ = fmt.Fprintln(writer, "  🤖 AWX API: http://awx-service.kubernaut-system:8052")
+	_, _ = fmt.Fprintf(writer, "  🤖 AWX API: http://%s.kubernaut-system:%d\n", AWXServiceName, AWXServicePort)
 	_, _ = fmt.Fprintln(writer, "  📦 Namespace: kubernaut-system")
 	_, _ = fmt.Fprintln(writer, "  ⏱️  Total time: ~5-6 minutes (per DD-TEST-002)")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
