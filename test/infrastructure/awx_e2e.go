@@ -89,8 +89,28 @@ data:
         }
     }
     BROKER_URL = 'redis://redis:6379/1'
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels_redis.core.RedisChannelLayer',
+            'CONFIG': {
+                'hosts': [('redis', 6379)],
+                'prefix': 'awx',
+            },
+        },
+    }
     CLUSTER_HOST_ID = "awx-e2e"
     CSRF_TRUSTED_ORIGINS = ['http://localhost:%[5]d', 'http://awx-service.%[1]s:8052']
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: awx-receptor-conf
+  namespace: %[1]s
+data:
+  receptor.conf: |
+    ---
+    - node:
+        id: awx-e2e
 ---
 apiVersion: batch/v1
 kind: Job
@@ -303,6 +323,9 @@ spec:
         - name: settings
           mountPath: /etc/tower/conf.d/
           readOnly: true
+        - name: receptor-conf
+          mountPath: /etc/receptor/
+          readOnly: true
         resources:
           requests:
             cpu: 100m
@@ -314,6 +337,9 @@ spec:
       - name: settings
         configMap:
           name: awx-settings
+      - name: receptor-conf
+        configMap:
+          name: awx-receptor-conf
 ---
 apiVersion: v1
 kind: Service
