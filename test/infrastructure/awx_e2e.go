@@ -204,7 +204,8 @@ spec:
       containers:
       - name: web
         image: %[6]s
-        command: ["/usr/bin/launch_awx.sh"]
+        command: ["awx-manage"]
+        args: ["runserver", "0.0.0.0:8052", "--noreload"]
         ports:
         - containerPort: 8052
           name: http
