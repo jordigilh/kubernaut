@@ -8731,44 +8731,6 @@ func (s *CreateNotificationAuditInternalServerError) UnmarshalJSON(data []byte) 
 	return s.Decode(d)
 }
 
-// Encode encodes CreateWorkflowBadGateway as json.
-func (s *CreateWorkflowBadGateway) Encode(e *jx.Encoder) {
-	unwrapped := (*RFC7807Problem)(s)
-
-	unwrapped.Encode(e)
-}
-
-// Decode decodes CreateWorkflowBadGateway from json.
-func (s *CreateWorkflowBadGateway) Decode(d *jx.Decoder) error {
-	if s == nil {
-		return errors.New("invalid: unable to decode CreateWorkflowBadGateway to nil")
-	}
-	var unwrapped RFC7807Problem
-	if err := func() error {
-		if err := unwrapped.Decode(d); err != nil {
-			return err
-		}
-		return nil
-	}(); err != nil {
-		return errors.Wrap(err, "alias")
-	}
-	*s = CreateWorkflowBadGateway(unwrapped)
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s *CreateWorkflowBadGateway) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *CreateWorkflowBadGateway) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
 // Encode encodes CreateWorkflowBadRequest as json.
 func (s *CreateWorkflowBadRequest) Encode(e *jx.Encoder) {
 	unwrapped := (*RFC7807Problem)(s)
@@ -8845,6 +8807,44 @@ func (s *CreateWorkflowConflict) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes CreateWorkflowCreated as json.
+func (s *CreateWorkflowCreated) Encode(e *jx.Encoder) {
+	unwrapped := (*RemediationWorkflow)(s)
+
+	unwrapped.Encode(e)
+}
+
+// Decode decodes CreateWorkflowCreated from json.
+func (s *CreateWorkflowCreated) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode CreateWorkflowCreated to nil")
+	}
+	var unwrapped RemediationWorkflow
+	if err := func() error {
+		if err := unwrapped.Decode(d); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return errors.Wrap(err, "alias")
+	}
+	*s = CreateWorkflowCreated(unwrapped)
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *CreateWorkflowCreated) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *CreateWorkflowCreated) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes CreateWorkflowForbidden as json.
 func (s *CreateWorkflowForbidden) Encode(e *jx.Encoder) {
 	unwrapped := (*RFC7807Problem)(s)
@@ -8884,51 +8884,85 @@ func (s *CreateWorkflowForbidden) UnmarshalJSON(data []byte) error {
 }
 
 // Encode implements json.Marshaler.
-func (s *CreateWorkflowFromOCIRequest) Encode(e *jx.Encoder) {
+func (s *CreateWorkflowInlineRequest) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
 	e.ObjEnd()
 }
 
 // encodeFields encodes fields.
-func (s *CreateWorkflowFromOCIRequest) encodeFields(e *jx.Encoder) {
+func (s *CreateWorkflowInlineRequest) encodeFields(e *jx.Encoder) {
 	{
-		e.FieldStart("schemaImage")
-		e.Str(s.SchemaImage)
+		e.FieldStart("content")
+		e.Str(s.Content)
+	}
+	{
+		if s.Source.Set {
+			e.FieldStart("source")
+			s.Source.Encode(e)
+		}
+	}
+	{
+		if s.RegisteredBy.Set {
+			e.FieldStart("registeredBy")
+			s.RegisteredBy.Encode(e)
+		}
 	}
 }
 
-var jsonFieldsNameOfCreateWorkflowFromOCIRequest = [1]string{
-	0: "schemaImage",
+var jsonFieldsNameOfCreateWorkflowInlineRequest = [3]string{
+	0: "content",
+	1: "source",
+	2: "registeredBy",
 }
 
-// Decode decodes CreateWorkflowFromOCIRequest from json.
-func (s *CreateWorkflowFromOCIRequest) Decode(d *jx.Decoder) error {
+// Decode decodes CreateWorkflowInlineRequest from json.
+func (s *CreateWorkflowInlineRequest) Decode(d *jx.Decoder) error {
 	if s == nil {
-		return errors.New("invalid: unable to decode CreateWorkflowFromOCIRequest to nil")
+		return errors.New("invalid: unable to decode CreateWorkflowInlineRequest to nil")
 	}
 	var requiredBitSet [1]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
-		case "schemaImage":
+		case "content":
 			requiredBitSet[0] |= 1 << 0
 			if err := func() error {
 				v, err := d.Str()
-				s.SchemaImage = string(v)
+				s.Content = string(v)
 				if err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"schemaImage\"")
+				return errors.Wrap(err, "decode field \"content\"")
+			}
+		case "source":
+			if err := func() error {
+				s.Source.Reset()
+				if err := s.Source.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"source\"")
+			}
+		case "registeredBy":
+			if err := func() error {
+				s.RegisteredBy.Reset()
+				if err := s.RegisteredBy.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"registeredBy\"")
 			}
 		default:
 			return d.Skip()
 		}
 		return nil
 	}); err != nil {
-		return errors.Wrap(err, "decode CreateWorkflowFromOCIRequest")
+		return errors.Wrap(err, "decode CreateWorkflowInlineRequest")
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
@@ -8945,8 +8979,8 @@ func (s *CreateWorkflowFromOCIRequest) Decode(d *jx.Decoder) error {
 				bitIdx := bits.TrailingZeros8(result)
 				fieldIdx := i*8 + bitIdx
 				var name string
-				if fieldIdx < len(jsonFieldsNameOfCreateWorkflowFromOCIRequest) {
-					name = jsonFieldsNameOfCreateWorkflowFromOCIRequest[fieldIdx]
+				if fieldIdx < len(jsonFieldsNameOfCreateWorkflowInlineRequest) {
+					name = jsonFieldsNameOfCreateWorkflowInlineRequest[fieldIdx]
 				} else {
 					name = strconv.Itoa(fieldIdx)
 				}
@@ -8967,14 +9001,14 @@ func (s *CreateWorkflowFromOCIRequest) Decode(d *jx.Decoder) error {
 }
 
 // MarshalJSON implements stdjson.Marshaler.
-func (s *CreateWorkflowFromOCIRequest) MarshalJSON() ([]byte, error) {
+func (s *CreateWorkflowInlineRequest) MarshalJSON() ([]byte, error) {
 	e := jx.Encoder{}
 	s.Encode(&e)
 	return e.Bytes(), nil
 }
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *CreateWorkflowFromOCIRequest) UnmarshalJSON(data []byte) error {
+func (s *CreateWorkflowInlineRequest) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -9017,6 +9051,44 @@ func (s *CreateWorkflowInternalServerError) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes CreateWorkflowOK as json.
+func (s *CreateWorkflowOK) Encode(e *jx.Encoder) {
+	unwrapped := (*RemediationWorkflow)(s)
+
+	unwrapped.Encode(e)
+}
+
+// Decode decodes CreateWorkflowOK from json.
+func (s *CreateWorkflowOK) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode CreateWorkflowOK to nil")
+	}
+	var unwrapped RemediationWorkflow
+	if err := func() error {
+		if err := unwrapped.Decode(d); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return errors.Wrap(err, "alias")
+	}
+	*s = CreateWorkflowOK(unwrapped)
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *CreateWorkflowOK) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *CreateWorkflowOK) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes CreateWorkflowUnauthorized as json.
 func (s *CreateWorkflowUnauthorized) Encode(e *jx.Encoder) {
 	unwrapped := (*RFC7807Problem)(s)
@@ -9051,44 +9123,6 @@ func (s *CreateWorkflowUnauthorized) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *CreateWorkflowUnauthorized) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
-// Encode encodes CreateWorkflowUnprocessableEntity as json.
-func (s *CreateWorkflowUnprocessableEntity) Encode(e *jx.Encoder) {
-	unwrapped := (*RFC7807Problem)(s)
-
-	unwrapped.Encode(e)
-}
-
-// Decode decodes CreateWorkflowUnprocessableEntity from json.
-func (s *CreateWorkflowUnprocessableEntity) Decode(d *jx.Decoder) error {
-	if s == nil {
-		return errors.New("invalid: unable to decode CreateWorkflowUnprocessableEntity to nil")
-	}
-	var unwrapped RFC7807Problem
-	if err := func() error {
-		if err := unwrapped.Decode(d); err != nil {
-			return err
-		}
-		return nil
-	}(); err != nil {
-		return errors.Wrap(err, "alias")
-	}
-	*s = CreateWorkflowUnprocessableEntity(unwrapped)
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s *CreateWorkflowUnprocessableEntity) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *CreateWorkflowUnprocessableEntity) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

@@ -42,7 +42,7 @@ datastorage/models/audit_export_response_export_metadata_query_filters.py
 datastorage/models/audit_export_response_hash_chain_verification.py
 datastorage/models/batch_audit_event_response.py
 datastorage/models/create_notification_audit202_response.py
-datastorage/models/create_workflow_from_oci_request.py
+datastorage/models/create_workflow_inline_request.py
 datastorage/models/detected_labels.py
 datastorage/models/effectiveness_assessment_audit_payload.py
 datastorage/models/effectiveness_assessment_audit_payload_alert_resolution.py
@@ -144,7 +144,7 @@ docs/AuditReconstructionAPIApi.md
 docs/AuditWriteAPIApi.md
 docs/BatchAuditEventResponse.md
 docs/CreateNotificationAudit202Response.md
-docs/CreateWorkflowFromOCIRequest.md
+docs/CreateWorkflowInlineRequest.md
 docs/DetectedLabels.md
 docs/EffectivenessAssessmentAPIApi.md
 docs/EffectivenessAssessmentAuditPayload.md
@@ -257,7 +257,7 @@ test/test_audit_reconstruction_api_api.py
 test/test_audit_write_api_api.py
 test/test_batch_audit_event_response.py
 test/test_create_notification_audit202_response.py
-test/test_create_workflow_from_oci_request.py
+test/test_create_workflow_inline_request.py
 test/test_detected_labels.py
 test/test_effectiveness_assessment_api_api.py
 test/test_effectiveness_assessment_audit_payload.py

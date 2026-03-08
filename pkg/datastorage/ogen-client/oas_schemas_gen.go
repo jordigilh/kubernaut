@@ -4608,10 +4608,6 @@ type CreateNotificationAuditInternalServerError RFC7807Problem
 
 func (*CreateNotificationAuditInternalServerError) createNotificationAuditRes() {}
 
-type CreateWorkflowBadGateway RFC7807Problem
-
-func (*CreateWorkflowBadGateway) createWorkflowRes() {}
-
 type CreateWorkflowBadRequest RFC7807Problem
 
 func (*CreateWorkflowBadRequest) createWorkflowRes() {}
@@ -4620,39 +4616,69 @@ type CreateWorkflowConflict RFC7807Problem
 
 func (*CreateWorkflowConflict) createWorkflowRes() {}
 
+type CreateWorkflowCreated RemediationWorkflow
+
+func (*CreateWorkflowCreated) createWorkflowRes() {}
+
 type CreateWorkflowForbidden RFC7807Problem
 
 func (*CreateWorkflowForbidden) createWorkflowRes() {}
 
-// Ref: #/components/schemas/CreateWorkflowFromOCIRequest
-type CreateWorkflowFromOCIRequest struct {
-	// OCI image pullspec. Data Storage pulls this image, extracts
-	// /workflow-schema.yaml (ADR-043), validates it, and populates
-	// all catalog fields from the extracted schema.
-	SchemaImage string `json:"schemaImage"`
+// Ref: #/components/schemas/CreateWorkflowInlineRequest
+type CreateWorkflowInlineRequest struct {
+	// Raw YAML content of the RemediationWorkflow CRD. Data Storage
+	// parses the CRD envelope (apiVersion/kind/metadata/spec), validates
+	// the spec, and populates all catalog fields from it.
+	Content string `json:"content"`
+	// Registration source. Set to "crd" when the request originates from
+	// the Auth Webhook on CRD creation, or "api" for direct API calls.
+	Source OptString `json:"source"`
+	// Identity of the user or service account that triggered the registration.
+	// Populated from AdmissionReview.request.userInfo.username when source is "crd".
+	RegisteredBy OptString `json:"registeredBy"`
 }
 
-// GetSchemaImage returns the value of SchemaImage.
-func (s *CreateWorkflowFromOCIRequest) GetSchemaImage() string {
-	return s.SchemaImage
+// GetContent returns the value of Content.
+func (s *CreateWorkflowInlineRequest) GetContent() string {
+	return s.Content
 }
 
-// SetSchemaImage sets the value of SchemaImage.
-func (s *CreateWorkflowFromOCIRequest) SetSchemaImage(val string) {
-	s.SchemaImage = val
+// GetSource returns the value of Source.
+func (s *CreateWorkflowInlineRequest) GetSource() OptString {
+	return s.Source
+}
+
+// GetRegisteredBy returns the value of RegisteredBy.
+func (s *CreateWorkflowInlineRequest) GetRegisteredBy() OptString {
+	return s.RegisteredBy
+}
+
+// SetContent sets the value of Content.
+func (s *CreateWorkflowInlineRequest) SetContent(val string) {
+	s.Content = val
+}
+
+// SetSource sets the value of Source.
+func (s *CreateWorkflowInlineRequest) SetSource(val OptString) {
+	s.Source = val
+}
+
+// SetRegisteredBy sets the value of RegisteredBy.
+func (s *CreateWorkflowInlineRequest) SetRegisteredBy(val OptString) {
+	s.RegisteredBy = val
 }
 
 type CreateWorkflowInternalServerError RFC7807Problem
 
 func (*CreateWorkflowInternalServerError) createWorkflowRes() {}
 
+type CreateWorkflowOK RemediationWorkflow
+
+func (*CreateWorkflowOK) createWorkflowRes() {}
+
 type CreateWorkflowUnauthorized RFC7807Problem
 
 func (*CreateWorkflowUnauthorized) createWorkflowRes() {}
-
-type CreateWorkflowUnprocessableEntity RFC7807Problem
-
-func (*CreateWorkflowUnprocessableEntity) createWorkflowRes() {}
 
 // Customer-defined labels (DD-WORKFLOW-001 v1.5) - subdomain-based format.
 // Ref: #/components/schemas/CustomLabels
@@ -16930,7 +16956,6 @@ func (s *RemediationWorkflow) SetUpdatedBy(val OptString) {
 	s.UpdatedBy = val
 }
 
-func (*RemediationWorkflow) createWorkflowRes()    {}
 func (*RemediationWorkflow) deprecateWorkflowRes() {}
 func (*RemediationWorkflow) disableWorkflowRes()   {}
 func (*RemediationWorkflow) enableWorkflowRes()    {}

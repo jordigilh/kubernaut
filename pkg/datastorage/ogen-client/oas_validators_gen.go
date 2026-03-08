@@ -1042,6 +1042,22 @@ func (s CreateNotificationAuditAcceptedStatus) Validate() error {
 	}
 }
 
+func (s *CreateWorkflowCreated) Validate() error {
+	alias := (*RemediationWorkflow)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *CreateWorkflowOK) Validate() error {
+	alias := (*RemediationWorkflow)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (s CustomLabels) Validate() error {
 	var failures []validate.FieldError
 	for key, elem := range s {

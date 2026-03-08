@@ -185,7 +185,20 @@ func encodeCreateNotificationAuditResponse(response CreateNotificationAuditRes, 
 
 func encodeCreateWorkflowResponse(response CreateWorkflowRes, w http.ResponseWriter, span trace.Span) error {
 	switch response := response.(type) {
-	case *RemediationWorkflow:
+	case *CreateWorkflowOK:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(200)
+		span.SetStatus(codes.Ok, http.StatusText(200))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *CreateWorkflowCreated:
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(201)
 		span.SetStatus(codes.Ok, http.StatusText(201))
@@ -250,36 +263,10 @@ func encodeCreateWorkflowResponse(response CreateWorkflowRes, w http.ResponseWri
 
 		return nil
 
-	case *CreateWorkflowUnprocessableEntity:
-		w.Header().Set("Content-Type", "application/problem+json")
-		w.WriteHeader(422)
-		span.SetStatus(codes.Error, http.StatusText(422))
-
-		e := new(jx.Encoder)
-		response.Encode(e)
-		if _, err := e.WriteTo(w); err != nil {
-			return errors.Wrap(err, "write")
-		}
-
-		return nil
-
 	case *CreateWorkflowInternalServerError:
 		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(500)
 		span.SetStatus(codes.Error, http.StatusText(500))
-
-		e := new(jx.Encoder)
-		response.Encode(e)
-		if _, err := e.WriteTo(w); err != nil {
-			return errors.Wrap(err, "write")
-		}
-
-		return nil
-
-	case *CreateWorkflowBadGateway:
-		w.Header().Set("Content-Type", "application/problem+json")
-		w.WriteHeader(502)
-		span.SetStatus(codes.Error, http.StatusText(502))
 
 		e := new(jx.Encoder)
 		response.Encode(e)

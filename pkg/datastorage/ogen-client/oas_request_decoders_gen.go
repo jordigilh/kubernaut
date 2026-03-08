@@ -278,7 +278,7 @@ func (s *Server) decodeCreateNotificationAuditRequest(r *http.Request) (
 }
 
 func (s *Server) decodeCreateWorkflowRequest(r *http.Request) (
-	req *CreateWorkflowFromOCIRequest,
+	req *CreateWorkflowInlineRequest,
 	rawBody []byte,
 	close func() error,
 	rerr error,
@@ -325,7 +325,7 @@ func (s *Server) decodeCreateWorkflowRequest(r *http.Request) (
 		rawBody = append(rawBody, buf...)
 		d := jx.DecodeBytes(buf)
 
-		var request CreateWorkflowFromOCIRequest
+		var request CreateWorkflowInlineRequest
 		if err := func() error {
 			if err := request.Decode(d); err != nil {
 				return err

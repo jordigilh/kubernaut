@@ -474,11 +474,13 @@ func (s *Server) handleCreateNotificationAuditRequest(args [0]string, argsEscape
 
 // handleCreateWorkflowRequest handles createWorkflow operation.
 //
-// Register a new workflow by providing an OCI image pullspec.
-// Data Storage pulls the image, extracts /workflow-schema.yaml (ADR-043),
-// validates the schema, and populates all catalog fields from it.
-// **Business Requirement**: BR-WORKFLOW-017-001 (OCI-based workflow registration)
-// **Design Decision**: DD-WORKFLOW-017 (Workflow Lifecycle Component Interactions).
+// Register a new workflow by providing the raw YAML content of a
+// RemediationWorkflow CRD. Data Storage parses and validates the schema,
+// then populates all catalog fields from it.
+// If the workflow was previously registered and disabled (via CRD deletion),
+// it is re-enabled and a 200 response is returned instead of 201.
+// **Business Requirement**: BR-WORKFLOW-006 (RemediationWorkflow CRD Definition)
+// **Design Decision**: ADR-058 (Webhook-Driven Workflow Registration).
 //
 // POST /api/v1/workflows
 func (s *Server) handleCreateWorkflowRequest(args [0]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
@@ -573,7 +575,7 @@ func (s *Server) handleCreateWorkflowRequest(args [0]string, argsEscaped bool, w
 		mreq := middleware.Request{
 			Context:          ctx,
 			OperationName:    CreateWorkflowOperation,
-			OperationSummary: "Register workflow from OCI image",
+			OperationSummary: "Register workflow from inline schema",
 			OperationID:      "createWorkflow",
 			Body:             request,
 			RawBody:          rawBody,
@@ -582,7 +584,7 @@ func (s *Server) handleCreateWorkflowRequest(args [0]string, argsEscaped bool, w
 		}
 
 		type (
-			Request  = *CreateWorkflowFromOCIRequest
+			Request  = *CreateWorkflowInlineRequest
 			Params   = struct{}
 			Response = CreateWorkflowRes
 		)

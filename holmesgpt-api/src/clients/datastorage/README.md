@@ -157,7 +157,7 @@ Class | Method | HTTP request | Description
 *HealthApi* | [**readiness_check**](docs/HealthApi.md#readiness_check) | **GET** /health/ready | Readiness check
 *MetricsApi* | [**get_metrics**](docs/MetricsApi.md#get_metrics) | **GET** /metrics | Prometheus metrics
 *RemediationHistoryAPIApi* | [**get_remediation_history_context**](docs/RemediationHistoryAPIApi.md#get_remediation_history_context) | **GET** /api/v1/remediation-history/context | Get remediation history context for a target resource
-*WorkflowCatalogAPIApi* | [**create_workflow**](docs/WorkflowCatalogAPIApi.md#create_workflow) | **POST** /api/v1/workflows | Register workflow from OCI image
+*WorkflowCatalogAPIApi* | [**create_workflow**](docs/WorkflowCatalogAPIApi.md#create_workflow) | **POST** /api/v1/workflows | Register workflow from inline schema
 *WorkflowCatalogAPIApi* | [**deprecate_workflow**](docs/WorkflowCatalogAPIApi.md#deprecate_workflow) | **PATCH** /api/v1/workflows/{workflow_id}/deprecate | Deprecate workflow
 *WorkflowCatalogAPIApi* | [**disable_workflow**](docs/WorkflowCatalogAPIApi.md#disable_workflow) | **PATCH** /api/v1/workflows/{workflow_id}/disable | Disable workflow
 *WorkflowCatalogAPIApi* | [**enable_workflow**](docs/WorkflowCatalogAPIApi.md#enable_workflow) | **PATCH** /api/v1/workflows/{workflow_id}/enable | Enable workflow
@@ -194,7 +194,7 @@ Class | Method | HTTP request | Description
  - [AuditExportResponseHashChainVerification](docs/AuditExportResponseHashChainVerification.md)
  - [BatchAuditEventResponse](docs/BatchAuditEventResponse.md)
  - [CreateNotificationAudit202Response](docs/CreateNotificationAudit202Response.md)
- - [CreateWorkflowFromOCIRequest](docs/CreateWorkflowFromOCIRequest.md)
+ - [CreateWorkflowInlineRequest](docs/CreateWorkflowInlineRequest.md)
  - [DetectedLabels](docs/DetectedLabels.md)
  - [EffectivenessAssessmentAuditPayload](docs/EffectivenessAssessmentAuditPayload.md)
  - [EffectivenessAssessmentAuditPayloadAlertResolution](docs/EffectivenessAssessmentAuditPayloadAlertResolution.md)

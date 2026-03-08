@@ -1089,7 +1089,7 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 							return r, true
 						case "POST":
 							r.name = CreateWorkflowOperation
-							r.summary = "Register workflow from OCI image"
+							r.summary = "Register workflow from inline schema"
 							r.operationID = "createWorkflow"
 							r.operationGroup = ""
 							r.pathPattern = "/api/v1/workflows"

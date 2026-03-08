@@ -29,7 +29,7 @@ from pydantic import StrictInt, StrictStr, field_validator
 
 from typing import Optional
 
-from datastorage.models.create_workflow_from_oci_request import CreateWorkflowFromOCIRequest
+from datastorage.models.create_workflow_inline_request import CreateWorkflowInlineRequest
 from datastorage.models.remediation_workflow import RemediationWorkflow
 from datastorage.models.workflow_lifecycle_request import WorkflowLifecycleRequest
 from datastorage.models.workflow_list_response import WorkflowListResponse
@@ -56,7 +56,7 @@ class WorkflowCatalogAPIApi:
     @validate_call
     def create_workflow(
         self,
-        create_workflow_from_oci_request: CreateWorkflowFromOCIRequest,
+        create_workflow_inline_request: CreateWorkflowInlineRequest,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -70,12 +70,12 @@ class WorkflowCatalogAPIApi:
         _headers: Optional[Dict[StrictStr, Any]] = None,
         _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
     ) -> RemediationWorkflow:
-        """Register workflow from OCI image
+        """Register workflow from inline schema
 
-        Register a new workflow by providing an OCI image pullspec. Data Storage pulls the image, extracts /workflow-schema.yaml (ADR-043), validates the schema, and populates all catalog fields from it.  **Business Requirement**: BR-WORKFLOW-017-001 (OCI-based workflow registration) **Design Decision**: DD-WORKFLOW-017 (Workflow Lifecycle Component Interactions) 
+        Register a new workflow by providing the raw YAML content of a RemediationWorkflow CRD. Data Storage parses and validates the schema, then populates all catalog fields from it.  If the workflow was previously registered and disabled (via CRD deletion), it is re-enabled and a 200 response is returned instead of 201.  **Business Requirement**: BR-WORKFLOW-006 (RemediationWorkflow CRD Definition) **Design Decision**: ADR-058 (Webhook-Driven Workflow Registration) 
 
-        :param create_workflow_from_oci_request: (required)
-        :type create_workflow_from_oci_request: CreateWorkflowFromOCIRequest
+        :param create_workflow_inline_request: (required)
+        :type create_workflow_inline_request: CreateWorkflowInlineRequest
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
                                  timeout. It can also be a pair (tuple) of
@@ -99,7 +99,7 @@ class WorkflowCatalogAPIApi:
         """ # noqa: E501
 
         _param = self._create_workflow_serialize(
-            create_workflow_from_oci_request=create_workflow_from_oci_request,
+            create_workflow_inline_request=create_workflow_inline_request,
             _request_auth=_request_auth,
             _content_type=_content_type,
             _headers=_headers,
@@ -107,14 +107,13 @@ class WorkflowCatalogAPIApi:
         )
 
         _response_types_map: Dict[str, Optional[str]] = {
+            '200': "RemediationWorkflow",
             '201': "RemediationWorkflow",
             '400': "RFC7807Problem",
             '401': "RFC7807Problem",
             '403': "RFC7807Problem",
             '409': "RFC7807Problem",
-            '422': "RFC7807Problem",
             '500': "RFC7807Problem",
-            '502': "RFC7807Problem",
         }
         response_data = self.api_client.call_api(
             *_param,
@@ -130,7 +129,7 @@ class WorkflowCatalogAPIApi:
     @validate_call
     def create_workflow_with_http_info(
         self,
-        create_workflow_from_oci_request: CreateWorkflowFromOCIRequest,
+        create_workflow_inline_request: CreateWorkflowInlineRequest,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -144,12 +143,12 @@ class WorkflowCatalogAPIApi:
         _headers: Optional[Dict[StrictStr, Any]] = None,
         _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
     ) -> ApiResponse[RemediationWorkflow]:
-        """Register workflow from OCI image
+        """Register workflow from inline schema
 
-        Register a new workflow by providing an OCI image pullspec. Data Storage pulls the image, extracts /workflow-schema.yaml (ADR-043), validates the schema, and populates all catalog fields from it.  **Business Requirement**: BR-WORKFLOW-017-001 (OCI-based workflow registration) **Design Decision**: DD-WORKFLOW-017 (Workflow Lifecycle Component Interactions) 
+        Register a new workflow by providing the raw YAML content of a RemediationWorkflow CRD. Data Storage parses and validates the schema, then populates all catalog fields from it.  If the workflow was previously registered and disabled (via CRD deletion), it is re-enabled and a 200 response is returned instead of 201.  **Business Requirement**: BR-WORKFLOW-006 (RemediationWorkflow CRD Definition) **Design Decision**: ADR-058 (Webhook-Driven Workflow Registration) 
 
-        :param create_workflow_from_oci_request: (required)
-        :type create_workflow_from_oci_request: CreateWorkflowFromOCIRequest
+        :param create_workflow_inline_request: (required)
+        :type create_workflow_inline_request: CreateWorkflowInlineRequest
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
                                  timeout. It can also be a pair (tuple) of
@@ -173,7 +172,7 @@ class WorkflowCatalogAPIApi:
         """ # noqa: E501
 
         _param = self._create_workflow_serialize(
-            create_workflow_from_oci_request=create_workflow_from_oci_request,
+            create_workflow_inline_request=create_workflow_inline_request,
             _request_auth=_request_auth,
             _content_type=_content_type,
             _headers=_headers,
@@ -181,14 +180,13 @@ class WorkflowCatalogAPIApi:
         )
 
         _response_types_map: Dict[str, Optional[str]] = {
+            '200': "RemediationWorkflow",
             '201': "RemediationWorkflow",
             '400': "RFC7807Problem",
             '401': "RFC7807Problem",
             '403': "RFC7807Problem",
             '409': "RFC7807Problem",
-            '422': "RFC7807Problem",
             '500': "RFC7807Problem",
-            '502': "RFC7807Problem",
         }
         response_data = self.api_client.call_api(
             *_param,
@@ -204,7 +202,7 @@ class WorkflowCatalogAPIApi:
     @validate_call
     def create_workflow_without_preload_content(
         self,
-        create_workflow_from_oci_request: CreateWorkflowFromOCIRequest,
+        create_workflow_inline_request: CreateWorkflowInlineRequest,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -218,12 +216,12 @@ class WorkflowCatalogAPIApi:
         _headers: Optional[Dict[StrictStr, Any]] = None,
         _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
     ) -> RESTResponseType:
-        """Register workflow from OCI image
+        """Register workflow from inline schema
 
-        Register a new workflow by providing an OCI image pullspec. Data Storage pulls the image, extracts /workflow-schema.yaml (ADR-043), validates the schema, and populates all catalog fields from it.  **Business Requirement**: BR-WORKFLOW-017-001 (OCI-based workflow registration) **Design Decision**: DD-WORKFLOW-017 (Workflow Lifecycle Component Interactions) 
+        Register a new workflow by providing the raw YAML content of a RemediationWorkflow CRD. Data Storage parses and validates the schema, then populates all catalog fields from it.  If the workflow was previously registered and disabled (via CRD deletion), it is re-enabled and a 200 response is returned instead of 201.  **Business Requirement**: BR-WORKFLOW-006 (RemediationWorkflow CRD Definition) **Design Decision**: ADR-058 (Webhook-Driven Workflow Registration) 
 
-        :param create_workflow_from_oci_request: (required)
-        :type create_workflow_from_oci_request: CreateWorkflowFromOCIRequest
+        :param create_workflow_inline_request: (required)
+        :type create_workflow_inline_request: CreateWorkflowInlineRequest
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
                                  timeout. It can also be a pair (tuple) of
@@ -247,7 +245,7 @@ class WorkflowCatalogAPIApi:
         """ # noqa: E501
 
         _param = self._create_workflow_serialize(
-            create_workflow_from_oci_request=create_workflow_from_oci_request,
+            create_workflow_inline_request=create_workflow_inline_request,
             _request_auth=_request_auth,
             _content_type=_content_type,
             _headers=_headers,
@@ -255,14 +253,13 @@ class WorkflowCatalogAPIApi:
         )
 
         _response_types_map: Dict[str, Optional[str]] = {
+            '200': "RemediationWorkflow",
             '201': "RemediationWorkflow",
             '400': "RFC7807Problem",
             '401': "RFC7807Problem",
             '403': "RFC7807Problem",
             '409': "RFC7807Problem",
-            '422': "RFC7807Problem",
             '500': "RFC7807Problem",
-            '502': "RFC7807Problem",
         }
         response_data = self.api_client.call_api(
             *_param,
@@ -273,7 +270,7 @@ class WorkflowCatalogAPIApi:
 
     def _create_workflow_serialize(
         self,
-        create_workflow_from_oci_request,
+        create_workflow_inline_request,
         _request_auth,
         _content_type,
         _headers,
@@ -297,8 +294,8 @@ class WorkflowCatalogAPIApi:
         # process the header parameters
         # process the form parameters
         # process the body parameter
-        if create_workflow_from_oci_request is not None:
-            _body_params = create_workflow_from_oci_request
+        if create_workflow_inline_request is not None:
+            _body_params = create_workflow_inline_request
 
 
         # set the HTTP header `Accept`

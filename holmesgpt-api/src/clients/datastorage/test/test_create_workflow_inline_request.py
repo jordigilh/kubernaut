@@ -15,10 +15,10 @@
 import unittest
 import datetime
 
-from datastorage.models.create_workflow_from_oci_request import CreateWorkflowFromOCIRequest
+from datastorage.models.create_workflow_inline_request import CreateWorkflowInlineRequest
 
-class TestCreateWorkflowFromOCIRequest(unittest.TestCase):
-    """CreateWorkflowFromOCIRequest unit test stubs"""
+class TestCreateWorkflowInlineRequest(unittest.TestCase):
+    """CreateWorkflowInlineRequest unit test stubs"""
 
     def setUp(self):
         pass
@@ -26,26 +26,38 @@ class TestCreateWorkflowFromOCIRequest(unittest.TestCase):
     def tearDown(self):
         pass
 
-    def make_instance(self, include_optional) -> CreateWorkflowFromOCIRequest:
-        """Test CreateWorkflowFromOCIRequest
+    def make_instance(self, include_optional) -> CreateWorkflowInlineRequest:
+        """Test CreateWorkflowInlineRequest
             include_option is a boolean, when False only required
             params are included, when True both required and
             optional params are included """
-        # uncomment below to create an instance of `CreateWorkflowFromOCIRequest`
+        # uncomment below to create an instance of `CreateWorkflowInlineRequest`
         """
-        model = CreateWorkflowFromOCIRequest()
+        model = CreateWorkflowInlineRequest()
         if include_optional:
-            return CreateWorkflowFromOCIRequest(
-                schema_image = 'quay.io/kubernaut/workflows/scale-replicas:v1.0.0'
+            return CreateWorkflowInlineRequest(
+                content = 'apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
+metadata:
+  name: scale-memory
+spec:
+  ...',
+                source = 'crd',
+                registered_by = 'admin@example.com'
             )
         else:
-            return CreateWorkflowFromOCIRequest(
-                schema_image = 'quay.io/kubernaut/workflows/scale-replicas:v1.0.0',
+            return CreateWorkflowInlineRequest(
+                content = 'apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
+metadata:
+  name: scale-memory
+spec:
+  ...',
         )
         """
 
-    def testCreateWorkflowFromOCIRequest(self):
-        """Test CreateWorkflowFromOCIRequest"""
+    def testCreateWorkflowInlineRequest(self):
+        """Test CreateWorkflowInlineRequest"""
         # inst_req_only = self.make_instance(include_optional=False)
         # inst_req_and_optional = self.make_instance(include_optional=True)
 

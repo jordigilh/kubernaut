@@ -63,14 +63,16 @@ type Invoker interface {
 	CreateNotificationAudit(ctx context.Context, request *NotificationAudit) (CreateNotificationAuditRes, error)
 	// CreateWorkflow invokes createWorkflow operation.
 	//
-	// Register a new workflow by providing an OCI image pullspec.
-	// Data Storage pulls the image, extracts /workflow-schema.yaml (ADR-043),
-	// validates the schema, and populates all catalog fields from it.
-	// **Business Requirement**: BR-WORKFLOW-017-001 (OCI-based workflow registration)
-	// **Design Decision**: DD-WORKFLOW-017 (Workflow Lifecycle Component Interactions).
+	// Register a new workflow by providing the raw YAML content of a
+	// RemediationWorkflow CRD. Data Storage parses and validates the schema,
+	// then populates all catalog fields from it.
+	// If the workflow was previously registered and disabled (via CRD deletion),
+	// it is re-enabled and a 200 response is returned instead of 201.
+	// **Business Requirement**: BR-WORKFLOW-006 (RemediationWorkflow CRD Definition)
+	// **Design Decision**: ADR-058 (Webhook-Driven Workflow Registration).
 	//
 	// POST /api/v1/workflows
-	CreateWorkflow(ctx context.Context, request *CreateWorkflowFromOCIRequest) (CreateWorkflowRes, error)
+	CreateWorkflow(ctx context.Context, request *CreateWorkflowInlineRequest) (CreateWorkflowRes, error)
 	// DeprecateWorkflow invokes deprecateWorkflow operation.
 	//
 	// Mark a workflow as deprecated. Deprecated workflows are excluded from
@@ -634,19 +636,21 @@ func (c *Client) sendCreateNotificationAudit(ctx context.Context, request *Notif
 
 // CreateWorkflow invokes createWorkflow operation.
 //
-// Register a new workflow by providing an OCI image pullspec.
-// Data Storage pulls the image, extracts /workflow-schema.yaml (ADR-043),
-// validates the schema, and populates all catalog fields from it.
-// **Business Requirement**: BR-WORKFLOW-017-001 (OCI-based workflow registration)
-// **Design Decision**: DD-WORKFLOW-017 (Workflow Lifecycle Component Interactions).
+// Register a new workflow by providing the raw YAML content of a
+// RemediationWorkflow CRD. Data Storage parses and validates the schema,
+// then populates all catalog fields from it.
+// If the workflow was previously registered and disabled (via CRD deletion),
+// it is re-enabled and a 200 response is returned instead of 201.
+// **Business Requirement**: BR-WORKFLOW-006 (RemediationWorkflow CRD Definition)
+// **Design Decision**: ADR-058 (Webhook-Driven Workflow Registration).
 //
 // POST /api/v1/workflows
-func (c *Client) CreateWorkflow(ctx context.Context, request *CreateWorkflowFromOCIRequest) (CreateWorkflowRes, error) {
+func (c *Client) CreateWorkflow(ctx context.Context, request *CreateWorkflowInlineRequest) (CreateWorkflowRes, error) {
 	res, err := c.sendCreateWorkflow(ctx, request)
 	return res, err
 }
 
-func (c *Client) sendCreateWorkflow(ctx context.Context, request *CreateWorkflowFromOCIRequest) (res CreateWorkflowRes, err error) {
+func (c *Client) sendCreateWorkflow(ctx context.Context, request *CreateWorkflowInlineRequest) (res CreateWorkflowRes, err error) {
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("createWorkflow"),
 		semconv.HTTPRequestMethodKey.String("POST"),

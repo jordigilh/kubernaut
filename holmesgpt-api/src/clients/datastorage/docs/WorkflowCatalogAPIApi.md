@@ -4,7 +4,7 @@ All URIs are relative to *http://localhost:8080*
 
 Method | HTTP request | Description
 ------------- | ------------- | -------------
-[**create_workflow**](WorkflowCatalogAPIApi.md#create_workflow) | **POST** /api/v1/workflows | Register workflow from OCI image
+[**create_workflow**](WorkflowCatalogAPIApi.md#create_workflow) | **POST** /api/v1/workflows | Register workflow from inline schema
 [**deprecate_workflow**](WorkflowCatalogAPIApi.md#deprecate_workflow) | **PATCH** /api/v1/workflows/{workflow_id}/deprecate | Deprecate workflow
 [**disable_workflow**](WorkflowCatalogAPIApi.md#disable_workflow) | **PATCH** /api/v1/workflows/{workflow_id}/disable | Disable workflow
 [**enable_workflow**](WorkflowCatalogAPIApi.md#enable_workflow) | **PATCH** /api/v1/workflows/{workflow_id}/enable | Enable workflow
@@ -14,11 +14,11 @@ Method | HTTP request | Description
 
 
 # **create_workflow**
-> RemediationWorkflow create_workflow(create_workflow_from_oci_request)
+> RemediationWorkflow create_workflow(create_workflow_inline_request)
 
-Register workflow from OCI image
+Register workflow from inline schema
 
-Register a new workflow by providing an OCI image pullspec. Data Storage pulls the image, extracts /workflow-schema.yaml (ADR-043), validates the schema, and populates all catalog fields from it.  **Business Requirement**: BR-WORKFLOW-017-001 (OCI-based workflow registration) **Design Decision**: DD-WORKFLOW-017 (Workflow Lifecycle Component Interactions) 
+Register a new workflow by providing the raw YAML content of a RemediationWorkflow CRD. Data Storage parses and validates the schema, then populates all catalog fields from it.  If the workflow was previously registered and disabled (via CRD deletion), it is re-enabled and a 200 response is returned instead of 201.  **Business Requirement**: BR-WORKFLOW-006 (RemediationWorkflow CRD Definition) **Design Decision**: ADR-058 (Webhook-Driven Workflow Registration) 
 
 ### Example
 
@@ -27,7 +27,7 @@ Register a new workflow by providing an OCI image pullspec. Data Storage pulls t
 import time
 import os
 import datastorage
-from datastorage.models.create_workflow_from_oci_request import CreateWorkflowFromOCIRequest
+from datastorage.models.create_workflow_inline_request import CreateWorkflowInlineRequest
 from datastorage.models.remediation_workflow import RemediationWorkflow
 from datastorage.rest import ApiException
 from pprint import pprint
@@ -43,11 +43,11 @@ configuration = datastorage.Configuration(
 with datastorage.ApiClient(configuration) as api_client:
     # Create an instance of the API class
     api_instance = datastorage.WorkflowCatalogAPIApi(api_client)
-    create_workflow_from_oci_request = datastorage.CreateWorkflowFromOCIRequest() # CreateWorkflowFromOCIRequest | 
+    create_workflow_inline_request = datastorage.CreateWorkflowInlineRequest() # CreateWorkflowInlineRequest | 
 
     try:
-        # Register workflow from OCI image
-        api_response = api_instance.create_workflow(create_workflow_from_oci_request)
+        # Register workflow from inline schema
+        api_response = api_instance.create_workflow(create_workflow_inline_request)
         print("The response of WorkflowCatalogAPIApi->create_workflow:\n")
         pprint(api_response)
     except Exception as e:
@@ -61,7 +61,7 @@ with datastorage.ApiClient(configuration) as api_client:
 
 Name | Type | Description  | Notes
 ------------- | ------------- | ------------- | -------------
- **create_workflow_from_oci_request** | [**CreateWorkflowFromOCIRequest**](CreateWorkflowFromOCIRequest.md)|  | 
+ **create_workflow_inline_request** | [**CreateWorkflowInlineRequest**](CreateWorkflowInlineRequest.md)|  | 
 
 ### Return type
 
@@ -80,14 +80,13 @@ No authorization required
 
 | Status code | Description | Response headers |
 |-------------|-------------|------------------|
+**200** | Workflow re-enabled. The workflow was previously disabled and has been re-activated with the provided schema content.  |  -  |
 **201** | Workflow created successfully |  -  |
 **400** | Validation error - schema invalid, unknown action_type, missing mandatory labels, or missing required fields.  |  -  |
 **401** | Authentication failed - Invalid or missing Bearer token.  **Authority**: DD-AUTH-014 (Middleware-based authentication)  |  -  |
 **403** | Authorization failed - Kubernetes SubjectAccessReview (SAR) denied access.  **Authority**: DD-AUTH-014 (Middleware-based authorization)  |  -  |
-**409** | Conflict - Duplicate workflow. Workflow with same workflow_name and version already exists.  **Authority**: DS-BUG-001 fix (RFC 9110 Section 15.5.10)  |  -  |
-**422** | Unprocessable Entity - /workflow-schema.yaml not found in OCI image.  |  -  |
+**409** | Conflict - Duplicate workflow. Workflow with same workflow_name and version already exists in active state.  **Authority**: DS-BUG-001 fix (RFC 9110 Section 15.5.10)  |  -  |
 **500** | Internal server error |  -  |
-**502** | Bad Gateway - OCI image could not be pulled from registry.  |  -  |
 
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
 

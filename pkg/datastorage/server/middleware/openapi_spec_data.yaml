@@ -317,22 +317,33 @@ paths:
     post:
       tags:
         - Workflow Catalog API
-      summary: Register workflow from OCI image
+      summary: Register workflow from inline schema
       description: |
-        Register a new workflow by providing an OCI image pullspec.
-        Data Storage pulls the image, extracts /workflow-schema.yaml (ADR-043),
-        validates the schema, and populates all catalog fields from it.
+        Register a new workflow by providing the raw YAML content of a
+        RemediationWorkflow CRD. Data Storage parses and validates the schema,
+        then populates all catalog fields from it.
 
-        **Business Requirement**: BR-WORKFLOW-017-001 (OCI-based workflow registration)
-        **Design Decision**: DD-WORKFLOW-017 (Workflow Lifecycle Component Interactions)
+        If the workflow was previously registered and disabled (via CRD deletion),
+        it is re-enabled and a 200 response is returned instead of 201.
+
+        **Business Requirement**: BR-WORKFLOW-006 (RemediationWorkflow CRD Definition)
+        **Design Decision**: ADR-058 (Webhook-Driven Workflow Registration)
       operationId: createWorkflow
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateWorkflowFromOCIRequest'
+              $ref: '#/components/schemas/CreateWorkflowInlineRequest'
       responses:
+        '200':
+          description: |
+            Workflow re-enabled. The workflow was previously disabled and has been
+            re-activated with the provided schema content.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RemediationWorkflow'
         '201':
           description: Workflow created successfully
           content:
@@ -368,29 +379,15 @@ paths:
         '409':
           description: |
             Conflict - Duplicate workflow.
-            Workflow with same workflow_name and version already exists.
+            Workflow with same workflow_name and version already exists in active state.
             
             **Authority**: DS-BUG-001 fix (RFC 9110 Section 15.5.10)
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/RFC7807Problem'
-        '422':
-          description: |
-            Unprocessable Entity - /workflow-schema.yaml not found in OCI image.
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
         '500':
           description: Internal server error
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-        '502':
-          description: |
-            Bad Gateway - OCI image could not be pulled from registry.
           content:
             application/problem+json:
               schema:
@@ -2854,18 +2851,30 @@ components:
           additionalProperties: true
           description: "Workflow parameter schema (JSONB) - describes expected parameters"
 
-    CreateWorkflowFromOCIRequest:
+    CreateWorkflowInlineRequest:
       type: object
       required:
-        - schemaImage
+        - content
       properties:
-        schemaImage:
+        content:
           type: string
           description: |
-            OCI image pullspec. Data Storage pulls this image, extracts
-            /workflow-schema.yaml (ADR-043), validates it, and populates
-            all catalog fields from the extracted schema.
-          example: "quay.io/kubernaut/workflows/scale-replicas:v1.0.0"
+            Raw YAML content of the RemediationWorkflow CRD. Data Storage
+            parses the CRD envelope (apiVersion/kind/metadata/spec), validates
+            the spec, and populates all catalog fields from it.
+          example: "apiVersion: kubernaut.ai/v1alpha1\nkind: RemediationWorkflow\nmetadata:\n  name: scale-memory\nspec:\n  ..."
+        source:
+          type: string
+          description: |
+            Registration source. Set to "crd" when the request originates from
+            the Auth Webhook on CRD creation, or "api" for direct API calls.
+          example: "crd"
+        registeredBy:
+          type: string
+          description: |
+            Identity of the user or service account that triggered the registration.
+            Populated from AdmissionReview.request.userInfo.username when source is "crd".
+          example: "admin@example.com"
 
     RemediationWorkflow:
       type: object

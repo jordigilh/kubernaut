@@ -18,7 +18,7 @@ import re  # noqa: F401
 import json
 
 
-from typing import Any, ClassVar, Dict, List
+from typing import Any, ClassVar, Dict, List, Optional
 from pydantic import BaseModel, StrictStr
 from pydantic import Field
 try:
@@ -26,12 +26,14 @@ try:
 except ImportError:
     from typing_extensions import Self
 
-class CreateWorkflowFromOCIRequest(BaseModel):
+class CreateWorkflowInlineRequest(BaseModel):
     """
-    CreateWorkflowFromOCIRequest
+    CreateWorkflowInlineRequest
     """ # noqa: E501
-    schema_image: StrictStr = Field(description="OCI image pullspec. Data Storage pulls this image, extracts /workflow-schema.yaml (ADR-043), validates it, and populates all catalog fields from the extracted schema. ", alias="schemaImage")
-    __properties: ClassVar[List[str]] = ["schemaImage"]
+    content: StrictStr = Field(description="Raw YAML content of the RemediationWorkflow CRD. Data Storage parses the CRD envelope (apiVersion/kind/metadata/spec), validates the spec, and populates all catalog fields from it. ")
+    source: Optional[StrictStr] = Field(default=None, description="Registration source. Set to \"crd\" when the request originates from the Auth Webhook on CRD creation, or \"api\" for direct API calls. ")
+    registered_by: Optional[StrictStr] = Field(default=None, description="Identity of the user or service account that triggered the registration. Populated from AdmissionReview.request.userInfo.username when source is \"crd\". ", alias="registeredBy")
+    __properties: ClassVar[List[str]] = ["content", "source", "registeredBy"]
 
     model_config = {
         "populate_by_name": True,
@@ -51,7 +53,7 @@ class CreateWorkflowFromOCIRequest(BaseModel):
 
     @classmethod
     def from_json(cls, json_str: str) -> Self:
-        """Create an instance of CreateWorkflowFromOCIRequest from a JSON string"""
+        """Create an instance of CreateWorkflowInlineRequest from a JSON string"""
         return cls.from_dict(json.loads(json_str))
 
     def to_dict(self) -> Dict[str, Any]:
@@ -74,7 +76,7 @@ class CreateWorkflowFromOCIRequest(BaseModel):
 
     @classmethod
     def from_dict(cls, obj: Dict) -> Self:
-        """Create an instance of CreateWorkflowFromOCIRequest from a dict"""
+        """Create an instance of CreateWorkflowInlineRequest from a dict"""
         if obj is None:
             return None
 
@@ -82,7 +84,9 @@ class CreateWorkflowFromOCIRequest(BaseModel):
             return cls.model_validate(obj)
 
         _obj = cls.model_validate({
-            "schemaImage": obj.get("schemaImage")
+            "content": obj.get("content"),
+            "source": obj.get("source"),
+            "registeredBy": obj.get("registeredBy")
         })
         return _obj
 
