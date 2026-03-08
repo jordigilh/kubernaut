@@ -76,6 +76,7 @@ metadata:
 data:
   settings.py: |
     SECRET_KEY = '%[7]s'
+    ALLOWED_HOSTS = ['*']
     DATABASES = {
         'default': {
             'ATOMIC_REQUESTS': True,
