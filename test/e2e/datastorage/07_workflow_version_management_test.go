@@ -26,7 +26,6 @@ import (
 	"github.com/google/uuid"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
-	"github.com/jordigilh/kubernaut/test/infrastructure"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -138,20 +137,27 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 		It("should create workflow v1.0.0 with UUID and is_latest_version=true", func() {
 			testLogger.Info("📝 Creating workflow v1.0.0...")
 
-			// DD-WORKFLOW-017: Register workflow v1.0.0 from OCI image
-			createReq := dsgen.CreateWorkflowFromOCIRequest{
-				SchemaImage: fmt.Sprintf("%s/oom-recovery:v1.0.0", infrastructure.TestWorkflowBundleRegistry),
-			}
+			// DD-WORKFLOW-017: Register workflow v1.0.0 inline
+			createReq := &dsgen.CreateWorkflowInlineRequest{Content: e2eTestWorkflowStubContent}
+			createReq.Source.SetTo("e2e-test")
 
-			createResp, err := DSClient.CreateWorkflow(ctx, &createReq)
+			createResp, err := DSClient.CreateWorkflow(ctx, createReq)
 			Expect(err).ToNot(HaveOccurred())
 			testLogger.Info("Create v1.0.0 response", "status", 201)
 
 			// DD-WORKFLOW-002 v3.0: workflow_id is UUID - extract from response
-			workflowResp, ok := createResp.(*dsgen.RemediationWorkflow)
-			Expect(ok).To(BeTrue(), "Response should be *RemediationWorkflow")
+			var workflowResp *dsgen.RemediationWorkflow
+			switch v := createResp.(type) {
+			case *dsgen.CreateWorkflowCreated:
+				workflowResp = (*dsgen.RemediationWorkflow)(v)
+			case *dsgen.CreateWorkflowOK:
+				workflowResp = (*dsgen.RemediationWorkflow)(v)
+			default:
+				Fail(fmt.Sprintf("Response should be CreateWorkflowCreated or CreateWorkflowOK, got: %T", createResp))
+			}
 			workflowV1UUID = workflowResp.WorkflowId.Value.String()
-			Expect(workflowV1UUID).ToNot(BeEmpty())
+			Expect(workflowV1UUID).To(MatchRegexp(`^[0-9a-f]{8}-`),
+				"workflowV1UUID should be a valid UUID")
 			// DD-WORKFLOW-017: Capture workflow name from OCI schema for subsequent assertions
 			workflowName = workflowResp.WorkflowName
 			testLogger.Info("✅ Workflow v1.0.0 created", "uuid", workflowV1UUID, "name", workflowName)
@@ -170,21 +176,28 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 		It("should create workflow v1.1.0 and mark v1.0.0 as not latest", func() {
 			testLogger.Info("📝 Creating workflow v1.1.0...")
 
-			// DD-WORKFLOW-017: Register workflow v1.1.0 from OCI image
-			createReq := dsgen.CreateWorkflowFromOCIRequest{
-				SchemaImage: fmt.Sprintf("%s/oom-recovery:v1.1.0", infrastructure.TestWorkflowBundleRegistry),
-			}
+			// DD-WORKFLOW-017: Register workflow v1.1.0 inline
+			createReq := &dsgen.CreateWorkflowInlineRequest{Content: e2eTestWorkflowStubContent}
+			createReq.Source.SetTo("e2e-test")
 
-			createResp, err := DSClient.CreateWorkflow(ctx, &createReq)
+			createResp, err := DSClient.CreateWorkflow(ctx, createReq)
 			Expect(err).ToNot(HaveOccurred())
 			testLogger.Info("Create v1.1.0 response", "status", 201)
 
 			// DD-WORKFLOW-002 v3.0: workflow_id is UUID - extract from response
-			workflowResp, ok := createResp.(*dsgen.RemediationWorkflow)
-			Expect(ok).To(BeTrue(), "Response should be *RemediationWorkflow")
+			var workflowResp *dsgen.RemediationWorkflow
+			switch v := createResp.(type) {
+			case *dsgen.CreateWorkflowCreated:
+				workflowResp = (*dsgen.RemediationWorkflow)(v)
+			case *dsgen.CreateWorkflowOK:
+				workflowResp = (*dsgen.RemediationWorkflow)(v)
+			default:
+				Fail(fmt.Sprintf("Response should be CreateWorkflowCreated or CreateWorkflowOK, got: %T", createResp))
+			}
 			workflowV2UUID = workflowResp.WorkflowId.Value.String()
-			Expect(workflowV2UUID).ToNot(BeEmpty())
-			Expect(workflowV2UUID).ToNot(Equal(workflowV1UUID), "v1.1.0 should have different UUID than v1.0.0")
+			Expect(workflowV2UUID).To(MatchRegexp(`^[0-9a-f]{8}-`),
+				"workflowV2UUID should be a valid UUID")
+			Expect(workflowV2UUID).To(Not(Equal(workflowV1UUID)), "v1.1.0 should have different UUID than v1.0.0")
 			testLogger.Info("✅ Workflow v1.1.0 created", "uuid", workflowV2UUID)
 
 			// DD-WORKFLOW-012 v2.0: Verify is_latest_version management
@@ -208,17 +221,23 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 		It("should create workflow v2.0.0 and only latest version is marked", func() {
 			testLogger.Info("📝 Creating workflow v2.0.0...")
 
-			// DD-WORKFLOW-017: Register workflow v2.0.0 from OCI image
-			createReq := dsgen.CreateWorkflowFromOCIRequest{
-				SchemaImage: fmt.Sprintf("%s/oom-recovery:v2.0.0", infrastructure.TestWorkflowBundleRegistry),
-			}
+			// DD-WORKFLOW-017: Register workflow v2.0.0 inline
+			createReq := &dsgen.CreateWorkflowInlineRequest{Content: e2eTestWorkflowStubContent}
+			createReq.Source.SetTo("e2e-test")
 
-			createResp, err := DSClient.CreateWorkflow(ctx, &createReq)
+			createResp, err := DSClient.CreateWorkflow(ctx, createReq)
 			Expect(err).ToNot(HaveOccurred())
 
 			// DD-WORKFLOW-002 v3.0: workflow_id is UUID - extract from response
-			workflowResp, ok := createResp.(*dsgen.RemediationWorkflow)
-			Expect(ok).To(BeTrue(), "Response should be *RemediationWorkflow")
+			var workflowResp *dsgen.RemediationWorkflow
+			switch v := createResp.(type) {
+			case *dsgen.CreateWorkflowCreated:
+				workflowResp = (*dsgen.RemediationWorkflow)(v)
+			case *dsgen.CreateWorkflowOK:
+				workflowResp = (*dsgen.RemediationWorkflow)(v)
+			default:
+				Fail(fmt.Sprintf("Response should be CreateWorkflowCreated or CreateWorkflowOK, got: %T", createResp))
+			}
 			workflowV3UUID = workflowResp.WorkflowId.Value.String()
 			testLogger.Info("✅ Workflow v2.0.0 created", "uuid", workflowV3UUID)
 

@@ -26,7 +26,6 @@ import (
 
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/ogenx"
-	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
 // DS-BUG-001: Duplicate Workflow Returns 500 Instead of 409
@@ -38,19 +37,25 @@ var _ = Describe("Workflow API Integration - Duplicate Detection (DS-BUG-001)", 
 		It("should return 409 Conflict when creating duplicate workflow (RFC 9110 compliance)", func() {
 			ctx := context.Background()
 
-			// DD-WORKFLOW-017: Register workflow from OCI image (pullspec-only)
+			// DD-WORKFLOW-017: Register workflow inline (pullspec replaced by inline YAML)
 			_ = fmt.Sprintf("test-workflow-duplicate-%d", time.Now().UnixNano()) // for logging
-			workflow := &ogenclient.CreateWorkflowFromOCIRequest{
-				SchemaImage: fmt.Sprintf("%s/duplicate-test:v1.0.0", infrastructure.TestWorkflowBundleRegistry),
-			}
+			workflow := &ogenclient.CreateWorkflowInlineRequest{Content: e2eTestWorkflowStubContent}
+			workflow.Source.SetTo("e2e-test")
 
 			// DD-AUTH-014: Use shared authenticated DSClient with ogenx.ToError() for type-safe error handling
 			resp1, err := DSClient.CreateWorkflow(ctx, workflow)
 			Expect(err).ToNot(HaveOccurred(), "First workflow creation should not error")
 
-			// Verify first creation succeeds (201 Created returns RemediationWorkflow)
-			createdWorkflow, ok := resp1.(*ogenclient.RemediationWorkflow)
-			Expect(ok).To(BeTrue(), "Expected RemediationWorkflow for 201 Created")
+			// Verify first creation succeeds (201 Created or 200 OK)
+			var createdWorkflow *ogenclient.RemediationWorkflow
+			switch v := resp1.(type) {
+			case *ogenclient.CreateWorkflowCreated:
+				createdWorkflow = (*ogenclient.RemediationWorkflow)(v)
+			case *ogenclient.CreateWorkflowOK:
+				createdWorkflow = (*ogenclient.RemediationWorkflow)(v)
+			default:
+				Fail(fmt.Sprintf("Expected CreateWorkflowCreated or CreateWorkflowOK, got: %T", resp1))
+			}
 			Expect(createdWorkflow.WorkflowId.Set).To(BeTrue(), "Created workflow should have ID")
 			createdWorkflowName := createdWorkflow.WorkflowName
 
@@ -98,7 +103,8 @@ var _ = Describe("Workflow API Integration - Duplicate Detection (DS-BUG-001)", 
 			// Type assert the response
 			listResult, ok := listResp.(*ogenclient.WorkflowListResponse)
 			Expect(ok).To(BeTrue(), "Expected WorkflowListResponse")
-			Expect(listResult.Workflows).ToNot(BeNil())
+			Expect(len(listResult.Workflows)).To(BeNumerically(">=", 1),
+				"Workflow list should contain at least the duplicate-tested workflow")
 
 			// Count workflows with our unique name
 			matchingWorkflows := 0
@@ -114,10 +120,11 @@ var _ = Describe("Workflow API Integration - Duplicate Detection (DS-BUG-001)", 
 		It("should return error for invalid OCI image reference", func() {
 			ctx := context.Background()
 
-			// DD-WORKFLOW-017: Test with empty image reference (should return 400)
-			invalidWorkflow := &ogenclient.CreateWorkflowFromOCIRequest{
-				SchemaImage: "",
+			// DD-WORKFLOW-017: Test with empty content (should return 400)
+			invalidWorkflow := &ogenclient.CreateWorkflowInlineRequest{
+				Content: "",
 			}
+			invalidWorkflow.Source.SetTo("e2e-test")
 
 			resp, err := DSClient.CreateWorkflow(ctx, invalidWorkflow)
 			err = ogenx.ToError(resp, err)

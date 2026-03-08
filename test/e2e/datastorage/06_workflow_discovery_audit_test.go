@@ -25,7 +25,6 @@ import (
 	dsaudit "github.com/jordigilh/kubernaut/pkg/datastorage/audit"
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/ogenx"
-	"github.com/jordigilh/kubernaut/test/infrastructure"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -54,21 +53,25 @@ var _ = Describe("E2E-DS-017-AUDIT: Workflow Discovery Audit Events (DD-WORKFLOW
 		testCtx, testCancel = context.WithTimeout(ctx, 5*time.Minute)
 		DeferCleanup(testCancel)
 
-		// DD-WORKFLOW-017: Register workflow from OCI image for audit tests
+		// DD-WORKFLOW-017: Register workflow inline for audit tests
 		testID := uuid.New().String()[:8]
 		remediationID = fmt.Sprintf("rem-audit-e2e-%s", testID)
 
-		createReq := dsgen.CreateWorkflowFromOCIRequest{
-			SchemaImage: fmt.Sprintf("%s/audit-test:v1.0.0", infrastructure.TestWorkflowBundleRegistry),
-		}
+		createReq := &dsgen.CreateWorkflowInlineRequest{Content: e2eTestWorkflowStubContent}
+		createReq.Source.SetTo("e2e-test")
 
-		resp, err := DSClient.CreateWorkflow(testCtx, &createReq)
+		resp, err := DSClient.CreateWorkflow(testCtx, createReq)
 		Expect(err).ToNot(HaveOccurred())
 
 		switch r := resp.(type) {
-		case *dsgen.RemediationWorkflow:
-			auditWorkflowID = r.WorkflowId.Value.String()
-			auditWorkflowUUID = r.WorkflowId.Value
+		case *dsgen.CreateWorkflowCreated:
+			wf := (*dsgen.RemediationWorkflow)(r)
+			auditWorkflowID = wf.WorkflowId.Value.String()
+			auditWorkflowUUID = wf.WorkflowId.Value
+		case *dsgen.CreateWorkflowOK:
+			wf := (*dsgen.RemediationWorkflow)(r)
+			auditWorkflowID = wf.WorkflowId.Value.String()
+			auditWorkflowUUID = wf.WorkflowId.Value
 		case *dsgen.CreateWorkflowConflict:
 			// DD-WORKFLOW-002 v3.0: Workflow already exists (409 Conflict).
 			// Query by name to retrieve existing UUID (idempotent test setup).

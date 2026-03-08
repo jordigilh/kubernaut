@@ -23,7 +23,6 @@ import (
 
 	"github.com/google/uuid"
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
-	"github.com/jordigilh/kubernaut/test/infrastructure"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -63,16 +62,17 @@ var _ = Describe("E2E-DS-043: DetectedLabels OCI Registration and Retrieval", Or
 		testCtx, testCancel = context.WithTimeout(ctx, 5*time.Minute)
 		DeferCleanup(testCancel)
 
-		createReq := dsgen.CreateWorkflowFromOCIRequest{
-			SchemaImage: fmt.Sprintf("%s/detected-labels-test:v1.0.0", infrastructure.TestWorkflowBundleRegistry),
-		}
+		createReq := &dsgen.CreateWorkflowInlineRequest{Content: e2eTestWorkflowStubContent}
+		createReq.Source.SetTo("e2e-test")
 
-		resp, err := DSClient.CreateWorkflow(testCtx, &createReq)
+		resp, err := DSClient.CreateWorkflow(testCtx, createReq)
 		Expect(err).ToNot(HaveOccurred())
 
 		switch v := resp.(type) {
-		case *dsgen.RemediationWorkflow:
-			registeredWorkflowID = v.WorkflowId.Value.String()
+		case *dsgen.CreateWorkflowCreated:
+			registeredWorkflowID = (*dsgen.RemediationWorkflow)(v).WorkflowId.Value.String()
+		case *dsgen.CreateWorkflowOK:
+			registeredWorkflowID = (*dsgen.RemediationWorkflow)(v).WorkflowId.Value.String()
 			logger.Info("Workflow registered for detectedLabels E2E",
 				"uuid", registeredWorkflowID)
 		case *dsgen.CreateWorkflowConflict:
@@ -324,16 +324,17 @@ var _ = Describe("E2E-DS-043-005: All 8 DetectedLabels Fields OCI -> DB -> HTTP 
 		allFieldsCtx, allFieldsCancel = context.WithTimeout(ctx, 5*time.Minute)
 		DeferCleanup(allFieldsCancel)
 
-		createReq := dsgen.CreateWorkflowFromOCIRequest{
-			SchemaImage: fmt.Sprintf("%s/detected-labels-all-fields:v1.0.0", infrastructure.TestWorkflowBundleRegistry),
-		}
+		createReq := &dsgen.CreateWorkflowInlineRequest{Content: e2eTestWorkflowStubContent}
+		createReq.Source.SetTo("e2e-test")
 
-		resp, err := DSClient.CreateWorkflow(allFieldsCtx, &createReq)
+		resp, err := DSClient.CreateWorkflow(allFieldsCtx, createReq)
 		Expect(err).ToNot(HaveOccurred())
 
 		switch v := resp.(type) {
-		case *dsgen.RemediationWorkflow:
-			allFieldsWorkflowID = v.WorkflowId.Value.String()
+		case *dsgen.CreateWorkflowCreated:
+			allFieldsWorkflowID = (*dsgen.RemediationWorkflow)(v).WorkflowId.Value.String()
+		case *dsgen.CreateWorkflowOK:
+			allFieldsWorkflowID = (*dsgen.RemediationWorkflow)(v).WorkflowId.Value.String()
 			logger.Info("All-8-fields workflow registered",
 				"uuid", allFieldsWorkflowID)
 		case *dsgen.CreateWorkflowConflict:

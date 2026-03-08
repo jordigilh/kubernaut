@@ -56,27 +56,31 @@ const (
 	depTestNamespace = "kubernaut-workflows"
 
 	// Base schema without dependencies for backward compat tests
-	depTestBaseSchema = `schemaVersion: "1.0"
+	depTestBaseSchema = `apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
 metadata:
-  workflowId: dep-test-workflow
-  version: "1.0.0"
-  description:
-    what: Integration test workflow for dependency validation
-    whenToUse: When testing DD-WE-006
-actionType: GitRevertCommit
-labels:
-  severity: [critical]
-  environment: ["*"]
-  component: deployment
-  priority: "*"
-execution:
-  engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/dep-test:v1.0.0@sha256:f313b9632f3a8d0ffd41150b12715a43a41c6c8e7871bb830fd82c09b5988cc4
-parameters:
-  - name: TARGET_NAMESPACE
-    type: string
-    required: true
-    description: Namespace of the affected resource
+  name: dep-test-workflow
+spec:
+  metadata:
+    workflowId: dep-test-workflow
+    version: "1.0.0"
+    description:
+      what: Integration test workflow for dependency validation
+      whenToUse: When testing DD-WE-006
+  actionType: GitRevertCommit
+  labels:
+    severity: [critical]
+    environment: ["*"]
+    component: deployment
+    priority: "*"
+  execution:
+    engine: job
+    bundle: quay.io/kubernaut-cicd/test-workflows/dep-test:v1.0.0@sha256:f313b9632f3a8d0ffd41150b12715a43a41c6c8e7871bb830fd82c09b5988cc4
+  parameters:
+    - name: TARGET_NAMESPACE
+      type: string
+      required: true
+      description: Namespace of the affected resource
 `
 )
 
@@ -84,16 +88,18 @@ parameters:
 // Use for specs that expect 201 Created (e.g. IT-DS-006-006) to avoid duplicate key across processes.
 func depTestBaseSchemaUnique() string {
 	uniqueID := fmt.Sprintf("dep-test-workflow-%d-%s", GinkgoParallelProcess(), uuid.New().String())
-	return strings.Replace(depTestBaseSchema, "workflowId: dep-test-workflow", "workflowId: "+uniqueID, 1)
+	s := strings.Replace(depTestBaseSchema, "workflowId: dep-test-workflow", "workflowId: "+uniqueID, 1)
+	s = strings.Replace(s, "name: dep-test-workflow", "name: "+uniqueID, 1)
+	return s
 }
 
 func depTestSchemaWithSecrets(secretNames ...string) string {
 	if len(secretNames) == 0 {
 		return depTestBaseSchema
 	}
-	deps := "dependencies:\n  secrets:\n"
+	deps := "  dependencies:\n    secrets:\n"
 	for _, name := range secretNames {
-		deps += fmt.Sprintf("    - name: %s\n", name)
+		deps += fmt.Sprintf("      - name: %s\n", name)
 	}
 	return depTestBaseSchema + deps
 }
@@ -102,9 +108,9 @@ func depTestSchemaWithConfigMaps(cmNames ...string) string {
 	if len(cmNames) == 0 {
 		return depTestBaseSchema
 	}
-	deps := "dependencies:\n  configMaps:\n"
+	deps := "  dependencies:\n    configMaps:\n"
 	for _, name := range cmNames {
-		deps += fmt.Sprintf("    - name: %s\n", name)
+		deps += fmt.Sprintf("      - name: %s\n", name)
 	}
 	return depTestBaseSchema + deps
 }

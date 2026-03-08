@@ -208,7 +208,6 @@ var _ = Describe("E2E-DS-023: SAR Access Control Validation (DD-AUTH-014, DD-AUT
 
 			// Verify request succeeded
 			Expect(err).ToNot(HaveOccurred(), "Authorized ServiceAccount should be able to write audit events")
-			Expect(resp).ToNot(BeNil())
 
 			// Verify response is either 201 Created (synchronous) or 202 Accepted (async)
 			// Per DD-009: DataStorage may queue events to DLQ if database is unavailable
@@ -258,9 +257,8 @@ var _ = Describe("E2E-DS-023: SAR Access Control Validation (DD-AUTH-014, DD-AUT
 			Expect(err).ToNot(HaveOccurred(), "Client should receive response (may be 403)")
 
 			// Check if response is 403 Forbidden
-			forbidden, isForbidden := resp.(*dsgen.CreateAuditEventForbidden)
+			_, isForbidden := resp.(*dsgen.CreateAuditEventForbidden)
 			Expect(isForbidden).To(BeTrue(), fmt.Sprintf("Expected 403 Forbidden response, got: %T", resp))
-			Expect(forbidden).ToNot(BeNil())
 
 			logger.Info("✅ Unauthorized ServiceAccount correctly rejected with 403 Forbidden")
 		})
@@ -298,9 +296,8 @@ var _ = Describe("E2E-DS-023: SAR Access Control Validation (DD-AUTH-014, DD-AUT
 			Expect(err).ToNot(HaveOccurred(), "Client should receive response (not error)")
 
 			// Check if response is 403 Forbidden
-			forbidden, isForbidden := resp.(*dsgen.CreateAuditEventForbidden)
+			_, isForbidden := resp.(*dsgen.CreateAuditEventForbidden)
 			Expect(isForbidden).To(BeTrue(), fmt.Sprintf("Expected 403 Forbidden response, got: %T", resp))
-			Expect(forbidden).ToNot(BeNil())
 
 			logger.Info("✅ Read-only ServiceAccount correctly rejected with 403 Forbidden (insufficient permissions)")
 		})
@@ -310,25 +307,27 @@ var _ = Describe("E2E-DS-023: SAR Access Control Validation (DD-AUTH-014, DD-AUT
 		It("should capture user identity for workflow catalog operations", func() {
 			logger.Info("🧪 Test 4: Workflow catalog operations capture X-Auth-Request-User header")
 
-			// DD-WORKFLOW-017: Register workflow from OCI image for SAR validation
-			workflowReq := dsgen.CreateWorkflowFromOCIRequest{
-				SchemaImage: fmt.Sprintf("%s/sar-test:v1.0.0", infrastructure.TestWorkflowBundleRegistry),
-			}
+			// DD-WORKFLOW-017: Register workflow inline for SAR validation
+			workflowReq := &dsgen.CreateWorkflowInlineRequest{Content: e2eTestWorkflowStubContent}
+			workflowReq.Source.SetTo("e2e-test")
 
 			// Create workflow (requires "create" permission)
-			resp, err := authorizedClient.CreateWorkflow(testCtx, &workflowReq)
+			resp, err := authorizedClient.CreateWorkflow(testCtx, workflowReq)
 			Expect(err).ToNot(HaveOccurred(), "Authorized ServiceAccount should be able to create workflows")
-			Expect(resp).ToNot(BeNil())
 
-			// Type assert to get the actual workflow response
-			workflow, ok := resp.(*dsgen.RemediationWorkflow)
-			if !ok {
-				// Log actual response type for debugging
+			// Type assert to get the actual workflow response (201 Created or 200 OK)
+			var workflow *dsgen.RemediationWorkflow
+			switch v := resp.(type) {
+			case *dsgen.CreateWorkflowCreated:
+				workflow = (*dsgen.RemediationWorkflow)(v)
+			case *dsgen.CreateWorkflowOK:
+				workflow = (*dsgen.RemediationWorkflow)(v)
+			default:
 				logger.Error(fmt.Errorf("unexpected response type"), "Type assertion failed",
-					"expected", "*dsgen.RemediationWorkflow",
+					"expected", "*dsgen.CreateWorkflowCreated or *dsgen.CreateWorkflowOK",
 					"actual", fmt.Sprintf("%T", resp))
+				Fail(fmt.Sprintf("Response should be CreateWorkflowCreated or CreateWorkflowOK, got: %T", resp))
 			}
-			Expect(ok).To(BeTrue(), fmt.Sprintf("Response should be RemediationWorkflow, got: %T", resp))
 			Expect(workflow.WorkflowId.IsSet()).To(BeTrue(), "WorkflowID should be set by DataStorage")
 			Expect(workflow.WorkflowName).ToNot(BeEmpty(), "WorkflowName should be extracted from OCI schema")
 
@@ -374,22 +373,20 @@ var _ = Describe("E2E-DS-023: SAR Access Control Validation (DD-AUTH-014, DD-AUT
 		It("should reject workflow operations from unauthorized ServiceAccount", func() {
 			logger.Info("🧪 Test 5: Unauthorized ServiceAccount cannot access workflow catalog endpoints")
 
-			// DD-WORKFLOW-017: Attempt to create workflow from OCI image with unauthorized client
+			// DD-WORKFLOW-017: Attempt to create workflow inline with unauthorized client
 			// This workflow is never created (403 expected), but request must be valid for SAR check
-			workflowReq := dsgen.CreateWorkflowFromOCIRequest{
-				SchemaImage: fmt.Sprintf("%s/sar-test-unauth:v1.0.0", infrastructure.TestWorkflowBundleRegistry),
-			}
+			workflowReq := &dsgen.CreateWorkflowInlineRequest{Content: e2eTestWorkflowStubContent}
+			workflowReq.Source.SetTo("e2e-test")
 
 			// Attempt to create workflow (should fail with 403)
-			resp, err := unauthorizedClient.CreateWorkflow(testCtx, &workflowReq)
+			resp, err := unauthorizedClient.CreateWorkflow(testCtx, workflowReq)
 
 			// Verify request returned 403 Forbidden response
 			Expect(err).ToNot(HaveOccurred(), "Client should receive response (not error)")
 
 			// Check if response is 403 Forbidden
-			forbidden, isForbidden := resp.(*dsgen.CreateWorkflowForbidden)
+			_, isForbidden := resp.(*dsgen.CreateWorkflowForbidden)
 			Expect(isForbidden).To(BeTrue(), fmt.Sprintf("Expected 403 Forbidden response, got: %T", resp))
-			Expect(forbidden).ToNot(BeNil())
 
 			logger.Info("✅ Workflow creation correctly rejected with 403 Forbidden")
 		})
