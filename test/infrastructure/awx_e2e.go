@@ -111,6 +111,9 @@ data:
     ---
     - node:
         id: awx-e2e
+    - control-service:
+        service: control
+        filename: /tmp/receptor.sock
 ---
 apiVersion: batch/v1
 kind: Job
