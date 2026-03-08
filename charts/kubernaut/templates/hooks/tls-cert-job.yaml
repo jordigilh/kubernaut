@@ -182,6 +182,9 @@ rules:
   - apiGroups: ["batch"]
     resources: ["jobs"]
     verbs: ["get", "list"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["remediationworkflows"]
+    verbs: ["get", "create", "update", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
