@@ -130,6 +130,7 @@ UNIT_TEST_*.md
 #*.mp4
 
 # Build artifacts (large binaries that should never be committed)
+/authwebhook
 workflowexecutor
 integration-webhook-server
 /kubernaut
