@@ -1,42 +1,46 @@
-schemaVersion: "1.0"
-# Fix Certificate (GitOps) Workflow Schema - Job Backend (BR-WORKFLOW-004)
-# Scenario: #134 -- GitOps-managed Certificate failure -> git revert
+apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
 metadata:
-  workflowId: fix-certificate-gitops-v1
-  version: "1.0.0"
-  description:
-    what: "Reverts a bad Git commit that broke a cert-manager ClusterIssuer in a GitOps-managed environment"
-    whenToUse: "When a GitOps-managed cert-manager Certificate is stuck NotReady because a recent Git commit changed the ClusterIssuer to reference a non-existent CA Secret"
-    whenNotToUse: "When the environment is not GitOps-managed (use fix-certificate-v1 instead for direct kubectl remediation)"
-    preconditions: "ArgoCD is active, the Gitea repository is accessible, and a previous healthy commit exists with the correct ClusterIssuer configuration"
-
-actionType: GitRevertCommit
-
-labels:
-  severity: [critical, high]
-  environment: ["*"]
-  component: "*"
-  priority: "*"
-
-detectedLabels:
-  gitOpsTool: "*"
-
-execution:
-  engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/fix-certificate-gitops-job@sha256:9c97e791e8c58397f668456f54414e263852974f85f89c0a65a1eb454f0877e1
-
-# DD-WE-006: Infrastructure dependencies provisioned by operators in kubernaut-workflows.
-# Credentials are mounted as files, NOT provided by the LLM.
-dependencies:
-  secrets:
-    - name: gitea-repo-creds
-
-parameters:
-  - name: TARGET_NAMESPACE
-    type: string
-    required: true
-    description: "Namespace of the affected Certificate"
-  - name: TARGET_RESOURCE_NAME
-    type: string
-    required: true
-    description: "Name of the affected Certificate (for verification)"
+  name: fix-certificate-gitops-v1
+spec:
+  # Fix Certificate (GitOps) Workflow Schema - Job Backend (BR-WORKFLOW-004)
+  # Scenario: #134 -- GitOps-managed Certificate failure -> git revert
+  metadata:
+    workflowId: fix-certificate-gitops-v1
+    version: "1.0.0"
+    description:
+      what: "Reverts a bad Git commit that broke a cert-manager ClusterIssuer in a GitOps-managed environment"
+      whenToUse: "When a GitOps-managed cert-manager Certificate is stuck NotReady because a recent Git commit changed the ClusterIssuer to reference a non-existent CA Secret"
+      whenNotToUse: "When the environment is not GitOps-managed (use fix-certificate-v1 instead for direct kubectl remediation)"
+      preconditions: "ArgoCD is active, the Gitea repository is accessible, and a previous healthy commit exists with the correct ClusterIssuer configuration"
+  
+  actionType: GitRevertCommit
+  
+  labels:
+    severity: [critical, high]
+    environment: ["*"]
+    component: "*"
+    priority: "*"
+  
+  detectedLabels:
+    gitOpsTool: "*"
+  
+  execution:
+    engine: job
+    bundle: quay.io/kubernaut-cicd/test-workflows/fix-certificate-gitops-job@sha256:9c97e791e8c58397f668456f54414e263852974f85f89c0a65a1eb454f0877e1
+  
+  # DD-WE-006: Infrastructure dependencies provisioned by operators in kubernaut-workflows.
+  # Credentials are mounted as files, NOT provided by the LLM.
+  dependencies:
+    secrets:
+      - name: gitea-repo-creds
+  
+  parameters:
+    - name: TARGET_NAMESPACE
+      type: string
+      required: true
+      description: "Namespace of the affected Certificate"
+    - name: TARGET_RESOURCE_NAME
+      type: string
+      required: true
+      description: "Name of the affected Certificate (for verification)"

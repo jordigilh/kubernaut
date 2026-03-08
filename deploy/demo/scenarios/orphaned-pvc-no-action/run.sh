@@ -18,6 +18,16 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NAMESPACE="demo-orphaned-pvc"
 
+APPROVE_MODE="--auto-approve"
+SKIP_VALIDATE=""
+for _arg in "$@"; do
+    case "$_arg" in
+        --auto-approve)  APPROVE_MODE="--auto-approve" ;;
+        --interactive)   APPROVE_MODE="--interactive" ;;
+        --no-validate)   SKIP_VALIDATE=true ;;
+    esac
+done
+
 # shellcheck source=../../scripts/kind-helper.sh
 source "${SCRIPT_DIR}/../../scripts/kind-helper.sh"
 ensure_kind_cluster "${SCRIPT_DIR}/../kind-config-singlenode.yaml" "${1:-}"
@@ -61,7 +71,10 @@ bash "${SCRIPT_DIR}/inject-orphan-pvcs.sh"
 echo ""
 
 echo "==> Step 5: Fault injected. Waiting for KubePersistentVolumeClaimOrphaned alert (~2 min)."
-echo "    The alert fires when >3 bound PVCs exist in namespace ${NAMESPACE}."
-echo ""
-echo "  Expected pipeline:"
-echo "    Alert -> Gateway -> SP -> AIAnalysis (benign, no workflow) -> NoActionRequired"
+
+# Validate pipeline
+if [ "${SKIP_VALIDATE}" != "true" ] && [ -f "${SCRIPT_DIR}/validate.sh" ]; then
+    echo ""
+    echo "==> Running validation pipeline..."
+    bash "${SCRIPT_DIR}/validate.sh" "${APPROVE_MODE}"
+fi

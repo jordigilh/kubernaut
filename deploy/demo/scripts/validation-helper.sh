@@ -413,7 +413,7 @@ show_effectiveness() {
 
 # Auto-approve the first RAR in the namespace.
 auto_approve_rar() {
-    local _unused="$1"  # kept for API compat; always uses PLATFORM_NS
+    local _unused="${1:-}"  # kept for API compat; always uses PLATFORM_NS
 
     local rar_name
     rar_name=$(kubectl get remediationapprovalrequests -n "$PLATFORM_NS" \

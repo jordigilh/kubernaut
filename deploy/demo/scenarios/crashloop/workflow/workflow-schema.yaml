@@ -1,33 +1,37 @@
-schemaVersion: "1.0"
-# Rollback Deployment Workflow Schema - Job Backend (BR-WORKFLOW-004)
-# Scenario: #120 -- CrashLoopBackOff -> rollback to working config
+apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
 metadata:
-  workflowId: crashloop-rollback-v1
-  version: "1.0.1"
-  description:
-    what: "Rolls back a deployment to its previous revision to recover from CrashLoopBackOff caused by a bad configuration change"
-    whenToUse: "When a deployment enters CrashLoopBackOff immediately after a config or image change, and the previous revision was healthy"
-    whenNotToUse: "When the crash is caused by an external dependency failure (database down, network partition) rather than a local configuration change"
-    preconditions: "The deployment has at least one previous healthy revision in its rollout history"
-
-actionType: RollbackDeployment
-
-labels:
-  severity: [critical, low]
-  environment: [production, staging, "*"]
-  component: "*"
-  priority: "*"
-
-execution:
-  engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/crashloop-rollback-job@sha256:64338763a1f7fd3a771122a6491c2fc67b11524e434f2ab298c0641e4a9d81bd
-
-parameters:
-  - name: TARGET_NAMESPACE
-    type: string
-    required: true
-    description: "Namespace of the affected deployment"
-  - name: TARGET_DEPLOYMENT
-    type: string
-    required: true
-    description: "Name of the deployment to roll back"
+  name: crashloop-rollback-v1
+spec:
+  # Rollback Deployment Workflow Schema - Job Backend (BR-WORKFLOW-004)
+  # Scenario: #120 -- CrashLoopBackOff -> rollback to working config
+  metadata:
+    workflowId: crashloop-rollback-v1
+    version: "1.0.1"
+    description:
+      what: "Rolls back a deployment to its previous revision to recover from CrashLoopBackOff caused by a bad configuration change"
+      whenToUse: "When a deployment enters CrashLoopBackOff immediately after a config or image change, and the previous revision was healthy"
+      whenNotToUse: "When the crash is caused by an external dependency failure (database down, network partition) rather than a local configuration change"
+      preconditions: "The deployment has at least one previous healthy revision in its rollout history"
+  
+  actionType: RollbackDeployment
+  
+  labels:
+    severity: [critical, low]
+    environment: [production, staging, "*"]
+    component: "*"
+    priority: "*"
+  
+  execution:
+    engine: job
+    bundle: quay.io/kubernaut-cicd/test-workflows/crashloop-rollback-job@sha256:64338763a1f7fd3a771122a6491c2fc67b11524e434f2ab298c0641e4a9d81bd
+  
+  parameters:
+    - name: TARGET_NAMESPACE
+      type: string
+      required: true
+      description: "Namespace of the affected deployment"
+    - name: TARGET_DEPLOYMENT
+      type: string
+      required: true
+      description: "Name of the deployment to roll back"

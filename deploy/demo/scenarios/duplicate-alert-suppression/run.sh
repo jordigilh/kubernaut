@@ -16,6 +16,16 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NAMESPACE="demo-alert-storm"
 
+APPROVE_MODE="--auto-approve"
+SKIP_VALIDATE=""
+for _arg in "$@"; do
+    case "$_arg" in
+        --auto-approve)  APPROVE_MODE="--auto-approve" ;;
+        --interactive)   APPROVE_MODE="--interactive" ;;
+        --no-validate)   SKIP_VALIDATE=true ;;
+    esac
+done
+
 # shellcheck source=../../scripts/kind-helper.sh
 source "${SCRIPT_DIR}/../../scripts/kind-helper.sh"
 ensure_kind_cluster "${SCRIPT_DIR}/../kind-config-singlenode.yaml" "${1:-}"
@@ -68,19 +78,18 @@ echo "  The Gateway OwnerResolver maps each pod alert to the Deployment."
 echo "  All 5 alerts share fingerprint: SHA256(demo-alert-storm:deployment:api-gateway)"
 echo ""
 
-# Step 7: Show deduplication
-echo "==> Step 7: Monitoring deduplication status..."
-echo "  Check periodically with: bash ${SCRIPT_DIR}/show-dedup-status.sh"
-echo ""
-echo "  Monitor pipeline:"
-echo "    kubectl get rr,aa,we -n ${NAMESPACE} -w"
+# Step 7: Expected deduplication behavior
+echo "==> Step 7: Waiting for deduplication and pipeline..."
 echo ""
 echo "  Expected:"
 echo "    - 1 RR created (NOT 5)"
 echo "    - RR.status.deduplication.occurrenceCount increases to 5"
 echo "    - Pipeline proceeds: AA -> RO -> WE (rollback) -> EM"
 echo "    - All 5 pods recover after single rollback"
-echo ""
-echo "==> To verify:"
-echo "    bash ${SCRIPT_DIR}/show-dedup-status.sh"
-echo "    kubectl get pods -n ${NAMESPACE}"
+
+# Validate pipeline
+if [ "${SKIP_VALIDATE}" != "true" ] && [ -f "${SCRIPT_DIR}/validate.sh" ]; then
+    echo ""
+    echo "==> Running validation pipeline..."
+    bash "${SCRIPT_DIR}/validate.sh" "${APPROVE_MODE}"
+fi

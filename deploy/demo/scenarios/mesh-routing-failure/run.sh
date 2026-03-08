@@ -12,6 +12,16 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NAMESPACE="demo-mesh-failure"
 
+APPROVE_MODE="--auto-approve"
+SKIP_VALIDATE=""
+for _arg in "$@"; do
+    case "$_arg" in
+        --auto-approve)  APPROVE_MODE="--auto-approve" ;;
+        --interactive)   APPROVE_MODE="--interactive" ;;
+        --no-validate)   SKIP_VALIDATE=true ;;
+    esac
+done
+
 # shellcheck source=../../scripts/kind-helper.sh
 source "${SCRIPT_DIR}/../../scripts/kind-helper.sh"
 ensure_kind_cluster "${SCRIPT_DIR}/../kind-config-singlenode.yaml" "${1:-}"
@@ -59,15 +69,9 @@ echo "==> Step 4: Waiting for high error rate alert (~2-3 min)..."
 echo "  Linkerd proxy will deny all inbound traffic (403 Forbidden)."
 echo "  Check Prometheus: kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090"
 echo ""
-echo "==> Step 5: Pipeline in progress. Monitor with:"
-echo "    kubectl get rr,sp,aa,wfe,ea -n kubernaut-system -w"
-echo ""
-echo "  Expected flow:"
-echo "    Alert (HighErrorRate/MeshUnauthorized) -> Gateway -> SP -> AA (HAPI)"
-echo "    LLM detects serviceMesh=linkerd, diagnoses AuthorizationPolicy block"
-echo "    WE removes the deny-all AuthorizationPolicy"
-echo "    EM verifies traffic flowing, error rate drops"
-echo ""
-echo "==> Verify remediation:"
-echo "    kubectl get authorizationpolicies -n ${NAMESPACE}"
-echo "    kubectl get pods -n ${NAMESPACE}"
+# Validate pipeline
+if [ "${SKIP_VALIDATE}" != "true" ] && [ -f "${SCRIPT_DIR}/validate.sh" ]; then
+    echo ""
+    echo "==> Running validation pipeline..."
+    bash "${SCRIPT_DIR}/validate.sh" "${APPROVE_MODE}"
+fi

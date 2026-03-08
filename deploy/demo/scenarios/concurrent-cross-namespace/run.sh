@@ -16,6 +16,16 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+APPROVE_MODE="--auto-approve"
+SKIP_VALIDATE=""
+for _arg in "$@"; do
+    case "$_arg" in
+        --auto-approve)  APPROVE_MODE="--auto-approve" ;;
+        --interactive)   APPROVE_MODE="--interactive" ;;
+        --no-validate)   SKIP_VALIDATE=true ;;
+    esac
+done
+
 # shellcheck source=../../scripts/kind-helper.sh
 source "${SCRIPT_DIR}/../../scripts/kind-helper.sh"
 ensure_kind_cluster "${SCRIPT_DIR}/../kind-config-singlenode.yaml" "${1:-}"
@@ -78,10 +88,8 @@ echo "==> Step 5: Injecting bad config into both namespaces simultaneously..."
 bash "${SCRIPT_DIR}/inject-both.sh"
 echo ""
 
-# Step 6: Monitor
-echo "==> Step 6: Both pipelines running in parallel. Monitor with:"
-echo "    kubectl get rr,aa,we -n demo-team-alpha -w"
-echo "    kubectl get rr,aa,we -n demo-team-beta -w"
+# Step 6: Expected behavior
+echo "==> Step 6: Both pipelines running in parallel."
 echo ""
 echo "  Expected:"
 echo "    Team Alpha (high risk tolerance):"
@@ -94,8 +102,9 @@ echo "      -> SP enriches with customLabels: {risk_tolerance: [low]}"
 echo "      -> DataStorage boosts crashloop-rollback-v1 (customLabels match)"
 echo "      -> LLM selects crashloop-rollback-v1 (safer, more thorough)"
 echo ""
-echo "==> To verify:"
-echo "    kubectl get aa -n demo-team-alpha -o jsonpath='{.items[0].status.selectedWorkflow.workflowId}'"
-echo "    # Expected: restart-pods-v1"
-echo "    kubectl get aa -n demo-team-beta -o jsonpath='{.items[0].status.selectedWorkflow.workflowId}'"
-echo "    # Expected: crashloop-rollback-v1"
+# Validate pipeline
+if [ "${SKIP_VALIDATE}" != "true" ] && [ -f "${SCRIPT_DIR}/validate.sh" ]; then
+    echo ""
+    echo "==> Running validation pipeline..."
+    bash "${SCRIPT_DIR}/validate.sh" "${APPROVE_MODE}"
+fi

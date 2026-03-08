@@ -38,11 +38,11 @@ printf '  ────────────────\n'
 if [ -n "$ALERT_SCORE" ]; then
   printf '  Alert Resolution:  %s' "$ALERT_SCORE"
   if awk "BEGIN{exit !($ALERT_SCORE >= 1.0)}" 2>/dev/null; then
-    printf '    -- alert is no longer firing\n'
+    printf '    ✓ alert resolved\n'
   elif awk "BEGIN{exit !($ALERT_SCORE >= 0.5)}" 2>/dev/null; then
-    printf '    -- alert partially resolved\n'
+    printf '    ~ alert partially resolved\n'
   else
-    printf '    -- alert is still active\n'
+    printf '    (pending — Prometheus evaluation window has not expired yet, ~10m)\n'
   fi
 else
   printf '  Alert Resolution:  pending\n'
@@ -51,18 +51,18 @@ fi
 if [ -n "$HEALTH_SCORE" ]; then
   printf '  Health Check:      %s' "$HEALTH_SCORE"
   if awk "BEGIN{exit !($HEALTH_SCORE >= 1.0)}" 2>/dev/null; then
-    printf '    -- all pods Running, no restarts\n'
+    printf '    ✓ all pods Running, no restarts\n'
   elif awk "BEGIN{exit !($HEALTH_SCORE >= 0.75)}" 2>/dev/null; then
-    printf '    -- all pods Running (restarts from prior crash cleared)\n'
+    printf '    ✓ all pods Running (restart count reflects prior crash)\n'
   elif awk "BEGIN{exit !($HEALTH_SCORE >= 0.5)}" 2>/dev/null; then
-    printf '    -- partial readiness (some pods recovering)\n'
+    printf '    ~ partial readiness (some pods recovering)\n'
   else
     READY_PODS=$(kubectl get pods -n "$SCENARIO_NS" --no-headers 2>/dev/null | grep -c "Running" || echo "0")
     TOTAL_PODS=$(kubectl get pods -n "$SCENARIO_NS" --no-headers 2>/dev/null | wc -l | tr -d ' ')
     if [ "$READY_PODS" = "$TOTAL_PODS" ] && [ "$READY_PODS" != "0" ]; then
-      printf '    -- pods Running (score reflects prior crash restarts)\n'
+      printf '    ✓ pods Running (restart count reflects prior crash)\n'
     else
-      printf '    -- pods not yet healthy\n'
+      printf '    ~ pods not yet healthy\n'
     fi
   fi
 else
@@ -70,11 +70,12 @@ else
 fi
 
 if [ -n "$METRICS_SCORE" ]; then
-  printf '  Metrics:           %s' "$METRICS_SCORE"
   if awk "BEGIN{exit !($METRICS_SCORE >= 0.5)}" 2>/dev/null; then
-    printf '    -- improvement detected across Prometheus queries\n'
+    printf '  Metrics:           %s    ✓ improvement detected\n' "$METRICS_SCORE"
+  elif awk "BEGIN{exit !($METRICS_SCORE > 0)}" 2>/dev/null; then
+    printf '  Metrics:           %s    ~ baseline (no custom queries configured)\n' "$METRICS_SCORE"
   else
-    printf '    -- N/A (no application-level Prometheus metrics)\n'
+    printf '  Metrics:           0.0     ~ baseline (no custom queries configured)\n'
   fi
 else
   printf '  Metrics:           pending\n'

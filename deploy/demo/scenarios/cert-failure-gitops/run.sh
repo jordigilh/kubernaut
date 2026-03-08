@@ -19,8 +19,17 @@ GITEA_ADMIN_USER="kubernaut"
 GITEA_ADMIN_PASS="kubernaut123"
 REPO_NAME="demo-cert-gitops-repo"
 
-SUBCOMMAND="${1:-all}"
-if [[ "$SUBCOMMAND" =~ ^(setup|inject|all)$ ]]; then shift || true; fi
+APPROVE_MODE="--auto-approve"
+SKIP_VALIDATE=""
+SUBCOMMAND="all"
+for _arg in "$@"; do
+    case "$_arg" in
+        --auto-approve)  APPROVE_MODE="--auto-approve" ;;
+        --interactive)   APPROVE_MODE="--interactive" ;;
+        --no-validate)   SKIP_VALIDATE=true ;;
+        setup|inject|all) SUBCOMMAND="$_arg" ;;
+    esac
+done
 
 # shellcheck source=../../scripts/kind-helper.sh
 source "${SCRIPT_DIR}/../../scripts/kind-helper.sh"
@@ -278,22 +287,14 @@ echo ""
 }
 
 run_monitor() {
-echo "==> Step 9: Waiting for CertManagerCertNotReady alert (~2-3 min)..."
-echo "  ArgoCD synced broken ClusterIssuer -> cert-manager cannot sign."
-echo "  Check Prometheus: kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090"
-echo ""
-echo "==> Step 10: Pipeline in progress. Monitor with:"
-echo "    kubectl get rr,sp,aa,we,ea -n ${NAMESPACE} -w"
-echo ""
-echo "  Expected flow:"
-echo "    Alert (CertManagerCertNotReady) -> Gateway -> SP -> AA (HAPI)"
-echo "    LLM detects gitOpsManaged=true, gitOpsTool=argocd"
-echo "    LLM selects git-based fix -> workflow reverts the bad commit"
-echo "    ArgoCD re-syncs restored ClusterIssuer"
-echo "    EM verifies Certificate is Ready"
-echo ""
-echo "==> Verify remediation:"
-echo "    kubectl get certificate -n ${NAMESPACE}"
+echo "==> Step 9: Waiting for pipeline to process alert..."
+
+# Validate pipeline
+if [ "${SKIP_VALIDATE}" != "true" ] && [ -f "${SCRIPT_DIR}/validate.sh" ]; then
+    echo ""
+    echo "==> Running validation pipeline..."
+    bash "${SCRIPT_DIR}/validate.sh" "${APPROVE_MODE}"
+fi
 }
 
 case "$SUBCOMMAND" in

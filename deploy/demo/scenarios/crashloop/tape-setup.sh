@@ -8,7 +8,7 @@ PLATFORM_NS="${PLATFORM_NS:-kubernaut-system}"
 bash "${SCRIPT_DIR}/cleanup.sh" 2>/dev/null || true
 
 kubectl get configmap remediationorchestrator-config -n "${PLATFORM_NS}" -o yaml \
-  | sed 's/stabilizationWindow: "5m"/stabilizationWindow: "1m"/' \
+  | sed 's/stabilizationWindow: "[^"]*"/stabilizationWindow: "720s"/' \
   | kubectl apply -f - >/dev/null 2>&1
 kubectl rollout restart deploy/remediationorchestrator-controller -n "${PLATFORM_NS}" >/dev/null 2>&1
 kubectl rollout status deploy/remediationorchestrator-controller -n "${PLATFORM_NS}" --timeout=120s >/dev/null 2>&1

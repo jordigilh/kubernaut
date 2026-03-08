@@ -31,14 +31,6 @@ REGO_POLICY=$(kubectl get configmap aianalysis-policies -n "$PLATFORM_NS" \
   -o jsonpath='{.data.approval\.rego}' 2>/dev/null)
 
 printf '\n'
-printf '  ┌─────────────────────────────────────────────────────────┐\n'
-printf '  │  Approval Policy Match                                  │\n'
-printf '  └─────────────────────────────────────────────────────────┘\n'
-printf '\n'
-printf '  Approval Required:  %s\n' "${APPROVAL:-false}"
-printf '  Policy Reason:      %s\n' "${REASON:-N/A}"
-printf '  Namespace Label:    kubernaut.ai/environment=%s\n' "${ENVIRONMENT:-N/A}"
-printf '\n'
 printf '  ① Namespace Label (source of truth):\n'
 printf '  ─────────────────────────────────────\n'
 printf '    kubectl get ns %s --show-labels\n' "$SCENARIO_NS"

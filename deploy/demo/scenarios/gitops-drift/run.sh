@@ -13,8 +13,18 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SUBCOMMAND="${1:-all}"
-if [[ "$SUBCOMMAND" =~ ^(setup|inject|all)$ ]]; then shift || true; fi
+
+APPROVE_MODE="--auto-approve"
+SKIP_VALIDATE=""
+SUBCOMMAND="all"
+for _arg in "$@"; do
+    case "$_arg" in
+        --auto-approve)  APPROVE_MODE="--auto-approve" ;;
+        --interactive)   APPROVE_MODE="--interactive" ;;
+        --no-validate)   SKIP_VALIDATE=true ;;
+        setup|inject|all) SUBCOMMAND="$_arg" ;;
+    esac
+done
 
 # shellcheck source=../../scripts/kind-helper.sh
 source "${SCRIPT_DIR}/../../scripts/kind-helper.sh"
@@ -210,21 +220,12 @@ sleep 60
 kubectl get pods -n "${NAMESPACE}"
 echo ""
 
-# Step 8: Watch the Kubernaut pipeline
-echo "==> Step 8: Watching Kubernaut pipeline (Ctrl+C to stop watching)..."
-echo "  Expected flow: Alert -> Gateway -> SP -> AA (HAPI) -> RO -> WE (git revert) -> EM"
-echo ""
-echo "  Monitoring CRDs:"
-kubectl get remediationrequests,signalprocessings,aianalyses,workflowexecutions,effectivenessassessments \
-  -n "${NAMESPACE}" 2>/dev/null || echo "  (no CRDs yet -- waiting for alert to fire)"
-
-echo ""
-echo "==> Pipeline in progress. Monitor with:"
-echo "    kubectl get rr,sp,aa,we,ea -n ${NAMESPACE} -w"
-echo ""
-echo "==> To verify remediation succeeded:"
-echo "    kubectl get pods -n ${NAMESPACE}"
-echo "    # All pods should return to Running after git revert"
+# Step 8: Validate pipeline
+if [ "${SKIP_VALIDATE}" != "true" ] && [ -f "${SCRIPT_DIR}/validate.sh" ]; then
+    echo ""
+    echo "==> Running validation pipeline..."
+    bash "${SCRIPT_DIR}/validate.sh" "${APPROVE_MODE}"
+fi
 }
 
 case "$SUBCOMMAND" in

@@ -12,6 +12,16 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NAMESPACE="demo-pdb"
 
+APPROVE_MODE="--auto-approve"
+SKIP_VALIDATE=""
+for _arg in "$@"; do
+    case "$_arg" in
+        --auto-approve)  APPROVE_MODE="--auto-approve" ;;
+        --interactive)   APPROVE_MODE="--interactive" ;;
+        --no-validate)   SKIP_VALIDATE=true ;;
+    esac
+done
+
 # shellcheck source=../../scripts/kind-helper.sh
 source "${SCRIPT_DIR}/../../scripts/kind-helper.sh"
 ensure_kind_cluster "${SCRIPT_DIR}/../kind-config-multinode.yaml" "${1:-}"
@@ -63,25 +73,12 @@ echo "  Check Prometheus: kubectl port-forward -n monitoring svc/kube-prometheus
 echo "  The KubePodDisruptionBudgetAtLimit alert fires when allowed disruptions = 0 for 3 min."
 echo ""
 
-# Step 7: Monitor pipeline
-echo "==> Step 7: Pipeline in progress. Monitor with:"
-echo "    kubectl get rr,sp,aa,we,ea -n ${NAMESPACE} -w"
-echo ""
-echo "  Expected flow:"
-echo "    Alert (KubePodDisruptionBudgetAtLimit) -> Gateway -> SP -> AA (HAPI) -> RO -> WE"
-echo "    LLM detects PDB (via detectedLabels:pdbProtected) blocking node drain"
-echo "    Selects RelaxPDB workflow -> patches minAvailable to 1"
-echo "    Blocked drain resumes -> pods reschedule to control-plane"
-echo "    EM verifies pods healthy after drain"
-echo ""
-echo "==> To verify remediation succeeded:"
-echo "    kubectl get pdb -n ${NAMESPACE}"
-echo "    # ALLOWED DISRUPTIONS should be > 0"
-echo "    kubectl get nodes"
-echo "    # Worker node should complete drain (SchedulingDisabled)"
-echo "    kubectl get pods -n ${NAMESPACE} -o wide"
-echo "    # Pods should be Running on control-plane node"
-echo ""
+# Step 7: Validate pipeline
+if [ "${SKIP_VALIDATE}" != "true" ] && [ -f "${SCRIPT_DIR}/validate.sh" ]; then
+    echo ""
+    echo "==> Running validation pipeline..."
+    bash "${SCRIPT_DIR}/validate.sh" "${APPROVE_MODE}"
+fi
 
 # Step 8: Post-maintenance -- uncordon worker and verify recovery
 echo "==> Step 8: Post-maintenance -- uncordoning worker node..."

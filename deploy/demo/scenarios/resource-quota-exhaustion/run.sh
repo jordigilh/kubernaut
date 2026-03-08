@@ -19,6 +19,16 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NAMESPACE="demo-quota"
 
+APPROVE_MODE="--auto-approve"
+SKIP_VALIDATE=""
+for _arg in "$@"; do
+    case "$_arg" in
+        --auto-approve)  APPROVE_MODE="--auto-approve" ;;
+        --interactive)   APPROVE_MODE="--interactive" ;;
+        --no-validate)   SKIP_VALIDATE=true ;;
+    esac
+done
+
 # shellcheck source=../../scripts/kind-helper.sh
 source "${SCRIPT_DIR}/../../scripts/kind-helper.sh"
 ensure_kind_cluster "${SCRIPT_DIR}/../kind-config-singlenode.yaml" "${1:-}"
@@ -62,8 +72,10 @@ bash "${SCRIPT_DIR}/exhaust-quota.sh"
 echo ""
 
 echo "==> Step 5: Fault injected. Waiting for KubeResourceQuotaExhausted alert (~1-2 min)."
-echo "    New RS has spec_replicas>0 but status_replicas=0 (FailedCreate)."
-echo ""
-echo "  Expected pipeline:"
-echo "    Alert -> Gateway -> SP -> AIAnalysis (policy constraint, no workflow)"
-echo "    -> ManualReviewRequired (escalation to human)"
+
+# Validate pipeline
+if [ "${SKIP_VALIDATE}" != "true" ] && [ -f "${SCRIPT_DIR}/validate.sh" ]; then
+    echo ""
+    echo "==> Running validation pipeline..."
+    bash "${SCRIPT_DIR}/validate.sh" "${APPROVE_MODE}"
+fi

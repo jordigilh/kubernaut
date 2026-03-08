@@ -13,6 +13,16 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NAMESPACE="demo-node"
 
+APPROVE_MODE="--auto-approve"
+SKIP_VALIDATE=""
+for _arg in "$@"; do
+    case "$_arg" in
+        --auto-approve)  APPROVE_MODE="--auto-approve" ;;
+        --interactive)   APPROVE_MODE="--interactive" ;;
+        --no-validate)   SKIP_VALIDATE=true ;;
+    esac
+done
+
 # shellcheck source=../../scripts/kind-helper.sh
 source "${SCRIPT_DIR}/../../scripts/kind-helper.sh"
 ensure_kind_cluster "${SCRIPT_DIR}/../kind-config-multinode.yaml" "${1:-}"
@@ -57,21 +67,9 @@ echo "  Check: kubectl get nodes -w"
 echo "  Check Prometheus: kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090"
 echo ""
 
-# Step 6: Monitor pipeline
-echo "==> Step 6: Pipeline in progress. Monitor with:"
-echo "    kubectl get rr,sp,aa,we,ea -n ${NAMESPACE} -w"
-echo ""
-echo "  Expected flow:"
-echo "    Alert (KubeNodeNotReady) -> Gateway -> SP -> AA (HAPI) -> RO -> WE"
-echo "    LLM diagnoses node failure -> selects CordonDrainNode"
-echo "    WE cordons + drains node -> pods rescheduled to healthy nodes"
-echo "    EM verifies all pods Running on healthy nodes"
-echo ""
-echo "==> To verify remediation succeeded:"
-echo "    kubectl get nodes"
-echo "    kubectl get pods -n ${NAMESPACE} -o wide"
-echo ""
-echo "==> To restore the node after demo:"
-echo "    WORKER=\$(kubectl get nodes -l kubernaut.ai/managed=true -o name | head -1 | sed 's|node/||')"
-echo "    podman unpause \$WORKER"
-echo "    kubectl uncordon \$WORKER"
+# Step 6: Validate pipeline
+if [ "${SKIP_VALIDATE}" != "true" ] && [ -f "${SCRIPT_DIR}/validate.sh" ]; then
+    echo ""
+    echo "==> Running validation pipeline..."
+    bash "${SCRIPT_DIR}/validate.sh" "${APPROVE_MODE}"
+fi

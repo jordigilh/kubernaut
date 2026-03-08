@@ -19,6 +19,16 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NAMESPACE="demo-memory-escalation"
 
+APPROVE_MODE="--auto-approve"
+SKIP_VALIDATE=""
+for _arg in "$@"; do
+    case "$_arg" in
+        --auto-approve)  APPROVE_MODE="--auto-approve" ;;
+        --interactive)   APPROVE_MODE="--interactive" ;;
+        --no-validate)   SKIP_VALIDATE=true ;;
+    esac
+done
+
 # shellcheck source=../../scripts/kind-helper.sh
 source "${SCRIPT_DIR}/../../scripts/kind-helper.sh"
 ensure_kind_cluster "${SCRIPT_DIR}/../kind-config-singlenode.yaml" "${1:-}"
@@ -51,9 +61,8 @@ echo "  The ml-worker allocates 8Mi every 2s. With 64Mi limit, OOMKill in ~16s."
 echo "  After OOMKill, Prometheus detects ContainerOOMKilling alert."
 echo ""
 
-# Step 4: Monitor pipeline
-echo "==> Step 4: Pipeline in progress. Monitor with:"
-echo "    kubectl get rr,aa,we,ea -n ${NAMESPACE} -w"
+# Step 4: Expected behavior
+echo "==> Step 4: Pipeline in progress..."
 echo ""
 echo "  Expected multi-cycle flow:"
 echo "    Cycle 1: OOMKill -> increase limits (64Mi -> 128Mi) -> OOMKill recurs"
@@ -66,8 +75,9 @@ echo "  The increase-memory-limits workflow DOES work (pods run longer), but the
 echo "  underlying memory leak means OOMKill always recurs. The platform recognizes"
 echo "  the pattern and stops throwing automated remediation at it."
 echo ""
-echo "==> To verify escalation outcome:"
-echo "    kubectl get rr -n ${NAMESPACE} -o json | jq '.items[-1].status.outcome'"
-echo "    # Should show 'Blocked' or 'NeedsHumanReview' after 2-3 cycles"
-echo "    kubectl get rr -n ${NAMESPACE} -o json | jq '.items[-1].status.blockingCondition'"
-echo "    # Should show 'ConsecutiveFailures'"
+# Validate pipeline
+if [ "${SKIP_VALIDATE}" != "true" ] && [ -f "${SCRIPT_DIR}/validate.sh" ]; then
+    echo ""
+    echo "==> Running validation pipeline..."
+    bash "${SCRIPT_DIR}/validate.sh" "${APPROVE_MODE}"
+fi

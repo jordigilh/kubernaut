@@ -19,12 +19,7 @@ fi
 
 # No NotificationRequest found
 if [ "${COUNT:-0}" -eq 0 ]; then
-  printf '\n'
-  printf '╔══════════════════════════════════════════════════════╗\n'
-  printf '║  No notification generated -- pipeline completed   ║\n'
-  printf '║  without action                                     ║\n'
-  printf '╚══════════════════════════════════════════════════════╝\n'
-  printf '\n'
+  printf '\n  \e[38;5;245mNo notification generated — pipeline completed without action\e[0m\n\n'
   exit 0
 fi
 
@@ -45,6 +40,21 @@ display_one() {
     type=$(echo "$json" | jq -r '.spec.type // ""')
     phase=$(echo "$json" | jq -r '.status.phase // "Pending"')
     meta=$(echo "$json" | jq -r '(.spec.metadata // {}) | to_entries | map("\(.key)=\(.value)") | join(", ")')
+
+    # Supplement empty Outcome from the RR status (notification is created
+    # during the Verifying phase before the outcome is known).
+    if echo "$body" | grep -q '^\*\*Outcome\*\*: *$'; then
+      local rr_name rr_ns outcome
+      rr_name=$(echo "$json" | jq -r '.spec.remediationRequestRef.name // ""')
+      rr_ns=$(echo "$json" | jq -r '.spec.remediationRequestRef.namespace // ""')
+      if [ -n "$rr_name" ] && [ -n "$rr_ns" ]; then
+        outcome=$(kubectl get remediationrequest "$rr_name" -n "$rr_ns" \
+          -o jsonpath='{.status.outcome}' 2>/dev/null || true)
+        if [ -n "$outcome" ]; then
+          body=$(echo "$body" | sed "s/^\*\*Outcome\*\*: *$/\*\*Outcome\*\*: $outcome/")
+        fi
+      fi
+    fi
   else
     name="$1"
     [ -z "$name" ] && return
@@ -60,26 +70,16 @@ display_one() {
   local title="${subj:-$type}"
   [ -z "$title" ] && title="Notification"
 
-  local label_w=41
-  local body_w=51
-  local border='══════════════════════════════════════════════════════'
+  local line_w=100
 
   printf '\n'
-  printf '╔%s╗\n' "$border"
-  printf '║  NOTIFICATION                                        ║\n'
-  printf '╠%s╣\n' "$border"
-  printf '║  Subject:  %-*s ║\n' "$label_w" "${subj:0:$label_w}"
-  printf '║  Priority: %-*s ║\n' "$label_w" "${prio:0:$label_w}"
-  printf '║  Type:     %-*s ║\n' "$label_w" "${type:0:$label_w}"
-  printf '║  Phase:    %-*s ║\n' "$label_w" "${phase:0:$label_w}"
-  printf '╠%s╣\n' "$border"
-  printf '║  %-*s ║\n' "$body_w" "Body:"
-
-  echo "$body" | fold -s -w "$body_w" | while IFS= read -r line; do
-    printf '║  %-*s ║\n' "$body_w" "$line"
+  printf '  \e[1;33mSubject:\e[0m  %s\n' "${subj:0:$line_w}"
+  printf '  \e[1;33mPriority:\e[0m %s   \e[1;33mType:\e[0m %s   \e[1;33mPhase:\e[0m %s\n' \
+    "${prio:-N/A}" "${type:-N/A}" "${phase:-Pending}"
+  printf '  \e[38;5;245m%s\e[0m\n' "────────────────────────────────────────────────────────────────────────"
+  echo "$body" | fold -s -w "$line_w" | while IFS= read -r line; do
+    printf '  %s\n' "$line"
   done
-
-  printf '╚%s╝\n' "$border"
   printf '\n'
 }
 

@@ -1,33 +1,37 @@
-schemaVersion: "1.0"
-# Rollback Deployment Workflow Schema - Job Backend (BR-WORKFLOW-004)
-# Scenario: #130 -- Stuck rollout -> rollback to previous revision
+apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
 metadata:
-  workflowId: rollback-deployment-v1
-  version: "1.0.0"
-  description:
-    what: "Rolls back a deployment to its previous working revision when the current rollout is stuck"
-    whenToUse: "When a deployment rollout has exceeded its progressDeadlineSeconds and new pods cannot start (ImagePullBackOff, CrashLoopBackOff, resource issues)"
-    whenNotToUse: "When the rollout is still within its deadline and may succeed with more time, or when the issue affects all revisions (cluster-wide problem)"
-    preconditions: "The deployment has at least one previous successful revision in its history"
-
-actionType: GracefulRestart
-
-labels:
-  severity: [critical, low]
-  environment: [production, staging, "*"]
-  component: "*"
-  priority: "*"
-
-execution:
-  engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/rollback-deployment-job@sha256:64192969331bcfc1d5980865115e2791c272927bbabc3b247687680b3532ede9
-
-parameters:
-  - name: TARGET_NAMESPACE
-    type: string
-    required: true
-    description: "Namespace of the stuck deployment"
-  - name: TARGET_DEPLOYMENT
-    type: string
-    required: true
-    description: "Name of the deployment to roll back"
+  name: rollback-deployment-v1
+spec:
+  # Rollback Deployment Workflow Schema - Job Backend (BR-WORKFLOW-004)
+  # Scenario: #130 -- Stuck rollout -> rollback to previous revision
+  metadata:
+    workflowId: rollback-deployment-v1
+    version: "1.0.0"
+    description:
+      what: "Rolls back a deployment to its previous working revision when the current rollout is stuck"
+      whenToUse: "When a deployment rollout has exceeded its progressDeadlineSeconds and new pods cannot start (ImagePullBackOff, CrashLoopBackOff, resource issues)"
+      whenNotToUse: "When the rollout is still within its deadline and may succeed with more time, or when the issue affects all revisions (cluster-wide problem)"
+      preconditions: "The deployment has at least one previous successful revision in its history"
+  
+  actionType: GracefulRestart
+  
+  labels:
+    severity: [critical, low]
+    environment: [production, staging, "*"]
+    component: "*"
+    priority: "*"
+  
+  execution:
+    engine: job
+    bundle: quay.io/kubernaut-cicd/test-workflows/rollback-deployment-job@sha256:64192969331bcfc1d5980865115e2791c272927bbabc3b247687680b3532ede9
+  
+  parameters:
+    - name: TARGET_NAMESPACE
+      type: string
+      required: true
+      description: "Namespace of the stuck deployment"
+    - name: TARGET_DEPLOYMENT
+      type: string
+      required: true
+      description: "Name of the deployment to roll back"

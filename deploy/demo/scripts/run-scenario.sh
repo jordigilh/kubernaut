@@ -197,10 +197,12 @@ for scenario in "${SCENARIOS[@]}"; do
     scenario_result="PASS"
 
     # Step 1: run.sh (unless --validate-only)
+    # Pass --no-validate so run.sh doesn't chain into validate.sh itself
+    # (run-scenario.sh calls validate.sh separately in Step 2).
     if [ "$VALIDATE_ONLY" = false ]; then
         if [ -f "${scenario_dir}/run.sh" ]; then
             log_phase "Running ${scenario}/run.sh..."
-            if ! bash "${scenario_dir}/run.sh"; then
+            if ! bash "${scenario_dir}/run.sh" --no-validate; then
                 log_error "run.sh failed for ${scenario}"
                 scenario_result="FAIL"
             fi
