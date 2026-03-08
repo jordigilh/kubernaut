@@ -31,14 +31,13 @@ import (
 // WORKFLOW SCHEMA PARSER
 // ========================================
 // Authority: BR-WORKFLOW-004 (Workflow Schema Format Specification)
+// Authority: BR-WORKFLOW-006 (RemediationWorkflow CRD Definition)
 // Design Decision: DD-WORKFLOW-017 (OCI-based Workflow Registration)
 // ========================================
 //
 // This package provides parsing and validation for /workflow-schema.yaml
-// files as defined in BR-WORKFLOW-004.
-//
-// The schema is a plain configuration file (not a Kubernetes resource)
-// using camelCase field names per kubernaut convention.
+// files using the Kubernetes CRD envelope format (apiVersion/kind/metadata/spec).
+// The apiVersion determines the schema version used for DB storage.
 //
 // ========================================
 
@@ -50,19 +49,49 @@ func NewParser() *Parser {
 	return &Parser{}
 }
 
-// Parse parses workflow-schema.yaml content and returns a WorkflowSchema
-// Returns error if content is invalid YAML or doesn't match the schema structure
+// Parse parses workflow-schema.yaml content in CRD format and returns the spec.
+// Validates the CRD envelope (apiVersion, kind, metadata.name) and derives
+// SchemaVersion from apiVersion.
 func (p *Parser) Parse(content string) (*models.WorkflowSchema, error) {
 	if content == "" {
 		return nil, fmt.Errorf("content is empty")
 	}
 
-	var schema models.WorkflowSchema
-	if err := yaml.Unmarshal([]byte(content), &schema); err != nil {
+	var crd models.WorkflowSchemaCRD
+	if err := yaml.Unmarshal([]byte(content), &crd); err != nil {
 		return nil, fmt.Errorf("invalid YAML: %w", err)
 	}
 
-	return &schema, nil
+	if err := validateCRDEnvelope(&crd); err != nil {
+		return nil, err
+	}
+
+	spec := &crd.Spec
+	spec.SchemaVersion = models.APIVersionToSchemaVersion[crd.APIVersion]
+
+	return spec, nil
+}
+
+// validateCRDEnvelope checks the CRD-level fields: apiVersion, kind, metadata.name.
+func validateCRDEnvelope(crd *models.WorkflowSchemaCRD) error {
+	if crd.APIVersion == "" {
+		return models.NewSchemaValidationError("apiVersion", "apiVersion is required")
+	}
+	if _, ok := models.APIVersionToSchemaVersion[crd.APIVersion]; !ok {
+		return models.NewSchemaValidationError("apiVersion",
+			fmt.Sprintf("unsupported apiVersion %q; valid values: [kubernaut.ai/v1alpha1]", crd.APIVersion))
+	}
+	if crd.Kind == "" {
+		return models.NewSchemaValidationError("kind", "kind is required")
+	}
+	if crd.Kind != "RemediationWorkflow" {
+		return models.NewSchemaValidationError("kind",
+			fmt.Sprintf("kind must be \"RemediationWorkflow\", got %q", crd.Kind))
+	}
+	if crd.Metadata.Name == "" {
+		return models.NewSchemaValidationError("metadata.name", "metadata.name is required")
+	}
+	return nil
 }
 
 // ParseAndValidate parses and validates workflow-schema.yaml content
@@ -85,23 +114,10 @@ func (p *Parser) ParseAndValidate(content string) (*models.WorkflowSchema, error
 	return schema, nil
 }
 
-// validSchemaVersions defines the set of accepted schemaVersion values.
-// BR-WORKFLOW-004 v1.1: schemaVersion is required and must be in this set.
-var validSchemaVersions = map[string]bool{
-	"1.0": true,
-}
-
-// Validate validates a WorkflowSchema against BR-WORKFLOW-004 requirements
+// Validate validates a WorkflowSchema spec against BR-WORKFLOW-004 requirements.
+// CRD envelope validation (apiVersion, kind) is handled by Parse/validateCRDEnvelope.
+// SchemaVersion is derived from apiVersion and already populated by Parse.
 func (p *Parser) Validate(schema *models.WorkflowSchema) error {
-	// Validate SchemaVersion (BR-WORKFLOW-004 v1.1, #255)
-	if schema.SchemaVersion == "" {
-		return models.NewSchemaValidationError("schemaVersion", "schemaVersion is required")
-	}
-	if !validSchemaVersions[schema.SchemaVersion] {
-		return models.NewSchemaValidationError("schemaVersion",
-			fmt.Sprintf("unsupported schemaVersion %q; valid values: [1.0]", schema.SchemaVersion))
-	}
-
 	// Validate Metadata
 	if schema.Metadata.WorkflowID == "" {
 		return models.NewSchemaValidationError("metadata.workflowId", "workflowId is required")

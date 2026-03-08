@@ -28,27 +28,46 @@ import (
 // WORKFLOW SCHEMA MODELS
 // ========================================
 // Authority: BR-WORKFLOW-004 (Workflow Schema Format Specification)
+// Authority: BR-WORKFLOW-006 (RemediationWorkflow CRD Definition)
 // Design Decision: DD-WORKFLOW-017 (OCI-based Workflow Registration)
 // ========================================
 //
-// These types represent the structure of /workflow-schema.yaml
-// as defined in BR-WORKFLOW-004. The schema is a plain configuration
-// file (not a Kubernetes resource) extracted from workflow OCI images
-// and stored in the workflow catalog.
+// These types represent the structure of /workflow-schema.yaml files which use
+// the Kubernetes CRD envelope format: apiVersion/kind/metadata/spec.
+// The apiVersion determines the schema version (e.g., kubernaut.ai/v1alpha1 -> "1.0").
 //
 // Naming: camelCase for all YAML/JSON field names per kubernaut convention.
 //
 // ========================================
 
-// WorkflowSchema represents the complete /workflow-schema.yaml structure
-// per BR-WORKFLOW-004. This is the authoritative schema format for all
-// Kubernaut remediation workflows.
+// WorkflowSchemaCRD is the top-level CRD envelope for workflow-schema.yaml.
+// The parser unmarshals into this structure and extracts the Spec for downstream use.
+type WorkflowSchemaCRD struct {
+	APIVersion string              `yaml:"apiVersion" json:"apiVersion"`
+	Kind       string              `yaml:"kind" json:"kind"`
+	Metadata   WorkflowCRDMetadata `yaml:"metadata" json:"metadata"`
+	Spec       WorkflowSchema      `yaml:"spec" json:"spec"`
+}
+
+// WorkflowCRDMetadata is the CRD-level metadata (name, namespace).
+// Distinct from WorkflowSchemaMetadata which holds workflowId, version, description.
+type WorkflowCRDMetadata struct {
+	Name      string `yaml:"name" json:"name"`
+	Namespace string `yaml:"namespace,omitempty" json:"namespace,omitempty"`
+}
+
+// apiVersionToSchemaVersion maps CRD apiVersion to the DB schema_version value.
+// kubernaut.ai/v1alpha1 is the pre-GA version established by #292.
+var APIVersionToSchemaVersion = map[string]string{
+	"kubernaut.ai/v1alpha1": "1.0",
+}
+
+// WorkflowSchema represents the spec content of a RemediationWorkflow CRD.
+// This is the authoritative schema format for all Kubernaut remediation workflows.
 type WorkflowSchema struct {
-	// SchemaVersion identifies the structural generation of this schema file.
-	// Allows the parser to distinguish between schema formats (e.g., "1.0" vs "1.1"
-	// which adds the rbac stanza per DD-WE-005).
-	// BR-WORKFLOW-004 v1.1: Required top-level field. Must be first in YAML.
-	SchemaVersion string `yaml:"schemaVersion" json:"schemaVersion" validate:"required"`
+	// SchemaVersion is derived from apiVersion by the parser (not present in YAML).
+	// Stored in DB column schema_version for format compatibility tracking.
+	SchemaVersion string `yaml:"-" json:"schemaVersion"`
 
 	// Metadata contains workflow identification and description
 	Metadata WorkflowSchemaMetadata `yaml:"metadata" json:"metadata" validate:"required"`

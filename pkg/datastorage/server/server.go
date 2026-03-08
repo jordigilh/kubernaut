@@ -286,7 +286,7 @@ func NewServer(deps ServerDeps) (*Server, error) {
 	// Create database adapter for READ API handlers
 	dbAdapter := adapter.NewDBAdapter(db, logger)
 
-	// DD-WORKFLOW-017: Create OCI schema extractor for pullspec-only workflow registration
+	// DD-WE-006: Create OCI schema extractor for execution bundle validation
 	imagePuller := oci.NewCraneImagePuller(logger)
 	schemaParser := schema.NewParser()
 	schemaExtractor := oci.NewSchemaExtractor(imagePuller, schemaParser)

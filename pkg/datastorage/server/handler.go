@@ -101,7 +101,7 @@ type Handler struct {
 	workflowLifecycleRepo   WorkflowLifecycleRepository       // GAP-WF-1: Lifecycle ops (enable/disable/deprecate) - uses workflowRepo when nil
 	actionTypeValidator     ActionTypeValidator                // GAP-4: DD-WORKFLOW-016 taxonomy validation
 	auditStore              audit.AuditStore                  // BR-AUDIT-023: Workflow search audit
-	schemaExtractor         *oci.SchemaExtractor              // DD-WORKFLOW-017: OCI-based workflow registration
+	schemaExtractor         *oci.SchemaExtractor              // DD-WE-006: OCI bundle validation (ValidateBundleExists)
 	dependencyValidator     validation.DependencyValidator     // DD-WE-006: Schema-declared dependency validation
 	executionNamespace      string                            // DD-WE-006: Namespace where dependencies are provisioned
 	remediationHistoryRepo  RemediationHistoryQuerier         // BR-HAPI-016: Remediation history context (DD-HAPI-016 v1.1)
@@ -167,8 +167,8 @@ func WithAuditStore(store audit.AuditStore) HandlerOption {
 	}
 }
 
-// WithSchemaExtractor sets the OCI schema extractor for workflow registration
-// DD-WORKFLOW-017: OCI-based workflow registration (pullspec-only)
+// WithSchemaExtractor sets the OCI schema extractor for bundle validation
+// DD-WE-006: ValidateBundleExists uses OCI puller to verify execution bundles
 func WithSchemaExtractor(extractor *oci.SchemaExtractor) HandlerOption {
 	return func(h *Handler) {
 		h.schemaExtractor = extractor
