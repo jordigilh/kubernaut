@@ -204,6 +204,7 @@ spec:
       containers:
       - name: web
         image: %[6]s
+        command: ["/usr/bin/launch_awx.sh"]
         ports:
         - containerPort: 8052
           name: http
