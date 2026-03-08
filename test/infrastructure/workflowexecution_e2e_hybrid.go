@@ -284,8 +284,9 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	go func() {
 		thirdPartyImages := []string{
 			AWXOperatorImage, // quay.io/ansible/awx-operator:2.19.1
-			AWXImage,         // quay.io/ansible/awx:24.6.1
-			AWXEEImage,       // quay.io/ansible/awx-ee:24.6.1
+			"registry.k8s.io/kubebuilder/kube-rbac-proxy:v0.15.0",
+			AWXImage,   // quay.io/ansible/awx:24.6.1
+			AWXEEImage, // quay.io/ansible/awx-ee:24.6.1
 			"docker.io/library/postgres:16-alpine",
 			"docker.io/redis:7",
 			"quay.io/centos/centos:stream9",

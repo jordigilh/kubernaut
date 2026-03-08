@@ -139,6 +139,9 @@ resources:
 images:
   - name: quay.io/ansible/awx-operator
     newTag: %s
+  - name: gcr.io/kubebuilder/kube-rbac-proxy
+    newName: registry.k8s.io/kubebuilder/kube-rbac-proxy
+    newTag: v0.15.0
 namespace: %s
 `, AWXOperatorVersion, AWXOperatorVersion, namespace)
 
@@ -183,19 +186,11 @@ spec:
             sleep 2
           done
           echo "Creating AWX database and user..."
-          PGPASSWORD=test_password psql -h postgresql -p 5432 -U slm_user -d action_history -c "
-            DO \$\$
-            BEGIN
-              IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '%[2]s') THEN
-                CREATE ROLE %[2]s WITH LOGIN PASSWORD '%[3]s';
-              END IF;
-            END
-            \$\$;
-          "
-          PGPASSWORD=test_password psql -h postgresql -p 5432 -U slm_user -d action_history -tc "SELECT 1 FROM pg_database WHERE datname = '%[4]s'" | grep -q 1 || PGPASSWORD=test_password psql -h postgresql -p 5432 -U slm_user -d action_history -c "CREATE DATABASE %[4]s OWNER %[2]s"
-          PGPASSWORD=test_password psql -h postgresql -p 5432 -U slm_user -d action_history -c "
-            GRANT ALL PRIVILEGES ON DATABASE %[4]s TO %[2]s;
-          "
+          export PGPASSWORD=test_password
+          psql -h postgresql -p 5432 -U slm_user -d action_history -c "CREATE ROLE %[2]s WITH LOGIN PASSWORD '%[3]s';" 2>&1 || true
+          set -e
+          psql -h postgresql -p 5432 -U slm_user -d action_history -tc "SELECT 1 FROM pg_database WHERE datname = '%[4]s'" | grep -q 1 || psql -h postgresql -p 5432 -U slm_user -d action_history -c "CREATE DATABASE %[4]s OWNER %[2]s;"
+          psql -h postgresql -p 5432 -U slm_user -d action_history -c "GRANT ALL PRIVILEGES ON DATABASE %[4]s TO %[2]s;"
           echo "AWX database ready."
 `, namespace, AWXDatabaseUser, AWXDatabasePass, AWXDatabaseName)
 
@@ -286,17 +281,17 @@ spec:
   web_resource_requirements:
     requests:
       cpu: 100m
-      memory: 256Mi
+      memory: 512Mi
     limits:
       cpu: "1"
-      memory: 1Gi
+      memory: 2Gi
   task_resource_requirements:
     requests:
       cpu: 100m
-      memory: 256Mi
+      memory: 512Mi
     limits:
       cpu: "1"
-      memory: 1Gi
+      memory: 2Gi
   ee_resource_requirements:
     requests:
       cpu: 50m
