@@ -304,6 +304,8 @@ spec:
         command: ["sh", "-c"]
         args:
         - |
+          receptor --config /etc/receptor/receptor.conf &
+          sleep 2
           awx-manage run_dispatcher &
           awx-manage run_callback_receiver &
           wait
