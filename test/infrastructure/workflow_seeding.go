@@ -30,7 +30,7 @@ import (
 )
 
 
-// workflowIDToImageName maps WorkflowID to OCI image name.
+// workflowIDToImageName maps WorkflowID to fixture directory name.
 // WorkflowIDs include version suffix (e.g., oomkill-increase-memory-v1) but fixture
 // directories and built images use base names (oomkill-increase-memory). Makefile
 // build-test-workflows uses basename of fixture dir, so we strip -vN suffix.
@@ -44,8 +44,8 @@ func workflowIDToImageName(workflowID string) string {
 // Pattern: Shared data structure for AIAnalysis integration tests and HAPI E2E tests
 // This struct consolidates workflow definitions from both test suites
 //
-// DD-WORKFLOW-017: Registration is pullspec-only — DataStorage pulls the OCI image
-// and extracts /workflow-schema.yaml to populate labels (severity, environment, etc.).
+// ADR-058: Registration uses inline CRD YAML content read from fixture files.
+// DataStorage parses the CRD envelope to populate labels (severity, environment, etc.).
 // The string metadata fields below (Severity, Component, Environment, Priority) are
 // NOT sent to the API; they serve as human-readable documentation and as key
 // components for workflowUUIDs map lookups (key format: "workflowID:environment").
@@ -54,11 +54,11 @@ type TestWorkflow struct {
 	Name            string
 	Description     string
 	ActionType      string // DD-WORKFLOW-016: FK to action_type_taxonomy (e.g., "ScaleReplicas", "RestartPod")
-	Severity        string // Metadata only: "critical", "high", "medium", "low" (actual value from OCI image)
-	Component       string // Metadata only: "deployment", "pod", "node", etc. (actual value from OCI image)
-	Environment     string // Metadata only + map key: "staging", "production", "test" (actual value from OCI image)
-	Priority        string // Metadata only: "P0", "P1", "P2", "P3" (actual value from OCI image)
-	SchemaImage     string // Full image ref with optional digest (e.g., "ghcr.io/org/image:tag@sha256:...")
+	Severity        string // Metadata only: "critical", "high", "medium", "low" (actual value from fixture)
+	Component       string // Metadata only: "deployment", "pod", "node", etc. (actual value from fixture)
+	Environment     string // Metadata only + map key: "staging", "production", "test" (actual value from fixture)
+	Priority        string // Metadata only: "P0", "P1", "P2", "P3" (actual value from fixture)
+	SchemaImage     string // Legacy: retained for fixture directory name mapping
 	ExecutionEngine string // "tekton" or "job" - defaults to "tekton" if empty (BR-WE-014)
 	// SchemaParameters defines workflow input parameters per ADR-043 (BR-HAPI-191)
 	// Used to generate valid workflow-schema.yaml content that DataStorage will parse
@@ -110,60 +110,39 @@ func SeedWorkflowsInDataStorage(client *ogenclient.Client, workflows []TestWorkf
 	return workflowUUIDs, nil
 }
 
-// RegisterWorkflowInDataStorage registers a single workflow via DataStorage OpenAPI Client
-// DD-WORKFLOW-017: Pullspec-only registration — sends only schemaImage.
-// DataStorage pulls the image, extracts /workflow-schema.yaml, and populates all fields.
+// RegisterWorkflowInDataStorage registers a single workflow via DataStorage OpenAPI Client.
+// ADR-058: Inline schema registration — reads CRD YAML from test fixtures and posts inline.
 //
 // DD-WORKFLOW-002 v3.0: DataStorage generates UUID (security - cannot be specified by client)
 // DD-AUTH-014: Accepts authenticated client instead of creating unauthenticated one
 //
-// This function is idempotent - safe to call multiple times for the same workflow
-// If workflow already exists (409 Conflict), it queries DataStorage to retrieve the existing UUID
+// This function is idempotent - safe to call multiple times for the same workflow.
+// If workflow already exists (409 Conflict), it queries DataStorage to retrieve the existing UUID.
 //
 // Returns: The actual UUID assigned by DataStorage (either from creation or query)
 func RegisterWorkflowInDataStorage(client *ogenclient.Client, wf TestWorkflow, output io.Writer) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	// Handle schema image: use provided value or generate default pattern
-	schemaImage := wf.SchemaImage
-	if schemaImage == "" {
-		// Default pattern for tests that don't specify a schema image
-		schemaImage = fmt.Sprintf("quay.io/kubernaut-cicd/test-workflows/%s:v1.0.0", workflowIDToImageName(wf.WorkflowID))
+	fixtureDir := workflowIDToImageName(wf.WorkflowID)
+	content, readErr := readWorkflowFixtureContent(fixtureDir)
+	if readErr != nil {
+		return "", fmt.Errorf("read fixture for %s: %w", wf.WorkflowID, readErr)
 	}
 
-	// DD-WORKFLOW-017: Pullspec-only registration request
-	workflowReq := &ogenclient.CreateWorkflowFromOCIRequest{
-		SchemaImage: schemaImage,
-	}
-
-	// POST to DataStorage workflow creation endpoint
-	resp, err := client.CreateWorkflow(ctx, workflowReq)
-	if err != nil {
-		// DD-WORKFLOW-002 v3.0: If creation fails (likely 409 Conflict), query for existing UUID
-		_, _ = fmt.Fprintf(output, "  ⚠️  Workflow may already exist (%v), querying for UUID...\n", err)
-	}
-
-	// Extract workflow_id from successful response
+	uuid, _, err := callCreateWorkflowInline(client, content, "e2e-test-seeder")
 	if err == nil {
-		switch r := resp.(type) {
-		case *ogenclient.RemediationWorkflow:
-			return r.WorkflowId.Value.String(), nil
-		case *ogenclient.CreateWorkflowConflict:
-			// DS-BUG-001: 409 Conflict - workflow already exists
-			_, _ = fmt.Fprintf(output, "  ⚠️  Workflow already exists (409 Conflict), querying for UUID...\n")
-		default:
-			return "", fmt.Errorf("unexpected response type from CreateWorkflow: %T", resp)
-		}
+		return uuid, nil
 	}
+
+	_, _ = fmt.Fprintf(output, "  ⚠️  Inline registration failed (%v), querying for existing UUID...\n", err)
 
 	// For 409 Conflict or other errors, query by workflow_name to get existing UUID
-	listResp, err := client.ListWorkflows(ctx, ogenclient.ListWorkflowsParams{
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	listResp, listErr := client.ListWorkflows(ctx, ogenclient.ListWorkflowsParams{
 		WorkflowName: ogenclient.NewOptString(wf.WorkflowID),
 		Limit:        ogenclient.NewOptInt(1),
 	})
-	if err != nil {
-		return "", fmt.Errorf("failed to query existing workflow: %w", err)
+	if listErr != nil {
+		return "", fmt.Errorf("failed to query existing workflow: %w", listErr)
 	}
 
 	switch r := listResp.(type) {
@@ -199,5 +178,5 @@ func SortedWorkflowUUIDKeys(workflowUUIDs map[string]string) []string {
 	return keys
 }
 
-// Note: buildWorkflowSchemaContent removed — DD-WORKFLOW-017 pullspec-only registration
-// means DataStorage extracts schema from OCI image, not from client-provided content.
+// Note: buildWorkflowSchemaContent removed — ADR-058 inline registration reads
+// content directly from fixture YAML files via readWorkflowFixtureContent.

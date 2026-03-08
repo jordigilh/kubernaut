@@ -345,19 +345,34 @@ func WaitForAWXReady(ctx context.Context, namespace, kubeconfigPath string, writ
 	deadline := time.Now().Add(12 * time.Minute)
 	for time.Now().Before(deadline) {
 		pods, listErr := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
-			LabelSelector: "app.kubernetes.io/managed-by=awx-operator,app.kubernetes.io/name=" + AWXInstanceName,
+			LabelSelector: "app.kubernetes.io/managed-by=awx-operator,app.kubernetes.io/part-of=" + AWXInstanceName,
 		})
 		if listErr == nil && len(pods.Items) > 0 {
+			allReady := true
+			readyCount := 0
 			for _, pod := range pods.Items {
+				if pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed {
+					continue
+				}
+				podReady := false
 				if pod.Status.Phase == corev1.PodRunning {
 					for _, c := range pod.Status.Conditions {
 						if c.Type == corev1.PodReady && c.Status == corev1.ConditionTrue {
-							_, _ = fmt.Fprintf(writer, "AWX is ready (all containers running)\n")
-							return nil
+							podReady = true
+							readyCount++
+							break
 						}
 					}
 				}
+				if !podReady {
+					allReady = false
+				}
 			}
+			if allReady && readyCount >= 2 {
+				_, _ = fmt.Fprintf(writer, "AWX is ready (%d pods running)\n", readyCount)
+				return nil
+			}
+			_, _ = fmt.Fprintf(writer, "  AWX pods: %d/%d ready...\n", readyCount, len(pods.Items))
 		}
 		time.Sleep(10 * time.Second)
 	}
@@ -435,6 +450,7 @@ func ConfigureAWX(ctx context.Context, awxBaseURL string, writer io.Writer) (*AW
 	_, _ = fmt.Fprintf(writer, "   ✅ Organization ID: %d\n", cfg.OrganizationID)
 
 	// 2. Create project (Git SCM pointing to test playbooks repo)
+	// Retry on 500 errors: AWX task queue may not be fully initialized right after pod readiness.
 	_, _ = fmt.Fprintf(writer, "   Creating project (Git: %s)...\n", AWXTestPlaybooksRepo)
 	projectBody := map[string]interface{}{
 		"name":             "kubernaut-test-playbooks",
@@ -445,19 +461,49 @@ func ConfigureAWX(ctx context.Context, awxBaseURL string, writer io.Writer) (*AW
 		"scm_branch":       AWXTestPlaybooksCommit,
 		"scm_update_on_launch": true,
 	}
-	projectResult, projectStatus, err := awxAPIRequest("POST", awxBaseURL+"/api/v2/projects/", projectBody, "")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create project: %w", err)
-	}
-	if projectStatus != http.StatusCreated {
+	var projectResult map[string]interface{}
+	var projectStatus int
+	projectCreated := false
+	for attempt := 0; attempt < 6; attempt++ {
+		projectResult, projectStatus, err = awxAPIRequest("POST", awxBaseURL+"/api/v2/projects/", projectBody, "")
+		if err != nil {
+			return nil, fmt.Errorf("failed to create project: %w", err)
+		}
+		if projectStatus == http.StatusCreated {
+			projectCreated = true
+			break
+		}
+		if projectStatus == http.StatusBadRequest || projectStatus == http.StatusConflict {
+			_, _ = fmt.Fprintf(writer, "   ⚠️  Project may already exist (HTTP %d), looking up by name...\n", projectStatus)
+			existingResult, existingStatus, lookupErr := awxAPIRequest("GET", fmt.Sprintf("%s/api/v2/projects/?name=%s", awxBaseURL, "kubernaut-test-playbooks"), nil, "")
+			if lookupErr == nil && existingStatus == http.StatusOK {
+				if results, ok := existingResult["results"].([]interface{}); ok && len(results) > 0 {
+					if proj, ok := results[0].(map[string]interface{}); ok {
+						projectResult = proj
+						projectCreated = true
+						_, _ = fmt.Fprintf(writer, "   ✅ Found existing project ID: %.0f\n", proj["id"].(float64))
+						break
+					}
+				}
+			}
+			return nil, fmt.Errorf("failed to create project: HTTP %d (and could not find existing)", projectStatus)
+		}
+		if projectStatus >= 500 {
+			_, _ = fmt.Fprintf(writer, "   ⚠️  Project creation returned HTTP %d (attempt %d/6), retrying in 10s...\n", projectStatus, attempt+1)
+			time.Sleep(10 * time.Second)
+			continue
+		}
 		return nil, fmt.Errorf("failed to create project: HTTP %d", projectStatus)
+	}
+	if !projectCreated {
+		return nil, fmt.Errorf("failed to create project after 6 attempts: HTTP %d", projectStatus)
 	}
 	cfg.ProjectID = int(projectResult["id"].(float64))
 	_, _ = fmt.Fprintf(writer, "   ✅ Project ID: %d\n", cfg.ProjectID)
 
 	// 3. Wait for project sync to complete (manual polling — called from goroutine)
 	_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for project sync...\n")
-	syncDeadline := time.Now().Add(3 * time.Minute)
+	syncDeadline := time.Now().Add(5 * time.Minute)
 	projectSynced := false
 	for time.Now().Before(syncDeadline) {
 		result, _, _ := awxAPIRequest("GET", fmt.Sprintf("%s/api/v2/projects/%d/", awxBaseURL, cfg.ProjectID), nil, "")
@@ -472,7 +518,7 @@ func ConfigureAWX(ctx context.Context, awxBaseURL string, writer io.Writer) (*AW
 		time.Sleep(5 * time.Second)
 	}
 	if !projectSynced {
-		return nil, fmt.Errorf("project sync did not complete within 3 minutes")
+		return nil, fmt.Errorf("project sync did not complete within 5 minutes")
 	}
 	_, _ = fmt.Fprintf(writer, "   ✅ Project synced\n")
 
