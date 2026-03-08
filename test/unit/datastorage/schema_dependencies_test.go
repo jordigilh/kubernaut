@@ -40,37 +40,41 @@ import (
 // ========================================
 
 // validSchemaWithDependencies is a workflow schema that declares dependencies
-const validSchemaWithDependencies = `schemaVersion: "1.0"
+const validSchemaWithDependencies = `apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
 metadata:
-  workflowId: fix-certificate-gitops-v1
-  version: "1.0.0"
-  description:
-    what: Reverts a bad Git commit that broke a cert-manager ClusterIssuer
-    whenToUse: When a GitOps-managed cert-manager Certificate is stuck NotReady
-actionType: GitRevertCommit
-labels:
-  signalName: CertManagerCertNotReady
-  severity: [critical, high]
-  environment: ["*"]
-  component: certificate
-  priority: "*"
-execution:
-  engine: job
-  bundle: quay.io/kubernaut/fix-cert:v1.0.0@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
-dependencies:
-  secrets:
-    - name: gitea-repo-creds
-  configMaps:
-    - name: remediation-config
-parameters:
-  - name: GIT_REPO_URL
-    type: string
-    required: true
-    description: URL of the Git repository (without credentials)
-  - name: TARGET_NAMESPACE
-    type: string
-    required: true
-    description: Namespace of the affected Certificate
+  name: fix-certificate-gitops-v1
+spec:
+  metadata:
+    workflowId: fix-certificate-gitops-v1
+    version: "1.0.0"
+    description:
+      what: Reverts a bad Git commit that broke a cert-manager ClusterIssuer
+      whenToUse: When a GitOps-managed cert-manager Certificate is stuck NotReady
+  actionType: GitRevertCommit
+  labels:
+    signalName: CertManagerCertNotReady
+    severity: [critical, high]
+    environment: ["*"]
+    component: certificate
+    priority: "*"
+  execution:
+    engine: job
+    bundle: quay.io/kubernaut/fix-cert:v1.0.0@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
+  dependencies:
+    secrets:
+      - name: gitea-repo-creds
+    configMaps:
+      - name: remediation-config
+  parameters:
+    - name: GIT_REPO_URL
+      type: string
+      required: true
+      description: URL of the Git repository (without credentials)
+    - name: TARGET_NAMESPACE
+      type: string
+      required: true
+      description: Namespace of the affected Certificate
 `
 
 var _ = Describe("Schema-Declared Dependencies (DD-WE-006)", func() {
@@ -99,7 +103,7 @@ var _ = Describe("Schema-Declared Dependencies (DD-WE-006)", func() {
 		})
 
 		It("UT-DS-006-003: should accept schema with empty dependencies section", func() {
-			yamlContent := validWorkflowSchemaYAML + `dependencies: {}
+			yamlContent := validWorkflowSchemaYAML + `  dependencies: {}
 `
 			parsedSchema, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).ToNot(HaveOccurred())
@@ -108,9 +112,9 @@ var _ = Describe("Schema-Declared Dependencies (DD-WE-006)", func() {
 		})
 
 		It("UT-DS-006-004: should accept schema with only secrets, no configMaps", func() {
-			yamlContent := validWorkflowSchemaYAML + `dependencies:
-  secrets:
-    - name: gitea-repo-creds
+			yamlContent := validWorkflowSchemaYAML + `  dependencies:
+    secrets:
+      - name: gitea-repo-creds
 `
 			parsedSchema, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).ToNot(HaveOccurred())
@@ -119,9 +123,9 @@ var _ = Describe("Schema-Declared Dependencies (DD-WE-006)", func() {
 		})
 
 		It("UT-DS-006-005: should accept schema with only configMaps, no secrets", func() {
-			yamlContent := validWorkflowSchemaYAML + `dependencies:
-  configMaps:
-    - name: remediation-config
+			yamlContent := validWorkflowSchemaYAML + `  dependencies:
+    configMaps:
+      - name: remediation-config
 `
 			parsedSchema, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).ToNot(HaveOccurred())
@@ -130,13 +134,13 @@ var _ = Describe("Schema-Declared Dependencies (DD-WE-006)", func() {
 		})
 
 		It("UT-DS-006-006: should parse multiple secrets and configMaps", func() {
-			yamlContent := validWorkflowSchemaYAML + `dependencies:
-  secrets:
-    - name: gitea-repo-creds
-    - name: tls-certificates
-  configMaps:
-    - name: remediation-config
-    - name: alert-thresholds
+			yamlContent := validWorkflowSchemaYAML + `  dependencies:
+    secrets:
+      - name: gitea-repo-creds
+      - name: tls-certificates
+    configMaps:
+      - name: remediation-config
+      - name: alert-thresholds
 `
 			parsedSchema, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).ToNot(HaveOccurred())
@@ -153,9 +157,9 @@ var _ = Describe("Schema-Declared Dependencies (DD-WE-006)", func() {
 		})
 
 		It("UT-DS-006-010: should reject secret with empty name", func() {
-			yamlContent := validWorkflowSchemaYAML + `dependencies:
-  secrets:
-    - name: ""
+			yamlContent := validWorkflowSchemaYAML + `  dependencies:
+    secrets:
+      - name: ""
 `
 			_, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).To(HaveOccurred())
@@ -165,9 +169,9 @@ var _ = Describe("Schema-Declared Dependencies (DD-WE-006)", func() {
 		})
 
 		It("UT-DS-006-011: should reject configMap with empty name", func() {
-			yamlContent := validWorkflowSchemaYAML + `dependencies:
-  configMaps:
-    - name: ""
+			yamlContent := validWorkflowSchemaYAML + `  dependencies:
+    configMaps:
+      - name: ""
 `
 			_, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).To(HaveOccurred())
@@ -177,10 +181,10 @@ var _ = Describe("Schema-Declared Dependencies (DD-WE-006)", func() {
 		})
 
 		It("UT-DS-006-012: should reject duplicate secret names", func() {
-			yamlContent := validWorkflowSchemaYAML + `dependencies:
-  secrets:
-    - name: gitea-repo-creds
-    - name: gitea-repo-creds
+			yamlContent := validWorkflowSchemaYAML + `  dependencies:
+    secrets:
+      - name: gitea-repo-creds
+      - name: gitea-repo-creds
 `
 			_, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).To(HaveOccurred())
@@ -191,10 +195,10 @@ var _ = Describe("Schema-Declared Dependencies (DD-WE-006)", func() {
 		})
 
 		It("UT-DS-006-013: should reject duplicate configMap names", func() {
-			yamlContent := validWorkflowSchemaYAML + `dependencies:
-  configMaps:
-    - name: remediation-config
-    - name: remediation-config
+			yamlContent := validWorkflowSchemaYAML + `  dependencies:
+    configMaps:
+      - name: remediation-config
+      - name: remediation-config
 `
 			_, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).To(HaveOccurred())
@@ -205,11 +209,11 @@ var _ = Describe("Schema-Declared Dependencies (DD-WE-006)", func() {
 		})
 
 		It("UT-DS-006-014: should allow same name in different categories (secret vs configMap)", func() {
-			yamlContent := validWorkflowSchemaYAML + `dependencies:
-  secrets:
-    - name: shared-name
-  configMaps:
-    - name: shared-name
+			yamlContent := validWorkflowSchemaYAML + `  dependencies:
+    secrets:
+      - name: shared-name
+    configMaps:
+      - name: shared-name
 `
 			parsedSchema, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).ToNot(HaveOccurred(),

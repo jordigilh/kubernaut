@@ -32,60 +32,64 @@ import (
 // Test Plan: docs/testing/45/TEST_PLAN.md
 // ========================================
 
-const ansibleSchemaBaseYAML = `schemaVersion: "1.0"
+const ansibleSchemaBaseYAML = `apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
 metadata:
-  workflowId: ansible-test-workflow
-  version: "1.0.0"
-  description:
-    what: Tests ansible engine config extraction
-    whenToUse: When validating ansible workflow registration
-    whenNotToUse: N/A
-    preconditions: None
-actionType: RestartPod
-labels:
-  signalType: OOMKilled
-  severity: [critical]
-  component: pod
-  environment: [production]
-  priority: P0
-parameters:
-  - name: NAMESPACE
-    type: string
-    description: Target namespace
-    required: true
+  name: ansible-test-workflow
+spec:
+  metadata:
+    workflowId: ansible-test-workflow
+    version: "1.0.0"
+    description:
+      what: Tests ansible engine config extraction
+      whenToUse: When validating ansible workflow registration
+      whenNotToUse: N/A
+      preconditions: None
+  actionType: RestartPod
+  labels:
+    signalType: OOMKilled
+    severity: [critical]
+    component: pod
+    environment: [production]
+    priority: P0
+  parameters:
+    - name: NAMESPACE
+      type: string
+      description: Target namespace
+      required: true
 `
 
-const validAnsibleSchemaYAML = ansibleSchemaBaseYAML + `execution:
-  engine: ansible
-  bundle: https://github.com/kubernaut/playbooks.git
-  bundleDigest: abc123def456
-  engineConfig:
-    playbookPath: playbooks/restart_pod.yml
-    jobTemplateName: restart-pod
-    inventoryName: production
+const validAnsibleSchemaYAML = ansibleSchemaBaseYAML + `  execution:
+    engine: ansible
+    bundle: https://github.com/kubernaut/playbooks.git
+    bundleDigest: abc123def456
+    engineConfig:
+      playbookPath: playbooks/restart_pod.yml
+      jobTemplateName: restart-pod
+      inventoryName: production
 `
 
-const ansibleSchemaNoEngineConfigYAML = ansibleSchemaBaseYAML + `execution:
-  engine: ansible
-  bundle: https://github.com/kubernaut/playbooks.git
+const ansibleSchemaNoEngineConfigYAML = ansibleSchemaBaseYAML + `  execution:
+    engine: ansible
+    bundle: https://github.com/kubernaut/playbooks.git
 `
 
-const ansibleSchemaEmptyPlaybookPathYAML = ansibleSchemaBaseYAML + `execution:
-  engine: ansible
-  bundle: https://github.com/kubernaut/playbooks.git
-  engineConfig:
-    jobTemplateName: some-template
+const ansibleSchemaEmptyPlaybookPathYAML = ansibleSchemaBaseYAML + `  execution:
+    engine: ansible
+    bundle: https://github.com/kubernaut/playbooks.git
+    engineConfig:
+      jobTemplateName: some-template
 `
 
-const tektonSchemaWithBundleDigestYAML = ansibleSchemaBaseYAML + `execution:
-  engine: tekton
-  bundle: quay.io/kubernaut/workflows/scale@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
-  bundleDigest: abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
+const tektonSchemaWithBundleDigestYAML = ansibleSchemaBaseYAML + `  execution:
+    engine: tekton
+    bundle: quay.io/kubernaut/workflows/scale@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
+    bundleDigest: abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
 `
 
-const tektonSchemaInlineDigestYAML = ansibleSchemaBaseYAML + `execution:
-  engine: tekton
-  bundle: quay.io/kubernaut/workflows/scale@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
+const tektonSchemaInlineDigestYAML = ansibleSchemaBaseYAML + `  execution:
+    engine: tekton
+    bundle: quay.io/kubernaut/workflows/scale@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
 `
 
 var _ = Describe("Schema Parser EngineConfig Extraction [BR-WE-016]", func() {

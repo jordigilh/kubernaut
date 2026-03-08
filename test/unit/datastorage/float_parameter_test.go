@@ -31,58 +31,62 @@ import (
 // Test Plan: docs/testing/45/TEST_PLAN.md
 // ========================================
 
-const floatParamBaseYAML = `schemaVersion: "1.0"
+const floatParamBaseYAML = `apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
 metadata:
-  workflowId: float-param-test
-  version: "1.0.0"
-  description:
-    what: Tests float parameter type
-    whenToUse: When validating float parameter support
-    whenNotToUse: N/A
-    preconditions: None
-actionType: ScaleMemory
-labels:
-  signalType: MemoryPressure
-  severity: [medium]
-  component: pod
-  environment: [production]
-  priority: P1
+  name: float-param-test
+spec:
+  metadata:
+    workflowId: float-param-test
+    version: "1.0.0"
+    description:
+      what: Tests float parameter type
+      whenToUse: When validating float parameter support
+      whenNotToUse: N/A
+      preconditions: None
+  actionType: ScaleMemory
+  labels:
+    signalType: MemoryPressure
+    severity: [medium]
+    component: pod
+    environment: [production]
+    priority: P1
 `
 
-const floatParamValidSchemaYAML = floatParamBaseYAML + `parameters:
-  - name: THRESHOLD
-    type: float
-    description: Memory threshold percentage
-    required: true
-    minimum: 0.0
-    maximum: 1.0
-execution:
-  engine: tekton
-  bundle: quay.io/kubernaut/workflows/scale@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
+const floatParamValidSchemaYAML = floatParamBaseYAML + `  parameters:
+    - name: THRESHOLD
+      type: float
+      description: Memory threshold percentage
+      required: true
+      minimum: 0.0
+      maximum: 1.0
+  execution:
+    engine: tekton
+    bundle: quay.io/kubernaut/workflows/scale@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
 `
 
-const intParamBackwardCompatYAML = floatParamBaseYAML + `parameters:
-  - name: REPLICAS
-    type: integer
-    description: Number of replicas
-    required: true
-    minimum: 1
-    maximum: 10
-execution:
-  engine: tekton
-  bundle: quay.io/kubernaut/workflows/scale@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
+const intParamBackwardCompatYAML = floatParamBaseYAML + `  parameters:
+    - name: REPLICAS
+      type: integer
+      description: Number of replicas
+      required: true
+      minimum: 1
+      maximum: 10
+  execution:
+    engine: tekton
+    bundle: quay.io/kubernaut/workflows/scale@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
 `
 
-const floatParamWithDecimalBoundsYAML = floatParamBaseYAML + `parameters:
-  - name: CPU_LIMIT
-    type: float
-    description: CPU limit in cores
-    required: true
-    minimum: 0.25
-    maximum: 8.0
-execution:
-  engine: tekton
-  bundle: quay.io/kubernaut/workflows/scale@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
+const floatParamWithDecimalBoundsYAML = floatParamBaseYAML + `  parameters:
+    - name: CPU_LIMIT
+      type: float
+      description: CPU limit in cores
+      required: true
+      minimum: 0.25
+      maximum: 8.0
+  execution:
+    engine: tekton
+    bundle: quay.io/kubernaut/workflows/scale@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
 `
 
 var _ = Describe("Float Parameter Type [BR-WORKFLOW-005]", func() {

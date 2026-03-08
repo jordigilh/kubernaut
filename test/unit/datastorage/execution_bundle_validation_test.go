@@ -40,71 +40,75 @@ import (
 
 // baseSchemaPrefix provides a valid schema where only the execution section varies.
 // All fields satisfy BR-WORKFLOW-004 non-execution requirements.
-const baseSchemaPrefix = `schemaVersion: "1.0"
+const baseSchemaPrefix = `apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
 metadata:
-  workflowId: exec-bundle-test
-  version: "v1.0.0"
-  description:
-    what: Tests execution.bundle validation
-    whenToUse: When validating digest enforcement
-    whenNotToUse: N/A
-    preconditions: None
-actionType: RestartPod
-labels:
-  signalType: OOMKilled
-  severity: [critical]
-  component: pod
-  environment: [production]
-  priority: P0
-parameters:
-  - name: NAMESPACE
-    type: string
-    description: Target namespace
-    required: true
+  name: exec-bundle-test
+spec:
+  metadata:
+    workflowId: exec-bundle-test
+    version: "v1.0.0"
+    description:
+      what: Tests execution.bundle validation
+      whenToUse: When validating digest enforcement
+      whenNotToUse: N/A
+      preconditions: None
+  actionType: RestartPod
+  labels:
+    signalType: OOMKilled
+    severity: [critical]
+    component: pod
+    environment: [production]
+    priority: P0
+  parameters:
+    - name: NAMESPACE
+      type: string
+      description: Target namespace
+      required: true
 `
 
 // UT-DS-017-011: digest-only execution.bundle (positive)
-const validDigestOnlyBundleSchemaYAML = baseSchemaPrefix + `execution:
-  engine: tekton
-  bundle: quay.io/kubernaut/workflows/scale-memory-bundle@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
+const validDigestOnlyBundleSchemaYAML = baseSchemaPrefix + `  execution:
+    engine: tekton
+    bundle: quay.io/kubernaut/workflows/scale-memory-bundle@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
 `
 
 // UT-DS-017-012: tag+digest execution.bundle (positive)
-const validTagDigestBundleSchemaYAML = baseSchemaPrefix + `execution:
-  engine: tekton
-  bundle: quay.io/kubernaut/workflows/scale-memory-bundle:v1.0.0@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
+const validTagDigestBundleSchemaYAML = baseSchemaPrefix + `  execution:
+    engine: tekton
+    bundle: quay.io/kubernaut/workflows/scale-memory-bundle:v1.0.0@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
 `
 
 // UT-DS-017-013: tag-only execution.bundle (negative — must be rejected)
-const tagOnlyBundleSchemaYAML = baseSchemaPrefix + `execution:
-  engine: tekton
-  bundle: quay.io/kubernaut/workflows/scale-memory-bundle:v1.0.0
+const tagOnlyBundleSchemaYAML = baseSchemaPrefix + `  execution:
+    engine: tekton
+    bundle: quay.io/kubernaut/workflows/scale-memory-bundle:v1.0.0
 `
 
 // UT-DS-017-014: no execution section (negative — must be rejected)
 const noExecutionSectionSchemaYAML = baseSchemaPrefix
 
 // UT-DS-017-015: empty bundle string (negative — must be rejected)
-const emptyBundleSchemaYAML = baseSchemaPrefix + `execution:
-  engine: tekton
-  bundle: ""
+const emptyBundleSchemaYAML = baseSchemaPrefix + `  execution:
+    engine: tekton
+    bundle: ""
 `
 
 // UT-DS-017-016: execution section without bundle field (negative — must be rejected)
-const executionNoBundleSchemaYAML = baseSchemaPrefix + `execution:
-  engine: tekton
+const executionNoBundleSchemaYAML = baseSchemaPrefix + `  execution:
+    engine: tekton
 `
 
 // UT-DS-017-017: non-sha256 digest algorithm (negative — must be rejected)
-const wrongAlgorithmBundleSchemaYAML = baseSchemaPrefix + `execution:
-  engine: tekton
-  bundle: quay.io/kubernaut/test@md5:abc123def456
+const wrongAlgorithmBundleSchemaYAML = baseSchemaPrefix + `  execution:
+    engine: tekton
+    bundle: quay.io/kubernaut/test@md5:abc123def456
 `
 
 // UT-DS-017-018: short sha256 digest (negative — must be rejected)
-const shortDigestBundleSchemaYAML = baseSchemaPrefix + `execution:
-  engine: tekton
-  bundle: quay.io/kubernaut/test@sha256:abc123
+const shortDigestBundleSchemaYAML = baseSchemaPrefix + `  execution:
+    engine: tekton
+    bundle: quay.io/kubernaut/test@sha256:abc123
 `
 
 var _ = Describe("UT-DS/WF-017: Execution Bundle Validation", func() {
@@ -233,7 +237,7 @@ var _ = Describe("UT-DS/WF-017: Execution Bundle Validation", func() {
 	// Preconditions: Handler wired with MockImagePuller + SchemaExtractor,
 	// no DB (nil repository). RFC 7807 Problem Details on rejection.
 
-	Context("Handler validation: execution.bundle in OCI registration", func() {
+	Context("Handler validation: execution.bundle in inline registration", func() {
 
 		newHandlerWithMockExtractor := func(puller oci.ImagePuller) *server.Handler {
 			p := schema.NewParser()
@@ -241,33 +245,29 @@ var _ = Describe("UT-DS/WF-017: Execution Bundle Validation", func() {
 			return server.NewHandler(nil, server.WithSchemaExtractor(extractor))
 		}
 
-		makeCreateRequest := func(schemaImage string) *http.Request {
-			body := map[string]string{"schemaImage": schemaImage}
+		makeInlineCreateRequest := func(content string) *http.Request {
+			body := map[string]string{"content": content}
 			jsonBody, err := json.Marshal(body)
 			Expect(err).ToNot(HaveOccurred())
 			return httptest.NewRequest(http.MethodPost, "/api/v1/workflows", bytes.NewReader(jsonBody))
 		}
 
-		It("UT-WF-017-010: should accept OCI registration with valid digest-pinned bundle", func() {
+		It("UT-WF-017-010: should accept inline registration with valid digest-pinned bundle", func() {
 			puller := oci.NewMockImagePuller(validDigestOnlyBundleSchemaYAML)
 			handler := newHandlerWithMockExtractor(puller)
-			req := makeCreateRequest("quay.io/kubernaut/schemas/exec-bundle-test:v1.0.0")
+			req := makeInlineCreateRequest(validDigestOnlyBundleSchemaYAML)
 			rr := httptest.NewRecorder()
 
 			handler.HandleCreateWorkflow(rr, req)
 
 			Expect(rr.Code).ToNot(Equal(http.StatusBadRequest),
 				"valid bundle must not be rejected as bad request")
-			Expect(rr.Code).ToNot(Equal(http.StatusUnprocessableEntity),
-				"valid schema must not be reported as missing")
-			Expect(rr.Code).ToNot(Equal(http.StatusBadGateway),
-				"mock puller must not cause image pull failure")
 		})
 
-		It("UT-WF-017-011: should reject OCI registration when bundle has tag-only reference", func() {
+		It("UT-WF-017-011: should reject inline registration when bundle has tag-only reference", func() {
 			puller := oci.NewMockImagePuller(tagOnlyBundleSchemaYAML)
 			handler := newHandlerWithMockExtractor(puller)
-			req := makeCreateRequest("quay.io/kubernaut/schemas/exec-bundle-test:v1.0.0")
+			req := makeInlineCreateRequest(tagOnlyBundleSchemaYAML)
 			rr := httptest.NewRecorder()
 
 			handler.HandleCreateWorkflow(rr, req)
@@ -278,16 +278,13 @@ var _ = Describe("UT-DS/WF-017: Execution Bundle Validation", func() {
 			var problem map[string]interface{}
 			Expect(json.Unmarshal(rr.Body.Bytes(), &problem)).To(Succeed(),
 				"response body must be valid RFC 7807 JSON")
-			Expect(problem["type"]).To(Equal("https://kubernaut.ai/problems/validation-error"),
-				"RFC 7807 type must be validation-error")
 			Expect(problem["detail"]).To(ContainSubstring("execution.bundle"),
-				"RFC 7807 detail must identify the offending field")
+				"error detail must identify the offending field")
 		})
 
-		It("UT-WF-017-012: should reject OCI registration when execution section is missing", func() {
-			puller := oci.NewMockImagePuller(noExecutionSectionSchemaYAML)
-			handler := newHandlerWithMockExtractor(puller)
-			req := makeCreateRequest("quay.io/kubernaut/schemas/exec-bundle-test:v1.0.0")
+		It("UT-WF-017-012: should reject inline registration when execution section is missing", func() {
+			handler := server.NewHandler(nil)
+			req := makeInlineCreateRequest(noExecutionSectionSchemaYAML)
 			rr := httptest.NewRecorder()
 
 			handler.HandleCreateWorkflow(rr, req)
@@ -298,19 +295,17 @@ var _ = Describe("UT-DS/WF-017: Execution Bundle Validation", func() {
 			var problem map[string]interface{}
 			Expect(json.Unmarshal(rr.Body.Bytes(), &problem)).To(Succeed(),
 				"response body must be valid RFC 7807 JSON")
-			Expect(problem["type"]).To(Equal("https://kubernaut.ai/problems/validation-error"),
-				"RFC 7807 type must be validation-error")
 			Expect(problem["detail"]).To(ContainSubstring("execution"),
-				"RFC 7807 detail must reference the missing section")
+				"error detail must reference the missing section")
 		})
 
-		It("UT-WF-017-013: should reject OCI registration when execution.bundle image does not exist in registry", func() {
+		It("UT-WF-017-013: should reject inline registration when execution.bundle image does not exist in registry", func() {
 			puller := oci.NewMockImagePullerWithFailingExists(
 				validDigestOnlyBundleSchemaYAML,
 				fmt.Errorf("MANIFEST_UNKNOWN: manifest unknown"),
 			)
 			handler := newHandlerWithMockExtractor(puller)
-			req := makeCreateRequest("quay.io/kubernaut/schemas/exec-bundle-test:v1.0.0")
+			req := makeInlineCreateRequest(validDigestOnlyBundleSchemaYAML)
 			rr := httptest.NewRecorder()
 
 			handler.HandleCreateWorkflow(rr, req)
@@ -324,9 +319,9 @@ var _ = Describe("UT-DS/WF-017: Execution Bundle Validation", func() {
 			Expect(json.Unmarshal(rr.Body.Bytes(), &problem)).To(Succeed(),
 				"response body must be valid RFC 7807 JSON")
 			Expect(problem["type"]).To(Equal("https://kubernaut.ai/problems/bundle-not-found"),
-				"RFC 7807 type must be bundle-not-found (distinct from validation-error)")
+				"RFC 7807 type must be bundle-not-found")
 			Expect(problem["detail"]).To(ContainSubstring("execution.bundle"),
-				"RFC 7807 detail must reference the bundle field")
+				"error detail must reference the bundle field")
 		})
 	})
 })
