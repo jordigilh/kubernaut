@@ -1228,6 +1228,30 @@ subjects:
   name: workflowexecution-controller
   namespace: %[1]s
 ---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: workflowexecution-secret-reader
+  namespace: %[1]s
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: workflowexecution-secret-reader
+  namespace: %[1]s
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: workflowexecution-secret-reader
+subjects:
+- kind: ServiceAccount
+  name: workflowexecution-controller
+  namespace: %[1]s
+---
 apiVersion: v1
 kind: ConfigMap
 metadata:
