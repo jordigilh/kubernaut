@@ -144,8 +144,14 @@ func BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL, 
 }
 
 // readWorkflowFixtureContent reads workflow-schema.yaml from the test fixtures directory.
+// Uses findWorkspaceRoot() so the path resolves correctly regardless of the
+// working directory (ginkgo sets cwd to the test package directory).
 func readWorkflowFixtureContent(fixtureName string) (string, error) {
-	path := filepath.Join("test", "fixtures", "workflows", fixtureName, "workflow-schema.yaml")
+	root, err := findWorkspaceRoot()
+	if err != nil {
+		return "", fmt.Errorf("find workspace root: %w", err)
+	}
+	path := filepath.Join(root, "test", "fixtures", "workflows", fixtureName, "workflow-schema.yaml")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return "", fmt.Errorf("read %s: %w", path, err)

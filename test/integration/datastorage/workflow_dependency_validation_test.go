@@ -195,8 +195,8 @@ func deleteK8sObject(obj client.Object) {
 	_ = k8sClient.Delete(ctx, obj)
 }
 
-func registerWorkflow(serverURL string) (*http.Response, error) {
-	body := `{"schemaImage":"test-registry.io/dep-test:v1.0.0"}`
+func registerWorkflow(serverURL, schemaContent string) (*http.Response, error) {
+	body := fmt.Sprintf(`{"content":%s}`, jsonEscapeDepTest(schemaContent))
 	req, err := http.NewRequest("POST", serverURL+"/api/v1/workflows", strings.NewReader(body))
 	if err != nil {
 		return nil, err
@@ -204,6 +204,11 @@ func registerWorkflow(serverURL string) (*http.Response, error) {
 	req.Header.Set("Authorization", "Bearer test-token")
 	req.Header.Set("Content-Type", "application/json")
 	return http.DefaultClient.Do(req)
+}
+
+func jsonEscapeDepTest(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
 }
 
 var _ = Describe("Schema-Declared Dependency Validation (DD-WE-006)", Label("integration", "dd-we-006"), func() {
@@ -227,7 +232,7 @@ var _ = Describe("Schema-Declared Dependency Validation (DD-WE-006)", Label("int
 			defer testServer.Close()
 			defer func() { _ = srv.Shutdown(ctx) }()
 
-			resp, err := registerWorkflow(testServer.URL)
+			resp, err := registerWorkflow(testServer.URL, schemaYAML)
 			Expect(err).ToNot(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
 
@@ -241,7 +246,7 @@ var _ = Describe("Schema-Declared Dependency Validation (DD-WE-006)", Label("int
 			defer testServer.Close()
 			defer func() { _ = srv.Shutdown(ctx) }()
 
-			resp, err := registerWorkflow(testServer.URL)
+			resp, err := registerWorkflow(testServer.URL, schemaYAML)
 			Expect(err).ToNot(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
 
@@ -269,7 +274,7 @@ var _ = Describe("Schema-Declared Dependency Validation (DD-WE-006)", Label("int
 			defer testServer.Close()
 			defer func() { _ = srv.Shutdown(ctx) }()
 
-			resp, err := registerWorkflow(testServer.URL)
+			resp, err := registerWorkflow(testServer.URL, schemaYAML)
 			Expect(err).ToNot(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
 
@@ -290,7 +295,7 @@ var _ = Describe("Schema-Declared Dependency Validation (DD-WE-006)", Label("int
 			defer testServer.Close()
 			defer func() { _ = srv.Shutdown(ctx) }()
 
-			resp, err := registerWorkflow(testServer.URL)
+			resp, err := registerWorkflow(testServer.URL, schemaYAML)
 			Expect(err).ToNot(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
 
@@ -318,7 +323,7 @@ var _ = Describe("Schema-Declared Dependency Validation (DD-WE-006)", Label("int
 			defer testServer.Close()
 			defer func() { _ = srv.Shutdown(ctx) }()
 
-			resp, err := registerWorkflow(testServer.URL)
+			resp, err := registerWorkflow(testServer.URL, schemaYAML)
 			Expect(err).ToNot(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
 
@@ -334,11 +339,12 @@ var _ = Describe("Schema-Declared Dependency Validation (DD-WE-006)", Label("int
 		})
 
 		It("IT-DS-006-006: should accept workflow without dependencies section", func() {
-			testServer, srv := createDepTestServer(depTestBaseSchemaUnique())
+			schemaYAML := depTestBaseSchemaUnique()
+			testServer, srv := createDepTestServer(schemaYAML)
 			defer testServer.Close()
 			defer func() { _ = srv.Shutdown(ctx) }()
 
-			resp, err := registerWorkflow(testServer.URL)
+			resp, err := registerWorkflow(testServer.URL, schemaYAML)
 			Expect(err).ToNot(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
 
