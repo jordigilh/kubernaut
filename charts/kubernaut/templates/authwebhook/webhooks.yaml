@@ -86,3 +86,24 @@ webhooks:
         scope: "Namespaced"
     sideEffects: None
     timeoutSeconds: 10
+  - name: remediationworkflow.validate.kubernaut.ai
+    admissionReviewVersions: ["v1"]
+    clientConfig:
+      service:
+        name: authwebhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-remediationworkflow
+      caBundle: ""
+    failurePolicy: Fail
+    matchPolicy: Equivalent
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: kubernaut-system
+    rules:
+      - apiGroups: ["kubernaut.ai"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "DELETE"]
+        resources: ["remediationworkflows"]
+        scope: "Namespaced"
+    sideEffects: NoneOnDryRun
+    timeoutSeconds: 15

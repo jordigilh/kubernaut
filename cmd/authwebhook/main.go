@@ -8,6 +8,7 @@ import (
 
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/version"
 	"github.com/jordigilh/kubernaut/pkg/audit"
@@ -32,6 +33,7 @@ func init() {
 	_ = workflowexecutionv1.AddToScheme(scheme)
 	_ = remediationv1.AddToScheme(scheme)
 	_ = notificationv1.AddToScheme(scheme)
+	_ = remediationworkflowv1.AddToScheme(scheme)
 }
 
 func main() {
@@ -177,6 +179,20 @@ func main() {
 	}
 	webhookServer.Register("/validate-notificationrequest-delete", &webhook.Admission{Handler: nrHandler})
 	setupLog.Info("Registered NotificationRequest DELETE webhook handler with audit store")
+
+	// Register RemediationWorkflow handler (ADR-058: CRD-based workflow registration)
+	rwDSClient, err := authwebhook.NewDSClientAdapter(
+		cfg.DataStorage.URL,
+		cfg.DataStorage.Timeout,
+		ctrl.Log.WithName("rw-ds-client"),
+	)
+	if err != nil {
+		setupLog.Error(err, "failed to create DS client adapter for RemediationWorkflow handler")
+		os.Exit(1)
+	}
+	rwHandler := authwebhook.NewRemediationWorkflowHandler(rwDSClient, auditStore, mgr.GetClient())
+	webhookServer.Register("/validate-remediationworkflow", &webhook.Admission{Handler: rwHandler})
+	setupLog.Info("Registered RemediationWorkflow webhook handler with DS client and audit store")
 
 	// Register health check endpoints for liveness and readiness probes
 	// These are required by Kubernetes deployment health checks

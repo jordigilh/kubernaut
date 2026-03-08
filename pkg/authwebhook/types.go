@@ -12,6 +12,11 @@ const (
 	EventTypeTimeoutModified = "webhook.remediationrequest.timeout_modified"
 	EventTypeRARDecided      = "webhook.remediationapprovalrequest.decided"
 	EventTypeNotifCancelled  = "webhook.notification.cancelled"
+
+	// ADR-058: RemediationWorkflow CRD admission event types
+	EventTypeRWAdmittedCreate = "remediationworkflow.admitted.create"
+	EventTypeRWAdmittedDelete = "remediationworkflow.admitted.delete"
+	EventTypeRWAdmittedDenied = "remediationworkflow.admitted.denied"
 )
 
 // Event category constant per ADR-034 v1.4: event_category = emitter service
