@@ -278,7 +278,12 @@ spec:
       containers:
       - name: task
         image: %[6]s
-        command: ["/usr/bin/launch_awx_task.sh"]
+        command: ["sh", "-c"]
+        args:
+        - |
+          awx-manage run_dispatcher &
+          awx-manage run_callback_receiver &
+          wait
         env:
         - name: AWX_SETTINGS_FILE
           value: "/etc/tower/conf.d/settings.py"
@@ -294,8 +299,6 @@ spec:
           value: "%[3]s"
         - name: DATABASE_PASSWORD
           value: "%[4]s"
-        - name: SUPERVISOR_WEB_CONFIG_PATH
-          value: "/etc/supervisord.conf"
         volumeMounts:
         - name: settings
           mountPath: /etc/tower/conf.d/
