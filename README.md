@@ -18,9 +18,7 @@ The result: **mean time to resolution drops from 60 minutes to under 5**, while 
 
 ## How It Works
 
-<p align="center">
-  <img src="docs/architecture/diagrams/kubernaut-layered-architecture.svg" alt="Kubernaut Layered Architecture" width="50%">
-</p>
+![Kubernaut Layered Architecture](docs/architecture/diagrams/kubernaut-layered-architecture.svg)
 
 Kubernaut automates the entire incident response lifecycle through a five-stage pipeline:
 
