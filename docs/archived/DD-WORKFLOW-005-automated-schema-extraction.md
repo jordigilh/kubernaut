@@ -1,9 +1,11 @@
 # DD-WORKFLOW-005: Automated Schema Extraction from Workflow Containers
 
+> **ARCHIVED** (2026-03-04): This document has been moved to `docs/archived/` because it is fully superseded by CRD-based registration. See [ADR-058](../architecture/decisions/ADR-058-webhook-driven-workflow-registration.md) and [DD-WORKFLOW-017 v1.1](../architecture/decisions/DD-WORKFLOW-017-workflow-lifecycle-component-interactions.md).
+
 **Date**: 2025-11-15
 **Updated**: 2025-11-28
 **Version**: 2.0
-**Status**: **SUPERSEDED** by [DD-WORKFLOW-017](./DD-WORKFLOW-017-workflow-lifecycle-component-interactions.md) for V1.0 workflow registration and lifecycle
+**Status**: **SUPERSEDED** and **ARCHIVED** -- Replaced by CRD-based registration (ADR-058, BR-WORKFLOW-006)
 **Related**: DD-WORKFLOW-003, DD-WORKFLOW-004, ADR-043, DD-NAMING-001
 
 > **Note**: This document is superseded by DD-WORKFLOW-017, which consolidates the end-to-end workflow lifecycle with the `action_type`-based design (DD-WORKFLOW-016). V1.0 registration is now defined in DD-WORKFLOW-017 Phase 1. V1.1 CRD automation (Solution 2 in this document) remains as historical reference for future planning.

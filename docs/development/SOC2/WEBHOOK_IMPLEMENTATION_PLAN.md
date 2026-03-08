@@ -2,7 +2,7 @@
 
 **Date**: January 6, 2026
 **Status**: ✅ **APPROVED** - Ready for Implementation
-**Purpose**: Implement single webhook service handling authentication for 3 CRDs
+**Purpose**: Implement single webhook service handling authentication for 4 CRDs
 **Authority**: DD-AUTH-001, DD-WEBHOOK-001, SOC2 CC8.1
 **Timeline**: 5-6 days
 **Owner**: Webhook Team
@@ -13,10 +13,11 @@
 
 ### **Core Principle: Single Webhook, Multiple Handlers**
 
-**One deployment** (`kubernaut-auth-webhook`) with **three handlers**:
+**One deployment** (`kubernaut-auth-webhook`) with **four handlers**:
 1. WorkflowExecution handler (block clearance)
 2. RemediationApprovalRequest handler (approval/rejection)
 3. NotificationRequest handler (cancellation)
+4. RemediationWorkflow handler (CRD registration/disable via DS bridge -- ADR-058)
 
 **Common authentication logic** shared across all handlers:
 - Extract `req.UserInfo.Username`
@@ -49,6 +50,12 @@
 │  │  Route: /validate-notificationrequest-delete             │ │
 │  │    → NotificationRequestDeleteHandler(auditStore)        │ │
 │  │    → Captures: metadata.deletionTimestamp + user         │ │
+│  │    → Writes: audit event (WHO + WHAT + ACTION)          │ │
+│  │                                                           │ │
+│  │  Route: /validate-remediationworkflow (ADR-058)          │ │
+│  │    → RemediationWorkflowHandler(dsClient, auditStore)    │ │
+│  │    → CREATE: registers in DS, async .status update       │ │
+│  │    → DELETE: disables in DS (best-effort)                │ │
 │  │    → Writes: audit event (WHO + WHAT + ACTION)          │ │
 │  │                                                           │ │
 │  │  Shared: ExtractAuthenticatedUser(req.UserInfo)          │ │
@@ -257,14 +264,18 @@ kubernaut/
 │       ├── remediationapprovalrequest_handler_test.go # RAR unit tests
 │       │
 │       ├── notificationrequest_handler.go       # NR handler
-│       └── notificationrequest_handler_test.go  # NR unit tests
+│       ├── notificationrequest_handler_test.go  # NR unit tests
+│       │
+│       ├── remediationworkflow_handler.go       # RW handler (ADR-058)
+│       ├── remediationworkflow_audit.go         # RW audit helpers
+│       └── ds_client.go                         # DS client adapter for RW
 │
 ├── deploy/
 │   └── webhooks/
 │       ├── deployment.yaml                      # Single webhook deployment
 │       ├── service.yaml                         # Webhook service
 │       ├── mutating-webhook-config.yaml         # MutatingWebhookConfiguration
-│       ├── validating-webhook-config.yaml       # ValidatingWebhookConfiguration (NR only)
+│       ├── validating-webhook-config.yaml       # ValidatingWebhookConfiguration (NR + RW)
 │       ├── certificate.yaml                     # TLS cert (cert-manager)
 │       └── kustomization.yaml                   # Kustomize overlay
 │
@@ -277,7 +288,7 @@ kubernaut/
     │
     └── e2e/
         └── webhooks/
-            └── 10_webhook_auth_test.go          # E2E tests (all 3 CRDs)
+            └── 10_webhook_auth_test.go          # E2E tests (all 4 CRDs)
 ```
 
 ---
@@ -416,7 +427,7 @@ kubernaut/
 **Goal**: Complete system validation + SOC2 compliance verification
 
 **Tasks**:
-1. E2E test: Complete flow for all 3 CRDs with authenticated users
+1. E2E test: Complete flow for all 4 CRDs with authenticated users
 2. E2E test: Verify unauthenticated requests are rejected
 3. E2E test: Verify audit events contain correct `actor_id`
 4. Performance test: Webhook latency < 50ms per request
@@ -435,7 +446,7 @@ kubernaut/
 - **Check** (4 hours): Final compliance validation + documentation
 
 **Deliverables**:
-- ✅ 10 E2E tests passing (all 3 CRDs)
+- ✅ 10+ E2E tests passing (all 4 CRDs)
 - ✅ Performance: < 50ms webhook latency
 - ✅ Security: TLS + RBAC + NetworkPolicy validated
 - ✅ Documentation: Runbooks + troubleshooting guides

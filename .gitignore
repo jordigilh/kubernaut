@@ -177,6 +177,10 @@ TDD-*.md
 !docs/architecture/decisions/DD-*.md
 !docs/architecture/decisions/ADR-*.md
 
+# EXCEPTIONS: Allow archived design documents
+!docs/archived/
+!docs/archived/**
+
 # Pattern with underscores (e.g., CONTEXT_API_*) - GLOBAL
 [A-Z][A-Z_]*_*_SUMMARY.md
 [A-Z][A-Z_]*_*_COMPLETE.md

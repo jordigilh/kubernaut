@@ -1,7 +1,7 @@
 # Workflow Authoring Guide
 
-**Version**: v1.0
-**Last Updated**: 2025-12-06
+**Version**: v1.1
+**Last Updated**: 2026-03-04
 **Audience**: Platform Engineers, SREs, DevOps Engineers
 **Prerequisites**: Familiarity with Tekton Pipelines, Kubernetes, OCI registries
 
@@ -131,9 +131,73 @@ tkn bundle push ghcr.io/your-org/kubernaut-workflows/restart-deployment:v1.0.0 \
 tkn bundle list ghcr.io/your-org/kubernaut-workflows/restart-deployment:v1.0.0
 ```
 
-### Step 3: Register in Kubernaut
+### Step 3: Create a Workflow Schema
 
-The workflow is now available for AI Analysis to select. No additional registration is needed—Kubernaut uses the OCI bundle reference directly.
+Create a `workflow-schema.yaml` (per BR-WORKFLOW-004) that declares the workflow's metadata, action type, labels, execution engine, and parameters. This schema describes the workflow to the LLM for discovery and selection.
+
+### Step 4: Register via RemediationWorkflow CRD
+
+Create a `RemediationWorkflow` CRD that embeds the workflow schema in its `.spec`:
+
+```yaml
+apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
+metadata:
+  name: restart-deployment-v1
+  namespace: kubernaut-system
+spec:
+  metadata:
+    workflowId: restart-deployment
+    version: "1.0.0"
+    description:
+      what: "Restarts a deployment by triggering a rollout restart"
+      whenToUse: "When pods are unhealthy due to transient issues like memory leaks"
+      whenNotToUse: "When the issue is a configuration error that will recur after restart"
+  actionType: RestartDeployment
+  labels:
+    severity: ["warning", "critical"]
+    environment: ["production", "staging", "development"]
+    component: Deployment
+    priority: high
+  execution:
+    engine: tekton
+    bundle: "ghcr.io/your-org/kubernaut-workflows/restart-deployment:v1.0.0@sha256:abc123..."
+  parameters:
+    - name: namespace
+      type: string
+      required: true
+      description: "Namespace of the deployment"
+    - name: deployment-name
+      type: string
+      required: true
+      description: "Name of the deployment to restart"
+    - name: dry-run
+      type: string
+      required: false
+      description: "If true, only validate without executing"
+```
+
+Apply it:
+
+```bash
+kubectl apply -f restart-deployment-rw.yaml
+```
+
+After successful admission, the AuthWebhook registers the workflow in the DataStorage catalog. Check registration status:
+
+```bash
+kubectl get remediationworkflow restart-deployment-v1 -n kubernaut-system -o yaml
+# .status.workflowId should contain the DS-assigned UUID
+# .status.catalogStatus should be "active"
+```
+
+To remove a workflow from the catalog (disable), delete the CRD:
+
+```bash
+kubectl delete remediationworkflow restart-deployment-v1 -n kubernaut-system
+```
+
+See [BR-WORKFLOW-006](../../requirements/BR-WORKFLOW-006-remediation-workflow-crd.md) and [ADR-058](../../architecture/decisions/ADR-058-webhook-driven-workflow-registration.md) for full CRD specification and architecture details.
 
 ---
 
@@ -639,6 +703,9 @@ spec:
 - [Security Configuration](../../services/crd-controllers/03-workflowexecution/security-configuration.md)
 - [ADR-044: Tekton Delegation](../../architecture/decisions/ADR-044-workflow-execution-engine-delegation.md)
 - [ADR-043: OCI Bundle Standard](../../architecture/decisions/ADR-043-workflow-schema-definition-standard.md)
+- [ADR-058: Webhook-Driven Registration](../../architecture/decisions/ADR-058-webhook-driven-workflow-registration.md)
+- [BR-WORKFLOW-006: RemediationWorkflow CRD](../../requirements/BR-WORKFLOW-006-remediation-workflow-crd.md)
+- [BR-WORKFLOW-004: Workflow Schema Format](../../requirements/BR-WORKFLOW-004-workflow-schema-format.md)
 
 ---
 
@@ -654,6 +721,7 @@ spec:
 
 | Version | Date | Changes |
 |---------|------|---------|
+| v1.1 | 2026-03-04 | Added CRD-based registration (Step 3-4) via RemediationWorkflow CRD. Replaced "no registration needed" with explicit CRD creation instructions. Added links to ADR-058, BR-WORKFLOW-006, BR-WORKFLOW-004. |
 | v1.0 | 2025-12-06 | Initial release |
 
 

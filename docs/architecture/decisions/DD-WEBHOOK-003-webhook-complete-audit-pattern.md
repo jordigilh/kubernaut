@@ -1,8 +1,8 @@
 # DD-WEBHOOK-003: Webhook-Complete Audit Pattern for Operator Actions
 
-**Status**: ✅ **Approved** (2026-01-05)
+**Status**: ✅ **Approved** (2026-01-05, updated 2026-03-04)
 **Confidence**: 95% (based on SOC2 requirements and operational simplicity)
-**Related**: DD-WEBHOOK-001 (Consolidated Webhook), BR-AUTH-001 (SOC2 CC8.1)
+**Related**: DD-WEBHOOK-001 (Consolidated Webhook), BR-AUTH-001 (SOC2 CC8.1), ADR-058 (Webhook-Driven Workflow Registration)
 
 ---
 
@@ -341,6 +341,64 @@ h.auditManager.RecordEvent(ctx, audit.Event{
 })
 // No CRD mutation (DELETE limitation + no annotations)
 ```
+
+---
+
+### RemediationWorkflow Registration (CREATE) and Disable (DELETE)
+
+**Architecture**: [ADR-058](./ADR-058-webhook-driven-workflow-registration.md), [BR-WORKFLOW-006](../../requirements/BR-WORKFLOW-006-remediation-workflow-crd.md)
+
+**CREATE -- Webhook (ValidatingWebhookConfiguration)**:
+```go
+// 1. Extract authenticated user (SOC2 CC8.1)
+authCtx, _ := h.authenticator.ExtractUser(ctx, &req.AdmissionRequest)
+
+// 2. Forward CRD spec to DS internal API for registration
+result, _ := h.dsClient.CreateWorkflowInline(ctx, string(content), "crd", authCtx.Username)
+
+// 3. Write complete audit event (WHO + WHAT + ACTION)
+event := audit.NewAuditEventRequest()
+audit.SetEventType(event, "remediationworkflow.admitted.create")
+audit.SetEventCategory(event, "webhook")
+audit.SetEventAction(event, "admitted")
+audit.SetActor(event, "user", req.UserInfo.Username)
+audit.SetResource(event, "RemediationWorkflow", result.WorkflowID)
+
+// 4. Async status update (goroutine -- does NOT block admission)
+go h.updateCRDStatus(req.Namespace, req.Name, authCtx.Username, result)
+```
+
+**DELETE -- Webhook (best-effort disable)**:
+```go
+// 1. Extract workflowId from CRD status
+workflowID := rw.Status.WorkflowID
+
+// 2. Disable in DS (best-effort -- DELETE always allowed)
+_ = h.dsClient.DisableWorkflow(ctx, workflowID, "CRD deleted", username)
+
+// 3. Write audit event
+event := audit.NewAuditEventRequest()
+audit.SetEventType(event, "remediationworkflow.admitted.delete")
+audit.SetEventCategory(event, "webhook")
+audit.SetEventAction(event, "admitted")
+audit.SetResource(event, "RemediationWorkflow", workflowID)
+// No CRD mutation (ValidatingWebhook; status update not applicable on DELETE)
+```
+
+**DENIED -- Webhook (CREATE failure)**:
+```go
+event := audit.NewAuditEventRequest()
+audit.SetEventType(event, "remediationworkflow.admitted.denied")
+audit.SetEventAction(event, "denied")
+audit.SetEventOutcome(event, "failure")
+// Denial reason included in admission response message
+```
+
+**Key differences from other handlers**:
+- Uses **ValidatingWebhookConfiguration** (not Mutating) due to `+kubebuilder:subresource:status`
+- Status update is **asynchronous** (goroutine after admission completes)
+- DELETE is **always allowed** (best-effort DS disable to prevent GitOps drift)
+- Three distinct event types: `admitted.create`, `admitted.delete`, `admitted.denied`
 
 ---
 

@@ -1,4 +1,4 @@
-ing ite# BR-WORKFLOW-004: Workflow Schema Format Specification
+# BR-WORKFLOW-004: Workflow Schema Format Specification
 
 **Business Requirement ID**: BR-WORKFLOW-004
 **Category**: Workflow Catalog Service
@@ -6,19 +6,27 @@ ing ite# BR-WORKFLOW-004: Workflow Schema Format Specification
 **Target Version**: V1.0
 **Status**: Active
 **Date**: March 2, 2026
-**Version**: 1.1
+**Version**: 1.3
 
 **Authority**: This is the authoritative specification for the `workflow-schema.yaml` file format. All implementations, tests, and documentation must conform to this BR.
 
 **Related**:
 - [DD-WORKFLOW-016](../architecture/decisions/DD-WORKFLOW-016-action-type-workflow-indexing.md) -- Action type taxonomy and structured descriptions
-- [DD-WORKFLOW-017](../architecture/decisions/DD-WORKFLOW-017-workflow-lifecycle-component-interactions.md) -- OCI-based workflow registration (pullspec-only)
+- [DD-WORKFLOW-017](../architecture/decisions/DD-WORKFLOW-017-workflow-lifecycle-component-interactions.md) -- Workflow lifecycle (CRD-based registration via AuthWebhook)
+- [BR-WORKFLOW-006](./BR-WORKFLOW-006-remediation-workflow-crd.md) -- RemediationWorkflow CRD specification
+- [ADR-058](../architecture/decisions/ADR-058-webhook-driven-workflow-registration.md) -- Webhook-driven registration architecture
 - [DD-WE-006](../architecture/decisions/DD-WE-006-schema-declared-dependencies.md) -- Schema-declared infrastructure dependencies (Secrets, ConfigMaps)
 - [ADR-043](../architecture/decisions/ADR-043-workflow-schema-definition-standard.md) -- Original schema standard (superseded by this BR for format)
 
 ---
 
 ## Changelog
+
+### Version 1.3 (2026-03-04)
+- **UPDATED**: Registration mechanism is now CRD-based via `RemediationWorkflow` CRD (BR-WORKFLOW-006, ADR-058)
+  - Schema content is embedded in the CRD `.spec` and forwarded to DS by the AuthWebhook
+  - DS `POST /api/v1/workflows` is an internal API consumed only by the AuthWebhook
+  - Added cross-references to BR-WORKFLOW-006 and ADR-058
 
 ### Version 1.2 (2026-03-04)
 - **REMOVED**: `labels.signalType` / `labels.signalName` (#274)
@@ -53,7 +61,7 @@ Kubernaut remediation workflows are packaged as OCI container images. Each image
 
 1. **Plain configuration file** -- `workflow-schema.yaml` is not a Kubernetes resource. It has no `apiVersion` or `kind` fields. It is a configuration file with a defined schema.
 2. **camelCase field names** -- Consistent with kubernaut configuration conventions.
-3. **Single source of truth** -- All workflow metadata is extracted from this file during OCI-based registration. The operator does not provide metadata separately.
+3. **Single source of truth** -- All workflow metadata is defined in this schema format. When embedded in a RemediationWorkflow CRD spec, the AuthWebhook forwards it to DS for validation and catalog population (BR-WORKFLOW-006, ADR-058).
 4. **Structured descriptions** -- Descriptions use a structured format (`what`, `whenToUse`, `whenNotToUse`, `preconditions`) that is useful for both operators and the LLM.
 5. **Versioned schema format** -- The `schemaVersion` field identifies the structural generation of the schema. This allows the platform to gate features (e.g., RBAC in v1.1) on schema version.
 
@@ -308,11 +316,11 @@ Each parameter is an object with the following fields:
 
 ### Registration Validation (Data Storage)
 
-When a workflow is registered via `POST /api/v1/workflows` (OCI pullspec-only), Data Storage:
+When a workflow is registered via the RemediationWorkflow CRD (BR-WORKFLOW-006), the AuthWebhook forwards the CRD spec as inline content to the DS internal API (`POST /api/v1/workflows`). Data Storage:
 
-1. Pulls the OCI image
-2. Extracts `/workflow-schema.yaml` from the image layers
-3. Parses and validates the YAML against this specification
+1. Receives inline JSON content from the AuthWebhook
+2. Parses the content as a workflow schema
+3. Validates the schema against this specification
 4. Validates `actionType` against `action_type_taxonomy` (FK constraint)
 5. Validates `dependencies`: each declared Secret/ConfigMap must exist in `kubernaut-workflows` with non-empty `.data` (DD-WE-006)
 6. Extracts and stores all fields in `remediation_workflow_catalog`

@@ -1,7 +1,9 @@
 # DD-WORKFLOW-007: Manual Workflow Registration - FINAL
 
+> **ARCHIVED** (2026-03-04): This document has been moved to `docs/archived/` because manual registration is now handled via `RemediationWorkflow` CRD. See [ADR-058](../architecture/decisions/ADR-058-webhook-driven-workflow-registration.md) and [BR-WORKFLOW-006](../requirements/BR-WORKFLOW-006-remediation-workflow-crd.md).
+
 **Date**: 2025-11-15
-**Status**: **SUPERSEDED** by [DD-WORKFLOW-017](./DD-WORKFLOW-017-workflow-lifecycle-component-interactions.md) for V1.0 registration and lifecycle; CLI deferred to V1.2
+**Status**: **SUPERSEDED** and **ARCHIVED** -- Replaced by CRD-based registration (ADR-058, BR-WORKFLOW-006). CLI deferred to V1.2
 **Related**: DD-WORKFLOW-003, DD-WORKFLOW-006, DD-WORKFLOW-008, DD-WORKFLOW-012 (Workflow Immutability)
 
 > **Note**: This document is superseded by DD-WORKFLOW-017, which defines the authoritative V1.0 workflow lifecycle with `action_type`-based design (DD-WORKFLOW-016). The CLI approach described here remains as historical reference for V1.2 planning.

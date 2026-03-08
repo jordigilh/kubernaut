@@ -1,13 +1,22 @@
 # Data Storage Service - Business Requirements
 
-**Version**: v1.4
-**Date**: December 6, 2025
+**Version**: v1.5
+**Date**: March 4, 2026
 **Status**: Production-Ready (per ADR-032)
 **Service Type**: Stateless HTTP REST API + Database Layer
 
 ---
 
 ## 📝 **Changelog**
+
+### **v1.5** (March 4, 2026)
+- **UPDATED**: BR-STORAGE-038 (Workflow Catalog Create API)
+  - `POST /api/v1/workflows` is now an **internal API** consumed exclusively by the AuthWebhook
+  - Registration payload changed from OCI pullspec (`containerImage`) to inline content (`content`, `source`, `registeredBy`)
+  - User-facing registration is via RemediationWorkflow CRD (BR-WORKFLOW-006, ADR-058)
+  - DS validates inline schema content (BR-WORKFLOW-004), action type FK, and uniqueness constraints
+  - Duplicate `(workflow_name, version)` triggers re-enable from disabled state
+- **References**: [ADR-058](../../../architecture/decisions/ADR-058-webhook-driven-workflow-registration.md), [BR-WORKFLOW-006](../../../requirements/BR-WORKFLOW-006-remediation-workflow-crd.md)
 
 ### **v1.4** (December 6, 2025)
 - **RESOLVED**: BR numbering gap triage (BR-004, 008, 018, 029)
@@ -230,7 +239,7 @@ The Data Storage Service is the **exclusive database access layer** for Kubernau
 
 #### **BR-STORAGE-009: Cache Hit/Miss Tracking** ⚠️ DEPRECATED (2026-03)
 - **Priority**: ~~P1~~ N/A
-- **Status**: ⚠️ **DEPRECATED** — Playbook embedding cache is no longer relevant. The current workflow catalog implementation uses OCI-based registration with SQL-backed search (not playbooks or embeddings). This BR was written before the current DataStorage architecture was finalized.
+- **Status**: ⚠️ **DEPRECATED** — Playbook embedding cache is no longer relevant. The current workflow catalog implementation uses CRD-based registration (BR-WORKFLOW-006) with SQL-backed search (not playbooks or embeddings). This BR was written before the current DataStorage architecture was finalized.
 - **Original Description**: ~~Track Redis cache hit and miss rates for playbook embedding cache performance monitoring~~
 - **Original Business Value**: ~~Enable cache optimization and identify cache inefficiencies for playbook queries~~
 - **Scope Change (v1.1)**:
@@ -723,16 +732,19 @@ The Data Storage Service is the **exclusive database access layer** for Kubernau
 
 ### **Category 10: Workflow Catalog CRUD API (BR-STORAGE-038 to BR-STORAGE-042)**
 
-#### **BR-STORAGE-038: Workflow Catalog Create API**
+#### **BR-STORAGE-038: Workflow Catalog Create API (Internal)**
 - **Priority**: P0
 - **Status**: ✅ Active
-- **Description**: Provide REST API endpoint for creating remediation workflows (`POST /api/v1/workflows`) with ADR-043 schema validation
-- **Business Value**: Enable workflow registration in the catalog for AI-driven remediation selection
+- **Description**: Provide **internal** REST API endpoint for creating remediation workflows (`POST /api/v1/workflows`) with inline content validation. This endpoint is consumed exclusively by the AuthWebhook (AW) -- it is NOT a user-facing management endpoint. User-facing registration is via RemediationWorkflow CRD (BR-WORKFLOW-006).
+- **Business Value**: Enable CRD-based workflow registration bridged through the AuthWebhook for the DS catalog
+- **Request Payload**: `{content: string (JSON-serialized CRD spec), source: "crd", registeredBy: string}`
+- **Validation**: DS parses inline content, validates schema (BR-WORKFLOW-004), action type FK (DD-WORKFLOW-016), uniqueness constraint (DD-WORKFLOW-012)
+- **Duplicate Handling**: If `(workflow_name, version)` exists in disabled state, re-enables and returns `previouslyExisted: true`
 - **Test Coverage**:
   - Unit: `test/unit/datastorage/workflow_crud_test.go`
   - Integration: `test/integration/datastorage/workflow_catalog_test.go`
 - **Implementation**: `pkg/datastorage/server/workflow_handlers.go:HandleCreateWorkflow`
-- **Related BRs**: BR-WORKFLOW-001 (workflow registry management)
+- **Related BRs**: BR-WORKFLOW-001 (workflow registry), BR-WORKFLOW-006 (CRD spec), ADR-058 (webhook architecture)
 - **Design Decisions**: DD-WORKFLOW-002 v3.0 (UUID primary key), DD-WORKFLOW-012 (workflow immutability)
 
 #### **BR-STORAGE-039: Workflow Catalog Retrieval API**
