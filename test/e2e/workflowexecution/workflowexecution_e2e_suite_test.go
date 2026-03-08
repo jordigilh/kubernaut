@@ -135,37 +135,21 @@ var _ = SynchronizedBeforeSuite(
 		err = os.Setenv("KUBECONFIG", kubeconfigPath)
 		Expect(err).ToNot(HaveOccurred())
 
-		// Note: WorkflowExecution Controller is already deployed by hybrid infrastructure setup
-		// Wait for deployment to be available first (ensures ReplicaSet creates pod)
-		// Phase 1 E2E Stabilization: Increased timeout to 1 hour (3600s) to prevent timeout failures
-		// Root cause: Slow Tekton image pulls in Kind cluster (see WE_E2E_INFRASTRUCTURE_STABILIZATION_PLAN.md)
-		logger.Info("⏳ Waiting for WorkflowExecution Controller deployment to be available (timeout: 1 hour)...")
-		waitDeployCmd := exec.Command("kubectl", "wait",
+		// Wait for the WE controller rollout to complete. Using `rollout status` instead
+		// of `kubectl wait --for=condition=ready pod` because the latter has a known issue
+		// where it can miss pod replacements during rolling updates (the old terminating
+		// pod is watched but never transitions to Ready, and the new pod is not discovered).
+		logger.Info("⏳ Waiting for WorkflowExecution Controller rollout to complete (timeout: 1 hour)...")
+		rolloutCmd := exec.Command("kubectl", "rollout", "status",
 			"-n", controllerNamespace,
-			"--for=condition=available",
 			"deployment/workflowexecution-controller",
 			"--timeout=3600s",
 			"--kubeconfig", kubeconfigPath)
-		waitDeployCmd.Stdout = GinkgoWriter
-		waitDeployCmd.Stderr = GinkgoWriter
-		err = waitDeployCmd.Run()
-		Expect(err).ToNot(HaveOccurred(), "WorkflowExecution Controller deployment did not become available")
-
-		// Then wait for controller pod to be ready
-		// Phase 1 E2E Stabilization: Increased timeout to 1 hour (3600s)
-		logger.Info("⏳ Waiting for WorkflowExecution Controller pod to be ready (timeout: 1 hour)...")
-		waitCmd := exec.Command("kubectl", "wait",
-			"-n", controllerNamespace,
-			"--for=condition=ready",
-			"pod",
-			"-l", "app=workflowexecution-controller",
-			"--timeout=3600s",
-			"--kubeconfig", kubeconfigPath)
-		waitCmd.Stdout = GinkgoWriter
-		waitCmd.Stderr = GinkgoWriter
-		err = waitCmd.Run()
-		Expect(err).ToNot(HaveOccurred(), "WorkflowExecution Controller pod did not become ready")
-		logger.Info("✅ WorkflowExecution Controller pod is ready")
+		rolloutCmd.Stdout = GinkgoWriter
+		rolloutCmd.Stderr = GinkgoWriter
+		err = rolloutCmd.Run()
+		Expect(err).ToNot(HaveOccurred(), "WorkflowExecution Controller rollout did not complete")
+		logger.Info("✅ WorkflowExecution Controller rollout complete")
 
 		// Note: Test pipeline is already created by hybrid infrastructure setup
 
