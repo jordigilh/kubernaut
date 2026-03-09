@@ -541,6 +541,107 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 	})
 
 	// ========================================
+	// UT-AW-INTEGRITY-001: CREATE patches new UUID on supersede
+	// BR-WORKFLOW-006: When DS supersedes an old workflow, AW patches the new UUID
+	// ========================================
+	Describe("UT-AW-INTEGRITY-001: CREATE patches new UUID into CRD status on supersede", func() {
+		It("should populate CRD .status with the NEW workflow UUID when DS indicates supersede", func() {
+			rw := buildRemediationWorkflow("integrity-supersede", "kubernaut-system")
+
+			scheme := runtime.NewScheme()
+			_ = rwv1alpha1.AddToScheme(scheme)
+
+			fakeK8s := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(rw).
+				WithStatusSubresource(&rwv1alpha1.RemediationWorkflow{}).
+				Build()
+
+			handlerWithK8s := authwebhook.NewRemediationWorkflowHandler(mockDS, mockAudit, fakeK8s)
+
+			newUUID := "new-uuid-after-supersede"
+			supersededUUID := "old-uuid-superseded"
+			mockDS.createFn = func(_ context.Context, _, _, _ string) (*authwebhook.WorkflowRegistrationResult, error) {
+				return &authwebhook.WorkflowRegistrationResult{
+					WorkflowID:        newUUID,
+					WorkflowName:      "integrity-supersede",
+					Version:           "1.0.0",
+					Status:            "active",
+					PreviouslyExisted: false,
+					Superseded:        true,
+					SupersededID:      supersededUUID,
+				}, nil
+			}
+
+			admReq := buildCreateAdmissionRequest(rw)
+			resp := handlerWithK8s.Handle(ctx, admReq)
+			Expect(resp.Allowed).To(BeTrue())
+
+			Eventually(func() string {
+				updated := &rwv1alpha1.RemediationWorkflow{}
+				err := fakeK8s.Get(ctx, fakeK8sKey("kubernaut-system", "integrity-supersede"), updated)
+				if err != nil {
+					return ""
+				}
+				return updated.Status.WorkflowID
+			}, 5*time.Second, 100*time.Millisecond).Should(Equal(newUUID),
+				"CRD status should contain the NEW UUID from the supersede, not the old one")
+		})
+	})
+
+	// ========================================
+	// UT-AW-INTEGRITY-002: CREATE patches same UUID on re-enable
+	// BR-WORKFLOW-006: When DS re-enables a disabled workflow, AW patches the original UUID
+	// ========================================
+	Describe("UT-AW-INTEGRITY-002: CREATE patches same UUID into CRD status on re-enable", func() {
+		It("should populate CRD .status with the ORIGINAL UUID when DS re-enables", func() {
+			rw := buildRemediationWorkflow("integrity-reenable", "kubernaut-system")
+
+			scheme := runtime.NewScheme()
+			_ = rwv1alpha1.AddToScheme(scheme)
+
+			fakeK8s := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(rw).
+				WithStatusSubresource(&rwv1alpha1.RemediationWorkflow{}).
+				Build()
+
+			handlerWithK8s := authwebhook.NewRemediationWorkflowHandler(mockDS, mockAudit, fakeK8s)
+
+			originalUUID := "original-uuid-reenabled"
+			mockDS.createFn = func(_ context.Context, _, _, _ string) (*authwebhook.WorkflowRegistrationResult, error) {
+				return &authwebhook.WorkflowRegistrationResult{
+					WorkflowID:        originalUUID,
+					WorkflowName:      "integrity-reenable",
+					Version:           "1.0.0",
+					Status:            "active",
+					PreviouslyExisted: true,
+					Superseded:        false,
+				}, nil
+			}
+
+			admReq := buildCreateAdmissionRequest(rw)
+			resp := handlerWithK8s.Handle(ctx, admReq)
+			Expect(resp.Allowed).To(BeTrue())
+
+			Eventually(func() string {
+				updated := &rwv1alpha1.RemediationWorkflow{}
+				err := fakeK8s.Get(ctx, fakeK8sKey("kubernaut-system", "integrity-reenable"), updated)
+				if err != nil {
+					return ""
+				}
+				return updated.Status.WorkflowID
+			}, 5*time.Second, 100*time.Millisecond).Should(Equal(originalUUID),
+				"CRD status should contain the ORIGINAL UUID from the re-enable")
+
+			updated := &rwv1alpha1.RemediationWorkflow{}
+			Expect(fakeK8s.Get(ctx, fakeK8sKey("kubernaut-system", "integrity-reenable"), updated)).To(Succeed())
+			Expect(updated.Status.PreviouslyExisted).To(BeTrue(),
+				"PreviouslyExisted should be true for re-enabled workflows")
+		})
+	})
+
+	// ========================================
 	// UT-AW-299-012: DELETE with empty Status.WorkflowID skips DS disable
 	// ========================================
 	Describe("UT-AW-299-012: DELETE with empty status (production scenario)", func() {
