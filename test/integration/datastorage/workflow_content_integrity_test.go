@@ -175,7 +175,7 @@ metadata:
   name: %s
 spec:
   metadata:
-    workflowId: %s
+    workflowName: %s
     version: "1.0.0"
     description:
       what: "%s"

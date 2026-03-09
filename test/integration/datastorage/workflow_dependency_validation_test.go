@@ -62,7 +62,7 @@ metadata:
   name: dep-test-workflow
 spec:
   metadata:
-    workflowId: dep-test-workflow
+    workflowName: dep-test-workflow
     version: "1.0.0"
     description:
       what: Integration test workflow for dependency validation
@@ -84,11 +84,11 @@ spec:
 `
 )
 
-// depTestBaseSchemaUnique returns the base schema with a unique workflowId for parallel-safe registration.
+// depTestBaseSchemaUnique returns the base schema with a unique workflowName for parallel-safe registration.
 // Use for specs that expect 201 Created (e.g. IT-DS-006-006) to avoid duplicate key across processes.
 func depTestBaseSchemaUnique() string {
 	uniqueID := fmt.Sprintf("dep-test-workflow-%d-%s", GinkgoParallelProcess(), uuid.New().String())
-	s := strings.Replace(depTestBaseSchema, "workflowId: dep-test-workflow", "workflowId: "+uniqueID, 1)
+	s := strings.Replace(depTestBaseSchema, "workflowName: dep-test-workflow", "workflowName: "+uniqueID, 1)
 	s = strings.Replace(s, "name: dep-test-workflow", "name: "+uniqueID, 1)
 	return s
 }

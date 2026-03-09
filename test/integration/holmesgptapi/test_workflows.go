@@ -48,7 +48,7 @@ metadata:
   name: %s
 spec:
   metadata:
-    workflowId: %s
+    workflowName: %s
     version: "%s"
     description:
       what: %s
