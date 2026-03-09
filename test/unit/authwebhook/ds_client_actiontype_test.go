@@ -85,7 +85,7 @@ var _ = Describe("UT-AT-300-012: DSClientAdapter ActionType operations", Label("
 					"status":       "created",
 					"wasReenabled": false,
 				}
-				json.NewEncoder(w).Encode(resp)
+				_ = json.NewEncoder(w).Encode(resp)
 			})
 
 			adapter := buildAdapter(mux)
@@ -112,7 +112,7 @@ var _ = Describe("UT-AT-300-012: DSClientAdapter ActionType operations", Label("
 					"status":       "exists",
 					"wasReenabled": false,
 				}
-				json.NewEncoder(w).Encode(resp)
+				_ = json.NewEncoder(w).Encode(resp)
 			})
 
 			adapter := buildAdapter(mux)
@@ -136,7 +136,7 @@ var _ = Describe("UT-AT-300-012: DSClientAdapter ActionType operations", Label("
 					"status":       "reenabled",
 					"wasReenabled": true,
 				}
-				json.NewEncoder(w).Encode(resp)
+				_ = json.NewEncoder(w).Encode(resp)
 			})
 
 			adapter := buildAdapter(mux)
@@ -190,7 +190,7 @@ var _ = Describe("UT-AT-300-012: DSClientAdapter ActionType operations", Label("
 					},
 					"updatedFields": []string{"what", "whenToUse"},
 				}
-				json.NewEncoder(w).Encode(resp)
+				_ = json.NewEncoder(w).Encode(resp)
 			})
 
 			adapter := buildAdapter(mux)
@@ -217,7 +217,7 @@ var _ = Describe("UT-AT-300-012: DSClientAdapter ActionType operations", Label("
 					"actionType": "RestartPod",
 					"status":     "disabled",
 				}
-				json.NewEncoder(w).Encode(resp)
+				_ = json.NewEncoder(w).Encode(resp)
 			})
 
 			adapter := buildAdapter(mux)
@@ -238,7 +238,7 @@ var _ = Describe("UT-AT-300-012: DSClientAdapter ActionType operations", Label("
 					"dependentWorkflowCount": 3,
 					"dependentWorkflows":     []string{"wf-alpha", "wf-beta", "wf-gamma"},
 				}
-				json.NewEncoder(w).Encode(resp)
+				_ = json.NewEncoder(w).Encode(resp)
 			})
 
 			adapter := buildAdapter(mux)
@@ -264,7 +264,7 @@ var _ = Describe("UT-AT-300-012: DSClientAdapter ActionType operations", Label("
 
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusOK)
-				json.NewEncoder(w).Encode(map[string]int{"count": 7})
+				_ = json.NewEncoder(w).Encode(map[string]int{"count": 7})
 			})
 
 			adapter := buildAdapter(mux)
@@ -280,7 +280,7 @@ var _ = Describe("UT-AT-300-012: DSClientAdapter ActionType operations", Label("
 			mux.HandleFunc("GET /api/v1/action-types/{name}/workflow-count", func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusOK)
-				json.NewEncoder(w).Encode(map[string]int{"count": 0})
+				_ = json.NewEncoder(w).Encode(map[string]int{"count": 0})
 			})
 
 			adapter := buildAdapter(mux)

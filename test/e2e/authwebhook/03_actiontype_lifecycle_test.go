@@ -353,31 +353,41 @@ var _ = Describe("E2E: ActionType CRD Lifecycle (#300)", Ordered, Label("e2e", "
 	It("E2E-AT-300-AUDIT: audit events emitted for ActionType lifecycle", func() {
 		By("Querying DS audit API for ActionType events")
 
-		// Query audit events for the ActionType resource
-		url := fmt.Sprintf("%s/api/v1/audit/events?resource_type=ActionType&limit=50", dataStorageURL)
-		resp, err := authHTTPClient.Get(url)
-		if err != nil {
-			GinkgoWriter.Printf("⚠️ Audit query failed (DS may not have audit query endpoint): %v\n", err)
-			Skip("Audit query endpoint not available — skipping audit verification")
-		}
-		defer resp.Body.Close()
+		// Poll for audit events: the authwebhook's buffered audit store flushes
+		// every 5 seconds in E2E, so we need to retry until events appear.
+		var eventTypes []string
+		queryURL := fmt.Sprintf("%s/api/v1/audit/events?event_category=actiontype&limit=50", dataStorageURL)
 
-		if resp.StatusCode != 200 {
-			GinkgoWriter.Printf("⚠️ Audit query returned %d — skipping audit verification\n", resp.StatusCode)
-			Skip("Audit query returned non-200 status")
-		}
+		Eventually(func() []string {
+			resp, err := authHTTPClient.Get(queryURL)
+			if err != nil {
+				GinkgoWriter.Printf("⚠️ Audit query failed: %v\n", err)
+				return nil
+			}
+			defer resp.Body.Close()
 
-		var auditResp struct {
-			Events []struct {
-				EventType string `json:"event_type"`
-			} `json:"events"`
-		}
-		Expect(json.NewDecoder(resp.Body).Decode(&auditResp)).To(Succeed())
+			if resp.StatusCode != 200 {
+				GinkgoWriter.Printf("⚠️ Audit query returned %d\n", resp.StatusCode)
+				return nil
+			}
 
-		eventTypes := make([]string, 0, len(auditResp.Events))
-		for _, e := range auditResp.Events {
-			eventTypes = append(eventTypes, e.EventType)
-		}
+			var auditResp struct {
+				Data []struct {
+					EventType string `json:"event_type"`
+				} `json:"data"`
+			}
+			if err := json.NewDecoder(resp.Body).Decode(&auditResp); err != nil {
+				GinkgoWriter.Printf("⚠️ Failed to decode audit response: %v\n", err)
+				return nil
+			}
+
+			eventTypes = make([]string, 0, len(auditResp.Data))
+			for _, e := range auditResp.Data {
+				eventTypes = append(eventTypes, e.EventType)
+			}
+			return eventTypes
+		}, 15*time.Second, 2*time.Second).ShouldNot(BeEmpty(),
+			"Audit events should appear within 15s (flush interval is 5s)")
 
 		GinkgoWriter.Printf("Audit events found: %v\n", eventTypes)
 

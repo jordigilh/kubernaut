@@ -230,7 +230,7 @@ func (r *Repository) CountActiveWorkflows(ctx context.Context, actionType string
 	if err != nil {
 		return 0, nil, fmt.Errorf("count active workflows for %q: %w", actionType, err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var names []string
 	for rows.Next() {
