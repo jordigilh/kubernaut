@@ -18,6 +18,7 @@ package infrastructure
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"regexp"
@@ -117,7 +118,9 @@ func SeedWorkflowsInDataStorage(client *ogenclient.Client, workflows []TestWorkf
 // DD-AUTH-014: Accepts authenticated client instead of creating unauthenticated one
 //
 // This function is idempotent - safe to call multiple times for the same workflow.
-// If workflow already exists (409 Conflict), it queries DataStorage to retrieve the existing UUID.
+// If the DS returns 409 Conflict, it falls back to a ListWorkflows query to retrieve the
+// existing UUID. For any other error (400, 401, 403, 500, transport), the original error
+// is returned immediately — no misleading fallback.
 //
 // Returns: The actual UUID assigned by DataStorage (either from creation or query)
 func RegisterWorkflowInDataStorage(client *ogenclient.Client, wf TestWorkflow, output io.Writer) (string, error) {
@@ -132,9 +135,15 @@ func RegisterWorkflowInDataStorage(client *ogenclient.Client, wf TestWorkflow, o
 		return uuid, nil
 	}
 
-	_, _ = fmt.Fprintf(output, "  ⚠️  Inline registration failed (%v), querying for existing UUID...\n", err)
+	// Only fall back to ListWorkflows for 409 Conflict (workflow already exists).
+	// All other errors (400 bad request, 500 internal, transport, etc.) are fatal.
+	var ce *workflowConflictError
+	if !errors.As(err, &ce) {
+		return "", fmt.Errorf("register workflow %s: %w", wf.WorkflowID, err)
+	}
 
-	// For 409 Conflict or other errors, query by workflow_name to get existing UUID
+	_, _ = fmt.Fprintf(output, "  ⚠️  Workflow already exists (409), querying for existing UUID...\n")
+
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	listResp, listErr := client.ListWorkflows(ctx, ogenclient.ListWorkflowsParams{
@@ -142,13 +151,13 @@ func RegisterWorkflowInDataStorage(client *ogenclient.Client, wf TestWorkflow, o
 		Limit:        ogenclient.NewOptInt(1),
 	})
 	if listErr != nil {
-		return "", fmt.Errorf("failed to query existing workflow: %w", listErr)
+		return "", fmt.Errorf("failed to query existing workflow %s (after 409): %w", wf.WorkflowID, listErr)
 	}
 
 	switch r := listResp.(type) {
 	case *ogenclient.WorkflowListResponse:
 		if len(r.Workflows) == 0 {
-			return "", fmt.Errorf("workflow exists but query returned no results")
+			return "", fmt.Errorf("registration conflict but no existing workflow found (name=%s): %w", wf.WorkflowID, err)
 		}
 		return r.Workflows[0].WorkflowId.Value.String(), nil
 	default:

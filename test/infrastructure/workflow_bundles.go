@@ -28,6 +28,15 @@ import (
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
+// workflowConflictError is returned when the DS API reports a 409 Conflict,
+// indicating the workflow already exists. The caller can use errors.As to
+// distinguish this from fatal errors and fall back to a ListWorkflows query.
+type workflowConflictError struct{ detail string }
+
+func (e *workflowConflictError) Error() string {
+	return fmt.Sprintf("conflict (409): %s", e.detail)
+}
+
 // Workflow Bundle Infrastructure for WorkflowExecution E2E Tests
 //
 // This implements the production-like workflow registration flow:
@@ -191,6 +200,10 @@ func registerTestBundleWorkflow(dataStorageURL, saToken, workflowName, version, 
 // callCreateWorkflowInline sends an inline registration request to DataStorage and
 // extracts the UUID from the response. Shared by both bundle and seeding flows.
 // Returns (uuid, reEnabled, error).
+//
+// All ogen response types are handled so that the caller receives an actionable
+// error with the DS detail message instead of a generic "unexpected response type".
+// A *workflowConflictError is returned for 409 so callers can fall back to query.
 func callCreateWorkflowInline(client *dsgen.Client, content, registeredBy string) (string, bool, error) {
 	req := &dsgen.CreateWorkflowInlineRequest{
 		Content: content,
@@ -201,7 +214,7 @@ func callCreateWorkflowInline(client *dsgen.Client, content, registeredBy string
 	ctx := context.Background()
 	resp, err := client.CreateWorkflow(ctx, req)
 	if err != nil {
-		return "", false, err
+		return "", false, fmt.Errorf("transport error: %w", err)
 	}
 
 	switch v := resp.(type) {
@@ -217,6 +230,21 @@ func callCreateWorkflowInline(client *dsgen.Client, content, registeredBy string
 			return wfID.String(), true, nil
 		}
 		return "", false, fmt.Errorf("workflow re-enabled but UUID not returned")
+	case *dsgen.CreateWorkflowConflict:
+		p := (*dsgen.RFC7807Problem)(v)
+		return "", false, &workflowConflictError{detail: p.Detail.Value}
+	case *dsgen.CreateWorkflowBadRequest:
+		p := (*dsgen.RFC7807Problem)(v)
+		return "", false, fmt.Errorf("DS rejected registration (400): %s", p.Detail.Value)
+	case *dsgen.CreateWorkflowUnauthorized:
+		p := (*dsgen.RFC7807Problem)(v)
+		return "", false, fmt.Errorf("DS unauthorized (401): %s", p.Detail.Value)
+	case *dsgen.CreateWorkflowForbidden:
+		p := (*dsgen.RFC7807Problem)(v)
+		return "", false, fmt.Errorf("DS forbidden (403): %s", p.Detail.Value)
+	case *dsgen.CreateWorkflowInternalServerError:
+		p := (*dsgen.RFC7807Problem)(v)
+		return "", false, fmt.Errorf("DS internal error (500): %s", p.Detail.Value)
 	default:
 		return "", false, fmt.Errorf("unexpected response type: %T", resp)
 	}
