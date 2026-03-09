@@ -124,17 +124,17 @@ var _ = Describe("IT-AT-300-006: ActionType Audit Events", Label("integration", 
 			Expect(dbAction).To(Equal("create"))
 			Expect(dbOutcome).To(Equal("success"))
 
-			// Verify JSONB payload
+			// Verify JSONB payload (ogen uses snake_case JSON tags)
 			data := readEventData(created.EventID)
 			Expect(data["event_type"]).To(Equal("datastorage.actiontype.created"))
-			Expect(data["actionType"]).To(Equal("RestartPod"))
-			Expect(data["registeredBy"]).To(Equal("admin@kubernaut.ai"))
-			Expect(data["wasReenabled"]).To(BeFalse())
+			Expect(data["action_type"]).To(Equal("RestartPod"))
+			Expect(data["registered_by"]).To(Equal("admin@kubernaut.ai"))
+			Expect(data["was_reenabled"]).To(BeFalse())
 
 			descMap, ok := data["description"].(map[string]interface{})
 			Expect(ok).To(BeTrue(), "description should be a JSON object")
 			Expect(descMap["what"]).To(Equal("Kill and recreate pods"))
-			Expect(descMap["whenToUse"]).To(Equal("Transient runtime issue"))
+			Expect(descMap["when_to_use"]).To(Equal("Transient runtime issue"))
 		})
 	})
 
@@ -165,18 +165,18 @@ var _ = Describe("IT-AT-300-006: ActionType Audit Events", Label("integration", 
 
 			data := readEventData(created.EventID)
 			Expect(data["event_type"]).To(Equal("datastorage.actiontype.updated"))
-			Expect(data["actionType"]).To(Equal("RestartPod"))
-			Expect(data["updatedBy"]).To(Equal("editor@kubernaut.ai"))
+			Expect(data["action_type"]).To(Equal("RestartPod"))
+			Expect(data["updated_by"]).To(Equal("editor@kubernaut.ai"))
 
-			oldDescMap, ok := data["oldDescription"].(map[string]interface{})
+			oldDescMap, ok := data["old_description"].(map[string]interface{})
 			Expect(ok).To(BeTrue())
 			Expect(oldDescMap["what"]).To(Equal("Old description"))
 
-			newDescMap, ok := data["newDescription"].(map[string]interface{})
+			newDescMap, ok := data["new_description"].(map[string]interface{})
 			Expect(ok).To(BeTrue())
 			Expect(newDescMap["what"]).To(Equal("New description"))
 
-			updatedFields, ok := data["updatedFields"].([]interface{})
+			updatedFields, ok := data["updated_fields"].([]interface{})
 			Expect(ok).To(BeTrue())
 			Expect(updatedFields).To(ConsistOf("what", "whenToUse"))
 		})
@@ -203,8 +203,8 @@ var _ = Describe("IT-AT-300-006: ActionType Audit Events", Label("integration", 
 
 			data := readEventData(created.EventID)
 			Expect(data["event_type"]).To(Equal("datastorage.actiontype.disabled"))
-			Expect(data["actionType"]).To(Equal("RestartPod"))
-			Expect(data["disabledBy"]).To(Equal("ops@kubernaut.ai"))
+			Expect(data["action_type"]).To(Equal("RestartPod"))
+			Expect(data["disabled_by"]).To(Equal("ops@kubernaut.ai"))
 		})
 	})
 
@@ -228,10 +228,10 @@ var _ = Describe("IT-AT-300-006: ActionType Audit Events", Label("integration", 
 
 			data := readEventData(created.EventID)
 			Expect(data["event_type"]).To(Equal("datastorage.actiontype.reenabled"))
-			Expect(data["actionType"]).To(Equal("RestartPod"))
-			Expect(data["reenabledBy"]).To(Equal("admin@kubernaut.ai"))
-			Expect(data["previousState"]).To(Equal("disabled"))
-			Expect(data["disabledBy"]).To(Equal("ops@kubernaut.ai"))
+			Expect(data["action_type"]).To(Equal("RestartPod"))
+			Expect(data["reenabled_by"]).To(Equal("admin@kubernaut.ai"))
+			Expect(data["previous_state"]).To(Equal("disabled"))
+			Expect(data["disabled_by"]).To(Equal("ops@kubernaut.ai"))
 		})
 	})
 
@@ -256,11 +256,11 @@ var _ = Describe("IT-AT-300-006: ActionType Audit Events", Label("integration", 
 
 			data := readEventData(created.EventID)
 			Expect(data["event_type"]).To(Equal("datastorage.actiontype.disable_denied"))
-			Expect(data["actionType"]).To(Equal("RestartPod"))
-			Expect(data["requestedBy"]).To(Equal("ops@kubernaut.ai"))
-			Expect(data["dependentWorkflowCount"]).To(BeNumerically("==", 3))
+			Expect(data["action_type"]).To(Equal("RestartPod"))
+			Expect(data["requested_by"]).To(Equal("ops@kubernaut.ai"))
+			Expect(data["dependent_workflow_count"]).To(BeNumerically("==", 3))
 
-			workflows, ok := data["dependentWorkflows"].([]interface{})
+			workflows, ok := data["dependent_workflows"].([]interface{})
 			Expect(ok).To(BeTrue())
 			Expect(workflows).To(ConsistOf("wf-alpha", "wf-beta", "wf-gamma"))
 		})
