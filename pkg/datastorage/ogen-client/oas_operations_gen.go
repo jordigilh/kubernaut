@@ -16,6 +16,7 @@ const (
 	DisableWorkflowOperation               OperationName = "DisableWorkflow"
 	EnableWorkflowOperation                OperationName = "EnableWorkflow"
 	ExportAuditEventsOperation             OperationName = "ExportAuditEvents"
+	GetActionTypeWorkflowCountOperation    OperationName = "GetActionTypeWorkflowCount"
 	GetEffectivenessScoreOperation         OperationName = "GetEffectivenessScore"
 	GetMetricsOperation                    OperationName = "GetMetrics"
 	GetRemediationHistoryContextOperation  OperationName = "GetRemediationHistoryContext"

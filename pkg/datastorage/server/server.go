@@ -533,6 +533,7 @@ func (s *Server) Handler() http.Handler {
 		r.Post("/action-types", s.handler.HandleCreateActionType)
 		r.Patch("/action-types/{name}", s.handler.HandleUpdateActionType)
 		r.Patch("/action-types/{name}/disable", s.handler.HandleDisableActionType)
+		r.Get("/action-types/{name}/workflow-count", s.handler.HandleGetActionTypeWorkflowCount)
 	})
 
 	s.logger.V(1).Info("API v1 routes configured successfully")

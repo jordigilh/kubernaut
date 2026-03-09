@@ -13,47 +13,41 @@
 
 
 import unittest
+import datetime
 
-from datastorage.api.action_type_taxonomy_api_api import ActionTypeTaxonomyAPIApi
+from datastorage.models.action_type_workflow_count_response import ActionTypeWorkflowCountResponse
 
+class TestActionTypeWorkflowCountResponse(unittest.TestCase):
+    """ActionTypeWorkflowCountResponse unit test stubs"""
 
-class TestActionTypeTaxonomyAPIApi(unittest.TestCase):
-    """ActionTypeTaxonomyAPIApi unit test stubs"""
-
-    def setUp(self) -> None:
-        self.api = ActionTypeTaxonomyAPIApi()
-
-    def tearDown(self) -> None:
+    def setUp(self):
         pass
 
-    def test_create_action_type(self) -> None:
-        """Test case for create_action_type
+    def tearDown(self):
+        pass
 
-        Create or re-enable an action type
+    def make_instance(self, include_optional) -> ActionTypeWorkflowCountResponse:
+        """Test ActionTypeWorkflowCountResponse
+            include_option is a boolean, when False only required
+            params are included, when True both required and
+            optional params are included """
+        # uncomment below to create an instance of `ActionTypeWorkflowCountResponse`
         """
-        pass
-
-    def test_disable_action_type(self) -> None:
-        """Test case for disable_action_type
-
-        Soft-disable an action type
+        model = ActionTypeWorkflowCountResponse()
+        if include_optional:
+            return ActionTypeWorkflowCountResponse(
+                count = 56
+            )
+        else:
+            return ActionTypeWorkflowCountResponse(
+                count = 56,
+        )
         """
-        pass
 
-    def test_get_action_type_workflow_count(self) -> None:
-        """Test case for get_action_type_workflow_count
-
-        Get active workflow count for an action type
-        """
-        pass
-
-    def test_update_action_type(self) -> None:
-        """Test case for update_action_type
-
-        Update action type description
-        """
-        pass
-
+    def testActionTypeWorkflowCountResponse(self):
+        """Test ActionTypeWorkflowCountResponse"""
+        # inst_req_only = self.make_instance(include_optional=False)
+        # inst_req_and_optional = self.make_instance(include_optional=True)
 
 if __name__ == '__main__':
     unittest.main()

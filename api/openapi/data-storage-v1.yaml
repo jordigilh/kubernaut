@@ -828,6 +828,33 @@ paths:
               schema:
                 $ref: '#/components/schemas/ActionTypeDisableDeniedResponse'
 
+  /api/v1/action-types/{name}/workflow-count:
+    get:
+      tags:
+        - ActionType Taxonomy API
+      summary: Get active workflow count for an action type
+      description: |
+        Returns the number of active RemediationWorkflows referencing this action type.
+        Used by the RW admission webhook to refresh the ActionType CRD's
+        status.activeWorkflowCount after RW CREATE/DELETE (Phase 3c cross-update).
+
+        **Business Requirement**: BR-WORKFLOW-007 (ActionType CRD lifecycle)
+      operationId: getActionTypeWorkflowCount
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "PascalCase action type name (e.g., RestartPod)"
+      responses:
+        '200':
+          description: Active workflow count for the action type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionTypeWorkflowCountResponse'
+
   /api/v1/audit/events:
     post:
       tags:
@@ -5719,4 +5746,14 @@ components:
           items:
             type: string
           description: "Names of dependent workflows"
+
+    ActionTypeWorkflowCountResponse:
+      type: object
+      description: "Response containing the count of active workflows referencing an action type"
+      required:
+        - count
+      properties:
+        count:
+          type: integer
+          description: "Number of active RemediationWorkflows referencing this action type"
 

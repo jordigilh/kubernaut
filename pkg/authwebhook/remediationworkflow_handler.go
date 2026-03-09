@@ -22,10 +22,12 @@ import (
 	"fmt"
 	"time"
 
+	atv1alpha1 "github.com/jordigilh/kubernaut/api/actiontype/v1alpha1"
 	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	admissionv1 "k8s.io/api/admission/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -38,6 +40,13 @@ import (
 type WorkflowCatalogClient interface {
 	CreateWorkflowInline(ctx context.Context, content, source, registeredBy string) (*WorkflowRegistrationResult, error)
 	DisableWorkflow(ctx context.Context, workflowID, reason, updatedBy string) error
+}
+
+// ActionTypeWorkflowCounter retrieves the authoritative active workflow count from DS.
+// Used for best-effort cross-update of ActionType CRD status.activeWorkflowCount
+// after RW CREATE/DELETE (Phase 3c, BR-WORKFLOW-007).
+type ActionTypeWorkflowCounter interface {
+	GetActiveWorkflowCount(ctx context.Context, actionType string) (int, error)
 }
 
 // WorkflowRegistrationResult holds the DS response after registering or re-enabling a workflow.
@@ -63,6 +72,18 @@ type RemediationWorkflowHandler struct {
 	auditStore    audit.AuditStore
 	k8sClient     client.Client
 	authenticator *Authenticator
+	atCounter     ActionTypeWorkflowCounter // nullable; nil skips cross-update
+}
+
+// RWHandlerOption configures optional dependencies on RemediationWorkflowHandler.
+type RWHandlerOption func(*RemediationWorkflowHandler)
+
+// WithActionTypeWorkflowCounter enables best-effort cross-update of ActionType
+// CRD status.activeWorkflowCount after RW CREATE/DELETE (Phase 3c, BR-WORKFLOW-007).
+func WithActionTypeWorkflowCounter(counter ActionTypeWorkflowCounter) RWHandlerOption {
+	return func(h *RemediationWorkflowHandler) {
+		h.atCounter = counter
+	}
 }
 
 // NewRemediationWorkflowHandler creates a handler for RemediationWorkflow admission.
@@ -70,13 +91,18 @@ func NewRemediationWorkflowHandler(
 	dsClient WorkflowCatalogClient,
 	auditStore audit.AuditStore,
 	k8sClient client.Client,
+	opts ...RWHandlerOption,
 ) *RemediationWorkflowHandler {
-	return &RemediationWorkflowHandler{
+	h := &RemediationWorkflowHandler{
 		dsClient:      dsClient,
 		auditStore:    auditStore,
 		k8sClient:     k8sClient,
 		authenticator: NewAuthenticator(),
 	}
+	for _, opt := range opts {
+		opt(h)
+	}
+	return h
 }
 
 // Handle processes admission requests for RemediationWorkflow CRD.
@@ -148,6 +174,9 @@ func (h *RemediationWorkflowHandler) handleCreate(ctx context.Context, req admis
 	// the spec stored by the API server.
 	go h.updateCRDStatus(req.Namespace, req.Name, authCtx.Username, result)
 
+	// Phase 3c: best-effort cross-update of ActionType CRD status.activeWorkflowCount
+	go h.refreshActionTypeWorkflowCount(rw.Spec.ActionType, req.Namespace)
+
 	return admission.Allowed("workflow registered in catalog")
 }
 
@@ -191,6 +220,9 @@ func (h *RemediationWorkflowHandler) handleDelete(ctx context.Context, req admis
 
 	// Emit DELETE audit event
 	h.emitAdmitAudit(ctx, req, EventTypeRWAdmittedDelete, workflowID, rw.Name)
+
+	// Phase 3c: best-effort cross-update of ActionType CRD status.activeWorkflowCount
+	go h.refreshActionTypeWorkflowCount(rw.Spec.ActionType, req.Namespace)
 
 	return admission.Allowed("workflow disabled in catalog")
 }
@@ -257,6 +289,62 @@ func (h *RemediationWorkflowHandler) updateCRDStatus(namespace, name, registered
 		"catalog_status", result.Status,
 		"previously_existed", result.PreviouslyExisted,
 	)
+}
+
+// refreshActionTypeWorkflowCount is a best-effort goroutine that queries DS for
+// the current active workflow count for the given actionType, then patches the
+// corresponding ActionType CRD's status.activeWorkflowCount. Errors are logged
+// but never propagated — the RW admission result is already decided.
+//
+// Phase 3c (BR-WORKFLOW-007): keeps the kubectl get at WORKFLOWS column up-to-date.
+func (h *RemediationWorkflowHandler) refreshActionTypeWorkflowCount(actionType, namespace string) {
+	logger := ctrl.Log.WithName("rw-webhook").WithValues("operation", "at-cross-update", "actionType", actionType)
+
+	if h.atCounter == nil || h.k8sClient == nil {
+		logger.V(1).Info("Cross-update skipped: atCounter or k8sClient not configured")
+		return
+	}
+
+	if actionType == "" {
+		logger.V(1).Info("Cross-update skipped: empty actionType")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	count, err := h.atCounter.GetActiveWorkflowCount(ctx, actionType)
+	if err != nil {
+		logger.Error(err, "Failed to fetch active workflow count from DS")
+		return
+	}
+
+	// Find the ActionType CRD using the selectable field .spec.name
+	atList := &atv1alpha1.ActionTypeList{}
+	if err := h.k8sClient.List(ctx, atList,
+		client.InNamespace(namespace),
+		client.MatchingFieldsSelector{Selector: fields.OneTermEqualSelector(".spec.name", actionType)},
+	); err != nil {
+		logger.Error(err, "Failed to list ActionType CRDs")
+		return
+	}
+
+	if len(atList.Items) == 0 {
+		logger.V(1).Info("No ActionType CRD found — cross-update skipped (may not be created yet)")
+		return
+	}
+
+	for i := range atList.Items {
+		at := &atList.Items[i]
+		at.Status.ActiveWorkflowCount = count
+		if err := h.k8sClient.Status().Update(ctx, at); err != nil {
+			logger.Error(err, "Failed to patch ActionType CRD status.activeWorkflowCount",
+				"crd", at.Name, "count", count)
+		} else {
+			logger.Info("ActionType CRD status.activeWorkflowCount updated",
+				"crd", at.Name, "count", count)
+		}
+	}
 }
 
 // marshalCleanCRDContent produces a JSON representation of the CRD that only

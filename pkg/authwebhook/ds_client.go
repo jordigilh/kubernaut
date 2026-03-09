@@ -230,3 +230,13 @@ func (a *DSClientAdapter) DisableActionType(ctx context.Context, name string, di
 		return nil, fmt.Errorf("unexpected response type from DisableActionType: %T", res)
 	}
 }
+
+// GetActiveWorkflowCount returns the number of active workflows referencing the given action type.
+// Used by the RW handler for best-effort cross-update of ActionType CRD status.activeWorkflowCount.
+func (a *DSClientAdapter) GetActiveWorkflowCount(ctx context.Context, actionType string) (int, error) {
+	res, err := a.client.GetActionTypeWorkflowCount(ctx, ogenclient.GetActionTypeWorkflowCountParams{Name: actionType})
+	if err != nil {
+		return 0, fmt.Errorf("data storage GetActionTypeWorkflowCount failed: %w", err)
+	}
+	return res.Count, nil
+}

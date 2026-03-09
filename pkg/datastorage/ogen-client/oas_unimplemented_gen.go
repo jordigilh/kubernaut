@@ -162,6 +162,18 @@ func (UnimplementedHandler) ExportAuditEvents(ctx context.Context, params Export
 	return r, ht.ErrNotImplemented
 }
 
+// GetActionTypeWorkflowCount implements getActionTypeWorkflowCount operation.
+//
+// Returns the number of active RemediationWorkflows referencing this action type.
+// Used by the RW admission webhook to refresh the ActionType CRD's
+// status.activeWorkflowCount after RW CREATE/DELETE (Phase 3c cross-update).
+// **Business Requirement**: BR-WORKFLOW-007 (ActionType CRD lifecycle).
+//
+// GET /api/v1/action-types/{name}/workflow-count
+func (UnimplementedHandler) GetActionTypeWorkflowCount(ctx context.Context, params GetActionTypeWorkflowCountParams) (r *ActionTypeWorkflowCountResponse, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // GetEffectivenessScore implements getEffectivenessScore operation.
 //
 // Computes the weighted effectiveness score for a given remediation lifecycle

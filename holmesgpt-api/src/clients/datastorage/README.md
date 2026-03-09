@@ -144,6 +144,7 @@ Class | Method | HTTP request | Description
 ------------ | ------------- | ------------- | -------------
 *ActionTypeTaxonomyAPIApi* | [**create_action_type**](docs/ActionTypeTaxonomyAPIApi.md#create_action_type) | **POST** /api/v1/action-types | Create or re-enable an action type
 *ActionTypeTaxonomyAPIApi* | [**disable_action_type**](docs/ActionTypeTaxonomyAPIApi.md#disable_action_type) | **PATCH** /api/v1/action-types/{name}/disable | Soft-disable an action type
+*ActionTypeTaxonomyAPIApi* | [**get_action_type_workflow_count**](docs/ActionTypeTaxonomyAPIApi.md#get_action_type_workflow_count) | **GET** /api/v1/action-types/{name}/workflow-count | Get active workflow count for an action type
 *ActionTypeTaxonomyAPIApi* | [**update_action_type**](docs/ActionTypeTaxonomyAPIApi.md#update_action_type) | **PATCH** /api/v1/action-types/{name} | Update action type description
 *AuditReconstructionAPIApi* | [**reconstruct_remediation_request**](docs/AuditReconstructionAPIApi.md#reconstruct_remediation_request) | **POST** /api/v1/audit/remediation-requests/{correlation_id}/reconstruct | Reconstruct RemediationRequest from audit trail
 *AuditWriteAPIApi* | [**create_audit_event**](docs/AuditWriteAPIApi.md#create_audit_event) | **POST** /api/v1/audit/events | Create unified audit event
@@ -191,6 +192,7 @@ Class | Method | HTTP request | Description
  - [ActionTypeListResponse](docs/ActionTypeListResponse.md)
  - [ActionTypeUpdateRequest](docs/ActionTypeUpdateRequest.md)
  - [ActionTypeUpdateResponse](docs/ActionTypeUpdateResponse.md)
+ - [ActionTypeWorkflowCountResponse](docs/ActionTypeWorkflowCountResponse.md)
  - [AsyncAcceptanceResponse](docs/AsyncAcceptanceResponse.md)
  - [AuditEvent](docs/AuditEvent.md)
  - [AuditEventRequest](docs/AuditEventRequest.md)

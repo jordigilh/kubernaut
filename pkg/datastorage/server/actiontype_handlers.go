@@ -285,3 +285,38 @@ func (h *Handler) HandleDisableActionType(w http.ResponseWriter, r *http.Request
 		"disabled_by", req.DisabledBy,
 	)
 }
+
+// HandleGetActionTypeWorkflowCount handles GET /api/v1/action-types/{name}/workflow-count.
+// BR-WORKFLOW-007: Returns the number of active workflows referencing this action type.
+func (h *Handler) HandleGetActionTypeWorkflowCount(w http.ResponseWriter, r *http.Request) {
+	if h.actionTypeRepo == nil {
+		response.WriteRFC7807Error(w, http.StatusInternalServerError, "not-configured",
+			"Service Not Configured", "ActionType repository not initialized", h.logger)
+		return
+	}
+
+	name := chi.URLParam(r, "name")
+	if name == "" {
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "validation-error",
+			"Validation Error", "action type name is required in URL path", h.logger)
+		return
+	}
+
+	count, _, err := h.actionTypeRepo.CountActiveWorkflows(r.Context(), name)
+	if err != nil {
+		h.logger.Error(err, "Failed to count active workflows", "name", name)
+		response.WriteRFC7807Error(w, http.StatusInternalServerError, "database-error",
+			"Database Error", fmt.Sprintf("Failed to count active workflows: %v", err), h.logger)
+		return
+	}
+
+	type countResponse struct {
+		Count int `json:"count"`
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(countResponse{Count: count}); err != nil {
+		h.logger.Error(err, "Failed to encode workflow count response")
+	}
+}

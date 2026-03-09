@@ -134,26 +134,62 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 								return
 							}
 							switch elem[0] {
-							case '/': // Prefix: "/disable"
+							case '/': // Prefix: "/"
 
-								if l := len("/disable"); len(elem) >= l && elem[0:l] == "/disable" {
+								if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
 									elem = elem[l:]
 								} else {
 									break
 								}
 
 								if len(elem) == 0 {
-									// Leaf node.
-									switch r.Method {
-									case "PATCH":
-										s.handleDisableActionTypeRequest([1]string{
-											args[0],
-										}, elemIsEscaped, w, r)
-									default:
-										s.notAllowed(w, r, "PATCH")
+									break
+								}
+								switch elem[0] {
+								case 'd': // Prefix: "disable"
+
+									if l := len("disable"); len(elem) >= l && elem[0:l] == "disable" {
+										elem = elem[l:]
+									} else {
+										break
 									}
 
-									return
+									if len(elem) == 0 {
+										// Leaf node.
+										switch r.Method {
+										case "PATCH":
+											s.handleDisableActionTypeRequest([1]string{
+												args[0],
+											}, elemIsEscaped, w, r)
+										default:
+											s.notAllowed(w, r, "PATCH")
+										}
+
+										return
+									}
+
+								case 'w': // Prefix: "workflow-count"
+
+									if l := len("workflow-count"); len(elem) >= l && elem[0:l] == "workflow-count" {
+										elem = elem[l:]
+									} else {
+										break
+									}
+
+									if len(elem) == 0 {
+										// Leaf node.
+										switch r.Method {
+										case "GET":
+											s.handleGetActionTypeWorkflowCountRequest([1]string{
+												args[0],
+											}, elemIsEscaped, w, r)
+										default:
+											s.notAllowed(w, r, "GET")
+										}
+
+										return
+									}
+
 								}
 
 							}
@@ -912,29 +948,68 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 								}
 							}
 							switch elem[0] {
-							case '/': // Prefix: "/disable"
+							case '/': // Prefix: "/"
 
-								if l := len("/disable"); len(elem) >= l && elem[0:l] == "/disable" {
+								if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
 									elem = elem[l:]
 								} else {
 									break
 								}
 
 								if len(elem) == 0 {
-									// Leaf node.
-									switch method {
-									case "PATCH":
-										r.name = DisableActionTypeOperation
-										r.summary = "Soft-disable an action type"
-										r.operationID = "disableActionType"
-										r.operationGroup = ""
-										r.pathPattern = "/api/v1/action-types/{name}/disable"
-										r.args = args
-										r.count = 1
-										return r, true
-									default:
-										return
+									break
+								}
+								switch elem[0] {
+								case 'd': // Prefix: "disable"
+
+									if l := len("disable"); len(elem) >= l && elem[0:l] == "disable" {
+										elem = elem[l:]
+									} else {
+										break
 									}
+
+									if len(elem) == 0 {
+										// Leaf node.
+										switch method {
+										case "PATCH":
+											r.name = DisableActionTypeOperation
+											r.summary = "Soft-disable an action type"
+											r.operationID = "disableActionType"
+											r.operationGroup = ""
+											r.pathPattern = "/api/v1/action-types/{name}/disable"
+											r.args = args
+											r.count = 1
+											return r, true
+										default:
+											return
+										}
+									}
+
+								case 'w': // Prefix: "workflow-count"
+
+									if l := len("workflow-count"); len(elem) >= l && elem[0:l] == "workflow-count" {
+										elem = elem[l:]
+									} else {
+										break
+									}
+
+									if len(elem) == 0 {
+										// Leaf node.
+										switch method {
+										case "GET":
+											r.name = GetActionTypeWorkflowCountOperation
+											r.summary = "Get active workflow count for an action type"
+											r.operationID = "getActionTypeWorkflowCount"
+											r.operationGroup = ""
+											r.pathPattern = "/api/v1/action-types/{name}/workflow-count"
+											r.args = args
+											r.count = 1
+											return r, true
+										default:
+											return
+										}
+									}
+
 								}
 
 							}

@@ -863,6 +863,72 @@ func decodeExportAuditEventsParams(args [0]string, argsEscaped bool, r *http.Req
 	return params, nil
 }
 
+// GetActionTypeWorkflowCountParams is parameters of getActionTypeWorkflowCount operation.
+type GetActionTypeWorkflowCountParams struct {
+	// PascalCase action type name (e.g., RestartPod).
+	Name string
+}
+
+func unpackGetActionTypeWorkflowCountParams(packed middleware.Parameters) (params GetActionTypeWorkflowCountParams) {
+	{
+		key := middleware.ParameterKey{
+			Name: "name",
+			In:   "path",
+		}
+		params.Name = packed[key].(string)
+	}
+	return params
+}
+
+func decodeGetActionTypeWorkflowCountParams(args [1]string, argsEscaped bool, r *http.Request) (params GetActionTypeWorkflowCountParams, _ error) {
+	// Decode path: name.
+	if err := func() error {
+		param := args[0]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[0])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "name",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.Name = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "name",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	return params, nil
+}
+
 // GetEffectivenessScoreParams is parameters of getEffectivenessScore operation.
 type GetEffectivenessScoreParams struct {
 	// The correlation ID (typically RemediationRequest name) that links all

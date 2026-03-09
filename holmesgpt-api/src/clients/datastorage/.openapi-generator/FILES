@@ -30,6 +30,7 @@ datastorage/models/action_type_entry.py
 datastorage/models/action_type_list_response.py
 datastorage/models/action_type_update_request.py
 datastorage/models/action_type_update_response.py
+datastorage/models/action_type_workflow_count_response.py
 datastorage/models/ai_agent_response_payload.py
 datastorage/models/ai_analysis_ai_agent_call_payload.py
 datastorage/models/ai_analysis_approval_decision_payload.py
@@ -147,6 +148,7 @@ docs/ActionTypeListResponse.md
 docs/ActionTypeTaxonomyAPIApi.md
 docs/ActionTypeUpdateRequest.md
 docs/ActionTypeUpdateResponse.md
+docs/ActionTypeWorkflowCountResponse.md
 docs/AsyncAcceptanceResponse.md
 docs/AuditEvent.md
 docs/AuditEventRequest.md
@@ -263,6 +265,7 @@ test/test_action_type_list_response.py
 test/test_action_type_taxonomy_api_api.py
 test/test_action_type_update_request.py
 test/test_action_type_update_response.py
+test/test_action_type_workflow_count_response.py
 test/test_ai_agent_response_payload.py
 test/test_ai_analysis_ai_agent_call_payload.py
 test/test_ai_analysis_approval_decision_payload.py

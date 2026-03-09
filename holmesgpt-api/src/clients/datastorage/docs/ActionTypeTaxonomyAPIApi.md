@@ -6,6 +6,7 @@ Method | HTTP request | Description
 ------------- | ------------- | -------------
 [**create_action_type**](ActionTypeTaxonomyAPIApi.md#create_action_type) | **POST** /api/v1/action-types | Create or re-enable an action type
 [**disable_action_type**](ActionTypeTaxonomyAPIApi.md#disable_action_type) | **PATCH** /api/v1/action-types/{name}/disable | Soft-disable an action type
+[**get_action_type_workflow_count**](ActionTypeTaxonomyAPIApi.md#get_action_type_workflow_count) | **GET** /api/v1/action-types/{name}/workflow-count | Get active workflow count for an action type
 [**update_action_type**](ActionTypeTaxonomyAPIApi.md#update_action_type) | **PATCH** /api/v1/action-types/{name} | Update action type description
 
 
@@ -153,6 +154,76 @@ No authorization required
 |-------------|-------------|------------------|
 **200** | Action type disabled successfully |  -  |
 **409** | Cannot disable — active workflows depend on this action type |  -  |
+
+[[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
+
+# **get_action_type_workflow_count**
+> ActionTypeWorkflowCountResponse get_action_type_workflow_count(name)
+
+Get active workflow count for an action type
+
+Returns the number of active RemediationWorkflows referencing this action type. Used by the RW admission webhook to refresh the ActionType CRD's status.activeWorkflowCount after RW CREATE/DELETE (Phase 3c cross-update).  **Business Requirement**: BR-WORKFLOW-007 (ActionType CRD lifecycle) 
+
+### Example
+
+
+```python
+import time
+import os
+import datastorage
+from datastorage.models.action_type_workflow_count_response import ActionTypeWorkflowCountResponse
+from datastorage.rest import ApiException
+from pprint import pprint
+
+# Defining the host is optional and defaults to http://localhost:8080
+# See configuration.py for a list of all supported configuration parameters.
+configuration = datastorage.Configuration(
+    host = "http://localhost:8080"
+)
+
+
+# Enter a context with an instance of the API client
+with datastorage.ApiClient(configuration) as api_client:
+    # Create an instance of the API class
+    api_instance = datastorage.ActionTypeTaxonomyAPIApi(api_client)
+    name = 'name_example' # str | PascalCase action type name (e.g., RestartPod)
+
+    try:
+        # Get active workflow count for an action type
+        api_response = api_instance.get_action_type_workflow_count(name)
+        print("The response of ActionTypeTaxonomyAPIApi->get_action_type_workflow_count:\n")
+        pprint(api_response)
+    except Exception as e:
+        print("Exception when calling ActionTypeTaxonomyAPIApi->get_action_type_workflow_count: %s\n" % e)
+```
+
+
+
+### Parameters
+
+
+Name | Type | Description  | Notes
+------------- | ------------- | ------------- | -------------
+ **name** | **str**| PascalCase action type name (e.g., RestartPod) | 
+
+### Return type
+
+[**ActionTypeWorkflowCountResponse**](ActionTypeWorkflowCountResponse.md)
+
+### Authorization
+
+No authorization required
+
+### HTTP request headers
+
+ - **Content-Type**: Not defined
+ - **Accept**: application/json
+
+### HTTP response details
+
+| Status code | Description | Response headers |
+|-------------|-------------|------------------|
+**200** | Active workflow count for the action type |  -  |
 
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
 

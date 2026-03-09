@@ -192,7 +192,10 @@ func main() {
 		setupLog.Error(err, "failed to create DS client adapter for RemediationWorkflow handler")
 		os.Exit(1)
 	}
-	rwHandler := authwebhook.NewRemediationWorkflowHandler(rwDSClient, auditStore, mgr.GetClient())
+	rwHandler := authwebhook.NewRemediationWorkflowHandler(
+		rwDSClient, auditStore, mgr.GetClient(),
+		authwebhook.WithActionTypeWorkflowCounter(rwDSClient),
+	)
 	webhookServer.Register("/validate-remediationworkflow", &webhook.Admission{Handler: rwHandler})
 	setupLog.Info("Registered RemediationWorkflow webhook handler with DS client and audit store")
 

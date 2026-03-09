@@ -1089,6 +1089,23 @@ func (s *ActionTypeUpdateResponse) SetUpdatedFields(val []string) {
 
 func (*ActionTypeUpdateResponse) updateActionTypeRes() {}
 
+// Response containing the count of active workflows referencing an action type.
+// Ref: #/components/schemas/ActionTypeWorkflowCountResponse
+type ActionTypeWorkflowCountResponse struct {
+	// Number of active RemediationWorkflows referencing this action type.
+	Count int `json:"count"`
+}
+
+// GetCount returns the value of Count.
+func (s *ActionTypeWorkflowCountResponse) GetCount() int {
+	return s.Count
+}
+
+// SetCount sets the value of Count.
+func (s *ActionTypeWorkflowCountResponse) SetCount(val int) {
+	s.Count = val
+}
+
 // Response when audit event is queued for async processing (202 Accepted).
 // Ref: #/components/schemas/AsyncAcceptanceResponse
 type AsyncAcceptanceResponse struct {

@@ -56,6 +56,7 @@ from datastorage.models.action_type_entry import ActionTypeEntry
 from datastorage.models.action_type_list_response import ActionTypeListResponse
 from datastorage.models.action_type_update_request import ActionTypeUpdateRequest
 from datastorage.models.action_type_update_response import ActionTypeUpdateResponse
+from datastorage.models.action_type_workflow_count_response import ActionTypeWorkflowCountResponse
 from datastorage.models.async_acceptance_response import AsyncAcceptanceResponse
 from datastorage.models.audit_event import AuditEvent
 from datastorage.models.audit_event_request import AuditEventRequest
