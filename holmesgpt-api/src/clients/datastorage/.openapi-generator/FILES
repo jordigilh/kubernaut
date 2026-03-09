@@ -91,6 +91,7 @@ datastorage/models/remediation_metric_deltas.py
 datastorage/models/remediation_orchestrator_audit_payload.py
 datastorage/models/remediation_request_webhook_audit_payload.py
 datastorage/models/remediation_workflow.py
+datastorage/models/remediation_workflow_webhook_audit_payload.py
 datastorage/models/results_metadata.py
 datastorage/models/rfc7807_problem.py
 datastorage/models/scoring_v1_audit.py
@@ -198,6 +199,7 @@ docs/RemediationMetricDeltas.md
 docs/RemediationOrchestratorAuditPayload.md
 docs/RemediationRequestWebhookAuditPayload.md
 docs/RemediationWorkflow.md
+docs/RemediationWorkflowWebhookAuditPayload.md
 docs/ResultsMetadata.md
 docs/ScoringV1Audit.md
 docs/SearchExecutionMetadata.md
@@ -310,6 +312,7 @@ test/test_remediation_metric_deltas.py
 test/test_remediation_orchestrator_audit_payload.py
 test/test_remediation_request_webhook_audit_payload.py
 test/test_remediation_workflow.py
+test/test_remediation_workflow_webhook_audit_payload.py
 test/test_results_metadata.py
 test/test_rfc7807_problem.py
 test/test_scoring_v1_audit.py

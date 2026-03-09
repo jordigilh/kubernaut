@@ -31,7 +31,7 @@ Name | Type | Description | Notes
 **transition_reason** | **str** | Reason for the transition | [optional] 
 **rar_name** | **str** | Name of the RemediationApprovalRequest | [optional] 
 **required_by** | **datetime** | Approval deadline (RFC3339) | [optional] 
-**workflow_id** | **str** | Workflow ID being validated | 
+**workflow_id** | **str** | DataStorage catalog UUID (set after successful registration) | 
 **confidence_str** | **str** | Workflow selection confidence as string | [optional] 
 **decision** | **str** | Decision made | 
 **approved_by** | **str** | User who approved the request | [optional] 
@@ -98,8 +98,8 @@ Name | Type | Description | Notes
 **cancelled_by** | **str** | Username who cancelled the notification | [optional] 
 **user_uid** | **str** | UID of the user who performed the action | [optional] 
 **user_groups** | **List[str]** | Groups of the user who performed the action | [optional] 
-**action** | **str** | Webhook action performed | [optional] 
-**workflow_name** | **str** | Name of workflow being validated | 
+**action** | **str** | Admission action performed | 
+**workflow_name** | **str** | Name of the RemediationWorkflow CRD (metadata.name) | 
 **clear_reason** | **str** | Reason for clearing the block | 
 **cleared_at** | **datetime** | When the block was cleared | 
 **previous_state** | **str** | State before unblocking (always \&quot;Blocked\&quot;) | 
@@ -169,6 +169,8 @@ Name | Type | Description | Notes
 **modified_at** | **datetime** | When the modification occurred | 
 **old_timeout_config** | [**TimeoutConfig**](TimeoutConfig.md) |  | [optional] 
 **new_timeout_config** | [**TimeoutConfig**](TimeoutConfig.md) |  | [optional] 
+**catalog_status** | **str** | Catalog registration status (active, disabled, etc.) | [optional] 
+**denial_reason** | **str** | Reason for denial (only set when action&#x3D;denied) | [optional] 
 **correlation_id** | **str** | Correlation ID (EA spec.correlationID, matches parent RR name) | 
 **component** | **str** | Assessment component that produced this event | 
 **assessed** | **bool** | Whether the component was successfully assessed | [optional] 

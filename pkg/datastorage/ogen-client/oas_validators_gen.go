@@ -536,6 +536,11 @@ func (s AuditEventEventData) Validate() error {
 			return err
 		}
 		return nil
+	case AuditEventEventDataRemediationworkflowAdmittedCreateAuditEventEventData, AuditEventEventDataRemediationworkflowAdmittedDeleteAuditEventEventData, AuditEventEventDataRemediationworkflowAdmittedDeniedAuditEventEventData:
+		if err := s.RemediationWorkflowWebhookAuditPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
 	case AuditEventEventDataEffectivenessAlertAssessedAuditEventEventData, AuditEventEventDataEffectivenessAssessmentCompletedAuditEventEventData, AuditEventEventDataEffectivenessAssessmentScheduledAuditEventEventData, AuditEventEventDataEffectivenessHashComputedAuditEventEventData, AuditEventEventDataEffectivenessHealthAssessedAuditEventEventData, AuditEventEventDataEffectivenessMetricsAssessedAuditEventEventData:
 		if err := s.EffectivenessAssessmentAuditPayload.Validate(); err != nil {
 			return err
@@ -830,6 +835,11 @@ func (s AuditEventRequestEventData) Validate() error {
 		return nil
 	case RemediationRequestWebhookAuditPayloadAuditEventRequestEventData:
 		if err := s.RemediationRequestWebhookAuditPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case AuditEventRequestEventDataRemediationworkflowAdmittedCreateAuditEventRequestEventData, AuditEventRequestEventDataRemediationworkflowAdmittedDeleteAuditEventRequestEventData, AuditEventRequestEventDataRemediationworkflowAdmittedDeniedAuditEventRequestEventData:
+		if err := s.RemediationWorkflowWebhookAuditPayload.Validate(); err != nil {
 			return err
 		}
 		return nil
@@ -4888,6 +4898,66 @@ func (s RemediationWorkflowStatus) Validate() error {
 	case "deprecated":
 		return nil
 	case "archived":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *RemediationWorkflowWebhookAuditPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if err := s.Action.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "action",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s RemediationWorkflowWebhookAuditPayloadAction) Validate() error {
+	switch s {
+	case "create":
+		return nil
+	case "delete":
+		return nil
+	case "denied":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s RemediationWorkflowWebhookAuditPayloadEventType) Validate() error {
+	switch s {
+	case "remediationworkflow.admitted.create":
+		return nil
+	case "remediationworkflow.admitted.delete":
+		return nil
+	case "remediationworkflow.admitted.denied":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)

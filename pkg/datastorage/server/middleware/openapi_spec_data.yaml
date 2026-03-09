@@ -2301,6 +2301,7 @@ components:
             - $ref: '#/components/schemas/LLMToolCallPayload'
             - $ref: '#/components/schemas/WorkflowValidationPayload'
             - $ref: '#/components/schemas/RemediationRequestWebhookAuditPayload'
+            - $ref: '#/components/schemas/RemediationWorkflowWebhookAuditPayload'
             - $ref: '#/components/schemas/EffectivenessAssessmentAuditPayload'
           discriminator:
             propertyName: event_type
@@ -2342,6 +2343,9 @@ components:
               'workflowexecution.block.cleared': '#/components/schemas/WorkflowExecutionWebhookAuditPayload'
               'webhook.remediationapprovalrequest.decided': '#/components/schemas/RemediationApprovalAuditPayload'
               'webhook.remediationrequest.timeout_modified': '#/components/schemas/RemediationRequestWebhookAuditPayload'
+              'remediationworkflow.admitted.create': '#/components/schemas/RemediationWorkflowWebhookAuditPayload'
+              'remediationworkflow.admitted.delete': '#/components/schemas/RemediationWorkflowWebhookAuditPayload'
+              'remediationworkflow.admitted.denied': '#/components/schemas/RemediationWorkflowWebhookAuditPayload'
               'workflow.catalog.actions_listed': '#/components/schemas/WorkflowDiscoveryAuditPayload'
               'workflow.catalog.workflows_listed': '#/components/schemas/WorkflowDiscoveryAuditPayload'
               'workflow.catalog.workflow_retrieved': '#/components/schemas/WorkflowDiscoveryAuditPayload'
@@ -4045,6 +4049,42 @@ components:
         new_timeout_config:
           $ref: '#/components/schemas/TimeoutConfig'
           description: New timeout configuration after operator modification
+
+    RemediationWorkflowWebhookAuditPayload:
+      type: object
+      required: [event_type, workflow_name, action]
+      description: |
+        Audit payload for RemediationWorkflow CRD admission events (ADR-058).
+        Emitted by the authwebhook when a RemediationWorkflow CRD is created, deleted, or denied.
+      properties:
+        event_type:
+          type: string
+          enum:
+            - 'remediationworkflow.admitted.create'
+            - 'remediationworkflow.admitted.delete'
+            - 'remediationworkflow.admitted.denied'
+          description: Event type for discriminator (matches parent event_type)
+        workflow_name:
+          type: string
+          description: Name of the RemediationWorkflow CRD (metadata.name)
+          example: "crashloop-rollback-v1"
+        action:
+          type: string
+          enum: [create, delete, denied]
+          description: Admission action performed
+          example: "create"
+        workflow_id:
+          type: string
+          description: DataStorage catalog UUID (set after successful registration)
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        catalog_status:
+          type: string
+          description: Catalog registration status (active, disabled, etc.)
+          example: "active"
+        denial_reason:
+          type: string
+          description: Reason for denial (only set when action=denied)
+          example: "data storage registration failed"
 
     # ========================================
     # Effectiveness Monitor Audit Payloads

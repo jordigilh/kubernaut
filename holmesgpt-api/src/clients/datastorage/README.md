@@ -244,6 +244,7 @@ Class | Method | HTTP request | Description
  - [RemediationOrchestratorAuditPayload](docs/RemediationOrchestratorAuditPayload.md)
  - [RemediationRequestWebhookAuditPayload](docs/RemediationRequestWebhookAuditPayload.md)
  - [RemediationWorkflow](docs/RemediationWorkflow.md)
+ - [RemediationWorkflowWebhookAuditPayload](docs/RemediationWorkflowWebhookAuditPayload.md)
  - [ResultsMetadata](docs/ResultsMetadata.md)
  - [ScoringV1Audit](docs/ScoringV1Audit.md)
  - [SearchExecutionMetadata](docs/SearchExecutionMetadata.md)

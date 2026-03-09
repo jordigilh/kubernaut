@@ -1107,6 +1107,7 @@ type AuditEventEventData struct {
 	LLMToolCallPayload                     LLMToolCallPayload
 	WorkflowValidationPayload              WorkflowValidationPayload
 	RemediationRequestWebhookAuditPayload  RemediationRequestWebhookAuditPayload
+	RemediationWorkflowWebhookAuditPayload RemediationWorkflowWebhookAuditPayload
 	EffectivenessAssessmentAuditPayload    EffectivenessAssessmentAuditPayload
 }
 
@@ -1176,6 +1177,9 @@ const (
 	LLMToolCallPayloadAuditEventEventData                                            AuditEventEventDataType = "aiagent.llm.tool_call"
 	WorkflowValidationPayloadAuditEventEventData                                     AuditEventEventDataType = "aiagent.workflow.validation_attempt"
 	RemediationRequestWebhookAuditPayloadAuditEventEventData                         AuditEventEventDataType = "webhook.remediationrequest.timeout_modified"
+	AuditEventEventDataRemediationworkflowAdmittedCreateAuditEventEventData          AuditEventEventDataType = "remediationworkflow.admitted.create"
+	AuditEventEventDataRemediationworkflowAdmittedDeleteAuditEventEventData          AuditEventEventDataType = "remediationworkflow.admitted.delete"
+	AuditEventEventDataRemediationworkflowAdmittedDeniedAuditEventEventData          AuditEventEventDataType = "remediationworkflow.admitted.denied"
 	AuditEventEventDataEffectivenessAlertAssessedAuditEventEventData                 AuditEventEventDataType = "effectiveness.alert.assessed"
 	AuditEventEventDataEffectivenessAssessmentCompletedAuditEventEventData           AuditEventEventDataType = "effectiveness.assessment.completed"
 	AuditEventEventDataEffectivenessAssessmentScheduledAuditEventEventData           AuditEventEventDataType = "effectiveness.assessment.scheduled"
@@ -1357,6 +1361,16 @@ func (s AuditEventEventData) IsWorkflowValidationPayload() bool {
 // IsRemediationRequestWebhookAuditPayload reports whether AuditEventEventData is RemediationRequestWebhookAuditPayload.
 func (s AuditEventEventData) IsRemediationRequestWebhookAuditPayload() bool {
 	return s.Type == RemediationRequestWebhookAuditPayloadAuditEventEventData
+}
+
+// IsRemediationWorkflowWebhookAuditPayload reports whether AuditEventEventData is RemediationWorkflowWebhookAuditPayload.
+func (s AuditEventEventData) IsRemediationWorkflowWebhookAuditPayload() bool {
+	switch s.Type {
+	case AuditEventEventDataRemediationworkflowAdmittedCreateAuditEventEventData, AuditEventEventDataRemediationworkflowAdmittedDeleteAuditEventEventData, AuditEventEventDataRemediationworkflowAdmittedDeniedAuditEventEventData:
+		return true
+	default:
+		return false
+	}
 }
 
 // IsEffectivenessAssessmentAuditPayload reports whether AuditEventEventData is EffectivenessAssessmentAuditPayload.
@@ -2206,6 +2220,45 @@ func NewRemediationRequestWebhookAuditPayloadAuditEventEventData(v RemediationRe
 	return s
 }
 
+// SetRemediationWorkflowWebhookAuditPayload sets AuditEventEventData to RemediationWorkflowWebhookAuditPayload.
+// panics if `t` is not associated with RemediationWorkflowWebhookAuditPayload
+func (s *AuditEventEventData) SetRemediationWorkflowWebhookAuditPayload(t AuditEventEventDataType, v RemediationWorkflowWebhookAuditPayload) {
+	s.Type = t
+	s.RemediationWorkflowWebhookAuditPayload = v
+	if !s.IsRemediationWorkflowWebhookAuditPayload() {
+		panic(fmt.Errorf("invariant: %v is not RemediationWorkflowWebhookAuditPayload", t))
+	}
+}
+
+// GetRemediationWorkflowWebhookAuditPayload returns RemediationWorkflowWebhookAuditPayload and true boolean if AuditEventEventData is RemediationWorkflowWebhookAuditPayload.
+func (s AuditEventEventData) GetRemediationWorkflowWebhookAuditPayload() (v RemediationWorkflowWebhookAuditPayload, ok bool) {
+	if !s.IsRemediationWorkflowWebhookAuditPayload() {
+		return v, false
+	}
+	return s.RemediationWorkflowWebhookAuditPayload, true
+}
+
+// NewAuditEventEventDataRemediationworkflowAdmittedCreateAuditEventEventData returns new AuditEventEventData from RemediationWorkflowWebhookAuditPayload.
+func NewAuditEventEventDataRemediationworkflowAdmittedCreateAuditEventEventData(v RemediationWorkflowWebhookAuditPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetRemediationWorkflowWebhookAuditPayload(AuditEventEventDataRemediationworkflowAdmittedCreateAuditEventEventData, v)
+	return s
+}
+
+// NewAuditEventEventDataRemediationworkflowAdmittedDeleteAuditEventEventData returns new AuditEventEventData from RemediationWorkflowWebhookAuditPayload.
+func NewAuditEventEventDataRemediationworkflowAdmittedDeleteAuditEventEventData(v RemediationWorkflowWebhookAuditPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetRemediationWorkflowWebhookAuditPayload(AuditEventEventDataRemediationworkflowAdmittedDeleteAuditEventEventData, v)
+	return s
+}
+
+// NewAuditEventEventDataRemediationworkflowAdmittedDeniedAuditEventEventData returns new AuditEventEventData from RemediationWorkflowWebhookAuditPayload.
+func NewAuditEventEventDataRemediationworkflowAdmittedDeniedAuditEventEventData(v RemediationWorkflowWebhookAuditPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetRemediationWorkflowWebhookAuditPayload(AuditEventEventDataRemediationworkflowAdmittedDeniedAuditEventEventData, v)
+	return s
+}
+
 // SetEffectivenessAssessmentAuditPayload sets AuditEventEventData to EffectivenessAssessmentAuditPayload.
 // panics if `t` is not associated with EffectivenessAssessmentAuditPayload
 func (s *AuditEventEventData) SetEffectivenessAssessmentAuditPayload(t AuditEventEventDataType, v EffectivenessAssessmentAuditPayload) {
@@ -2675,6 +2728,7 @@ type AuditEventRequestEventData struct {
 	LLMToolCallPayload                     LLMToolCallPayload
 	WorkflowValidationPayload              WorkflowValidationPayload
 	RemediationRequestWebhookAuditPayload  RemediationRequestWebhookAuditPayload
+	RemediationWorkflowWebhookAuditPayload RemediationWorkflowWebhookAuditPayload
 	EffectivenessAssessmentAuditPayload    EffectivenessAssessmentAuditPayload
 }
 
@@ -2744,6 +2798,9 @@ const (
 	LLMToolCallPayloadAuditEventRequestEventData                                                   AuditEventRequestEventDataType = "aiagent.llm.tool_call"
 	WorkflowValidationPayloadAuditEventRequestEventData                                            AuditEventRequestEventDataType = "aiagent.workflow.validation_attempt"
 	RemediationRequestWebhookAuditPayloadAuditEventRequestEventData                                AuditEventRequestEventDataType = "webhook.remediationrequest.timeout_modified"
+	AuditEventRequestEventDataRemediationworkflowAdmittedCreateAuditEventRequestEventData          AuditEventRequestEventDataType = "remediationworkflow.admitted.create"
+	AuditEventRequestEventDataRemediationworkflowAdmittedDeleteAuditEventRequestEventData          AuditEventRequestEventDataType = "remediationworkflow.admitted.delete"
+	AuditEventRequestEventDataRemediationworkflowAdmittedDeniedAuditEventRequestEventData          AuditEventRequestEventDataType = "remediationworkflow.admitted.denied"
 	AuditEventRequestEventDataEffectivenessAlertAssessedAuditEventRequestEventData                 AuditEventRequestEventDataType = "effectiveness.alert.assessed"
 	AuditEventRequestEventDataEffectivenessAssessmentCompletedAuditEventRequestEventData           AuditEventRequestEventDataType = "effectiveness.assessment.completed"
 	AuditEventRequestEventDataEffectivenessAssessmentScheduledAuditEventRequestEventData           AuditEventRequestEventDataType = "effectiveness.assessment.scheduled"
@@ -2925,6 +2982,16 @@ func (s AuditEventRequestEventData) IsWorkflowValidationPayload() bool {
 // IsRemediationRequestWebhookAuditPayload reports whether AuditEventRequestEventData is RemediationRequestWebhookAuditPayload.
 func (s AuditEventRequestEventData) IsRemediationRequestWebhookAuditPayload() bool {
 	return s.Type == RemediationRequestWebhookAuditPayloadAuditEventRequestEventData
+}
+
+// IsRemediationWorkflowWebhookAuditPayload reports whether AuditEventRequestEventData is RemediationWorkflowWebhookAuditPayload.
+func (s AuditEventRequestEventData) IsRemediationWorkflowWebhookAuditPayload() bool {
+	switch s.Type {
+	case AuditEventRequestEventDataRemediationworkflowAdmittedCreateAuditEventRequestEventData, AuditEventRequestEventDataRemediationworkflowAdmittedDeleteAuditEventRequestEventData, AuditEventRequestEventDataRemediationworkflowAdmittedDeniedAuditEventRequestEventData:
+		return true
+	default:
+		return false
+	}
 }
 
 // IsEffectivenessAssessmentAuditPayload reports whether AuditEventRequestEventData is EffectivenessAssessmentAuditPayload.
@@ -3771,6 +3838,45 @@ func (s AuditEventRequestEventData) GetRemediationRequestWebhookAuditPayload() (
 func NewRemediationRequestWebhookAuditPayloadAuditEventRequestEventData(v RemediationRequestWebhookAuditPayload) AuditEventRequestEventData {
 	var s AuditEventRequestEventData
 	s.SetRemediationRequestWebhookAuditPayload(v)
+	return s
+}
+
+// SetRemediationWorkflowWebhookAuditPayload sets AuditEventRequestEventData to RemediationWorkflowWebhookAuditPayload.
+// panics if `t` is not associated with RemediationWorkflowWebhookAuditPayload
+func (s *AuditEventRequestEventData) SetRemediationWorkflowWebhookAuditPayload(t AuditEventRequestEventDataType, v RemediationWorkflowWebhookAuditPayload) {
+	s.Type = t
+	s.RemediationWorkflowWebhookAuditPayload = v
+	if !s.IsRemediationWorkflowWebhookAuditPayload() {
+		panic(fmt.Errorf("invariant: %v is not RemediationWorkflowWebhookAuditPayload", t))
+	}
+}
+
+// GetRemediationWorkflowWebhookAuditPayload returns RemediationWorkflowWebhookAuditPayload and true boolean if AuditEventRequestEventData is RemediationWorkflowWebhookAuditPayload.
+func (s AuditEventRequestEventData) GetRemediationWorkflowWebhookAuditPayload() (v RemediationWorkflowWebhookAuditPayload, ok bool) {
+	if !s.IsRemediationWorkflowWebhookAuditPayload() {
+		return v, false
+	}
+	return s.RemediationWorkflowWebhookAuditPayload, true
+}
+
+// NewAuditEventRequestEventDataRemediationworkflowAdmittedCreateAuditEventRequestEventData returns new AuditEventRequestEventData from RemediationWorkflowWebhookAuditPayload.
+func NewAuditEventRequestEventDataRemediationworkflowAdmittedCreateAuditEventRequestEventData(v RemediationWorkflowWebhookAuditPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetRemediationWorkflowWebhookAuditPayload(AuditEventRequestEventDataRemediationworkflowAdmittedCreateAuditEventRequestEventData, v)
+	return s
+}
+
+// NewAuditEventRequestEventDataRemediationworkflowAdmittedDeleteAuditEventRequestEventData returns new AuditEventRequestEventData from RemediationWorkflowWebhookAuditPayload.
+func NewAuditEventRequestEventDataRemediationworkflowAdmittedDeleteAuditEventRequestEventData(v RemediationWorkflowWebhookAuditPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetRemediationWorkflowWebhookAuditPayload(AuditEventRequestEventDataRemediationworkflowAdmittedDeleteAuditEventRequestEventData, v)
+	return s
+}
+
+// NewAuditEventRequestEventDataRemediationworkflowAdmittedDeniedAuditEventRequestEventData returns new AuditEventRequestEventData from RemediationWorkflowWebhookAuditPayload.
+func NewAuditEventRequestEventDataRemediationworkflowAdmittedDeniedAuditEventRequestEventData(v RemediationWorkflowWebhookAuditPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetRemediationWorkflowWebhookAuditPayload(AuditEventRequestEventDataRemediationworkflowAdmittedDeniedAuditEventRequestEventData, v)
 	return s
 }
 
@@ -17024,6 +17130,182 @@ func (s *RemediationWorkflowStatus) UnmarshalText(data []byte) error {
 		return nil
 	case RemediationWorkflowStatusArchived:
 		*s = RemediationWorkflowStatusArchived
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Audit payload for RemediationWorkflow CRD admission events (ADR-058).
+// Emitted by the authwebhook when a RemediationWorkflow CRD is created, deleted, or denied.
+// Ref: #/components/schemas/RemediationWorkflowWebhookAuditPayload
+type RemediationWorkflowWebhookAuditPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType RemediationWorkflowWebhookAuditPayloadEventType `json:"event_type"`
+	// Name of the RemediationWorkflow CRD (metadata.name).
+	WorkflowName string `json:"workflow_name"`
+	// Admission action performed.
+	Action RemediationWorkflowWebhookAuditPayloadAction `json:"action"`
+	// DataStorage catalog UUID (set after successful registration).
+	WorkflowID OptString `json:"workflow_id"`
+	// Catalog registration status (active, disabled, etc.).
+	CatalogStatus OptString `json:"catalog_status"`
+	// Reason for denial (only set when action=denied).
+	DenialReason OptString `json:"denial_reason"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *RemediationWorkflowWebhookAuditPayload) GetEventType() RemediationWorkflowWebhookAuditPayloadEventType {
+	return s.EventType
+}
+
+// GetWorkflowName returns the value of WorkflowName.
+func (s *RemediationWorkflowWebhookAuditPayload) GetWorkflowName() string {
+	return s.WorkflowName
+}
+
+// GetAction returns the value of Action.
+func (s *RemediationWorkflowWebhookAuditPayload) GetAction() RemediationWorkflowWebhookAuditPayloadAction {
+	return s.Action
+}
+
+// GetWorkflowID returns the value of WorkflowID.
+func (s *RemediationWorkflowWebhookAuditPayload) GetWorkflowID() OptString {
+	return s.WorkflowID
+}
+
+// GetCatalogStatus returns the value of CatalogStatus.
+func (s *RemediationWorkflowWebhookAuditPayload) GetCatalogStatus() OptString {
+	return s.CatalogStatus
+}
+
+// GetDenialReason returns the value of DenialReason.
+func (s *RemediationWorkflowWebhookAuditPayload) GetDenialReason() OptString {
+	return s.DenialReason
+}
+
+// SetEventType sets the value of EventType.
+func (s *RemediationWorkflowWebhookAuditPayload) SetEventType(val RemediationWorkflowWebhookAuditPayloadEventType) {
+	s.EventType = val
+}
+
+// SetWorkflowName sets the value of WorkflowName.
+func (s *RemediationWorkflowWebhookAuditPayload) SetWorkflowName(val string) {
+	s.WorkflowName = val
+}
+
+// SetAction sets the value of Action.
+func (s *RemediationWorkflowWebhookAuditPayload) SetAction(val RemediationWorkflowWebhookAuditPayloadAction) {
+	s.Action = val
+}
+
+// SetWorkflowID sets the value of WorkflowID.
+func (s *RemediationWorkflowWebhookAuditPayload) SetWorkflowID(val OptString) {
+	s.WorkflowID = val
+}
+
+// SetCatalogStatus sets the value of CatalogStatus.
+func (s *RemediationWorkflowWebhookAuditPayload) SetCatalogStatus(val OptString) {
+	s.CatalogStatus = val
+}
+
+// SetDenialReason sets the value of DenialReason.
+func (s *RemediationWorkflowWebhookAuditPayload) SetDenialReason(val OptString) {
+	s.DenialReason = val
+}
+
+// Admission action performed.
+type RemediationWorkflowWebhookAuditPayloadAction string
+
+const (
+	RemediationWorkflowWebhookAuditPayloadActionCreate RemediationWorkflowWebhookAuditPayloadAction = "create"
+	RemediationWorkflowWebhookAuditPayloadActionDelete RemediationWorkflowWebhookAuditPayloadAction = "delete"
+	RemediationWorkflowWebhookAuditPayloadActionDenied RemediationWorkflowWebhookAuditPayloadAction = "denied"
+)
+
+// AllValues returns all RemediationWorkflowWebhookAuditPayloadAction values.
+func (RemediationWorkflowWebhookAuditPayloadAction) AllValues() []RemediationWorkflowWebhookAuditPayloadAction {
+	return []RemediationWorkflowWebhookAuditPayloadAction{
+		RemediationWorkflowWebhookAuditPayloadActionCreate,
+		RemediationWorkflowWebhookAuditPayloadActionDelete,
+		RemediationWorkflowWebhookAuditPayloadActionDenied,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s RemediationWorkflowWebhookAuditPayloadAction) MarshalText() ([]byte, error) {
+	switch s {
+	case RemediationWorkflowWebhookAuditPayloadActionCreate:
+		return []byte(s), nil
+	case RemediationWorkflowWebhookAuditPayloadActionDelete:
+		return []byte(s), nil
+	case RemediationWorkflowWebhookAuditPayloadActionDenied:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *RemediationWorkflowWebhookAuditPayloadAction) UnmarshalText(data []byte) error {
+	switch RemediationWorkflowWebhookAuditPayloadAction(data) {
+	case RemediationWorkflowWebhookAuditPayloadActionCreate:
+		*s = RemediationWorkflowWebhookAuditPayloadActionCreate
+		return nil
+	case RemediationWorkflowWebhookAuditPayloadActionDelete:
+		*s = RemediationWorkflowWebhookAuditPayloadActionDelete
+		return nil
+	case RemediationWorkflowWebhookAuditPayloadActionDenied:
+		*s = RemediationWorkflowWebhookAuditPayloadActionDenied
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Event type for discriminator (matches parent event_type).
+type RemediationWorkflowWebhookAuditPayloadEventType string
+
+const (
+	RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedCreate RemediationWorkflowWebhookAuditPayloadEventType = "remediationworkflow.admitted.create"
+	RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedDelete RemediationWorkflowWebhookAuditPayloadEventType = "remediationworkflow.admitted.delete"
+	RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedDenied RemediationWorkflowWebhookAuditPayloadEventType = "remediationworkflow.admitted.denied"
+)
+
+// AllValues returns all RemediationWorkflowWebhookAuditPayloadEventType values.
+func (RemediationWorkflowWebhookAuditPayloadEventType) AllValues() []RemediationWorkflowWebhookAuditPayloadEventType {
+	return []RemediationWorkflowWebhookAuditPayloadEventType{
+		RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedCreate,
+		RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedDelete,
+		RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedDenied,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s RemediationWorkflowWebhookAuditPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedCreate:
+		return []byte(s), nil
+	case RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedDelete:
+		return []byte(s), nil
+	case RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedDenied:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *RemediationWorkflowWebhookAuditPayloadEventType) UnmarshalText(data []byte) error {
+	switch RemediationWorkflowWebhookAuditPayloadEventType(data) {
+	case RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedCreate:
+		*s = RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedCreate
+		return nil
+	case RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedDelete:
+		*s = RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedDelete
+		return nil
+	case RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedDenied:
+		*s = RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedDenied
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)

@@ -3652,6 +3652,47 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
+	case AuditEventEventDataRemediationworkflowAdmittedCreateAuditEventEventData, AuditEventEventDataRemediationworkflowAdmittedDeleteAuditEventEventData, AuditEventEventDataRemediationworkflowAdmittedDeniedAuditEventEventData:
+		switch s.Type {
+		case AuditEventEventDataRemediationworkflowAdmittedCreateAuditEventEventData:
+			e.FieldStart("event_type")
+			e.Str("remediationworkflow.admitted.create")
+		case AuditEventEventDataRemediationworkflowAdmittedDeleteAuditEventEventData:
+			e.FieldStart("event_type")
+			e.Str("remediationworkflow.admitted.delete")
+		case AuditEventEventDataRemediationworkflowAdmittedDeniedAuditEventEventData:
+			e.FieldStart("event_type")
+			e.Str("remediationworkflow.admitted.denied")
+		}
+		{
+			s := s.RemediationWorkflowWebhookAuditPayload
+			{
+				e.FieldStart("workflow_name")
+				e.Str(s.WorkflowName)
+			}
+			{
+				e.FieldStart("action")
+				s.Action.Encode(e)
+			}
+			{
+				if s.WorkflowID.Set {
+					e.FieldStart("workflow_id")
+					s.WorkflowID.Encode(e)
+				}
+			}
+			{
+				if s.CatalogStatus.Set {
+					e.FieldStart("catalog_status")
+					s.CatalogStatus.Encode(e)
+				}
+			}
+			{
+				if s.DenialReason.Set {
+					e.FieldStart("denial_reason")
+					s.DenialReason.Encode(e)
+				}
+			}
+		}
 	case AuditEventEventDataEffectivenessAlertAssessedAuditEventEventData, AuditEventEventDataEffectivenessAssessmentCompletedAuditEventEventData, AuditEventEventDataEffectivenessAssessmentScheduledAuditEventEventData, AuditEventEventDataEffectivenessHashComputedAuditEventEventData, AuditEventEventDataEffectivenessHealthAssessedAuditEventEventData, AuditEventEventDataEffectivenessMetricsAssessedAuditEventEventData:
 		switch s.Type {
 		case AuditEventEventDataEffectivenessAlertAssessedAuditEventEventData:
@@ -4057,6 +4098,15 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 				case "webhook.remediationrequest.timeout_modified":
 					s.Type = RemediationRequestWebhookAuditPayloadAuditEventEventData
 					found = true
+				case "remediationworkflow.admitted.create":
+					s.Type = AuditEventEventDataRemediationworkflowAdmittedCreateAuditEventEventData
+					found = true
+				case "remediationworkflow.admitted.delete":
+					s.Type = AuditEventEventDataRemediationworkflowAdmittedDeleteAuditEventEventData
+					found = true
+				case "remediationworkflow.admitted.denied":
+					s.Type = AuditEventEventDataRemediationworkflowAdmittedDeniedAuditEventEventData
+					found = true
 				case "effectiveness.alert.assessed":
 					s.Type = AuditEventEventDataEffectivenessAlertAssessedAuditEventEventData
 					found = true
@@ -4195,6 +4245,10 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 		}
 	case RemediationRequestWebhookAuditPayloadAuditEventEventData:
 		if err := s.RemediationRequestWebhookAuditPayload.Decode(d); err != nil {
+			return err
+		}
+	case AuditEventEventDataRemediationworkflowAdmittedCreateAuditEventEventData, AuditEventEventDataRemediationworkflowAdmittedDeleteAuditEventEventData, AuditEventEventDataRemediationworkflowAdmittedDeniedAuditEventEventData:
+		if err := s.RemediationWorkflowWebhookAuditPayload.Decode(d); err != nil {
 			return err
 		}
 	case AuditEventEventDataEffectivenessAlertAssessedAuditEventEventData, AuditEventEventDataEffectivenessAssessmentCompletedAuditEventEventData, AuditEventEventDataEffectivenessAssessmentScheduledAuditEventEventData, AuditEventEventDataEffectivenessHashComputedAuditEventEventData, AuditEventEventDataEffectivenessHealthAssessedAuditEventEventData, AuditEventEventDataEffectivenessMetricsAssessedAuditEventEventData:
@@ -6207,6 +6261,47 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
+	case AuditEventRequestEventDataRemediationworkflowAdmittedCreateAuditEventRequestEventData, AuditEventRequestEventDataRemediationworkflowAdmittedDeleteAuditEventRequestEventData, AuditEventRequestEventDataRemediationworkflowAdmittedDeniedAuditEventRequestEventData:
+		switch s.Type {
+		case AuditEventRequestEventDataRemediationworkflowAdmittedCreateAuditEventRequestEventData:
+			e.FieldStart("event_type")
+			e.Str("remediationworkflow.admitted.create")
+		case AuditEventRequestEventDataRemediationworkflowAdmittedDeleteAuditEventRequestEventData:
+			e.FieldStart("event_type")
+			e.Str("remediationworkflow.admitted.delete")
+		case AuditEventRequestEventDataRemediationworkflowAdmittedDeniedAuditEventRequestEventData:
+			e.FieldStart("event_type")
+			e.Str("remediationworkflow.admitted.denied")
+		}
+		{
+			s := s.RemediationWorkflowWebhookAuditPayload
+			{
+				e.FieldStart("workflow_name")
+				e.Str(s.WorkflowName)
+			}
+			{
+				e.FieldStart("action")
+				s.Action.Encode(e)
+			}
+			{
+				if s.WorkflowID.Set {
+					e.FieldStart("workflow_id")
+					s.WorkflowID.Encode(e)
+				}
+			}
+			{
+				if s.CatalogStatus.Set {
+					e.FieldStart("catalog_status")
+					s.CatalogStatus.Encode(e)
+				}
+			}
+			{
+				if s.DenialReason.Set {
+					e.FieldStart("denial_reason")
+					s.DenialReason.Encode(e)
+				}
+			}
+		}
 	case AuditEventRequestEventDataEffectivenessAlertAssessedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessAssessmentCompletedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessAssessmentScheduledAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessHashComputedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessHealthAssessedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessMetricsAssessedAuditEventRequestEventData:
 		switch s.Type {
 		case AuditEventRequestEventDataEffectivenessAlertAssessedAuditEventRequestEventData:
@@ -6612,6 +6707,15 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 				case "webhook.remediationrequest.timeout_modified":
 					s.Type = RemediationRequestWebhookAuditPayloadAuditEventRequestEventData
 					found = true
+				case "remediationworkflow.admitted.create":
+					s.Type = AuditEventRequestEventDataRemediationworkflowAdmittedCreateAuditEventRequestEventData
+					found = true
+				case "remediationworkflow.admitted.delete":
+					s.Type = AuditEventRequestEventDataRemediationworkflowAdmittedDeleteAuditEventRequestEventData
+					found = true
+				case "remediationworkflow.admitted.denied":
+					s.Type = AuditEventRequestEventDataRemediationworkflowAdmittedDeniedAuditEventRequestEventData
+					found = true
 				case "effectiveness.alert.assessed":
 					s.Type = AuditEventRequestEventDataEffectivenessAlertAssessedAuditEventRequestEventData
 					found = true
@@ -6750,6 +6854,10 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 		}
 	case RemediationRequestWebhookAuditPayloadAuditEventRequestEventData:
 		if err := s.RemediationRequestWebhookAuditPayload.Decode(d); err != nil {
+			return err
+		}
+	case AuditEventRequestEventDataRemediationworkflowAdmittedCreateAuditEventRequestEventData, AuditEventRequestEventDataRemediationworkflowAdmittedDeleteAuditEventRequestEventData, AuditEventRequestEventDataRemediationworkflowAdmittedDeniedAuditEventRequestEventData:
+		if err := s.RemediationWorkflowWebhookAuditPayload.Decode(d); err != nil {
 			return err
 		}
 	case AuditEventRequestEventDataEffectivenessAlertAssessedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessAssessmentCompletedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessAssessmentScheduledAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessHashComputedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessHealthAssessedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessMetricsAssessedAuditEventRequestEventData:
@@ -25983,6 +26091,267 @@ func (s RemediationWorkflowStatus) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *RemediationWorkflowStatus) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *RemediationWorkflowWebhookAuditPayload) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *RemediationWorkflowWebhookAuditPayload) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("event_type")
+		s.EventType.Encode(e)
+	}
+	{
+		e.FieldStart("workflow_name")
+		e.Str(s.WorkflowName)
+	}
+	{
+		e.FieldStart("action")
+		s.Action.Encode(e)
+	}
+	{
+		if s.WorkflowID.Set {
+			e.FieldStart("workflow_id")
+			s.WorkflowID.Encode(e)
+		}
+	}
+	{
+		if s.CatalogStatus.Set {
+			e.FieldStart("catalog_status")
+			s.CatalogStatus.Encode(e)
+		}
+	}
+	{
+		if s.DenialReason.Set {
+			e.FieldStart("denial_reason")
+			s.DenialReason.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfRemediationWorkflowWebhookAuditPayload = [6]string{
+	0: "event_type",
+	1: "workflow_name",
+	2: "action",
+	3: "workflow_id",
+	4: "catalog_status",
+	5: "denial_reason",
+}
+
+// Decode decodes RemediationWorkflowWebhookAuditPayload from json.
+func (s *RemediationWorkflowWebhookAuditPayload) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode RemediationWorkflowWebhookAuditPayload to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "event_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.EventType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_type\"")
+			}
+		case "workflow_name":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.WorkflowName = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"workflow_name\"")
+			}
+		case "action":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				if err := s.Action.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"action\"")
+			}
+		case "workflow_id":
+			if err := func() error {
+				s.WorkflowID.Reset()
+				if err := s.WorkflowID.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"workflow_id\"")
+			}
+		case "catalog_status":
+			if err := func() error {
+				s.CatalogStatus.Reset()
+				if err := s.CatalogStatus.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"catalog_status\"")
+			}
+		case "denial_reason":
+			if err := func() error {
+				s.DenialReason.Reset()
+				if err := s.DenialReason.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"denial_reason\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode RemediationWorkflowWebhookAuditPayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfRemediationWorkflowWebhookAuditPayload) {
+					name = jsonFieldsNameOfRemediationWorkflowWebhookAuditPayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *RemediationWorkflowWebhookAuditPayload) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *RemediationWorkflowWebhookAuditPayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes RemediationWorkflowWebhookAuditPayloadAction as json.
+func (s RemediationWorkflowWebhookAuditPayloadAction) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes RemediationWorkflowWebhookAuditPayloadAction from json.
+func (s *RemediationWorkflowWebhookAuditPayloadAction) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode RemediationWorkflowWebhookAuditPayloadAction to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch RemediationWorkflowWebhookAuditPayloadAction(v) {
+	case RemediationWorkflowWebhookAuditPayloadActionCreate:
+		*s = RemediationWorkflowWebhookAuditPayloadActionCreate
+	case RemediationWorkflowWebhookAuditPayloadActionDelete:
+		*s = RemediationWorkflowWebhookAuditPayloadActionDelete
+	case RemediationWorkflowWebhookAuditPayloadActionDenied:
+		*s = RemediationWorkflowWebhookAuditPayloadActionDenied
+	default:
+		*s = RemediationWorkflowWebhookAuditPayloadAction(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s RemediationWorkflowWebhookAuditPayloadAction) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *RemediationWorkflowWebhookAuditPayloadAction) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes RemediationWorkflowWebhookAuditPayloadEventType as json.
+func (s RemediationWorkflowWebhookAuditPayloadEventType) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes RemediationWorkflowWebhookAuditPayloadEventType from json.
+func (s *RemediationWorkflowWebhookAuditPayloadEventType) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode RemediationWorkflowWebhookAuditPayloadEventType to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch RemediationWorkflowWebhookAuditPayloadEventType(v) {
+	case RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedCreate:
+		*s = RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedCreate
+	case RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedDelete:
+		*s = RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedDelete
+	case RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedDenied:
+		*s = RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedDenied
+	default:
+		*s = RemediationWorkflowWebhookAuditPayloadEventType(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s RemediationWorkflowWebhookAuditPayloadEventType) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *RemediationWorkflowWebhookAuditPayloadEventType) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
