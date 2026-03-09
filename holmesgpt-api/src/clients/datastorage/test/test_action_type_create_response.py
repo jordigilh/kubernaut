@@ -15,10 +15,10 @@
 import unittest
 import datetime
 
-from datastorage.models.workflow_discovery_entry import WorkflowDiscoveryEntry
+from datastorage.models.action_type_create_response import ActionTypeCreateResponse
 
-class TestWorkflowDiscoveryEntry(unittest.TestCase):
-    """WorkflowDiscoveryEntry unit test stubs"""
+class TestActionTypeCreateResponse(unittest.TestCase):
+    """ActionTypeCreateResponse unit test stubs"""
 
     def setUp(self):
         pass
@@ -26,46 +26,35 @@ class TestWorkflowDiscoveryEntry(unittest.TestCase):
     def tearDown(self):
         pass
 
-    def make_instance(self, include_optional) -> WorkflowDiscoveryEntry:
-        """Test WorkflowDiscoveryEntry
+    def make_instance(self, include_optional) -> ActionTypeCreateResponse:
+        """Test ActionTypeCreateResponse
             include_option is a boolean, when False only required
             params are included, when True both required and
             optional params are included """
-        # uncomment below to create an instance of `WorkflowDiscoveryEntry`
+        # uncomment below to create an instance of `ActionTypeCreateResponse`
         """
-        model = WorkflowDiscoveryEntry()
+        model = ActionTypeCreateResponse()
         if include_optional:
-            return WorkflowDiscoveryEntry(
-                workflow_id = '',
-                workflow_name = '',
-                name = '',
-                description = datastorage.models.structured_description.StructuredDescription(
+            return ActionTypeCreateResponse(
+                action_type = '',
+                description = datastorage.models.action_type_description.ActionTypeDescription(
                     what = '', 
                     when_to_use = '', 
                     when_not_to_use = '', 
                     preconditions = '', ),
-                version = '',
-                schema_version = '',
-                schema_image = '',
-                execution_bundle = '',
-                execution_engine = 'tekton'
+                status = 'created',
+                was_reenabled = True
             )
         else:
-            return WorkflowDiscoveryEntry(
-                workflow_id = '',
-                workflow_name = '',
-                name = '',
-                description = datastorage.models.structured_description.StructuredDescription(
-                    what = '', 
-                    when_to_use = '', 
-                    when_not_to_use = '', 
-                    preconditions = '', ),
-                version = '',
+            return ActionTypeCreateResponse(
+                action_type = '',
+                status = 'created',
+                was_reenabled = True,
         )
         """
 
-    def testWorkflowDiscoveryEntry(self):
-        """Test WorkflowDiscoveryEntry"""
+    def testActionTypeCreateResponse(self):
+        """Test ActionTypeCreateResponse"""
         # inst_req_only = self.make_instance(include_optional=False)
         # inst_req_and_optional = self.make_instance(include_optional=True)
 

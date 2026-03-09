@@ -714,6 +714,120 @@ paths:
               schema:
                 $ref: '#/components/schemas/RFC7807Problem'
 
+  /api/v1/action-types:
+    post:
+      tags:
+        - ActionType Taxonomy API
+      summary: Create or re-enable an action type
+      description: |
+        Idempotent CREATE: creates a new action type, returns existing if active,
+        or re-enables if previously disabled.
+
+        **Business Requirement**: BR-WORKFLOW-007.1 (Idempotent CREATE)
+        **Design Decision**: DD-ACTIONTYPE-001 (ActionType CRD Lifecycle Design)
+      operationId: createActionType
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionTypeCreateRequest'
+      responses:
+        '201':
+          description: Action type created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionTypeCreateResponse'
+        '200':
+          description: Action type already exists (NOOP) or re-enabled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionTypeCreateResponse'
+        '400':
+          description: Validation error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+
+  /api/v1/action-types/{name}:
+    patch:
+      tags:
+        - ActionType Taxonomy API
+      summary: Update action type description
+      description: |
+        Updates the description fields of an active action type.
+        Only spec.description is mutable; spec.name is immutable.
+
+        **Business Requirement**: BR-WORKFLOW-007.2 (Description UPDATE with audit)
+      operationId: updateActionType
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "PascalCase action type name (e.g., RestartPod)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionTypeUpdateRequest'
+      responses:
+        '200':
+          description: Action type description updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionTypeUpdateResponse'
+        '404':
+          description: Action type not found or disabled
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+
+  /api/v1/action-types/{name}/disable:
+    patch:
+      tags:
+        - ActionType Taxonomy API
+      summary: Soft-disable an action type
+      description: |
+        Soft-disables an action type. Denied with 409 if active workflows reference it.
+        The denial response includes the count and names of dependent workflows.
+
+        **Business Requirement**: BR-WORKFLOW-007.3 (DELETE with dependency guard)
+      operationId: disableActionType
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "PascalCase action type name (e.g., RestartPod)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionTypeDisableRequest'
+      responses:
+        '200':
+          description: Action type disabled successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionTypeDisableResponse'
+        '409':
+          description: Cannot disable — active workflows depend on this action type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionTypeDisableDeniedResponse'
+
   /api/v1/audit/events:
     post:
       tags:
@@ -2526,7 +2640,6 @@ components:
         - name
         - description
         - version
-        - schemaImage
       properties:
         workflowId:
           type: string
@@ -5465,4 +5578,145 @@ components:
           format: double
           description: Error rate after remediation (0.0-1.0)
           example: 0.019
+
+    # ========================================
+    # ActionType Taxonomy (BR-WORKFLOW-007)
+    # ========================================
+
+    ActionTypeDescription:
+      type: object
+      description: "Structured description for an action type"
+      required:
+        - what
+        - whenToUse
+      properties:
+        what:
+          type: string
+          description: "What this action type concretely does"
+        whenToUse:
+          type: string
+          description: "When this action type is appropriate"
+        whenNotToUse:
+          type: string
+          description: "Exclusion conditions"
+        preconditions:
+          type: string
+          description: "Conditions to verify before use"
+
+    ActionTypeCreateRequest:
+      type: object
+      description: "Request body for creating or re-enabling an action type"
+      required:
+        - name
+        - description
+        - registeredBy
+      properties:
+        name:
+          type: string
+          description: "PascalCase action type name (e.g., RestartPod)"
+        description:
+          $ref: '#/components/schemas/ActionTypeDescription'
+        registeredBy:
+          type: string
+          description: "Identity of the registrant (K8s SA or user)"
+
+    ActionTypeCreateResponse:
+      type: object
+      description: "Response for action type create/re-enable"
+      required:
+        - actionType
+        - status
+        - wasReenabled
+      properties:
+        actionType:
+          type: string
+          description: "PascalCase action type name"
+        description:
+          $ref: '#/components/schemas/ActionTypeDescription'
+        status:
+          type: string
+          description: "Outcome: created, exists, or reenabled"
+          enum:
+            - created
+            - exists
+            - reenabled
+        wasReenabled:
+          type: boolean
+          description: "true if re-enabled from disabled state"
+
+    ActionTypeUpdateRequest:
+      type: object
+      description: "Request body for updating action type description. updatedBy is optional — the audit trail (Phase 6a) captures the actor authoritatively."
+      required:
+        - description
+      properties:
+        description:
+          $ref: '#/components/schemas/ActionTypeDescription'
+        updatedBy:
+          type: string
+          description: "Identity of who made the change"
+
+    ActionTypeUpdateResponse:
+      type: object
+      description: "Response for action type description update"
+      required:
+        - actionType
+        - oldDescription
+        - newDescription
+        - updatedFields
+      properties:
+        actionType:
+          type: string
+        oldDescription:
+          $ref: '#/components/schemas/ActionTypeDescription'
+        newDescription:
+          $ref: '#/components/schemas/ActionTypeDescription'
+        updatedFields:
+          type: array
+          items:
+            type: string
+          description: "List of changed field names"
+
+    ActionTypeDisableRequest:
+      type: object
+      description: "Request body for disabling an action type"
+      required:
+        - disabledBy
+      properties:
+        disabledBy:
+          type: string
+          description: "Identity of who is disabling"
+
+    ActionTypeDisableResponse:
+      type: object
+      description: "Response for successful action type disable"
+      required:
+        - actionType
+        - status
+      properties:
+        actionType:
+          type: string
+        status:
+          type: string
+          enum:
+            - disabled
+
+    ActionTypeDisableDeniedResponse:
+      type: object
+      description: "409 response when disable is denied due to active workflow dependencies"
+      required:
+        - actionType
+        - dependentWorkflowCount
+        - dependentWorkflows
+      properties:
+        actionType:
+          type: string
+        dependentWorkflowCount:
+          type: integer
+          description: "Number of active workflows referencing this action type"
+        dependentWorkflows:
+          type: array
+          items:
+            type: string
+          description: "Names of dependent workflows"
 

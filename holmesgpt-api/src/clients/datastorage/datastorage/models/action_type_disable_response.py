@@ -12,62 +12,87 @@
 """  # noqa: E501
 
 
-import unittest
-import datetime
+from __future__ import annotations
+import pprint
+import re  # noqa: F401
+import json
 
-from datastorage.models.workflow_discovery_entry import WorkflowDiscoveryEntry
 
-class TestWorkflowDiscoveryEntry(unittest.TestCase):
-    """WorkflowDiscoveryEntry unit test stubs"""
+from typing import Any, ClassVar, Dict, List
+from pydantic import BaseModel, StrictStr, field_validator
+from pydantic import Field
+try:
+    from typing import Self
+except ImportError:
+    from typing_extensions import Self
 
-    def setUp(self):
-        pass
+class ActionTypeDisableResponse(BaseModel):
+    """
+    Response for successful action type disable
+    """ # noqa: E501
+    action_type: StrictStr = Field(alias="actionType")
+    status: StrictStr
+    __properties: ClassVar[List[str]] = ["actionType", "status"]
 
-    def tearDown(self):
-        pass
+    @field_validator('status')
+    def status_validate_enum(cls, value):
+        """Validates the enum"""
+        if value not in ('disabled'):
+            raise ValueError("must be one of enum values ('disabled')")
+        return value
 
-    def make_instance(self, include_optional) -> WorkflowDiscoveryEntry:
-        """Test WorkflowDiscoveryEntry
-            include_option is a boolean, when False only required
-            params are included, when True both required and
-            optional params are included """
-        # uncomment below to create an instance of `WorkflowDiscoveryEntry`
+    model_config = {
+        "populate_by_name": True,
+        "validate_assignment": True,
+        "protected_namespaces": (),
+    }
+
+
+    def to_str(self) -> str:
+        """Returns the string representation of the model using alias"""
+        return pprint.pformat(self.model_dump(by_alias=True))
+
+    def to_json(self) -> str:
+        """Returns the JSON representation of the model using alias"""
+        # TODO: pydantic v2: use .model_dump_json(by_alias=True, exclude_unset=True) instead
+        return json.dumps(self.to_dict())
+
+    @classmethod
+    def from_json(cls, json_str: str) -> Self:
+        """Create an instance of ActionTypeDisableResponse from a JSON string"""
+        return cls.from_dict(json.loads(json_str))
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Return the dictionary representation of the model using alias.
+
+        This has the following differences from calling pydantic's
+        `self.model_dump(by_alias=True)`:
+
+        * `None` is only added to the output dict for nullable fields that
+          were set at model initialization. Other fields with value `None`
+          are ignored.
         """
-        model = WorkflowDiscoveryEntry()
-        if include_optional:
-            return WorkflowDiscoveryEntry(
-                workflow_id = '',
-                workflow_name = '',
-                name = '',
-                description = datastorage.models.structured_description.StructuredDescription(
-                    what = '', 
-                    when_to_use = '', 
-                    when_not_to_use = '', 
-                    preconditions = '', ),
-                version = '',
-                schema_version = '',
-                schema_image = '',
-                execution_bundle = '',
-                execution_engine = 'tekton'
-            )
-        else:
-            return WorkflowDiscoveryEntry(
-                workflow_id = '',
-                workflow_name = '',
-                name = '',
-                description = datastorage.models.structured_description.StructuredDescription(
-                    what = '', 
-                    when_to_use = '', 
-                    when_not_to_use = '', 
-                    preconditions = '', ),
-                version = '',
+        _dict = self.model_dump(
+            by_alias=True,
+            exclude={
+            },
+            exclude_none=True,
         )
-        """
+        return _dict
 
-    def testWorkflowDiscoveryEntry(self):
-        """Test WorkflowDiscoveryEntry"""
-        # inst_req_only = self.make_instance(include_optional=False)
-        # inst_req_and_optional = self.make_instance(include_optional=True)
+    @classmethod
+    def from_dict(cls, obj: Dict) -> Self:
+        """Create an instance of ActionTypeDisableResponse from a dict"""
+        if obj is None:
+            return None
 
-if __name__ == '__main__':
-    unittest.main()
+        if not isinstance(obj, dict):
+            return cls.model_validate(obj)
+
+        _obj = cls.model_validate({
+            "actionType": obj.get("actionType"),
+            "status": obj.get("status")
+        })
+        return _obj
+
+

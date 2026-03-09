@@ -623,6 +623,322 @@ func (s *AIAnalysisRegoEvaluationPayload) SetReason(val string) {
 	s.Reason = val
 }
 
+// Request body for creating or re-enabling an action type.
+// Ref: #/components/schemas/ActionTypeCreateRequest
+type ActionTypeCreateRequest struct {
+	// PascalCase action type name (e.g., RestartPod).
+	Name        string                `json:"name"`
+	Description ActionTypeDescription `json:"description"`
+	// Identity of the registrant (K8s SA or user).
+	RegisteredBy string `json:"registeredBy"`
+}
+
+// GetName returns the value of Name.
+func (s *ActionTypeCreateRequest) GetName() string {
+	return s.Name
+}
+
+// GetDescription returns the value of Description.
+func (s *ActionTypeCreateRequest) GetDescription() ActionTypeDescription {
+	return s.Description
+}
+
+// GetRegisteredBy returns the value of RegisteredBy.
+func (s *ActionTypeCreateRequest) GetRegisteredBy() string {
+	return s.RegisteredBy
+}
+
+// SetName sets the value of Name.
+func (s *ActionTypeCreateRequest) SetName(val string) {
+	s.Name = val
+}
+
+// SetDescription sets the value of Description.
+func (s *ActionTypeCreateRequest) SetDescription(val ActionTypeDescription) {
+	s.Description = val
+}
+
+// SetRegisteredBy sets the value of RegisteredBy.
+func (s *ActionTypeCreateRequest) SetRegisteredBy(val string) {
+	s.RegisteredBy = val
+}
+
+// Response for action type create/re-enable.
+// Ref: #/components/schemas/ActionTypeCreateResponse
+type ActionTypeCreateResponse struct {
+	// PascalCase action type name.
+	ActionType  string                   `json:"actionType"`
+	Description OptActionTypeDescription `json:"description"`
+	// Outcome: created, exists, or reenabled.
+	Status ActionTypeCreateResponseStatus `json:"status"`
+	// True if re-enabled from disabled state.
+	WasReenabled bool `json:"wasReenabled"`
+}
+
+// GetActionType returns the value of ActionType.
+func (s *ActionTypeCreateResponse) GetActionType() string {
+	return s.ActionType
+}
+
+// GetDescription returns the value of Description.
+func (s *ActionTypeCreateResponse) GetDescription() OptActionTypeDescription {
+	return s.Description
+}
+
+// GetStatus returns the value of Status.
+func (s *ActionTypeCreateResponse) GetStatus() ActionTypeCreateResponseStatus {
+	return s.Status
+}
+
+// GetWasReenabled returns the value of WasReenabled.
+func (s *ActionTypeCreateResponse) GetWasReenabled() bool {
+	return s.WasReenabled
+}
+
+// SetActionType sets the value of ActionType.
+func (s *ActionTypeCreateResponse) SetActionType(val string) {
+	s.ActionType = val
+}
+
+// SetDescription sets the value of Description.
+func (s *ActionTypeCreateResponse) SetDescription(val OptActionTypeDescription) {
+	s.Description = val
+}
+
+// SetStatus sets the value of Status.
+func (s *ActionTypeCreateResponse) SetStatus(val ActionTypeCreateResponseStatus) {
+	s.Status = val
+}
+
+// SetWasReenabled sets the value of WasReenabled.
+func (s *ActionTypeCreateResponse) SetWasReenabled(val bool) {
+	s.WasReenabled = val
+}
+
+// Outcome: created, exists, or reenabled.
+type ActionTypeCreateResponseStatus string
+
+const (
+	ActionTypeCreateResponseStatusCreated   ActionTypeCreateResponseStatus = "created"
+	ActionTypeCreateResponseStatusExists    ActionTypeCreateResponseStatus = "exists"
+	ActionTypeCreateResponseStatusReenabled ActionTypeCreateResponseStatus = "reenabled"
+)
+
+// AllValues returns all ActionTypeCreateResponseStatus values.
+func (ActionTypeCreateResponseStatus) AllValues() []ActionTypeCreateResponseStatus {
+	return []ActionTypeCreateResponseStatus{
+		ActionTypeCreateResponseStatusCreated,
+		ActionTypeCreateResponseStatusExists,
+		ActionTypeCreateResponseStatusReenabled,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ActionTypeCreateResponseStatus) MarshalText() ([]byte, error) {
+	switch s {
+	case ActionTypeCreateResponseStatusCreated:
+		return []byte(s), nil
+	case ActionTypeCreateResponseStatusExists:
+		return []byte(s), nil
+	case ActionTypeCreateResponseStatusReenabled:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ActionTypeCreateResponseStatus) UnmarshalText(data []byte) error {
+	switch ActionTypeCreateResponseStatus(data) {
+	case ActionTypeCreateResponseStatusCreated:
+		*s = ActionTypeCreateResponseStatusCreated
+		return nil
+	case ActionTypeCreateResponseStatusExists:
+		*s = ActionTypeCreateResponseStatusExists
+		return nil
+	case ActionTypeCreateResponseStatusReenabled:
+		*s = ActionTypeCreateResponseStatusReenabled
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Structured description for an action type.
+// Ref: #/components/schemas/ActionTypeDescription
+type ActionTypeDescription struct {
+	// What this action type concretely does.
+	What string `json:"what"`
+	// When this action type is appropriate.
+	WhenToUse string `json:"whenToUse"`
+	// Exclusion conditions.
+	WhenNotToUse OptString `json:"whenNotToUse"`
+	// Conditions to verify before use.
+	Preconditions OptString `json:"preconditions"`
+}
+
+// GetWhat returns the value of What.
+func (s *ActionTypeDescription) GetWhat() string {
+	return s.What
+}
+
+// GetWhenToUse returns the value of WhenToUse.
+func (s *ActionTypeDescription) GetWhenToUse() string {
+	return s.WhenToUse
+}
+
+// GetWhenNotToUse returns the value of WhenNotToUse.
+func (s *ActionTypeDescription) GetWhenNotToUse() OptString {
+	return s.WhenNotToUse
+}
+
+// GetPreconditions returns the value of Preconditions.
+func (s *ActionTypeDescription) GetPreconditions() OptString {
+	return s.Preconditions
+}
+
+// SetWhat sets the value of What.
+func (s *ActionTypeDescription) SetWhat(val string) {
+	s.What = val
+}
+
+// SetWhenToUse sets the value of WhenToUse.
+func (s *ActionTypeDescription) SetWhenToUse(val string) {
+	s.WhenToUse = val
+}
+
+// SetWhenNotToUse sets the value of WhenNotToUse.
+func (s *ActionTypeDescription) SetWhenNotToUse(val OptString) {
+	s.WhenNotToUse = val
+}
+
+// SetPreconditions sets the value of Preconditions.
+func (s *ActionTypeDescription) SetPreconditions(val OptString) {
+	s.Preconditions = val
+}
+
+// 409 response when disable is denied due to active workflow dependencies.
+// Ref: #/components/schemas/ActionTypeDisableDeniedResponse
+type ActionTypeDisableDeniedResponse struct {
+	ActionType string `json:"actionType"`
+	// Number of active workflows referencing this action type.
+	DependentWorkflowCount int `json:"dependentWorkflowCount"`
+	// Names of dependent workflows.
+	DependentWorkflows []string `json:"dependentWorkflows"`
+}
+
+// GetActionType returns the value of ActionType.
+func (s *ActionTypeDisableDeniedResponse) GetActionType() string {
+	return s.ActionType
+}
+
+// GetDependentWorkflowCount returns the value of DependentWorkflowCount.
+func (s *ActionTypeDisableDeniedResponse) GetDependentWorkflowCount() int {
+	return s.DependentWorkflowCount
+}
+
+// GetDependentWorkflows returns the value of DependentWorkflows.
+func (s *ActionTypeDisableDeniedResponse) GetDependentWorkflows() []string {
+	return s.DependentWorkflows
+}
+
+// SetActionType sets the value of ActionType.
+func (s *ActionTypeDisableDeniedResponse) SetActionType(val string) {
+	s.ActionType = val
+}
+
+// SetDependentWorkflowCount sets the value of DependentWorkflowCount.
+func (s *ActionTypeDisableDeniedResponse) SetDependentWorkflowCount(val int) {
+	s.DependentWorkflowCount = val
+}
+
+// SetDependentWorkflows sets the value of DependentWorkflows.
+func (s *ActionTypeDisableDeniedResponse) SetDependentWorkflows(val []string) {
+	s.DependentWorkflows = val
+}
+
+func (*ActionTypeDisableDeniedResponse) disableActionTypeRes() {}
+
+// Request body for disabling an action type.
+// Ref: #/components/schemas/ActionTypeDisableRequest
+type ActionTypeDisableRequest struct {
+	// Identity of who is disabling.
+	DisabledBy string `json:"disabledBy"`
+}
+
+// GetDisabledBy returns the value of DisabledBy.
+func (s *ActionTypeDisableRequest) GetDisabledBy() string {
+	return s.DisabledBy
+}
+
+// SetDisabledBy sets the value of DisabledBy.
+func (s *ActionTypeDisableRequest) SetDisabledBy(val string) {
+	s.DisabledBy = val
+}
+
+// Response for successful action type disable.
+// Ref: #/components/schemas/ActionTypeDisableResponse
+type ActionTypeDisableResponse struct {
+	ActionType string                          `json:"actionType"`
+	Status     ActionTypeDisableResponseStatus `json:"status"`
+}
+
+// GetActionType returns the value of ActionType.
+func (s *ActionTypeDisableResponse) GetActionType() string {
+	return s.ActionType
+}
+
+// GetStatus returns the value of Status.
+func (s *ActionTypeDisableResponse) GetStatus() ActionTypeDisableResponseStatus {
+	return s.Status
+}
+
+// SetActionType sets the value of ActionType.
+func (s *ActionTypeDisableResponse) SetActionType(val string) {
+	s.ActionType = val
+}
+
+// SetStatus sets the value of Status.
+func (s *ActionTypeDisableResponse) SetStatus(val ActionTypeDisableResponseStatus) {
+	s.Status = val
+}
+
+func (*ActionTypeDisableResponse) disableActionTypeRes() {}
+
+type ActionTypeDisableResponseStatus string
+
+const (
+	ActionTypeDisableResponseStatusDisabled ActionTypeDisableResponseStatus = "disabled"
+)
+
+// AllValues returns all ActionTypeDisableResponseStatus values.
+func (ActionTypeDisableResponseStatus) AllValues() []ActionTypeDisableResponseStatus {
+	return []ActionTypeDisableResponseStatus{
+		ActionTypeDisableResponseStatusDisabled,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ActionTypeDisableResponseStatus) MarshalText() ([]byte, error) {
+	switch s {
+	case ActionTypeDisableResponseStatusDisabled:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ActionTypeDisableResponseStatus) UnmarshalText(data []byte) error {
+	switch ActionTypeDisableResponseStatus(data) {
+	case ActionTypeDisableResponseStatusDisabled:
+		*s = ActionTypeDisableResponseStatusDisabled
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Single action type with description and workflow count.
 // Ref: #/components/schemas/ActionTypeEntry
 type ActionTypeEntry struct {
@@ -691,6 +1007,87 @@ func (s *ActionTypeListResponse) SetPagination(val PaginationMetadata) {
 }
 
 func (*ActionTypeListResponse) listAvailableActionsRes() {}
+
+// Request body for updating action type description. updatedBy is optional — the audit trail
+// (Phase 6a) captures the actor authoritatively.
+// Ref: #/components/schemas/ActionTypeUpdateRequest
+type ActionTypeUpdateRequest struct {
+	Description ActionTypeDescription `json:"description"`
+	// Identity of who made the change.
+	UpdatedBy OptString `json:"updatedBy"`
+}
+
+// GetDescription returns the value of Description.
+func (s *ActionTypeUpdateRequest) GetDescription() ActionTypeDescription {
+	return s.Description
+}
+
+// GetUpdatedBy returns the value of UpdatedBy.
+func (s *ActionTypeUpdateRequest) GetUpdatedBy() OptString {
+	return s.UpdatedBy
+}
+
+// SetDescription sets the value of Description.
+func (s *ActionTypeUpdateRequest) SetDescription(val ActionTypeDescription) {
+	s.Description = val
+}
+
+// SetUpdatedBy sets the value of UpdatedBy.
+func (s *ActionTypeUpdateRequest) SetUpdatedBy(val OptString) {
+	s.UpdatedBy = val
+}
+
+// Response for action type description update.
+// Ref: #/components/schemas/ActionTypeUpdateResponse
+type ActionTypeUpdateResponse struct {
+	ActionType     string                `json:"actionType"`
+	OldDescription ActionTypeDescription `json:"oldDescription"`
+	NewDescription ActionTypeDescription `json:"newDescription"`
+	// List of changed field names.
+	UpdatedFields []string `json:"updatedFields"`
+}
+
+// GetActionType returns the value of ActionType.
+func (s *ActionTypeUpdateResponse) GetActionType() string {
+	return s.ActionType
+}
+
+// GetOldDescription returns the value of OldDescription.
+func (s *ActionTypeUpdateResponse) GetOldDescription() ActionTypeDescription {
+	return s.OldDescription
+}
+
+// GetNewDescription returns the value of NewDescription.
+func (s *ActionTypeUpdateResponse) GetNewDescription() ActionTypeDescription {
+	return s.NewDescription
+}
+
+// GetUpdatedFields returns the value of UpdatedFields.
+func (s *ActionTypeUpdateResponse) GetUpdatedFields() []string {
+	return s.UpdatedFields
+}
+
+// SetActionType sets the value of ActionType.
+func (s *ActionTypeUpdateResponse) SetActionType(val string) {
+	s.ActionType = val
+}
+
+// SetOldDescription sets the value of OldDescription.
+func (s *ActionTypeUpdateResponse) SetOldDescription(val ActionTypeDescription) {
+	s.OldDescription = val
+}
+
+// SetNewDescription sets the value of NewDescription.
+func (s *ActionTypeUpdateResponse) SetNewDescription(val ActionTypeDescription) {
+	s.NewDescription = val
+}
+
+// SetUpdatedFields sets the value of UpdatedFields.
+func (s *ActionTypeUpdateResponse) SetUpdatedFields(val []string) {
+	s.UpdatedFields = val
+}
+
+func (*ActionTypeUpdateResponse) updateActionTypeRes() {}
 
 // Response when audit event is queued for async processing (202 Accepted).
 // Ref: #/components/schemas/AsyncAcceptanceResponse
@@ -4624,6 +5021,14 @@ func (s *BatchAuditEventResponse) SetEventIds(val []uuid.UUID) {
 func (s *BatchAuditEventResponse) SetMessage(val OptString) {
 	s.Message = val
 }
+
+type CreateActionTypeCreated ActionTypeCreateResponse
+
+func (*CreateActionTypeCreated) createActionTypeRes() {}
+
+type CreateActionTypeOK ActionTypeCreateResponse
+
+func (*CreateActionTypeOK) createActionTypeRes() {}
 
 type CreateAuditEventBadRequest RFC7807Problem
 
@@ -9875,6 +10280,52 @@ func (s *NotificationMessageSentPayloadMetadata) init() NotificationMessageSentP
 	return m
 }
 
+// NewOptActionTypeDescription returns new OptActionTypeDescription with value set to v.
+func NewOptActionTypeDescription(v ActionTypeDescription) OptActionTypeDescription {
+	return OptActionTypeDescription{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptActionTypeDescription is optional ActionTypeDescription.
+type OptActionTypeDescription struct {
+	Value ActionTypeDescription
+	Set   bool
+}
+
+// IsSet returns true if OptActionTypeDescription was set.
+func (o OptActionTypeDescription) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptActionTypeDescription) Reset() {
+	var v ActionTypeDescription
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptActionTypeDescription) SetTo(v ActionTypeDescription) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptActionTypeDescription) Get() (v ActionTypeDescription, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptActionTypeDescription) Or(d ActionTypeDescription) ActionTypeDescription {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptAuditEventsQueryResponsePagination returns new OptAuditEventsQueryResponsePagination with value set to v.
 func NewOptAuditEventsQueryResponsePagination(v AuditEventsQueryResponsePagination) OptAuditEventsQueryResponsePagination {
 	return OptAuditEventsQueryResponsePagination{
@@ -14170,7 +14621,9 @@ func (s *RFC7807Problem) SetFieldErrors(val OptRFC7807ProblemFieldErrors) {
 	s.FieldErrors = val
 }
 
-func (*RFC7807Problem) listWorkflowsRes() {}
+func (*RFC7807Problem) createActionTypeRes() {}
+func (*RFC7807Problem) listWorkflowsRes()    {}
+func (*RFC7807Problem) updateActionTypeRes() {}
 
 // Map of field names to error messages for validation errors.
 // Only present for 400 Bad Request responses.
@@ -18920,7 +19373,7 @@ type WorkflowDiscoveryEntry struct {
 	// Schema format version (e.g., 1.0, 1.1). #255.
 	SchemaVersion OptString `json:"schemaVersion"`
 	// OCI image used to extract the workflow schema.
-	SchemaImage string `json:"schemaImage"`
+	SchemaImage OptString `json:"schemaImage"`
 	// OCI execution bundle reference (digest-pinned).
 	ExecutionBundle OptString `json:"executionBundle"`
 	// Execution engine (tekton, job).
@@ -18958,7 +19411,7 @@ func (s *WorkflowDiscoveryEntry) GetSchemaVersion() OptString {
 }
 
 // GetSchemaImage returns the value of SchemaImage.
-func (s *WorkflowDiscoveryEntry) GetSchemaImage() string {
+func (s *WorkflowDiscoveryEntry) GetSchemaImage() OptString {
 	return s.SchemaImage
 }
 
@@ -19003,7 +19456,7 @@ func (s *WorkflowDiscoveryEntry) SetSchemaVersion(val OptString) {
 }
 
 // SetSchemaImage sets the value of SchemaImage.
-func (s *WorkflowDiscoveryEntry) SetSchemaImage(val string) {
+func (s *WorkflowDiscoveryEntry) SetSchemaImage(val OptString) {
 	s.SchemaImage = val
 }
 

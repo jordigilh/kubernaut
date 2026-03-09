@@ -18,39 +18,23 @@ import re  # noqa: F401
 import json
 
 
-from typing import Any, ClassVar, Dict, List, Optional
-from pydantic import BaseModel, StrictStr, field_validator
+from typing import Any, ClassVar, Dict, List
+from pydantic import BaseModel, StrictStr
 from pydantic import Field
-from datastorage.models.structured_description import StructuredDescription
+from datastorage.models.action_type_description import ActionTypeDescription
 try:
     from typing import Self
 except ImportError:
     from typing_extensions import Self
 
-class WorkflowDiscoveryEntry(BaseModel):
+class ActionTypeCreateRequest(BaseModel):
     """
-    Workflow summary for discovery (Step 2) - no parameter schema, no scores
+    Request body for creating or re-enabling an action type
     """ # noqa: E501
-    workflow_id: StrictStr = Field(description="UUID primary key", alias="workflowId")
-    workflow_name: StrictStr = Field(description="Human-readable workflow identifier (e.g., scale-conservative-v1)", alias="workflowName")
-    name: StrictStr = Field(description="Display name")
-    description: StructuredDescription
-    version: StrictStr = Field(description="Semantic version")
-    schema_version: Optional[StrictStr] = Field(default=None, description="Schema format version (e.g., 1.0, 1.1). #255", alias="schemaVersion")
-    schema_image: Optional[StrictStr] = Field(default=None, description="OCI image used to extract the workflow schema", alias="schemaImage")
-    execution_bundle: Optional[StrictStr] = Field(default=None, description="OCI execution bundle reference (digest-pinned)", alias="executionBundle")
-    execution_engine: Optional[StrictStr] = Field(default=None, description="Execution engine (tekton, job)", alias="executionEngine")
-    __properties: ClassVar[List[str]] = ["workflowId", "workflowName", "name", "description", "version", "schemaVersion", "schemaImage", "executionBundle", "executionEngine"]
-
-    @field_validator('execution_engine')
-    def execution_engine_validate_enum(cls, value):
-        """Validates the enum"""
-        if value is None:
-            return value
-
-        if value not in ('tekton', 'job'):
-            raise ValueError("must be one of enum values ('tekton', 'job')")
-        return value
+    name: StrictStr = Field(description="PascalCase action type name (e.g., RestartPod)")
+    description: ActionTypeDescription
+    registered_by: StrictStr = Field(description="Identity of the registrant (K8s SA or user)", alias="registeredBy")
+    __properties: ClassVar[List[str]] = ["name", "description", "registeredBy"]
 
     model_config = {
         "populate_by_name": True,
@@ -70,7 +54,7 @@ class WorkflowDiscoveryEntry(BaseModel):
 
     @classmethod
     def from_json(cls, json_str: str) -> Self:
-        """Create an instance of WorkflowDiscoveryEntry from a JSON string"""
+        """Create an instance of ActionTypeCreateRequest from a JSON string"""
         return cls.from_dict(json.loads(json_str))
 
     def to_dict(self) -> Dict[str, Any]:
@@ -96,7 +80,7 @@ class WorkflowDiscoveryEntry(BaseModel):
 
     @classmethod
     def from_dict(cls, obj: Dict) -> Self:
-        """Create an instance of WorkflowDiscoveryEntry from a dict"""
+        """Create an instance of ActionTypeCreateRequest from a dict"""
         if obj is None:
             return None
 
@@ -104,15 +88,9 @@ class WorkflowDiscoveryEntry(BaseModel):
             return cls.model_validate(obj)
 
         _obj = cls.model_validate({
-            "workflowId": obj.get("workflowId"),
-            "workflowName": obj.get("workflowName"),
             "name": obj.get("name"),
-            "description": StructuredDescription.from_dict(obj.get("description")) if obj.get("description") is not None else None,
-            "version": obj.get("version"),
-            "schemaVersion": obj.get("schemaVersion"),
-            "schemaImage": obj.get("schemaImage"),
-            "executionBundle": obj.get("executionBundle"),
-            "executionEngine": obj.get("executionEngine")
+            "description": ActionTypeDescription.from_dict(obj.get("description")) if obj.get("description") is not None else None,
+            "registeredBy": obj.get("registeredBy")
         })
         return _obj
 

@@ -123,16 +123,16 @@ configuration = datastorage.Configuration(
 # Enter a context with an instance of the API client
 with datastorage.ApiClient(configuration) as api_client:
     # Create an instance of the API class
-    api_instance = datastorage.AuditReconstructionAPIApi(api_client)
-    correlation_id = 'rr-prometheus-alert-highcpu-abc123' # str | Unique correlation ID for the remediation lifecycle
+    api_instance = datastorage.ActionTypeTaxonomyAPIApi(api_client)
+    action_type_create_request = datastorage.ActionTypeCreateRequest() # ActionTypeCreateRequest | 
 
     try:
-        # Reconstruct RemediationRequest from audit trail
-        api_response = api_instance.reconstruct_remediation_request(correlation_id)
-        print("The response of AuditReconstructionAPIApi->reconstruct_remediation_request:\n")
+        # Create or re-enable an action type
+        api_response = api_instance.create_action_type(action_type_create_request)
+        print("The response of ActionTypeTaxonomyAPIApi->create_action_type:\n")
         pprint(api_response)
     except ApiException as e:
-        print("Exception when calling AuditReconstructionAPIApi->reconstruct_remediation_request: %s\n" % e)
+        print("Exception when calling ActionTypeTaxonomyAPIApi->create_action_type: %s\n" % e)
 
 ```
 
@@ -142,6 +142,9 @@ All URIs are relative to *http://localhost:8080*
 
 Class | Method | HTTP request | Description
 ------------ | ------------- | ------------- | -------------
+*ActionTypeTaxonomyAPIApi* | [**create_action_type**](docs/ActionTypeTaxonomyAPIApi.md#create_action_type) | **POST** /api/v1/action-types | Create or re-enable an action type
+*ActionTypeTaxonomyAPIApi* | [**disable_action_type**](docs/ActionTypeTaxonomyAPIApi.md#disable_action_type) | **PATCH** /api/v1/action-types/{name}/disable | Soft-disable an action type
+*ActionTypeTaxonomyAPIApi* | [**update_action_type**](docs/ActionTypeTaxonomyAPIApi.md#update_action_type) | **PATCH** /api/v1/action-types/{name} | Update action type description
 *AuditReconstructionAPIApi* | [**reconstruct_remediation_request**](docs/AuditReconstructionAPIApi.md#reconstruct_remediation_request) | **POST** /api/v1/audit/remediation-requests/{correlation_id}/reconstruct | Reconstruct RemediationRequest from audit trail
 *AuditWriteAPIApi* | [**create_audit_event**](docs/AuditWriteAPIApi.md#create_audit_event) | **POST** /api/v1/audit/events | Create unified audit event
 *AuditWriteAPIApi* | [**create_audit_events_batch**](docs/AuditWriteAPIApi.md#create_audit_events_batch) | **POST** /api/v1/audit/events/batch | Create audit events batch
@@ -178,8 +181,16 @@ Class | Method | HTTP request | Description
  - [AIAnalysisErrorPayload](docs/AIAnalysisErrorPayload.md)
  - [AIAnalysisPhaseTransitionPayload](docs/AIAnalysisPhaseTransitionPayload.md)
  - [AIAnalysisRegoEvaluationPayload](docs/AIAnalysisRegoEvaluationPayload.md)
+ - [ActionTypeCreateRequest](docs/ActionTypeCreateRequest.md)
+ - [ActionTypeCreateResponse](docs/ActionTypeCreateResponse.md)
+ - [ActionTypeDescription](docs/ActionTypeDescription.md)
+ - [ActionTypeDisableDeniedResponse](docs/ActionTypeDisableDeniedResponse.md)
+ - [ActionTypeDisableRequest](docs/ActionTypeDisableRequest.md)
+ - [ActionTypeDisableResponse](docs/ActionTypeDisableResponse.md)
  - [ActionTypeEntry](docs/ActionTypeEntry.md)
  - [ActionTypeListResponse](docs/ActionTypeListResponse.md)
+ - [ActionTypeUpdateRequest](docs/ActionTypeUpdateRequest.md)
+ - [ActionTypeUpdateResponse](docs/ActionTypeUpdateResponse.md)
  - [AsyncAcceptanceResponse](docs/AsyncAcceptanceResponse.md)
  - [AuditEvent](docs/AuditEvent.md)
  - [AuditEventRequest](docs/AuditEventRequest.md)

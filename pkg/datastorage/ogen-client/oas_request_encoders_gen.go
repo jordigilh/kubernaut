@@ -10,6 +10,20 @@ import (
 	ht "github.com/ogen-go/ogen/http"
 )
 
+func encodeCreateActionTypeRequest(
+	req *ActionTypeCreateRequest,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
 func encodeCreateAuditEventRequest(
 	req *AuditEventRequest,
 	r *http.Request,
@@ -84,6 +98,20 @@ func encodeDeprecateWorkflowRequest(
 	return nil
 }
 
+func encodeDisableActionTypeRequest(
+	req *ActionTypeDisableRequest,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
 func encodeDisableWorkflowRequest(
 	req *WorkflowLifecycleRequest,
 	r *http.Request,
@@ -128,6 +156,20 @@ func encodePlaceLegalHoldRequest(
 
 func encodeReleaseLegalHoldRequest(
 	req *ReleaseLegalHoldReq,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
+func encodeUpdateActionTypeRequest(
+	req *ActionTypeUpdateRequest,
 	r *http.Request,
 ) error {
 	const contentType = "application/json"

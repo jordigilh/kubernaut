@@ -18,39 +18,22 @@ import re  # noqa: F401
 import json
 
 
-from typing import Any, ClassVar, Dict, List, Optional
-from pydantic import BaseModel, StrictStr, field_validator
+from typing import Any, ClassVar, Dict, List
+from pydantic import BaseModel, StrictInt, StrictStr
 from pydantic import Field
-from datastorage.models.structured_description import StructuredDescription
 try:
     from typing import Self
 except ImportError:
     from typing_extensions import Self
 
-class WorkflowDiscoveryEntry(BaseModel):
+class ActionTypeDisableDeniedResponse(BaseModel):
     """
-    Workflow summary for discovery (Step 2) - no parameter schema, no scores
+    409 response when disable is denied due to active workflow dependencies
     """ # noqa: E501
-    workflow_id: StrictStr = Field(description="UUID primary key", alias="workflowId")
-    workflow_name: StrictStr = Field(description="Human-readable workflow identifier (e.g., scale-conservative-v1)", alias="workflowName")
-    name: StrictStr = Field(description="Display name")
-    description: StructuredDescription
-    version: StrictStr = Field(description="Semantic version")
-    schema_version: Optional[StrictStr] = Field(default=None, description="Schema format version (e.g., 1.0, 1.1). #255", alias="schemaVersion")
-    schema_image: Optional[StrictStr] = Field(default=None, description="OCI image used to extract the workflow schema", alias="schemaImage")
-    execution_bundle: Optional[StrictStr] = Field(default=None, description="OCI execution bundle reference (digest-pinned)", alias="executionBundle")
-    execution_engine: Optional[StrictStr] = Field(default=None, description="Execution engine (tekton, job)", alias="executionEngine")
-    __properties: ClassVar[List[str]] = ["workflowId", "workflowName", "name", "description", "version", "schemaVersion", "schemaImage", "executionBundle", "executionEngine"]
-
-    @field_validator('execution_engine')
-    def execution_engine_validate_enum(cls, value):
-        """Validates the enum"""
-        if value is None:
-            return value
-
-        if value not in ('tekton', 'job'):
-            raise ValueError("must be one of enum values ('tekton', 'job')")
-        return value
+    action_type: StrictStr = Field(alias="actionType")
+    dependent_workflow_count: StrictInt = Field(description="Number of active workflows referencing this action type", alias="dependentWorkflowCount")
+    dependent_workflows: List[StrictStr] = Field(description="Names of dependent workflows", alias="dependentWorkflows")
+    __properties: ClassVar[List[str]] = ["actionType", "dependentWorkflowCount", "dependentWorkflows"]
 
     model_config = {
         "populate_by_name": True,
@@ -70,7 +53,7 @@ class WorkflowDiscoveryEntry(BaseModel):
 
     @classmethod
     def from_json(cls, json_str: str) -> Self:
-        """Create an instance of WorkflowDiscoveryEntry from a JSON string"""
+        """Create an instance of ActionTypeDisableDeniedResponse from a JSON string"""
         return cls.from_dict(json.loads(json_str))
 
     def to_dict(self) -> Dict[str, Any]:
@@ -89,14 +72,11 @@ class WorkflowDiscoveryEntry(BaseModel):
             },
             exclude_none=True,
         )
-        # override the default output from pydantic by calling `to_dict()` of description
-        if self.description:
-            _dict['description'] = self.description.to_dict()
         return _dict
 
     @classmethod
     def from_dict(cls, obj: Dict) -> Self:
-        """Create an instance of WorkflowDiscoveryEntry from a dict"""
+        """Create an instance of ActionTypeDisableDeniedResponse from a dict"""
         if obj is None:
             return None
 
@@ -104,15 +84,9 @@ class WorkflowDiscoveryEntry(BaseModel):
             return cls.model_validate(obj)
 
         _obj = cls.model_validate({
-            "workflowId": obj.get("workflowId"),
-            "workflowName": obj.get("workflowName"),
-            "name": obj.get("name"),
-            "description": StructuredDescription.from_dict(obj.get("description")) if obj.get("description") is not None else None,
-            "version": obj.get("version"),
-            "schemaVersion": obj.get("schemaVersion"),
-            "schemaImage": obj.get("schemaImage"),
-            "executionBundle": obj.get("executionBundle"),
-            "executionEngine": obj.get("executionEngine")
+            "actionType": obj.get("actionType"),
+            "dependentWorkflowCount": obj.get("dependentWorkflowCount"),
+            "dependentWorkflows": obj.get("dependentWorkflows")
         })
         return _obj
 

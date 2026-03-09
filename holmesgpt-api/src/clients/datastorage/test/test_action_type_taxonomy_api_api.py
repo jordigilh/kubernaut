@@ -13,61 +13,40 @@
 
 
 import unittest
-import datetime
 
-from datastorage.models.workflow_discovery_entry import WorkflowDiscoveryEntry
+from datastorage.api.action_type_taxonomy_api_api import ActionTypeTaxonomyAPIApi
 
-class TestWorkflowDiscoveryEntry(unittest.TestCase):
-    """WorkflowDiscoveryEntry unit test stubs"""
 
-    def setUp(self):
+class TestActionTypeTaxonomyAPIApi(unittest.TestCase):
+    """ActionTypeTaxonomyAPIApi unit test stubs"""
+
+    def setUp(self) -> None:
+        self.api = ActionTypeTaxonomyAPIApi()
+
+    def tearDown(self) -> None:
         pass
 
-    def tearDown(self):
+    def test_create_action_type(self) -> None:
+        """Test case for create_action_type
+
+        Create or re-enable an action type
+        """
         pass
 
-    def make_instance(self, include_optional) -> WorkflowDiscoveryEntry:
-        """Test WorkflowDiscoveryEntry
-            include_option is a boolean, when False only required
-            params are included, when True both required and
-            optional params are included """
-        # uncomment below to create an instance of `WorkflowDiscoveryEntry`
-        """
-        model = WorkflowDiscoveryEntry()
-        if include_optional:
-            return WorkflowDiscoveryEntry(
-                workflow_id = '',
-                workflow_name = '',
-                name = '',
-                description = datastorage.models.structured_description.StructuredDescription(
-                    what = '', 
-                    when_to_use = '', 
-                    when_not_to_use = '', 
-                    preconditions = '', ),
-                version = '',
-                schema_version = '',
-                schema_image = '',
-                execution_bundle = '',
-                execution_engine = 'tekton'
-            )
-        else:
-            return WorkflowDiscoveryEntry(
-                workflow_id = '',
-                workflow_name = '',
-                name = '',
-                description = datastorage.models.structured_description.StructuredDescription(
-                    what = '', 
-                    when_to_use = '', 
-                    when_not_to_use = '', 
-                    preconditions = '', ),
-                version = '',
-        )
-        """
+    def test_disable_action_type(self) -> None:
+        """Test case for disable_action_type
 
-    def testWorkflowDiscoveryEntry(self):
-        """Test WorkflowDiscoveryEntry"""
-        # inst_req_only = self.make_instance(include_optional=False)
-        # inst_req_and_optional = self.make_instance(include_optional=True)
+        Soft-disable an action type
+        """
+        pass
+
+    def test_update_action_type(self) -> None:
+        """Test case for update_action_type
+
+        Update action type description
+        """
+        pass
+
 
 if __name__ == '__main__':
     unittest.main()

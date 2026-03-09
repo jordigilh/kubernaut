@@ -2526,7 +2526,6 @@ components:
         - name
         - description
         - version
-        - schemaImage
       properties:
         workflowId:
           type: string

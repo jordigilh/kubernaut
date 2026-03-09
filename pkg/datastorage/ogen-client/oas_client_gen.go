@@ -27,6 +27,15 @@ func trimTrailingSlashes(u *url.URL) {
 
 // Invoker invokes operations described by OpenAPI v3 specification.
 type Invoker interface {
+	// CreateActionType invokes createActionType operation.
+	//
+	// Idempotent CREATE: creates a new action type, returns existing if active,
+	// or re-enables if previously disabled.
+	// **Business Requirement**: BR-WORKFLOW-007.1 (Idempotent CREATE)
+	// **Design Decision**: DD-ACTIONTYPE-001 (ActionType CRD Lifecycle Design).
+	//
+	// POST /api/v1/action-types
+	CreateActionType(ctx context.Context, request *ActionTypeCreateRequest) (CreateActionTypeRes, error)
 	// CreateAuditEvent invokes createAuditEvent operation.
 	//
 	// Persists a unified audit event to the audit_events table (ADR-034).
@@ -81,6 +90,14 @@ type Invoker interface {
 	//
 	// PATCH /api/v1/workflows/{workflow_id}/deprecate
 	DeprecateWorkflow(ctx context.Context, request *WorkflowLifecycleRequest, params DeprecateWorkflowParams) (DeprecateWorkflowRes, error)
+	// DisableActionType invokes disableActionType operation.
+	//
+	// Soft-disables an action type. Denied with 409 if active workflows reference it.
+	// The denial response includes the count and names of dependent workflows.
+	// **Business Requirement**: BR-WORKFLOW-007.3 (DELETE with dependency guard).
+	//
+	// PATCH /api/v1/action-types/{name}/disable
+	DisableActionType(ctx context.Context, request *ActionTypeDisableRequest, params DisableActionTypeParams) (DisableActionTypeRes, error)
 	// DisableWorkflow invokes disableWorkflow operation.
 	//
 	// Convenience endpoint to disable a workflow (soft delete).
@@ -337,6 +354,14 @@ type Invoker interface {
 	//
 	// DELETE /api/v1/audit/legal-hold/{correlation_id}
 	ReleaseLegalHold(ctx context.Context, request *ReleaseLegalHoldReq, params ReleaseLegalHoldParams) (ReleaseLegalHoldRes, error)
+	// UpdateActionType invokes updateActionType operation.
+	//
+	// Updates the description fields of an active action type.
+	// Only spec.description is mutable; spec.name is immutable.
+	// **Business Requirement**: BR-WORKFLOW-007.2 (Description UPDATE with audit).
+	//
+	// PATCH /api/v1/action-types/{name}
+	UpdateActionType(ctx context.Context, request *ActionTypeUpdateRequest, params UpdateActionTypeParams) (UpdateActionTypeRes, error)
 	// UpdateWorkflow invokes updateWorkflow operation.
 	//
 	// Update mutable workflow fields (status, metrics).
@@ -388,6 +413,85 @@ func (c *Client) requestURL(ctx context.Context) *url.URL {
 		return c.serverURL
 	}
 	return u
+}
+
+// CreateActionType invokes createActionType operation.
+//
+// Idempotent CREATE: creates a new action type, returns existing if active,
+// or re-enables if previously disabled.
+// **Business Requirement**: BR-WORKFLOW-007.1 (Idempotent CREATE)
+// **Design Decision**: DD-ACTIONTYPE-001 (ActionType CRD Lifecycle Design).
+//
+// POST /api/v1/action-types
+func (c *Client) CreateActionType(ctx context.Context, request *ActionTypeCreateRequest) (CreateActionTypeRes, error) {
+	res, err := c.sendCreateActionType(ctx, request)
+	return res, err
+}
+
+func (c *Client) sendCreateActionType(ctx context.Context, request *ActionTypeCreateRequest) (res CreateActionTypeRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("createActionType"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/api/v1/action-types"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, CreateActionTypeOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [1]string
+	pathParts[0] = "/api/v1/action-types"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeCreateActionTypeRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	defer resp.Body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeCreateActionTypeResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
 }
 
 // CreateAuditEvent invokes createAuditEvent operation.
@@ -806,6 +910,103 @@ func (c *Client) sendDeprecateWorkflow(ctx context.Context, request *WorkflowLif
 
 	stage = "DecodeResponse"
 	result, err := decodeDeprecateWorkflowResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// DisableActionType invokes disableActionType operation.
+//
+// Soft-disables an action type. Denied with 409 if active workflows reference it.
+// The denial response includes the count and names of dependent workflows.
+// **Business Requirement**: BR-WORKFLOW-007.3 (DELETE with dependency guard).
+//
+// PATCH /api/v1/action-types/{name}/disable
+func (c *Client) DisableActionType(ctx context.Context, request *ActionTypeDisableRequest, params DisableActionTypeParams) (DisableActionTypeRes, error) {
+	res, err := c.sendDisableActionType(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendDisableActionType(ctx context.Context, request *ActionTypeDisableRequest, params DisableActionTypeParams) (res DisableActionTypeRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("disableActionType"),
+		semconv.HTTPRequestMethodKey.String("PATCH"),
+		semconv.URLTemplateKey.String("/api/v1/action-types/{name}/disable"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, DisableActionTypeOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/api/v1/action-types/"
+	{
+		// Encode "name" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "name",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.Name))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/disable"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "PATCH", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeDisableActionTypeRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	defer resp.Body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeDisableActionTypeResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -3353,6 +3554,102 @@ func (c *Client) sendReleaseLegalHold(ctx context.Context, request *ReleaseLegal
 
 	stage = "DecodeResponse"
 	result, err := decodeReleaseLegalHoldResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// UpdateActionType invokes updateActionType operation.
+//
+// Updates the description fields of an active action type.
+// Only spec.description is mutable; spec.name is immutable.
+// **Business Requirement**: BR-WORKFLOW-007.2 (Description UPDATE with audit).
+//
+// PATCH /api/v1/action-types/{name}
+func (c *Client) UpdateActionType(ctx context.Context, request *ActionTypeUpdateRequest, params UpdateActionTypeParams) (UpdateActionTypeRes, error) {
+	res, err := c.sendUpdateActionType(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendUpdateActionType(ctx context.Context, request *ActionTypeUpdateRequest, params UpdateActionTypeParams) (res UpdateActionTypeRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("updateActionType"),
+		semconv.HTTPRequestMethodKey.String("PATCH"),
+		semconv.URLTemplateKey.String("/api/v1/action-types/{name}"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, UpdateActionTypeOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [2]string
+	pathParts[0] = "/api/v1/action-types/"
+	{
+		// Encode "name" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "name",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.Name))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "PATCH", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeUpdateActionTypeRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	defer resp.Body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeUpdateActionTypeResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

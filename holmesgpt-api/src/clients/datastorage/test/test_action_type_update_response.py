@@ -15,10 +15,10 @@
 import unittest
 import datetime
 
-from datastorage.models.workflow_discovery_entry import WorkflowDiscoveryEntry
+from datastorage.models.action_type_update_response import ActionTypeUpdateResponse
 
-class TestWorkflowDiscoveryEntry(unittest.TestCase):
-    """WorkflowDiscoveryEntry unit test stubs"""
+class TestActionTypeUpdateResponse(unittest.TestCase):
+    """ActionTypeUpdateResponse unit test stubs"""
 
     def setUp(self):
         pass
@@ -26,46 +26,52 @@ class TestWorkflowDiscoveryEntry(unittest.TestCase):
     def tearDown(self):
         pass
 
-    def make_instance(self, include_optional) -> WorkflowDiscoveryEntry:
-        """Test WorkflowDiscoveryEntry
+    def make_instance(self, include_optional) -> ActionTypeUpdateResponse:
+        """Test ActionTypeUpdateResponse
             include_option is a boolean, when False only required
             params are included, when True both required and
             optional params are included """
-        # uncomment below to create an instance of `WorkflowDiscoveryEntry`
+        # uncomment below to create an instance of `ActionTypeUpdateResponse`
         """
-        model = WorkflowDiscoveryEntry()
+        model = ActionTypeUpdateResponse()
         if include_optional:
-            return WorkflowDiscoveryEntry(
-                workflow_id = '',
-                workflow_name = '',
-                name = '',
-                description = datastorage.models.structured_description.StructuredDescription(
+            return ActionTypeUpdateResponse(
+                action_type = '',
+                old_description = datastorage.models.action_type_description.ActionTypeDescription(
                     what = '', 
                     when_to_use = '', 
                     when_not_to_use = '', 
                     preconditions = '', ),
-                version = '',
-                schema_version = '',
-                schema_image = '',
-                execution_bundle = '',
-                execution_engine = 'tekton'
+                new_description = datastorage.models.action_type_description.ActionTypeDescription(
+                    what = '', 
+                    when_to_use = '', 
+                    when_not_to_use = '', 
+                    preconditions = '', ),
+                updated_fields = [
+                    ''
+                    ]
             )
         else:
-            return WorkflowDiscoveryEntry(
-                workflow_id = '',
-                workflow_name = '',
-                name = '',
-                description = datastorage.models.structured_description.StructuredDescription(
+            return ActionTypeUpdateResponse(
+                action_type = '',
+                old_description = datastorage.models.action_type_description.ActionTypeDescription(
                     what = '', 
                     when_to_use = '', 
                     when_not_to_use = '', 
                     preconditions = '', ),
-                version = '',
+                new_description = datastorage.models.action_type_description.ActionTypeDescription(
+                    what = '', 
+                    when_to_use = '', 
+                    when_not_to_use = '', 
+                    preconditions = '', ),
+                updated_fields = [
+                    ''
+                    ],
         )
         """
 
-    def testWorkflowDiscoveryEntry(self):
-        """Test WorkflowDiscoveryEntry"""
+    def testActionTypeUpdateResponse(self):
+        """Test ActionTypeUpdateResponse"""
         # inst_req_only = self.make_instance(include_optional=False)
         # inst_req_and_optional = self.make_instance(include_optional=True)
 

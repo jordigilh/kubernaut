@@ -17,6 +17,7 @@
 __version__ = "1.0.0"
 
 # import apis into sdk package
+from datastorage.api.action_type_taxonomy_api_api import ActionTypeTaxonomyAPIApi
 from datastorage.api.audit_reconstruction_api_api import AuditReconstructionAPIApi
 from datastorage.api.audit_write_api_api import AuditWriteAPIApi
 from datastorage.api.effectiveness_assessment_api_api import EffectivenessAssessmentAPIApi
@@ -45,8 +46,16 @@ from datastorage.models.ai_analysis_audit_payload import AIAnalysisAuditPayload
 from datastorage.models.ai_analysis_error_payload import AIAnalysisErrorPayload
 from datastorage.models.ai_analysis_phase_transition_payload import AIAnalysisPhaseTransitionPayload
 from datastorage.models.ai_analysis_rego_evaluation_payload import AIAnalysisRegoEvaluationPayload
+from datastorage.models.action_type_create_request import ActionTypeCreateRequest
+from datastorage.models.action_type_create_response import ActionTypeCreateResponse
+from datastorage.models.action_type_description import ActionTypeDescription
+from datastorage.models.action_type_disable_denied_response import ActionTypeDisableDeniedResponse
+from datastorage.models.action_type_disable_request import ActionTypeDisableRequest
+from datastorage.models.action_type_disable_response import ActionTypeDisableResponse
 from datastorage.models.action_type_entry import ActionTypeEntry
 from datastorage.models.action_type_list_response import ActionTypeListResponse
+from datastorage.models.action_type_update_request import ActionTypeUpdateRequest
+from datastorage.models.action_type_update_response import ActionTypeUpdateResponse
 from datastorage.models.async_acceptance_response import AsyncAcceptanceResponse
 from datastorage.models.audit_event import AuditEvent
 from datastorage.models.audit_event_request import AuditEventRequest

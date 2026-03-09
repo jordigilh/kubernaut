@@ -15,10 +15,10 @@
 import unittest
 import datetime
 
-from datastorage.models.workflow_discovery_entry import WorkflowDiscoveryEntry
+from datastorage.models.action_type_disable_request import ActionTypeDisableRequest
 
-class TestWorkflowDiscoveryEntry(unittest.TestCase):
-    """WorkflowDiscoveryEntry unit test stubs"""
+class TestActionTypeDisableRequest(unittest.TestCase):
+    """ActionTypeDisableRequest unit test stubs"""
 
     def setUp(self):
         pass
@@ -26,46 +26,26 @@ class TestWorkflowDiscoveryEntry(unittest.TestCase):
     def tearDown(self):
         pass
 
-    def make_instance(self, include_optional) -> WorkflowDiscoveryEntry:
-        """Test WorkflowDiscoveryEntry
+    def make_instance(self, include_optional) -> ActionTypeDisableRequest:
+        """Test ActionTypeDisableRequest
             include_option is a boolean, when False only required
             params are included, when True both required and
             optional params are included """
-        # uncomment below to create an instance of `WorkflowDiscoveryEntry`
+        # uncomment below to create an instance of `ActionTypeDisableRequest`
         """
-        model = WorkflowDiscoveryEntry()
+        model = ActionTypeDisableRequest()
         if include_optional:
-            return WorkflowDiscoveryEntry(
-                workflow_id = '',
-                workflow_name = '',
-                name = '',
-                description = datastorage.models.structured_description.StructuredDescription(
-                    what = '', 
-                    when_to_use = '', 
-                    when_not_to_use = '', 
-                    preconditions = '', ),
-                version = '',
-                schema_version = '',
-                schema_image = '',
-                execution_bundle = '',
-                execution_engine = 'tekton'
+            return ActionTypeDisableRequest(
+                disabled_by = ''
             )
         else:
-            return WorkflowDiscoveryEntry(
-                workflow_id = '',
-                workflow_name = '',
-                name = '',
-                description = datastorage.models.structured_description.StructuredDescription(
-                    what = '', 
-                    when_to_use = '', 
-                    when_not_to_use = '', 
-                    preconditions = '', ),
-                version = '',
+            return ActionTypeDisableRequest(
+                disabled_by = '',
         )
         """
 
-    def testWorkflowDiscoveryEntry(self):
-        """Test WorkflowDiscoveryEntry"""
+    def testActionTypeDisableRequest(self):
+        """Test ActionTypeDisableRequest"""
         # inst_req_only = self.make_instance(include_optional=False)
         # inst_req_and_optional = self.make_instance(include_optional=True)
 

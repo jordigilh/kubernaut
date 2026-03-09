@@ -42,6 +42,7 @@ import (
 	dsmetrics "github.com/jordigilh/kubernaut/pkg/datastorage/metrics"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/oci"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
+	actiontyperepo "github.com/jordigilh/kubernaut/pkg/datastorage/repository/actiontype"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/schema"
 	dsmiddleware "github.com/jordigilh/kubernaut/pkg/datastorage/server/middleware"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
@@ -283,6 +284,9 @@ func NewServer(deps ServerDeps) (*Server, error) {
 	logger.V(1).Info("Workflow catalog dependencies created (label-only search)",
 		"workflow_repo_nil", workflowRepo == nil)
 
+	// BR-WORKFLOW-007: ActionType taxonomy repository
+	actionTypeRepo := actiontyperepo.NewRepository(sqlxDB, logger)
+
 	// Create database adapter for READ API handlers
 	dbAdapter := adapter.NewDBAdapter(db, logger)
 
@@ -311,6 +315,7 @@ func NewServer(deps ServerDeps) (*Server, error) {
 		WithSQLDB(db),
 		WithSchemaExtractor(schemaExtractor),
 		WithRemediationHistoryQuerier(remHistoryQuerier),
+		WithActionTypeRepository(actionTypeRepo),
 	}
 	opts = append(opts, deps.HandlerOpts...)
 	handler := NewHandler(dbAdapter, opts...)
@@ -522,6 +527,12 @@ func (s *Server) Handler() http.Handler {
 		// DD-WORKFLOW-017 Phase 4.4 (GAP-WF-1): Lifecycle endpoints for enable and deprecate
 		r.Patch("/workflows/{workflowID}/enable", s.handler.HandleEnableWorkflow)
 		r.Patch("/workflows/{workflowID}/deprecate", s.handler.HandleDeprecateWorkflow)
+
+		// BR-WORKFLOW-007: ActionType taxonomy CRUD (ADR-059, DD-ACTIONTYPE-001)
+		s.logger.V(1).Info("Registering /api/v1/action-types handlers (BR-WORKFLOW-007)")
+		r.Post("/action-types", s.handler.HandleCreateActionType)
+		r.Patch("/action-types/{name}", s.handler.HandleUpdateActionType)
+		r.Patch("/action-types/{name}/disable", s.handler.HandleDisableActionType)
 	})
 
 	s.logger.V(1).Info("API v1 routes configured successfully")

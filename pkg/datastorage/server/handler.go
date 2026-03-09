@@ -32,6 +32,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/oci"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
+	actiontyperepo "github.com/jordigilh/kubernaut/pkg/datastorage/repository/actiontype"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server/response"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 )
@@ -118,6 +119,7 @@ type Handler struct {
 	dependencyValidator     validation.DependencyValidator     // DD-WE-006: Schema-declared dependency validation
 	executionNamespace      string                            // DD-WE-006: Namespace where dependencies are provisioned
 	remediationHistoryRepo  RemediationHistoryQuerier         // BR-HAPI-016: Remediation history context (DD-HAPI-016 v1.1)
+	actionTypeRepo          *actiontyperepo.Repository        // BR-WORKFLOW-007: ActionType CRD lifecycle
 }
 
 // HandlerOption is a functional option for configuring the Handler
@@ -212,6 +214,14 @@ func WithWorkflowContentIntegrityRepository(repo WorkflowContentIntegrityReposit
 func WithRemediationHistoryQuerier(repo RemediationHistoryQuerier) HandlerOption {
 	return func(h *Handler) {
 		h.remediationHistoryRepo = repo
+	}
+}
+
+// WithActionTypeRepository sets the action type taxonomy repository.
+// BR-WORKFLOW-007: ActionType CRD lifecycle management.
+func WithActionTypeRepository(repo *actiontyperepo.Repository) HandlerOption {
+	return func(h *Handler) {
+		h.actionTypeRepo = repo
 	}
 }
 

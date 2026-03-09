@@ -12,7 +12,7 @@ Name | Type | Description | Notes
 **description** | [**StructuredDescription**](StructuredDescription.md) |  | 
 **version** | **str** | Semantic version | 
 **schema_version** | **str** | Schema format version (e.g., 1.0, 1.1). #255 | [optional] 
-**schema_image** | **str** | OCI image used to extract the workflow schema | 
+**schema_image** | **str** | OCI image used to extract the workflow schema | [optional] 
 **execution_bundle** | **str** | OCI execution bundle reference (digest-pinned) | [optional] 
 **execution_engine** | **str** | Execution engine (tekton, job) | [optional] 
 
