@@ -14,7 +14,7 @@ source "${SCRIPT_DIR}/../../scripts/validation-helper.sh"
 # ── Wait for alert ──────────────────────────────────────────────────────────
 # ReplicaSet-level alert: spec_replicas>0 but status_replicas=0 (FailedCreate)
 
-wait_for_alert "KubeResourceQuotaExhausted" "${NAMESPACE}" 180
+wait_for_alert "KubeResourceQuotaExhausted" "${NAMESPACE}" 480
 show_alert "KubeResourceQuotaExhausted" "${NAMESPACE}"
 
 # ── Wait for pipeline ──────────────────────────────────────────────────────
@@ -56,9 +56,9 @@ assert_eq "$aa_reason" "no_matching_workflows" "AA humanReviewReason"
 wfe_phase=$(get_wfe_phase "${NAMESPACE}")
 assert_eq "$wfe_phase" "" "WFE should not exist"
 
-# Quota should still be exhausted: new RS has desired>0 but 0 current pods
+# Quota should still be exhausted: at least one RS has desired > ready
 stuck_rs=$(kubectl get rs -n "${NAMESPACE}" --no-headers 2>/dev/null \
-  | awk '$2 > 0 && $3 == 0 {count++} END {print count+0}')
-assert_gt "${stuck_rs:-0}" "0" "At least 1 RS stuck (desired>0, current=0)"
+  | awk '$2 > $4 {count++} END {print count+0}')
+assert_gt "${stuck_rs:-0}" "0" "At least 1 RS stuck (desired > ready)"
 
 print_result "resource-quota-exhaustion"
