@@ -137,8 +137,8 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 		It("should create workflow v1.0.0 with UUID and is_latest_version=true", func() {
 			testLogger.Info("📝 Creating workflow v1.0.0...")
 
-			// DD-WORKFLOW-017: Register workflow v1.0.0 inline
-			createReq := &dsgen.CreateWorkflowInlineRequest{Content: e2eTestWorkflowStubContent}
+			// DD-WORKFLOW-017: Register workflow v1.0.0 inline with unique name+version
+			createReq := &dsgen.CreateWorkflowInlineRequest{Content: generateWorkflowContent(workflowName, "1.0.0")}
 			createReq.Source.SetTo("e2e-test")
 
 			createResp, err := DSClient.CreateWorkflow(ctx, createReq)
@@ -176,8 +176,8 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 		It("should create workflow v1.1.0 and mark v1.0.0 as not latest", func() {
 			testLogger.Info("📝 Creating workflow v1.1.0...")
 
-			// DD-WORKFLOW-017: Register workflow v1.1.0 inline
-			createReq := &dsgen.CreateWorkflowInlineRequest{Content: e2eTestWorkflowStubContent}
+			// DD-WORKFLOW-017: Register workflow v1.1.0 inline with same name, new version
+			createReq := &dsgen.CreateWorkflowInlineRequest{Content: generateWorkflowContent(workflowName, "1.1.0")}
 			createReq.Source.SetTo("e2e-test")
 
 			createResp, err := DSClient.CreateWorkflow(ctx, createReq)
@@ -221,8 +221,8 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 		It("should create workflow v2.0.0 and only latest version is marked", func() {
 			testLogger.Info("📝 Creating workflow v2.0.0...")
 
-			// DD-WORKFLOW-017: Register workflow v2.0.0 inline
-			createReq := &dsgen.CreateWorkflowInlineRequest{Content: e2eTestWorkflowStubContent}
+			// DD-WORKFLOW-017: Register workflow v2.0.0 inline with same name, new version
+			createReq := &dsgen.CreateWorkflowInlineRequest{Content: generateWorkflowContent(workflowName, "2.0.0")}
 			createReq.Source.SetTo("e2e-test")
 
 			createResp, err := DSClient.CreateWorkflow(ctx, createReq)

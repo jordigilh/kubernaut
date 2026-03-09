@@ -174,8 +174,11 @@ var _ = Describe("E2E-DS-017-001: Three-Step Workflow Discovery (DD-HAPI-017)", 
 			logger.Info("E2E-DS-017-001-002: Disabled workflow excluded from discovery")
 			logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-			// Create ACTIVE workflow via inline YAML (DD-WORKFLOW-017)
-			activeReq := &dsgen.CreateWorkflowInlineRequest{Content: e2eTestWorkflowStubContent}
+			suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+
+			// Create ACTIVE workflow with a unique name
+			activeContent := generateWorkflowContent(fmt.Sprintf("e2e-active-%s", suffix), "1.0.0")
+			activeReq := &dsgen.CreateWorkflowInlineRequest{Content: activeContent}
 			activeReq.Source.SetTo("e2e-test")
 			activeResp, err := DSClient.CreateWorkflow(testCtx, activeReq)
 			Expect(err).ToNot(HaveOccurred())
@@ -190,8 +193,9 @@ var _ = Describe("E2E-DS-017-001: Three-Step Workflow Discovery (DD-HAPI-017)", 
 			}
 			activeUUID := activeWorkflow.WorkflowId.Value.String()
 
-			// Create a second workflow inline, then disable it via PATCH (DD-WORKFLOW-017)
-			disabledReq := &dsgen.CreateWorkflowInlineRequest{Content: e2eTestWorkflowStubContent}
+			// Create a DISTINCT second workflow to be disabled
+			disabledContent := generateWorkflowContent(fmt.Sprintf("e2e-disabled-%s", suffix), "1.0.0")
+			disabledReq := &dsgen.CreateWorkflowInlineRequest{Content: disabledContent}
 			disabledReq.Source.SetTo("e2e-test")
 			disabledResp, err := DSClient.CreateWorkflow(testCtx, disabledReq)
 			Expect(err).ToNot(HaveOccurred())
@@ -206,22 +210,22 @@ var _ = Describe("E2E-DS-017-001: Three-Step Workflow Discovery (DD-HAPI-017)", 
 			}
 			disabledUUID := disabledWorkflow.WorkflowId.Value
 
-			// Disable the workflow via PATCH endpoint (GAP-WF-5: reason mandatory)
-			disableReq := &dsgen.WorkflowLifecycleRequest{
+			// Disable the second workflow
+			disableReqBody := &dsgen.WorkflowLifecycleRequest{
 				Reason: "E2E test: exclude disabled from discovery",
 			}
-			_, err = DSClient.DisableWorkflow(testCtx, disableReq, dsgen.DisableWorkflowParams{
+			_, err = DSClient.DisableWorkflow(testCtx, disableReqBody, dsgen.DisableWorkflowParams{
 				WorkflowID: disabledUUID,
 			})
 			Expect(err).ToNot(HaveOccurred())
 
-			// Query discovery — disabled workflow should NOT appear
+			// Query discovery with filters matching the stub (ScaleReplicas, critical, pod, production, P0)
 			step2Resp, err := DSClient.ListWorkflowsByActionType(testCtx, dsgen.ListWorkflowsByActionTypeParams{
-				ActionType:  "RollbackDeployment",
-				Severity:    dsgen.ListWorkflowsByActionTypeSeverityHigh,
-				Component:   "deployment",
-				Environment: "staging",
-				Priority:    dsgen.ListWorkflowsByActionTypePriorityP1,
+				ActionType:  "ScaleReplicas",
+				Severity:    dsgen.ListWorkflowsByActionTypeSeverityCritical,
+				Component:   "pod",
+				Environment: "production",
+				Priority:    dsgen.ListWorkflowsByActionTypePriorityP0,
 				Limit:       dsgen.NewOptInt(100),
 			})
 			Expect(err).ToNot(HaveOccurred())
@@ -229,7 +233,6 @@ var _ = Describe("E2E-DS-017-001: Three-Step Workflow Discovery (DD-HAPI-017)", 
 			workflows, ok := step2Resp.(*dsgen.WorkflowDiscoveryResponse)
 			Expect(ok).To(BeTrue())
 
-			// Verify active workflow IS present, disabled IS NOT
 			var foundActive, foundDisabled bool
 			for _, wf := range workflows.Workflows {
 				if wf.WorkflowId.String() == activeUUID {

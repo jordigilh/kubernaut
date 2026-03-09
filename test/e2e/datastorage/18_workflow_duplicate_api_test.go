@@ -37,16 +37,16 @@ var _ = Describe("Workflow API Integration - Duplicate Detection (DS-BUG-001)", 
 		It("should return 409 Conflict when creating duplicate workflow (RFC 9110 compliance)", func() {
 			ctx := context.Background()
 
-			// DD-WORKFLOW-017: Register workflow inline (pullspec replaced by inline YAML)
-			_ = fmt.Sprintf("test-workflow-duplicate-%d", time.Now().UnixNano()) // for logging
-			workflow := &ogenclient.CreateWorkflowInlineRequest{Content: e2eTestWorkflowStubContent}
+			// Step 1: Create the initial workflow
+			testID := fmt.Sprintf("dup-%d", time.Now().UnixNano())
+			uniqueName := fmt.Sprintf("e2e-dup-%s", testID)
+			content1 := generateWorkflowContent(uniqueName, "1.0.0")
+			workflow := &ogenclient.CreateWorkflowInlineRequest{Content: content1}
 			workflow.Source.SetTo("e2e-test")
 
-			// DD-AUTH-014: Use shared authenticated DSClient with ogenx.ToError() for type-safe error handling
 			resp1, err := DSClient.CreateWorkflow(ctx, workflow)
 			Expect(err).ToNot(HaveOccurred(), "First workflow creation should not error")
 
-			// Verify first creation succeeds (201 Created or 200 OK)
 			var createdWorkflow *ogenclient.RemediationWorkflow
 			switch v := resp1.(type) {
 			case *ogenclient.CreateWorkflowCreated:
@@ -59,33 +59,57 @@ var _ = Describe("Workflow API Integration - Duplicate Detection (DS-BUG-001)", 
 			Expect(createdWorkflow.WorkflowId.Set).To(BeTrue(), "Created workflow should have ID")
 			createdWorkflowName := createdWorkflow.WorkflowName
 
-			// Step 2: Attempt to create the same workflow again (should return 409 Conflict)
+			// Step 2: Create a DIFFERENT workflow with same name+version but altered content
+			// (different description produces a different content hash → triggers 409 Conflict)
+			content2 := fmt.Sprintf(`apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
+metadata:
+  name: %[1]s
+spec:
+  metadata:
+    workflowName: %[1]s
+    version: "1.0.0"
+    description:
+      what: "DUPLICATE: altered content to trigger 409 Conflict"
+      whenToUse: "DS-BUG-001 duplicate detection E2E test"
+  actionType: ScaleReplicas
+  labels:
+    severity: [critical]
+    environment: [production]
+    component: pod
+    priority: P0
+  execution:
+    engine: tekton
+    bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:adfc09ea45a5b627550c6a73fe75d50efe1c80fa43359fcc4908c9c5b0639ac3
+  parameters:
+    - name: TARGET_RESOURCE
+      type: string
+      required: true
+      description: "Target resource for remediation"
+`, uniqueName)
+
 			GinkgoWriter.Printf("\n Creating duplicate workflow (expecting 409 Conflict)...\n")
-			resp2, err := DSClient.CreateWorkflow(ctx, workflow)
+			dupWorkflow := &ogenclient.CreateWorkflowInlineRequest{Content: content2}
+			dupWorkflow.Source.SetTo("e2e-test")
+			resp2, err := DSClient.CreateWorkflow(ctx, dupWorkflow)
 
 			// DS-BUG-001 FIX VERIFICATION: Use ogenx.ToError() to convert 409 Conflict to error
 			err = ogenx.ToError(resp2, err)
 			Expect(err).To(HaveOccurred(), "Duplicate workflow creation should return error")
 
-			// Verify 409 Conflict status code
 			httpErr := ogenx.GetHTTPError(err)
 			Expect(httpErr).ToNot(BeNil(), "Error should be HTTPError")
 			Expect(httpErr.StatusCode).To(Equal(409),
 				"Duplicate workflow creation should return 409 Conflict (RFC 9110 Section 15.5.10), not 500")
 
-			// Step 3: Verify RFC 7807 problem details extracted by ogenx.ToError()
 			Expect(httpErr.Title).To(ContainSubstring("Already Exists"),
 				"Problem details 'title' should indicate workflow already exists")
 
-			// Verify error message includes workflow name
 			Expect(httpErr.Detail).To(ContainSubstring(createdWorkflowName),
 				"Error detail should include workflow name")
 
-			// Type assert the response to access RFC 7807 fields directly
-			// CreateWorkflowConflict is an alias for RFC7807Problem
 			conflictResp, ok := httpErr.Response.(*ogenclient.CreateWorkflowConflict)
 			Expect(ok).To(BeTrue(), "Response should be CreateWorkflowConflict type")
-			// Cast to RFC7807Problem to access methods
 			rfc7807 := (*ogenclient.RFC7807Problem)(conflictResp)
 			Expect(rfc7807.GetStatus()).To(Equal(int32(409)), "RFC 7807 status field should be 409")
 
@@ -95,18 +119,15 @@ var _ = Describe("Workflow API Integration - Duplicate Detection (DS-BUG-001)", 
 			GinkgoWriter.Printf("   - Error format: RFC 7807 problem details\n")
 			GinkgoWriter.Printf("   - Error detail: '%s'\n", httpErr.Detail)
 
-			// Step 4: Verify only one workflow exists in database using ListWorkflows API
-			// DD-AUTH-014: Use shared authenticated DSClient from suite setup
+			// Step 3: Verify only one workflow exists with this name
 			listResp, err := DSClient.ListWorkflows(ctx, ogenclient.ListWorkflowsParams{})
 			Expect(err).ToNot(HaveOccurred())
 
-			// Type assert the response
 			listResult, ok := listResp.(*ogenclient.WorkflowListResponse)
 			Expect(ok).To(BeTrue(), "Expected WorkflowListResponse")
 			Expect(len(listResult.Workflows)).To(BeNumerically(">=", 1),
 				"Workflow list should contain at least the duplicate-tested workflow")
 
-			// Count workflows with our unique name
 			matchingWorkflows := 0
 			for _, wf := range listResult.Workflows {
 				if wf.WorkflowName == createdWorkflowName {
