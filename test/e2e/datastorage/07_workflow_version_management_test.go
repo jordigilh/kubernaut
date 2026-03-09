@@ -283,7 +283,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 
 			// Verify workflow_name and version are present (for human reference)
 			Expect(workflow.WorkflowName).To(Equal(workflowName))
-			Expect(workflow.Version).To(Equal("v2.0.0"))
+			Expect(workflow.Version).To(Equal("2.0.0"))
 
 			testLogger.Info("✅ Workflow retrieved by UUID", "uuid", workflowV3UUID)
 		})

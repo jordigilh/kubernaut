@@ -90,8 +90,13 @@ func waitForCRDStatus(crdName string, timeout time.Duration) *rwv1alpha1.Remedia
 }
 
 // queryDSWorkflowStatus calls the DS API to check the status of a workflow by ID.
+// Uses authenticated HTTP client (DD-AUTH-014) since DS endpoints require Bearer token.
 func queryDSWorkflowStatus(workflowID string) string {
-	resp, err := http.Get(fmt.Sprintf("%s/api/v1/workflows/%s", dataStorageURL, workflowID))
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/api/v1/workflows/%s", dataStorageURL, workflowID), nil)
+	if err != nil {
+		return ""
+	}
+	resp, err := authHTTPClient.Do(req)
 	if err != nil {
 		return ""
 	}

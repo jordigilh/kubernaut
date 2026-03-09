@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"testing"
@@ -40,6 +41,7 @@ import (
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	auditclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
+	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
 // Test suite for AuthWebhook E2E tests
@@ -83,6 +85,9 @@ var (
 
 	// Audit client for validating webhook audit events
 	auditClient *auditclient.Client
+
+	// Authenticated HTTP client for direct DS API queries (DD-AUTH-014)
+	authHTTPClient *http.Client
 
 	// Shared namespace for all tests (services deployed ONCE)
 	sharedNamespace string = "authwebhook-e2e"
@@ -172,6 +177,15 @@ var _ = SynchronizedBeforeSuite(
 		}, 120*time.Second, 2*time.Second).Should(Succeed(), "Data Storage NodePort did not become responsive")
 		logger.Info("✅ Data Storage is ready via NodePort (localhost:28099)")
 
+		// DD-AUTH-014: Create E2E ServiceAccount for test-side DS API queries
+		logger.Info("🔐 Creating E2E ServiceAccount for DS API queries (DD-AUTH-014)...")
+		e2eSAName := "authwebhook-e2e-client"
+		err = infrastructure.CreateE2EServiceAccountWithDataStorageAccess(
+			ctx, sharedNamespace, kubeconfigPath, e2eSAName, GinkgoWriter,
+		)
+		Expect(err).ToNot(HaveOccurred(), "Failed to create E2E ServiceAccount for DS access")
+		logger.Info("✅ E2E ServiceAccount created", "name", e2eSAName)
+
 		// Wait for AuthWebhook HTTPS endpoint to be responsive via NodePort
 		logger.Info("⏳ Waiting for AuthWebhook NodePort to be responsive...")
 		Eventually(func() error {
@@ -240,6 +254,17 @@ var _ = SynchronizedBeforeSuite(
 		// Initialize audit client for DD-TESTING-001 validation
 		auditClient, err = auditclient.NewClient(dataStorageURL)
 		Expect(err).ToNot(HaveOccurred())
+
+		// DD-AUTH-014: Get token for E2E ServiceAccount and create authenticated HTTP client
+		e2eToken, err := infrastructure.GetServiceAccountToken(
+			ctx, sharedNamespace, "authwebhook-e2e-client", kubeconfigPath,
+		)
+		Expect(err).ToNot(HaveOccurred(), "Failed to get E2E ServiceAccount token")
+		authHTTPClient = &http.Client{
+			Timeout:   10 * time.Second,
+			Transport: testauth.NewServiceAccountTransport(e2eToken),
+		}
+		logger.Info("✅ Authenticated HTTP client created for DS API queries (DD-AUTH-014)")
 
 		// Note: We do NOT set KUBECONFIG environment variable to avoid affecting other tests
 		// All kubectl commands must use --kubeconfig flag explicitly

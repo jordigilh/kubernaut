@@ -71,7 +71,7 @@ type WorkflowDiscoveryEntry struct {
 	Name            string                `json:"name"`
 	Description     StructuredDescription `json:"description"`
 	Version         string                `json:"version"`
-	SchemaImage     string                `json:"schemaImage,omitempty"`
+	SchemaImage     string                `json:"schemaImage"`
 	ExecutionBundle string                `json:"executionBundle,omitempty"`
 	ExecutionEngine string                `json:"executionEngine,omitempty"`
 }
