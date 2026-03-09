@@ -41,17 +41,20 @@ kubectl apply -f "${SCRIPT_DIR}/manifests/deployment.yaml"
 kubectl apply -f "${SCRIPT_DIR}/manifests/prometheus-rule.yaml"
 kubectl apply -f "${SCRIPT_DIR}/manifests/linkerd-podmonitor.yaml"
 
-echo "  Waiting for deployment to be ready..."
+echo "  Waiting for deployments to be ready..."
 kubectl wait --for=condition=Available deployment/api-server \
   -n "${NAMESPACE}" --timeout=120s
-echo "  Workload deployed with Linkerd sidecar."
+kubectl wait --for=condition=Available deployment/traffic-gen \
+  -n "${NAMESPACE}" --timeout=120s
+echo "  Workload and traffic generator deployed with Linkerd sidecars."
 kubectl get pods -n "${NAMESPACE}"
 echo ""
 
-# Step 2: Baseline
-echo "==> Step 2: Establishing healthy baseline (20s)..."
-sleep 20
-echo "  Baseline established. Traffic flowing through Linkerd proxy."
+# Step 2: Baseline -- let traffic flow so Prometheus scrapes healthy metrics
+echo "==> Step 2: Establishing healthy baseline (30s)..."
+echo "  traffic-gen is sending requests to api-server through the mesh."
+sleep 30
+echo "  Baseline established."
 echo ""
 
 # Step 3: Inject

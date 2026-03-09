@@ -67,4 +67,10 @@ healthy_pods=$(kubectl get pods -n "${NAMESPACE}" --no-headers 2>/dev/null \
   | grep -c "Running" || true)
 assert_gt "${healthy_pods:-0}" "0" "At least 1 healthy Running pod"
 
+# ── Post-remediation root cause fix ─────────────────────────────────────────
+# Stop the traffic generator so the deny error rate drops to zero and the alert
+# resolves naturally (prevents secondary alert after successful remediation).
+log_phase "Scaling traffic-gen to 0 (root cause fix)..."
+kubectl scale deployment/traffic-gen -n "${NAMESPACE}" --replicas=0 2>/dev/null || true
+
 print_result "mesh-routing-failure"

@@ -27,7 +27,7 @@ spec:
   
   execution:
     engine: job
-    bundle: quay.io/kubernaut-cicd/test-workflows/fix-authz-policy-job@sha256:e2f72645f71aac3209a0b22f5ef4f3c1912e9efbdbea4adf8b3b24a163e4529c
+    bundle: quay.io/kubernaut-cicd/test-workflows/fix-authz-policy-job@sha256:38dd6854497a9625ad876400dff9fa3c00e069e6f7e97057c1d33d21c0b4035b
   
   parameters:
     - name: TARGET_NAMESPACE

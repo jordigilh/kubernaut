@@ -111,6 +111,9 @@ rules:
   - apiGroups: [""]
     resources: ["persistentvolumeclaims"]
     verbs: ["get", "list", "create", "update", "patch", "delete"]
+  - apiGroups: ["policy.linkerd.io"]
+    resources: ["authorizationpolicies", "servers", "meshtlsauthentications"]
+    verbs: ["get", "list", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
