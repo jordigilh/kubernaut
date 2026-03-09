@@ -266,6 +266,11 @@ type duplicateResult struct {
 //   disabled + same hash   → re-enable → 200
 //   disabled + diff hash   → create new → 201
 //   none                   → create new → 201
+//
+// Concurrency safety: All Create calls handle PostgreSQL 23505 (unique constraint
+// violation on uq_workflow_name_version_active) by retrying the active-lookup.
+// This handles the race where two concurrent requests both pass the initial lookup,
+// one wins the INSERT, and the other must discover the winner's committed row.
 func (h *Handler) handleDuplicateWorkflow(ctx context.Context, workflow *models.RemediationWorkflow) (*duplicateResult, error) {
 	repo := h.workflowIntegrityRepo
 	incomingHash := computeContentHash(workflow.Content)
@@ -299,6 +304,9 @@ func (h *Handler) handleDuplicateWorkflow(ctx context.Context, workflow *models.
 		)
 
 		if err := repo.Create(ctx, workflow); err != nil {
+			if result, handled := h.retryOnUniqueViolation(ctx, err, workflow, incomingHash); handled {
+				return result, nil
+			}
 			return nil, fmt.Errorf("create new workflow after supersede: %w", err)
 		}
 		return &duplicateResult{workflow: workflow, statusCode: http.StatusCreated}, nil
@@ -328,6 +336,9 @@ func (h *Handler) handleDuplicateWorkflow(ctx context.Context, workflow *models.
 		}
 
 		if err := repo.Create(ctx, workflow); err != nil {
+			if result, handled := h.retryOnUniqueViolation(ctx, err, workflow, incomingHash); handled {
+				return result, nil
+			}
 			return nil, fmt.Errorf("create new workflow (disabled had different content): %w", err)
 		}
 
@@ -340,9 +351,57 @@ func (h *Handler) handleDuplicateWorkflow(ctx context.Context, workflow *models.
 	}
 
 	if err := repo.Create(ctx, workflow); err != nil {
+		if result, handled := h.retryOnUniqueViolation(ctx, err, workflow, incomingHash); handled {
+			return result, nil
+		}
 		return nil, fmt.Errorf("create new workflow: %w", err)
 	}
 	return &duplicateResult{workflow: workflow, statusCode: http.StatusCreated}, nil
+}
+
+// retryOnUniqueViolation handles PostgreSQL 23505 errors from concurrent Create
+// calls by re-querying for the active workflow that won the INSERT race.
+// Returns (result, true) if the 23505 was successfully handled, or (nil, false)
+// if the error is not a 23505 and should be propagated by the caller.
+func (h *Handler) retryOnUniqueViolation(ctx context.Context, createErr error, workflow *models.RemediationWorkflow, incomingHash string) (*duplicateResult, bool) {
+	var pgErr *pgconn.PgError
+	if !errors.As(createErr, &pgErr) || pgErr.Code != "23505" {
+		return nil, false
+	}
+
+	h.logger.Info("Concurrent INSERT race detected (23505), retrying active-lookup",
+		"workflow_name", workflow.WorkflowName,
+		"version", workflow.Version,
+		"constraint", pgErr.ConstraintName,
+	)
+
+	active, err := h.workflowIntegrityRepo.GetActiveByNameAndVersion(ctx, workflow.WorkflowName, workflow.Version)
+	if err != nil {
+		h.logger.Error(err, "Retry lookup failed after 23505",
+			"workflow_name", workflow.WorkflowName, "version", workflow.Version)
+		return nil, false
+	}
+	if active == nil {
+		h.logger.Error(nil, "No active workflow found on retry after 23505 — constraint violation from unexpected source",
+			"workflow_name", workflow.WorkflowName, "version", workflow.Version)
+		return nil, false
+	}
+
+	if active.ContentHash == incomingHash {
+		h.logger.Info("Concurrent race resolved: idempotent (same content hash)",
+			"workflow_id", active.WorkflowID,
+			"workflow_name", active.WorkflowName,
+			"content_hash", incomingHash,
+		)
+		return &duplicateResult{workflow: active, statusCode: http.StatusOK}, true
+	}
+
+	h.logger.Info("Concurrent race resolved: different content already active",
+		"active_workflow_id", active.WorkflowID,
+		"active_hash", active.ContentHash,
+		"incoming_hash", incomingHash,
+	)
+	return &duplicateResult{workflow: active, statusCode: http.StatusConflict}, true
 }
 
 // tryReEnableWorkflow attempts to re-enable a previously disabled workflow on duplicate insert.

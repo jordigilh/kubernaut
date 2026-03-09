@@ -22,9 +22,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -382,7 +385,88 @@ var _ = Describe("Workflow Content Integrity (BR-WORKFLOW-006)", func() {
 				"Response should contain the new ACTIVE workflow, not the superseded one")
 		})
 	})
+
+	// ========================================
+	// UT-DS-INTEGRITY-007: Concurrent Create race (none found → 23505) → idempotent 200
+	// BR-WORKFLOW-006: When two concurrent requests for the same workflow both pass
+	// the active-lookup (both see nil), one wins the INSERT and the other gets a
+	// PostgreSQL 23505 unique constraint violation from uq_workflow_name_version_active.
+	// The losing request must retry the lookup and return 200 OK (idempotent).
+	// ========================================
+	Describe("UT-DS-INTEGRITY-007: Concurrent create race — 23505 on INSERT retries to idempotent 200", func() {
+		It("should return 200 OK when Create fails with 23505 and retry finds the committed workflow", func() {
+			winnerUUID := "winner-uuid-007"
+			raceRepo := &raceConditionIntegrityRepo{
+				activeOnRetry: &models.RemediationWorkflow{
+					WorkflowID:   winnerUUID,
+					WorkflowName: "integrity-test-wf",
+					Version:      "1.0.0",
+					Status:       "active",
+					Content:      integrityBaseYAML,
+					ContentHash:  computeTestHash(integrityBaseYAML),
+				},
+			}
+
+			puller := oci.NewMockImagePuller(integrityBaseYAML)
+			parser := schema.NewParser()
+			extractor := oci.NewSchemaExtractor(puller, parser)
+			handler := server.NewHandler(nil,
+				server.WithSchemaExtractor(extractor),
+				server.WithWorkflowContentIntegrityRepository(raceRepo),
+			)
+
+			req := makeInlineRequest(integrityBaseYAML)
+			rr := httptest.NewRecorder()
+
+			handler.HandleCreateWorkflow(rr, req)
+
+			Expect(rr.Code).To(Equal(http.StatusOK),
+				"23505 race should retry lookup and return 200 (idempotent), got %d: %s", rr.Code, rr.Body.String())
+
+			var resp map[string]interface{}
+			Expect(json.Unmarshal(rr.Body.Bytes(), &resp)).To(Succeed())
+			Expect(resp["workflowId"]).To(Equal(winnerUUID),
+				"Should return the winner's UUID from the retried lookup")
+
+			Expect(raceRepo.getActiveCalls.Load()).To(BeNumerically("==", 2),
+				"GetActiveByNameAndVersion should be called twice: initial + retry after 23505")
+		})
+	})
 })
+
+// raceConditionIntegrityRepo simulates the race condition where two concurrent
+// CreateWorkflow requests both pass the GetActiveByNameAndVersion check (returning nil),
+// one wins the INSERT, and the other gets a PostgreSQL 23505 unique constraint violation.
+// On retry (after the fix), the losing request should find the winner's committed workflow.
+type raceConditionIntegrityRepo struct {
+	getActiveCalls   atomic.Int32
+	activeOnRetry    *models.RemediationWorkflow
+	createdWorkflows []*models.RemediationWorkflow
+}
+
+func (m *raceConditionIntegrityRepo) GetActiveByNameAndVersion(_ context.Context, _, _ string) (*models.RemediationWorkflow, error) {
+	call := m.getActiveCalls.Add(1)
+	if call == 1 {
+		return nil, nil // First call: no active workflow (race window — other request not yet committed)
+	}
+	return m.activeOnRetry, nil // Retry after 23505: the concurrent insert has committed
+}
+
+func (m *raceConditionIntegrityRepo) GetLatestDisabledByNameAndVersion(_ context.Context, _, _ string) (*models.RemediationWorkflow, error) {
+	return nil, nil
+}
+
+func (m *raceConditionIntegrityRepo) Create(_ context.Context, workflow *models.RemediationWorkflow) error {
+	return &pgconn.PgError{
+		Code:           "23505",
+		ConstraintName: "uq_workflow_name_version_active",
+		Message:        fmt.Sprintf("duplicate key value violates unique constraint for (%s, %s)", workflow.WorkflowName, workflow.Version),
+	}
+}
+
+func (m *raceConditionIntegrityRepo) UpdateStatus(_ context.Context, _, _, _, _, _ string) error {
+	return nil
+}
 
 // computeTestHash computes SHA-256 for test content comparison.
 // Mirrors the production computeContentHash (unexported in server package).
