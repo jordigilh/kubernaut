@@ -186,6 +186,51 @@ func (r *Repository) GetByNameAndVersion(ctx context.Context, workflowName, vers
 	return &workflow, nil
 }
 
+// GetActiveByNameAndVersion retrieves an active workflow by name and version.
+// BR-WORKFLOW-006: Used by content integrity check to detect idempotent re-apply vs supersede.
+func (r *Repository) GetActiveByNameAndVersion(ctx context.Context, workflowName, version string) (*models.RemediationWorkflow, error) {
+	query := `
+		SELECT * FROM remediation_workflow_catalog
+		WHERE workflow_name = $1 AND version = $2 AND status = 'active'
+	`
+
+	var wf models.RemediationWorkflow
+	err := r.db.GetContext(ctx, &wf, query, workflowName, version)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		r.logger.Error(err, "failed to get active workflow by name and version",
+			"workflow_name", workflowName, "version", version)
+		return nil, fmt.Errorf("failed to get active workflow: %w", err)
+	}
+	return &wf, nil
+}
+
+// GetLatestDisabledByNameAndVersion retrieves the most recently disabled workflow
+// by name and version. BR-WORKFLOW-006: Used by content integrity check to decide
+// between re-enable (same hash) and create-new (different hash).
+func (r *Repository) GetLatestDisabledByNameAndVersion(ctx context.Context, workflowName, version string) (*models.RemediationWorkflow, error) {
+	query := `
+		SELECT * FROM remediation_workflow_catalog
+		WHERE workflow_name = $1 AND version = $2 AND status = 'disabled'
+		ORDER BY updated_at DESC
+		LIMIT 1
+	`
+
+	var wf models.RemediationWorkflow
+	err := r.db.GetContext(ctx, &wf, query, workflowName, version)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		r.logger.Error(err, "failed to get disabled workflow by name and version",
+			"workflow_name", workflowName, "version", version)
+		return nil, fmt.Errorf("failed to get disabled workflow: %w", err)
+	}
+	return &wf, nil
+}
+
 // GetLatestVersion retrieves the latest version of a workflow by workflow_name
 // DD-WORKFLOW-002 v3.0: Uses is_latest_version flag for efficient lookup
 func (r *Repository) GetLatestVersion(ctx context.Context, workflowName string) (*models.RemediationWorkflow, error) {

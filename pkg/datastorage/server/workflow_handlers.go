@@ -159,13 +159,28 @@ func (h *Handler) HandleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Step 6: Create workflow in repository (with re-enable logic for disabled duplicates)
+	// Step 6: Create workflow in repository (with content integrity checking)
+	// BR-WORKFLOW-006: ContentHash-based duplicate detection prevents spec tampering
 	statusCode := http.StatusCreated
-	if h.workflowRepo != nil {
+	if h.workflowIntegrityRepo != nil {
+		result, integrityErr := h.handleDuplicateWorkflow(r.Context(), workflow)
+		if integrityErr != nil {
+			h.logger.Error(integrityErr, "Content integrity check failed",
+				"workflow_name", workflow.WorkflowName,
+				"version", workflow.Version,
+			)
+			response.WriteRFC7807Error(w, http.StatusInternalServerError, "internal-error", "Internal Server Error",
+				"Failed to process workflow registration", h.logger)
+			return
+		}
+		if result != nil {
+			workflow = result.workflow
+			statusCode = result.statusCode
+		}
+	} else if h.workflowRepo != nil {
 		if err := h.workflowRepo.Create(r.Context(), workflow); err != nil {
 			var pgErr *pgconn.PgError
 			if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-				// Duplicate: attempt re-enable if workflow is disabled
 				reEnabled, reEnableErr := h.tryReEnableWorkflow(r.Context(), workflow)
 				if reEnableErr != nil {
 					h.logger.Error(reEnableErr, "Failed to re-enable workflow",
@@ -233,6 +248,101 @@ func (h *Handler) HandleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(workflow); err != nil {
 		h.logger.Error(err, "Failed to encode workflow create response")
 	}
+}
+
+// duplicateResult holds the outcome of content integrity checking.
+type duplicateResult struct {
+	workflow   *models.RemediationWorkflow
+	statusCode int
+}
+
+// handleDuplicateWorkflow implements ContentHash-based duplicate detection.
+// BR-WORKFLOW-006: Determines the correct action when a workflow with the same
+// name+version already exists: idempotent return, supersede, re-enable, or create new.
+//
+// Decision tree:
+//   active  + same hash    → 200 (idempotent, no DB writes)
+//   active  + diff hash    → supersede old → create new → 201
+//   disabled + same hash   → re-enable → 200
+//   disabled + diff hash   → create new → 201
+//   none                   → create new → 201
+func (h *Handler) handleDuplicateWorkflow(ctx context.Context, workflow *models.RemediationWorkflow) (*duplicateResult, error) {
+	repo := h.workflowIntegrityRepo
+	incomingHash := computeContentHash(workflow.Content)
+	workflow.ContentHash = incomingHash
+
+	active, err := repo.GetActiveByNameAndVersion(ctx, workflow.WorkflowName, workflow.Version)
+	if err != nil {
+		return nil, fmt.Errorf("lookup active workflow: %w", err)
+	}
+
+	if active != nil {
+		if active.ContentHash == incomingHash {
+			h.logger.Info("Idempotent workflow re-apply (same content hash)",
+				"workflow_id", active.WorkflowID,
+				"workflow_name", active.WorkflowName,
+				"content_hash", incomingHash,
+			)
+			return &duplicateResult{workflow: active, statusCode: http.StatusOK}, nil
+		}
+
+		reason := fmt.Sprintf("superseded: content hash changed from %s to %s", active.ContentHash, incomingHash)
+		if err := repo.UpdateStatus(ctx, active.WorkflowID, active.Version, "superseded", reason, ""); err != nil {
+			return nil, fmt.Errorf("supersede old workflow %s: %w", active.WorkflowID, err)
+		}
+
+		h.logger.Info("Workflow superseded due to content hash change",
+			"old_workflow_id", active.WorkflowID,
+			"workflow_name", active.WorkflowName,
+			"old_hash", active.ContentHash,
+			"new_hash", incomingHash,
+		)
+
+		if err := repo.Create(ctx, workflow); err != nil {
+			return nil, fmt.Errorf("create new workflow after supersede: %w", err)
+		}
+		return &duplicateResult{workflow: workflow, statusCode: http.StatusCreated}, nil
+	}
+
+	disabled, err := repo.GetLatestDisabledByNameAndVersion(ctx, workflow.WorkflowName, workflow.Version)
+	if err != nil {
+		return nil, fmt.Errorf("lookup disabled workflow: %w", err)
+	}
+
+	if disabled != nil {
+		if disabled.ContentHash == incomingHash {
+			if err := repo.UpdateStatus(ctx, disabled.WorkflowID, disabled.Version, "active", "re-enabled via CRD re-creation", ""); err != nil {
+				return nil, fmt.Errorf("re-enable workflow %s: %w", disabled.WorkflowID, err)
+			}
+			disabled.Status = "active"
+			disabled.DisabledAt = nil
+			disabled.DisabledBy = nil
+			disabled.DisabledReason = nil
+
+			h.logger.Info("Disabled workflow re-enabled (same content hash)",
+				"workflow_id", disabled.WorkflowID,
+				"workflow_name", disabled.WorkflowName,
+				"content_hash", incomingHash,
+			)
+			return &duplicateResult{workflow: disabled, statusCode: http.StatusOK}, nil
+		}
+
+		if err := repo.Create(ctx, workflow); err != nil {
+			return nil, fmt.Errorf("create new workflow (disabled had different content): %w", err)
+		}
+
+		h.logger.Info("New workflow created (disabled had different content hash)",
+			"workflow_id", workflow.WorkflowID,
+			"workflow_name", workflow.WorkflowName,
+			"disabled_id", disabled.WorkflowID,
+		)
+		return &duplicateResult{workflow: workflow, statusCode: http.StatusCreated}, nil
+	}
+
+	if err := repo.Create(ctx, workflow); err != nil {
+		return nil, fmt.Errorf("create new workflow: %w", err)
+	}
+	return &duplicateResult{workflow: workflow, statusCode: http.StatusCreated}, nil
 }
 
 // tryReEnableWorkflow attempts to re-enable a previously disabled workflow on duplicate insert.

@@ -305,6 +305,7 @@ func NewServer(deps ServerDeps) (*Server, error) {
 		WithActionTraceRepository(actionTraceRepo),
 		WithWorkflowRepository(workflowRepo),
 		WithWorkflowLifecycleRepository(workflowRepo),
+		WithWorkflowContentIntegrityRepository(workflowRepo),
 		WithActionTypeValidator(workflowRepo),
 		WithAuditStore(auditStore),
 		WithSQLDB(db),
