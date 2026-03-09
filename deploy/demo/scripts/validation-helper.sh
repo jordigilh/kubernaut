@@ -168,7 +168,7 @@ wait_for_alert() {
     while [ "$elapsed" -lt "$timeout" ]; do
         local count
         count=$(kubectl exec -n monitoring "$am_pod" -- \
-            amtool alert query "alertname=${alert_name}" \
+            amtool alert query "alertname=${alert_name}" "namespace=${namespace}" \
             --alertmanager.url=http://localhost:9093 \
             --output=json 2>/dev/null \
             | python3 -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
@@ -245,11 +245,15 @@ wait_for_rr_phase() {
 
 show_alert() {
     local alert_name="$1"
+    local namespace="${2:-}"
     local am_pod="alertmanager-kube-prometheus-stack-alertmanager-0"
+
+    local query_args=("alertname=${alert_name}")
+    [ -n "$namespace" ] && query_args+=("namespace=${namespace}")
 
     local alerts_json
     alerts_json=$(kubectl exec -n monitoring "$am_pod" -- \
-        amtool alert query "alertname=${alert_name}" \
+        amtool alert query "${query_args[@]}" \
         --alertmanager.url=http://localhost:9093 \
         --output=json 2>/dev/null || echo "[]")
 
@@ -411,16 +415,26 @@ show_effectiveness() {
 
 # ── Approval ─────────────────────────────────────────────────────────────────
 
-# Auto-approve the first RAR in the namespace.
+# Auto-approve the RAR for a specific RR.
+# Args: $1=rr_name (required) — derives RAR name as rar-{rr_name}
 auto_approve_rar() {
-    local _unused="${1:-}"  # kept for API compat; always uses PLATFORM_NS
+    local rr_name="${1:-}"
 
     local rar_name
-    rar_name=$(kubectl get remediationapprovalrequests -n "$PLATFORM_NS" \
-        -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+    if [ -n "$rr_name" ]; then
+        rar_name="rar-${rr_name}"
+    else
+        rar_name=$(kubectl get remediationapprovalrequests -n "$PLATFORM_NS" \
+            -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+    fi
 
     if [ -z "$rar_name" ]; then
         log_warn "No RemediationApprovalRequest found to approve"
+        return 1
+    fi
+
+    if ! kubectl get remediationapprovalrequest "$rar_name" -n "$PLATFORM_NS" &>/dev/null; then
+        log_warn "RAR ${rar_name} not found yet"
         return 1
     fi
 
@@ -469,7 +483,9 @@ poll_pipeline() {
                     fi
                     if [ "$approve_mode" = "--auto-approve" ]; then
                         sleep 2
-                        auto_approve_rar
+                        local rr_name
+                        rr_name=$(_find_rr_name "$target_ns")
+                        auto_approve_rar "$rr_name"
                     else
                         log_warn "Awaiting manual approval. Approve with:"
                         log_info "  kubectl patch rar \$(kubectl get rar -n $PLATFORM_NS -o name | head -1) -n $PLATFORM_NS --type=merge --subresource=status -p '{\"status\":{\"decision\":\"Approved\"}}'"
