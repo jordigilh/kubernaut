@@ -320,10 +320,10 @@ metadata:
     app.kubernetes.io/component: admission-webhook
 rules:
 - apiGroups: ["kubernaut.ai"]
-  resources: ["workflowexecutions", "remediationapprovalrequests", "notificationrequests", "remediationrequests", "remediationworkflows"]
+  resources: ["workflowexecutions", "remediationapprovalrequests", "notificationrequests", "remediationrequests", "remediationworkflows", "actiontypes"]
   verbs: ["get", "list", "watch"]
 - apiGroups: ["kubernaut.ai"]
-  resources: ["workflowexecutions/status", "remediationapprovalrequests/status", "remediationrequests/status", "remediationworkflows/status"]
+  resources: ["workflowexecutions/status", "remediationapprovalrequests/status", "remediationrequests/status", "remediationworkflows/status", "actiontypes/status"]
   verbs: ["update", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
