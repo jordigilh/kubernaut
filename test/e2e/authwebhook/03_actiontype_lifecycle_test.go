@@ -53,17 +53,16 @@ var _ = Describe("E2E: ActionType CRD Lifecycle (#300)", Ordered, Label("e2e", "
 
 	BeforeAll(func() {
 		testCtx = context.Background()
-		testNamespace = "e2e-at-" + time.Now().Format("150405")
-
-		By("Creating test namespace: " + testNamespace)
-		err := CreateNamespace(testCtx, k8sClient, testNamespace)
-		Expect(err).ToNot(HaveOccurred())
+		// Use the shared namespace so the ValidatingWebhookConfiguration's
+		// namespaceSelector (kubernetes.io/metadata.name: authwebhook-e2e) matches.
+		testNamespace = sharedNamespace
 	})
 
 	AfterAll(func() {
-		By("Deleting test namespace: " + testNamespace)
-		err := DeleteNamespace(testCtx, k8sClient, testNamespace)
-		Expect(err).ToNot(HaveOccurred())
+		By("Cleaning up ActionType CRDs from shared namespace")
+		_ = client.IgnoreNotFound(k8sClient.Delete(testCtx, &atv1alpha1.ActionType{
+			ObjectMeta: metav1.ObjectMeta{Name: "e2e-restart-pod", Namespace: testNamespace},
+		}))
 	})
 
 	// ========================================
