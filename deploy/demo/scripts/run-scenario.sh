@@ -120,6 +120,11 @@ fi
 # Source color support
 source "${SCRIPT_DIR}/validation-helper.sh"
 
+# Pre-flight: verify demo environment is set up
+# shellcheck source=platform-helper.sh
+source "${SCRIPT_DIR}/platform-helper.sh"
+require_demo_ready
+
 # ── Port-forward management ──────────────────────────────────────────────────
 
 ensure_datastorage_port_forward() {
