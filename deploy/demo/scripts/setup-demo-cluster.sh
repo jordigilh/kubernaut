@@ -132,9 +132,13 @@ if [ "$SKIP_INFRA" = false ]; then
     echo ""
 fi
 
-# ── 5. Seed workflow catalog ────────────────────────────────────────────────
+# ── 5. Seed action types + workflow catalog ─────────────────────────────────
 
-echo "==> Phase 5: Seeding workflow catalog"
+echo "==> Phase 5a: Seeding ActionType CRDs (must exist before workflows)"
+bash "${SCRIPT_DIR}/seed-action-types.sh" --continue-on-error --skip-wait
+echo ""
+
+echo "==> Phase 5b: Seeding workflow catalog"
 
 DS_PORT_FORWARD_PID=""
 cleanup_port_forward() {

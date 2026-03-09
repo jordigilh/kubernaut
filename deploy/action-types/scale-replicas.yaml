@@ -1,0 +1,11 @@
+apiVersion: kubernaut.ai/v1alpha1
+kind: ActionType
+metadata:
+  name: scale-replicas
+  namespace: kubernaut-system
+spec:
+  name: ScaleReplicas
+  description:
+    what: "Horizontally scale a workload by adjusting the replica count."
+    whenToUse: "Root cause is insufficient capacity to handle current load and the workload supports horizontal scaling."
+    preconditions: "Evidence of increased incoming traffic or load correlating with the resource exhaustion."

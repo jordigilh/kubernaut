@@ -1,0 +1,11 @@
+apiVersion: kubernaut.ai/v1alpha1
+kind: ActionType
+metadata:
+  name: restart-pod
+  namespace: kubernaut-system
+spec:
+  name: RestartPod
+  description:
+    what: "Kill and recreate one or more pods."
+    whenToUse: "Root cause is a transient runtime state issue (corrupted cache, leaked connections, stuck threads) that a fresh process would resolve."
+    preconditions: "Evidence that the issue is transient (e.g., pod was healthy before, no recent code deployment)."
