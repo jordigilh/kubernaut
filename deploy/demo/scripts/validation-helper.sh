@@ -635,6 +635,23 @@ assert_gt() {
     fi
 }
 
+assert_in() {
+    local actual="$1"
+    local label="$2"
+    shift 2
+    _ASSERT_TOTAL=$((_ASSERT_TOTAL + 1))
+
+    for expected in "$@"; do
+        if [ "$actual" = "$expected" ]; then
+            _ASSERT_PASS=$((_ASSERT_PASS + 1))
+            printf '           %s[PASS]%s %s = %s\n' "$_c_green" "$_c_reset" "$label" "$actual"
+            return
+        fi
+    done
+    _ASSERT_FAIL=$((_ASSERT_FAIL + 1))
+    printf '           %s[FAIL]%s %s = %s (expected one of: %s)\n' "$_c_red" "$_c_reset" "$label" "$actual" "$*"
+}
+
 assert_contains() {
     local haystack="$1"
     local needle="$2"
