@@ -355,8 +355,11 @@ var _ = Describe("E2E: ActionType CRD Lifecycle (#300)", Ordered, Label("e2e", "
 
 		// Poll for audit events: the authwebhook's buffered audit store flushes
 		// every 5 seconds in E2E, so we need to retry until events appear.
+		// Note: authwebhook emits events with event_category=webhook (per ADR-034:
+		// category = emitter service), so we filter by that category and verify
+		// actiontype-specific event_type values in the results.
 		var eventTypes []string
-		queryURL := fmt.Sprintf("%s/api/v1/audit/events?event_category=actiontype&limit=50", dataStorageURL)
+		queryURL := fmt.Sprintf("%s/api/v1/audit/events?event_category=webhook&limit=50", dataStorageURL)
 
 		Eventually(func() []string {
 			resp, err := authHTTPClient.Get(queryURL)
@@ -383,11 +386,13 @@ var _ = Describe("E2E: ActionType CRD Lifecycle (#300)", Ordered, Label("e2e", "
 
 			eventTypes = make([]string, 0, len(auditResp.Data))
 			for _, e := range auditResp.Data {
-				eventTypes = append(eventTypes, e.EventType)
+				if strings.HasPrefix(e.EventType, "actiontype.") {
+					eventTypes = append(eventTypes, e.EventType)
+				}
 			}
 			return eventTypes
 		}, 15*time.Second, 2*time.Second).ShouldNot(BeEmpty(),
-			"Audit events should appear within 15s (flush interval is 5s)")
+			"ActionType audit events should appear within 15s (flush interval is 5s)")
 
 		GinkgoWriter.Printf("Audit events found: %v\n", eventTypes)
 
