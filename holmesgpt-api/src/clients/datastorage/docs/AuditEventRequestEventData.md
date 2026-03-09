@@ -6,7 +6,7 @@ Service-specific event data as structured type. V2.0: Typed schemas documented b
 
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
-**event_type** | **str** | Event type for discriminator (matches parent event_type) | 
+**event_type** | **str** |  | 
 **original_payload** | **Dict[str, object]** | Full signal payload for RR.Spec.OriginalPayload reconstruction | [optional] 
 **signal_labels** | **Dict[str, str]** | Signal labels for RR.Spec.SignalLabels reconstruction | [optional] 
 **signal_annotations** | **Dict[str, str]** | Signal annotations for RR.Spec.SignalAnnotations reconstruction | [optional] 
@@ -98,11 +98,11 @@ Name | Type | Description | Notes
 **cancelled_by** | **str** | Username who cancelled the notification | [optional] 
 **user_uid** | **str** | UID of the user who performed the action | [optional] 
 **user_groups** | **List[str]** | Groups of the user who performed the action | [optional] 
-**action** | **str** | Admission action performed | 
+**action** | **str** |  | 
 **workflow_name** | **str** | Name of the RemediationWorkflow CRD (metadata.name) | 
 **clear_reason** | **str** | Reason for clearing the block | 
 **cleared_at** | **datetime** | When the block was cleared | 
-**previous_state** | **str** | State before unblocking (always \&quot;Blocked\&quot;) | 
+**previous_state** | **str** |  | 
 **new_state** | **str** | State after unblocking (always \&quot;Running\&quot;) | 
 **request_name** | **str** | Name of the RemediationApprovalRequest | 
 **decided_at** | **datetime** | When decision was made | 
@@ -124,9 +124,9 @@ Name | Type | Description | Notes
 **is_latest_version** | **bool** | Whether this is the latest version | 
 **execution_engine** | **str** | Workflow execution engine | 
 **name** | **str** | Display name | 
-**description** | **str** | Workflow description | [optional] 
+**description** | [**ActionTypeDescriptionPayload**](ActionTypeDescriptionPayload.md) |  | 
 **labels** | **Dict[str, object]** | Workflow labels | [optional] 
-**updated_fields** | [**WorkflowCatalogUpdatedFields**](WorkflowCatalogUpdatedFields.md) |  | 
+**updated_fields** | **List[str]** |  | 
 **old_phase** | **str** | Previous phase | 
 **new_phase** | **str** | New phase | 
 **endpoint** | **str** | API endpoint called | 
@@ -169,8 +169,8 @@ Name | Type | Description | Notes
 **modified_at** | **datetime** | When the modification occurred | 
 **old_timeout_config** | [**TimeoutConfig**](TimeoutConfig.md) |  | [optional] 
 **new_timeout_config** | [**TimeoutConfig**](TimeoutConfig.md) |  | [optional] 
-**catalog_status** | **str** | Catalog registration status (active, disabled, etc.) | [optional] 
-**denial_reason** | **str** | Reason for denial (only set when action&#x3D;denied) | [optional] 
+**catalog_status** | **str** |  | [optional] 
+**denial_reason** | **str** |  | [optional] 
 **correlation_id** | **str** | Correlation ID (EA spec.correlationID, matches parent RR name) | 
 **component** | **str** | Assessment component that produced this event | 
 **assessed** | **bool** | Whether the component was successfully assessed | [optional] 
@@ -190,6 +190,24 @@ Name | Type | Description | Notes
 **health_checks** | [**EffectivenessAssessmentAuditPayloadHealthChecks**](EffectivenessAssessmentAuditPayloadHealthChecks.md) |  | [optional] 
 **metric_deltas** | [**EffectivenessAssessmentAuditPayloadMetricDeltas**](EffectivenessAssessmentAuditPayloadMetricDeltas.md) |  | [optional] 
 **alert_resolution** | [**EffectivenessAssessmentAuditPayloadAlertResolution**](EffectivenessAssessmentAuditPayloadAlertResolution.md) |  | [optional] 
+**action_type** | **str** |  | 
+**registered_by** | **str** |  | 
+**was_reenabled** | **bool** |  | 
+**old_description** | [**ActionTypeDescriptionPayload**](ActionTypeDescriptionPayload.md) |  | 
+**new_description** | [**ActionTypeDescriptionPayload**](ActionTypeDescriptionPayload.md) |  | 
+**updated_by** | **str** |  | 
+**disabled_by** | **str** |  | 
+**disabled_at** | **datetime** |  | 
+**reenabled_by** | **str** |  | 
+**denied_reason** | **str** |  | 
+**dependent_workflow_count** | **int** |  | 
+**dependent_workflows** | **List[str]** |  | 
+**requested_by** | **str** |  | 
+**action_type_name** | **str** | PascalCase name from spec.name | 
+**crd_name** | **str** | K8s metadata.name | 
+**crd_namespace** | **str** | K8s namespace | 
+**previously_existed** | **bool** |  | [optional] 
+**denial_operation** | **str** |  | [optional] 
 
 ## Example
 

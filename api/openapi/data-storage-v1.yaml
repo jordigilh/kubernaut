@@ -2444,6 +2444,12 @@ components:
             - $ref: '#/components/schemas/RemediationRequestWebhookAuditPayload'
             - $ref: '#/components/schemas/RemediationWorkflowWebhookAuditPayload'
             - $ref: '#/components/schemas/EffectivenessAssessmentAuditPayload'
+            - $ref: '#/components/schemas/ActionTypeCatalogCreatedPayload'
+            - $ref: '#/components/schemas/ActionTypeCatalogUpdatedPayload'
+            - $ref: '#/components/schemas/ActionTypeCatalogDisabledPayload'
+            - $ref: '#/components/schemas/ActionTypeCatalogReenabledPayload'
+            - $ref: '#/components/schemas/ActionTypeCatalogDisableDeniedPayload'
+            - $ref: '#/components/schemas/ActionTypeWebhookAuditPayload'
           discriminator:
             propertyName: event_type
             mapping:
@@ -2516,6 +2522,17 @@ components:
               'effectiveness.metrics.assessed': '#/components/schemas/EffectivenessAssessmentAuditPayload'
               'effectiveness.assessment.scheduled': '#/components/schemas/EffectivenessAssessmentAuditPayload'
               'effectiveness.assessment.completed': '#/components/schemas/EffectivenessAssessmentAuditPayload'
+              'datastorage.actiontype.created': '#/components/schemas/ActionTypeCatalogCreatedPayload'
+              'datastorage.actiontype.updated': '#/components/schemas/ActionTypeCatalogUpdatedPayload'
+              'datastorage.actiontype.disabled': '#/components/schemas/ActionTypeCatalogDisabledPayload'
+              'datastorage.actiontype.reenabled': '#/components/schemas/ActionTypeCatalogReenabledPayload'
+              'datastorage.actiontype.disable_denied': '#/components/schemas/ActionTypeCatalogDisableDeniedPayload'
+              'actiontype.admitted.create': '#/components/schemas/ActionTypeWebhookAuditPayload'
+              'actiontype.admitted.update': '#/components/schemas/ActionTypeWebhookAuditPayload'
+              'actiontype.admitted.delete': '#/components/schemas/ActionTypeWebhookAuditPayload'
+              'actiontype.denied.create': '#/components/schemas/ActionTypeWebhookAuditPayload'
+              'actiontype.denied.update': '#/components/schemas/ActionTypeWebhookAuditPayload'
+              'actiontype.denied.delete': '#/components/schemas/ActionTypeWebhookAuditPayload'
           # Removed x-go-type override to use proper oneOf discriminator
           # Let oapi-codegen generate appropriate union type from oneOf schemas
 
@@ -5756,4 +5773,185 @@ components:
         count:
           type: integer
           description: "Number of active RemediationWorkflows referencing this action type"
+
+    # ── ActionType Audit Payloads (Phase 6, BR-WORKFLOW-007) ──────────────────
+
+    ActionTypeDescriptionPayload:
+      type: object
+      description: "Structured description of an action type for audit payloads"
+      required:
+        - what
+        - when_to_use
+      properties:
+        what:
+          type: string
+        when_to_use:
+          type: string
+        when_not_to_use:
+          type: string
+        preconditions:
+          type: string
+
+    ActionTypeCatalogCreatedPayload:
+      type: object
+      description: "DS audit payload when a new action type is created or re-enabled"
+      required:
+        - event_type
+        - action_type
+        - description
+        - registered_by
+        - was_reenabled
+      properties:
+        event_type:
+          type: string
+          enum: ['datastorage.actiontype.created']
+        action_type:
+          type: string
+        description:
+          $ref: '#/components/schemas/ActionTypeDescriptionPayload'
+        registered_by:
+          type: string
+        was_reenabled:
+          type: boolean
+
+    ActionTypeCatalogUpdatedPayload:
+      type: object
+      description: "DS audit payload when an action type description is updated (SOC2: old+new)"
+      required:
+        - event_type
+        - action_type
+        - old_description
+        - new_description
+        - updated_by
+        - updated_fields
+      properties:
+        event_type:
+          type: string
+          enum: ['datastorage.actiontype.updated']
+        action_type:
+          type: string
+        old_description:
+          $ref: '#/components/schemas/ActionTypeDescriptionPayload'
+        new_description:
+          $ref: '#/components/schemas/ActionTypeDescriptionPayload'
+        updated_by:
+          type: string
+        updated_fields:
+          type: array
+          items:
+            type: string
+
+    ActionTypeCatalogDisabledPayload:
+      type: object
+      description: "DS audit payload when an action type is soft-disabled"
+      required:
+        - event_type
+        - action_type
+        - disabled_by
+        - disabled_at
+      properties:
+        event_type:
+          type: string
+          enum: ['datastorage.actiontype.disabled']
+        action_type:
+          type: string
+        disabled_by:
+          type: string
+        disabled_at:
+          type: string
+          format: date-time
+
+    ActionTypeCatalogReenabledPayload:
+      type: object
+      description: "DS audit payload when a previously disabled action type is re-enabled"
+      required:
+        - event_type
+        - action_type
+        - reenabled_by
+        - previous_state
+        - disabled_at
+        - disabled_by
+      properties:
+        event_type:
+          type: string
+          enum: ['datastorage.actiontype.reenabled']
+        action_type:
+          type: string
+        reenabled_by:
+          type: string
+        previous_state:
+          type: string
+          enum: ['disabled']
+        disabled_at:
+          type: string
+          format: date-time
+        disabled_by:
+          type: string
+
+    ActionTypeCatalogDisableDeniedPayload:
+      type: object
+      description: "DS audit payload when disable is denied due to active workflow dependencies"
+      required:
+        - event_type
+        - action_type
+        - denied_reason
+        - dependent_workflow_count
+        - dependent_workflows
+        - requested_by
+      properties:
+        event_type:
+          type: string
+          enum: ['datastorage.actiontype.disable_denied']
+        action_type:
+          type: string
+        denied_reason:
+          type: string
+        dependent_workflow_count:
+          type: integer
+        dependent_workflows:
+          type: array
+          items:
+            type: string
+        requested_by:
+          type: string
+
+    ActionTypeWebhookAuditPayload:
+      type: object
+      description: "AW audit payload for ActionType CRD admission events"
+      required:
+        - event_type
+        - action_type_name
+        - crd_name
+        - crd_namespace
+        - action
+      properties:
+        event_type:
+          type: string
+          enum:
+            - 'actiontype.admitted.create'
+            - 'actiontype.admitted.update'
+            - 'actiontype.admitted.delete'
+            - 'actiontype.denied.create'
+            - 'actiontype.denied.update'
+            - 'actiontype.denied.delete'
+        action_type_name:
+          type: string
+          description: "PascalCase name from spec.name"
+        crd_name:
+          type: string
+          description: "K8s metadata.name"
+        crd_namespace:
+          type: string
+          description: "K8s namespace"
+        action:
+          type: string
+          enum: ['create', 'update', 'delete', 'denied']
+        previously_existed:
+          type: boolean
+        catalog_status:
+          type: string
+        denial_reason:
+          type: string
+        denial_operation:
+          type: string
 

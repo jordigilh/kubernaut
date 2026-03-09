@@ -21,10 +21,13 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
+	dsaudit "github.com/jordigilh/kubernaut/pkg/datastorage/audit"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	actiontyperepo "github.com/jordigilh/kubernaut/pkg/datastorage/repository/actiontype"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server/response"
 )
@@ -140,6 +143,29 @@ func (h *Handler) HandleCreateActionType(w http.ResponseWriter, r *http.Request)
 		"status", result.Status,
 		"was_reenabled", result.WasReenabled,
 	)
+
+	// Emit audit (only for state changes: created or reenabled, NOT for NOOP)
+	if h.auditStore != nil && result.Status != "exists" {
+		desc := toDescPayload(req.Description)
+		var auditEvent *api.AuditEventRequest
+		var auditErr error
+		if result.WasReenabled && result.ActionType != nil {
+			disabledAt := time.Time{}
+			disabledBy := ""
+			if result.ActionType.DisabledAt != nil {
+				disabledAt = *result.ActionType.DisabledAt
+			}
+			if result.ActionType.DisabledBy != nil {
+				disabledBy = *result.ActionType.DisabledBy
+			}
+			auditEvent, auditErr = dsaudit.NewActionTypeReenabledAuditEvent(req.Name, req.RegisteredBy, disabledAt, disabledBy)
+		} else {
+			auditEvent, auditErr = dsaudit.NewActionTypeCreatedAuditEvent(req.Name, desc, req.RegisteredBy, false)
+		}
+		if auditErr == nil && auditEvent != nil {
+			h.emitAuditEventsAsync([]*api.AuditEventRequest{auditEvent}, "action_type", req.Name)
+		}
+	}
 }
 
 // HandleUpdateActionType handles PATCH /api/v1/action-types/{name}.
@@ -207,6 +233,19 @@ func (h *Handler) HandleUpdateActionType(w http.ResponseWriter, r *http.Request)
 		"name", name,
 		"updated_fields", result.UpdatedFields,
 	)
+
+	if h.auditStore != nil {
+		auditEvent, auditErr := dsaudit.NewActionTypeUpdatedAuditEvent(
+			name,
+			toDescPayload(result.OldDescription),
+			toDescPayload(result.NewDescription),
+			req.UpdatedBy,
+			result.UpdatedFields,
+		)
+		if auditErr == nil && auditEvent != nil {
+			h.emitAuditEventsAsync([]*api.AuditEventRequest{auditEvent}, "action_type", name)
+		}
+	}
 }
 
 // HandleDisableActionType handles PATCH /api/v1/action-types/{name}/disable.
@@ -267,6 +306,15 @@ func (h *Handler) HandleDisableActionType(w http.ResponseWriter, r *http.Request
 			"dependent_count", result.DependentWorkflowCount,
 			"dependent_workflows", result.DependentWorkflows,
 		)
+
+		if h.auditStore != nil {
+			auditEvent, auditErr := dsaudit.NewActionTypeDisableDeniedAuditEvent(
+				name, req.DisabledBy, result.DependentWorkflowCount, result.DependentWorkflows,
+			)
+			if auditErr == nil && auditEvent != nil {
+				h.emitAuditEventsAsync([]*api.AuditEventRequest{auditEvent}, "action_type", name)
+			}
+		}
 		return
 	}
 
@@ -284,6 +332,13 @@ func (h *Handler) HandleDisableActionType(w http.ResponseWriter, r *http.Request
 		"name", name,
 		"disabled_by", req.DisabledBy,
 	)
+
+	if h.auditStore != nil {
+		auditEvent, auditErr := dsaudit.NewActionTypeDisabledAuditEvent(name, req.DisabledBy, time.Now())
+		if auditErr == nil && auditEvent != nil {
+			h.emitAuditEventsAsync([]*api.AuditEventRequest{auditEvent}, "action_type", name)
+		}
+	}
 }
 
 // HandleGetActionTypeWorkflowCount handles GET /api/v1/action-types/{name}/workflow-count.
@@ -319,4 +374,19 @@ func (h *Handler) HandleGetActionTypeWorkflowCount(w http.ResponseWriter, r *htt
 	if err := json.NewEncoder(w).Encode(countResponse{Count: count}); err != nil {
 		h.logger.Error(err, "Failed to encode workflow count response")
 	}
+}
+
+// toDescPayload converts an internal ActionTypeDescription to the ogen audit payload struct.
+func toDescPayload(d models.ActionTypeDescription) api.ActionTypeDescriptionPayload {
+	p := api.ActionTypeDescriptionPayload{
+		What:      d.What,
+		WhenToUse: d.WhenToUse,
+	}
+	if d.WhenNotToUse != "" {
+		p.WhenNotToUse.SetTo(d.WhenNotToUse)
+	}
+	if d.Preconditions != "" {
+		p.Preconditions.SetTo(d.Preconditions)
+	}
+	return p
 }

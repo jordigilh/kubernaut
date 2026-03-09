@@ -102,6 +102,7 @@ func (h *ActionTypeHandler) handleCreate(ctx context.Context, req admission.Requ
 	result, err := h.dsClient.CreateActionType(ctx, at.Spec.Name, desc, authCtx.Username)
 	if err != nil {
 		logger.Error(err, "DS CreateActionType failed")
+		h.emitATDeniedAudit(ctx, req, fmt.Sprintf("DS registration failed: %v", err), "CREATE")
 		return admission.Denied(fmt.Sprintf("data storage registration failed: %v", err))
 	}
 
@@ -110,6 +111,8 @@ func (h *ActionTypeHandler) handleCreate(ctx context.Context, req admission.Requ
 		"status", result.Status,
 		"was_reenabled", result.WasReenabled,
 	)
+
+	h.emitATAdmitAudit(ctx, req, EventTypeATAdmittedCreate, at.Spec.Name, result.WasReenabled, "active")
 
 	go h.updateCRDStatusCreate(req.Namespace, req.Name, authCtx.Username, result)
 
@@ -133,6 +136,7 @@ func (h *ActionTypeHandler) handleUpdate(ctx context.Context, req admission.Requ
 
 	// BR-WORKFLOW-007.2: spec.name is immutable
 	if oldAT.Spec.Name != newAT.Spec.Name {
+		h.emitATDeniedAudit(ctx, req, "spec.name is immutable", "UPDATE")
 		return admission.Denied(fmt.Sprintf("spec.name is immutable: cannot change from %q to %q", oldAT.Spec.Name, newAT.Spec.Name))
 	}
 
@@ -161,10 +165,12 @@ func (h *ActionTypeHandler) handleUpdate(ctx context.Context, req admission.Requ
 	_, err = h.dsClient.UpdateActionType(ctx, newAT.Spec.Name, desc, authCtx.Username)
 	if err != nil {
 		logger.Error(err, "DS UpdateActionType failed")
+		h.emitATDeniedAudit(ctx, req, fmt.Sprintf("DS update failed: %v", err), "UPDATE")
 		return admission.Denied(fmt.Sprintf("data storage update failed: %v", err))
 	}
 
 	logger.Info("ActionType description updated in DS", "action_type", newAT.Spec.Name)
+	h.emitATAdmitAudit(ctx, req, EventTypeATAdmittedUpdate, newAT.Spec.Name, false, "active")
 
 	return admission.Allowed("action type description updated")
 }
@@ -186,6 +192,7 @@ func (h *ActionTypeHandler) handleDelete(ctx context.Context, req admission.Requ
 	result, err := h.dsClient.DisableActionType(ctx, at.Spec.Name, username)
 	if err != nil {
 		logger.Error(err, "DS DisableActionType failed")
+		h.emitATDeniedAudit(ctx, req, fmt.Sprintf("DS disable failed: %v", err), "DELETE")
 		return admission.Denied(fmt.Sprintf("data storage disable failed: %v", err))
 	}
 
@@ -194,10 +201,12 @@ func (h *ActionTypeHandler) handleDelete(ctx context.Context, req admission.Requ
 			at.Spec.Name, result.DependentWorkflowCount,
 			strings.Join(result.DependentWorkflows, ", "))
 		logger.Info("ActionType disable denied", "reason", msg)
+		h.emitATDeniedAudit(ctx, req, msg, "DELETE")
 		return admission.Denied(msg)
 	}
 
 	logger.Info("ActionType disabled in DS", "action_type", at.Spec.Name)
+	h.emitATAdmitAudit(ctx, req, EventTypeATAdmittedDelete, at.Spec.Name, false, "disabled")
 	return admission.Allowed("action type disabled in catalog")
 }
 
