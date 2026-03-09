@@ -36,6 +36,7 @@ import (
 
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	auditclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
@@ -231,6 +232,7 @@ var _ = SynchronizedBeforeSuite(
 		Expect(workflowexecutionv1.AddToScheme(scheme.Scheme)).To(Succeed())
 		Expect(remediationv1.AddToScheme(scheme.Scheme)).To(Succeed())
 		Expect(notificationv1.AddToScheme(scheme.Scheme)).To(Succeed())
+		Expect(remediationworkflowv1.AddToScheme(scheme.Scheme)).To(Succeed())
 
 		k8sClient, err = client.New(restConfig, client.Options{Scheme: scheme.Scheme})
 		Expect(err).ToNot(HaveOccurred())

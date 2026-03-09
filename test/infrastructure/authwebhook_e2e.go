@@ -309,10 +309,10 @@ metadata:
     app.kubernetes.io/component: admission-webhook
 rules:
 - apiGroups: ["kubernaut.ai"]
-  resources: ["workflowexecutions", "remediationapprovalrequests", "notificationrequests", "remediationrequests"]
+  resources: ["workflowexecutions", "remediationapprovalrequests", "notificationrequests", "remediationrequests", "remediationworkflows"]
   verbs: ["get", "list", "watch"]
 - apiGroups: ["kubernaut.ai"]
-  resources: ["workflowexecutions/status", "remediationapprovalrequests/status", "remediationrequests/status"]
+  resources: ["workflowexecutions/status", "remediationapprovalrequests/status", "remediationrequests/status", "remediationworkflows/status"]
   verbs: ["update", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -362,7 +362,7 @@ data:
       certDir: /tmp/k8s-webhook-server/serving-certs
       healthProbeAddr: ":8081"
     datastorage:
-      url: "http://data-storage-service:8080"
+      url: "http://datastorage.%[1]s.svc.cluster.local:8080"
       timeout: 30s
       buffer:
         bufferSize: 1000
@@ -540,6 +540,27 @@ webhooks:
     scope: "Namespaced"
   sideEffects: None
   timeoutSeconds: 10
+- name: remediationworkflow.validate.kubernaut.ai
+  admissionReviewVersions: ["v1"]
+  clientConfig:
+    service:
+      name: authwebhook
+      namespace: %[1]s
+      path: /validate-remediationworkflow
+    caBundle: ""
+  failurePolicy: Fail
+  matchPolicy: Equivalent
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: %[1]s
+  rules:
+  - apiGroups: ["kubernaut.ai"]
+    apiVersions: ["v1alpha1"]
+    operations: ["CREATE", "DELETE"]
+    resources: ["remediationworkflows"]
+    scope: "Namespaced"
+  sideEffects: NoneOnDryRun
+  timeoutSeconds: 15
 `, namespace, imageTag, pullPolicy)
 }
 
@@ -656,17 +677,20 @@ func patchWebhookConfigurations(kubeconfigPath string, writer io.Writer) error {
 		_, _ = fmt.Fprintf(writer, "   ✅ Patched %s\n", webhookName)
 	}
 
-	// Patch ValidatingWebhookConfiguration
-	_, _ = fmt.Fprintln(writer, "   🔧 Patching ValidatingWebhookConfiguration...")
-	patchCmd := exec.Command("kubectl", "patch", "validatingwebhookconfiguration", "authwebhook-validating",
-		"--kubeconfig", kubeconfigPath,
-		"--type=json",
-		"-p", fmt.Sprintf(`[{"op":"replace","path":"/webhooks/0/clientConfig/caBundle","value":"%s"}]`, caBundleB64))
-	if output, err := patchCmd.CombinedOutput(); err != nil {
-		_, _ = fmt.Fprintf(writer, "   ❌ Failed to patch validating webhook: %s\n", output)
-		return fmt.Errorf("failed to patch validating webhook: %w", err)
+	// Patch ValidatingWebhookConfiguration (2 webhooks: notificationrequest + remediationworkflow)
+	_, _ = fmt.Fprintln(writer, "   🔧 Patching ValidatingWebhookConfiguration webhooks...")
+	validatingWebhookNames := []string{"notificationrequest.validate.kubernaut.ai", "remediationworkflow.validate.kubernaut.ai"}
+	for i, vwName := range validatingWebhookNames {
+		patchCmd := exec.Command("kubectl", "patch", "validatingwebhookconfiguration", "authwebhook-validating",
+			"--kubeconfig", kubeconfigPath,
+			"--type=json",
+			"-p", fmt.Sprintf(`[{"op":"replace","path":"/webhooks/%d/clientConfig/caBundle","value":"%s"}]`, i, caBundleB64))
+		if output, err := patchCmd.CombinedOutput(); err != nil {
+			_, _ = fmt.Fprintf(writer, "   ❌ Failed to patch %s: %s\n", vwName, output)
+			return fmt.Errorf("failed to patch validating webhook %s: %w", vwName, err)
+		}
+		_, _ = fmt.Fprintf(writer, "   ✅ Patched %s\n", vwName)
 	}
-	_, _ = fmt.Fprintln(writer, "   ✅ Patched validating webhook")
 
 	_, _ = fmt.Fprintln(writer, "✅ All webhook configurations patched with CA bundle")
 	return nil
