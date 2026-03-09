@@ -24,6 +24,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	actiontyperepo "github.com/jordigilh/kubernaut/pkg/datastorage/repository/actiontype"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository/workflow"
 )
