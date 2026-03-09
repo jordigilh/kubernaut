@@ -137,7 +137,11 @@ spec:
 
               echo "  Patching ValidatingWebhookConfiguration (authwebhook-validating)..."
               kubectl patch validatingwebhookconfiguration authwebhook-validating --type='json' \
-                -p "[{\"op\":\"add\",\"path\":\"/webhooks/0/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"}]"
+                -p "[
+                  {\"op\":\"add\",\"path\":\"/webhooks/0/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"},
+                  {\"op\":\"add\",\"path\":\"/webhooks/1/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"},
+                  {\"op\":\"add\",\"path\":\"/webhooks/2/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"}
+                ]"
 
               echo "==> Webhook CA bundle patching complete"
 ---

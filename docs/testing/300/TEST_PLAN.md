@@ -153,7 +153,7 @@ Format: `{TIER}-AT-300-{SEQUENCE}`
 | `UT-AT-300-009` | UPDATE audit event contains oldDescription and newDescription structs | Complete |
 | `UT-AT-300-010` | Disable denied audit contains dependentWorkflows as []string | Complete |
 | `UT-AT-300-011` | RW CREATE/DELETE triggers async activeWorkflowCount update | Complete |
-| `UT-AT-300-012` | DS client adapter Create/Update/Disable map correctly to DS API | Deferred |
+| `UT-AT-300-012` | DS client adapter Create/Update/Disable map correctly to DS API | Complete |
 | `UT-AT-300-013` | CRD types: YAML unmarshal, DeepCopy, scheme registration | Complete |
 
 ### Tier 2: Integration Tests
@@ -166,8 +166,8 @@ Format: `{TIER}-AT-300-{SEQUENCE}`
 | `IT-AT-300-002` | Idempotency matrix: create/re-enable/NOOP against real DB | Complete |
 | `IT-AT-300-003` | Disable with dependency guard: count active workflows in DB | Complete |
 | `IT-AT-300-004` | Update description: verify old+new values captured | Complete |
-| `IT-AT-300-005` | Discovery filtering: disabled action types excluded from ListActions | Deferred |
-| `IT-AT-300-006` | Audit events written to audit table with correct payloads | Deferred |
+| `IT-AT-300-005` | Discovery filtering: disabled action types excluded from ListActions | Complete |
+| `IT-AT-300-006` | Audit events written to audit table with correct payloads | Complete |
 
 ### Tier 3: E2E Tests
 
