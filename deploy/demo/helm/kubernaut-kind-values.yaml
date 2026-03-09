@@ -7,7 +7,7 @@
 # (e.g. podman pause) without disrupting the platform.
 global:
   image:
-    tag: demo-v1.5
+    tag: demo-v1.6
   nodeSelector:
     node-role.kubernetes.io/control-plane: ""
   tolerations:
@@ -22,7 +22,7 @@ gateway:
   auth:
     signalSources:
       - name: alertmanager
-        serviceAccount: alertmanager-kube-prometheus-stack-alertmanager
+        serviceAccount: kube-prometheus-stack-alertmanager
         namespace: monitoring
 
 datastorage:
