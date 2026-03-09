@@ -9,6 +9,75 @@ CHART_DIR="${REPO_ROOT}/charts/kubernaut"
 KIND_VALUES="${REPO_ROOT}/deploy/demo/helm/kubernaut-kind-values.yaml"
 LLM_VALUES="${HOME}/.kubernaut/helm/llm-values.yaml"
 
+# Use dedicated kubeconfig to avoid overwriting ~/.kube/config
+DEMO_KUBECONFIG="${DEMO_KUBECONFIG:-${HOME}/.kube/kubernaut-demo-config}"
+export KUBECONFIG="${DEMO_KUBECONFIG}"
+
+# Validate that the demo environment is ready (no installs).
+# Checks: kubeconfig, Kubernaut Helm release, all deployments ready, monitoring stack.
+# Exits with a clear error if anything is missing.
+require_demo_ready() {
+    local fail=false
+
+    if ! kubectl cluster-info &>/dev/null; then
+        echo "ERROR: Cannot connect to Kubernetes cluster."
+        echo "  Is the Kind cluster running? Check: kind get clusters"
+        echo "  Kubeconfig: ${KUBECONFIG}"
+        fail=true
+    fi
+
+    if [ "$fail" = false ] && ! helm status kubernaut -n "${PLATFORM_NS}" &>/dev/null; then
+        echo "ERROR: Kubernaut platform is not installed in ${PLATFORM_NS}."
+        fail=true
+    fi
+
+    if [ "$fail" = false ]; then
+        local not_ready
+        not_ready=$(kubectl get deployments -n "${PLATFORM_NS}" -o jsonpath='{range .items[*]}{.metadata.name}={.status.readyReplicas}/{.spec.replicas}{"\n"}{end}' 2>/dev/null \
+            | awk -F'[=/]' '$2 != $3 || $2 == ""' | head -5)
+        if [ -n "$not_ready" ]; then
+            echo "WARNING: Some Kubernaut deployments are not ready:"
+            echo "$not_ready" | sed 's/^/    /'
+        fi
+    fi
+
+    if [ "$fail" = false ] && ! helm status kube-prometheus-stack -n monitoring &>/dev/null; then
+        echo "ERROR: Monitoring stack is not installed."
+        fail=true
+    fi
+
+    if [ "$fail" = true ]; then
+        echo ""
+        echo "Run setup first:  bash deploy/demo/scripts/setup-demo-cluster.sh"
+        exit 1
+    fi
+}
+
+wait_platform_ready() {
+    local ns="${PLATFORM_NS:-kubernaut-system}"
+    local timeout="${1:-300}"
+    local deployments
+    deployments=$(kubectl get deployments -n "$ns" -o jsonpath='{.items[*].metadata.name}' 2>/dev/null)
+    if [ -z "$deployments" ]; then
+        return 0
+    fi
+
+    echo "==> Waiting for all deployments in ${ns} to be ready (timeout ${timeout}s)..."
+    local failed=0
+    for dep in $deployments; do
+        if ! kubectl rollout status deployment/"$dep" -n "$ns" --timeout="${timeout}s" 2>&1 | sed 's/^/    /'; then
+            echo "  WARNING: deployment/${dep} did not become ready within ${timeout}s"
+            failed=1
+        fi
+    done
+    if [ "$failed" -eq 0 ]; then
+        echo "  All deployments in ${ns} are ready."
+    else
+        echo "  WARNING: Some deployments in ${ns} are not ready."
+    fi
+    return $failed
+}
+
 ensure_platform() {
     if helm status kubernaut -n "${PLATFORM_NS}" &>/dev/null; then
         echo "  Kubernaut platform already installed."
@@ -43,6 +112,7 @@ ensure_platform() {
         --wait --timeout 10m
 
     echo "  Kubernaut platform installed in ${PLATFORM_NS}."
+    wait_platform_ready
     _check_llm_credentials
 }
 
