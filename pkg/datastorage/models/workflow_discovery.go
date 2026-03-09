@@ -29,11 +29,15 @@ import (
 // Business Requirement: BR-HAPI-017-001 (Three-Step Tool Implementation)
 // ========================================
 
-// ActionTypeTaxonomy represents an entry in the action_type_taxonomy table
-// Migration 025: action_type_taxonomy table
+// ActionTypeTaxonomy represents an entry in the action_type_taxonomy table.
+// Migration 001: action_type_taxonomy table.
+// Migration 004: Added status, disabled_at, disabled_by columns (BR-WORKFLOW-007).
 type ActionTypeTaxonomy struct {
 	ActionType  string          `json:"actionType" db:"action_type"`
 	Description json.RawMessage `json:"description" db:"description"`
+	Status      string          `json:"status" db:"status"`
+	DisabledAt  *time.Time      `json:"disabledAt,omitempty" db:"disabled_at"`
+	DisabledBy  *string         `json:"disabledBy,omitempty" db:"disabled_by"`
 	CreatedAt   time.Time       `json:"createdAt" db:"created_at"`
 	UpdatedAt   time.Time       `json:"updatedAt" db:"updated_at"`
 }
@@ -71,7 +75,7 @@ type WorkflowDiscoveryEntry struct {
 	Name            string                `json:"name"`
 	Description     StructuredDescription `json:"description"`
 	Version         string                `json:"version"`
-	SchemaImage     string                `json:"schemaImage"`
+	SchemaImage     string                `json:"schemaImage,omitempty"`
 	ExecutionBundle string                `json:"executionBundle,omitempty"`
 	ExecutionEngine string                `json:"executionEngine,omitempty"`
 }
