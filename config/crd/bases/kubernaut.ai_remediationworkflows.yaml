@@ -20,6 +20,9 @@ spec:
     - jsonPath: .spec.actionType
       name: Action
       type: string
+    - jsonPath: .status.workflowId
+      name: UUID
+      type: string
     - jsonPath: .spec.execution.engine
       name: Engine
       type: string
@@ -195,14 +198,15 @@ spec:
                     description: Version is the semantic version (e.g., "1.0.0")
                     maxLength: 50
                     type: string
-                  workflowId:
-                    description: WorkflowID is the unique workflow identifier
+                  workflowName:
+                    description: WorkflowName is the human-readable workflow name
+                      (maps to DS workflow_name)
                     maxLength: 255
                     type: string
                 required:
                 - description
                 - version
-                - workflowId
+                - workflowName
                 type: object
               parameters:
                 description: Parameters defines the workflow input parameters
@@ -322,6 +326,8 @@ spec:
                 type: string
             type: object
         type: object
+    selectableFields:
+    - jsonPath: .status.workflowId
     served: true
     storage: true
     subresources:
