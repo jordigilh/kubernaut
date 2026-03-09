@@ -243,6 +243,17 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 4.5: Deploy DataStorage client RBAC (DD-AUTH-014)
+	// ═══════════════════════════════════════════════════════════════════════
+	_, _ = fmt.Fprintln(writer, "\n🔐 PHASE 4.5: Deploying DataStorage client RBAC (DD-AUTH-014)...")
+	if err := deployDataStorageClientClusterRole(ctx, kubeconfigPath, writer); err != nil {
+		return "", "", fmt.Errorf("failed to deploy data-storage-client ClusterRole: %w", err)
+	}
+	if err := CreateDataStorageAccessRoleBinding(ctx, namespace, kubeconfigPath, "authwebhook", writer); err != nil {
+		return "", "", fmt.Errorf("failed to create AuthWebhook DataStorage client RoleBinding: %w", err)
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 5: Deploy services (Sequential - depends on migrations)
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n🚀 PHASE 5: Deploying services...")
