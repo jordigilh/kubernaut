@@ -137,7 +137,7 @@ func deleteCRDAndWait(crdName string) {
 		"CRD should be deleted")
 }
 
-var _ = Describe("Workflow Content Integrity E2E Tests (BR-WORKFLOW-006)", func() {
+var _ = Describe("Workflow Content Integrity E2E Tests (BR-WORKFLOW-006)", Serial, func() {
 
 	AfterEach(func() {
 		// Clean up any lingering CRDs from this test
