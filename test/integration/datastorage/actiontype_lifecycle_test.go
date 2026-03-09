@@ -24,7 +24,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	actiontyperepo "github.com/jordigilh/kubernaut/pkg/datastorage/repository/actiontype"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository/workflow"
 )
@@ -180,23 +179,21 @@ var _ = Describe("ActionType Lifecycle Integration Tests (#300)", Label("integra
 			wfName := fmt.Sprintf("AT-IT-%s-wf-dep", testID)
 			content := `{"steps":[{"action":"test"}]}`
 			contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
-			labels := models.MandatoryLabels{
-				Severity:    []string{"critical"},
-				Component:   "pod",
-				Priority:    "P0",
-				Environment: []string{"production"},
-			}
-			labelsJSON, _ := json.Marshal(labels)
+			labelsJSON, _ := json.Marshal(map[string]interface{}{
+				"severity": []string{"critical"}, "component": "pod",
+				"priority": "P0", "environment": []string{"production"},
+			})
+			descJSON, _ := json.Marshal(map[string]string{
+				"what": "test workflow", "whenToUse": "during tests",
+			})
 
 			_, err = db.ExecContext(ctx,
 				`INSERT INTO remediation_workflow_catalog
-				 (workflow_name, version, is_latest_version, status, content, content_hash,
-				  action_type, severity, component, priority, environment, labels,
-				  source, registered_by, description_what, description_when_to_use)
-				 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
-				wfName, "1.0.0", true, "active", content, contentHash,
-				name, "{critical}", "pod", "P0", "{production}", labelsJSON,
-				"test", "admin@example.com", "test workflow", "during tests")
+				 (workflow_name, version, name, is_latest_version, status, content, content_hash,
+				  action_type, labels, description)
+				 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+				wfName, "1.0.0", wfName, true, "active", content, contentHash,
+				name, labelsJSON, descJSON)
 			Expect(err).ToNot(HaveOccurred(), "Inserting fake workflow should succeed")
 
 			// Disable should be denied
@@ -382,23 +379,20 @@ var _ = Describe("ActionType Lifecycle Integration Tests (#300)", Label("integra
 				wfName := fmt.Sprintf("AT-IT-%s-wf-count-%d", testID, i)
 				content := fmt.Sprintf(`{"steps":[{"action":"test-%d"}]}`, i)
 				contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
-				labels := models.MandatoryLabels{
-					Severity:    []string{"critical"},
-					Component:   "pod",
-					Priority:    "P0",
-					Environment: []string{"production"},
-				}
-				labelsJSON, _ := json.Marshal(labels)
+				labelsJSON, _ := json.Marshal(map[string]interface{}{
+					"severity": []string{"critical"}, "component": "pod",
+				})
+				descJSON, _ := json.Marshal(map[string]string{
+					"what": "test", "whenToUse": "test",
+				})
 
 				_, insertErr := db.ExecContext(ctx,
 					`INSERT INTO remediation_workflow_catalog
-					 (workflow_name, version, is_latest_version, status, content, content_hash,
-					  action_type, severity, component, priority, environment, labels,
-					  source, registered_by, description_what, description_when_to_use)
-					 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
-					wfName, "1.0.0", true, "active", content, contentHash,
-					name, "{critical}", "pod", "P0", "{production}", labelsJSON,
-					"test", "admin@example.com", "test", "test")
+					 (workflow_name, version, name, is_latest_version, status, content, content_hash,
+					  action_type, labels, description)
+					 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+					wfName, "1.0.0", wfName, true, "active", content, contentHash,
+					name, labelsJSON, descJSON)
 				Expect(insertErr).ToNot(HaveOccurred())
 			}
 
@@ -407,7 +401,7 @@ var _ = Describe("ActionType Lifecycle Integration Tests (#300)", Label("integra
 			Expect(count).To(Equal(2))
 			Expect(names).To(HaveLen(2))
 
-			_ = workflowRepo // suppress unused lint if needed
+			_ = workflowRepo
 		})
 	})
 })
