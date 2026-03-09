@@ -1002,6 +1002,48 @@ stringData:
     password: ""
 ---
 apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: data-storage-sa
+  labels:
+    app: datastorage
+    component: auth
+    authorization: dd-auth-014
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: data-storage-auth-middleware
+  labels:
+    app: datastorage
+    component: auth
+    authorization: dd-auth-014
+rules:
+- apiGroups: ["authentication.k8s.io"]
+  resources: ["tokenreviews"]
+  verbs: ["create"]
+- apiGroups: ["authorization.k8s.io"]
+  resources: ["subjectaccessreviews"]
+  verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: data-storage-auth-middleware
+  labels:
+    app: datastorage
+    component: auth
+    authorization: dd-auth-014
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-auth-middleware
+subjects:
+- kind: ServiceAccount
+  name: data-storage-sa
+  namespace: %[1]s
+---
+apiVersion: v1
 kind: Service
 metadata:
   name: datastorage
@@ -1034,6 +1076,7 @@ spec:
       labels:
         app: datastorage
     spec:
+      serviceAccountName: data-storage-sa
       containers:
       - name: datastorage
         image: %[3]s
