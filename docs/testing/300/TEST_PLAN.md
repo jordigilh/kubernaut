@@ -100,24 +100,28 @@ Tests validate business outcomes: "Can operators manage action types via kubectl
 
 | BR ID | Description | Priority | Tier | Test ID | Status |
 |-------|-------------|----------|------|---------|--------|
-| BR-WORKFLOW-007.1 | CREATE: new action type registered | P0 | Unit | UT-AT-300-001 | Pending |
-| BR-WORKFLOW-007.1 | CREATE: idempotent (already active) | P0 | Unit | UT-AT-300-002 | Pending |
-| BR-WORKFLOW-007.1 | CREATE: re-enable disabled | P0 | Unit | UT-AT-300-003 | Pending |
-| BR-WORKFLOW-007.2 | UPDATE: description change with audit | P0 | Unit | UT-AT-300-004 | Pending |
-| BR-WORKFLOW-007.2 | UPDATE: spec.name change denied | P0 | Unit | UT-AT-300-005 | Pending |
-| BR-WORKFLOW-007.3 | DELETE: soft-disable (no deps) | P0 | Unit | UT-AT-300-006 | Pending |
-| BR-WORKFLOW-007.3 | DELETE: denied with dependency count | P0 | Unit | UT-AT-300-007 | Pending |
-| BR-WORKFLOW-007.4 | Audit: CREATE event payload | P1 | Unit | UT-AT-300-008 | Pending |
-| BR-WORKFLOW-007.4 | Audit: UPDATE event with old+new | P1 | Unit | UT-AT-300-009 | Pending |
-| BR-WORKFLOW-007.4 | Audit: disable_denied event | P1 | Unit | UT-AT-300-010 | Pending |
-| BR-WORKFLOW-007.5 | Cross-update: activeWorkflowCount | P1 | Unit | UT-AT-300-011 | Pending |
-| BR-WORKFLOW-007.1 | CREATE: DS CRUD against PostgreSQL | P0 | Integration | IT-AT-300-001 | Pending |
-| BR-WORKFLOW-007.1 | CREATE: idempotency matrix | P0 | Integration | IT-AT-300-002 | Pending |
-| BR-WORKFLOW-007.3 | DELETE: dependency guard in DB | P0 | Integration | IT-AT-300-003 | Pending |
-| BR-WORKFLOW-007.1 | CREATE: full kubectl lifecycle | P0 | E2E | E2E-AT-300-001 | Pending |
-| BR-WORKFLOW-007.2 | UPDATE: description via kubectl edit | P0 | E2E | E2E-AT-300-002 | Pending |
-| BR-WORKFLOW-007.3 | DELETE: denied then allowed | P0 | E2E | E2E-AT-300-003 | Pending |
-| BR-WORKFLOW-007.5 | Cross-update: printer columns | P1 | E2E | E2E-AT-300-004 | Pending |
+| BR-WORKFLOW-007.1 | CREATE: new action type registered | P0 | Unit | UT-AT-300-001 | Complete |
+| BR-WORKFLOW-007.1 | CREATE: idempotent (already active) | P0 | Unit | UT-AT-300-002 | Complete |
+| BR-WORKFLOW-007.1 | CREATE: re-enable disabled | P0 | Unit | UT-AT-300-003 | Complete |
+| BR-WORKFLOW-007.2 | UPDATE: description change with audit | P0 | Unit | UT-AT-300-004 | Complete |
+| BR-WORKFLOW-007.2 | UPDATE: spec.name change denied | P0 | Unit | UT-AT-300-005 | Complete |
+| BR-WORKFLOW-007.3 | DELETE: soft-disable (no deps) | P0 | Unit | UT-AT-300-006 | Complete |
+| BR-WORKFLOW-007.3 | DELETE: denied with dependency count | P0 | Unit | UT-AT-300-007 | Complete |
+| BR-WORKFLOW-007.4 | Audit: CREATE event payload | P1 | Unit | UT-AT-300-008 | Complete |
+| BR-WORKFLOW-007.4 | Audit: UPDATE event with old+new | P1 | Unit | UT-AT-300-009 | Complete |
+| BR-WORKFLOW-007.4 | Audit: disable_denied event | P1 | Unit | UT-AT-300-010 | Complete |
+| BR-WORKFLOW-007.5 | Cross-update: activeWorkflowCount | P1 | Unit | UT-AT-300-011 | Complete |
+| BR-WORKFLOW-007.1 | CREATE: DS CRUD against PostgreSQL | P0 | Integration | IT-AT-300-001 | Complete |
+| BR-WORKFLOW-007.1 | CREATE: idempotency matrix | P0 | Integration | IT-AT-300-002 | Complete |
+| BR-WORKFLOW-007.3 | DELETE: dependency guard in DB | P0 | Integration | IT-AT-300-003 | Complete |
+| BR-WORKFLOW-007.2 | UPDATE: description diff capture | P0 | Integration | IT-AT-300-004 | Complete |
+| BR-WORKFLOW-007.1 | CREATE: full kubectl lifecycle | P0 | E2E | E2E-AT-300-001 | Complete |
+| BR-WORKFLOW-007.2 | UPDATE: description via kubectl edit | P0 | E2E | E2E-AT-300-002 | Complete |
+| BR-WORKFLOW-007.3 | DELETE: denied then allowed | P0 | E2E | E2E-AT-300-003 | Complete |
+| BR-WORKFLOW-007.5 | Cross-update: printer columns | P1 | E2E | E2E-AT-300-004 | Complete |
+| BR-WORKFLOW-007 | Wide output: DESCRIPTION column | P1 | E2E | E2E-AT-300-005 | Complete |
+| BR-WORKFLOW-007.5 | RW cross-update: activeWorkflowCount | P1 | E2E | E2E-AT-300-006 | Complete |
+| BR-WORKFLOW-007.1 | Re-enable: previouslyExisted=true | P1 | E2E | E2E-AT-300-007 | Complete |
 
 ---
 
@@ -138,18 +142,18 @@ Format: `{TIER}-AT-300-{SEQUENCE}`
 
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
-| `UT-AT-300-001` | New ActionType CRD CREATE registers in DS and populates status | Pending |
-| `UT-AT-300-002` | Idempotent CREATE for already-active action type returns NOOP | Pending |
-| `UT-AT-300-003` | CREATE for disabled action type re-enables and sets previouslyExisted | Pending |
-| `UT-AT-300-004` | Description UPDATE generates audit with old+new values | Pending |
-| `UT-AT-300-005` | Spec.name change in UPDATE is denied by webhook | Pending |
-| `UT-AT-300-006` | DELETE with no dependent workflows soft-disables successfully | Pending |
-| `UT-AT-300-007` | DELETE with N dependent workflows returns denial with count+names | Pending |
-| `UT-AT-300-008` | CREATE audit event payload contains all required fields | Pending |
-| `UT-AT-300-009` | UPDATE audit event contains oldDescription and newDescription structs | Pending |
-| `UT-AT-300-010` | Disable denied audit contains dependentWorkflows as []string | Pending |
-| `UT-AT-300-011` | RW CREATE/DELETE triggers async activeWorkflowCount update | Pending |
-| `UT-AT-300-012` | DS client adapter Create/Update/Disable map correctly to DS API | Pending |
+| `UT-AT-300-001` | New ActionType CRD CREATE registers in DS and populates status | Complete |
+| `UT-AT-300-002` | Idempotent CREATE for already-active action type returns NOOP | Complete |
+| `UT-AT-300-003` | CREATE for disabled action type re-enables and sets previouslyExisted | Complete |
+| `UT-AT-300-004` | Description UPDATE generates audit with old+new values | Complete |
+| `UT-AT-300-005` | Spec.name change in UPDATE is denied by webhook | Complete |
+| `UT-AT-300-006` | DELETE with no dependent workflows soft-disables successfully | Complete |
+| `UT-AT-300-007` | DELETE with N dependent workflows returns denial with count+names | Complete |
+| `UT-AT-300-008` | CREATE audit event payload contains all required fields | Complete |
+| `UT-AT-300-009` | UPDATE audit event contains oldDescription and newDescription structs | Complete |
+| `UT-AT-300-010` | Disable denied audit contains dependentWorkflows as []string | Complete |
+| `UT-AT-300-011` | RW CREATE/DELETE triggers async activeWorkflowCount update | Complete |
+| `UT-AT-300-012` | DS client adapter Create/Update/Disable map correctly to DS API | Deferred |
 | `UT-AT-300-013` | CRD types: YAML unmarshal, DeepCopy, scheme registration | Complete |
 
 ### Tier 2: Integration Tests
@@ -158,12 +162,12 @@ Format: `{TIER}-AT-300-{SEQUENCE}`
 
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
-| `IT-AT-300-001` | Create action type in real PostgreSQL, verify row exists | Pending |
-| `IT-AT-300-002` | Idempotency matrix: create/re-enable/NOOP against real DB | Pending |
-| `IT-AT-300-003` | Disable with dependency guard: count active workflows in DB | Pending |
-| `IT-AT-300-004` | Update description: verify old+new values captured | Pending |
-| `IT-AT-300-005` | Discovery filtering: disabled action types excluded from ListActions | Pending |
-| `IT-AT-300-006` | Audit events written to audit table with correct payloads | Pending |
+| `IT-AT-300-001` | Create action type in real PostgreSQL, verify row exists | Complete |
+| `IT-AT-300-002` | Idempotency matrix: create/re-enable/NOOP against real DB | Complete |
+| `IT-AT-300-003` | Disable with dependency guard: count active workflows in DB | Complete |
+| `IT-AT-300-004` | Update description: verify old+new values captured | Complete |
+| `IT-AT-300-005` | Discovery filtering: disabled action types excluded from ListActions | Deferred |
+| `IT-AT-300-006` | Audit events written to audit table with correct payloads | Deferred |
 
 ### Tier 3: E2E Tests
 
@@ -171,13 +175,13 @@ Format: `{TIER}-AT-300-{SEQUENCE}`
 
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
-| `E2E-AT-300-001` | kubectl apply creates ActionType, status populated | Pending |
-| `E2E-AT-300-002` | kubectl edit updates description, audit trail generated | Pending |
-| `E2E-AT-300-003` | kubectl delete denied with dependent workflows, allowed after removal | Pending |
-| `E2E-AT-300-004` | Printer columns show correct values (ACTION TYPE, WORKFLOWS, REGISTERED, AGE) | Pending |
-| `E2E-AT-300-005` | Wide output shows DESCRIPTION column | Pending |
-| `E2E-AT-300-006` | RW CREATE/DELETE updates ActionType activeWorkflowCount | Pending |
-| `E2E-AT-300-007` | Re-applying deleted ActionType re-enables with previouslyExisted=true | Pending |
+| `E2E-AT-300-001` | kubectl apply creates ActionType, status populated | Complete |
+| `E2E-AT-300-002` | kubectl edit updates description, audit trail generated | Complete |
+| `E2E-AT-300-003` | kubectl delete denied with dependent workflows, allowed after removal | Complete |
+| `E2E-AT-300-004` | Printer columns show correct values (ACTION TYPE, WORKFLOWS, REGISTERED, AGE) | Complete |
+| `E2E-AT-300-005` | Wide output shows DESCRIPTION column | Complete |
+| `E2E-AT-300-006` | RW CREATE/DELETE updates ActionType activeWorkflowCount | Complete |
+| `E2E-AT-300-007` | Re-applying deleted ActionType re-enables with previouslyExisted=true | Complete |
 
 ---
 

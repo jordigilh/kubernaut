@@ -138,10 +138,10 @@ var _ = Describe("E2E: ActionType CRD Lifecycle (#300)", Ordered, Label("e2e", "
 	})
 
 	// ========================================
-	// E2E-AT-300-005: spec.name change denied
+	// E2E-AT-300-IMMUTABLE: spec.name change denied (bonus, not in plan)
 	// BR-WORKFLOW-007.2
 	// ========================================
-	It("E2E-AT-300-005: spec.name change is denied by webhook", func() {
+	It("E2E-AT-300-IMMUTABLE: spec.name change is denied by webhook", func() {
 		at := &atv1alpha1.ActionType{}
 		Expect(k8sClient.Get(testCtx, client.ObjectKey{
 			Namespace: testNamespace, Name: "e2e-restart-pod",
@@ -181,6 +181,28 @@ var _ = Describe("E2E: ActionType CRD Lifecycle (#300)", Ordered, Label("e2e", "
 			"ACTION TYPE column (spec.name) should appear")
 		Expect(line).To(ContainSubstring("true"),
 			"REGISTERED column should show true")
+	})
+
+	// ========================================
+	// E2E-AT-300-005: Wide output shows DESCRIPTION column
+	// BR-WORKFLOW-007
+	// ========================================
+	It("E2E-AT-300-005: wide output shows DESCRIPTION column", func() {
+		By("Running kubectl get actiontypes -o wide")
+		cmd := exec.Command("kubectl",
+			"--kubeconfig", kubeconfigPath,
+			"get", "actiontypes", "-n", testNamespace,
+			"-o", "wide",
+			"--no-headers",
+		)
+		output, err := cmd.CombinedOutput()
+		Expect(err).ToNot(HaveOccurred(), "kubectl get actiontypes -o wide should succeed: %s", string(output))
+
+		line := strings.TrimSpace(string(output))
+		GinkgoWriter.Printf("kubectl -o wide output: %s\n", line)
+
+		Expect(line).To(ContainSubstring("Gracefully restart pods"),
+			"DESCRIPTION column should show the updated description.what")
 	})
 
 	// ========================================
