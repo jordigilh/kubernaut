@@ -115,8 +115,11 @@ func (h *RemediationWorkflowHandler) handleCreate(ctx context.Context, req admis
 		return admission.Denied(fmt.Sprintf("authentication required: %v", err))
 	}
 
-	// Marshal the CRD back to JSON as the content payload for DS
-	content, err := json.Marshal(rw)
+	// DD-WORKFLOW-017: Build clean content for DS that excludes Kubernetes runtime
+	// metadata (UID, resourceVersion, creationTimestamp). Including these would make
+	// the content hash non-deterministic across CRD delete+recreate cycles, breaking
+	// BR-WORKFLOW-006 re-enable detection (disabled + same hash → re-enable).
+	content, err := marshalCleanCRDContent(rw)
 	if err != nil {
 		logger.Error(err, "Failed to marshal CRD content for DS")
 		h.emitDeniedAudit(ctx, req, "marshal failed")
@@ -254,5 +257,39 @@ func (h *RemediationWorkflowHandler) updateCRDStatus(namespace, name, registered
 		"catalog_status", result.Status,
 		"previously_existed", result.PreviouslyExisted,
 	)
+}
+
+// marshalCleanCRDContent produces a JSON representation of the CRD that only
+// includes the fields relevant to the workflow definition: apiVersion, kind,
+// metadata.name, and spec. Kubernetes runtime metadata (UID, resourceVersion,
+// creationTimestamp, managedFields, etc.) is excluded so that the content hash
+// computed by DS is deterministic across CRD delete+recreate cycles.
+func marshalCleanCRDContent(rw *rwv1alpha1.RemediationWorkflow) ([]byte, error) {
+	type cleanMetadata struct {
+		Name string `json:"name"`
+	}
+	type cleanCRD struct {
+		APIVersion string                              `json:"apiVersion"`
+		Kind       string                              `json:"kind"`
+		Metadata   cleanMetadata                       `json:"metadata"`
+		Spec       rwv1alpha1.RemediationWorkflowSpec  `json:"spec"`
+	}
+
+	apiVersion := rw.APIVersion
+	if apiVersion == "" {
+		apiVersion = "kubernaut.ai/v1alpha1"
+	}
+	kind := rw.Kind
+	if kind == "" {
+		kind = "RemediationWorkflow"
+	}
+
+	clean := cleanCRD{
+		APIVersion: apiVersion,
+		Kind:       kind,
+		Metadata:   cleanMetadata{Name: rw.Name},
+		Spec:       rw.Spec,
+	}
+	return json.Marshal(clean)
 }
 
