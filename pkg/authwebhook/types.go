@@ -17,6 +17,14 @@ const (
 	EventTypeRWAdmittedCreate = "remediationworkflow.admitted.create"
 	EventTypeRWAdmittedDelete = "remediationworkflow.admitted.delete"
 	EventTypeRWAdmittedDenied = "remediationworkflow.admitted.denied"
+
+	// ADR-059: ActionType CRD admission event types (BR-WORKFLOW-007)
+	EventTypeATAdmittedCreate = "actiontype.admitted.create"
+	EventTypeATAdmittedUpdate = "actiontype.admitted.update"
+	EventTypeATAdmittedDelete = "actiontype.admitted.delete"
+	EventTypeATDeniedCreate   = "actiontype.denied.create"
+	EventTypeATDeniedUpdate   = "actiontype.denied.update"
+	EventTypeATDeniedDelete   = "actiontype.denied.delete"
 )
 
 // Event category constant per ADR-034 v1.4: event_category = emitter service

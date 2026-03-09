@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	actiontypev1 "github.com/jordigilh/kubernaut/api/actiontype/v1alpha1"
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
@@ -34,6 +35,7 @@ func init() {
 	_ = remediationv1.AddToScheme(scheme)
 	_ = notificationv1.AddToScheme(scheme)
 	_ = remediationworkflowv1.AddToScheme(scheme)
+	_ = actiontypev1.AddToScheme(scheme)
 }
 
 func main() {
@@ -193,6 +195,12 @@ func main() {
 	rwHandler := authwebhook.NewRemediationWorkflowHandler(rwDSClient, auditStore, mgr.GetClient())
 	webhookServer.Register("/validate-remediationworkflow", &webhook.Admission{Handler: rwHandler})
 	setupLog.Info("Registered RemediationWorkflow webhook handler with DS client and audit store")
+
+	// Register ActionType handler (ADR-059: CRD-based action type lifecycle)
+	// Reuses the same DS client adapter since it connects to the same Data Storage service
+	atHandler := authwebhook.NewActionTypeHandler(rwDSClient, auditStore, mgr.GetClient())
+	webhookServer.Register("/validate-actiontype", &webhook.Admission{Handler: atHandler})
+	setupLog.Info("Registered ActionType webhook handler with DS client and audit store")
 
 	// Register health check endpoints for liveness and readiness probes
 	// These are required by Kubernetes deployment health checks

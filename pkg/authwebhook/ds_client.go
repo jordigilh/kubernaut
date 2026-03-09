@@ -130,3 +130,103 @@ func mapOgenWorkflowToResult(rw *ogenclient.RemediationWorkflow, previouslyExist
 		PreviouslyExisted: previouslyExisted,
 	}
 }
+
+// ActionTypeRegistrationResult holds the DS response after registering or re-enabling an action type.
+type ActionTypeRegistrationResult struct {
+	ActionType   string
+	Status       string // "created", "exists", "reenabled"
+	WasReenabled bool
+}
+
+// ActionTypeDisableResult holds the DS response when disabling an action type.
+type ActionTypeDisableResult struct {
+	Disabled               bool
+	DependentWorkflowCount int
+	DependentWorkflows     []string
+}
+
+// ActionTypeUpdateResult holds the DS response after updating an action type description.
+type ActionTypeUpdateResult struct {
+	ActionType    string
+	UpdatedFields []string
+}
+
+func (a *DSClientAdapter) CreateActionType(ctx context.Context, name string, description ogenclient.ActionTypeDescription, registeredBy string) (*ActionTypeRegistrationResult, error) {
+	req := &ogenclient.ActionTypeCreateRequest{
+		Name:         name,
+		Description:  description,
+		RegisteredBy: registeredBy,
+	}
+
+	res, err := a.client.CreateActionType(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("data storage CreateActionType failed: %w", err)
+	}
+
+	switch v := res.(type) {
+	case *ogenclient.CreateActionTypeCreated:
+		resp := (*ogenclient.ActionTypeCreateResponse)(v)
+		return &ActionTypeRegistrationResult{
+			ActionType:   resp.ActionType,
+			Status:       string(resp.Status),
+			WasReenabled: resp.WasReenabled,
+		}, nil
+	case *ogenclient.CreateActionTypeOK:
+		resp := (*ogenclient.ActionTypeCreateResponse)(v)
+		return &ActionTypeRegistrationResult{
+			ActionType:   resp.ActionType,
+			Status:       string(resp.Status),
+			WasReenabled: resp.WasReenabled,
+		}, nil
+	default:
+		return nil, fmt.Errorf("unexpected response type from CreateActionType: %T", res)
+	}
+}
+
+func (a *DSClientAdapter) UpdateActionType(ctx context.Context, name string, description ogenclient.ActionTypeDescription, updatedBy string) (*ActionTypeUpdateResult, error) {
+	req := &ogenclient.ActionTypeUpdateRequest{
+		Description: description,
+	}
+	if updatedBy != "" {
+		req.UpdatedBy.SetTo(updatedBy)
+	}
+
+	res, err := a.client.UpdateActionType(ctx, req, ogenclient.UpdateActionTypeParams{Name: name})
+	if err != nil {
+		return nil, fmt.Errorf("data storage UpdateActionType failed: %w", err)
+	}
+
+	switch v := res.(type) {
+	case *ogenclient.ActionTypeUpdateResponse:
+		return &ActionTypeUpdateResult{
+			ActionType:    v.ActionType,
+			UpdatedFields: v.UpdatedFields,
+		}, nil
+	default:
+		return nil, fmt.Errorf("unexpected response type from UpdateActionType: %T", res)
+	}
+}
+
+func (a *DSClientAdapter) DisableActionType(ctx context.Context, name string, disabledBy string) (*ActionTypeDisableResult, error) {
+	req := &ogenclient.ActionTypeDisableRequest{
+		DisabledBy: disabledBy,
+	}
+
+	res, err := a.client.DisableActionType(ctx, req, ogenclient.DisableActionTypeParams{Name: name})
+	if err != nil {
+		return nil, fmt.Errorf("data storage DisableActionType failed: %w", err)
+	}
+
+	switch v := res.(type) {
+	case *ogenclient.ActionTypeDisableResponse:
+		return &ActionTypeDisableResult{Disabled: true}, nil
+	case *ogenclient.ActionTypeDisableDeniedResponse:
+		return &ActionTypeDisableResult{
+			Disabled:               false,
+			DependentWorkflowCount: v.DependentWorkflowCount,
+			DependentWorkflows:     v.DependentWorkflows,
+		}, nil
+	default:
+		return nil, fmt.Errorf("unexpected response type from DisableActionType: %T", res)
+	}
+}
