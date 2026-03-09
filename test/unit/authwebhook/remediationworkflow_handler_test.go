@@ -104,8 +104,8 @@ func buildRemediationWorkflow(name, namespace string) *rwv1alpha1.RemediationWor
 		},
 		Spec: rwv1alpha1.RemediationWorkflowSpec{
 			Metadata: rwv1alpha1.RemediationWorkflowMetadata{
-				WorkflowID: name,
-				Version:    "1.0.0",
+				WorkflowName: name,
+				Version:      "1.0.0",
 				Description: rwv1alpha1.RemediationWorkflowDescription{
 					What:      "Test workflow",
 					WhenToUse: "During tests",

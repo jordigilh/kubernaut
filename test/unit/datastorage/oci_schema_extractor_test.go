@@ -329,7 +329,7 @@ spec:
 
 			result, err := extractor.ExtractFromImage(context.Background(), "quay.io/test/workflow:v1.0.0")
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result.Schema.Metadata.WorkflowID).To(Equal("oomkill-scale-down"))
+			Expect(result.Schema.Metadata.WorkflowName).To(Equal("oomkill-scale-down"))
 			Expect(result.Schema.ActionType).To(Equal("RestartPod"))
 			Expect(result.Digest).To(HavePrefix("sha256:"),
 				"digest must be a valid sha256 content-addressable identifier")
