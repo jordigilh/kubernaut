@@ -6,7 +6,7 @@ spec:
   # Rollback Deployment Test Workflow Schema (BR-WORKFLOW-004)
   # Used by: DataStorage E2E — 04_workflow_discovery_test.go (DD-HAPI-017)
   metadata:
-    workflowId: rollback-deployment-test-v1
+    workflowName: rollback-deployment-test-v1
     version: "1.0.0"
     description:
       what: "Rolls back a deployment to a previous revision"

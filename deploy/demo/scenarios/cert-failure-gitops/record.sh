@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+SCENARIO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCENARIO_NAME="cert-failure-gitops"
+DEMO_NS="demo-cert-gitops"
+ALERT_NAME="CertManagerCertNotReady"
+RESOURCE_TAPE="cert-failure-gitops-certs.tape"
+SCREENS_TAPE="cert-failure-gitops-screens.tape"
+APPROVAL_REQUIRED="false"
+TERMINAL_STATE="Completed"
+INJECT_CMD="bash ${SCENARIO_DIR}/run.sh inject"
+SETUP_CMD="bash ${SCENARIO_DIR}/run.sh setup"
+CLEANUP_CMD="bash ${SCENARIO_DIR}/cleanup.sh"
+source "$(cd "${SCENARIO_DIR}/../../../.." && pwd)/deploy/demo/scripts/record-scenario.sh"

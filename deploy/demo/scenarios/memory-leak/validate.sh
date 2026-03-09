@@ -24,7 +24,7 @@ done
 # predict_linear needs ~5-7 minutes of trend data before projecting OOM
 
 wait_for_alert "ContainerMemoryExhaustionPredicted" "${NAMESPACE}" 600
-show_alert "ContainerMemoryExhaustionPredicted"
+show_alert "ContainerMemoryExhaustionPredicted" "${NAMESPACE}"
 
 # ── Wait for pipeline ──────────────────────────────────────────────────────
 

@@ -31,17 +31,14 @@ for _arg in "$@"; do
     esac
 done
 
-# shellcheck source=../../scripts/kind-helper.sh
-source "${SCRIPT_DIR}/../../scripts/kind-helper.sh"
-ensure_kind_cluster "${SCRIPT_DIR}/../kind-config-singlenode.yaml" "${1:-}"
-
+# shellcheck source=../../scripts/platform-helper.sh
+source "${SCRIPT_DIR}/../../scripts/platform-helper.sh"
+require_demo_ready
 # shellcheck source=../../scripts/monitoring-helper.sh
 source "${SCRIPT_DIR}/../../scripts/monitoring-helper.sh"
-ensure_monitoring_stack
-source "${SCRIPT_DIR}/../../scripts/platform-helper.sh"
-ensure_platform
-seed_scenario_workflow "cert-failure-gitops"
-ensure_cert_manager
+require_infra cert-manager
+require_infra gitea
+require_infra argocd
 
 run_setup() {
 echo "============================================="
@@ -60,21 +57,11 @@ kubectl create secret tls demo-ca-key-pair \
   -n cert-manager --dry-run=client -o yaml | kubectl apply -f -
 rm -rf "${TMPDIR_CA}"
 
-# Step 3: Ensure GitOps infrastructure
-echo "==> Step 3: Checking GitOps infrastructure..."
-if ! kubectl get namespace gitea &>/dev/null; then
-  echo "  Installing Gitea..."
-  bash "${SCRIPT_DIR}/../gitops/scripts/setup-gitea.sh"
-fi
-if ! kubectl get namespace argocd &>/dev/null; then
-  echo "  Installing ArgoCD..."
-  bash "${SCRIPT_DIR}/../gitops/scripts/setup-argocd.sh"
-fi
 # Speed up ArgoCD polling for demo scenarios (default 180s -> 60s)
 kubectl patch configmap argocd-cm -n argocd --type merge \
   -p '{"data":{"timeout.reconciliation":"60s"}}' 2>/dev/null || true
 
-# Step 4: Create Gitea repo with cert-manager manifests
+# Step 3: Create Gitea repo with cert-manager manifests
 echo "==> Step 4: Pushing cert-manager manifests to Gitea..."
 WORK_DIR=$(mktemp -d)
 kubectl port-forward -n "${GITEA_NAMESPACE}" svc/gitea-http 3000:3000 &

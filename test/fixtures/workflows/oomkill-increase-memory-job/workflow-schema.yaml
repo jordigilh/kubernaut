@@ -6,7 +6,7 @@ spec:
   # OOMKill Increase Memory Workflow Schema - Job Backend (BR-WORKFLOW-004)
   # Used by: FullPipeline E2E (execution.engine: job)
   metadata:
-    workflowId: oomkill-increase-memory-v1
+    workflowName: oomkill-increase-memory-v1
     version: "1.0.0"
     description:
       what: "Increases memory limits for pods experiencing OOMKill events"

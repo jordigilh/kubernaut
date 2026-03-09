@@ -6,7 +6,7 @@ spec:
   # Node Drain and Reboot Workflow Schema (BR-WORKFLOW-004)
   # Used by: AIAnalysis E2E, HolmesGPT-API E2E
   metadata:
-    workflowId: node-drain-reboot-v1
+    workflowName: node-drain-reboot-v1
     version: "1.0.0"
     description:
       what: "Drains and reboots a node that is in NotReady state"

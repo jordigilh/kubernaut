@@ -6,7 +6,7 @@ spec:
   # Discovery Test Workflow Schema (BR-WORKFLOW-004)
   # Used by: DataStorage E2E — 04_workflow_discovery_test.go (DD-HAPI-017)
   metadata:
-    workflowId: discovery-test-v1
+    workflowName: discovery-test-v1
     version: "1.0.0"
     description:
       what: "Test workflow for three-step discovery E2E validation"

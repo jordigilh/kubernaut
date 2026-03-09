@@ -6,7 +6,7 @@ spec:
   # Fix NetworkPolicy Workflow Schema - Job Backend (BR-WORKFLOW-004)
   # Scenario: #138 -- Deny-all NetworkPolicy blocks traffic -> remove offending policy
   metadata:
-    workflowId: fix-network-policy-v1
+    workflowName: fix-network-policy-v1
     version: "1.0.0"
     description:
       what: "Removes a deny-all NetworkPolicy that is blocking legitimate ingress traffic and causing health check failures"

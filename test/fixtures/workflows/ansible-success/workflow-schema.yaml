@@ -6,7 +6,7 @@ spec:
   # Ansible Success Test Workflow Schema (BR-WE-015, BR-WE-016)
   # Used by: WorkflowExecution E2E — ansible engine success path
   metadata:
-    workflowId: test-ansible-success
+    workflowName: test-ansible-success
     version: "1.0.0"
     description:
       what: "Ansible playbook that simulates a successful remediation via AWX"

@@ -7,7 +7,7 @@ spec:
   # Authority: ADR-043
   # E2E Testing: Validates failure handling in WorkflowExecution controller's Job backend
   metadata:
-    workflowId: test-job-intentional-failure
+    workflowName: test-job-intentional-failure
     version: "1.0.0"
     description:
       what: "Intentionally failing workflow using Kubernetes Job backend for E2E testing"

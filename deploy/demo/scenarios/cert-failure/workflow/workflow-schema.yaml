@@ -6,7 +6,7 @@ spec:
   # Fix Certificate Workflow Schema - Job Backend (BR-WORKFLOW-004)
   # Scenario: #133 -- cert-manager Certificate NotReady -> recreate CA Secret
   metadata:
-    workflowId: fix-certificate-v1
+    workflowName: fix-certificate-v1
     version: "1.0.0"
     description:
       what: "Recreates the CA Secret backing a cert-manager ClusterIssuer to restore certificate issuance"

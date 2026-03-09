@@ -6,7 +6,7 @@ spec:
   # Helm Rollback Workflow Schema - Job Backend (BR-WORKFLOW-004)
   # Scenario: #135 -- Helm-managed CrashLoopBackOff -> helm rollback
   metadata:
-    workflowId: helm-rollback-v1
+    workflowName: helm-rollback-v1
     version: "1.0.0"
     description:
       what: "Rolls back a Helm release to its previous revision to recover from CrashLoopBackOff caused by a bad configuration change deployed via helm upgrade"

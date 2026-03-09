@@ -6,7 +6,7 @@ spec:
   # Fix Certificate (GitOps) Workflow Schema - Job Backend (BR-WORKFLOW-004)
   # Scenario: #134 -- GitOps-managed Certificate failure -> git revert
   metadata:
-    workflowId: fix-certificate-gitops-v1
+    workflowName: fix-certificate-gitops-v1
     version: "1.0.0"
     description:
       what: "Reverts a bad Git commit that broke a cert-manager ClusterIssuer in a GitOps-managed environment"

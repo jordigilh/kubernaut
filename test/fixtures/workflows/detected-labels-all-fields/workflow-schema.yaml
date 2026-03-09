@@ -7,7 +7,7 @@ spec:
   # Used by: DataStorage E2E -- E2E-DS-043-005
   # Purpose: Validates all 8 detectedLabels fields survive full OCI -> DB -> HTTP round-trip
   metadata:
-    workflowId: detected-labels-all-fields-v1
+    workflowName: detected-labels-all-fields-v1
     version: "1.0.0"
     description:
       what: "Test workflow with all 8 detectedLabels fields populated"

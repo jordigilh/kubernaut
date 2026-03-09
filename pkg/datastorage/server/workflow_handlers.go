@@ -423,10 +423,10 @@ func (h *Handler) buildWorkflowCommon(
 	execEngine := models.ExecutionEngine(schemaParser.ExtractExecutionEngine(parsedSchema))
 
 	workflow := &models.RemediationWorkflow{
-		WorkflowName:    parsedSchema.Metadata.WorkflowID,
+		WorkflowName:    parsedSchema.Metadata.WorkflowName,
 		Version:         parsedSchema.Metadata.Version,
 		SchemaVersion:   parsedSchema.SchemaVersion,
-		Name:            parsedSchema.Metadata.WorkflowID,
+		Name:            parsedSchema.Metadata.WorkflowName,
 		Description:     desc,
 		Content:         rawContent,
 		Parameters:      &rawParams,

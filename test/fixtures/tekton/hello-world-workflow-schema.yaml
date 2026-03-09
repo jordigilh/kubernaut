@@ -2,7 +2,7 @@
 # Authority: ADR-043
 # E2E Testing: Validates WorkflowExecution controller's Tekton integration
 metadata:
-  workflowId: test-hello-world
+  workflowName: test-hello-world
   version: "1.0.0"
   description:
     what: "Simple hello-world workflow for E2E testing of WorkflowExecution controller"

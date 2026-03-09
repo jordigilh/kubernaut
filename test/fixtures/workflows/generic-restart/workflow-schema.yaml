@@ -6,7 +6,7 @@ spec:
   # Generic Restart Workflow Schema (BR-WORKFLOW-004)
   # Used by: AIAnalysis E2E, HolmesGPT-API E2E
   metadata:
-    workflowId: generic-restart-v1
+    workflowName: generic-restart-v1
     version: "1.0.0"
     description:
       what: "Restarts a pod as a generic recovery action"

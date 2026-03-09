@@ -7,7 +7,7 @@ spec:
   # Used by: WorkflowExecution E2E (Tekton dependency injection tests)
   # Authority: DD-WE-006, BR-WE-014
   metadata:
-    workflowId: test-dep-secret-tekton
+    workflowName: test-dep-secret-tekton
     version: "1.0.0"
     description:
       what: "Tekton workflow that declares a Secret dependency for DD-WE-006 E2E testing"

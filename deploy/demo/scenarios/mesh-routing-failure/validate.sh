@@ -21,7 +21,7 @@ done
 # mesh-routing-failure has two alerts; LinkerdHighErrorRate fires first
 
 wait_for_alert "LinkerdHighErrorRate" "${NAMESPACE}" 300
-show_alert "LinkerdHighErrorRate"
+show_alert "LinkerdHighErrorRate" "${NAMESPACE}"
 
 # ── Wait for pipeline ──────────────────────────────────────────────────────
 

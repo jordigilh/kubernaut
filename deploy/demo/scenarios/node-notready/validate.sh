@@ -20,7 +20,7 @@ done
 # ── Wait for alert ──────────────────────────────────────────────────────────
 
 wait_for_alert "KubeNodeNotReady" "${NAMESPACE}" 300
-show_alert "KubeNodeNotReady"
+show_alert "KubeNodeNotReady" "${NAMESPACE}"
 
 # ── Wait for pipeline ──────────────────────────────────────────────────────
 

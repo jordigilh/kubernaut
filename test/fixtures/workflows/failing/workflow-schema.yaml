@@ -6,7 +6,7 @@ spec:
   # Intentional Failure Test Workflow Schema (BR-WORKFLOW-004)
   # Used by: WorkflowExecution E2E
   metadata:
-    workflowId: test-intentional-failure
+    workflowName: test-intentional-failure
     version: "1.0.0"
     description:
       what: "Workflow that intentionally fails for testing error handling"

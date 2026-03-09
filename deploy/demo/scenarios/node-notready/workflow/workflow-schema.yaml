@@ -6,7 +6,7 @@ spec:
   # Cordon + Drain Workflow Schema - Job Backend (BR-WORKFLOW-004)
   # Scenario: #127 -- Node NotReady -> cordon and drain
   metadata:
-    workflowId: cordon-drain-v1
+    workflowName: cordon-drain-v1
     version: "1.0.0"
     description:
       what: "Cordons a NotReady node to prevent new scheduling and drains existing workloads to healthy nodes"

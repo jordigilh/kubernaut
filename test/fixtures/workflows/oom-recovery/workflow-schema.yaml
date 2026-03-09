@@ -6,7 +6,7 @@ spec:
   # OOM Recovery Workflow Schema (BR-WORKFLOW-004)
   # Used by: DataStorage E2E — 07_workflow_version_management_test.go (DD-WORKFLOW-002)
   metadata:
-    workflowId: oom-recovery-v1
+    workflowName: oom-recovery-v1
     version: "v1.0.0"
     description:
       what: "Recovers pods from OOM events by adjusting memory limits"

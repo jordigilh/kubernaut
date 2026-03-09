@@ -6,7 +6,7 @@ spec:
   # SAR Test Workflow Schema (BR-WORKFLOW-004)
   # Used by: DataStorage E2E — 23_sar_access_control_test.go (DD-AUTH-012)
   metadata:
-    workflowId: sar-test-v1
+    workflowName: sar-test-v1
     version: "1.0.0"
     description:
       what: "Test workflow for SubjectAccessReview and user attribution validation"

@@ -6,7 +6,7 @@ spec:
   # Rollback Deployment Workflow Schema - Job Backend (BR-WORKFLOW-004)
   # Scenario: #120 -- CrashLoopBackOff -> rollback to working config
   metadata:
-    workflowId: crashloop-rollback-v1
+    workflowName: crashloop-rollback-v1
     version: "1.0.1"
     description:
       what: "Rolls back a deployment to its previous revision to recover from CrashLoopBackOff caused by a bad configuration change"

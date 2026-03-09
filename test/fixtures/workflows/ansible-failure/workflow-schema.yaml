@@ -6,7 +6,7 @@ spec:
   # Ansible Failure Test Workflow Schema (BR-WE-015, BR-WE-016)
   # Used by: WorkflowExecution E2E — ansible engine failure path
   metadata:
-    workflowId: test-ansible-failure
+    workflowName: test-ansible-failure
     version: "1.0.0"
     description:
       what: "Ansible playbook that intentionally fails for testing failure handling"

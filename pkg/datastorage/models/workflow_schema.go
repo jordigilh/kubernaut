@@ -109,9 +109,9 @@ type WorkflowSchema struct {
 
 // WorkflowSchemaMetadata contains workflow identification and description
 type WorkflowSchemaMetadata struct {
-	// WorkflowID is the unique workflow identifier
+	// WorkflowName is the human-readable workflow name (maps to DS workflow_name)
 	// Format: lowercase alphanumeric with hyphens (e.g., "oomkill-restart-pod")
-	WorkflowID string `yaml:"workflowId" json:"workflowId" validate:"required,max=255"`
+	WorkflowName string `yaml:"workflowName" json:"workflowName" validate:"required,max=255"`
 
 	// Version is the semantic version (e.g., "1.0.0", "2.1.3")
 	Version string `yaml:"version" json:"version" validate:"required,max=50"`

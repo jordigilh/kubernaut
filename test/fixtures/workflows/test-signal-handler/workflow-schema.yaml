@@ -6,7 +6,7 @@ spec:
   # Test Signal Handler Workflow Schema (BR-WORKFLOW-004)
   # Used by: AIAnalysis E2E
   metadata:
-    workflowId: test-signal-handler-v1
+    workflowName: test-signal-handler-v1
     version: "1.0.0"
     description:
       what: "Deletes a pod in response to a test signal for validation purposes"

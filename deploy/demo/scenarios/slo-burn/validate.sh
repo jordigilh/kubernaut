@@ -20,7 +20,7 @@ done
 # ── Wait for alert ──────────────────────────────────────────────────────────
 
 wait_for_alert "ErrorBudgetBurn" "${NAMESPACE}" 300
-show_alert "ErrorBudgetBurn"
+show_alert "ErrorBudgetBurn" "${NAMESPACE}"
 
 # ── Wait for pipeline ──────────────────────────────────────────────────────
 

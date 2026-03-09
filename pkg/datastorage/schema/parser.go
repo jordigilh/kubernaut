@@ -119,8 +119,8 @@ func (p *Parser) ParseAndValidate(content string) (*models.WorkflowSchema, error
 // SchemaVersion is derived from apiVersion and already populated by Parse.
 func (p *Parser) Validate(schema *models.WorkflowSchema) error {
 	// Validate Metadata
-	if schema.Metadata.WorkflowID == "" {
-		return models.NewSchemaValidationError("metadata.workflowId", "workflowId is required")
+	if schema.Metadata.WorkflowName == "" {
+		return models.NewSchemaValidationError("metadata.workflowName", "workflowName is required")
 	}
 	if schema.Metadata.Version == "" {
 		return models.NewSchemaValidationError("metadata.version", "version is required")

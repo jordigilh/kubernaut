@@ -6,7 +6,7 @@ spec:
   # Fix AuthorizationPolicy Workflow Schema - Job Backend (BR-WORKFLOW-004)
   # Scenario: #136 -- Linkerd AuthorizationPolicy blocks traffic -> remove/fix policy
   metadata:
-    workflowId: fix-authz-policy-v1
+    workflowName: fix-authz-policy-v1
     version: "1.0.0"
     description:
       what: "Removes or fixes a Linkerd AuthorizationPolicy that is blocking legitimate traffic"

@@ -6,7 +6,7 @@ spec:
   # Memory Optimize Workflow Schema (BR-WORKFLOW-004)
   # Used by: AIAnalysis E2E, HolmesGPT-API E2E
   metadata:
-    workflowId: memory-optimize-v1
+    workflowName: memory-optimize-v1
     version: "1.0.0"
     description:
       what: "Scales replicas to optimize memory usage across pods"

@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+SCENARIO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCENARIO_NAME="statefulset-pvc-failure"
+DEMO_NS="demo-statefulset"
+ALERT_NAME="KubeStatefulSetReplicasMismatch"
+RESOURCE_TAPE="statefulset-pvc-failure-pods.tape"
+SCREENS_TAPE="statefulset-pvc-failure-screens.tape"
+APPROVAL_REQUIRED="false"
+TERMINAL_STATE="Completed"
+INJECT_CMD="bash ${SCENARIO_DIR}/inject-pvc-issue.sh"
+SETUP_CMD="bash ${SCENARIO_DIR}/cleanup.sh 2>/dev/null || true && kubectl apply -f ${SCENARIO_DIR}/manifests/ && kubectl wait --for=condition=Ready pod -l app=kv-store -n demo-statefulset --timeout=120s"
+CLEANUP_CMD="bash ${SCENARIO_DIR}/cleanup.sh"
+source "$(cd "${SCENARIO_DIR}/../../../.." && pwd)/deploy/demo/scripts/record-scenario.sh"

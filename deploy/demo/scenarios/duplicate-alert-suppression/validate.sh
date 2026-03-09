@@ -19,8 +19,8 @@ source "${SCRIPT_DIR}/../../scripts/validation-helper.sh"
 # ── Wait for alert ──────────────────────────────────────────────────────────
 # 5 pods crash → 5 KubePodCrashLooping alerts expected
 
-wait_for_alert "KubePodCrashLooping" "${NAMESPACE}" 300
-show_alert "KubePodCrashLooping"
+wait_for_alert "KubePodCrashLooping" "${NAMESPACE}" 360
+show_alert "KubePodCrashLooping" "${NAMESPACE}"
 
 # ── Wait for pipeline ──────────────────────────────────────────────────────
 

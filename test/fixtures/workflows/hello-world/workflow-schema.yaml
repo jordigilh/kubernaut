@@ -6,7 +6,7 @@ spec:
   # Hello World Test Workflow Schema (BR-WORKFLOW-004)
   # Used by: WorkflowExecution E2E
   metadata:
-    workflowId: test-hello-world
+    workflowName: test-hello-world
     version: "1.0.0"
     description:
       what: "Simple hello-world workflow for testing the execution pipeline"

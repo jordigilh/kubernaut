@@ -26,15 +26,9 @@ for _arg in "$@"; do
     esac
 done
 
-# shellcheck source=../../scripts/kind-helper.sh
-source "${SCRIPT_DIR}/../../scripts/kind-helper.sh"
-ensure_kind_cluster "${SCRIPT_DIR}/../kind-config-singlenode.yaml" "${1:-}"
-
-# shellcheck source=../../scripts/monitoring-helper.sh
-source "${SCRIPT_DIR}/../../scripts/monitoring-helper.sh"
-ensure_monitoring_stack
+# shellcheck source=../../scripts/platform-helper.sh
 source "${SCRIPT_DIR}/../../scripts/platform-helper.sh"
-ensure_platform
+require_demo_ready
 
 echo "============================================="
 echo " Concurrent Cross-Namespace Demo (#172)"
@@ -54,13 +48,7 @@ kubectl rollout restart deployment/signalprocessing-controller -n kubernaut-syst
 kubectl rollout status deployment/signalprocessing-controller -n kubernaut-system --timeout=60s
 echo ""
 
-# Step 1: Seed workflows
-echo "==> Step 1: Seeding workflows..."
-echo "  crashloop-rollback-v1 (for low risk-tolerance teams)..."
-seed_scenario_workflow "crashloop"
-echo ""
-
-# Step 2: Deploy both namespaces and workloads
+# Step 1: Deploy both namespaces and workloads
 echo "==> Step 2: Deploying team-alpha and team-beta workloads..."
 for team in team-alpha team-beta; do
   echo "  Deploying ${team}..."

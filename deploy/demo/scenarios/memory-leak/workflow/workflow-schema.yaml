@@ -6,7 +6,7 @@ spec:
   # Graceful Restart Workflow Schema - Job Backend (BR-WORKFLOW-004)
   # Scenario: #129 -- Proactive memory exhaustion -> graceful restart
   metadata:
-    workflowId: graceful-restart-v1
+    workflowName: graceful-restart-v1
     version: "1.0.0"
     description:
       what: "Performs a graceful rolling restart of a deployment to reset its runtime state and reclaim leaked memory"

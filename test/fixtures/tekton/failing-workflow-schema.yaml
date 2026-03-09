@@ -2,7 +2,7 @@
 # Authority: ADR-043
 # E2E Testing: Validates failure handling in WorkflowExecution controller
 metadata:
-  workflowId: test-intentional-failure
+  workflowName: test-intentional-failure
   version: "1.0.0"
   description:
     what: "Intentionally failing workflow for E2E testing of failure handling"

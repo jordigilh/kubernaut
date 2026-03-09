@@ -6,7 +6,7 @@ spec:
   # CrashLoop Config Fix Workflow Schema - Job Backend (BR-WORKFLOW-004)
   # Used by: FullPipeline E2E (execution.engine: job)
   metadata:
-    workflowId: crashloop-config-fix-v1
+    workflowName: crashloop-config-fix-v1
     version: "1.0.0"
     description:
       what: "Restarts deployment to recover from CrashLoopBackOff caused by configuration issues"

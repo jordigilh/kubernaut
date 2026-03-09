@@ -6,7 +6,7 @@ spec:
   # GitOps Revert Workflow Schema - Job Backend (BR-WORKFLOW-004)
   # Scenario: #125 -- GitOps drift remediation (ArgoCD + Gitea)
   metadata:
-    workflowId: git-revert-v1
+    workflowName: git-revert-v1
     version: "1.0.0"
     description:
       what: "Reverts the most recent commit in a GitOps-managed repository to undo a bad change"

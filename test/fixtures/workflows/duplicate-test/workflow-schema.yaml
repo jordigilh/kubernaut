@@ -7,7 +7,7 @@ spec:
   # Used by: DataStorage E2E — 18_workflow_duplicate_api_test.go (DS-BUG-001)
   # This workflow is created twice to test 409 Conflict duplicate detection
   metadata:
-    workflowId: duplicate-test-v1
+    workflowName: duplicate-test-v1
     version: "1.0.0"
     description:
       what: "Test workflow for duplicate creation detection"

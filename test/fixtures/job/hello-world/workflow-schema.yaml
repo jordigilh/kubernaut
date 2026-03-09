@@ -7,7 +7,7 @@ spec:
   # Authority: ADR-043
   # E2E Testing: Validates WorkflowExecution controller's Kubernetes Job integration
   metadata:
-    workflowId: test-job-hello-world
+    workflowName: test-job-hello-world
     version: "1.0.0"
     description:
       what: "Simple hello-world workflow using Kubernetes Job backend for E2E testing"

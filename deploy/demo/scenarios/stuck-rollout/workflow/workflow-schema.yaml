@@ -6,7 +6,7 @@ spec:
   # Rollback Deployment Workflow Schema - Job Backend (BR-WORKFLOW-004)
   # Scenario: #130 -- Stuck rollout -> rollback to previous revision
   metadata:
-    workflowId: rollback-deployment-v1
+    workflowName: rollback-deployment-v1
     version: "1.0.0"
     description:
       what: "Rolls back a deployment to its previous working revision when the current rollout is stuck"

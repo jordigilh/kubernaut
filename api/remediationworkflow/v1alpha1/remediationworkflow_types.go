@@ -61,10 +61,10 @@ type RemediationWorkflowSpec struct {
 
 // RemediationWorkflowMetadata contains workflow identification and description
 type RemediationWorkflowMetadata struct {
-	// WorkflowID is the unique workflow identifier
+	// WorkflowName is the human-readable workflow name (maps to DS workflow_name)
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MaxLength=255
-	WorkflowID string `json:"workflowId"`
+	WorkflowName string `json:"workflowName"`
 
 	// Version is the semantic version (e.g., "1.0.0")
 	// +kubebuilder:validation:Required
@@ -208,6 +208,7 @@ type RemediationWorkflowStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:shortName=rw
 // +kubebuilder:printcolumn:name="Action",type=string,JSONPath=`.spec.actionType`
+// +kubebuilder:printcolumn:name="UUID",type=string,JSONPath=`.status.workflowId`
 // +kubebuilder:printcolumn:name="Engine",type=string,JSONPath=`.spec.execution.engine`
 // +kubebuilder:printcolumn:name="Version",type=string,JSONPath=`.spec.metadata.version`
 // +kubebuilder:printcolumn:name="Status",type=string,JSONPath=`.status.catalogStatus`

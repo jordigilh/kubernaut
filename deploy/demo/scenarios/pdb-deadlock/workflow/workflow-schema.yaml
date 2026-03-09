@@ -6,7 +6,7 @@ spec:
   # Relax PDB Workflow Schema - Job Backend (BR-WORKFLOW-004)
   # Scenario: #124 -- PDB deadlock -> temporarily relax PDB
   metadata:
-    workflowId: relax-pdb-v1
+    workflowName: relax-pdb-v1
     version: "1.0.0"
     description:
       what: "Temporarily relaxes a PodDisruptionBudget by reducing minAvailable to allow voluntary disruptions to proceed"

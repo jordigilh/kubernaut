@@ -6,7 +6,7 @@ spec:
   # Patch HPA Workflow Schema - Job Backend (BR-WORKFLOW-004)
   # Scenario: #123 -- HPA at maxReplicas -> temporarily raise ceiling
   metadata:
-    workflowId: patch-hpa-v1
+    workflowName: patch-hpa-v1
     version: "1.0.0"
     description:
       what: "Temporarily increases the maxReplicas value of an HPA to allow scaling beyond the current ceiling"

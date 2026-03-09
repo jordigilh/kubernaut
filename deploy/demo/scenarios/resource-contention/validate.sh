@@ -20,7 +20,7 @@ done
 # ── Wait for alert ──────────────────────────────────────────────────────────
 
 wait_for_alert "ContainerOOMKilling" "${NAMESPACE}" 300
-show_alert "ContainerOOMKilling"
+show_alert "ContainerOOMKilling" "${NAMESPACE}"
 
 # ── Wait for pipeline ──────────────────────────────────────────────────────
 

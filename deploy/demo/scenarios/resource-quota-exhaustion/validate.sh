@@ -15,7 +15,7 @@ source "${SCRIPT_DIR}/../../scripts/validation-helper.sh"
 # ReplicaSet-level alert: spec_replicas>0 but status_replicas=0 (FailedCreate)
 
 wait_for_alert "KubeResourceQuotaExhausted" "${NAMESPACE}" 180
-show_alert "KubeResourceQuotaExhausted"
+show_alert "KubeResourceQuotaExhausted" "${NAMESPACE}"
 
 # ── Wait for pipeline ──────────────────────────────────────────────────────
 

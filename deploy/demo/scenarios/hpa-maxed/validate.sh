@@ -37,7 +37,7 @@ echo ""
 
 # Phase 1: Wait for alert
 wait_for_alert "$ALERT_NAME" "$NAMESPACE" "$ALERT_TIMEOUT"
-show_alert "$ALERT_NAME"
+show_alert "$ALERT_NAME" "$NAMESPACE"
 
 # Phase 2: Wait for RR and poll pipeline to completion
 wait_for_rr "$NAMESPACE" 120

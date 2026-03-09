@@ -6,7 +6,7 @@ spec:
   # ImagePull Fix Credentials Workflow Schema (BR-WORKFLOW-004)
   # Used by: HolmesGPT-API E2E
   metadata:
-    workflowId: image-pull-backoff-fix-credentials
+    workflowName: image-pull-backoff-fix-credentials
     version: "1.0.0"
     description:
       what: "Rolls back a deployment to fix ImagePullBackOff caused by credential issues"

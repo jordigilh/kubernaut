@@ -7,7 +7,7 @@ spec:
   # Used by: DataStorage E2E — 04_workflow_discovery_test.go (DD-HAPI-017)
   # This workflow is created and then DISABLED via PATCH to test discovery exclusion
   metadata:
-    workflowId: rollback-deployment-disabled-test-v1
+    workflowName: rollback-deployment-disabled-test-v1
     version: "1.0.0"
     description:
       what: "Rolls back a deployment (disabled variant for testing discovery exclusion)"

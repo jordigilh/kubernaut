@@ -13,7 +13,7 @@ source "${SCRIPT_DIR}/../../scripts/validation-helper.sh"
 
 wait_for_alert "KubePodCrashLooping" "${NAMESPACE}" 300
 
-show_alert "KubePodCrashLooping"
+show_alert "KubePodCrashLooping" "${NAMESPACE}"
 
 # ── Wait for pipeline ──────────────────────────────────────────────────────
 

@@ -7,7 +7,7 @@ spec:
   # Used by: DataStorage E2E -- detected_labels_search_e2e_test.go
   # Purpose: Validates full OCI registration -> search with detectedLabels scoring
   metadata:
-    workflowId: detected-labels-test-v1
+    workflowName: detected-labels-test-v1
     version: "1.0.0"
     description:
       what: "Test workflow for detectedLabels end-to-end validation"
