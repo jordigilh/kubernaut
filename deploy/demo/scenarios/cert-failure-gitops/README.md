@@ -179,9 +179,16 @@ awareness.
 
 ### Recurrence Behavior
 
-When the problem was re-triggered (Secret deleted again), the LLM chose the same
-approach (`FixCertificate`, confidence 0.85, same rationale). This demonstrates
-consistent, reproducible reasoning.
+When the problem was re-triggered (Secret deleted again), HAPI's `get_resource_context`
+tool queried DataStorage and returned the remediation history for the resource
+(`history_count=5`), including the previous successful `FixCertificate` outcome with
+verified effectiveness scores. The LLM chose the same approach (`FixCertificate`,
+confidence 0.85, same rationale) -- reinforced by historical evidence that the
+previous remediation succeeded.
+
+If the same workflow keeps completing but the problem recurs, Kubernaut's remediation
+history prompt automatically warns the LLM to escalate to human review rather than
+repeating an ineffective loop.
 
 ### AIOps Insight
 
