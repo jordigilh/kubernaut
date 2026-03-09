@@ -287,7 +287,7 @@ func loadAuthWebhookImageOnly(imageName, clusterName string, writer io.Writer) e
 // This is the single source of truth for all AuthWebhook E2E deployments.
 // Includes: ServiceAccount, ClusterRole, ClusterRoleBinding, Service, ConfigMap,
 // Deployment, MutatingWebhookConfiguration, ValidatingWebhookConfiguration.
-func authWebhookManifest(namespace, imageTag string) string {
+func authWebhookManifest(namespace, imageTag, dataStorageURL string) string {
 	pullPolicy := GetImagePullPolicy()
 
 	return fmt.Sprintf(`---
@@ -362,7 +362,7 @@ data:
       certDir: /tmp/k8s-webhook-server/serving-certs
       healthProbeAddr: ":8081"
     datastorage:
-      url: "http://datastorage.%[1]s.svc.cluster.local:8080"
+      url: "%[4]s"
       timeout: 30s
       buffer:
         bufferSize: 1000
@@ -561,7 +561,7 @@ webhooks:
     scope: "Namespaced"
   sideEffects: NoneOnDryRun
   timeoutSeconds: 15
-`, namespace, imageTag, pullPolicy)
+`, namespace, imageTag, pullPolicy, dataStorageURL)
 }
 
 // deployAuthWebhookToKind deploys the AuthWebhook service to Kind cluster.
@@ -591,7 +591,8 @@ func deployAuthWebhookToKind(kubeconfigPath, namespace, imageTag string, writer 
 
 	// STEP 3: Apply AuthWebhook manifest (all resources including webhook configs)
 	_, _ = fmt.Fprintln(writer, "🚀 Applying AuthWebhook deployment...")
-	manifest := authWebhookManifest(namespace, imageTag)
+	dsURL := fmt.Sprintf("http://datastorage.%s.svc.cluster.local:8080", namespace)
+	manifest := authWebhookManifest(namespace, imageTag, dsURL)
 	cmd = exec.Command("kubectl", "apply",
 		"--kubeconfig", kubeconfigPath,
 		"-f", "-")

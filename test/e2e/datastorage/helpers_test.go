@@ -28,9 +28,34 @@ import (
 	. "github.com/onsi/gomega"    //nolint:revive,staticcheck // Ginkgo/Gomega convention
 )
 
-// e2eTestWorkflowStubContent is minimal YAML content for CreateWorkflowInlineRequest.
-// Used when tests need a valid request body; actual workflow content comes from fixtures.
-const e2eTestWorkflowStubContent = "apiVersion: kubernaut.ai/v1alpha1\nkind: RemediationWorkflow\nmetadata:\n  name: test\nspec: {}"
+// e2eTestWorkflowStubContent is minimal valid YAML content for CreateWorkflowInlineRequest.
+// Satisfies schema parser required fields: workflowName, version, description, actionType, labels, execution, parameters.
+const e2eTestWorkflowStubContent = `apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
+metadata:
+  name: e2e-stub
+spec:
+  metadata:
+    workflowName: e2e-stub-workflow
+    version: "1.0.0"
+    description:
+      what: "Stub workflow for E2E test registration"
+      whenToUse: "For E2E tests that need a valid CreateWorkflow request body"
+  actionType: RestartPod
+  labels:
+    severity: [low]
+    environment: [test]
+    component: pod
+    priority: P3
+  execution:
+    engine: job
+    bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:adfc09ea45a5b627550c6a73fe75d50efe1c80fa43359fcc4908c9c5b0639ac3
+  parameters:
+    - name: TARGET_RESOURCE
+      type: string
+      required: true
+      description: "Target resource for remediation"
+`
 
 // postAuditEventBatch posts multiple audit events using the ogen client and returns the event IDs
 func postAuditEventBatch(
