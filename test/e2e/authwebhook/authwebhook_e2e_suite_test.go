@@ -35,6 +35,7 @@ import (
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	actiontypev1 "github.com/jordigilh/kubernaut/api/actiontype/v1alpha1"
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
@@ -243,6 +244,7 @@ var _ = SynchronizedBeforeSuite(
 		Expect(err).ToNot(HaveOccurred())
 
 		// Register CRD schemes
+		Expect(actiontypev1.AddToScheme(scheme.Scheme)).To(Succeed())
 		Expect(workflowexecutionv1.AddToScheme(scheme.Scheme)).To(Succeed())
 		Expect(remediationv1.AddToScheme(scheme.Scheme)).To(Succeed())
 		Expect(notificationv1.AddToScheme(scheme.Scheme)).To(Succeed())
