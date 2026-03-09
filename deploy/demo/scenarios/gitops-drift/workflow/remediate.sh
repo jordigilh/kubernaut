@@ -93,40 +93,5 @@ git push origin "${GIT_BRANCH}"
 NEW_COMMIT=$(git rev-parse HEAD)
 echo "Revert commit: ${NEW_COMMIT}"
 
-echo "=== Phase 3: Verify ==="
-VERIFY_TIMEOUT="${VERIFY_TIMEOUT:-180}"
-POLL_INTERVAL=5
-ELAPSED=0
-
-ARGO_APP_NAME=$(echo "${ARGO_APP_JSON}" | jq -r \
-  --arg ns "${TARGET_NAMESPACE}" \
-  '.items[] | select(.spec.destination.namespace == $ns) | .metadata.name' \
-  | head -1)
-
-echo "Waiting for ArgoCD app '${ARGO_APP_NAME}' to sync revision ${NEW_COMMIT} (timeout=${VERIFY_TIMEOUT}s)..."
-while [ "${ELAPSED}" -lt "${VERIFY_TIMEOUT}" ]; do
-  SYNC_REV=$(kubectl get app "${ARGO_APP_NAME}" -n argocd \
-    -o jsonpath='{.status.sync.revision}' 2>/dev/null || echo "")
-
-  if [ "${SYNC_REV}" = "${NEW_COMMIT}" ]; then
-    echo "  [${ELAPSED}s] ArgoCD synced revision ${NEW_COMMIT}"
-    break
-  fi
-
-  echo "  [${ELAPSED}s] ArgoCD sync revision=${SYNC_REV:-pending}, waiting..."
-  sleep "${POLL_INTERVAL}"
-  ELAPSED=$((ELAPSED + POLL_INTERVAL))
-done
-
-if [ "${ELAPSED}" -ge "${VERIFY_TIMEOUT}" ]; then
-  echo "ERROR: ArgoCD did not sync revert commit after ${VERIFY_TIMEOUT}s"
-  exit 1
-fi
-
-echo "Waiting for deployment rollout to complete..."
-if kubectl rollout status "deployment/${TARGET_RESOURCE_NAME}" -n "${TARGET_NAMESPACE}" --timeout=120s 2>&1; then
-  echo "=== SUCCESS: Git commit reverted (${NEW_COMMIT}), deployment rolled out ==="
-else
-  echo "ERROR: Deployment rollout did not complete after revert"
-  exit 1
-fi
+echo "=== SUCCESS: Git commit reverted (${NEW_COMMIT}) ==="
+echo "ArgoCD will sync the reverted state. RO/EM handle drift verification."

@@ -81,25 +81,5 @@ git push origin "${GIT_BRANCH}"
 NEW_COMMIT=$(git rev-parse HEAD)
 echo "Revert commit: ${NEW_COMMIT}"
 
-echo "=== Phase 3: Verify ==="
-VERIFY_TIMEOUT="${VERIFY_TIMEOUT:-180}"
-POLL_INTERVAL=10
-ELAPSED=0
-
-echo "Polling Certificate status (timeout=${VERIFY_TIMEOUT}s, interval=${POLL_INTERVAL}s)..."
-while [ "${ELAPSED}" -lt "${VERIFY_TIMEOUT}" ]; do
-  CERT_READY=$(kubectl get certificate "${TARGET_RESOURCE_NAME}" -n "${TARGET_NAMESPACE}" \
-    -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "Unknown")
-
-  if [ "${CERT_READY}" = "True" ]; then
-    echo "=== SUCCESS: Git commit reverted (${CURRENT_COMMIT} -> ${NEW_COMMIT}), Certificate is Ready (after ${ELAPSED}s) ==="
-    exit 0
-  fi
-
-  echo "  [${ELAPSED}s] Certificate Ready=${CERT_READY}, waiting..."
-  sleep "${POLL_INTERVAL}"
-  ELAPSED=$((ELAPSED + POLL_INTERVAL))
-done
-
-echo "ERROR: Certificate still not Ready after revert + ${VERIFY_TIMEOUT}s"
-exit 1
+echo "=== SUCCESS: Git commit reverted (${CURRENT_COMMIT} -> ${NEW_COMMIT}) ==="
+echo "ArgoCD will sync the reverted state. RO/EM handle drift verification."

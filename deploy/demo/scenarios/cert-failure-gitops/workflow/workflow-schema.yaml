@@ -27,7 +27,7 @@ spec:
   
   execution:
     engine: job
-    bundle: quay.io/kubernaut-cicd/test-workflows/fix-certificate-gitops-job@sha256:fd5a50a4036eb8e675c107b6b09fe2746c5acd2230b570eeea592098e802f9d4
+    bundle: quay.io/kubernaut-cicd/test-workflows/fix-certificate-gitops-job@sha256:1e6eb0c6a248c79781518c8459e1a65d2110d89c52cac2024ea5ca1754a48145
   
   # DD-WE-006: Infrastructure dependencies provisioned by operators in kubernaut-workflows.
   # Credentials are mounted as files, NOT provided by the LLM.
