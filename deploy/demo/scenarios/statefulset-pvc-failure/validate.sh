@@ -19,7 +19,7 @@ done
 
 # ── Wait for alert ──────────────────────────────────────────────────────────
 
-wait_for_alert "KubeStatefulSetReplicasMismatch" "${NAMESPACE}" 300
+wait_for_alert "KubeStatefulSetReplicasMismatch" "${NAMESPACE}" 480
 show_alert "KubeStatefulSetReplicasMismatch" "${NAMESPACE}"
 
 # ── Wait for pipeline ──────────────────────────────────────────────────────

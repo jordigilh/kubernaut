@@ -20,7 +20,7 @@ SCENARIOS_DIR="${SCRIPT_DIR}/../scenarios"
 
 CREATE_FLAG=""
 SKIP_INFRA=false
-KIND_CONFIG="${SCENARIOS_DIR}/kind-config-singlenode.yaml"
+KIND_CONFIG="${SCENARIOS_DIR}/kind-config-multinode.yaml"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in

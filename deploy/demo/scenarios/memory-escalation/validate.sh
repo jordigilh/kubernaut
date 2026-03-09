@@ -19,7 +19,7 @@ source "${SCRIPT_DIR}/../../scripts/validation-helper.sh"
 
 # ── Wait for alert ──────────────────────────────────────────────────────────
 
-wait_for_alert "ContainerOOMKilling" "${NAMESPACE}" 300
+wait_for_alert "ContainerOOMKilling" "${NAMESPACE}" 480
 show_alert "ContainerOOMKilling" "${NAMESPACE}"
 
 # ── Wait for first cycle pipeline ──────────────────────────────────────────
@@ -82,5 +82,10 @@ total_rr=$(kubectl get rr -n "${PLATFORM_NS}" \
   -o jsonpath='{range .items[*]}{.spec.signalLabels.namespace}{"\n"}{end}' 2>/dev/null \
   | grep "^${NAMESPACE}$" | wc -l | tr -d ' ')
 assert_gt "${total_rr:-0}" "1" "Multiple RRs created (multi-cycle)"
+
+# ── Post-escalation root cause fix ──────────────────────────────────────────
+# Scale workload to 0 so OOMKills stop and alerts resolve naturally.
+log_phase "Scaling ml-worker to 0 (root cause fix after escalation)..."
+kubectl scale deployment/ml-worker -n "${NAMESPACE}" --replicas=0 2>/dev/null || true
 
 print_result "memory-escalation"

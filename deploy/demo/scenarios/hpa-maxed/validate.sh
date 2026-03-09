@@ -54,4 +54,11 @@ assert_eq "$OUTCOME" "Remediated" "RR outcome"
 assert_gt "$MAX_REPLICAS" 3 "HPA maxReplicas raised"
 assert_eq "$EA_PHASE" "Completed" "EA phase"
 
+# ── Post-remediation root cause fix ─────────────────────────────────────────
+# Kill stress processes so CPU drops and alert resolves naturally.
+log_phase "Killing CPU stress processes (root cause fix)..."
+for pod in $(kubectl get pods -n "$NAMESPACE" -l app=api-frontend -o name 2>/dev/null); do
+    kubectl exec -n "$NAMESPACE" "$pod" -- /bin/sh -c 'killall yes 2>/dev/null || true' 2>/dev/null || true
+done
+
 print_result "hpa-maxed"

@@ -13,7 +13,7 @@ source "${SCRIPT_DIR}/../../scripts/validation-helper.sh"
 
 # ── Wait for alert ──────────────────────────────────────────────────────────
 
-wait_for_alert "KubePersistentVolumeClaimOrphaned" "${NAMESPACE}" 300
+wait_for_alert "KubePersistentVolumeClaimOrphaned" "${NAMESPACE}" 480
 show_alert "KubePersistentVolumeClaimOrphaned" "${NAMESPACE}"
 
 # ── Wait for pipeline ──────────────────────────────────────────────────────

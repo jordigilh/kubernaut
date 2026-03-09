@@ -64,7 +64,18 @@ DESIRED=$(kubectl get "deployment/$TARGET_DEPLOYMENT" -n "$TARGET_NAMESPACE" \
 echo "New memory limit: $VERIFIED_LIMIT"
 echo "Replicas: $READY/$DESIRED ready"
 
-if [ "$VERIFIED_LIMIT" = "$NEW_LIMIT" ] && [ "$READY" = "$DESIRED" ]; then
+# Normalize to bytes for comparison (K8s may return 2Gi instead of 2048Mi)
+normalize_mem() {
+  case "$1" in
+    *Gi) echo $(( $(echo "$1" | sed 's/Gi$//') * 1024 )) ;;
+    *Mi) echo $(echo "$1" | sed 's/Mi$//') ;;
+    *)   echo "$1" ;;
+  esac
+}
+VERIFIED_NORM=$(normalize_mem "$VERIFIED_LIMIT")
+EXPECTED_NORM=$(normalize_mem "$NEW_LIMIT")
+
+if [ "$VERIFIED_NORM" = "$EXPECTED_NORM" ] && [ "$READY" = "$DESIRED" ]; then
   echo "=== SUCCESS: Memory limits increased ($CURRENT_MEM -> $NEW_LIMIT), all replicas ready ==="
 else
   echo "ERROR: Verification failed (limit=$VERIFIED_LIMIT expected=$NEW_LIMIT, ready=$READY/$DESIRED)"

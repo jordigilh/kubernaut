@@ -17,7 +17,7 @@ spec:
             container="nginx"
           }[3m]
         ) > 3
-      for: 1m
+      for: 3m
       labels:
         severity: critical
       annotations:

@@ -19,7 +19,7 @@ done
 
 # ── Wait for alert ──────────────────────────────────────────────────────────
 
-wait_for_alert "ContainerOOMKilling" "${NAMESPACE}" 300
+wait_for_alert "ContainerOOMKilling" "${NAMESPACE}" 480
 show_alert "ContainerOOMKilling" "${NAMESPACE}"
 
 # ── Wait for pipeline ──────────────────────────────────────────────────────
@@ -44,5 +44,13 @@ assert_eq "$action_type" "IncreaseMemoryLimits" "AA selected workflow"
 
 wfe_phase=$(get_wfe_phase "${NAMESPACE}")
 assert_eq "$wfe_phase" "Completed" "WFE phase"
+
+# ── Post-remediation root cause fix ─────────────────────────────────────────
+# Ensure sufficient memory limits so OOMKills stop and the alert resolves
+# naturally. The external actor (which reverts limits) is killed by run.sh
+# after this script exits.
+log_phase "Setting sufficient memory limits (root cause fix)..."
+kubectl set resources deployment/contention-app -n "${NAMESPACE}" \
+  --limits=memory=256Mi --requests=memory=128Mi 2>/dev/null || true
 
 print_result "resource-contention"

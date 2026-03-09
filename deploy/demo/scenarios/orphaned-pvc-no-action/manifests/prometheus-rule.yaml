@@ -20,7 +20,7 @@ spec:
             phase="Bound"
           }
         ) > 3
-      for: 2m
+      for: 3m
       labels:
         severity: warning
         deployment: data-processor

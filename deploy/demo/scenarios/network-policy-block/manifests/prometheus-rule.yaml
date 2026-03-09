@@ -20,7 +20,7 @@ spec:
             container="curl"
           }[10m]
         ) > 2
-      for: 1m
+      for: 3m
       labels:
         severity: critical
       annotations:

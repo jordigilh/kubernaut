@@ -65,4 +65,11 @@ rollout_rev=$(kubectl rollout history deployment/leaky-app -n "${NAMESPACE}" 2>/
   | grep -c "^[0-9]" || echo "0")
 assert_gt "$rollout_rev" "1" "Deployment has >1 revision (restart occurred)"
 
+# ── Post-remediation root cause fix ─────────────────────────────────────────
+# Remove leaker sidecar so memory stops growing and the alert resolves naturally.
+log_phase "Removing leaker sidecar (root cause fix)..."
+kubectl patch deployment leaky-app -n "${NAMESPACE}" --type=json \
+  -p='[{"op":"remove","path":"/spec/template/spec/containers/1"}]' 2>/dev/null || true
+kubectl rollout status deployment/leaky-app -n "${NAMESPACE}" --timeout=60s 2>/dev/null || true
+
 print_result "memory-leak"

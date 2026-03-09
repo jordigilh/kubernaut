@@ -20,7 +20,7 @@ spec:
             container="worker"
           }[10m]
         ) > 1
-      for: 1m
+      for: 3m
       labels:
         severity: critical
       annotations:

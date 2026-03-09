@@ -12,7 +12,7 @@ spec:
     - alert: LinkerdHighErrorRate
       expr: |
         sum by (namespace)(rate(inbound_http_authz_deny_total{namespace="demo-mesh-failure"}[5m])) > 0
-      for: 2m
+      for: 3m
       labels:
         severity: critical
       annotations:
@@ -27,7 +27,7 @@ spec:
     - alert: LinkerdRequestsUnauthorized
       expr: |
         sum by (namespace)(rate(inbound_http_authz_deny_total{namespace="demo-mesh-failure"}[2m])) > 0.1
-      for: 1m
+      for: 3m
       labels:
         severity: critical
       annotations:

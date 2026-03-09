@@ -27,7 +27,7 @@ spec:
   
   execution:
     engine: job
-    bundle: quay.io/kubernaut-cicd/test-workflows/helm-rollback-job@sha256:f23baab51006d365887df8f3e23ad37ccb7fadc89f0638554d6b514e88b2964d
+    bundle: quay.io/kubernaut-cicd/test-workflows/helm-rollback-job@sha256:700f4f8aee30195ad95f404d20cd19dbfae389a8a5e522d0cf9623f7d014414a
   
   parameters:
     - name: TARGET_NAMESPACE

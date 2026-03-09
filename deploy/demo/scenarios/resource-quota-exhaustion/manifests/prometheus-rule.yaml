@@ -16,7 +16,7 @@ spec:
           unless on(replicaset, namespace)
           (kube_replicaset_status_replicas{namespace="demo-quota"} > 0)
         )
-      for: 1m
+      for: 3m
       labels:
         severity: warning
       annotations:

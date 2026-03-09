@@ -19,7 +19,7 @@ done
 
 # ── Wait for alert ──────────────────────────────────────────────────────────
 
-wait_for_alert "KubeDeploymentRolloutStuck" "${NAMESPACE}" 300
+wait_for_alert "KubeDeploymentRolloutStuck" "${NAMESPACE}" 480
 show_alert "KubeDeploymentRolloutStuck" "${NAMESPACE}"
 
 # ── Wait for pipeline ──────────────────────────────────────────────────────

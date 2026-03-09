@@ -16,7 +16,7 @@ source "${SCRIPT_DIR}/../../scripts/validation-helper.sh"
 
 # ── Wait for alerts ──────────────────────────────────────────────────────────
 
-wait_for_alert "KubePodCrashLooping" "${NS_ALPHA}" 300
+wait_for_alert "KubePodCrashLooping" "${NS_ALPHA}" 480
 show_alert "KubePodCrashLooping" "${NS_ALPHA}"
 
 # ── Wait for both pipelines ──────────────────────────────────────────────────
