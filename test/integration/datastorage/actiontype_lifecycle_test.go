@@ -304,18 +304,36 @@ var _ = Describe("ActionType Lifecycle Integration Tests (#300)", Label("integra
 	// BR-WORKFLOW-007.5 (cross-cutting)
 	// ========================================
 	Describe("IT-AT-300-005: Disabled action types excluded from discovery", func() {
-		It("should not count disabled action type as having active workflows", func() {
-			name := atName("discovery")
+		It("should return only active action types, excluding disabled ones", func() {
+			nameA := atName("disc-A")
+			nameB := atName("disc-B")
+			nameC := atName("disc-C")
 			desc := baseDesc()
 
-			_, err := atRepo.Create(ctx, name, desc, "admin@example.com")
+			_, err := atRepo.Create(ctx, nameA, desc, "admin@example.com")
+			Expect(err).ToNot(HaveOccurred())
+			_, err = atRepo.Create(ctx, nameB, desc, "admin@example.com")
+			Expect(err).ToNot(HaveOccurred())
+			_, err = atRepo.Create(ctx, nameC, desc, "admin@example.com")
 			Expect(err).ToNot(HaveOccurred())
 
-			// No workflows referencing it
-			count, names, err := atRepo.CountActiveWorkflows(ctx, name)
+			// Disable B
+			_, err = atRepo.Disable(ctx, nameB, "admin@example.com")
 			Expect(err).ToNot(HaveOccurred())
-			Expect(count).To(Equal(0))
-			Expect(names).To(BeEmpty())
+
+			activeTypes, err := atRepo.ListActive(ctx)
+			Expect(err).ToNot(HaveOccurred())
+
+			activeNames := make([]string, 0, len(activeTypes))
+			for _, at := range activeTypes {
+				activeNames = append(activeNames, at.ActionType)
+			}
+			Expect(activeNames).To(ContainElement(nameA),
+				"Active action type A should appear in discovery list")
+			Expect(activeNames).ToNot(ContainElement(nameB),
+				"Disabled action type B should NOT appear in discovery list")
+			Expect(activeNames).To(ContainElement(nameC),
+				"Active action type C should appear in discovery list")
 		})
 	})
 

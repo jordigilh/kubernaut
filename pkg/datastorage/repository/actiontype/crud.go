@@ -247,6 +247,20 @@ func (r *Repository) CountActiveWorkflows(ctx context.Context, actionType string
 	return len(names), names, nil
 }
 
+// ListActive returns all action types with status='active'.
+// BR-WORKFLOW-007.5: Discovery filtering excludes disabled action types.
+func (r *Repository) ListActive(ctx context.Context) ([]models.ActionTypeTaxonomy, error) {
+	var types []models.ActionTypeTaxonomy
+	err := r.db.SelectContext(ctx, &types,
+		`SELECT action_type, description, status, disabled_at, disabled_by, created_at, updated_at
+		 FROM action_type_taxonomy WHERE status = 'active'
+		 ORDER BY action_type`)
+	if err != nil {
+		return nil, fmt.Errorf("list active action types: %w", err)
+	}
+	return types, nil
+}
+
 // descriptionDiff returns the list of field names that differ between two descriptions.
 func descriptionDiff(old, new models.ActionTypeDescription) []string {
 	var changed []string
