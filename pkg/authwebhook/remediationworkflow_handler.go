@@ -27,7 +27,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	admissionv1 "k8s.io/api/admission/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -319,23 +318,24 @@ func (h *RemediationWorkflowHandler) refreshActionTypeWorkflowCount(actionType, 
 		return
 	}
 
-	// Find the ActionType CRD using the selectable field .spec.name
+	// Find the ActionType CRD by listing all in the namespace and filtering by spec.name.
+	// Client-side filtering avoids requiring a cache field index, which may race with
+	// cache sync in webhook admission contexts.
 	atList := &atv1alpha1.ActionTypeList{}
 	if err := h.k8sClient.List(ctx, atList,
 		client.InNamespace(namespace),
-		client.MatchingFieldsSelector{Selector: fields.OneTermEqualSelector(".spec.name", actionType)},
 	); err != nil {
 		logger.Error(err, "Failed to list ActionType CRDs")
 		return
 	}
 
-	if len(atList.Items) == 0 {
-		logger.V(1).Info("No ActionType CRD found — cross-update skipped (may not be created yet)")
-		return
-	}
-
+	found := false
 	for i := range atList.Items {
 		at := &atList.Items[i]
+		if at.Spec.Name != actionType {
+			continue
+		}
+		found = true
 		at.Status.ActiveWorkflowCount = count
 		if err := h.k8sClient.Status().Update(ctx, at); err != nil {
 			logger.Error(err, "Failed to patch ActionType CRD status.activeWorkflowCount",
@@ -344,6 +344,10 @@ func (h *RemediationWorkflowHandler) refreshActionTypeWorkflowCount(actionType, 
 			logger.Info("ActionType CRD status.activeWorkflowCount updated",
 				"crd", at.Name, "count", count)
 		}
+	}
+
+	if !found {
+		logger.V(1).Info("No ActionType CRD found — cross-update skipped (may not be created yet)")
 	}
 }
 
