@@ -107,3 +107,24 @@ webhooks:
         scope: "Namespaced"
     sideEffects: NoneOnDryRun
     timeoutSeconds: 15
+  - name: actiontype.validate.kubernaut.ai
+    admissionReviewVersions: ["v1"]
+    clientConfig:
+      service:
+        name: authwebhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-actiontype
+      caBundle: ""
+    failurePolicy: Fail
+    matchPolicy: Equivalent
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: kubernaut-system
+    rules:
+      - apiGroups: ["kubernaut.ai"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["actiontypes"]
+        scope: "Namespaced"
+    sideEffects: NoneOnDryRun
+    timeoutSeconds: 15
