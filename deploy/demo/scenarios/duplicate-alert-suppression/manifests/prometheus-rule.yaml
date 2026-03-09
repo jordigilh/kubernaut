@@ -15,7 +15,7 @@ spec:
           kube_pod_container_status_restarts_total{
             namespace="demo-alert-storm",
             container="nginx"
-          }[3m]
+          }[10m]
         ) > 3
       for: 3m
       labels:
