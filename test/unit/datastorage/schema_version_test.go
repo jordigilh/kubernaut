@@ -39,7 +39,7 @@ metadata:
   name: schema-version-test
 spec:
   metadata:
-    workflowId: schema-version-test
+    workflowName: schema-version-test
     version: "1.0.0"
     description:
       what: Tests schemaVersion validation
@@ -69,7 +69,7 @@ metadata:
   name: schema-version-missing
 spec:
   metadata:
-    workflowId: schema-version-missing
+    workflowName: schema-version-missing
     version: "1.0.0"
     description:
       what: Tests missing apiVersion
@@ -100,7 +100,7 @@ metadata:
   name: schema-version-invalid
 spec:
   metadata:
-    workflowId: schema-version-invalid
+    workflowName: schema-version-invalid
     version: "1.0.0"
     description:
       what: Tests invalid apiVersion

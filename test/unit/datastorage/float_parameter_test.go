@@ -37,7 +37,7 @@ metadata:
   name: float-param-test
 spec:
   metadata:
-    workflowId: float-param-test
+    workflowName: float-param-test
     version: "1.0.0"
     description:
       what: Tests float parameter type

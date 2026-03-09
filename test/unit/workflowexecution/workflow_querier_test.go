@@ -47,7 +47,7 @@ metadata:
   name: test-workflow
 spec:
   metadata:
-    workflowId: test-workflow
+    workflowName: test-workflow
     version: "1.0.0"
     description:
       what: "Test workflow"

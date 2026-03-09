@@ -85,7 +85,7 @@ metadata:
   name: integrity-test-wf
 spec:
   metadata:
-    workflowId: integrity-test-wf
+    workflowName: integrity-test-wf
     version: "1.0.0"
     description:
       what: "Scales memory limits for OOM-killed pods"
@@ -113,7 +113,7 @@ metadata:
   name: integrity-test-wf
 spec:
   metadata:
-    workflowId: integrity-test-wf
+    workflowName: integrity-test-wf
     version: "1.0.0"
     description:
       what: "Rolls back a deployment experiencing CrashLoopBackOff"

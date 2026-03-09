@@ -38,7 +38,7 @@ metadata:
   name: scale-memory-inline
 spec:
   metadata:
-    workflowId: scale-memory-inline
+    workflowName: scale-memory-inline
     version: "1.0.0"
     description:
       what: "Scales memory limits for OOM-killed pods"
@@ -208,7 +208,7 @@ metadata:
   name: missing-apiversion
 spec:
   metadata:
-    workflowId: missing-apiversion
+    workflowName: missing-apiversion
     version: "1.0.0"
     description:
       what: "Test"
@@ -249,7 +249,7 @@ metadata:
   name: wrong-kind
 spec:
   metadata:
-    workflowId: wrong-kind
+    workflowName: wrong-kind
     version: "1.0.0"
     description:
       what: "Test"

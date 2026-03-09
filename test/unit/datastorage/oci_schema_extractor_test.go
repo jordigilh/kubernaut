@@ -53,7 +53,7 @@ metadata:
   name: oomkill-scale-down
 spec:
   metadata:
-    workflowId: oomkill-scale-down
+    workflowName: oomkill-scale-down
     version: "1.0.0"
     description:
       what: Restarts a pod that was OOMKilled to restore service
@@ -145,7 +145,7 @@ metadata:
   name: multi-env-test
 spec:
   metadata:
-    workflowId: multi-env-test
+    workflowName: multi-env-test
     version: "1.0.0"
     description:
       what: Test
@@ -190,7 +190,7 @@ metadata:
   name: no-signal-name
 spec:
   metadata:
-    workflowId: no-signal-name
+    workflowName: no-signal-name
     version: "1.0.0"
     description:
       what: Workflow without signalName
@@ -244,7 +244,7 @@ metadata:
   name: test-custom
 spec:
   metadata:
-    workflowId: test-custom
+    workflowName: test-custom
     version: "1.0.0"
     description:
       what: Test
@@ -288,7 +288,7 @@ metadata:
   name: test-custom
 spec:
   metadata:
-    workflowId: test-custom
+    workflowName: test-custom
     version: "1.0.0"
     description:
       what: Test
@@ -536,7 +536,7 @@ metadata:
   name: incomplete
 spec:
   metadata:
-    workflowId: incomplete
+    workflowName: incomplete
     version: "1.0.0"
     description:
       what: Incomplete workflow

@@ -46,7 +46,7 @@ metadata:
   name: exec-bundle-test
 spec:
   metadata:
-    workflowId: exec-bundle-test
+    workflowName: exec-bundle-test
     version: "v1.0.0"
     description:
       what: Tests execution.bundle validation

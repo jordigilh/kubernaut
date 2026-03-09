@@ -46,7 +46,7 @@ metadata:
   name: fix-certificate-gitops-v1
 spec:
   metadata:
-    workflowId: fix-certificate-gitops-v1
+    workflowName: fix-certificate-gitops-v1
     version: "1.0.0"
     description:
       what: Reverts a bad Git commit that broke a cert-manager ClusterIssuer

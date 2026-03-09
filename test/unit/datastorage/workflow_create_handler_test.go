@@ -59,7 +59,7 @@ metadata:
   name: scale-memory
 spec:
   metadata:
-    workflowId: scale-memory
+    workflowName: scale-memory
     version: "v1.0.0"
     description:
       what: Increases memory limits for OOMKilled pods
@@ -90,7 +90,7 @@ metadata:
   name: broken
 spec:
   metadata:
-    workflowId: broken
+    workflowName: broken
     version: "v0.1.0"
 `
 
@@ -170,7 +170,7 @@ metadata:
   name: no-labels
 spec:
   metadata:
-    workflowId: no-labels
+    workflowName: no-labels
     version: "v1.0.0"
     description:
       what: Missing labels, parameters and actionType
@@ -235,7 +235,7 @@ metadata:
   name: invalid-action
 spec:
   metadata:
-    workflowId: invalid-action
+    workflowName: invalid-action
     version: "v1.0.0"
     description:
       what: Tests invalid action type rejection

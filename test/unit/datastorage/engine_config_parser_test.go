@@ -38,7 +38,7 @@ metadata:
   name: ansible-test-workflow
 spec:
   metadata:
-    workflowId: ansible-test-workflow
+    workflowName: ansible-test-workflow
     version: "1.0.0"
     description:
       what: Tests ansible engine config extraction
