@@ -67,7 +67,7 @@ assert_gt "${healthy_pods:-0}" "0" "At least 1 healthy Running pod after rollbac
 # Dedup: blocked RRs should reference the active one as duplicateOf
 blocked_count=$(kubectl get rr -n "${PLATFORM_NS}" \
   -o jsonpath='{range .items[*]}{.status.overallPhase}={.spec.signalLabels.namespace}{"\n"}{end}' 2>/dev/null \
-  | grep "^Blocked=" | grep "=${NAMESPACE}$" | wc -l | tr -d ' ')
+  | { grep "^Blocked=" || true; } | { grep "=${NAMESPACE}$" || true; } | wc -l | tr -d ' ')
 log_phase "Blocked duplicate RRs: ${blocked_count}"
 
 print_result "duplicate-alert-suppression"
