@@ -197,6 +197,8 @@ func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, 
 			// Scope validation backoff (ADR-053 Decision #4, BR-SCOPE-010)
 			ScopeBackoffBase: 5,   // 5 seconds initial
 			ScopeBackoffMax:  300, // 5 minutes max
+			// NoActionRequired suppression (Issue #314)
+			NoActionRequiredDelayHours: 24, // 24 hours
 		}
 		// ADR-057: All CRDs live in the controller namespace; empty string is correct.
 		routingNamespace := ""
@@ -247,7 +249,8 @@ func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, 
 	r.spHandler = handler.NewSignalProcessingHandler(c, s, r.transitionPhase)
 
 	// AIAnalysisHandler: delegates failure transitions
-	r.aiAnalysisHandler = handler.NewAIAnalysisHandler(c, s, nc, m, r.transitionToFailed)
+	noActionDelay := time.Duration(r.routingEngine.Config().NoActionRequiredDelayHours) * time.Hour
+	r.aiAnalysisHandler = handler.NewAIAnalysisHandler(c, s, nc, m, r.transitionToFailed, noActionDelay)
 
 	// WorkflowExecutionHandler: delegates verifying and failure transitions
 	r.weHandler = handler.NewWorkflowExecutionHandler(c, s, m, r.transitionToFailed, r.transitionToVerifying)

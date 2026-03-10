@@ -108,6 +108,18 @@ type Config struct {
 	ScopeBackoffMax int64 // seconds
 
 	// ========================================
+	// NO-ACTION-REQUIRED SUPPRESSION (Issue #314)
+	// ========================================
+
+	// NoActionRequiredDelayHours is the number of hours to suppress new RR
+	// creation after an RR completes with Outcome=NoActionRequired.
+	// The Gateway's ShouldDeduplicate respects NextAllowedExecution on terminal
+	// RRs, so setting this field prevents duplicate RR churn for signals whose
+	// underlying condition is unchanged by design.
+	// Default: 24 (hours). Issue #314.
+	NoActionRequiredDelayHours int
+
+	// ========================================
 	// INEFFECTIVE REMEDIATION CHAIN (Issue #214)
 	// ========================================
 

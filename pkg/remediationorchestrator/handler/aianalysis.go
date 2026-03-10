@@ -19,6 +19,7 @@ package handler
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
@@ -40,21 +41,26 @@ import (
 // AIAnalysisHandler handles AIAnalysis CRD status changes for the Remediation Orchestrator.
 // Reference: BR-ORCH-036 (manual review), BR-ORCH-037 (workflow not needed)
 type AIAnalysisHandler struct {
-	client              client.Client
-	scheme              *runtime.Scheme
-	notificationCreator *creator.NotificationCreator
-	Metrics             *metrics.Metrics
-	transitionToFailed  func(context.Context, *remediationv1.RemediationRequest, string, error) (ctrl.Result, error)
+	client                 client.Client
+	scheme                 *runtime.Scheme
+	notificationCreator    *creator.NotificationCreator
+	Metrics                *metrics.Metrics
+	transitionToFailed     func(context.Context, *remediationv1.RemediationRequest, string, error) (ctrl.Result, error)
+	noActionRequiredDelay  time.Duration
 }
 
 // NewAIAnalysisHandler creates a new AIAnalysisHandler.
-func NewAIAnalysisHandler(c client.Client, s *runtime.Scheme, nc *creator.NotificationCreator, m *metrics.Metrics, ttf func(context.Context, *remediationv1.RemediationRequest, string, error) (ctrl.Result, error)) *AIAnalysisHandler {
+// noActionDelay controls how long after a NoActionRequired completion the Gateway
+// should suppress new RR creation for the same signal fingerprint (Issue #314).
+// Pass 0 to disable suppression.
+func NewAIAnalysisHandler(c client.Client, s *runtime.Scheme, nc *creator.NotificationCreator, m *metrics.Metrics, ttf func(context.Context, *remediationv1.RemediationRequest, string, error) (ctrl.Result, error), noActionDelay time.Duration) *AIAnalysisHandler {
 	return &AIAnalysisHandler{
-		client:              c,
-		scheme:              s,
-		notificationCreator: nc,
-		Metrics:             m,
-		transitionToFailed:  ttf,
+		client:                c,
+		scheme:                s,
+		notificationCreator:   nc,
+		Metrics:               m,
+		transitionToFailed:    ttf,
+		noActionRequiredDelay: noActionDelay,
 	}
 }
 
@@ -159,6 +165,14 @@ func (h *AIAnalysisHandler) handleWorkflowNotNeeded(
 		now := metav1.Now()
 		rr.Status.CompletedAt = &now
 
+		// Issue #314: Suppress Gateway duplicate RR creation for the same signal
+		// fingerprint. The Gateway's ShouldDeduplicate respects NextAllowedExecution
+		// on terminal-phase RRs, preventing an infinite NoActionRequired loop.
+		if h.noActionRequiredDelay > 0 {
+			nextAllowed := metav1.NewTime(time.Now().Add(h.noActionRequiredDelay))
+			rr.Status.NextAllowedExecution = &nextAllowed
+		}
+
 		// BR-ORCH-043: Set Ready condition (terminal success - no action required)
 		remediationrequest.SetReady(rr, true, remediationrequest.ReasonReady, "No action required", h.Metrics)
 
@@ -181,6 +195,7 @@ func (h *AIAnalysisHandler) handleWorkflowNotNeeded(
 	logger.Info("Remediation completed - no action required",
 		"outcome", "NoActionRequired",
 		"reason", reason,
+		"nextAllowedExecution", rr.Status.NextAllowedExecution,
 	)
 
 	return ctrl.Result{}, nil
