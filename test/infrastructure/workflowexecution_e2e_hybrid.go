@@ -523,6 +523,28 @@ subjects:
 		_, _ = fmt.Fprintf(writer, "   ✅ Secret e2e-dep-secret-tekton ready in %s\n", ExecutionNamespace)
 	}
 
+	// DD-WE-006: ConfigMap dependencies for Job and Tekton ConfigMap injection tests.
+	_, _ = fmt.Fprintf(writer, "📦 Creating DD-WE-006 dependency ConfigMaps and Ansible deps in %s...\n", ExecutionNamespace)
+	depResources := []struct {
+		args []string
+		desc string
+	}{
+		{[]string{"create", "configmap", "e2e-dep-configmap", "--from-literal=setting=e2e-configmap-value"}, "ConfigMap e2e-dep-configmap"},
+		{[]string{"create", "configmap", "e2e-dep-configmap-tekton", "--from-literal=setting=e2e-configmap-value-tekton"}, "ConfigMap e2e-dep-configmap-tekton"},
+		{[]string{"create", "secret", "generic", "e2e-dep-secret-ansible", "--from-literal=token=e2e-ansible-secret-value"}, "Secret e2e-dep-secret-ansible"},
+		{[]string{"create", "configmap", "e2e-dep-configmap-ansible", "--from-literal=setting=e2e-ansible-configmap-value"}, "ConfigMap e2e-dep-configmap-ansible"},
+	}
+	for _, res := range depResources {
+		fullArgs := append(res.args, "--namespace", ExecutionNamespace, "--kubeconfig", kubeconfigPath)
+		cmd := exec.Command("kubectl", fullArgs...)
+		out, err := cmd.CombinedOutput()
+		if err != nil && !strings.Contains(string(out), "AlreadyExists") {
+			_, _ = fmt.Fprintf(writer, "⚠️  Failed to create %s (non-fatal): %s\n", res.desc, string(out))
+		} else {
+			_, _ = fmt.Fprintf(writer, "   ✅ %s ready in %s\n", res.desc, ExecutionNamespace)
+		}
+	}
+
 	// ═══════════════════════════════════════════════════════════════════════
 	// POST-DEPLOYMENT PARALLEL: Workflow seeding + AWX config run concurrently.
 	// Workflow registration only needs DataStorage; AWX config only needs AWX.

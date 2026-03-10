@@ -121,6 +121,10 @@ func (a *AnsibleExecutor) Create(
 	extraVars["WFE_NAME"] = wfe.Name
 	extraVars["WFE_NAMESPACE"] = wfe.Namespace
 
+	if err := a.injectDependencyConfigMaps(ctx, opts.Dependencies, namespace, extraVars); err != nil {
+		return "", fmt.Errorf("inject dependency configmaps: %w", err)
+	}
+
 	credentialIDs, err := a.injectDependencySecrets(ctx, opts.Dependencies, namespace, wfe.Name)
 	if err != nil {
 		return "", fmt.Errorf("inject dependency secrets: %w", err)
@@ -201,6 +205,40 @@ func (a *AnsibleExecutor) injectDependencySecrets(
 	return credentialIDs, nil
 }
 
+// injectDependencyConfigMaps reads K8s ConfigMaps declared in dependencies and
+// merges their data into extra_vars with a KUBERNAUT_CONFIGMAP_{NAME}_{KEY} prefix.
+// ConfigMaps are non-sensitive, so they use AWX extra_vars (not credentials).
+func (a *AnsibleExecutor) injectDependencyConfigMaps(
+	ctx context.Context,
+	deps *models.WorkflowDependencies,
+	namespace string,
+	extraVars map[string]interface{},
+) error {
+	if deps == nil || len(deps.ConfigMaps) == 0 {
+		return nil
+	}
+
+	for _, dep := range deps.ConfigMaps {
+		var cm corev1.ConfigMap
+		if err := a.K8sClient.Get(ctx, client.ObjectKey{
+			Name:      dep.Name,
+			Namespace: namespace,
+		}, &cm); err != nil {
+			return fmt.Errorf("read dependency configmap %q in %q: %w", dep.Name, namespace, err)
+		}
+
+		prefix := "KUBERNAUT_CONFIGMAP_" + sanitizeEnvSegment(dep.Name) + "_"
+		for k, v := range cm.Data {
+			extraVars[prefix+sanitizeEnvSegment(k)] = v
+		}
+
+		a.Logger.Info("Injected ConfigMap data into extra_vars",
+			"configMap", dep.Name, "keyCount", len(cm.Data))
+	}
+
+	return nil
+}
+
 // ensureCredentialType finds or creates an AWX credential type for the given
 // K8s Secret name. The credential type's env injector maps each secret key to
 // KUBERNAUT_SECRET_{SECRET_NAME}_{KEY}.
@@ -216,7 +254,7 @@ func (a *AnsibleExecutor) ensureCredentialType(
 		return id, nil
 	}
 
-	envPrefix := "KUBERNAUT_SECRET_" + strings.ToUpper(strings.ReplaceAll(secretName, "-", "_")) + "_"
+	envPrefix := "KUBERNAUT_SECRET_" + sanitizeEnvSegment(secretName) + "_"
 
 	fields := make([]map[string]interface{}, 0, len(secretData))
 	envMap := make(map[string]string, len(secretData))
@@ -228,7 +266,7 @@ func (a *AnsibleExecutor) ensureCredentialType(
 			"type":   "string",
 			"secret": true,
 		})
-		envMap[envPrefix+strings.ToUpper(strings.ReplaceAll(key, "-", "_"))] = "{{" + key + "}}"
+		envMap[envPrefix+sanitizeEnvSegment(key)] = "{{" + key + "}}"
 	}
 
 	inputs := map[string]interface{}{"fields": fields}
@@ -450,6 +488,12 @@ func mapAWXStatusToPhase(awxStatus string) (phase, reason, message string) {
 	default:
 		return workflowexecutionv1alpha1.PhasePending, "AWXJobUnknown", fmt.Sprintf("Unknown AWX job status: %s", awxStatus)
 	}
+}
+
+// sanitizeEnvSegment converts a Kubernetes resource name segment into an
+// environment-variable-safe uppercase format: hyphens become underscores.
+func sanitizeEnvSegment(s string) string {
+	return strings.ToUpper(strings.ReplaceAll(s, "-", "_"))
 }
 
 func parseAWXJobID(executionRefName string) (int, error) {

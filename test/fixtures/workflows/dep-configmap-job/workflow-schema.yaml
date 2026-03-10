@@ -1,0 +1,44 @@
+apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
+metadata:
+  name: test-dep-configmap-job
+spec:
+  # DD-WE-006 Test Workflow: Job with ConfigMap Dependency (BR-WORKFLOW-004)
+  # Used by: WorkflowExecution E2E (ConfigMap dependency injection tests)
+  # Authority: DD-WE-006, BR-WE-014
+  metadata:
+    workflowName: test-dep-configmap-job
+    version: "1.0.0"
+    description:
+      what: "Job workflow that declares a ConfigMap dependency for DD-WE-006 E2E testing"
+      whenToUse: "For E2E validation of schema-declared ConfigMap dependency injection into Jobs"
+      whenNotToUse: "Not intended for production use"
+      preconditions: "ConfigMap 'e2e-dep-configmap' provisioned in execution namespace"
+  
+  actionType: RestartPod
+  
+  labels:
+    severity: [low]
+    environment: [test]
+    component: deployment
+    priority: P3
+  
+  execution:
+    engine: job
+    bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:adfc09ea45a5b627550c6a73fe75d50efe1c80fa43359fcc4908c9c5b0639ac3
+  
+  dependencies:
+    configMaps:
+      - name: e2e-dep-configmap
+  
+  parameters:
+    - name: TARGET_RESOURCE
+      type: string
+      required: true
+      description: "Target resource being remediated"
+      default: "test/deployment/dep-test"
+    - name: MESSAGE
+      type: string
+      required: false
+      description: "Optional message for execution log"
+      default: "Hello from DD-WE-006 ConfigMap dependency injection test!"

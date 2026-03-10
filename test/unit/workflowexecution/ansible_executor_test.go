@@ -674,3 +674,177 @@ var _ = Describe("AnsibleExecutor dependencies.secrets injection (BR-WE-015)", f
 		})
 	})
 })
+
+// ========================================
+// BR-WE-015: AnsibleExecutor dependencies.configMaps injection
+// ========================================
+// Tests the ConfigMap injection for the ansible engine via AWX extra_vars.
+// ConfigMaps are non-sensitive and follow the standard AWX pattern of
+// injecting configuration as extra_vars (not credentials).
+// ========================================
+
+var _ = Describe("AnsibleExecutor dependencies.configMaps injection (BR-WE-015)", func() {
+	var (
+		ctx         context.Context
+		awxClient   *mockAWXClient
+		fakeClient  client.Client
+		ansibleExec *executor.AnsibleExecutor
+	)
+
+	newFakeClient := func(objs ...client.Object) client.Client {
+		scheme := runtime.NewScheme()
+		Expect(corev1.AddToScheme(scheme)).To(Succeed())
+		Expect(workflowexecutionv1alpha1.AddToScheme(scheme)).To(Succeed())
+		return fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build()
+	}
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		awxClient = &mockAWXClient{}
+	})
+
+	Context("Create with dependencies.configMaps", func() {
+		It("UT-WE-015-040: should merge ConfigMap data into extra_vars with KUBERNAUT_CONFIGMAP_ prefix", func() {
+			cm := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "app-config",
+					Namespace: "kubernaut-workflows",
+				},
+				Data: map[string]string{
+					"log-level":  "debug",
+					"max-retries": "5",
+				},
+			}
+
+			engineConfig, _ := json.Marshal(map[string]interface{}{
+				"playbookPath":    "playbooks/test.yml",
+				"jobTemplateName": "test-template",
+			})
+			wfe := newAnsibleWFE("we-configmap-test", "kubernaut-system", engineConfig, map[string]string{
+				"TARGET_NAMESPACE": "demo-ns",
+			})
+
+			fakeClient = newFakeClient(cm, wfe)
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+
+			var capturedExtraVars map[string]interface{}
+			launchCalled := false
+			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
+			awxClient.launchFunc = func(_ context.Context, _ int, extraVars map[string]interface{}) (int, error) {
+				launchCalled = true
+				capturedExtraVars = extraVars
+				return 42, nil
+			}
+			launchWithCredsCalled := false
+			awxClient.launchWithCredsFn = func(_ context.Context, _ int, _ map[string]interface{}, _ []int) (int, error) {
+				launchWithCredsCalled = true
+				return 42, nil
+			}
+
+			opts := executor.CreateOptions{
+				Dependencies: &models.WorkflowDependencies{
+					ConfigMaps: []models.ResourceDependency{{Name: "app-config"}},
+				},
+			}
+
+			_, err := ansibleExec.Create(ctx, wfe, "kubernaut-workflows", opts)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(launchCalled).To(BeTrue(), "should use LaunchJobTemplate (no credentials needed for configMaps)")
+			Expect(launchWithCredsCalled).To(BeFalse(), "should NOT use LaunchJobTemplateWithCreds for configMap-only deps")
+
+			Expect(capturedExtraVars).To(HaveKeyWithValue("KUBERNAUT_CONFIGMAP_APP_CONFIG_LOG_LEVEL", "debug"))
+			Expect(capturedExtraVars).To(HaveKeyWithValue("KUBERNAUT_CONFIGMAP_APP_CONFIG_MAX_RETRIES", "5"))
+			Expect(capturedExtraVars).To(HaveKeyWithValue("TARGET_NAMESPACE", "demo-ns"))
+			Expect(capturedExtraVars).To(HaveKey("WFE_NAME"))
+			Expect(capturedExtraVars).To(HaveKey("WFE_NAMESPACE"))
+		})
+
+		It("UT-WE-015-041: should inject both secrets as credentials AND configMaps as extra_vars", func() {
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "gitea-repo-creds",
+					Namespace: "kubernaut-workflows",
+				},
+				Data: map[string][]byte{
+					"username": []byte("admin"),
+					"password": []byte("secret123"),
+				},
+			}
+			cm := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "app-settings",
+					Namespace: "kubernaut-workflows",
+				},
+				Data: map[string]string{
+					"timeout": "30s",
+				},
+			}
+
+			engineConfig, _ := json.Marshal(map[string]interface{}{
+				"playbookPath":    "playbooks/test.yml",
+				"jobTemplateName": "test-template",
+			})
+			wfe := newAnsibleWFE("we-both-deps", "kubernaut-system", engineConfig, nil)
+
+			fakeClient = newFakeClient(secret, cm, wfe)
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+
+			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
+			awxClient.findCredentialTypeByNameFn = func(_ context.Context, _ string) (int, error) {
+				return 0, fmt.Errorf("not found")
+			}
+			awxClient.createCredentialTypeFn = func(_ context.Context, _ string, _, _ map[string]interface{}) (int, error) {
+				return 15, nil
+			}
+			awxClient.createCredentialFn = func(_ context.Context, _ string, _ int, _ int, _ map[string]string) (int, error) {
+				return 42, nil
+			}
+
+			var capturedExtraVars map[string]interface{}
+			var capturedCredIDs []int
+			awxClient.launchWithCredsFn = func(_ context.Context, _ int, extraVars map[string]interface{}, credIDs []int) (int, error) {
+				capturedExtraVars = extraVars
+				capturedCredIDs = credIDs
+				return 77, nil
+			}
+
+			opts := executor.CreateOptions{
+				Dependencies: &models.WorkflowDependencies{
+					Secrets:    []models.ResourceDependency{{Name: "gitea-repo-creds"}},
+					ConfigMaps: []models.ResourceDependency{{Name: "app-settings"}},
+				},
+			}
+
+			_, err := ansibleExec.Create(ctx, wfe, "kubernaut-workflows", opts)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(capturedCredIDs).To(ContainElement(42), "should launch with ephemeral secret credential")
+			Expect(capturedExtraVars).To(HaveKeyWithValue("KUBERNAUT_CONFIGMAP_APP_SETTINGS_TIMEOUT", "30s"),
+				"configMap data should be merged into extra_vars")
+			Expect(capturedExtraVars).To(HaveKey("WFE_NAME"))
+		})
+
+		It("UT-WE-015-042: should return error when ConfigMap not found", func() {
+			fakeClient = newFakeClient()
+			ansibleExec = executor.NewAnsibleExecutor(awxClient, fakeClient, 1, ctrl.Log.WithName("test"))
+
+			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
+
+			engineConfig, _ := json.Marshal(map[string]interface{}{
+				"playbookPath":    "playbooks/test.yml",
+				"jobTemplateName": "test-template",
+			})
+			wfe := newAnsibleWFE("we-missing-cm", "kubernaut-system", engineConfig, nil)
+
+			opts := executor.CreateOptions{
+				Dependencies: &models.WorkflowDependencies{
+					ConfigMaps: []models.ResourceDependency{{Name: "nonexistent-configmap"}},
+				},
+			}
+
+			_, err := ansibleExec.Create(ctx, wfe, "kubernaut-workflows", opts)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("nonexistent-configmap"))
+		})
+	})
+})

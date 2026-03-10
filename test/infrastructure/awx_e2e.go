@@ -589,7 +589,38 @@ func ConfigureAWX(ctx context.Context, awxBaseURL string, writer io.Writer) (*AW
 	cfg.FailureTemplateID = int(failureResult["id"].(float64))
 	_, _ = fmt.Fprintf(writer, "   ✅ Failure Job Template ID: %d\n", cfg.FailureTemplateID)
 
-	// 7. Create API token for WE controller
+	// 7. Create dependency injection test templates (DD-WE-006 / BR-WE-015)
+	depTemplates := []struct {
+		name     string
+		playbook string
+		desc     string
+	}{
+		{"kubernaut-test-dep-secret", "playbooks/test-dep-secret.yml", "E2E test: secret dependency injection"},
+		{"kubernaut-test-dep-configmap", "playbooks/test-dep-configmap.yml", "E2E test: configmap dependency injection"},
+	}
+	for _, dt := range depTemplates {
+		_, _ = fmt.Fprintf(writer, "   Creating dep-injection template: %s...\n", dt.name)
+		dtBody := map[string]interface{}{
+			"name":                    dt.name,
+			"description":             dt.desc,
+			"project":                 cfg.ProjectID,
+			"playbook":                dt.playbook,
+			"inventory":               cfg.InventoryID,
+			"ask_variables_on_launch": true,
+			"ask_credential_on_launch": true,
+		}
+		dtResult, dtStatus, dtErr := awxAPIRequest("POST", awxBaseURL+"/api/v2/job_templates/", dtBody, "")
+		if dtErr != nil {
+			_, _ = fmt.Fprintf(writer, "   ⚠️  Failed to create template %s (non-fatal): %v\n", dt.name, dtErr)
+		} else if dtStatus != http.StatusCreated {
+			_, _ = fmt.Fprintf(writer, "   ⚠️  Template %s returned HTTP %d (non-fatal)\n", dt.name, dtStatus)
+		} else {
+			templateID := int(dtResult["id"].(float64))
+			_, _ = fmt.Fprintf(writer, "   ✅ %s Template ID: %d\n", dt.name, templateID)
+		}
+	}
+
+	// 8. Create API token for WE controller
 	_, _ = fmt.Fprintf(writer, "   Creating API token...\n")
 	tokenBody := map[string]interface{}{
 		"description": "Kubernaut WE controller E2E token",

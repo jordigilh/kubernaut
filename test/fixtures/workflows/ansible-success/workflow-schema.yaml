@@ -25,7 +25,7 @@ spec:
   execution:
     engine: ansible
     bundle: https://github.com/jordigilh/kubernaut-test-playbooks.git
-    bundleDigest: b7e6a135be2019f995cb4875dbc0116dfda39d21
+    bundleDigest: 42eadeba052b13e3ec4e113ebc8165efd5497974
     engineConfig:
       playbookPath: "playbooks/test-success.yml"
       jobTemplateName: "kubernaut-test-success"

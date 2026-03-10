@@ -119,8 +119,12 @@ func BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL, 
 		{"test-intentional-failure", "v1.0.0", "failing", "Intentionally failing workflow for E2E failure handling tests"},
 		{"test-dep-secret-job", "v1.0.0", "dep-secret-job", "Job workflow with Secret dependency for DD-WE-006 E2E testing"},
 		{"test-dep-secret-tekton", "v1.0.0", "dep-secret-tekton", "Tekton workflow with Secret dependency for DD-WE-006 E2E testing"},
+		{"test-dep-configmap-job", "v1.0.0", "dep-configmap-job", "Job workflow with ConfigMap dependency for DD-WE-006 E2E testing"},
+		{"test-dep-configmap-tekton", "v1.0.0", "dep-configmap-tekton", "Tekton workflow with ConfigMap dependency for DD-WE-006 E2E testing"},
 		{"test-ansible-success", "v1.0.0", "ansible-success", "Ansible engine success workflow for BR-WE-015 E2E testing"},
 		{"test-ansible-failure", "v1.0.0", "ansible-failure", "Ansible engine failure workflow for BR-WE-015 E2E testing"},
+		{"test-dep-secret-ansible", "v1.0.0", "dep-secret-ansible", "Ansible workflow with Secret dependency for DD-WE-006/BR-WE-015 E2E testing"},
+		{"test-dep-configmap-ansible", "v1.0.0", "dep-configmap-ansible", "Ansible workflow with ConfigMap dependency for DD-WE-006/BR-WE-015 E2E testing"},
 	}
 
 	for _, bw := range bundleWorkflows {

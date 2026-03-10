@@ -265,6 +265,163 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 			GinkgoWriter.Printf("   Failure message: %.200s\n", failed.Status.FailureDetails.Message)
 		})
 	})
+
+	Context("Dependency Injection", func() {
+		It("E2E-WE-015-005: should inject Secret as ephemeral AWX credential and complete", func() {
+			depSecretAnsibleUUID := infrastructure.RegisteredWorkflowUUIDs["test-dep-secret-ansible"]
+			Expect(depSecretAnsibleUUID).ToNot(BeEmpty(),
+				"test-dep-secret-ansible UUID should have been captured during workflow registration")
+
+			testName := fmt.Sprintf("e2e-ansible-dep-secret-%s", uuid.New().String()[:8])
+			targetResource := fmt.Sprintf("default/deployment/ansible-dep-secret-%s", uuid.New().String()[:8])
+
+			engineCfgJSON, err := json.Marshal(map[string]string{
+				"playbookPath":    "playbooks/test-dep-secret.yml",
+				"jobTemplateName": "kubernaut-test-dep-secret",
+			})
+			Expect(err).ToNot(HaveOccurred())
+
+			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testName,
+					Namespace: controllerNamespace,
+				},
+				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+					ExecutionEngine: "ansible",
+					RemediationRequestRef: corev1.ObjectReference{
+						APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
+						Kind:       "RemediationRequest",
+						Name:       "test-rr-" + testName,
+						Namespace:  controllerNamespace,
+					},
+					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+						WorkflowID:      depSecretAnsibleUUID,
+						Version:         "v1.0.0",
+						ExecutionBundle: "https://github.com/jordigilh/kubernaut-test-playbooks.git",
+						EngineConfig:    &apiextensionsv1.JSON{Raw: engineCfgJSON},
+					},
+					TargetResource: targetResource,
+					Parameters: map[string]string{
+						"target_kind":      "Deployment",
+						"target_name":      "dep-secret-test",
+						"target_namespace": "default",
+					},
+				},
+			}
+
+			defer func() { _ = deleteWFE(wfe) }()
+
+			By("E2E-WE-015-005: Creating WFE with ansible engine and secret dependency")
+			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+
+			By("E2E-WE-015-005: Verifying WFE transitions to Running")
+			Eventually(func() string {
+				updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+				if updated != nil {
+					return updated.Status.Phase
+				}
+				return ""
+			}, 60*time.Second, 2*time.Second).Should(Equal(workflowexecutionv1alpha1.PhaseRunning))
+
+			By("E2E-WE-015-005: Verifying ephemeral credential annotation was set")
+			runningWFE, err := getWFEDirect(wfe.Name, wfe.Namespace)
+			Expect(err).ToNot(HaveOccurred())
+			credAnnotation, hasAnnotation := runningWFE.Annotations["kubernaut.ai/awx-ephemeral-credentials"]
+			Expect(hasAnnotation).To(BeTrue(),
+				"WFE should have kubernaut.ai/awx-ephemeral-credentials annotation")
+			Expect(credAnnotation).ToNot(BeEmpty(),
+				"Ephemeral credential annotation should contain credential IDs")
+			GinkgoWriter.Printf("Ephemeral credential IDs: %s\n", credAnnotation)
+
+			By("E2E-WE-015-005: Waiting for WFE to complete (playbook validates env var)")
+			Eventually(func() string {
+				updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+				if updated != nil {
+					return updated.Status.Phase
+				}
+				return ""
+			}, 180*time.Second, 5*time.Second).Should(Equal(workflowexecutionv1alpha1.PhaseCompleted),
+				"WFE should complete after playbook validates KUBERNAUT_SECRET_* env var")
+
+			GinkgoWriter.Printf("E2E-WE-015-005 passed: Ansible secret dependency injection via AWX credential verified\n")
+		})
+
+		It("E2E-WE-015-006: should inject ConfigMap as extra_vars and complete", func() {
+			depConfigMapAnsibleUUID := infrastructure.RegisteredWorkflowUUIDs["test-dep-configmap-ansible"]
+			Expect(depConfigMapAnsibleUUID).ToNot(BeEmpty(),
+				"test-dep-configmap-ansible UUID should have been captured during workflow registration")
+
+			testName := fmt.Sprintf("e2e-ansible-dep-cm-%s", uuid.New().String()[:8])
+			targetResource := fmt.Sprintf("default/deployment/ansible-dep-cm-%s", uuid.New().String()[:8])
+
+			engineCfgJSON, err := json.Marshal(map[string]string{
+				"playbookPath":    "playbooks/test-dep-configmap.yml",
+				"jobTemplateName": "kubernaut-test-dep-configmap",
+			})
+			Expect(err).ToNot(HaveOccurred())
+
+			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testName,
+					Namespace: controllerNamespace,
+				},
+				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+					ExecutionEngine: "ansible",
+					RemediationRequestRef: corev1.ObjectReference{
+						APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
+						Kind:       "RemediationRequest",
+						Name:       "test-rr-" + testName,
+						Namespace:  controllerNamespace,
+					},
+					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+						WorkflowID:      depConfigMapAnsibleUUID,
+						Version:         "v1.0.0",
+						ExecutionBundle: "https://github.com/jordigilh/kubernaut-test-playbooks.git",
+						EngineConfig:    &apiextensionsv1.JSON{Raw: engineCfgJSON},
+					},
+					TargetResource: targetResource,
+					Parameters: map[string]string{
+						"target_kind":      "Deployment",
+						"target_name":      "dep-configmap-test",
+						"target_namespace": "default",
+					},
+				},
+			}
+
+			defer func() { _ = deleteWFE(wfe) }()
+
+			By("E2E-WE-015-006: Creating WFE with ansible engine and ConfigMap dependency")
+			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+
+			By("E2E-WE-015-006: Verifying WFE transitions to Running")
+			Eventually(func() string {
+				updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+				if updated != nil {
+					return updated.Status.Phase
+				}
+				return ""
+			}, 60*time.Second, 2*time.Second).Should(Equal(workflowexecutionv1alpha1.PhaseRunning))
+
+			By("E2E-WE-015-006: Verifying NO ephemeral credential annotation (ConfigMaps use extra_vars)")
+			runningWFE, err := getWFEDirect(wfe.Name, wfe.Namespace)
+			Expect(err).ToNot(HaveOccurred())
+			_, hasCredAnnotation := runningWFE.Annotations["kubernaut.ai/awx-ephemeral-credentials"]
+			Expect(hasCredAnnotation).To(BeFalse(),
+				"ConfigMap-only deps should NOT create ephemeral credentials")
+
+			By("E2E-WE-015-006: Waiting for WFE to complete (playbook validates extra_var)")
+			Eventually(func() string {
+				updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+				if updated != nil {
+					return updated.Status.Phase
+				}
+				return ""
+			}, 180*time.Second, 5*time.Second).Should(Equal(workflowexecutionv1alpha1.PhaseCompleted),
+				"WFE should complete after playbook validates KUBERNAUT_CONFIGMAP_* extra_var")
+
+			GinkgoWriter.Printf("E2E-WE-015-006 passed: Ansible ConfigMap dependency injection via extra_vars verified\n")
+		})
+	})
 })
 
 // createAnsibleWFE builds a WorkflowExecution CRD targeting the ansible engine.
