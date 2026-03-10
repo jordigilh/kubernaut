@@ -310,7 +310,7 @@ func NewServer(deps ServerDeps) (*Server, error) {
 		WithWorkflowRepository(workflowRepo),
 		WithWorkflowLifecycleRepository(workflowRepo),
 		WithWorkflowContentIntegrityRepository(workflowRepo),
-		WithActionTypeValidator(workflowRepo),
+		WithActionTypeValidator(actionTypeRepo),
 		WithAuditStore(auditStore),
 		WithSQLDB(db),
 		WithSchemaExtractor(schemaExtractor),

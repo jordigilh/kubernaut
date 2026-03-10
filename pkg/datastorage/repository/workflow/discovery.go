@@ -362,18 +362,3 @@ func buildContextFilterSQL(filters *models.WorkflowDiscoveryFilters) (string, []
 
 	return strings.Join(conditions, " AND "), args
 }
-
-// ActionTypeExists checks whether the given action type is active in the action_type_taxonomy table.
-// DD-WORKFLOW-016 GAP-4: Explicit validation before DB FK constraint for clean 400 errors.
-// BR-WORKFLOW-007: Disabled action types are not considered to exist for new workflow references.
-func (r *Repository) ActionTypeExists(ctx context.Context, actionType string) (bool, error) {
-	var exists bool
-	err := r.db.QueryRowContext(ctx,
-		"SELECT EXISTS(SELECT 1 FROM action_type_taxonomy WHERE action_type = $1 AND status = 'active')",
-		actionType,
-	).Scan(&exists)
-	if err != nil {
-		return false, fmt.Errorf("action type taxonomy lookup: %w", err)
-	}
-	return exists, nil
-}
