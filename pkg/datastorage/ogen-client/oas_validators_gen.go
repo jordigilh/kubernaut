@@ -805,6 +805,8 @@ func (s AuditEventEventCategory) Validate() error {
 		return nil
 	case "effectiveness":
 		return nil
+	case "actiontype":
+		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}
@@ -1136,6 +1138,8 @@ func (s AuditEventRequestEventCategory) Validate() error {
 	case "webhook":
 		return nil
 	case "effectiveness":
+		return nil
+	case "actiontype":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)

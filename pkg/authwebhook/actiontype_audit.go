@@ -41,7 +41,7 @@ func (h *ActionTypeHandler) emitATAdmitAudit(
 
 	event := audit.NewAuditEventRequest()
 	audit.SetEventType(event, eventType)
-	audit.SetEventCategory(event, EventCategoryWebhook)
+	audit.SetEventCategory(event, EventCategoryActionType)
 	audit.SetEventAction(event, "admitted")
 	audit.SetEventOutcome(event, api.AuditEventRequestEventOutcomeSuccess)
 	audit.SetActor(event, "user", req.UserInfo.Username)
@@ -95,7 +95,7 @@ func (h *ActionTypeHandler) emitATDeniedAudit(
 
 	event := audit.NewAuditEventRequest()
 	audit.SetEventType(event, eventType)
-	audit.SetEventCategory(event, EventCategoryWebhook)
+	audit.SetEventCategory(event, EventCategoryActionType)
 	audit.SetEventAction(event, "denied")
 	audit.SetEventOutcome(event, api.AuditEventRequestEventOutcomeFailure)
 	audit.SetActor(event, "user", req.UserInfo.Username)

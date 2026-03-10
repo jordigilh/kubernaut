@@ -1952,20 +1952,21 @@ type AuditEvent struct {
 	EventType string `json:"event_type"`
 	// ISO 8601 timestamp when the event occurred.
 	EventTimestamp time.Time `json:"event_timestamp"`
-	// Service-level event category (ADR-034 v1.7).
-	// Per ADR-034 v1.2: event_category MUST match the service name that emits the event.
+	// Domain-level event category (ADR-034 v1.8).
+	// Per convention: event_category identifies the business domain of the event.
+	// The emitter/service is captured in the event_type first segment.
 	// Values:
-	// - gateway: Gateway Service
-	// - notification: Notification Service
-	// - analysis: AI Analysis Controller (NOT HolmesGPT API)
+	// - gateway: Gateway signal and CRD lifecycle events
+	// - notification: Notification delivery and escalation events
+	// - analysis: AI analysis, agent calls, and rego evaluation events
 	// - aiagent: AI Agent Provider (HolmesGPT API) - autonomous tool-calling agent
 	// - signalprocessing: Signal Processing Service
-	// - workflow: Workflow Catalog Service
-	// - workflowexecution: WorkflowExecution Controller (ADR-034 v1.5)
-	// - approval: RemediationApprovalRequest Controller (BR-AUDIT-006)
-	// - orchestration: Remediation Orchestrator Service
+	// - workflow: Workflow catalog and discovery events
+	// - workflowexecution: Workflow execution lifecycle events
+	// - orchestration: Remediation orchestration lifecycle events
 	// - webhook: Authentication Webhook Service (SOC2 CC8.1 operator attribution)
-	// - effectiveness: Effectiveness Monitor Controller (ADR-EM-001).
+	// - effectiveness: Effectiveness assessment and monitoring events
+	// - actiontype: ActionType taxonomy lifecycle events (Issue #300).
 	EventCategory AuditEventEventCategory `json:"event_category"`
 	// Action performed (ADR-034).
 	EventAction string `json:"event_action"`
@@ -2182,20 +2183,21 @@ func (s *AuditEvent) SetEventDate(val OptNilDate) {
 	s.EventDate = val
 }
 
-// Service-level event category (ADR-034 v1.7).
-// Per ADR-034 v1.2: event_category MUST match the service name that emits the event.
+// Domain-level event category (ADR-034 v1.8).
+// Per convention: event_category identifies the business domain of the event.
+// The emitter/service is captured in the event_type first segment.
 // Values:
-// - gateway: Gateway Service
-// - notification: Notification Service
-// - analysis: AI Analysis Controller (NOT HolmesGPT API)
+// - gateway: Gateway signal and CRD lifecycle events
+// - notification: Notification delivery and escalation events
+// - analysis: AI analysis, agent calls, and rego evaluation events
 // - aiagent: AI Agent Provider (HolmesGPT API) - autonomous tool-calling agent
 // - signalprocessing: Signal Processing Service
-// - workflow: Workflow Catalog Service
-// - workflowexecution: WorkflowExecution Controller (ADR-034 v1.5)
-// - approval: RemediationApprovalRequest Controller (BR-AUDIT-006)
-// - orchestration: Remediation Orchestrator Service
+// - workflow: Workflow catalog and discovery events
+// - workflowexecution: Workflow execution lifecycle events
+// - orchestration: Remediation orchestration lifecycle events
 // - webhook: Authentication Webhook Service (SOC2 CC8.1 operator attribution)
-// - effectiveness: Effectiveness Monitor Controller (ADR-EM-001).
+// - effectiveness: Effectiveness assessment and monitoring events
+// - actiontype: ActionType taxonomy lifecycle events (Issue #300).
 type AuditEventEventCategory string
 
 const (
@@ -2209,6 +2211,7 @@ const (
 	AuditEventEventCategoryOrchestration     AuditEventEventCategory = "orchestration"
 	AuditEventEventCategoryWebhook           AuditEventEventCategory = "webhook"
 	AuditEventEventCategoryEffectiveness     AuditEventEventCategory = "effectiveness"
+	AuditEventEventCategoryActiontype        AuditEventEventCategory = "actiontype"
 )
 
 // AllValues returns all AuditEventEventCategory values.
@@ -2224,6 +2227,7 @@ func (AuditEventEventCategory) AllValues() []AuditEventEventCategory {
 		AuditEventEventCategoryOrchestration,
 		AuditEventEventCategoryWebhook,
 		AuditEventEventCategoryEffectiveness,
+		AuditEventEventCategoryActiontype,
 	}
 }
 
@@ -2249,6 +2253,8 @@ func (s AuditEventEventCategory) MarshalText() ([]byte, error) {
 	case AuditEventEventCategoryWebhook:
 		return []byte(s), nil
 	case AuditEventEventCategoryEffectiveness:
+		return []byte(s), nil
+	case AuditEventEventCategoryActiontype:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -2287,6 +2293,9 @@ func (s *AuditEventEventCategory) UnmarshalText(data []byte) error {
 		return nil
 	case AuditEventEventCategoryEffectiveness:
 		*s = AuditEventEventCategoryEffectiveness
+		return nil
+	case AuditEventEventCategoryActiontype:
+		*s = AuditEventEventCategoryActiontype
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -3813,20 +3822,21 @@ type AuditEventRequest struct {
 	EventType string `json:"event_type"`
 	// ISO 8601 timestamp when the event occurred.
 	EventTimestamp time.Time `json:"event_timestamp"`
-	// Service-level event category (ADR-034 v1.7).
-	// Per ADR-034 v1.2: event_category MUST match the service name that emits the event.
+	// Domain-level event category (ADR-034 v1.8).
+	// Per convention: event_category identifies the business domain of the event.
+	// The emitter/service is captured in the event_type first segment.
 	// Values:
-	// - gateway: Gateway Service
-	// - notification: Notification Service
-	// - analysis: AI Analysis Controller (NOT HolmesGPT API)
+	// - gateway: Gateway signal and CRD lifecycle events
+	// - notification: Notification delivery and escalation events
+	// - analysis: AI analysis, agent calls, and rego evaluation events
 	// - aiagent: AI Agent Provider (HolmesGPT API) - autonomous tool-calling agent
 	// - signalprocessing: Signal Processing Service
-	// - workflow: Workflow Catalog Service
-	// - workflowexecution: WorkflowExecution Controller (ADR-034 v1.5)
-	// - approval: RemediationApprovalRequest Controller (BR-AUDIT-006)
-	// - orchestration: Remediation Orchestrator Service
+	// - workflow: Workflow catalog and discovery events
+	// - workflowexecution: Workflow execution lifecycle events
+	// - orchestration: Remediation orchestration lifecycle events
 	// - webhook: Authentication Webhook Service (SOC2 CC8.1 operator attribution)
-	// - effectiveness: Effectiveness Monitor Controller (ADR-EM-001).
+	// - effectiveness: Effectiveness assessment and monitoring events
+	// - actiontype: ActionType taxonomy lifecycle events (Issue #300).
 	EventCategory AuditEventRequestEventCategory `json:"event_category"`
 	// Action performed (ADR-034).
 	EventAction string `json:"event_action"`
@@ -4020,20 +4030,21 @@ func (s *AuditEventRequest) SetEventData(val AuditEventRequestEventData) {
 	s.EventData = val
 }
 
-// Service-level event category (ADR-034 v1.7).
-// Per ADR-034 v1.2: event_category MUST match the service name that emits the event.
+// Domain-level event category (ADR-034 v1.8).
+// Per convention: event_category identifies the business domain of the event.
+// The emitter/service is captured in the event_type first segment.
 // Values:
-// - gateway: Gateway Service
-// - notification: Notification Service
-// - analysis: AI Analysis Controller (NOT HolmesGPT API)
+// - gateway: Gateway signal and CRD lifecycle events
+// - notification: Notification delivery and escalation events
+// - analysis: AI analysis, agent calls, and rego evaluation events
 // - aiagent: AI Agent Provider (HolmesGPT API) - autonomous tool-calling agent
 // - signalprocessing: Signal Processing Service
-// - workflow: Workflow Catalog Service
-// - workflowexecution: WorkflowExecution Controller (ADR-034 v1.5)
-// - approval: RemediationApprovalRequest Controller (BR-AUDIT-006)
-// - orchestration: Remediation Orchestrator Service
+// - workflow: Workflow catalog and discovery events
+// - workflowexecution: Workflow execution lifecycle events
+// - orchestration: Remediation orchestration lifecycle events
 // - webhook: Authentication Webhook Service (SOC2 CC8.1 operator attribution)
-// - effectiveness: Effectiveness Monitor Controller (ADR-EM-001).
+// - effectiveness: Effectiveness assessment and monitoring events
+// - actiontype: ActionType taxonomy lifecycle events (Issue #300).
 type AuditEventRequestEventCategory string
 
 const (
@@ -4047,6 +4058,7 @@ const (
 	AuditEventRequestEventCategoryOrchestration     AuditEventRequestEventCategory = "orchestration"
 	AuditEventRequestEventCategoryWebhook           AuditEventRequestEventCategory = "webhook"
 	AuditEventRequestEventCategoryEffectiveness     AuditEventRequestEventCategory = "effectiveness"
+	AuditEventRequestEventCategoryActiontype        AuditEventRequestEventCategory = "actiontype"
 )
 
 // AllValues returns all AuditEventRequestEventCategory values.
@@ -4062,6 +4074,7 @@ func (AuditEventRequestEventCategory) AllValues() []AuditEventRequestEventCatego
 		AuditEventRequestEventCategoryOrchestration,
 		AuditEventRequestEventCategoryWebhook,
 		AuditEventRequestEventCategoryEffectiveness,
+		AuditEventRequestEventCategoryActiontype,
 	}
 }
 
@@ -4087,6 +4100,8 @@ func (s AuditEventRequestEventCategory) MarshalText() ([]byte, error) {
 	case AuditEventRequestEventCategoryWebhook:
 		return []byte(s), nil
 	case AuditEventRequestEventCategoryEffectiveness:
+		return []byte(s), nil
+	case AuditEventRequestEventCategoryActiontype:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -4125,6 +4140,9 @@ func (s *AuditEventRequestEventCategory) UnmarshalText(data []byte) error {
 		return nil
 	case AuditEventRequestEventCategoryEffectiveness:
 		*s = AuditEventRequestEventCategoryEffectiveness
+		return nil
+	case AuditEventRequestEventCategoryActiontype:
+		*s = AuditEventRequestEventCategoryActiontype
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)

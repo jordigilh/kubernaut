@@ -4874,6 +4874,8 @@ func (s *AuditEventEventCategory) Decode(d *jx.Decoder) error {
 		*s = AuditEventEventCategoryWebhook
 	case AuditEventEventCategoryEffectiveness:
 		*s = AuditEventEventCategoryEffectiveness
+	case AuditEventEventCategoryActiontype:
+		*s = AuditEventEventCategoryActiontype
 	default:
 		*s = AuditEventEventCategory(v)
 	}
@@ -7730,6 +7732,8 @@ func (s *AuditEventRequestEventCategory) Decode(d *jx.Decoder) error {
 		*s = AuditEventRequestEventCategoryWebhook
 	case AuditEventRequestEventCategoryEffectiveness:
 		*s = AuditEventRequestEventCategoryEffectiveness
+	case AuditEventRequestEventCategoryActiontype:
+		*s = AuditEventRequestEventCategoryActiontype
 	default:
 		*s = AuditEventRequestEventCategory(v)
 	}

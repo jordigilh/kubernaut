@@ -27,9 +27,10 @@ const (
 	EventTypeATDeniedDelete   = "actiontype.denied.delete"
 )
 
-// Event category constant per ADR-034 v1.4: event_category = emitter service
+// Event category constants per ADR-034 v1.8: event_category = business domain
 const (
-	EventCategoryWebhook = "webhook"
+	EventCategoryWebhook    = "webhook"
+	EventCategoryActionType = "actiontype"
 )
 
 // AuthContext holds authenticated user information extracted from admission requests.

@@ -429,7 +429,7 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 			Expect(mockAudit.StoredEvents).To(HaveLen(1))
 			event := mockAudit.StoredEvents[0]
 			Expect(event.EventType).To(Equal("actiontype.admitted.create"))
-			Expect(string(event.EventCategory)).To(Equal("webhook"))
+			Expect(string(event.EventCategory)).To(Equal("actiontype"))
 			Expect(event.EventAction).To(Equal("admitted"))
 			Expect(string(event.EventOutcome)).To(Equal("success"))
 			Expect(event.ActorID.Value).To(Equal(testUserEmail))
