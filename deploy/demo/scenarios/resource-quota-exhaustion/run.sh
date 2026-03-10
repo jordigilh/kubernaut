@@ -2,8 +2,11 @@
 # Resource Quota Exhaustion Demo -- Automated Runner
 # Scenario #171: ResourceQuota prevents pod creation -> LLM escalates to human review
 #
-# No workflow is seeded -- the LLM should recognize this as a policy constraint
-# and escalate with needs_human_review: true (ManualReviewRequired).
+# No workflow is seeded for ResourceQuota exhaustion. The LLM should recognize
+# this as a policy constraint and escalate to ManualReviewRequired.
+# The validation accepts a 1-or-2 pass loop: if the LLM initially selects a
+# semantically similar workflow that fails, it self-corrects on the second
+# attempt using remediation history feedback (#323).
 #
 # The alert uses ReplicaSet-level metrics (spec vs status replicas) because
 # quota-rejected pods are never created (FailedCreate at admission, never
