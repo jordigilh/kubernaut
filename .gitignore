@@ -28,6 +28,9 @@ holmesgpt-api/venv-*-test/
 /*.md
 !/README.md
 !/CHANGELOG*.md
+!/CONTRIBUTING.md
+!/CODE_OF_CONDUCT.md
+!/SECURITY.md
 
 # Root ephemeral files (test artifacts, build metadata)
 /watch_*
