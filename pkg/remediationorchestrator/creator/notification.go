@@ -44,6 +44,24 @@ func formatTargetResource(r remediationv1.ResourceIdentifier) string {
 	return result
 }
 
+// resolveNotificationTargetResource returns the best available target resource for notifications (#305).
+// Prefers AI's AffectedResource (from LLM investigation) when the Gateway's TargetResource
+// is "Unknown" (e.g., when owner resolution failed for kube-state-metrics alerts).
+func resolveNotificationTargetResource(rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) remediationv1.ResourceIdentifier {
+	if rr.Spec.TargetResource.Kind != "Unknown" {
+		return rr.Spec.TargetResource
+	}
+	if ai != nil && ai.Status.RootCauseAnalysis != nil && ai.Status.RootCauseAnalysis.AffectedResource != nil {
+		ar := ai.Status.RootCauseAnalysis.AffectedResource
+		return remediationv1.ResourceIdentifier{
+			Kind:      ar.Kind,
+			Name:      ar.Name,
+			Namespace: ar.Namespace,
+		}
+	}
+	return rr.Spec.TargetResource
+}
+
 // NotificationCreator creates NotificationRequest CRDs for the Remediation Orchestrator.
 // Reference: BR-ORCH-001 (approval notification), BR-ORCH-034 (bulk duplicate), BR-ORCH-036 (manual review), BR-ORCH-045 (completion)
 type NotificationCreator struct {
@@ -127,7 +145,7 @@ func (c *NotificationCreator) CreateApprovalNotification(
 			Priority: c.mapPriority(ai.Spec.AnalysisRequest.SignalContext.BusinessPriority),
 			Severity: rr.Spec.Severity,
 			Subject:  fmt.Sprintf("Approval Required: %s", rr.Spec.SignalName),
-			Body:     c.buildApprovalBody(rr, ai),
+			Body:     c.buildApprovalBody(rr, ai, resolveNotificationTargetResource(rr, ai)),
 			Metadata: map[string]string{
 				"remediationRequest": rr.Name,
 				"aiAnalysis":         ai.Name,
@@ -183,7 +201,7 @@ func (c *NotificationCreator) mapPriority(priority string) notificationv1.Notifi
 }
 
 // buildApprovalBody builds the approval notification body.
-func (c *NotificationCreator) buildApprovalBody(rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) string {
+func (c *NotificationCreator) buildApprovalBody(rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis, target remediationv1.ResourceIdentifier) string {
 	rootCause := ai.Status.RootCause
 	if ai.Status.RootCauseAnalysis != nil && ai.Status.RootCauseAnalysis.Summary != "" {
 		rootCause = ai.Status.RootCauseAnalysis.Summary
@@ -217,7 +235,7 @@ func (c *NotificationCreator) buildApprovalBody(rr *remediationv1.RemediationReq
 **Approval Reason**: %s`,
 		rr.Spec.SignalName,
 		rr.Spec.Severity,
-		formatTargetResource(rr.Spec.TargetResource),
+		formatTargetResource(target),
 		rootCause,
 		ai.Status.SelectedWorkflow.Confidence*100,
 		workflowLabel,
@@ -298,7 +316,7 @@ func (c *NotificationCreator) CreateCompletionNotification(
 			Priority: notificationv1.NotificationPriorityLow,
 			Severity: rr.Spec.Severity,
 			Subject:  fmt.Sprintf("Remediation Completed: %s", rr.Spec.SignalName),
-			Body:     c.buildCompletionBody(rr, ai, rootCause, workflowID, executionEngine, actionType, rationale),
+			Body:     c.buildCompletionBody(rr, ai, rootCause, workflowID, executionEngine, actionType, rationale, resolveNotificationTargetResource(rr, ai)),
 			Metadata: map[string]string{
 				"remediationRequest": rr.Name,
 				"aiAnalysis":         ai.Name,
@@ -341,8 +359,9 @@ func (c *NotificationCreator) CreateCompletionNotification(
 // buildCompletionBody builds the completion notification body.
 func (c *NotificationCreator) buildCompletionBody(
 	rr *remediationv1.RemediationRequest,
-	ai *aianalysisv1.AIAnalysis,
+	_ *aianalysisv1.AIAnalysis,
 	rootCause, workflowID, executionEngine, actionType, rationale string,
+	target remediationv1.ResourceIdentifier,
 ) string {
 	workflowLabel := workflowID
 	if actionType != "" {
@@ -365,7 +384,7 @@ func (c *NotificationCreator) buildCompletionBody(
 **Outcome**: %s`,
 		rr.Spec.SignalName,
 		rr.Spec.Severity,
-		formatTargetResource(rr.Spec.TargetResource),
+		formatTargetResource(target),
 		rootCause,
 		workflowLabel,
 		executionEngine,
