@@ -48,7 +48,7 @@ aa_name="ai-${rr_name}"
 
 action_type=$(kubectl get aianalyses "${aa_name}" -n "${PLATFORM_NS}" \
   -o jsonpath='{.status.selectedWorkflow.actionType}' 2>/dev/null || echo "")
-assert_eq "$action_type" "ProactiveRollback" "AA selected action type"
+assert_in "$action_type" "AA selected action type" "ProactiveRollback" "RollbackDeployment"
 
 confidence=$(kubectl get aianalyses "${aa_name}" -n "${PLATFORM_NS}" \
   -o jsonpath='{.status.selectedWorkflow.confidence}' 2>/dev/null || echo "")

@@ -14,7 +14,7 @@ spec:
       whenNotToUse: "When the rollout is still within its deadline and may succeed with more time, or when the issue affects all revisions (cluster-wide problem)"
       preconditions: "The deployment has at least one previous successful revision in its history"
   
-  actionType: GracefulRestart
+  actionType: RollbackDeployment
   
   labels:
     severity: [critical, low]

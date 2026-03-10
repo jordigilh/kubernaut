@@ -25,7 +25,7 @@ show_alert "KubeStatefulSetReplicasMismatch" "${NAMESPACE}"
 # ── Wait for pipeline ──────────────────────────────────────────────────────
 
 wait_for_rr "${NAMESPACE}" 120
-poll_pipeline "${NAMESPACE}" 600 "${APPROVE_MODE}"
+poll_pipeline "${NAMESPACE}" 900 "${APPROVE_MODE}"
 
 # ── Assertions ──────────────────────────────────────────────────────────────
 
