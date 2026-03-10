@@ -553,9 +553,7 @@ hapiConfig := infrastructure.GenericContainerConfig{
 
 | Test ID | Test Scenario | Related BRs | Priority | Status |
 |---------|--------------|-------------|----------|--------|
-| **AA-INT-METRICS-001** | Record reconciliation metrics via registry inspection | DD-METRICS-001 | 🟢 Mandatory | ⏸️ Pending |
 | **AA-INT-METRICS-002** | Record failure metrics with correct labels | DD-METRICS-001 | 🟢 Mandatory | ⏸️ Pending |
-| **AA-INT-METRICS-003** | Record phase transition duration metrics | DD-METRICS-001 | 🟢 Mandatory | ⏸️ Pending |
 
 ### Audit Trace Validation (DD-AUDIT-003)
 
@@ -572,75 +570,6 @@ hapiConfig := infrastructure.GenericContainerConfig{
 | **AA-INT-SHUTDOWN-001** | Verify audit store flush on SIGTERM | DD-007 | 🟢 Mandatory | ⏸️ Pending |
 
 ### Test Details
-
-#### AA-INT-METRICS-001: Record reconciliation metrics via registry inspection
-
-**Description**: When AIAnalysis reconciles, metrics MUST be recorded and verifiable via Prometheus registry inspection (NOT HTTP endpoint - integration tests use envtest with NO HTTP server).
-
-**Authority**: TESTING_GUIDELINES.md Lines 473-528, 1490-1537
-
-**Test Steps**:
-1. Create test-specific Prometheus registry (DD-METRICS-001)
-2. Initialize metrics with test registry: `testMetrics := metrics.NewMetricsWithRegistry(testRegistry)`
-3. Create AIAnalysis CRD
-4. Wait for reconciliation completion with `Eventually()`
-5. Verify metrics via registry inspection (NOT HTTP)
-
-**Expected Results**:
-- Metric exists: `aianalysis_reconciler_reconciliations_total{phase="Investigating", result="success"}` > 0
-- Metric exists: `aianalysis_reconciler_duration_seconds{phase="Investigating"}` > 0
-- All metrics have correct label dimensions
-- NO HTTP server started (integration tests use envtest)
-
-**Pattern** (MANDATORY):
-```go
-It("AA-INT-METRICS-001: should record reconciliation metrics via registry inspection", func() {
-    By("Creating test-specific registry (DD-METRICS-001)")
-    testRegistry := prometheus.NewRegistry()
-    testMetrics := metrics.NewMetricsWithRegistry(testRegistry)
-
-    By("Creating AIAnalysis CRD")
-    analysis := createTestAIAnalysis("test-metrics", namespace)
-    Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
-
-    By("Waiting for reconciliation with Eventually()")
-    Eventually(func() string {
-        var updated aianalysisv1.AIAnalysis
-        _ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), &updated)
-        return updated.Status.Phase
-    }, 30*time.Second, 1*time.Second).Should(Equal("Analyzing"))
-
-    By("Verifying metrics via registry inspection (NOT HTTP)")
-    families, err := testRegistry.Gather()
-    Expect(err).ToNot(HaveOccurred())
-
-    found := false
-    for _, family := range families {
-        if family.GetName() == "aianalysis_reconciler_reconciliations_total" {
-            found = true
-            // Verify label values
-            for _, metric := range family.GetMetric() {
-                labels := make(map[string]string)
-                for _, label := range metric.GetLabel() {
-                    labels[label.GetName()] = label.GetValue()
-                }
-                if labels["phase"] == "Investigating" && labels["result"] == "success" {
-                    Expect(metric.GetCounter().GetValue()).To(BeNumerically(">", 0))
-                }
-            }
-        }
-    }
-    Expect(found).To(BeTrue(), "Metric aianalysis_reconciler_reconciliations_total not found in registry")
-})
-```
-
-**Related Code**:
-- `pkg/aianalysis/metrics/metrics.go` - Metrics definitions
-- `internal/controller/aianalysis/aianalysis_controller.go` - Metric recording
-
-**Critical**: Integration tests use **registry inspection** (envtest has NO HTTP server). E2E tests will use `/metrics` HTTP endpoint.
-
----
 
 #### AA-INT-AUDIT-001: Validate analysis_completed audit trace ALL fields
 
@@ -785,9 +714,7 @@ It("AA-INT-SHUTDOWN-001: should flush audit store on SIGTERM", func() {
 
 Use this checklist to verify V1.0 production readiness:
 
-- [ ] **AA-INT-METRICS-001**: Metrics recorded via registry inspection ✅/❌
 - [ ] **AA-INT-METRICS-002**: Failure metrics with correct labels ✅/❌
-- [ ] **AA-INT-METRICS-003**: Duration metrics recorded ✅/❌
 - [ ] **AA-INT-AUDIT-001**: analysis_completed audit trace ALL fields validated ✅/❌
 - [ ] **AA-INT-AUDIT-002**: phase_transition audit trace ALL fields validated ✅/❌
 - [ ] **AA-INT-AUDIT-003**: analysis_failed audit trace ALL fields validated ✅/❌
@@ -821,7 +748,7 @@ Use this checklist to verify V1.0 production readiness:
 | **Phase 1** | 30 | 0 | 60-65% | 54.6% ⏸️ | Error handling critical paths |
 | **Phase 2** | 12 | 0 | 65-70% | 54.6% ⏸️ | Controller edge cases |
 | **Phase 3** | 11 | 0 | 70%+ | 54.6% ⏸️ | Comprehensive coverage |
-| **Phase 4** | 8 | 0 | 70%+ | 54.6% ⏸️ | **V1.0 Maturity** (metrics, audit, shutdown) |
+| **Phase 4** | 6 | 0 | 70%+ | 54.6% ⏸️ | **V1.0 Maturity** (metrics, audit, shutdown) |
 | **Total** | **114** | **53** | **70%+** | **54.6%** | Critical paths + V1.0 compliance |
 
 **Key Change**: Phase targets adjusted to reflect that **50% integration coverage is sufficient** per guidelines. Additional tests focus on **critical paths** (error handling, retry logic) and **V1.0 maturity compliance** (metrics, audit, shutdown), not just code coverage percentage.
@@ -910,15 +837,13 @@ touch test/integration/aianalysis/error_types_test.go
 
 ### 🆕 Week 4 (Phase 4 - V1.0 Maturity Compliance) ⭐ MANDATORY
 
-**Days 1-2: Metrics Testing (AA-INT-METRICS-001 to AA-INT-METRICS-003)**
+**Days 1-2: Metrics Testing (AA-INT-METRICS-002)**
 ```bash
 # Create test file
 touch test/integration/aianalysis/v1_maturity_test.go
 
 # Implement:
-# - AA-INT-METRICS-001: Registry inspection pattern: 0.5 day
 # - AA-INT-METRICS-002: Failure metrics with labels: 0.5 day
-# - AA-INT-METRICS-003: Duration metrics: 0.5 day
 ```
 
 **Days 2-3: Audit Trace Validation (AA-INT-AUDIT-001 to AA-INT-AUDIT-003)**
@@ -1233,9 +1158,7 @@ go tool cover -html=coverage-integration-aianalysis.out -o coverage-integration.
 **Production Readiness Checklist** (Per TESTING_GUIDELINES.md Lines 1763-1770):
 
 #### Metrics Testing (DD-METRICS-001)
-- [ ] **AA-INT-METRICS-001** passing: Reconciliation metrics via registry ✅/❌
 - [ ] **AA-INT-METRICS-002** passing: Failure metrics with labels ✅/❌
-- [ ] **AA-INT-METRICS-003** passing: Duration metrics ✅/❌
 - [ ] Metrics coverage ≥ 90% ✅/❌
 - [ ] All metrics use test-specific registry (NO HTTP in integration) ✅/❌
 
@@ -1252,7 +1175,7 @@ go tool cover -html=coverage-integration-aianalysis.out -o coverage-integration.
 - [ ] Graceful shutdown coverage ≥ 90% ✅/❌
 
 #### V1.0 Production Readiness Sign-Off
-- [ ] **ALL Phase 4 tests passing** (8 tests) ✅/❌
+- [ ] **ALL Phase 4 tests passing** (6 tests) ✅/❌
 - [ ] **Zero V1.0 maturity gaps** ✅/❌
 - [ ] **Integration test suite stable** (zero flakes) ✅/❌
 - [ ] **Overall integration coverage**: 70%+ ✅/❌
@@ -1290,7 +1213,7 @@ go tool cover -html=coverage-integration-aianalysis.out -o coverage-integration.
 ### Version 1.1 (December 24, 2025) - Guidelines Compliance Update
 
 **Changes Made**:
-1. ✅ **Added Phase 4**: V1.0 Maturity Compliance (8 tests: metrics, audit, graceful shutdown)
+1. ✅ **Added Phase 4**: V1.0 Maturity Compliance (7 tests: metrics, audit, graceful shutdown)
 2. ✅ **Updated Coverage Targets**: Aligned with 70%/50%/50% defense-in-depth guideline (was targeting 85-90%)
 3. ✅ **Added Infrastructure Section**: DD-TEST-002 sequential startup + mock LLM policy documentation
 4. ✅ **Added Anti-Patterns**: Skip() forbidden + time.Sleep() forbidden with mandatory Eventually() usage
@@ -1313,7 +1236,7 @@ go tool cover -html=coverage-integration-aianalysis.out -o coverage-integration.
 - Gap #7: Audit validation pattern missing → **OpenAPI client requirements added**
 - Gap #8: Mock LLM policy missing → **Infrastructure section documents MOCK_LLM_MODE**
 
-**Test Count Update**: 106 → 114 tests (added 8 V1.0 maturity tests)
+**Test Count Update**: 106 → 112 tests (added 6 V1.0 maturity tests)
 
 **Compliance Score**: 65% → 100% (all critical gaps addressed)
 

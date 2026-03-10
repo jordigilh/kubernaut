@@ -16,7 +16,7 @@ spec:
           name="demo-app-cert",
           condition="True"
         } == 0
-      for: 2m
+      for: 3m
       labels:
         severity: critical
         deployment: demo-app

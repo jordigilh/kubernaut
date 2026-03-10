@@ -483,6 +483,193 @@ var _ = Describe("ApprovalOrchestration", func() {
 		})
 	})
 
+	// ========================================
+	// BR-AI-059, BR-AI-076, BR-ORCH-026: ApprovalContext field mapping (#307)
+	// ========================================
+	Describe("ApprovalContext field mapping to RAR spec (#307)", func() {
+		var (
+			rr *remediationv1.RemediationRequest
+		)
+
+		BeforeEach(func() {
+			rr = &remediationv1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-rr-307",
+					Namespace: "default",
+					UID:       types.UID("uid-307"),
+				},
+				Spec: remediationv1.RemediationRequestSpec{
+					SignalName:        "OOMKilled",
+					SignalFingerprint: "fp12345678901234567890123456789012345678901234567890123456789012",
+					Severity:          "critical",
+					SignalType:        "alert",
+					TargetType:        "kubernetes",
+					TargetResource: remediationv1.ResourceIdentifier{
+						Kind:      "Deployment",
+						Name:      "payment-api",
+						Namespace: "default",
+					},
+				},
+			}
+			Expect(fakeClient.Create(ctx, rr)).To(Succeed())
+		})
+
+		It("UT-RAR-307-001: should map EvidenceCollected from ApprovalContext to RAR spec", func() {
+			ai := &aianalysisv1.AIAnalysis{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "ai-test-rr-307-001",
+					Namespace: "default",
+				},
+				Status: aianalysisv1.AIAnalysisStatus{
+					Phase: "Completed",
+					SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
+						WorkflowID:     "wf-restart-pods",
+						Version:        "v1.0.0",
+						Confidence:     0.72,
+						ExecutionBundle: "kubernaut/workflows:latest",
+						Rationale:      "Pod restart recommended",
+					},
+					ApprovalReason: "Confidence below auto-approve threshold",
+					ApprovalContext: &aianalysisv1.ApprovalContext{
+						EvidenceCollected: []string{
+							"OOM killed event detected at 14:32 UTC",
+							"Memory usage exceeded 95% of limit",
+							"Container restart count: 3 in last 10 minutes",
+						},
+					},
+				},
+			}
+			Expect(fakeClient.Create(ctx, ai)).To(Succeed())
+
+			name, err := ac.Create(ctx, rr, ai)
+			Expect(err).ToNot(HaveOccurred())
+
+			rar := &remediationv1.RemediationApprovalRequest{}
+			Expect(fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: "default"}, rar)).To(Succeed())
+
+			Expect(rar.Spec.EvidenceCollected).To(HaveLen(3),
+				"BR-AI-076: EvidenceCollected must be mapped from ApprovalContext")
+			Expect(rar.Spec.EvidenceCollected).To(ContainElement("OOM killed event detected at 14:32 UTC"))
+		})
+
+		It("UT-RAR-307-002: should map AlternativesConsidered from ApprovalContext to RAR spec", func() {
+			ai := &aianalysisv1.AIAnalysis{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "ai-test-rr-307-002",
+					Namespace: "default",
+				},
+				Status: aianalysisv1.AIAnalysisStatus{
+					Phase: "Completed",
+					SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
+						WorkflowID:     "wf-restart-pods",
+						Version:        "v1.0.0",
+						Confidence:     0.72,
+						ExecutionBundle: "kubernaut/workflows:latest",
+						Rationale:      "Pod restart recommended",
+					},
+					ApprovalReason: "Confidence below auto-approve threshold",
+					ApprovalContext: &aianalysisv1.ApprovalContext{
+						AlternativesConsidered: []aianalysisv1.AlternativeApproach{
+							{
+								Approach: "wf-scale-up",
+								ProsCons: "Pros: addresses root cause. Cons: higher resource cost",
+							},
+							{
+								Approach: "wf-rollback",
+								ProsCons: "Pros: quick recovery. Cons: loses recent changes",
+							},
+						},
+					},
+				},
+			}
+			Expect(fakeClient.Create(ctx, ai)).To(Succeed())
+
+			name, err := ac.Create(ctx, rr, ai)
+			Expect(err).ToNot(HaveOccurred())
+
+			rar := &remediationv1.RemediationApprovalRequest{}
+			Expect(fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: "default"}, rar)).To(Succeed())
+
+			Expect(rar.Spec.AlternativesConsidered).To(HaveLen(2),
+				"BR-AI-076: AlternativesConsidered must be mapped from ApprovalContext")
+			Expect(rar.Spec.AlternativesConsidered[0].Approach).To(Equal("wf-scale-up"))
+			Expect(rar.Spec.AlternativesConsidered[0].ProsCons).To(ContainSubstring("higher resource cost"))
+			Expect(rar.Spec.AlternativesConsidered[1].Approach).To(Equal("wf-rollback"))
+		})
+
+		It("UT-RAR-307-003: should map PolicyEvaluation from ApprovalContext to RAR spec", func() {
+			ai := &aianalysisv1.AIAnalysis{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "ai-test-rr-307-003",
+					Namespace: "default",
+				},
+				Status: aianalysisv1.AIAnalysisStatus{
+					Phase: "Completed",
+					SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
+						WorkflowID:     "wf-restart-pods",
+						Version:        "v1.0.0",
+						Confidence:     0.85,
+						ExecutionBundle: "kubernaut/workflows:latest",
+						Rationale:      "Pod restart recommended",
+					},
+					ApprovalReason: "Production environment requires manual approval",
+					ApprovalContext: &aianalysisv1.ApprovalContext{
+						PolicyEvaluation: &aianalysisv1.PolicyEvaluation{
+							PolicyName:   "production-approval-policy",
+							MatchedRules: []string{"require_approval_for_production", "sensitive_namespace"},
+							Decision:     "manual_review_required",
+						},
+					},
+				},
+			}
+			Expect(fakeClient.Create(ctx, ai)).To(Succeed())
+
+			name, err := ac.Create(ctx, rr, ai)
+			Expect(err).ToNot(HaveOccurred())
+
+			rar := &remediationv1.RemediationApprovalRequest{}
+			Expect(fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: "default"}, rar)).To(Succeed())
+
+			Expect(rar.Spec.PolicyEvaluation).ToNot(BeNil(),
+				"BR-AI-059: PolicyEvaluation must be mapped from ApprovalContext")
+			Expect(rar.Spec.PolicyEvaluation.PolicyName).To(Equal("production-approval-policy"))
+			Expect(rar.Spec.PolicyEvaluation.MatchedRules).To(ConsistOf("require_approval_for_production", "sensitive_namespace"))
+			Expect(rar.Spec.PolicyEvaluation.Decision).To(Equal("manual_review_required"))
+		})
+
+		It("UT-RAR-307-004: should handle nil ApprovalContext gracefully", func() {
+			ai := &aianalysisv1.AIAnalysis{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "ai-test-rr-307-004",
+					Namespace: "default",
+				},
+				Status: aianalysisv1.AIAnalysisStatus{
+					Phase: "Completed",
+					SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
+						WorkflowID:     "wf-restart-pods",
+						Version:        "v1.0.0",
+						Confidence:     0.72,
+						ExecutionBundle: "kubernaut/workflows:latest",
+						Rationale:      "Pod restart recommended",
+					},
+					ApprovalReason:  "Confidence below auto-approve threshold",
+					ApprovalContext: nil,
+				},
+			}
+			Expect(fakeClient.Create(ctx, ai)).To(Succeed())
+
+			name, err := ac.Create(ctx, rr, ai)
+			Expect(err).ToNot(HaveOccurred())
+
+			rar := &remediationv1.RemediationApprovalRequest{}
+			Expect(fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: "default"}, rar)).To(Succeed())
+
+			Expect(rar.Spec.EvidenceCollected).To(BeNil())
+			Expect(rar.Spec.AlternativesConsidered).To(BeNil())
+			Expect(rar.Spec.PolicyEvaluation).To(BeNil())
+		})
+	})
+
 	Describe("Confidence Level Mapping", func() {
 		DescribeTable("should map confidence score to level",
 			func(confidence float64, expectedLevel string) {

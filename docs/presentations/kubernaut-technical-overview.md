@@ -263,14 +263,15 @@ The LLM populates the workflow parameters (e.g., `MEMORY_LIMIT_NEW=128Mi`) based
 
 ---
 
-## Slide 9: Workflow Schema (workflow-schema.yaml)
+## Slide 9: Workflow Schema (RemediationWorkflow CRD)
 
-**Purpose**: Every remediation workflow ships as an OCI image containing a `/workflow-schema.yaml` that declares what the workflow does, when to use it, and what parameters it needs. This schema is extracted during registration and stored in the workflow catalog for LLM-driven discovery.
+**Purpose**: Every remediation workflow is declared as a `RemediationWorkflow` CRD containing a structured schema that describes what the workflow does, when to use it, and what parameters it needs. On CRD creation, the AuthWebhook registers it in the DataStorage workflow catalog for LLM-driven discovery.
 
-**Container Image Reference** (DD-WORKFLOW-002 v2.4):
-- V1.0 requires **tag + digest** for immutability and audit compliance
-- Full pullspec: `container_image@container_digest`
-- The digest guarantees that the exact image bytes are auditable and reproducible
+**Registration mechanism** (ADR-058, BR-WORKFLOW-006):
+- Operator creates `RemediationWorkflow` CRD via `kubectl apply` or GitOps
+- AuthWebhook intercepts CREATE, forwards spec to DataStorage internal API
+- DataStorage validates, catalogs, and returns a UUID
+- CRD `.status` is updated asynchronously with `workflowId`, `catalogStatus`, `registeredBy`
 
 **Example**: `workflow-schema.yaml` for the OOMKill increase-memory workflow:
 
@@ -324,12 +325,13 @@ parameters:
 ```
 
 **Key Design Decisions**:
-- `containerImage` with tag + digest ensures the exact workflow binary is traceable in the audit trail
+- `execution.bundle` with tag + digest ensures the exact workflow binary is traceable in the audit trail (used at execution time by Tekton/Job)
 - `actionType` maps to the action taxonomy used by the LLM's three-step discovery protocol (list actions > list workflows > get schema)
 - `labels` (mandatory) enable catalog filtering: severity, environment, component, priority
 - `customLabels` (optional) are operator-defined key-value pairs for team/org-specific filtering -- stored separately from mandatory labels in their own JSONB column, passed through the discovery protocol for additional matching
 - `description` fields (`what`, `whenToUse`, `whenNotToUse`, `preconditions`) are shown to the LLM during workflow selection
 - `parameters` are populated by the LLM based on the incident context
+- CRD DELETE triggers DS catalog disable (best-effort) -- prevents discovery without deleting audit history
 
 ---
 
@@ -381,7 +383,7 @@ parameters:
 
 **Key Features**:
 - Audit events API: batch write, query by correlation ID, hash chain verification (SOC2 compliance)
-- Workflow catalog API: CRUD, action-type taxonomy, version lifecycle (active/deprecated)
+- Workflow catalog API: CRUD (internal registration via AuthWebhook), action-type taxonomy, version lifecycle (active/disabled/deprecated)
 - Workflow discovery API: three-step protocol for LLM-driven remediation selection
 - Remediation history API: two-tier windowing (24h recent + 90d historical) with three-way hash comparison
 - OpenAPI-first: `data-storage-v1.yaml` spec with auto-generated Go and Python clients
@@ -391,19 +393,21 @@ parameters:
 
 ## Slide 13: AuthWebhook
 
-**Purpose**: Kubernetes admission webhook that injects authenticated user identity into CRD status updates for SOC2 CC8.1 audit compliance. Ensures every remediation action is traceable to a human or service account.
+**Purpose**: Kubernetes admission webhook that injects authenticated user identity into CRD status updates for SOC2 CC8.1 audit compliance, and bridges RemediationWorkflow CRD lifecycle to the DataStorage workflow catalog. Ensures every remediation and workflow management action is traceable.
 
-**Architecture**: Mutating + Validating admission webhook.
+**Architecture**: Mutating + Validating admission webhook (single consolidated deployment with 4 handlers).
 
 **Key Features**:
 - Mutating webhooks for identity injection:
   - WorkflowExecution: `status.initiatedBy`, `status.approvedBy`
   - RemediationApprovalRequest: `status.approvedBy`, `status.rejectedBy`
   - RemediationRequest: `status.lastModifiedBy`, `status.lastModifiedAt`
-- Validating webhook: audit event before NotificationRequest deletion
+- Validating webhooks:
+  - NotificationRequest: audit event before deletion
+  - **RemediationWorkflow**: CRD-to-DS bridge for workflow registration (CREATE) and disable (DELETE) (ADR-058, BR-WORKFLOW-006)
 - Forgery detection: overwrites user-provided identity fields and logs tampering attempts
 - Decision validation: enforces Approved/Rejected/Expired for approval decisions
-- Namespace selector: only processes namespaces with `kubernaut.ai/audit-enabled=true`
+- RemediationWorkflow: async `.status` update after successful registration
 - mTLS via cert-manager; failure policy `Fail` (rejects requests if webhook is down)
 
 ---

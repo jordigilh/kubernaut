@@ -1,41 +1,45 @@
-schemaVersion: "1.0"
-# OOMKill Increase Memory Workflow Schema (BR-WORKFLOW-004)
-# Used by: AIAnalysis E2E, HolmesGPT-API E2E
+apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
 metadata:
-  workflowId: oomkill-increase-memory-v1
-  version: "1.0.0"
-  description:
-    what: "Increases memory limits for pods experiencing OOMKill events"
-    whenToUse: "When pods are OOMKilled due to insufficient memory limits"
-    whenNotToUse: "When OOM is caused by a memory leak requiring code fix"
-    preconditions: "Pod is managed by a Deployment or StatefulSet"
-
-actionType: IncreaseMemoryLimits
-
-labels:
-  severity: [critical, high]
-  environment: [production, staging, test]
-  component: "*"
-  priority: "*"
-
-execution:
-  engine: tekton
-  bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:8d727758cf289589e025fc9b89e254d73cb77b4c6384b850007b9ef1e8412200
-
-parameters:
-  - name: TARGET_RESOURCE_KIND
-    type: string
-    required: false
-    description: "Kubernetes resource kind (Deployment, StatefulSet, DaemonSet). Falls back to TARGET_RESOURCE if not provided."
-  - name: TARGET_RESOURCE_NAME
-    type: string
-    required: false
-    description: "Name of the resource to patch. Falls back to TARGET_RESOURCE if not provided."
-  - name: TARGET_NAMESPACE
-    type: string
-    required: false
-    description: "Namespace of the resource. Falls back to TARGET_RESOURCE if not provided."
-  - name: MEMORY_LIMIT_NEW
-    type: string
-    required: true
-    description: "New memory limit to apply (e.g., 128Mi, 256Mi, 1Gi)"
+  name: oomkill-increase-memory-v1
+spec:
+  # OOMKill Increase Memory Workflow Schema (BR-WORKFLOW-004)
+  # Used by: AIAnalysis E2E, HolmesGPT-API E2E
+  metadata:
+    workflowName: oomkill-increase-memory-v1
+    version: "1.0.0"
+    description:
+      what: "Increases memory limits for pods experiencing OOMKill events"
+      whenToUse: "When pods are OOMKilled due to insufficient memory limits"
+      whenNotToUse: "When OOM is caused by a memory leak requiring code fix"
+      preconditions: "Pod is managed by a Deployment or StatefulSet"
+  
+  actionType: IncreaseMemoryLimits
+  
+  labels:
+    severity: [critical, high]
+    environment: [production, staging, test]
+    component: "*"
+    priority: "*"
+  
+  execution:
+    engine: tekton
+    bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:adfc09ea45a5b627550c6a73fe75d50efe1c80fa43359fcc4908c9c5b0639ac3
+  
+  parameters:
+    - name: TARGET_RESOURCE_KIND
+      type: string
+      required: false
+      description: "Kubernetes resource kind (Deployment, StatefulSet, DaemonSet). Falls back to TARGET_RESOURCE if not provided."
+    - name: TARGET_RESOURCE_NAME
+      type: string
+      required: false
+      description: "Name of the resource to patch. Falls back to TARGET_RESOURCE if not provided."
+    - name: TARGET_NAMESPACE
+      type: string
+      required: false
+      description: "Namespace of the resource. Falls back to TARGET_RESOURCE if not provided."
+    - name: MEMORY_LIMIT_NEW
+      type: string
+      required: true
+      description: "New memory limit to apply (e.g., 128Mi, 256Mi, 1Gi)"

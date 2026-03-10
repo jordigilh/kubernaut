@@ -250,11 +250,6 @@ gateway_signal_processing_duration_seconds_bucket{source="prometheus",le="0.1"} 
 gateway_signal_processing_duration_seconds_count{source="prometheus"} 2379
 gateway_signal_processing_duration_seconds_sum{source="prometheus"} 89.45
 
-# HELP gateway_deduplication_rate Deduplication rate
-# TYPE gateway_deduplication_rate gauge
-gateway_deduplication_rate{source="prometheus"} 0.36
-gateway_deduplication_rate{source="kubernetes-event"} 0.28
-
 # HELP gateway_storm_detected_total Total number of alert storms detected
 # TYPE gateway_storm_detected_total counter
 gateway_storm_detected_total{type="rate"} 12

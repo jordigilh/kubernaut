@@ -150,7 +150,7 @@ data:
         },
         {
           "id": 11,
-          "title": "Enrichment Duration",
+          "title": "Processing Duration (p95)",
           "type": "timeseries",
           "gridPos": { "h": 8, "w": 12, "x": 12, "y": 10 },
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
@@ -164,8 +164,8 @@ data:
           },
           "targets": [
             {
-              "expr": "histogram_quantile(0.95, sum(rate(signalprocessing_enrichment_duration_seconds_bucket[5m])) by (le, resource_kind))",
-              "legendFormat": "p95 {{resource_kind}}",
+              "expr": "histogram_quantile(0.95, sum(rate(signalprocessing_processing_duration_seconds_bucket[5m])) by (le, phase))",
+              "legendFormat": "p95 {{phase}}",
               "refId": "A"
             }
           ]
@@ -179,7 +179,7 @@ data:
         },
         {
           "id": 20,
-          "title": "AI Reconciliations",
+          "title": "AI Analysis Failures",
           "type": "timeseries",
           "gridPos": { "h": 8, "w": 8, "x": 0, "y": 19 },
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
@@ -193,8 +193,8 @@ data:
           },
           "targets": [
             {
-              "expr": "sum(rate(aianalysis_reconciler_reconciliations_total[5m])) by (result)",
-              "legendFormat": "{{result}}",
+              "expr": "sum(rate(aianalysis_failures_total[5m])) by (reason)",
+              "legendFormat": "{{reason}}",
               "refId": "A"
             }
           ]
@@ -431,38 +431,12 @@ data:
           "collapsed": false,
           "gridPos": { "h": 1, "w": 24, "x": 0, "y": 54 },
           "id": 106,
-          "title": "Audit Buffer Health",
+          "title": "Audit Pipeline Health",
           "type": "row"
         },
         {
-          "id": 60,
-          "title": "Buffer Utilization",
-          "type": "gauge",
-          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 55 },
-          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "fieldConfig": {
-            "defaults": {
-              "color": { "mode": "thresholds" },
-              "thresholds": { "steps": [
-                { "color": "green", "value": null },
-                { "color": "yellow", "value": 0.7 },
-                { "color": "red", "value": 0.9 }
-              ]},
-              "unit": "percentunit", "min": 0, "max": 1
-            },
-            "overrides": []
-          },
-          "targets": [
-            {
-              "expr": "audit_buffer_utilization_ratio",
-              "legendFormat": "{{service}}",
-              "refId": "A"
-            }
-          ]
-        },
-        {
           "id": 61,
-          "title": "Events Dropped vs Written",
+          "title": "Audit Events Dropped",
           "type": "timeseries",
           "gridPos": { "h": 8, "w": 12, "x": 12, "y": 55 },
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
@@ -476,14 +450,9 @@ data:
           },
           "targets": [
             {
-              "expr": "sum(rate(audit_events_written_total[5m])) by (service)",
-              "legendFormat": "written: {{service}}",
-              "refId": "A"
-            },
-            {
               "expr": "sum(rate(audit_events_dropped_total[5m])) by (service)",
               "legendFormat": "DROPPED: {{service}}",
-              "refId": "B"
+              "refId": "A"
             }
           ]
         }

@@ -125,11 +125,6 @@ func (h *NotificationHandler) HandleNotificationRequestDeletion(
 	rr.Status.NotificationStatus = "Cancelled"
 	rr.Status.Message = "NotificationRequest deleted by user before delivery completed"
 
-	// Increment cancellation metric (BR-ORCH-029)
-	if h.Metrics != nil {
-		h.Metrics.NotificationCancellationsTotal.WithLabelValues(rr.Namespace).Inc()
-	}
-
 	logger.V(1).Info("Updated notification status",
 		"previousStatus", previousStatus,
 		"newStatus", rr.Status.NotificationStatus,
@@ -197,30 +192,16 @@ func (h *NotificationHandler) UpdateNotificationStatus(
 	case notificationv1.NotificationPhasePending:
 		rr.Status.NotificationStatus = "Pending"
 		logger.V(1).Info("Notification pending delivery")
-		// Update status gauge (BR-ORCH-030)
-		if h.Metrics != nil {
-			h.Metrics.NotificationStatusGauge.WithLabelValues(rr.Namespace, "Pending").Set(1)
-		}
 
 	case notificationv1.NotificationPhaseSending:
 		rr.Status.NotificationStatus = "InProgress"
 		logger.V(1).Info("Notification delivery in progress")
-		// Update status gauge (BR-ORCH-030)
-		if h.Metrics != nil {
-			h.Metrics.NotificationStatusGauge.WithLabelValues(rr.Namespace, "InProgress").Set(1)
-		}
 
 	case notificationv1.NotificationPhaseSent:
 		rr.Status.NotificationStatus = "Sent"
 		deliveryDuration := time.Since(startTime)
 
 		remediationrequest.SetNotificationDelivered(rr, true, remediationrequest.ReasonDeliverySucceeded, "Notification delivered successfully", h.Metrics)
-
-		// Update metrics (BR-ORCH-030)
-		if h.Metrics != nil {
-			h.Metrics.NotificationStatusGauge.WithLabelValues(rr.Namespace, "Sent").Set(1)
-			h.Metrics.NotificationDeliveryDurationSeconds.WithLabelValues(rr.Namespace, "Sent").Observe(deliveryDuration.Seconds())
-		}
 
 		logger.Info("Notification delivered successfully",
 			"deliveryDuration", deliveryDuration,
@@ -237,12 +218,6 @@ func (h *NotificationHandler) UpdateNotificationStatus(
 		}
 
 		remediationrequest.SetNotificationDelivered(rr, false, remediationrequest.ReasonDeliveryFailed, fmt.Sprintf("Notification delivery failed: %s", failureMessage), h.Metrics)
-
-		// Update metrics (BR-ORCH-030)
-		if h.Metrics != nil {
-			h.Metrics.NotificationStatusGauge.WithLabelValues(rr.Namespace, "Failed").Set(1)
-			h.Metrics.NotificationDeliveryDurationSeconds.WithLabelValues(rr.Namespace, "Failed").Observe(deliveryDuration.Seconds())
-		}
 
 		logger.Error(nil, "Notification delivery failed",
 			"reason", failureMessage,

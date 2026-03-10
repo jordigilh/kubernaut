@@ -24,7 +24,7 @@ done
 # predict_linear needs ~5-7 minutes of trend data before projecting OOM
 
 wait_for_alert "ContainerMemoryExhaustionPredicted" "${NAMESPACE}" 600
-show_alert "ContainerMemoryExhaustionPredicted"
+show_alert "ContainerMemoryExhaustionPredicted" "${NAMESPACE}"
 
 # ── Wait for pipeline ──────────────────────────────────────────────────────
 
@@ -64,5 +64,12 @@ assert_eq "$wfe_phase" "Completed" "WFE phase"
 rollout_rev=$(kubectl rollout history deployment/leaky-app -n "${NAMESPACE}" 2>/dev/null \
   | grep -c "^[0-9]" || echo "0")
 assert_gt "$rollout_rev" "1" "Deployment has >1 revision (restart occurred)"
+
+# ── Post-remediation root cause fix ─────────────────────────────────────────
+# Remove leaker sidecar so memory stops growing and the alert resolves naturally.
+log_phase "Removing leaker sidecar (root cause fix)..."
+kubectl patch deployment leaky-app -n "${NAMESPACE}" --type=json \
+  -p='[{"op":"remove","path":"/spec/template/spec/containers/1"}]' 2>/dev/null || true
+kubectl rollout status deployment/leaky-app -n "${NAMESPACE}" --timeout=60s 2>/dev/null || true
 
 print_result "memory-leak"

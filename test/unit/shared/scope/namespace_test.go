@@ -39,21 +39,21 @@ var _ = Describe("GetControllerNamespace [ADR-057]", func() {
 	BeforeEach(func() {
 		origEnv, envWasSet = os.LookupEnv("KUBERNAUT_CONTROLLER_NAMESPACE")
 		origPath = scope.NamespaceFilePath
-		os.Unsetenv("KUBERNAUT_CONTROLLER_NAMESPACE")
+		Expect(os.Unsetenv("KUBERNAUT_CONTROLLER_NAMESPACE")).To(Succeed())
 	})
 
 	AfterEach(func() {
 		if envWasSet {
-			os.Setenv("KUBERNAUT_CONTROLLER_NAMESPACE", origEnv)
+			Expect(os.Setenv("KUBERNAUT_CONTROLLER_NAMESPACE", origEnv)).To(Succeed())
 		} else {
-			os.Unsetenv("KUBERNAUT_CONTROLLER_NAMESPACE")
+			Expect(os.Unsetenv("KUBERNAUT_CONTROLLER_NAMESPACE")).To(Succeed())
 		}
 		scope.NamespaceFilePath = origPath
 	})
 
 	Context("UT-NS-057-001: environment variable override", func() {
 		It("returns the namespace from KUBERNAUT_CONTROLLER_NAMESPACE when set", func() {
-			os.Setenv("KUBERNAUT_CONTROLLER_NAMESPACE", "my-custom-ns")
+			Expect(os.Setenv("KUBERNAUT_CONTROLLER_NAMESPACE", "my-custom-ns")).To(Succeed())
 
 			ns, err := scope.GetControllerNamespace()
 			Expect(err).NotTo(HaveOccurred())
@@ -61,7 +61,7 @@ var _ = Describe("GetControllerNamespace [ADR-057]", func() {
 		})
 
 		It("trims whitespace from the environment variable value", func() {
-			os.Setenv("KUBERNAUT_CONTROLLER_NAMESPACE", "  kubernaut-system  \n")
+			Expect(os.Setenv("KUBERNAUT_CONTROLLER_NAMESPACE", "  kubernaut-system  \n")).To(Succeed())
 
 			ns, err := scope.GetControllerNamespace()
 			Expect(err).NotTo(HaveOccurred())
@@ -122,7 +122,7 @@ var _ = Describe("GetControllerNamespace [ADR-057]", func() {
 
 	Context("UT-NS-057-003: precedence", func() {
 		It("prefers env var over file when both are available", func() {
-			os.Setenv("KUBERNAUT_CONTROLLER_NAMESPACE", "env-namespace")
+			Expect(os.Setenv("KUBERNAUT_CONTROLLER_NAMESPACE", "env-namespace")).To(Succeed())
 
 			tmpDir := GinkgoT().TempDir()
 			nsFile := filepath.Join(tmpDir, "namespace")

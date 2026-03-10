@@ -48,6 +48,7 @@ var _ = Describe("Test 19: Replay Attack Prevention (BR-GATEWAY-074, BR-GATEWAY-
 		// Create unique test namespace (Pattern: RO E2E)
 		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
 		testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "replay")
+		helpers.EnsureTestPods(ctx, k8sClient, testNamespace, "test-pod", "test-pod-request-id")
 
 		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 		testLogger.Info("✅ Using shared Gateway", "url", gatewayURL)
@@ -109,6 +110,7 @@ var _ = Describe("Test 19: Replay Attack Prevention (BR-GATEWAY-074, BR-GATEWAY-
 			Expect(err).ToNot(HaveOccurred())
 			req.Header.Set("Content-Type", "application/json")
 			// Deliberately NOT setting X-Timestamp header; body also lacks startsAt
+			setE2EAuthHeader(req)
 			resp, err := httpClient.Do(req)
 			Expect(err).ToNot(HaveOccurred(), "HTTP request should complete")
 			defer func() { _ = resp.Body.Close() }()
@@ -191,6 +193,7 @@ var _ = Describe("Test 19: Replay Attack Prevention (BR-GATEWAY-074, BR-GATEWAY-
 			Expect(err).ToNot(HaveOccurred())
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-Timestamp", strconv.FormatInt(oldTimestamp, 10))
+			setE2EAuthHeader(req)
 
 			resp, err := httpClient.Do(req)
 			Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed")
@@ -241,6 +244,7 @@ var _ = Describe("Test 19: Replay Attack Prevention (BR-GATEWAY-074, BR-GATEWAY-
 			Expect(err).ToNot(HaveOccurred())
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-Timestamp", strconv.FormatInt(futureTimestamp, 10))
+			setE2EAuthHeader(req)
 
 			resp, err := httpClient.Do(req)
 			Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed")
@@ -287,6 +291,7 @@ var _ = Describe("Test 19: Replay Attack Prevention (BR-GATEWAY-074, BR-GATEWAY-
 			Expect(err).ToNot(HaveOccurred())
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-Timestamp", "not-a-valid-timestamp")
+			setE2EAuthHeader(req)
 
 			resp, err := httpClient.Do(req)
 			Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed")

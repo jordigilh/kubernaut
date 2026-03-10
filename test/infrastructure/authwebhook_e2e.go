@@ -243,6 +243,17 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 4.5: Deploy DataStorage client RBAC (DD-AUTH-014)
+	// ═══════════════════════════════════════════════════════════════════════
+	_, _ = fmt.Fprintln(writer, "\n🔐 PHASE 4.5: Deploying DataStorage client RBAC (DD-AUTH-014)...")
+	if err := deployDataStorageClientClusterRole(ctx, kubeconfigPath, writer); err != nil {
+		return "", "", fmt.Errorf("failed to deploy data-storage-client ClusterRole: %w", err)
+	}
+	if err := CreateDataStorageAccessRoleBinding(ctx, namespace, kubeconfigPath, "authwebhook", writer); err != nil {
+		return "", "", fmt.Errorf("failed to create AuthWebhook DataStorage client RoleBinding: %w", err)
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 5: Deploy services (Sequential - depends on migrations)
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n🚀 PHASE 5: Deploying services...")
@@ -287,7 +298,7 @@ func loadAuthWebhookImageOnly(imageName, clusterName string, writer io.Writer) e
 // This is the single source of truth for all AuthWebhook E2E deployments.
 // Includes: ServiceAccount, ClusterRole, ClusterRoleBinding, Service, ConfigMap,
 // Deployment, MutatingWebhookConfiguration, ValidatingWebhookConfiguration.
-func authWebhookManifest(namespace, imageTag string) string {
+func authWebhookManifest(namespace, imageTag, dataStorageURL string) string {
 	pullPolicy := GetImagePullPolicy()
 
 	return fmt.Sprintf(`---
@@ -309,10 +320,10 @@ metadata:
     app.kubernetes.io/component: admission-webhook
 rules:
 - apiGroups: ["kubernaut.ai"]
-  resources: ["workflowexecutions", "remediationapprovalrequests", "notificationrequests", "remediationrequests"]
+  resources: ["workflowexecutions", "remediationapprovalrequests", "notificationrequests", "remediationrequests", "remediationworkflows", "actiontypes"]
   verbs: ["get", "list", "watch"]
 - apiGroups: ["kubernaut.ai"]
-  resources: ["workflowexecutions/status", "remediationapprovalrequests/status", "remediationrequests/status"]
+  resources: ["workflowexecutions/status", "remediationapprovalrequests/status", "remediationrequests/status", "remediationworkflows/status", "actiontypes/status"]
   verbs: ["update", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -362,7 +373,7 @@ data:
       certDir: /tmp/k8s-webhook-server/serving-certs
       healthProbeAddr: ":8081"
     datastorage:
-      url: "http://data-storage-service:8080"
+      url: "%[4]s"
       timeout: 30s
       buffer:
         bufferSize: 1000
@@ -540,7 +551,49 @@ webhooks:
     scope: "Namespaced"
   sideEffects: None
   timeoutSeconds: 10
-`, namespace, imageTag, pullPolicy)
+- name: remediationworkflow.validate.kubernaut.ai
+  admissionReviewVersions: ["v1"]
+  clientConfig:
+    service:
+      name: authwebhook
+      namespace: %[1]s
+      path: /validate-remediationworkflow
+    caBundle: ""
+  failurePolicy: Fail
+  matchPolicy: Equivalent
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: %[1]s
+  rules:
+  - apiGroups: ["kubernaut.ai"]
+    apiVersions: ["v1alpha1"]
+    operations: ["CREATE", "DELETE"]
+    resources: ["remediationworkflows"]
+    scope: "Namespaced"
+  sideEffects: NoneOnDryRun
+  timeoutSeconds: 15
+- name: actiontype.validate.kubernaut.ai
+  admissionReviewVersions: ["v1"]
+  clientConfig:
+    service:
+      name: authwebhook
+      namespace: %[1]s
+      path: /validate-actiontype
+    caBundle: ""
+  failurePolicy: Fail
+  matchPolicy: Equivalent
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: %[1]s
+  rules:
+  - apiGroups: ["kubernaut.ai"]
+    apiVersions: ["v1alpha1"]
+    operations: ["CREATE", "UPDATE", "DELETE"]
+    resources: ["actiontypes"]
+    scope: "Namespaced"
+  sideEffects: NoneOnDryRun
+  timeoutSeconds: 15
+`, namespace, imageTag, pullPolicy, dataStorageURL)
 }
 
 // deployAuthWebhookToKind deploys the AuthWebhook service to Kind cluster.
@@ -570,7 +623,8 @@ func deployAuthWebhookToKind(kubeconfigPath, namespace, imageTag string, writer 
 
 	// STEP 3: Apply AuthWebhook manifest (all resources including webhook configs)
 	_, _ = fmt.Fprintln(writer, "🚀 Applying AuthWebhook deployment...")
-	manifest := authWebhookManifest(namespace, imageTag)
+	dsURL := fmt.Sprintf("http://datastorage.%s.svc.cluster.local:8080", namespace)
+	manifest := authWebhookManifest(namespace, imageTag, dsURL)
 	cmd = exec.Command("kubectl", "apply",
 		"--kubeconfig", kubeconfigPath,
 		"-f", "-")
@@ -656,17 +710,20 @@ func patchWebhookConfigurations(kubeconfigPath string, writer io.Writer) error {
 		_, _ = fmt.Fprintf(writer, "   ✅ Patched %s\n", webhookName)
 	}
 
-	// Patch ValidatingWebhookConfiguration
-	_, _ = fmt.Fprintln(writer, "   🔧 Patching ValidatingWebhookConfiguration...")
-	patchCmd := exec.Command("kubectl", "patch", "validatingwebhookconfiguration", "authwebhook-validating",
-		"--kubeconfig", kubeconfigPath,
-		"--type=json",
-		"-p", fmt.Sprintf(`[{"op":"replace","path":"/webhooks/0/clientConfig/caBundle","value":"%s"}]`, caBundleB64))
-	if output, err := patchCmd.CombinedOutput(); err != nil {
-		_, _ = fmt.Fprintf(writer, "   ❌ Failed to patch validating webhook: %s\n", output)
-		return fmt.Errorf("failed to patch validating webhook: %w", err)
+	// Patch ValidatingWebhookConfiguration (3 webhooks: notificationrequest + remediationworkflow + actiontype)
+	_, _ = fmt.Fprintln(writer, "   🔧 Patching ValidatingWebhookConfiguration webhooks...")
+	validatingWebhookNames := []string{"notificationrequest.validate.kubernaut.ai", "remediationworkflow.validate.kubernaut.ai", "actiontype.validate.kubernaut.ai"}
+	for i, vwName := range validatingWebhookNames {
+		patchCmd := exec.Command("kubectl", "patch", "validatingwebhookconfiguration", "authwebhook-validating",
+			"--kubeconfig", kubeconfigPath,
+			"--type=json",
+			"-p", fmt.Sprintf(`[{"op":"replace","path":"/webhooks/%d/clientConfig/caBundle","value":"%s"}]`, i, caBundleB64))
+		if output, err := patchCmd.CombinedOutput(); err != nil {
+			_, _ = fmt.Fprintf(writer, "   ❌ Failed to patch %s: %s\n", vwName, output)
+			return fmt.Errorf("failed to patch validating webhook %s: %w", vwName, err)
+		}
+		_, _ = fmt.Fprintf(writer, "   ✅ Patched %s\n", vwName)
 	}
-	_, _ = fmt.Fprintln(writer, "   ✅ Patched validating webhook")
 
 	_, _ = fmt.Fprintln(writer, "✅ All webhook configurations patched with CA bundle")
 	return nil
@@ -977,6 +1034,48 @@ stringData:
     password: ""
 ---
 apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: data-storage-sa
+  labels:
+    app: datastorage
+    component: auth
+    authorization: dd-auth-014
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: data-storage-auth-middleware
+  labels:
+    app: datastorage
+    component: auth
+    authorization: dd-auth-014
+rules:
+- apiGroups: ["authentication.k8s.io"]
+  resources: ["tokenreviews"]
+  verbs: ["create"]
+- apiGroups: ["authorization.k8s.io"]
+  resources: ["subjectaccessreviews"]
+  verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: data-storage-auth-middleware
+  labels:
+    app: datastorage
+    component: auth
+    authorization: dd-auth-014
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-auth-middleware
+subjects:
+- kind: ServiceAccount
+  name: data-storage-sa
+  namespace: %[1]s
+---
+apiVersion: v1
 kind: Service
 metadata:
   name: datastorage
@@ -1009,6 +1108,7 @@ spec:
       labels:
         app: datastorage
     spec:
+      serviceAccountName: data-storage-sa
       containers:
       - name: datastorage
         image: %[3]s

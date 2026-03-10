@@ -721,12 +721,6 @@ import (
 )
 
 var (
-    // auditEventsBuffered tracks total events buffered
-    auditEventsBuffered = promauto.NewCounter(prometheus.CounterOpts{
-        Name: "audit_events_buffered_total",
-        Help: "Total number of audit events buffered",
-    })
-
     // auditEventsDropped tracks total events dropped (buffer full)
     auditEventsDropped = promauto.NewCounter(prometheus.CounterOpts{
         Name: "audit_events_dropped_total",
@@ -750,13 +744,6 @@ var (
         Name: "audit_buffer_size",
         Help: "Current number of events in audit buffer",
     })
-
-    // auditWriteDuration tracks write latency
-    auditWriteDuration = promauto.NewHistogram(prometheus.HistogramOpts{
-        Name:    "audit_write_duration_seconds",
-        Help:    "Duration of audit batch writes",
-        Buckets: prometheus.DefBuckets,
-    })
 )
 ```
 
@@ -765,9 +752,6 @@ var (
 **Grafana Queries**:
 
 ```promql
-# Drop rate (should be <1%)
-rate(audit_events_dropped_total[5m]) / rate(audit_events_buffered_total[5m]) * 100
-
 # Failure rate (should be <5%)
 rate(audit_batches_failed_total[5m]) / rate(audit_events_written_total[5m]) * 100
 
@@ -776,23 +760,11 @@ audit_buffer_size / 10000 * 100
 
 # Write throughput
 rate(audit_events_written_total[5m])
-
-# Write latency (p50, p95, p99)
-histogram_quantile(0.50, rate(audit_write_duration_seconds_bucket[5m]))
-histogram_quantile(0.95, rate(audit_write_duration_seconds_bucket[5m]))
-histogram_quantile(0.99, rate(audit_write_duration_seconds_bucket[5m]))
 ```
 
 **Alerts**:
 
 ```yaml
-# High drop rate
-- alert: AuditHighDropRate
-  expr: rate(audit_events_dropped_total[5m]) / rate(audit_events_buffered_total[5m]) > 0.01
-  for: 5m
-  annotations:
-    summary: "Audit drop rate >1%"
-
 # High failure rate
 - alert: AuditHighFailureRate
   expr: rate(audit_batches_failed_total[5m]) / rate(audit_events_written_total[5m]) > 0.05

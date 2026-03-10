@@ -12,7 +12,7 @@ spec:
     - alert: KubeNodeNotReady
       expr: |
         kube_node_status_condition{condition="Ready", status="true"} == 0
-      for: 1m
+      for: 3m
       labels:
         severity: critical
         namespace: demo-node

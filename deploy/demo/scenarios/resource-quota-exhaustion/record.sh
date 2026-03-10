@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+SCENARIO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCENARIO_NAME="resource-quota-exhaustion"
+DEMO_NS="demo-quota"
+ALERT_NAME="KubeResourceQuotaExhausted"
+RESOURCE_TAPE="resource-quota-exhaustion-quota.tape"
+SCREENS_TAPE="resource-quota-exhaustion-screens.tape"
+APPROVAL_REQUIRED="false"
+TERMINAL_STATE="ManualReviewRequired"
+INJECT_CMD="bash ${SCENARIO_DIR}/exhaust-quota.sh"
+SETUP_CMD="bash ${SCENARIO_DIR}/cleanup.sh 2>/dev/null || true && kubectl apply -f ${SCENARIO_DIR}/manifests/ && sleep 20"
+CLEANUP_CMD="bash ${SCENARIO_DIR}/cleanup.sh"
+source "$(cd "${SCENARIO_DIR}/../../../.." && pwd)/deploy/demo/scripts/record-scenario.sh"

@@ -1,34 +1,38 @@
-schemaVersion: "1.0"
-# Duplicate Test Workflow Schema (BR-WORKFLOW-004)
-# Used by: DataStorage E2E — 18_workflow_duplicate_api_test.go (DS-BUG-001)
-# This workflow is created twice to test 409 Conflict duplicate detection
+apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
 metadata:
-  workflowId: duplicate-test-v1
-  version: "1.0.0"
-  description:
-    what: "Test workflow for duplicate creation detection"
-    whenToUse: "For E2E testing of RFC 9110 Section 15.5.10 duplicate resource handling"
-    whenNotToUse: "Not intended for production use"
-    preconditions: "DataStorage service running"
-
-actionType: RestartPod
-
-labels:
-  severity: [high]
-  environment: [test]
-  component: deployment
-  priority: P2
-
-execution:
-  engine: tekton
-  bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:8d727758cf289589e025fc9b89e254d73cb77b4c6384b850007b9ef1e8412200
-
-parameters:
-  - name: NAMESPACE
-    type: string
-    required: true
-    description: "Target namespace"
-  - name: POD_NAME
-    type: string
-    required: true
-    description: "Name of the pod to restart"
+  name: duplicate-test-v1
+spec:
+  # Duplicate Test Workflow Schema (BR-WORKFLOW-004)
+  # Used by: DataStorage E2E — 18_workflow_duplicate_api_test.go (DS-BUG-001)
+  # This workflow is created twice to test 409 Conflict duplicate detection
+  metadata:
+    workflowName: duplicate-test-v1
+    version: "1.0.0"
+    description:
+      what: "Test workflow for duplicate creation detection"
+      whenToUse: "For E2E testing of RFC 9110 Section 15.5.10 duplicate resource handling"
+      whenNotToUse: "Not intended for production use"
+      preconditions: "DataStorage service running"
+  
+  actionType: RestartPod
+  
+  labels:
+    severity: [high]
+    environment: [test]
+    component: deployment
+    priority: P2
+  
+  execution:
+    engine: tekton
+    bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:adfc09ea45a5b627550c6a73fe75d50efe1c80fa43359fcc4908c9c5b0639ac3
+  
+  parameters:
+    - name: NAMESPACE
+      type: string
+      required: true
+      description: "Target namespace"
+    - name: POD_NAME
+      type: string
+      required: true
+      description: "Name of the pod to restart"

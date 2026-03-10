@@ -46,14 +46,14 @@ Service maturity validation (December 20, 2025) revealed two metrics wiring appr
 ```go
 // pkg/aianalysis/metrics/metrics.go
 var (
-    ReconcilerReconciliationsTotal = prometheus.NewCounterVec(...)
-    ReconcilerDurationSeconds = prometheus.NewHistogramVec(...)
+    FailuresTotal = prometheus.NewCounterVec(...)
+    RegoEvaluationsTotal = prometheus.NewCounterVec(...)
 )
 
 func init() {
     metrics.Registry.MustRegister(
-        ReconcilerReconciliationsTotal,
-        ReconcilerDurationSeconds,
+        FailuresTotal,
+        RegoEvaluationsTotal,
     )
 }
 
@@ -66,7 +66,7 @@ type AIAnalysisReconciler struct {
 
 func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
     // ❌ Uses global metrics directly
-    metrics.ReconcilerReconciliationsTotal.WithLabelValues("success").Inc()
+    metrics.FailuresTotal.WithLabelValues("APIError", "AuthenticationError").Inc()
 }
 ```
 
@@ -241,37 +241,36 @@ import (
 
 // Metrics holds Prometheus metrics for the {Service} controller.
 type Metrics struct {
-    // Business metrics
-    ReconcilerReconciliationsTotal *prometheus.CounterVec
-    ReconcilerDurationSeconds      *prometheus.HistogramVec
+    // Business metrics (kept metrics - operational/debugging metrics removed per v1.13)
+    FailuresTotal         *prometheus.CounterVec
+    RegoEvaluationsTotal  *prometheus.CounterVec
 }
 
 // NewMetrics creates a new Metrics instance and registers with controller-runtime.
 // Uses controller-runtime's metrics.Registry for automatic /metrics endpoint exposure.
 func NewMetrics() *Metrics {
     m := &Metrics{
-        ReconcilerReconciliationsTotal: prometheus.NewCounterVec(
+        FailuresTotal: prometheus.NewCounterVec(
             prometheus.CounterOpts{
-                Name: "{service}_reconciler_reconciliations_total",
-                Help: "Total number of {Service} reconciliations",
+                Name: "{service}_failures_total",
+                Help: "Total number of {Service} failures by reason",
             },
-            []string{"result"}, // labels: success, error, requeue
+            []string{"reason", "sub_reason"},
         ),
-        ReconcilerDurationSeconds: prometheus.NewHistogramVec(
-            prometheus.HistogramOpts{
-                Name:    "{service}_reconciler_duration_seconds",
-                Help:    "Duration of {Service} reconciliations in seconds",
-                Buckets: prometheus.DefBuckets,
+        RegoEvaluationsTotal: prometheus.NewCounterVec(
+            prometheus.CounterOpts{
+                Name: "{service}_rego_evaluations_total",
+                Help: "Total number of Rego policy evaluations",
             },
-            []string{"phase"}, // labels: analyzing, processing, etc.
+            []string{"outcome"},
         ),
     }
 
     // Register with controller-runtime's global registry
     // This makes metrics available at :8080/metrics endpoint
     metrics.Registry.MustRegister(
-        m.ReconcilerReconciliationsTotal,
-        m.ReconcilerDurationSeconds,
+        m.FailuresTotal,
+        m.RegoEvaluationsTotal,
     )
 
     return m
@@ -281,27 +280,26 @@ func NewMetrics() *Metrics {
 // Tests should use this to avoid polluting global registry.
 func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
     m := &Metrics{
-        ReconcilerReconciliationsTotal: prometheus.NewCounterVec(
+        FailuresTotal: prometheus.NewCounterVec(
             prometheus.CounterOpts{
-                Name: "{service}_reconciler_reconciliations_total",
-                Help: "Total number of {Service} reconciliations",
+                Name: "{service}_failures_total",
+                Help: "Total number of {Service} failures by reason",
             },
-            []string{"result"},
+            []string{"reason", "sub_reason"},
         ),
-        ReconcilerDurationSeconds: prometheus.NewHistogramVec(
-            prometheus.HistogramOpts{
-                Name:    "{service}_reconciler_duration_seconds",
-                Help:    "Duration of {Service} reconciliations in seconds",
-                Buckets: prometheus.DefBuckets,
+        RegoEvaluationsTotal: prometheus.NewCounterVec(
+            prometheus.CounterOpts{
+                Name: "{service}_rego_evaluations_total",
+                Help: "Total number of Rego policy evaluations",
             },
-            []string{"phase"},
+            []string{"outcome"},
         ),
     }
 
     // Register with provided registry (test registry)
     registry.MustRegister(
-        m.ReconcilerReconciliationsTotal,
-        m.ReconcilerDurationSeconds,
+        m.FailuresTotal,
+        m.RegoEvaluationsTotal,
     )
 
     return m
@@ -392,16 +390,11 @@ func main() {
 ```go
 func (r *{Service}Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
     logger := log.FromContext(ctx)
-    startTime := time.Now()
 
     // Reconciliation logic...
 
-    // ✅ Use injected metrics
-    defer func() {
-        duration := time.Since(startTime).Seconds()
-        r.Metrics.ReconcilerDurationSeconds.WithLabelValues("analyzing").Observe(duration)
-        r.Metrics.ReconcilerReconciliationsTotal.WithLabelValues("success").Inc()
-    }()
+    // ✅ Use injected metrics (business value metrics only)
+    r.Metrics.FailuresTotal.WithLabelValues("APIError", "AuthenticationError").Inc()
 
     // ... reconciliation implementation ...
 }
@@ -433,16 +426,15 @@ var _ = Describe("{Service} Controller", func() {
         }
     })
 
-    It("should increment reconciliation counter", func() {
+    It("should increment failure counter on error", func() {
         // Get baseline
-        before := getCounterValue(testMetrics.ReconcilerReconciliationsTotal.WithLabelValues("success"))
+        before := getCounterValue(testMetrics.FailuresTotal.WithLabelValues("APIError", "AuthenticationError"))
 
-        // Trigger reconciliation
-        result, err := reconciler.Reconcile(ctx, req)
-        Expect(err).ToNot(HaveOccurred())
+        // Trigger reconciliation that results in failure
+        _, _ = reconciler.Reconcile(ctx, req)
 
         // Verify metric increment
-        after := getCounterValue(testMetrics.ReconcilerReconciliationsTotal.WithLabelValues("success"))
+        after := getCounterValue(testMetrics.FailuresTotal.WithLabelValues("APIError", "AuthenticationError"))
         Expect(after - before).To(Equal(float64(1)))
     })
 })

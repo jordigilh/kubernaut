@@ -133,7 +133,6 @@ Gateway Service is the **P0-Critical entry point** for Kubernaut, responsible fo
 3. ✅ Circuit breaker detects 50% failure rate (timeouts count as failures)
 4. ✅ Circuit breaker OPENS → Prometheus metric updated:
    - gateway_circuit_breaker_state{name="k8s-api"} = 2 (OPEN)
-   - gateway_circuit_breaker_operations_total{result="failure"} increases
 5. ✅ Alertmanager fires: "GatewayK8sAPICircuitBreakerOpen" (critical)
 6. ✅ SRE team notified immediately (PagerDuty, Slack)
 7. ✅ SRE investigates K8s API server metrics (before Gateway OOM)
@@ -236,12 +235,10 @@ func (c *ClientWithCircuitBreaker) CreateRemediationRequest(ctx context.Context,
 
         // Treat "AlreadyExists" as success for circuit breaker purposes
         if k8serrors.IsAlreadyExists(err) {
-            c.recordOperationResultWithIdempotency("create", err)  // Metrics: success
             return nil, nil  // Circuit breaker: success (don't increment failure count)
         }
 
-        // All other errors: record and return as-is
-        c.recordOperationResult("create", err)
+        // All other errors: return as-is
         return nil, err
     })
     return err
@@ -273,10 +270,6 @@ These are **idempotent operations**, not true failures. Treating them as failure
 ```go
 // Circuit breaker state gauge (0=Closed, 1=Half-Open, 2=Open)
 gateway_circuit_breaker_state{name="k8s-api"} 0
-
-// Circuit breaker operations counter
-gateway_circuit_breaker_operations_total{name="k8s-api",result="success"} 1543
-gateway_circuit_breaker_operations_total{name="k8s-api",result="failure"} 12
 ```
 
 **Metric Update Logic**:
@@ -284,15 +277,6 @@ gateway_circuit_breaker_operations_total{name="k8s-api",result="failure"} 12
 // Update state metric on state transitions
 func (cb *CircuitBreaker) OnStateChange(name string, from State, to State) {
     metrics.CircuitBreakerState.WithLabelValues(name).Set(float64(to))
-}
-
-// Update operations metric on every K8s API call
-func (c *ClientWithCircuitBreaker) recordOperationResult(operation string, err error) {
-    result := "success"
-    if err != nil {
-        result = "failure"
-    }
-    metrics.CircuitBreakerOperations.WithLabelValues("k8s-api", result).Inc()
 }
 ```
 
@@ -306,24 +290,11 @@ func (c *ClientWithCircuitBreaker) recordOperationResult(operation string, err e
   annotations:
     summary: "Gateway K8s API circuit breaker OPEN (fail-fast mode)"
     description: "K8s API is degraded. Gateway rejecting requests to prevent cascading failure."
-
-# Alert when failure rate exceeds 20% (pre-trip warning)
-- alert: GatewayK8sAPIHighFailureRate
-  expr: |
-    rate(gateway_circuit_breaker_operations_total{name="k8s-api",result="failure"}[5m])
-    /
-    rate(gateway_circuit_breaker_operations_total{name="k8s-api"}[5m]) > 0.20
-  for: 2m
-  severity: warning
-  annotations:
-    summary: "Gateway K8s API failure rate >20% (circuit breaker may trip)"
 ```
 
 **Acceptance Criteria**:
 - ✅ Prometheus scrapes `gateway_circuit_breaker_state` metric (0/1/2 values)
-- ✅ Prometheus scrapes `gateway_circuit_breaker_operations_total` metric (success/failure counters)
 - ✅ Alertmanager fires `GatewayK8sAPICircuitBreakerOpen` alert when state = 2 (Open)
-- ✅ Alertmanager fires `GatewayK8sAPIHighFailureRate` alert when failure rate > 20% (pre-trip warning)
 - ✅ Grafana dashboard visualizes circuit breaker state and failure rate trends
 
 ---
@@ -472,7 +443,7 @@ data:
 - ✅ Circuit breaker trips during K8s API outage simulation (ErrorInjectableK8sClient)
 - ✅ Circuit breaker automatically recovers when K8s API becomes available
 - ✅ Circuit breaker does NOT trip on `AlreadyExists` errors (idempotent operations)
-- ✅ Prometheus metrics are correctly updated during state transitions
+- ✅ Prometheus state metric is correctly updated during state transitions
 - ✅ Circuit breaker respects ConfigMap configuration (failure ratio, timeout)
 
 **Test Files**:
@@ -520,7 +491,6 @@ It("[BR-GATEWAY-093] should trip circuit breaker when K8s API fails", func() {
 | Metric | Type | Labels | Purpose |
 |--------|------|--------|---------|
 | `gateway_circuit_breaker_state` | Gauge | `name="k8s-api"` | Current state (0=Closed, 1=Half-Open, 2=Open) |
-| `gateway_circuit_breaker_operations_total` | Counter | `name="k8s-api"`, `result="success\|failure"` | Total operations and results |
 
 ### **Alerting Rules**
 
@@ -530,14 +500,6 @@ It("[BR-GATEWAY-093] should trip circuit breaker when K8s API fails", func() {
   expr: gateway_circuit_breaker_state{name="k8s-api"} == 2
   for: 30s
   severity: critical
-```
-
-**Warning Alerts**:
-```yaml
-- alert: GatewayK8sAPIHighFailureRate
-  expr: rate(gateway_circuit_breaker_operations_total{result="failure"}[5m]) / rate(gateway_circuit_breaker_operations_total[5m]) > 0.20
-  for: 2m
-  severity: warning
 ```
 
 ---

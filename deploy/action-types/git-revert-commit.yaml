@@ -1,0 +1,12 @@
+apiVersion: kubernaut.ai/v1alpha1
+kind: ActionType
+metadata:
+  name: git-revert-commit
+  namespace: kubernaut-system
+spec:
+  name: GitRevertCommit
+  description:
+    what: "Revert a bad commit in a Git repository managed by GitOps (ArgoCD/Flux)."
+    whenToUse: "Root cause is a recent Git commit that introduced a regression in a GitOps-managed environment, and the ArgoCD/Flux controller will reconcile the reverted state."
+    whenNotToUse: "When the environment is not GitOps-managed. Use RollbackDeployment instead for direct kubectl-managed workloads."
+    preconditions: "GitOps tooling (ArgoCD or Flux) is active, the source Git repository is accessible, and a previous healthy commit exists."

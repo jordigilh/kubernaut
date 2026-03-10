@@ -278,15 +278,12 @@ func (g *Gateway) handleSignal(ctx context.Context, signal *Signal) error {
 ### Operational Impact
 
 **Required Monitoring**:
-- `audit_events_buffered_total` - Total events buffered
 - `audit_events_dropped_total` - Total events dropped (buffer full)
 - `audit_events_written_total` - Total events written to database
 - `audit_batches_failed_total` - Total batches failed after max retries
 - `audit_buffer_size` - Current buffer size
-- `audit_write_duration_seconds` - Write latency histogram
 
 **Required Alerts**:
-- High drop rate (>1% of buffered events)
 - High failure rate (>5% of batches)
 - High buffer utilization (>80% full)
 

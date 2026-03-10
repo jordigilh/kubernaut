@@ -1,0 +1,12 @@
+apiVersion: kubernaut.ai/v1alpha1
+kind: ActionType
+metadata:
+  name: proactive-rollback
+  namespace: kubernaut-system
+spec:
+  name: ProactiveRollback
+  description:
+    what: "Proactively roll back a deployment based on predictive SLO burn rate analysis."
+    whenToUse: "Predictive analysis shows the current error rate will exhaust the SLO error budget before the next maintenance window."
+    whenNotToUse: "When the error rate is within normal bounds or the SLO budget has sufficient headroom."
+    preconditions: "A previous stable deployment revision exists, and the error spike correlates with a recent deployment change."

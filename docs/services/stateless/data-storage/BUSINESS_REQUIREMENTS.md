@@ -1,13 +1,22 @@
 # Data Storage Service - Business Requirements
 
-**Version**: v1.4
-**Date**: December 6, 2025
+**Version**: v1.5
+**Date**: March 4, 2026
 **Status**: Production-Ready (per ADR-032)
 **Service Type**: Stateless HTTP REST API + Database Layer
 
 ---
 
 ## 📝 **Changelog**
+
+### **v1.5** (March 4, 2026)
+- **UPDATED**: BR-STORAGE-038 (Workflow Catalog Create API)
+  - `POST /api/v1/workflows` is now an **internal API** consumed exclusively by the AuthWebhook
+  - Registration payload changed from OCI pullspec (`containerImage`) to inline content (`content`, `source`, `registeredBy`)
+  - User-facing registration is via RemediationWorkflow CRD (BR-WORKFLOW-006, ADR-058)
+  - DS validates inline schema content (BR-WORKFLOW-004), action type FK, and uniqueness constraints
+  - Duplicate `(workflow_name, version)` triggers re-enable from disabled state
+- **References**: [ADR-058](../../../architecture/decisions/ADR-058-webhook-driven-workflow-registration.md), [BR-WORKFLOW-006](../../../requirements/BR-WORKFLOW-006-remediation-workflow-crd.md)
 
 ### **v1.4** (December 6, 2025)
 - **RESOLVED**: BR numbering gap triage (BR-004, 008, 018, 029)
@@ -228,11 +237,11 @@ The Data Storage Service is the **exclusive database access layer** for Kubernau
 
 ### **Category 3: Observability (BR-STORAGE-009, BR-STORAGE-010, BR-STORAGE-018, BR-STORAGE-019)**
 
-#### **BR-STORAGE-009: Cache Hit/Miss Tracking**
-- **Priority**: P1
-- **Status**: ⏸️ **DEFERRED TO V1.1** (v1.1 - Corrected Scope)
-- **Description**: Track Redis cache hit and miss rates for playbook embedding cache performance monitoring
-- **Business Value**: Enable cache optimization and identify cache inefficiencies for playbook queries
+#### **BR-STORAGE-009: Cache Hit/Miss Tracking** ⚠️ DEPRECATED (2026-03)
+- **Priority**: ~~P1~~ N/A
+- **Status**: ⚠️ **DEPRECATED** — Playbook embedding cache is no longer relevant. The current workflow catalog implementation uses CRD-based registration (BR-WORKFLOW-006) with SQL-backed search (not playbooks or embeddings). This BR was written before the current DataStorage architecture was finalized.
+- **Original Description**: ~~Track Redis cache hit and miss rates for playbook embedding cache performance monitoring~~
+- **Original Business Value**: ~~Enable cache optimization and identify cache inefficiencies for playbook queries~~
 - **Scope Change (v1.1)**:
   - ❌ **OLD**: Cache audit embeddings (INCORRECT - low hit rate, no business value)
   - ✅ **NEW**: Cache playbook embeddings (CORRECT - high hit rate, playbooks queried repeatedly)
@@ -723,16 +732,19 @@ The Data Storage Service is the **exclusive database access layer** for Kubernau
 
 ### **Category 10: Workflow Catalog CRUD API (BR-STORAGE-038 to BR-STORAGE-042)**
 
-#### **BR-STORAGE-038: Workflow Catalog Create API**
+#### **BR-STORAGE-038: Workflow Catalog Create API (Internal)**
 - **Priority**: P0
 - **Status**: ✅ Active
-- **Description**: Provide REST API endpoint for creating remediation workflows (`POST /api/v1/workflows`) with ADR-043 schema validation
-- **Business Value**: Enable workflow registration in the catalog for AI-driven remediation selection
+- **Description**: Provide **internal** REST API endpoint for creating remediation workflows (`POST /api/v1/workflows`) with inline content validation. This endpoint is consumed exclusively by the AuthWebhook (AW) -- it is NOT a user-facing management endpoint. User-facing registration is via RemediationWorkflow CRD (BR-WORKFLOW-006).
+- **Business Value**: Enable CRD-based workflow registration bridged through the AuthWebhook for the DS catalog
+- **Request Payload**: `{content: string (JSON-serialized CRD spec), source: "crd", registeredBy: string}`
+- **Validation**: DS parses inline content, validates schema (BR-WORKFLOW-004), action type FK (DD-WORKFLOW-016), uniqueness constraint (DD-WORKFLOW-012)
+- **Duplicate Handling**: If `(workflow_name, version)` exists in disabled state, re-enables and returns `previouslyExisted: true`
 - **Test Coverage**:
   - Unit: `test/unit/datastorage/workflow_crud_test.go`
   - Integration: `test/integration/datastorage/workflow_catalog_test.go`
 - **Implementation**: `pkg/datastorage/server/workflow_handlers.go:HandleCreateWorkflow`
-- **Related BRs**: BR-WORKFLOW-001 (workflow registry management)
+- **Related BRs**: BR-WORKFLOW-001 (workflow registry), BR-WORKFLOW-006 (CRD spec), ADR-058 (webhook architecture)
 - **Design Decisions**: DD-WORKFLOW-002 v3.0 (UUID primary key), DD-WORKFLOW-012 (workflow immutability)
 
 #### **BR-STORAGE-039: Workflow Catalog Retrieval API**
@@ -889,7 +901,7 @@ The Data Storage Service is the **exclusive database access layer** for Kubernau
 
 #### **BR-STORAGE-035: Cursor-Based Pagination**
 - **Priority**: P1
-- **Status**: 📋 Planned (V1.1)
+- **Status**: 📋 Planned (V1.1) — Tracked in [GitHub #288](https://github.com/jordigilh/kubernaut/issues/288)
 - **Description**: Support cursor-based pagination for audit event queries to handle real-time data with high write volumes. Cursor format: `base64(event_timestamp + event_id)` for uniqueness.
 - **Business Value**:
   - **Consistency**: No missed/duplicate records during pagination
@@ -911,7 +923,7 @@ The Data Storage Service is the **exclusive database access layer** for Kubernau
 
 #### **BR-STORAGE-036: Parent Event Lookup Index**
 - **Priority**: P1
-- **Status**: 📋 Planned (V1.1)
+- **Status**: 📋 Planned (V1.1) — Tracked in [GitHub #289](https://github.com/jordigilh/kubernaut/issues/289)
 - **Description**: Create database index on `(parent_event_id, parent_event_date)` to optimize child event lookups and event chain traversal.
 - **Business Value**:
   - **Performance**: Faster queries for "find all children of parent X"
@@ -932,7 +944,7 @@ The Data Storage Service is the **exclusive database access layer** for Kubernau
 
 #### **BR-STORAGE-037: Historical Parent-Child Backfill**
 - **Priority**: P2
-- **Status**: 📋 Planned (V1.1)
+- **Status**: 📋 Planned (V1.1) — Tracked in [GitHub #290](https://github.com/jordigilh/kubernaut/issues/290)
 - **Description**: Backfill `parent_event_date` for existing audit events to enable historical event chain queries. Run during maintenance window.
 - **Business Value**:
   - **Completeness**: Enable historical event chain queries

@@ -27,6 +27,15 @@ func trimTrailingSlashes(u *url.URL) {
 
 // Invoker invokes operations described by OpenAPI v3 specification.
 type Invoker interface {
+	// CreateActionType invokes createActionType operation.
+	//
+	// Idempotent CREATE: creates a new action type, returns existing if active,
+	// or re-enables if previously disabled.
+	// **Business Requirement**: BR-WORKFLOW-007.1 (Idempotent CREATE)
+	// **Design Decision**: DD-ACTIONTYPE-001 (ActionType CRD Lifecycle Design).
+	//
+	// POST /api/v1/action-types
+	CreateActionType(ctx context.Context, request *ActionTypeCreateRequest) (CreateActionTypeRes, error)
 	// CreateAuditEvent invokes createAuditEvent operation.
 	//
 	// Persists a unified audit event to the audit_events table (ADR-034).
@@ -63,14 +72,16 @@ type Invoker interface {
 	CreateNotificationAudit(ctx context.Context, request *NotificationAudit) (CreateNotificationAuditRes, error)
 	// CreateWorkflow invokes createWorkflow operation.
 	//
-	// Register a new workflow by providing an OCI image pullspec.
-	// Data Storage pulls the image, extracts /workflow-schema.yaml (ADR-043),
-	// validates the schema, and populates all catalog fields from it.
-	// **Business Requirement**: BR-WORKFLOW-017-001 (OCI-based workflow registration)
-	// **Design Decision**: DD-WORKFLOW-017 (Workflow Lifecycle Component Interactions).
+	// Register a new workflow by providing the raw YAML content of a
+	// RemediationWorkflow CRD. Data Storage parses and validates the schema,
+	// then populates all catalog fields from it.
+	// If the workflow was previously registered and disabled (via CRD deletion),
+	// it is re-enabled and a 200 response is returned instead of 201.
+	// **Business Requirement**: BR-WORKFLOW-006 (RemediationWorkflow CRD Definition)
+	// **Design Decision**: ADR-058 (Webhook-Driven Workflow Registration).
 	//
 	// POST /api/v1/workflows
-	CreateWorkflow(ctx context.Context, request *CreateWorkflowFromOCIRequest) (CreateWorkflowRes, error)
+	CreateWorkflow(ctx context.Context, request *CreateWorkflowInlineRequest) (CreateWorkflowRes, error)
 	// DeprecateWorkflow invokes deprecateWorkflow operation.
 	//
 	// Mark a workflow as deprecated. Deprecated workflows are excluded from
@@ -79,6 +90,14 @@ type Invoker interface {
 	//
 	// PATCH /api/v1/workflows/{workflow_id}/deprecate
 	DeprecateWorkflow(ctx context.Context, request *WorkflowLifecycleRequest, params DeprecateWorkflowParams) (DeprecateWorkflowRes, error)
+	// DisableActionType invokes disableActionType operation.
+	//
+	// Soft-disables an action type. Denied with 409 if active workflows reference it.
+	// The denial response includes the count and names of dependent workflows.
+	// **Business Requirement**: BR-WORKFLOW-007.3 (DELETE with dependency guard).
+	//
+	// PATCH /api/v1/action-types/{name}/disable
+	DisableActionType(ctx context.Context, request *ActionTypeDisableRequest, params DisableActionTypeParams) (DisableActionTypeRes, error)
 	// DisableWorkflow invokes disableWorkflow operation.
 	//
 	// Convenience endpoint to disable a workflow (soft delete).
@@ -127,6 +146,15 @@ type Invoker interface {
 	//
 	// GET /api/v1/audit/export
 	ExportAuditEvents(ctx context.Context, params ExportAuditEventsParams) (ExportAuditEventsRes, error)
+	// GetActionTypeWorkflowCount invokes getActionTypeWorkflowCount operation.
+	//
+	// Returns the number of active RemediationWorkflows referencing this action type.
+	// Used by the RW admission webhook to refresh the ActionType CRD's
+	// status.activeWorkflowCount after RW CREATE/DELETE (Phase 3c cross-update).
+	// **Business Requirement**: BR-WORKFLOW-007 (ActionType CRD lifecycle).
+	//
+	// GET /api/v1/action-types/{name}/workflow-count
+	GetActionTypeWorkflowCount(ctx context.Context, params GetActionTypeWorkflowCountParams) (*ActionTypeWorkflowCountResponse, error)
 	// GetEffectivenessScore invokes getEffectivenessScore operation.
 	//
 	// Computes the weighted effectiveness score for a given remediation lifecycle
@@ -335,6 +363,14 @@ type Invoker interface {
 	//
 	// DELETE /api/v1/audit/legal-hold/{correlation_id}
 	ReleaseLegalHold(ctx context.Context, request *ReleaseLegalHoldReq, params ReleaseLegalHoldParams) (ReleaseLegalHoldRes, error)
+	// UpdateActionType invokes updateActionType operation.
+	//
+	// Updates the description fields of an active action type.
+	// Only spec.description is mutable; spec.name is immutable.
+	// **Business Requirement**: BR-WORKFLOW-007.2 (Description UPDATE with audit).
+	//
+	// PATCH /api/v1/action-types/{name}
+	UpdateActionType(ctx context.Context, request *ActionTypeUpdateRequest, params UpdateActionTypeParams) (UpdateActionTypeRes, error)
 	// UpdateWorkflow invokes updateWorkflow operation.
 	//
 	// Update mutable workflow fields (status, metrics).
@@ -386,6 +422,85 @@ func (c *Client) requestURL(ctx context.Context) *url.URL {
 		return c.serverURL
 	}
 	return u
+}
+
+// CreateActionType invokes createActionType operation.
+//
+// Idempotent CREATE: creates a new action type, returns existing if active,
+// or re-enables if previously disabled.
+// **Business Requirement**: BR-WORKFLOW-007.1 (Idempotent CREATE)
+// **Design Decision**: DD-ACTIONTYPE-001 (ActionType CRD Lifecycle Design).
+//
+// POST /api/v1/action-types
+func (c *Client) CreateActionType(ctx context.Context, request *ActionTypeCreateRequest) (CreateActionTypeRes, error) {
+	res, err := c.sendCreateActionType(ctx, request)
+	return res, err
+}
+
+func (c *Client) sendCreateActionType(ctx context.Context, request *ActionTypeCreateRequest) (res CreateActionTypeRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("createActionType"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/api/v1/action-types"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, CreateActionTypeOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [1]string
+	pathParts[0] = "/api/v1/action-types"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeCreateActionTypeRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	defer resp.Body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeCreateActionTypeResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
 }
 
 // CreateAuditEvent invokes createAuditEvent operation.
@@ -634,19 +749,21 @@ func (c *Client) sendCreateNotificationAudit(ctx context.Context, request *Notif
 
 // CreateWorkflow invokes createWorkflow operation.
 //
-// Register a new workflow by providing an OCI image pullspec.
-// Data Storage pulls the image, extracts /workflow-schema.yaml (ADR-043),
-// validates the schema, and populates all catalog fields from it.
-// **Business Requirement**: BR-WORKFLOW-017-001 (OCI-based workflow registration)
-// **Design Decision**: DD-WORKFLOW-017 (Workflow Lifecycle Component Interactions).
+// Register a new workflow by providing the raw YAML content of a
+// RemediationWorkflow CRD. Data Storage parses and validates the schema,
+// then populates all catalog fields from it.
+// If the workflow was previously registered and disabled (via CRD deletion),
+// it is re-enabled and a 200 response is returned instead of 201.
+// **Business Requirement**: BR-WORKFLOW-006 (RemediationWorkflow CRD Definition)
+// **Design Decision**: ADR-058 (Webhook-Driven Workflow Registration).
 //
 // POST /api/v1/workflows
-func (c *Client) CreateWorkflow(ctx context.Context, request *CreateWorkflowFromOCIRequest) (CreateWorkflowRes, error) {
+func (c *Client) CreateWorkflow(ctx context.Context, request *CreateWorkflowInlineRequest) (CreateWorkflowRes, error) {
 	res, err := c.sendCreateWorkflow(ctx, request)
 	return res, err
 }
 
-func (c *Client) sendCreateWorkflow(ctx context.Context, request *CreateWorkflowFromOCIRequest) (res CreateWorkflowRes, err error) {
+func (c *Client) sendCreateWorkflow(ctx context.Context, request *CreateWorkflowInlineRequest) (res CreateWorkflowRes, err error) {
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("createWorkflow"),
 		semconv.HTTPRequestMethodKey.String("POST"),
@@ -802,6 +919,103 @@ func (c *Client) sendDeprecateWorkflow(ctx context.Context, request *WorkflowLif
 
 	stage = "DecodeResponse"
 	result, err := decodeDeprecateWorkflowResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// DisableActionType invokes disableActionType operation.
+//
+// Soft-disables an action type. Denied with 409 if active workflows reference it.
+// The denial response includes the count and names of dependent workflows.
+// **Business Requirement**: BR-WORKFLOW-007.3 (DELETE with dependency guard).
+//
+// PATCH /api/v1/action-types/{name}/disable
+func (c *Client) DisableActionType(ctx context.Context, request *ActionTypeDisableRequest, params DisableActionTypeParams) (DisableActionTypeRes, error) {
+	res, err := c.sendDisableActionType(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendDisableActionType(ctx context.Context, request *ActionTypeDisableRequest, params DisableActionTypeParams) (res DisableActionTypeRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("disableActionType"),
+		semconv.HTTPRequestMethodKey.String("PATCH"),
+		semconv.URLTemplateKey.String("/api/v1/action-types/{name}/disable"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, DisableActionTypeOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/api/v1/action-types/"
+	{
+		// Encode "name" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "name",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.Name))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/disable"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "PATCH", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeDisableActionTypeRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	defer resp.Body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeDisableActionTypeResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -1252,6 +1466,101 @@ func (c *Client) sendExportAuditEvents(ctx context.Context, params ExportAuditEv
 
 	stage = "DecodeResponse"
 	result, err := decodeExportAuditEventsResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// GetActionTypeWorkflowCount invokes getActionTypeWorkflowCount operation.
+//
+// Returns the number of active RemediationWorkflows referencing this action type.
+// Used by the RW admission webhook to refresh the ActionType CRD's
+// status.activeWorkflowCount after RW CREATE/DELETE (Phase 3c cross-update).
+// **Business Requirement**: BR-WORKFLOW-007 (ActionType CRD lifecycle).
+//
+// GET /api/v1/action-types/{name}/workflow-count
+func (c *Client) GetActionTypeWorkflowCount(ctx context.Context, params GetActionTypeWorkflowCountParams) (*ActionTypeWorkflowCountResponse, error) {
+	res, err := c.sendGetActionTypeWorkflowCount(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendGetActionTypeWorkflowCount(ctx context.Context, params GetActionTypeWorkflowCountParams) (res *ActionTypeWorkflowCountResponse, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("getActionTypeWorkflowCount"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/api/v1/action-types/{name}/workflow-count"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, GetActionTypeWorkflowCountOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/api/v1/action-types/"
+	{
+		// Encode "name" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "name",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.Name))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/workflow-count"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	defer resp.Body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeGetActionTypeWorkflowCountResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -3349,6 +3658,102 @@ func (c *Client) sendReleaseLegalHold(ctx context.Context, request *ReleaseLegal
 
 	stage = "DecodeResponse"
 	result, err := decodeReleaseLegalHoldResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// UpdateActionType invokes updateActionType operation.
+//
+// Updates the description fields of an active action type.
+// Only spec.description is mutable; spec.name is immutable.
+// **Business Requirement**: BR-WORKFLOW-007.2 (Description UPDATE with audit).
+//
+// PATCH /api/v1/action-types/{name}
+func (c *Client) UpdateActionType(ctx context.Context, request *ActionTypeUpdateRequest, params UpdateActionTypeParams) (UpdateActionTypeRes, error) {
+	res, err := c.sendUpdateActionType(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendUpdateActionType(ctx context.Context, request *ActionTypeUpdateRequest, params UpdateActionTypeParams) (res UpdateActionTypeRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("updateActionType"),
+		semconv.HTTPRequestMethodKey.String("PATCH"),
+		semconv.URLTemplateKey.String("/api/v1/action-types/{name}"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, UpdateActionTypeOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [2]string
+	pathParts[0] = "/api/v1/action-types/"
+	{
+		// Encode "name" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "name",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.Name))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "PATCH", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeUpdateActionTypeRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	defer resp.Body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeUpdateActionTypeResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

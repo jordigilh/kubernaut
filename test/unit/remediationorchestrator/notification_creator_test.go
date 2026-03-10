@@ -1280,4 +1280,178 @@ var _ = Describe("NotificationCreator", func() {
 			})
 		})
 	})
+
+	// ========================================
+	// #304: Completion notification must include Outcome in body and metadata
+	// ========================================
+	Describe("Completion notification Outcome (#304)", func() {
+		var (
+			fakeClient *fake.ClientBuilder
+			nc         *creator.NotificationCreator
+			ctx        context.Context
+		)
+
+		BeforeEach(func() {
+			fakeClient = fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(
+				&notificationv1.NotificationRequest{},
+			)
+			ctx = context.Background()
+		})
+
+		It("UT-NT-304-001: completion notification metadata should contain Outcome when set", func() {
+			client := fakeClient.Build()
+			nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+			rr := helpers.NewRemediationRequest("test-rr-304", "default")
+			rr.Status.Outcome = "Remediated"
+			ai := helpers.NewCompletedAIAnalysis("test-ai-304", "default")
+
+			name, err := nc.CreateCompletionNotification(ctx, rr, ai)
+			Expect(err).ToNot(HaveOccurred())
+
+			nr := &notificationv1.NotificationRequest{}
+			err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(nr.Spec.Metadata).To(HaveKeyWithValue("outcome", "Remediated"),
+				"#304: BR-ORCH-045 requires completion notification metadata to include actual Outcome")
+			Expect(nr.Spec.Body).To(ContainSubstring("Remediated"),
+				"#304: BR-ORCH-045 requires completion notification body to include actual Outcome")
+		})
+
+		It("UT-NT-304-002: completion notification body shows empty outcome when Outcome not set (pre-fix bug)", func() {
+			client := fakeClient.Build()
+			nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+			rr := helpers.NewRemediationRequest("test-rr-304b", "default")
+			ai := helpers.NewCompletedAIAnalysis("test-ai-304b", "default")
+
+			name, err := nc.CreateCompletionNotification(ctx, rr, ai)
+			Expect(err).ToNot(HaveOccurred())
+
+			nr := &notificationv1.NotificationRequest{}
+			err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(nr.Spec.Metadata["outcome"]).To(BeEmpty(),
+				"#304: When Outcome is not set, metadata should reflect empty outcome (demonstrating the bug)")
+		})
+	})
+
+	// ========================================
+	// #305: Target resource resolution — prefer AI AffectedResource over Unknown
+	// ========================================
+	Describe("Target resource resolution (#305)", func() {
+		var (
+			fakeClient *fake.ClientBuilder
+			nc         *creator.NotificationCreator
+			ctx        context.Context
+		)
+
+		BeforeEach(func() {
+			fakeClient = fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(
+				&notificationv1.NotificationRequest{},
+			)
+			ctx = context.Background()
+		})
+
+		It("UT-NT-305-001: completion body should use AI AffectedResource when TargetResource is Unknown", func() {
+			client := fakeClient.Build()
+			nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+			rr := helpers.NewRemediationRequest("test-rr-305", "default")
+			rr.Spec.TargetResource = remediationv1.ResourceIdentifier{
+				Kind:      "Unknown",
+				Name:      "unknown",
+				Namespace: "default",
+			}
+
+			ai := helpers.NewCompletedAIAnalysis("test-ai-305", "default")
+			ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+				Summary:  "OOM kills in payment-api",
+				AffectedResource: &aianalysisv1.AffectedResource{
+					Kind:      "Deployment",
+					Name:      "payment-api",
+					Namespace: "production",
+				},
+			}
+
+			name, err := nc.CreateCompletionNotification(ctx, rr, ai)
+			Expect(err).ToNot(HaveOccurred())
+
+			nr := &notificationv1.NotificationRequest{}
+			err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(nr.Spec.Body).To(ContainSubstring("Deployment"),
+				"#305: Body should use AI AffectedResource.Kind when TargetResource is Unknown")
+			Expect(nr.Spec.Body).To(ContainSubstring("payment-api"),
+				"#305: Body should use AI AffectedResource.Name when TargetResource is Unknown")
+			Expect(nr.Spec.Body).ToNot(ContainSubstring("- **Kind**: Unknown"),
+				"#305: Body should NOT show 'Unknown' when AI AffectedResource is available")
+		})
+
+		It("UT-NT-305-002: completion body should keep TargetResource when it is valid", func() {
+			client := fakeClient.Build()
+			nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+			rr := helpers.NewRemediationRequest("test-rr-305b", "default")
+			ai := helpers.NewCompletedAIAnalysis("test-ai-305b", "default")
+			ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+				Summary: "Some issue",
+				AffectedResource: &aianalysisv1.AffectedResource{
+					Kind:      "Deployment",
+					Name:      "web-frontend",
+					Namespace: "production",
+				},
+			}
+
+			name, err := nc.CreateCompletionNotification(ctx, rr, ai)
+			Expect(err).ToNot(HaveOccurred())
+
+			nr := &notificationv1.NotificationRequest{}
+			err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(nr.Spec.Body).To(ContainSubstring("Pod"),
+				"#305: Body should keep TargetResource.Kind when it is valid (not Unknown)")
+			Expect(nr.Spec.Body).To(ContainSubstring("test-pod"),
+				"#305: Body should keep TargetResource.Name when it is valid (not Unknown)")
+		})
+
+		It("UT-NT-305-003: approval body should use AI AffectedResource when TargetResource is Unknown", func() {
+			client := fakeClient.Build()
+			nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+			rr := helpers.NewRemediationRequest("test-rr-305c", "default")
+			rr.Spec.TargetResource = remediationv1.ResourceIdentifier{
+				Kind:      "Unknown",
+				Name:      "unknown",
+				Namespace: "default",
+			}
+
+			ai := helpers.NewCompletedAIAnalysis("test-ai-305c", "default")
+			ai.Status.ApprovalReason = "Production namespace"
+			ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+				Summary: "Memory leak",
+				AffectedResource: &aianalysisv1.AffectedResource{
+					Kind:      "StatefulSet",
+					Name:      "redis-primary",
+					Namespace: "cache",
+				},
+			}
+
+			name, err := nc.CreateApprovalNotification(ctx, rr, ai)
+			Expect(err).ToNot(HaveOccurred())
+
+			nr := &notificationv1.NotificationRequest{}
+			err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(nr.Spec.Body).To(ContainSubstring("StatefulSet"),
+				"#305: Approval body should use AI AffectedResource.Kind when TargetResource is Unknown")
+			Expect(nr.Spec.Body).To(ContainSubstring("redis-primary"),
+				"#305: Approval body should use AI AffectedResource.Name when TargetResource is Unknown")
+		})
+	})
 })

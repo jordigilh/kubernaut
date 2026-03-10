@@ -41,29 +41,31 @@ func (m *mockWorkflowCatalogClient) GetWorkflowByID(_ context.Context, _ ogencli
 // buildTestSchema builds a minimal valid workflow schema YAML with an optional
 // dependencies section appended. Eliminates YAML boilerplate across tests.
 func buildTestSchema(dependenciesYAML string) string {
-	base := `schemaVersion: "1.0"
-apiVersion: kubernaut.ai/v1alpha1
-kind: WorkflowSchema
+	base := `apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
 metadata:
-  workflowId: test-workflow
-  version: "1.0.0"
-  description:
-    what: "Test workflow"
-    when_to_use: "Testing"
-    when_not_to_use: ""
-    preconditions: ""
+  name: test-workflow
+spec:
+  metadata:
+    workflowName: test-workflow
+    version: "1.0.0"
+    description:
+      what: "Test workflow"
+      whenToUse: "Testing"
+  actionType: CertificateRenewal
   labels:
-    severity: critical
+    severity: [critical]
     component: deployment
-    environment: production
-actionType: certificate_renewal
-execution:
-  engine: job
-  bundle: "ghcr.io/test/bundle:latest"
-parameters:
-  - name: TARGET_NAMESPACE
-    type: string
-    required: true`
+    environment: [production]
+    priority: P1
+  execution:
+    engine: job
+    bundle: "ghcr.io/test/bundle:latest@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+  parameters:
+    - name: TARGET_NAMESPACE
+      type: string
+      required: true
+      description: Target namespace for certificate renewal`
 	if dependenciesYAML != "" {
 		return base + "\n" + dependenciesYAML
 	}
@@ -79,9 +81,9 @@ var _ = Describe("OgenWorkflowQuerier (DD-WE-006)", func() {
 
 	Context("GetWorkflowDependencies", func() {
 		It("UT-WE-006-001: should extract secret dependencies from workflow content", func() {
-			content := buildTestSchema(`dependencies:
-  secrets:
-    - name: gitea-repo-creds`)
+			content := buildTestSchema(`  dependencies:
+    secrets:
+      - name: gitea-repo-creds`)
 			mock := &mockWorkflowCatalogClient{
 				response: &ogenclient.RemediationWorkflow{Content: content},
 			}
@@ -95,11 +97,11 @@ var _ = Describe("OgenWorkflowQuerier (DD-WE-006)", func() {
 		})
 
 		It("UT-WE-006-002: should extract both secrets and configMaps", func() {
-			content := buildTestSchema(`dependencies:
-  secrets:
-    - name: gitea-repo-creds
-  configMaps:
-    - name: remediation-config`)
+			content := buildTestSchema(`  dependencies:
+    secrets:
+      - name: gitea-repo-creds
+    configMaps:
+      - name: remediation-config`)
 			mock := &mockWorkflowCatalogClient{
 				response: &ogenclient.RemediationWorkflow{Content: content},
 			}

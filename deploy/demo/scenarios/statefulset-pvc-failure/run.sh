@@ -6,16 +6,19 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NAMESPACE="demo-statefulset"
 
-# shellcheck source=../../scripts/kind-helper.sh
-source "${SCRIPT_DIR}/../../scripts/kind-helper.sh"
-ensure_kind_cluster "${SCRIPT_DIR}/../kind-config-singlenode.yaml" "${1:-}"
+APPROVE_MODE="--auto-approve"
+SKIP_VALIDATE=""
+for _arg in "$@"; do
+    case "$_arg" in
+        --auto-approve)  APPROVE_MODE="--auto-approve" ;;
+        --interactive)   APPROVE_MODE="--interactive" ;;
+        --no-validate)   SKIP_VALIDATE=true ;;
+    esac
+done
 
-# shellcheck source=../../scripts/monitoring-helper.sh
-source "${SCRIPT_DIR}/../../scripts/monitoring-helper.sh"
-ensure_monitoring_stack
+# shellcheck source=../../scripts/platform-helper.sh
 source "${SCRIPT_DIR}/../../scripts/platform-helper.sh"
-ensure_platform
-seed_scenario_workflow "statefulset-pvc-failure"
+require_demo_ready
 
 echo "============================================="
 echo " StatefulSet PVC Failure Demo (#137)"
@@ -44,15 +47,9 @@ echo ""
 echo "==> Step 5: Waiting for KubeStatefulSetReplicasMismatch alert (~3-4 min)..."
 echo "  Check Prometheus: kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090"
 echo ""
-echo "==> Step 6: Pipeline in progress. Monitor with:"
-echo "    kubectl get rr,sp,aa,we,ea -n ${NAMESPACE} -w"
-echo ""
-echo "  Expected flow:"
-echo "    Alert (KubeStatefulSetReplicasMismatch) -> Gateway -> SP -> AA (HAPI)"
-echo "    LLM detects stateful=true, diagnoses PVC failure"
-echo "    WE recreates PVC, deletes stuck pod"
-echo "    EM verifies all replicas ready"
-echo ""
-echo "==> Verify remediation:"
-echo "    kubectl get pods -n ${NAMESPACE}"
-echo "    kubectl get pvc -n ${NAMESPACE}"
+# Validate pipeline
+if [ "${SKIP_VALIDATE}" != "true" ] && [ -f "${SCRIPT_DIR}/validate.sh" ]; then
+    echo ""
+    echo "==> Running validation pipeline..."
+    bash "${SCRIPT_DIR}/validate.sh" "${APPROVE_MODE}"
+fi

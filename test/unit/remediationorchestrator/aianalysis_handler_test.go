@@ -18,6 +18,7 @@ package remediationorchestrator
 
 import (
 	"context"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -164,7 +165,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				client := fakeClientBuilder.WithObjects(rr).Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
-				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed)
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Pending"
@@ -179,7 +180,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				client := fakeClientBuilder.WithObjects(rr).Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
-				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed)
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Investigating"
@@ -194,7 +195,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				client := fakeClientBuilder.WithObjects(rr).Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
-				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed)
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Analyzing"
@@ -206,12 +207,42 @@ var _ = Describe("AIAnalysisHandler", func() {
 		})
 
 		Context("BR-ORCH-037: WorkflowNotNeeded Handling", func() {
-			// Test #13: Sets RR status to Completed with NoActionRequired
-			It("should set RR status to Completed with Outcome=NoActionRequired", func() {
+			// Test #13: Sets RR status to Completed with NoActionRequired + NextAllowedExecution
+			It("should set RR status to Completed with Outcome=NoActionRequired and NextAllowedExecution (#314)", func() {
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
-				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed)
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
+
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
+				ai.Status.Phase = "Completed"
+				ai.Status.Reason = "WorkflowNotNeeded"
+				ai.Status.SubReason = "ProblemResolved"
+				ai.Status.Message = "Issue self-resolved"
+
+				beforeCall := time.Now()
+				result, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result.RequeueAfter).To(BeZero())
+
+				// Verify RR status was updated
+				updatedRR := &remediationv1.RemediationRequest{}
+				err = client.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: rr.Namespace}, updatedRR)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(updatedRR.Status.OverallPhase).To(Equal(remediationv1.PhaseCompleted))
+				Expect(updatedRR.Status.Outcome).To(Equal("NoActionRequired"))
+				Expect(updatedRR.Status.CompletedAt.Time).To(BeTemporally("~", time.Now(), 5*time.Second))
+
+				// Issue #314: NextAllowedExecution must be set to suppress Gateway duplicate RR creation
+				Expect(updatedRR.Status.NextAllowedExecution).To(HaveField("Time", BeTemporally("~", beforeCall.Add(24*time.Hour), time.Minute)))
+			})
+
+			// Test #13b: NextAllowedExecution NOT set when delay is zero (opt-out)
+			It("should NOT set NextAllowedExecution when noActionRequiredDelay is zero (#314)", func() {
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
+				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 0)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Completed"
@@ -223,13 +254,12 @@ var _ = Describe("AIAnalysisHandler", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(result.RequeueAfter).To(BeZero())
 
-				// Verify RR status was updated
 				updatedRR := &remediationv1.RemediationRequest{}
 				err = client.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: rr.Namespace}, updatedRR)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(updatedRR.Status.OverallPhase).To(Equal(remediationv1.PhaseCompleted))
 				Expect(updatedRR.Status.Outcome).To(Equal("NoActionRequired"))
-				Expect(updatedRR.Status.CompletedAt).ToNot(BeNil())
+				Expect(updatedRR.Status.NextAllowedExecution).To(BeNil(), "NextAllowedExecution should be nil when delay is zero")
 			})
 		})
 
@@ -239,7 +269,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
-				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed)
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Completed"
@@ -265,7 +295,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
-				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed)
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Failed"
@@ -292,7 +322,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
 				mockTransitionFailed = createMockTransitionFailed(client)
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
-				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed)
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Failed"
@@ -319,7 +349,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
 				mockTransitionFailed = createMockTransitionFailed(client)
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
-				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed)
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Failed"
@@ -344,7 +374,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
 				mockTransitionFailed = createMockTransitionFailed(client)
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
-				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed)
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Failed"
@@ -372,7 +402,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
 				mockTransitionFailed = createMockTransitionFailed(client)
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
-				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed)
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Failed"
@@ -405,7 +435,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
 				mockTransitionFailed = createMockTransitionFailed(client)
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
-				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed)
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Failed"
@@ -431,7 +461,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
 				mockTransitionFailed = createMockTransitionFailed(client)
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
-				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed)
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Failed"
@@ -455,7 +485,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
 				mockTransitionFailed = createMockTransitionFailed(client)
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
-				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed)
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Failed"
@@ -482,7 +512,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
 				mockTransitionFailed = createMockTransitionFailed(client)
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
-				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed)
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Failed"
@@ -506,7 +536,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
 				mockTransitionFailed = createMockTransitionFailed(client)
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
-				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed)
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Failed"
@@ -530,7 +560,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
 				mockTransitionFailed = createMockTransitionFailed(client)
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
-				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed)
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Failed"
@@ -558,7 +588,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
 				mockTransitionFailed = createMockTransitionFailed(client)
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
-				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed)
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Failed"
@@ -584,7 +614,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
-				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed)
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Completed"
@@ -611,7 +641,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
 				mockTransitionFailed = createMockTransitionFailed(client)
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
-				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed)
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				// Both flags set (edge case)
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
@@ -641,7 +671,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
 				mockTransitionFailed = createMockTransitionFailed(client)
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
-				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed)
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Failed"
@@ -668,7 +698,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
 				mockTransitionFailed = createMockTransitionFailed(client)
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
-				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed)
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				// Test all 8 enum values
 				reasons := []string{
@@ -710,7 +740,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
-				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed)
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Failed"

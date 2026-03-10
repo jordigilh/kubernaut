@@ -2,13 +2,20 @@
 
 **Date**: 2025-11-27
 **Status**: ✅ **APPROVED**
-**Version**: 2.0
+**Version**: 2.1
 **Authority**: ⭐ **AUTHORITATIVE** - Single source of truth for workflow immutability
-**Related**: DD-WORKFLOW-006, DD-WORKFLOW-009, DD-WORKFLOW-002, DD-NAMING-001
+**Related**: DD-WORKFLOW-006, DD-WORKFLOW-009, DD-WORKFLOW-002, DD-NAMING-001, ADR-058 (Webhook-Driven Registration), BR-WORKFLOW-006 (RemediationWorkflow CRD)
 
 ---
 
 ## Changelog
+
+### Version 2.1 (2026-03-04)
+- Clarified that immutability applies to CRD-registered workflows (BR-WORKFLOW-006)
+- The RemediationWorkflow CRD `.spec` is the source of truth for workflow schema content
+- UPDATE operations on RemediationWorkflow CRDs pass through the AuthWebhook without DS interaction (spec is immutable; only K8s metadata like labels/annotations may change)
+- To modify a workflow's schema, operators must create a new CRD with a new version
+- Added cross-references to ADR-058 and BR-WORKFLOW-006
 
 ### Version 2.0 (2025-11-29)
 - **BREAKING**: Changed primary key from composite `(workflow_id, version)` to UUID `workflow_id`
@@ -42,7 +49,7 @@
 │ ❌ Any field used for semantic search or audit trail            │
 │                                                                  │
 │ TO CHANGE THESE FIELDS:                                         │
-│ ✅ CREATE A NEW WORKFLOW (gets new UUID)                        │
+│ ✅ CREATE A NEW WORKFLOW (new CRD with new version, gets UUID)  │
 │                                                                  │
 │ YOU CAN CHANGE:                                                 │
 │ ✅ Status (active/disabled/deprecated/archived)                │

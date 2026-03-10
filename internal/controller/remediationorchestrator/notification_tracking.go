@@ -135,7 +135,7 @@ func (r *Reconciler) trackNotificationStatus(ctx context.Context, rr *remediatio
 // Reference: BR-ORCH-029 (user cancellation), BR-ORCH-031 (cascade cleanup)
 func (r *Reconciler) handleNotificationDeletion(ctx context.Context, rr *remediationv1.RemediationRequest) error {
 	// Update status with retry helper (REFACTOR-RO-001)
-	return helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+	return helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		// Delegate to NotificationHandler
 		return r.notificationHandler.HandleNotificationRequestDeletion(ctx, rr)
 	})
@@ -152,7 +152,7 @@ func (r *Reconciler) updateNotificationStatusFromPhase(
 	notif *notificationv1.NotificationRequest,
 ) error {
 	// Update status with retry helper (REFACTOR-RO-001)
-	return helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+	return helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		// Delegate to NotificationHandler
 		return r.notificationHandler.UpdateNotificationStatus(ctx, rr, notif)
 	})

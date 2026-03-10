@@ -15,7 +15,7 @@ spec:
         kube_horizontalpodautoscaler_status_current_replicas{namespace="demo-hpa", horizontalpodautoscaler="api-frontend"}
         ==
         kube_horizontalpodautoscaler_spec_max_replicas{namespace="demo-hpa", horizontalpodautoscaler="api-frontend"}
-      for: 2m
+      for: 3m
       labels:
         severity: warning
       annotations:

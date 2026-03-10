@@ -1,0 +1,53 @@
+apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
+metadata:
+  name: test-dep-configmap-ansible
+spec:
+  # DD-WE-006 Test Workflow: Ansible with ConfigMap Dependency (BR-WE-015)
+  # Used by: WorkflowExecution E2E (Ansible ConfigMap dependency injection tests)
+  # Authority: DD-WE-006, BR-WE-014, BR-WE-015
+  metadata:
+    workflowName: test-dep-configmap-ansible
+    version: "1.0.0"
+    description:
+      what: "Ansible workflow that declares a ConfigMap dependency for E2E testing of extra_vars injection"
+      whenToUse: "For E2E validation of dependencies.configMaps injection via AWX extra_vars"
+      whenNotToUse: "Not intended for production use"
+      preconditions: "AWX deployed, ConfigMap 'e2e-dep-configmap-ansible' in execution namespace"
+  
+  actionType: RestartPod
+  
+  labels:
+    severity: [low]
+    environment: [test]
+    component: deployment
+    priority: P3
+  
+  execution:
+    engine: ansible
+    bundle: https://github.com/jordigilh/kubernaut-test-playbooks.git
+    bundleDigest: 42eadeba052b13e3ec4e113ebc8165efd5497974
+    engineConfig:
+      playbookPath: "playbooks/test-dep-configmap.yml"
+      jobTemplateName: "kubernaut-test-dep-configmap"
+  
+  dependencies:
+    configMaps:
+      - name: e2e-dep-configmap-ansible
+  
+  parameters:
+    - name: target_kind
+      type: string
+      required: true
+      description: "Kubernetes resource kind"
+      default: "Deployment"
+    - name: target_name
+      type: string
+      required: true
+      description: "Name of the target resource"
+      default: "test-deployment"
+    - name: target_namespace
+      type: string
+      required: false
+      description: "Namespace of the target resource"
+      default: "default"

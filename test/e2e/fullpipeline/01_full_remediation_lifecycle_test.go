@@ -467,9 +467,10 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 			expectedMinTotal, len(allAuditEvents), len(exactlyOnceEvents), len(atLeastOnceEvents))
 
 		// Verify temporal ordering: gateway.signal.received should be among the earliest events.
-		// Audit timestamps have second-level precision, so multiple events emitted in the
-		// first second of the pipeline (gateway → RO → SP) share the same timestamp.
-		// We verify gateway.signal.received is present at the earliest timestamp tier.
+		// Audit timestamps have second-level precision and services run on different pods,
+		// so cross-service clock skew can cause events from later pipeline stages to appear
+		// up to 2 seconds before the gateway event. We use a tolerance window rather than
+		// exact equality to account for this.
 		Expect(len(allAuditEvents)).To(BeNumerically(">=", 3),
 			"Full pipeline should produce at least gateway, orchestrator, and workflow audit events")
 		earliestTS := allAuditEvents[0].EventTimestamp
@@ -478,15 +479,16 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 				earliestTS = event.EventTimestamp
 			}
 		}
+		clockSkewTolerance := 2 * time.Second
 		var earliestTypes []string
 		for _, event := range allAuditEvents {
-			if event.EventTimestamp.Equal(earliestTS) {
+			if event.EventTimestamp.Before(earliestTS.Add(clockSkewTolerance)) {
 				earliestTypes = append(earliestTypes, event.EventType)
 			}
 		}
 		Expect(earliestTypes).To(ContainElement("gateway.signal.received"),
-			"gateway.signal.received must be among the earliest audit events (ts=%s, found: %v)",
-			earliestTS.Format(time.RFC3339), earliestTypes)
+			"gateway.signal.received must be among the earliest audit events (earliest=%s, window=%s, found: %v)",
+			earliestTS.Format(time.RFC3339), clockSkewTolerance, earliestTypes)
 
 		GinkgoWriter.Printf("  ✅ Audit trail verified: %d events, %d unique types, all expected present\n",
 			len(allAuditEvents), len(eventTypeCounts))

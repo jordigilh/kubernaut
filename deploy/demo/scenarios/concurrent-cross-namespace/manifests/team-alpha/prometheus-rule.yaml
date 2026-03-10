@@ -15,9 +15,9 @@ spec:
           kube_pod_container_status_restarts_total{
             namespace="demo-team-alpha",
             container="worker"
-          }[3m]
+          }[10m]
         ) > 3
-      for: 1m
+      for: 3m
       labels:
         severity: critical
       annotations:

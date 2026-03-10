@@ -93,6 +93,11 @@ var (
 	// DD-AUTH-014: ServiceAccount token for DataStorage authentication
 	e2eAuthToken string
 
+	// BR-GATEWAY-036/037: ServiceAccount token for Gateway /api/v1/signals/* authentication.
+	// Used by tests that make direct HTTP requests to signal endpoints (e.g., future tests).
+	// Infrastructure components (event-exporter, AlertManager) get their token at deploy time.
+	fpAuthToken string
+
 	// Workflow UUIDs seeded once in SynchronizedBeforeSuite, shared by all tests.
 	// Map of "workflowID:environment" → UUID. Tests must NOT modify this or the Mock LLM ConfigMap.
 	workflowUUIDs map[string]string
@@ -135,6 +140,13 @@ var _ = SynchronizedBeforeSuite(
 
 		token, err := infrastructure.GetServiceAccountToken(ctx, namespace, e2eSAName, tempKubeconfigPath)
 		Expect(err).ToNot(HaveOccurred(), "Failed to get E2E ServiceAccount token")
+
+		// BR-GATEWAY-036/037: Create E2E ServiceAccount for Gateway signal endpoint auth
+		// (fullpipeline-gateway-sa is created in SetupFullPipelineInfrastructure for event-exporter/AlertManager)
+		By("Creating E2E ServiceAccount for Gateway authentication (BR-GATEWAY-036/037)")
+		gatewaySAName := "fullpipeline-gateway-sa"
+		gatewayToken, gtwErr := infrastructure.GetServiceAccountToken(ctx, namespace, gatewaySAName, tempKubeconfigPath)
+		Expect(gtwErr).ToNot(HaveOccurred(), "Failed to get Gateway SA token (SA created in SetupFullPipelineInfrastructure)")
 
 		By("Setting KUBECONFIG for all processes")
 		err = os.Setenv("KUBECONFIG", tempKubeconfigPath)
@@ -221,14 +233,14 @@ var _ = SynchronizedBeforeSuite(
 
 		GinkgoWriter.Println("✅ Full Pipeline E2E infrastructure ready (Process 1)")
 
-		// Encode kubeconfig + token + workflow UUIDs for all processes
+		// Encode kubeconfig + tokens + workflow UUIDs for all processes
 		uuidsJSON, jsonErr := json.Marshal(seededUUIDs)
 		Expect(jsonErr).ToNot(HaveOccurred())
-		return []byte(fmt.Sprintf("%s|%s|%s", tempKubeconfigPath, token, string(uuidsJSON)))
+		return []byte(fmt.Sprintf("%s|%s|%s|%s", tempKubeconfigPath, token, string(uuidsJSON), gatewayToken))
 	},
 	// ALL processes: connect to the cluster
 	func(data []byte) {
-		parts := strings.SplitN(string(data), "|", 3)
+		parts := strings.SplitN(string(data), "|", 4)
 		kubeconfigPath = parts[0]
 		if len(parts) > 1 {
 			e2eAuthToken = parts[1]
@@ -236,6 +248,9 @@ var _ = SynchronizedBeforeSuite(
 		if len(parts) > 2 {
 			Expect(json.Unmarshal([]byte(parts[2]), &workflowUUIDs)).To(Succeed(),
 				"Failed to decode workflow UUIDs from Process 1")
+		}
+		if len(parts) > 3 {
+			fpAuthToken = parts[3]
 		}
 
 		ctx, cancel = context.WithCancel(context.TODO())
@@ -286,6 +301,14 @@ var _ = ReportAfterEach(func(report SpecReport) {
 		infrastructure.MarkTestFailure(clusterName)
 	}
 })
+
+// setFPAuthHeader injects the suite-level Gateway Bearer token into an HTTP request.
+// Call this on every *http.Request that targets /api/v1/signals/* endpoints (BR-GATEWAY-036/037).
+func setFPAuthHeader(req *http.Request) {
+	if fpAuthToken != "" {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", fpAuthToken))
+	}
+}
 
 var _ = SynchronizedAfterSuite(
 	// ALL processes: cleanup context

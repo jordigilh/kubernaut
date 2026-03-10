@@ -1,34 +1,38 @@
-schemaVersion: "1.0"
-# Discovery Test Workflow Schema (BR-WORKFLOW-004)
-# Used by: DataStorage E2E — 04_workflow_discovery_test.go (DD-HAPI-017)
+apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
 metadata:
-  workflowId: discovery-test-v1
-  version: "1.0.0"
-  description:
-    what: "Test workflow for three-step discovery E2E validation"
-    whenToUse: "For E2E testing of ListAvailableActions, ListWorkflows, GetWorkflow"
-    whenNotToUse: "Not intended for production use"
-    preconditions: "DataStorage service running with action_type_taxonomy seeded"
-
-actionType: ScaleReplicas
-
-labels:
-  severity: [critical]
-  environment: [production, staging, test]
-  component: pod
-  priority: P0
-
-execution:
-  engine: tekton
-  bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:8d727758cf289589e025fc9b89e254d73cb77b4c6384b850007b9ef1e8412200
-
-parameters:
-  - name: NAMESPACE
-    type: string
-    required: true
-    description: "Target namespace containing the affected pod"
-  - name: REPLICA_COUNT
-    type: integer
-    required: false
-    description: "Target replica count"
-    default: 3
+  name: discovery-test-v1
+spec:
+  # Discovery Test Workflow Schema (BR-WORKFLOW-004)
+  # Used by: DataStorage E2E — 04_workflow_discovery_test.go (DD-HAPI-017)
+  metadata:
+    workflowName: discovery-test-v1
+    version: "1.0.0"
+    description:
+      what: "Test workflow for three-step discovery E2E validation"
+      whenToUse: "For E2E testing of ListAvailableActions, ListWorkflows, GetWorkflow"
+      whenNotToUse: "Not intended for production use"
+      preconditions: "DataStorage service running with action_type_taxonomy seeded"
+  
+  actionType: ScaleReplicas
+  
+  labels:
+    severity: [critical]
+    environment: [production, staging, test]
+    component: pod
+    priority: P0
+  
+  execution:
+    engine: tekton
+    bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:adfc09ea45a5b627550c6a73fe75d50efe1c80fa43359fcc4908c9c5b0639ac3
+  
+  parameters:
+    - name: NAMESPACE
+      type: string
+      required: true
+      description: "Target namespace containing the affected pod"
+    - name: REPLICA_COUNT
+      type: integer
+      required: false
+      description: "Target replica count"
+      default: 3

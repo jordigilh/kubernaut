@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+SCENARIO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCENARIO_NAME="pending-taint"
+DEMO_NS="demo-taint"
+ALERT_NAME="KubePodNotScheduled"
+RESOURCE_TAPE="pending-taint-pods.tape"
+SCREENS_TAPE="pending-taint-screens.tape"
+APPROVAL_REQUIRED="false"
+TERMINAL_STATE="Completed"
+INJECT_CMD="bash ${SCENARIO_DIR}/inject-taint.sh && kubectl delete pods --all -n demo-taint"
+SETUP_CMD="bash ${SCENARIO_DIR}/cleanup.sh 2>/dev/null || true && kubectl apply -f ${SCENARIO_DIR}/manifests/ && kubectl wait --for=condition=Available deployment/web-app -n demo-taint --timeout=120s"
+CLEANUP_CMD="bash ${SCENARIO_DIR}/cleanup.sh"
+source "$(cd "${SCENARIO_DIR}/../../../.." && pwd)/deploy/demo/scripts/record-scenario.sh"

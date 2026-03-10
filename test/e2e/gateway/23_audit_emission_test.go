@@ -176,13 +176,15 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 
 		// Test payload
 		uniqueID := uuid.New().String()
+		podName := "audit-test-pod-" + uniqueID[:8]
+		helpers.EnsureTestPod(ctx, k8sClient, sharedNamespace, podName)
 		prometheusPayload = createPrometheusWebhookPayload(PrometheusAlertPayload{
 			AlertName: "AuditTestAlert",
 			Namespace: sharedNamespace,
 			Severity:  "warning",
 			Resource: ResourceIdentifier{
 				Kind: "Pod",
-				Name: "audit-test-pod-" + uniqueID[:8],
+				Name: podName,
 			},
 			Labels: map[string]string{
 				"audit_test": uniqueID,

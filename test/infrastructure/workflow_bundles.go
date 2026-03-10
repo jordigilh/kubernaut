@@ -21,10 +21,21 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
+
+// workflowConflictError is returned when the DS API reports a 409 Conflict,
+// indicating the workflow already exists. The caller can use errors.As to
+// distinguish this from fatal errors and fall back to a ListWorkflows query.
+type workflowConflictError struct{ detail string }
+
+func (e *workflowConflictError) Error() string {
+	return fmt.Sprintf("conflict (409): %s", e.detail)
+}
 
 // Workflow Bundle Infrastructure for WorkflowExecution E2E Tests
 //
@@ -93,114 +104,152 @@ func BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL, 
 
 	_, _ = fmt.Fprintf(output, "  ✅ Using bundles from %s\n", TestWorkflowBundleRegistry)
 
-	// Register workflows in DataStorage using OpenAPI client (DD-API-001)
-	_, _ = fmt.Fprintf(output, "\n📝 Registering workflows in DataStorage...\n")
+	// Register workflows in DataStorage using inline content (ADR-058)
+	_, _ = fmt.Fprintf(output, "\n📝 Registering workflows in DataStorage (inline)...\n")
 
-	wfUUID, err := registerTestBundleWorkflow(
-		dataStorageURL,
-		saToken,
-		"test-hello-world",
-		"v1.0.0",
-		bundles["test-hello-world"],
-		"Simple hello-world workflow for E2E testing",
-		output,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to register hello-world workflow: %w", err)
+	// ADR-058: Read workflow-schema.yaml from fixture directories and register inline.
+	// The fixture directory name maps to the workflow name (without "test-" prefix for some).
+	bundleWorkflows := []struct {
+		name       string
+		version    string
+		fixtureDIR string
+		desc       string
+	}{
+		{"test-hello-world", "v1.0.0", "hello-world", "Simple hello-world workflow for E2E testing"},
+		{"test-intentional-failure", "v1.0.0", "failing", "Intentionally failing workflow for E2E failure handling tests"},
+		{"test-dep-secret-job", "v1.0.0", "dep-secret-job", "Job workflow with Secret dependency for DD-WE-006 E2E testing"},
+		{"test-dep-secret-tekton", "v1.0.0", "dep-secret-tekton", "Tekton workflow with Secret dependency for DD-WE-006 E2E testing"},
+		{"test-dep-configmap-job", "v1.0.0", "dep-configmap-job", "Job workflow with ConfigMap dependency for DD-WE-006 E2E testing"},
+		{"test-dep-configmap-tekton", "v1.0.0", "dep-configmap-tekton", "Tekton workflow with ConfigMap dependency for DD-WE-006 E2E testing"},
+		{"test-ansible-success", "v1.0.0", "ansible-success", "Ansible engine success workflow for BR-WE-015 E2E testing"},
+		{"test-ansible-failure", "v1.0.0", "ansible-failure", "Ansible engine failure workflow for BR-WE-015 E2E testing"},
+		{"test-dep-secret-ansible", "v1.0.0", "dep-secret-ansible", "Ansible workflow with Secret dependency for DD-WE-006/BR-WE-015 E2E testing"},
+		{"test-dep-configmap-ansible", "v1.0.0", "dep-configmap-ansible", "Ansible workflow with ConfigMap dependency for DD-WE-006/BR-WE-015 E2E testing"},
 	}
-	RegisteredWorkflowUUIDs["test-hello-world"] = wfUUID
 
-	wfUUID, err = registerTestBundleWorkflow(
-		dataStorageURL,
-		saToken,
-		"test-intentional-failure",
-		"v1.0.0",
-		bundles["test-intentional-failure"],
-		"Intentionally failing workflow for E2E failure handling tests",
-		output,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to register failing workflow: %w", err)
-	}
-	RegisteredWorkflowUUIDs["test-intentional-failure"] = wfUUID
+	for _, bw := range bundleWorkflows {
+		content, readErr := readWorkflowFixtureContent(bw.fixtureDIR)
+		if readErr != nil {
+			return nil, fmt.Errorf("failed to read fixture for %s: %w", bw.name, readErr)
+		}
 
-	// DD-WE-006: Register workflow with secret dependency for dependency injection E2E tests.
-	// The Secret "e2e-dep-secret" must exist in the execution namespace BEFORE registration
-	// because DS validates dependencies at registration time.
-	wfUUID, err = registerTestBundleWorkflow(
-		dataStorageURL,
-		saToken,
-		"test-dep-secret-job",
-		"v1.0.0",
-		bundles["test-dep-secret-job"],
-		"Job workflow with Secret dependency for DD-WE-006 E2E testing",
-		output,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to register dep-secret-job workflow: %w", err)
+		wfUUID, regErr := registerTestBundleWorkflow(
+			dataStorageURL,
+			saToken,
+			bw.name,
+			bw.version,
+			content,
+			bw.desc,
+			output,
+		)
+		if regErr != nil {
+			return nil, fmt.Errorf("failed to register %s workflow: %w", bw.name, regErr)
+		}
+		RegisteredWorkflowUUIDs[bw.name] = wfUUID
 	}
-	RegisteredWorkflowUUIDs["test-dep-secret-job"] = wfUUID
 
-	// DD-WE-006: Register Tekton workflow with secret dependency for Tekton dependency injection E2E tests.
-	wfUUID, err = registerTestBundleWorkflow(
-		dataStorageURL,
-		saToken,
-		"test-dep-secret-tekton",
-		"v1.0.0",
-		bundles["test-dep-secret-tekton"],
-		"Tekton workflow with Secret dependency for DD-WE-006 E2E testing",
-		output,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to register dep-secret-tekton workflow: %w", err)
-	}
-	RegisteredWorkflowUUIDs["test-dep-secret-tekton"] = wfUUID
+	// Populate bundles map with execution bundle references (still OCI images for Tekton/Job runtime)
+	bundles["test-ansible-success"] = fmt.Sprintf("%s/ansible-success:%s", TestWorkflowBundleRegistry, TestWorkflowBundleVersion)
+	bundles["test-ansible-failure"] = fmt.Sprintf("%s/ansible-failure:%s", TestWorkflowBundleRegistry, TestWorkflowBundleVersion)
 
 	_, _ = fmt.Fprintf(output, "✅ Test workflows ready\n")
 	return bundles, nil
 }
 
-// registerTestBundleWorkflow registers a workflow in DataStorage using OpenAPI client.
-// DD-WORKFLOW-017: Pullspec-only registration — sends only schemaImage.
-// DataStorage pulls the image, extracts /workflow-schema.yaml, and populates all fields.
+// readWorkflowFixtureContent reads workflow-schema.yaml from the test fixtures directory.
+// Uses findWorkspaceRoot() so the path resolves correctly regardless of the
+// working directory (ginkgo sets cwd to the test package directory).
+func readWorkflowFixtureContent(fixtureName string) (string, error) {
+	root, err := findWorkspaceRoot()
+	if err != nil {
+		return "", fmt.Errorf("find workspace root: %w", err)
+	}
+	path := filepath.Join(root, "test", "fixtures", "workflows", fixtureName, "workflow-schema.yaml")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read %s: %w", path, err)
+	}
+	return string(data), nil
+}
+
+// registerTestBundleWorkflow registers a workflow in DataStorage using the inline schema API.
+// ADR-058: Sends CRD YAML content directly (inline) instead of OCI pullspec.
 // Returns the DS-assigned UUID for use in WorkflowExecution specs (DD-WE-006).
 // Includes DD-AUTH-014 ServiceAccount authentication.
-func registerTestBundleWorkflow(dataStorageURL, saToken, workflowName, version, schemaImage, description string, output io.Writer) (string, error) {
-	_, _ = fmt.Fprintf(output, "  Registering: %s (version %s) from %s\n", workflowName, version, schemaImage)
+func registerTestBundleWorkflow(dataStorageURL, saToken, workflowName, version, schemaContent, description string, output io.Writer) (string, error) {
+	_, _ = fmt.Fprintf(output, "  Registering: %s (version %s) inline\n", workflowName, version)
 
-	// Create authenticated HTTP client (DD-AUTH-014)
 	httpClient := &http.Client{
 		Transport: testauth.NewServiceAccountTransport(saToken),
 	}
 
-	// Create OpenAPI client with authentication
 	client, err := dsgen.NewClient(dataStorageURL, dsgen.WithClient(httpClient))
 	if err != nil {
 		return "", fmt.Errorf("failed to create DataStorage client: %w", err)
 	}
 
-	// DD-WORKFLOW-017: Pullspec-only registration request
-	req := &dsgen.CreateWorkflowFromOCIRequest{
-		SchemaImage: schemaImage,
-	}
-
-	// Register workflow via OpenAPI client
-	ctx := context.Background()
-	resp, err := client.CreateWorkflow(ctx, req)
+	uuid, reEnabled, err := callCreateWorkflowInline(client, schemaContent, "e2e-test-infra")
 	if err != nil {
 		return "", fmt.Errorf("failed to register workflow: %w", err)
 	}
 
-	// Validate response - success returns *RemediationWorkflow
-	if createdWorkflow, ok := resp.(*dsgen.RemediationWorkflow); ok {
-		_, _ = fmt.Fprintf(output, "    ✅ Registered in DataStorage: %s\n", workflowName)
-		if wfID, exists := createdWorkflow.WorkflowId.Get(); exists {
-			_, _ = fmt.Fprintf(output, "       UUID: %s\n", wfID.String())
-			return wfID.String(), nil
-		}
-		return "", fmt.Errorf("workflow registered but UUID not returned in response")
+	if reEnabled {
+		_, _ = fmt.Fprintf(output, "    ✅ Re-enabled in DataStorage: %s (UUID: %s)\n", workflowName, uuid)
+	} else {
+		_, _ = fmt.Fprintf(output, "    ✅ Registered in DataStorage: %s (UUID: %s)\n", workflowName, uuid)
+	}
+	return uuid, nil
+}
+
+// callCreateWorkflowInline sends an inline registration request to DataStorage and
+// extracts the UUID from the response. Shared by both bundle and seeding flows.
+// Returns (uuid, reEnabled, error).
+//
+// All ogen response types are handled so that the caller receives an actionable
+// error with the DS detail message instead of a generic "unexpected response type".
+// A *workflowConflictError is returned for 409 so callers can fall back to query.
+func callCreateWorkflowInline(client *dsgen.Client, content, registeredBy string) (string, bool, error) {
+	req := &dsgen.CreateWorkflowInlineRequest{
+		Content: content,
+	}
+	req.Source.SetTo("e2e-test")
+	req.RegisteredBy.SetTo(registeredBy)
+
+	ctx := context.Background()
+	resp, err := client.CreateWorkflow(ctx, req)
+	if err != nil {
+		return "", false, fmt.Errorf("transport error: %w", err)
 	}
 
-	// Handle error responses
-	return "", fmt.Errorf("unexpected response type: %T", resp)
+	switch v := resp.(type) {
+	case *dsgen.CreateWorkflowCreated:
+		rw := (*dsgen.RemediationWorkflow)(v)
+		if wfID, exists := rw.WorkflowId.Get(); exists {
+			return wfID.String(), false, nil
+		}
+		return "", false, fmt.Errorf("workflow registered but UUID not returned")
+	case *dsgen.CreateWorkflowOK:
+		rw := (*dsgen.RemediationWorkflow)(v)
+		if wfID, exists := rw.WorkflowId.Get(); exists {
+			return wfID.String(), true, nil
+		}
+		return "", false, fmt.Errorf("workflow re-enabled but UUID not returned")
+	case *dsgen.CreateWorkflowConflict:
+		p := (*dsgen.RFC7807Problem)(v)
+		return "", false, &workflowConflictError{detail: p.Detail.Value}
+	case *dsgen.CreateWorkflowBadRequest:
+		p := (*dsgen.RFC7807Problem)(v)
+		return "", false, fmt.Errorf("DS rejected registration (400): %s", p.Detail.Value)
+	case *dsgen.CreateWorkflowUnauthorized:
+		p := (*dsgen.RFC7807Problem)(v)
+		return "", false, fmt.Errorf("DS unauthorized (401): %s", p.Detail.Value)
+	case *dsgen.CreateWorkflowForbidden:
+		p := (*dsgen.RFC7807Problem)(v)
+		return "", false, fmt.Errorf("DS forbidden (403): %s", p.Detail.Value)
+	case *dsgen.CreateWorkflowInternalServerError:
+		p := (*dsgen.RFC7807Problem)(v)
+		return "", false, fmt.Errorf("DS internal error (500): %s", p.Detail.Value)
+	default:
+		return "", false, fmt.Errorf("unexpected response type: %T", resp)
+	}
 }

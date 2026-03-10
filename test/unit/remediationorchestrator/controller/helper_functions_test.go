@@ -46,7 +46,6 @@ var _ = Describe("BR-ORCH-HELPERS: Helper Function Tests", func() {
 		fakeClient        client.Client
 		reconciler        *prodcontroller.Reconciler
 		mockRoutingEngine *MockRoutingEngine
-		testMetrics       *metrics.Metrics
 	)
 
 	BeforeEach(func() {
@@ -57,10 +56,6 @@ var _ = Describe("BR-ORCH-HELPERS: Helper Function Tests", func() {
 
 		// Create mock routing engine
 		mockRoutingEngine = &MockRoutingEngine{}
-
-		// Don't create new metrics (causes Prometheus registration conflicts)
-		// Helper tests don't need metrics
-		testMetrics = nil
 
 		// Create fake client with status subresource
 		fakeClient = fake.NewClientBuilder().
@@ -104,7 +99,7 @@ var _ = Describe("BR-ORCH-HELPERS: Helper Function Tests", func() {
 			Expect(fakeClient.Create(ctx, rr)).To(Succeed())
 
 			// Update status using helper
-			err := helpers.UpdateRemediationRequestStatus(ctx, fakeClient, testMetrics, rr, func(rr *remediationv1.RemediationRequest) error {
+			err := helpers.UpdateRemediationRequestStatus(ctx, fakeClient, rr, func(rr *remediationv1.RemediationRequest) error {
 				rr.Status.OverallPhase = remediationv1.PhaseProcessing
 				rr.Status.Message = "Transitioning to Processing"
 				return nil
@@ -128,7 +123,7 @@ var _ = Describe("BR-ORCH-HELPERS: Helper Function Tests", func() {
 
 			// Update status with error in updateFn
 			testError := fmt.Errorf("simulated update function error")
-			err := helpers.UpdateRemediationRequestStatus(ctx, fakeClient, testMetrics, rr, func(rr *remediationv1.RemediationRequest) error {
+			err := helpers.UpdateRemediationRequestStatus(ctx, fakeClient, rr, func(rr *remediationv1.RemediationRequest) error {
 				return testError
 			})
 
@@ -148,7 +143,7 @@ var _ = Describe("BR-ORCH-HELPERS: Helper Function Tests", func() {
 			rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 
 			// Try to update status (should fail with NotFound)
-			err := helpers.UpdateRemediationRequestStatus(ctx, fakeClient, testMetrics, rr, func(rr *remediationv1.RemediationRequest) error {
+			err := helpers.UpdateRemediationRequestStatus(ctx, fakeClient, rr, func(rr *remediationv1.RemediationRequest) error {
 				rr.Status.OverallPhase = remediationv1.PhaseProcessing
 				return nil
 			})

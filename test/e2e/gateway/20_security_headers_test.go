@@ -51,6 +51,7 @@ var _ = Describe("Test 20: Security Headers & Observability", Ordered, func() {
 
 	// Pre-create managed namespace (Pattern: RO E2E)
 	testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "security-headers")
+	helpers.EnsureTestPods(ctx, k8sClient, testNamespace, "test-pod", "test-pod-request-id", "test-pod-metrics")
 	testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 		testLogger.Info("✅ Using shared Gateway", "url", gatewayURL)
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -118,6 +119,7 @@ var _ = Describe("Test 20: Security Headers & Observability", Ordered, func() {
 					}
 					req29.Header.Set("Content-Type", "application/json")
 					req29.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+					setE2EAuthHeader(req29)
 					return httpClient.Do(req29)
 				}()
 				Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed")
@@ -190,6 +192,7 @@ var _ = Describe("Test 20: Security Headers & Observability", Ordered, func() {
 				}
 				req30.Header.Set("Content-Type", "application/json")
 				req30.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+				setE2EAuthHeader(req30)
 				return httpClient.Do(req30)
 			}()
 			Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed")
@@ -253,6 +256,7 @@ var _ = Describe("Test 20: Security Headers & Observability", Ordered, func() {
 				}
 				req31.Header.Set("Content-Type", "application/json")
 				req31.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+				setE2EAuthHeader(req31)
 				return httpClient.Do(req31)
 			}()
 			Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed")

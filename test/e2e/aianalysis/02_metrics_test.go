@@ -169,7 +169,6 @@ var _ = Describe("Metrics Endpoint E2E", Label("e2e", "metrics"), func() {
 			// Core metrics per DD-005 and implementation plan
 			// DD-005 V3.0: Use constants from production code to prevent typos
 			expectedMetrics := []string{
-				aametrics.MetricNameReconcilerReconciliationsTotal,
 				aametrics.MetricNameFailuresTotal,
 			}
 

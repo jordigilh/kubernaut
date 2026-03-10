@@ -215,6 +215,8 @@ func (r *Reconciler) handleBlockedPhase(ctx context.Context, rr *remediationv1.R
 
 ## Metrics
 
+> **Note**: `BlockedCooldownExpiredTotal` was removed per GitHub issue #294.
+
 ```go
 // New metrics for blocking feature
 var (
@@ -224,13 +226,6 @@ var (
             Help: "Total RemediationRequests blocked due to consecutive failures",
         },
         []string{"namespace", "reason"},
-    )
-
-    BlockedCooldownExpiredTotal = prometheus.NewCounter(
-        prometheus.CounterOpts{
-            Name: "remediationorchestrator_blocked_cooldown_expired_total",
-            Help: "Total blocked RRs that expired and transitioned to Failed",
-        },
     )
 
     CurrentBlockedGauge = prometheus.NewGaugeVec(

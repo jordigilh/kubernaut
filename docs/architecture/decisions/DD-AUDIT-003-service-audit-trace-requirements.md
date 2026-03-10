@@ -2,10 +2,25 @@
 
 **Status**: ✅ **APPROVED** (Production Standard)
 **Date**: November 8, 2025
-**Last Reviewed**: March 2, 2026
-**Version**: 1.6
+**Last Reviewed**: March 9, 2026
+**Version**: 1.7
 **Confidence**: 95%
-**Authority Level**: SYSTEM-WIDE - Defines audit requirements for all 11 services
+**Authority Level**: SYSTEM-WIDE - Defines audit requirements for all 12 services
+
+**Recent Changes** (v1.7 - March 9, 2026):
+- **Auth Webhook**: Added as P0 service (12th service, 7th MUST) per BR-WORKFLOW-007 / Issue #300
+  - `actiontype.admitted.create` — ActionType CREATE admitted by webhook
+  - `actiontype.admitted.update` — ActionType UPDATE admitted by webhook
+  - `actiontype.admitted.delete` — ActionType DELETE admitted by webhook (soft-disable)
+  - `actiontype.denied.delete` — ActionType DELETE denied (active workflow dependencies)
+- **Data Storage**: Added 5 ActionType catalog audit events per BR-WORKFLOW-007.4:
+  - `datastorage.actiontype.created` — ActionType registered in catalog
+  - `datastorage.actiontype.updated` — ActionType description updated
+  - `datastorage.actiontype.disabled` — ActionType soft-disabled
+  - `datastorage.actiontype.disable_denied` — Disable denied (active dependencies)
+  - `datastorage.actiontype.reenabled` — Previously disabled ActionType re-enabled via CREATE
+- **Expected Volume**: +200 events/day (ActionType lifecycle operations)
+- **Authority**: BR-WORKFLOW-007.4 (SOC2 Audit Trail), DD-ACTIONTYPE-001, Issue #300
 
 **Recent Changes** (v1.6 - March 2, 2026):
 - **Remediation Orchestrator**: Added 3 Verifying phase audit events per Issue #280:
@@ -57,10 +72,10 @@ This design decision establishes **which services MUST generate audit traces** a
 
 **Key Principle**: Audit traces are mandatory for business-critical operations, compliance requirements, and state-changing operations. Read-only and configuration services use application logs instead.
 
-**Scope**: All 11 Kubernaut services (4 CRD controllers + 7 stateless services).
+**Scope**: All 12 Kubernaut services (4 CRD controllers + 8 stateless services).
 
 **Decision Summary**:
-- ✅ **6 services MUST** generate audit traces (P0 - business-critical)
+- ✅ **7 services MUST** generate audit traces (P0 - business-critical)
 - ✅ **2 services SHOULD** generate audit traces (P1 - operational visibility)
 - ⚠️ **3 services NO audit** traces needed (read-only/configuration)
 
@@ -83,7 +98,7 @@ This design decision establishes **which services MUST generate audit traces** a
 
 ### **Challenge**
 
-Kubernaut consists of 11 microservices with different responsibilities. Not all services require audit traces:
+Kubernaut consists of 12 microservices with different responsibilities. Not all services require audit traces:
 
 1. ⚠️ **Over-Auditing Risk**: Auditing read-only operations wastes storage and degrades performance
 2. ⚠️ **Under-Auditing Risk**: Missing audit traces for business-critical operations violates compliance
@@ -99,7 +114,7 @@ Kubernaut consists of 11 microservices with different responsibilities. Not all 
 
 ### **Key Question**
 
-**Which of the 11 Kubernaut services should generate audit traces?**
+**Which of the 12 Kubernaut services should generate audit traces?**
 
 ---
 
@@ -118,14 +133,15 @@ Kubernaut consists of 11 microservices with different responsibilities. Not all 
 
 ### **Service Inventory**
 
-**Stateless Services** (7):
+**Stateless Services** (8):
 1. Gateway Service
 2. Data Storage Service
-3. Context API Service
-4. HolmesGPT API Service
-5. Dynamic Toolset Service
-6. Notification Service
-7. Effectiveness Monitor Service
+3. Auth Webhook Service
+4. Context API Service
+5. HolmesGPT API Service
+6. Dynamic Toolset Service
+7. Notification Service
+8. Effectiveness Monitor Service
 
 **CRD Controllers** (4):
 8. Signal Processing Controller
@@ -137,10 +153,10 @@ Kubernaut consists of 11 microservices with different responsibilities. Not all 
 
 ## ✅ **Decision**
 
-**APPROVED**: **8 out of 11 services** generate audit traces
+**APPROVED**: **9 out of 12 services** generate audit traces
 
 **Breakdown**:
-- ✅ **6 services MUST** (P0): Gateway, AI Analysis, Remediation Execution, Notification, Data Storage, Effectiveness Monitor
+- ✅ **7 services MUST** (P0): Gateway, AI Analysis, Remediation Execution, Notification, Data Storage, Auth Webhook, Effectiveness Monitor
 - ✅ **2 services SHOULD** (P1): Signal Processing, Remediation Orchestrator
 - ⚠️ **3 services NO audit**: Context API, HolmesGPT API, Dynamic Toolset
 
@@ -154,7 +170,7 @@ Kubernaut consists of 11 microservices with different responsibilities. Not all 
 
 ## 📊 **Service-by-Service Analysis**
 
-### **P0: MUST Generate Audit Traces (6 Services)**
+### **P0: MUST Generate Audit Traces (7 Services)**
 
 ---
 
@@ -371,6 +387,11 @@ Kubernaut consists of 11 microservices with different responsibilities. Not all 
 |------------|-------------|----------|
 | `datastorage.workflow.created` | Workflow added to catalog (business logic) | P0 |
 | `datastorage.workflow.updated` | Workflow mutable fields updated (including disable, deprecate) | P0 |
+| `datastorage.actiontype.created` | ActionType registered in catalog (new or re-enabled) | **P0** |
+| `datastorage.actiontype.updated` | ActionType description updated | **P0** |
+| `datastorage.actiontype.disabled` | ActionType soft-disabled | **P0** |
+| `datastorage.actiontype.disable_denied` | ActionType disable denied (active workflow dependencies) | **P0** |
+| `datastorage.actiontype.reenabled` | Previously disabled ActionType re-enabled via CREATE | **P0** |
 | `workflow.catalog.actions_listed` | Step 1: Action types returned for signal context (DD-WORKFLOW-014 v3.0) | P0 |
 | `workflow.catalog.workflows_listed` | Step 2: Workflows returned for selected action type (DD-WORKFLOW-014 v3.0) | P0 |
 | `workflow.catalog.workflow_retrieved` | Step 3: Single workflow parameter schema retrieved (DD-WORKFLOW-014 v3.0) | P0 |
@@ -381,20 +402,62 @@ Kubernaut consists of 11 microservices with different responsibilities. Not all 
 - **Failed writes**: DLQ already captures failures
 - **Operational visibility**: Maintained via Prometheus metrics (`audit_writes_total{status="success|failure|dlq"}`) and structured logs
 
-**What Data Storage DOES Audit**: Workflow catalog operations involve state changes and business decisions:
+**What Data Storage DOES Audit**: Workflow and ActionType catalog operations involve state changes and business decisions:
 - Workflow creation (sets `status="active"`, marks as latest version)
 - Workflow updates (mutable field changes, status transitions, disable/deprecate operations)
 - Workflow discovery (three-step protocol queries per DD-WORKFLOW-014 v3.0, DD-WORKFLOW-016)
+- ActionType registration, update, disable, disable-denied, and re-enable (BR-WORKFLOW-007.4, Issue #300)
+
+**ActionType Catalog Events** (v1.7 - March 2026):
+- **Authority**: BR-WORKFLOW-007.4, DD-ACTIONTYPE-001, Issue #300
+- **Compliance**: SOC2 Type II requires full audit trail for taxonomy lifecycle operations
+- **Implementation**: `pkg/datastorage/audit/actiontype_events.go`
+- **Payload Structure**: All events carry typed payloads (ogen-generated from OpenAPI spec) persisted as JSONB in `audit_events.event_data`
 
 **Industry Precedent**: AWS RDS audit logs, Google Cloud SQL audit logs (audit business operations, not CRUD operations)
 
-**Expected Volume**: 500 events/day, 15 MB/month (reduced from 5,000 events/day after meta-auditing removal)
+**Expected Volume**: 600 events/day, 18 MB/month (+100 events/day for ActionType lifecycle)
 
-**Authority**: DD-AUDIT-002 V2.0.1, `pkg/datastorage/audit/workflow_catalog_event.go`
+**Authority**: DD-AUDIT-002 V2.0.1, `pkg/datastorage/audit/workflow_catalog_event.go`, `pkg/datastorage/audit/actiontype_events.go`
 
 ---
 
-#### 6. Effectiveness Monitor Service ⭐⭐⭐⭐
+#### 6. Auth Webhook Service ⭐⭐⭐⭐⭐
+
+**Status**: ✅ **MUST** generate audit traces
+
+**Rationale**:
+- ✅ **Business-Critical**: Validates all ActionType CRD operations (CREATE, UPDATE, DELETE) via Kubernetes admission webhooks
+- ✅ **Compliance**: CRD admission decisions require audit trail (SOC 2, ISO 27001)
+- ✅ **State Changes**: Admits or denies CRD mutations that modify the ActionType taxonomy
+- ✅ **Safety**: Critical for understanding why operations were admitted or denied
+- ✅ **Cross-Service**: Coordinates with Data Storage for ActionType registration and workflow dependency checks
+
+**Audit Events**:
+
+| Event Type | Description | Priority |
+|------------|-------------|----------|
+| `actiontype.admitted.create` | ActionType CREATE admitted by webhook | P0 |
+| `actiontype.admitted.update` | ActionType UPDATE admitted by webhook | P0 |
+| `actiontype.admitted.delete` | ActionType DELETE admitted by webhook (soft-disable) | P0 |
+| `actiontype.denied.delete` | ActionType DELETE denied (active workflow dependencies) | P0 |
+
+**Webhook Admission Events** (v1.7 - March 2026):
+- **Authority**: BR-WORKFLOW-007.4, DD-ACTIONTYPE-001, Issue #300
+- **Compliance**: SOC2 Type II requires admission decision audit trail for taxonomy governance
+- **Implementation**: `pkg/authwebhook/actiontype_audit.go`
+- **Payload Structure**: Events carry ActionType spec, user identity, and DS result as typed payloads
+- **Delivery**: Events are batched and written to Data Storage audit API via async buffered store
+
+**Industry Precedent**: Kubernetes Admission Audit Logs, OPA/Gatekeeper decision logs
+
+**Expected Volume**: 100 events/day, 3 MB/month
+
+**Authority**: BR-WORKFLOW-007.4, `pkg/authwebhook/actiontype_audit.go`
+
+---
+
+#### 7. Effectiveness Monitor Service ⭐⭐⭐⭐
 
 **Status**: ✅ **MUST** generate audit traces
 
@@ -430,7 +493,7 @@ Kubernaut consists of 11 microservices with different responsibilities. Not all 
 
 ---
 
-#### 7. Signal Processing Controller ⭐⭐⭐
+#### 8. Signal Processing Controller ⭐⭐⭐
 
 **Status**: ✅ **SHOULD** generate audit traces (operational visibility)
 
@@ -455,7 +518,7 @@ Kubernaut consists of 11 microservices with different responsibilities. Not all 
 
 ---
 
-#### 8. Remediation Orchestrator Controller ⭐⭐⭐
+#### 9. Remediation Orchestrator Controller ⭐⭐⭐
 
 **Status**: ✅ **SHOULD** generate audit traces (coordination visibility)
 
@@ -498,7 +561,7 @@ Kubernaut consists of 11 microservices with different responsibilities. Not all 
 
 ---
 
-#### 9. Context API Service ❌
+#### 10. Context API Service ❌
 
 **Status**: ⚠️ **NO** audit traces needed
 
@@ -580,7 +643,7 @@ context_api:
 
 ---
 
-#### 10. HolmesGPT API Service ❌
+#### 11. HolmesGPT API Service ❌
 
 **Status**: ⚠️ **NO** audit traces needed (delegated to AI Analysis Controller)
 
@@ -604,7 +667,7 @@ context_api:
 
 ---
 
-#### 11. Dynamic Toolset Service ❌
+#### 12. Dynamic Toolset Service ❌
 
 **Status**: ⚠️ **NO** audit traces needed
 
@@ -636,7 +699,8 @@ context_api:
 | **AI Analysis Controller** | ✅ **MUST** | P0 | Business-critical AI recommendations |
 | **Remediation Execution Controller** | ✅ **MUST** | P0 | Business-critical Kubernetes operations |
 | **Notification Service** | ✅ **MUST** | P0 | Compliance-required notification delivery |
-| **Data Storage Service** | ✅ **MUST** | P0 | Internal audit write monitoring |
+| **Data Storage Service** | ✅ **MUST** | P0 | Workflow + ActionType catalog audit |
+| **Auth Webhook Service** | ✅ **MUST** | P0 | ActionType CRD admission decisions (SOC2) |
 | **Effectiveness Monitor Service** | ✅ **MUST** | P0 | Business-critical learning loop |
 | **Signal Processing Controller** | ✅ **SHOULD** | P1 | Operational visibility (enrichment) |
 | **Remediation Orchestrator Controller** | ✅ **SHOULD** | P1 | Operational visibility (coordination) |
@@ -644,25 +708,26 @@ context_api:
 | **HolmesGPT API Service** | ❌ **NO** | N/A | Proxy, audit delegated to caller |
 | **Dynamic Toolset Service** | ❌ **NO** | N/A | Configuration, read-only |
 
-**Total**: **8 out of 11 services** generate audit traces (73%)
+**Total**: **9 out of 12 services** generate audit traces (75%)
 
 ---
 
 ## 🎯 **Implementation Priority**
 
-### Phase 1: P0 Services (MUST) - 6 Services
+### Phase 1: P0 Services (MUST) - 7 Services
 
 **Timeline**: Sprint 1-2 (2 weeks)
 
 **Services**:
 1. Gateway Service (Week 1)
 2. Data Storage Service (Week 1)
-3. AI Analysis Controller (Week 2)
-4. Remediation Execution Controller (Week 2)
-5. Notification Service (Week 2)
-6. Effectiveness Monitor Service (Week 2)
+3. Auth Webhook Service (Week 1) — ActionType CRD admission audit (Issue #300)
+4. AI Analysis Controller (Week 2)
+5. Remediation Execution Controller (Week 2)
+6. Notification Service (Week 2)
+7. Effectiveness Monitor Service (Week 2)
 
-**Effort**: 6 hours (1 hour per service)
+**Effort**: 7 hours (1 hour per service)
 
 **Implementation**:
 - Use `pkg/audit/` shared library (see [DD-AUDIT-002](./DD-AUDIT-002-audit-shared-library-design.md))
@@ -713,13 +778,14 @@ context_api:
 | **AI Analysis Controller** | 500 | 15,000 | 15 MB |
 | **Remediation Execution Controller** | 2,310 | 69,300 | 69.3 MB |
 | **Notification Service** | 550 | 16,500 | 16.5 MB |
-| **Data Storage Service** | 5,000 | 150,000 | 150 MB |
+| **Data Storage Service** | 5,100 | 153,000 | 153 MB |
+| **Auth Webhook Service** | 100 | 3,000 | 3 MB |
 | **Effectiveness Monitor Service** | 500 | 15,000 | 15 MB |
 | **Signal Processing Controller** | 1,000 | 30,000 | 30 MB |
 | **Remediation Orchestrator Controller** | 1,200 | 36,000 | 36 MB |
-| **TOTAL** | **12,060** | **361,800** | **361.8 MB** |
+| **TOTAL** | **12,260** | **367,800** | **367.8 MB** |
 
-**Storage Cost**: ~$0.36/month (PostgreSQL storage at $0.10/GB, 361.8 MB ≈ 0.36 GB)
+**Storage Cost**: ~$0.37/month (PostgreSQL storage at $0.10/GB, 367.8 MB ≈ 0.37 GB)
 
 **Retention**: 90 days (default), 7 years (compliance)
 
@@ -741,6 +807,7 @@ context_api:
 | Remediation Execution Controller | Kubernetes API | ✅ Yes | Infrastructure changes require audit |
 | Notification Service | PagerDuty | ✅ Yes | Notification delivery is compliance-required |
 | Data Storage Service | AWS RDS | ✅ Yes | Database operations require audit |
+| Auth Webhook Service | OPA/Gatekeeper | ✅ Yes | Admission decisions require audit trail |
 | Effectiveness Monitor Service | MLflow | ✅ Yes | ML model performance requires tracking |
 
 ---
@@ -809,7 +876,6 @@ context_api:
 - [ ] **Define event types** (per service table above)
 
 - [ ] **Add Prometheus metrics**
-  - `audit_events_buffered_total`
   - `audit_events_dropped_total`
   - `audit_events_written_total`
 
@@ -832,12 +898,12 @@ context_api:
 - ✅ <1ms latency impact on business operations
 
 **Cost Metrics**:
-- ✅ Storage cost <$1/month (345 MB/month)
+- ✅ Storage cost <$1/month (367.8 MB/month)
 - ✅ Zero audit traces for read-only operations
 
 ---
 
 **Maintained By**: Kubernaut Architecture Team
-**Last Updated**: November 8, 2025
+**Last Updated**: March 9, 2026
 **Review Cycle**: Annually or when new services are added
 

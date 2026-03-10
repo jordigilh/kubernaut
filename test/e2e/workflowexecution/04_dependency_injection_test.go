@@ -370,6 +370,169 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 			GinkgoWriter.Printf("   Workspace count: %d\n", len(pr.Spec.Workspaces))
 		})
 	})
+
+	Context("E2E-WE-006-005: Job ConfigMap dependency injection", func() {
+		It("should mount declared ConfigMap in Job at the DD-WE-006 convention path", func() {
+			depConfigMapJobUUID := infrastructure.RegisteredWorkflowUUIDs["test-dep-configmap-job"]
+			Expect(depConfigMapJobUUID).ToNot(BeEmpty(),
+				"test-dep-configmap-job UUID should have been captured during workflow registration")
+
+			testName := fmt.Sprintf("e2e-dep-inj-005-%s", uuid.New().String()[:8])
+			targetResource := fmt.Sprintf("default/deployment/dep-inj-cm-%s", uuid.New().String()[:8])
+
+			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testName,
+					Namespace: controllerNamespace,
+				},
+				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+					ExecutionEngine: "job",
+					RemediationRequestRef: corev1.ObjectReference{
+						APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
+						Kind:       "RemediationRequest",
+						Name:       "test-rr-" + testName,
+						Namespace:  controllerNamespace,
+					},
+					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+						WorkflowID: depConfigMapJobUUID,
+						Version:    "v1.0.0",
+						ExecutionBundle: fmt.Sprintf("%s/placeholder-execution:%s",
+							infrastructure.TestWorkflowBundleRegistry, infrastructure.TestWorkflowBundleVersion),
+					},
+					TargetResource: targetResource,
+					Parameters: map[string]string{
+						"MESSAGE": "DD-WE-006 E2E ConfigMap dependency injection test",
+					},
+				},
+			}
+
+			defer func() { _ = deleteWFE(wfe) }()
+
+			By("E2E-WE-006-005: Creating a WFE referencing a workflow with declared ConfigMap dependency")
+			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+
+			By("E2E-WE-006-005: Waiting for Running phase (Job created)")
+			Eventually(func() string {
+				updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+				if updated != nil {
+					return updated.Status.Phase
+				}
+				return ""
+			}, 60*time.Second, 2*time.Second).Should(Equal(workflowexecutionv1alpha1.PhaseRunning))
+
+			By("E2E-WE-006-005: Fetching the created Job from execution namespace")
+			var jobList batchv1.JobList
+			Eventually(func() int {
+				err := k8sClient.List(ctx, &jobList,
+					client.InNamespace(infrastructure.ExecutionNamespace),
+					client.MatchingLabels{"kubernaut.ai/workflow-execution": wfe.Name})
+				if err != nil {
+					return 0
+				}
+				return len(jobList.Items)
+			}, 30*time.Second, 2*time.Second).Should(Equal(1))
+
+			job := jobList.Items[0]
+
+			By("E2E-WE-006-005: Verifying Job has a volume for the declared ConfigMap")
+			Expect(job.Spec.Template.Spec.Volumes).To(ContainElement(
+				HaveField("Name", "configmap-e2e-dep-configmap"),
+			), "Job should have a volume named configmap-e2e-dep-configmap")
+
+			By("E2E-WE-006-005: Verifying container mounts the ConfigMap at the DD-WE-006 convention path")
+			Expect(job.Spec.Template.Spec.Containers).To(HaveLen(1))
+			container := job.Spec.Template.Spec.Containers[0]
+			Expect(container.VolumeMounts).To(ContainElement(And(
+				HaveField("Name", "configmap-e2e-dep-configmap"),
+				HaveField("MountPath", "/run/kubernaut/configmaps/e2e-dep-configmap"),
+				HaveField("ReadOnly", true),
+			)), "ConfigMap should be mounted read-only at /run/kubernaut/configmaps/e2e-dep-configmap")
+
+			GinkgoWriter.Printf("E2E-WE-006-005: ConfigMap dependency injection validated\n")
+			GinkgoWriter.Printf("   Workflow UUID: %s\n", depConfigMapJobUUID)
+			GinkgoWriter.Printf("   Job name: %s\n", job.Name)
+		})
+	})
+
+	Context("E2E-WE-006-006: Tekton PipelineRun with ConfigMap workspace binding", func() {
+		It("should create PipelineRun with workspace binding for declared ConfigMap dependency", func() {
+			depConfigMapTektonUUID := infrastructure.RegisteredWorkflowUUIDs["test-dep-configmap-tekton"]
+			Expect(depConfigMapTektonUUID).ToNot(BeEmpty(),
+				"test-dep-configmap-tekton UUID should have been captured during workflow registration")
+
+			testName := fmt.Sprintf("e2e-dep-inj-006-%s", uuid.New().String()[:8])
+			targetResource := fmt.Sprintf("default/deployment/dep-inj-cm-tekton-%s", uuid.New().String()[:8])
+
+			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testName,
+					Namespace: controllerNamespace,
+				},
+				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+					ExecutionEngine: "tekton",
+					RemediationRequestRef: corev1.ObjectReference{
+						APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
+						Kind:       "RemediationRequest",
+						Name:       "test-rr-" + testName,
+						Namespace:  controllerNamespace,
+					},
+					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+						WorkflowID:      depConfigMapTektonUUID,
+						Version:         "v1.0.0",
+						ExecutionBundle: "quay.io/kubernaut-cicd/tekton-bundles/hello-world:v1.0.0",
+					},
+					TargetResource: targetResource,
+					Parameters: map[string]string{
+						"MESSAGE": "DD-WE-006 Tekton ConfigMap dependency injection test",
+					},
+				},
+			}
+
+			defer func() { _ = deleteWFE(wfe) }()
+
+			By("E2E-WE-006-006: Creating a Tekton WFE referencing a workflow with declared ConfigMap dependency")
+			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+
+			By("E2E-WE-006-006: Waiting for Running phase (PipelineRun created)")
+			Eventually(func() string {
+				updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+				if updated != nil {
+					return updated.Status.Phase
+				}
+				return ""
+			}, 60*time.Second, 2*time.Second).Should(Equal(workflowexecutionv1alpha1.PhaseRunning))
+
+			By("E2E-WE-006-006: Fetching the created PipelineRun from execution namespace")
+			var prList tektonv1.PipelineRunList
+			Eventually(func() int {
+				err := k8sClient.List(ctx, &prList,
+					client.InNamespace(infrastructure.ExecutionNamespace),
+					client.MatchingLabels{"kubernaut.ai/workflow-execution": wfe.Name})
+				if err != nil {
+					return 0
+				}
+				return len(prList.Items)
+			}, 30*time.Second, 2*time.Second).Should(Equal(1))
+
+			pr := prList.Items[0]
+
+			By("E2E-WE-006-006: Verifying PipelineRun has a workspace binding for the declared ConfigMap")
+			Expect(pr.Spec.Workspaces).To(ContainElement(And(
+				HaveField("Name", "configmap-e2e-dep-configmap-tekton"),
+				HaveField("ConfigMap", Not(BeNil())),
+			)), "PipelineRun should have workspace configmap-e2e-dep-configmap-tekton backed by ConfigMap")
+
+			cmWs := findWorkspace(pr.Spec.Workspaces, "configmap-e2e-dep-configmap-tekton")
+			Expect(cmWs).ToNot(BeNil(), "workspace should exist")
+			Expect(cmWs.ConfigMap.Name).To(Equal("e2e-dep-configmap-tekton"),
+				"Workspace should reference ConfigMap e2e-dep-configmap-tekton")
+
+			GinkgoWriter.Printf("E2E-WE-006-006: Tekton ConfigMap dependency injection validated\n")
+			GinkgoWriter.Printf("   Workflow UUID: %s\n", depConfigMapTektonUUID)
+			GinkgoWriter.Printf("   PipelineRun name: %s\n", pr.Name)
+			GinkgoWriter.Printf("   Workspace count: %d\n", len(pr.Spec.Workspaces))
+		})
+	})
 })
 
 func findWorkspace(workspaces []tektonv1.WorkspaceBinding, name string) *tektonv1.WorkspaceBinding {

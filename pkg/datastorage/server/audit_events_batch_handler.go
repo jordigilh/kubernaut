@@ -78,19 +78,11 @@ func (s *Server) handleCreateAuditEventsBatch(w http.ResponseWriter, r *http.Req
 		errMsg := err.Error()
 		if strings.Contains(errMsg, "cannot unmarshal object") {
 			s.logger.Info("Batch endpoint received single object instead of array", "error", err)
-
-		// Metrics are guaranteed non-nil by constructor
-		s.metrics.ValidationFailures.WithLabelValues("body", "not_array").Inc()
-
 			response.WriteRFC7807Error(w, http.StatusBadRequest, "invalid_request", "Invalid Request", "request body must be a JSON array, not a single object", s.logger)
 			return
 		}
 
 		s.logger.Info("Invalid JSON array in request body", "error", err)
-
-	// Metrics are guaranteed non-nil by constructor
-	s.metrics.ValidationFailures.WithLabelValues("body", "invalid_json_array").Inc()
-
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "invalid_request", "Invalid Request", "request body must be a JSON array: "+err.Error(), s.logger)
 		return
 	}
@@ -98,10 +90,6 @@ func (s *Server) handleCreateAuditEventsBatch(w http.ResponseWriter, r *http.Req
 	// 2. Validate batch is not empty
 	if len(requests) == 0 {
 		s.logger.Info("Batch endpoint received empty array")
-
-	// Metrics are guaranteed non-nil by constructor
-	s.metrics.ValidationFailures.WithLabelValues("body", "empty_batch").Inc()
-
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "validation-error", "Validation Error", "batch cannot be empty", s.logger)
 		return
 	}
@@ -116,10 +104,6 @@ func (s *Server) handleCreateAuditEventsBatch(w http.ResponseWriter, r *http.Req
 		// Validate business rules
 		if err := helpers.ValidateAuditEventRequest(&req); err != nil {
 			s.logger.Info("Batch validation failed", "index", i, "error", err)
-
-		// Metrics are guaranteed non-nil by constructor
-		s.metrics.ValidationFailures.WithLabelValues("batch_event", "validation_failed").Inc()
-
 			response.WriteRFC7807Error(w, http.StatusBadRequest, "validation-error", "Validation Error", fmt.Sprintf("event at index %d: %s", i, err.Error()), s.logger)
 			return
 		}
@@ -177,12 +161,6 @@ func (s *Server) handleCreateAuditEventsBatch(w http.ResponseWriter, r *http.Req
 	eventIDs := make([]string, len(createdEvents))
 	for i, event := range createdEvents {
 		eventIDs[i] = event.EventID.String()
-	}
-
-	// 6. Record metrics
-	// Metrics are guaranteed non-nil by constructor
-	for _, event := range createdEvents {
-		s.metrics.AuditTracesTotal.WithLabelValues(string(event.EventCategory), "success").Inc()
 	}
 
 	s.logger.Info("Batch audit events created successfully",

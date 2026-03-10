@@ -113,17 +113,11 @@ const (
 
 // SetCondition sets or updates a condition on the RemediationRequest status.
 // Uses the canonical Kubernetes meta.SetStatusCondition function per DD-CRD-002 v1.2.
-// Records Prometheus metrics for condition status and transitions (BR-ORCH-043) if metrics is provided.
 //
 // Per DD-METRICS-001: metrics parameter is optional (can be nil) for backward compatibility.
 // Controllers with metrics should pass their metrics instance; tests can pass nil.
 func SetCondition(rr *remediationv1.RemediationRequest, conditionType string, status metav1.ConditionStatus, reason, message string, m *rometrics.Metrics) {
-	// Get previous condition status for transition tracking
-	previousCondition := meta.FindStatusCondition(rr.Status.Conditions, conditionType)
-	previousStatus := ""
-	if previousCondition != nil {
-		previousStatus = string(previousCondition.Status)
-	}
+	_ = m // Reserved for future metrics; currently unused after internal-only metrics removal
 
 	// Set the condition using canonical K8s function
 	condition := metav1.Condition{
@@ -135,23 +129,6 @@ func SetCondition(rr *remediationv1.RemediationRequest, conditionType string, st
 		ObservedGeneration: rr.Generation,
 	}
 	meta.SetStatusCondition(&rr.Status.Conditions, condition)
-
-	// Record metrics (BR-ORCH-043, DD-005) if metrics instance provided
-	if m != nil {
-		currentStatus := string(status)
-		namespace := rr.Namespace
-		if namespace == "" {
-			namespace = "default" // Fallback for testing or unnamespaced objects
-		}
-
-		// Record current condition status (gauge)
-		m.RecordConditionStatus("RemediationRequest", conditionType, currentStatus, namespace)
-
-		// Record condition transition (counter) only if status changed
-		if previousStatus != currentStatus {
-			m.RecordConditionTransition("RemediationRequest", conditionType, previousStatus, currentStatus, namespace)
-		}
-	}
 }
 
 // GetCondition returns the condition with the specified type, or nil if not found.

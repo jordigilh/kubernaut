@@ -37,6 +37,17 @@ import (
 	"github.com/google/uuid"
 )
 
+// BR-GATEWAY-036/037: Suite-level authorized SA token for all E2E webhook requests.
+// Set in BeforeSuite (gateway_e2e_suite_test.go), used by sendWebhook/sendWebhookRequest.
+var e2eAuthToken string //nolint:gochecknoglobals // suite-level state shared across E2E tests
+
+// setE2EAuthHeader injects the suite-level authorized Bearer token into an HTTP request.
+func setE2EAuthHeader(req *http.Request) {
+	if e2eAuthToken != "" {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", e2eAuthToken))
+	}
+}
+
 // GatewayResponse represents the Gateway API response
 type GatewayResponse struct {
 	Status                      string `json:"status"`
@@ -170,6 +181,7 @@ func sendWebhook(baseURL, path string, payload []byte) *WebhookResponse {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+	setE2EAuthHeader(req)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -213,6 +225,7 @@ func sendWebhookRequest(gatewayURL, path string, body []byte) *WebhookResponse {
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+	setE2EAuthHeader(req)
 
 	resp, err := http.DefaultClient.Do(req)
 	Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed")

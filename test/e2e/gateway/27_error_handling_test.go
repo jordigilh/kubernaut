@@ -55,6 +55,7 @@ var _ = Describe("Error Handling & Edge Cases", func() {
 
 	// Pre-create managed namespace for E2E tests (Pattern: RO E2E)
 	testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "test-err")
+	helpers.EnsureTestPod(ctx, k8sClient, testNamespace, "test-pod")
 
 		// Clear Redis
 	})
@@ -88,6 +89,7 @@ AfterEach(func() {
 			bytes.NewBufferString(malformedJSON))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+		setE2EAuthHeader(req)
 
 		resp, err := http.DefaultClient.Do(req)
 		_ = err
@@ -143,6 +145,7 @@ AfterEach(func() {
 			bytes.NewBufferString(largePayload))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+		setE2EAuthHeader(req)
 
 		resp, err := http.DefaultClient.Do(req)
 		_ = err
@@ -185,6 +188,7 @@ AfterEach(func() {
 			bytes.NewBufferString(invalidAlert))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+		setE2EAuthHeader(req)
 
 		resp, err := http.DefaultClient.Do(req)
 		_ = err

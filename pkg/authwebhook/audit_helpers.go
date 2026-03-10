@@ -17,92 +17,45 @@ limitations under the License.
 package authwebhook
 
 import (
+	"context"
+
+	"github.com/jordigilh/kubernaut/pkg/audit"
 	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
-// Enum conversion helpers for webhook audit payloads
-
-// toNotificationAuditPayloadType converts CRD notification type string to ogen enum
-// Maps api/notification/v1alpha1/notificationrequest_types.go:31-40 NotificationType enum
-func toNotificationAuditPayloadType(typeStr string) api.NotificationAuditPayloadType {
-	switch typeStr {
-	case "escalation":
-		return api.NotificationAuditPayloadTypeEscalation
-	case "simple":
-		return api.NotificationAuditPayloadTypeSimple
-	case "status-update":
-		return api.NotificationAuditPayloadTypeStatusUpdate
-	case "approval":
-		return api.NotificationAuditPayloadTypeApproval
-	case "manual-review":
-		return api.NotificationAuditPayloadTypeManualReview
-	default:
-		return api.NotificationAuditPayloadTypeSimple // default fallback
-	}
+// WebhookAuditOpts holds the parameters for constructing a webhook audit event envelope.
+// The envelope fields are identical across all AW handlers; only the payload differs.
+type WebhookAuditOpts struct {
+	EventType    string
+	Category     string
+	Action       string
+	Outcome      api.AuditEventRequestEventOutcome
+	ResourceKind string
+	ResourceID   string
+	LoggerName   string
 }
 
-// toNotificationAuditPayloadNotificationType converts CRD notification type string to ogen enum (alias field)
-// Maps api/notification/v1alpha1/notificationrequest_types.go:31-40 NotificationType enum
-func toNotificationAuditPayloadNotificationType(typeStr string) api.NotificationAuditPayloadNotificationType {
-	switch typeStr {
-	case "escalation":
-		return api.NotificationAuditPayloadNotificationTypeEscalation
-	case "simple":
-		return api.NotificationAuditPayloadNotificationTypeSimple
-	case "status-update":
-		return api.NotificationAuditPayloadNotificationTypeStatusUpdate
-	case "approval":
-		return api.NotificationAuditPayloadNotificationTypeApproval
-	case "manual-review":
-		return api.NotificationAuditPayloadNotificationTypeManualReview
-	default:
-		return api.NotificationAuditPayloadNotificationTypeSimple // default fallback
-	}
+// buildAuditEnvelope creates a fully populated audit event envelope from an admission
+// request and options. The caller sets EventData on the returned event before storing.
+func buildAuditEnvelope(req admission.Request, opts WebhookAuditOpts) *api.AuditEventRequest {
+	event := audit.NewAuditEventRequest()
+	audit.SetEventType(event, opts.EventType)
+	audit.SetEventCategory(event, opts.Category)
+	audit.SetEventAction(event, opts.Action)
+	audit.SetEventOutcome(event, opts.Outcome)
+	audit.SetActor(event, "user", req.UserInfo.Username)
+	audit.SetResource(event, opts.ResourceKind, opts.ResourceID)
+	audit.SetCorrelationID(event, string(req.UID))
+	audit.SetNamespace(event, req.Namespace)
+	return event
 }
 
-// toNotificationAuditPayloadPriority converts CRD priority string to ogen enum
-// Maps api/notification/v1alpha1/notificationrequest_types.go:47-50 NotificationPriority enum
-func toNotificationAuditPayloadPriority(priority string) api.NotificationAuditPayloadPriority {
-	switch priority {
-	case "critical":
-		return api.NotificationAuditPayloadPriorityCritical
-	case "high":
-		return api.NotificationAuditPayloadPriorityHigh
-	case "medium":
-		return api.NotificationAuditPayloadPriorityMedium
-	case "low":
-		return api.NotificationAuditPayloadPriorityLow
-	default:
-		return api.NotificationAuditPayloadPriorityMedium // default fallback
-	}
-}
-
-// toNotificationAuditPayloadFinalStatus converts CRD phase string to ogen enum
-func toNotificationAuditPayloadFinalStatus(phase string) api.NotificationAuditPayloadFinalStatus {
-	switch phase {
-	case "Pending":
-		return api.NotificationAuditPayloadFinalStatusPending
-	case "Sending":
-		return api.NotificationAuditPayloadFinalStatusSending
-	case "Sent":
-		return api.NotificationAuditPayloadFinalStatusSent
-	case "Failed":
-		return api.NotificationAuditPayloadFinalStatusFailed
-	case "Cancelled":
-		return api.NotificationAuditPayloadFinalStatusCancelled
-	default:
-		return api.NotificationAuditPayloadFinalStatusPending // default fallback
-	}
-}
-
-// toRemediationApprovalAuditPayloadDecision converts CRD decision string to ogen enum
-func toRemediationApprovalAuditPayloadDecision(decision string) api.RemediationApprovalAuditPayloadDecision {
-	switch decision {
-	case "Approved":
-		return api.RemediationApprovalAuditPayloadDecisionApproved
-	case "Rejected":
-		return api.RemediationApprovalAuditPayloadDecisionRejected
-	default:
-		return api.RemediationApprovalAuditPayloadDecisionApproved // default fallback
+// storeAuditBestEffort persists an audit event, logging any error without propagating.
+func storeAuditBestEffort(ctx context.Context, store audit.AuditStore, event *api.AuditEventRequest, loggerName, eventType string) {
+	if err := store.StoreAudit(ctx, event); err != nil {
+		logger := ctrl.Log.WithName(loggerName)
+		logger.Error(err, "Audit event storage failed (non-blocking)", "eventType", eventType)
 	}
 }

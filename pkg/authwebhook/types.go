@@ -12,11 +12,25 @@ const (
 	EventTypeTimeoutModified = "webhook.remediationrequest.timeout_modified"
 	EventTypeRARDecided      = "webhook.remediationapprovalrequest.decided"
 	EventTypeNotifCancelled  = "webhook.notification.cancelled"
+
+	// ADR-058: RemediationWorkflow CRD admission event types
+	EventTypeRWAdmittedCreate = "remediationworkflow.admitted.create"
+	EventTypeRWAdmittedDelete = "remediationworkflow.admitted.delete"
+	EventTypeRWAdmittedDenied = "remediationworkflow.admitted.denied"
+
+	// ADR-059: ActionType CRD admission event types (BR-WORKFLOW-007)
+	EventTypeATAdmittedCreate = "actiontype.admitted.create"
+	EventTypeATAdmittedUpdate = "actiontype.admitted.update"
+	EventTypeATAdmittedDelete = "actiontype.admitted.delete"
+	EventTypeATDeniedCreate   = "actiontype.denied.create"
+	EventTypeATDeniedUpdate   = "actiontype.denied.update"
+	EventTypeATDeniedDelete   = "actiontype.denied.delete"
 )
 
-// Event category constant per ADR-034 v1.4: event_category = emitter service
+// Event category constants per ADR-034 v1.8: event_category = business domain
 const (
-	EventCategoryWebhook = "webhook"
+	EventCategoryWebhook    = "webhook"
+	EventCategoryActionType = "actiontype"
 )
 
 // AuthContext holds authenticated user information extracted from admission requests.

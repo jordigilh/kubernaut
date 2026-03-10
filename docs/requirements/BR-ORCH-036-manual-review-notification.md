@@ -467,20 +467,6 @@ const (
 
 ---
 
-## Metrics
-
-```prometheus
-# Counter for manual review notifications sent
-kubernaut_remediationorchestrator_manual_review_notifications_total{
-  source="WorkflowExecution|AIAnalysis",
-  reason="ExhaustedRetries|PreviousExecutionFailed|ExecutionFailure|WorkflowResolutionFailed|APIError",
-  sub_reason="WorkflowNotFound|ImageMismatch|ParameterValidationFailed|NoMatchingWorkflows|LowConfidence|LLMParsingError|InvestigationInconclusive|MaxRetriesExceeded|TransientError|PermanentError",
-  namespace="<rr_namespace>"
-}
-```
-
----
-
 ## Related Documents
 
 - [BR-ORCH-032: Handle WE Skipped Phase](./BR-ORCH-032-034-resource-lock-deduplication.md)

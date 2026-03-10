@@ -187,9 +187,6 @@ const (
 	// MetricNameReconciliationDuration is the name of the reconciliation duration histogram metric
 	MetricNameReconciliationDuration = "signalprocessing_reconciler_reconciliation_duration_seconds"
 
-	// MetricNameEnrichmentDuration is the name of the enrichment duration histogram metric
-	MetricNameEnrichmentDuration = "signalprocessing_enricher_duration_seconds"
-
 	// Label value constants
 	LabelPhaseCompleted = "Completed"
 	LabelPhaseFailed    = "Failed"
@@ -201,7 +198,6 @@ const (
 type Metrics struct {
 	ReconciliationTotal    *prometheus.CounterVec
 	ReconciliationDuration *prometheus.HistogramVec
-	EnrichmentDuration     *prometheus.HistogramVec
 }
 
 func NewMetrics() *Metrics {
@@ -220,17 +216,14 @@ func NewMetrics() *Metrics {
 	ctrlmetrics.Registry.MustRegister(
 		m.ReconciliationTotal,
 		m.ReconciliationDuration,
-		m.EnrichmentDuration,
 	)
 
 	return m
 }
 
-// RecordReconciliation records a completed reconciliation.
-func (m *Metrics) RecordReconciliation(phase, result string, duration float64) {
-	m.ReconciliationTotal.WithLabelValues(phase, result).Inc()
-	m.ReconciliationDuration.WithLabelValues(phase).Observe(duration)
-}
+// Record metrics at call site (inline, no helper)
+// m.ReconciliationTotal.WithLabelValues(phase, result).Inc()
+// m.ReconciliationDuration.WithLabelValues(phase).Observe(duration)
 ```
 
 **Test Usage** (`*_test.go`):

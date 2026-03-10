@@ -113,10 +113,11 @@ func (c *WorkflowExecutionCreator) Create(
 			},
 			// WorkflowRef: Direct pass-through from AIAnalysis (BR-ORCH-025)
 			WorkflowRef: workflowexecutionv1.WorkflowRef{
-				WorkflowID:      ai.Status.SelectedWorkflow.WorkflowID,
-				Version:         ai.Status.SelectedWorkflow.Version,
-				ExecutionBundle:  ai.Status.SelectedWorkflow.ExecutionBundle,
+				WorkflowID:            ai.Status.SelectedWorkflow.WorkflowID,
+				Version:               ai.Status.SelectedWorkflow.Version,
+				ExecutionBundle:       ai.Status.SelectedWorkflow.ExecutionBundle,
 				ExecutionBundleDigest: ai.Status.SelectedWorkflow.ExecutionBundleDigest,
+				EngineConfig:          ai.Status.SelectedWorkflow.EngineConfig,
 			},
 			// TargetResource: String format "namespace/kind/name" (per API contract)
 			// BR-HAPI-191: Prefer LLM-identified AffectedResource (e.g., Deployment)

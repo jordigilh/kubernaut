@@ -37,7 +37,7 @@ hapi_root = os.path.join(os.path.dirname(__file__), '..', '..')
 sys.path.insert(0, hapi_root)
 from datastorage import ApiClient, Configuration
 from datastorage.api import WorkflowCatalogAPIApi, WorkflowDiscoveryAPIApi
-from datastorage.models import CreateWorkflowFromOCIRequest, RemediationWorkflow, MandatoryLabels
+from datastorage.models import CreateWorkflowInlineRequest, RemediationWorkflow, MandatoryLabels
 
 
 @dataclass
@@ -89,23 +89,25 @@ execution:
   engine: tekton
   bundle: {self.schema_image}"""
 
-    def to_oci_request(self) -> CreateWorkflowFromOCIRequest:
+    def to_inline_request(self) -> CreateWorkflowInlineRequest:
         """
-        Convert to CreateWorkflowFromOCIRequest (DD-WORKFLOW-017 compliant).
+        Convert to CreateWorkflowInlineRequest (ADR-058 compliant).
 
-        DD-WORKFLOW-017: Workflow registration accepts only an OCI image pullspec.
-        DataStorage pulls the image, extracts workflow-schema.yaml, validates it,
-        and populates all catalog fields from the extracted schema.
+        ADR-058: Workflow registration accepts inline CRD YAML content.
+        DataStorage parses the CRD envelope, validates the spec, and
+        populates all catalog fields from the provided content.
         """
-        return CreateWorkflowFromOCIRequest(
-            schema_image=self.schema_image
+        return CreateWorkflowInlineRequest(
+            content=self.to_yaml_content(),
+            source="e2e-test",
+            registered_by="e2e-test-fixture",
         )
 
     def to_remediation_workflow(self) -> RemediationWorkflow:
         """
         Convert to RemediationWorkflow model for test assertions.
 
-        NOTE: This is no longer used for workflow creation (see to_oci_request()).
+        NOTE: This is no longer used for workflow creation (see to_inline_request()).
         Retained for tests that need to build expected RemediationWorkflow values
         for response assertions.
         """
@@ -251,8 +253,8 @@ def bootstrap_workflows(data_storage_url: str, workflows: List[WorkflowFixture] 
     """
     Bootstrap workflow test data into Data Storage.
 
-    DD-WORKFLOW-017: Uses OCI pullspec-only registration. DataStorage pulls the OCI image,
-    extracts workflow-schema.yaml, validates it, and populates all catalog fields.
+    ADR-058: Uses inline YAML registration. DataStorage parses the CRD content,
+    validates the spec, and populates all catalog fields.
     DD-AUTH-014: Uses shared pool manager with ServiceAccount token injection.
     DD-TEST-011 v2.0: Captures workflow UUIDs for Mock LLM configuration.
 
@@ -287,14 +289,12 @@ def bootstrap_workflows(data_storage_url: str, workflows: List[WorkflowFixture] 
 
         for workflow in workflows:
             try:
-                # DD-WORKFLOW-017: Register workflow via OCI pullspec only
-                oci_request = workflow.to_oci_request()
+                inline_request = workflow.to_inline_request()
                 response = catalog_api.create_workflow(
-                    create_workflow_from_oci_request=oci_request,
+                    create_workflow_inline_request=inline_request,
                     _request_timeout=10
                 )
 
-                # DD-TEST-011: Capture workflow_id from response
                 workflow_id = response.workflow_id if hasattr(response, 'workflow_id') else None
                 if workflow_id:
                     key = f"{workflow.workflow_name}:{workflow.primary_environment}"
@@ -304,12 +304,9 @@ def bootstrap_workflows(data_storage_url: str, workflows: List[WorkflowFixture] 
 
             except Exception as e:
                 error_msg = str(e)
-                # 409 Conflict means workflow already exists (acceptable)
                 if "409" in error_msg or "already exists" in error_msg.lower():
                     results["existing"].append(workflow.workflow_name)
 
-                    # DD-TEST-011: Query for existing workflow UUID via discovery API
-                    # DD-WORKFLOW-016: Use list_workflows_by_action_type (replaces removed search_workflows)
                     try:
                         discovery_response = discovery_api.list_workflows_by_action_type(
                             action_type=workflow.action_type,
@@ -319,7 +316,6 @@ def bootstrap_workflows(data_storage_url: str, workflows: List[WorkflowFixture] 
                             priority=workflow.priority,
                             _request_timeout=5
                         )
-                        # Match by workflow_name in the discovery results
                         for entry in discovery_response.workflows:
                             if entry.workflow_name == workflow.workflow_name:
                                 key = f"{workflow.workflow_name}:{workflow.primary_environment}"

@@ -62,6 +62,7 @@ var _ = Describe("Test 04: Metrics Endpoint (BR-GATEWAY-017)", Ordered, func() {
 		// Create unique test namespace (Pattern: RO E2E)
 		// This prevents circuit breaker degradation from "namespace not found" errors
 		testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "metrics")
+		helpers.EnsureTestPod(ctx, k8sClient, testNamespace, "metrics-test-pod")
 		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 	})
 
@@ -153,6 +154,7 @@ var _ = Describe("Test 04: Metrics Endpoint (BR-GATEWAY-017)", Ordered, func() {
 			Expect(err).ToNot(HaveOccurred())
 			req5.Header.Set("Content-Type", "application/json")
 			req5.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+			setE2EAuthHeader(req5)
 			alertResp, err = httpClient.Do(req5)
 			Expect(err).ToNot(HaveOccurred())
 			statusCode := alertResp.StatusCode
@@ -213,6 +215,7 @@ var _ = Describe("Test 04: Metrics Endpoint (BR-GATEWAY-017)", Ordered, func() {
 			}
 			req6.Header.Set("Content-Type", "application/json")
 			req6.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+			setE2EAuthHeader(req6)
 			return httpClient.Do(req6)
 		}()
 		Expect(err).ToNot(HaveOccurred())

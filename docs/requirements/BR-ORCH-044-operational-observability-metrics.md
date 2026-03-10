@@ -50,17 +50,7 @@ RemediationOrchestrator (RO) is the central orchestration controller coordinatin
 
 **Metrics**:
 
-1. **`kubernaut_remediationorchestrator_reconcile_total`**
-   - **Type**: Counter
-   - **Labels**: `namespace`, `phase`
-   - **Purpose**: Total reconciliation attempts
-   - **Business Value**: **90%** - Throughput tracking, error rate calculation, capacity planning
-   - **Usage**:
-     - Alert on sudden drops (service down)
-     - Track per-phase success rates
-     - Capacity planning (requests/second)
-
-2. **`kubernaut_remediationorchestrator_reconcile_duration_seconds`**
+1. **`kubernaut_remediationorchestrator_reconcile_duration_seconds`**
    - **Type**: Histogram
    - **Labels**: `namespace`, `phase`
    - **Buckets**: `[0.01, 0.02, 0.04, 0.08, 0.16, 0.32, 0.64, 1.28, 2.56, 5.12, 10.24]` seconds
@@ -78,17 +68,12 @@ defer func() {
     r.Metrics.ReconcileDurationSeconds.WithLabelValues(
         rr.Namespace, string(rr.Status.OverallPhase),
     ).Observe(time.Since(startTime).Seconds())
-
-    r.Metrics.ReconcileTotal.WithLabelValues(
-        rr.Namespace, string(rr.Status.OverallPhase),
-    ).Inc()
 }()
 ```
 
 **Acceptance Criteria**:
 - AC-044-1.1: Metrics exposed at `:8080/metrics` endpoint
 - AC-044-1.2: P95 latency queryable via Prometheus
-- AC-044-1.3: Per-phase throughput calculable
 
 ---
 
@@ -155,7 +140,6 @@ func (r *Reconciler) transitionPhase(ctx context.Context, rr *remediationv1.Reme
    - **Business Value**: **80%** - Resource accounting, orchestration debugging
    - **CRD Types**: `SignalProcessing`, `AIAnalysis`, `WorkflowExecution`, `RemediationApprovalRequest`, `NotificationRequest`
    - **Usage**:
-     - Track creation failures (compare to ReconcileTotal)
      - Capacity planning (CRDs/hour)
      - Detect orchestration issues (missing child CRDs)
 
@@ -259,155 +243,6 @@ func (r *Reconciler) handleTimeout(ctx context.Context, rr *remediationv1.Remedi
 
 ---
 
-### **BR-ORCH-044.5: Notification Lifecycle Metrics**
-
-**MUST**: RO SHALL track notification creation and delivery for approval workflow observability.
-
-**Rationale**: Notification workflows (manual review, approval) are critical paths. Tracking notification metrics enables SLOs and debugging for approval-based remediations.
-
-**Metrics**:
-
-1. **`kubernaut_remediationorchestrator_manual_review_notifications_total`**
-   - **Type**: Counter
-   - **Labels**: `source`, `reason`, `sub_reason`, `namespace`
-   - **Purpose**: Track manual review notification creation
-   - **Business Value**: **75%** - Important for workload characterization
-   - **Sources**: `aianalysis`, `workflow_execution`
-   - **Reasons**: `workflow_resolution_failed`, `confidence_too_low`, `execution_failed`
-   - **Usage**:
-     - Track manual review workload
-     - Identify common failure patterns
-     - Measure automation vs. manual ratio
-
-2. **`kubernaut_remediationorchestrator_approval_notifications_total`**
-   - **Type**: Counter
-   - **Labels**: `namespace`
-   - **Purpose**: Track approval notification creation
-   - **Business Value**: **70%** - Required for approval SLO tracking
-   - **Usage**:
-     - Track approval workflow volume
-     - Measure approval latency (time to approval)
-     - Capacity planning for approval team
-
-3. **`kubernaut_remediationorchestrator_notification_delivery_duration_seconds`**
-   - **Type**: Histogram
-   - **Labels**: `namespace`, `status`
-   - **Buckets**: `[1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]` seconds
-   - **Purpose**: Track notification delivery latency
-   - **Business Value**: **75%** - Notification SLO tracking
-   - **Statuses**: `Sent`, `Failed`
-   - **Usage**:
-     - SLO: P95 notification delivery < 60 seconds
-     - Alert on delivery failures
-     - Optimize notification service integration
-
-**Implementation**:
-```go
-// Manual review notification
-func (h *AIAnalysisHandler) handleWorkflowResolutionFailed(ctx context.Context, rr *remediationv1.RemediationRequest) error {
-    h.metrics.ManualReviewNotificationsTotal.WithLabelValues(
-        "aianalysis", "workflow_resolution_failed", ai.Status.Reason, rr.Namespace,
-    ).Inc()
-
-    // ... create NotificationRequest ...
-}
-
-// Approval notification
-func (h *AIAnalysisHandler) handleApprovalRequired(ctx context.Context, rr *remediationv1.RemediationRequest) error {
-    h.metrics.ApprovalNotificationsTotal.WithLabelValues(rr.Namespace).Inc()
-
-    // ... create RAR and NotificationRequest ...
-}
-
-// Delivery duration
-func (h *NotificationHandler) UpdateNotificationStatus(ctx context.Context, rr *remediationv1.RemediationRequest) error {
-    deliveryDuration := time.Since(nr.CreationTimestamp.Time)
-
-    h.metrics.NotificationDeliveryDurationSeconds.WithLabelValues(
-        rr.Namespace, nr.Status.Phase,
-    ).Observe(deliveryDuration.Seconds())
-
-    // ... update status ...
-}
-```
-
-**Acceptance Criteria**:
-- AC-044-5.1: Manual review workload measurable
-- AC-044-5.2: Approval volume tracked
-- AC-044-5.3: Notification delivery SLO (P95 < 60s) queryable
-- AC-044-5.4: Alert on notification delivery failures
-
----
-
-### **BR-ORCH-044.6: Status Update Performance Metrics**
-
-**MUST**: RO SHALL track status update retries and conflicts for Kubernetes API performance monitoring.
-
-**Rationale**: RemediationOrchestrator performs frequent status updates with optimistic concurrency control. Tracking retries and conflicts helps tune retry logic and detect API contention issues.
-
-**Metrics**:
-
-1. **`kubernaut_remediationorchestrator_status_update_retries_total`**
-   - **Type**: Counter
-   - **Labels**: `namespace`, `outcome`
-   - **Purpose**: Track retry attempts for status updates
-   - **Business Value**: **65%** - Useful for retry logic tuning
-   - **Outcomes**: `success`, `exhausted`
-   - **Usage**:
-     - Tune max retry count
-     - Detect API performance degradation
-     - Optimize backoff strategy
-
-2. **`kubernaut_remediationorchestrator_status_update_conflicts_total`**
-   - **Type**: Counter
-   - **Labels**: `namespace`
-   - **Purpose**: Track optimistic concurrency conflicts
-   - **Business Value**: **70%** - Required for API contention debugging
-   - **Usage**:
-     - Detect high-contention resources
-     - Alert on excessive conflicts (>10/minute)
-     - Optimize reconciliation frequency
-
-**Implementation**:
-```go
-// In helpers.UpdateRemediationRequestStatus()
-func UpdateRemediationRequestStatus(ctx context.Context, c client.Client, m *metrics.Metrics, rr *remediationv1.RemediationRequest, updateFn func(*remediationv1.RemediationRequest) error) error {
-    attemptCount := 0
-    maxRetries := 5
-
-    for attemptCount < maxRetries {
-        attemptCount++
-
-        if err := c.Status().Update(ctx, rr); err != nil {
-            if isConflictError(err) {
-                m.StatusUpdateConflictsTotal.WithLabelValues(rr.Namespace).Inc()
-                continue // Retry
-            }
-            return err
-        }
-
-        // Success
-        outcome := "success"
-        if attemptCount > 1 {
-            m.StatusUpdateRetriesTotal.WithLabelValues(rr.Namespace, outcome).Add(float64(attemptCount - 1))
-        }
-        return nil
-    }
-
-    // Exhausted retries
-    m.StatusUpdateRetriesTotal.WithLabelValues(rr.Namespace, "exhausted").Add(float64(attemptCount))
-    return fmt.Errorf("exhausted retries")
-}
-```
-
-**Acceptance Criteria**:
-- AC-044-6.1: Retry attempts tracked
-- AC-044-6.2: Conflict rate queryable
-- AC-044-6.3: Alert on excessive conflicts (>10/min)
-- AC-044-6.4: Retry exhaustion tracked separately
-
----
-
 ## 🎯 **Implementation Status**
 
 ### **Current State** (December 20, 2025)
@@ -432,9 +267,8 @@ func UpdateRemediationRequestStatus(ctx context.Context, c client.Client, m *met
 | KPI | Metric | Target | Alert Threshold |
 |-----|--------|--------|-----------------|
 | **Reconciliation SLO** | P95 `reconcile_duration_seconds` | < 5s | > 10s |
-| **Throughput** | `reconcile_total` rate | > 10 req/s | < 5 req/s (service degradation) |
 | **Error Rate** | Failed reconciliations / total | < 5% | > 10% |
-| **Timeout Rate** | `timeouts_total` / `reconcile_total` | < 5% per phase | > 10% per phase |
+| **Timeout Rate** | `timeouts_total` / reconcile rate | < 5% per phase | > 10% per phase |
 
 ### **Automation Effectiveness KPIs**
 
@@ -443,20 +277,6 @@ func UpdateRemediationRequestStatus(ctx context.Context, c client.Client, m *met
 | **Self-Resolution Rate** | `no_action_needed_total` / signals | > 30% | Higher = better self-healing |
 | **Deduplication Rate** | `duplicates_skipped_total` / signals | > 50% | Higher = better efficiency |
 | **Automation vs. Manual** | Auto remediations / manual review | > 70% / 30% | Higher = better automation |
-
-### **Notification SLOs**
-
-| SLO | Metric | Target | Alert Threshold |
-|-----|--------|--------|-----------------|
-| **Notification Delivery** | P95 `notification_delivery_duration_seconds` | < 60s | > 120s |
-| **Approval Latency** | Time from approval notification to decision | < 5 min | > 15 min |
-
-### **API Performance KPIs**
-
-| KPI | Metric | Target | Alert Threshold |
-|-----|--------|--------|-----------------|
-| **Conflict Rate** | `status_update_conflicts_total` rate | < 5 conflicts/min | > 10 conflicts/min |
-| **Retry Rate** | Retries / total updates | < 10% | > 20% |
 
 ---
 
@@ -477,8 +297,6 @@ func UpdateRemediationRequestStatus(ctx context.Context, c client.Client, m *met
 | **BR-ORCH-027/028** (Timeouts) | TimeoutsTotal | **Makes Explicit** - Formalizes timeout tracking for tuning |
 | **BR-ORCH-032/038** (Deduplication) | DuplicatesSkippedTotal | **Makes Explicit** - Formalizes dedup effectiveness tracking |
 | **BR-ORCH-037** (No Action Needed) | NoActionNeededTotal | **Makes Explicit** - Formalizes self-resolution tracking |
-| **BR-ORCH-001** (Approval) | ApprovalNotificationsTotal | **Makes Explicit** - Formalizes approval volume tracking |
-| **BR-ORCH-036** (Manual Review) | ManualReviewNotificationsTotal | **Makes Explicit** - Formalizes manual review tracking |
 
 ---
 
@@ -499,8 +317,7 @@ func UpdateRemediationRequestStatus(ctx context.Context, c client.Client, m *met
 | `pkg/remediationorchestrator/metrics/metrics.go` | Metrics struct and constructors |
 | `cmd/remediationorchestrator/main.go` | Metrics initialization and injection |
 | `pkg/remediationorchestrator/controller/reconciler.go` | Core reconciliation and phase transition metrics |
-| `pkg/remediationorchestrator/handler/*.go` | Routing decision and notification metrics |
-| `pkg/remediationorchestrator/helpers/retry.go` | Status update performance metrics |
+| `pkg/remediationorchestrator/handler/*.go` | Routing decision metrics |
 
 ### **Validation**
 
@@ -515,7 +332,7 @@ func UpdateRemediationRequestStatus(ctx context.Context, c client.Client, m *met
 
 ### **Documentation Completeness**
 
-- [x] AC-044-DOC-1: All 13 operational metrics documented with business justification
+- [x] AC-044-DOC-1: All operational metrics documented with business justification
 - [x] AC-044-DOC-2: Relationship to existing BRs clarified
 - [x] AC-044-DOC-3: KPIs and SLOs defined for each metric category
 - [x] AC-044-DOC-4: Alert thresholds specified
@@ -561,7 +378,7 @@ func UpdateRemediationRequestStatus(ctx context.Context, c client.Client, m *met
 
 | Version | Date | Changes | Author |
 |---------|------|---------|--------|
-| **1.0** | December 20, 2025 | Initial release - Documents 13 operational metrics | RO Team |
+| **1.0** | December 20, 2025 | Initial release - Documents operational metrics | RO Team |
 
 ---
 
@@ -576,13 +393,11 @@ func UpdateRemediationRequestStatus(ctx context.Context, c client.Client, m *met
 ### **Post-V1.0** (Recommended Follow-Up)
 
 1. **Create Grafana Dashboards** (Priority: P1, Estimate: 4 hours)
-   - Core reconciliation dashboard (ReconcileTotal, Duration, PhaseTransitions)
+   - Core reconciliation dashboard (Duration, PhaseTransitions)
    - Effectiveness dashboard (NoActionNeeded, DuplicatesSkipped, Automation Rate)
-   - Notification dashboard (ManualReview, Approval, Delivery Duration)
-   - API performance dashboard (Retries, Conflicts)
 
 2. **Configure Alerting Rules** (Priority: P1, Estimate: 2 hours)
-   - Critical: P95 latency > 10s, Conflict rate > 10/min
+   - Critical: P95 latency > 10s
    - Warning: Timeout rate > 10%, Error rate > 5%
 
 3. **Create Metrics E2E Tests** (Priority: P2, Estimate: 3 hours)

@@ -40,7 +40,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -61,6 +60,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/validity"
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
 	canonicalhash "github.com/jordigilh/kubernaut/pkg/shared/hash"
+	k8sutil "github.com/jordigilh/kubernaut/pkg/shared/k8s"
 )
 
 // Reconciler reconciles EffectivenessAssessment objects.
@@ -174,7 +174,6 @@ func NewReconciler(
 //  10. Otherwise -> requeue for remaining components
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
-	startTime := time.Now()
 
 	// Step 1: Fetch EA
 	ea := &eav1.EffectivenessAssessment{}
@@ -184,7 +183,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			return ctrl.Result{}, nil
 		}
 		logger.Error(err, "Failed to fetch EffectivenessAssessment")
-		r.Metrics.RecordReconcile("error", time.Since(startTime).Seconds())
 		return ctrl.Result{RequeueAfter: r.Config.RequeueGenericError}, err
 	}
 
@@ -202,7 +200,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	}
 	if phase.IsTerminal(currentPhase) {
 		logger.V(1).Info("EA in terminal state, skipping reconciliation")
-		r.Metrics.RecordReconcile("skipped", time.Since(startTime).Seconds())
 		return ctrl.Result{}, nil
 	}
 
@@ -253,18 +250,15 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 				"checkAfter", checkAfter,
 				"alertCheckAfter", alertCheckAfter,
 			)
-			r.Metrics.RecordPhaseTransition(currentPhase, eav1.PhaseWaitingForPropagation)
 
 			if err := r.Status().Update(ctx, ea); err != nil {
 				logger.Error(err, "Failed to persist WaitingForPropagation phase")
-				r.Metrics.RecordReconcile("error", time.Since(startTime).Seconds())
 				return ctrl.Result{RequeueAfter: r.Config.RequeueGenericError}, err
 			}
 		}
 
 		remaining := time.Until(hashDeadline.Time)
 		logger.Info("Waiting for async propagation to complete", "remaining", remaining)
-		r.Metrics.RecordReconcile("requeue", time.Since(startTime).Seconds())
 		return ctrl.Result{RequeueAfter: remaining}, nil
 	}
 
@@ -274,9 +268,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		r.Recorder.Event(ea, corev1.EventTypeWarning, events.EventReasonAssessmentExpired,
 			fmt.Sprintf("Validity window expired for correlation %s; completing with available data",
 				ea.Spec.CorrelationID))
-		r.Metrics.RecordK8sEvent("Warning", events.EventReasonAssessmentExpired)
 		r.Metrics.RecordValidityExpiration()
-		return r.completeAssessment(ctx, ea, startTime)
+		return r.completeAssessment(ctx, ea)
 	}
 
 	// Step 5: If stabilizing -> persist derived timing if not yet set, then requeue
@@ -296,10 +289,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			ea.Status.Phase = eav1.PhaseStabilizing
 			logger.Info("Async target: WaitingForPropagation → Stabilizing (HCA elapsed)",
 				"remaining", remaining)
-			r.Metrics.RecordPhaseTransition(eav1.PhaseWaitingForPropagation, eav1.PhaseStabilizing)
 			if err := r.Status().Update(ctx, ea); err != nil {
 				logger.Error(err, "Failed to persist WaitingForPropagation → Stabilizing transition")
-				r.Metrics.RecordReconcile("error", time.Since(startTime).Seconds())
 				return ctrl.Result{RequeueAfter: r.Config.RequeueGenericError}, err
 			}
 		}
@@ -333,18 +324,14 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 				"stabilizationWindow", ea.Spec.Config.StabilizationWindow.Duration,
 				"validityDeadline", deadline,
 			)
-			r.Metrics.RecordPhaseTransition(currentPhase, eav1.PhaseStabilizing)
 
 			if err := r.Status().Update(ctx, ea); err != nil {
 				logger.Error(err, "Failed to persist Stabilizing phase and derived timing")
-				r.Metrics.RecordReconcile("error", time.Since(startTime).Seconds())
 				return ctrl.Result{RequeueAfter: r.Config.RequeueGenericError}, err
 			}
 		}
 
 		logger.Info("Stabilization window active, requeueing", "remaining", remaining)
-		r.Metrics.RecordStabilizationWait()
-		r.Metrics.RecordReconcile("requeue", time.Since(startTime).Seconds())
 		return ctrl.Result{RequeueAfter: remaining}, nil
 	}
 
@@ -358,7 +345,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	if currentPhase == eav1.PhasePending || currentPhase == eav1.PhaseWaitingForPropagation || currentPhase == eav1.PhaseStabilizing || currentPhase == "" {
 		if !phase.CanTransition(currentPhase, eav1.PhaseAssessing) {
 			logger.Error(nil, "Invalid phase transition", "from", currentPhase, "to", eav1.PhaseAssessing)
-			r.Metrics.RecordReconcile("error", time.Since(startTime).Seconds())
 			return ctrl.Result{RequeueAfter: r.Config.RequeueGenericError}, fmt.Errorf("invalid phase transition: %s -> %s", currentPhase, eav1.PhaseAssessing)
 		}
 
@@ -432,10 +418,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 
 			r.Recorder.Event(ea, corev1.EventTypeWarning, events.EventReasonSpecDriftDetected,
 				fmt.Sprintf("Target resource spec modified during assessment (correlation: %s)", ea.Spec.CorrelationID))
-			r.Metrics.RecordK8sEvent("Warning", events.EventReasonSpecDriftDetected)
 
 				// Complete with spec_drift reason — do NOT assess metrics/alerts
-				return r.completeAssessmentWithReason(ctx, ea, startTime, eav1.AssessmentReasonSpecDrift)
+				return r.completeAssessmentWithReason(ctx, ea, eav1.AssessmentReasonSpecDrift)
 			}
 
 			// Spec unchanged — set positive condition
@@ -457,7 +442,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		} else if !started {
 			logger.Info("No workflow execution started for this correlation ID — completing as no_execution",
 				"correlationID", ea.Spec.CorrelationID)
-			return r.completeAssessmentWithReason(ctx, ea, startTime, eav1.AssessmentReasonNoExecution)
+			return r.completeAssessmentWithReason(ctx, ea, eav1.AssessmentReasonNoExecution)
 		}
 	}
 
@@ -498,7 +483,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		// (even on single-pass completions where Step 6.5 never runs).
 		ea.Status.Components.CurrentSpecHash = result.Hash
 		componentsChanged = true
-		r.Metrics.RecordComponentAssessment("hash", resultStatus(result.Component), time.Since(startTime).Seconds(), nil)
+		r.Metrics.RecordComponentAssessment("hash", resultStatus(result.Component), nil)
 		r.emitHashEvent(ctx, ea, result)
 
 		// Log pre vs post comparison (informational — Phase 1 of two-phase model)
@@ -529,7 +514,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		ea.Status.Components.HealthAssessed = healthResult.Component.Assessed
 		ea.Status.Components.HealthScore = healthResult.Component.Score
 		componentsChanged = true
-		r.Metrics.RecordComponentAssessment("health", resultStatus(healthResult.Component), time.Since(startTime).Seconds(), healthResult.Component.Score)
+		r.Metrics.RecordComponentAssessment("health", resultStatus(healthResult.Component), healthResult.Component.Score)
 		// Skip health audit event when score is nil (N/A for non-pod resources).
 		// The component is marked Assessed=true so allComponentsDone sees it as complete,
 		// but there is no meaningful health data to emit in the audit trail.
@@ -548,18 +533,18 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 				logger.V(1).Info("Alert check deferred (proactive signal, #277)",
 					"alertManagerCheckAfter", ea.Status.AlertManagerCheckAfter,
 					"remaining", alertDeferred.RequeueAfter)
-				r.Metrics.RecordComponentAssessment("alert", "deferred", time.Since(startTime).Seconds(), nil)
+				r.Metrics.RecordComponentAssessment("alert", "deferred", nil)
 			} else {
 				alertResult := r.assessAlert(ctx, ea)
 				ea.Status.Components.AlertAssessed = alertResult.Component.Assessed
 				ea.Status.Components.AlertScore = alertResult.Component.Score
-				r.Metrics.RecordComponentAssessment("alert", resultStatus(alertResult.Component), time.Since(startTime).Seconds(), alertResult.Component.Score)
+				r.Metrics.RecordComponentAssessment("alert", resultStatus(alertResult.Component), alertResult.Component.Score)
 				r.emitAlertEvent(ctx, ea, alertResult)
 				componentsChanged = true
 			}
 		} else {
 			ea.Status.Components.AlertAssessed = true
-			r.Metrics.RecordComponentAssessment("alert", "skipped", time.Since(startTime).Seconds(), nil)
+			r.Metrics.RecordComponentAssessment("alert", "skipped", nil)
 			componentsChanged = true
 		}
 	}
@@ -570,7 +555,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			metricsResult := r.assessMetrics(ctx, ea)
 			ea.Status.Components.MetricsAssessed = metricsResult.Component.Assessed
 			ea.Status.Components.MetricsScore = metricsResult.Component.Score
-			r.Metrics.RecordComponentAssessment("metrics", resultStatus(metricsResult.Component), time.Since(startTime).Seconds(), metricsResult.Component.Score)
+			r.Metrics.RecordComponentAssessment("metrics", resultStatus(metricsResult.Component), metricsResult.Component.Score)
 			// Only emit the audit event when the metrics assessment succeeds.
 			// If Prometheus returns no data, Assessed=false and we silently retry
 			// on the next reconcile. Emitting on every retry would create duplicate
@@ -580,7 +565,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			}
 		} else {
 			ea.Status.Components.MetricsAssessed = true
-			r.Metrics.RecordComponentAssessment("metrics", "skipped", time.Since(startTime).Seconds(), nil)
+			r.Metrics.RecordComponentAssessment("metrics", "skipped", nil)
 		}
 		componentsChanged = true
 	}
@@ -599,7 +584,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		}
 		logger.Info("All components except alert done; precise requeue for alert deferral (#277)",
 			"requeueAfter", alertDeferred.RequeueAfter)
-		r.Metrics.RecordReconcile("requeue", time.Since(startTime).Seconds())
 		return ctrl.Result{RequeueAfter: alertDeferred.RequeueAfter}, nil
 	}
 
@@ -623,7 +607,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 				"phase", ea.Status.Phase, "completing", completing,
 				"resourceVersion", ea.ResourceVersion,
 			)
-			r.Metrics.RecordReconcile("error", time.Since(startTime).Seconds())
 			return ctrl.Result{RequeueAfter: r.Config.RequeueGenericError}, err
 		}
 
@@ -637,13 +620,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 				"reason", ea.Status.AssessmentReason,
 				"correlationID", ea.Spec.CorrelationID,
 			)
-			r.Metrics.RecordReconcile("success", time.Since(startTime).Seconds())
 			return ctrl.Result{}, nil
 		}
 	}
 
 	// Step 10: Requeue for remaining components
-	r.Metrics.RecordReconcile("requeue", time.Since(startTime).Seconds())
 	return ctrl.Result{RequeueAfter: r.Config.RequeueAssessmentInProgress}, nil
 }
 
@@ -1162,7 +1143,7 @@ func (r *Reconciler) getTargetSpec(ctx context.Context, target eav1.TargetResour
 		}
 	}
 
-	gvk, err := resolveGVKForKind(r.restMapper, target.Kind)
+	gvk, err := k8sutil.ResolveGVKForKind(r.restMapper, target.Kind)
 	if err != nil {
 		logger.Error(err, "Failed to resolve GVK for target resource kind",
 			"kind", target.Kind)
@@ -1225,25 +1206,6 @@ func (r *Reconciler) queryPreRemediationHash(ctx context.Context, correlationID 
 	return preHash
 }
 
-// resolveGVKForKind dynamically resolves a Kind string to a schema.GroupVersionKind
-// using the REST mapper's live API server discovery.
-//
-// Uses meta.UnsafeGuessKindToResource for proper pluralization (handles -s→-ses,
-// -y→-ies, etc.) and passes an empty Group/Version to KindsFor so it searches
-// across all API groups. This supports any resource the cluster serves, including
-// CRDs, without a static lookup table.
-func resolveGVKForKind(rm meta.RESTMapper, kind string) (schema.GroupVersionKind, error) {
-	// UnsafeGuessKindToResource pluralizes correctly (e.g. "Ingress"→"ingresses",
-	// "NetworkPolicy"→"networkpolicies"). We pass an empty Group/Version so
-	// KindsFor searches all API groups registered with the API server.
-	pluralGVR, _ := meta.UnsafeGuessKindToResource(schema.GroupVersionKind{Kind: kind})
-	gvks, err := rm.KindsFor(schema.GroupVersionResource{Resource: pluralGVR.Resource})
-	if err == nil && len(gvks) > 0 {
-		return gvks[0], nil
-	}
-
-	return schema.GroupVersionKind{}, fmt.Errorf("cannot resolve GVK for kind %q (tried resource %q): %w", kind, pluralGVR.Resource, err)
-}
 
 // emitHashEvent emits K8s and audit events for the hash computation result.
 // Uses the specialized RecordHashComputed to include pre/post hashes and match flag.
@@ -1252,11 +1214,9 @@ func (r *Reconciler) emitHashEvent(ctx context.Context, ea *eav1.EffectivenessAs
 	if result.Component.Error != nil {
 		r.Recorder.Event(ea, corev1.EventTypeWarning, events.EventReasonComponentAssessed,
 			fmt.Sprintf("Component hash assessment failed: %v", result.Component.Error))
-		r.Metrics.RecordK8sEvent("Warning", events.EventReasonComponentAssessed)
 	} else {
 		r.Recorder.Event(ea, corev1.EventTypeNormal, events.EventReasonComponentAssessed,
 			fmt.Sprintf("Component hash computed (match: %v)", result.Match))
-		r.Metrics.RecordK8sEvent("Normal", events.EventReasonComponentAssessed)
 	}
 
 	// Audit Event to DataStorage (DD-AUDIT-003, DD-EM-002)
@@ -1270,14 +1230,13 @@ func (r *Reconciler) emitHashEvent(ctx context.Context, ea *eav1.EffectivenessAs
 			log.FromContext(ctx).V(1).Info("Failed to store hash computed audit event",
 				"error", err)
 		}
-		r.Metrics.RecordAuditEvent(string(emtypes.AuditHashComputed), resultStatus(result.Component))
 	}
 }
 
 // completeAssessment finalizes the EA with Completed phase and assessment reason.
 // It performs a single atomic status update and emits completion events.
 // Used by both the normal completion path (Step 8-9) and the expired path (Step 4).
-func (r *Reconciler) completeAssessment(ctx context.Context, ea *eav1.EffectivenessAssessment, startTime time.Time) (ctrl.Result, error) {
+func (r *Reconciler) completeAssessment(ctx context.Context, ea *eav1.EffectivenessAssessment) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
 	reason := r.determineAssessmentReason(ea)
@@ -1286,7 +1245,6 @@ func (r *Reconciler) completeAssessment(ctx context.Context, ea *eav1.Effectiven
 	if err := r.Status().Update(ctx, ea); err != nil {
 		logger.Error(err, "Failed to update EA to Completed",
 			"reason", reason, "resourceVersion", ea.ResourceVersion)
-		r.Metrics.RecordReconcile("error", time.Since(startTime).Seconds())
 		return ctrl.Result{RequeueAfter: r.Config.RequeueGenericError}, err
 	}
 
@@ -1297,14 +1255,13 @@ func (r *Reconciler) completeAssessment(ctx context.Context, ea *eav1.Effectiven
 		"correlationID", ea.Spec.CorrelationID,
 	)
 
-	r.Metrics.RecordReconcile("success", time.Since(startTime).Seconds())
 	return ctrl.Result{}, nil
 }
 
 // completeAssessmentWithReason finalizes the EA with an explicit assessment reason.
 // Unlike completeAssessment, which computes the reason from component state, this
 // method uses the provided reason directly. Used by the spec drift guard (DD-EM-002 v1.1).
-func (r *Reconciler) completeAssessmentWithReason(ctx context.Context, ea *eav1.EffectivenessAssessment, startTime time.Time, reason string) (ctrl.Result, error) {
+func (r *Reconciler) completeAssessmentWithReason(ctx context.Context, ea *eav1.EffectivenessAssessment, reason string) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
 	r.setCompletionFields(ea, reason)
@@ -1312,7 +1269,6 @@ func (r *Reconciler) completeAssessmentWithReason(ctx context.Context, ea *eav1.
 	if err := r.Status().Update(ctx, ea); err != nil {
 		logger.Error(err, "Failed to update EA to Completed",
 			"reason", reason, "resourceVersion", ea.ResourceVersion)
-		r.Metrics.RecordReconcile("error", time.Since(startTime).Seconds())
 		return ctrl.Result{RequeueAfter: r.Config.RequeueGenericError}, err
 	}
 
@@ -1323,7 +1279,6 @@ func (r *Reconciler) completeAssessmentWithReason(ctx context.Context, ea *eav1.
 		"correlationID", ea.Spec.CorrelationID,
 	)
 
-	r.Metrics.RecordReconcile("success", time.Since(startTime).Seconds())
 	return ctrl.Result{}, nil
 }
 
@@ -1372,7 +1327,6 @@ func mapAssessmentReasonToConditionReason(reason string) string {
 // emitCompletionMetricsAndEvents records metrics and emits K8s + audit events for completion.
 // Extracted to share between the normal completion path and the expired path.
 func (r *Reconciler) emitCompletionMetricsAndEvents(ctx context.Context, ea *eav1.EffectivenessAssessment, reason string) {
-	r.Metrics.RecordPhaseTransition(eav1.PhaseAssessing, eav1.PhaseCompleted)
 	r.Metrics.RecordAssessmentCompleted(reason)
 	r.emitCompletionEvent(ea, reason)
 	r.emitCompletedAuditEvent(ctx, ea, reason)
@@ -1454,7 +1408,6 @@ func (r *Reconciler) allComponentsDone(ea *eav1.EffectivenessAssessment) bool {
 func (r *Reconciler) emitCompletionEvent(ea *eav1.EffectivenessAssessment, reason string) {
 	r.Recorder.Event(ea, corev1.EventTypeNormal, events.EventReasonEffectivenessAssessed,
 		fmt.Sprintf("Assessment completed: %s (correlation: %s)", reason, ea.Spec.CorrelationID))
-	r.Metrics.RecordK8sEvent("Normal", events.EventReasonEffectivenessAssessed)
 }
 
 // emitK8sComponentEvent emits a K8s event for a component assessment result.
@@ -1463,14 +1416,12 @@ func (r *Reconciler) emitK8sComponentEvent(ea *eav1.EffectivenessAssessment, com
 	if result.Error != nil {
 		r.Recorder.Event(ea, corev1.EventTypeWarning, events.EventReasonComponentAssessed,
 			fmt.Sprintf("Component %s assessment failed: %v", component, result.Error))
-		r.Metrics.RecordK8sEvent("Warning", events.EventReasonComponentAssessed)
 	} else {
 		msg := fmt.Sprintf("Component %s assessed", component)
 		if result.Score != nil {
 			msg = fmt.Sprintf("Component %s assessed (score: %.2f)", component, *result.Score)
 		}
 		r.Recorder.Event(ea, corev1.EventTypeNormal, events.EventReasonComponentAssessed, msg)
-		r.Metrics.RecordK8sEvent("Normal", events.EventReasonComponentAssessed)
 	}
 }
 
@@ -1523,11 +1474,9 @@ func (r *Reconciler) emitMetricsEvent(ctx context.Context, ea *eav1.Effectivenes
 	})
 }
 
-// emitPendingTransitionEvents emits K8s events, audit events, and metrics for the
+// emitPendingTransitionEvents emits K8s events and audit events for the
 // Pending -> Assessing phase transition. Called after the status update succeeds.
 func (r *Reconciler) emitPendingTransitionEvents(ctx context.Context, ea *eav1.EffectivenessAssessment) {
-	r.Metrics.RecordPhaseTransition(eav1.PhasePending, eav1.PhaseAssessing)
-
 	// Emit assessment_scheduled audit event (BR-EM-009.4)
 	r.emitAuditEvent(ctx, emtypes.AuditAssessmentScheduled, func() error {
 		return r.AuditManager.RecordAssessmentScheduled(ctx, ea, r.Config.ValidityWindow)
@@ -1535,7 +1484,6 @@ func (r *Reconciler) emitPendingTransitionEvents(ctx context.Context, ea *eav1.E
 
 	r.Recorder.Event(ea, corev1.EventTypeNormal, events.EventReasonAssessmentStarted,
 		fmt.Sprintf("Assessment started for correlation %s", ea.Spec.CorrelationID))
-	r.Metrics.RecordK8sEvent("Normal", events.EventReasonAssessmentStarted)
 }
 
 // emitCompletedAuditEvent emits the assessment.completed audit event to DataStorage.
@@ -1545,8 +1493,8 @@ func (r *Reconciler) emitCompletedAuditEvent(ctx context.Context, ea *eav1.Effec
 	})
 }
 
-// emitAuditEvent is a helper that handles the nil-check, error logging, and metrics
-// recording common to all audit event emissions. The recordFn performs the actual audit call.
+// emitAuditEvent is a helper that handles the nil-check and error logging common to
+// all audit event emissions. The recordFn performs the actual audit call.
 func (r *Reconciler) emitAuditEvent(ctx context.Context, eventType emtypes.AuditEventType, recordFn func() error) {
 	if r.AuditManager == nil {
 		log.FromContext(ctx).V(1).Info("AuditManager not configured, skipping audit event",
@@ -1556,10 +1504,8 @@ func (r *Reconciler) emitAuditEvent(ctx context.Context, eventType emtypes.Audit
 
 	if err := recordFn(); err != nil {
 		log.FromContext(ctx).Error(err, "Failed to emit audit event", "eventType", string(eventType))
-		r.Metrics.RecordAuditEvent(string(eventType), "error")
 		return
 	}
-	r.Metrics.RecordAuditEvent(string(eventType), "success")
 }
 
 // resultStatus returns a metric label for a component result.

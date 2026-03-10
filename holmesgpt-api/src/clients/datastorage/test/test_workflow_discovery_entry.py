@@ -61,7 +61,6 @@ class TestWorkflowDiscoveryEntry(unittest.TestCase):
                     when_not_to_use = '', 
                     preconditions = '', ),
                 version = '',
-                schema_image = '',
         )
         """
 

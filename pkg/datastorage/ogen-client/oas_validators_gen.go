@@ -178,6 +178,299 @@ func (s AIAnalysisAuditPayloadPhase) Validate() error {
 	}
 }
 
+func (s *ActionTypeCatalogCreatedPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s ActionTypeCatalogCreatedPayloadEventType) Validate() error {
+	switch s {
+	case "datastorage.actiontype.created":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *ActionTypeCatalogDisableDeniedPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if s.DependentWorkflows == nil {
+			return errors.New("nil is invalid value")
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "dependent_workflows",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s ActionTypeCatalogDisableDeniedPayloadEventType) Validate() error {
+	switch s {
+	case "datastorage.actiontype.disable_denied":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *ActionTypeCatalogDisabledPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s ActionTypeCatalogDisabledPayloadEventType) Validate() error {
+	switch s {
+	case "datastorage.actiontype.disabled":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *ActionTypeCatalogReenabledPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if err := s.PreviousState.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "previous_state",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s ActionTypeCatalogReenabledPayloadEventType) Validate() error {
+	switch s {
+	case "datastorage.actiontype.reenabled":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s ActionTypeCatalogReenabledPayloadPreviousState) Validate() error {
+	switch s {
+	case "disabled":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *ActionTypeCatalogUpdatedPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if s.UpdatedFields == nil {
+			return errors.New("nil is invalid value")
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "updated_fields",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s ActionTypeCatalogUpdatedPayloadEventType) Validate() error {
+	switch s {
+	case "datastorage.actiontype.updated":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *ActionTypeCreateResponse) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.Status.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "status",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s ActionTypeCreateResponseStatus) Validate() error {
+	switch s {
+	case "created":
+		return nil
+	case "exists":
+		return nil
+	case "reenabled":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *ActionTypeDisableDeniedResponse) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if s.DependentWorkflows == nil {
+			return errors.New("nil is invalid value")
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "dependentWorkflows",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s *ActionTypeDisableResponse) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.Status.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "status",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s ActionTypeDisableResponseStatus) Validate() error {
+	switch s {
+	case "disabled":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s *ActionTypeEntry) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -260,6 +553,97 @@ func (s *ActionTypeListResponse) Validate() error {
 		return &validate.Error{Fields: failures}
 	}
 	return nil
+}
+
+func (s *ActionTypeUpdateResponse) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if s.UpdatedFields == nil {
+			return errors.New("nil is invalid value")
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "updatedFields",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s *ActionTypeWebhookAuditPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if err := s.Action.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "action",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s ActionTypeWebhookAuditPayloadAction) Validate() error {
+	switch s {
+	case "create":
+		return nil
+	case "update":
+		return nil
+	case "delete":
+		return nil
+	case "denied":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s ActionTypeWebhookAuditPayloadEventType) Validate() error {
+	switch s {
+	case "actiontype.admitted.create":
+		return nil
+	case "actiontype.admitted.update":
+		return nil
+	case "actiontype.admitted.delete":
+		return nil
+	case "actiontype.denied.create":
+		return nil
+	case "actiontype.denied.update":
+		return nil
+	case "actiontype.denied.delete":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
 }
 
 func (s *AuditEvent) Validate() error {
@@ -421,6 +805,8 @@ func (s AuditEventEventCategory) Validate() error {
 		return nil
 	case "effectiveness":
 		return nil
+	case "actiontype":
+		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}
@@ -536,8 +922,43 @@ func (s AuditEventEventData) Validate() error {
 			return err
 		}
 		return nil
+	case AuditEventEventDataRemediationworkflowAdmittedCreateAuditEventEventData, AuditEventEventDataRemediationworkflowAdmittedDeleteAuditEventEventData, AuditEventEventDataRemediationworkflowAdmittedDeniedAuditEventEventData:
+		if err := s.RemediationWorkflowWebhookAuditPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
 	case AuditEventEventDataEffectivenessAlertAssessedAuditEventEventData, AuditEventEventDataEffectivenessAssessmentCompletedAuditEventEventData, AuditEventEventDataEffectivenessAssessmentScheduledAuditEventEventData, AuditEventEventDataEffectivenessHashComputedAuditEventEventData, AuditEventEventDataEffectivenessHealthAssessedAuditEventEventData, AuditEventEventDataEffectivenessMetricsAssessedAuditEventEventData:
 		if err := s.EffectivenessAssessmentAuditPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ActionTypeCatalogCreatedPayloadAuditEventEventData:
+		if err := s.ActionTypeCatalogCreatedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ActionTypeCatalogUpdatedPayloadAuditEventEventData:
+		if err := s.ActionTypeCatalogUpdatedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ActionTypeCatalogDisabledPayloadAuditEventEventData:
+		if err := s.ActionTypeCatalogDisabledPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ActionTypeCatalogReenabledPayloadAuditEventEventData:
+		if err := s.ActionTypeCatalogReenabledPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ActionTypeCatalogDisableDeniedPayloadAuditEventEventData:
+		if err := s.ActionTypeCatalogDisableDeniedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case AuditEventEventDataActiontypeAdmittedCreateAuditEventEventData, AuditEventEventDataActiontypeAdmittedDeleteAuditEventEventData, AuditEventEventDataActiontypeAdmittedUpdateAuditEventEventData, AuditEventEventDataActiontypeDeniedCreateAuditEventEventData, AuditEventEventDataActiontypeDeniedDeleteAuditEventEventData, AuditEventEventDataActiontypeDeniedUpdateAuditEventEventData:
+		if err := s.ActionTypeWebhookAuditPayload.Validate(); err != nil {
 			return err
 		}
 		return nil
@@ -718,6 +1139,8 @@ func (s AuditEventRequestEventCategory) Validate() error {
 		return nil
 	case "effectiveness":
 		return nil
+	case "actiontype":
+		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}
@@ -833,8 +1256,43 @@ func (s AuditEventRequestEventData) Validate() error {
 			return err
 		}
 		return nil
+	case AuditEventRequestEventDataRemediationworkflowAdmittedCreateAuditEventRequestEventData, AuditEventRequestEventDataRemediationworkflowAdmittedDeleteAuditEventRequestEventData, AuditEventRequestEventDataRemediationworkflowAdmittedDeniedAuditEventRequestEventData:
+		if err := s.RemediationWorkflowWebhookAuditPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
 	case AuditEventRequestEventDataEffectivenessAlertAssessedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessAssessmentCompletedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessAssessmentScheduledAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessHashComputedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessHealthAssessedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessMetricsAssessedAuditEventRequestEventData:
 		if err := s.EffectivenessAssessmentAuditPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ActionTypeCatalogCreatedPayloadAuditEventRequestEventData:
+		if err := s.ActionTypeCatalogCreatedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ActionTypeCatalogUpdatedPayloadAuditEventRequestEventData:
+		if err := s.ActionTypeCatalogUpdatedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ActionTypeCatalogDisabledPayloadAuditEventRequestEventData:
+		if err := s.ActionTypeCatalogDisabledPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ActionTypeCatalogReenabledPayloadAuditEventRequestEventData:
+		if err := s.ActionTypeCatalogReenabledPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ActionTypeCatalogDisableDeniedPayloadAuditEventRequestEventData:
+		if err := s.ActionTypeCatalogDisableDeniedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case AuditEventRequestEventDataActiontypeAdmittedCreateAuditEventRequestEventData, AuditEventRequestEventDataActiontypeAdmittedDeleteAuditEventRequestEventData, AuditEventRequestEventDataActiontypeAdmittedUpdateAuditEventRequestEventData, AuditEventRequestEventDataActiontypeDeniedCreateAuditEventRequestEventData, AuditEventRequestEventDataActiontypeDeniedDeleteAuditEventRequestEventData, AuditEventRequestEventDataActiontypeDeniedUpdateAuditEventRequestEventData:
+		if err := s.ActionTypeWebhookAuditPayload.Validate(); err != nil {
 			return err
 		}
 		return nil
@@ -1010,6 +1468,22 @@ func (s *AuditExportResponseHashChainVerification) Validate() error {
 	return nil
 }
 
+func (s *CreateActionTypeCreated) Validate() error {
+	alias := (*ActionTypeCreateResponse)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *CreateActionTypeOK) Validate() error {
+	alias := (*ActionTypeCreateResponse)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (s *CreateNotificationAuditAccepted) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -1040,6 +1514,22 @@ func (s CreateNotificationAuditAcceptedStatus) Validate() error {
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}
+}
+
+func (s *CreateWorkflowCreated) Validate() error {
+	alias := (*RemediationWorkflow)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *CreateWorkflowOK) Validate() error {
+	alias := (*RemediationWorkflow)(s)
+	if err := alias.Validate(); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s CustomLabels) Validate() error {
@@ -4872,6 +5362,66 @@ func (s RemediationWorkflowStatus) Validate() error {
 	case "deprecated":
 		return nil
 	case "archived":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *RemediationWorkflowWebhookAuditPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if err := s.Action.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "action",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s RemediationWorkflowWebhookAuditPayloadAction) Validate() error {
+	switch s {
+	case "create":
+		return nil
+	case "delete":
+		return nil
+	case "denied":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s RemediationWorkflowWebhookAuditPayloadEventType) Validate() error {
+	switch s {
+	case "remediationworkflow.admitted.create":
+		return nil
+	case "remediationworkflow.admitted.delete":
+		return nil
+	case "remediationworkflow.admitted.denied":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)

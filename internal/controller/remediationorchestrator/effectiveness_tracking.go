@@ -120,7 +120,7 @@ func (r *Reconciler) trackEffectivenessStatus(ctx context.Context, rr *remediati
 			"assessmentReason", ea.Status.AssessmentReason,
 			"conditionReason", reason,
 		)
-		return helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+		return helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 			meta.SetStatusCondition(&rr.Status.Conditions, metav1.Condition{
 				Type:               ConditionEffectivenessAssessed,
 				Status:             metav1.ConditionTrue,
@@ -139,7 +139,7 @@ func (r *Reconciler) trackEffectivenessStatus(ctx context.Context, rr *remediati
 			"eaName", ea.Name,
 			"failureReason", ea.Status.AssessmentReason,
 		)
-		return helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+		return helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 			meta.SetStatusCondition(&rr.Status.Conditions, metav1.Condition{
 				Type:               ConditionEffectivenessAssessed,
 				Status:             metav1.ConditionFalse,

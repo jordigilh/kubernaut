@@ -129,24 +129,6 @@ var _ = Describe("NotificationRequest Retry Integration (#281)", Label("integrat
 			return rr.Status.OverallPhase
 		}, timeout, interval).Should(Equal(remediationv1.PhaseVerifying))
 
-		By("Verifying completion notification was created (#281)")
-		completionNTName := fmt.Sprintf("nr-completion-%s", rr.Name)
-		nt := &notificationv1.NotificationRequest{}
-		Eventually(func() error {
-			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: completionNTName, Namespace: ROControllerNamespace}, nt)
-		}, timeout, interval).Should(Succeed(), "Completion NotificationRequest should be created during Verifying phase")
-
-		By("Verifying completion notification ref is tracked in NotificationRequestRefs (#281)")
-		Eventually(func() bool {
-			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
-			for _, ref := range rr.Status.NotificationRequestRefs {
-				if ref.Name == completionNTName {
-					return true
-				}
-			}
-			return false
-		}, timeout, interval).Should(BeTrue(), "NotificationRequestRefs should contain completion notification ref")
-
 		By("Driving EA to completion for Verifying -> Completed (#280)")
 		eaName := fmt.Sprintf("ea-%s", rr.Name)
 		ea := &eav1.EffectivenessAssessment{}
@@ -163,15 +145,22 @@ var _ = Describe("NotificationRequest Retry Integration (#281)", Label("integrat
 			return rr.Status.OverallPhase
 		}, timeout, interval).Should(Equal(remediationv1.PhaseCompleted))
 
-		By("Final verification: NotificationRequestRefs still contains completion ref after Completed")
-		_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
-		found := false
-		for _, ref := range rr.Status.NotificationRequestRefs {
-			if ref.Name == completionNTName {
-				found = true
-				break
+		By("Verifying completion notification was created (#281, #304)")
+		completionNTName := fmt.Sprintf("nr-completion-%s", rr.Name)
+		nt := &notificationv1.NotificationRequest{}
+		Eventually(func() error {
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: completionNTName, Namespace: ROControllerNamespace}, nt)
+		}, timeout, interval).Should(Succeed(), "Completion NotificationRequest should be created after Outcome is set (#304)")
+
+		By("Verifying completion notification ref is tracked in NotificationRequestRefs (#281)")
+		Eventually(func() bool {
+			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
+			for _, ref := range rr.Status.NotificationRequestRefs {
+				if ref.Name == completionNTName {
+					return true
+				}
 			}
-		}
-		Expect(found).To(BeTrue(), "NotificationRequestRefs should persist completion ref through Completed")
+			return false
+		}, timeout, interval).Should(BeTrue(), "NotificationRequestRefs should contain completion notification ref")
 	})
 })

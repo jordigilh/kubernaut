@@ -321,7 +321,6 @@ var _ = Describe("Metrics E2E Validation", Label("metrics"), func() {
 			// DD-005 V3.0: Use metric name constants
 			additionalMetrics := []string{
 				ntmetrics.MetricNameDeliveryRetriesTotal,
-				ntmetrics.MetricNameReconcilerErrorsTotal,
 				ntmetrics.MetricNameChannelHealthScore,
 			}
 

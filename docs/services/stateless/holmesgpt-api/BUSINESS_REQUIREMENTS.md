@@ -14,7 +14,7 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 
 ### Architecture
 
-**Service Type**: Stateless HTTP API (Python Flask)
+**Service Type**: Stateless HTTP API (Python FastAPI)
 
 **Key Characteristics**:
 - Internal-only service (network policies handle access control)
@@ -82,14 +82,16 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 
 #### BR-HAPI-001: AI-Powered Investigation Endpoint
 
-**Description**: The HolmesGPT API Service MUST provide a `/investigate` POST endpoint that accepts Kubernetes alert data and returns AI-powered investigation results including root cause analysis, affected resources, and recommended actions.
+**Description**: The HolmesGPT API Service MUST provide an incident analysis POST endpoint that accepts Kubernetes alert data and returns AI-powered investigation results including root cause analysis, affected resources, and recommended actions.
 
 **Priority**: P0 (CRITICAL)
 
 **Rationale**: This is the core business capability - AI-powered investigation of Kubernetes issues. Without this, the service has no value.
 
 **Implementation**:
-- **Endpoint**: `POST /api/v1/investigate`
+- **Endpoint**: `POST /api/v1/incident/analyze` (async session flow)
+
+> **Update (2026-03)**: Original BR used `/api/v1/investigate`. Actual implementation uses `/api/v1/incident/analyze` with an async session-based flow (create session → poll → get results).
 - **Input**: Alert data (name, namespace, labels, annotations, description)
 - **Output**: Investigation result (root cause, affected resources, recommendations, confidence score)
 - **LLM Integration**: Calls HolmesGPT SDK with alert context
@@ -559,15 +561,17 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 
 #### BR-HAPI-036: Flask HTTP Server
 
-**Description**: The HolmesGPT API Service MUST provide a Flask-based HTTP server with production-ready configuration including CORS, request logging, error handling, and graceful shutdown.
+**Description**: The HolmesGPT API Service MUST provide a FastAPI-based HTTP server with production-ready configuration including CORS, request logging, error handling, and graceful shutdown.
 
 **Priority**: P0 (CRITICAL)
 
-**Rationale**: Flask is the Python HTTP framework - production-ready configuration ensures reliability and observability.
+**Rationale**: FastAPI is the Python HTTP framework — production-ready configuration ensures reliability and observability.
+
+> **Update (2026-03)**: Original BR described Flask + Gunicorn. Actual implementation uses FastAPI + uvicorn.
 
 **Implementation**:
-- **Framework**: Flask 3.0+
-- **WSGI Server**: Gunicorn with 4 workers
+- **Framework**: FastAPI
+- **ASGI Server**: uvicorn
 - **Port**: 8080 (configurable)
 - **Request Logging**: Structured JSON logs for all requests
 - **Error Handling**: RFC 7807 Problem Details (pending implementation)
@@ -684,11 +688,14 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 
 ---
 
-#### BR-HAPI-302: HTTP Request Metrics (DD-005 Standard)
+#### BR-HAPI-302: HTTP Request Metrics (DD-005 Standard) — **DEFERRED (GitHub #294)**
+
+> **Status**: Removed in V1.0 per GitHub #294 (internal-only metrics cleanup).
+> These metrics had no external consumer. May be reconsidered post-V1.0.
 
 **Description**: The HolmesGPT API Service MUST expose standard HTTP request metrics per DD-005 observability standards.
 
-**Priority**: P0 (CRITICAL) - Required by DD-005
+**Priority**: ~~P0 (CRITICAL) - Required by DD-005~~ Deferred
 
 **Rationale**:
 - **Compliance**: DD-005 mandates HTTP metrics for all stateless services
@@ -735,11 +742,14 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 
 ---
 
-#### BR-HAPI-303: Config Hot-Reload Metrics (Operational Visibility)
+#### BR-HAPI-303: Config Hot-Reload Metrics (Operational Visibility) — **DEFERRED (GitHub #294)**
+
+> **Status**: Removed in V1.0 per GitHub #294 (internal-only metrics cleanup).
+> Config hot-reload is logged but no longer emits Prometheus metrics. May be reconsidered post-V1.0.
 
 **Description**: The HolmesGPT API Service MUST expose metrics for ConfigMap hot-reload operations (BR-HAPI-199 compliance).
 
-**Priority**: P1 (HIGH) - Operational visibility
+**Priority**: ~~P1 (HIGH) - Operational visibility~~ Deferred
 
 **Rationale**: Operators need visibility into config reload events for troubleshooting and audit.
 
@@ -774,7 +784,7 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 - ✅ Metrics update on ConfigMap change events
 - ✅ Integration tests validate reload metrics
 
-**Implementation Status**: ✅ Implemented (BR-HAPI-199)
+**Implementation Status**: ❌ Removed in V1.0 (GitHub #294)
 
 **Related BRs**: BR-HAPI-199 (ConfigMap Hot-Reload)
 

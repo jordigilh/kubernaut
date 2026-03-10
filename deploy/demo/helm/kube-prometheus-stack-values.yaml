@@ -56,6 +56,10 @@ alertmanager:
         webhook_configs:
           - url: "http://gateway-service.kubernaut-system.svc.cluster.local:8080/api/v1/signals/prometheus"
             send_resolved: false
+            http_config:
+              authorization:
+                type: Bearer
+                credentials_file: /var/run/secrets/kubernetes.io/serviceaccount/token
 
 # ---------------------------------------------------------------------------
 # Prometheus

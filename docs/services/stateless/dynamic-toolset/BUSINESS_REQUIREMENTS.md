@@ -2,9 +2,9 @@
 
 **Service**: Dynamic Toolset Service
 **Service Type**: Stateless HTTP API + Kubernetes Controller
-**Version**: V2.0 DEFERRED
-**Last Updated**: December 7, 2025
-**Status**: 🚫 **DEFERRED TO V2.0** - See [DD-016](../../../architecture/decisions/DD-016-dynamic-toolset-v2-deferral.md)
+**Version**: DEPRECATED
+**Last Updated**: March 4, 2026
+**Status**: 🚫 **DEPRECATED** — Service concept abandoned. Operators configure HAPI at startup.
 
 ---
 
@@ -15,9 +15,9 @@ All business requirements for this service are **DEFERRED to V2.0** per Design D
 **Rationale**: V1.x only requires Prometheus integration, which HolmesGPT-API already handles with built-in service discovery logic. When V2.0 expands HolmesGPT-API to identify multiple observability services (Grafana, Jaeger, Elasticsearch, custom services), this service will provide clear architectural value for centralized multi-service discovery.
 
 **Status**:
-- ✅ Implementation **COMPLETE** and code **PRESERVED** for V2.0
-- ❌ Business requirements **NOT ACTIVE** in V1.x scope
-- ✅ Will **RETURN TO ACTIVE** status in V2.0 planning
+- ⚠️ **DEPRECATED** (2026-03): The concept of automatically reconfiguring HAPI based on new service availability has been abandoned. Operators should configure HAPI at startup and update configuration manually when needed. Automatic on-the-fly adjustments introduce unpredictability.
+- ❌ Implementation code (`pkg/toolset/`, `cmd/dynamictoolset/`) has been **REMOVED** from the codebase
+- ❌ Business requirements are **DEPRECATED** — this service will not be implemented
 
 ---
 

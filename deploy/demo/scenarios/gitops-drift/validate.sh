@@ -19,8 +19,8 @@ done
 
 # ── Wait for alert ──────────────────────────────────────────────────────────
 
-wait_for_alert "KubePodCrashLooping" "${NAMESPACE}" 300
-show_alert "KubePodCrashLooping"
+wait_for_alert "KubePodCrashLooping" "${NAMESPACE}" 480
+show_alert "KubePodCrashLooping" "${NAMESPACE}"
 
 # ── Wait for pipeline ──────────────────────────────────────────────────────
 

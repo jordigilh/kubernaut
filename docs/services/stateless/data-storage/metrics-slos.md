@@ -28,14 +28,6 @@
 | **Write Latency (p95)** | 95th percentile write duration | `histogram_quantile(0.95, rate(write_duration[5m]))` |
 | **Write Latency (p99)** | 99th percentile write duration | `histogram_quantile(0.99, rate(write_duration[5m]))` |
 
-### Query Operations
-
-| SLI | Description | Measurement |
-|-----|-------------|-------------|
-| **Query Availability** | Percentage of successful queries | `success / total * 100` |
-| **Query Latency (p95)** | 95th percentile query duration | `histogram_quantile(0.95, rate(query_duration[5m]))` |
-| **Semantic Search Latency** | Vector similarity search duration | `histogram_quantile(0.95, rate(semantic_search[5m]))` |
-
 ### Dual-Write Coordination
 
 | SLI | Description | Measurement |
@@ -52,11 +44,8 @@
 | Metric | Target | Window | BR Coverage |
 |--------|--------|--------|-------------|
 | **Write Availability** | 99.9% | 30 days | BR-STORAGE-001, BR-STORAGE-002 |
-| **Query Availability** | 99.9% | 30 days | BR-STORAGE-007, BR-STORAGE-012 |
 | **Write Latency (p95)** | < 50ms | Rolling 5m | BR-STORAGE-001 |
 | **Write Latency (p99)** | < 100ms | Rolling 5m | BR-STORAGE-001 |
-| **Query Latency (p95)** | < 250ms | Rolling 5m | BR-STORAGE-007 |
-| **Semantic Search (p95)** | < 50ms | Rolling 5m | BR-STORAGE-012 |
 | **Dual-Write Success** | 99.9% | 30 days | BR-STORAGE-014 |
 | **Fallback Rate** | < 0.1% | 30 days | BR-STORAGE-015 |
 | **Cache Hit Rate** | > 80% | Rolling 15m | BR-STORAGE-009 |
@@ -123,13 +112,7 @@ var (
     ValidationFailuresTotal = promauto.NewCounterVec(prometheus.CounterOpts{
         Name: "datastorage_validation_failures_total",
         Help: "Total validation failures by field and reason",
-    }, []string{"field", "reason"})  // reason: required, invalid, length_exceeded, xss_detected
-
-    // Query metrics
-    QueryTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-        Name: "datastorage_query_total",
-        Help: "Total query operations by operation type and status",
-    }, []string{"operation", "status"})  // operation: list, get, semantic_search, filter
+    }, []string{"field", "reason"})  // reason: required, invalid, length_exceeded, xss_detected, sql_injection_detected
 )
 ```
 
@@ -143,13 +126,6 @@ var (
         Help:    "Write operation duration in seconds",
         Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0},
     }, []string{"table"})
-
-    // Query duration
-    QueryDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
-        Name:    "datastorage_query_duration_seconds",
-        Help:    "Query operation duration in seconds by operation type",
-        Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0},
-    }, []string{"operation"})
 
     // Embedding generation
     EmbeddingGenerationDuration = promauto.NewHistogram(prometheus.HistogramOpts{
@@ -175,10 +151,6 @@ CacheHitsTotal.Inc()
 
 // Record validation failure
 ValidationFailuresTotal.WithLabelValues("remediation_id", "required").Inc()
-
-// Record query
-QueryTotal.WithLabelValues("semantic_search", "success").Inc()
-QueryDuration.WithLabelValues("semantic_search").Observe(duration.Seconds())
 ```
 
 ---
@@ -198,11 +170,7 @@ The Data Storage Service Grafana dashboard includes:
 | **Cache Hit Rate** | Gauge | `cache_hits / (cache_hits + cache_misses)` |
 | **Embedding Generation Time** | Graph | `histogram_quantile(0.95, rate(datastorage_embedding_generation_duration_seconds_bucket[5m]))` |
 | **Validation Failures** | Table | `rate(datastorage_validation_failures_total[5m]) by (field, reason)` |
-| **Query Rate** | Graph | `rate(datastorage_query_total[5m]) by (operation)` |
-| **Query Latency** | Graph | `histogram_quantile(0.95, rate(datastorage_query_duration_seconds_bucket[5m])) by (operation)` |
-| **Semantic Search Performance** | Graph | `histogram_quantile(0.95, rate(datastorage_query_duration_seconds_bucket{operation="semantic_search"}[5m]))` |
 | **Error Rate Overview** | Stat | `sum(rate(datastorage_write_total{status="failure"}[5m])) / sum(rate(datastorage_write_total[5m]))` |
-| **Query Error Rate** | Stat | `sum(rate(datastorage_query_total{status="failure"}[5m])) / sum(rate(datastorage_query_total[5m]))` |
 
 ### Dashboard Location
 
@@ -247,22 +215,6 @@ The Data Storage Service Grafana dashboard includes:
   annotations:
     summary: "PostgreSQL write failures detected"
     runbook_url: "observability/ALERTING_RUNBOOK.md#datastoragepostgresqlfailure"
-
-# High Query Error Rate
-- alert: DataStorageHighQueryErrorRate
-  expr: |
-    100 * (
-      sum(rate(datastorage_query_total{status="failure"}[5m]))
-      /
-      sum(rate(datastorage_query_total[5m]))
-    ) > 5
-  for: 5m
-  labels:
-    severity: critical
-    service: data-storage
-  annotations:
-    summary: "Data Storage query error rate > 5%"
-    runbook_url: "observability/ALERTING_RUNBOOK.md#datastoragehighqueryerrorrate"
 ```
 
 ### Warning Alerts
@@ -294,18 +246,6 @@ The Data Storage Service Grafana dashboard includes:
     summary: "Embedding cache hit rate < 50%"
     runbook_url: "observability/ALERTING_RUNBOOK.md#datastoragelowcachehitrate"
 
-# Slow Semantic Search
-- alert: DataStorageSlowSemanticSearch
-  expr: |
-    histogram_quantile(0.95, rate(datastorage_query_duration_seconds_bucket{operation="semantic_search"}[5m]))
-    > 0.1
-  for: 10m
-  labels:
-    severity: warning
-    service: data-storage
-  annotations:
-    summary: "Semantic search p95 latency > 100ms"
-    runbook_url: "observability/ALERTING_RUNBOOK.md#datastoragesemanticsearchslow"
 ```
 
 ---
@@ -327,13 +267,6 @@ The Data Storage Service Grafana dashboard includes:
   sum(rate(datastorage_write_total{status="failure"}[30d]))
   /
   sum(rate(datastorage_write_total[30d]))
-)) - 0.999
-
-# Query Error Budget Remaining
-(1 - (
-  sum(rate(datastorage_query_total{status="failure"}[30d]))
-  /
-  sum(rate(datastorage_query_total[30d]))
 )) - 0.999
 ```
 
@@ -377,9 +310,9 @@ The Data Storage Service Grafana dashboard includes:
 
 | Category | Metric Count | Cardinality | Performance Impact |
 |----------|--------------|-------------|-------------------|
-| Counters | 7 | ~50 unique labels | < 1% CPU |
-| Histograms | 3 | ~30 unique labels | < 1% CPU |
-| **Total** | 11 | ~80 unique labels | < 1% overhead |
+| Counters | 6 | ~50 unique labels | < 1% CPU |
+| Histograms | 2 | ~30 unique labels | < 1% CPU |
+| **Total** | 9 | ~80 unique labels | < 1% overhead |
 
 **Cardinality Safety**: All metrics are designed with bounded cardinality (< 100 unique label combinations).
 

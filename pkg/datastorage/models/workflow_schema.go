@@ -17,8 +17,11 @@ limitations under the License.
 package models
 
 import (
+	"encoding/json"
 	"fmt"
+	"strconv"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"gopkg.in/yaml.v3"
 )
 
@@ -26,27 +29,46 @@ import (
 // WORKFLOW SCHEMA MODELS
 // ========================================
 // Authority: BR-WORKFLOW-004 (Workflow Schema Format Specification)
+// Authority: BR-WORKFLOW-006 (RemediationWorkflow CRD Definition)
 // Design Decision: DD-WORKFLOW-017 (OCI-based Workflow Registration)
 // ========================================
 //
-// These types represent the structure of /workflow-schema.yaml
-// as defined in BR-WORKFLOW-004. The schema is a plain configuration
-// file (not a Kubernetes resource) extracted from workflow OCI images
-// and stored in the workflow catalog.
+// These types represent the structure of /workflow-schema.yaml files which use
+// the Kubernetes CRD envelope format: apiVersion/kind/metadata/spec.
+// The apiVersion determines the schema version (e.g., kubernaut.ai/v1alpha1 -> "1.0").
 //
 // Naming: camelCase for all YAML/JSON field names per kubernaut convention.
 //
 // ========================================
 
-// WorkflowSchema represents the complete /workflow-schema.yaml structure
-// per BR-WORKFLOW-004. This is the authoritative schema format for all
-// Kubernaut remediation workflows.
+// WorkflowSchemaCRD is the top-level CRD envelope for workflow-schema.yaml.
+// The parser unmarshals into this structure and extracts the Spec for downstream use.
+type WorkflowSchemaCRD struct {
+	APIVersion string              `yaml:"apiVersion" json:"apiVersion"`
+	Kind       string              `yaml:"kind" json:"kind"`
+	Metadata   WorkflowCRDMetadata `yaml:"metadata" json:"metadata"`
+	Spec       WorkflowSchema      `yaml:"spec" json:"spec"`
+}
+
+// WorkflowCRDMetadata is the CRD-level metadata (name, namespace).
+// Distinct from WorkflowSchemaMetadata which holds workflowId, version, description.
+type WorkflowCRDMetadata struct {
+	Name      string `yaml:"name" json:"name"`
+	Namespace string `yaml:"namespace,omitempty" json:"namespace,omitempty"`
+}
+
+// apiVersionToSchemaVersion maps CRD apiVersion to the DB schema_version value.
+// kubernaut.ai/v1alpha1 is the pre-GA version established by #292.
+var APIVersionToSchemaVersion = map[string]string{
+	"kubernaut.ai/v1alpha1": "1.0",
+}
+
+// WorkflowSchema represents the spec content of a RemediationWorkflow CRD.
+// This is the authoritative schema format for all Kubernaut remediation workflows.
 type WorkflowSchema struct {
-	// SchemaVersion identifies the structural generation of this schema file.
-	// Allows the parser to distinguish between schema formats (e.g., "1.0" vs "1.1"
-	// which adds the rbac stanza per DD-WE-005).
-	// BR-WORKFLOW-004 v1.1: Required top-level field. Must be first in YAML.
-	SchemaVersion string `yaml:"schemaVersion" json:"schemaVersion" validate:"required"`
+	// SchemaVersion is derived from apiVersion by the parser (not present in YAML).
+	// Stored in DB column schema_version for format compatibility tracking.
+	SchemaVersion string `yaml:"-" json:"schemaVersion"`
 
 	// Metadata contains workflow identification and description
 	Metadata WorkflowSchemaMetadata `yaml:"metadata" json:"metadata" validate:"required"`
@@ -88,9 +110,9 @@ type WorkflowSchema struct {
 
 // WorkflowSchemaMetadata contains workflow identification and description
 type WorkflowSchemaMetadata struct {
-	// WorkflowID is the unique workflow identifier
+	// WorkflowName is the human-readable workflow name (maps to DS workflow_name)
 	// Format: lowercase alphanumeric with hyphens (e.g., "oomkill-restart-pod")
-	WorkflowID string `yaml:"workflowId" json:"workflowId" validate:"required,max=255"`
+	WorkflowName string `yaml:"workflowName" json:"workflowName" validate:"required,max=255"`
 
 	// Version is the semantic version (e.g., "1.0.0", "2.1.3")
 	Version string `yaml:"version" json:"version" validate:"required,max=50"`
@@ -103,25 +125,9 @@ type WorkflowSchemaMetadata struct {
 	Maintainers []WorkflowMaintainer `yaml:"maintainers,omitempty" json:"maintainers,omitempty" validate:"omitempty,dive"`
 }
 
-// WorkflowDescription provides structured information about a workflow.
-// This is shown to the LLM during workflow selection and to operators in the catalog.
-// Format matches action_type_taxonomy.description (DD-WORKFLOW-016).
-type WorkflowDescription struct {
-	// What describes what this workflow concretely does. One sentence. (REQUIRED)
-	What string `yaml:"what" json:"what" validate:"required"`
-
-	// WhenToUse describes root cause conditions under which this workflow is appropriate. (REQUIRED)
-	WhenToUse string `yaml:"whenToUse" json:"whenToUse" validate:"required"`
-
-	// WhenNotToUse describes specific exclusion conditions. (OPTIONAL)
-	// Only include genuinely useful exclusions. Do not include failure-based exclusions
-	// (handled by remediation history, DD-HAPI-016).
-	WhenNotToUse string `yaml:"whenNotToUse,omitempty" json:"whenNotToUse,omitempty"`
-
-	// Preconditions describes conditions that must be verified through investigation
-	// that cannot be determined by catalog label filtering. (OPTIONAL)
-	Preconditions string `yaml:"preconditions,omitempty" json:"preconditions,omitempty"`
-}
+// WorkflowDescription is an alias for the shared StructuredDescription type.
+// DD-WORKFLOW-016: Same format shared between RemediationWorkflow and ActionType.
+type WorkflowDescription = sharedtypes.StructuredDescription
 
 // WorkflowMaintainer contains maintainer contact information
 type WorkflowMaintainer struct {
@@ -221,12 +227,55 @@ func (d *WorkflowDependencies) ValidateDependencies() error {
 // WorkflowExecution contains execution engine configuration
 type WorkflowExecution struct {
 	// Engine is the execution engine type
-	// Values: "tekton", "ansible", "lambda", "shell"
+	// Values: "tekton", "job", "ansible"
 	// Defaults to "tekton" if not specified.
-	Engine string `yaml:"engine,omitempty" json:"engine,omitempty" validate:"omitempty,oneof=tekton ansible lambda shell"`
+	Engine string `yaml:"engine,omitempty" json:"engine,omitempty" validate:"omitempty,oneof=tekton job ansible"`
 
 	// Bundle is the execution bundle or container image reference
 	Bundle string `yaml:"bundle,omitempty" json:"bundle,omitempty" validate:"omitempty"`
+
+	// BundleDigest is the digest of the execution bundle (OPTIONAL).
+	// For tekton/job: OCI image SHA. For ansible: Git commit SHA.
+	BundleDigest string `yaml:"bundleDigest,omitempty" json:"bundleDigest,omitempty" validate:"omitempty"`
+
+	// EngineConfig holds engine-specific configuration as parsed YAML/JSON.
+	// BR-WE-016: Discriminator pattern — the Engine field determines the shape.
+	// Stored as interface{} for YAML compatibility; converted to json.RawMessage by the parser.
+	EngineConfig interface{} `yaml:"engineConfig,omitempty" json:"engineConfig,omitempty"`
+}
+
+// AnsibleEngineConfig holds Ansible/AWX/AAP-specific execution configuration.
+// BR-WE-015, BR-WE-016: Deserialized from WorkflowExecution.EngineConfig
+// when Engine="ansible" via two-phase unmarshal (ParseEngineConfig).
+type AnsibleEngineConfig struct {
+	PlaybookPath    string `yaml:"playbookPath" json:"playbookPath"`
+	JobTemplateName string `yaml:"jobTemplateName,omitempty" json:"jobTemplateName,omitempty"`
+	InventoryName   string `yaml:"inventoryName,omitempty" json:"inventoryName,omitempty"`
+}
+
+// ParseEngineConfig deserializes raw engineConfig JSON based on the engine discriminator.
+// BR-WE-016: Two-phase unmarshal — read engine first, then unmarshal config.
+// Returns (nil, nil) when raw is empty, regardless of engine.
+// Returns error for unknown engines or invalid/incomplete ansible config.
+func ParseEngineConfig(engine string, raw json.RawMessage) (any, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	switch engine {
+	case "ansible":
+		var cfg AnsibleEngineConfig
+		if err := json.Unmarshal(raw, &cfg); err != nil {
+			return nil, fmt.Errorf("invalid ansible engineConfig: %w", err)
+		}
+		if cfg.PlaybookPath == "" {
+			return nil, fmt.Errorf("playbookPath is required in ansible engineConfig")
+		}
+		return &cfg, nil
+	case "tekton", "job":
+		return nil, nil
+	default:
+		return nil, fmt.Errorf("unknown engine %q: cannot parse engineConfig", engine)
+	}
 }
 
 // WorkflowParameter defines a workflow input parameter
@@ -237,8 +286,9 @@ type WorkflowParameter struct {
 	Name string `yaml:"name" json:"name" validate:"required"`
 
 	// Type is the parameter type (REQUIRED)
-	// Values: "string", "integer", "boolean", "array"
-	Type string `yaml:"type" json:"type" validate:"required,oneof=string integer boolean array"`
+	// Values: "string", "integer", "boolean", "array", "float"
+	// BR-WORKFLOW-005: "float" added for AWX survey compatibility.
+	Type string `yaml:"type" json:"type" validate:"required,oneof=string integer boolean array float"`
 
 	// Required indicates whether the parameter must be provided
 	Required bool `yaml:"required" json:"required"`
@@ -252,11 +302,13 @@ type WorkflowParameter struct {
 	// Pattern is a regex pattern for string validation (OPTIONAL)
 	Pattern string `yaml:"pattern,omitempty" json:"pattern,omitempty" validate:"omitempty"`
 
-	// Minimum is the minimum value for integer type (OPTIONAL)
-	Minimum *int `yaml:"minimum,omitempty" json:"minimum,omitempty" validate:"omitempty"`
+	// Minimum is the minimum value for integer/float types (OPTIONAL)
+	// BR-WORKFLOW-005: Changed from *int to *float64 for float support. Backward compatible.
+	Minimum *float64 `yaml:"minimum,omitempty" json:"minimum,omitempty" validate:"omitempty"`
 
-	// Maximum is the maximum value for integer type (OPTIONAL)
-	Maximum *int `yaml:"maximum,omitempty" json:"maximum,omitempty" validate:"omitempty"`
+	// Maximum is the maximum value for integer/float types (OPTIONAL)
+	// BR-WORKFLOW-005: Changed from *int to *float64 for float support. Backward compatible.
+	Maximum *float64 `yaml:"maximum,omitempty" json:"maximum,omitempty" validate:"omitempty"`
 
 	// Default is the default value if not provided (OPTIONAL)
 	Default interface{} `yaml:"default,omitempty" json:"default,omitempty" validate:"omitempty"`
@@ -462,14 +514,45 @@ func (l *WorkflowSchemaLabels) ValidateMandatoryLabels() error {
 	return nil
 }
 
-// ValidateDescription checks if the structured description has required fields
-// BR-WORKFLOW-004: what and whenToUse are required
-func (d *WorkflowDescription) ValidateDescription() error {
+// ValidateDescription checks if the structured description has required fields.
+// BR-WORKFLOW-004: what and whenToUse are required.
+func ValidateDescription(d *WorkflowDescription) error {
 	if d.What == "" {
 		return NewSchemaValidationError("metadata.description.what", "what is required")
 	}
 	if d.WhenToUse == "" {
 		return NewSchemaValidationError("metadata.description.whenToUse", "whenToUse is required")
+	}
+	return nil
+}
+
+// ValidateParameterValue checks a string parameter value against the schema's type and bounds.
+// Returns nil if the value is valid; error with descriptive message otherwise.
+func ValidateParameterValue(param WorkflowParameter, value string) error {
+	switch param.Type {
+	case "integer":
+		v, err := strconv.ParseFloat(value, 64)
+		if err != nil {
+			return fmt.Errorf("parameter %q: invalid integer value %q", param.Name, value)
+		}
+		return checkNumericBounds(param, v)
+	case "float":
+		v, err := strconv.ParseFloat(value, 64)
+		if err != nil {
+			return fmt.Errorf("parameter %q: invalid float value %q", param.Name, value)
+		}
+		return checkNumericBounds(param, v)
+	default:
+		return nil
+	}
+}
+
+func checkNumericBounds(param WorkflowParameter, value float64) error {
+	if param.Minimum != nil && value < *param.Minimum {
+		return fmt.Errorf("parameter %q: value %v is below minimum %v", param.Name, value, *param.Minimum)
+	}
+	if param.Maximum != nil && value > *param.Maximum {
+		return fmt.Errorf("parameter %q: value %v exceeds maximum %v", param.Name, value, *param.Maximum)
 	}
 	return nil
 }

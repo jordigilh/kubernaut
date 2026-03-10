@@ -6,14 +6,17 @@ package api
 type OperationName = string
 
 const (
+	CreateActionTypeOperation              OperationName = "CreateActionType"
 	CreateAuditEventOperation              OperationName = "CreateAuditEvent"
 	CreateAuditEventsBatchOperation        OperationName = "CreateAuditEventsBatch"
 	CreateNotificationAuditOperation       OperationName = "CreateNotificationAudit"
 	CreateWorkflowOperation                OperationName = "CreateWorkflow"
 	DeprecateWorkflowOperation             OperationName = "DeprecateWorkflow"
+	DisableActionTypeOperation             OperationName = "DisableActionType"
 	DisableWorkflowOperation               OperationName = "DisableWorkflow"
 	EnableWorkflowOperation                OperationName = "EnableWorkflow"
 	ExportAuditEventsOperation             OperationName = "ExportAuditEvents"
+	GetActionTypeWorkflowCountOperation    OperationName = "GetActionTypeWorkflowCount"
 	GetEffectivenessScoreOperation         OperationName = "GetEffectivenessScore"
 	GetMetricsOperation                    OperationName = "GetMetrics"
 	GetRemediationHistoryContextOperation  OperationName = "GetRemediationHistoryContext"
@@ -29,5 +32,6 @@ const (
 	ReadinessCheckOperation                OperationName = "ReadinessCheck"
 	ReconstructRemediationRequestOperation OperationName = "ReconstructRemediationRequest"
 	ReleaseLegalHoldOperation              OperationName = "ReleaseLegalHold"
+	UpdateActionTypeOperation              OperationName = "UpdateActionType"
 	UpdateWorkflowOperation                OperationName = "UpdateWorkflow"
 )

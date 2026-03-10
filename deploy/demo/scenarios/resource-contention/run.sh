@@ -25,16 +25,19 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NAMESPACE="demo-resource-contention"
 
-# shellcheck source=../../scripts/kind-helper.sh
-source "${SCRIPT_DIR}/../../scripts/kind-helper.sh"
-ensure_kind_cluster "${SCRIPT_DIR}/../kind-config-singlenode.yaml" "${1:-}"
+APPROVE_MODE="--auto-approve"
+SKIP_VALIDATE=""
+for _arg in "$@"; do
+    case "$_arg" in
+        --auto-approve)  APPROVE_MODE="--auto-approve" ;;
+        --interactive)   APPROVE_MODE="--interactive" ;;
+        --no-validate)   SKIP_VALIDATE=true ;;
+    esac
+done
 
-# shellcheck source=../../scripts/monitoring-helper.sh
-source "${SCRIPT_DIR}/../../scripts/monitoring-helper.sh"
-ensure_monitoring_stack
+# shellcheck source=../../scripts/platform-helper.sh
 source "${SCRIPT_DIR}/../../scripts/platform-helper.sh"
-ensure_platform
-seed_scenario_workflow "resource-contention"
+require_demo_ready
 
 echo "============================================="
 echo " Resource Contention Demo (Issue #231)"
@@ -63,15 +66,11 @@ echo "    3. External actor reverts limits back to original value"
 echo "    4. OOMKill recurs"
 echo "    5. After 3 cycles: RO detects ineffective chain via spec_drift"
 echo "       -> Blocks with ManualReviewRequired"
-echo ""
-echo "==> To monitor progress:"
-echo "    kubectl get rr -n ${NAMESPACE} -w"
-echo ""
-echo "==> To verify escalation outcome:"
-echo "    kubectl get rr -n ${NAMESPACE} -o json | jq '.items[-1].status.outcome'"
-echo "    # Should show 'ManualReviewRequired' after 3 cycles"
-echo "    kubectl get rr -n ${NAMESPACE} -o json | jq '.items[-1].status.blockReason'"
-echo "    # Should show 'IneffectiveChain'"
-echo ""
-echo ">> Press Ctrl+C to stop the demo"
-wait
+# Validate pipeline
+if [ "${SKIP_VALIDATE}" != "true" ] && [ -f "${SCRIPT_DIR}/validate.sh" ]; then
+    echo ""
+    echo "==> Running validation pipeline..."
+    bash "${SCRIPT_DIR}/validate.sh" "${APPROVE_MODE}"
+fi
+
+kill "${EXTERNAL_ACTOR_PID}" 2>/dev/null || true

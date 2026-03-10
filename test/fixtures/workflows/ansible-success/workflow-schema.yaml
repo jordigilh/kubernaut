@@ -1,0 +1,48 @@
+apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
+metadata:
+  name: test-ansible-success
+spec:
+  # Ansible Success Test Workflow Schema (BR-WE-015, BR-WE-016)
+  # Used by: WorkflowExecution E2E — ansible engine success path
+  metadata:
+    workflowName: test-ansible-success
+    version: "1.0.0"
+    description:
+      what: "Ansible playbook that simulates a successful remediation via AWX"
+      whenToUse: "For E2E validation of ansible engine workflow execution (success path)"
+      whenNotToUse: "Not intended for production use"
+      preconditions: "AWX instance deployed and configured with kubernaut-test-playbooks project"
+  
+  actionType: RestartPod
+  
+  labels:
+    severity: [low]
+    environment: [test]
+    component: deployment
+    priority: P3
+  
+  execution:
+    engine: ansible
+    bundle: https://github.com/jordigilh/kubernaut-test-playbooks.git
+    bundleDigest: 42eadeba052b13e3ec4e113ebc8165efd5497974
+    engineConfig:
+      playbookPath: "playbooks/test-success.yml"
+      jobTemplateName: "kubernaut-test-success"
+  
+  parameters:
+    - name: target_kind
+      type: string
+      required: true
+      description: "Kubernetes resource kind (e.g., Pod, Deployment)"
+      default: "Pod"
+    - name: target_name
+      type: string
+      required: true
+      description: "Name of the target resource"
+      default: "test-pod"
+    - name: target_namespace
+      type: string
+      required: false
+      description: "Namespace of the target resource"
+      default: "default"

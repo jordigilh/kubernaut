@@ -42,9 +42,7 @@ kubectl exec -n kubernaut-system notification-controller-xxx -- \
   curl -s localhost:9090/metrics | grep audit
 
 # Expected metrics:
-# audit_events_buffered{service="notification"} 0
-# audit_events_written_total{service="notification"} > 0
-# audit_batch_write_duration_seconds_count > 0
+# audit_events_dropped_total{service="notification"} 0
 ```
 
 **Resolution Steps**:
@@ -307,12 +305,6 @@ ORDER BY mean_exec_time DESC LIMIT 5;
 ### **Key Prometheus Metrics**
 
 ```promql
-# Audit events buffered (should be low, <100)
-audit_events_buffered{service="notification"}
-
-# Total audit events written (should increase steadily)
-audit_events_written_total{service="notification"}
-
 # Dropped audit events (should be 0)
 audit_events_dropped_total{service="notification"}
 
@@ -350,11 +342,11 @@ annotations:
   description: "P95 audit write latency is {{ $value }}s (threshold: 0.5s)"
 ```
 
-**Alert 3: Audit Buffer Full**
+**Alert 3: Audit Events Dropped**
 ```yaml
-alert: NotificationAuditBufferFull
-expr: audit_events_buffered{service="notification"} > 900
-for: 2m
+alert: NotificationAuditEventsDropped
+expr: rate(audit_events_dropped_total{service="notification"}[5m]) > 0
+for: 5m
 labels:
   severity: warning
 annotations:

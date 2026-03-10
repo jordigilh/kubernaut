@@ -130,6 +130,7 @@ UNIT_TEST_*.md
 #*.mp4
 
 # Build artifacts (large binaries that should never be committed)
+/authwebhook
 workflowexecutor
 integration-webhook-server
 /kubernaut
@@ -175,6 +176,10 @@ TDD-*.md
 # EXCEPTIONS: Allow Design Decision documents (DD-*.md, ADR-*.md) in architecture/decisions
 !docs/architecture/decisions/DD-*.md
 !docs/architecture/decisions/ADR-*.md
+
+# EXCEPTIONS: Allow archived design documents
+!docs/archived/
+!docs/archived/**
 
 # Pattern with underscores (e.g., CONTEXT_API_*) - GLOBAL
 [A-Z][A-Z_]*_*_SUMMARY.md

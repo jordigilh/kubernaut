@@ -420,5 +420,19 @@ func ValidateRARSpec(rar *remediationv1.RemediationApprovalRequest) []string {
 	f = appendIfNonEmpty(f, checkNonEmpty("RAR Spec: WhyApprovalRequired", "operator cannot understand why approval was triggered", sp.WhyApprovalRequired))
 	f = appendIfNonEmpty(f, checkNonZeroTime("RAR Spec: RequiredBy", "operator has no deadline for approval decision", sp.RequiredBy))
 
+	// #307: ApprovalContext fields mapped from AIAnalysis
+	if len(sp.EvidenceCollected) == 0 {
+		f = append(f, "RAR Spec: EvidenceCollected empty -- operator has no evidence trail for approval decision (BR-AI-076)")
+	}
+	if len(sp.AlternativesConsidered) == 0 {
+		f = append(f, "RAR Spec: AlternativesConsidered empty -- operator cannot evaluate alternative approaches (BR-AI-076)")
+	}
+	if sp.PolicyEvaluation == nil {
+		f = append(f, "RAR Spec: PolicyEvaluation not populated -- operator has no Rego policy evaluation context (BR-AI-059)")
+	} else {
+		f = appendIfNonEmpty(f, checkNonEmpty("RAR Spec: PolicyEvaluation.PolicyName", "operator cannot identify which policy triggered approval", sp.PolicyEvaluation.PolicyName))
+		f = appendIfNonEmpty(f, checkNonEmpty("RAR Spec: PolicyEvaluation.Decision", "operator cannot see policy decision outcome", sp.PolicyEvaluation.Decision))
+	}
+
 	return f
 }

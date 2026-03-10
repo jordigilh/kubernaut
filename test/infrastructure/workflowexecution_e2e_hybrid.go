@@ -256,7 +256,7 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 		err  error
 	}
 
-	loadResults := make(chan loadResult, 3)
+	loadResults := make(chan loadResult, 4)
 
 	// Load WorkflowExecution controller image
 	go func() {
@@ -279,10 +279,31 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 		loadResults <- loadResult{name: "AuthWebhook", err: err}
 	}()
 
-	// Wait for all 4 loads to complete (TD-E2E-001: Now includes OAuth2-Proxy)
+	// BR-WE-015: Pre-load AWX Operator and AWX images into Kind to prevent
+	// slow quay.io/docker.io pulls that cause AWX readiness timeouts in CI.
+	go func() {
+		thirdPartyImages := []string{
+			AWXOperatorImage, // quay.io/ansible/awx-operator:2.19.1
+			"registry.k8s.io/kubebuilder/kube-rbac-proxy:v0.15.0",
+			AWXImage,   // quay.io/ansible/awx:24.6.1
+			AWXEEImage, // quay.io/ansible/awx-ee:24.6.1
+			"docker.io/library/postgres:16-alpine",
+			"docker.io/redis:7",
+			"quay.io/centos/centos:stream9",
+		}
+		for _, img := range thirdPartyImages {
+			if preloadErr := PreloadExternalImage(img, clusterName, writer); preloadErr != nil {
+				loadResults <- loadResult{name: "AWX third-party images", err: fmt.Errorf("preload %s: %w", img, preloadErr)}
+				return
+			}
+		}
+		loadResults <- loadResult{name: "AWX third-party images", err: nil}
+	}()
+
+	// Wait for all loads to complete (service images + AWX third-party)
 	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for images to load...")
 	var loadErrors []error
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 4; i++ {
 		result := <-loadResults
 		if result.err != nil {
 			_, _ = fmt.Fprintf(writer, "  ❌ %s load failed: %v\n", result.name, result.err)
@@ -342,9 +363,9 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 		name string
 		err  error
 	}
-	deployResults := make(chan deployResult, 6)
+	deployResults := make(chan deployResult, 7)
 
-	// Launch ALL kubectl apply commands concurrently
+	// Launch ALL kubectl apply commands concurrently (including AWX — BR-WE-015)
 	go func() {
 		err := installTektonPipelines(kubeconfigPath, writer)
 		deployResults <- deployResult{"Tekton Pipelines", err}
@@ -362,24 +383,25 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 		deployResults <- deployResult{"Migrations", err}
 	}()
 	go func() {
-		// Per Consolidated API Migration (January 2026):
-		// Use DataStorage image name from builtImages map (built in Phase 1)
 		dsImage := builtImages["DataStorage"]
-		// TD-E2E-001 Phase 1: Deploy DataStorage with OAuth2-Proxy sidecar
 		err := deployDataStorageServiceInNamespace(ctx, WorkflowExecutionNamespace, kubeconfigPath, dsImage, writer)
 		deployResults <- deployResult{"DataStorage", err}
 	}()
 	go func() {
-		// Per Consolidated API Migration (January 2026):
-		// Use WorkflowExecution image name from builtImages map (built in Phase 1)
 		wfeImage := builtImages["WorkflowExecution (coverage)"]
 		err := DeployWorkflowExecutionController(ctx, WorkflowExecutionNamespace, kubeconfigPath, wfeImage, writer)
 		deployResults <- deployResult{"WorkflowExecution", err}
 	}()
+	go func() {
+		// BR-WE-015: Deploy AWX via Operator (external PG, operator-managed Redis).
+		// Installs operator CRDs + controller, then creates AWX CR.
+		err := DeployAWXInNamespace(ctx, WorkflowExecutionNamespace, kubeconfigPath, writer)
+		deployResults <- deployResult{"AWX", err}
+	}()
 
 	// Collect ALL results before proceeding (MANDATORY)
 	var deployErrors []error
-	for i := 0; i < 6; i++ {
+	for i := 0; i < 7; i++ {
 		result := <-deployResults
 		if result.err != nil {
 			_, _ = fmt.Fprintf(writer, "  ❌ %s deployment failed: %v\n", result.name, result.err)
@@ -501,9 +523,68 @@ subjects:
 		_, _ = fmt.Fprintf(writer, "   ✅ Secret e2e-dep-secret-tekton ready in %s\n", ExecutionNamespace)
 	}
 
+	// DD-WE-006: ConfigMap dependencies for Job and Tekton ConfigMap injection tests.
+	_, _ = fmt.Fprintf(writer, "📦 Creating DD-WE-006 dependency ConfigMaps and Ansible deps in %s...\n", ExecutionNamespace)
+	depResources := []struct {
+		args []string
+		desc string
+	}{
+		{[]string{"create", "configmap", "e2e-dep-configmap", "--from-literal=setting=e2e-configmap-value"}, "ConfigMap e2e-dep-configmap"},
+		{[]string{"create", "configmap", "e2e-dep-configmap-tekton", "--from-literal=setting=e2e-configmap-value-tekton"}, "ConfigMap e2e-dep-configmap-tekton"},
+		{[]string{"create", "secret", "generic", "e2e-dep-secret-ansible", "--from-literal=token=e2e-ansible-secret-value"}, "Secret e2e-dep-secret-ansible"},
+		{[]string{"create", "configmap", "e2e-dep-configmap-ansible", "--from-literal=setting=e2e-ansible-configmap-value"}, "ConfigMap e2e-dep-configmap-ansible"},
+	}
+	for _, res := range depResources {
+		fullArgs := append(res.args, "--namespace", ExecutionNamespace, "--kubeconfig", kubeconfigPath)
+		cmd := exec.Command("kubectl", fullArgs...)
+		out, err := cmd.CombinedOutput()
+		if err != nil && !strings.Contains(string(out), "AlreadyExists") {
+			_, _ = fmt.Fprintf(writer, "⚠️  Failed to create %s (non-fatal): %s\n", res.desc, string(out))
+		} else {
+			_, _ = fmt.Fprintf(writer, "   ✅ %s ready in %s\n", res.desc, ExecutionNamespace)
+		}
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// POST-DEPLOYMENT PARALLEL: Workflow seeding + AWX config run concurrently.
+	// Workflow registration only needs DataStorage; AWX config only needs AWX.
+	// ═══════════════════════════════════════════════════════════════════════
 	dataStorageURL := "http://localhost:8092" // DD-TEST-001: WE → DataStorage dependency port
-	if _, err = BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL, saToken, writer); err != nil {
-		return fmt.Errorf("failed to build and register test workflows: %w", err)
+
+	type postDeployResult struct {
+		name string
+		err  error
+	}
+	postDeployCh := make(chan postDeployResult, 2)
+
+	// Goroutine 1: Seed workflows in DataStorage (includes ansible workflows — BR-WE-015)
+	go func() {
+		if _, seedErr := BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL, saToken, writer); seedErr != nil {
+			postDeployCh <- postDeployResult{"workflow seeding", seedErr}
+			return
+		}
+		postDeployCh <- postDeployResult{"workflow seeding", nil}
+	}()
+
+	// Goroutine 2: Configure AWX (project, inventory, templates, token) — BR-WE-015
+	var awxCfg *AWXConfig
+	go func() {
+		cfg, awxErr := SetupAWXPostDeployment(ctx, WorkflowExecutionNamespace, kubeconfigPath, writer)
+		if awxErr != nil {
+			postDeployCh <- postDeployResult{"AWX configuration", awxErr}
+			return
+		}
+		awxCfg = cfg
+		postDeployCh <- postDeployResult{"AWX configuration", nil}
+	}()
+
+	// Collect both results
+	for i := 0; i < 2; i++ {
+		result := <-postDeployCh
+		if result.err != nil {
+			return fmt.Errorf("%s failed: %w", result.name, result.err)
+		}
+		_, _ = fmt.Fprintf(writer, "  ✅ %s complete\n", result.name)
 	}
 
 	_, _ = fmt.Fprintln(writer, "\n📋 Creating test pipeline...")
@@ -514,7 +595,21 @@ subjects:
 	_, _ = fmt.Fprintln(writer, "\n🔑 Creating image pull secret...")
 	if err := createQuayPullSecret(kubeconfigPath, ExecutionNamespace, writer); err != nil {
 		_, _ = fmt.Fprintf(writer, "⚠️  Warning: Could not create quay.io pull secret: %v\n", err)
-		// Non-fatal - repos may be public
+	}
+
+	// BR-WE-015: After both workflow seeding and AWX config are done, patch WE
+	// controller with the ansible config and restart it to register the executor.
+	// This is the only truly sequential step — it needs the AWX token from above.
+	if awxCfg != nil {
+		if err := PatchWEControllerWithAnsibleConfig(ctx, WorkflowExecutionNamespace, kubeconfigPath, awxCfg, writer); err != nil {
+			return fmt.Errorf("failed to enable ansible executor on WE controller: %w", err)
+		}
+		// Verify AWX web pod has ALL containers healthy before tests start.
+		// The rsyslog sidecar can crash after initial readiness on constrained
+		// runners, making the ClusterIP service unreachable.
+		if err := EnsureAWXWebPodHealthy(ctx, WorkflowExecutionNamespace, kubeconfigPath, writer); err != nil {
+			return fmt.Errorf("AWX web pod health check failed: %w", err)
+		}
 	}
 
 	_, _ = fmt.Fprintln(writer, "\n✅ All services ready and configured!")
@@ -524,7 +619,8 @@ subjects:
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "  🚀 Strategy: Hybrid parallel (build parallel → cluster → load)")
 	_, _ = fmt.Fprintln(writer, "  📊 Coverage: Enabled (GOCOVERDIR=/coverdata)")
-	_, _ = fmt.Fprintln(writer, "  🎯 DataStorage URL: http://localhost:8092") // DD-TEST-001: WE → DataStorage dependency port
+	_, _ = fmt.Fprintln(writer, "  🎯 DataStorage URL: http://localhost:8092")
+	_, _ = fmt.Fprintf(writer, "  🤖 AWX API: http://%s.kubernaut-system:%d\n", AWXServiceName, AWXServicePort)
 	_, _ = fmt.Fprintln(writer, "  📦 Namespace: kubernaut-system")
 	_, _ = fmt.Fprintln(writer, "  ⏱️  Total time: ~5-6 minutes (per DD-TEST-002)")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -1155,6 +1251,30 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: workflowexecution-dep-reader
+subjects:
+- kind: ServiceAccount
+  name: workflowexecution-controller
+  namespace: %[1]s
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: workflowexecution-secret-reader
+  namespace: %[1]s
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: workflowexecution-secret-reader
+  namespace: %[1]s
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: workflowexecution-secret-reader
 subjects:
 - kind: ServiceAccount
   name: workflowexecution-controller

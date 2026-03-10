@@ -27,7 +27,7 @@ spec:
           container="leaker",
           resource="memory"
         }
-      for: 1m
+      for: 3m
       labels:
         severity: warning
       annotations:

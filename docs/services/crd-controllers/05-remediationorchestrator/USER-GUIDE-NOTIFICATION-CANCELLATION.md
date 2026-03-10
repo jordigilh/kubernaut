@@ -176,52 +176,6 @@ kubectl delete remediationrequest rr-123 -n default
 
 ---
 
-## 📈 Monitoring Cancellations
-
-### **Prometheus Metrics**
-
-**Metric**: `kubernaut_remediationorchestrator_notification_cancellations_total`
-
-**Labels**: `namespace`
-
-**Query Examples**:
-
-```promql
-# Total cancellations across all namespaces
-sum(kubernaut_remediationorchestrator_notification_cancellations_total)
-
-# Cancellations per namespace
-kubernaut_remediationorchestrator_notification_cancellations_total
-
-# Cancellation rate (per minute)
-rate(kubernaut_remediationorchestrator_notification_cancellations_total[5m])
-```
-
-### **Notification Status Distribution**
-
-**Metric**: `kubernaut_remediationorchestrator_notification_status`
-
-**Labels**: `namespace`, `status`
-
-**Query Examples**:
-
-```promql
-# Current notification status distribution
-kubernaut_remediationorchestrator_notification_status
-
-# Count of cancelled notifications
-kubernaut_remediationorchestrator_notification_status{status="Cancelled"}
-
-# Percentage of cancelled notifications
-(
-  kubernaut_remediationorchestrator_notification_status{status="Cancelled"}
-  /
-  sum(kubernaut_remediationorchestrator_notification_status)
-) * 100
-```
-
----
-
 ## 🔍 Troubleshooting
 
 ### **Problem**: Notification still delivered after deletion
@@ -306,16 +260,7 @@ Cancel multiple notifications efficiently using field selectors (Issue #91: labe
 kubectl delete notificationrequests -n <namespace> --field-selector spec.remediationRequestRef.name=<rr-name>
 ```
 
-### **3. Monitor Cancellation Patterns**
-
-Track cancellation rates to identify notification spam issues.
-
-```promql
-# Alert if cancellation rate is too high (indicates spam)
-rate(kubernaut_remediationorchestrator_notification_cancellations_total[5m]) > 0.5
-```
-
-### **4. Document Cancellation Reasons**
+### **3. Document Cancellation Reasons**
 
 When cancelling notifications during incidents, document why in your incident log.
 

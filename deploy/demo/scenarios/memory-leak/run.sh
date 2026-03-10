@@ -17,16 +17,19 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NAMESPACE="demo-memory-leak"
 
-# shellcheck source=../../scripts/kind-helper.sh
-source "${SCRIPT_DIR}/../../scripts/kind-helper.sh"
-ensure_kind_cluster "${SCRIPT_DIR}/../kind-config-singlenode.yaml" "${1:-}"
+APPROVE_MODE="--auto-approve"
+SKIP_VALIDATE=""
+for _arg in "$@"; do
+    case "$_arg" in
+        --auto-approve)  APPROVE_MODE="--auto-approve" ;;
+        --interactive)   APPROVE_MODE="--interactive" ;;
+        --no-validate)   SKIP_VALIDATE=true ;;
+    esac
+done
 
-# shellcheck source=../../scripts/monitoring-helper.sh
-source "${SCRIPT_DIR}/../../scripts/monitoring-helper.sh"
-ensure_monitoring_stack
+# shellcheck source=../../scripts/platform-helper.sh
 source "${SCRIPT_DIR}/../../scripts/platform-helper.sh"
-ensure_platform
-seed_scenario_workflow "memory-leak"
+require_demo_ready
 
 echo "============================================="
 echo " Proactive Memory Exhaustion Demo (#129)"
@@ -53,7 +56,10 @@ echo ""
 echo "==> Step 4: Memory leak building (~12MB/min per pod)."
 echo "    predict_linear will fire once it projects OOM within 30 minutes,"
 echo "    typically after 5-7 minutes of trend data."
-echo ""
-echo "  Expected pipeline:"
-echo "    Alert (ContainerMemoryExhaustionPredicted) -> Gateway -> SP -> AIAnalysis"
-echo "    -> LLM selects GracefulRestart -> WFE (rolling restart) -> EA (memory reset)"
+
+# Validate pipeline
+if [ "${SKIP_VALIDATE}" != "true" ] && [ -f "${SCRIPT_DIR}/validate.sh" ]; then
+    echo ""
+    echo "==> Running validation pipeline..."
+    bash "${SCRIPT_DIR}/validate.sh" "${APPROVE_MODE}"
+fi

@@ -209,8 +209,5 @@ func (c *EffectivenessAssessmentCreator) CreateEffectivenessAssessment(
 			"Created EffectivenessAssessment %s (correlationID: %s)", name, rr.Name)
 	}
 
-	// Track EA creation metric (DD-METRICS-001)
-	c.metrics.EffectivenessAssessmentsCreatedTotal.WithLabelValues(rr.Namespace).Inc()
-
 	return name, nil
 }

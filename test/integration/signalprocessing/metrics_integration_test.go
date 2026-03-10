@@ -52,8 +52,6 @@ import (
 // Metrics Tested (per pkg/signalprocessing/metrics/metrics.go):
 // - signalprocessing_processing_total{phase, result}
 // - signalprocessing_processing_duration_seconds{phase}
-// - signalprocessing_enrichment_total{result}
-// - signalprocessing_enrichment_duration_seconds{resource_kind}
 // - signalprocessing_enrichment_errors_total{error_type}
 // ========================================
 
@@ -264,19 +262,6 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 					updated.Status.Phase == signalprocessingv1alpha1.PhaseCompleted
 			}, 30*time.Second, 500*time.Millisecond).Should(BeTrue())
 
-			// 4. Verify enrichment metrics were emitted
-			Eventually(func() float64 {
-				return getCounterValue("signalprocessing_enrichment_total",
-					map[string]string{"result": "success"})
-			}, 10*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
-				"Enrichment total metric should be emitted during Pod enrichment")
-
-			// 5. Verify enrichment duration histogram
-			Eventually(func() uint64 {
-				return getHistogramCount("signalprocessing_enrichment_duration_seconds",
-					map[string]string{"resource_kind": "pod"})
-			}, 5*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
-				"Enrichment duration should be recorded for Pod resources")
 		})
 	})
 

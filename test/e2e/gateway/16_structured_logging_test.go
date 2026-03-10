@@ -53,6 +53,7 @@ var _ = Describe("Test 16: Structured Logging Verification (BR-GATEWAY-024, BR-G
 		// Create unique test namespace (Pattern: RO E2E)
 		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
 		testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "logging")
+		helpers.EnsureTestPod(ctx, k8sClient, testNamespace, "logging-test-pod")
 		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 		testLogger.Info("✅ Using shared Gateway", "url", gatewayURL)
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -117,6 +118,7 @@ var _ = Describe("Test 16: Structured Logging Verification (BR-GATEWAY-024, BR-G
 				}
 				req24.Header.Set("Content-Type", "application/json")
 				req24.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+				setE2EAuthHeader(req24)
 				return httpClient.Do(req24)
 			}()
 			if err != nil {

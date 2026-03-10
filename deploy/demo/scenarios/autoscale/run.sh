@@ -13,17 +13,22 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NAMESPACE="demo-autoscale"
 PROVISIONER_PID=""
 
-# shellcheck source=../../scripts/kind-helper.sh
-source "${SCRIPT_DIR}/../../scripts/kind-helper.sh"
-ensure_kind_cluster "${SCRIPT_DIR}/../kind-config-multinode.yaml" "${1:-}"
+APPROVE_MODE="--auto-approve"
+SKIP_VALIDATE=""
+for _arg in "$@"; do
+    case "$_arg" in
+        --auto-approve)  APPROVE_MODE="--auto-approve" ;;
+        --interactive)   APPROVE_MODE="--interactive" ;;
+        --no-validate)   SKIP_VALIDATE=true ;;
+    esac
+done
 
+# shellcheck source=../../scripts/platform-helper.sh
+source "${SCRIPT_DIR}/../../scripts/platform-helper.sh"
+require_demo_ready
 # shellcheck source=../../scripts/monitoring-helper.sh
 source "${SCRIPT_DIR}/../../scripts/monitoring-helper.sh"
-ensure_monitoring_stack
-source "${SCRIPT_DIR}/../../scripts/platform-helper.sh"
-ensure_platform
-seed_scenario_workflow "autoscale"
-ensure_metrics_server
+require_infra metrics-server
 
 cleanup_provisioner() {
   if [ -n "$PROVISIONER_PID" ]; then
@@ -80,14 +85,9 @@ sleep 15
 kubectl get pods -n "${NAMESPACE}" -o wide
 echo ""
 
-# Step 8: Monitor
-echo "==> Step 8: Pipeline in progress. Monitor with:"
-echo "    kubectl get rr,sp,aa,we,ea -n ${NAMESPACE} -w"
-echo ""
-echo "  Expected flow:"
-echo "    Alert (FailedScheduling) -> Gateway -> SP -> AA (HAPI) -> RO -> WE"
-echo "    WE Job creates ScaleRequest -> Provisioner adds node -> WE verifies -> EM"
-echo ""
-echo "==> To verify remediation succeeded:"
-echo "    kubectl get nodes                    # New worker node visible"
-echo "    kubectl get pods -n ${NAMESPACE} -o wide  # All pods Running"
+# Step 8: Validate pipeline
+if [ "${SKIP_VALIDATE}" != "true" ] && [ -f "${SCRIPT_DIR}/validate.sh" ]; then
+    echo ""
+    echo "==> Running validation pipeline..."
+    bash "${SCRIPT_DIR}/validate.sh" "${APPROVE_MODE}"
+fi

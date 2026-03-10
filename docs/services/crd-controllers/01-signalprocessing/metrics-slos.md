@@ -14,7 +14,6 @@
 
 | SLI | Measurement | Target | Business Impact |
 |-----|-------------|--------|----------------|
-| **Enrichment Success Rate** | `signalprocessing_enrichment_success_total / signalprocessing_enrichment_total` | ≥99% | HolmesGPT receives quality data |
 | **Processing Latency (P95)** | `histogram_quantile(0.95, signalprocessing_duration_seconds)` | <5s | Fast remediation start |
 | **Degraded Mode Rate** | `signalprocessing_degraded_total / signalprocessing_total` | <5% | Most signals fully enriched |
 | **Categorization Success Rate** | `signalprocessing_categorization_success_total / signalprocessing_categorization_total` | ≥99% | Accurate priority assignment |
@@ -105,13 +104,6 @@ signalprocessing_rego_security_blocks_total:
 
 ```yaml
 slos:
-  - name: "SignalProcessing Enrichment Success Rate"
-    sli: "signalprocessing_enrichment_success_total / signalprocessing_enrichment_total"
-    target: 0.99  # 99%
-    window: "30d"
-    burn_rate_fast: 14.4  # 1h window
-    burn_rate_slow: 6     # 6h window
-
   - name: "SignalProcessing P95 Latency"
     sli: "histogram_quantile(0.95, signalprocessing_duration_seconds)"
     target: 5  # 5 seconds (updated from 30s per implementation plan)
@@ -139,24 +131,6 @@ slos:
     "panels": [
       {
         "id": 1,
-        "title": "Enrichment Success Rate (SLI)",
-        "type": "graph",
-        "targets": [
-          {
-            "expr": "sum(rate(signalprocessing_enrichment_success_total[5m])) / sum(rate(signalprocessing_enrichment_total[5m]))",
-            "legendFormat": "Success Rate",
-            "refId": "A"
-          }
-        ],
-        "yaxes": [
-          {"format": "percentunit", "min": 0, "max": 1}
-        ],
-        "thresholds": [
-          {"value": 0.99, "colorMode": "critical", "op": "lt", "line": true}
-        ]
-      },
-      {
-        "id": 2,
         "title": "Processing Latency (P50, P95, P99)",
         "type": "graph",
         "targets": [
@@ -292,22 +266,6 @@ groups:
 - name: signalprocessing-slos
   interval: 30s
   rules:
-  # SLO: Enrichment Success Rate
-  - alert: SignalProcessingEnrichmentSLOBreach
-    expr: |
-      (
-        sum(rate(signalprocessing_enrichment_success_total[1h])) /
-        sum(rate(signalprocessing_enrichment_total[1h]))
-      ) < 0.99
-    for: 5m
-    labels:
-      severity: critical
-      slo: enrichment_success_rate
-    annotations:
-      summary: "SignalProcessing enrichment success rate below SLO"
-      description: "Enrichment success rate is {{ $value | humanizePercentage }}, below 99% SLO threshold"
-      runbook: "https://docs.kubernaut.io/runbooks/signalprocessing-enrichment-failure"
-
   # SLO: Processing Latency P95
   - alert: SignalProcessingLatencySLOBreach
     expr: |
@@ -419,52 +377,48 @@ groups:
 **SLI Queries for Dashboards**:
 
 ```promql
-# 1. Enrichment Success Rate (SLI)
-sum(rate(signalprocessing_enrichment_success_total[5m])) /
-sum(rate(signalprocessing_enrichment_total[5m]))
-
-# 2. Processing Latency P95 (SLI)
+# 1. Processing Latency P95 (SLI)
 histogram_quantile(0.95,
   rate(signalprocessing_duration_seconds_bucket[5m])
 )
 
-# 3. Categorization Success Rate (SLI)
+# 2. Categorization Success Rate (SLI)
 sum(rate(signalprocessing_categorization_success_total[5m])) /
 sum(rate(signalprocessing_categorization_total[5m]))
 
-# 4. Degraded Mode Rate (SLI)
+# 3. Degraded Mode Rate (SLI)
 sum(rate(signalprocessing_degraded_total[5m])) /
 sum(rate(signalprocessing_total[5m]))
 
-# 5. Error Budget Remaining (30-day window)
+# 4. Error Budget Remaining (30-day window)
 1 - (
   (1 - 0.99) -  # SLO target: 99%
-  (
+    (
     1 - (
-      sum(increase(signalprocessing_enrichment_success_total[30d])) /
-      sum(increase(signalprocessing_enrichment_total[30d]))
+      sum(increase(signalprocessing_categorization_success_total[30d])) /
+      sum(increase(signalprocessing_categorization_total[30d]))
     )
   )
 ) / (1 - 0.99)
 
-# 6. Phase Distribution
+# 5. Phase Distribution
 sum by (phase) (signalprocessing_active_total)
 
-# 7. Enrichment Duration by Phase
+# 6. Enrichment Duration by Phase
 histogram_quantile(0.95,
   rate(signalprocessing_phase_duration_seconds_bucket{phase="enriching"}[5m])
 )
 
-# 8. Kubernetes API Query Rate
+# 7. Kubernetes API Query Rate
 rate(signalprocessing_kubernetes_api_requests_total[5m])
 
-# 9. CRD Creation Rate
+# 8. CRD Creation Rate
 rate(signalprocessing_created_total[5m])
 
-# 10. Active SignalProcessing CRDs
+# 9. Active SignalProcessing CRDs
 signalprocessing_active_total
 
-# 11. Audit Write Latency P95
+# 10. Audit Write Latency P95
 histogram_quantile(0.95,
   rate(signalprocessing_audit_duration_seconds_bucket[5m])
 )

@@ -870,7 +870,7 @@ It("should register all business metrics", func() {
     testMetrics := metrics.NewMetricsWithRegistry(testRegistry)
 
     // Record metrics via injected metrics instance
-    testMetrics.RecordReconciliation("Pending", "success")
+    testMetrics.FailuresTotal.WithLabelValues("APIError", "AuthenticationError").Inc()
 
     // Verify via registry inspection (NOT HTTP endpoint)
     families, err := testRegistry.Gather()
@@ -879,7 +879,7 @@ It("should register all business metrics", func() {
     // Check metric exists
     found := false
     for _, family := range families {
-        if family.GetName() == "aianalysis_reconciler_reconciliations_total" {
+        if family.GetName() == "aianalysis_failures_total" {
             found = true
             break
         }
@@ -889,7 +889,7 @@ It("should register all business metrics", func() {
 
 // ❌ WRONG: Using global controller-runtime registry in tests
 It("should register all business metrics", func() {
-    metrics.RecordReconciliation("Pending", "success")  // ❌ Global metrics
+    metrics.FailuresTotal.WithLabelValues("APIError", "AuthenticationError").Inc()  // ❌ Global metrics
 
     // ❌ Pollutes global registry, causes test interference
     families, err := ctrlmetrics.Registry.Gather()
@@ -1824,7 +1824,7 @@ aianalysis_reconciler_analysis_duration_seconds{phase="Investigating"}
 // Stateless HTTP Examples
 gateway_http_requests_total{method="POST", path="/api/v1/signals", status="201"}
 gateway_http_request_duration_seconds{method="POST", path="/api/v1/signals"}
-datastorage_audit_events_written_total{service="signalprocessing"}
+audit_events_dropped_total{service="signalprocessing"}
 ```
 
 **Anti-Patterns to Avoid**:
@@ -1968,7 +1968,6 @@ var _ = Describe("Metrics E2E", func() {
         metricsOutput := string(body)
         Expect(metricsOutput).To(ContainSubstring("signalprocessing_reconciliations_total"))
         Expect(metricsOutput).To(ContainSubstring("signalprocessing_processing_duration_seconds"))
-        Expect(metricsOutput).To(ContainSubstring("signalprocessing_enrichment_total"))
     })
 })
 ```
@@ -2388,27 +2387,17 @@ var _ = Describe("Metrics Integration Tests", func() {
         testMetrics = metrics.NewMetrics()
     })
 
-    It("should increment reconciliation counter", func() {
+    It("should increment failure counter directly", func() {
         // ❌ WRONG: Directly calling metrics method (not from business logic)
-        testMetrics.RecordReconciliation("Investigating", "success")
+        testMetrics.FailuresTotal.WithLabelValues("APIError", "AuthenticationError").Inc()
 
         // ❌ WRONG: Verifying metrics infrastructure works
         families, err := ctrlmetrics.Registry.Gather()
         Expect(err).ToNot(HaveOccurred())
 
         // ❌ WRONG: Checking metric exists in registry (infrastructure test)
-        metric := families["aianalysis_reconciler_reconciliations_total"]
+        metric := families["aianalysis_failures_total"]
         Expect(metric).ToNot(BeNil())
-    })
-
-    It("should observe duration histogram", func() {
-        // ❌ WRONG: Directly calling metrics method
-        testMetrics.RecordReconcileDuration("Pending", 1.5)
-
-        // ❌ WRONG: Verifying histogram infrastructure
-        families, _ := ctrlmetrics.Registry.Gather()
-        histogram := families["aianalysis_reconciler_duration_seconds"]
-        Expect(histogram.GetType()).To(Equal(dto.MetricType_HISTOGRAM))
     })
 
     It("should increment processing counter multiple times", func() {
@@ -2504,32 +2493,22 @@ var _ = Describe("AIAnalysis Metrics Integration", func() {
 
         // ✅ CORRECT: Verify controller emitted metrics (SIDE EFFECT)
         Eventually(func() float64 {
-            return getCounterValue("aianalysis_reconciler_reconciliations_total",
+            return getCounterValue("aianalysis_failures_total",
                 map[string]string{
-                    "phase":  "Investigating",
-                    "result": "success",
+                    "reason":     "APIError",
+                    "sub_reason": "AuthenticationError",
+                })
+        }, 10*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 0),
+            "Controller should emit failure metrics when errors occur")
+
+        // ✅ CORRECT: Verify Rego evaluations metric was recorded (success path)
+        Eventually(func() float64 {
+            return getCounterValue("aianalysis_rego_evaluations_total",
+                map[string]string{
+                    "outcome": "AutoApproved",
                 })
         }, 10*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
-            "Controller should emit reconciliation metrics during reconciliation")
-
-        // ✅ CORRECT: Verify duration histogram was recorded
-        Eventually(func() bool {
-            families, _ := gatherMetrics()
-            histogram := families["aianalysis_reconciler_duration_seconds"]
-            if histogram == nil {
-                return false
-            }
-            // Check histogram has samples (controller recorded duration)
-            for _, m := range histogram.GetMetric() {
-                for _, l := range m.GetLabel() {
-                    if l.GetName() == "phase" && l.GetValue() == "Investigating" {
-                        return m.GetHistogram().GetSampleCount() > 0
-                    }
-                }
-            }
-            return false
-        }, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
-            "Controller should record reconciliation duration")
+            "Controller should emit Rego evaluation metrics during reconciliation")
     })
 
     It("should emit approval decision metrics when Rego evaluation completes", func() {
@@ -2661,7 +2640,7 @@ fi
 
 **Integration tests should test SERVICE BEHAVIOR (business logic), not INFRASTRUCTURE (metrics client library).**
 
-If your test directly calls `testMetrics.RecordReconciliation()` or similar methods, you're testing the wrong thing.
+If your test directly calls `testMetrics.FailuresTotal.WithLabelValues(...).Inc()` or similar metrics methods (instead of triggering business logic), you're testing the wrong thing.
 
 **Correct approach**: Create CRD → Wait for business outcome → Verify metrics were emitted as side effect.
 

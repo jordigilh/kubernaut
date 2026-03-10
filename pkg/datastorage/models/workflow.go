@@ -38,6 +38,8 @@ const (
 	ExecutionEngineTekton ExecutionEngine = "tekton"
 	// ExecutionEngineJob represents Kubernetes Job execution engine
 	ExecutionEngineJob ExecutionEngine = "job"
+	// ExecutionEngineAnsible represents Ansible/AWX/AAP execution engine (BR-WE-015)
+	ExecutionEngineAnsible ExecutionEngine = "ansible"
 )
 
 // RemediationWorkflow represents a workflow in the catalog
@@ -96,6 +98,11 @@ type RemediationWorkflow struct {
 	ExecutionBundle *string `json:"executionBundle,omitempty" db:"execution_bundle"`
 	// ExecutionBundleDigest is the sha256 digest portion of execution_bundle
 	ExecutionBundleDigest *string `json:"executionBundleDigest,omitempty" db:"execution_bundle_digest"`
+
+	// EngineConfig holds engine-specific configuration as JSONB (BR-WE-016).
+	// For ansible: {"playbookPath": "...", "jobTemplateName": "...", "inventoryName": "..."}.
+	// For tekton/job: NULL.
+	EngineConfig *json.RawMessage `json:"engineConfig,omitempty" db:"engine_config"`
 
 	// ========================================
 	// LABELS (V1.0: STRUCTURED TYPES FOR TYPE SAFETY)
@@ -356,6 +363,15 @@ type WorkflowSearchResult struct {
 
 	// ExecutionBundle is the operator's execution bundle reference (digest-only)
 	ExecutionBundle string `json:"executionBundle,omitempty"`
+
+	// ExecutionBundleDigest is the sha256 digest of the execution bundle
+	ExecutionBundleDigest string `json:"executionBundleDigest,omitempty"`
+
+	// ExecutionEngine is the workflow's execution engine (tekton, job, ansible)
+	ExecutionEngine ExecutionEngine `json:"executionEngine,omitempty"`
+
+	// EngineConfig holds engine-specific configuration as raw JSON (BR-WE-016)
+	EngineConfig *json.RawMessage `json:"engineConfig,omitempty"`
 
 	// ========================================
 	// V1.0: LABEL-ONLY SCORING COMPONENTS

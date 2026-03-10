@@ -2,8 +2,11 @@
 # Resource Quota Exhaustion Demo -- Automated Runner
 # Scenario #171: ResourceQuota prevents pod creation -> LLM escalates to human review
 #
-# No workflow is seeded -- the LLM should recognize this as a policy constraint
-# and escalate with needs_human_review: true (ManualReviewRequired).
+# No workflow is seeded for ResourceQuota exhaustion. The LLM should recognize
+# this as a policy constraint and escalate to ManualReviewRequired.
+# The validation accepts a 1-or-2 pass loop: if the LLM initially selects a
+# semantically similar workflow that fails, it self-corrects on the second
+# attempt using remediation history feedback (#323).
 #
 # The alert uses ReplicaSet-level metrics (spec vs status replicas) because
 # quota-rejected pods are never created (FailedCreate at admission, never
@@ -19,15 +22,19 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NAMESPACE="demo-quota"
 
-# shellcheck source=../../scripts/kind-helper.sh
-source "${SCRIPT_DIR}/../../scripts/kind-helper.sh"
-ensure_kind_cluster "${SCRIPT_DIR}/../kind-config-singlenode.yaml" "${1:-}"
+APPROVE_MODE="--auto-approve"
+SKIP_VALIDATE=""
+for _arg in "$@"; do
+    case "$_arg" in
+        --auto-approve)  APPROVE_MODE="--auto-approve" ;;
+        --interactive)   APPROVE_MODE="--interactive" ;;
+        --no-validate)   SKIP_VALIDATE=true ;;
+    esac
+done
 
-# shellcheck source=../../scripts/monitoring-helper.sh
-source "${SCRIPT_DIR}/../../scripts/monitoring-helper.sh"
-ensure_monitoring_stack
+# shellcheck source=../../scripts/platform-helper.sh
 source "${SCRIPT_DIR}/../../scripts/platform-helper.sh"
-ensure_platform
+require_demo_ready
 
 echo "============================================="
 echo " Resource Quota Exhaustion Demo (#171)"
@@ -62,8 +69,10 @@ bash "${SCRIPT_DIR}/exhaust-quota.sh"
 echo ""
 
 echo "==> Step 5: Fault injected. Waiting for KubeResourceQuotaExhausted alert (~1-2 min)."
-echo "    New RS has spec_replicas>0 but status_replicas=0 (FailedCreate)."
-echo ""
-echo "  Expected pipeline:"
-echo "    Alert -> Gateway -> SP -> AIAnalysis (policy constraint, no workflow)"
-echo "    -> ManualReviewRequired (escalation to human)"
+
+# Validate pipeline
+if [ "${SKIP_VALIDATE}" != "true" ] && [ -f "${SCRIPT_DIR}/validate.sh" ]; then
+    echo ""
+    echo "==> Running validation pipeline..."
+    bash "${SCRIPT_DIR}/validate.sh" "${APPROVE_MODE}"
+fi

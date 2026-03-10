@@ -42,7 +42,6 @@ package enricher
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -101,18 +100,6 @@ func NewK8sEnricher(c client.Client, logger logr.Logger, m *metrics.Metrics, tim
 //	Node signal   → Node only (no namespace)
 //	Unknown       → Namespace only (graceful fallback)
 func (e *K8sEnricher) Enrich(ctx context.Context, signal *signalprocessingv1alpha1.SignalData) (*signalprocessingv1alpha1.KubernetesContext, error) {
-	startTime := time.Now()
-	// Get resource kind for metrics labeling (lowercase to match Prometheus conventions)
-	resourceKind := "unknown"
-	if signal.TargetResource.Kind != "" {
-		resourceKind = strings.ToLower(signal.TargetResource.Kind)
-	}
-	defer func() {
-		// DD-005: Record enrichment duration with actual resource kind
-		// Metrics are validated at constructor time (non-nil guaranteed)
-		e.metrics.EnrichmentDuration.WithLabelValues(resourceKind).Observe(time.Since(startTime).Seconds())
-	}()
-
 	// Apply timeout
 	ctx, cancel := context.WithTimeout(ctx, e.timeout)
 	defer cancel()
@@ -154,7 +141,6 @@ func (e *K8sEnricher) enrichPodSignal(ctx context.Context, signal *signalprocess
 	// 1. Fetch namespace (required)
 	ns, err := e.getNamespace(ctx, signal.TargetResource.Namespace)
 	if err != nil {
-		e.recordEnrichmentResult("failure")
 		return nil, fmt.Errorf("failed to get namespace %s: %w", signal.TargetResource.Namespace, err)
 	}
 	e.populateNamespaceContext(result, ns)
@@ -166,13 +152,11 @@ func (e *K8sEnricher) enrichPodSignal(ctx context.Context, signal *signalprocess
 			// BR-SP-001: Enter degraded mode when target resource not found
 			e.logger.Info("Target pod not found, entering degraded mode", "name", signal.TargetResource.Name)
 			result.DegradedMode = true
-			e.metrics.RecordEnrichmentError("not_found")  // DD-005: Record error metric
-			e.recordEnrichmentResult("degraded")
+			e.metrics.RecordEnrichmentError("not_found")
 			return result, nil
 		}
 		e.logger.Error(err, "Failed to fetch pod", "name", signal.TargetResource.Name)
-		e.metrics.RecordEnrichmentError("api_error")  // DD-005: Record error metric
-		e.recordEnrichmentResult("failure")
+		e.metrics.RecordEnrichmentError("api_error")
 		return nil, fmt.Errorf("failed to fetch pod: %w", err)
 	}
 	result.Workload = &signalprocessingv1alpha1.WorkloadDetails{
@@ -193,7 +177,6 @@ func (e *K8sEnricher) enrichPodSignal(ctx context.Context, signal *signalprocess
 		}
 	}
 
-	e.recordEnrichmentResult("success")
 	return result, nil
 }
 
@@ -203,7 +186,6 @@ func (e *K8sEnricher) enrichDeploymentSignal(ctx context.Context, signal *signal
 	// 1. Fetch namespace (required)
 	ns, err := e.getNamespace(ctx, signal.TargetResource.Namespace)
 	if err != nil {
-		e.recordEnrichmentResult("failure")
 		return nil, fmt.Errorf("failed to get namespace %s: %w", signal.TargetResource.Namespace, err)
 	}
 	e.populateNamespaceContext(result, ns)
@@ -214,13 +196,11 @@ func (e *K8sEnricher) enrichDeploymentSignal(ctx context.Context, signal *signal
 		if apierrors.IsNotFound(err) {
 			e.logger.Info("Target deployment not found, entering degraded mode", "name", signal.TargetResource.Name)
 			result.DegradedMode = true
-			e.metrics.RecordEnrichmentError("not_found")  // DD-005: Record error metric
-			e.recordEnrichmentResult("degraded")
+			e.metrics.RecordEnrichmentError("not_found")
 			return result, nil
 		}
 		e.logger.Error(err, "Failed to fetch deployment", "name", signal.TargetResource.Name)
-		e.metrics.RecordEnrichmentError("api_error")  // DD-005: Record error metric
-		e.recordEnrichmentResult("failure")
+		e.metrics.RecordEnrichmentError("api_error")
 		return nil, fmt.Errorf("failed to fetch deployment: %w", err)
 	}
 	result.Workload = &signalprocessingv1alpha1.WorkloadDetails{
@@ -230,7 +210,6 @@ func (e *K8sEnricher) enrichDeploymentSignal(ctx context.Context, signal *signal
 		Annotations: ensureMap(deployment.Annotations),
 	}
 
-	e.recordEnrichmentResult("success")
 	return result, nil
 }
 
@@ -240,7 +219,6 @@ func (e *K8sEnricher) enrichStatefulSetSignal(ctx context.Context, signal *signa
 	// 1. Fetch namespace (required)
 	ns, err := e.getNamespace(ctx, signal.TargetResource.Namespace)
 	if err != nil {
-		e.recordEnrichmentResult("failure")
 		return nil, fmt.Errorf("failed to get namespace %s: %w", signal.TargetResource.Namespace, err)
 	}
 	e.populateNamespaceContext(result, ns)
@@ -251,13 +229,11 @@ func (e *K8sEnricher) enrichStatefulSetSignal(ctx context.Context, signal *signa
 		if apierrors.IsNotFound(err) {
 			e.logger.Info("Target statefulset not found, entering degraded mode", "name", signal.TargetResource.Name)
 			result.DegradedMode = true
-			e.metrics.RecordEnrichmentError("not_found")  // DD-005: Record error metric
-			e.recordEnrichmentResult("degraded")
+			e.metrics.RecordEnrichmentError("not_found")
 			return result, nil
 		}
 		e.logger.Error(err, "Failed to fetch statefulset", "name", signal.TargetResource.Name)
-		e.metrics.RecordEnrichmentError("api_error")  // DD-005: Record error metric
-		e.recordEnrichmentResult("failure")
+		e.metrics.RecordEnrichmentError("api_error")
 		return nil, fmt.Errorf("failed to fetch statefulset: %w", err)
 	}
 	result.Workload = &signalprocessingv1alpha1.WorkloadDetails{
@@ -267,7 +243,6 @@ func (e *K8sEnricher) enrichStatefulSetSignal(ctx context.Context, signal *signa
 		Annotations: ensureMap(statefulset.Annotations),
 	}
 
-	e.recordEnrichmentResult("success")
 	return result, nil
 }
 
@@ -277,7 +252,6 @@ func (e *K8sEnricher) enrichDaemonSetSignal(ctx context.Context, signal *signalp
 	// 1. Fetch namespace (required)
 	ns, err := e.getNamespace(ctx, signal.TargetResource.Namespace)
 	if err != nil {
-		e.recordEnrichmentResult("failure")
 		return nil, fmt.Errorf("failed to get namespace %s: %w", signal.TargetResource.Namespace, err)
 	}
 	e.populateNamespaceContext(result, ns)
@@ -288,13 +262,11 @@ func (e *K8sEnricher) enrichDaemonSetSignal(ctx context.Context, signal *signalp
 		if apierrors.IsNotFound(err) {
 			e.logger.Info("Target daemonset not found, entering degraded mode", "name", signal.TargetResource.Name)
 			result.DegradedMode = true
-			e.metrics.RecordEnrichmentError("not_found")  // DD-005: Record error metric
-			e.recordEnrichmentResult("degraded")
+			e.metrics.RecordEnrichmentError("not_found")
 			return result, nil
 		}
 		e.logger.Error(err, "Failed to fetch daemonset", "name", signal.TargetResource.Name)
-		e.metrics.RecordEnrichmentError("api_error")  // DD-005: Record error metric
-		e.recordEnrichmentResult("failure")
+		e.metrics.RecordEnrichmentError("api_error")
 		return nil, fmt.Errorf("failed to fetch daemonset: %w", err)
 	}
 	result.Workload = &signalprocessingv1alpha1.WorkloadDetails{
@@ -304,7 +276,6 @@ func (e *K8sEnricher) enrichDaemonSetSignal(ctx context.Context, signal *signalp
 		Annotations: ensureMap(daemonset.Annotations),
 	}
 
-	e.recordEnrichmentResult("success")
 	return result, nil
 }
 
@@ -314,7 +285,6 @@ func (e *K8sEnricher) enrichReplicaSetSignal(ctx context.Context, signal *signal
 	// 1. Fetch namespace (required)
 	ns, err := e.getNamespace(ctx, signal.TargetResource.Namespace)
 	if err != nil {
-		e.recordEnrichmentResult("failure")
 		return nil, fmt.Errorf("failed to get namespace %s: %w", signal.TargetResource.Namespace, err)
 	}
 	e.populateNamespaceContext(result, ns)
@@ -325,13 +295,11 @@ func (e *K8sEnricher) enrichReplicaSetSignal(ctx context.Context, signal *signal
 		if apierrors.IsNotFound(err) {
 			e.logger.Info("Target replicaset not found, entering degraded mode", "name", signal.TargetResource.Name)
 			result.DegradedMode = true
-			e.metrics.RecordEnrichmentError("not_found")  // DD-005: Record error metric
-			e.recordEnrichmentResult("degraded")
+			e.metrics.RecordEnrichmentError("not_found")
 			return result, nil
 		}
 		e.logger.Error(err, "Failed to fetch replicaset", "name", signal.TargetResource.Name)
-		e.metrics.RecordEnrichmentError("api_error")  // DD-005: Record error metric
-		e.recordEnrichmentResult("failure")
+		e.metrics.RecordEnrichmentError("api_error")
 		return nil, fmt.Errorf("failed to fetch replicaset: %w", err)
 	}
 	result.Workload = &signalprocessingv1alpha1.WorkloadDetails{
@@ -341,7 +309,6 @@ func (e *K8sEnricher) enrichReplicaSetSignal(ctx context.Context, signal *signal
 		Annotations: ensureMap(replicaset.Annotations),
 	}
 
-	e.recordEnrichmentResult("success")
 	return result, nil
 }
 
@@ -351,7 +318,6 @@ func (e *K8sEnricher) enrichServiceSignal(ctx context.Context, signal *signalpro
 	// 1. Fetch namespace (required)
 	ns, err := e.getNamespace(ctx, signal.TargetResource.Namespace)
 	if err != nil {
-		e.recordEnrichmentResult("failure")
 		return nil, fmt.Errorf("failed to get namespace %s: %w", signal.TargetResource.Namespace, err)
 	}
 	e.populateNamespaceContext(result, ns)
@@ -362,13 +328,11 @@ func (e *K8sEnricher) enrichServiceSignal(ctx context.Context, signal *signalpro
 		if apierrors.IsNotFound(err) {
 			e.logger.Info("Target service not found, entering degraded mode", "name", signal.TargetResource.Name)
 			result.DegradedMode = true
-			e.metrics.RecordEnrichmentError("not_found")  // DD-005: Record error metric
-			e.recordEnrichmentResult("degraded")
+			e.metrics.RecordEnrichmentError("not_found")
 			return result, nil
 		}
 		e.logger.Error(err, "Failed to fetch service", "name", signal.TargetResource.Name)
-		e.metrics.RecordEnrichmentError("api_error")  // DD-005: Record error metric
-		e.recordEnrichmentResult("failure")
+		e.metrics.RecordEnrichmentError("api_error")
 		return nil, fmt.Errorf("failed to fetch service: %w", err)
 	}
 	result.Workload = &signalprocessingv1alpha1.WorkloadDetails{
@@ -378,7 +342,6 @@ func (e *K8sEnricher) enrichServiceSignal(ctx context.Context, signal *signalpro
 		Annotations: ensureMap(service.Annotations),
 	}
 
-	e.recordEnrichmentResult("success")
 	return result, nil
 }
 
@@ -387,7 +350,6 @@ func (e *K8sEnricher) enrichNodeSignal(ctx context.Context, signal *signalproces
 	// Node signals have no namespace
 	node, err := e.getNode(ctx, signal.TargetResource.Name)
 	if err != nil {
-		e.recordEnrichmentResult("failure")
 		return nil, fmt.Errorf("failed to get node %s: %w", signal.TargetResource.Name, err)
 	}
 	result.Workload = &signalprocessingv1alpha1.WorkloadDetails{
@@ -397,7 +359,6 @@ func (e *K8sEnricher) enrichNodeSignal(ctx context.Context, signal *signalproces
 		Annotations: ensureMap(node.Annotations),
 	}
 
-	e.recordEnrichmentResult("success")
 	return result, nil
 }
 
@@ -405,12 +366,10 @@ func (e *K8sEnricher) enrichNodeSignal(ctx context.Context, signal *signalproces
 func (e *K8sEnricher) enrichNamespaceOnly(ctx context.Context, signal *signalprocessingv1alpha1.SignalData, result *signalprocessingv1alpha1.KubernetesContext) (*signalprocessingv1alpha1.KubernetesContext, error) {
 	ns, err := e.getNamespace(ctx, signal.TargetResource.Namespace)
 	if err != nil {
-		e.recordEnrichmentResult("failure")
 		return nil, fmt.Errorf("failed to get namespace %s: %w", signal.TargetResource.Namespace, err)
 	}
 	e.populateNamespaceContext(result, ns)
 
-	e.recordEnrichmentResult("success")
 	return result, nil
 }
 
@@ -512,9 +471,3 @@ func (e *K8sEnricher) populateNamespaceContext(result *signalprocessingv1alpha1.
 	}
 }
 
-// recordEnrichmentResult records the enrichment result metric.
-// Per plan: direct field access to EnrichmentTotal.WithLabelValues(result).Inc()
-// Metrics are validated at constructor time (non-nil guaranteed)
-func (e *K8sEnricher) recordEnrichmentResult(result string) {
-	e.metrics.EnrichmentTotal.WithLabelValues(result).Inc()
-}

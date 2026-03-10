@@ -19,8 +19,8 @@ done
 
 # ── Wait for alert ──────────────────────────────────────────────────────────
 
-wait_for_alert "KubePodNotScheduled" "${NAMESPACE}" 300
-show_alert "KubePodNotScheduled"
+wait_for_alert "KubePodNotScheduled" "${NAMESPACE}" 480
+show_alert "KubePodNotScheduled" "${NAMESPACE}"
 
 # ── Wait for pipeline ──────────────────────────────────────────────────────
 

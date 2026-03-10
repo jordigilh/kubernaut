@@ -13,17 +13,22 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NAMESPACE="demo-hpa"
 
-# shellcheck source=../../scripts/kind-helper.sh
-source "${SCRIPT_DIR}/../../scripts/kind-helper.sh"
-ensure_kind_cluster "${SCRIPT_DIR}/../kind-config-singlenode.yaml" "${1:-}"
+APPROVE_MODE="--auto-approve"
+SKIP_VALIDATE=""
+for _arg in "$@"; do
+    case "$_arg" in
+        --auto-approve)  APPROVE_MODE="--auto-approve" ;;
+        --interactive)   APPROVE_MODE="--interactive" ;;
+        --no-validate)   SKIP_VALIDATE=true ;;
+    esac
+done
 
+# shellcheck source=../../scripts/platform-helper.sh
+source "${SCRIPT_DIR}/../../scripts/platform-helper.sh"
+require_demo_ready
 # shellcheck source=../../scripts/monitoring-helper.sh
 source "${SCRIPT_DIR}/../../scripts/monitoring-helper.sh"
-ensure_monitoring_stack
-source "${SCRIPT_DIR}/../../scripts/platform-helper.sh"
-ensure_platform
-seed_scenario_workflow "hpa-maxed"
-ensure_metrics_server
+require_infra metrics-server
 
 echo "============================================="
 echo " HPA Maxed Out Demo (#123)"
@@ -64,16 +69,9 @@ echo "  Watch HPA: kubectl get hpa -n ${NAMESPACE} -w"
 echo "  Check Prometheus: kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090"
 echo ""
 
-# Step 7: Monitor pipeline
-echo "==> Step 7: Pipeline in progress. Monitor with:"
-echo "    kubectl get rr,sp,aa,we,ea -n ${NAMESPACE} -w"
-echo ""
-echo "  Expected flow:"
-echo "    Alert (KubeHpaMaxedOut) -> Gateway -> SP -> AA (HAPI) -> RO -> WE"
-echo "    LLM detects HPA (via detectedLabels:hpaEnabled) at ceiling"
-echo "    Selects PatchHPA workflow -> raises maxReplicas"
-echo "    HPA scales up -> EM verifies pods healthy"
-echo ""
-echo "==> To verify remediation succeeded:"
-echo "    kubectl get hpa -n ${NAMESPACE}"
-echo "    # maxReplicas should be > 3 (raised by workflow)"
+# Step 7: Validate pipeline
+if [ "${SKIP_VALIDATE}" != "true" ] && [ -f "${SCRIPT_DIR}/validate.sh" ]; then
+    echo ""
+    echo "==> Running validation pipeline..."
+    bash "${SCRIPT_DIR}/validate.sh" "${APPROVE_MODE}"
+fi

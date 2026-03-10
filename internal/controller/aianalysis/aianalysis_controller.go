@@ -112,13 +112,6 @@ func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	log := r.Log.WithValues("aianalysis", req.NamespacedName)
 	log.Info("Reconciling AIAnalysis")
 
-	// BR-AI-017: Track reconciliation timing
-	startTime := time.Now()
-	defer func() {
-		duration := time.Since(startTime).Seconds()
-		r.Metrics.RecordReconcileDuration("overall", duration)
-	}()
-
 	// 1. FETCH RESOURCE
 	analysis := &aianalysisv1.AIAnalysis{}
 	if err := r.Get(ctx, req.NamespacedName, analysis); err != nil {

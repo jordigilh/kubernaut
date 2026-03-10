@@ -13,6 +13,18 @@ type UnimplementedHandler struct{}
 
 var _ Handler = UnimplementedHandler{}
 
+// CreateActionType implements createActionType operation.
+//
+// Idempotent CREATE: creates a new action type, returns existing if active,
+// or re-enables if previously disabled.
+// **Business Requirement**: BR-WORKFLOW-007.1 (Idempotent CREATE)
+// **Design Decision**: DD-ACTIONTYPE-001 (ActionType CRD Lifecycle Design).
+//
+// POST /api/v1/action-types
+func (UnimplementedHandler) CreateActionType(ctx context.Context, req *ActionTypeCreateRequest) (r CreateActionTypeRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // CreateAuditEvent implements createAuditEvent operation.
 //
 // Persists a unified audit event to the audit_events table (ADR-034).
@@ -58,14 +70,16 @@ func (UnimplementedHandler) CreateNotificationAudit(ctx context.Context, req *No
 
 // CreateWorkflow implements createWorkflow operation.
 //
-// Register a new workflow by providing an OCI image pullspec.
-// Data Storage pulls the image, extracts /workflow-schema.yaml (ADR-043),
-// validates the schema, and populates all catalog fields from it.
-// **Business Requirement**: BR-WORKFLOW-017-001 (OCI-based workflow registration)
-// **Design Decision**: DD-WORKFLOW-017 (Workflow Lifecycle Component Interactions).
+// Register a new workflow by providing the raw YAML content of a
+// RemediationWorkflow CRD. Data Storage parses and validates the schema,
+// then populates all catalog fields from it.
+// If the workflow was previously registered and disabled (via CRD deletion),
+// it is re-enabled and a 200 response is returned instead of 201.
+// **Business Requirement**: BR-WORKFLOW-006 (RemediationWorkflow CRD Definition)
+// **Design Decision**: ADR-058 (Webhook-Driven Workflow Registration).
 //
 // POST /api/v1/workflows
-func (UnimplementedHandler) CreateWorkflow(ctx context.Context, req *CreateWorkflowFromOCIRequest) (r CreateWorkflowRes, _ error) {
+func (UnimplementedHandler) CreateWorkflow(ctx context.Context, req *CreateWorkflowInlineRequest) (r CreateWorkflowRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -77,6 +91,17 @@ func (UnimplementedHandler) CreateWorkflow(ctx context.Context, req *CreateWorkf
 //
 // PATCH /api/v1/workflows/{workflow_id}/deprecate
 func (UnimplementedHandler) DeprecateWorkflow(ctx context.Context, req *WorkflowLifecycleRequest, params DeprecateWorkflowParams) (r DeprecateWorkflowRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// DisableActionType implements disableActionType operation.
+//
+// Soft-disables an action type. Denied with 409 if active workflows reference it.
+// The denial response includes the count and names of dependent workflows.
+// **Business Requirement**: BR-WORKFLOW-007.3 (DELETE with dependency guard).
+//
+// PATCH /api/v1/action-types/{name}/disable
+func (UnimplementedHandler) DisableActionType(ctx context.Context, req *ActionTypeDisableRequest, params DisableActionTypeParams) (r DisableActionTypeRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -134,6 +159,18 @@ func (UnimplementedHandler) EnableWorkflow(ctx context.Context, req *WorkflowLif
 //
 // GET /api/v1/audit/export
 func (UnimplementedHandler) ExportAuditEvents(ctx context.Context, params ExportAuditEventsParams) (r ExportAuditEventsRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// GetActionTypeWorkflowCount implements getActionTypeWorkflowCount operation.
+//
+// Returns the number of active RemediationWorkflows referencing this action type.
+// Used by the RW admission webhook to refresh the ActionType CRD's
+// status.activeWorkflowCount after RW CREATE/DELETE (Phase 3c cross-update).
+// **Business Requirement**: BR-WORKFLOW-007 (ActionType CRD lifecycle).
+//
+// GET /api/v1/action-types/{name}/workflow-count
+func (UnimplementedHandler) GetActionTypeWorkflowCount(ctx context.Context, params GetActionTypeWorkflowCountParams) (r *ActionTypeWorkflowCountResponse, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -387,6 +424,17 @@ func (UnimplementedHandler) ReconstructRemediationRequest(ctx context.Context, p
 //
 // DELETE /api/v1/audit/legal-hold/{correlation_id}
 func (UnimplementedHandler) ReleaseLegalHold(ctx context.Context, req *ReleaseLegalHoldReq, params ReleaseLegalHoldParams) (r ReleaseLegalHoldRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// UpdateActionType implements updateActionType operation.
+//
+// Updates the description fields of an active action type.
+// Only spec.description is mutable; spec.name is immutable.
+// **Business Requirement**: BR-WORKFLOW-007.2 (Description UPDATE with audit).
+//
+// PATCH /api/v1/action-types/{name}
+func (UnimplementedHandler) UpdateActionType(ctx context.Context, req *ActionTypeUpdateRequest, params UpdateActionTypeParams) (r UpdateActionTypeRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 

@@ -275,7 +275,8 @@ func SetupEMInfrastructure(ctx context.Context, clusterName, kubeconfigPath stri
 	}
 
 	// Deploy AlertManager (real instance for alert resolution)
-	if err := DeployAlertManager(ctx, namespace, kubeconfigPath, writer); err != nil {
+	// EM suite does not deploy Gateway; pass empty token (webhook targets gateway-service which may not exist)
+	if err := DeployAlertManager(ctx, namespace, kubeconfigPath, "", writer); err != nil {
 		return fmt.Errorf("failed to deploy AlertManager: %w", err)
 	}
 

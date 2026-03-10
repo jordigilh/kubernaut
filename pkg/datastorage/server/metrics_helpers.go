@@ -38,22 +38,6 @@ package server
 //
 // ========================================
 
-// RecordValidationFailure records a validation failure metric.
-// Metrics are guaranteed non-nil by constructor.
-//
-// Usage:
-//
-//	// Before (3 lines):
-//	if s.metrics != nil && s.metrics.ValidationFailures != nil {
-//	    s.metrics.ValidationFailures.WithLabelValues("body", "invalid_json").Inc()
-//	}
-//
-//	// After (1 line):
-//	s.RecordValidationFailure("body", "invalid_json")
-func (s *Server) RecordValidationFailure(field, reason string) {
-	s.metrics.ValidationFailures.WithLabelValues(field, reason).Inc()
-}
-
 // RecordWriteDuration records a database write duration metric.
 // Metrics are guaranteed non-nil by constructor.
 //
@@ -74,20 +58,4 @@ func (s *Server) RecordValidationFailure(field, reason string) {
 //	s.RecordWriteDuration("audit_events", duration)
 func (s *Server) RecordWriteDuration(table string, durationSeconds float64) {
 	s.metrics.WriteDuration.WithLabelValues(table).Observe(durationSeconds)
-}
-
-// RecordAuditTrace records an audit trace metric.
-// Metrics are guaranteed non-nil by constructor.
-//
-// Usage:
-//
-//	// Before (3 lines):
-//	if s.metrics != nil && s.metrics.AuditTracesTotal != nil {
-//	    s.metrics.AuditTracesTotal.WithLabelValues("notification", "success").Inc()
-//	}
-//
-//	// After (1 line):
-//	s.RecordAuditTrace("notification", "success")
-func (s *Server) RecordAuditTrace(service, status string) {
-	s.metrics.AuditTracesTotal.WithLabelValues(service, status).Inc()
 }

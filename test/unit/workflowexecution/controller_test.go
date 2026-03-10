@@ -2538,13 +2538,6 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			})
 		})
 
-		Context("workflowexecution_pipelinerun_creation_total metric", func() {
-			It("should be accessible from the metrics package", func() {
-				// Per DD-METRICS-001: Access via metrics struct
-				Expect(testMetrics.ExecutionCreations).To(Not(BeNil()), "ExecutionCreations metric must be registered")
-			})
-		})
-
 		// V1.0: workflowexecution_skip_total metric removed - routing moved to RO (DD-RO-002)
 
 		Context("Metric Recording in Controller Methods", func() {

@@ -1,6 +1,7 @@
 # flake8: noqa
 
 # import apis into api package
+from datastorage.api.action_type_taxonomy_api_api import ActionTypeTaxonomyAPIApi
 from datastorage.api.audit_reconstruction_api_api import AuditReconstructionAPIApi
 from datastorage.api.audit_write_api_api import AuditWriteAPIApi
 from datastorage.api.effectiveness_assessment_api_api import EffectivenessAssessmentAPIApi

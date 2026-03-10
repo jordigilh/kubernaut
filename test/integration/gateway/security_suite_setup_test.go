@@ -18,15 +18,16 @@ package gateway
 
 import (
 	"context"
-	"os"
-	"path/filepath"
+	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	rbacv1 "k8s.io/api/rbac/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/rest"
 
 	"github.com/jordigilh/kubernaut/test/integration/gateway/helpers"
 )
@@ -47,9 +48,8 @@ var securityTokens *SecurityTestTokens
 // SetupSecurityTokens creates ServiceAccounts and extracts tokens ONCE for the entire test suite
 // This dramatically improves test performance: ~30 seconds once vs ~30 seconds per test
 //
-// **Kind-Only Integration Tests**: Assumes Kind cluster with pre-created ClusterRole
-// - ClusterRole 'gateway-test-remediation-creator' must exist (created by setup-kind-cluster.sh)
-// - Creates ServiceAccounts + ClusterRoleBindings
+// Creates ClusterRole 'gateway-test-remediation-creator' if it doesn't exist (matching testdata fixture),
+// then creates ServiceAccounts + ClusterRoleBindings and extracts tokens.
 // - Extracts tokens for authentication/authorization tests
 func SetupSecurityTokens() *SecurityTestTokens {
 	if securityTokens != nil {
@@ -62,25 +62,13 @@ func SetupSecurityTokens() *SecurityTestTokens {
 
 	GinkgoWriter.Println("🔐 Setting up suite-level ServiceAccounts (one-time setup with 60s timeout)...")
 
-	// Create K8s clientset
+	// Create K8s clientset from envtest REST config (suite-level k8sConfig)
 	step1Start := time.Now()
-	GinkgoWriter.Println("  📋 Step 1: Creating K8s clientset...")
+	GinkgoWriter.Println("  📋 Step 1: Creating K8s clientset from envtest REST config...")
 
-	// Use isolated kubeconfig for Kind cluster to avoid impacting other tests
-	kubeconfigPath := os.Getenv("KUBECONFIG")
-	if kubeconfigPath == "" {
-		kubeconfigPath = filepath.Join(os.Getenv("HOME"), ".kube", "gateway-kubeconfig")
-	}
+	Expect(k8sConfig).ToNot(BeNil(), "envtest REST config must be available (set in suite BeforeSuite)")
 
-	config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
-	if err != nil {
-		GinkgoWriter.Printf("  ❌ Failed to build kubeconfig from %s: %v\n", kubeconfigPath, err)
-		Expect(err).ToNot(HaveOccurred(), "Failed to build kubeconfig")
-	}
-
-	// Set higher QPS and Burst for integration tests to prevent client-side throttling
-	// Default: QPS=5, Burst=10 (too low for concurrent tests)
-	// Integration tests: QPS=50, Burst=100 (allows 100 concurrent TokenReview calls)
+	config := rest.CopyConfig(k8sConfig)
 	config.QPS = 50
 	config.Burst = 100
 
@@ -114,16 +102,24 @@ func SetupSecurityTokens() *SecurityTestTokens {
 	authorizedSA := "test-gateway-authorized-suite"
 	unauthorizedSA := "test-gateway-unauthorized-suite"
 
-	// Verify ClusterRole exists (should be created by setup-kind-cluster.sh)
+	// Create ClusterRole if it doesn't exist (matches testdata/gateway-test-clusterrole.yaml).
+	// In Kind clusters, setup-kind-cluster.sh applies this; in envtest, we create it programmatically.
 	step4Start := time.Now()
-	GinkgoWriter.Println("  📋 Step 4: Verifying ClusterRole exists...")
-	_, err = clientset.RbacV1().ClusterRoles().Get(ctx, "gateway-test-remediation-creator", metav1.GetOptions{})
-	if err != nil {
-		GinkgoWriter.Printf("  ❌ ClusterRole 'gateway-test-remediation-creator' not found: %v\n", err)
-		GinkgoWriter.Println("  💡 Hint: Run ./test/integration/gateway/setup-kind-cluster.sh first")
-		Expect(err).ToNot(HaveOccurred(), "ClusterRole must exist (created by setup script)")
+	GinkgoWriter.Println("  📋 Step 4: Ensuring ClusterRole 'gateway-test-remediation-creator' exists...")
+	testCR := &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{Name: "gateway-test-remediation-creator"},
+		Rules: []rbacv1.PolicyRule{{
+			APIGroups: []string{"remediation.kubernaut.ai"},
+			Resources: []string{"remediationrequests"},
+			Verbs:     []string{"create", "get", "list", "watch", "update", "patch", "delete"},
+		}},
 	}
-	GinkgoWriter.Printf("  ✓ ClusterRole 'gateway-test-remediation-creator' exists (took %v)\n", time.Since(step4Start))
+	err = k8sClient.Create(ctx, testCR)
+	if err != nil && !apierrors.IsAlreadyExists(err) {
+		GinkgoWriter.Printf("  ❌ Failed to create ClusterRole 'gateway-test-remediation-creator': %v\n", err)
+		Expect(err).ToNot(HaveOccurred(), "Failed to create gateway-test-remediation-creator ClusterRole")
+	}
+	GinkgoWriter.Printf("  ✓ ClusterRole 'gateway-test-remediation-creator' ready (took %v)\n", time.Since(step4Start))
 
 	// Create authorized SA with RBAC
 	step5Start := time.Now()
@@ -138,6 +134,32 @@ func SetupSecurityTokens() *SecurityTestTokens {
 		Expect(err).ToNot(HaveOccurred(), "Should create authorized ServiceAccount")
 	}
 	GinkgoWriter.Printf("  ✓ Created authorized ServiceAccount: %s (took %v)\n", authorizedSA, time.Since(step5Start))
+
+	// BR-GATEWAY-037: Also bind to gateway-signal-source so the SA passes SAR checks.
+	// (gateway middleware verifies create verb on services/gateway-service)
+	// Create binding directly since CreateServiceAccountWithRBAC uses a fixed binding
+	// name that would collide with the gateway-test-remediation-creator binding above.
+	sarBinding := &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: fmt.Sprintf("%s-gateway-signal-source", authorizedSA),
+		},
+		Subjects: []rbacv1.Subject{{
+			Kind:      "ServiceAccount",
+			Name:      authorizedSA,
+			Namespace: "kubernaut-system",
+		}},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     "gateway-signal-source",
+		},
+	}
+	err = k8sClient.Create(ctx, sarBinding)
+	if err != nil && !apierrors.IsAlreadyExists(err) {
+		GinkgoWriter.Printf("  ❌ Failed to bind SA to gateway-signal-source: %v\n", err)
+		Expect(err).ToNot(HaveOccurred(), "Should bind authorized SA to gateway-signal-source")
+	}
+	GinkgoWriter.Printf("  ✓ Bound %s to gateway-signal-source ClusterRole\n", authorizedSA)
 
 	// Extract token for authorized SA
 	step6Start := time.Now()

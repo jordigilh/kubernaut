@@ -42,6 +42,7 @@ import (
 	dsmetrics "github.com/jordigilh/kubernaut/pkg/datastorage/metrics"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/oci"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
+	actiontyperepo "github.com/jordigilh/kubernaut/pkg/datastorage/repository/actiontype"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/schema"
 	dsmiddleware "github.com/jordigilh/kubernaut/pkg/datastorage/server/middleware"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
@@ -283,10 +284,13 @@ func NewServer(deps ServerDeps) (*Server, error) {
 	logger.V(1).Info("Workflow catalog dependencies created (label-only search)",
 		"workflow_repo_nil", workflowRepo == nil)
 
+	// BR-WORKFLOW-007: ActionType taxonomy repository
+	actionTypeRepo := actiontyperepo.NewRepository(sqlxDB, logger)
+
 	// Create database adapter for READ API handlers
 	dbAdapter := adapter.NewDBAdapter(db, logger)
 
-	// DD-WORKFLOW-017: Create OCI schema extractor for pullspec-only workflow registration
+	// DD-WE-006: Create OCI schema extractor for execution bundle validation
 	imagePuller := oci.NewCraneImagePuller(logger)
 	schemaParser := schema.NewParser()
 	schemaExtractor := oci.NewSchemaExtractor(imagePuller, schemaParser)
@@ -305,11 +309,13 @@ func NewServer(deps ServerDeps) (*Server, error) {
 		WithActionTraceRepository(actionTraceRepo),
 		WithWorkflowRepository(workflowRepo),
 		WithWorkflowLifecycleRepository(workflowRepo),
-		WithActionTypeValidator(workflowRepo),
+		WithWorkflowContentIntegrityRepository(workflowRepo),
+		WithActionTypeValidator(actionTypeRepo),
 		WithAuditStore(auditStore),
 		WithSQLDB(db),
 		WithSchemaExtractor(schemaExtractor),
 		WithRemediationHistoryQuerier(remHistoryQuerier),
+		WithActionTypeRepository(actionTypeRepo),
 	}
 	opts = append(opts, deps.HandlerOpts...)
 	handler := NewHandler(dbAdapter, opts...)
@@ -382,20 +388,16 @@ func (s *Server) Handler() http.Handler {
 	}))
 
 	// BR-STORAGE-034: OpenAPI validation middleware
-	// BR-STORAGE-019: Prometheus metrics for validation failures
 	// DD-API-002: OpenAPI spec embedded in binary (zero-config deployment)
 	//
 	// Automatically validates all API requests against OpenAPI spec:
 	// - Validates required fields (including empty strings via minLength: 1)
 	// - Validates enum values, types, formats
 	// - Returns RFC 7807 errors for validation failures
-	// - Emits Prometheus metrics for observability
 	// Routes not in spec (/health, /metrics) pass through without validation
-	// Metrics are validated at constructor time (non-nil guaranteed)
-	validationMetrics := s.metrics.ValidationFailures
 	openapiValidator, err := dsmiddleware.NewOpenAPIValidator(
 		s.logger.WithName("openapi-validator"),
-		validationMetrics,
+		nil, // Validation metrics removed per GitHub issue #294
 	)
 	if err != nil {
 		s.logger.Error(err, "Failed to initialize OpenAPI validator - continuing without validation")
@@ -410,11 +412,9 @@ func (s *Server) Handler() http.Handler {
 	r.Get("/health/live", s.handleLiveness)
 
 	// BR-STORAGE-019: Prometheus metrics endpoint (GAP-10)
-	// Exposes audit-specific metrics:
-	// - datastorage_audit_traces_total{service,status}
+	// Exposes external-facing metrics (GitHub issue #294):
 	// - datastorage_audit_lag_seconds{service}
 	// - datastorage_write_duration_seconds{table}
-	// - datastorage_validation_failures_total{field,reason}
 	r.Handle("/metrics", promhttp.Handler())
 
 	// API v1 routes
@@ -429,10 +429,10 @@ func (s *Server) Handler() http.Handler {
 		// Applied to all /api/v1 routes (excludes /health, /metrics)
 		// Authority: DD-AUTH-011 (SAR with verb:"create" for all audit write operations)
 		// Note: authenticator/authorizer guaranteed non-nil by NewServer validation
-		authMiddleware := dsmiddleware.NewAuthMiddleware(
+		authMiddleware := auth.NewMiddleware(
 			s.authenticator,
 			s.authorizer,
-			dsmiddleware.AuthConfig{
+			auth.MiddlewareConfig{
 				Namespace:    s.authNamespace,
 				Resource:     "services",
 				ResourceName: "data-storage-service",
@@ -527,6 +527,13 @@ func (s *Server) Handler() http.Handler {
 		// DD-WORKFLOW-017 Phase 4.4 (GAP-WF-1): Lifecycle endpoints for enable and deprecate
 		r.Patch("/workflows/{workflowID}/enable", s.handler.HandleEnableWorkflow)
 		r.Patch("/workflows/{workflowID}/deprecate", s.handler.HandleDeprecateWorkflow)
+
+		// BR-WORKFLOW-007: ActionType taxonomy CRUD (ADR-059, DD-ACTIONTYPE-001)
+		s.logger.V(1).Info("Registering /api/v1/action-types handlers (BR-WORKFLOW-007)")
+		r.Post("/action-types", s.handler.HandleCreateActionType)
+		r.Patch("/action-types/{name}", s.handler.HandleUpdateActionType)
+		r.Patch("/action-types/{name}/disable", s.handler.HandleDisableActionType)
+		r.Get("/action-types/{name}/workflow-count", s.handler.HandleGetActionTypeWorkflowCount)
 	})
 
 	s.logger.V(1).Info("API v1 routes configured successfully")

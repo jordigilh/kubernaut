@@ -1,0 +1,12 @@
+apiVersion: kubernaut.ai/v1alpha1
+kind: ActionType
+metadata:
+  name: drain-node
+  namespace: kubernaut-system
+spec:
+  name: DrainNode
+  description:
+    what: "Drain and cordon a Kubernetes node, evicting all pods and preventing new scheduling."
+    whenToUse: "Root cause is a node-level issue (hardware degradation, kernel problems, disk pressure) affecting multiple workloads on the node, and pods must be moved to healthy nodes."
+    whenNotToUse: "Only a single pod is affected on the node. This indicates a pod-level issue, not node-level -- use a pod-targeted action instead. If pods don't need to be evicted yet, use CordonNode instead."
+    preconditions: "Confirmed that multiple workloads on the same node are affected, indicating node-scoped impact."

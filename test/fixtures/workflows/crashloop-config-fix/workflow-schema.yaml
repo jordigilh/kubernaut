@@ -1,40 +1,44 @@
-schemaVersion: "1.0"
-# CrashLoop Config Fix Workflow Schema (BR-WORKFLOW-004)
-# Used by: AIAnalysis E2E, HolmesGPT-API E2E
+apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
 metadata:
-  workflowId: crashloop-config-fix-v1
-  version: "1.0.0"
-  description:
-    what: "Restarts deployment to recover from CrashLoopBackOff caused by configuration issues"
-    whenToUse: "When pods are in CrashLoopBackOff due to misconfiguration"
-    whenNotToUse: "When crash is caused by a persistent code bug"
-    preconditions: "Pod is managed by a Deployment"
+  name: crashloop-config-fix-v1
+spec:
+  # CrashLoop Config Fix Workflow Schema (BR-WORKFLOW-004)
+  # Used by: AIAnalysis E2E, HolmesGPT-API E2E
+  metadata:
+    workflowName: crashloop-config-fix-v1
+    version: "1.0.0"
+    description:
+      what: "Restarts deployment to recover from CrashLoopBackOff caused by configuration issues"
+      whenToUse: "When pods are in CrashLoopBackOff due to misconfiguration"
+      whenNotToUse: "When crash is caused by a persistent code bug"
+      preconditions: "Pod is managed by a Deployment"
 
-actionType: RestartDeployment
+  actionType: RestartDeployment
 
-labels:
-  severity: [high]
-  environment: [production, staging, test]
-  component: deployment
-  priority: P1
+  labels:
+    severity: [high]
+    environment: [production, staging, test]
+    component: deployment
+    priority: P1
 
-execution:
-  engine: tekton
-  bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:8d727758cf289589e025fc9b89e254d73cb77b4c6384b850007b9ef1e8412200
+  execution:
+    engine: tekton
+    bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:adfc09ea45a5b627550c6a73fe75d50efe1c80fa43359fcc4908c9c5b0639ac3
 
-parameters:
-  - name: NAMESPACE
-    type: string
-    required: true
-    description: "Target namespace"
-  - name: DEPLOYMENT_NAME
-    type: string
-    required: true
-    description: "Name of the deployment to restart"
-  - name: GRACE_PERIOD_SECONDS
-    type: integer
-    required: false
-    description: "Graceful shutdown period in seconds"
-    default: 30
-    minimum: 0
-    maximum: 300
+  parameters:
+    - name: NAMESPACE
+      type: string
+      required: true
+      description: "Target namespace"
+    - name: DEPLOYMENT_NAME
+      type: string
+      required: true
+      description: "Name of the deployment to restart"
+    - name: GRACE_PERIOD_SECONDS
+      type: integer
+      required: false
+      description: "Graceful shutdown period in seconds"
+      default: 30
+      minimum: 0
+      maximum: 300

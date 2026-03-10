@@ -26,7 +26,6 @@ import (
 
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/ogenx"
-	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
 // DS-BUG-001: Duplicate Workflow Returns 500 Instead of 409
@@ -35,72 +34,59 @@ import (
 
 var _ = Describe("Workflow API Integration - Duplicate Detection (DS-BUG-001)", Ordered, func() {
 	Context("DS-BUG-001: Duplicate workflow creation", func() {
-		It("should return 409 Conflict when creating duplicate workflow (RFC 9110 compliance)", func() {
+		// DS-BUG-001 Fix Verification: The original bug was that duplicate workflow creation
+		// returned 500 Internal Server Error. The fix uses BR-WORKFLOW-006 ContentHash-based
+		// duplicate detection:
+		//   active + same hash    → 200 OK (idempotent, no DB writes)
+		//   active + diff hash    → supersede old → create new → 201 Created
+		// Both are meaningful responses, not 500.
+
+		It("should return 200 OK for idempotent re-apply of same content (DS-BUG-001 fix)", func() {
 			ctx := context.Background()
 
-			// DD-WORKFLOW-017: Register workflow from OCI image (pullspec-only)
-			_ = fmt.Sprintf("test-workflow-duplicate-%d", time.Now().UnixNano()) // for logging
-			workflow := &ogenclient.CreateWorkflowFromOCIRequest{
-				SchemaImage: fmt.Sprintf("%s/duplicate-test:v1.0.0", infrastructure.TestWorkflowBundleRegistry),
-			}
+			testID := fmt.Sprintf("dup-%d", time.Now().UnixNano())
+			uniqueName := fmt.Sprintf("e2e-dup-%s", testID)
+			content := generateWorkflowContent(uniqueName, "1.0.0")
 
-			// DD-AUTH-014: Use shared authenticated DSClient with ogenx.ToError() for type-safe error handling
+			// Step 1: Create the initial workflow
+			workflow := &ogenclient.CreateWorkflowInlineRequest{Content: content}
+			workflow.Source.SetTo("e2e-test")
 			resp1, err := DSClient.CreateWorkflow(ctx, workflow)
 			Expect(err).ToNot(HaveOccurred(), "First workflow creation should not error")
 
-			// Verify first creation succeeds (201 Created returns RemediationWorkflow)
-			createdWorkflow, ok := resp1.(*ogenclient.RemediationWorkflow)
-			Expect(ok).To(BeTrue(), "Expected RemediationWorkflow for 201 Created")
+			var createdWorkflow *ogenclient.RemediationWorkflow
+			switch v := resp1.(type) {
+			case *ogenclient.CreateWorkflowCreated:
+				createdWorkflow = (*ogenclient.RemediationWorkflow)(v)
+			case *ogenclient.CreateWorkflowOK:
+				createdWorkflow = (*ogenclient.RemediationWorkflow)(v)
+			default:
+				Fail(fmt.Sprintf("Expected CreateWorkflowCreated or CreateWorkflowOK, got: %T", resp1))
+			}
 			Expect(createdWorkflow.WorkflowId.Set).To(BeTrue(), "Created workflow should have ID")
 			createdWorkflowName := createdWorkflow.WorkflowName
+			createdWorkflowID := createdWorkflow.WorkflowId.Value.String()
 
-			// Step 2: Attempt to create the same workflow again (should return 409 Conflict)
-			GinkgoWriter.Printf("\n Creating duplicate workflow (expecting 409 Conflict)...\n")
-			resp2, err := DSClient.CreateWorkflow(ctx, workflow)
+			// Step 2: Re-apply exact same content (idempotent)
+			// DS-BUG-001 fix: returns 200 OK (not 500 Internal Server Error)
+			GinkgoWriter.Printf("\n Re-applying same workflow content (expecting 200 OK - idempotent)...\n")
+			dupWorkflow := &ogenclient.CreateWorkflowInlineRequest{Content: content}
+			dupWorkflow.Source.SetTo("e2e-test")
+			resp2, err := DSClient.CreateWorkflow(ctx, dupWorkflow)
+			Expect(err).ToNot(HaveOccurred(), "Idempotent re-apply should not error")
 
-			// DS-BUG-001 FIX VERIFICATION: Use ogenx.ToError() to convert 409 Conflict to error
-			err = ogenx.ToError(resp2, err)
-			Expect(err).To(HaveOccurred(), "Duplicate workflow creation should return error")
+			idempotentResult, ok := resp2.(*ogenclient.CreateWorkflowOK)
+			Expect(ok).To(BeTrue(), "Idempotent re-apply should return 200 OK (CreateWorkflowOK)")
+			Expect(idempotentResult.WorkflowId.Value.String()).To(Equal(createdWorkflowID),
+				"Idempotent re-apply should return the same workflow ID")
 
-			// Verify 409 Conflict status code
-			httpErr := ogenx.GetHTTPError(err)
-			Expect(httpErr).ToNot(BeNil(), "Error should be HTTPError")
-			Expect(httpErr.StatusCode).To(Equal(409),
-				"Duplicate workflow creation should return 409 Conflict (RFC 9110 Section 15.5.10), not 500")
-
-			// Step 3: Verify RFC 7807 problem details extracted by ogenx.ToError()
-			Expect(httpErr.Title).To(ContainSubstring("Already Exists"),
-				"Problem details 'title' should indicate workflow already exists")
-
-			// Verify error message includes workflow name
-			Expect(httpErr.Detail).To(ContainSubstring(createdWorkflowName),
-				"Error detail should include workflow name")
-
-			// Type assert the response to access RFC 7807 fields directly
-			// CreateWorkflowConflict is an alias for RFC7807Problem
-			conflictResp, ok := httpErr.Response.(*ogenclient.CreateWorkflowConflict)
-			Expect(ok).To(BeTrue(), "Response should be CreateWorkflowConflict type")
-			// Cast to RFC7807Problem to access methods
-			rfc7807 := (*ogenclient.RFC7807Problem)(conflictResp)
-			Expect(rfc7807.GetStatus()).To(Equal(int32(409)), "RFC 7807 status field should be 409")
-
-			GinkgoWriter.Printf("DS-BUG-001 Fix Verified:\n")
-			GinkgoWriter.Printf("   - First creation: 201 Created\n")
-			GinkgoWriter.Printf("   - Duplicate attempt: 409 Conflict (RFC 9110 compliant)\n")
-			GinkgoWriter.Printf("   - Error format: RFC 7807 problem details\n")
-			GinkgoWriter.Printf("   - Error detail: '%s'\n", httpErr.Detail)
-
-			// Step 4: Verify only one workflow exists in database using ListWorkflows API
-			// DD-AUTH-014: Use shared authenticated DSClient from suite setup
+			// Step 3: Verify only one active workflow exists with this name
 			listResp, err := DSClient.ListWorkflows(ctx, ogenclient.ListWorkflowsParams{})
 			Expect(err).ToNot(HaveOccurred())
 
-			// Type assert the response
 			listResult, ok := listResp.(*ogenclient.WorkflowListResponse)
 			Expect(ok).To(BeTrue(), "Expected WorkflowListResponse")
-			Expect(listResult.Workflows).ToNot(BeNil())
 
-			// Count workflows with our unique name
 			matchingWorkflows := 0
 			for _, wf := range listResult.Workflows {
 				if wf.WorkflowName == createdWorkflowName {
@@ -108,16 +94,101 @@ var _ = Describe("Workflow API Integration - Duplicate Detection (DS-BUG-001)", 
 				}
 			}
 			Expect(matchingWorkflows).To(Equal(1),
-				"Duplicate creation should not create additional records")
+				"Idempotent re-apply should not create additional records")
+
+			GinkgoWriter.Printf("DS-BUG-001 Fix Verified:\n")
+			GinkgoWriter.Printf("   - First creation: 201 Created\n")
+			GinkgoWriter.Printf("   - Idempotent re-apply: 200 OK (same workflow ID returned)\n")
+			GinkgoWriter.Printf("   - No 500 Internal Server Error\n")
+		})
+
+		It("should supersede active workflow when content hash changes (BR-WORKFLOW-006)", func() {
+			ctx := context.Background()
+
+			testID := fmt.Sprintf("sup-%d", time.Now().UnixNano())
+			uniqueName := fmt.Sprintf("e2e-sup-%s", testID)
+			content1 := generateWorkflowContent(uniqueName, "1.0.0")
+
+			// Step 1: Create initial workflow
+			workflow := &ogenclient.CreateWorkflowInlineRequest{Content: content1}
+			workflow.Source.SetTo("e2e-test")
+			resp1, err := DSClient.CreateWorkflow(ctx, workflow)
+			Expect(err).ToNot(HaveOccurred())
+
+			var firstWorkflow *ogenclient.RemediationWorkflow
+			switch v := resp1.(type) {
+			case *ogenclient.CreateWorkflowCreated:
+				firstWorkflow = (*ogenclient.RemediationWorkflow)(v)
+			case *ogenclient.CreateWorkflowOK:
+				firstWorkflow = (*ogenclient.RemediationWorkflow)(v)
+			default:
+				Fail(fmt.Sprintf("Expected CreateWorkflowCreated or CreateWorkflowOK, got: %T", resp1))
+			}
+			firstWorkflowID := firstWorkflow.WorkflowId.Value.String()
+
+			// Step 2: Create with same name+version but different content (triggers supersede)
+			content2 := fmt.Sprintf(`apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
+metadata:
+  name: %[1]s
+spec:
+  metadata:
+    workflowName: %[1]s
+    version: "1.0.0"
+    description:
+      what: "Updated content to trigger supersede (BR-WORKFLOW-006)"
+      whenToUse: "DS-BUG-001 supersede path E2E test"
+  actionType: ScaleReplicas
+  labels:
+    severity: [critical]
+    environment: [production]
+    component: pod
+    priority: P0
+  detectedLabels:
+    hpaEnabled: "true"
+    gitOpsTool: "argocd"
+  execution:
+    engine: tekton
+    bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:adfc09ea45a5b627550c6a73fe75d50efe1c80fa43359fcc4908c9c5b0639ac3
+  parameters:
+    - name: TARGET_RESOURCE
+      type: string
+      required: true
+      description: "Target resource for remediation"
+`, uniqueName)
+
+			GinkgoWriter.Printf("\n Creating workflow with different content (expecting 201 Created - supersede)...\n")
+			supersede := &ogenclient.CreateWorkflowInlineRequest{Content: content2}
+			supersede.Source.SetTo("e2e-test")
+			resp2, err := DSClient.CreateWorkflow(ctx, supersede)
+			Expect(err).ToNot(HaveOccurred(), "Supersede should not return error")
+
+			var supersededWorkflow *ogenclient.RemediationWorkflow
+			switch v := resp2.(type) {
+			case *ogenclient.CreateWorkflowCreated:
+				supersededWorkflow = (*ogenclient.RemediationWorkflow)(v)
+			case *ogenclient.CreateWorkflowOK:
+				supersededWorkflow = (*ogenclient.RemediationWorkflow)(v)
+			default:
+				Fail(fmt.Sprintf("Expected CreateWorkflowCreated or CreateWorkflowOK, got: %T", resp2))
+			}
+
+			Expect(supersededWorkflow.WorkflowId.Value.String()).ToNot(Equal(firstWorkflowID),
+				"Supersede should create a new workflow with a different ID")
+
+			GinkgoWriter.Printf("BR-WORKFLOW-006 Supersede Verified:\n")
+			GinkgoWriter.Printf("   - First creation: %s\n", firstWorkflowID)
+			GinkgoWriter.Printf("   - Supersede: %s (new ID)\n", supersededWorkflow.WorkflowId.Value.String())
 		})
 
 		It("should return error for invalid OCI image reference", func() {
 			ctx := context.Background()
 
-			// DD-WORKFLOW-017: Test with empty image reference (should return 400)
-			invalidWorkflow := &ogenclient.CreateWorkflowFromOCIRequest{
-				SchemaImage: "",
+			// DD-WORKFLOW-017: Test with empty content (should return 400)
+			invalidWorkflow := &ogenclient.CreateWorkflowInlineRequest{
+				Content: "",
 			}
+			invalidWorkflow.Source.SetTo("e2e-test")
 
 			resp, err := DSClient.CreateWorkflow(ctx, invalidWorkflow)
 			err = ogenx.ToError(resp, err)

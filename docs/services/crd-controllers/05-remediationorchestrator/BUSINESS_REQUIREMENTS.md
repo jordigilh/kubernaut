@@ -31,7 +31,9 @@ The **RemediationOrchestrator** is the central coordinator for the Kubernaut rem
 
 #### BR-ORCH-001: Approval Notification Creation
 
-**Description**: RemediationOrchestrator MUST create NotificationRequest CRDs when AIAnalysis enters the "Approving" phase (confidence between 60-79%), alerting operators that manual approval is required before workflow execution.
+**Description**: RemediationOrchestrator MUST create NotificationRequest CRDs when AIAnalysis completes with `approvalRequired = true` (confidence below the configurable threshold, default 80%), alerting operators that manual approval is required before workflow execution.
+
+> **Update (2026-03)**: Original BR referenced an "Approving" phase. The actual behavior is that AIAnalysis completes with `status.approvalRequired = true`, and RO transitions to `AwaitingApproval` phase, creating a NotificationRequest and RemediationApprovalRequest.
 
 **Priority**: P0 (CRITICAL)
 
@@ -39,7 +41,7 @@ The **RemediationOrchestrator** is the central coordinator for the Kubernaut rem
 
 **Implementation**:
 - Watch AIAnalysis CRD status changes
-- When `AIAnalysis.status.phase == "Approving"`:
+- When `AIAnalysis.status.phase == "Completed"` AND `AIAnalysis.status.approvalRequired == true`:
   - Check `RemediationRequest.status.approvalNotificationSent == false` (idempotency)
   - Create NotificationRequest CRD with approval context
   - Set `RemediationRequest.status.approvalNotificationSent = true`
@@ -51,7 +53,7 @@ The **RemediationOrchestrator** is the central coordinator for the Kubernaut rem
   - Links to approve/reject
 
 **Acceptance Criteria**:
-- ✅ NotificationRequest created when AIAnalysis enters "Approving" phase
+- ✅ NotificationRequest created when AIAnalysis completes with `approvalRequired = true`
 - ✅ Idempotency: Only ONE notification per approval request (no duplicates on retries)
 - ✅ Notification contains complete approval context
 - ✅ OwnerReference set for cascade deletion
@@ -315,25 +317,21 @@ The **RemediationOrchestrator** is the central coordinator for the Kubernaut rem
 
 ### Category 4: Resource Lock Deduplication (DD-RO-001)
 
-#### BR-ORCH-032: Handle WE Skipped Phase
+#### BR-ORCH-032: Handle WE Skipped Phase ⚠️ UPDATED (2026-03)
 
-**Description**: RemediationOrchestrator MUST watch WorkflowExecution status and handle the `Skipped` phase when WE's resource locking mechanism prevents execution due to `ResourceBusy` or `RecentlyRemediated` reasons.
+**Description**: RemediationOrchestrator MUST handle blocking conditions (e.g., `ResourceBusy`, `RecentlyRemediated`, `DuplicateInProgress`) that prevent workflow execution. Per DD-RO-002, blocking evaluation occurs in the RO routing engine *before* creating a WorkflowExecution CRD — WE never sees or reports `Skipped`.
+
+> **Update (2026-03)**: Original BR assumed WE would report a `Skipped` phase. Per DD-RO-002, the RO routing engine evaluates blocking conditions before creating WFE, transitioning the RR to the `Blocked` phase with a blocking reason. WE is never created for blocked remediations.
 
 **Priority**: P0 (CRITICAL)
 
-**Rationale**: WorkflowExecution implements resource-level locking (DD-WE-001) to prevent parallel and redundant workflow executions on the same Kubernetes resource. When WE skips execution, RO must update RemediationRequest status accordingly and track the relationship with the active remediation.
+**Rationale**: The RO routing engine evaluates blocking conditions (distributed locking, deduplication, consecutive failures, exponential backoff) to prevent unnecessary WFE creation. This is more efficient than creating a WFE only to have it skip.
 
 **Implementation**:
-- Watch WorkflowExecution.status.phase for `Skipped` value
-- Extract skip reason from `status.skipDetails.reason` (`ResourceBusy` or `RecentlyRemediated`)
-- Extract parent RR reference from:
-  - `ResourceBusy`: `status.skipDetails.conflictingWorkflow.remediationRequestRef`
-  - `RecentlyRemediated`: `status.skipDetails.recentRemediation.remediationRequestRef`
-- Update RemediationRequest:
-  - `status.phase = "Skipped"`
-  - `status.skipReason = reason`
-  - `status.duplicateOf = parentRRName`
-  - `status.message = "Skipped: {reason} - see {parentRRName}"`
+- RO routing engine evaluates blocking conditions at the `Executing` transition
+- Blocking conditions: `UnmanagedResource`, `ConsecutiveFailures`, `DuplicateInProgress`, `ExponentialBackoff`, `ResourceBusy`, `RecentlyRemediated`, `IneffectiveChain`
+- When blocked: Set `status.phase = "Blocked"` with blocking reason and details
+- When `DuplicateInProgress` or `ResourceBusy`: Track relationship to active RR via `status.duplicateOf`
 
 **Acceptance Criteria**:
 - ✅ RO watches WorkflowExecution status changes
@@ -422,11 +420,13 @@ The **RemediationOrchestrator** is the central coordinator for the Kubernaut rem
 
 ### Category 5: Operational Awareness
 
-#### BR-ORCH-046: Policy-Driven Operational Awareness Notification
+#### BR-ORCH-046: Policy-Driven Operational Awareness Notification ⚠️ DEPRECATED (2026-03)
 
-**Description**: RemediationOrchestrator MUST evaluate a configurable Rego policy after SignalProcessing completes (at the `processing → analyzing` transition) to determine whether operators should be proactively notified that a remediation is underway, using normalized signal data and remediation history.
+**Status**: ⚠️ **DEPRECATED** — Operators receive notifications through the existing notification pipeline (approval notifications, completion/failure notifications, skip notifications). A dedicated "remediation underway" notification adds marginal value given existing coverage. [GitHub #93](https://github.com/jordigilh/kubernaut/issues/93) closed.
 
-**Priority**: P1 (HIGH)
+**Original Description**: ~~RemediationOrchestrator MUST evaluate a configurable Rego policy after SignalProcessing completes (at the `processing → analyzing` transition) to determine whether operators should be proactively notified that a remediation is underway, using normalized signal data and remediation history.~~
+
+**Priority**: ~~P1 (HIGH)~~ N/A
 
 **Rationale**: During early adoption, SREs need real-time awareness of automated remediation activity. Beyond early adoption, policy-driven notifications detect operational patterns (remediation loops, critical production incidents) that require attention even when individual remediations succeed. No existing notification mechanism covers the window between signal classification and workflow outcome.
 

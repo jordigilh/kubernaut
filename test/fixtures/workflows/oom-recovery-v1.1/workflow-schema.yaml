@@ -1,38 +1,42 @@
-schemaVersion: "1.0"
-# OOM Recovery Workflow Schema v1.1.0 (BR-WORKFLOW-004)
-# Used by: DataStorage E2E — 07_workflow_version_management_test.go (DD-WORKFLOW-002)
+apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
 metadata:
-  workflowId: oom-recovery-v1
-  version: "v1.1.0"
-  description:
-    what: "Recovers pods from OOM events by adjusting memory limits (improved heuristics)"
-    whenToUse: "When pods are OOMKilled and need memory limit adjustments"
-    whenNotToUse: "When OOM is caused by memory leaks requiring code fix"
-    preconditions: "Pod is managed by a Deployment or StatefulSet"
-
-actionType: IncreaseMemoryLimits
-
-labels:
-  severity: [critical]
-  environment: [production, staging, test]
-  component: deployment
-  priority: P1
-
-execution:
-  engine: tekton
-  bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:8d727758cf289589e025fc9b89e254d73cb77b4c6384b850007b9ef1e8412200
-
-parameters:
-  - name: NAMESPACE
-    type: string
-    required: true
-    description: "Target namespace containing the affected deployment"
-  - name: DEPLOYMENT_NAME
-    type: string
-    required: true
-    description: "Name of the deployment to update memory limits"
-  - name: MEMORY_INCREASE_PERCENT
-    type: integer
-    required: false
-    description: "Percentage to increase memory limits by"
-    default: 30
+  name: oom-recovery-v1
+spec:
+  # OOM Recovery Workflow Schema v1.1.0 (BR-WORKFLOW-004)
+  # Used by: DataStorage E2E — 07_workflow_version_management_test.go (DD-WORKFLOW-002)
+  metadata:
+    workflowName: oom-recovery-v1
+    version: "v1.1.0"
+    description:
+      what: "Recovers pods from OOM events by adjusting memory limits (improved heuristics)"
+      whenToUse: "When pods are OOMKilled and need memory limit adjustments"
+      whenNotToUse: "When OOM is caused by memory leaks requiring code fix"
+      preconditions: "Pod is managed by a Deployment or StatefulSet"
+  
+  actionType: IncreaseMemoryLimits
+  
+  labels:
+    severity: [critical]
+    environment: [production, staging, test]
+    component: deployment
+    priority: P1
+  
+  execution:
+    engine: tekton
+    bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:adfc09ea45a5b627550c6a73fe75d50efe1c80fa43359fcc4908c9c5b0639ac3
+  
+  parameters:
+    - name: NAMESPACE
+      type: string
+      required: true
+      description: "Target namespace containing the affected deployment"
+    - name: DEPLOYMENT_NAME
+      type: string
+      required: true
+      description: "Name of the deployment to update memory limits"
+    - name: MEMORY_INCREASE_PERCENT
+      type: integer
+      required: false
+      description: "Percentage to increase memory limits by"
+      default: 30

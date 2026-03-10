@@ -22,6 +22,17 @@ gateway:
   service:
     type: ClusterIP
     nodePort: null
+  # BR-GATEWAY-036/037: Auth middleware configuration
+  auth:
+    # External signal sources that need RBAC to call the Gateway.
+    # Each entry creates a ClusterRoleBinding granting services/gateway-service/create.
+    # Event Exporter is bound automatically (deployed by this chart).
+    signalSources: []
+    # Example for AlertManager deployed by kube-prometheus-stack:
+    # signalSources:
+    #   - name: alertmanager
+    #     serviceAccount: alertmanager-kube-prometheus-stack-alertmanager
+    #     namespace: monitoring
 
 # -- DataStorage service (audit trail, workflow catalog)
 datastorage:
@@ -219,7 +230,5 @@ hooks:
   migrations:
     image: postgres:16-alpine
     gooseVersion: v3.24.1  # DD-012: goose CLI version for migration state tracking
-  seedWorkflows:
-    image: curlimages/curl:latest
   tlsCerts:
     image: bitnami/kubectl:latest

@@ -7,13 +7,29 @@
 **Confidence**: 95%
 **Purpose**: Define the hybrid weighted scoring strategy for workflow catalog semantic search that combines strict filtering for mandatory labels with semantic similarity ranking.
 **Related**: DD-WORKFLOW-012 (Workflow Immutability), DD-WORKFLOW-001 v2.4 (Mandatory Label Schema + Multi-Environment), DD-HAPI-001 (Custom Labels Auto-Append)
-**Version**: 1.6 (CURRENT), 2.2 (SPECIFICATION)
+**Version**: 1.7 (CURRENT), 2.2 (SPECIFICATION)
 
 ---
 
 ## 📝 **Changelog**
 
-### Version 2.0 (2026-01-28) **← CURRENT IMPLEMENTATION**
+### Version 1.7 (2026-03-10) **← CURRENT IMPLEMENTATION**
+**FIX**: CustomLabels scoring weight increase + final_score ceiling clamp.
+
+**Changes**:
+- ✅ **CustomLabels weight**: Increased from 0.05 to **0.15** per exact match (wildcard: 0.075)
+- ✅ **Final score clamp**: Added `LEAST(..., 1.0)` to prevent final_score exceeding 1.0 with many custom labels
+- ✅ **Rationale**: Custom labels represent explicit operator intent (user-authored, declarative).
+  A weight of 0.05 produced a +0.005 delta on the 0-1 final score -- negligible for workflow ordering.
+  At 0.15, a single custom label match produces +0.015, which meaningfully influences Step 2 ordering
+  within an action type. Combined with workflow-level `whenToUse` description engineering,
+  this enables risk-based and condition-based workflow differentiation.
+- ✅ **Bounded**: Even with 5 matching custom labels (0.75 raw boost), final_score = 0.575.
+  The LEAST clamp ensures no score exceeds 1.0 regardless of label count.
+
+**References**: #319 (weight increase), #252 (score clamp), #317 (concurrent-cross-namespace scenario)
+
+### Version 2.0 (2026-01-28)
 **FEATURE**: Multi-environment workflow capability with JSONB array containment.
 
 **Breaking Changes**:

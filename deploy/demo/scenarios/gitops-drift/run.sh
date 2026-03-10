@@ -13,19 +13,26 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SUBCOMMAND="${1:-all}"
-if [[ "$SUBCOMMAND" =~ ^(setup|inject|all)$ ]]; then shift || true; fi
 
-# shellcheck source=../../scripts/kind-helper.sh
-source "${SCRIPT_DIR}/../../scripts/kind-helper.sh"
-ensure_kind_cluster "${SCRIPT_DIR}/../kind-config-singlenode.yaml" "${1:-}"
+APPROVE_MODE="--auto-approve"
+SKIP_VALIDATE=""
+SUBCOMMAND="all"
+for _arg in "$@"; do
+    case "$_arg" in
+        --auto-approve)  APPROVE_MODE="--auto-approve" ;;
+        --interactive)   APPROVE_MODE="--interactive" ;;
+        --no-validate)   SKIP_VALIDATE=true ;;
+        setup|inject|all) SUBCOMMAND="$_arg" ;;
+    esac
+done
 
+# shellcheck source=../../scripts/platform-helper.sh
+source "${SCRIPT_DIR}/../../scripts/platform-helper.sh"
+require_demo_ready
 # shellcheck source=../../scripts/monitoring-helper.sh
 source "${SCRIPT_DIR}/../../scripts/monitoring-helper.sh"
-ensure_monitoring_stack
-source "${SCRIPT_DIR}/../../scripts/platform-helper.sh"
-ensure_platform
-seed_scenario_workflow "gitops-drift"
+require_infra gitea
+require_infra argocd
 
 GITEA_NAMESPACE="gitea"
 GITEA_ADMIN_USER="kubernaut"
@@ -39,19 +46,7 @@ echo " GitOps Drift Remediation Demo (#125)"
 echo "============================================="
 echo ""
 
-# Step 1: Ensure GitOps infrastructure is up
-echo "==> Step 1: Checking GitOps infrastructure..."
-if ! kubectl get namespace gitea &>/dev/null; then
-  echo "  Gitea not found. Installing..."
-  bash "${SCRIPT_DIR}/../gitops/scripts/setup-gitea.sh"
-fi
-if ! kubectl get namespace argocd &>/dev/null; then
-  echo "  ArgoCD not found. Installing..."
-  bash "${SCRIPT_DIR}/../gitops/scripts/setup-argocd.sh"
-fi
-echo "  GitOps infrastructure ready."
-
-# Step 2: Create ArgoCD Application (namespace + workload managed by ArgoCD)
+# Step 1: Create ArgoCD Application (namespace + workload managed by ArgoCD)
 echo "==> Step 2: Creating ArgoCD Application..."
 kubectl apply -f "${SCRIPT_DIR}/manifests/argocd-application.yaml"
 
@@ -210,21 +205,12 @@ sleep 60
 kubectl get pods -n "${NAMESPACE}"
 echo ""
 
-# Step 8: Watch the Kubernaut pipeline
-echo "==> Step 8: Watching Kubernaut pipeline (Ctrl+C to stop watching)..."
-echo "  Expected flow: Alert -> Gateway -> SP -> AA (HAPI) -> RO -> WE (git revert) -> EM"
-echo ""
-echo "  Monitoring CRDs:"
-kubectl get remediationrequests,signalprocessings,aianalyses,workflowexecutions,effectivenessassessments \
-  -n "${NAMESPACE}" 2>/dev/null || echo "  (no CRDs yet -- waiting for alert to fire)"
-
-echo ""
-echo "==> Pipeline in progress. Monitor with:"
-echo "    kubectl get rr,sp,aa,we,ea -n ${NAMESPACE} -w"
-echo ""
-echo "==> To verify remediation succeeded:"
-echo "    kubectl get pods -n ${NAMESPACE}"
-echo "    # All pods should return to Running after git revert"
+# Step 8: Validate pipeline
+if [ "${SKIP_VALIDATE}" != "true" ] && [ -f "${SCRIPT_DIR}/validate.sh" ]; then
+    echo ""
+    echo "==> Running validation pipeline..."
+    bash "${SCRIPT_DIR}/validate.sh" "${APPROVE_MODE}"
+fi
 }
 
 case "$SUBCOMMAND" in

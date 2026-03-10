@@ -1,11 +1,11 @@
 # BR-GATEWAY-184: Target Resource Extraction Priority Order
 
 **Status**: ✅ APPROVED
-**Version**: 2.0.0
-**Date**: 2026-02-17
+**Version**: 2.1.0
+**Date**: 2026-03-04
 **Owner**: Gateway Service Team
 **Stakeholders**: SRE Team, AI Analysis Team, Demo/QA Team
-**GitHub Issues**: [#178](https://github.com/jordigilh/kubernaut/issues/178), [#191](https://github.com/jordigilh/kubernaut/issues/191) (v2.0: monitoring metadata label filtering)
+**GitHub Issues**: [#178](https://github.com/jordigilh/kubernaut/issues/178), [#191](https://github.com/jordigilh/kubernaut/issues/191) (v2.0: monitoring metadata label filtering), [#303](https://github.com/jordigilh/kubernaut/issues/303) / [#308](https://github.com/jordigilh/kubernaut/issues/308) (v2.1: replicaset + pod label filtering)
 
 ---
 
@@ -56,12 +56,13 @@ Gateway MUST extract the target resource kind from Prometheus alert labels using
 | 4        | `deployment`               | `Deployment`                | |
 | 5        | `statefulset`              | `StatefulSet`               | |
 | 6        | `daemonset`                | `DaemonSet`                 | |
-| 7        | `node`                     | `Node`                      | |
-| 8        | `service`                  | `Service`                   | Subject to FR-5 filtering |
-| 9        | `job_name`                 | `Job`                       | v2.0: Changed from `job` (see FR-6) |
-| 10       | `cronjob`                  | `CronJob`                   | |
-| 11       | `pod`                      | `Pod`                       | |
-| 12       | (none matched)             | `Unknown`                   | |
+| 7        | `replicaset`               | `ReplicaSet`                | v2.1: Added (#303, #308) |
+| 8        | `node`                     | `Node`                      | |
+| 9        | `service`                  | `Service`                   | Subject to FR-5 filtering |
+| 10       | `job_name`                 | `Job`                       | v2.0: Changed from `job` (see FR-6) |
+| 11       | `cronjob`                  | `CronJob`                   | |
+| 12       | `pod`                      | `Pod`                       | Subject to FR-7 filtering |
+| 13       | (none matched)             | `Unknown`                   | |
 
 **Rationale**: For `kube_pod_*` metrics, the `pod` label IS the correct target (it is the metric's subject). For resource-level metrics (`kube_hpa_*`, `kube_deployment_*`, etc.), `pod` is injected by Prometheus target discovery and points to the metrics exporter. Checking specific resource labels first ensures the correct target is extracted in both cases.
 
@@ -95,6 +96,16 @@ Known naming patterns (SME-approved, Issue #191):
 When no `LabelFilter` is configured (nil), the `service` label passes through without filtering (backward-compatible).
 
 **Rationale**: The `service` label in Prometheus alerts often refers to the Kubernetes Service fronting the metrics exporter (e.g., `kube-prometheus-stack-kube-state-metrics`), not the workload's own Service. Pattern-based filtering covers 90%+ of monitoring stack deployments. The LLM's `affectedResource` field provides a safety net for edge cases. See Issue #191 for SME review.
+
+### FR-7: Monitoring Infrastructure Pod Label Filtering (v2.1)
+
+When a `LabelFilter` is configured, the `pod` label (priority 12) MUST be checked against known monitoring infrastructure pod naming patterns before being accepted as a target resource. If the filter determines the pod name refers to monitoring infrastructure (e.g., `"kube-prometheus-stack-kube-state-metrics-abc123"`), that candidate is skipped and extraction continues (ultimately returning `Unknown` if no other labels match).
+
+Known pod naming patterns (#303, #308):
+- **Substrings**: `kube-state-metrics`, `prometheus-node-exporter`, `alertmanager-kube-prometheus`, `prometheus-kube-prometheus`
+- **Prefixes**: `kube-prometheus-stack-grafana`, `kube-prometheus-stack-prometheus`, `kube-prometheus-stack-kube-state-metrics`
+
+**Rationale**: Defense-in-depth for scenarios where the `replicaset` label is absent but the `pod` label points to a monitoring infrastructure pod. Without this filter, the signal would be created with the kube-state-metrics pod as the target resource, causing incorrect LLM investigation.
 
 ### FR-6: job_name Semantics for Kubernetes Jobs (v2.0)
 

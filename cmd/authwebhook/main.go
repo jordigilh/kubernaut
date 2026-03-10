@@ -6,8 +6,10 @@ import (
 	"os"
 	"time"
 
+	actiontypev1 "github.com/jordigilh/kubernaut/api/actiontype/v1alpha1"
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/version"
 	"github.com/jordigilh/kubernaut/pkg/audit"
@@ -16,6 +18,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -32,6 +35,8 @@ func init() {
 	_ = workflowexecutionv1.AddToScheme(scheme)
 	_ = remediationv1.AddToScheme(scheme)
 	_ = notificationv1.AddToScheme(scheme)
+	_ = remediationworkflowv1.AddToScheme(scheme)
+	_ = actiontypev1.AddToScheme(scheme)
 }
 
 func main() {
@@ -90,6 +95,25 @@ func main() {
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to create manager")
+		os.Exit(1)
+	}
+
+	// BR-WORKFLOW-007: Cache field index for ActionType .spec.name
+	// Required by RemediationWorkflow handler's cross-update that looks up ActionType
+	// CRDs by their spec.name using MatchingFieldsSelector.
+	if err := mgr.GetFieldIndexer().IndexField(
+		context.Background(),
+		&actiontypev1.ActionType{},
+		".spec.name",
+		func(obj client.Object) []string {
+			at, ok := obj.(*actiontypev1.ActionType)
+			if !ok || at.Spec.Name == "" {
+				return nil
+			}
+			return []string{at.Spec.Name}
+		},
+	); err != nil {
+		setupLog.Error(err, "failed to create field index on .spec.name for ActionType")
 		os.Exit(1)
 	}
 
@@ -177,6 +201,29 @@ func main() {
 	}
 	webhookServer.Register("/validate-notificationrequest-delete", &webhook.Admission{Handler: nrHandler})
 	setupLog.Info("Registered NotificationRequest DELETE webhook handler with audit store")
+
+	// Register RemediationWorkflow handler (ADR-058: CRD-based workflow registration)
+	rwDSClient, err := authwebhook.NewDSClientAdapter(
+		cfg.DataStorage.URL,
+		cfg.DataStorage.Timeout,
+		ctrl.Log.WithName("rw-ds-client"),
+	)
+	if err != nil {
+		setupLog.Error(err, "failed to create DS client adapter for RemediationWorkflow handler")
+		os.Exit(1)
+	}
+	rwHandler := authwebhook.NewRemediationWorkflowHandler(
+		rwDSClient, auditStore, mgr.GetClient(),
+		authwebhook.WithActionTypeWorkflowCounter(rwDSClient),
+	)
+	webhookServer.Register("/validate-remediationworkflow", &webhook.Admission{Handler: rwHandler})
+	setupLog.Info("Registered RemediationWorkflow webhook handler with DS client and audit store")
+
+	// Register ActionType handler (ADR-059: CRD-based action type lifecycle)
+	// Reuses the same DS client adapter since it connects to the same Data Storage service
+	atHandler := authwebhook.NewActionTypeHandler(rwDSClient, auditStore, mgr.GetClient())
+	webhookServer.Register("/validate-actiontype", &webhook.Admission{Handler: atHandler})
+	setupLog.Info("Registered ActionType webhook handler with DS client and audit store")
 
 	// Register health check endpoints for liveness and readiness probes
 	// These are required by Kubernetes deployment health checks

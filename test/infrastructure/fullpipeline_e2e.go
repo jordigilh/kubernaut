@@ -332,6 +332,19 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	_, _ = fmt.Fprintln(writer, "\n🚀 PHASE 7: Parallel service deployment (Wave A + Wave B)...")
 	phase7Start := time.Now()
 
+	// BR-GATEWAY-036/037: Create Gateway SA and token for event-exporter and AlertManager webhooks
+	// Signal sources (event-exporter, AlertManager) must send Bearer tokens to /api/v1/signals/* endpoints.
+	_, _ = fmt.Fprintln(writer, "  🔐 Creating E2E ServiceAccount for Gateway signal ingestion (BR-GATEWAY-036/037)...")
+	gatewaySAName := "fullpipeline-gateway-sa"
+	if err := CreateE2EServiceAccountWithGatewayAccess(ctx, namespace, kubeconfigPath, gatewaySAName, writer); err != nil {
+		return builtImages, fmt.Errorf("PHASE 7: failed to create Gateway SA: %w", err)
+	}
+	gatewayToken, err := GetServiceAccountToken(ctx, namespace, gatewaySAName, kubeconfigPath)
+	if err != nil {
+		return builtImages, fmt.Errorf("PHASE 7: failed to get Gateway SA token: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "  ✅ Gateway auth token ready for event-exporter and AlertManager")
+
 	// Synchronization channels: Wave B services wait on these before deploying.
 	mockLLMReady := make(chan struct{})
 	promAMReady := make(chan struct{})
@@ -379,7 +392,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		}()
 		go func() {
 			defer wg.Done()
-			amErr = DeployAlertManager(ctx, namespace, kubeconfigPath, writer)
+			amErr = DeployAlertManager(ctx, namespace, kubeconfigPath, gatewayToken, writer)
 		}()
 		wg.Wait()
 		if promErr != nil {
@@ -446,7 +459,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	// B3: event-exporter — wait for Gateway
 	go func() {
 		<-gatewayReady
-		err := deployKubernetesEventExporter(ctx, namespace, kubeconfigPath, writer)
+		err := deployKubernetesEventExporter(ctx, namespace, kubeconfigPath, gatewayToken, writer)
 		allResults <- waveResult{"event-exporter", err}
 	}()
 
@@ -671,13 +684,20 @@ func deployFullPipelineGateway(ctx context.Context, namespace, kubeconfigPath, g
 //
 // The event-exporter:
 //   - Watches for Warning events (OOMKilled, CrashLoopBackOff, etc.)
-//   - POSTs to Gateway's /api/v1/alerts/kubernetes-events endpoint
+//   - POSTs to Gateway's /api/v1/signals/kubernetes-event endpoint
 //   - Runs in kubernaut-system namespace with RBAC for cluster-wide event watching
+//   - BR-GATEWAY-036/037: When gatewayToken is non-empty, adds Bearer auth to webhook requests
 //
 // Image: ghcr.io/resmoio/kubernetes-event-exporter:latest
 // (No local build needed — pulled directly by Kind's containerd)
-func deployKubernetesEventExporter(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+func deployKubernetesEventExporter(ctx context.Context, namespace, kubeconfigPath, gatewayToken string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "  📡 Deploying kubernetes-event-exporter...")
+
+	// BR-GATEWAY-036/037: Add Authorization header to webhook when token is provided
+	authHeaderYaml := ""
+	if gatewayToken != "" {
+		authHeaderYaml = fmt.Sprintf("            Authorization: Bearer %s\n", gatewayToken)
+	}
 
 	manifest := fmt.Sprintf(`---
 # ServiceAccount for event-exporter
@@ -749,6 +769,7 @@ data:
           endpoint: "http://gateway-service.%[1]s.svc.cluster.local:8080/api/v1/signals/kubernetes-event"
           headers:
             Content-Type: application/json
+%[2]s
 ---
 # Deployment
 apiVersion: apps/v1
@@ -792,7 +813,7 @@ spec:
       - name: config
         configMap:
           name: event-exporter-config
-`, namespace)
+`, namespace, authHeaderYaml)
 
 	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
@@ -1149,7 +1170,7 @@ func SetupCertManagerScenario(kubeconfigPath, namespace string, writer io.Writer
 	if err != nil {
 		return fmt.Errorf("failed to create temp dir: %w", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	keyPath := filepath.Join(tmpDir, "ca.key")
 	crtPath := filepath.Join(tmpDir, "ca.crt")

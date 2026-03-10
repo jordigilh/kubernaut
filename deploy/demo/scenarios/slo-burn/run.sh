@@ -12,17 +12,22 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NAMESPACE="demo-slo"
 
-# shellcheck source=../../scripts/kind-helper.sh
-source "${SCRIPT_DIR}/../../scripts/kind-helper.sh"
-ensure_kind_cluster "${SCRIPT_DIR}/../kind-config-singlenode.yaml" "${1:-}"
+APPROVE_MODE="--auto-approve"
+SKIP_VALIDATE=""
+for _arg in "$@"; do
+    case "$_arg" in
+        --auto-approve)  APPROVE_MODE="--auto-approve" ;;
+        --interactive)   APPROVE_MODE="--interactive" ;;
+        --no-validate)   SKIP_VALIDATE=true ;;
+    esac
+done
 
+# shellcheck source=../../scripts/platform-helper.sh
+source "${SCRIPT_DIR}/../../scripts/platform-helper.sh"
+require_demo_ready
 # shellcheck source=../../scripts/monitoring-helper.sh
 source "${SCRIPT_DIR}/../../scripts/monitoring-helper.sh"
-ensure_monitoring_stack
-source "${SCRIPT_DIR}/../../scripts/platform-helper.sh"
-ensure_platform
-seed_scenario_workflow "slo-burn"
-ensure_blackbox_exporter
+require_infra blackbox
 
 echo "============================================="
 echo " SLO Error Budget Burn Demo (#128)"
@@ -75,15 +80,9 @@ echo "  Check Prometheus: kubectl port-forward -n monitoring svc/kube-prometheus
 echo "  The ErrorBudgetBurn alert should appear within 5 minutes."
 echo ""
 
-# Step 8: Monitor
-echo "==> Step 8: Pipeline in progress. Monitor with:"
-echo "    kubectl get rr,sp,aa,we,ea -n ${NAMESPACE} -w"
-echo ""
-echo "  Expected flow:"
-echo "    Alert (ErrorBudgetBurn) -> Gateway -> SP -> AA (HAPI) -> RO -> WE"
-echo "    LLM correlates error spike with recent deploy -> selects rollback"
-echo "    WE rolls back deployment -> EM verifies error rate within SLO"
-echo ""
-echo "==> To verify remediation succeeded:"
-echo "    kubectl rollout history deployment/api-gateway -n ${NAMESPACE}"
-echo "    # Verify error rate drops (check Prometheus)"
+# Step 8: Validate pipeline
+if [ "${SKIP_VALIDATE}" != "true" ] && [ -f "${SCRIPT_DIR}/validate.sh" ]; then
+    echo ""
+    echo "==> Running validation pipeline..."
+    bash "${SCRIPT_DIR}/validate.sh" "${APPROVE_MODE}"
+fi

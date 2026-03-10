@@ -163,15 +163,12 @@ func (r *RARReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	// Store audit event (fire-and-forget)
 	auditErr := r.auditStore.StoreAudit(ctx, event)
 
-	// Record metrics and log the audit outcome
+	// Log the audit outcome
 	if auditErr != nil {
 		logger.Error(auditErr, "Failed to store approval audit event",
 			"rar", rar.Name,
 			"decision", decision,
 			"namespace", rar.Namespace)
-		if r.metrics != nil {
-			r.metrics.RecordAuditEventFailure("RAR", "approval_decision", rar.Namespace)
-		}
 	} else {
 		logger.Info("Successfully emitted approval audit event",
 			"rar", rar.Name,
@@ -181,9 +178,6 @@ func (r *RARReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 			"decidedBy", decidedBy,
 			"correlationID", parentRRName,
 			"namespace", rar.Namespace)
-		if r.metrics != nil {
-			r.metrics.RecordAuditEventSuccess("RAR", "approval_decision", rar.Namespace)
-		}
 	}
 
 	// Persist AuditRecorded condition with conflict retry.

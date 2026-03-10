@@ -342,7 +342,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 					Namespace: controllerNamespace,
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-					ExecutionEngine: "ansible", // Invalid: not in enum [tekton, job]
+					ExecutionEngine: "invalid-engine", // Invalid: not in enum [tekton, job, ansible]
 					RemediationRequestRef: corev1.ObjectReference{
 						APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
 						Kind:       "RemediationRequest",
@@ -358,7 +358,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 				},
 			}
 
-			By("Attempting to create WFE with executionEngine=ansible")
+			By("Attempting to create WFE with invalid executionEngine")
 			err := k8sClient.Create(ctx, wfe)
 
 			By("Verifying API server rejects the resource with validation error")

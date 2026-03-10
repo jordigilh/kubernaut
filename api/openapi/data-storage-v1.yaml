@@ -317,22 +317,33 @@ paths:
     post:
       tags:
         - Workflow Catalog API
-      summary: Register workflow from OCI image
+      summary: Register workflow from inline schema
       description: |
-        Register a new workflow by providing an OCI image pullspec.
-        Data Storage pulls the image, extracts /workflow-schema.yaml (ADR-043),
-        validates the schema, and populates all catalog fields from it.
+        Register a new workflow by providing the raw YAML content of a
+        RemediationWorkflow CRD. Data Storage parses and validates the schema,
+        then populates all catalog fields from it.
 
-        **Business Requirement**: BR-WORKFLOW-017-001 (OCI-based workflow registration)
-        **Design Decision**: DD-WORKFLOW-017 (Workflow Lifecycle Component Interactions)
+        If the workflow was previously registered and disabled (via CRD deletion),
+        it is re-enabled and a 200 response is returned instead of 201.
+
+        **Business Requirement**: BR-WORKFLOW-006 (RemediationWorkflow CRD Definition)
+        **Design Decision**: ADR-058 (Webhook-Driven Workflow Registration)
       operationId: createWorkflow
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateWorkflowFromOCIRequest'
+              $ref: '#/components/schemas/CreateWorkflowInlineRequest'
       responses:
+        '200':
+          description: |
+            Workflow re-enabled. The workflow was previously disabled and has been
+            re-activated with the provided schema content.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RemediationWorkflow'
         '201':
           description: Workflow created successfully
           content:
@@ -368,29 +379,15 @@ paths:
         '409':
           description: |
             Conflict - Duplicate workflow.
-            Workflow with same workflow_name and version already exists.
+            Workflow with same workflow_name and version already exists in active state.
             
             **Authority**: DS-BUG-001 fix (RFC 9110 Section 15.5.10)
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/RFC7807Problem'
-        '422':
-          description: |
-            Unprocessable Entity - /workflow-schema.yaml not found in OCI image.
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
         '500':
           description: Internal server error
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-        '502':
-          description: |
-            Bad Gateway - OCI image could not be pulled from registry.
           content:
             application/problem+json:
               schema:
@@ -716,6 +713,165 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/RFC7807Problem'
+
+  /api/v1/action-types:
+    post:
+      tags:
+        - ActionType Taxonomy API
+      summary: Create or re-enable an action type
+      description: |
+        Idempotent CREATE: creates a new action type, returns existing if active,
+        or re-enables if previously disabled.
+
+        **Business Requirement**: BR-WORKFLOW-007.1 (Idempotent CREATE)
+        **Design Decision**: DD-ACTIONTYPE-001 (ActionType CRD Lifecycle Design)
+      operationId: createActionType
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionTypeCreateRequest'
+      responses:
+        '201':
+          description: Action type created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionTypeCreateResponse'
+        '200':
+          description: Action type already exists (NOOP) or re-enabled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionTypeCreateResponse'
+        '400':
+          description: Validation error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+
+  /api/v1/action-types/{name}:
+    patch:
+      tags:
+        - ActionType Taxonomy API
+      summary: Update action type description
+      description: |
+        Updates the description fields of an active action type.
+        Only spec.description is mutable; spec.name is immutable.
+
+        **Business Requirement**: BR-WORKFLOW-007.2 (Description UPDATE with audit)
+      operationId: updateActionType
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "PascalCase action type name (e.g., RestartPod)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionTypeUpdateRequest'
+      responses:
+        '200':
+          description: Action type description updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionTypeUpdateResponse'
+        '404':
+          description: Action type not found or disabled
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+
+  /api/v1/action-types/{name}/disable:
+    patch:
+      tags:
+        - ActionType Taxonomy API
+      summary: Soft-disable an action type
+      description: |
+        Soft-disables an action type. Denied with 409 if active workflows reference it.
+        The denial response includes the count and names of dependent workflows.
+
+        **Business Requirement**: BR-WORKFLOW-007.3 (DELETE with dependency guard)
+      operationId: disableActionType
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "PascalCase action type name (e.g., RestartPod)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionTypeDisableRequest'
+      responses:
+        '200':
+          description: Action type disabled successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionTypeDisableResponse'
+        '400':
+          description: Invalid request body
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+        '404':
+          description: Action type not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+        '409':
+          description: Cannot disable — active workflows depend on this action type, or action type already disabled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionTypeDisableDeniedResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+
+  /api/v1/action-types/{name}/workflow-count:
+    get:
+      tags:
+        - ActionType Taxonomy API
+      summary: Get active workflow count for an action type
+      description: |
+        Returns the number of active RemediationWorkflows referencing this action type.
+        Used by the RW admission webhook to refresh the ActionType CRD's
+        status.activeWorkflowCount after RW CREATE/DELETE (Phase 3c cross-update).
+
+        **Business Requirement**: BR-WORKFLOW-007 (ActionType CRD lifecycle)
+      operationId: getActionTypeWorkflowCount
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "PascalCase action type name (e.g., RestartPod)"
+      responses:
+        '200':
+          description: Active workflow count for the action type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionTypeWorkflowCountResponse'
 
   /api/v1/audit/events:
     post:
@@ -2208,22 +2364,23 @@ components:
           type: string
           minLength: 1
           maxLength: 50
-          enum: [gateway, notification, analysis, aiagent, signalprocessing, workflow, workflowexecution, orchestration, webhook, effectiveness]
+          enum: [gateway, notification, analysis, aiagent, signalprocessing, workflow, workflowexecution, orchestration, webhook, effectiveness, actiontype]
           description: |
-            Service-level event category (ADR-034 v1.7).
-            Per ADR-034 v1.2: event_category MUST match the service name that emits the event.
+            Domain-level event category (ADR-034 v1.8).
+            Per convention: event_category identifies the business domain of the event.
+            The emitter/service is captured in the event_type first segment.
             Values:
-            - gateway: Gateway Service
-            - notification: Notification Service
-            - analysis: AI Analysis Controller (NOT HolmesGPT API)
+            - gateway: Gateway signal and CRD lifecycle events
+            - notification: Notification delivery and escalation events
+            - analysis: AI analysis, agent calls, and rego evaluation events
             - aiagent: AI Agent Provider (HolmesGPT API) - autonomous tool-calling agent
             - signalprocessing: Signal Processing Service
-            - workflow: Workflow Catalog Service
-            - workflowexecution: WorkflowExecution Controller (ADR-034 v1.5)
-            - approval: RemediationApprovalRequest Controller (BR-AUDIT-006)
-            - orchestration: Remediation Orchestrator Service
+            - workflow: Workflow catalog and discovery events
+            - workflowexecution: Workflow execution lifecycle events
+            - orchestration: Remediation orchestration lifecycle events
             - webhook: Authentication Webhook Service (SOC2 CC8.1 operator attribution)
-            - effectiveness: Effectiveness Monitor Controller (ADR-EM-001)
+            - effectiveness: Effectiveness assessment and monitoring events
+            - actiontype: ActionType taxonomy lifecycle events (Issue #300)
           example: gateway
         event_action:
           type: string
@@ -2304,7 +2461,14 @@ components:
             - $ref: '#/components/schemas/LLMToolCallPayload'
             - $ref: '#/components/schemas/WorkflowValidationPayload'
             - $ref: '#/components/schemas/RemediationRequestWebhookAuditPayload'
+            - $ref: '#/components/schemas/RemediationWorkflowWebhookAuditPayload'
             - $ref: '#/components/schemas/EffectivenessAssessmentAuditPayload'
+            - $ref: '#/components/schemas/ActionTypeCatalogCreatedPayload'
+            - $ref: '#/components/schemas/ActionTypeCatalogUpdatedPayload'
+            - $ref: '#/components/schemas/ActionTypeCatalogDisabledPayload'
+            - $ref: '#/components/schemas/ActionTypeCatalogReenabledPayload'
+            - $ref: '#/components/schemas/ActionTypeCatalogDisableDeniedPayload'
+            - $ref: '#/components/schemas/ActionTypeWebhookAuditPayload'
           discriminator:
             propertyName: event_type
             mapping:
@@ -2345,6 +2509,9 @@ components:
               'workflowexecution.block.cleared': '#/components/schemas/WorkflowExecutionWebhookAuditPayload'
               'webhook.remediationapprovalrequest.decided': '#/components/schemas/RemediationApprovalAuditPayload'
               'webhook.remediationrequest.timeout_modified': '#/components/schemas/RemediationRequestWebhookAuditPayload'
+              'remediationworkflow.admitted.create': '#/components/schemas/RemediationWorkflowWebhookAuditPayload'
+              'remediationworkflow.admitted.delete': '#/components/schemas/RemediationWorkflowWebhookAuditPayload'
+              'remediationworkflow.admitted.denied': '#/components/schemas/RemediationWorkflowWebhookAuditPayload'
               'workflow.catalog.actions_listed': '#/components/schemas/WorkflowDiscoveryAuditPayload'
               'workflow.catalog.workflows_listed': '#/components/schemas/WorkflowDiscoveryAuditPayload'
               'workflow.catalog.workflow_retrieved': '#/components/schemas/WorkflowDiscoveryAuditPayload'
@@ -2374,6 +2541,17 @@ components:
               'effectiveness.metrics.assessed': '#/components/schemas/EffectivenessAssessmentAuditPayload'
               'effectiveness.assessment.scheduled': '#/components/schemas/EffectivenessAssessmentAuditPayload'
               'effectiveness.assessment.completed': '#/components/schemas/EffectivenessAssessmentAuditPayload'
+              'datastorage.actiontype.created': '#/components/schemas/ActionTypeCatalogCreatedPayload'
+              'datastorage.actiontype.updated': '#/components/schemas/ActionTypeCatalogUpdatedPayload'
+              'datastorage.actiontype.disabled': '#/components/schemas/ActionTypeCatalogDisabledPayload'
+              'datastorage.actiontype.reenabled': '#/components/schemas/ActionTypeCatalogReenabledPayload'
+              'datastorage.actiontype.disable_denied': '#/components/schemas/ActionTypeCatalogDisableDeniedPayload'
+              'actiontype.admitted.create': '#/components/schemas/ActionTypeWebhookAuditPayload'
+              'actiontype.admitted.update': '#/components/schemas/ActionTypeWebhookAuditPayload'
+              'actiontype.admitted.delete': '#/components/schemas/ActionTypeWebhookAuditPayload'
+              'actiontype.denied.create': '#/components/schemas/ActionTypeWebhookAuditPayload'
+              'actiontype.denied.update': '#/components/schemas/ActionTypeWebhookAuditPayload'
+              'actiontype.denied.delete': '#/components/schemas/ActionTypeWebhookAuditPayload'
           # Removed x-go-type override to use proper oneOf discriminator
           # Let oapi-codegen generate appropriate union type from oneOf schemas
 
@@ -2525,7 +2703,6 @@ components:
         - name
         - description
         - version
-        - schemaImage
       properties:
         workflowId:
           type: string
@@ -2854,18 +3031,30 @@ components:
           additionalProperties: true
           description: "Workflow parameter schema (JSONB) - describes expected parameters"
 
-    CreateWorkflowFromOCIRequest:
+    CreateWorkflowInlineRequest:
       type: object
       required:
-        - schemaImage
+        - content
       properties:
-        schemaImage:
+        content:
           type: string
           description: |
-            OCI image pullspec. Data Storage pulls this image, extracts
-            /workflow-schema.yaml (ADR-043), validates it, and populates
-            all catalog fields from the extracted schema.
-          example: "quay.io/kubernaut/workflows/scale-replicas:v1.0.0"
+            Raw YAML content of the RemediationWorkflow CRD. Data Storage
+            parses the CRD envelope (apiVersion/kind/metadata/spec), validates
+            the spec, and populates all catalog fields from it.
+          example: "apiVersion: kubernaut.ai/v1alpha1\nkind: RemediationWorkflow\nmetadata:\n  name: scale-memory\nspec:\n  ..."
+        source:
+          type: string
+          description: |
+            Registration source. Set to "crd" when the request originates from
+            the Auth Webhook on CRD creation, or "api" for direct API calls.
+          example: "crd"
+        registeredBy:
+          type: string
+          description: |
+            Identity of the user or service account that triggered the registration.
+            Populated from AdmissionReview.request.userInfo.username when source is "crd".
+          example: "admin@example.com"
 
     RemediationWorkflow:
       type: object
@@ -4036,6 +4225,42 @@ components:
         new_timeout_config:
           $ref: '#/components/schemas/TimeoutConfig'
           description: New timeout configuration after operator modification
+
+    RemediationWorkflowWebhookAuditPayload:
+      type: object
+      required: [event_type, workflow_name, action]
+      description: |
+        Audit payload for RemediationWorkflow CRD admission events (ADR-058).
+        Emitted by the authwebhook when a RemediationWorkflow CRD is created, deleted, or denied.
+      properties:
+        event_type:
+          type: string
+          enum:
+            - 'remediationworkflow.admitted.create'
+            - 'remediationworkflow.admitted.delete'
+            - 'remediationworkflow.admitted.denied'
+          description: Event type for discriminator (matches parent event_type)
+        workflow_name:
+          type: string
+          description: Name of the RemediationWorkflow CRD (metadata.name)
+          example: "crashloop-rollback-v1"
+        action:
+          type: string
+          enum: [create, delete, denied]
+          description: Admission action performed
+          example: "create"
+        workflow_id:
+          type: string
+          description: DataStorage catalog UUID (set after successful registration)
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        catalog_status:
+          type: string
+          description: Catalog registration status (active, disabled, etc.)
+          example: "active"
+        denial_reason:
+          type: string
+          description: Reason for denial (only set when action=denied)
+          example: "data storage registration failed"
 
     # ========================================
     # Effectiveness Monitor Audit Payloads
@@ -5416,4 +5641,336 @@ components:
           format: double
           description: Error rate after remediation (0.0-1.0)
           example: 0.019
+
+    # ========================================
+    # ActionType Taxonomy (BR-WORKFLOW-007)
+    # ========================================
+
+    ActionTypeDescription:
+      type: object
+      description: "Structured description for an action type"
+      required:
+        - what
+        - whenToUse
+      properties:
+        what:
+          type: string
+          description: "What this action type concretely does"
+        whenToUse:
+          type: string
+          description: "When this action type is appropriate"
+        whenNotToUse:
+          type: string
+          description: "Exclusion conditions"
+        preconditions:
+          type: string
+          description: "Conditions to verify before use"
+
+    ActionTypeCreateRequest:
+      type: object
+      description: "Request body for creating or re-enabling an action type"
+      required:
+        - name
+        - description
+        - registeredBy
+      properties:
+        name:
+          type: string
+          description: "PascalCase action type name (e.g., RestartPod)"
+        description:
+          $ref: '#/components/schemas/ActionTypeDescription'
+        registeredBy:
+          type: string
+          description: "Identity of the registrant (K8s SA or user)"
+
+    ActionTypeCreateResponse:
+      type: object
+      description: "Response for action type create/re-enable"
+      required:
+        - actionType
+        - status
+        - wasReenabled
+      properties:
+        actionType:
+          type: string
+          description: "PascalCase action type name"
+        description:
+          $ref: '#/components/schemas/ActionTypeDescription'
+        status:
+          type: string
+          description: "Outcome: created, exists, or reenabled"
+          enum:
+            - created
+            - exists
+            - reenabled
+        wasReenabled:
+          type: boolean
+          description: "true if re-enabled from disabled state"
+
+    ActionTypeUpdateRequest:
+      type: object
+      description: "Request body for updating action type description. updatedBy is optional — the audit trail (Phase 6a) captures the actor authoritatively."
+      required:
+        - description
+      properties:
+        description:
+          $ref: '#/components/schemas/ActionTypeDescription'
+        updatedBy:
+          type: string
+          description: "Identity of who made the change"
+
+    ActionTypeUpdateResponse:
+      type: object
+      description: "Response for action type description update"
+      required:
+        - actionType
+        - oldDescription
+        - newDescription
+        - updatedFields
+      properties:
+        actionType:
+          type: string
+        oldDescription:
+          $ref: '#/components/schemas/ActionTypeDescription'
+        newDescription:
+          $ref: '#/components/schemas/ActionTypeDescription'
+        updatedFields:
+          type: array
+          items:
+            type: string
+          description: "List of changed field names"
+
+    ActionTypeDisableRequest:
+      type: object
+      description: "Request body for disabling an action type"
+      required:
+        - disabledBy
+      properties:
+        disabledBy:
+          type: string
+          description: "Identity of who is disabling"
+
+    ActionTypeDisableResponse:
+      type: object
+      description: "Response for successful action type disable"
+      required:
+        - actionType
+        - status
+      properties:
+        actionType:
+          type: string
+        status:
+          type: string
+          enum:
+            - disabled
+
+    ActionTypeDisableDeniedResponse:
+      type: object
+      description: "409 response when disable is denied due to active workflow dependencies"
+      required:
+        - actionType
+        - dependentWorkflowCount
+        - dependentWorkflows
+      properties:
+        actionType:
+          type: string
+        dependentWorkflowCount:
+          type: integer
+          description: "Number of active workflows referencing this action type"
+        dependentWorkflows:
+          type: array
+          items:
+            type: string
+          description: "Names of dependent workflows"
+
+    ActionTypeWorkflowCountResponse:
+      type: object
+      description: "Response containing the count of active workflows referencing an action type"
+      required:
+        - count
+      properties:
+        count:
+          type: integer
+          description: "Number of active RemediationWorkflows referencing this action type"
+
+    # ── ActionType Audit Payloads (Phase 6, BR-WORKFLOW-007) ──────────────────
+
+    ActionTypeDescriptionPayload:
+      type: object
+      description: "Structured description of an action type for audit payloads"
+      required:
+        - what
+        - when_to_use
+      properties:
+        what:
+          type: string
+        when_to_use:
+          type: string
+        when_not_to_use:
+          type: string
+        preconditions:
+          type: string
+
+    ActionTypeCatalogCreatedPayload:
+      type: object
+      description: "DS audit payload when a new action type is created or re-enabled"
+      required:
+        - event_type
+        - action_type
+        - description
+        - registered_by
+        - was_reenabled
+      properties:
+        event_type:
+          type: string
+          enum: ['datastorage.actiontype.created']
+        action_type:
+          type: string
+        description:
+          $ref: '#/components/schemas/ActionTypeDescriptionPayload'
+        registered_by:
+          type: string
+        was_reenabled:
+          type: boolean
+
+    ActionTypeCatalogUpdatedPayload:
+      type: object
+      description: "DS audit payload when an action type description is updated (SOC2: old+new)"
+      required:
+        - event_type
+        - action_type
+        - old_description
+        - new_description
+        - updated_by
+        - updated_fields
+      properties:
+        event_type:
+          type: string
+          enum: ['datastorage.actiontype.updated']
+        action_type:
+          type: string
+        old_description:
+          $ref: '#/components/schemas/ActionTypeDescriptionPayload'
+        new_description:
+          $ref: '#/components/schemas/ActionTypeDescriptionPayload'
+        updated_by:
+          type: string
+        updated_fields:
+          type: array
+          items:
+            type: string
+
+    ActionTypeCatalogDisabledPayload:
+      type: object
+      description: "DS audit payload when an action type is soft-disabled"
+      required:
+        - event_type
+        - action_type
+        - disabled_by
+        - disabled_at
+      properties:
+        event_type:
+          type: string
+          enum: ['datastorage.actiontype.disabled']
+        action_type:
+          type: string
+        disabled_by:
+          type: string
+        disabled_at:
+          type: string
+          format: date-time
+
+    ActionTypeCatalogReenabledPayload:
+      type: object
+      description: "DS audit payload when a previously disabled action type is re-enabled"
+      required:
+        - event_type
+        - action_type
+        - reenabled_by
+        - previous_state
+        - disabled_at
+        - disabled_by
+      properties:
+        event_type:
+          type: string
+          enum: ['datastorage.actiontype.reenabled']
+        action_type:
+          type: string
+        reenabled_by:
+          type: string
+        previous_state:
+          type: string
+          enum: ['disabled']
+        disabled_at:
+          type: string
+          format: date-time
+        disabled_by:
+          type: string
+
+    ActionTypeCatalogDisableDeniedPayload:
+      type: object
+      description: "DS audit payload when disable is denied due to active workflow dependencies"
+      required:
+        - event_type
+        - action_type
+        - denied_reason
+        - dependent_workflow_count
+        - dependent_workflows
+        - requested_by
+      properties:
+        event_type:
+          type: string
+          enum: ['datastorage.actiontype.disable_denied']
+        action_type:
+          type: string
+        denied_reason:
+          type: string
+        dependent_workflow_count:
+          type: integer
+        dependent_workflows:
+          type: array
+          items:
+            type: string
+        requested_by:
+          type: string
+
+    ActionTypeWebhookAuditPayload:
+      type: object
+      description: "AW audit payload for ActionType CRD admission events"
+      required:
+        - event_type
+        - action_type_name
+        - crd_name
+        - crd_namespace
+        - action
+      properties:
+        event_type:
+          type: string
+          enum:
+            - 'actiontype.admitted.create'
+            - 'actiontype.admitted.update'
+            - 'actiontype.admitted.delete'
+            - 'actiontype.denied.create'
+            - 'actiontype.denied.update'
+            - 'actiontype.denied.delete'
+        action_type_name:
+          type: string
+          description: "PascalCase name from spec.name"
+        crd_name:
+          type: string
+          description: "K8s metadata.name"
+        crd_namespace:
+          type: string
+          description: "K8s namespace"
+        action:
+          type: string
+          enum: ['create', 'update', 'delete', 'denied']
+        previously_existed:
+          type: boolean
+        catalog_status:
+          type: string
+        denial_reason:
+          type: string
+        denial_operation:
+          type: string
 

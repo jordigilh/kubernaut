@@ -1,0 +1,12 @@
+apiVersion: kubernaut.ai/v1alpha1
+kind: ActionType
+metadata:
+  name: fix-network-policy
+  namespace: kubernaut-system
+spec:
+  name: FixNetworkPolicy
+  description:
+    what: "Remove a deny-all NetworkPolicy that is blocking legitimate ingress traffic and causing health check failures."
+    whenToUse: "A NetworkPolicy is blocking all ingress traffic to a workload, causing liveness and readiness probe failures that lead to pod restarts or unavailability."
+    whenNotToUse: "When the NetworkPolicy is intentionally restrictive for security purposes and the outage has a different root cause."
+    preconditions: "A deny-all NetworkPolicy exists in the namespace, and the workload health checks are confirmed to be failing due to blocked network traffic rather than application errors."

@@ -30,6 +30,7 @@ var _ = Describe("Observability E2E Tests", func() {
 		// Pre-create managed namespace to prevent circuit breaker degradation
 		// Pattern: RO E2E (test/e2e/remediationorchestrator/suite_test.go)
 		testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "gw-obs")
+		helpers.EnsureTestPod(ctx, k8sClient, testNamespace, "warmup-pod")
 
 		// Note: gatewayURL is provided by E2E suite (deployed Gateway service)
 	})
@@ -75,21 +76,6 @@ var _ = Describe("Observability E2E Tests", func() {
 			// BUSINESS SCENARIO: Operator queries Prometheus for Gateway metrics
 			// BUSINESS VALIDATION: Metrics endpoint is accessible and returns expected metrics
 
-			// Query metrics endpoint - should be accessible immediately
-			metrics, err := GetPrometheusMetrics(gatewayURL + "/metrics")
-			Expect(err).ToNot(HaveOccurred(), "Metrics endpoint should be accessible")
-
-			// Verify key Gateway metrics are present (7 specification-aligned metrics)
-			// Note: Gauge metrics appear immediately
-			expectedGaugeMetrics := []string{
-				"gateway_deduplication_rate", // Deduplication percentage (gauge) - always present
-			}
-
-			for _, metricName := range expectedGaugeMetrics {
-				_, exists := metrics[metricName]
-				Expect(exists).To(BeTrue(), fmt.Sprintf("Metric %s should be present for operators", metricName))
-			}
-
 			// Verify histogram metrics appear after requests
 			// The /metrics request itself should trigger HTTP duration metric
 			Eventually(func() bool {
@@ -125,13 +111,15 @@ var _ = Describe("Observability E2E Tests", func() {
 
 			// Send 5 alerts
 			for i := 0; i < 5; i++ {
+				podName := fmt.Sprintf("pod-%d", i)
+				helpers.EnsureTestPod(ctx, k8sClient, testNamespace, podName)
 				payload := GeneratePrometheusAlert(PrometheusAlertPayload{
 					AlertName: fmt.Sprintf("Alert-%d", i),
 					Namespace: testNamespace,
 					Severity:  "warning",
 					Resource: ResourceIdentifier{
 						Kind: "Pod",
-						Name: fmt.Sprintf("pod-%d", i),
+						Name: podName,
 					},
 				})
 				SendWebhook(gatewayURL, payload)
@@ -163,13 +151,15 @@ var _ = Describe("Observability E2E Tests", func() {
 			// validation requires the resource to be opted-in. Pod inherits managed status
 			// from the namespace label; a Node would need its own label on a real Node object.
 			uniqueID := time.Now().UnixNano()
+			dedupPodName := fmt.Sprintf("test-pod-%d", uniqueID)
+			helpers.EnsureTestPod(ctx, k8sClient, testNamespace, dedupPodName)
 			payload := GeneratePrometheusAlert(PrometheusAlertPayload{
 				AlertName: fmt.Sprintf("DuplicateAlert-%d", uniqueID),
 				Namespace: testNamespace,
 				Severity:  "critical",
 				Resource: ResourceIdentifier{
 					Kind: "Pod",
-					Name: fmt.Sprintf("test-pod-%d", uniqueID),
+					Name: dedupPodName,
 				},
 			})
 
@@ -233,13 +223,15 @@ var _ = Describe("Observability E2E Tests", func() {
 
 			// Send alert to create CRD (use unique name to avoid collisions)
 			uniqueID := time.Now().UnixNano()
+			deployName := fmt.Sprintf("app-%d", uniqueID)
+			helpers.EnsureTestDeployment(ctx, k8sClient, testNamespace, deployName)
 			payload := GeneratePrometheusAlert(PrometheusAlertPayload{
 				AlertName: fmt.Sprintf("CRDCreationTest-%d", uniqueID),
 				Namespace: testNamespace,
 				Severity:  "warning",
 				Resource: ResourceIdentifier{
 					Kind: "Deployment",
-					Name: fmt.Sprintf("app-%d", uniqueID),
+					Name: deployName,
 				},
 			})
 			// Retry handles scope informer cache propagation delay for newly created namespace
@@ -275,13 +267,15 @@ var _ = Describe("Observability E2E Tests", func() {
 			namespaces := []string{testNamespace}
 			successCount := 0
 			for i, ns := range namespaces {
+				appPodName := fmt.Sprintf("app-pod-%d-%d", uniqueID, i)
+				helpers.EnsureTestPod(ctx, k8sClient, ns, appPodName)
 				payload := GeneratePrometheusAlert(PrometheusAlertPayload{
 					AlertName: fmt.Sprintf("LabelTest-%d-%d", uniqueID, i),
 					Namespace: ns,
 					Severity:  "critical", // P0 in production, P1 in staging
 					Resource: ResourceIdentifier{
 						Kind: "Pod",
-						Name: fmt.Sprintf("app-pod-%d-%d", uniqueID, i),
+						Name: appPodName,
 					},
 				})
 				// Retry handles scope informer cache propagation delay for newly created namespace
@@ -388,13 +382,15 @@ var _ = Describe("Observability E2E Tests", func() {
 			By("Sending additional requests for latency distribution")
 			uniqueID := time.Now().UnixNano()
 			for i := 0; i < 10; i++ {
+				latencyPodName := fmt.Sprintf("pod-%d-%d", uniqueID, i)
+				helpers.EnsureTestPod(ctx, k8sClient, testNamespace, latencyPodName)
 				payload := GeneratePrometheusAlert(PrometheusAlertPayload{
 					AlertName: fmt.Sprintf("LatencyTest-%d-%d", uniqueID, i),
 					Namespace: testNamespace,
 					Severity:  "warning",
 					Resource: ResourceIdentifier{
 						Kind: "Pod",
-						Name: fmt.Sprintf("pod-%d-%d", uniqueID, i),
+						Name: latencyPodName,
 					},
 				})
 				resp := SendWebhook(gatewayURL, payload)
@@ -425,13 +421,15 @@ var _ = Describe("Observability E2E Tests", func() {
 
 			// Send requests to different endpoints (use unique name)
 			uniqueID := time.Now().UnixNano()
+			svcName := fmt.Sprintf("api-%d", uniqueID)
+			helpers.EnsureTestService(ctx, k8sClient, testNamespace, svcName)
 			payload := GeneratePrometheusAlert(PrometheusAlertPayload{
 				AlertName: fmt.Sprintf("EndpointTest-%d", uniqueID),
 				Namespace: testNamespace,
 				Severity:  "info",
 				Resource: ResourceIdentifier{
 					Kind: "Service",
-					Name: fmt.Sprintf("api-%d", uniqueID),
+					Name: svcName,
 				},
 			})
 			resp := sendWebhookExpectCreated(gatewayURL, "/api/v1/signals/prometheus", payload)

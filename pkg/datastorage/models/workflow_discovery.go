@@ -19,6 +19,8 @@ package models
 import (
 	"encoding/json"
 	"time"
+
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // ========================================
@@ -29,24 +31,23 @@ import (
 // Business Requirement: BR-HAPI-017-001 (Three-Step Tool Implementation)
 // ========================================
 
-// ActionTypeTaxonomy represents an entry in the action_type_taxonomy table
-// Migration 025: action_type_taxonomy table
+// ActionTypeTaxonomy represents an entry in the action_type_taxonomy table.
+// Migration 001: action_type_taxonomy table.
+// Migration 004: Added status, disabled_at, disabled_by columns (BR-WORKFLOW-007).
 type ActionTypeTaxonomy struct {
 	ActionType  string          `json:"actionType" db:"action_type"`
 	Description json.RawMessage `json:"description" db:"description"`
+	Status      string          `json:"status" db:"status"`
+	DisabledAt  *time.Time      `json:"disabledAt,omitempty" db:"disabled_at"`
+	DisabledBy  *string         `json:"disabledBy,omitempty" db:"disabled_by"`
 	CreatedAt   time.Time       `json:"createdAt" db:"created_at"`
 	UpdatedAt   time.Time       `json:"updatedAt" db:"updated_at"`
 }
 
-// ActionTypeDescription represents the JSONB description structure for an action type
-// Stored in action_type_taxonomy.description column
-// BR-WORKFLOW-004: camelCase JSON keys (migration 026 updates existing data)
-type ActionTypeDescription struct {
-	What          string `json:"what"`
-	WhenToUse     string `json:"whenToUse"`
-	WhenNotToUse  string `json:"whenNotToUse,omitempty"`
-	Preconditions string `json:"preconditions,omitempty"`
-}
+// ActionTypeDescription is an alias for the shared StructuredDescription type.
+// BR-WORKFLOW-004: camelCase JSON keys (migration 026 updates existing data).
+// DD-WORKFLOW-016: Same format shared between RemediationWorkflow and ActionType.
+type ActionTypeDescription = sharedtypes.StructuredDescription
 
 // ActionTypeEntry represents a single action type in the discovery response (Step 1)
 // Includes the action type metadata and count of matching workflows

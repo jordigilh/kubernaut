@@ -20,7 +20,7 @@ spec:
           condition="Progressing",
           status="false"
         } == 1
-      for: 1m
+      for: 3m
       labels:
         severity: critical
       annotations:

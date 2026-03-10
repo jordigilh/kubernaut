@@ -1,39 +1,43 @@
-schemaVersion: "1.0"
-# Detected Labels Test Workflow Schema (BR-WORKFLOW-004, ADR-043 v1.3)
-# Used by: DataStorage E2E -- detected_labels_search_e2e_test.go
-# Purpose: Validates full OCI registration -> search with detectedLabels scoring
+apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
 metadata:
-  workflowId: detected-labels-test-v1
-  version: "1.0.0"
-  description:
-    what: "Test workflow for detectedLabels end-to-end validation"
-    whenToUse: "For E2E testing that OCI-registered detectedLabels affect search scoring"
-    whenNotToUse: "Not intended for production use"
-    preconditions: "DataStorage service running with action_type_taxonomy seeded"
-
-actionType: ScaleReplicas
-
-labels:
-  severity: [critical]
-  environment: [production]
-  component: pod
-  priority: P0
-
-detectedLabels:
-  hpaEnabled: "true"
-  gitOpsTool: "argocd"
-
-execution:
-  engine: tekton
-  bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:8d727758cf289589e025fc9b89e254d73cb77b4c6384b850007b9ef1e8412200
-
-parameters:
-  - name: NAMESPACE
-    type: string
-    required: true
-    description: "Target namespace containing the affected pod"
-  - name: REPLICA_COUNT
-    type: integer
-    required: false
-    description: "Target replica count"
-    default: 3
+  name: detected-labels-test-v1
+spec:
+  # Detected Labels Test Workflow Schema (BR-WORKFLOW-004, ADR-043 v1.3)
+  # Used by: DataStorage E2E -- detected_labels_search_e2e_test.go
+  # Purpose: Validates full OCI registration -> search with detectedLabels scoring
+  metadata:
+    workflowName: detected-labels-test-v1
+    version: "1.0.0"
+    description:
+      what: "Test workflow for detectedLabels end-to-end validation"
+      whenToUse: "For E2E testing that OCI-registered detectedLabels affect search scoring"
+      whenNotToUse: "Not intended for production use"
+      preconditions: "DataStorage service running with action_type_taxonomy seeded"
+  
+  actionType: ScaleReplicas
+  
+  labels:
+    severity: [critical]
+    environment: [production]
+    component: pod
+    priority: P0
+  
+  detectedLabels:
+    hpaEnabled: "true"
+    gitOpsTool: "argocd"
+  
+  execution:
+    engine: tekton
+    bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:adfc09ea45a5b627550c6a73fe75d50efe1c80fa43359fcc4908c9c5b0639ac3
+  
+  parameters:
+    - name: NAMESPACE
+      type: string
+      required: true
+      description: "Target namespace containing the affected pod"
+    - name: REPLICA_COUNT
+      type: integer
+      required: false
+      description: "Target replica count"
+      default: 3

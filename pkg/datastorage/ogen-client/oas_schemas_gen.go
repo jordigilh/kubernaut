@@ -623,6 +623,897 @@ func (s *AIAnalysisRegoEvaluationPayload) SetReason(val string) {
 	s.Reason = val
 }
 
+// DS audit payload when a new action type is created or re-enabled.
+// Ref: #/components/schemas/ActionTypeCatalogCreatedPayload
+type ActionTypeCatalogCreatedPayload struct {
+	EventType    ActionTypeCatalogCreatedPayloadEventType `json:"event_type"`
+	ActionType   string                                   `json:"action_type"`
+	Description  ActionTypeDescriptionPayload             `json:"description"`
+	RegisteredBy string                                   `json:"registered_by"`
+	WasReenabled bool                                     `json:"was_reenabled"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *ActionTypeCatalogCreatedPayload) GetEventType() ActionTypeCatalogCreatedPayloadEventType {
+	return s.EventType
+}
+
+// GetActionType returns the value of ActionType.
+func (s *ActionTypeCatalogCreatedPayload) GetActionType() string {
+	return s.ActionType
+}
+
+// GetDescription returns the value of Description.
+func (s *ActionTypeCatalogCreatedPayload) GetDescription() ActionTypeDescriptionPayload {
+	return s.Description
+}
+
+// GetRegisteredBy returns the value of RegisteredBy.
+func (s *ActionTypeCatalogCreatedPayload) GetRegisteredBy() string {
+	return s.RegisteredBy
+}
+
+// GetWasReenabled returns the value of WasReenabled.
+func (s *ActionTypeCatalogCreatedPayload) GetWasReenabled() bool {
+	return s.WasReenabled
+}
+
+// SetEventType sets the value of EventType.
+func (s *ActionTypeCatalogCreatedPayload) SetEventType(val ActionTypeCatalogCreatedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetActionType sets the value of ActionType.
+func (s *ActionTypeCatalogCreatedPayload) SetActionType(val string) {
+	s.ActionType = val
+}
+
+// SetDescription sets the value of Description.
+func (s *ActionTypeCatalogCreatedPayload) SetDescription(val ActionTypeDescriptionPayload) {
+	s.Description = val
+}
+
+// SetRegisteredBy sets the value of RegisteredBy.
+func (s *ActionTypeCatalogCreatedPayload) SetRegisteredBy(val string) {
+	s.RegisteredBy = val
+}
+
+// SetWasReenabled sets the value of WasReenabled.
+func (s *ActionTypeCatalogCreatedPayload) SetWasReenabled(val bool) {
+	s.WasReenabled = val
+}
+
+type ActionTypeCatalogCreatedPayloadEventType string
+
+const (
+	ActionTypeCatalogCreatedPayloadEventTypeDatastorageActiontypeCreated ActionTypeCatalogCreatedPayloadEventType = "datastorage.actiontype.created"
+)
+
+// AllValues returns all ActionTypeCatalogCreatedPayloadEventType values.
+func (ActionTypeCatalogCreatedPayloadEventType) AllValues() []ActionTypeCatalogCreatedPayloadEventType {
+	return []ActionTypeCatalogCreatedPayloadEventType{
+		ActionTypeCatalogCreatedPayloadEventTypeDatastorageActiontypeCreated,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ActionTypeCatalogCreatedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case ActionTypeCatalogCreatedPayloadEventTypeDatastorageActiontypeCreated:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ActionTypeCatalogCreatedPayloadEventType) UnmarshalText(data []byte) error {
+	switch ActionTypeCatalogCreatedPayloadEventType(data) {
+	case ActionTypeCatalogCreatedPayloadEventTypeDatastorageActiontypeCreated:
+		*s = ActionTypeCatalogCreatedPayloadEventTypeDatastorageActiontypeCreated
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// DS audit payload when disable is denied due to active workflow dependencies.
+// Ref: #/components/schemas/ActionTypeCatalogDisableDeniedPayload
+type ActionTypeCatalogDisableDeniedPayload struct {
+	EventType              ActionTypeCatalogDisableDeniedPayloadEventType `json:"event_type"`
+	ActionType             string                                         `json:"action_type"`
+	DeniedReason           string                                         `json:"denied_reason"`
+	DependentWorkflowCount int                                            `json:"dependent_workflow_count"`
+	DependentWorkflows     []string                                       `json:"dependent_workflows"`
+	RequestedBy            string                                         `json:"requested_by"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *ActionTypeCatalogDisableDeniedPayload) GetEventType() ActionTypeCatalogDisableDeniedPayloadEventType {
+	return s.EventType
+}
+
+// GetActionType returns the value of ActionType.
+func (s *ActionTypeCatalogDisableDeniedPayload) GetActionType() string {
+	return s.ActionType
+}
+
+// GetDeniedReason returns the value of DeniedReason.
+func (s *ActionTypeCatalogDisableDeniedPayload) GetDeniedReason() string {
+	return s.DeniedReason
+}
+
+// GetDependentWorkflowCount returns the value of DependentWorkflowCount.
+func (s *ActionTypeCatalogDisableDeniedPayload) GetDependentWorkflowCount() int {
+	return s.DependentWorkflowCount
+}
+
+// GetDependentWorkflows returns the value of DependentWorkflows.
+func (s *ActionTypeCatalogDisableDeniedPayload) GetDependentWorkflows() []string {
+	return s.DependentWorkflows
+}
+
+// GetRequestedBy returns the value of RequestedBy.
+func (s *ActionTypeCatalogDisableDeniedPayload) GetRequestedBy() string {
+	return s.RequestedBy
+}
+
+// SetEventType sets the value of EventType.
+func (s *ActionTypeCatalogDisableDeniedPayload) SetEventType(val ActionTypeCatalogDisableDeniedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetActionType sets the value of ActionType.
+func (s *ActionTypeCatalogDisableDeniedPayload) SetActionType(val string) {
+	s.ActionType = val
+}
+
+// SetDeniedReason sets the value of DeniedReason.
+func (s *ActionTypeCatalogDisableDeniedPayload) SetDeniedReason(val string) {
+	s.DeniedReason = val
+}
+
+// SetDependentWorkflowCount sets the value of DependentWorkflowCount.
+func (s *ActionTypeCatalogDisableDeniedPayload) SetDependentWorkflowCount(val int) {
+	s.DependentWorkflowCount = val
+}
+
+// SetDependentWorkflows sets the value of DependentWorkflows.
+func (s *ActionTypeCatalogDisableDeniedPayload) SetDependentWorkflows(val []string) {
+	s.DependentWorkflows = val
+}
+
+// SetRequestedBy sets the value of RequestedBy.
+func (s *ActionTypeCatalogDisableDeniedPayload) SetRequestedBy(val string) {
+	s.RequestedBy = val
+}
+
+type ActionTypeCatalogDisableDeniedPayloadEventType string
+
+const (
+	ActionTypeCatalogDisableDeniedPayloadEventTypeDatastorageActiontypeDisableDenied ActionTypeCatalogDisableDeniedPayloadEventType = "datastorage.actiontype.disable_denied"
+)
+
+// AllValues returns all ActionTypeCatalogDisableDeniedPayloadEventType values.
+func (ActionTypeCatalogDisableDeniedPayloadEventType) AllValues() []ActionTypeCatalogDisableDeniedPayloadEventType {
+	return []ActionTypeCatalogDisableDeniedPayloadEventType{
+		ActionTypeCatalogDisableDeniedPayloadEventTypeDatastorageActiontypeDisableDenied,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ActionTypeCatalogDisableDeniedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case ActionTypeCatalogDisableDeniedPayloadEventTypeDatastorageActiontypeDisableDenied:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ActionTypeCatalogDisableDeniedPayloadEventType) UnmarshalText(data []byte) error {
+	switch ActionTypeCatalogDisableDeniedPayloadEventType(data) {
+	case ActionTypeCatalogDisableDeniedPayloadEventTypeDatastorageActiontypeDisableDenied:
+		*s = ActionTypeCatalogDisableDeniedPayloadEventTypeDatastorageActiontypeDisableDenied
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// DS audit payload when an action type is soft-disabled.
+// Ref: #/components/schemas/ActionTypeCatalogDisabledPayload
+type ActionTypeCatalogDisabledPayload struct {
+	EventType  ActionTypeCatalogDisabledPayloadEventType `json:"event_type"`
+	ActionType string                                    `json:"action_type"`
+	DisabledBy string                                    `json:"disabled_by"`
+	DisabledAt time.Time                                 `json:"disabled_at"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *ActionTypeCatalogDisabledPayload) GetEventType() ActionTypeCatalogDisabledPayloadEventType {
+	return s.EventType
+}
+
+// GetActionType returns the value of ActionType.
+func (s *ActionTypeCatalogDisabledPayload) GetActionType() string {
+	return s.ActionType
+}
+
+// GetDisabledBy returns the value of DisabledBy.
+func (s *ActionTypeCatalogDisabledPayload) GetDisabledBy() string {
+	return s.DisabledBy
+}
+
+// GetDisabledAt returns the value of DisabledAt.
+func (s *ActionTypeCatalogDisabledPayload) GetDisabledAt() time.Time {
+	return s.DisabledAt
+}
+
+// SetEventType sets the value of EventType.
+func (s *ActionTypeCatalogDisabledPayload) SetEventType(val ActionTypeCatalogDisabledPayloadEventType) {
+	s.EventType = val
+}
+
+// SetActionType sets the value of ActionType.
+func (s *ActionTypeCatalogDisabledPayload) SetActionType(val string) {
+	s.ActionType = val
+}
+
+// SetDisabledBy sets the value of DisabledBy.
+func (s *ActionTypeCatalogDisabledPayload) SetDisabledBy(val string) {
+	s.DisabledBy = val
+}
+
+// SetDisabledAt sets the value of DisabledAt.
+func (s *ActionTypeCatalogDisabledPayload) SetDisabledAt(val time.Time) {
+	s.DisabledAt = val
+}
+
+type ActionTypeCatalogDisabledPayloadEventType string
+
+const (
+	ActionTypeCatalogDisabledPayloadEventTypeDatastorageActiontypeDisabled ActionTypeCatalogDisabledPayloadEventType = "datastorage.actiontype.disabled"
+)
+
+// AllValues returns all ActionTypeCatalogDisabledPayloadEventType values.
+func (ActionTypeCatalogDisabledPayloadEventType) AllValues() []ActionTypeCatalogDisabledPayloadEventType {
+	return []ActionTypeCatalogDisabledPayloadEventType{
+		ActionTypeCatalogDisabledPayloadEventTypeDatastorageActiontypeDisabled,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ActionTypeCatalogDisabledPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case ActionTypeCatalogDisabledPayloadEventTypeDatastorageActiontypeDisabled:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ActionTypeCatalogDisabledPayloadEventType) UnmarshalText(data []byte) error {
+	switch ActionTypeCatalogDisabledPayloadEventType(data) {
+	case ActionTypeCatalogDisabledPayloadEventTypeDatastorageActiontypeDisabled:
+		*s = ActionTypeCatalogDisabledPayloadEventTypeDatastorageActiontypeDisabled
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// DS audit payload when a previously disabled action type is re-enabled.
+// Ref: #/components/schemas/ActionTypeCatalogReenabledPayload
+type ActionTypeCatalogReenabledPayload struct {
+	EventType     ActionTypeCatalogReenabledPayloadEventType     `json:"event_type"`
+	ActionType    string                                         `json:"action_type"`
+	ReenabledBy   string                                         `json:"reenabled_by"`
+	PreviousState ActionTypeCatalogReenabledPayloadPreviousState `json:"previous_state"`
+	DisabledAt    time.Time                                      `json:"disabled_at"`
+	DisabledBy    string                                         `json:"disabled_by"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *ActionTypeCatalogReenabledPayload) GetEventType() ActionTypeCatalogReenabledPayloadEventType {
+	return s.EventType
+}
+
+// GetActionType returns the value of ActionType.
+func (s *ActionTypeCatalogReenabledPayload) GetActionType() string {
+	return s.ActionType
+}
+
+// GetReenabledBy returns the value of ReenabledBy.
+func (s *ActionTypeCatalogReenabledPayload) GetReenabledBy() string {
+	return s.ReenabledBy
+}
+
+// GetPreviousState returns the value of PreviousState.
+func (s *ActionTypeCatalogReenabledPayload) GetPreviousState() ActionTypeCatalogReenabledPayloadPreviousState {
+	return s.PreviousState
+}
+
+// GetDisabledAt returns the value of DisabledAt.
+func (s *ActionTypeCatalogReenabledPayload) GetDisabledAt() time.Time {
+	return s.DisabledAt
+}
+
+// GetDisabledBy returns the value of DisabledBy.
+func (s *ActionTypeCatalogReenabledPayload) GetDisabledBy() string {
+	return s.DisabledBy
+}
+
+// SetEventType sets the value of EventType.
+func (s *ActionTypeCatalogReenabledPayload) SetEventType(val ActionTypeCatalogReenabledPayloadEventType) {
+	s.EventType = val
+}
+
+// SetActionType sets the value of ActionType.
+func (s *ActionTypeCatalogReenabledPayload) SetActionType(val string) {
+	s.ActionType = val
+}
+
+// SetReenabledBy sets the value of ReenabledBy.
+func (s *ActionTypeCatalogReenabledPayload) SetReenabledBy(val string) {
+	s.ReenabledBy = val
+}
+
+// SetPreviousState sets the value of PreviousState.
+func (s *ActionTypeCatalogReenabledPayload) SetPreviousState(val ActionTypeCatalogReenabledPayloadPreviousState) {
+	s.PreviousState = val
+}
+
+// SetDisabledAt sets the value of DisabledAt.
+func (s *ActionTypeCatalogReenabledPayload) SetDisabledAt(val time.Time) {
+	s.DisabledAt = val
+}
+
+// SetDisabledBy sets the value of DisabledBy.
+func (s *ActionTypeCatalogReenabledPayload) SetDisabledBy(val string) {
+	s.DisabledBy = val
+}
+
+type ActionTypeCatalogReenabledPayloadEventType string
+
+const (
+	ActionTypeCatalogReenabledPayloadEventTypeDatastorageActiontypeReenabled ActionTypeCatalogReenabledPayloadEventType = "datastorage.actiontype.reenabled"
+)
+
+// AllValues returns all ActionTypeCatalogReenabledPayloadEventType values.
+func (ActionTypeCatalogReenabledPayloadEventType) AllValues() []ActionTypeCatalogReenabledPayloadEventType {
+	return []ActionTypeCatalogReenabledPayloadEventType{
+		ActionTypeCatalogReenabledPayloadEventTypeDatastorageActiontypeReenabled,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ActionTypeCatalogReenabledPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case ActionTypeCatalogReenabledPayloadEventTypeDatastorageActiontypeReenabled:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ActionTypeCatalogReenabledPayloadEventType) UnmarshalText(data []byte) error {
+	switch ActionTypeCatalogReenabledPayloadEventType(data) {
+	case ActionTypeCatalogReenabledPayloadEventTypeDatastorageActiontypeReenabled:
+		*s = ActionTypeCatalogReenabledPayloadEventTypeDatastorageActiontypeReenabled
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+type ActionTypeCatalogReenabledPayloadPreviousState string
+
+const (
+	ActionTypeCatalogReenabledPayloadPreviousStateDisabled ActionTypeCatalogReenabledPayloadPreviousState = "disabled"
+)
+
+// AllValues returns all ActionTypeCatalogReenabledPayloadPreviousState values.
+func (ActionTypeCatalogReenabledPayloadPreviousState) AllValues() []ActionTypeCatalogReenabledPayloadPreviousState {
+	return []ActionTypeCatalogReenabledPayloadPreviousState{
+		ActionTypeCatalogReenabledPayloadPreviousStateDisabled,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ActionTypeCatalogReenabledPayloadPreviousState) MarshalText() ([]byte, error) {
+	switch s {
+	case ActionTypeCatalogReenabledPayloadPreviousStateDisabled:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ActionTypeCatalogReenabledPayloadPreviousState) UnmarshalText(data []byte) error {
+	switch ActionTypeCatalogReenabledPayloadPreviousState(data) {
+	case ActionTypeCatalogReenabledPayloadPreviousStateDisabled:
+		*s = ActionTypeCatalogReenabledPayloadPreviousStateDisabled
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// DS audit payload when an action type description is updated (SOC2: old+new).
+// Ref: #/components/schemas/ActionTypeCatalogUpdatedPayload
+type ActionTypeCatalogUpdatedPayload struct {
+	EventType      ActionTypeCatalogUpdatedPayloadEventType `json:"event_type"`
+	ActionType     string                                   `json:"action_type"`
+	OldDescription ActionTypeDescriptionPayload             `json:"old_description"`
+	NewDescription ActionTypeDescriptionPayload             `json:"new_description"`
+	UpdatedBy      string                                   `json:"updated_by"`
+	UpdatedFields  []string                                 `json:"updated_fields"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *ActionTypeCatalogUpdatedPayload) GetEventType() ActionTypeCatalogUpdatedPayloadEventType {
+	return s.EventType
+}
+
+// GetActionType returns the value of ActionType.
+func (s *ActionTypeCatalogUpdatedPayload) GetActionType() string {
+	return s.ActionType
+}
+
+// GetOldDescription returns the value of OldDescription.
+func (s *ActionTypeCatalogUpdatedPayload) GetOldDescription() ActionTypeDescriptionPayload {
+	return s.OldDescription
+}
+
+// GetNewDescription returns the value of NewDescription.
+func (s *ActionTypeCatalogUpdatedPayload) GetNewDescription() ActionTypeDescriptionPayload {
+	return s.NewDescription
+}
+
+// GetUpdatedBy returns the value of UpdatedBy.
+func (s *ActionTypeCatalogUpdatedPayload) GetUpdatedBy() string {
+	return s.UpdatedBy
+}
+
+// GetUpdatedFields returns the value of UpdatedFields.
+func (s *ActionTypeCatalogUpdatedPayload) GetUpdatedFields() []string {
+	return s.UpdatedFields
+}
+
+// SetEventType sets the value of EventType.
+func (s *ActionTypeCatalogUpdatedPayload) SetEventType(val ActionTypeCatalogUpdatedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetActionType sets the value of ActionType.
+func (s *ActionTypeCatalogUpdatedPayload) SetActionType(val string) {
+	s.ActionType = val
+}
+
+// SetOldDescription sets the value of OldDescription.
+func (s *ActionTypeCatalogUpdatedPayload) SetOldDescription(val ActionTypeDescriptionPayload) {
+	s.OldDescription = val
+}
+
+// SetNewDescription sets the value of NewDescription.
+func (s *ActionTypeCatalogUpdatedPayload) SetNewDescription(val ActionTypeDescriptionPayload) {
+	s.NewDescription = val
+}
+
+// SetUpdatedBy sets the value of UpdatedBy.
+func (s *ActionTypeCatalogUpdatedPayload) SetUpdatedBy(val string) {
+	s.UpdatedBy = val
+}
+
+// SetUpdatedFields sets the value of UpdatedFields.
+func (s *ActionTypeCatalogUpdatedPayload) SetUpdatedFields(val []string) {
+	s.UpdatedFields = val
+}
+
+type ActionTypeCatalogUpdatedPayloadEventType string
+
+const (
+	ActionTypeCatalogUpdatedPayloadEventTypeDatastorageActiontypeUpdated ActionTypeCatalogUpdatedPayloadEventType = "datastorage.actiontype.updated"
+)
+
+// AllValues returns all ActionTypeCatalogUpdatedPayloadEventType values.
+func (ActionTypeCatalogUpdatedPayloadEventType) AllValues() []ActionTypeCatalogUpdatedPayloadEventType {
+	return []ActionTypeCatalogUpdatedPayloadEventType{
+		ActionTypeCatalogUpdatedPayloadEventTypeDatastorageActiontypeUpdated,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ActionTypeCatalogUpdatedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case ActionTypeCatalogUpdatedPayloadEventTypeDatastorageActiontypeUpdated:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ActionTypeCatalogUpdatedPayloadEventType) UnmarshalText(data []byte) error {
+	switch ActionTypeCatalogUpdatedPayloadEventType(data) {
+	case ActionTypeCatalogUpdatedPayloadEventTypeDatastorageActiontypeUpdated:
+		*s = ActionTypeCatalogUpdatedPayloadEventTypeDatastorageActiontypeUpdated
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Request body for creating or re-enabling an action type.
+// Ref: #/components/schemas/ActionTypeCreateRequest
+type ActionTypeCreateRequest struct {
+	// PascalCase action type name (e.g., RestartPod).
+	Name        string                `json:"name"`
+	Description ActionTypeDescription `json:"description"`
+	// Identity of the registrant (K8s SA or user).
+	RegisteredBy string `json:"registeredBy"`
+}
+
+// GetName returns the value of Name.
+func (s *ActionTypeCreateRequest) GetName() string {
+	return s.Name
+}
+
+// GetDescription returns the value of Description.
+func (s *ActionTypeCreateRequest) GetDescription() ActionTypeDescription {
+	return s.Description
+}
+
+// GetRegisteredBy returns the value of RegisteredBy.
+func (s *ActionTypeCreateRequest) GetRegisteredBy() string {
+	return s.RegisteredBy
+}
+
+// SetName sets the value of Name.
+func (s *ActionTypeCreateRequest) SetName(val string) {
+	s.Name = val
+}
+
+// SetDescription sets the value of Description.
+func (s *ActionTypeCreateRequest) SetDescription(val ActionTypeDescription) {
+	s.Description = val
+}
+
+// SetRegisteredBy sets the value of RegisteredBy.
+func (s *ActionTypeCreateRequest) SetRegisteredBy(val string) {
+	s.RegisteredBy = val
+}
+
+// Response for action type create/re-enable.
+// Ref: #/components/schemas/ActionTypeCreateResponse
+type ActionTypeCreateResponse struct {
+	// PascalCase action type name.
+	ActionType  string                   `json:"actionType"`
+	Description OptActionTypeDescription `json:"description"`
+	// Outcome: created, exists, or reenabled.
+	Status ActionTypeCreateResponseStatus `json:"status"`
+	// True if re-enabled from disabled state.
+	WasReenabled bool `json:"wasReenabled"`
+}
+
+// GetActionType returns the value of ActionType.
+func (s *ActionTypeCreateResponse) GetActionType() string {
+	return s.ActionType
+}
+
+// GetDescription returns the value of Description.
+func (s *ActionTypeCreateResponse) GetDescription() OptActionTypeDescription {
+	return s.Description
+}
+
+// GetStatus returns the value of Status.
+func (s *ActionTypeCreateResponse) GetStatus() ActionTypeCreateResponseStatus {
+	return s.Status
+}
+
+// GetWasReenabled returns the value of WasReenabled.
+func (s *ActionTypeCreateResponse) GetWasReenabled() bool {
+	return s.WasReenabled
+}
+
+// SetActionType sets the value of ActionType.
+func (s *ActionTypeCreateResponse) SetActionType(val string) {
+	s.ActionType = val
+}
+
+// SetDescription sets the value of Description.
+func (s *ActionTypeCreateResponse) SetDescription(val OptActionTypeDescription) {
+	s.Description = val
+}
+
+// SetStatus sets the value of Status.
+func (s *ActionTypeCreateResponse) SetStatus(val ActionTypeCreateResponseStatus) {
+	s.Status = val
+}
+
+// SetWasReenabled sets the value of WasReenabled.
+func (s *ActionTypeCreateResponse) SetWasReenabled(val bool) {
+	s.WasReenabled = val
+}
+
+// Outcome: created, exists, or reenabled.
+type ActionTypeCreateResponseStatus string
+
+const (
+	ActionTypeCreateResponseStatusCreated   ActionTypeCreateResponseStatus = "created"
+	ActionTypeCreateResponseStatusExists    ActionTypeCreateResponseStatus = "exists"
+	ActionTypeCreateResponseStatusReenabled ActionTypeCreateResponseStatus = "reenabled"
+)
+
+// AllValues returns all ActionTypeCreateResponseStatus values.
+func (ActionTypeCreateResponseStatus) AllValues() []ActionTypeCreateResponseStatus {
+	return []ActionTypeCreateResponseStatus{
+		ActionTypeCreateResponseStatusCreated,
+		ActionTypeCreateResponseStatusExists,
+		ActionTypeCreateResponseStatusReenabled,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ActionTypeCreateResponseStatus) MarshalText() ([]byte, error) {
+	switch s {
+	case ActionTypeCreateResponseStatusCreated:
+		return []byte(s), nil
+	case ActionTypeCreateResponseStatusExists:
+		return []byte(s), nil
+	case ActionTypeCreateResponseStatusReenabled:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ActionTypeCreateResponseStatus) UnmarshalText(data []byte) error {
+	switch ActionTypeCreateResponseStatus(data) {
+	case ActionTypeCreateResponseStatusCreated:
+		*s = ActionTypeCreateResponseStatusCreated
+		return nil
+	case ActionTypeCreateResponseStatusExists:
+		*s = ActionTypeCreateResponseStatusExists
+		return nil
+	case ActionTypeCreateResponseStatusReenabled:
+		*s = ActionTypeCreateResponseStatusReenabled
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Structured description for an action type.
+// Ref: #/components/schemas/ActionTypeDescription
+type ActionTypeDescription struct {
+	// What this action type concretely does.
+	What string `json:"what"`
+	// When this action type is appropriate.
+	WhenToUse string `json:"whenToUse"`
+	// Exclusion conditions.
+	WhenNotToUse OptString `json:"whenNotToUse"`
+	// Conditions to verify before use.
+	Preconditions OptString `json:"preconditions"`
+}
+
+// GetWhat returns the value of What.
+func (s *ActionTypeDescription) GetWhat() string {
+	return s.What
+}
+
+// GetWhenToUse returns the value of WhenToUse.
+func (s *ActionTypeDescription) GetWhenToUse() string {
+	return s.WhenToUse
+}
+
+// GetWhenNotToUse returns the value of WhenNotToUse.
+func (s *ActionTypeDescription) GetWhenNotToUse() OptString {
+	return s.WhenNotToUse
+}
+
+// GetPreconditions returns the value of Preconditions.
+func (s *ActionTypeDescription) GetPreconditions() OptString {
+	return s.Preconditions
+}
+
+// SetWhat sets the value of What.
+func (s *ActionTypeDescription) SetWhat(val string) {
+	s.What = val
+}
+
+// SetWhenToUse sets the value of WhenToUse.
+func (s *ActionTypeDescription) SetWhenToUse(val string) {
+	s.WhenToUse = val
+}
+
+// SetWhenNotToUse sets the value of WhenNotToUse.
+func (s *ActionTypeDescription) SetWhenNotToUse(val OptString) {
+	s.WhenNotToUse = val
+}
+
+// SetPreconditions sets the value of Preconditions.
+func (s *ActionTypeDescription) SetPreconditions(val OptString) {
+	s.Preconditions = val
+}
+
+// Structured description of an action type for audit payloads.
+// Ref: #/components/schemas/ActionTypeDescriptionPayload
+type ActionTypeDescriptionPayload struct {
+	What          string    `json:"what"`
+	WhenToUse     string    `json:"when_to_use"`
+	WhenNotToUse  OptString `json:"when_not_to_use"`
+	Preconditions OptString `json:"preconditions"`
+}
+
+// GetWhat returns the value of What.
+func (s *ActionTypeDescriptionPayload) GetWhat() string {
+	return s.What
+}
+
+// GetWhenToUse returns the value of WhenToUse.
+func (s *ActionTypeDescriptionPayload) GetWhenToUse() string {
+	return s.WhenToUse
+}
+
+// GetWhenNotToUse returns the value of WhenNotToUse.
+func (s *ActionTypeDescriptionPayload) GetWhenNotToUse() OptString {
+	return s.WhenNotToUse
+}
+
+// GetPreconditions returns the value of Preconditions.
+func (s *ActionTypeDescriptionPayload) GetPreconditions() OptString {
+	return s.Preconditions
+}
+
+// SetWhat sets the value of What.
+func (s *ActionTypeDescriptionPayload) SetWhat(val string) {
+	s.What = val
+}
+
+// SetWhenToUse sets the value of WhenToUse.
+func (s *ActionTypeDescriptionPayload) SetWhenToUse(val string) {
+	s.WhenToUse = val
+}
+
+// SetWhenNotToUse sets the value of WhenNotToUse.
+func (s *ActionTypeDescriptionPayload) SetWhenNotToUse(val OptString) {
+	s.WhenNotToUse = val
+}
+
+// SetPreconditions sets the value of Preconditions.
+func (s *ActionTypeDescriptionPayload) SetPreconditions(val OptString) {
+	s.Preconditions = val
+}
+
+// 409 response when disable is denied due to active workflow dependencies.
+// Ref: #/components/schemas/ActionTypeDisableDeniedResponse
+type ActionTypeDisableDeniedResponse struct {
+	ActionType string `json:"actionType"`
+	// Number of active workflows referencing this action type.
+	DependentWorkflowCount int `json:"dependentWorkflowCount"`
+	// Names of dependent workflows.
+	DependentWorkflows []string `json:"dependentWorkflows"`
+}
+
+// GetActionType returns the value of ActionType.
+func (s *ActionTypeDisableDeniedResponse) GetActionType() string {
+	return s.ActionType
+}
+
+// GetDependentWorkflowCount returns the value of DependentWorkflowCount.
+func (s *ActionTypeDisableDeniedResponse) GetDependentWorkflowCount() int {
+	return s.DependentWorkflowCount
+}
+
+// GetDependentWorkflows returns the value of DependentWorkflows.
+func (s *ActionTypeDisableDeniedResponse) GetDependentWorkflows() []string {
+	return s.DependentWorkflows
+}
+
+// SetActionType sets the value of ActionType.
+func (s *ActionTypeDisableDeniedResponse) SetActionType(val string) {
+	s.ActionType = val
+}
+
+// SetDependentWorkflowCount sets the value of DependentWorkflowCount.
+func (s *ActionTypeDisableDeniedResponse) SetDependentWorkflowCount(val int) {
+	s.DependentWorkflowCount = val
+}
+
+// SetDependentWorkflows sets the value of DependentWorkflows.
+func (s *ActionTypeDisableDeniedResponse) SetDependentWorkflows(val []string) {
+	s.DependentWorkflows = val
+}
+
+func (*ActionTypeDisableDeniedResponse) disableActionTypeRes() {}
+
+// Request body for disabling an action type.
+// Ref: #/components/schemas/ActionTypeDisableRequest
+type ActionTypeDisableRequest struct {
+	// Identity of who is disabling.
+	DisabledBy string `json:"disabledBy"`
+}
+
+// GetDisabledBy returns the value of DisabledBy.
+func (s *ActionTypeDisableRequest) GetDisabledBy() string {
+	return s.DisabledBy
+}
+
+// SetDisabledBy sets the value of DisabledBy.
+func (s *ActionTypeDisableRequest) SetDisabledBy(val string) {
+	s.DisabledBy = val
+}
+
+// Response for successful action type disable.
+// Ref: #/components/schemas/ActionTypeDisableResponse
+type ActionTypeDisableResponse struct {
+	ActionType string                          `json:"actionType"`
+	Status     ActionTypeDisableResponseStatus `json:"status"`
+}
+
+// GetActionType returns the value of ActionType.
+func (s *ActionTypeDisableResponse) GetActionType() string {
+	return s.ActionType
+}
+
+// GetStatus returns the value of Status.
+func (s *ActionTypeDisableResponse) GetStatus() ActionTypeDisableResponseStatus {
+	return s.Status
+}
+
+// SetActionType sets the value of ActionType.
+func (s *ActionTypeDisableResponse) SetActionType(val string) {
+	s.ActionType = val
+}
+
+// SetStatus sets the value of Status.
+func (s *ActionTypeDisableResponse) SetStatus(val ActionTypeDisableResponseStatus) {
+	s.Status = val
+}
+
+func (*ActionTypeDisableResponse) disableActionTypeRes() {}
+
+type ActionTypeDisableResponseStatus string
+
+const (
+	ActionTypeDisableResponseStatusDisabled ActionTypeDisableResponseStatus = "disabled"
+)
+
+// AllValues returns all ActionTypeDisableResponseStatus values.
+func (ActionTypeDisableResponseStatus) AllValues() []ActionTypeDisableResponseStatus {
+	return []ActionTypeDisableResponseStatus{
+		ActionTypeDisableResponseStatusDisabled,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ActionTypeDisableResponseStatus) MarshalText() ([]byte, error) {
+	switch s {
+	case ActionTypeDisableResponseStatusDisabled:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ActionTypeDisableResponseStatus) UnmarshalText(data []byte) error {
+	switch ActionTypeDisableResponseStatus(data) {
+	case ActionTypeDisableResponseStatusDisabled:
+		*s = ActionTypeDisableResponseStatusDisabled
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Single action type with description and workflow count.
 // Ref: #/components/schemas/ActionTypeEntry
 type ActionTypeEntry struct {
@@ -692,6 +1583,335 @@ func (s *ActionTypeListResponse) SetPagination(val PaginationMetadata) {
 
 func (*ActionTypeListResponse) listAvailableActionsRes() {}
 
+// Request body for updating action type description. updatedBy is optional — the audit trail
+// (Phase 6a) captures the actor authoritatively.
+// Ref: #/components/schemas/ActionTypeUpdateRequest
+type ActionTypeUpdateRequest struct {
+	Description ActionTypeDescription `json:"description"`
+	// Identity of who made the change.
+	UpdatedBy OptString `json:"updatedBy"`
+}
+
+// GetDescription returns the value of Description.
+func (s *ActionTypeUpdateRequest) GetDescription() ActionTypeDescription {
+	return s.Description
+}
+
+// GetUpdatedBy returns the value of UpdatedBy.
+func (s *ActionTypeUpdateRequest) GetUpdatedBy() OptString {
+	return s.UpdatedBy
+}
+
+// SetDescription sets the value of Description.
+func (s *ActionTypeUpdateRequest) SetDescription(val ActionTypeDescription) {
+	s.Description = val
+}
+
+// SetUpdatedBy sets the value of UpdatedBy.
+func (s *ActionTypeUpdateRequest) SetUpdatedBy(val OptString) {
+	s.UpdatedBy = val
+}
+
+// Response for action type description update.
+// Ref: #/components/schemas/ActionTypeUpdateResponse
+type ActionTypeUpdateResponse struct {
+	ActionType     string                `json:"actionType"`
+	OldDescription ActionTypeDescription `json:"oldDescription"`
+	NewDescription ActionTypeDescription `json:"newDescription"`
+	// List of changed field names.
+	UpdatedFields []string `json:"updatedFields"`
+}
+
+// GetActionType returns the value of ActionType.
+func (s *ActionTypeUpdateResponse) GetActionType() string {
+	return s.ActionType
+}
+
+// GetOldDescription returns the value of OldDescription.
+func (s *ActionTypeUpdateResponse) GetOldDescription() ActionTypeDescription {
+	return s.OldDescription
+}
+
+// GetNewDescription returns the value of NewDescription.
+func (s *ActionTypeUpdateResponse) GetNewDescription() ActionTypeDescription {
+	return s.NewDescription
+}
+
+// GetUpdatedFields returns the value of UpdatedFields.
+func (s *ActionTypeUpdateResponse) GetUpdatedFields() []string {
+	return s.UpdatedFields
+}
+
+// SetActionType sets the value of ActionType.
+func (s *ActionTypeUpdateResponse) SetActionType(val string) {
+	s.ActionType = val
+}
+
+// SetOldDescription sets the value of OldDescription.
+func (s *ActionTypeUpdateResponse) SetOldDescription(val ActionTypeDescription) {
+	s.OldDescription = val
+}
+
+// SetNewDescription sets the value of NewDescription.
+func (s *ActionTypeUpdateResponse) SetNewDescription(val ActionTypeDescription) {
+	s.NewDescription = val
+}
+
+// SetUpdatedFields sets the value of UpdatedFields.
+func (s *ActionTypeUpdateResponse) SetUpdatedFields(val []string) {
+	s.UpdatedFields = val
+}
+
+func (*ActionTypeUpdateResponse) updateActionTypeRes() {}
+
+// AW audit payload for ActionType CRD admission events.
+// Ref: #/components/schemas/ActionTypeWebhookAuditPayload
+type ActionTypeWebhookAuditPayload struct {
+	EventType ActionTypeWebhookAuditPayloadEventType `json:"event_type"`
+	// PascalCase name from spec.name.
+	ActionTypeName string `json:"action_type_name"`
+	// K8s metadata.name.
+	CrdName string `json:"crd_name"`
+	// K8s namespace.
+	CrdNamespace      string                              `json:"crd_namespace"`
+	Action            ActionTypeWebhookAuditPayloadAction `json:"action"`
+	PreviouslyExisted OptBool                             `json:"previously_existed"`
+	CatalogStatus     OptString                           `json:"catalog_status"`
+	DenialReason      OptString                           `json:"denial_reason"`
+	DenialOperation   OptString                           `json:"denial_operation"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *ActionTypeWebhookAuditPayload) GetEventType() ActionTypeWebhookAuditPayloadEventType {
+	return s.EventType
+}
+
+// GetActionTypeName returns the value of ActionTypeName.
+func (s *ActionTypeWebhookAuditPayload) GetActionTypeName() string {
+	return s.ActionTypeName
+}
+
+// GetCrdName returns the value of CrdName.
+func (s *ActionTypeWebhookAuditPayload) GetCrdName() string {
+	return s.CrdName
+}
+
+// GetCrdNamespace returns the value of CrdNamespace.
+func (s *ActionTypeWebhookAuditPayload) GetCrdNamespace() string {
+	return s.CrdNamespace
+}
+
+// GetAction returns the value of Action.
+func (s *ActionTypeWebhookAuditPayload) GetAction() ActionTypeWebhookAuditPayloadAction {
+	return s.Action
+}
+
+// GetPreviouslyExisted returns the value of PreviouslyExisted.
+func (s *ActionTypeWebhookAuditPayload) GetPreviouslyExisted() OptBool {
+	return s.PreviouslyExisted
+}
+
+// GetCatalogStatus returns the value of CatalogStatus.
+func (s *ActionTypeWebhookAuditPayload) GetCatalogStatus() OptString {
+	return s.CatalogStatus
+}
+
+// GetDenialReason returns the value of DenialReason.
+func (s *ActionTypeWebhookAuditPayload) GetDenialReason() OptString {
+	return s.DenialReason
+}
+
+// GetDenialOperation returns the value of DenialOperation.
+func (s *ActionTypeWebhookAuditPayload) GetDenialOperation() OptString {
+	return s.DenialOperation
+}
+
+// SetEventType sets the value of EventType.
+func (s *ActionTypeWebhookAuditPayload) SetEventType(val ActionTypeWebhookAuditPayloadEventType) {
+	s.EventType = val
+}
+
+// SetActionTypeName sets the value of ActionTypeName.
+func (s *ActionTypeWebhookAuditPayload) SetActionTypeName(val string) {
+	s.ActionTypeName = val
+}
+
+// SetCrdName sets the value of CrdName.
+func (s *ActionTypeWebhookAuditPayload) SetCrdName(val string) {
+	s.CrdName = val
+}
+
+// SetCrdNamespace sets the value of CrdNamespace.
+func (s *ActionTypeWebhookAuditPayload) SetCrdNamespace(val string) {
+	s.CrdNamespace = val
+}
+
+// SetAction sets the value of Action.
+func (s *ActionTypeWebhookAuditPayload) SetAction(val ActionTypeWebhookAuditPayloadAction) {
+	s.Action = val
+}
+
+// SetPreviouslyExisted sets the value of PreviouslyExisted.
+func (s *ActionTypeWebhookAuditPayload) SetPreviouslyExisted(val OptBool) {
+	s.PreviouslyExisted = val
+}
+
+// SetCatalogStatus sets the value of CatalogStatus.
+func (s *ActionTypeWebhookAuditPayload) SetCatalogStatus(val OptString) {
+	s.CatalogStatus = val
+}
+
+// SetDenialReason sets the value of DenialReason.
+func (s *ActionTypeWebhookAuditPayload) SetDenialReason(val OptString) {
+	s.DenialReason = val
+}
+
+// SetDenialOperation sets the value of DenialOperation.
+func (s *ActionTypeWebhookAuditPayload) SetDenialOperation(val OptString) {
+	s.DenialOperation = val
+}
+
+type ActionTypeWebhookAuditPayloadAction string
+
+const (
+	ActionTypeWebhookAuditPayloadActionCreate ActionTypeWebhookAuditPayloadAction = "create"
+	ActionTypeWebhookAuditPayloadActionUpdate ActionTypeWebhookAuditPayloadAction = "update"
+	ActionTypeWebhookAuditPayloadActionDelete ActionTypeWebhookAuditPayloadAction = "delete"
+	ActionTypeWebhookAuditPayloadActionDenied ActionTypeWebhookAuditPayloadAction = "denied"
+)
+
+// AllValues returns all ActionTypeWebhookAuditPayloadAction values.
+func (ActionTypeWebhookAuditPayloadAction) AllValues() []ActionTypeWebhookAuditPayloadAction {
+	return []ActionTypeWebhookAuditPayloadAction{
+		ActionTypeWebhookAuditPayloadActionCreate,
+		ActionTypeWebhookAuditPayloadActionUpdate,
+		ActionTypeWebhookAuditPayloadActionDelete,
+		ActionTypeWebhookAuditPayloadActionDenied,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ActionTypeWebhookAuditPayloadAction) MarshalText() ([]byte, error) {
+	switch s {
+	case ActionTypeWebhookAuditPayloadActionCreate:
+		return []byte(s), nil
+	case ActionTypeWebhookAuditPayloadActionUpdate:
+		return []byte(s), nil
+	case ActionTypeWebhookAuditPayloadActionDelete:
+		return []byte(s), nil
+	case ActionTypeWebhookAuditPayloadActionDenied:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ActionTypeWebhookAuditPayloadAction) UnmarshalText(data []byte) error {
+	switch ActionTypeWebhookAuditPayloadAction(data) {
+	case ActionTypeWebhookAuditPayloadActionCreate:
+		*s = ActionTypeWebhookAuditPayloadActionCreate
+		return nil
+	case ActionTypeWebhookAuditPayloadActionUpdate:
+		*s = ActionTypeWebhookAuditPayloadActionUpdate
+		return nil
+	case ActionTypeWebhookAuditPayloadActionDelete:
+		*s = ActionTypeWebhookAuditPayloadActionDelete
+		return nil
+	case ActionTypeWebhookAuditPayloadActionDenied:
+		*s = ActionTypeWebhookAuditPayloadActionDenied
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+type ActionTypeWebhookAuditPayloadEventType string
+
+const (
+	ActionTypeWebhookAuditPayloadEventTypeActiontypeAdmittedCreate ActionTypeWebhookAuditPayloadEventType = "actiontype.admitted.create"
+	ActionTypeWebhookAuditPayloadEventTypeActiontypeAdmittedUpdate ActionTypeWebhookAuditPayloadEventType = "actiontype.admitted.update"
+	ActionTypeWebhookAuditPayloadEventTypeActiontypeAdmittedDelete ActionTypeWebhookAuditPayloadEventType = "actiontype.admitted.delete"
+	ActionTypeWebhookAuditPayloadEventTypeActiontypeDeniedCreate   ActionTypeWebhookAuditPayloadEventType = "actiontype.denied.create"
+	ActionTypeWebhookAuditPayloadEventTypeActiontypeDeniedUpdate   ActionTypeWebhookAuditPayloadEventType = "actiontype.denied.update"
+	ActionTypeWebhookAuditPayloadEventTypeActiontypeDeniedDelete   ActionTypeWebhookAuditPayloadEventType = "actiontype.denied.delete"
+)
+
+// AllValues returns all ActionTypeWebhookAuditPayloadEventType values.
+func (ActionTypeWebhookAuditPayloadEventType) AllValues() []ActionTypeWebhookAuditPayloadEventType {
+	return []ActionTypeWebhookAuditPayloadEventType{
+		ActionTypeWebhookAuditPayloadEventTypeActiontypeAdmittedCreate,
+		ActionTypeWebhookAuditPayloadEventTypeActiontypeAdmittedUpdate,
+		ActionTypeWebhookAuditPayloadEventTypeActiontypeAdmittedDelete,
+		ActionTypeWebhookAuditPayloadEventTypeActiontypeDeniedCreate,
+		ActionTypeWebhookAuditPayloadEventTypeActiontypeDeniedUpdate,
+		ActionTypeWebhookAuditPayloadEventTypeActiontypeDeniedDelete,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ActionTypeWebhookAuditPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case ActionTypeWebhookAuditPayloadEventTypeActiontypeAdmittedCreate:
+		return []byte(s), nil
+	case ActionTypeWebhookAuditPayloadEventTypeActiontypeAdmittedUpdate:
+		return []byte(s), nil
+	case ActionTypeWebhookAuditPayloadEventTypeActiontypeAdmittedDelete:
+		return []byte(s), nil
+	case ActionTypeWebhookAuditPayloadEventTypeActiontypeDeniedCreate:
+		return []byte(s), nil
+	case ActionTypeWebhookAuditPayloadEventTypeActiontypeDeniedUpdate:
+		return []byte(s), nil
+	case ActionTypeWebhookAuditPayloadEventTypeActiontypeDeniedDelete:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ActionTypeWebhookAuditPayloadEventType) UnmarshalText(data []byte) error {
+	switch ActionTypeWebhookAuditPayloadEventType(data) {
+	case ActionTypeWebhookAuditPayloadEventTypeActiontypeAdmittedCreate:
+		*s = ActionTypeWebhookAuditPayloadEventTypeActiontypeAdmittedCreate
+		return nil
+	case ActionTypeWebhookAuditPayloadEventTypeActiontypeAdmittedUpdate:
+		*s = ActionTypeWebhookAuditPayloadEventTypeActiontypeAdmittedUpdate
+		return nil
+	case ActionTypeWebhookAuditPayloadEventTypeActiontypeAdmittedDelete:
+		*s = ActionTypeWebhookAuditPayloadEventTypeActiontypeAdmittedDelete
+		return nil
+	case ActionTypeWebhookAuditPayloadEventTypeActiontypeDeniedCreate:
+		*s = ActionTypeWebhookAuditPayloadEventTypeActiontypeDeniedCreate
+		return nil
+	case ActionTypeWebhookAuditPayloadEventTypeActiontypeDeniedUpdate:
+		*s = ActionTypeWebhookAuditPayloadEventTypeActiontypeDeniedUpdate
+		return nil
+	case ActionTypeWebhookAuditPayloadEventTypeActiontypeDeniedDelete:
+		*s = ActionTypeWebhookAuditPayloadEventTypeActiontypeDeniedDelete
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Response containing the count of active workflows referencing an action type.
+// Ref: #/components/schemas/ActionTypeWorkflowCountResponse
+type ActionTypeWorkflowCountResponse struct {
+	// Number of active RemediationWorkflows referencing this action type.
+	Count int `json:"count"`
+}
+
+// GetCount returns the value of Count.
+func (s *ActionTypeWorkflowCountResponse) GetCount() int {
+	return s.Count
+}
+
+// SetCount sets the value of Count.
+func (s *ActionTypeWorkflowCountResponse) SetCount(val int) {
+	s.Count = val
+}
+
 // Response when audit event is queued for async processing (202 Accepted).
 // Ref: #/components/schemas/AsyncAcceptanceResponse
 type AsyncAcceptanceResponse struct {
@@ -732,20 +1952,21 @@ type AuditEvent struct {
 	EventType string `json:"event_type"`
 	// ISO 8601 timestamp when the event occurred.
 	EventTimestamp time.Time `json:"event_timestamp"`
-	// Service-level event category (ADR-034 v1.7).
-	// Per ADR-034 v1.2: event_category MUST match the service name that emits the event.
+	// Domain-level event category (ADR-034 v1.8).
+	// Per convention: event_category identifies the business domain of the event.
+	// The emitter/service is captured in the event_type first segment.
 	// Values:
-	// - gateway: Gateway Service
-	// - notification: Notification Service
-	// - analysis: AI Analysis Controller (NOT HolmesGPT API)
+	// - gateway: Gateway signal and CRD lifecycle events
+	// - notification: Notification delivery and escalation events
+	// - analysis: AI analysis, agent calls, and rego evaluation events
 	// - aiagent: AI Agent Provider (HolmesGPT API) - autonomous tool-calling agent
 	// - signalprocessing: Signal Processing Service
-	// - workflow: Workflow Catalog Service
-	// - workflowexecution: WorkflowExecution Controller (ADR-034 v1.5)
-	// - approval: RemediationApprovalRequest Controller (BR-AUDIT-006)
-	// - orchestration: Remediation Orchestrator Service
+	// - workflow: Workflow catalog and discovery events
+	// - workflowexecution: Workflow execution lifecycle events
+	// - orchestration: Remediation orchestration lifecycle events
 	// - webhook: Authentication Webhook Service (SOC2 CC8.1 operator attribution)
-	// - effectiveness: Effectiveness Monitor Controller (ADR-EM-001).
+	// - effectiveness: Effectiveness assessment and monitoring events
+	// - actiontype: ActionType taxonomy lifecycle events (Issue #300).
 	EventCategory AuditEventEventCategory `json:"event_category"`
 	// Action performed (ADR-034).
 	EventAction string `json:"event_action"`
@@ -962,20 +2183,21 @@ func (s *AuditEvent) SetEventDate(val OptNilDate) {
 	s.EventDate = val
 }
 
-// Service-level event category (ADR-034 v1.7).
-// Per ADR-034 v1.2: event_category MUST match the service name that emits the event.
+// Domain-level event category (ADR-034 v1.8).
+// Per convention: event_category identifies the business domain of the event.
+// The emitter/service is captured in the event_type first segment.
 // Values:
-// - gateway: Gateway Service
-// - notification: Notification Service
-// - analysis: AI Analysis Controller (NOT HolmesGPT API)
+// - gateway: Gateway signal and CRD lifecycle events
+// - notification: Notification delivery and escalation events
+// - analysis: AI analysis, agent calls, and rego evaluation events
 // - aiagent: AI Agent Provider (HolmesGPT API) - autonomous tool-calling agent
 // - signalprocessing: Signal Processing Service
-// - workflow: Workflow Catalog Service
-// - workflowexecution: WorkflowExecution Controller (ADR-034 v1.5)
-// - approval: RemediationApprovalRequest Controller (BR-AUDIT-006)
-// - orchestration: Remediation Orchestrator Service
+// - workflow: Workflow catalog and discovery events
+// - workflowexecution: Workflow execution lifecycle events
+// - orchestration: Remediation orchestration lifecycle events
 // - webhook: Authentication Webhook Service (SOC2 CC8.1 operator attribution)
-// - effectiveness: Effectiveness Monitor Controller (ADR-EM-001).
+// - effectiveness: Effectiveness assessment and monitoring events
+// - actiontype: ActionType taxonomy lifecycle events (Issue #300).
 type AuditEventEventCategory string
 
 const (
@@ -989,6 +2211,7 @@ const (
 	AuditEventEventCategoryOrchestration     AuditEventEventCategory = "orchestration"
 	AuditEventEventCategoryWebhook           AuditEventEventCategory = "webhook"
 	AuditEventEventCategoryEffectiveness     AuditEventEventCategory = "effectiveness"
+	AuditEventEventCategoryActiontype        AuditEventEventCategory = "actiontype"
 )
 
 // AllValues returns all AuditEventEventCategory values.
@@ -1004,6 +2227,7 @@ func (AuditEventEventCategory) AllValues() []AuditEventEventCategory {
 		AuditEventEventCategoryOrchestration,
 		AuditEventEventCategoryWebhook,
 		AuditEventEventCategoryEffectiveness,
+		AuditEventEventCategoryActiontype,
 	}
 }
 
@@ -1029,6 +2253,8 @@ func (s AuditEventEventCategory) MarshalText() ([]byte, error) {
 	case AuditEventEventCategoryWebhook:
 		return []byte(s), nil
 	case AuditEventEventCategoryEffectiveness:
+		return []byte(s), nil
+	case AuditEventEventCategoryActiontype:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -1067,6 +2293,9 @@ func (s *AuditEventEventCategory) UnmarshalText(data []byte) error {
 		return nil
 	case AuditEventEventCategoryEffectiveness:
 		*s = AuditEventEventCategoryEffectiveness
+		return nil
+	case AuditEventEventCategoryActiontype:
+		*s = AuditEventEventCategoryActiontype
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -1107,7 +2336,14 @@ type AuditEventEventData struct {
 	LLMToolCallPayload                     LLMToolCallPayload
 	WorkflowValidationPayload              WorkflowValidationPayload
 	RemediationRequestWebhookAuditPayload  RemediationRequestWebhookAuditPayload
+	RemediationWorkflowWebhookAuditPayload RemediationWorkflowWebhookAuditPayload
 	EffectivenessAssessmentAuditPayload    EffectivenessAssessmentAuditPayload
+	ActionTypeCatalogCreatedPayload        ActionTypeCatalogCreatedPayload
+	ActionTypeCatalogUpdatedPayload        ActionTypeCatalogUpdatedPayload
+	ActionTypeCatalogDisabledPayload       ActionTypeCatalogDisabledPayload
+	ActionTypeCatalogReenabledPayload      ActionTypeCatalogReenabledPayload
+	ActionTypeCatalogDisableDeniedPayload  ActionTypeCatalogDisableDeniedPayload
+	ActionTypeWebhookAuditPayload          ActionTypeWebhookAuditPayload
 }
 
 // AuditEventEventDataType is oneOf type of AuditEventEventData.
@@ -1176,12 +2412,26 @@ const (
 	LLMToolCallPayloadAuditEventEventData                                            AuditEventEventDataType = "aiagent.llm.tool_call"
 	WorkflowValidationPayloadAuditEventEventData                                     AuditEventEventDataType = "aiagent.workflow.validation_attempt"
 	RemediationRequestWebhookAuditPayloadAuditEventEventData                         AuditEventEventDataType = "webhook.remediationrequest.timeout_modified"
+	AuditEventEventDataRemediationworkflowAdmittedCreateAuditEventEventData          AuditEventEventDataType = "remediationworkflow.admitted.create"
+	AuditEventEventDataRemediationworkflowAdmittedDeleteAuditEventEventData          AuditEventEventDataType = "remediationworkflow.admitted.delete"
+	AuditEventEventDataRemediationworkflowAdmittedDeniedAuditEventEventData          AuditEventEventDataType = "remediationworkflow.admitted.denied"
 	AuditEventEventDataEffectivenessAlertAssessedAuditEventEventData                 AuditEventEventDataType = "effectiveness.alert.assessed"
 	AuditEventEventDataEffectivenessAssessmentCompletedAuditEventEventData           AuditEventEventDataType = "effectiveness.assessment.completed"
 	AuditEventEventDataEffectivenessAssessmentScheduledAuditEventEventData           AuditEventEventDataType = "effectiveness.assessment.scheduled"
 	AuditEventEventDataEffectivenessHashComputedAuditEventEventData                  AuditEventEventDataType = "effectiveness.hash.computed"
 	AuditEventEventDataEffectivenessHealthAssessedAuditEventEventData                AuditEventEventDataType = "effectiveness.health.assessed"
 	AuditEventEventDataEffectivenessMetricsAssessedAuditEventEventData               AuditEventEventDataType = "effectiveness.metrics.assessed"
+	ActionTypeCatalogCreatedPayloadAuditEventEventData                               AuditEventEventDataType = "datastorage.actiontype.created"
+	ActionTypeCatalogUpdatedPayloadAuditEventEventData                               AuditEventEventDataType = "datastorage.actiontype.updated"
+	ActionTypeCatalogDisabledPayloadAuditEventEventData                              AuditEventEventDataType = "datastorage.actiontype.disabled"
+	ActionTypeCatalogReenabledPayloadAuditEventEventData                             AuditEventEventDataType = "datastorage.actiontype.reenabled"
+	ActionTypeCatalogDisableDeniedPayloadAuditEventEventData                         AuditEventEventDataType = "datastorage.actiontype.disable_denied"
+	AuditEventEventDataActiontypeAdmittedCreateAuditEventEventData                   AuditEventEventDataType = "actiontype.admitted.create"
+	AuditEventEventDataActiontypeAdmittedDeleteAuditEventEventData                   AuditEventEventDataType = "actiontype.admitted.delete"
+	AuditEventEventDataActiontypeAdmittedUpdateAuditEventEventData                   AuditEventEventDataType = "actiontype.admitted.update"
+	AuditEventEventDataActiontypeDeniedCreateAuditEventEventData                     AuditEventEventDataType = "actiontype.denied.create"
+	AuditEventEventDataActiontypeDeniedDeleteAuditEventEventData                     AuditEventEventDataType = "actiontype.denied.delete"
+	AuditEventEventDataActiontypeDeniedUpdateAuditEventEventData                     AuditEventEventDataType = "actiontype.denied.update"
 )
 
 // IsGatewayAuditPayload reports whether AuditEventEventData is GatewayAuditPayload.
@@ -1359,10 +2609,55 @@ func (s AuditEventEventData) IsRemediationRequestWebhookAuditPayload() bool {
 	return s.Type == RemediationRequestWebhookAuditPayloadAuditEventEventData
 }
 
+// IsRemediationWorkflowWebhookAuditPayload reports whether AuditEventEventData is RemediationWorkflowWebhookAuditPayload.
+func (s AuditEventEventData) IsRemediationWorkflowWebhookAuditPayload() bool {
+	switch s.Type {
+	case AuditEventEventDataRemediationworkflowAdmittedCreateAuditEventEventData, AuditEventEventDataRemediationworkflowAdmittedDeleteAuditEventEventData, AuditEventEventDataRemediationworkflowAdmittedDeniedAuditEventEventData:
+		return true
+	default:
+		return false
+	}
+}
+
 // IsEffectivenessAssessmentAuditPayload reports whether AuditEventEventData is EffectivenessAssessmentAuditPayload.
 func (s AuditEventEventData) IsEffectivenessAssessmentAuditPayload() bool {
 	switch s.Type {
 	case AuditEventEventDataEffectivenessAlertAssessedAuditEventEventData, AuditEventEventDataEffectivenessAssessmentCompletedAuditEventEventData, AuditEventEventDataEffectivenessAssessmentScheduledAuditEventEventData, AuditEventEventDataEffectivenessHashComputedAuditEventEventData, AuditEventEventDataEffectivenessHealthAssessedAuditEventEventData, AuditEventEventDataEffectivenessMetricsAssessedAuditEventEventData:
+		return true
+	default:
+		return false
+	}
+}
+
+// IsActionTypeCatalogCreatedPayload reports whether AuditEventEventData is ActionTypeCatalogCreatedPayload.
+func (s AuditEventEventData) IsActionTypeCatalogCreatedPayload() bool {
+	return s.Type == ActionTypeCatalogCreatedPayloadAuditEventEventData
+}
+
+// IsActionTypeCatalogUpdatedPayload reports whether AuditEventEventData is ActionTypeCatalogUpdatedPayload.
+func (s AuditEventEventData) IsActionTypeCatalogUpdatedPayload() bool {
+	return s.Type == ActionTypeCatalogUpdatedPayloadAuditEventEventData
+}
+
+// IsActionTypeCatalogDisabledPayload reports whether AuditEventEventData is ActionTypeCatalogDisabledPayload.
+func (s AuditEventEventData) IsActionTypeCatalogDisabledPayload() bool {
+	return s.Type == ActionTypeCatalogDisabledPayloadAuditEventEventData
+}
+
+// IsActionTypeCatalogReenabledPayload reports whether AuditEventEventData is ActionTypeCatalogReenabledPayload.
+func (s AuditEventEventData) IsActionTypeCatalogReenabledPayload() bool {
+	return s.Type == ActionTypeCatalogReenabledPayloadAuditEventEventData
+}
+
+// IsActionTypeCatalogDisableDeniedPayload reports whether AuditEventEventData is ActionTypeCatalogDisableDeniedPayload.
+func (s AuditEventEventData) IsActionTypeCatalogDisableDeniedPayload() bool {
+	return s.Type == ActionTypeCatalogDisableDeniedPayloadAuditEventEventData
+}
+
+// IsActionTypeWebhookAuditPayload reports whether AuditEventEventData is ActionTypeWebhookAuditPayload.
+func (s AuditEventEventData) IsActionTypeWebhookAuditPayload() bool {
+	switch s.Type {
+	case AuditEventEventDataActiontypeAdmittedCreateAuditEventEventData, AuditEventEventDataActiontypeAdmittedDeleteAuditEventEventData, AuditEventEventDataActiontypeAdmittedUpdateAuditEventEventData, AuditEventEventDataActiontypeDeniedCreateAuditEventEventData, AuditEventEventDataActiontypeDeniedDeleteAuditEventEventData, AuditEventEventDataActiontypeDeniedUpdateAuditEventEventData:
 		return true
 	default:
 		return false
@@ -2206,6 +3501,45 @@ func NewRemediationRequestWebhookAuditPayloadAuditEventEventData(v RemediationRe
 	return s
 }
 
+// SetRemediationWorkflowWebhookAuditPayload sets AuditEventEventData to RemediationWorkflowWebhookAuditPayload.
+// panics if `t` is not associated with RemediationWorkflowWebhookAuditPayload
+func (s *AuditEventEventData) SetRemediationWorkflowWebhookAuditPayload(t AuditEventEventDataType, v RemediationWorkflowWebhookAuditPayload) {
+	s.Type = t
+	s.RemediationWorkflowWebhookAuditPayload = v
+	if !s.IsRemediationWorkflowWebhookAuditPayload() {
+		panic(fmt.Errorf("invariant: %v is not RemediationWorkflowWebhookAuditPayload", t))
+	}
+}
+
+// GetRemediationWorkflowWebhookAuditPayload returns RemediationWorkflowWebhookAuditPayload and true boolean if AuditEventEventData is RemediationWorkflowWebhookAuditPayload.
+func (s AuditEventEventData) GetRemediationWorkflowWebhookAuditPayload() (v RemediationWorkflowWebhookAuditPayload, ok bool) {
+	if !s.IsRemediationWorkflowWebhookAuditPayload() {
+		return v, false
+	}
+	return s.RemediationWorkflowWebhookAuditPayload, true
+}
+
+// NewAuditEventEventDataRemediationworkflowAdmittedCreateAuditEventEventData returns new AuditEventEventData from RemediationWorkflowWebhookAuditPayload.
+func NewAuditEventEventDataRemediationworkflowAdmittedCreateAuditEventEventData(v RemediationWorkflowWebhookAuditPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetRemediationWorkflowWebhookAuditPayload(AuditEventEventDataRemediationworkflowAdmittedCreateAuditEventEventData, v)
+	return s
+}
+
+// NewAuditEventEventDataRemediationworkflowAdmittedDeleteAuditEventEventData returns new AuditEventEventData from RemediationWorkflowWebhookAuditPayload.
+func NewAuditEventEventDataRemediationworkflowAdmittedDeleteAuditEventEventData(v RemediationWorkflowWebhookAuditPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetRemediationWorkflowWebhookAuditPayload(AuditEventEventDataRemediationworkflowAdmittedDeleteAuditEventEventData, v)
+	return s
+}
+
+// NewAuditEventEventDataRemediationworkflowAdmittedDeniedAuditEventEventData returns new AuditEventEventData from RemediationWorkflowWebhookAuditPayload.
+func NewAuditEventEventDataRemediationworkflowAdmittedDeniedAuditEventEventData(v RemediationWorkflowWebhookAuditPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetRemediationWorkflowWebhookAuditPayload(AuditEventEventDataRemediationworkflowAdmittedDeniedAuditEventEventData, v)
+	return s
+}
+
 // SetEffectivenessAssessmentAuditPayload sets AuditEventEventData to EffectivenessAssessmentAuditPayload.
 // panics if `t` is not associated with EffectivenessAssessmentAuditPayload
 func (s *AuditEventEventData) SetEffectivenessAssessmentAuditPayload(t AuditEventEventDataType, v EffectivenessAssessmentAuditPayload) {
@@ -2266,6 +3600,171 @@ func NewAuditEventEventDataEffectivenessMetricsAssessedAuditEventEventData(v Eff
 	return s
 }
 
+// SetActionTypeCatalogCreatedPayload sets AuditEventEventData to ActionTypeCatalogCreatedPayload.
+func (s *AuditEventEventData) SetActionTypeCatalogCreatedPayload(v ActionTypeCatalogCreatedPayload) {
+	s.Type = ActionTypeCatalogCreatedPayloadAuditEventEventData
+	s.ActionTypeCatalogCreatedPayload = v
+}
+
+// GetActionTypeCatalogCreatedPayload returns ActionTypeCatalogCreatedPayload and true boolean if AuditEventEventData is ActionTypeCatalogCreatedPayload.
+func (s AuditEventEventData) GetActionTypeCatalogCreatedPayload() (v ActionTypeCatalogCreatedPayload, ok bool) {
+	if !s.IsActionTypeCatalogCreatedPayload() {
+		return v, false
+	}
+	return s.ActionTypeCatalogCreatedPayload, true
+}
+
+// NewActionTypeCatalogCreatedPayloadAuditEventEventData returns new AuditEventEventData from ActionTypeCatalogCreatedPayload.
+func NewActionTypeCatalogCreatedPayloadAuditEventEventData(v ActionTypeCatalogCreatedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetActionTypeCatalogCreatedPayload(v)
+	return s
+}
+
+// SetActionTypeCatalogUpdatedPayload sets AuditEventEventData to ActionTypeCatalogUpdatedPayload.
+func (s *AuditEventEventData) SetActionTypeCatalogUpdatedPayload(v ActionTypeCatalogUpdatedPayload) {
+	s.Type = ActionTypeCatalogUpdatedPayloadAuditEventEventData
+	s.ActionTypeCatalogUpdatedPayload = v
+}
+
+// GetActionTypeCatalogUpdatedPayload returns ActionTypeCatalogUpdatedPayload and true boolean if AuditEventEventData is ActionTypeCatalogUpdatedPayload.
+func (s AuditEventEventData) GetActionTypeCatalogUpdatedPayload() (v ActionTypeCatalogUpdatedPayload, ok bool) {
+	if !s.IsActionTypeCatalogUpdatedPayload() {
+		return v, false
+	}
+	return s.ActionTypeCatalogUpdatedPayload, true
+}
+
+// NewActionTypeCatalogUpdatedPayloadAuditEventEventData returns new AuditEventEventData from ActionTypeCatalogUpdatedPayload.
+func NewActionTypeCatalogUpdatedPayloadAuditEventEventData(v ActionTypeCatalogUpdatedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetActionTypeCatalogUpdatedPayload(v)
+	return s
+}
+
+// SetActionTypeCatalogDisabledPayload sets AuditEventEventData to ActionTypeCatalogDisabledPayload.
+func (s *AuditEventEventData) SetActionTypeCatalogDisabledPayload(v ActionTypeCatalogDisabledPayload) {
+	s.Type = ActionTypeCatalogDisabledPayloadAuditEventEventData
+	s.ActionTypeCatalogDisabledPayload = v
+}
+
+// GetActionTypeCatalogDisabledPayload returns ActionTypeCatalogDisabledPayload and true boolean if AuditEventEventData is ActionTypeCatalogDisabledPayload.
+func (s AuditEventEventData) GetActionTypeCatalogDisabledPayload() (v ActionTypeCatalogDisabledPayload, ok bool) {
+	if !s.IsActionTypeCatalogDisabledPayload() {
+		return v, false
+	}
+	return s.ActionTypeCatalogDisabledPayload, true
+}
+
+// NewActionTypeCatalogDisabledPayloadAuditEventEventData returns new AuditEventEventData from ActionTypeCatalogDisabledPayload.
+func NewActionTypeCatalogDisabledPayloadAuditEventEventData(v ActionTypeCatalogDisabledPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetActionTypeCatalogDisabledPayload(v)
+	return s
+}
+
+// SetActionTypeCatalogReenabledPayload sets AuditEventEventData to ActionTypeCatalogReenabledPayload.
+func (s *AuditEventEventData) SetActionTypeCatalogReenabledPayload(v ActionTypeCatalogReenabledPayload) {
+	s.Type = ActionTypeCatalogReenabledPayloadAuditEventEventData
+	s.ActionTypeCatalogReenabledPayload = v
+}
+
+// GetActionTypeCatalogReenabledPayload returns ActionTypeCatalogReenabledPayload and true boolean if AuditEventEventData is ActionTypeCatalogReenabledPayload.
+func (s AuditEventEventData) GetActionTypeCatalogReenabledPayload() (v ActionTypeCatalogReenabledPayload, ok bool) {
+	if !s.IsActionTypeCatalogReenabledPayload() {
+		return v, false
+	}
+	return s.ActionTypeCatalogReenabledPayload, true
+}
+
+// NewActionTypeCatalogReenabledPayloadAuditEventEventData returns new AuditEventEventData from ActionTypeCatalogReenabledPayload.
+func NewActionTypeCatalogReenabledPayloadAuditEventEventData(v ActionTypeCatalogReenabledPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetActionTypeCatalogReenabledPayload(v)
+	return s
+}
+
+// SetActionTypeCatalogDisableDeniedPayload sets AuditEventEventData to ActionTypeCatalogDisableDeniedPayload.
+func (s *AuditEventEventData) SetActionTypeCatalogDisableDeniedPayload(v ActionTypeCatalogDisableDeniedPayload) {
+	s.Type = ActionTypeCatalogDisableDeniedPayloadAuditEventEventData
+	s.ActionTypeCatalogDisableDeniedPayload = v
+}
+
+// GetActionTypeCatalogDisableDeniedPayload returns ActionTypeCatalogDisableDeniedPayload and true boolean if AuditEventEventData is ActionTypeCatalogDisableDeniedPayload.
+func (s AuditEventEventData) GetActionTypeCatalogDisableDeniedPayload() (v ActionTypeCatalogDisableDeniedPayload, ok bool) {
+	if !s.IsActionTypeCatalogDisableDeniedPayload() {
+		return v, false
+	}
+	return s.ActionTypeCatalogDisableDeniedPayload, true
+}
+
+// NewActionTypeCatalogDisableDeniedPayloadAuditEventEventData returns new AuditEventEventData from ActionTypeCatalogDisableDeniedPayload.
+func NewActionTypeCatalogDisableDeniedPayloadAuditEventEventData(v ActionTypeCatalogDisableDeniedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetActionTypeCatalogDisableDeniedPayload(v)
+	return s
+}
+
+// SetActionTypeWebhookAuditPayload sets AuditEventEventData to ActionTypeWebhookAuditPayload.
+// panics if `t` is not associated with ActionTypeWebhookAuditPayload
+func (s *AuditEventEventData) SetActionTypeWebhookAuditPayload(t AuditEventEventDataType, v ActionTypeWebhookAuditPayload) {
+	s.Type = t
+	s.ActionTypeWebhookAuditPayload = v
+	if !s.IsActionTypeWebhookAuditPayload() {
+		panic(fmt.Errorf("invariant: %v is not ActionTypeWebhookAuditPayload", t))
+	}
+}
+
+// GetActionTypeWebhookAuditPayload returns ActionTypeWebhookAuditPayload and true boolean if AuditEventEventData is ActionTypeWebhookAuditPayload.
+func (s AuditEventEventData) GetActionTypeWebhookAuditPayload() (v ActionTypeWebhookAuditPayload, ok bool) {
+	if !s.IsActionTypeWebhookAuditPayload() {
+		return v, false
+	}
+	return s.ActionTypeWebhookAuditPayload, true
+}
+
+// NewAuditEventEventDataActiontypeAdmittedCreateAuditEventEventData returns new AuditEventEventData from ActionTypeWebhookAuditPayload.
+func NewAuditEventEventDataActiontypeAdmittedCreateAuditEventEventData(v ActionTypeWebhookAuditPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetActionTypeWebhookAuditPayload(AuditEventEventDataActiontypeAdmittedCreateAuditEventEventData, v)
+	return s
+}
+
+// NewAuditEventEventDataActiontypeAdmittedDeleteAuditEventEventData returns new AuditEventEventData from ActionTypeWebhookAuditPayload.
+func NewAuditEventEventDataActiontypeAdmittedDeleteAuditEventEventData(v ActionTypeWebhookAuditPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetActionTypeWebhookAuditPayload(AuditEventEventDataActiontypeAdmittedDeleteAuditEventEventData, v)
+	return s
+}
+
+// NewAuditEventEventDataActiontypeAdmittedUpdateAuditEventEventData returns new AuditEventEventData from ActionTypeWebhookAuditPayload.
+func NewAuditEventEventDataActiontypeAdmittedUpdateAuditEventEventData(v ActionTypeWebhookAuditPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetActionTypeWebhookAuditPayload(AuditEventEventDataActiontypeAdmittedUpdateAuditEventEventData, v)
+	return s
+}
+
+// NewAuditEventEventDataActiontypeDeniedCreateAuditEventEventData returns new AuditEventEventData from ActionTypeWebhookAuditPayload.
+func NewAuditEventEventDataActiontypeDeniedCreateAuditEventEventData(v ActionTypeWebhookAuditPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetActionTypeWebhookAuditPayload(AuditEventEventDataActiontypeDeniedCreateAuditEventEventData, v)
+	return s
+}
+
+// NewAuditEventEventDataActiontypeDeniedDeleteAuditEventEventData returns new AuditEventEventData from ActionTypeWebhookAuditPayload.
+func NewAuditEventEventDataActiontypeDeniedDeleteAuditEventEventData(v ActionTypeWebhookAuditPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetActionTypeWebhookAuditPayload(AuditEventEventDataActiontypeDeniedDeleteAuditEventEventData, v)
+	return s
+}
+
+// NewAuditEventEventDataActiontypeDeniedUpdateAuditEventEventData returns new AuditEventEventData from ActionTypeWebhookAuditPayload.
+func NewAuditEventEventDataActiontypeDeniedUpdateAuditEventEventData(v ActionTypeWebhookAuditPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetActionTypeWebhookAuditPayload(AuditEventEventDataActiontypeDeniedUpdateAuditEventEventData, v)
+	return s
+}
+
 // Result of the event.
 type AuditEventEventOutcome string
 
@@ -2323,20 +3822,21 @@ type AuditEventRequest struct {
 	EventType string `json:"event_type"`
 	// ISO 8601 timestamp when the event occurred.
 	EventTimestamp time.Time `json:"event_timestamp"`
-	// Service-level event category (ADR-034 v1.7).
-	// Per ADR-034 v1.2: event_category MUST match the service name that emits the event.
+	// Domain-level event category (ADR-034 v1.8).
+	// Per convention: event_category identifies the business domain of the event.
+	// The emitter/service is captured in the event_type first segment.
 	// Values:
-	// - gateway: Gateway Service
-	// - notification: Notification Service
-	// - analysis: AI Analysis Controller (NOT HolmesGPT API)
+	// - gateway: Gateway signal and CRD lifecycle events
+	// - notification: Notification delivery and escalation events
+	// - analysis: AI analysis, agent calls, and rego evaluation events
 	// - aiagent: AI Agent Provider (HolmesGPT API) - autonomous tool-calling agent
 	// - signalprocessing: Signal Processing Service
-	// - workflow: Workflow Catalog Service
-	// - workflowexecution: WorkflowExecution Controller (ADR-034 v1.5)
-	// - approval: RemediationApprovalRequest Controller (BR-AUDIT-006)
-	// - orchestration: Remediation Orchestrator Service
+	// - workflow: Workflow catalog and discovery events
+	// - workflowexecution: Workflow execution lifecycle events
+	// - orchestration: Remediation orchestration lifecycle events
 	// - webhook: Authentication Webhook Service (SOC2 CC8.1 operator attribution)
-	// - effectiveness: Effectiveness Monitor Controller (ADR-EM-001).
+	// - effectiveness: Effectiveness assessment and monitoring events
+	// - actiontype: ActionType taxonomy lifecycle events (Issue #300).
 	EventCategory AuditEventRequestEventCategory `json:"event_category"`
 	// Action performed (ADR-034).
 	EventAction string `json:"event_action"`
@@ -2530,20 +4030,21 @@ func (s *AuditEventRequest) SetEventData(val AuditEventRequestEventData) {
 	s.EventData = val
 }
 
-// Service-level event category (ADR-034 v1.7).
-// Per ADR-034 v1.2: event_category MUST match the service name that emits the event.
+// Domain-level event category (ADR-034 v1.8).
+// Per convention: event_category identifies the business domain of the event.
+// The emitter/service is captured in the event_type first segment.
 // Values:
-// - gateway: Gateway Service
-// - notification: Notification Service
-// - analysis: AI Analysis Controller (NOT HolmesGPT API)
+// - gateway: Gateway signal and CRD lifecycle events
+// - notification: Notification delivery and escalation events
+// - analysis: AI analysis, agent calls, and rego evaluation events
 // - aiagent: AI Agent Provider (HolmesGPT API) - autonomous tool-calling agent
 // - signalprocessing: Signal Processing Service
-// - workflow: Workflow Catalog Service
-// - workflowexecution: WorkflowExecution Controller (ADR-034 v1.5)
-// - approval: RemediationApprovalRequest Controller (BR-AUDIT-006)
-// - orchestration: Remediation Orchestrator Service
+// - workflow: Workflow catalog and discovery events
+// - workflowexecution: Workflow execution lifecycle events
+// - orchestration: Remediation orchestration lifecycle events
 // - webhook: Authentication Webhook Service (SOC2 CC8.1 operator attribution)
-// - effectiveness: Effectiveness Monitor Controller (ADR-EM-001).
+// - effectiveness: Effectiveness assessment and monitoring events
+// - actiontype: ActionType taxonomy lifecycle events (Issue #300).
 type AuditEventRequestEventCategory string
 
 const (
@@ -2557,6 +4058,7 @@ const (
 	AuditEventRequestEventCategoryOrchestration     AuditEventRequestEventCategory = "orchestration"
 	AuditEventRequestEventCategoryWebhook           AuditEventRequestEventCategory = "webhook"
 	AuditEventRequestEventCategoryEffectiveness     AuditEventRequestEventCategory = "effectiveness"
+	AuditEventRequestEventCategoryActiontype        AuditEventRequestEventCategory = "actiontype"
 )
 
 // AllValues returns all AuditEventRequestEventCategory values.
@@ -2572,6 +4074,7 @@ func (AuditEventRequestEventCategory) AllValues() []AuditEventRequestEventCatego
 		AuditEventRequestEventCategoryOrchestration,
 		AuditEventRequestEventCategoryWebhook,
 		AuditEventRequestEventCategoryEffectiveness,
+		AuditEventRequestEventCategoryActiontype,
 	}
 }
 
@@ -2597,6 +4100,8 @@ func (s AuditEventRequestEventCategory) MarshalText() ([]byte, error) {
 	case AuditEventRequestEventCategoryWebhook:
 		return []byte(s), nil
 	case AuditEventRequestEventCategoryEffectiveness:
+		return []byte(s), nil
+	case AuditEventRequestEventCategoryActiontype:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -2635,6 +4140,9 @@ func (s *AuditEventRequestEventCategory) UnmarshalText(data []byte) error {
 		return nil
 	case AuditEventRequestEventCategoryEffectiveness:
 		*s = AuditEventRequestEventCategoryEffectiveness
+		return nil
+	case AuditEventRequestEventCategoryActiontype:
+		*s = AuditEventRequestEventCategoryActiontype
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -2675,7 +4183,14 @@ type AuditEventRequestEventData struct {
 	LLMToolCallPayload                     LLMToolCallPayload
 	WorkflowValidationPayload              WorkflowValidationPayload
 	RemediationRequestWebhookAuditPayload  RemediationRequestWebhookAuditPayload
+	RemediationWorkflowWebhookAuditPayload RemediationWorkflowWebhookAuditPayload
 	EffectivenessAssessmentAuditPayload    EffectivenessAssessmentAuditPayload
+	ActionTypeCatalogCreatedPayload        ActionTypeCatalogCreatedPayload
+	ActionTypeCatalogUpdatedPayload        ActionTypeCatalogUpdatedPayload
+	ActionTypeCatalogDisabledPayload       ActionTypeCatalogDisabledPayload
+	ActionTypeCatalogReenabledPayload      ActionTypeCatalogReenabledPayload
+	ActionTypeCatalogDisableDeniedPayload  ActionTypeCatalogDisableDeniedPayload
+	ActionTypeWebhookAuditPayload          ActionTypeWebhookAuditPayload
 }
 
 // AuditEventRequestEventDataType is oneOf type of AuditEventRequestEventData.
@@ -2744,12 +4259,26 @@ const (
 	LLMToolCallPayloadAuditEventRequestEventData                                                   AuditEventRequestEventDataType = "aiagent.llm.tool_call"
 	WorkflowValidationPayloadAuditEventRequestEventData                                            AuditEventRequestEventDataType = "aiagent.workflow.validation_attempt"
 	RemediationRequestWebhookAuditPayloadAuditEventRequestEventData                                AuditEventRequestEventDataType = "webhook.remediationrequest.timeout_modified"
+	AuditEventRequestEventDataRemediationworkflowAdmittedCreateAuditEventRequestEventData          AuditEventRequestEventDataType = "remediationworkflow.admitted.create"
+	AuditEventRequestEventDataRemediationworkflowAdmittedDeleteAuditEventRequestEventData          AuditEventRequestEventDataType = "remediationworkflow.admitted.delete"
+	AuditEventRequestEventDataRemediationworkflowAdmittedDeniedAuditEventRequestEventData          AuditEventRequestEventDataType = "remediationworkflow.admitted.denied"
 	AuditEventRequestEventDataEffectivenessAlertAssessedAuditEventRequestEventData                 AuditEventRequestEventDataType = "effectiveness.alert.assessed"
 	AuditEventRequestEventDataEffectivenessAssessmentCompletedAuditEventRequestEventData           AuditEventRequestEventDataType = "effectiveness.assessment.completed"
 	AuditEventRequestEventDataEffectivenessAssessmentScheduledAuditEventRequestEventData           AuditEventRequestEventDataType = "effectiveness.assessment.scheduled"
 	AuditEventRequestEventDataEffectivenessHashComputedAuditEventRequestEventData                  AuditEventRequestEventDataType = "effectiveness.hash.computed"
 	AuditEventRequestEventDataEffectivenessHealthAssessedAuditEventRequestEventData                AuditEventRequestEventDataType = "effectiveness.health.assessed"
 	AuditEventRequestEventDataEffectivenessMetricsAssessedAuditEventRequestEventData               AuditEventRequestEventDataType = "effectiveness.metrics.assessed"
+	ActionTypeCatalogCreatedPayloadAuditEventRequestEventData                                      AuditEventRequestEventDataType = "datastorage.actiontype.created"
+	ActionTypeCatalogUpdatedPayloadAuditEventRequestEventData                                      AuditEventRequestEventDataType = "datastorage.actiontype.updated"
+	ActionTypeCatalogDisabledPayloadAuditEventRequestEventData                                     AuditEventRequestEventDataType = "datastorage.actiontype.disabled"
+	ActionTypeCatalogReenabledPayloadAuditEventRequestEventData                                    AuditEventRequestEventDataType = "datastorage.actiontype.reenabled"
+	ActionTypeCatalogDisableDeniedPayloadAuditEventRequestEventData                                AuditEventRequestEventDataType = "datastorage.actiontype.disable_denied"
+	AuditEventRequestEventDataActiontypeAdmittedCreateAuditEventRequestEventData                   AuditEventRequestEventDataType = "actiontype.admitted.create"
+	AuditEventRequestEventDataActiontypeAdmittedDeleteAuditEventRequestEventData                   AuditEventRequestEventDataType = "actiontype.admitted.delete"
+	AuditEventRequestEventDataActiontypeAdmittedUpdateAuditEventRequestEventData                   AuditEventRequestEventDataType = "actiontype.admitted.update"
+	AuditEventRequestEventDataActiontypeDeniedCreateAuditEventRequestEventData                     AuditEventRequestEventDataType = "actiontype.denied.create"
+	AuditEventRequestEventDataActiontypeDeniedDeleteAuditEventRequestEventData                     AuditEventRequestEventDataType = "actiontype.denied.delete"
+	AuditEventRequestEventDataActiontypeDeniedUpdateAuditEventRequestEventData                     AuditEventRequestEventDataType = "actiontype.denied.update"
 )
 
 // IsGatewayAuditPayload reports whether AuditEventRequestEventData is GatewayAuditPayload.
@@ -2927,10 +4456,55 @@ func (s AuditEventRequestEventData) IsRemediationRequestWebhookAuditPayload() bo
 	return s.Type == RemediationRequestWebhookAuditPayloadAuditEventRequestEventData
 }
 
+// IsRemediationWorkflowWebhookAuditPayload reports whether AuditEventRequestEventData is RemediationWorkflowWebhookAuditPayload.
+func (s AuditEventRequestEventData) IsRemediationWorkflowWebhookAuditPayload() bool {
+	switch s.Type {
+	case AuditEventRequestEventDataRemediationworkflowAdmittedCreateAuditEventRequestEventData, AuditEventRequestEventDataRemediationworkflowAdmittedDeleteAuditEventRequestEventData, AuditEventRequestEventDataRemediationworkflowAdmittedDeniedAuditEventRequestEventData:
+		return true
+	default:
+		return false
+	}
+}
+
 // IsEffectivenessAssessmentAuditPayload reports whether AuditEventRequestEventData is EffectivenessAssessmentAuditPayload.
 func (s AuditEventRequestEventData) IsEffectivenessAssessmentAuditPayload() bool {
 	switch s.Type {
 	case AuditEventRequestEventDataEffectivenessAlertAssessedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessAssessmentCompletedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessAssessmentScheduledAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessHashComputedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessHealthAssessedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessMetricsAssessedAuditEventRequestEventData:
+		return true
+	default:
+		return false
+	}
+}
+
+// IsActionTypeCatalogCreatedPayload reports whether AuditEventRequestEventData is ActionTypeCatalogCreatedPayload.
+func (s AuditEventRequestEventData) IsActionTypeCatalogCreatedPayload() bool {
+	return s.Type == ActionTypeCatalogCreatedPayloadAuditEventRequestEventData
+}
+
+// IsActionTypeCatalogUpdatedPayload reports whether AuditEventRequestEventData is ActionTypeCatalogUpdatedPayload.
+func (s AuditEventRequestEventData) IsActionTypeCatalogUpdatedPayload() bool {
+	return s.Type == ActionTypeCatalogUpdatedPayloadAuditEventRequestEventData
+}
+
+// IsActionTypeCatalogDisabledPayload reports whether AuditEventRequestEventData is ActionTypeCatalogDisabledPayload.
+func (s AuditEventRequestEventData) IsActionTypeCatalogDisabledPayload() bool {
+	return s.Type == ActionTypeCatalogDisabledPayloadAuditEventRequestEventData
+}
+
+// IsActionTypeCatalogReenabledPayload reports whether AuditEventRequestEventData is ActionTypeCatalogReenabledPayload.
+func (s AuditEventRequestEventData) IsActionTypeCatalogReenabledPayload() bool {
+	return s.Type == ActionTypeCatalogReenabledPayloadAuditEventRequestEventData
+}
+
+// IsActionTypeCatalogDisableDeniedPayload reports whether AuditEventRequestEventData is ActionTypeCatalogDisableDeniedPayload.
+func (s AuditEventRequestEventData) IsActionTypeCatalogDisableDeniedPayload() bool {
+	return s.Type == ActionTypeCatalogDisableDeniedPayloadAuditEventRequestEventData
+}
+
+// IsActionTypeWebhookAuditPayload reports whether AuditEventRequestEventData is ActionTypeWebhookAuditPayload.
+func (s AuditEventRequestEventData) IsActionTypeWebhookAuditPayload() bool {
+	switch s.Type {
+	case AuditEventRequestEventDataActiontypeAdmittedCreateAuditEventRequestEventData, AuditEventRequestEventDataActiontypeAdmittedDeleteAuditEventRequestEventData, AuditEventRequestEventDataActiontypeAdmittedUpdateAuditEventRequestEventData, AuditEventRequestEventDataActiontypeDeniedCreateAuditEventRequestEventData, AuditEventRequestEventDataActiontypeDeniedDeleteAuditEventRequestEventData, AuditEventRequestEventDataActiontypeDeniedUpdateAuditEventRequestEventData:
 		return true
 	default:
 		return false
@@ -3774,6 +5348,45 @@ func NewRemediationRequestWebhookAuditPayloadAuditEventRequestEventData(v Remedi
 	return s
 }
 
+// SetRemediationWorkflowWebhookAuditPayload sets AuditEventRequestEventData to RemediationWorkflowWebhookAuditPayload.
+// panics if `t` is not associated with RemediationWorkflowWebhookAuditPayload
+func (s *AuditEventRequestEventData) SetRemediationWorkflowWebhookAuditPayload(t AuditEventRequestEventDataType, v RemediationWorkflowWebhookAuditPayload) {
+	s.Type = t
+	s.RemediationWorkflowWebhookAuditPayload = v
+	if !s.IsRemediationWorkflowWebhookAuditPayload() {
+		panic(fmt.Errorf("invariant: %v is not RemediationWorkflowWebhookAuditPayload", t))
+	}
+}
+
+// GetRemediationWorkflowWebhookAuditPayload returns RemediationWorkflowWebhookAuditPayload and true boolean if AuditEventRequestEventData is RemediationWorkflowWebhookAuditPayload.
+func (s AuditEventRequestEventData) GetRemediationWorkflowWebhookAuditPayload() (v RemediationWorkflowWebhookAuditPayload, ok bool) {
+	if !s.IsRemediationWorkflowWebhookAuditPayload() {
+		return v, false
+	}
+	return s.RemediationWorkflowWebhookAuditPayload, true
+}
+
+// NewAuditEventRequestEventDataRemediationworkflowAdmittedCreateAuditEventRequestEventData returns new AuditEventRequestEventData from RemediationWorkflowWebhookAuditPayload.
+func NewAuditEventRequestEventDataRemediationworkflowAdmittedCreateAuditEventRequestEventData(v RemediationWorkflowWebhookAuditPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetRemediationWorkflowWebhookAuditPayload(AuditEventRequestEventDataRemediationworkflowAdmittedCreateAuditEventRequestEventData, v)
+	return s
+}
+
+// NewAuditEventRequestEventDataRemediationworkflowAdmittedDeleteAuditEventRequestEventData returns new AuditEventRequestEventData from RemediationWorkflowWebhookAuditPayload.
+func NewAuditEventRequestEventDataRemediationworkflowAdmittedDeleteAuditEventRequestEventData(v RemediationWorkflowWebhookAuditPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetRemediationWorkflowWebhookAuditPayload(AuditEventRequestEventDataRemediationworkflowAdmittedDeleteAuditEventRequestEventData, v)
+	return s
+}
+
+// NewAuditEventRequestEventDataRemediationworkflowAdmittedDeniedAuditEventRequestEventData returns new AuditEventRequestEventData from RemediationWorkflowWebhookAuditPayload.
+func NewAuditEventRequestEventDataRemediationworkflowAdmittedDeniedAuditEventRequestEventData(v RemediationWorkflowWebhookAuditPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetRemediationWorkflowWebhookAuditPayload(AuditEventRequestEventDataRemediationworkflowAdmittedDeniedAuditEventRequestEventData, v)
+	return s
+}
+
 // SetEffectivenessAssessmentAuditPayload sets AuditEventRequestEventData to EffectivenessAssessmentAuditPayload.
 // panics if `t` is not associated with EffectivenessAssessmentAuditPayload
 func (s *AuditEventRequestEventData) SetEffectivenessAssessmentAuditPayload(t AuditEventRequestEventDataType, v EffectivenessAssessmentAuditPayload) {
@@ -3831,6 +5444,171 @@ func NewAuditEventRequestEventDataEffectivenessHealthAssessedAuditEventRequestEv
 func NewAuditEventRequestEventDataEffectivenessMetricsAssessedAuditEventRequestEventData(v EffectivenessAssessmentAuditPayload) AuditEventRequestEventData {
 	var s AuditEventRequestEventData
 	s.SetEffectivenessAssessmentAuditPayload(AuditEventRequestEventDataEffectivenessMetricsAssessedAuditEventRequestEventData, v)
+	return s
+}
+
+// SetActionTypeCatalogCreatedPayload sets AuditEventRequestEventData to ActionTypeCatalogCreatedPayload.
+func (s *AuditEventRequestEventData) SetActionTypeCatalogCreatedPayload(v ActionTypeCatalogCreatedPayload) {
+	s.Type = ActionTypeCatalogCreatedPayloadAuditEventRequestEventData
+	s.ActionTypeCatalogCreatedPayload = v
+}
+
+// GetActionTypeCatalogCreatedPayload returns ActionTypeCatalogCreatedPayload and true boolean if AuditEventRequestEventData is ActionTypeCatalogCreatedPayload.
+func (s AuditEventRequestEventData) GetActionTypeCatalogCreatedPayload() (v ActionTypeCatalogCreatedPayload, ok bool) {
+	if !s.IsActionTypeCatalogCreatedPayload() {
+		return v, false
+	}
+	return s.ActionTypeCatalogCreatedPayload, true
+}
+
+// NewActionTypeCatalogCreatedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from ActionTypeCatalogCreatedPayload.
+func NewActionTypeCatalogCreatedPayloadAuditEventRequestEventData(v ActionTypeCatalogCreatedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetActionTypeCatalogCreatedPayload(v)
+	return s
+}
+
+// SetActionTypeCatalogUpdatedPayload sets AuditEventRequestEventData to ActionTypeCatalogUpdatedPayload.
+func (s *AuditEventRequestEventData) SetActionTypeCatalogUpdatedPayload(v ActionTypeCatalogUpdatedPayload) {
+	s.Type = ActionTypeCatalogUpdatedPayloadAuditEventRequestEventData
+	s.ActionTypeCatalogUpdatedPayload = v
+}
+
+// GetActionTypeCatalogUpdatedPayload returns ActionTypeCatalogUpdatedPayload and true boolean if AuditEventRequestEventData is ActionTypeCatalogUpdatedPayload.
+func (s AuditEventRequestEventData) GetActionTypeCatalogUpdatedPayload() (v ActionTypeCatalogUpdatedPayload, ok bool) {
+	if !s.IsActionTypeCatalogUpdatedPayload() {
+		return v, false
+	}
+	return s.ActionTypeCatalogUpdatedPayload, true
+}
+
+// NewActionTypeCatalogUpdatedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from ActionTypeCatalogUpdatedPayload.
+func NewActionTypeCatalogUpdatedPayloadAuditEventRequestEventData(v ActionTypeCatalogUpdatedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetActionTypeCatalogUpdatedPayload(v)
+	return s
+}
+
+// SetActionTypeCatalogDisabledPayload sets AuditEventRequestEventData to ActionTypeCatalogDisabledPayload.
+func (s *AuditEventRequestEventData) SetActionTypeCatalogDisabledPayload(v ActionTypeCatalogDisabledPayload) {
+	s.Type = ActionTypeCatalogDisabledPayloadAuditEventRequestEventData
+	s.ActionTypeCatalogDisabledPayload = v
+}
+
+// GetActionTypeCatalogDisabledPayload returns ActionTypeCatalogDisabledPayload and true boolean if AuditEventRequestEventData is ActionTypeCatalogDisabledPayload.
+func (s AuditEventRequestEventData) GetActionTypeCatalogDisabledPayload() (v ActionTypeCatalogDisabledPayload, ok bool) {
+	if !s.IsActionTypeCatalogDisabledPayload() {
+		return v, false
+	}
+	return s.ActionTypeCatalogDisabledPayload, true
+}
+
+// NewActionTypeCatalogDisabledPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from ActionTypeCatalogDisabledPayload.
+func NewActionTypeCatalogDisabledPayloadAuditEventRequestEventData(v ActionTypeCatalogDisabledPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetActionTypeCatalogDisabledPayload(v)
+	return s
+}
+
+// SetActionTypeCatalogReenabledPayload sets AuditEventRequestEventData to ActionTypeCatalogReenabledPayload.
+func (s *AuditEventRequestEventData) SetActionTypeCatalogReenabledPayload(v ActionTypeCatalogReenabledPayload) {
+	s.Type = ActionTypeCatalogReenabledPayloadAuditEventRequestEventData
+	s.ActionTypeCatalogReenabledPayload = v
+}
+
+// GetActionTypeCatalogReenabledPayload returns ActionTypeCatalogReenabledPayload and true boolean if AuditEventRequestEventData is ActionTypeCatalogReenabledPayload.
+func (s AuditEventRequestEventData) GetActionTypeCatalogReenabledPayload() (v ActionTypeCatalogReenabledPayload, ok bool) {
+	if !s.IsActionTypeCatalogReenabledPayload() {
+		return v, false
+	}
+	return s.ActionTypeCatalogReenabledPayload, true
+}
+
+// NewActionTypeCatalogReenabledPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from ActionTypeCatalogReenabledPayload.
+func NewActionTypeCatalogReenabledPayloadAuditEventRequestEventData(v ActionTypeCatalogReenabledPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetActionTypeCatalogReenabledPayload(v)
+	return s
+}
+
+// SetActionTypeCatalogDisableDeniedPayload sets AuditEventRequestEventData to ActionTypeCatalogDisableDeniedPayload.
+func (s *AuditEventRequestEventData) SetActionTypeCatalogDisableDeniedPayload(v ActionTypeCatalogDisableDeniedPayload) {
+	s.Type = ActionTypeCatalogDisableDeniedPayloadAuditEventRequestEventData
+	s.ActionTypeCatalogDisableDeniedPayload = v
+}
+
+// GetActionTypeCatalogDisableDeniedPayload returns ActionTypeCatalogDisableDeniedPayload and true boolean if AuditEventRequestEventData is ActionTypeCatalogDisableDeniedPayload.
+func (s AuditEventRequestEventData) GetActionTypeCatalogDisableDeniedPayload() (v ActionTypeCatalogDisableDeniedPayload, ok bool) {
+	if !s.IsActionTypeCatalogDisableDeniedPayload() {
+		return v, false
+	}
+	return s.ActionTypeCatalogDisableDeniedPayload, true
+}
+
+// NewActionTypeCatalogDisableDeniedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from ActionTypeCatalogDisableDeniedPayload.
+func NewActionTypeCatalogDisableDeniedPayloadAuditEventRequestEventData(v ActionTypeCatalogDisableDeniedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetActionTypeCatalogDisableDeniedPayload(v)
+	return s
+}
+
+// SetActionTypeWebhookAuditPayload sets AuditEventRequestEventData to ActionTypeWebhookAuditPayload.
+// panics if `t` is not associated with ActionTypeWebhookAuditPayload
+func (s *AuditEventRequestEventData) SetActionTypeWebhookAuditPayload(t AuditEventRequestEventDataType, v ActionTypeWebhookAuditPayload) {
+	s.Type = t
+	s.ActionTypeWebhookAuditPayload = v
+	if !s.IsActionTypeWebhookAuditPayload() {
+		panic(fmt.Errorf("invariant: %v is not ActionTypeWebhookAuditPayload", t))
+	}
+}
+
+// GetActionTypeWebhookAuditPayload returns ActionTypeWebhookAuditPayload and true boolean if AuditEventRequestEventData is ActionTypeWebhookAuditPayload.
+func (s AuditEventRequestEventData) GetActionTypeWebhookAuditPayload() (v ActionTypeWebhookAuditPayload, ok bool) {
+	if !s.IsActionTypeWebhookAuditPayload() {
+		return v, false
+	}
+	return s.ActionTypeWebhookAuditPayload, true
+}
+
+// NewAuditEventRequestEventDataActiontypeAdmittedCreateAuditEventRequestEventData returns new AuditEventRequestEventData from ActionTypeWebhookAuditPayload.
+func NewAuditEventRequestEventDataActiontypeAdmittedCreateAuditEventRequestEventData(v ActionTypeWebhookAuditPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetActionTypeWebhookAuditPayload(AuditEventRequestEventDataActiontypeAdmittedCreateAuditEventRequestEventData, v)
+	return s
+}
+
+// NewAuditEventRequestEventDataActiontypeAdmittedDeleteAuditEventRequestEventData returns new AuditEventRequestEventData from ActionTypeWebhookAuditPayload.
+func NewAuditEventRequestEventDataActiontypeAdmittedDeleteAuditEventRequestEventData(v ActionTypeWebhookAuditPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetActionTypeWebhookAuditPayload(AuditEventRequestEventDataActiontypeAdmittedDeleteAuditEventRequestEventData, v)
+	return s
+}
+
+// NewAuditEventRequestEventDataActiontypeAdmittedUpdateAuditEventRequestEventData returns new AuditEventRequestEventData from ActionTypeWebhookAuditPayload.
+func NewAuditEventRequestEventDataActiontypeAdmittedUpdateAuditEventRequestEventData(v ActionTypeWebhookAuditPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetActionTypeWebhookAuditPayload(AuditEventRequestEventDataActiontypeAdmittedUpdateAuditEventRequestEventData, v)
+	return s
+}
+
+// NewAuditEventRequestEventDataActiontypeDeniedCreateAuditEventRequestEventData returns new AuditEventRequestEventData from ActionTypeWebhookAuditPayload.
+func NewAuditEventRequestEventDataActiontypeDeniedCreateAuditEventRequestEventData(v ActionTypeWebhookAuditPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetActionTypeWebhookAuditPayload(AuditEventRequestEventDataActiontypeDeniedCreateAuditEventRequestEventData, v)
+	return s
+}
+
+// NewAuditEventRequestEventDataActiontypeDeniedDeleteAuditEventRequestEventData returns new AuditEventRequestEventData from ActionTypeWebhookAuditPayload.
+func NewAuditEventRequestEventDataActiontypeDeniedDeleteAuditEventRequestEventData(v ActionTypeWebhookAuditPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetActionTypeWebhookAuditPayload(AuditEventRequestEventDataActiontypeDeniedDeleteAuditEventRequestEventData, v)
+	return s
+}
+
+// NewAuditEventRequestEventDataActiontypeDeniedUpdateAuditEventRequestEventData returns new AuditEventRequestEventData from ActionTypeWebhookAuditPayload.
+func NewAuditEventRequestEventDataActiontypeDeniedUpdateAuditEventRequestEventData(v ActionTypeWebhookAuditPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetActionTypeWebhookAuditPayload(AuditEventRequestEventDataActiontypeDeniedUpdateAuditEventRequestEventData, v)
 	return s
 }
 
@@ -4519,6 +6297,14 @@ func (s *BatchAuditEventResponse) SetMessage(val OptString) {
 	s.Message = val
 }
 
+type CreateActionTypeCreated ActionTypeCreateResponse
+
+func (*CreateActionTypeCreated) createActionTypeRes() {}
+
+type CreateActionTypeOK ActionTypeCreateResponse
+
+func (*CreateActionTypeOK) createActionTypeRes() {}
+
 type CreateAuditEventBadRequest RFC7807Problem
 
 func (*CreateAuditEventBadRequest) createAuditEventRes() {}
@@ -4608,10 +6394,6 @@ type CreateNotificationAuditInternalServerError RFC7807Problem
 
 func (*CreateNotificationAuditInternalServerError) createNotificationAuditRes() {}
 
-type CreateWorkflowBadGateway RFC7807Problem
-
-func (*CreateWorkflowBadGateway) createWorkflowRes() {}
-
 type CreateWorkflowBadRequest RFC7807Problem
 
 func (*CreateWorkflowBadRequest) createWorkflowRes() {}
@@ -4620,39 +6402,69 @@ type CreateWorkflowConflict RFC7807Problem
 
 func (*CreateWorkflowConflict) createWorkflowRes() {}
 
+type CreateWorkflowCreated RemediationWorkflow
+
+func (*CreateWorkflowCreated) createWorkflowRes() {}
+
 type CreateWorkflowForbidden RFC7807Problem
 
 func (*CreateWorkflowForbidden) createWorkflowRes() {}
 
-// Ref: #/components/schemas/CreateWorkflowFromOCIRequest
-type CreateWorkflowFromOCIRequest struct {
-	// OCI image pullspec. Data Storage pulls this image, extracts
-	// /workflow-schema.yaml (ADR-043), validates it, and populates
-	// all catalog fields from the extracted schema.
-	SchemaImage string `json:"schemaImage"`
+// Ref: #/components/schemas/CreateWorkflowInlineRequest
+type CreateWorkflowInlineRequest struct {
+	// Raw YAML content of the RemediationWorkflow CRD. Data Storage
+	// parses the CRD envelope (apiVersion/kind/metadata/spec), validates
+	// the spec, and populates all catalog fields from it.
+	Content string `json:"content"`
+	// Registration source. Set to "crd" when the request originates from
+	// the Auth Webhook on CRD creation, or "api" for direct API calls.
+	Source OptString `json:"source"`
+	// Identity of the user or service account that triggered the registration.
+	// Populated from AdmissionReview.request.userInfo.username when source is "crd".
+	RegisteredBy OptString `json:"registeredBy"`
 }
 
-// GetSchemaImage returns the value of SchemaImage.
-func (s *CreateWorkflowFromOCIRequest) GetSchemaImage() string {
-	return s.SchemaImage
+// GetContent returns the value of Content.
+func (s *CreateWorkflowInlineRequest) GetContent() string {
+	return s.Content
 }
 
-// SetSchemaImage sets the value of SchemaImage.
-func (s *CreateWorkflowFromOCIRequest) SetSchemaImage(val string) {
-	s.SchemaImage = val
+// GetSource returns the value of Source.
+func (s *CreateWorkflowInlineRequest) GetSource() OptString {
+	return s.Source
+}
+
+// GetRegisteredBy returns the value of RegisteredBy.
+func (s *CreateWorkflowInlineRequest) GetRegisteredBy() OptString {
+	return s.RegisteredBy
+}
+
+// SetContent sets the value of Content.
+func (s *CreateWorkflowInlineRequest) SetContent(val string) {
+	s.Content = val
+}
+
+// SetSource sets the value of Source.
+func (s *CreateWorkflowInlineRequest) SetSource(val OptString) {
+	s.Source = val
+}
+
+// SetRegisteredBy sets the value of RegisteredBy.
+func (s *CreateWorkflowInlineRequest) SetRegisteredBy(val OptString) {
+	s.RegisteredBy = val
 }
 
 type CreateWorkflowInternalServerError RFC7807Problem
 
 func (*CreateWorkflowInternalServerError) createWorkflowRes() {}
 
+type CreateWorkflowOK RemediationWorkflow
+
+func (*CreateWorkflowOK) createWorkflowRes() {}
+
 type CreateWorkflowUnauthorized RFC7807Problem
 
 func (*CreateWorkflowUnauthorized) createWorkflowRes() {}
-
-type CreateWorkflowUnprocessableEntity RFC7807Problem
-
-func (*CreateWorkflowUnprocessableEntity) createWorkflowRes() {}
 
 // Customer-defined labels (DD-WORKFLOW-001 v1.5) - subdomain-based format.
 // Ref: #/components/schemas/CustomLabels
@@ -4968,6 +6780,18 @@ func (s *DetectedLabelsServiceMesh) UnmarshalText(data []byte) error {
 		return errors.Errorf("invalid value: %q", data)
 	}
 }
+
+type DisableActionTypeBadRequest RFC7807Problem
+
+func (*DisableActionTypeBadRequest) disableActionTypeRes() {}
+
+type DisableActionTypeInternalServerError RFC7807Problem
+
+func (*DisableActionTypeInternalServerError) disableActionTypeRes() {}
+
+type DisableActionTypeNotFound RFC7807Problem
+
+func (*DisableActionTypeNotFound) disableActionTypeRes() {}
 
 type DisableWorkflowBadRequest RFC7807Problem
 
@@ -9743,6 +11567,52 @@ func (s *NotificationMessageSentPayloadMetadata) init() NotificationMessageSentP
 	return m
 }
 
+// NewOptActionTypeDescription returns new OptActionTypeDescription with value set to v.
+func NewOptActionTypeDescription(v ActionTypeDescription) OptActionTypeDescription {
+	return OptActionTypeDescription{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptActionTypeDescription is optional ActionTypeDescription.
+type OptActionTypeDescription struct {
+	Value ActionTypeDescription
+	Set   bool
+}
+
+// IsSet returns true if OptActionTypeDescription was set.
+func (o OptActionTypeDescription) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptActionTypeDescription) Reset() {
+	var v ActionTypeDescription
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptActionTypeDescription) SetTo(v ActionTypeDescription) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptActionTypeDescription) Get() (v ActionTypeDescription, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptActionTypeDescription) Or(d ActionTypeDescription) ActionTypeDescription {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptAuditEventsQueryResponsePagination returns new OptAuditEventsQueryResponsePagination with value set to v.
 func NewOptAuditEventsQueryResponsePagination(v AuditEventsQueryResponsePagination) OptAuditEventsQueryResponsePagination {
 	return OptAuditEventsQueryResponsePagination{
@@ -14038,7 +15908,9 @@ func (s *RFC7807Problem) SetFieldErrors(val OptRFC7807ProblemFieldErrors) {
 	s.FieldErrors = val
 }
 
-func (*RFC7807Problem) listWorkflowsRes() {}
+func (*RFC7807Problem) createActionTypeRes() {}
+func (*RFC7807Problem) listWorkflowsRes()    {}
+func (*RFC7807Problem) updateActionTypeRes() {}
 
 // Map of field names to error messages for validation errors.
 // Only present for 400 Bad Request responses.
@@ -16930,7 +18802,6 @@ func (s *RemediationWorkflow) SetUpdatedBy(val OptString) {
 	s.UpdatedBy = val
 }
 
-func (*RemediationWorkflow) createWorkflowRes()    {}
 func (*RemediationWorkflow) deprecateWorkflowRes() {}
 func (*RemediationWorkflow) disableWorkflowRes()   {}
 func (*RemediationWorkflow) enableWorkflowRes()    {}
@@ -16999,6 +18870,182 @@ func (s *RemediationWorkflowStatus) UnmarshalText(data []byte) error {
 		return nil
 	case RemediationWorkflowStatusArchived:
 		*s = RemediationWorkflowStatusArchived
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Audit payload for RemediationWorkflow CRD admission events (ADR-058).
+// Emitted by the authwebhook when a RemediationWorkflow CRD is created, deleted, or denied.
+// Ref: #/components/schemas/RemediationWorkflowWebhookAuditPayload
+type RemediationWorkflowWebhookAuditPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType RemediationWorkflowWebhookAuditPayloadEventType `json:"event_type"`
+	// Name of the RemediationWorkflow CRD (metadata.name).
+	WorkflowName string `json:"workflow_name"`
+	// Admission action performed.
+	Action RemediationWorkflowWebhookAuditPayloadAction `json:"action"`
+	// DataStorage catalog UUID (set after successful registration).
+	WorkflowID OptString `json:"workflow_id"`
+	// Catalog registration status (active, disabled, etc.).
+	CatalogStatus OptString `json:"catalog_status"`
+	// Reason for denial (only set when action=denied).
+	DenialReason OptString `json:"denial_reason"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *RemediationWorkflowWebhookAuditPayload) GetEventType() RemediationWorkflowWebhookAuditPayloadEventType {
+	return s.EventType
+}
+
+// GetWorkflowName returns the value of WorkflowName.
+func (s *RemediationWorkflowWebhookAuditPayload) GetWorkflowName() string {
+	return s.WorkflowName
+}
+
+// GetAction returns the value of Action.
+func (s *RemediationWorkflowWebhookAuditPayload) GetAction() RemediationWorkflowWebhookAuditPayloadAction {
+	return s.Action
+}
+
+// GetWorkflowID returns the value of WorkflowID.
+func (s *RemediationWorkflowWebhookAuditPayload) GetWorkflowID() OptString {
+	return s.WorkflowID
+}
+
+// GetCatalogStatus returns the value of CatalogStatus.
+func (s *RemediationWorkflowWebhookAuditPayload) GetCatalogStatus() OptString {
+	return s.CatalogStatus
+}
+
+// GetDenialReason returns the value of DenialReason.
+func (s *RemediationWorkflowWebhookAuditPayload) GetDenialReason() OptString {
+	return s.DenialReason
+}
+
+// SetEventType sets the value of EventType.
+func (s *RemediationWorkflowWebhookAuditPayload) SetEventType(val RemediationWorkflowWebhookAuditPayloadEventType) {
+	s.EventType = val
+}
+
+// SetWorkflowName sets the value of WorkflowName.
+func (s *RemediationWorkflowWebhookAuditPayload) SetWorkflowName(val string) {
+	s.WorkflowName = val
+}
+
+// SetAction sets the value of Action.
+func (s *RemediationWorkflowWebhookAuditPayload) SetAction(val RemediationWorkflowWebhookAuditPayloadAction) {
+	s.Action = val
+}
+
+// SetWorkflowID sets the value of WorkflowID.
+func (s *RemediationWorkflowWebhookAuditPayload) SetWorkflowID(val OptString) {
+	s.WorkflowID = val
+}
+
+// SetCatalogStatus sets the value of CatalogStatus.
+func (s *RemediationWorkflowWebhookAuditPayload) SetCatalogStatus(val OptString) {
+	s.CatalogStatus = val
+}
+
+// SetDenialReason sets the value of DenialReason.
+func (s *RemediationWorkflowWebhookAuditPayload) SetDenialReason(val OptString) {
+	s.DenialReason = val
+}
+
+// Admission action performed.
+type RemediationWorkflowWebhookAuditPayloadAction string
+
+const (
+	RemediationWorkflowWebhookAuditPayloadActionCreate RemediationWorkflowWebhookAuditPayloadAction = "create"
+	RemediationWorkflowWebhookAuditPayloadActionDelete RemediationWorkflowWebhookAuditPayloadAction = "delete"
+	RemediationWorkflowWebhookAuditPayloadActionDenied RemediationWorkflowWebhookAuditPayloadAction = "denied"
+)
+
+// AllValues returns all RemediationWorkflowWebhookAuditPayloadAction values.
+func (RemediationWorkflowWebhookAuditPayloadAction) AllValues() []RemediationWorkflowWebhookAuditPayloadAction {
+	return []RemediationWorkflowWebhookAuditPayloadAction{
+		RemediationWorkflowWebhookAuditPayloadActionCreate,
+		RemediationWorkflowWebhookAuditPayloadActionDelete,
+		RemediationWorkflowWebhookAuditPayloadActionDenied,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s RemediationWorkflowWebhookAuditPayloadAction) MarshalText() ([]byte, error) {
+	switch s {
+	case RemediationWorkflowWebhookAuditPayloadActionCreate:
+		return []byte(s), nil
+	case RemediationWorkflowWebhookAuditPayloadActionDelete:
+		return []byte(s), nil
+	case RemediationWorkflowWebhookAuditPayloadActionDenied:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *RemediationWorkflowWebhookAuditPayloadAction) UnmarshalText(data []byte) error {
+	switch RemediationWorkflowWebhookAuditPayloadAction(data) {
+	case RemediationWorkflowWebhookAuditPayloadActionCreate:
+		*s = RemediationWorkflowWebhookAuditPayloadActionCreate
+		return nil
+	case RemediationWorkflowWebhookAuditPayloadActionDelete:
+		*s = RemediationWorkflowWebhookAuditPayloadActionDelete
+		return nil
+	case RemediationWorkflowWebhookAuditPayloadActionDenied:
+		*s = RemediationWorkflowWebhookAuditPayloadActionDenied
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Event type for discriminator (matches parent event_type).
+type RemediationWorkflowWebhookAuditPayloadEventType string
+
+const (
+	RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedCreate RemediationWorkflowWebhookAuditPayloadEventType = "remediationworkflow.admitted.create"
+	RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedDelete RemediationWorkflowWebhookAuditPayloadEventType = "remediationworkflow.admitted.delete"
+	RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedDenied RemediationWorkflowWebhookAuditPayloadEventType = "remediationworkflow.admitted.denied"
+)
+
+// AllValues returns all RemediationWorkflowWebhookAuditPayloadEventType values.
+func (RemediationWorkflowWebhookAuditPayloadEventType) AllValues() []RemediationWorkflowWebhookAuditPayloadEventType {
+	return []RemediationWorkflowWebhookAuditPayloadEventType{
+		RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedCreate,
+		RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedDelete,
+		RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedDenied,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s RemediationWorkflowWebhookAuditPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedCreate:
+		return []byte(s), nil
+	case RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedDelete:
+		return []byte(s), nil
+	case RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedDenied:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *RemediationWorkflowWebhookAuditPayloadEventType) UnmarshalText(data []byte) error {
+	switch RemediationWorkflowWebhookAuditPayloadEventType(data) {
+	case RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedCreate:
+		*s = RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedCreate
+		return nil
+	case RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedDelete:
+		*s = RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedDelete
+		return nil
+	case RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedDenied:
+		*s = RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedDenied
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -18613,7 +20660,7 @@ type WorkflowDiscoveryEntry struct {
 	// Schema format version (e.g., 1.0, 1.1). #255.
 	SchemaVersion OptString `json:"schemaVersion"`
 	// OCI image used to extract the workflow schema.
-	SchemaImage string `json:"schemaImage"`
+	SchemaImage OptString `json:"schemaImage"`
 	// OCI execution bundle reference (digest-pinned).
 	ExecutionBundle OptString `json:"executionBundle"`
 	// Execution engine (tekton, job).
@@ -18651,7 +20698,7 @@ func (s *WorkflowDiscoveryEntry) GetSchemaVersion() OptString {
 }
 
 // GetSchemaImage returns the value of SchemaImage.
-func (s *WorkflowDiscoveryEntry) GetSchemaImage() string {
+func (s *WorkflowDiscoveryEntry) GetSchemaImage() OptString {
 	return s.SchemaImage
 }
 
@@ -18696,7 +20743,7 @@ func (s *WorkflowDiscoveryEntry) SetSchemaVersion(val OptString) {
 }
 
 // SetSchemaImage sets the value of SchemaImage.
-func (s *WorkflowDiscoveryEntry) SetSchemaImage(val string) {
+func (s *WorkflowDiscoveryEntry) SetSchemaImage(val OptString) {
 	s.SchemaImage = val
 }
 

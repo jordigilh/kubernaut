@@ -39,24 +39,20 @@ var _ = Describe("Controller Metrics (BR-EM-009, DD-METRICS-001)", func() {
 			}).ToNot(Panic())
 		})
 
-		It("should create non-nil metric collectors", func() {
+		It("should create functional metric collectors that can record observations", func() {
 			registry := prometheus.NewPedanticRegistry()
 			m := emmetrics.NewMetricsWithRegistry(registry)
 
-			Expect(m.ReconcileTotal).ToNot(BeNil())
-			Expect(m.ReconcileDuration).ToNot(BeNil())
-			Expect(m.PhaseTransitionsTotal).ToNot(BeNil())
-			Expect(m.ComponentAssessmentsTotal).ToNot(BeNil())
-			Expect(m.ComponentAssessmentDuration).ToNot(BeNil())
-			Expect(m.ComponentScores).ToNot(BeNil())
-			Expect(m.AssessmentsCompletedTotal).ToNot(BeNil())
-			Expect(m.ExternalCallsTotal).ToNot(BeNil())
-			Expect(m.ExternalCallDuration).ToNot(BeNil())
-			Expect(m.ExternalCallErrors).ToNot(BeNil())
-			Expect(m.ValidityExpirationsTotal).ToNot(BeNil())
-			Expect(m.StabilizationWaitsTotal).ToNot(BeNil())
-			Expect(m.AuditEventsTotal).ToNot(BeNil())
-			Expect(m.K8sEventsTotal).ToNot(BeNil())
+			Expect(func() {
+				m.RecordComponentAssessment("health", "success", nil)
+				m.RecordAssessmentCompleted("full")
+				m.RecordExternalCallError("test", "op", "err")
+				m.RecordValidityExpiration()
+			}).ToNot(Panic(), "all metric collectors should accept observations without panic")
+
+			families, err := registry.Gather()
+			Expect(err).ToNot(HaveOccurred())
+			Expect(families).To(HaveLen(4), "should have 4 metric families after recording one observation per collector")
 		})
 
 		It("should not allow duplicate registration", func() {
@@ -77,14 +73,11 @@ var _ = Describe("Controller Metrics (BR-EM-009, DD-METRICS-001)", func() {
 
 		It("should follow DD-005 naming convention", func() {
 			// All metrics must start with kubernaut_effectivenessmonitor_
-			Expect(emmetrics.MetricNameReconcileTotal).To(HavePrefix("kubernaut_effectivenessmonitor_"))
-			Expect(emmetrics.MetricNameReconcileDuration).To(HavePrefix("kubernaut_effectivenessmonitor_"))
-			Expect(emmetrics.MetricNamePhaseTransitionsTotal).To(HavePrefix("kubernaut_effectivenessmonitor_"))
 			Expect(emmetrics.MetricNameComponentAssessmentsTotal).To(HavePrefix("kubernaut_effectivenessmonitor_"))
+			Expect(emmetrics.MetricNameComponentScores).To(HavePrefix("kubernaut_effectivenessmonitor_"))
 			Expect(emmetrics.MetricNameAssessmentsCompletedTotal).To(HavePrefix("kubernaut_effectivenessmonitor_"))
-			Expect(emmetrics.MetricNameExternalCallsTotal).To(HavePrefix("kubernaut_effectivenessmonitor_"))
-			Expect(emmetrics.MetricNameAuditEventsTotal).To(HavePrefix("kubernaut_effectivenessmonitor_"))
-			Expect(emmetrics.MetricNameK8sEventsTotal).To(HavePrefix("kubernaut_effectivenessmonitor_"))
+			Expect(emmetrics.MetricNameExternalCallErrors).To(HavePrefix("kubernaut_effectivenessmonitor_"))
+			Expect(emmetrics.MetricNameValidityExpirationsTotal).To(HavePrefix("kubernaut_effectivenessmonitor_"))
 		})
 	})
 
@@ -100,40 +93,22 @@ var _ = Describe("Controller Metrics (BR-EM-009, DD-METRICS-001)", func() {
 			m = emmetrics.NewMetricsWithRegistry(registry)
 		})
 
-		It("RecordReconcile should not panic", func() {
-			Expect(func() {
-				m.RecordReconcile("success", 0.5)
-			}).ToNot(Panic())
-		})
-
-		It("RecordPhaseTransition should not panic", func() {
-			Expect(func() {
-				m.RecordPhaseTransition("Pending", "Assessing")
-			}).ToNot(Panic())
-		})
-
 		It("RecordComponentAssessment should not panic with non-nil score", func() {
 			score := 1.0
 			Expect(func() {
-				m.RecordComponentAssessment("health", "success", 0.1, &score)
+				m.RecordComponentAssessment("health", "success", &score)
 			}).ToNot(Panic())
 		})
 
 		It("RecordComponentAssessment should not panic with nil score", func() {
 			Expect(func() {
-				m.RecordComponentAssessment("metrics", "error", 0.5, nil)
+				m.RecordComponentAssessment("metrics", "error", nil)
 			}).ToNot(Panic())
 		})
 
 		It("RecordAssessmentCompleted should not panic", func() {
 			Expect(func() {
 				m.RecordAssessmentCompleted("full")
-			}).ToNot(Panic())
-		})
-
-		It("RecordExternalCall should not panic", func() {
-			Expect(func() {
-				m.RecordExternalCall("prometheus", "query", 0.2)
 			}).ToNot(Panic())
 		})
 
@@ -146,24 +121,6 @@ var _ = Describe("Controller Metrics (BR-EM-009, DD-METRICS-001)", func() {
 		It("RecordValidityExpiration should not panic", func() {
 			Expect(func() {
 				m.RecordValidityExpiration()
-			}).ToNot(Panic())
-		})
-
-		It("RecordStabilizationWait should not panic", func() {
-			Expect(func() {
-				m.RecordStabilizationWait()
-			}).ToNot(Panic())
-		})
-
-		It("RecordAuditEvent should not panic", func() {
-			Expect(func() {
-				m.RecordAuditEvent("effectiveness.health.assessed", "success")
-			}).ToNot(Panic())
-		})
-
-		It("RecordK8sEvent should not panic", func() {
-			Expect(func() {
-				m.RecordK8sEvent("Normal", "AssessmentStarted")
 			}).ToNot(Panic())
 		})
 	})

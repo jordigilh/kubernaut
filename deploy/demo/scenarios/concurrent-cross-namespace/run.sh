@@ -16,15 +16,19 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# shellcheck source=../../scripts/kind-helper.sh
-source "${SCRIPT_DIR}/../../scripts/kind-helper.sh"
-ensure_kind_cluster "${SCRIPT_DIR}/../kind-config-singlenode.yaml" "${1:-}"
+APPROVE_MODE="--auto-approve"
+SKIP_VALIDATE=""
+for _arg in "$@"; do
+    case "$_arg" in
+        --auto-approve)  APPROVE_MODE="--auto-approve" ;;
+        --interactive)   APPROVE_MODE="--interactive" ;;
+        --no-validate)   SKIP_VALIDATE=true ;;
+    esac
+done
 
-# shellcheck source=../../scripts/monitoring-helper.sh
-source "${SCRIPT_DIR}/../../scripts/monitoring-helper.sh"
-ensure_monitoring_stack
+# shellcheck source=../../scripts/platform-helper.sh
 source "${SCRIPT_DIR}/../../scripts/platform-helper.sh"
-ensure_platform
+require_demo_ready
 
 echo "============================================="
 echo " Concurrent Cross-Namespace Demo (#172)"
@@ -44,14 +48,34 @@ kubectl rollout restart deployment/signalprocessing-controller -n kubernaut-syst
 kubectl rollout status deployment/signalprocessing-controller -n kubernaut-system --timeout=60s
 echo ""
 
-# Step 1: Seed workflows
-echo "==> Step 1: Seeding workflows..."
-echo "  crashloop-rollback-v1 (for low risk-tolerance teams)..."
-seed_scenario_workflow "crashloop"
+# Step 0b: Register risk-tolerance-aware workflows in DataStorage
+echo "==> Step 0b: Registering risk-tolerance workflows in DataStorage..."
+# shellcheck source=../../scripts/seed-workflows.sh
+DATASTORAGE_URL="${DATASTORAGE_URL:-http://localhost:30081}"
+SA_TOKEN=$(kubectl create token holmesgpt-api-sa -n kubernaut-system --duration=10m 2>/dev/null || echo "")
+for schema in "${SCRIPT_DIR}/workflow/"*.yaml; do
+  wf_name=$(basename "$schema" .yaml)
+  echo -n "  ${wf_name}: "
+  yaml_content=$(cat "$schema")
+  payload=$(jq -n --arg content "$yaml_content" --arg source "api" --arg registeredBy "concurrent-scenario" \
+    '{ content: $content, source: $source, registeredBy: $registeredBy }')
+
+  curl_args=(-s -w "\n%{http_code}" -X POST "${DATASTORAGE_URL}/api/v1/workflows"
+    -H "Content-Type: application/json" -d "$payload")
+  [ -n "$SA_TOKEN" ] && curl_args+=(-H "Authorization: Bearer ${SA_TOKEN}")
+
+  response=$(curl "${curl_args[@]}" 2>&1) || true
+  http_code=$(echo "$response" | tail -1)
+  case "$http_code" in
+    2[0-9][0-9]) echo "OK (HTTP ${http_code})" ;;
+    409) echo "ALREADY EXISTS" ;;
+    *) echo "FAILED (HTTP ${http_code})" ;;
+  esac
+done
 echo ""
 
-# Step 2: Deploy both namespaces and workloads
-echo "==> Step 2: Deploying team-alpha and team-beta workloads..."
+# Step 1: Deploy both namespaces and workloads
+echo "==> Step 1: Deploying team-alpha and team-beta workloads..."
 for team in team-alpha team-beta; do
   echo "  Deploying ${team}..."
   kubectl apply -f "${SCRIPT_DIR}/manifests/${team}/namespace.yaml"
@@ -61,27 +85,25 @@ for team in team-alpha team-beta; do
 done
 echo ""
 
-# Step 3: Wait for healthy deployments
-echo "==> Step 3: Waiting for both deployments to be healthy..."
+# Step 2: Wait for healthy deployments
+echo "==> Step 2: Waiting for both deployments to be healthy..."
 kubectl wait --for=condition=Available deployment/worker -n demo-team-alpha --timeout=120s
 kubectl wait --for=condition=Available deployment/worker -n demo-team-beta --timeout=120s
 echo "  Both teams running."
 echo ""
 
-# Step 4: Establish baseline
-echo "==> Step 4: Establishing healthy baseline (20s)..."
+# Step 3: Establish baseline
+echo "==> Step 3: Establishing healthy baseline (20s)..."
 sleep 20
 echo ""
 
-# Step 5: Inject bad config into BOTH namespaces
-echo "==> Step 5: Injecting bad config into both namespaces simultaneously..."
+# Step 4: Inject bad config into BOTH namespaces
+echo "==> Step 4: Injecting bad config into both namespaces simultaneously..."
 bash "${SCRIPT_DIR}/inject-both.sh"
 echo ""
 
-# Step 6: Monitor
-echo "==> Step 6: Both pipelines running in parallel. Monitor with:"
-echo "    kubectl get rr,aa,we -n demo-team-alpha -w"
-echo "    kubectl get rr,aa,we -n demo-team-beta -w"
+# Step 5: Expected behavior
+echo "==> Step 5: Both pipelines running in parallel."
 echo ""
 echo "  Expected:"
 echo "    Team Alpha (high risk tolerance):"
@@ -94,8 +116,9 @@ echo "      -> SP enriches with customLabels: {risk_tolerance: [low]}"
 echo "      -> DataStorage boosts crashloop-rollback-v1 (customLabels match)"
 echo "      -> LLM selects crashloop-rollback-v1 (safer, more thorough)"
 echo ""
-echo "==> To verify:"
-echo "    kubectl get aa -n demo-team-alpha -o jsonpath='{.items[0].status.selectedWorkflow.workflowId}'"
-echo "    # Expected: restart-pods-v1"
-echo "    kubectl get aa -n demo-team-beta -o jsonpath='{.items[0].status.selectedWorkflow.workflowId}'"
-echo "    # Expected: crashloop-rollback-v1"
+# Validate pipeline
+if [ "${SKIP_VALIDATE}" != "true" ] && [ -f "${SCRIPT_DIR}/validate.sh" ]; then
+    echo ""
+    echo "==> Running validation pipeline..."
+    bash "${SCRIPT_DIR}/validate.sh" "${APPROVE_MODE}"
+fi

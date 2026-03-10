@@ -225,7 +225,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 
 			// Query metrics endpoint via NodePort
 			// Per DD-TEST-001: Metrics NodePort is 30185
-			metricsURL := fmt.Sprintf("http://localhost:%d/metrics", infrastructure.WorkflowExecutionMetricsHostPort)
+			metricsURL := fmt.Sprintf("http://127.0.0.1:%d/metrics", infrastructure.WorkflowExecutionMetricsHostPort)
 
 			// Business Behavior: Metrics should be scrapable by Prometheus
 			var metricsBody string
@@ -247,9 +247,8 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 			// Verify expected business metrics are present
 			// Using constants from pkg/workflowexecution/metrics to prevent typos (DRY principle)
 			expectedMetrics := []string{
-				wemetrics.MetricNameExecutionTotal,       // Execution count by outcome
-				wemetrics.MetricNameExecutionDuration,    // Execution duration histogram
-				wemetrics.MetricNameExecutionCreations, // PipelineRun creation counter
+				wemetrics.MetricNameExecutionTotal,    // Execution count by outcome
+				wemetrics.MetricNameExecutionDuration, // Execution duration histogram
 			}
 
 			for _, metric := range expectedMetrics {
@@ -275,7 +274,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 			// This test validates metrics are actually incremented when workflows complete
 
 			// Query initial metric value
-			metricsURL := fmt.Sprintf("http://localhost:%d/metrics", infrastructure.WorkflowExecutionMetricsHostPort)
+			metricsURL := fmt.Sprintf("http://127.0.0.1:%d/metrics", infrastructure.WorkflowExecutionMetricsHostPort)
 
 			var initialMetricsBody string
 			Eventually(func() error {
@@ -343,7 +342,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 			// This test validates metrics are actually incremented when workflows fail
 
 			// Query initial metric value
-			metricsURL := fmt.Sprintf("http://localhost:%d/metrics", infrastructure.WorkflowExecutionMetricsHostPort)
+			metricsURL := fmt.Sprintf("http://127.0.0.1:%d/metrics", infrastructure.WorkflowExecutionMetricsHostPort)
 
 			var initialMetricsBody string
 			Eventually(func() error {

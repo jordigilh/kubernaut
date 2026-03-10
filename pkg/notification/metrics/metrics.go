@@ -37,15 +37,6 @@ import (
 const (
 	// === RECONCILIATION METRIC NAMES ===
 
-	// MetricNameReconcilerRequestsTotal is the name of the reconciler requests counter metric
-	MetricNameReconcilerRequestsTotal = "kubernaut_notification_reconciler_requests_total"
-
-	// MetricNameReconcilerDuration is the name of the reconciler duration histogram metric
-	MetricNameReconcilerDuration = "kubernaut_notification_reconciler_duration_seconds"
-
-	// MetricNameReconcilerErrorsTotal is the name of the reconciler errors counter metric
-	MetricNameReconcilerErrorsTotal = "kubernaut_notification_reconciler_errors_total"
-
 	// MetricNameReconcilerActive is the name of the active notifications gauge metric
 	MetricNameReconcilerActive = "kubernaut_notification_reconciler_active"
 
@@ -67,11 +58,6 @@ const (
 
 	// MetricNameChannelHealthScore is the name of the channel health score gauge metric
 	MetricNameChannelHealthScore = "kubernaut_notification_channel_health_score"
-
-	// === SANITIZATION METRIC NAMES ===
-
-	// MetricNameSanitizationRedactions is the name of the sanitization redactions counter metric
-	MetricNameSanitizationRedactions = "kubernaut_notification_sanitization_redactions_total"
 
 	// === COMMON LABEL VALUES ===
 
@@ -105,10 +91,7 @@ const (
 // Per DD-METRICS-001: Dependency-injected metrics pattern for testability and clarity.
 type Metrics struct {
 	// === RECONCILIATION METRICS ===
-	ReconcilerRequestsTotal *prometheus.CounterVec
-	ReconcilerDuration      prometheus.Histogram
-	ReconcilerErrorsTotal   *prometheus.CounterVec
-	ReconcilerActive        *prometheus.GaugeVec
+	ReconcilerActive *prometheus.GaugeVec
 
 	// === DELIVERY METRICS ===
 	DeliveryAttemptsTotal *prometheus.CounterVec
@@ -119,8 +102,6 @@ type Metrics struct {
 	ChannelCircuitBreakerState *prometheus.GaugeVec
 	ChannelHealthScore         *prometheus.GaugeVec
 
-	// === SANITIZATION METRICS ===
-	SanitizationRedactions *prometheus.CounterVec
 }
 
 // NewMetrics creates a new Metrics instance and registers with controller-runtime.
@@ -129,27 +110,6 @@ type Metrics struct {
 func NewMetrics() *Metrics {
 	m := &Metrics{
 		// Reconciliation metrics
-		ReconcilerRequestsTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameReconcilerRequestsTotal, // DD-005 V3.0: Pattern B (full name)
-				Help: "Total number of notification reconciler requests",
-			},
-			[]string{"type", "priority", "phase"},
-		),
-		ReconcilerDuration: prometheus.NewHistogram(
-			prometheus.HistogramOpts{
-				Name:    MetricNameReconcilerDuration, // DD-005 V3.0: Pattern B (full name)
-				Help:    "Reconciler loop duration in seconds",
-				Buckets: prometheus.DefBuckets,
-			},
-		),
-		ReconcilerErrorsTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameReconcilerErrorsTotal, // DD-005 V3.0: Pattern B (full name)
-				Help: "Total number of reconciler errors",
-			},
-			[]string{"error_type"},
-		),
 		ReconcilerActive: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Name: MetricNameReconcilerActive, // DD-005 V3.0: Pattern B (full name)
@@ -197,30 +157,16 @@ func NewMetrics() *Metrics {
 			},
 			[]string{"channel"},
 		),
-
-		// Sanitization metrics
-		SanitizationRedactions: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameSanitizationRedactions, // DD-005 V3.0: Pattern B (full name)
-				Help: "Total number of sensitive data redactions",
-			},
-			[]string{"pattern_type"},
-		),
 	}
 
 	// Register all metrics with controller-runtime's global registry
-	// This makes metrics available at /metrics endpoint
 	ctrlmetrics.Registry.MustRegister(
-		m.ReconcilerRequestsTotal,
-		m.ReconcilerDuration,
-		m.ReconcilerErrorsTotal,
 		m.ReconcilerActive,
 		m.DeliveryAttemptsTotal,
 		m.DeliveryDuration,
 		m.DeliveryRetriesTotal,
 		m.ChannelCircuitBreakerState,
 		m.ChannelHealthScore,
-		m.SanitizationRedactions,
 	)
 
 	return m
@@ -232,27 +178,6 @@ func NewMetrics() *Metrics {
 func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 	m := &Metrics{
 		// Reconciliation metrics
-		ReconcilerRequestsTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameReconcilerRequestsTotal, // DD-005 V3.0: Pattern B (full name)
-				Help: "Total number of notification reconciler requests",
-			},
-			[]string{"type", "priority", "phase"},
-		),
-		ReconcilerDuration: prometheus.NewHistogram(
-			prometheus.HistogramOpts{
-				Name:    MetricNameReconcilerDuration, // DD-005 V3.0: Pattern B (full name)
-				Help:    "Reconciler loop duration in seconds",
-				Buckets: prometheus.DefBuckets,
-			},
-		),
-		ReconcilerErrorsTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameReconcilerErrorsTotal, // DD-005 V3.0: Pattern B (full name)
-				Help: "Total number of reconciler errors",
-			},
-			[]string{"error_type"},
-		),
 		ReconcilerActive: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Name: MetricNameReconcilerActive, // DD-005 V3.0: Pattern B (full name)
@@ -300,29 +225,16 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 			},
 			[]string{"channel"},
 		),
-
-		// Sanitization metrics
-		SanitizationRedactions: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameSanitizationRedactions, // DD-005 V3.0: Pattern B (full name)
-				Help: "Total number of sensitive data redactions",
-			},
-			[]string{"pattern_type"},
-		),
 	}
 
 	// Register with provided registry (test registry)
 	registry.MustRegister(
-		m.ReconcilerRequestsTotal,
-		m.ReconcilerDuration,
-		m.ReconcilerErrorsTotal,
 		m.ReconcilerActive,
 		m.DeliveryAttemptsTotal,
 		m.DeliveryDuration,
 		m.DeliveryRetriesTotal,
 		m.ChannelCircuitBreakerState,
 		m.ChannelHealthScore,
-		m.SanitizationRedactions,
 	)
 
 	return m

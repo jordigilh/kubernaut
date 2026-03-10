@@ -22,7 +22,6 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	prometheusTestutil "github.com/prometheus/client_golang/prometheus/testutil"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -70,7 +69,6 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			By("Waiting for controller to create PipelineRun")
 			pr, err := waitForPipelineRunCreation(wfe.Name, wfe.Namespace, 10*time.Second)
 			Expect(err).ToNot(HaveOccurred(), "PipelineRun should be created")
-			Expect(pr).ToNot(BeNil())
 
 			By("Verifying PipelineRun has correct labels")
 			Expect(pr.Labels).To(HaveKeyWithValue("kubernaut.ai/workflow-execution", wfe.Name))
@@ -82,7 +80,6 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			By("Verifying WFE status updated to Running")
 			updatedWFE, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 10*time.Second)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(updatedWFE.Status.ExecutionRef).ToNot(BeNil())
 			Expect(updatedWFE.Status.ExecutionRef.Name).To(Equal(pr.Name))
 		})
 
@@ -166,8 +163,8 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			By("Waiting for WFE to reach Completed phase")
 			updatedWFE, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseCompleted), 15*time.Second)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(updatedWFE.Status.CompletionTime).ToNot(BeNil())
-			Expect(updatedWFE.Status.Duration).ToNot(BeEmpty())
+			Expect(updatedWFE.Status.CompletionTime.Time).To(BeTemporally("<=", time.Now()))
+			Expect(updatedWFE.Status.Duration).To(ContainSubstring("s"))
 		})
 
 		It("should sync WFE status when PipelineRun fails", func() {
@@ -187,8 +184,8 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			By("Waiting for WFE to reach Failed phase")
 			updatedWFE, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseFailed), 15*time.Second)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(updatedWFE.Status.CompletionTime).ToNot(BeNil())
-			Expect(updatedWFE.Status.FailureDetails).ToNot(BeNil())
+			Expect(updatedWFE.Status.CompletionTime.Time).To(BeTemporally("<=", time.Now()))
+			Expect(updatedWFE.Status.FailureDetails.WasExecutionFailure).To(BeTrue())
 		})
 
 		It("should populate ExecutionStatus during Running phase", func() {
@@ -201,8 +198,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying ExecutionRef is populated")
-			Expect(updatedWFE.Status.ExecutionRef).ToNot(BeNil())
-			Expect(updatedWFE.Status.ExecutionRef.Name).ToNot(BeEmpty())
+			Expect(updatedWFE.Status.ExecutionRef.Name).To(HavePrefix("wfe-"))
 		})
 	})
 
@@ -325,7 +321,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			By("Waiting for Completed phase")
 			finalWFE, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseCompleted), 15*time.Second)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(finalWFE.Status.CompletionTime).ToNot(BeNil())
+			Expect(finalWFE.Status.CompletionTime.Time).To(BeTemporally("<=", time.Now()))
 		})
 
 		It("should transition Pending → Running → Failed", func() {
@@ -347,7 +343,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			By("Waiting for Failed phase")
 			finalWFE, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseFailed), 15*time.Second)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(finalWFE.Status.FailureDetails).ToNot(BeNil())
+			Expect(finalWFE.Status.FailureDetails.WasExecutionFailure).To(BeTrue())
 		})
 
 		// V1.0 NOTE: "Pending → Skipped" test removed - routing moved to RO (DD-RO-002)
@@ -426,7 +422,6 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 				"workflowexecution.execution.started audit event should be persisted in DataStorage (30s timeout for parallel execution)")
 
 			By("Verifying audit event field values")
-			Expect(startedEvent).ToNot(BeNil())
 			Expect(startedEvent.EventCategory).To(Equal(ogenclient.AuditEventEventCategoryWorkflowexecution)) // Per ADR-034 v1.5: workflowexecution category
 			// WE-BUG-002: event_action contains short form ("started" not "execution.workflow.started")
 			Expect(startedEvent.EventAction).To(Equal("started"))
@@ -487,7 +482,6 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 				"workflowexecution.workflow.completed audit event should be persisted in DataStorage (30s timeout for parallel execution)")
 
 			By("Verifying audit event field values")
-			Expect(completedEvent).ToNot(BeNil())
 			Expect(completedEvent.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeSuccess))
 			// WE-BUG-002: event_action contains short form ("completed" not weaudit.EventTypeCompleted)
 			Expect(completedEvent.EventAction).To(Equal("completed"))
@@ -547,7 +541,6 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 				"workflowexecution.workflow.failed audit event should be persisted in DataStorage (30s timeout for parallel execution)")
 
 			By("Verifying audit event field values including failure details")
-			Expect(failedEvent).ToNot(BeNil())
 			Expect(failedEvent.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeFailure))
 			// WE-BUG-002: event_action contains short form ("failed" not weaudit.EventTypeFailed)
 			Expect(failedEvent.EventAction).To(Equal("failed"))
@@ -637,7 +630,6 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 					"Second WFE should fail due to resource lock")
 
 				// Validate failure reason is Unknown (ExecutionRaceCondition not in CRD enum)
-				Expect(wfe2Status.Status.FailureDetails).ToNot(BeNil())
 				Expect(wfe2Status.Status.FailureDetails.Reason).To(Equal("Unknown"))
 				Expect(wfe2Status.Status.FailureDetails.Message).To(ContainSubstring("PipelineRun"))
 				Expect(wfe2Status.Status.FailureDetails.Message).To(ContainSubstring("already exists"))
@@ -679,7 +671,6 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 				By("Fetching PipelineRun and verifying deterministic naming")
 				wfeStatus, err := getWFE(wfe.Name, wfe.Namespace)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(wfeStatus.Status.ExecutionRef).ToNot(BeNil())
 
 				prName := wfeStatus.Status.ExecutionRef.Name
 				// Deterministic name should be "wfe-" + first 16 chars of sha256(targetResource)
@@ -879,7 +870,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				startTime := wfeStatus.Status.StartTime
-				Expect(startTime).ToNot(BeNil())
+				Expect(startTime.Time).To(BeTemporally("<=", time.Now()))
 
 				By("Completing after a measurable duration")
 				time.Sleep(2 * time.Second) // Simulate execution time
@@ -913,31 +904,6 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 				GinkgoWriter.Println("✅ BR-WE-008: Duration histogram metric recording successful (no errors)")
 			})
 
-			It("should record workflowexecution_pipelinerun_creation_total counter", func() {
-				By("Getting initial counter value")
-				initialCount := prometheusTestutil.ToFloat64(reconciler.Metrics.ExecutionCreations)
-
-				By("Creating WorkflowExecution")
-				targetResource := "test-namespace/deployment/metrics-pr-creation"
-				wfe := createUniqueWFE("metrics-pr", targetResource)
-				Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
-
-				By("Waiting for PipelineRun creation")
-				_, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 30*time.Second)
-				Expect(err).ToNot(HaveOccurred())
-
-				By("Verifying pipelinerun_creation_total incremented")
-				// Use Eventually to handle controller reconciliation timing for metrics
-				Eventually(func() float64 {
-					return prometheusTestutil.ToFloat64(reconciler.Metrics.ExecutionCreations)
-				}, 15*time.Second, 500*time.Millisecond).Should(BeNumerically(">", initialCount),
-					"pipelinerun_creation_total should increment after controller creates PipelineRun")
-
-				finalCount := prometheusTestutil.ToFloat64(reconciler.Metrics.ExecutionCreations)
-
-				GinkgoWriter.Printf("✅ BR-WE-008: PipelineRun creation metric incremented from %.0f to %.0f\n",
-					initialCount, finalCount)
-			})
 		})
 
 		// ========================================

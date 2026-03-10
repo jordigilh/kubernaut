@@ -93,10 +93,6 @@ func (s *Server) handleCreateNotificationAudit(w http.ResponseWriter, r *http.Re
 		var fieldErrors map[string]string
 		if valErr, ok := err.(*validation.ValidationError); ok {
 			fieldErrors = valErr.FieldErrors
-			// GAP-10: Emit validation failure metrics for each field
-			for field := range fieldErrors {
-				s.metrics.ValidationFailures.WithLabelValues(field, dsmetrics.ValidationReasonRequired).Inc()
-			}
 		} else {
 			// Fallback for unexpected error type
 			fieldErrors = map[string]string{"error": err.Error()}
@@ -157,12 +153,6 @@ func (s *Server) handleCreateNotificationAudit(w http.ResponseWriter, r *http.Re
 		s.logger.Info("DLQ fallback succeeded",
 			"notification_id", audit.NotificationID)
 
-		// GAP-10: Emit DLQ fallback metrics
-		s.metrics.AuditTracesTotal.WithLabelValues(
-			dsmetrics.ServiceNotification,
-			dsmetrics.AuditStatusDLQFallback,
-		).Inc()
-
 		// DLQ success - return 202 Accepted (async processing)
 		s.logger.Info("Audit record queued to DLQ for async processing",
 			"notification_id", audit.NotificationID)
@@ -185,12 +175,6 @@ func (s *Server) handleCreateNotificationAudit(w http.ResponseWriter, r *http.Re
 		"remediation_id", created.RemediationID)
 
 	// GAP-10: Emit success metrics
-	// Audit traces total (success)
-	s.metrics.AuditTracesTotal.WithLabelValues(
-		dsmetrics.ServiceNotification,
-		dsmetrics.AuditStatusSuccess,
-	).Inc()
-
 	// Audit lag (time between event and write)
 	auditLag := time.Since(audit.SentAt).Seconds()
 	s.metrics.AuditLagSeconds.WithLabelValues(dsmetrics.ServiceNotification).Observe(auditLag)

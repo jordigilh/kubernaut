@@ -19,8 +19,8 @@ done
 
 # ── Wait for alert ──────────────────────────────────────────────────────────
 
-wait_for_alert "KubeDeploymentRolloutStuck" "${NAMESPACE}" 300
-show_alert "KubeDeploymentRolloutStuck"
+wait_for_alert "KubeDeploymentRolloutStuck" "${NAMESPACE}" 480
+show_alert "KubeDeploymentRolloutStuck" "${NAMESPACE}"
 
 # ── Wait for pipeline ──────────────────────────────────────────────────────
 
@@ -48,7 +48,7 @@ aa_name="ai-${rr_name}"
 
 action_type=$(kubectl get aianalyses "${aa_name}" -n "${PLATFORM_NS}" \
   -o jsonpath='{.status.selectedWorkflow.actionType}' 2>/dev/null || echo "")
-assert_eq "$action_type" "GracefulRestart" "AA selected action type"
+assert_eq "$action_type" "RollbackDeployment" "AA selected action type"
 
 confidence=$(kubectl get aianalyses "${aa_name}" -n "${PLATFORM_NS}" \
   -o jsonpath='{.status.selectedWorkflow.confidence}' 2>/dev/null || echo "")

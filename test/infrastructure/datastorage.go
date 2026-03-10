@@ -1721,66 +1721,23 @@ func connectPostgreSQL(infra *DataStorageInfrastructure, cfg *DataStorageConfig,
 }
 
 func applyMigrations(infra *DataStorageInfrastructure, writer io.Writer) error {
-	// Drop and recreate schema
 	_, _ = fmt.Fprintln(writer, "  🗑️  Dropping existing schema...")
 	_, err := infra.DB.Exec("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
 	if err != nil {
 		return fmt.Errorf("failed to drop schema: %w", err)
 	}
 
-	// Apply migrations
-	_, _ = fmt.Fprintln(writer, "  📜 Applying V1.0 migrations (label-only, no embeddings)...")
-	// V1.0 Migration List (label-only architecture per DD-WORKFLOW-015)
-	// Vector-dependent migrations (005, 007-010, 016) removed per TRIAGE_DS_MIGRATION_DEPENDENCIES_V1.0.md
-	migrations := []string{
-		"001_initial_schema.sql",
-		"002_fix_partitioning.sql",
-		"003_stored_procedures.sql",
-		"004_add_effectiveness_assessment_due.sql",
-		// NOTE: Migration 006 moved to migrations/v1.1/ (v1.1 feature, removed 2026-01-07)
-		"012_adr033_multidimensional_tracking.sql",
-		"013_create_audit_events_table.sql",
-		"017_add_workflow_schema_fields.sql",
-		"018_rename_execution_bundle_to_container_image.sql",
-		"019_uuid_primary_key.sql",
-		"020_add_workflow_label_columns.sql", // DD-WORKFLOW-001 v1.6: custom_labels + detected_labels
-		"1000_create_audit_events_partitions.sql",
-	}
-
-	// Find workspace root once (project root with go.mod)
+	_, _ = fmt.Fprintln(writer, "  📜 Applying migrations with goose (DD-012)...")
 	workspaceRoot, err := findWorkspaceRoot()
 	if err != nil {
 		return fmt.Errorf("failed to find workspace root: %w", err)
 	}
+	migrationsDir := filepath.Join(workspaceRoot, "migrations")
 
-	for _, migration := range migrations {
-		// Use absolute path from project root (no relative path issues)
-		migrationPath := filepath.Join(workspaceRoot, "migrations", migration)
-
-		content, err := os.ReadFile(migrationPath)
-		if err != nil {
-			_, _ = fmt.Fprintf(writer, "  ❌ Migration file not found at %s: %v\n", migrationPath, err)
-			return fmt.Errorf("migration file %s not found at %s: %w", migration, migrationPath, err)
-		}
-
-		// Remove CONCURRENTLY keyword for test environment
-		migrationSQL := strings.ReplaceAll(string(content), "CONCURRENTLY ", "")
-
-		// Extract only the UP migration (ignore DOWN section)
-		if strings.Contains(migrationSQL, "-- +goose Down") {
-			parts := strings.Split(migrationSQL, "-- +goose Down")
-			migrationSQL = parts[0]
-		}
-
-		_, err = infra.DB.Exec(migrationSQL)
-		if err != nil {
-			_, _ = fmt.Fprintf(writer, "  ❌ Migration %s failed: %v\n", migration, err)
-			return fmt.Errorf("migration %s failed: %w", migration, err)
-		}
-		_, _ = fmt.Fprintf(writer, "  ✅ Applied %s\n", migration)
+	if err := RunGooseMigrations(context.Background(), infra.DB, migrationsDir, writer); err != nil {
+		return fmt.Errorf("goose migrations failed: %w", err)
 	}
 
-	// Grant permissions
 	_, _ = fmt.Fprintln(writer, "  🔐 Granting permissions...")
 	_, err = infra.DB.Exec(`
 		GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO slm_user;
@@ -1790,10 +1747,6 @@ func applyMigrations(infra *DataStorageInfrastructure, writer io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("failed to grant permissions: %w", err)
 	}
-
-	// Wait for schema propagation
-	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for PostgreSQL schema propagation (2s)...")
-	time.Sleep(2 * time.Second)
 
 	_, _ = fmt.Fprintln(writer, "  ✅ All migrations applied successfully")
 	return nil

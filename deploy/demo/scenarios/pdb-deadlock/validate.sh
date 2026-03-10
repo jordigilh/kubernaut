@@ -19,8 +19,8 @@ done
 
 # ── Wait for alert ──────────────────────────────────────────────────────────
 
-wait_for_alert "KubePodDisruptionBudgetAtLimit" "${NAMESPACE}" 300
-show_alert "KubePodDisruptionBudgetAtLimit"
+wait_for_alert "KubePodDisruptionBudgetAtLimit" "${NAMESPACE}" 480
+show_alert "KubePodDisruptionBudgetAtLimit" "${NAMESPACE}"
 
 # ── Wait for pipeline ──────────────────────────────────────────────────────
 

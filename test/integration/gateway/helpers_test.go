@@ -39,6 +39,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway/config"
 	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
+	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
@@ -92,14 +93,20 @@ type TestServerOptions struct {
 	ReadTimeout  time.Duration
 	WriteTimeout time.Duration
 	IdleTimeout  time.Duration
+	// BR-GATEWAY-036/037: Auth deps (nil = no auth for backward compat)
+	Authenticator auth.Authenticator
+	Authorizer    auth.Authorizer
 }
 
-// DefaultTestServerOptions returns default options for test Gateway servers
+// DefaultTestServerOptions returns default options for test Gateway servers.
+// BR-GATEWAY-036/037: Includes suite-level real K8s auth when available.
 func DefaultTestServerOptions() *TestServerOptions {
 	return &TestServerOptions{
-		ReadTimeout:  5 * time.Second,
-		WriteTimeout: 10 * time.Second,
-		IdleTimeout:  120 * time.Second,
+		ReadTimeout:   5 * time.Second,
+		WriteTimeout:  10 * time.Second,
+		IdleTimeout:   120 * time.Second,
+		Authenticator: suiteAuthenticator,
+		Authorizer:    suiteAuthorizer,
 	}
 }
 
@@ -288,7 +295,7 @@ func StartTestGatewayWithOptions(ctx context.Context, k8sClient *K8sTestClient, 
 	// "namespace not found" errors due to cache propagation delays
 	// DD-005: Convert zap.Logger to logr.Logger for unified logging (per migration decision)
 	logrLogger := zapr.NewLogger(logger)
-	server, err := gateway.NewServerWithK8sClient(cfg, logrLogger, metricsInstance, k8sClient.Client)
+	server, err := gateway.NewServerWithK8sClient(cfg, logrLogger, metricsInstance, k8sClient.Client, opts.Authenticator, opts.Authorizer)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Gateway server: %w", err)
 	}
@@ -315,7 +322,7 @@ func StartTestGatewayWithOptions(ctx context.Context, k8sClient *K8sTestClient, 
 // SendWebhook sends HTTP POST request to Gateway webhook endpoint
 // DD-GATEWAY-004: No authentication needed - handled at network layer
 func SendWebhook(url string, payload []byte) WebhookResponse {
-	return SendWebhookWithAuth(url, payload, "")
+	return SendWebhookWithAuth(url, payload, suiteAuthToken)
 }
 
 // sharedHTTPClient is a package-level HTTP client with connection pooling
@@ -1332,7 +1339,7 @@ func createGatewayServer(cfg *config.ServerConfig, testLogger logr.Logger, k8sCl
 	// DD-AUTH-014 + DD-AUDIT-003: Use SHARED audit store from suite_test.go
 	// The sharedAuditStore has continuous background flusher across all tests
 	// BR-SCOPE-002: nil scope checker = no scope filtering in integration tests
-	return gateway.NewServerForTesting(cfg, testLogger, metricsInstance, k8sClient, sharedAuditStore, nil)
+	return gateway.NewServerForTesting(cfg, testLogger, metricsInstance, k8sClient, sharedAuditStore, nil, suiteAuthenticator, suiteAuthorizer)
 }
 
 // SignalBuilder provides optional fields for creating test signals
@@ -1524,7 +1531,7 @@ func createGatewayServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger
 	// DD-AUTH-014 + DD-AUDIT-003: Use SHARED audit store from suite_test.go
 	// The sharedAuditStore has continuous background flusher across all tests
 	// BR-SCOPE-002: nil scope checker = no scope filtering in integration tests
-	return gateway.NewServerForTesting(cfg, logger, metricsInstance, k8sClient, sharedAuditStore, nil)
+	return gateway.NewServerForTesting(cfg, logger, metricsInstance, k8sClient, sharedAuditStore, nil, suiteAuthenticator, suiteAuthorizer)
 }
 
 // createPrometheusAlert creates a Prometheus AlertManager webhook payload

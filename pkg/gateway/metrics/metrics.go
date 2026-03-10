@@ -19,7 +19,6 @@ package metrics
 import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	dto "github.com/prometheus/client_model/go"
 )
 
 // Gateway Service Prometheus Metrics
@@ -54,26 +53,8 @@ const (
 	// MetricNameHTTPRequestDuration tracks HTTP request latency (P50/P95/P99 SLO)
 	MetricNameHTTPRequestDuration = "gateway_http_request_duration_seconds"
 
-	// MetricNameDeduplicationCacheHitsTotal tracks deduplication cache hits
-	MetricNameDeduplicationCacheHitsTotal = "gateway_deduplication_cache_hits_total"
-
-	// MetricNameDeduplicationRate tracks current deduplication percentage
-	MetricNameDeduplicationRate = "gateway_deduplication_rate"
-
-	// MetricNameConflictRetriesTotal tracks K8s optimistic concurrency retry attempts
-	MetricNameConflictRetriesTotal = "gateway_conflict_retries_total"
-
-	// MetricNameConflictResolutionDuration tracks latency for conflict resolution with retries
-	MetricNameConflictResolutionDuration = "gateway_conflict_resolution_duration_seconds"
-
-	// MetricNameFieldIndexQueryDuration tracks field index query performance
-	MetricNameFieldIndexQueryDuration = "gateway_field_index_query_duration_seconds"
-
 	// MetricNameCircuitBreakerState tracks circuit breaker state (0=closed, 1=half-open, 2=open)
 	MetricNameCircuitBreakerState = "gateway_circuit_breaker_state"
-
-	// MetricNameCircuitBreakerOperationsTotal tracks operations through circuit breaker
-	MetricNameCircuitBreakerOperationsTotal = "gateway_circuit_breaker_operations_total"
 
 	// MetricNameSignalsRejectedTotal tracks signals rejected by scope filtering
 	// BR-SCOPE-002: Gateway Signal Filtering
@@ -95,23 +76,8 @@ type Metrics struct {
 	// Performance Metrics (BR-GATEWAY-067: HTTP request metrics, BR-GATEWAY-079: Performance metrics)
 	HTTPRequestDuration *prometheus.HistogramVec // gateway_http_request_duration_seconds
 
-	// Deduplication Metrics (BR-GATEWAY-069: Deduplication metrics)
-	DeduplicationCacheHitsTotal prometheus.Counter // gateway_deduplication_cache_hits_total
-	// Note: DeduplicationRate is NOT stored here - it's calculated on-the-fly by DeduplicationRateCollector
-
-	// Conflict Resolution Metrics (Performance Observability - Option A)
-	// Track optimistic concurrency control performance for status updates
-	ConflictRetriesTotal      *prometheus.CounterVec   // gateway_conflict_retries_total
-	ConflictResolutionLatency *prometheus.HistogramVec // gateway_conflict_resolution_duration_seconds
-
-	// Field Index Performance Metrics (Performance Observability - Option A)
-	// Track O(1) field index query performance for deduplication lookups
-	FieldIndexQueryDuration *prometheus.HistogramVec // gateway_field_index_query_duration_seconds
-
 	// Circuit Breaker Metrics (Resilience - Option B)
-	// Track K8s API circuit breaker state and operation results
-	CircuitBreakerState      *prometheus.GaugeVec   // gateway_circuit_breaker_state
-	CircuitBreakerOperations *prometheus.CounterVec // gateway_circuit_breaker_operations_total
+	CircuitBreakerState *prometheus.GaugeVec // gateway_circuit_breaker_state
 
 	// Scope Filtering Metrics (BR-SCOPE-002: Gateway Signal Filtering)
 	SignalsRejectedTotal *prometheus.CounterVec // gateway_signals_rejected_total{reason}
@@ -186,59 +152,13 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 			[]string{"endpoint", "method", "status"},
 		),
 
-		// Deduplication Metrics (BR-GATEWAY-069: Deduplication metrics)
-		DeduplicationCacheHitsTotal: factory.NewCounter(
-			prometheus.CounterOpts{
-				Name: MetricNameDeduplicationCacheHitsTotal, // DD-005 V3.0: Pattern B,
-				Help: "Total deduplication cache hits (duplicate fingerprint found)",
-			},
-		),
-		// DeduplicationRate: Removed - now calculated by custom collector (see below)
-
-		// Conflict Resolution Metrics (Performance Observability - Option A)
-		// Track optimistic concurrency control performance for status updates
-		ConflictRetriesTotal: factory.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameConflictRetriesTotal,
-				Help: "Total K8s optimistic concurrency retry attempts by operation and error type",
-			},
-			[]string{"operation", "error_type"},
-		),
-		ConflictResolutionLatency: factory.NewHistogramVec(
-			prometheus.HistogramOpts{
-				Name:    MetricNameConflictResolutionDuration,
-				Help:    "Latency for K8s conflict resolution including retries (seconds)",
-				Buckets: prometheus.ExponentialBuckets(0.001, 2, 10), // 1ms to ~1s
-			},
-			[]string{"operation"},
-		),
-
-		// Field Index Performance Metrics (Performance Observability - Option A)
-		// Track O(1) field index query performance for deduplication lookups
-		FieldIndexQueryDuration: factory.NewHistogramVec(
-			prometheus.HistogramOpts{
-				Name:    MetricNameFieldIndexQueryDuration,
-				Help:    "Field index query duration for deduplication lookups (seconds)",
-				Buckets: prometheus.ExponentialBuckets(0.0001, 2, 10), // 0.1ms to ~100ms
-			},
-			[]string{"index_name"},
-		),
-
 		// Circuit Breaker Metrics (Resilience - Option B)
-		// Track K8s API circuit breaker state and operation results
 		CircuitBreakerState: factory.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Name: MetricNameCircuitBreakerState,
 				Help: "Circuit breaker state (0=closed, 1=half-open, 2=open)",
 			},
 			[]string{"name"},
-		),
-		CircuitBreakerOperations: factory.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameCircuitBreakerOperationsTotal,
-				Help: "Total operations through circuit breaker by name and result",
-			},
-			[]string{"name", "result"},
 		),
 
 		// Scope Filtering Metrics (BR-SCOPE-002)
@@ -251,11 +171,6 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 		),
 	}
 
-	// BR-GATEWAY-069: Register custom collector for deduplication rate
-	// This calculates the rate on-the-fly when /metrics is scraped
-	dedupRateCollector := NewDeduplicationRateCollector(m)
-	registry.MustRegister(dedupRateCollector)
-
 	return m
 }
 
@@ -266,81 +181,4 @@ func (m *Metrics) Registry() prometheus.Gatherer {
 		return m.registry
 	}
 	return prometheus.DefaultGatherer
-}
-
-// DeduplicationRateCollector is a custom Prometheus collector that calculates
-// gateway_deduplication_rate gauge on-the-fly when /metrics is scraped
-// BR-GATEWAY-069: Derived metric implementation
-//
-// Design Pattern: Custom Collector for Derived Metrics
-// - Calculates rate from existing counters (DeduplicationCacheHitsTotal / sum(AlertsReceivedTotal))
-// - No state duplication - reads from Prometheus counters
-// - Metric always fresh when scraped
-// - Standard Prometheus pattern for derived metrics
-type DeduplicationRateCollector struct {
-	metrics *Metrics
-	desc    *prometheus.Desc
-}
-
-// NewDeduplicationRateCollector creates a custom collector for the deduplication rate gauge
-func NewDeduplicationRateCollector(m *Metrics) *DeduplicationRateCollector {
-	return &DeduplicationRateCollector{
-		metrics: m,
-		desc: prometheus.NewDesc(
-			MetricNameDeduplicationRate,
-			"Current deduplication rate (percentage of signals deduplicated, calculated on-the-fly)",
-			nil, // No labels
-			nil, // No constant labels
-		),
-	}
-}
-
-// Describe implements prometheus.Collector
-func (c *DeduplicationRateCollector) Describe(ch chan<- *prometheus.Desc) {
-	ch <- c.desc
-}
-
-// Collect implements prometheus.Collector
-// Calculates deduplication rate from existing counters when /metrics is scraped
-func (c *DeduplicationRateCollector) Collect(ch chan<- prometheus.Metric) {
-	// Get total deduplications (simple counter, no labels)
-	var totalDeduplicated float64
-	metricCh := make(chan prometheus.Metric, 1)
-	go func() {
-		c.metrics.DeduplicationCacheHitsTotal.Collect(metricCh)
-		close(metricCh)
-	}()
-	for m := range metricCh {
-		var dto dto.Metric
-		if err := m.Write(&dto); err == nil && dto.Counter != nil {
-			totalDeduplicated = dto.Counter.GetValue()
-		}
-	}
-
-	// Get total signals received (sum across all source_type and severity labels)
-	var totalReceived float64
-	receivedCh := make(chan prometheus.Metric, 100)
-	go func() {
-		c.metrics.AlertsReceivedTotal.Collect(receivedCh)
-		close(receivedCh)
-	}()
-	for m := range receivedCh {
-		var dto dto.Metric
-		if err := m.Write(&dto); err == nil && dto.Counter != nil {
-			totalReceived += dto.Counter.GetValue()
-		}
-	}
-
-	// Calculate rate (0 if no signals received yet)
-	var dedupRate float64
-	if totalReceived > 0 {
-		dedupRate = totalDeduplicated / totalReceived
-	}
-
-	// Emit gauge metric
-	ch <- prometheus.MustNewConstMetric(
-		c.desc,
-		prometheus.GaugeValue,
-		dedupRate,
-	)
 }

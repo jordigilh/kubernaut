@@ -112,8 +112,8 @@ func TestBuildCustomLabelsBoostSQL_SingleKey(t *testing.T) {
 	if !strings.Contains(result, "constraint") {
 		t.Errorf("expected SQL to reference constraint key, got: %s", result)
 	}
-	if !strings.Contains(result, "0.05") {
-		t.Errorf("expected 0.05 weight for exact match, got: %s", result)
+	if !strings.Contains(result, "0.15") {
+		t.Errorf("expected 0.15 weight for exact match, got: %s", result)
 	}
 }
 
@@ -202,8 +202,8 @@ func TestBuildCustomLabelsBoostSQL_MultipleKeys(t *testing.T) {
 	if !strings.Contains(result, "team") {
 		t.Errorf("expected SQL to reference team key, got: %s", result)
 	}
-	if !strings.Contains(result, "0.05") {
-		t.Errorf("expected exact match weight 0.05, got: %s", result)
+	if !strings.Contains(result, "0.15") {
+		t.Errorf("expected exact match weight 0.15, got: %s", result)
 	}
 	// Wildcard half-boost present
 	if !strings.Contains(result, `'"*"'`) {

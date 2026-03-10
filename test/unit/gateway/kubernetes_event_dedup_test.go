@@ -134,10 +134,9 @@ var _ = Describe("K8s Event Deduplication with Owner Chain Resolution", func() {
 		})
 	})
 
-	// Test 3: Fallback to involvedObject when owner resolution fails
-	Describe("Fallback behavior on owner resolution failure", func() {
-		It("should fall back to involvedObject-based fingerprint when resolution fails", func() {
-			// Mock: Owner resolution fails (RBAC error)
+	// Test 3: Owner resolution failure drops the signal (no fallback to pod-level fingerprint)
+	Describe("Signal drop on owner resolution failure", func() {
+		It("should return error when owner resolution fails (stale alert for deleted pod)", func() {
 			resolver := &mockOwnerResolver{
 				resolveFunc: func(ctx context.Context, namespace, kind, name string) (string, string, error) {
 					return "", "", fmt.Errorf("RBAC: forbidden")
@@ -147,17 +146,10 @@ var _ = Describe("K8s Event Deduplication with Owner Chain Resolution", func() {
 
 			event := newK8sEventJSON("BackOff", "Warning", "payment-api-789", "prod")
 			signal, err := adapter.Parse(ctx, event)
-			Expect(err).ToNot(HaveOccurred())
-
-			// Should fall back to involvedObject-based fingerprint (without reason)
-			// Even on fallback, reason is excluded from fingerprint
-			expectedFingerprint := types.CalculateOwnerFingerprint(types.ResourceIdentifier{
-				Namespace: "prod",
-				Kind:      "Pod",
-				Name:      "payment-api-789",
-			})
-			Expect(signal.Fingerprint).To(Equal(expectedFingerprint),
-				"On owner resolution failure, should fall back to involvedObject-based fingerprint (reason excluded)")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("dropping signal"))
+			Expect(signal).To(BeNil(),
+				"Signal must be nil when owner resolution fails to prevent pod-level dedup breakage")
 		})
 	})
 

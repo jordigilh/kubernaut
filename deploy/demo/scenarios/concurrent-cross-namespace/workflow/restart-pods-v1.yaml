@@ -1,0 +1,38 @@
+apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
+metadata:
+  name: restart-pods-v1
+spec:
+  metadata:
+    workflowName: restart-pods-v1
+    version: "1.0.0"
+    description:
+      what: "Performs a rolling restart of a deployment to recover from CrashLoopBackOff by resetting pod state without changing the deployment revision"
+      whenToUse: "When a deployment enters CrashLoopBackOff and the signal carries risk_tolerance=high. This simpler restart approach prioritizes recovery speed over revision safety -- it resets pod state without rolling back to a previous revision. Best for teams that accept the risk of the current configuration and want the fastest path to recovery."
+      whenNotToUse: "When the crash is caused by a persistent configuration error that will recur after restart, or when the signal carries risk_tolerance=low. In those cases, a full rollback to a known-good revision is safer."
+      preconditions: "The deployment exists and the crash may be transient (resource pressure, dependency timing, stale state)."
+
+  actionType: RollbackDeployment
+
+  labels:
+    severity: [critical, high]
+    environment: [production, staging, "*"]
+    component: "*"
+    priority: "*"
+
+  customLabels:
+    risk_tolerance: "high"
+
+  execution:
+    engine: job
+    bundle: quay.io/kubernaut-cicd/test-workflows/graceful-restart-job@sha256:ff29339e9d9bb4a590a5392de0b8a7c6326932af207230b8cefc77a70b2b67e7
+
+  parameters:
+    - name: TARGET_NAMESPACE
+      type: string
+      required: true
+      description: "Namespace of the affected deployment"
+    - name: TARGET_DEPLOYMENT
+      type: string
+      required: true
+      description: "Name of the deployment to restart"

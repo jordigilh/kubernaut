@@ -32,6 +32,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/oci"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
+	actiontyperepo "github.com/jordigilh/kubernaut/pkg/datastorage/repository/actiontype"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server/response"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 )
@@ -80,6 +81,18 @@ type RemediationHistoryQuerier interface {
 	QueryROEventsBySpecHash(ctx context.Context, specHash string, since, until time.Time) ([]repository.RawAuditRow, error)
 }
 
+// WorkflowContentIntegrityRepository defines the data access operations needed
+// for content integrity checking during workflow registration. When a workflow
+// with the same name+version already exists, these methods determine the correct
+// action: idempotent return, supersede, or re-enable.
+// BR-WORKFLOW-006: Content hash verification prevents spec tampering.
+type WorkflowContentIntegrityRepository interface {
+	Create(ctx context.Context, workflow *models.RemediationWorkflow) error
+	GetActiveByNameAndVersion(ctx context.Context, workflowName, version string) (*models.RemediationWorkflow, error)
+	GetLatestDisabledByNameAndVersion(ctx context.Context, workflowName, version string) (*models.RemediationWorkflow, error)
+	UpdateStatus(ctx context.Context, workflowID, version, status, reason, updatedBy string) error
+}
+
 // ActionTypeValidator validates action types against the taxonomy before DB insertion.
 // DD-WORKFLOW-016: Explicit validation for clean 400 errors instead of FK constraint 500.
 type ActionTypeValidator interface {
@@ -99,12 +112,14 @@ type Handler struct {
 	actionTraceRepository   *repository.ActionTraceRepository // ADR-033: Multi-dimensional success tracking
 	workflowRepo            *repository.WorkflowRepository    // BR-STORAGE-013: Workflow catalog (label-only search)
 	workflowLifecycleRepo   WorkflowLifecycleRepository       // GAP-WF-1: Lifecycle ops (enable/disable/deprecate) - uses workflowRepo when nil
+	workflowIntegrityRepo   WorkflowContentIntegrityRepository // BR-WORKFLOW-006: Content hash integrity checking
 	actionTypeValidator     ActionTypeValidator                // GAP-4: DD-WORKFLOW-016 taxonomy validation
 	auditStore              audit.AuditStore                  // BR-AUDIT-023: Workflow search audit
-	schemaExtractor         *oci.SchemaExtractor              // DD-WORKFLOW-017: OCI-based workflow registration
+	schemaExtractor         *oci.SchemaExtractor              // DD-WE-006: OCI bundle validation (ValidateBundleExists)
 	dependencyValidator     validation.DependencyValidator     // DD-WE-006: Schema-declared dependency validation
 	executionNamespace      string                            // DD-WE-006: Namespace where dependencies are provisioned
 	remediationHistoryRepo  RemediationHistoryQuerier         // BR-HAPI-016: Remediation history context (DD-HAPI-016 v1.1)
+	actionTypeRepo          *actiontyperepo.Repository        // BR-WORKFLOW-007: ActionType CRD lifecycle
 }
 
 // HandlerOption is a functional option for configuring the Handler
@@ -167,8 +182,8 @@ func WithAuditStore(store audit.AuditStore) HandlerOption {
 	}
 }
 
-// WithSchemaExtractor sets the OCI schema extractor for workflow registration
-// DD-WORKFLOW-017: OCI-based workflow registration (pullspec-only)
+// WithSchemaExtractor sets the OCI schema extractor for bundle validation
+// DD-WE-006: ValidateBundleExists uses OCI puller to verify execution bundles
 func WithSchemaExtractor(extractor *oci.SchemaExtractor) HandlerOption {
 	return func(h *Handler) {
 		h.schemaExtractor = extractor
@@ -185,11 +200,28 @@ func WithDependencyValidator(v validation.DependencyValidator, executionNamespac
 	}
 }
 
+// WithWorkflowContentIntegrityRepository sets the content integrity repository
+// for ContentHash-based duplicate detection during workflow registration.
+// BR-WORKFLOW-006: Prevents spec tampering for same name+version workflows.
+func WithWorkflowContentIntegrityRepository(repo WorkflowContentIntegrityRepository) HandlerOption {
+	return func(h *Handler) {
+		h.workflowIntegrityRepo = repo
+	}
+}
+
 // WithRemediationHistoryQuerier sets the remediation history repository.
 // BR-HAPI-016: Remediation history context for LLM prompt enrichment.
 func WithRemediationHistoryQuerier(repo RemediationHistoryQuerier) HandlerOption {
 	return func(h *Handler) {
 		h.remediationHistoryRepo = repo
+	}
+}
+
+// WithActionTypeRepository sets the action type taxonomy repository.
+// BR-WORKFLOW-007: ActionType CRD lifecycle management.
+func WithActionTypeRepository(repo *actiontyperepo.Repository) HandlerOption {
+	return func(h *Handler) {
+		h.actionTypeRepo = repo
 	}
 }
 

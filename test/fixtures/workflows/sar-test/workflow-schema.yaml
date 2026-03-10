@@ -1,33 +1,37 @@
-schemaVersion: "1.0"
-# SAR Test Workflow Schema (BR-WORKFLOW-004)
-# Used by: DataStorage E2E — 23_sar_access_control_test.go (DD-AUTH-012)
+apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
 metadata:
-  workflowId: sar-test-v1
-  version: "1.0.0"
-  description:
-    what: "Test workflow for SubjectAccessReview and user attribution validation"
-    whenToUse: "For E2E testing of SAR-based access control on workflow catalog"
-    whenNotToUse: "Not intended for production use"
-    preconditions: "DataStorage service running with RBAC configured"
-
-actionType: RestartPod
-
-labels:
-  severity: [high]
-  environment: [test]
-  component: deployment
-  priority: P2
-
-execution:
-  engine: tekton
-  bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:8d727758cf289589e025fc9b89e254d73cb77b4c6384b850007b9ef1e8412200
-
-parameters:
-  - name: NAMESPACE
-    type: string
-    required: true
-    description: "Target namespace"
-  - name: DEPLOYMENT_NAME
-    type: string
-    required: true
-    description: "Name of the deployment to restart"
+  name: sar-test-v1
+spec:
+  # SAR Test Workflow Schema (BR-WORKFLOW-004)
+  # Used by: DataStorage E2E — 23_sar_access_control_test.go (DD-AUTH-012)
+  metadata:
+    workflowName: sar-test-v1
+    version: "1.0.0"
+    description:
+      what: "Test workflow for SubjectAccessReview and user attribution validation"
+      whenToUse: "For E2E testing of SAR-based access control on workflow catalog"
+      whenNotToUse: "Not intended for production use"
+      preconditions: "DataStorage service running with RBAC configured"
+  
+  actionType: RestartPod
+  
+  labels:
+    severity: [high]
+    environment: [test]
+    component: deployment
+    priority: P2
+  
+  execution:
+    engine: tekton
+    bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:adfc09ea45a5b627550c6a73fe75d50efe1c80fa43359fcc4908c9c5b0639ac3
+  
+  parameters:
+    - name: NAMESPACE
+      type: string
+      required: true
+      description: "Target namespace"
+    - name: DEPLOYMENT_NAME
+      type: string
+      required: true
+      description: "Name of the deployment to restart"

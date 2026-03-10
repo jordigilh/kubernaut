@@ -1,34 +1,38 @@
-schemaVersion: "1.0"
-# Rollback Deployment Disabled Test Workflow Schema (BR-WORKFLOW-004)
-# Used by: DataStorage E2E — 04_workflow_discovery_test.go (DD-HAPI-017)
-# This workflow is created and then DISABLED via PATCH to test discovery exclusion
+apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
 metadata:
-  workflowId: rollback-deployment-disabled-test-v1
-  version: "1.0.0"
-  description:
-    what: "Rolls back a deployment (disabled variant for testing discovery exclusion)"
-    whenToUse: "For E2E testing of disabled workflow exclusion from discovery"
-    whenNotToUse: "Not intended for production use"
-    preconditions: "Deployment has previous revisions available"
-
-actionType: RollbackDeployment
-
-labels:
-  severity: [high]
-  environment: [production, staging, test]
-  component: deployment
-  priority: P1
-
-execution:
-  engine: tekton
-  bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:8d727758cf289589e025fc9b89e254d73cb77b4c6384b850007b9ef1e8412200
-
-parameters:
-  - name: NAMESPACE
-    type: string
-    required: true
-    description: "Target namespace containing the deployment"
-  - name: DEPLOYMENT_NAME
-    type: string
-    required: true
-    description: "Name of the deployment to roll back"
+  name: rollback-deployment-disabled-test-v1
+spec:
+  # Rollback Deployment Disabled Test Workflow Schema (BR-WORKFLOW-004)
+  # Used by: DataStorage E2E — 04_workflow_discovery_test.go (DD-HAPI-017)
+  # This workflow is created and then DISABLED via PATCH to test discovery exclusion
+  metadata:
+    workflowName: rollback-deployment-disabled-test-v1
+    version: "1.0.0"
+    description:
+      what: "Rolls back a deployment (disabled variant for testing discovery exclusion)"
+      whenToUse: "For E2E testing of disabled workflow exclusion from discovery"
+      whenNotToUse: "Not intended for production use"
+      preconditions: "Deployment has previous revisions available"
+  
+  actionType: RollbackDeployment
+  
+  labels:
+    severity: [high]
+    environment: [production, staging, test]
+    component: deployment
+    priority: P1
+  
+  execution:
+    engine: tekton
+    bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:adfc09ea45a5b627550c6a73fe75d50efe1c80fa43359fcc4908c9c5b0639ac3
+  
+  parameters:
+    - name: NAMESPACE
+      type: string
+      required: true
+      description: "Target namespace containing the deployment"
+    - name: DEPLOYMENT_NAME
+      type: string
+      required: true
+      description: "Name of the deployment to roll back"

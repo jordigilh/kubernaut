@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+SCENARIO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCENARIO_NAME="memory-leak"
+DEMO_NS="demo-memory-leak"
+ALERT_NAME="ContainerMemoryExhaustionPredicted"
+RESOURCE_TAPE="memory-leak-pods.tape"
+SCREENS_TAPE="memory-leak-screens.tape"
+APPROVAL_REQUIRED="false"
+TERMINAL_STATE="Completed"
+INJECT_CMD=""
+SETUP_CMD="bash ${SCENARIO_DIR}/tape-setup.sh"
+CLEANUP_CMD="bash ${SCENARIO_DIR}/cleanup.sh"
+source "$(cd "${SCENARIO_DIR}/../../../.." && pwd)/deploy/demo/scripts/record-scenario.sh"

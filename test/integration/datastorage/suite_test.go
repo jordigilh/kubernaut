@@ -22,7 +22,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strings" // Used by cleanupContainers and migration processing
+	"strings"
 	"testing"
 	"time"
 
@@ -748,7 +748,7 @@ func connectRedis() {
 }
 
 // applyMigrationsWithPropagationTo applies migrations to a specific database connection
-// Used by SynchronizedBeforeSuite process 1 to setup schema once
+// using the goose Go library (DD-012). Used by SynchronizedBeforeSuite process 1.
 func applyMigrationsWithPropagationTo(targetDB *sql.DB) {
 	ctx := context.Background()
 
@@ -757,50 +757,21 @@ func applyMigrationsWithPropagationTo(targetDB *sql.DB) {
 	_, err := targetDB.ExecContext(ctx, "DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
 	Expect(err).ToNot(HaveOccurred())
 
-	// 2. Auto-discover ALL migrations from filesystem (no manual sync required!)
-	// This prevents test failures when DataStorage team adds new migrations
-	// Reference: docs/handoff/MIGRATION_SYNC_PREVENTION_STRATEGY.md
-	GinkgoWriter.Println("  📜 Auto-discovering migrations from filesystem...")
+	// 2. Apply all migrations with goose (DD-012)
+	GinkgoWriter.Println("  📜 Applying migrations with goose (DD-012)...")
 	migrationsDir := "../../../migrations"
-	migrations, err := infrastructure.DiscoverMigrations(migrationsDir)
-	Expect(err).ToNot(HaveOccurred(), "Migration discovery should succeed")
+	err = infrastructure.RunGooseMigrations(ctx, targetDB, migrationsDir, GinkgoWriter)
+	Expect(err).ToNot(HaveOccurred(), "goose migrations should succeed")
 
-	GinkgoWriter.Printf("  📋 Found %d migrations to apply (auto-discovered)\n", len(migrations))
-
-	// 3. Apply each migration in order
-	for _, migration := range migrations {
-		GinkgoWriter.Printf("  📜 Applying %s...\n", migration)
-		migrationPath := "../../../migrations/" + migration
-		content, err := os.ReadFile(migrationPath)
-		if err != nil {
-			GinkgoWriter.Printf("  ❌ Migration file not found: %v\n", err)
-			Fail(fmt.Sprintf("Migration file %s not found: %v", migration, err))
-		}
-
-		// Remove CONCURRENTLY keyword for test environment
-		// CONCURRENTLY cannot run inside a transaction block
-		migrationSQL := strings.ReplaceAll(string(content), "CONCURRENTLY ", "")
-
-		// Extract only the UP migration (ignore DOWN section)
-		// Goose migrations have "-- +goose Up" and "-- +goose Down" markers
-		if strings.Contains(migrationSQL, "-- +goose Down") {
-			// Split at the DOWN marker and only use the UP part
-			parts := strings.Split(migrationSQL, "-- +goose Down")
-			migrationSQL = parts[0]
-		}
-
-		_, err = targetDB.ExecContext(ctx, migrationSQL)
-		if err != nil {
-			GinkgoWriter.Printf("  ❌ Migration %s failed: %v\n", migration, err)
-			Fail(fmt.Sprintf("Migration %s failed: %v", migration, err))
-		}
-	}
-
-	GinkgoWriter.Println("  ✅ All migrations applied successfully")
+	// 3. Grant permissions
+	_, err = targetDB.ExecContext(ctx, `
+		GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO slm_user;
+		GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO slm_user;
+		GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO slm_user;
+	`)
+	Expect(err).ToNot(HaveOccurred(), "granting permissions should succeed")
 
 	// 4. Verify and create critical constraints in public schema
-	// Migration 019 should create uq_workflow_name_version, but verify it exists
-	// This prevents test failures when workflow repository tests use public schema
 	GinkgoWriter.Println("  🔍 Verifying critical constraints in public schema...")
 	verifyAndCreatePublicSchemaConstraints(ctx, targetDB)
 
@@ -808,12 +779,9 @@ func applyMigrationsWithPropagationTo(targetDB *sql.DB) {
 	GinkgoWriter.Println("  📅 Creating dynamic partitions for current month...")
 	createDynamicPartitions(ctx, targetDB)
 
-	// 5. Wait for schema propagation (Context API lesson)
-	// PostgreSQL needs time to propagate schema changes to new connections
-	// Per TESTING_GUIDELINES.md: Use Eventually() to verify schema propagation
+	// 6. Wait for schema propagation
 	GinkgoWriter.Println("  ⏳ Waiting for schema propagation...")
 	Eventually(func() error {
-		// Verify schema exists by attempting a simple query
 		_, err := targetDB.ExecContext(ctx, "SELECT 1")
 		return err
 	}, 5*time.Second, 100*time.Millisecond).Should(Succeed(), "Schema should propagate")
@@ -821,13 +789,38 @@ func applyMigrationsWithPropagationTo(targetDB *sql.DB) {
 }
 
 // verifyAndCreatePublicSchemaConstraints ensures critical constraints exist in public schema
-// Migration 019 should create these, but this provides a safety net for test reliability
-// Authority: Migration 019 (uq_workflow_name_version constraint)
-// Business Requirement: BR-STORAGE-012 (Workflow Catalog Immutability)
+// verifyAndCreatePublicSchemaConstraints ensures critical constraints exist in public schema.
+// Migration 003 replaced the full UNIQUE constraint with a partial unique index
+// (uq_workflow_name_version_active) that only enforces uniqueness for active workflows,
+// allowing superseded/disabled records to coexist with the same name+version.
+// Authority: Migration 003 (BR-WORKFLOW-006 content integrity)
+// Business Requirement: BR-STORAGE-012, BR-WORKFLOW-006
 func verifyAndCreatePublicSchemaConstraints(ctx context.Context, targetDB *sql.DB) {
-	// Check if uq_workflow_name_version constraint exists
-	var constraintExists bool
-	checkQuery := `
+	// Check for the partial unique index (migration 003) — preferred
+	var partialIndexExists bool
+	partialCheckQuery := `
+		SELECT EXISTS (
+			SELECT 1 FROM pg_class c
+			JOIN pg_namespace n ON n.oid = c.relnamespace
+			WHERE n.nspname = 'public'
+			  AND c.relname = 'uq_workflow_name_version_active'
+			  AND c.relkind = 'i'
+		)
+	`
+	err := targetDB.QueryRowContext(ctx, partialCheckQuery).Scan(&partialIndexExists)
+	if err != nil {
+		GinkgoWriter.Printf("  ⚠️  Failed to check partial index existence: %v\n", err)
+		Fail(fmt.Sprintf("Failed to verify constraints: %v", err))
+	}
+
+	if partialIndexExists {
+		GinkgoWriter.Println("  ✅ Partial unique index uq_workflow_name_version_active exists (migration 003)")
+		return
+	}
+
+	// Fallback: check for the legacy full UNIQUE constraint (pre-migration 003)
+	var legacyConstraintExists bool
+	legacyCheckQuery := `
 		SELECT EXISTS (
 			SELECT 1 FROM pg_constraint con
 			JOIN pg_class rel ON rel.oid = con.conrelid
@@ -837,29 +830,30 @@ func verifyAndCreatePublicSchemaConstraints(ctx context.Context, targetDB *sql.D
 			  AND con.conname = 'uq_workflow_name_version'
 		)
 	`
-	err := targetDB.QueryRowContext(ctx, checkQuery).Scan(&constraintExists)
+	err = targetDB.QueryRowContext(ctx, legacyCheckQuery).Scan(&legacyConstraintExists)
 	if err != nil {
-		GinkgoWriter.Printf("  ⚠️  Failed to check constraint existence: %v\n", err)
+		GinkgoWriter.Printf("  ⚠️  Failed to check legacy constraint existence: %v\n", err)
 		Fail(fmt.Sprintf("Failed to verify constraints: %v", err))
 	}
 
-	if constraintExists {
-		GinkgoWriter.Println("  ✅ Constraint uq_workflow_name_version exists in public schema")
+	if legacyConstraintExists {
+		GinkgoWriter.Println("  ✅ Legacy constraint uq_workflow_name_version exists (pre-migration 003)")
 		return
 	}
 
-	// Constraint missing - create it (defensive programming for test reliability)
-	GinkgoWriter.Println("  ⚠️  Constraint uq_workflow_name_version missing - creating...")
-	createConstraintSQL := `
-		ALTER TABLE public.remediation_workflow_catalog
-		ADD CONSTRAINT uq_workflow_name_version UNIQUE (workflow_name, version)
+	// Neither exists — create the partial unique index (migration 003 intent)
+	GinkgoWriter.Println("  ⚠️  No workflow uniqueness constraint found — creating partial index...")
+	createIndexSQL := `
+		CREATE UNIQUE INDEX uq_workflow_name_version_active
+		ON public.remediation_workflow_catalog (workflow_name, version)
+		WHERE status = 'active'
 	`
-	_, err = targetDB.ExecContext(ctx, createConstraintSQL)
+	_, err = targetDB.ExecContext(ctx, createIndexSQL)
 	if err != nil {
-		GinkgoWriter.Printf("  ❌ Failed to create constraint: %v\n", err)
-		Fail(fmt.Sprintf("Failed to create uq_workflow_name_version constraint: %v", err))
+		GinkgoWriter.Printf("  ❌ Failed to create partial index: %v\n", err)
+		Fail(fmt.Sprintf("Failed to create uq_workflow_name_version_active index: %v", err))
 	}
-	GinkgoWriter.Println("  ✅ Created constraint uq_workflow_name_version in public schema")
+	GinkgoWriter.Println("  ✅ Created partial unique index uq_workflow_name_version_active")
 }
 
 // NOTE: Container-based service functions (buildDataStorageService, startDataStorageService, waitForServiceReady)

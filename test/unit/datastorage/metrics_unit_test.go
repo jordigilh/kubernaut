@@ -26,7 +26,7 @@ import (
 // ========================================
 // TDD RED PHASE: Metrics Struct Tests
 // Business Requirement: BR-STORAGE-019 (Logging and metrics)
-// GAP-10: Audit-specific metrics
+// GAP-10: Audit-specific metrics (external-facing per GitHub issue #294)
 // Test entry point is in helpers_test.go (TestMetrics)
 // ========================================
 
@@ -47,26 +47,21 @@ var _ = Describe("Metrics Struct", func() {
 	Context("Metrics Creation", func() {
 		It("should create metrics struct with all functional metrics", func() {
 			// CORRECTNESS: All metrics are functional (can record values without panicking)
-			// If any metric were nil, these calls would panic
-			m.AuditTracesTotal.WithLabelValues("test_table", "success").Inc()
 			m.AuditLagSeconds.WithLabelValues("test_table").Observe(0.5)
 			m.WriteDuration.WithLabelValues("test_table").Observe(0.1)
-			m.ValidationFailures.WithLabelValues("test_field", "test_reason").Inc()
 		})
 
 		It("should register metrics with custom registry", func() {
 			// Record some values to ensure metrics appear in Gather()
-			m.AuditTracesTotal.WithLabelValues(metrics.ServiceNotification, metrics.AuditStatusSuccess).Inc()
 			m.AuditLagSeconds.WithLabelValues(metrics.ServiceNotification).Observe(0.5)
 			m.WriteDuration.WithLabelValues("notification_audit").Observe(0.025)
-			m.ValidationFailures.WithLabelValues("notification_id", metrics.ValidationReasonRequired).Inc()
 
 			// Gather metrics from registry
 			families, err := registry.Gather()
 			Expect(err).ToNot(HaveOccurred())
 
-			// Should have metrics registered (4 metrics)
-			Expect(families).To(HaveLen(4), "Registry should contain 4 metric families")
+			// Should have 2 metrics (external-facing per GitHub issue #294)
+			Expect(families).To(HaveLen(2), "Registry should contain 2 metric families")
 
 			// Check for key metrics
 			metricNames := make(map[string]bool)
@@ -74,63 +69,8 @@ var _ = Describe("Metrics Struct", func() {
 				metricNames[family.GetName()] = true
 			}
 
-			Expect(metricNames).To(HaveKey("datastorage_audit_traces_total"), "audit_traces_total metric should exist")
 			Expect(metricNames).To(HaveKey("datastorage_audit_lag_seconds"), "audit_lag_seconds metric should exist")
 			Expect(metricNames).To(HaveKey("datastorage_write_duration_seconds"), "write_duration metric should exist")
-			Expect(metricNames).To(HaveKey("datastorage_validation_failures_total"), "validation_failures metric should exist")
-		})
-	})
-
-	Context("GAP-10: Audit Traces Total Metric", func() {
-		It("should increment audit traces total with service and status labels", func() {
-			// Increment counter
-			m.AuditTracesTotal.WithLabelValues(metrics.ServiceNotification, metrics.AuditStatusSuccess).Inc()
-
-			// Verify metric was incremented
-			families, err := registry.Gather()
-			Expect(err).ToNot(HaveOccurred())
-
-			// Find the audit_traces_total metric
-			var found bool
-			for _, family := range families {
-				if family.GetName() == "datastorage_audit_traces_total" {
-					found = true
-					Expect(family.GetMetric()).To(HaveLen(1), "Should have 1 label combination")
-					metric := family.GetMetric()[0]
-					Expect(metric.GetCounter().GetValue()).To(BeNumerically("==", 1))
-
-					// Check labels
-					labels := metric.GetLabel()
-					Expect(labels).To(HaveLen(2), "Should have 2 labels: service, status")
-
-					// Verify label values
-					labelMap := make(map[string]string)
-					for _, label := range labels {
-						labelMap[label.GetName()] = label.GetValue()
-					}
-					Expect(labelMap["service"]).To(Equal(metrics.ServiceNotification))
-					Expect(labelMap["status"]).To(Equal(metrics.AuditStatusSuccess))
-					break
-				}
-			}
-			Expect(found).To(BeTrue(), "audit_traces_total metric should exist in registry")
-		})
-
-		It("should support different audit statuses", func() {
-			// Increment for different statuses
-			m.AuditTracesTotal.WithLabelValues(metrics.ServiceNotification, metrics.AuditStatusSuccess).Inc()
-			m.AuditTracesTotal.WithLabelValues(metrics.ServiceNotification, metrics.AuditStatusFailure).Inc()
-			m.AuditTracesTotal.WithLabelValues(metrics.ServiceNotification, metrics.AuditStatusDLQFallback).Inc()
-
-			// Verify all statuses recorded
-			families, err := registry.Gather()
-			Expect(err).ToNot(HaveOccurred())
-
-			for _, family := range families {
-				if family.GetName() == "datastorage_audit_traces_total" {
-					Expect(family.GetMetric()).To(HaveLen(3), "Should have 3 label combinations (3 statuses)")
-				}
-			}
 		})
 	})
 
@@ -187,38 +127,6 @@ var _ = Describe("Metrics Struct", func() {
 				}
 			}
 			Expect(found).To(BeTrue(), "write_duration metric should exist")
-		})
-	})
-
-	Context("Validation Failures Metric", func() {
-		It("should increment validation failures with field and reason labels", func() {
-			// Increment validation failure
-			m.ValidationFailures.WithLabelValues("notification_id", metrics.ValidationReasonRequired).Inc()
-
-			// Verify metric was incremented
-			families, err := registry.Gather()
-			Expect(err).ToNot(HaveOccurred())
-
-			var found bool
-			for _, family := range families {
-				if family.GetName() == "datastorage_validation_failures_total" {
-					found = true
-					Expect(family.GetMetric()).To(HaveLen(1))
-					metric := family.GetMetric()[0]
-					Expect(metric.GetCounter().GetValue()).To(BeNumerically("==", 1))
-
-					// Check labels
-					labels := metric.GetLabel()
-					labelMap := make(map[string]string)
-					for _, label := range labels {
-						labelMap[label.GetName()] = label.GetValue()
-					}
-					Expect(labelMap["field"]).To(Equal("notification_id"))
-					Expect(labelMap["reason"]).To(Equal(metrics.ValidationReasonRequired))
-					break
-				}
-			}
-			Expect(found).To(BeTrue())
 		})
 	})
 })

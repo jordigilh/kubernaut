@@ -12,16 +12,19 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NAMESPACE="demo-taint"
 
-# shellcheck source=../../scripts/kind-helper.sh
-source "${SCRIPT_DIR}/../../scripts/kind-helper.sh"
-ensure_kind_cluster "${SCRIPT_DIR}/../kind-config-multinode.yaml" "${1:-}"
+APPROVE_MODE="--auto-approve"
+SKIP_VALIDATE=""
+for _arg in "$@"; do
+    case "$_arg" in
+        --auto-approve)  APPROVE_MODE="--auto-approve" ;;
+        --interactive)   APPROVE_MODE="--interactive" ;;
+        --no-validate)   SKIP_VALIDATE=true ;;
+    esac
+done
 
-# shellcheck source=../../scripts/monitoring-helper.sh
-source "${SCRIPT_DIR}/../../scripts/monitoring-helper.sh"
-ensure_monitoring_stack
+# shellcheck source=../../scripts/platform-helper.sh
 source "${SCRIPT_DIR}/../../scripts/platform-helper.sh"
-ensure_platform
-seed_scenario_workflow "pending-taint"
+require_demo_ready
 
 echo "============================================="
 echo " Pending Pods - Taint Removal Demo (#122)"
@@ -54,17 +57,9 @@ echo "==> Step 5: Waiting for Pending alert to fire (~3 min)..."
 echo "  Check Prometheus: kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090"
 echo ""
 
-# Step 6: Monitor pipeline
-echo "==> Step 6: Pipeline in progress. Monitor with:"
-echo "    kubectl get rr,sp,aa,we,ea -n ${NAMESPACE} -w"
-echo ""
-echo "  Expected flow:"
-echo "    Alert (KubePodNotScheduled) -> Gateway -> SP -> AA (HAPI) -> RO -> WE"
-echo "    LLM investigates Pending pods, finds node taint"
-echo "    Selects RemoveTaint workflow -> removes maintenance taint"
-echo "    Pods get scheduled -> EM verifies pods Running"
-echo ""
-echo "==> To verify remediation succeeded:"
-echo "    kubectl get pods -n ${NAMESPACE}"
-echo "    # All pods should be Running"
-echo "    kubectl describe node <worker-node> | grep Taints"
+# Step 6: Validate pipeline
+if [ "${SKIP_VALIDATE}" != "true" ] && [ -f "${SCRIPT_DIR}/validate.sh" ]; then
+    echo ""
+    echo "==> Running validation pipeline..."
+    bash "${SCRIPT_DIR}/validate.sh" "${APPROVE_MODE}"
+fi

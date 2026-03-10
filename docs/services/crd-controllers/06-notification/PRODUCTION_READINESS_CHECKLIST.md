@@ -198,10 +198,9 @@ This checklist validates that the Notification Controller is ready for productio
 - [x] **notification_reconciliation_duration_seconds** - Histogram ✅
 - [x] **notification_reconciliation_errors_total** - Counter (error_type) ✅
 - [x] **notification_active_notifications** - Gauge (phase) ✅
-- [x] **notification_sanitization_redactions_total** - Counter (pattern_type) ✅
 - [x] **notification_channel_health_score** - Gauge (channel) ✅
 
-**Status**: ✅ **100% Complete** (10/10 metrics)
+**Status**: ✅ **100% Complete** (9/9 metrics)
 
 ---
 

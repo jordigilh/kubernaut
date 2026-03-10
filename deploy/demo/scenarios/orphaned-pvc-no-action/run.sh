@@ -18,15 +18,19 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NAMESPACE="demo-orphaned-pvc"
 
-# shellcheck source=../../scripts/kind-helper.sh
-source "${SCRIPT_DIR}/../../scripts/kind-helper.sh"
-ensure_kind_cluster "${SCRIPT_DIR}/../kind-config-singlenode.yaml" "${1:-}"
+APPROVE_MODE="--auto-approve"
+SKIP_VALIDATE=""
+for _arg in "$@"; do
+    case "$_arg" in
+        --auto-approve)  APPROVE_MODE="--auto-approve" ;;
+        --interactive)   APPROVE_MODE="--interactive" ;;
+        --no-validate)   SKIP_VALIDATE=true ;;
+    esac
+done
 
-# shellcheck source=../../scripts/monitoring-helper.sh
-source "${SCRIPT_DIR}/../../scripts/monitoring-helper.sh"
-ensure_monitoring_stack
+# shellcheck source=../../scripts/platform-helper.sh
 source "${SCRIPT_DIR}/../../scripts/platform-helper.sh"
-ensure_platform
+require_demo_ready
 
 # NOTE: We intentionally do NOT seed a workflow for this scenario.
 # Orphaned PVCs are housekeeping, not a critical issue. The LLM should
@@ -61,7 +65,10 @@ bash "${SCRIPT_DIR}/inject-orphan-pvcs.sh"
 echo ""
 
 echo "==> Step 5: Fault injected. Waiting for KubePersistentVolumeClaimOrphaned alert (~2 min)."
-echo "    The alert fires when >3 bound PVCs exist in namespace ${NAMESPACE}."
-echo ""
-echo "  Expected pipeline:"
-echo "    Alert -> Gateway -> SP -> AIAnalysis (benign, no workflow) -> NoActionRequired"
+
+# Validate pipeline
+if [ "${SKIP_VALIDATE}" != "true" ] && [ -f "${SCRIPT_DIR}/validate.sh" ]; then
+    echo ""
+    echo "==> Running validation pipeline..."
+    bash "${SCRIPT_DIR}/validate.sh" "${APPROVE_MODE}"
+fi

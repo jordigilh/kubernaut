@@ -303,25 +303,25 @@ receivers:
 		It("should use POD_NAMESPACE env var when set", func() {
 			// #207: Routing ConfigMap namespace must match the pod's namespace
 			original := os.Getenv("POD_NAMESPACE")
-			defer os.Setenv("POD_NAMESPACE", original)
+			defer func() { _ = os.Setenv("POD_NAMESPACE", original) }()
 
-			os.Setenv("POD_NAMESPACE", "kubernaut-system")
+			Expect(os.Setenv("POD_NAMESPACE", "kubernaut-system")).To(Succeed())
 			Expect(routing.GetConfigMapNamespace()).To(Equal("kubernaut-system"))
 		})
 
 		It("should fall back to DefaultConfigMapNamespace when POD_NAMESPACE is not set", func() {
 			original := os.Getenv("POD_NAMESPACE")
-			defer os.Setenv("POD_NAMESPACE", original)
+			defer func() { _ = os.Setenv("POD_NAMESPACE", original) }()
 
-			os.Unsetenv("POD_NAMESPACE")
+			Expect(os.Unsetenv("POD_NAMESPACE")).To(Succeed())
 			Expect(routing.GetConfigMapNamespace()).To(Equal(routing.DefaultConfigMapNamespace))
 		})
 
 		It("should use POD_NAMESPACE in IsRoutingConfigMap matching", func() {
 			original := os.Getenv("POD_NAMESPACE")
-			defer os.Setenv("POD_NAMESPACE", original)
+			defer func() { _ = os.Setenv("POD_NAMESPACE", original) }()
 
-			os.Setenv("POD_NAMESPACE", "kubernaut-system")
+			Expect(os.Setenv("POD_NAMESPACE", "kubernaut-system")).To(Succeed())
 			Expect(routing.IsRoutingConfigMap("notification-routing-config", "kubernaut-system")).To(BeTrue())
 			Expect(routing.IsRoutingConfigMap("notification-routing-config", "kubernaut-notifications")).To(BeFalse())
 		})

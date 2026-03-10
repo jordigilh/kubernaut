@@ -1,33 +1,37 @@
-schemaVersion: "1.0"
-# Remove Taint Workflow Schema - Job Backend (BR-WORKFLOW-004)
-# Scenario: #122 -- Pods pending due to node taint -> remove taint
+apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
 metadata:
-  workflowId: remove-taint-v1
-  version: "1.0.0"
-  description:
-    what: "Removes a specific taint from a Kubernetes node to unblock pod scheduling"
-    whenToUse: "When pods are stuck in Pending state because a node has a taint that blocks scheduling, and the taint is no longer needed (e.g., maintenance window ended)"
-    whenNotToUse: "When the taint is intentional (e.g., node is genuinely under maintenance or has a hardware issue)"
-    preconditions: "The node is otherwise healthy and the taint is the sole reason pods are unschedulable"
-
-actionType: RemoveTaint
-
-labels:
-  severity: [low, medium, high, critical]
-  environment: [production, staging, "*"]
-  component: "*"
-  priority: "*"
-
-execution:
-  engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/remove-taint-job@sha256:4055ea8f483abec1cb7d7567fc529c65f4250e74ff9ae9d92e2b6ff485b580e2
-
-parameters:
-  - name: TARGET_NODE
-    type: string
-    required: true
-    description: "Name of the node with the taint to remove"
-  - name: TAINT_KEY
-    type: string
-    required: true
-    description: "Key of the taint to remove (e.g., 'maintenance')"
+  name: remove-taint-v1
+spec:
+  # Remove Taint Workflow Schema - Job Backend (BR-WORKFLOW-004)
+  # Scenario: #122 -- Pods pending due to node taint -> remove taint
+  metadata:
+    workflowName: remove-taint-v1
+    version: "1.0.0"
+    description:
+      what: "Removes a specific taint from a Kubernetes node to unblock pod scheduling"
+      whenToUse: "When pods are stuck in Pending state because a node has a taint that blocks scheduling, and the taint is no longer needed (e.g., maintenance window ended)"
+      whenNotToUse: "When the taint is intentional (e.g., node is genuinely under maintenance or has a hardware issue)"
+      preconditions: "The node is otherwise healthy and the taint is the sole reason pods are unschedulable"
+  
+  actionType: RemoveTaint
+  
+  labels:
+    severity: [low, medium, high, critical]
+    environment: [production, staging, "*"]
+    component: "*"
+    priority: "*"
+  
+  execution:
+    engine: job
+    bundle: quay.io/kubernaut-cicd/test-workflows/remove-taint-job@sha256:4055ea8f483abec1cb7d7567fc529c65f4250e74ff9ae9d92e2b6ff485b580e2
+  
+  parameters:
+    - name: TARGET_NODE
+      type: string
+      required: true
+      description: "Name of the node with the taint to remove"
+    - name: TAINT_KEY
+      type: string
+      required: true
+      description: "Key of the taint to remove (e.g., 'maintenance')"

@@ -134,14 +134,16 @@ The **AIAnalysis Service** is a Kubernetes CRD controller that orchestrates Holm
 
 **Implementation**:
 - `status.selectedWorkflow.workflowId`: Catalog lookup key
-- `status.selectedWorkflow.containerImage`: OCI image reference
+- `status.selectedWorkflow.executionBundle`: OCI image reference (workflow container)
 - `status.selectedWorkflow.parameters`: UPPER_SNAKE_CASE workflow parameters
 - `status.selectedWorkflow.rationale`: LLM reasoning
+
+> **Update (2026-03)**: Original BR used `containerImage`. Actual implementation uses `executionBundle` as the field name for the OCI image reference.
 
 **Acceptance Criteria**:
 - ✅ Workflow selected from predefined catalog (via MCP tool)
 - ✅ Parameters use UPPER_SNAKE_CASE naming convention
-- ✅ Container image reference included for execution
+- ✅ Execution bundle (OCI image reference) included for execution
 
 **Test Coverage**:
 - Unit: Workflow selection logic
@@ -165,13 +167,15 @@ The **AIAnalysis Service** is a Kubernetes CRD controller that orchestrates Holm
 **Rationale**: Root cause identification enables targeted remediation and prevents treating symptoms instead of causes.
 
 **Implementation**:
-- `status.investigationSummary`: RCA summary from HolmesGPT
-- `status.evidenceChain`: Supporting evidence list
-- `status.affectedResource`: Identified problematic resource
+- `status.rootCauseAnalysis.summary`: RCA summary from HolmesGPT
+- `status.rootCauseAnalysis.contributingFactors`: Contributing factors list
+- `status.approvalContext.evidenceCollected`: Supporting evidence for approval decisions
+
+> **Update (2026-03)**: Original BR used `status.investigationSummary` and `status.evidenceChain`. Actual implementation uses `status.rootCauseAnalysis` (with `Summary` and `ContributingFactors` subfields) and `status.approvalContext.evidenceCollected`.
 
 **Acceptance Criteria**:
-- ✅ Root cause identified with evidence chain
-- ✅ Affected resource captured in status
+- ✅ Root cause identified with contributing factors
+- ✅ Evidence collected for approval context
 - ✅ Investigation summary provides actionable insights
 
 **Test Coverage**:
@@ -348,13 +352,16 @@ The **AIAnalysis Service** is a Kubernetes CRD controller that orchestrates Holm
 
 ---
 
-### Category 4: Recovery Flow
+### Category 4: Recovery Flow ⚠️ DEPRECATED (2026-03)
 
-#### BR-AI-080: Track Previous Execution Attempts
+> **Deprecation Notice (2026-03)**: The recovery flow described in BR-AI-080 through BR-AI-083 has been **deprecated**. Recovery was superseded by the Effectiveness Monitor (EM) service, which handles post-remediation assessment. The EM evaluates whether a remediation was effective, making explicit recovery tracking in the AIAnalysis CRD unnecessary. The spec fields (`isRecoveryAttempt`, `recoveryAttemptNumber`, `previousExecutions`) were never added to the CRD.
 
-**Description**: AIAnalysis MUST track previous execution attempts when analyzing recovery scenarios, providing historical context for learning.
+#### BR-AI-080: Track Previous Execution Attempts ⚠️ DEPRECATED
 
-**Priority**: P0 (CRITICAL)
+**Description**: ~~AIAnalysis MUST track previous execution attempts when analyzing recovery scenarios, providing historical context for learning.~~
+
+**Status**: ⚠️ **DEPRECATED** — Superseded by Effectiveness Monitor service.
+**Priority**: ~~P0 (CRITICAL)~~ N/A
 
 **Rationale**: Failed workflows indicate initial RCA may have been incorrect or incomplete. Recovery investigations benefit from knowing what was already tried.
 
@@ -381,11 +388,12 @@ The **AIAnalysis Service** is a Kubernetes CRD controller that orchestrates Holm
 
 ---
 
-#### BR-AI-081: Pass Failure Context to LLM
+#### BR-AI-081: Pass Failure Context to LLM ⚠️ DEPRECATED
 
-**Description**: AIAnalysis MUST pass failure context from previous execution attempts to HolmesGPT-API for improved recovery investigation.
+**Description**: ~~AIAnalysis MUST pass failure context from previous execution attempts to HolmesGPT-API for improved recovery investigation.~~
 
-**Priority**: P0 (CRITICAL)
+**Status**: ⚠️ **DEPRECATED** — Superseded by Effectiveness Monitor service.
+**Priority**: ~~P0 (CRITICAL)~~ N/A
 
 **Rationale**: LLM can learn from previous failures to suggest alternative workflows or identify missed root causes.
 
@@ -412,11 +420,12 @@ The **AIAnalysis Service** is a Kubernetes CRD controller that orchestrates Holm
 
 ---
 
-#### BR-AI-082: Historical Context for Learning
+#### BR-AI-082: Historical Context for Learning ⚠️ DEPRECATED
 
-**Description**: AIAnalysis MUST maintain historical context across recovery attempts to enable learning and pattern recognition.
+**Description**: ~~AIAnalysis MUST maintain historical context across recovery attempts to enable learning and pattern recognition.~~
 
-**Priority**: P1 (HIGH)
+**Status**: ⚠️ **DEPRECATED** — Superseded by Effectiveness Monitor service.
+**Priority**: ~~P1 (HIGH)~~ N/A
 
 **Rationale**: Multiple recovery attempts indicate persistent or complex issues. Historical context helps identify patterns and systemic problems.
 
@@ -442,11 +451,12 @@ The **AIAnalysis Service** is a Kubernetes CRD controller that orchestrates Holm
 
 ---
 
-#### BR-AI-083: Recovery Investigation Flow
+#### BR-AI-083: Recovery Investigation Flow ⚠️ DEPRECATED
 
-**Description**: AIAnalysis MUST support direct recovery investigation flow where RemediationOrchestrator creates new AIAnalysis CRD for recovery attempts.
+**Description**: ~~AIAnalysis MUST support direct recovery investigation flow where RemediationOrchestrator creates new AIAnalysis CRD for recovery attempts.~~
 
-**Priority**: P0 (CRITICAL)
+**Status**: ⚠️ **DEPRECATED** — Superseded by Effectiveness Monitor service.
+**Priority**: ~~P0 (CRITICAL)~~ N/A
 
 **Rationale**: Direct recovery flow (RO → AIAnalysis) is simpler than self-recovery and provides fresh investigation context. Per DD-RECOVERY-002, this is the V1.0 approach.
 

@@ -22,6 +22,7 @@ package v1alpha1
 
 import (
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 )
@@ -413,6 +414,11 @@ func (in *SelectedWorkflow) DeepCopyInto(out *SelectedWorkflow) {
 		for key, val := range *in {
 			(*out)[key] = val
 		}
+	}
+	if in.EngineConfig != nil {
+		in, out := &in.EngineConfig, &out.EngineConfig
+		*out = new(apiextensionsv1.JSON)
+		(*in).DeepCopyInto(*out)
 	}
 }
 

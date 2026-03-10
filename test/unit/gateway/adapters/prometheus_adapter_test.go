@@ -581,6 +581,50 @@ var _ = Describe("BR-GATEWAY-002: Prometheus Adapter - Parse AlertManager Webhoo
 				"BR-GATEWAY-184 FR-4: With only scrape metadata + pod, pod is the correct target")
 		})
 
+		It("[GW-RE-15] should extract ReplicaSet when replicaset label is present (#303)", func() {
+			payload := []byte(`{
+				"alerts": [{
+					"labels": {
+						"alertname": "KubeReplicaSetMismatch",
+						"namespace": "production",
+						"pod": "kube-prometheus-stack-kube-state-metrics-abc123",
+						"replicaset": "payment-api-7f86bb8877"
+					}
+				}]
+			}`)
+
+			signal, err := adapter.Parse(ctx, payload)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(signal.Resource.Kind).To(Equal("ReplicaSet"),
+				"BR-GATEWAY-184 #303: ReplicaSet label must take priority over pod (kube-state-metrics exporter)")
+			Expect(signal.Resource.Name).To(Equal("payment-api-7f86bb8877"),
+				"BR-GATEWAY-184 #303: Resource name must come from replicaset label, not pod label")
+		})
+
+		It("[GW-RE-16] should filter monitoring pod when replicaset is absent and pod is kube-state-metrics (#303)", func() {
+			filter := adapters.NewMonitoringMetadataFilter(logr.Discard())
+			adapterWithFilter := adapters.NewPrometheusAdapter(nil, filter)
+
+			payload := []byte(`{
+				"alerts": [{
+					"labels": {
+						"alertname": "KubeQuotaExceeded",
+						"namespace": "demo",
+						"pod": "kube-prometheus-stack-kube-state-metrics-abc123"
+					}
+				}]
+			}`)
+
+			signal, err := adapterWithFilter.Parse(ctx, payload)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(signal.Resource.Kind).To(Equal("Unknown"),
+				"BR-GATEWAY-184 #303: kube-state-metrics pod label must be filtered; no resource found")
+			Expect(signal.Resource.Name).To(Equal("unknown"),
+				"BR-GATEWAY-184 #303: When only monitoring pod label present, extraction returns unknown")
+		})
+
 		It("[GW-RE-14] should not filter when LabelFilter is nil (backward compatible)", func() {
 			adapterNoFilter := adapters.NewPrometheusAdapter(nil, nil)
 

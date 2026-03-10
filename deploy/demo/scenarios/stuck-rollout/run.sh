@@ -12,16 +12,19 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NAMESPACE="demo-rollout"
 
-# shellcheck source=../../scripts/kind-helper.sh
-source "${SCRIPT_DIR}/../../scripts/kind-helper.sh"
-ensure_kind_cluster "${SCRIPT_DIR}/../kind-config-singlenode.yaml" "${1:-}"
+APPROVE_MODE="--auto-approve"
+SKIP_VALIDATE=""
+for _arg in "$@"; do
+    case "$_arg" in
+        --auto-approve)  APPROVE_MODE="--auto-approve" ;;
+        --interactive)   APPROVE_MODE="--interactive" ;;
+        --no-validate)   SKIP_VALIDATE=true ;;
+    esac
+done
 
-# shellcheck source=../../scripts/monitoring-helper.sh
-source "${SCRIPT_DIR}/../../scripts/monitoring-helper.sh"
-ensure_monitoring_stack
+# shellcheck source=../../scripts/platform-helper.sh
 source "${SCRIPT_DIR}/../../scripts/platform-helper.sh"
-ensure_platform
-seed_scenario_workflow "stuck-rollout"
+require_demo_ready
 
 echo "============================================="
 echo " Stuck Rollout Demo (#130)"
@@ -61,15 +64,9 @@ echo "  Then the KubeDeploymentRolloutStuck alert fires after 1 min more (~3 min
 echo "  Check Prometheus: kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090"
 echo ""
 
-# Step 7: Monitor pipeline
-echo "==> Step 7: Pipeline in progress. Monitor with:"
-echo "    kubectl get rr,sp,aa,we,ea -n ${NAMESPACE} -w"
-echo ""
-echo "  Expected flow:"
-echo "    Alert (StuckRollout) -> Gateway -> SP -> AA (HAPI) -> RO -> WE"
-echo "    LLM diagnoses stuck rollout from bad image -> selects rollback"
-echo "    WE rolls back deployment -> EM verifies all pods Running"
-echo ""
-echo "==> To verify remediation succeeded:"
-echo "    kubectl get pods -n ${NAMESPACE}"
-echo "    kubectl rollout history deployment/checkout-api -n ${NAMESPACE}"
+# Step 7: Validate pipeline
+if [ "${SKIP_VALIDATE}" != "true" ] && [ -f "${SCRIPT_DIR}/validate.sh" ]; then
+    echo ""
+    echo "==> Running validation pipeline..."
+    bash "${SCRIPT_DIR}/validate.sh" "${APPROVE_MODE}"
+fi

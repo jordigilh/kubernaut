@@ -52,6 +52,7 @@ var _ = Describe("Test 09: Signal Validation & Rejection (BR-GATEWAY-003)", Orde
 
 		// BR-SCOPE-002: Create managed namespace so the valid payload passes scope validation
 		testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "signal-valid")
+		helpers.EnsureTestPod(ctx, k8sClient, testNamespace, "validation-test-pod")
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		testLogger.Info("Test 09: Signal Validation & Rejection - Setup")
@@ -80,6 +81,7 @@ var _ = Describe("Test 09: Signal Validation & Rejection (BR-GATEWAY-003)", Orde
 		Expect(err).ToNot(HaveOccurred())
 		req1.Header.Set("Content-Type", "application/json")
 		req1.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+		setE2EAuthHeader(req1)
 		resp1, err := httpClient.Do(req1)
 		Expect(err).ToNot(HaveOccurred())
 		body1, _ := io.ReadAll(resp1.Body)
@@ -101,6 +103,7 @@ var _ = Describe("Test 09: Signal Validation & Rejection (BR-GATEWAY-003)", Orde
 		Expect(err).ToNot(HaveOccurred())
 		req2.Header.Set("Content-Type", "application/json")
 		req2.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+		setE2EAuthHeader(req2)
 		resp2, err := httpClient.Do(req2)
 		Expect(err).ToNot(HaveOccurred())
 		body2, _ := io.ReadAll(resp2.Body)
@@ -125,6 +128,7 @@ var _ = Describe("Test 09: Signal Validation & Rejection (BR-GATEWAY-003)", Orde
 		Expect(err).ToNot(HaveOccurred())
 		req3.Header.Set("Content-Type", "application/json")
 		req3.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+		setE2EAuthHeader(req3)
 		resp3, err := httpClient.Do(req3)
 		Expect(err).ToNot(HaveOccurred())
 		body3, _ := io.ReadAll(resp3.Body)
@@ -160,6 +164,7 @@ var _ = Describe("Test 09: Signal Validation & Rejection (BR-GATEWAY-003)", Orde
 			Expect(err).ToNot(HaveOccurred())
 			req4.Header.Set("Content-Type", "application/json")
 			req4.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+			setE2EAuthHeader(req4)
 			resp4, err = httpClient.Do(req4)
 			Expect(err).ToNot(HaveOccurred())
 			code := resp4.StatusCode

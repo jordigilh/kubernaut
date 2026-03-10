@@ -1,0 +1,55 @@
+---
+# BR-GATEWAY-036/037: Gateway signal source RBAC
+# Grants signal sources (AlertManager, Event Exporter) permission to send
+# signals to the Gateway via its auth middleware (SAR: services/gateway-service/create)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: gateway-signal-source
+  labels:
+    app: gateway
+    component: auth
+    {{- include "kubernaut.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["services"]
+    resourceNames: ["gateway-service"]
+    verbs: ["create"]
+---
+# Event Exporter → Gateway (deployed by this chart)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: event-exporter-gateway-signal-source
+  labels:
+    app: gateway
+    component: auth
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: gateway-signal-source
+subjects:
+  - kind: ServiceAccount
+    name: event-exporter
+    namespace: {{ .Release.Namespace }}
+{{- range .Values.gateway.auth.signalSources }}
+---
+# {{ .name }} → Gateway (external signal source)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ .name }}-gateway-signal-source
+  labels:
+    app: gateway
+    component: auth
+    {{- include "kubernaut.labels" $ | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: gateway-signal-source
+subjects:
+  - kind: ServiceAccount
+    name: {{ .serviceAccount }}
+    namespace: {{ .namespace }}
+{{- end }}

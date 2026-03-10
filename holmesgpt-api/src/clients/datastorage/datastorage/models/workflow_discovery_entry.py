@@ -37,7 +37,7 @@ class WorkflowDiscoveryEntry(BaseModel):
     description: StructuredDescription
     version: StrictStr = Field(description="Semantic version")
     schema_version: Optional[StrictStr] = Field(default=None, description="Schema format version (e.g., 1.0, 1.1). #255", alias="schemaVersion")
-    schema_image: StrictStr = Field(description="OCI image used to extract the workflow schema", alias="schemaImage")
+    schema_image: Optional[StrictStr] = Field(default=None, description="OCI image used to extract the workflow schema", alias="schemaImage")
     execution_bundle: Optional[StrictStr] = Field(default=None, description="OCI execution bundle reference (digest-pinned)", alias="executionBundle")
     execution_engine: Optional[StrictStr] = Field(default=None, description="Execution engine (tekton, job)", alias="executionEngine")
     __properties: ClassVar[List[str]] = ["workflowId", "workflowName", "name", "description", "version", "schemaVersion", "schemaImage", "executionBundle", "executionEngine"]

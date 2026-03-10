@@ -11,20 +11,20 @@ spec:
     rules:
     - alert: KubeResourceQuotaExhausted
       expr: |
-        max by (replicaset, namespace) (
-          (kube_replicaset_spec_replicas{namespace="demo-quota"} > 0)
-          unless on(replicaset, namespace)
-          (kube_replicaset_status_replicas{namespace="demo-quota"} > 0)
-        )
-      for: 1m
+        (
+          kube_replicaset_spec_replicas{namespace="demo-quota"}
+          -
+          kube_replicaset_status_ready_replicas{namespace="demo-quota"}
+        ) > 0
+      for: 3m
       labels:
         severity: warning
       annotations:
         summary: >
           ReplicaSet {{ $labels.replicaset }} in namespace {{ $labels.namespace }}
-          wants pods but has zero running. ResourceQuota likely prevents creation.
+          has {{ $value }} fewer ready pods than desired. ResourceQuota likely
+          prevents pod creation.
         description: >
-          A ReplicaSet in the demo-quota namespace has desired replicas but zero
-          actual replicas. This occurs when ResourceQuota prevents pod creation
-          at admission (FailedCreate). Pods never reach Pending state.
+          A ReplicaSet in the demo-quota namespace cannot reach its desired replica
+          count because ResourceQuota prevents pod creation at admission (FailedCreate).
           Check: kubectl describe quota -n demo-quota && kubectl describe rs {{ $labels.replicaset }} -n demo-quota

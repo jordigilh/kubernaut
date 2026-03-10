@@ -64,9 +64,8 @@ func (a *K8sAuthenticator) ValidateToken(ctx context.Context, token string) (str
 		return "", fmt.Errorf("token validation failed: %w", err)
 	}
 
-	// Check if token is authenticated
 	if !result.Status.Authenticated {
-		return "", errors.New("token not authenticated")
+		return "", fmt.Errorf("%w: token rejected by API server", ErrTokenInvalid)
 	}
 
 	// Check if user info is present

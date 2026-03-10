@@ -20,6 +20,11 @@ echo "Found AuthorizationPolicies:"
 echo "${POLICIES}"
 
 POLICY_NAME="${TARGET_POLICY}"
+if ! echo "${POLICIES}" | grep -q "/${POLICY_NAME}$"; then
+  echo "WARNING: TARGET_POLICY '${POLICY_NAME}' not found among existing policies."
+  echo "Falling back to removing all AuthorizationPolicies in the namespace."
+  POLICY_NAME=""
+fi
 
 echo "Checking pods status..."
 NOT_READY=$(kubectl get pods -n "${TARGET_NAMESPACE}" \
@@ -29,9 +34,15 @@ echo "Pods not ready: ${NOT_READY}"
 echo "Validated: AuthorizationPolicy '${POLICY_NAME}' found, likely blocking traffic."
 
 echo "=== Phase 2: Action ==="
-echo "Removing AuthorizationPolicy '${POLICY_NAME}'..."
-kubectl delete authorizationpolicy.policy.linkerd.io "${POLICY_NAME}" \
-  -n "${TARGET_NAMESPACE}"
+if [ -n "${POLICY_NAME}" ]; then
+  echo "Removing AuthorizationPolicy '${POLICY_NAME}'..."
+  kubectl delete authorizationpolicy.policy.linkerd.io "${POLICY_NAME}" \
+    -n "${TARGET_NAMESPACE}"
+else
+  echo "Removing all AuthorizationPolicies in ${TARGET_NAMESPACE}..."
+  kubectl delete authorizationpolicies.policy.linkerd.io --all \
+    -n "${TARGET_NAMESPACE}" --ignore-not-found
+fi
 
 SERVERS=$(kubectl get servers.policy.linkerd.io \
   -n "${TARGET_NAMESPACE}" -o name 2>/dev/null || echo "")

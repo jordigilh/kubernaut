@@ -149,9 +149,9 @@ Update NT service documentation to reflect recent achievements:
    ```go
    // pkg/notification/metrics/metrics.go
    const (
-       MetricNameReconcilerRequestsTotal = "kubernaut_notification_reconciler_requests_total"
-       MetricNameReconcilerDuration      = "kubernaut_notification_reconciler_duration_seconds"
-       // ... 8 more metrics
+       MetricNameDeliveryAttemptsTotal = "kubernaut_notification_delivery_attempts_total"
+       MetricNameReconcilerActive      = "kubernaut_notification_reconciler_active"
+       // ... 4 more metrics (operational/debugging metrics removed per v1.13)
    )
    ```
 

@@ -7,8 +7,9 @@
 **Scope**: All Kubernetes CRDs in Kubernaut requiring user authentication
 
 **Version History**:
+- **v1.3** (March 4, 2026): Added RemediationWorkflow (CREATE/DELETE) as 4th webhook handler. Workflow registration now uses CRD + ValidatingWebhook (ADR-058), replacing REST-only approach. Corrects v1.1 note about workflow CRUD using HTTP middleware.
 - **v1.2** (January 6, 2026): **ARCHITECTURE UPDATE**: Single consolidated webhook deployment (`kubernaut-auth-webhook`) with multiple handlers. Updated implementation approach and timelines. Added references to comprehensive implementation and test plans.
-- **v1.1** (January 6, 2026): Added NotificationRequest (DELETE attribution). **Note**: Workflow CRUD uses HTTP middleware, not CRD webhook (see DD-AUTH-003)
+- **v1.1** (January 6, 2026): Added NotificationRequest (DELETE attribution). ~~Note: Workflow CRUD uses HTTP middleware, not CRD webhook~~ (Corrected in v1.3: RemediationWorkflow now uses CRD webhook)
 - **v1.0** (December 20, 2025): Initial version with WorkflowExecution + RemediationApprovalRequest
 
 ---
@@ -50,6 +51,11 @@
 │  │    → NotificationRequestDeleteHandler                    │ │
 │  │    → Captures: metadata.deletionTimestamp + user         │ │
 │  │                                                           │ │
+│  │  Route: /validate-remediationworkflow                    │ │
+│  │    → RemediationWorkflowHandler (ADR-058)                │ │
+│  │    → CREATE: registers in DS, updates .status async      │ │
+│  │    → DELETE: disables in DS (best-effort)                │ │
+│  │                                                           │ │
 │  │  Shared: ExtractAuthenticatedUser(req.UserInfo)          │ │
 │  └──────────────────────────────────────────────────────────┘ │
 │                                                                 │
@@ -79,11 +85,15 @@
 ### **Implementation Structure**
 
 ```
-cmd/authwebhook/main.go                    # Single webhook server entry point
-pkg/authwebhook/auth/common.go             # Shared: ExtractAuthenticatedUser()
-pkg/authwebhook/workflowexecution_handler.go     # WE-specific logic
-pkg/authwebhook/remediationapprovalrequest_handler.go  # RAR-specific logic
-pkg/authwebhook/notificationrequest_handler.go         # NR-specific logic
+cmd/authwebhook/main.go                              # Single webhook server entry point
+pkg/authwebhook/authenticator.go                      # Shared: ExtractAuthenticatedUser()
+pkg/authwebhook/types.go                              # Shared: AuthContext, event type constants
+pkg/authwebhook/workflowexecution_handler.go          # WE-specific logic
+pkg/authwebhook/remediationapprovalrequest_handler.go # RAR-specific logic
+pkg/authwebhook/notificationrequest_handler.go        # NR-specific logic
+pkg/authwebhook/remediationworkflow_handler.go        # RW-specific logic (ADR-058)
+pkg/authwebhook/remediationworkflow_audit.go          # RW audit helpers
+pkg/authwebhook/ds_client.go                          # DS client adapter for RW handler
 ```
 
 **Comprehensive Plans**:
@@ -171,15 +181,16 @@ env:
 
 ## 📊 **CRD Webhook Requirements Matrix**
 
-### **CRDs Requiring Webhooks** ✅ (3 Total)
+### **CRDs Requiring Webhooks** ✅ (4 Total)
 
 | CRD | Use Case | Status Fields Requiring Auth | SOC2 Control | Implementation Owner | Priority | Target Version |
 |-----|----------|------------------------------|--------------|----------------------|----------|----------------|
 | **WorkflowExecution** | Block Clearance | `status.blockClearanceRequest` | CC8.1 (Attribution) | WE Team | P0 | v1.0 |
 | **RemediationApprovalRequest** | Approval Decisions | `status.approvalRequest` | CC8.1 (Attribution) | RO Team | P0 | v1.0 |
 | **NotificationRequest** | Cancellation Attribution | `metadata.deletionTimestamp` (DELETE) | CC8.1 (Attribution) | Notification Team | P0 | v1.1 |
+| **RemediationWorkflow** | CRD-Based Registration/Disable | `status.workflowId`, `status.catalogStatus` (CREATE/DELETE) | CC8.1 (Attribution) | Webhook Team | P0 | v1.0 |
 
-**Note**: Workflow catalog CRUD operations use externalized authorization via sidecar (REST API), not CRD webhooks. See `DD-AUTH-003-externalized-authorization-sidecar.md` for workflow CRUD attribution.
+**Note**: RemediationWorkflow registration uses a ValidatingWebhookConfiguration that bridges CRD lifecycle to the DS workflow catalog (ADR-058, BR-WORKFLOW-006). The DS REST API for workflow registration is internal-only.
 
 ### **CRDs NOT Requiring Webhooks** ❌
 
@@ -376,6 +387,41 @@ kubectl delete notificationrequest <nr-name> -n <namespace>
 
 **Timeline**: 1-2 days (reuses shared library)
 
+---
+
+### **Use Case 4: RemediationWorkflow Registration and Disable** (v1.3)
+
+**Business Requirement**: [BR-WORKFLOW-006](../../requirements/BR-WORKFLOW-006-remediation-workflow-crd.md), [ADR-058](./ADR-058-webhook-driven-workflow-registration.md)
+
+**Scenario**: Operator registers a workflow by creating a RemediationWorkflow CRD. The AuthWebhook intercepts CREATE, forwards to DS for validation and catalog population, and updates CRD `.status` asynchronously. On DELETE, AW disables the workflow in DS (best-effort).
+
+**Why Webhook Required**:
+1. ✅ **SOC2 CC8.1**: Must record WHO registered/deleted the workflow for audit trail
+2. ✅ **DS Bridge**: CRD lifecycle must be bridged to DS catalog (registration, disable)
+3. ✅ **Validation Gate**: CREATE must be denied if DS validation fails (schema errors, unknown action types)
+
+**Operations Intercepted**:
+- **CREATE**: Validates and registers workflow in DS catalog; populates `.status` asynchronously
+- **DELETE**: Disables workflow in DS catalog (best-effort; DELETE always succeeds)
+
+**Status Fields Updated** (asynchronously after CREATE):
+- `status.workflowId`: UUID from DS
+- `status.catalogStatus`: `"active"` or re-enabled status
+- `status.registeredBy`: Authenticated user
+- `status.registeredAt`: Registration timestamp
+- `status.previouslyExisted`: `true` if re-enabled from disabled
+
+**Audit Events**:
+- `remediationworkflow.admitted.create`: CREATE admitted (success)
+- `remediationworkflow.admitted.delete`: DELETE admitted (success)
+- `remediationworkflow.admitted.denied`: CREATE denied (failure)
+
+**Webhook Type**: **ValidatingWebhookConfiguration** (CREATE + DELETE operations)
+
+**Implementation Owner**: Webhook Team
+
+**Timeline**: Implemented (v1.0, Issue #299)
+
 **Reference**: [TRIAGE_OPERATOR_ACTIONS_SOC2_EXTENSION.md](../../development/SOC2/TRIAGE_OPERATOR_ACTIONS_SOC2_EXTENSION.md)
 
 ---
@@ -539,18 +585,17 @@ Is this an approval workflow or override action?
 
 ---
 
-## 🎯 **Team Responsibility Matrix (v1.2 - Consolidated Webhook)**
+## 🎯 **Team Responsibility Matrix (v1.3 - Consolidated Webhook)**
 
 | CRD | Webhook Needed? | Handler Owner | Implementation Phase | Timeline | Dependencies |
 |-----|----------------|---------------|----------------------|----------|--------------|
 | **WorkflowExecution** | ✅ YES | Webhook Team | Phase 2 (Day 2) | 1 day | Phase 1 complete |
 | **RemediationApprovalRequest** | ✅ YES | Webhook Team | Phase 3 (Day 3) | 1 day | Phase 1 complete |
 | **NotificationRequest** (v1.1) | ✅ YES | Webhook Team | Phase 4 (Day 4) | 1 day | Phase 1 complete |
+| **RemediationWorkflow** (v1.3) | ✅ YES | Webhook Team | Implemented (Issue #299) | Implemented | ADR-058, BR-WORKFLOW-006 |
 | **SignalProcessing** | ❌ NO | N/A | N/A | N/A | N/A (K8s enrichment automated) |
 | **AIAnalysis** | ❌ NO | N/A | N/A | N/A | N/A (AI investigation automated) |
 | **RemediationRequest** | ❌ NO | N/A | N/A | N/A | N/A (routing automated) |
-
-**Note**: Workflow CRUD attribution (Data Storage Team) uses externalized authorization via sidecar, not CRD webhook. See `DD-AUTH-003` for implementation.
 
 **Single Webhook Service Ownership**:
 - **Webhook Team**: Implements unified `kubernaut-auth-webhook` service
@@ -565,8 +610,7 @@ Is this an approval workflow or override action?
 **V1.0 (December 2025)**: WorkflowExecution + RemediationApprovalRequest
 **V1.1 (January 2026)**: NotificationRequest (Week 2-3)
 **V1.2 (January 2026)**: **ARCHITECTURE UPDATE** - Single consolidated webhook deployment
-
-**Note**: Workflow CRUD attribution uses externalized authorization via sidecar (DD-AUTH-003), not CRD webhook
+**V1.3 (March 2026)**: RemediationWorkflow (CREATE/DELETE) - CRD-based workflow registration (ADR-058)
 
 ### **Consolidated Implementation (5-6 days) - v1.2**
 
@@ -605,7 +649,7 @@ Is this an approval workflow or override action?
 - **Deliverable**: NR attribution working end-to-end ✅
 
 **Day 5-6: Integration + E2E + Documentation** (Webhook Team)
-- E2E tests: Complete flows for all 3 CRDs (14 tests)
+- E2E tests: Complete flows for all 4 CRDs (14+ tests)
 - Performance validation: Webhook latency < 50ms
 - Security validation: TLS + RBAC + NetworkPolicy
 - Documentation: Runbooks, troubleshooting guides
@@ -741,7 +785,8 @@ This DD is successfully implemented when:
 
 | Version | Date | Changes |
 |---------|------|---------|
-| **1.2** | **2026-01-06** | **ARCHITECTURE UPDATE**: Single consolidated webhook deployment (`kubernaut-auth-webhook`) with multiple handlers instead of 3 separate webhooks. Added consolidated architecture section with benefits (66% memory reduction, 3× faster deployments, guaranteed consistency). Updated team responsibility matrix for unified Webhook Team ownership. Updated implementation timeline to 5-6 days consolidated approach. Added comprehensive [implementation plan](../../development/SOC2/WEBHOOK_IMPLEMENTATION_PLAN.md) and [test plan](../../development/SOC2/WEBHOOK_TEST_PLAN.md) references. Updated all DD-AUTH-002 references to DD-AUTH-003 (sidecar pattern supersedes middleware). |
+| **1.3** | **2026-03-04** | Added RemediationWorkflow as 4th webhook handler (ValidatingWebhookConfiguration for CREATE/DELETE). Workflow registration now uses CRD + AW bridge to DS (ADR-058, BR-WORKFLOW-006). Corrects v1.1 note: workflow operations now use CRD webhook, not HTTP middleware. Updated architecture diagram, file structure, matrix (3→4), team responsibility matrix, and timeline. |
+| 1.2 | 2026-01-06 | **ARCHITECTURE UPDATE**: Single consolidated webhook deployment (`kubernaut-auth-webhook`) with multiple handlers instead of 3 separate webhooks. Added consolidated architecture section with benefits (66% memory reduction, 3× faster deployments, guaranteed consistency). Updated team responsibility matrix for unified Webhook Team ownership. Updated implementation timeline to 5-6 days consolidated approach. Added comprehensive [implementation plan](../../development/SOC2/WEBHOOK_IMPLEMENTATION_PLAN.md) and [test plan](../../development/SOC2/WEBHOOK_TEST_PLAN.md) references. Updated all DD-AUTH-002 references to DD-AUTH-003 (sidecar pattern supersedes middleware). |
 | 1.1 | 2026-01-06 | Added NotificationRequest (DELETE attribution). Workflow CRUD uses externalized authorization via sidecar (DD-AUTH-003), not CRD webhook. |
 | 1.0.2 | 2025-12-20 | **CRITICAL**: Removed KubernetesExecution CRD (deprecated 2025-10-19, never implemented, replaced by Tekton Pipelines). Verified all CRDs against authoritative BR documents. Added deprecation note referencing [DEPRECATED.md](../../services/crd-controllers/04-kubernetesexecutor/DEPRECATED.md). Updated examples with actual CRDs: SignalProcessing, AIAnalysis, RemediationRequest, NotificationRequest. |
 | 1.0.1 | 2025-12-20 | Fixed CRD names to match actual kubernaut CRDs: KubernetesExecution (not KubernetesExecutor), SignalProcessing, AIAnalysis, NotificationRequest (removed invented CRDs: WorkflowDefinition, AlertForwarder, DataStorage). |
@@ -750,7 +795,7 @@ This DD is successfully implemented when:
 ---
 
 **Document Status**: ✅ **AUTHORITATIVE**
-**Version**: 1.2
+**Version**: 1.3
 **Authority**: Decision criteria for all CRD webhook implementations
-**Next Review**: 2026-02-06 (1 month - after consolidated webhook v1.2 deployment)
+**Next Review**: 2026-06-04 (3 months)
 

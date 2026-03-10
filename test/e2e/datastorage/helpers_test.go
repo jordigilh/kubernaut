@@ -28,6 +28,112 @@ import (
 	. "github.com/onsi/gomega"    //nolint:revive,staticcheck // Ginkgo/Gomega convention
 )
 
+// e2eTestWorkflowStubContent is valid YAML content for CreateWorkflowInlineRequest.
+// Aligns with DS E2E test expectations: discovery queries (ScaleReplicas, critical/production/P0),
+// detected labels tests (hpaEnabled, gitOpsTool), and duplicate detection.
+const e2eTestWorkflowStubContent = `apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
+metadata:
+  name: e2e-stub
+spec:
+  metadata:
+    workflowName: e2e-stub-workflow
+    version: "1.0.0"
+    description:
+      what: "Stub workflow for E2E test registration"
+      whenToUse: "For E2E tests that need a valid CreateWorkflow request body"
+  actionType: ScaleReplicas
+  labels:
+    severity: [critical]
+    environment: [production]
+    component: pod
+    priority: P0
+  detectedLabels:
+    hpaEnabled: "true"
+    gitOpsTool: "argocd"
+  execution:
+    engine: tekton
+    bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:adfc09ea45a5b627550c6a73fe75d50efe1c80fa43359fcc4908c9c5b0639ac3
+  parameters:
+    - name: TARGET_RESOURCE
+      type: string
+      required: true
+      description: "Target resource for remediation"
+`
+
+// e2eTestAllDetectedLabelsContent is a workflow with all 8 detectedLabels fields populated.
+// Used by E2E-DS-043-005 to verify the full OCI -> DB -> HTTP round-trip for every field.
+const e2eTestAllDetectedLabelsContent = `apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
+metadata:
+  name: e2e-all-labels
+spec:
+  metadata:
+    workflowName: detected-labels-all-fields-v1
+    version: "1.0.0"
+    description:
+      what: "Workflow with all 8 detectedLabels fields for round-trip E2E testing"
+      whenToUse: "E2E-DS-043-005: validates every detectedLabels field survives storage"
+  actionType: RestartPod
+  labels:
+    severity: [critical]
+    environment: [production]
+    component: pod
+    priority: P0
+  detectedLabels:
+    hpaEnabled: "true"
+    pdbProtected: "true"
+    stateful: "true"
+    helmManaged: "true"
+    networkIsolated: "true"
+    gitOpsManaged: "true"
+    gitOpsTool: "flux"
+    serviceMesh: "istio"
+  execution:
+    engine: tekton
+    bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:adfc09ea45a5b627550c6a73fe75d50efe1c80fa43359fcc4908c9c5b0639ac3
+  parameters:
+    - name: TARGET_RESOURCE
+      type: string
+      required: true
+      description: "Target resource for remediation"
+`
+
+// generateWorkflowContent returns valid inline YAML for CreateWorkflowInlineRequest
+// with the given workflowName and version. Useful for tests that need distinct
+// workflow versions or names to avoid idempotent 200 OK responses.
+func generateWorkflowContent(workflowName, version string) string {
+	return fmt.Sprintf(`apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
+metadata:
+  name: %[1]s
+spec:
+  metadata:
+    workflowName: %[1]s
+    version: "%[2]s"
+    description:
+      what: "Generated workflow %[1]s v%[2]s for E2E testing"
+      whenToUse: "E2E tests that need distinct workflow versions"
+  actionType: ScaleReplicas
+  labels:
+    severity: [critical]
+    environment: [production]
+    component: pod
+    priority: P0
+  detectedLabels:
+    hpaEnabled: "true"
+    gitOpsTool: "argocd"
+  execution:
+    engine: tekton
+    bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:adfc09ea45a5b627550c6a73fe75d50efe1c80fa43359fcc4908c9c5b0639ac3
+  parameters:
+    - name: TARGET_RESOURCE
+      type: string
+      required: true
+      description: "Target resource for remediation"
+`, workflowName, version)
+}
+
 // postAuditEventBatch posts multiple audit events using the ogen client and returns the event IDs
 func postAuditEventBatch(
 	ctx context.Context,

@@ -1,0 +1,12 @@
+apiVersion: kubernaut.ai/v1alpha1
+kind: ActionType
+metadata:
+  name: increase-memory-limits
+  namespace: kubernaut-system
+spec:
+  name: IncreaseMemoryLimits
+  description:
+    what: "Increase memory resource limits on containers."
+    whenToUse: "OOM kills are caused by memory limits being too low relative to the workload actual requirements."
+    whenNotToUse: "When the deployment is constrained by a ResourceQuota -- increasing individual container limits does not increase the namespace's total allocation. Also not appropriate for memory leaks with unbounded growth."
+    preconditions: "Memory usage shows a stable pattern consistent with legitimate workload, not unbounded growth over time."

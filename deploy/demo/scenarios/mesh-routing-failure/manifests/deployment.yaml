@@ -86,3 +86,38 @@ spec:
     targetPort: 8080
     name: http
   type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: traffic-gen
+  namespace: demo-mesh-failure
+  labels:
+    app: traffic-gen
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: traffic-gen
+  template:
+    metadata:
+      labels:
+        app: traffic-gen
+    spec:
+      containers:
+      - name: curl-loop
+        image: curlimages/curl:8.12.1
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            while true; do
+              curl -s -o /dev/null http://api-server:8080/ || true
+              sleep 0.5
+            done
+        resources:
+          requests:
+            memory: "16Mi"
+            cpu: "5m"
+          limits:
+            memory: "32Mi"
+            cpu: "20m"

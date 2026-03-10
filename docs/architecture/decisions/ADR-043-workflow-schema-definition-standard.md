@@ -3,22 +3,30 @@
 **Status**: Approved
 **Date**: 2025-11-28
 **Deciders**: Architecture Team
-**Related**: DD-WORKFLOW-003, DD-WORKFLOW-011, DD-NAMING-001, ADR-041
-**Version**: 1.3
+**Related**: DD-WORKFLOW-003, DD-WORKFLOW-011, DD-NAMING-001, ADR-041, BR-WORKFLOW-006, ADR-058, DD-WORKFLOW-017
+**Version**: 1.4
 
 ---
 
 ## Changelog
 
+### Version 1.4 (2026-03-08)
+- **BREAKING**: Schema now uses Kubernetes CRD envelope format (`apiVersion`/`kind`/`metadata`/`spec`). Flat format no longer supported.
+- **Issue #292**: `apiVersion: kubernaut.ai/v1alpha1` and `kind: RemediationWorkflow` re-introduced as CRD envelope. All operational fields moved under `spec`.
+- **Issue #299**: Registration is via `RemediationWorkflow` CRD applied with `kubectl apply`. AuthWebhook forwards inline schema to DS internal API. OCI-based registration (`schemaImage`) removed.
+- **BR-WORKFLOW-004 v1.2**: `signalType`/`signalName` removed from labels. Discovery is by `actionType` (DD-WORKFLOW-016).
+- **Labels**: `severity` and `environment` are now arrays (e.g., `severity: [critical, high]`). `component` and `priority` remain scalar strings.
+- Schema file location: Inline in `RemediationWorkflow` CRD `spec` (no longer extracted from OCI bundles). OCI bundles retained for execution only (`spec.execution.bundle`).
+- See: BR-WORKFLOW-006, ADR-058, DD-WORKFLOW-017
+
 ### Version 1.3 (2026-02-20)
-- **Issue #131**: Added `detectedLabels` as optional top-level field for workflow-author-declared infrastructure requirements
+- **Issue #131**: Added `detectedLabels` as optional field for workflow-author-declared infrastructure requirements
 - **DD-WORKFLOW-001 v2.0**: 8 supported fields: `gitOpsManaged`, `gitOpsTool`, `pdbProtected`, `hpaEnabled`, `stateful`, `helmManaged`, `networkIsolated`, `serviceMesh`
 - **Validation**: Boolean fields accept only `"true"`; string fields accept specific values or `"*"` wildcard; unknown fields rejected
-- **OCI Extractor**: Parses and stores `detectedLabels` during workflow registration
 - See test plan: `docs/testing/ADR-043/TEST_PLAN.md`
 
 ### Version 1.2 (2026-02-13)
-- **BR-WORKFLOW-004**: Removed `apiVersion` and `kind` fields (plain config file, not K8s resource)
+- **BR-WORKFLOW-004**: Removed `apiVersion` and `kind` fields (plain config file, not K8s resource) -- **Superseded by v1.4**
 - **BR-WORKFLOW-004**: Renamed field names to camelCase (e.g., `signal_type` -> `signalType`, `workflow_id` -> `workflowId`)
 - **BR-WORKFLOW-004**: Promoted `actionType` from labels to top-level field
 - **BR-WORKFLOW-004**: Made `description` a structured object (`what`, `whenToUse`, `whenNotToUse`, `preconditions`)
@@ -43,12 +51,13 @@ Kubernaut requires a standardized way to define remediation workflow metadata, p
 
 ### Problem Statement
 
-When operators create remediation workflows as OCI bundles containing Tekton Pipelines, we need to:
+When operators define remediation workflows for Kubernaut, we need to:
 
-1. **Discover workflows** by signal type, severity, and other labels
+1. **Discover workflows** by action type, severity, and other labels
 2. **Guide LLM** with parameter constraints (enum, pattern, min/max)
 3. **Validate parameters** before execution
-4. **Support future execution engines** (Ansible, Lambda, etc.)
+4. **Support multiple execution engines** (Tekton, Kubernetes Job, Ansible)
+5. **Enable GitOps registration** via `kubectl apply` of `RemediationWorkflow` CRDs (#292, #299)
 
 ### Options Evaluated
 
@@ -117,350 +126,287 @@ When operators create remediation workflows as OCI bundles containing Tekton Pip
 
 ## Specification
 
-### File Location
+### Schema Location
 
-```
-<oci-bundle>/
-├── pipeline.yaml           # Tekton Pipeline (execution)
-└── workflow-schema.yaml    # Kubernaut Schema (discovery + validation)
+As of v1.4, the workflow schema is embedded inline in the `RemediationWorkflow` CRD `spec` field and registered via `kubectl apply`:
+
+```yaml
+# Applied directly to the cluster:
+kubectl apply -f my-workflow.yaml
 ```
 
-**Path**: `/workflow-schema.yaml` (root of OCI bundle)
-**Format**: YAML 1.2
+The AuthWebhook intercepts the CREATE admission and forwards the inline schema to the Data Storage internal API (ADR-058). OCI bundles are retained for **execution** only (referenced by `spec.execution.bundle`).
+
+**Format**: YAML 1.2 with Kubernetes CRD envelope
 **Encoding**: UTF-8
 
 ### Schema Definition
 
 ```yaml
-# Kubernaut Workflow Schema v1.0
-# Authority: ADR-043
-# See: docs/architecture/decisions/ADR-043-workflow-schema-definition-standard.md
-# Format spec: docs/requirements/BR-WORKFLOW-004-workflow-schema-format.md
+# RemediationWorkflow CRD Format (v1.4)
+# Authority: ADR-043, BR-WORKFLOW-004, BR-WORKFLOW-006
+# CRD definition: config/crd/bases/kubernaut.ai_remediationworkflows.yaml
+# Parser: pkg/datastorage/schema/parser.go
 
 # ============================================
-# METADATA (Required)
+# CRD ENVELOPE (Required)
 # ============================================
+apiVersion: kubernaut.ai/v1alpha1     # REQUIRED - determines SchemaVersion
+kind: RemediationWorkflow             # REQUIRED - must be "RemediationWorkflow"
 metadata:
-  # Unique workflow identifier (used in catalog and LLM responses)
-  # Format: lowercase alphanumeric with hyphens
-  # Example: "oomkill-scale-down", "disk-cleanup-v2"
-  workflowId: string  # REQUIRED
+  name: string                        # REQUIRED - K8s resource name
 
-  # Semantic version (SemVer 2.0)
-  # Format: MAJOR.MINOR.PATCH
-  # Example: "1.0.0", "2.1.3"
-  version: string  # REQUIRED
+# ============================================
+# SPEC (Required) - all operational fields
+# ============================================
+spec:
+  # ============================================
+  # WORKFLOW METADATA (Required)
+  # ============================================
+  metadata:
+    workflowId: string  # REQUIRED - lowercase alphanumeric with hyphens
+    version: string     # REQUIRED - semantic version (e.g., "1.0.0")
+    description:        # REQUIRED - structured description for LLM and operators
+      what: string        # REQUIRED - one sentence describing what the workflow does
+      whenToUse: string   # REQUIRED - root cause conditions
+      whenNotToUse: string  # OPTIONAL - exclusion conditions
+      preconditions: string # OPTIONAL - conditions to verify
+    maintainers:        # OPTIONAL
+      - name: string
+        email: string
 
-  # Human-readable description (shown to LLM and operators)
-  # Max length: 500 characters
-  description: string  # REQUIRED
+  # ============================================
+  # ACTION TYPE (Required)
+  # Primary matching key for workflow discovery (DD-WORKFLOW-016)
+  # ============================================
+  actionType: string  # REQUIRED - PascalCase, from action_type_taxonomy
 
-  # Optional maintainer information
-  maintainers:  # OPTIONAL
+  # ============================================
+  # DISCOVERY LABELS (Required)
+  # Used by MCP search to match workflows to incidents
+  # ============================================
+  labels:
+    severity: [string]     # REQUIRED - array: [critical, high, medium, low]
+    environment: [string]  # REQUIRED - array: [production, staging, "*"]
+    component: string      # REQUIRED - K8s resource type (pod, deployment, node)
+    priority: string       # REQUIRED - P0, P1, P2, P3, or "*"
+
+  # ============================================
+  # CUSTOM LABELS (Optional)
+  # Operator-defined key-value labels for additional filtering (#212)
+  # ============================================
+  customLabels:            # OPTIONAL
+    [key]: string
+
+  # ============================================
+  # DETECTED LABELS (Optional)
+  # Author-declared infrastructure requirements (ADR-043 v1.3)
+  # DD-WORKFLOW-001 v2.0: matched against incident DetectedLabels
+  # ============================================
+  detectedLabels:          # OPTIONAL
+    gitOpsManaged: string    # "true" - requires GitOps management
+    gitOpsTool: string       # "argocd", "flux", "*"
+    pdbProtected: string     # "true"
+    hpaEnabled: string       # "true"
+    stateful: string         # "true"
+    helmManaged: string      # "true"
+    networkIsolated: string  # "true"
+    serviceMesh: string      # "istio", "linkerd", "*"
+
+  # ============================================
+  # EXECUTION (Required)
+  # Engine and bundle configuration
+  # ============================================
+  execution:
+    engine: string   # "tekton" (default), "job", "ansible"
+    bundle: string   # OCI image (tekton/job) or Git URL (ansible), with sha256 digest
+    engineConfig:    # Engine-specific config (BR-WE-016, x-kubernetes-preserve-unknown-fields)
+      # For ansible: playbookPath, commitDigest, jobTemplateName, inventoryName
+
+  # ============================================
+  # DEPENDENCIES (Optional, DD-WE-006)
+  # Infrastructure resources required in execution namespace
+  # ============================================
+  dependencies:
+    secrets:
+      - name: string
+    configMaps:
+      - name: string
+
+  # ============================================
+  # PARAMETERS (Required)
+  # At least one parameter must be defined
+  # ============================================
+  parameters:
+    - name: string        # REQUIRED - UPPER_SNAKE_CASE (DD-WORKFLOW-003)
+      type: string        # REQUIRED - string, integer, boolean, array, float
+      required: boolean   # REQUIRED
+      description: string # REQUIRED - human-readable for LLM
+      enum: [string]      # OPTIONAL - allowed values
+      pattern: string     # OPTIONAL - regex pattern
+      minimum: number     # OPTIONAL - min value
+      maximum: number     # OPTIONAL - max value
+      default: any        # OPTIONAL - default value
+      dependsOn: [string] # OPTIONAL - parameter dependencies
+
+  # ============================================
+  # ROLLBACK PARAMETERS (Optional)
+  # ============================================
+  rollbackParameters:     # OPTIONAL
     - name: string
-      email: string
-
-# ============================================
-# DISCOVERY LABELS (Required)
-# Used by MCP search to match workflows to signals
-# ============================================
-labels:
-  # Signal type this workflow handles
-  # Must match DD-WORKFLOW-001 mandatory labels
-  signalType: string  # REQUIRED - e.g., "OOMKilled", "CrashLoopBackOff"
-
-  # Severity level this workflow is designed for
-  # Values: "critical", "high", "medium", "low"
-  severity: string  # REQUIRED
-
-  # DEPRECATED: riskTolerance removed (BR-WORKFLOW-004)
-
-  # Business category for filtering
-  # Values: "cost-management", "performance", "availability", "security"
-  business_category: string  # OPTIONAL
-
-  # Additional custom labels (operator-defined)
-  # Example: "team: platform", "region: us-east-1"
-  # No character limits (unlike K8s labels)
-  [custom_key]: string  # OPTIONAL
-
-# ============================================
-# DETECTED LABELS (Optional)
-# Author-declared infrastructure requirements
-# DD-WORKFLOW-001 v2.0: matched against incident
-# DetectedLabels from HAPI LabelDetector
-# ============================================
-detectedLabels:  # OPTIONAL
-  # Boolean fields: accept only "true" (absence = no requirement)
-  gitOpsManaged: string   # "true" - requires GitOps management
-  pdbProtected: string    # "true" - requires PDB protection
-  hpaEnabled: string      # "true" - requires HPA
-  stateful: string        # "true" - requires stateful workload
-  helmManaged: string     # "true" - requires Helm management
-  networkIsolated: string # "true" - requires NetworkPolicy
-
-  # String fields: accept specific values or "*" wildcard
-  gitOpsTool: string      # "argocd", "flux", "*" (any tool)
-  serviceMesh: string     # "istio", "linkerd", "*" (any mesh)
-
-# ============================================
-# EXECUTION HINT (Optional for V1, Required for V2)
-# Specifies which execution engine runs this workflow
-# ============================================
-execution:
-  # Execution engine type
-  # V1 values: "tekton", "job" (Kubernetes Job - per BR-WE-014)
-  # V2 values: "tekton", "job", "ansible", "lambda", "shell"
-  engine: string  # OPTIONAL (default: "tekton")
-
-  # Container image or bundle reference
-  # For Tekton: OCI bundle URL
-  # For Ansible: Git repo or container with playbook
-  bundle: string  # OPTIONAL (can be derived from OCI bundle)
-
-# ============================================
-# PARAMETERS (Required)
-# Define inputs for workflow execution
-# Format: JSON Schema compatible subset
-# ============================================
-parameters:
-  - name: string  # REQUIRED - Parameter name (UPPER_SNAKE_CASE per DD-WORKFLOW-003)
-    type: string  # REQUIRED - "string", "integer", "boolean", "array"
-    required: boolean  # REQUIRED - Whether parameter must be provided
-    description: string  # REQUIRED - Human-readable description for LLM
-
-    # Validation constraints (all OPTIONAL)
-    enum: [string]  # Allowed values (for type: string)
-    pattern: string  # Regex pattern (for type: string)
-    minimum: number  # Minimum value (for type: integer)
-    maximum: number  # Maximum value (for type: integer)
-    default: any  # Default value if not provided
-
-    # Parameter dependencies (OPTIONAL)
-    # References other parameter names that must be set first
-    depends_on: [string]
-
-# ============================================
-# ROLLBACK PARAMETERS (Optional)
-# Parameters needed to rollback this workflow
-# ============================================
-rollback_parameters:  # OPTIONAL
-  - name: string
-    type: string
-    required: boolean
-    description: string
+      type: string
+      required: boolean
+      description: string
 ```
 
 ### Complete Example
 
 ```yaml
-# /workflow-schema.yaml
-# OOMKilled Scale Down Workflow - Production Ready
-
+apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
 metadata:
-  workflowId: oomkill-scale-down
-  version: "1.0.0"
-  description: >-
-    Scale down deployment replicas to reduce memory pressure when OOMKilled
-    events are detected. Suitable for non-critical workloads where temporary
-    capacity reduction is acceptable.
-  maintainers:
-    - name: Platform Team
-      email: platform@example.com
+  name: oomkill-scale-down
+spec:
+  metadata:
+    workflowId: oomkill-scale-down
+    version: "1.0.0"
+    description:
+      what: "Scale down deployment replicas to reduce memory pressure"
+      whenToUse: "When pods are OOMKilled and temporary capacity reduction is acceptable"
+      whenNotToUse: "When OOM is caused by memory leaks requiring code fix"
+      preconditions: "Pod is managed by a Deployment or StatefulSet"
+    maintainers:
+      - name: Platform Team
+        email: platform@example.com
 
-labels:
-  signalType: OOMKilled
-  severity: critical
-  # DEPRECATED: riskTolerance removed (BR-WORKFLOW-004)
-  business_category: cost-management
-  team: platform
-  environment: production
+  actionType: ScaleReplicas
 
-detectedLabels:
-  hpaEnabled: "true"
-  stateful: "true"
+  labels:
+    severity: [critical, high]
+    environment: [production, staging]
+    component: deployment
+    priority: P1
 
-execution:
-  engine: tekton
-  bundle: quay.io/kubernaut/workflow-oomkill-scale-down:v1.0.0
+  detectedLabels:
+    hpaEnabled: "true"
+    stateful: "true"
 
-parameters:
-  - name: TARGET_RESOURCE_KIND
-    type: string
-    required: true
-    enum: [Deployment, StatefulSet, DaemonSet]
-    description: Kubernetes resource type to modify
+  execution:
+    engine: job
+    bundle: quay.io/kubernaut/workflow-oomkill-scale-down:v1.0.0@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
 
-  - name: TARGET_RESOURCE_NAME
-    type: string
-    required: true
-    pattern: "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
-    description: Name of the Kubernetes resource to scale
+  parameters:
+    - name: TARGET_RESOURCE_KIND
+      type: string
+      required: true
+      enum: [Deployment, StatefulSet, DaemonSet]
+      description: Kubernetes resource type to modify
 
-  - name: TARGET_NAMESPACE
-    type: string
-    required: true
-    pattern: "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
-    description: Kubernetes namespace containing the resource
+    - name: TARGET_RESOURCE_NAME
+      type: string
+      required: true
+      pattern: "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+      description: Name of the Kubernetes resource to scale
 
-  - name: SCALE_TARGET_REPLICAS
-    type: integer
-    required: true
-    minimum: 0
-    maximum: 100
-    description: Number of replicas to scale to (0 = scale to zero)
+    - name: TARGET_NAMESPACE
+      type: string
+      required: true
+      pattern: "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+      description: Kubernetes namespace containing the resource
 
-  - name: WAIT_FOR_ROLLOUT
-    type: boolean
-    required: false
-    default: true
-    description: Wait for deployment rollout to complete before finishing
+    - name: SCALE_TARGET_REPLICAS
+      type: integer
+      required: true
+      minimum: 0
+      maximum: 100
+      description: Number of replicas to scale to (0 = scale to zero)
 
-  - name: TIMEOUT_SECONDS
-    type: integer
-    required: false
-    default: 300
-    minimum: 30
-    maximum: 3600
-    description: Maximum time to wait for scale operation
+    - name: WAIT_FOR_ROLLOUT
+      type: boolean
+      required: false
+      default: true
+      description: Wait for deployment rollout to complete before finishing
 
-rollback_parameters:
-  - name: ORIGINAL_REPLICAS
-    type: integer
-    required: true
-    description: Original replica count to restore on rollback
+    - name: TIMEOUT_SECONDS
+      type: integer
+      required: false
+      default: 300
+      minimum: 30
+      maximum: 3600
+      description: Maximum time to wait for scale operation
+
+  rollbackParameters:
+    - name: ORIGINAL_REPLICAS
+      type: integer
+      required: true
+      description: Original replica count to restore on rollback
 ```
 
 ---
 
 ## Validation Rules
 
-### Required Fields Validation
+Validation is performed in two stages by the parser at `pkg/datastorage/schema/parser.go`:
 
-```go
-// pkg/workflow/validation/schema_validator.go
+### Stage 1: CRD Envelope Validation
 
-func ValidateWorkflowSchema(schema *WorkflowSchema) error {
-    var errs []error
+| Field | Rule |
+|-------|------|
+| `apiVersion` | Required. Must be a supported version (currently `kubernaut.ai/v1alpha1`). |
+| `kind` | Required. Must be `RemediationWorkflow`. |
+| `metadata.name` | Required. Standard K8s resource name. |
 
-    // Metadata validation
-    if schema.Metadata.WorkflowID == "" {
-        errs = append(errs, errors.New("metadata.workflow_id is required"))
-    }
-    if !semverRegex.MatchString(schema.Metadata.Version) {
-        errs = append(errs, errors.New("metadata.version must be valid semver"))
-    }
-    if schema.Metadata.Description == "" {
-        errs = append(errs, errors.New("metadata.description is required"))
-    }
+### Stage 2: Spec Validation (BR-WORKFLOW-004)
 
-    // Labels validation (DD-WORKFLOW-001 mandatory labels)
-    if schema.Labels.SignalType == "" {
-        errs = append(errs, errors.New("labels.signal_type is required"))
-    }
-    if schema.Labels.Severity == "" {
-        errs = append(errs, errors.New("labels.severity is required"))
-    }
-    // DEPRECATED: Labels.RiskTolerance removed per BR-WORKFLOW-004 (never stored in DB)
-    if schema.Labels.RiskTolerance == "" {
-        errs = append(errs, errors.New("labels.risk_tolerance is required"))
-    }
-
-    // Parameters validation
-    if len(schema.Parameters) == 0 {
-        errs = append(errs, errors.New("at least one parameter is required"))
-    }
-    for i, param := range schema.Parameters {
-        if param.Name == "" {
-            errs = append(errs, fmt.Errorf("parameters[%d].name is required", i))
-        }
-        if !upperSnakeCaseRegex.MatchString(param.Name) {
-            errs = append(errs, fmt.Errorf("parameters[%d].name must be UPPER_SNAKE_CASE", i))
-        }
-        if param.Type == "" {
-            errs = append(errs, fmt.Errorf("parameters[%d].type is required", i))
-        }
-        if param.Description == "" {
-            errs = append(errs, fmt.Errorf("parameters[%d].description is required", i))
-        }
-    }
-
-    if len(errs) > 0 {
-        return errors.Join(errs...)
-    }
-    return nil
-}
-```
-
-### Parameter Value Validation
-
-```go
-// Validate parameter values against schema constraints
-func ValidateParameterValue(param ParameterDef, value any) error {
-    switch param.Type {
-    case "string":
-        str, ok := value.(string)
-        if !ok {
-            return fmt.Errorf("%s: expected string, got %T", param.Name, value)
-        }
-        if len(param.Enum) > 0 && !slices.Contains(param.Enum, str) {
-            return fmt.Errorf("%s: value '%s' not in enum %v", param.Name, str, param.Enum)
-        }
-        if param.Pattern != "" {
-            re := regexp.MustCompile(param.Pattern)
-            if !re.MatchString(str) {
-                return fmt.Errorf("%s: value '%s' does not match pattern '%s'",
-                    param.Name, str, param.Pattern)
-            }
-        }
-
-    case "integer":
-        num, ok := value.(int)
-        if !ok {
-            return fmt.Errorf("%s: expected integer, got %T", param.Name, value)
-        }
-        if param.Minimum != nil && num < *param.Minimum {
-            return fmt.Errorf("%s: value %d below minimum %d", param.Name, num, *param.Minimum)
-        }
-        if param.Maximum != nil && num > *param.Maximum {
-            return fmt.Errorf("%s: value %d above maximum %d", param.Name, num, *param.Maximum)
-        }
-
-    case "boolean":
-        if _, ok := value.(bool); !ok {
-            return fmt.Errorf("%s: expected boolean, got %T", param.Name, value)
-        }
-    }
-
-    return nil
-}
-```
+| Field | Rule |
+|-------|------|
+| `spec.metadata.workflowId` | Required. Lowercase alphanumeric with hyphens. |
+| `spec.metadata.version` | Required. Semantic version string. |
+| `spec.metadata.description.what` | Required. |
+| `spec.metadata.description.whenToUse` | Required. |
+| `spec.actionType` | Required. PascalCase from action type taxonomy. |
+| `spec.labels.severity` | Required. Array of severity values. |
+| `spec.labels.environment` | Required. Array of environment values. |
+| `spec.labels.component` | Required. K8s resource type string. |
+| `spec.labels.priority` | Required. Normalized to uppercase. |
+| `spec.execution.bundle` | Required. Must include `@sha256:<64 hex>` digest for tekton/job engines. |
+| `spec.parameters` | At least one required. Each must have `name`, `type`, `description`. |
+| `spec.detectedLabels` | Optional. Boolean fields accept only `"true"`; string fields accept specific values or `"*"`. |
+| `spec.dependencies` | Optional. Secret/ConfigMap names validated if present. |
+| `spec.execution.engineConfig` | Required when `engine: ansible`. Must include `playbookPath` (BR-WE-016). |
 
 ---
 
 ## Migration Path
 
-### Phase 1: V1.0 (Immediate)
+### Phase 1: Schema Standard (Complete)
 
 1. ✅ Create ADR-043 (this document)
-2. ⏳ Update DD-WORKFLOW-011 to reference `workflow-schema.yaml`
-3. ⏳ Implement schema extractor in `pkg/workflow/extraction/`
-4. ⏳ Update workflow registration to validate schema
-5. ⏳ Update mock MCP server to use schema labels
+2. ✅ Implement schema parser in `pkg/datastorage/schema/parser.go`
+3. ✅ Schema validation during registration
+4. ✅ `execution.engine: "job"` support (BR-WE-014)
+5. ✅ `execution.engine: "ansible"` support with `engineConfig` (Issue #45, BR-WE-016)
+6. ✅ `detectedLabels` support (ADR-043 v1.3)
 
-### Phase 2: V1.1 (Future)
+### Phase 2: CRD Format Migration (Complete -- #292)
 
-1. ⏳ Add schema drift detection (compare catalog vs bundle)
-2. ⏳ Add JSON Schema generation for IDE support
-3. ⏳ Add `kubernaut workflow validate` CLI command
+1. ✅ Restructure `workflow-schema.yaml` to `apiVersion`/`kind`/`metadata`/`spec` CRD format
+2. ✅ Parser handles CRD envelope, derives `SchemaVersion` from `apiVersion`
+3. ✅ All test fixtures and demo scenarios migrated
+4. ✅ Flat format removed (no backward compatibility)
 
-### Phase 3: V2.0 (Multi-Engine Expansion)
+### Phase 3: CRD-Based Registration (Complete -- #299)
 
-1. ⏳ Add `execution.engine: ansible` support (per Issue #45, BR-WE-014 future scope)
-2. ⏳ Add `execution.engine: lambda` support
-3. ⏳ Schema versioning (apiVersion: kubernaut.io/v2)
+1. ✅ `RemediationWorkflow` CRD registered in cluster
+2. ✅ AuthWebhook validates CREATE/DELETE and bridges to DS internal API
+3. ✅ OCI-based registration (`schemaImage`) removed from DS API
+4. ✅ GitOps-compatible: `kubectl apply -f workflow.yaml`
 
-**Note**: `execution.engine: "job"` (Kubernetes Job) was added to V1 per BR-WE-014.
+### Phase 4: Future
+
+1. ⏳ Schema versioning (`kubernaut.ai/v1beta1`, `kubernaut.ai/v1`)
+2. ⏳ JSON Schema generation for IDE support
+3. ⏳ `kubernaut workflow validate` CLI command
 
 ---
 
@@ -478,44 +424,45 @@ func ValidateParameterValue(param ParameterDef, value any) error {
 
 ### Negative
 
-1. ⚠️ **Two files per workflow** - `pipeline.yaml` + `workflow-schema.yaml`
-2. ⚠️ **Potential drift** - Schema could drift from actual pipeline params
+1. ⚠️ **DS availability dependency** - AuthWebhook requires DS to be reachable during `kubectl apply` (mitigated by `failurePolicy: Fail`)
+2. ⚠️ **Stale CRD status** - Admin-only operations (`deprecated`, `archived`) via DS REST API do not update CRD `.status`
 
 ### Mitigations
 
-**For two files:**
-- Clear documentation and examples
-- `kubernaut workflow init` scaffolding tool
-- Pre-commit validation hook
+**For DS availability:**
+- `failurePolicy: Fail` ensures no orphaned CRDs
+- Operational runbook for troubleshooting (see `docs/operations/runbooks/workflow-registration-runbook.md`)
 
-**For drift:**
-- Validation during registration
-- Schema drift detection (V1.1)
-- CI/CD pipeline checks
+**For stale status:**
+- Documented as accepted trade-off in ADR-058
+- `deprecated`/`archived` states are rare admin operations
 
 ---
 
 ## Related Documents
 
+- **BR-WORKFLOW-004**: Workflow Schema Format Specification (authoritative format)
+- **BR-WORKFLOW-006**: RemediationWorkflow CRD Definition (CRD lifecycle and fields)
+- **ADR-058**: Webhook-Driven Workflow Registration (AuthWebhook bridge architecture)
+- **DD-WORKFLOW-017**: Workflow Lifecycle Component Interactions (end-to-end flow)
+- **DD-WORKFLOW-016**: Action-Type Workflow Indexing (discovery matching)
 - **DD-WORKFLOW-003**: Parameterized Remediation Actions (parameter naming)
-- **DD-WORKFLOW-011**: Tekton OCI Bundles (bundle structure)
+- **DD-WORKFLOW-011**: Tekton OCI Bundles (execution bundle structure)
+- **DD-WORKFLOW-001**: Mandatory Label Schema (required labels)
 - **DD-NAMING-001**: Workflow Terminology (naming conventions)
 - **ADR-041**: LLM Prompt/Response Contract (how LLM uses schema)
-- **DD-WORKFLOW-001**: Mandatory Label Schema (required labels)
-- **BR-WE-014**: Kubernetes Job Execution Backend (adds `"job"` to V1 engine values)
-- **Issue #44**: K8s Job execution backend proposal
+- **BR-WE-014**: Kubernetes Job Execution Backend
+- **BR-WE-016**: Ansible Engine Config (discriminator pattern)
+- **Issue #292**: Schema CRD format migration
+- **Issue #299**: CRD-based workflow registration
 
 ---
 
 ## Approval
 
 **Status**: ✅ Approved
-**Date**: 2025-11-28
+**Date**: 2025-11-28 (original), 2026-03-08 (v1.4)
 **Authority**: Authoritative
 
-**Next Steps**:
-1. Update DD-WORKFLOW-011 to reference this ADR
-2. Implement schema extractor in `pkg/workflow/extraction/`
-3. Create example workflow with `workflow-schema.yaml`
-4. Update documentation
+**Implementation Status**: Complete through Phase 3 (CRD-based registration). See `pkg/datastorage/schema/parser.go` for the authoritative parser implementation.
 

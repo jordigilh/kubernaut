@@ -4,7 +4,7 @@
 
 Same fault as #133 (cert-manager Certificate stuck NotReady) but cert-manager resources (Certificate, ClusterIssuer) are managed by ArgoCD via Gitea. Remediation uses **git revert** instead of direct kubectl changes.
 
-**Key differentiator**: The LLM detects `gitOpsManaged=true` and `gitOpsTool=argocd` from the environment and selects the GitOps-aware workflow (`fix-certificate-gitops-v1`) that reverts the bad commit rather than directly recreating the CA Secret.
+**Key differentiator**: The LLM detects `gitOpsManaged=true` and `gitOpsTool=argocd` from the environment. It may select the GitOps-aware workflow (`fix-certificate-gitops-v1`) that reverts the bad commit, or the direct-fix workflow (`fix-certificate-v1`) that recreates the missing CA Secret. Both are valid remediations that restore certificate issuance. See [Observed Alternative](#observed-alternative-fixcertificate-direct-remediation) for details.
 
 **Signal**: `CertManagerCertNotReady` — from `certmanager_certificate_ready_status`  
 **Root cause**: Bad Git commit changed ClusterIssuer to reference non-existent CA Secret  
@@ -132,4 +132,71 @@ kubectl get certificate -n demo-cert-gitops
 - **Workflow ID**: `fix-certificate-gitops-v1`
 - **Action Type**: `GitRevertCommit`
 - **Bundle**: `workflow/Dockerfile` (ubi9-minimal + git + kubectl)
-- **Script**: `workflow/remediate.sh` (Validate -> Action -> Verify pattern)
+- **Script**: `workflow/remediate.sh` (Validate -> Action pattern; RO/EM handle verification)
+
+## Observed Alternative: FixCertificate (Direct Remediation)
+
+During live validation, the LLM chose `FixCertificate` instead of `GitRevertCommit`.
+This section documents the observed behavior and its implications.
+
+### What Happened
+
+The LLM correctly identified the root cause (missing CA Secret `nonexistent-ca-secret`
+backing the ClusterIssuer) but selected the `fix-certificate-v1` workflow, which creates
+the Secret directly in the cluster rather than reverting the bad Git commit.
+
+**LLM rationale**:
+
+> "Despite GitOps management, this is an infrastructure-level certificate issue requiring
+> direct remediation."
+
+The remediation completed in ~10 seconds (vs ~3 minutes for the git-based path), the
+certificate was restored to Ready, and the Effectiveness Assessment scored 1/1 on both
+alert and health checks.
+
+### Why Both Approaches Are Valid
+
+Kubernaut's mission is to reduce MTTR -- restore service health and silence the alert.
+Both paths achieve this goal:
+
+| Aspect | GitRevertCommit | FixCertificate |
+|--------|:-:|:-:|
+| Alert remediated | Yes | Yes |
+| Certificate restored | Yes | Yes |
+| MTTR | ~3 min | ~10 sec |
+| Git state | Clean | Dirty (broken commit remains) |
+| Long-term stability | Stable | Requires follow-up git fix |
+
+The permanent fix (cleaning up the Git repository) remains the responsibility of the
+engineering team during post-incident review.
+
+### Confidence and Approval
+
+The LLM set confidence to **0.85** and triggered a human approval request. This shows
+the LLM was aware that choosing direct remediation in a GitOps environment is a
+consequential decision that warrants human confirmation -- a sign of genuine situational
+awareness.
+
+### Recurrence Behavior
+
+When the problem was re-triggered (Secret deleted again), HAPI's `get_resource_context`
+tool queried DataStorage and returned the remediation history for the resource
+(`history_count=5`), including the previous successful `FixCertificate` outcome with
+verified effectiveness scores. The LLM chose the same approach (`FixCertificate`,
+confidence 0.85, same rationale) -- reinforced by historical evidence that the
+previous remediation succeeded.
+
+If the same workflow keeps completing but the problem recurs, Kubernaut's remediation
+history prompt automatically warns the LLM to escalate to human review rather than
+repeating an ineffective loop.
+
+### AIOps Insight
+
+A rule-based system would enforce a single path: `if GitOps then revert commit`. The LLM
+reasons about the actual problem and may choose differently depending on what it judges
+most appropriate. This flexibility is a strength of AIOps -- real-world problems rarely
+have a single correct solution.
+
+For a deeper analysis, see the
+[Multi-Path Remediation](https://jordigilh.github.io/kubernaut-docs/use-cases/multi-path-remediation/)
+use case in the Kubernaut documentation.

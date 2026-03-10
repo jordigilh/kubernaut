@@ -16,9 +16,27 @@ metadata:
     app: holmesgpt-api
     component: investigation
     {{- include "kubernaut.labels" . | nindent 4 }}
+  # NOTE: This ClusterRole uses an explicit resource enumeration rather than
+  # cluster-reader. Rules for API groups whose CRDs are not installed are
+  # silently ignored by Kubernetes (no extra privileges are granted).
+  # If HAPI reports "permission restrictions" during investigation, check
+  # whether the target resource's API group is listed here and add it if not.
 rules:
+  # ── Core Kubernetes ──────────────────────────────────────────────────────
   - apiGroups: [""]
-    resources: ["pods", "pods/log", "events", "services", "configmaps", "nodes", "namespaces", "replicationcontrollers", "persistentvolumeclaims"]
+    resources:
+      - pods
+      - pods/log
+      - events
+      - services
+      - endpoints
+      - configmaps
+      - secrets
+      - nodes
+      - namespaces
+      - replicationcontrollers
+      - persistentvolumeclaims
+      - resourcequotas
     verbs: ["get", "list", "watch"]
   - apiGroups: ["apps"]
     resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
@@ -28,6 +46,31 @@ rules:
     verbs: ["get", "list", "watch"]
   - apiGroups: ["events.k8s.io"]
     resources: ["events"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch"]
+  # ── cert-manager ─────────────────────────────────────────────────────────
+  - apiGroups: ["cert-manager.io"]
+    resources: ["certificates", "clusterissuers", "certificaterequests"]
+    verbs: ["get", "list", "watch"]
+  # ── ArgoCD ───────────────────────────────────────────────────────────────
+  - apiGroups: ["argoproj.io"]
+    resources: ["applications"]
+    verbs: ["get", "list", "watch"]
+  # ── Linkerd ──────────────────────────────────────────────────────────────
+  - apiGroups: ["policy.linkerd.io"]
+    resources: ["servers", "authorizationpolicies", "meshtlsauthentications"]
+    verbs: ["get", "list", "watch"]
+  # ── Prometheus Operator ──────────────────────────────────────────────────
+  - apiGroups: ["monitoring.coreos.com"]
+    resources: ["prometheusrules", "servicemonitors", "podmonitors", "probes"]
     verbs: ["get", "list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1

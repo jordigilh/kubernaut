@@ -58,26 +58,37 @@ func NewMonitoringMetadataFilter(logger logr.Logger) LabelFilter {
 // IsMonitoringMetadata returns true if the label is a monitoring infrastructure
 // artifact that should be skipped during target resource extraction.
 //
-// Only acts on the "service" label key. For all other keys, returns false.
+// Acts on "service" and "pod" label keys. For all other keys, returns false.
 //
-// Naming patterns (SME-approved, #191):
+// Service naming patterns (SME-approved, #191):
 //   - Substrings: prometheus, kube-state-metrics, alertmanager, grafana, thanos, exporter
 //   - Prefixes: victoria, loki, jaeger
 //   - Suffixes: -operator
+//
+// Pod naming patterns (#303, #308):
+//   - Same monitoring substrings applied to pod names
 func (f *monitoringMetadataFilter) IsMonitoringMetadata(labelKey, labelValue string) bool {
-	if labelKey != "service" {
-		return false
-	}
-
-	lower := strings.ToLower(labelValue)
-
-	if isKnownMonitoringServiceName(lower) {
-		f.logger.V(1).Info("Filtered monitoring metadata label",
-			"labelKey", labelKey,
-			"labelValue", labelValue,
-			"reason", "naming_pattern",
-		)
-		return true
+	switch labelKey {
+	case "service":
+		lower := strings.ToLower(labelValue)
+		if isKnownMonitoringServiceName(lower) {
+			f.logger.V(1).Info("Filtered monitoring metadata label",
+				"labelKey", labelKey,
+				"labelValue", labelValue,
+				"reason", "naming_pattern",
+			)
+			return true
+		}
+	case "pod":
+		lower := strings.ToLower(labelValue)
+		if isKnownMonitoringPodName(lower) {
+			f.logger.V(1).Info("Filtered monitoring infrastructure pod",
+				"labelKey", labelKey,
+				"labelValue", labelValue,
+				"reason", "monitoring_pod_pattern",
+			)
+			return true
+		}
 	}
 
 	return false
@@ -116,4 +127,36 @@ func isKnownMonitoringServiceName(lower string) bool {
 	}
 
 	return strings.HasSuffix(lower, "-operator")
+}
+
+// isKnownMonitoringPodName checks if a lowercased pod name matches known
+// monitoring infrastructure naming patterns (#303, #308).
+//
+// Pod names from kube-prometheus-stack, standalone kube-state-metrics,
+// and other monitoring deployments contain recognizable substrings.
+func isKnownMonitoringPodName(lower string) bool {
+	substrings := []string{
+		"kube-state-metrics",
+		"prometheus-node-exporter",
+		"alertmanager-kube-prometheus",
+		"prometheus-kube-prometheus",
+	}
+	for _, s := range substrings {
+		if strings.Contains(lower, s) {
+			return true
+		}
+	}
+
+	prefixes := []string{
+		"kube-prometheus-stack-grafana",
+		"kube-prometheus-stack-prometheus",
+		"kube-prometheus-stack-kube-state-metrics",
+	}
+	for _, p := range prefixes {
+		if strings.HasPrefix(lower, p) {
+			return true
+		}
+	}
+
+	return false
 }

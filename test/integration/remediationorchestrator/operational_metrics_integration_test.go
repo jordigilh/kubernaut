@@ -148,51 +148,6 @@ var _ = Describe("Operational Metrics Integration Tests (BR-ORCH-044)", Serial, 
 		return false
 	}
 
-	Context("M-INT-1: reconcile_total Counter (BR-ORCH-044)", func() {
-		It("should register and increment reconcile_total counter metric", func() {
-			// Verify metric is registered
-			Expect(metricExists(rometrics.MetricNameReconcileTotal)).To(BeTrue(),
-				"reconcile_total should be registered in Prometheus registry")
-
-			// Create RemediationRequest to trigger reconciliation
-			rr := &remediationv1.RemediationRequest{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "rr-reconcile-total",
-					Namespace: ROControllerNamespace,
-				},
-				Spec: remediationv1.RemediationRequestSpec{
-					SignalFingerprint: GenerateTestFingerprint(testNamespace, "m-int-1"),
-					SignalName:        "test-signal",
-					Severity:          "critical",
-					SignalType:        "test-type",
-					TargetType:        "kubernetes",
-					TargetResource: remediationv1.ResourceIdentifier{
-						Kind:      "Pod",
-						Name:      "test-pod",
-						Namespace: testNamespace,
-					},
-					FiringTime:   metav1.Now(),
-					ReceivedTime: metav1.Now(),
-				},
-			}
-			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
-
-			// Wait for reconciliation to occur
-			Eventually(func() remediationv1.RemediationPhase {
-				_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
-				return rr.Status.OverallPhase
-			}, timeout, interval).Should(Equal(remediationv1.PhaseProcessing))
-
-			// Verify metric was incremented via registry inspection
-			Eventually(func() float64 {
-				return getCounterValue(rometrics.MetricNameReconcileTotal, map[string]string{
-					"namespace": ROControllerNamespace,
-				})
-			}, timeout, interval).Should(BeNumerically(">", 0),
-				"reconcile_total counter should be incremented after reconciliation")
-		})
-	})
-
 	Context("M-INT-2: reconcile_duration Histogram (BR-ORCH-044)", func() {
 		It("should register and record reconcile_duration histogram metric", func() {
 			// Verify metric is registered

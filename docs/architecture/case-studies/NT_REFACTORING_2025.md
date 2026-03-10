@@ -122,8 +122,8 @@ grep -r "StatusManager" pkg/notification/status/
 
 #### 1. Metrics Naming Misalignment (DD-005 Violation)
 
-**Problem**: NT metrics used flat prefix `notification_reconciler_requests_total`
-**Standard**: DD-005 requires `kubernaut_notification_reconciler_requests_total`
+**Problem**: NT metrics used flat prefix `notification_delivery_attempts_total`
+**Standard**: DD-005 requires `kubernaut_notification_delivery_attempts_total`
 **Root Cause**: Missing `Namespace` and `Subsystem` in Prometheus metric definitions
 **Time Lost**: 2 hours debugging E2E test failures
 
@@ -133,7 +133,7 @@ grep -r "StatusManager" pkg/notification/status/
 ```go
 // ❌ BAD: Missing namespace/subsystem
 prometheus.NewCounterVec(prometheus.CounterOpts{
-    Name: "notification_reconciler_requests_total",
+    Name: "notification_legacy_metric_total",
 })
 
 // ✅ GOOD: DD-005 compliant

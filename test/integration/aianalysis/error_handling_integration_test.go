@@ -442,5 +442,72 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 
 			GinkgoWriter.Printf("✅ Problem resolved path test complete\n")
 		})
+
+		// #301: Contradiction case — investigation_outcome=resolved + needs_human_review=true
+		// HAPI parser Layer 1 fix should override contradictory needs_human_review to false,
+		// and Go processor Layer 3 should bypass hasSubstantiveRCA via hasProblemResolvedSignal.
+		It("should handle problem_resolved even when LLM contradicts with needs_human_review=true (#301)", func() {
+			shortID := fmt.Sprintf("%d", time.Now().UnixNano()%1000000)
+			testID := fmt.Sprintf("pr-contra-%s", shortID)
+			analysis := &aianalysisv1.AIAnalysis{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testID,
+					Namespace: testNamespace,
+				},
+				Spec: aianalysisv1.AIAnalysisSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						Name:      fmt.Sprintf("test-rr-%s", testID),
+						Namespace: testNamespace,
+					},
+					RemediationID: fmt.Sprintf("test-rr-%s", testID),
+					AnalysisRequest: aianalysisv1.AnalysisRequest{
+						SignalContext: aianalysisv1.SignalContextInput{
+							SignalName:       "MOCK_PROBLEM_RESOLVED_CONTRADICTION",
+							Severity:         "low",
+							Environment:      "production",
+							BusinessPriority: "P2",
+							Fingerprint:      fmt.Sprintf("fp-contra-%s", shortID),
+							TargetResource: aianalysisv1.TargetResource{
+								Namespace: testNamespace,
+								Kind:      "Pod",
+								Name:      "recovered-pod",
+							},
+						},
+						AnalysisTypes: []string{"investigation"},
+					},
+				},
+			}
+
+			GinkgoWriter.Printf("📝 Creating AIAnalysis %s to trigger problem_resolved_contradiction path (#301)\n", analysis.Name)
+			Expect(k8sClient.Create(testCtx, analysis)).To(Succeed())
+
+			Eventually(func() bool {
+				var updated aianalysisv1.AIAnalysis
+				if err := k8sClient.Get(testCtx, client.ObjectKeyFromObject(analysis), &updated); err != nil {
+					return false
+				}
+				GinkgoWriter.Printf("  Current phase: %s, Reason: %s, SubReason: %s\n",
+					updated.Status.Phase, updated.Status.Reason, updated.Status.SubReason)
+				return updated.Status.Phase == aianalysisv1.PhaseCompleted &&
+					updated.Status.Reason == "WorkflowNotNeeded" &&
+					updated.Status.SubReason == "ProblemResolved"
+			}, 90*time.Second, 2*time.Second).Should(BeTrue(),
+				"#301: Parser should override contradictory needs_human_review=true when investigation_outcome=resolved")
+
+			var finalAnalysis aianalysisv1.AIAnalysis
+			Expect(k8sClient.Get(testCtx, client.ObjectKeyFromObject(analysis), &finalAnalysis)).To(Succeed())
+
+			Expect(finalAnalysis.Status.Phase).To(Equal(aianalysisv1.PhaseCompleted))
+			Expect(finalAnalysis.Status.Reason).To(Equal("WorkflowNotNeeded"))
+			Expect(finalAnalysis.Status.SubReason).To(Equal("ProblemResolved"))
+			Expect(finalAnalysis.Status.NeedsHumanReview).To(BeFalse(),
+				"#301: needs_human_review should be false after parser contradiction override")
+			Expect(finalAnalysis.Status.RootCauseAnalysis).NotTo(BeNil(),
+				"RCA should be preserved")
+			Expect(finalAnalysis.Status.RootCauseAnalysis.ContributingFactors).NotTo(BeEmpty(),
+				"#301: Contributing factors should be preserved despite resolution")
+
+			GinkgoWriter.Printf("✅ Problem resolved contradiction test complete (#301)\n")
+		})
 	})
 })

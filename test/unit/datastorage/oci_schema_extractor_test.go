@@ -46,33 +46,38 @@ import (
 // ========================================
 
 // validWorkflowSchemaYAML is a minimal valid workflow-schema.yaml per BR-WORKFLOW-004
-const validWorkflowSchemaYAML = `schemaVersion: "1.0"
+// CRD format: apiVersion/kind/metadata/spec envelope with spec content
+const validWorkflowSchemaYAML = `apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
 metadata:
-  workflowId: oomkill-scale-down
-  version: "1.0.0"
-  description:
-    what: Restarts a pod that was OOMKilled to restore service
-    whenToUse: OOMKilled events where the pod is managed by a controller
-    whenNotToUse: When the crash is caused by a persistent code bug
-    preconditions: Pod is managed by a Deployment or StatefulSet
-actionType: RestartPod
-labels:
-  severity: [critical]
-  environment: [production]
-  component: pod
-  priority: p1
-execution:
-  engine: tekton
-  bundle: quay.io/kubernaut/oomkill-workflow:v1.0.0@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
-parameters:
-  - name: NAMESPACE
-    type: string
-    required: true
-    description: Target namespace
-  - name: POD_NAME
-    type: string
-    required: true
-    description: Target pod name
+  name: oomkill-scale-down
+spec:
+  metadata:
+    workflowName: oomkill-scale-down
+    version: "1.0.0"
+    description:
+      what: Restarts a pod that was OOMKilled to restore service
+      whenToUse: OOMKilled events where the pod is managed by a controller
+      whenNotToUse: When the crash is caused by a persistent code bug
+      preconditions: Pod is managed by a Deployment or StatefulSet
+  actionType: RestartPod
+  labels:
+    severity: [critical]
+    environment: [production]
+    component: pod
+    priority: p1
+  execution:
+    engine: tekton
+    bundle: quay.io/kubernaut/oomkill-workflow:v1.0.0@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
+  parameters:
+    - name: NAMESPACE
+      type: string
+      required: true
+      description: Target namespace
+    - name: POD_NAME
+      type: string
+      required: true
+      description: Target pod name
 `
 
 var _ = Describe("OCI Schema Extractor (DD-WORKFLOW-017)", func() {
@@ -134,27 +139,31 @@ var _ = Describe("OCI Schema Extractor (DD-WORKFLOW-017)", func() {
 			Expect(parsedSchema.Labels.Environment).To(Equal([]string{"production"}))
 
 			// Multi-value array format
-			arrayYAML := `schemaVersion: "1.0"
+			arrayYAML := `apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
 metadata:
-  workflowId: multi-env-test
-  version: "1.0.0"
-  description:
-    what: Test
-    whenToUse: Test
-actionType: RestartPod
-labels:
-  severity: [critical]
-  environment: [staging, production]
-  component: pod
-  priority: p1
-execution:
-  engine: tekton
-  bundle: ghcr.io/kubernaut/workflows/multi-env-test@sha256:a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2
-parameters:
-  - name: PARAM
-    type: string
-    required: true
-    description: A param
+  name: multi-env-test
+spec:
+  metadata:
+    workflowName: multi-env-test
+    version: "1.0.0"
+    description:
+      what: Test
+      whenToUse: Test
+  actionType: RestartPod
+  labels:
+    severity: [critical]
+    environment: [staging, production]
+    component: pod
+    priority: p1
+  execution:
+    engine: tekton
+    bundle: ghcr.io/kubernaut/workflows/multi-env-test@sha256:a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2
+  parameters:
+    - name: PARAM
+      type: string
+      required: true
+      description: A param
 `
 			parsedArray, err := parser.ParseAndValidate(arrayYAML)
 			Expect(err).ToNot(HaveOccurred())
@@ -175,27 +184,31 @@ parameters:
 
 		It("UT-DS-017-019: should accept schema without signalName (DD-WORKFLOW-016)", func() {
 			// DD-WORKFLOW-016: signalName is optional metadata, not required for registration
-			noSignalNameYAML := `schemaVersion: "1.0"
+			noSignalNameYAML := `apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
 metadata:
-  workflowId: no-signal-name
-  version: "1.0.0"
-  description:
-    what: Workflow without signalName
-    whenToUse: When signalName is optional
-actionType: RestartPod
-labels:
-  severity: [critical]
-  environment: [production]
-  component: pod
-  priority: p1
-parameters:
-  - name: PARAM
-    type: string
-    required: true
-    description: A param
-execution:
-  engine: tekton
-  bundle: quay.io/test/no-signal:v1.0.0@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
+  name: no-signal-name
+spec:
+  metadata:
+    workflowName: no-signal-name
+    version: "1.0.0"
+    description:
+      what: Workflow without signalName
+      whenToUse: When signalName is optional
+  actionType: RestartPod
+  labels:
+    severity: [critical]
+    environment: [production]
+    component: pod
+    priority: p1
+  parameters:
+    - name: PARAM
+      type: string
+      required: true
+      description: A param
+  execution:
+    engine: tekton
+    bundle: quay.io/test/no-signal:v1.0.0@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
 `
 			parsedSchema, err := parser.ParseAndValidate(noSignalNameYAML)
 			Expect(err).ToNot(HaveOccurred(), "schema without signalName should be accepted")
@@ -225,30 +238,34 @@ execution:
 		})
 
 		It("UT-DS-212-001: ExtractLabels must NOT include custom labels (#212)", func() {
-			schemaWithCustom := `schemaVersion: "1.0"
+			schemaWithCustom := `apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
 metadata:
-  workflowId: test-custom
-  version: "1.0.0"
-  description:
-    what: Test
-    whenToUse: Test
-actionType: RestartPod
-labels:
-  severity: [critical]
-  environment: [production]
-  component: pod
-  priority: P1
-customLabels:
-  constraint: cost-constrained
-  team: payments
-execution:
-  engine: job
-  bundle: quay.io/test/wf:v1@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
-parameters:
-  - name: NAMESPACE
-    type: string
-    required: true
-    description: Target namespace
+  name: test-custom
+spec:
+  metadata:
+    workflowName: test-custom
+    version: "1.0.0"
+    description:
+      what: Test
+      whenToUse: Test
+  actionType: RestartPod
+  labels:
+    severity: [critical]
+    environment: [production]
+    component: pod
+    priority: P1
+  customLabels:
+    constraint: cost-constrained
+    team: payments
+  execution:
+    engine: job
+    bundle: quay.io/test/wf:v1@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
+  parameters:
+    - name: NAMESPACE
+      type: string
+      required: true
+      description: Target namespace
 `
 			parsedSchema, err := parser.ParseAndValidate(schemaWithCustom)
 			Expect(err).ToNot(HaveOccurred())
@@ -265,30 +282,34 @@ parameters:
 		})
 
 		It("UT-DS-212-002: ExtractCustomLabels must return custom labels as map[string][]string (#212)", func() {
-			schemaWithCustom := `schemaVersion: "1.0"
+			schemaWithCustom := `apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
 metadata:
-  workflowId: test-custom
-  version: "1.0.0"
-  description:
-    what: Test
-    whenToUse: Test
-actionType: RestartPod
-labels:
-  severity: [critical]
-  environment: [production]
-  component: pod
-  priority: P1
-customLabels:
-  constraint: cost-constrained
-  team: payments
-execution:
-  engine: job
-  bundle: quay.io/test/wf:v1@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
-parameters:
-  - name: NAMESPACE
-    type: string
-    required: true
-    description: Target namespace
+  name: test-custom
+spec:
+  metadata:
+    workflowName: test-custom
+    version: "1.0.0"
+    description:
+      what: Test
+      whenToUse: Test
+  actionType: RestartPod
+  labels:
+    severity: [critical]
+    environment: [production]
+    component: pod
+    priority: P1
+  customLabels:
+    constraint: cost-constrained
+    team: payments
+  execution:
+    engine: job
+    bundle: quay.io/test/wf:v1@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
+  parameters:
+    - name: NAMESPACE
+      type: string
+      required: true
+      description: Target namespace
 `
 			parsedSchema, err := parser.ParseAndValidate(schemaWithCustom)
 			Expect(err).ToNot(HaveOccurred())
@@ -308,7 +329,7 @@ parameters:
 
 			result, err := extractor.ExtractFromImage(context.Background(), "quay.io/test/workflow:v1.0.0")
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result.Schema.Metadata.WorkflowID).To(Equal("oomkill-scale-down"))
+			Expect(result.Schema.Metadata.WorkflowName).To(Equal("oomkill-scale-down"))
 			Expect(result.Schema.ActionType).To(Equal("RestartPod"))
 			Expect(result.Digest).To(HavePrefix("sha256:"),
 				"digest must be a valid sha256 content-addressable identifier")
@@ -327,9 +348,9 @@ parameters:
 		})
 
 		It("UT-DS-043-001: workflow requiring HPA-enabled targets is correctly represented after parsing", func() {
-			yamlContent := validWorkflowSchemaYAML + `detectedLabels:
-  hpaEnabled: "true"
-  pdbProtected: "true"
+			yamlContent := validWorkflowSchemaYAML + `  detectedLabels:
+    hpaEnabled: "true"
+    pdbProtected: "true"
 `
 			parsedSchema, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).ToNot(HaveOccurred())
@@ -338,8 +359,8 @@ parameters:
 		})
 
 		It("UT-DS-043-002: workflow requiring any GitOps tool is correctly represented after parsing", func() {
-			yamlContent := validWorkflowSchemaYAML + `detectedLabels:
-  gitOpsTool: "*"
+			yamlContent := validWorkflowSchemaYAML + `  detectedLabels:
+    gitOpsTool: "*"
 `
 			parsedSchema, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).ToNot(HaveOccurred())
@@ -354,8 +375,8 @@ parameters:
 		})
 
 		It("UT-DS-043-004: workflow author gets actionable error for invalid boolean value", func() {
-			yamlContent := validWorkflowSchemaYAML + `detectedLabels:
-  hpaEnabled: "false"
+			yamlContent := validWorkflowSchemaYAML + `  detectedLabels:
+    hpaEnabled: "false"
 `
 			_, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).To(HaveOccurred())
@@ -365,8 +386,8 @@ parameters:
 		})
 
 		It("UT-DS-043-005: workflow author gets actionable error for invalid gitOpsTool", func() {
-			yamlContent := validWorkflowSchemaYAML + `detectedLabels:
-  gitOpsTool: "terraform"
+			yamlContent := validWorkflowSchemaYAML + `  detectedLabels:
+    gitOpsTool: "terraform"
 `
 			_, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).To(HaveOccurred())
@@ -375,8 +396,8 @@ parameters:
 		})
 
 		It("UT-DS-043-006: workflow author gets actionable error for invalid serviceMesh", func() {
-			yamlContent := validWorkflowSchemaYAML + `detectedLabels:
-  serviceMesh: "consul"
+			yamlContent := validWorkflowSchemaYAML + `  detectedLabels:
+    serviceMesh: "consul"
 `
 			_, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).To(HaveOccurred())
@@ -385,15 +406,15 @@ parameters:
 		})
 
 		It("UT-DS-043-007: all 8 detectedLabels fields survive YAML-to-model conversion with exact values", func() {
-			yamlContent := validWorkflowSchemaYAML + `detectedLabels:
-  gitOpsManaged: "true"
-  gitOpsTool: "argocd"
-  pdbProtected: "true"
-  hpaEnabled: "true"
-  stateful: "true"
-  helmManaged: "true"
-  networkIsolated: "true"
-  serviceMesh: "istio"
+			yamlContent := validWorkflowSchemaYAML + `  detectedLabels:
+    gitOpsManaged: "true"
+    gitOpsTool: "argocd"
+    pdbProtected: "true"
+    hpaEnabled: "true"
+    stateful: "true"
+    helmManaged: "true"
+    networkIsolated: "true"
+    serviceMesh: "istio"
 `
 			parsedSchema, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).ToNot(HaveOccurred())
@@ -418,10 +439,10 @@ parameters:
 		})
 
 		It("UT-DS-043-008: multi-field combination mirrors real demo scenario schemas", func() {
-			yamlContent := validWorkflowSchemaYAML + `detectedLabels:
-  pdbProtected: "true"
-  hpaEnabled: "true"
-  gitOpsTool: "*"
+			yamlContent := validWorkflowSchemaYAML + `  detectedLabels:
+    pdbProtected: "true"
+    hpaEnabled: "true"
+    gitOpsTool: "*"
 `
 			parsedSchema, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).ToNot(HaveOccurred())
@@ -441,9 +462,9 @@ parameters:
 		})
 
 		It("UT-DS-043-009: OCI extraction pipeline preserves detectedLabels end-to-end", func() {
-			yamlWithDetected := validWorkflowSchemaYAML + `detectedLabels:
-  hpaEnabled: "true"
-  gitOpsTool: "argocd"
+			yamlWithDetected := validWorkflowSchemaYAML + `  detectedLabels:
+    hpaEnabled: "true"
+    gitOpsTool: "argocd"
 `
 			mockPuller := oci.NewMockImagePuller(yamlWithDetected)
 			extractor := oci.NewSchemaExtractor(mockPuller, schema.NewParser())
@@ -455,9 +476,9 @@ parameters:
 		})
 
 		It("UT-DS-043-010: unknown field in detectedLabels is rejected with error naming the field", func() {
-			yamlContent := validWorkflowSchemaYAML + `detectedLabels:
-  hpaEnabled: "true"
-  customField: "true"
+			yamlContent := validWorkflowSchemaYAML + `  detectedLabels:
+    hpaEnabled: "true"
+    customField: "true"
 `
 			_, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).To(HaveOccurred())
@@ -466,7 +487,7 @@ parameters:
 		})
 
 		It("UT-DS-043-011: empty detectedLabels section produces empty struct, not nil", func() {
-			yamlContent := validWorkflowSchemaYAML + `detectedLabels: {}
+			yamlContent := validWorkflowSchemaYAML + `  detectedLabels: {}
 `
 			parsedSchema, err := parser.ParseAndValidate(yamlContent)
 			Expect(err).ToNot(HaveOccurred())
@@ -508,24 +529,28 @@ parameters:
 				"YAML",
 			),
 
-			Entry("UT-DS-017-007: schema missing required fields (actionType, labels)",
-				oci.NewMockImagePuller(`schemaVersion: "1.0"
+			Entry("UT-DS-017-007: schema missing required fields (actionType)",
+				oci.NewMockImagePuller(`apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
 metadata:
-  workflowId: incomplete
-  version: "1.0.0"
-  description:
-    what: Incomplete workflow
-    whenToUse: Testing validation
-labels:
-  severity: [critical]
-  environment: [production]
-  component: pod
-  priority: p1
-parameters:
-  - name: PARAM
-    type: string
-    required: true
-    description: A param
+  name: incomplete
+spec:
+  metadata:
+    workflowName: incomplete
+    version: "1.0.0"
+    description:
+      what: Incomplete workflow
+      whenToUse: Testing validation
+  labels:
+    severity: [critical]
+    environment: [production]
+    component: pod
+    priority: p1
+  parameters:
+    - name: PARAM
+      type: string
+      required: true
+      description: A param
 `),
 				"quay.io/test/incomplete:v1.0.0",
 				"actionType",

@@ -36,7 +36,7 @@ class TestAuditEventRequestEventData(unittest.TestCase):
         model = AuditEventRequestEventData()
         if include_optional:
             return AuditEventRequestEventData(
-                event_type = 'effectiveness.health.assessed',
+                event_type = 'actiontype.admitted.create',
                 original_payload = { },
                 signal_labels = {
                     'key' : ''
@@ -70,7 +70,7 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                 transition_reason = '',
                 rar_name = 'approve-payment-api-restart-2025-12-17-xyz789',
                 required_by = datetime.datetime.strptime('2013-10-20 19:20:30.00', '%Y-%m-%d %H:%M:%S.%f'),
-                workflow_id = '',
+                workflow_id = '550e8400-e29b-41d4-a716-446655440000',
                 confidence_str = '',
                 decision = 'requires_approval',
                 approved_by = '',
@@ -152,11 +152,11 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                 user_groups = [
                     ''
                     ],
-                action = 'notification_cancelled',
-                workflow_name = '',
+                action = 'create',
+                workflow_name = 'crashloop-rollback-v1',
                 clear_reason = 'Manual approval by ops team',
                 cleared_at = datetime.datetime.strptime('2013-10-20 19:20:30.00', '%Y-%m-%d %H:%M:%S.%f'),
-                previous_state = 'Blocked',
+                previous_state = 'disabled',
                 new_state = 'Running',
                 request_name = 'approve-payment-api-2025-12-17-abc123',
                 decided_at = '2026-01-15T10:30Z',
@@ -214,14 +214,15 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                 is_latest_version = True,
                 execution_engine = 'argo',
                 name = 'Restart OOMKilled Pod',
-                description = 'Restarts pods that were terminated due to OOM',
+                description = datastorage.models.action_type_description_payload.ActionTypeDescriptionPayload(
+                    what = '', 
+                    when_to_use = '', 
+                    when_not_to_use = '', 
+                    preconditions = '', ),
                 labels = { },
-                updated_fields = datastorage.models.workflow_catalog_updated_fields.WorkflowCatalogUpdatedFields(
-                    status = 'disabled', 
-                    disabled_by = 'admin@example.com', 
-                    disabled_reason = 'Security vulnerability detected', 
-                    version = '1.0.1', 
-                    description = 'Updated workflow description', ),
+                updated_fields = [
+                    ''
+                    ],
                 old_phase = 'Investigating',
                 new_phase = 'Analyzing',
                 endpoint = '/api/v1/investigate',
@@ -306,6 +307,8 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                     processing = '10m', 
                     analyzing = '5m', 
                     executing = '15m', ),
+                catalog_status = '',
+                denial_reason = '',
                 correlation_id = 'restart-payment-api-2026-02-12-abc123',
                 component = 'health',
                 assessed = True,
@@ -345,11 +348,39 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                 alert_resolution = datastorage.models.effectiveness_assessment_audit_payload_alert_resolution.EffectivenessAssessmentAuditPayload_alert_resolution(
                     alert_resolved = True, 
                     active_count = 0, 
-                    resolution_time_seconds = 1.337, )
+                    resolution_time_seconds = 1.337, ),
+                action_type = '',
+                registered_by = '',
+                was_reenabled = True,
+                old_description = datastorage.models.action_type_description_payload.ActionTypeDescriptionPayload(
+                    what = '', 
+                    when_to_use = '', 
+                    when_not_to_use = '', 
+                    preconditions = '', ),
+                new_description = datastorage.models.action_type_description_payload.ActionTypeDescriptionPayload(
+                    what = '', 
+                    when_to_use = '', 
+                    when_not_to_use = '', 
+                    preconditions = '', ),
+                updated_by = '',
+                disabled_by = '',
+                disabled_at = datetime.datetime.strptime('2013-10-20 19:20:30.00', '%Y-%m-%d %H:%M:%S.%f'),
+                reenabled_by = '',
+                denied_reason = '',
+                dependent_workflow_count = 56,
+                dependent_workflows = [
+                    ''
+                    ],
+                requested_by = '',
+                action_type_name = '',
+                crd_name = '',
+                crd_namespace = '',
+                previously_existed = True,
+                denial_operation = ''
             )
         else:
             return AuditEventRequestEventData(
-                event_type = 'effectiveness.health.assessed',
+                event_type = 'actiontype.admitted.create',
                 signal_type = 'alert',
                 signal_name = 'HighCPUUsage',
                 namespace = 'production',
@@ -357,7 +388,7 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                 rr_name = 'rr-payment-restart-123',
                 outcome = 'allow',
                 duration_ms = 50,
-                workflow_id = '',
+                workflow_id = '550e8400-e29b-41d4-a716-446655440000',
                 decision = 'requires_approval',
                 reason = 'full',
                 target_resource = 'payment/deployment/payment-api',
@@ -376,10 +407,11 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                 execution_name = 'restart-payment-api-2025-12-17-abc123',
                 notification_id = '',
                 type = '',
-                workflow_name = '',
+                action = 'create',
+                workflow_name = 'crashloop-rollback-v1',
                 clear_reason = 'Manual approval by ops team',
                 cleared_at = datetime.datetime.strptime('2013-10-20 19:20:30.00', '%Y-%m-%d %H:%M:%S.%f'),
-                previous_state = 'Blocked',
+                previous_state = 'disabled',
                 new_state = 'Running',
                 request_name = 'approve-payment-api-2025-12-17-abc123',
                 decided_at = '2026-01-15T10:30Z',
@@ -432,12 +464,14 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                 is_latest_version = True,
                 execution_engine = 'argo',
                 name = 'Restart OOMKilled Pod',
-                updated_fields = datastorage.models.workflow_catalog_updated_fields.WorkflowCatalogUpdatedFields(
-                    status = 'disabled', 
-                    disabled_by = 'admin@example.com', 
-                    disabled_reason = 'Security vulnerability detected', 
-                    version = '1.0.1', 
-                    description = 'Updated workflow description', ),
+                description = datastorage.models.action_type_description_payload.ActionTypeDescriptionPayload(
+                    what = '', 
+                    when_to_use = '', 
+                    when_not_to_use = '', 
+                    preconditions = '', ),
+                updated_fields = [
+                    ''
+                    ],
                 old_phase = 'Investigating',
                 new_phase = 'Analyzing',
                 endpoint = '/api/v1/investigate',
@@ -494,6 +528,32 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                 modified_at = datetime.datetime.strptime('2013-10-20 19:20:30.00', '%Y-%m-%d %H:%M:%S.%f'),
                 correlation_id = 'restart-payment-api-2026-02-12-abc123',
                 component = 'health',
+                action_type = '',
+                registered_by = '',
+                was_reenabled = True,
+                old_description = datastorage.models.action_type_description_payload.ActionTypeDescriptionPayload(
+                    what = '', 
+                    when_to_use = '', 
+                    when_not_to_use = '', 
+                    preconditions = '', ),
+                new_description = datastorage.models.action_type_description_payload.ActionTypeDescriptionPayload(
+                    what = '', 
+                    when_to_use = '', 
+                    when_not_to_use = '', 
+                    preconditions = '', ),
+                updated_by = '',
+                disabled_by = '',
+                disabled_at = datetime.datetime.strptime('2013-10-20 19:20:30.00', '%Y-%m-%d %H:%M:%S.%f'),
+                reenabled_by = '',
+                denied_reason = '',
+                dependent_workflow_count = 56,
+                dependent_workflows = [
+                    ''
+                    ],
+                requested_by = '',
+                action_type_name = '',
+                crd_name = '',
+                crd_namespace = '',
         )
         """
 

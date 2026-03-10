@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/jordigilh/kubernaut/pkg/gateway/middleware"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
 )
@@ -50,6 +51,7 @@ import (
 type PrometheusAdapter struct {
 	ownerResolver types.OwnerResolver
 	labelFilter   LabelFilter
+	logger        logr.Logger
 }
 
 // NewPrometheusAdapter creates a new Prometheus adapter.
@@ -58,10 +60,15 @@ type PrometheusAdapter struct {
 //   - ownerResolver: If non-nil, resolves Pod→Deployment for owner-chain-based fingerprinting.
 //   - labelFilter: If non-nil, filters monitoring metadata labels (e.g., "service" pointing
 //     to kube-state-metrics) during target resource extraction. See Issue #191.
-func NewPrometheusAdapter(ownerResolver types.OwnerResolver, labelFilter LabelFilter) *PrometheusAdapter {
+func NewPrometheusAdapter(ownerResolver types.OwnerResolver, labelFilter LabelFilter, opts ...logr.Logger) *PrometheusAdapter {
+	l := logr.Discard()
+	if len(opts) > 0 {
+		l = opts[0]
+	}
 	return &PrometheusAdapter{
 		ownerResolver: ownerResolver,
 		labelFilter:   labelFilter,
+		logger:        l.WithName("prometheus-adapter"),
 	}
 }
 
@@ -171,7 +178,11 @@ func (a *PrometheusAdapter) Parse(ctx context.Context, rawData []byte) (*types.N
 
 	// Generate fingerprint for deduplication (Issue #63, #228)
 	// Delegates to shared types.ResolveFingerprint for cross-adapter consistency.
-	fingerprint := types.ResolveFingerprint(ctx, a.ownerResolver, resource)
+	// Returns error when owner resolution fails (e.g., stale alert for deleted pod).
+	fingerprint, err := types.ResolveFingerprint(ctx, a.ownerResolver, resource, a.logger)
+	if err != nil {
+		return nil, fmt.Errorf("dropping signal: %w", err)
+	}
 
 	// Merge alert-specific labels with common labels
 	// Common labels are shared across all alerts in the webhook group
@@ -286,6 +297,7 @@ var resourceCandidates = []resourceCandidate{
 	{"deployment", "Deployment"},
 	{"statefulset", "StatefulSet"},
 	{"daemonset", "DaemonSet"},
+	{"replicaset", "ReplicaSet"},
 	{"node", "Node"},
 	{"service", "Service"},
 	{"job_name", "Job"},

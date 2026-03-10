@@ -1,23 +1,31 @@
 # Data Storage Service - REST API Specification
 
-**Version**: v2.0 (Phase 1: Read API + ADR-033 Success Rate Analytics ✅ Production-Ready)
-**Last Updated**: November 5, 2025
+**Version**: v2.0
+**Last Updated**: March 2026
 **Base URL**: `http://data-storage.kubernaut-system:8080`
 **Authentication**: Bearer Token (Kubernetes ServiceAccount) - *Phase 2*
-**Implementation Status**: Days 1-15 Complete, 92 Tests (38 Unit, 54 Integration)
+
+> **Note**: The Incidents Read API and Success Rate Analytics API described below are
+> **disabled in V1.0** (routes commented out in `server.go`, not present in the OpenAPI
+> spec). They predate the ADR-034 unified audit events API and have no production
+> consumer. See [#238](https://github.com/jordigilh/kubernaut/issues/238) for the
+> evaluation decision (keep, remove, or redesign for post-V1.0).
+>
+> The **authoritative V1.0 API surface** is defined by the OpenAPI spec at
+> `api/openapi/data-storage-v1.yaml` and registered in `pkg/datastorage/server/server.go`.
 
 ---
 
 ## Table of Contents
 
-### Phase 1: Read API (✅ Production-Ready)
+### Incidents & Analytics (Disabled — under evaluation, see [#238](https://github.com/jordigilh/kubernaut/issues/238))
 1. [Incidents Read API](#incidents-read-api-phase-1)
    - [List Incidents](#list-incidents)
    - [Get Incident by ID](#get-incident-by-id)
-2. [Success Rate Analytics API](#success-rate-analytics-api-adr-033) **✨ NEW in v2.0**
+2. [Success Rate Analytics API](#success-rate-analytics-api-adr-033)
    - [Get Success Rate by Incident Type](#get-success-rate-by-incident-type)
    - [Get Success Rate by Playbook](#get-success-rate-by-playbook)
-   - [Get Multi-Dimensional Success Rate](#get-multi-dimensional-success-rate) **✨ NEW**
+   - [Get Multi-Dimensional Success Rate](#get-multi-dimensional-success-rate)
 3. [Health & Metrics](#health--metrics)
 4. [RFC 7807 Error Responses](#rfc-7807-error-responses)
 
@@ -53,9 +61,9 @@ Content-Type: application/json
 
 ## Incidents Read API (Phase 1)
 
-**Status**: ✅ Production-Ready (Days 1-8 Complete)
+**Status**: Disabled in V1.0 — under evaluation ([#238](https://github.com/jordigilh/kubernaut/issues/238))
 **Business Requirements**: BR-STORAGE-021 through BR-STORAGE-028
-**Test Coverage**: 75 tests (38 unit, 37 integration)
+**Test Coverage**: Tests removed from CI (see #238)
 
 ### List Incidents
 
@@ -220,7 +228,7 @@ All errors follow [RFC 7807 Problem Details](https://datatracker.ietf.org/doc/ht
 
 ## Success Rate Analytics API (ADR-033)
 
-**Status**: ✅ Production-Ready (Days 12-18 Complete)
+**Status**: Disabled in V1.0 — under evaluation ([#238](https://github.com/jordigilh/kubernaut/issues/238))
 **Business Requirements**: BR-STORAGE-031-01, BR-STORAGE-031-02, BR-STORAGE-031-05
 **Test Coverage**: 23 integration tests (6 new multi-dimensional tests)
 **OpenAPI Spec**: [v2.yaml](./openapi/v2.yaml)
@@ -1081,7 +1089,6 @@ GET /metrics
 
 **Key Metrics**:
 - `datastorage_audit_writes_total{type="remediation"}` - Total writes
-- `datastorage_audit_write_duration_seconds` - Write latency histogram
 - `datastorage_embedding_cache_hits_total` - Embedding cache hits
 - `datastorage_embedding_generation_duration_seconds` - Embedding latency
 - `datastorage_database_write_errors_total` - Write errors

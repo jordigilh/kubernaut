@@ -1,15 +1,17 @@
 # Webhook Consolidation Triage - SOC2 Compliance (FINAL CORRECTION)
 
 **Date**: January 6, 2026
-**Status**: ✅ **ANALYSIS COMPLETE - FINAL CORRECTION**
+**Status**: ✅ **ANALYSIS COMPLETE - SUPERSEDED IN PART**
 **Purpose**: Evaluate consolidating multiple admission webhooks into a single implementation
-**Correction**: **3 CRDs** + **1 REST API** requiring authentication (not 2 CRDs, not 4 CRDs)
+
+> **March 2026 Correction (v1.3)**: This document's conclusion of "3 CRDs + 1 REST API" is **no longer accurate**. As of [ADR-058](../../architecture/decisions/ADR-058-webhook-driven-workflow-registration.md) and [BR-WORKFLOW-006](../../requirements/BR-WORKFLOW-006-remediation-workflow-crd.md), RemediationWorkflow now uses a **CRD + ValidatingWebhook** pattern, making the correct count **4 CRDs**. The DS REST API for workflow registration (`POST /api/v1/workflows`) is now an internal API consumed only by the AuthWebhook. See [DD-WEBHOOK-001 v1.3](../../architecture/decisions/DD-WEBHOOK-001-crd-webhook-requirements-matrix.md) for the current authoritative matrix.
+
+**Original Correction (January 2026)**: ~~**3 CRDs** + **1 REST API** requiring authentication~~
 **Authoritative Sources**:
 - `DD-AUTH-001`: Shared Authentication Webhook (AUTHORITATIVE for CRD webhooks)
-- `DD-AUTH-002`: HTTP Authentication Middleware (AUTHORITATIVE for REST APIs)
-- `DD-WEBHOOK-001 v1.1`: CRD Webhook Requirements Matrix (January 2026)
-- `DD-WORKFLOW-005 v2.0`: Workflow registration architecture (REST API only)
-- `WEBHOOK_WORKFLOW_CRUD_ATTRIBUTION_TRIAGE.md`: Authentication pattern triage
+- `DD-WEBHOOK-001 v1.3`: CRD Webhook Requirements Matrix (**4 CRDs** including RemediationWorkflow)
+- `ADR-058`: Webhook-driven workflow registration (RemediationWorkflow CRD)
+- `BR-WORKFLOW-006`: RemediationWorkflow CRD specification
 
 ---
 

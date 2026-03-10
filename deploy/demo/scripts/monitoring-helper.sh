@@ -6,6 +6,45 @@
 MONITORING_NS="${MONITORING_NS:-monitoring}"
 DEMO_HELM_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../helm" && pwd)"
 
+# Validate that an infrastructure component is present (no installs).
+# Usage: require_infra cert-manager
+require_infra() {
+    local component="$1"
+    case "$component" in
+        cert-manager)
+            helm status cert-manager -n cert-manager &>/dev/null && return 0
+            echo "ERROR: cert-manager is not installed. Run: bash deploy/demo/scripts/setup-demo-cluster.sh"
+            exit 1 ;;
+        metrics-server)
+            kubectl get deployment metrics-server -n kube-system &>/dev/null && return 0
+            echo "ERROR: metrics-server is not installed. Run: bash deploy/demo/scripts/setup-demo-cluster.sh"
+            exit 1 ;;
+        linkerd)
+            kubectl get namespace linkerd &>/dev/null && return 0
+            echo "ERROR: Linkerd is not installed. Run: bash deploy/demo/scripts/setup-demo-cluster.sh"
+            exit 1 ;;
+        blackbox)
+            helm status prometheus-blackbox-exporter -n "${MONITORING_NS}" &>/dev/null && return 0
+            echo "ERROR: blackbox-exporter is not installed. Run: bash deploy/demo/scripts/setup-demo-cluster.sh"
+            exit 1 ;;
+        gitea)
+            kubectl get namespace gitea &>/dev/null && return 0
+            echo "ERROR: Gitea is not installed. Run: bash deploy/demo/scripts/setup-demo-cluster.sh"
+            exit 1 ;;
+        argocd)
+            kubectl get namespace argocd &>/dev/null && return 0
+            echo "ERROR: ArgoCD is not installed. Run: bash deploy/demo/scripts/setup-demo-cluster.sh"
+            exit 1 ;;
+        awx)
+            kubectl get deployment -n kubernaut-system -l app.kubernetes.io/managed-by=awx-operator --no-headers 2>/dev/null | grep -q . && return 0
+            echo "ERROR: AWX is not installed. Run: bash deploy/demo/scripts/awx-helper.sh"
+            exit 1 ;;
+        *)
+            echo "ERROR: Unknown infrastructure component: ${component}"
+            exit 1 ;;
+    esac
+}
+
 # ── kube-prometheus-stack ────────────────────────────────────────────────────
 # Installs kube-prometheus-stack via Helm (idempotent).
 # Provides: Prometheus Operator, Prometheus, AlertManager, Grafana,
@@ -100,9 +139,12 @@ ensure_linkerd() {
 
     if ! command -v linkerd &>/dev/null; then
         echo "  Installing Linkerd CLI..."
-        curl -fsL https://run.linkerd.io/install | sh
+        curl -fsL https://run.linkerd.io/install-edge | sh
         export PATH="$HOME/.linkerd2/bin:$PATH"
     fi
+
+    echo "  Installing Gateway API CRDs (Linkerd prerequisite)..."
+    kubectl apply --server-side -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.4.0/standard-install.yaml
 
     linkerd install --crds | kubectl apply -f -
     linkerd install | kubectl apply -f -

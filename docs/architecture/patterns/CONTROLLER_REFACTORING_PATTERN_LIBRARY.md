@@ -1741,8 +1741,8 @@ Use this template to track refactoring progress:
 **Problem**: Service metrics don't follow DD-005 naming standards, causing E2E test failures
 
 **NT Case Study**:
-- NT metrics used flat prefix: `notification_reconciler_requests_total`
-- DD-005 requires: `kubernaut_notification_reconciler_requests_total`
+- NT metrics used flat prefix: `notification_delivery_attempts_total`
+- DD-005 requires: `kubernaut_notification_delivery_attempts_total`
 - Root cause: Missing `Namespace` and `Subsystem` in metric definitions
 - Time lost: 2 hours debugging E2E failures
 

@@ -47,8 +47,10 @@ func (r *Repository) ListActions(ctx context.Context, filters *models.WorkflowDi
 	// Build the context filter WHERE clause for the workflow join
 	whereClause, args := buildContextFilterSQL(filters)
 
-	// Always filter for active workflows only (GAP-WF-3: DD-WORKFLOW-016 - latest version only)
-	activeFilter := "w.status = 'active' AND w.is_latest_version = true"
+	// Always filter for active workflows and active action types only
+	// GAP-WF-3: DD-WORKFLOW-016 — latest version only
+	// BR-WORKFLOW-007: Disabled action types excluded from discovery
+	activeFilter := "w.status = 'active' AND w.is_latest_version = true AND t.status = 'active'"
 	if whereClause != "" {
 		whereClause = activeFilter + " AND " + whereClause
 	} else {
@@ -172,7 +174,7 @@ func (r *Repository) ListWorkflowsByActionType(ctx context.Context, actionType s
 				%s AS detected_label_boost,
 				%s AS custom_label_boost,
 				%s AS label_penalty,
-				(5.0 + (%s) + (%s) - (%s)) / 10.0 AS final_score
+				LEAST((5.0 + (%s) + (%s) - (%s)) / 10.0, 1.0) AS final_score
 			FROM remediation_workflow_catalog
 			WHERE %s
 		) scored
@@ -359,18 +361,4 @@ func buildContextFilterSQL(filters *models.WorkflowDiscoveryFilters) (string, []
 	}
 
 	return strings.Join(conditions, " AND "), args
-}
-
-// ActionTypeExists checks whether the given action type is in the action_type_taxonomy table.
-// DD-WORKFLOW-016 GAP-4: Explicit validation before DB FK constraint for clean 400 errors.
-func (r *Repository) ActionTypeExists(ctx context.Context, actionType string) (bool, error) {
-	var exists bool
-	err := r.db.QueryRowContext(ctx,
-		"SELECT EXISTS(SELECT 1 FROM action_type_taxonomy WHERE action_type = $1)",
-		actionType,
-	).Scan(&exists)
-	if err != nil {
-		return false, fmt.Errorf("action type taxonomy lookup: %w", err)
-	}
-	return exists, nil
 }

@@ -302,19 +302,18 @@ var _ = Describe("BR-GATEWAY-185: ShouldDeduplicate with Field Selectors", func(
 	})
 
 	// ========================================================================
-	// Post-Completion Cooldown Tests (Issue #202)
+	// Post-Completion Phase Tests (Issue #202, updated by #280)
 	// Test Plan: docs/testing/COOLDOWN_GW_RO/TEST_PLAN.md
 	//
-	// BUSINESS VALUE:
-	// - Validates cooldown with real K8s field selectors (primary code path)
-	// - Proves CompletedAt timestamp comparison works against envtest API
+	// #280: Post-completion cooldown removed — Verifying phase replaces it.
+	// Completed is a terminal phase, so ShouldDeduplicate always returns false
+	// regardless of when CompletedAt occurred. New RR creation is allowed.
 	// ========================================================================
 
-	Context("IT-GW-011-001: Completed RR within cooldown triggers dedup (#202)", func() {
-		It("should deduplicate when Completed RR has CompletedAt within cooldown window", func() {
-			// BUSINESS OUTCOME: Alert re-fires 2 minutes after a successful fix.
-			// The Gateway must not create a new RR -- it would waste an LLM call
-			// on stale signal data from before the remediation.
+	Context("IT-GW-011-001: Completed RR allows new RR creation (#280)", func() {
+		It("should allow new RR when Completed RR exists (terminal phase, no cooldown)", func() {
+			// #280: Verifying phase replaces post-completion cooldown.
+			// Completed is terminal — Gateway always allows a new RR.
 			fingerprint := "cd011001"
 			cooldownChecker := processing.NewPhaseBasedDeduplicationChecker(k8sClient, 5*time.Minute)
 
@@ -328,18 +327,26 @@ var _ = Describe("BR-GATEWAY-185: ShouldDeduplicate with Field Selectors", func(
 			Expect(k8sClient.Status().Update(ctx, rr)).To(Succeed())
 
 			Eventually(func() bool {
-				shouldDedup, existingRR, err := cooldownChecker.ShouldDeduplicate(ctx, testNamespace, rr.Spec.SignalFingerprint)
-				return err == nil && shouldDedup && existingRR != nil
+				var fetchedRR remediationv1alpha1.RemediationRequest
+				if err := k8sClient.Get(ctx, client.ObjectKey{Name: rr.Name, Namespace: controllerNamespace}, &fetchedRR); err != nil {
+					return false
+				}
+				return fetchedRR.Status.OverallPhase == remediationv1alpha1.PhaseCompleted
 			}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
-				"Completed RR within 5-min cooldown must trigger dedup via real field selector")
+				"Status update must propagate to cache")
+
+			shouldDedup, existingRR, err := cooldownChecker.ShouldDeduplicate(ctx, testNamespace, rr.Spec.SignalFingerprint)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(shouldDedup).To(BeFalse(),
+				"Completed RR is terminal (#280) — new RR creation must be allowed")
+			Expect(existingRR).To(BeNil())
 		})
 	})
 
-	Context("IT-GW-011-002: Completed RR outside cooldown allows new RR (#202)", func() {
-		It("should allow new RR when Completed RR has CompletedAt beyond cooldown window", func() {
-			// BUSINESS OUTCOME: Alert re-fires 6 minutes after a successful fix.
-			// Cooldown has expired, so this is likely a genuine recurrence.
-			// Gateway allows a new RR so the pipeline processes fresh signal data.
+	Context("IT-GW-011-002: Completed RR always allows new RR regardless of timing (#280)", func() {
+		It("should allow new RR when Completed RR exists (terminal phase, CompletedAt irrelevant)", func() {
+			// #280: Verifying phase replaces post-completion cooldown.
+			// CompletedAt timestamp no longer influences dedup; Completed is always terminal.
 			fingerprint := "cd011002"
 			cooldownChecker := processing.NewPhaseBasedDeduplicationChecker(k8sClient, 5*time.Minute)
 

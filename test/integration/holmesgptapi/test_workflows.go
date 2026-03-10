@@ -40,33 +40,37 @@ type HAPIWorkflowFixture struct {
 	ContentHash     string
 }
 
-// ToYAMLContent generates workflow YAML content per BR-WORKFLOW-004 format
+// ToYAMLContent generates workflow YAML content in CRD format per BR-WORKFLOW-006
 func (wf *HAPIWorkflowFixture) ToYAMLContent() string {
-	return fmt.Sprintf(`schemaVersion: "1.0"
+	return fmt.Sprintf(`apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
 metadata:
-  workflowId: %s
-  version: "%s"
-  description:
-    what: %s
-    whenToUse: Test workflow for %s
-actionType: %s
-labels:
-  severity: %s
-  component: %s
-  environment: %s
-  priority: %s
-parameters:
-  - name: NAMESPACE
-    type: string
-    required: true
-    description: Target namespace for the operation
-  - name: TARGET_NAME
-    type: string
-    required: true
-    description: Target resource name
-execution:
-  engine: tekton
-  bundle: %s`, wf.WorkflowName, wf.Version, wf.Description, wf.ActionType,
+  name: %s
+spec:
+  metadata:
+    workflowName: %s
+    version: "%s"
+    description:
+      what: %s
+      whenToUse: Test workflow for %s
+  actionType: %s
+  labels:
+    severity: %s
+    component: %s
+    environment: %s
+    priority: %s
+  parameters:
+    - name: NAMESPACE
+      type: string
+      required: true
+      description: Target namespace for the operation
+    - name: TARGET_NAME
+      type: string
+      required: true
+      description: Target resource name
+  execution:
+    engine: tekton
+    bundle: %s`, wf.WorkflowName, wf.WorkflowName, wf.Version, wf.Description, wf.ActionType,
 		wf.ActionType,
 		wf.Severity, wf.Component, wf.Environment, wf.Priority, wf.ContainerImage)
 }

@@ -1,33 +1,37 @@
-schemaVersion: "1.0"
-# Rollback Deployment Test Workflow Schema (BR-WORKFLOW-004)
-# Used by: DataStorage E2E — 04_workflow_discovery_test.go (DD-HAPI-017)
+apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
 metadata:
-  workflowId: rollback-deployment-test-v1
-  version: "1.0.0"
-  description:
-    what: "Rolls back a deployment to a previous revision"
-    whenToUse: "When a deployment update causes failures and needs rollback"
-    whenNotToUse: "When the issue is not caused by the latest deployment change"
-    preconditions: "Deployment has previous revisions available"
-
-actionType: RollbackDeployment
-
-labels:
-  severity: [high]
-  environment: [production, staging, test]
-  component: deployment
-  priority: P1
-
-execution:
-  engine: tekton
-  bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:8d727758cf289589e025fc9b89e254d73cb77b4c6384b850007b9ef1e8412200
-
-parameters:
-  - name: NAMESPACE
-    type: string
-    required: true
-    description: "Target namespace containing the deployment"
-  - name: DEPLOYMENT_NAME
-    type: string
-    required: true
-    description: "Name of the deployment to roll back"
+  name: rollback-deployment-test-v1
+spec:
+  # Rollback Deployment Test Workflow Schema (BR-WORKFLOW-004)
+  # Used by: DataStorage E2E — 04_workflow_discovery_test.go (DD-HAPI-017)
+  metadata:
+    workflowName: rollback-deployment-test-v1
+    version: "1.0.0"
+    description:
+      what: "Rolls back a deployment to a previous revision"
+      whenToUse: "When a deployment update causes failures and needs rollback"
+      whenNotToUse: "When the issue is not caused by the latest deployment change"
+      preconditions: "Deployment has previous revisions available"
+  
+  actionType: RollbackDeployment
+  
+  labels:
+    severity: [high]
+    environment: [production, staging, test]
+    component: deployment
+    priority: P1
+  
+  execution:
+    engine: tekton
+    bundle: quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:adfc09ea45a5b627550c6a73fe75d50efe1c80fa43359fcc4908c9c5b0639ac3
+  
+  parameters:
+    - name: NAMESPACE
+      type: string
+      required: true
+      description: "Target namespace containing the deployment"
+    - name: DEPLOYMENT_NAME
+      type: string
+      required: true
+      description: "Name of the deployment to roll back"

@@ -25,12 +25,12 @@
 | `holmesgpt_llm_calls_total` | ✅ Implemented | Labels: provider, model, status |
 | `holmesgpt_llm_call_duration_seconds` | ✅ Implemented | Histogram |
 | `holmesgpt_llm_token_usage_total` | ✅ Implemented | Labels: provider, model, type (prompt/completion) |
-| `holmesgpt_auth_failures_total` | ✅ Implemented | Labels: reason, endpoint |
-| `holmesgpt_auth_success_total` | ✅ Implemented | Labels: username, role |
-| `holmesgpt_context_api_calls_total` | ⚠️ Deprecated | Context API deprecated (DD-CONTEXT-006) |
-| `holmesgpt_active_requests` | ✅ Implemented | Gauge |
-| `holmesgpt_http_requests_total` | ✅ Implemented | General HTTP metrics |
-| `holmesgpt_rfc7807_errors_total` | ✅ Implemented | Labels: status_code, error_type |
+| `holmesgpt_auth_failures_total` | ❌ Removed | No BR backing (GitHub #294) |
+| `holmesgpt_auth_success_total` | ❌ Removed | No BR backing (GitHub #294) |
+| `holmesgpt_context_api_calls_total` | ❌ Removed | Context API deprecated (DD-CONTEXT-006) |
+| `holmesgpt_active_requests` | ❌ Removed | Internal-only (GitHub #294) |
+| `holmesgpt_http_requests_total` | ❌ Removed | Internal-only (GitHub #294) |
+| `holmesgpt_rfc7807_errors_total` | ❌ Removed | Internal-only (GitHub #294) |
 | `holmesgpt_investigation_cost_dollars_total` | ❌ Not implemented | Deferred to v2.0 |
 
 ---

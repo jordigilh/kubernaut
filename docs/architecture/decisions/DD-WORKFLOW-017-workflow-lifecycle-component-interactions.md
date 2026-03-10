@@ -1,19 +1,31 @@
 # DD-WORKFLOW-017: Workflow Lifecycle Component Interactions
 
 **Date**: February 5, 2026
+**Updated**: March 4, 2026
 **Status**: Approved
 **Decision Maker**: Kubernaut Architecture Team
 **Authority**: AUTHORITATIVE - This document governs the end-to-end workflow lifecycle and component interactions
-**Affects**: Data Storage Service, HolmesGPT API, Remediation Orchestrator, Signal Processing, Workflow Execution
-**Related**: DD-WORKFLOW-016 (Action-Type Indexing), DD-WORKFLOW-012 (Immutability Constraints), DD-STORAGE-008 (Catalog Schema), DD-WORKFLOW-001 v2.6 (Label Schema), DD-AUDIT-003 (Audit Trace), DD-AUTH-002 (Authentication), DD-004 (RFC 7807 Error Responses)
+**Affects**: Data Storage Service, AuthWebhook Service, HolmesGPT API, Remediation Orchestrator, Signal Processing, Workflow Execution
+**Related**: DD-WORKFLOW-016 (Action-Type Indexing), DD-WORKFLOW-012 (Immutability Constraints), DD-STORAGE-008 (Catalog Schema), DD-WORKFLOW-001 v2.6 (Label Schema), DD-AUDIT-003 (Audit Trace), ADR-058 (Webhook-Driven Registration), BR-WORKFLOW-006 (RemediationWorkflow CRD), DD-WEBHOOK-001 (Webhook Matrix), DD-004 (RFC 7807 Error Responses)
 **Supersedes**: DD-WORKFLOW-005 (Schema Extraction), DD-WORKFLOW-007 (Manual Registration)
-**Version**: 1.0
+**Version**: 1.1
 
 ---
 
 ## Changelog
 
-### Version 1.0 (2026-02-05) -- CURRENT
+### Version 1.1 (2026-03-04) -- CURRENT
+
+- **BREAKING**: Replaced OCI pullspec registration with CRD-based registration via RemediationWorkflow CRD
+- Phase 1 rewritten: operators create `RemediationWorkflow` CRD; AuthWebhook intercepts and bridges to DS
+- DS `POST /api/v1/workflows` is now an internal API consumed only by the AuthWebhook
+- Added AuthWebhook (AW) to components table
+- Updated scope: CRD-based registration is now in-scope for V1.0
+- Added cross-references to ADR-058 and BR-WORKFLOW-006
+- Phase 4 (Operational Management): disable via CRD DELETE in addition to REST PATCH
+- Superseded docs (DD-WORKFLOW-005, DD-WORKFLOW-007) moved to `docs/archived/`
+
+### Version 1.0 (2026-02-05)
 
 - Initial version defining end-to-end workflow lifecycle
 - Consolidates workflow creation, discovery, usage, and disable/enable in one document
@@ -50,15 +62,17 @@ Each phase specifies the components involved, the API calls between them, the va
 
 ## Scope
 
-**V1.0 only**. This document describes the current implementation scope:
+**V1.0**. This document describes the current implementation scope:
 
-- Manual REST API registration (no CRD automation)
+- CRD-based workflow registration via `RemediationWorkflow` CRD (BR-WORKFLOW-006, ADR-058)
+- AuthWebhook bridges CRD lifecycle to DS catalog (internal `POST /api/v1/workflows`)
 - `action_type`-based catalog indexing (DD-WORKFLOW-016)
 - Three-step LLM discovery protocol
-- Disable/enable via REST API
+- Disable via CRD DELETE or REST API PATCH
+- Enable via REST API PATCH
 
 **Out of scope** (deferred to future versions):
-- CRD-based automated registration (V1.1)
+- Full reconciliation controller for CRD-DS state drift (V1.1)
 - CLI registration tool (V1.2)
 - Image signing and verification (V1.2)
 - Workflow versioning and rollback UI (V1.2)
@@ -69,12 +83,13 @@ Each phase specifies the components involved, the API calls between them, the va
 
 | Component | Abbreviation | Role in Workflow Lifecycle |
 |-----------|-------------|---------------------------|
-| **Data Storage** | DS | Workflow catalog CRUD, OCI schema extraction, validation, audit traces |
+| **Data Storage** | DS | Workflow catalog CRUD, schema validation from inline content (internal API), audit traces |
+| **AuthWebhook** | AW | Intercepts RemediationWorkflow CRD CREATE/DELETE; bridges to DS internal API; SOC2 user attribution; audit events (ADR-058) |
 | **HolmesGPT API** | HAPI | LLM tool orchestration, three-step discovery, post-selection validation |
 | **Signal Processing** | SP | Signal enrichment, context labels |
 | **Remediation Orchestrator** | RO | End-to-end remediation lifecycle management. Creates and watches CRDs sequentially (SP -> AIAnalysis -> WorkflowExecution -> Notification). Makes all routing decisions. |
 | **Workflow Execution** | WE | Pure executor (no routing logic). Reconciles WorkflowExecution CRDs, selects execution engine (Tekton PipelineRun or Kubernetes Job per BR-WE-014), creates and monitors execution primitives. |
-| **Operator** | -- | Human actor: registers, disables/enables workflows |
+| **Operator** | -- | Human actor: creates RemediationWorkflow CRDs, manages lifecycle |
 | **LLM** | -- | AI model: performs RCA, selects action type and workflow |
 
 ---
@@ -83,197 +98,141 @@ Each phase specifies the components involved, the API calls between them, the va
 
 ### Overview
 
-In V1.0, workflows are registered manually by an operator via the Data Storage REST API. The operator builds a container image (OCI bundle) containing the workflow implementation and a `/workflow-schema.yaml` file (per ADR-043), pushes it to a container registry, and then provides only the **OCI image pullspec** to DS. DS pulls the image, extracts the `/workflow-schema.yaml`, validates it, and populates the catalog.
+Workflows are registered by creating a `RemediationWorkflow` CRD in the `kubernaut-system` namespace. The AuthWebhook (AW) intercepts the CREATE operation via a `ValidatingWebhookConfiguration`, extracts the CRD spec, and forwards it to the Data Storage internal API for validation and catalog population. The DS `POST /api/v1/workflows` endpoint is an **internal API** -- it is NOT a user-facing management endpoint.
 
-**Key design principle**: The OCI image is the **single source of truth** for all workflow metadata. The operator does not provide workflow metadata, labels, parameters, or descriptions in the registration request -- all of this is extracted from the `/workflow-schema.yaml` inside the image. This prevents tampering and ensures that the catalog entry always reflects exactly what is in the container that will be executed.
+**Key design principle**: The CRD is the **user-facing interface** for workflow registration. Operators use standard `kubectl apply` or GitOps tools (Flux, ArgoCD) to manage workflows. The AW bridges the Kubernetes API to the DS catalog, capturing authenticated user identity for SOC2 CC8.1 compliance.
+
+See [ADR-058](./ADR-058-webhook-driven-workflow-registration.md) for the full architecture decision and [BR-WORKFLOW-006](../../requirements/BR-WORKFLOW-006-remediation-workflow-crd.md) for the CRD specification.
 
 ### Component Flow
 
 ```mermaid
 sequenceDiagram
     participant Op as Operator
+    participant K8s as K8s API Server
+    participant AW as AuthWebhook
     participant DS as DataStorage
-    participant Reg as ContainerRegistry
     participant DB as PostgreSQL
 
-    Note over Op: Build container with /workflow-schema.yaml (per ADR-043)
-    Note over Op: Push to container registry
+    Note over Op: Author RemediationWorkflow YAML<br/>(spec per BR-WORKFLOW-004)
 
-    Op->>DS: POST /api/v1/workflows
-    Note right of Op: {"containerImage": "quay.io/.../workflow-scale:v1.0.0"}
+    Op->>K8s: kubectl apply -f remediationworkflow.yaml
+    K8s->>AW: AdmissionReview (CREATE)
+    AW->>AW: Extract authenticated user (req.UserInfo)
+    AW->>AW: Marshal CRD spec to JSON content
 
-    DS->>Reg: Pull image (crane)
-    Reg-->>DS: Image layers
-    DS->>DS: Extract /workflow-schema.yaml from image
-    DS->>DS: Record container digest (SHA-256)
+    AW->>DS: POST /api/v1/workflows (internal)
+    Note right of AW: {content: JSON, source: "crd", registeredBy: user}
 
-    DS->>DS: Validate schema format (ADR-043)
+    DS->>DS: Parse and validate schema (BR-WORKFLOW-004)
     DS->>DB: SELECT action_type FROM action_type_taxonomy WHERE action_type = $1
     DB-->>DS: Validate action_type exists (FK)
     DS->>DS: Validate mandatory labels (DD-WORKFLOW-001 v2.6)
     DS->>DS: Validate immutability rules (DD-WORKFLOW-012)
-    DS->>DS: Validate execution.bundle has sha256 digest
-    DS->>Reg: HEAD execution.bundle image (crane.Head)
-    Note right of DS: Verifies execution image exists in registry
     DS->>DB: Check duplicate prevention (UNIQUE constraint)
 
     alt Validation passes
         DS->>DB: INSERT INTO remediation_workflow_catalog (status='active')
         DB-->>DS: workflow_id (UUID)
-        DS->>DB: INSERT audit trace: datastorage.workflow.created
-        DS-->>Op: 201 Created (workflow_id, extracted schema summary)
-    else Image pull fails
-        DS-->>Op: 502 Bad Gateway (image pull failed)
-    else Schema not found in image
-        DS-->>Op: 422 Unprocessable Entity (missing /workflow-schema.yaml)
-    else execution.bundle digest format invalid
-        DS-->>Op: 400 Bad Request (invalid digest format)
-    else execution.bundle image not found in registry
-        DS-->>Op: 400 Bad Request (execution bundle not found)
+        DS-->>AW: 201 Created {workflowId, status, previouslyExisted}
+        AW->>AW: Emit audit: remediationworkflow.admitted.create
+        AW-->>K8s: Allowed
+        K8s-->>Op: RemediationWorkflow created
+        Note over AW: Async goroutine: update CRD .status<br/>(workflowId, catalogStatus, registeredBy, registeredAt)
+    else Duplicate (409)
+        DS-->>AW: 200 OK (re-enabled, previouslyExisted: true)
+        AW->>AW: Emit audit: remediationworkflow.admitted.create
+        AW-->>K8s: Allowed
     else Validation fails
-        DS-->>Op: 400 Bad Request (validation errors)
+        DS-->>AW: 400 Bad Request (validation errors)
+        AW->>AW: Emit audit: remediationworkflow.admitted.denied
+        AW-->>K8s: Denied (DS error message forwarded)
+        K8s-->>Op: Admission denied
     end
 ```
 
-### Registration Payload
+### Registration Interface
 
-The operator submits **only the OCI image pullspec** to `POST /api/v1/workflows`:
+The operator creates a `RemediationWorkflow` CRD:
 
-```json
-{
-  "containerImage": "quay.io/kubernaut-ai/workflow-scale-conservative:v1.0.0"
-}
+```yaml
+apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
+metadata:
+  name: scale-conservative-v1
+  namespace: kubernaut-system
+spec:
+  metadata:
+    workflowId: scale-conservative
+    version: "1.0.0"
+    description:
+      what: "Scales deployment replicas conservatively"
+      whenToUse: "When pods are under CPU pressure"
+      whenNotToUse: "When cluster is at capacity"
+  actionType: ScaleReplicas
+  labels:
+    severity: ["warning", "critical"]
+    environment: ["production", "staging"]
+    component: Deployment
+    priority: high
+  execution:
+    engine: tekton
+    bundle: "quay.io/kubernaut-ai/workflow-scale:v1.0.0@sha256:abc123..."
+  parameters:
+    - name: replicas
+      type: integer
+      required: true
+      description: "Target replica count"
+      minimum: 1
+      maximum: 100
 ```
 
-DS extracts all workflow metadata from the `/workflow-schema.yaml` inside the image (per ADR-043):
-
-- `metadata.workflow_id`, `metadata.version`, `metadata.description`
-- `labels` (severity, component, environment, action_type, etc.)
-- `parameters` (name, type, required, constraints, etc.)
-- `execution.engine` (tekton, job, etc.)
-- `execution.bundle` (OCI image reference with sha256 digest -- the image WE will pull at execution time)
-
-**Why pullspec-only registration?**
-
-1. **Anti-tampering**: The catalog entry is guaranteed to match the container that will execute. An operator cannot register metadata that differs from the actual workflow image.
-2. **Single source of truth**: The OCI image is the authoritative source. There is no ambiguity about where metadata lives.
-3. **Decoupling**: The workflow definition is self-contained in the image. Registration is a discovery operation, not a data entry operation.
-
-### Schema Extraction
-
-DS extracts the schema using a container image inspection tool (e.g., `crane`):
-
-1. Pull the image from the registry
-2. Extract `/workflow-schema.yaml` from the image filesystem
-3. Parse and validate the YAML against the ADR-043 schema definition
-4. Record the image's SHA-256 digest for audit trail integrity
-
-If the image does not contain `/workflow-schema.yaml` at the root, registration is rejected with a clear error.
+The AW marshals the full CRD spec to JSON and passes it as the `content` field to the DS internal API, with `source: "crd"` and `registeredBy` set to the authenticated Kubernetes user.
 
 ### Validation Rules
 
-After extracting the schema from the image, DS validates the following in order. All error responses use **RFC 7807 Problem Details** format per DD-004 (`Content-Type: application/problem+json`):
+DS validates the inline content from the AW. All error responses are surfaced to the operator as admission denial messages:
 
-| # | Validation | Authority | HTTP Status | Error Type (DD-004) |
-|---|-----------|-----------|-------------|---------------------|
-| 1 | Image is pullable from registry | Infrastructure | 502 | `image-pull-failed` |
-| 2 | `/workflow-schema.yaml` exists in image | ADR-043 | 422 | `schema-not-found` |
-| 3 | Schema format valid (required fields, types) | ADR-043 | 400 | `validation-error` |
-| 4 | `action_type` exists in `action_type_taxonomy` table | DD-WORKFLOW-016 (FK) | 400 | `unknown-action-type` |
-| 5 | Mandatory labels present: `severity`, `component`, `environment` | DD-WORKFLOW-001 v2.6 | 400 | `validation-error` |
-| 6 | `workflow_name` + `version` is unique (UNIQUE constraint) | DD-WORKFLOW-012 | 409 | `duplicate-workflow` |
-| 7 | Description is non-empty | DD-WORKFLOW-012 | 400 | `validation-error` |
-| 8 | At least one parameter defined OR explicit empty list | ADR-043 | 400 | `validation-error` |
-| 9 | `execution.bundle` is present and contains sha256 digest (`tag@sha256:<64hex>` or `@sha256:<64hex>`) | Issue #89 | 400 | `validation-error` |
-| 10 | `execution.bundle` image exists in container registry (HEAD check via `crane.Head`) | Issue #89 | 400 | `bundle-not-found` |
+| # | Validation | Authority | Admission Result |
+|---|-----------|-----------|-----------------|
+| 1 | Schema format valid (required fields, types) | BR-WORKFLOW-004 | Denied: validation errors |
+| 2 | `action_type` exists in `action_type_taxonomy` table | DD-WORKFLOW-016 (FK) | Denied: unknown action type |
+| 3 | Mandatory labels present: `severity`, `component`, `environment` | DD-WORKFLOW-001 v2.6 | Denied: validation errors |
+| 4 | `workflow_name` + `version` is unique (UNIQUE constraint) | DD-WORKFLOW-012 | Allowed (re-enable) |
+| 5 | Description is non-empty | DD-WORKFLOW-012 | Denied: validation errors |
+| 6 | At least one parameter defined | BR-WORKFLOW-004 | Denied: validation errors |
 
-#### RFC 7807 Error Examples
+**Duplicate handling (validation #4)**: If the `(workflow_name, version)` combination already exists in a disabled state, DS re-enables the workflow and returns success with `previouslyExisted: true`. The CRD `.status.previouslyExisted` field reflects this.
 
-**Validation #1 — Image pull failed (502)**:
+### Async Status Update
 
-```json
-{
-  "type": "https://kubernaut.ai/problems/image-pull-failed",
-  "title": "Bad Gateway",
-  "detail": "Failed to pull image 'quay.io/kubernaut-ai/workflow-scale-conservative:v1.0.0': connection refused",
-  "status": 502,
-  "instance": "/api/v1/workflows"
-}
-```
+After admission succeeds, the AW spawns a goroutine that updates the CRD `.status` subresource via `k8sClient.Status().Update()`. This uses a fresh context with a 10-second timeout. Status fields populated:
 
-**Validation #2 — Schema file not found (422)**:
+| Field | Value |
+|-------|-------|
+| `status.workflowId` | UUID from DS response |
+| `status.catalogStatus` | `"active"` (or DS-returned status) |
+| `status.registeredBy` | Authenticated Kubernetes user |
+| `status.registeredAt` | Current timestamp |
+| `status.previouslyExisted` | `true` if re-enabled from disabled |
 
-```json
-{
-  "type": "https://kubernaut.ai/problems/schema-not-found",
-  "title": "Unprocessable Entity",
-  "detail": "Image 'quay.io/kubernaut-ai/workflow-scale-conservative:v1.0.0' does not contain /workflow-schema.yaml at the root filesystem (required by ADR-043)",
-  "status": 422,
-  "instance": "/api/v1/workflows"
-}
-```
+**Trade-off**: There is a brief window where the CRD exists but `.status` is empty. The DS catalog is the source of truth; CRD status is informational. See ADR-058 for the full rationale.
 
-**Validation #4 — Unknown action type (400)**:
+### Audit Traces
 
-```json
-{
-  "type": "https://kubernaut.ai/problems/unknown-action-type",
-  "title": "Bad Request",
-  "detail": "action_type 'ScaleToZero' is not registered in the action_type_taxonomy. Valid action types: ScaleReplicas, IncreaseCPULimits, RestartPod, RollbackDeployment",
-  "status": 400,
-  "instance": "/api/v1/workflows"
-}
-```
+Registration generates audit traces at two levels:
 
-**Validation #6 — Duplicate workflow (409)**:
+| Event Type | Component | Description | Authority |
+|-----------|-----------|-------------|-----------|
+| `remediationworkflow.admitted.create` | AW | CRD CREATE admitted, workflow registered | DD-WEBHOOK-003, ADR-058 |
+| `remediationworkflow.admitted.denied` | AW | CRD CREATE denied (validation/auth failure) | DD-WEBHOOK-003, ADR-058 |
+| `datastorage.workflow.created` | DS | Workflow added to catalog (internal) | DD-AUDIT-003 |
 
-```json
-{
-  "type": "https://kubernaut.ai/problems/duplicate-workflow",
-  "title": "Conflict",
-  "detail": "Workflow 'scale-conservative' version '1.0.0' already exists (workflow_id: 550e8400-e29b-41d4-a716-446655440000)",
-  "status": 409,
-  "instance": "/api/v1/workflows"
-}
-```
-
-**Validation #9 — execution.bundle digest format invalid (400)**:
-
-```json
-{
-  "type": "https://kubernaut.ai/problems/validation-error",
-  "title": "Bad Request",
-  "detail": "execution.bundle: must contain a sha256 digest (e.g., @sha256:<64 hex chars>)",
-  "status": 400,
-  "instance": "/api/v1/workflows"
-}
-```
-
-**Validation #10 — execution.bundle image not found (400)**:
-
-```json
-{
-  "type": "https://kubernaut.ai/problems/bundle-not-found",
-  "title": "Bad Request",
-  "detail": "execution.bundle image not found: HEAD https://quay.io/v2/kubernaut-cicd/test-workflows/crashloop-config-fix-job/manifests/v1.0.0-exec: MANIFEST_UNKNOWN",
-  "status": 400,
-  "instance": "/api/v1/workflows"
-}
-```
-
-### Audit Trace
-
-On successful creation, DS emits:
-
-| Event Type | Description | Authority |
-|-----------|-------------|-----------|
-| `datastorage.workflow.created` | Workflow added to catalog | DD-AUDIT-003 |
-
-The audit trace includes: `workflowId`, `workflowName`, `version`, `actionType`, `containerImage`, `containerDigest` (SHA-256), `createdBy` (operator identity from auth context per DD-AUTH-002).
+AW audit events include: authenticated user, resource name, correlation ID (admission UID), namespace.
 
 ### Authentication
 
-`POST /api/v1/workflows` requires authenticated operator identity per DD-AUTH-002. The operator's identity is captured in the `created_by` field and the audit trace for SOC2 CC8.1 (Attribution) compliance.
+Authentication is handled at the Kubernetes API server level. The AW extracts the authenticated user from `req.UserInfo` in the admission request (SOC2 CC8.1). The DS internal API receives the user identity in the `registeredBy` field.
 
 ---
 
@@ -461,7 +420,31 @@ Execution generates audit traces across RO and WE:
 
 ### 4.1 Disable Workflow
 
-Operators can disable a workflow to prevent it from appearing in discovery results without deleting it. This is a mutable status change per DD-WORKFLOW-012.
+Operators can disable a workflow in two ways:
+
+**Option A: Delete the RemediationWorkflow CRD** (preferred for GitOps):
+
+```mermaid
+sequenceDiagram
+    participant Op as Operator
+    participant K8s as K8s API Server
+    participant AW as AuthWebhook
+    participant DS as DataStorage
+    participant DB as PostgreSQL
+
+    Op->>K8s: kubectl delete remediationworkflow my-workflow
+    K8s->>AW: AdmissionReview (DELETE)
+    AW->>AW: Extract workflowId from CRD status
+    AW->>DS: PATCH /api/v1/workflows/{id}/disable (best-effort)
+    DS->>DB: UPDATE status='disabled', disabled_at=NOW()
+    AW->>AW: Emit audit: remediationworkflow.admitted.delete
+    AW-->>K8s: Allowed (always, even if DS fails)
+    K8s-->>Op: CRD deleted
+```
+
+**Note**: CRD DELETE always succeeds regardless of DS response. This prevents GitOps drift.
+
+**Option B: REST API PATCH** (for operational management without CRD changes):
 
 ```mermaid
 sequenceDiagram
@@ -648,14 +631,15 @@ All lifecycle transitions emit a `datastorage.workflow.updated` audit event usin
 
 ### 4.6 Authentication
 
-All operational management endpoints require authenticated operator identity per DD-AUTH-002:
+Workflow lifecycle operations use two authentication mechanisms:
 
-| Endpoint | HTTP Method | SOC2 Control |
-|----------|-------------|-------------|
-| `POST /api/v1/workflows` | POST | CC8.1 (Attribution) |
-| `PATCH /api/v1/workflows/{id}/disable` | PATCH | CC8.1 (Attribution) |
-| `PATCH /api/v1/workflows/{id}/enable` | PATCH | CC8.1 (Attribution) |
-| `PATCH /api/v1/workflows/{id}/deprecate` | PATCH | CC8.1 (Attribution) |
+| Operation | Interface | Auth Mechanism | SOC2 Control |
+|-----------|-----------|---------------|-------------|
+| Registration (CREATE) | `RemediationWorkflow` CRD | K8s admission `req.UserInfo` via AW | CC8.1 (Attribution) |
+| Disable (DELETE) | `RemediationWorkflow` CRD | K8s admission `req.UserInfo` via AW | CC8.1 (Attribution) |
+| Disable (direct) | `PATCH /api/v1/workflows/{id}/disable` | DD-AUTH-002 middleware | CC8.1 (Attribution) |
+| Enable | `PATCH /api/v1/workflows/{id}/enable` | DD-AUTH-002 middleware | CC8.1 (Attribution) |
+| Deprecate | `PATCH /api/v1/workflows/{id}/deprecate` | DD-AUTH-002 middleware | CC8.1 (Attribution) |
 
 ---
 
@@ -665,45 +649,44 @@ This DD consolidates the workflow lifecycle but does **not** supersede the follo
 
 | Document | Remains Authoritative For | Referenced In |
 |----------|--------------------------|---------------|
+| **ADR-058** | Webhook-driven registration architecture (ValidatingWebhook, async status, DS bridge) | Phase 1 (registration) |
+| **BR-WORKFLOW-006** | RemediationWorkflow CRD specification (fields, lifecycle, RBAC) | Phase 1 (registration) |
+| **DD-WEBHOOK-001** | CRD Webhook Requirements Matrix (all 4 handlers) | Phase 1 (registration) |
+| **DD-WEBHOOK-003** | Webhook-complete audit pattern | Phase 1 (audit traces) |
 | **DD-WORKFLOW-012** | Immutability constraints (mutable vs immutable fields) | Phase 1 (validation), Phase 4 (status transitions) |
 | **DD-WORKFLOW-016** | Action-type indexing, three-step discovery protocol, SQL queries, pagination | Phase 2 (discovery) |
 | **DD-WORKFLOW-001 v2.6** | Mandatory label schema (6 labels including `action_type`) | Phase 1 (validation) |
 | **DD-STORAGE-008** | Database schema (`remediation_workflow_catalog` table) | Phase 1 (INSERT), Phase 4 (UPDATE) |
 | **DD-AUDIT-003** | Audit trace event types and requirements | Phase 1, 3, 4 (audit traces) |
-| **DD-AUTH-002** | Authentication middleware and operator identity capture | Phase 1, 4 (auth) |
-| **DD-004** | RFC 7807 error response standard, error type URI convention | Phase 1 (validation errors), Phase 4 (transition errors) |
+| **DD-004** | RFC 7807 error response standard, error type URI convention | Phase 4 (transition errors) |
 | **ADR-043** | Workflow schema definition standard (`/workflow-schema.yaml`) | Phase 1 (schema format) |
 
 This DD **supersedes**:
 
 | Document | Reason |
 |----------|--------|
-| **DD-WORKFLOW-005** | Registration is now covered here with `action_type` design. V1.1 CRD automation deferred. |
-| **DD-WORKFLOW-007** | Manual registration is now covered here. CLI deferred to V1.2. |
+| **DD-WORKFLOW-005** | Registration now uses CRD + AW bridge (ADR-058). Moved to `docs/archived/`. |
+| **DD-WORKFLOW-007** | Manual registration now uses CRD. Moved to `docs/archived/`. CLI deferred to V1.2. |
 
 ---
 
 ## Business Requirements
 
-### BR-WORKFLOW-017-001: OCI Image Extraction and Action Type FK Validation on Registration
+### BR-WORKFLOW-017-001: CRD-Based Registration with Action Type FK Validation
 
 - **Category**: WORKFLOW
 - **Priority**: P0 (blocking for V1.0 registration)
-- **Description**: MUST extract `/workflow-schema.yaml` from the OCI image provided during registration and validate that the `action_type` declared in the extracted schema exists in the `action_type_taxonomy` table. Additionally, MUST validate that `execution.bundle` contains a sha256 digest (format: `registry/repo:tag@sha256:<64 hex>` or `registry/repo@sha256:<64 hex>`) and that the referenced image exists in the container registry, providing early feedback on format errors, typos, or missing images rather than deferring failure to workflow execution time. The registration payload contains only the OCI image pullspec -- all workflow metadata is extracted from the image. Workflows with unknown action types, invalid bundle digests, or non-existent bundle images are rejected at registration time.
+- **Description**: MUST support workflow registration via `RemediationWorkflow` CRD. The AuthWebhook intercepts CRD CREATE, extracts the spec, and forwards it to the DS internal API as inline content. DS validates the schema (BR-WORKFLOW-004), validates that `action_type` exists in the `action_type_taxonomy` table (FK constraint), and inserts into the catalog. Workflows with unknown action types or invalid schemas are rejected at admission time. The DS `POST /api/v1/workflows` endpoint is internal-only, consumed exclusively by the AW.
 - **Acceptance Criteria**:
-  - `POST /api/v1/workflows` accepts only `containerImage` (OCI pullspec) in the request body
-  - DS pulls the image from the registry and extracts `/workflow-schema.yaml` (per ADR-043)
-  - DS records the image's SHA-256 digest for audit trail integrity
-  - Registration is rejected if the image is not pullable (502), schema file is missing (422), or schema is invalid (400)
-  - `action_type` from extracted schema is validated against `action_type_taxonomy` (FK constraint)
-  - `execution.bundle` is mandatory in the extracted schema; registration is rejected with 400 if missing
-  - `execution.bundle` must contain a sha256 digest in one of two formats: `registry/repo:tag@sha256:<64 hex chars>` (tag+digest) or `registry/repo@sha256:<64 hex chars>` (digest-only); tag-only references are rejected with 400
-  - `execution.bundle` image reference is validated for existence in the container registry via a lightweight HEAD request (`crane.Head`); registration is rejected with 400 `bundle-not-found` if the image does not exist
-  - All error responses use RFC 7807 Problem Details format per DD-004 (`Content-Type: application/problem+json`)
-  - Error `detail` field clearly indicates the invalid `action_type` and lists valid options
-  - Unit tests cover valid images, unpullable images, missing schema, invalid schema, valid/invalid action types
-  - Unit tests cover `execution.bundle` validation: valid references (tag+digest, digest-only), tag-only references (rejected), non-existent bundle images (rejected), truncated digests (rejected), missing bundle field (rejected)
-  - Unit tests verify RFC 7807 compliance: `Content-Type` header, required fields (`type`, `title`, `detail`, `status`, `instance`)
+  - `RemediationWorkflow` CRD CREATE triggers AW admission handler
+  - AW marshals CRD spec to JSON and calls DS `POST /api/v1/workflows` with `content`, `source: "crd"`, `registeredBy`
+  - DS validates inline schema content (BR-WORKFLOW-004 format)
+  - `action_type` from schema is validated against `action_type_taxonomy` (FK constraint)
+  - Registration is rejected (CRD denied) if schema is invalid or action type is unknown
+  - Duplicate `(workflow_name, version)` triggers re-enable of disabled workflow (`previouslyExisted: true`)
+  - CRD `.status` is populated asynchronously after successful admission
+  - Audit events emitted: `remediationworkflow.admitted.create` (success), `remediationworkflow.admitted.denied` (failure)
+  - Unit tests cover valid CRDs, invalid schemas, unknown action types, duplicate handling, auth failures
 
 ### BR-WORKFLOW-017-002: Disabled Workflow Exclusion from Discovery
 
@@ -746,10 +729,10 @@ This DD **supersedes**:
 ```mermaid
 flowchart TD
     subgraph creation [Phase 1: Creation]
-        A1[Operator builds container] --> A2[Operator POSTs to DS]
+        A1["Operator creates RemediationWorkflow CRD"] --> A2["AW intercepts, forwards to DS"]
         A2 --> A3{DS validates}
         A3 -->|Pass| A4[Workflow active in catalog]
-        A3 -->|Fail| A5[400 Bad Request]
+        A3 -->|Fail| A5["CRD admission denied"]
     end
 
     subgraph discovery [Phase 2: Discovery]
@@ -782,15 +765,16 @@ flowchart TD
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: February 5, 2026
+**Document Version**: 1.1
+**Last Updated**: March 4, 2026
 **Status**: Approved
 **Authority**: AUTHORITATIVE - Governs workflow lifecycle component interactions (V1.0)
-**Confidence**: 96%
+**Confidence**: 95%
 
-**Confidence Gap (4%)**:
-- Container registry access (~2%): DS must be able to pull images from the container registry. Private registries require image pull credentials to be configured for DS. Mitigated by supporting imagePullSecrets configuration.
+**Confidence Gap (5%)**:
+- CRD-DS state drift (~2%): No reconciliation controller in V1.0. If DS and CRD state diverge, manual intervention is required. Mitigated by the fact that CRD CREATE/DELETE is the only registration path.
 - Execution flow detail (~1%): RO and WE component interactions are described at summary level. Detailed execution protocol is governed by existing WE and RO design documents.
 - Deprecation API (~1%): PATCH endpoint for deprecation is defined but not yet implemented. Disable/enable is the V1.0 priority.
+- Goroutine status update (~1%): Async status update may fail, leaving CRD `.status` empty. DS catalog is source of truth. See ADR-058.
 
-**Next Review**: After V1.0 implementation validates the end-to-end lifecycle flow
+**Next Review**: After V1.0 deployment validates the end-to-end CRD registration flow

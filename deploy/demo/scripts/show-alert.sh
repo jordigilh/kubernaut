@@ -1,16 +1,22 @@
 #!/usr/bin/env bash
 # Query AlertManager for active alerts and display them.
+# Supports cached alert data via ALERT_CACHE env var (set to a JSON file path).
 # Usage: bash deploy/demo/scripts/show-alert.sh <alert-name>
 # Example: bash deploy/demo/scripts/show-alert.sh KubePodCrashLooping
+# Example: ALERT_CACHE=/tmp/alert-data.json bash deploy/demo/scripts/show-alert.sh KubePodCrashLooping
 set -euo pipefail
 
 ALERT_NAME="${1:?Usage: show-alert.sh <alert-name>}"
 AM_POD="alertmanager-kube-prometheus-stack-alertmanager-0"
 
-ALERTS_JSON=$(kubectl exec -n monitoring "$AM_POD" -- \
-  amtool alert query "alertname=$ALERT_NAME" \
-  --alertmanager.url=http://localhost:9093 \
-  --output=json 2>/dev/null)
+if [ -n "${ALERT_CACHE:-}" ] && [ -f "$ALERT_CACHE" ]; then
+  ALERTS_JSON=$(cat "$ALERT_CACHE")
+else
+  ALERTS_JSON=$(kubectl exec -n monitoring "$AM_POD" -- \
+    amtool alert query "alertname=$ALERT_NAME" \
+    --alertmanager.url=http://localhost:9093 \
+    --output=json 2>/dev/null)
+fi
 
 COUNT=$(echo "$ALERTS_JSON" | python3 -c "import sys,json; a=json.load(sys.stdin); print(len(a))" 2>/dev/null || echo "0")
 

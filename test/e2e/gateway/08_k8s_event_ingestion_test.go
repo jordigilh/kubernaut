@@ -87,6 +87,7 @@ var _ = Describe("Test 08: Kubernetes Event Ingestion (BR-GATEWAY-002)", Ordered
 		testLogger.Info("Step 1: Verify Gateway accepts K8s Event payload format")
 
 		podNames := []string{"api-server-0", "api-server-1", "api-server-2", "api-server-3", "api-server-4"}
+		helpers.EnsureTestPods(ctx, k8sClient, testNamespace, podNames...)
 		eventReason := "BackOff"
 		eventMessage := "Back-off restarting failed container"
 		acceptedCount := 0
@@ -132,6 +133,7 @@ var _ = Describe("Test 08: Kubernetes Event Ingestion (BR-GATEWAY-002)", Ordered
 					}
 					req.Header.Set("Content-Type", "application/json")
 					req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+					setE2EAuthHeader(req)
 					resp, err = httpClient.Do(req)
 					return err
 				}, 10*time.Second, 1*time.Second).Should(Succeed())

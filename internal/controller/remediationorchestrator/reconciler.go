@@ -40,7 +40,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/record"
 	k8sretry "k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -72,6 +71,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/remediationrequest"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 	"github.com/jordigilh/kubernaut/pkg/shared/k8serrors"
+	k8sutil "github.com/jordigilh/kubernaut/pkg/shared/k8s"
 	canonicalhash "github.com/jordigilh/kubernaut/pkg/shared/hash"
 )
 
@@ -197,6 +197,8 @@ func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, 
 			// Scope validation backoff (ADR-053 Decision #4, BR-SCOPE-010)
 			ScopeBackoffBase: 5,   // 5 seconds initial
 			ScopeBackoffMax:  300, // 5 minutes max
+			// NoActionRequired suppression (Issue #314)
+			NoActionRequiredDelayHours: 24, // 24 hours
 		}
 		// ADR-057: All CRDs live in the controller namespace; empty string is correct.
 		routingNamespace := ""
@@ -247,7 +249,8 @@ func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, 
 	r.spHandler = handler.NewSignalProcessingHandler(c, s, r.transitionPhase)
 
 	// AIAnalysisHandler: delegates failure transitions
-	r.aiAnalysisHandler = handler.NewAIAnalysisHandler(c, s, nc, m, r.transitionToFailed)
+	noActionDelay := time.Duration(r.routingEngine.Config().NoActionRequiredDelayHours) * time.Hour
+	r.aiAnalysisHandler = handler.NewAIAnalysisHandler(c, s, nc, m, r.transitionToFailed, noActionDelay)
 
 	// WorkflowExecutionHandler: delegates verifying and failure transitions
 	r.weHandler = handler.NewWorkflowExecutionHandler(c, s, m, r.transitionToFailed, r.transitionToVerifying)
@@ -416,7 +419,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			rr.Namespace,
 			string(rr.Status.OverallPhase),
 		).Observe(time.Since(startTime).Seconds())
-		r.Metrics.ReconcileTotal.WithLabelValues(rr.Namespace, string(rr.Status.OverallPhase)).Inc()
 	}()
 
 	// BR-AUDIT-005 Gap #7: Validate timeout configuration (fail fast on invalid config)
@@ -553,14 +555,14 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		if readyCondition == nil {
 			isSuccess := rr.Status.OverallPhase == remediationv1.PhaseCompleted || rr.Status.OverallPhase == remediationv1.PhaseSkipped
 			if isSuccess {
-				if updateErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+				if updateErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 					remediationrequest.SetReady(rr, true, remediationrequest.ReasonReady, "Terminal phase: "+string(rr.Status.OverallPhase), r.Metrics)
 					return nil
 				}); updateErr != nil {
 					logger.Error(updateErr, "Failed to set Ready safety net")
 				}
 			} else {
-				if updateErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+				if updateErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 					remediationrequest.SetReady(rr, false, remediationrequest.ReasonNotReady, "Terminal phase: "+string(rr.Status.OverallPhase), r.Metrics)
 					return nil
 				}); updateErr != nil {
@@ -717,7 +719,7 @@ func (r *Reconciler) handlePendingPhase(ctx context.Context, rr *remediationv1.R
 	// Set SignalProcessingRef in status for aggregator (BR-ORCH-029)
 	// REFACTOR-RO-001: Using retry helper
 	// DD-CRD-002-RR: Also persists SignalProcessingReady=True condition set by creator
-	err = helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+	err = helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		rr.Status.SignalProcessingRef = &corev1.ObjectReference{
 			APIVersion: signalprocessingv1.GroupVersion.String(),
 			Kind:       "SignalProcessing",
@@ -797,7 +799,7 @@ func (r *Reconciler) handleProcessingPhase(ctx context.Context, rr *remediationv
 		// Set AIAnalysisRef in status for aggregator (BR-ORCH-029)
 		// REFACTOR-RO-001: Using retry helper
 		// DD-CRD-002-RR: Also persists AIAnalysisReady=True condition set by creator
-		err = helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+		err = helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 			rr.Status.AIAnalysisRef = &corev1.ObjectReference{
 				APIVersion: aianalysisv1.GroupVersion.String(),
 				Kind:       "AIAnalysis",
@@ -1003,7 +1005,7 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 		if hashErr != nil {
 			// Issue #214: hashErr != nil is terminal -- cannot safely remediate without knowing target state
 			logger.Error(hashErr, "Failed to capture pre-remediation hash (terminal)")
-			if updateErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+			if updateErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 				rr.Status.OverallPhase = remediationv1.PhaseFailed
 				reason := fmt.Sprintf("Cannot determine target resource state: %v", hashErr)
 				rr.Status.FailureReason = &reason
@@ -1015,7 +1017,7 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 			return ctrl.Result{}, nil
 		}
 		if preHash != "" && rr.Status.PreRemediationSpecHash == "" {
-			if updateErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+			if updateErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 				rr.Status.PreRemediationSpecHash = preHash
 				return nil
 			}); updateErr != nil {
@@ -1074,7 +1076,7 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 		// Set WorkflowExecutionRef + SelectedWorkflowRef in status (BR-ORCH-029, Issue #118 Gap 5)
 		// REFACTOR-RO-001: Using retry helper
 		// DD-CRD-002-RR: Also persists WorkflowExecutionReady=True condition set by creator
-		err = helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+		err = helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 			rr.Status.WorkflowExecutionRef = &corev1.ObjectReference{
 				APIVersion: workflowexecutionv1.GroupVersion.String(),
 				Kind:       "WorkflowExecution",
@@ -1225,7 +1227,7 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 			logger.Error(hashErr, "Failed to capture pre-remediation hash after approval (non-fatal)")
 		}
 		if preHash != "" && rr.Status.PreRemediationSpecHash == "" {
-			if updateErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+			if updateErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 				rr.Status.PreRemediationSpecHash = preHash
 				return nil
 			}); updateErr != nil {
@@ -1249,7 +1251,7 @@ func (r *Reconciler) handleAwaitingApprovalPhase(ctx context.Context, rr *remedi
 
 		// Set WorkflowExecutionRef + SelectedWorkflowRef after approval (BR-ORCH-029, Issue #118 Gap 5)
 		// REFACTOR-RO-001: Using retry helper
-		err = helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+		err = helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 			rr.Status.WorkflowExecutionRef = &corev1.ObjectReference{
 				APIVersion: workflowexecutionv1.GroupVersion.String(),
 				Kind:       "WorkflowExecution",
@@ -1488,7 +1490,7 @@ func (r *Reconciler) handleBlocked(
 	}
 
 	// Update RR status to Blocked phase (REFACTOR-RO-001: using retry helper)
-	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		rr.Status.OverallPhase = remediationv1.PhaseBlocked
 		rr.Status.BlockReason = blocked.Reason
 		rr.Status.BlockMessage = blocked.Message
@@ -1574,7 +1576,7 @@ func (r *Reconciler) transitionPhase(ctx context.Context, rr *remediationv1.Reme
 		return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
 	}
 
-	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		// Update only RO-owned fields (preserves Gateway fields per DD-GATEWAY-011)
 		rr.Status.OverallPhase = newPhase
 		rr.Status.ObservedGeneration = rr.Generation // DD-CONTROLLER-001: Track processed generation
@@ -1656,7 +1658,7 @@ func (r *Reconciler) transitionToVerifying(ctx context.Context, rr *remediationv
 
 	// #280: Transition to Verifying (not Completed). CompletedAt and Outcome are set later
 	// when EA finishes or VerificationDeadline expires.
-	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		rr.Status.OverallPhase = phase.Verifying
 		rr.Status.ObservedGeneration = rr.Generation
 
@@ -1692,9 +1694,9 @@ func (r *Reconciler) transitionToVerifying(ctx context.Context, rr *remediationv
 		}
 	}
 
-	// BR-ORCH-045 + BR-ORCH-034: Completion and bulk duplicate notifications.
-	// #281: Non-blocking first attempt; handleVerifyingPhase retries on subsequent reconciles.
-	r.ensureNotificationsCreated(ctx, rr)
+	// #304: Notification creation deferred until after Outcome is set (completeVerificationIfNeeded).
+	// ensureNotificationsCreated is called from handleVerifyingPhase after EA terminal transition
+	// or timeout sets Outcome. Previously called here with empty Outcome (BR-ORCH-045 violation).
 
 	// #280: Create EA — if this fails, handleVerifyingPhase will retry on next reconcile
 	r.createEffectivenessAssessmentIfNeeded(ctx, rr)
@@ -1713,9 +1715,11 @@ func (r *Reconciler) transitionToVerifying(ctx context.Context, rr *remediationv
 func (r *Reconciler) handleVerifyingPhase(ctx context.Context, rr *remediationv1.RemediationRequest) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
 
-	// Step 0 (#281): Retry notification creation if refs are missing.
-	// Non-blocking: notifications are informational, don't gate EA/verification.
-	r.ensureNotificationsCreated(ctx, rr)
+	// Step 0 (#281, #304): Retry notification creation only after Outcome is set.
+	// Completion notifications require Outcome for body/metadata (BR-ORCH-045).
+	if rr.Status.Outcome != "" {
+		r.ensureNotificationsCreated(ctx, rr)
+	}
 
 	// Step 1: If EA was not created during transition (transient failure), retry now
 	if rr.Status.EffectivenessAssessmentRef == nil {
@@ -1739,7 +1743,7 @@ func (r *Reconciler) handleVerifyingPhase(ctx context.Context, rr *remediationv1
 
 		if ea.Status.ValidityDeadline != nil {
 			deadline := metav1.NewTime(ea.Status.ValidityDeadline.Add(VerificationDeadlineBuffer))
-			if err := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+			if err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 				rr.Status.VerificationDeadline = &deadline
 				return nil
 			}); err != nil {
@@ -1751,7 +1755,7 @@ func (r *Reconciler) handleVerifyingPhase(ctx context.Context, rr *remediationv1
 			logger.Info("Safety-net timeout: VerificationDeadline never set, RR exceeded verifying timeout",
 				"age", time.Since(rr.CreationTimestamp.Time).String(),
 				"verifyingTimeout", r.timeouts.Verifying.String())
-			if err := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+			if err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 				now := metav1.Now()
 				rr.Status.OverallPhase = phase.Completed
 				rr.Status.Outcome = "VerificationTimedOut"
@@ -1765,6 +1769,8 @@ func (r *Reconciler) handleVerifyingPhase(ctx context.Context, rr *remediationv1
 			if r.Metrics != nil {
 				r.Metrics.PhaseTransitionsTotal.WithLabelValues(string(phase.Verifying), string(phase.Completed), rr.Namespace).Inc()
 			}
+		// #304: Create notifications AFTER Outcome is set (BR-ORCH-045)
+		r.ensureNotificationsCreated(ctx, rr)
 		r.emitVerificationTimedOutAudit(ctx, rr)
 		if rr.Status.StartTime != nil {
 			r.emitCompletionAudit(ctx, rr, "success", time.Since(rr.Status.StartTime.Time).Milliseconds())
@@ -1780,7 +1786,7 @@ func (r *Reconciler) handleVerifyingPhase(ctx context.Context, rr *remediationv1
 	if rr.Status.VerificationDeadline != nil && time.Now().After(rr.Status.VerificationDeadline.Time) {
 		logger.Info("VerificationDeadline expired, timing out verification",
 			"deadline", rr.Status.VerificationDeadline.Time.Format(time.RFC3339))
-		if err := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+		if err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 			now := metav1.Now()
 			rr.Status.OverallPhase = phase.Completed
 			rr.Status.Outcome = "VerificationTimedOut"
@@ -1794,6 +1800,8 @@ func (r *Reconciler) handleVerifyingPhase(ctx context.Context, rr *remediationv1
 		if r.Metrics != nil {
 			r.Metrics.PhaseTransitionsTotal.WithLabelValues(string(phase.Verifying), string(phase.Completed), rr.Namespace).Inc()
 		}
+		// #304: Create notifications AFTER Outcome is set (BR-ORCH-045)
+		r.ensureNotificationsCreated(ctx, rr)
 		r.emitVerificationTimedOutAudit(ctx, rr)
 		if rr.Status.StartTime != nil {
 			r.emitCompletionAudit(ctx, rr, "success", time.Since(rr.Status.StartTime.Time).Milliseconds())
@@ -1806,8 +1814,10 @@ func (r *Reconciler) handleVerifyingPhase(ctx context.Context, rr *remediationv1
 		logger.Error(err, "Failed to track EA status during Verifying phase")
 	}
 
-	// If trackEffectivenessStatus transitioned to Completed, emit audit and return
+	// If trackEffectivenessStatus transitioned to Completed, create notifications and emit audit
 	if rr.Status.OverallPhase == phase.Completed {
+		// #304: Create notifications AFTER Outcome is set (BR-ORCH-045)
+		r.ensureNotificationsCreated(ctx, rr)
 		r.emitVerificationCompletedAudit(ctx, rr)
 		if rr.Status.StartTime != nil {
 			r.emitCompletionAudit(ctx, rr, "success", time.Since(rr.Status.StartTime.Time).Milliseconds())
@@ -1876,7 +1886,7 @@ func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.R
 	startTime := rr.CreationTimestamp.Time
 
 	// REFACTOR-RO-001: Using retry helper
-	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		rr.Status.OverallPhase = phase.Failed
 		rr.Status.ObservedGeneration = rr.Generation // DD-CONTROLLER-001: Track final generation
 		rr.Status.FailurePhase = &failurePhase
@@ -1953,7 +1963,7 @@ func (r *Reconciler) handleGlobalTimeout(ctx context.Context, rr *remediationv1.
 
 	// Update status to TimedOut (BR-ORCH-027)
 	// REFACTOR-RO-001: Using retry helper for optimistic concurrency
-	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		rr.Status.OverallPhase = remediationv1.PhaseTimedOut
 		now := metav1.Now()
 		rr.Status.TimeoutTime = &now
@@ -2075,7 +2085,7 @@ The remediation was in %s phase when it timed out. Please investigate why the re
 
 	// Track notification in status (Recommendation #2, BR-ORCH-035)
 	// REFACTOR-RO-001: Using retry helper
-	err = helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+	err = helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		// Add notification to tracking list (BR-ORCH-035)
 		notifRef := corev1.ObjectReference{
 			Kind:       "NotificationRequest",
@@ -2152,7 +2162,7 @@ func (r *Reconciler) createEffectivenessAssessmentIfNeeded(ctx context.Context, 
 	}
 
 	isCRD := false
-	gvk, err := resolveGVKForKind(r.restMapper, remediationKind)
+	gvk, err := k8sutil.ResolveGVKForKind(r.restMapper, remediationKind)
 	if err != nil {
 		logger.V(1).Info("Cannot resolve GVK for kind, treating as sync target for hash timing",
 			"kind", remediationKind, "error", err)
@@ -2197,7 +2207,7 @@ func (r *Reconciler) createEffectivenessAssessmentIfNeeded(ctx context.Context, 
 	// as NT ref tracking in handleGlobalTimeout).
 	// GAP-2 (ADR-EM-001 Section 9.4.15): Also set initial EffectivenessAssessed=False /
 	// AssessmentInProgress so operators can distinguish "no EA yet" from "EA in progress."
-	if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+	if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		rr.Status.EffectivenessAssessmentRef = &corev1.ObjectReference{
 			Kind:       "EffectivenessAssessment",
 			Name:       name,
@@ -3011,7 +3021,7 @@ func (r *Reconciler) handlePhaseTimeout(ctx context.Context, rr *remediationv1.R
 
 	// Update status to TimedOut with phase-specific metadata
 	// REFACTOR-RO-001: Using retry helper
-	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		// Transition to TimedOut phase
 		rr.Status.OverallPhase = remediationv1.PhaseTimedOut
 		rr.Status.Message = fmt.Sprintf("Phase %s exceeded timeout of %s", phase, timeout)
@@ -3071,7 +3081,8 @@ func hasNotificationRef(rr *remediationv1.RemediationRequest, name string) bool 
 // if they are not yet tracked in NotificationRequestRefs.
 // Idempotent: deterministic names + ref check prevent duplicates across reconciles.
 // Non-blocking: errors are logged but never propagated.
-// Called from transitionToVerifying (first attempt) and handleVerifyingPhase (retry).
+// #304: Called ONLY after Outcome is set (completeVerificationIfNeeded or timeout transitions).
+// Previously called from transitionToVerifying before Outcome was populated (BR-ORCH-045 violation).
 // Reference: BR-ORCH-045 (completion), BR-ORCH-034 (bulk duplicate), #281 (retry).
 func (r *Reconciler) ensureNotificationsCreated(ctx context.Context, rr *remediationv1.RemediationRequest) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
@@ -3091,7 +3102,7 @@ func (r *Reconciler) ensureNotificationsCreated(ctx context.Context, rr *remedia
 			} else {
 				logger.Info("Created completion notification", "notification", notifName)
 				ref := r.buildNotificationRef(ctx, notifName, rr.Namespace)
-				if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+				if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 					rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
 					return nil
 				}); refErr != nil {
@@ -3112,7 +3123,7 @@ func (r *Reconciler) ensureNotificationsCreated(ctx context.Context, rr *remedia
 		} else {
 			logger.Info("Created bulk duplicate notification", "notification", name)
 			ref := r.buildNotificationRef(ctx, name, rr.Namespace)
-			if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+			if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 				rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
 				return nil
 			}); refErr != nil {
@@ -3226,7 +3237,7 @@ The %s phase did not complete within the expected timeframe. Please investigate 
 
 	// BR-ORCH-035 AC-4: Track timeout notification ref (non-blocking)
 	ref := r.buildNotificationRef(ctx, notificationName, rr.Namespace)
-	if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
+	if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
 		return nil
 	}); refErr != nil {
@@ -3357,7 +3368,7 @@ func CapturePreRemediationHash(
 	logger := log.FromContext(ctx)
 
 	// Resolve Kind to GVK via REST mapper
-	gvk, err := resolveGVKForKind(restMapper, targetKind)
+	gvk, err := k8sutil.ResolveGVKForKind(restMapper, targetKind)
 	if err != nil {
 		logger.V(1).Info("Cannot resolve GVK for kind, skipping pre-remediation hash",
 			"kind", targetKind, "error", err)
@@ -3397,41 +3408,3 @@ func CapturePreRemediationHash(
 	return hash, nil
 }
 
-// resolveGVKForKind resolves a Kind string to its GroupVersionKind using the
-// REST mapper. Falls back to common Kubernetes kinds if the mapper fails.
-func resolveGVKForKind(mapper meta.RESTMapper, kind string) (schema.GroupVersionKind, error) {
-	// Try well-known kinds first for reliability
-	switch kind {
-	case "Deployment":
-		return schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "Deployment"}, nil
-	case "StatefulSet":
-		return schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "StatefulSet"}, nil
-	case "DaemonSet":
-		return schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "DaemonSet"}, nil
-	case "Pod":
-		return schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Pod"}, nil
-	case "Service":
-		return schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Service"}, nil
-	case "ConfigMap":
-		return schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"}, nil
-	case "HorizontalPodAutoscaler":
-		return schema.GroupVersionKind{Group: "autoscaling", Version: "v2", Kind: "HorizontalPodAutoscaler"}, nil
-	case "PodDisruptionBudget":
-		return schema.GroupVersionKind{Group: "policy", Version: "v1", Kind: "PodDisruptionBudget"}, nil
-	case "Certificate":
-		return schema.GroupVersionKind{Group: "cert-manager.io", Version: "v1", Kind: "Certificate"}, nil
-	}
-
-	// Fall back to REST mapper for custom resources.
-	// Use KindsFor with the pluralized resource name to search ALL registered
-	// API groups (RESTMapping with empty group only checks the default group).
-	if mapper != nil {
-		pluralGVR, _ := meta.UnsafeGuessKindToResource(schema.GroupVersionKind{Kind: kind})
-		gvks, err := mapper.KindsFor(schema.GroupVersionResource{Resource: pluralGVR.Resource})
-		if err == nil && len(gvks) > 0 {
-			return gvks[0], nil
-		}
-	}
-
-	return schema.GroupVersionKind{}, fmt.Errorf("cannot resolve GVK for kind %q", kind)
-}

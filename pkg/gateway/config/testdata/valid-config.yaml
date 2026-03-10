@@ -8,7 +8,7 @@ server:
   idleTimeout: "120s"
 
 middleware:
-  # Rate limiting removed (ADR-048) - delegated to Ingress/Route proxy
+  # Concurrency limiting via chi Throttle in server.maxConcurrentRequests (ADR-048-ADDENDUM-001)
 
 datastorage:
   # ADR-030: DataStorage connectivity (audit trail + workflow catalog)

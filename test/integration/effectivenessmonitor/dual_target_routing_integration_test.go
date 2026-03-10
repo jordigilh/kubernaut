@@ -276,18 +276,22 @@ var _ = Describe("Dual-Target Routing (Issue #188, DD-EM-003)", func() {
 		alertGetRequests := 0
 		for _, req := range requests {
 			if req.Path == "/api/v2/alerts" && req.Method == "GET" {
-				alertGetRequests++
-				// The scorer builds matchers from AlertContext.AlertName
 				filterValues := req.Query["filter"]
 				if len(filterValues) > 0 {
 					filter := strings.Join(filterValues, " ")
+					// Filter: only inspect AM requests relevant to this test's signal namespace.
+					// Other concurrently-reconciling EAs may also query the shared mock.
+					if !strings.Contains(filter, signalNs) {
+						continue
+					}
+					alertGetRequests++
 					Expect(filter).To(ContainSubstring("KubeHpaMaxedOut"),
 						"DD-EM-003: alert filter should contain the signal alert name")
 				}
 			}
 		}
 		Expect(alertGetRequests).To(BeNumerically(">", 0),
-			"AlertManager should have been queried at least once")
+			"AlertManager should have been queried with this test's signal namespace at least once")
 	})
 
 	// ========================================================================

@@ -1,40 +1,44 @@
-schemaVersion: "1.0"
-# Test Hello World Job Workflow Schema (BR-WORKFLOW-004)
-# Authority: ADR-043
-# E2E Testing: Validates WorkflowExecution controller's Kubernetes Job integration
+apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
 metadata:
-  workflowId: test-job-hello-world
-  version: "1.0.0"
-  description:
-    what: "Simple hello-world workflow using Kubernetes Job backend for E2E testing"
-    whenToUse: "For E2E validation of Job-based workflow execution"
-    whenNotToUse: "Not intended for production use"
-    preconditions: "Kubernetes cluster with Job support"
-
-actionType: RestartPod
-
-labels:
-  severity: [low]
-  environment: [test]
-  component: deployment
-  priority: P3
-
-customLabels:
-  test-category: e2e
-  validation-type: success-path
-
-execution:
-  engine: job
-  bundle: ghcr.io/kubernaut/workflows/hello-world@sha256:a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2
-
-parameters:
-  - name: TARGET_RESOURCE
-    type: string
-    required: true
-    description: "Target resource being remediated (e.g., 'default/deployment/my-app')"
-    default: "test/deployment/hello"
-  - name: MESSAGE
-    type: string
-    required: false
-    description: "Optional message to echo during execution"
-    default: "Hello from Kubernaut Job WorkflowExecution!"
+  name: test-job-hello-world
+spec:
+  # Test Hello World Job Workflow Schema (BR-WORKFLOW-004)
+  # Authority: ADR-043
+  # E2E Testing: Validates WorkflowExecution controller's Kubernetes Job integration
+  metadata:
+    workflowName: test-job-hello-world
+    version: "1.0.0"
+    description:
+      what: "Simple hello-world workflow using Kubernetes Job backend for E2E testing"
+      whenToUse: "For E2E validation of Job-based workflow execution"
+      whenNotToUse: "Not intended for production use"
+      preconditions: "Kubernetes cluster with Job support"
+  
+  actionType: RestartPod
+  
+  labels:
+    severity: [low]
+    environment: [test]
+    component: deployment
+    priority: P3
+  
+  customLabels:
+    test-category: e2e
+    validation-type: success-path
+  
+  execution:
+    engine: job
+    bundle: ghcr.io/kubernaut/workflows/hello-world@sha256:a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2
+  
+  parameters:
+    - name: TARGET_RESOURCE
+      type: string
+      required: true
+      description: "Target resource being remediated (e.g., 'default/deployment/my-app')"
+      default: "test/deployment/hello"
+    - name: MESSAGE
+      type: string
+      required: false
+      description: "Optional message to echo during execution"
+      default: "Hello from Kubernaut Job WorkflowExecution!"

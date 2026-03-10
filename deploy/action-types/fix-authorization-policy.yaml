@@ -1,0 +1,12 @@
+apiVersion: kubernaut.ai/v1alpha1
+kind: ActionType
+metadata:
+  name: fix-authorization-policy
+  namespace: kubernaut-system
+spec:
+  name: FixAuthorizationPolicy
+  description:
+    what: "Remove or fix a Linkerd AuthorizationPolicy that is blocking legitimate traffic."
+    whenToUse: "A Linkerd-meshed workload has high error rates (403 Forbidden) because a restrictive AuthorizationPolicy is denying all unauthenticated or unrecognized traffic."
+    whenNotToUse: "When the 403 errors are intentional security policy enforcement, or when the issue is caused by something other than an AuthorizationPolicy (e.g., network partition)."
+    preconditions: "Linkerd is installed, the workload is meshed with a Linkerd sidecar, and an AuthorizationPolicy has been identified as the traffic blocker."
