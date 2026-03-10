@@ -40,7 +40,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -61,6 +60,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/validity"
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
 	canonicalhash "github.com/jordigilh/kubernaut/pkg/shared/hash"
+	k8sutil "github.com/jordigilh/kubernaut/pkg/shared/k8s"
 )
 
 // Reconciler reconciles EffectivenessAssessment objects.
@@ -1143,7 +1143,7 @@ func (r *Reconciler) getTargetSpec(ctx context.Context, target eav1.TargetResour
 		}
 	}
 
-	gvk, err := resolveGVKForKind(r.restMapper, target.Kind)
+	gvk, err := k8sutil.ResolveGVKForKind(r.restMapper, target.Kind)
 	if err != nil {
 		logger.Error(err, "Failed to resolve GVK for target resource kind",
 			"kind", target.Kind)
@@ -1206,25 +1206,6 @@ func (r *Reconciler) queryPreRemediationHash(ctx context.Context, correlationID 
 	return preHash
 }
 
-// resolveGVKForKind dynamically resolves a Kind string to a schema.GroupVersionKind
-// using the REST mapper's live API server discovery.
-//
-// Uses meta.UnsafeGuessKindToResource for proper pluralization (handles -s→-ses,
-// -y→-ies, etc.) and passes an empty Group/Version to KindsFor so it searches
-// across all API groups. This supports any resource the cluster serves, including
-// CRDs, without a static lookup table.
-func resolveGVKForKind(rm meta.RESTMapper, kind string) (schema.GroupVersionKind, error) {
-	// UnsafeGuessKindToResource pluralizes correctly (e.g. "Ingress"→"ingresses",
-	// "NetworkPolicy"→"networkpolicies"). We pass an empty Group/Version so
-	// KindsFor searches all API groups registered with the API server.
-	pluralGVR, _ := meta.UnsafeGuessKindToResource(schema.GroupVersionKind{Kind: kind})
-	gvks, err := rm.KindsFor(schema.GroupVersionResource{Resource: pluralGVR.Resource})
-	if err == nil && len(gvks) > 0 {
-		return gvks[0], nil
-	}
-
-	return schema.GroupVersionKind{}, fmt.Errorf("cannot resolve GVK for kind %q (tried resource %q): %w", kind, pluralGVR.Resource, err)
-}
 
 // emitHashEvent emits K8s and audit events for the hash computation result.
 // Uses the specialized RecordHashComputed to include pre/post hashes and match flag.

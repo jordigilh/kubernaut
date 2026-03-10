@@ -40,7 +40,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/record"
 	k8sretry "k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -72,6 +71,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/remediationrequest"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 	"github.com/jordigilh/kubernaut/pkg/shared/k8serrors"
+	k8sutil "github.com/jordigilh/kubernaut/pkg/shared/k8s"
 	canonicalhash "github.com/jordigilh/kubernaut/pkg/shared/hash"
 )
 
@@ -2159,7 +2159,7 @@ func (r *Reconciler) createEffectivenessAssessmentIfNeeded(ctx context.Context, 
 	}
 
 	isCRD := false
-	gvk, err := resolveGVKForKind(r.restMapper, remediationKind)
+	gvk, err := k8sutil.ResolveGVKForKind(r.restMapper, remediationKind)
 	if err != nil {
 		logger.V(1).Info("Cannot resolve GVK for kind, treating as sync target for hash timing",
 			"kind", remediationKind, "error", err)
@@ -3365,7 +3365,7 @@ func CapturePreRemediationHash(
 	logger := log.FromContext(ctx)
 
 	// Resolve Kind to GVK via REST mapper
-	gvk, err := resolveGVKForKind(restMapper, targetKind)
+	gvk, err := k8sutil.ResolveGVKForKind(restMapper, targetKind)
 	if err != nil {
 		logger.V(1).Info("Cannot resolve GVK for kind, skipping pre-remediation hash",
 			"kind", targetKind, "error", err)
@@ -3405,41 +3405,3 @@ func CapturePreRemediationHash(
 	return hash, nil
 }
 
-// resolveGVKForKind resolves a Kind string to its GroupVersionKind using the
-// REST mapper. Falls back to common Kubernetes kinds if the mapper fails.
-func resolveGVKForKind(mapper meta.RESTMapper, kind string) (schema.GroupVersionKind, error) {
-	// Try well-known kinds first for reliability
-	switch kind {
-	case "Deployment":
-		return schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "Deployment"}, nil
-	case "StatefulSet":
-		return schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "StatefulSet"}, nil
-	case "DaemonSet":
-		return schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "DaemonSet"}, nil
-	case "Pod":
-		return schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Pod"}, nil
-	case "Service":
-		return schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Service"}, nil
-	case "ConfigMap":
-		return schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"}, nil
-	case "HorizontalPodAutoscaler":
-		return schema.GroupVersionKind{Group: "autoscaling", Version: "v2", Kind: "HorizontalPodAutoscaler"}, nil
-	case "PodDisruptionBudget":
-		return schema.GroupVersionKind{Group: "policy", Version: "v1", Kind: "PodDisruptionBudget"}, nil
-	case "Certificate":
-		return schema.GroupVersionKind{Group: "cert-manager.io", Version: "v1", Kind: "Certificate"}, nil
-	}
-
-	// Fall back to REST mapper for custom resources.
-	// Use KindsFor with the pluralized resource name to search ALL registered
-	// API groups (RESTMapping with empty group only checks the default group).
-	if mapper != nil {
-		pluralGVR, _ := meta.UnsafeGuessKindToResource(schema.GroupVersionKind{Kind: kind})
-		gvks, err := mapper.KindsFor(schema.GroupVersionResource{Resource: pluralGVR.Resource})
-		if err == nil && len(gvks) > 0 {
-			return gvks[0], nil
-		}
-	}
-
-	return schema.GroupVersionKind{}, fmt.Errorf("cannot resolve GVK for kind %q", kind)
-}
