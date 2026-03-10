@@ -174,7 +174,7 @@ func (r *Repository) ListWorkflowsByActionType(ctx context.Context, actionType s
 				%s AS detected_label_boost,
 				%s AS custom_label_boost,
 				%s AS label_penalty,
-				(5.0 + (%s) + (%s) - (%s)) / 10.0 AS final_score
+				LEAST((5.0 + (%s) + (%s) - (%s)) / 10.0, 1.0) AS final_score
 			FROM remediation_workflow_catalog
 			WHERE %s
 		) scored

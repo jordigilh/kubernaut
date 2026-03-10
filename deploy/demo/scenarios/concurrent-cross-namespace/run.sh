@@ -48,8 +48,34 @@ kubectl rollout restart deployment/signalprocessing-controller -n kubernaut-syst
 kubectl rollout status deployment/signalprocessing-controller -n kubernaut-system --timeout=60s
 echo ""
 
+# Step 0b: Register risk-tolerance-aware workflows in DataStorage
+echo "==> Step 0b: Registering risk-tolerance workflows in DataStorage..."
+# shellcheck source=../../scripts/seed-workflows.sh
+DATASTORAGE_URL="${DATASTORAGE_URL:-http://localhost:30081}"
+SA_TOKEN=$(kubectl create token holmesgpt-api-sa -n kubernaut-system --duration=10m 2>/dev/null || echo "")
+for schema in "${SCRIPT_DIR}/workflow/"*.yaml; do
+  wf_name=$(basename "$schema" .yaml)
+  echo -n "  ${wf_name}: "
+  yaml_content=$(cat "$schema")
+  payload=$(jq -n --arg content "$yaml_content" --arg source "api" --arg registeredBy "concurrent-scenario" \
+    '{ content: $content, source: $source, registeredBy: $registeredBy }')
+
+  curl_args=(-s -w "\n%{http_code}" -X POST "${DATASTORAGE_URL}/api/v1/workflows"
+    -H "Content-Type: application/json" -d "$payload")
+  [ -n "$SA_TOKEN" ] && curl_args+=(-H "Authorization: Bearer ${SA_TOKEN}")
+
+  response=$(curl "${curl_args[@]}" 2>&1) || true
+  http_code=$(echo "$response" | tail -1)
+  case "$http_code" in
+    2[0-9][0-9]) echo "OK (HTTP ${http_code})" ;;
+    409) echo "ALREADY EXISTS" ;;
+    *) echo "FAILED (HTTP ${http_code})" ;;
+  esac
+done
+echo ""
+
 # Step 1: Deploy both namespaces and workloads
-echo "==> Step 2: Deploying team-alpha and team-beta workloads..."
+echo "==> Step 1: Deploying team-alpha and team-beta workloads..."
 for team in team-alpha team-beta; do
   echo "  Deploying ${team}..."
   kubectl apply -f "${SCRIPT_DIR}/manifests/${team}/namespace.yaml"
@@ -59,25 +85,25 @@ for team in team-alpha team-beta; do
 done
 echo ""
 
-# Step 3: Wait for healthy deployments
-echo "==> Step 3: Waiting for both deployments to be healthy..."
+# Step 2: Wait for healthy deployments
+echo "==> Step 2: Waiting for both deployments to be healthy..."
 kubectl wait --for=condition=Available deployment/worker -n demo-team-alpha --timeout=120s
 kubectl wait --for=condition=Available deployment/worker -n demo-team-beta --timeout=120s
 echo "  Both teams running."
 echo ""
 
-# Step 4: Establish baseline
-echo "==> Step 4: Establishing healthy baseline (20s)..."
+# Step 3: Establish baseline
+echo "==> Step 3: Establishing healthy baseline (20s)..."
 sleep 20
 echo ""
 
-# Step 5: Inject bad config into BOTH namespaces
-echo "==> Step 5: Injecting bad config into both namespaces simultaneously..."
+# Step 4: Inject bad config into BOTH namespaces
+echo "==> Step 4: Injecting bad config into both namespaces simultaneously..."
 bash "${SCRIPT_DIR}/inject-both.sh"
 echo ""
 
-# Step 6: Expected behavior
-echo "==> Step 6: Both pipelines running in parallel."
+# Step 5: Expected behavior
+echo "==> Step 5: Both pipelines running in parallel."
 echo ""
 echo "  Expected:"
 echo "    Team Alpha (high risk tolerance):"

@@ -214,9 +214,9 @@ func buildDetectedLabelsPenaltySQL(dl *models.DetectedLabels) string {
 
 // buildCustomLabelsBoostSQL generates SQL for custom label boost scoring.
 //
-// Per DD-WORKFLOW-004 v1.5:
-//   - Exact match: 0.05 per key
-//   - Wildcard match: 0.025 per key
+// Per DD-WORKFLOW-004 v1.7:
+//   - Exact match: 0.15 per key
+//   - Wildcard match: 0.075 per key
 //   - No match: 0.0
 func buildCustomLabelsBoostSQL(customLabels map[string][]string) string {
 	if len(customLabels) == 0 {
@@ -224,7 +224,7 @@ func buildCustomLabelsBoostSQL(customLabels map[string][]string) string {
 	}
 
 	boostCases := []string{}
-	const customLabelWeight = 0.05
+	const customLabelWeight = 0.15
 
 	for key, incidentValues := range customLabels {
 		if len(incidentValues) == 0 {

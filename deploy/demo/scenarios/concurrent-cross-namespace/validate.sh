@@ -57,7 +57,12 @@ assert_neq "$alpha_workflow" "" "Alpha AA selected a workflow"
 assert_neq "$beta_workflow" "" "Beta AA selected a workflow"
 assert_neq "$alpha_workflow" "$beta_workflow" "Different workflows selected (risk-based)"
 
-log_info "Alpha workflow: ${alpha_workflow}"
-log_info "Beta workflow:  ${beta_workflow}"
+alpha_action=$(kubectl get aianalyses "ai-${alpha_rr}" -n "${PLATFORM_NS}" \
+  -o jsonpath='{.status.selectedWorkflow.actionType}' 2>/dev/null || echo "")
+beta_action=$(kubectl get aianalyses "ai-${beta_rr}" -n "${PLATFORM_NS}" \
+  -o jsonpath='{.status.selectedWorkflow.actionType}' 2>/dev/null || echo "")
+
+log_info "Alpha workflow: ${alpha_workflow} (${alpha_action})"
+log_info "Beta workflow:  ${beta_workflow} (${beta_action})"
 
 print_result "concurrent-cross-namespace"
