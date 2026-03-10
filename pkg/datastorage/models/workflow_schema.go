@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"strconv"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"gopkg.in/yaml.v3"
 )
 
@@ -124,25 +125,9 @@ type WorkflowSchemaMetadata struct {
 	Maintainers []WorkflowMaintainer `yaml:"maintainers,omitempty" json:"maintainers,omitempty" validate:"omitempty,dive"`
 }
 
-// WorkflowDescription provides structured information about a workflow.
-// This is shown to the LLM during workflow selection and to operators in the catalog.
-// Format matches action_type_taxonomy.description (DD-WORKFLOW-016).
-type WorkflowDescription struct {
-	// What describes what this workflow concretely does. One sentence. (REQUIRED)
-	What string `yaml:"what" json:"what" validate:"required"`
-
-	// WhenToUse describes root cause conditions under which this workflow is appropriate. (REQUIRED)
-	WhenToUse string `yaml:"whenToUse" json:"whenToUse" validate:"required"`
-
-	// WhenNotToUse describes specific exclusion conditions. (OPTIONAL)
-	// Only include genuinely useful exclusions. Do not include failure-based exclusions
-	// (handled by remediation history, DD-HAPI-016).
-	WhenNotToUse string `yaml:"whenNotToUse,omitempty" json:"whenNotToUse,omitempty"`
-
-	// Preconditions describes conditions that must be verified through investigation
-	// that cannot be determined by catalog label filtering. (OPTIONAL)
-	Preconditions string `yaml:"preconditions,omitempty" json:"preconditions,omitempty"`
-}
+// WorkflowDescription is an alias for the shared StructuredDescription type.
+// DD-WORKFLOW-016: Same format shared between RemediationWorkflow and ActionType.
+type WorkflowDescription = sharedtypes.StructuredDescription
 
 // WorkflowMaintainer contains maintainer contact information
 type WorkflowMaintainer struct {
@@ -529,9 +514,9 @@ func (l *WorkflowSchemaLabels) ValidateMandatoryLabels() error {
 	return nil
 }
 
-// ValidateDescription checks if the structured description has required fields
-// BR-WORKFLOW-004: what and whenToUse are required
-func (d *WorkflowDescription) ValidateDescription() error {
+// ValidateDescription checks if the structured description has required fields.
+// BR-WORKFLOW-004: what and whenToUse are required.
+func ValidateDescription(d *WorkflowDescription) error {
 	if d.What == "" {
 		return NewSchemaValidationError("metadata.description.what", "what is required")
 	}

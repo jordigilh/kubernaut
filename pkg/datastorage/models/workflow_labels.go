@@ -20,6 +20,8 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"fmt"
+
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // ========================================
@@ -201,18 +203,35 @@ type DetectedLabels struct {
 
 // StructuredDescription provides structured workflow information for LLM and operators.
 // This is stored as JSONB in the description column of remediation_workflow_catalog.
+//
+// This is a DB-scannable variant of sharedtypes.StructuredDescription that adds
+// custom UnmarshalJSON (backward-compat with plain strings), sql.Scanner, and
+// driver.Valuer implementations. Use ToShared() / FromSharedDescription() to convert.
 type StructuredDescription struct {
-	// What describes what this workflow concretely does. One sentence. (REQUIRED)
-	What string `json:"what" validate:"required"`
-
-	// WhenToUse describes root cause conditions under which this workflow is appropriate. (REQUIRED)
-	WhenToUse string `json:"whenToUse" validate:"required"`
-
-	// WhenNotToUse describes specific exclusion conditions. (OPTIONAL)
-	WhenNotToUse string `json:"whenNotToUse,omitempty"`
-
-	// Preconditions describes conditions that must be verified through investigation. (OPTIONAL)
+	What          string `json:"what" validate:"required"`
+	WhenToUse     string `json:"whenToUse" validate:"required"`
+	WhenNotToUse  string `json:"whenNotToUse,omitempty"`
 	Preconditions string `json:"preconditions,omitempty"`
+}
+
+// ToShared converts to the canonical shared StructuredDescription type.
+func (d StructuredDescription) ToShared() sharedtypes.StructuredDescription {
+	return sharedtypes.StructuredDescription{
+		What:          d.What,
+		WhenToUse:     d.WhenToUse,
+		WhenNotToUse:  d.WhenNotToUse,
+		Preconditions: d.Preconditions,
+	}
+}
+
+// FromSharedDescription creates a DB-scannable StructuredDescription from the shared type.
+func FromSharedDescription(d sharedtypes.StructuredDescription) StructuredDescription {
+	return StructuredDescription{
+		What:          d.What,
+		WhenToUse:     d.WhenToUse,
+		WhenNotToUse:  d.WhenNotToUse,
+		Preconditions: d.Preconditions,
+	}
 }
 
 // UnmarshalJSON implements custom JSON unmarshaling for StructuredDescription

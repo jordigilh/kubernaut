@@ -127,7 +127,7 @@ func (p *Parser) Validate(schema *models.WorkflowSchema) error {
 	}
 
 	// Validate structured description
-	if err := schema.Metadata.Description.ValidateDescription(); err != nil {
+	if err := models.ValidateDescription(&schema.Metadata.Description); err != nil {
 		return err
 	}
 

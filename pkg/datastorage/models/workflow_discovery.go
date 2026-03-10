@@ -19,6 +19,8 @@ package models
 import (
 	"encoding/json"
 	"time"
+
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // ========================================
@@ -42,15 +44,10 @@ type ActionTypeTaxonomy struct {
 	UpdatedAt   time.Time       `json:"updatedAt" db:"updated_at"`
 }
 
-// ActionTypeDescription represents the JSONB description structure for an action type
-// Stored in action_type_taxonomy.description column
-// BR-WORKFLOW-004: camelCase JSON keys (migration 026 updates existing data)
-type ActionTypeDescription struct {
-	What          string `json:"what"`
-	WhenToUse     string `json:"whenToUse"`
-	WhenNotToUse  string `json:"whenNotToUse,omitempty"`
-	Preconditions string `json:"preconditions,omitempty"`
-}
+// ActionTypeDescription is an alias for the shared StructuredDescription type.
+// BR-WORKFLOW-004: camelCase JSON keys (migration 026 updates existing data).
+// DD-WORKFLOW-016: Same format shared between RemediationWorkflow and ActionType.
+type ActionTypeDescription = sharedtypes.StructuredDescription
 
 // ActionTypeEntry represents a single action type in the discovery response (Step 1)
 // Includes the action type metadata and count of matching workflows
