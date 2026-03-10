@@ -967,12 +967,17 @@ IMAGE_DOCKERFILES_signalprocessing := docker/signalprocessing-controller.Dockerf
 IMAGE_DOCKERFILES_workflowexecution := docker/workflowexecution-controller.Dockerfile
 IMAGE_DOCKERFILES_effectivenessmonitor := docker/effectivenessmonitor-controller.Dockerfile
 
+# IMAGE_TARGET: Dockerfile --target stage to build. Empty = last stage (development).
+# Set IMAGE_TARGET=production for release builds (scratch runtime, zero CVE surface).
+IMAGE_TARGET ?=
+
 # _image_build_one builds a single service image for a specific platform.
 # --platform ensures TARGETARCH is set correctly for cross-compilation (e.g., arm64 on amd64 host).
 # Usage: $(call _image_build_one,<service>,<dockerfile>)
 define _image_build_one
-	@echo "  Building $(1) [$(IMAGE_ARCH)]..."
+	@echo "  Building $(1) [$(IMAGE_ARCH)]$(if $(IMAGE_TARGET), (target: $(IMAGE_TARGET)),)..."
 	@$(CONTAINER_TOOL) build --platform linux/$(IMAGE_ARCH) \
+		$(if $(IMAGE_TARGET),--target $(IMAGE_TARGET),) \
 		--build-arg APP_VERSION=$(APP_VERSION) \
 		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
 		--build-arg BUILD_DATE=$(BUILD_DATE) \
@@ -1063,8 +1068,9 @@ image-build-%: ## Build a single service image (specified arch via IMAGE_ARCH)
 	        --build-arg BUILD_DATE=$(BUILD_DATE) \
 	        -t $(IMAGE_REGISTRY)/must-gather:$(IMAGE_TAG)-$(IMAGE_ARCH) -f cmd/must-gather/Dockerfile cmd/must-gather/; \
 	elif [ -n "$(IMAGE_DOCKERFILES_$*)" ]; then \
-	    echo "  Building $* [$(IMAGE_ARCH)]..."; \
+	    echo "  Building $* [$(IMAGE_ARCH)]$(if $(IMAGE_TARGET), (target: $(IMAGE_TARGET)),)..."; \
 	    $(CONTAINER_TOOL) build --platform linux/$(IMAGE_ARCH) \
+	        $(if $(IMAGE_TARGET),--target $(IMAGE_TARGET),) \
 	        --build-arg APP_VERSION=$(APP_VERSION) \
 	        --build-arg GIT_COMMIT=$(GIT_COMMIT) \
 	        --build-arg BUILD_DATE=$(BUILD_DATE) \
