@@ -1302,6 +1302,16 @@ null
                 "execution_engine": scenario.execution_engine,  # BR-WE-014
                 "parameters": scenario.parameters
             }
+            # #307: Include alternative_workflows so ApprovalContext.AlternativesConsidered
+            # is populated when policy-driven approval gates are triggered (BR-AI-076).
+            analysis_json["alternative_workflows"] = [
+                {
+                    "workflow_id": "alt-manual-investigation",
+                    "title": "Manual Investigation",
+                    "confidence": 0.30,
+                    "rationale": "Operator-driven investigation as fallback approach"
+                }
+            ]
             # BR-HAPI-197: Explicitly set needs_human_review=false for valid workflow selections.
             # Without this, HAPI's parser may infer needs_human_review=true from missing field.
             analysis_json["needs_human_review"] = False
