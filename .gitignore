@@ -118,6 +118,9 @@ SKIPPED_*.md
 HEALTH_*.md
 UNIT_TEST_*.md
 
+# GitHub community files (exempt from ephemeral patterns above)
+!.github/**/*.md
+
 # Session and infrastructure ephemeral files
 *SESSION*.md
 # Exception: test plan documents containing "session" in docs/testing/
