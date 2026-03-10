@@ -1282,6 +1282,63 @@ var _ = Describe("NotificationCreator", func() {
 	})
 
 	// ========================================
+	// #304: Completion notification must include Outcome in body and metadata
+	// ========================================
+	Describe("Completion notification Outcome (#304)", func() {
+		var (
+			fakeClient *fake.ClientBuilder
+			nc         *creator.NotificationCreator
+			ctx        context.Context
+		)
+
+		BeforeEach(func() {
+			fakeClient = fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(
+				&notificationv1.NotificationRequest{},
+			)
+			ctx = context.Background()
+		})
+
+		It("UT-NT-304-001: completion notification metadata should contain Outcome when set", func() {
+			client := fakeClient.Build()
+			nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+			rr := helpers.NewRemediationRequest("test-rr-304", "default")
+			rr.Status.Outcome = "Remediated"
+			ai := helpers.NewCompletedAIAnalysis("test-ai-304", "default")
+
+			name, err := nc.CreateCompletionNotification(ctx, rr, ai)
+			Expect(err).ToNot(HaveOccurred())
+
+			nr := &notificationv1.NotificationRequest{}
+			err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(nr.Spec.Metadata).To(HaveKeyWithValue("outcome", "Remediated"),
+				"#304: BR-ORCH-045 requires completion notification metadata to include actual Outcome")
+			Expect(nr.Spec.Body).To(ContainSubstring("Remediated"),
+				"#304: BR-ORCH-045 requires completion notification body to include actual Outcome")
+		})
+
+		It("UT-NT-304-002: completion notification body shows empty outcome when Outcome not set (pre-fix bug)", func() {
+			client := fakeClient.Build()
+			nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+			rr := helpers.NewRemediationRequest("test-rr-304b", "default")
+			ai := helpers.NewCompletedAIAnalysis("test-ai-304b", "default")
+
+			name, err := nc.CreateCompletionNotification(ctx, rr, ai)
+			Expect(err).ToNot(HaveOccurred())
+
+			nr := &notificationv1.NotificationRequest{}
+			err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(nr.Spec.Metadata["outcome"]).To(BeEmpty(),
+				"#304: When Outcome is not set, metadata should reflect empty outcome (demonstrating the bug)")
+		})
+	})
+
+	// ========================================
 	// #305: Target resource resolution — prefer AI AffectedResource over Unknown
 	// ========================================
 	Describe("Target resource resolution (#305)", func() {

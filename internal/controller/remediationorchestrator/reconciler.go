@@ -1691,9 +1691,9 @@ func (r *Reconciler) transitionToVerifying(ctx context.Context, rr *remediationv
 		}
 	}
 
-	// BR-ORCH-045 + BR-ORCH-034: Completion and bulk duplicate notifications.
-	// #281: Non-blocking first attempt; handleVerifyingPhase retries on subsequent reconciles.
-	r.ensureNotificationsCreated(ctx, rr)
+	// #304: Notification creation deferred until after Outcome is set (completeVerificationIfNeeded).
+	// ensureNotificationsCreated is called from handleVerifyingPhase after EA terminal transition
+	// or timeout sets Outcome. Previously called here with empty Outcome (BR-ORCH-045 violation).
 
 	// #280: Create EA — if this fails, handleVerifyingPhase will retry on next reconcile
 	r.createEffectivenessAssessmentIfNeeded(ctx, rr)
@@ -1712,9 +1712,11 @@ func (r *Reconciler) transitionToVerifying(ctx context.Context, rr *remediationv
 func (r *Reconciler) handleVerifyingPhase(ctx context.Context, rr *remediationv1.RemediationRequest) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
 
-	// Step 0 (#281): Retry notification creation if refs are missing.
-	// Non-blocking: notifications are informational, don't gate EA/verification.
-	r.ensureNotificationsCreated(ctx, rr)
+	// Step 0 (#281, #304): Retry notification creation only after Outcome is set.
+	// Completion notifications require Outcome for body/metadata (BR-ORCH-045).
+	if rr.Status.Outcome != "" {
+		r.ensureNotificationsCreated(ctx, rr)
+	}
 
 	// Step 1: If EA was not created during transition (transient failure), retry now
 	if rr.Status.EffectivenessAssessmentRef == nil {
@@ -1764,6 +1766,8 @@ func (r *Reconciler) handleVerifyingPhase(ctx context.Context, rr *remediationv1
 			if r.Metrics != nil {
 				r.Metrics.PhaseTransitionsTotal.WithLabelValues(string(phase.Verifying), string(phase.Completed), rr.Namespace).Inc()
 			}
+		// #304: Create notifications AFTER Outcome is set (BR-ORCH-045)
+		r.ensureNotificationsCreated(ctx, rr)
 		r.emitVerificationTimedOutAudit(ctx, rr)
 		if rr.Status.StartTime != nil {
 			r.emitCompletionAudit(ctx, rr, "success", time.Since(rr.Status.StartTime.Time).Milliseconds())
@@ -1793,6 +1797,8 @@ func (r *Reconciler) handleVerifyingPhase(ctx context.Context, rr *remediationv1
 		if r.Metrics != nil {
 			r.Metrics.PhaseTransitionsTotal.WithLabelValues(string(phase.Verifying), string(phase.Completed), rr.Namespace).Inc()
 		}
+		// #304: Create notifications AFTER Outcome is set (BR-ORCH-045)
+		r.ensureNotificationsCreated(ctx, rr)
 		r.emitVerificationTimedOutAudit(ctx, rr)
 		if rr.Status.StartTime != nil {
 			r.emitCompletionAudit(ctx, rr, "success", time.Since(rr.Status.StartTime.Time).Milliseconds())
@@ -1805,8 +1811,10 @@ func (r *Reconciler) handleVerifyingPhase(ctx context.Context, rr *remediationv1
 		logger.Error(err, "Failed to track EA status during Verifying phase")
 	}
 
-	// If trackEffectivenessStatus transitioned to Completed, emit audit and return
+	// If trackEffectivenessStatus transitioned to Completed, create notifications and emit audit
 	if rr.Status.OverallPhase == phase.Completed {
+		// #304: Create notifications AFTER Outcome is set (BR-ORCH-045)
+		r.ensureNotificationsCreated(ctx, rr)
 		r.emitVerificationCompletedAudit(ctx, rr)
 		if rr.Status.StartTime != nil {
 			r.emitCompletionAudit(ctx, rr, "success", time.Since(rr.Status.StartTime.Time).Milliseconds())
@@ -3070,7 +3078,8 @@ func hasNotificationRef(rr *remediationv1.RemediationRequest, name string) bool 
 // if they are not yet tracked in NotificationRequestRefs.
 // Idempotent: deterministic names + ref check prevent duplicates across reconciles.
 // Non-blocking: errors are logged but never propagated.
-// Called from transitionToVerifying (first attempt) and handleVerifyingPhase (retry).
+// #304: Called ONLY after Outcome is set (completeVerificationIfNeeded or timeout transitions).
+// Previously called from transitionToVerifying before Outcome was populated (BR-ORCH-045 violation).
 // Reference: BR-ORCH-045 (completion), BR-ORCH-034 (bulk duplicate), #281 (retry).
 func (r *Reconciler) ensureNotificationsCreated(ctx context.Context, rr *remediationv1.RemediationRequest) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
