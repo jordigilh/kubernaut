@@ -2156,7 +2156,7 @@ docs/services/crd-controllers/05-remediationorchestrator/implementation/
 ├── IMPLEMENTATION_PLAN_DISTRIBUTED_LOCKING_V1.0.md  # This document
 └── TEST_PLAN_DISTRIBUTED_LOCKING_V1.0.md            # Test plan
 
-(Cross-team doc CROSS_TEAM_DISTRIBUTED_LOCKING_PATTERN_DEC_30_2025.md was in docs/shared/; directory removed)
+(Cross-team doc CROSS_TEAM_DISTRIBUTED_LOCKING_PATTERN_DEC_30_2025.md removed in v1.0 cleanup)
 ```
 
 ---
