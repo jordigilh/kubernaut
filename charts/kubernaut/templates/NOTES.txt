@@ -8,8 +8,8 @@ Kubernaut {{ .Chart.AppVersion }} has been installed in namespace {{ .Release.Na
 
 2. Configure LLM credentials (required for AI analysis):
 
-   cp deploy/demo/credentials/vertex-ai-example.yaml my-llm-credentials.yaml
-   # Edit with your provider credentials
+   # See https://github.com/jordigilh/kubernaut-demo-scenarios for credential examples
+   # Create a Secret with your LLM provider credentials, then:
    kubectl apply -f my-llm-credentials.yaml -n {{ .Release.Namespace }}
    kubectl rollout restart deployment/holmesgpt-api -n {{ .Release.Namespace }}
 
