@@ -555,7 +555,7 @@ groups:
 
 1. **Kahn's Algorithm**: https://en.wikipedia.org/wiki/Topological_sorting#Kahn's_algorithm
 2. **Topological Sort**: Standard graph algorithm
-3. **Multi-Step Workflow Examples**: `docs/analysis/MULTI_STEP_WORKFLOW_EXAMPLES.md`
+3. **Multi-Step Workflow Examples**: MULTI_STEP_WORKFLOW_EXAMPLES (document removed)
 
 ---
 

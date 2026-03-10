@@ -250,7 +250,7 @@ containers:
 ### Internal Documentation
 
 - **ADR-030**: Configuration Management Standard
-- **HAPI ADR-030 Implementation**: `docs/handoff/HAPI_ADR_030_FINAL_DEC_29_2025.md`
+- **HAPI ADR-030 Implementation**: (internal development reference, removed in v1.0)
 - **Entrypoint Script**: `holmesgpt-api/entrypoint.sh`
 
 ### Verification Test

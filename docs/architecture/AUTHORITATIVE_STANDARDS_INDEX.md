@@ -48,7 +48,7 @@ An **authoritative document** is the single source of truth for a particular asp
 
 ### **2. RO Viceversa Pattern: Cross-Service Phase Consumption** 🏛️
 
-**Location**: `docs/handoff/RO_VICEVERSA_PATTERN_IMPLEMENTATION.md`
+**Location**: (internal development reference, removed in v1.0)
 **Authority**: Mandatory Pattern for Cross-Service Integration
 **Created**: 2025-12-11
 **Scope**: All services consuming phase values from other CRDs

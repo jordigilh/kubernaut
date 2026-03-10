@@ -337,7 +337,7 @@ make test-gateway
 
 **Status**: ✅ **READY FOR SEGMENTED E2E TESTING WITH RO TEAM**
 
-**Pending Handoff**: Storm detection fields in `RemediationRequest.spec` (DD-GATEWAY-015) - See `docs/handoff/HANDOFF_RO_STORM_FIELDS_REMOVAL.md`
+**Pending Handoff**: Storm detection fields in `RemediationRequest.spec` (DD-GATEWAY-015) - (internal development reference, removed in v1.0)
 
 ---
 

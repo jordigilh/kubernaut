@@ -7,6 +7,10 @@
 **Status**: Pending
 **Date**: 2026-02-23
 
+> **Note**: Demo scenarios have been migrated to
+> [kubernaut-demo-scenarios](https://github.com/jordigilh/kubernaut-demo-scenarios).
+> Paths referencing `deploy/demo/` in this document now correspond to paths in that repository.
+
 ---
 
 ## Business Need

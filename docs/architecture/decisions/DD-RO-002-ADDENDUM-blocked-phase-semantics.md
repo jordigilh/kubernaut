@@ -312,8 +312,8 @@ V1.0 WITH Fix (Correct):
 
 ## 📋 **Related Documents**
 
-- **Triage**: `docs/handoff/TRIAGE_V1.0_SKIPPED_PHASE_GATEWAY_DEDUPLICATION_GAP.md`
-- **Semantic Analysis**: `docs/handoff/TRIAGE_BLOCKED_PHASE_SEMANTIC_ANALYSIS.md`
+- **Triage**: (internal development reference, removed in v1.0)
+- **Semantic Analysis**: (internal development reference, removed in v1.0)
 - **Implementation Plan**: `docs/services/crd-controllers/05-remediationorchestrator/implementation/V1.0_BLOCKED_PHASE_ROUTING_EXTENSION_V1.0.md`
 
 ---

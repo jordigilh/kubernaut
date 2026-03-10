@@ -144,7 +144,7 @@ apiVersion: kubernaut.ai/v1alpha1
 kind: RemediationApprovalRequest
 ```
 
-**Migration Guide**: See `docs/handoff/SHARED_APIGROUP_MIGRATION_NOTICE.md` for detailed migration instructions.
+**Migration Guide**: (internal development reference, removed in v1.0)
 
 ## Consequences
 
@@ -226,7 +226,7 @@ kind: RemediationApprovalRequest
   - Retains: Single API group strategy (95% confidence)
   - Updates: Domain from `.io` to `.ai` (AIOps branding)
 - **Supports**: BR-PLATFORM-001 (AIOps platform branding)
-- **Migration Guide**: `docs/handoff/SHARED_APIGROUP_MIGRATION_NOTICE.md` (December 2025)
+- **Migration Guide**: (internal development reference, removed in v1.0)
 
 ## Review & Evolution
 

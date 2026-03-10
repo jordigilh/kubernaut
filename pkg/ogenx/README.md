@@ -1,7 +1,7 @@
 # ogenx: Generic Error Handling for ogen-generated OpenAPI Clients
 
 **Package**: `github.com/jordigilh/kubernaut/pkg/ogenx`  
-**Authority**: [OGEN_ERROR_HANDLING_INVESTIGATION_FEB_03_2026.md](../../docs/handoff/OGEN_ERROR_HANDLING_INVESTIGATION_FEB_03_2026.md)  
+**Authority**: OGEN_ERROR_HANDLING_INVESTIGATION_FEB_03_2026 (internal development reference, removed in v1.0)
 **Status**: ✅ SME-Validated Pattern
 
 ---
@@ -346,7 +346,7 @@ It("E2E-HAPI-007: Invalid request returns error", func() {
 
 The pattern is validated by an ogen community expert as **intentional design** and **community-standard practice**.
 
-See: [OGEN_ERROR_HANDLING_INVESTIGATION_FEB_03_2026.md](../../docs/handoff/OGEN_ERROR_HANDLING_INVESTIGATION_FEB_03_2026.md)
+See: OGEN_ERROR_HANDLING_INVESTIGATION_FEB_03_2026 (internal development reference, removed in v1.0)
 
 ### ✅ Type Safety Preserved
 
@@ -502,7 +502,7 @@ Expect(err.Error()).To(ContainSubstring("HTTP 400"))
 
 ## Related Documentation
 
-- **[OGEN_ERROR_HANDLING_INVESTIGATION_FEB_03_2026.md](../../docs/handoff/OGEN_ERROR_HANDLING_INVESTIGATION_FEB_03_2026.md)**: Complete investigation and SME validation
+- **OGEN_ERROR_HANDLING_INVESTIGATION_FEB_03_2026**: Complete investigation and SME validation (internal development reference, removed in v1.0)
 - **[OGENX_REFACTOR_PLAN.md](../../docs/development/OGENX_REFACTOR_PLAN.md)**: 5-phase rollout plan with timeline
 - **[Kubernaut Core Rules](../../.cursor/rules/00-kubernaut-core-rules.mdc)**: TDD methodology and business requirements
 

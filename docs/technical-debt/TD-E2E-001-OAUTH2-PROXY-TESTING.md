@@ -369,7 +369,7 @@ var _ = Describe("OAuth2-Proxy Authentication (TD-E2E-001)", Label("e2e", "oauth
 ### **Phase 3: Documentation Updates** ⏱️ 1-2 hours
 
 **Files to Update**:
-1. `docs/development/SOC2/DD-AUTH-007_OAUTH_PROXY_MIGRATION.md` - Mark E2E migration as complete
+1. DD-AUTH-007_OAUTH_PROXY_MIGRATION - Mark E2E migration as complete (document removed)
 2. `docs/testing/e2e/E2E_OAUTH_AUTHENTICATION.md` - New doc explaining E2E OAuth setup
 3. `test/e2e/datastorage/README.md` - Update with OAuth test instructions
 4. `docs/technical-debt/TD-E2E-001-OAUTH2-PROXY-TESTING.md` - Close this technical debt issue

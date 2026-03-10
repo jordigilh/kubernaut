@@ -2122,9 +2122,6 @@ test/integration/remediationorchestrator/
 test/e2e/remediationorchestrator/
 └── multi_replica_locking_e2e_test.go          # Multi-replica E2E tests
 
-docs/handoff/
-└── DD_TO_ADR_CONVERSION_DISTRIBUTED_LOCKING_DEC_30_2025.md
-
 docs/architecture/decisions/
 └── ADR-052-distributed-locking-pattern.md  # To be created (pattern documentation)
 ```
@@ -2159,11 +2156,7 @@ docs/services/crd-controllers/05-remediationorchestrator/implementation/
 ├── IMPLEMENTATION_PLAN_DISTRIBUTED_LOCKING_V1.0.md  # This document
 └── TEST_PLAN_DISTRIBUTED_LOCKING_V1.0.md            # Test plan
 
-docs/shared/
-└── CROSS_TEAM_DISTRIBUTED_LOCKING_PATTERN_DEC_30_2025.md  # Updated
-
-docs/handoff/
-└── RO_RACE_CONDITION_ANALYSIS_DEC_30_2025.md  # Reference document
+(Cross-team doc CROSS_TEAM_DISTRIBUTED_LOCKING_PATTERN_DEC_30_2025.md was in docs/shared/; directory removed)
 ```
 
 ---
@@ -2179,7 +2172,7 @@ docs/handoff/
 - **BR-GATEWAY-190**: Multi-Replica Deduplication Safety (Gateway)
 
 ### **Cross-Team Documentation**
-- [CROSS_TEAM_DISTRIBUTED_LOCKING_PATTERN_DEC_30_2025.md](../../../../shared/CROSS_TEAM_DISTRIBUTED_LOCKING_PATTERN_DEC_30_2025.md)
+- CROSS_TEAM_DISTRIBUTED_LOCKING_PATTERN_DEC_30_2025.md (document removed)
 - [RO_RACE_CONDITION_ANALYSIS_DEC_30_2025.md](../../../../handoff/RO_RACE_CONDITION_ANALYSIS_DEC_30_2025.md)
 
 ### **Gateway Implementation**

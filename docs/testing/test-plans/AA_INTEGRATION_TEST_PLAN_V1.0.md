@@ -1099,8 +1099,6 @@ go tool cover -html=coverage-integration-aianalysis.out -o coverage-integration.
 ## 📚 REFERENCES
 
 ### Related Documents
-- **🆕 Guidelines Triage**: `docs/handoff/AA_TEST_PLAN_GUIDELINES_TRIAGE_DEC_24_2025.md` (Gap analysis vs TESTING_GUIDELINES.md)
-- **Coverage Analysis**: `docs/handoff/AA_INTEGRATION_TEST_COVERAGE_GAPS_DEC_24_2025.md`
 - **Testing Guidelines**: `docs/development/business-requirements/TESTING_GUIDELINES.md` ⭐ AUTHORITATIVE
 - **Testing Strategy**: `.cursor/rules/03-testing-strategy.mdc`
 - **Business Requirements**: `docs/requirements/BR-AI-*.md`

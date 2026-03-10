@@ -258,7 +258,7 @@ ANALYSIS → PLAN → DO-RED → DO-GREEN → DO-REFACTOR → CHECK
 - ✅ **Confirmed all 14 specification documents are complete** (not stubs)
 - ✅ **Added dedicated BR files** (BR-ORCH-001, BR-ORCH-025-034)
 - ✅ **Added BR_MAPPING.md** for test coverage tracking
-- ✅ **API contract alignment** with Gateway, SP, AI, WE teams (see docs/handoff/)
+- ✅ **API contract alignment** with Gateway, SP, AI, WE teams
 - ✅ **Added DD-RO-001** for resource lock deduplication handling
 - 📊 **Total documentation**: ~9,875 lines across 14 specification documents
 

@@ -29,7 +29,7 @@
 
 ### Out of Scope
 
-- `deploy/demo/` manifest changes (deferred to separate task)
+- Demo scenario manifest changes (see [kubernaut-demo-scenarios](https://github.com/jordigilh/kubernaut-demo-scenarios))
 - E2E tests requiring full Kind cluster (not applicable for credential resolver; covered by UT + IT)
 - PagerDuty, Email, Webhook credentialRef support (future enhancement)
 

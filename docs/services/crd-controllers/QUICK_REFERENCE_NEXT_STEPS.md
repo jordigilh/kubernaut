@@ -98,7 +98,7 @@ make bootstrap-executor-dev
 - Edge Case Guide: `docs/testing/EDGE_CASE_TESTING_GUIDE.md`
 
 ### Service Development Strategy
-- **Updated Strategy**: `docs/planning/SERVICE_DEVELOPMENT_ORDER_STRATEGY.md`
+- **Updated Strategy**: SERVICE_DEVELOPMENT_ORDER_STRATEGY (document removed)
 
 ---
 

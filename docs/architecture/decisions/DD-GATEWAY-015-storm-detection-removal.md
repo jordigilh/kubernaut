@@ -827,8 +827,8 @@ git push
 
 ## References
 
-- **Analysis Document**: `docs/handoff/BRAINSTORM_STORM_DETECTION_PURPOSE.md` - Storm purpose analysis
-- **AI Analysis**: `docs/handoff/CONFIDENCE_ASSESSMENT_GATEWAY_CIRCUIT_BREAKER.md` - Circuit breaker vs storm
+- **Analysis Document**: (internal development reference, removed in v1.0) - Storm purpose analysis
+- **AI Analysis**: (internal development reference, removed in v1.0) - Circuit breaker vs storm
 - **Implementation Plan**: This document (DD-GATEWAY-015)
 - **CRD Schema**: `api/remediation/v1alpha1/remediationrequest_types.go`
 - **Gateway Server**: `pkg/gateway/server.go`

@@ -373,9 +373,6 @@ All build targets have been validated:
 
 ## 📚 **References**
 
-- **Analysis Document**: `docs/handoff/HAPI_DEPENDENCY_REDUCTION_ANALYSIS_JAN_03_2026.md`
-- **Test Results**: `docs/handoff/HAPI_E2E_REQUIREMENTS_TEST_RESULTS_JAN_03_2026.md`
-- **Success Summary**: `docs/handoff/HAPI_E2E_MINIMAL_REQUIREMENTS_SUCCESS_JAN_03_2026.md`
 - **Build Notes**: `holmesgpt-api/BUILD_NOTES.md`
 
 ---

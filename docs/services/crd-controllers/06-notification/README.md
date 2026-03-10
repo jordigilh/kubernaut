@@ -650,7 +650,7 @@ err := r.Create(ctx, notification)
 - [ADR-017: NotificationRequest CRD Creator](../../../architecture/decisions/ADR-017-notification-crd-creator.md) - Responsibility definition
 
 **Cross-Team Q&A**:
-- [WE→Notification Questions](../../../../docs/handoff/QUESTIONS_FROM_WORKFLOW_ENGINE_TEAM.md#questions-for-notification-team) - 5 questions answered
+- WE→Notification Questions - 5 questions answered (internal development reference, removed in v1.0)
 - [DD-RO-001: Notification Cancellation Handling](../05-remediationorchestrator/DD-RO-001-NOTIFICATION-CANCELLATION-HANDLING.md) - Deletion behavior
 
 ---

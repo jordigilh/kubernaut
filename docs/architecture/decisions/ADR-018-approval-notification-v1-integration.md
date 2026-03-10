@@ -446,8 +446,8 @@ func (r *RemediationOrchestratorReconciler) formatApprovalBody(ai *aianalysisv1.
 
 1. **ADR-017**: NotificationRequest CRD Creator Responsibility
 2. **Notification Controller Status**: `docs/services/crd-controllers/06-notification/PRODUCTION_READINESS_CHECKLIST.md`
-3. **Value Proposition**: `docs/value-proposition/EXECUTIVE_SUMMARY.md`
-4. **Confidence Assessment**: `docs/analysis/APPROVAL_NOTIFICATION_V1_INTEGRATION_ASSESSMENT.md`
+3. **Value Proposition**: EXECUTIVE_SUMMARY (document removed)
+4. **Confidence Assessment**: APPROVAL_NOTIFICATION_V1_INTEGRATION_ASSESSMENT (document removed)
 
 ---
 

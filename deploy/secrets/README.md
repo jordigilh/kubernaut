@@ -218,7 +218,7 @@ volumeMounts:
 ## 📚 **References**
 
 - **[DD-AUTH-008: Secret Management Strategy](../../docs/architecture/decisions/DD-AUTH-008-secret-management-kustomize-helm.md)** - Authoritative design decision
-- **[DD-AUTH-007: OAuth2-Proxy Migration](../../docs/development/SOC2/DD-AUTH-007_OAUTH_PROXY_MIGRATION.md)** - Migration guide
+- **DD-AUTH-007: OAuth2-Proxy Migration** - Migration guide (document removed)
 - **[DD-AUTH-004: DataStorage OAuth](../../docs/architecture/decisions/DD-AUTH-004-openshift-oauth-proxy-legal-hold.md)** - DataStorage oauth-proxy pattern
 - **[DD-AUTH-006: HAPI OAuth](../../docs/architecture/decisions/DD-AUTH-006-hapi-oauth-integration.md)** - HAPI oauth-proxy pattern
 

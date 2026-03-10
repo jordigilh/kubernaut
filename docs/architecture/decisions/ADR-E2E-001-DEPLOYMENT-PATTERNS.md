@@ -385,7 +385,6 @@ var _ = BeforeSuite(func() {
 ### Step 4: Update Documentation
 Remove all manual `kubectl apply` commands from:
 - `docs/services/crd-controllers/*/`
-- `docs/handoff/`
 - `README.md` files
 
 ---

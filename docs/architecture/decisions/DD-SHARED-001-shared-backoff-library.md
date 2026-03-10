@@ -400,7 +400,7 @@ duration := backoff.CalculateWithoutJitter(failures)  // For test assertions
 
 ## 📞 **Communication Plan**
 
-### Team Announcement: `docs/handoff/TEAM_ANNOUNCEMENT_SHARED_BACKOFF.md`
+### Team Announcement: (internal development reference, removed in v1.0)
 **Recipients**:
 - [ ] **WorkflowExecution (WE)**: P1 - Migrate existing usage (backward compatible)
 - [ ] **SignalProcessing (SP)**: FYI - Available for future BR implementations

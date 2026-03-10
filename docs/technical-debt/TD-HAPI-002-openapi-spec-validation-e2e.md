@@ -498,7 +498,7 @@ return result  # FastAPI expects RecoveryResponse
 
 ## 📚 RELATED DOCUMENTS
 
-- [Bug Report](../../docs/shared/HAPI_RECOVERY_DICT_VS_MODEL_BUG.md) - Dict vs model bug this would catch
+- Bug Report (HAPI_RECOVERY_DICT_VS_MODEL_BUG) - Dict vs model bug this would catch (document removed)
 - [BR-HAPI-002](../../docs/requirements/BR-HAPI-002-response-schemas.md) - Response schema requirements
 - [DD-API-001](../../docs/architecture/decisions/DD-API-001-openapi-client-mandate.md) - OpenAPI client usage
 - [TESTING_GUIDELINES.md](../../TESTING_GUIDELINES.md) - Testing strategy

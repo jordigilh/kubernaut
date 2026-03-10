@@ -16,7 +16,7 @@ This directory contains **permanent case studies** that document:
 - Cross-service pattern applications
 - Best practices and recommendations
 
-Unlike `docs/handoff/` (ephemeral, will be archived), case studies here are **permanent references** that inform future development efforts.
+Unlike internal development references (ephemeral, removed in v1.0), case studies here are **permanent references** that inform future development efforts.
 
 ---
 
@@ -120,7 +120,7 @@ Create a permanent case study when:
 
 | Aspect | Case Study | Handoff Document |
 |--------|------------|------------------|
-| **Location** | `docs/architecture/case-studies/` | `docs/handoff/` |
+| **Location** | `docs/architecture/case-studies/` | (internal, removed in v1.0) |
 | **Lifecycle** | Permanent | Ephemeral (will be archived) |
 | **Purpose** | Long-term reference | Short-term team transfer |
 | **Content** | Essential lessons, patterns | Detailed play-by-play |

@@ -271,7 +271,7 @@ Result: Graceful degradation, no crash
 - **ADR-048**: Rate Limiting Proxy Delegation (Primary decision)
 - **ADR-030**: Service Configuration Management (YAML-only functional config)
 - **Chi Throttle Middleware**: https://github.com/go-chi/chi/blob/master/middleware/throttle.go
-- **E2E Test Failure Analysis**: `docs/handoff/GATEWAY_E2E_COMPLETE_FIX_JAN_29_2026.md`
+- **E2E Test Failure Analysis**: (internal development reference, removed in v1.0)
 
 ---
 

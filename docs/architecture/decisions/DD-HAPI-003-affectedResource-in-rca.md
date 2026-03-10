@@ -254,7 +254,7 @@ func (r *Reconciler) CheckManagedResource(ctx context.Context, rr *remediationv1
 
 ### Documentation (Created/Updated)
 1. **LLM Response Format Guide** (`holmesgpt-api/docs/LLM_RESPONSE_FORMAT.md`): NEW FILE - document `affectedResource` structure and examples
-2. **Scope Management Handoff** (`docs/handoff/BR_SCOPE_COMPLETE_DEFINITION_JAN20_2026.md`): UPDATE - reference RCA target in RO validation
+2. **Scope Management Handoff**: UPDATE - reference RCA target in RO validation (internal development reference, removed in v1.0)
 
 ### Test Files (Created)
 1. **AIAnalysis Response Processor Unit Tests** (`pkg/aianalysis/handlers/response_processor_test.go`): Add tests for `extractTargetResourceFromRCA()`

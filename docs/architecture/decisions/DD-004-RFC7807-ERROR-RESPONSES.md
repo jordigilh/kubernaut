@@ -16,7 +16,7 @@
 - **Format Correction**: Removed "Implementation Status by Service" section (operational tracking)
 - **Rationale**: DD documents define decisions, not track implementation status
 - **Impact**: Documentation-only change (no functional impact)
-- **Moved To**: Implementation tracking moved to `docs/handoff/DD_004_V1_1_IMPLEMENTATION_TRACKER.md`
+- **Moved To**: Implementation tracking (internal development reference, removed in v1.0)
 - **Validation Section**: Replaced status tracking with proper validation strategy (how to verify compliance)
 
 ### **Version 1.1** (December 18, 2025)
@@ -597,7 +597,7 @@ Services are DD-004 compliant when all HTTP error responses (4xx, 5xx) meet thes
 
 **Reference Implementation**: `pkg/gateway/errors/rfc7807.go` demonstrates compliant structure
 
-**Implementation Tracking**: See `docs/handoff/DD_004_V1_1_IMPLEMENTATION_TRACKER.md` for service-specific status
+**Implementation Tracking**: (internal development reference, removed in v1.0)
 
 **Note**: Success responses (2xx) are not affected by DD-004 and may use service-specific formats.
 

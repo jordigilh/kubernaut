@@ -232,7 +232,7 @@ correlationID := analysis.Spec.RemediationID  // Uses rr.UID
 correlationID := analysis.Spec.RemediationRequestRef.Name
 ```
 
-**Note**: AIAnalysis inconsistency already documented in `docs/handoff/AA_CORRELATION_ID_INCONSISTENCY_JAN14_2026.md`.
+**Note**: AIAnalysis inconsistency (internal development reference, removed in v1.0).
 
 ### **Phase 4: Integration Tests - Update Queries**
 

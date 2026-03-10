@@ -25,7 +25,7 @@
 
 **Affected Services**: AIAnalysis (v1.5), all future integration tests using container-to-container communication
 
-**See**: `docs/handoff/AA_INTEGRATION_HTTP500_FIX_JAN08.md` for detailed RCA
+**See**: (internal development reference, removed in v1.0) for detailed RCA
 
 ### Version 1.4 (January 7, 2026)
 **Added**:
@@ -37,7 +37,7 @@
 
 **Impact**: Standard parallel E2E patterns now use single source of truth for image building, reducing ~170 lines of duplicated code. Build-before-cluster optimization patterns documented for 6 additional services.
 
-**See**: `docs/handoff/TEST_INFRASTRUCTURE_PHASE3_COMPLETE_JAN07.md` for migration details
+**See**: (internal development reference, removed in v1.0) for migration details
 
 ### Version 1.3 (December 26, 2025)
 **Added**:
@@ -1022,7 +1022,7 @@ Some services build images BEFORE creating the Kind cluster (optimization). Thes
 
 **Services**: Gateway (coverage), SignalProcessing, WorkflowExecution, RemediationOrchestrator
 
-**See**: `docs/handoff/TEST_INFRASTRUCTURE_PHASE3_COMPLETE_JAN07.md` for details
+**See**: (internal development reference, removed in v1.0) for details
 
 ---
 
@@ -1338,7 +1338,7 @@ podman exec {container_name} env | grep URL
 
 ### 🔗 **Related Documentation**
 
-- **RCA Document**: `docs/handoff/AA_INTEGRATION_HTTP500_FIX_JAN08.md` (detailed root cause analysis)
+- **RCA Document**: (internal development reference, removed in v1.0) (detailed root cause analysis)
 - **DataStorage Bootstrap**: `test/infrastructure/datastorage_bootstrap.go` (reference implementation)
 - **DD-TEST-002**: Integration Test Container Orchestration (deprecated, see DD-INTEGRATION-001)
 - **Podman Networking**: https://docs.podman.io/en/latest/markdown/podman-network.1.html
@@ -1360,7 +1360,7 @@ podman exec {container_name} env | grep URL
 - `docs/development/testing.md`: Testing strategy and patterns
 - `docs/services/crd-controllers/*/README.md`: Service-specific testing
 - `.github/workflows/*.yml`: CI/CD pipeline configurations
-- `docs/handoff/TEST_INFRASTRUCTURE_PHASE3_COMPLETE_JAN07.md`: Phase 3 migration results
+- (internal development reference, removed in v1.0): Phase 3 migration results
 
 ### **Business Requirements**
 - BR-TEST-001: Parallel test execution capability

@@ -645,9 +645,6 @@ rec-002   rec-003
 
 - **Related Documents**:
   - `docs/architecture/SAFETY_AWARE_INVESTIGATION_PATTERN.md`
-  - `docs/analysis/WORKFLOW_EXECUTION_MODE_DETERMINATION.md`
-  - `docs/analysis/HOLMESGPT_DEPENDENCY_SPECIFICATION_ASSESSMENT.md`
-  - `docs/analysis/AI_TO_WORKFLOW_DETAILED_FLOW.md`
   - `docs/services/crd-controllers/02-aianalysis/crd-schema.md`
 
 ---

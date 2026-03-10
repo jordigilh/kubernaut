@@ -229,13 +229,13 @@ kubectl delete -k deploy/gateway/base/
 
 ### **Architecture Decisions**
 - [DD-GATEWAY-011 - Shared Status Deduplication](../../docs/architecture/decisions/DD-GATEWAY-011-shared-status-deduplication.md)
-- [DD-GATEWAY-012 - Redis Removal Complete](../../docs/handoff/NOTICE_DD_GATEWAY_012_REDIS_REMOVAL_COMPLETE.md)
+- DD-GATEWAY-012 - Redis Removal Complete (internal development reference, removed in v1.0)
 - [DD-GATEWAY-015 - Storm Detection Removal](../../docs/architecture/decisions/DD-GATEWAY-015-storm-detection-removal.md)
 
 ### **Implementation**
 - [Gateway Service Documentation](../../docs/services/stateless/gateway-service/)
-- [V1.0 Completion Summary](../../docs/handoff/GATEWAY_V1_0_COMPLETE_25_25_TESTS_PASSING_DEC_20_2025.md)
-- [P0 Maturity Compliance](../../docs/handoff/GATEWAY_P0_MATURITY_COMPLIANCE_COMPLETE_DEC_20_2025.md)
+- V1.0 Completion Summary (internal development reference, removed in v1.0)
+- P0 Maturity Compliance (internal development reference, removed in v1.0)
 
 ### **Testing**
 - **Tests**: 443 total (314 unit + 104 integration + 25 E2E)

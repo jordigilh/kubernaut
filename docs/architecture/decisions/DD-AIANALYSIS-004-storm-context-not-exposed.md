@@ -366,7 +366,7 @@ After determining that storm context has minimal value for LLM RCA (3-6%), the a
 - **HAPI API Contract**: `pkg/aianalysis/client/holmesgpt.go`
 - **AIAnalysis Integration**: `docs/services/crd-controllers/02-aianalysis/integration-points.md`
 - **Gateway Storm Detection**: `docs/services/stateless/gateway-service/overview.md`
-- **Storm Detection Brainstorm**: `docs/handoff/BRAINSTORM_STORM_DETECTION_PURPOSE.md`
+- **Storm Detection Brainstorm**: (internal development reference, removed in v1.0)
 
 ---
 

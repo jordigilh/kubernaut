@@ -154,9 +154,7 @@ Use Kubernetes Lease resources for distributed mutual exclusion across service r
 
 ### **Source Documents**
 - `docs/architecture/decisions/DD-GATEWAY-013-multi-replica-deduplication.md` (to be deprecated)
-- `docs/shared/CROSS_TEAM_DISTRIBUTED_LOCKING_PATTERN_DEC_30_2025.md` (cross-team recommendation)
-- `docs/handoff/RO_RACE_CONDITION_ANALYSIS_DEC_30_2025.md` (RO race condition analysis)
-
+- CROSS_TEAM_DISTRIBUTED_LOCKING_PATTERN_DEC_30_2025.md (cross-team recommendation; document removed)
 ### **Implementation Plans**
 - `docs/services/stateless/gateway-service/implementation/IMPLEMENTATION_PLAN_DISTRIBUTED_LOCKING_V1.0.md`
 - `docs/services/crd-controllers/05-remediationorchestrator/implementation/IMPLEMENTATION_PLAN_DISTRIBUTED_LOCKING_V1.0.md` (to be created)

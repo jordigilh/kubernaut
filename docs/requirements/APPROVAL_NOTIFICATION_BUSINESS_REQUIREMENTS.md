@@ -433,7 +433,7 @@ const ApprovalNotificationTemplate = `
 ## 🔗 **Related Documentation**
 
 1. **ADR-018**: Approval Notification V1.0 Integration Decision
-2. **Multi-Step Workflow Examples**: `docs/analysis/MULTI_STEP_WORKFLOW_EXAMPLES.md`
+2. **Multi-Step Workflow Examples**: MULTI_STEP_WORKFLOW_EXAMPLES (document removed)
 3. **AIAnalysis Implementation Plan**: `docs/services/crd-controllers/02-aianalysis/implementation/IMPLEMENTATION_PLAN_V1.0.md`
 4. **RemediationOrchestrator Integration**: `docs/services/crd-controllers/05-remediationorchestrator/NOTIFICATION_INTEGRATION_PLAN.md`
 5. **Notification Controller**: `docs/services/crd-controllers/06-notification/README.md`

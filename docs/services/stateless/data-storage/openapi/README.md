@@ -51,7 +51,7 @@ podman run --rm -v ${PWD}:/local:z openapitools/openapi-generator-cli generate \
 
 - **Authoritative Spec**: `api/openapi/data-storage-v1.yaml`
 - **Service Documentation**: `docs/services/stateless/data-storage/README.md`
-- **Migration Issue**: `docs/handoff/HANDOFF_HAPI_TO_DS_OPENAPI_SPEC_ISSUE.md`
+- **Migration Issue**: (internal development reference, removed in v1.0)
 
 ---
 

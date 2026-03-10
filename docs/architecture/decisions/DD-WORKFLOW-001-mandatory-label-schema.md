@@ -126,7 +126,7 @@ WHERE labels->'environment' ? 'production' OR labels->'environment' ? '*'
 - **RATIONALE**: PodSecurityPolicy (PSP) is deprecated since K8s 1.21, removed in 1.25. Pod Security Standards (PSS) are namespace-level, not pod-level, making detection inconsistent and unreliable.
 - **IMPACT**: Field count reduced from 9 to 8 detected labels
 - **MIGRATION**: Services should remove any references to `podSecurityLevel` in DetectedLabels
-- **NOTIFICATION**: See `docs/handoff/NOTICE_PODSECURITYLEVEL_REMOVED.md`
+- **NOTIFICATION**: (internal development reference, removed in v1.0)
 
 ### Version 2.1 (2025-12-02)
 - **NEW**: Added **Detection Failure Handling** section documenting the December 2025 inter-team agreement

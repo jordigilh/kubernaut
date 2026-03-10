@@ -323,8 +323,8 @@ func (r *Reconciler) handleTimeout(ctx context.Context, rr *remediationv1.Remedi
 
 | Document | Purpose |
 |----------|---------|
-| `docs/handoff/RO_METRICS_WIRING_COMPLETE_DEC_20_2025.md` | Implementation completion report |
-| `docs/handoff/RO_METRICS_SPECIFICATION_GAP_ANALYSIS_DEC_20_2025.md` | Analysis of BR-specified vs. operational metrics |
+| (internal development reference, removed in v1.0) | Implementation completion report |
+| (internal development reference, removed in v1.0) | Analysis of BR-specified vs. operational metrics |
 
 ---
 

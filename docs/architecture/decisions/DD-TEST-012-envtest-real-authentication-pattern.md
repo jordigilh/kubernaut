@@ -324,7 +324,7 @@ ControlPlane: envtest.ControlPlane{
 
 **Verification**: Edit `/etc/hosts` to ensure `127.0.0.1 localhost` is active and `::1 localhost` is commented out.
 
-**Reference**: `docs/handoff/DD_AUTH_014_ENVTEST_IPV6_BLOCKER.md`
+**Reference**: (internal development reference, removed in v1.0)
 
 ### 2. Podman Bridge Networking
 
@@ -507,7 +507,7 @@ Time to failure: 2-3 minutes
 1. Force IPv4 binding in envtest config (see "IPv4 Binding" section)
 2. Verify `/etc/hosts` has `127.0.0.1 localhost` (not `::1 localhost`)
 
-**Reference**: `docs/handoff/DD_AUTH_014_ENVTEST_IPV6_BLOCKER.md`
+**Reference**: (internal development reference, removed in v1.0)
 
 ### Issue: `tokenreviews.authentication.k8s.io is forbidden`
 
@@ -605,7 +605,7 @@ var _ = Describe("E2E Tests", func() {
 - **DD-TEST-009**: Field index setup in envtest (related test infrastructure)
 - **BR-SEC-001**: SOC2 compliance requirements
 - **envtest docs**: https://book.kubebuilder.io/reference/envtest.html
-- **Troubleshooting**: `docs/handoff/DD_AUTH_014_ENVTEST_IPV6_BLOCKER.md`
+- **Troubleshooting**: (internal development reference, removed in v1.0)
 
 ---
 

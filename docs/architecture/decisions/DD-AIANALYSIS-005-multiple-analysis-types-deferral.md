@@ -33,7 +33,7 @@ Despite the CRD including an `AnalysisTypes []string` field, the feature has nev
 - No production code depends on this feature
 - Feature gap was identified in December 2025 analysis as "medium priority, unused"
 
-**Full Analysis**: See `docs/handoff/BR_AI_002_TRIAGE_JAN11_2026.md`
+**Full Analysis**: (internal development reference, removed in v1.0)
 
 ---
 
@@ -250,11 +250,6 @@ pending business requirement validation.
 
 ### Gap Analysis Documents
 
-**Files**:
-- `docs/handoff/AA_V1_0_GAPS_RESOLUTION_DEC_20_2025.md`
-- `docs/handoff/AA_V1_0_COMPLIANCE_TRIAGE_DEC_20_2025.md`
-- `docs/handoff/AA_INTEGRATION_TEST_EDGE_CASE_TRIAGE.md`
-
 **Update Status**: Mark BR-AI-002 as "Deferred v2.0" with reference to DD-AIANALYSIS-005
 
 ---
@@ -287,7 +282,6 @@ All AIAnalysis integration tests MUST:
 ## Related Documents
 
 **Primary References**:
-- `docs/handoff/BR_AI_002_TRIAGE_JAN11_2026.md` - Full gap analysis
 - `docs/services/crd-controllers/02-aianalysis/BUSINESS_REQUIREMENTS.md` - BR-AI-002 definition
 - `docs/services/crd-controllers/02-aianalysis/crd-schema.md` - CRD field documentation
 

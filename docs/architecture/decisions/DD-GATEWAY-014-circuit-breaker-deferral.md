@@ -516,10 +516,10 @@ THEN: Implement circuit breaker per Phase 2 guidance (8-12h)
 
 ## References
 
-- **Confidence Assessment**: `docs/handoff/CONFIDENCE_ASSESSMENT_GATEWAY_CIRCUIT_BREAKER.md` - Detailed analysis
+- **Confidence Assessment**: (internal development reference, removed in v1.0) - Detailed analysis
 - **Gateway API Spec**: `docs/services/stateless/gateway-service/api-specification.md` - Performance targets
 - **Gateway Business Requirements**: `docs/services/stateless/gateway-service/BUSINESS_REQUIREMENTS.md` - BR-105, BR-110
-- **Storm Detection Purpose**: `docs/handoff/BRAINSTORM_STORM_DETECTION_PURPOSE.md` - Circuit breaker vs storm detection
+- **Storm Detection Purpose**: (internal development reference, removed in v1.0) - Circuit breaker vs storm detection
 
 ---
 

@@ -10,7 +10,7 @@
 
 Kubernaut closes the loop from Kubernetes alert to automated remediation. When something goes wrong in your cluster, Kubernaut detects the signal, sends it to an LLM for live root cause investigation with real `kubectl` access, selects a remediation workflow, and executes the fix — or escalates to a human with a full RCA when it can't.
 
-![CrashLoopBackOff demo — from alert to automated fix in under 5 minutes](deploy/demo/scenarios/crashloop/crashloop-lite.gif)
+![CrashLoopBackOff demo — from alert to automated fix in under 5 minutes](https://raw.githubusercontent.com/jordigilh/kubernaut-demo-scenarios/main/scenarios/crashloop/crashloop-lite.gif)
 
 **[Full Documentation](https://jordigilh.github.io/kubernaut-docs/)** · **[Demo Scenarios](https://github.com/jordigilh/kubernaut-demo-scenarios)**
 
@@ -85,7 +85,7 @@ We use **Ginkgo/Gomega BDD** for testing and follow a TDD workflow. See the [Dev
 
 ## Contributing
 
-See the [Contributing Guide](https://jordigilh.github.io/kubernaut-docs/contributing/) for guidelines. In short: create a feature branch, implement with tests, update docs, and open a PR.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines. In short: create a feature branch, implement with tests, update docs, and open a PR.
 
 ---
 
