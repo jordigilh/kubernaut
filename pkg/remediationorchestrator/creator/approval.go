@@ -214,12 +214,10 @@ func (c *ApprovalCreator) buildApprovalRequest(
 		UID:        rr.UID,
 	}
 
-	return &remediationv1.RemediationApprovalRequest{
+	rar := &remediationv1.RemediationApprovalRequest{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: rr.Namespace,
-			// Issue #91: labels removed; parent tracked via spec.remediationRequestRef + ownerRef
-
 		},
 		Spec: remediationv1.RemediationApprovalRequestSpec{
 			RemediationRequestRef: rrRef,
@@ -236,4 +234,30 @@ func (c *ApprovalCreator) buildApprovalRequest(
 			RequiredBy:           requiredBy,
 		},
 	}
+
+	// Map ApprovalContext fields (BR-AI-059, BR-AI-076, #307)
+	if ac := ai.Status.ApprovalContext; ac != nil {
+		rar.Spec.EvidenceCollected = ac.EvidenceCollected
+
+		if len(ac.AlternativesConsidered) > 0 {
+			alts := make([]remediationv1.ApprovalAlternative, len(ac.AlternativesConsidered))
+			for i, a := range ac.AlternativesConsidered {
+				alts[i] = remediationv1.ApprovalAlternative{
+					Approach: a.Approach,
+					ProsCons: a.ProsCons,
+				}
+			}
+			rar.Spec.AlternativesConsidered = alts
+		}
+
+		if ac.PolicyEvaluation != nil {
+			rar.Spec.PolicyEvaluation = &remediationv1.ApprovalPolicyEvaluation{
+				PolicyName:   ac.PolicyEvaluation.PolicyName,
+				MatchedRules: ac.PolicyEvaluation.MatchedRules,
+				Decision:     ac.PolicyEvaluation.Decision,
+			}
+		}
+	}
+
+	return rar
 }
