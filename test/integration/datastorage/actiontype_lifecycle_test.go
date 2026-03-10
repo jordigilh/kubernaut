@@ -347,19 +347,20 @@ var _ = Describe("ActionType Lifecycle Integration Tests (#300)", Label("integra
 			Expect(err.Error()).To(ContainSubstring("not found"))
 		})
 
-		It("should reject disable on already-disabled action type", func() {
+		It("should be idempotent when disabling an already-disabled action type", func() {
 			name := atName("double-disable")
 			desc := baseDesc()
 
 			_, err := atRepo.Create(ctx, name, desc, "admin@example.com")
 			Expect(err).ToNot(HaveOccurred())
 
-			_, err = atRepo.Disable(ctx, name, "admin@example.com")
+			result, err := atRepo.Disable(ctx, name, "admin@example.com")
 			Expect(err).ToNot(HaveOccurred())
+			Expect(result.Disabled).To(BeTrue())
 
-			_, err = atRepo.Disable(ctx, name, "admin@example.com")
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("disabled"))
+			result, err = atRepo.Disable(ctx, name, "admin@example.com")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.Disabled).To(BeTrue(), "Idempotent disable should succeed without error")
 		})
 
 		It("should set disabled_at and disabled_by when disabling", func() {
