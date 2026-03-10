@@ -11,7 +11,7 @@ spec:
     description:
       what: "Increases the memory limits of a deployment's containers to prevent OOMKill events. Doubles the current memory limit by default."
       whenToUse: "When containers are being OOMKilled because the memory limit is too low for the workload's legitimate requirements."
-      whenNotToUse: "When the OOMKill is caused by a memory leak. Increasing limits only delays the inevitable -- the application needs to be fixed. Check remediation history: if this workflow has been applied multiple times with declining effectiveness, escalate to human review."
+      whenNotToUse: "When the OOMKill is caused by a memory leak, or when the issue is a namespace ResourceQuota constraint. Increasing individual pod limits cannot resolve quota exhaustion and may worsen it by requesting more memory per pod against a fixed quota ceiling. In quota exhaustion cases, escalate to human review for quota policy adjustment. Check remediation history: if this workflow has been applied multiple times with declining effectiveness, escalate to human review."
       preconditions: "The deployment exists and containers have memory limits set. The node has sufficient allocatable memory for the increased limit."
   
   actionType: IncreaseMemoryLimits

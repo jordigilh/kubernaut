@@ -11,7 +11,7 @@ spec:
     description:
       what: "Increases the memory limits of a GitOps-managed deployment by updating the resource definition in the source Git repository and letting the GitOps controller reconcile the change"
       whenToUse: "When containers are being OOMKilled because the memory limit is too low, and the deployment is managed by a GitOps tool (ArgoCD or Flux). The new memory value must be higher than the current limit."
-      whenNotToUse: "When the OOMKill is caused by a memory leak (increasing limits only delays the inevitable). When the environment is not GitOps-managed (use increase-memory-limits-v1 for direct kubectl patching instead)."
+      whenNotToUse: "When the OOMKill is caused by a memory leak (increasing limits only delays the inevitable). When the issue is a namespace ResourceQuota constraint -- increasing individual pod limits cannot resolve quota exhaustion and may worsen it by requesting more memory per pod against a fixed quota ceiling; escalate to human review for quota policy adjustment. When the environment is not GitOps-managed (use increase-memory-limits-v1 for direct kubectl patching instead)."
       preconditions: "A GitOps tool (ArgoCD or Flux) is managing the target namespace. The source Git repository is accessible. The deployment YAML in the repo defines explicit memory limits."
 
   actionType: IncreaseMemoryLimits
