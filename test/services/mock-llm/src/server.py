@@ -1304,7 +1304,7 @@ null
             }
             # #307: Include alternative_workflows so ApprovalContext.AlternativesConsidered
             # is populated when policy-driven approval gates are triggered (BR-AI-076).
-            analysis_json["alternative_workflows"] = [
+            alternatives_list = [
                 {
                     "workflow_id": "alt-manual-investigation",
                     "title": "Manual Investigation",
@@ -1312,24 +1312,33 @@ null
                     "rationale": "Operator-driven investigation as fallback approach"
                 }
             ]
+            analysis_json["alternative_workflows"] = alternatives_list
             # BR-HAPI-197: Explicitly set needs_human_review=false for valid workflow selections.
             # Without this, HAPI's parser may infer needs_human_review=true from missing field.
             analysis_json["needs_human_review"] = False
             analysis_json["human_review_reason"] = None
-            # Format as markdown with JSON block (like real LLM would)
+            # Use section-header format (Pattern 2B) — the HolmesGPT SDK re-formats
+            # responses into this layout, so Pattern 1 (```json block) is never matched
+            # by the HAPI parser in the E2E pipeline.
             content = f"""Based on my investigation of the {scenario.signal_name} signal:
 
-## Root Cause Analysis
+# root_cause_analysis
+{json.dumps(analysis_json["root_cause_analysis"])}
 
-{scenario.root_cause}
+# confidence
+{scenario.confidence}
 
-## Recommended Workflow
+# selected_workflow
+{json.dumps(analysis_json["selected_workflow"])}
 
-I've identified a suitable remediation workflow from the catalog.
+# alternative_workflows
+{json.dumps(alternatives_list)}
 
-```json
-{json.dumps(analysis_json, indent=2)}
-```
+# needs_human_review
+false
+
+# human_review_reason
+null
 """
 
         # DEBUG: Log what we're returning
