@@ -19,9 +19,7 @@ package authwebhook
 import (
 	"context"
 
-	"github.com/jordigilh/kubernaut/pkg/audit"
 	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
@@ -31,19 +29,19 @@ func (h *RemediationWorkflowHandler) emitAdmitAudit(ctx context.Context, req adm
 		return
 	}
 
-	event := audit.NewAuditEventRequest()
-	audit.SetEventType(event, eventType)
-	audit.SetEventCategory(event, EventCategoryWebhook)
-	audit.SetEventAction(event, "admitted")
-	audit.SetEventOutcome(event, api.AuditEventRequestEventOutcomeSuccess)
-	audit.SetActor(event, "user", req.UserInfo.Username)
 	resourceID := workflowID
 	if resourceID == "" {
 		resourceID = resourceName
 	}
-	audit.SetResource(event, "RemediationWorkflow", resourceID)
-	audit.SetCorrelationID(event, string(req.UID))
-	audit.SetNamespace(event, req.Namespace)
+
+	event := buildAuditEnvelope(req, WebhookAuditOpts{
+		EventType:    eventType,
+		Category:     EventCategoryWebhook,
+		Action:       "admitted",
+		Outcome:      api.AuditEventRequestEventOutcomeSuccess,
+		ResourceKind: "RemediationWorkflow",
+		ResourceID:   resourceID,
+	})
 
 	action := api.RemediationWorkflowWebhookAuditPayloadActionCreate
 	ogenEventType := api.RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedCreate
@@ -64,11 +62,7 @@ func (h *RemediationWorkflowHandler) emitAdmitAudit(ctx context.Context, req adm
 	}
 	event.EventData = wrapFn(payload)
 
-	if err := h.auditStore.StoreAudit(ctx, event); err != nil {
-		logger := ctrl.Log.WithName("rw-webhook")
-		logger.Error(err, "Audit event storage failed (non-blocking)",
-			"eventType", eventType)
-	}
+	storeAuditBestEffort(ctx, h.auditStore, event, "rw-webhook", eventType)
 }
 
 // emitDeniedAudit emits a denied audit event when CREATE is rejected.
@@ -77,15 +71,14 @@ func (h *RemediationWorkflowHandler) emitDeniedAudit(ctx context.Context, req ad
 		return
 	}
 
-	event := audit.NewAuditEventRequest()
-	audit.SetEventType(event, EventTypeRWAdmittedDenied)
-	audit.SetEventCategory(event, EventCategoryWebhook)
-	audit.SetEventAction(event, "denied")
-	audit.SetEventOutcome(event, api.AuditEventRequestEventOutcomeFailure)
-	audit.SetActor(event, "user", req.UserInfo.Username)
-	audit.SetResource(event, "RemediationWorkflow", req.Name)
-	audit.SetCorrelationID(event, string(req.UID))
-	audit.SetNamespace(event, req.Namespace)
+	event := buildAuditEnvelope(req, WebhookAuditOpts{
+		EventType:    EventTypeRWAdmittedDenied,
+		Category:     EventCategoryWebhook,
+		Action:       "denied",
+		Outcome:      api.AuditEventRequestEventOutcomeFailure,
+		ResourceKind: "RemediationWorkflow",
+		ResourceID:   req.Name,
+	})
 
 	payload := api.RemediationWorkflowWebhookAuditPayload{
 		EventType:    api.RemediationWorkflowWebhookAuditPayloadEventTypeRemediationworkflowAdmittedDenied,
@@ -95,9 +88,5 @@ func (h *RemediationWorkflowHandler) emitDeniedAudit(ctx context.Context, req ad
 	payload.DenialReason.SetTo(reason)
 	event.EventData = api.NewAuditEventRequestEventDataRemediationworkflowAdmittedDeniedAuditEventRequestEventData(payload)
 
-	if err := h.auditStore.StoreAudit(ctx, event); err != nil {
-		logger := ctrl.Log.WithName("rw-webhook")
-		logger.Error(err, "Denied audit event storage failed (non-blocking)",
-			"reason", reason)
-	}
+	storeAuditBestEffort(ctx, h.auditStore, event, "rw-webhook", EventTypeRWAdmittedDenied)
 }

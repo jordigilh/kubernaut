@@ -19,9 +19,7 @@ package authwebhook
 import (
 	"context"
 
-	"github.com/jordigilh/kubernaut/pkg/audit"
 	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
@@ -39,15 +37,14 @@ func (h *ActionTypeHandler) emitATAdmitAudit(
 		return
 	}
 
-	event := audit.NewAuditEventRequest()
-	audit.SetEventType(event, eventType)
-	audit.SetEventCategory(event, EventCategoryActionType)
-	audit.SetEventAction(event, "admitted")
-	audit.SetEventOutcome(event, api.AuditEventRequestEventOutcomeSuccess)
-	audit.SetActor(event, "user", req.UserInfo.Username)
-	audit.SetResource(event, "ActionType", req.Name)
-	audit.SetCorrelationID(event, string(req.UID))
-	audit.SetNamespace(event, req.Namespace)
+	event := buildAuditEnvelope(req, WebhookAuditOpts{
+		EventType:    eventType,
+		Category:     EventCategoryActionType,
+		Action:       "admitted",
+		Outcome:      api.AuditEventRequestEventOutcomeSuccess,
+		ResourceKind: "ActionType",
+		ResourceID:   req.Name,
+	})
 
 	ogenEventType, action, wrapFn := resolveATAdmitTypes(eventType)
 
@@ -64,10 +61,7 @@ func (h *ActionTypeHandler) emitATAdmitAudit(
 	}
 	event.EventData = wrapFn(payload)
 
-	if err := h.auditStore.StoreAudit(ctx, event); err != nil {
-		logger := ctrl.Log.WithName("at-webhook")
-		logger.Error(err, "Audit event storage failed (non-blocking)", "eventType", eventType)
-	}
+	storeAuditBestEffort(ctx, h.auditStore, event, "at-webhook", eventType)
 }
 
 // emitATDeniedAudit emits a denied audit event when an ActionType operation is rejected.
@@ -93,15 +87,14 @@ func (h *ActionTypeHandler) emitATDeniedAudit(
 		eventType = EventTypeATDeniedCreate
 	}
 
-	event := audit.NewAuditEventRequest()
-	audit.SetEventType(event, eventType)
-	audit.SetEventCategory(event, EventCategoryActionType)
-	audit.SetEventAction(event, "denied")
-	audit.SetEventOutcome(event, api.AuditEventRequestEventOutcomeFailure)
-	audit.SetActor(event, "user", req.UserInfo.Username)
-	audit.SetResource(event, "ActionType", req.Name)
-	audit.SetCorrelationID(event, string(req.UID))
-	audit.SetNamespace(event, req.Namespace)
+	event := buildAuditEnvelope(req, WebhookAuditOpts{
+		EventType:    eventType,
+		Category:     EventCategoryActionType,
+		Action:       "denied",
+		Outcome:      api.AuditEventRequestEventOutcomeFailure,
+		ResourceKind: "ActionType",
+		ResourceID:   req.Name,
+	})
 
 	_, _, wrapFn := resolveATDeniedTypes(eventType)
 
@@ -116,10 +109,7 @@ func (h *ActionTypeHandler) emitATDeniedAudit(
 	payload.DenialOperation.SetTo(operation)
 	event.EventData = wrapFn(payload)
 
-	if err := h.auditStore.StoreAudit(ctx, event); err != nil {
-		logger := ctrl.Log.WithName("at-webhook")
-		logger.Error(err, "Denied audit event storage failed (non-blocking)", "reason", reason)
-	}
+	storeAuditBestEffort(ctx, h.auditStore, event, "at-webhook", eventType)
 }
 
 type atWrapFn = func(api.ActionTypeWebhookAuditPayload) api.AuditEventRequestEventData

@@ -26,6 +26,7 @@ import (
 	atv1alpha1 "github.com/jordigilh/kubernaut/api/actiontype/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	admissionv1 "k8s.io/api/admission/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -88,18 +89,7 @@ func (h *ActionTypeHandler) handleCreate(ctx context.Context, req admission.Requ
 		return admission.Denied(fmt.Sprintf("authentication required: %v", err))
 	}
 
-	desc := ogenclient.ActionTypeDescription{
-		What:      at.Spec.Description.What,
-		WhenToUse: at.Spec.Description.WhenToUse,
-	}
-	if at.Spec.Description.WhenNotToUse != "" {
-		desc.WhenNotToUse.SetTo(at.Spec.Description.WhenNotToUse)
-	}
-	if at.Spec.Description.Preconditions != "" {
-		desc.Preconditions.SetTo(at.Spec.Description.Preconditions)
-	}
-
-	result, err := h.dsClient.CreateActionType(ctx, at.Spec.Name, desc, authCtx.Username)
+	result, err := h.dsClient.CreateActionType(ctx, at.Spec.Name, crdDescriptionToOgen(at.Spec.Description), authCtx.Username)
 	if err != nil {
 		logger.Error(err, "DS CreateActionType failed")
 		h.emitATDeniedAudit(ctx, req, fmt.Sprintf("DS registration failed: %v", err), "CREATE")
@@ -151,18 +141,7 @@ func (h *ActionTypeHandler) handleUpdate(ctx context.Context, req admission.Requ
 		return admission.Denied(fmt.Sprintf("authentication required: %v", err))
 	}
 
-	desc := ogenclient.ActionTypeDescription{
-		What:      newAT.Spec.Description.What,
-		WhenToUse: newAT.Spec.Description.WhenToUse,
-	}
-	if newAT.Spec.Description.WhenNotToUse != "" {
-		desc.WhenNotToUse.SetTo(newAT.Spec.Description.WhenNotToUse)
-	}
-	if newAT.Spec.Description.Preconditions != "" {
-		desc.Preconditions.SetTo(newAT.Spec.Description.Preconditions)
-	}
-
-	_, err = h.dsClient.UpdateActionType(ctx, newAT.Spec.Name, desc, authCtx.Username)
+	_, err = h.dsClient.UpdateActionType(ctx, newAT.Spec.Name, crdDescriptionToOgen(newAT.Spec.Description), authCtx.Username)
 	if err != nil {
 		logger.Error(err, "DS UpdateActionType failed")
 		h.emitATDeniedAudit(ctx, req, fmt.Sprintf("DS update failed: %v", err), "UPDATE")
@@ -223,27 +202,8 @@ func (h *ActionTypeHandler) updateCRDStatusCreate(namespace, name, registeredBy 
 	defer cancel()
 
 	at := &atv1alpha1.ActionType{}
-
-	backoff := 500 * time.Millisecond
-	const maxRetries = 5
-	var lastErr error
-	for attempt := 0; attempt < maxRetries; attempt++ {
-		if attempt > 0 {
-			select {
-			case <-ctx.Done():
-				logger.Error(ctx.Err(), "Context expired waiting for CRD to appear", "attempts", attempt)
-				return
-			case <-time.After(backoff):
-				backoff *= 2
-			}
-		}
-		lastErr = h.k8sClient.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, at)
-		if lastErr == nil {
-			break
-		}
-	}
-	if lastErr != nil {
-		logger.Error(lastErr, "Failed to fetch CRD for status update after retries", "retries", maxRetries)
+	if err := RetryGetCRD(ctx, h.k8sClient, types.NamespacedName{Namespace: namespace, Name: name}, at, 5); err != nil {
+		logger.Error(err, "Failed to fetch CRD for status update after retries")
 		return
 	}
 
@@ -260,4 +220,9 @@ func (h *ActionTypeHandler) updateCRDStatusCreate(namespace, name, registeredBy 
 	}
 
 	logger.Info("ActionType CRD status updated", "action_type", at.Spec.Name, "was_reenabled", result.WasReenabled)
+}
+
+// crdDescriptionToOgen converts a CRD ActionTypeDescription to the ogen-generated type.
+func crdDescriptionToOgen(d atv1alpha1.ActionTypeDescription) ogenclient.ActionTypeDescription {
+	return sharedtypes.SharedDescriptionToOgen(atv1alpha1.DescriptionToShared(d))
 }

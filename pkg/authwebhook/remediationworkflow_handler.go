@@ -229,10 +229,6 @@ func (h *RemediationWorkflowHandler) handleDelete(ctx context.Context, req admis
 // updateCRDStatus writes the DS registration result into the CRD's .status subresource.
 // Runs asynchronously after admission completes so it doesn't block the API server response.
 // Uses a fresh context with a timeout since the admission context is cancelled after response.
-//
-// The CRD may not be committed by the API server yet when this goroutine starts
-// (the admission response triggers the commit). A retry loop with exponential
-// backoff (500ms, 1s, 2s) handles this race.
 func (h *RemediationWorkflowHandler) updateCRDStatus(namespace, name, registeredBy string, result *WorkflowRegistrationResult) {
 	logger := ctrl.Log.WithName("rw-webhook").WithValues("operation", "status-update", "name", name, "namespace", namespace)
 
@@ -245,27 +241,8 @@ func (h *RemediationWorkflowHandler) updateCRDStatus(namespace, name, registered
 	defer cancel()
 
 	rw := &rwv1alpha1.RemediationWorkflow{}
-
-	backoff := 500 * time.Millisecond
-	const maxRetries = 5
-	var lastErr error
-	for attempt := 0; attempt < maxRetries; attempt++ {
-		if attempt > 0 {
-			select {
-			case <-ctx.Done():
-				logger.Error(ctx.Err(), "Context expired waiting for CRD to appear", "attempts", attempt)
-				return
-			case <-time.After(backoff):
-				backoff *= 2
-			}
-		}
-		lastErr = h.k8sClient.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, rw)
-		if lastErr == nil {
-			break
-		}
-	}
-	if lastErr != nil {
-		logger.Error(lastErr, "Failed to fetch CRD for status update after retries", "retries", maxRetries)
+	if err := RetryGetCRD(ctx, h.k8sClient, types.NamespacedName{Namespace: namespace, Name: name}, rw, 5); err != nil {
+		logger.Error(err, "Failed to fetch CRD for status update after retries")
 		return
 	}
 
