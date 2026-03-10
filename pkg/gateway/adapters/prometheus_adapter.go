@@ -297,6 +297,7 @@ var resourceCandidates = []resourceCandidate{
 	{"deployment", "Deployment"},
 	{"statefulset", "StatefulSet"},
 	{"daemonset", "DaemonSet"},
+	{"replicaset", "ReplicaSet"},
 	{"node", "Node"},
 	{"service", "Service"},
 	{"job_name", "Job"},

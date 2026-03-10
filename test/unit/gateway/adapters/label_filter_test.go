@@ -64,13 +64,38 @@ var _ = Describe("BR-GATEWAY-184 FR-5: Monitoring Metadata Label Filtering", fun
 			Entry("cache service", "redis-cluster"),
 		)
 
-		It("should not filter non-service label keys", func() {
+		It("should not filter non-service/pod label keys", func() {
 			Expect(filter.IsMonitoringMetadata("deployment", "kube-prometheus-stack")).To(BeFalse(),
-				"BR-GATEWAY-184 FR-5: Filter must only act on 'service' label key")
-			Expect(filter.IsMonitoringMetadata("pod", "prometheus-pod-abc123")).To(BeFalse(),
-				"BR-GATEWAY-184 FR-5: Filter must only act on 'service' label key")
+				"BR-GATEWAY-184 FR-5: Filter must only act on 'service' and 'pod' label keys")
 			Expect(filter.IsMonitoringMetadata("node", "grafana-node")).To(BeFalse(),
-				"BR-GATEWAY-184 FR-5: Filter must only act on 'service' label key")
+				"BR-GATEWAY-184 FR-5: Filter must only act on 'service' and 'pod' label keys")
 		})
+	})
+
+	// #303 / #308: pod label filtering for monitoring infrastructure pods
+	Context("GW-RE-15: pod label filtered for monitoring infrastructure pod names (#303)", func() {
+		DescribeTable("should detect monitoring infrastructure pod names",
+			func(podValue string) {
+				Expect(filter.IsMonitoringMetadata("pod", podValue)).To(BeTrue(),
+					"BR-GATEWAY-184 #303: '%s' should be recognized as a monitoring infrastructure pod", podValue)
+			},
+			Entry("kube-state-metrics pod", "kube-prometheus-stack-kube-state-metrics-abc123"),
+			Entry("kube-state-metrics standalone", "kube-state-metrics-7f86bb8877-4hv68"),
+			Entry("prometheus pod", "prometheus-kube-prometheus-stack-prometheus-0"),
+			Entry("alertmanager pod", "alertmanager-kube-prometheus-stack-alertmanager-0"),
+			Entry("node-exporter pod", "kube-prometheus-stack-prometheus-node-exporter-x2k9m"),
+			Entry("grafana pod", "kube-prometheus-stack-grafana-abc123"),
+		)
+
+		DescribeTable("should NOT filter legitimate workload pod names",
+			func(podValue string) {
+				Expect(filter.IsMonitoringMetadata("pod", podValue)).To(BeFalse(),
+					"BR-GATEWAY-184 #303: '%s' should pass through as a legitimate workload pod", podValue)
+			},
+			Entry("application pod", "payment-api-7f86bb8877-4hv68"),
+			Entry("web frontend pod", "web-frontend-6b9f4d7c88-x2k9m"),
+			Entry("database pod", "postgres-primary-0"),
+			Entry("queue worker pod", "rabbitmq-ha-server-0"),
+		)
 	})
 })
