@@ -447,7 +447,8 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 		// HAPI parser Layer 1 fix should override contradictory needs_human_review to false,
 		// and Go processor Layer 3 should bypass hasSubstantiveRCA via hasProblemResolvedSignal.
 		It("should handle problem_resolved even when LLM contradicts with needs_human_review=true (#301)", func() {
-			testID := fmt.Sprintf("problem-resolved-contradiction-%d", time.Now().UnixNano())
+			shortID := fmt.Sprintf("%d", time.Now().UnixNano()%1000000)
+			testID := fmt.Sprintf("pr-contra-%s", shortID)
 			analysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      testID,
@@ -465,7 +466,7 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 							Severity:         "low",
 							Environment:      "production",
 							BusinessPriority: "P2",
-							Fingerprint:      "test-fingerprint-" + testID,
+							Fingerprint:      fmt.Sprintf("fp-contra-%s", shortID),
 							TargetResource: aianalysisv1.TargetResource{
 								Namespace: testNamespace,
 								Kind:      "Pod",
