@@ -8,61 +8,46 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![CI](https://github.com/jordigilh/kubernaut/actions/workflows/ci-pipeline.yml/badge.svg)](https://github.com/jordigilh/kubernaut/actions/workflows/ci-pipeline.yml)
 
-Kubernaut is an open-source **AIOps platform** that closes the loop from Kubernetes alert to automated remediation — without a human in the middle. When something goes wrong in your cluster (an OOMKill, a CrashLoopBackOff, node pressure), Kubernaut detects the signal, enriches it with context, sends it to an LLM for live root cause investigation using real `kubectl` access, matches a remediation workflow from a searchable catalog, and executes the fix — or escalates to a human with a full RCA when it can't.
+Kubernaut closes the loop from Kubernetes alert to automated remediation. When something goes wrong in your cluster, Kubernaut detects the signal, sends it to an LLM for live root cause investigation with real `kubectl` access, selects a remediation workflow, and executes the fix — or escalates to a human with a full RCA when it can't.
 
-The result: **mean time to resolution drops from 60 minutes to under 5**, while humans stay in control through approval gates, configurable confidence thresholds, and SOC2-compliant audit trails.
+![CrashLoopBackOff demo — from alert to automated fix in under 5 minutes](deploy/demo/scenarios/crashloop/crashloop-lite.gif)
 
-**[Full Documentation](https://jordigilh.github.io/kubernaut-docs/)**
+**[Full Documentation](https://jordigilh.github.io/kubernaut-docs/)** · **[Demo Scenarios](https://github.com/jordigilh/kubernaut-demo-scenarios)**
 
 ---
 
-## How It Works
+## What It Does
+
+- **Detects** — Ingests Prometheus AlertManager alerts and Kubernetes Events, validates resource scope, and deduplicates by fingerprint
+- **Investigates** — HolmesGPT performs live root cause analysis using Kubernetes inspection tools, observability toolsets (Prometheus, Loki, Tempo), and remediation history
+- **Remediates** — Selects and executes a workflow from a searchable catalog via Tekton Pipelines, Kubernetes Jobs, or Ansible (AWX/AAP), with optional human approval gates
+- **Closes the loop** — Notifies the team (Slack, console), evaluates whether the fix worked via health checks, alert resolution, and spec hash drift detection, and feeds effectiveness scores back into future investigations
+
+<details>
+<summary>Architecture</summary>
 
 ![Kubernaut Layered Architecture](docs/architecture/diagrams/kubernaut-layered-architecture.svg)
 
-Kubernaut automates the entire incident response lifecycle through a five-stage pipeline:
-
-1. **Signal Detection** — The Gateway receives Prometheus AlertManager alerts and Kubernetes Events, validates resource scope (`kubernaut.ai/managed`), performs fingerprint-based deduplication, and creates a `RemediationRequest` CRD.
-2. **Signal Processing** — Enriches the signal with Kubernetes context (owner chain, namespace, workload), environment classification, priority assignment, business classification, severity normalization, and signal mode (reactive vs. proactive) via Rego policies.
-3. **AI Analysis** — HolmesGPT investigates the incident live using Kubernetes inspection tools and configurable observability toolsets (Prometheus, Grafana Loki/Tempo). It produces a root cause analysis, detects infrastructure labels (GitOps, Helm, service mesh, HPA, PDB), fetches remediation history so the LLM avoids repeating failed approaches, and selects a workflow from the catalog.
-4. **Workflow Execution** — Runs the selected remediation via Tekton Pipelines or Kubernetes Jobs, with optional human approval gates controlled by Rego policies.
-5. **Close the Loop** — Notifies the team (Slack, console, file, log) and evaluates whether the fix worked via health checks, alert resolution, metric comparison, and spec hash drift detection. Effectiveness scores feed back into future investigations.
+</details>
 
 ---
 
-## Quick Start
-
-### Prerequisites
-
-- **Go 1.25+** for building services
-- **Kubernetes cluster** (Kind recommended for development, v1.34+)
-- **PostgreSQL** (for Data Storage service)
-- **kubectl** with cluster access
-
-### Build
+## Installation
 
 ```bash
-make build-all
-
-make build-gateway
-make build-datastorage
+# Install via Helm (from local chart during development)
+helm install kubernaut ./charts/kubernaut \
+  --namespace kubernaut-system --create-namespace \
+  -f charts/kubernaut/values.yaml
 ```
 
-### Testing
+> When the chart is published to an OCI registry, installation will be:
+> ```bash
+> helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
+>   --namespace kubernaut-system --create-namespace
+> ```
 
-```bash
-make test-unit-gateway
-make test-tier-unit
-
-make test-integration-gateway
-make test-e2e-gateway
-
-make test-all-gateway
-```
-
-### Deployment
-
-See the [Installation Guide](https://jordigilh.github.io/kubernaut-docs/getting-started/installation/) for Helm-based deployment, or the [demo deployment guide](docs/demo/README.md) for a local walkthrough.
+See the [Installation Guide](https://jordigilh.github.io/kubernaut-docs/getting-started/installation/) for prerequisites, configuration options, and production deployment.
 
 ---
 
@@ -70,29 +55,46 @@ See the [Installation Guide](https://jordigilh.github.io/kubernaut-docs/getting-
 
 | Resource | Link |
 |---|---|
-| **User & Operator Documentation** | [jordigilh.github.io/kubernaut-docs](https://jordigilh.github.io/kubernaut-docs/) |
+| **User & Operator Guide** | [jordigilh.github.io/kubernaut-docs](https://jordigilh.github.io/kubernaut-docs/) |
+| **Architecture Overview** | [Architecture](https://jordigilh.github.io/kubernaut-docs/getting-started/architecture-overview/) |
 | **Developer Guide** | [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md) |
 | **Must-Gather Diagnostics** | [cmd/must-gather/README.md](cmd/must-gather/README.md) |
 
 ---
 
+## Related Repositories
+
+| Repository | Description |
+|---|---|
+| [kubernaut-docs](https://github.com/jordigilh/kubernaut-docs) | Documentation website (MkDocs Material) |
+| [kubernaut-demo-scenarios](https://github.com/jordigilh/kubernaut-demo-scenarios) | Demo scenarios, scripts, and recordings |
+
+---
+
+## Development
+
+```bash
+make build-all          # Build all services
+make test-tier-unit     # Run unit tests
+make test-all-gateway   # Run all test tiers for a service
+```
+
+We use **Ginkgo/Gomega BDD** for testing and follow a TDD workflow. See the [Developer Guide](docs/DEVELOPER_GUIDE.md) for environment setup, build targets, and test commands.
+
+---
+
 ## Contributing
 
-We use **Ginkgo/Gomega BDD** for testing and follow a TDD workflow. See the [Developer Guide](docs/DEVELOPER_GUIDE.md) for environment setup and the [Contributing Guide](https://jordigilh.github.io/kubernaut-docs/contributing/) for contribution guidelines.
-
-1. Create a feature branch from `main`
-2. Implement with tests
-3. Update relevant documentation
-4. Open a pull request for review
+See the [Contributing Guide](https://jordigilh.github.io/kubernaut-docs/contributing/) for guidelines. In short: create a feature branch, implement with tests, update docs, and open a PR.
 
 ---
 
 ## License
 
-Apache License 2.0
+Apache License 2.0 — see [LICENSE](LICENSE).
 
 ---
 
-**Issues**: [GitHub Issues](https://github.com/jordigilh/kubernaut/issues) | **Discussions**: [GitHub Discussions](https://github.com/jordigilh/kubernaut/discussions)
+**Issues**: [GitHub Issues](https://github.com/jordigilh/kubernaut/issues) · **Discussions**: [GitHub Discussions](https://github.com/jordigilh/kubernaut/discussions)
 
 **Kubernaut** — From alert to remediation, intelligently.
