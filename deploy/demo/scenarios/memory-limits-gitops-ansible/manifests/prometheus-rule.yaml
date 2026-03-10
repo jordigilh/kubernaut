@@ -1,0 +1,21 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: demo-memory-gitops-ansible-oomkill
+  namespace: demo-memory-gitops-ansible
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: demo-memory-gitops-ansible
+      rules:
+        - alert: ContainerOOMKilling
+          expr: |
+            increase(kube_pod_container_status_last_terminated_reason{reason="OOMKilled", namespace="demo-memory-gitops-ansible"}[5m]) > 0
+          for: 0m
+          labels:
+            severity: critical
+            namespace: demo-memory-gitops-ansible
+          annotations:
+            summary: "Container OOMKilled in demo-memory-gitops-ansible"
+            description: "Container {{ $labels.container }} in pod {{ $labels.pod }} was OOMKilled."

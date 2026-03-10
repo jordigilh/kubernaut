@@ -261,8 +261,12 @@ func main() {
 				setupLog.Error(readErr, "Failed to read AWX token secret, ansible executor not available")
 			} else {
 				awxClient := weexecutor.NewAWXHTTPClient(cfg.Ansible.APIURL, token, cfg.Ansible.Insecure)
-				executorRegistry.Register("ansible", weexecutor.NewAnsibleExecutor(awxClient, ctrl.Log.WithName("ansible-executor")))
-				setupLog.Info("Ansible executor registered", "awxURL", cfg.Ansible.APIURL)
+				orgID := cfg.Ansible.OrganizationID
+				if orgID <= 0 {
+					orgID = 1
+				}
+				executorRegistry.Register("ansible", weexecutor.NewAnsibleExecutor(awxClient, mgr.GetClient(), orgID, ctrl.Log.WithName("ansible-executor")))
+				setupLog.Info("Ansible executor registered", "awxURL", cfg.Ansible.APIURL, "organizationID", orgID)
 			}
 		}
 	} else if cfg.Ansible != nil {

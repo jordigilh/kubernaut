@@ -53,9 +53,10 @@ type Config struct {
 // AnsibleConfig holds AWX/AAP connectivity settings (BR-WE-015).
 // Optional: if nil, the ansible executor is not registered.
 type AnsibleConfig struct {
-	APIURL       string        `yaml:"apiURL" validate:"required,url"`
+	APIURL         string        `yaml:"apiURL" validate:"required,url"`
 	TokenSecretRef *SecretKeyRef `yaml:"tokenSecretRef,omitempty"`
-	Insecure     bool          `yaml:"insecure,omitempty"`
+	Insecure       bool          `yaml:"insecure,omitempty"`
+	OrganizationID int           `yaml:"organizationID,omitempty"`
 }
 
 // SecretKeyRef references a key within a Kubernetes Secret.

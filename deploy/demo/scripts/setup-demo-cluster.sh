@@ -20,6 +20,7 @@ SCENARIOS_DIR="${SCRIPT_DIR}/../scenarios"
 
 CREATE_FLAG=""
 SKIP_INFRA=false
+WITH_AWX=false
 KIND_CONFIG="${SCENARIOS_DIR}/kind-config-multinode.yaml"
 
 while [[ $# -gt 0 ]]; do
@@ -32,16 +33,21 @@ while [[ $# -gt 0 ]]; do
             SKIP_INFRA=true
             shift
             ;;
+        --with-awx)
+            WITH_AWX=true
+            shift
+            ;;
         --kind-config)
             KIND_CONFIG="$2"
             shift 2
             ;;
         --help|-h)
-            echo "Usage: $0 [--create-cluster] [--skip-infra] [--kind-config PATH]"
+            echo "Usage: $0 [--create-cluster] [--skip-infra] [--with-awx] [--kind-config PATH]"
             echo ""
             echo "Options:"
             echo "  --create-cluster   Force-recreate the Kind cluster (deletes existing)"
             echo "  --skip-infra       Skip optional infrastructure (cert-manager, Gitea, etc.)"
+            echo "  --with-awx         Install AWX Operator for Ansible engine demos (#312)"
             echo "  --kind-config PATH Override Kind cluster config (default: singlenode)"
             exit 0
             ;;
@@ -128,6 +134,18 @@ if [ "$SKIP_INFRA" = false ]; then
         echo "  ArgoCD already installed."
     else
         bash "${SCENARIOS_DIR}/gitops/scripts/setup-argocd.sh"
+    fi
+    echo ""
+fi
+
+# ── 4c. AWX for Ansible engine demos (optional) ─────────────────────────────
+
+if [ "$WITH_AWX" = true ] && [ "$SKIP_INFRA" = false ]; then
+    echo "==> Phase 4c: AWX (Ansible engine)"
+    if kubectl get deployment -n kubernaut-system -l app.kubernetes.io/managed-by=awx-operator --no-headers 2>/dev/null | grep -q .; then
+        echo "  AWX already installed."
+    else
+        bash "${SCRIPT_DIR}/awx-helper.sh"
     fi
     echo ""
 fi
