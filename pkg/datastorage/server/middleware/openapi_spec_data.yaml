@@ -821,12 +821,30 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ActionTypeDisableResponse'
+        '400':
+          description: Invalid request body
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+        '404':
+          description: Action type not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
         '409':
-          description: Cannot disable — active workflows depend on this action type
+          description: Cannot disable — active workflows depend on this action type, or action type already disabled
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ActionTypeDisableDeniedResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
 
   /api/v1/action-types/{name}/workflow-count:
     get:

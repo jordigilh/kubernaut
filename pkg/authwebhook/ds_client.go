@@ -226,6 +226,15 @@ func (a *DSClientAdapter) DisableActionType(ctx context.Context, name string, di
 			DependentWorkflowCount: v.DependentWorkflowCount,
 			DependentWorkflows:     v.DependentWorkflows,
 		}, nil
+	case *ogenclient.DisableActionTypeBadRequest:
+		p := (*ogenclient.RFC7807Problem)(v)
+		return nil, fmt.Errorf("disable action type %q: bad request: %s — %s", name, p.Title, p.Detail.Value)
+	case *ogenclient.DisableActionTypeNotFound:
+		p := (*ogenclient.RFC7807Problem)(v)
+		return nil, fmt.Errorf("disable action type %q: not found: %s — %s", name, p.Title, p.Detail.Value)
+	case *ogenclient.DisableActionTypeInternalServerError:
+		p := (*ogenclient.RFC7807Problem)(v)
+		return nil, fmt.Errorf("disable action type %q: server error: %s — %s", name, p.Title, p.Detail.Value)
 	default:
 		return nil, fmt.Errorf("unexpected response type from DisableActionType: %T", res)
 	}

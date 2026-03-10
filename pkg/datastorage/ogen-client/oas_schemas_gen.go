@@ -6781,6 +6781,18 @@ func (s *DetectedLabelsServiceMesh) UnmarshalText(data []byte) error {
 	}
 }
 
+type DisableActionTypeBadRequest RFC7807Problem
+
+func (*DisableActionTypeBadRequest) disableActionTypeRes() {}
+
+type DisableActionTypeInternalServerError RFC7807Problem
+
+func (*DisableActionTypeInternalServerError) disableActionTypeRes() {}
+
+type DisableActionTypeNotFound RFC7807Problem
+
+func (*DisableActionTypeNotFound) disableActionTypeRes() {}
+
 type DisableWorkflowBadRequest RFC7807Problem
 
 func (*DisableWorkflowBadRequest) disableWorkflowRes() {}

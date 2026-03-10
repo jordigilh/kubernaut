@@ -284,7 +284,7 @@ var _ = Describe("E2E: ActionType CRD Lifecycle (#300)", Ordered, Label("e2e", "
 		}, rw)).To(Succeed())
 		Expect(k8sClient.Delete(testCtx, rw)).To(Succeed())
 
-		By("Waiting for RW to be fully deleted")
+		By("Waiting for RW to be fully deleted from K8s")
 		Eventually(func() bool {
 			err := k8sClient.Get(testCtx, client.ObjectKey{
 				Namespace: testNamespace, Name: "e2e-rw-for-at",
@@ -292,6 +292,19 @@ var _ = Describe("E2E: ActionType CRD Lifecycle (#300)", Ordered, Label("e2e", "
 			return err != nil
 		}, 30*time.Second, 1*time.Second).Should(BeTrue(),
 			"RemediationWorkflow should be deleted")
+
+		By("Waiting for DS to reflect the workflow removal (activeWorkflowCount=0)")
+		Eventually(func() int {
+			updated := &atv1alpha1.ActionType{}
+			if err := k8sClient.Get(testCtx, client.ObjectKey{
+				Namespace: testNamespace, Name: "e2e-restart-pod",
+			}, updated); err != nil {
+				return -1
+			}
+			GinkgoWriter.Printf("  activeWorkflowCount=%d\n", updated.Status.ActiveWorkflowCount)
+			return updated.Status.ActiveWorkflowCount
+		}, 30*time.Second, 1*time.Second).Should(Equal(0),
+			"DS should process the RW disable and update activeWorkflowCount to 0")
 
 		By("Deleting ActionType (should succeed now)")
 		at = &atv1alpha1.ActionType{}
