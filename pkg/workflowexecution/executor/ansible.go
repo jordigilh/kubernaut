@@ -120,6 +120,8 @@ func (a *AnsibleExecutor) Create(
 	}
 	extraVars["WFE_NAME"] = wfe.Name
 	extraVars["WFE_NAMESPACE"] = wfe.Namespace
+	extraVars["RR_NAME"] = wfe.Spec.RemediationRequestRef.Name
+	extraVars["RR_NAMESPACE"] = wfe.Spec.RemediationRequestRef.Namespace
 
 	if err := a.injectDependencyConfigMaps(ctx, opts.Dependencies, namespace, extraVars); err != nil {
 		return "", fmt.Errorf("inject dependency configmaps: %w", err)

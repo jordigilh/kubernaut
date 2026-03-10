@@ -128,6 +128,12 @@ func newAnsibleWFE(name, namespace string, engineConfigJSON []byte, params map[s
 		Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 			ExecutionEngine: "ansible",
 			TargetResource:  namespace + "/deployment/test-app",
+			RemediationRequestRef: corev1.ObjectReference{
+				APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
+				Kind:       "RemediationRequest",
+				Name:       "rr-" + name,
+				Namespace:  namespace,
+			},
 			WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 				WorkflowID:      "ansible-restart",
 				Version:         "1.0.0",
@@ -191,7 +197,7 @@ var _ = Describe("AnsibleExecutor (BR-WE-015)", func() {
 			Expect(capturedExtraVars).To(HaveKeyWithValue("REPLICAS", BeNumerically("==", 3)))
 		})
 
-		It("UT-WE-015-006: should inject WFE_NAME and WFE_NAMESPACE into extra_vars (#311)", func() {
+		It("UT-WE-015-006: should inject WFE and RR context into extra_vars (#311, #313)", func() {
 			var capturedExtraVars map[string]interface{}
 			awxClient.findTemplateByNameFn = func(_ context.Context, name string) (int, error) {
 				return 10, nil
@@ -215,8 +221,46 @@ var _ = Describe("AnsibleExecutor (BR-WE-015)", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(capturedExtraVars).To(HaveKeyWithValue("WFE_NAME", "we-rr-abc123"))
 			Expect(capturedExtraVars).To(HaveKeyWithValue("WFE_NAMESPACE", "kubernaut-workflows"))
+			Expect(capturedExtraVars).To(HaveKeyWithValue("RR_NAME", "rr-we-rr-abc123"))
+			Expect(capturedExtraVars).To(HaveKeyWithValue("RR_NAMESPACE", "kubernaut-workflows"))
 			Expect(capturedExtraVars).To(HaveKeyWithValue("TARGET_NAMESPACE", "demo-ns"))
 			Expect(capturedExtraVars).To(HaveKeyWithValue("NEW_MEMORY_LIMIT", "512Mi"))
+		})
+
+		It("UT-WE-015-007: should inject empty RR context when RemediationRequestRef is unset (#313)", func() {
+			var capturedExtraVars map[string]interface{}
+			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) {
+				return 10, nil
+			}
+			awxClient.launchFunc = func(_ context.Context, _ int, extraVars map[string]interface{}) (int, error) {
+				capturedExtraVars = extraVars
+				return 77, nil
+			}
+
+			engineConfig, _ := json.Marshal(map[string]interface{}{
+				"playbookPath":    "playbooks/test.yml",
+				"jobTemplateName": "test-template",
+			})
+
+			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+				ObjectMeta: metav1.ObjectMeta{Name: "wfe-no-rr", Namespace: "default"},
+				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+					ExecutionEngine: "ansible",
+					TargetResource:  "default/deployment/app",
+					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+						WorkflowID:      "ansible-test",
+						ExecutionBundle: "https://github.com/kubernaut/playbooks.git",
+						EngineConfig:    &apiextensionsv1.JSON{Raw: engineConfig},
+					},
+				},
+			}
+
+			_, err := ansibleExec.Create(ctx, wfe, "default", executor.CreateOptions{})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(capturedExtraVars).To(HaveKeyWithValue("WFE_NAME", "wfe-no-rr"))
+			Expect(capturedExtraVars).To(HaveKeyWithValue("WFE_NAMESPACE", "default"))
+			Expect(capturedExtraVars).To(HaveKeyWithValue("RR_NAME", ""))
+			Expect(capturedExtraVars).To(HaveKeyWithValue("RR_NAMESPACE", ""))
 		})
 
 		It("UT-WE-015-004: should reject WFE without engineConfig", func() {
