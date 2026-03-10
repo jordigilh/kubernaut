@@ -181,33 +181,74 @@ type DisableResult struct {
 
 // Disable soft-disables an action type if no active workflows reference it.
 // BR-WORKFLOW-007.3: Denied if active RemediationWorkflows reference the type.
+//
+// The operation runs inside a SERIALIZABLE transaction to prevent race conditions
+// where concurrent requests read stale workflow counts. If the action type is
+// already disabled, the operation is idempotent and returns Disabled: true (matching
+// the RW disable pattern in HandleDisableWorkflow).
 func (r *Repository) Disable(ctx context.Context, actionType string, disabledBy string) (*DisableResult, error) {
-	existing, err := r.GetByName(ctx, actionType)
+	tx, err := r.db.BeginTxx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
+		return nil, fmt.Errorf("begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var existing models.ActionTypeTaxonomy
+	err = tx.QueryRowxContext(ctx,
+		`SELECT action_type, description, status, disabled_at, disabled_by, created_at, updated_at
+		 FROM action_type_taxonomy WHERE action_type = $1`,
+		actionType,
+	).StructScan(&existing)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("%w: %s", ErrActionTypeNotFound, actionType)
+		}
 		return nil, fmt.Errorf("check action type for disable: %w", err)
 	}
-	if existing == nil {
-		return nil, fmt.Errorf("%w: %s", ErrActionTypeNotFound, actionType)
-	}
+
 	if existing.Status != "active" {
-		return nil, fmt.Errorf("%w: %s", ErrActionTypeDisabled, actionType)
+		// Idempotent: already disabled — commit (no-op) and return success.
+		if err := tx.Commit(); err != nil {
+			return nil, fmt.Errorf("commit (already disabled): %w", err)
+		}
+		return &DisableResult{Disabled: true}, nil
 	}
 
-	count, names, err := r.CountActiveWorkflows(ctx, actionType)
+	rows, err := tx.QueryxContext(ctx,
+		`SELECT workflow_name FROM remediation_workflow_catalog
+		 WHERE action_type = $1 AND status = 'active'`,
+		actionType,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("count active workflows for %q: %w", actionType, err)
 	}
+	var names []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			_ = rows.Close()
+			return nil, fmt.Errorf("scan workflow name: %w", err)
+		}
+		names = append(names, name)
+	}
+	_ = rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate workflow rows: %w", err)
+	}
 
-	if count > 0 {
+	if len(names) > 0 {
+		if err := tx.Commit(); err != nil {
+			return nil, fmt.Errorf("commit (denied): %w", err)
+		}
 		return &DisableResult{
 			Disabled:               false,
-			DependentWorkflowCount: count,
+			DependentWorkflowCount: len(names),
 			DependentWorkflows:     names,
 		}, nil
 	}
 
 	now := time.Now().UTC()
-	_, err = r.db.ExecContext(ctx,
+	_, err = tx.ExecContext(ctx,
 		`UPDATE action_type_taxonomy
 		 SET status = 'disabled', disabled_at = $2, disabled_by = $3
 		 WHERE action_type = $1 AND status = 'active'`,
@@ -217,6 +258,9 @@ func (r *Repository) Disable(ctx context.Context, actionType string, disabledBy 
 		return nil, fmt.Errorf("disable action type %q: %w", actionType, err)
 	}
 
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit disable: %w", err)
+	}
 	return &DisableResult{Disabled: true}, nil
 }
 

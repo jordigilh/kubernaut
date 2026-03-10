@@ -280,11 +280,6 @@ func (h *Handler) HandleDisableActionType(w http.ResponseWriter, r *http.Request
 				"Not Found", fmt.Sprintf("Action type %q not found", name), h.logger)
 			return
 		}
-		if errors.Is(err, actiontyperepo.ErrActionTypeDisabled) {
-			response.WriteRFC7807Error(w, http.StatusConflict, "already-disabled",
-				"Already Disabled", fmt.Sprintf("Action type %q is already disabled", name), h.logger)
-			return
-		}
 		response.WriteRFC7807Error(w, http.StatusInternalServerError, "database-error",
 			"Database Error", fmt.Sprintf("Failed to disable action type: %v", err), h.logger)
 		return
