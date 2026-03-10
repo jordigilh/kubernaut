@@ -1,0 +1,504 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Kubernaut Helm Chart Values",
+  "description": "Schema for validating Kubernaut Helm chart values.yaml",
+  "type": "object",
+  "additionalProperties": false,
+  "definitions": {
+    "resourceQuantity": {
+      "description": "Kubernetes resource quantity (e.g., 256Mi, 100m)",
+      "type": "string"
+    },
+    "resources": {
+      "description": "Kubernetes resource requests and limits",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requests": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "memory": { "$ref": "#/definitions/resourceQuantity" },
+            "cpu": { "$ref": "#/definitions/resourceQuantity" }
+          }
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "memory": { "$ref": "#/definitions/resourceQuantity" },
+            "cpu": { "$ref": "#/definitions/resourceQuantity" }
+          }
+        }
+      }
+    },
+    "serviceConfig": {
+      "description": "Kubernetes Service configuration",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["ClusterIP", "NodePort", "LoadBalancer"],
+          "default": "ClusterIP",
+          "description": "Kubernetes Service type"
+        },
+        "nodePort": {
+          "oneOf": [{ "type": "integer" }, { "type": "null" }],
+          "description": "Static node port when type is NodePort"
+        }
+      }
+    },
+    "nodeSelector": {
+      "description": "Kubernetes node selector",
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "toleration": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "key": { "type": "string" },
+        "operator": { "type": "string" },
+        "value": { "type": "string" },
+        "effect": { "type": "string" },
+        "tolerationSeconds": { "type": "integer" }
+      }
+    }
+  },
+  "properties": {
+    "global": {
+      "type": "object",
+      "description": "Global settings applied across all components",
+      "additionalProperties": false,
+      "properties": {
+        "image": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "registry": {
+              "type": "string",
+              "default": "quay.io/kubernaut-ai",
+              "description": "Container image registry"
+            },
+            "tag": {
+              "type": "string",
+              "default": "",
+              "description": "Image tag; empty defaults to Chart.appVersion"
+            },
+            "pullPolicy": {
+              "type": "string",
+              "enum": ["Always", "IfNotPresent", "Never"],
+              "default": "IfNotPresent",
+              "description": "Image pull policy"
+            }
+          }
+        },
+        "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
+        "tolerations": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/toleration" },
+          "default": [],
+          "description": "Pod tolerations"
+        }
+      }
+    },
+    "nameOverride": {
+      "type": "string",
+      "default": "",
+      "description": "Override the chart name in resource names"
+    },
+    "fullnameOverride": {
+      "type": "string",
+      "default": "",
+      "description": "Override the full resource names"
+    },
+    "gateway": {
+      "type": "object",
+      "description": "Gateway service (AlertManager webhook target + external signal ingestion)",
+      "additionalProperties": false,
+      "properties": {
+        "replicas": { "type": "integer", "default": 1 },
+        "resources": { "$ref": "#/definitions/resources" },
+        "service": { "$ref": "#/definitions/serviceConfig" },
+        "auth": {
+          "type": "object",
+          "description": "BR-GATEWAY-036/037: Auth middleware configuration",
+          "additionalProperties": false,
+          "properties": {
+            "signalSources": {
+              "type": "array",
+              "description": "External signal sources that need RBAC to call the Gateway",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": { "type": "string" },
+                  "serviceAccount": { "type": "string" },
+                  "namespace": { "type": "string" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "datastorage": {
+      "type": "object",
+      "description": "DataStorage service (audit trail, workflow catalog)",
+      "additionalProperties": false,
+      "properties": {
+        "replicas": { "type": "integer", "default": 1 },
+        "dbExistingSecret": {
+          "type": "string",
+          "default": "",
+          "description": "Name of pre-created Secret with db-secrets.yaml key; overrides chart-managed datastorage-db-secret"
+        },
+        "resources": { "$ref": "#/definitions/resources" },
+        "service": { "$ref": "#/definitions/serviceConfig" }
+      }
+    },
+    "aianalysis": {
+      "type": "object",
+      "description": "AIAnalysis controller",
+      "additionalProperties": false,
+      "properties": {
+        "rego": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "confidenceThreshold": {
+              "oneOf": [{ "type": "number" }, { "type": "null" }],
+              "description": "BR-AI-076: nil = use Rego default (0.8)"
+            }
+          }
+        },
+        "resources": { "$ref": "#/definitions/resources" }
+      }
+    },
+    "signalprocessing": {
+      "type": "object",
+      "description": "SignalProcessing controller",
+      "additionalProperties": false,
+      "properties": {
+        "resources": { "$ref": "#/definitions/resources" }
+      }
+    },
+    "remediationorchestrator": {
+      "type": "object",
+      "description": "RemediationOrchestrator controller",
+      "additionalProperties": false,
+      "properties": {
+        "resources": { "$ref": "#/definitions/resources" },
+        "config": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "effectivenessAssessment": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "stabilizationWindow": {
+                  "type": "string",
+                  "default": "5m",
+                  "description": "Time for system stabilization after remediation before assessment"
+                }
+              }
+            },
+            "asyncPropagation": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "gitOpsSyncDelay": {
+                  "type": "string",
+                  "default": "3m",
+                  "description": "Expected time for GitOps tool (ArgoCD/Flux) to sync changes to cluster"
+                },
+                "operatorReconcileDelay": {
+                  "type": "string",
+                  "default": "1m",
+                  "description": "Expected time for operator to reconcile after CR update"
+                },
+                "proactiveAlertDelay": {
+                  "type": "string",
+                  "default": "5m",
+                  "description": "Extra delay for proactive alert resolution"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "workflowexecution": {
+      "type": "object",
+      "description": "WorkflowExecution controller",
+      "additionalProperties": false,
+      "properties": {
+        "resources": { "$ref": "#/definitions/resources" }
+      }
+    },
+    "notification": {
+      "type": "object",
+      "description": "Notification controller",
+      "additionalProperties": false,
+      "properties": {
+        "slack": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": false,
+              "description": "Enable Slack delivery channel; when false, only console/log delivery is active"
+            },
+            "channel": {
+              "type": "string",
+              "default": "#kubernaut-alerts",
+              "description": "Slack channel for alerts"
+            }
+          }
+        },
+        "credentials": {
+          "type": "array",
+          "description": "Per-receiver credentials projected into /etc/notification/credentials/",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "secretName", "secretKey"],
+            "properties": {
+              "name": { "type": "string" },
+              "secretName": { "type": "string" },
+              "secretKey": { "type": "string" }
+            }
+          }
+        },
+        "resources": { "$ref": "#/definitions/resources" }
+      }
+    },
+    "effectivenessmonitor": {
+      "type": "object",
+      "description": "EffectivenessMonitor controller",
+      "additionalProperties": false,
+      "properties": {
+        "resources": { "$ref": "#/definitions/resources" }
+      }
+    },
+    "holmesgptApi": {
+      "type": "object",
+      "description": "HolmesGPT API (LLM integration service)",
+      "additionalProperties": false,
+      "properties": {
+        "replicas": { "type": "integer", "default": 1 },
+        "resources": { "$ref": "#/definitions/resources" },
+        "service": { "$ref": "#/definitions/serviceConfig" },
+        "llm": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "provider": { "type": "string", "default": "" },
+            "model": { "type": "string", "default": "" },
+            "endpoint": { "type": "string", "default": "" },
+            "gcpProjectId": { "type": "string", "default": "" },
+            "gcpRegion": { "type": "string", "default": "" },
+            "maxRetries": { "type": "integer", "default": 3 },
+            "timeoutSeconds": { "type": "integer", "default": 120 },
+            "temperature": { "type": "number", "default": 0.7 }
+          }
+        }
+      }
+    },
+    "authwebhook": {
+      "type": "object",
+      "description": "AuthWebhook admission controller",
+      "additionalProperties": false,
+      "properties": {
+        "resources": { "$ref": "#/definitions/resources" }
+      }
+    },
+    "eventExporter": {
+      "type": "object",
+      "description": "Event Exporter (forwards K8s Warning events to Gateway)",
+      "additionalProperties": false,
+      "properties": {
+        "image": {
+          "type": "string",
+          "default": "ghcr.io/resmoio/kubernetes-event-exporter:latest"
+        },
+        "resources": { "$ref": "#/definitions/resources" }
+      }
+    },
+    "postgresql": {
+      "type": "object",
+      "description": "PostgreSQL (DataStorage backend). Set enabled=false to use externalPostgresql (BYO #256)",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Set false to skip in-chart PostgreSQL and use externalPostgresql instead"
+        },
+        "image": {
+          "type": "string",
+          "default": "postgres:16-alpine"
+        },
+        "auth": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "existingSecret": {
+              "type": "string",
+              "default": "",
+              "description": "Name of pre-created K8s Secret; when set, chart skips Secret creation. Secret must have POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB"
+            },
+            "username": { "type": "string", "default": "slm_user" },
+            "password": {
+              "type": "string",
+              "default": "",
+              "description": "Required when existingSecret is empty; use --set or values-demo.yaml"
+            },
+            "database": { "type": "string", "default": "action_history" }
+          },
+          "if": {
+            "properties": {
+              "existingSecret": { "const": "" }
+            }
+          },
+          "then": {
+            "required": ["password"]
+          }
+        },
+        "storage": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "size": { "type": "string", "default": "10Gi" },
+            "storageClassName": {
+              "type": "string",
+              "default": "",
+              "description": "Empty = cluster default"
+            }
+          }
+        },
+        "resources": { "$ref": "#/definitions/resources" }
+      }
+    },
+    "externalPostgresql": {
+      "type": "object",
+      "description": "External PostgreSQL (BYO #256). Used when postgresql.enabled=false",
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "type": "string",
+          "default": "",
+          "description": "Required when postgresql.enabled=false (e.g., db.example.com)"
+        },
+        "port": { "type": "integer", "default": 5432 },
+        "auth": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "existingSecret": {
+              "type": "string",
+              "default": "",
+              "description": "K8s Secret with POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB keys"
+            },
+            "username": { "type": "string", "default": "slm_user" },
+            "password": { "type": "string", "default": "" },
+            "database": { "type": "string", "default": "action_history" }
+          }
+        }
+      }
+    },
+    "redis": {
+      "type": "object",
+      "description": "Redis (DataStorage DLQ). Set enabled=false to use externalRedis (BYO #256)",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Set false to skip in-chart Redis and use externalRedis instead"
+        },
+        "image": {
+          "type": "string",
+          "default": "quay.io/jordigilh/redis:7-alpine"
+        },
+        "existingSecret": {
+          "type": "string",
+          "default": "",
+          "description": "Name of pre-created K8s Secret; when set, chart skips Secret creation. Secret must have redis-secrets.yaml key"
+        },
+        "password": {
+          "type": "string",
+          "default": "",
+          "description": "Empty password allowed for development"
+        },
+        "storage": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "size": { "type": "string", "default": "512Mi" },
+            "storageClassName": {
+              "type": "string",
+              "default": "",
+              "description": "Empty = cluster default"
+            }
+          }
+        },
+        "resources": { "$ref": "#/definitions/resources" }
+      }
+    },
+    "externalRedis": {
+      "type": "object",
+      "description": "External Redis (BYO #256). Used when redis.enabled=false",
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "type": "string",
+          "default": "",
+          "description": "Required when redis.enabled=false (e.g., redis.example.com)"
+        },
+        "port": { "type": "integer", "default": 6379 },
+        "existingSecret": {
+          "type": "string",
+          "default": "",
+          "description": "K8s Secret with redis-secrets.yaml key"
+        },
+        "password": { "type": "string", "default": "" }
+      }
+    },
+    "hooks": {
+      "type": "object",
+      "description": "Post-install Jobs",
+      "additionalProperties": false,
+      "properties": {
+        "migrations": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "image": {
+              "type": "string",
+              "default": "postgres:16-alpine"
+            },
+            "gooseVersion": {
+              "type": "string",
+              "default": "v3.24.1",
+              "description": "DD-012: goose CLI version for migration state tracking"
+            }
+          }
+        },
+        "tlsCerts": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "image": {
+              "type": "string",
+              "default": "bitnami/kubectl:latest"
+            }
+          }
+        }
+      }
+    }
+  }
+}
