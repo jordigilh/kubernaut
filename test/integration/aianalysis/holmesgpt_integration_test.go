@@ -329,6 +329,37 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 			// Note: Investigation outcome validation removed - field doesn't exist in OpenAPI spec
 			// The test validates problem resolution by checking confidence >= 0.7 and no workflow selected
 		})
+
+		// #301: Contradiction case — HAPI parser should override needs_human_review to false
+		It("should override contradictory needs_human_review=true when investigation_outcome=resolved (#301)", func() {
+			resp, err := realHGClient.Investigate(testCtx, &client.IncidentRequest{
+				IncidentID:        "test-resolved-contradiction-001",
+				RemediationID:     "req-resolved-contradiction-001",
+				SignalName:        "MOCK_PROBLEM_RESOLVED_CONTRADICTION",
+				Severity:          "low",
+				SignalSource:      "kubernaut",
+				ResourceNamespace: testNamespace,
+				ResourceKind:      "Pod",
+				ResourceName:      "recovered-pod",
+				ErrorMessage:      "Service was previously degraded but has now recovered",
+				Environment:       "production",
+				Priority:          "P2",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "standard",
+				ClusterName:       "test-cluster",
+			})
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resp).NotTo(BeNil())
+
+			// #301 Layer 1: Parser should override contradictory needs_human_review=true
+			Expect(resp.NeedsHumanReview.Value).To(BeFalse(),
+				"#301: Parser must override contradictory needs_human_review=true when investigation_outcome=resolved")
+			Expect(resp.SelectedWorkflow.Set).To(BeFalse(),
+				"No workflow should be set when problem is resolved")
+			Expect(resp.Confidence).To(BeNumerically(">=", 0.7),
+				"High confidence that problem is resolved")
+		})
 	})
 
 	Context("LLM Parsing Error - BR-HAPI-197", func() {

@@ -100,7 +100,11 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 	// #208 (Layer 3): If the LLM provided a substantive RCA (with contributing factors),
 	// it identified a real problem. Route to human review since no workflow was selected,
 	// rather than silently closing as "no action required."
-	if !hasSelectedWorkflow && resp.Confidence >= 0.7 && !hasNoWorkflowWarningSignal(resp.Warnings) && !hasSubstantiveRCA(resp.RootCauseAnalysis) {
+	// #301: When HAPI's "Problem self-resolved" signal is present (from investigation_outcome=resolved),
+	// bypass the hasSubstantiveRCA check — the RCA documents the transient condition for audit,
+	// not an ongoing problem requiring intervention.
+	isResolved := hasProblemResolvedSignal(resp.Warnings)
+	if !hasSelectedWorkflow && resp.Confidence >= 0.7 && !hasNoWorkflowWarningSignal(resp.Warnings) && (isResolved || !hasSubstantiveRCA(resp.RootCauseAnalysis)) {
 		return p.handleProblemResolvedFromIncident(ctx, analysis, resp)
 	}
 
@@ -583,6 +587,20 @@ func hasNoWorkflowWarningSignal(warnings []string) bool {
 		if strings.Contains(lower, "inconclusive") ||
 			strings.Contains(lower, "no workflows matched") ||
 			strings.Contains(lower, "human review recommended") {
+			return true
+		}
+	}
+	return false
+}
+
+// hasProblemResolvedSignal checks if HAPI emitted the "Problem self-resolved" warning.
+// This warning is only produced when investigation_outcome == "resolved" (result_parser.py),
+// making it an authoritative signal that the problem is no longer occurring.
+// #301: Used to bypass hasSubstantiveRCA when the RCA documents a resolved transient
+// condition rather than an active problem.
+func hasProblemResolvedSignal(warnings []string) bool {
+	for _, w := range warnings {
+		if strings.Contains(strings.ToLower(w), "problem self-resolved") {
 			return true
 		}
 	}

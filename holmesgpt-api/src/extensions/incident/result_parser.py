@@ -307,10 +307,18 @@ def parse_and_validate_investigation_result(
     # BR-HAPI-200: Outcome A - Problem self-resolved (high confidence, no workflow needed)
     if investigation_outcome == "resolved":
         warnings.append("Problem self-resolved - no remediation required")
-        # Don't override if LLM already set these
-        if needs_human_review_from_llm is None:
-            needs_human_review = False
-            human_review_reason = None
+        # #301: resolved outcome is authoritative — override any contradictory LLM values.
+        # needs_human_review=true + investigation_outcome=resolved is a contradiction;
+        # the structured outcome takes precedence over the boolean flag.
+        if needs_human_review_from_llm is not None and needs_human_review_from_llm:
+            logger.warning({
+                "event": "resolved_contradiction_override",
+                "incident_id": incident_id,
+                "needs_human_review_from_llm": needs_human_review_from_llm,
+                "message": "#301: Overriding contradictory needs_human_review=true because investigation_outcome=resolved"
+            })
+        needs_human_review = False
+        human_review_reason = None
         logger.info({
             "event": "problem_self_resolved",
             "incident_id": incident_id,
@@ -331,14 +339,33 @@ def parse_and_validate_investigation_result(
             "message": "BR-HAPI-200: Investigation could not determine root cause"
         })
     elif selected_workflow is None:
-        warnings.append("No workflows matched the search criteria")
-        # E2E-HAPI-003: Only override if LLM didn't explicitly provide human review values
-        if not llm_provided_human_review:
-            needs_human_review = True
-            human_review_reason = "no_matching_workflows"
-            logger.info("E2E-HAPI-003: Using default no_matching_workflows (LLM didn't provide)")
+        # #301 Layer 2: Infer resolved from RCA summary when LLM omits investigation_outcome.
+        # The prompt contract (Outcome A) requires investigation_outcome=resolved, but LLMs
+        # occasionally describe resolution in the RCA without setting the field.
+        rca_summary_lower = (rca.get("summary", "") or "").lower() if rca else ""
+        resolution_indicators = [
+            "self-resolved", "self-healed", "auto-recovered",
+            "recovered on its own", "no longer occurring",
+        ]
+        if any(ind in rca_summary_lower for ind in resolution_indicators):
+            warnings.append("Problem self-resolved - no remediation required")
+            needs_human_review = False
+            human_review_reason = None
+            logger.info({
+                "event": "inferred_resolved_from_rca",
+                "incident_id": incident_id,
+                "rca_summary": rca.get("summary", ""),
+                "message": "#301: Inferred resolution from RCA summary (LLM omitted investigation_outcome)"
+            })
         else:
-            logger.info(f"E2E-HAPI-003: Preserving LLM-provided values - needs_human_review={needs_human_review}, reason={human_review_reason}")
+            warnings.append("No workflows matched the search criteria")
+            # E2E-HAPI-003: Only override if LLM didn't explicitly provide human review values
+            if not llm_provided_human_review:
+                needs_human_review = True
+                human_review_reason = "no_matching_workflows"
+                logger.info("E2E-HAPI-003: Using default no_matching_workflows (LLM didn't provide)")
+            else:
+                logger.info(f"E2E-HAPI-003: Preserving LLM-provided values - needs_human_review={needs_human_review}, reason={human_review_reason}")
     # BR-HAPI-197: Confidence threshold enforcement is AIAnalysis's responsibility, not HAPI's
     # HAPI only sets needs_human_review for validation failures, not confidence thresholds
     # AIAnalysis will apply the 70% threshold (V1.0) or configurable rules (V1.1, BR-HAPI-198)

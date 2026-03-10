@@ -84,6 +84,8 @@ class MockScenario:
     rca_override_prompt_resource: bool = False  # DD-EM-004: Use scenario kind/name instead of prompt-extracted
     parameters: Dict[str, str] = field(default_factory=dict)
     execution_engine: str = "tekton"  # BR-WE-014: Execution backend ("tekton" or "job")
+    contributing_factors: List[str] = field(default_factory=list)  # #301: RCA contributing factors
+    needs_human_review_override: Optional[bool] = None  # #301: Force needs_human_review in response
 
 
 # Pre-defined scenarios for common test cases
@@ -199,7 +201,27 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         rca_resource_kind="Pod",
         rca_resource_namespace="production",
         rca_resource_name="recovered-pod",
-        parameters={}
+        parameters={},
+        # #301: Include resolution-oriented contributing factors matching Outcome A template.
+        # Exercises the hasProblemResolvedSignal bypass for hasSubstantiveRCA.
+        contributing_factors=["Transient condition", "Auto-recovery"],
+    ),
+    # #301: Contradiction scenario — investigation_outcome=resolved but needs_human_review=true
+    "problem_resolved_contradiction": MockScenario(
+        name="problem_resolved_contradiction",
+        workflow_name="",
+        signal_name="MOCK_PROBLEM_RESOLVED_CONTRADICTION",
+        severity="low",
+        workflow_id="",
+        workflow_title="",
+        confidence=0.85,
+        root_cause="Problem self-resolved. Transient OOM cleared after pod restart",
+        rca_resource_kind="Pod",
+        rca_resource_namespace="production",
+        rca_resource_name="recovered-pod",
+        parameters={},
+        contributing_factors=["Transient condition", "Auto-recovery"],
+        needs_human_review_override=True,  # #301 Layer 1: Force contradiction
     ),
     # E2E-HAPI-003: Max retries exhausted - LLM parsing failed
     "max_retries_exhausted": MockScenario(
@@ -679,6 +701,9 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
         if "mock_low_confidence" in search_text or "mock low confidence" in search_text:
             logger.info("✅ SCENARIO DETECTED: LOW_CONFIDENCE (mock keyword match)")
             return MOCK_SCENARIOS.get("low_confidence", DEFAULT_SCENARIO)
+        if "mock_problem_resolved_contradiction" in search_text or "mock problem resolved contradiction" in search_text:
+            logger.info("✅ SCENARIO DETECTED: PROBLEM_RESOLVED_CONTRADICTION (mock keyword match)")
+            return MOCK_SCENARIOS.get("problem_resolved_contradiction", DEFAULT_SCENARIO)
         if "mock_problem_resolved" in search_text or "mock problem resolved" in search_text:
             logger.info("✅ SCENARIO DETECTED: PROBLEM_RESOLVED (mock keyword match)")
             return MOCK_SCENARIOS.get("problem_resolved", DEFAULT_SCENARIO)
@@ -1081,7 +1106,7 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
                 "summary": scenario.root_cause,
                 "severity": scenario.severity,
                 "signal_name": scenario.signal_name,
-                "contributing_factors": ["identified_by_mock_llm"] if scenario.workflow_id else []
+                "contributing_factors": scenario.contributing_factors if scenario.contributing_factors else (["identified_by_mock_llm"] if scenario.workflow_id else [])
             },
             # E2E-HAPI-002: Always include confidence field in response
             "confidence": scenario.confidence
@@ -1132,11 +1157,13 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
             analysis_json["root_cause_analysis"]["affectedResource"] = affected_resource
 
         # BR-HAPI-200: Handle problem resolved case (investigation_outcome: "resolved")
-        if scenario.name == "problem_resolved":
+        if scenario.name in ("problem_resolved", "problem_resolved_contradiction"):
             analysis_json["selected_workflow"] = None
             analysis_json["investigation_outcome"] = "resolved"  # BR-HAPI-200: Signal problem self-resolved
-            # Note: confidence already set at line 841
             analysis_json["can_recover"] = False  # E2E-HAPI-023: No recovery needed when problem self-resolved
+            # #301 Layer 1: Optionally inject contradictory needs_human_review
+            if scenario.needs_human_review_override is not None:
+                analysis_json["needs_human_review"] = scenario.needs_human_review_override
             content = f"""Based on my investigation of the {scenario.signal_name} signal:
 
 ## Root Cause Analysis

@@ -733,6 +733,117 @@ var _ = Describe("InvestigatingHandler", func() {
 			})
 		})
 
+		// #301: Self-resolved with resolution-oriented RCA should complete (not escalate)
+		// Bug: hasSubstantiveRCA blocks the ProblemResolved path even when HAPI's
+		// "Problem self-resolved" signal is present and RCA describes a transient condition.
+		Context("when HAPI signals problem self-resolved with resolution RCA (#301)", func() {
+			// UT-AA-301-001: Self-resolved with resolution RCA → should complete
+			Context("UT-AA-301-001: resolution warning + resolution-oriented RCA", func() {
+				BeforeEach(func() {
+					rcaMap := mocks.BuildMockRCA(
+						"Problem self-resolved. Pod recovered from transient OOM",
+						"low",
+						[]string{"Transient condition", "Auto-recovery"},
+					)
+					mockClient.Response = &hgptclient.IncidentResponse{
+						IncidentID:        "mock-incident-001",
+						Analysis:          "Investigated OOMKilled signal. Pod recovered automatically.",
+						RootCauseAnalysis: rcaMap,
+						Confidence:        0.85,
+						Timestamp:         "2025-12-07T10:00:00Z",
+						Warnings:          []string{"Problem self-resolved - no remediation required"},
+					}
+					mockClient.Response.NeedsHumanReview.SetTo(false)
+					mockClient.Err = nil
+				})
+
+				It("should complete as ProblemResolved and preserve RCA", func() {
+					analysis := createTestAnalysis()
+
+					_, err := handler.Handle(ctx, analysis)
+
+					Expect(err).NotTo(HaveOccurred())
+					Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseCompleted),
+						"#301: HAPI self-resolved signal should bypass hasSubstantiveRCA")
+					Expect(analysis.Status.Reason).To(Equal("WorkflowNotNeeded"))
+					Expect(analysis.Status.SubReason).To(Equal("ProblemResolved"))
+					Expect(analysis.Status.NeedsHumanReview).To(BeFalse(),
+						"Self-resolved problems do not need human review")
+					Expect(analysis.Status.RootCauseAnalysis).NotTo(BeNil(),
+						"RCA should be preserved for audit trail")
+					Expect(analysis.Status.RootCauseAnalysis.Summary).To(
+						ContainSubstring("self-resolved"))
+					Expect(analysis.Status.RootCauseAnalysis.ContributingFactors).To(
+						ContainElements("Transient condition", "Auto-recovery"))
+				})
+			})
+
+			// UT-AA-301-002: Non-resolution RCA without self-resolved signal → still escalates (#208 regression guard)
+			Context("UT-AA-301-002: no resolution warning + active-problem RCA", func() {
+				BeforeEach(func() {
+					rcaMap := mocks.BuildMockRCA(
+						"High CPU causing OOM kills in production",
+						"high",
+						[]string{"Insufficient memory limits", "Traffic spike"},
+					)
+					mockClient.Response = &hgptclient.IncidentResponse{
+						IncidentID:        "mock-incident-001",
+						Analysis:          "Identified persistent OOM condition requiring intervention.",
+						RootCauseAnalysis: rcaMap,
+						Confidence:        0.88,
+						Timestamp:         "2025-12-07T10:00:00Z",
+						Warnings:          []string{},
+					}
+					mockClient.Response.NeedsHumanReview.SetTo(false)
+					mockClient.Err = nil
+				})
+
+				It("should escalate to human review (#208 preserved)", func() {
+					analysis := createTestAnalysis()
+
+					_, err := handler.Handle(ctx, analysis)
+
+					Expect(err).NotTo(HaveOccurred())
+					Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed),
+						"#208: Active-problem RCA without self-resolved signal must escalate")
+					Expect(analysis.Status.NeedsHumanReview).To(BeTrue())
+				})
+			})
+
+			// UT-AA-301-003: Self-resolved signal overrides RCA with mixed contributing factors
+			Context("UT-AA-301-003: resolution warning + mixed contributing factors", func() {
+				BeforeEach(func() {
+					rcaMap := mocks.BuildMockRCA(
+						"Problem self-resolved. Temporary memory spike subsided after pod restart",
+						"low",
+						[]string{"Temporary memory spike", "Transient condition"},
+					)
+					mockClient.Response = &hgptclient.IncidentResponse{
+						IncidentID:        "mock-incident-001",
+						Analysis:          "Memory pressure resolved after automatic restart.",
+						RootCauseAnalysis: rcaMap,
+						Confidence:        0.82,
+						Timestamp:         "2025-12-07T10:00:00Z",
+						Warnings:          []string{"Problem self-resolved - no remediation required"},
+					}
+					mockClient.Response.NeedsHumanReview.SetTo(false)
+					mockClient.Err = nil
+				})
+
+				It("should complete as ProblemResolved despite mixed factors", func() {
+					analysis := createTestAnalysis()
+
+					_, err := handler.Handle(ctx, analysis)
+
+					Expect(err).NotTo(HaveOccurred())
+					Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseCompleted),
+						"#301: Self-resolved signal should bypass RCA factor analysis")
+					Expect(analysis.Status.Reason).To(Equal("WorkflowNotNeeded"))
+					Expect(analysis.Status.SubReason).To(Equal("ProblemResolved"))
+				})
+			})
+		})
+
 		// BR-HAPI-200: Confidence threshold boundary tests
 		DescribeTable("should respect confidence threshold of 0.7",
 			func(confidence float64, shouldBeResolved bool) {
