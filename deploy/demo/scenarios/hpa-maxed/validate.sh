@@ -41,6 +41,16 @@ show_alert "$ALERT_NAME" "$NAMESPACE"
 
 # Phase 2: Wait for RR and poll pipeline to completion
 wait_for_rr "$NAMESPACE" 120
+
+# Kill stress when entering Verifying phase so CPU drops, HPA backs off the
+# ceiling, and the alert resolves naturally within the EA verification window.
+on_verifying() {
+    log_phase "Killing CPU stress processes (root cause fix)..."
+    for pod in $(kubectl get pods -n "$NAMESPACE" -l app=api-frontend -o name 2>/dev/null); do
+        kubectl exec -n "$NAMESPACE" "$pod" -- /bin/sh -c 'killall yes 2>/dev/null || true' 2>/dev/null || true
+    done
+}
+ON_VERIFYING_HOOK="on_verifying"
 poll_pipeline "$NAMESPACE" "$PIPELINE_TIMEOUT" "$APPROVE_MODE"
 
 # Phase 3: Scenario-specific assertions
@@ -53,12 +63,5 @@ assert_eq "$PHASE" "Completed" "RR overallPhase"
 assert_eq "$OUTCOME" "Remediated" "RR outcome"
 assert_gt "$MAX_REPLICAS" 3 "HPA maxReplicas raised"
 assert_eq "$EA_PHASE" "Completed" "EA phase"
-
-# ── Post-remediation root cause fix ─────────────────────────────────────────
-# Kill stress processes so CPU drops and alert resolves naturally.
-log_phase "Killing CPU stress processes (root cause fix)..."
-for pod in $(kubectl get pods -n "$NAMESPACE" -l app=api-frontend -o name 2>/dev/null); do
-    kubectl exec -n "$NAMESPACE" "$pod" -- /bin/sh -c 'killall yes 2>/dev/null || true' 2>/dev/null || true
-done
 
 print_result "hpa-maxed"

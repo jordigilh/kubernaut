@@ -498,6 +498,13 @@ poll_pipeline() {
                     fi
                     log_phase "WorkflowExecution running..."
                     ;;
+                Verifying)
+                    log_phase "EffectivenessAssessment verification in progress..."
+                    if [ -n "${ON_VERIFYING_HOOK:-}" ] && type "$ON_VERIFYING_HOOK" &>/dev/null; then
+                        "$ON_VERIFYING_HOOK"
+                        ON_VERIFYING_HOOK=""
+                    fi
+                    ;;
                 Completed)
                     if [ "$aa_shown" = false ]; then
                         show_ai_analysis "$target_ns"
