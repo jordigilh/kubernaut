@@ -186,7 +186,9 @@ eventExporter:
 #     containing "username: <user>\npassword: <pass>".
 #   Option B (dev):  Set postgresql.auth.password via --set or values-demo.yaml.
 #     Chart auto-creates postgresql-secret and datastorage-db-secret.
+#   Option C (BYO #256): Set postgresql.enabled=false and configure externalPostgresql.
 postgresql:
+  enabled: true  # set false to skip in-chart PostgreSQL and use externalPostgresql instead
   image: postgres:16-alpine
   auth:
     existingSecret: ""  # name of pre-created K8s Secret; when set, chart skips Secret creation
@@ -204,13 +206,26 @@ postgresql:
       memory: 512Mi
       cpu: 500m
 
+# -- External PostgreSQL (BYO #256). Used when postgresql.enabled=false.
+# Provide the host of an existing PostgreSQL instance.
+externalPostgresql:
+  host: ""          # required when postgresql.enabled=false (e.g., "db.example.com")
+  port: 5432
+  auth:
+    existingSecret: ""  # K8s Secret with POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB keys
+    username: slm_user
+    password: ""
+    database: action_history
+
 # -- Redis (DataStorage DLQ)
 # Credential flow (#204):
 #   Option A (prod): Pre-create a Secret and set redis.existingSecret.
 #     Secret must have key redis-secrets.yaml containing "password: <pass>".
 #   Option B (dev):  Set redis.password via --set. Chart auto-creates redis-secret.
 #     Empty password ("") is allowed for development.
+#   Option C (BYO #256): Set redis.enabled=false and configure externalRedis.
 redis:
+  enabled: true  # set false to skip in-chart Redis and use externalRedis instead
   image: quay.io/jordigilh/redis:7-alpine
   existingSecret: ""  # name of pre-created K8s Secret; when set, chart skips Secret creation
   password: ""
@@ -224,6 +239,14 @@ redis:
     limits:
       memory: 256Mi
       cpu: 200m
+
+# -- External Redis (BYO #256). Used when redis.enabled=false.
+# Provide the host of an existing Redis instance.
+externalRedis:
+  host: ""          # required when redis.enabled=false (e.g., "redis.example.com")
+  port: 6379
+  existingSecret: ""  # K8s Secret with redis-secrets.yaml key
+  password: ""
 
 # -- Hooks (post-install Jobs)
 hooks:

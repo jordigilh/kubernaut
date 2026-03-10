@@ -27,7 +27,7 @@ spec:
             - -c
             - |
               echo "Waiting for PostgreSQL..."
-              until pg_isready -h postgresql.{{ .Release.Namespace }}.svc.cluster.local -U {{ .Values.postgresql.auth.username }} -d {{ .Values.postgresql.auth.database }}; do
+              until pg_isready -h {{ include "kubernaut.postgresql.host" . }} -p {{ include "kubernaut.postgresql.port" . }} -U {{ include "kubernaut.postgresql.username" . }} -d {{ include "kubernaut.postgresql.database" . }}; do
                 echo "  PostgreSQL not ready, retrying in 2s..."
                 sleep 2
               done
@@ -37,16 +37,18 @@ spec:
           image: {{ .Values.hooks.migrations.image }}
           env:
             - name: PGHOST
-              value: postgresql.{{ .Release.Namespace }}.svc.cluster.local
+              value: {{ include "kubernaut.postgresql.host" . }}
+            - name: PGPORT
+              value: "{{ include "kubernaut.postgresql.port" . }}"
             - name: PGUSER
-              value: {{ .Values.postgresql.auth.username }}
+              value: {{ include "kubernaut.postgresql.username" . }}
             - name: PGPASSWORD
               valueFrom:
                 secretKeyRef:
                   name: {{ include "kubernaut.postgresql.secretName" . }}
                   key: POSTGRES_PASSWORD
             - name: PGDATABASE
-              value: {{ .Values.postgresql.auth.database }}
+              value: {{ include "kubernaut.postgresql.database" . }}
           command:
             - /bin/sh
             - -c
@@ -74,9 +76,9 @@ spec:
 
               echo "==> Granting privileges..."
               psql -q <<'EOSQL'
-              GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO {{ .Values.postgresql.auth.username }};
-              GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO {{ .Values.postgresql.auth.username }};
-              GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO {{ .Values.postgresql.auth.username }};
+              GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO {{ include "kubernaut.postgresql.username" . }};
+              GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO {{ include "kubernaut.postgresql.username" . }};
+              GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO {{ include "kubernaut.postgresql.username" . }};
               EOSQL
               echo "==> Migrations complete"
           volumeMounts:

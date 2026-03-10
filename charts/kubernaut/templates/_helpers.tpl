@@ -66,13 +66,21 @@ Usage: {{ include "kubernaut.image" (dict "service" "gateway" "global" .Values.g
 
 {{/*
 Return the Secret name for PostgreSQL credentials.
-Uses existingSecret if set, otherwise the chart-managed "postgresql-secret".
+When using external PostgreSQL, falls through to the external auth settings.
 */}}
 {{- define "kubernaut.postgresql.secretName" -}}
-{{- if .Values.postgresql.auth.existingSecret -}}
-{{- .Values.postgresql.auth.existingSecret -}}
+{{- if .Values.postgresql.enabled -}}
+  {{- if .Values.postgresql.auth.existingSecret -}}
+    {{- .Values.postgresql.auth.existingSecret -}}
+  {{- else -}}
+    postgresql-secret
+  {{- end -}}
 {{- else -}}
-postgresql-secret
+  {{- if .Values.externalPostgresql.auth.existingSecret -}}
+    {{- .Values.externalPostgresql.auth.existingSecret -}}
+  {{- else -}}
+    postgresql-secret
+  {{- end -}}
 {{- end -}}
 {{- end }}
 
@@ -92,13 +100,78 @@ datastorage-db-secret
 
 {{/*
 Return the Secret name for Redis credentials.
-Uses existingSecret if set, otherwise the chart-managed "redis-secret".
+When using external Redis, falls through to the external settings.
 */}}
 {{- define "kubernaut.redis.secretName" -}}
-{{- if .Values.redis.existingSecret -}}
-{{- .Values.redis.existingSecret -}}
+{{- if .Values.redis.enabled -}}
+  {{- if .Values.redis.existingSecret -}}
+    {{- .Values.redis.existingSecret -}}
+  {{- else -}}
+    redis-secret
+  {{- end -}}
 {{- else -}}
-redis-secret
+  {{- if .Values.externalRedis.existingSecret -}}
+    {{- .Values.externalRedis.existingSecret -}}
+  {{- else -}}
+    redis-secret
+  {{- end -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+Return the PostgreSQL host.
+Uses in-chart service DNS when postgresql.enabled, otherwise externalPostgresql.host.
+*/}}
+{{- define "kubernaut.postgresql.host" -}}
+{{- if .Values.postgresql.enabled -}}
+postgresql.{{ .Release.Namespace }}.svc.cluster.local
+{{- else -}}
+{{- required "externalPostgresql.host is required when postgresql.enabled=false" .Values.externalPostgresql.host -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+Return the PostgreSQL port.
+*/}}
+{{- define "kubernaut.postgresql.port" -}}
+{{- if .Values.postgresql.enabled -}}
+5432
+{{- else -}}
+{{- .Values.externalPostgresql.port | default 5432 -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+Return the PostgreSQL username (for config files / readiness probes).
+*/}}
+{{- define "kubernaut.postgresql.username" -}}
+{{- if .Values.postgresql.enabled -}}
+{{- .Values.postgresql.auth.username -}}
+{{- else -}}
+{{- .Values.externalPostgresql.auth.username | default "slm_user" -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+Return the PostgreSQL database name.
+*/}}
+{{- define "kubernaut.postgresql.database" -}}
+{{- if .Values.postgresql.enabled -}}
+{{- .Values.postgresql.auth.database -}}
+{{- else -}}
+{{- .Values.externalPostgresql.auth.database | default "action_history" -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+Return the Redis address (host:port).
+*/}}
+{{- define "kubernaut.redis.addr" -}}
+{{- if .Values.redis.enabled -}}
+redis.{{ .Release.Namespace }}.svc.cluster.local:6379
+{{- else -}}
+{{- $host := required "externalRedis.host is required when redis.enabled=false" .Values.externalRedis.host -}}
+{{- printf "%s:%d" $host (int (.Values.externalRedis.port | default 6379)) -}}
 {{- end -}}
 {{- end }}
 
