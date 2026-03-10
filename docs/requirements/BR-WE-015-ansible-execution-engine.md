@@ -45,6 +45,7 @@ Organizations running Red Hat Ansible Automation Platform (AAP) or AWX have exis
 6. AWX connection configuration (API URL, auth token) is in WE controller config, not in workflow schemas
 7. Workflow parameters (`map[string]string`) are converted to typed AWX `extra_vars` JSON with correct type coercion
 8. Resource locking (BR-WE-009), audit trail (BR-WE-005), and failure details (BR-WE-003) apply to Ansible executions identically to Tekton and Job backends
+9. `Create` auto-injects remediation context (`WFE_NAME`, `WFE_NAMESPACE`, `RR_NAME`, `RR_NAMESPACE`) into `extra_vars` so playbooks can reference the parent RemediationRequest without a Kubernetes API lookup (TR-6)
 
 ---
 
@@ -144,6 +145,23 @@ ansible:
 - AWX authentication failures (401/403) SHALL be reported as non-retryable errors
 - AWX job failures SHALL populate `FailureDetails` in WFE status
 
+### TR-6: Remediation Context Auto-Injection
+
+The `AnsibleExecutor.Create()` method SHALL auto-inject the following context variables into AWX `extra_vars` for every Ansible execution, in addition to the workflow's declared parameters:
+
+| Variable | Source | Purpose |
+|----------|--------|---------|
+| `WFE_NAME` | `wfe.Name` | Identifies the WorkflowExecution CRD. Enables playbooks to query WFE status, parameters, or execution metadata via the Kubernetes API. |
+| `WFE_NAMESPACE` | `wfe.Namespace` | Namespace of the WFE CRD. |
+| `RR_NAME` | `wfe.Spec.RemediationRequestRef.Name` | Identifies the parent RemediationRequest. Enables playbooks to reference the RR in commit messages, logs, and audit annotations without requiring a Kubernetes API lookup. |
+| `RR_NAMESPACE` | `wfe.Spec.RemediationRequestRef.Namespace` | Namespace of the parent RR. |
+
+**Rationale**: The RR name is the most common context that playbooks need (e.g., for Git commit messages referencing the remediation event). Passing it directly as an extra_var eliminates a Kubernetes API lookup that every playbook would otherwise need to perform, and removes the requirement for the playbook's Execution Environment to have RBAC access to WFE resources.
+
+`WFE_NAME` and `WFE_NAMESPACE` are retained for advanced use cases where playbooks need the full WFE execution context (status, timeout configuration, parameters metadata).
+
+These variables are auto-injected by the executor and MUST NOT be declared as parameters in the workflow schema. They are always present for `engine: ansible` executions.
+
 ---
 
 ## Acceptance Criteria
@@ -164,6 +182,13 @@ Given a WorkflowExecution CRD with executionEngine "ansible"
 When the AWX API is unreachable
 Then the executor retries with exponential backoff
 And reports a transient error after retry exhaustion
+
+Given a WorkflowExecution CRD with executionEngine "ansible"
+When the AnsibleExecutor builds extra_vars for the AWX job launch
+Then extra_vars SHALL contain WFE_NAME, WFE_NAMESPACE, RR_NAME, and RR_NAMESPACE
+And RR_NAME SHALL equal wfe.Spec.RemediationRequestRef.Name
+And RR_NAMESPACE SHALL equal wfe.Spec.RemediationRequestRef.Namespace
+And the playbook can reference the RR name without a Kubernetes API lookup
 ```
 
 ---
@@ -182,3 +207,4 @@ And reports a transient error after retry exhaustion
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2026-03-02 | Initial BR |
+| 1.1 | 2026-03-04 | Add TR-6: Remediation Context Auto-Injection (WFE_NAME, WFE_NAMESPACE, RR_NAME, RR_NAMESPACE) |
