@@ -250,7 +250,7 @@ Override per-component via <component>.podSecurityContext in values.yaml.
 Usage: {{ include "kubernaut.podSecurityContext" .Values.gateway | nindent 6 }}
 */}}
 {{- define "kubernaut.podSecurityContext" -}}
-{{- $defaults := dict "runAsNonRoot" true "runAsUser" 65534 "fsGroup" 65534 "seccompProfile" (dict "type" "RuntimeDefault") -}}
+{{- $defaults := dict "runAsNonRoot" true "seccompProfile" (dict "type" "RuntimeDefault") -}}
 {{- $override := .podSecurityContext | default dict -}}
 {{- toYaml (merge $override $defaults) }}
 {{- end }}

@@ -141,6 +141,47 @@
       "default": "",
       "description": "Override the full resource names"
     },
+    "tls": {
+      "type": "object",
+      "description": "TLS certificate management for AuthWebhook. mode=hook uses self-signed certs via Helm hooks; mode=cert-manager delegates to cert-manager.",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["hook", "cert-manager"],
+          "default": "hook",
+          "description": "TLS mode: 'hook' (self-signed via Helm hooks) or 'cert-manager' (production, requires cert-manager)"
+        },
+        "certManager": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "issuerRef": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "default": "",
+                  "description": "Name of the Issuer or ClusterIssuer (required when tls.mode=cert-manager)"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": ["Issuer", "ClusterIssuer"],
+                  "default": "ClusterIssuer",
+                  "description": "Kind of the issuer resource"
+                },
+                "group": {
+                  "type": "string",
+                  "default": "cert-manager.io",
+                  "description": "API group of the issuer"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "gateway": {
       "type": "object",
       "description": "Gateway service (AlertManager webhook target + external signal ingestion)",
@@ -512,6 +553,8 @@
           }
         },
         "resources": { "$ref": "#/definitions/resources" },
+        "podSecurityContext": { "$ref": "#/definitions/securityContext" },
+        "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
         "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
         "tolerations": { "$ref": "#/definitions/tolerations" }
       }
@@ -581,6 +624,8 @@
           }
         },
         "resources": { "$ref": "#/definitions/resources" },
+        "podSecurityContext": { "$ref": "#/definitions/securityContext" },
+        "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
         "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
         "tolerations": { "$ref": "#/definitions/tolerations" }
       }

@@ -20,9 +20,6 @@ spec:
       serviceAccountName: {{ include "kubernaut.fullname" . }}-hook-sa
       restartPolicy: Never
       securityContext:
-        runAsNonRoot: true
-        runAsUser: 65534
-        fsGroup: 65534
         seccompProfile:
           type: RuntimeDefault
       {{- include "kubernaut.scheduling" (dict "component" .Values.hooks "global" .Values.global) | nindent 6 }}
