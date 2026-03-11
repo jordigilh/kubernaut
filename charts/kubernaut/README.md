@@ -379,8 +379,8 @@ All controllers (`aianalysis`, `signalprocessing`, `remediationorchestrator`, `w
 |---|---|---|
 | `<controller>.replicas` | Number of replicas | `1` |
 | `<controller>.resources` | CPU/memory requests and limits | See `values.yaml` |
-| `<controller>.podSecurityContext` | Pod-level security context override | Restricted profile defaults |
-| `<controller>.containerSecurityContext` | Container-level security context override | Restricted profile defaults |
+| `<controller>.podSecurityContext` | Pod-level security context override | `runAsNonRoot: true` + `seccompProfile: RuntimeDefault` (Tier 1); `seccompProfile: RuntimeDefault` only (Tier 2: postgresql, redis) |
+| `<controller>.containerSecurityContext` | Container-level security context override | `allowPrivilegeEscalation: false`, `capabilities.drop: [ALL]` |
 | `<controller>.nodeSelector` | Per-component node selector (overrides global) | `{}` |
 | `<controller>.tolerations` | Per-component tolerations (overrides global) | `[]` |
 | `<controller>.affinity` | Pod affinity/anti-affinity rules | `{}` |
@@ -490,28 +490,50 @@ When enabled, NetworkPolicies restrict ingress/egress traffic for gateway, datas
 
 ## Security Hardening
 
-### Pod Security
+### Pod Security (Platform-Agnostic)
 
-All Deployments and hook Jobs run with a restricted security profile by default:
+The chart ships **without hardcoded `runAsUser` or `fsGroup` values** so it deploys
+on both vanilla Kubernetes (Kind, EKS, GKE, AKS) and OpenShift without modification.
 
-**Pod-level** (`securityContext`):
-- `runAsNonRoot: true`
-- `runAsUser: 65534` (nobody) for application containers; `999` for postgresql/redis
-- `seccompProfile.type: RuntimeDefault`
+**Tier 1 -- Kubernaut microservices** (gateway, datastorage, aianalysis, authwebhook,
+notification, remediationorchestrator, signalprocessing, workflowexecution,
+effectivenessmonitor, holmesgptApi, eventExporter) and `bitnami/kubectl` hook jobs:
 
-**Container-level** (`securityContext`):
+| Field | Default |
+|-------|---------|
+| `runAsNonRoot` | `true` |
+| `seccompProfile.type` | `RuntimeDefault` |
+| `runAsUser` / `fsGroup` | **Not set** -- image USER directive (non-root) is used on vanilla K8s; OCP SCC assigns from namespace range |
+
+All kubernaut images declare `USER nobody` (UID 65534) in their Dockerfiles,
+so `runAsNonRoot: true` alone is sufficient for admission validation.
+
+**Tier 2 -- Infrastructure** (postgresql, redis, migration hook job):
+
+| Field | Default |
+|-------|---------|
+| `seccompProfile.type` | `RuntimeDefault` |
+| `runAsNonRoot` / `runAsUser` / `fsGroup` | **Not set** |
+
+Third-party images (`postgres:16-alpine`, `redis:7-alpine`) start as root and
+switch to an application user internally via gosu/su-exec. On OpenShift the SCC
+assigns a non-root UID and the entrypoints detect this automatically.
+
+**Container-level** (`securityContext`) for all components:
 - `allowPrivilegeEscalation: false`
 - `readOnlyRootFilesystem: true` (where supported)
 - `capabilities.drop: ["ALL"]`
 
-Override per-component via `<component>.podSecurityContext` and `<component>.containerSecurityContext`:
+Override per-component via `<component>.podSecurityContext` and `<component>.containerSecurityContext`.
+For example, on a namespace with PodSecurity `restricted` enforcement where
+postgres needs an explicit non-root UID:
 
 ```yaml
-gateway:
+postgresql:
   podSecurityContext:
-    runAsUser: 1000
-  containerSecurityContext:
-    readOnlyRootFilesystem: false
+    runAsUser: 999
+    fsGroup: 999
+    runAsNonRoot: true
 ```
 
 ### Service Accounts
