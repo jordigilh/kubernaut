@@ -1,3 +1,4 @@
+{{- if eq .Values.tls.mode "hook" }}
 # Job 1: Generate TLS certificates (pre-install/pre-upgrade).
 # Runs BEFORE chart resources so the authwebhook pod can mount the TLS secret.
 # Stores the CA cert in a ConfigMap for the post-install caBundle patch job.
@@ -24,8 +25,6 @@ spec:
       restartPolicy: Never
       securityContext:
         runAsNonRoot: true
-        runAsUser: 65534
-        fsGroup: 65534
         seccompProfile:
           type: RuntimeDefault
       {{- include "kubernaut.scheduling" (dict "component" .Values.hooks "global" .Values.global) | nindent 6 }}
@@ -144,8 +143,6 @@ spec:
       restartPolicy: Never
       securityContext:
         runAsNonRoot: true
-        runAsUser: 65534
-        fsGroup: 65534
         seccompProfile:
           type: RuntimeDefault
       {{- include "kubernaut.scheduling" (dict "component" .Values.hooks "global" .Values.global) | nindent 6 }}
@@ -199,8 +196,9 @@ spec:
                 ]"
 
               echo "==> Webhook CA bundle patching complete"
+{{- end }}
 ---
-# Shared RBAC for all Helm hooks (pre-install TLS cert + post-install migration).
+# Shared RBAC for all Helm hooks (TLS cert jobs + migration job).
 # Uses both pre- and post- phases so the SA exists across all hook jobs.
 # Only cleaned up on next install/upgrade (before-hook-creation), not on success.
 apiVersion: v1
@@ -260,6 +258,7 @@ subjects:
   - kind: ServiceAccount
     name: {{ include "kubernaut.fullname" . }}-hook-sa
     namespace: {{ .Release.Namespace }}
+{{- if eq .Values.tls.mode "hook" }}
 ---
 # Job 3: Clean up hook-created resources on uninstall (post-delete).
 # Removes authwebhook-tls Secret and authwebhook-ca ConfigMap that are
@@ -287,8 +286,6 @@ spec:
       restartPolicy: Never
       securityContext:
         runAsNonRoot: true
-        runAsUser: 65534
-        fsGroup: 65534
         seccompProfile:
           type: RuntimeDefault
       containers:
@@ -316,3 +313,4 @@ spec:
               kubectl delete secret authwebhook-tls -n "$NAMESPACE" --ignore-not-found
               kubectl delete configmap authwebhook-ca -n "$NAMESPACE" --ignore-not-found
               echo "==> Cleanup complete"
+{{- end }}

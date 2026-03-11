@@ -1,16 +1,23 @@
 Kubernaut {{ .Chart.AppVersion }} has been installed in namespace {{ .Release.Namespace }}.
 
-=== Post-Install Steps ===
+=== Post-Install Verification ===
 
 1. Verify all pods are running:
 
    kubectl get pods -n {{ .Release.Namespace }}
 
-2. Configure LLM credentials (required for AI analysis):
+2. Verify LLM credentials secret exists:
 
-   # See https://github.com/jordigilh/kubernaut-demo-scenarios for credential examples
-   # Create a Secret with your LLM provider credentials, then:
-   kubectl apply -f my-llm-credentials.yaml -n {{ .Release.Namespace }}
+   kubectl get secret {{ .Values.holmesgptApi.llm.credentialsSecretName }} -n {{ .Release.Namespace }}
+
+   If missing, create it with your LLM provider API key:
+
+   kubectl create secret generic {{ .Values.holmesgptApi.llm.credentialsSecretName }} \
+     --from-literal=OPENAI_API_KEY=sk-... \
+     -n {{ .Release.Namespace }}
+
+   Then restart HAPI to pick it up:
+
    kubectl rollout restart deployment/holmesgpt-api -n {{ .Release.Namespace }}
 
 3. Check the workflow catalog:
@@ -18,10 +25,20 @@ Kubernaut {{ .Chart.AppVersion }} has been installed in namespace {{ .Release.Na
    kubectl port-forward -n {{ .Release.Namespace }} svc/data-storage-service 8080:8080
    curl -s http://localhost:8080/api/v1/workflows | jq '.'
 
+4. Load ActionTypes (remediation catalog):
+
+   kubectl apply -f deploy/action-types/ -n {{ .Release.Namespace }}
+
 === Monitoring ===
 
 Kubernaut is designed to work with kube-prometheus-stack.
-Install it separately for full alerting and remediation capabilities.
+If deployed, configure AlertManager to send alerts to the Gateway:
+
+  receivers:
+    - name: kubernaut
+      webhook_configs:
+        - url: "http://gateway.{{ .Release.Namespace }}.svc:9090/api/v1/signals/alertmanager"
+          send_resolved: true
 
 === Upgrading ===
 
@@ -31,8 +48,14 @@ CRDs are NOT upgraded automatically by `helm upgrade`. To update CRDs:
 
 Run this BEFORE `helm upgrade` when CRD schemas have changed between versions.
 
-TLS certificates are automatically renewed during upgrade if they expire
-within 30 days.
+{{- if eq .Values.tls.mode "hook" }}
+TLS mode: hook (self-signed certificates via Helm hooks).
+Certificates are automatically renewed during upgrade if they expire within 30 days.
+{{- else }}
+TLS mode: cert-manager (certificates managed by cert-manager).
+The authwebhook-cert Certificate resource provisions the authwebhook-tls Secret.
+cert-manager handles renewal automatically.
+{{- end }}
 
 === Uninstalling ===
 
@@ -48,7 +71,7 @@ IMPORTANT -- Data Retention:
 
       kubectl delete -f charts/kubernaut/crds/
 
-  - The kubernaut-workflows namespace may contain active Jobs or PipelineRuns.
+  - The {{ include "kubernaut.workflowNamespace" . }} namespace may contain active Jobs or PipelineRuns.
     Verify it is empty or clean up before uninstalling if it gets stuck:
 
       kubectl get jobs -n {{ include "kubernaut.workflowNamespace" . }}

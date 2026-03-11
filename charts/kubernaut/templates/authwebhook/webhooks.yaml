@@ -1,8 +1,6 @@
-{{- $caConfigMap := lookup "v1" "ConfigMap" .Release.Namespace "authwebhook-ca" -}}
-{{- $caBundle := "" -}}
-{{- if and $caConfigMap $caConfigMap.data -}}
-{{-   $caBundle = index $caConfigMap.data "ca.crt" | default "" | b64enc -}}
-{{- end -}}
+{{- /* caBundle is NOT managed by Helm (avoids SSA field manager conflicts on upgrade).
+     In hook mode: post-install/post-upgrade tls-cabundle-patch hook injects it via kubectl patch.
+     In cert-manager mode: cainjector writes it via the inject-ca-from annotation. */ -}}
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: MutatingWebhookConfiguration
@@ -10,6 +8,10 @@ metadata:
   name: authwebhook-mutating
   labels:
     {{- include "kubernaut.labels" . | nindent 4 }}
+  {{- if eq .Values.tls.mode "cert-manager" }}
+  annotations:
+    cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/authwebhook-cert
+  {{- end }}
 webhooks:
   - name: workflowexecution.mutate.kubernaut.ai
     admissionReviewVersions: ["v1"]
@@ -18,7 +20,6 @@ webhooks:
         name: authwebhook
         namespace: {{ .Release.Namespace }}
         path: /mutate-workflowexecution
-      caBundle: {{ $caBundle | quote }}
     failurePolicy: Fail
     matchPolicy: Equivalent
     rules:
@@ -36,7 +37,6 @@ webhooks:
         name: authwebhook
         namespace: {{ .Release.Namespace }}
         path: /mutate-remediationapprovalrequest
-      caBundle: {{ $caBundle | quote }}
     failurePolicy: Fail
     matchPolicy: Equivalent
     rules:
@@ -54,7 +54,6 @@ webhooks:
         name: authwebhook
         namespace: {{ .Release.Namespace }}
         path: /mutate-remediationrequest
-      caBundle: {{ $caBundle | quote }}
     failurePolicy: Fail
     matchPolicy: Equivalent
     rules:
@@ -72,6 +71,10 @@ metadata:
   name: authwebhook-validating
   labels:
     {{- include "kubernaut.labels" . | nindent 4 }}
+  {{- if eq .Values.tls.mode "cert-manager" }}
+  annotations:
+    cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/authwebhook-cert
+  {{- end }}
 webhooks:
   - name: notificationrequest.validate.kubernaut.ai
     admissionReviewVersions: ["v1"]
@@ -80,7 +83,6 @@ webhooks:
         name: authwebhook
         namespace: {{ .Release.Namespace }}
         path: /validate-notificationrequest-delete
-      caBundle: {{ $caBundle | quote }}
     failurePolicy: Fail
     matchPolicy: Equivalent
     rules:
@@ -98,7 +100,6 @@ webhooks:
         name: authwebhook
         namespace: {{ .Release.Namespace }}
         path: /validate-remediationworkflow
-      caBundle: {{ $caBundle | quote }}
     failurePolicy: Fail
     matchPolicy: Equivalent
     namespaceSelector:
@@ -119,7 +120,6 @@ webhooks:
         name: authwebhook
         namespace: {{ .Release.Namespace }}
         path: /validate-actiontype
-      caBundle: {{ $caBundle | quote }}
     failurePolicy: Fail
     matchPolicy: Equivalent
     namespaceSelector:
