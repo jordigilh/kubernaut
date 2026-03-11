@@ -101,52 +101,54 @@ than propagating through CRDs.
 
 ### Workflow Schema Extension
 
-Add a `dependencies` field to the workflow schema (BR-WORKFLOW-004):
+Add a `dependencies` field to the workflow schema spec (BR-WORKFLOW-004):
 
 ```yaml
+apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
 metadata:
-  workflowId: fix-certificate-gitops-v1
+  name: fix-certificate-gitops-v1
+spec:
   version: "1.0.0"
   description:
     what: "Reverts a bad Git commit that broke a cert-manager ClusterIssuer"
     whenToUse: "When a GitOps-managed cert-manager Certificate is stuck NotReady"
 
-actionType: GitRevertCommit
+  actionType: GitRevertCommit
 
-dependencies:
-  secrets:
-    - name: gitea-repo-creds
-  configMaps: []
+  dependencies:
+    secrets:
+      - name: gitea-repo-creds
+    configMaps: []
 
-labels:
-  signalName: CertManagerCertNotReady
-  severity: [critical, high]
-  environment: ["*"]
-  component: "*"
-  priority: "*"
+  labels:
+    severity: [critical, high]
+    environment: ["*"]
+    component: "*"
+    priority: "*"
 
-execution:
-  engine: job
-  bundle: quay.io/kubernaut-cicd/test-workflows/fix-certificate-gitops-job:demo-v1.3
+  execution:
+    engine: job
+    bundle: quay.io/kubernaut-cicd/test-workflows/fix-certificate-gitops-job:demo-v1.3
 
-parameters:
-  - name: GIT_REPO_URL
-    type: string
-    required: true
-    description: "URL of the Git repository (without credentials)"
-  - name: GIT_BRANCH
-    type: string
-    required: false
-    description: "Branch to revert on"
-    default: "main"
-  - name: TARGET_NAMESPACE
-    type: string
-    required: true
-    description: "Namespace of the affected Certificate"
-  - name: TARGET_RESOURCE_NAME
-    type: string
-    required: true
-    description: "Name of the affected Certificate (for verification)"
+  parameters:
+    - name: GIT_REPO_URL
+      type: string
+      required: true
+      description: "URL of the Git repository (without credentials)"
+    - name: GIT_BRANCH
+      type: string
+      required: false
+      description: "Branch to revert on"
+      default: "main"
+    - name: TARGET_NAMESPACE
+      type: string
+      required: true
+      description: "Namespace of the affected Certificate"
+    - name: TARGET_RESOURCE_NAME
+      type: string
+      required: true
+      description: "Name of the affected Certificate (for verification)"
 ```
 
 Note: `GIT_USERNAME` and `GIT_PASSWORD` are removed from parameters. The `gitea-repo-creds`
@@ -337,7 +339,7 @@ Dependencies are NOT propagated through the CRD chain (HAPI -> RO -> WFE). Ratio
 Data flow:
 ```
 Registration:
-  workflow-schema.yaml -> DS parser -> catalog DB (dependencies stored)
+  RemediationWorkflow CRD -> DS parser -> catalog DB (dependencies stored)
 
 Execution:
   WFE spec (workflowRef.workflowId) -> DS GET /workflows/{id} -> dependencies
@@ -446,3 +448,4 @@ Workflows without `dependencies` in their schema continue to work unchanged. The
 |------|---------|---------|
 | 2026-02-24 | 1.0 | Initial decision -- EnvFrom injection with CRD propagation |
 | 2026-02-24 | 2.0 | Rewrite -- Volume mount, on-demand DS query, dual validation, no CRD propagation |
+| 2026-03-11 | 2.1 | Updated schema structure per #329: metadata.name, spec.version, spec.description |

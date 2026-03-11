@@ -159,16 +159,14 @@ The operator creates a `RemediationWorkflow` CRD:
 apiVersion: kubernaut.ai/v1alpha1
 kind: RemediationWorkflow
 metadata:
-  name: scale-conservative-v1
+  name: scale-conservative
   namespace: kubernaut-system
 spec:
-  metadata:
-    workflowId: scale-conservative
-    version: "1.0.0"
-    description:
-      what: "Scales deployment replicas conservatively"
-      whenToUse: "When pods are under CPU pressure"
-      whenNotToUse: "When cluster is at capacity"
+  version: "1.0.0"
+  description:
+    what: "Scales deployment replicas conservatively"
+    whenToUse: "When pods are under CPU pressure"
+    whenNotToUse: "When cluster is at capacity"
   actionType: ScaleReplicas
   labels:
     severity: ["warning", "critical"]

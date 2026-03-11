@@ -143,16 +143,14 @@ Create a `RemediationWorkflow` CRD that embeds the workflow schema in its `.spec
 apiVersion: kubernaut.ai/v1alpha1
 kind: RemediationWorkflow
 metadata:
-  name: restart-deployment-v1
+  name: restart-deployment
   namespace: kubernaut-system
 spec:
-  metadata:
-    workflowId: restart-deployment
-    version: "1.0.0"
-    description:
-      what: "Restarts a deployment by triggering a rollout restart"
-      whenToUse: "When pods are unhealthy due to transient issues like memory leaks"
-      whenNotToUse: "When the issue is a configuration error that will recur after restart"
+  version: "1.0.0"
+  description:
+    what: "Restarts a deployment by triggering a rollout restart"
+    whenToUse: "When pods are unhealthy due to transient issues like memory leaks"
+    whenNotToUse: "When the issue is a configuration error that will recur after restart"
   actionType: RestartDeployment
   labels:
     severity: ["warning", "critical"]
@@ -186,7 +184,7 @@ kubectl apply -f restart-deployment-rw.yaml
 After successful admission, the AuthWebhook registers the workflow in the DataStorage catalog. Check registration status:
 
 ```bash
-kubectl get remediationworkflow restart-deployment-v1 -n kubernaut-system -o yaml
+kubectl get remediationworkflow restart-deployment -n kubernaut-system -o yaml
 # .status.workflowId should contain the DS-assigned UUID
 # .status.catalogStatus should be "active"
 ```
@@ -194,7 +192,7 @@ kubectl get remediationworkflow restart-deployment-v1 -n kubernaut-system -o yam
 To remove a workflow from the catalog (disable), delete the CRD:
 
 ```bash
-kubectl delete remediationworkflow restart-deployment-v1 -n kubernaut-system
+kubectl delete remediationworkflow restart-deployment -n kubernaut-system
 ```
 
 See [BR-WORKFLOW-006](../../requirements/BR-WORKFLOW-006-remediation-workflow-crd.md) and [ADR-058](../../architecture/decisions/ADR-058-webhook-driven-workflow-registration.md) for full CRD specification and architecture details.
