@@ -90,6 +90,28 @@ echo "Patch applied successfully."
 echo ""
 
 # ============================================
+# Quantity-aware comparison (Issue #302)
+# Kubernetes normalizes memory units (e.g., 2048Mi -> 2Gi).
+# Convert both values to bytes before comparing.
+# ============================================
+to_bytes() {
+    local val="$1"
+    local num="${val%%[A-Za-z]*}"
+    local unit="${val##*[0-9]}"
+    case "$unit" in
+        Ki) echo $((num * 1024)) ;;
+        Mi) echo $((num * 1024 * 1024)) ;;
+        Gi) echo $((num * 1024 * 1024 * 1024)) ;;
+        Ti) echo $((num * 1024 * 1024 * 1024 * 1024)) ;;
+        K)  echo $((num * 1000)) ;;
+        M)  echo $((num * 1000000)) ;;
+        G)  echo $((num * 1000000000)) ;;
+        T)  echo $((num * 1000000000000)) ;;
+        *)  echo "$num" ;;
+    esac
+}
+
+# ============================================
 # Phase 3: Verify
 # ============================================
 echo "--- Phase 3: Verify ---"
@@ -99,16 +121,19 @@ NEW_LIMIT=$(kubectl get "$KIND_LOWER" "$NAME" -n "$NAMESPACE" \
     -o jsonpath='{.spec.template.spec.containers[0].resources.limits.memory}')
 echo "Verified memory limit: $NEW_LIMIT"
 
-if [ "$NEW_LIMIT" = "$MEMORY_LIMIT_NEW" ]; then
+EXPECTED_BYTES=$(to_bytes "$MEMORY_LIMIT_NEW")
+ACTUAL_BYTES=$(to_bytes "$NEW_LIMIT")
+
+if [ "$ACTUAL_BYTES" -eq "$EXPECTED_BYTES" ] 2>/dev/null; then
     echo ""
     echo "============================================"
-    echo "SUCCESS: Memory limit updated to $MEMORY_LIMIT_NEW"
+    echo "SUCCESS: Memory limit updated to $NEW_LIMIT (=$MEMORY_LIMIT_NEW)"
     echo "============================================"
     exit 0
 else
     echo ""
     echo "ERROR: Verification failed!"
-    echo "  Expected: $MEMORY_LIMIT_NEW"
-    echo "  Got:      $NEW_LIMIT"
+    echo "  Expected: $MEMORY_LIMIT_NEW ($EXPECTED_BYTES bytes)"
+    echo "  Got:      $NEW_LIMIT ($ACTUAL_BYTES bytes)"
     exit 1
 fi
