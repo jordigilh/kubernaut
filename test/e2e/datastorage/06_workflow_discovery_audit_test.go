@@ -76,7 +76,7 @@ var _ = Describe("E2E-DS-017-AUDIT: Workflow Discovery Audit Events (DD-WORKFLOW
 			// DD-WORKFLOW-002 v3.0: Workflow already exists (409 Conflict).
 			// Query by name to retrieve existing UUID (idempotent test setup).
 			listResp, listErr := DSClient.ListWorkflows(testCtx, dsgen.ListWorkflowsParams{
-				WorkflowName: dsgen.NewOptString("e2e-stub-workflow"),
+				WorkflowName: dsgen.NewOptString("e2e-stub"),
 				Limit:        dsgen.NewOptInt(1),
 			})
 			listErr = ogenx.ToError(listResp, listErr)
