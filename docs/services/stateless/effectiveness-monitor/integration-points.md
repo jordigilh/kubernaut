@@ -178,7 +178,7 @@ if r.needsDetailedWorkflowInfo(rr) {
 
 **See**:
 - [DD-EFFECTIVENESS-003](../../../architecture/decisions/DD-EFFECTIVENESS-003-RemediationRequest-Watch-Strategy.md) - Watch strategy decision
-- [DD-EFFECTIVENESS-002](../../../decisions/DD-EFFECTIVENESS-002-Restart-Recovery-Idempotency.md) - Restart recovery and idempotency
+- [DD-EFFECTIVENESS-002](../../../architecture/decisions/DD-EFFECTIVENESS-002-Restart-Recovery-Idempotency.md) - Restart recovery and idempotency
 
 ---
 
@@ -606,7 +606,7 @@ func (s *EffectivenessMonitorService) performAssessment(
 - **Value**: 85-90% effectiveness (vs 70% without AI)
 - **ROI**: 11x return on investment
 
-**See**: `/docs/decisions/DD-EFFECTIVENESS-001-Hybrid-Automated-AI-Analysis.md` for complete design
+**See**: `/docs/architecture/decisions/DD-EFFECTIVENESS-001-Hybrid-Automated-AI-Analysis.md` for complete design
 
 ---
 
@@ -899,12 +899,12 @@ func (cb *CircuitBreaker) recordSuccess() {
 ### **Related Design Decisions**
 
 - **DD-EFFECTIVENESS-001**: Hybrid Automated + AI Analysis Approach
-  - Location: `/docs/decisions/DD-EFFECTIVENESS-001-Hybrid-Automated-AI-Analysis.md`
+  - Location: `/docs/architecture/decisions/DD-EFFECTIVENESS-001-Hybrid-Automated-AI-Analysis.md`
   - Decision: Automated assessment always, AI analysis selective
   - Rationale: 11x ROI, 85-90% effectiveness vs 70% without AI
 
 - **DD-EFFECTIVENESS-002**: Restart Recovery & Idempotency
-  - Location: `/docs/decisions/DD-EFFECTIVENESS-002-Restart-Recovery-Idempotency.md`
+  - Location: `/docs/architecture/decisions/DD-EFFECTIVENESS-002-Restart-Recovery-Idempotency.md`
   - Decision: Database-backed idempotency with WorkflowExecution.UID
   - Rationale: Zero manual intervention, automatic catch-up, HA support
 

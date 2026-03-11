@@ -46,7 +46,7 @@
 - Redis fingerprints expire via TTL (5 minutes), not immediate cleanup on CRD deletion
 - This protects against false positives and alert storms after CRD deletion
 - If admin deletes CRD, same alert shouldn't immediately recreate it
-- **Design Decision**: [DD-GATEWAY-005](../../docs/decisions/DD-GATEWAY-005-redis-cleanup-on-crd-deletion.md)
+- **Design Decision**: [DD-GATEWAY-005](../../docs/architecture/decisions/DD-GATEWAY-005-redis-cleanup-on-crd-deletion.md)
 
 **Action Taken**: Test deleted from `redis_integration_test.go` with explanatory comment
 
@@ -431,7 +431,7 @@ Time:    ~40 seconds (+2 seconds for Redis stop/start)
 - Redis fingerprints expire via TTL (5 minutes), not immediate cleanup on CRD deletion
 - This protects against false positives and alert storms after CRD deletion
 - If admin deletes CRD, same alert shouldn't immediately recreate it
-- **Design Decision**: [DD-GATEWAY-005](../../docs/decisions/DD-GATEWAY-005-redis-cleanup-on-crd-deletion.md)
+- **Design Decision**: [DD-GATEWAY-005](../../docs/architecture/decisions/DD-GATEWAY-005-redis-cleanup-on-crd-deletion.md)
 
 **Action Taken**: Test deleted from `redis_integration_test.go` with explanatory comment
 
@@ -816,7 +816,7 @@ Time:    ~40 seconds (+2 seconds for Redis stop/start)
 - Redis fingerprints expire via TTL (5 minutes), not immediate cleanup on CRD deletion
 - This protects against false positives and alert storms after CRD deletion
 - If admin deletes CRD, same alert shouldn't immediately recreate it
-- **Design Decision**: [DD-GATEWAY-005](../../docs/decisions/DD-GATEWAY-005-redis-cleanup-on-crd-deletion.md)
+- **Design Decision**: [DD-GATEWAY-005](../../docs/architecture/decisions/DD-GATEWAY-005-redis-cleanup-on-crd-deletion.md)
 
 **Action Taken**: Test deleted from `redis_integration_test.go` with explanatory comment
 
@@ -1203,7 +1203,7 @@ Time:    ~40 seconds (+2 seconds for Redis stop/start)
 - Redis fingerprints expire via TTL (5 minutes), not immediate cleanup on CRD deletion
 - This protects against false positives and alert storms after CRD deletion
 - If admin deletes CRD, same alert shouldn't immediately recreate it
-- **Design Decision**: [DD-GATEWAY-005](../../docs/decisions/DD-GATEWAY-005-redis-cleanup-on-crd-deletion.md)
+- **Design Decision**: [DD-GATEWAY-005](../../docs/architecture/decisions/DD-GATEWAY-005-redis-cleanup-on-crd-deletion.md)
 
 **Action Taken**: Test deleted from `redis_integration_test.go` with explanatory comment
 
@@ -1588,7 +1588,7 @@ Time:    ~40 seconds (+2 seconds for Redis stop/start)
 - Redis fingerprints expire via TTL (5 minutes), not immediate cleanup on CRD deletion
 - This protects against false positives and alert storms after CRD deletion
 - If admin deletes CRD, same alert shouldn't immediately recreate it
-- **Design Decision**: [DD-GATEWAY-005](../../docs/decisions/DD-GATEWAY-005-redis-cleanup-on-crd-deletion.md)
+- **Design Decision**: [DD-GATEWAY-005](../../docs/architecture/decisions/DD-GATEWAY-005-redis-cleanup-on-crd-deletion.md)
 
 **Action Taken**: Test deleted from `redis_integration_test.go` with explanatory comment
 
@@ -1973,7 +1973,7 @@ Time:    ~40 seconds (+2 seconds for Redis stop/start)
 - Redis fingerprints expire via TTL (5 minutes), not immediate cleanup on CRD deletion
 - This protects against false positives and alert storms after CRD deletion
 - If admin deletes CRD, same alert shouldn't immediately recreate it
-- **Design Decision**: [DD-GATEWAY-005](../../docs/decisions/DD-GATEWAY-005-redis-cleanup-on-crd-deletion.md)
+- **Design Decision**: [DD-GATEWAY-005](../../docs/architecture/decisions/DD-GATEWAY-005-redis-cleanup-on-crd-deletion.md)
 
 **Action Taken**: Test deleted from `redis_integration_test.go` with explanatory comment
 

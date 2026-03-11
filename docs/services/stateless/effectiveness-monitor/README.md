@@ -486,8 +486,8 @@ logger.Info("Effectiveness assessment completed",
 ### **Related Documentation**
 
 - **Design Decisions**:
-  - `/docs/decisions/DD-EFFECTIVENESS-001-Hybrid-Automated-AI-Analysis.md`
-  - `/docs/decisions/DD-EFFECTIVENESS-002-Restart-Recovery-Idempotency.md`
+  - `/docs/architecture/decisions/DD-EFFECTIVENESS-001-Hybrid-Automated-AI-Analysis.md`
+  - `/docs/architecture/decisions/DD-EFFECTIVENESS-002-Restart-Recovery-Idempotency.md`
 
 - **Architecture**:
   - `/docs/architecture/EFFECTIVENESS_MONITOR_RESTART_RECOVERY_FLOWS.md`

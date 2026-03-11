@@ -79,7 +79,7 @@
 - **[DD-WE-001: Resource Locking Safety](../../../architecture/decisions/DD-WE-001-resource-locking-safety.md)** - ResourceLocked condition basis
 - **[DD-WE-003: Resource Lock Persistence](../../../architecture/decisions/DD-WE-003-resource-lock-persistence.md)** - Lock state tracking
 - **[DD-WE-004: Exponential Backoff Cooldown](../../../architecture/decisions/DD-WE-004-exponential-backoff-cooldown.md)** - Cooldown handling
-- **[DD-005: Observability Standards](../../../architecture/decisions/DD-005-observability-standards.md)** - Metrics/logging (MANDATORY)
+- **[DD-005: Observability Standards](../../../architecture/decisions/DD-005-OBSERVABILITY-STANDARDS.md)** - Metrics/logging (MANDATORY)
 
 ### Reference Implementations
 - **[AIAnalysis Conditions Implementation Status](../../../handoff/AIANALYSIS_CONDITIONS_IMPLEMENTATION_STATUS.md)** - Proven pattern

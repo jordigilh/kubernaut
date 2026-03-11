@@ -477,7 +477,7 @@ var _ = Describe("Safety-Aware Prompt", func() {
 
 ## 📝 **Design Decisions**
 
-**See**: `docs/decisions/DD-HOLMESGPT-008-Safety-Aware-Investigation.md`
+**See**: `docs/architecture/decisions/DD-HOLMESGPT-008-Safety-Aware-Investigation.md`
 
 **Key Decision**: Embed safety context in investigation prompt instead of separate endpoint.
 
@@ -491,7 +491,7 @@ var _ = Describe("Safety-Aware Prompt", func() {
 ## 🔗 **Related Documentation**
 
 - **Architecture**: `docs/architecture/APPROVED_MICROSERVICES_ARCHITECTURE.md`
-- **Decision**: `docs/decisions/DD-HOLMESGPT-008-Safety-Aware-Investigation.md`
+- **Decision**: `docs/architecture/decisions/DD-HOLMESGPT-008-Safety-Aware-Investigation.md`
 - **RemediationProcessor**: `docs/services/stateless/remediation-processor/README.md`
 - **WorkflowExecution**: `docs/services/stateless/workflow-execution/README.md`
 - **Rego Policies**: `config/rego/safety_policies.rego`

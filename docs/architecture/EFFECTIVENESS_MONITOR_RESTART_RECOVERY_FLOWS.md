@@ -713,7 +713,7 @@ Total: ~7s (check) + 0.5s (create) + 5min (stabilization) + 8.3min (assessment)
 
 ## 🔗 **REFERENCES**
 
-- **Design Decision**: `/docs/decisions/DD-EFFECTIVENESS-002-Restart-Recovery-Idempotency.md`
+- **Design Decision**: `/docs/architecture/decisions/DD-EFFECTIVENESS-002-Restart-Recovery-Idempotency.md`
 - **Technical Details**: `/holmesgpt-api/docs/EFFECTIVENESS_MONITOR_RESTART_RECOVERY.md`
 - **CRD Assessment**: `/holmesgpt-api/docs/EFFECTIVENESS_MONITOR_CRD_DESIGN_ASSESSMENT.md`
 - **Database Schema**: `/migrations/006_effectiveness_assessment.sql`

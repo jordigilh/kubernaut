@@ -262,7 +262,7 @@ flowchart LR
 ### **Implementation Guides**
 - **[APDC Development Methodology](../development/methodology/APDC_FRAMEWORK.md)** - Development process
 - **[Testing Framework](../TESTING_FRAMEWORK.md)** - Quality assurance approach
-- **[Quick Reference Card](../getting-started/QUICK_REFERENCE_CARD.md)** - Developer guidelines
+- **[Quick Reference Card](../development/getting-started/QUICK_REFERENCE_CARD.md)** - Developer guidelines
 
 ---
 
