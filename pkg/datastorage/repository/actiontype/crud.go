@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/repository/txretry"
 )
 
 var (
@@ -187,6 +188,18 @@ type DisableResult struct {
 // already disabled, the operation is idempotent and returns Disabled: true (matching
 // the RW disable pattern in HandleDisableWorkflow).
 func (r *Repository) Disable(ctx context.Context, actionType string, disabledBy string) (*DisableResult, error) {
+	const maxRetries = 3
+	var result *DisableResult
+	err := txretry.WithSerializableRetry(ctx, maxRetries, func() error {
+		var txErr error
+		result, txErr = r.disableOnce(ctx, actionType, disabledBy)
+		return txErr
+	})
+	return result, err
+}
+
+// disableOnce runs a single attempt of the serializable disable transaction.
+func (r *Repository) disableOnce(ctx context.Context, actionType string, disabledBy string) (*DisableResult, error) {
 	tx, err := r.db.BeginTxx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
 		return nil, fmt.Errorf("begin transaction: %w", err)
@@ -207,7 +220,6 @@ func (r *Repository) Disable(ctx context.Context, actionType string, disabledBy 
 	}
 
 	if existing.Status != "active" {
-		// Idempotent: already disabled — commit (no-op) and return success.
 		if err := tx.Commit(); err != nil {
 			return nil, fmt.Errorf("commit (already disabled): %w", err)
 		}
