@@ -13,7 +13,7 @@
 # ============================================================================
 FROM registry.access.redhat.com/ubi9/go-toolset:1.25 AS builder
 
-ARG APP_VERSION=dev
+ARG APP_VERSION=v1.0.0
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 # GOFLAGS: Optional build flags (e.g., -cover for E2E coverage profiling per DD-TEST-007)

@@ -17,7 +17,7 @@ FROM registry.access.redhat.com/ubi9/go-toolset:1.25 AS builder
 
 ARG TARGETOS=linux
 ARG TARGETARCH
-ARG APP_VERSION=dev
+ARG APP_VERSION=v1.0.0
 ARG GIT_COMMIT=dev
 ARG BUILD_DATE=dev
 # GOFLAGS: -cover enables E2E coverage instrumentation (DD-TEST-007)
