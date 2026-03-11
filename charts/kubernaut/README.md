@@ -90,7 +90,9 @@ Kubernaut integrates with Prometheus and AlertManager at two levels:
 | Prometheus | `http://kube-prometheus-stack-prometheus.monitoring.svc:9090` | `effectivenessmonitor.external.prometheusUrl` |
 | AlertManager | `http://kube-prometheus-stack-alertmanager.monitoring.svc:9093` | `effectivenessmonitor.external.alertManagerUrl` |
 
-**2. AlertManager sends alerts to Gateway** -- AlertManager must be configured with a webhook receiver pointing to the Kubernaut Gateway. Add this to your AlertManager configuration:
+**2. AlertManager sends alerts to Gateway** -- The Gateway authenticates every signal ingestion request using **Kubernetes TokenReview + SubjectAccessReview (SAR)**. AlertManager must include a bearer token in its webhook requests, and the ServiceAccount behind that token must have RBAC permission to submit signals.
+
+Configure AlertManager with a webhook receiver that includes the `http_config.bearer_token_file` directive pointing to the pod's projected ServiceAccount token:
 
 ```yaml
 receivers:
@@ -98,6 +100,8 @@ receivers:
     webhook_configs:
       - url: "http://gateway.kubernaut-system.svc:9090/api/v1/signals/alertmanager"
         send_resolved: true
+        http_config:
+          bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
 
 route:
   routes:
@@ -118,6 +122,8 @@ alertmanager:
         webhook_configs:
           - url: "http://gateway.kubernaut-system.svc:9090/api/v1/signals/alertmanager"
             send_resolved: true
+            http_config:
+              bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
     route:
       routes:
         - receiver: kubernaut
@@ -126,7 +132,9 @@ alertmanager:
           continue: true
 ```
 
-**3. Gateway RBAC for AlertManager** -- The Gateway requires AlertManager's ServiceAccount to be authorized as a signal source. Configure `gateway.auth.signalSources` in your Kubernaut values:
+> **Important**: Without `bearer_token_file`, AlertManager sends requests with no authentication token and the Gateway rejects them with `401 Unauthorized`.
+
+**3. Gateway RBAC for AlertManager** -- The Kubernaut chart creates a `ClusterRoleBinding` for each entry in `gateway.auth.signalSources`, granting the specified ServiceAccount permission to submit signals via SAR. Configure it with AlertManager's ServiceAccount:
 
 ```yaml
 gateway:
@@ -136,6 +144,8 @@ gateway:
         serviceAccount: alertmanager-kube-prometheus-stack-alertmanager
         namespace: monitoring
 ```
+
+The ServiceAccount name must match AlertManager's actual ServiceAccount in the cluster. For kube-prometheus-stack, this is typically `alertmanager-kube-prometheus-stack-alertmanager` in the `monitoring` namespace.
 <!-- --8<-- [end:infrastructure-setup] -->
 
 ## Pre-Installation
