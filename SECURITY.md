@@ -13,7 +13,7 @@ If you discover a security vulnerability in Kubernaut, please report it responsi
 
 **Do NOT open a public GitHub issue for security vulnerabilities.**
 
-Instead, please email **kubernaut-security@proton.me** with:
+Instead, please email **jgil@redhat.com** with:
 
 1. A description of the vulnerability
 2. Steps to reproduce
