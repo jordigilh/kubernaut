@@ -27,9 +27,9 @@ data:
       leaderElectionId: "effectivenessmonitor.kubernaut.ai"
     external:
       prometheusUrl: {{ .Values.effectivenessmonitor.external.prometheusUrl | default "http://kube-prometheus-stack-prometheus.monitoring.svc:9090" }}
-      prometheusEnabled: {{ .Values.effectivenessmonitor.external.prometheusEnabled | default true }}
+      prometheusEnabled: {{ if hasKey .Values.effectivenessmonitor.external "prometheusEnabled" }}{{ .Values.effectivenessmonitor.external.prometheusEnabled }}{{ else }}true{{ end }}
       alertManagerUrl: {{ .Values.effectivenessmonitor.external.alertManagerUrl | default "http://kube-prometheus-stack-alertmanager.monitoring.svc:9093" }}
-      alertManagerEnabled: {{ .Values.effectivenessmonitor.external.alertManagerEnabled | default true }}
+      alertManagerEnabled: {{ if hasKey .Values.effectivenessmonitor.external "alertManagerEnabled" }}{{ .Values.effectivenessmonitor.external.alertManagerEnabled }}{{ else }}true{{ end }}
       connectionTimeout: 10s
 ---
 apiVersion: v1
