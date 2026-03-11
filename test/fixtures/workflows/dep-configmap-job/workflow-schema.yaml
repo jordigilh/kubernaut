@@ -6,14 +6,12 @@ spec:
   # DD-WE-006 Test Workflow: Job with ConfigMap Dependency (BR-WORKFLOW-004)
   # Used by: WorkflowExecution E2E (ConfigMap dependency injection tests)
   # Authority: DD-WE-006, BR-WE-014
-  metadata:
-    workflowName: test-dep-configmap-job
-    version: "1.0.0"
-    description:
-      what: "Job workflow that declares a ConfigMap dependency for DD-WE-006 E2E testing"
-      whenToUse: "For E2E validation of schema-declared ConfigMap dependency injection into Jobs"
-      whenNotToUse: "Not intended for production use"
-      preconditions: "ConfigMap 'e2e-dep-configmap' provisioned in execution namespace"
+  version: "1.0.0"
+  description:
+    what: "Job workflow that declares a ConfigMap dependency for DD-WE-006 E2E testing"
+    whenToUse: "For E2E validation of schema-declared ConfigMap dependency injection into Jobs"
+    whenNotToUse: "Not intended for production use"
+    preconditions: "ConfigMap 'e2e-dep-configmap' provisioned in execution namespace"
   
   actionType: RestartPod
   

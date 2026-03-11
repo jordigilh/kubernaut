@@ -5,14 +5,12 @@ metadata:
 spec:
   # Intentional Failure Test Workflow Schema (BR-WORKFLOW-004)
   # Used by: WorkflowExecution E2E
-  metadata:
-    workflowName: test-intentional-failure
-    version: "1.0.0"
-    description:
-      what: "Workflow that intentionally fails for testing error handling"
-      whenToUse: "For E2E validation of failure detection and error propagation"
-      whenNotToUse: "Not intended for production use"
-      preconditions: "Tekton Pipelines installed in the cluster"
+  version: "1.0.0"
+  description:
+    what: "Workflow that intentionally fails for testing error handling"
+    whenToUse: "For E2E validation of failure detection and error propagation"
+    whenNotToUse: "Not intended for production use"
+    preconditions: "Tekton Pipelines installed in the cluster"
   
   actionType: RestartPod
   

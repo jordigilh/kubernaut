@@ -5,14 +5,12 @@ metadata:
 spec:
   # Ansible Success Test Workflow Schema (BR-WE-015, BR-WE-016)
   # Used by: WorkflowExecution E2E — ansible engine success path
-  metadata:
-    workflowName: test-ansible-success
-    version: "1.0.0"
-    description:
-      what: "Ansible playbook that simulates a successful remediation via AWX"
-      whenToUse: "For E2E validation of ansible engine workflow execution (success path)"
-      whenNotToUse: "Not intended for production use"
-      preconditions: "AWX instance deployed and configured with kubernaut-test-playbooks project"
+  version: "1.0.0"
+  description:
+    what: "Ansible playbook that simulates a successful remediation via AWX"
+    whenToUse: "For E2E validation of ansible engine workflow execution (success path)"
+    whenNotToUse: "Not intended for production use"
+    preconditions: "AWX instance deployed and configured with kubernaut-test-playbooks project"
   
   actionType: RestartPod
   

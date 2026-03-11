@@ -5,14 +5,12 @@ metadata:
 spec:
   # Test Signal Handler Workflow Schema (BR-WORKFLOW-004)
   # Used by: AIAnalysis E2E
-  metadata:
-    workflowName: test-signal-handler-v1
-    version: "1.0.0"
-    description:
-      what: "Deletes a pod in response to a test signal for validation purposes"
-      whenToUse: "When a test signal is received that requires pod deletion"
-      whenNotToUse: "In production environments"
-      preconditions: "Pod exists and is deletable"
+  version: "1.0.0"
+  description:
+    what: "Deletes a pod in response to a test signal for validation purposes"
+    whenToUse: "When a test signal is received that requires pod deletion"
+    whenNotToUse: "In production environments"
+    preconditions: "Pod exists and is deletable"
   
   actionType: DeletePod
   

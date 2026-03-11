@@ -5,14 +5,12 @@ metadata:
 spec:
   # OOMKill Increase Memory Workflow Schema - Job Backend (BR-WORKFLOW-004)
   # Used by: FullPipeline E2E (execution.engine: job)
-  metadata:
-    workflowName: oomkill-increase-memory-v1
-    version: "1.0.0"
-    description:
-      what: "Increases memory limits for pods experiencing OOMKill events"
-      whenToUse: "When pods are OOMKilled due to insufficient memory limits"
-      whenNotToUse: "When OOM is caused by a memory leak requiring code fix"
-      preconditions: "Pod is managed by a Deployment or StatefulSet"
+  version: "1.0.0"
+  description:
+    what: "Increases memory limits for pods experiencing OOMKill events"
+    whenToUse: "When pods are OOMKilled due to insufficient memory limits"
+    whenNotToUse: "When OOM is caused by a memory leak requiring code fix"
+    preconditions: "Pod is managed by a Deployment or StatefulSet"
   
   actionType: IncreaseMemoryLimits
   

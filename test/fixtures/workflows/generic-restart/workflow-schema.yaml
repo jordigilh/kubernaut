@@ -5,14 +5,12 @@ metadata:
 spec:
   # Generic Restart Workflow Schema (BR-WORKFLOW-004)
   # Used by: AIAnalysis E2E, HolmesGPT-API E2E
-  metadata:
-    workflowName: generic-restart-v1
-    version: "1.0.0"
-    description:
-      what: "Restarts a pod as a generic recovery action"
-      whenToUse: "When a pod needs a restart and no specific remediation applies"
-      whenNotToUse: "When root cause is known and a targeted fix exists"
-      preconditions: "Pod is managed by a controller"
+  version: "1.0.0"
+  description:
+    what: "Restarts a pod as a generic recovery action"
+    whenToUse: "When a pod needs a restart and no specific remediation applies"
+    whenNotToUse: "When root cause is known and a targeted fix exists"
+    preconditions: "Pod is managed by a controller"
   
   actionType: RestartPod
   

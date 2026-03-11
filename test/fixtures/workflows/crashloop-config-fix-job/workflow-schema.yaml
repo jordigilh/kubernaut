@@ -5,14 +5,12 @@ metadata:
 spec:
   # CrashLoop Config Fix Workflow Schema - Job Backend (BR-WORKFLOW-004)
   # Used by: FullPipeline E2E (execution.engine: job)
-  metadata:
-    workflowName: crashloop-config-fix-v1
-    version: "1.0.0"
-    description:
-      what: "Restarts deployment to recover from CrashLoopBackOff caused by configuration issues"
-      whenToUse: "When pods are in CrashLoopBackOff due to misconfiguration"
-      whenNotToUse: "When crash is caused by a persistent code bug"
-      preconditions: "Pod is managed by a Deployment"
+  version: "1.0.0"
+  description:
+    what: "Restarts deployment to recover from CrashLoopBackOff caused by configuration issues"
+    whenToUse: "When pods are in CrashLoopBackOff due to misconfiguration"
+    whenNotToUse: "When crash is caused by a persistent code bug"
+    preconditions: "Pod is managed by a Deployment"
   
   actionType: RestartDeployment
   

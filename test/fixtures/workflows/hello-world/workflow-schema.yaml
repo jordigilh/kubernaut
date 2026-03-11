@@ -5,14 +5,12 @@ metadata:
 spec:
   # Hello World Test Workflow Schema (BR-WORKFLOW-004)
   # Used by: WorkflowExecution E2E
-  metadata:
-    workflowName: test-hello-world
-    version: "1.0.0"
-    description:
-      what: "Simple hello-world workflow for testing the execution pipeline"
-      whenToUse: "For E2E validation of workflow registration and execution"
-      whenNotToUse: "Not intended for production use"
-      preconditions: "Tekton Pipelines installed in the cluster"
+  version: "1.0.0"
+  description:
+    what: "Simple hello-world workflow for testing the execution pipeline"
+    whenToUse: "For E2E validation of workflow registration and execution"
+    whenNotToUse: "Not intended for production use"
+    preconditions: "Tekton Pipelines installed in the cluster"
   
   actionType: RestartPod
   

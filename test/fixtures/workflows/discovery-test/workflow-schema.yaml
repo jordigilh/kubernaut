@@ -5,14 +5,12 @@ metadata:
 spec:
   # Discovery Test Workflow Schema (BR-WORKFLOW-004)
   # Used by: DataStorage E2E — 04_workflow_discovery_test.go (DD-HAPI-017)
-  metadata:
-    workflowName: discovery-test-v1
-    version: "1.0.0"
-    description:
-      what: "Test workflow for three-step discovery E2E validation"
-      whenToUse: "For E2E testing of ListAvailableActions, ListWorkflows, GetWorkflow"
-      whenNotToUse: "Not intended for production use"
-      preconditions: "DataStorage service running with action_type_taxonomy seeded"
+  version: "1.0.0"
+  description:
+    what: "Test workflow for three-step discovery E2E validation"
+    whenToUse: "For E2E testing of ListAvailableActions, ListWorkflows, GetWorkflow"
+    whenNotToUse: "Not intended for production use"
+    preconditions: "DataStorage service running with action_type_taxonomy seeded"
   
   actionType: ScaleReplicas
   
