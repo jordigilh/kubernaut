@@ -409,7 +409,8 @@
             "gcpRegion": { "type": "string", "default": "" },
             "maxRetries": { "type": "integer", "default": 3 },
             "timeoutSeconds": { "type": "integer", "default": 120 },
-            "temperature": { "type": "number", "default": 0.7 }
+            "temperature": { "type": "number", "default": 0.7 },
+            "credentialsSecretName": { "type": "string", "default": "llm-credentials", "description": "Name of the pre-existing K8s Secret containing LLM API credentials (e.g. OPENAI_API_KEY)" }
           }
         },
         "podSecurityContext": { "$ref": "#/definitions/securityContext" },

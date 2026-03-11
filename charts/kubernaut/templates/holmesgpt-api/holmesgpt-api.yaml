@@ -176,7 +176,7 @@ spec:
               value: "DEBUG"
           envFrom:
             - secretRef:
-                name: llm-credentials
+                name: {{ .Values.holmesgptApi.llm.credentialsSecretName }}
                 optional: true
           volumeMounts:
             - name: config
@@ -209,7 +209,7 @@ spec:
             name: holmesgpt-api-config
         - name: llm-credentials-file
           secret:
-            secretName: llm-credentials
+            secretName: {{ .Values.holmesgptApi.llm.credentialsSecretName }}
             optional: true
 ---
 apiVersion: v1

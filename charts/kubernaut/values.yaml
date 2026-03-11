@@ -168,6 +168,7 @@ holmesgptApi:
     maxRetries: 3
     timeoutSeconds: 120
     temperature: 0.7
+    credentialsSecretName: llm-credentials
 
 # -- AuthWebhook admission controller
 authwebhook:
