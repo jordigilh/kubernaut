@@ -16,6 +16,18 @@ Kubernaut closes the loop from Kubernetes alert to automated remediation. When s
 
 ---
 
+## Why
+
+Kubernetes operators spend hours manually triaging alerts, diagnosing root causes from scattered logs and metrics, and executing remediation steps from runbooks that drift out of date. The response depends on tribal knowledge, human availability, and often happens at 3am.
+
+Rule-based remediation tools help with known, deterministic problems — "if X, do Y." But when the same symptom has multiple root causes, or the right fix depends on context the rule can't see, they fall short.
+
+Kubernaut bridges that gap. It uses an LLM to investigate the actual root cause with live cluster access, selects the right remediation from a workflow catalog, executes it, and verifies the fix worked — escalating to humans only when it should. Rule-based tools are thermostats. Kubernaut is a diagnostician that also adjusts the thermostat.
+
+**[Why Kubernaut? — full comparison with rule-based tools](https://jordigilh.github.io/kubernaut-docs/getting-started/why-kubernaut/)**
+
+---
+
 ## What It Does
 
 - **Detects** — Ingests Prometheus AlertManager alerts and Kubernetes Events, validates resource scope, and deduplicates by fingerprint
