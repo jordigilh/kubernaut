@@ -51,7 +51,7 @@ type WorkflowSchemaCRD struct {
 }
 
 // WorkflowCRDMetadata is the CRD-level metadata (name, namespace).
-// Distinct from WorkflowSchemaMetadata which holds workflowId, version, description.
+// metadata.name provides the workflow name (issue #329).
 type WorkflowCRDMetadata struct {
 	Name      string `yaml:"name" json:"name"`
 	Namespace string `yaml:"namespace,omitempty" json:"namespace,omitempty"`
@@ -65,13 +65,22 @@ var APIVersionToSchemaVersion = map[string]string{
 
 // WorkflowSchema represents the spec content of a RemediationWorkflow CRD.
 // This is the authoritative schema format for all Kubernaut remediation workflows.
+// Issue #329: WorkflowName is derived from CRD metadata.name (not duplicated in spec).
 type WorkflowSchema struct {
 	// SchemaVersion is derived from apiVersion by the parser (not present in YAML).
 	// Stored in DB column schema_version for format compatibility tracking.
 	SchemaVersion string `yaml:"-" json:"schemaVersion"`
 
-	// Metadata contains workflow identification and description
-	Metadata WorkflowSchemaMetadata `yaml:"metadata" json:"metadata" validate:"required"`
+	// WorkflowName is derived from the CRD metadata.name by the parser.
+	// Not present in the spec YAML; populated by Parse() from crd.Metadata.Name.
+	WorkflowName string `yaml:"-" json:"workflowName" validate:"required,max=255"`
+
+	// Version is the semantic version (e.g., "1.0.0", "2.1.3")
+	Version string `yaml:"version" json:"version" validate:"required,max=50"`
+
+	// Description is a structured description for LLM and operator consumption
+	// BR-WORKFLOW-004: Uses same format as action_type_taxonomy.description (DD-WORKFLOW-016)
+	Description WorkflowDescription `yaml:"description" json:"description" validate:"required"`
 
 	// ActionType is the action type from the taxonomy (PascalCase).
 	// Must match a valid entry in action_type_taxonomy.
@@ -100,29 +109,15 @@ type WorkflowSchema struct {
 	// DD-WE-006: Validated at registration (DS) and execution (WFE) time.
 	Dependencies *WorkflowDependencies `yaml:"dependencies,omitempty" json:"dependencies,omitempty"`
 
+	// Maintainers is optional maintainer information
+	Maintainers []WorkflowMaintainer `yaml:"maintainers,omitempty" json:"maintainers,omitempty" validate:"omitempty,dive"`
+
 	// Parameters defines the workflow input parameters (at least one required)
 	// These are returned to the LLM for parameter population
 	Parameters []WorkflowParameter `yaml:"parameters" json:"parameters" validate:"required,min=1,dive"`
 
 	// RollbackParameters defines parameters needed for rollback (optional)
 	RollbackParameters []WorkflowParameter `yaml:"rollbackParameters,omitempty" json:"rollbackParameters,omitempty" validate:"omitempty,dive"`
-}
-
-// WorkflowSchemaMetadata contains workflow identification and description
-type WorkflowSchemaMetadata struct {
-	// WorkflowName is the human-readable workflow name (maps to DS workflow_name)
-	// Format: lowercase alphanumeric with hyphens (e.g., "oomkill-restart-pod")
-	WorkflowName string `yaml:"workflowName" json:"workflowName" validate:"required,max=255"`
-
-	// Version is the semantic version (e.g., "1.0.0", "2.1.3")
-	Version string `yaml:"version" json:"version" validate:"required,max=50"`
-
-	// Description is a structured description for LLM and operator consumption
-	// BR-WORKFLOW-004: Uses same format as action_type_taxonomy.description (DD-WORKFLOW-016)
-	Description WorkflowDescription `yaml:"description" json:"description" validate:"required"`
-
-	// Maintainers is optional maintainer information
-	Maintainers []WorkflowMaintainer `yaml:"maintainers,omitempty" json:"maintainers,omitempty" validate:"omitempty,dive"`
 }
 
 // WorkflowDescription is an alias for the shared StructuredDescription type.
@@ -419,9 +414,25 @@ func (d *DetectedLabelsSchema) UnmarshalYAML(value *yaml.Node) error {
 	return nil
 }
 
+// MarshalYAML implements custom YAML marshaling for DetectedLabelsSchema.
+// Symmetric with UnmarshalYAML: emits only the fields listed in PopulatedFields,
+// preserving the distinction between "field absent" and "field present with value".
+// Issue #330: Enables round-trip marshal/unmarshal for test fixture builders.
+func (d DetectedLabelsSchema) MarshalYAML() (interface{}, error) {
+	node := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+	for _, field := range d.PopulatedFields {
+		val := d.fieldValue(field)
+		node.Content = append(node.Content,
+			&yaml.Node{Kind: yaml.ScalarNode, Value: field},
+			&yaml.Node{Kind: yaml.ScalarNode, Value: val},
+		)
+	}
+	return node, nil
+}
+
 // fieldValue returns the raw string value for a given field name.
-// Centralizes the field-name-to-struct-field mapping used by both
-// UnmarshalYAML (write) and ValidateDetectedLabels (read).
+// Centralizes the field-name-to-struct-field mapping used by
+// UnmarshalYAML (write), MarshalYAML (read), and ValidateDetectedLabels (read).
 func (d *DetectedLabelsSchema) fieldValue(name string) string {
 	switch name {
 	case "gitOpsManaged":
@@ -518,10 +529,10 @@ func (l *WorkflowSchemaLabels) ValidateMandatoryLabels() error {
 // BR-WORKFLOW-004: what and whenToUse are required.
 func ValidateDescription(d *WorkflowDescription) error {
 	if d.What == "" {
-		return NewSchemaValidationError("metadata.description.what", "what is required")
+		return NewSchemaValidationError("description.what", "what is required")
 	}
 	if d.WhenToUse == "" {
-		return NewSchemaValidationError("metadata.description.whenToUse", "whenToUse is required")
+		return NewSchemaValidationError("description.whenToUse", "whenToUse is required")
 	}
 	return nil
 }
